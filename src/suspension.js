@@ -524,8 +524,12 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // job, not the carcass's.
         const dNorm = Math.min(0.94, Math.max(0, c.depth) / sidewall)
         const carcass = 1 / (1 - dNorm * dNorm)
+        // SM-3 flat tire: params._tireRateScale[i] collapses the carcass rate when the air is gone.
+        // It scales the LINEAR term only — the progressive `carcass` term stays, because a flat tire
+        // still stacks up against its rim, and that is what stops the wheel sinking through the road.
+        const rate = params._tireRateScale ? params._tireRateScale[i] : 1
         const tireFnAtContact = Math.max(0,
-          params.tireStiffness * c.depth * carcass + params.tireDamping * compressionVel
+          params.tireStiffness * rate * c.depth * carcass + params.tireDamping * rate * compressionVel
         ) * env
 
         // RIM CONTACT from the analytic path. Depth is measured from the tire's OUTER radius, so

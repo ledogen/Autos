@@ -626,6 +626,32 @@ function _muteAll (now) {
                                                // keep swinging the impact gain around zero
 }
 
+/**
+ * One-shot tire BLOWOUT — a short, loud burst of noise with a fast decay, filtered so it reads as a
+ * carcass letting go rather than a gunshot. Fired by the SM-3 damage model when a tire punctures;
+ * nothing else in the audio graph is one-shot, so it builds and discards its own tiny chain.
+ */
+export function playTireBlowout () {
+  if (!ctx || !master) return
+  const now = ctx.currentTime
+  const src = ctx.createBufferSource()
+  const len = Math.floor(ctx.sampleRate * 0.35)
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
+  src.buffer = buf
+  // Band-passed: the crack is mid, not treble, and the body of it is the air leaving.
+  const bp = ctx.createBiquadFilter()
+  bp.type = 'bandpass'; bp.frequency.value = 320; bp.Q.value = 0.8
+  const g = ctx.createGain()
+  g.gain.setValueAtTime(0.0001, now)
+  g.gain.exponentialRampToValueAtTime(0.9, now + 0.004)   // near-instant attack: it is a burst
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.30)
+  src.connect(bp); bp.connect(g); g.connect(master)
+  src.start(now); src.stop(now + 0.35)
+  src.onended = () => { try { src.disconnect(); bp.disconnect(); g.disconnect() } catch {} }
+}
+
 export function setTireAudioEnabled (on) {
   enabled = !!on
   if (!on && started) _muteAll(ctx.currentTime)

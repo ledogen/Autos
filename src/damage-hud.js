@@ -42,6 +42,7 @@ const GROUPS = [
   ['damper',    'Dampers'],
   ['brake',     'Brakes'],
   ['engine',    'Engine'],
+  ['filter',    'Air Filter'],
   ['radiator',  'Radiator'],
   ['headlights', 'Lights'],
   ['alignment', 'Alignment'],
@@ -99,8 +100,13 @@ export class DamageHUD {
     this.impacts = []          // most recent first, capped
     this._acc = 0
     this._history = []         // [{t, condition:{...}}] for the wear-rate window
-    this._rimHold = [0, 0, 0, 0]   // peak-held rim impulse per corner (see HOLD_S)
+    // Peak-held rim load per corner, per SOURCE (see HOLD_S). Two rows, because they are two
+    // different measurements on wildly different scales — showing only one made drops look like
+    // they registered nothing at all.
+    this._rimHold = [0, 0, 0, 0]        // debris: what the rigid wheel core exchanges
     this._rimHoldT = [0, 0, 0, 0]
+    this._roadHold = [0, 0, 0, 0]       // road: squashed-carcass load past full compression
+    this._roadHoldT = [0, 0, 0, 0]
     this._t = 0
 
     const style = document.createElement('style')
@@ -134,12 +140,14 @@ export class DamageHUD {
   update (dt) {
     // The peak hold runs even while hidden — otherwise opening the panel after a strike shows
     // nothing, which is exactly when you want to look.
-    const rim = this.vehicleState.rimForce
-    if (rim) {
+    const rim = this.vehicleState.rimForce, road = this.vehicleState.rimForceRoad
+    if (rim || road) {
       this._t += dt
       for (let i = 0; i < 4; i++) {
-        if (rim[i] > this._rimHold[i]) { this._rimHold[i] = rim[i]; this._rimHoldT[i] = this._t }
+        if (rim && rim[i] > this._rimHold[i]) { this._rimHold[i] = rim[i]; this._rimHoldT[i] = this._t }
         else if (this._t - this._rimHoldT[i] > HOLD_S) this._rimHold[i] = 0
+        if (road && road[i] > this._roadHold[i]) { this._roadHold[i] = road[i]; this._roadHoldT[i] = this._t }
+        else if (this._t - this._roadHoldT[i] > HOLD_S) this._roadHold[i] = 0
       }
     }
     if (!this.visible) return
@@ -185,9 +193,21 @@ export class DamageHUD {
         // that actually reaches the physics. Runout in particular is an OUTPUT of wheel condition —
         // nothing derives wear from it — so it belongs here beside the wheel, never in SIGNALS.
         const cls = TRACKS[id].cls
+        // Tires show FLAT rather than a wear rate — a puncture is a state, not a percentage, and it
+        // is the thing you need to see first.
+        if (cls === 'tire' && d.flat[TRACKS[id].wheel]) {
+          col.push(
+            `<div class="dh-row"><span class="dh-lbl">${TRACKS[id].label}</span>` +
+            `<span class="dh-bar"><span class="dh-fill" style="width:${(c * 100).toFixed(1)}%;background:${conditionColor(c)}"></span></span>` +
+            `<span class="dh-pct">${(c * 100).toFixed(0)}%</span>` +
+            `<span class="dh-rate" style="color:#e0705c;font-weight:600">FLAT</span></div>`)
+          continue
+        }
         const extra = cls === 'alignment'
           ? `${d.camberOffsetDeg[TRACKS[id].wheel] >= 0 ? '+' : ''}${d.camberOffsetDeg[TRACKS[id].wheel].toFixed(2)}°cam`
-          : cls === 'wheel'
+          : cls === 'filter'
+            ? (d.filterEngineMultiplier() > 1.05 ? `${d.filterEngineMultiplier().toFixed(1)}× eng wear` : '')
+            : cls === 'wheel'
             ? `${(d.wheelRunout(TRACKS[id].wheel) * 1000).toFixed(1)}mm o-o-r`
             : (r > 0.005 ? `${r.toFixed(2)}%/min` : '')
         col.push(
@@ -212,12 +232,16 @@ export class DamageHUD {
     // Rim-core contact impulse, PEAK-HELD. A strike lasts a couple of physics steps and this pane
     // redraws at 10 Hz, so the instantaneous value is almost never the one you want to read — the
     // hold keeps each corner's worst for a few seconds so a spike can actually be caught.
-    const trip = P.rimYieldMult * DamageModel.staticWheelLoad(this.model.params || {})
-    out.push(`<div class="dh-sig"><span>rim kN</span>${[0, 1, 2, 3].map(i =>
+    const sw = DamageModel.staticWheelLoad(this.model.params || {})
+    const trip = P.rimYieldMult * sw, tripRoad = P.rimYieldRoadMult * sw
+    out.push(`<div class="dh-sig"><span>rim/rock kN</span>${[0, 1, 2, 3].map(i =>
       fmt(this._rimHold[i] / 1000, trip / 1000, 1)).join('')}</div>`)
+    out.push(`<div class="dh-sig"><span>rim/road kN</span>${[0, 1, 2, 3].map(i =>
+      fmt(this._roadHold[i] / 1000, tripRoad / 1000, 0)).join('')}</div>`)
     out.push(`<div class="dh-note">floors — slip ${P.tireSlipFloor} m/s · bump ${(P.springForceFloor / 1000).toFixed(0)} kN`
       + ` (align ${(P.alignBumpFloorN / 1000).toFixed(0)} kN) · strut ${P.damperVelFloor} m/s`
-      + ` · rim yield ${(trip / 1000).toFixed(0)} kN on the wheel core (peak held ${HOLD_S}s). Below yield the rim springs back.</div>`)
+      + ` · rim yield — rock ${(trip / 1000).toFixed(1)} kN on the core, road ${(tripRoad / 1000).toFixed(0)} kN past full tire compression`
+      + ` (peaks held ${HOLD_S}s). Below yield the rim springs back.</div>`)
     out.push('<div class="dh-note">a floor that is red on ordinary road is wrong, or the signal under it is noise.</div>')
 
     // ── IMPACTS ───────────────────────────────────────────────────────────────────────────────

@@ -60,8 +60,11 @@ console.log('\n§2 armor takes its own curve — floored, saturating at 80 mph, 
   ok(near(b / a, 4, 0.05), `doubling speed-over-floor quadruples the damage (x${(b / a).toFixed(2)}) — energy, not impulse`)
   // The fatal threshold is 60 mph and armor now saturates at 80, so the two no longer coincide.
   // That is a deliberate consequence of the owner's re-anchor, pinned so it cannot drift silently.
-  ok(D.fatalMph === 60 && D.impactArmor.fullMph === 80,
-    'death (60 mph) and total armor loss (80 mph) are now DIFFERENT speeds — they used to be the same hit')
+  // Death and total armor loss are the SAME impact by design (owner restored this 2026-08-23 after
+  // the armor re-anchor briefly split them): the hit that writes off a bumper outright is the hit
+  // that kills you.
+  ok(D.fatalMph === D.impactArmor.fullMph,
+    `death and total armor loss are the same impact — both ${D.fatalMph} mph`)
 }
 
 console.log('\n§3 armor absorption follows the ratified two anchors')
@@ -115,8 +118,8 @@ for (const mph of [20, 29]) {
 
 console.log('\n§7 the fatal-crash threshold is the 60 mph the armor curve tops out at')
 ok(hit('front', 59, 1).r.fatal === false, '59 mph is survivable')
-ok(hit('front', 60, 1).r.fatal === true, '60 mph is fatal')
-ok(hit('front', 60, 1).r.fatal === true, '...and full armor does NOT save you — the deceleration kills, the bumper only decides what breaks')
+ok(hit('front', D.fatalMph, 1).r.fatal === true, '`${D.fatalMph} mph is fatal`')
+ok(hit('front', D.fatalMph, 1).r.fatal === true, '...and full armor does NOT save you — the deceleration kills, the bumper only decides what breaks')
 
 console.log('\n§8 impulse, not speed: a glancing hit prices as the small hit it is')
 {

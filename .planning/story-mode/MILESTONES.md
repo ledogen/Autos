@@ -246,8 +246,13 @@ ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.20 
 
 **Goal:** the second death condition exists, and every run starts in a different bad truck.
 
-> **The component model below is RATIFIED** [owner, 2026-08-19]. It supersedes the shape sketched in
-> DESIGN.md "Damage, wear & repair" wherever the two differ — specifically: suspension splits into
+> **The component model below is RATIFIED** [owner, 2026-08-19] and **RECONCILED WITH THE BUILD**
+> [owner, 2026-08-23: *"current implementation is source of truth"*]. Where this table once
+> described an intent that the build then improved on, the table has been corrected rather than the
+> code — the damage sources marked below changed because driving them showed the original signal was
+> the wrong quantity, and each is argued in `design-amendments-2026-08-23-sm3.md`.
+>
+> It supersedes the shape sketched in DESIGN.md "Damage, wear & repair" wherever the two differ — specifically: suspension splits into
 > **springs and dampers** as separate tracks; **armor**, **headlights**, **alignment** and **wheels**
 > are new classes DESIGN.md does not have; and wheels are separate from tires. Everything DESIGN.md
 > ratified earlier still stands: one framework, per-component 0–100% condition, honest physics
@@ -266,7 +271,11 @@ ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.20 
   impact and its only effect is temperature, so the thermal model is not a dependency to wait on —
   it is part of the radiator track.
 - **Death is in scope.** Both SM-INV-1 fail states land here: the fatal-crash impact threshold and
-  the unrecoverable-breakdown run-end. This pulls SM-4 run-lifecycle work forward far enough that
+  the unrecoverable-breakdown run-end. **The fatal threshold is 80 mph of Δv, measured off the
+  vehicle** — the same speed the armor curve saturates at, so total armor loss and death are the
+  same impact (owner restored that coincidence 2026-08-23 after the armor re-anchor briefly split
+  them). Severity comes from the truck's own velocity change across the collision, NOT from the
+  engine's accumulated contact impulse, which is not net momentum transfer. This pulls SM-4 run-lifecycle work forward far enough that
   a dead run needs somewhere to go.
 - **Ships in three slices**, each merged and driven before the next starts:
   1. the condition spine + debug tooling + per-tire μ + its wiring gate + every wear track that
@@ -276,21 +285,22 @@ ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.20 
 
 ### The component tracks
 
-**Twenty-six tracks in eight classes.** Left/right is deliberately NOT separable on suspension or
+**Twenty-seven tracks in nine classes** (the air filter joined 2026-08-23). Left/right is deliberately NOT separable on suspension or
 brakes — the player should not be asked to manage eight independent corners.
 
 | Class | Tracks | Damaged by | Effect when worn |
 |---|---|---|---|
 | **Armor** | front bumper · left side · right side · rear bumper | impact | absorbs impact energy destined for the components behind it; absorbs *less* as it degrades |
-| **Tires** | ×4 independent (FL/FR/RL/RR) | slip velocity × time (dominant) + cornering force × time (minor) | per-tire friction coefficient falls; puncture below a threshold |
-| **Wheels** | ×4 independent (FL/FR/RL/RR) | high suspension acceleration + impact through the armor | radial runout — the wheel goes out of round, ≤ 0.04 m peak-to-peak |
-| **Suspension springs** | front pair · rear pair | bump-stop force + side impacts | spring rate falls, non-linearly (most of it in the last 30%) |
+| **Tires** | ×4 independent (FL/FR/RL/RR) | slip velocity × time (dominant) + cornering force × time (minor). **Puncture** on bump-stop force against a worn tire — 70 kN at 50% condition falling to 30 kN at 10%, and fresh rubber cannot pop at all | per-tire friction coefficient falls. A FLAT drops grip 30% and collapses the carcass rate to 5% of stock (not zero — a flat tire still stacks up against its rim) |
+| **Wheels** | ×4 independent (FL/FR/RL/RR) | **rim contact** — the tire squashed clean through its soft band onto the road, or the rigid wheel core striking debris — plus impact through the armor. Past a YIELD force only: below it the rim springs back | radial runout — the wheel goes out of round, ≤ 0.04 m peak-to-peak |
+| **Suspension springs** | front pair · rear pair | bump-stop PEAK force, per event (never integrated over time) + side impacts | spring rate falls, non-linearly (most of it in the last 30%) — bottoming out at **50% of stock, never zero** |
 | **Suspension dampers** | front pair · rear pair | high suspension displacement rate + side impacts | damping rate falls, non-linearly (most of it in the last 30%) |
-| **Brakes** | front pair · rear pair | ∫(brake torque × time) — **never** impact | max brake torque falls, non-linearly (most of it in the last 30%) |
-| **Engine** | one | front impact + coolant above 105 °C + slow f(rpm, torque, load) | available torque falls at all rpm (curve below) |
+| **Brakes** | front pair · rear pair | ∫(brake torque × **wheel speed** × time) — the friction ENERGY the pads dissipate; **never** impact | max brake torque falls, non-linearly (most of it in the last 30%) |
+| **Engine** | one | front impact + coolant above 105 °C + slow f(rpm, torque, load), **multiplied by up to 20× on a blocked air filter** | available torque falls at all rpm (curve below) |
+| **Air filter** | one | the air the engine breathes — the same rpm × load the engine track integrates, since airflow is what carries the dust in | **nothing at all above 20%**, then engine wear multiplies hard. ~30 min of hard driving to replace. Cheap consumable; the asymmetry IS the mechanic |
 | **Radiator** | one | **impact only** | available cooling rate falls → coolant temperature climbs |
 | **Headlights** | left · right | front impact, much worse when the front bumper is compromised | flicker below 50%, permanently dark at 0% |
-| **Alignment** | ×4 per wheel | impact (front bumper protects front, rear bumper rear, each side protects its own) | random toe + camber offsets applied to the affected wheels, bounded |
+| **Alignment** | ×4 per wheel | impact (front bumper protects front, rear bumper rear, each side protects its own) + **really hard bump-stop hits**, on a floor far above the spring track's so ordinary landings never touch it | random toe + camber offsets applied to the affected wheels, bounded |
 
 ### Armor — the mechanism that ties impacts together
 

@@ -70,6 +70,9 @@ export const TRACKS = {
 
   // Powertrain + front-end. All three sit behind the front bumper and nothing else.
   engine:     { label: 'Engine',     cls: 'engine',     regions: ['front'] },
+  // The air filter is a CONSUMABLE, not a component — cheap to replace, and the one track the
+  // player has to watch. Impacts do not touch it; it clogs from the air the engine breathes.
+  airFilter:  { label: 'Air Filter', cls: 'filter',     regions: [] },
   radiator:   { label: 'Radiator',   cls: 'radiator',   regions: ['front'] },
   headlightL: { label: 'Headlight L', cls: 'headlights', regions: ['front'], side: 'left'  },
   headlightR: { label: 'Headlight R', cls: 'headlights', regions: ['front'], side: 'right' },
@@ -156,6 +159,26 @@ export const DAMAGE_PARAMS = {
   // Engine: f(rpm, torque, load) — deliberately VERY slow. Normalised so 1.0 = redline at full load.
   durEngine:      2.0e5,     // normalised load-seconds
   engineRPMExp:   2.0,       // rpm term exponent — revving hurts superlinearly
+
+  // ── Air filter (DESIGN.md's track, ratified into SM-3 on 2026-08-23) ────────────────────────
+  // It clogs on the AIR THE ENGINE BREATHES, which is the same rpm x load quantity the engine wear
+  // already integrates — airflow is what carries the dust in. That makes it emergent from a signal
+  // the sim already produces rather than a timer, and it means the driving that wears the engine is
+  // the driving that blinds its filter.
+  //
+  // Owner rate: about 30 real-world minutes of HARD driving before it needs replacing. "Hard" here
+  // is the same duty cycle the tire and brake fits use — sustained high rpm under load, which reads
+  // about 0.5 on this normalised insult — so 1800 s x 0.5 = 900.
+  //
+  // The EFFECT is the whole point and it is deliberately a cliff, not a slope: nothing measurable
+  // until 20%, then engine wear multiplies hard. A filter is cheap and the warning is loud; letting
+  // it bottom out silently is what kills the engine, and that asymmetry is the mechanic.
+  durFilter:        900,     // normalised load-seconds to a fully blocked filter
+  filterKnee:       0.20,    // below this the filter starts choking the engine
+  filterEngineMult: 20,      // engine wear multiplier at a COMPLETELY blocked filter
+  // FEAT-38 hook: dust exposure should multiply the clog rate on dirt roads. Not wired — the
+  // per-surface plumbing does not exist yet — so the filter currently clogs at one rate everywhere.
+  filterDustMult:   1,
 
   // Springs: bump-stop EVENTS, priced on the PEAK force of each one.
   //
@@ -250,12 +273,11 @@ export const DAMAGE_PARAMS = {
 
   // Death: a hit at or above this equivalent speed is the fatal-crash fail state (SM-INV-1).
   //
-  // NOTE (2026-08-20): this used to coincide with the armor curve topping out, so total armor loss
-  // and death were the same impact. The re-anchor moved armor's write-off speed to 80 mph and left
-  // death at 60, because the owner's tuning pass was about panel sensitivity and said nothing about
-  // the fail state. They are now DIFFERENT speeds and that is UNRESOLVED, not settled — a single
-  // survivable hit can no longer destroy a bumper outright; it takes an accumulation. Raise it.
-  fatalMph:        60,
+  // 80 mph, RESTORING the coincidence with the armor curve (owner, 2026-08-23). Total armor loss
+  // and death are the same impact again: the hit that writes off a bumper outright is the hit that
+  // kills you. That was deliberate in the original calibration and briefly lost when armor was
+  // re-anchored from 60 to 80 without the fail state moving with it.
+  fatalMph:        80,
   fatalEnabled:    true,
 
   // ── Wheels ─────────────────────────────────────────────────────────────────────────────────
@@ -313,6 +335,30 @@ export const DAMAGE_PARAMS = {
   // passed, while a steady resting load never decays and so is never banked twice.
   eventDecayFrac:   0.5,
 
+  // ── Punctures (owner, 2026-08-23) ──────────────────────────────────────────────────────────
+  // A tire pops when a bump-stop hit finds it already worn. The signal is the SAME peak bump-stop
+  // force the spring track reads, because it is the same event — the suspension slamming through
+  // its travel is what pinches a carcass against the rim hard enough to split it.
+  //
+  // Fresh rubber does not pop at all: above `punctureCond` there is no threshold to exceed. Below
+  // it, the force needed falls as the tire wears, which is DESIGN.md's wear→fragility curve made of
+  // one honest quantity instead of a probability roll. Owner anchors, linear between them:
+  //
+  //     50% tire → 70 kN        10% tire and below → 30 kN
+  //
+  // Deterministic rather than random on purpose: the same drive over the same rock pops the same
+  // tire every replay (INFRA-03), and a player who knows their tires are down can read the risk.
+  punctureCond:    0.50,     // condition above which a tire cannot be punctured at all
+  punctureAtHalf:  70000,    // N — bump-stop force that pops a 50% tire
+  punctureFloorC:  0.10,     // at and below this condition the threshold stops falling
+  punctureAtFloor: 30000,    // N — bump-stop force that pops a 10%-or-worse tire
+  // A flat is not a hole in the ground: the air is gone, so the carcass carries almost nothing at
+  // small deflection, but it still stacks up against the rim as it squashes. Scaling the LINEAR
+  // rate to a few percent gives exactly that, while a literal zero would mean no normal force at
+  // all and the wheel would sink through the road.
+  tireFlatRate:    0.05,     // x stock tire spring rate when flat
+  tireFlatMu:      0.70,     // x grip when flat — the owner's 30% loss
+
   // ── Live tuning multipliers ────────────────────────────────────────────────────────────────
   // Per-class wear SPEED, 1 = the calibrated rate above. These exist so wear can be tuned by feel
   // from the debug panel during a drive — which is how every one of these rates has actually been
@@ -322,7 +368,7 @@ export const DAMAGE_PARAMS = {
   // They are a TUNING surface, not part of the model: anything that settles here should be folded
   // back into the dur* constant it scales and the multiplier returned to 1, so there is one number
   // per rate rather than two that have to be read together.
-  wearScale: { tire: 1, brake: 1, spring: 1, damper: 1, wheel: 1, engine: 1 },
+  wearScale: { tire: 1, brake: 1, spring: 1, damper: 1, wheel: 1, engine: 1, filter: 1 },
 
   // ── Contact → impact gating (feedContact) ──────────────────────────────────────────────────
   // A contact is not an impact. The engine reports a manifold every step a body is touching
@@ -505,6 +551,12 @@ export class DamageModel {
     // Peak bump-stop force per corner while a stop is currently loaded; 0 when it is not.
     this._bumpPeak = [0, 0, 0, 0]
 
+    /** @type {boolean[]} which tires are flat. A puncture is a STATE, not a condition value —
+     *  a flat 80% tire is still 80% of a tire, it just has no air in it. */
+    this.flat = [false, false, false, false]
+    /** Corners punctured since the last drainPops(), for the one-shot bang. */
+    this.popped = []
+
     // Peak rim-core contact FORCE per corner while a strike is in progress; 0 otherwise.
     this._strikePeak = [0, 0, 0, 0]
 
@@ -523,7 +575,15 @@ export class DamageModel {
   adjust (id, delta) { this.set(id, this.get(id) + delta) }
 
   /** Set every track at once (damage-disable lock, new run). */
-  setAll (v) { for (const id of TRACK_IDS) this.set(id, v) }
+  /**
+   * Set every track. Full condition also puts the air back in the tires: a puncture is STATE rather
+   * than a condition value, so restoring conditions alone would leave a flat tire flat — which
+   * makes the debug panel's "Restore All" quietly untrue.
+   */
+  setAll (v) {
+    for (const id of TRACK_IDS) this.set(id, v)
+    if (v >= 1) for (let i = 0; i < 4; i++) this.flat[i] = false
+  }
 
   /**
    * Durability multiplier for a track — the parts lever (SM-INV-10). A heavy-duty spring sets this
@@ -550,7 +610,35 @@ export class DamageModel {
     const id = ['tireFL', 'tireFR', 'tireRL', 'tireRR'][wheelIndex]
     const atZero = dirt ? DAMAGE_PARAMS.tireMuAtZeroDirt : DAMAGE_PARAMS.tireMuAtZero
     const c = this.get(id)
-    return atZero + (1 - atZero) * c
+    const worn = atZero + (1 - atZero) * c
+    return this.flat[wheelIndex] ? worn * DAMAGE_PARAMS.tireFlatMu : worn
+  }
+
+  /**
+   * Bump-stop force that would puncture a tire at condition `c`, in newtons — Infinity for rubber
+   * healthy enough that no bump can pop it. Linear between the owner's two anchors, flat below the
+   * floor condition.
+   */
+  punctureThreshold (c) {
+    const P = DAMAGE_PARAMS
+    if (c > P.punctureCond) return Infinity
+    if (c <= P.punctureFloorC) return P.punctureAtFloor
+    const t = (c - P.punctureFloorC) / (P.punctureCond - P.punctureFloorC)
+    return P.punctureAtFloor + t * (P.punctureAtHalf - P.punctureAtFloor)
+  }
+
+  /** Fit a fresh tire: full condition and the air back in it. */
+  replaceTire (wheelIndex) {
+    this.set(['tireFL', 'tireFR', 'tireRL', 'tireRR'][wheelIndex], 1)
+    this.flat[wheelIndex] = false
+  }
+
+  /** Corners that have popped since the last call, so the game layer can bang once per puncture. */
+  drainPops () {
+    if (!this.popped.length) return null
+    const out = this.popped.slice()
+    this.popped.length = 0
+    return out
   }
 
   brakeScale (rear) {
@@ -566,6 +654,18 @@ export class DamageModel {
   damperScale (rear) {
     const P = DAMAGE_PARAMS
     return kneeResponse(this.get(rear ? 'damperRear' : 'damperFront'), P.damperKnee, P.damperAtKnee, P.damperAtZero)
+  }
+
+  /**
+   * How much faster the engine wears for the state of its air filter. 1 above the knee, climbing to
+   * `filterEngineMult` at a completely blocked filter, squared so the damage is back-loaded.
+   */
+  filterEngineMultiplier () {
+    const P = DAMAGE_PARAMS
+    const c = this.get('airFilter')
+    if (c >= P.filterKnee) return 1
+    const t = (P.filterKnee - c) / P.filterKnee     // 0 at the knee → 1 at fully blocked
+    return 1 + (P.filterEngineMult - 1) * t * t
   }
 
   engineScale () {
@@ -793,6 +893,13 @@ export class DamageModel {
     // durability multiplier (SM-INV-10) and the wear-speed slider still apply inside wear().
     this.wear(id, dmg, 1)
 
+    // PUNCTURE: the same event, read against the tire rather than the spring.
+    const tireId = ['tireFL', 'tireFR', 'tireRL', 'tireRR'][corner]
+    if (!this.flat[corner] && peakN >= this.punctureThreshold(this.get(tireId))) {
+      this.flat[corner] = true
+      this.popped.push(corner)         // drained by the game layer for the bang
+    }
+
     // Alignment crosstalk: only really hard bumps, per the owner's floor.
     if (peakN > P.alignBumpFloorN) {
       const sev = Math.min(1, (peakN - P.alignBumpFloorN) / (P.alignBumpFullN - P.alignBumpFloorN))
@@ -821,6 +928,10 @@ export class DamageModel {
     params._camberOffsetDeg = this.camberOffsetDeg
     // Per-wheel out-of-round, in metres peak-to-peak. Added to the params.wheelRunout slider so
     // that slider stays usable on its own as a test tool with damage off.
+    // Flat tires: the carcass rate collapses and grip drops. Published as a RATE multiplier so the
+    // suspension needs no notion of "flat" at all — it just reads a softer tire.
+    const fr = params._tireRateScale || (params._tireRateScale = [1, 1, 1, 1])
+    for (let i = 0; i < 4; i++) fr[i] = this.flat[i] ? DAMAGE_PARAMS.tireFlatRate : 1
     const ro = params._wheelRunout || (params._wheelRunout = [0, 0, 0, 0])
     for (let i = 0; i < 4; i++) ro[i] = this.wheelRunout(i, params)
   }
@@ -975,7 +1086,14 @@ export class DamageModel {
       const rpmN    = Math.max(0, ((dtr.engineRPM || idle) - idle) / (redline - idle))
       const loadN   = Math.max(0, Math.min(1, vehicleState.throttle || 0))
       const insult  = Math.pow(rpmN, P.engineRPMExp) * loadN
-      if (insult > 0) this.wear('engine', insult * dt, P.durEngine)
+      if (insult > 0) {
+        // A choked filter starves the engine and accelerates its wear — the multiplier is 1 down to
+        // the knee and then climbs to filterEngineMult at zero, squared so the last stretch is the
+        // punishing one. This is the ONLY coupling between two tracks in the model, and it is
+        // deliberate: the filter has no effect of its own, it makes something else worse.
+        this.wear('engine', insult * this.filterEngineMultiplier() * dt, P.durEngine)
+        this.wear('airFilter', insult * P.filterDustMult * dt, P.durFilter)
+      }
     }
 
     this.publish(params)

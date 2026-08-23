@@ -292,6 +292,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   dmgFolder.add({ f: _poke(+0.05) }, 'f').name('+5%')
   dmgFolder.add({ f: _poke(+0.25) }, 'f').name('+25%')
   dmgFolder.add({ f: () => { const d = _damage(); if (d) { d.setAll(1); d.publish(params); _sync() } } }, 'f').name('Restore All')
+  // A puncture is state, not condition, so "Restore All" alone would leave a flat tire flat.
+  dmgFolder.add({ f: () => { const d = _damage(); if (!d) return
+    for (let i = 0; i < 4; i++) d.replaceTire(i); d.publish(params); _sync() } }, 'f').name('Fit 4 New Tires')
   void _readout
 
   // ── Wear speed, per class ────────────────────────────────────────────────────────────────────
@@ -302,7 +305,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // `wheel` has no continuous wear source — wheels are damaged by impacts only — so that one
   // scales how hard impacts hit the wheels rather than a rate.
   const wearFolder = dmgFolder.addFolder('Wear Speed (x calibrated)')
-  for (const k of ['tire', 'brake', 'spring', 'damper', 'wheel', 'engine']) {
+  for (const k of ['tire', 'brake', 'spring', 'damper', 'wheel', 'engine', 'filter']) {
     wearFolder.add(DAMAGE_PARAMS.wearScale, k, 0, 10, 0.1).name(k)
   }
   wearFolder.close()

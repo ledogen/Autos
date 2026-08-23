@@ -38,7 +38,7 @@ import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, set
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
 import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setAudioPageActive } from './engine-audio.js'
-import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes } from './tire-audio.js'
+import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes, playTireBlowout } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
@@ -4717,6 +4717,9 @@ function loop () {
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
+    // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
+    // catch-up burst of physics steps still gets exactly one.
+    if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
     // SM-3 collision damage: read the hardest contact on the chassis this step and hand it to the
     // damage model, which decides whether that is an impact (see feedContact — a contact is not).
     // classifyImpactRegion turns the body-local point/normal into an armor region and returns null
