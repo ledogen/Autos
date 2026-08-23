@@ -840,6 +840,13 @@ export class PoiSystem {
 
         for (let k = 0; k < P.poiCandidates; k++) {
             const s = off + clear + rnd() * (L - 2 * clear)
+            // BUG-55 phase 5: never seat a pad on a CEDED stretch — that ground is the WINNER's
+            // pavement (the loser's points are the winner's verbatim), so the winner's own edge
+            // can seat a pad on the same physical spot and the two lay-bys would overlap.
+            // Seed-pure: merge plans are pure functions of the graph, so every window rejects
+            // identically. The TAPER band stays eligible — it is the loser's own road, and it
+            // owns its surface there (the ceded exclusion ends at the ceded boundary).
+            if ((ed.cededSpans || []).some((sp) => s >= sp.s0 - 20 && s <= sp.s1 + 20)) continue
             // WHICH SIDE is decided by the ground, not by the hash: try both and take the one that
             // needs less earthwork. On a mountain road the two sides are wildly asymmetric — one is
             // a 1:1 cut bank, the other a 3:1 fill slope — so letting the terrain choose is both the

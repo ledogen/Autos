@@ -1628,9 +1628,14 @@ export class Map2D {
 
     // A run's polyline minus its bored stretches — i.e. the parts that are actually on the surface.
     // Returns the whole polyline untouched when the run carries no tunnel.
+    // BUG-55 phase 5: minus its CEDED stretches too — those vertices are the winner's polyline
+    // verbatim, and both runs stroking them doubled the ink on every shared road. The loser still
+    // draws when the owner is absent from this window (the surface resolver's absent-winner rule).
     _surfaceSlices(e) {
-        const { points, polyCum: cum, tunnelSpans: spans } = e
-        if (!spans || !spans.length || !cum) return [points]
+        const { points, polyCum: cum, tunnelSpans } = e
+        const ceded = (e.cededSpans || []).filter((sp) => this._road?._network?.has(sp.owner))
+        const spans = [...(tunnelSpans || []), ...ceded]
+        if (!spans.length || !cum) return [points]
         const out = []
         let s = 0
         for (const sp of [...spans].sort((p, q) => p.s0 - q.s0)) {

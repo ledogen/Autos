@@ -1843,11 +1843,11 @@ export class RoadSystem {
         const clOf = (hit) => hit.offCurveSpans ? _pointSampler(hit.points, hit.clArc) : hit.centerline
         if (this._network.has(key)) {
             const hit = this._network.get(key)
-            return { key, centerline: clOf(hit), gradeAt: _gradeSampler(hit.points, hit.clArc) }
+            return { key, centerline: clOf(hit), gradeAt: _gradeSampler(hit.points, hit.clArc), cededSpans: hit.cededSpans }
         }
         if (this._network.has(alt)) {
             const hit = this._network.get(alt)
-            return { key: alt, centerline: clOf(hit), gradeAt: _gradeSampler(hit.points, hit.clArc) }
+            return { key: alt, centerline: clOf(hit), gradeAt: _gradeSampler(hit.points, hit.clArc), cededSpans: hit.cededSpans }
         }
         // (QUAL-24 chain-span view removed with the merge — runs are 1:1 with edges.)
         // Dirless on purpose: this fallback only touches never-registered edges (no settled

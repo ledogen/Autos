@@ -137,9 +137,19 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
     let worst = 0, sum = 0, m = 0
     for (const [, e] of roadA._network) {
         const A = roadA._nodePos(e.cellA), B = roadA._nodePos(e.cellB), pts = e.points
-        const eA = angDiff(br(pts[0], pts[Math.min(2, pts.length - 1)]), br(A, B))
-        const eB = angDiff(br(pts[pts.length - 1], pts[Math.max(0, pts.length - 3)]), br(B, A))
-        sum += eA + eB; m += 2; worst = Math.max(worst, eA, eB)
+        // BUG-55 re-baseline: a merged LOSER departs its node along the WINNER's course (the
+        // ceded strand starts at the node), so its leave-bearing legitimately diverges from its
+        // own chord — exempt an endpoint whose departure lies inside an offCurveSpan.
+        const L = e.polyCum[e.polyCum.length - 1]
+        const off = e.offCurveSpans || []
+        if (!off.some((sp) => sp.s0 <= 10)) {
+            const eA = angDiff(br(pts[0], pts[Math.min(2, pts.length - 1)]), br(A, B))
+            sum += eA; m += 1; worst = Math.max(worst, eA)
+        }
+        if (!off.some((sp) => sp.s1 >= L - 10)) {
+            const eB = angDiff(br(pts[pts.length - 1], pts[Math.max(0, pts.length - 3)]), br(B, A))
+            sum += eB; m += 1; worst = Math.max(worst, eB)
+        }
     }
     const avg = sum / m
     log(avg < 22 && worst < 60, 'GRAPH-NODE-DEPARTURE',
@@ -187,10 +197,25 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         const ea = runs[x][1], eb = runs[y][1]
         const ex = [ea.cellA, ea.cellB, eb.cellA, eb.cellB].map(n => roadA._nodePos(n))
         const isEx = (p) => ex.some(q => (p.x - q.x) ** 2 + (p.z - q.z) ** 2 < EXEMPT * EXEMPT)
-        for (const p of ea.points) {
+        // BUG-55 re-baseline: a merge's own extent is intended geometry — the ceded strand is the
+        // winner's polyline verbatim (0 m separation BY DESIGN) and the taper band is the pair
+        // parting on purpose. Same three-way sanction as capture-classify, each side tested in
+        // its own arc: A ceding to B, B ceding to A, both ceding to one spine.
+        const kaKey = runs[x][0], kbKey = runs[y][0]
+        const aOff = ea.offCurveSpans || [], bOff = eb.offCurveSpans || []
+        const sa = [], sb = []
+        for (const sp of aOff) if (sp.owner === kbKey || bOff.some(o => o.owner === sp.owner)) sa.push([sp.s0, sp.s1])
+        for (const sp of bOff) if (sp.owner === kaKey || aOff.some(o => o.owner === sp.owner)) sb.push([sp.s0, sp.s1])
+        for (let pi = 0; pi < ea.points.length; pi++) {
+            const p = ea.points[pi]
             if (isEx(p)) continue
-            for (const q of eb.points) {
+            const sA = ea.polyCum[pi]
+            if (sa.some(([s0, s1]) => sA >= s0 - 1 && sA <= s1 + 1)) continue
+            for (let qi = 0; qi < eb.points.length; qi++) {
+                const q = eb.points[qi]
                 if (isEx(q)) continue
+                const sB = eb.polyCum[qi]
+                if (sb.some(([s0, s1]) => sB >= s0 - 1 && sB <= s1 + 1)) continue
                 const d = Math.hypot(p.x - q.x, p.z - q.z)
                 if (d < D) { viol++; if (d < worst) { worst = d; worstAt = `${runs[x][0]} × ${runs[y][0]} @(${p.x.toFixed(0)},${p.z.toFixed(0)})` } }
             }
@@ -200,15 +225,12 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         `cross-edge sample pairs closer than ${D.toFixed(1)} m outside ${EXEMPT} m endpoint exemption: ${viol}${viol ? ` worst=${worst.toFixed(1)} m ${worstAt}` : ''} — no parallel runs sharing a cut wall`)
 }
 
-// (h) CROSSINGS CULLED — the safe-prune drops redundant routed crossings (at-grade intersections read
-// ugly). Any survivor is a genuine bridge (no detour). Connectivity is already guarded by (a); this
-// asserts the cull actually fires and leaves very few crossings.
-{
-    const culled = roadA.crossingList().length
-    const uncut = (() => { const r = new RoadSystem(6, { ...P, roadGraphCullCrossings: false }); r.update(new THREE.Vector3(4500, 0, 600)); return r.crossingList().length })()
-    log(culled <= 2 && culled <= uncut, 'GRAPH-CROSSINGS-CULLED',
-        `routed crossings: cull-off=${uncut} → cull-on=${culled} (survivors are un-cullable bridges)`)
-}
+// (h) CROSSINGS CULLED — RETIRED (BUG-55 phase 5). It compared against roadGraphCullCrossings:false,
+// but the blunt crossing cull it exercised was deleted long ago (restoring it measured connectivity
+// 95.7% → 54.1% — see the ticket's settled results), so the comparison was a no-op and the ≤2 bound
+// asserted a world where crossings are culled rather than resolved. Under BUG-55 the resolution for
+// a mid-edge crossing is MERGE or DELETE, and what those cannot take is a named, counted decline —
+// censused by overlap-census/crossing-census and judged by the owner, not bounded here.
 
 // (i) JUNCTION-AT-ROAD-GRADE — a degree≥2 node sits at the MEAN incident road grade, NOT collapsed to the
 // terrain valley floor (the ~10 m hump/dip regression). _graphJunctionGradeY must equal the mean of the
