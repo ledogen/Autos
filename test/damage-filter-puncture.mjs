@@ -64,6 +64,24 @@ console.log('\n§2 it does nothing until it is nearly gone, then it is savage')
     'two minutes of the same driving costs the engine many times more once the filter is gone')
 }
 
+console.log('\n§2b a crash does not clog a filter')
+{
+  // Owner ruling 2026-08-23. A filter sits behind the grille, but a collision does not block it,
+  // and putting a consumable on the armor's damage path is not what armor is for. Guarded twice —
+  // an empty `regions` list the impact loop can never match, and no impact curve for the class —
+  // so this pins the OUTCOME rather than either mechanism.
+  for (const region of ['front', 'left', 'right', 'rear']) {
+    const d = fresh(); d.setAll(1)
+    for (const id of ['armorFront', 'armorLeft', 'armorRight', 'armorRear']) d.set(id, 0)  // worst case
+    d.applyImpact(region, 1360 * 80 * 0.44704, 1360)                                        // fatal-grade hit
+    ok(d.get('airFilter') === 1, `an 80 mph ${region} impact through destroyed armor leaves the filter untouched`)
+  }
+  const d = fresh(); d.setAll(1)
+  for (const id of ['armorFront', 'armorLeft', 'armorRight', 'armorRear']) d.set(id, 0)
+  d.applyImpact('front', 1360 * 80 * 0.44704, 1360)
+  ok(d.get('engine') < 1 && d.get('radiator') < 1, '...while the things behind that bumper that SHOULD take it, did')
+}
+
 console.log('\n§3 punctures — fresh rubber is safe, worn rubber is not')
 {
   const pop = (cond, forceN) => {

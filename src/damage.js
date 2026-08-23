@@ -71,7 +71,14 @@ export const TRACKS = {
   // Powertrain + front-end. All three sit behind the front bumper and nothing else.
   engine:     { label: 'Engine',     cls: 'engine',     regions: ['front'] },
   // The air filter is a CONSUMABLE, not a component — cheap to replace, and the one track the
-  // player has to watch. Impacts do not touch it; it clogs from the air the engine breathes.
+  // player has to watch. It clogs ONLY from the air the engine breathes.
+  //
+  // `regions: []` is what keeps impacts off it, and that is deliberate rather than incidental
+  // (owner, 2026-08-23): a filter sits behind the grille but a crash does not clog it, and letting
+  // collisions touch it would put a consumable on the armor's damage path where it does not belong.
+  // The impact loop skips a track whose regions do not include the hit region, so an empty list can
+  // never be reached — and there is no impact curve for the `filter` class either, so it is guarded
+  // twice. Pinned in test/damage-filter-puncture.mjs.
   airFilter:  { label: 'Air Filter', cls: 'filter',     regions: [] },
   radiator:   { label: 'Radiator',   cls: 'radiator',   regions: ['front'] },
   headlightL: { label: 'Headlight L', cls: 'headlights', regions: ['front'], side: 'left'  },
@@ -156,8 +163,12 @@ export const DAMAGE_PARAMS = {
   // than the original fit so pads actually wear out inside a run).
   durBrake:       2.31e9,    // J per axle to destroy the pads
 
-  // Engine: f(rpm, torque, load) — deliberately VERY slow. Normalised so 1.0 = redline at full load.
-  durEngine:      2.0e5,     // normalised load-seconds
+  // Engine: f(rpm, torque, load). Normalised so 1.0 = redline at full load.
+  // 10x FASTER as of 2026-08-23 (owner: "soooooooo slow"). At the fitted rate an engine outlasted
+  // several runs and was a component the player never thought about — the same reason the brakes
+  // were sped up. Hard driving now costs an engine in about eleven hours rather than a hundred and
+  // ten, and a blocked air filter multiplies that by up to twenty on top.
+  durEngine:      2.0e4,     // normalised load-seconds
   engineRPMExp:   2.0,       // rpm term exponent — revving hurts superlinearly
 
   // ── Air filter (DESIGN.md's track, ratified into SM-3 on 2026-08-23) ────────────────────────
