@@ -366,10 +366,8 @@ Load-bearing subtleties, each measured in:
   junction is a **mutual-victim NEST** — the winner also tangles 349 m with a third road, and
   the loser and the remaining entry into the far node are longer-members of their own ≥60
   tears — so the one-shot no-candidate-as-detour rule refuses every path BY DESIGN (sound:
-  nests must not cascade). THE NEXT PIECE: canonically-ordered SEQUENTIAL delete resolution
-  (the census sim's greedy shape made order-free — process nominees in a deterministic global
-  priority, each BFS seeing prior drops; needs the wide margin at ~2×cap for locality). Plan
-  it fresh; do not hack the one-shot rule.
+  nests must not cascade). Resolution: the ORDERED CLUSTER DELETE — full plan in the next
+  section, written 2026-08-24 with the diagnosis fresh. Do not hack the one-shot rule.
 
 ### Verification (all at `3daadc5`)
 
@@ -398,6 +396,73 @@ deletions: seed 6 ×1, seed 7 ×2, seeds 20/11/67 ×0. Delete-rung cost, interle
 5. Booked code follow-ups: dry-run for END-anchored specs (`_v2RegisterMerged`); the
    census/`_v2ConflictPairs` scan consolidation (perf); disjoint both-to-same-spine planned
   check (node case is measured, disjoint analog is not).
+
+### PLANNED NEXT PIECE (2026-08-24, owner-approved direction): ordered cluster deletes
+
+**Goal.** Delete rung learns to clean a NEST — a cluster of tangled roads where every detour
+runs through another delete candidate — by resolving the cluster's candidates in a fixed order
+instead of refusing them as a group. Target reproducer: seed 6 (−1692,1759). Expected outcome
+there: the winner `g:-4,3,2:-3,3,2` deletes first (clearing BOTH its tears — the 164 m pair
+with the loser and the 349 m pair with `g:-4,2,0:-4,3,2`), the loser's spec is dropped by the
+already-shipped dead-winner rule and it registers plain, and the tangle is gone.
+
+**Why the one-shot rule cannot do this.** It checks each candidate's detour against a world
+where EVERY other candidate is assumed gone. That is what makes uncoordinated per-window
+deletions safe — and what makes a nest unresolvable: at (−1692,1759) all three roads into node
+-3,3,2 are candidates, so no detour survives the assumption. Keep the one-shot rule as the
+FAST PATH for isolated victims (it produced all six shipped deletions — those must not change).
+
+**The ordered walk (the census SIM's greedy shape, made window-safe).**
+1. CLUSTER: grow from the nominated edge over "candidates within deleteDetourHops of each
+   other's endpoints" adjacency. Candidates found via _v2ConflictPairs (geometry-only,
+   memoized). Cluster of one → fast path (one-shot rule, unchanged).
+2. ORDER: sort members by (a) total unresolved tear length (sum of leftovers across their
+   pairs), then (b) longer edge, then (c) lexicographic ck. Pure inputs, same order everywhere.
+3. WALK: for each member in order, BFS its endpoints on (graph − approvals so far), within the
+   cap. Reconnects → approve. Each approval re-evaluates later members' pairs first: a pair
+   with a deleted member EVAPORATES (this is what guarantees a pair never loses both legs —
+   the owner's one-leg rule holds structurally).
+4. FINAL PASS: after the walk, re-check every approved member's detour on (graph − ALL
+   approvals), in the same order; any failure un-approves it and restarts the pass. Terminates
+   (the approved set only shrinks). This closes the induction gap where a later approval
+   removes an edge an earlier detour used: connectivity survives the greedy walk by induction,
+   but the ≤cap PROMISE needs the final-graph check.
+5. Memoize the resolution per cluster (key: sorted member cks) so every member's registration
+   reads one answer.
+
+**Window invariance — the load-bearing argument.** A cluster's resolution is a pure function
+of (members, their pairs, the graph within cap hops of every member). Every window registering
+any member must derive the identical cluster. So: (a) cluster growth is clipped at a fixed
+diameter bound B = 6 graph hops between members — a cluster that would exceed B declines ALL
+its members ('cluster', counted, censused) — and (b) the graph context comes from a LAZY wider
+Urquhart box (margin ≈ gMargin + B + cap + 1 ≈ 16 cells), built once per window rev ONLY when
+a multi-member cluster is detected. The everyday margin-10 box and every scan on it stay
+untouched — nest windows pay for nests, nothing else does. Two windows seeing any member both
+grow the same component inside their (sufficient) boxes, or both detect it exceeds B and
+decline — identical either way.
+
+**Integration points.**
+- `_v2DeleteFor`: nomination unchanged; replace the BFS section with fast-path/cluster split.
+- Assembly needs no change (the dead-winner spec-dropping shipped in `4726151` already handles
+  losers of deleted winners; degree drops and `g.adj` policy unchanged).
+- capture-classify: print the cluster ("cluster of 3: DELETED g:… (rank 1, detour 3) · kept
+  g:… (detour would exceed cap)").
+
+**Verification battery (run all before hand-back).**
+1. (−1692,1759): winner deleted, loser plain, mark reports the deletion; check what leftover
+   remains between the loser and the third road afterwards.
+2. Regression: (932,793), (3328,−27), seed-7 ×2 and seed-20 origin deletions BYTE-IDENTICAL
+   (fast path); all eleven marks; origin probe counts.
+3. Gates: carve-mesh (junction -3,3,2's pad rebuilds from two legs — watch for steps),
+   road-smoothness, invariance + restream (THE risk class for clusters), road-connectivity,
+   graph-topology, census (seed-6 total should drop ~2 pairs). `npm run test:all` at the end.
+4. Bench interleaved (cluster path is lazy — expect ~zero delta off-nest).
+
+**Watch-outs from tonight's dead ends.** Do NOT widen BFS vetting to shorter members (it
+deadlocks every tear-dense node — reverted once already). Do NOT re-try mergeFlareM 80 for this
+pair (fused interval forces the fork into the crossing; measured strictly worse). The pad at a
+node that loses a leg is registration-derived and window-consistent — stale-pin concerns stay
+answered by the g.adj-untouched policy.
 
 ### Traps discovered this session (append to the do-not-reattempt list)
 
