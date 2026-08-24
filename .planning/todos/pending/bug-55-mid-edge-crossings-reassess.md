@@ -280,7 +280,8 @@ Code on `feature/corridor-router` (worktree `CarGame-corridor-router`, dev :3343
 `2568d1a` census → `b6d4012` bundle → `1306eeb` mid-span ON → `bdd09f2` phase-4 WIP →
 `6696445` phase 4 closed → `5f6d423` delete rung → `f28d90e` cleanup (map2d/poi/gate) →
 `3daadc5` dry-run built-ness → `4726151` leftover-aware nomination + deletable plan-winners
-(2026-08-24 session). Docs here on main.
+→ `4c72378` ordered cluster deletes (the nest resolver — 2026-08-24 session 3, the SHIPPED
+section below). Docs here on main.
 
 ### Owner rulings (2026-08-23 session 2, binding — added to the earlier set)
 
@@ -357,17 +358,15 @@ Load-bearing subtleties, each measured in:
 - **2 resolved by DELETION at the mark**: (932,793) — `g:1,1,2:2,1,0`, 4 hops (kills the origin
   weave; a benign 24 m/0.4 m-deck near-node leftover remains) · (3328,−27) — `g:5,0,1:6,0,0`,
   5 hops, one deletion clears BOTH tears.
-- **1 remaining case** (two marks, same spot): the stacked pair (−1710,1760)/(−1712,1743)
-  keeps its 80 m leftover + 0.7 m-deck crossing. Diagnosed to the bottom 2026-08-24: the pair
-  conflicts in THREE stretches; the longest merged (62 m, built clean — 0.000 m through the
-  ceded strand); the leftover's crossing sits exactly where any fork must land (R 0.9–3.9 vs
-  floor 6 in every configuration, fused-interval flare-80 experiment included — measured
-  WORSE, reverted). Deletion now NOMINATES (winner, leftover 99 ≥ 60, no role-block) but the
-  junction is a **mutual-victim NEST** — the winner also tangles 349 m with a third road, and
-  the loser and the remaining entry into the far node are longer-members of their own ≥60
-  tears — so the one-shot no-candidate-as-detour rule refuses every path BY DESIGN (sound:
-  nests must not cascade). Resolution: the ORDERED CLUSTER DELETE — full plan in the next
-  section, written 2026-08-24 with the diagnosis fresh. Do not hack the one-shot rule.
+- **RESOLVED at `4c72378` (session 3): the stacked pair (−1710,1760)/(−1712,1743)** — was
+  the last open case (mutual-victim NEST; full diagnosis preserved in the SHIPPED section
+  below). The ordered cluster delete resolves it: nest of 4, the winner `g:-4,3,2:-3,3,2`
+  deletes at rank 1 (3-hop detour), the loser registers plain via the dead-winner rule.
+  **Both marks now come back CLEAN** — the 84 m leftover and the 0.7 m-deck crossing are
+  gone. Window-invariant: identical resolution from the origin, (−1091,2792), and
+  (−1692,1759) window centers. The kept members' own smaller tears (74 m `-2,3,1|-3,4,2`,
+  66 m `-3,1,1|-4,2,0`) stay declined — their detours would lean on the nest's deletions —
+  and are censused, not silent.
 
 ### Verification (all at `3daadc5`)
 
@@ -381,6 +380,14 @@ deletions: seed 6 ×1, seed 7 ×2, seeds 20/11/67 ×0. Delete-rung cost, interle
 2.3–4.1 s budget this is above noise and honestly booked; consolidating the census walk with
 `_v2ConflictPairs` (two per-edge scans today) is the identified lever if it matters.
 
+Session 3 (`4c72378`): the full pre/post sweep (all eleven marks + six origin probes +
+overlap-census) shows the ONLY behavioural deltas are the seed-6 nest deletion and
+nest-annotated decline messages — every shipped deletion byte-identical (fast path, by
+construction), overlap-census byte-identical, `npm run test:all` 45/50 = the same five booked
+reds with identical internals (road-smoothness lone-pine 16 cm canary only; graph-topology 7/9,
+(f) 28.4/106 unchanged). Interleaved A/B bench (seeds 3/6/7, 2 rounds): no delta above noise —
+the cluster path is lazy (deep box + growth only on windows with a one-shot 'detour' failure).
+
 ### Open items — all owner-side or booked follow-ups
 
 1. **Owner drives it** (acceptance #7): map judgment + driven pass. Deleted-edge spots worth
@@ -390,14 +397,52 @@ deletions: seed 6 ×1, seed 7 ×2, seeds 20/11/67 ×0. Delete-rung cost, interle
    `4,1,1|5,1,0 × 3,1,0|4,1,1` (153°) and `6,3,0|6,4,1 × 5,3,2|6,3,0` (138°), 1.2–1.3 m apart
    mid-span. Real tears the 'angle' ruling protects from both merge and delete. Owner call:
    accept as character, or carve out a rule.
-3. **The stacked pair's 84 m leftover** (above) — accept, or invent new machinery.
-4. **(f) NODE-DEPARTURE bounds** (avg<22/worst<60 vs measured 28.4/106 over 24 endpoints):
+3. **(f) NODE-DEPARTURE bounds** (avg<22/worst<60 vs measured 28.4/106 over 24 endpoints):
    predate chord-pin demotions; needs its own pass, not a fit-to-current loosening.
-5. Booked code follow-ups: dry-run for END-anchored specs (`_v2RegisterMerged`); the
+4. Booked code follow-ups: dry-run for END-anchored specs (`_v2RegisterMerged`); the
    census/`_v2ConflictPairs` scan consolidation (perf); disjoint both-to-same-spine planned
   check (node case is measured, disjoint analog is not).
 
-### PLANNED NEXT PIECE (2026-08-24, owner-approved direction): ordered cluster deletes
+### SHIPPED (2026-08-24 session 3, `4c72378`): ordered cluster deletes — the nest resolver
+
+Executed as planned below, with four measured deviations, each forced by evidence:
+
+1. **The fast-path split is one-shot-FIRST, not cluster-size.** The shipped one-shot rule runs
+   untouched for every nominated edge; the cluster path engages only on its 'detour' failure.
+   This makes the six shipped deletions byte-identical BY CONSTRUCTION (a size-split would have
+   re-routed any of them that happen to sit in a multi-member cluster through the walk).
+2. **Growth adjacency is the detour ELLIPSE, not endpoint balls.** "Within cap hops of an
+   endpoint" is a union of two 6-hop balls — measured: it pulled tear candidates from 2 km away
+   into seed-6's nest and the diameter bound declined everything. The correct reach is
+   dist(kA,·) + 1 + dist(·,kB) ≤ cap — exactly the edges that can appear on a ≤cap detour
+   (superset of on-path edges, so the safety argument is unharmed; symmetric, so every seed
+   grows the same component).
+3. **One-shot-succeeding members join as non-expanding LEAVES, and are PRE-APPROVED.** Even
+   ellipse growth chained seed-6's compact 3-member core to 8 members spread >6 hops through
+   independently-deletable edges. A member whose own (deep-universe) one-shot succeeds deletes
+   standalone via its own fast path, so it needs no coordination: it joins only to be treated
+   as gone — pre-approved before the walk (closing the mixed-path hole where a member skipped
+   by evaporation but really deleted by its own fast path could serve as another member's
+   detour) — and its ellipse never extends growth. Only one-shot-FAILING members expand the
+   frontier; their closure forms well-separated components (walk members are provably unique to
+   one cluster; only leaves can be shared, and a leaf's verdict is member-intrinsic).
+4. **`rec.cluster.approved`, never "deleted".** The walk's approved set over-approximates
+   actual deletions — a member deletes only where it also NOMINATES at its own registration
+   (planner state the geometry-pure walk deliberately never reads; measured live: the seed-6
+   leaf `-1,3,0|-2,3,1` is approved-gone but never nominates, and stands). Reports print
+   "approved gone", and safety only needs deletions ⊆ approved.
+
+Mechanics as shipped: `_v2ClusterResolve` (memoized per member ck, rev-scoped) + factored
+`_v2VictimFreePath`; the deep universe is a LAZY wider Urquhart box on the `_degreeDrops` entry
+(margin gMargin + NEST_DIAMETER_HOPS + cap + 1 = 16, built at most once per window rev, only on
+nest suspects) with its own degree pass, and `_v2ConflictPairs` memos deep calls under `D|` keys
+so the everyday universe stays byte-identical. New decline reasons: 'cluster' (nest wider than
+6 hops / tear dies with deleted nest partner); walk-declines keep 'detour' with a nest
+annotation. NEST_DIAMETER_HOPS = 6 is a fixed module constant, deliberately not a slider.
+
+The original plan (executed, kept for the record):
+
+### The plan as written (2026-08-24, owner-approved direction): ordered cluster deletes
 
 **Goal.** Delete rung learns to clean a NEST — a cluster of tangled roads where every detour
 runs through another delete candidate — by resolving the cluster's candidates in a fixed order
@@ -476,3 +521,12 @@ answered by the g.adj-untouched policy.
 4. **Deleting a bundled leg tears the junction carve** (87 m second-diff) — same-spine pairs
    are planned, full stop.
 5. **zsh does not word-split `$m`** — use `${=m}` in capture-classify sweep loops.
+6. **Endpoint-ball cluster growth chains the valley** — candidates 2 km apart share a 6-hop
+   ball; the detour ellipse (dist(kA,·)+1+dist(·,kB) ≤ cap) is the reach that matches what a
+   detour can actually touch.
+7. **Expanding a leaf's ellipse dissolves the compactness** — one-shot-succeeding members must
+   not extend growth, or every independently-deletable edge within reach chains nests together
+   until the diameter bound kills them all.
+8. **The walk's approved set is NOT the deletion set** — nomination still decides per edge;
+   naming the field `deleted` (first draft) had capture-classify printing standing roads as
+   deleted.
