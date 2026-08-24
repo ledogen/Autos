@@ -279,7 +279,8 @@ can weigh rather than rediscover them:
 Code on `feature/corridor-router` (worktree `CarGame-corridor-router`, dev :3343):
 `2568d1a` census → `b6d4012` bundle → `1306eeb` mid-span ON → `bdd09f2` phase-4 WIP →
 `6696445` phase 4 closed → `5f6d423` delete rung → `f28d90e` cleanup (map2d/poi/gate) →
-`3daadc5` dry-run built-ness. Docs here on main.
+`3daadc5` dry-run built-ness → `4726151` leftover-aware nomination + deletable plan-winners
+(2026-08-24 session). Docs here on main.
 
 ### Owner rulings (2026-08-23 session 2, binding — added to the earlier set)
 
@@ -288,8 +289,23 @@ Code on `feature/corridor-router` (worktree `CarGame-corridor-router`, dev :3343
 - **Victim = the LONGER member confirmed** (tie → lexicographic). The wanderer dies, the direct
   connection survives.
 - **One-machinery-per-run stays STRICT** — a node-merge winner refuses the disjoint-loser role
-  even when the intervals don't overlap (seed-20's tear therefore resolves by slider or stays a
-  named decline; the drift class stays impossible by construction).
+  even when the intervals don't overlap (the drift class stays impossible by construction).
+- **2026-08-24, at the stacked-pair capture: cull ONE leg of a tangle, never both.** And the
+  recorded "dropping would strand" for that pair was WRONG — a window-EDGE census artifact
+  (measured centered: 3 hops either member, 5 both). The census sim's drop lines are advisory
+  only; never cite them without a centered re-measure. Owner also flagged: a region boundary
+  could cut a detour and revive a stranding claim — region-aware connectivity is not modelled;
+  single-leg culls + the short hop cap keep detours local, revisit if it bites.
+- **2026-08-24 upgrades (`4726151`)**: (1) covered = the buildable plan's ACTUAL ceded length
+  (dry-run returns the building variant's |lOut−lIn|); leftover = nearLen − covered ≥ 60
+  nominates — a PARTIAL merge no longer shields the rest of its pair. (2) The 'wins a plan'
+  role-block is GONE: (3) the assembly drops any spec whose winner is deleted, so the loser
+  registers on its own line and the conflict dies with the winner (window-invariant, acyclic).
+  Vetting stays LONGER-ONLY — a shorter-member fallback was tried and REVERTED: it forces
+  vetting to exclude both members of every substantial pair and deadlocks every detour into a
+  tear-dense node. Consequence: **seed-20's disjoint tear RESOLVED** (its real blocker was the
+  role-block, not the hop count — one deletion at 4 hops clears both its pairs; census seed 20
+  is now 0/0/0 and its CENSUS-DISJOINT entry stamps resolved(deleted)). Census total 10.
 
 ### Phase 4 (closed at `6696445`)
 
@@ -341,9 +357,19 @@ Load-bearing subtleties, each measured in:
 - **2 resolved by DELETION at the mark**: (932,793) — `g:1,1,2:2,1,0`, 4 hops (kills the origin
   weave; a benign 24 m/0.4 m-deck near-node leftover remains) · (3328,−27) — `g:5,0,1:6,0,0`,
   5 hops, one deletion clears BOTH tears.
-- **1 booked owner-judgment case** (two marks, same spot): the stacked pair
-  (−1710,1760)/(−1712,1743) keeps its 84 m merge-leftover at 0.6 m separation — merge is
-  partial at any pad cap (14.5 m vertical stack), deletion would STRAND (census: detour NONE).
+- **1 remaining case** (two marks, same spot): the stacked pair (−1710,1760)/(−1712,1743)
+  keeps its 80 m leftover + 0.7 m-deck crossing. Diagnosed to the bottom 2026-08-24: the pair
+  conflicts in THREE stretches; the longest merged (62 m, built clean — 0.000 m through the
+  ceded strand); the leftover's crossing sits exactly where any fork must land (R 0.9–3.9 vs
+  floor 6 in every configuration, fused-interval flare-80 experiment included — measured
+  WORSE, reverted). Deletion now NOMINATES (winner, leftover 99 ≥ 60, no role-block) but the
+  junction is a **mutual-victim NEST** — the winner also tangles 349 m with a third road, and
+  the loser and the remaining entry into the far node are longer-members of their own ≥60
+  tears — so the one-shot no-candidate-as-detour rule refuses every path BY DESIGN (sound:
+  nests must not cascade). THE NEXT PIECE: canonically-ordered SEQUENTIAL delete resolution
+  (the census sim's greedy shape made order-free — process nominees in a deterministic global
+  priority, each BFS seeing prior drops; needs the wide margin at ~2×cap for locality). Plan
+  it fresh; do not hack the one-shot rule.
 
 ### Verification (all at `3daadc5`)
 
@@ -367,10 +393,9 @@ deletions: seed 6 ×1, seed 7 ×2, seeds 20/11/67 ×0. Delete-rung cost, interle
    mid-span. Real tears the 'angle' ruling protects from both merge and delete. Owner call:
    accept as character, or carve out a rule.
 3. **The stacked pair's 84 m leftover** (above) — accept, or invent new machinery.
-4. **Seed-20's disjoint tear** — needs cap 7 (slider) or stays a named 'detour' decline.
-5. **(f) NODE-DEPARTURE bounds** (avg<22/worst<60 vs measured 28.4/106 over 24 endpoints):
+4. **(f) NODE-DEPARTURE bounds** (avg<22/worst<60 vs measured 28.4/106 over 24 endpoints):
    predate chord-pin demotions; needs its own pass, not a fit-to-current loosening.
-6. Booked code follow-ups: dry-run for END-anchored specs (`_v2RegisterMerged`); the
+5. Booked code follow-ups: dry-run for END-anchored specs (`_v2RegisterMerged`); the
    census/`_v2ConflictPairs` scan consolidation (perf); disjoint both-to-same-spine planned
   check (node case is measured, disjoint analog is not).
 
