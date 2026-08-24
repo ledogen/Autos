@@ -78,7 +78,8 @@ for (const rec of (road._v2Deleted || new Map()).values()) {
   let dMin = Infinity
   for (const p of rec.pts || []) { const dd = Math.hypot(p.x - MX, p.z - MZ); if (dd < dMin) dMin = dd }
   if (dMin < LOOK) deletedAtMark++
-  console.log(`     resolved by DELETING ${rec.key} (detour ${rec.hops} hops) · pairs: ${rec.pairs.join(', ')}${dMin < LOOK ? '   <<< AT THE MARK' : ''}`)
+  const nest = rec.cluster ? ` · nest of ${rec.cluster.members.length} (rank ${rec.cluster.rank}; approved gone: ${rec.cluster.approved.join(' + ')}; kept: ${rec.cluster.members.filter((m) => !rec.cluster.approved.includes(m)).join(' + ') || 'none'})` : ''
+  console.log(`     resolved by DELETING ${rec.key} (detour ${rec.hops} hops)${nest} · pairs: ${rec.pairs.join(', ')}${dMin < LOOK ? '   <<< AT THE MARK' : ''}`)
 }
 for (const o of atMark) {
   const ceded = (o.r.e.cededSpans || []).map((s) => `${s.s0.toFixed(0)}–${s.s1.toFixed(0)} m to ${s.owner}`)

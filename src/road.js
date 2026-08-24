@@ -573,6 +573,12 @@ const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spa
 // drops vertices this close to a splice) MUST use the same value, or the weld is anchored to a
 // vertex the assembly then discards.
 const SPLICE_EPS = PROTO_SAMPLE_DS * 0.5
+// BUG-55 nests (ordered cluster deletes): hard diameter bound, in graph hops, on a delete
+// CLUSTER — a nest whose members spread wider than this declines whole. Fixed, not a slider:
+// every window must derive the identical cluster, so growth is clipped at a fixed bound, and
+// the lazy deep Urquhart box (_degreeDrops) is sized gMargin + this + detour cap + 1 to contain
+// the farthest member's full detour neighbourhood. See _v2ClusterResolve.
+const NEST_DIAMETER_HOPS = 6
 
 // Corner-facet fix: _resolveRoadSurface refines the WINNING run's frame onto its exact primitive
 // centerline (the same curve the ribbon samples) instead of the 4 m polyline, which faceted the dirt
@@ -2275,6 +2281,25 @@ export class RoadSystem {
                                               this._params?.roadV2?.deleteDetourHops ?? 6) + 1
         const wide = this._buildUrquhart(mx0, mx1, mz0, mz1, false, dropMargin)
         const entry = { drop: this._degreeDropSet(wide), wide }
+        // BUG-55 nests: the ordered cluster delete needs graph context out to (nest diameter) +
+        // (detour cap) beyond the everyday margin — members sit up to NEST_DIAMETER_HOPS from
+        // the registering edge and each runs its own cap-hop detour BFS. LAZY: built only when
+        // _v2DeleteFor meets a one-shot 'detour' failure (a nest suspect), memoized with this
+        // entry so a window rev builds it at most once — nest windows pay for nests, nothing
+        // else does. The everyday `wide` box and every scan on it stay byte-untouched; `_isDeep`
+        // keys the conflict-pair memo into its own universe so deep results never alias
+        // everyday ones.
+        wide._deepBox = () => {
+            if (!entry.deepE) {
+                const cap = Math.max(this._params?.roadGraphDegreeDetourHops ?? 4,
+                                     this._params?.roadV2?.deleteDetourHops ?? 6)
+                const dW = this._buildUrquhart(mx0, mx1, mz0, mz1, false,
+                                               gMargin + NEST_DIAMETER_HOPS + cap + 1)
+                dW._isDeep = true
+                entry.deepE = { wide: dW, drop: this._degreeDropSet(dW), cells: null }
+            }
+            return entry.deepE
+        }
         if (memo.size > 6) memo.clear()   // warm/stream/spawn windows alternate — keep a handful
         memo.set(sig, entry)
         return entry
@@ -3054,8 +3079,12 @@ export class RoadSystem {
         if (!this._v2ConflictMemo || this._v2ConflictMemo.rev !== this._networkRev)
             this._v2ConflictMemo = { rev: this._networkRev, map: new Map() }
         const memo = this._v2ConflictMemo.map
-        if (memo.has(ck)) return memo.get(ck)
-        const fin = (v) => { memo.set(ck, v); return v }
+        // Deep-universe calls (the nest resolver's wider box) memo under their own key: a far
+        // member's everyday-box answer could be clipped by the box rim, and the two universes
+        // must never alias — the everyday universe stays byte-identical to pre-nest behaviour.
+        const mk = (wide._isDeep ? 'D|' : '') + ck
+        if (memo.has(mk)) return memo.get(mk)
+        const fin = (v) => { memo.set(mk, v); return v }
         const C = this._v2Costs()
         const PROX = C.mergeProxM ?? 18, GAPM = C.mergeGapM ?? 200, FLARE = C.mergeFlareM ?? 60
         const CHORD = C.censusChordM ?? 300
@@ -3261,6 +3290,60 @@ export class RoadSystem {
             const a = wide.key(q1), b = wide.key(q2)
             cells.set(a < b ? a + '|' + b : b + '|' + a, [q1, q2])
         }
+        // FAST PATH — the shipped one-shot rule, byte-identical for every deletion it can
+        // resolve: BFS excluding every possible victim from detours, so uncoordinated per-window
+        // deletions can never lean on each other. Only its failure falls to the cluster path.
+        const path = this._v2VictimFreePath(g, drop, wide, cells, ck, kA, kB, CAP)
+        if (path) {
+            const rec = { ck, key: `g:${g.key(c1)}:${g.key(c2)}`, hops: path.length,
+                          pairs: nominating.map((t) => t.qck),
+                          pts: this._v2RunSample(g, drop, c1, c2)?.pts ?? null }
+            this._v2Deleted.set(ck, rec)
+            return fin(rec)
+        }
+        // CLUSTER PATH (2026-08-24): a mutual-victim NEST — every detour runs through another
+        // candidate, so the one-shot rule refuses every path BY DESIGN (sound: uncoordinated
+        // deletions must not cascade). Resolve the cluster's candidates in a fixed order instead
+        // of refusing them as a group — see _v2ClusterResolve for the walk and the invariance
+        // argument.
+        const res = this._v2ClusterResolve(g, drop, wide, ck, CAP)
+        if (res?.exceeds) {
+            this._v2MergeSkipped('cluster', `${ck}: nest wider than ${NEST_DIAMETER_HOPS} hops`)
+            return fin(null)
+        }
+        if (res && res.members.length > 1) {
+            const a = res.approved.get(ck)
+            if (a) {
+                const rec = { ck, key: `g:${g.key(c1)}:${g.key(c2)}`, hops: a.hops,
+                              pairs: nominating.map((t) => t.qck),
+                              pts: this._v2RunSample(g, drop, c1, c2)?.pts ?? null,
+                              // approved = the walk's assumed-gone set, an over-approximation
+                              // of actual deletions (a member only deletes where it also
+                              // nominates) — reports must not print it as "deleted".
+                              cluster: { members: res.members, rank: a.rank,
+                                         approved: [...res.approved.keys()].sort() } }
+                this._v2Deleted.set(ck, rec)
+                return fin(rec)
+            }
+            if (res.evaporated.has(ck)) {
+                this._v2MergeSkipped('cluster', `${ck}: tear dies with deleted nest partner`)
+                return fin(null)
+            }
+            this._v2MergeSkipped('detour', `${ck} delete: no detour <= ${CAP} hops (nest of ${res.members.length})`)
+            return fin(null)
+        }
+        this._v2MergeSkipped('detour', `${ck} delete: no victim-free detour <= ${CAP} hops`)
+        return fin(null)
+    }
+
+    // The one-shot victim-free detour: BFS between an edge's endpoints, vetting every path edge
+    // with the geometry-only possible-victim test (_v2ConflictPairs: tear-grade pair >= 60 m
+    // where it is the longer member) and re-BFSing around failures, until a victim-free path
+    // exists or none remains within the cap. Factored out of _v2DeleteFor so the nest resolver
+    // can run the identical rule on the deep universe (pre-approval); everyday-universe
+    // behaviour is byte-identical to the shipped inline loop — only the failure COUNTING moved
+    // to the callers.
+    _v2VictimFreePath(g, drop, wide, cells, ck, kA, kB, CAP) {
         const eK = (a, b) => (a < b ? a + '|' + b : b + '|' + a)
         const adjOf = (u) => [...(wide.adj.get(u) || [])].filter((v) => !drop.has(u + '|' + v)).sort()
         const excl = new Set([ck])
@@ -3278,7 +3361,7 @@ export class RoadSystem {
                     bq.push([v, d + 1])
                 }
             }
-            if (!hit) { this._v2MergeSkipped('detour', `${ck} delete: no victim-free detour <= ${CAP} hops`); return fin(null) }
+            if (!hit) return null
             const path = []
             for (let v = kB; parent.get(v) !== null; v = parent.get(v)) path.push(eK(parent.get(v), v))
             let bad = null
@@ -3287,15 +3370,187 @@ export class RoadSystem {
                 const pt = pc ? this._v2ConflictPairs(g, drop, wide, pc[0], pc[1]) : []
                 if (!pc || pt.some((t2) => t2.tear && t2.longer && t2.nearLen >= 60)) { bad = pe; break }
             }
-            if (!bad) {
-                const rec = { ck, key: `g:${g.key(c1)}:${g.key(c2)}`, hops: path.length,
-                              pairs: nominating.map((t) => t.qck),
-                              pts: this._v2RunSample(g, drop, c1, c2)?.pts ?? null }
-                this._v2Deleted.set(ck, rec)
-                return fin(rec)
-            }
+            if (!bad) return path
             excl.add(bad)
         }
+    }
+
+    // ── BUG-55: ordered cluster deletes — the nest resolver (2026-08-24) ──────────────────────
+    // A NEST is a cluster of tangled roads where every delete candidate's detour runs through
+    // another candidate, so the one-shot rule refuses them as a group. Here the cluster resolves
+    // as a UNIT, in a fixed order, and every member's registration reads one memoized answer:
+    //
+    //   1. GROW the cluster from the seed over detour-ellipse adjacency: a candidate joins when
+    //      it could appear on a member's <= CAP-hop detour (dist(kA,·) + 1 + dist(·,kB) <= CAP).
+    //      Candidacy is the one-shot vetting's geometry-only possible-victim test —
+    //      planner-free, so it reads the same from every window. A candidate whose own ONE-SHOT
+    //      (deep universe) succeeds joins as a LEAF: it deletes standalone via its own fast
+    //      path, so it never extends growth — only one-shot-FAILING members expand the
+    //      frontier, which is what keeps real nests compact instead of chaining every deletable
+    //      edge in the valley into one oversize component.
+    //   2. ORDER members by total tear length (sum of qualifying-pair nearLen, desc), then
+    //      longer edge, then lexicographic ck — pure inputs, identical everywhere.
+    //   3. PRE-APPROVE the leaves: they delete no matter what this walk decides, so the walk
+    //      must treat them as gone — without this a member skipped by evaporation but really
+    //      deleted by its own fast path could serve as another member's detour (the mixed-path
+    //      hole).
+    //   4. WALK the rest in order: a member's pairs with already-approved members EVAPORATE (the
+    //      deleted partner resolves the tear — the owner's one-leg rule holds structurally: no
+    //      pair ever deletes its second leg FOR that pair); a member with live pairs left is
+    //      approved when its endpoints reconnect within CAP on (deep graph − approvals so far).
+    //   5. FINAL PASS: re-check every walk approval on (deep graph − ALL approvals), in order;
+    //      a failure un-approves it and restarts the pass (the approved set only shrinks, so it
+    //      terminates). This closes the induction gap where a later approval removes an edge an
+    //      earlier detour used — connectivity survives the greedy walk by induction, but the
+    //      <= CAP PROMISE needs the final-graph check. Un-approving only FREES paths, so
+    //      surviving approvals stay valid.
+    //
+    // WINDOW INVARIANCE. The resolution is a pure function of (members, their pairs, the deep
+    // graph within CAP hops of every member). Growth is clipped at NEST_DIAMETER_HOPS between
+    // members — a cluster that would exceed it declines ALL its members ('cluster', counted) —
+    // and the graph context is the lazy deep box (_degreeDrops), whose margin contains the
+    // farthest member's full detour neighbourhood from any window that can see any member.
+    // Every pair of members is distance-checked exactly once (newcomer vs existing), so an
+    // oversize nest is detected from every seed regardless of growth order — the partial member
+    // list may differ, the DECLINE never does.
+    //
+    // SAFETY. Actual deletions ⊆ approved: a member deletes only when it ALSO nominates at its
+    // own registration — planner state this walk deliberately never reads (an approved member
+    // that never nominates only costs missed deletes, never a strand). Every surviving detour is
+    // checked against (deep graph − approved) ⊆ (real graph − actual deletions), and any
+    // candidate within a member's detour reach is by construction a member of THIS cluster
+    // (growth reach == detour reach), so no detour can lean on an edge some other cluster or
+    // fast path deletes.
+    _v2ClusterResolve(g, drop, wide, seedCk, CAP) {
+        if (!this._v2ClusterMemo || this._v2ClusterMemo.rev !== this._networkRev)
+            this._v2ClusterMemo = { rev: this._networkRev, map: new Map() }
+        const memo = this._v2ClusterMemo.map
+        const hit = memo.get(seedCk)
+        if (hit !== undefined) return hit
+        const fin = (v) => { for (const m of v?.members ?? [seedCk]) memo.set(m, v); return v }
+        const deepE = wide._deepBox?.()
+        if (!deepE) return fin(null)
+        const dW = deepE.wide, dDrop = deepE.drop
+        if (!deepE.cells) {
+            deepE.cells = new Map()
+            for (const [q1, q2] of dW.edges) {
+                const a = dW.key(q1), b = dW.key(q2)
+                deepE.cells.set(a < b ? a + '|' + b : b + '|' + a, [q1, q2])
+            }
+        }
+        if (!deepE.cells.has(seedCk)) return fin(null)
+        const spellG = this._v2EdgeSpellings(g)
+        const qualPairs = (ckX) => {
+            const cc = deepE.cells.get(ckX)
+            return this._v2ConflictPairs(g, dDrop, dW, cc[0], cc[1])
+                .filter((t) => t.tear && t.longer && t.nearLen >= 60)
+        }
+        const adjOf = (u) => [...(dW.adj.get(u) || [])].filter((v) => !dDrop.has(u + '|' + v)).sort()
+        const bfsFrom = (starts, depth) => {
+            const dist = new Map(starts.map((s) => [s, 0]))
+            const q = [...starts]
+            while (q.length) {
+                const u = q.shift(), du = dist.get(u)
+                if (du >= depth) continue
+                for (const v of adjOf(u)) if (!dist.has(v)) { dist.set(v, du + 1); q.push(v) }
+            }
+            return dist
+        }
+        const mkMember = (ckX) => {
+            const cc = deepE.cells.get(ckX)
+            const pairs = qualPairs(ckX)
+            const sp = spellG.get(ckX)
+            const S = sp ? this._v2RunSample(g, drop, sp[0], sp[1]) : this._v2RunSample(dW, dDrop, cc[0], cc[1])
+            // oneShot = this member's own victim-free detour (deep universe). Non-null makes it
+            // a LEAF: it deletes standalone via its own fast path (avoiding every candidate), so
+            // it needs no coordination — it joins the cluster only to be treated as gone
+            // (pre-approval, evaporation, detour exclusion) and its ellipse never extends
+            // growth. Measured: expanding leaves chained seed-6's compact 3-member nest to 8
+            // members spread 6+ hops along the valley and the diameter bound declined them all.
+            return { ck: ckX, kA: dW.key(cc[0]), kB: dW.key(cc[1]), pairs,
+                     tearSum: pairs.reduce((s, t) => s + t.nearLen, 0), L: S?.L ?? 0,
+                     oneShot: this._v2VictimFreePath(g, dDrop, dW, deepE.cells,
+                                                     ckX, dW.key(cc[0]), dW.key(cc[1]), CAP) }
+        }
+        const members = new Map([[seedCk, mkMember(seedCk)]])
+        const queue = members.get(seedCk).oneShot ? [] : [seedCk]
+        let exceeds = false
+        while (queue.length && !exceeds) {
+            const m = members.get(queue.shift())
+            // Growth reach is the member's DETOUR ELLIPSE — an edge can appear on a <= CAP-hop
+            // path between the member's endpoints only if dist(kA,·) + 1 + dist(·,kB) <= CAP
+            // (superset of on-path edges, so the safety argument holds; symmetric, so every seed
+            // grows the same component). A plain "within CAP hops of an endpoint" ball is far
+            // too loose — measured: it pulled tear candidates from 2 km away into seed-6's nest
+            // and the diameter bound then declined the whole cluster.
+            const dA = bfsFrom([m.kA], CAP), dB = bfsFrom([m.kB], CAP)
+            for (const [eck, cc] of deepE.cells) {
+                if (members.has(eck)) continue
+                const a = dW.key(cc[0]), b = dW.key(cc[1])
+                const da1 = dA.get(a) ?? Infinity, da2 = dA.get(b) ?? Infinity
+                const db1 = dB.get(a) ?? Infinity, db2 = dB.get(b) ?? Infinity
+                if (Math.min(da1 + 1 + db2, da2 + 1 + db1) > CAP) continue
+                if (dDrop.has(a + '|' + b)) continue
+                if (!qualPairs(eck).length) continue
+                const far = bfsFrom([a, b], NEST_DIAMETER_HOPS)
+                for (const om of members.values())
+                    if (!far.has(om.kA) && !far.has(om.kB)) { exceeds = true; break }
+                if (exceeds) break
+                members.set(eck, mkMember(eck))
+                if (!members.get(eck).oneShot) queue.push(eck)   // leaves never extend growth
+            }
+        }
+        const membersSorted = [...members.keys()].sort()
+        if (exceeds)
+            return fin({ exceeds: true, members: membersSorted, approved: new Map(), evaporated: new Set() })
+        const list = [...members.values()].sort((x, y) =>
+            (y.tearSum - x.tearSum) || (y.L - x.L) || (x.ck < y.ck ? -1 : 1))
+        list.forEach((m, i) => { m.rank = i + 1 })
+        const approved = new Map()   // ck → { hops, rank, pre }
+        for (const m of list)
+            if (m.oneShot) approved.set(m.ck, { hops: m.oneShot.length, rank: m.rank, pre: true })
+        const eK = (a, b) => (a < b ? a + '|' + b : b + '|' + a)
+        const detour = (m, excl) => {
+            const parent = new Map([[m.kA, null]])
+            const q = [[m.kA, 0]]
+            while (q.length) {
+                const [u, d] = q.shift()
+                if (d >= CAP) continue
+                for (const v of adjOf(u)) {
+                    if (excl.has(eK(u, v)) || parent.has(v)) continue
+                    parent.set(v, u)
+                    if (v === m.kB) {
+                        let n = 0
+                        for (let w = v; parent.get(w) !== null; w = parent.get(w)) n++
+                        return n
+                    }
+                    q.push([v, d + 1])
+                }
+            }
+            return 0
+        }
+        const evaporated = new Set()
+        for (const m of list) {
+            if (approved.has(m.ck)) continue
+            const live = m.pairs.filter((t) => !approved.has(t.qck))
+            if (!live.length) { evaporated.add(m.ck); continue }
+            const excl = new Set([m.ck, ...approved.keys()])
+            const h = detour(m, excl)
+            if (h) approved.set(m.ck, { hops: h, rank: m.rank, pre: false })
+        }
+        for (;;) {
+            const excl = new Set(approved.keys())
+            let removed = false
+            for (const m of list) {
+                const a = approved.get(m.ck)
+                if (!a || a.pre) continue
+                const h = detour(m, excl)
+                if (h) a.hops = h
+                else { approved.delete(m.ck); removed = true; break }
+            }
+            if (!removed) break
+        }
+        return fin({ exceeds: false, members: membersSorted, approved, evaporated })
     }
 
     // Guard telemetry: every merge guard SKIPS AND COUNTS, never forces. Read by
