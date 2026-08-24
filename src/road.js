@@ -3196,46 +3196,66 @@ export class RoadSystem {
         // the delete rung, nor role-block its winner. End-anchored specs keep spec-exists
         // semantics (conservative: fewer deletions) — no mark is blocked on one today.
         const spellG = this._v2EdgeSpellings(g)
+        // true = buildable (end-anchored, spec-exists semantics) · number = buildable mid-span,
+        // valued at the building variant's CEDED length · false = doomed.
         const builds = (spec, loserSp) => !spec.midSpan
             || (loserSp ? this._v2RegisterMidSpan(null, null, loserSp[0], loserSp[1], spec, g, drop, true) : true)
-        let winsAny = !!this._v2BundleSolve(g, drop, c1, c2)
-        for (const nk of [kA, kB]) {
-            if (winsAny) break
-            for (const [lck, spec] of this._v2NodeMerges(g, drop, nk))
-                if (ckOf(spec.winner) === ck && builds(spec, spellG.get(lck))) { winsAny = true; break }
-        }
         const nominating = []
         for (const t of pairs) {
-            let planned = false, angleExempt = false
+            // covered = how much of the pair's conflict a BUILDABLE plan resolves (its planned
+            // interval region — over-counts actual coverage, so the leftover under-counts:
+            // conservative toward keeping the road). cedesToPartner = OUR buildable spec names
+            // the partner as winner — the trigger for the shorter-member fallback below.
+            let covered = 0, bundled = false, angleExempt = false
+            const take = (spec, b) => { covered = Math.max(covered, typeof b === 'number' ? b : spec.region ?? 0) }
             for (const nk of t.shared) {
                 const nm = this._v2NodeMerges(g, drop, nk)
-                const sE = nm.get(ck); if (sE && ckOf(sE.winner) === t.qck && builds(sE, spellG.get(ck) ?? [c1, c2])) planned = true
-                const sY = nm.get(t.qck); if (sY && ckOf(sY.winner) === ck && (!t.inG || builds(sY, t.spQ))) { planned = true; winsAny = true }
+                const sE = nm.get(ck)
+                let bE = sE && ckOf(sE.winner) === t.qck ? builds(sE, spellG.get(ck) ?? [c1, c2]) : false
+                if (bE) take(sE, bE)
+                const sY = nm.get(t.qck)
+                const bY = sY && ckOf(sY.winner) === ck ? (!t.inG || builds(sY, t.spQ)) : false
+                if (bY) take(sY, bY)
                 // Both ceding to the SAME spine is the junction-bundle shape — the pair rides one
-                // pavement by construction and is the merge machinery's business. Deleting a
-                // bundled leg rips a limb out of a composed junction: measured as an 87 m carve
-                // crease at the shared node's chunk when this check was missing.
-                if (sE && sY && ckOf(sE.winner) === ckOf(sY.winner)) planned = true
+                // pavement by construction and is the merge machinery's business. An ABSOLUTE
+                // shield, not leftover-based: deleting a bundled leg rips a limb out of a
+                // composed junction (measured: an 87 m carve crease at the shared node's chunk).
+                if (sE && sY && ckOf(sE.winner) === ckOf(sY.winner)) bundled = true
                 if (nm.declinedAngle?.has(ck < t.qck ? ck + '#' + t.qck : t.qck + '#' + ck)) angleExempt = true
             }
             if (!t.shared.length) {
                 const dOwn = this._v2DisjointFor(g, drop, wide, c1, c2)
-                if (dOwn && ckOf(dOwn[0].winner) === t.qck && builds(dOwn[0], spellG.get(ck) ?? [c1, c2])) planned = true
-                if (!planned && t.inG) {
+                const bO = dOwn && ckOf(dOwn[0].winner) === t.qck ? builds(dOwn[0], spellG.get(ck) ?? [c1, c2]) : false
+                if (bO) take(dOwn[0], bO)
+                if (t.inG) {
                     const dQ = this._v2DisjointFor(g, drop, wide, t.spQ[0], t.spQ[1])
-                    if (dQ && ckOf(dQ[0].winner) === ck && builds(dQ[0], t.spQ)) { planned = true; winsAny = true }
+                    const bQ = dQ && ckOf(dQ[0].winner) === ck ? builds(dQ[0], t.spQ) : false
+                    if (bQ) take(dQ[0], bQ)
                 }
             }
-            // Substantiality floor: only a conflict of MINSPAN grade (60 m — the same "worth
-            // two forks" bar the merge ladder uses) drives a deletion. Below it the leftover is
-            // junction-dressing / merge-quality territory, censused and owner-judged — and the
-            // floor is what keeps the BFS vetting below from blackballing every edge with a few
-            // metres of throat overflow. The vetting test MUST stay in lockstep (deleted ⇒
-            // possible-victim), so both read the same 60.
-            if (t.tear && t.longer && t.nearLen >= 60 && !planned && !angleExempt) nominating.push(t)
+            // Substantiality floor on the LEFTOVER: only unresolved conflict of MINSPAN grade
+            // (60 m — the merge ladder's own "worth two forks" bar) drives a deletion. A PARTIAL
+            // merge must not shield the rest of its pair (measured: the stacked pair merges 62 m
+            // and leaves an 80 m tangle with a proper crossing — and its recorded "would strand"
+            // was a window-EDGE census artifact; the centered detour is 3 hops). The BFS vetting
+            // below stays a SUPERSET (it tests raw nearLen ≥ 60; leftover ≥ 60 implies that),
+            // so deleted ⇒ possible-victim still holds.
+            const leftover = t.nearLen - covered
+            if (!t.tear || bundled || angleExempt || leftover < 60) continue
+            // Victim: the LONGER member, full stop (owner-confirmed; and cull ONE leg, never
+            // both — 2026-08-24). With no role-block, a partially-merged pair's WINNER can be
+            // the victim: its loser then registers plain (the assembly drops dead-winner specs)
+            // and the whole tangle dies with the winner. The BFS still decides: connectivity
+            // first, and its vetting stays longer-only — a shorter member can never delete, so
+            // it may lawfully serve as another victim's detour.
+            if (t.longer) nominating.push(t)
         }
         if (!nominating.length) return fin(null)
-        if (winsAny) { this._v2MergeSkipped('role', `${ck} delete: wins a plan`); return fin(null) }
+        // No "wins a plan" role-block (2026-08-24, owner-directed cull): deleting a plan-winner
+        // is SAFE because the assembly drops any spec whose winner is deleted — the loser
+        // registers on its own line, and its conflict with the winner dies with the winner.
+        // (The narrow residue: a same-spine TRIO whose spine deletes via an unrelated pair
+        // re-exposes its two losers' mutual tear for this rev — censused, not silent.)
         const cells = new Map()
         for (const [q1, q2] of wide.edges) {
             const a = wide.key(q1), b = wide.key(q2)
@@ -3863,7 +3883,11 @@ export class RoadSystem {
                 return r.spans.map((sp) => ({ s0: toFinal(sp.s0), s1: toFinal(sp.s1) }))
             }
             const tunnelSpans = [...mapSpans(r1), ...mapSpans(r2)]
-            if (dry) return true
+            // dry mode reports the variant that would build as its CEDED length — the delete
+            // rung's `covered` must reflect what the merge actually resolves, not the planned
+            // interval (the stacked pair plans 108 m, builds 62, and the 4 m difference was
+            // exactly what hid its leftover under the 60 m floor).
+            if (dry) return Math.max(1, Math.abs(v.lOut - v.lIn))
             const wLo = Math.min(v.wIn, v.wOut), wHi = Math.max(v.wIn, v.wOut)
             this._network.set(key, {
                 points: pts, arcOrigin: 0, centerline: cl,
@@ -4325,11 +4349,16 @@ export class RoadSystem {
             // then tapers back onto its own. BUG-55: a winner registers through its bundle when
             // one negotiated, and an edge with no node-merge role checks the DISJOINT planner
             // (shape E) before registering plain.
-            const merge = this._v2MergeFor(g, drop, c1, c2)
-            if (merge) this._v2RegisterMerged(key, cl, c1, c2, merge, g, drop)
+            // BUG-55: a spec whose WINNER is deleted never applies — the loser registers on
+            // its own line (the conflict died with the winner). Window-invariant: the winner's
+            // verdict is winner-local, so every window drops the identical specs; acyclic:
+            // _v2DeleteFor never consults other edges' delete verdicts.
+            const alive = (spec) => !this._v2DeleteFor(g, drop, wide, spec.winner[0], spec.winner[1])
+            const merge = (this._v2MergeFor(g, drop, c1, c2) || []).filter(alive)
+            if (merge.length) this._v2RegisterMerged(key, cl, c1, c2, merge, g, drop)
             else {
-                const dj = this._v2DisjointFor(g, drop, wide, c1, c2)
-                if (dj) this._v2RegisterMidSpan(key, cl, c1, c2, dj[0], g, drop)
+                const dj = (this._v2DisjointFor(g, drop, wide, c1, c2) || []).filter(alive)
+                if (dj.length) this._v2RegisterMidSpan(key, cl, c1, c2, dj[0], g, drop)
                 else this._registerRun(key, cl, c1, c2, this._v2BundleSolve(g, drop, c1, c2))
             }
             addInc(g.key(c1), key); addInc(g.key(c2), key)
