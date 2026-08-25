@@ -50,6 +50,10 @@
 //                       does for modelKey (hash32(`...:${seed}:${id}`)), never Math.random().
 //   credit     string — attribution if third-party; also recorded in assets/models/CREDITS.md
 
+// ASSET-31 road signs: every one of the seven is the same 4x4 timber post carrying a
+// different blank, so they share one collision box. 89 mm square, 2.18 m to the post top.
+const SIGN_POST_BOX = { shape: 'box', size: [0.089, 2.180, 0.089] }
+
 export const PROP_MODELS = {
   newsRoll: {
     url: 'assets/models/news-roll.glb',
@@ -275,6 +279,36 @@ export const PROP_MODELS = {
     // with FEAT-50 refuelling, which is what gives a gas stop something to do.
     tags: ['gasStation'],
   },
+
+  // ASSET-31 — ROAD FURNITURE: seven Californian roadside signs on a timber 4x4.
+  // 52 tris each, three materials (SignPost / SignBack / SignFace), one 512x512 baked face
+  // per sign. Built by ONE generator, assets/models/src/road-signs.py — the steel-drum
+  // packaging: a variant is a .glb of its own, so a spawner brings in one sign, not a set.
+  //
+  // THE PLACEMENT RULE, AND IT IS THE WHOLE RISK OF THIS ASSET (ASSET-31's own warning):
+  // A SIGN THAT LIES IS WORSE THAN NO SIGN. A curve warning on a straight, or a left-curve
+  // sign on a right bend, teaches the player that their instruments are untrustworthy. The
+  // road system already knows the truth — the router prices curvature as k^2 and the
+  // centerline carries real min-radius and honest 1-D EMA grade — so these must be DERIVED
+  // FROM THE ROUTED CENTERLINE, never scattered. signCurves reads minR on the run ahead;
+  // signGrade reads the grade profile; signTee / signCross read the node degree ahead;
+  // signStop belongs at a junction the player must actually stop at. signRockslide and
+  // signIcy are the two with no geometric truth behind them yet — they are terrain/weather
+  // claims, so leave them out until something can vouch for them.
+  //
+  // NO POOL TAG. 'roadSign' would be a pool of things scattered at random, which is exactly
+  // the mistake above. Placement is a separate ticket and it is a road-geometry query, not a
+  // scatter. Reachable meanwhile via spawnModel('signStop') etc.
+  //
+  // Collision is the POST ONLY and it is knockable — the blank is 12 mm of sheet 1.6 m up,
+  // and clipping it should cost a mirror, not stop a truck.
+  signGrade: { url: 'assets/models/sign-grade.glb', collision: SIGN_POST_BOX },
+  signCurves: { url: 'assets/models/sign-curves.glb', collision: SIGN_POST_BOX },
+  signRockslide: { url: 'assets/models/sign-rockslide.glb', collision: SIGN_POST_BOX },
+  signTee: { url: 'assets/models/sign-tee.glb', collision: SIGN_POST_BOX },
+  signCross: { url: 'assets/models/sign-cross.glb', collision: SIGN_POST_BOX },
+  signStop: { url: 'assets/models/sign-stop.glb', collision: SIGN_POST_BOX },
+  signIcy: { url: 'assets/models/sign-icy.glb', collision: SIGN_POST_BOX },
 }
 
 /** Every registry key carrying `tag`, in registry order — the pool a roster slot draws from. */

@@ -36,6 +36,30 @@ That path is load-bearing in three places — it is not a loose convention:
 a separate directory also means it can be gitignored wholesale later if the `.blend` files grow —
 `.glb` is the only artefact the game needs. `*.blend1` (Blender autosave) is already gitignored.
 
+### A kit of variants is ONE generator and N `.glb` files
+
+When a ticket asks for "a kit" — three drums, seven road signs — the shape is **one `.py`, one
+`.blend`, and a separate `.glb` per variant**, not one model containing all of them.
+`assets/models/src/steel-drum.py` is the reference and `road-signs.py` follows it:
+
+- the generator holds a `VARIANTS` list, one entry per output;
+- `build()` lays them out side by side — that combined scene is what the `.blend` is saved as, and
+  it is the source view you open to compare them;
+- `export()` rebuilds each variant **alone in a fresh scene** and writes `<name>.glb`;
+- each gets its own `data/prop-models.js` entry.
+
+The reason is the runtime, not tidiness. The registry is one URL per key and `spawnModel()` clones
+a whole template, so a multi-object `.glb` would bring every variant into memory to place one of
+them, and would need loader code to pick a child — it stops being a data-only asset drop. Owner
+ruling 2026-08-24: *"obviously I'm not going to want to bring them all in at the same time, we just
+want to spawn one."*
+
+The one thing to watch is **shared textures**: seven files cannot share one image, so either give
+each variant its own small bake (the road signs: one 512×512 face each, 188 kB for all seven) or
+keep the kit untextured. Duplicating one large atlas into N files is the trap — three.js cannot
+dedupe an image across separate `.glb` loads, so it lands in VRAM N times.
+
+
 ## Format: glTF 2.0 Binary (`.glb`), textures embedded
 
 The loader is a bare `new GLTFLoader()` (`src/vehicle-model.js`) — no `DRACOLoader`, no
