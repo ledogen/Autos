@@ -390,9 +390,11 @@ the cluster path is lazy (deep box + growth only on windows with a one-shot 'det
 
 ### Open items — all owner-side or booked follow-ups
 
-1. **Owner drives it** (acceptance #7): map judgment + driven pass. Deleted-edge spots worth
-   eyeballing: (932,793) and (3328,−27); the seed-7 deletions at (−1650..−1315, 310..837) and
-   (−640..−247, −429..11).
+1. **Owner drives it** (acceptance #7): map judgment + driven pass. **2026-08-24: the owner
+   free-cammed the nest area and called it great** — the remaining defect they flagged there is
+   the junction-surface class, ticketed as BUG-56 (fork disjunction, not a BUG-55 pair). Still
+   worth eyeballing: (932,793) and (3328,−27); the seed-7 deletions at (−1650..−1315, 310..837)
+   and (−640..−247, −429..11).
 2. **The two hairpin stacks** — graph-topology (j)'s ONLY remaining violations:
    `4,1,1|5,1,0 × 3,1,0|4,1,1` (153°) and `6,3,0|6,4,1 × 5,3,2|6,3,0` (138°), 1.2–1.3 m apart
    mid-span. Real tears the 'angle' ruling protects from both merge and delete. Owner call:
