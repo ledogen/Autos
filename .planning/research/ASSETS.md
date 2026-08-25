@@ -110,10 +110,21 @@ Apply transforms in Blender before exporting.
   on material name (`spec.paint` / `spec.tail` / `spec.reverse.material`). Give them stable,
   distinctive names — `Material.001` is not addressable, and renaming on re-export silently drops
   the recolor/lighting hookup.
-- **Wheels stay separate objects.** The loader strips the model's own wheels (detected as child
-  nodes much smaller than the body, deliberately *not* by name so re-exports keep working) so the
-  procedural wheels — which spin, steer, and show suspension travel — show through. A single merged
-  node keeps its static, non-animating wheels.
+- **Wheels stay separate objects — or state that there are none.** The loader strips the model's own
+  wheels (detected as child nodes much smaller than the body, deliberately *not* by name so
+  re-exports keep working) so the procedural wheels — which spin, steer, and show suspension travel —
+  show through. A single merged node keeps its static, non-animating wheels.
+  A model authored **without wheels at all** (the right answer, since the procedural set is the only
+  set that moves) must say so with **`ownWheels: false`** in its spec — ASSET-34 added this. The
+  heuristic cannot infer it: a wheel-less model is one big node, which is indistinguishable from a
+  merged model with its wheels baked in, so without the flag the procedural wheels never appear.
+- **Anything small that must SURVIVE has to be a CHILD of the body node, not a root sibling.** That
+  strip pass hides root children much smaller than the body, so a steering wheel, a glass object or
+  a mirror left at the scene root is silently deleted at load. `ranger.glb` parents its glass and its
+  steering wheel to the body for exactly this reason.
+- **Fine-alignment numbers come from the generator, not from the eye.** The loader centres the
+  model's bounding box on the CG and plants `box.min` on the ground, so `shiftRear` / `shiftDown`
+  exist to undo both. `assets/models/src/ranger.py` prints the exact pair; copy them across.
 - **Scale is automatic.** `targetLength` rescales the longest horizontal axis; real-world units are
   convenient but not required. `bodyScale` / `shiftRear` / `shiftDown` are the fine-alignment knobs.
 

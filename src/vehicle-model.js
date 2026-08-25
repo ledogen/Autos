@@ -715,13 +715,22 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     // travel) show through. Wheels are separate nodes sitting low under the body (Mesh2–5).
     // Detect them as "much smaller than the body" rather than by name, so a re-export still works.
     // If the model is one merged node, keep its static wheels instead.
-    const longest = (o) => { const sz = new THREE.Vector3(); new THREE.Box3().setFromObject(o).getSize(sz); return Math.max(sz.x, sz.y, sz.z) }
-    const kids = root.children.filter((c) => longest(c) > 0)
+    //
+    // ASSET-34: a model may instead declare `ownWheels: false`, meaning it was authored WITHOUT
+    // wheels because the procedural set is the only set. The heuristic cannot infer that — a
+    // wheel-less model is one big node, which is indistinguishable from a merged model whose
+    // wheels are baked in — so it has to be stated in the spec.
     let stripped = 0
-    if (kids.length > 1) {
-      const dims = kids.map(longest)
-      const bodyDim = Math.max(...dims)
-      kids.forEach((c, i) => { if (dims[i] < 0.5 * bodyDim) { c.visible = false; stripped++ } })
+    if (spec.ownWheels === false) {
+      stripped = 1                        // nothing to hide; the procedural wheels are the wheels
+    } else {
+      const longest = (o) => { const sz = new THREE.Vector3(); new THREE.Box3().setFromObject(o).getSize(sz); return Math.max(sz.x, sz.y, sz.z) }
+      const kids = root.children.filter((c) => longest(c) > 0)
+      if (kids.length > 1) {
+        const dims = kids.map(longest)
+        const bodyDim = Math.max(...dims)
+        kids.forEach((c, i) => { if (dims[i] < 0.5 * bodyDim) { c.visible = false; stripped++ } })
+      }
     }
     for (const w of wheelMeshes) w.visible = stripped > 0   // show procedural wheels only if we removed the model's
     modelActive = true
