@@ -4,55 +4,67 @@ type: bug
 status: open
 severity: major
 opened: 2026-08-24
-source: owner ruling 2026-08-24 (Option 1) on the graph-topology (j) stacks
-relates: BUG-55 (the resolution ladder this extends), BUG-56 (the surviving-pair stitching —
-  what this ticket deletes, that one reconciles), graph-topology (j)
+source: owner rulings 2026-08-24 (Option 1 on the (j) stacks) + 2026-08-25 (the crossing
+  invariant, which re-scoped this ticket and made the threshold approach moot)
+relates: BUG-55 (whose tear-delete rung + nest resolver this SUPERSEDES after parity),
+  BUG-56 (non-crossing junction tears — the class this rung does not touch),
+  graph-topology (j), ROAD-CLOSEOUT-PLAN.md (the ruling ledger + measurements)
 ---
 
-# BUG-57: hairpin-stack tangles fall through to the delete rung
+# BUG-57: the crossing rung — no unsanctioned crossings survive; the longer leg dies, unconditionally
 
-**Owner ruling (2026-08-24):** "Hairpins are desired, but if you zoom out and look at what
-these actually are, they're not really hairpins. They're tangled messes of roads that don't
-drive nice. They're not even all that tight of corners." Option 1: resolve them through the
-BUG-55 merge/suppress ladder. This NARROWS the 2026-08-23 'angle' ruling, it does not repeal
-it: >135° pairs still never MERGE (a fork at a reversal is geometric nonsense); angle simply
-stops shielding a tear-grade pair from DELETE.
+**Owner ruling (2026-08-25):** "If two legs cross on the way from one node to another I just
+want to get rid of one of those legs so there are no crossings left. If connectivity suffers,
+terrain is making the world unconnectable — fall back to a different seed instead of forcing
+the square peg." Threshold detectors (floors, deck-gap, angle guards) cannot enumerate an
+infinite defect class; the invariant replaces them. The merge ladder stays first — merges are
+the bountiful fix; this rung only judges what survives it.
 
-## The three stacks and their measured blockers (seed 6, gate window (4500,600), at `4c72378`)
+## The rule (order-free, pure per-pair)
 
-| # | Pair (shared node) | Tear | Victim (longer) | Blocked by |
-|---|---|---|---|---|
-| 1 | `3,1,0\|4,1,1 × 3,-1,1\|3,1,0` (3,1,0) | 52 m, gap 7.9 m | `3,-1,1\|3,1,0` | **floor** (52 < 60); NOT angle — the turn is 49° |
-| 2 | `4,1,1\|5,1,0 × 3,1,0\|4,1,1` (4,1,1) | 90 m, gap 11.5 m | `3,1,0\|4,1,1` | **angle** (153°) + **bundle shield** (both legs cede to spine `5,0,1\|4,1,1`) |
-| 3 | `6,3,0\|6,4,1 × 5,3,2\|6,3,0` (6,3,0) | 94 m, gap 9.2 m, leftover 48 after the covered 46 m merge | `5,3,2\|6,3,0` | **angle** (138°) + **floor** (48 < 60) |
+An edge DIES iff some pair (edge, partner) has an UNSANCTIONED proper crossing and the edge is
+the pair's LONGER member (tie → lexicographic). Unsanctioned = outside planned merge geometry
+(offCurve spans, three-way sanction incl. both-ceding-to-one-spine, and the flat-merged
+at-grade crossings — pending the owner's confirmation those live) and outside a 30 m
+shared-node throat. No detour vetting, no substantiality floor, no angle logic, no cluster
+coordination — the verdict is a pure function of the two pre-registration routes plus their
+merge plans, so it is window-invariant with no graph context at all.
 
-All six member edges reconnect in 5–6 hops — deletion is connectivity-viable everywhere.
-Predicted minimal outcome: deleting `3,1,0|4,1,1` clears stacks 1+2 (stack 1's pair
-evaporates with it), deleting `5,3,2|6,3,0` clears stack 3. The cluster walk decides the
-actual set; with the lowered floor stack 1 may instead/also nominate `3,-1,1|3,1,0` — measure
-and show the resulting map before committing.
+Connectivity is VALIDATED, not guarded: a gate asserts component count unchanged across the
+seed battery. The seed re-roll valve gets designed only if a real seed ever trips it.
 
-## The three changes
+## Measured (2026-08-25 simulations, 8 windows, seeds 3/6/7/20/11/67 — details in plan doc)
 
-1. **Lift the angle shield in delete nomination** (`angleExempt` in `_v2DeleteFor`): an
-   angle-declined pair that is TEAR-grade proceeds to nomination. Merge stays angle-blocked.
-2. **Stack floor** (PENDING OWNER RULING — see ROAD-CLOSEOUT-PLAN.md): shelf-grade tears
-   (maxDy ≥ 3 m) nominate at leftover ≥ 30 m instead of 60. LOCKSTEP: the BFS possible-victim
-   vetting must widen to the identical geometry-only test (trap #2 — nomination and vetting
-   share one floor, always).
-3. **Bundle drops a deleted LOSER** — mirror of the shipped dead-winner rule, needed for
-   stack 2's victim: today "deleting a bundled leg rips a limb out of a composed junction"
-   (measured 87 m carve crease), which is why the bundle shield is absolute. Make the
-   assembly/bundle-solve exclude a deleted member's plan (watch acyclicity:
-   `_v2DeleteFor → _v2DisjointFor → _v2BundleSolve` must not recurse back into
-   `_v2DeleteFor`), then relax the shield to leftover-based.
+- Rung-off parity: the crossing rule re-derives EVERY shipped BUG-55 deletion with the
+  identical victim — including the nest winner `g:-4,3,2:-3,3,2`, with no cluster machinery.
+- It additionally resolves what the guarded rung refused: seed-3 origin's 'detour' decline
+  (`0,-1,0|0,-1,1`), seed-11's two census-stuck pairs, and ALL THREE hairpin stacks — one
+  victim `3,1,0|4,1,1` clears three crossing pairs; `5,3,2|6,3,0` clears the third stack.
+  graph-topology (j) expected GREEN.
+- Connectivity: unchanged in every window (seed 67's 2 components pre-existed).
+- Order-free == minimal evaporation walk in every sampled window (no victim chains found).
 
-## Verification
+## Work items
 
-- The three stacks resolve; graph-topology **(j) expected GREEN** (all 217 violating samples
-  live in these stacks).
-- **Full BUG-55 battery again**: the widened vetting means prior deletions are no longer
-  byte-guaranteed — every one of the eleven marks, the six origin probes, and overlap-census
-  re-verified; any changed resolution is investigated, not waved through. Cluster-path
-  refusals are the expected failure mode and the nest resolver is the safety net.
-- Bench A/B (the vetting test runs on more path edges).
+1. Implement the rung on pure pre-registration samples (the census's machinery is the model:
+   `_v2RunSample` routes + planned offCurve sanction + throat trim + a proper-crossing test —
+   `_v2ConflictPairs` can grow a `crosses` flag). Runs where `_v2DeleteFor` runs today.
+2. **Bundle drops a deleted LOSER** — mirror of the shipped dead-winner rule; victim
+   `3,1,0|4,1,1` is a bundle loser at node 4,1,1 (deleting one today is the measured 87 m
+   carve-crease trap). Watch acyclicity through `_v2DisjointFor → _v2BundleSolve`.
+3. Parity battery, then DELETE the superseded machinery: tear nomination guards, the one-shot
+   victim-free BFS, `_v2ClusterResolve` + deep boxes + 'D|' memo universe, NEST_DIAMETER_HOPS.
+   (The deleteDetourHops slider retires or becomes the rung's on/off.) Update BUG-55 ticket +
+   memory to mark the nest resolver historical.
+4. Connectivity gate: components-unchanged assertion across the census seeds; census/classify
+   reporting updated (crossing-rung verdicts print like deletions today).
+5. Map A/B screenshots of every changed window for the owner (ruling 4).
+
+## Acceptance
+
+- Zero unsanctioned crossings in every battery window; all prior marks stay CLEAN/resolved;
+  victims match the parity table (any divergence investigated, not waved through).
+- graph-topology (j) green; component counts unchanged across the seed battery.
+- The superseded machinery is gone; `npm run test:all` shows no new reds; bench shows the
+  delete-rung scan cost reduced or unchanged (feeds PERF-28).
+- Owner map review of the changed windows.

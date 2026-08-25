@@ -52,17 +52,31 @@ red until every intersection stitches nicely."**
 involved — it takes the longer spec ALONE even though the two regions are disjoint. The
 planned end merge is silently discarded; 74 m / 5.3 m-gap tear at (-967, 2522).
 
-## The pass (three pieces)
+## The pass (per owner rulings 2/3, 2026-08-25)
 
-1. **Co-grade through the taper**: while a parting pair stays within mergeProxM laterally,
-   the loser's deck stays pinned near the winner's; it regains its own profile only past
-   separation. Turns the tear into a graded wye (the pinned-deck/taper machinery exists).
-2. **Compose disjoint mid-span + end merges on one run** (mechanism b): the assembly must
-   splice both ceded regions (four strands). If genuinely disjoint regions still can't
-   compose, say why in the decline — never silently drop a planned end merge.
-3. **The honest gate** (owner ruling): a stitching check measuring deck coplanarity of
-   registered pairs within shared-earthworks distance INCLUDING taper bands (bounded dy while
-   lateral separation < mergeProxM) — allowed to be red until this pass lands.
+**The bar**: a car must be able to drive straight through on the through-road without being
+launched or hitting a wall from the third road. The screenshot fork fails because the minor
+leg joins at a very shallow angle — it occupies the through-leg's XZ space for so long that
+the constraints pulling it into its own Y space conflict. "It's begging to be a T instead of
+a Y. We need to figure out how to get out of its way."
+
+1. **Y→T departure shape, EMERGENT**: give the minor leg a departure boundary condition at
+   the junction — an exit heading across the through-axis (the through-axis is already
+   computed per node for pads/pins; the corridor search already accepts start-heading pins) —
+   and let terrain do the rest. The leg exits the through-road's XZ clearance before its Y
+   diverges; if it must run parallel eventually, it first diverts outside a clearance width.
+   Do NOT hand-code a taper shape or a co-grade choreography (the earlier co-grade-taper idea
+   is REPLACED by this ruling). Routing change ⇒ affected edges re-route; expect network
+   character changes at shallow-angle junctions — map A/B for the owner.
+2. **The honest stitching gate** (owner ruling: "should be red until every intersection
+   stitches nicely"): a check that measures the drive-through bar — deck coplanarity /
+   obstruction within the through-road's clearance corridor at every junction, INCLUDING
+   sanctioned taper bands (sanctioning is what let the screenshot print CLEAN). Allowed to be
+   red until this pass lands.
+
+(Mechanism (b) — the discarded end merge at −2,3,1 — is now BUG-57's business: that pair has
+an unsanctioned crossing and its longer member dies under the crossing rung. The
+midspan+end-merge composition idea is demoted to a structural watch in the plan doc.)
 
 First moves: `node test/capture-classify.mjs 6 -1576 1361` for the runs/merge state at the node;
 `RoadSystem.debugSampleAt` / carve-mesh probes across the fork for the height series of each
