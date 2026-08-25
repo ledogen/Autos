@@ -22,7 +22,7 @@ Everything else built for this class is stranded:
 
 | Asset | Model | Registry | Pool | Spawns |
 |---|---|---|---|---|
-| ASSET-15 produce stall | `produce-stall.glb` | **missing** | — | no |
+| ASSET-15 produce stall | `produce-stall.glb` | **missing** | — | no — **a POI model**, see below |
 | ASSET-14 gas pump | `gas-pump.glb` | `gasPump` | `gasStation` | **no — nothing names that pool** |
 
 `gasStation` is deliberately orphaned (owner ruling 2026-08-22: this POI sells fuel, it does not
@@ -35,31 +35,36 @@ The produce stall is the real gap: a finished 1752-tri model with no entry at al
 - A `data/prop-models.js` entry for `produceStall`, with the collision box **restated for the
   trailer form**: deck mass only, excluding the 1.2 m drawbar and the sign. The ticket's original
   box was authored for a trestle table that the asset is no longer.
-- Decide what pool the produce stall belongs to (see below) and wire the roster slot for it.
+- Wire the produce stall onto a POI roster slot — see "The pool question" for which pool.
 - Audit every roster slot in `src/poi.js` against the built assets, so "shipped but unreachable"
   cannot recur silently. A gate that fails when a registry entry carries a tag no roster slot names
   would catch this class of gap permanently — `test/dist-assets.mjs` already walks the registry and
   is the natural place.
 
-## The question the owner owns
+## The pool question
 
-**Is a produce stall a place that hands out work?** It is a roadside trailer with someone behind
-it, which reads as a mission giver; but it is also a place that *sells* — closer to the gas pump,
-which was explicitly ruled out of `missionGiver` for exactly that reason. The options:
+**The produce stall is a POI model** (owner, 2026-08-24) — it anchors a zone the way the trailer
+home and the Winnebago do, and it is explicitly *not* yard clutter. So it belongs on a POI roster
+slot; the only thing left to pick is which pool.
 
-1. Add it to `missionGiver`. Cheapest, and adding to a pool is allowed to reshuffle which marker
-   wears what (owner ruling 2026-08-15).
-2. Its own `vendor` pool alongside `gasStation`, with no consumer until a buying/selling path
-   exists. Consistent with the gas pump, and honest about the fact that nothing can be bought yet.
-3. Both — a stall that trades *and* passes on a job.
+**Default to `missionGiver` unless the owner says otherwise.** It is the one pool `src/poi.js`
+resolves, adding to a pool is allowed to reshuffle which marker wears what (owner ruling
+2026-08-15), and a roadside trailer with someone behind it reads as a place that hands out work.
 
-`.planning/story-mode/items.md` has the cargo/catch vocabulary and DESIGN.md's invariants govern;
-any actual buying or selling is a story-mode ticket, not this one.
+The one thing that argues against it: the gas pump was deliberately kept out of `missionGiver`
+because it *sells* rather than hands out work, and a produce stall sells too. If the owner wants
+that distinction held, the stall gets a `vendor` pool alongside `gasStation` — orphaned until a
+buying path exists, which means the model still would not appear. That is the trade: `missionGiver`
+puts it in the world today, `vendor` is more honest about what it is and leaves it invisible.
+
+Any actual buying or selling is a story-mode ticket, not this one —
+`.planning/story-mode/items.md` has the cargo/catch vocabulary and DESIGN.md's invariants govern.
 
 ## Acceptance
 
 - `produce-stall.glb` has a registry entry with correct collision metadata for the trailer form.
-- Its pool is decided and either wired to a roster slot or documented as deliberately orphaned with
-  the ticket that will consume it — the `gasStation` pattern.
+- The produce stall is on a POI roster slot and spawns in-world, or — if the owner picks `vendor` —
+  is documented as deliberately orphaned with the ticket that will consume it, the `gasStation`
+  pattern.
 - A gate fails if a registry entry carries a tag that no roster slot names, so the next stranded
   asset is caught by the harness and not by a ticket audit six weeks later.

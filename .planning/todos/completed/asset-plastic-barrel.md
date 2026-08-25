@@ -76,7 +76,7 @@ Rolling hoops are geometry — they are the silhouette. Do not smooth the barrel
 
 ## Loadability — 2026-08-24 posture change
 
-**This ticket is closed on the model.** Getting it into the world is **FEAT-73 (visible cargo — bed load and yard clutter)**, not this ticket.
+**This ticket is closed on the model.** Getting it into the world is **FEAT-73 (yard clutter — barrels and drums around a POI)**, not this ticket.
 
 Standing posture (owner, 2026-08-24): *an asset ticket closes when the `.glb` ships.* The harness
 that places it is a separate, consolidated ticket per asset class. Holding a row of finished models
