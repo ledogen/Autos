@@ -1,11 +1,10 @@
 ---
 id: ASSET-04
 type: asset
-status: open
+status: done
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-23
-blocked-by: FEAT-59, FEAT-71
+updated: 2026-08-24
 relates: FEAT-06, FEAT-46, SM-1
 ---
 
@@ -147,3 +146,19 @@ This is the same standing gap that ASSET-01 (flamingos) and ASSET-02 (gnome) eac
 separately in their own resolutions. FEAT-71 is where it gets discharged once, for all of them.
 The `gasStation` tag on ASSET-14 is a *different* gap — that one wants a POI, not a satellite —
 and is deliberately not folded in.
+
+## Closed — 2026-08-24
+
+Model shipped 2026-08-23 (`bbq-grill.glb`, 566 tris, four flat materials, recolourable
+`GrillEnamel`) and committed. The `blocked-by: FEAT-71` that held this open is discharged by
+the posture change below: FEAT-71 is minted, it is the named consumer for the `lawnFurniture`
+tag this asset already carries, and it tracks the placement work for the whole class.
+
+## Loadability — 2026-08-24 posture change
+
+**This ticket is closed on the model.** Getting it into the world is **FEAT-71 (POI-satellite scatter for lawn furniture)**, not this ticket.
+
+Standing posture (owner, 2026-08-24): *an asset ticket closes when the `.glb` ships.* The harness
+that places it is a separate, consolidated ticket per asset class. Holding a row of finished models
+open behind one missing consumer made the tracker read as unfinished work when the outstanding
+action was a single system, named once.

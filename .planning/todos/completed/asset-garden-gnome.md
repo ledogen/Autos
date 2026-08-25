@@ -1,7 +1,7 @@
 ---
 id: ASSET-02
 type: asset
-status: completed
+status: done
 severity: minor
 opened: 2026-08-03
 updated: 2026-08-19
@@ -189,3 +189,12 @@ matches six materials — each caught with a specific message.
 
 **Nothing spawns gnomes yet** (no pool tag; see the resolution above), so the randomisation goes
 live with the lawn-furniture scatter, not now.
+
+## Loadability — 2026-08-24 posture change
+
+**This ticket is closed on the model.** Getting it into the world is **FEAT-71 (POI-satellite scatter for lawn furniture)**, not this ticket.
+
+Standing posture (owner, 2026-08-24): *an asset ticket closes when the `.glb` ships.* The harness
+that places it is a separate, consolidated ticket per asset class. Holding a row of finished models
+open behind one missing consumer made the tracker read as unfinished work when the outstanding
+action was a single system, named once.

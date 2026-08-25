@@ -1,7 +1,7 @@
 ---
 id: ASSET-09
 type: asset
-status: completed
+status: done
 severity: minor
 opened: 2026-08-03
 updated: 2026-08-15

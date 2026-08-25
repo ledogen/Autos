@@ -1,11 +1,10 @@
 ---
 id: ASSET-15
 type: asset
-status: open
+status: done
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-18
-blocked-by: FEAT-59
+updated: 2026-08-24
 relates: FEAT-46, FEAT-21, ASSET-06
 ---
 
@@ -74,7 +73,7 @@ lettering). All others are fixed.
       anywhere in the asset. See the amendment table.
 - [x] Canopy renders correctly from below (gable underside is a V ceiling, not a flat slab).
 - [x] Tri count within the amended budget; material names stable.
-- [ ] **Loads and places in-world through the FEAT-59 model import service.** NOT DONE - there is
+- [→] **Loads and places in-world through the FEAT-59 model import service.** MOVED TO FEAT-74 - there is
       no `data/prop-models.js` entry yet, and the collision box needs restating for the trailer
       form. This is the only outstanding item.
 
@@ -88,3 +87,20 @@ lettering). All others are fixed.
   lettering can be varied per-region later without a re-model.
 - Any buying/selling *gameplay* is a story-mode ticket — `.planning/story-mode/items.md` has the
   cargo/catch vocabulary, and DESIGN.md's invariants govern. Not this ticket's business.
+
+## Closed — 2026-08-24
+
+Model shipped 2026-08-18 (`produce-stall.glb`, 1752 tris, 12 materials, one baked 512x384
+sign). The single outstanding acceptance item was the `data/prop-models.js` entry and a
+collision box restated for the trailer form — both are now **FEAT-74**, along with the
+pool question (is a stall a mission giver, or a vendor like the gas pump?) which is the
+owner's to answer.
+
+## Loadability — 2026-08-24 posture change
+
+**This ticket is closed on the model.** Getting it into the world is **FEAT-74 (POI model pools)**, not this ticket.
+
+Standing posture (owner, 2026-08-24): *an asset ticket closes when the `.glb` ships.* The harness
+that places it is a separate, consolidated ticket per asset class. Holding a row of finished models
+open behind one missing consumer made the tracker read as unfinished work when the outstanding
+action was a single system, named once.

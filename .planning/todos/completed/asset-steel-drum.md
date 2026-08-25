@@ -1,7 +1,7 @@
 ---
 id: ASSET-30
 type: asset
-status: completed
+status: done
 severity: minor
 opened: 2026-08-03
 updated: 2026-08-15
@@ -90,3 +90,12 @@ Chimes and rolling hoops are geometry on all three — they are the silhouette.
 - **A separate model from ASSET-29 (plastic barrel), not a recolour** — see that ticket's note.
 - Rust and paint should live in the atlas, so a rustier drum is a **UV offset**, not a fourth mesh.
   Variety here is nearly free; spend it in texture space, never in geometry.
+
+## Loadability — 2026-08-24 posture change
+
+**This ticket is closed on the model.** Getting it into the world is **FEAT-73 (visible cargo — bed load and yard clutter)**, not this ticket.
+
+Standing posture (owner, 2026-08-24): *an asset ticket closes when the `.glb` ships.* The harness
+that places it is a separate, consolidated ticket per asset class. Holding a row of finished models
+open behind one missing consumer made the tracker read as unfinished work when the outstanding
+action was a single system, named once.

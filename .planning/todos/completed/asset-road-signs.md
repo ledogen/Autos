@@ -175,3 +175,12 @@ player their instruments lie. Placement is a road-geometry query, and it is its 
 | `signRockslide` / `signIcy` | **nothing yet.** No geometric truth stands behind them — they are terrain/weather claims. Leave them unplaced until something can vouch for them. |
 
 Same FEAT-59 wiring gap as ASSET-23 / `news-roll`; reachable meanwhile via `spawnModel('signStop')`.
+
+## Loadability — 2026-08-24 posture change
+
+**This ticket is closed on the model.** Getting it into the world is **FEAT-72 (road-furniture placement from the routed centerline)**, not this ticket.
+
+Standing posture (owner, 2026-08-24): *an asset ticket closes when the `.glb` ships.* The harness
+that places it is a separate, consolidated ticket per asset class. Holding a row of finished models
+open behind one missing consumer made the tracker read as unfinished work when the outstanding
+action was a single system, named once.

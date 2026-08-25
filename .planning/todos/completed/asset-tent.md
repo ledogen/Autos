@@ -1,7 +1,7 @@
 ---
 id: ASSET-23
 type: asset
-status: completed
+status: done
 severity: minor
 opened: 2026-08-03
 updated: 2026-08-17
@@ -88,3 +88,12 @@ through the FEAT-59 model import service."* The tent has no `data/prop-models.js
 `src/camp.js` has no `shelter`-slot renderer at all — the camp is a pad today, with no camp-gear
 placement path. That is a gameplay feature, not asset work, so it is now **FEAT-66** (camp gear slot
 renderer). The same gap blocks ASSET-24/25/26 the moment their models land.
+
+## Loadability — 2026-08-24 posture change
+
+**This ticket is closed on the model.** Getting it into the world is **FEAT-66 (camp gear slot renderer)**, not this ticket.
+
+Standing posture (owner, 2026-08-24): *an asset ticket closes when the `.glb` ships.* The harness
+that places it is a separate, consolidated ticket per asset class. Holding a row of finished models
+open behind one missing consumer made the tracker read as unfinished work when the outstanding
+action was a single system, named once.

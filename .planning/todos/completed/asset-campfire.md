@@ -1,7 +1,7 @@
 ---
 id: ASSET-24
 type: asset
-status: completed
+status: done
 severity: minor
 opened: 2026-08-03
 updated: 2026-08-22
@@ -123,3 +123,12 @@ that half is done, and it is the half an asset ticket owns. What is missing is t
 `src/camp.js` has no `fire`-slot renderer, and nothing calls `spawnModel` for any camp slot. That is
 **FEAT-66** (camp gear slot renderer), already carrying the identical gap from ASSET-23. Closing this
 does not close that.
+
+## Loadability — 2026-08-24 posture change
+
+**This ticket is closed on the model.** Getting it into the world is **FEAT-66 (camp gear slot renderer)**, not this ticket.
+
+Standing posture (owner, 2026-08-24): *an asset ticket closes when the `.glb` ships.* The harness
+that places it is a separate, consolidated ticket per asset class. Holding a row of finished models
+open behind one missing consumer made the tracker read as unfinished work when the outstanding
+action was a single system, named once.

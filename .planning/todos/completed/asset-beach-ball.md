@@ -119,3 +119,12 @@ The clearance lesson is kept as a comment in the generator header rather than as
 anything proud is ever added back, check it with `hypot(offset, radius)` against `RADIUS`,
 NOT with the axis-aligned bounding box — the bbox cannot see an off-axis bump and reported
 the 12.3 mm overshoot as clean.
+
+## Loadability — 2026-08-24 posture change
+
+**This ticket is closed on the model.** Getting it into the world is **FEAT-71 (POI-satellite scatter for lawn furniture)**, not this ticket.
+
+Standing posture (owner, 2026-08-24): *an asset ticket closes when the `.glb` ships.* The harness
+that places it is a separate, consolidated ticket per asset class. Holding a row of finished models
+open behind one missing consumer made the tracker read as unfinished work when the outstanding
+action was a single system, named once.
