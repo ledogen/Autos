@@ -140,3 +140,38 @@ brake light read, the bed and its floor ribs read, and the interior is visible t
   filed as FEAT-75 because camera feel is the owner's call, not the model's.
 - The reference board lives at `references/98 ranger reference/` and is **untracked**. Other assets
   keep theirs at `assets/models/src/ref-<name>/`. 10 MB of BaT photos is the owner's call to commit.
+
+---
+
+## Rework — 2026-08-25 (owner review pass)
+
+Owner review of the shipped model gave seven items. All seven done; **2910 tris / 4000**, audit
+still clean (0 overlapping coplanar pairs, 600/600 rays correct, all seven invariants green).
+
+| Note | What changed |
+|---|---|
+| "the cab is a little too small, especially too short" | Cab 1.100 → **1.214 m**, taken out of the hood (which was 1.508). Beltline dropped 1.200 → 1.180 for more glass; roof is pinned at bodyHeight so glass is the only lever. Roof length 0.606 → 0.663 |
+| "the A pillar line where the window glass meets the pillar should be much straighter and less wavy" | **Structural fix, not a nudge.** `pillar_frame()` derives the pillar prism, the windscreen's outboard edge and the door glass's front edge from ONE line each. They were three independent hand-typed lines a few mm out of parallel |
+| "options for a smooth continuous blended shape" | Costed four (see below); took **selective chamfer + domed rim**, +470 tris. Subdivision was 4× and banned by ART-STYLE; chamfering every corner was +806 tris spent mostly on flanks the same review wanted *merged* |
+| "rearview mirrors… early 2000s soft lobby shape" | Octagonal-lozenge head swept as three rings on a triangular **sail mount**, rooted on the door skin at 1.146 — the first placement had it above the beltline, i.e. floating in the glass |
+| "front and rear fascia and bumpers are too flat… ends on a flat wall" | Nose: two-ring **domed rim** + **barrel-curved face** (`face_y()`), with grille bars, lamp lenses and valance all swept along that same curve. Both bumpers rebuilt with a **seven-point round section** (rolled top, convex face, tuck under) standing proud. Headlamps are six-point curved lofts, not boxes |
+| "seats could use a little more rounding" | Cushion and back are chamfered eight-point lofts (vertical slices for the cushion, horizontal for the back), not hexa boxes |
+| "wasting triangles on perfectly flat faces" | `simplify_stations()` — a Douglas-Peucker pass on the station list, run on the RINGS so the arches keep every sample. Reclaimed 160 tris with zero visual change; the cab went 5 stations → 3 |
+
+### The options, costed (this is the answer to "what are our options")
+
+| | Tris | Verdict |
+|---|---|---|
+| **A** chamfer every section corner | 896 → 1702 | Rejected: +806, most of it on the door and bedside flanks the same review wanted merged |
+| **B** chamfer only nose/tail/fender-crown corners | 896 → 1209 | **Taken** |
+| **C** domed rim rings at both ends | +128 | **Taken** — the single highest-value change in the model |
+| **D** Catmull-Clark subdiv, 1 level | ×4 | Rejected: 3584 tris for the body alone, and ART-STYLE bans subdivision outright |
+
+B+C is the affordable path *and* the targeted one. Recorded in ART-STYLE.md as a narrowing of the
+"beveling every edge" anti-pattern: rounding is spent only where the eye lands.
+
+### Still open (owner's call, explicitly deferred by them)
+
+Ring-direction merging. `simplify_stations()` merges along the length; the *section* still carries
+points that are collinear at every station on the crisp panels. Worth maybe 80–150 tris and it is
+fiddly, because ring topology has to stay constant across stations for the loft to work.

@@ -110,7 +110,9 @@ Z_GROUND = 0.0
 Z_UNDER = 0.285                  # frame / underbody pan — the model's lowest point
 Z_ROCKER = 0.435                 # rocker step: flank bottom out of the arch zones
 Z_HIP = 0.86                     # widest point of the flank
-Z_BELT = 1.200                   # door beltline = base of the side glass
+Z_BELT = 1.180                   # door beltline = base of the side glass.  Dropped 20 mm
+                                 # from the first pass: with the roof pinned at bodyHeight the
+                                 # only way to make the cab read bigger is more glass.
 Z_ROOF = 1.600                   # roof deck (bodyHeight 1.60)
 Z_ROOF_CROWN = 0.020             # centre of the roof sits this much proud of the rails
 Z_RAIL = 1.110                   # bed rail top — reads BELOW the door belt, as on the ref
@@ -139,10 +141,12 @@ W_WHEELHOUSE = 0.545             # bed inner wall over the rear arch
 Z_WHEELHOUSE = 0.965             # wheelhouse box top
 
 # --- Cab / greenhouse (all y MEASURED, see above) ---
-Y_COWL = 0.470                   # base of the windscreen
+Y_COWL = 0.584                   # base of the windscreen.  The cab was 1.100 long and read
+                                 # as too short (owner, 2026-08-25); it is now 1.214, taken
+                                 # out of the hood, which was generously long at 1.508.
 Y_CAB_REAR = -0.630              # cab rear panel
-Y_HDR_F = 0.025                  # windscreen header
-Y_HDR_R = -0.581                 # rear header
+Y_HDR_F = 0.085                  # windscreen header
+Y_HDR_R = -0.578                 # rear header
 W_ROOF = 0.676                   # roof half width (tumblehome from W_BELT)
 PILLAR_A = 0.038                 # A-pillar section (across the glass)
 PILLAR_C = 0.072                 # C-pillar section
@@ -178,7 +182,7 @@ W_TUNNEL = 0.195
 SEAT_X = 0.355                   # seat centres; driver at -SEAT_X (LHD)
 Z_CUSHION = 0.855
 Z_SEATBACK = 1.375               # MUST clear Z_BELT or the cabin reads as empty
-SW_AT = (-0.355, 0.135, 1.048)   # steering-wheel hub
+SW_AT = (-0.355, 0.186, 1.048)   # steering-wheel hub
 SW_TILT = math.radians(66.0)     # Euler-X of the wheel node.  66 deg puts the
                                  # column axis 24 deg off horizontal, i.e. the wheel
                                  # 24 deg off vertical — matched to the ref interior.
@@ -402,6 +406,41 @@ def arch_samples(axle):
             for i in range(ARCH_SAMP)]
 
 
+def simplify_stations(ys, ring_fn, tol=0.0015):
+    """Drop any station whose ring is already within `tol` of the straight line
+    between its neighbours — i.e. a station that adds a loop of PLANAR quads.
+
+    This is a Douglas-Peucker pass on the station list, and it is where the tri
+    budget for the nose and tail comes from.  The bed side, the door flank and most
+    of the hood are dead flat along y, so every station in those runs was costing a
+    full ring of quads (20, 16 and 12 respectively) to describe nothing.  Owner,
+    2026-08-25: "we're wasting a lot of triangles on perfectly flat faces."
+
+    Runs on the RINGS, not on the station table, so it is automatically right for
+    whatever the section functions do — including the arch, which is genuinely
+    curved and therefore keeps all of its samples.
+    """
+    if len(ys) < 3:
+        return list(ys)
+    keep = [True] * len(ys)
+    changed = True
+    while changed:
+        changed = False
+        idx = [i for i, k in enumerate(keep) if k]
+        for a, b, c in zip(idx, idx[1:], idx[2:]):
+            t = (ys[b] - ys[a]) / (ys[c] - ys[a])
+            ra, rb, rc = ring_fn(ys[a]), ring_fn(ys[b]), ring_fn(ys[c])
+            err = 0.0
+            for pa, pb, pc in zip(ra, rb, rc):
+                for k in (0, 2):        # x and z; y is the parameter
+                    err = max(err, abs(pb[k] - (pa[k] + (pc[k] - pa[k]) * t)))
+            if err <= tol:
+                keep[b] = False
+                changed = True
+                break
+    return [y for y, k in zip(ys, keep) if k]
+
+
 def _interp(table, y):
     """Linear interpolation down a station table sorted DESCENDING in y."""
     if y >= table[0][0]:
@@ -421,21 +460,21 @@ def _interp(table, y):
 # The hood falls CONTINUOUSLY from the cowl to the nose — a hood that plateaus and
 # then kinks reads as two glued boxes (learned on broken-car, 2026-08-10).
 CLIP_ST = [
-    (1.978, 0.806, 0.736, 1.118, 0.016),   # nose sheet metal
+    (1.900, 0.812, 0.742, 1.122, 0.016),   # last FULL station; the rim wraps ahead of it
     (1.860, 0.828, 0.750, 1.126, 0.020),
     (1.640, 0.840, 0.762, 1.140, 0.024),
     (1.2825, 0.845, 0.770, 1.156, 0.024),  # front axle — widest, the fender blister
     (1.000, 0.840, 0.774, 1.166, 0.018),
-    (0.700, 0.828, 0.776, 1.173, 0.009),
-    (0.470, 0.816, 0.776, 1.176, 0.003),   # cowl — level with the door beltline
+    (0.820, 0.828, 0.776, 1.166, 0.009),
+    (0.584, 0.816, 0.776, 1.170, 0.003),   # cowl — level with the door beltline
 ]
 
 # Cab: (y, w_flank, w_shoulder, z_belt).  Meets CLIP_ST's numbers at the cowl so the
 # fender-to-door transition has no step.
 CAB_ST = [
-    (0.470, 0.816, 0.776, 1.176),          # cowl
-    (0.210, 0.810, 0.775, 1.200),
-    (-0.630, 0.806, 0.775, 1.200),         # cab rear panel
+    (0.584, 0.816, 0.776, 1.170),          # cowl
+    (0.300, 0.810, 0.775, 1.180),
+    (-0.630, 0.806, 0.775, 1.180),         # cab rear panel
 ]
 W_DOORCARD = 0.700                         # inner face of the door trim
 
@@ -488,11 +527,57 @@ BED_BANDS = {0: DARK, 1: DARK, 2: DARK, 17: DARK, 18: DARK, 19: DARK}
 # ---------------------------------------------------------------------------
 # SHELLS
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# NOSE ROUNDING — the fix for "the truck ends abruptly on a flat wall at both the
+# nose and tail" (owner, 2026-08-25).  Three parts, and all three are needed:
+#   1. a RIM: two rings ahead of the last full station, shrunk in plan and squeezed
+#      in height, so the flanks and the hood wrap into the face instead of meeting
+#      it at a hard 90 degrees;
+#   2. a BARREL-CURVED face: its y varies with x, so the grille and the nose panel
+#      bow forward at the centre — a flat face is what made the first pass read like
+#      a brick even after the opening was cut;
+#   3. a bumper with a genuinely ROUND cross-section, standing well proud (below).
+# Everything mounted on the face — grille bars, lamp lenses, the frame itself —
+# rides face_y(), so the whole assembly curves together and cannot delaminate.
+# ---------------------------------------------------------------------------
+Y_FACE_C = 1.998                 # sheet-metal face at the centreline (most forward)
+NOSE_CROWN = 0.034               # how much the face falls away by the outer edge
+NOSE_CROWN_W = 0.800             # x at which that full fall is reached
+# (dy behind the face, plan scale, height squeeze) for each rim ring, outermost last.
+NOSE_RIM = [(0.052, 0.986, 0.013), (0.020, 0.948, 0.037)]
+
+
+def face_y(x):
+    """The barrel curve.  Quadratic, so the face is flattest at the centre — which is
+    what a stamped panel does, and what keeps the grille bars from looking bent."""
+    t = min(1.0, abs(x) / NOSE_CROWN_W)
+    return Y_FACE_C - NOSE_CROWN * t * t
+
+
+def nose_rim_ring(spec):
+    """One rim ring: the last full section, shrunk about its own centre and laid on
+    the barrel curve.  Squeezing about the section's OWN mid-height (rather than a
+    fixed z) is what keeps the hood line and the rocker line converging evenly."""
+    dy, scale, squeeze = spec
+    base = clip_ring(CLIP_ST[0][0])
+    zs = [q[2] for q in base]
+    zmid = 0.5 * (min(zs) + max(zs))
+    zscale = 1.0 - 2.0 * squeeze / (max(zs) - min(zs))
+    out = []
+    for x, _y, z in base:
+        nx = x * scale
+        out.append((nx, face_y(nx) - dy, zmid + (z - zmid) * zscale))
+    return out
+
+
 def build_front_clip(p):
     ys = sorted({round(s[0], 5) for s in CLIP_ST}
                 | {round(v, 5) for v in arch_samples(AX_F)}, reverse=True)
     ys = [y for y in ys if CLIP_ST[-1][0] <= y <= CLIP_ST[0][0]]
+    ys = simplify_stations(ys, clip_ring)
     rings = [clip_ring(y) for y in ys]     # ys DESCENDING: nose first, cowl last
+    # Rim rings go IN FRONT, outermost first, so the loft still runs nose -> cowl.
+    rings = [nose_rim_ring(NOSE_RIM[1]), nose_rim_ring(NOSE_RIM[0])] + rings
     # cap_last (at the cowl) is the FIREWALL — seen from the cabin, never from the
     # engine bay, so it is interior-dark, not paint.
     # cap_first (the nose) is omitted: build_front_end() replaces it with a FRAME so
@@ -503,7 +588,7 @@ def build_front_clip(p):
 
 
 def build_cab(p):
-    ys = [Y_COWL, 0.210, -0.080, -0.400, Y_CAB_REAR]
+    ys = simplify_stations([Y_COWL, 0.300, -0.080, -0.400, Y_CAB_REAR], cab_ring)
     rings = [cab_ring(y) for y in ys]
     # cap_first at the cowl would z-fight the firewall the front clip already put
     # there, so it is omitted; loft() still orients from the virtual closed volume.
@@ -516,6 +601,7 @@ def build_bed(p):
                 | {round(v, 5) for v in arch_samples(AX_R)}
                 | {AX_R - ARCH_R - 0.06, AX_R + ARCH_R + 0.06}, reverse=True)
     ys = [y for y in ys if Y_BED_R <= y <= Y_BED_F]
+    ys = simplify_stations(ys, bed_ring)
     rings = [bed_ring(y) for y in ys]
     loft(p, rings, "RangerPaint", cap_first=True, cap_last=True,
          band_mats=BED_BANDS, cap_last_mat=DARK)
@@ -561,89 +647,110 @@ def build_bed_detail(p):
 # ---------------------------------------------------------------------------
 # FRONT END
 # ---------------------------------------------------------------------------
+def _sweep(part, xs, prof, mat, cap=True):
+    """Sweep a y-z profile along x, laying each station on the nose's barrel curve.
+
+    `prof(x)` returns the section at that x as (dy, z) pairs measured BACK from the
+    face; this adds face_y(x) so every swept part — bar, bezel, lens — bows forward
+    at the centre by the same amount as the panel it sits in.  Sweeping the parts
+    flat while the panel curved is what would make the nose read as stuck-on.
+    """
+    rings = [[(x, face_y(x) - dy, z) for dy, z in prof(x)] for x in xs]
+    loft(part, rings, mat, cap_first=cap, cap_last=cap)
+
+
 def build_front_end(p):
-    Y_F = Y_NOSE_SHEET                       # sheet-metal face plane
-    # OPEN_X is bounded by the nose outline, which tapers from 0.800 at z 0.86 to
-    # 0.700 at z 1.082 — push the opening wider than this and the frame inverts.
-    OPEN_X, OPEN_Z0, OPEN_Z1 = 0.726, Z_LAMP0, Z_LAMP1
+    # The opening is bounded by the nose outline, which tapers toward the top —
+    # push it wider than this and the frame inverts.
+    OPEN_X, OPEN_Z0, OPEN_Z1 = 0.712, Z_LAMP0, Z_LAMP1
 
     # The nose cap, as a frame around the lamp/grille opening.  Point order matches
-    # clip_ring(); the duplicated corners collapse into triangles, which is what
+    # the rim ring; the duplicated corners collapse into triangles, which is what
     # turns a 12-point body outline into a rectangular hole.
     inner = [(0.0, OPEN_Z0), (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0),
              (OPEN_X, 0.5 * (OPEN_Z0 + OPEN_Z1)), (OPEN_X, OPEN_Z1), (0.0, OPEN_Z1)]
     inner = inner + [(-x, z) for x, z in reversed(inner[1:6])]
-    frame(p, clip_ring(Y_F), [(x, Y_F, z) for x, z in inner], "RangerPaint")
+    frame(p, nose_rim_ring(NOSE_RIM[1]),
+          [(x, face_y(x), z) for x, z in inner], "RangerPaint")
 
     # Dark box behind the opening — the thing the grille bars and bezels read
-    # against, and the reason you cannot see through into the engine bay.
-    # DEPTH TRAP: this box's FRONT face has to sit behind everything mounted in the
-    # opening.  At Y_F-0.006 it was in front of the grille bars and the amber corners
-    # and hid both, which is why the first render had a plain black grille.
-    box(p, -0.775, 0.775, Y_F - 0.098, Y_F - 0.062, Z_VAL0 + 0.02, OPEN_Z1 + 0.006, DARK)
+    # against, and the reason you cannot see through into the engine bay.  Its FRONT
+    # face must sit behind everything mounted in the opening or it hides them.
+    box(p, -0.775, 0.775, Y_FACE_C - 0.150, Y_FACE_C - 0.112, Z_VAL0 + 0.02,
+        OPEN_Z1 + 0.006, DARK)
 
-    # Grille: a body-colour surround with four chrome bars.
-    gx, gz0, gz1 = 0.398, OPEN_Z0 + 0.016, OPEN_Z1 - 0.016
+    # Grille: a body-colour surround with four chrome bars, every one of them swept
+    # along the barrel curve so the grille reads ROUNDED, not flat (owner: "the
+    # grille is rounded, not flat").
+    gx, gz0, gz1 = 0.392, OPEN_Z0 + 0.016, OPEN_Z1 - 0.016
+    gxs = [-gx + 0.006, -0.200, 0.0, 0.200, gx - 0.006]
     for i in range(4):
         z = gz0 + (gz1 - gz0) * (i + 0.5) / 4
-        # -0.006 inside gx: the surround uprights start at exactly gx, and a bar
-        # ending on that plane gives four overlapping coplanar faces.
-        box(p, -gx + 0.006, gx - 0.006, Y_F - 0.056, Y_F - 0.020,
-            z - 0.018, z + 0.018, "RangerChrome")
+        _sweep(p, gxs, lambda x, z=z: [(0.058, z - 0.018), (0.058, z + 0.018),
+                                       (0.020, z + 0.015), (0.020, z - 0.015)],
+               "RangerChrome")
     for sx in (1, -1):                        # grille surround uprights
-        box(p, sx * gx, sx * (gx + 0.022), Y_F - 0.058, Y_F - 0.004, OPEN_Z0, OPEN_Z1,
-            "RangerPaint")
+        _sweep(p, [sx * gx, sx * (gx + 0.022)],
+               lambda x: [(0.060, OPEN_Z0), (0.060, OPEN_Z1),
+                          (0.004, OPEN_Z1), (0.004, OPEN_Z0)], "RangerPaint")
 
-    # Headlamps.  Big wrap-around units with an AMBER outboard corner — the single
-    # most identifying feature of this generation's face.  Sized off the dead-on
-    # reference shot: grille ~45% of the width, each lamp ~22%, amber the outboard
-    # third of the lamp.
+    # Headlamps.  Six-point section, not a box: the lens face is convex and rolls
+    # back at the top and bottom, and the whole unit follows the barrel curve, so it
+    # reads as a moulded object rather than a rectangle stuck on the front (owner:
+    # "the headlights are smooth curved objects, not rectangles").
+    def lens_prof(z0, z1, deep):
+        zm = 0.5 * (z0 + z1)
+        return lambda x: [(deep, z0), (deep * 0.34, z0 + 0.016), (0.008, zm),
+                          (deep * 0.34, z1 - 0.016), (deep, z1), (deep + 0.030, zm)]
     for sx in (1, -1):
-        hexa(p, [(sx * 0.408, Y_F - 0.048, OPEN_Z0 + 0.008),
-                 (sx * 0.628, Y_F - 0.048, OPEN_Z0 + 0.004),
-                 (sx * 0.628, Y_F - 0.006, OPEN_Z0 + 0.004),
-                 (sx * 0.408, Y_F - 0.002, OPEN_Z0 + 0.008),
-                 (sx * 0.408, Y_F - 0.048, OPEN_Z1 - 0.006),
-                 (sx * 0.628, Y_F - 0.048, OPEN_Z1 - 0.024),
-                 (sx * 0.628, Y_F - 0.006, OPEN_Z1 - 0.024),
-                 (sx * 0.408, Y_F - 0.002, OPEN_Z1 - 0.006)], "RangerLens")
-        hexa(p, [(sx * 0.632, Y_F - 0.048, OPEN_Z0 + 0.004),
-                 (sx * 0.720, Y_F - 0.060, OPEN_Z0 + 0.016),
-                 (sx * 0.720, Y_F - 0.020, OPEN_Z0 + 0.016),
-                 (sx * 0.632, Y_F - 0.006, OPEN_Z0 + 0.004),
-                 (sx * 0.632, Y_F - 0.048, OPEN_Z1 - 0.024),
-                 (sx * 0.720, Y_F - 0.060, OPEN_Z1 - 0.056),
-                 (sx * 0.720, Y_F - 0.020, OPEN_Z1 - 0.056),
-                 (sx * 0.632, Y_F - 0.006, OPEN_Z1 - 0.024)], "RangerAmber")
+        _sweep(p, [sx * 0.404, sx * 0.520, sx * 0.612],
+               lens_prof(OPEN_Z0 + 0.008, OPEN_Z1 - 0.010, 0.052), "RangerLens")
+        # Amber corner: shorter, and it wraps harder because it is out where the
+        # nose is already turning back into the fender.
+        _sweep(p, [sx * 0.616, sx * 0.668, sx * 0.712],
+               lens_prof(OPEN_Z0 + 0.010, OPEN_Z1 - 0.042, 0.056), "RangerAmber")
 
-    # Chrome bumper blade.  Swept as a loft along X so the ends WRAP back instead of
-    # being cut off square — a bumper built as one straight prism reads glued on.
-    # Two bands, not one: the upper strip is the rolled top edge, and without it the
-    # bumper is a flat grey stripe with no shape at all.
-    xs = [-0.818, -0.760, -0.560, 0.0, 0.560, 0.760, 0.818]
-    dys = [0.115, 0.070, 0.014, 0.0, 0.014, 0.070, 0.115]
-    # ONE loft with a six-point profile, not two stacked boxes: stacking them put a
-    # pair of overlapping coplanar faces at the join, which is a real z-fight.
-    ZB_MID = Z_BUMP1 - 0.038
+    # Chrome bumper blade.  Seven-point ROUND section — a rolled top, a convex face
+    # and a tuck under — swept along X so the ends wrap back.  Owner: "the bumpers
+    # are especially rounded and they stick out pretty far", so the crown sits a
+    # full 60 mm ahead of the face centre and the section is 100 mm deep.
+    # The end wrap was 0.128 and the bumper vanished in profile — from the side you
+    # see the END of the blade, and tucking it that far back hides it behind the
+    # valance.  0.086 still reads as a wrap without losing the element.
+    xs = [-0.836, -0.780, -0.560, 0.0, 0.560, 0.780, 0.836]
+    dys = [0.086, 0.048, 0.012, 0.0, 0.012, 0.048, 0.086]
+    ZBM = 0.5 * (Z_BUMP0 + Z_BUMP1)
 
     def bprof(x, dy):
-        yf = Y_NOSE - dy
-        return [(x, yf, Z_BUMP0), (x, yf - 0.085, Z_BUMP0),
-                (x, yf - 0.085, Z_BUMP1), (x, yf - 0.022, Z_BUMP1),
-                (x, yf - 0.022, ZB_MID), (x, yf, ZB_MID)]
+        yf = Y_NOSE - dy                       # this blade's own front plane
+        return [(x, yf - 0.104, Z_BUMP0), (x, yf - 0.040, Z_BUMP0 - 0.006),
+                (x, yf - 0.008, Z_BUMP0 + 0.026), (x, yf, ZBM),
+                (x, yf - 0.010, Z_BUMP1 - 0.024), (x, yf - 0.044, Z_BUMP1),
+                (x, yf - 0.104, Z_BUMP1)]
     loft(p, [bprof(x, dy) for x, dy in zip(xs, dys)], "RangerChrome")
 
-    # Grey lower valance, and the air intake let into it.
-    vxs = [-0.788, -0.700, 0.0, 0.700, 0.788]
-    vdy = [0.115, 0.060, 0.028, 0.060, 0.115]
-    loft(p, [[(x, Y_NOSE - dy, Z_VAL0), (x, Y_NOSE - dy - 0.110, Z_VAL0),
-              (x, Y_NOSE - dy - 0.110, Z_BUMP0 + 0.004), (x, Y_NOSE - dy, Z_BUMP0 + 0.004)]
-             for x, dy in zip(vxs, vdy)], "RangerTrim")
-    box(p, -0.400, 0.400, Y_NOSE - 0.075, Y_NOSE - 0.030, Z_VAL0 + 0.030,
-        Z_BUMP0 - 0.030, DARK)
+    # Grey lower valance.  It rides face_y() like everything else on the nose — a
+    # hand-typed wrap schedule put its ENDS 60 mm BEHIND the nose rim, so the body
+    # showed through in body colour at both bottom corners.  Anything that has to
+    # stay proud of a curved panel must be driven by the same curve, not by a
+    # separate table that happens to look similar.
+    vxs = [-0.800, -0.712, -0.400, 0.0, 0.400, 0.712, 0.800]
+    # NEGATIVE dy = PROUD of the sheet metal.  Below the bumper the nose frame is
+    # still painted body panel, so a valance recessed behind it simply vanished and
+    # the truck showed body colour under the chrome — which is not what the fascia
+    # does on the reference car.  It now stands 14 mm ahead of the face at its crown,
+    # with the bumper another 40 mm ahead of that.
+    _sweep(p, vxs, lambda x: [(0.150, Z_VAL0), (0.030, Z_VAL0 + 0.016),
+                              (-0.014, Z_VAL0 + 0.086), (0.006, Z_BUMP0 + 0.004),
+                              (0.150, Z_BUMP0 + 0.004)], "RangerTrim")
+    _sweep(p, [-0.360, -0.180, 0.0, 0.180, 0.360],
+           lambda x: [(0.048, Z_VAL0 + 0.036), (0.048, Z_BUMP0 - 0.036),
+                      (0.014, Z_BUMP0 - 0.036), (0.014, Z_VAL0 + 0.036)], DARK)
     # Licence-plate bracket, hung off the valance dead centre (as on the ref car).
-    box(p, -0.150, 0.150, Y_NOSE - 0.032, Y_NOSE - 0.024, Z_VAL0 + 0.055,
-        Z_VAL0 + 0.175, DARK)
+    # Proud of the valance face (which is at Y_NOSE - 0.046 on the centreline), not
+    # behind it — at 0.050 back the bracket was buried inside the plastic.
+    box(p, -0.150, 0.150, Y_FACE_C + 0.016, Y_FACE_C + 0.026, Z_VAL0 + 0.058,
+        Z_VAL0 + 0.178, DARK)
 
 
 # ---------------------------------------------------------------------------
@@ -651,15 +758,9 @@ def build_front_end(p):
 # ---------------------------------------------------------------------------
 def build_rear_end(p):
     Y_R = Y_BED_R
-    # The bed loft's rear cap has to cover the underbody as well as the tailgate
-    # aperture, and one polygon cannot be paint at the top and dark underneath — so
-    # the cap goes DARK and the painted rear panels sit on it, REARWARD of it.
-    # (First pass built them forward of the cap, which put the tailgate inside the
-    # bed and left the lamps hanging 3.5 mm past the bumper.)
-    # The panels INTERPENETRATE the cap rather than butting flush against it: two
-    # faces sharing the y = Y_R plane is a z-fight, whereas a solid pushed 20 mm into
-    # another solid is just geometry.  Y_P0 is set so the lens surface lands exactly
-    # on Y_TAIL and nothing reaches past the bumper.
+    # The panels INTERPENETRATE the bed loft's rear cap rather than butting flush
+    # against it: two faces sharing the y = Y_R plane is a z-fight, whereas a solid
+    # pushed 20 mm into another solid is just geometry.
     Y_P0, Y_P1 = -2.566, Y_R + 0.020
     Z_P0, Z_P1 = Z_BEDFLOOR - 0.030, Z_RAIL
     # Tailgate, and the two body-colour corner panels the lamps are let into.  The
@@ -677,22 +778,35 @@ def build_rear_end(p):
                            (Z_TAIL0, 0.844, "RangerTail")):
             box(p, sx * 0.572, sx * 0.800, Y_TAIL, Y_P0 + 0.010, z0, z1, mt)
 
-    # Grey step bumper: narrower than the bed, with two tread pads on top.
-    bxs = [-0.800, -0.740, 0.0, 0.740, 0.800]
-    bdy = [0.078, 0.028, 0.0, 0.028, 0.078]
-    loft(p, [[(x, Y_TAIL + dy, Z_RBUMP0), (x, Y_R - 0.020, Z_RBUMP0),
-              (x, Y_R - 0.020, Z_RBUMP1), (x, Y_TAIL + dy, Z_RBUMP1)]
-             for x, dy in zip(bxs, bdy)], "RangerTrim")
-    for sx in (1, -1):
-        box(p, sx * 0.086, sx * 0.320, Y_TAIL + 0.010, Y_R - 0.028,
-            Z_RBUMP1 - 0.004, Z_RBUMP1 + 0.020, DARK)
-    box(p, -0.150, 0.150, Y_TAIL, Y_TAIL + 0.010, Z_RBUMP0 + 0.030,
-        Z_RBUMP0 + 0.150, "RangerLens")      # licence plate, ON the bumper face
+    # STEP BUMPER.  Owner, 2026-08-25: "the bumpers are especially rounded and they
+    # stick out pretty far".  A seven-point section — rolled top, convex face, tuck
+    # under — swept along X with the ends wrapping back, exactly like the front
+    # blade.  The old four-point box read as a black plank bolted to the tailgate.
+    bxs = [-0.812, -0.752, -0.420, 0.0, 0.420, 0.752, 0.812]
+    bdy = [0.104, 0.052, 0.008, 0.0, 0.008, 0.052, 0.104]
+    ZRM = 0.5 * (Z_RBUMP0 + Z_RBUMP1)
+
+    def rprof(x, dy):
+        yb = Y_TAIL + dy                       # this station's own rear plane
+        return [(x, yb + 0.118, Z_RBUMP0), (x, yb + 0.044, Z_RBUMP0 - 0.008),
+                (x, yb + 0.010, Z_RBUMP0 + 0.030), (x, yb + 0.012, ZRM),
+                (x, yb + 0.012, Z_RBUMP1 - 0.026), (x, yb + 0.048, Z_RBUMP1),
+                (x, yb + 0.118, Z_RBUMP1)]
+    loft(p, [rprof(x, dy) for x, dy in zip(bxs, bdy)], "RangerTrim")
+    for sx in (1, -1):                          # tread pads let into the top face
+        # Spans FORWARD from the bumper face.  `Y_R - 0.040` reads like "just inside
+        # the bed" but Y_R is a bed coordinate and subtracting moves REARWARD, so it
+        # put the pads 7.5 mm behind the bumper — caught by the overhang invariant.
+        box(p, sx * 0.086, sx * 0.320, Y_TAIL + 0.030, Y_TAIL + 0.112,
+            Z_RBUMP1 - 0.006, Z_RBUMP1 + 0.016, DARK)
+    # PROUD of the bumper crown (which now sits at Y_TAIL + 0.012), not inside it —
+    # buried in the convex face the plate showed only as a white diamond.
+    box(p, -0.150, 0.150, Y_TAIL, Y_TAIL + 0.014, Z_RBUMP0 + 0.034,
+        Z_RBUMP0 + 0.154, "RangerLens")      # licence plate, on the bumper face
 
     # Exhaust tip, right rear, exiting BELOW the bumper so it is actually visible.
-    tube(p, (0.470, -1.980, 0.348), (0.470, -2.400, 0.330), 0.038, 6, "RangerTrim")
-    # Mud flaps.  The first pass made these 4 cm wide and they read as two black
-    # sticks hanging in space; a real flap is nearly as wide as the tyre.
+    tube(p, (0.470, -1.980, 0.348), (0.470, -2.420, 0.330), 0.038, 6, "RangerTrim")
+    # Mud flaps, nearly as wide as the tyre.
     for sx in (1, -1):
         box(p, sx * 0.590, sx * 0.816, -2.132, -2.100, 0.108, 0.442, "RangerTrim")
 
@@ -700,22 +814,54 @@ def build_rear_end(p):
 # ---------------------------------------------------------------------------
 # EXTERIOR TRIM
 # ---------------------------------------------------------------------------
+# The root must sit ON THE DOOR SKIN, i.e. AT OR BELOW the beltline — above it
+# there is no body, only glass, and the first placement left the head hanging in
+# mid-air beside the A-pillar with a visible gap.
+MIRROR_AT = (0.776, 0.398, 1.146)   # sail-mount root on the door skin
+
+
+def build_mirror(p, sx):
+    """The early-2000s soft-lozenge mirror head, not a rectangular prism.
+
+    Owner, 2026-08-25: "they should have that early 2000s soft lobby shape".  Two
+    things make that read at low poly, and the first pass had neither:
+      - the head is a LOZENGE in plan and in elevation — its outboard face is
+        smaller than its inboard one and every corner is cut, so the silhouette has
+        eight sides rather than four;
+      - it hangs off a triangular SAIL mount, not a round stalk, which is what
+        actually reads as "1990s truck mirror" from twenty metres.
+    """
+    X0, Y0, Z0 = sx * MIRROR_AT[0], MIRROR_AT[1], MIRROR_AT[2]
+    # Sail mount: a wedge that is WIDE where it meets the door and narrows as it
+    # rises outboard — the triangular silhouette is what reads as a 1990s truck
+    # mirror from twenty metres, far more than the head shape does.
+    hexa(p, [(X0, Y0 + 0.070, Z0 - 0.026), (X0, Y0 - 0.070, Z0 - 0.026),
+             (X0, Y0 - 0.070, Z0 + 0.086), (X0, Y0 + 0.070, Z0 + 0.086),
+             (X0 + sx * 0.052, Y0 + 0.028, Z0 + 0.052),
+             (X0 + sx * 0.052, Y0 - 0.034, Z0 + 0.052),
+             (X0 + sx * 0.052, Y0 - 0.034, Z0 + 0.108),
+             (X0 + sx * 0.052, Y0 + 0.028, Z0 + 0.108)], "RangerTrim")
+    # Head: swept along X as three rings, each an octagonal lozenge in the y-z
+    # plane, widest in the middle.  The corner cuts are what soften it.
+    def lozenge(hy, hz, cy, cz, cut):
+        return [(cy + hy, cz - hz + cut), (cy + hy - cut, cz - hz),
+                (cy - hy + cut, cz - hz), (cy - hy, cz - hz + cut),
+                (cy - hy, cz + hz - cut), (cy - hy + cut, cz + hz),
+                (cy + hy - cut, cz + hz), (cy + hy, cz + hz - cut)]
+    cy, cz = Y0 - 0.006, Z0 + 0.082
+    rings = []
+    for dx, s in ((0.046, 0.84), (0.112, 1.00), (0.168, 0.88)):
+        hy, hz = 0.080 * s, 0.058 * s
+        rings.append([(X0 + sx * dx, y, z) for y, z in lozenge(hy, hz, cy, cz, 0.024 * s)])
+    loft(p, rings, "RangerTrim")
+
+
 def build_trim(p):
     for sx in (1, -1):
-        # Door mirror: a stalk and a head, both black.  Placed on the door skin at
-        # the beltline where the reference has them, NOT on the A-pillar.
-        # The stalk must START on the body skin (0.775 at the belt).  The first pass
-        # began it at 0.812 and the whole mirror floated 4 cm off the door.
-        strut(p, (sx * 0.774, 0.320, 1.198), (sx * 0.902, 0.290, 1.240),
-              0.042, 0.054, "RangerTrim")
-        hexa(p, [(sx * 0.878, 0.352, 1.196), (sx * 0.952, 0.352, 1.196),
-                 (sx * 0.952, 0.232, 1.196), (sx * 0.878, 0.232, 1.196),
-                 (sx * 0.878, 0.352, 1.288), (sx * 0.952, 0.352, 1.288),
-                 (sx * 0.952, 0.232, 1.288), (sx * 0.878, 0.232, 1.288)],
-             "RangerTrim")
+        build_mirror(p, sx)
         # Door handle, and the shut line that says there IS a door.
         box(p, sx * 0.796, sx * 0.822, -0.170, -0.038, 1.062, 1.100, "RangerTrim")
-        box(p, sx * 0.800, sx * 0.812, -0.626, 0.462, 0.860, 0.874, DARK)
+        box(p, sx * 0.800, sx * 0.812, -0.626, 0.556, 0.860, 0.874, DARK)
 
     # Cowl: the black plenum strip at the base of the windscreen, plus two wipers.
     # Without it the glass runs straight into the hood and the nose reads unfinished.
@@ -748,7 +894,7 @@ def build_interior(p):
         Z_BELT, DARK)
 
     # --- Dash --------------------------------------------------------------
-    Y_DASH = 0.245                          # rear edge of the pad
+    Y_DASH = 0.322                          # rear edge of the pad
     hexa(p, [(-0.692, Y_DASH, 1.062), (0.692, Y_DASH, 1.062),
              (0.692, Y_COWL, 1.108), (-0.692, Y_COWL, 1.108),
              (-0.692, Y_DASH, 1.118), (0.692, Y_DASH, 1.118),
@@ -774,7 +920,7 @@ def build_interior(p):
     for x0, x1 in ((-0.680, -0.576), (-0.098, -0.012), (0.012, 0.098), (0.576, 0.680)):
         box(p, x0, x1, Y_DASH - 0.032, Y_DASH - 0.012, 1.086, 1.126, "RangerTrim")
     # Steering column shroud (the wheel itself is a separate, animatable object).
-    strut(p, (-0.355, 0.198, 1.019), (-0.355, 0.392, 0.933), 0.086, 0.078, DARK)
+    strut(p, (-0.355, 0.250, 1.019), (-0.355, 0.452, 0.933), 0.086, 0.078, DARK)
 
     # --- Console + shifter --------------------------------------------------
     hexa(p, [(-0.168, -0.062, Z_TUNNEL - 0.040), (0.168, -0.062, Z_TUNNEL - 0.040),
@@ -784,23 +930,47 @@ def build_interior(p):
     strut(p, (-0.016, 0.104, 0.842), (-0.016, 0.028, 0.986), 0.030, 0.030, DARK)
     box(p, -0.046, 0.014, -0.004, 0.056, 0.982, 1.028, "RangerTrim")     # shift knob
 
-    # --- Seats.  The backs MUST break the beltline (1.200) or the cabin reads as
-    # empty through the glass no matter how good the geometry is (ART-STYLE, the
-    # beltline sightline rule learned on winnebago).
+    # --- Seats.  The backs MUST break the beltline or the cabin reads as empty
+    # through the glass no matter how good the geometry is (ART-STYLE, the beltline
+    # sightline rule learned on winnebago).
+    #
+    # Both halves are swept as lofts with a CHAMFERED section rather than built as
+    # boxes (owner, 2026-08-25: "seats could use a little more rounding").  Eight
+    # points instead of four costs 32 tris a seat and buys the bolster roll that
+    # says "upholstery" instead of "crate" — worth it on the one asset the player
+    # sits next to for hours.
+    def seat_section(cx, hw, hh, cy, cz, cut):
+        """Vertical slice (x-z at fixed y) — for sweeping the cushion front-to-back."""
+        return [(cx - hw + cut, cy, cz - hh), (cx + hw - cut, cy, cz - hh),
+                (cx + hw, cy, cz - hh + cut), (cx + hw, cy, cz + hh - cut),
+                (cx + hw - cut, cy, cz + hh), (cx - hw + cut, cy, cz + hh),
+                (cx - hw, cy, cz + hh - cut), (cx - hw, cy, cz - hh + cut)]
+
+    def seat_section_h(cx, hw, ht, cy, cz, cut):
+        """Horizontal slice (x-y at fixed z) — for sweeping the back bottom-to-top."""
+        return [(cx - hw + cut, cy - ht, cz), (cx + hw - cut, cy - ht, cz),
+                (cx + hw, cy - ht + cut, cz), (cx + hw, cy + ht - cut, cz),
+                (cx + hw - cut, cy + ht, cz), (cx - hw + cut, cy + ht, cz),
+                (cx - hw, cy + ht - cut, cz), (cx - hw, cy - ht + cut, cz)]
+
     for sx in (-1, 1):
         cx = sx * SEAT_X
-        hexa(p, [(cx - 0.230, -0.420, 0.660), (cx + 0.230, -0.420, 0.660),
-                 (cx + 0.230, 0.020, 0.660), (cx - 0.230, 0.020, 0.660),
-                 (cx - 0.230, -0.420, Z_CUSHION), (cx + 0.230, -0.420, Z_CUSHION),
-                 (cx + 0.230, 0.020, Z_CUSHION - 0.030),
-                 (cx - 0.230, 0.020, Z_CUSHION - 0.030)], "RangerSeat")
-        hexa(p, [(cx - 0.228, -0.520, Z_CUSHION - 0.030),
-                 (cx + 0.228, -0.520, Z_CUSHION - 0.030),
-                 (cx + 0.228, -0.404, Z_CUSHION - 0.030),
-                 (cx - 0.228, -0.404, Z_CUSHION - 0.030),
-                 (cx - 0.206, -0.556, Z_SEATBACK), (cx + 0.206, -0.556, Z_SEATBACK),
-                 (cx + 0.206, -0.462, Z_SEATBACK), (cx - 0.206, -0.462, Z_SEATBACK)],
+        # Cushion: swept front-to-back, tapering and dropping at the front lip.
+        zc = 0.5 * (0.660 + Z_CUSHION)
+        hz = 0.5 * (Z_CUSHION - 0.660)
+        loft(p, [seat_section(cx, 0.230, hz, -0.420, zc, 0.030),
+                 seat_section(cx, 0.232, hz, -0.180, zc, 0.034),
+                 seat_section(cx, 0.222, hz * 0.86, 0.020, zc - 0.022, 0.030)],
              "RangerSeat")
+        # Back: swept BOTTOM-TO-TOP, so its slices are horizontal (x-y at fixed z),
+        # not vertical like the cushion's.  Leans back and narrows into the headrest.
+        back = [(-0.424, Z_CUSHION - 0.030, 0.228, 0.056),
+                (-0.462, 1.110, 0.226, 0.054),
+                (-0.502, Z_SEATBACK - 0.130, 0.214, 0.050),
+                (-0.528, Z_SEATBACK - 0.036, 0.176, 0.046),
+                (-0.540, Z_SEATBACK, 0.140, 0.038)]
+        loft(p, [seat_section_h(cx, hw, ht, cy, cz, 0.026)
+                 for cy, cz, hw, ht in back], "RangerSeat")
 
     # --- Door cards: an armrest and a pull, both proud of the tub wall ---------
     for sx in (1, -1):
@@ -1002,23 +1172,59 @@ def strut(part, p0, p1, w, t, mat):
 
 
 # Greenhouse key points (right side; x is mirrored for the left).
-GH_BELT = 1.212                    # glass sits a hair proud of the sheet-metal belt
+GH_BELT = 1.192                    # glass sits a hair proud of the sheet-metal belt
 # PILLAR TRAP.  The first pass built these at 0.058 x 0.052 and they read as roll-
 # cage bars stuck to the outside of the cab.  A window frame is THIN and FLUSH: the
 # section is now 0.038 across, and the feet sit inboard of the beltline (0.775) by
 # just enough that half the prism's thickness lands back on the body surface.
-A_FOOT = (0.744, 0.466, 1.176)     # A-pillar foot, on the cowl corner
-A_HEAD = (0.680, 0.030, 1.544)     # A-pillar head, at the roof front corner
-C_FOOT = (0.744, -0.622, 1.190)
-C_HEAD = (0.680, -0.573, 1.544)
-B_FOOT = (0.758, -0.386, 1.204)    # rear quarter division — a real line on the ref car
-B_HEAD = (0.690, -0.368, 1.532)
-WS_BASE_Y, WS_BASE_Z = 0.466, 1.180    # windscreen bottom edge
-WS_TOP_Y, WS_TOP_Z = 0.030, 1.556      # windscreen top edge (tucked under the header)
+A_FOOT = (0.744, 0.556, 1.168)     # A-pillar foot, ON the cowl deck.  Sunk below it
+                                   # and the prism pokes out through the hood.
+A_HEAD = (0.680, 0.089, 1.540)     # A-pillar head, at the roof front corner
+C_FOOT = (0.744, -0.622, 1.176)
+C_HEAD = (0.680, -0.574, 1.540)
+B_FOOT = (0.758, -0.386, 1.184)    # rear quarter division — a real line on the ref car
+B_HEAD = (0.690, -0.370, 1.528)
+
+
+def pillar_frame(foot, head, width, thick, sx):
+    """Return (prism_rings, glass_edge_front, glass_edge_rear) for one window pillar.
+
+    THE WAVY-LINE FIX (owner, 2026-08-25: "the A pillar line where the window glass
+    meets the pillar should be much straighter and less wavy").  The first pass drew
+    the pillar, the windscreen's outboard edge and the door glass's front edge as
+    three INDEPENDENT hand-typed lines.  Three lines that are nearly-but-not-quite
+    parallel read as a wobble, and no amount of nudging the numbers fixes it because
+    the error is structural.  Here all three come off ONE line: the pillar prism is
+    centred on it, and each glass edge is that same line displaced by half the frame
+    width along the pillar's own cross-axis.  They are parallel by construction.
+    """
+    import mathutils
+    a = mathutils.Vector((sx * foot[0], foot[1], foot[2]))
+    b = mathutils.Vector((sx * head[0], head[1], head[2]))
+    d = (b - a).normalized()
+    u = mathutils.Vector((1, 0, 0)).cross(d).normalized()   # across the frame, in y-z
+    v = d.cross(u).normalized()                             # outboard-ish normal
+    if v.x * sx < 0:
+        v, u = -v, -u
+    # Pick the sign of u that heads TOWARD the nose, so "front" means the windscreen
+    # side on both flanks of the truck rather than mirroring with sx.
+    if u.y < 0:
+        u = -u
+    rings = [[tuple(c + u * (width * 0.5) + v * (thick * 0.5)),
+              tuple(c - u * (width * 0.5) + v * (thick * 0.5)),
+              tuple(c - u * (width * 0.5) - v * (thick * 0.5)),
+              tuple(c + u * (width * 0.5) - v * (thick * 0.5))] for c in (a, b)]
+    inset = v * (thick * 0.5 + GLASS_INSET)
+    front = [tuple(c + u * (width * 0.5) - inset) for c in (a, b)]
+    rear = [tuple(c - u * (width * 0.5) - inset) for c in (a, b)]
+    return rings, front, rear
+WS_BASE_Y, WS_BASE_Z = 0.580, 1.160    # windscreen bottom edge
+WS_TOP_Y, WS_TOP_Z = 0.089, 1.552      # windscreen top edge (tucked under the header)
 WS_HALF_B, WS_HALF_T = 0.704, 0.646    # half width at the bottom / top edge
-BL_BASE_Y, BL_BASE_Z = -0.622, 1.200   # backlight
+BL_BASE_Y, BL_BASE_Z = -0.622, 1.180   # backlight
 BL_TOP_Y, BL_TOP_Z = -0.575, 1.548
 BL_HALF_B, BL_HALF_T = 0.644, 0.630
+GLASS_INSET = 0.010                    # glass sits this far inboard of the pillar's outer face
 
 
 def build_greenhouse(p):
@@ -1033,11 +1239,11 @@ def build_greenhouse(p):
          band_mats={0: DARK, 5: DARK})     # headliner underside
 
     for sx in (1, -1):
-        def m(pt):
-            return (sx * pt[0], pt[1], pt[2])
-        strut(p, m(A_FOOT), m(A_HEAD), PILLAR_A, 0.040, "RangerPaint")
-        strut(p, m(C_FOOT), m(C_HEAD), PILLAR_C, 0.044, "RangerPaint")
-        strut(p, m(B_FOOT), m(B_HEAD), 0.034, 0.038, "RangerPaint")
+        for foot, head, w, t in ((A_FOOT, A_HEAD, PILLAR_A, 0.040),
+                                 (C_FOOT, C_HEAD, PILLAR_C, 0.044),
+                                 (B_FOOT, B_HEAD, 0.034, 0.038)):
+            rings, _f, _r = pillar_frame(foot, head, w, t, sx)
+            loft(p, rings, "RangerPaint")
 
     # DRIP RAIL.  Runs the whole length of the door opening, from the A-pillar head
     # to the C-pillar head — not just across the roof slab.  Without it there is an
@@ -1063,29 +1269,46 @@ def build_greenhouse(p):
     box(p, -0.105, 0.105, -0.616, -0.580, 1.498, 1.546, "RangerTail")
 
 
+def _edge_at_z(e0, e1, z):
+    """Point at height z on a pillar edge line, extrapolated past the ends if need be
+    — the glass top sits below the pillar head and the sill above its foot."""
+    t = (z - e0[2]) / (e1[2] - e0[2])
+    return tuple(e0[k] + (e1[k] - e0[k]) * t for k in range(3))
+
+
+GLASS_TOP_Z = 1.518                # side glass tucks under the drip rail here
+
+
 def build_glass(g):
     """Every pane is a single quad, double-sided, and drawn from OUTSIDE in.
 
     Winding matters even for a double-sided pane: Three.js still lights the front
     face, so a pane wound inward reads dark from the driver's seat.
+
+    All six panes take their side edges from pillar_frame(), never from hand-typed
+    coordinates — see the note there.  That is what makes the A-pillar/glass line
+    read straight instead of wandering a few millimetres along its length.
     """
-    # Windscreen — faces forward and up.
-    pane(g, (-WS_HALF_B, WS_BASE_Y, WS_BASE_Z), (WS_HALF_B, WS_BASE_Y, WS_BASE_Z),
-         (WS_HALF_T, WS_TOP_Y, WS_TOP_Z), (-WS_HALF_T, WS_TOP_Y, WS_TOP_Z),
+    A = {sx: pillar_frame(A_FOOT, A_HEAD, PILLAR_A, 0.040, sx) for sx in (1, -1)}
+    B = {sx: pillar_frame(B_FOOT, B_HEAD, 0.034, 0.038, sx) for sx in (1, -1)}
+    C = {sx: pillar_frame(C_FOOT, C_HEAD, PILLAR_C, 0.044, sx) for sx in (1, -1)}
+
+    # Windscreen: spans between the two A-pillars' nose-side edges.
+    wl, wr = A[-1][1], A[1][1]
+    pane(g, _edge_at_z(*wl, WS_BASE_Z), _edge_at_z(*wr, WS_BASE_Z),
+         _edge_at_z(*wr, WS_TOP_Z), _edge_at_z(*wl, WS_TOP_Z),
          "RangerGlass", (0.0, 0.65, 0.76))
-    # Backlight — faces rearward and up.
-    pane(g, (BL_HALF_B, BL_BASE_Y, BL_BASE_Z), (-BL_HALF_B, BL_BASE_Y, BL_BASE_Z),
-         (-BL_HALF_T, BL_TOP_Y, BL_TOP_Z), (BL_HALF_T, BL_TOP_Y, BL_TOP_Z),
+    # Backlight: between the two C-pillars' tail-side edges.
+    bl, br = C[-1][2], C[1][2]
+    pane(g, _edge_at_z(*br, BL_BASE_Z), _edge_at_z(*bl, BL_BASE_Z),
+         _edge_at_z(*bl, BL_TOP_Z), _edge_at_z(*br, BL_TOP_Z),
          "RangerGlass", (0.0, -0.99, 0.13))
-    # Door glass + rear quarter, both sides.  Split at the B-division so the pane
-    # edges land ON the divider instead of running behind it.
+    # Door glass (A rear -> B front) and the rear quarter (B rear -> C front).
     for sx in (1, -1):
-        pane(g, (sx * 0.766, 0.452, GH_BELT), (sx * 0.766, -0.378, GH_BELT),
-             (sx * 0.692, -0.362, 1.536), (sx * 0.692, 0.044, 1.536),
-             "RangerGlass", (sx * 0.97, 0.0, 0.24))
-        pane(g, (sx * 0.766, -0.394, GH_BELT), (sx * 0.766, -0.618, GH_BELT),
-             (sx * 0.692, -0.578, 1.536), (sx * 0.692, -0.374, 1.536),
-             "RangerGlass", (sx * 0.97, 0.0, 0.24))
+        for f, r in ((A[sx][2], B[sx][1]), (B[sx][2], C[sx][1])):
+            pane(g, _edge_at_z(*f, GH_BELT), _edge_at_z(*r, GH_BELT),
+                 _edge_at_z(*r, GLASS_TOP_Z), _edge_at_z(*f, GLASS_TOP_Z),
+                 "RangerGlass", (sx * 0.97, 0.0, 0.24))
 
 
 # ---------------------------------------------------------------------------
