@@ -356,7 +356,9 @@ Load-bearing subtleties, each measured in:
 
 - **8 CLEAN**: all seven seed-3 marks + seed-6 (−1091,2792).
 - **2 resolved by DELETION at the mark**: (932,793) — `g:1,1,2:2,1,0`, 4 hops (kills the origin
-  weave; a benign 24 m/0.4 m-deck near-node leftover remains) · (3328,−27) — `g:5,0,1:6,0,0`,
+  weave; the "benign leftover" there is CLOSED 2026-08-24 — owner cannot see it, and measured
+  it is two runs 17.7 m apart with decks within 0.4 m, flagged only by the 18 m census
+  threshold — not a defect) · (3328,−27) — `g:5,0,1:6,0,0`,
   5 hops, one deletion clears BOTH tears.
 - **RESOLVED at `4c72378` (session 3): the stacked pair (−1710,1760)/(−1712,1743)** — was
   the last open case (mutual-victim NEST; full diagnosis preserved in the SHIPPED section
@@ -409,8 +411,10 @@ the cluster path is lazy (deep box + growth only on windows with a one-shot 'det
    · `3,1,0|4,1,1 × 3,-1,1|3,1,0` — closest **1.2 m @(2549, 685)**, ~35 m stretch
    · `4,1,1|5,1,0 × 3,1,0|4,1,1` (the booked 153°) — closest **1.3 m @(3118, 1026)**, ~20 m
    · `6,3,0|6,4,1 × 5,3,2|6,3,0` (the booked 138°) — closest **1.2 m @(4217, 2291)**, ~30 m
-   Real tears the 'angle' ruling protects from both merge and delete. Owner call: accept as
-   character, or carve out a rule.
+   **RULED 2026-08-24 (Option 1): these are not wanted hairpins — "tangled messes of roads
+   that don't drive nice" — and fall through to the delete rung. The 'angle' ruling is
+   NARROWED, not repealed: merge stays angle-blocked; delete no longer is. Work + measured
+   blocker matrix (floor for stack 1, angle+bundle for 2, angle+floor for 3): BUG-57.**
 3. **(f) NODE-DEPARTURE bounds** (avg<22/worst<60 vs measured 28.4/106 over 24 endpoints):
    predate chord-pin demotions; needs its own pass, not a fit-to-current loosening.
 4. Booked code follow-ups: dry-run for END-anchored specs (`_v2RegisterMerged`); the

@@ -33,16 +33,36 @@ that remains around it.
 - graph-topology (f) NODE-DEPARTURE is booked separately (bearing); if one pass fixes both,
   fine, but do not fold its re-baselining into this ticket silently.
 
-**IDENTIFIED (2026-08-24, measured):** the screenshot spot is the nest's second kept-member
-tear — `g:-3,1,1:-3,3,2` (the BUG-55 loser) × `g:-3,1,1:-4,2,0`, both leaving node -3,1,1 at
-(-1533, 1247): ~120 m raw alongside (66 m past the 30 m throat trim), separation 0–18 m, decks
-up to **4.4 m apart @(-1583, 1352)** — 12 m from the owner's camera POS. The floating shelf is
-the higher deck riding over the lower one's carve. Deletion of either leg was declined by the
-cluster walk (detour would lean on the nest's deletions); the merge ladder declined earlier.
-So this ticket's job at THIS node is a junction-surface reconciliation the resolution ladder
-does not attempt: two legs that both survive, leaving one node within earthworks distance at
-different grades. The sibling tear of the same class sits at node -2,3,1 (-870, 2486), worst
-gap 4.9 m @(-967, 2522) — fix both, and sweep for more.
+**ROOT CAUSE (2026-08-24, measured — two distinct mechanisms):**
+
+**(a) The screenshot tear IS a sanctioned merge TAPER BAND.** At node -3,1,1 the merge
+planner planned AND APPLIED: `g:-3,1,1:-4,2,0` cedes 0–96 m to `g:-3,1,1:-3,3,2`
+(off-curve band 0–142 m). The ceded strand rides the winner's deck exactly — the throat
+stitches. The tear is the FORK: from 96 m the loser departs the winner's course and regains
+its own solved profile, packing **4.4 m of height divergence** into the ~50 m taper while
+still within shared-earthworks distance (<18 m lateral) — the floating shelf over the carved
+bench at (-1583, 1352), 12 m from the owner's camera. capture-classify and the gates SANCTION
+off-curve bands as intended geometry, so this prints CLEAN while looking torn — **owner
+ruling 2026-08-24: that sanctioning is wrong as a quality bar; junction stitching "should be
+red until every intersection stitches nicely."**
+
+**(b) The sibling tear at node -2,3,1 is an UNAPPLIED planned merge.** The planner planned
+`-2,3,1|-3,4,2` ceding ~101 m at the node, but that run also carries a MID-SPAN merge
+(294–466 m to `-3,4,2|-2,5,1`) and `_v2MergeFor` allows one merge per run when a mid-span is
+involved — it takes the longer spec ALONE even though the two regions are disjoint. The
+planned end merge is silently discarded; 74 m / 5.3 m-gap tear at (-967, 2522).
+
+## The pass (three pieces)
+
+1. **Co-grade through the taper**: while a parting pair stays within mergeProxM laterally,
+   the loser's deck stays pinned near the winner's; it regains its own profile only past
+   separation. Turns the tear into a graded wye (the pinned-deck/taper machinery exists).
+2. **Compose disjoint mid-span + end merges on one run** (mechanism b): the assembly must
+   splice both ceded regions (four strands). If genuinely disjoint regions still can't
+   compose, say why in the decline — never silently drop a planned end merge.
+3. **The honest gate** (owner ruling): a stitching check measuring deck coplanarity of
+   registered pairs within shared-earthworks distance INCLUDING taper bands (bounded dy while
+   lateral separation < mergeProxM) — allowed to be red until this pass lands.
 
 First moves: `node test/capture-classify.mjs 6 -1576 1361` for the runs/merge state at the node;
 `RoadSystem.debugSampleAt` / carve-mesh probes across the fork for the height series of each
