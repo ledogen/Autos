@@ -78,8 +78,13 @@ for (const rec of (road._v2Deleted || new Map()).values()) {
   let dMin = Infinity
   for (const p of rec.pts || []) { const dd = Math.hypot(p.x - MX, p.z - MZ); if (dd < dMin) dMin = dd }
   if (dMin < LOOK) deletedAtMark++
+  // BUG-57: the crossing rung's records carry the unsanctioned crossing count + points; the
+  // retired BUG-55 rung's carried detour hops (and a nest, for cluster deletes).
+  const why = rec.crossings != null
+    ? `${rec.crossings} unsanctioned crossing${rec.crossings === 1 ? '' : 's'}${(rec.at || []).slice(0, 3).map((p) => ` (${p.x.toFixed(0)},${p.z.toFixed(0)})`).join('')}`
+    : `detour ${rec.hops} hops`
   const nest = rec.cluster ? ` · nest of ${rec.cluster.members.length} (rank ${rec.cluster.rank}; approved gone: ${rec.cluster.approved.join(' + ')}; kept: ${rec.cluster.members.filter((m) => !rec.cluster.approved.includes(m)).join(' + ') || 'none'})` : ''
-  console.log(`     resolved by DELETING ${rec.key} (detour ${rec.hops} hops)${nest} · pairs: ${rec.pairs.join(', ')}${dMin < LOOK ? '   <<< AT THE MARK' : ''}`)
+  console.log(`     resolved by DELETING ${rec.key} (${why})${nest} · pairs: ${rec.pairs.join(', ')}${dMin < LOOK ? '   <<< AT THE MARK' : ''}`)
 }
 for (const o of atMark) {
   const ceded = (o.r.e.cededSpans || []).map((s) => `${s.s0.toFixed(0)}–${s.s1.toFixed(0)} m to ${s.owner}`)

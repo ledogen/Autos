@@ -37,10 +37,28 @@ for (const seed of [20, 11, 67]) {
         uni(a, b)
         polys.push({ a, b, pts: e.points.filter((_, i) => i % 3 === 0) })
     }
+    // BUG-57: RIM-HONEST count. Margin edges register with one endpoint far beyond the stream
+    // radius; that far node's OTHER edges are outside the window, so a chain hanging off the rim
+    // can read as a phantom second component (measured: seed 11's crossing-rung deletion left a
+    // 3-node rim chain at |p| ≈ 2.3-2.6 km that a 2000 m window shows fully connected). Contract
+    // every node beyond the stream radius into one virtual OUTSIDE node — a genuinely stranded
+    // interior island still counts, while rim chains merge into the world beyond, which is the
+    // truth this window can actually attest.
+    const OUT = '(outside)'
+    for (const [, e] of road._network) {
+        for (const c of [e.cellA, e.cellB]) {
+            if (!c) continue
+            const p = road._nodePos(c)
+            if (Math.hypot(p.x, p.z) > 1400) {
+                if (!parent.has(OUT)) parent.set(OUT, OUT)
+                uni(key(c), OUT)
+            }
+        }
+    }
     const comps = new Set()
     for (const k of parent.keys()) comps.add(find(k))
     log(comps.size === 1, `CONNECTED seed=${seed}`,
-        `${polys.length} runs over ${parent.size} nodes → ${comps.size} component(s)`)
+        `${polys.length} runs over ${parent.size - 1} nodes (+rim contraction) → ${comps.size} component(s)`)
 
     // real crossings between runs that share no node (the thing the deleted culls guarded — must
     // stay ~zero BY GEOMETRY now; a nonzero here means v2 corridors started genuinely overlapping)
