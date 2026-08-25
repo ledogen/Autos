@@ -145,6 +145,71 @@ export const PROP_MODELS = {
   // SIX MATERIALS, one over the ART-STYLE soft limit.  GnomeLeather carries the
   // belt, trousers and boots as one dark-leather role; GnomeBuckle is the brass
   // buckle and is the only thing that could not be merged into it.
+  // ASSET-04 — the kettle barbecue.  566 tris, 0.629 x 1.066 x 0.629 m, four flat
+  // materials, no textures.  LAWN FURNITURE: scatter it WITH a POI, never on bare
+  // ground — the ticket's rule is that without an anchor it reads as litter, not
+  // habitation.  It is the anchor object of the camp-dressing cluster (ASSET-05
+  // propane tank, ASSET-06 awning, ASSET-08 fire pit).
+  //
+  // WEBER-STYLE, owner call 2026-08-23 (the request opened as a Coleman box grill
+  // and was corrected before modelling).  RESHAPED the same day against a photo
+  // reference: the ball is 0.827 as tall as it is wide (was 0.70 and read as a
+  // flying saucer), the bowl's widest point sits BELOW the lid joint, the bar
+  // handle owns the apex with the damper offset onto the shoulder beside it, and
+  // the ash pan hangs at leg height on three struts instead of floating under the
+  // bowl.  1.07 m overall, which is the real 22" kettle and over the ticket's 0.95
+  // estimate.
+  //
+  // THE 'lawnFurniture' TAG IS DECLARED BUT NOTHING CONSUMES IT YET.  src/poi.js
+  // resolves `modelPool` against tags for the mission-giver roster only; the
+  // POI-satellite scatter this tag is for does not exist (same note as the
+  // flamingos above, which predate the tag and are still spawnModel()-only).  The
+  // tag is here so that scatter, when it lands, is a consumer change and not an
+  // edit to every prop entry.  Do NOT add 'missionGiver' to make it show up.
+  bbqGrill: {
+    url: 'assets/models/bbq-grill.glb',
+    tags: ['lawnFurniture'],
+    // Measured off the GLB.  Wider than the 0.57 m bowl because the LEGS splay to
+    // a 0.68 m stance; the ticket's authored cylinder (r 0.28) is the bowl only and
+    // would let a wheel poke through, so this box covers the stance instead.
+    collision: { shape: 'box', size: [0.629, 1.066, 0.629] },
+    // Black, Weber red, bottle green.  ONE key: bowl and lid share GrillEnamel
+    // because on a real kettle they are the same porcelain coat, so they must
+    // recolour together.  Handles, wheels, legs, grate and damper are all FIXED —
+    // a red kettle still has black trim and bright steel legs, and recolouring
+    // those would take the model's only value contrast with it.
+    //
+    // ALL THREE WERE PICKED RENDERED, NOT FROM THE NUMBERS, and both non-black
+    // entries needed a second try for the same underlying reason — ART-STYLE
+    // rule 5's linear trap, where a tuple renders roughly 1.5x lighter than it
+    // reads.  Worth keeping, because the two failures were NOT the same failure:
+    //
+    //   * The red opened at 0.30 linear and came out fire-engine orange — too
+    //     bright in absolute terms.  0.115 linear is about 0.37 sRGB and is the
+    //     deep enamel red the reference shows.
+    //   * The green opened at 0.048 and came out a grassy mid-tone that was
+    //     visibly LIGHTER than the red beside it, despite the smaller number.
+    //     That is the luminance weighting, not the gamma: green carries 0.715 of
+    //     perceived luminance against red's 0.213, so equal-looking tuples are
+    //     nowhere near equal-looking colours.  Matching the red's weight needs
+    //     G ≈ 0.034, and a little blue pulls it from grass toward bottle.
+    //
+    // Landing the green on grass ALSO risked it reading as vegetation — the
+    // nature palette is grey-green (ART-STYLE rule 5), and a man-made object that
+    // shares a hue with the scenery stops being the thing your eye lands on.
+    // Deep bottle green keeps the saturated-thing / desaturated-world contrast.
+    //
+    // All three sit at roughly the same rendered value, so the variant changes
+    // the hue of the ball and nothing about the model's value structure.
+    palette: {
+      GrillEnamel: [
+        [0.014, 0.014, 0.015],   // 0 — black enamel, the authored colour (must match the .glb)
+        [0.115, 0.0055, 0.007],  // 1 — Weber red
+        [0.006, 0.034, 0.016],   // 2 — bottle green
+      ],
+    },
+  },
+
   gnome: {
     url: 'assets/models/gnome.glb',
     // 0.206 wide x 0.400 tall x 0.165 deep, measured off the GLB — inside the
