@@ -455,6 +455,32 @@ scoring shape has never been specified. Probably margin against a pursuer rather
 which would make it the first type where the reference is dynamic rather than geometric — a real
 deviation from the par philosophy if it goes that way.
 
+### 8. Vendor jobs — **the giver's trade flavours the errand** *(2026-08-25, undesigned)*
+
+Owner ruling: **all food vendors hand out work.** That is not a new POI category — `src/poi.js` has
+carried it since 2026-08-05 (*"a mission giver MAY present as a food vendor… a vendor that also
+hands out work costs the region nothing"*) — but it is the first statement of what those jobs
+*look like*, and it points at a shape the catalog above does not have.
+
+The owner's two examples:
+
+- **A burger joint: deliver food to customers.** This is §3a point-to-point with a perishable
+  cargo, which `items.md`'s spoilage clock already prices — the food is the timer, so the mission
+  needs no clock of its own. Possibly §3b fragile too, if a spilled order counts.
+- **A market stall: go and fetch a load of fertiliser, bring it back.** This one is genuinely new:
+  **an out-and-back**, where the outbound leg is empty and the return leg is loaded. Every delivery
+  type in the catalog is one-way from a giver to a receiver. An out-and-back returns to the giver,
+  which means the reward conversation happens where the job was taken and the loaded leg is the
+  half that is scored.
+
+Nothing here is designed yet. The open questions are: does the out-and-back get its own par
+(two legs, one number, or one par per leg?), and does the empty outbound leg score at all — if it
+does not, the mission is a §3c freight run with a commute bolted on the front.
+
+**The pairing rule this implies:** a mission giver's *model* should be able to flavour the jobs it
+offers, rather than every giver drawing from one flat mission pool. That is a real dependency
+between `data/prop-models.js` and mission generation, and it does not exist today.
+
 ---
 
 ## Main missions: region unlock (the boss)

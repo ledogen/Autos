@@ -244,9 +244,10 @@ the norm.
   and fitting the 6 m camp pad; **cargo** (ASSET-27..30) is visible load, real mass, never a scoring
   axis; **road furniture** (ASSET-22, ASSET-31) repeats along the network, placed from road geometry.
   **An asset ticket closes when the `.glb` ships** (owner, 2026-08-24). Getting it into the world is
-  a separate, consolidated ticket *per role* — FEAT-71 lawn furniture scatter · FEAT-66 camp gear
-  slots · FEAT-73 yard clutter · FEAT-72 road furniture · FEAT-74 POI pools — so the tracker shows
-  the one system that is actually missing rather than a row of finished models held open behind it.
+  a separate, consolidated ticket *per role* — FEAT-71 POI-satellite placement (lawn furniture AND
+  yard clutter: one zone solver, different pools) · FEAT-66 camp gear slots · FEAT-72 road furniture
+  · FEAT-74 POI pools — so the tracker shows the one system that is actually missing rather than a
+  row of finished models held open behind it.
   Do not re-open an asset ticket because nothing places its model, and do not re-tag an asset into
   an existing pool to make it appear.
   Most of `.planning/story-mode/items.md` is **2D art, not models** — only camp gear, bed/dragged
