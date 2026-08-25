@@ -164,3 +164,65 @@ under both forms.
   reports it (same class BUG-55 accepted). Watch, don't guard.
 - Edges under 60 m never enumerate conflict pairs (`_v2ConflictPairs` floor, pre-existing) — a
   crossing with a <60 m run is invisible to the rung; census would catch it (none seen).
+
+---
+
+## SESSION 2 (2026-08-25, owner re-scope): "KEEP THE CONNECTION, TRIM THE MESS" — built
+
+**Owner ruling (session 2, from the drawn map):** connectivity is the invariant, geometry is
+the variable. Keep the blue-dot-to-blue-dot connections; trim as few edges as necessary to
+zero the mid-edge crossings. Deletion stays the LAST resort. Concretely: "instead of new
+machinery, be sloppier with the exact polyline — skip the points that violate the constraint."
+
+### The tangle relaxations (all gated on `tangled` — a pair whose pure routes properly cross
+beyond the 30 m throat; non-crossing pairs take the byte-identical old ladder)
+
+1. **Angle-guard waiver**: the >135° decline is waived for tangled pairs — the crossing is the
+   measured proof the shape is a mess, not a wanted hairpin (the owner's own (j)-stacks ruling).
+2. **Outward fork slide**: extra frac rungs target the loser-side fork past the farthest
+   crossing ("skip the points up to past the mess"); tangled variants must SPAN every crossing
+   or they are not offered (a merge that leaves a crossing outside its built extent resolves
+   nothing).
+3. **Direct-span bands** (`DIRECT_SPAN_LADDER` 60–320 m): when the offset-decay taper fails
+   (the loser's own course is switchbacky near the fork), the band abandons the loser's line —
+   a cubic HERMITE with travel tangents pinned at both ends, measured by the same
+   min-circumradius rule against the same 6 m fold floor. (A Catmull-Rom through just
+   fork+join was tried first and measured useless — its fork tangent points at the join.)
+4. **The SHOVE rung** (`_v2ShoveFor` + `_v2RegisterShoved`): the nick-cross resolution — a leg
+   that pokes across a partner and comes back (same side both ends) is neither mergeable
+   (<60 m strand) nor redundant. The LONGER member registers with a local lateral deflection
+   (partner-normal, target separation shoveClearM 12 m + 4 headroom, smoothstep envelope +
+   4 box passes, RAMP ladder 40/70/100 m against the fold floor), offCurveSpans marking the
+   deflected stretches. Shorter-member fallback when the longer is bend-locked (one level,
+   strictly-longer recursion → provably acyclic). One machinery per run stays strict.
+   A TRANSIT (leg ends up on the other side) is unshovable by construction → delete rung.
+5. **One-level chain view** (`_v2WinnerView`): a tangled merge whose winner is itself a
+   far-end merge loser pins to the winner's DRY-ASSEMBLED heights (index-aligned head), not
+   its pure sample — the winner's own fork pin bends its whole outer strand and the pure pin
+   shipped a measured 0.72 m collision step (SURFACE-SMOOTH red). One level only; deeper
+   chains keep a second-order seam, censused. `_v2RegisterMerged` dry now returns the
+   assembled arrays for this.
+
+### Battery outcome (same 8 windows)
+
+Zero census REAL crossings everywhere · ONE component everywhere (the rim artifacts vanished —
+those chains keep their connections now) · deletions total: BUG-55 shipped 7 → order-free rung
+alone 18 → **now 9**. Per window: s3 1 (origin pair) · s6@0,0 2 (-3,3,2|-4,3,2 nest winner,
+1,-1,1|1,0,0) · s6@nest 1 · s6@gate **1** (5,0,1|6,0,0 — a genuine TRANSIT with a bore-locked
+merge; was a BUG-55 victim) · s7 2 (parity) · s20 1 (parity) · s11 1 · s67 0. The gate-window
+tangle: 4 of the owner's 5 drawn connections kept (3 by tangle-merge, 1 by shove) — map
+`B_s6_tangle_2800_900.png` matches the drawing. The session-1 near-tie divergence is MOOT
+(nothing at that tangle deletes anymore).
+
+Gates: graph-topology 8/9 ((f) only — ruling 7 retires it); affected suite 25/30 = exactly the
+five booked reds; full `test:all` run at session end (see commit).
+
+### Booked / residue
+
+- The one-level chain view leaves second-order seams on ≥2-level merge chains, and start-
+  anchored/both-end winner specs keep the pure view — censused, BUG-56 stitching territory.
+- Shove declines: transit, fold-locked at every ramp, deflection > 30 m — all counted
+  ('shove'), all fall to the delete rung. Deletion remains the honest last resort.
+- Tangled mid-span pairs get direct-span bands but not yet the span-the-crossings variant
+  filter (node-anchored only) — full-strand-first ordering covers the observed cases.
+- `roadV2.shoveClearM` (default 12) is a new param — debug-slider audit at phase end.
