@@ -24,9 +24,13 @@ the bountiful fix; this rung only judges what survives it.
 
 An edge DIES iff some pair (edge, partner) has an UNSANCTIONED proper crossing and the edge is
 the pair's LONGER member (tie → lexicographic). Unsanctioned = outside planned merge geometry
-(offCurve spans, three-way sanction incl. both-ceding-to-one-spine, and the flat-merged
-at-grade crossings — pending the owner's confirmation those live) and outside a 30 m
-shared-node throat. No detour vetting, no substantiality floor, no angle logic, no cluster
+(offCurve spans, three-way sanction incl. both-ceding-to-one-spine) and outside a 30 m
+shared-node throat. **No flat-crossing carve-out** — ruling A (2026-08-25): nodes are the
+ONLY intersections. The classifier's "flat crossings" were measured to be exactly the three
+stacks' crossing points, so mid-span crossings are always defects; `crossingList()` becomes
+the invariant's gate instrument ("zero unsanctioned crossings", permanent), the T/X-promotion
+concept retires, and SURFACE-SMOOTH's crossing-zone exclusion is removed once crossings are
+gone. Deliberate X intersections (Option B) stay possible future feature work. No detour vetting, no substantiality floor, no angle logic, no cluster
 coordination — the verdict is a pure function of the two pre-registration routes plus their
 merge plans, so it is window-invariant with no graph context at all.
 

@@ -1,7 +1,9 @@
-# Road redesign close-out plan (living doc, opened 2026-08-24, reshaped 2026-08-25)
+# Road redesign close-out plan (RULED 2026-08-25 — build phase is a GO)
 
-The owner is batching rulings; this doc accumulates them and orders the work. Tickets stay the
-source of truth for each item's detail — this is the ordering + ruling ledger.
+Ruling ledger + work order for closing out the road redesign. All rulings are in; no open
+questions block the build. Tickets hold each item's detail; this doc is the contract.
+Code lands on `feature/corridor-router` (worktree `CarGame-corridor-router`, dev :3343);
+docs/tickets stay here on main — the established BUG-55 pattern.
 
 ## The governing ruling (2026-08-25): the CROSSING INVARIANT
 
@@ -10,93 +12,90 @@ source of truth for each item's detail — this is the ordering + ruling ledger.
 > it's likely that terrain is making the world unconnectable — if that's the case we should
 > just fall back to a different seed gen instead of forcing the square peg in the round hole."
 
-Rationale: the set of defective intersections is INFINITE in a procedural world; threshold
-edge-case detectors (floors, deck-gap conditions, angle conditions) can never enumerate it —
-"band-aids on band-aids" risks a one-in-a-million unplayable world. The merge ladder stays
-(it was the bountiful fix); after it, any surviving unsanctioned crossing condemns the longer
-leg, UNCONDITIONALLY — connectivity is VALIDATED, not guarded per-deletion.
+Rationale: the defective-intersection set is INFINITE in a procedural world; threshold
+edge-case detectors (floors, deck-gap conditions, angle guards) can never enumerate it. The
+merge ladder stays first (it was the bountiful fix); after it, any surviving unsanctioned
+crossing condemns the LONGER leg, UNCONDITIONALLY — connectivity is VALIDATED (a gate), never
+guarded per-deletion.
 
-**Measured 2026-08-25 (simulation, 8 windows across seeds 3/6/7/20/11/67):**
-- With the shipped tear rung ON: 0–2 additional victims per window, zero crossings remain,
-  **connectivity never changes** (seed 67's 2 components pre-existed unchanged).
-- With the shipped tear rung OFF: the crossing rule alone re-derives **every shipped deletion
-  with the identical victim** (seed-6 ×2, seed-7 ×2, seed-20 ×1 incl. the nest winner
-  `g:-4,3,2:-3,3,2` — no cluster machinery involved), PLUS the cases the guarded rung
-  refused: the seed-3 origin 'detour' decline, seed-11's two census-stuck pairs, and all
-  three hairpin stacks (one victim `3,1,0|4,1,1` clears three crossing pairs). Connectivity
-  unchanged in every window.
+**Measured 2026-08-25 (simulations, 8 windows across seeds 3/6/7/20/11/67):**
+- Rung-off parity: the crossing rule re-derives EVERY shipped BUG-55 deletion with the
+  identical victim (nest winner `g:-4,3,2:-3,3,2` included — no cluster machinery), PLUS
+  everything the guarded rung refused: seed-3 origin's 'detour' decline, seed-11's two
+  census-stuck pairs, and all three hairpin stacks (`3,1,0|4,1,1` clears three crossing
+  pairs; `5,3,2|6,3,0` the third stack).
+- Connectivity NEVER changed in any window (seed 67's 2 components pre-existed unchanged).
 - The ORDER-FREE form ("edge X dies iff some unsanctioned-crossing pair has X as its longer
-  member") produced the same victim set as the minimal evaporation walk in every sampled
-  window — and it is a pure per-pair function: trivially window-invariant, no graph context,
-  no deep boxes, no ordering.
+  member; tie → lexicographic") matched the minimal evaporation walk everywhere — and it is a
+  pure per-pair function: window-invariant with no graph context, boxes, or ordering.
+- **The classifier finding (2026-08-25)**: the crossing classifier's "6 flat crossings" at
+  the gate window are EXACTLY the three stacks' crossing points — there is NO healthy
+  promoted-crossing population. The "at-grade intersections everywhere" are NODE junctions
+  (T/Y/4-way at graph nodes, pads) — untouched by all of this.
 
-**Consequence: BUG-57 is re-scoped to THE CROSSING RUNG, replacing the tear-grade delete rung
-and its guard machinery** (floors, angle shield, one-shot vetting, the nest resolver) after a
-parity verification. The stack-floor ruling (60→30 m) is MOOT — withdrawn.
+## Ruling ledger (complete)
 
-## Rulings ledger
-
-1. **Crossing invariant** (above) — supersedes Option-1-with-thresholds. → BUG-57.
-2. **Junction stitching bar = drivability of the through-road** (2026-08-25): a car must
-   drive straight through on the through-road without getting launched or hitting a wall from
-   the third road. The screenshot tear is a third road joining at a very shallow angle,
-   occupying the through-leg's XZ space so long that the constraints pulling it into its own
-   Y space conflict — "it's begging to be a T instead of a Y. We need to figure out how to
-   get out of its way." → BUG-56.
-3. **No coded taper choreography** (2026-08-25): make the leave-the-way behavior EMERGENT —
-   a departure boundary condition (T-ish exit heading), terrain does the rest; or divert
-   outside a clearance width before running parallel. Not a hand-coded taper shape. → BUG-56.
-4. **Deletion review protocol: map A/B** before accepting each new deletion class.
-5. **graph-topology (f) node-departure: retire** (probable — owner "retire probs"; confirm at
-   the touch). Note ruling 2/3 cuts the other way for MINOR legs at junctions: BUG-56 wants
-   departure headings CONTROLLED there. (f) as a chord-alignment character check still
-   retires; the new departure discipline gets its own check if needed.
-6. **(932,793) leftover: closed, not a defect** (17.7 m apart, decks within 0.4 m — census
-   threshold artifact).
-7. **Junction stitching "should be red until every intersection stitches nicely"** — the
-   sanctioning of merge taper bands in classify/gates hides real tears; BUG-56 ships an
-   honest stitching check, red until the pass lands.
+1. **Crossing invariant** (above) → BUG-57. The earlier Option-1-with-thresholds and the
+   60→30 m floor proposal are WITHDRAWN as moot.
+2. **Intersection vocabulary = Option A: nodes are the ONLY intersections** ("A for now, B if
+   we need/want later"). Mid-span crossings are always defects; the rung culls them all;
+   "zero unsanctioned crossings" becomes a permanent gate with `crossingList()` as its
+   measuring instrument; the T/X-promotion concept RETIRES (nothing left to promote — the
+   SURFACE-SMOOTH crossing-zone exclusion goes with it). Option B (deliberate, worldgen-
+   created X intersections promoted to real nodes) stays available as future feature work.
+3. **Machinery deletion: CONFIRMED.** After parity, delete the superseded BUG-55 guard
+   machinery — tear nomination guards, one-shot victim-free BFS, the nest resolver
+   (`_v2ClusterResolve`), deep boxes + 'D|' memo universe, NEST_DIAMETER_HOPS.
+4. **BUG-56 = emergent Y→T departure**: a car must drive the through-road straight without
+   launch or wall from the third road. Minor legs get a departure boundary condition across
+   the through-axis (existing pin machinery); terrain makes the rest emergent — no hand-coded
+   taper choreography. The co-grade-taper idea is replaced; midspan+end merge composition is
+   demoted to a watch (its motivating tear dies under BUG-57).
+5. **Junction stitching "should be red until every intersection stitches nicely"** — BUG-56
+   ships an honest stitching check (taper bands NOT sanctioned away); red is acceptable until
+   the pass lands.
+6. **Deletion review protocol: map A/B** screenshots before accepting each new deletion class.
+7. **graph-topology (f) node-departure: retire** ("retire probs" — confirm at the touch).
+8. **(932,793) leftover: closed, not a defect** (17.7 m separation, decks within 0.4 m — an
+   18 m-census-threshold artifact).
+9. Hairpins in principle remain desired; the three (j) stacks are "tangled messes, not really
+   hairpins" — resolved via ruling 1. The 'angle' merge-decline stays (a U-turn fork is
+   geometric nonsense).
 
 ## Work order
 
-### Build phase
-1. **BUG-57 — the crossing rung** (re-scoped 2026-08-25). Implement the order-free crossing
-   rule on pure pre-registration samples (census-style: planned offCurve spans sanction,
-   30 m shared-node throat exemption); teach the bundle/assembly to drop a deleted LOSER
-   (mirror of the shipped dead-winner rule — victim `3,1,0|4,1,1` is a bundle loser); run the
-   parity battery; then DELETE the superseded machinery (tear nomination guards, one-shot
-   vetting, cluster resolver, deep boxes). Connectivity becomes a GATE (components unchanged
-   across the seed battery); the seed re-roll valve is designed only if a seed ever trips it.
-2. **BUG-56 — junction departure shape (Y→T) + stitching gate.** Minor legs leave a junction
-   across the through-axis (a departure-heading boundary condition via the existing pin
-   machinery; the corridor search + terrain make the rest emergent), so they exit the
-   through-road's XZ space before their Y diverges. The co-grade-taper idea is REPLACED by
-   this; the midspan+end merge composition is DEMOTED to a watch (its motivating tear at
-   −2,3,1 dies under BUG-57's crossing rule). Plus the honest stitching gate (ruling 7).
-3. **PERF-28 — hitch attribution + fix.** Note: BUG-57's machinery deletion likely REDUCES
-   the per-window scan cost (the delete rung's +270–360 ms was the top hitch suspect) —
-   run the attribution first anyway.
+### Build phase (serial, in this order)
+1. **BUG-57 — the crossing rung** (`.planning/todos/pending/bug-57-hairpin-stack-fallthrough.md`).
+   Implement order-free crossing deletion on pure pre-registration samples; bundle learns to
+   drop a deleted LOSER (dead-winner-rule mirror; watch acyclicity); parity battery; then the
+   ruling-3 machinery deletion; connectivity gate (components unchanged across the seed
+   battery); classifier reduced to the invariant's gate instrument; map A/B to the owner.
+   Expected: graph-topology (j) green; the (−1692,1759) area unchanged (nest resolution
+   parity); seed-3/11 tangles newly resolved.
+2. **BUG-56 — junction departure shape + stitching gate**
+   (`.planning/todos/pending/bug-56-junction-fork-disjunction.md`). The screenshot tear at
+   node −3,1,1 (−1533,1247) is the reproducer; sibling class sweep after.
+3. **PERF-28 — hitch attribution, then fix**
+   (`.planning/todos/pending/perf-28-streaming-hitch-events.md`). Run the attribution AFTER
+   BUG-57 lands — the deleted machinery was the top cost suspect, so measure the new baseline.
 
 ### Late phase (after building)
-4. Re-triage sweep of stale road tickets (BUG-42/47/48/51/52, BUG-25 watch) against v2.
-5. Merge feature/corridor-router → main (settle the five booked reds deliberately; re-bake
-   the default-seed route cache; close FEAT-68; re-derive BUG-51 on v2).
+4. Re-triage sweep: BUG-42/47/48/51/52 + the BUG-25 watch against the v2 world.
+5. Merge `feature/corridor-router` → main: settle the five booked gate reds deliberately
+   (fix or re-baseline with written rationale), re-bake the default-seed route cache, close
+   FEAT-68; re-derive BUG-51 on v2 rather than merging `feature/seed20-road`.
 
-### Deferred
-- Gate-debt: road-smoothness lone-pine 16 cm canary. ((f) retires per ruling 5; (j) expected
-  green via BUG-57.)
-- Structural watches: region-boundary connectivity (bites when region-gating lands); QUAL-23
-  per-region routing character; midspan+end merge composition (demoted from BUG-56).
+### Deferred (named so they are not lost)
+- road-smoothness lone-pine 16 cm canary.
+- Structural watches: region-boundary connectivity (bites when region-gating lands; also the
+  seed-reroll valve of ruling 1 — design only if a real seed ever trips the connectivity
+  gate); QUAL-23 per-region routing character; midspan+end merge composition; Option B
+  deliberate X intersections.
 
-## Pending rulings
+## Kickoff (for the next agent)
 
-- **At-grade X crossings** (small): the crossing classifier flat-merges a handful of
-  legitimate crossings into at-grade intersections (GRAPH-FLAT-MERGES green: "6 crossings,
-  every one merges flat"). These are sanctioned geometry and the simulations did NOT count
-  them. Confirm they LIVE (they are proper intersections, they stitch) — recommend yes; the
-  invariant then reads "no unsanctioned crossings".
-- **Scope of the machinery deletion** (confirm): the nest resolver shipped 3 days ago and the
-  parity battery shows the crossing rule re-derives its result. Recommend deleting it with
-  the rest of the guard machinery — less code for the next session to misread. Alternative:
-  leave it dormant behind the rung. Recommend: delete.
-- (space for the owner's next batch)
+Start the session in `/Users/ledogen/CodeShit/CarGame` (main — memory + docs load from here)
+and say: **"Start BUG-57 per .planning/ROAD-CLOSEOUT-PLAN.md."** Code edits go in the
+`/Users/ledogen/CodeShit/CarGame-corridor-router` worktree (branch `feature/corridor-router`),
+docs/ticket updates on main — same split BUG-55 used. Work the build phase serially; bring
+the map A/B and the parity table back to the owner before deleting the superseded machinery.
