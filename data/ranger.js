@@ -519,6 +519,12 @@ export const RANGER_PARAMS = {
     // reach, so bounding the arrival is what keeps a merge from parking a step at a junction.
     // 0.12 = the plane clamp plus what the junction blend absorbs over its reach.
     mergePadArrivalMax: 0.12,
+    // BUG-57: the SHOVE rung's post-deflection separation floor. A nick-crossed pair (a leg
+    // that pokes across a partner and comes back) keeps BOTH connections: the longer member
+    // registers deflected laterally until the pair stays this far apart over the contact —
+    // above the census's 9 m tear floor, below mergeProxM. Deflection declines (fold floor,
+    // transit, >30 m) fall through to the delete rung.
+    shoveClearM: 12,
     // BUG-55 phase 5 (owner rulings 2026-08-23): a tear-grade pair the merge ladder cannot take
     // loses its LONGER member (the wanderer; the direct connection survives) — but only when the
     // victim's endpoints reconnect within this many hops through edges that cannot themselves be
