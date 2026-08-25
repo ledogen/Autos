@@ -364,9 +364,16 @@ Load-bearing subtleties, each measured in:
   deletes at rank 1 (3-hop detour), the loser registers plain via the dead-winner rule.
   **Both marks now come back CLEAN** — the 84 m leftover and the 0.7 m-deck crossing are
   gone. Window-invariant: identical resolution from the origin, (−1091,2792), and
-  (−1692,1759) window centers. The kept members' own smaller tears (74 m `-2,3,1|-3,4,2`,
-  66 m `-3,1,1|-4,2,0`) stay declined — their detours would lean on the nest's deletions —
-  and are censused, not silent.
+  (−1692,1759) window centers. The kept members' own smaller tears stay declined
+  (their detours would lean on the nest's deletions) and are censused, not silent — measured
+  coords at `4c72378`, seed 6:
+  · `g:-2,3,1:-3,3,2 × g:-2,3,1:-3,4,2` — ~108 m raw alongside (74 m past the throat trim)
+    out of node -2,3,1 (-870, 2486); closest 0.2 m @(-940, 2515); worst deck gap **4.9 m
+    @(-967, 2522)**.
+  · `g:-3,1,1:-3,3,2 × g:-3,1,1:-4,2,0` — ~120 m raw (66 m trimmed) out of node -3,1,1
+    (-1533, 1247); closest 0.0 m @(-1533, 1247); worst deck gap **4.4 m @(-1583, 1352)**.
+    **This is the owner's BUG-56 screenshot spot** (POS −1576/1361 is 12 m from the worst
+    gap) — the "junction disjunction" they flagged IS this tear's throat.
 
 ### Verification (all at `3daadc5`)
 
@@ -395,10 +402,15 @@ the cluster path is lazy (deep box + growth only on windows with a one-shot 'det
    the junction-surface class, ticketed as BUG-56 (fork disjunction, not a BUG-55 pair). Still
    worth eyeballing: (932,793) and (3328,−27); the seed-7 deletions at (−1650..−1315, 310..837)
    and (−640..−247, −429..11).
-2. **The two hairpin stacks** — graph-topology (j)'s ONLY remaining violations:
-   `4,1,1|5,1,0 × 3,1,0|4,1,1` (153°) and `6,3,0|6,4,1 × 5,3,2|6,3,0` (138°), 1.2–1.3 m apart
-   mid-span. Real tears the 'angle' ruling protects from both merge and delete. Owner call:
-   accept as character, or carve out a rule.
+2. **The hairpin stacks** — graph-topology (j)'s remaining violations, re-measured 2026-08-24
+   at `4c72378` (seed 6, gate window (4500,600)): THREE pair-violations, not the two the
+   session-2 note recorded — the first two share the run `3,1,0|4,1,1`, i.e. one switchback
+   ladder doubling back twice:
+   · `3,1,0|4,1,1 × 3,-1,1|3,1,0` — closest **1.2 m @(2549, 685)**, ~35 m stretch
+   · `4,1,1|5,1,0 × 3,1,0|4,1,1` (the booked 153°) — closest **1.3 m @(3118, 1026)**, ~20 m
+   · `6,3,0|6,4,1 × 5,3,2|6,3,0` (the booked 138°) — closest **1.2 m @(4217, 2291)**, ~30 m
+   Real tears the 'angle' ruling protects from both merge and delete. Owner call: accept as
+   character, or carve out a rule.
 3. **(f) NODE-DEPARTURE bounds** (avg<22/worst<60 vs measured 28.4/106 over 24 endpoints):
    predate chord-pin demotions; needs its own pass, not a fit-to-current loosening.
 4. Booked code follow-ups: dry-run for END-anchored specs (`_v2RegisterMerged`); the

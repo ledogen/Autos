@@ -33,6 +33,17 @@ that remains around it.
 - graph-topology (f) NODE-DEPARTURE is booked separately (bearing); if one pass fixes both,
   fine, but do not fold its re-baselining into this ticket silently.
 
+**IDENTIFIED (2026-08-24, measured):** the screenshot spot is the nest's second kept-member
+tear — `g:-3,1,1:-3,3,2` (the BUG-55 loser) × `g:-3,1,1:-4,2,0`, both leaving node -3,1,1 at
+(-1533, 1247): ~120 m raw alongside (66 m past the 30 m throat trim), separation 0–18 m, decks
+up to **4.4 m apart @(-1583, 1352)** — 12 m from the owner's camera POS. The floating shelf is
+the higher deck riding over the lower one's carve. Deletion of either leg was declined by the
+cluster walk (detour would lean on the nest's deletions); the merge ladder declined earlier.
+So this ticket's job at THIS node is a junction-surface reconciliation the resolution ladder
+does not attempt: two legs that both survive, leaving one node within earthworks distance at
+different grades. The sibling tear of the same class sits at node -2,3,1 (-870, 2486), worst
+gap 4.9 m @(-967, 2522) — fix both, and sweep for more.
+
 First moves: `node test/capture-classify.mjs 6 -1576 1361` for the runs/merge state at the node;
 `RoadSystem.debugSampleAt` / carve-mesh probes across the fork for the height series of each
 surface; identify WHICH surface (leg ribbon, pad, carve floor) owns the step.
