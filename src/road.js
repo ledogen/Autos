@@ -4130,9 +4130,6 @@ export class RoadSystem {
             const vb = spec.variants[Math.min(wb2.bandIdx, spec.variants.length - 1)]
             vList = [vb, ...spec.variants.filter((v2) => v2 !== vb)]
         }
-        // BUG-56: held pass first, unheld fallback second — see the note on the same ladder in
-        // _v2RegisterMerged. A mid-span merge forks at BOTH ends, so both hold or neither does.
-        for (const hold of [true, false])
         for (const v of vList) {
             const lDir = v.lDir, wDir = v.wDir, bIn = v.bandIn, bOut = v.bandOut
             const startCum = lDir > 0 ? 0 : own.L, endCum = lDir > 0 ? own.L : 0
@@ -4181,25 +4178,15 @@ export class RoadSystem {
             const iA = Math.min(iIn, iOut), iB = Math.max(iIn, iOut)
             const nA = iA === iIn ? nIn : nOut     // band vertices adjacent to each fork
             const nB = iB === iOut ? nOut : nIn
-            // BUG-56: the DEPARTURE HOLD at both forks. In registered order the array reads
-            // head · bandA · forkA · ceded · forkB · bandB · tail, so a band's vertices walk away
-            // from their fork at iA−1, iA−2, … and iB+1, iB+2, … whichever travel direction the
-            // run was assembled in. Each fork's still-overlapping vertices ride the winner's deck
-            // and the strand solve starts past them (see _v2DepartureHold).
-            const wArcA = iA === iIn ? v.wIn : v.wOut, wArcB = iB === iOut ? v.wOut : v.wIn
-            const holdSide = (fork, dir, nBand, wArc, bandLen) => {
-                if (!hold) return { edge: fork, deck: pts[fork].y }
-                const walk = []
-                for (let k = 1; k <= nBand; k++) walk.push(pts[fork + dir * k])
-                const { holdK, y, clears } = this._v2DepartureHold(win, wArc, bandLen, walk)
-                if (!clears) return null   // still overlapping where the band welds onto its own line
-                for (let k = 1; k <= holdK; k++) pts[fork + dir * k].y = y[k - 1]
-                return { edge: fork + dir * holdK, deck: holdK > 0 ? y[holdK - 1] : pts[fork].y }
-            }
-            const hA = holdSide(iA, -1, nA, wArcA, iA === iIn ? bIn.Lb : bOut.Lb)
-            const hB = holdSide(iB, +1, nB, wArcB, iB === iOut ? bOut.Lb : bIn.Lb)
-            if (!hA || !hB) { why = 'fork never clears the through road'; continue }
-            const deckA = hA.deck, deckB = hB.deck
+            // BUG-56: the DEPARTURE HOLD is NOT applied to mid-span forks. It was built and
+            // measured here (both forks hold or neither does) and it works — the seed-6
+            // −2,3,1|−3,4,2 forks went from 1.05 m to 0.08 m of deck gap inside the corridor —
+            // but it shifts the strand solve's boundary and the profile drifts far enough by the
+            // JOIN that the seam where the analytic refine resumes reads as a 24 cm collision-only
+            // step at a junction pad (seed 6, (877,921)). Measured trade: one junction-stitch site
+            // gained, road-smoothness lost. The collision-surface bar wins; mid-span forks stay
+            // booked on BUG-56.
+            const deckA = pts[iA].y, deckB = pts[iB].y
             // TWO solves, each pinned at its fork to the winner's real deck; the ceded middle keeps
             // the winner's heights untouched, so the two branches leave from the same pavement.
             const infBefore = this._v2Infeasible || 0
@@ -4212,8 +4199,8 @@ export class RoadSystem {
                 for (let i = 0; i < sub.length; i++) sub[i].y = this._coarseH(sub[i].x, sub[i].z)
                 return { spans: this._v2GradePts(sub, arc, opts), i0, arc }
             }
-            const r1 = solve(0, hA.edge, { yB: deckA })
-            const r2 = solve(hB.edge, pts.length - 1, { yA: deckB })
+            const r1 = solve(0, iA, { yB: deckA })
+            const r2 = solve(iB, pts.length - 1, { yA: deckB })
             if (!r1 || !r2 || (this._v2Infeasible || 0) > infBefore) {
                 this._v2Infeasible = infBefore
                 why = `strand profile infeasible (head ${iA + 1} pts / ${(clArc[iA] - clArc[0]).toFixed(0)} m to deck ${deckA.toFixed(1)}, tail ${pts.length - iB} pts / ${(clArc[pts.length - 1] - clArc[iB]).toFixed(0)} m from deck ${deckB.toFixed(1)})`
@@ -4269,7 +4256,6 @@ export class RoadSystem {
                                   owner: wk, ownerS0: wLo - bOut.Lb, ownerS1: wHi + bOut.Lb }],
             })
             this._v2Merges = (this._v2Merges || 0) + 1
-            if (!hold) this._v2MergeSkipped('unheld', `${key} mid-span keeps its merge with front-loaded forks (BUG-56 hold infeasible)`)
             return true
         }
         return bail(why)
