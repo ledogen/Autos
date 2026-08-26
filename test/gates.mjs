@@ -66,6 +66,8 @@ export const GATES = [
     desc: 'FEAT-13 v2: Delaunay/Urquhart primitives — empty-circumcircle, Urquhart⊇MST (connected), order-invariant' },
   { file: 'road-connectivity.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-68: the registered network is ONE component on the eval trio (connectivity is priority #1 and it regressed silently once — the deleted v1 culls shredded v2 geometry to 54% mean largest-component share while preventing zero real crossings), and no non-adjacent runs cross' },
+  { file: 'junction-stitch.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-56: the HONEST stitching bar — no two pavements overlap in XZ at incompatible deck heights (sanctioned merge bands INCLUDED; that sanctioning is what let the owner\'s torn fork print clean). RED until the departure pass lands.' },
   { file: 'graph-topology.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-13 v2: blue-noise + Urquhart: reachability (known-accepted 78% red, see BUG-35), window-invariance, direction variety, step-free surface, junction-at-grade' },
   { file: 'props.mjs', subsystem: 'props', cost: 'fast', extraDeps: [],
