@@ -4312,14 +4312,28 @@ export class RoadSystem {
     // wrong end of itself.
     _v2DepartureHold(win, wArc, bandLen, pts) {
         const CLEAR = 2 * (this._params?.roadHalfWidth ?? 5)
-        const R = bandLen + 80
-        const lo = Math.max(0, wArc - R), hi = Math.min(win.L, wArc + R)
         const y = new Array(pts.length)
         let last = -1
+        // ROLLING window, anchored at the fork and walked forward one vertex at a time. A single
+        // whole-run search is not good enough here: past the corridor the nearest point runs off
+        // the winner's far end (or onto a loop-back), and the answer TELEPORTS — measured as a
+        // 12.3 m step in the registered deck where the last held vertex handed over to the solve,
+        // because that vertex's height came from the wrong stretch of road. Walking keeps the
+        // projection on the piece of winner the band is actually leaving.
+        let at = wArc
         for (let k = 0; k < pts.length; k++) {
-            const w = _nearestOnPolyXZ(pts[k].x, pts[k].z, win.pts, win.polyCum, lo, hi)
+            const w = _nearestOnPolyXZ(pts[k].x, pts[k].z, win.pts, win.polyCum,
+                                       Math.max(0, at - 60), Math.min(win.L, at + 60))
             y[k] = w.y
-            if (w.d < CLEAR) last = k
+            at = w.cum
+            // CONTIGUOUS from the fork, and only that. A band that clears the corridor and later
+            // comes back near the winner — the winner hairpins, the band runs up the far arm — is
+            // a separate proximity for the merge planner and the crossing rung to answer, not part
+            // of this departure. (Measured: taking the LAST vertex inside the corridor instead held
+            // a whole 60 m band whose projection walked down one arm and teleported to the other,
+            // registering a 9.4 m step in the deck where it flipped.)
+            if (w.d >= CLEAR) break
+            last = k
         }
         // `clears` is about the band's OWN last vertex — a band that is still overlapping where it
         // welds back onto the loser's line has nowhere to put the departure and the ladder must try
