@@ -65,6 +65,14 @@ guarded per-deletion.
 ## Work order
 
 ### Build phase (serial, in this order)
+
+> **Status 2026-08-26:** item 1 (BUG-57) is DONE and CLOSED — crossing invariant + the owner's
+> keep-the-connection re-scope (tangle merges, shove rung, deletion demoted to last resort),
+> ruling-3 machinery deletion executed, graph-topology 8/8 ((f) retired per ruling 7,
+> SURFACE-SMOOTH exclusion removed per ruling 2), zero census crossings across the battery,
+> owner map sign-off received. Item 2 (BUG-56) is NEXT — owner priority 2026-08-26
+> ("undriveable intersections"); fresh reproducer + measured fork table in the BUG-56 ticket.
+
 1. **BUG-57 — the crossing rung** (`.planning/todos/pending/bug-57-hairpin-stack-fallthrough.md`).
    Implement order-free crossing deletion on pure pre-registration samples; bundle learns to
    drop a deleted LOSER (dead-winner-rule mirror; watch acyclicity); parity battery; then the
@@ -92,10 +100,26 @@ guarded per-deletion.
   gate); QUAL-23 per-region routing character; midspan+end merge composition; Option B
   deliberate X intersections.
 
-## Kickoff (for the next agent)
+## Kickoff (for the next agent) — updated 2026-08-26: the priority is INTERSECTIONS (BUG-56)
 
 Start the session in `/Users/ledogen/CodeShit/CarGame` (main — memory + docs load from here)
-and say: **"Start BUG-57 per .planning/ROAD-CLOSEOUT-PLAN.md."** Code edits go in the
-`/Users/ledogen/CodeShit/CarGame-corridor-router` worktree (branch `feature/corridor-router`),
-docs/ticket updates on main — same split BUG-55 used. Work the build phase serially; bring
-the map A/B and the parity table back to the owner before deleting the superseded machinery.
+and say: **"Start BUG-56 per .planning/ROAD-CLOSEOUT-PLAN.md."** Code edits go in the
+`/Users/ledogen/CodeShit/CarGame-corridor-router` worktree (branch `feature/corridor-router`,
+dev :3343), docs/ticket updates on main — the established split. BUG-57 is closed; read its
+ticket's RESOLUTION section + `[[project_bug57_crossing_rung_state]]` before touching the
+merge/shove/delete ladder.
+
+BUG-56 in one paragraph: the owner's 2026-08-26 capture (seed 6, mark (−1582,1333), node
+−3,1,1) shows the class — a leg that merges onto the through spine, rides it exactly (deck
+gap 0.00 m through the ceded strand), then FORKS and front-loads its entire climb: +0.9 m
+deck gap at 1 m lateral separation, +5.6 m at 20 m, with band camber on top and no pad (forks
+have no pad vocabulary, and shouldn't). The ruled pass (ticket, "The pass" section): (1) a
+DEPARTURE BOUNDARY CONDITION — the minor leg exits across the through-axis, out of the
+through-road's XZ clearance BEFORE its Y diverges, via the existing heading-pin machinery;
+terrain does the rest, no hand-coded taper choreography; (2) the HONEST STITCHING GATE that
+measures deck-gap-vs-lateral-separation at every junction leg and fork, sanctioned bands
+INCLUDED (sanctioning is what let this print CLEAN) — allowed red until the pass lands. The
+shove rung's deflections and the direct-span Hermite bands are additional fork-like
+departures the same gate must cover. Routing changes re-route affected edges: expect network
+character changes at shallow junctions — map A/B to the owner (ruling 6). After BUG-56:
+PERF-28 → re-triage sweep → merge to main (work order above).

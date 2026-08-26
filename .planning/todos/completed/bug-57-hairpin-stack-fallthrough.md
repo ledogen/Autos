@@ -1,7 +1,8 @@
 ---
 id: BUG-57
 type: bug
-status: open
+status: closed
+closed: 2026-08-26
 severity: major
 opened: 2026-08-24
 source: owner rulings 2026-08-24 (Option 1 on the (j) stacks) + 2026-08-25 (the crossing
@@ -226,3 +227,35 @@ five booked reds; full `test:all` run at session end (see commit).
 - Tangled mid-span pairs get direct-span bands but not yet the span-the-crossings variant
   filter (node-anchored only) — full-strand-first ordering covers the observed cases.
 - `roadV2.shoveClearM` (default 12) is a new param — debug-slider audit at phase end.
+
+---
+
+## RESOLUTION (2026-08-26) — CLOSED
+
+Owner map review 2026-08-26: "previewing the map it looks like all tangles are gone. good
+job." Ruling-3 machinery deletion executed the same day:
+
+- DELETED: `_v2VictimFreePath` (one-shot victim-free BFS), `_v2ClusterResolve` + its memo
+  (the nest resolver), the lazy deep Urquhart box (`_deepBox`/`deepE`/`_isDeep`) + the 'D|'
+  conflict-memo universe, `NEST_DIAMETER_HOPS`, the tear grades in `_v2ConflictPairs`
+  (nearLen/minSep/maxDy/tear — pairs are crossing-driven now), the unread `declinedAngle`
+  memo, and the `deleteDetourHops` param + slider (the rung has no cap and no toggle — the
+  invariant is not optional). `_degreeDrops`' box margin reverted to the pre-BUG-55
+  gMargin + degreeDetourHops + 1.
+- graph-topology: SURFACE-SMOOTH's crossing-zone exclusion REMOVED (ruling 2 — zero mid-span
+  crossings is structural; the gate walks every sample now) and (f) NODE-DEPARTURE RETIRED
+  (ruling 7, confirmed at the touch) → **8/8 green**, the first fully-green run.
+- The permanent zero-crossings gate lives in road-connectivity's NO-REAL-CROSSINGS (per seed)
+  + the crossing-rung parity battery; crossing-classifier accepts the empty network.
+- Battery after deletion: byte-identical verdicts (no victim/component drift), zero census
+  crossings, one component everywhere.
+
+Final shape of the resolution ladder, in order: merge (with tangle relaxations: angle waiver,
+outward fork, direct-span Hermite bands) → shove (nick-cross deflection) → DELETE (longer
+member of a surviving unsanctioned-crossing pair — transits and terrain-locked tangles) →
+connectivity gate. Deletion is the last resort, per the owner's keep-the-connection ruling.
+
+Follow-up landed with it: polar-cap terminus coverage (deletion-degraded junction wedges),
+one-level chain winner view (0.72 m fork-step class), rim-honest connectivity counting.
+Successor work: **BUG-56** (junction departure + honest stitching gate — the owner's
+2026-08-26 capture at (−1582,1333) is the reproducer, measured table in that ticket).

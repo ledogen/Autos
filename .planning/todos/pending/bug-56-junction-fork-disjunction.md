@@ -91,3 +91,41 @@ surface; identify WHICH surface (leg ribbon, pad, carve floor) owns the step.
 - carve-mesh-smoothness and road-smoothness stay green (lone-pine canary allowed); no new reds
   in `npm run test:all`.
 - MESH == PHYSICS holds at the fork (drive over it; no invisible step).
+
+---
+
+## PRIORITY + fresh reproducer (owner, 2026-08-26) — THIS IS THE NEXT BUILD ITEM
+
+**Owner (2026-08-26, after accepting BUG-57's maps):** "my next main complaint is now these
+undriveable intersections where one leg comes in above the other with lots of camber and no
+junction pad is formed at all." Capture: `rangersim-capture-1787760371377.json`, seed 6, mark
+**(−1582, 1333)** — the SAME node −3,1,1 as mechanism (a), photographed from the road this
+time (blue truck parked on the high leg).
+
+**Fresh measurement (2026-08-26, post-BUG-57 world, capture-classify + a probe along the
+loser):** `g:-3,1,1:-4,2,0` cedes 0–95 m to the through spine `g:-3,1,1:-3,3,2` (offCurve
+0–141). Deck agreement is EXACT through the ceded strand (dy 0.00 m). Then the fork:
+
+| loser arc | lateral sep | dy above winner |
+|---|---|---|
+| 100 m | 1.0 m | **+0.88 m** |
+| 123 m | 20.6 m | +5.56 m |
+| 146 m | 39.4 m | +10.4 m |
+| 205 m | 76.1 m | +15.7 m |
+
+The leg must climb ~15 m and the profile solve front-loads the whole climb at the fork — the
+fork Y is pinned to the winner's deck but nothing constrains the DEPARTURE GRADE, so at 1 m of
+lateral separation the pavements already differ by 0.9 m (the lip in the screenshot), and the
+band's own camber banks it against the through road. "No junction pad" is structurally true:
+the node's pad is 95 m away at −3,1,1 — no pad vocabulary exists at FORKS, and none should:
+the ruled fix is the departure boundary condition (item 1 above), which moves the leg OUT of
+the through-road's XZ clearance before its Y diverges. The stitching gate (item 2) must
+measure exactly this table: deck gap vs lateral separation at every fork/junction leg,
+sanctioned bands included.
+
+Where this sits: BUG-57 is CLOSED (crossing invariant + keep-the-connection relaxations +
+ruling-3 machinery deletion all shipped; graph-topology 8/8 with (f) retired per ruling 7 and
+the SURFACE-SMOOTH crossing-zone exclusion removed). The shove rung's deflections and the
+direct-span Hermite bands are additional fork-like departures this pass should cover with the
+same gate. Build order per ROAD-CLOSEOUT-PLAN: **BUG-56 (this) → PERF-28 → re-triage sweep →
+merge to main.**
