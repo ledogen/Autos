@@ -16,23 +16,28 @@
 // gates while looking torn. A ceded strand rides the winner's deck exactly and passes here on its
 // own merit (sep ~0, dy ~0); a fork that front-loads its climb does not, and that is the point.
 //
-// THREE TIERS, one of them gating:
+// ONE RULE, measured centreline to centreline:
 //
-//   LIP  (GATING) — lateral separation ≤ 2·roadHalfWidth: the two PAVEMENTS OVERLAP. The drivable
-//                   surface must be single-valued, so the decks must agree to the collision-surface
-//                   tolerance (0.15 m — road-smoothness's WALL step). Excludes the junction PAD
-//                   footprint, where the ribbons are cut back and a real junction surface exists
-//                   (that surface's own quality is the pad-arrival guard's business,
-//                   mergePadArrivalMax) — everything else is measured, forks first.
+//     deck gap <= 0.15 m + lateral separation / roadFillSlope
 //
-//   BANK (report) — separation ≤ mergeProxM (18 m, shared earthworks): the strip between the two
-//                   shoulders can carry a fill embankment, so the gap may grow at the slope the
-//                   carve actually builds (roadFillSlope 3:1 → 0.333 V/H) before it reads as a
-//                   cliff between two roads. Reported, not gating: the class is real but it is the
-//                   merge/crossing rung's business (BUG-57), not the departure shape's.
+// Two decks may not diverge faster than the ground between them can slope. The 0.15 m floor is
+// road-smoothness's WALL step — the collision-surface bar — so pavements that are coincident must
+// agree outright; past that the gap may open at exactly the embankment slope the carve builds
+// (roadFillSlope 3:1 -> 0.333 V/H), which is the steepest transition the two roads can actually be
+// joined by. Above that line the ground between them is a cliff, whatever it is called.
 //
-//   PAD  (report) — the same BANK measure inside the pad footprint, counted so a pass that fixes
-//                   forks by pushing the mess into the pad is visible rather than silent.
+// Owner's reproducer under this rule: 0.88 m of deck gap at 1.0 m of separation, allowed 0.48 — a
+// FAIL, which is the lip in the screenshot. A fork gore 9 m out with 1.5 m of gap is allowed 3.1
+// and passes: two roads leaving a junction on their own grades, edges grazing, no wall in a lane.
+//
+// Measured out to mergeProxM (18 m, shared earthworks); beyond that the two roads do not share any
+// ground and there is nothing to stitch. Two populations, both reported, one gating:
+//
+//   SPAN (GATING) — everywhere else. Forks, taper bands, merge seams, junction legs past the pad.
+//   PAD  (report) — inside the junction pad footprint, where the ribbons are cut back and a REAL
+//                   junction surface exists. That surface's quality is the pad-arrival guard's
+//                   business (mergePadArrivalMax); counted here so a pass that fixes forks by
+//                   pushing the mess into the pad is visible rather than silent.
 //
 // Beyond 18 m the two roads do not share earthworks: two roads on a hillside, not a junction.
 // Tunnel bores are excluded (a bore genuinely passes under). Nothing else is.
@@ -50,8 +55,6 @@ const TOP = Number((argv.find((a) => a.startsWith('--top=')) || '--top=6').split
 const ONLY = (argv.find((a) => a.startsWith('--window=')) || '').split('=')[1]
 
 const NEAR  = P.roadV2?.mergeProxM ?? 18            // m — shared-earthworks centre separation
-const HW    = P.roadHalfWidth ?? 5                  // m — pavement half-width
-const PAVE  = 2 * HW                                // m — separation at which the pavements part
 const FILLV = 1 / (P.roadFillSlope ?? 3)            // V/H — the embankment the carve actually builds
 const TOL   = 0.15                                  // m — road-smoothness's collision-surface WALL
 const STEP  = 2.0                                   // m — sampling pitch along the first run
@@ -59,7 +62,7 @@ const STEP  = 2.0                                   // m — sampling pitch alon
 // corner fillets pave the gap. One fillet radius of margin past the mouth.
 const PADR  = (P.roadJunctionCutback ?? 10) + (P.roadFilletRadius ?? 5)
 
-const bankAllowed = (d) => TOL + FILLV * Math.max(0, d - PAVE)
+const allowed = (d) => TOL + FILLV * d
 
 const nearestOn = (px, pz, pts, cum) => {
   let d = Infinity, s = 0, y = 0
@@ -120,7 +123,7 @@ const scan = (road) => {
     .filter((r) => r.a && r.b && r.e.points?.length > 1)
   for (const r of runs) r.bb = bboxOf(r.e.points)
   const lips = []
-  let bankPairs = 0, padPairs = 0
+  let padPairs = 0
   for (let i = 0; i < runs.length; i++) for (let j = 0; j < runs.length; j++) {
     if (i === j) continue
     const A = runs[i], B = runs[j]
@@ -132,7 +135,7 @@ const scan = (road) => {
     const nodePts = []
     if (shared.includes(A.a)) nodePts.push(pA[0])
     if (shared.includes(A.b)) nodePts.push(pA[pA.length - 1])
-    let lip = null, sawBank = false, sawPad = false
+    let lip = null, sawPad = false
     let lo = 0
     for (let s = 0; s <= LA; s += STEP) {
       while (lo + 2 < cA.length && cA[lo + 1] <= s) lo++
@@ -146,13 +149,11 @@ const scan = (road) => {
       const dy = Math.abs(ay - n.y)
       let dNode = Infinity
       for (const q of nodePts) dNode = Math.min(dNode, Math.hypot(ax - q.x, az - q.z))
-      const inPad = dNode <= PADR
-      if (dy > bankAllowed(n.d)) { if (inPad) sawPad = true; else sawBank = true }
-      if (inPad || n.d > PAVE || dy <= TOL) continue
-      const ex = dy - TOL
+      const ex = dy - allowed(n.d)
+      if (ex <= 0) continue
+      if (dNode <= PADR) { sawPad = true; continue }
       if (!lip || ex > lip.excess) lip = { excess: ex, dy, sep: n.d, x: ax, z: az, sA: s, dNode }
     }
-    if (sawBank) bankPairs++
     if (sawPad) padPairs++
     if (!lip) continue
     lip.pair = A.k < B.k ? `${A.k} × ${B.k}` : `${B.k} × ${A.k}`
@@ -167,25 +168,25 @@ const scan = (road) => {
   const byPair = new Map()
   for (const l of lips) { const h = byPair.get(l.pair); if (!h || l.excess > h.excess) byPair.set(l.pair, l) }
   const out = [...byPair.values()].sort((a, b) => b.excess - a.excess)
-  return { lips: out, bankPairs: bankPairs >> 1, padPairs: padPairs >> 1, runs: runs.length }
+  return { lips: out, padPairs: padPairs >> 1, runs: runs.length }
 }
 
-let fails = 0, totalLips = 0, totalBank = 0, totalPad = 0
+let fails = 0, totalLips = 0, totalPad = 0
 for (const W of WINDOWS) {
   if (ONLY && !W.name.includes(ONLY)) continue
-  const { lips, bankPairs, padPairs, runs } = scan(buildWindow(W))
-  totalLips += lips.length; totalBank += bankPairs; totalPad += padPairs
+  const { lips, padPairs, runs } = scan(buildWindow(W))
+  totalLips += lips.length; totalPad += padPairs
   const byTag = {}
   for (const w of lips) byTag[w.tag] = (byTag[w.tag] || 0) + 1
-  const head = `${W.name.padEnd(20)} runs ${String(runs).padStart(3)} · LIP ${String(lips.length).padStart(3)} · bank ${String(bankPairs).padStart(3)} · pad ${String(padPairs).padStart(3)}`
+  const head = `${W.name.padEnd(20)} runs ${String(runs).padStart(3)} · span ${String(lips.length).padStart(3)} · pad ${String(padPairs).padStart(3)}`
   if (!lips.length) { console.log(`  ok   ${head}`); continue }
   fails++
   console.log(`  FAIL ${head} · ${JSON.stringify(byTag)}`)
   for (const w of lips.slice(0, VERBOSE ? lips.length : TOP))
-    console.log(`         ${w.tag.padEnd(7)} (${w.x.toFixed(0)},${w.z.toFixed(0)})  deck gap ${w.dy.toFixed(2)} m at ${w.sep.toFixed(1)} m separation, ${w.dNode.toFixed(0)} m from the node   ${w.pair}`)
+    console.log(`         ${w.tag.padEnd(7)} (${w.x.toFixed(0)},${w.z.toFixed(0)})  deck gap ${w.dy.toFixed(2)} m at ${w.sep.toFixed(1)} m separation (allowed ${allowed(w.sep).toFixed(2)}), ${w.dNode.toFixed(0)} m from the node   ${w.pair}`)
   if (!VERBOSE && lips.length > TOP) console.log(`         … ${lips.length - TOP} more (--verbose)`)
 }
 
-console.log(`\njunction-stitch: ${totalLips} overlapping-pavement LIPS (gating) · ${totalBank} shared-earthwork bank pairs · ${totalPad} pad-vicinity pairs`)
-if (fails) { console.log('FAIL — pavements overlap at incompatible heights (BUG-56)'); process.exit(1) }
+console.log(`\njunction-stitch: ${totalLips} unstitched pair-stretches (gating) · ${totalPad} pad-vicinity pairs (report)`)
+if (fails) { console.log('FAIL — road decks diverge faster than the ground between them can slope (BUG-56)'); process.exit(1) }
 console.log('PASS')
