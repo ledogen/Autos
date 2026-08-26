@@ -259,3 +259,26 @@ Follow-up landed with it: polar-cap terminus coverage (deletion-degraded junctio
 one-level chain winner view (0.72 m fork-step class), rim-honest connectivity counting.
 Successor work: **BUG-56** (junction departure + honest stitching gate — the owner's
 2026-08-26 capture at (−1582,1333) is the reproducer, measured table in that ticket).
+
+---
+
+## CARRIED FORWARD FROM BUG-55 (owner instruction, 2026-08-26: "close bug 55 and merge any open work into 57")
+
+BUG-55 was closed on 2026-08-26. Its "Open items" list was audited item by item; this is where the
+live residue lands. BUG-57 is itself closed, so anything still open here is booked to a named home
+rather than left implicit.
+
+| BUG-55 open item | Disposition |
+|---|---|
+| 1. Owner drives it (acceptance #7) | **DONE.** Owner free-cammed the nest area and called it great (2026-08-24); the residue they flagged became BUG-56, which shipped its first pass 2026-08-26. |
+| 2. The hairpin stacks — graph-topology (j) | **DONE here.** All three pair-violations cleared by the crossing invariant + the keep-the-connection ladder; graph-topology (j) green, zero census crossings across the battery. |
+| 3. (f) NODE-DEPARTURE bounds | **RETIRED** by this ticket's ruling 7, confirmed at the touch. BUG-56 owns that surface now. |
+| 4a. Dry-run for END-anchored specs (`_v2RegisterMerged`) | **DONE here.** `_v2RegisterMerged(…, dry)` was added for the crossing rung's sanction (built-extent semantics); it covers both ends. |
+| 4b. Census / `_v2ConflictPairs` scan consolidation (perf) | **STILL OPEN → PERF-28.** Purely a cost item; PERF-28's attribution pass is the right place to size it, now that the BUG-55 guard machinery it shared cost with is deleted. |
+| 4c. Disjoint both-to-same-spine planned check | **STILL OPEN → here, unowned.** The NODE case is measured (two legs ceding to the same third run are on one pavement by construction, and the instruments discount it); the DISJOINT analog was never measured. Not known to bite — the crossing rung's zero-crossings invariant would catch the failure it guards against — so it is recorded as a gap in the census's reasoning, not a live defect. Re-open only if a disjoint pair ever prints a false sanction.
+
+BUG-55's own acceptance #4 ("infeasible 0, zero runs over the 40% ceiling") is NOT met and never was:
+measured 2026-08-26 across 467 runs in 9 windows, **6 runs exceed the 40% contract ceiling in their
+interior, worst 115%**, and 4 runs are marked infeasible. That is BUG-51's business, not this
+ticket's — the measurement is recorded there.
+

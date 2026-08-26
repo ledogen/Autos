@@ -158,3 +158,45 @@ cannot close it.
   follows a teleport, it is a much narrower bug than a worldgen one — worth checking first.
 - Story mode's teleport lockout is deliberately held OFF (owner decision, see `src/story.js`), so
   teleporting inside a frozen region is reachable in normal play.
+
+---
+
+## RE-MEASURED ON THE v2 WORLD (2026-08-26) — the named mechanism is GONE; recommend demoting to a WATCH
+
+Owner asked directly: "is this still an issue in v2? we improved connectivity."
+
+Connectivity is not what this bug was about — BUG-48 named the mechanism as the **three RoadSystem
+instances disagreeing**: the 320 m `play` stream (the road you drive) and the 1400 m `map`/`planner`
+stream grouping the same ground differently. So that is what was measured, directly.
+
+**Test** (`test/scratch-radius-ab.mjs`, rainy-day): for six degree-≥3 junctions per seed on
+0/3/6/11/20/90, build the 1400 m map stream, then build a **fresh 320 m play stream centred on that
+junction** — which is what the player does when they drive to one — and compare. Band truncation is
+by design, so a map leg only counts as missing if its first 120 m out of the node lies inside the
+play radius, i.e. the world plainly ought to have it.
+
+| | result |
+|---|---|
+| junctions probed | 36 (6 seeds × 6) |
+| junctions where the play stream lost a leg the map draws | **0** |
+| worst deck disagreement on legs both streams registered | **0.00 m** |
+
+Zero, and exactly zero on the surface height — the 5.3 m discrepancy this ticket recorded has no
+analogue in the v2 world. That is consistent with what changed underneath: v1 grouped deg-2 chains by
+the streamed band (QUAL-24's note, which was this ticket's symptom stated in the abstract), and v2
+registers per graph edge with window-invariant plans. graph-topology's INVARIANCE check and
+`restream-invariance` are both green.
+
+**What this does NOT prove.** This ticket was never reproduced headlessly — the original note was
+"no headless build reproduces it, so it must be live session state", and a headless probe cannot
+disprove a live-session bug. The live path this test does not exercise is runtime `setRadius`
+churn: teleport, recentre, and the quality-preset ring slider all change the play radius mid-session
+and then stream incrementally rather than building fresh. `restream-invariance.mjs` is the gate that
+covers that path and it is green.
+
+**Recommendation (owner's call):** demote from `major` open bug to a **WATCH** — the named mechanism
+is measurably absent and the covering gate is green, so there is nothing left to fix without a fresh
+sighting. If it is ever seen again in a live session, the first move is to capture at the dead end and
+diff the play instance against a `MISSION_PLAN_RADIUS` rebuild at the same spot, which is the test
+above with real session state instead of a fresh build.
+

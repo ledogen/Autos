@@ -133,3 +133,51 @@ the honest terminal rung; connectivity outranks the cap per the 2026-08-18 prior
 Residual: marked edges exist (~1 per ~3 spawn regions) — the game-side response to
 `gradeExceeded` (warning sign / one-way / winch point) and the region-interface case are
 FEAT-28's (see "The unsatisfiable region" there). Planner mispricing split out as BUG-52.
+
+---
+
+## RE-MEASURED ON THE v2 WORLD (2026-08-26) — STILL LIVE, and the cap is not the guard it looks like
+
+Owner asked directly: "I thought the v2 router made absurd grade illegal." It does not. It makes an
+absurd grade *unsolvable*, and then ships one anyway.
+
+Measured across **467 runs in 9 windows** (seeds 0/3/6/7/11/20/67/90, incl. the seed-6 gate window),
+grade taken on a **10 m baseline** — the same station spacing `profileSolve` caps on — and with the
+junction-blend reach (`roadJunctionBlendLength` + 10 m) excluded at each end, so this is the road the
+ROUTER built and not grade the blend added:
+
+| | count |
+|---|---|
+| runs above the 24 % `gMaxRoad` design cap | 196 / 467 |
+| runs above the **40 % contract ceiling**, in their INTERIOR | **6 / 467** |
+| runs flagged `_v2Infeasible` (mark-and-ship) | 4 |
+| worst | **115 %** — seed 6 `g:8,1,0:9,1,0` @(5738,884), which climbs 23 m in 24 m of arc |
+
+Two facts worth keeping:
+
+1. **The over-ceiling runs are all INTERIOR**, so this is not the junction blend steepening a mouth.
+   It is the router building a road up a wall.
+2. **Marked ≠ over-ceiling.** Only 4 runs are marked infeasible, but 6 exceed the ceiling — so the
+   count of marks does not bound the damage, and a gate that watches `_v2Infeasible` alone would
+   report clean while a 115 % road ships.
+
+Mechanism, restated for v2: `_v2GradePts` walks a 4-rung ladder (cap → yStep 0.25 → cap + 0.03 →
+0.38), and when every rung fails it takes the **mark-and-ship fallback** — terrain-follow Y with the
+ends blended onto the node heights. That fallback is deliberate and well-argued in the code (a marked
+road beats a road that does not exist), but it means the ceiling is a *design intent*, not an
+enforced invariant: nothing vetoes the EDGE. The ticket's original framing — "the router is boxed in
+and nothing can veto the edge" — is exactly right and unchanged by v2.
+
+**Why this matters for driveability** (owner, 2026-08-26: "every intersection navigable and
+continuous and driveable in any direction"): a 115 % road is not driveable in either direction, and
+it is upstream of BUG-56 — two of `junction-stitch`'s 18 residual sites are this bug, not a stitching
+defect. Fixing the fork geometry cannot help a leg the truck cannot climb.
+
+The open design question is unchanged and is the owner's: when no legal road exists across an
+Urquhart edge, does the edge get **deleted** (BUG-57's crossing invariant already has the vocabulary
+— condemn the edge, validate connectivity, fall back to a different seed if the world is genuinely
+unconnectable), or does it get **re-routed** at a wider corridor, or does it ship marked as today?
+
+Instrument used: `test/scratch-grades.mjs` (rainy-day, not kept). A permanent gate would be four
+lines in the existing road battery — worth adding when this is picked up.
+

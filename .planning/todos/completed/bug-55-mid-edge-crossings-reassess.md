@@ -1,9 +1,10 @@
 ---
 id: BUG-55
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-08-22
+closed: 2026-08-26
 source: owner instruction 2026-08-22 after four rounds of captures on the FEAT-68 proximity merge —
   "bring out a more powerful model to reassess and figure out how to clean up all the mid-edge
   crossings once and for all"
@@ -11,6 +12,23 @@ relates: FEAT-68 (the corridor router this lives inside; BUG-53 was absorbed the
   merge lineage is recorded in its dated sections), BUG-25 (window invariance — the constraint that
   shapes every design here), QUAL-22 (cost-weighted pruning — measured contraindicated, see below)
 ---
+
+> **CLOSED 2026-08-26 — owner instruction: "close bug 55 and merge any open work into 57".**
+>
+> All five phases shipped (`4c72378`); the owner accepted the area. The delete rung and the nest
+> resolver this ticket built were then SUPERSEDED by BUG-57's crossing invariant, and the machinery
+> was deleted under BUG-57 ruling 3 — so this ticket's implementation no longer exists in the code,
+> and its lessons live on as BUG-57's do-not-reattempt list. The residue of the "Open items" list
+> below was audited item by item and merged into BUG-57's ticket under
+> **"CARRIED FORWARD FROM BUG-55"**: items 1, 2, 3 and 4a are done, 4b goes to PERF-28, 4c is
+> recorded there as an unowned gap in the census's reasoning (not a live defect).
+>
+> One acceptance criterion here was never met and is NOT silently dropped: #4's "infeasible 0, zero
+> runs over the 40% ceiling". Measured 2026-08-26, 6 of 467 runs exceed the 40% ceiling in their
+> interior, worst 115%. That is **BUG-51**, which stays open with the measurement recorded.
+>
+> Sections 1–8 below stay as written — the measured taxonomy, the three walls and especially
+> §5 "Settled by measurement — do NOT re-attempt" are the most valuable thing this ticket produced.
 
 # BUG-55: mid-edge crossings and overlaps — reassess the whole approach
 
