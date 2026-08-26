@@ -146,3 +146,88 @@ the SURFACE-SMOOTH crossing-zone exclusion removed). The shove rung's deflection
 direct-span Hermite bands are additional fork-like departures this pass should cover with the
 same gate. Build order per ROAD-CLOSEOUT-PLAN: **BUG-56 (this) → PERF-28 → re-triage sweep →
 merge to main.**
+
+---
+
+## BUILD PASS 1 (2026-08-26) — the DEPARTURE HOLD. Reproducer cleared; gate built; road-smoothness GREEN.
+
+Branch `feature/corridor-router`, commits 90675b2 · 165a99d · 82562d8 · ae9d7da.
+
+### The diagnosis changed the fix
+
+The ruled pass assumed the leg's problem was its PLAN-VIEW departure — "it's begging to be a T",
+pin an exit heading across the through-axis, expect re-routing and network character changes. That
+turned out to be measurably wrong, and it is the most important finding of this session:
+
+**The XZ departure was already fine.** At the owner's reproducer the band reaches 10 m of lateral
+clearance in **17 m of arc** — a brisk ~36° departure. Measured across every merge in the window,
+the good forks and the torn forks have the SAME clearance run (13–22 m); what separates them is the
+deck gap accumulated over it (0.38 m on a fork that stitches, 3.46 m on the owner's, 4.97 m on the
+worst). Nothing in the profile solve paced the leg's Y against its XZ clearance, so it front-loaded
+its climb at the fork where it still had the through road underneath it.
+
+So the ruled INVARIANT — "the leg exits the through-road's XZ clearance BEFORE its Y diverges" — is
+enforced on the half that was actually broken, and **no routing changed at all**. There is no
+network character change to review from re-routing (ruling 6's map A/B is therefore not owed on that
+account); what did change is which merge variants build (see the battery below).
+
+### What shipped
+
+1. **`_v2DepartureHold`** (`src/road.js`). Walking a merge band's vertices away from its fork, every
+   one still inside the through road's pavement corridor (2 × roadHalfWidth) is HELD: its deck is
+   read off the winner's surface at its nearest point — exact, not solved — and the loser's own
+   profile solve starts at the first vertex that is genuinely clear. The held length is whatever the
+   geometry says: ZERO for a leg that leaves across the through-axis, i.e. a real T. Two conditioning
+   rules earned by measurement: the hold is CONTIGUOUS from the fork (taking the last vertex inside
+   the corridor re-armed on the far arm of a hairpinning winner and held a whole 60 m band), and the
+   nearest-winner projection WALKS a rolling ±60 m window (a global search teleports to the winner's
+   far end and put a 12.3 m step in the deck).
+2. **Outward fork rungs generalised from tangled pairs to all pairs** — the owner's skip-and-reconnect
+   addition applied to GRADE. Holding the through deck costs the strand climbing room; looking
+   further out gives it a fork where it has room. Appended AFTER the standard ladder, so an ordinary
+   cession still wins wherever it builds.
+3. **The hold is a PREFERENCE, not an ultimatum.** If every rung declines held, the whole ladder runs
+   again unheld and the fallback is counted (`unheld`). Rationale: BUG-57's ruling puts connectivity
+   first — a lost merge unsanctions a crossing and condemns a leg. Without this the battery lost 7
+   merges and gained 5 deletions.
+4. **`test/junction-stitch.mjs`** — the honest stitching gate (registered in `test/gates.mjs`). ONE
+   physical rule, centreline to centreline: `deck gap ≤ 0.15 m + separation / roadFillSlope`. Two
+   decks may not diverge faster than the ground between them can slope; the 0.15 m floor is
+   road-smoothness's WALL step. Sanctioned geometry is NOT discounted — that sanctioning is what let
+   the owner's torn fork print CLEAN through capture-classify. Windows: both BUG-56 reproducers plus
+   the crossing-rung battery. Pad-footprint hits are reported separately, not gating.
+
+### Measured
+
+| | before | after |
+|---|---|---|
+| owner's reproducer, deck gap inside the 10 m corridor | **3.24 m** (0.88 m at 1.0 m sep) | **0.00 m** |
+| junction-stitch unstitched stretches (8 windows) | 44 | **18** |
+| road-smoothness | RED (lone-pine 2 steps, worst 19 cm) | **GREEN, all 3 seeds** |
+| battery merges / deletions | 71 / 9 | **74 / 9** |
+| graph-topology | 8/8 | 8/8 |
+| crossing-rung-parity | 0 REAL crossings, 1 component | unchanged |
+| `npm run test:all` | 46/51 | **47/51** |
+
+The lone-pine 16 cm canary is CLEARED, which is exactly what ROAD-CLOSEOUT-PLAN's road-to-50/50
+item 1 predicted would ride this pass.
+
+### Not done — what the 18 residual sites are
+
+- **10 are the `leg` class**: two legs of ONE junction diverging 15–31 m from the node, just past the
+  pad mouth, 12–18 m apart with 5–9 m of deck gap. Nothing to do with forks — this is the junction
+  blend + pad's surface, and it is the next piece of BUG-56 if the owner wants it.
+- **~7 are `fork` at 13–18 m separation** — a band that has left the winner's corridor and then
+  passes the winner's OTHER hairpin arm, or a run whose own profile is marked (seed 6 `8,0,1|9,1,0`
+  climbs 23 m in 24 m of arc; its 16.4 m entry is that, not a stitching defect). One,
+  `g:5,3,2:6,3,0 × g:6,3,0:6,4,1`, is pre-existing and IMPROVED by this pass (3.44 m → 2.21 m).
+- **MID-SPAN forks are deliberately NOT held.** The hold was built for them too and works on its own
+  terms (seed 6 `−2,3,1|−3,4,2` went 1.05 m → 0.08 m), but moving a mid-span strand's solve boundary
+  drifts its profile far enough by the JOIN that the seam where the analytic refine resumes reads as
+  a 24 cm collision-only step at a junction pad. Measured trade: one junction-stitch site gained,
+  road-smoothness lost. The collision-surface bar wins. Removed rather than parked; re-deriving the
+  band's arc allocation from its XZ length instead of its vertex index halved the step (30 → 24 cm)
+  but did not close it, and had no effect once the hold came out, so it was not kept either.
+- The SHOVE rung's deflections are covered by the gate (it measures registered geometry, whatever
+  produced it) but were not separately audited.
+

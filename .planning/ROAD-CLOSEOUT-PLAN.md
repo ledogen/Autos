@@ -66,6 +66,19 @@ guarded per-deletion.
 
 ### Build phase (serial, in this order)
 
+> **Status 2026-08-26 (later):** item 2 (BUG-56) has shipped its FIRST PASS — the departure hold
+> (`_v2DepartureHold`), skip-and-reconnect generalised to grade, and the honest stitching gate
+> `test/junction-stitch.mjs`. The owner's reproducer now reads 0.00 m of deck gap through the whole
+> overlap (from +0.88 m at 1.0 m); junction-stitch 44 → 18 unstitched stretches; **road-smoothness is
+> GREEN on all three seeds** (the lone-pine canary cleared exactly as item 1 of the road-to-50/50
+> section predicted), so `npm run test:all` is 47/51. Detail + the residue in the BUG-56 ticket's
+> "BUILD PASS 1" section. **The ruling's PLAN-VIEW diagnosis was measurably wrong and no routing
+> changed**: the leg's XZ departure was already brisk (10 m of clearance in 17 m of arc); only its Y
+> was unpaced. Ruling 6's map A/B is therefore not owed for re-routing — merge extents did change
+> (71 → 74 merges, deletions unchanged at 9), so a map A/B is offered on that account instead.
+> Still open on BUG-56: the `leg` class (two legs of one junction diverging just past the pad mouth,
+> 10 of the 18 sites) and mid-span forks (held version measured, traded away — road-smoothness won).
+>
 > **Status 2026-08-26:** item 1 (BUG-57) is DONE and CLOSED — crossing invariant + the owner's
 > keep-the-connection re-scope (tangle merges, shove rung, deletion demoted to last resort),
 > ruling-3 machinery deletion executed, graph-topology 8/8 ((f) retired per ruling 7,
@@ -96,12 +109,20 @@ guarded per-deletion.
 
 ### Post-junction improvement: the road to 50/50 (owner ask, 2026-08-26)
 
-Current: **46/50** (graph-topology went green with BUG-57's close-out). The four reds are all
-settleable — NO gate needs dropping. Per gate, after BUG-56:
+Current: **47/50** — road-smoothness went green with BUG-56's first pass (2026-08-26), on top of
+graph-topology going green with BUG-57's close-out. Three reds left, all settleable — NO gate needs
+dropping. (The new `junction-stitch` gate is a 51st, deliberately red until BUG-56 finishes.) Per
+gate, after BUG-56:
 
 All four RULED by the owner 2026-08-26; per gate:
 
-1. **road-smoothness — the lone-pine canary IS the BUG-56 class** (owner drove it,
+1. **road-smoothness — SETTLED GREEN 2026-08-26.** The prediction held exactly: the departure hold
+   cleared the canary with no tolerance change. (Watch: the seed-6 spawn window briefly went red
+   with a 24 cm collision-only step when the hold was extended to MID-SPAN forks; that extension was
+   removed — the collision-surface bar wins — so mid-span forks remain BUG-56 work.) Original
+   analysis kept below for the record.
+
+   **road-smoothness — the lone-pine canary IS the BUG-56 class** (owner drove it,
    screenshot at POS 713/622; probe confirms): the 16 cm step at (713,654) sits INSIDE a
    merge fork band — `g:0,1,1:1,1,0` cedes its end to the through road `g:0,0,2:1,1,0`
    (offCurve 351–630, step at arc ~403), one road meeting another mid-span. (An earlier
