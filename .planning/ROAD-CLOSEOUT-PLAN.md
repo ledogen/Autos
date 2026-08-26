@@ -116,9 +116,14 @@ deck gap at 1 m lateral separation, +5.6 m at 20 m, with band camber on top and 
 have no pad vocabulary, and shouldn't). The ruled pass (ticket, "The pass" section): (1) a
 DEPARTURE BOUNDARY CONDITION — the minor leg exits across the through-axis, out of the
 through-road's XZ clearance BEFORE its Y diverges, via the existing heading-pin machinery;
-terrain does the rest, no hand-coded taper choreography; (2) the HONEST STITCHING GATE that
-measures deck-gap-vs-lateral-separation at every junction leg and fork, sanctioned bands
-INCLUDED (sanctioning is what let this print CLEAN) — allowed red until the pass lands. The
+terrain does the rest, no hand-coded taper choreography; (2) SKIP-AND-RECONNECT (owner
+addition 2026-08-26) — when the polyline points near the fork violate min radius OR grade,
+ignore them and connect further out at a good point: BUG-57 session-2's outward-slide +
+direct-span ladder generalized to grade, so the leg leaves at the through deck and climbs
+where it has room; same discipline — measure every variant against the fold floor and grade
+caps, decline honestly, never relax the floors; (3) the HONEST STITCHING GATE that measures
+deck-gap-vs-lateral-separation at every junction leg and fork, sanctioned bands INCLUDED
+(sanctioning is what let this print CLEAN) — allowed red until the pass lands. The
 shove rung's deflections and the direct-span Hermite bands are additional fork-like
 departures the same gate must cover. Routing changes re-route affected edges: expect network
 character changes at shallow junctions — map A/B to the owner (ruling 6). After BUG-56:

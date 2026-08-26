@@ -68,7 +68,17 @@ a Y. We need to figure out how to get out of its way."
    Do NOT hand-code a taper shape or a co-grade choreography (the earlier co-grade-taper idea
    is REPLACED by this ruling). Routing change ⇒ affected edges re-route; expect network
    character changes at shallow-angle junctions — map A/B for the owner.
-2. **The honest stitching gate** (owner ruling: "should be red until every intersection
+2. **Skip-and-reconnect (owner addition, 2026-08-26)**: alongside the departure boundary
+   condition, apply BUG-57 session-2's technique to the fork itself — when the polyline points
+   near the fork violate MIN RADIUS **or GRADE**, ignore them and look FURTHER OUT for a good
+   point to connect the road in. This is the outward fork slide + direct-span band generalized
+   to grade: today the fork lands at the conflict end and the solver must absorb the whole
+   climb there (the measured +0.9 m-at-1 m table below); sliding the join out past the steep
+   stretch and spanning it with fresh simple geometry lets the leg leave at the through deck
+   and take its climb where it has room. Same ladder discipline as session 2: try the
+   variants, measure against the fold floor and the grade caps, decline honestly — never
+   relax the floors themselves, change the curve until it clears them.
+3. **The honest stitching gate** (owner ruling: "should be red until every intersection
    stitches nicely"): a check that measures the drive-through bar — deck coplanarity /
    obstruction within the through-road's clearance corridor at every junction, INCLUDING
    sanctioned taper bands (sanctioning is what let the screenshot print CLEAN). Allowed to be
