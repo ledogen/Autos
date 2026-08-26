@@ -268,3 +268,30 @@ headlamps.
 Also tightened `check_normals()`: a face lying within ~3° of edge-on to a ray is a **grazing hit**,
 not evidence of inversion. Verified at 2400 rays that the three it was reporting were the flat
 bottoms of the rear corner panel, the licence plate and a mud flap, all correctly wound.
+
+---
+
+## Hood/nose seam — 2026-08-26
+
+Owner: *"fix the seam between the front and the hood"*, with a screenshot showing a dark crack across
+the hood where the nose rim starts.
+
+**It was a fold, not a shading artifact.** `NOSE_RIM`'s first number was an ABSOLUTE setback from the
+face (`dy`), and `face_y()` is a barrel curve — at the flank the face sits 34 mm further back than on
+the centreline. A `dy` that clears the last full station at x = 0 lands *behind* it at x = 0.83.
+Measured: **ten of the first ring's twelve points were behind the station they were supposed to
+lead**, so the loft folded over itself and the fold read as a crack.
+
+Fixed structurally rather than by tuning: the first number is now a **fraction of the span from the
+last full station to the face, evaluated at each point's own x**. No value in (0, 1] can fold,
+whatever the crown does. New invariant asserts every rim ring leads the one behind it at every point
+(tightest gap now +0.0247 m).
+
+Second bug the same screenshot exposed: `frame()` picked its winding from one sample quad and applied
+it to the whole annulus. Fine for a flat frame; the nose frame rides the barrel curve, so one band
+of it faced backwards. It now orients **per face** — cheap, and neighbouring quads cannot disagree
+because `facing` is shared.
+
+**Residual, stated rather than hidden:** at 8000 rays (13× the audit's density) one hit still lands
+on the buried underside of a bumper tread pad at a 0.14 dot — an interior face of a decorative inset,
+reachable only at a grazing angle. The audit at its own 600-ray setting is clean. Not chased.
