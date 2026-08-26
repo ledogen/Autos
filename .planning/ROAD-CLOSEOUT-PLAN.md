@@ -99,32 +99,31 @@ guarded per-deletion.
 Current: **46/50** (graph-topology went green with BUG-57's close-out). The four reds are all
 settleable — NO gate needs dropping. Per gate, after BUG-56:
 
-1. **road-smoothness — the lone-pine canary**: ONE collision-only step, 16 cm at (713,654),
-   over 16.1 km of centerline. Measured 2026-08-26: the spot is MID-SPAN (nearest node 443 m
-   away), so BUG-56's junction pass is NOT expected to clear it — it needs its own diagnosis
-   (a resolver seam: run boundary, offCurve edge, or rival cross-fade — `debugSampleAt` + the
-   invariance harness at the spot). FIX the seam; do not widen the 0.15 m tolerance — it is a
-   collision-surface bar, and the truck feels it.
-2. **mission-network — two distinct halves.** (a) BUG-41 proper: missions/par read the
-   `seg.gradeAt` par series while the world drives the CARVED `runProfile().gradeY` — p99
-   1.48 m interior disagreement, 352 m junction end-bands. Real fix: point the mission/par
-   elevation at the carved series (or re-derive par from it) — that is BUG-41's ticket, not a
-   re-baseline. (b) The gate's "registered network ≡ degree-capped graph" and "blue line IS
-   the white line" identity checks predate the resolution ladder — merge/shove/delete now
-   legitimately change the registered set. Re-scope those checks to assert against the
-   POST-LADDER expectation (written rationale in the gate header).
-3. **paper-tour**: one customer dropped (house 7,2,1|7,3,0:3) because its run changed under
-   the ladder; the gate's own failure text states the contract — "the tier picks who, never
-   what exists". Re-derive the tour fixture from the v2 network. Pure re-baseline.
-4. **pond-route-around — NON-VACUOUS**: the check needs the UN-injected router to actually
-   cross a pond in its probe window (seed 6 near spawn) so the injection provably does work;
-   the v2 network moved and the precondition went vacuous. Re-pick a window/seed where ponds
-   genuinely interpose (scan candidates with the injection off). The pond machinery itself is
-   fine (checks 2–3 pass); drop the gate only if NO window anywhere reproduces the
-   precondition, which valley-seeking makes unlikely.
+All four RULED by the owner 2026-08-26; per gate:
 
-Order of settlement: (2a) BUG-41 is the only real product bug — do it first; (1) the lone-pine
-seam next (collision surface); (2b)/(3)/(4) are instrument re-baselines that can ride the
+1. **road-smoothness — the lone-pine canary IS the BUG-56 class** (owner drove it,
+   screenshot at POS 713/622; probe confirms): the 16 cm step at (713,654) sits INSIDE a
+   merge fork band — `g:0,1,1:1,1,0` cedes its end to the through road `g:0,0,2:1,1,0`
+   (offCurve 351–630, step at arc ~403), one road meeting another mid-span. (An earlier
+   "mid-span, not junction" note was measured in the WRONG WORLD — string seeds must go
+   through `parseWorldSeed`, a raw 'lone-pine' string builds garbage. Trap noted for probes.)
+   → BUG-56's pass is expected to clear it; its stitching gate MUST include the lone-pine
+   spawn window so the canary is measured by the same instrument. If any step survives the
+   pass, fix the seam — never widen the 0.15 m tolerance (collision-surface bar).
+2. **mission-network** — RULED: do the BUG-41 fix. (a) Point the mission/par elevation at the
+   CARVED series (`runProfile().gradeY`) instead of `seg.gradeAt` — p99 1.48 m interior
+   disagreement, 352 m junction end-bands — a real product fix under BUG-41's ticket.
+   (b) Re-scope the gate's pre-ladder identity checks ("registered ≡ degree-capped graph",
+   "blue line IS the white line") to assert against the post-ladder expectation, rationale in
+   the gate header.
+3. **paper-tour** — RULED: easy re-baseline. Re-derive the tour fixture from the v2 network
+   (the gate's own contract line: "the tier picks who, never what exists").
+4. **pond-route-around** — RULED: CHANGE THE GATE. Re-pick a probe window/seed where the
+   un-injected router genuinely runs through a pond (scan candidates with the injection off)
+   so NON-VACUOUS holds again; keep checks 2–3 as they are. Not dropped.
+
+Order of settlement: (2a) BUG-41 first (the only product bug); (1) rides BUG-56 (re-measure
+the canary under the stitching gate); (2b)/(3)/(4) are instrument changes that can ride the
 merge-to-main commit with their rationale.
 
 ### Deferred (named so they are not lost)

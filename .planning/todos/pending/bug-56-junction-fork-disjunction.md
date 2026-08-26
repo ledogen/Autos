@@ -133,6 +133,13 @@ the through-road's XZ clearance before its Y diverges. The stitching gate (item 
 measure exactly this table: deck gap vs lateral separation at every fork/junction leg,
 sanctioned bands included.
 
+**Second reproducer (owner, 2026-08-26): the lone-pine road-smoothness canary is this same
+class.** Seed `lone-pine` (via `parseWorldSeed` — a raw string seed builds the wrong world),
+step of 16 cm at (713,654): `g:0,1,1:1,1,0` cedes its end to `g:0,0,2:1,1,0`, offCurve
+351–630, the step at arc ~403 — a mid-span fork-band seam where one road meets another away
+from any node. The stitching gate must include the lone-pine spawn window; the pass is
+expected to turn road-smoothness green with it (see ROAD-CLOSEOUT-PLAN's road-to-50/50).
+
 Where this sits: BUG-57 is CLOSED (crossing invariant + keep-the-connection relaxations +
 ruling-3 machinery deletion all shipped; graph-topology 8/8 with (f) retired per ruling 7 and
 the SURFACE-SMOOTH crossing-zone exclusion removed). The shove rung's deflections and the
