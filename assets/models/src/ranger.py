@@ -162,14 +162,14 @@ N_RIBS = 8                       # bed-floor rib crests across the full width
 RIB_H = 0.028
 
 # --- Front clip ---
-Y_NOSE_SHEET = 1.845             # sheet-metal nose; the bumper fills to Y_NOSE
-Z_LAMP0, Z_LAMP1 = 0.713, 0.870  # headlamp / grille opening.  Re-measured off the
+Y_NOSE_SHEET = 1.630             # sheet-metal nose; the bumper fills to Y_NOSE
+Z_LAMP0, Z_LAMP1 = 0.772, 0.990  # headlamp / grille opening.  Re-measured off the
                                  # DEAD-ON reference (547 px/m there): the first pass
                                  # took these off the profile shot and left a 28 cm
                                  # blank painted band between the grille and the
                                  # bumper, where the real truck has about 10 cm.
-Z_BUMP0, Z_BUMP1 = 0.494, 0.619  # chrome blade
-Z_VAL0 = 0.271                   # bottom of the grey valance
+Z_BUMP0, Z_BUMP1 = 0.492, 0.648  # chrome blade
+Z_VAL0 = 0.285                   # bottom of the grey valance
 
 # --- Rear ---
 Z_TAIL0, Z_TAIL1 = 0.722, 0.998  # tail lamp band
@@ -406,9 +406,22 @@ def arch_z(y, axle):
 
 
 def arch_samples(axle):
-    """Cosine-spaced y samples across an arch: dense where the circle turns."""
-    return [axle + ARCH_R * math.cos(math.pi * i / (ARCH_SAMP - 1))
-            for i in range(ARCH_SAMP)]
+    """Cosine-spaced y samples across an arch: dense where the circle turns.
+
+    Plus the two stations where arch_z()'s CLAMP RELEASES.  Between the tangent
+    (clamped flat to the rocker) and the first cosine sample 30 degrees round, the
+    flank bottom jumps ~0.18 m in 63 mm of length, and the quad spanning that is
+    twisted enough that its triangulation produced a backward-facing triangle — one
+    inverted face, caught by the ray test and invisible in every screenshot.
+    Sampling exactly where the clamp lets go removes the jump instead of hiding it.
+    """
+    ys = [axle + ARCH_R * math.cos(math.pi * i / (ARCH_SAMP - 1))
+          for i in range(ARCH_SAMP)]
+    sin_rel = (Z_ROCKER - ARCH_Z) / ARCH_R
+    if 0.0 < sin_rel < 1.0:
+        dy = ARCH_R * math.sqrt(1.0 - sin_rel * sin_rel)
+        ys += [axle + dy, axle - dy]
+    return ys
 
 
 def simplify_stations(ys, ring_fn, tol=0.0015):
@@ -465,20 +478,26 @@ def _interp(table, y):
 # The hood falls CONTINUOUSLY from the cowl to the nose — a hood that plateaus and
 # then kinks reads as two glued boxes (learned on broken-car, 2026-08-10).
 CLIP_ST = [
-    (1.845, 0.796, 0.712, 0.968, 0.014),   # last FULL station; the rim wraps ahead of it
-    (1.700, 0.820, 0.738, 1.000, 0.018),
-    (1.500, 0.838, 0.758, 1.040, 0.022),
-    (1.2825, 0.845, 0.772, 1.076, 0.022),  # front axle — widest, the fender blister
-    (1.050, 0.842, 0.777, 1.106, 0.018),
-    (0.820, 0.832, 0.779, 1.126, 0.010),
-    (0.584, 0.816, 0.778, 1.140, 0.004),   # cowl — 53 mm BELOW the door beltline, which
-                                           # is what the cowl/wiper strip fills
+    # FLAT.  Owner, 2026-08-26: "the hood is quite flat near the windshield and
+    # rounds off heavily near the end."  A hood is a PLATEAU with a nose radius, not
+    # a ramp — the previous pass spread the whole 0.198 m fall evenly along the
+    # length, which is why it read as a wedge.  The plateau barely moves from the
+    # cowl to the last station here; ALL of the fall lives in NOSE_RIM below.
+    (1.7525, 0.836, 0.752, 1.160, 0.020),  # last FULL station.  MUST equal AX_F+ARCH_R
+                                           # exactly (asserted in report()): 2.5 mm off it
+                                           # and the arch sample lands beside this station
+                                           # instead of on it, leaving a sliver face that
+                                           # came out inverted.
+    (1.2825, 0.845, 0.774, 1.170, 0.018),  # front axle — widest, the fender blister
+    (1.050, 0.842, 0.778, 1.172, 0.012),
+    (0.820, 0.832, 0.779, 1.172, 0.007),
+    (0.584, 0.816, 0.778, 1.172, 0.003),   # cowl
 ]
 
 # Cab: (y, w_flank, w_shoulder, z_belt).  Meets CLIP_ST's numbers at the cowl so the
 # fender-to-door transition has no step.
 CAB_ST = [
-    (0.584, 0.816, 0.778, 1.140),          # cowl — matches CLIP_ST so the shells weld
+    (0.584, 0.816, 0.778, 1.172),          # cowl — matches CLIP_ST so the shells weld
     (0.300, 0.810, 0.775, Z_BELT),
     (-0.630, 0.806, 0.775, Z_BELT),        # cab rear panel
 ]
@@ -549,8 +568,23 @@ BED_BANDS = {0: DARK, 1: DARK, 2: DARK, 17: DARK, 18: DARK, 19: DARK}
 Y_FACE_C = 1.895                 # sheet-metal face at the centreline (most forward)
 NOSE_CROWN = 0.034               # how much the face falls away by the outer edge
 NOSE_CROWN_W = 0.800             # x at which that full fall is reached
-# (dy behind the face, plan scale, height squeeze) for each rim ring, outermost last.
-NOSE_RIM = [(0.052, 0.986, 0.013), (0.020, 0.948, 0.037)]
+# THE NOSE RADIUS.  (dy behind the face, plan scale, TOP drop, BOTTOM rise) per rim
+# ring, outermost last.  Four rings spanning 0.216 m of length and dropping the hood
+# line 0.126 m: that is the "rounds off heavily near the end" the owner described,
+# and it is a RADIUS, not a slope — the plateau above it stays dead flat.
+# Top and bottom move INDEPENDENTLY on purpose.  A symmetric squeeze (what the first
+# version did) lifts the valance line by as much as it drops the hood, which pinches
+# the whole face; a real nose rolls hard over the top and only tucks a little under.
+# THE ARCH CONSTRAINT.  The rim is generated by shrinking CLIP_ST[0]'s section, so
+# if that station still has the wheel arch cut into it the arch gets carried forward
+# through the whole rim and opens a notch in the nose.  CLIP_ST[0] therefore sits at
+# 1.755, just clear of the front arch's forward tangent (AX_F + ARCH_R = 1.7525),
+# and the rim's dy values start from there.  That leaves 0.136 m for the roll, which
+# is also all the real truck has between the arch and the bumper.
+NOSE_RIM = [(0.140, 0.997, 0.012, 0.004),
+            (0.092, 0.986, 0.040, 0.014),
+            (0.048, 0.964, 0.081, 0.026),
+            (0.014, 0.930, 0.126, 0.040)]
 
 
 def face_y(x):
@@ -561,18 +595,23 @@ def face_y(x):
 
 
 def nose_rim_ring(spec):
-    """One rim ring: the last full section, shrunk about its own centre and laid on
-    the barrel curve.  Squeezing about the section's OWN mid-height (rather than a
-    fixed z) is what keeps the hood line and the rocker line converging evenly."""
-    dy, scale, squeeze = spec
+    """One rim ring: the last full section, narrowed in plan, rolled down over the
+    top and tucked up a little underneath, and laid on the barrel curve.
+
+    The top and bottom are driven by SEPARATE amounts.  Each point's z is remapped
+    linearly between the section's own bottom and top, so a point on the hood line
+    gets the full drop, a point on the rocker gets the full rise, and everything
+    between is interpolated — which keeps the flank's character line continuous
+    instead of kinking where the rim starts."""
+    dy, scale, drop, rise = spec
     base = clip_ring(CLIP_ST[0][0])
     zs = [q[2] for q in base]
-    zmid = 0.5 * (min(zs) + max(zs))
-    zscale = 1.0 - 2.0 * squeeze / (max(zs) - min(zs))
+    z0, z1 = min(zs), max(zs)
     out = []
     for x, _y, z in base:
         nx = x * scale
-        out.append((nx, face_y(nx) - dy, zmid + (z - zmid) * zscale))
+        t = (z - z0) / (z1 - z0)                 # 0 at the rocker, 1 at the hood line
+        out.append((nx, face_y(nx) - dy, z + rise * (1.0 - t) - drop * t))
     return out
 
 
@@ -583,7 +622,7 @@ def build_front_clip(p):
     ys = simplify_stations(ys, clip_ring)
     rings = [clip_ring(y) for y in ys]     # ys DESCENDING: nose first, cowl last
     # Rim rings go IN FRONT, outermost first, so the loft still runs nose -> cowl.
-    rings = [nose_rim_ring(NOSE_RIM[1]), nose_rim_ring(NOSE_RIM[0])] + rings
+    rings = [nose_rim_ring(r) for r in reversed(NOSE_RIM)] + rings
     # cap_last (at the cowl) is the FIREWALL — seen from the cabin, never from the
     # engine bay, so it is interior-dark, not paint.
     # cap_first (the nose) is omitted: build_front_end() replaces it with a FRAME so
@@ -700,7 +739,9 @@ def build_front_end(p):
     inner = [(0.0, OPEN_Z0), (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0),
              (OPEN_X, 0.5 * (OPEN_Z0 + OPEN_Z1)), (OPEN_X, OPEN_Z1), (0.0, OPEN_Z1)]
     inner = inner + [(-x, z) for x, z in reversed(inner[1:6])]
-    frame(p, nose_rim_ring(NOSE_RIM[1]),
+    # NOSE_RIM[-1], not [1]: the frame has to sit on the OUTERMOST rim ring, and that
+    # index moved when the rim went from two rings to four.
+    frame(p, nose_rim_ring(NOSE_RIM[-1]),
           [(x, face_y(x), z) for x, z in inner], "RangerPaint")
 
     # Dark box behind the opening — the thing the grille bars and bezels read
@@ -1499,6 +1540,13 @@ def report(objs):
     # The arch must land on the axle the PHYSICS uses, not on a symmetric guess.
     chk("arches on the physics axles",
         abs(AX_F - WHEELBASE * WEIGHT_R) < 1e-9 and abs(AX_R + WHEELBASE * WEIGHT_F) < 1e-9)
+    # The nose rim is generated by shrinking CLIP_ST[0]'s section.  If that station
+    # still has the wheel arch cut into it, the arch is carried forward through the
+    # whole rim and opens a notch in the nose; if it merely sits NEAR the arch's
+    # forward tangent, the tangent's own sample lands beside it and leaves a sliver.
+    chk("nose rim starts on the front arch's tangent",
+        abs(CLIP_ST[0][0] - (AX_F + ARCH_R)) < 1e-9,
+        f"{CLIP_ST[0][0]:.4f} vs {AX_F + ARCH_R:.4f}")
     # Steering wheel vs windscreen: signed distance to the glass plane, cabin side
     # negative.  Tested on the WHEEL'S OWN vertices — a geometric filter like
     # "y > 0.3 and z > 1.0" also catches the cowl, which is legitimately ahead of
@@ -1565,8 +1613,17 @@ def check_normals(objs, samples=600):
         hit = bvh.ray_cast(origin, -d)
         if hit[0] is None:
             continue
+        # A face lying nearly EDGE-ON to the ray is not evidence of inversion — it is
+        # a grazing hit, and at this ray density a handful always land on the flat
+        # underside of some box at ~89 degrees.  Skip those rather than counting them
+        # either way.  (Checked at 2400 rays: the three this used to report were the
+        # bottoms of the rear corner panel, the licence plate and a mud flap, all
+        # correctly wound.)
+        c = hit[1].dot(-d)
+        if abs(c) < 0.05:
+            continue
         tested += 1
-        if hit[1].dot(-d) >= 0.0:
+        if c > 0.0:
             bad += 1
     return tested, bad
 
