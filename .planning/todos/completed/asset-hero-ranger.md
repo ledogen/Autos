@@ -175,3 +175,55 @@ B+C is the affordable path *and* the targeted one. Recorded in ART-STYLE.md as a
 Ring-direction merging. `simplify_stations()` merges along the length; the *section* still carries
 points that are collinear at every station on the crisp panels. Worth maybe 80–150 tris and it is
 fiddly, because ring topology has to stay constant across stations for the loft to work.
+
+---
+
+## Second rework — 2026-08-26 (hood slope + rear depth)
+
+Two notes: *"the hood should slope off a lot more towards the nose"* and *"focus on the rear end
+especially how the bumper sticks out — the back is just far too planar. use the references."*
+**2936 tris / 4000**, audit clean.
+
+### The measurement mistake that caused both
+
+The first pass guessed a 0.175 m hood fall and the truck read as a car. I "corrected" it to 0.048
+off **IMG_0879** — and that number was wrong, because 0879 is shot from higher and closer and
+foreshortens the nose. The result read squared off, exactly as the owner said.
+
+**IMG_0873 is the one near-orthographic side shot in the set**, and it proves itself: its scale
+comes out at **287.5 px/m from the roof height (1.60 m) and 287.5 px/m from the wheelbase
+(2.835 m), independently**. Two agreeing scales is what makes it safe to read absolute heights off
+a photograph. The rule now written into the generator: *pick the reference photo by whether its
+scale checks agree with each other, not by which one a feature is easiest to find in.*
+
+Re-measured off 0873, everything below is now a read value rather than a guess:
+
+| | Was | Measured |
+|---|---|---|
+| Hood fall, cowl → nose | 0.048 | **0.198** (1.130 → 0.932) |
+| Rear bumper protrusion | 0.033 | **0.111** |
+| Rear bumper band | 0.430–0.612 | **0.383–0.539** |
+| Headlamp / grille band | 0.772–1.006 | **0.713–0.870** |
+| Front bumper band | 0.492–0.648 | **0.494–0.619** |
+| Bed rail | 1.110 | **1.141** |
+| Overhangs (front / rear) | 0.755 / 1.005 | **0.676 / 1.084** |
+
+### The rear
+
+The bumper was the whole problem: at 33 mm of protrusion it was a stripe on a wall. At the measured
+**111 mm** it becomes the thing that gives the tail depth, and the 150 mm dark slot it opens up
+under the tailgate (bumper top 0.539, tailgate bottom 0.690) is most of what stops the back reading
+planar. Section went from seven points to nine — rolled top, convex face, tuck under, deep return.
+The bed also gets a **rear rim ring** (`tail_rim_ring()`), the tail's version of the nose treatment,
+so the bedsides turn into the tail instead of being cut off square by it.
+
+`shiftRear` moved 0.2675 → **0.3465** with the new overhangs; `data/vehicle-models.js` updated to
+match, and the in-game check confirms the wheels are still centred in the arches.
+
+### Two z-fights the audit caught that no screenshot would have
+
+- The grille bars overlapped each other: the opening got 77 mm shorter when the front end was
+  re-measured, and 18 mm half-height bars on a 31 mm pitch collide. Half-height is now derived from
+  the pitch (`min(0.018, pitch * 0.38)`) so it cannot happen again on a re-tune.
+- The painted tailgate landed exactly on the plane the new bed rim ring had just moved the dark rear
+  cap onto. Pushed 3 mm proud.

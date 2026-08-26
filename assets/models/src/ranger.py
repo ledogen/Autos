@@ -85,37 +85,39 @@ SAG_R = (MASS * WEIGHT_R / 2) * 9.81 / K_SUSP      # 0.091 m
 SAG = (SAG_F + SAG_R) * 0.5                        # 0.101 m
 AX_F = WHEELBASE * WEIGHT_R      # +1.2825  front axle, blender y
 AX_R = -WHEELBASE * WEIGHT_F     # -1.5675  rear axle
-FRONT_OH, REAR_OH = 0.755, 1.005  # see the tiling note below
-Y_NOSE = AX_F + FRONT_OH         # +2.0375  extreme front (bumper face)
-Y_TAIL = AX_R - REAR_OH          # -2.5725  extreme rear (bumper face)
+FRONT_OH, REAR_OH = 0.676, 1.084  # see the tiling note below
+Y_NOSE = AX_F + FRONT_OH         # +1.9585  extreme front (bumper face)
+Y_TAIL = AX_R - REAR_OH          # -2.6515  extreme rear (bumper face)
 
-# THE LONGITUDINAL TILING.  4.611 = 0.060 front bumper + 1.508 hood + 1.100 cab
-# + 0.080 cab/bed gap + 1.800 bed + 0.063 rear bumper.  Those five spans come from
-# the published regular-cab dimensions (111.6 in wheelbase, 189.4 in long, 6 ft
-# bed), with ONLY the overhangs scaled by 4.61/4.81 to fit the physics preset — the
-# cab and bed keep their real lengths, because shrinking those is what a viewer
-# actually notices.  The first pass shrank the cab to 1.045 and the roof to 0.50
-# and the greenhouse read like a cap perched on the back.
+# THE LONGITUDINAL TILING.  4.610 = 0.064 front bumper + 1.311 hood + 1.214 cab
+# + 0.080 cab/bed gap + 1.831 bed + 0.111 rear bumper.  Only the OVERHANGS are
+# scaled to fit the physics preset (by 1.76/1.903); the cab and bed keep their real
+# lengths, because shrinking those is what a viewer actually notices.
 #
-# HOW THE HEIGHTS WERE GOT.  Every station below was read off the reference profile
-# photo (IMG_0879) using the TYRE as the ruler: the wheelbase measures 1025 px and is
-# known to be 2.85 m, giving 359 px/m, and every other feature was then divided by
-# that.  This is why the hood is nearly FLAT — the first pass guessed a 0.175 m fall
-# from cowl to nose and the truck immediately read as a car.  The real fall is 0.076.
-# The overhangs came out at 0.70 / 1.06, which sum to exactly the 1.76 m the physics
-# preset leaves over — so the real proportions fit the preset with nothing forced.
+# HOW THE HEIGHTS AND OVERHANGS WERE GOT.  Off IMG_0873, the one near-ORTHOGRAPHIC
+# side shot in the reference set: its scale comes out at 287.5 px/m from the roof
+# height (1.60 m) AND at 287.5 px/m from the wheelbase (2.835 m), independently.
+# Two agreeing scales is what makes it safe to read absolute heights off a photo.
+#
+# THE HOOD-SLOPE TRAP, hit twice.  The first pass guessed a 0.175 m fall from cowl
+# to nose and the truck read as a car.  The correction over-shot to 0.048 — measured
+# off IMG_0879, which is shot from higher and closer and foreshortens the nose — and
+# the truck then read SQUARED OFF (owner, 2026-08-26: "the hood should slope off a
+# lot more towards the nose").  On the orthographic shot the fall is 0.198 m: hood
+# 1.130 at the cowl, 0.932 at the nose.  Pick the photo by whether its scale checks
+# agree with each other, not by which one a feature is easiest to find in.
 
 # --- Heights (z = 0 is the tyre contact plane) ---
 Z_GROUND = 0.0
 Z_UNDER = 0.285                  # frame / underbody pan — the model's lowest point
-Z_ROCKER = 0.435                 # rocker step: flank bottom out of the arch zones
+Z_ROCKER = 0.442                 # rocker step: flank bottom out of the arch zones
 Z_HIP = 0.86                     # widest point of the flank
-Z_BELT = 1.180                   # door beltline = base of the side glass.  Dropped 20 mm
+Z_BELT = 1.183                   # door beltline = base of the side glass.  Dropped 20 mm
                                  # from the first pass: with the roof pinned at bodyHeight the
                                  # only way to make the cab read bigger is more glass.
 Z_ROOF = 1.600                   # roof deck (bodyHeight 1.60)
 Z_ROOF_CROWN = 0.020             # centre of the roof sits this much proud of the rails
-Z_RAIL = 1.110                   # bed rail top — reads BELOW the door belt, as on the ref
+Z_RAIL = 1.141                   # bed rail top — reads BELOW the door belt, as on the ref
 Z_BEDFLOOR = 0.700               # bed floor pan (rib crests sit RIB_H above)
 Z_HEADLINER = 1.526              # underside of the roof slab
 
@@ -153,25 +155,28 @@ PILLAR_C = 0.072                 # C-pillar section
 
 # --- Bed ---
 Y_BED_F = -0.710                 # bed front wall (8 cm gap behind the cab)
-Y_BED_R = -2.540                 # bed loft tail; the 30 mm tailgate slab takes the
+Y_BED_R = -2.5105                # bed loft tail; the 30 mm tailgate slab takes the
                                  # outer face to -2.510, so the bed is 1.800 m —
                                  # a real 6-foot bed, un-scaled
 N_RIBS = 8                       # bed-floor rib crests across the full width
 RIB_H = 0.028
 
 # --- Front clip ---
-Y_NOSE_SHEET = 1.978             # sheet-metal nose; the bumper fills to Y_NOSE
-Z_LAMP0, Z_LAMP1 = 0.772, 1.006  # headlamp / grille opening.  Re-measured off the
+Y_NOSE_SHEET = 1.845             # sheet-metal nose; the bumper fills to Y_NOSE
+Z_LAMP0, Z_LAMP1 = 0.713, 0.870  # headlamp / grille opening.  Re-measured off the
                                  # DEAD-ON reference (547 px/m there): the first pass
                                  # took these off the profile shot and left a 28 cm
                                  # blank painted band between the grille and the
                                  # bumper, where the real truck has about 10 cm.
-Z_BUMP0, Z_BUMP1 = 0.492, 0.648  # chrome blade
-Z_VAL0 = 0.285                   # bottom of the grey valance
+Z_BUMP0, Z_BUMP1 = 0.494, 0.619  # chrome blade
+Z_VAL0 = 0.271                   # bottom of the grey valance
 
 # --- Rear ---
-Z_TAIL0, Z_TAIL1 = 0.735, 1.062  # tail lamp band
-Z_RBUMP0, Z_RBUMP1 = 0.430, 0.612
+Z_TAIL0, Z_TAIL1 = 0.722, 0.998  # tail lamp band
+Z_RBUMP0, Z_RBUMP1 = 0.383, 0.539
+Y_TAILGATE = -2.5405             # outer face of the tailgate.  The step bumper stands
+                                 # 0.111 m PROUD of this, back to Y_TAIL — measured, and
+                                 # the single thing that stops the rear reading planar.
 
 # --- Interior ---
 Z_FLOOR = 0.520                  # cab floor pan.  Higher than this and the seated
@@ -460,21 +465,22 @@ def _interp(table, y):
 # The hood falls CONTINUOUSLY from the cowl to the nose — a hood that plateaus and
 # then kinks reads as two glued boxes (learned on broken-car, 2026-08-10).
 CLIP_ST = [
-    (1.900, 0.812, 0.742, 1.122, 0.016),   # last FULL station; the rim wraps ahead of it
-    (1.860, 0.828, 0.750, 1.126, 0.020),
-    (1.640, 0.840, 0.762, 1.140, 0.024),
-    (1.2825, 0.845, 0.770, 1.156, 0.024),  # front axle — widest, the fender blister
-    (1.000, 0.840, 0.774, 1.166, 0.018),
-    (0.820, 0.828, 0.776, 1.166, 0.009),
-    (0.584, 0.816, 0.776, 1.170, 0.003),   # cowl — level with the door beltline
+    (1.845, 0.796, 0.712, 0.968, 0.014),   # last FULL station; the rim wraps ahead of it
+    (1.700, 0.820, 0.738, 1.000, 0.018),
+    (1.500, 0.838, 0.758, 1.040, 0.022),
+    (1.2825, 0.845, 0.772, 1.076, 0.022),  # front axle — widest, the fender blister
+    (1.050, 0.842, 0.777, 1.106, 0.018),
+    (0.820, 0.832, 0.779, 1.126, 0.010),
+    (0.584, 0.816, 0.778, 1.140, 0.004),   # cowl — 53 mm BELOW the door beltline, which
+                                           # is what the cowl/wiper strip fills
 ]
 
 # Cab: (y, w_flank, w_shoulder, z_belt).  Meets CLIP_ST's numbers at the cowl so the
 # fender-to-door transition has no step.
 CAB_ST = [
-    (0.584, 0.816, 0.776, 1.170),          # cowl
-    (0.300, 0.810, 0.775, 1.180),
-    (-0.630, 0.806, 0.775, 1.180),         # cab rear panel
+    (0.584, 0.816, 0.778, 1.140),          # cowl — matches CLIP_ST so the shells weld
+    (0.300, 0.810, 0.775, Z_BELT),
+    (-0.630, 0.806, 0.775, Z_BELT),        # cab rear panel
 ]
 W_DOORCARD = 0.700                         # inner face of the door trim
 
@@ -540,7 +546,7 @@ BED_BANDS = {0: DARK, 1: DARK, 2: DARK, 17: DARK, 18: DARK, 19: DARK}
 # Everything mounted on the face — grille bars, lamp lenses, the frame itself —
 # rides face_y(), so the whole assembly curves together and cannot delaminate.
 # ---------------------------------------------------------------------------
-Y_FACE_C = 1.998                 # sheet-metal face at the centreline (most forward)
+Y_FACE_C = 1.895                 # sheet-metal face at the centreline (most forward)
 NOSE_CROWN = 0.034               # how much the face falls away by the outer edge
 NOSE_CROWN_W = 0.800             # x at which that full fall is reached
 # (dy behind the face, plan scale, height squeeze) for each rim ring, outermost last.
@@ -596,6 +602,26 @@ def build_cab(p):
          band_mats=CAB_BANDS)
 
 
+TAIL_RIM = (0.030, 0.982, 0.014)   # (dy back, plan scale, height squeeze)
+
+
+def tail_rim_ring(last):
+    """Shrink the bed's last full ring and push it rearward — the tail's answer to
+    nose_rim_ring().  Only the OUTER points move: the tub's inner wall and floor
+    (which the tailgate closes off anyway) stay put, or the bed would visibly pinch."""
+    dy, scale, squeeze = TAIL_RIM
+    zs = [q[2] for q in last]
+    zmid = 0.5 * (min(zs) + max(zs))
+    zscale = 1.0 - 2.0 * squeeze / (max(zs) - min(zs))
+    out = []
+    for x, y, z in last:
+        if abs(x) > W_BED_IN + 0.001:            # outer skin only
+            out.append((x * scale, y - dy, zmid + (z - zmid) * zscale))
+        else:
+            out.append((x, y - dy, z))
+    return out
+
+
 def build_bed(p):
     ys = sorted({Y_BED_F, -0.980, Y_BED_R, -2.300}
                 | {round(v, 5) for v in arch_samples(AX_R)}
@@ -603,6 +629,10 @@ def build_bed(p):
     ys = [y for y in ys if Y_BED_R <= y <= Y_BED_F]
     ys = simplify_stations(ys, bed_ring)
     rings = [bed_ring(y) for y in ys]
+    # Rear corner rim: one shrunk ring so the bedsides TURN INTO the tail instead of
+    # being cut off square by it.  Same trick as the nose, one ring instead of two
+    # because a tailgate really is close to flat — it is the corners that are round.
+    rings.append(tail_rim_ring(rings[-1]))
     loft(p, rings, "RangerPaint", cap_first=True, cap_last=True,
          band_mats=BED_BANDS, cap_last_mat=DARK)
 
@@ -684,10 +714,16 @@ def build_front_end(p):
     # grille is rounded, not flat").
     gx, gz0, gz1 = 0.392, OPEN_Z0 + 0.016, OPEN_Z1 - 0.016
     gxs = [-gx + 0.006, -0.200, 0.0, 0.200, gx - 0.006]
-    for i in range(4):
-        z = gz0 + (gz1 - gz0) * (i + 0.5) / 4
-        _sweep(p, gxs, lambda x, z=z: [(0.058, z - 0.018), (0.058, z + 0.018),
-                                       (0.020, z + 0.015), (0.020, z - 0.015)],
+    # HALF-HEIGHT MUST BE UNDER HALF THE PITCH.  The opening got 77 mm shorter when
+    # the front end was re-measured, and 18 mm half-height bars on a 31 mm pitch then
+    # overlapped each other — eight coplanar face pairs, invisible in a screenshot.
+    n_bars = 4
+    pitch = (gz1 - gz0) / n_bars
+    half = min(0.018, pitch * 0.38)
+    for i in range(n_bars):
+        z = gz0 + pitch * (i + 0.5)
+        _sweep(p, gxs, lambda x, z=z, h=half: [(0.058, z - h), (0.058, z + h),
+                                               (0.020, z + h * 0.84), (0.020, z - h * 0.84)],
                "RangerChrome")
     for sx in (1, -1):                        # grille surround uprights
         _sweep(p, [sx * gx, sx * (gx + 0.022)],
@@ -757,55 +793,76 @@ def build_front_end(p):
 # REAR END
 # ---------------------------------------------------------------------------
 def build_rear_end(p):
-    Y_R = Y_BED_R
-    # The panels INTERPENETRATE the bed loft's rear cap rather than butting flush
-    # against it: two faces sharing the y = Y_R plane is a z-fight, whereas a solid
-    # pushed 20 mm into another solid is just geometry.
-    Y_P0, Y_P1 = -2.566, Y_R + 0.020
-    Z_P0, Z_P1 = Z_BEDFLOOR - 0.030, Z_RAIL
+    """The tail.  Owner, 2026-08-26: "the back is just far too planar right now."
+
+    Three things were wrong and all three are measurable off IMG_0873:
+      1. the step bumper stood only 33 mm proud of the tailgate; the real one stands
+         **111 mm** proud, which is the whole reason a pickup's tail has depth;
+      2. it sat too high, closing the gap under the tailgate — on the real truck
+         there is a 150 mm dark slot between the tailgate bottom (0.696) and the
+         bumper top (0.539), and that slot is most of what reads as "not a slab";
+      3. the bed's rear corners met the tailgate at a hard 90 degrees.  They now get
+         the same trick the nose got: one shrunk rim ring, so the bedsides turn into
+         the tail instead of being cut off by it.
+    """
+    # Painted panels sit AHEAD of the tailgate plane and INTERPENETRATE the bed
+    # loft's rear cap — two solids overlapping is fine, two faces sharing a plane
+    # z-fights.
+    # 3 mm PROUD of the bed loft's rear cap, which the tail rim ring moved onto
+    # exactly this plane — flush, the dark cap and the painted panel z-fight.
+    Y_P0, Y_P1 = Y_TAILGATE - 0.003, Y_BED_R + 0.020
+    # The panels have to fit INSIDE the bed's rear rim ring, which shrank the outer
+    # skin by TAIL_RIM's scale.  Left at the full bed width they poked past it and
+    # opened a black void at each top corner.  Derived from the same constant so the
+    # two cannot drift apart.
+    W_PANEL = W_BED_OUT * TAIL_RIM[1] - 0.004
+    Z_P0, Z_P1 = 0.690, Z_RAIL - TAIL_RIM[2] - 0.004
     # Tailgate, and the two body-colour corner panels the lamps are let into.  The
     # gap between them at |x| 0.545 is the tailgate shut line, for free.
     box(p, -0.545, 0.545, Y_P0, Y_P1, Z_P0, Z_P1, "RangerPaint")
     for sx in (1, -1):
-        box(p, sx * 0.551, sx * W_BED_OUT, Y_P0, Y_P1, Z_P0, Z_P1, "RangerPaint")
+        box(p, sx * 0.551, sx * W_PANEL, Y_P0, Y_P1, Z_P0, Z_P1, "RangerPaint")
         # Tail lamp: red / clear / red, top to bottom, per the reference unit.  The
         # dark bezel is not decoration — with a red default body the red lens would
         # otherwise vanish into the paint and only the clear band would read.
-        box(p, sx * 0.560, sx * 0.812, Y_P0 - 0.004, Y_P0 + 0.016, Z_TAIL0 - 0.014,
-            Z_TAIL1 + 0.014, DARK)
-        for z0, z1, mt in ((0.948, Z_TAIL1, "RangerTail"),
-                           (0.848, 0.944, "RangerLens"),
-                           (Z_TAIL0, 0.844, "RangerTail")):
-            box(p, sx * 0.572, sx * 0.800, Y_TAIL, Y_P0 + 0.010, z0, z1, mt)
+        box(p, sx * 0.558, sx * (W_PANEL - 0.008), Y_P0 - 0.004, Y_P0 + 0.016,
+            Z_TAIL0 - 0.014, Z_TAIL1 + 0.014, DARK)
+        for z0, z1, mt in ((0.906, Z_TAIL1, "RangerTail"),
+                           (0.812, 0.902, "RangerLens"),
+                           (Z_TAIL0, 0.808, "RangerTail")):
+            box(p, sx * 0.570, sx * (W_PANEL - 0.020), Y_P0 - 0.024, Y_P0 + 0.010,
+                z0, z1, mt)
 
-    # STEP BUMPER.  Owner, 2026-08-25: "the bumpers are especially rounded and they
-    # stick out pretty far".  A seven-point section — rolled top, convex face, tuck
-    # under — swept along X with the ends wrapping back, exactly like the front
-    # blade.  The old four-point box read as a black plank bolted to the tailgate.
-    bxs = [-0.812, -0.752, -0.420, 0.0, 0.420, 0.752, 0.812]
-    bdy = [0.104, 0.052, 0.008, 0.0, 0.008, 0.052, 0.104]
+    # STEP BUMPER.  Nine-point section — rolled top, convex face, tuck under, and a
+    # deep return back to its mounting plane at the tailgate.  111 mm of protrusion
+    # is the point; anything less and the tail is a wall with a stripe on it.
+    bxs = [-0.818, -0.756, -0.430, 0.0, 0.430, 0.756, 0.818]
+    bdy = [0.070, 0.030, 0.004, 0.0, 0.004, 0.030, 0.070]
+    # The bumper crown stops 14 mm SHORT of Y_TAIL so the licence plate can be the
+    # rearmost thing and still sit proud of the convex face.  Y_TAIL is the hard
+    # length limit; something has to own it, and a flat plate reads better there
+    # than a curved surface that the plate then has to be buried in.
+    YB = Y_TAIL + 0.014
+    D = Y_TAILGATE - YB                           # 0.097 — the section's own depth
     ZRM = 0.5 * (Z_RBUMP0 + Z_RBUMP1)
 
     def rprof(x, dy):
-        yb = Y_TAIL + dy                       # this station's own rear plane
-        return [(x, yb + 0.118, Z_RBUMP0), (x, yb + 0.044, Z_RBUMP0 - 0.008),
-                (x, yb + 0.010, Z_RBUMP0 + 0.030), (x, yb + 0.012, ZRM),
-                (x, yb + 0.012, Z_RBUMP1 - 0.026), (x, yb + 0.048, Z_RBUMP1),
-                (x, yb + 0.118, Z_RBUMP1)]
+        yb = YB + dy                              # this station's own rear plane
+        return [(x, yb + D, Z_RBUMP0), (x, yb + 0.052, Z_RBUMP0 - 0.012),
+                (x, yb + 0.014, Z_RBUMP0 + 0.024), (x, yb, ZRM - 0.020),
+                (x, yb + 0.002, ZRM + 0.024), (x, yb + 0.020, Z_RBUMP1 - 0.020),
+                (x, yb + 0.056, Z_RBUMP1), (x, yb + D, Z_RBUMP1)]
     loft(p, [rprof(x, dy) for x, dy in zip(bxs, bdy)], "RangerTrim")
-    for sx in (1, -1):                          # tread pads let into the top face
-        # Spans FORWARD from the bumper face.  `Y_R - 0.040` reads like "just inside
-        # the bed" but Y_R is a bed coordinate and subtracting moves REARWARD, so it
-        # put the pads 7.5 mm behind the bumper — caught by the overhang invariant.
-        box(p, sx * 0.086, sx * 0.320, Y_TAIL + 0.030, Y_TAIL + 0.112,
-            Z_RBUMP1 - 0.006, Z_RBUMP1 + 0.016, DARK)
-    # PROUD of the bumper crown (which now sits at Y_TAIL + 0.012), not inside it —
-    # buried in the convex face the plate showed only as a white diamond.
-    box(p, -0.150, 0.150, Y_TAIL, Y_TAIL + 0.014, Z_RBUMP0 + 0.034,
-        Z_RBUMP0 + 0.154, "RangerLens")      # licence plate, on the bumper face
+    for sx in (1, -1):                            # tread pads let into the top face
+        box(p, sx * 0.098, sx * 0.336, Y_TAIL + 0.040, Y_TAIL + 0.104,
+            Z_RBUMP1 - 0.008, Z_RBUMP1 + 0.014, DARK)
+    # Licence plate, PROUD of the bumper crown (which sits at Y_TAIL on the
+    # centreline) — buried inside the convex face it showed only as a white diamond.
+    box(p, -0.150, 0.150, Y_TAIL, Y_TAIL + 0.018, Z_RBUMP0 + 0.034,
+        Z_RBUMP0 + 0.148, "RangerLens")
 
     # Exhaust tip, right rear, exiting BELOW the bumper so it is actually visible.
-    tube(p, (0.470, -1.980, 0.348), (0.470, -2.420, 0.330), 0.038, 6, "RangerTrim")
+    tube(p, (0.470, -2.020, 0.330), (0.470, -2.470, 0.312), 0.038, 6, "RangerTrim")
     # Mud flaps, nearly as wide as the tyre.
     for sx in (1, -1):
         box(p, sx * 0.590, sx * 0.816, -2.132, -2.100, 0.108, 0.442, "RangerTrim")

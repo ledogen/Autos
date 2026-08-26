@@ -60,7 +60,7 @@ export const VEHICLE_MODELS = {
     targetLength: 4.61,
     bodyScale: 1.0,
     yaw: 0,
-    shiftRear: 0.2675,
+    shiftRear: 0.3465,
     // -0.007 = -(model's lowest point, 0.108) + (static suspension sag, 0.101).  The
     // loader plants box.min at car-local y = -cgHeight, which assumes the suspension is
     // fully extended; at rest it sags ~0.10 m and the truck visibly floats without this.
