@@ -481,7 +481,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   Delete Detour Cap (BUG-55 phase 5): an unmergeable tear-grade pair loses its LONGER member
   //   iff its endpoints reconnect within this many hops (0 = never delete). Higher clears more
   //   doubled roads at the cost of longer real drives where a leg is removed.
-  v2Folder.add(params.roadV2, 'deleteDetourHops', 0, 10, 1).name('Delete Detour Cap').onChange(fireRoadParam)
   //   Class boundaries: deeper than cutMax below ground becomes a BORE; higher than fillMax above
   //   it would become a bridge (bridges are de-scoped — owner ruling 2026-08-18 — so fill is
   //   capped there instead). A 12-20 m trench is an open rock cutting, not a tunnel.

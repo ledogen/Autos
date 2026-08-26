@@ -525,13 +525,6 @@ export const RANGER_PARAMS = {
     // above the census's 9 m tear floor, below mergeProxM. Deflection declines (fold floor,
     // transit, >30 m) fall through to the delete rung.
     shoveClearM: 12,
-    // BUG-55 phase 5 (owner rulings 2026-08-23): a tear-grade pair the merge ladder cannot take
-    // loses its LONGER member (the wanderer; the direct connection survives) — but only when the
-    // victim's endpoints reconnect within this many hops through edges that cannot themselves be
-    // deleted, so simultaneous deletions can never strand a component. Measured on the known
-    // tears: the seed-6 (3328,-27) victim reconnects in 5 hops; seed-20's needs 7 and stays a
-    // named 'detour' decline on purpose. 0 disables the delete rung entirely.
-    deleteDetourHops: 6,
     // BUG-55 pair census: an edge is a CANDIDATE conflict partner of a registering edge when its
     // node-to-node CHORD comes within this of the registering edge's ROUTE polyline. Chord-to-
     // chord was measured useless (blue-noise keeps chords >= 407 m apart while routes wander up

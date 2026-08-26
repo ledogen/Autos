@@ -89,16 +89,12 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         `heading buckets=[${bins.join(',')}] entropy=${entropy.toFixed(2)} maxDirFrac=${(100 * maxFrac).toFixed(0)}% (rows mode would be 100% one axis)`)
 }
 
-// (d) SMOOTHNESS — the INTER-EDGE collision surface is step-free. Samples within EXCL of a mid-span
-// routed crossing are excluded: those crossings are planar-ABSTRACT-but-routed overlaps whose smooth
-// resolution needs T/X secondary-node PROMOTION (deferred — handoff §5B). This check guards the
-// per-edge grade + degree-2/≥3 junction reconciliation (the foundation pass's responsibility); the
-// crossing-adjacent step count is reported separately as the deferred follow-up's metric.
+// (d) SMOOTHNESS — the INTER-EDGE collision surface is step-free. BUG-57 (ruling 2, 2026-08-25):
+// the crossing-zone exclusion is GONE — nodes are the only intersections, mid-span crossings are
+// resolved by merge/shove/delete, and the crossing rung's zero-crossings invariant makes the old
+// "deferred T/X promotion zone" structurally empty. Every sample counts now.
 {
-    const EXCL = 14   // m — radius around an unpromoted routed crossing (the deferred-promotion zone)
-    const xs = roadA.crossingList().map(c => c.point)
-    const nearCrossing = (x, z) => { for (const p of xs) if ((p.x - x) ** 2 + (p.z - z) ** 2 < EXCL * EXCL) return true; return false }
-    let worst = 0, steps = 0, walked = 0, worstAt = '', xSteps = 0
+    let worst = 0, steps = 0, walked = 0, worstAt = ''
     for (const [rk, e] of roadA._network) {
         const pts = e.points
         for (let i = 0; i < pts.length - 1; i++) {
@@ -106,7 +102,6 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
             let prev = null
             for (let k = 0; k <= n; k++) {
                 const t = k / n, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t
-                if (nearCrossing(x, z)) { prev = null; continue }   // skip the deferred-promotion zone
                 const r = roadA._resolveRoadSurface(x, z); if (!r) { prev = null; continue }
                 walked++
                 if (prev) { const dY = Math.abs(r.point.y - prev.y), dH = Math.hypot(x - prev.x, z - prev.z) || 0.01
@@ -116,7 +111,7 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         }
     }
     log(walked > 10000 && steps === 0, 'GRAPH-SURFACE-SMOOTH',
-        `walked ${walked} inter-crossing samples; steps (>0.15 m, >56°)=${steps} worst=${worst.toFixed(2)} m ${worstAt} | (crossing-zone steps deferred to T/X promotion)`)
+        `walked ${walked} samples (no crossing-zone exclusion — zero mid-span crossings is structural now); steps (>0.15 m, >56°)=${steps} worst=${worst.toFixed(2)} m ${worstAt}`)
 }
 
 // (e) FLAT MERGES — every crossing merges at grade; the classifier only emits AT_GRADE | NEAR_PARALLEL
@@ -128,33 +123,11 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         `${list.length} crossings, non-flat kinds=${bad} — every crossing merges flat, no floating overpasses`)
 }
 
-// (f) NODE DEPARTURE — each edge leaves BOTH endpoints heading toward its neighbour (not the reverse).
-// Guards the goalHeading-direction bug: a directed router fed the reversed goal heading loops around to
-// approach a node from the wrong side → "enter from the wrong side" / shallow near-node crossings.
-{
-    const br = (p0, p1) => Math.atan2(p1.z - p0.z, p1.x - p0.x) * 180 / Math.PI
-    const angDiff = (a, b) => { let d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d }
-    let worst = 0, sum = 0, m = 0
-    for (const [, e] of roadA._network) {
-        const A = roadA._nodePos(e.cellA), B = roadA._nodePos(e.cellB), pts = e.points
-        // BUG-55 re-baseline: a merged LOSER departs its node along the WINNER's course (the
-        // ceded strand starts at the node), so its leave-bearing legitimately diverges from its
-        // own chord — exempt an endpoint whose departure lies inside an offCurveSpan.
-        const L = e.polyCum[e.polyCum.length - 1]
-        const off = e.offCurveSpans || []
-        if (!off.some((sp) => sp.s0 <= 10)) {
-            const eA = angDiff(br(pts[0], pts[Math.min(2, pts.length - 1)]), br(A, B))
-            sum += eA; m += 1; worst = Math.max(worst, eA)
-        }
-        if (!off.some((sp) => sp.s1 >= L - 10)) {
-            const eB = angDiff(br(pts[pts.length - 1], pts[Math.max(0, pts.length - 3)]), br(B, A))
-            sum += eB; m += 1; worst = Math.max(worst, eB)
-        }
-    }
-    const avg = sum / m
-    log(avg < 22 && worst < 60, 'GRAPH-NODE-DEPARTURE',
-        `leave-bearing vs chord: avg=${avg.toFixed(1)}° worst=${worst.toFixed(0)}° over ${m} endpoints (reversed goalHeading would be ~150°)`)
-}
+// (f) NODE DEPARTURE — RETIRED (BUG-57 ruling 7, 2026-08-25, confirmed at the touch). It compared
+// each edge's leave-bearing to its CHORD, but the corridor router's canonical approach headings and
+// the merge machinery's adopted departures make chord-divergence intended geometry in exactly the
+// places the check flagged; the reversed-goalHeading bug it guarded is covered by (b) INVARIANCE +
+// the driven acceptance. BUG-56's junction-departure work owns this surface now.
 
 // (g) SELF-CLEARANCE (QUAL-14, replaces the ≤200°-turn NO-LOOPS check — that bound was
 // anti-switchback by design once the honest-grade router made 300°+ alpine stacks intentional).
