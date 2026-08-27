@@ -1,7 +1,7 @@
 ---
 id: BUG-56
 type: bug
-status: open
+status: in-progress
 severity: major
 opened: 2026-08-24
 source: owner screenshot while freecamming the BUG-55 acceptance area (2026-08-24)
@@ -231,3 +231,150 @@ item 1 predicted would ride this pass.
 - The SHOVE rung's deflections are covered by the gate (it measures registered geometry, whatever
   produced it) but were not separately audited.
 
+
+---
+
+## RE-SCOPED 2026-08-27 (owner) — BUILD PASS 1's diagnosis was too narrow
+
+The owner drove the world again and gave three reproducers. Fresh measurement says the remaining work
+is **five independent mechanisms**, not one. Camber (build pass 1's "next piece") is real but is not
+the worst of them at the owner's own reproducer.
+
+**The plan is `.planning/HANDOFF-2026-08-27-BUG-56-camber.md` rev 2** — six items in build order, with
+the full measurement tables. Do not re-derive them.
+
+| owner's mark | what is actually wrong |
+|---|---|
+| seed 6 (−1589, 1338) | 22 m turn radius + **34° camber swing** + grade reversal −17 % → **+24 %**, all inside 45 m past the fork. The leg cedes 96 m to a through road diving 17 %, arrives 10 m low, and must claw back 22 m of climb. |
+| seed 6 (−2507, 4209) | same fork mechanism, **camber and radius only** — 20.8 m radius, camber −18.9° → +15.9° in 35 m. Grade is fine (15.3 % peak). |
+| seed 6 (−870, 2468) | **the SHOVE deflection unpins the node.** `g:-3,3,2:-2,3,1` ends 17.3 m sideways and 1.60 m above node `-2,3,1`, outside the pad's reach. The displacement field is never forced to zero at a run endpoint. Census: 260 nodes, exactly this one broken. |
+| all taper bands | **the bands are the tightest geometry in the network.** Min-R median **23.3 m**, p05 **14.9 m**, vs open road p01 24.8 / p05 70.3 / median 308. 38 of 70 under 25 m, **4 under `roadMinTurnRadius` 15** (tightest 12.8 m). Cause: the band ladder's `RFLOOR` is 6 and it takes the FIRST band that clears, not the gentlest. This is the owner's original "turns to parallel last second". |
+
+**Owner rulings 2026-08-27:**
+
+- **Grade is priority 1, but NOT by tightening the cap.** `gMaxRoad` stays 0.24, the 38 % ceiling
+  stays, `wGrade` stays the preference dial. *"mainly i dont want to destroy connectivity by
+  strictening grade compared to the very lenient fall back to terrain we currently have."* What must
+  die is the **terrain-follow drape** (`src/road.js:4705`) — 4 runs across the battery, one at 108 %.
+  Ladder: solve ≤ 38 % → re-route → deterministic seed advance at story-region entry.
+- **Camber through a fork: match, then ease off.** The leg carries the winner's bank at the fork and
+  eases to its own once laterally clear. Not flat-to-zero — the winner is banked 13.1° there.
+- **A drape is evidence of load-bearing connectivity**, not evidence of a spare edge. It only fires
+  because nothing solved on that corridor.
+- **New: a play-area gate** (`test/play-area.mjs`), run whenever terrain or router settings change:
+  5 fixed seeds × **a 3×3 grid of 4000 m square tiles (12 km × 12 km, 144 km², nine regions)**.
+  Headline assertion: the road graph across all nine tiles is ONE component. Catches settings under
+  which no seed can start a story run. Heavy (~3–5 min/seed) — `test:all` only. May trail the merge.
+
+Build pass 1's departure hold is **kept and extended, not removed**. Measured: neutralising it fixes
+the owner's 24 % (→ 19.8 %) but costs road-smoothness GREEN and doubles junction-stitch's site count
+(17 → 37). It needs a grade acceptance test and a partial-hold rung, not deletion.
+
+### OWNER RULING 2026-08-27 (second pass): make the Y work, do not replace it
+
+Promoting forks to real nodes (a T at the fork) was considered and **ruled against**:
+*"lets just make the y mechanism work nice like the junction pad code. do what is necessary to the
+router as well as the junction pass."*
+
+**The reframe that makes it cheap:** `src/road.js:101-118` (`THROAT_GAP` / `THROAT_SEP_MULT` /
+`THROAT_TRIG_MULT` + `_throatSweep`) already solves the slow-diverging Y **at a node** — its own
+comment describes the defect as *"the gore (the V between the two diverging ribbons) as raw terrain
+even though it's carved flush — a tan wedge piercing the asphalt"*, which is this ticket's original
+screenshot. So the junction pass is mostly a **PORT of working machinery from the node to the fork**,
+not an invention.
+
+Six things a deg-3 node gets and a fork does not — gore paved+carved as one footprint · decks
+reconciled · camber eased · grade clamped · turn radius disciplined · an acceptance guard. The plan
+maps each to an item (B3, B6, B4, B6, B5, B6) in
+`.planning/HANDOFF-2026-08-27-BUG-56-camber.md` rev 2.
+
+**Router is now in scope too**, but gated: a taper band is a downstream patch for a routing decision
+(two edges leave one node and stay inside `mergeProxM` for 76–96 m). Workstream A adds sibling
+clearance as a COST — not a heading pin, QUAL-19's Architecture A is DISPROVEN. **A0 must measure how
+many of the 70 hugs are avoidable before A1 is built**, because A1 deliberately breaks the router's
+stated purity contract (`src/corridor-router.js:12-14`: *"No sibling coupling, no window state.
+Window invariance is structural, not defended."*) and makes window invariance something that must be
+proven, plus re-keys the route cache.
+
+### NEW BUG CLASS 2026-08-27: **31 real junctions get NO PAD AT ALL**
+
+Owner: *"make sure we are considering the bug class where no junction pad generates, for example
+seed 6 (−3862, 884)."* Confirmed and censused over all 9 battery windows:
+
+| | |
+|---|---|
+| junction clusters | **274** |
+| no pad because degree-2 (connector arc — by design, QUAL-16) | 83 |
+| **≥3-leg junctions whose RING BUILD FAILED — real intersection, no junction surface** | **31** |
+
+**31 of 191 real junctions = 16 %.** The owner's site is node `(−3866, 885)`, **4 legs**,
+`ring = NULL`.
+
+`_buildJunctionRing` (`src/road.js:6760-6770`) is a three-rung ladder — exact weld at fillet scale
+1.0 → weld at 0.5 → legacy circle pad — each verified by `_ringSelfIntersects`, and it can end in
+`null`. When it does, `ring = null` makes EVERY consumer skip the node (pad carve, `padReachNodes`,
+the mesh's ring branch) while the legs stay cut back, so what ships is a naked gap.
+
+**Interaction with mark C:** clusters form by endpoint proximity at `EPS2 = (halfWidth·0.75)²`
+≈ 3.75 m (`src/road.js:6604`). A shoved endpoint 17.3 m out never joins its cluster, the node drops
+to 2 legs, `node.deg2` sets `ring = null`. **Fixing the shove (B2) may fix pads for free — re-census
+after B2 before diagnosing the remaining failures.**
+
+Fix: a ≥3-leg junction must ALWAYS get a ring. Diagnose why the weld self-intersects at both scales,
+why `_junctionRingLegacy` also fails, then put a real floor under the ladder (a plain
+`LEGACY_PAD_FLARE` disc sized to the widest mouth beats a naked gap). New gate `test/pad-census.mjs`:
+zero ring-build failures on ≥3-leg clusters.
+
+### OWNER CORRECTION 2026-08-27: the gore is FILL; the NORMAL is what matters
+
+*"the v gore is mostly a fill not a smooth driveable surface. i think the most important thing is the
+road normal direction matches the mid edge."*
+
+The invariant for the whole junction pass is therefore:
+
+> Through the departure, the joining leg's deck plane IS the through road's deck plane.
+> Camber gives it the roll, grade gives it the pitch. Both, or the car is thrown.
+
+Camber (B4) and grade (B6) are the two halves of one normal match, not two independent items — that
+is the acceptance bar for both. The gore (B3) is demoted from headline to hygiene: it must be
+continuous (no stepped wall, no raw-terrain wedge) but nobody drives on it, so it does not need the
+pad's paving quality.
+
+
+---
+
+## BUILD STATE (2026-08-27 evening) — B, C and D are BUILT; A is measured and NOT built
+
+Full account: **`.planning/HANDOFF-2026-08-27-BUG-56-build.md`**. Plan of record it executes:
+`.planning/HANDOFF-2026-08-27-BUG-56-camber.md` rev 3. Nine commits on `feature/corridor-router`,
+head `8c0cfd0`.
+
+| | | |
+|---|---|---|
+| B1 | the stitching gate reads ribbon EDGES | 17 sites → 102; both owner forks were invisible before |
+| B2 | a run ends at the node it shares | 253 nodes, **0 unpinned**, worst spread 0.00 m |
+| B0 | the ring ladder gets a floor | **27 naked junctions → 0** |
+| C  | never drape — re-route, else condemn | **worst grade 106 % → 38 %**, condemned 0 |
+| B4 | departure camber (ROLL half of the normal) | fork roll residual **median 0.0°** |
+| B6 | departure grade (PITCH half) | mark A's fork spike **24.1 % → gone** |
+| B5 | a band may not be tighter than the road | median band radius **23.3 m → 33.4 m** |
+| B3 | the gore is a wall at the seam | gore wall steps **470 → 373** |
+| D  | play-area gate + the shared validator | 5 seeds × 144 km², all one component |
+
+Against this ticket's own Acceptance section: the fork tear, the floating shelf, the missing pads
+and the undesigned grades are all addressed and gated. road-smoothness and graph-topology's other
+seven checks stay green; MESH == PHYSICS holds (B4's blend is applied in both consumers). What is
+NOT yet true is "no new reds in test:all" — there is one, `graph-topology`'s corridor-clearance,
+booked with its cause in the handoff (an edge that used to be DELETED now survives and hugs a
+sibling it cannot taper against, best band radius 2.3 m).
+
+**The owner's two open rulings**, both stated in the handoff with the numbers behind them:
+
+1. **Workstream A.** A0 measured that 83 % of hugs are avoidable at a median length cost of 1.00×.
+   A1 was then built the purity-preserving way (price each sibling's CHORD) and measured to do
+   nothing at any weight, and was reverted rather than shipped inert. The version that works prices
+   the sibling's REAL corridor, which needs two-pass routing — deterministic and window-invariant,
+   but roughly **2× route time** plus a cache re-bake. Worth it or not is a perf call.
+2. **The nine-tile play area.** Story mode builds one 2500 m region; the owner's 3×3 grid of 4000 m
+   tiles is what workstream C's run-start reroll validates. `src/world-validate.js` is written and
+   green; the reroll is a handful of lines once story mode adopts the shape.
