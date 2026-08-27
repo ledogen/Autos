@@ -295,3 +295,28 @@ because `facing` is shared.
 **Residual, stated rather than hidden:** at 8000 rays (13× the audit's density) one hit still lands
 on the buried underside of a bumper tread pad at a 0.14 dot — an interior face of a decorative inset,
 reachable only at a grazing angle. The audit at its own 600-ray setting is clean. Not chased.
+
+---
+
+## Nose blend, second pass — 2026-08-27
+
+Owner: *"split the difference and pull the hood slope off back a little. increase the radius on the
+vertical edges of the front end blend you just improved."* **3064 tris / 4000**, audit clean.
+
+**The schedule is now generated, not typed.** `NOSE_RIM` was four hand-picked 4-tuples that only
+approximated a corner. One quarter-turn now drives all four numbers: the ring advances as
+`sin θ` and the tuck, drop and rise all ease in as `1 − cos θ`. That makes the blend a real
+quarter-**ellipse** — tangent to the flat hood and to the straight flank where it starts,
+perpendicular where it meets the face. Three knobs replace twelve numbers:
+
+| | |
+|---|---|
+| `NOSE_RIM_N = 5` | ring count — on a corner, this is what buys smoothness (was 4) |
+| `NOSE_TUCK = 0.105` | plan-view corner: the face is this fraction narrower than the flank. **This is the "radius on the vertical edges"** (was 0.070 effective) |
+| `NOSE_DROP = 0.076` | hood-line fall across the rim (was 0.126) |
+| `NOSE_RISE = 0.026` | valance-line tuck — deliberately a third of the drop, because a symmetric squeeze pinches the face |
+
+**Split the difference:** total hood fall is unchanged at ~0.14 m, but it is now *shared* instead of
+living entirely in the rim — dead flat from the cowl to y 1.05, then 0.064 m of gentle descent in
+the sheet metal to the last station, then 0.076 m in the rim. The previous version put all of it in
+the last 0.14 m, which is what made the transition read as abrupt.

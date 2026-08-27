@@ -485,19 +485,22 @@ def _interp(table, y):
 # The hood falls CONTINUOUSLY from the cowl to the nose — a hood that plateaus and
 # then kinks reads as two glued boxes (learned on broken-car, 2026-08-10).
 CLIP_ST = [
-    # FLAT.  Owner, 2026-08-26: "the hood is quite flat near the windshield and
-    # rounds off heavily near the end."  A hood is a PLATEAU with a nose radius, not
-    # a ramp — the previous pass spread the whole 0.198 m fall evenly along the
-    # length, which is why it read as a wedge.  The plateau barely moves from the
-    # cowl to the last station here; ALL of the fall lives in NOSE_RIM below.
-    (1.7525, 0.836, 0.752, 1.160, 0.020),  # last FULL station.  MUST equal AX_F+ARCH_R
+    # PLATEAU, then a roll.  Owner, 2026-08-26: "the hood is quite flat near the
+    # windshield and rounds off heavily near the end" — a hood is a plateau with a
+    # nose radius, not a ramp.  Then 2026-08-27: "split the difference and pull the
+    # hood slope off back a little", because putting ALL of the fall in the rim made
+    # the transition too abrupt.  So the total is unchanged at ~0.14 m but it is now
+    # shared: dead flat from the cowl to y 1.05, 0.064 m of gentle descent from there
+    # to the last station, and the remaining 0.076 m in the rim's quarter-ellipse.
+    (1.7525, 0.836, 0.752, 1.108, 0.022),  # last FULL station.  MUST equal AX_F+ARCH_R
                                            # exactly (asserted in report()): 2.5 mm off it
                                            # and the arch sample lands beside this station
                                            # instead of on it, leaving a sliver face that
                                            # came out inverted.
-    (1.2825, 0.845, 0.774, 1.170, 0.018),  # front axle — widest, the fender blister
-    (1.050, 0.842, 0.778, 1.172, 0.012),
-    (0.820, 0.832, 0.779, 1.172, 0.007),
+    (1.500, 0.842, 0.766, 1.140, 0.020),
+    (1.2825, 0.845, 0.774, 1.156, 0.018),  # front axle — widest, the fender blister
+    (1.050, 0.842, 0.778, 1.166, 0.012),
+    (0.820, 0.832, 0.779, 1.171, 0.007),
     (0.584, 0.816, 0.778, 1.172, 0.003),   # cowl
 ]
 
@@ -587,22 +590,35 @@ NOSE_CROWN_W = 0.800             # x at which that full fall is reached
 # through the whole rim and opens a notch in the nose.  CLIP_ST[0] is therefore
 # pinned to the front arch's forward tangent, AX_F + ARCH_R = 1.7525 (asserted).
 #
-# THE FOLD TRAP.  These used to be absolute setbacks from the face (dy).  That is
-# unsafe, because face_y() is a BARREL CURVE: at the flank the face sits 34 mm
-# further back than on the centreline, so a dy that clears the last station at x = 0
-# lands BEHIND it at x = 0.83.  Ten of the first ring's twelve points ended up behind
-# the station they were supposed to lead, the loft folded over itself, and the
-# fold read as a dark crack across the hood (owner, 2026-08-26: "fix the seam
-# between the front and the hood").
+# THE FOLD TRAP.  The first number used to be an absolute setback from the face.
+# That is unsafe, because face_y() is a BARREL CURVE: at the flank the face sits
+# 34 mm further back than on the centreline, so a setback that clears the last
+# station at x = 0 lands BEHIND it at x = 0.83.  Ten of the first ring's twelve
+# points ended up behind the station they were supposed to lead, the loft folded
+# over itself, and the fold read as a dark crack across the hood.  It is now a
+# FRACTION of the span from the last station to the face, evaluated at each point's
+# own x — monotone by construction, asserted in report().
 #
-# So the first number is now a FRACTION of the span from the last full station to
-# the face, evaluated at each point's own x.  Monotone by construction: no value in
-# (0, 1] can fold, whatever the crown does.  1.0 lands exactly on the face.
-#   (t along station->face, plan scale, TOP drop, BOTTOM rise)
-NOSE_RIM = [(0.26, 0.997, 0.012, 0.004),
-            (0.54, 0.986, 0.040, 0.014),
-            (0.79, 0.964, 0.081, 0.026),
-            (1.00, 0.930, 0.126, 0.040)]
+# THE SCHEDULE IS NOW GENERATED, not typed.  One quarter-turn drives all four
+# numbers: the ring advances as sin(theta) and the tuck, drop and rise all ease in
+# as (1 - cos theta).  That makes the blend a real quarter-ELLIPSE — tangent to the
+# flat hood and to the straight flank where it starts, perpendicular where it meets
+# the face — instead of four hand-picked numbers that only approximated one.  Five
+# rings rather than four because the owner asked for more radius on the vertical
+# edges (2026-08-27), and on a corner it is ring count that buys smoothness.
+NOSE_RIM_N = 5
+NOSE_TUCK = 0.105      # plan-view corner: the face is this fraction narrower than
+                       # the flank.  THIS is the "radius on the vertical edges".
+NOSE_DROP = 0.076      # how far the hood line falls across the rim
+NOSE_RISE = 0.026      # how far the valance line tucks up; deliberately far less —
+                       # a symmetric squeeze pinches the face (see nose_rim_ring)
+
+NOSE_RIM = []
+for _i in range(1, NOSE_RIM_N + 1):
+    _th = 0.5 * math.pi * _i / NOSE_RIM_N
+    _ease = 1.0 - math.cos(_th)
+    NOSE_RIM.append((math.sin(_th), 1.0 - NOSE_TUCK * _ease,
+                     NOSE_DROP * _ease, NOSE_RISE * _ease))
 
 
 def face_y(x):
