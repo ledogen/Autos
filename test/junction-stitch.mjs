@@ -228,10 +228,17 @@ const scan = (road) => {
 }
 
 let fails = 0, totalLips = 0, totalPad = 0, totalPadEdge = 0
+// BUG-56 B4/B6 split the ONE normal invariant into roll and pitch, so track them apart: this is the
+// roll residual on the population B4 owns. It went 15.6 deg -> 0.9 deg at mark A and 14.6 deg -> 0.0
+// at mark B when B4 landed, while the site COUNT barely moved — because a pair stays red until both
+// halves are right, and the pitch half is B6.
+const forkCamber = []
 for (const W of WINDOWS) {
   if (ONLY && !W.name.includes(ONLY)) continue
   const { lips, padPairs, padEdgePairs, runs } = scan(buildWindow(W, P))
   totalLips += lips.length; totalPad += padPairs; totalPadEdge += padEdgePairs
+  for (const w of lips) if (w.tag === 'fork' && w.rule === 'edge')
+    forkCamber.push(Math.abs(w.camA - w.camB) * 180 / Math.PI)
   const byTag = {}
   for (const w of lips) { const t = `${w.tag}/${w.rule}`; byTag[t] = (byTag[t] || 0) + 1 }
   const head = `${W.name.padEnd(20)} runs ${String(runs).padStart(3)} · span ${String(lips.length).padStart(3)} · pad ${String(padPairs).padStart(3)} deck / ${String(padEdgePairs).padStart(3)} edge`
@@ -247,6 +254,9 @@ for (const W of WINDOWS) {
   if (!VERBOSE && lips.length > TOP) console.log(`         … ${lips.length - TOP} more (--verbose)`)
 }
 
+const fc = forkCamber.slice().sort((a, b) => b - a)
+const med = fc.length ? fc[fc.length >> 1] : 0
 console.log(`\njunction-stitch: ${totalLips} unstitched pair-stretches (gating) · pad-vicinity pairs (report): ${totalPad} deck, ${totalPadEdge} edge`)
+console.log(`   fork ROLL residual (B4, report): ${fc.length} fork rows · worst ${(fc[0] ?? 0).toFixed(1)} deg · median ${med.toFixed(1)} deg of camber mismatch`)
 if (fails) { console.log('FAIL — road decks diverge faster than the ground between them can slope (BUG-56)'); process.exit(1) }
 console.log('PASS')

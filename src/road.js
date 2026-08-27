@@ -4365,6 +4365,10 @@ export class RoadSystem {
                 cededSpans: [{ s0: polyCum[iA], s1: polyCum[iB], owner: wk, ownerS0: wLo, ownerS1: wHi }],
                 offCurveSpans: [{ s0: polyCum[Math.max(0, iA - nA)], s1: polyCum[Math.min(n, iB + nB)],
                                   owner: wk, ownerS0: wLo - bOut.Lb, ownerS1: wHi + bOut.Lb }],
+                // BUG-56 B4: band, ceded strand, band — one contiguous stretch of "on top of the
+                // winner". The lateral ramp inside _applyDepartureCamber tells the parts apart on
+                // its own: zero separation on the ceded middle, opening out through each band.
+                departureSpans: [{ s0: polyCum[Math.max(0, iA - nA)], s1: polyCum[Math.min(n, iB + nB)], owner: wk }],
             })
             this._v2Merges = (this._v2Merges || 0) + 1
             return true
@@ -4667,13 +4671,24 @@ export class RoadSystem {
             //                  extent over which the pair is INTENDED to be close, which is what the
             //                  BUG-53 censuses must discount before counting a defect.
             const cededSpans = [], offCurveSpans = []
+            // BUG-56 B4: departureSpans cover the CEDED STRAND AND THE BAND — everywhere this leg is
+            // riding on, or still on top of, the winner's pavement. The band obviously needs it. The
+            // ceded strand needs it too, and that is not obvious: its vertices ARE the winner's, so
+            // one would expect its bank to follow for free, and it does not. _computeCamberArrays
+            // reads curvature over a +/-10 m window and marches a slew limit forward, so within a
+            // window of the fork the leg's window already straddles the band's turn while the
+            // winner's sees only its own continuation. Measured at mark A: at arc 90, ZERO lateral
+            // separation, leg +2.6 deg against winner -5.9 deg. Same pavement, 8.5 deg apart.
+            const departureSpans = []
             if (dS) {
                 cededSpans.push({ s0: 0, s1: polyCum[forkIdxS], owner: dS.wk, ownerS0: dS.oS[0], ownerS1: dS.oS[1] })
                 offCurveSpans.push({ s0: 0, s1: polyCum[x1Idx + dS.blend.length], owner: dS.wk, ownerS0: dS.oSFork[0], ownerS1: dS.oSFork[1] })
+                departureSpans.push({ s0: 0, s1: polyCum[x1Idx + dS.blend.length], owner: dS.wk })
             }
             if (dE) {
                 cededSpans.push({ s0: polyCum[forkIdxE], s1: polyCum[n], owner: dE.wk, ownerS0: dE.oS[0], ownerS1: dE.oS[1] })
                 offCurveSpans.push({ s0: polyCum[x2Idx - dE.blend.length], s1: polyCum[n], owner: dE.wk, ownerS0: dE.oSFork[0], ownerS1: dE.oSFork[1] })
+                departureSpans.push({ s0: polyCum[x2Idx - dE.blend.length], s1: polyCum[n], owner: dE.wk })
             }
             if (dry) dryAsm = { pts, polyCum }
             else this._network.set(key, {
@@ -4681,6 +4696,7 @@ export class RoadSystem {
                 polyCum, clArc: Float64Array.from(clArc), cellA, cellB,
                 tunnelSpans: midSpans && midSpans.length ? midSpans : null,
                 cededSpans, offCurveSpans,
+                ...(departureSpans.length ? { departureSpans } : {}),
             })
             return null   // built
         }
@@ -9118,12 +9134,83 @@ export class RoadSystem {
         }
     }
 
+    /**
+     * BUG-56 B4 — THE DEPARTURE CAMBER MATCH: the ROLL half of the normal invariant.
+     *
+     * Owner ruling 2026-08-27, correcting the earlier gore framing:
+     *
+     *     "the v gore is mostly a fill not a smooth driveable surface. i think the most important
+     *      thing is the road normal direction matches the mid edge."
+     *
+     * A deck's normal is set by two things — transverse CAMBER and longitudinal GRADE. Through the
+     * departure the joining leg's deck plane must be the through road's deck plane: camber gives it
+     * the roll, grade gives it the pitch, and without both the car is thrown. The height half is
+     * already enforced by the departure hold; this is the roll half.
+     *
+     * A ≥3-way node pad gets this for free (_applyJunctionBlend eases camber to zero at flatCamber
+     * nodes). A FORK gets nothing: _computeCamberArrays sees only the band's own curvature, and a
+     * band is the tightest geometry in the network — median turn radius 23 m against open road's
+     * 308 m — so it banks hard, in whatever direction its own corner happens to go. Measured at the
+     * owner's two marks, with the winner banked 13-15 deg the whole way through:
+     *
+     *     mark A  seed 6 (-1585,1336)   leg camber  15.4 deg   vs winner  -0.2 deg
+     *     mark B  seed 6 (-2505,4204)   leg camber   0.0 deg   vs winner -14.6 deg
+     *
+     * Both are ~15 deg of deck mismatch between two pavements at ZERO lateral separation, and both
+     * printed CLEAN through a centreline-only stitching gate.
+     *
+     * THE RULE — match, then ease off, ramped on LATERAL SEPARATION rather than arc, because the
+     * invariant is about position, not progress:
+     *
+     *     while you are on top of the through road, your bank is its bank
+     *
+     * Fully the winner's while the ribbons still overlap (d <= 2·halfWidth), fully this leg's own
+     * once they no longer share earthworks (d >= mergeProxM), smoothstep between. It does NOT ramp
+     * to zero at the fork: the winner is banked 13 deg there, so flattening the leg would re-create
+     * the very mismatch at the very spot being fixed.
+     *
+     * Applied in BOTH consumers — _buildCamberProfile (ribbon + carve) and _buildRunProfile
+     * (physics) — so MESH == PHYSICS holds. Pure fn of the two registered runs, hence
+     * window-invariant; acyclic because a winner never departs onto its own loser, which is
+     * asserted rather than assumed (a cycle here would recurse forever, not just read wrong).
+     */
+    _applyDepartureCamber(runKey, arcPos, camberRad) {
+        if (!camberRad) return
+        const e = this._network?.get(runKey)
+        const spans = e?.departureSpans
+        if (!spans || !spans.length || !e.points) return
+        const hw = this._params?.roadHalfWidth ?? 5
+        const D0 = 2 * hw                                   // ribbons still overlap: the winner's bank
+        const D1 = Math.max(D0 + 1e-3, this._v2Costs?.().mergeProxM ?? 18)   // no shared earthworks: own bank
+        for (const sp of spans) {
+            const w = this._network.get(sp.owner)
+            if (!w || !w.points || w.points.length < 2 || !w.polyCum) continue
+            if ((w.departureSpans || []).some((q) => q.owner === runKey)) continue   // the acyclic check
+            const wOrigin = w.arcOrigin ?? 0
+            for (let i = 0; i < arcPos.length && i < e.points.length; i++) {
+                const a = arcPos[i]
+                if (a < sp.s0 - 1e-6 || a > sp.s1 + 1e-6) continue
+                const P = e.points[i]
+                const nr = _nearestOnPolyXZ(P.x, P.z, w.points, w.polyCum)
+                if (!nr || nr.d >= D1) continue
+                const t = Math.max(0, Math.min(1, (nr.d - D0) / (D1 - D0)))
+                const f = 1 - t * t * (3 - 2 * t)            // 1 on top of the winner, 0 once clear
+                if (f <= 0) continue
+                const wc = this.camberProfile(nr.cum - wOrigin, sp.owner)
+                camberRad[i] += (wc - camberRad[i]) * f
+            }
+        }
+    }
+
     _buildCamberProfile(runKey) {
         const netEntry = this._network?.get(runKey)
         if (!netEntry || !netEntry.points || netEntry.points.length < 2) return null
         // BUG-19: build via the shared canonical routine, seeded from the predecessor's end (P4/BUG-10).
         // _runEndCamber uses the SAME routine, so the seed equals the predecessor profile's real end.
         const prof = this._computeCamberArrays(netEntry.points, netEntry.arcOrigin, this._runStartCamber(runKey))
+        // BUG-56 B4 first, junction blend second: a ≥3-way node is a flat plaza and outranks a fork's
+        // bank, so the node's camber-kill must be the last word where the two reaches overlap.
+        this._applyDepartureCamber(runKey, prof.arcPos, prof.camberRad)       // BUG-56 B4: fork bank matches the through road
         this._applyJunctionBlend(runKey, prof.arcPos, null, prof.camberRad)   // FEAT-10: camber→0 at shared-anchor junctions
         this._applyMidspanJunctionBlend(runKey, prof.arcPos, null, prof.camberRad)   // FEAT-07 Step 2: camber→0 at AT_GRADE crossings
         return prof
@@ -9258,6 +9345,7 @@ export class RoadSystem {
         // FEAT-10: flatten grade → nodeY and camber → 0 near merged junction endpoints so crossing
         // runs agree at the node (no invisible collision step, no banking jolt). Same blend as
         // _buildCamberProfile → the ribbon (camberProfile) and the run profile stay in sync at junctions.
+        this._applyDepartureCamber(runKey, arcPos, camberRad)   // BUG-56 B4 — MESH == PHYSICS: same blend, same order
         this._applyJunctionBlend(runKey, arcPos, gradeY, camberRad)
         // FEAT-07 Step 2: same flatten at AT_GRADE mid-span crossings (both strands → one shared node Y).
         this._applyMidspanJunctionBlend(runKey, arcPos, gradeY, camberRad)
