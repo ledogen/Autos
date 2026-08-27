@@ -4591,6 +4591,7 @@ export class RoadSystem {
             const free = blend.slice(holdK), freeClArc = blendClArc.slice(holdK)
             return {
                 wY: Xv.y, wSeg, held, heldClArc, blend: free, blendClArc: freeClArc, joinCum,
+                winPts: win.pts, winCum: win.polyCum,   // BUG-56 B3: the deck the departure must not wall against
                 forkClArc: cutCl,
                 cutClArc: XvClArc,
                 Xv,
@@ -4625,7 +4626,7 @@ export class RoadSystem {
         }
         let why = 'no band'
         let dryAsm = null   // BUG-57: the dry walk hands its assembled arrays to the chain view
-        const attempt = (bandIdx, holdFrac) => {
+        const attempt = (bandIdx, holdFrac, seamOn) => {
             const dS = sS ? endData(sS, bandIdx, holdFrac) : null
             const dE = sE ? endData(sE, bandIdx, holdFrac) : null
             if ((sS && !dS) || (sE && !dE)) return 'no winner sample'
@@ -4691,6 +4692,46 @@ export class RoadSystem {
                 return `departure grade ${(100 * worstOver(0, dS.blend.length)).toFixed(0)}% > cap ${(100 * depCap).toFixed(0)}%`
             if (dE && dE.blend.length && worstOver(sub.length - 1 - dE.blend.length, sub.length - 1) > depCap)
                 return `departure grade ${(100 * worstOver(sub.length - 1 - dE.blend.length, sub.length - 1)).toFixed(0)}% > cap ${(100 * depCap).toFixed(0)}%`
+            // ── BUG-56 B3 — THE SEAM, which is what the "gore" defect actually is ────────────────
+            // The ticket's screenshot is a stepped wall in the V between two diverging ribbons, and
+            // the obvious reading is that the V is unpaved. Measured 2026-08-27 it is not: at seed 6
+            // (1959,885) both decks are DEAD FLAT across their own ribbon (2 cm over 5 m) and the
+            // entire 5.38 m appears in ONE 0.25 m step, exactly where ownership flips. The centres
+            // are 10.7 m apart — the pavements are TOUCHING — and they are 5.4 m apart in height.
+            // There is no gore to pave. There is a wall between two roads at the same piece of ground.
+            //
+            // Why here: the hold releases on lateral clearance alone, at 2*halfWidth of centre
+            // separation, which is the exact instant the ribbon EDGES touch. At that instant the
+            // freed solve is unconstrained and simply takes the height its own route wanted.
+            //
+            // So the hold must hand over to a BOUNDED divergence, not to nothing, and the bound is
+            // junction-stitch's own rule — two decks may not diverge faster than the ground between
+            // them can slope. Test the freed departure against the winner's deck; over the bound and
+            // this rung DECLINES, so the ladder tries a longer band (more room to part), a shorter
+            // hold, or none. Same discipline as the grade test above: change the geometry until it
+            // clears, never relax the floor.
+            const TOLW = 0.15, FILLV = 1 / (this._params?.roadFillSlope ?? 3), SEAM_WINDOW = 2
+            const HWs = this._params?.roadHalfWidth ?? 5
+            const NEARW = this._v2Costs().mergeProxM ?? 18
+            const seamFail = (d, i0, i1) => {
+                if (!d || !d.winPts || !d.blend.length) return null
+                for (let i = Math.max(0, i0); i <= Math.min(sub.length - 1, i1); i++) {
+                    const q = _nearestOnPolyXZ(sub[i].x, sub[i].z, d.winPts, d.winCum)
+                    if (!q || q.d >= NEARW) continue
+                    const sep = Math.max(0, q.d - 2 * HWs)          // edge to edge, 0 while they overlap
+                    // Only where the pavements TOUCH. Past a couple of metres of daylight the ground
+                    // between them is ordinary embankment and the ordinary carve builds it; judging
+                    // the far field here rejected merges for divergence that was never a wall.
+                    if (sep > SEAM_WINDOW) continue
+                    const gap = Math.abs(sub[i].y - q.y)
+                    const allow = TOLW + FILLV * sep
+                    if (gap > allow) return `departure deck gap ${gap.toFixed(2)} m at ${sep.toFixed(1)} m of edge separation (allowed ${allow.toFixed(2)})`
+                }
+                return null
+            }
+            const sf = seamOn && (seamFail(dS, 0, dS ? dS.blend.length : -1) ||
+                                  seamFail(dE, dE ? sub.length - 1 - dE.blend.length : 0, sub.length - 1))
+            if (sf) return sf
             // assemble the final polyline in the loser's registered direction
             const pts = [], clArc = []
             if (dS) {
@@ -4786,16 +4827,28 @@ export class RoadSystem {
         // condemns a leg). So walk the whole ladder at a FULL hold; then at HALF (B6 — most of the
         // lip benefit, half the climbing room back); then unheld. Every fallback is COUNTED, so
         // junction-stitch's residue stays attributable rather than mysterious.
+        // BUG-56 B3: the seam rule is a PREFERENCE with a counted fallback, and it took four
+        // measured attempts to be sure of that. As a hard acceptance criterion it is the better
+        // SURFACE — 470 wall steps across four windows down to 173, worst 5.38 m down to 2.28 —
+        // but it declines 16 of 67 merges, and a declined merge leaves the pair in conflict, which
+        // hands the crossing rung a leg to delete: seed 7 SPLIT INTO TWO COMPONENTS. That is the
+        // one outcome that is never worth any surface. Relaxing it in steps (strict, x4, off) made
+        // no difference at all, because the failing seams are an order of magnitude over the rule
+        // (5.38 m where 0.38 is allowed), not marginally over it. So: walk the whole ladder with
+        // the rule on, and only if every rung refuses walk it again without, and COUNT that.
+        for (const seamOn of [true, false]) {
         for (const holdFrac of [1, 0.5, 0]) {
             for (const bandIdx of order) {
-                why = attempt(bandIdx, holdFrac)
+                why = attempt(bandIdx, holdFrac, seamOn)
                 if (!why) {
                     if (holdFrac === 0.5 && !dry) this._v2MergeSkipped('partial-hold', `${key} holds half its band (BUG-56 B6: the full hold blew the departure grade cap)`)
                     if (holdFrac === 0 && !dry) this._v2MergeSkipped('unheld', `${key} keeps its merge with a front-loaded fork (BUG-56 hold infeasible)`)
+                    if (!seamOn && !dry) this._v2MergeSkipped('seam', `${key} keeps its merge with a walled fork — no rung cleared the deck-gap rule (BUG-56 B3)`)
                     if (dry) return { bandIdx, pts: dryAsm?.pts, polyCum: dryAsm?.polyCum }
                     this._v2Merges = (this._v2Merges || 0) + specs.length; return
                 }
             }
+        }
         }
         return bail(`${why} (tried ${nBands} variant${nBands === 1 ? '' : 's'})`)
     }
