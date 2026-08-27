@@ -49,6 +49,12 @@ dist/
 # Last matching pattern wins, so this has to sit BELOW the negations, not beside its sibling rule.
 **/.DS_Store
 
+# Bulk PHOTO reference — owner's own shots of the real truck, kept locally for modelling and not
+# worth 9.3 MB of permanent git history (21 files). Same placement rule as .DS_Store above: it has
+# to sit below `!references/**` or the negation re-admits it. Small reference art that IS worth
+# committing still commits normally — see references/km elev ref.png.
+references/98 ranger reference/
+
 # Common scratch / capture dump locations
 screenshots/
 captures/
