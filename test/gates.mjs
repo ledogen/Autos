@@ -11,6 +11,9 @@
 //   cost       'fast' = no network worldgen (physics / props / isolated primitive math);
 //              'heavy' = full road/terrain/water generation. Advisory only (rough, not measured);
 //              it warns when an affected set will be slow. Selection does NOT use cost.
+//   manual     true = never AFFECTED-selected, however much of its closure changed. For proofs that
+//              cost minutes and answer a settings-level question rather than a per-commit one.
+//              `npm run test:all` and `--only` still run them; `npm test` reports them as held back.
 //   extraDeps  repo-relative paths a gate depends on but does NOT `import` (text mirrors, JSON
 //              assets) — the import-closure can't see these, so list them or the gate won't be
 //              selected when that file changes. Treated as exact-file triggers (their own imports
@@ -68,6 +71,8 @@ export const GATES = [
     desc: 'FEAT-68: the registered network is ONE component on the eval trio (connectivity is priority #1 and it regressed silently once — the deleted v1 culls shredded v2 geometry to 54% mean largest-component share while preventing zero real crossings), and no non-adjacent runs cross' },
   { file: 'junction-stitch.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-56: the HONEST stitching bar — no two pavements overlap in XZ at incompatible deck heights (sanctioned merge bands INCLUDED; that sanctioning is what let the owner\'s torn fork print clean). RED until the departure pass lands.' },
+  { file: 'play-area.mjs', subsystem: 'road', cost: 'heavy', manual: true, extraDeps: [],
+    desc: 'BUG-56 D: CAN A STORY RUN START AT ALL? Five fixed seeds, each generating the owner-specified 3x3 grid of 4000 m tiles (12 km square, 144 km2): ONE component, zero condemned edges, zero node-pin violations. Runs the same src/world-validate.js routine the game runs on the player\'s seed at new-game, so the gate and the reroll cannot drift. MINUTES per seed — settings changes only, never npm test.' },
   { file: 'road-grade.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-56 C: NEVER DRAPE. No shipped run exceeds the gMaxRoad+gradeTol ceiling and nothing is condemned — measured on the registered geometry, so a run nobody solved cannot hide. The terrain-follow fallback is where the 108% grades came from; it is now re-route then condemn. Also prints the grade histogram + ladder rungs (report only — the ceiling is legal by fiat).' },
   { file: 'pad-census.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],

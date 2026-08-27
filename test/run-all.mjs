@@ -108,13 +108,18 @@ if (ALL) {
         header = `mode: AFFECTED — ⚠ not a git repo / git unavailable, running ALL ${gates.length} gates`
     } else {
         const graph = buildGraph()
-        gates = GATES.filter(g => [...reachable(g, graph)].some(f => changed.has(f)))
+        // `manual` gates are never AFFECTED-selected however much of their closure changed. They are
+        // for proofs that cost minutes rather than seconds and answer a settings-level question, not
+        // a per-commit one — play-area routes 144 km2 per seed. --all and --only still run them.
+        gates = GATES.filter(g => !g.manual && [...reachable(g, graph)].some(f => changed.has(f)))
+        const skipped = GATES.filter(g => g.manual && [...reachable(g, graph)].some(f => changed.has(f)))
         const bySub = {}
         for (const g of gates) bySub[g.subsystem] = (bySub[g.subsystem] || 0) + 1
         const heavy = gates.filter(g => g.cost === 'heavy').length
         const subs = Object.entries(bySub).map(([s, n]) => `${s}:${n}`).join(' ') || '—'
         header = `mode: AFFECTED — ${gates.length}/${GATES.length} gates selected [${subs}]`
             + `${heavy ? ` · ${heavy} heavy` : ''} · from ${changed.size} changed file(s)`
+            + `${skipped.length ? ` · ${skipped.length} manual gate(s) held back: ${skipped.map(g => g.file.replace('.mjs', '')).join(', ')} (npm run test:all)` : ''}`
         if (!gates.length) {
             console.log(`\n${'═'.repeat(64)}`)
             console.log(header)
