@@ -46,7 +46,7 @@ DELIBERATELY NOT BUILT — see "The A decision", which is the one thing left for
    hands the crossing rung a leg to delete: **seed 7 split into two components.** Measured, not
    theorised. That is why the seam rule ships as a preference with a counted fallback.
 
-## The A decision — the one thing left for the owner
+## Workstream A — RULED 2026-08-27: banked as QUAL-26, not scheduled
 
 **A0 says the hugs ARE avoidable, and cheaply.** All 59 departures in the battery, each re-routed
 with the winner's corridor priced as occupied within `mergeProxM`:
@@ -87,10 +87,15 @@ PASS-1 corridors (pass 2). This is still deterministic and still window-invarian
 obligation — pass 1 is a pure function of the edge alone, so pass 2 is a pure function of the graph,
 and there are no cycles and no ordering. Both passes parallelise fully on the Worker.
 
-It costs roughly **2× routing**, everywhere, plus a route-cache re-bake. That is a load-time and
-perf decision (PERF-27's cold→driving is 14.7 s baked / 42.8 s unbaked), which is why it is not
-being taken unilaterally. **The question for the owner is simply: is up to 83 % fewer taper bands
-worth doubling route time?** If yes, the design above is the whole design.
+**The cost is ~1.15×, not 2×** — an earlier draft of this document said 2×, which was the naive
+"route everything twice" framing and wrong as an estimate. Pass 2 is only needed for the LOSERS of
+pairs that actually hug, and pass 1 already tells you which those are (the merge planner computes
+exactly that today). In the battery it is 67 departures against 412 registered runs — about 16 %.
+
+**OWNER RULING 2026-08-27: not now.** "taper bands look pretty good right now" — B4/B5/B6/B3 got the
+bands to acceptable, so this is banked as **QUAL-26** (`.planning/todos/pending/`), to be opened only
+if taper-band smoothness becomes a problem again. The A0 table, the sweep that killed the cheap
+version, and the two-pass design all live in that ticket now; nothing here is a pending decision.
 
 ## The five reds, all booked
 
@@ -130,5 +135,5 @@ changed, still run by `--all` and `--only`, and reported as held back so it stay
 ## Still to do before the merge
 
 Unchanged from rev 3: settle the booked instrument re-baselines, run the BUG-47/48/52 + BUG-25
-re-triage against the v2 world, re-bake the default-seed route cache, close FEAT-68. Plus: rule the
-A decision, and rule whether story mode adopts the nine-tile play area.
+re-triage against the v2 world, re-bake the default-seed route cache, close FEAT-68. Plus: rule
+whether story mode adopts the nine-tile play area. (The A decision is RULED — see QUAL-26.)

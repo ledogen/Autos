@@ -368,13 +368,14 @@ NOT yet true is "no new reds in test:all" — there is one, `graph-topology`'s c
 booked with its cause in the handoff (an edge that used to be DELETED now survives and hugs a
 sibling it cannot taper against, best band radius 2.3 m).
 
-**The owner's two open rulings**, both stated in the handoff with the numbers behind them:
+**Workstream A is RULED (2026-08-27): banked, not built.** A0 measured that 83 % of hugs are
+avoidable at a median length cost of 1.00×; A1 was then built the purity-preserving way (price each
+sibling's CHORD), measured to do nothing at any weight, and reverted rather than shipped inert. The
+version that works prices the sibling's REAL corridor via targeted two-pass routing, at roughly
+**1.15×** route time. Owner: *"taper bands look pretty good right now"* — so it is **QUAL-26**, to be
+opened only if band smoothness becomes a problem again.
 
-1. **Workstream A.** A0 measured that 83 % of hugs are avoidable at a median length cost of 1.00×.
-   A1 was then built the purity-preserving way (price each sibling's CHORD) and measured to do
-   nothing at any weight, and was reverted rather than shipped inert. The version that works prices
-   the sibling's REAL corridor, which needs two-pass routing — deterministic and window-invariant,
-   but roughly **2× route time** plus a cache re-bake. Worth it or not is a perf call.
-2. **The nine-tile play area.** Story mode builds one 2500 m region; the owner's 3×3 grid of 4000 m
-   tiles is what workstream C's run-start reroll validates. `src/world-validate.js` is written and
-   green; the reroll is a handful of lines once story mode adopts the shape.
+**One ruling still open: the nine-tile play area.** Story mode builds one 2500 m region; the owner's
+3×3 grid of 4000 m tiles is what workstream C's run-start reroll validates. `src/world-validate.js`
+is written and green on five seeds; the reroll is a handful of lines once story mode adopts the
+shape.
