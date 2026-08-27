@@ -4469,7 +4469,7 @@ export class RoadSystem {
         const EPSV = SPLICE_EPS
         const sS = specs.find((sp) => sp.loserNodeAtStart) || null
         const sE = specs.find((sp) => !sp.loserNodeAtStart) || null
-        const endData = (sp, bandIdx, hold) => {
+        const endData = (sp, bandIdx, holdFrac) => {
             const v = sp.variants[Math.min(bandIdx, sp.variants.length - 1)]
             const band = v.band
             // BUG-55: the winner VIEW — XZ from the pure sample, Y from the bundle when one
@@ -4525,9 +4525,17 @@ export class RoadSystem {
             // the loser's own profile starts at the vertex where it is genuinely clear. Nothing is
             // choreographed: the held length is whatever the geometry says (zero for a real T), and
             // a band that never gets clear is DECLINED so the ladder tries the next one.
-            const { holdK, y: holdY, clears } = hold
+            // BUG-56 B6: the hold is a FRACTION, not a switch. It used to run to the corridor exit or
+            // not at all, and that all-or-nothing is what forced the choice between a stitched deck
+            // and climbing room: mark A holds to the corridor exit and pays 24.1 % to claw the height
+            // back, while dropping the hold entirely gives 19.8 % and costs road-smoothness plus 20
+            // extra stitch sites. Holding FEWER vertices keeps most of the lip benefit and hands back
+            // the room, so the ladder can find the middle instead of picking an end.
+            const full = holdFrac > 0
                 ? this._v2DepartureHold(win, v.wCut, band.Lb, blend)
                 : { holdK: 0, y: [], clears: true }
+            const { y: holdY, clears } = full
+            const holdK = holdFrac >= 1 ? full.holdK : Math.floor(full.holdK * holdFrac)
             if (!clears) return { holdFail: true }   // still overlapping at the join — the next band may
             const held = [], heldClArc = []
             if (holdK > 0) {
@@ -4576,9 +4584,9 @@ export class RoadSystem {
         }
         let why = 'no band'
         let dryAsm = null   // BUG-57: the dry walk hands its assembled arrays to the chain view
-        const attempt = (bandIdx, hold) => {
-            const dS = sS ? endData(sS, bandIdx, hold) : null
-            const dE = sE ? endData(sE, bandIdx, hold) : null
+        const attempt = (bandIdx, holdFrac) => {
+            const dS = sS ? endData(sS, bandIdx, holdFrac) : null
+            const dE = sE ? endData(sE, bandIdx, holdFrac) : null
             if ((sS && !dS) || (sE && !dE)) return 'no winner sample'
             // BUG-56: a band that is still inside the through-road's pavement corridor when it
             // runs out of band has nowhere to put its climb — the next rung gets the chance.
@@ -4614,6 +4622,34 @@ export class RoadSystem {
             if (dE) solveOpts.yB = dE.wY
             let midSpans = this._v2GradePts(sub, subArc, solveOpts)
             if ((this._v2Infeasible || 0) > infBefore) { this._v2Infeasible = infBefore; return 'outer profile infeasible' }
+            // ── BUG-56 B6 — THE DEPARTURE GRADE ACCEPTANCE TEST: the PITCH half of the normal ────
+            // A node pad has one of these (mergePadArrivalMax): arrival grade against pad plane is
+            // checked, and a variant that fails it DECLINES so the ladder tries the next. A fork end
+            // had nothing. The hold pins the leg to the winner's deck for as long as it is on top of
+            // the through road, which is right, but it also spends the leg's climbing room there —
+            // and then the freed solve has to claw the whole height back in what is left. Measured at
+            // mark A: the leg cedes 96 m to a through road DIVING 17 %, reaches the fork 10 m below
+            // where its own route wanted to be, and reverses to +24.1 % inside 45 m. The solve is
+            // legal (the ceiling is 38 %) and the road is still wrong.
+            //
+            // So test what the driver meets: the steepest 12 m anywhere in the freed departure. Over
+            // the cap and this rung DECLINES — the ladder then tries the next band, then a shorter
+            // hold, then no hold, and the decline is honest rather than a relaxed floor.
+            const depCap = (this._v2Costs().gMaxRoad ?? 0.24)
+            const worstOver = (i0, i1) => {
+                let worst = 0
+                for (let i = Math.max(0, i0); i <= Math.min(sub.length - 1, i1); i++) {
+                    let j = i
+                    while (j < Math.min(sub.length - 1, i1) && subArc[j] - subArc[i] < 12) j++
+                    const ds = subArc[j] - subArc[i]
+                    if (ds > 1e-6) worst = Math.max(worst, Math.abs(sub[j].y - sub[i].y) / ds)
+                }
+                return worst
+            }
+            if (dS && dS.blend.length && worstOver(0, dS.blend.length) > depCap)
+                return `departure grade ${(100 * worstOver(0, dS.blend.length)).toFixed(0)}% > cap ${(100 * depCap).toFixed(0)}%`
+            if (dE && dE.blend.length && worstOver(sub.length - 1 - dE.blend.length, sub.length - 1) > depCap)
+                return `departure grade ${(100 * worstOver(sub.length - 1 - dE.blend.length, sub.length - 1)).toFixed(0)}% > cap ${(100 * depCap).toFixed(0)}%`
             // assemble the final polyline in the loser's registered direction
             const pts = [], clArc = []
             if (dS) {
@@ -4706,14 +4742,15 @@ export class RoadSystem {
         // BUG-56: the departure hold is a PREFERENCE, not an ultimatum. Holding the through deck
         // costs the strand its climbing room, and where no variant can pay that a lost merge costs
         // a CONNECTION — BUG-57's ruling puts connectivity first (an unsanctioned crossing then
-        // condemns a leg). So walk the whole ladder held; only if every rung declines, walk it
-        // again unheld and COUNT the fallback, so junction-stitch's residue is attributable rather
-        // than mysterious.
-        for (const hold of [true, false]) {
+        // condemns a leg). So walk the whole ladder at a FULL hold; then at HALF (B6 — most of the
+        // lip benefit, half the climbing room back); then unheld. Every fallback is COUNTED, so
+        // junction-stitch's residue stays attributable rather than mysterious.
+        for (const holdFrac of [1, 0.5, 0]) {
             for (const bandIdx of order) {
-                why = attempt(bandIdx, hold)
+                why = attempt(bandIdx, holdFrac)
                 if (!why) {
-                    if (!hold && !dry) this._v2MergeSkipped('unheld', `${key} keeps its merge with a front-loaded fork (BUG-56 hold infeasible)`)
+                    if (holdFrac === 0.5 && !dry) this._v2MergeSkipped('partial-hold', `${key} holds half its band (BUG-56 B6: the full hold blew the departure grade cap)`)
+                    if (holdFrac === 0 && !dry) this._v2MergeSkipped('unheld', `${key} keeps its merge with a front-loaded fork (BUG-56 hold infeasible)`)
                     if (dry) return { bandIdx, pts: dryAsm?.pts, polyCum: dryAsm?.polyCum }
                     this._v2Merges = (this._v2Merges || 0) + specs.length; return
                 }
