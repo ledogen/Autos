@@ -3,8 +3,10 @@
 // BUG-56 B0 — EVERY REAL JUNCTION GETS A JUNCTION SURFACE.
 //
 // A node where three or more runs meet is an intersection, and an intersection needs a pad. The
-// pad boundary comes from _buildJunctionRing, a ladder: exact weld at full fillet -> exact weld at
-// half fillet -> legacy circle pad -> (B0) convex-hull floor. Before the floor existed the ladder
+// pad boundary comes from _buildJunctionRing, a ladder: exact weld -> legacy circle pad -> (B0)
+// convex-hull floor. (A half-fillet weld rung sat in the middle until 2026-08-27; it fired 0 times
+// in 176 junctions and was deleted — shrinking a corner fillet cannot un-overlap two mouth chords.)
+// Before the floor existed the ladder
 // could end in `null`, and `ring = null` makes EVERY consumer skip the node — the pad carve,
 // padReachNodes, and the mesh's pad branch — while the legs stay cut back. What shipped was a
 // naked gap where the intersection should be: the owner's report of "no junction pad generates,
@@ -38,12 +40,9 @@ const ONLY = (argv.find((a) => a.startsWith('--window=')) || '').split('=')[1]
 // Re-walk the ladder the way _buildJunctionRing does, so the census can name the rung without any
 // diagnostic plumbing living in src/.
 const rungOf = (road, node) => {
-  let ring = road._junctionRingWeld(node, 1.0)
+  let ring = road._junctionRingWeld(node)
   if (ring && road._ringSelfIntersects(ring)) ring = null
   if (ring && ring.length >= 3) return 'weld'
-  ring = road._junctionRingWeld(node, 0.5)
-  if (ring && road._ringSelfIntersects(ring)) ring = null
-  if (ring && ring.length >= 3) return 'weld½'
   ring = road._junctionRingLegacy(node)
   if (ring && ring.length >= 3) return 'circle'
   ring = road._junctionRingHull(node)
@@ -52,13 +51,13 @@ const rungOf = (road, node) => {
 }
 
 let fails = 0
-const tot = { clusters: 0, deg2: 0, weld: 0, 'weld½': 0, circle: 0, hull: 0, NONE: 0 }
+const tot = { clusters: 0, deg2: 0, weld: 0, circle: 0, hull: 0, NONE: 0 }
 
 for (const W of WINDOWS) {
   if (ONLY && !W.name.includes(ONLY)) continue
   const road = buildWindow(W, P)
   const nodes = road._detectNodeJunctions()
-  const by = { weld: 0, 'weld½': 0, circle: 0, hull: 0, NONE: 0 }
+  const by = { weld: 0, circle: 0, hull: 0, NONE: 0 }
   let clusters = 0, deg2 = 0
   const bad = []
   for (const [nk, node] of nodes) {
@@ -73,8 +72,8 @@ for (const W of WINDOWS) {
   tot.clusters += clusters; tot.deg2 += deg2
   for (const k of Object.keys(by)) tot[k] += by[k]
   const head = `${W.name.padEnd(20)} clusters ${String(clusters).padStart(3)} · deg2 ${String(deg2).padStart(3)} · ` +
-               `weld ${String(by.weld).padStart(3)} · weld½ ${String(by['weld½']).padStart(2)} · ` +
-               `circle ${String(by.circle).padStart(2)} · hull ${String(by.hull).padStart(2)}`
+               `weld ${String(by.weld).padStart(3)} · circle ${String(by.circle).padStart(2)} · ` +
+               `hull ${String(by.hull).padStart(2)}`
   if (!bad.length) { console.log(`  ok   ${head}`); continue }
   fails++
   console.log(`  FAIL ${head} · ${bad.length} with NO RING`)
@@ -85,7 +84,7 @@ for (const W of WINDOWS) {
 const real = tot.clusters - tot.deg2
 console.log(`\npad-census: ${tot.clusters} clusters · ${tot.deg2} degree-2 (connector arc, by design) · ` +
             `${real} real junctions`)
-console.log(`            rungs — weld ${tot.weld} · weld½ ${tot['weld½']} · circle ${tot.circle} · ` +
+console.log(`            rungs — weld ${tot.weld} · circle ${tot.circle} · ` +
             `hull ${tot.hull} (${real ? (100 * tot.hull / real).toFixed(0) : 0}% on the floor) · NONE ${tot.NONE}`)
 if (fails) { console.log('FAIL — a ≥3-leg junction has no pad; the legs are cut back and nothing paves the gap (BUG-56 B0)'); process.exit(1) }
 console.log('PASS')

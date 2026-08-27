@@ -6846,12 +6846,12 @@ export class RoadSystem {
      */
     _buildJunctionRing(node) {
         if (!node.legs || node.legs.length < 2) return null
-        let ring = this._junctionRingWeld(node, 1.0)
+        // The half-fillet weld rung is GONE (owner, 2026-08-27). Censused across the battery it
+        // fired 0 times in 176 real junctions: every weld that self-intersects at full fillet also
+        // self-intersects at half, because the cause is two mouth CHORDS overlapping and shrinking
+        // the corner fillets does not move a mouth. Ladder is weld -> circle -> hull.
+        let ring = this._junctionRingWeld(node)
         if (ring && this._ringSelfIntersects(ring)) ring = null
-        if (!ring) {
-            ring = this._junctionRingWeld(node, 0.5)
-            if (ring && this._ringSelfIntersects(ring)) ring = null
-        }
         if (!ring) ring = this._junctionRingLegacy(node)
         // BUG-56 B0 — THE FLOOR. Before this rung the ladder could end in nothing, and did at 27 of
         // 176 real (>=3-leg) junctions across the battery — 15 %, measured 2026-08-27. Every one of
@@ -6943,7 +6943,7 @@ export class RoadSystem {
         return { legs, T, halfWidth }
     }
 
-    _junctionRingWeld(node, filletScale) {
+    _junctionRingWeld(node) {
         const params = this._params
         const nx = node.pos.x, nz = node.pos.z
         const m = this._junctionMouths(node)
@@ -6955,7 +6955,7 @@ export class RoadSystem {
         // The real correctness gate is _ringSelfIntersects() in _buildJunctionRing.
 
         const edgePt = (l, side) => ({ x: l.cx + (-l.dz) * side * halfWidth, z: l.cz + (l.dx) * side * halfWidth })
-        const filletR = (params.roadFilletRadius ?? 5) * filletScale
+        const filletR = params.roadFilletRadius ?? 5
         const ring = []
         for (let i = 0; i < n; i++) {
             const A = legs[i], B = legs[(i + 1) % n]
