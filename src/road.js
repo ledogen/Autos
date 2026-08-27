@@ -4382,10 +4382,22 @@ export class RoadSystem {
             const joinCum = band.joinCum
             const joinCl = clArcAtCum(own, joinCum)
             const K = band.pts.length
+            // BUG-51/56: the band's arc allocation follows its OWN XZ LENGTH, not its vertex INDEX.
+            // The profile is SOLVED in the run's arc domain and DRIVEN in the XZ domain, and a band
+            // cuts the corner its own line goes round — so an index-proportional fill hands the band
+            // more arc than it has ground, and a profile solved legally at the 38% ceiling ships
+            // steeper than that on the dirt (measured: 53% over 14 m at seed 0 (1303,−1148), where
+            // the band's arc ran ~1.4x its length).
             const blend = [], blendClArc = []
+            let bCum = Math.hypot(band.pts[0].x - v.forkPt.x, band.pts[0].z - v.forkPt.z)
+            const bAcc = [bCum]
+            for (let k = 1; k < K; k++) {
+                bCum += Math.hypot(band.pts[k].x - band.pts[k - 1].x, band.pts[k].z - band.pts[k - 1].z)
+                bAcc.push(bCum)
+            }
             for (let k = 0; k < K; k++) {
                 blend.push(new THREE.Vector3(band.pts[k].x, 0, band.pts[k].z))
-                blendClArc.push(cutCl + (joinCl - cutCl) * (k + 1) / K)
+                blendClArc.push(cutCl + (joinCl - cutCl) * (bCum > 1e-6 ? bAcc[k] / bCum : (k + 1) / K))
             }
             // BUG-56: THE DEPARTURE BOUNDARY CONDITION. Owner ruling 2026-08-25: the minor leg
             // "exits the through-road's XZ clearance BEFORE its Y diverges". Measured at the
