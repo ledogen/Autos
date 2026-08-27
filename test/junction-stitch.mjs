@@ -59,7 +59,7 @@
 //                   business (mergePadArrivalMax).
 //
 // Baseline the day rule 2 landed (2026-08-27, head 63b0e21): 100 span, 8 pad-deck / 498 pad-edge,
-// over NINE windows — mark B was added with the rule, so it is the ninth. Rule 1 alone found 17
+// over NINE windows (102 / 8 / 501 after B2's endpoint pin — see node-pin.mjs) — mark B was added with the rule, so it is the ninth. Rule 1 alone found 17
 // span / 8 pad over the original eight, and those eight windows' rule-1 numbers are unchanged.
 // BUG-56's B3-B6 departure pass is what takes the 100 down. Both of the owner's named forks are in
 // it and BOTH were invisible to rule 1: mark A (-1585,1336) camber 15.4 vs -0.2 deg, mark B
@@ -70,10 +70,8 @@
 //
 // RED until BUG-56's departure pass lands — see .planning/ROAD-CLOSEOUT-PLAN.md.
 
-import * as THREE from 'three'
-import { RoadSystem } from '../src/road.js'
-import { parseWorldSeed, seedFor } from '../src/seed.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
+import { WINDOWS, buildWindow } from './lib/road-battery.mjs'
 
 const argv = process.argv.slice(2)
 const VERBOSE = argv.includes('--verbose')
@@ -124,43 +122,6 @@ const nearestOn = (px, pz, pts, cum) => {
 // lat*sin(camber) is invariant to which way round a run is traversed.
 const latOf = (px, pz, m) => (px - m.fx) * m.tz - (pz - m.fz) * m.tx
 const inBore = (e, s) => (e.tunnelSpans || []).some((sp) => s >= sp.s0 - 5 && s <= sp.s1 + 5)
-
-// The windows: the BUG-56 reproducers first, then the crossing-rung battery.
-const WINDOWS = [
-  { name: 'seed6 fork -3,1,1', seed: '6', cx: -1582, cz: 1333, r: 1400 },  // owner capture 2026-08-26
-  // BUG-56 mark B (2026-08-27): g:-4,6,0:-4,7,1 cedes 76 m to g:-5,6,1:-4,6,0. Grade is FINE here
-  // (peak 15.3 %) and the camber still swings 35 deg in 35 m — the fork defect with its grade
-  // component subtracted out, which is what makes it the clean isolate for the B4 camber match.
-  { name: 'seed6 fork mark-B',  seed: '6', cx: -2507, cz: 4209, r: 1000 },
-  { name: 'lone-pine spawn',   seed: 'lone-pine', spawn: true },           // road-smoothness canary
-  { name: 'seed6 origin',      seed: '6',  cx: 0, cz: 0, r: 1400 },
-  { name: 'seed6 gate window', seed: '6',  cx: 4500, cz: 600, r: 1600 },
-  { name: 'seed3 origin',      seed: '3',  cx: 0, cz: 0, r: 1400 },
-  { name: 'seed7 origin',      seed: '7',  cx: 0, cz: 0, r: 1400 },
-  { name: 'seed20 origin',     seed: '20', cx: 0, cz: 0, r: 1400 },
-  { name: 'seed11 origin',     seed: '11', cx: 0, cz: 0, r: 1400 },
-]
-
-const buildWindow = (W) => {
-  const ws = parseWorldSeed(W.seed)
-  const road = new RoadSystem(ws, P)
-  if (W.spawn) {   // the road-smoothness canary's own window, built its way
-    const ss = seedFor(ws, 'spawn')
-    const bx = ((ss & 0xFFFF) / 0xFFFF - 0.5) * 200
-    const bz = (((ss >>> 16) & 0xFFFF) / 0xFFFF - 0.5) * 200
-    road.ensureTile(Math.floor(bx / 64), Math.floor(bz / 64))
-    let n = road.queryNearest(bx, bz, 200)
-    if (n) {
-      road.ensureTile(Math.floor(n.point.x / 64), Math.floor(n.point.z / 64))
-      n = road.queryNearest(n.point.x, n.point.z, 100) || n
-      road.update(new THREE.Vector3(n.point.x, 0, n.point.z))
-    } else road.update(new THREE.Vector3(bx, 0, bz))
-  } else {
-    road.setRadius(W.r)
-    road.update(new THREE.Vector3(W.cx, 0, W.cz))
-  }
-  return road
-}
 
 const bboxOf = (pts) => {
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
@@ -269,7 +230,7 @@ const scan = (road) => {
 let fails = 0, totalLips = 0, totalPad = 0, totalPadEdge = 0
 for (const W of WINDOWS) {
   if (ONLY && !W.name.includes(ONLY)) continue
-  const { lips, padPairs, padEdgePairs, runs } = scan(buildWindow(W))
+  const { lips, padPairs, padEdgePairs, runs } = scan(buildWindow(W, P))
   totalLips += lips.length; totalPad += padPairs; totalPadEdge += padEdgePairs
   const byTag = {}
   for (const w of lips) { const t = `${w.tag}/${w.rule}`; byTag[t] = (byTag[t] || 0) + 1 }

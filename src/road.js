@@ -3519,6 +3519,30 @@ export class RoadSystem {
                 disp[2 * i + 1] = 0.25 * prev[2 * (i - 1) + 1] + 0.5 * prev[2 * i + 1] + 0.25 * prev[2 * (i + 1) + 1]
             }
         }
+        // BUG-56 B2 — A SHOVE MUST NOT UNPIN A NODE. The field above is built over
+        // [r0 - padI, r1 + padI] under a smoothstep envelope in ARC, but nothing forces it to zero
+        // at i = 0 / i = nS-1. When a contact region reaches a run END the endpoint therefore takes
+        // the full deficit and walks off its junction: measured 2026-08-27 at seed 6 (-870, 2468),
+        // node -2,3,1, where g:-3,3,2:-2,3,1 ends 17.3 m sideways and 1.60 m up from the node it is
+        // supposed to share — a road stopping in a field. It passed every existing check (17.3 < DCAP)
+        // and it also cost the node its pad: cluster membership is endpoint proximity within
+        // EPS2 = (halfWidth*0.75)^2 ~= 3.75 m, so a 17.3 m endpoint drops the node from 3 legs to 2
+        // and _buildJunctionRing returns null. Taper the field to zero at both ends over
+        // min(RAMPL, distance-to-end) — the same smoothstep, applied in the one place the envelope
+        // never reached. Applied AFTER the box passes so the pin is exact, and BEFORE the fold
+        // floor / DCAP / re-crossing tests so they judge the tapered field: a shove that can no
+        // longer clear falls to the next RAMPL rung and finally declines, which is a path that
+        // already exists and is already counted.
+        {
+            const L = own.polyCum[nS - 1]
+            for (let i = 0; i < nS; i++) {
+                const dEnd = Math.min(own.polyCum[i], L - own.polyCum[i])
+                if (dEnd >= RAMPL) continue
+                const u = Math.max(0, dEnd / RAMPL)
+                const w = u * u * (3 - 2 * u)
+                disp[2 * i] *= w; disp[2 * i + 1] *= w
+            }
+        }
         let maxD = 0
         for (let i = 0; i < nS; i++) maxD = Math.max(maxD, Math.hypot(disp[2 * i], disp[2 * i + 1]))
         if (maxD > DCAP) { this._v2MergeSkipped('shove', `${ck}: deflection ${maxD.toFixed(0)} m > ${DCAP}`); return fin(null) }
@@ -4137,19 +4161,48 @@ export class RoadSystem {
             const pOut = _polyAtCum(win.pts, win.polyCum, v.wOut)
             const clIn = clAt(own, v.lIn), clOut = clAt(own, v.lOut)
             const P = [], A = []
-            const pushOwn = (a, b) => {   // own vertices strictly between a and b, in travel order
-                const lo2 = Math.min(a, b) + EPSV, hi2 = Math.max(a, b) - EPSV
+            // own vertices between a and b, in travel order. EPSV keeps the JOIN vertex from being
+            // spliced in twice — but `a` on the head call and `b` on the tail call are not joins,
+            // they are the run's TERMINI, and excluding those unpins the run from its own node.
+            // BUG-56 B2, measured 2026-08-27: a mid-span-merged run shipped one PROTO_SAMPLE_DS
+            // (4 m) shy of the anchor at BOTH ends — seed 6 node -2,3,1 and node -3,4,2, 3.98 m,
+            // which is past the 3.75 m cluster radius, so those nodes lost the leg and their pad.
+            // incA / incB make the terminus side inclusive; the join side keeps its epsilon.
+            const pushOwn = (a, b, incA = false, incB = false) => {
+                const aLow = a <= b
+                const lo2 = (aLow ? a : b) + ((aLow ? incA : incB) ? -EPSV : EPSV)
+                const hi2 = (aLow ? b : a) - ((aLow ? incB : incA) ? -EPSV : EPSV)
                 if (lDir > 0) { for (let i = 0; i < own.pts.length; i++) if (own.polyCum[i] > lo2 && own.polyCum[i] < hi2) { P.push(own.pts[i].clone()); A.push(own.clArc[i]) } }
                 else { for (let i = own.pts.length - 1; i >= 0; i--) if (own.polyCum[i] > lo2 && own.polyCum[i] < hi2) { P.push(own.pts[i].clone()); A.push(own.clArc[i]) } }
             }
-            pushOwn(startCum, bIn.joinCum)
+            pushOwn(startCum, bIn.joinCum, true, false)
             const headLen = P.length
             if (headLen < 2) { why = 'head too short'; continue }
-            // inner band: its pts run fork → join, so travel order is REVERSED
+            // inner band: its pts run fork → join, so travel order is REVERSED.
+            // BUG-51/56: the band's arc allocation follows its OWN XZ LENGTH, not its vertex INDEX
+            // — the same correction 63b0e21 made in the end-anchored path, mirrored here. A band
+            // cuts the corner its own line goes round, so an index-proportional fill hands it more
+            // arc than it has ground; the clArc <-> polyCum pairs then disagree at the band's ends
+            // and _resolveRoadSurface's analytic refine, which reads the surface through exactly
+            // that mapping, steps where it resumes. Measured 2026-08-27 at seed 6 (912,842): 3.5 m
+            // of arc error at the band end, decaying to zero 5 m later, shipping as a 23 cm
+            // collision-only cliff on road-smoothness.
             const clJoinIn = clAt(own, bIn.joinCum), nIn = bIn.pts.length
-            for (let k = nIn - 1; k >= 0; k--) {
-                P.push(new THREE.Vector3(bIn.pts[k].x, 0, bIn.pts[k].z))
-                A.push(clJoinIn + (clIn - clJoinIn) * (nIn - k) / (nIn + 1))
+            {
+                const jp = _polyAtCum(own.pts, own.polyCum, bIn.joinCum)
+                const acc = new Float64Array(nIn)
+                let c = Math.hypot(bIn.pts[nIn - 1].x - jp.x, bIn.pts[nIn - 1].z - jp.z)
+                acc[0] = c
+                for (let m = 1; m < nIn; m++) {
+                    c += Math.hypot(bIn.pts[nIn - 1 - m].x - bIn.pts[nIn - m].x, bIn.pts[nIn - 1 - m].z - bIn.pts[nIn - m].z)
+                    acc[m] = c
+                }
+                const tot = c + Math.hypot(pIn.x - bIn.pts[0].x, pIn.z - bIn.pts[0].z)
+                for (let m = 0; m < nIn; m++) {
+                    const k = nIn - 1 - m
+                    P.push(new THREE.Vector3(bIn.pts[k].x, 0, bIn.pts[k].z))
+                    A.push(clJoinIn + (clIn - clJoinIn) * (tot > 1e-6 ? acc[m] / tot : (m + 1) / (nIn + 1)))
+                }
             }
             const jIn = P.length
             P.push(new THREE.Vector3(pIn.x, _polyAtCum(win.pts, win.polyCum, v.wIn).y, pIn.z)); A.push(clIn)
@@ -4161,13 +4214,25 @@ export class RoadSystem {
             for (let i = 0; i < mid.length; i++) { P.push(mid[i].clone()); A.push(clIn + (clOut - clIn) * (i + 1) / (mid.length + 1)) }
             const jOut = P.length
             P.push(new THREE.Vector3(pOut.x, _polyAtCum(win.pts, win.polyCum, v.wOut).y, pOut.z)); A.push(clOut)
+            // outer band: travel order is fork -> join. Length-proportional, as the inner one.
             const clJoinOut = clAt(own, bOut.joinCum), nOut = bOut.pts.length
-            for (let k = 0; k < nOut; k++) {
-                P.push(new THREE.Vector3(bOut.pts[k].x, 0, bOut.pts[k].z))
-                A.push(clOut + (clJoinOut - clOut) * (k + 1) / (nOut + 1))
+            {
+                const jp = _polyAtCum(own.pts, own.polyCum, bOut.joinCum)
+                const acc = new Float64Array(nOut)
+                let c = Math.hypot(bOut.pts[0].x - pOut.x, bOut.pts[0].z - pOut.z)
+                acc[0] = c
+                for (let k = 1; k < nOut; k++) {
+                    c += Math.hypot(bOut.pts[k].x - bOut.pts[k - 1].x, bOut.pts[k].z - bOut.pts[k - 1].z)
+                    acc[k] = c
+                }
+                const tot = c + Math.hypot(jp.x - bOut.pts[nOut - 1].x, jp.z - bOut.pts[nOut - 1].z)
+                for (let k = 0; k < nOut; k++) {
+                    P.push(new THREE.Vector3(bOut.pts[k].x, 0, bOut.pts[k].z))
+                    A.push(clOut + (clJoinOut - clOut) * (tot > 1e-6 ? acc[k] / tot : (k + 1) / (nOut + 1)))
+                }
             }
             const beforeTail = P.length
-            pushOwn(bOut.joinCum, endCum)
+            pushOwn(bOut.joinCum, endCum, false, true)
             if (P.length - beforeTail < 2) { why = 'tail too short'; continue }
             // to registered order (increasing polyCum), and remap the fork indices with it
             let pts = P, clArc = A, iIn = jIn, iOut = jOut
