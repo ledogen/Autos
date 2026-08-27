@@ -68,6 +68,8 @@ export const GATES = [
     desc: 'FEAT-68: the registered network is ONE component on the eval trio (connectivity is priority #1 and it regressed silently once — the deleted v1 culls shredded v2 geometry to 54% mean largest-component share while preventing zero real crossings), and no non-adjacent runs cross' },
   { file: 'junction-stitch.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-56: the HONEST stitching bar — no two pavements overlap in XZ at incompatible deck heights (sanctioned merge bands INCLUDED; that sanctioning is what let the owner\'s torn fork print clean). RED until the departure pass lands.' },
+  { file: 'pad-census.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-56 B0: every >=3-leg junction gets a pad. The ring ladder could end in null — 27 of 176 real junctions (15%) shipped a naked gap where the intersection should be, the owner\'s seed 6 (-3862,884) among them. Also reports which rung each pad landed on; the hull floor is a symptom counter.' },
   { file: 'node-pin.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-56 B2: every run ENDS at the node it shares. A shove or a mid-span merge that walks an endpoint past the 3.75 m cluster radius costs that node both the leg and its junction pad — the owner\'s "road that just ends in a field" (seed 6 -870,2468 was 17.3 m off).' },
   { file: 'graph-topology.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],

@@ -306,6 +306,28 @@ function _unitXZ(x, z) {
     return { x: x / l, z: z / l }
 }
 
+/**
+ * BUG-56 B0: convex hull of XZ points, monotone chain, CCW, no repeated endpoint. A hull is simple
+ * by construction, which is the whole point of it here — it is the one pad boundary that cannot
+ * self-intersect, so it can be the floor under a ladder whose every other rung is allowed to fail.
+ */
+function _convexHullXZ(pts) {
+    if (pts.length < 3) return null
+    const P = pts.slice().sort((a, b) => (a.x - b.x) || (a.z - b.z))
+    const cross = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x)
+    const half = (src) => {
+        const h = []
+        for (const p of src) {
+            while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], p) <= 1e-9) h.pop()
+            h.push(p)
+        }
+        h.pop()
+        return h
+    }
+    const hull = [...half(P), ...half(P.slice().reverse())]
+    return hull.length >= 3 ? hull : null
+}
+
 /** BUG-53 merge machinery: sample a polyline at a cumulative arc (clamped at both ends). */
 function _polyAtCum(pts, polyCum, cum) {
     const n = polyCum.length
@@ -6831,7 +6853,50 @@ export class RoadSystem {
             if (ring && this._ringSelfIntersects(ring)) ring = null
         }
         if (!ring) ring = this._junctionRingLegacy(node)
+        // BUG-56 B0 — THE FLOOR. Before this rung the ladder could end in nothing, and did at 27 of
+        // 176 real (>=3-leg) junctions across the battery — 15 %, measured 2026-08-27. Every one of
+        // them failed the same way: the exact weld SELF-INTERSECTS at both fillet scales because two
+        // of the legs leave the node on the same bearing (20 of the 27 are separated by under half a
+        // degree — the slowly-diverging Y this whole ticket is about), so their mouth chords overlap
+        // and the boundary crosses itself. The legacy circle pad then folds those two legs into one
+        // direction (it merges anything inside ~20 deg), which leaves TWO distinct mouths, and a
+        // 2-mouth circle pad emits only two distinct corner points, so it returns null as well.
+        // ring = null makes EVERY consumer skip the node — pad carve, padReachNodes, the mesh's pad
+        // branch — while the legs stay cut back, so what shipped was a naked gap where the
+        // intersection should be. A crude pad beats that, always.
+        if ((!ring || ring.length < 3) && node.legs.length >= 3) ring = this._junctionRingHull(node)
         return (ring && ring.length >= 3) ? ring : null
+    }
+
+    /**
+     * THE LAST RUNG (BUG-56 B0): the convex hull of every leg mouth, seeded with a half-width disc
+     * at the node. Crude on purpose — it has no fillets, no throat sweep and no back-arc bulb, so a
+     * junction that lands here is paved as one flat convex plaza rather than a shaped intersection.
+     * What it buys is that it CANNOT FAIL: a hull is simple by construction, so _ringSelfIntersects
+     * has nothing to reject, and the disc guarantees at least three distinct points and that the
+     * node itself is interior even when every leg leaves on the same side.
+     *
+     * Landing here is a SYMPTOM, not a resolution — the legs that force it are the same
+     * shallow-departure forks B4/B5/B6 are about, and as those land the population here should
+     * shrink. test/pad-census.mjs prints the count so it stays visible instead of quietly becoming
+     * the normal way a junction gets built.
+     */
+    _junctionRingHull(node) {
+        const m = this._junctionMouths(node)
+        if (!m) return null
+        const { legs, halfWidth } = m
+        const nx = node.pos.x, nz = node.pos.z
+        const pts = []
+        for (const l of legs) {
+            pts.push({ x: l.cx - l.dz * halfWidth, z: l.cz + l.dx * halfWidth })
+            pts.push({ x: l.cx + l.dz * halfWidth, z: l.cz - l.dx * halfWidth })
+        }
+        const D = 12
+        for (let i = 0; i < D; i++) {
+            const a = 2 * Math.PI * i / D
+            pts.push({ x: nx + Math.cos(a) * halfWidth, z: nz + Math.sin(a) * halfWidth })
+        }
+        return _convexHullXZ(pts)
     }
 
     /**
@@ -6840,7 +6905,14 @@ export class RoadSystem {
      * a node-centred bulb (open sector) or a straight chord (through road). Pure fn of node + streamed
      * network (window-invariant, D-16). (Formerly RoadMeshSystem._junctionRingWeld.)
      */
-    _junctionRingWeld(node, filletScale) {
+    /**
+     * The node's LEG MOUTHS: each leg's real cross-section centre and outward unit direction at the
+     * cut-back, bearing-sorted. ONE definition shared by every rung of the ring ladder, so a
+     * fallback pad is anchored to exactly the pavement the exact weld would have welded to. Returns
+     * null when any leg's geometry is unusable — the whole ladder then declines together, which is
+     * the honest outcome (there is nothing to build a pad against).
+     */
+    _junctionMouths(node) {
         const road = this
         const params = this._params
         if (!road.runPointAt || !road.runProfile || !road._network) return null
@@ -6868,6 +6940,15 @@ export class RoadSystem {
             legs.push({ cx: c.x, cz: c.z, dx, dz, bear: Math.atan2(c.x - nx, c.z - nz), runKey: leg.runKey, mouthArc, s, len })
         }
         legs.sort((a, b) => a.bear - b.bear)
+        return { legs, T, halfWidth }
+    }
+
+    _junctionRingWeld(node, filletScale) {
+        const params = this._params
+        const nx = node.pos.x, nz = node.pos.z
+        const m = this._junctionMouths(node)
+        if (!m) return null
+        const { legs, T, halfWidth } = m
         const n = legs.length
         // NOTE: the old "pitchfork guard" (reject when Σleg-dirs / n > 0.55) was removed — it rejected
         // valid one-sided tridents whose weld is a clean, non-self-intersecting pad (seed-6 node 253,-131).
