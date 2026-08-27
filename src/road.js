@@ -2622,12 +2622,29 @@ export class RoadSystem {
         const FORKWIN = 80   // m — arc window for locating the fork abreast on the loser
         const MINSPAN = 60   // m — a mid-span strand shorter than this is not worth two forks
         const MIDSPAN_ON = C.mergeMidSpan !== false
-        // Floor for the band's DENSE radius (see buildTaper — it measures the swept curve, not the
-        // control polyline). Two numbers bound it: the ribbon FOLDS below 5.5 m (BUG-12, gated by
-        // road-minradius), and the shipped network's own tightest corner measures 5.70 m. A floor
-        // of 6 clears both. Higher is not "safer" — at 7 the band is held to a standard the roads
-        // it joins do not meet, and the measured cluster of rejects sat at 6.8–7.0 m.
-        const RFLOOR = 6
+        // BUG-56 B5 — the floor for the band's DENSE radius (buildTaper measures the swept curve,
+        // not the control polyline) is the ROAD'S OWN CONTRACT, roadMinTurnRadius, not a separate
+        // smaller number. It used to be 6: enough to clear the 5.5 m ribbon FOLD limit (BUG-12,
+        // gated by road-minradius) and the shipped network's tightest measured corner of 5.70 m,
+        // and the note here argued that anything higher held a band to a standard the roads it
+        // joins do not meet. The 2026-08-27 census says otherwise, and it is the reason the owner
+        // opened this ticket: the MEDIAN taper band is tighter than the FIRST PERCENTILE of open
+        // road — median band radius 23.3 m against open road's 1st pct 24.8 m and median 308 m —
+        // with 38 of 70 bands under 25 m and 4 outright under roadMinTurnRadius, tightest 12.8 m.
+        // "A road coming in perpendicular and then last second turning to be parallel" IS a 13-23 m
+        // radius turn in a network that otherwise never goes below 25. A band is road; it may not
+        // be tighter than road.
+        //
+        // But it is a LADDER, not a hard swap, and that was measured too. A gentler band is a LONGER
+        // band, a longer band runs alongside the through road further, and a band that clears no
+        // rung LOSES ITS MERGE — at which point the two roads run parallel unsanctioned, which is
+        // what graph-topology's corridor-clearance check exists to catch. Swapping the floor outright
+        // cost 3 merges and turned one of them into 50 sample pairs at 1.3 m separation. So: take the
+        // gentlest band at or above the road's own radius, and only if NOTHING clears it fall back to
+        // RFLOOR_MIN — the ribbon FOLD limit (5.5 m, BUG-12, gated by road-minradius) plus margin,
+        // which is a safety floor rather than a quality one and is never relaxed.
+        const RFLOOR = this._params?.roadMinTurnRadius ?? 12
+        const RFLOOR_MIN = 6
         // Band lengths tried, shortest first: a gentle fork settles at 40 m, a wide one needs the
         // upper rungs to swing the whole turn at road radius.
         const TAPER_LADDER = [40, 55, 70, 90, 110, 130]
@@ -2727,7 +2744,7 @@ export class RoadSystem {
         // The fork machinery — buildTaper and midSpanPair — lives as methods now
         // (_v2BuildTaper/_v2MidSpanPair) so the BUG-55 disjoint planner reuses the IDENTICAL
         // taper construction and guards; ctx carries this planner's constants and report tag.
-        const ctx = { PROX, GAPM, FLARE, MINREG, MINSPAN, RFLOOR, TAPER_LADDER, tag: `@${nk}` }
+        const ctx = { PROX, GAPM, FLARE, MINREG, MINSPAN, RFLOOR, RFLOOR_MIN, TAPER_LADDER, tag: `@${nk}` }
         const pairs = []
         for (let i = 0; i < inc.length; i++) for (let j = i + 1; j < inc.length; j++) {
             const A = inc[i], B = inc[j]
@@ -2906,12 +2923,30 @@ export class RoadSystem {
             // measurement below is what decides whether that corner is buildable.
             const ang = Math.atan2(tL0.x * tW.z - tL0.z * tW.x, tL0.x * tW.x + tL0.z * tW.z)
             const s0 = Math.tan(Math.max(-1.047, Math.min(1.047, ang)))
-            // Every rung that clears the floor is kept, shortest first: the SHAPE is settled here,
+            // Every rung that clears a floor is kept, GENTLEST first (B5): the SHAPE is settled here,
             // but whether the loser's remaining road can still be graded from the winner's deck is
             // only known once the profile is solved, and a different band length changes both the
             // ground it crosses and how much road is left to absorb the fork height. The assembly
-            // walks these in order.
-            const bands = []
+            // walks these in order, so a gentle band that blows the grade still falls to the next.
+            const cand = []
+            // B5 ORDERING, and this is the load-bearing half. Do not DROP candidates — REORDER them.
+            // Swapping the floor outright cost 3 merges and turned one into 50 sample pairs at 1.3 m
+            // separation (graph-topology corridor-clearance, seed 6 g:4,1,1:5,1,0). The merges were
+            // not lost to the floor: they were lost to keeping only the gentlest three and throwing
+            // away the short bands the assembly's grade and stitch tests would have fallen back to.
+            // So hand the assembly everything that clears the SAFETY floor, gentlest-legal first,
+            // then the rest — it walks them in order and the downstream tests still have the last
+            // word. Capped at four because each variant costs a profile solve × three hold rungs.
+            const pick = () => {
+                const ok = (c) => c.minR >= ctx.RFLOOR
+                const all = cand.filter((c) => c.minR >= ctx.RFLOOR_MIN)
+                // Gentlest-legal first — then the REST BY LENGTH, not by radius. That tail is the
+                // old behaviour verbatim (shortest first), and keeping it verbatim is the point:
+                // ordering by radius all the way down quietly dropped the short bands the assembly
+                // used to fall back to, which cost merges rather than tightening anything.
+                return [...all.filter(ok).sort((a, b) => b.minR - a.minR),
+                        ...all.filter((c) => !ok(c)).sort((a, b) => a.Lb - b.Lb)].slice(0, 5)
+            }
             let bestR = 0, bestLb = 0
             for (const Lb of ctx.TAPER_LADDER) {
                 const joinCum = lCut + sgnL * Lb
@@ -2953,9 +2988,13 @@ export class RoadSystem {
                     minR = Math.min(minR, (la * lb * lc) / (2 * area2))
                 }
                 if (minR > bestR) { bestR = minR; bestLb = Lb }
-                if (minR >= ctx.RFLOOR) { bands.push({ Lb, joinCum, pts, minR }); if (bands.length >= 3) break }
+                cand.push({ Lb, joinCum, pts, minR })
+                if (cand.filter((c) => c.minR >= ctx.RFLOOR).length >= 3) break
             }
-            if (bands.length) return { bands }
+            {
+                const bands = pick()
+                if (bands.length) return { bands }
+            }
             // BUG-57 rung: DIRECT SPAN — tangled pairs only (allowDirect). The offset construction
             // above is the loser's own course carrying a decaying lateral shift, so when that
             // course is itself switchbacky near the fork the band inherits its curvature and no
@@ -2971,7 +3010,7 @@ export class RoadSystem {
             // solve's business downstream (declines fall through exactly as before).
             if (allowDirect) {
                 for (const Lb of DIRECT_SPAN_LADDER) {
-                    if (bands.length >= 3) break
+                    if (cand.filter((c) => c.minR >= ctx.RFLOOR).length >= 3) break
                     const joinCum = lCut + sgnL * Lb
                     if (joinCum < 0 || joinCum > L2.S.L) continue
                     const nexts = _spliceNeighbourDir(L2.S, joinCum, lAway, 3)
@@ -3018,11 +3057,12 @@ export class RoadSystem {
                             minR = Math.min(minR, (la * lb * lc) / (2 * area2))
                         }
                         if (minR > bestR) { bestR = minR; bestLb = Lb }
-                        if (minR < ctx.RFLOOR) continue
-                        bands.push({ Lb, joinCum, pts, minR, direct: true })
+                        if (minR < ctx.RFLOOR_MIN) continue
+                        cand.push({ Lb, joinCum, pts, minR, direct: true })
                         break   // one band per join distance — the next rung varies Lb, not magnitude
                     }
                 }
+                const bands = pick()                     // BUG-56 B5: gentlest-legal first, rest after
                 if (bands.length) return { bands }
             }
             return { fail: true, bestR, bestLb }
@@ -3145,7 +3185,8 @@ export class RoadSystem {
         const own = this._v2RunSample(g, drop, c1, c2)
         const PROX = C.mergeProxM ?? 18, GAPM = C.mergeGapM ?? 200, FLARE = C.mergeFlareM ?? 60
         const CHORD = C.censusChordM ?? 300
-        const MINREG = 30, MINSPAN = 60, RFLOOR = 6
+        const MINREG = 30, MINSPAN = 60                                   // BUG-56 B5: two floors,
+        const RFLOOR = this._params?.roadMinTurnRadius ?? 12, RFLOOR_MIN = 6   // quality then safety
         const TAPER_LADDER = [40, 55, 70, 90, 110, 130]
         if (!own || own.L < 2 * MINREG) return fail(null)
         let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
@@ -3208,7 +3249,7 @@ export class RoadSystem {
                 this._v2MergeSkipped('winner', `${ck} x ${qck} disjoint`)
                 continue
             }
-            const ctx = { PROX, GAPM, FLARE, MINREG, MINSPAN, RFLOOR, TAPER_LADDER,
+            const ctx = { PROX, GAPM, FLARE, MINREG, MINSPAN, RFLOOR, RFLOOR_MIN, TAPER_LADDER,
                           tag: 'disjoint', allIntervals: true, winnerCk: qck }
             const mid = this._v2MidSpanPair(ctx, { ck, S: own, nodeAtStart: true },
                                                  { ck: qck, S: SQ, nodeAtStart: true }, ivs)
