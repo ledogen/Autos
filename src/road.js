@@ -4626,7 +4626,10 @@ export class RoadSystem {
         }
         let why = 'no band'
         let dryAsm = null   // BUG-57: the dry walk hands its assembled arrays to the chain view
+        // PERF: set by attempt() when the seam rule was the ONLY thing it failed — see the ladder below.
+        let seamOnlyFail = false
         const attempt = (bandIdx, holdFrac, seamOn) => {
+            seamOnlyFail = false
             const dS = sS ? endData(sS, bandIdx, holdFrac) : null
             const dE = sE ? endData(sE, bandIdx, holdFrac) : null
             if ((sS && !dS) || (sE && !dE)) return 'no winner sample'
@@ -4731,7 +4734,7 @@ export class RoadSystem {
             }
             const sf = seamOn && (seamFail(dS, 0, dS ? dS.blend.length : -1) ||
                                   seamFail(dE, dE ? sub.length - 1 - dE.blend.length : 0, sub.length - 1))
-            if (sf) return sf
+            if (sf) { seamOnlyFail = true; return sf }
             // assemble the final polyline in the loser's registered direction
             const pts = [], clArc = []
             if (dS) {
@@ -4836,19 +4839,34 @@ export class RoadSystem {
         // no difference at all, because the failing seams are an order of magnitude over the rule
         // (5.38 m where 0.38 is allowed), not marginally over it. So: walk the whole ladder with
         // the rule on, and only if every rung refuses walk it again without, and COUNT that.
-        for (const seamOn of [true, false]) {
+        // The ladder is walked ONCE, not twice. It used to be wrapped in `for (const seamOn of [true,
+        // false])`, which re-walked every band x hold rung with the seam rule off — re-SOLVING each
+        // profile even though `seamOn` gates nothing but a post-solve acceptance test. Measured on a
+        // seed-3 region: _v2RegisterMerged was making 305 of the 617 profile solves for 141 edges.
+        //
+        // It is the same outcome by construction. If any rung had cleared both grade AND seam, the
+        // old first pass would have returned there; so reaching the old second pass meant none did,
+        // and the first rung it then accepted was the first that cleared GRADE — which is exactly the
+        // first rung that failed on the seam alone. Remember that one and re-attempt only it.
+        const succeed = (bandIdx, holdFrac, seamRelaxed) => {
+            if (holdFrac === 0.5 && !dry) this._v2MergeSkipped('partial-hold', `${key} holds half its band (BUG-56 B6: the full hold blew the departure grade cap)`)
+            if (holdFrac === 0 && !dry) this._v2MergeSkipped('unheld', `${key} keeps its merge with a front-loaded fork (BUG-56 hold infeasible)`)
+            if (seamRelaxed && !dry) this._v2MergeSkipped('seam', `${key} keeps its merge with a walled fork — no rung cleared the deck-gap rule (BUG-56 B3)`)
+            if (dry) return { bandIdx, pts: dryAsm?.pts, polyCum: dryAsm?.polyCum }
+            this._v2Merges = (this._v2Merges || 0) + specs.length
+            return true
+        }
+        let seamFallback = null
         for (const holdFrac of [1, 0.5, 0]) {
             for (const bandIdx of order) {
-                why = attempt(bandIdx, holdFrac, seamOn)
-                if (!why) {
-                    if (holdFrac === 0.5 && !dry) this._v2MergeSkipped('partial-hold', `${key} holds half its band (BUG-56 B6: the full hold blew the departure grade cap)`)
-                    if (holdFrac === 0 && !dry) this._v2MergeSkipped('unheld', `${key} keeps its merge with a front-loaded fork (BUG-56 hold infeasible)`)
-                    if (!seamOn && !dry) this._v2MergeSkipped('seam', `${key} keeps its merge with a walled fork — no rung cleared the deck-gap rule (BUG-56 B3)`)
-                    if (dry) return { bandIdx, pts: dryAsm?.pts, polyCum: dryAsm?.polyCum }
-                    this._v2Merges = (this._v2Merges || 0) + specs.length; return
-                }
+                why = attempt(bandIdx, holdFrac, true)
+                if (!why) { const r = succeed(bandIdx, holdFrac, false); return dry ? r : undefined }
+                if (seamOnlyFail && !seamFallback) seamFallback = [bandIdx, holdFrac]
             }
         }
+        if (seamFallback) {
+            why = attempt(seamFallback[0], seamFallback[1], false)
+            if (!why) { const r = succeed(seamFallback[0], seamFallback[1], true); return dry ? r : undefined }
         }
         return bail(`${why} (tried ${nBands} variant${nBands === 1 ? '' : 's'})`)
     }
