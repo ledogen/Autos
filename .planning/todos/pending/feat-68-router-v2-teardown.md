@@ -14,6 +14,23 @@ relates: BUG-51 (absorbed — grade ceiling becomes core spec), BUG-53 (absorbed
   (arc quantization — dies with the old router)
 ---
 
+> **2026-08-27 — two acceptance boxes are now satisfiable; the ticket still needs the MERGE and the
+> owner's character sign-off, so it stays open.** Everything below is on `feature/corridor-router`.
+>
+> - *"Zero marked edges across the eval seed set (gate); marked-seed disclaimer wired in-game."*
+>   Both halves exist. `test/road-grade.mjs` gates zero condemned and nothing above the
+>   `gMaxRoad + gradeTol` ceiling; the disclaimer is story mode's unroutable-seed refusal
+>   (`src/world-validate.js` + the `#ss-reject` modal), which replaced the seed reroll on the
+>   owner's 2026-08-27 ruling.
+> - *"Connectivity ≥ the branch's floor … on the seed sweep."* `test/play-area.mjs` runs five fixed
+>   seeds over 144 km² each and asserts ONE component; all five pass, with zero condemned edges.
+>
+> Still outstanding: cold-to-driving under 10 s on the old hardware (measured 2026-08-27 at ~17 s
+> single-threaded headless for a 2.8 km region, ~114 s for 12 km² — the game runs 2–4 workers, so the
+> real number is lower and unmeasured); character sign-off from driven checkpoints; retiring the old
+> router from main in the swap merge; bundles rebaked.
+
+
 # FEAT-68: Router v2 — tear down, rebuild two-stage, iterate against driven character
 
 **Naming (2026-08-18):** the outgoing router is the **arc-lattice router (v1)** — fixed-angle arc

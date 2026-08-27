@@ -4,11 +4,42 @@ type: bug
 status: in-progress
 severity: major
 opened: 2026-08-24
+closed: 2026-08-27
 source: owner screenshot while freecamming the BUG-55 acceptance area (2026-08-24)
 relates: BUG-55 (the nest fix is just down-network), FEAT-68 (v2 junction assembly),
   graph-topology (f) NODE-DEPARTURE (bearing debt at the same class of node — separate axis:
   that one is heading, this one is HEIGHT/surface)
 ---
+
+> **CLOSED 2026-08-27 — owner: "close bug 56".**
+>
+> **SHIPS ON `feature/corridor-router`, NOT ON MAIN** — nine commits, `63b0e21..304d96d`. Full
+> account: `.planning/HANDOFF-2026-08-27-BUG-56-build.md`.
+>
+> | | | |
+> |---|---|---|
+> | B1 | stitching gate reads ribbon EDGES | 17 sites → 102; both owner forks were invisible before |
+> | B2 | a run ends at the node it shares | 253 nodes, **0 unpinned**, worst spread 0.00 m |
+> | B0 | the ring ladder gets a floor | **27 naked junctions → 0** (incl. the owner's −3866,885) |
+> | C  | never drape — re-route, else condemn | **worst grade 106 % → 38 %**, condemned 0 |
+> | B4 | departure camber (ROLL half of the normal) | fork roll residual **median 0.0°** |
+> | B6 | departure grade (PITCH half) | mark A's fork spike **24.1 % → gone** |
+> | B5 | a band may not be tighter than the road | median band radius **23.3 m → 33.4 m** |
+> | B3 | the gore is a wall at the seam, not an unpaved V | gore wall steps **470 → 373** |
+> | D  | play-area gate + shared validator | 5 seeds × 144 km², all one component |
+>
+> Plus the **unroutable-seed disclaimer** that replaced workstream C's reroll (owner ruling
+> 2026-08-27): story mode refuses a seed whose region is severed or carries an unsolvable road and
+> asks for another, so the nine-tile world architecture is not needed.
+>
+> New gates: `node-pin`, `pad-census`, `road-grade`, `play-area` (manual). All green.
+>
+> **Residue, deliberately left and booked, not swept:** `junction-stitch` stays RED at 105 sites and
+> `graph-topology`'s corridor-clearance is a new red — both with measured causes in the handoff, and
+> both now **QUAL-26**'s subject (two roads routed to the same ground) rather than this ticket's. The
+> remaining walls are at forks where two roads cannot part legally; forcing them apart was measured
+> to SPLIT seed 7 into two components, and connectivity outranks stitching.
+
 
 # BUG-56: junction fork disjunction — minor leg arrives as a floating shelf over a stepped carve cliff
 

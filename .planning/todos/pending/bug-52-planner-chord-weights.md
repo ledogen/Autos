@@ -8,6 +8,23 @@ source: found while diagnosing seed 20's spawn road (BUG-51); scoped out of the 
 relates: BUG-51, BUG-47, FEAT-61, FEAT-29
 ---
 
+> **RE-TRIAGED 2026-08-27 against the v2 world — STILL OPEN, and still the same defect.**
+>
+> BUG-51 (its sibling, the reason this was found) is CLOSED: the seed-20 spawn edge that weighed
+> 452 m in the planner against 1134 m of up-to-118 % road is now **601 m of ≤18 % road**. So the
+> *consequence* is much milder — the planner is no longer being lured onto three-figure grades,
+> because those no longer exist.
+>
+> **The defect is untouched.** `buildGraphAdj` (`src/mission.js:117`) still weights every edge by
+> `Math.hypot` of the chord, and the v2 router changed nothing in `mission.js`. A detour factor of
+> 2.5× was the headline example, not the mechanism. Do not close this on BUG-51's numbers.
+>
+> One thing that DID change in its favour: the ticket argues the stale justification was
+> *"routing an edge just to measure it would cost more than the bias is worth"*. Registered runs now
+> carry `polyCum`, so the real road length is a single array read — measuring is free where the edge
+> is already streamed.
+
+
 # BUG-52: every planner weights graph edges by straight-line chord, not road length
 
 ## The defect

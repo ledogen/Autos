@@ -1,12 +1,32 @@
 ---
 id: BUG-51
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-08-17
+closed: 2026-08-27
 source: measured while diagnosing seed 20's spawn-region road (user report: "a crazy road right at the start")
 relates: BUG-47, FEAT-28, FEAT-40, QUAL-19, PERF-03
 ---
+
+> **CLOSED 2026-08-27 — subsumed by BUG-56 workstream C ("never drape"), on `feature/corridor-router`.**
+>
+> This ticket's own reproducer, **seed 20 spawn edge `g:0,-1,2:-1,0,2`**: it was 1134 m carrying a
+> **118 % deck** across a 254 % ridge, floating +27 m on fill and trenching −67 m. On the v2 world it
+> is **601 m with a worst grade of 18 %** — not condemned, not even re-routed. The corridor router
+> simply does not choose that ridge crossing, so the "boxed in with nothing able to veto the edge"
+> premise no longer holds. The whole spawn region: 24 runs, **one component, zero condemned**, worst
+> grade in the region 25 %.
+>
+> The two coordinates the BUG-56 handoff carried forward from here:
+> **seed 6 (5736, 885) 115 % → 32 %** · **seed 7 (−1756, 1596) 87 % → window worst 34 %**.
+>
+> What actually fixed it is not a tighter cap — the owner explicitly ruled that out, and it was
+> measured not to work (at gMaxRoad 0.20 and 0.18 the worst spot was still 108 %). It was killing the
+> terrain-follow DRAPE: the profile ladder used to end by draping the road over raw ground with no
+> grade bound at all, and that fallback is where every three-figure grade in this ticket came from.
+> The ladder now ends re-route → condemn, and `test/road-grade.mjs` gates zero of either.
+
 
 # BUG-51: an Urquhart edge across a cliff is built as a 118% road, because the router is boxed in and nothing can veto the edge
 
@@ -226,3 +246,24 @@ none was a road the router built up a wall — the profile was solved legally at
 ceiling and then shipped steeper than that because the band's arc ran longer than its ground. Do not
 go looking for them again. The battery count is **2 of 467 runs**, down from 6.
 
+
+---
+
+## 2026-08-27 — SUBSUMED by BUG-56 rev 2, item 1 ("never drape")
+
+Same ladder, same condemn-and-validate discipline, one implementation. See
+`.planning/HANDOFF-2026-08-27-BUG-56-camber.md` rev 2.
+
+Measured root cause: the profile solve's four rungs (24 % → finer step → 27 % → 38 %,
+`src/road.js:4681-4704`) are followed by an **unbounded terrain-follow drape** at `src/road.js:4705`
+when nothing solves. That drape, not any grade cap, is what produces the extreme runs. Across the
+8-window battery: 1049 solves at the cap, 6 at 27 %, 17 at 38 %, **4 draped**.
+
+This ticket's two remaining coordinates are both drapes: **seed 7 (−1756, 1596) at 87 %** and
+**seed 6 (5736, 885) at 115 %** — the latter is `g:8,1,0:9,1,0`, which climbs 62 m in 85 m of arc
+because it is raw hillside with tarmac on it.
+
+Owner amended the earlier "condemn it" ruling on 2026-08-27: condemning is **not** automatically an
+improvement, because a drape only exists where the edge was hard to build and therefore load-bearing.
+Re-route first; condemn only after that fails; reroll the seed deterministically at story-region entry
+if the region cannot be made whole.

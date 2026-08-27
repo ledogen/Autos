@@ -17,6 +17,18 @@ note: "Precursor to STORY MODE region unlocking — the connectivity-validation 
   not budgeted. See 'The unlock load is HIDDEN, not budgeted'."
 ---
 
+> **2026-08-27 — the connectivity-VALIDATION half of this now exists**, built for BUG-56 workstream D
+> on `feature/corridor-router`. It does not close this ticket: the region-unlock progression, the
+> diegetic barrier (SM-INV-13) and the run-layer recurrence are all untouched.
+>
+> `src/world-validate.js` answers "is this area one connected component, with every edge solved?" as
+> a pure read over a streamed RoadSystem, for either a disc or a tile grid. Two consumers already:
+> `test/play-area.mjs` (five fixed seeds × 144 km², the dev bar) and story mode's entry check (the
+> player bar, which refuses an unroutable seed rather than rerolling it). Whatever this ticket
+> eventually gates an unlock on, that routine is what it should call — the point of it being shared
+> is that the gate and the game cannot drift on what "connected" means.
+
+
 # FEAT-28: Region-gated connectivity validation (bounded unlock-time component check) — precursor to story-mode region unlocking
 
 ## Goal

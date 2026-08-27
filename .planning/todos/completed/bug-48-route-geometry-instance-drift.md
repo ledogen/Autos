@@ -1,14 +1,42 @@
 ---
 id: BUG-48
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-08-15
+closed: 2026-08-27
 source: owner-report 2026-08-14 (map screenshots + in-world chevrons), capture 2026-08-15
 relates: QUAL-24, FEAT-39, FEAT-16, FEAT-63, BUG-42
 note: "The route and the road are resolved by DIFFERENT RoadSystem instances. Read the QUAL-24
   chain-merge note at src/mission.js:806 before touching this — it predicts exactly this failure."
 ---
+
+> **CLOSED 2026-08-27 — named mechanism DELETED by FEAT-68 and measured absent. Same basis as
+> BUG-42, which this ticket's own frontmatter calls "likely the same root", and which the owner
+> closed on the same evidence.**
+>
+> The diagnosis here was that `edgeParData` returns an arc-span VIEW of a *merged* run, and QUAL-24's
+> deg-2 chain merge grouped by the **streamed band** — so the play (320 m), planner (1400 m) and map
+> (2500 m) instances could name different chains for the same road and hand back different curves.
+> FEAT-68 deleted that machinery outright; runs are now 1:1 with graph edges.
+>
+> Measured 2026-08-27 — every edge the play instance carries, resolved through `edgeParData` on all
+> three instance radii and sampled at 21 fractions:
+>
+> | seed / centre | shared edge views | differ | worst |
+> |---|---|---|---|
+> | 90 @(1072, 1743) — this ticket's own mark | 28 | **0** | 0.000 m |
+> | 11 @(4500, 600) | 20 | **0** | 0.000 m |
+> | 6 @(0, 0) | 26 | **0** | 0.000 m |
+>
+> The 79.6 m vs 195.5 m centreline-radius split recorded here has no analogue.
+>
+> **Caveat, stated rather than buried:** the capture
+> `.planning/bug-captures/bug-48-seed90-route-shortcut.json` is now STALE — v2 rebuilt seed 90, so the
+> mark (1072.5, 1743.0) resolves to a different run entirely (`g:1,2,2:2,2,0`, not `g:1,1,1:1,3,1`)
+> and the original symptom cannot be replayed. The three RoadSystem instances still exist; what is
+> gone is their ability to disagree. **Re-open if a route is seen cutting a corner on the v2 world.**
+
 
 # BUG-48: the mission route cuts corners the road doesn't have — three networks, one arc range
 

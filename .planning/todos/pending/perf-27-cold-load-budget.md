@@ -12,6 +12,26 @@ being mistaken for a shipping load-time optimization — it is a DEV convenience
 making the cold load WORSE for real players."
 ---
 
+> **2026-08-27 — cold ROUTING measured on `feature/corridor-router`**, since this ticket's job is to
+> hold the numbers. Single-threaded, headless, road network only (no terrain, mesh or POIs):
+>
+> | | edges | road km | cold build |
+> |---|---|---|---|
+> | story region (r 2800 m, `REGION_WARM_RADIUS_M`) | ~142 | ~110 km | **11–25 s, avg 17 s** |
+> | 12 km square (r 8485 m) | ~1155 | ~880 km | **100–126 s, avg 114 s** |
+>
+> **The cost is linear in EDGE COUNT, not radius** — ~70–85 ms per routed centreline at both scales.
+> The 12 km area is 6.8× the work because it has 6.8× the edges. So the lever is site density, not
+> the radius knob.
+>
+> The game runs a 2–4 worker pool (`hardwareConcurrency − 2`, capped at 4, and measured SLOWER at 8
+> on the M4), so wall-clock in-game is lower than these — but not by 4×, because assembly and slicing
+> stay on the main thread. Not measured in-game.
+>
+> Bears on this ticket's own framing: a pre-validated seed list would collapse the cold cost to zero
+> for a new game, and `test/play-area.mjs` is already the tool that would validate the candidates.
+
+
 # PERF-27: Cold load time on older machines — story mode is the path that has to be fast
 
 ## Why this exists

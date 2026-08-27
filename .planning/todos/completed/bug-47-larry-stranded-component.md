@@ -1,12 +1,30 @@
 ---
 id: BUG-47
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-08-11
+closed: 2026-08-27
 source: measured during the FEAT-61 rung-radius pass (2026-08-11)
 relates: FEAT-28, FEAT-61, BUG-42, BUG-25, QUAL-14, QUAL-19
 ---
+
+> **CLOSED 2026-08-27 — measured fixed on the v2 world (`feature/corridor-router`).**
+>
+> This ticket's own metric, re-run: **seed 11, region centre (4500, 600), radius 2500 m —
+> 16 customers placed, 16 ROUTABLE from Larry**, a 14.9 km tour. It recorded **4 of 16**.
+> Two more windows check the same way: seed 11 @(0,0) 16/16, seed 90 @(0,0) 16/16.
+>
+> The region's road graph is now **ONE component** (81 runs, 65 km, zero condemned, zero node-pin
+> violations), so there is no stranded island for Larry to be on. The FEAT-61 consequence goes with
+> it: `radiusForTier` widening the ring now finds new customers, because the ring was never the
+> constraint and the constraint is gone.
+>
+> Not fixed by one change — the v2 corridor router, BUG-57's keep-the-connection ladder, and
+> BUG-56's B2/B0/C between them. `test/play-area.mjs` and `src/world-validate.js` now gate
+> "one component" as a first-class assertion, so a regression here fails a gate rather than
+> silently capping a paper route at four stops.
+
 
 # BUG-47: the paper route saturates at four customers on seed 11 — Larry is on a stranded graph component
 
