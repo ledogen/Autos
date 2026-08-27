@@ -66,6 +66,16 @@ guarded per-deletion.
 
 ### Build phase (serial, in this order)
 
+> **Status 2026-08-27:** BUG-56 is **HALF DONE and the owner has REJECTED the drive**. The HEIGHT
+> half holds (measured at the reproducer: the minor road's pavement used to sit ~2 m above the
+> through road at 4.5 m of separation, now within 9 cm). The **CAMBER** half is untouched and is what
+> the owner is looking at — the leg banks +17.8° 25 m past the fork and reverses to −17.3° over the
+> next 30 m, identical before and after. `junction-stitch` compares CENTRELINES only, which is why it
+> printed the fork clean. Next agent: **`.planning/HANDOFF-2026-08-27-BUG-56-camber.md`**.
+> Also settled 2026-08-27: BUG-42 CLOSED (mechanism measured absent), BUG-55 CLOSED (residue merged
+> into BUG-57), BUG-51 RULED (condemn the edge, validate connectivity, reroll the seed) and narrowed
+> from 6 over-ceiling runs to 2 by the band arc-allocation fix.
+>
 > **Status 2026-08-26 (later):** item 2 (BUG-56) has shipped its FIRST PASS — the departure hold
 > (`_v2DepartureHold`), skip-and-reconnect generalised to grade, and the honest stitching gate
 > `test/junction-stitch.mjs`. The owner's reproducer now reads 0.00 m of deck gap through the whole

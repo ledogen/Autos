@@ -181,3 +181,48 @@ unconnectable), or does it get **re-routed** at a wider corridor, or does it shi
 Instrument used: `test/scratch-grades.mjs` (rainy-day, not kept). A permanent gate would be four
 lines in the existing road battery — worth adding when this is picked up.
 
+---
+
+## OWNER RULING (2026-08-27) — DEFAULT: condemn the edge
+
+> "default decision unless I rule otherwise is condemn it, validate connectivity, reroll the seed if
+> the world is genuinely unconnectable"
+
+That is BUG-57's crossing-invariant pattern applied to grade, and the vocabulary already exists:
+condemn → connectivity is VALIDATED as a gate, never guarded per-deletion → a seed that genuinely
+cannot be connected is a seed-gen problem, not something to force. Implementation notes for whoever
+picks this up:
+
+- **Where the veto goes.** `_v2GradePts` ends its 4-rung ladder in the mark-and-ship fallback. The
+  condemn decision must NOT live there — that method is called from discovery, dry-runs and assembly
+  alike, and a delete verdict inside it would create exactly the recursion BUG-57's two-layer bundle
+  exists to prevent. Model it on `_v2DeleteFor`: a pure per-edge predicate ("is there any legal
+  profile for this edge?"), memoized per rev, read by the assembly layer only.
+- **Marks do not bound the damage.** 6 runs exceed the ceiling but only 4 are `_v2Infeasible`, so a
+  predicate keyed on "the solve failed" misses two. Key it on the SHIPPED grade instead, measured on
+  a 10 m baseline with the junction-blend reach excluded — the measurement below.
+- **Connectivity gate already exists**: `test/road-connectivity.mjs` (CONNECTED is rim-honest) plus
+  the component counts in `test/crossing-rung-parity.mjs`. Reuse, do not re-derive.
+- **Seed reroll is a named structural watch** in `.planning/ROAD-CLOSEOUT-PLAN.md` and stays a
+  design-only item until a real seed actually trips the connectivity gate.
+
+## THE LIST — seed and coordinates, for the owner to look at (measured 2026-08-27)
+
+Free-roam, `Shift+C` free-cam, `T` to teleport. Grade on a 10 m baseline, junction-blend reach
+excluded at both ends, so every one of these is the router's own road.
+
+| Seed | Go to X, Z | Worst | How much of it | Run |
+|---|---|---|---|---|
+| **7** | **−1756, 1596** | **87 %** | **192 m of a 572 m run · 155 m of climb** | `g:-4,2,2:-3,2,2` |
+| **6** | **5736, 885** | **115 %** | **96 m of an 801 m run · 107 m of climb** | `g:8,1,0:9,1,0` |
+
+Those two are the whole defect. Seed 7's is the one to look at first — it is a third of the run.
+Seed 6's is the steepest and it is the run that eats two of `junction-stitch`'s residual sites.
+
+**Four MORE were on this list before 2026-08-27 and are gone**, killed by the band arc-allocation fix
+committed under BUG-56 (seed 0 `1,-2,2:2,-2,2` 53 %, seed 6 `3,1,0:4,1,1` 74 %, seed 11
+`2,-3,2:1,-2,0` 45 %, seed 67 `1,-2,1:1,-1,0` 41 %). Every one of them was INSIDE A MERGE BAND, and
+none was a road the router built up a wall — the profile was solved legally at or under the 38 %
+ceiling and then shipped steeper than that because the band's arc ran longer than its ground. Do not
+go looking for them again. The battery count is **2 of 467 runs**, down from 6.
+

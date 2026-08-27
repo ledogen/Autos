@@ -1,13 +1,29 @@
 ---
 id: BUG-42
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-08-07
 updated: 2026-08-15
+closed: 2026-08-27
 source: owner-report
 relates: BUG-48 (three RoadSystem instances — likely the same root), QUAL-24, BUG-47, BUG-25, FEAT-40
 ---
+
+> **CLOSED 2026-08-27 — owner: "just close it out ill flag if it happens to bother us again".**
+>
+> Never reproduced headlessly, and on 2026-08-27 its named mechanism was measured absent on the v2
+> world: 36 degree-3+ junctions across seeds 0/3/6/11/20/90, the 320 m PLAY stream rebuilt centred on
+> each one and compared against the 1400 m MAP stream — **zero lost legs, 0.00 m deck disagreement**.
+> The 5.3 m surface discrepancy this ticket recorded has no analogue. v1 grouped deg-2 chains by the
+> streamed band (QUAL-24's note, which was this ticket's symptom stated in the abstract); v2
+> registers per graph edge with window-invariant plans, and `restream-invariance` covers the live
+> radius-churn path that a headless probe cannot.
+>
+> **If it is ever seen again**, the first move is the same test with real session state instead of a
+> fresh build: capture at the dead end, then diff the live play instance against a
+> `MISSION_PLAN_RADIUS` rebuild at the same spot. BUG-48 (three RoadSystem instances) stays open and
+> is where that would land.
 
 # BUG-42: a deg-3 junction on the map is a dead end in the world (seed 0, story mode)
 
