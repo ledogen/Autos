@@ -485,6 +485,11 @@ export const RANGER_PARAMS = {
     // then solves refusals at min(0.38, 0.27), and the ceiling rung still guards the 0.38 contract.
     gMaxRoad: 0.24,   // hard vocabulary cap for surface states (the sustained ceiling is 0.40)
     gMaxBore: 0.18,   // bores are gentler by construction (FEAT-40 lineage)
+    // BUG-56 C (owner, 2026-08-27): the ladder's CEILING rung = gMaxRoad + gradeTol, so it tracks
+    // the cap rather than being a second free-floating number (0.14 keeps the historical 38 %).
+    // Lenient on purpose — a grade failure is cheaper than a connectivity violation, and a road
+    // solved at the ceiling is legal by fiat. Beyond it the edge is RE-ROUTED, then CONDEMNED.
+    gradeTol: 0.14,
     // BUG-53 merge (phase 2, owner ruling 2026-08-22): "evaluate where these come within some
     // proximity of one another, then merge and share one run until they diverge again or hit a
     // node". Two runs leaving the same node CONFLICT while their centres are within mergeProxM;

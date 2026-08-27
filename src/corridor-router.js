@@ -59,6 +59,13 @@ export const V2_COSTS = {
     onTol: 0.75,      // m — |deck − ground| within this counts as on-grade
     gMaxRoad: 0.24,   // hard vocabulary cap for surface states (sustained ceiling is 0.40)
     gMaxBore: 0.18,   // bores are gentler by construction (FEAT-40 lineage)
+    // BUG-56 workstream C, owner ruling 2026-08-27: the profile ladder's CEILING rung is the strict
+    // limit, and it is expressed RELATIVE to the cap — gMaxRoad + gradeTol — so it tracks the knob
+    // instead of being a second free-floating number. 0.14 keeps the historical 38 % exactly. It is
+    // deliberately lenient: a road solved at the ceiling is legal by fiat, because a grade failure
+    // is cheaper than a connectivity violation. wGrade keeps its job as the routing preference that
+    // holds AVERAGE grade pleasant; the ceiling is only the backstop that decides condemnation.
+    gradeTol: 0.14,
 }
 
 // The corridor stage's octave depth. 4 == the full coarse field at default params: the 2.5D plan

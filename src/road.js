@@ -98,6 +98,17 @@ const JN_FADE_OUT = 34.0
 // road's back side. LEGACY_PAD_FLARE: mouth flare (× halfWidth) for the circle-pad fallback ring.
 const STRAIGHT_GAP = 2.7
 const LEGACY_PAD_FLARE = 1.6
+
+// BUG-56 workstream C: the RE-ROUTE ladder — how much harder each rung prices grade than the
+// ordinary route. wGrade sets the grade the search WANTS (g* = 1/sqrt(wGrade)); ×2 moves it from
+// 7.5 % to 5.3 %, ×6 to 3.1 %. A LADDER, not one number, and the first rung that solves wins: a
+// harder price buys a longer, gentler corridor, and a longer corridor is one that wanders further
+// from the line the graph asked for. Measured 2026-08-27 — jumping straight to ×6 on seed 6
+// g:8,1,0:9,1,0 fixed the grade (106 % -> 32 %) and put the new line 1.3 m from its sibling for
+// 158 samples, which is graph-topology's corridor-clearance red. Take the gentlest deviation that
+// works. Not a cap change: gMaxRoad is untouched, per the owner's ruling that tightening it trades
+// away connectivity.
+const HARD_GRADE_RUNGS = [2, 3, 6]
 // THROAT_*: narrow-gore paving for a Y-throat. When two consecutive legs diverge slowly (small gap),
 // the node-centred corner arc cuts across the throat far too close to the node, leaving the gore (the V
 // between the two diverging ribbons) as raw terrain even though it's carved flush — a tan wedge piercing
@@ -2367,9 +2378,12 @@ export class RoadSystem {
     // `dirs` = {startDir?, goalDir?} unit {x,z} — deg-2 canonical approach headings (registration
     // passes them; they are a pure fn of the settled post-drop adjacency, so every window derives
     // the identical pins and cache entries stay window-invariant).
-    _edgeCenterline(c1, c2, dirs) {
+    _edgeCenterline(c1, c2, dirs, hardGrade) {
         if (!this._proto.cls) this._proto.cls = new Map()
-        const key = this._edgeClsKey(c1, c2)
+        // BUG-56 C: each grade-hard re-route rung is a SEPARATE geometry for the same edge, so each
+        // gets its own cache namespace — a rung must never be handed back to an ordinary request,
+        // an ordinary route must never be handed back to a re-route, and two rungs must not collide.
+        const key = this._edgeClsKey(c1, c2) + (hardGrade ? `#g${hardGrade}` : '')
         const cached = this._proto.cls.get(key)
         // CACHE-POISONING GUARD: entries are tagged `_v2Dirs` when routed by a dirs-aware caller.
         // A dirless caller (edgeParData's standalone fallback — it only touches never-registered
@@ -2389,9 +2403,10 @@ export class RoadSystem {
             // reversed traversal: leave B along −goalDir, arrive at A along −startDir
             const neg = (d) => d ? { x: -d.x, z: -d.z } : undefined
             const flip = dirs ? { startDir: neg(dirs.goalDir), goalDir: neg(dirs.startDir) } : undefined
-            const fwd = this._edgeCenterline(c2, c1, flip)
+            const fwd = this._edgeCenterline(c2, c1, flip, hardGrade)
             const cl = new Centerline(reversePrimitives(fwd.primitives))
             if (fwd._v2Dirs) cl._v2Dirs = true
+            cl._v2DirsSpec = dirs
             this._proto.cls.set(key, cl)
             this._pendingRoutes.delete(key)
             return cl
@@ -2399,9 +2414,10 @@ export class RoadSystem {
         // routeEdgeV2 is THE route function — the route Worker imports the same one, so the
         // pre-warmed cache entry and this synchronous fallback are byte-identical by construction
         // (the FEAT-68 no-mirror fence; test/road-worker-parity.mjs pins the field derivation).
-        const spec = this._v2EdgeSpec(c1, c2, dirs)
+        const spec = this._v2EdgeSpec(c1, c2, dirs, hardGrade)
         const res = routeEdgeV2(spec, this._v2Trunc(), (x, z) => this._coarseH(x, z))
         const cl = res.cl
+        cl._v2DirsSpec = dirs   // BUG-56 C: the re-route rung needs the pins this edge was routed with
         if (res.pinRequested && res.feasible && !res.usedPin) {
             this._v2DirFallbacks = (this._v2DirFallbacks || 0) + 1
             ;(this._v2DirFallbackKeys ||= []).push(key)
@@ -2419,18 +2435,25 @@ export class RoadSystem {
      * The 2.5D corridor plans the DECK pinned at the same node heights the profile pins to;
      * pond+skirt no-go discs (FEAT-17) are fetched over the corridor's own (wide) search box.
      */
-    _v2EdgeSpec(c1, c2, dirs) {
+    _v2EdgeSpec(c1, c2, dirs, hardGrade) {
         const A = this._nodePos(c1), B = this._nodePos(c2)
         const margin = Math.max(800, Math.hypot(B.x - A.x, B.z - A.z))
         const blockedDiscs = this._pondDiscsInBBox ? this._pondDiscsInBBox(
             Math.min(A.x, B.x) - margin, Math.min(A.z, B.z) - margin,
             Math.max(A.x, B.x) + margin, Math.max(A.z, B.z) + margin) : undefined
         return {
-            key: this._edgeClsKey(c1, c2),
+            key: this._edgeClsKey(c1, c2) + (hardGrade ? `#g${hardGrade}` : ''),   // its own cache namespace (BUG-56 C)
             ax: A.x, az: A.z, yA: this._v2NodeHeight(A.x, A.z),
             bx: B.x, bz: B.z, yB: this._v2NodeHeight(B.x, B.z),
             margin, blockedDiscs, dirs,
-            costs: this._v2Costs(),   // ride the spec so Worker-routed edges price identically (own module instance)
+            // BUG-56 C — the RE-ROUTE price list. gMaxRoad is UNCHANGED: the owner ruled out
+            // tightening the cap, because that trades connectivity for grade and connectivity wins.
+            // What changes is wGrade, the length-vs-grade dial (cost/m = 1 + wGrade·g², minimised at
+            // g* = 1/sqrt(wGrade)). At 180 the search wants 7.5 %; at 180·HARD_GRADE_MULT it wants
+            // ~3 %, so it BUYS LENGTH to go round the pitch it could not solve over. Same search,
+            // same field, one number moved — still a pure function of (endpoints, seed, params).
+            costs: hardGrade ? { ...this._v2Costs(), wGrade: (this._v2Costs().wGrade ?? 180) * hardGrade }
+                             : this._v2Costs(),   // ride the spec so Worker-routed edges price identically (own module instance)
         }
     }
 
@@ -4049,11 +4072,12 @@ export class RoadSystem {
             })
             if (solverBranches.some((b) => !b)) continue
             // the same 4-rung ladder the ordinary solve walks
-            const reliefCap = Math.min(0.38, C.gMaxRoad + 0.03)
+            const ceiling = C.gMaxRoad + (C.gradeTol ?? 0.14)
+            const reliefCap = Math.min(ceiling, C.gMaxRoad + 0.03)
             let res = profileSolveBundle(trunk, solverBranches, { costs: C })
             if (!res) res = profileSolveBundle(trunk, solverBranches, { yStep: 0.25, costs: C })
             if (!res) res = profileSolveBundle(trunk, solverBranches, { yStep: 0.25, costs: { ...C, gMaxRoad: reliefCap } })
-            if (!res && reliefCap < 0.38) res = profileSolveBundle(trunk, solverBranches, { yStep: 0.25, costs: { ...C, gMaxRoad: 0.38 } })
+            if (!res && reliefCap < ceiling) res = profileSolveBundle(trunk, solverBranches, { yStep: 0.25, costs: { ...C, gMaxRoad: ceiling } })
             if (!res) continue
             // 'pad' guard: raw arrival grade at each strand's far node
             let padHit = false
@@ -4770,25 +4794,27 @@ export class RoadSystem {
         // Rung 1 (quantization pinch): thin-margin descents die at yStep 0.5 (grade quanta 5%) but
         // solve at 0.25 — the measured M0 failure class. Only failures pay the finer, slower solve.
         if (!prof) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: C, pins }); if (prof) this._v2Rung[1]++ }
-        // Rung 3 (last before the mark): grant a SMALL relief above the vocabulary cap — the cap is a
-        // design comfort, the 40% sustained ceiling is the contract, and a road shipped here is steep
-        // but legal and unmarked.
+        // Rung 3: grant a SMALL relief above the vocabulary cap — the cap is a design comfort, the
+        // gMaxRoad + gradeTol ceiling is the contract, and a road shipped here is steep but legal.
         //
         // The relief is RELATIVE to the live cap and never exceeds the ceiling. It used to be the
-        // literal 0.38, which silently overrode the setting: with Max Road Grade dialled to 20%, the
+        // literal 0.38 (as the ceiling itself was until BUG-56 C), which silently overrode the
+        // setting: with Max Road Grade dialled to 20%, the
         // handful of edges that could not solve at 20% shipped at 38% — nearly double the request —
         // which is exactly why the knob "seemed to have very little influence" (owner 2026-08-20).
         // Measured at cap 0.20 on seed 20: 54 edges solved at the cap, 2 fell here and produced the
         // 38% maximum. Honouring the cap instead means those 2 edges may MARK, which is the designed
         // answer — a mark says the terrain cannot meet the request, which is true information.
-        const reliefCap = Math.min(0.38, C.gMaxRoad + 0.03)
+        const ceiling = C.gMaxRoad + (C.gradeTol ?? 0.14)
+        const reliefCap = Math.min(ceiling, C.gMaxRoad + 0.03)
         if (!prof) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...C, gMaxRoad: reliefCap }, pins }); if (prof) this._v2Rung[2]++ }
-        // Rung 4 (the CEILING rung, last before the mark): if even the relieved cap fails, ship the
-        // steepest road the CONTRACT allows rather than fall through to the terrain-follow. Marking
-        // is for "no legal road exists here", not for "your design cap was ambitious" — and the
-        // fallback below is a genuinely bad road (measured: a marked run at a 20% cap terrain-
-        // follows to 106%, where a solved 38% road existed the whole time).
-        if (!prof && reliefCap < 0.38) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...C, gMaxRoad: 0.38 }, pins }); if (prof) this._v2Rung[3]++ }
+        // Rung 4 (the CEILING rung): if even the relieved cap fails, ship the steepest road the
+        // CONTRACT allows rather than fall through to the terrain-follow. Condemnation is for "no
+        // legal road exists here", not for "your design cap was ambitious" — and the drape below is
+        // a genuinely bad road (measured: a marked run at a 20% cap terrain-follows to 106%, where
+        // a solved 38% road existed the whole time). BUG-56 C: the ceiling is gMaxRoad + gradeTol,
+        // so it tracks the knob; it is the STRICT limit, and past it workstream C re-routes.
+        if (!prof && reliefCap < ceiling) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...C, gMaxRoad: ceiling }, pins }); if (prof) this._v2Rung[3]++ }
         if (!prof) {
             // Mark-and-ship fallback: terrain-follow y, but BLEND the ends onto the shared node
             // heights over 60 m so a marked run still meets its solved neighbors (node agreement
@@ -4953,29 +4979,77 @@ export class RoadSystem {
      * built the same way an ordinary one is, or it would not be ordinary road.
      */
     _registerRun(key, cl, cellA, cellB, bundle) {
-        const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
-        const pts = new Array(n + 1)
-        const clArc = new Float64Array(n + 1)
-        for (let i = 0; i <= n; i++) {
-            const s = cl.length * i / n
-            clArc[i] = s
-            const p = cl.pointAt(s)
-            pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
+        const sample = (curve) => {
+            const n = Math.max(1, Math.ceil(curve.length / PROTO_SAMPLE_DS))
+            const pts = new Array(n + 1)
+            const clArc = new Float64Array(n + 1)
+            for (let i = 0; i <= n; i++) {
+                const s = curve.length * i / n
+                clArc[i] = s
+                const p = curve.pointAt(s)
+                pts[i] = new THREE.Vector3(p.x, this._coarseH(p.x, p.z), p.z)
+            }
+            return { n, pts, clArc }
         }
+        let { n, pts, clArc } = sample(cl)
         // FEAT-68 (v2): exact profile solve replaces design-grading + the FEAT-40 tunnel pass.
         // Bore AND bridge stretches come back as FEAT-40-shaped spans (carve-skip + lining +
         // collider through the existing machinery; bridge rendering is knowingly crude for now).
         // BUG-55: a bundled WINNER ships the bundle's solved profile instead — same sampling
         // formula as _v2RunSample, so the y arrays align index-for-index; anything else falls
         // through to the ordinary solve.
-        let tunnelSpans
+        let tunnelSpans, rerouted = false, condemned = false
         if (bundle && bundle.winnerY && bundle.winnerY.length === n + 1) {
             for (let i = 0; i <= n; i++) pts[i].y = bundle.winnerY[i]
             tunnelSpans = bundle.winnerSpans
-        } else tunnelSpans = this._v2GradePts(pts, clArc)
+        } else {
+            const inf0 = this._v2Infeasible || 0
+            tunnelSpans = this._v2GradePts(pts, clArc)
+            if ((this._v2Infeasible || 0) > inf0) {
+                // ── BUG-56 WORKSTREAM C — NEVER DRAPE ────────────────────────────────────────
+                // The ladder above failed at every rung including the ceiling, so _v2GradePts fell
+                // back to raw terrain height with 60 m end blends and NO grade bound whatsoever.
+                // That drape is where every headline grade number came from: measured 2026-08-27,
+                // four edges across the battery reached this line and one of them (g:8,1,0:9,1,0 on
+                // seed 6) climbs 62 m in 85 m of arc — 108 %, in a world whose worst SOLVED road is
+                // 38 %. Nothing was designed there and nobody checked the result.
+                //
+                // The failure is the CORRIDOR, not the cap: the profile solver was handed a plan
+                // view that forces more climb than any legal profile can absorb. So re-plan it —
+                // same search, same field, wGrade priced hard so the corridor buys length instead
+                // of pitch — and solve on the new line through the ordinary ladder.
+                for (const mult of HARD_GRADE_RUNGS) {
+                    const alt = this._edgeCenterline(cellA, cellB, cl._v2DirsSpec, mult)
+                    if (!alt || !(alt.length > 1e-6)) continue
+                    const s2 = sample(alt)
+                    const inf1 = this._v2Infeasible || 0
+                    const ts2 = this._v2GradePts(s2.pts, s2.clArc)
+                    if ((this._v2Infeasible || 0) > inf1) { this._v2Infeasible = inf1; continue }
+                    cl = alt; n = s2.n; pts = s2.pts; clArc = s2.clArc; tunnelSpans = ts2
+                    rerouted = true
+                    this._v2Reroutes = (this._v2Reroutes || 0) + 1
+                    break
+                }
+                this._v2Infeasible = inf0 + (rerouted ? 0 : 1)   // one tick per EDGE, not per try
+                if (!rerouted) {
+                    // CONDEMNED — not deleted. A drape is evidence the edge was LOAD-BEARING (owner,
+                    // 2026-08-27): it only drapes because nothing solved on that corridor, so cutting
+                    // it is an improvement only if something else still connects the two nodes. The
+                    // run therefore SHIPS, drape and all, carrying a mark. Story mode reads that mark
+                    // at run start and advances the seed; free roam keeps the road and the mark, so
+                    // the bad stretch is counted and surfaced rather than silently normal.
+                    condemned = true
+                    this._v2Condemned = (this._v2Condemned || 0) + 1
+                    ;(this._v2CondemnedKeys ||= []).push(key)
+                }
+            }
+        }
         const polyCum = new Float64Array(n + 1)
         for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
-        this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA, cellB, tunnelSpans })
+        const entry = { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA, cellB, tunnelSpans }
+        if (rerouted) entry.rerouted = true
+        if (condemned) entry.condemned = true
+        this._network.set(key, entry)
         return pts
     }
 
@@ -4993,7 +5067,18 @@ export class RoadSystem {
             clArc[i] = cl.length * i / n
             pts[i] = new THREE.Vector3(plan.pts[i].x, this._coarseH(plan.pts[i].x, plan.pts[i].z), plan.pts[i].z)
         }
+        // BUG-56 C: a shove whose deflected line cannot be profiled declines to the plain path, which
+        // owns the never-drape ladder (re-route, then condemn). Deflecting is a preference; shipping
+        // a run nobody graded is not an option, and re-routing a shoved line is meaningless anyway —
+        // the deflection is defined against a corridor the re-route would replace.
+        const inf0 = this._v2Infeasible || 0
         const tunnelSpans = this._v2GradePts(pts, clArc)
+        if ((this._v2Infeasible || 0) > inf0) {
+            this._v2Infeasible = inf0
+            this._v2MergeSkipped('shove', `${key}: deflected profile infeasible`)
+            this._registerRun(key, cl, cellA, cellB)
+            return
+        }
         const polyCum = new Float64Array(n + 1)
         for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
         const offCurveSpans = plan.idxSpans.map(([i0, i1, owner]) => ({ s0: polyCum[i0], s1: polyCum[i1], owner }))
