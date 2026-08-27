@@ -492,13 +492,17 @@ CLIP_ST = [
     # the transition too abrupt.  So the total is unchanged at ~0.14 m but it is now
     # shared: dead flat from the cowl to y 1.05, 0.064 m of gentle descent from there
     # to the last station, and the remaining 0.076 m in the rim's quarter-ellipse.
-    (1.7525, 0.836, 0.752, 1.108, 0.022),  # last FULL station.  MUST equal AX_F+ARCH_R
+    (1.7525, 0.824, 0.738, 1.108, 0.022),  # last FULL station.  MUST equal AX_F+ARCH_R
                                            # exactly (asserted in report()): 2.5 mm off it
                                            # and the arch sample lands beside this station
                                            # instead of on it, leaving a sliver face that
                                            # came out inverted.
-    (1.500, 0.842, 0.766, 1.140, 0.020),
-    (1.2825, 0.845, 0.774, 1.156, 0.018),  # front axle — widest, the fender blister
+    # The FENDER ties into the nose (owner, 2026-08-27): it carries its crown past
+    # the axle, then tucks in over the last 0.30 m to hand off to the prow.  Left
+    # prismatic to the arch tangent, the bullet would look grafted onto a slab.
+    (1.620, 0.838, 0.754, 1.126, 0.022),
+    (1.450, 0.845, 0.768, 1.142, 0.020),   # fender crown carried forward of the axle
+    (1.2825, 0.845, 0.774, 1.156, 0.018),  # front axle
     (1.050, 0.842, 0.778, 1.166, 0.012),
     (0.820, 0.832, 0.779, 1.171, 0.007),
     (0.584, 0.816, 0.778, 1.172, 0.003),   # cowl
@@ -563,55 +567,62 @@ BED_BANDS = {0: DARK, 1: DARK, 2: DARK, 17: DARK, 18: DARK, 19: DARK}
 # SHELLS
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# NOSE ROUNDING — the fix for "the truck ends abruptly on a flat wall at both the
-# nose and tail" (owner, 2026-08-25).  Three parts, and all three are needed:
-#   1. a RIM: two rings ahead of the last full station, shrunk in plan and squeezed
-#      in height, so the flanks and the hood wrap into the face instead of meeting
-#      it at a hard 90 degrees;
-#   2. a BARREL-CURVED face: its y varies with x, so the grille and the nose panel
-#      bow forward at the centre — a flat face is what made the first pass read like
-#      a brick even after the opening was cut;
-#   3. a bumper with a genuinely ROUND cross-section, standing well proud (below).
-# Everything mounted on the face — grille bars, lamp lenses, the frame itself —
-# rides face_y(), so the whole assembly curves together and cannot delaminate.
+# THE NOSE IS A BULLET — rewritten 2026-08-27.
+#
+# Owner: "the front end of the vehicle you modeled is fundamentally much flatter
+# than the front end of an early 2000s Ranger… redevelop the front end generation
+# code to account for the bullet shaped nose."  Correct, and it was structural:
+# face_y() took only x, so the face was a VERTICAL PLANE bowed 34 mm in plan with
+# rounded edges stuck on.  No amount of extra rim rings fixes that, because what
+# makes this nose read is that it projects along TWO axes at once.
+#
+# What a bullet actually is here, all three read off the reference:
+#   1. PLAN PROW.  The centreline leads the corners by 115 mm, not 34.  This is
+#      what makes the grille jut and the headlamps sweep back into the fenders.
+#   2. ELEVATION LEAN.  The frontmost point is NOT the hood edge — it is the middle
+#      of the LAMP BAND.  The hood edge falls 45 mm back from it and the valance
+#      75 mm.  This was completely absent, and it is most of why the old nose read
+#      as a wall.
+#   3. FLANK RELIEF.  The lean is a centreline feature; out at the fender the face
+#      has already been swept back by the prow, so only 40% of it survives there.
+#      Without this the flank's lower points fall behind the last full station and
+#      the loft folds (caught by the fold invariant in report()).
+#
+# Everything mounted on the nose — grille bars, lamp lenses, the frame, the valance
+# — rides nose_y(x, z) through _sweep(), so the whole assembly is the same surface
+# and cannot delaminate from it.
 # ---------------------------------------------------------------------------
-Y_FACE_C = 1.895                 # sheet-metal face at the centreline (most forward)
-NOSE_CROWN = 0.034               # how much the face falls away by the outer edge
-NOSE_CROWN_W = 0.800             # x at which that full fall is reached
-# THE NOSE RADIUS.  (dy behind the face, plan scale, TOP drop, BOTTOM rise) per rim
-# ring, outermost last.  Four rings spanning 0.216 m of length and dropping the hood
-# line 0.126 m: that is the "rounds off heavily near the end" the owner described,
-# and it is a RADIUS, not a slope — the plateau above it stays dead flat.
-# Top and bottom move INDEPENDENTLY on purpose.  A symmetric squeeze (what the first
-# version did) lifts the valance line by as much as it drops the hood, which pinches
-# the whole face; a real nose rolls hard over the top and only tucks a little under.
+Y_FACE_C = 1.920                 # the APEX: frontmost sheet metal, on the centreline
+Z_NOSE_APEX = 0.880              # ...and at this height — the middle of the lamp band
+NOSE_PROW = 0.115                # plan: how far the apex leads |x| = NOSE_PROW_W
+NOSE_PROW_W = 0.820
+NOSE_LEAN_UP = 0.045             # how far the face falls back from apex to hood line
+NOSE_LEAN_DN = 0.075             # ...and from apex down to the rocker
+NOSE_FLANK_LEAN = 0.40           # fraction of the lean surviving at the flank
+NOSE_Z_TOP = 1.108               # hood line at the last full station
+NOSE_Z_BOT = Z_ROCKER
+
 # THE ARCH CONSTRAINT.  The rim is generated by shrinking CLIP_ST[0]'s section, so
 # if that station still has the wheel arch cut into it the arch gets carried forward
 # through the whole rim and opens a notch in the nose.  CLIP_ST[0] is therefore
 # pinned to the front arch's forward tangent, AX_F + ARCH_R = 1.7525 (asserted).
 #
-# THE FOLD TRAP.  The first number used to be an absolute setback from the face.
-# That is unsafe, because face_y() is a BARREL CURVE: at the flank the face sits
-# 34 mm further back than on the centreline, so a setback that clears the last
-# station at x = 0 lands BEHIND it at x = 0.83.  Ten of the first ring's twelve
-# points ended up behind the station they were supposed to lead, the loft folded
-# over itself, and the fold read as a dark crack across the hood.  It is now a
-# FRACTION of the span from the last station to the face, evaluated at each point's
-# own x — monotone by construction, asserted in report().
+# THE FOLD TRAP.  Rim rings are placed as a FRACTION of the span from the last full
+# station to the nose surface, evaluated at each point's own x AND z — monotone by
+# construction.  An earlier version used an absolute setback and ten of the first
+# ring's twelve points ended up behind the station they were meant to lead; the loft
+# folded and read as a dark crack across the hood.
 #
-# THE SCHEDULE IS NOW GENERATED, not typed.  One quarter-turn drives all four
-# numbers: the ring advances as sin(theta) and the tuck, drop and rise all ease in
-# as (1 - cos theta).  That makes the blend a real quarter-ELLIPSE — tangent to the
-# flat hood and to the straight flank where it starts, perpendicular where it meets
-# the face — instead of four hand-picked numbers that only approximated one.  Five
-# rings rather than four because the owner asked for more radius on the vertical
-# edges (2026-08-27), and on a corner it is ring count that buys smoothness.
+# THE SCHEDULE IS GENERATED, not typed.  One quarter-turn drives all four numbers:
+# the ring advances as sin(theta), and the tuck, drop and rise ease in as
+# (1 - cos theta).  That makes the blend a real quarter-ELLIPSE — tangent to the
+# hood and to the flank where it starts, perpendicular where it meets the face.
 NOSE_RIM_N = 5
-NOSE_TUCK = 0.105      # plan-view corner: the face is this fraction narrower than
-                       # the flank.  THIS is the "radius on the vertical edges".
-NOSE_DROP = 0.076      # how far the hood line falls across the rim
-NOSE_RISE = 0.026      # how far the valance line tucks up; deliberately far less —
-                       # a symmetric squeeze pinches the face (see nose_rim_ring)
+NOSE_TUCK = 0.090      # plan-view corner radius on the vertical edges.  Smaller than
+                       # before, because NOSE_PROW now does most of the plan work.
+NOSE_DROP = 0.070      # how far the hood line falls across the rim
+NOSE_RISE = 0.024      # how far the valance line tucks up; deliberately far less —
+                       # a symmetric squeeze pinches the face
 
 NOSE_RIM = []
 for _i in range(1, NOSE_RIM_N + 1):
@@ -621,22 +632,34 @@ for _i in range(1, NOSE_RIM_N + 1):
                      NOSE_DROP * _ease, NOSE_RISE * _ease))
 
 
-def face_y(x):
-    """The barrel curve.  Quadratic, so the face is flattest at the centre — which is
-    what a stamped panel does, and what keeps the grille bars from looking bent."""
-    t = min(1.0, abs(x) / NOSE_CROWN_W)
-    return Y_FACE_C - NOSE_CROWN * t * t
+def nose_y(x, z):
+    """The bullet surface: how far forward the nose reaches at (x, z).
+
+    Quadratic in both axes — a parabola is flattest at its apex, which is what a
+    stamped panel does and what keeps the grille bars from looking bent.  The lean
+    is scaled down toward the flank (NOSE_FLANK_LEAN) because it is a centreline
+    feature; left at full strength out there it drags the fender's lower points
+    behind the last full station and folds the loft.
+    """
+    px = min(1.0, abs(x) / NOSE_PROW_W)
+    if z >= Z_NOSE_APEX:
+        t = (z - Z_NOSE_APEX) / max(1e-6, NOSE_Z_TOP - Z_NOSE_APEX)
+        lean = NOSE_LEAN_UP * min(1.0, t) ** 2
+    else:
+        t = (Z_NOSE_APEX - z) / max(1e-6, Z_NOSE_APEX - NOSE_Z_BOT)
+        lean = NOSE_LEAN_DN * min(1.0, t) ** 2
+    lean *= 1.0 - (1.0 - NOSE_FLANK_LEAN) * px * px
+    return Y_FACE_C - NOSE_PROW * px * px - lean
 
 
 def nose_rim_ring(spec):
-    """One rim ring: the last full section, narrowed in plan, rolled down over the
-    top and tucked up a little underneath, and laid on the barrel curve.
+    """One rim ring: the last full section, tucked in plan, rolled down over the top
+    and tucked up a little underneath, then advanced onto the bullet surface.
 
-    The top and bottom are driven by SEPARATE amounts.  Each point's z is remapped
-    linearly between the section's own bottom and top, so a point on the hood line
-    gets the full drop, a point on the rocker gets the full rise, and everything
-    between is interpolated — which keeps the flank's character line continuous
-    instead of kinking where the rim starts."""
+    The advance is evaluated at the point's FINAL x and z, not its original ones —
+    that is what lets a ring lean forward at the lamp band and back at the hood
+    edge, i.e. what makes the swept form a bullet rather than a cone.
+    """
     frac, scale, drop, rise = spec
     y_last = CLIP_ST[0][0]
     base = clip_ring(y_last)
@@ -645,9 +668,9 @@ def nose_rim_ring(spec):
     out = []
     for x, _y, z in base:
         nx = x * scale
-        y = y_last + frac * (face_y(nx) - y_last)
         t = (z - z0) / (z1 - z0)                 # 0 at the rocker, 1 at the hood line
-        out.append((nx, y, z + rise * (1.0 - t) - drop * t))
+        nz = z + rise * (1.0 - t) - drop * t
+        out.append((nx, y_last + frac * (nose_y(nx, nz) - y_last), nz))
     return out
 
 
@@ -662,8 +685,7 @@ def build_front_clip(p):
     # cap_last (at the cowl) is the FIREWALL — seen from the cabin, never from the
     # engine bay, so it is interior-dark, not paint.
     # cap_first (the nose) is omitted: build_front_end() replaces it with a FRAME so
-    # the grille and lamps have something to sit in.  loft() still orients from the
-    # virtual closed volume, so dropping the cap costs nothing.
+    # the grille and lamps have something to sit in.
     loft(p, rings, "RangerPaint", cap_first=False, cap_last=True,
          band_mats=CLIP_BANDS, cap_last_mat=DARK)
 
@@ -756,11 +778,13 @@ def _sweep(part, xs, prof, mat, cap=True):
     """Sweep a y-z profile along x, laying each station on the nose's barrel curve.
 
     `prof(x)` returns the section at that x as (dy, z) pairs measured BACK from the
-    face; this adds face_y(x) so every swept part — bar, bezel, lens — bows forward
-    at the centre by the same amount as the panel it sits in.  Sweeping the parts
-    flat while the panel curved is what would make the nose read as stuck-on.
+    face; this adds nose_y(x, z) so every swept part — bar, bezel, lens, valance —
+    projects by the same amount as the panel it sits in, in BOTH axes.  Evaluating
+    at the profile point's own z is what makes a headlamp sweep back at its top and
+    bottom the way the sheet metal around it does; using only x would leave every
+    fitting on a vertical plane inside a bullet-shaped hole.
     """
-    rings = [[(x, face_y(x) - dy, z) for dy, z in prof(x)] for x in xs]
+    rings = [[(x, nose_y(x, z) - dy, z) for dy, z in prof(x)] for x in xs]
     loft(part, rings, mat, cap_first=cap, cap_last=cap)
 
 
@@ -778,13 +802,17 @@ def build_front_end(p):
     # NOSE_RIM[-1], not [1]: the frame has to sit on the OUTERMOST rim ring, and that
     # index moved when the rim went from two rings to four.
     frame(p, nose_rim_ring(NOSE_RIM[-1]),
-          [(x, face_y(x), z) for x, z in inner], "RangerPaint")
+          [(x, nose_y(x, z), z) for x, z in inner], "RangerPaint")
 
-    # Dark box behind the opening — the thing the grille bars and bezels read
-    # against, and the reason you cannot see through into the engine bay.  Its FRONT
-    # face must sit behind everything mounted in the opening or it hides them.
-    box(p, -0.775, 0.775, Y_FACE_C - 0.150, Y_FACE_C - 0.112, Z_VAL0 + 0.02,
-        OPEN_Z1 + 0.006, DARK)
+    # Dark backing behind the opening — the thing the grille bars and bezels read
+    # against, and the reason you cannot see through into the engine bay.  It has to
+    # be SWEPT, not a box: on a bullet nose a flat slab at a fixed y is ahead of the
+    # sheet metal at the corners even while it is behind it at the centre, and it
+    # punched through the fenders as two dark notches.  Constant setback behind
+    # nose_y() instead, so it is parallel to the face everywhere.
+    _sweep(p, [-0.775, -0.500, -0.250, 0.0, 0.250, 0.500, 0.775],
+           lambda x: [(0.150, Z_VAL0 + 0.020), (0.150, OPEN_Z1 + 0.006),
+                      (0.112, OPEN_Z1 + 0.006), (0.112, Z_VAL0 + 0.020)], DARK)
 
     # Grille: a body-colour surround with four chrome bars, every one of them swept
     # along the barrel curve so the grille reads ROUNDED, not flat (owner: "the
@@ -827,11 +855,13 @@ def build_front_end(p):
     # and a tuck under — swept along X so the ends wrap back.  Owner: "the bumpers
     # are especially rounded and they stick out pretty far", so the crown sits a
     # full 60 mm ahead of the face centre and the section is 100 mm deep.
-    # The end wrap was 0.128 and the bumper vanished in profile — from the side you
-    # see the END of the blade, and tucking it that far back hides it behind the
-    # valance.  0.086 still reads as a wrap without losing the element.
+    # The blade's plan curve is DERIVED from the prow, not hand-typed: a bumper that
+    # wraps less than the nose it hangs off looks bolted on, and one that wraps more
+    # disappears in profile.  BUMP_WRAP is a little deeper than NOSE_PROW because a
+    # real bumper does turn harder at its ends than the sheet metal behind it.
+    BUMP_WRAP, BUMP_W = 0.150, 0.836
     xs = [-0.836, -0.780, -0.560, 0.0, 0.560, 0.780, 0.836]
-    dys = [0.086, 0.048, 0.012, 0.0, 0.012, 0.048, 0.086]
+    dys = [BUMP_WRAP * (min(1.0, abs(x) / BUMP_W) ** 2) for x in xs]
     ZBM = 0.5 * (Z_BUMP0 + Z_BUMP1)
 
     def bprof(x, dy):
@@ -842,12 +872,15 @@ def build_front_end(p):
                 (x, yf - 0.104, Z_BUMP1)]
     loft(p, [bprof(x, dy) for x, dy in zip(xs, dys)], "RangerChrome")
 
-    # Grey lower valance.  It rides face_y() like everything else on the nose — a
+    # Grey lower valance.  It rides nose_y() like everything else on the nose — a
     # hand-typed wrap schedule put its ENDS 60 mm BEHIND the nose rim, so the body
     # showed through in body colour at both bottom corners.  Anything that has to
     # stay proud of a curved panel must be driven by the same curve, not by a
     # separate table that happens to look similar.
-    vxs = [-0.800, -0.712, -0.400, 0.0, 0.400, 0.712, 0.800]
+    # Must not run wider than the FACE, which the prow + tuck has narrowed to about
+    # 0.75 at the corners — at 0.800 the valance stood proud of the sheet metal it
+    # is supposed to sit under and showed as a step at each front corner.
+    vxs = [-0.748, -0.672, -0.380, 0.0, 0.380, 0.672, 0.748]
     # NEGATIVE dy = PROUD of the sheet metal.  Below the bumper the nose frame is
     # still painted body panel, so a valance recessed behind it simply vanished and
     # the truck showed body colour under the chrome — which is not what the fascia

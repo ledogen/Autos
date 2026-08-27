@@ -320,3 +320,48 @@ perpendicular where it meets the face. Three knobs replace twelve numbers:
 living entirely in the rim — dead flat from the cowl to y 1.05, then 0.064 m of gentle descent in
 the sheet metal to the last station, then 0.076 m in the rim. The previous version put all of it in
 the last 0.14 m, which is what made the transition read as abrupt.
+
+---
+
+## The nose rebuilt as a BULLET — 2026-08-27
+
+Owner: *"the front end of the vehicle you modeled is fundamentally much flatter than the front end
+of an early 2000s Ranger… redevelop the front end generation code to account for the bullet shaped
+nose. it's ok to drop the work done on the hood swoop. front fenders will also need to tie into this
+change."* **3128 tris / 4000**, audit clean.
+
+**The critique was structural, not a tuning miss.** `face_y()` took only `x`. So no matter how many
+rim rings or how big the corner radius, the face was a **vertical plane bowed 34 mm in plan** with
+rounded edges stuck on it. What makes this nose read is that it projects along *two* axes at once,
+and one of them was simply not in the model.
+
+`nose_y(x, z)` replaces it. Three things, all read off the reference:
+
+| | Was | Now |
+|---|---|---|
+| **Plan prow** — centreline leading the corners | 0.030 m | **0.096 m** |
+| **Elevation lean** — apex at the LAMP BAND, hood edge and valance falling back from it | **absent** | 0.045 m up / 0.075 m down |
+| Flank relief — fraction of the lean surviving at the fender | n/a | 0.40 |
+
+The centreline section is now an actual bullet: 1.875 at the hood edge → **1.920 at the apex** →
+1.845 at the rocker. Before, every one of those was 1.895.
+
+**Flank relief is load-bearing, not a nicety.** The lean is a centreline feature; left at full
+strength out at the fender it drags the flank's lower points behind the last full station and folds
+the loft. `NOSE_FLANK_LEAN` scales it out with `px²`, and the fold invariant confirms it (tightest
+gap +0.0045 m — thin, and the number to watch if the prow ever gets deeper).
+
+**Everything on the nose rides the same surface.** `_sweep()` now evaluates `nose_y(x, z)` at each
+profile point's own `z`, so a headlamp sweeps back at its top and bottom exactly as the sheet metal
+around it does. The grille backing had to stop being a `box()` for the same reason: on a bullet a
+flat slab at fixed `y` is *behind* the face at the centre and *ahead* of it at the corners, and it
+punched through both fenders as dark notches. The bumper's plan wrap is now derived from the prow
+rather than hand-typed, and the valance was narrowed to 0.748 because the prow plus tuck pulls the
+face in to about that — at 0.800 it stood proud of the metal it is supposed to sit under.
+
+**Fenders tie in** as asked: the crown is carried past the axle (stations at 1.450 and 1.620) and
+tucks over the last 0.30 m to hand off to the prow. Left prismatic to the arch tangent, the bullet
+would have looked grafted onto a slab.
+
+The hood swoop was dropped per the ruling — the plateau is flat and `NOSE_DROP` fell to 0.070,
+since the bullet's own lean now supplies the fall the swoop was faking.
