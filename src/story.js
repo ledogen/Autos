@@ -88,7 +88,12 @@ export class StorySystem {
     this._d = deps
     this._R = REGION_RADIUS_M
     this._active = false
-    this._phase = 'idle'      // 'idle' | 'settling' | 'warming' | 'live'
+    // 'idle' | 'settling' | 'warming' | 'rejected' | 'live'. `rejected` is a TERMINAL entry state:
+    // the region is built and frozen behind the disclaimer, so "start anyway" costs nothing to
+    // honour and typing a new seed just re-enters (the token invalidates this attempt).
+    this._phase = 'idle'
+    this._seed = null
+    this._report = null
     this._center = null       // {x,z} — region center; captured post-reseat
     this._frozen = false      // true ⇒ the frame loop makes NO road stream/route calls
     this._armed = false       // the wall only clamps once the player has been inside the region
@@ -112,7 +117,7 @@ export class StorySystem {
    *   • frozen — the region is registered and must stay registered; an update() would narrow the
    *     network back to a 320 m window around the player and silently undo the freeze.
    */
-  isRoadStreamSuspended () { return this._frozen || this._phase === 'warming' }
+  isRoadStreamSuspended () { return this._frozen || this._phase === 'warming' || this._phase === 'rejected' }
   /**
    * True while the mode is loading (reseat/reseed settling, or the region routing warm running).
    * Callers that also use the road Worker (the Quick Job planner pre-warm) hold off while this is
@@ -165,6 +170,7 @@ export class StorySystem {
     // for the road Worker, and there is nothing to drive to yet.
     this._d.setQuickJobVisible(false)
 
+    this._seed = seed          // the disclaimer names the seed that was refused
     const reseed = this._d.applySeed && String(this._d.getWorldSeed()) !== seed
     const settled = reseed ? this._d.applySeed(seed) : this._d.reseat()
     Promise.resolve(settled)
@@ -186,6 +192,56 @@ export class StorySystem {
     this._pumpAcc = WARM_PUMP_MS   // pump immediately on the next frame
     this._d.setLoading(true, 'building the region…')
   }
+
+  /**
+   * Warm done: is this seed actually playable on the CURRENT router and terrain parameters?
+   *
+   * Owner ruling 2026-08-27, replacing the earlier deterministic-reseed plan: do NOT reroll the
+   * seed. Fail safe and say so. The player typed a seed and loaded a parameter set; if those two
+   * are not compatible the honest answer is a disclaimer and a prompt for a different seed, not a
+   * world quietly swapped underneath them. That also means story mode does not need the nine-tile
+   * play area the reroll would have required, which is the whole point — the architecture stays as
+   * small as story mode currently is while the design is still being decided.
+   *
+   * The check is HARD FAILURES ONLY (owner): the region's road graph is severed, or an edge exists
+   * that nothing could give a profile to even after workstream C's grade-hard re-route. A steep but
+   * solved seed is a playable seed. Node-pin violations do NOT count — those are a bug in our
+   * geometry rather than a property of the seed, and blaming the player for our defect would be
+   * wrong (see src/world-validate.js, `playable` vs `ok`).
+   *
+   * It necessarily runs HERE, after the warm, and not when the seed is typed: you have to route the
+   * region to know whether it routes. That is the cost of the check being honest.
+   */
+  _checkSeed () {
+    let report = null
+    try {
+      report = this._d.validateRegion?.(this._center, REGION_RADIUS_M) ?? null
+    } catch (e) {
+      // A throwing validator must not strand the player on a loading screen. Enter, and say so.
+      console.warn('[story] seed validation threw — entering anyway', e)
+      this._goLive(); return
+    }
+    if (!report || report.playable) { this._goLive(); return }
+    this._phase = 'rejected'
+    this._report = report
+    this._d.setLoading(false)
+    this._d.onSeedRejected?.(this._seed, report)
+  }
+
+  /**
+   * The player chose "start anyway" at the disclaimer. Story mode is a sandbox while it is being
+   * built, and going to LOOK at what broke is a legitimate thing to want; the warning has already
+   * been shown, so this is an informed choice rather than a silent one.
+   */
+  acceptRejectedSeed () {
+    if (this._phase !== 'rejected') return
+    console.warn('[story] entering a seed the region check rejected —', this._report?.components,
+                 'components,', this._report?.condemned?.length ?? 0, 'condemned')
+    this._goLive()
+  }
+
+  /** True while the entry disclaimer is up: entered, warmed, and refused. */
+  isSeedRejected () { return this._phase === 'rejected' }
 
   /**
    * Warm done (or timed out): freeze the router and hand the region to the player.
@@ -213,6 +269,7 @@ export class StorySystem {
     this._phase = 'idle'
     this._frozen = false
     this._center = null
+    this._report = null
     this._d.setLoading(false)
     this._d.setQuickJobVisible(false)
     this._d.onRegionExit?.()  // FEAT-46: drop the POIs + their pads BEFORE the carve re-bakes below
@@ -256,7 +313,7 @@ export class StorySystem {
         this._goLive(false)
         return
       }
-      if (done) { this._goLive(); return }
+      if (done) { this._checkSeed(); return }
       if (this._elapsed > WARM_MAX_MS) {
         // Don't strand the player on a loading screen. Enter UNFROZEN so the loop keeps streaming
         // and the missing roads fill in as they drive — degraded, but playable and honest.

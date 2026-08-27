@@ -8,16 +8,32 @@
 // ONE routine, TWO triggers, and that is deliberate — the handoff's rule is that the gate and the
 // game must not drift apart:
 //
-//   test/play-area.mjs   5 FIXED seeds, run on settings changes (heavy: test:all / desktop only).
-//   story run start      the player's own seed, once at new-game, over all nine tiles, before day 1.
-//                        A failure advances the seed DETERMINISTICALLY and tries again. It is a
-//                        run-START decision, never a region-entry one (owner ruling 2026-08-27):
-//                        the world is one seed across nine tiles, so a mid-run region that turned
-//                        out broken would leave the player standing in a world that cannot be
-//                        rerolled. A one-time "generating world" wait at new-game is accepted.
+//   test/play-area.mjs   5 FIXED seeds over a 3x3 grid of 4000 m tiles, run on settings changes
+//                        (heavy: test:all / desktop only). This is the DEV bar.
+//   story mode entry     the player's own seed over the region it actually builds, once, behind
+//                        the entry loading screen. This is the PLAYER bar.
 //
-// THE PLAY AREA, owner-specified 2026-08-27: a 3x3 grid of SQUARE tiles 4000 m on a side. Nine
-// regions, 12 km x 12 km, 144 km2, one tile per story region and roughly equal area each.
+// **THE RE-ROLL IS GONE (owner ruling 2026-08-27, superseding the earlier one).** The original plan
+// was to advance the seed deterministically until a world validated, which needed story mode to
+// adopt a nine-tile play area first. The owner replaced it with something much cheaper while story
+// mode is still being decided: FAIL SAFE AND SAY SO.
+//
+//     "This seed is not routable with the current router parameters and terrain generation
+//      parameters" — a disclaimer, and a prompt to type a different seed.
+//
+// So nothing rerolls, nothing needs the 3x3 world, and the architecture stays as small as story
+// mode currently is. If connectivity later turns out to be a real problem with tuned parameters,
+// the reroll is still the answer and this routine is still what it would call.
+//
+// TWO BARS, and they differ on purpose — this is the one thing to get right when editing here:
+//
+//   `playable`  components === 1 && no condemned edge.  THE PLAYER BAR. "Is this world broken?"
+//   `ok`        playable && no node-pin violation.      THE DEV BAR. Adds our OWN geometry
+//               regressions, which are a bug in the code and not a property of the seed. Blocking
+//               a player on one would be blaming them for our defect, so the game does not.
+//
+// The MEASUREMENTS never differ — that is what stops the gate and the game drifting apart. Only the
+// policy over them does.
 //
 // WHAT IS ASSERTED (and what is only reported):
 //
@@ -35,28 +51,39 @@
 // The caller owns STREAMING: the gate streams synchronously, the game pumps its warm loop behind a
 // loading screen. Only the CHECKS live here, because only the checks must be identical.
 
-export const STORY_TILE_M = 4000    // m — one story region, square
+export const STORY_TILE_M = 4000    // m — one tile of the play-area GATE's grid, square
 export const STORY_GRID   = 3       // 3x3 tiles => 12 km x 12 km, 144 km2
 
-/** The play area's half-extent in metres — the radius a caller must stream to cover the square. */
+/** The play-area grid's half-extent in metres — the radius a caller must stream to cover it. */
 export const playAreaHalfExtent = () => STORY_TILE_M * STORY_GRID / 2
 
 /** The disc radius that contains the whole square (its circumradius). */
 export const playAreaStreamRadius = () => playAreaHalfExtent() * Math.SQRT2
 
+/** The GATE's area: the owner-specified 3x3 grid of 4000 m tiles. */
+export const gridArea = () => ({ kind: 'grid', tile: STORY_TILE_M, grid: STORY_GRID })
+
+/** The GAME's area: whatever disc story mode actually built. */
+export const discArea = (radius) => ({ kind: 'disc', radius })
+
 /**
- * Validate a streamed RoadSystem over the nine-tile play area centred on `centre`.
+ * Validate a streamed RoadSystem over `area` centred on `centre`.
  * Pure read: touches no world state, mutates nothing, allocates its own report.
  *
  * @param {object} road   a streamed RoadSystem (the caller has already covered the area)
- * @param {{x:number,z:number}} centre  the play area's centre in world XZ
- * @param {object} [params] RANGER_PARAMS, for the grade ceiling and the node-pin radius
- * @returns {{ok:boolean, components:number, condemned:string[], unpinned:object[],
- *             runs:number, km:number, grade:object, tiles:object[]}}
+ * @param {{x:number,z:number}} centre  the area's centre in world XZ
+ * @param {object} area   gridArea() for the gate, discArea(r) for the game
+ * @param {object} [params] RANGER_PARAMS, for the node-pin radius
+ * @returns {{playable:boolean, ok:boolean, components:number, condemned:string[],
+ *             unpinned:object[], runs:number, km:number, grade:object, tiles:object[]}}
  */
-export function validatePlayArea(road, centre, params = {}) {
-    const half = playAreaHalfExtent()
-    const inArea = (p) => Math.abs(p.x - centre.x) <= half && Math.abs(p.z - centre.z) <= half
+export function validateArea(road, centre, area, params = {}) {
+    const isDisc = area?.kind === 'disc'
+    const half = isDisc ? 0 : (area.tile * area.grid) / 2
+    const r2 = isDisc ? area.radius * area.radius : 0
+    const inArea = isDisc
+        ? (p) => (p.x - centre.x) ** 2 + (p.z - centre.z) ** 2 <= r2
+        : (p) => Math.abs(p.x - centre.x) <= half && Math.abs(p.z - centre.z) <= half
 
     // ── the runs that are actually in the play area ───────────────────────────────────────────
     const runs = []
@@ -134,10 +161,10 @@ export function validatePlayArea(road, centre, params = {}) {
 
     // ── per-tile road presence: a region with no road in it is a region with no missions ──────
     const tiles = []
-    for (let tz = 0; tz < STORY_GRID; tz++) for (let tx = 0; tx < STORY_GRID; tx++) {
-        const cx = centre.x + (tx - (STORY_GRID - 1) / 2) * STORY_TILE_M
-        const cz = centre.z + (tz - (STORY_GRID - 1) / 2) * STORY_TILE_M
-        const h = STORY_TILE_M / 2
+    for (let tz = 0; !isDisc && tz < area.grid; tz++) for (let tx = 0; tx < area.grid; tx++) {
+        const cx = centre.x + (tx - (area.grid - 1) / 2) * area.tile
+        const cz = centre.z + (tz - (area.grid - 1) / 2) * area.tile
+        const h = area.tile / 2
         let km = 0
         for (const [, e] of runs) {
             const cum = e.polyCum
@@ -149,8 +176,13 @@ export function validatePlayArea(road, centre, params = {}) {
         tiles.push({ tx, tz, cx, cz, km })
     }
 
+    // THE PLAYER BAR vs THE DEV BAR — see the header. `playable` is what story mode's disclaimer
+    // reads: the world is severed, or an edge exists that nothing could give a profile to. `ok`
+    // adds node-pin, which is OUR bug rather than the seed's and must never block a player.
+    const playable = components === 1 && condemned.length === 0
     return {
-        ok: components === 1 && condemned.length === 0 && unpinned.length === 0,
+        playable,
+        ok: playable && unpinned.length === 0,
         components, condemned, unpinned,
         runs: runs.length, km: g.km,
         grade: { over20: g.over20 / Math.max(1, g.n), over24: g.over24 / Math.max(1, g.n),
@@ -159,4 +191,22 @@ export function validatePlayArea(road, centre, params = {}) {
                  reroutes: road._v2Reroutes || 0 },
         tiles,
     }
+}
+
+/** Back-compat shim for the gate: the 3x3 grid area. */
+export function validatePlayArea(road, centre, params = {}) {
+    return validateArea(road, centre, gridArea(), params)
+}
+
+/**
+ * The one-line reason a seed is not playable, for the entry disclaimer. Null when it is.
+ * Deliberately plain: the player typed a seed, not a bug report.
+ */
+export function unplayableReason(report) {
+    if (!report) return 'the region could not be built'
+    if (report.components > 1)
+        return `the road network breaks into ${report.components} separate pieces — parts of the region cannot be driven to`
+    if (report.condemned.length)
+        return `${report.condemned.length} road${report.condemned.length === 1 ? '' : 's'} could not be given a drivable profile on this terrain`
+    return null
 }

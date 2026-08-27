@@ -57,6 +57,7 @@ import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger
 import { MissionSystem, MISSION_PLAN_RADIUS, PLAN_RESTREAM_MOVE } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
+import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney } from './economy.js'  // FEAT-53: payout, wallet, good deeds
@@ -4271,6 +4272,13 @@ const storySystem = new StorySystem({
     // spheres left on in free roam don't linger into story mode.
     if (locked && _dbgSpheresOn) { _dbgSpheresOn = false; _dbgSpheres.forEach(m => { m.visible = false }) }
   },
+  // BUG-56 workstream C: is the seed the player typed actually playable on the parameters that are
+  // loaded? story.js owns WHEN (after the region warm — you have to route it to know) and WHAT TO DO
+  // (the disclaimer); main.js owns the road system, so it answers. The check itself is
+  // src/world-validate.js, the SAME routine test/play-area.mjs gates on, so the game and the gate
+  // cannot drift apart on what "broken" means.
+  validateRegion: (centre, radius) => validateArea(roadSystem, centre, discArea(radius), RANGER_PARAMS),
+  onSeedRejected: (seed, report) => _showSeedModal(report, seed),
   hidePauseMenu: () => _hidePauseMenu(),
   setQuickJobVisible: (visible) => { const el = document.getElementById('quickjob-btn'); if (el) el.style.display = visible ? 'block' : 'none' },
   setLoading: (visible, text) => {
@@ -4379,15 +4387,36 @@ const storySystem = new StorySystem({
 })
 
 // ── Story-mode seed prompt (FEAT-43) ──────────────────────────────────────────────────────
-function _showSeedModal () {
+/**
+ * Open the story seed prompt. With a `report` it opens in its REFUSED state: the seed just entered
+ * routed a region that is severed or carries a road nothing could give a profile to, so the player
+ * is told plainly and asked for a different one. Nothing rerolls — that was the owner's ruling
+ * (2026-08-27), and it is why story mode does not need a nine-tile play area to be safe.
+ */
+function _showSeedModal (report = null, rejectedSeed = null) {
   const el = document.getElementById('story-seed-modal')
-  if (el) el.style.display = 'flex'
+  if (el) {
+    el.style.display = 'flex'
+    el.classList.toggle('rejected', !!report)
+  }
+  if (report) {
+    const why = document.getElementById('ss-reject-why')
+    const detail = document.getElementById('ss-reject-detail')
+    if (why) why.textContent = `Seed "${rejectedSeed}": ${unplayableReason(report)}.`
+    if (detail) {
+      const bits = [`${report.runs} roads · ${report.km.toFixed(0)} km in the region`]
+      if (report.components > 1) bits.push(`${report.components} disconnected pieces`)
+      if (report.condemned.length) bits.push(`${report.condemned.length} unsolvable: ${report.condemned.slice(0, 3).join(', ')}`)
+      bits.push(`max road grade ${((RANGER_PARAMS.roadV2?.gMaxRoad ?? 0.24) * 100).toFixed(0)} %`)
+      detail.textContent = bits.join('  ·  ')
+    }
+  }
   const inp = document.getElementById('ss-seed')
-  if (inp) { inp.value = _seedString; inp.focus(); inp.select() }
+  if (inp) { inp.value = report ? '' : _seedString; inp.focus(); inp.select() }
 }
 function _hideSeedModal () {
   const el = document.getElementById('story-seed-modal')
-  if (el) el.style.display = 'none'
+  if (el) { el.style.display = 'none'; el.classList.remove('rejected') }
 }
 function _startStoryFromModal () {
   const seed = document.getElementById('ss-seed')?.value ?? '6'
@@ -4396,7 +4425,21 @@ function _startStoryFromModal () {
   storySystem.enter(seed)
 }
 document.getElementById('ss-start')?.addEventListener('click', _startStoryFromModal)
-document.getElementById('ss-cancel')?.addEventListener('click', () => _hideSeedModal())
+// "start anyway": the region behind the disclaimer is already built and frozen, so honouring this
+// costs nothing but a call. Story mode is a sandbox while it is being designed and going to LOOK at
+// what broke is a legitimate thing to want — the warning has been read, so this is informed.
+document.getElementById('ss-anyway')?.addEventListener('click', () => {
+  _hideSeedModal()
+  storySystem.acceptRejectedSeed()
+})
+// Cancel out of a REFUSED entry leaves story mode entirely — the region is built but the player has
+// declined it, and leaving them standing in a world the check refused would be the silent failure
+// this whole feature exists to avoid.
+document.getElementById('ss-cancel')?.addEventListener('click', () => {
+  const wasRejected = storySystem.isSeedRejected()
+  _hideSeedModal()
+  if (wasRejected) storySystem.exit()
+})
 document.getElementById('ss-seed')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); _startStoryFromModal() }
   else if (e.key === 'Escape') { e.preventDefault(); _hideSeedModal() }
