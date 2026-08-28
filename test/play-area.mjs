@@ -49,7 +49,8 @@ for (const seed of SEEDS) {
 
   const pc = (v) => `${(100 * v).toFixed(2)} %`
   const head = `seed ${seed.padEnd(4)} ${String(r.runs).padStart(4)} runs · ${r.km.toFixed(0).padStart(4)} km · ` +
-               `components ${r.components} · condemned ${r.condemned.length} · unpinned ${r.unpinned.length} · ${secs}s`
+               `components ${r.components} · condemned ${r.condemned.length} · unpinned ${r.unpinned.length} · ${secs}s` +
+               (r.rimIslands ? `  (+${r.rimIslands} rim island${r.rimIslands === 1 ? '' : 's'} not counted)` : '')
   if (r.ok) console.log(`  ok   ${head}`)
   else { fails++; console.log(`  FAIL ${head}`) }
 
