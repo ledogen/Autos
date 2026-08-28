@@ -271,7 +271,7 @@ function _segCrossParam(ax, az, bx, bz, cx, cz, dx, dz) {
  * @returns {{d: number, cum: number, y: number}}
  */
 function _nearestOnPolyXZ(px, pz, pts, polyCum, lo = -Infinity, hi = Infinity) {
-    let d = Infinity, cum = 0, y = 0
+    let d = Infinity, cum = 0, y = 0, tx = 1, tz = 0
     for (let i = 1; i < pts.length; i++) {
         if (polyCum[i] < lo || polyCum[i - 1] > hi) continue   // outside the searched arc window
         const a = pts[i - 1], b = pts[i]
@@ -283,9 +283,16 @@ function _nearestOnPolyXZ(px, pz, pts, polyCum, lo = -Infinity, hi = Infinity) {
         const t = l2 > 1e-12 ? Math.max(0, Math.min(1, ((px - a.x) * ex + (pz - a.z) * ez) / l2)) : 0
         const qx = a.x + t * ex, qz = a.z + t * ez
         const dd = Math.hypot(px - qx, pz - qz)
-        if (dd < d) { d = dd; cum = polyCum[i - 1] + t * (polyCum[i] - polyCum[i - 1]); y = a.y + t * (b.y - a.y) }
+        if (dd < d) {
+            d = dd; cum = polyCum[i - 1] + t * (polyCum[i] - polyCum[i - 1]); y = a.y + t * (b.y - a.y)
+            // tx/tz — the unit XZ tangent of the winning segment, in the polyline's own direction.
+            // Callers that copy a RUN-FRAME quantity across two runs (camber, BUG-56 B4) need it to
+            // tell whether the two runs walk this ground the same way round.
+            const l = Math.sqrt(l2) || 1
+            tx = ex / l; tz = ez / l
+        }
     }
-    return { d, cum, y }
+    return { d, cum, y, tx, tz }
 }
 
 /**
@@ -9345,7 +9352,18 @@ export class RoadSystem {
                 const t = Math.max(0, Math.min(1, (nr.d - D0) / (D1 - D0)))
                 const f = 1 - t * t * (3 - 2 * t)            // 1 on top of the winner, 0 once clear
                 if (f <= 0) continue
-                const wc = this.camberProfile(nr.cum - wOrigin, sp.owner)
+                // ORIENTATION (2026-08-28). Camber is a RUN-FRAME angle: +camber banks toward that
+                // run's own +lateral axis (t.z, -t.x). A leg that cedes its START to the winner's END
+                // walks the shared stretch BACKWARDS, so its +lateral axis is the winner's -lateral,
+                // and the winner's bank is -wc in THIS run's frame. Copying the raw angle banked the
+                // leg the opposite way IN THE WORLD — two pavements on one piece of ground tilted 2x
+                // camber apart, +/-2.5 m of edge disagreement at the owner's seed-21 fork (218,255),
+                // on 35 of the battery's 64 departure spans. Match the FRAMES, then the angle.
+                const j = Math.max(1, Math.min(i, e.points.length - 1))
+                const q0 = e.points[j - 1], q1 = e.points[j]
+                const lx = q1.x - q0.x, lz = q1.z - q0.z, ll = Math.hypot(lx, lz) || 1
+                const orient = (lx / ll) * nr.tx + (lz / ll) * nr.tz < 0 ? -1 : 1
+                const wc = orient * this.camberProfile(nr.cum - wOrigin, sp.owner)
                 camberRad[i] += (wc - camberRad[i]) * f
             }
         }

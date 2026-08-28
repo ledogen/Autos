@@ -201,7 +201,14 @@ const scan = (road) => {
         if (exE <= 0) continue
         if (aEnds || m.s < PADR || m.s > LB - PADR) { edgePad = true; continue }
         if (!worst || exE > worst.excess)
-          worst = { rule: 'edge', excess: exE, dy: dyE, sep: sepE, camA, camB }
+          // `orient`: do the two runs walk this ground the same way round? Camber is a RUN-FRAME
+          // angle, so the winner's bank reads as -camB in A's frame when the two oppose. The GAP
+          // above is already world-space (each lat is taken in its own run's frame); orient is only
+          // so the ROLL RESIDUAL below compares like with like. An unsigned |camA - camB| printed
+          // 0.0 deg on decks tilted 2x camber apart, which is how B4's sign error survived a whole
+          // build pass looking like a success (fixed 2026-08-28).
+          worst = { rule: 'edge', excess: exE, dy: dyE, sep: sepE, camA, camB,
+                    orient: txA * m.tx + tzA * m.tz < 0 ? -1 : 1 }
       }
 
       if (edgePad) sawPadEdge = true
@@ -238,7 +245,7 @@ for (const W of WINDOWS) {
   const { lips, padPairs, padEdgePairs, runs } = scan(buildWindow(W, P))
   totalLips += lips.length; totalPad += padPairs; totalPadEdge += padEdgePairs
   for (const w of lips) if (w.tag === 'fork' && w.rule === 'edge')
-    forkCamber.push(Math.abs(w.camA - w.camB) * 180 / Math.PI)
+    forkCamber.push(Math.abs(w.camA - (w.orient ?? 1) * w.camB) * 180 / Math.PI)
   const byTag = {}
   for (const w of lips) { const t = `${w.tag}/${w.rule}`; byTag[t] = (byTag[t] || 0) + 1 }
   const head = `${W.name.padEnd(20)} runs ${String(runs).padStart(3)} · span ${String(lips.length).padStart(3)} · pad ${String(padPairs).padStart(3)} deck / ${String(padEdgePairs).padStart(3)} edge`
@@ -247,7 +254,7 @@ for (const W of WINDOWS) {
   console.log(`  FAIL ${head} · ${JSON.stringify(byTag)}`)
   for (const w of lips.slice(0, VERBOSE ? lips.length : TOP)) {
     const bank = w.rule === 'edge'
-      ? `  camber ${(w.camA * 180 / Math.PI).toFixed(1)}/${(w.camB * 180 / Math.PI).toFixed(1)} deg`
+      ? `  camber ${(w.camA * 180 / Math.PI).toFixed(1)}/${((w.orient ?? 1) * w.camB * 180 / Math.PI).toFixed(1)} deg${w.orient < 0 ? ' (rev)' : ''}`
       : ''
     console.log(`         ${`${w.tag}/${w.rule}`.padEnd(12)} (${w.x.toFixed(0)},${w.z.toFixed(0)})  ${w.rule === 'edge' ? 'edge' : 'deck'} gap ${w.dy.toFixed(2)} m at ${w.sep.toFixed(1)} m separation (allowed ${allowed(w.sep).toFixed(2)}), ${w.dNode.toFixed(0)} m from the node${bank}   ${w.pair}`)
   }
