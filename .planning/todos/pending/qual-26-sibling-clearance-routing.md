@@ -125,3 +125,12 @@ back as the reason not to do this.
 
 `.planning/HANDOFF-2026-08-27-BUG-56-build.md` — "The A decision" section, with the full A0 table
 and the sweep that killed the cheap version.
+
+## Status 2026-09-01 — the NARROW cost (R5) shipped; this ticket stays banked
+
+The owner's R5 ruling ("a narrow sibling-departure cost, and nothing wider") landed on
+`feature/corridor-router` (`e97d611`): sibling BEARINGS ride the edge spec and `corridorSearch`
+prices departures within `sibConeDeg` of one on the demoted rungs only (`wSibDepart`, `sibReachM`
+knobs in `roadV2`). That is deliberately NOT this ticket's full two-pass — corridors are still not
+priced as occupied. Re-measure the demoted-rung population after the corridor-router branch merges;
+this ticket's scope is what remains.
