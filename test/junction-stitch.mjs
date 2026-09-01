@@ -139,7 +139,7 @@ const scan = (road) => {
     .filter((r) => r.a && r.b && r.e.points?.length > 1)
   for (const r of runs) r.bb = bboxOf(r.e.points)
   const lips = []
-  let padPairs = 0, padEdgePairs = 0
+  let padPairs = 0, padEdgePairs = 0, farBand = 0
   for (let i = 0; i < runs.length; i++) for (let j = 0; j < runs.length; j++) {
     if (i === j) continue
     const A = runs[i], B = runs[j]
@@ -168,6 +168,7 @@ const scan = (road) => {
     relPts(A, B.k); relPts(B, A.k)
     let lip = null, sawPad = false, sawPadEdge = false
     let lo = 0
+    // (farBand accumulates per-pair below via the closure counter)
     for (let s = 0; s <= LA; s += STEP) {
       while (lo + 2 < cA.length && cA[lo + 1] <= s) lo++
       const u = (s - cA[lo]) / Math.max(1e-9, cA[lo + 1] - cA[lo])
@@ -177,6 +178,12 @@ const scan = (road) => {
       const n = nearestOn(ax, az, B.e.points, B.e.polyCum)
       if (n.d >= NEAR) continue
       if (inBore(A.e, s) || inBore(B.e, n.s)) continue
+      // R2/R8 (owner, 2026-08-31/09-01): "clear of one another" is ONE ROAD WIDTH centre to
+      // centre — over 10 m each road owes the other nothing (own deck, own camber, own grade;
+      // R8's table). The fill-slope inequality between 10 and 18 m was the old generic ruler and
+      // it is what scored class E's junctions "far too big". Those samples are counted, not
+      // gated: the 10–18 m band still shares earthworks, and the report keeps it visible.
+      if (n.d >= 2 * HW) { farBand++; continue }
       let dNode = Infinity
       for (const q of nodePts) dNode = Math.min(dNode, Math.hypot(ax - q.x, az - q.z))
 
@@ -256,10 +263,10 @@ const scan = (road) => {
     if (out.some((o) => Math.hypot(o.x - l.x, o.z - l.z) < 25)) continue
     out.push(l)
   }
-  return { lips: out, padPairs: padPairs >> 1, padEdgePairs: padEdgePairs >> 1, runs: runs.length }
+  return { lips: out, padPairs: padPairs >> 1, padEdgePairs: padEdgePairs >> 1, farBand: farBand >> 1, runs: runs.length }
 }
 
-let fails = 0, totalLips = 0, totalPad = 0, totalPadEdge = 0
+let fails = 0, totalLips = 0, totalPad = 0, totalPadEdge = 0, totalFar = 0
 // BUG-56 B4/B6 split the ONE normal invariant into roll and pitch, so track them apart: this is the
 // roll residual on the population B4 owns. It went 15.6 deg -> 0.9 deg at mark A and 14.6 deg -> 0.0
 // at mark B when B4 landed, while the site COUNT barely moved — because a pair stays red until both
@@ -267,8 +274,8 @@ let fails = 0, totalLips = 0, totalPad = 0, totalPadEdge = 0
 const forkCamber = []
 for (const W of WINDOWS) {
   if (ONLY && !W.name.includes(ONLY)) continue
-  const { lips, padPairs, padEdgePairs, runs } = scan(buildWindow(W, P))
-  totalLips += lips.length; totalPad += padPairs; totalPadEdge += padEdgePairs
+  const { lips, padPairs, padEdgePairs, farBand, runs } = scan(buildWindow(W, P))
+  totalLips += lips.length; totalPad += padPairs; totalPadEdge += padEdgePairs; totalFar += farBand
   for (const w of lips) if (w.tag === 'fork' && w.rule === 'edge')
     forkCamber.push(Math.abs(w.camA - (w.orient ?? 1) * w.camB) * 180 / Math.PI)
   const byTag = {}
@@ -288,7 +295,7 @@ for (const W of WINDOWS) {
 
 const fc = forkCamber.slice().sort((a, b) => b - a)
 const med = fc.length ? fc[fc.length >> 1] : 0
-console.log(`\njunction-stitch: ${totalLips} unstitched pair-stretches (gating) · pad-vicinity pairs (report): ${totalPad} deck, ${totalPadEdge} edge`)
+console.log(`\njunction-stitch: ${totalLips} unstitched pair-stretches (gating) · pad-vicinity pairs (report): ${totalPad} deck, ${totalPadEdge} edge · legal two-roads samples 10–18 m (report): ${totalFar}`)
 console.log(`   fork ROLL residual (B4, report): ${fc.length} fork rows · worst ${(fc[0] ?? 0).toFixed(1)} deg · median ${med.toFixed(1)} deg of camber mismatch`)
 if (fails) { console.log('FAIL — road decks diverge faster than the ground between them can slope (BUG-56)'); process.exit(1) }
 console.log('PASS')
