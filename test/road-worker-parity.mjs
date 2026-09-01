@@ -50,8 +50,10 @@ for (const seed of [20, 11]) {
   for (const [c1, c2] of g.edges) {
     if (compared >= 8) break
     if ((c1[0] - c2[0] || c1[1] - c2[1] || c1[2] - c2[2]) > 0) continue   // canonical spellings only
+    // R4: dirful entries are pin-fingerprinted ('#p…') — find this edge's entry by key prefix.
     const key = road._edgeClsKey(c1, c2)
     let registered = road._proto.cls.get(key)
+    if (!registered) for (const [k, v] of road._proto.cls) if (k.startsWith(key + '#p')) { registered = v; break }
     if (!registered || !(registered.length > 1e-6)) continue
     // R4: route with the pins the cached entry was ACTUALLY routed with (_v2DirsSpec). The gate's
     // target is the worker's FIELD derivation, and the settle pass now routes margin edges whose

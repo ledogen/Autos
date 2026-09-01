@@ -1812,11 +1812,10 @@ export class RoadSystem {
             if (jobs.length >= cap || evals >= evalCap) { deferred = true; break }
             let [c1, c2] = edges[(start + i) % n]
             if ((c1[0] - c2[0] || c1[1] - c2[1] || c1[2] - c2[2]) > 0) [c1, c2] = [c2, c1]   // canonical spelling
-            const key = this._edgeClsKey(c1, c2)
-            if (this._pendingRoutes.has(key)) { deferred = true; continue }
-            evals++   // past here this edge pays pin + disc + node-height derivation
+            evals++   // this edge pays pin + disc + node-height derivation
             const dirs = this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2))
-            if (dirs && dirs._built) continue   // R4: '#b'-namespaced (pin class flipped) — sync path routes it
+            const key = this._edgeClsKey(c1, c2) + this._v2DirsNS(dirs)   // R4: pin-fingerprinted
+            if (this._pendingRoutes.has(key)) { deferred = true; continue }
             const cached = this._proto.cls?.get(key)
             if (cached && (!dirs || cached._v2Dirs)) continue   // cache-complete (mirrors the _edgeCenterline guard)
             const spec = this._v2EdgeSpec(c1, c2, dirs)
@@ -2498,16 +2497,20 @@ export class RoadSystem {
         return t && t.rev === this._networkRev ? t.tag : this._networkRev
     }
 
-    // R4: the '#b' route-cache namespace is CONTENT-KEYED on the pins themselves. A bare '#b'
-    // was measured non-deterministic under streaming history (world-determinism, spawn moved
-    // 10.16 m): two windows can derive DIFFERENT built pins for one edge (fringe delete verdicts
-    // differ), and a bare suffix let the first window's geometry answer the second window's
-    // request. With the pin vector in the key, an entry is a pure fn of (edge, pins).
+    // R4: EVERY dirful route is cache-keyed on the pins themselves (a pure fn of (edge, pins)).
+    // Two failures forced this, both measured by world-determinism's 10.16 m spawn move:
+    //   1. a bare '#b' suffix let one window's built pins answer another window's request;
+    //   2. the settle pass routes MARGIN edges (never registered in this window) whose pins come
+    //      from the band graph's fringe-truncated adjacency — cached under the plain key, they
+    //      poisoned the window that later registers the edge with its interior (correct) pins.
+    //      The old cache guard's "a dirful entry IS the edge's one true geometry" assumption only
+    //      ever held for in-band edges, and pre-R4 only those were dirful-routed.
+    // Sibling bearings ride the key too — they steer demoted rungs, so they are route content.
     _v2DirsNS(dirs) {
-        if (!dirs || !dirs._built) return ''
+        if (!dirs) return ''
         const f = (d) => d ? `${d.x.toFixed(5)},${d.z.toFixed(5)}` : 'x'
         const fs = (a) => a ? a.map((d) => `${d.x.toFixed(3)},${d.z.toFixed(3)}`).join('|') : 'x'
-        return `#b${f(dirs.startDir)};${f(dirs.goalDir)};${fs(dirs.sibStart)};${fs(dirs.sibGoal)}`
+        return `#p${f(dirs.startDir)};${f(dirs.goalDir)};${fs(dirs.sibStart)};${fs(dirs.sibGoal)}`
     }
 
     // FEAT-68 deg-2 canonical approach headings: a pass-through node is a POINT ON a longer
