@@ -271,7 +271,7 @@ function _segCrossParam(ax, az, bx, bz, cx, cz, dx, dz) {
  * @returns {{d: number, cum: number, y: number}}
  */
 function _nearestOnPolyXZ(px, pz, pts, polyCum, lo = -Infinity, hi = Infinity) {
-    let d = Infinity, cum = 0, y = 0, tx = 1, tz = 0
+    let d = Infinity, cum = 0, y = 0, tx = 1, tz = 0, fx = px, fz = pz
     for (let i = 1; i < pts.length; i++) {
         if (polyCum[i] < lo || polyCum[i - 1] > hi) continue   // outside the searched arc window
         const a = pts[i - 1], b = pts[i]
@@ -290,9 +290,10 @@ function _nearestOnPolyXZ(px, pz, pts, polyCum, lo = -Infinity, hi = Infinity) {
             // tell whether the two runs walk this ground the same way round.
             const l = Math.sqrt(l2) || 1
             tx = ex / l; tz = ez / l
+            fx = qx; fz = qz
         }
     }
-    return { d, cum, y, tx, tz }
+    return { d, cum, y, tx, tz, fx, fz }
 }
 
 /**
@@ -1815,6 +1816,7 @@ export class RoadSystem {
             if (this._pendingRoutes.has(key)) { deferred = true; continue }
             evals++   // past here this edge pays pin + disc + node-height derivation
             const dirs = this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2))
+            if (dirs && dirs._built) continue   // R4: '#b'-namespaced (pin class flipped) — sync path routes it
             const cached = this._proto.cls?.get(key)
             if (cached && (!dirs || cached._v2Dirs)) continue   // cache-complete (mirrors the _edgeCenterline guard)
             const spec = this._v2EdgeSpec(c1, c2, dirs)
@@ -2229,10 +2231,21 @@ export class RoadSystem {
 
     // Graph-mode degree of a site (incident Urquhart-edge count over the current band graph) — drives
     // junction classification: degree ≥ 3 = junction (flatten + camber→0 + pad); 2 = continuing path.
+    // R4 (2026-09-01): the degree is the BUILT degree — crossing-rung deletions (_v2Deleted, frozen
+    // per rev by _v2SettleDeletions) subtract, because a deleted edge never registers a run. Before
+    // R4 a node that LOST an edge to the delete rung still classified (and padded, and flattened
+    // camber) as its graph degree — the seed-6 node 4,1,1 three-way-plaza-on-two-roads defect.
     _graphDegreeOf(id) {
         const g = this._proto.graph
         if (!g) return 2
-        return g.adj.get(g.key(id))?.size ?? 0
+        const nk = g.key(id)
+        const nbrs = g.adj.get(nk)
+        if (!nbrs) return 0
+        const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen.del : null
+        if (!delF || !delF.size) return nbrs.size
+        let n = 0
+        for (const o of nbrs) if (!delF.has(nk + '|' + o)) n++
+        return n
     }
 
     // FEAT-68 (2026-08-19): the crossing + clearance culls are DELETED, with their one-ring
@@ -2390,7 +2403,7 @@ export class RoadSystem {
         // BUG-56 C: each grade-hard re-route rung is a SEPARATE geometry for the same edge, so each
         // gets its own cache namespace — a rung must never be handed back to an ordinary request,
         // an ordinary route must never be handed back to a re-route, and two rungs must not collide.
-        const key = this._edgeClsKey(c1, c2) + (hardGrade ? `#g${hardGrade}` : '')
+        const key = this._edgeClsKey(c1, c2) + (hardGrade ? `#g${hardGrade}` : '') + this._v2DirsNS(dirs)
         const cached = this._proto.cls.get(key)
         // CACHE-POISONING GUARD: entries are tagged `_v2Dirs` when routed by a dirs-aware caller.
         // A dirless caller (edgeParData's standalone fallback — it only touches never-registered
@@ -2410,6 +2423,7 @@ export class RoadSystem {
             // reversed traversal: leave B along −goalDir, arrive at A along −startDir
             const neg = (d) => d ? { x: -d.x, z: -d.z } : undefined
             const flip = dirs ? { startDir: neg(dirs.goalDir), goalDir: neg(dirs.startDir) } : undefined
+            if (flip && dirs._built) flip._built = true
             const fwd = this._edgeCenterline(c2, c1, flip, hardGrade)
             const cl = new Centerline(reversePrimitives(fwd.primitives))
             if (fwd._v2Dirs) cl._v2Dirs = true
@@ -2449,7 +2463,7 @@ export class RoadSystem {
             Math.min(A.x, B.x) - margin, Math.min(A.z, B.z) - margin,
             Math.max(A.x, B.x) + margin, Math.max(A.z, B.z) + margin) : undefined
         return {
-            key: this._edgeClsKey(c1, c2) + (hardGrade ? `#g${hardGrade}` : ''),   // its own cache namespace (BUG-56 C)
+            key: this._edgeClsKey(c1, c2) + (hardGrade ? `#g${hardGrade}` : '') + this._v2DirsNS(dirs),   // its own cache namespace (BUG-56 C / R4)
             ax: A.x, az: A.z, yA: this._v2NodeHeight(A.x, A.z),
             bx: B.x, bz: B.z, yB: this._v2NodeHeight(B.x, B.z),
             margin, blockedDiscs, dirs,
@@ -2472,6 +2486,29 @@ export class RoadSystem {
      */
     _v2Costs() { return this._params?.roadV2 ?? V2_COSTS }
 
+    // R4 (2026-09-01): the PLAN REV. The plan layer (samples, conflict pairs, merge/shove/ceded/
+    // disjoint/bundle/census/view memos) is versioned by this tag rather than _networkRev, so the
+    // assembly can run it TWICE per re-stream when the crossing rung's deletions flip a node's
+    // pin class: pass 1 (tag == _networkRev) plans on graph-degree pins and decides the delete
+    // set; pass 2 (tag == _networkRev + 0.5) re-plans on BUILT-degree pins with the delete
+    // verdicts FROZEN (_v2DeleteMemo stays on _networkRev). Deletions are the one verdict judged
+    // on layer-0 — that is what breaks the pins→routes→crossings→degree→pins cycle.
+    _planRev() {
+        const t = this._v2PlanTag
+        return t && t.rev === this._networkRev ? t.tag : this._networkRev
+    }
+
+    // R4: the '#b' route-cache namespace is CONTENT-KEYED on the pins themselves. A bare '#b'
+    // was measured non-deterministic under streaming history (world-determinism, spawn moved
+    // 10.16 m): two windows can derive DIFFERENT built pins for one edge (fringe delete verdicts
+    // differ), and a bare suffix let the first window's geometry answer the second window's
+    // request. With the pin vector in the key, an entry is a pure fn of (edge, pins).
+    _v2DirsNS(dirs) {
+        if (!dirs || !dirs._built) return ''
+        const f = (d) => d ? `${d.x.toFixed(5)},${d.z.toFixed(5)}` : 'x'
+        return `#b${f(dirs.startDir)};${f(dirs.goalDir)}`
+    }
+
     // FEAT-68 deg-2 canonical approach headings: a pass-through node is a POINT ON a longer
     // corridor, not a route boundary — its two incident edges should meet tangentially. The
     // through-direction at a deg-2 node of the SETTLED post-drop adjacency is the
@@ -2486,6 +2523,11 @@ export class RoadSystem {
         if (!nbrs) return null
         let ks = [...nbrs]
         if (drop) ks = ks.filter((o) => !drop.has(nk + '|' + o))
+        // R4: pins read the BUILT degree — an edge the crossing rung deleted is not a road, and
+        // the node it leaves behind pins as what remains. The frozen set is per-rev, minted by
+        // _v2SettleDeletions AFTER plan pass 1, so pass 1 itself is graph-degree by construction.
+        const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen.del : null
+        if (delF && delF.size) ks = ks.filter((o) => !delF.has(nk + '|' + o))
         if (ks.length !== 2) return null
         ks.sort()
         const p1 = this._nodePos(ks[0].split(',').map(Number))
@@ -2511,11 +2553,16 @@ export class RoadSystem {
     // Leaf ends (degree 1) stay unpinned — there is nothing to separate.
     _v2EdgeDirs(g, drop, kA, kB) {
         const s = this._v2NodeThrough(g, drop, kA), t = this._v2NodeThrough(g, drop, kB)
+        const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen : null
         const degOf = (nk) => {
             const nbrs = g.adj.get(nk)
             if (!nbrs) return 0
             let n = 0
-            for (const o of nbrs) if (!drop || !drop.has(nk + '|' + o)) n++
+            for (const o of nbrs) {
+                if (drop && drop.has(nk + '|' + o)) continue
+                if (delF && delF.del.size && delF.del.has(nk + '|' + o)) continue   // R4: built degree
+                n++
+            }
             return n
         }
         let chord
@@ -2534,7 +2581,12 @@ export class RoadSystem {
         const goalDir = t ? (t.toward === kA ? neg(t) : { x: t.x, z: t.z })
             : (degOf(kB) >= 3 ? chordDir() : undefined)
         if (!startDir && !goalDir) return undefined
-        return { startDir, goalDir }
+        const dirs = { startDir, goalDir }
+        // R4: an edge whose endpoint's pin CLASS flipped when the delete set settled routes in its
+        // own cache namespace ('#b') — its pins differ from the layer-0 pins the warm path derives,
+        // and the two geometries must never collide on one cache key.
+        if (delF && (delF.flip.has(kA) || delF.flip.has(kB))) dirs._built = true
+        return dirs
     }
 
     // ── BUG-53: fork-at-last-crossing trims (owner-ruled 2026-08-21) ──────────────────────────
@@ -2566,8 +2618,8 @@ export class RoadSystem {
     // arrays _registerRun would build for it. Memoization only (pure fn of terrain + edge + prices).
     _v2RunSample(g, drop, c1, c2) {
         const key = `g:${g.key(c1)}:${g.key(c2)}`
-        if (!this._v2SampleMemo || this._v2SampleMemo.rev !== this._networkRev)
-            this._v2SampleMemo = { rev: this._networkRev, map: new Map() }
+        if (!this._v2SampleMemo || this._v2SampleMemo.rev !== this._planRev())
+            this._v2SampleMemo = { rev: this._planRev(), map: new Map() }
         const memo = this._v2SampleMemo.map
         const hit = memo.get(key)
         if (hit !== undefined) return hit
@@ -2610,8 +2662,8 @@ export class RoadSystem {
     // shape to it. Crossings survive in the code for ONE job — licensing a merge to bridge a gap in
     // the conflict, which is what collapses a bow (capture 1044/7423). Mere proximity never bridges.
     _v2NodeMerges(g, drop, nk) {
-        if (!this._v2MergeMemo || this._v2MergeMemo.rev !== this._networkRev)
-            this._v2MergeMemo = { rev: this._networkRev, map: new Map() }
+        if (!this._v2MergeMemo || this._v2MergeMemo.rev !== this._planRev())
+            this._v2MergeMemo = { rev: this._planRev(), map: new Map() }
         const memo = this._v2MergeMemo.map
         const hit = memo.get(nk)
         if (hit !== undefined) return hit
@@ -3174,8 +3226,8 @@ export class RoadSystem {
     _v2DisjointFor(g, drop, wide, c1, c2) {
         const kA = g.key(c1), kB = g.key(c2)
         const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
-        if (!this._v2DisjointMemo || this._v2DisjointMemo.rev !== this._networkRev)
-            this._v2DisjointMemo = { rev: this._networkRev, map: new Map() }
+        if (!this._v2DisjointMemo || this._v2DisjointMemo.rev !== this._planRev())
+            this._v2DisjointMemo = { rev: this._planRev(), map: new Map() }
         const memo = this._v2DisjointMemo.map
         if (memo.has(ck)) return memo.get(ck)
         const fail = (v) => { memo.set(ck, v); return v }
@@ -3282,8 +3334,8 @@ export class RoadSystem {
     _v2ConflictPairs(g, drop, wide, c1, c2) {
         const kA = wide.key(c1), kB = wide.key(c2)
         const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
-        if (!this._v2ConflictMemo || this._v2ConflictMemo.rev !== this._networkRev)
-            this._v2ConflictMemo = { rev: this._networkRev, map: new Map() }
+        if (!this._v2ConflictMemo || this._v2ConflictMemo.rev !== this._planRev())
+            this._v2ConflictMemo = { rev: this._planRev(), map: new Map() }
         const memo = this._v2ConflictMemo.map
         if (memo.has(ck)) return memo.get(ck)
         const fin = (v) => { memo.set(ck, v); return v }
@@ -3441,8 +3493,8 @@ export class RoadSystem {
     _v2CededExtents(g, drop, wide, c1, c2) {
         const kA = g.key(c1), kB = g.key(c2)
         const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
-        if (!this._v2ExtentMemo || this._v2ExtentMemo.rev !== this._networkRev)
-            this._v2ExtentMemo = { rev: this._networkRev, map: new Map() }
+        if (!this._v2ExtentMemo || this._v2ExtentMemo.rev !== this._planRev())
+            this._v2ExtentMemo = { rev: this._planRev(), map: new Map() }
         const memo = this._v2ExtentMemo.map
         if (memo.has(ck)) return memo.get(ck)
         const fin = (v) => { memo.set(ck, v); return v }
@@ -3489,8 +3541,8 @@ export class RoadSystem {
     _v2ShoveFor(g, drop, wide, c1, c2) {
         const kA = g.key(c1), kB = g.key(c2)
         const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
-        if (!this._v2ShoveMemo || this._v2ShoveMemo.rev !== this._networkRev)
-            this._v2ShoveMemo = { rev: this._networkRev, map: new Map() }
+        if (!this._v2ShoveMemo || this._v2ShoveMemo.rev !== this._planRev())
+            this._v2ShoveMemo = { rev: this._planRev(), map: new Map() }
         const memo = this._v2ShoveMemo.map
         if (memo.has(ck)) return memo.get(ck)
         const fin = (v) => { memo.set(ck, v); return v }
@@ -3689,6 +3741,10 @@ export class RoadSystem {
         }
         const memo = this._v2DeleteMemo.map
         if (memo.has(ck)) return memo.get(ck)
+        // R4: after the settle pass the delete set is CLOSED for this rev — a pass-2 (built-pin)
+        // caller must never mint a verdict from re-planned geometry, or built degree would change
+        // under the pins that were derived from it. An unseen pair is alive, full stop.
+        if (this._v2DelFrozen?.rev === this._networkRev) return null
         const fin = (v) => { memo.set(ck, v); return v }
         const pairs = this._v2ConflictPairs(g, drop, wide, c1, c2)
         if (!pairs.length) return fin(null)
@@ -3809,8 +3865,8 @@ export class RoadSystem {
     // through _v2NodeMerges exactly as before.
     _v2PairCensus(mx0, mx1, mz0, mz1, g, drop, wide) {
         const sig = `${mx0}:${mx1}:${mz0}:${mz1}`
-        if (!this._v2CensusMemo || this._v2CensusMemo.rev !== this._networkRev)
-            this._v2CensusMemo = { rev: this._networkRev, map: new Map() }
+        if (!this._v2CensusMemo || this._v2CensusMemo.rev !== this._planRev())
+            this._v2CensusMemo = { rev: this._planRev(), map: new Map() }
         const memo = this._v2CensusMemo.map
         const hit = memo.get(sig)
         if (hit) { this._v2Census = hit; return hit }
@@ -3830,7 +3886,7 @@ export class RoadSystem {
         // node planner walks those same edges regardless, the census just meets them first.
         const sampleOf = (gg, sp, countFresh) => {
             const key = `g:${gg.key(sp[0])}:${gg.key(sp[1])}`
-            if (countFresh && (!this._v2SampleMemo || this._v2SampleMemo.rev !== this._networkRev
+            if (countFresh && (!this._v2SampleMemo || this._v2SampleMemo.rev !== this._planRev()
                 || !this._v2SampleMemo.map.has(key))) out.routedFresh++
             return this._v2RunSample(gg, drop, sp[0], sp[1])
         }
@@ -3993,8 +4049,8 @@ export class RoadSystem {
     _v2BundleSolve(g, drop, wc1, wc2, wide) {
         const wkA = g.key(wc1), wkB = g.key(wc2)
         const wck = wkA < wkB ? wkA + '|' + wkB : wkB + '|' + wkA
-        if (!this._v2BundleMemo || this._v2BundleMemo.rev !== this._networkRev)
-            this._v2BundleMemo = { rev: this._networkRev, map: new Map() }
+        if (!this._v2BundleMemo || this._v2BundleMemo.rev !== this._planRev())
+            this._v2BundleMemo = { rev: this._planRev(), map: new Map() }
         const memo = this._v2BundleMemo.map
         const mk = (wide ? 'A|' : '') + wck
         if (memo.has(mk)) return memo.get(mk)
@@ -4161,8 +4217,8 @@ export class RoadSystem {
     _v2WinnerView(g, drop, wc1, wc2, wide) {
         const kA = g.key(wc1), kB = g.key(wc2)
         const ck = (wide ? 'A|' : '') + (kA < kB ? kA + '|' + kB : kB + '|' + kA)
-        if (!this._v2ViewMemo || this._v2ViewMemo.rev !== this._networkRev)
-            this._v2ViewMemo = { rev: this._networkRev, map: new Map() }
+        if (!this._v2ViewMemo || this._v2ViewMemo.rev !== this._planRev())
+            this._v2ViewMemo = { rev: this._planRev(), map: new Map() }
         const memo = this._v2ViewMemo.map
         const hit = memo.get(ck)
         if (hit !== undefined) return hit
@@ -4410,7 +4466,7 @@ export class RoadSystem {
                 points: pts, arcOrigin: 0, centerline: cl,
                 polyCum, clArc: Float64Array.from(clArc), cellA, cellB,
                 tunnelSpans: tunnelSpans.length ? tunnelSpans : null,
-                cededSpans: [{ s0: polyCum[iA], s1: polyCum[iB], owner: wk, ownerS0: wLo, ownerS1: wHi }],
+                cededSpans: [{ s0: polyCum[iA], s1: polyCum[iB], owner: wk, ownerS0: wLo, ownerS1: wHi, midSpan: true }],
                 offCurveSpans: [{ s0: polyCum[Math.max(0, iA - nA)], s1: polyCum[Math.min(n, iB + nB)],
                                   owner: wk, ownerS0: wLo - bOut.Lb, ownerS1: wHi + bOut.Lb }],
                 // BUG-56 B4: band, ceded strand, band — one contiguous stretch of "on top of the
@@ -4459,6 +4515,29 @@ export class RoadSystem {
     // (measured: 0.80 m of lip left at 9.8 m separation when the hold stopped at the exact boundary
     // vertex). Window on the winner's own arc, so a run that loops back cannot answer from the
     // wrong end of itself.
+    // R8 (2026-09-01): the winner's ESTIMATED camber profile, memoized per view object. The hold
+    // ties the loser to the winner's deck PLANE — centre height plus lateral·sin(camber) — and at
+    // assembly time the winner's real camberProfile may not exist yet (registration order), so the
+    // estimate runs the SAME canonical routine over the winner view's points (pure). It differs
+    // from the served profile only by the seed (0 here vs the predecessor chain) and by junction
+    // blends, both of which live inside pad footprints the stitch gate already buckets separately.
+    _v2WinCamber(win) {
+        if (!this._v2WinCamMemo) this._v2WinCamMemo = new WeakMap()
+        let c = this._v2WinCamMemo.get(win)
+        if (!c) { c = this._computeCamberArrays(win.pts, 0, 0); this._v2WinCamMemo.set(win, c) }
+        return c
+    }
+
+    _v2CamAtArc(cam, sArc) {
+        const a = cam.arcPos, c = cam.camberRad, n = a.length
+        if (sArc <= a[0]) return c[0]
+        if (sArc >= a[n - 1]) return c[n - 1]
+        let lo = 0, hi = n - 1
+        while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (a[m] <= sArc) lo = m; else hi = m }
+        const span = a[hi] - a[lo] || 1
+        return c[lo] + (c[hi] - c[lo]) * (sArc - a[lo]) / span
+    }
+
     _v2DepartureHold(win, wArc, bandLen, pts) {
         const CLEAR = 2 * (this._params?.roadHalfWidth ?? 5)
         const y = new Array(pts.length)
@@ -4470,10 +4549,16 @@ export class RoadSystem {
         // because that vertex's height came from the wrong stretch of road. Walking keeps the
         // projection on the piece of winner the band is actually leaving.
         let at = wArc
+        const camW = this._v2WinCamber(win)
         for (let k = 0; k < pts.length; k++) {
             const w = _nearestOnPolyXZ(pts[k].x, pts[k].z, win.pts, win.polyCum,
                                        Math.max(0, at - 60), Math.min(win.L, at + 60))
-            y[k] = w.y
+            // R8: the held deck is the winner's PLANE, not its centreline height. Two parallel
+            // decks: at the wye (2·halfWidth of centre separation) the loser's inner edge lands
+            // exactly on the winner's outer edge, so the pavements weld instead of stepping by
+            // halfWidth·sin(camber) — the B1 defect class. lat is the carve's signedLat convention.
+            const lat = (pts[k].x - w.fx) * w.tz - (pts[k].z - w.fz) * w.tx
+            y[k] = w.y + lat * Math.sin(this._v2CamAtArc(camW, w.cum))
             at = w.cum
             // CONTIGUOUS from the fork, and only that. A band that clears the corridor and later
             // comes back near the winner — the winner hairpins, the band runs up the far arm — is
@@ -4484,11 +4569,24 @@ export class RoadSystem {
             if (w.d >= CLEAR) break
             last = k
         }
+        // R8 / class A (2026-09-01): past the wye the freed band must STAY clear. A band that dips
+        // back under one road width of the through road re-creates the overlapping-decks state on
+        // ground the built-extent sanction waives — site 03's crossing at 2.2 m of plan separation
+        // and 7.2 m of air, censused CLEAN. Keep the rolling window walking over the rest of the
+        // band; a re-entry declines the band (the ladder tries the next), except on the relief
+        // rung, where keeping the connection outranks it.
+        let reEnters = false
+        for (let k = Math.max(0, last + 2); k < pts.length; k++) {
+            const w = _nearestOnPolyXZ(pts[k].x, pts[k].z, win.pts, win.polyCum,
+                                       Math.max(0, at - 60), Math.min(win.L, at + 60))
+            at = w.cum
+            if (w.d < CLEAR - 1) { reEnters = true; break }
+        }
         // `clears` is about the band's OWN last vertex — a band that is still overlapping where it
         // welds back onto the loser's line has nowhere to put the departure and the ladder must try
         // another. Holding every vertex (holdK === length) is legal: the whole band rides the deck
         // and the loser's own road resumes at the join.
-        return { holdK: Math.min(pts.length, last + 2), y, clears: last < pts.length - 1 }
+        return { holdK: Math.min(pts.length, last + 2), y, clears: last < pts.length - 1, reEnters }
     }
 
     _v2RegisterMerged(key, cl, cellA, cellB, specs, g, drop, wide = null, dry = false) {
@@ -4582,7 +4680,7 @@ export class RoadSystem {
             const full = holdFrac > 0
                 ? this._v2DepartureHold(win, v.wCut, band.Lb, blend)
                 : { holdK: 0, y: [], clears: true }
-            const { y: holdY, clears } = full
+            const { y: holdY, clears, reEnters } = full
             const holdK = holdFrac >= 1 ? full.holdK : Math.floor(full.holdK * holdFrac)
             if (!clears) return { holdFail: true }   // still overlapping at the join — the next band may
             const held = [], heldClArc = []
@@ -4597,7 +4695,9 @@ export class RoadSystem {
             const XvClArc = holdK > 0 ? blendClArc[holdK - 1] : cutCl
             const free = blend.slice(holdK), freeClArc = blendClArc.slice(holdK)
             return {
+                reEnters,   // R8/class A: band dips back under a road width past the wye
                 wY: Xv.y, wSeg, held, heldClArc, blend: free, blendClArc: freeClArc, joinCum,
+                winView: win,   // R8: the seam test prices the winner's deck PLANE (camber estimate)
                 winPts: win.pts, winCum: win.polyCum,   // BUG-56 B3: the deck the departure must not wall against
                 forkClArc: cutCl,
                 cutClArc: XvClArc,
@@ -4635,7 +4735,7 @@ export class RoadSystem {
         let dryAsm = null   // BUG-57: the dry walk hands its assembled arrays to the chain view
         // PERF: set by attempt() when the seam rule was the ONLY thing it failed — see the ladder below.
         let seamOnlyFail = false
-        const attempt = (bandIdx, holdFrac, seamOn) => {
+        const attempt = (bandIdx, holdFrac, seamOn, gradeOn = true) => {
             seamOnlyFail = false
             const dS = sS ? endData(sS, bandIdx, holdFrac) : null
             const dE = sE ? endData(sE, bandIdx, holdFrac) : null
@@ -4643,6 +4743,9 @@ export class RoadSystem {
             // BUG-56: a band that is still inside the through-road's pavement corridor when it
             // runs out of band has nowhere to put its climb — the next rung gets the chance.
             if (dS?.holdFail || dE?.holdFail) return 'fork never clears the through road'
+            // R8/class A: on the counted rungs a re-entering band declines so the ladder finds one
+            // that stays clear; the relief rung (gradeOn false) keeps the connection instead.
+            if (gradeOn && (dS?.reEnters || dE?.reEnters)) return 'band re-enters the corridor past the wye'
             // own middle: samples strictly outside the taper bands (the bands carry their own vertices)
             const loC = dS ? dS.joinCum : -Infinity
             const hiC = dE ? dE.joinCum : Infinity
@@ -4698,9 +4801,9 @@ export class RoadSystem {
                 }
                 return worst
             }
-            if (dS && dS.blend.length && worstOver(0, dS.blend.length) > depCap)
+            if (gradeOn && dS && dS.blend.length && worstOver(0, dS.blend.length) > depCap)
                 return `departure grade ${(100 * worstOver(0, dS.blend.length)).toFixed(0)}% > cap ${(100 * depCap).toFixed(0)}%`
-            if (dE && dE.blend.length && worstOver(sub.length - 1 - dE.blend.length, sub.length - 1) > depCap)
+            if (gradeOn && dE && dE.blend.length && worstOver(sub.length - 1 - dE.blend.length, sub.length - 1) > depCap)
                 return `departure grade ${(100 * worstOver(sub.length - 1 - dE.blend.length, sub.length - 1)).toFixed(0)}% > cap ${(100 * depCap).toFixed(0)}%`
             // ── BUG-56 B3 — THE SEAM, which is what the "gore" defect actually is ────────────────
             // The ticket's screenshot is a stepped wall in the V between two diverging ribbons, and
@@ -4725,6 +4828,7 @@ export class RoadSystem {
             const NEARW = this._v2Costs().mergeProxM ?? 18
             const seamFail = (d, i0, i1) => {
                 if (!d || !d.winPts || !d.blend.length) return null
+                const camWd = this._v2WinCamber(d.winView)
                 for (let i = Math.max(0, i0); i <= Math.min(sub.length - 1, i1); i++) {
                     const q = _nearestOnPolyXZ(sub[i].x, sub[i].z, d.winPts, d.winCum)
                     if (!q || q.d >= NEARW) continue
@@ -4733,7 +4837,11 @@ export class RoadSystem {
                     // between them is ordinary embankment and the ordinary carve builds it; judging
                     // the far field here rejected merges for divergence that was never a wall.
                     if (sep > SEAM_WINDOW) continue
-                    const gap = Math.abs(sub[i].y - q.y)
+                    // R8: measure against the winner's deck PLANE at this lateral offset — the hold
+                    // now rides that plane, so a centreline-to-centreline gap would read the banked
+                    // deck's own tilt (up to halfWidth·sin(camber)) as a wall that is not there.
+                    const latQ = (sub[i].x - q.fx) * q.tz - (sub[i].z - q.fz) * q.tx
+                    const gap = Math.abs(sub[i].y - (q.y + latQ * Math.sin(this._v2CamAtArc(camWd, q.cum))))
                     const allow = TOLW + FILLV * sep
                     if (gap > allow) return `departure deck gap ${gap.toFixed(2)} m at ${sep.toFixed(1)} m of edge separation (allowed ${allow.toFixed(2)})`
                 }
@@ -4808,13 +4916,21 @@ export class RoadSystem {
             // winner's sees only its own continuation. Measured at mark A: at arc 90, ZERO lateral
             // separation, leg +2.6 deg against winner -5.9 deg. Same pavement, 8.5 deg apart.
             const departureSpans = []
+            // R8 (owner, 2026-09-01): a ceded strand releases at ONE ROAD WIDTH of centre
+            // separation, not at the fork. s1/s0 land on the wye vertex (Xv — the hold's first
+            // clear vertex, ≥ 2·halfWidth by construction), so the slicer suppresses the loser's
+            // ribbon over the whole one-surface stretch (the gore's double deck is gone) and the
+            // censuses sanction it. exS1/exS0 keep the SURFACE-RESOLVE exclusion at the verbatim
+            // boundary: past the fork the held vertices are the loser's own line riding the
+            // winner's plane, and excluding the loser there was measured worse (2026-08-22 —
+            // steps to 489 cm where nobody owned the gore).
             if (dS) {
-                cededSpans.push({ s0: 0, s1: polyCum[forkIdxS], owner: dS.wk, ownerS0: dS.oS[0], ownerS1: dS.oS[1] })
+                cededSpans.push({ s0: 0, s1: polyCum[x1Idx], exS1: polyCum[forkIdxS], owner: dS.wk, ownerS0: dS.oS[0], ownerS1: dS.oS[1] })
                 offCurveSpans.push({ s0: 0, s1: polyCum[x1Idx + dS.blend.length], owner: dS.wk, ownerS0: dS.oSFork[0], ownerS1: dS.oSFork[1] })
                 departureSpans.push({ s0: 0, s1: polyCum[x1Idx + dS.blend.length], owner: dS.wk })
             }
             if (dE) {
-                cededSpans.push({ s0: polyCum[forkIdxE], s1: polyCum[n], owner: dE.wk, ownerS0: dE.oS[0], ownerS1: dE.oS[1] })
+                cededSpans.push({ s0: polyCum[x2Idx], s1: polyCum[n], exS0: polyCum[forkIdxE], owner: dE.wk, ownerS0: dE.oS[0], ownerS1: dE.oS[1] })
                 offCurveSpans.push({ s0: polyCum[x2Idx - dE.blend.length], s1: polyCum[n], owner: dE.wk, ownerS0: dE.oSFork[0], ownerS1: dE.oSFork[1] })
                 departureSpans.push({ s0: polyCum[x2Idx - dE.blend.length], s1: polyCum[n], owner: dE.wk })
             }
@@ -4856,15 +4972,18 @@ export class RoadSystem {
         // and the first rung it then accepted was the first that cleared GRADE — which is exactly the
         // first rung that failed on the seam alone. Remember that one and re-attempt only it.
         const succeed = (bandIdx, holdFrac, seamRelaxed) => {
-            if (holdFrac === 0.5 && !dry) this._v2MergeSkipped('partial-hold', `${key} holds half its band (BUG-56 B6: the full hold blew the departure grade cap)`)
-            if (holdFrac === 0 && !dry) this._v2MergeSkipped('unheld', `${key} keeps its merge with a front-loaded fork (BUG-56 hold infeasible)`)
             if (seamRelaxed && !dry) this._v2MergeSkipped('seam', `${key} keeps its merge with a walled fork — no rung cleared the deck-gap rule (BUG-56 B3)`)
             if (dry) return { bandIdx, pts: dryAsm?.pts, polyCum: dryAsm?.polyCum }
             this._v2Merges = (this._v2Merges || 0) + specs.length
             return true
         }
         let seamFallback = null
-        for (const holdFrac of [1, 0.5, 0]) {
+        // R8 (owner, 2026-09-01): the B6 holdFrac rungs [0.5, 0] are DELETED. A shortened hold is
+        // the illegal state R8 names — two overlapping decks below one road width of separation —
+        // so a merge either grades from the wye (full hold, release at 2·halfWidth) or declines
+        // down the band ladder and, past it, registers plain and is censused. Measure the merge
+        // count either side of this: a drop in merges is what split seed 7 (B3's lesson).
+        for (const holdFrac of [1]) {
             for (const bandIdx of order) {
                 why = attempt(bandIdx, holdFrac, true)
                 if (!why) { const r = succeed(bandIdx, holdFrac, false); return dry ? r : undefined }
@@ -4874,6 +4993,20 @@ export class RoadSystem {
         if (seamFallback) {
             why = attempt(seamFallback[0], seamFallback[1], false)
             if (!why) { const r = succeed(seamFallback[0], seamFallback[1], true); return dry ? r : undefined }
+        }
+        // R8 RELIEF RUNG (2026-09-01): full hold, seam AND departure-grade acceptances both off.
+        // Deleting the holdFrac rungs handed legs to the delete rung — measured immediately as the
+        // seed-7 split (the exact failure B3's hard-rule experiment produced). A steep or walled
+        // fork is a censused quality residue; a deleted road is a lost connection, and the owner's
+        // standing BUG-56 ruling is that grade failure ranks below connectivity violation. The
+        // geometry stays R8-legal (one surface to the wye, release at 2·halfWidth) — only the
+        // ACCEPTANCE tests relax, and every use is counted ('steep-fork').
+        for (const bandIdx of order) {
+            why = attempt(bandIdx, 1, false, false)
+            if (!why) {
+                if (!dry) this._v2MergeSkipped('steep-fork', `${key} keeps its merge past the departure grade/seam caps (R8 relief — the alternative was the delete rung)`)
+                const r = succeed(bandIdx, 1, true); return dry ? r : undefined
+            }
         }
         return bail(`${why} (tried ${nBands} variant${nBands === 1 ? '' : 's'})`)
     }
@@ -5077,6 +5210,47 @@ export class RoadSystem {
     // _applyJunctionBlend ties shared nodes together), and registered with cellA/cellB = site ids. An
     // incidence map (site-key → runKeys) is built for the junction-grade reconciliation. runKey =
     // "g:<idA>:<idB>" (canonical, from _buildUrquhart's id order).
+    // ── R4: the SETTLE pass ──────────────────────────────────────────────────────────────────
+    // Evaluate the delete rung for every non-dropped, non-degenerate edge of the band graph (not
+    // just the in-band registration set: a node's built degree needs a verdict for EVERY incident
+    // edge, or pins would depend on which window asked — the BUG-25 variance class). Then freeze:
+    //   del  — every deleted pair as 'kA|kB' both orders (g.key spellings, same as adj)
+    //   flip — nodes whose PIN CLASS changed (2 = through pin, 3+ = chord pin, else none);
+    //          only these force plan pass 2, and only their edges take the '#b' route namespace.
+    // Returns whether any node flipped. Pure fn of (graph, drop, terrain) → window-invariant to
+    // the same degree the delete rung itself is.
+    _v2SettleDeletions(g, drop, wide) {
+        const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
+        for (const [c1, c2] of g.edges) {
+            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
+            const A = this._nodePos(c1), B = this._nodePos(c2)
+            { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
+            this._v2DeleteFor(g, drop, wide, c1, c2)
+        }
+        const del = new Set()
+        for (const rec of (this._v2Deleted?.values() ?? [])) {
+            const [, kA, kB] = rec.key.split(':')
+            del.add(kA + '|' + kB); del.add(kB + '|' + kA)
+        }
+        const flip = new Set()
+        const pinClass = (d) => (d === 2 ? 2 : d >= 3 ? 3 : 0)
+        const touched = new Set()
+        for (const pr of del) touched.add(pr.split('|')[0])
+        for (const nk of touched) {
+            const nbrs = g.adj.get(nk)
+            if (!nbrs) continue
+            let d0 = 0, d1 = 0
+            for (const o of nbrs) {
+                if (drop.has(nk + '|' + o)) continue
+                d0++
+                if (!del.has(nk + '|' + o)) d1++
+            }
+            if (pinClass(d0) !== pinClass(d1)) flip.add(nk)
+        }
+        this._v2DelFrozen = { rev: this._networkRev, del, flip }
+        return flip.size > 0
+    }
+
     _assembleGraphEdges(mx0, mx1, mz0, mz1) {
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         // in-band test is by WORLD extent now (site ids live on a different grid than the macro band).
@@ -5096,6 +5270,12 @@ export class RoadSystem {
                 g.adj.get(g.key(c1))?.delete(g.key(c2)); g.adj.get(g.key(c2))?.delete(g.key(c1))
             }
         }
+        // R4: settle the crossing-rung delete set FIRST (plan pass 1, graph-degree pins). If any
+        // deletion flips a node's pin class, everything re-plans on built-degree pins (pass 2:
+        // _planRev bumps, plan memos lazily invalidate, delete verdicts stay frozen).
+        this._v2PlanTag = null
+        if (this._v2SettleDeletions(g, drop, wide))
+            this._v2PlanTag = { rev: this._networkRev, tag: this._networkRev + 0.5 }
         // BUG-55: the pair census, on the settled adjacency (dirs sampled here must match what
         // registration builds). Phase 1: measures + counts the disjoint class; resolution follows.
         this._v2PairCensus(mx0, mx1, mz0, mz1, g, drop, wide)
@@ -6347,7 +6527,10 @@ export class RoadSystem {
                 // leaves nobody owning the surface and the terrain reverts to raw under it.
                 const aC = pr.arcS + (neC.arcOrigin ?? 0)
                 for (const csp of neC.cededSpans) {
-                    const lo2 = csp.s0 - 0.5, hi2 = csp.s1 + 0.5
+                    // R8: the exclusion is the VERBATIM interval (exS0/exS1 when the span was
+                    // extended to the wye) — over the gore the loser's plane-held deck is the
+                    // only continuous surface at its own line and must keep serving it.
+                    const lo2 = (csp.exS0 ?? csp.s0) - 0.5, hi2 = (csp.exS1 ?? csp.s1) + 0.5
                     if (aC >= lo2 && aC <= hi2) {
                         if (this._network.has(csp.owner)) return
                         break
@@ -9336,8 +9519,16 @@ export class RoadSystem {
         const spans = e?.departureSpans
         if (!spans || !spans.length || !e.points) return
         const hw = this._params?.roadHalfWidth ?? 5
-        const D0 = 2 * hw                                   // ribbons still overlap: the winner's bank
-        const D1 = Math.max(D0 + 1e-3, this._v2Costs?.().mergeProxM ?? 18)   // no shared earthworks: own bank
+        // R8 (owner, 2026-09-01): the blend is a WYE boundary condition, not a shared-earthworks
+        // ramp. Below D0 = 2·halfWidth there is ONE surface (the strand is ceded; this profile is
+        // not served there, but it must arrive at the wye ON the winner's plane); the crease then
+        // develops over one road width of gore opening, and past D1 the road is fully its own.
+        // mergeProxM measures shared earthworks — a different question — so it no longer appears.
+        // The crease across the shared edge is capped at wyeCreaseMaxDeg (owner: 30°, at the wye
+        // only), clamped on the blend TARGET so the cap relaxes exactly as the blend does.
+        const D0 = 2 * hw                                   // the wye: decks share an edge
+        const D1 = 2 * D0                                   // gore fully open: own bank, no cap
+        const capRad = (this._v2Costs?.().wyeCreaseMaxDeg ?? 30) * (Math.PI / 180)
         for (const sp of spans) {
             const w = this._network.get(sp.owner)
             if (!w || !w.points || w.points.length < 2 || !w.polyCum) continue
@@ -9364,7 +9555,8 @@ export class RoadSystem {
                 const lx = q1.x - q0.x, lz = q1.z - q0.z, ll = Math.hypot(lx, lz) || 1
                 const orient = (lx / ll) * nr.tx + (lz / ll) * nr.tz < 0 ? -1 : 1
                 const wc = orient * this.camberProfile(nr.cum - wOrigin, sp.owner)
-                camberRad[i] += (wc - camberRad[i]) * f
+                const target = wc + Math.max(-capRad, Math.min(capRad, camberRad[i] - wc))   // R8 crease cap
+                camberRad[i] = target + (wc - target) * f
             }
         }
     }

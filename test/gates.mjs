@@ -71,6 +71,8 @@ export const GATES = [
     desc: 'FEAT-68: the registered network is ONE component on the eval trio (connectivity is priority #1 and it regressed silently once — the deleted v1 culls shredded v2 geometry to 54% mean largest-component share while preventing zero real crossings), and no non-adjacent runs cross' },
   { file: 'junction-stitch.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-56: the HONEST stitching bar — no two pavements overlap in XZ at incompatible deck heights (sanctioned merge bands INCLUDED; that sanctioning is what let the owner\'s torn fork print clean). RED until the departure pass lands.' },
+  { file: 'wye-release.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'R8 (owner 2026-09-01): two roads may not carry independent decks within one road width. GATING: every end-anchored ceded strand releases at >= 2*halfWidth of separation (was 0.00 m on all 64). REPORT: residual own-deck arc inside one road width + worst deck disagreement.' },
   { file: 'play-area.mjs', subsystem: 'road', cost: 'heavy', manual: true, extraDeps: [],
     desc: 'BUG-56 D: CAN A STORY RUN START AT ALL? Five fixed seeds, each generating the owner-specified 3x3 grid of 4000 m tiles (12 km square, 144 km2): ONE component, zero condemned edges, zero node-pin violations. Runs the same src/world-validate.js routine the game runs on the player\'s seed at new-game, so the gate and the reroll cannot drift. MINUTES per seed — settings changes only, never npm test.' },
   { file: 'road-grade.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],

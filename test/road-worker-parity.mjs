@@ -51,9 +51,12 @@ for (const seed of [20, 11]) {
     if (compared >= 8) break
     if ((c1[0] - c2[0] || c1[1] - c2[1] || c1[2] - c2[2]) > 0) continue   // canonical spellings only
     const key = road._edgeClsKey(c1, c2)
-    const registered = road._proto.cls.get(key)
+    let registered = road._proto.cls.get(key)
     if (!registered || !(registered.length > 1e-6)) continue
-    const dirs = road._v2EdgeDirs(g, null, g.key(c1), g.key(c2))
+    // R4: route with the pins the cached entry was ACTUALLY routed with (_v2DirsSpec). The gate's
+    // target is the worker's FIELD derivation, and the settle pass now routes margin edges whose
+    // pins cannot be re-derived here without the assembly's drop + frozen-delete state.
+    const dirs = registered._v2DirsSpec
     const spec = road._v2EdgeSpec(c1, c2, dirs)
     const res = routeEdgeV2(spec, fields.hTrunc, fields.hCoarse)
     const a = JSON.stringify(res.cl.primitives)

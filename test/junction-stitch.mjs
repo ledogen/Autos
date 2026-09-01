@@ -82,9 +82,10 @@ const NEAR  = P.roadV2?.mergeProxM ?? 18            // m — shared-earthworks c
 const FILLV = 1 / (P.roadFillSlope ?? 3)            // V/H — the embankment the carve actually builds
 const TOL   = 0.15                                  // m — road-smoothness's collision-surface WALL
 const STEP  = 2.0                                   // m — sampling pitch along the first run
-// The pad footprint: ribbons are cut back roadJunctionCutback from the node and the pad + its
-// corner fillets pave the gap. One fillet radius of margin past the mouth.
-const PADR  = (P.roadJunctionCutback ?? 10) + (P.roadFilletRadius ?? 5)
+// R3 (owner, 2026-08-31): a pad reaches 10 m AT MOST — from the node OR from a fork's divergence
+// point. That is the ruled bar, not the built reach; ground past 10 m is span ground and the deck
+// rule owns it. (Was roadJunctionCutback + roadFilletRadius = 15 m of instrument margin.)
+const PADR  = 10
 const HW    = P.roadHalfWidth ?? 5                  // m — the ribbon reaches +/-HW from centreline
 
 const allowed = (d) => TOL + FILLV * d
@@ -121,7 +122,10 @@ const nearestOn = (px, pz, pts, cum) => {
 // (t.z, -t.x). camberProfile is a RUN-FRAME angle under exactly that convention, which is why
 // lat*sin(camber) is invariant to which way round a run is traversed.
 const latOf = (px, pz, m) => (px - m.fx) * m.tz - (pz - m.fz) * m.tx
-const inBore = (e, s) => (e.tunnelSpans || []).some((sp) => s >= sp.s0 - 5 && s <= sp.s1 + 5)
+// Tunnel exclusion covers the APPROACH CUT, not just the bore: two roads converging on a portal
+// bench are 10–12 m apart on purpose for the last stretch of cutting (site 01's worst sample sat
+// 77 m outside the portal). 80 m of approach on each end, instrument-only.
+const inBore = (e, s) => (e.tunnelSpans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)
 
 const bboxOf = (pts) => {
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
@@ -148,6 +152,20 @@ const scan = (road) => {
     const nodePts = []
     if (shared.includes(A.a)) nodePts.push(pA[0])
     if (shared.includes(A.b)) nodePts.push(pA[pA.length - 1])
+    // R3: the PAIR'S OWN divergence points are pad centres in their own right — where one of the
+    // two cedes to the other, the release (wye) point gets the same 10 m footprint a node gets.
+    const relPts = (X, otherKey) => {
+      for (const sp of X.e.cededSpans || []) {
+        if (sp.owner !== otherKey || sp.midSpan) continue
+        const rs = sp.s0 < 1e-6 ? sp.s1 : sp.s0
+        const c = X.e.polyCum; let k = 0
+        while (k + 2 < c.length && c[k + 1] <= rs) k++
+        const u = (rs - c[k]) / Math.max(1e-9, c[k + 1] - c[k])
+        nodePts.push({ x: X.e.points[k].x + (X.e.points[k + 1].x - X.e.points[k].x) * u,
+                       z: X.e.points[k].z + (X.e.points[k + 1].z - X.e.points[k].z) * u })
+      }
+    }
+    relPts(A, B.k); relPts(B, A.k)
     let lip = null, sawPad = false, sawPadEdge = false
     let lo = 0
     for (let s = 0; s <= LA; s += STEP) {
@@ -230,7 +248,14 @@ const scan = (road) => {
   // one row per unordered pair — both directions measure the same site
   const byPair = new Map()
   for (const l of lips) { const h = byPair.get(l.pair); if (!h || l.excess > h.excess) byPair.set(l.pair, l) }
-  const out = [...byPair.values()].sort((a, b) => b.excess - a.excess)
+  // …and one row per PIECE OF GROUND (owner-caught: a three-legged node yielded up to three rows
+  // for one spot — sites 11/12 were one place). Worst row wins; anything within 25 m of it merges.
+  const sorted = [...byPair.values()].sort((a, b) => b.excess - a.excess)
+  const out = []
+  for (const l of sorted) {
+    if (out.some((o) => Math.hypot(o.x - l.x, o.z - l.z) < 25)) continue
+    out.push(l)
+  }
   return { lips: out, padPairs: padPairs >> 1, padEdgePairs: padEdgePairs >> 1, runs: runs.length }
 }
 

@@ -498,6 +498,7 @@ export const RANGER_PARAMS = {
     // side + 3 m carve extra — i.e. the separation below which the two roads write their cut/fill
     // stencils into the same terrain vertices. Owner-set 2026-08-22.
     mergeProxM: 18,
+    wyeCreaseMaxDeg: 30,   // R8: max camber crease across a wye's shared edge (binds at the wye only)
     // A merged pair may swing apart and come back — that FLARE is a bulge in one road, not two
     // roads going different places, so the merge bridges it and the bulge disappears. Both bounds
     // are measured off the owner's seed-3 captures, whose flares run 35 m (1598/5875), 44 m
