@@ -2506,7 +2506,8 @@ export class RoadSystem {
     _v2DirsNS(dirs) {
         if (!dirs || !dirs._built) return ''
         const f = (d) => d ? `${d.x.toFixed(5)},${d.z.toFixed(5)}` : 'x'
-        return `#b${f(dirs.startDir)};${f(dirs.goalDir)}`
+        const fs = (a) => a ? a.map((d) => `${d.x.toFixed(3)},${d.z.toFixed(3)}`).join('|') : 'x'
+        return `#b${f(dirs.startDir)};${f(dirs.goalDir)};${fs(dirs.sibStart)};${fs(dirs.sibGoal)}`
     }
 
     // FEAT-68 deg-2 canonical approach headings: a pass-through node is a POINT ON a longer
@@ -2582,6 +2583,29 @@ export class RoadSystem {
             : (degOf(kB) >= 3 ? chordDir() : undefined)
         if (!startDir && !goalDir) return undefined
         const dirs = { startDir, goalDir }
+        // R5: sibling bearings at each end — the chords from the node toward its OTHER settled
+        // neighbours (pure graph data, the same window-invariance class as the pins; A1 proved
+        // pricing the sibling's whole corridor by chord proxy does NOT work, so this carries only
+        // the departure bearings and routeEdgeV2 prices only the exit). Sorted for determinism.
+        const sibsOf = (nk, exclude) => {
+            const nbrs = g.adj.get(nk)
+            if (!nbrs || nbrs.size < 2) return undefined
+            const pn = this._nodePos(nk.split(',').map(Number))
+            const out = []
+            for (const o of [...nbrs].sort()) {
+                if (o === exclude) continue
+                if (drop && drop.has(nk + '|' + o)) continue
+                if (delF && delF.del.size && delF.del.has(nk + '|' + o)) continue
+                const po = this._nodePos(o.split(',').map(Number))
+                const dx = po.x - pn.x, dz = po.z - pn.z, l = Math.hypot(dx, dz)
+                if (l > 1e-9) out.push({ x: dx / l, z: dz / l })
+                if (out.length >= 4) break
+            }
+            return out.length ? out : undefined
+        }
+        const sibStart = sibsOf(kA, kB), sibGoal = sibsOf(kB, kA)
+        if (sibStart) dirs.sibStart = sibStart
+        if (sibGoal) dirs.sibGoal = sibGoal
         // R4: an edge whose endpoint's pin CLASS flipped when the delete set settled routes in its
         // own cache namespace ('#b') — its pins differ from the layer-0 pins the warm path derives,
         // and the two geometries must never collide on one cache key.
@@ -2841,6 +2865,53 @@ export class RoadSystem {
             const aWins = A.S.L > B.S.L || (A.S.L === B.S.L && A.ck < B.ck)
             const W = aWins ? A : B, L2 = aWins ? B : A
             const fW = aWins ? fA : fB, fLw = aWins ? fB : fA
+            // R6 (owner, 2026-08-31): a merge that would overwrite a PINNED approach is a
+            // preference, not a hard rule — at seed 21 node 1,0,2 all three legs routed with their
+            // pins and the merge still replaced one leg's pinned approach with its sibling's
+            // geometry (the 86°-apart pairing over the 160° through axis). Decline where it is
+            // SAFE: the pair's routes never properly cross (a shipped crossing is delete-rung bait
+            // — B3's hard rule split seed 7) and the overlap is bounded. Count where it is not.
+            // "Did the leg keep its pin" is read off the GEOMETRY (first-leg direction vs the pin
+            // cone), never off route metadata — a cache-rehydrated route must answer identically.
+            const pinHeld = (R) => {
+                const dirs2 = this._v2EdgeDirs(g, drop, g.key(R.sp[0]), g.key(R.sp[1]))
+                const pin = dirs2 && (R.nodeAtStart ? dirs2.startDir
+                    : (dirs2.goalDir ? { x: -dirs2.goalDir.x, z: -dirs2.goalDir.z } : null))
+                if (!pin) return false
+                const nP = R.S.pts.length
+                const i0 = R.nodeAtStart ? 0 : nP - 1, i1 = R.nodeAtStart ? 1 : nP - 2
+                const dx = R.S.pts[i1].x - R.S.pts[i0].x, dz = R.S.pts[i1].z - R.S.pts[i0].z
+                const l = Math.hypot(dx, dz) || 1
+                return (dx * pin.x + dz * pin.z) / l >= 0.5
+            }
+            const xingsEarly = _pairProperCrossingsXZ(A.S, A.nodeAtStart, B.S, B.nodeAtStart, true)
+            if (pinHeld(L2)) {
+                // R8 refines "safe": beyond the pad the pair must never come under ONE ROAD WIDTH
+                // of separation — 10–18 m is legal shared earthworks, under 10 m is overlapping
+                // decks and MUST resolve (merge), pinned approach or not.
+                const HWn = this._params?.roadHalfWidth ?? 5
+                let minSep = Infinity
+                {
+                    const nP = L2.S.pts.length
+                    for (let k2 = 0; k2 < nP; k2++) {
+                        const i2 = L2.nodeAtStart ? k2 : nP - 1 - k2
+                        const arc2 = fromNode(L2, L2.S.polyCum[i2])
+                        if (arc2 < 15) continue
+                        if (arc2 > fLw) break
+                        const d2 = _nearestOnPolyXZ(L2.S.pts[i2].x, L2.S.pts[i2].z, W.S.pts, W.S.polyCum).d
+                        if (d2 < minSep) minSep = d2
+                    }
+                }
+                // The 80 m bound is graph-topology corridor-clearance's own endpoint exemption:
+                // a declined pair at 10–18 m of separation is legal R8 ground, but past 80 m from
+                // the node it would trip the 17.5 m parallel-runs floor — so a LONG hug merges
+                // (counted) even off a pinned approach. Seed 21's 175 m pair is the counted case.
+                if (!xingsEarly.length && minSep >= 2 * HWn && fLw <= (C.mergePinDeclineMaxM ?? 80)) {
+                    this._v2MergeSkipped('pin-decline', `${L2.ck} keeps its pinned approach @${nk} (R6 — overlap ${fLw.toFixed(0)} m at >=${minSep.toFixed(1)} m, no crossings)`)
+                    continue
+                }
+                this._v2MergeSkipped('pin-overwrite', `${L2.ck} @${nk} (R6 counted — ${xingsEarly.length ? 'tangled' : `minSep ${minSep.toFixed(1)} m over ${fLw.toFixed(0)} m`})`)
+            }
             // VARIANTS: the full merge first, then progressively shorter ones. Only a solved profile
             // can say whether the loser's remaining road still grades from the winner's DECK at the
             // fork, and when it cannot, sharing LESS of the pavement is a real answer — better than
@@ -2859,7 +2930,7 @@ export class RoadSystem {
             // only variants whose ceded extent SPANS every crossing are kept — a merge that
             // leaves a crossing outside its built extent resolves nothing (the crossing rung
             // would still fire and the connection would die anyway).
-            const xingsAB = _pairProperCrossingsXZ(A.S, A.nodeAtStart, B.S, B.nodeAtStart, true)
+            const xingsAB = xingsEarly
             const tangled = xingsAB.length > 0
             let maxCrossL = 0
             for (const x of xingsAB) maxCrossL = Math.max(maxCrossL, fromNode(L2, aWins ? x.sB : x.sA))

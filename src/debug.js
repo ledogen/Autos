@@ -474,6 +474,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   shipping value — it restores the doubled roads).
   v2Folder.add(params.roadV2, 'mergeProxM', 0, 40, 1).name('Merge Distance (m)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'wyeCreaseMaxDeg', 0, 45, 1).name('Wye Crease Cap (deg)').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'sibConeDeg', 0, 60, 1).name('Sibling Cone (deg)').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'wSibDepart', 0, 20, 0.5).name('Sibling Depart Cost').onChange(fireRoadParam)
   //   Pad Arrival Cap (BUG-55): a merged strand may not arrive at its far junction steeper than
   //   this — the pad there is a near-flat plaza (clamped ~7%), and a steep arrival parks a step
   //   at its rim (the measured 1.75-2.37 m cliff class). A merge that cannot meet it is declined

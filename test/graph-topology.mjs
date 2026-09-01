@@ -162,7 +162,12 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
 // Corridor avoidance prevents this at routing time; the clearance cull backstops it — this
 // asserts the end result. Same 0.5 m sampling tolerance as (g).
 {
-    const D = 2 * (P.roadHalfWidth ?? 5) + 2 * (P.roadShoulderWidth ?? 2.5) + (P.roadSelfClearMargin ?? 3) - 0.5
+    // R8 re-baseline (owner ruling 2026-09-01): over ONE ROAD WIDTH of centre separation, two
+    // roads are two roads — each gets its own full deck, own camber, own grade. The old floor
+    // (pavement + shoulders + margin = 17.5 m) predates that ruling and read legal 10–18 m
+    // shared-earthworks ground as a defect; the QUALITY of that band (deck-height compatibility)
+    // is junction-stitch's and wye-release's business now, not a distance floor's.
+    const D = 2 * (P.roadHalfWidth ?? 5) - 0.5
     const EXEMPT = P.roadCorridorExempt ?? (Math.max(P.roadGraphGoalBlend ?? 60, P.roadJunctionBlendLength ?? 30, 60) + 20)
     const runs = [...roadA._network.entries()]
     let viol = 0, worst = 1e9, worstAt = ''

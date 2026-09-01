@@ -200,6 +200,18 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     const _unit = (d) => { if (!d) return null; const l = Math.hypot(d.x, d.z); return l > 1e-9 ? { x: d.x / l, z: d.z / l } : null }
     const sDir = _unit(opts.startDir), gDir = _unit(opts.goalDir)
     const C = opts.costs ?? V2_COSTS
+    // R5 (owner, 2026-08-31): the SIBLING-DEPARTURE COST — a narrow cost at the node, and nothing
+    // wider. On the demoted (unpinned) rung a leg is free to depart on a sibling's bearing, which
+    // BUG-53 names as the measured generator of the node-sharing overlap class. Steps near a node
+    // that align with a sibling's chord bearing (within sibConeDeg) pay wSibDepart extra per
+    // metre, so the search buys a different exit when the terrain affords one. A COST, never a
+    // heading gate — QUAL-19's Architecture A (the gate) is disproven; a gated search returns
+    // null and costs the connection, a costed one degrades gracefully.
+    const sibS = (opts.sibStart ?? []).map(_unit).filter(Boolean)
+    const sibG = (opts.sibGoal ?? []).map(_unit).filter(Boolean)
+    const COSSIB = Math.cos((C.sibConeDeg ?? 25) * Math.PI / 180)
+    const C_wSib = C.wSibDepart ?? 3
+    const SIB_REACH = C.sibReachM ?? 120
     const cell = opts.cell ?? 32
     const yBin = opts.yBin ?? 3
     const chord = Math.hypot(bx - ax, bz - az)
@@ -323,6 +335,11 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
             pdx /= pl; pdz /= pl
         }
         expanded++
+        // R5: distance of the popped cell from each pinned node, once per pop (the per-direction
+        // sibling test below reuses it — a landing-cell distance would differ by at most one cell,
+        // noise against a 120 m reach).
+        const dStartM = sibS.length ? Math.hypot(wx(cx2) - ax, wz(cz2) - az) : Infinity
+        const dGoalM = sibG.length ? Math.hypot(wx(cx2) - bx, wz(cz2) - bz) : Infinity
         const y0 = yOf(curB)
         const cls0 = classOf(y0 - hAt(cx2, cz2), C)
         const bore0 = cls0 === CLS.BORE
@@ -365,6 +382,13 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
                 const dot = (dx * pdx + dz * pdz) / dl
                 const crs = Math.abs(dx * pdz - dz * pdx) / dl
                 turnC = C_cTurn * Math.atan2(crs, dot)
+            }
+            // R5: departing along a sibling (start side) / arriving along one (goal side, where the
+            // sibling bearing points AWAY from the node so the hugging step is its negation).
+            if (dStartM < SIB_REACH) {
+                for (const sb of sibS) if (dx * sb.x + dz * sb.z >= COSSIB * dl) { turnC += C_wSib * D.ds; break }
+            } else if (dGoalM < SIB_REACH) {
+                for (const sb of sibG) if (dx * sb.x + dz * sb.z <= -COSSIB * dl) { turnC += C_wSib * D.ds; break }
             }
             const nbHi = Math.min(bTop, curB + kMax)      // was re-evaluated every iteration
             const slack = D.slack
@@ -989,8 +1013,13 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
             pin ? { keepStart: !!pin.startDir, keepEnd: !!pin.goalDir } : {}) : null
     }
     const pin = dirs && (dirs.startDir || dirs.goalDir) ? dirs : null
+    // R5: the demoted rungs carry the sibling-departure cost — the pinned rungs don't need it (the
+    // pin already forces the exit), and pricing it there would double-charge a through pin that
+    // legitimately parallels a sibling for a while.
+    const sib = dirs && (dirs.sibStart?.length || dirs.sibGoal?.length)
+        ? { sibStart: dirs.sibStart, sibGoal: dirs.sibGoal } : null
     const rungs = pin
-        ? [[pin, {}], [null, {}], [pin, { structureCap: false }], [null, { structureCap: false }]]
+        ? [[pin, {}], [null, sib ?? {}], [pin, { structureCap: false }], [null, sib ? { structureCap: false, ...sib } : { structureCap: false }]]
         : [[null, {}], [null, { structureCap: false }]]
     let cl = null, first = null, usedPin = false
     for (const [p, extra] of rungs) {

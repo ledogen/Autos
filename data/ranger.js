@@ -499,6 +499,10 @@ export const RANGER_PARAMS = {
     // stencils into the same terrain vertices. Owner-set 2026-08-22.
     mergeProxM: 18,
     wyeCreaseMaxDeg: 30,   // R8: max camber crease across a wye's shared edge (binds at the wye only)
+    sibConeDeg: 25,        // R5: demoted-rung departure within this cone of a sibling's bearing pays extra
+    wSibDepart: 3,         // R5: the surcharge, cost per metre while inside the cone near the node
+    sibReachM: 120,        // R5: how far from the node the surcharge reaches
+    mergePinDeclineMaxM: 80,   // R6: a pinned loser declines its merge when overlap is under this and crossing-free
     // A merged pair may swing apart and come back — that FLARE is a bulge in one road, not two
     // roads going different places, so the merge bridges it and the bulge disappears. Both bounds
     // are measured off the owner's seed-3 captures, whose flares run 35 m (1598/5875), 44 m
