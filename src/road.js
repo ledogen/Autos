@@ -5728,12 +5728,19 @@ export class RoadSystem {
             let keep = [[0, points.length - 1]]
             for (const csp of entry.cededSpans || []) {
                 if (!this._network.has(csp.owner)) continue   // fringe: the loser serves this span itself
+                // R8 deck-hole fix (owner screenshots, seed 6 (-1571,1304) / (127,1882)): suppress
+                // only the VERBATIM interval (exS0/exS1), exactly like the surface resolver. The
+                // extended interval reaches the wye, but the winner's ribbon is one half-width wide
+                // — past ~5 m of separation the loser's held pavement is the ONLY deck on that
+                // ground, and suppressing it shipped carved earthwork with no asphalt (the same
+                // failure the 2026-08-22 resolver experiment measured, now on the mesh side).
+                const cs0 = csp.exS0 ?? csp.s0, cs1 = csp.exS1 ?? csp.s1
                 const next = []
                 for (const [a0, a1] of keep) {
                     let lo = a0
-                    while (lo <= a1 && pc[lo] < csp.s0 - 1e-6) lo++
+                    while (lo <= a1 && pc[lo] < cs0 - 1e-6) lo++
                     let hi = a1
-                    while (hi >= a0 && pc[hi] > csp.s1 + 1e-6) hi--
+                    while (hi >= a0 && pc[hi] > cs1 + 1e-6) hi--
                     // [a0..lo-1] survives below the span, [hi+1..a1] above it
                     if (lo - 1 - a0 >= 1) next.push([a0, lo - 1])
                     if (a1 - (hi + 1) >= 1) next.push([hi + 1, a1])
