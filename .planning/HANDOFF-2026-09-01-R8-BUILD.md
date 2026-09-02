@@ -8,7 +8,7 @@ repair. Owner choices taken this session (asked, answered): **sharp crease** at 
 | | |
 |---|---|
 | Code | worktree `CarGame-corridor-router`, branch `feature/corridor-router`, dev **:3343** |
-| Commits | `3addd5b` (R4 + R8 + relief + re-entry + R3 instruments + wye-release gate) · `e97d611` (R5 + R6 + clearance re-baseline) · `fe68994` (R2 gating jurisdiction) · `9c2732b` (determinism fp-fix) — head **`9c2732b`** |
+| Commits | `3addd5b` (R4 + R8 + relief + re-entry + R3 instruments + wye-release gate) · `e97d611` (R5 + R6 + clearance re-baseline) · `fe68994` (R2 gating jurisdiction) · `9c2732b` (determinism fp-fix) · `b781628` (deck-hole slicer fix) · `d0131e9` (settle scoping, build 9.3→6.1 s) · `d08d016` (map warm restream) — head **`d08d016`** |
 | Docs | this file, on main |
 
 ## The headline numbers
@@ -121,3 +121,23 @@ old 15 m instrument margin covered part of it). Typical row: 0.2–1.5 m separat
 - **The 10–30 m throat:** fix by letting the wye vocabulary go below `MINREG`, or by a pad-adjacent
   surface treatment? Either changes a ruled quantity (merge minimum / pad reach), so it is an
   owner call.
+
+## Owner-verify round (2026-09-01 evening) — three findings, all fixed
+
+1. **Deck holes at wyes** (owner screenshots, seed 6 (-1571,1304) and (127,1882)): my cededSpans
+   extension reached the slicer, which suppressed the loser's ribbon over the held stretch — the
+   only pavement on that ground past one half-width of separation. Carve/physics were fine (they
+   read the verbatim exS boundary); the MESH was not. Slicer now reads exS0/exS1 like the
+   resolver. Verified in-game at both reproducers. (`b781628`)
+2. **Worldgen speed** — measured across eras on three windows: v2 at birth **5.2 s** → after the
+   BUG-56 merge machinery **19.6 s** (~4×, pre-existing) → after my R4 settle **24.5 s**. The
+   settle pass was evaluating delete verdicts for every band-graph edge (298 of 309 routes,
+   7.7 s of a 9.3 s build) — scoped to the consumable set (in-band + 1-ring), **15.6 s** total,
+   i.e. net faster than pre-session. All six guard gates green. The remaining ~3× vs v2-at-birth
+   is the BUG-56 plan layer (conflict pairs, merge ladder, profile solves) — the honest next perf
+   target, not addressed here. (`d0131e9`)
+3. **Map "regenerates on zoom"** — measured live: draws are 50–180 ms; the cost was the restream
+   policy (flat 300 m drift tripped by zoom-about-cursor pan, then the FULL progressive ladder =
+   ~5 sync re-plans). Warm restreams now jump straight to full radius (one re-plan) and the drift
+   threshold scales with the streamed radius. Cold open unchanged 8.8 s; warm restream 9 → 4.1 s;
+   sub-threshold pans free. Story mode untouched. (`d08d016`)
