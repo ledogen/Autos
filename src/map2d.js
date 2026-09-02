@@ -50,7 +50,7 @@ const MAP_RADIUS_STEPS = [400, 650, 900, 1150, MAP_RADIUS]
 const MAP_RADIUS_MAX = 2000
 const PROGRESSIVE_GAP  = 16    // ms — yield between stream chunks so the page stays responsive
 const STREAM_DEBOUNCE = 120    // ms — re-stream only after a pan settles (a stream is expensive)
-const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifted past this since last stream
+const RESTREAM_MOVE   = 300    // m — floor; see _anchorDrifted (threshold scales with streamed radius)
 const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest road within this range
 
 // ── Topographic paper (the map's whole visual identity) ───────────────────────────────────────
@@ -501,7 +501,12 @@ export class Map2D {
     _anchorDrifted() {
         if (!this._streamAt) return true
         const a = this._streamAnchor()
-        return Math.hypot(a.x - this._streamAt.x, a.z - this._streamAt.z) > RESTREAM_MOVE
+        // PERF (owner, 2026-09-01: "map regenerates the whole thing even when zooming"): the flat
+        // 300 m tripped on ordinary zoom-about-cursor pan drift and re-streamed a network whose
+        // 1450+ m radius still covered the view several times over. Re-stream only when the drift
+        // eats a real fraction of the streamed radius — coverage, not motion, is the criterion.
+        const R = this._radiusSteps()[this._radiusSteps().length - 1]
+        return Math.hypot(a.x - this._streamAt.x, a.z - this._streamAt.z) > Math.max(RESTREAM_MOVE, 0.35 * R)
     }
 
     _radiusSteps() {
@@ -681,7 +686,12 @@ export class Map2D {
     _startStream() {
         clearTimeout(this._pumpTimer)
         // Restart the radius growth from the smallest step for the NEW center (first ring paints fast).
-        this._streamStep = 0
+        // PERF (2026-09-01): the ladder exists so a COLD open paints something quickly. On a warm
+        // re-stream (a network already exists — its stale picture keeps drawing while the new one
+        // builds) the ladder just multiplies the cost ~2.3x: five synchronous re-plans of growing
+        // windows instead of one at full radius. Jump straight to the final step when warm.
+        this._streamStep = (this._road && this._road._network && this._road._network.size > 0)
+            ? this._radiusSteps().length - 1 : 0
         this._streamFull = false
         const a = this._streamAnchor()
         this._streamCenter = new THREE.Vector3(a.x, 0, a.z)
