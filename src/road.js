@@ -5293,10 +5293,27 @@ export class RoadSystem {
     //          only these force plan pass 2, and only their edges take the '#b' route namespace.
     // Returns whether any node flipped. Pure fn of (graph, drop, terrain) → window-invariant to
     // the same degree the delete rung itself is.
-    _v2SettleDeletions(g, drop, wide) {
+    _v2SettleDeletions(g, drop, wide, mx0, mx1, mz0, mz1) {
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
+        // PERF (2026-09-01): settle ONLY the verdicts this window can consume — the in-band edges
+        // registration will delete-check anyway, plus every edge incident to one of their endpoint
+        // nodes (a margin edge's deletion changes that node's BUILT degree, hence the in-band
+        // edge's pin). Settling the whole band graph routed 298 edges where registration needs
+        // ~104 and owned 7.7 s of a 9.3 s build. Verdicts are pure fns of pass-1 routes, so any
+        // window that consumes a node's pins evaluates the identical incident set — the same
+        // 1-ring invariance argument the pins themselves ride on.
+        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
+        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
+        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+        const coreNodes = new Set()
         for (const [c1, c2] of g.edges) {
             if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
+            if (!inBand(c1) && !inBand(c2)) continue
+            coreNodes.add(g.key(c1)); coreNodes.add(g.key(c2))
+        }
+        for (const [c1, c2] of g.edges) {
+            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
+            if (!coreNodes.has(g.key(c1)) && !coreNodes.has(g.key(c2))) continue
             const A = this._nodePos(c1), B = this._nodePos(c2)
             { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
             this._v2DeleteFor(g, drop, wide, c1, c2)
@@ -5348,7 +5365,7 @@ export class RoadSystem {
         // deletion flips a node's pin class, everything re-plans on built-degree pins (pass 2:
         // _planRev bumps, plan memos lazily invalidate, delete verdicts stay frozen).
         this._v2PlanTag = null
-        if (this._v2SettleDeletions(g, drop, wide))
+        if (this._v2SettleDeletions(g, drop, wide, mx0, mx1, mz0, mz1))
             this._v2PlanTag = { rev: this._networkRev, tag: this._networkRev + 0.5 }
         // BUG-55: the pair census, on the settled adjacency (dirs sampled here must match what
         // registration builds). Phase 1: measures + counts the disjoint class; resolution follows.
