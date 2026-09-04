@@ -102,7 +102,11 @@ const mapA  = listToMap(listA)
         if (g.kind !== r.kind) { if (kindMis++ === 0) sample = `${k}: bf=${r.kind} classifier=${g.kind}`; }
     }
     for (const k of mapA.keys()) if (!bf.has(k)) extra++
-    log(mapA.size >= 1 && missing === 0 && extra === 0 && kindMis === 0, 'BROADPHASE-EQ-BRUTEFORCE',
+    // BUG-57: zero crossings is the crossing invariant WORKING (the rung deletes the longer member
+    // of every unsanctioned-crossing pair), so an empty set no longer voids the equivalence check.
+    // The classifier's full reduction to the invariant's gate instrument lands with the ruling-3
+    // machinery deletion.
+    log(missing === 0 && extra === 0 && kindMis === 0, 'BROADPHASE-EQ-BRUTEFORCE',
         `crossings: classifier=${mapA.size} bruteforce=${bf.size} | missing=${missing} extra=${extra} kindMismatch=${kindMis}${sample ? ` | e.g. ${sample}` : ''}`)
 }
 

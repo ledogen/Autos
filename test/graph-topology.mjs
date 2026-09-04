@@ -89,16 +89,12 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         `heading buckets=[${bins.join(',')}] entropy=${entropy.toFixed(2)} maxDirFrac=${(100 * maxFrac).toFixed(0)}% (rows mode would be 100% one axis)`)
 }
 
-// (d) SMOOTHNESS — the INTER-EDGE collision surface is step-free. Samples within EXCL of a mid-span
-// routed crossing are excluded: those crossings are planar-ABSTRACT-but-routed overlaps whose smooth
-// resolution needs T/X secondary-node PROMOTION (deferred — handoff §5B). This check guards the
-// per-edge grade + degree-2/≥3 junction reconciliation (the foundation pass's responsibility); the
-// crossing-adjacent step count is reported separately as the deferred follow-up's metric.
+// (d) SMOOTHNESS — the INTER-EDGE collision surface is step-free. BUG-57 (ruling 2, 2026-08-25):
+// the crossing-zone exclusion is GONE — nodes are the only intersections, mid-span crossings are
+// resolved by merge/shove/delete, and the crossing rung's zero-crossings invariant makes the old
+// "deferred T/X promotion zone" structurally empty. Every sample counts now.
 {
-    const EXCL = 14   // m — radius around an unpromoted routed crossing (the deferred-promotion zone)
-    const xs = roadA.crossingList().map(c => c.point)
-    const nearCrossing = (x, z) => { for (const p of xs) if ((p.x - x) ** 2 + (p.z - z) ** 2 < EXCL * EXCL) return true; return false }
-    let worst = 0, steps = 0, walked = 0, worstAt = '', xSteps = 0
+    let worst = 0, steps = 0, walked = 0, worstAt = ''
     for (const [rk, e] of roadA._network) {
         const pts = e.points
         for (let i = 0; i < pts.length - 1; i++) {
@@ -106,7 +102,6 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
             let prev = null
             for (let k = 0; k <= n; k++) {
                 const t = k / n, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t
-                if (nearCrossing(x, z)) { prev = null; continue }   // skip the deferred-promotion zone
                 const r = roadA._resolveRoadSurface(x, z); if (!r) { prev = null; continue }
                 walked++
                 if (prev) { const dY = Math.abs(r.point.y - prev.y), dH = Math.hypot(x - prev.x, z - prev.z) || 0.01
@@ -116,7 +111,7 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         }
     }
     log(walked > 10000 && steps === 0, 'GRAPH-SURFACE-SMOOTH',
-        `walked ${walked} inter-crossing samples; steps (>0.15 m, >56°)=${steps} worst=${worst.toFixed(2)} m ${worstAt} | (crossing-zone steps deferred to T/X promotion)`)
+        `walked ${walked} samples (no crossing-zone exclusion — zero mid-span crossings is structural now); steps (>0.15 m, >56°)=${steps} worst=${worst.toFixed(2)} m ${worstAt}`)
 }
 
 // (e) FLAT MERGES — every crossing merges at grade; the classifier only emits AT_GRADE | NEAR_PARALLEL
@@ -128,23 +123,11 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         `${list.length} crossings, non-flat kinds=${bad} — every crossing merges flat, no floating overpasses`)
 }
 
-// (f) NODE DEPARTURE — each edge leaves BOTH endpoints heading toward its neighbour (not the reverse).
-// Guards the goalHeading-direction bug: a directed router fed the reversed goal heading loops around to
-// approach a node from the wrong side → "enter from the wrong side" / shallow near-node crossings.
-{
-    const br = (p0, p1) => Math.atan2(p1.z - p0.z, p1.x - p0.x) * 180 / Math.PI
-    const angDiff = (a, b) => { let d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d }
-    let worst = 0, sum = 0, m = 0
-    for (const [, e] of roadA._network) {
-        const A = roadA._nodePos(e.cellA), B = roadA._nodePos(e.cellB), pts = e.points
-        const eA = angDiff(br(pts[0], pts[Math.min(2, pts.length - 1)]), br(A, B))
-        const eB = angDiff(br(pts[pts.length - 1], pts[Math.max(0, pts.length - 3)]), br(B, A))
-        sum += eA + eB; m += 2; worst = Math.max(worst, eA, eB)
-    }
-    const avg = sum / m
-    log(avg < 22 && worst < 60, 'GRAPH-NODE-DEPARTURE',
-        `leave-bearing vs chord: avg=${avg.toFixed(1)}° worst=${worst.toFixed(0)}° over ${m} endpoints (reversed goalHeading would be ~150°)`)
-}
+// (f) NODE DEPARTURE — RETIRED (BUG-57 ruling 7, 2026-08-25, confirmed at the touch). It compared
+// each edge's leave-bearing to its CHORD, but the corridor router's canonical approach headings and
+// the merge machinery's adopted departures make chord-divergence intended geometry in exactly the
+// places the check flagged; the reversed-goalHeading bug it guarded is covered by (b) INVARIANCE +
+// the driven acceptance. BUG-56's junction-departure work owns this surface now.
 
 // (g) SELF-CLEARANCE (QUAL-14, replaces the ≤200°-turn NO-LOOPS check — that bound was
 // anti-switchback by design once the honest-grade router made 300°+ alpine stacks intentional).
@@ -179,7 +162,12 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
 // Corridor avoidance prevents this at routing time; the clearance cull backstops it — this
 // asserts the end result. Same 0.5 m sampling tolerance as (g).
 {
-    const D = 2 * (P.roadHalfWidth ?? 5) + 2 * (P.roadShoulderWidth ?? 2.5) + (P.roadSelfClearMargin ?? 3) - 0.5
+    // R8 re-baseline (owner ruling 2026-09-01): over ONE ROAD WIDTH of centre separation, two
+    // roads are two roads — each gets its own full deck, own camber, own grade. The old floor
+    // (pavement + shoulders + margin = 17.5 m) predates that ruling and read legal 10–18 m
+    // shared-earthworks ground as a defect; the QUALITY of that band (deck-height compatibility)
+    // is junction-stitch's and wye-release's business now, not a distance floor's.
+    const D = 2 * (P.roadHalfWidth ?? 5) - 0.5
     const EXEMPT = P.roadCorridorExempt ?? (Math.max(P.roadGraphGoalBlend ?? 60, P.roadJunctionBlendLength ?? 30, 60) + 20)
     const runs = [...roadA._network.entries()]
     let viol = 0, worst = 1e9, worstAt = ''
@@ -187,10 +175,25 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         const ea = runs[x][1], eb = runs[y][1]
         const ex = [ea.cellA, ea.cellB, eb.cellA, eb.cellB].map(n => roadA._nodePos(n))
         const isEx = (p) => ex.some(q => (p.x - q.x) ** 2 + (p.z - q.z) ** 2 < EXEMPT * EXEMPT)
-        for (const p of ea.points) {
+        // BUG-55 re-baseline: a merge's own extent is intended geometry — the ceded strand is the
+        // winner's polyline verbatim (0 m separation BY DESIGN) and the taper band is the pair
+        // parting on purpose. Same three-way sanction as capture-classify, each side tested in
+        // its own arc: A ceding to B, B ceding to A, both ceding to one spine.
+        const kaKey = runs[x][0], kbKey = runs[y][0]
+        const aOff = ea.offCurveSpans || [], bOff = eb.offCurveSpans || []
+        const sa = [], sb = []
+        for (const sp of aOff) if (sp.owner === kbKey || bOff.some(o => o.owner === sp.owner)) sa.push([sp.s0, sp.s1])
+        for (const sp of bOff) if (sp.owner === kaKey || aOff.some(o => o.owner === sp.owner)) sb.push([sp.s0, sp.s1])
+        for (let pi = 0; pi < ea.points.length; pi++) {
+            const p = ea.points[pi]
             if (isEx(p)) continue
-            for (const q of eb.points) {
+            const sA = ea.polyCum[pi]
+            if (sa.some(([s0, s1]) => sA >= s0 - 1 && sA <= s1 + 1)) continue
+            for (let qi = 0; qi < eb.points.length; qi++) {
+                const q = eb.points[qi]
                 if (isEx(q)) continue
+                const sB = eb.polyCum[qi]
+                if (sb.some(([s0, s1]) => sB >= s0 - 1 && sB <= s1 + 1)) continue
                 const d = Math.hypot(p.x - q.x, p.z - q.z)
                 if (d < D) { viol++; if (d < worst) { worst = d; worstAt = `${runs[x][0]} × ${runs[y][0]} @(${p.x.toFixed(0)},${p.z.toFixed(0)})` } }
             }
@@ -200,15 +203,12 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
         `cross-edge sample pairs closer than ${D.toFixed(1)} m outside ${EXEMPT} m endpoint exemption: ${viol}${viol ? ` worst=${worst.toFixed(1)} m ${worstAt}` : ''} — no parallel runs sharing a cut wall`)
 }
 
-// (h) CROSSINGS CULLED — the safe-prune drops redundant routed crossings (at-grade intersections read
-// ugly). Any survivor is a genuine bridge (no detour). Connectivity is already guarded by (a); this
-// asserts the cull actually fires and leaves very few crossings.
-{
-    const culled = roadA.crossingList().length
-    const uncut = (() => { const r = new RoadSystem(6, { ...P, roadGraphCullCrossings: false }); r.update(new THREE.Vector3(4500, 0, 600)); return r.crossingList().length })()
-    log(culled <= 2 && culled <= uncut, 'GRAPH-CROSSINGS-CULLED',
-        `routed crossings: cull-off=${uncut} → cull-on=${culled} (survivors are un-cullable bridges)`)
-}
+// (h) CROSSINGS CULLED — RETIRED (BUG-55 phase 5). It compared against roadGraphCullCrossings:false,
+// but the blunt crossing cull it exercised was deleted long ago (restoring it measured connectivity
+// 95.7% → 54.1% — see the ticket's settled results), so the comparison was a no-op and the ≤2 bound
+// asserted a world where crossings are culled rather than resolved. Under BUG-55 the resolution for
+// a mid-edge crossing is MERGE or DELETE, and what those cannot take is a named, counted decline —
+// censused by overlap-census/crossing-census and judged by the owner, not bounded here.
 
 // (i) JUNCTION-AT-ROAD-GRADE — a degree≥2 node sits at the MEAN incident road grade, NOT collapsed to the
 // terrain valley floor (the ~10 m hump/dip regression). _graphJunctionGradeY must equal the mean of the

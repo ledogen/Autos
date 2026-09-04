@@ -270,8 +270,8 @@ let noiseCoarse, noiseFine, noiseRegional
 let _workerParams = null
 
 // ── (routing removed — QUAL-08) ─────────────────────────────────────────────────────────────
-// The road router (arcPrimitiveConnect + dubins + search scratch — the ROUTE SYNC region) moved to
-// its OWN Worker, src/road-worker.js (ROAD_WORKER_SOURCE). Terrain is heightfield-only now so route
+// The road router moved to its OWN Worker pool (src/road-worker.js; since FEAT-68 a real module
+// worker importing corridor-router.js — no mirror). Terrain is heightfield-only now so route
 // jobs can never starve terrain generate (BUG-26). Do NOT reintroduce routing here.
 
 console.log('[terrain-worker] ready — awaiting init message')

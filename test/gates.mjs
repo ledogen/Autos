@@ -11,6 +11,9 @@
 //   cost       'fast' = no network worldgen (physics / props / isolated primitive math);
 //              'heavy' = full road/terrain/water generation. Advisory only (rough, not measured);
 //              it warns when an affected set will be slow. Selection does NOT use cost.
+//   manual     true = never AFFECTED-selected, however much of its closure changed. For proofs that
+//              cost minutes and answer a settings-level question rather than a per-commit one.
+//              `npm run test:all` and `--only` still run them; `npm test` reports them as held back.
 //   extraDeps  repo-relative paths a gate depends on but does NOT `import` (text mirrors, JSON
 //              assets) — the import-closure can't see these, so list them or the gate won't be
 //              selected when that file changes. Treated as exact-file triggers (their own imports
@@ -19,16 +22,10 @@
 // Adding a gate: add an entry here AND write test/<file>. Keep this list in run order.
 
 export const GATES = [
-  { file: 'arc-router.mjs', subsystem: 'road', cost: 'fast', extraDeps: [],
-    desc: 'arc-primitive router valid-by-construction: reaches goal, detours peaks, min-radius, determinism (search-time now report-only)' },
-  { file: 'road-dequantize.mjs', subsystem: 'road', cost: 'fast', extraDeps: [],
-    desc: 'BUG-16+FEAT-20 de-quantize refit: shortcut straightens the bow, κ-filter clothoids, switchbacks preserved, endpoint-exact (timing report-only)' },
   { file: 'road-minradius.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-12: DENSE realized centerline min-radius the ribbon sweeps (incl. capture fixtures) — the fold metric' },
   { file: 'centerline-curvature.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'EXACT per-primitive min-radius + two-center invariance (construction-level, complements road-minradius realized geometry)' },
-  { file: 'defect-b-grade.mjs', subsystem: 'road', cost: 'fast', extraDeps: [],
-    desc: 'smoothGradeInPlace window-invariance + grade-flip collapse + ramp-preserved (defect B)' },
   { file: 'invariance.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'two-center network invariance: arcS + gradeY stable across streaming windows' },
   { file: 'road-band-coverage.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
@@ -64,21 +61,31 @@ export const GATES = [
   { file: 'model-palette.mjs', subsystem: 'infra', cost: 'fast',
     extraDeps: ['data/prop-models.js', 'assets/models'],
     desc: 'curated recolour pools bind to the GLB by SUBSTRING on material name, which fails silently on re-export: assert every palette key still matches exactly one material, arrays are equal-length (one variant index drives the whole model), and index 0 equals the authored baseColorFactor (variant 0 reuses that material)' },
-  { file: 'route-worker-sync.mjs', subsystem: 'road', cost: 'fast', extraDeps: ['src/road-carve.js', 'src/road-worker.js'],
-    desc: 'PERF-03 WS-A: worker routing copy (road-worker.js ROAD_WORKER_SOURCE) byte-identical to road-carve.js canonical' },
-  { file: 'route-bundle-parity.mjs', subsystem: 'road', cost: 'heavy',
-    extraDeps: ['data/route-cache-default.json.gz', 'data/route-cache-region.json.gz'],
-    desc: 'QUAL-14/PERF-26: both bundled route caches == live router output, region delta disjoint from base, and the pair covers the story warm band (regenerate BOTH on any router change)' },
+  { file: 'road-worker-parity.mjs', subsystem: 'road', cost: 'heavy',
+    extraDeps: ['src/road-route-worker.js', 'src/road-worker.js', 'src/corridor-router.js'],
+    desc: 'FEAT-68: route Worker == sync path — the worker imports the same routeEdgeV2 (no mirror), so this pins the one drift surface left: the height-field rebuild from the init subset, plus byte-identical descriptors on real pinned edges' },
   { file: 'route-merge.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-10: no collinear duplicates + connectivity (graph emits each edge once)' },
   { file: 'crossing-classifier.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-07/08/11/13: bounded crossing classifier == brute force (feeds FEAT-19 carve widening) + once-per-build identity' },
   { file: 'road-graph.mjs', subsystem: 'road', cost: 'fast', extraDeps: [],
     desc: 'FEAT-13 v2: Delaunay/Urquhart primitives — empty-circumcircle, Urquhart⊇MST (connected), order-invariant' },
+  { file: 'road-connectivity.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'FEAT-68: the registered network is ONE component on the eval trio (connectivity is priority #1 and it regressed silently once — the deleted v1 culls shredded v2 geometry to 54% mean largest-component share while preventing zero real crossings), and no non-adjacent runs cross' },
+  { file: 'junction-stitch.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-56: the HONEST stitching bar — no two pavements overlap in XZ at incompatible deck heights (sanctioned merge bands INCLUDED; that sanctioning is what let the owner\'s torn fork print clean). RED until the departure pass lands.' },
+  { file: 'wye-release.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'R8 (owner 2026-09-01): two roads may not carry independent decks within one road width. GATING: every end-anchored ceded strand releases at >= 2*halfWidth of separation (was 0.00 m on all 64). REPORT: residual own-deck arc inside one road width + worst deck disagreement.' },
+  { file: 'play-area.mjs', subsystem: 'road', cost: 'heavy', manual: true, extraDeps: [],
+    desc: 'BUG-56 D: CAN A STORY RUN START AT ALL? Five fixed seeds, each generating the owner-specified 3x3 grid of 4000 m tiles (12 km square, 144 km2): ONE component, zero condemned edges, zero node-pin violations. Runs the same src/world-validate.js routine the game runs on the player\'s seed at new-game, so the gate and the reroll cannot drift. MINUTES per seed — settings changes only, never npm test.' },
+  { file: 'road-grade.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-56 C: NEVER DRAPE. No shipped run exceeds the gMaxRoad+gradeTol ceiling and nothing is condemned — measured on the registered geometry, so a run nobody solved cannot hide. The terrain-follow fallback is where the 108% grades came from; it is now re-route then condemn. Also prints the grade histogram + ladder rungs (report only — the ceiling is legal by fiat).' },
+  { file: 'pad-census.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-56 B0: every >=3-leg junction gets a pad. The ring ladder could end in null — 27 of 176 real junctions (15%) shipped a naked gap where the intersection should be, the owner\'s seed 6 (-3862,884) among them. Also reports which rung each pad landed on; the hull floor is a symptom counter.' },
+  { file: 'node-pin.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-56 B2: every run ENDS at the node it shares. A shove or a mid-span merge that walks an endpoint past the 3.75 m cluster radius costs that node both the leg and its junction pad — the owner\'s "road that just ends in a field" (seed 6 -870,2468 was 17.3 m off).' },
   { file: 'graph-topology.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-13 v2: blue-noise + Urquhart: reachability (known-accepted 78% red, see BUG-35), window-invariance, direction variety, step-free surface, junction-at-grade' },
-  { file: 'graph-cull-radius-invariance.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
-    desc: 'BUG-25: crossing cull is render-radius- + approach-history-invariant (320 m vs 1500 m edge sets agree; drive-out-and-back reproduces the network)' },
   { file: 'props.mjs', subsystem: 'props', cost: 'fast', extraDeps: [],
     desc: 'FEAT-06: prop geometry sanity + scatter determinism/window-invariance + slot accounting' },
   { file: 'prop-road-clearance.mjs', subsystem: 'props', cost: 'fast', extraDeps: [],

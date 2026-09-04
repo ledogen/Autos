@@ -50,7 +50,7 @@ const MAP_RADIUS_STEPS = [400, 650, 900, 1150, MAP_RADIUS]
 const MAP_RADIUS_MAX = 2000
 const PROGRESSIVE_GAP  = 16    // ms — yield between stream chunks so the page stays responsive
 const STREAM_DEBOUNCE = 120    // ms — re-stream only after a pan settles (a stream is expensive)
-const RESTREAM_MOVE   = 300    // m — re-stream when the pan center has drifted past this since last stream
+const RESTREAM_MOVE   = 300    // m — floor; see _anchorDrifted (threshold scales with streamed radius)
 const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest road within this range
 
 // ── Topographic paper (the map's whole visual identity) ───────────────────────────────────────
@@ -501,7 +501,12 @@ export class Map2D {
     _anchorDrifted() {
         if (!this._streamAt) return true
         const a = this._streamAnchor()
-        return Math.hypot(a.x - this._streamAt.x, a.z - this._streamAt.z) > RESTREAM_MOVE
+        // PERF (owner, 2026-09-01: "map regenerates the whole thing even when zooming"): the flat
+        // 300 m tripped on ordinary zoom-about-cursor pan drift and re-streamed a network whose
+        // 1450+ m radius still covered the view several times over. Re-stream only when the drift
+        // eats a real fraction of the streamed radius — coverage, not motion, is the criterion.
+        const R = this._radiusSteps()[this._radiusSteps().length - 1]
+        return Math.hypot(a.x - this._streamAt.x, a.z - this._streamAt.z) > Math.max(RESTREAM_MOVE, 0.35 * R)
     }
 
     _radiusSteps() {
@@ -614,12 +619,19 @@ export class Map2D {
     // ── RoadSystem (the map's own read-only instance) ────────────────────────────────────────
     // A signature over the seed + every road*/tunnel* param, so the kept instance is rebuilt iff
     // the network it represents could have changed (mode/graph-knob/tunnel tuning) — and reused
-    // (instant) otherwise. tunnel* is separate from road* on purpose (routeCacheSig must not see
-    // it — FEAT-40), but the tunnel pass DOES change spans/profiles, so the map must re-stream.
+    // (instant) otherwise. tunnel* is separate from road* on purpose (it must not force a
+    // re-route — FEAT-40), but it DOES change spans/profiles, so the map must re-stream.
     _paramSig() {
         const p = this._getParams()
         let s = 'seed=' + this._getSeed()
-        for (const k of Object.keys(p)) if (/^road|^tunnel/i.test(k) && typeof p[k] !== 'function') s += '|' + k + '=' + p[k]
+        // JSON.stringify OBJECT values: `'' + p[k]` renders any object as the constant
+        // "[object Object]", so the nested v2 price list (params.roadV2) was invisible here and the
+        // map kept a stale network through every router-price edit while the real road re-routed.
+        for (const k of Object.keys(p)) {
+            const v = p[k]
+            if (!/^road|^tunnel/i.test(k) || typeof v === 'function') continue
+            s += '|' + k + '=' + (v && typeof v === 'object' ? JSON.stringify(v) : v)
+        }
         return s
     }
 
@@ -663,7 +675,6 @@ export class Map2D {
         if (src && src._worldSeed === this._getSeed()) {
             const p = src._proto, q = this._road._proto
             q.cls = (p.cls ??= new Map())
-            q.clsSolo = (p.clsSolo ??= new Map())
         }
     }
 
@@ -675,7 +686,12 @@ export class Map2D {
     _startStream() {
         clearTimeout(this._pumpTimer)
         // Restart the radius growth from the smallest step for the NEW center (first ring paints fast).
-        this._streamStep = 0
+        // PERF (2026-09-01): the ladder exists so a COLD open paints something quickly. On a warm
+        // re-stream (a network already exists — its stale picture keeps drawing while the new one
+        // builds) the ladder just multiplies the cost ~2.3x: five synchronous re-plans of growing
+        // windows instead of one at full radius. Jump straight to the final step when warm.
+        this._streamStep = (this._road && this._road._network && this._road._network.size > 0)
+            ? this._radiusSteps().length - 1 : 0
         this._streamFull = false
         const a = this._streamAnchor()
         this._streamCenter = new THREE.Vector3(a.x, 0, a.z)
@@ -1622,9 +1638,14 @@ export class Map2D {
 
     // A run's polyline minus its bored stretches — i.e. the parts that are actually on the surface.
     // Returns the whole polyline untouched when the run carries no tunnel.
+    // BUG-55 phase 5: minus its CEDED stretches too — those vertices are the winner's polyline
+    // verbatim, and both runs stroking them doubled the ink on every shared road. The loser still
+    // draws when the owner is absent from this window (the surface resolver's absent-winner rule).
     _surfaceSlices(e) {
-        const { points, polyCum: cum, tunnelSpans: spans } = e
-        if (!spans || !spans.length || !cum) return [points]
+        const { points, polyCum: cum, tunnelSpans } = e
+        const ceded = (e.cededSpans || []).filter((sp) => this._road?._network?.has(sp.owner))
+        const spans = [...(tunnelSpans || []), ...ceded]
+        if (!spans.length || !cum) return [points]
         const out = []
         let s = 0
         for (const sp of [...spans].sort((p, q) => p.s0 - q.s0)) {

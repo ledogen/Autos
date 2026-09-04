@@ -113,6 +113,27 @@
     }
     #story-seed-modal #ss-start { border-color: #2f6da4; color: #7fbfff; }
     #story-seed-modal .ss-hint { color: #6a7a88; font-size: 11px; }
+    /* BUG-56 / workstream C, owner ruling 2026-08-27: a seed the region check REFUSED. The seed and
+       the loaded parameter set are not compatible, and the honest answer is to say so and ask for a
+       different seed — NOT to reroll the world underneath the player. Hidden until it fires. */
+    #story-seed-modal #ss-reject { display: none; flex-direction: column; gap: 8px; max-width: 460px; }
+    #story-seed-modal.rejected #ss-reject { display: flex; }
+    #story-seed-modal.rejected { border-color: #b8801f; min-width: 460px; }
+    #story-seed-modal .ss-reject-head {
+      color: #ffb020;
+      font-size: 17px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-align: center;
+      border: 2px solid #b8801f;
+      background: rgba(184, 128, 31, 0.14);
+      padding: 10px 14px;
+      line-height: 1.45;
+    }
+    #story-seed-modal .ss-reject-why { color: #e8d7b0; font-size: 13px; line-height: 1.5; text-align: center; }
+    #story-seed-modal .ss-reject-detail { color: #8a7a5e; font-size: 11px; line-height: 1.6; text-align: center; }
+    #story-seed-modal #ss-anyway { display: none; border-color: #7a5a1a; color: #c9a45a; }
+    #story-seed-modal.rejected #ss-anyway { display: block; }
     /* FEAT-43: Story Mode entry loading screen. Full-cover (not a panel) — the world behind it is
        mid-reseed and mid-warm, so showing it would read as a broken frame. Opaque, above everything
        including the pause menu. Minimal styling; FEAT-41 owns the real menu look. */
@@ -789,10 +810,21 @@
        with the pre-baked default seed 6 so it boots instantly for testing. Wired in main.js. -->
   <div id="story-seed-modal">
     <div class="ss-title">story mode</div>
+    <!-- The refusal block. Populated by main.js from src/world-validate.js's report; the modal gets
+         class="rejected" to reveal it and the "start anyway" button. -->
+    <div id="ss-reject">
+      <div class="ss-reject-head">
+        ⚠ THIS SEED IS NOT ROUTABLE WITH THE CURRENT ROUTER PARAMETERS
+        AND TERRAIN GENERATION PARAMETERS
+      </div>
+      <div class="ss-reject-why" id="ss-reject-why"></div>
+      <div class="ss-reject-detail" id="ss-reject-detail"></div>
+    </div>
     <div class="ss-label">world seed</div>
     <input id="ss-seed" type="text" maxlength="24" spellcheck="false" value="6">
     <div class="ss-actions">
       <button id="ss-start">start</button>
+      <button id="ss-anyway">start anyway</button>
       <button id="ss-cancel">cancel</button>
     </div>
     <div class="ss-hint">default seed 6 is pre-baked — loads instantly</div>

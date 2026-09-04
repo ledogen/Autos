@@ -50,7 +50,16 @@ for (const seed of SEEDS) {
     let best = null
     for (const [runKey, entry] of road._network) {
         const pts = entry.points
+        const spans = entry.tunnelSpans
         for (let i = 2; i < pts.length - 2; i += 3) {
+            // FEAT-68: bore/bridge spans are STRUCTURE (carve-skip by design) — a bridge deck is
+            // supported by the span collider, not an embankment, so it is not this gate's subject.
+            if (spans) {
+                const sArc = entry.polyCum[i]
+                let inSpan = false
+                for (const sp of spans) if (sArc >= sp.s0 - 6 && sArc <= sp.s1 + 6) { inSpan = true; break }
+                if (inSpan) continue
+            }
             const d = pts[i].y - terr.rawHeightWorld(pts[i].x, pts[i].z)
             if (d > (best?.d ?? 2.0)) best = { d, x: pts[i].x, z: pts[i].z, runKey }
         }

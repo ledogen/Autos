@@ -259,9 +259,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   on the raw noise BEFORE the amplitude multiply; the modulator depends on neither). So scaling
   //   BOTH layer amplitudes by k scales the final height by k — the same geometry the old Y-scale
   //   produced — but through params the road router ALREADY prices (coarseAmplitude feeds _coarseHeight),
-  //   the routing worker ALREADY ships (init), and routeCacheSig ALREADY keys (^coarse). Result: taller
-  //   mountains RE-ROUTE (switchbacks, grade caps respected) with ZERO router/sig/worker/bundle changes,
-  //   and the shipped default-world bundle still matches at k=1 (coarseAmplitude unchanged). The router
+  //   and the routing worker ALREADY ships (init). Result: taller mountains RE-ROUTE (switchbacks,
+  //   grade caps respected) with ZERO router or worker changes. The router
   //   only prices the coarse layer, so scaling fineAmplitude alters visual detail but never routes.
   //   params.terrainAmplitude stays permanently 1.0 (the internal visual/physics multiply), unless set
   //   programmatically elsewhere.
@@ -412,95 +411,95 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // roadAltWeight sliders (per-tile router params, removed in 08-05). The full "Valley Trunk (proto)"
   // subfolder is gone — there is ONE road system and ONE viz now (Show Road Splines above).
   const fireRoadParam = () => { if (typeof callbacks.onRoadParamChange === 'function') callbacks.onRoadParamChange() }
-  // FEAT-13 v2 URQUHART/blue-noise graph topology knobs (the sole road network — QUAL-12 removed rows).
+  // ── Topology (which nodes exist, which pairs connect) — SURVIVES router v2 ────────────────
+  // Blue-noise sites + Urquhart + the degree cap. FEAT-68 deleted the crossing/clearance culls
+  // (they removed 11-21 good edges per seed while preventing zero real crossings), so what is
+  // left here is genuinely the whole topology layer.
   roadFolder.add(params, 'roadSiteCandidates', 1, 4, 1).name('Site Candidates').onChange(fireRoadParam)
   roadFolder.add(params, 'roadSiteSpacing', 256, 900, 32).name('Density (cell m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadSiteMinDist', 120, 600, 20).name('Node Min-Gap (m)').onChange(fireRoadParam)
   roadFolder.add(params, 'roadSiteValleySnap').name('Valley Snap').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphMargin', 1, 6, 1).name('Margin (cells)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphDeviationCap', 0, 12, 0.5).name('Earthwork Cap (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphMaxGrade', 0.05, 0.25, 0.01).name('Max Grade').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphGoalBlend', 20, 200, 10).name('Goal Blend').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphWTurn', 0, 12000, 250).name('Curve Penalty').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphWAlt', 0, 6, 0.1).name('wAlt').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadGraphCullCrossings').name('Cull Crossings').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphMaxDegree', 0, 6, 1).name('Max Junction Degree').onChange(fireRoadParam)
   roadFolder.add(params, 'roadGraphDegreeDetourHops', 2, 8, 1).name('Degree Cull Strictness').onChange(fireRoadParam)
-  // QUAL-14 route clearance: self-clearance contract (D_self = roadWidth + 2·shoulder + margin over
-  // arc-separations > gap; violations re-route via the router's no-go repair loop) and the corridor
-  // clearance kept between an edge and its higher-priority siblings' solo lanes. Re-routes.
-  roadFolder.add(params, 'roadSelfClearMargin', 0, 10, 0.5).name('Self-Clear Margin (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadSelfClearGap', 40, 200, 10).name('Self-Clear Gap (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadCorridorClearance', 10, 40, 1).name('Corridor Clearance (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadCorridorExempt', 30, 150, 5).name('Corridor Exempt (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadWGrade', 0, 2000,  20  ).name('wGrade').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadWOver',  0, 40000, 500 ).name('wOver').onChange(fireRoadParam)
-  // Valley-seek depth cap (m below the straight edge baseline that still rewards descending). Higher =
-  // more decisive valley-following / less squiggly (slightly more detour); the cap bounds wander.
-  roadFolder.add(params, 'roadValleyDepthCap', 0, 120, 5).name('Valley Depth Cap (m)').onChange(fireRoadParam)
-  // FEAT-10 earthwork routing levers (re-route + re-stream + carve rebuild on change via fireRoadParam).
-  // Window 0 = OFF (terrain-following / old spiral behaviour). These trade loops vs earthwork depth.
-  roadFolder.add(params, 'roadEarthworkWindow', 0, 250, 10).name('Earthwork Window (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadWDeviation',      0, 20,  0.5).name('wDev').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadDeviationCap',    0, 25,  1  ).name('Deviation Cap (m)').onChange(fireRoadParam)
-  // roadMergeBand = "same node" tolerance for skipping a degenerate (collapsed) graph edge. Re-routes.
+  // "same node" tolerance for skipping a degenerate (collapsed) graph edge.
   roadFolder.add(params, 'roadMergeBand', 4, 60, 2).name('Merge Band (m)').onChange(fireRoadParam)
-  // D0 — min turn radius (m); arc-fillet rounds corners tighter than this (higher = wider hairpins).
-  // Floor: 6 m (UI lower bound; road.js _refreshParams further clamps to ≥ roadHalfWidth+clearance+ε).
-  // D3 (plan 09-22) COUPLING: carve footprint (blendW=1 trough width) is capped at roadMinTurnRadius
-  // so adjacent switchback arms' footprints can't overlap. Changing this slider re-routes the road
-  // AND re-bakes the carve (debouncedRoadRebuild now also calls rebuildAllChunksFromWorker).
-  roadFolder.add(params, 'roadMinTurnRadius', 6, 300, 5).name('Min Turn Radius (m)').onChange(fireRoadParam)
-  // FEAT-40 tunnels — taut-string summit cut (profile-only; routed XZ untouched). fireRoadParam is
-  // the one lever that re-streams the network AND rebuilds carve + ribbon, all of which read spans.
-  roadFolder.add(params, 'tunnelsEnabled').name('Tunnels').onChange(fireRoadParam)
-  roadFolder.add(params, 'tunnelMinDepth', 5, 45, 1).name('Tunnel Min Depth (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'tunnelMinLen', 6, 46, 1).name('Min Bore Len (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'tunnelMaxLen', 50, 350, 10).name('Max Bore Len (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'tunnelPortalDepth', 0, 6, 0.25).name('Crown Cover (m)').onChange(fireRoadParam)
+
+  // ── Router v2 price list (FEAT-68) ────────────────────────────────────────────────────────
+  // The corridor router buys elevation with MONEY, never with length, so every knob here is a
+  // price in "metres of flat road" (cRoadM = 1 is the numeraire). These are the tuning dividend:
+  // ~5 physically-meaningful prices replacing v1's ~15 interacting abstract weights.
+  //
+  // They live on params.roadV2 (data/ranger.js) — the same object every other road slider binds,
+  // which is what keeps a live edit from being aliased away by a hot-module reload — and RoadSystem
+  // hands that object to each route job, so Worker-routed edges price identically.
+  const v2Folder = roadFolder.addFolder('Router v2 (prices)')
+  //   Turn Cost: money per RADIAN of direction change — THE hairpin dial. The corridor search is
+  //   heading-free, so without a turn price a ladder of twenty micro-zigzags costs the same as two
+  //   long traverses. Lower = switchbacks stack tighter and more often; higher = long sweeping
+  //   traverses, fewer reversals. Measured on the eval trio: 15 -> 20/38/32 hairpins,
+  //   30 -> 17/21/24, 60 -> 17/15/11, with grade compliance identical at all three.
+  v2Folder.add(params.roadV2, 'cTurn', 0, 120, 5).name('Turn Cost (per rad)').onChange(fireRoadParam)
+  //   Grade Discomfort: cost/m multiplier is 1 + wGrade·g². Climbing H m at grade g costs about
+  //   H·(1/g + wGrade·g), minimised at g* = 1/sqrt(wGrade) — so this sets the grade the router
+  //   WANTS to climb at. 120 puts g* near 9% (forest-road grade); 40 put it at 16% and the solver
+  //   just took steep straights.
+  v2Folder.add(params.roadV2, 'wGrade', 10, 300, 5).name('Grade Discomfort').onChange(fireRoadParam)
+  //   Earthworks: cut is priced per m of length per m of depth, plus a QUADRATIC depth term (real
+  //   cuttings go superlinear past ~8 m: rock walls, stabilisation). The quadratic term is what
+  //   makes a portal emerge at bench depth instead of the solver trenching to the class boundary.
+  v2Folder.add(params.roadV2, 'cCutM', 0, 1, 0.01).name('Cut (per m·m)').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'cCut2', 0, 0.5, 0.01).name('Cut² (per m·m²)').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'cFillM', 0, 1, 0.01).name('Fill (per m·m)').onChange(fireRoadParam)
+  //   Bores: per-metre rate + a fixed charge per PORTAL. Raise either to make tunnels rarer —
+  //   they must read as earned. Structures minimise grade cost, so they must never be the default.
+  v2Folder.add(params.roadV2, 'cBoreM', 2, 40, 0.5).name('Bore (per m)').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'cPortal', 0, 800, 25).name('Portal (each)').onChange(fireRoadParam)
+  //   Vocabulary caps — HARD limits the search may not exceed (the sustained-24 m ceiling is 40%).
+  //   Bores are gentler by construction (FEAT-40 lineage).
+  //   Corner Rounding: the solved profile is defined at ~10 m stations, so grade changes
+  //   instantaneously at each one — a corner every 10 m that reads as a periodic tick through the
+  //   suspension. This rounds them into short vertical curves. NOT monotone: measured jolt p99 at
+  //   20 m/s runs 0 m → 0.51 g, 15 m → 0.24 g, 30 m → 0.48 g, because past ~2 stations the
+  //   displacement bound clips and clipping puts corners back. 15 is the floor; 25 is the cap.
+  v2Folder.add(params.roadV2, 'vSmoothM', 0, 25, 2.5).name('Corner Rounding (m)').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'gMaxRoad', 0.15, 0.40, 0.01).name('Max Road Grade').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'gMaxBore', 0.05, 0.30, 0.01).name('Max Bore Grade').onChange(fireRoadParam)
+  //   Merge Distance (BUG-53): two roads leaving the same junction count as ONE road while their
+  //   centres are this close, and the loser gives up its own line over that stretch — one pavement
+  //   out of the junction, then a tapered fork where they finally part. 18 m is where their
+  //   earthworks touch (5 m carriageway + 2.5 m shoulder each side + 3 m carve margin), so below
+  //   it the two roads are carving the same dirt. Raise it to merge pairs that merely LOOK
+  //   doubled; lower it to merge only hard overlaps; 0 disables merging entirely (an A/B, not a
+  //   shipping value — it restores the doubled roads).
+  v2Folder.add(params.roadV2, 'mergeProxM', 0, 40, 1).name('Merge Distance (m)').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'wyeCreaseMaxDeg', 0, 45, 1).name('Wye Crease Cap (deg)').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'sibConeDeg', 0, 60, 1).name('Sibling Cone (deg)').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'wSibDepart', 0, 20, 0.5).name('Sibling Depart Cost').onChange(fireRoadParam)
+  //   Pad Arrival Cap (BUG-55): a merged strand may not arrive at its far junction steeper than
+  //   this — the pad there is a near-flat plaza (clamped ~7%), and a steep arrival parks a step
+  //   at its rim (the measured 1.75-2.37 m cliff class). A merge that cannot meet it is declined
+  //   with reason 'pad', never forced.
+  v2Folder.add(params.roadV2, 'mergePadArrivalMax', 0.07, 0.24, 0.01).name('Pad Arrival Cap').onChange(fireRoadParam)
+  //   Delete Detour Cap (BUG-55 phase 5): an unmergeable tear-grade pair loses its LONGER member
+  //   iff its endpoints reconnect within this many hops (0 = never delete). Higher clears more
+  //   doubled roads at the cost of longer real drives where a leg is removed.
+  //   Class boundaries: deeper than cutMax below ground becomes a BORE; higher than fillMax above
+  //   it would become a bridge (bridges are de-scoped — owner ruling 2026-08-18 — so fill is
+  //   capped there instead). A 12-20 m trench is an open rock cutting, not a tunnel.
+  v2Folder.add(params.roadV2, 'cutMax', 6, 40, 1).name('Cut→Bore Depth (m)').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'fillMax', 2, 20, 0.5).name('Max Fill (m)').onChange(fireRoadParam)
+
+  // Bore GEOMETRY (rendering + collider + the containment test), as opposed to bore PRICING above.
+  // Spans now come from the profile solver, so FEAT-40's tunnel-detection pass and its knobs
+  // (tunnelsEnabled / MinDepth / MinLen / MaxLen / PortalDepth) are gone with it — a tunnel is no
+  // longer something detected after the fact, it is a state the router priced.
   roadFolder.add(params, 'tunnelBoreRadius', 4, 12, 0.25).name('Bore Radius (m)').onChange(fireRoadParam)
 
-  // D-arc (2026-06-16) / fixed-angle palette (QUAL-05 follow-up, 2026-06-24) — arc-primitive router knobs.
-  // The road is min-radius-valid BY CONSTRUCTION: the router turns a FIXED ANGLE per primitive (one
-  // heading bin) at one of the palette radii below, preferring the LARGEST that fits the heading change +
-  // grade → sweeping turns on mild ground, tight switchbacks only where grade forces them. Each re-routes
-  // via onRoadParamChange. The old single 'Arc Gentle Radius' slider is GONE — it bound roadArcGentleRadius,
-  // which the fixed-angle router now only reads as a fallback when roadArcRadii is absent (never, here).
-  //   Sweep/Gentle/Medium Radius: the curvature palette roadArcRadii[0..2] — ↑ = wider, sweepier turns.
-  //   Hard Radius:   tightest switchback the router (and the Dubins terminal) can express — the real fold
-  //                  floor. Writes BOTH roadArcRadii[3] and roadArcHardRadius so the palette tail stays
-  //                  pinned to the floor (ranger.js invariant: "last entry should equal roadArcHardRadius").
-  //   Heading Bins:  heading-lattice resolution; one bin is turned per turn primitive. COARSER (fewer
-  //                  bins) = LONGER, sweepier arcs (the opposite of the old anti-zigzag intuition).
-  //   Grade Samples: grade sample points along each (now variable-length) arc; ≥2 for the long sweeps.
-  //   Heur Weight:   weighted-A* speed knob. ↑ = faster chunk loads, slightly less optimal routes.
-  roadFolder.add(params.roadArcRadii, '0', 60, 400, 10).name('Arc Sweep Radius (m)').onChange(fireRoadParam)
-  roadFolder.add(params.roadArcRadii, '1', 30, 200, 5 ).name('Arc Gentle Radius (m)').onChange(fireRoadParam)
-  roadFolder.add(params.roadArcRadii, '2', 15, 100, 5 ).name('Arc Medium Radius (m)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadArcHardRadius', 6, 40, 1).name('Arc Hard Radius (m)').onChange(() => {
-    params.roadArcRadii[3] = params.roadArcHardRadius   // keep the palette tail pinned to the min-radius floor
-    fireRoadParam()
-  })
-  roadFolder.add(params, 'roadArcHeadingBins', 8, 48, 1 ).name('Arc Heading Bins').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadArcGradeSamples', 1, 6, 1 ).name('Arc Grade Samples').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadArcHeurWeight',   1, 3, 0.1).name('Arc Heur Weight').onChange(fireRoadParam)
-
-  // PERF routing experiments (perf-worldgen worktree — see .planning/perf-worldgen/PROPOSALS.md).
-  //   Corridor 2-Pass: coarse backward flood feeds the fine search's heuristic (×2.5–3 cold
-  //                    load; same character bands, different individual roads — drive it).
-  //   Corridor HScale: guidance strength — lower = closer to the shipped optimum, slower.
-  //   Solo Reuse:      adopt an edge's solo route as final when sibling corridors don't bind.
-  roadFolder.add(params, 'roadCorridorTwoPass').name('Corridor 2-Pass (perf)').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadCorridorHScale', 0.5, 1.2, 0.05).name('Corridor HScale').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadSoloReuse').name('Solo Reuse (perf)').onChange(fireRoadParam)
-
-  // De-quantize refit (BUG-16 + FEAT-20) — post-passes on the routed chain (road-carve.js).
-  //   Refit Shortcut: corridor Dubins shortcut — straightens the quantized-heading bow on
-  //                   near-straight roads and yields continuous (chord-derived) turn radii.
-  //   Refit Smooth Window: κ box-filter window re-emitted as clothoid ramps; 0 = off. Larger =
-  //                   smoother curvature but more far-end drift for the terminal to absorb.
-  roadFolder.add(params, 'roadRefitShortcut').name('Refit Shortcut').onChange(fireRoadParam)
-  roadFolder.add(params, 'roadRefitWindow', 0, 100, 5).name('Refit Smooth Window (m)').onChange(fireRoadParam)
+  // Carve footprint cap (NOT a routing knob): the road's end half-width is clamped to this so
+  // adjacent switchback arms' carve troughs cannot overlap. v2's own fold floor is the fillet
+  // minimum radius in corridorCenterline, which is enforced during curve generation.
+  roadFolder.add(params, 'roadMinTurnRadius', 6, 300, 5).name('Carve Footprint Cap (m)').onChange(fireRoadParam)
 
   // ── Road Surface sub-folder (D-04/D-07 — Plan 09-05 surface sliders) ────────────
   // These sliders change ROAD GEOMETRY (width, crown, camber, carve slopes, shoulder, etc.)
@@ -614,36 +613,13 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadSiteMinDist:       'Minimum distance allowed between two graph nodes — stops junctions from clustering too tightly.',
     roadSiteValleySnap:    'Nudges graph nodes toward nearby valley floors so roads settle into low ground.',
     roadGraphMargin:       'Extra cells beyond the streamed area the graph is built into, so edges near the border still connect.',
-    roadGraphDeviationCap: 'Max earthwork (m of cut/fill) the graph router spends to hold grade before it detours instead.',
-    roadGraphMaxGrade:     'Steepest grade the graph router permits. Higher = straighter/steeper; lower = windier routes that stay gentle.',
-    roadGraphGoalBlend:    'How hard the router aims straight at the destination near the end. Higher = less weaving as it arrives.',
-    roadGraphWTurn:        'Curve penalty for the graph router — higher = straighter roads with fewer, gentler turns.',
     roadGraphMaxDegree:    'Cap junction connectivity: nodes above this degree lose their longest redundant edge (detour-safe). 0 = off; 3 = thin 4-ways.',
     roadGraphDegreeDetourHops: 'How redundant an edge must be before the degree cap may drop it. 3 = thin about half the 4-ways (measured); 8 = drop any edge with a detour (kills all 4-ways).',
-    roadGraphWAlt:         'Reward for staying low / following valleys. Higher = roads hug the low ground more.',
     roadGraphCullCrossings:'Drops redundant crossings from the graph, thinning tangled intersection clusters.',
-    roadSelfClearMargin:   'Extra clearance (m) beyond the road+shoulder footprint a road must keep from ITSELF. Higher = wider berth where a road loops back near itself.',
-    roadSelfClearGap:      'Arc window (m) within which a road passing close to itself is treated as one natural bend (exempt). Below it = expected switchback; beyond it, a close approach is a self-overlap and the route re-threads wider. Lower = tighter hairpins get flagged and un-knotted.',
-    roadWGrade:            'Cost weight for steepness — higher trades distance for gentler grades.',
-    roadWOver:             'Soft-cap penalty once grade exceeds Max Grade — discourages, but does not forbid, over-steep segments.',
-    roadValleyDepthCap:    'How far below baseline (m) descending still earns reward. Higher = more decisive valley-following, less squiggle.',
-    roadEarthworkWindow:   'Look-ahead window (m) for planning cut/fill to smooth grade. 0 = off (the road just follows the terrain).',
-    roadWDeviation:        'Weight pulling the road to hug existing terrain (less earthwork). Higher = fewer, smaller cuts and fills.',
-    roadDeviationCap:      'Max cut or fill depth (m) the earthwork pass may use at any point.',
     roadMergeBand:         'Tolerance (m) for treating an edge\'s two endpoints as the "same" node (skips a collapsed edge).',
-    roadMinTurnRadius:     'Tightest corner the road can make (m). The fillet rounds sharper corners up to this radius.',
     '0':                   'Widest radius in the turn palette (m) — used for sweeping turns on mild ground.',
     '1':                   'Second-widest turn radius in the palette (m).',
     '2':                   'Mid turn radius in the palette (m).',
-    roadArcHardRadius:     'Tightest radius the router can express (m) — the real switchback floor. Also pins the palette tail.',
-    roadArcHeadingBins:    'Heading-lattice resolution; one bin is turned per turn. Fewer bins = longer, sweepier arcs.',
-    roadArcGradeSamples:   'Grade sample points along each arc. Use ≥2 so long sweeps read grade correctly.',
-    roadArcHeurWeight:     'Weighted-A* speed knob. Higher = faster routing, slightly less optimal roads.',
-    roadRefitShortcut:     'Post-pass that straightens the quantized-heading "bow" on near-straight roads via a Dubins shortcut.',
-    roadRefitWindow:       'Smoothing window (m) that re-emits curvature as clothoid ramps. 0 = off; larger = smoother but more end drift.',
-    roadCorridorTwoPass:   'PERF experiment: coarse pass guides the router (×2.5–3 cold load). Same road style, different individual roads.',
-    roadCorridorHScale:    'Corridor guidance strength. 1.0 = fastest; lower = closer to the shipped routes but slower.',
-    roadSoloReuse:         'PERF experiment: skip the constrained re-route when sibling corridors don\'t bind. Near-identical network.',
     // Road Surface
     roadWidth:             'Total drivable width of the road surface (m).',
     crownHeight:           'Height of the centerline crown (m) — the slight peak that sheds water to the edges.',

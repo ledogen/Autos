@@ -352,101 +352,11 @@ export const RANGER_PARAMS = {
   brakeRampRate:    8,    // /s — brake input ramp (125 ms to full)
   releaseRampRate: 20,    // /s — release decay rate for both axes
 
-  // ── Phase 8 Road Routing — D-09 LOCKED cost model (valley-trunk core) ─────
-  // Soft-cost turn-penalty A* weights for the valley-following streaming trunk in src/road.js.
-  // Cost (per A* edge, D-09):
-  //   edgeCost = roadWDist·horiz + roadWAlt·h + roadWGrade·grade²
-  //            + roadWOver·max(0, grade − maxRoadGrade) + roadWTurn·(Δheading/45°)
-  // These are live-tunable (08-07 sliders flow through this._proto.params seeded from these).
-  // The over-cap term is FINITE/SOFT — there is NEVER an Infinity edge / hard grade block
-  // (D-02 REVISED; the old hard block caused the "no path" failure — see 08-VERIFICATION.md).
-  // See .planning/phases/08-road-routing/08-RESEARCH.md + spike 001 for derivation.
-  //
-  // maxRoadGrade: SOFT target grade the over-cap penalty measures against (rise/run ratio).
-  // Exceeding it is penalized (roadWOver·excess), NOT blocked — the route climbs steep ground
-  // only when wrapping around would cost more.
-  // FEAT-10: raised 0.15→0.20. At 0.15 the router switchbacked so hard to stay gentle that roads
-  // SPIRALED (2.3× detour, 34/62 runs looping). A steeper grade lets roads run straighter (~1.8×
-  // detour, ~22 loops); tall fills are handled by the constant-slope embankment carve (landed with it).
-  // Live slider: lower = gentler + windier; higher = straighter + steeper.
-  maxRoadGrade: 0.20,   // ratio (20%) — SOFT over-cap target (FEAT-10; never a hard block)
-
-  // roadWDist: directness weight — cost per metre of horizontal travel. Keeps the trunk from
-  // wandering; balanced against the altitude/grade terms. D-09 default 1.
-  roadWDist: 1,         // cost units / m horizontal — directness (D-09)
-
-  // roadWAlt: stay-low valley-seeking weight — DOMINANT term. The altitude cost is measured
-  // RELATIVE to the straight anchor→anchor baseline: roadWAlt·max(0, δ + roadValleyDepthCap), where
-  // δ = terrainHeight − baseline. Above baseline → avoid (route around ridges); below baseline →
-  // seek the low ground (valley spine); below the cap → saturates (bounded, no km wander).
-  roadWAlt: 1.0,        // cost units/m altitude·m — valley-seeking term, per-metre (×L) (D-09 / D-04)
-
-  // roadValleyDepthCap: how far BELOW the anchor baseline still earns valley-seeking reward (m).
-  // Higher = stronger pull into deep valleys & more decisive, less squiggly roads (but a touch more
-  // detour); lower = flatter, more direct-but-aimless. The cap is what keeps the old absolute-altitude
-  // global magnet (km wander) from coming back. ~40 m re-activates the spine over ~all road length.
-  roadValleyDepthCap: 40,  // m below baseline that still rewards descending (bounded valley-seek)
 
   // roadMergeBand: how close an edge's two endpoints count as the "same node" — a DEGENERATE (collapsed)
   //   edge whose endpoints coincide within this band is skipped at graph assembly. m.
   roadMergeBand: 24,
 
-  // roadWGrade: gentle-grade weight — quadratic (grade²) cost. 2× grade → 4× penalty; shapes
-  // smooth gentle climbs without forbidding any grade. D-09 default 400.
-  // NOTE (fixed-angle redesign): the router cost is now accrued PER-METRE × arc length, since turn
-  // primitives vary in length (fixed-angle: arc = R·turnAngle). roadWGrade/roadWOver/roadWAlt were
-  // rescaled accordingly (they were per-8m-primitive before). Tuned via a headless radius+grade sweep
-  // on seed 6 + lone-pine to give sweeping radii on mild ground (avg ~130 m, ~50% of road ≥100 m) while
-  // switchbacking where grade forces it.
-  // Road-Feel Phase 2 sweep vs the HONEST cost model (93d61a6, test/road-character.mjs OFAT+combos,
-  // seed 6): 100→960 as part of the shipped preset (with roadGraphWTurn 800 + roadGraphMaxGrade 0.12
-  // + roadWOver 30000): built grade p95 21.4%→20.6%, switchbacks 39→62, straights>200m ~5%, +6% km.
-  // The more aggressive maxGrade 0.10 variant scored better still (straights 3.4%, p95 16.5%, sw 80)
-  // but put 40 invisible collision steps into seed 6 (road-smoothness.mjs RED) — retry after QUAL-13.
-  // One-factor wins do NOT stack naively (wCurv800+wGrade960 at mg0.15 REGRESSED straights to 7.5%);
-  // change these four together or re-sweep.
-  roadWGrade: 960,      // cost units/m — quadratic grade² penalty (gentle climbs); per-metre (×L)
-
-  // roadWOver: FINITE over-cap penalty — roadWOver·max(0, grade − maxRoadGrade). Strongly (but
-  // never infinitely) discourages exceeding maxRoadGrade; forces switchbacks where the grade
-  // would otherwise blow past the target. NEVER Infinity (D-02 REVISED). D-09 default 8000.
-  roadWOver: 19000,     // cost units/m over-grade — SOFT over-cap penalty, per-metre (×L) (2500→18500 harder
-                        // soft-cap; Road-Feel Phase 2: →30000 paired with roadGraphMaxGrade 0.12, see roadWGrade note.
-                        // Crunchy-road pass: 30000→18500 — the grade wall dwarfed roadWTurn ~17×, flipping the router
-                        // into hard contour-weaving above maxGrade; softening it ramps the mode transition.)
-
-  // roadWTurn: curvature penalty weight (wCurv) in the arc router. QUAL-05: the per-primitive cost is
-  // wCurv·κ²·L (curvature SQUARED — "bending energy"), so for a given heading change the cost is
-  // wCurv·Δθ/R → a TIGHTER radius costs more. This biases the route to gentle sweeps on mild ground and
-  // lets tight radii (down to roadArcHardRadius) emerge ONLY where grade/altitude savings outweigh the
-  // penalty (i.e. where the terrain is genuinely steep). Was 120 under the old LINEAR (wCurv·|κ|·L)
-  // model, which was radius-blind per turn → roads turned tight everywhere. 8000 picked by a headless
-  // radius-distribution sweep: tight (<20 m) arc-length 48%→8%, avg radius 24 m→53 m, min radius still
-  // the hard floor (8 m). Higher = gentler/straighter; live-tunable via "Curve Penalty (wCurv)".
-  roadWTurn: 8000,      // cost units — wCurv·κ²·L curvature penalty (QUAL-05); higher = gentler roads
-
-  // ── FEAT-10 earthwork routing ────────────────────────────────────────────────────────────────
-  // The router used to cost grade against RAW terrain, so it SPIRALLED to follow contours (43/63 runs
-  // looped >270° at seed 6). These three turn on the "fill-the-valley / cut-the-ridge" cost model: the
-  // router (and the design-grade profile) follow a LOW-PASSED terrain line instead of raw, paying a
-  // weighted deviation (earthwork) penalty, bounded by a cap. Result (seed 6): loops 43→15, full-circle
-  // spirals 20→2, detour 1.72→1.19, no perf cost. Set roadEarthworkWindow=0 to fully revert to terrain-
-  // following routing. (Carve fills/cuts to the design line; deviationCap keeps them carve-buildable.)
-  //
-  // roadEarthworkWindow: half-width (m) of the terrain low-pass = the design grade line. Larger =
-  // smoother/straighter roads + bigger earthwork. 0 = OFF (terrain-following, the old behaviour).
-  roadEarthworkWindow: 120,
-  // roadWDeviation: weight on the per-metre |design − terrain| earthwork penalty. Higher = hugs terrain
-  // more (less fill/cut, windier); lower = straighter (more earthwork). 0 = OFF.
-  // Road-Feel Phase 2 (measured, seed 6/3/11 via test/road-character.mjs): 3→12 with roadGraphWTurn 1500
-  // is the tuned pair — straights>200m 45%→35%, switchbacks 3→13 (10 on steep terrain), mean earthwork
-  // 6.6→6.1 m, loopers unchanged. (roadWGrade beyond 100 measured useless-to-harmful: 960 kills all
-  // switchbacks and worsens crest-g. maxGrade 0.12 interacts badly with this pair — do not stack.)
-  roadWDeviation: 12,
-  // roadDeviationCap: max |design − terrain| (m) the router/profile will build — bounds fill/cut depth so
-  // the carve can construct it. On terrain taller than this the design grade falls back to terrain grade
-  // and the road still switchbacks (the genuinely-forced loops).
-  roadDeviationCap: 10,   // crunchy-road pass: 8→10 (let the carve bridge/cut more before forced weaving)
 
   // roadJunctionFootprints: render the flat pad mesh at AT_GRADE crossings (FEAT-07 Step 2). Now ON: the
   // pad sits coplanar with the two strands the mid-span flatten eased to node.nodeY, so the crossing reads
@@ -483,27 +393,6 @@ export const RANGER_PARAMS = {
   // untouched: no pad spam. 0 = off. Kinks > 75° are never padded (degenerate strands).
   roadJunctionKinkDeg: 9,
 
-  // ── Tunnels (FEAT-40) ───────────────────────────────────────────────────────────────────────────
-  // Two decoupled stages (applyTunnelPassInPlace): (1) taut-string SUMMIT CUT — profile summits
-  // ≥ tunnelMinDepth above the lower convex hull get cut to the hull chord; (2) BORE DETECTION —
-  // wherever RAW terrain (router coarse height) covers the tube CROWN (profile + boreRadius) by
-  // ≥ tunnelPortalDepth for ≥ tunnelMinLen, that stretch becomes a bored tunnel (raw hill kept
-  // overhead, concrete half-tube lining, masonry portal rings). Stage 2 probes real terrain on
-  // purpose: the grade smoother flattens short sharp spurs out of the profile entirely, so a
-  // profile-only trigger turned 15–50 m spur tunnels into open trenches. Profile-only pass:
-  // routed XZ centerlines are untouched, so these params are DELIBERATELY tunnel*-prefixed
-  // (a road* key would spuriously invalidate the bundled route cache — see routeCacheSig).
-  tunnelsEnabled: true,     // bool — master toggle for the tunnel pass
-  tunnelMinDepth: 25,       // m — min dirt above the road deck (peak, somewhere in the span)
-                            //     that JUSTIFIES a tunnel — shallower crests stay earthwork
-                            //     cuts. Also the stage-1 summit-cut trigger. The tunnel-count
-                            //     lever: higher = only the juicy deep bores survive.
-  tunnelMinLen: 26,         // m — MIN BORE LENGTH; shorter covered stretches stay open cuttings
-  tunnelPortalDepth: 1.5,   // m — terrain cover required ABOVE THE TUBE CROWN to bore (portal
-                            //     line sits where the hill genuinely swallows the tube)
-  tunnelMaxGrade: 0.12,     // abs grade cap on a stage-1 chord (vetoes degenerate steep chords)
-  tunnelMaxLen: 200,        // m — longest single bore; longer covered stretches stay open
-                            //     (tunnels are spur shortcuts, not kilometre subways)
   tunnelBoreRadius: 8,      // m — half-tube lining radius; also the physics bore-apex clearance
 
   // ── Crossing classifier (FEAT-07/11/13 foundation) ──────────────────────────────────────────────
@@ -514,81 +403,6 @@ export const RANGER_PARAMS = {
   //   AT_GRADE      (otherwise)                 — flatten both strands to one shared pad (FEAT-07).
   roadCrossAngleMin: 12,   // deg — crossings shallower than this are near-parallel grazes, not junctions.
 
-  // ── Road network topology (FEAT-13 v2) ──────────────────────────────────────────────────────────
-  // The network is an URQUHART graph (Delaunay minus each triangle's longest edge) over a BLUE-NOISE
-  // anchor set: varied-angle real T/X intersections at nodes, sparse with route-choice cycles, CONNECTED
-  // by construction (Urquhart ⊇ Euclidean MST), window-invariant. (QUAL-12 removed the historical parallel-
-  // rows generator; the graph is now the sole topology. See .planning/ROAD-GRAPH-HANDOFF.md.)
-  // roadGraphDeviationCap: graph-mode earthwork fill/cut cap (m) — how far the smooth design grade may
-  // deviate from terrain before the clamp pulls it back. CAUTION: too TIGHT is the jarring "level-patch"
-  // staircase — the clamp slams the gentle wide-window design line back onto steep raw grade wherever a
-  // terrain bump exceeds the cap, producing flat plateau → steep drop → flat plateau (grade kinks of 20%+
-  // over a single sample). The old 2 m value did exactly this. 8 m (== rows' roadDeviationCap) lets the
-  // design bridge/cut normal undulations smoothly: on the seed-67 complaint edge it cut grade kinks 10→0
-  // and flat patches 7→0. Junction endpoints are reconciled separately (_applyJunctionBlend), so a looser
-  // mid-edge cap does not float merges. Lower only if you want tighter terrain-hug AND accept the steps.
-  roadGraphDeviationCap: 10,   // crunchy-road pass: 8→10 (design line bridges more undulation before clamping to raw grade)
-  // roadGraphMaxGrade: the SOFT grade target for the router. This is the DOMINANT WINDINESS lever
-  // (windiness-stage finding): lower target ⇒ more chords exceed it ⇒ the over-cap penalty forces
-  // terrain-following detours/switchbacks ⇒ windier, more terrain-following roads. 0.20
-  // (matching rows' maxRoadGrade) lifts seed-6 detour 1.13→1.22 and stays loop-free across seeds 3/6/7/11/42
-  // (paired with roadGraphWTurn 3000 + roadGraphWAlt 2.0 + goalBlend 60). Raising it back toward 0.30
-  // straightens roads (short connectors run direct); much below 0.20 reintroduces 360° spiral loops.
-  // Road-Feel Phase 2 (honest cost model): 0.15→0.12 (with roadWOver 30000 — see roadWGrade note)
-  // toward the user's "full alpine" target. 0.10 scored better on character but trips
-  // road-smoothness.mjs (invisible collision steps at seed-6 switchback density) — retry post-QUAL-13.
-  roadGraphMaxGrade: 0.12,
-  // roadGraphGoalBlend: how many metres of an edge's tail are routed as a clean GEOMETRIC Dubins curve INTO
-  // the goal node. NOTE (windiness-stage): this is NOT a windiness
-  // lever — sweeping 140→20 barely moves detour (the straightness lives in the SEARCH cost, not the tail).
-  // Its real job is taming overshoot: the hybrid-A* can sail past a short edge's goal node, bowing the road
-  // past it to cross a sibling near the junction; replacing the tail with a direct Dubins curve erases that.
-  // 60 m keeps overshoot low while letting more of the tail follow terrain; <40 m reintroduces a couple of
-  // routed crossings (cullable). 140 m was the old straightener-era value.
-  roadGraphGoalBlend: 20,
-  // roadGraphWTurn: the router's curvature penalty (wCurv). Lower = cheaper bends = the router accepts
-  // more/tighter curves = windier. 3000 (windiness stage) noticeably loosens the roads without tripping
-  // the min-radius or no-loop gates. Road-Feel Phase 2: 3000→1500 paired with roadWDeviation 12 (see
-  // that knob's note for the measured wins); detour 1.11→1.20 — distance traded for terrain-following.
-  // Road-Feel Phase 2 (honest cost model): 1500→800 as part of the shipped preset (see roadWGrade note).
-  // PERF-worldgen 2026-07-17: 800→1750 user-approved in the same drive test that adopted the
-  // corridor-heuristic router + solo-reuse (the three ship as one preset — retune together).
-  roadGraphWTurn: 1750,
-  // roadGraphWAlt: the router's valley-seeking weight (wAlt). Higher = roads dive harder for low ground =
-  // more terrain-hugging wander. 2.0 (windiness stage).
-  roadGraphWAlt: 2.0,
-  // (QUAL-21 stroke routing lived here 2026-07-24→25 and was DELETED after the A/B drive verdict:
-  // prescribed through-headings make the router absorb rotations as terminal wiggle — "crunchy"
-  // roads. Full findings in .planning/todos/completed/qual-21-router-rearchitecture.md.)
-  // (QUAL-22 roadGraphCostPrune lived here 2026-07-25→27: Urquhart pruning voting by TERRAIN COST
-  // instead of length. Implemented and measured green, but never shipped default-on, so it was
-  // DELETED rather than parked off — findings + numbers in
-  // .planning/todos/completed/qual-22-terrain-cost-urquhart.md if it is ever wanted back.)
-  // roadSoloReuse: PERF cold-load — adopt an edge's cached SOLO route as its FINAL when the sibling
-  // corridor discs never come within 2 m-sampled reach of it (the constrained re-search solves a
-  // problem whose constraints don't bind; measured ~50% of final searches return the solo
-  // byte-identical anyway). ×1.24. User-approved 2026-07-17.
-  roadSoloReuse: true,
-  // roadCorridorTwoPass: PERF cold-load — coarse-lattice corridor pass guiding the fine search
-  // (road-carve.js corridor block). roadCorridorMode 'heuristic' feeds the coarse backward-flood
-  // cost-to-go to the fine search as its heuristic (roadCorridorHScale scales it: higher = more
-  // guidance = faster + less optimal); 'tube' hard-restricts the fine lattice to roadCorridorTubeR
-  // metres around the coarse path. ×2.5–3.2 across seeds. User-approved 2026-07-17 at hScale 1.0
-  // (paired with roadGraphWTurn 1750 + roadSoloReuse — the shipped feel preset).
-  roadCorridorTwoPass: true,
-  roadCorridorMode: 'heuristic',
-  roadCorridorHScale: 1.0,
-  roadCorridorTubeR: 100,
-  // roadGraphCullCrossings: SAFE-PRUNE the redundant edge of every routed at-grade crossing
-  // (they read as ugly mid-span intersections; the graph is planar-abstract so a routed cross means one
-  // edge took a redundant excursion). Only dropped if the far endpoint keeps a detour (≤ cull max hops),
-  // so dead ends + bridges are never cut. seed-set: routed crossings 7→1 (the 1 is a true bridge, kept).
-  roadGraphCullCrossings: true,
-  // roadGraphCullMaxHops: how far the connectivity-safe detour search looks before deeming a crossing
-  // edge a bridge (un-cullable). Higher = culls crossings with longer alternate routes (more aggressive,
-  // accepts bigger detours); lower = keeps more crossings but never risks a long way round. 8 clears all
-  // but genuine bridges while connectivity holds.
-  roadGraphCullMaxHops: 8,
   // roadGraphMaxDegree: cap on junction connectivity (2026-07-17/18 user preference: FEWER
   // 4-ways, not none — β-lune thinning was a no-op here because the blue-noise field makes
   // Urquhart ≈ RNG already). Nodes above this degree lose incident edges longest-chord-first,
@@ -606,6 +420,134 @@ export const RANGER_PARAMS = {
   // remote forest-service network: ~4 nodes/km², ~670 m between junctions, ~45% dead-end spurs. Smaller =
   // denser (256 = the old tight grid). Pair roadSiteMinDist ≈ 0.65× this.
   roadSiteSpacing: 640,
+  // ── FEAT-68 corridor router (v2) price list ──────────────────────────────────────────────────
+  // The router buys elevation with MONEY, never with length, so every entry is a price expressed in
+  // METRES OF FLAT ROAD (cRoadM = 1 is the numéraire: "a metre of bore costs the same as N metres of
+  // road"). This replaced v1's ~15 interacting abstract weights with ~5 physically-meaningful ones.
+  //
+  // It lives HERE, in RANGER_PARAMS, rather than as a module constant in corridor-router.js, for two
+  // reasons: the debug sliders bind the same object every other road knob binds (so a live edit is
+  // never aliased away by a hot-module reload swapping the algorithm module underneath the panel),
+  // and RoadSystem hands this object to each route job — which is what makes a Worker, a separate
+  // module instance with its own defaults, price exactly what the main thread prices.
+  roadV2: {
+    cRoadM: 1.0,      // on-grade road, per m — the unit everything else is quoted in
+    // Grade discomfort: cost/m factor is 1 + wGrade·g². Climbing H m at grade g costs about
+    // H·(1/g + wGrade·g), minimised at g* = 1/√wGrade — so this sets the grade the router WANTS to
+    // climb at. 40 put g* at 16% and the solver just took steep straights (owner: "no switchbacks");
+    // 120 puts g* near 9%, forest-road grade, so length wins against sustained steepness.
+    // Owner review 2026-08-20: 120 → 180 alongside cTurn 30 → 55 — "this forces a little more
+    // turning without it being free and everywhere". g* = 1/√180 ≈ 7.5%.
+    wGrade: 180,
+    cCutM: 0.15,      // cut, per m of length per m of depth (linear haul term)
+    // Quadratic cut term (owner 2026-08-18: "no visual difference in the mountaintop above a tunnel —
+    // just carve a clean hole"): real cuttings go superlinear past ~8 m (rock walls, stabilisation),
+    // and without it the solver trenched to the 20 m class boundary before conceding a portal.
+    // Cut ≈ bore at ~9 m now, so portals emerge at bench depth and approach notches stay small.
+    cCut2: 0.12,
+    cFillM: 0.12,     // fill, per m of length per m of height
+    cBoreM: 12.0,     // bore, per m (owner 2026-08-18: "too happy to tunnel" — raised 8 → 12)
+    cPortal: 250,     // fixed, per bore portal (also raised — kills pop-through mini-bores)
+    // Direction-change cost, per RADIAN — the hairpin dial. The corridor search is heading-free, so
+    // without this a ladder of twenty micro-zigzags prices identically to two long traverses and the
+    // search has no reason to prefer the buildable shape (v1's roadWTurn lesson as a physical knob).
+    // Measured on the eval trio: 15 → 20/38/32 hairpins, 30 → 17/21/24, 60 → 17/15/11, with grade
+    // compliance identical at all three — it trades hairpin density against sweep, nothing else.
+    // Owner review 2026-08-21 (set from the live sliders): 55 -> 45.
+    cTurn: 45,
+    // Bridges are DE-SCOPED from the vocabulary (owner 2026-08-18): real forest bridges are short,
+    // same-elevation water crossings, not grade machines — and valley-spanning decks raise "why is
+    // there no road down there". Machinery stays; flip bridgesOn to re-enable. The planned way back
+    // is a post-router conversion of stream/water crossings only.
+    bridgesOn: false,
+    cBridgeM: 20.0,   // bridge deck, per m (only read when bridgesOn)
+    cAbutment: 100,   // fixed, per bridge end (only read when bridgesOn)
+    cutMax: 20,       // m below ground where a cut becomes a BORE — a 12–20 m trench is an open rock
+                      // cutting at road grade cap, not a tunnel; at 12 the bore's 18% cap
+                      // rate-limited legitimate cliff descents through deep-cut pockets
+    fillMax: 8,       // m above ground where a fill would become a bridge (so: the fill ceiling)
+    // Vertical corner-rounding window in METRES (0 = off). The solved profile is defined at ~10 m
+    // stations and lerped onto the 4 m polyline, so grade is constant within a station and changes
+    // INSTANTANEOUSLY at each one — a corner every 10 m, which reads as a periodic tick through the
+    // suspension however small the grade step (owner 2026-08-20: "lots of tiny microcrests and
+    // troughs"). This low-passes the shipped samples so each corner becomes a short vertical curve.
+    //
+    // MEASURED, and the curve is not monotone — more is NOT smoother. Vertical jolt (v²·dg/ds at
+    // 20 m/s, p99 over seeds 20/11): 0 m → 0.51/0.46 g · 15 m → 0.24/0.24 g · 30 m → 0.48/0.45 g.
+    // Past ~2 stations the ±0.25 m displacement bound starts clipping, and clipping puts corners
+    // back. 15 m ≈ 1.5 stations is the floor of that curve, which is why the slider stops at 25.
+    // Crest airtime survives (strongest crest 0.31 → 0.25 g) because a real crest spans many
+    // stations; the bound is half the solver's own elevation quantum, so the shipped road never
+    // departs from the priced one by more than the solver could resolve in the first place.
+    vSmoothM: 15,
+    onTol: 0.75,      // m — |deck − ground| within this counts as on-grade
+    // Owner review 2026-08-21 (set from the live sliders): 0.35 -> 0.24. The ladder's relief rung
+    // then solves refusals at min(0.38, 0.27), and the ceiling rung still guards the 0.38 contract.
+    gMaxRoad: 0.24,   // hard vocabulary cap for surface states (the sustained ceiling is 0.40)
+    gMaxBore: 0.18,   // bores are gentler by construction (FEAT-40 lineage)
+    // BUG-56 C (owner, 2026-08-27): the ladder's CEILING rung = gMaxRoad + gradeTol, so it tracks
+    // the cap rather than being a second free-floating number (0.14 keeps the historical 38 %).
+    // Lenient on purpose — a grade failure is cheaper than a connectivity violation, and a road
+    // solved at the ceiling is legal by fiat. Beyond it the edge is RE-ROUTED, then CONDEMNED.
+    gradeTol: 0.14,
+    // BUG-53 merge (phase 2, owner ruling 2026-08-22): "evaluate where these come within some
+    // proximity of one another, then merge and share one run until they diverge again or hit a
+    // node". Two runs leaving the same node CONFLICT while their centres are within mergeProxM;
+    // the loser adopts the winner's course from the node out to the last conflict, then tapers
+    // back onto its own. 18 m is the shared-earthworks distance — halfWidth 5 + shoulder 2.5 each
+    // side + 3 m carve extra — i.e. the separation below which the two roads write their cut/fill
+    // stencils into the same terrain vertices. Owner-set 2026-08-22.
+    mergeProxM: 18,
+    wyeCreaseMaxDeg: 30,   // R8: max camber crease across a wye's shared edge (binds at the wye only)
+    sibConeDeg: 25,        // R5: demoted-rung departure within this cone of a sibling's bearing pays extra
+    wSibDepart: 3,         // R5: the surcharge, cost per metre while inside the cone near the node
+    sibReachM: 120,        // R5: how far from the node the surcharge reaches
+    mergePinDeclineMaxM: 80,   // R6: a pinned loser declines its merge when overlap is under this and crossing-free
+    // A merged pair may swing apart and come back — that FLARE is a bulge in one road, not two
+    // roads going different places, so the merge bridges it and the bulge disappears. Both bounds
+    // are measured off the owner's seed-3 captures, whose flares run 35 m (1598/5875), 44 m
+    // (-105/2418) and 49 m (1044/7423, which also crosses itself inside its flare — the reason no
+    // separate crossing rule is needed: two polylines that meet are already in conflict). Wider or
+    // longer than these and the legs are genuinely going somewhere different: the merge stops at
+    // the first divergence and the flare is counted.
+    mergeFlareM: 60,   // m — widest the pair may swing apart inside a merge
+    mergeGapM: 200,    // m — longest flare the merge may bridge, measured along the run
+    // MID-SPAN merges (legs that part at the node and only run together far out). ON since
+    // BUG-55 phase 3. The collision-cliff class that kept this off (1.75 m seed 7 / 2.37 m
+    // seed 6 — a tail re-solved from a dictated winner deck steepened into a junction pad that
+    // took no part in the solve) is held off by the mergePadArrivalMax check on every variant's
+    // FINAL solved profile — MEASURED load-bearing: opening the cap to 0.24 reproduces both
+    // cliffs to the centimetre (237/175 cm), closing it to 0.12 clears them. A variant that
+    // cannot meet the cap is declined with reason 'pad', never forced. The bundle solve
+    // additionally negotiates fork decks where the winner heads a bundle, which is what widens
+    // the merged fraction; the guard is what makes the flag safe.
+    mergeMidSpan: true,
+    // BUG-55 'pad' guard: a bundle rung is DECLINED (counted, never forced) when any loser
+    // strand's solved arrival grade at its far node exceeds this. The junction pad plane is
+    // clamped to roadJunctionPadMaxGrade (0.07) while roads may run gMaxRoad (0.24); the
+    // measured 1.75-2.37 m mid-span collision cliffs are (arrival - plane) x the ~14 m ring
+    // reach, so bounding the arrival is what keeps a merge from parking a step at a junction.
+    // 0.12 = the plane clamp plus what the junction blend absorbs over its reach.
+    mergePadArrivalMax: 0.12,
+    // BUG-57: the SHOVE rung's post-deflection separation floor. A nick-crossed pair (a leg
+    // that pokes across a partner and comes back) keeps BOTH connections: the longer member
+    // registers deflected laterally until the pair stays this far apart over the contact —
+    // above the census's 9 m tear floor, below mergeProxM. Deflection declines (fold floor,
+    // transit, >30 m) fall through to the delete rung.
+    shoveClearM: 12,
+    // BUG-55 pair census: an edge is a CANDIDATE conflict partner of a registering edge when its
+    // node-to-node CHORD comes within this of the registering edge's ROUTE polyline. Chord-to-
+    // chord was measured useless (blue-noise keeps chords >= 407 m apart while routes wander up
+    // to 657 m off their chords and land 0.3 m from each other — the seed-6 (3328,-27) tear);
+    // chord-to-ROUTE catches a conflict whenever the partner's own wander is under this bound,
+    // measured 0-4 fresh partner routes per window at 300. A pair BOTH of whose members wander
+    // beyond this is blind to the census — identically so in every window (the test is a pure fn
+    // of one route + one chord), so it is a counted coverage bound, never a tear risk.
+    // overlap-census reports each real conflict's best-direction chord-to-route distance so this
+    // stays measurably above the max.
+    censusChordM: 300,
+  },
+
   // roadSiteCandidates: seeded candidate sites PER cell before Poisson-disk thinning. >1 breaks the
   // residual grid regularity (one-per-cell still reads as rows); 2–3 gives an organic blue-noise field.
   roadSiteCandidates: 3,
@@ -635,71 +577,6 @@ export const RANGER_PARAMS = {
   // Live-tunable via the "Min Turn Radius (m)" debug slider (src/debug.js Roads folder).
   roadMinTurnRadius: 15,   // m — arc-fillet min turn radius (D0); safety floor ≥ roadHalfWidth + clearance (~5.5 m). 15 m = user's "15–20 m" feel pick (2026-06-16); live-tunable via "Min Turn Radius (m)" slider.
 
-  // D-arc (2026-06-16) — arc-primitive router knobs (arcPrimitiveConnect). The road is min-radius-VALID
-  // by construction: roadArcHardRadius is the HARDEST (tightest) turn the router can express — the real
-  // fold floor — while roadArcGentleRadius + wTurn (curvature cost) bias toward gentle/straight runs.
-  roadArcHardRadius:   10,  // m — tightest switchback radius (≥ roadHalfWidth+clearance ≈ 5.6 m floor). Higher = no tight
-                            // turns. QUAL-14: 8→10 so a legal hairpin's legs (2·hardR = 20 m apart) clear the
-                            // self-clearance footprint D_self = roadWidth + 2·shoulder + margin = 18 m BY CONSTRUCTION.
-  roadArcGentleRadius: 75,  // m — gentle-turn primitive radius (the preferred, cheap curve). 75 m
-                            // sweeps wider → fewer tight loopbacks; the loopbacks that remain read as
-                            // natural cloverleaf/on-ramp curves.
-  roadArcHeurWeight:   1.5, // weighted-A* heuristic inflation — PERF knob: higher = faster streaming, slightly less optimal routing.
-
-  // ── Fixed-angle motion-primitive palette (QUAL-05 follow-up: large sweeping radii) ──────────────
-  // The router turns a FIXED ANGLE per primitive (one heading bin) at one of these radii, so arc length
-  // scales with radius — a 200 m sweep is representable (a fixed-LENGTH step at 200 m would turn <1° and
-  // be invisible to the lattice). The router prefers the LARGEST radius that fits the heading change +
-  // grade, so mild ground gets sweeping turns (avg ~130 m, ~50% of curved road ≥100 m radius) and tight
-  // radii (down to roadArcHardRadius) appear only where grade forces a switchback. Largest→smallest;
-  // last entry should equal roadArcHardRadius (the min-radius floor). NOTE: with fixed-angle primitives,
-  // COARSER heading bins give LONGER (sweepier) arcs — finer bins (the old anti-zigzag intuition) is not
-  // needed and is slower; 24 bins (15°) is the sweet spot. gradeSamples>1 samples grade along the long
-  // arcs so the search isn't blind to intra-arc steepness.
-  roadArcRadii: [200, 90, 35, 10], // m — curvature palette (sweep / gentle / medium / hard floor = roadArcHardRadius)
-  roadArcHeadingBins: 24,          // heading discretization (15°); one bin turned per turn primitive
-  roadArcGradeSamples: 2,          // grade samples along each primitive arc (≥2 for long sweeps)
-
-  // ── De-quantize refit (BUG-16 + FEAT-20) — post-passes on the routed primitive chain ────────────
-  // roadRefitShortcut (BUG-16): corridor Dubins shortcut. The greedy weighted-A* holds a quantized
-  // heading when the canonical startHeading is off the chord bearing → a long-wavelength bow
-  // (~22–36 m lateral over a 500 m connection) that reads as a serpentine. The shortcut replaces any
-  // span with a shorter continuous-radius Dubins word; acceptance is HARD (length ≤ raw·1.02, max
-  // sampled grade ≤ raw + slack, pond-clear, in-bounds) so switchback stacks are never cut through
-  // the hillside. Continuous chord-derived radii also break the 4-radius palette look.
-  // roadRefitWindow (FEAT-20): κ box-filter window (m), re-emitted as clothoid ramps — smooth
-  // curvature transitions instead of instant κ jumps at primitive boundaries. Averaging can only
-  // shrink max |κ| ⇒ min-radius stays ≥ roadArcHardRadius BY CONSTRUCTION. Larger = smoother but
-  // more far-end drift for the terminal Dubins to absorb (superlinear in W — keep ≤ ~40).
-  // Palette densification was evaluated for FEAT-20 and DEFERRED: the shortcut already yields
-  // continuous radii and the filter yields spirals, without the A*-branching cost or touching the
-  // index-bound roadArcRadii debug sliders.
-  roadRefitShortcut: true,  // BUG-16 — straighten near-straight roads (corridor Dubins shortcut)
-  roadRefitWindow: 30,      // m — FEAT-20 κ-smoothing window (0 = off)
-
-  // ── QUAL-14 route clearance — routes may not touch themselves or each other ─────────────────────
-  // Self-clearance: no two samples of ONE edge's centerline with arc-separation > roadSelfClearGap
-  // may lie closer than D_self = roadWidth + 2·roadShoulderWidth + roadSelfClearMargin in XZ (kills
-  // lollipop self-intersections and hairpin legs stacking their carve walls). Violations re-route
-  // with no-go discs dropped on the violation sites (deterministic iterative repair riding the
-  // pondDiscs rejection — SELF_CLEAR_MAX_REPAIR, road-carve.js).
-  // Corridor clearance: an edge routes with no-go discs (radius roadCorridorClearance, ~12 m spacing)
-  // sampled from the final centerlines of HIGHER-PRIORITY sibling edges (canonical edge-key order),
-  // except near a node both edges share (merge exemption) — kills parallel runs with a shared cut
-  // wall. The Urquhart graph is planar, so edge-edge proximity is always route wander, never needed.
-  roadSelfClearGap: 50,       // m — arc window within which self-proximity is legitimate (one bend).
-                              //      80 let tight hairpins (legs ~60 m apart along-arc) hug at ~5 m and
-                              //      merge into a self-overlap blob (seed 7); 50 flags them so the route
-                              //      re-threads wider (worst self-proximity 5→20 m, clear of the footprint).
-  roadSelfClearMargin: 3,     // m — clearance beyond the carve footprint (D_self = 10 + 5 + 3 = 18)
-  roadCorridorClearance: 15,  // m — min XZ distance between two edges' centerlines outside merge zones (QUAL-19: 20→15)
-  // roadCorridorExempt: radius around the pair's endpoint nodes within which corridor discs /
-  // the clearance cull / the gate do NOT apply (junction approaches may converge). 80 = the old
-  // implicit formula max(goalBlend, junctionBlend, 60) + 20. Lowering it (e.g. 50, paired with
-  // roadGraphGoalBlend 60) pushes approaches apart earlier — measured to cut near-junction
-  // crossings 40→33 and reconnect the streamed window (comps [33,5,5,2,2,2]→[46,2,2]) at the
-  // seed-6 tangle center (4500,600). Live-tunable ("Corridor Exempt (m)" slider).
-  roadCorridorExempt: 50,  // m — junction-approach exemption radius for corridor clearance (QUAL-19: 80→50, paired with roadCorridorClearance 20→15, pushes shared-node approaches apart earlier)
 
   // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
   // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.
@@ -807,14 +684,6 @@ export const RANGER_PARAMS = {
   // where a corner is too tight to fit (and ×0.5 once more if the boundary self-intersects).
   roadFilletRadius: 5,          // m — junction pad corner fillet radius (QUAL-11)
 
-  // ── Phase 9 Plan 05 — Road Quality Markings (D-02/D-03) ───────────────────
-  // roadQualityStretch: arc-length per quality tier (metres). Each stretch gets a deterministic
-  // quality value from (worldSeed, runKey, stretchIdx). 500 m gives ~2–4 tier changes per km. D-02.
-  roadQualityStretch: 500,     // m — arc-length per road-quality tier stretch (D-02 / A9)
-
-  // roadQualityBlend: marking transition zone at stretch boundaries (metres). D-02.
-  // Smooth-step over this span prevents marking tier from snapping visually.
-  roadQualityBlend: 10,        // m — smooth-step blend zone at stretch boundaries (D-02 / A9)
 
   // ── Phase 9 Plan 05 — Cliff Shading (D-11) ────────────────────────────────
   // roadCliffSlopeLo: slope threshold where cliff color begins to blend in.

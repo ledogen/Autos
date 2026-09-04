@@ -57,6 +57,7 @@ import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger
 import { MissionSystem, MISSION_PLAN_RADIUS, PLAN_RESTREAM_MOVE } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
+import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney } from './economy.js'  // FEAT-53: payout, wallet, good deeds
@@ -77,7 +78,6 @@ import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuni
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
-import { loadBundledRouteCache, loadRegionRouteCache } from './route-store.js'  // QUAL-14/PERF-26: bundled route caches (BASE at boot, REGION lazily)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
 
 // World seed — parsed from URL ?seed= parameter, defaulting to '6'.
@@ -381,47 +381,20 @@ function _spawnProbeBase (wseed, params) {
 // stays alive. resolveSpawn's stream then finds every connection in _proto.cls (pure cache hits).
 // Warms the TIGHT tier only — the wide tier fires for rare sparse-gap seeds and falls back to the
 // synchronous router exactly as before. Bounded wait: correctness NEVER depends on the warm.
-// ── QUAL-14 perf: route-cache import (bundled default world + in-session seeds) ─────────
-// Nothing persists on the player's machine (user decision 2026-07-06). The shipped default
-// world's routes come from the bundled static asset (route-store.js — sig-guarded, baked at
-// commit time); every other seed caches in this in-session Map: a regen stashes the outgoing
-// RoadSystem's routes here, so toggling back to a seed already visited this session is instant.
+// ── QUAL-14 perf: in-session route cache ─────────────────────────────────────────────────
+// Nothing persists on the player's machine (user decision 2026-07-06). A regen stashes the
+// outgoing RoadSystem's routes in this Map, so toggling back to a seed already visited this
+// session is instant. (FEAT-68 deleted the BUNDLED half — the baked static assets, their bake
+// script, sig discipline and parity gate. v2 routes a whole region in ~2.8 s at 4x throttle and
+// the bundle had shrunk to 130 KB, so it was buying a second on the one seed it covered while
+// costing a subsystem; owner call 2026-08-19.)
 const _sessionRouteCache = new Map()   // String(seed) → exportRouteCache() payload
-async function _importSessionOrBundledRoutes () {
+function _importSessionRoutes () {
   if (!roadSystem) return
   const mem = _sessionRouteCache.get(String(worldSeed))
-  if (mem) { roadSystem.importRouteCache(mem); return }
-  const bundled = await loadBundledRouteCache(worldSeed, RANGER_PARAMS)
-  if (bundled && roadSystem) roadSystem.importRouteCache(bundled)
+  if (mem) roadSystem.importRouteCache(mem)
 }
 
-// ── PERF-26: the STORY-REGION route cache, off the boot critical path ────────────────────
-// The bundle is split in two (route-store.js): BASE, awaited above, and this REGION delta, which
-// only story mode's 2800 m entry warm needs. Boot must not wait on it — it is the larger half, and
-// the cost is not just the download: inflate + JSON.parse run on the main thread.
-//
-// So: kick the fetch off once the world is up and idle, and let story entry AWAIT it. By the time
-// the owner clicks into story mode it is already parsed and waiting (the point of doing it at all);
-// if they click sooner, entry blocks on the tail of a download that is already in flight, behind
-// the loading screen it already shows.
-//
-// Fetch and IMPORT are deliberately separate. The download is memoized per seed — the sig check
-// inside is seed-dependent, so a non-default seed resolves null and is never retried — while the
-// import happens only when story mode actually asks, so free roam never merges 4.7 MB of routes it
-// will not use. Correctness never depends on any of this: a miss just routes, like any other seed.
-const _regionRouteFetch = new Map()   // String(seed) → Promise<data|null>
-function _fetchRegionRoutes (seed) {
-  const k = String(seed)
-  if (!_regionRouteFetch.has(k)) _regionRouteFetch.set(k, loadRegionRouteCache(seed, RANGER_PARAMS))
-  return _regionRouteFetch.get(k)
-}
-async function _ensureRegionRoutes () {
-  const seed = worldSeed
-  const data = await _fetchRegionRoutes(seed)
-  // Re-check the seed: the player can reseed while this is in flight, and roadSystem is a DIFFERENT
-  // instance after a reseed — importing seed 6's routes into seed 99's network would be poison.
-  if (data && roadSystem && worldSeed === seed) roadSystem.importRouteCache(data)
-}
 // One-time cleanup of the short-lived IndexedDB persistence experiment (32cde75, reverted same day).
 try { indexedDB.deleteDatabase('rangersim-routes') } catch { /* private mode etc. */ }
 
@@ -629,7 +602,7 @@ async function _rebuildFullNow () {
     if (roadSystem && scene) {
       const wasVisible = roadSystem._debugVisible
       // QUAL-14 perf: stash the outgoing instance's routes so toggling back to this seed later
-      // in the session is instant (in-session cache only — nothing persists to disk).
+      // in the session is instant (in-session only — nothing persists to disk).
       if (roadSystem._proto?.cls?.size) {
         _sessionRouteCache.set(String(roadSystem._worldSeed), roadSystem.exportRouteCache())
       }
@@ -683,11 +656,11 @@ async function _rebuildFullNow () {
       if (_syncImpostors) _syncImpostors()   // PERF-21: re-activate billboards on the fresh instance
     }
     _step('props')
-    // QUAL-14 perf: same cache import + async reseat as the initial load — the new seed's spawn
+    // QUAL-14 perf: same session-cache import + async reseat as the initial load — the new seed's spawn
     // bands route on the worker pool inside resolveSpawn (frames keep rendering) before each
     // synchronous stream. AFTER rebuildWaterSystem above: the warm must carry the new seed's
     // pond no-go discs.
-    await _importSessionOrBundledRoutes()
+    _importSessionRoutes()
     _step('routeImport')
     await _reseatTruckAtSpawn()
     _step('reseat')
@@ -1076,6 +1049,15 @@ const scene = new THREE.Scene()
 // the FEAT-05 "no hard band at the horizon" invariant is preserved. Initial colour is a placeholder
 // overwritten by SkySystem.apply() on construction (it applies the active look's fog colour).
 scene.fog = new THREE.FogExp2(0x9bb8d4, 0.006)
+// Fog kill-switch (owner request, 2026-08-18 — FEAT-68 checkpoint screenshots): `?nofog=1` boots
+// with fog off, and the debug-panel checkbox flips it live. Quality presets write density THROUGH
+// this state (applyQuality), so a preset change can never silently re-enable fog. FogExp2 with
+// density 0 is a no-op, so toggling needs no scene surgery. Sky looks only recolour fog — unaffected.
+const _fogState = {
+  disabled: _urlParams.has('nofog'),
+  presetDensity: 0.006,   // last preset-owned density; restored when the toggle re-enables fog
+}
+if (_fogState.disabled) scene.fog.density = 0
 
 // HemisphereLight (cool alpine sky above, warm granite-ground bounce below) reads far more alpine
 // than a flat white ambient for almost no cost (FEAT-05).
@@ -1341,6 +1323,16 @@ const map2d = new Map2D({
     map2d.hide()   // close the map so the teleport is immediately visible
   }
 })
+// Dev handles for the FEAT-68 checkpoint tooling (CDP probes: map renders, drive-through tests).
+// Same always-on precedent as window.__view.
+window.__map2d = () => map2d
+// FEAT-68: the live v2 price list, so a harness (or the console) can read/poke a router price
+// and see the world re-route. This is the SAME object the router prices with — if a slider ever
+// stops taking effect, compare what the panel mutated against what this returns.
+window.__v2costs = () => RANGER_PARAMS.roadV2
+window.__teleport = (x, z, heading, drop = 0.5) => teleportToGround(x, z, heading, drop)
+window.__car = () => ({ x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
+                        v: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) })
 
 // FEAT-49: gauge cluster (bottom-right canvas overlay). The odometer seeds to a random jalopy
 // mileage at boot and RE-seeds on every story-mode entry — "the next run's jalopy". Fuel/temp
@@ -1712,7 +1704,8 @@ function applyQuality (name) {
   // Normal land exactly on today's 192/320; High/Ultra trim 512→448 / 640→576 (the old constants were
   // routed past anything renderable). Tied to ring so it can never drift out of sync with the terrain.
   if (roadSystem) roadSystem.setRadius((p.ring + 0.5) * 2 * CHUNK_SIZE)   // dirty → next update() re-streams
-  if (scene.fog) scene.fog.density = p.fogDensity
+  _fogState.presetDensity = p.fogDensity
+  if (scene.fog && !_fogState.disabled) scene.fog.density = p.fogDensity
   // Drive the FEAT-05 detail master from the tier. Mirrors setTerrainUniform: write the param (source
   // of truth + what the debug slider binds to) and push the live uniform to both the terrain and the
   // road-shoulder materials. The debug onChange refreshes the slider display to match.
@@ -1797,9 +1790,21 @@ if (_PROF) {
         return orig(jobs, epoch)
       }
     }
+    // Geometry fingerprint: cheap, order-independent hash of every registered run's sampled
+    // points. Two builds with the same fingerprint ARE the same roads — this is what makes a
+    // router-price A/B measurable instead of eyeballed.
+    let fp = 0, pts = 0, km = 0
+    for (const [key, e] of rs._network) {
+      km += (e.polyCum?.[e.polyCum.length - 1] ?? 0) / 1000
+      for (const q of e.points) {
+        fp = (fp + Math.round(q.x * 8) * 73856093 + Math.round(q.y * 8) * 19349663 + Math.round(q.z * 8) * 83492791) >>> 0
+        pts++
+      }
+    }
     return {
+      runs: rs._network.size, fp, pts, km: +km.toFixed(2),
       pending: rs._pendingRoutes.size,
-      cls: rs._proto.cls?.size ?? 0, clsSolo: rs._proto.clsSolo?.size ?? 0,
+      cls: rs._proto.cls?.size ?? 0,
       lastWarm: !!rs._lastWarmCenter, epoch: rs._routeEpoch,
       dispatched: _rdWrap?.count ?? 0,
       hot: _rdWrap ? [..._rdWrap.keys.entries()].filter(([, n]) => n > 2).sort((a, b) => b[1] - a[1]).slice(0, 8) : [],
@@ -1903,6 +1908,11 @@ const _gui = initDebug(RANGER_PARAMS, {
   },
 }, { initialSeed: _urlSeed ?? '6' })
 
+// Fog kill-switch checkbox (see _fogState at the fog construction for the boot-param half).
+_gui.add(_fogState, 'disabled').name('Disable fog').onChange((v) => {
+  if (scene.fog) scene.fog.density = v ? 0 : _fogState.presetDensity
+})
+
 // Body paint color picker (visual-model) — recolors the imported truck's paint coat live.
 const _bodyColor = { color: '#2f6da4' }
 _gui.addColor(_bodyColor, 'color').name('Body color').onChange((v) => setBodyColor(v))
@@ -1944,7 +1954,7 @@ scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks re
 // existing boot style (route-cache import below also top-level awaits).
 perfMark('init: before physics engine')
 const physicsEngine = await createPhysicsEngine()
-const terrainPhysics = new TerrainPhysics(physicsEngine)
+const terrainPhysics = new TerrainPhysics(physicsEngine, () => roadSystem)   // road spans → bore slots in the collider
 terrainSystem.setPhysicsHook(terrainPhysics)   // mirrors every chunk build/recarve/dispose
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS)
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
@@ -2011,7 +2021,6 @@ function _buildPlannerRoad (seed) {
   if (roadSystem && roadSystem._worldSeed === seed) {
     const p = roadSystem._proto, q = r._proto
     q.cls = (p.cls ??= new Map())
-    q.clsSolo = (p.clsSolo ??= new Map())
   }
   return r
 }
@@ -2042,8 +2051,8 @@ function _startPlannerWarm (seed, cx, cz) {
 // routing determinism — structural: free roam never calls build(), so it never sets a pad, and the
 // same seed produces the same roads, the same surface and the same par in both modes.
 //
-// POI knobs live in POI_PARAMS, deliberately NOT in RANGER_PARAMS: that object feeds routeCacheSig,
-// and a poi* key landing in it would re-key every baked route bundle for a marker's size.
+// POI knobs live in POI_PARAMS, deliberately NOT in RANGER_PARAMS: a poi* key landing in that
+// object would re-route the whole world every time a marker's size changed.
 const poiSystem = new PoiSystem({
   getRoad:    () => roadSystem,
   getWater:   () => waterSystem,
@@ -2053,7 +2062,7 @@ const poiSystem = new PoiSystem({
 })
 
 // FEAT-45: dispersed-camping zones. Same isolation + same params discipline as the POI layer above
-// (CAMP_PARAMS is outside RANGER_PARAMS for the routeCacheSig reason), and the same story-only
+// (CAMP_PARAMS is outside RANGER_PARAMS for the same re-route reason), and the same story-only
 // lifecycle: built from the story deps when the region goes live, cleared on exit, so free roam
 // never has a zone and pays nothing. Zones are pure f(seed, macro cell) — they read nothing from
 // the world, so unlike POIs there is no carve or re-bake to trigger here.
@@ -2345,8 +2354,8 @@ function _updateMissionRings () {
 // Story mode only: started when the region goes live, stopped on exit (see the story deps below),
 // and a no-op every frame in between in free roam. Its one output today is the sky hour — pushed on
 // a quantized ladder because each push re-bakes the sky cubemap and the prop impostor atlas
-// (skySystem.onLookApplied, below). DAY_PARAMS lives in day.js, out of RANGER_PARAMS/routeCacheSig,
-// for the same reason POI_PARAMS does.
+// (skySystem.onLookApplied, below). DAY_PARAMS lives in day.js, out of RANGER_PARAMS, for the
+// same reason POI_PARAMS does.
 const daySystem = new DaySystem({
   setTimeOfDay: (h) => skySystem.setTimeOfDay(h),
 })
@@ -3954,7 +3963,7 @@ applyQuality('Normal')
 // main.js is a module, so everything below, including the render loop start, waits).
 // resolveSpawn warms each band it streams on the worker POOL before touching it, so the old
 // 20 s+ synchronous cold-load block becomes a parallel, event-loop-friendly wait.
-await _importSessionOrBundledRoutes()
+_importSessionRoutes()
 await _reseatTruckAtSpawn()
 perfMark('init: spawn reseated')  // TEMP (D-arc)
 
@@ -4263,7 +4272,13 @@ const storySystem = new StorySystem({
     // spheres left on in free roam don't linger into story mode.
     if (locked && _dbgSpheresOn) { _dbgSpheresOn = false; _dbgSpheres.forEach(m => { m.visible = false }) }
   },
-  ensureRegionRoutes: () => _ensureRegionRoutes(),   // PERF-26: lazy story-region route cache
+  // BUG-56 workstream C: is the seed the player typed actually playable on the parameters that are
+  // loaded? story.js owns WHEN (after the region warm — you have to route it to know) and WHAT TO DO
+  // (the disclaimer); main.js owns the road system, so it answers. The check itself is
+  // src/world-validate.js, the SAME routine test/play-area.mjs gates on, so the game and the gate
+  // cannot drift apart on what "broken" means.
+  validateRegion: (centre, radius) => validateArea(roadSystem, centre, discArea(radius), RANGER_PARAMS),
+  onSeedRejected: (seed, report) => _showSeedModal(report, seed),
   hidePauseMenu: () => _hidePauseMenu(),
   setQuickJobVisible: (visible) => { const el = document.getElementById('quickjob-btn'); if (el) el.style.display = visible ? 'block' : 'none' },
   setLoading: (visible, text) => {
@@ -4372,15 +4387,36 @@ const storySystem = new StorySystem({
 })
 
 // ── Story-mode seed prompt (FEAT-43) ──────────────────────────────────────────────────────
-function _showSeedModal () {
+/**
+ * Open the story seed prompt. With a `report` it opens in its REFUSED state: the seed just entered
+ * routed a region that is severed or carries a road nothing could give a profile to, so the player
+ * is told plainly and asked for a different one. Nothing rerolls — that was the owner's ruling
+ * (2026-08-27), and it is why story mode does not need a nine-tile play area to be safe.
+ */
+function _showSeedModal (report = null, rejectedSeed = null) {
   const el = document.getElementById('story-seed-modal')
-  if (el) el.style.display = 'flex'
+  if (el) {
+    el.style.display = 'flex'
+    el.classList.toggle('rejected', !!report)
+  }
+  if (report) {
+    const why = document.getElementById('ss-reject-why')
+    const detail = document.getElementById('ss-reject-detail')
+    if (why) why.textContent = `Seed "${rejectedSeed}": ${unplayableReason(report)}.`
+    if (detail) {
+      const bits = [`${report.runs} roads · ${report.km.toFixed(0)} km in the region`]
+      if (report.components > 1) bits.push(`${report.components} disconnected pieces`)
+      if (report.condemned.length) bits.push(`${report.condemned.length} unsolvable: ${report.condemned.slice(0, 3).join(', ')}`)
+      bits.push(`max road grade ${((RANGER_PARAMS.roadV2?.gMaxRoad ?? 0.24) * 100).toFixed(0)} %`)
+      detail.textContent = bits.join('  ·  ')
+    }
+  }
   const inp = document.getElementById('ss-seed')
-  if (inp) { inp.value = _seedString; inp.focus(); inp.select() }
+  if (inp) { inp.value = report ? '' : _seedString; inp.focus(); inp.select() }
 }
 function _hideSeedModal () {
   const el = document.getElementById('story-seed-modal')
-  if (el) el.style.display = 'none'
+  if (el) { el.style.display = 'none'; el.classList.remove('rejected') }
 }
 function _startStoryFromModal () {
   const seed = document.getElementById('ss-seed')?.value ?? '6'
@@ -4389,7 +4425,21 @@ function _startStoryFromModal () {
   storySystem.enter(seed)
 }
 document.getElementById('ss-start')?.addEventListener('click', _startStoryFromModal)
-document.getElementById('ss-cancel')?.addEventListener('click', () => _hideSeedModal())
+// "start anyway": the region behind the disclaimer is already built and frozen, so honouring this
+// costs nothing but a call. Story mode is a sandbox while it is being designed and going to LOOK at
+// what broke is a legitimate thing to want — the warning has been read, so this is informed.
+document.getElementById('ss-anyway')?.addEventListener('click', () => {
+  _hideSeedModal()
+  storySystem.acceptRejectedSeed()
+})
+// Cancel out of a REFUSED entry leaves story mode entirely — the region is built but the player has
+// declined it, and leaving them standing in a world the check refused would be the silent failure
+// this whole feature exists to avoid.
+document.getElementById('ss-cancel')?.addEventListener('click', () => {
+  const wasRejected = storySystem.isSeedRejected()
+  _hideSeedModal()
+  if (wasRejected) storySystem.exit()
+})
 document.getElementById('ss-seed')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); _startStoryFromModal() }
   else if (e.key === 'Escape') { e.preventDefault(); _hideSeedModal() }
@@ -5196,16 +5246,6 @@ perfMark('init: synchronous bootstrap done, requesting first frame')  // TEMP (D
 // the render loop is starting. Read by the headless boot-timing probes.
 window.__rsReady = true
 requestAnimationFrame(loop)
-// PERF-26: start pulling the story-region route cache now that boot is done — download + parse
-// only, no import (see _fetchRegionRoutes). Deferred to idle so it never competes with the initial
-// terrain/prop fill, with a timeout so a permanently-busy machine still gets it. Story entry awaits
-// whatever this leaves in flight, so clicking in early costs the tail of the download, not the whole
-// thing. Fire-and-forget by design: a failure here just means story mode routes as any seed does.
-{
-  const kick = () => { void _fetchRegionRoutes(worldSeed) }
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(kick, { timeout: 4000 })
-  else setTimeout(kick, 2000)
-}
 // PERF-21: precompile the light-count shader variants (lamps off/brake/night/reverse) off the
 // critical path so the first brake or headlight toggle doesn't compile shaders mid-drive.
 prewarmLightPrograms(renderer, scene, camera)

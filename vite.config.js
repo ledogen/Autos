@@ -5,22 +5,22 @@
 // working); `npm run build` bundles to dist/ for the GitHub Actions Pages deploy.
 //
 // three + simplex-noise resolve from node_modules (byte-identical to the old importmap pin). The
-// Blob-classic terrain + road workers are built from template STRINGS inside src/*.js and are
-// bundler-invisible — the string constants survive bundling untouched.
+// Blob-classic TERRAIN worker is built from a template STRING inside src/terrain.js and is
+// bundler-invisible; the ROUTE worker (FEAT-68) is a real module worker — src/road-worker.js does
+// `new Worker(new URL('./road-route-worker.js', import.meta.url), {type:'module'})`, which Vite
+// detects and bundles as its own chunk in dev and build.
 import { defineConfig } from 'vite'
 import { copyFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
 // Runtime assets fetched by URL (NOT ES imports), so the bundler never sees them — they must be
 // copied into dist verbatim at their existing paths so the runtime fetch/loader URLs keep resolving:
-//   data/route-cache-default.json.gz  ← src/route-store.js fetch() (BASE route bundle, boot)
-//   data/route-cache-region.json.gz   ← src/route-store.js fetch() (story-region delta, lazy)
 //   assets/models/CREDITS.md          ← license attribution shipped beside the models
 //   assets/models/*.glb               ← ENUMERATED, not listed (see below)
 // The Vite dev server already serves project-root files, so these 200 in dev with no plugin; this
 // plugin only fixes the BUILD (vite build ships imports + publicDir, and these are neither). We do
 // NOT move them under public/ — that would change the fetch URLs and break the pure-node gates that
-// read data/*.js directly. (route-store.js keeps its fetch URL; do NOT convert it to a ?url import.)
+// read data/*.js directly.
 //
 // BUG: the .glb list used to be hand-maintained here and silently drifted — every model added after
 // FEAT-60 (test-rock, test-barrel, the drums, winnebago, tent, broken-car, barrel-plastic) was
@@ -29,8 +29,6 @@ import { dirname, resolve } from 'node:path'
 // directory is now the manifest: dropping a .glb in assets/models/ is all "adding a vehicle is
 // data-only" (CLAUDE.md) ever claimed it should take. test/dist-assets.mjs gates it.
 const RUNTIME_ASSETS = [
-  'data/route-cache-default.json.gz',
-  'data/route-cache-region.json.gz',
   'assets/models/CREDITS.md',
 ]
 
