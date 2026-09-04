@@ -111,6 +111,44 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   st.wheelspin = wheelspin
   const spinLock = params.wheelspinShiftLock !== false && wheelspin > (params.wheelspinThreshold ?? 7.5)
 
+  // ── FEAT-33 ignition gate: OFF / CRANKING short-circuit before any combustion happens ───────────
+  // vehicleState.ignition ABSENT ⇒ RUNNING. That default is load-bearing: every headless gate builds
+  // a vehicleState by hand with no ignition field, so they keep seeing exactly today's drivetrain and
+  // never have to crank the truck before driving it.
+  const ignState = vehicleState.ignition ? vehicleState.ignition.state : 'running'
+  if (ignState !== 'running') {
+    let target
+    if (ignState === 'cranking') {
+      // Starter motor spins the engine at a fixed low speed. It makes NO drive torque — T stays all
+      // zero — so cranking on a slope cannot creep the truck.
+      target = params.ignitionCrankRPM ?? 250
+    } else {
+      // Ignition OFF. A dead engine in an automatic left in gear does NOT freewheel: above the
+      // converter's coupling speed the turbine drags the impeller — and the whole engine — around, so
+      // the truck coasts down on the engine's pumping and friction losses (MORE retardation than
+      // idle engine braking, not less). Below that speed the fluid slips and the drag fades out,
+      // which is why a key-off coast rolls freely once you are nearly stopped.
+      // `couple` ∈ [0,1] is that fade; drag torque rises with the speed the dead engine is turned at.
+      const couple = Math.min(1, turbineRPM / (params.engineOffCouplingRPM || 1100))
+      target = (turbineRPM / couplingSR) * couple
+      const dragNm = (params.engineOffDrag ?? 90) * (target / 1000) * couple
+      const axleDrag = -Math.sign(axleOmega) * dragNm * totalRatio
+      T[2] = axleDrag / 2
+      T[3] = axleDrag / 2
+    }
+    // Own RPM lag, NOT engineRpmLag (which defaults to 0 = instant and would snap the tach needle
+    // from idle to zero in one step). The starter picks the engine up fast; a dying engine coasts
+    // down slowly on its own inertia, which is the whole sound and look of shutting a truck off.
+    const tauOff = ignState === 'cranking' ? (params.ignitionCrankRpmLag ?? 0.12) : (params.engineOffRpmLag ?? 0.7)
+    st.engineRPM += (target - st.engineRPM) * (1 - Math.exp(-dt / tauOff))
+    if (st.engineRPM < 1) st.engineRPM = 0
+    st.SR = 0
+    st.TR = 1
+    st.activeGear = reverse ? 0 : st.gear
+    st.coupledRPM = turbineRPM / couplingSR
+    return
+  }
+
   // ── Engine RPM (quasi-static converter) ─────────────────────────────────────────────────────────
   // Idle-throttle floor lets the engine make a little torque for creep when engineIdleThrottle > 0
   // (default 0 = no creep, so BUG-20 static-slope hold is untouched at zero input).

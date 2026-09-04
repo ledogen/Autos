@@ -105,6 +105,8 @@ export const GATES = [
     desc: 'BUG-27: hard body slams honor params.bodyRestitution without amplifying it (sampled-once bias, accumulated-impulse solver, tamed Baumgarte) — no phantom spin/launch, no energy gain, rest stable' },
   { file: 'drivetrain-climb.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-23: auto-trans + torque-converter climbs 20–30% grades from a stop, no drive/brake oscillation; accel tapers; 4-gear progression, no shift hunting' },
+  { file: 'ignition-starter.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'FEAT-33: ignition/starter state machine (hold-to-crank catches at ignitionCatchTime, early release aborts and discards progress, tap-kills, held key cannot restart through a shutoff, catch time scales with engineHealth) + drivetrain gating (OFF/CRANKING make no drive torque, a killed engine in gear drags and that drag fades toward a stop, and an ABSENT ignition field behaves exactly like RUNNING — the default every other headless gate relies on)' },
   { file: 'wheel-multicontact-friction.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-38: Pacejka tire friction is evaluated ONCE per wheel against the support surface — a 2nd contact (wall/prop/ramp) adds only push-out via _hubNormalXZ, never re-applied grip; no double-counted cornering/drive force when a wheel straddles ground + obstacle' },
   { file: 'mission-network.mjs', subsystem: 'story', cost: 'heavy', extraDeps: [],

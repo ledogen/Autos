@@ -25,12 +25,42 @@ const DEG = Math.PI / 180
 
 // Layout in CSS pixels (canvas logical size — scaled by devicePixelRatio at construction).
 // Temp and fuel are staggered like the reference — temp high and inboard, fuel low and outboard.
-const W = 416
-const H = 200
+// W/H are FEAT-49's 416x200 plus a few px of slack: the FEAT-33 ignition switch is small enough to
+// tuck into the housing's existing bottom-right corner, so it only bumps the outline out slightly
+// rather than growing a whole extra lobe. The canvas is anchored bottom-right in CSS.
+const W = 420
+const H = 204
 const TEMP  = { cx: 86,  cy: 70,  well: 33, scaleR: 26, start: 215, sweep: 110 }
 const FUEL  = { cx: 62,  cy: 136, well: 33, scaleR: 26, start: 215, sweep: 110 }
 const TACH  = { cx: 180, cy: 102, well: 62, scaleR: 54, start: 135, sweep: 195, max: 6 }    // ×1000 RPM
 const SPEEDO= { cx: 318, cy: 102, well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
+// FEAT-33 ignition switch — a small well tucked diagonally into the housing's bottom-right corner.
+// It carries its OWN indent pad (smaller than DIAL_PAD) because at this size the standard ring would
+// be most of the dial. Three distances have to hold, and they are tight — check all three before
+// moving it (all measured from the speedo centre, 90.5 px away):
+//   wells apart      93.3 > SPEEDO.well + KEY.well (87)      or the key face eats the speedo face
+//   indent clears    93.3 − (well+pad) = 73.3 > SPEEDO.well   or it bites a crescent out of 120/km-h
+//   indents overlap  93.3 < SPEEDO.well + DIAL_PAD + well+pad or the switch reads as a detached island
+// The well grew 13 → 17 when the needle became a key grip: a key silhouette needs pixels to read as
+// an object, and 26 px of dial was not enough. 34 px is the most the three distances above allow.
+const KEY   = { cx: 384, cy: 168, well: 17, pad: 3 }
+// Key detents, in canvas angles (0 = 3 o'clock, increasing clockwise): 10 / 12 / 2 o'clock.
+const KEY_ANGLE = { off: 210 * DEG, on: 270 * DEG, start: 330 * DEG }
+const KEY_TICK_R = 16.5   // detent ticks run inward from here to r=14.5 — OUTSIDE the fascia, framing it
+const KEY_FASCIA_R = 12   // the silver escutcheon the key turns in
+// Escutcheon metal. The rest of the cluster is dark plastic; the ignition surround is the one part
+// of a real dash that is bare metal, and that contrast is what makes the switch findable.
+const STEEL_HI = '#e4e4de'
+const STEEL    = '#b4b4ac'
+const STEEL_LO = '#6f6f68'
+// Vertical foreshortening of the dial plane — the whole isometric read in one number. Lower = the
+// dash is seen from further above, so a key pointing up flattens more against one pointing sideways.
+const ISO = 0.80
+const KEY_PLASTIC = '#242428'   // moulded plastic key body
+// The key body is the keyhole slot's shape at a larger size — half-length and thickness, vs the
+// slot's 5.6 / 2.2. Keep it wider AND thicker than the slot or the two states stop reading apart.
+const KEY_BODY_L = 8.0
+const KEY_BODY_W = 5.2
 
 // Indent geometry (the recessed regions the dials sit in) and the housing margin around them.
 // The housing outline is NOT drawn as its own shape: it is the indent geometry dilated by
@@ -73,6 +103,12 @@ export class GaugeCluster {
     this._tempShown = 0
     this._odoMiles = 0
     this._visible = true
+    // FEAT-33 ignition. _keyPos is which of the three renderings to draw; _keyAngle chases
+    // _keyTarget so the key SWEEPS between 12 and 2 o'clock instead of teleporting (a
+    // quarter-second start would otherwise be a single-frame flicker at START and easy to miss).
+    this._keyPos = 'on'
+    this._keyTarget = KEY_ANGLE.on
+    this._keyAngle = KEY_ANGLE.on
 
     this._bg = document.createElement('canvas')
     this._bg.width = W * this._dpr
@@ -92,6 +128,21 @@ export class GaugeCluster {
   setCoolantTemp (frac) { this._tempFrac = Math.max(0, Math.min(1, frac)) }
 
   odometerMiles () { return this._odoMiles }
+
+  /**
+   * FEAT-33: which of the three switch renderings to draw — 'off' | 'on' | 'start', straight from
+   * src/ignition.js keyPosition(). No second argument: 'start' happens exactly when the key is held
+   * against the spring, which is exactly when the starter is turning, so the position IS the tell.
+   */
+  setIgnition (pos) {
+    const next = KEY_ANGLE[pos] ? pos : 'on'
+    // Leaving OFF, the key was not on screen at all, so there is nothing to sweep FROM — snap to
+    // the new detent. Otherwise a start would animate the key up from 10 o'clock as if it had been
+    // sitting there, which is the one transition the three-rendering design is meant to avoid.
+    if (this._keyPos === 'off' && next !== 'off') this._keyAngle = KEY_ANGLE[next]
+    this._keyPos = next
+    this._keyTarget = KEY_ANGLE[next]
+  }
 
   setVisible (v) {
     if (v === this._visible) return
@@ -124,6 +175,8 @@ export class GaugeCluster {
     this._drawNeedle(ctx, FUEL, this._fuelShown, 22, 2)
     this._drawNeedle(ctx, TACH, this._rpm / (TACH.max * 1000), 48, 3)
     this._drawNeedle(ctx, SPEEDO, this._speedMph / SPEEDO.max, 56, 3)
+    this._keyAngle += (this._keyTarget - this._keyAngle) * (1 - Math.exp(-dt / 0.045))
+    this._drawKey(ctx)
   }
 
   // ── static face ────────────────────────────────────────────────────────────────────────────
@@ -140,7 +193,7 @@ export class GaugeCluster {
     this._fillDilated(ctx, MARGIN - 1.5, '#282320')           // housing face
 
     this._paintIndents(ctx)
-    for (const g of [TEMP, FUEL, TACH, SPEEDO]) this._paintWell(ctx, g)
+    for (const g of [TEMP, FUEL, TACH, SPEEDO, KEY]) this._paintWell(ctx, g)
 
     this._paintSmallGauge(ctx, TEMP, 'C', 'H', 1)   // red mark at the H end
     this._paintSmallGauge(ctx, FUEL, 'E', 'F', 0)   // red mark at the E end
@@ -148,6 +201,43 @@ export class GaugeCluster {
     this._paintFuelIcon(ctx, FUEL.cx, FUEL.cy + 13)
     this._paintTach(ctx)
     this._paintSpeedo(ctx)
+    this._paintKeyFace(ctx)
+  }
+
+  // FEAT-33 ignition switch face: a silver escutcheon with three detent ticks FRAMING it at
+  // 10 / 12 / 2 o'clock (OFF / ON / START). There is no needle — the key grip itself is the pointer,
+  // drawn live in _drawKey.
+  _paintKeyFace (ctx) {
+    const g = KEY
+    // Escutcheon: lit from the top-left like the rest of the cluster's shading, with a dark seam
+    // where the metal meets the plastic recess.
+    const grad = ctx.createRadialGradient(g.cx - 4.5, g.cy - 5, 0.5, g.cx, g.cy, KEY_FASCIA_R)
+    grad.addColorStop(0, STEEL_HI)
+    grad.addColorStop(0.55, STEEL)
+    grad.addColorStop(1, STEEL_LO)
+    ctx.beginPath()
+    ctx.arc(g.cx, g.cy, KEY_FASCIA_R, 0, Math.PI * 2)
+    ctx.fillStyle = grad
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(0,0,0,0.65)'
+    ctx.lineWidth = 1
+    ctx.stroke()
+    // Ticks sit on the dark recess OUTSIDE the metal, so they frame the escutcheon instead of
+    // competing with the key for the middle of the dial.
+    const r = KEY_TICK_R
+    for (const [pos, a] of Object.entries(KEY_ANGLE)) {
+      const c = Math.cos(a); const sn = Math.sin(a)
+      // START is the momentary position you have to hold against a spring, so it wears the warning
+      // colour the redlines use — the same "don't sit here" language as the rest of the cluster.
+      ctx.strokeStyle = pos === 'start' ? RED : WHITE
+      ctx.lineWidth = pos === 'on' ? 1.6 : 1.2
+      ctx.beginPath()
+      ctx.moveTo(g.cx + c * r, g.cy + sn * r)
+      ctx.lineTo(g.cx + c * (r - 2), g.cy + sn * (r - 2))
+      ctx.stroke()
+    }
+    // No 'IGN' legend at this size — a 7 px word inside a 26 px dial is mud, and the three detents
+    // plus a key shape already say what it is.
   }
 
   // Fill the housing silhouette at dilation `pad`: the convex hull of the four outline circles
@@ -160,12 +250,17 @@ export class GaugeCluster {
     const F = { x: FUEL.cx, y: FUEL.cy, r: POD_R + pad }
     const K = { x: TACH.cx, y: TACH.cy, r: TACH.well + DIAL_PAD + pad }
     const S = { x: SPEEDO.cx, y: SPEEDO.cy, r: SPEEDO.well + DIAL_PAD + pad }
+    const G = { x: KEY.cx, y: KEY.cy, r: KEY.well + KEY.pad + pad }        // FEAT-33 ignition switch
     // Outward normals of the common external tangents, in clockwise boundary order. The tach
     // crests above the temp→speedo line, so the top edge is two tangent segments (temp→tach,
     // tach→speedo); it stays inside the bottom edge, so the bottom is one (speedo→fuel).
     const nA = this._tangentNormal(T, K, (n) => n.y < 0)   // top, pod → tach
     const nB = this._tangentNormal(K, S, (n) => n.y < 0)   // top, tach → speedo
-    const nC = this._tangentNormal(S, F, (n) => n.y > 0)   // bottom, speedo → fuel
+    // FEAT-33: the bottom edge used to run speedo → fuel in one tangent. The key well hangs below
+    // and right of the speedo, so the hull now goes speedo → key → fuel: down the OUTER (upper-right)
+    // tangent to the key, around it, then back along the bottom to the pod.
+    const nE = this._tangentNormal(S, G, (n) => n.y < 0)   // right side, speedo → key (outer tangent)
+    const nC = this._tangentNormal(G, F, (n) => n.y > 0)   // bottom, key → fuel
     const nD = this._tangentNormal(F, T, (n) => n.x < 0)   // left side, fuel → temp (pod side)
     const ang = (n) => Math.atan2(n.y, n.x)
     const pt = (c, n) => ({ x: c.x + c.r * n.x, y: c.y + c.r * n.y })
@@ -182,7 +277,8 @@ export class GaugeCluster {
     ctx.beginPath()
     ctx.arc(T.x, T.y, T.r, ang(nD), ang(nA))   // pod top-left shoulder
     ctx.quadraticCurveTo(X.x, X.y, pB.x, pB.y) // visor curve, left edge to right edge
-    ctx.arc(S.x, S.y, S.r, ang(nB), ang(nC))   // speedo right end
+    ctx.arc(S.x, S.y, S.r, ang(nB), ang(nE))   // speedo right end
+    ctx.arc(G.x, G.y, G.r, ang(nE), ang(nC))   // ignition switch — the bottom-right corner
     ctx.arc(F.x, F.y, F.r, ang(nC), ang(nD))   // pod bottom-left nose (bottom stays straight)
     ctx.closePath()
     ctx.fill()
@@ -227,34 +323,25 @@ export class GaugeCluster {
       ctx.lineTo(FUEL.cx, FUEL.cy)
       ctx.stroke()
     }
-    this._dialUnionPath(ctx, TACH, TACH.well + DIAL_PAD, SPEEDO, SPEEDO.well + DIAL_PAD)
-    ctx.fillStyle = FILL
-    ctx.fill()
+    // Dial indents: tach ∪ speedo ∪ ignition switch, as one merged region. Drawn stroke-UNDER-fill
+    // (the same trick as the pod capsule above): every circle is stroked 3 px wide in the rim colour
+    // FIRST, then all three are filled, so each fill covers the stroke halves that fall inside its
+    // neighbours and only the outer 1.5 px of rim survives. That gives a true union outline —
+    // including the concave pinches where the circles meet — without computing the outline path.
+    const dials = [[TACH, TACH.well + DIAL_PAD], [SPEEDO, SPEEDO.well + DIAL_PAD], [KEY, KEY.well + KEY.pad]]
     ctx.strokeStyle = RIM
-    ctx.lineWidth = 1.5
-    ctx.stroke()
-  }
-
-  // Single closed path for the union of two overlapping discs: one arc on each circle between
-  // the two intersection points, running the long way around. Falls back to two full circles
-  // if they don't overlap (layout change safety).
-  _dialUnionPath (ctx, c1, r1, c2, r2) {
-    const dx = c2.cx - c1.cx; const dy = c2.cy - c1.cy
-    const d = Math.hypot(dx, dy)
-    ctx.beginPath()
-    if (d >= r1 + r2) {
-      ctx.arc(c1.cx, c1.cy, r1, 0, Math.PI * 2)
-      ctx.arc(c2.cx, c2.cy, r2, 0, Math.PI * 2)
-      return
+    ctx.lineWidth = 3
+    for (const [g, r] of dials) {
+      ctx.beginPath()
+      ctx.arc(g.cx, g.cy, r, 0, Math.PI * 2)
+      ctx.stroke()
     }
-    const base = Math.atan2(dy, dx)
-    const a = (d * d + r1 * r1 - r2 * r2) / (2 * d)   // distance from c1 to the chord
-    const h = Math.sqrt(Math.max(0, r1 * r1 - a * a))
-    const t1 = Math.atan2(h, a)                        // intersection half-angle seen from c1
-    const t2 = Math.atan2(h, d - a)                    // …and from c2
-    ctx.arc(c1.cx, c1.cy, r1, base - t1, base + t1, true)                          // around c1's far side
-    ctx.arc(c2.cx, c2.cy, r2, base + Math.PI - t2, base + Math.PI + t2, true)      // around c2's far side
-    ctx.closePath()
+    ctx.fillStyle = FILL
+    for (const [g, r] of dials) {
+      ctx.beginPath()
+      ctx.arc(g.cx, g.cy, r, 0, Math.PI * 2)
+      ctx.fill()
+    }
   }
 
   // Circular recess each gauge sits in — face disc with a soft inner shadow at the rim.
@@ -426,6 +513,79 @@ export class GaugeCluster {
     ctx.arc(g.cx, g.cy, width + 2.5, 0, Math.PI * 2)
     ctx.fillStyle = '#2a2624'
     ctx.fill()
+  }
+
+  // FEAT-33: the ignition switch has THREE distinct renderings, not one shape swept through three
+  // angles (owner, 2026-08-22). Each state is a different picture, and that is what makes it
+  // readable at a glance rather than something you have to measure:
+  //
+  //   OFF     no key at all — a bare silver disc with a dark slot lying on the 10 o'clock axis.
+  //           An empty keyhole IS the "this truck is dead" read; nothing else has to say it.
+  //   START   the plastic key body — the slot shape, fattened — turned to 2 o'clock. Only ever
+  //           on screen while the key is physically held against the spring.
+  //   ON      the same key body at 12 o'clock — and it LOOKS different there, because the
+  //           projection foreshortens vertically (see ISO below), so a key pointing up reads
+  //           shorter and flatter than the same key pointing up-right. That is the perspective
+  //           change, and it falls out of the projection rather than being drawn twice.
+  //
+  // THE PROJECTION. The key turns in the plane of the dial, and we view that plane from slightly
+  // above, so screen_y = y · ISO. Applying that squash BEFORE the rotation is what makes it a fixed
+  // viewpoint — squash after and the foreshortening spins with the key, which reads as a wobble.
+  // Thickness is the silhouette drawn twice with the dark copy offset in SCREEN space (always down);
+  // offsetting it inside the key's rotated frame — the obvious way — reads as a smear, not depth.
+  _drawKey (ctx) {
+    const g = KEY
+    if (this._keyPos === 'off') { this._drawKeyhole(ctx); return }
+
+    // The key body is deliberately the SAME shape as the keyhole, just wider and thicker (owner,
+    // 2026-08-22). That is the whole visual language of the switch: a thin dark slot means empty,
+    // a fat plastic bar means the key is in, and which way the bar lies is which detent it is at.
+    // No head, no blade, no keyring — none of that survives being 34 px across anyway.
+    const bar = (oy, fill) => {
+      ctx.save()
+      ctx.translate(g.cx, g.cy + oy)
+      ctx.scale(1, ISO)                  // viewpoint foreshortening — before rotate, see above
+      ctx.rotate(this._keyAngle)
+      ctx.fillStyle = fill
+      ctx.beginPath()
+      ctx.roundRect(-KEY_BODY_L, -KEY_BODY_W / 2, KEY_BODY_L * 2, KEY_BODY_W, KEY_BODY_W / 2)
+      ctx.fill()
+      ctx.restore()
+    }
+    // Thickness first, then the face on top of it. 2 px of extrusion, not 1 — at this size a
+    // one-pixel offset reads as a printing error rather than as a body standing off the metal.
+    bar(2.0, '#08080a')
+    bar(0, KEY_PLASTIC)
+    // Moulding highlight down the body's upper edge, in the same projected frame.
+    ctx.save()
+    ctx.translate(g.cx, g.cy)
+    ctx.scale(1, ISO)
+    ctx.rotate(this._keyAngle)
+    ctx.strokeStyle = 'rgba(255,255,255,0.20)'
+    ctx.lineWidth = 0.9
+    ctx.beginPath()
+    ctx.moveTo(-KEY_BODY_L + 2, -KEY_BODY_W / 2 + 0.9)
+    ctx.lineTo(KEY_BODY_L - 2, -KEY_BODY_W / 2 + 0.9)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  // OFF: the slot the key goes into, lying along the 10 o'clock axis — the direction the key points
+  // when it is in and turned off. Dark, with a light lower lip so it reads as cut INTO the metal.
+  _drawKeyhole (ctx) {
+    const g = KEY
+    ctx.save()
+    ctx.translate(g.cx, g.cy)
+    ctx.rotate(KEY_ANGLE.off)
+    ctx.fillStyle = 'rgba(255,255,255,0.30)'                       // lip catching the light below
+    ctx.beginPath()
+    ctx.roundRect(-5.6, -1.1 + 0.9, 11.2, 2.2, 1.1)
+    ctx.fill()
+    ctx.fillStyle = '#141416'
+    ctx.beginPath()
+    ctx.roundRect(-5.6, -1.1, 11.2, 2.2, 1.1)
+    ctx.fill()
+    ctx.restore()
   }
 
   // Six-digit drum, white on black; the ones digit rolls continuously with the fraction.

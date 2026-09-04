@@ -24,6 +24,7 @@ import { DebrisSystem } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition } from './suspension.js'
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
+import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
@@ -35,7 +36,7 @@ window.__renderer = () => renderer
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
-import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setAudioPageActive } from './engine-audio.js'
+import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playShutoffAudio } from './engine-audio.js'
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
@@ -891,6 +892,10 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
   vehicleState.wheelOmega     = [0, 0, 0, 0]
   vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 }
+  // FEAT-33 (owner, 2026-08-22): story mode re-seats you with a DEAD truck — starting the day by
+  // starting the truck is the ritual SM-INV-6 wants. Free roam / lab / scenario hand you a running
+  // one so a debug reset is never gated behind a keypress.
+  vehicleState.ignition       = makeIgnitionState(_gameMode === 'story' ? IGN_OFF : IGN_RUNNING)
   vehicleState.slipLong       = [0, 0, 0, 0]
   vehicleState.slipLat        = [0, 0, 0, 0]
   vehicleState.handbrake      = false
@@ -1010,6 +1015,8 @@ const vehicleState = {
   wheelDebug:      [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ],  // per-wheel debug data written by stepPhysics; read by logger; fz=tire spring force (D-12)
   wheelOmega:      [0, 0, 0, 0],                   // per-wheel angular velocity [rad/s]; integrated by physics.js omega integrator
   drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
+  ignition:        makeIgnitionState(),               // FEAT-33 key state (OFF/CRANKING/RUNNING); stepped by updateVehicle, read by stepDrivetrain + the cluster. Free roam spawns RUNNING.
+  engineHealth:    1,                                 // FEAT-33 seam for the SM-3 wear model: 1 = fresh engine (quarter-second catch), 0 = beater (ignitionCatchTimeWorn). Nothing writes it yet.
   handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque
   parked:          true,                              // spawn/teleport hold (feature/teleport): handbrake held until first driver input
   submerged:       false,                            // FEAT-22: CG below a water surface (set per-frame from WaterSystem.submergedAt)
@@ -1879,6 +1886,9 @@ if (_PROF) {
 //   changeSeed = update worldSeed then fire Path B.
 const _gui = initDebug(RANGER_PARAMS, {
   setRampVisible:      (v) => { rampMesh.visible = v },
+  // FEAT-33: engine condition is vehicleState, not a param (it is the SM-3 wear seam) — the slider
+  // reaches it through here. Lower health ⇒ longer crank before the engine catches.
+  setEngineHealth:     (v) => { vehicleState.engineHealth = v },
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
@@ -1973,6 +1983,13 @@ const physicsWireframes = new PhysicsWireframes(physicsEngine, scene)
 window.__physWireframes = physicsWireframes    // dev handle — debug.js checkbox targets it
 window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
 window.__vehicleChassis = vehicleChassis       // dev handle — debug.js restitution slider targets it
+window.__vs = vehicleState                    // dev handle — read live vehicle state from the console / CDP probes
+
+// FEAT-33: is the starter motor actually turning? Not the same as state === 'cranking' — the key
+// stays at START while it is held, so an over-crank against an already-running engine still has the
+// starter engaged. Drives the crank audio level. (The cluster needs no equivalent: it draws the key
+// at the START detent under exactly this condition, so the picture already says it.)
+const _starterEngaged = (ign) => !!ign && (ign.state === 'cranking' || ign.startHeld)
 window.__debris = debrisSystem                 // dev handle — debug.js projectile selector + clear button
 perfMark('init: physics engine ready')
 
@@ -3276,6 +3293,10 @@ function _sleepAtCamp () {
   const back = _campUi.moms ? 'moms' : 'camp'
   _campFade(() => {
     daySystem.sleep(hours, vibe)
+    // FEAT-33: you turned the key off to make camp, so you wake to a dead truck and start the
+    // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
+    // and on a worn engine it is also the morning's first piece of news about what you're driving.
+    vehicleState.ignition = makeIgnitionState(IGN_OFF)
     // You wake WHERE YOU SLEPT: the truck is untouched and the dialogue is still up. The pad stays
     // dug for as long as you stay camped; "break camp" is what closes it AND un-digs the bench.
     _campUi = { ..._campUi, mode: back }
@@ -5024,7 +5045,25 @@ function loop () {
   if (dtrain) {
     setEngineAudioEnabled(RANGER_PARAMS.engineAudioEnabled !== false)
     setEngineAudioVolume(RANGER_PARAMS.engineAudioVolume ?? 0.5)
-    updateEngineAudio(dtrain.engineRPM, vehicleState.throttle)
+    updateEngineAudio(dtrain.engineRPM, vehicleState.throttle, (vehicleState.ignition?.state ?? 'running') === 'running')
+  }
+
+  // FEAT-33 ignition audio, in two halves.
+  //
+  // The STARTER is a level, not an edge: it runs for as long as the key is physically held at START
+  // — including after the engine has caught, because you really can keep grinding the starter
+  // against a running engine and the driver decides when to stop by letting go (owner, 2026-08-22).
+  // start/stopCrankAudio are idempotent, so calling the level every frame is free.
+  //
+  // The CATCH and SHUTOFF are edges. The state machine leaves a one-shot on ignition.event for
+  // exactly the step it happened on; consuming it here (once per frame, not per physics step) is
+  // fine because these are edges the player caused, never per-step continuous values.
+  const ign = vehicleState.ignition
+  if (ign) {
+    if (_starterEngaged(ign)) startCrankAudio(); else stopCrankAudio()
+    if (ign.event === 'catch') playCatchAudio()
+    else if (ign.event === 'shutoff') playShutoffAudio()
+    ign.event = null
   }
 
   // Tire-slip audio (src/tire-audio.js): screech on pavement / tearing roar on dirt, gated by
@@ -5205,6 +5244,7 @@ function loop () {
   // FEAT-49: gauge cluster — every frame (needles must be smooth, unlike the 10 Hz text HUD),
   // hidden while the map is open, live in chase/hood/freecam alike. update() early-outs when hidden.
   gaugeCluster.setVisible(!map2d.isOpen())
+  gaugeCluster.setIgnition(keyPosition(vehicleState.ignition))
   gaugeCluster.update(frameTime, vehicleState.velocity.length(), vehicleState.drivetrain?.engineRPM ?? 0)
 
   // feature/teleport: show the "teleport here" button only in free-cam + free-roam. Toggle on

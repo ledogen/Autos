@@ -80,12 +80,19 @@ export function ensureEngineAudio () {
  * Per-frame update: map engine RPM → fundamental, open the filter with revs/throttle, and set volume.
  * Ramps every param with setTargetAtTime (~50 ms) so nothing zippers.
  */
-export function updateEngineAudio (rpm, throttle) {
+export function updateEngineAudio (rpm, throttle, firing = true) {
   if (!started || !ctx) return
   const now = ctx.currentTime
   const tc = 0.05
 
   if (!enabled) { master.gain.setTargetAtTime(0, now, tc); return }
+
+  // FEAT-33: `firing` is false whenever the ignition is not RUNNING. This drone models COMBUSTION,
+  // so it has to go silent for a dead engine — including the case that would otherwise sound worst,
+  // an off-key coast at speed where the driveline is dragging the engine round at 1300 rpm and the
+  // stack would happily drone as if the truck were still running. Kept as a fade, not a cut, so
+  // shutting the key off at idle dies away instead of clicking.
+  if (!firing) { master.gain.setTargetAtTime(0, now, 0.12); return }
 
   const r = Math.max(RPM_MIN, rpm || RPM_MIN)
   const f0 = Math.max(F_MIN, (r / 60) * 3)      // V6 firing fundamental
@@ -104,9 +111,15 @@ export function updateEngineAudio (rpm, throttle) {
 export function setEngineAudioEnabled (on) {
   enabled = !!on
   if (!on && started && ctx) master.gain.setTargetAtTime(0, ctx.currentTime, 0.05)
+  if (!on) stopCrankAudio()          // FEAT-33: the starter hangs off its own gate, not `master`
 }
 
-export function setEngineAudioVolume (v) { volume = Math.min(1, Math.max(0, v)) }
+export function setEngineAudioVolume (v) {
+  volume = Math.min(1, Math.max(0, v))
+  // The drone re-reads `volume` every frame; the crank loop is a level set once when it starts, so
+  // it has to be told about a mid-crank volume change or the slider appears not to work.
+  if (crankOn && crankGain && ctx) crankGain.gain.setTargetAtTime(volume * CRANK_LEVEL, ctx.currentTime, 0.05)
+}
 
 /**
  * Page-level mute for a backgrounded tab. Suspends/resumes the ONE shared AudioContext, so this
@@ -126,4 +139,138 @@ export function setAudioPageActive (on) {
   if (!ctx) return                                  // no gesture yet — nothing to suspend
   if (pageActive) { if (ctx.state === 'suspended') ctx.resume() }
   else if (ctx.state === 'running') ctx.suspend()
+}
+
+// ── FEAT-33: starter, catch and shutoff ──────────────────────────────────────────────────────────
+//
+// Same philosophy as the drone above — no samples, just a small graph that reads as the right
+// mechanical event. The crank is a LOOP gated by its own gain node; catch and shutoff are one-shot
+// voices that create, ramp and dispose.
+//
+// The crank is built on NOISE, not oscillators. A starter is Bendix teeth skidding on a ring gear
+// and an engine being dragged over compression — broadband scraping, not a pitch. An earlier
+// oscillator version read as a beep for exactly that reason. So: one white-noise source split two
+// ways — a bandpass around 1.5 kHz for the teeth, a lowpass under 240 Hz for the barrel-roll of
+// compression — each amplitude-modulated at its own rate (fast clatter, slow chug). The only tone
+// left is a weak sawtooth for the motor itself, buried under the noise.
+//
+// AMPLITUDE MODULATION in WebAudio: connect an LFO oscillator to a GainNode's .gain param and its
+// output is ADDED to that param's current value. So base 0.22 with a ±0.18 LFO swings the gain
+// between 0.04 and 0.40 — that swing IS the chug.
+
+let crankGain = null     // GainNode — the crank loop's on/off gate. Its sources run for the life of
+                         // the page behind this gate; starting/stopping is a gain ramp.
+let crankOn = false      // level state, so the per-frame calls from main.js are idempotent
+
+const TOOTH_HZ = 33      // ring-gear teeth clattering past
+const CHUG_HZ = 12       // ~250 rpm × 3 firings/rev ÷ 60 — the compression beat
+const MOTOR_HZ = 88      // the starter motor's own (weak, mostly masked) pitch
+const CRANK_LEVEL = 0.34 // crank loop gain, before the user volume scale
+
+/** A couple of seconds of white noise to loop — the raw material for the grind. */
+function noiseBuffer (seconds = 2) {
+  const n = Math.floor(ctx.sampleRate * seconds)
+  const buf = ctx.createBuffer(1, n, ctx.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
+  return buf
+}
+
+function ensureCrankGraph () {
+  if (crankGain || !getAudioContext()) return
+  const out = ctx.createBiquadFilter()      // final tame — keeps the noise from turning into hiss
+  out.type = 'lowpass'
+  out.frequency.value = 2600
+  out.Q.value = 0.7
+
+  crankGain = ctx.createGain()
+  crankGain.gain.value = 0
+  out.connect(crankGain)
+  crankGain.connect(ctx.destination)
+
+  const noise = ctx.createBufferSource()
+  noise.buffer = noiseBuffer()
+  noise.loop = true
+
+  // Modulated branch helper: noise → filter → gain, with an LFO swinging that gain.
+  const branch = (type, freq, Q, base, lfoHz, depth) => {
+    const f = ctx.createBiquadFilter()
+    f.type = type; f.frequency.value = freq; f.Q.value = Q
+    const g = ctx.createGain()
+    g.gain.value = base
+    noise.connect(f); f.connect(g); g.connect(out)
+    const lfo = ctx.createOscillator()
+    lfo.type = 'sine'
+    lfo.frequency.value = lfoHz
+    const amt = ctx.createGain()
+    amt.gain.value = depth
+    lfo.connect(amt); amt.connect(g.gain); lfo.start()
+  }
+  branch('bandpass', 1500, 1.0, 0.22, TOOTH_HZ, 0.18)   // teeth on the flywheel
+  branch('lowpass', 240, 0.9, 0.55, CHUG_HZ, 0.45)      // dragging it over compression
+  noise.start()
+
+  const motor = ctx.createOscillator()
+  motor.type = 'sawtooth'
+  motor.frequency.value = MOTOR_HZ
+  const mg = ctx.createGain()
+  mg.gain.value = 0.07
+  motor.connect(mg); mg.connect(out); motor.start()
+}
+
+/**
+ * Starter engaged — LEVEL, not an edge: main.js calls this every frame the key is held at START,
+ * including after the engine has caught (you really can keep grinding the starter against a running
+ * engine, and holding the key is how the player decides when to stop). Idempotent.
+ */
+export function startCrankAudio () {
+  if (!enabled || crankOn) return
+  ensureCrankGraph()
+  if (!crankGain) return
+  crankOn = true
+  crankGain.gain.setTargetAtTime(volume * CRANK_LEVEL, ctx.currentTime, 0.02)
+}
+
+/** Key released off START (whether it caught or not). Idempotent. */
+export function stopCrankAudio () {
+  if (!crankOn) return
+  crankOn = false
+  if (crankGain && ctx) crankGain.gain.setTargetAtTime(0, ctx.currentTime, 0.04)
+}
+
+/**
+ * One-shot voice: a lowpassed sawtooth sweeping f0 → f1 over `dur` with a percussive envelope.
+ * Nodes are stopped and left for GC — WebAudio tears down a stopped source's graph on its own.
+ */
+function _blip (f0, f1, dur, peak, cutoff) {
+  if (!enabled || !getAudioContext()) return
+  const now = ctx.currentTime
+  const osc = ctx.createOscillator()
+  osc.type = 'sawtooth'
+  osc.frequency.setValueAtTime(f0, now)
+  osc.frequency.exponentialRampToValueAtTime(Math.max(1, f1), now + dur)
+  const lpB = ctx.createBiquadFilter()
+  lpB.type = 'lowpass'
+  lpB.frequency.value = cutoff
+  const g = ctx.createGain()
+  g.gain.setValueAtTime(0.0001, now)
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume * peak), now + dur * 0.18)
+  g.gain.exponentialRampToValueAtTime(0.0001, now + dur)
+  osc.connect(lpB); lpB.connect(g); g.connect(ctx.destination)
+  osc.start(now)
+  osc.stop(now + dur + 0.02)
+}
+
+/**
+ * The engine catches. Its OWN sound, and deliberately loud enough to cut through the starter —
+ * the crank keeps grinding underneath if the driver is still holding the key, so the catch has to
+ * be what tells them they can let go. The idle drone fades in behind it on its own.
+ */
+export function playCatchAudio () {
+  _blip(38, 96, 0.42, 0.46, 2400)   // cranking firing rate → up past idle
+}
+
+/** Key cut: a short low thump under the drone's own fade-out. */
+export function playShutoffAudio () {
+  _blip(70, 30, 0.28, 0.22, 700)
 }

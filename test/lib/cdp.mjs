@@ -141,7 +141,7 @@ export async function startTracing (client, outPath, { categories = TRACE_CATEGO
 
 // ── Scripted keyboard input ──────────────────────────────────────────────────
 // Raw down/up dispatch for driving scenarios. `key` is a DOM key value ('w', 'ArrowUp', ' ').
-const KEY_CODES = { w: 'KeyW', a: 'KeyA', s: 'KeyS', d: 'KeyD', ' ': 'Space', Shift: 'ShiftLeft', c: 'KeyC' }
+const KEY_CODES = { w: 'KeyW', a: 'KeyA', s: 'KeyS', d: 'KeyD', i: 'KeyI', ' ': 'Space', Shift: 'ShiftLeft', c: 'KeyC' }
 export async function keyEvent (client, key, down) {
   const code = KEY_CODES[key] ?? key
   await client.cmd('Input.dispatchKeyEvent', {
