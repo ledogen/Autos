@@ -2044,6 +2044,175 @@ export class RoadSystem {
     }
 
 
+    // ── PERF-30: network export/adopt (the network-worker protocol) ─────────────────────────────
+    /**
+     * Serialize the REGISTERED network — everything a second RoadSystem needs to answer surface/
+     * slice/junction queries as if it had built the network itself — as structured-clonable data.
+     * Runs carry their exact primitive centerline as descriptors (the importRouteCache convention:
+     * centerlines rebuild losslessly via centerlineFromDescriptors). Planner state that post-build
+     * consumers read rides along: the R4 frozen delete set (_graphDegreeOf / pads / leaf tapers
+     * classify by BUILT degree), the band graph (so the adopter never re-runs Delaunay), the
+     * condemned keys (story reads the mark at run start), and the census tallies.
+     * Typed arrays are COPIES — postMessage transfer must not detach the live entries.
+     */
+    exportNetwork() {
+        const runs = []
+        for (const [key, e] of this._network) {
+            const n = e.points.length
+            const pts = new Float64Array(n * 3)
+            for (let i = 0; i < n; i++) {
+                pts[i * 3] = e.points[i].x; pts[i * 3 + 1] = e.points[i].y; pts[i * 3 + 2] = e.points[i].z
+            }
+            runs.push({
+                key, cellA: e.cellA, cellB: e.cellB, arcOrigin: e.arcOrigin ?? 0,
+                pts,
+                polyCum: Float64Array.from(e.polyCum),
+                clArc: Float64Array.from(e.clArc),
+                prims: e.centerline ? e.centerline.primitives : null,
+                v2Dirs: !!(e.centerline && e.centerline._v2Dirs),
+                dirsSpec: e.centerline?._v2DirsSpec ?? null,
+                tunnelSpans: e.tunnelSpans ?? null,
+                cededSpans: e.cededSpans ?? null,
+                offCurveSpans: e.offCurveSpans ?? null,
+                departureSpans: e.departureSpans ?? null,
+                rerouted: !!e.rerouted, condemned: !!e.condemned,
+            })
+        }
+        // Band box parsed back out of the sig (mz0:mz1:mx0:mx1:gen) — the adopter re-composes the
+        // sig with its OWN _generation so its _streamNetwork short-circuits on the adopted window.
+        let band = null
+        if (this._lastBandSig) {
+            const [mz0, mz1, mx0, mx1] = this._lastBandSig.split(':').map(Number)
+            band = { mz0, mz1, mx0, mx1 }
+        }
+        const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen : null
+        const g = this._proto.graph
+        // The degree pass deletes dropped pairs from g.adj but leaves g.edges raw (see
+        // _assembleGraphEdges) — export both, or the adopter resurrects every dropped edge when it
+        // rebuilds adj (measured: a dropped pair came back as a phantom degree-3 junction).
+        let dropped = null
+        if (g) {
+            dropped = []
+            for (const [a, b] of g.edges) {
+                if (!g.adj.get(g.key(a))?.has(g.key(b))) dropped.push([g.key(a), g.key(b)])
+            }
+        }
+        return {
+            center: this._networkCenter ? { x: this._networkCenter.x, z: this._networkCenter.z } : null,
+            radius: this._proto.radius,
+            band,
+            runs,
+            graph: g ? { sig: g.sig, edges: g.edges, dropped } : null,
+            delFrozen: delF ? [...delF.del] : [],
+            delFlip: delF ? [...delF.flip] : [],
+            condemnedKeys: this._v2CondemnedKeys ? [...this._v2CondemnedKeys] : [],
+            tallies: {
+                merges: this._v2Merges || 0, shoves: this._v2Shoves || 0,
+                reroutes: this._v2Reroutes || 0, infeasible: this._v2Infeasible || 0,
+                condemned: this._v2Condemned || 0, dirFallbacks: this._v2DirFallbacks || 0,
+            },
+        }
+    }
+
+    /**
+     * Adopt a network built elsewhere (the PERF-30 network worker — or exportNetwork() of any
+     * other instance). Replaces this instance's registered network ATOMICALLY within this call:
+     * fills _network, restores the planner state consumers read (frozen deletes, band graph,
+     * condemned marks), and performs the SAME post-rebuild bookkeeping _streamNetwork does — rev
+     * bump (every rev-keyed cache invalidates in the same swap), slice reset, junction re-detect.
+     * After adopting, _streamNetwork with the same (center, radius, params) short-circuits at the
+     * band-sig guard, so play keeps driving this network until the next real window change.
+     */
+    adoptNetwork(data) {
+        this._networkCenter = data.center ? new THREE.Vector3(data.center.x, 0, data.center.z) : null
+        this._proto.lastCenter = this._networkCenter ? this._networkCenter.clone() : null
+        this._proto.dirty = false
+        if (data.radius > 0) this._proto.radius = data.radius
+        this._lastBandSig = data.band
+            ? `${data.band.mz0}:${data.band.mz1}:${data.band.mx0}:${data.band.mx1}:${this._generation}`
+            : null
+        this._networkRev++   // one swap: every rev-keyed cache (profiles, camber, adjacency, leaf flags) invalidates together
+        this._network.clear()
+        this._slicedFrom = null
+        if (this._tiles) this._tiles.clear()
+        if (this._tileObjects) this._tileObjects.clear()
+        if (this._junctions) this._junctions.clear()
+        this._junctionsRev = -1
+        this._designGradeCache = new WeakMap()
+        for (const r of data.runs) {
+            const n = r.pts.length / 3
+            const points = new Array(n)
+            for (let i = 0; i < n; i++) points[i] = new THREE.Vector3(r.pts[i * 3], r.pts[i * 3 + 1], r.pts[i * 3 + 2])
+            let cl = null
+            if (r.prims && r.prims.length) {
+                cl = centerlineFromDescriptors(r.prims)
+                if (r.v2Dirs) cl._v2Dirs = true
+                if (r.dirsSpec) cl._v2DirsSpec = r.dirsSpec
+            }
+            const entry = {
+                points, arcOrigin: r.arcOrigin, centerline: cl,
+                polyCum: Float64Array.from(r.polyCum), clArc: Float64Array.from(r.clArc),
+                cellA: r.cellA, cellB: r.cellB, tunnelSpans: r.tunnelSpans || null,
+            }
+            // Optional fields mirror the registration sites: absent on a plain run, present on a
+            // merged/shoved one — consumers distinguish by presence.
+            if (r.cededSpans) entry.cededSpans = r.cededSpans
+            if (r.offCurveSpans) entry.offCurveSpans = r.offCurveSpans
+            if (r.departureSpans) entry.departureSpans = r.departureSpans
+            if (r.rerouted) entry.rerouted = true
+            if (r.condemned) entry.condemned = true
+            this._network.set(r.key, entry)
+        }
+        // R4 frozen deletes at THIS instance's new rev — _graphDegreeOf subtracts them, so pads,
+        // leaf tapers and pins classify by the built network exactly as the builder did.
+        this._v2DelFrozen = { rev: this._networkRev, del: new Set(data.delFrozen || []), flip: new Set(data.delFlip || []) }
+        this._v2CondemnedKeys = data.condemnedKeys ? [...data.condemnedKeys] : []
+        if (data.tallies) {
+            this._v2Merges = data.tallies.merges; this._v2Shoves = data.tallies.shoves
+            this._v2Reroutes = data.tallies.reroutes; this._v2Infeasible = data.tallies.infeasible
+            this._v2Condemned = data.tallies.condemned; this._v2DirFallbacks = data.tallies.dirFallbacks
+        }
+        // Adopt the builder's band graph (pure data: same sites, same Urquhart — byte-identical to
+        // what _buildUrquhart would derive here) so _graphDegreeOf never sees a null graph, which
+        // silently reads as degree 2 everywhere (no pads, no leaf tapers).
+        if (data.graph) {
+            const key = (id) => `${id[0]},${id[1]},${id[2]}`
+            const adj = new Map()
+            for (const [a, b] of data.graph.edges) {
+                const ka = key(a), kb = key(b)
+                if (!adj.has(ka)) adj.set(ka, new Set())
+                if (!adj.has(kb)) adj.set(kb, new Set())
+                adj.get(ka).add(kb); adj.get(kb).add(ka)
+            }
+            // Re-apply the degree-pass drops the builder applied to ITS adj (edges stays raw on
+            // both sides — that asymmetry is _assembleGraphEdges' own convention).
+            for (const [ka, kb] of data.graph.dropped || []) {
+                adj.get(ka)?.delete(kb); adj.get(kb)?.delete(ka)
+            }
+            this._proto.graph = { sig: data.graph.sig, edges: data.graph.edges, adj, key }
+        }
+        // Node incidence (site-key → [runKey,…]) — _graphNodeStrands/_graphJunctionGradeY read it
+        // for the pad plane, and only _assembleGraphEdges fills it. Registration pushed each run to
+        // both endpoints in edge order == network insertion order, which the export preserved — so
+        // this walk reproduces the arrays byte-for-byte (strand ORDER feeds a float least-squares).
+        this._proto.nodeInc.clear()
+        const incKey = (id) => `${id[0]},${id[1]},${id[2]}`
+        for (const [runKey, e] of this._network) {
+            for (const id of [e.cellA, e.cellB]) {
+                if (!id) continue
+                const k = incKey(id)
+                let a = this._proto.nodeInc.get(k)
+                if (!a) { a = []; this._proto.nodeInc.set(k, a) }
+                a.push(runKey)
+            }
+        }
+        // Same eager ordering as _streamNetwork: the crossing classifier is populated before any
+        // run profile is built (the AT_GRADE mid-span flatten reads it), then slices.
+        this._detectJunctions()
+        this._sliceNetwork()
+        return this._network
+    }
+
     // FEAT-13: the terminal heading the routed edge `at → toward` leaves the anchor `at` with (and the
     // ribbon-weld target there) = the EDGE's OWN direction toward its neighbour, so edges meeting at a
     // junction DIVERGE toward their neighbours (a shared per-cell heading made them all leave parallel and
