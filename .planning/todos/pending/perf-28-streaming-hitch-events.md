@@ -55,3 +55,26 @@ owner, the ?hitch instrumentation self-attributes). A/B any fix with the same tw
   scenario, and the owner no longer sees the events in free-cam at native speed.
 - No behavioural change to the network: worldgen gates byte-green (`npm test` affected set;
   invariance + restream in particular if the fix stages or reorders window work).
+
+## PERF-30 re-measure (2026-09-04) — the road-side class is CLOSED, terrain remains
+
+PERF-30 moved the entire network build (routing + BUG-56 plan layer + assembly) onto the
+network Worker; play adopts finished networks atomically (~5 ms/swap, measured). Re-run of
+this ticket's own method (`hitch-report --cpu=4`, stream 60 s + drive 45 s, seed 6, results
+in `perf-runs/perf30-after-{stream,drive}.json`):
+
+- **Hypothesis suspect #1 (BUG-55/56 registration-side scans at window rebuild) no longer
+  fires at all**: `road.streamNetwork` synchronous rebuild cost during play measured **0 ms /
+  0 calls** across four 2 km freecam jumps (was 3.09 s over the same pattern on the sync
+  path, ~770 ms per restream, with 0.2–1.4 s frame gaps per jump).
+- The worst remaining ROAD frames were `frame.road.warmRoutes` + `warm.degreeDrops`
+  (~40 ms combined at cpu×4) — the route pre-warm scanning for a cache nothing consumes with
+  the worker active ("route warm never drained"). Fixed in the same pass: play skips
+  warmRoutes when the network client is wired.
+- **What remains is suspect #2**: terrain chunk main-thread stages —
+  `flush.buildCarveTable`, `terrain.flushPendingQueue`, `flush.writeVertexColors` — plus
+  physics/shadow/props spikes, all in the 30–57 ms band at cpu×4. A 2.3 km teleport still
+  shows a ~4 s worst gap that attributes to terrain streaming, not roads.
+
+So: this ticket's remaining scope is the PERF-19-deferred terrain worker items (+ the
+props.lodSwap / shadow.bake spikes visible in the tables). The road half is done.

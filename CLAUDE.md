@@ -106,9 +106,10 @@ aliased to `three/examples/jsm/` in vite.config.js). Physics: Box3D WASM rigid-b
 `src/physics-engine.js` adapter (FEAT-48) + our own Pacejka tires and spring-damper suspension
 (Three.js math primitives). Local dev: `npm run dev` (Vite on :8000).
 Deploy: `npm run build` → `dist/` shipped to GitHub Pages by `.github/workflows/deploy.yml` (Pages
-Source must be set to "GitHub Actions"). Runtime assets fetched by URL — `data/route-cache-default
-.json.gz` and `assets/models/*.glb` — are copied into `dist/` by an inline plugin at their existing
-paths (NOT ES imports; do not convert to `?url`, that breaks the pure-node gates that read them).
+Source must be set to "GitHub Actions"). Runtime assets fetched by URL — `assets/models/*.glb` —
+are copied into `dist/` by an inline plugin at their existing paths (NOT ES imports; do not convert
+to `?url`, that breaks the pure-node gates that read them). (The bundled route-cache `.gz` pair was
+deleted 2026-08-19 with the whole bake subsystem — v2 routes fast enough live.)
 
 **Do NOT use:** any physics engine OUTSIDE the `physics-engine.js` adapter seam (no direct `b3*`/
 engine imports elsewhere — grep-enforceable; FEAT-48 reversed the old blanket physics-lib ban but the

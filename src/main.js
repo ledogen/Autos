@@ -5179,7 +5179,12 @@ function loop () {
   // the same anchor, and once frozen every region route is already cached, so there is nothing left
   // to pre-warm and no router traffic at all while driving.
   _pt = performance.now()   // PERF-26 INSTRUMENT: the one unbucketed call in the streaming block
-  if (roadSystem && !_spawnWarmActive && !_labActive && !storySystem.isRoadStreamSuspended()) roadSystem.warmRoutes(streamCenter)   // don't fight a spawn warm's anchor
+  // PERF-30 phase 3 (measured, hitch-report 2026-09-04): with the network Worker active the play
+  // route-cache has NO consumer — the worker routes internally — so the pre-warm re-dispatched
+  // every band's routes forever ("route warm never drained") and its degree-drop scan owned the
+  // worst road frames left in play (warmRoutes+degreeDrops ≈ 40 ms at cpu×4). Skip it; the map
+  // and the mission planner keep their own warm paths, and the no-worker fallback keeps this one.
+  if (roadSystem && !netClient && !_spawnWarmActive && !_labActive && !storySystem.isRoadStreamSuspended()) roadSystem.warmRoutes(streamCenter)   // don't fight a spawn warm's anchor
   perfAdd('frame.road.warmRoutes', performance.now() - _pt)
   // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
   // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.
