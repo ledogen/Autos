@@ -39,8 +39,9 @@
 
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
-import { computeNormalForce, getWheelPosition, stepSuspensionSubsteps } from './suspension.js'
+import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps, wheelRunoutOf, WHEEL_SOFT_BAND } from './suspension.js'
 import { stepDrivetrain } from './drivetrain.js'
+import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
 
 // Speed threshold for input routing (rule-based, no dead-zone oscillation).
@@ -84,9 +85,12 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
   // re-create the drive/brake oscillation this feature fixes.
 
   // S above REV_THRESHOLD: brake all wheels to slow forward motion (front/rear-split service brake).
+  // SM-3: worn pads deliver less torque. params._brakeScale{Front,Rear} is published by
+  // src/damage.js; absent (headless gates, damage off) it reads as 1 and nothing changes.
+  const brakeDmg = isRear ? (params._brakeScaleRear ?? 1) : (params._brakeScaleFront ?? 1)
   if (vehicleState.brake > 0 && longVel > REV_THRESHOLD) {
     const maxBt = isRear ? (params.maxBrakeTorqueRear ?? 800) : (params.maxBrakeTorqueFront ?? 1200)
-    return vehicleState.brake * maxBt
+    return vehicleState.brake * maxBt * brakeDmg
   }
 
   // Handbrake: rear wheels only, FULL clamping torque at all speeds. A handbrake is a fixed brake, so
@@ -97,7 +101,7 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
   // grades far below the friction angle. Full torque locks the rears; the tire then holds (static) or
   // skids (kinetic) per the slope vs friction angle, which is the correct behaviour.
   if (vehicleState.handbrake && isRear) {
-    return params.maxHandbrakeTorque
+    return params.maxHandbrakeTorque * brakeDmg
   }
 
   return 0
@@ -160,6 +164,82 @@ const CHASSIS_PROFILE = {
   slabHalfW: 0.95,     // fenders/bumpers
   cabHalfW: 0.78,      // cab + roof (mirrors excluded)
   deckHalfW: 0.93,     // bed sides
+}
+
+/**
+ * Fold the engine's WHEEL HARD CORE contact forces into `out`, per corner [N], taking the max
+ * against whatever the soft path already put there.
+ *
+ * This is the rim-strike signal, and it is the engine's own answer rather than anything derived.
+ * The QUAL-25 chassis carries a rigid sphere per wheel at `wheelRadius − WHEEL_SOFT_BAND`, riding
+ * the strut-derived hub position and colliding with debris only. That geometry IS the model of a
+ * tire: the outer 0.15 m band is rubber, handled by our analytic soft path, and the core is the
+ * rim. So "the rubber ran out and the rim is taking the load" needs no threshold and no proxy —
+ * it is exactly the condition that the engine reports a contact on a core, and Box3D solves that
+ * contact properly: real impulse exchange, the rock kicked away with the momentum it took out of
+ * the wheel, no penalty spring of ours in the loop.
+ *
+ * Note the enveloping factor is what decides whether a core is ever reached, and it points the
+ * right way round: a big boulder envelops little, so the tire resists it and rides over with the
+ * core untouched; a small hard rock envelops a lot, so the carcass wraps it and the hub sinks
+ * until the core meets it. Which is the ranking a rim wants.
+ *
+ * @param {object} engine - physics engine (adapter).
+ * @param {*} chassis - chassis body handle.
+ * @param {Array<number>} out - length-4 scratch, written FL/FR/RL/RR.
+ * @param {number} dt - physics step [s]; the engine reports an impulse, a yield criterion wants force.
+ * @returns {Array<number>} `out`.
+ */
+export function readRimStrikes (engine, chassis, out, dt) {
+  const rims = _chassisRims.get(chassis)
+  if (!rims) return out
+  if (!_shapeImpulseScratch || _shapeImpulseScratch.length < 64) _shapeImpulseScratch = new Float64Array(64)
+  engine.maxContactImpulse(chassis, _shapeImpulseScratch)
+  const inv = dt > 0 ? 1 / dt : 0
+  // MAX, not assign: the soft path has already written any rim contact it detected against
+  // terrain this step (suspension.js), and a wheel can be taking both at once.
+  for (let i = 0; i < 4; i++) {
+    const f = (_shapeImpulseScratch[rims[i].shapeIndex] || 0) * inv
+    if (f > out[i]) out[i] = f
+  }
+  return out
+}
+let _shapeImpulseScratch = null
+
+/**
+ * Which armor region a contact landed on: 'front' | 'left' | 'right' | 'rear', or null for a hit
+ * that no armor covers.
+ *
+ * Takes the body-local point AND body-local normal from `engine.maxContactImpulse()`, and uses each
+ * for what it is actually good at:
+ *
+ *   · The NORMAL says which FACE was struck. Nosing into a rock pushes back along the body's z
+ *     axis; scraping a wall pushes along x; landing from a jump pushes along y. That last one is
+ *     the reason the normal is consulted at all — a vertical push is the ground, and the truck has
+ *     no floor or roof armor, so it is not an impact this model prices. It is suspension work.
+ *   · The POINT says which END or SIDE of that face. The normal's SIGN is unusable — it flips with
+ *     whichever shape the engine happened to label A — so only its magnitudes pick the axis, and
+ *     the position supplies the direction.
+ *
+ * The z test is taken about the mid-point between the bumpers rather than the CG, because the CG
+ * sits well forward of body center on a pickup and would push the front/rear split into the cab.
+ * Both axes are normalised by their own half-extent so "closest face" is measured in body
+ * proportions, not metres — otherwise the long axis would win almost every time.
+ *
+ * @param {{x,y,z}} localPoint - contact point in body frame.
+ * @param {{x,y,z}} localNormal - contact normal in body frame (sign-agnostic).
+ * @returns {'front'|'left'|'right'|'rear'|null}
+ */
+export function classifyImpactRegion (localPoint, localNormal) {
+  if (!localPoint || !localNormal) return null
+  const ax = Math.abs(localNormal.x), ay = Math.abs(localNormal.y), az = Math.abs(localNormal.z)
+  if (ay >= ax && ay >= az) return null            // ground beneath / roof above — not armor
+  const P = CHASSIS_PROFILE
+  if (az >= ax) {
+    const midZ = 0.5 * (P.noseZ + P.tailZ)
+    return localPoint.z < midZ ? 'front' : 'rear'  // forward = −z
+  }
+  return localPoint.x < 0 ? 'left' : 'right'       // right = +x
 }
 
 /**
@@ -253,10 +333,8 @@ export function createVehicleChassis (engine, vehicleState, params) {
   ].entries()) {
     const mountY = -(params.cgHeight - params.wheelRadius) +
       (front ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
-    const shapeIndex = engine.addSphere(chassis, params.wheelRadius - WHEEL_SOFT_BAND, {
-      friction: 0.5, restitution: 0, group: GROUP_CHASSIS, collidesWith: GROUP_DEBRIS,
-    }, { x, y: mountY, z })
-    rims.push({ shapeIndex, x, z, mountY, front })
+    engine.addHull(chassis, wheelCorePoints(x, mountY, z, params), RIM_MATERIAL)
+    rims.push({ shapeIndex: engine.shapeCount(chassis) - 1, x, z, mountY, front, lastY: mountY })
   }
 
   // INERTIA AXES — PHYSICALLY CORRECT MAPPING (owner-approved fix, 2026-08-15). Body frame,
@@ -282,16 +360,46 @@ function updateWheelRims (engine, chassis, vehicleState, params) {
   for (let i = 0; i < 4; i++) {
     const r = rims[i]
     const L_S = r.front ? params.suspensionRestLengthFront : params.suspensionRestLengthRear
-    const strutLen = L_S - (vehicleState.strutComp[i] ?? 0)
-    engine.setSphereLocal(chassis, r.shapeIndex, { x: r.x, y: r.mountY - strutLen, z: r.z })
+    const y = r.mountY - (L_S - (vehicleState.strutComp[i] ?? 0))
+    // A hull cannot be mutated in place, so moving the core means rebuilding it — cheap, but not
+    // free, and the strut moves by microns most steps. Rebuild only once the core has drifted far
+    // enough for the difference to matter to a contact, which on a smooth road is almost never.
+    if (Math.abs(y - r.lastY) < RIM_REBUILD_M) continue
+    engine.replaceHullLocal(chassis, r.shapeIndex, wheelCorePoints(r.x, y, r.z, params), RIM_MATERIAL)
+    r.lastY = y
   }
 }
-// Soft band between the wheel hard core and the visual tire radius — the depth range the
-// analytic tire spring owns. Matches DYN_CONTACT_DEPTH deep-squish territory, so the core
-// engages only when the soft path has already been overwhelmed (a pinched rock).
-const WHEEL_SOFT_BAND = 0.15   // was 0.07 — thicker band gives the suspension more travel-time
-                               // to absorb fast hits before the rigid core engages (owner,
-                               // 2026-08-15: high-speed rock hits felt chassis-hard)
+
+const RIM_REBUILD_M = 0.004   // m — below this the core has not moved enough to change a contact
+const RIM_SIDES = 12          // dodecagon: within 3.5% of a true circle, 24 hull points
+// updateBodyMass FALSE: the chassis mass is pinned by setMassData after construction, and these
+// cores are rebuilt live as the strut moves — letting each rebuild re-derive mass from shape
+// densities throws that pinned mass away (the truck stops settling on flat ground).
+const RIM_MATERIAL = { friction: 0.5, restitution: 0, group: GROUP_CHASSIS, collidesWith: GROUP_DEBRIS, updateBodyMass: false }
+
+/**
+ * Hull points for one wheel HARD CORE — a DISK, not a sphere.
+ *
+ * The core is the rim, so it should be shaped like one: a regular prism about the spin axis (body
+ * X), radius `wheelRadius − WHEEL_SOFT_BAND`, as wide as the tire. A sphere of the same radius was
+ * wrong in both directions at once — 0.44 m across where the tire is 0.25 m, so it pinched rocks
+ * well outboard and inboard of the tread, and it met the ground at a POINT where a wheel meets it
+ * along a line. Neither error is small at rock scale.
+ *
+ * @param {number} cx,cy,cz - core centre in body-local space (the hub).
+ * @returns {Array<number>} flat [x,y,z,…] hull points.
+ */
+function wheelCorePoints (cx, cy, cz, params) {
+  const R = params.wheelRadius - WHEEL_SOFT_BAND
+  const halfW = (params.wheelWidth || 0.25) / 2
+  const pts = []
+  for (let k = 0; k < RIM_SIDES; k++) {
+    const a = (k + 0.5) * 2 * Math.PI / RIM_SIDES   // +0.5 so a FLAT faces down, not a vertex
+    const y = cy + R * Math.cos(a), z = cz + R * Math.sin(a)
+    pts.push(cx - halfW, y, z, cx + halfW, y, z)
+  }
+  return pts
+}
 
 export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx) {
   if (!engineCtx) throw new Error('stepPhysics: engineCtx {engine, chassis} is required (FEAT-48)')
@@ -528,6 +636,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       const wheelInertia_a = params.wheelInertia || 1.22
       const driveTorque_a  = getDriveTorque(i, vehicleState, params)
       const brakeTorque_a  = getBrakeTorque(i, vehicleState, params)
+      if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque_a
+      if (vehicleState.slipVel)  vehicleState.slipVel[i]  = 0   // airborne: no contact, no abrasion
+      if (vehicleState.tireFlat) vehicleState.tireFlat[i] = 0
       const omega0_a       = vehicleState.wheelOmega?.[i] ?? 0
       const spinSign_a     = omega0_a >= 0 ? 1 : -1
       const brakeSigned_a  = brakeTorque_a * spinSign_a
@@ -556,12 +667,20 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     )
 
     // Wheel-frame axes (steered for front wheels)
-    const steer = (i < 2 && vehicleState.wheelSteerAngles)
+    const steerInput = (i < 2 && vehicleState.wheelSteerAngles)
       ? vehicleState.wheelSteerAngles[i]
       : (i < 2 ? vehicleState.steerAngle : 0)
+    // Static toe rides on top of the steer angle (rear wheels get it too, from toeRear).
+    const steer = steerInput + toeOffset(i, params)
     const steerQ     = new THREE.Quaternion().setFromAxisAngle(up, steer)
     const wheelFwd   = forward.clone().applyQuaternion(steerQ)
     const wheelRight = right.clone().applyQuaternion(steerQ)
+    // Static camber tilts the whole wheel about its own forward axis, so the lateral (axle)
+    // axis tilts with it. Grip then has a small vertical component — the jacking force real
+    // cambered wheels generate. Body roll is already in `right`/`up` (body axes), so the lean
+    // this builds is the wheel's attitude relative to the WORLD, not just to the chassis.
+    const lean = camberLean(i, params)
+    if (lean !== 0) wheelRight.applyAxisAngle(wheelFwd, lean)
 
     params._lateralVelocity      = hubVel.dot(wheelRight)
     params._longitudinalVelocity = hubVel.dot(wheelFwd)
@@ -591,7 +710,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
 
     // Query every surface this wheel sphere overlaps (footprint=true: tire-envelope ground sampling).
     // qcPlus = analytic terrain/props/walls ∪ engine dynamic debris (FEAT-48 translation layer).
-    const contacts = qcPlus(hub.x, hub.y, hub.z, params.wheelRadius, true)
+    // Same out-of-round radius the suspension contact query uses (params.wheelRunout) — the
+    // Pacejka patch has to sit on the same tire surface the vertical spring is loading.
+    const contacts = qcPlus(hub.x, hub.y, hub.z, effectiveWheelRadius(i, vehicleState, params), true)
 
     // BUG-38: the Pacejka tire is a per-WHEEL model with ONE slip state, so its friction must be
     // evaluated ONCE per wheel — NOT once per contact. Pick the support surface (normal most aligned
@@ -698,7 +819,16 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       if (sMag > sBreak) { const k = sBreak / sMag; sLongCur *= k; sLatNew *= k }
       vehicleState.slipLat[i] = sLatNew
 
-      const { Flong, Flat } = computeTireForces(sLongCur, sLatNew, Fn, params)
+      // SM-3 per-tire friction: params._tireMuScale[i] is published by src/damage.js (tire wear),
+      // and is the same hook FEAT-38's per-surface μ will multiply into. Absent → 1, no change.
+      const muScale = params._tireMuScale?.[i] ?? 1
+      const { Flong, Flat } = computeTireForces(sLongCur, sLatNew, Fn, params, muScale)
+
+      // SM-3 honest wear signals for this wheel, published for src/damage.js to integrate.
+      // slipVel is the RAW contact-patch sliding speed (not the relaxation-filtered displacement) —
+      // abrasion is driven by how fast the rubber is actually sliding over the ground.
+      if (vehicleState.slipVel)  vehicleState.slipVel[i]  = Math.hypot(omegaCur - longVelCur, latVelCur)
+      if (vehicleState.tireFlat) vehicleState.tireFlat[i] = Math.abs(Flat)
 
       // Save state for Newton iteration in ω integrator (re-evaluates sLong and F at ω_new).
       lastFn         = Fn
@@ -716,6 +846,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // WR-02: lateral grip opposes lateral hub velocity (resists the slide), so positive Flat
       // from computeTireForces(positive slipVy) must be applied along -wheelRight.
       wheelForce.addScaledVector(wheelRight, -Flat)
+      // Camber thrust: a leaning tire steers itself toward the lean, at roughly a tenth of its
+      // cornering stiffness (camberThrustCoeff is that stiffness as a multiple of Fn per radian).
+      // Straight-line it cancels left against right; in a corner the loaded outside wheel wins,
+      // which is why negative camber pays off only once weight has transferred.
+      if (lean !== 0) {
+        wheelForce.addScaledVector(wheelRight, (params.camberThrustCoeff || 0) * Fn * lean)
+      }
       totalForce.add(wheelForce)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, wheelForce))
 
@@ -727,7 +864,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // suspension applied for this contact (Newton's third law, symmetric), never the wheel's
       // SUMMED Fz (road + rock when straddling once over-flung the rock).
       if (ground.body != null) {
-        const env = ground.sizeR !== undefined ? ground.sizeR / (ground.sizeR + TIRE_ENVELOPE_LEN) : 1
+        const env = ground.sizeR !== undefined
+          ? Math.min(1, 2 * Math.PI * ground.sizeR * Math.max(0, ground.depth) / (params.tireContactAreaM2 || 0.0166))
+          : 1   // MIRRORS suspension.js obstacle engagement EXACTLY (Newton's third law)
         const FnContact = Math.max(0,
           params.tireStiffness * ground.depth +
           params.tireDamping * (ground.depthRate ?? 0) * Math.min(1, ground.depth / 0.04)) * env
@@ -766,6 +905,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       const wheelInertia = params.wheelInertia || 1.22
       const driveTorque  = getDriveTorque(i, vehicleState, params)
       const brakeTorque  = getBrakeTorque(i, vehicleState, params)
+      if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque
       const dsdo         = dt * params.wheelRadius / lastRelaxDen  // ∂sLong_new/∂ω_new
       const omega0       = vehicleState.wheelOmega?.[i] ?? 0
       const spinSign     = omega0 >= 0 ? 1 : -1
@@ -786,7 +926,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         if (sLongIter < -sLongMax) sLongIter = -sLongMax
         sLongFinal = sLongIter
         if (lastFn <= 0) break  // airborne: no road reaction; Newton trivially converged
-        const { Flong, dFmagDs } = computeTireForces(sLongIter, lastSLatNew, lastFn, params)
+        const { Flong, dFmagDs } = computeTireForces(sLongIter, lastSLatNew, lastFn, params, params._tireMuScale?.[i] ?? 1)
         const g  = omegaNew - omega0 - dt / wheelInertia * (driveTorque - Flong * params.wheelRadius - brakeSigned)
         // g'(ω) = 1 + dt·r/I · dF/dω,  with dF/dω = dFmagDs · dsdo
         const gp = 1 + dt * params.wheelRadius * dFmagDs * dsdo / wheelInertia
@@ -834,6 +974,21 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     // Update omega debug field — airborne wheels still log their evolving omega (CR-03)
     if (vehicleState.wheelDebug) {
       vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
+    }
+  }
+
+  // ── Step 3-runout: integrate the tire spin phase ──
+  // wheelPhase is THE wheel spin angle: it sets the out-of-round contact radius here AND rotates
+  // the wheel MESH in vehicle-model.js, whose tire carcass has the same runout baked in. Those two
+  // must share ONE integrator or the visible high spot drifts out of phase with the hop you feel.
+  // Integrated at the FIXED physics step and wrapped to [0, 2π) so it stays exact after long
+  // drives; the mesh rotation is 2π-periodic, so the wrap is invisible.
+  {
+    if (!vehicleState.wheelPhase) vehicleState.wheelPhase = [0, 0, 0, 0]
+    const TWO_PI = Math.PI * 2
+    for (let i = 0; i < 4; i++) {
+      const ph = vehicleState.wheelPhase[i] + (vehicleState.wheelOmega?.[i] ?? 0) * dt
+      vehicleState.wheelPhase[i] = ph - TWO_PI * Math.floor(ph / TWO_PI)
     }
   }
 
@@ -906,11 +1061,11 @@ const _groundVelScratch = { x: 0, y: 0, z: 0 }
 // A loaded tire's real deflection is ~0.05 m; 0.09 allows a hard bump (~2× static corner load
 // at current tireStiffness) while making the one-frame full-radius spike impossible. Static
 // terrain contacts are untouched — their depth is already continuous.
-// Tire OBSTACLE ENVELOPING (standard tire mechanics; owner captures 178678330/78/28/69 —
-// 20 kN single-frame nose kicks at 20 m/s): a carcass wraps around objects smaller than its
-// own scale, so effective stiffness against a small rock is a fraction of the flat-ground
-// value — env = sizeR/(sizeR + L). A 0.2 m rock transmits ~60%, a barrel ~80%, and the
-// factor →1 as obstacles approach ground-scale. Size comes from the engine shape itself.
-const TIRE_ENVELOPE_LEN = 0.12              // m — the carcass wrap length-scale
+// Tire OBSTACLE ENGAGEMENT — the canonical explanation lives in src/suspension.js beside the
+// force it scales; this file only mirrors it on the reaction side (Newton's third law), so the
+// two must be edited together. Superseded the constant env = sizeR/(sizeR + 0.12) on 2026-08-21:
+// a fixed fraction softened the tire against every obstacle at every depth, which is what let
+// rocks sink to the rim. The area law is progressive instead — near-zero on first touch, full
+// flat-ground stiffness once the contact patch matches the tire's own.
 const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, take the explicit fallback
 const EMPTY_DEPTH_MAP = new Map()           // shared immutable-by-convention first-step default

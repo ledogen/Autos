@@ -63,7 +63,7 @@ function runScenario (gradePct, steps, label, opts = {}) {
     position: cg0.clone(), velocity: new THREE.Vector3(),
     quaternion: quat.clone(), angularVelocity: new THREE.Vector3(),
     steerAngle: 0, throttle: 1, brake: 0, smoothThrottle: 1, smoothBrake: 0,
-    wheelAngles: [0, 0, 0, 0], wheelSteerAngles: [0, 0, 0, 0],
+    wheelSteerAngles: [0, 0, 0, 0],
     wheelDebug: [0, 1, 2, 3].map(() => ({ fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: 0 })),
     wheelOmega: [0, 0, 0, 0], slipLong: [0, 0, 0, 0], slipLat: [0, 0, 0, 0],
     strutComp: [...eq.strutComp], strutCompVel: [0, 0, 0, 0], handbrake: false,

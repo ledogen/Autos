@@ -42,7 +42,9 @@ const groundY = 0
 const WALL_DEPTH = 1e-5   // ~0 → negligible push-out, but still a second contact the loop must handle
 let wallMode = false
 const mkQuery = () => (cx, cy, cz, r) => {
-  if (Math.abs(r - P.wheelRadius) > 1e-9) return []   // ignore body-sphere queries
+  // Accept the whole out-of-round radius band (params.wheelRunout modulates the wheel query
+  // radius by ±runout/2 per spin phase); anything outside it is a body-sphere query.
+  if (Math.abs(r - P.wheelRadius) > 0.5 * (P.wheelRunout || 0) + 1e-9) return []
   const depth = groundY + r - cy
   const hits = []
   if (depth > 0) hits.push({ normal: new THREE.Vector3(0, 1, 0), depth, contactPoint: new THREE.Vector3(cx, groundY, cz) })
@@ -61,7 +63,7 @@ function mkState (py, vx) {
     quaternion: new THREE.Quaternion(0, 0, 0, 1),
     angularVelocity: new THREE.Vector3(0, 0, 0),
     steerAngle: 0, throttle: 0, brake: 0, smoothThrottle: 0, smoothBrake: 0,
-    wheelAngles: [0, 0, 0, 0], wheelSteerAngles: [0, 0, 0, 0],
+    wheelSteerAngles: [0, 0, 0, 0],
     strutComp: [0.05, 0.05, 0.05, 0.05], strutCompVel: [0, 0, 0, 0],
     slipLong: [0, 0, 0, 0], slipLat: [0, 0, 0, 0],
     wheelOmega: [0, 0, 0, 0],
@@ -78,10 +80,11 @@ function cloneState (s) {
     angularVelocity: s.angularVelocity.clone(),
     steerAngle: s.steerAngle, throttle: s.throttle, brake: s.brake,
     smoothThrottle: s.smoothThrottle, smoothBrake: s.smoothBrake,
-    wheelAngles: [...s.wheelAngles], wheelSteerAngles: [...s.wheelSteerAngles],
+    wheelSteerAngles: [...s.wheelSteerAngles],
     strutComp: [...s.strutComp], strutCompVel: [...s.strutCompVel],
     slipLong: [...s.slipLong], slipLat: [...s.slipLat],
     wheelOmega: [...s.wheelOmega],
+    wheelPhase: s.wheelPhase ? [...s.wheelPhase] : [0, 0, 0, 0],
     wheelDebug: s.wheelDebug.map(d => ({ ...d })),
     handbrake: s.handbrake,
   }

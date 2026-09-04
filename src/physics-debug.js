@@ -148,8 +148,7 @@ export class PhysicsWireframes {
       }
       case 'sphere': {
         // Built at the ORIGIN; the caller positions the line objects from spec.offset and
-        // update() refreshes them each frame — sphere shapes can be re-seated live (the wheel
-        // rim cores track strut travel via setSphereLocal, which mutates spec.offset).
+        // update() refreshes them each frame.
         return this._edges(new THREE.SphereGeometry(spec.radius, 10, 6), 25)
       }
       case 'capsule': {

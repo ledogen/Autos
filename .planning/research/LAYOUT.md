@@ -40,7 +40,8 @@ CLAUDE.md; everything else here is inventory.
 
 **Physics stack** — `physics-engine.js` (THE Box3D adapter seam) · `physics.js` (vehicle step,
 chassis factory, debris translation) · `tire.js` (Pacejka, pure math) · `suspension.js`
-(spring-damper struts) · `terrain-physics.js` (streamed heightfield colliders, MESH == PHYSICS) ·
+(spring-damper struts, out-of-round tire radius) · `alignment.js` (static toe/camber signs,
+pure math — read by `physics.js` and `vehicle-model.js`) · `terrain-physics.js` (streamed heightfield colliders, MESH == PHYSICS) ·
 `drivetrain.js` (engine/converter/gearbox, FEAT-23) · `ignition.js` (key/starter state machine,
 FEAT-33 — pure, no DOM) · `vehicle.js` (state, Ackermann, input) ·
 `debris.js` (FEAT-36 dynamic props) · `physics-debug.js` (collider wireframes).

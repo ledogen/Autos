@@ -6,7 +6,7 @@
  * road / streaming code that also lives in main.js.
  *
  * Public surface:
- *   createVehicleModel(scene, params) -> { carGroup, bodyMesh, wheelMeshes, syncMeshesToState }
+ *   createVehicleModel(scene, params) -> { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, applyWheelRunout }
  *
  *   - carGroup            parent Object3D; position/quaternion driven each frame
  *   - bodyMesh            main hull mesh (kept for back-compat / debug references)
@@ -37,6 +37,8 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
+import { camberLean, toeOffset } from './alignment.js'
+import { carcassRadialOffset, wheelRunoutOf } from './suspension.js'
 
 // The imported GLB (described by a spec from data/vehicle-models.js) replaces the primitive truck.
 // The primitives stay as an automatic fallback if the load fails (offline, 404, parse error).
@@ -356,7 +358,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   // an inner group (see below) — never on the wheel group itself, whose quaternion syncMeshesToState owns.
   const TIRE_W  = 0.25                 // tire section width
   const HALF_W  = TIRE_W / 2
-  const RIM_R   = 0.203                // 16 in rim ≈ 0.406 m diameter
+  const RIM_R   = params.rimRadius      // 16 in rim ≈ 0.406 m diameter — one source, shared with damage.js
   const DISC_T  = 0.012                // disc face thickness
   const DISC_Y  = HALF_W - 0.042       // inboard side of the disc — the dish: face sits ~30 mm in
   const wRad    = params.wheelRadius
@@ -399,6 +401,90 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   const rimGeom = mergeGeometries(rimParts.map((g) => (g.index ? g.toNonIndexed() : g)))
   rimGeom.rotateZ(-Math.PI / 2)
 
+  // ── Out-of-round wheel (SM-3) ───────────────────────────────────────────────
+  // params.wheelRunout is PEAK-TO-PEAK radial runout, so the amplitude about the nominal radius is
+  // A = runout/2, and suspension.js's RUNOUT_HARMONIC sets how many high spots carry it (2 = OVAL,
+  // the shipped model). effectiveWheelRadius() makes the CONTACT radius follow that shape; this
+  // bakes the SAME shape into the mesh, so the bulge you can see is the bulge being rolled on.
+  //
+  // BOTH the tire and the steel rim are deformed — a bent wheel, not just a bad tire. The rim is
+  // what makes it legible: rubber has no hard edges, but an oval steel barrel and a swinging ring
+  // of lightening holes are unmistakable, and they stay lit and visible where a black sidewall does
+  // not. The tire is stretched over that rim and follows it, so the bead stays seated.
+  //
+  // ONE weight ramp, shared by both geometries, so they cannot tear apart at the bead:
+  //
+  //   w(r) = clamp((r − HUB_R) / (RIM_R − HUB_R), 0, 1)
+  //
+  // Zero out to HUB_R, which covers the hub boss and the whole lug circle: those bolt to the axle
+  // flange and CANNOT be out of round — the axle still runs true, which is what keeps the physics
+  // model honest (the hub CENTER never moves; only the metal and rubber around it). Full by RIM_R,
+  // so the barrel, the bead and everything outboard of it — the entire tire carcass, tread included
+  // — carry the whole amplitude rigidly. The disc face is caught mid-ramp, so the lightening holes
+  // visibly orbit off-centre while the lug nuts sit dead still. That contrast IS the read.
+  //
+  // Four geometries each, not one shared: every corner carries its own RUNOUT_PHASE so the wheels
+  // do not hop in lockstep, and that offset is a fixed rotation of the wheel, i.e. geometry.
+  //
+  // Vertex normals are deliberately NOT recomputed. At the 50 mm slider maximum the radial
+  // displacement is 6.7% of the radius, tilting the true surface normal by a couple of degrees at
+  // worst; recomputing on these non-indexed merged geometries would flat-shade the tread band and
+  // pop the tire's shading the instant the slider left zero.
+  //
+  // The signed offset itself is carcassRadialOffset() in suspension.js — it lives next to
+  // effectiveWheelRadius() because the two ARE one model, and its docblock carries the phase
+  // derivation for the build frame / mirror / spin chain used here.
+  const HUB_R = 0.085                  // axle-flange radius: clears the hub boss and the lug nuts
+
+  const tireBase  = Float32Array.from(tireGeom.attributes.position.array)
+  const rimBase   = Float32Array.from(rimGeom.attributes.position.array)
+  const tireGeoms = [0, 1, 2, 3].map(() => tireGeom.clone())
+  const rimGeoms  = [0, 1, 2, 3].map(() => rimGeom.clone())
+
+  function deformWheelPart (geom, base, corner, runout) {
+    const out = geom.attributes.position.array
+    for (let v = 0; v < out.length; v += 3) {
+      const y = base[v + 1]
+      const z = base[v + 2]
+      const r = Math.hypot(y, z)
+      let s = 1
+      if (runout && r > 1e-6) {
+        const d = carcassRadialOffset(corner, Math.atan2(z, y), runout)
+        const w = Math.min(1, Math.max(0, (r - HUB_R) / (RIM_R - HUB_R)))
+        s = (r + w * d) / r
+      }
+      out[v + 1] = y * s
+      out[v + 2] = z * s
+    }
+    geom.attributes.position.needsUpdate = true
+    geom.computeBoundingSphere()
+  }
+
+  function applyWheelRunout (runout) {
+    for (let c = 0; c < 4; c++) applyWheelRunoutAt(c, runout)
+  }
+
+  function applyWheelRunoutAt (corner, runout) {
+    deformWheelPart(tireGeoms[corner], tireBase, corner, runout)
+    deformWheelPart(rimGeoms[corner],  rimBase,  corner, runout)
+    _bakedRunout[corner] = runout
+  }
+
+  // Last runout actually baked into each corner's geometry. Re-deforming rewrites every tread and
+  // rim vertex, so it must not happen per frame — but SM-3 makes runout a function of WHEEL
+  // CONDITION, which creeps as the truck is driven and cannot be baked once at build time either.
+  // Re-bake only when a corner has actually moved, by enough to see.
+  const _bakedRunout = [0, 0, 0, 0]
+  const RUNOUT_REBAKE_M = 5e-4   // 0.5 mm — below this the change is invisible at any camera distance
+
+  /** Re-bake any corner whose effective runout has drifted from what its mesh is currently showing. */
+  function refreshWheelRunout (params) {
+    for (let c = 0; c < 4; c++) {
+      const want = wheelRunoutOf(c, params)
+      if (Math.abs(want - _bakedRunout[c]) >= RUNOUT_REBAKE_M) applyWheelRunoutAt(c, want)
+    }
+  }
+
   const tireMat = new THREE.MeshStandardMaterial({ color: COLOR_TIRE, roughness: 0.95, metalness: 0 })
   // DoubleSide on the rim only: the dish recess shows the INSIDE of the barrel, which would
   // otherwise be culled away into a see-through slot. ~1k tris, so the backfaces cost nothing.
@@ -429,13 +515,15 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   // Each wheel is ONE Group (tire + rim children, shared geometry): syncMeshesToState writes the
   // group's position/quaternion exactly as it did the old single mesh, and the GLB import path
   // still hides a whole wheel with a single `.visible` toggle.
-  const wheelMeshes = wheelLocalOffsets.map((offset) => {
+  applyWheelRunout(params.wheelRunout)
+
+  const wheelMeshes = wheelLocalOffsets.map((offset, corner) => {
     const wheel = new THREE.Group()
     // Wheels are children of carGroup — position is in carGroup local space (body-relative).
     // carGroup carries world position and orientation; wheels follow automatically (Bug 5 fix).
     wheel.position.set(offset.x, offset.y, offset.z)
-    const tire = new THREE.Mesh(tireGeom, tireMat)
-    const rim  = new THREE.Mesh(rimGeom, rimMat)
+    const tire = new THREE.Mesh(tireGeoms[corner], tireMat)
+    const rim  = new THREE.Mesh(rimGeoms[corner], rimMat)
     // Both geometries face outboard = +X, correct for the right-hand wheels. Mirror the WHOLE
     // assembly (tire is asymmetric too: open outboard annulus vs closed inboard caps) for the left
     // (negative X) side via an inner group, keeping the outer group's quaternion free for steer∘spin.
@@ -467,6 +555,11 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
   // carGroup carries world position and quaternion — body and wheels inherit it (Bug 5 fix).
   // Do NOT use Euler rotation for body orientation (Pitfall 3 / CLAUDE.md).
   function syncMeshesToState (state) {
+    // SM-3: a wheel bent by damage is visibly out of round, and its condition creeps while driving.
+    // This is a no-op on all but the rare frame where a corner has actually changed (see the
+    // 0.5 mm threshold), so the per-frame cost is four subtractions.
+    refreshWheelRunout(params)
+
     // Sync carGroup transform — body and wheels inherit this automatically (Bug 5 fix).
     carGroup.position.copy(state.position)
     carGroup.quaternion.copy(state.quaternion)  // quaternion-only rotation, never Euler (GLOSSARY.md)
@@ -475,20 +568,29 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     // wheelLocalOffsets[i] provides rest position; Y is overridden each frame by hub deviation.
     for (let i = 0; i < 4; i++) {
       // Spin quaternion: wheel rolling axis is X (geometry was rotateZ(PI/2) at creation).
-      // wheelAngles accumulates positive for forward roll (omega·r ≈ forward speed), but forward
+      // wheelPhase accumulates positive for forward roll (omega·r ≈ forward speed), but forward
       // roll is a NEGATIVE rotation about +X: positive X-rotation carries the tire top toward +Z,
       // which is rearward (forward = −Z). Negate here — visual only, physics owns the sign upstream.
-      const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -state.wheelAngles[i])
+      // The angle comes from wheelPhase (physics fixed step), NOT a render-rate accumulator: the
+      // out-of-round high spot is baked into this tire's geometry, so the mesh has to sit at the
+      // exact angle effectiveWheelRadius() was evaluated at. Wrapping to [0, 2π) is invisible here.
+      const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -(state.wheelPhase?.[i] ?? 0))
 
-      if (i < 2) {
-        // Front wheels: combine steer (Y) then spin (X). steerQ.multiply(spinQ) = steerQ * spinQ
-        // meaning spinQ is applied first, then steerQ — spin around axle, then yaw the whole assembly.
-        const steer  = state.wheelSteerAngles ? state.wheelSteerAngles[i] : state.steerAngle
-        const steerQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), steer)
-        wheelMeshes[i].quaternion.copy(steerQ).multiply(spinQ)
-      } else {
-        wheelMeshes[i].quaternion.copy(spinQ)
-      }
+      // Steer (Y) carries static toe on every corner — rear wheels are only ever toed, never steered.
+      const steerInput = i < 2
+        ? (state.wheelSteerAngles ? state.wheelSteerAngles[i] : state.steerAngle)
+        : 0
+      const steer  = steerInput + toeOffset(i, params)
+      const steerQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), steer)
+      // Camber leans the whole assembly about its forward axis (−Z), applied OUTSIDE steer+spin so
+      // it reads as suspension geometry rather than something the wheel does as it turns. Same
+      // signed lean physics.js uses, so what you see is what the tire model is actually doing.
+      const lean = camberLean(i, params)
+      const camberQ = lean !== 0
+        ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), lean)
+        : null
+      wheelMeshes[i].quaternion.copy(steerQ).multiply(spinQ)
+      if (camberQ) wheelMeshes[i].quaternion.premultiply(camberQ)
 
       // D-07 (Phase 4.1): Derive full hub world position from strutComp, inverse-transform to body-local.
       // Replaces the broken world-ΔY approximation with exact body-space hub position for any orientation.
@@ -758,5 +860,5 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     // syncMeshesToState re-asserts real visibility from intensities on the next frame.
   }
 
-  return { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, prewarmLightPrograms }
+  return { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, prewarmLightPrograms }
 }

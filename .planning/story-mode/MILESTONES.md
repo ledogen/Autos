@@ -241,28 +241,238 @@ ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.20 
 
 ## SM-3 — The Machine (wear, breakdown, the jalopy)
 
-**Requires:** SM-2 (money must exist before a repair economy means anything).
+**Requires:** SM-2 (money must exist before a repair economy means anything) — **MET 2026-08-18**
+(FEAT-53 closed; the payout line, wallet and dayTier all exist).
 
 **Goal:** the second death condition exists, and every run starts in a different bad truck.
 
-- **Wear/condition model**: ONE framework, `f(time, intensity)` never distance (SM-INV-5), but
-  **multiple per-component condition tracks** (DESIGN.md "Damage, wear & repair"). Each reads an
-  honest physics signal the sim already produces; cheap, out of the hot loop; shared with FEAT-26
-  rock hits and FEAT-36 debris impacts. Breakdown = death. The tracks:
-  - **Tires ×4 independent** — gradual wear scales per-wheel μ; binary punctures on a
-    wear→fragility curve; roadside self-change needs a spare, quick-jack/breaker-bar speeds it;
-    carried tires + tool have real mass → CoG/handling.
-  - **Engine** — `f(rpm, load, time)`; **air-filter** sub-track does ~nothing until ~20% then
-    sharply accelerates engine wear (dirt roads degrade it faster — FEAT-38 tie); overheat → power
-    loss + wear → blown head gasket.
-  - **Suspension** — degrades shock damping; triggered off bump-stop over-travel or
-    suspension-velocity. **Same signal the fragile mission type reads** (`missions.md` §3b) — one
-    plumbing, two consumers.
-  - **Brakes** front/rear pairs — `∫(brake torque·time)`; pad grades per axle set bias.
-  - **Radiator** — early-game cooling deliberately marginal; front collisions damage/puncture it.
-    **FEAT-51 (coolant temp) is this track arriving early**, driven by the FEAT-49 cluster's gauge —
-    build the honest temp signal there, the *condition consequences* (power loss → wear → gasket)
-    here.
+> **The component model below is RATIFIED** [owner, 2026-08-19] and **RECONCILED WITH THE BUILD**
+> [owner, 2026-08-23: *"current implementation is source of truth"*]. Where this table once
+> described an intent that the build then improved on, the table has been corrected rather than the
+> code — the damage sources marked below changed because driving them showed the original signal was
+> the wrong quantity, and each is argued in `design-amendments-2026-08-23-sm3.md`.
+>
+> It supersedes the shape sketched in DESIGN.md "Damage, wear & repair" wherever the two differ — specifically: suspension splits into
+> **springs and dampers** as separate tracks; **armor**, **headlights**, **alignment** and **wheels**
+> are new classes DESIGN.md does not have; and wheels are separate from tires. Everything DESIGN.md
+> ratified earlier still stands: one framework, per-component 0–100% condition, honest physics
+> signals only, out of the hot loop, per-run state (SM-INV-8), time+intensity never distance
+> (SM-INV-5).
+
+### Build decisions [owner, 2026-08-19]
+
+- **Alignment gets REAL static geometry**, not damage-only offsets. Toe and camber become genuine
+  vehicle parameters with stock 2002 Ranger values, and damage perturbs them from there. This
+  **shifts the handling baseline of every vehicle and rebaselines every physics gate** — accepted
+  knowingly, because a truck that has never had alignment is a truck that cannot lose it.
+  Implementation reference: the `feature/out-of-round` worktree, where the owner is building the
+  toe/camber geometry alongside the runout work. **Port that, do not invent a second one.**
+- **FEAT-51 (coolant temp) is folded into this milestone.** The radiator's only damage source is
+  impact and its only effect is temperature, so the thermal model is not a dependency to wait on —
+  it is part of the radiator track.
+- **Death is in scope.** Both SM-INV-1 fail states land here: the fatal-crash impact threshold and
+  the unrecoverable-breakdown run-end. **The fatal threshold is 80 mph of Δv, measured off the
+  vehicle** — the same speed the armor curve saturates at, so total armor loss and death are the
+  same impact (owner restored that coincidence 2026-08-23 after the armor re-anchor briefly split
+  them). Severity comes from the truck's own velocity change across the collision, NOT from the
+  engine's accumulated contact impulse, which is not net momentum transfer. This pulls SM-4 run-lifecycle work forward far enough that
+  a dead run needs somewhere to go.
+- **Ships in three slices**, each merged and driven before the next starts:
+  1. the condition spine + debug tooling + per-tire μ + its wiring gate + every wear track that
+     needs no new physics (brakes, tires, engine, springs, dampers);
+  2. impacts + armor + wheels (out-of-round);
+  3. thermal + headlights + alignment + the damage GUI + the death conditions.
+
+### The component tracks
+
+**Twenty-seven tracks in nine classes** (the air filter joined 2026-08-23). Left/right is deliberately NOT separable on suspension or
+brakes — the player should not be asked to manage eight independent corners.
+
+| Class | Tracks | Damaged by | Effect when worn |
+|---|---|---|---|
+| **Armor** | front bumper · left side · right side · rear bumper | impact | absorbs impact energy destined for the components behind it; absorbs *less* as it degrades |
+| **Tires** | ×4 independent (FL/FR/RL/RR) | slip velocity × time (dominant) + cornering force × time (minor). **Puncture** on bump-stop force against a worn tire — 84 kN at 50% condition falling to 30 kN at 10%, and fresh rubber cannot pop at all | per-tire friction coefficient falls **flat-then-cliff** — a half-worn tire keeps 97% of its grip and the loss arrives in the last third, because a real tire at 50% tread grips very nearly like a new one. A FLAT drops grip 30% and collapses the carcass rate to 5% of stock (not zero — a flat tire still stacks up against its rim) |
+| **Wheels** | ×4 independent (FL/FR/RL/RR) | **rim contact** — the tire squashed clean through its soft band onto the road, or the rigid wheel core striking debris — plus impact through the armor. Past a YIELD force only: below it the rim springs back | radial runout — the wheel goes out of round, ≤ 0.04 m peak-to-peak |
+| **Suspension springs** | front pair · rear pair | bump-stop PEAK force, per event (never integrated over time) + side impacts | spring rate falls, non-linearly (most of it in the last 30%) — bottoming out at **50% of stock, never zero** |
+| **Suspension dampers** | front pair · rear pair | high suspension displacement rate + side impacts | damping rate falls, non-linearly (most of it in the last 30%) |
+| **Brakes** | front pair · rear pair | ∫(brake torque × **wheel speed** × time) — the friction ENERGY the pads dissipate; **never** impact | max brake torque falls, non-linearly (most of it in the last 30%) |
+| **Engine** | one | front impact + coolant above 105 °C + slow f(rpm, torque, load), **multiplied by up to 20× on a blocked air filter** | available torque falls at all rpm (curve below) |
+| **Air filter** | one | the air the engine breathes — the same rpm × load the engine track integrates, since airflow is what carries the dust in | **nothing at all above 20%**, then engine wear multiplies hard. ~30 min of hard driving to replace. Cheap consumable; the asymmetry IS the mechanic |
+| **Radiator** | one | **impact only** | available cooling rate falls → coolant temperature climbs |
+| **Headlights** | left · right | front impact, much worse when the front bumper is compromised | flicker below 50%, permanently dark at 0% |
+| **Alignment** | ×4 per wheel | impact (front bumper protects front, rear bumper rear, each side protects its own) + **really hard bump-stop hits**, on a floor far above the spring track's so ordinary landings never touch it | random toe + camber offsets applied to the affected wheels, bounded |
+
+### Armor — the mechanism that ties impacts together
+
+The four armor tracks are not components the player repairs for their own sake; they are a **damage
+budget standing in front of everything else in their region**. An impact in a region is first
+absorbed by that region's armor. What gets through to the components behind it scales with how
+badly that armor is already crushed: fresh armor passes almost nothing, destroyed armor passes
+almost everything.
+
+**What each piece protects:**
+
+| Armor | Protects |
+|---|---|
+| **Front bumper** | radiator · engine · headlights · front wheels · front alignment · front suspension (springs + dampers) |
+| **Left side** | FL + RL wheels · suspension · left-side contribution to alignment |
+| **Right side** | FR + RR wheels · suspension · right-side contribution to alignment |
+| **Rear bumper** | rear wheels · rear alignment |
+
+The consequence the design wants: a truck with a mangled front end is not merely ugly, it is one
+more front-end tap away from a punctured radiator and a dead engine. Armor is the thing that makes
+the *order* of your crashes matter.
+
+### The impact calibration [owner, 2026-08-19]
+
+**Impacts are priced on contact IMPULSE, not on Δv.** The engine reports the manifold's normal
+impulse in N·s; a glancing clip transfers almost none of it while a square hit transfers the lot, so
+the severity of the *contact* drives the damage rather than the speed you happened to be doing. The
+mph figures below are the calibration language, converted through the reference square, dead-stop
+collision: **`v_eq = J / mass`** — the speed a hit would have shed had it stopped the truck dead.
+
+Two points per component define a power law, `damage = d10·(v/10mph)^n` with `n = ln(d60/d10)/ln 6`:
+
+| Component (UNPROTECTED) | 10 mph | 60 mph | n |
+|---|---|---|---|
+| Armor itself | 10% | 100% | 1.285 |
+| Headlight | 10% | 100% | 1.285 |
+| Radiator | 5% | 50% | 1.285 |
+| Engine | 1% | 20% | 1.672 |
+
+**Worth stating plainly:** `n = 1` would mean damage proportional to *impulse*, `n = 2` proportional
+to *kinetic energy*. The ratified anchors sit between the two, so this is a fitted curve rather than
+either textbook law — it is what the owner's two points say, not an appeal to physics.
+
+**Armor absorption**: 90% absorbed at full health, 10% absorbed at 10% health. Straight
+proportionality (`absorbed = 0.9 × condition`) reproduces both anchors, so the simple form *is* the
+ratified curve. Consequence, and the point of the whole mechanism: the same 30 mph tap costs the
+radiator 2% behind a fresh bumper and **20% behind a crushed one** — ten times worse.
+
+**Alignment** does nothing below **30 mph** and saturates at **80 mph** at roughly **±2° camber** and
+**±0.5° toe**, randomly signed and randomly split. The randomness is real but **seeded**, so a run
+replays identically (INFRA-03, FEAT-26's flag-gated-nondeterminism pattern).
+
+**60 mph is the fatal-crash threshold** — the same impact that writes off the armor. Armor does not
+save you from it: the deceleration is what kills, and the bumper only decides what breaks on the truck.
+
+### The wear calibration [owner, 2026-08-19]
+
+- **Tires: 70 h of hard driving costs 20%.**
+- **Brakes: 120 h of hard driving costs 20%** (front axle — the rears share the constant and get
+  there at ~347 h, because fronts really do wear about twice as fast).
+
+Neither can be turned into a constant without saying what *hard driving* is, because the model
+integrates slip velocity and brake torque rather than hours. The duty cycle is therefore stated out
+loud and lives in `test/calibrate-wear.mjs`: **25% of the hour at the grip limit, 15% on the brakes
+at 60% pedal**. That script measures what the honest signals actually read under real `stepPhysics`,
+mixes them by that duty cycle, and solves the durability constants. **Argue with the duty cycle, not
+with the constants** — and re-run the script rather than hand-editing them.
+
+Springs, dampers and wheels have **no owner-set rate**: there is no conversion from game feel to
+bump-stop force or wheel rate, so they start at chosen values and get tuned by driving.
+
+### Durability — per-component, and a parts lever
+
+Components do **not** share a damage scale. Heavy-duty suspension survives far more bump-stop
+abuse than stock. Implementation is free to express this either as more health or as less damage
+per insult — the two are algebraically the same and no invariant cares which. Whichever is chosen
+must be **one** mechanism used consistently across all tracks.
+
+This is the seam parts upgrades dock into (SM-INV-10 — parts are *described, never scored*): a
+heavy-duty spring is not "+10 suspension", it is a spring that takes longer to sag.
+
+### Per-track detail (the ratified numbers)
+
+**Tires.** Wear = slip velocity × time (**dominant**) + cornering force × time (minor). Effect is a
+straight reduction of that tire's friction coefficient, which requires **per-tire μ** — the physics
+today reads one global `frictionCoeff` (`src/tire.js`), so the per-wheel scale chain has to be
+introduced. The friction loss is **larger on dirt than on pavement**. Punctures become possible
+below ~30–50% condition and are triggered by the **same high suspension displacement rate signal
+the dampers read** — one signal, two consumers. Existing DESIGN.md rules on puncture probability
+and roadside self-change are unchanged.
+
+**Wheels.** Separate from tires, separate criteria, separate effect. Damage makes the wheel
+**out of round** — the mechanism already prototyped on the `feature/out-of-round` worktree, where
+`params.wheelRunout` modulates the contact-query radius once per wheel revolution. **0.04 m
+peak-to-peak is the ratified upper limit** at zero condition. Damaged by high suspension
+accelerations (same family as the damper signal) and by impact, especially where armor is missing.
+The prototype's single global runout becomes **per-wheel**, driven by wheel condition.
+
+**Suspension springs** — front pair and rear pair. Damaged by **bump-stop force** (the honest
+signal `src/suspension.js` already computes as `bumpForce`) and by impacts to the corresponding
+side. Effect: spring rate falls, **non-linearly, with most of the reduction in the last 30% of
+health**. Verification: hit a big dip hard enough to properly engage the bump stops.
+
+**Suspension dampers** — front pair and rear pair. Damaged by **high suspension displacement
+rates** and by side impacts. Effect: damping rate falls, non-linearly, most of it in the last 30%.
+Verification: washboard road at speed. **Open risk, stated by the owner:** we may not have enough
+fidelity in the wheel-rate signal to decide honestly when a damper should take damage. If the
+signal turns out to be too noisy, that is a finding, not a failure — say so rather than inventing a
+proxy.
+
+**Brakes** — front pair and rear pair. Wear = ∫(brake torque × time). **Impacts never damage
+brakes.** Effect: max available brake torque falls, non-linearly, most of it in the last 30%.
+
+**Radiator.** **Impact only** — no wear track at all. Very sensitive once the front bumper is
+compromised. The radiator supplies a **cooling rate** to the engine; if that rate cannot carry the
+heat the engine is making at its current rpm and load, coolant temperature rises.
+
+- **30 °C** cold start → **90 °C** fully warmed with a healthy radiator.
+- **104 °C** — coolant begins to boil off. Once it has all boiled away, temperature rises freely.
+- **~105 °C** — engine damage begins.
+- Available cooling falls with radiator condition. **Below ~50%, a stock radiator can no longer
+  hold a stock engine at all rpm and load** — it still copes at idle or light load.
+
+This is **FEAT-51 (coolant temp)** arriving as part of this milestone rather than before it: build
+the honest temp signal and the FEAT-49 gauge needle together with the condition consequences.
+
+**Engine.** Damaged by front impact (much worse with a compromised front bumper), by sustained
+operation **above 105 °C**, and — **very slowly** — by f(rpm, torque, load). Effect is a single
+correction factor on engine output torque at all rpm:
+
+```
+condition 100% → 20% :  torque × 1.00 → 0.90   (linear)
+condition  20% →  0% :  torque × 0.90 → 0.40   (linear)
+```
+
+The air-filter sub-track from DESIGN.md is unchanged and still owed.
+
+**Headlights.** Damaged by front-end collisions, disproportionately once the front bumper is gone.
+Below **50%** they **flicker**; at **0%** they are permanently dark. Flicker driven by vehicle
+**g-force** if that can be made to read well — a jolt makes a dying headlight stutter, which is
+both diegetic and free information about how bad the damage is.
+
+**Alignment** — front and rear. Impact applies **random toe and camber offsets to the affected
+wheels**, bounded. **This wiring does not exist yet**: the vehicle currently has no toe or camber
+in its wheel geometry at all, so alignment is not a damage track bolted onto existing physics — the
+underlying geometry has to be introduced first.
+
+### Tooling this milestone must ship
+
+- **Damage indicator GUI** — a simple **top-down schematic** of the truck. Each component reads
+  **green at full health through to red at zero**, gradient between. (Owner has a reference image
+  available on request.)
+- **Debug: disable damage** — a checkbox. Disabling does **not** freeze components where they are;
+  it restores or degrades every track to **75%** and locks it there. 75% is the nominal condition
+  of a used vehicle in this game.
+- **Debug: component poke** — a selectable component list with **−25% / −5% / +5% / +25%** buttons,
+  so any condition state can be reached in seconds without driving to it.
+- **Per-tire μ wiring check** — a real test, not an eyeball: hold a steady-state corner, change one
+  tire's friction coefficient, and confirm the cornering force moves the way that corner predicts.
+  Getting FL/FR/RL/RR mapped wrong is silent and would poison every tire-wear conclusion after it.
+
+### Still owed from the original SM-3 scope (unchanged)
+
+- **Repair, tow & death**: roadside self-service vs. town station, both cost time + money. **Tow** =
+  fast-travel to nearest town, priced near-prohibitively; can't-afford-tow ends the run. Two deaths
+  only (SM-INV-1): fatal crash impact or unrecoverable breakdown.
+- **Diagnostic screen** (FEAT-34 instrument cluster): every track, air-filter warning critical. The
+  damage GUI above is the debug/authoring surface; the diagnostic screen is the player-facing one.
+- **Jalopy generator**: seeded roll over FEAT-23's parts space + starting wear. Every roll
+  technically run-winning (SM-INV-7).
+- Parts as found/bought items, **described never scored** (SM-INV-10). Catalog: [items.md](items.md).
+- **No in-run vehicle purchase** (SM-INV-15) — parts yes, vehicles no.
 
 > **Fuel is RATIFIED** [owner, 2026-08-01: *"there should 100% be fuel in the game and gas
 > stations"*]. This resolves the contradiction between **FEAT-50** and `items.md`'s old *"Fuel? NOT
@@ -280,14 +490,6 @@ ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.20 
 >
 > Build order: FEAT-50's tank + burn is **free-lane** (an honest needle for the shipped FEAT-49
 > gauge). The *station economy* is SM-2/SM-3 work.
-- **Repair, tow & death**: roadside self-service vs. town station, both cost time + money. **Tow** =
-  fast-travel to nearest town, priced near-prohibitively; can't-afford-tow ends the run. Two deaths
-  only (SM-INV-1): fatal crash impact or unrecoverable breakdown.
-- **Diagnostic screen** (FEAT-34 instrument cluster): every track, air-filter warning critical.
-- **Jalopy generator**: seeded roll over FEAT-23's parts space + starting wear. Every roll
-  technically run-winning (SM-INV-7).
-- Parts as found/bought items, **described never scored** (SM-INV-10). Catalog: [items.md](items.md).
-- **No in-run vehicle purchase** (SM-INV-15) — parts yes, vehicles no.
 
 ## SM-4 — The Run (death, persistence, regions)
 

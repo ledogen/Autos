@@ -213,7 +213,9 @@ answer, not yours. Companion notes **downstream of DESIGN.md** (where they disag
 (run/day length, saving), `opening.md` (the firing, the uncle), `items.md` (items catalog —
 consumables/tools/parts/cargo/catch, the asset burn-down surface), `spirits-and-pacts.md` (the spirit
 cast — deferred, and carrying flagged conflicts with later rulings), `IDEAS.md` (scratchpad), and
-`design-amendments-2026-07-29.md` (provenance for the 2026-07-29 ratification pass).
+the amendment records `design-amendments-2026-07-29.md`, `design-amendments-2026-08-17.md` and
+`design-amendments-2026-08-23-sm3.md` (provenance for each ratification pass — DESIGN.md carries the
+decisions inline and wins wherever they differ).
 
 ## Workflow
 

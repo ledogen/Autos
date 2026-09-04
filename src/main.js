@@ -17,12 +17,14 @@
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes } from './physics.js'
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
 import { DebrisSystem } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition } from './suspension.js'
+import { DamageModel } from './damage.js'                   // SM-3: component condition model
+import { DamageHUD } from './damage-hud.js'                 // SM-3: the V-key condition readout
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming } from './camera.js'
@@ -37,7 +39,7 @@ import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, set
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
 import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playShutoffAudio } from './engine-audio.js'
-import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes } from './tire-audio.js'
+import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes, playTireBlowout } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
 import { RoadSystem, CHUNK_SIZE } from './road.js'
@@ -887,10 +889,16 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.brake         = 0
   vehicleState.smoothThrottle = 0
   vehicleState.smoothBrake    = 0
-  vehicleState.wheelAngles    = [0, 0, 0, 0]
   vehicleState.wheelSteerAngles = [0, 0, 0, 0]
   vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
   vehicleState.wheelOmega     = [0, 0, 0, 0]
+  vehicleState.slipVel        = [0, 0, 0, 0]     // SM-3 damage signals
+  vehicleState.tireFlat       = [0, 0, 0, 0]
+  vehicleState.bumpForce      = [0, 0, 0, 0]
+  vehicleState.rimForce       = [0, 0, 0, 0]
+  vehicleState.rimForceRoad   = [0, 0, 0, 0]
+  vehicleState.brakeTorque    = [0, 0, 0, 0]
+  vehicleState.wheelPhase     = [0, 0, 0, 0]
   vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 }
   // FEAT-33 (owner, 2026-08-22): story mode re-seats you with a DEAD truck — starting the day by
   // starting the truck is the ritual SM-INV-6 wants. Free roam / lab / scenario hand you a running
@@ -1006,7 +1014,6 @@ const vehicleState = {
   brake:           0,
   smoothThrottle:  0,                             // FEAT-01: ramped throttle accumulator; read+written by updateVehicle
   smoothBrake:     0,                             // FEAT-01: ramped brake accumulator; read+written by updateVehicle
-  wheelAngles:     [0, 0, 0, 0],                 // per-wheel spin angle [rad], Plan 03 drives
   wheelSteerAngles: [0, 0, 0, 0],               // Per-wheel Ackermann steer angles [rad]; set by updateVehicle each step; read by stepPhysics for lateral force decomposition.
   // Phase 4.1 strut state (D-01): strut compression and velocity per corner.
   // Initialized to static equilibrium — strutComp ≈ 0.111 m at current params.
@@ -1014,6 +1021,15 @@ const vehicleState = {
   strutCompVel: [0, 0, 0, 0],            // m/s — strut compression velocity per corner (D-01)
   wheelDebug:      [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ],  // per-wheel debug data written by stepPhysics; read by logger; fz=tire spring force (D-12)
   wheelOmega:      [0, 0, 0, 0],                   // per-wheel angular velocity [rad/s]; integrated by physics.js omega integrator
+  // ── SM-3 damage signals: honest per-corner quantities the physics already computes, published
+  // here so src/damage.js can integrate wear without importing anything from the physics stack.
+  slipVel:         [0, 0, 0, 0],                   // m/s — raw contact-patch sliding speed (tire wear, dominant term)
+  tireFlat:        [0, 0, 0, 0],                   // N   — cornering force magnitude (tire wear, minor term)
+  bumpForce:       [0, 0, 0, 0],                   // N   — peak bump-stop force this step (spring wear)
+  rimForceRoad:    [0, 0, 0, 0],                   // N   — rim load from ROAD/terrain: the squashed-carcass load past full compression (a different measurement from rimForce — see suspension.js)
+  rimForce:        [0, 0, 0, 0],                   // N   — engine contact FORCE on each WHEEL HARD CORE (QUAL-25). Non-zero only when the rim itself is hit — rim damage
+  brakeTorque:     [0, 0, 0, 0],                   // N·m — applied brake torque (brake wear)
+  wheelPhase:      [0, 0, 0, 0],                   // per-wheel spin phase [rad], fixed-step; feeds the out-of-round radius (params.wheelRunout)
   drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
   ignition:        makeIgnitionState(),               // FEAT-33 key state (OFF/CRANKING/RUNNING); stepped by updateVehicle, read by stepDrivetrain + the cluster. Free roam spawns RUNNING.
   engineHealth:    1,                                 // FEAT-33 seam for the SM-3 wear model: 1 = fresh engine (quarter-second catch), 0 = beater (ignitionCatchTimeWorn). Nothing writes it yet.
@@ -1022,6 +1038,23 @@ const vehicleState = {
   submerged:       false,                            // FEAT-22: CG below a water surface (set per-frame from WaterSystem.submergedAt)
   submergedDepth:  0,                                // FEAT-22: m below the water surface (0 when dry)
 }
+
+// ── SM-3 damage model ────────────────────────────────────────────────────────────────────────────
+// One instance per run. Starts at 100% (a new truck); the jalopy generator will replace this with a
+// seeded roll over starting wear later in SM-3. publish() runs immediately so the physics stack sees
+// defined multipliers on the very first step rather than falling back to its `?? 1` defaults.
+const damageModel = new DamageModel({ params: RANGER_PARAMS })
+damageModel.publish(RANGER_PARAMS)
+window.__damage = damageModel   // debug panel + the damage GUI read this
+// Read-only console/harness handle on the live vehicle state. The damage rates are calibrated by
+// driving the FEAT-31 lab rig and watching the per-corner signals, and a harness cannot hold a
+// target speed on the rumble lane without being able to read the speed back.
+window.__vehicleState = () => vehicleState
+// The driver's-seat readout (V). Hidden by default and free while hidden; it is how a drive is
+// evaluated at all, since condition, wear rates and a tenth-of-a-second impact are otherwise
+// invisible from behind the wheel. The ratified top-down schematic replaces its condition pane.
+const damageHUD = new DamageHUD(damageModel, vehicleState)
+
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
 const canvas = document.querySelector('canvas')
@@ -1224,7 +1257,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. carGroup/bodyMesh/wheelMeshes are returned for back-compat;
 // syncMeshesToState(state) is called once per render frame below.
-const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
+const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
 // Owns a SEPARATE read-only RoadSystem instance streamed around its own pan cursor — it never
@@ -1479,10 +1512,23 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // near-stationary wheel reuse one query instead of each re-scanning a switchback's many slices
   // (the slow-CPU 5fps lock that recovers airborne). Height stays accurate: at the query center the
   // projection is ~0 (perp foot) so rest height ≈ exact (≤~5 mm via the memo).
-  const _hint = (!_labActive && roadSystem) ? roadSystem.carveHint(cx, cz) : undefined
+  // The road run is resolved PER SAMPLE, not once at the wheel centre.
+  //
+  // It used to be resolved once at (cx,cz) and threaded into every footprint sample, which quietly
+  // defeated the tire envelope at exactly the place it matters most — a road EDGE. With the wheel
+  // centre still off the road, the centre's hint says "no run here", so every sample ahead resolved
+  // against bare terrain and the envelope never saw the raised road at all. The tire clipped through
+  // the edge until the centre crossed it, at which point the hint flipped and the surface snapped up
+  // under the wheel (owner, 2026-08-22). The whole point of the envelope is to feel an edge before
+  // the centre reaches it.
+  //
+  // The perf that motivated the shared hint (PERF-24) is preserved by carveHint's own memo, which is
+  // keyed per 0.05 m cell: the stencil's nine offsets are distinct cells, but every substep and every
+  // repeat query at the same spot still shares them, which is what the death-spiral case needs.
+  const _hintAt = (!_labActive && roadSystem) ? (x, z) => roadSystem.carveHint(x, z) : () => undefined
   // FEAT-40: cy disambiguates the two stacked surfaces in a bore span (floor vs hill overhead).
   const groundH = (x, z) => _labActive ? labSystem.groundHeight(x, z)
-                                       : (terrainSystem ? terrainSystem.analyticHeight(x, z, _hint, cy) : 0)
+                                       : (terrainSystem ? terrainSystem.analyticHeight(x, z, _hintAt(x, z), cy) : 0)
 
   // TIRE-ENVELOPE (footprint sampling). A wheel is a disc of radius r; it rests on the HIGHEST
   // terrain its circular profile can touch, NOT the single point under the hub. The legacy probe
@@ -1492,22 +1538,33 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // (d = horizontal offset; the sqrt is the circle's height above ground at that offset). The winning
   // sample sets penetration depth, contact point, and surface normal. At d=0 this reduces EXACTLY to
   // the old  terrainH + r − cy, so flat ground and the m4-* assertions are unchanged.
-  // PERF: _hint is threaded into every sample, so the whole stencil costs ONE road resolve (PERF-24) —
-  // only the cheap noise eval multiplies. Wheel callers pass footprint=true; body probes do not.
+  // PERF: each sample resolves its OWN road run, memoized per 0.05 m cell — see the note above the
+  // stencil for why a single shared hint broke the envelope at road edges. Wheel callers pass
+  // footprint=true; body probes do not.
   const doFootprint = footprint && r > 0 && RANGER_PARAMS.wheelFootprint !== false
   let bestH   = groundH(cx, cz)
   let bestTop = bestH + r        // d=0 term — identical to the legacy single probe
   let bestX = cx, bestZ = cz
   if (doFootprint) {
-    // Cardinal cross at 0.55 r and 0.9 r (8 offsets). Direction-agnostic so it bridges bumps and
-    // slopes in any orientation without knowing the wheel's heading.
-    const STEN = [0.55, 0.9]
+    // Four rings x eight directions (32 offsets), direction-agnostic so it bridges bumps and slopes
+    // in any orientation without knowing the wheel's heading.
+    //
+    // It was two rings x four directions, and the owner could see the seams: rolling onto a road
+    // edge the wheel climbed in two visible steps — one per ring — because the envelope only knows
+    // the surface at the radii it samples. The disc it is approximating is continuous, so the fix
+    // is resolution: more rings make the climb finer, and the diagonals matter because a wheel
+    // rarely meets an edge square-on to the world axes.
+    //
+    // Cost is bounded by carveHint's 0.05 m memo — these offsets are distinct cells for one wheel,
+    // but every suspension substep and every repeat query at the same spot reuse them.
+    const STEN = [0.35, 0.6, 0.8, 0.95]
+    const DIRS = 8
     for (let k = 0; k < STEN.length; k++) {
       const d    = STEN[k] * r
       const lift = Math.sqrt(Math.max(0, r * r - d * d))
-      const offs = [[d, 0], [-d, 0], [0, d], [0, -d]]
-      for (let o = 0; o < 4; o++) {
-        const sx = cx + offs[o][0], sz = cz + offs[o][1]
+      for (let o = 0; o < DIRS; o++) {
+        const a = o * Math.PI * 2 / DIRS
+        const sx = cx + d * Math.cos(a), sz = cz + d * Math.sin(a)
         const h   = groundH(sx, sz)
         const top = h + lift
         if (top > bestTop) { bestTop = top; bestH = h; bestX = sx; bestZ = sz }
@@ -1517,7 +1574,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   const gd = bestTop - cy
   if (gd > 0) {
     const n = _labActive ? labSystem.groundNormal(bestX, bestZ)
-                         : (terrainSystem ? terrainSystem.analyticNormal(bestX, bestZ, _hint, cy) : { x: 0, y: 1, z: 0 })
+                         : (terrainSystem ? terrainSystem.analyticNormal(bestX, bestZ, _hintAt(bestX, bestZ), cy) : { x: 0, y: 1, z: 0 })
     hits.push({
       normal:       new THREE.Vector3(n.x, n.y, n.z),
       depth:        gd,
@@ -1575,9 +1632,10 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // BUG-37: bore WALL contact — terrainSystem's ground block above only resolves the bore FLOOR
   // (bore-ownership rule); the curved half-tube sides have no matching collision without this. Same
   // {normal,depth,contactPoint} shape as prop hits, so the wheel solver treats a wall like any other
-  // surface. Reuses _hint (already resolved for the ground query above) — no extra tile scan.
+  // surface. Reuses the CENTRE's run (memoized, so no extra tile scan) — a tunnel wall is a
+  // property of the run the wheel is in, not of the envelope's outlying samples.
   if (!_labActive && roadSystem) {
-    const wallHit = roadSystem.queryTunnelWallContact(cx, cy, cz, r, _hint)
+    const wallHit = roadSystem.queryTunnelWallContact(cx, cy, cz, r, _hintAt(cx, cz))
     if (wallHit) hits.push(wallHit)
   }
 
@@ -1832,7 +1890,10 @@ if (_PROF) {
   window.__gps = () => gpsSystem
   // FEAT-39 harness: drop the CAR at a spot (unlike __view, which only moves the freecam). Lets the
   // CDP probe frame the real chase-cam approach to a junction without hand-driving there.
-  window.__tp = (x, z, heading = 0) => teleportToGround(x, z, heading, 0.5)
+  // `drop` is exposed because the SM-3 spring track is calibrated by DROPPING the truck onto its
+  // bump stops from a known height, which is the only clean way to produce a repeatable bump-stop
+  // force (owner, 2026-08-20). 0.5 m stays the default so existing harness calls are unchanged.
+  window.__tp = (x, z, heading = 0, drop = 0.5) => teleportToGround(x, z, heading, drop)
   // Single-lever A/B toggles: isolate one cost axis at a time at a fixed preset. Each returns true
   // if applied. NOT persisted anywhere — page reload restores the preset's values.
   const _eachPropMesh = (fn) => { if (propSystem) for (const rec of propSystem._meshes.values()) fn(rec) }
@@ -1889,6 +1950,8 @@ const _gui = initDebug(RANGER_PARAMS, {
   // FEAT-33: engine condition is vehicleState, not a param (it is the SM-3 wear seam) — the slider
   // reaches it through here. Lower health ⇒ longer crank before the engine catches.
   setEngineHealth:     (v) => { vehicleState.engineHealth = v },
+  // SM-3: re-bake the out-of-round tire carcass so the mesh matches the new contact radius.
+  onWheelRunoutChange: (v) => applyWheelRunout(v),
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
@@ -4651,6 +4714,7 @@ function loop () {
   _fpsLastTime = newTime
 
   accumulator += frameTime
+  damageHUD.update(frameTime)   // SM-3 readout (V) — returns on the first line while hidden
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
   // (a 150 ms frame is followed by one paying ~9 physics steps) land in no bucket at all, and the
@@ -4717,6 +4781,27 @@ function loop () {
     }
 
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
+    // SM-3: integrate component wear on the SAME fixed step the physics ran, so condition is
+    // framerate-independent like everything else (INFRA-03 determinism). Reads the honest signals
+    // stepPhysics just published; writes the effect multipliers the NEXT step will read.
+    // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
+    // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
+    readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
+    damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
+    // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
+    // catch-up burst of physics steps still gets exactly one.
+    if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
+    // SM-3 collision damage: read the hardest contact on the chassis this step and hand it to the
+    // damage model, which decides whether that is an impact (see feedContact — a contact is not).
+    // classifyImpactRegion turns the body-local point/normal into an armor region and returns null
+    // for ground contacts, so driving over terrain never registers as a crash.
+    {
+      const hit = physicsEngine.maxContactImpulse(vehicleChassis)
+      const landed = damageModel.feedContact(
+        classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT,
+        vehicleState.velocity)
+      if (landed) damageHUD.noteImpact(landed)
+    }
     simTime += PHYSICS_DT
     // BUG-12 diagnostic (open): while recording, log the truck run's local centerline turn radius
     // to localize ribbon folds. Gated on isRecording() so normal play pays nothing (queryNearest

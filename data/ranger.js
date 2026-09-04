@@ -14,6 +14,33 @@ export const RANGER_PARAMS = {
   trackRear:    1.46,   // m — center-to-center wheel spacing at rear axle
   cgHeight:     0.55,   // m — center of gravity above ground (estimate, laden)
   wheelRadius:  0.368,  // m — 245/75R16 tire radius
+  wheelWidth:   0.25,   // m — 245-section tire tread width. Sets the WIDTH of the wheel hard core
+                        // (src/physics.js wheelCorePoints), which is a disk, not a sphere.
+  rimRadius:    0.203,  // m — 16 in steel rim (0.406 m diameter). wheelRadius − rimRadius is the
+                        // SIDEWALL height, 165 mm, and that is a real dimension off the tire rather
+                        // than a tuning constant: it is how far the carcass can deflect before the
+                        // rim flange is taking the load. src/damage.js thresholds rim damage on it.
+  wheelRunout:  0.000,  // m — PEAK-TO-PEAK radial runout (out-of-round tire). 0 = perfectly round
+                        // and the whole path short-circuits; the Tires debug slider dials it in.
+                        // RESET to 0 on the damage branch (was 0.020 while the visual was being
+                        // built): here runout is DRIVEN BY WHEEL CONDITION and this value ADDS on
+                        // top, so a non-zero default ships every truck permanently out of round,
+                        // brand new. Use the slider or damage a wheel to see it.
+                        // Modulates the contact radius once per wheel revolution
+                        // (src/suspension.js effectiveWheelRadius), so it hops at wheel frequency.
+
+  // ── Wheel alignment (degrees — an alignment sheet reads in degrees, so the params do too) ──
+  // Sign conventions and the per-side mirroring live in src/alignment.js:
+  //   toe    > 0 = TOE-IN      (leading edges converge ahead of the axle)
+  //   camber < 0 = NEGATIVE    (tops lean toward the centerline, patches splay out)
+  toeFront:     +0.10,  // deg — mild toe-in for straight-line stability
+  toeRear:       0.00,  // deg — solid rear axle, no toe adjustment
+  camberFront:  -0.50,  // deg
+  camberRear:   -0.30,  // deg
+  // Camber stiffness as a multiple of Fn per radian of lean (camber thrust = coeff·Fn·lean).
+  // Radial tires run ≈0.5-1.5, roughly a tenth of cornering stiffness. 0 disables camber thrust
+  // (the geometric lean of the lateral axis stays).
+  camberThrustCoeff: 0.9,
   bodyLength:   4.61,   // m — approximate exterior length (2002 Ford Ranger)
   bodyWidth:    1.66,   // m — track(1.46) + wheel width(0.25) - 0.05 margin so wheels visible from side
   bodyHeight:   1.60,   // m — approximate exterior height (2002 Ford Ranger)
@@ -152,6 +179,11 @@ export const RANGER_PARAMS = {
   // the wheel returns to ground quickly but doesn't prematurely unload — overdamped tire
   // damping causes tireFz to hit zero while hub is still 2 cm in ground (hubVy drives damping
   // term negative, triggering spurious airborne flag at high hub velocities).
+  // Nominal flat-ground contact patch AREA. Sets how fast the tire stiffens against a rigid
+  // obstacle: the engaged fraction is the obstacle's growing contact area over this (see
+  // src/suspension.js). 245-section tire at ~35 psi carrying a quarter of the truck:
+  // 3.3 kN / 241 kPa = 0.0139 m2; 0.0166 leaves a little margin for a laden corner.
+  tireContactAreaM2: 0.0166,  // m^2
   tireStiffness: 100000,  // N/m
   tireDamping:     1500,  // N·s/m — ζ≈0.56; reduced from 4000 to prevent premature wheel lift-off
 

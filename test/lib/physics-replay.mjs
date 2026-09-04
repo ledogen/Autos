@@ -124,7 +124,7 @@ export async function replayEvent(capture, { THREE }) {
         quaternion:      new THREE.Quaternion(is.quaternion.x, is.quaternion.y, is.quaternion.z, is.quaternion.w),
         angularVelocity: new THREE.Vector3(is.angularVelocity.x, is.angularVelocity.y, is.angularVelocity.z),
         steerAngle: 0, throttle: 0, brake: 0, smoothThrottle: 0, smoothBrake: 0,
-        wheelAngles: [0, 0, 0, 0],
+        
         wheelSteerAngles: [0, 0, 0, 0],
         strutComp:    haveSc ? sc.slice() : STRUT_FALLBACK.slice(),
         strutCompVel: [0, 0, 0, 0],

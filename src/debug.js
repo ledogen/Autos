@@ -30,6 +30,7 @@ import { VEHICLES } from '../data/vehicles.js'
 import { resolveBuild } from './version.js'
 import { THROW_PARAMS } from './throw.js'                      // FEAT-61 Phase F: throw feel
 import { PAPER_PARAMS, RR_PARAMS } from './paper-route.js'     // FEAT-61 Phase F: payout + re-plan
+import { DAMAGE_PARAMS, TRACKS, TRACK_IDS } from './damage.js' // SM-3: component condition model
 
 // Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
 // can read them. Assigned inside initDebug(); null until then.
@@ -209,6 +210,21 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const tiresFolder = vehicleFolder.addFolder('Tires')
   tiresFolder.add(params, 'tireStiffness', 100000, 300000, 5000).name('Tire Stiffness (N/m)')
   tiresFolder.add(params, 'tireDamping', 200, 4000, 100).name('Tire Damping (N·s/m)')
+  // Out-of-round tire; 0 = perfectly round. The callback re-bakes the tire MESH so the visible
+  // egg matches the contact radius the physics is using (see vehicle-model.js applyWheelRunout).
+  tiresFolder.add(params, 'wheelRunout', 0, 0.05, 0.001).name('Runout p-p (m)')
+    .onChange((v) => callbacks.onWheelRunoutChange?.(v))
+
+  // ── Alignment ───────────────────────────────────────────────────────────────────
+  // Static toe and camber, in DEGREES, mirrored per side by src/alignment.js.
+  // toe > 0 = toe-in (leading edges converge); camber < 0 = tops leaning inboard.
+  // Live-editable: physics reads params every step and the wheel meshes tilt with them.
+  const alignFolder = vehicleFolder.addFolder('Alignment')
+  alignFolder.add(params, 'toeFront', -1.0, 1.0, 0.01).name('Toe Front (deg, + = in)')
+  alignFolder.add(params, 'toeRear', -1.0, 1.0, 0.01).name('Toe Rear (deg, + = in)')
+  alignFolder.add(params, 'camberFront', -5.0, 2.0, 0.05).name('Camber Front (deg, − = neg)')
+  alignFolder.add(params, 'camberRear', -5.0, 2.0, 0.05).name('Camber Rear (deg, − = neg)')
+  alignFolder.add(params, 'camberThrustCoeff', 0, 2.0, 0.05).name('Camber Thrust (×Fn/rad)')
   tiresFolder.add(params, 'frictionCoeff', 0.1, 1.5, 0.05).name('Friction Coeff')
   tiresFolder.add(params, 'pacejkaB', 5, 20, 0.5).name('B - Stiffness')
   tiresFolder.add(params, 'pacejkaC', 1.0, 1.99, 0.01).name('C - Shape [1.0-1.99]')
@@ -257,6 +273,57 @@ export function initDebug (params, callbacks = {}, options = {}) {
   suspFolder.add(params, 'suspensionBodyOffsetRear',  -0.10, 0.10,   0.005).name('Rear Body Offset (m)')
   suspFolder.add(params, 'bumpStopStiffness',         10000, 500000, 5000).name('Bump Stop Stiffness (N/m)')
   suspFolder.add(params, 'wheelFootprint').name('Tire Footprint (envelope)')
+
+  // ── SM-3 damage panel ──────────────────────────────────────────────────────────────────────────
+  // Two jobs, both authoring conveniences, neither shipped to the player (the player-facing surface
+  // is the diagnostic screen, FEAT-34):
+  //   1. Disable damage — does NOT freeze components where they are. It restores/degrades every
+  //      track to the nominal used-vehicle condition and locks it there (owner, 2026-08-19), so a
+  //      debug session always starts from the same known truck.
+  //   2. Poke one component by ±5 / ±25 percentage points, so any condition is reachable in seconds
+  //      instead of having to drive to it.
+  const dmgFolder = vehicleFolder.addFolder('Damage (SM-3)')
+  const _damage = () => (typeof window !== 'undefined' ? window.__damage : null)
+
+  dmgFolder.add(DAMAGE_PARAMS, 'enabled').name('Damage Enabled')
+  dmgFolder.add(DAMAGE_PARAMS, 'nominalCondition', 0, 1, 0.05).name('Nominal (disabled) %')
+
+  const _pick = { track: TRACK_IDS[0], condition: 1 }
+  const _trackOptions = {}
+  for (const id of TRACK_IDS) _trackOptions[TRACKS[id].label] = id
+
+  const _readout = dmgFolder.add(_pick, 'condition', 0, 1).name('Condition').listen().disable()
+  const _sync = () => { const d = _damage(); if (d) _pick.condition = d.get(_pick.track) }
+  dmgFolder.add(_pick, 'track', _trackOptions).name('Component').onChange(_sync)
+
+  const _poke = (delta) => () => {
+    const d = _damage(); if (!d) return
+    d.adjust(_pick.track, delta)
+    d.publish(params)     // effects apply immediately — no need to wait for the next wear step
+    _sync()
+  }
+  dmgFolder.add({ f: _poke(-0.25) }, 'f').name('−25%')
+  dmgFolder.add({ f: _poke(-0.05) }, 'f').name('−5%')
+  dmgFolder.add({ f: _poke(+0.05) }, 'f').name('+5%')
+  dmgFolder.add({ f: _poke(+0.25) }, 'f').name('+25%')
+  dmgFolder.add({ f: () => { const d = _damage(); if (d) { d.setAll(1); d.publish(params); _sync() } } }, 'f').name('Restore All')
+  // A puncture is state, not condition, so "Restore All" alone would leave a flat tire flat.
+  dmgFolder.add({ f: () => { const d = _damage(); if (!d) return
+    for (let i = 0; i < 4; i++) d.replaceTire(i); d.publish(params); _sync() } }, 'f').name('Fit 4 New Tires')
+  void _readout
+
+  // ── Wear speed, per class ────────────────────────────────────────────────────────────────────
+  // 1 = the calibrated rate in DAMAGE_PARAMS. Live, because every one of these rates has in
+  // practice been set by driving and judging, and a code edit + reload per guess is the slow way
+  // to do that. Watch the %/min column in the V readout while dialling. Anything that settles
+  // should be folded back into the dur* constant it scales (see the note in damage.js).
+  // `wheel` has no continuous wear source — wheels are damaged by impacts only — so that one
+  // scales how hard impacts hit the wheels rather than a rate.
+  const wearFolder = dmgFolder.addFolder('Wear Speed (x calibrated)')
+  for (const k of ['tire', 'brake', 'spring', 'damper', 'wheel', 'engine', 'filter']) {
+    wearFolder.add(DAMAGE_PARAMS.wearScale, k, 0, 10, 0.1).name(k)
+  }
+  wearFolder.close()
 
   // Phase 6 (TERR-06): Terrain folder — amplitude tuning + ramp visibility toggle.
   // terrainAmplitude is read by TerrainSystem._flushPendingQueue during geometry build;

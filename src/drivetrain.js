@@ -73,7 +73,10 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   const stallTR    = params.converterStallTorqueRatio || 2.0
   const stallRPMwot = params.converterStallRPM || 2400
   const curve      = params.engineTorqueCurve || [[800, 160], [3750, 250], [5800, 150]]
-  const scale      = params.engineTorqueScale ?? 1.0
+  // SM-3: engine wear/overheat/impact damage scales output torque at every rpm. Published by
+  // src/damage.js as params._engineDamageScale; absent → 1. Multiplied with the tuning slider so the
+  // two stay independent (engineTorqueScale is a param, _engineDamageScale is run state).
+  const scale      = (params.engineTorqueScale ?? 1.0) * (params._engineDamageScale ?? 1.0)
 
   const throttle = vehicleState.throttle || 0
   const brake    = vehicleState.brake || 0

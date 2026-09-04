@@ -33,6 +33,23 @@ export const GROUP_ALL     = 0xffffffffffffffffn
 
 let _b3 = null            // the loaded engine module — module-private, never exported
 
+/**
+ * Rotate a plain {x,y,z} by a quaternion given as [x,y,z,w]. Local to this module so the adapter
+ * stays dependency-free (it imports nothing but the engine); the standard v' = q·v·q* expanded.
+ */
+function _rotateByQuat (v, q) {
+  const [qx, qy, qz, qw] = q
+  const ix =  qw * v.x + qy * v.z - qz * v.y
+  const iy =  qw * v.y + qz * v.x - qx * v.z
+  const iz =  qw * v.z + qx * v.y - qy * v.x
+  const iw = -qx * v.x - qy * v.y - qz * v.z
+  return {
+    x: ix * qw + iw * -qx + iy * -qz - iz * -qy,
+    y: iy * qw + iw * -qy + iz * -qx - ix * -qz,
+    z: iz * qw + iw * -qz + ix * -qy - iy * -qx,
+  }
+}
+
 /** Load the engine WASM once. Idempotent. Call at boot (and at gate setup). */
 export async function initPhysicsEngine () {
   if (!_b3) _b3 = await Box3DFactory()
@@ -129,7 +146,7 @@ export class PhysicsEngine {
   // ── Colliders ─────────────────────────────────────────────────────────────
 
   _shapeDef ({ friction = 0.6, restitution = 0, density = 1000, group = GROUP_STATIC, collidesWith = GROUP_ALL,
-               rollingResistance = 0, hitEvents = false } = {}) {
+               rollingResistance = 0, hitEvents = false, updateBodyMass = true } = {}) {
     const sd = _b3.b3DefaultShapeDef()
     sd.baseMaterial.friction = friction
     sd.baseMaterial.restitution = restitution
@@ -138,6 +155,10 @@ export class PhysicsEngine {
     sd.filter.categoryBits = group
     sd.filter.maskBits = collidesWith
     sd.enableHitEvents = hitEvents        // per-contact impact events (wear-model seam)
+    // Adding a shape RE-DERIVES the body's mass from its shapes' densities by default. Bodies whose
+    // mass was pinned with setMassData (the chassis) must opt out, or a shape swap silently throws
+    // the pinned mass and inertia away — which reads as the truck no longer settling on flat ground.
+    sd.updateBodyMass = updateBodyMass
     return sd
   }
 
@@ -161,7 +182,7 @@ export class PhysicsEngine {
   }
 
   /** Sphere collider at local offset (default body origin). Returns the shape INDEX on the
-   *  body (stable — shapes are only ever appended), usable with setSphereLocal below. */
+   *  body (stable — shapes are only ever appended), and stays valid across replaceHullLocal. */
   addSphere (handle, radius, material = {}, offset = { x: 0, y: 0, z: 0 }) {
     const rec = this._bodies.get(handle)
     const shapeId = this._register(handle, _b3.b3CreateSphereShape(rec.id, this._shapeDef(material),
@@ -172,12 +193,40 @@ export class PhysicsEngine {
 
   /** Re-seat a sphere shape's LOCAL center (e.g. the wheel rim cores tracking strut travel).
    *  Cheap (one engine call); also updates the debug-viz spec in place. */
-  setSphereLocal (handle, shapeIndex, offset) {
+  /** How many collider shapes a body currently has — callers hold indices into this. */
+  shapeCount (handle) { return this._bodies.get(handle).shapes.length }
+
+  /**
+   * Replace an existing hull shape in place, keeping its shape INDEX stable.
+   *
+   * Box3D can mutate a sphere (b3Shape_SetSphere) and a capsule, but a hull has no setter — its
+   * points are baked at creation. A hull that has to MOVE within its body therefore has to be
+   * rebuilt, and a destroy+add would append the replacement at the end. Callers hold shape indices
+   * (the wheel cores do), so the new shape takes the old one's slot instead.
+   *
+   * Body mass is NOT recomputed on either half: this project sets chassis mass explicitly with
+   * setMassData after construction, and letting a shape swap re-derive it from densities would
+   * silently overwrite that.
+   */
+  replaceHullLocal (handle, shapeIndex, positions, material = {}) {
     const rec = this._bodies.get(handle)
-    const shapeId = rec.shapes[shapeIndex]
-    const spec = rec.specs[shapeIndex]
-    _b3.b3Shape_SetSphere(shapeId, { center: [offset.x, offset.y, offset.z], radius: spec.radius })
-    spec.offset.x = offset.x; spec.offset.y = offset.y; spec.offset.z = offset.z
+    const oldId = rec.shapes[shapeIndex]
+    this._shapeToHandle.delete(this._shapeKey(oldId))
+    this._shapeHulls.delete(this._shapeKey(oldId))
+    this._shapeSizeR.delete(this._shapeKey(oldId))
+    _b3.b3DestroyShape(oldId, false)
+    const hull = _b3.b3CreateHull(positions)
+    this._hulls.push(hull)
+    const shapeId = _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull)
+    rec.shapes[shapeIndex] = shapeId
+    rec.specs[shapeIndex] = { shape: 'hull', positions: Array.from(positions) }
+    this._shapeToHandle.set(this._shapeKey(shapeId), handle)
+    this._shapeHulls.set(this._shapeKey(shapeId), hull)
+    let m = 0
+    for (let i = 0; i < positions.length; i += 3) m = Math.max(m, Math.hypot(positions[i], positions[i + 1], positions[i + 2]))
+    this._shapeSizeR.set(this._shapeKey(shapeId), m)
+    this._rev++
+    return shapeId
   }
 
   /** Capsule collider between two local points. */
@@ -443,30 +492,79 @@ export class PhysicsEngine {
   }
 
   /**
-   * Per-body contact readout: max normal-impulse magnitude currently on the
-   * body's manifolds. The SM-3 wear model subscribes here later (FEAT-36's
-   * causesDamage flag gates the REPORT, not the contact).
+   * Per-body contact readout: the hardest normal impulse currently on the body's manifolds,
+   * WITH where it landed — in the body's own frame, so callers never touch engine types.
+   *
+   * The SM-3 wear model subscribes here (FEAT-36's causesDamage flag gates the REPORT, not the
+   * contact). It needs the location as well as the magnitude: front/left/right/rear armor can only
+   * be told apart by where the hit is, and a ground contact under the truck is not an armor hit
+   * at all. Both are returned for the SAME manifold point — the hardest one — so magnitude and
+   * position always describe one event.
+   *
+   * Frame notes: `anchorA`/`anchorB` are world-space OFFSETS from their body's center of mass, and
+   * this project seats the chassis body origin AT the CG, so rotating the anchor by the body's
+   * inverse rotation lands directly in body-local coordinates. The manifold normal is world-space
+   * and its SIGN depends on which shape the engine picked as A, so callers must use magnitudes
+   * only — see classifyImpactRegion in physics.js.
+   *
+   * @param {*} handle - body handle.
+   * @param {Float64Array|Array} [outByShape] - if given, filled with THIS STEP's peak normal impulse
+   *   on EACH of the body's shapes (indexed as they were added); divide by dt for contact force.
+   *   Lets a caller tell a wheel-core hit from a body hull hit without the engine knowing what
+   *   either means. Allocation-free: reused by the caller.
+   * @returns {{impulse: number, point: {x,y,z}|null, normal: {x,y,z}|null}} body-local point/normal.
    */
-  maxContactImpulse (handle) {
+  maxContactImpulse (handle, outByShape = null) {
     const rec = this._bodies.get(handle)
+    if (outByShape) outByShape.fill(0)
     if (!this._contactsBuf) this._contactsBuf = _b3.createContactsBuffer()
     const buf = _b3.getBodyContactData(this._contactsBuf, rec.id)
-    let max = 0
+    const none = { impulse: 0, stepImpulse: 0, point: null, normal: null }
     const n = _b3.getNumContacts(buf)
-    if (n === 0) return 0
-    const contact = _b3.createContact()
-    const manifold = _b3.createManifold()
+    if (n === 0) return none
+    // Reused across steps: this runs every physics step, and createContact/createManifold each
+    // allocate a wasm-backed struct.
+    const contact  = this._contactScratch  || (this._contactScratch  = _b3.createContact())
+    const manifold = this._manifoldScratch || (this._manifoldScratch = _b3.createManifold())
+    let max = 0, anchor = null, worldN = null, maxStep = 0
     for (let i = 0; i < n; i++) {
       _b3.getContactAt(contact, buf, i)
+      // Which side of the pair is US: the anchor is measured from that body, so picking the wrong
+      // one would offset every impact by the gap between the two bodies' centers.
+      const aIsSelf = this._shapeToHandle.get(this._shapeKey(contact.shapeIdA)) === handle
       for (let m = 0; m < contact.manifoldCount; m++) {
         _b3.getManifoldAt(manifold, contact, m)
         for (let k = 0; k < manifold.pointCount; k++) {
-          const imp = manifold.points[k].totalNormalImpulse
-          if (imp > max) max = imp
+          const pt = manifold.points[k]
+          // Per-SHAPE peak, when the caller wants attribution. The chassis is a QUAL-25 compound —
+          // four body hulls plus four wheel hard cores — and which shape took a hit is the whole
+          // difference between "the bumper hit a tree" and "the rim hit a rock".
+          if (pt.normalImpulse > maxStep) maxStep = pt.normalImpulse
+          if (outByShape) {
+            // THIS STEP's impulse, not the lifetime total: divided by dt it is the contact FORCE,
+            // which is what a yield criterion needs. totalNormalImpulse keeps accumulating while a
+            // contact persists, so it measures how long something was leaned on, not how hard it
+            // was hit — a slow crawl onto a rock out-reads a fast strike.
+            const selfShape = aIsSelf ? contact.shapeIdA : contact.shapeIdB
+            const si = rec.shapes.findIndex(sh => this._shapeKey(sh) === this._shapeKey(selfShape))
+            if (si >= 0 && pt.normalImpulse > outByShape[si]) outByShape[si] = pt.normalImpulse
+          }
+          if (pt.totalNormalImpulse <= max) continue
+          max = pt.totalNormalImpulse
+          const a = aIsSelf ? pt.anchorA : pt.anchorB
+          anchor = { x: a[0] ?? a.x, y: a[1] ?? a.y, z: a[2] ?? a.z }
+          const nv = manifold.normal
+          worldN = { x: nv[0] ?? nv.x, y: nv[1] ?? nv.y, z: nv[2] ?? nv.z }
         }
       }
     }
-    return max
+    if (max === 0 || !anchor) return none
+    // World → body frame. b3Body_GetLocalPoint would add the body TRANSLATION, which the anchor
+    // does not carry (it is already an offset), so rotate by the inverse rotation instead.
+    const q = [0, 0, 0, 1]
+    _b3.b3Body_GetRotation(q, rec.id)
+    const inv = [-(q[0] ?? q.x), -(q[1] ?? q.y), -(q[2] ?? q.z), (q[3] ?? q.w)]
+    return { impulse: max, stepImpulse: maxStep, point: _rotateByQuat(anchor, inv), normal: _rotateByQuat(worldN, inv) }
   }
 
   // ── Joints (log-drag etc.) ────────────────────────────────────────────────

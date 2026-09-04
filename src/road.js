@@ -6805,7 +6805,10 @@ export class RoadSystem {
         if (nr === undefined) {
             // Continuous-projection road resolver, NOT queryNearest — see _resolveRoadSurface.
             nr = this._resolveRoadSurface(wx, wz)
-            if (m.size > 128) m.clear()
+            // Cap raised with the per-sample hint (main.js queryContacts): the footprint stencil
+            // asks for nine distinct cells per wheel per query, so 128 thrashed and lost the reuse
+            // the memo exists for.
+            if (m.size > 1024) m.clear()
             m.set(key, nr)
         }
         return nr

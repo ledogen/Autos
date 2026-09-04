@@ -25,7 +25,7 @@
  *
  * @param {number} corner - Wheel index 0-3 (0=FL, 1=FR, 2=RL, 3=RR per GLOSSARY.md §Wheel Index).
  * @param {object} vehicleState - Full vehicleState object (position, velocity, quaternion,
- *   angularVelocity, steerAngle, throttle, brake, wheelAngles). Unused in Phase 1 static bodies.
+ *   angularVelocity, steerAngle, throttle, brake, wheelPhase). Unused in Phase 1 static bodies.
  * @param {object} params - RANGER_PARAMS; uses params.mass [kg], params.weightFront [-],
  *   params.weightRear [-]. Phase 4 will also use spring stiffness and compression state.
  * @returns {number} Fn [N] normal force on this wheel. Positive = pushing up against wheel.
@@ -129,6 +129,116 @@ export function getWheelPosition (corner, vehicleState, params) {
  * @returns {Array<{x,y,z}>} Four world-space points: FL/FR front bumper, RL/RR rear bumper.
  */
 /**
+ * ── Out-of-round tires (SM-3) ───────────────────────────────────────────────────────────────────
+ *
+ * `params.wheelRunout` is the PEAK-TO-PEAK radius variation in metres (0 = perfectly round), so the
+ * amplitude about the nominal radius is half of it: a 0.02 m runout means +/-0.01 m.
+ *
+ * The SHAPE is set by RUNOUT_HARMONIC — how many high spots there are around the carcass, which is
+ * the whole character of the defect:
+ *
+ *   n = 1  ECCENTRIC. One high spot. r(theta) = R + A*sin(theta + phi), which to first order is a
+ *          round tire whose centre is offset from the axle — a bent rim, a flat spot, a tire mounted
+ *          with its high point off the valve. ONE hop per revolution, at wheel frequency.
+ *   n = 2  OVAL. Two high spots, 180 deg apart, so the carcass is squashed across one diameter and
+ *          stretched across the other. Uneven wear, a pinched rim, a heat-set carcass. TWO hops per
+ *          revolution, at twice wheel frequency — the same runout therefore shakes at half the road
+ *          speed an eccentric tire would, and reads unmistakably as a wheel that is not round.
+ *
+ * n = 2 is the shipped model: "out of round" means OVAL here (owner, 2026-08-20). Changing this one
+ * number changes both the physics and the mesh together — carcassRadialOffset() below is derived
+ * for general n, and test/wheel-runout-mesh.mjs re-checks the agreement at whatever n is set.
+ *
+ * Either way the vertical force gets a sinusoid at n * (omega / 2*pi) Hz — the classic wheel hop /
+ * steering-wheel shimmy that grows with speed.
+ *
+ * Each corner carries a fixed phase offset so the four wheels do not hop in lockstep (a real set of
+ * tires is never phase-matched, and in-phase hop would read as pure heave).
+ *
+ * The hub CENTER is unaffected — runout is tire-carcass geometry, not axle position — so only the
+ * contact-query radius uses this, never getWheelPosition(). An oval tire on a straight axle is
+ * exactly that: the axle runs true, the rubber around it does not.
+ */
+/**
+ * Soft band between the wheel's rigid core and the visual tire radius — the depth range the
+ * analytic tire spring owns. Past it there is no rubber left and the rim is bearing directly.
+ * (0.15 m, raised from 0.07 on 2026-08-15: a thicker band gives the suspension more travel-time to
+ * absorb fast hits before the rigid core engages — high-speed rock hits felt chassis-hard.)
+ */
+export const WHEEL_SOFT_BAND = 0.15
+
+const RUNOUT_PHASE = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]
+export const RUNOUT_HARMONIC = 2   // 1 = eccentric (one high spot), 2 = oval (two)
+
+/**
+ * Peak-to-peak radial runout in effect on one corner, in metres.
+ *
+ * `params.wheelRunout` is the manual slider (a whole-vehicle test value); `params._wheelRunout[i]`
+ * is the per-wheel value the SM-3 damage model publishes from that wheel's condition, in the same
+ * `params._` scratch convention as every other damage effect. Undefined means no damage model is
+ * running — headless gates, damage off — and the slider alone applies. Defaults to 0 both ways, so
+ * a stock truck rolls on perfectly round wheels and the whole path short-circuits.
+ *
+ * This is the ONE place slider and damage are resolved; everything else asks here.
+ */
+export function wheelRunoutOf (corner, params) {
+  return params._wheelRunout ? params._wheelRunout[corner] : (params.wheelRunout || 0)
+}
+
+/**
+ * Effective (rolling-surface) tire radius for one corner at its current spin angle.
+ *
+ * Phase comes from vehicleState.wheelPhase — integrated by physics.js at the FIXED physics step,
+ * never at the render rate, or the ride becomes framerate-dependent (INFRA-03 determinism). It is
+ * also the angle vehicle-model.js spins the wheel MESH by, whose tire has the same runout baked
+ * into its geometry, so the visible high spot is the one being contacted here.
+ *
+ * @param {number} corner - 0-3 (FL, FR, RL, RR).
+ * @param {object} vehicleState - uses .wheelPhase[corner] (rad, integrated in physics.js).
+ * @param {object} params - uses wheelRadius, plus wheelRunout / _wheelRunout via wheelRunoutOf().
+ * @returns {number} radius in metres.
+ */
+export function effectiveWheelRadius (corner, vehicleState, params) {
+  const runout = wheelRunoutOf(corner, params)   // slider + this wheel's damage-driven runout
+  if (runout === 0) return params.wheelRadius
+  const theta = (vehicleState.wheelPhase && vehicleState.wheelPhase[corner]) || 0
+  return params.wheelRadius + 0.5 * runout * Math.sin(RUNOUT_HARMONIC * theta + RUNOUT_PHASE[corner])
+}
+
+/**
+ * Radial offset of the out-of-round tire CARCASS at build-frame carcass angle `psi`, for one corner.
+ *
+ * The mesh half of effectiveWheelRadius(): vehicle-model.js displaces its tread vertices by this so
+ * the tire you can SEE is the tire the contact query is rolling on. It lives here, next to the
+ * radius it must agree with, because the two are one model — edit one, edit both.
+ *
+ * Derivation. The wheel geometry is built with its spin axis along +X, so a vertex sits at carcass
+ * angle psi = atan2(z, y). syncMeshesToState spins the wheel group about +X by −phase, and the
+ * LEFT-side assembly is pre-flipped by rotation.y = PI. Pushing a vertex through that chain and
+ * asking which one lands at the contact patch (angle PI) at spin phase `a` gives
+ *
+ *     psi = PI + a   (right side)        psi = PI − a   (left side)
+ *
+ * so requiring the offset there to equal effectiveWheelRadius's A*sin(n*a + phi) — substitute
+ * a = psi − PI on the right, a = PI − psi on the left — gives the two branches below directly, for
+ * any harmonic n. (test/wheel-runout-mesh.mjs walks that chain numerically and checks it holds.)
+ *
+ * @param {number} corner - 0-3 (FL, FR, RL, RR). 0 and 2 are the left, mirrored side.
+ * @param {number} psi - carcass angle in the build frame [rad].
+ * @param {number} runout - params.wheelRunout, PEAK-TO-PEAK [m].
+ * @returns {number} signed radial offset [m], amplitude runout/2.
+ */
+export function carcassRadialOffset (corner, psi, runout) {
+  const A = 0.5 * (runout || 0)
+  if (A === 0) return 0
+  const phi = RUNOUT_PHASE[corner]
+  const n   = RUNOUT_HARMONIC
+  return (corner === 0 || corner === 2)
+    ? A * Math.sin(n * (Math.PI - psi) + phi)
+    : A * Math.sin(n * (psi - Math.PI) + phi)
+}
+
+/**
  * Quarter-car suspension sub-step loop. Integrates strut compression state (strutComp, strutCompVel)
  * at dt/N for stability, computes tire-spring and suspension-spring forces, applies ARB coupling.
  *
@@ -169,6 +279,14 @@ export function getWheelPosition (corner, vehicleState, params) {
  * @returns {void}
  */
 export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts) {
+  // SM-3: reset the per-step peak bump-stop force before the substep loop accumulates this step's.
+  if (vehicleState.bumpForce) { vehicleState.bumpForce[0] = 0; vehicleState.bumpForce[1] = 0; vehicleState.bumpForce[2] = 0; vehicleState.bumpForce[3] = 0 }
+  // SM-3: peak RIM contact force per corner this step [N]. Reset here and written below whenever
+  // the tire is squashed clean through its soft band; physics.js then folds the engine's own
+  // hard-core contacts (debris) in on top with a max. Two paths, ONE signal — a rim does not care
+  // whether it was the road or a rock that reached it, and the cores collide with debris only.
+  if (vehicleState.rimForce) { vehicleState.rimForce[0] = 0; vehicleState.rimForce[1] = 0; vehicleState.rimForce[2] = 0; vehicleState.rimForce[3] = 0 }
+  if (vehicleState.rimForceRoad) { vehicleState.rimForceRoad[0] = 0; vehicleState.rimForceRoad[1] = 0; vehicleState.rimForceRoad[2] = 0; vehicleState.rimForceRoad[3] = 0 }
   // Paranoid guard (Phase 4.1 D-01): if strutComp/strutCompVel not initialized, skip.
   if (!vehicleState.strutComp || vehicleState.strutComp.length !== 4) return
   if (!vehicleState.strutCompVel || vehicleState.strutCompVel.length !== 4) return
@@ -319,14 +437,22 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
     // ── 3. Force + strut integration pass ────────────────────────────────────────
     for (let i = 0; i < 4; i++) {
       const { strutCompI, strutCompVelI, hubWorldX, hubWorldY, hubWorldZ, isFront } = cornerData[i]
-      const k_S = isFront ? params.suspensionStiffnessFront : params.suspensionStiffnessRear
-      const c_S = isFront ? params.suspensionDampingFront   : params.suspensionDampingRear
+      // SM-3: sagged springs and dead dampers. params._springScale{Front,Rear} and
+      // params._damperScale{Front,Rear} are published by src/damage.js; absent (headless gates,
+      // damage off) they read as 1 and the suspension is exactly the stock one.
+      const k_S = (isFront ? params.suspensionStiffnessFront : params.suspensionStiffnessRear)
+                * (isFront ? (params._springScaleFront ?? 1) : (params._springScaleRear ?? 1))
+      const c_S = (isFront ? params.suspensionDampingFront   : params.suspensionDampingRear)
+                * (isFront ? (params._damperScaleFront ?? 1) : (params._damperScaleRear ?? 1))
 
       // Suspension spring: D-15 no-tension clamp on spring term (no tension when strut extended).
       const springTerm = strutCompI > 0 ? k_S * strutCompI : 0
 
       // Phase 4.1 D-06: Contact normal split into strut-axis component (tireFz) and X/Z residual (_hubNormalXZ).
-      const hubContacts = queryContacts(hubWorldX, hubWorldY, hubWorldZ, params.wheelRadius, true)
+      // Out-of-round tires: the contact query uses the radius AT THIS SPIN ANGLE, so the high
+      // spot digs deeper into the surface (bigger depth -> bigger tire force) once per revolution.
+      const hubContacts = queryContacts(hubWorldX, hubWorldY, hubWorldZ,
+        effectiveWheelRadius(i, vehicleState, params), true)
       let tireFz = 0
       for (const c of hubContacts) {
         // compressionVel sign convention: positive = hub approaching ground = tire compressing.
@@ -350,10 +476,103 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // flat-ground value — this is why real tires cross rock gardens at speed without
         // launching the body (owner captures: 20 kN single-frame nose kicks). Mirrors the
         // reaction-side factor in physics.js exactly (Newton's third law).
-        const env = (c.sizeR !== undefined) ? c.sizeR / (c.sizeR + 0.12) : 1
+        // ── OBSTACLE ENGAGEMENT (was a constant "enveloping" scale) ───────────────────────────
+        // A tire pressed onto a rigid object does not carry it at a fixed fraction of flat-ground
+        // stiffness. The contact AREA grows as it sinks in, and the carcass carries load in
+        // proportion to that area, so the resistance is PROGRESSIVE: nearly nothing on first touch,
+        // stiffening fast, full flat-ground stiffness once the patch is as big as the one the tire
+        // makes on the road.
+        //
+        // For a round indenter of radius a pressed a depth d into a surface, the contact radius is
+        // sqrt(2ad) to first order, so the area is 2*pi*a*d. Divide by the tire's own nominal
+        // contact-patch area and that ratio IS the engaged fraction:
+        //
+        //     engaged(d) = min(1, 2*pi*sizeR*d / tireContactAreaM2)
+        //
+        // which makes force go as d^2 until the patch saturates and linear after — the "point force
+        // on first contact, more of the profile as it penetrates" shape (owner, 2026-08-21).
+        //
+        // The constant it replaced (sizeR/(sizeR+0.12)) softened the tire UNIFORMLY against every
+        // obstacle, which is why rocks sank so far: a 0.34 m boulder was carried at 59% stiffness at
+        // every depth, so it kept sinking instead of the wheel climbing it. Under the area law that
+        // same boulder saturates to FULL stiffness within ~20 mm, and the wheel rides over it.
+        //
+        // Terrain and static props do not come through here at all — the analytic query already
+        // envelopes them GEOMETRICALLY (main.js queryContacts, the sqrt(r^2 - d^2) footprint
+        // stencil), which is the stronger treatment. Same principle, applied where each fits: how
+        // much of the tire is really touching.
+        const env = (c.sizeR !== undefined)
+          ? Math.min(1, 2 * Math.PI * c.sizeR * Math.max(0, c.depth) / (params.tireContactAreaM2 || 0.0166))
+          : 1
+        // PROGRESSIVE CARCASS RATE. A real tire cannot be squashed past its own sidewall: as the
+        // carcass runs out of travel the rate climbs steeply and the rim takes over. A LINEAR
+        // spring has no such limit, and the owner's 0.5 m drop capture shows what that costs —
+        // the strut bottoms at 299 mm, the tire becomes the only compliance left, and a 100 kN/m
+        // linear rate then crushes 264 mm into a 165 mm tire, putting the rim a hand's width below
+        // the road. That is the "floaty, clips through the ground" feel, and it is also why a rim
+        // strike was guaranteed on any landing at any pressure.
+        //
+        // rate multiplier = 1 / (1 - (d/sidewall)^2), clamped. At static deflection (~33 mm of 165)
+        // it is 1.04, so ordinary ride and every handling gate are untouched; by 100 mm it is 1.6,
+        // by 140 mm it is 3.6, and it runs away as the sidewall is used up. The tire stops the
+        // truck because it has run out of rubber, not because a number was raised.
+        const sidewall = (params.wheelRadius || 0.368) - (params.rimRadius || 0.203)
+        // Clamped at 0.94 (≈8.6x rate), not at the asymptote. Past the sidewall the rim is on the
+        // surface and this spring is no longer the thing resisting — letting the multiplier run to
+        // 25x there produced a 5.5 cm single-frame shove on a 0.34 m shoulder step, which reads as
+        // a teleport and trips the penetration failsafe gate. Deep penetration is the failsafe's
+        // job, not the carcass's.
+        const dNorm = Math.min(0.94, Math.max(0, c.depth) / sidewall)
+        const carcass = 1 / (1 - dNorm * dNorm)
+        // SM-3 flat tire: params._tireRateScale[i] collapses the carcass rate when the air is gone.
+        // It scales the LINEAR term only — the progressive `carcass` term stays, because a flat tire
+        // still stacks up against its rim, and that is what stops the wheel sinking through the road.
+        const rate = params._tireRateScale ? params._tireRateScale[i] : 1
+        // The rate scales the AIR SPRING only, never the bottoming term. Those are two different
+        // structures: the air is what a puncture lets out, and the carcass stacking against the rim
+        // is what is left when it is gone. Scaling both made a flat tire uniformly soft, so it never
+        // generated a large force at ANY depth — and since rim load is the force past full
+        // compression, a flat rim came out SAFER than an inflated one. Backwards, and the owner
+        // caught it: with no air to absorb the hit, the load goes straight to the rim.
+        //
+        // Split like this a flat tire is limp under its own load and then goes rigid the moment the
+        // rubber is squashed out — metal on road — which is exactly the failure being modelled.
+        const airTerm  = params.tireStiffness * rate * c.depth
+        const bottomTerm = params.tireStiffness * c.depth * (carcass - 1)
         const tireFnAtContact = Math.max(0,
-          params.tireStiffness * c.depth + params.tireDamping * compressionVel
+          airTerm + bottomTerm + params.tireDamping * rate * compressionVel
         ) * env
+
+        // RIM CONTACT from the analytic path. Depth is measured from the tire's OUTER radius, so
+        // once it exceeds the soft band the contact has reached the rim. A hard enough landing over
+        // a shoulder step really does kiss the rim, and the engine's hard cores can never report it
+        // because they collide with debris only, by construction.
+        //
+        // What is published is the RESIDUAL — the load beyond what the carcass alone carries when
+        // fully compressed — not the whole contact force. That matters: the debris path reports
+        // what the rigid core exchanges with a rock, which is already a residual, and the two must
+        // be the same quantity or one yield threshold cannot serve both.
+        //
+        // It is NOT the same quantity, and measurement settled that rather than argument: a 2 m
+        // drop reads 349 kN here against 0.3-5 kN for a rock strike on the core. Same name, two
+        // different measurements — the core exchanges only what a rigid pinch transmits, this is
+        // the whole squashed-carcass load past full compression. So they are published separately
+        // and carry their own yield thresholds (rimYieldMult vs rimYieldRoadMult in damage.js).
+        //
+        // The reference is THIS tire's carcass, not a healthy one — `rate` belongs in it. A flat
+        // tire carries almost nothing, so almost the whole load past the band goes straight into
+        // the rim, which is the point of a flat: there is no air left to absorb it. Subtracting a
+        // HEALTHY carcass's reference from a flat tire's force made the residual deeply negative
+        // and reported no rim load at all, so a flat rim was SAFER than an inflated one — exactly
+        // backwards (owner, 2026-08-23).
+        if (vehicleState.rimForceRoad && c.depth > WHEEL_SOFT_BAND) {
+          const bandNorm = Math.min(0.98, WHEEL_SOFT_BAND / sidewall)
+          // The reference is what this tire's AIR carries at full compression — for a flat that is
+          // almost nothing, so almost the whole load past the band is rim load.
+          const atBand = params.tireStiffness * rate * WHEEL_SOFT_BAND / (1 - bandNorm * bandNorm)
+          const residual = tireFnAtContact - atBand
+          if (residual > vehicleState.rimForceRoad[i]) vehicleState.rimForceRoad[i] = residual
+        }
         // D-06: split contact normal force into strut-axis and X/Z residual components
         // bodyUpDot = dot(c.normal, body_up): the fraction of contact normal force along the strut axis
         const bodyUpDot = c.normal.x * body_up.x + c.normal.y * body_up.y + c.normal.z * body_up.z
@@ -374,6 +593,13 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       // Bump stop: engages when strut is compressed past travel limit; pushes hub away from body (negative)
       const bumpOvershoot  = strutCompI - travel
       const bumpForce      = bumpOvershoot > 0 ? -params.bumpStopStiffness * bumpOvershoot : 0
+      // SM-3 honest wear signal: peak bump-stop force this step, per corner. src/damage.js reads it
+      // for the spring track. Peak (not mean) across substeps — a hard hit inside one substep is
+      // exactly the severity this track is supposed to notice.
+      if (vehicleState.bumpForce) {
+        const bfMag = Math.abs(bumpForce)
+        if (bfMag > vehicleState.bumpForce[i]) vehicleState.bumpForce[i] = bfMag
+      }
       // Droop stop: engages when strut extends past rest (strutComp < 0); pulls hub back toward body (positive)
       const droopOvershoot = -strutCompI  // positive when strutComp < 0
       const droopForce     = droopOvershoot > 0 ? DROOP_K * droopOvershoot : 0
