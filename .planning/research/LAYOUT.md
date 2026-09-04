@@ -52,10 +52,14 @@ rock classification) · `map-cover.js` (map-resolution forest cover) · `water.j
 generation) · `water-render.js` · `stone-texture.js` (procedural riverbed texture).
 
 **Road network** — `road.js` (RoadSystem: streaming, resolve, surface queries) · `road-graph.js`
-(blue-noise anchors + Urquhart topology) · `road-carve.js` (carve bodies + router, canonical for
-worker mirrors) · `road-mesh.js` (ribbon build) · `road-worker.js` (dedicated routing Worker,
-QUAL-08) · `road-quality.js` (per-stretch quality) · `centerline.js` (curvature-bounded centerline
-model) · `route-store.js` (bundled route cache, dev convenience).
+(blue-noise anchors + Urquhart topology) · `road-carve.js` (carve bodies, canonical for worker
+mirrors) · `corridor-router.js` (v2 corridor router, FEAT-68) · `road-mesh.js` (ribbon build) ·
+`road-worker.js` (route Worker POOL, QUAL-08/FEAT-68) · `road-route-worker.js` (route Worker
+module entry) · `road-network-worker.js` (PERF-30 network Worker module entry — the whole build
+off-thread) · `road-network-client.js` (PERF-30 main-thread client: dispatch + atomic adopt) ·
+`road-quality.js` (per-stretch quality) · `centerline.js` (curvature-bounded centerline model).
+(The bundled route cache / `route-store.js` was deleted 2026-08-19 — owner call; the in-session
+cache in main.js is what remains.)
 
 **Props** — `props/`: `prop-system.js` (orchestrator) · `prop-palette.js` · `prop-geometry.js` ·
 `prop-scatter.js` · `prop-collider.js` · `prop-impostor.js` · `prop-shadow-bake.js` ·

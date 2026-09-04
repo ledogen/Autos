@@ -73,6 +73,7 @@ import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, 
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
+import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
 import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read-only tree re-roll (camp shade score)
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
@@ -345,6 +346,9 @@ function computeStaticEquilibrium (p) {
 // BUG-26-safe state) if the dedicated Worker ever regresses — the synchronous router stays the cache-miss
 // / teleport / headless fallback regardless.
 const USE_WORKER_ROUTING = true
+// PERF-30: the network Worker builds the ENTIRE network (routing + BUG-56 plan layer + assembly)
+// off-thread; play adopts finished networks atomically between frames (stale-until-replaced).
+const USE_NETWORK_WORKER = true
 
 // ── resolveSpawn (D-14 / D-16) ───────────────────────────────────────────────────────────
 // Phase 8 COMPLETE (D-07 / D-16): Body now probes the road graph first (nearest road node +
@@ -456,8 +460,20 @@ async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-
     let nearest = null
     perfMark('resolveSpawn: before ensureTile (cold network stream)')  // TEMP (D-arc)
     for (const [_qR, _streamR] of _spawnTiers) {
-      roadSystem.setRadius(Math.max(_savedRadius, _streamR))
-      await _warmTileBand(baseTX, baseTZ)   // QUAL-14 perf: route this tier's band on the pool first
+      const _tierR = Math.max(_savedRadius, _streamR)
+      roadSystem.setRadius(_tierR)
+      // PERF-30: build the tier window on the network Worker — the whole plan layer runs
+      // off-thread while the loading screen animates. buildNow's center matches ensureTile's
+      // stream center exactly, so the ensureTile below finds the adopted band sig and never
+      // rebuilds synchronously. A stale reply (seed/params changed mid-load) falls through to
+      // ensureTile's synchronous build — correctness never depends on the worker.
+      if (netClient) {
+        // _spawnWarmActive parks the frame loop's update()/warmRoutes for the await, exactly as
+        // _warmTileBand does — otherwise a mid-session reseat races a synchronous cold build.
+        _spawnWarmActive = true
+        try { await netClient.buildNow((baseTX + 0.5) * CHUNK_SIZE, (baseTZ + 0.5) * CHUNK_SIZE, _tierR) }
+        finally { _spawnWarmActive = false }
+      } else await _warmTileBand(baseTX, baseTZ)   // QUAL-14 perf: route this tier's band on the pool first
       roadSystem.ensureTile(baseTX, baseTZ)
       nearest = roadSystem.queryNearest(baseX, baseZ, _qR)
       if (nearest) break   // tight tier hit → skip the wide stream entirely (the common, fast path)
@@ -490,7 +506,12 @@ async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-
       // cull one-ring make it irreducibly decision-gating, so it is NOT trimmed.
       const _recenterR = Math.min(_savedRadius, 100 + 128)   // 100 m query + registration/cull margin
       roadSystem.setRadius(_recenterR)
-      await _warmTileBand(spawnTX, spawnTZ)
+      // PERF-30: same off-thread treatment (and the same frame-loop park) as the tier loop above.
+      if (netClient) {
+        _spawnWarmActive = true
+        try { await netClient.buildNow((spawnTX + 0.5) * CHUNK_SIZE, (spawnTZ + 0.5) * CHUNK_SIZE, _recenterR) }
+        finally { _spawnWarmActive = false }
+      } else await _warmTileBand(spawnTX, spawnTZ)
       roadSystem.ensureTile(spawnTX, spawnTZ)
       roadSystem.setRadius(_savedRadius)   // restore play radius; next update() streams the full band
       nearest = roadSystem.queryNearest(nearest.point.x, nearest.point.z, 100) || nearest
@@ -623,6 +644,10 @@ async function _rebuildFullNow () {
         roadWorker.registerClient('play', roadSystem)
         roadSystem.setRouteDispatcher((jobs, epoch) => roadWorker.postRouteJobs('play', jobs, epoch))
       }
+      // PERF-30: re-attach the network-Worker client to the new instance. The worker notices the
+      // seed change on the next build request and rebuilds its own RoadSystem from scratch; any
+      // in-flight reply is dropped by the seed guard.
+      if (netClient) netClient.attach(roadSystem)
       // Restore viz state — the next roadSystem.update(streamCenter) re-streams the new seed's
       // network and (because _debugVisible is set) rebuilds the centerline lines.
       roadSystem.setDebugVisible(wasVisible)
@@ -741,6 +766,11 @@ function debouncedRoadRebuild () {
   _roadRebuildDebounceTimer = setTimeout(() => {
     if (!roadSystem) return
     roadSystem.invalidateCache()
+    // PERF-30: with the network Worker wired and a warm network up, invalidateCache DEFERRED the
+    // whole rebuild — the old world keeps serving until the swap. The ribbon clear + carve
+    // re-bake below fire in the client's onAdopted('params') instead; running them now would
+    // rebuild everything against the stale geometry and then again at adoption.
+    if (netClient && roadSystem._networkDispatch && roadSystem._network.size > 0) return
     // Phase 9 (SURF-01): clear road ribbon tiles — they rebuild from the new network.
     if (roadMeshSystem) roadMeshSystem.clearAll()
     // ORDER MATTERS (in-sim fix): re-stream the NEW road BEFORE rebuilding the ribbon/carve so
@@ -2047,6 +2077,7 @@ window.__physWireframes = physicsWireframes    // dev handle — debug.js checkb
 window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
 window.__vehicleChassis = vehicleChassis       // dev handle — debug.js restitution slider targets it
 window.__vs = vehicleState                    // dev handle — read live vehicle state from the console / CDP probes
+window.__roadSys = () => roadSystem           // dev handle — the LIVE RoadSystem instance (getter: play swaps instances on seed regen); __road() below is the stats view
 
 // FEAT-33: is the starter motor actually turning? Not the same as state === 'cranking' — the key
 // stays at START while it is held, so an over-crank against an already-running engine still has the
@@ -3925,6 +3956,37 @@ if (USE_WORKER_ROUTING) {
   // QUAL-14 perf: map shares the play route cache (getter — play swaps instances on seed regen).
   map2d.setSharedRouteSource(() => roadSystem)
 }
+// PERF-30: the network Worker client. The play RoadSystem's dispatcher hands every real rebuild
+// (window move past the band sig, slider invalidate) to the Worker and keeps serving the old
+// network until the finished one is adopted atomically between frames. Cold flows (spawn resolve,
+// story region entry) await client.buildNow() behind the loading screen — the build runs
+// off-thread so the screen actually animates. Headless gates never construct this → the
+// synchronous path in road.js is byte-untouched.
+let netClient = null
+if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
+  netClient = new RoadNetworkClient({
+    getSeed: () => worldSeed,
+    getParams: () => RANGER_PARAMS,
+    getPondDiscs: (minX, minZ, maxX, maxZ) => {
+      if (!waterSystem) return []
+      const discs = []
+      for (const p of waterSystem.pondsNear(minX, minZ, maxX, maxZ)) discs.push(p.floorX, p.floorZ, p.radius + p.skirt)
+      return discs
+    },
+    onAdopted: (reason) => {
+      if (reason !== 'params') return
+      // The deferred half of debouncedRoadRebuild (see there): the swap just bumped _generation,
+      // so clear the ribbon tiles and re-bake the carve against the ADOPTED geometry — doing this
+      // at invalidate time would have rebuilt against the stale network and then again here.
+      if (roadMeshSystem) roadMeshSystem.clearAll()
+      if (terrainSystem) {
+        terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
+        terrainSystem.rebuildAllChunksFromWorker()
+      }
+    },
+  })
+  netClient.attach(roadSystem)
+}
 roadMeshSystem = new RoadMeshSystem(
   scene, roadSystem,
   (x, z) => terrainSystem.rawHeightWorld(x, z),  // CR-04: carve-free — no crown/camber/pothole baked into design-grade window
@@ -4340,6 +4402,7 @@ function _hidePauseMenu () {
 // loop()). Terrain/props/water/ribbons keep streaming around the player and build against that
 // frozen network — freezing THEM would pin ~1.4 GB of chunk meshes. See story.js's header.
 const _storyWarmCenter = new THREE.Vector3()   // scratch for the region warm/release calls below
+let _regionNetBuild = null   // PERF-30: { key, done } — the one in-flight story-region worker build
 const storySystem = new StorySystem({
   setGameMode: (m) => window.__setGameMode(m),
   getWorldSeed: () => worldSeed,
@@ -4389,6 +4452,27 @@ const storySystem = new StorySystem({
   pumpRegionWarm: (center, radius) => {
     if (!roadSystem) return true
     _storyWarmCenter.set(center.x, 0, center.z)
+    // PERF-30: ONE off-thread region build replaces the route pre-warm + the synchronous
+    // region-wide plan/register that froze the loading screen for the whole plan-layer cost.
+    // story.js keeps pumping this until it returns true; the screen animates the whole while.
+    // A stale reply (seed/params changed mid-entry) resets the state so the next pump re-issues.
+    if (netClient) {
+      const key = `${center.x}:${center.z}:${radius}`
+      if (_regionNetBuild && _regionNetBuild.key === key && _regionNetBuild.done) {
+        _regionNetBuild = null
+        terrainSystem?.rebuildAllChunksFromWorker()   // same live-ring re-bake as the sync path below
+        return true
+      }
+      if (!_regionNetBuild || _regionNetBuild.key !== key) {
+        const st = { key, done: false }
+        _regionNetBuild = st
+        roadSystem.setRadius(radius)
+        netClient.buildNow(center.x, center.z, radius).then((ok) => {
+          if (_regionNetBuild === st) { if (ok) st.done = true; else _regionNetBuild = null }
+        })
+      }
+      return false
+    }
     roadSystem.setRadius(radius)
     if (!roadSystem.warmBandComplete(_storyWarmCenter)) return false
     roadSystem.update(_storyWarmCenter)   // register + cull the whole region, once

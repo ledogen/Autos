@@ -1405,6 +1405,23 @@ export class RoadSystem {
      * Clears the valley-trunk network and proto caches (the per-tile caches are gone).
      */
     invalidateCache() {
+        // ── PERF-30: stale-until-replaced (param change) ─────────────────────────
+        // With a network Worker wired and a warm network up, DEFER the destructive half of the
+        // invalidation: keep the network/tiles/viz/generation/rev exactly as they are — the world
+        // the player is driving stays coherent (rev-keyed caches still match the geometry they
+        // were computed from) — and clear only the route-derivation caches (_invalidateProto: the
+        // epoch bump discards in-flight replies, and sites/graph/cls re-derive under the new
+        // params). adoptNetwork() then performs the WHOLE swap atomically: new network, rev bump,
+        // and the _generation bump (regen:true) that signals ribbon + carve to rebuild.
+        // Transient caveat, accepted: until the reply lands, an UNCACHED query against the stale
+        // network re-derives sites/degrees under the new params (rev-cached answers — profiles,
+        // pad planes — are unaffected, and a slider drag rarely moves the window mid-flight).
+        if (this._networkDispatch && this._network && this._network.size > 0) {
+            this._invalidateProto()
+            const c = this._networkCenter
+            this._networkDispatch({ x: c ? c.x : 0, z: c ? c.z : 0, radius: this._proto.radius, reason: 'params' })
+            return
+        }
         for (const line of this._debugLines) {
             if (this._scene) this._scene.remove(line)
             if (line.geometry) line.geometry.dispose()
@@ -1434,7 +1451,10 @@ export class RoadSystem {
         const before = this._networkCenter
         // TEMP perf buckets (D-arc): split stream(routing) vs slice(spline build).
         let _pt = performance.now()
-        this._streamNetwork(center)
+        // PERF-30: the per-frame path may DEFER a real rebuild to the network Worker
+        // (stale-until-replaced); every other caller (ensureTile, spawn resolve) builds
+        // synchronously because it needs the answer now.
+        this._streamNetwork(center, true)
         perfAdd('road.streamNetwork', performance.now() - _pt)
         _pt = performance.now()
         this._sliceNetwork()
@@ -1638,6 +1658,7 @@ export class RoadSystem {
         // so the invariance/restream gates are untouched. _routeEpoch tags each dispatch so a reply
         // from before a re-route (cls cleared) is discarded as stale.
         this._routeDispatch  = null        // (jobs, epoch) => post to Worker; set via setRouteDispatcher
+        this._networkDispatch = null       // PERF-30: ({x,z,radius,reason}) => network Worker build; set via setNetworkDispatcher
         this._pendingRoutes  = new Set()   // cls keys requested from the Worker, awaiting a reply
         this._routeEpoch     = 0           // bumped on every _invalidateProto (param/route change)
         this._lastWarmCenter = null        // throttle: only rescan the pre-warm band after moving
@@ -1697,6 +1718,15 @@ export class RoadSystem {
      * Until set, routing is fully synchronous (headless gates never set it → unchanged behaviour).
      */
     setRouteDispatcher(fn) { this._routeDispatch = fn }
+
+    /**
+     * PERF-30: wire the network-Worker dispatcher. `fn({x, z, radius, reason})` asks the network
+     * Worker (src/road-network-client.js) for a full off-thread build; the reply comes back
+     * through adoptNetwork(). reason: 'move' = window change (stale-until-replaced), 'params' =
+     * deferred invalidateCache (the swap bumps _generation). Until set, streaming is fully
+     * synchronous (headless gates never set it → unchanged behaviour).
+     */
+    setNetworkDispatcher(fn) { this._networkDispatch = fn }
 
     /** Current route epoch — dispatch tags carry it so stale (pre-re-route) replies are dropped. */
     routeEpoch() { return this._routeEpoch }
@@ -2123,7 +2153,13 @@ export class RoadSystem {
      * After adopting, _streamNetwork with the same (center, radius, params) short-circuits at the
      * band-sig guard, so play keeps driving this network until the next real window change.
      */
-    adoptNetwork(data) {
+    adoptNetwork(data, opts = null) {
+        // regen:true = this build replaced the network's SHAPE (param change), not just its window —
+        // bump the single invalidation counter so ribbon tiles + carve chunks rebuild against the
+        // new geometry (the half of invalidateCache() that was deferred to this swap). A positional
+        // adopt must NOT bump it (D1: window-invariant geometry — rebuilding in-range tiles is
+        // pure waste and flickers).
+        if (opts && opts.regen) this._generation++
         this._networkCenter = data.center ? new THREE.Vector3(data.center.x, 0, data.center.z) : null
         this._proto.lastCenter = this._networkCenter ? this._networkCenter.clone() : null
         this._proto.dirty = false
@@ -5730,7 +5766,7 @@ export class RoadSystem {
      * @param {THREE.Vector3} center — stream center (same as terrain stream center)
      * @returns {Map<string, {points: THREE.Vector3[]}>} this._network (also stored on the instance)
      */
-    _streamNetwork(center) {
+    _streamNetwork(center, allowDefer = false) {
         // Lazy gating (mirrors the old updateProto gating; viz-independent so it works headless).
         if (this._proto.dirty && this._proto.paramDirtyAt && (Date.now() - this._proto.paramDirtyAt) < PROTO_PARAM_DEBOUNCE) {
             return this._network
@@ -5757,6 +5793,20 @@ export class RoadSystem {
             // so the next <PROTO_REGEN_MOVE move short-circuits at the lazy gate above.
             this._networkCenter = center.clone()
             this._proto.lastCenter = center.clone()
+            return this._network
+        }
+
+        // ── PERF-30: stale-until-replaced ────────────────────────────────────────
+        // A real rebuild is about to start. On the per-frame path with a network Worker wired and
+        // a warm network to keep serving, hand the build to the Worker instead and return the OLD
+        // network untouched — geometry, slices, profiles and rev-keyed caches all stay coherent
+        // with each other while the replacement builds off-thread; adoptNetwork() swaps atomically
+        // when the reply lands (the map's warm-restream pattern, promoted to play). The client
+        // dedupes repeat dispatches while one is in flight. A COLD network (size 0) still builds
+        // synchronously: nothing coherent exists to keep serving, and the cold flows (spawn
+        // resolve, story entry) run behind the loading screen via the client's awaited build.
+        if (allowDefer && this._networkDispatch && this._network.size > 0) {
+            this._networkDispatch({ x: center.x, z: center.z, radius: this._proto.radius, reason: 'move' })
             return this._network
         }
 

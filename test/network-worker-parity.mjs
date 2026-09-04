@@ -168,5 +168,41 @@ for (const [wi, c] of CENTERS.entries()) {
     log(JSON.stringify(ta) === JSON.stringify(tb), 'adopt: slice tile set == builder', `${tb.length} tiles`)
 }
 
+// ── 4: the play protocol — deferral and the deferred invalidate ──────────────────────────────
+{
+    const { wkData } = exportsByWindow[0]
+    const rs = new RoadSystem(SEED, RANGER_PARAMS)
+    rs.setWaterNoGo(liveNoGo, liveDiscs)
+    rs.setRadius(R)
+    rs.adoptNetwork(structuredClone(wkData))
+    const reqs = []
+    rs.setNetworkDispatcher((req) => reqs.push(req))
+
+    // A far-moved per-frame update must DEFER: dispatch one 'move' request and keep serving the
+    // old network untouched (stale-until-replaced).
+    const rev0 = rs._networkRev, size0 = rs._network.size
+    rs.update(new THREE.Vector3(CENTERS[0].x + 5000, 0, CENTERS[0].z))
+    const deferred = rs._networkRev === rev0 && rs._network.size === size0
+                  && reqs.length === 1 && reqs[0].reason === 'move'
+    log(deferred, 'dispatcher: far update defers to the worker, old network kept',
+        deferred ? `1 'move' request, network untouched (${size0} runs, rev ${rev0})`
+                 : `rev ${rev0}→${rs._networkRev}, size ${size0}→${rs._network.size}, reqs ${JSON.stringify(reqs)}`)
+
+    // invalidateCache with a warm network must defer the destructive half: network/generation
+    // kept, epoch bumped (in-flight replies go stale), one 'params' request dispatched. The
+    // adopt with regen:true then performs the deferred generation bump.
+    reqs.length = 0
+    const gen0 = rs._generation, epoch0 = rs.routeEpoch()
+    rs.invalidateCache()
+    const inv = rs._network.size === size0 && rs._generation === gen0 && rs.routeEpoch() === epoch0 + 1
+             && reqs.length === 1 && reqs[0].reason === 'params'
+    log(inv, 'dispatcher: invalidateCache defers — network+generation kept, epoch bumped',
+        inv ? `1 'params' request, epoch ${epoch0}→${rs.routeEpoch()}`
+            : `size ${rs._network.size}, gen ${gen0}→${rs._generation}, epoch ${epoch0}→${rs.routeEpoch()}, reqs ${JSON.stringify(reqs)}`)
+    rs.adoptNetwork(structuredClone(wkData), { regen: true })
+    log(rs._generation === gen0 + 1, 'dispatcher: regen adopt performs the deferred generation bump',
+        `generation ${gen0}→${rs._generation} (ribbon + carve rebuild signal fires at the swap, not before)`)
+}
+
 console.log(`\n${fail === 0 ? 'ALL NETWORK-WORKER-PARITY CHECKS PASSED' : `${fail} CHECK(S) FAILED`} (${pass} passed)`)
 process.exit(fail === 0 ? 0 : 1)
