@@ -387,6 +387,8 @@ export class Map2D {
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
         this._routeWorker = null         // QUAL-08: dedicated road-network Worker (client 'map'); set via setRouteWorker
+        this._netClient = null           // PERF-30: network-Worker client (whole builds off-thread); set via setNetworkClient
+        this._playNetSource = null       // PERF-30: live play RoadSystem getter; set via setPlayNetworkSource
         this._sharedRouteSource = null   // QUAL-14 perf: getter for the play RoadSystem (shared route cache)
         this._sig        = null          // seed+road-param signature the current _road was built for
         this._streamAt   = null          // THREE.Vector3 the network was last streamed around
@@ -443,6 +445,16 @@ export class Map2D {
     // OFF the main thread (client 'map'), decoupled from the play/terrain pipeline. Optional — without it
     // the map falls back to synchronous routing (its prior behaviour). Wired in _buildRoad on (re)build.
     setRouteWorker(rw) { this._routeWorker = rw }
+
+    /** PERF-30: the network-Worker client — the whole map build runs off-thread (client 'map'). */
+    setNetworkClient(c) { this._netClient = c }
+
+    /**
+     * PERF-30: getter for the LIVE play RoadSystem. When the map is region-locked (story mode) the
+     * play instance already holds the ENTIRE region's network, so the map ADOPTS it instead of
+     * building its own — the 15 s story-mode map open becomes one export/adopt pass.
+     */
+    setPlayNetworkSource(fn) { this._playNetSource = fn }
 
     /**
      * Ensure the map streams at least `r` metres around the pan cursor. Used by story mode so the
@@ -667,6 +679,10 @@ export class Map2D {
         }
         // FEAT-17: re-apply the water no-go so the fresh instance routes around ponds like play does.
         if (this._waterNoGoFns) this._road.setWaterNoGo(this._waterNoGoFns[0], this._waterNoGoFns[1])
+        // PERF-30: register with the network-Worker client (whole builds off-thread — see _pump).
+        // wireDispatcher:false — this instance is driven explicitly; its own update() stays the
+        // synchronous fallback for the no-client case.
+        if (this._netClient) this._netClient.register('map', this._road, { wireDispatcher: false })
         // QUAL-14 perf: adopt the play instance's route-cache Maps — strictly AFTER setWaterNoGo
         // above (it calls _invalidateProto, which CLEARS the caches it can see; it must not wipe
         // play's warm entries). Guarded on seed match; params match by construction (both read the
@@ -703,6 +719,42 @@ export class Map2D {
 
     _pump() {
         if (!this._open || !this._streaming) { this._streaming = false; return }
+        // ── PERF-30: build on the network Worker (owner: map cold-open froze 8 s free roam /
+        // 15 s story) ─────────────────────────────────────────────────────────────────────────
+        // The sync ladder below warms ROUTES off-thread but still runs the whole BUG-56 plan
+        // layer on the main thread once per radius step. With the client wired: ONE build at
+        // full radius on the worker (the stale picture keeps drawing, the "streaming…" badge
+        // shows), adopted atomically when it lands. In story mode there is no build at all —
+        // the region-locked map adopts the play network, which already IS the region.
+        if (this._netClient) {
+            const R = this._radiusSteps()[this._radiusSteps().length - 1]
+            const token = ++this._pumpToken
+            const done = () => {
+                this._streamAt = this._streamCenter
+                this._bgDirty = true
+                this._streaming = false
+                this._streamFull = true
+            }
+            const play = this._playNetSource?.()
+            const lock = this._regionLock()
+            // Coverage test is the REGION radius, not the +200 m padded target the M handler sets
+            // (that pad is cosmetic fringe past the wall) — play's frozen region network reaches
+            // the wall, which is what the pad exists to guarantee.
+            if (lock && play && play._worldSeed === this._getSeed()
+                && play._network && play._network.size > 0 && play._proto.radius >= lock.r - 1e-6) {
+                this._road.setRadius(R)
+                this._road.adoptNetwork(play.exportNetwork())
+                done()
+                return
+            }
+            this._road.setRadius(R)
+            this._netClient.buildNow('map', this._streamCenter.x, this._streamCenter.z, R).then((ok) => {
+                if (token !== this._pumpToken || !this._open) return
+                if (ok) done()
+                else this._streaming = false   // stale (seed/params changed) — the rebuild path re-streams
+            })
+            return
+        }
         const R = this._radiusSteps()[this._streamStep]
         this._road.setRadius(R)
         // Route OFF-THREAD first (owner-reported freeze fix): poll warmBandComplete until the road

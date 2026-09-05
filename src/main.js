@@ -471,7 +471,7 @@ async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-
         // _spawnWarmActive parks the frame loop's update()/warmRoutes for the await, exactly as
         // _warmTileBand does — otherwise a mid-session reseat races a synchronous cold build.
         _spawnWarmActive = true
-        try { await netClient.buildNow((baseTX + 0.5) * CHUNK_SIZE, (baseTZ + 0.5) * CHUNK_SIZE, _tierR) }
+        try { await netClient.buildNow('play', (baseTX + 0.5) * CHUNK_SIZE, (baseTZ + 0.5) * CHUNK_SIZE, _tierR) }
         finally { _spawnWarmActive = false }
       } else await _warmTileBand(baseTX, baseTZ)   // QUAL-14 perf: route this tier's band on the pool first
       roadSystem.ensureTile(baseTX, baseTZ)
@@ -509,7 +509,7 @@ async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-
       // PERF-30: same off-thread treatment (and the same frame-loop park) as the tier loop above.
       if (netClient) {
         _spawnWarmActive = true
-        try { await netClient.buildNow((spawnTX + 0.5) * CHUNK_SIZE, (spawnTZ + 0.5) * CHUNK_SIZE, _recenterR) }
+        try { await netClient.buildNow('play', (spawnTX + 0.5) * CHUNK_SIZE, (spawnTZ + 0.5) * CHUNK_SIZE, _recenterR) }
         finally { _spawnWarmActive = false }
       } else await _warmTileBand(spawnTX, spawnTZ)
       roadSystem.ensureTile(spawnTX, spawnTZ)
@@ -644,10 +644,10 @@ async function _rebuildFullNow () {
         roadWorker.registerClient('play', roadSystem)
         roadSystem.setRouteDispatcher((jobs, epoch) => roadWorker.postRouteJobs('play', jobs, epoch))
       }
-      // PERF-30: re-attach the network-Worker client to the new instance. The worker notices the
-      // seed change on the next build request and rebuilds its own RoadSystem from scratch; any
-      // in-flight reply is dropped by the seed guard.
-      if (netClient) netClient.attach(roadSystem)
+      // PERF-30: re-register the new instance with the network-Worker client (opts persist from
+      // the boot register). The worker notices the seed change on the next build request and
+      // rebuilds its own RoadSystem from scratch; any in-flight reply is dropped by the seed guard.
+      if (netClient) netClient.register('play', roadSystem)
       // Restore viz state — the next roadSystem.update(streamCenter) re-streams the new seed's
       // network and (because _debugVisible is set) rebuilds the centerline lines.
       roadSystem.setDebugVisible(wasVisible)
@@ -1977,9 +1977,10 @@ if (_PROF) {
 //   changeSeed = update worldSeed then fire Path B.
 const _gui = initDebug(RANGER_PARAMS, {
   setRampVisible:      (v) => { rampMesh.visible = v },
-  // FEAT-33: engine condition is vehicleState, not a param (it is the SM-3 wear seam) — the slider
-  // reaches it through here. Lower health ⇒ longer crank before the engine catches.
-  setEngineHealth:     (v) => { vehicleState.engineHealth = v },
+  // FEAT-33 × SM-3 (owner 2026-09-04): the damage model's engine track OWNS engineHealth now (it
+  // writes vehicleState.engineHealth every step), so the slider pokes the track itself. Inert while
+  // damage is disabled — the track is locked at nominal there, by design.
+  setEngineHealth:     (v) => { damageModel.set('engine', v); damageModel.publish(RANGER_PARAMS) },
   // SM-3: re-bake the out-of-round tire carcass so the mesh matches the new contact radius.
   onWheelRunoutChange: (v) => applyWheelRunout(v),
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
@@ -2144,6 +2145,19 @@ function _startPlannerWarm (seed, cx, cz) {
   const rec = { seed, road, center: { x: cx, z: cz }, ready: false, timer: 0 }
   _plannerWarm = rec
   _plannerWarmAt = performance.now()
+  // PERF-30 (owner freeze, measured 2026-09-04): the pump's final road.update() was "the cheap
+  // registration pass (~0.2 s)" when routing dominated — since the corridor merge it carries the
+  // whole BUG-56 plan layer, a ~4 s synchronous build landing a few seconds after boot (the
+  // "freeze after the first frames"). Build on the network Worker instead and adopt the result;
+  // a stale reply (seed changed mid-warm) just leaves ready=false — the seed-change path kicks a
+  // fresh warm anyway.
+  if (netClient) {
+    netClient.register('mission', road, { wireDispatcher: false })
+    netClient.buildNow('mission', cx, cz, MISSION_PLAN_RADIUS).then((ok) => {
+      if (_plannerWarm === rec && ok) rec.ready = true
+    })
+    return
+  }
   const pump = () => {
     if (_plannerWarm !== rec) return                     // superseded by a newer warm
     let done = false
@@ -3973,6 +3987,8 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
       for (const p of waterSystem.pondsNear(minX, minZ, maxX, maxZ)) discs.push(p.floorX, p.floorZ, p.radius + p.skirt)
       return discs
     },
+  })
+  netClient.register('play', roadSystem, {
     onAdopted: (reason) => {
       if (reason !== 'params') return
       // The deferred half of debouncedRoadRebuild (see there): the swap just bumped _generation,
@@ -3985,7 +4001,10 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
       }
     },
   })
-  netClient.attach(roadSystem)
+  // The map's read-only instance builds off the same worker (client 'map'), and in story mode it
+  // can skip the build entirely by adopting the play network — play already holds the region.
+  map2d.setNetworkClient(netClient)
+  map2d.setPlayNetworkSource(() => roadSystem)
 }
 roadMeshSystem = new RoadMeshSystem(
   scene, roadSystem,
@@ -4467,7 +4486,7 @@ const storySystem = new StorySystem({
         const st = { key, done: false }
         _regionNetBuild = st
         roadSystem.setRadius(radius)
-        netClient.buildNow(center.x, center.z, radius).then((ok) => {
+        netClient.buildNow('play', center.x, center.z, radius).then((ok) => {
           if (_regionNetBuild === st) { if (ok) st.done = true; else _regionNetBuild = null }
         })
       }
@@ -4778,7 +4797,15 @@ document.addEventListener('keydown', e => {
 function loop () {
   requestAnimationFrame(loop)
   perfFrameBegin()   // PERF-26: closes out the previous frame's attribution, arms this one (no-op unless ?hitch)
-  if (!_firstFrameMarked) { _firstFrameMarked = true; perfMark('first animate frame') }  // TEMP (D-arc)
+  if (!_firstFrameMarked) {
+    _firstFrameMarked = true
+    perfMark('first animate frame')  // TEMP (D-arc)
+    // PERF-30 (owner 2026-09-04): drop the boot loading screen — visible since HTML parse, and
+    // everything that used to freeze the first seconds (spawn build, planner warm) is off-thread
+    // now, so the first frame really is a playable one.
+    const bl = document.getElementById('boot-loading')
+    if (bl) bl.style.display = 'none'
+  }
 
   const newTime = performance.now() / 1000
   let frameTime = newTime - currentTime

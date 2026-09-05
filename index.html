@@ -137,6 +137,29 @@
     /* FEAT-43: Story Mode entry loading screen. Full-cover (not a panel) — the world behind it is
        mid-reseed and mid-warm, so showing it would read as a broken frame. Opaque, above everything
        including the pause menu. Minimal styling; FEAT-41 owns the real menu look. */
+    /* PERF-30 (owner 2026-09-04): the boot loading screen — the initial page load was a black
+       screen for the whole module-load + worldgen stretch. Visible by DEFAULT (it paints the
+       instant the HTML parses, before any JS); main.js hides it on the first animate frame. */
+    #boot-loading {
+      display: flex;
+      position: fixed;
+      inset: 0;
+      background: #05070a;
+      color: #cfd6dd;
+      font-family: monospace;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      z-index: 210;
+    }
+    #boot-loading .sl-title {
+      color: #00ff88;
+      font-size: 15px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+    }
+    #boot-loading .sl-sub { font-size: 13px; color: #8fa0b0; }
     #story-loading {
       display: none;
       position: fixed;
@@ -833,6 +856,11 @@
   <!-- FEAT-43: Story Mode entry loading screen. Covers the reseed + the one-time region routing
        warm; once it clears, the router is FROZEN for the whole region (no streaming/routing cost
        while driving). Text is set from src/story.js via the setLoading dep. -->
+  <div id="boot-loading">
+    <div class="sl-title">rangersim</div>
+    <div class="sl-sub">building the world&hellip;</div>
+  </div>
+
   <div id="story-loading">
     <div class="sl-title">story mode</div>
     <div id="sl-text">entering the region&hellip;</div>

@@ -115,21 +115,26 @@ export function buildNetworkSnapshot(req, rs = null) {
 }
 
 // Message loop — worker scope only, so importing this module from node (the parity gate) or the
-// main thread is side-effect-free.
+// main thread is side-effect-free. One RoadSystem PER CLIENT ('play' / 'mission' / 'map' — the
+// RoadNetworkClient registry): epochs are per main-side instance, so sharing one build instance
+// across clients would thrash it on every alternation; per-client instances mirror the main
+// thread's own one-instance-per-consumer layout and keep each one's warm caches coherent.
 if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
-    let rs = null, rsEpoch = null, rsSeed = null
+    const instances = new Map()   // client id → { rs, epoch, seed }
     self.onmessage = (e) => {
         const d = e.data
         if (d.type !== 'build') return
+        const cid = d.client ?? 'default'
+        let inst = instances.get(cid)
         // Epoch/seed change = params or water changed → the warm instance's caches are poisoned;
         // rebuild from scratch. Same epoch + seed = a moved center → reuse everything warm.
-        if (rs && (rsEpoch !== d.epoch || rsSeed !== d.seed)) rs = null
-        const built = buildNetworkSnapshot(d, rs)
-        rs = built.rs; rsEpoch = d.epoch; rsSeed = d.seed
+        if (inst && (inst.epoch !== d.epoch || inst.seed !== d.seed)) inst = null
+        const built = buildNetworkSnapshot(d, inst ? inst.rs : null)
+        instances.set(cid, { rs: built.rs, epoch: d.epoch, seed: d.seed })
         // Transfer every run's typed-array buffers — exportNetwork hands out copies, so detaching
         // them here never touches the live entries the next warm build reuses.
         const transfer = []
         for (const r of built.data.runs) transfer.push(r.pts.buffer, r.polyCum.buffer, r.clArc.buffer)
-        self.postMessage({ type: 'network', epoch: d.epoch, seed: d.seed, data: built.data }, transfer)
+        self.postMessage({ type: 'network', client: cid, epoch: d.epoch, seed: d.seed, data: built.data }, transfer)
     }
 }
