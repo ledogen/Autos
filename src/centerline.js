@@ -4,16 +4,20 @@
 // centerline from the router to every consumer and SAMPLE it — never re-interpolate, never patch.
 // BUG-12 (ribbon fold) was caused by re-fitting the already-valid routed path with overshooting
 // centripetal Catmull-Rom in road.js `_assignSlice`. A Centerline made of typed primitives
-// (line / circular-arc / clothoid) has curvature known ANALYTICALLY and bounded BY CONSTRUCTION,
+// (line / circular-arc) has curvature known ANALYTICALLY and bounded BY CONSTRUCTION,
 // so sampling it at any density can never fold (radius ≥ minR everywhere by definition).
 //
-// One primitive = a clothoid (Euler spiral) whose curvature is LINEAR in arc length:
-//     κ(s) = κ0 + (κ1 − κ0)·s/L          s ∈ [0, L]
-//   • line   : κ0 = κ1 = 0
-//   • arc    : κ0 = κ1 = k ≠ 0
-//   • clothoid: κ0 ≠ κ1   (curvature ramp — the G2 join primitive)
-// Heading integrates in closed form; position is closed-form for line/arc and a cached Fresnel
-// (numeric) table for the clothoid (clothoids are short terminals/joins, built once).
+// One primitive = a CONSTANT-curvature segment:
+//     κ(s) = κ                            s ∈ [0, L]
+//   • line : κ = 0
+//   • arc  : κ ≠ 0
+// Both heading and position are closed form — no tables, no numeric integration.
+//
+// QUAL-27: the clothoid (Euler-spiral) third case is DELETED. It existed for v1's Dubins terminals
+// and its κ box-filter refit; the corridor router's stage 3 is lineArcFit, which only ever emits
+// κ0 = κ1 (measured: seeds 6/20/11 streamed at 900 m — 553 line + 463 arc + 0 clothoid). It cost a
+// Fresnel table per primitive and a branch in the two hottest samplers for a case that never
+// occurred. A future G2 upgrade re-adds the ramp here; it does not get to live unused until then.
 //
 // Pure + deterministic (D-16): a primitive is a function of its start pose + length + endpoint
 // curvatures only — no RNG, no Date, no stream/session state. Built per anchor-pair from anchor-
@@ -24,11 +28,9 @@ import * as THREE from 'three'
 
 const EPS_K = 1e-9   // |κ| below this ⇒ treat as straight (closed-form line, avoids 1/κ blowup)
 
-// Type tag from the curvature endpoints — purely descriptive (sampling branches on κ, not on type).
-function primType(kappa0, kappa1) {
-    if (Math.abs(kappa0) < EPS_K && Math.abs(kappa1) < EPS_K) return 'line'
-    if (Math.abs(kappa0 - kappa1) < EPS_K) return 'arc'
-    return 'clothoid'
+// Type tag from the curvature — purely descriptive (sampling branches on κ, not on type).
+function primType(kappa) {
+    return Math.abs(kappa) < EPS_K ? 'line' : 'arc'
 }
 
 // Pose along a constant-κ primitive (line or arc) at local arc length ls ∈ [0, L].
@@ -44,69 +46,22 @@ function constKappaPose(x0, z0, theta0, k, ls) {
     }
 }
 
-// Build a cumulative XZ table for a clothoid by integrating cos/sin θ(s). Fixed step ⇒ deterministic.
-// Stored as flat [x,z, x,z, ...] at node arc-lengths 0, h, 2h, …, L (linear-interp between nodes —
-// the table is dense (≤0.5 m) so interpolation error is far below ribbon/physics tolerance).
-const CLOTHOID_STEP = 0.5
-function buildClothoidTable(x0, z0, theta0, kappa0, kappa1, L) {
-    const n = Math.max(1, Math.ceil(L / CLOTHOID_STEP))
-    const h = L / n
-    const dk = (kappa1 - kappa0) / L
-    const tab = new Float64Array((n + 1) * 2)
-    let x = x0, z = z0
-    tab[0] = x; tab[1] = z
-    // Trapezoid integration of (cosθ, sinθ); θ(s) closed form so each node is exact in heading.
-    const thetaAt = (s) => theta0 + kappa0 * s + 0.5 * dk * s * s
-    let cPrev = Math.cos(theta0), sPrev = Math.sin(theta0)
-    for (let i = 1; i <= n; i++) {
-        const s = i * h
-        const th = thetaAt(s)
-        const c = Math.cos(th), sn = Math.sin(th)
-        x += 0.5 * (cPrev + c) * h
-        z += 0.5 * (sPrev + sn) * h
-        tab[i * 2] = x; tab[i * 2 + 1] = z
-        cPrev = c; sPrev = sn
-    }
-    return { tab, h, n }
-}
-
 /**
- * makePrimitive — one centerline segment.
- * @returns {object} { type, x0, z0, theta0, length, kappa0, kappa1, x1, z1, theta1 } (+ private table for clothoids)
+ * makePrimitive — one centerline segment of CONSTANT curvature.
+ * @returns {object} { type, x0, z0, theta0, length, kappa, x1, z1, theta1 }
  */
-export function makePrimitive(x0, z0, theta0, length, kappa0, kappa1 = kappa0) {
-    const type = primType(kappa0, kappa1)
-    const p = { type, x0, z0, theta0, length, kappa0, kappa1, x1: 0, z1: 0, theta1: 0, _tab: null }
-    if (type === 'clothoid') {
-        p._tab = buildClothoidTable(x0, z0, theta0, kappa0, kappa1, length)
-        const last = p._tab.tab
-        p.x1 = last[last.length - 2]; p.z1 = last[last.length - 1]
-        p.theta1 = theta0 + kappa0 * length + 0.5 * (kappa1 - kappa0) * length
-    } else {
-        const e = constKappaPose(x0, z0, theta0, kappa0, length)
-        p.x1 = e.x; p.z1 = e.z; p.theta1 = e.theta
-    }
-    return p
+export function makePrimitive(x0, z0, theta0, length, kappa) {
+    const e = constKappaPose(x0, z0, theta0, kappa, length)
+    return { type: primType(kappa), x0, z0, theta0, length, kappa, x1: e.x, z1: e.z, theta1: e.theta }
 }
 
 // Pose {x,z,theta,kappa} at local arc length ls within primitive p (ls clamped to [0,L]).
 function primPose(p, ls) {
     const L = p.length
-    if (ls <= 0) return { x: p.x0, z: p.z0, theta: p.theta0, kappa: p.kappa0 }
-    if (ls >= L) return { x: p.x1, z: p.z1, theta: p.theta1, kappa: p.kappa1 }
-    const kappa = p.kappa0 + (p.kappa1 - p.kappa0) * ls / L
-    if (p.type !== 'clothoid') {
-        const e = constKappaPose(p.x0, p.z0, p.theta0, p.kappa0, ls)
-        return { x: e.x, z: e.z, theta: e.theta, kappa }
-    }
-    const { tab, h, n } = p._tab
-    const fi = ls / h
-    const i = Math.min(n - 1, Math.floor(fi))
-    const t = fi - i
-    const x = tab[i * 2] * (1 - t) + tab[(i + 1) * 2] * t
-    const z = tab[i * 2 + 1] * (1 - t) + tab[(i + 1) * 2 + 1] * t
-    const theta = p.theta0 + p.kappa0 * ls + 0.5 * (p.kappa1 - p.kappa0) * ls * ls / L
-    return { x, z, theta, kappa }
+    if (ls <= 0) return { x: p.x0, z: p.z0, theta: p.theta0, kappa: p.kappa }
+    if (ls >= L) return { x: p.x1, z: p.z1, theta: p.theta1, kappa: p.kappa }
+    const e = constKappaPose(p.x0, p.z0, p.theta0, p.kappa, ls)
+    return { x: e.x, z: e.z, theta: e.theta, kappa: p.kappa }
 }
 
 /**
@@ -172,62 +127,40 @@ export class CenterlineCurve {
     getPoints(n = 5) { return this.getSpacedPoints(n) }
 }
 
-// ── QUAL-24: primitive-list surgery for deg-2 chain merging ───────────────────────────────────
-// A deg-2 site is a "continuing path", not a junction (_graphDegreeOf), so its two edges are spliced
-// into ONE run: trim a tail off each and Dubins-connect the exposed frames. Doing that in DESCRIPTOR
-// space rather than on the sampled polyline is what keeps every downstream guarantee intact — the
-// merged run is still a Centerline of typed primitives, so curvature stays bounded BY CONSTRUCTION
-// (BUG-12), the analytic `nearest` refine still works, and nothing is re-interpolated.
+// ── Primitive-list surgery ────────────────────────────────────────────────────────────────────
+// Work in DESCRIPTOR space, never on the sampled polyline: a result built from primitives is still a
+// Centerline of typed primitives, so curvature stays bounded BY CONSTRUCTION (BUG-12), the analytic
+// `nearest` refine still works, and nothing is re-interpolated. (QUAL-27: the deg-2 chain-merge
+// splice these were written for is gone — FEAT-68 made runs 1:1 with edges — but the router's own
+// stage-3 emit reads poses, and road.js builds the reverse spelling of an edge from reversePrimitives.)
 
 /**
- * Pose (x, z, theta, kappa) at local arc `ls` along one primitive. Exported so road.js can read the
- * exact frame at a trim point — the same closed form the sampler uses, so the splice is exact.
+ * Pose (x, z, theta, kappa) at local arc `ls` along one primitive. Exported so the router can read
+ * the exact frame at a join — the same closed form the sampler uses, so the join is exact.
  */
 export function primitivePose(p, ls) { return primPose(p, ls) }
 
 /**
- * The sub-list of `prims` covering global arc [s0, s1], re-based to start exactly at s0. Whole
- * primitives pass through untouched; the partial one at each end is re-made from its pose at the cut
- * with the curvature ramp linearly re-sampled — so a cut clothoid is still an exact clothoid.
- */
-export function slicePrimitives(prims, s0, s1) {
-    const out = []
-    let acc = 0
-    for (const p of prims) {
-        const a = acc, b = acc + p.length
-        acc = b
-        if (b <= s0 + 1e-9 || a >= s1 - 1e-9) continue
-        const la = Math.max(0, s0 - a), lb = Math.min(p.length, s1 - a)
-        const L = lb - la
-        if (L <= 1e-9) continue
-        if (la <= 1e-9 && lb >= p.length - 1e-9) { out.push(p); continue }
-        const dk = p.length > 1e-9 ? (p.kappa1 - p.kappa0) / p.length : 0
-        const q = primPose(p, la)
-        out.push(makePrimitive(q.x, q.z, q.theta, L, p.kappa0 + dk * la, p.kappa0 + dk * lb))
-    }
-    return out
-}
-
-/**
- * `prims` traversed backwards. Each primitive restarts at its own END pose facing the other way, and
- * its curvature ramp both REVERSES (κ1→κ0) and NEGATES — going the other way round a bend turns the
- * opposite hand. Needed because an edge is stored A→B but a chain may traverse it B→A.
+ * `prims` traversed backwards. Each primitive restarts at its own END pose facing the other way with
+ * its curvature NEGATED — going the other way round a bend turns the opposite hand. Needed because
+ * an edge is stored A→B but a chain may traverse it B→A.
  */
 export function reversePrimitives(prims) {
     const out = []
     for (let i = prims.length - 1; i >= 0; i--) {
         const p = prims[i]
-        out.push(makePrimitive(p.x1, p.z1, p.theta1 + Math.PI, p.length, -p.kappa1, -p.kappa0))
+        out.push(makePrimitive(p.x1, p.z1, p.theta1 + Math.PI, p.length, -p.kappa))
     }
     return out
 }
 
-// Wrap plain primitive descriptors {x0,z0,theta0,length,kappa0,kappa1} (as emitted by
-// arcPrimitiveConnect({emitPrimitives:true}) / dubinsPrimitives) into a Centerline. Descriptors are
-// kept dependency-free on the router side; this is the single place they become live primitives.
+// Wrap plain primitive descriptors {x0,z0,theta0,length,kappa} (the shape routeEdgeV2 hands back —
+// and the shape that crosses the route/network Worker boundary by structured clone) into a
+// Centerline. Descriptors stay dependency-free on the router side; this is the single place they
+// become live primitives.
 export function centerlineFromDescriptors(descs) {
     return new Centerline((descs || []).map(d =>
-        makePrimitive(d.x0, d.z0, d.theta0, d.length, d.kappa0, d.kappa1 ?? d.kappa0)))
+        makePrimitive(d.x0, d.z0, d.theta0, d.length, d.kappa)))
 }
 
 /**
@@ -283,14 +216,12 @@ export class Centerline {
         return primPose(this.primitives[i], ls).kappa
     }
 
-    // Minimum |radius| over the whole centerline (exact: the extremum of |1/κ| is at a primitive
-    // endpoint since κ is monotone-linear within each primitive). This is the BUG-12 fold metric,
-    // computed on the EXACT curve instead of a sampled polyline circumradius.
+    // Minimum |radius| over the whole centerline (exact: κ is constant within each primitive, so the
+    // extremum of |1/κ| is just the largest |κ| in the list). This is the BUG-12 fold metric, computed
+    // on the EXACT curve instead of a sampled polyline circumradius.
     minRadius() {
         let maxAbsK = 0
-        for (const p of this.primitives) {
-            maxAbsK = Math.max(maxAbsK, Math.abs(p.kappa0), Math.abs(p.kappa1))
-        }
+        for (const p of this.primitives) maxAbsK = Math.max(maxAbsK, Math.abs(p.kappa))
         return maxAbsK < EPS_K ? Infinity : 1 / maxAbsK
     }
 
@@ -314,30 +245,20 @@ export class Centerline {
         }
         const p = this.primitives[i]
         const L = p.length
-        if (ls <= 0) { out.x = p.x0; out.z = p.z0; out.theta = p.theta0; out.kappa = p.kappa0; return out }
-        if (ls >= L) { out.x = p.x1; out.z = p.z1; out.theta = p.theta1; out.kappa = p.kappa1; return out }
-        out.kappa = p.kappa0 + (p.kappa1 - p.kappa0) * ls / L
-        if (p.type !== 'clothoid') {
-            const k = p.kappa0
-            if (Math.abs(k) < EPS_K) {
-                out.x = p.x0 + ls * Math.cos(p.theta0)
-                out.z = p.z0 + ls * Math.sin(p.theta0)
-                out.theta = p.theta0
-            } else {
-                const th2 = p.theta0 + k * ls
-                out.x = p.x0 + (Math.sin(th2) - Math.sin(p.theta0)) / k
-                out.z = p.z0 - (Math.cos(th2) - Math.cos(p.theta0)) / k
-                out.theta = th2
-            }
-            return out
+        out.kappa = p.kappa
+        if (ls <= 0) { out.x = p.x0; out.z = p.z0; out.theta = p.theta0; return out }
+        if (ls >= L) { out.x = p.x1; out.z = p.z1; out.theta = p.theta1; return out }
+        const k = p.kappa
+        if (Math.abs(k) < EPS_K) {
+            out.x = p.x0 + ls * Math.cos(p.theta0)
+            out.z = p.z0 + ls * Math.sin(p.theta0)
+            out.theta = p.theta0
+        } else {
+            const th2 = p.theta0 + k * ls
+            out.x = p.x0 + (Math.sin(th2) - Math.sin(p.theta0)) / k
+            out.z = p.z0 - (Math.cos(th2) - Math.cos(p.theta0)) / k
+            out.theta = th2
         }
-        const { tab, h, n: tn } = p._tab
-        const fi = ls / h
-        const ti = Math.min(tn - 1, Math.floor(fi))
-        const t = fi - ti
-        out.x = tab[ti * 2] * (1 - t) + tab[(ti + 1) * 2] * t
-        out.z = tab[ti * 2 + 1] * (1 - t) + tab[(ti + 1) * 2 + 1] * t
-        out.theta = p.theta0 + p.kappa0 * ls + 0.5 * (p.kappa1 - p.kappa0) * ls * ls / L
         return out
     }
 

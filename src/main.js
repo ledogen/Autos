@@ -72,7 +72,6 @@ import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './th
 import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
-import { RoadRouteWorker } from './road-worker.js'       // QUAL-08: dedicated road-network routing Worker
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
 import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read-only tree re-roll (camp shade score)
@@ -339,15 +338,12 @@ function computeStaticEquilibrium (p) {
   return { bodyY, strutComp }
 }
 
-// QUAL-08 (closes BUG-26): routing now runs on its OWN Worker (src/road-worker.js), separate from the
-// terrain heightfield Worker, so route pre-warm jobs can never starve terrain `generate` (the shared-FIFO
-// starvation that forced BUG-26 to route on the main thread). With the two job classes on two Workers the
-// pre-warm is safe to re-enable. Flip false to fall back to fully-synchronous main-thread routing (the
-// BUG-26-safe state) if the dedicated Worker ever regresses — the synchronous router stays the cache-miss
-// / teleport / headless fallback regardless.
-const USE_WORKER_ROUTING = true
 // PERF-30: the network Worker builds the ENTIRE network (routing + BUG-56 plan layer + assembly)
-// off-thread; play adopts finished networks atomically between frames (stale-until-replaced).
+// off-thread; play adopts finished networks atomically between frames (stale-until-replaced). It runs
+// its OWN nested route-worker pool (PERF-31 W2.2), which is the QUAL-08 pool that used to live here —
+// QUAL-27 deleted the main-thread copy, whose dispatcher had not been handed a job since PERF-30
+// (every warm call site was already netClient-guarded). Flip false to fall back to fully-synchronous
+// main-thread routing, which is exactly what the headless gates run.
 const USE_NETWORK_WORKER = true
 
 // ── resolveSpawn (D-14 / D-16) ───────────────────────────────────────────────────────────
@@ -382,12 +378,11 @@ function _spawnProbeBase (wseed, params) {
 
 // ── QUAL-14 perf: async cold-spawn route warm ────────────────────────────────────────────
 // resolveSpawn's ensureTile used to route the whole spawn band SYNCHRONOUSLY on the main thread —
-// the one 20 s+ cold-load block (perf log: "resolveSpawn: cold network stream"). Instead, before
-// the initial reseat, pump the normal warmRoutes pre-warm at the spawn stream radius on the route
-// worker POOL and await settlement: the searches split across 2–4 workers and the event loop
-// stays alive. resolveSpawn's stream then finds every connection in _proto.cls (pure cache hits).
-// Warms the TIGHT tier only — the wide tier fires for rare sparse-gap seeds and falls back to the
-// synchronous router exactly as before. Bounded wait: correctness NEVER depends on the warm.
+// the one 20 s+ cold-load block (perf log: "resolveSpawn: cold network stream"). PERF-30 replaced
+// that with awaiting netClient.buildNow() per spawn tier: the whole build (routing + plan layer +
+// assembly) happens on the network Worker while the loading screen animates, and resolveSpawn's
+// ensureTile then finds the adopted band (pure cache hits). Bounded: correctness NEVER depends on it.
+
 // ── QUAL-14 perf: in-session route cache ─────────────────────────────────────────────────
 // Nothing persists on the player's machine (user decision 2026-07-06). A regen stashes the
 // outgoing RoadSystem's routes in this Map, so toggling back to a seed already visited this
@@ -406,26 +401,6 @@ function _importSessionRoutes () {
 try { indexedDB.deleteDatabase('rangersim-routes') } catch { /* private mode etc. */ }
 
 let _spawnWarmActive = false   // frame loop skips road stream/warm while a spawn-band warm is pumping
-// ── QUAL-14 perf: async spawn-band warm ─────────────────────────────────────────────────
-// Pump RoadSystem.warmSpawnBand — the registered-band-exact, uncapped dispatch — for the tile
-// ensureTile(tx,tz) is about to stream, at the CURRENT road radius, until every band route is
-// cached (or a bounded wait expires; correctness never depends on the warm — the sync router
-// finishes any stragglers). The searches split across the worker pool and the event loop stays
-// alive. No-op without worker routing (headless gates / USE_WORKER_ROUTING=false).
-async function _warmTileBand (tx, tz) {
-  if (!roadSystem || !roadWorker) return
-  const c = new THREE.Vector3((tx + 0.5) * CHUNK_SIZE, 0, (tz + 0.5) * CHUNK_SIZE)
-  const t0 = performance.now()
-  _spawnWarmActive = true
-  try {
-    while (!roadSystem.warmSpawnBand(c) && performance.now() - t0 < 45000) {
-      await new Promise(r => setTimeout(r, 25))   // let route replies land between pump passes
-    }
-  } finally {
-    _spawnWarmActive = false
-  }
-}
-
 async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
   const { spawnSeed, baseX, baseZ, tightR, spawnR } = _spawnProbeBase(wseed, params)
 
@@ -468,12 +443,12 @@ async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-
       // rebuilds synchronously. A stale reply (seed/params changed mid-load) falls through to
       // ensureTile's synchronous build — correctness never depends on the worker.
       if (netClient) {
-        // _spawnWarmActive parks the frame loop's update()/warmRoutes for the await, exactly as
-        // _warmTileBand does — otherwise a mid-session reseat races a synchronous cold build.
+        // _spawnWarmActive parks the frame loop's update() for the await — otherwise a mid-session
+        // reseat races a synchronous cold build.
         _spawnWarmActive = true
         try { await netClient.buildNow('play', (baseTX + 0.5) * CHUNK_SIZE, (baseTZ + 0.5) * CHUNK_SIZE, _tierR) }
         finally { _spawnWarmActive = false }
-      } else await _warmTileBand(baseTX, baseTZ)   // QUAL-14 perf: route this tier's band on the pool first
+      }   // no client (USE_NETWORK_WORKER off / no Worker): ensureTile below builds synchronously
       roadSystem.ensureTile(baseTX, baseTZ)
       nearest = roadSystem.queryNearest(baseX, baseZ, _qR)
       if (nearest) break   // tight tier hit → skip the wide stream entirely (the common, fast path)
@@ -501,7 +476,7 @@ async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-
       // radius covering that query instead of the full play band: the near field is pure cache hits
       // (≈0 pre-ready routing) and the chosen spawn is byte-identical (headless 15-seed × 3-radius
       // spawn-identity check — test/spawn-identity.mjs). The full play band around the spawn streams on
-      // the FIRST post-ready update()/warmRoutes (near roads complete; distant roads pop in slightly
+      // the FIRST post-ready update() (near roads complete; distant roads pop in slightly
       // later — acceptable). The tight tier above is left intact: its queryNearest(tightR) + the BUG-25
       // cull one-ring make it irreducibly decision-gating, so it is NOT trimmed.
       const _recenterR = Math.min(_savedRadius, 100 + 128)   // 100 m query + registration/cull margin
@@ -511,7 +486,7 @@ async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-
         _spawnWarmActive = true
         try { await netClient.buildNow('play', (spawnTX + 0.5) * CHUNK_SIZE, (spawnTZ + 0.5) * CHUNK_SIZE, _recenterR) }
         finally { _spawnWarmActive = false }
-      } else await _warmTileBand(spawnTX, spawnTZ)
+      }
       roadSystem.ensureTile(spawnTX, spawnTZ)
       roadSystem.setRadius(_savedRadius)   // restore play radius; next update() streams the full band
       nearest = roadSystem.queryNearest(nearest.point.x, nearest.point.z, 100) || nearest
@@ -636,14 +611,6 @@ async function _rebuildFullNow () {
       roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
       roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  // CR-01: carve-free sampler for sampleDesignGradeAt
       roadSystem.setRadius(320)   // PERF (Tier 1): match the terrain ring, not 640 m — see initial setup
-      // QUAL-08: re-seed the dedicated route Worker + re-register the new play RoadSystem instance (a new
-      // seed → a different deterministic network). The stable 'play' client id swaps the instance; old
-      // in-flight replies are dropped by the new instance's route epoch. See USE_WORKER_ROUTING.
-      if (USE_WORKER_ROUTING && roadWorker) {
-        roadWorker.init(worldSeed, RANGER_PARAMS)
-        roadWorker.registerClient('play', roadSystem)
-        roadSystem.setRouteDispatcher((jobs, epoch) => roadWorker.postRouteJobs('play', jobs, epoch))
-      }
       // PERF-30: re-register the new instance with the network-Worker client (opts persist from
       // the boot register). The worker notices the seed change on the next build request and
       // rebuilds its own RoadSystem from scratch; any in-flight reply is dropped by the seed guard.
@@ -2139,10 +2106,6 @@ let _plannerWarmAt = -Infinity   // last warm start (throttles drift re-warms on
 
 function _buildPlannerRoad (seed) {
   const r = new RoadSystem(seed, RANGER_PARAMS)
-  if (roadWorker) {
-    roadWorker.registerClient('mission', r)
-    r.setRouteDispatcher((jobs, epoch) => roadWorker.postRouteJobs('mission', jobs, epoch))
-  }
   // Ponds first: setWaterNoGo calls _invalidateProto, which clears the route caches it can see —
   // it must run BEFORE adopting play's warm ones or it would wipe them.
   if (_waterNoGoFns) r.setWaterNoGo(_waterNoGoFns[0], _waterNoGoFns[1])
@@ -3971,21 +3934,8 @@ document.getElementById('mp-quit')?.addEventListener('click', () => {
 // Constructed after both terrainSystem and roadSystem exist.
 // setRoadSystem() wires the carve hook in analyticHeight so physics feels the road surface.
 terrainSystem.setRoadSystem(roadSystem)
-// QUAL-08: the road pre-warms its centerline cache off-thread via a DEDICATED road-network Worker
-// (not the terrain Worker — that's the BUG-26 fix), so the per-crossing arc-search hitch never lands on
-// the main thread AND route jobs never starve terrain generate. RoadSystem no-ops the dispatcher when
-// unset (headless gates / USE_WORKER_ROUTING=false), keeping the synchronous fallback behaviour.
-let roadWorker = null
-if (USE_WORKER_ROUTING) {
-  roadWorker = new RoadRouteWorker()
-  roadWorker.init(worldSeed, RANGER_PARAMS)
-  roadWorker.registerClient('play', roadSystem)
-  roadSystem.setRouteDispatcher((jobs, epoch) => roadWorker.postRouteJobs('play', jobs, epoch))
-  // QUAL-08: the Map2D dev overlay routes its own read-only network off the same Worker (client 'map').
-  map2d.setRouteWorker(roadWorker)
-  // QUAL-14 perf: map shares the play route cache (getter — play swaps instances on seed regen).
-  map2d.setSharedRouteSource(() => roadSystem)
-}
+// QUAL-14 perf: map shares the play route cache (getter — play swaps instances on seed regen).
+map2d.setSharedRouteSource(() => roadSystem)
 // PERF-30: the network Worker client. The play RoadSystem's dispatcher hands every real rebuild
 // (window move past the band sig, slider invalidate) to the Worker and keeps serving the old
 // network until the finished one is adopted atomically between frames. Cold flows (spawn resolve,
@@ -4442,7 +4392,7 @@ function _hidePauseMenu () {
 // The mode's defining behaviour is the ROUTING FREEZE: behind the entry loading screen the play
 // RoadSystem is widened to the whole region, every connection in it is warmed on the road Worker,
 // the network is registered once at that wide radius, and thereafter the frame loop makes NO
-// roadSystem.update()/warmRoutes() calls at all (see isRoutingFrozen() at the two call sites in
+// roadSystem.update() calls at all (see isRoutingFrozen() at the call site in
 // loop()). Terrain/props/water/ribbons keep streaming around the player and build against that
 // frozen network — freezing THEM would pin ~1.4 GB of chunk meshes. See story.js's header.
 const _storyWarmCenter = new THREE.Vector3()   // scratch for the region warm/release calls below
@@ -4482,9 +4432,9 @@ const storySystem = new StorySystem({
   isMissionActive: () => !!missionSystem?.isActive(),
   /**
    * One step of the region routing warm. Widens the play RoadSystem to the region radius and pumps
-   * warmBandComplete() — the completion-aware sibling of warmRoutes() — which dispatches every
-   * un-cached connection in the band to the road Worker and returns true only when nothing is
-   * outstanding. Mirrors the _startPlannerWarm pump above, but on the PLAY instance, because the
+   * warmBandComplete(), which dispatches every un-cached connection in the band to the road Worker
+   * and returns true only when nothing is outstanding.
+   * Mirrors the _startPlannerWarm pump above, but on the PLAY instance, because the
    * play network is the one the frame loop is about to stop updating.
    *
    * On the final step it registers the whole region ONCE at the wide radius (roadSystem.update):
@@ -4967,9 +4917,8 @@ function loop () {
   // PERF-26 INSTRUMENT (measurement only): close the attribution GAP. The worst frames left in the
   // run carry 60–73 ms inside NO bucket. That is either (a) an unbucketed section of this loop or
   // (b) a GC pause — completely different fixes, and the current buckets cannot tell them apart. So
-  // partition the WHOLE loop first: two coarse spans (pre-stream / post-stream) plus the one
-  // unbucketed call inside the streaming block (warmRoutes). After this frame.* covers the loop end
-  // to end, so if `unattr` is STILL ~60 ms it is GC, conclusively, with no guessing.
+  // partition the WHOLE loop first: two coarse spans (pre-stream / post-stream). After this frame.*
+  // covers the loop end to end, so if `unattr` is STILL ~60 ms it is GC, conclusively, no guessing.
   const _ptPre = performance.now()
 
   // FEAT-43: Story Mode — advance the settle→freeze timer and enforce the region boundary on the
@@ -5168,7 +5117,7 @@ function loop () {
   // FEAT-43: story mode suspends this for the same reason as _spawnWarmActive above — while its
   // region warm holds the enlarged radius a re-stream here would synchronously route the whole
   // region every frame; and once frozen, a re-stream would narrow the network back to a 320 m
-  // window and undo the freeze. This skip (and the warmRoutes one below) IS the mode's perf win.
+  // window and undo the freeze. This skip IS the mode's perf win.
   if (roadSystem && !_spawnWarmActive && !_labActive && !storySystem.isRoadStreamSuspended()) roadSystem.update(streamCenter)
   perfAdd('frame.road.update', performance.now() - _pt)
   // FEAT-06: stream props around the same center. PERF-14: scatter is queued + time-sliced inside
@@ -5225,23 +5174,6 @@ function loop () {
     waterSystem.warmRegion(streamCenter.x - WW, streamCenter.z - WW, streamCenter.x + WW, streamCenter.z + WW, 2)
   }
   perfAdd('frame.water.warm', performance.now() - _pt)   // TEMP (D-arc)
-  // PERF-03 WS-A: pre-warm the road centerline cache off-thread ahead of the streamer. This is LIVE:
-  // QUAL-08 gave routing its own Worker and USE_WORKER_ROUTING is true, so the dispatcher is wired and
-  // this runs. (It previously carried a comment claiming it no-ops under BUG-26 — that was stale, and
-  // it cost PERF-26 a whole investigation: the call reads as dead code, so nobody bucketed it, while
-  // it was in fact the largest remaining streaming hitch. The routing is off-thread as designed; the
-  // main-thread cost was the graph rebuild deciding WHAT to route, now memoised in road.js.)
-  // FEAT-43: suspended in story mode — during the region warm this would fight pumpRegionWarm for
-  // the same anchor, and once frozen every region route is already cached, so there is nothing left
-  // to pre-warm and no router traffic at all while driving.
-  _pt = performance.now()   // PERF-26 INSTRUMENT: the one unbucketed call in the streaming block
-  // PERF-30 phase 3 (measured, hitch-report 2026-09-04): with the network Worker active the play
-  // route-cache has NO consumer — the worker routes internally — so the pre-warm re-dispatched
-  // every band's routes forever ("route warm never drained") and its degree-drop scan owned the
-  // worst road frames left in play (warmRoutes+degreeDrops ≈ 40 ms at cpu×4). Skip it; the map
-  // and the mission planner keep their own warm paths, and the no-worker fallback keeps this one.
-  if (roadSystem && !netClient && !_spawnWarmActive && !_labActive && !storySystem.isRoadStreamSuspended()) roadSystem.warmRoutes(streamCenter)   // don't fight a spawn warm's anchor
-  perfAdd('frame.road.warmRoutes', performance.now() - _pt)
   // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
   // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.
   // flushPendingQueue builds up to MAX_ROAD_BUILDS_PER_FRAME tiles per frame.
@@ -5332,9 +5264,9 @@ function loop () {
     // instantly. Throttled — a re-warm is worker traffic, but there is no point starting one every
     // few seconds while driving across country.
     // Hold off until the spawn band has finished warming so the two do not fight for the Worker.
-    // FEAT-43: also hold off while story mode is still entering — its region warm owns the road
+    // FEAT-43: also hold off while story mode is still entering — its region warm owns the network
     // Worker until the loading screen clears, and a competing planner warm just stretches it.
-    if (roadWorker && !_labActive && !_spawnWarmActive && !storySystem.isEntering()) {
+    if (netClient && !_labActive && !_spawnWarmActive && !storySystem.isEntering()) {
       const drift = _plannerWarm
         ? Math.hypot(_plannerWarm.center.x - vehicleState.position.x, _plannerWarm.center.z - vehicleState.position.z)
         : Infinity

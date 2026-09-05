@@ -37,7 +37,7 @@ import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
 import { truncatedHeightField, routeEdgeV2, profileSolve, profileSolveBundle, dequantizeProfile, CLS, V2_COSTS, V2_TRUNC_K } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve
-import { centerlineFromDescriptors, CenterlineCurve, Centerline, makePrimitive, slicePrimitives, reversePrimitives, primitivePose } from './centerline.js'
+import { centerlineFromDescriptors, CenterlineCurve, Centerline, reversePrimitives } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
 
 // FEAT-13 v2: total order on site ids [cmx,cmz,k] — the Poisson-disk priority tie-break.
@@ -604,7 +604,6 @@ export const CHUNK_SIZE = 64
 // Non-destructive experimental routing for the Phase-8 redesign. Endless roads as a
 // deterministic chain of valley-anchor connections, streamed around the view like terrain.
 const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
-const PROTO_CELL           = 10    // m — A* grid resolution for an anchor→anchor connection
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
 // BUG-53 merge machinery: minimum spacing at a splice seam. A boundary vertex a centimetre from
@@ -707,16 +706,6 @@ const BORE_NOTCH_SLOPE = 1.2  // V:H — mouth-funnel floor rise per metre into 
 const LEAF_END_TAPER = 30     // m
 const PROTO_SNAP_CAP       = PROTO_ANCHOR_SPACING * 0.45  // m — max anchor gradient-descent displacement (keeps anchors in their lane → fewer parallel/duplicate roads)
 const PROTO_PARAM_DEBOUNCE = 160   // ms — coalesce slider drags before re-routing
-// 8-connectivity direction vectors (index 0..7); used for the turn-penalty A* state.
-const PROTO_DIRS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
-const _protoTurnSteps = (d1, d2) => { const a = Math.abs(d1 - d2); return Math.min(a, 8 - a) }  // 0..4 (×45°)
-// Road Overhaul: the ribbon/carve sample each run's exact primitive centerline (CenterlineCurve)
-// instead of re-fitting centripetal Catmull-Rom — the BUG-12 fold fix. (Flag retained as a guard:
-// a run with no centerline descriptors still falls back to Catmull-Rom in _assignSlice.)
-// Phase C deleted the patch stack that the dormant flag waited on (COVER overlap suppression,
-// proximity loop-removal, owner-ratio run origin) — run identity is now the connection's own
-// world key "mz:mx", band-independent by construction (see _streamNetwork).
-const USE_CENTERLINE_RIBBON = true
 
 // ── D-16: anchor-band half-width, SCALED to the active road radius ─────────────
 // _streamNetwork builds each macro-row run over a band keyed by (mz, mx0, mx1). The Z (mz) extent
@@ -739,16 +728,6 @@ const ROAD_BAND_MARGIN = 1  // extra macro-cols beyond ceil(R/spacing) each side
 
 // ── Off-thread route pre-warm tuning (PERF-03 Workstream A) ───────────────────
 const PREWARM_MARGIN    = 2   // extra macro-cols/rows beyond the streamer band to route AHEAD of need
-const PREWARM_MAX_JOBS  = 16  // route jobs dispatched per warmRoutes() call. Routing has its OWN worker
-                              // pool since QUAL-08 (terrain generation can't be starved), so the cap
-                              // is only back-pressure: enough in flight to keep 2–4 workers busy
-                              // without flooding a stale epoch.
-// PERF-26: WORK budget for _warmScan, distinct from the JOB budget above — bounds per-call spec
-// builds (pin + disc + node-height derivation on cold edges) so a cold macro-column crossing
-// spreads over frames instead of landing as one warm.scan hitch. Legitimate because warmRoutes is
-// pre-warm with PREWARM_MARGIN of slack by design — it may lag a few frames behind the streamer.
-const PREWARM_MAX_EVALS = 4   // expensive (uncached) edge evaluations per _warmScan call
-const PREWARM_WARM_MOVE = 32  // m — only rescan/redispatch the pre-warm band after the center moves this far
 
 // ── Module-scope pure height function ─────────────────────────────────────────
 /**
@@ -781,71 +760,6 @@ function _coarseHeight(wx, wz, noiseCoarse, params) {
         amp  *= gain
     }
     return h
-}
-
-// ── MinHeap — priority queue for A* open set ──────────────────────────────────
-/**
- * Binary min-heap for A* open set.
- * push(item, priority) — O(log n)
- * pop()                — O(log n), returns lowest-priority item
- * size (getter)        — O(1)
- *
- * Source: standard binary heap pattern; sufficient for 16×16=256-cell routing grids.
- */
-class MinHeap {
-    constructor() {
-        this._data = []
-    }
-
-    /**
-     * Add an item with the given priority.
-     * @param {*} item
-     * @param {number} priority — lower value = higher priority (dequeued first)
-     */
-    push(item, priority) {
-        this._data.push({ item, priority })
-        this._bubbleUp(this._data.length - 1)
-    }
-
-    /**
-     * Remove and return the lowest-priority item.
-     * @returns {*} item
-     */
-    pop() {
-        const top = this._data[0].item
-        const last = this._data.pop()
-        if (this._data.length > 0) {
-            this._data[0] = last
-            this._sinkDown(0)
-        }
-        return top
-    }
-
-    /** Number of items in the heap. */
-    get size() { return this._data.length }
-
-    _bubbleUp(i) {
-        while (i > 0) {
-            const p = (i - 1) >> 1
-            if (this._data[p].priority <= this._data[i].priority) break
-            ;[this._data[p], this._data[i]] = [this._data[i], this._data[p]]
-            i = p
-        }
-    }
-
-    _sinkDown(i) {
-        const n = this._data.length
-        while (true) {
-            let min = i
-            const l = 2 * i + 1
-            const r = 2 * i + 2
-            if (l < n && this._data[l].priority < this._data[min].priority) min = l
-            if (r < n && this._data[r].priority < this._data[min].priority) min = r
-            if (min === i) break
-            ;[this._data[min], this._data[i]] = [this._data[i], this._data[min]]
-            i = min
-        }
-    }
 }
 
 // ── RoadSystem ─────────────────────────────────────────────────────────────────
@@ -1650,8 +1564,8 @@ export class RoadSystem {
         this._padsAll = null
 
         // ── Off-thread route pre-warming (PERF-03 Workstream A) ──────────────────
-        // warmRoutes() asks a Worker to route the connections the streamer will soon need and posts
-        // the resulting primitives back; ingestRoutedConnections() drops them into _proto.cls. The
+        // warmBandComplete() asks a Worker to route the connections the streamer will soon need and
+        // posts the resulting primitives back; ingestRoutedConnections() drops them into _proto.cls. The
         // synchronous _streamNetwork then finds cache HITS instead of paying the 12–21 ms arc search
         // on a macro-cell crossing — the routing hitch moves off the main thread. If no dispatcher is
         // set (headless gates, or before wiring) routing stays fully synchronous: identical behaviour,
@@ -1661,8 +1575,6 @@ export class RoadSystem {
         this._networkDispatch = null       // PERF-30: ({x,z,radius,reason}) => network Worker build; set via setNetworkDispatcher
         this._pendingRoutes  = new Set()   // cls keys requested from the Worker, awaiting a reply
         this._routeEpoch     = 0           // bumped on every _invalidateProto (param/route change)
-        this._lastWarmCenter = null        // throttle: only rescan the pre-warm band after moving
-        this._warmCursor     = 0           // PERF-26: resume index for the eval-budgeted _warmScan
         this.warmPlanDemand  = false       // PERF-31 W2: opt-in — warmBandComplete also warms the plan layer's route demand (worker pre-warm only; see _warmPlanJobs)
         this._urqMemo        = new Map()   // PERF-26: sig -> graph for the persist=false builds
     }
@@ -1707,8 +1619,6 @@ export class RoadSystem {
         // as stale, and clear pending so the new params' connections get re-dispatched.
         this._routeEpoch++
         this._pendingRoutes.clear()
-        this._lastWarmCenter = null   // force the next warmRoutes() to rescan against the new params
-        this._warmCursor = 0          // the edge list is about to change — resume from the top
     }
 
     // ── Off-thread route pre-warming API (PERF-03 Workstream A) ──────────────────
@@ -1777,59 +1687,10 @@ export class RoadSystem {
      * radius so the registered network always covers the carved disc at every draw-distance preset.
      * See the ROAD_BAND_MARGIN block: ceil(R / spacing) covers the disc, +margin absorbs a west-anchored
      * run's east-reach + anchor snap so no visible run is dropped (Mechanism B fix). Used by BOTH
-     * warmRoutes (pre-warm) and _streamNetwork (register) so they stay consistent.
+     * warmBandComplete (pre-warm) and _streamNetwork (register) so they stay consistent.
      */
     _bandHalfWidth() {
         return Math.ceil(this._proto.radius / PROTO_ANCHOR_SPACING) + ROAD_BAND_MARGIN
-    }
-
-    /**
-     * Pre-warm the per-connection centerline cache around `center` by routing the connections the
-     * streamer will soon need ON THE WORKER, ahead of need. By the time _streamNetwork's band reaches
-     * a connection, it's already in _proto.cls → cache hit, no synchronous arc search → no macro-cell
-     * crossing hitch. No-op without a dispatcher (gates / pre-wiring). Trickles ≤ PREWARM_MAX_JOBS
-     * jobs per call and only rescans after the center moves PREWARM_WARM_MOVE m, so it can't flood the
-     * shared Worker. Throttle is bypassed right after a re-route (_lastWarmCenter nulled).
-     * @param {THREE.Vector3} center — same stream center the terrain + road update use
-     */
-    warmRoutes(center) {
-        if (!this._routeDispatch) return
-        if (this._lastWarmCenter && center.distanceTo(this._lastWarmCenter) < PREWARM_WARM_MOVE) return
-
-        const R = this._proto.radius
-        const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
-        // Pre-warm a superset of the registered band (+PREWARM_MARGIN) so the off-thread router fills
-        // every connection _streamNetwork will register — same R-scaled half-width as the real stream.
-        const HW = this._bandHalfWidth()
-        const mx0 = center_mx - HW - PREWARM_MARGIN
-        const mx1 = center_mx + HW + PREWARM_MARGIN
-        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING) - PREWARM_MARGIN
-        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING) + PREWARM_MARGIN
-
-        // FEAT-13 v2: warm every Urquhart edge in the band (same edge set _assembleGraphEdges will
-        // register → the pre-warmed routes are exact cache hits). Edge SELECTION stays main-thread;
-        // only routeEdgeV2 runs on the Worker (a real module import — no mirror, FEAT-68).
-        // PERF-26: warmRoutes decomposes into three costs with different fixes — keep them named.
-        // Measured at 4x CPU: urquhart ~1.4 ms (memoised below), degreeDrops 35-42 ms, scan 32-36 ms.
-        const _wU = performance.now()
-        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)   // persist=false: don't clobber the streaming graph
-        perfAdd('warm.urquhart', performance.now() - _wU)
-        // QUAL-21 Stage 2: degree-capped edges are settled OUT spec-time (_degreeDropSet) — never
-        // registered, never routed — so warming them would burn worker searches on roads that
-        // cannot exist. (Their SOLOS may still warm via _warmScan's dep chain when a SURVIVOR
-        // avoids their corridor — deps are enumerated on the raw graph, deliberately: survivor
-        // routes must stay byte-identical to the route-then-cull era.)
-        const _wD = performance.now()
-        const { drop } = this._degreeDrops(mx0, mx1, mz0, mz1)
-        perfAdd('warm.degreeDrops', performance.now() - _wD)
-        const wEdges = g.edges.filter(([c1, c2]) => !drop.has(g.key(c1) + '|' + g.key(c2)))
-        const _wS = performance.now()
-        const { jobs, deferred } = this._warmScan(g, drop, wEdges, PREWARM_MAX_JOBS, PREWARM_MAX_EVALS)
-        perfAdd('warm.scan', performance.now() - _wS)
-        // Only advance the throttle anchor once the visible band is fully warmed/pending — otherwise a
-        // single move could leave fringe connections un-dispatched until the NEXT PREWARM_WARM_MOVE.
-        if (jobs.length < PREWARM_MAX_JOBS && !deferred) this._lastWarmCenter = center.clone()
-        if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
     }
 
     /**
@@ -1846,23 +1707,20 @@ export class RoadSystem {
      * is NOT cache-complete (the _edgeCenterline guard would re-route it synchronously) — the
      * scan re-dispatches it and the reply overwrites.
      *
-     * Returns { jobs, deferred } — deferred means not yet cache-complete (replies in flight or a
-     * cap bit): callers rescan until false. `evalCap` bounds per-call spec builds (PERF-26: pin +
-     * disc derivation on a cold edge is the priced part); the rotating cursor keeps budgeted
-     * scans sweeping the whole list instead of starving the tail.
+     * Returns { jobs, deferred } — deferred means not yet cache-complete (replies still in flight):
+     * callers rescan until false.
+     *
+     * QUAL-27: the per-call JOB and EVAL budgets (and their rotating resume cursor) are gone with
+     * warmRoutes, the movement pre-warm they throttled. Every surviving caller — the network
+     * Worker's own pre-warm, the plan-layer demand scan — wants the WHOLE list in one pass and
+     * always passed Infinity for both.
      */
-    _warmScan(g, drop, edges, cap, evalCap = Infinity) {
+    _warmScan(g, drop, edges) {
         const jobs = []
         let deferred = false
-        let evals = 0
-        const n = edges.length
-        const start = (evalCap === Infinity || n === 0) ? 0 : this._warmCursor % n
-        let i = 0
-        for (; i < n; i++) {
-            if (jobs.length >= cap || evals >= evalCap) { deferred = true; break }
-            let [c1, c2] = edges[(start + i) % n]
+        for (let i = 0; i < edges.length; i++) {
+            let [c1, c2] = edges[i]
             if ((c1[0] - c2[0] || c1[1] - c2[1] || c1[2] - c2[2]) > 0) [c1, c2] = [c2, c1]   // canonical spelling
-            evals++   // this edge pays pin + disc + node-height derivation
             const dirs = this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2))
             const key = this._edgeClsKey(c1, c2) + this._v2DirsNS(dirs)   // R4: pin-fingerprinted
             if (this._pendingRoutes.has(key)) { deferred = true; continue }
@@ -1872,42 +1730,7 @@ export class RoadSystem {
             this._pendingRoutes.add(key)
             jobs.push(spec)
         }
-        if (evalCap !== Infinity && n > 0) this._warmCursor = (start + i) % n
         return { jobs, deferred }
-    }
-
-    /**
-     * QUAL-14 perf: warm exactly the REGISTERED band around `center` — the edge set the next
-     * _streamNetwork/ensureTile at the CURRENT radius will register — dispatching every missing
-     * route job at once so the worker POOL chews them in parallel. warmRoutes above is the
-     * MOVEMENT pre-warm: it trickles a superset band (prewarm + graph margins ≈ 3–6× the
-     * registered searches) capped per call — right for play, wrong for the cold spawn, which
-     * paid ~490 margin searches for a 25-edge band (the 30 s "warm" that then still missed).
-     * Returns true once every band edge (and its corridor-dep solos) is cached with no replies
-     * outstanding — the caller pumps this until true, then streams synchronously as pure cache
-     * hits. Without a dispatcher → true immediately (sync fallback owns routing; headless gates).
-     */
-    warmSpawnBand(center) {
-        if (!this._routeDispatch) return true
-        const R = this._proto.radius
-        const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
-        const HW = this._bandHalfWidth()
-        const mx0 = center_mx - HW, mx1 = center_mx + HW
-        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
-        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
-        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
-        // Same registration filter as _assembleGraphEdges: fully-margin edges never register.
-        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
-        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
-        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
-        // QUAL-21 Stage 2: skip degree-capped edges (settled spec-time — never registered/routed).
-        const dd = this._degreeDrops(mx0, mx1, mz0, mz1)
-        const dropped = ([c1, c2]) => dd.drop.has(g.key(c1) + '|' + g.key(c2))
-        const edges = g.edges.filter((e) => !dropped(e) && (inBand(e[0]) || inBand(e[1])))
-        // (FEAT-68: the cull one-ring warm is gone with the culls — only registered edges warm.)
-        const { jobs, deferred } = this._warmScan(g, dd.drop, edges, Infinity)
-        if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
-        return jobs.length === 0 && !deferred
     }
 
     // ── Story mode: mission geometry (FEAT-29 par oracle support) ───────────────
@@ -2009,8 +1832,7 @@ export class RoadSystem {
      * Routing is ~99% of the cost of a cold stream (measured: 19.5 s cold at 2200 m radius vs
      * 0.21 s once the per-connection route cache is populated). So a large read-only network — the
      * story-mode mission planner — becomes essentially free to build IF its routes are warmed in
-     * advance on the road Worker. This is the completion-aware sibling of warmRoutes(), which is
-     * throttled by move distance and gives no "done" signal.
+     * advance on the road Worker.
      *
      * @returns {boolean} true once every connection in the band is cached (nothing dispatched, no
      *   replies outstanding, no deferred dependencies) — callers pump until it returns true.
@@ -2034,7 +1856,7 @@ export class RoadSystem {
         // QUAL-21 Stage 2: skip degree-capped edges (settled spec-time — never registered/routed).
         const { drop } = this._degreeDrops(mx0, mx1, mz0, mz1)
         const edges = g.edges.filter(([c1, c2]) => !drop.has(g.key(c1) + '|' + g.key(c2)) && (inBand(c1) || inBand(c2)))
-        const { jobs, deferred } = this._warmScan(g, drop, edges, Infinity)
+        const { jobs, deferred } = this._warmScan(g, drop, edges)
         if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
         if (jobs.length > 0 || deferred) return false
         // PERF-31 W2 (pin parity): the registered band is cached — now warm the PLAN layer's
@@ -2097,7 +1919,7 @@ export class RoadSystem {
             { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
             settleEdges.push([c1, c2])
         }
-        const s1 = this._warmScan(g, drop, settleEdges, Infinity)
+        const s1 = this._warmScan(g, drop, settleEdges)
         if (s1.jobs.length || s1.deferred) return s1
         // Wave 2 — census discovery partners against the (now cached) settle routes.
         const CHORD = (this._v2Costs().censusChordM ?? 300)
@@ -2145,8 +1967,8 @@ export class RoadSystem {
                 else partnersW.push([q1, q2])
             }
         }
-        const s2g = this._warmScan(g, drop, partnersG, Infinity)
-        const s2w = this._warmScan(wide, drop, partnersW, Infinity)
+        const s2g = this._warmScan(g, drop, partnersG)
+        const s2w = this._warmScan(wide, drop, partnersW)
         if (s2g.jobs.length || s2w.jobs.length || s2g.deferred || s2w.deferred)
             return { jobs: [...s2g.jobs, ...s2w.jobs], deferred: s2g.deferred || s2w.deferred }
         // Wave 3 — the settle pass's PASS-2 pins. Run the same _v2SettleDeletions the build will
@@ -2159,9 +1981,9 @@ export class RoadSystem {
         // _v2EdgeDirs now reads the frozen sets and yields the flipped (built-degree) keys the
         // plan's pass 2 will demand; _warmScan skips all the unflipped (already cached) keys.
         if (this._v2SettleDeletions(g, drop, wide, mx0, mx1, mz0, mz1)) {
-            const s3 = this._warmScan(g, drop, settleEdges, Infinity)
-            const s3g = this._warmScan(g, drop, partnersG, Infinity)
-            const s3w = this._warmScan(wide, drop, partnersW, Infinity)
+            const s3 = this._warmScan(g, drop, settleEdges)
+            const s3g = this._warmScan(g, drop, partnersG)
+            const s3w = this._warmScan(wide, drop, partnersW)
             return { jobs: [...s3.jobs, ...s3g.jobs, ...s3w.jobs],
                      deferred: s3.deferred || s3g.deferred || s3w.deferred }
         }
@@ -2518,9 +2340,9 @@ export class RoadSystem {
     // window-invariant; the margin must be wide enough that adding farther sites can't change them
     // (graph-topology.mjs asserts this across two centers). Cached on the padded-band signature.
     // persist=true caches into this._proto.graph (the junction-degree source — used by the streaming
-    // assemble path). warmRoutes passes persist=false: it only needs the edge LIST for route jobs and
-    // runs on its own prewarm band, so it must NOT clobber the streaming graph (degree would go stale on
-    // a rebuild-skip). Window-invariance makes both bands agree on shared interior edges either way.
+    // assemble path). The warm scans pass persist=false: they only need the edge LIST for route jobs and
+    // run on their own band, so they must NOT clobber the streaming graph (degree would go stale on a
+    // rebuild-skip). Window-invariance makes both bands agree on shared interior edges either way.
     // `cacheable=false` lets a single-use window READ the memo without WRITING it (PERF-26: the
     // QUAL-14 per-edge dep windows produced ~113 distinct sigs per scan and wiped the 6-entry memo
     // 16 times over, evicting the warm-band and cull graphs _degreeDrops depends on; that caller
@@ -2540,10 +2362,10 @@ export class RoadSystem {
         const sig = `${S}:${scx0},${scx1},${scz0},${scz1}`
         if (persist && this._proto.graph && this._proto.graph.sig === sig) return this._proto.graph
         // PERF-26: the persist=false path was the ONLY one without a memo, and it is the hot one —
-        // warmRoutes re-derives the graph every PREWARM_WARM_MOVE (32 m) while `sig` is quantised to
-        // roadSiteSpacing (256 m by default), so ~7 of every 8 warm calls rebuilt a byte-identical
-        // graph: delaunay() + urquhartEdges() over the whole band+margin, 30–91 ms at 4× CPU, and the
-        // single largest remaining streaming hitch (it owned every worst frame in both measured runs).
+        // the warm scans re-derive the graph per call while `sig` is quantised to roadSiteSpacing
+        // (256 m by default), so most calls rebuilt a byte-identical graph: delaunay() +
+        // urquhartEdges() over the whole band+margin, 30–91 ms at 4× CPU, and (in the era when the
+        // movement pre-warm ran on the main thread) the single largest streaming hitch.
         // `sig` already captures site spacing and the margin-expanded cell box, so it is a complete
         // key; _invalidateProto clears the memo on the same signal that nulls _proto.graph.
         // Safe to share the object: the persist=true path has always returned one shared _proto.graph
@@ -5462,8 +5284,8 @@ export class RoadSystem {
     // already unreachable: _v2GradePts solves the exact profile instead, and a bore is no longer
     // something found after the fact — it is a priced state the router chose. Their knobs
     // (roadEarthworkWindow / roadWDeviation / roadDeviationCap / tunnelMinDepth / MinLen / MaxLen /
-    // PortalDepth / MaxGrade / tunnelsEnabled) went with them; tunnelBoreRadius survives because
-    // bore GEOMETRY — mesh, collider, containment test — is still real.
+    // PortalDepth / MaxGrade / tunnelsEnabled) went with them and none survives in data/ranger.js;
+    // tunnelBoreRadius does, because bore GEOMETRY — mesh, collider, containment test — is still real.
 
     /**
      * FEAT-68 (v2) day-two node-height rule: a node pinned to terrain ON A CONVEX EDGE is
@@ -5607,7 +5429,7 @@ export class RoadSystem {
         }
         const spans = []
         for (const sg of prof.segs) {
-            if ((sg.cls === CLS.BORE || sg.cls === CLS.BRIDGE) && sg.len >= 12) spans.push({ s0: sg.s0, s1: sg.s1 })
+            if (sg.cls === CLS.BORE && sg.len >= 12) spans.push({ s0: sg.s0, s1: sg.s1 })
         }
         return spans.length ? spans : null
     }
@@ -5796,8 +5618,8 @@ export class RoadSystem {
         }
         let { n, pts, clArc } = sample(cl)
         // FEAT-68 (v2): exact profile solve replaces design-grading + the FEAT-40 tunnel pass.
-        // Bore AND bridge stretches come back as FEAT-40-shaped spans (carve-skip + lining +
-        // collider through the existing machinery; bridge rendering is knowingly crude for now).
+        // Bore stretches come back as FEAT-40-shaped spans (carve-skip + lining + collider through
+        // the existing machinery). QUAL-27: bridges are gone from the vocabulary entirely.
         // BUG-55: a bundled WINNER ships the bundle's solved profile instead — same sampling
         // formula as _v2RunSample, so the y arrays align index-for-index; anything else falls
         // through to the ordinary solve.
@@ -10547,7 +10369,7 @@ export class RoadSystem {
             cededHere = entry.offCurveSpans.some((csp) => hi > csp.s0 + 1e-6 && lo < csp.s1 - 1e-6)
         }
         let spline
-        if (!cededHere && USE_CENTERLINE_RIBBON && entry && entry.centerline && entry.centerline.length > 1e-6 && entry.polyCum) {
+        if (!cededHere && entry && entry.centerline && entry.centerline.length > 1e-6 && entry.polyCum) {
             // Map this slice's owner-origined arcS endpoints to centerline arc through the run's exact
             // polyline→centerline correspondence table (built in _streamNetwork by sequential
             // projection). arcS + arcOrigin = run polyline cumulative-XZ arc = the table's polyCum key.

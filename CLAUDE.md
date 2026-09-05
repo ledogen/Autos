@@ -189,14 +189,23 @@ The terrain Web Worker source lives only as the `WORKER_SOURCE` template string 
 `WORKER_SOURCE` — edit the canonical original and reflect it there in the same commit (search
 `CARVE SYNC` / SYNC RULE).
 
-**Routing also runs in this Worker** (PERF-03 Workstream A): the road router (`arcPrimitiveConnect` +
-dubins helpers + search scratch, canonical in the `ROUTE SYNC` region of `src/road-carve.js`) is copied
-verbatim into `WORKER_SOURCE` so `RoadSystem.warmRoutes()` can pre-warm the per-connection centerline
-cache off the main thread (killing the macro-cell routing hitch). The copy is escaped for the backtick
-template literal; `test/route-worker-sync.mjs` (a `npm test` gate) asserts it stays byte-identical to
-the canonical (modulo `export` + template escaping). Edit the `ROUTE SYNC` region and re-mirror it in
-the same commit. The main thread keeps the synchronous router as the cold-load/teleport fallback, so
-headless gates (no Worker, no dispatcher) are unaffected.
+**Routing does NOT live in this Worker, and there is no route mirror.** FEAT-68 deleted the `ROUTE
+SYNC` region, its verbatim `WORKER_SOURCE` copy and the `route-worker-sync` byte-equality gate along
+with the v1 arc-lattice router they served. The road workers are real ES modules that **import** the
+same `routeEdgeV2` the synchronous path calls, so worker/sync parity is by construction — the
+**no-mirror fence**. Two of them, both spun from `src/`:
+
+- `src/road-network-worker.js` (PERF-30) runs the WHOLE build — corridor routing, the BUG-56 plan
+  layer, assembly — inside its own private `RoadSystem`; the main thread adopts finished networks
+  atomically between frames via `src/road-network-client.js`. It spins its own **nested** pool of
+- `src/road-route-worker.js` (via the `RoadRouteWorker` pool in `src/road-worker.js`) to fan a
+  build's route demand across cores (PERF-31 W2.2).
+
+QUAL-27 deleted the main thread's own copy of that pool: since PERF-30 every warm path was
+netClient-guarded, so it was spawned and seeded but never handed a job. Gates: `road-worker-parity`
+and `network-worker-parity` pin the seams that could still drift (height-field rebuild, params
+snapshot, pond-disc reconstruction). Without a Worker at all — headless gates — routing is fully
+synchronous, which is the same code path.
 
 ## Story Mode
 
