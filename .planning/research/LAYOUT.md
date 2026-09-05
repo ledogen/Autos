@@ -29,8 +29,10 @@ or delete a file, update the relevant line here in the same commit — it's one 
 - **Directories are earned:** a subsystem gets a subdirectory only once it splits into several
   files. `src/props/` is the only precedent (8 files). Don't pre-create directories.
 - **Worker mirrors:** the terrain worker exists only as `WORKER_SOURCE` in `src/terrain.js`;
-  carve/seed/route code is mirrored verbatim from its canonical file (search `CARVE SYNC` /
-  `ROUTE SYNC`; gate: `test/route-worker-sync.mjs`). Edit canonical + mirror in the same commit.
+  carve/seed code is mirrored verbatim from its canonical file (search `CARVE SYNC`). Edit canonical
+  + mirror in the same commit. There is NO route mirror — the road workers are ES modules that
+  import the router (FEAT-68 no-mirror fence); the `ROUTE SYNC` region and its byte-equality gate
+  died with the v1 router.
 - **New gates** register in `test/gates.mjs` with `subsystem`/`cost`/`desc`/`extraDeps`.
 
 ## src/ map
@@ -54,9 +56,10 @@ generation) · `water-render.js` · `stone-texture.js` (procedural riverbed text
 **Road network** — `road.js` (RoadSystem: streaming, resolve, surface queries) · `road-graph.js`
 (blue-noise anchors + Urquhart topology) · `road-carve.js` (carve bodies, canonical for worker
 mirrors) · `corridor-router.js` (v2 corridor router, FEAT-68) · `road-mesh.js` (ribbon build) ·
-`road-worker.js` (route Worker POOL, QUAL-08/FEAT-68) · `road-route-worker.js` (route Worker
-module entry) · `road-network-worker.js` (PERF-30 network Worker module entry — the whole build
-off-thread) · `road-network-client.js` (PERF-30 main-thread client: dispatch + atomic adopt) ·
+`road-worker.js` (route Worker POOL, QUAL-08/FEAT-68 — since QUAL-27 its only consumer is the
+network Worker's nested pool) · `road-route-worker.js` (route Worker module entry) ·
+`road-network-worker.js` (PERF-30 network Worker module entry — the whole build off-thread) ·
+`road-network-client.js` (PERF-30 main-thread client: dispatch + atomic adopt) ·
 `road-quality.js` (per-stretch quality) · `centerline.js` (curvature-bounded centerline model).
 (The bundled route cache / `route-store.js` was deleted 2026-08-19 — owner call; the in-session
 cache in main.js is what remains.)
