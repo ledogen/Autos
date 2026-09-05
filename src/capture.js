@@ -24,29 +24,48 @@ export const CAPTURE_VERSION = 1
 export const PLACE_REGION_HALF = 100
 
 /**
- * Copy the finite-number fields of a params object into a plain JSON-safe record. RANGER_PARAMS holds
- * the road-routing + terrain-noise scalars the reproduction reads; functions / THREE objects (if any)
- * are dropped so the capture serialises cleanly (and never trips the worker DataCloneError class of
- * issue). Order-independent — replay reads by key.
+ * Copy the JSON-safe fields of a params object into a plain record. RANGER_PARAMS holds the
+ * road-routing + terrain-noise values the reproduction reads; functions / THREE objects are dropped
+ * so the capture serialises cleanly (and never trips the worker DataCloneError class of issue).
+ * Order-independent — replay reads by key.
+ *
+ * THE RULE, and it has now cost three bugs: replay.mjs does `new RoadSystem(seed, params)` with NO
+ * merge over RANGER_PARAMS, so anything this function drops falls back to road.js's inline
+ * `?? default` — and a fallback that disagrees with the shipped value replays a DIFFERENT road than
+ * the game built. So every plain value type must survive, not just the ones a past bug happened to
+ * name. The three:
+ *   - BOOLEANS — roadSiteValleySnap (game false / fallback true) picked a different node field.
+ *   - NUMBER ARRAYS — the v1 roadArcRadii palette; without it the router used its own fallback pair.
+ *   - QUAL-27, NESTED OBJECTS — roadV2, the ENTIRE v2 price list, was invisible to this function, so
+ *     every capture replayed against V2_COSTS defaults. The keys that live only in data/ranger.js
+ *     diverge outright: `roadV2.vSmoothM` ships 15 m of vertical corner rounding while road.js reads
+ *     `?? 0`, so a replay's collision surface had none of it. (map2d._paramSig hit the identical
+ *     "[object Object]" blind spot and fixed it there — same lesson, other side of the codebase.)
  */
+function serializableValue(v) {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : undefined
+    if (typeof v === 'boolean' || typeof v === 'string') return v
+    if (Array.isArray(v)) {
+        const out = v.map(serializableValue)
+        return out.some(x => x === undefined) ? undefined : out
+    }
+    // Plain objects only — a THREE.Vector3 / Color would serialise into something replay can't use.
+    if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
+        const out = {}
+        for (const k of Object.keys(v)) {
+            const c = serializableValue(v[k])
+            if (c !== undefined) out[k] = c
+        }
+        return out
+    }
+    return undefined   // functions, class instances, null, undefined
+}
+
 export function serializableParams(params) {
     const out = {}
     for (const k of Object.keys(params || {})) {
-        const v = params[k]
-        if (typeof v === 'number' && Number.isFinite(v)) out[k] = v
-        // BOOLEAN toggles must survive too — e.g. roadSiteValleySnap / roadRefitShortcut / roadGraph*.
-        // replay.mjs does `new RoadSystem(seed, params)` with NO merge over RANGER_PARAMS, so a dropped
-        // boolean falls back to road.js's inline `?? default` — which does NOT match the game (valley
-        // snap: game false / fallback true; refit shortcut: game true / fallback false). Dropping them
-        // replayed a DIFFERENT node field + centerline than the game ran (same class of bug as the
-        // roadArcRadii array drop below).
-        else if (typeof v === 'boolean') out[k] = v
-        // Number ARRAYS must survive too — e.g. roadArcRadii (the fixed-angle curvature palette).
-        // Dropping it made replay.mjs route with arcPrimitiveConnect's [gentleR,hardR] fallback, i.e.
-        // a DIFFERENT road than the game ran, so every road capture replayed against the wrong surface.
-        else if (Array.isArray(v) && v.every(x => typeof x === 'number' && Number.isFinite(x))) {
-            out[k] = v.slice()
-        }
+        const v = serializableValue(params[k])
+        if (v !== undefined) out[k] = v
     }
     return out
 }
