@@ -522,7 +522,7 @@ function stationRateCls(cls, d, C) {
  *
  * `prepare(g0, g1, ds)` fills the tables for one station step; the caller then indexes them.
  * ARITHMETIC IS IDENTICAL, deliberately: `rateTo[j]` keeps the `ds * rate` product and the caller
- * keeps the `(ds*cRoadM*wGrade) * g * g` grouping and the portal/abutment addition order, so the
+ * keeps the `(ds*cRoadM*wGrade) * g * g` grouping and the portal addition order, so the
  * accumulated float cost is bit-for-bit what the closure produced (priced == built is not
  * relaxable — verified by the battery network hash being byte-identical on all 9 windows).
  */
@@ -655,7 +655,6 @@ export function profileSolve(st, yA, yB, opts = {}) {
                 if (Math.abs(g) > cap + half + 1e-9) continue
                 let sc = rateJ + gradeW * g * g
                 if (kBore !== jBore) sc += C.cPortal
-                if ((clsK === CLS.BRIDGE) !== (clsJ === CLS.BRIDGE)) sc += C.cAbutment
                 const c = p + sc
                 if (c < best) { best = c; bestK = k }
             }
@@ -803,7 +802,6 @@ export function profileSolveBundle(trunk, branches, opts = {}) {
                     if (Math.abs(g) > cap + half + 1e-9) continue
                     let sc = rateJ + gradeW * g * g
                     if (kBore !== jBore) sc += C.cPortal
-                    if ((clsK === CLS.BRIDGE) !== (clsJ === CLS.BRIDGE)) sc += C.cAbutment
                     const c = p + sc
                     if (c < best) { best = c; bestK = k }
                 }
@@ -835,7 +833,6 @@ export function profileSolveBundle(trunk, branches, opts = {}) {
                     if (Math.abs(g) > cap + half + 1e-9) continue
                     let sc = rateJ + gradeW * g * g
                     if (kBore !== jBore) sc += C.cPortal
-                    if ((clsK === CLS.BRIDGE) !== (clsJ === CLS.BRIDGE)) sc += C.cAbutment
                     const c = p + sc
                     if (c < best) { best = c; bestK = k }
                 }
@@ -889,7 +886,6 @@ export function profileSolveBundle(trunk, branches, opts = {}) {
                 if (Math.abs(g) > cap + half + 1e-9) continue
                 let sc = rateJ + gradeW * g * g
                 if (kBore !== jBore) sc += C.cPortal
-                if ((clsK === CLS.BRIDGE) !== (clsJ === CLS.BRIDGE)) sc += C.cAbutment
                 const c = p + sc
                 if (c < best) { best = c; bestK = k }
             }
