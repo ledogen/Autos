@@ -727,13 +727,14 @@ export class Map2D {
         // shows), adopted atomically when it lands. In story mode there is no build at all —
         // the region-locked map adopts the play network, which already IS the region.
         if (this._netClient) {
-            const R = this._radiusSteps()[this._radiusSteps().length - 1]
+            const steps = this._radiusSteps()
             const token = ++this._pumpToken
             const done = () => {
                 this._streamAt = this._streamCenter
                 this._bgDirty = true
                 this._streaming = false
                 this._streamFull = true
+                this._streamStep = steps.length
             }
             const play = this._playNetSource?.()
             const lock = this._regionLock()
@@ -742,16 +743,26 @@ export class Map2D {
             // the wall, which is what the pad exists to guarantee.
             if (lock && play && play._worldSeed === this._getSeed()
                 && play._network && play._network.size > 0 && play._proto.radius >= lock.r - 1e-6) {
-                this._road.setRadius(R)
+                this._road.setRadius(steps[steps.length - 1])
                 this._road.adoptNetwork(play.exportNetwork())
                 done()
                 return
             }
+            // COLD opens walk the same progressive ladder as the sync path — each ring is a worker
+            // build, adopted + repainted as it lands, so the streaming badge shows REAL progress
+            // (owner 2026-09-04: the frozen "80%" was this path skipping the ladder). WARM restreams
+            // keep the one-step full-radius jump (_startStream set _streamStep to the last ring —
+            // the d08d016 zoom-drift fix); the badge drops its % for that single honest step.
+            const R = steps[this._streamStep]
             this._road.setRadius(R)
             this._netClient.buildNow('map', this._streamCenter.x, this._streamCenter.z, R).then((ok) => {
                 if (token !== this._pumpToken || !this._open) return
-                if (ok) done()
-                else this._streaming = false   // stale (seed/params changed) — the rebuild path re-streams
+                if (!ok) { this._streaming = false; return }   // stale (seed/params changed) — the rebuild path re-streams
+                this._streamAt = this._streamCenter
+                this._bgDirty = true
+                this._streamStep++
+                if (this._streamStep < steps.length) this._pumpTimer = setTimeout(() => this._pump(), PROGRESSIVE_GAP)
+                else { this._streaming = false; this._streamFull = true }
             })
             return
         }
@@ -993,7 +1004,12 @@ export class Map2D {
     // Small bottom-center badge while the network is still filling in (chunked stream in flight).
     _drawStreamingBadge(ctx) {
         const s = this._sheet()
-        const txt = `streaming network… ${Math.round(100 * this._streamStep / this._radiusSteps().length)}%`
+        // A warm restream is ONE full-radius step (starts at the last ring), so a percentage there
+        // would sit frozen near 100 — say what is happening instead. Cold ladders show real %.
+        const n = this._radiusSteps().length
+        const txt = this._streamStep >= n - 1
+            ? 'updating map…'
+            : `streaming network… ${Math.round(100 * this._streamStep / n)}%`
         ctx.font = `12px ${MAP_LABEL_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
         const w = ctx.measureText(txt).width + 22
         const cx = (s.x0 + s.x1) / 2
