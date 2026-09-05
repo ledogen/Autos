@@ -365,3 +365,54 @@ would have looked grafted onto a slab.
 
 The hood swoop was dropped per the ruling — the plateau is flat and `NOSE_DROP` fell to 0.070,
 since the bullet's own lean now supplies the fall the swoop was faking.
+
+---
+
+## Air dam, lamp clip, and the tail's bullet treatment — 2026-09-04
+
+Three notes. **3512 tris / 4000**, audit clean.
+
+### 1. The front air dam
+
+Two separate causes, both from the fascia being authored against numbers instead of against the body:
+
+- **Its bottom edge was flat at z 0.285.** But the nose section only reaches that low for
+  |x| ≤ W_UNDER (0.560) — the underbody pan — and stops at the rocker outboard of that. So from
+  x 0.560 out the valance hung in mid-air with nothing behind it, and the painted nose face showed
+  beside it. `val_bottom(x)` now lands exactly on the body's own lower edge across the same span.
+- **Its back edge returned 150 mm into the truck.** That put the fascia's own bottom lip well behind
+  the painted nose, so the body showed *in front of* it — the two red wedges arrowed. The back now
+  hugs the face at 12 mm.
+
+### 2. Headlamps clipping the grille surround
+
+The lamp's inboard sweep station was at x 0.404 and the surround upright spans 0.392–0.414 — the
+station sat **inside** the upright, so the lens's convex apex poked out through its side as a bump at
+mid height. Station moved to `gx + 0.030`, i.e. derived from the upright rather than typed near it.
+
+### 3. The tail gets the nose's treatment
+
+Same architecture as `nose_y()`/`nose_rim_ring()`, signs flipped, numbers much smaller — a tailgate
+really is close to flat; it is the corners and the top edge that turn.
+
+| | |
+|---|---|
+| `tail_y(x, z)` + `tail_lean(z)` | the tail surface, split so the painted panels can use the same curve |
+| `TAIL_PROW = 0.026` | rounds the rear corners in plan |
+| `TAIL_LEAN_UP = 0.050` | **"the tailgate also rounds away at the top"** — the face rolls forward toward the rail |
+| `TAIL_RIM_N = 3` | quarter-ellipse rim, same generated schedule as the nose |
+| `BED_EDGE = 0.020` | **"the whole bed is rounded on top and bottom edges"** — one chamfer point per outer corner, ring 20 → 24 points |
+| `bed_bottom()` | **"the bedside tapers up to meet the bumper"** — behind the rear arch the rocker line kicks up to the step bumper's top face |
+
+**The rim needed room.** At the old 30 mm between `Y_BED_R` and the tailgate, prow + lean exceeded
+the span and the rings folded forward. `Y_BED_R` moved to −2.4405, giving 100 mm.
+
+**Everything at the tail is now derived, not typed.** The painted panels take their width from
+`W_FLANK * (1 − TAIL_TUCK)`, their top from `Z_RAIL − TAIL_DROP`, and their forward roll from
+`tail_lean(z)` itself, so a change to the rim cannot leave them behind. Two hardcoded leftovers were
+found and fixed on the way: the tailgate crease and handle were still pinned to the *old* `Y_TAIL`
+and had ended up 32 mm behind the tailgate, floating inside the bumper.
+
+**Residual, stated:** a small dark triangle survives at each top corner of the tailgate where the
+tapered panel meets the tucked rim. Chasing it fully means making the panel's outline follow the rim
+ring point-for-point, which is a bigger refactor than it is worth right now.
