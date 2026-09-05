@@ -51,7 +51,7 @@ export function catchTime (vehicleState, params) {
   const health = Math.max(0, Math.min(1, vehicleState.engineHealth ?? 1))
   if (health <= 0) return Infinity
   const fresh = params.ignitionCatchTime ?? 0.25
-  const worn = params.ignitionCatchTimeWorn ?? 1.0
+  const worn = params.ignitionCatchTimeWorn ?? 2.0
   return fresh + (1 - health) * (worn - fresh)
 }
 

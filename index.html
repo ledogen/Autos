@@ -619,6 +619,26 @@
       opacity: 0;
       transition: opacity 1s ease;
     }
+    /* FEAT-33: "hold I to start the truck" — shown when the driver asks for throttle with the
+       ignition off (story mode seats you in a dead truck). Same toast family as #spawn-toast;
+       the key itself is accented so it reads as a control rather than as part of the sentence. */
+    #ignition-hint {
+      position: fixed;
+      top: 8%;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #ffffff;
+      font-family: monospace;
+      font-size: 18px;
+      letter-spacing: 1px;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+      z-index: 96;
+      pointer-events: none;
+      user-select: none;
+      opacity: 0;
+      transition: opacity 1s ease;
+    }
+    #ignition-hint .k { color: #ffcf3c; }
     /* FEAT-47: the doze/blink overlay. Two eyelids that meet in the middle — a crossfade to black
        reads as a fade-out, closing lids read as a blink, which is the whole point. Above the HUD
        and panels, below the story loading screen (z 200). JS only ever writes the two transforms
@@ -1068,10 +1088,11 @@
 
   <!-- Spawn-point-set toast — fades out ~3 s after any spawn change (main.js showSpawnToast). -->
   <div id="spawn-toast">spawn point set</div>
+  <div id="ignition-hint">hold <span class="k">I</span> to start the truck</div>
 
   <!-- Controls cheat-sheet (lower-left, click header to collapse). Wired in main.js. -->
-  <div id="controls">
-    <div id="controls-toggle">controls &#9662;</div>
+  <div id="controls" class="collapsed">
+    <div id="controls-toggle">controls &#9656;</div>
     <div id="controls-body">
       <div><span class="k">WASD</span>drive</div>
       <div><span class="k">Space</span>handbrake</div>

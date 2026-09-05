@@ -471,6 +471,25 @@ export class Map2D {
      */
     setRadiusCap(r) { this._radiusCap = Math.max(MAP_RADIUS, r) }
 
+    /**
+     * Story exit: drop back to the free-roam streaming window.
+     *
+     * setRadiusTarget only ever RAISES (it early-returns on a smaller value), and only the
+     * constructor ever set it back — so before this existed, a map opened once inside story mode
+     * left free roam streaming to the region radius for the rest of the session. That is exactly
+     * what setRadiusCap's own docstring warns against ("do NOT call it from free roam, where those
+     * rings would route cold"), and it also stretched the progress ladder from 5 rungs to 8 (the
+     * owner's "13% > 25% > 38%" instead of 20% steps). Re-streams if the map is open so the drop
+     * takes effect immediately rather than on the next pan.
+     */
+    resetRadiusTarget() {
+        const had = this._radiusTarget
+        this._radiusCap = MAP_RADIUS_MAX
+        this._radiusTarget = MAP_RADIUS
+        this._streamFull = false
+        if (had > MAP_RADIUS && this._open) this._startStream()
+    }
+
     setRadiusTarget(r) {
         const want = Math.max(MAP_RADIUS, Math.min(this._radiusCap ?? MAP_RADIUS_MAX, r))
         if (want <= this._radiusTarget) return
@@ -748,19 +767,29 @@ export class Map2D {
                 done()
                 return
             }
-            // COLD opens walk the same progressive ladder as the sync path — each ring is a worker
-            // build, adopted + repainted as it lands, so the streaming badge shows REAL progress
-            // (owner 2026-09-04: the frozen "80%" was this path skipping the ladder). WARM restreams
-            // keep the one-step full-radius jump (_startStream set _streamStep to the last ring —
-            // the d08d016 zoom-drift fix); the badge drops its % for that single honest step.
-            const R = steps[this._streamStep]
+            // COLD opens paint the FIRST ring, then jump straight to the final radius — two
+            // builds, not five. Each rung here is a whole worker build of a superset window, so
+            // the middle rungs' output is entirely superseded by the last one: measured 2026-09-05,
+            // a cold free-roam open walked 400/650/900/1150/1400 in 4.2+1.8+2.1+2.4+3.1 = 13.6 s,
+            // of which the three middle rungs were ~6.3 s of thrown-away work. The ladder predates
+            // the worker, when every rung painted synchronously and was the only way to get
+            // anything on screen; now the first ring covers that (owner 2026-09-05: "i do want
+            // something on screen fast, but the first 20% suffices"). Story keeps its zero-build
+            // adopt above; WARM restreams keep the one-step full-radius jump (_startStream set
+            // _streamStep to the last ring — the d08d016 zoom-drift fix).
+            // Ring 0 paints fast; every later pump goes straight to the FINAL radius. _streamStep
+            // stays the honest badge index (0 → 1 → done, i.e. "20%" after the first ring) while
+            // the second build already covers the whole map, so the two never disagree about how
+            // much of the network is actually drawn.
+            const cold = this._streamStep === 0
+            const R = cold ? steps[0] : steps[steps.length - 1]
             this._road.setRadius(R)
             this._netClient.buildNow('map', this._streamCenter.x, this._streamCenter.z, R).then((ok) => {
                 if (token !== this._pumpToken || !this._open) return
                 if (!ok) { this._streaming = false; return }   // stale (seed/params changed) — the rebuild path re-streams
                 this._streamAt = this._streamCenter
                 this._bgDirty = true
-                this._streamStep++
+                this._streamStep = cold ? 1 : steps.length
                 if (this._streamStep < steps.length) this._pumpTimer = setTimeout(() => this._pump(), PROGRESSIVE_GAP)
                 else { this._streaming = false; this._streamFull = true }
             })

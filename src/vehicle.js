@@ -124,6 +124,13 @@ export function updateVehicle (vehicleState, params, dt) {
   // _controlAtten is 1 except during a story-mode doze, when it is 0 (see setControlAttenuation).
   const rawThrottle = ((!freecamActive && keys.w) ? 1 : 0) * _controlAtten
   const rawBrake    = ((!freecamActive && keys.s) ? 1 : 0) * _controlAtten
+  // FEAT-33: asking for throttle on a dead engine raises a one-shot the HUD turns into "hold I to
+  // start the truck" (story mode seats you in a dead truck; free roam hands you a running one, so
+  // this only ever fires where the ritual applies). Set here because this module owns driver input;
+  // main.js consumes and clears it, the same split as ignition.event. CRANKING is deliberately NOT
+  // hinted — the driver is already doing the right thing and just has not held it long enough.
+  if (rawThrottle > 0 && vehicleState.ignition && vehicleState.ignition.state === 'off')
+    vehicleState.ignitionHint = true
   if (rawThrottle > vehicleState.smoothThrottle)
     vehicleState.smoothThrottle = Math.min(vehicleState.smoothThrottle + params.throttleRampRate * dt, rawThrottle)
   else

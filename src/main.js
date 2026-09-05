@@ -973,6 +973,22 @@ function showSpawnToast () {
   _spawnToastTimer = setTimeout(() => { el.style.opacity = '0' }, 3000)
 }
 
+// ── FEAT-33 "hold I to start the truck" hint ──────────────────────────────────────────────
+// Raised by vehicle.js whenever the driver asks for throttle with the key off. Re-raised every
+// frame W is held, so the toast holds at full opacity while they keep trying and fades 1.5 s after
+// they stop (or the moment the starter engages — the hint has done its job by then).
+let _ignHintTimer = null
+function showIgnitionHint () {
+  const el = document.getElementById('ignition-hint')
+  if (!el) return
+  clearTimeout(_ignHintTimer)
+  el.style.transition = 'none'
+  el.style.opacity = '1'
+  void el.offsetWidth      // reflow so the fade re-arms (same trick as showSpawnToast)
+  el.style.transition = 'opacity 1s ease'
+  _ignHintTimer = setTimeout(() => { el.style.opacity = '0' }, 1500)
+}
+
 // ── Teleport / set-spawn primitives (feature/teleport) ────────────────────────────────────
 // Two flavours of spawn override (see _reseatTruckAtSpawnInner):
 //   align:true  — snap to the local ground plane at (x,z)+heading (map double-click, seed spawn).
@@ -4567,6 +4583,10 @@ const storySystem = new StorySystem({
   },
   /** Exit: hand the play RoadSystem back its normal streaming window before the loop resumes. */
   releaseRegion: () => {
+    // The map's streaming window is raised to the region radius when the map is opened in story
+    // mode (the M handler below) and only ever grows — hand it back too, or free roam keeps
+    // routing the region's outer rings cold for the rest of the session.
+    map2d?.resetRadiusTarget()
     if (!roadSystem) return
     roadSystem.setRadius(320)   // PERF (Tier 1) play radius — matches the terrain ring
     roadSystem.update(getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position)
@@ -5265,6 +5285,13 @@ function loop () {
     if (ign.event === 'catch') playCatchAudio()
     else if (ign.event === 'shutoff') playShutoffAudio()
     ign.event = null
+  }
+  // FEAT-33: the dead-engine throttle hint (raised in vehicle.js). Same one-shot discipline as the
+  // events above — consume and clear, so holding W re-raises it every frame and the toast simply
+  // stays up until the driver stops asking.
+  if (vehicleState.ignitionHint) {
+    vehicleState.ignitionHint = false
+    showIgnitionHint()
   }
 
   // Tire-slip audio (src/tire-audio.js): screech on pavement / tearing roar on dirt, gated by
