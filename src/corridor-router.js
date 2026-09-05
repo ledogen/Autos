@@ -512,6 +512,41 @@ function stationRateCls(cls, d, C) {
 // and a feasible 28.5%-mean descent "infeasible". Tolerating cap + yStep/(2·ds) (≤2.5% grade
 // at defaults) biases the error to a bounded overshoot instead of an unbounded undershoot.
 // (BUG-55: factored out of profileSolve so profileSolveBundle prices with the identical rule.)
+/**
+ * PERF-31 W3: the DP inner loop's form of makeStepCost, as per-station TABLES.
+ *
+ * The three profile DPs (profileSolve, and profileSolveBundle's branch + trunk passes) all walk
+ * transitions (station i−1, elevation k) → (station i, elevation j) and called makeStepCost for
+ * every (j, k) pair. But the arrival terms — the class at the new station and its per-metre
+ * station rate — depend ONLY on j, and the departure class ONLY on k, so each was recomputed
+ * kMax× / ny× per station respectively. Profiled 2026-09-05 on the network-worker thread, classOf
+ * + stationRateCls + the stepCost closure were ~29% of sampled time.
+ *
+ * `prepare(g0, g1, ds)` fills the tables for one station step; the caller then indexes them.
+ * ARITHMETIC IS IDENTICAL, deliberately: `rateTo[j]` keeps the `ds * rate` product and the caller
+ * keeps the `(ds*cRoadM*wGrade) * g * g` grouping and the portal/abutment addition order, so the
+ * accumulated float cost is bit-for-bit what the closure produced (priced == built is not
+ * relaxable — verified by the battery network hash being byte-identical on all 9 windows).
+ */
+function makeStationTables(C, yArr) {
+    const ny = yArr.length
+    const clsFrom = new Uint8Array(ny)      // class at the DEPARTURE station, indexed by k
+    const clsTo   = new Uint8Array(ny)      // class at the ARRIVAL station, indexed by j
+    const rateTo  = new Float64Array(ny)    // ds × station rate at arrival, indexed by j
+    return {
+        clsFrom, clsTo, rateTo,
+        prepare(g0, g1, ds) {
+            for (let k = 0; k < ny; k++) clsFrom[k] = classOf(yArr[k] - g0, C)
+            for (let j = 0; j < ny; j++) {
+                const d = yArr[j] - g1
+                const cls = classOf(d, C)
+                clsTo[j] = cls
+                rateTo[j] = ds * stationRateCls(cls, d, C)
+            }
+        },
+    }
+}
+
 function makeStepCost(C, yStep) {
     return (y0, g0, y1, g1, ds) => {
         const g = (y1 - y0) / ds
@@ -539,6 +574,11 @@ export function profileSolve(st, yA, yB, opts = {}) {
     hi += C.fillMax + 8
     const ny = Math.max(2, Math.round((hi - lo) / yStep) + 1)
     const yOf = j => lo + j * yStep
+    // PERF-31 W3: the grid as a flat array + the per-station tables the DP loops index (identical
+    // values to yOf/makeStepCost — see makeStationTables).
+    const yArr = new Float64Array(ny)
+    for (let j = 0; j < ny; j++) yArr[j] = lo + j * yStep
+    const tab = makeStationTables(C, yArr)
 
     const stepCost = makeStepCost(C, yStep)
 
@@ -599,13 +639,27 @@ export function profileSolve(st, yA, yB, opts = {}) {
         const fi = new Int32Array(ny).fill(-1)
         const prev = cost[i - 1]
         const g0 = st.ground[i - 1], g1 = st.ground[i]
+        // PERF-31 W3: per-station tables instead of a closure call per (j,k) — same arithmetic,
+        // same order (see makeStationTables). `half` keeps makeStepCost's exact cap grouping.
+        tab.prepare(g0, g1, ds)
+        const { clsFrom, clsTo, rateTo } = tab
+        const gradeW = ds * C.cRoadM * C.wGrade
+        const half = yStep / (2 * ds)
         for (let j = 0; j < ny; j++) {
-            const y1 = yOf(j)
+            const y1 = yArr[j]
+            const clsJ = clsTo[j], rateJ = rateTo[j], jBore = clsJ === CLS.BORE
             let best = Infinity, bestK = -1
             for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
                 const p = prev[k]
                 if (p === Infinity) continue
-                const c = p + stepCost(yOf(k), g0, y1, g1, ds)
+                const g = (y1 - yArr[k]) / ds
+                const clsK = clsFrom[k], kBore = clsK === CLS.BORE
+                const cap = (kBore || jBore) ? C.gMaxBore : C.gMaxRoad
+                if (Math.abs(g) > cap + half + 1e-9) continue
+                let sc = rateJ + gradeW * g * g
+                if (kBore !== jBore) sc += C.cPortal
+                if ((clsK === CLS.BRIDGE) !== (clsJ === CLS.BRIDGE)) sc += C.cAbutment
+                const c = p + sc
                 if (c < best) { best = c; bestK = k }
             }
             ci[j] = best
@@ -694,6 +748,10 @@ export function profileSolveBundle(trunk, branches, opts = {}) {
     hi += C.fillMax + 8
     const ny = Math.max(2, Math.round((hi - lo) / yStep) + 1)
     const yOf = j => lo + j * yStep
+    // PERF-31 W3: see makeStationTables — identical values to yOf/makeStepCost.
+    const yArr = new Float64Array(ny)
+    for (let j = 0; j < ny; j++) yArr[j] = lo + j * yStep
+    const tab = makeStationTables(C, yArr)
     const stepCost = makeStepCost(C, yStep)
 
     // ── branch forward passes: arr[j] = cheapest arrival at the fork at elevation yOf(j) ──
@@ -731,13 +789,25 @@ export function profileSolveBundle(trunk, branches, opts = {}) {
             const fi = new Int32Array(ny).fill(-1)
             const prev = cost[i - 1]
             const g0 = b.ground[i - 1], g1 = b.ground[i]
+            tab.prepare(g0, g1, ds)   // PERF-31 W3 — see makeStationTables
+            const { clsFrom, clsTo, rateTo } = tab
+            const gradeW = ds * C.cRoadM * C.wGrade
+            const half = yStep / (2 * ds)
             for (let j = 0; j < ny; j++) {
-                const y1 = yOf(j)
+                const y1 = yArr[j]
+                const clsJ = clsTo[j], rateJ = rateTo[j], jBore = clsJ === CLS.BORE
                 let best = Infinity, bestK = -1
                 for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
                     const p = prev[k]
                     if (p === Infinity) continue
-                    const c = p + stepCost(yOf(k), g0, y1, g1, ds)
+                    const g = (y1 - yArr[k]) / ds
+                    const clsK = clsFrom[k], kBore = clsK === CLS.BORE
+                    const cap = (kBore || jBore) ? C.gMaxBore : C.gMaxRoad
+                    if (Math.abs(g) > cap + half + 1e-9) continue
+                    let sc = rateJ + gradeW * g * g
+                    if (kBore !== jBore) sc += C.cPortal
+                    if ((clsK === CLS.BRIDGE) !== (clsJ === CLS.BRIDGE)) sc += C.cAbutment
+                    const c = p + sc
                     if (c < best) { best = c; bestK = k }
                 }
                 ci[j] = best
@@ -751,13 +821,25 @@ export function profileSolveBundle(trunk, branches, opts = {}) {
             const kMax = Math.ceil(C.gMaxRoad * ds / yStep)
             const prev = cost[m - 2]
             const g0 = b.ground[m - 2], g1 = b.ground[m - 1]
+            tab.prepare(g0, g1, ds)   // PERF-31 W3 — see makeStationTables
+            const { clsFrom, clsTo, rateTo } = tab
+            const gradeW = ds * C.cRoadM * C.wGrade
+            const half = yStep / (2 * ds)
             for (let j = 0; j < ny; j++) {
-                const y1 = yOf(j)
+                const y1 = yArr[j]
+                const clsJ = clsTo[j], rateJ = rateTo[j], jBore = clsJ === CLS.BORE
                 let best = Infinity, bestK = -1
                 for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
                     const p = prev[k]
                     if (p === Infinity) continue
-                    const c = p + stepCost(yOf(k), g0, y1, g1, ds)
+                    const g = (y1 - yArr[k]) / ds
+                    const clsK = clsFrom[k], kBore = clsK === CLS.BORE
+                    const cap = (kBore || jBore) ? C.gMaxBore : C.gMaxRoad
+                    if (Math.abs(g) > cap + half + 1e-9) continue
+                    let sc = rateJ + gradeW * g * g
+                    if (kBore !== jBore) sc += C.cPortal
+                    if ((clsK === CLS.BRIDGE) !== (clsJ === CLS.BRIDGE)) sc += C.cAbutment
+                    const c = p + sc
                     if (c < best) { best = c; bestK = k }
                 }
                 arr[j] = best
@@ -791,13 +873,27 @@ export function profileSolveBundle(trunk, branches, opts = {}) {
         const fi = new Int32Array(ny).fill(-1)
         const prev = cost[i - 1]
         const g0 = trunk.ground[i - 1], g1 = trunk.ground[i]
+        // PERF-31 W3: per-station tables instead of a closure call per (j,k) — same arithmetic,
+        // same order (see makeStationTables). `half` keeps makeStepCost's exact cap grouping.
+        tab.prepare(g0, g1, ds)
+        const { clsFrom, clsTo, rateTo } = tab
+        const gradeW = ds * C.cRoadM * C.wGrade
+        const half = yStep / (2 * ds)
         for (let j = 0; j < ny; j++) {
-            const y1 = yOf(j)
+            const y1 = yArr[j]
+            const clsJ = clsTo[j], rateJ = rateTo[j], jBore = clsJ === CLS.BORE
             let best = Infinity, bestK = -1
             for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
                 const p = prev[k]
                 if (p === Infinity) continue
-                const c = p + stepCost(yOf(k), g0, y1, g1, ds)
+                const g = (y1 - yArr[k]) / ds
+                const clsK = clsFrom[k], kBore = clsK === CLS.BORE
+                const cap = (kBore || jBore) ? C.gMaxBore : C.gMaxRoad
+                if (Math.abs(g) > cap + half + 1e-9) continue
+                let sc = rateJ + gradeW * g * g
+                if (kBore !== jBore) sc += C.cPortal
+                if ((clsK === CLS.BRIDGE) !== (clsJ === CLS.BRIDGE)) sc += C.cAbutment
+                const c = p + sc
                 if (c < best) { best = c; bestK = k }
             }
             ci[j] = best
