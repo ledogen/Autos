@@ -6,7 +6,7 @@
 //                                saddle). No radii, no geometry — a swath, not a road.
 //   Stage 2  profileSolve()    — exact 1-D dynamic programming over the vertical alignment along
 //                                the corridor. Full vocabulary as priced states: on-grade, cut,
-//                                fill, bore, bridge. The profile this solver outputs IS the
+//                                fill, bore. The profile this solver outputs IS the
 //                                profile that ships — priced == built by construction.
 //
 // Purity contract (FEAT-68 item 7, measured to hold): everything here is a pure function of
@@ -38,24 +38,21 @@ export const V2_COSTS = {
     cFillM: 0.12,     // fill, per m of length per m of height
     cBoreM: 12.0,     // bore, per m (owner 2026-08-18: "too happy to tunnel" — raised 8 → 12)
     cPortal: 250,     // fixed, per bore portal (also raised — kills pop-through mini-bores)
-    // Bridges are DE-SCOPED from the vocabulary (owner 2026-08-18): real forest bridges are short,
-    // same-elevation water crossings, not grade machines — and valley-spanning decks raise "why is
-    // there no road down there". Machinery stays; flip bridgesOn to re-enable. The planned way back
-    // is a post-router conversion of stream/water crossings only.
-    bridgesOn: false,
     // Direction-change cost, per radian (the corridor is heading-free, so without this a ladder
     // of twenty micro-zigzags prices identically to two long traverses — the search has no reason
     // to prefer the buildable shape). This is v1's roadWTurn lesson as a PHYSICAL knob: curvature
     // costs money. Evaluated greedily against the parent step's direction (not part of the state
     // — exact turn accounting would 8× the state space for a tie-shaping term).
     cTurn: 45,
-    cBridgeM: 20.0,   // bridge deck, per m (only read when bridgesOn)
-    cAbutment: 100,   // fixed, per bridge end (only read when bridgesOn)
     cutMax: 20,       // m below ground where a cut becomes a bore — a 12–20 m trench is an open
                       // rock CUTTING (road grade cap, priced linearly per m of depth), not a
                       // tunnel; at 12 the bore's 18% grade cap rate-limited legitimate cliff
                       // descents through incidental deep-cut pockets (seed 67, 31.7%-mean drop)
-    fillMax: 8,       // m above ground where a fill becomes a bridge
+    // QUAL-27: the fill CEILING. Above it there is no state to buy — bridges were de-scoped by the
+    // owner 2026-08-18 (real forest bridges are short, same-elevation water crossings, not grade
+    // machines) and their machinery is now deleted, so the price is simply Infinity and the corridor
+    // must find another way. A way back is a post-router conversion of stream/water crossings only.
+    fillMax: 8,       // m above ground beyond which a deck is unbuildable
     onTol: 0.75,      // m — |deck − ground| within this counts as on-grade
     gMaxRoad: 0.24,   // hard vocabulary cap for surface states (sustained ceiling is 0.40)
     gMaxBore: 0.18,   // bores are gentler by construction (FEAT-40 lineage)
@@ -232,7 +229,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     }
 
     // Elevation range: a stride-2 terrain pre-scan bounds the deck lattice. The deck can never sit
-    // above ground+fillMax (bridges de-scoped) and never usefully below the box floor minus the
+    // above ground+fillMax (the fill ceiling) and never usefully below the box floor minus the
     // cut band. The pre-scan fills the memo the search reuses.
     let tMin = Math.min(yA, yB), tMax = Math.max(yA, yB)
     for (let cz2 = 0; cz2 < Hn; cz2 += 2) for (let cx2 = 0; cx2 < W; cx2 += 2) {
@@ -369,7 +366,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
                 dx * gDir.x + dz * gDir.z < (0.5 - 1e-9) * dl
             const ds = D.ds
             const g1 = hAt(nx, nz)
-            // deck may not rise above ground+fillMax (no bridges); no useful floor below the band
+            // deck may not rise above ground+fillMax (the fill ceiling); no useful floor below the band
             const bTop = Math.min(NY - 1, Math.floor((g1 + C.fillMax - yLo) / yBin))
             const kMax = D.kMax
             const ni0 = nCell * NY
@@ -462,13 +459,13 @@ export function resampleStations(path, hFull, ds = 10) {
 }
 
 // Profile state classes (derived from deck − ground, never stored independently).
-export const CLS = { ON: 0, CUT: 1, FILL: 2, BORE: 3, BRIDGE: 4 }
-export const CLS_NAME = ['on', 'cut', 'fill', 'bore', 'bridge']
+export const CLS = { ON: 0, CUT: 1, FILL: 2, BORE: 3 }
+export const CLS_NAME = ['on', 'cut', 'fill', 'bore']
 
 function classOf(d, C) {
     if (Math.abs(d) <= C.onTol) return CLS.ON
     if (d < 0) return d < -C.cutMax ? CLS.BORE : CLS.CUT
-    return d > C.fillMax ? CLS.BRIDGE : CLS.FILL
+    return CLS.FILL
 }
 
 /** Per-metre station cost for a deck at offset d from ground (no grade/fixed terms). */
@@ -479,9 +476,10 @@ function stationRateCls(cls, d, C) {
     switch (cls) {
         case CLS.ON: return C.cRoadM
         case CLS.CUT: return C.cRoadM + C.cCutM * (-d) + (C.cCut2 ?? 0) * d * d
-        case CLS.FILL: return C.cRoadM + C.cFillM * d
+        // QUAL-27: above fillMax there is no buildable state. This used to classify BRIDGE and price
+        // at Infinity via bridgesOn:false — the same Infinity, one class and three knobs lighter.
+        case CLS.FILL: return d > C.fillMax ? Infinity : C.cRoadM + C.cFillM * d
         case CLS.BORE: return C.cBoreM
-        case CLS.BRIDGE: return C.bridgesOn ? C.cBridgeM : Infinity
     }
 }
 
@@ -490,7 +488,7 @@ function stationRateCls(cls, d, C) {
  * 1-D dynamic programming over deck elevation along the stations. State = (station, quantized y).
  * Transition = one station step at grade g = Δy/Δs, allowed while g respects the class caps
  * (surface 35%, bore 18%). Costs: station rate (above) × ds + on-grade quadratic discomfort
- * + fixed portal/abutment charges when the derived class crosses into/out of bore/bridge.
+ * + a fixed portal charge when the derived class crosses into/out of a bore.
  * Endpoints are PINNED to (yA, yB) — junction node heights as boundary conditions (FEAT-68
  * junction plan item 2: edges may never disagree at shared nodes).
  *
@@ -521,7 +519,6 @@ function makeStepCost(C, yStep) {
         if (Math.abs(g) > cap + yStep / (2 * ds) + 1e-9) return Infinity
         let c = ds * stationRate(y1 - g1, C) + ds * C.cRoadM * C.wGrade * g * g
         if ((cls0 === CLS.BORE) !== (cls1 === CLS.BORE)) c += C.cPortal
-        if ((cls0 === CLS.BRIDGE) !== (cls1 === CLS.BRIDGE)) c += C.cAbutment
         return c
     }
 }
@@ -873,7 +870,6 @@ export function priceProfile(st, y, C) {
         if (!Number.isFinite(rate)) return null
         cost += ds * rate + ds * C.cRoadM * C.wGrade * g * g
         if ((cls[i - 1] === CLS.BORE) !== (cls[i] === CLS.BORE)) cost += C.cPortal
-        if ((cls[i - 1] === CLS.BRIDGE) !== (cls[i] === CLS.BRIDGE)) cost += C.cAbutment
     }
     const segs = []
     for (let i = 0; i < n; i++) {
@@ -903,9 +899,10 @@ export function priceProfile(st, y, C) {
  * Three guarantees the callers depend on, in order of who would notice:
  *   1. ENDPOINTS NEVER MOVE. Junction node heights are a boundary condition, not a preference —
  *      moving one re-opens v1's node disease (y-spread at shared nodes).
- *   2. NO STATION CHANGES BORE/BRIDGE STATUS. on/cut/fill may interchange freely (they are one
- *      continuum and the re-price handles them), but a station may not sink into a bore or rise
- *      into a bridge — that would invent or destroy a span, portal charges and all.
+ *   2. NO STATION CHANGES BORE STATUS. on/cut/fill may interchange freely (they are one continuum
+ *      and the re-price handles them), but a station may not sink into a bore or climb out of one —
+ *      that would invent or destroy a span, portal charges and all. It may not breach the fill
+ *      ceiling either, which the same clamp holds.
  *   3. THE RESULT IS RE-PRICED, so priced == built still holds. It is a property of the SHIPPED
  *      array, and the shipped array is this one. If smoothing would break a grade cap the blend is
  *      bisected back toward the solved profile, which is always feasible — so this can soften the
@@ -933,16 +930,14 @@ export function dequantizeProfile(st, prof, C) {
         for (let i = 1; i < n - 1; i++) next[i] = 0.25 * y[i - 1] + 0.5 * y[i] + 0.25 * y[i + 1]
         for (let i = 1; i < n - 1; i++) y[i] = next[i]
     }
-    // Guarantee 2: clamp each interior station back inside its own bore/bridge status.
+    // Guarantee 2: clamp each interior station back inside its own bore status, and under the fill
+    // ceiling (a solved profile never breaches it, so this only holds what smoothing might push out).
     const EPS = 1e-3
     for (let i = 1; i < n - 1; i++) {
         const g = st.ground[i]
-        const wasBore = prof.cls[i] === CLS.BORE
-        const wasBridge = prof.cls[i] === CLS.BRIDGE
-        if (wasBore) y[i] = Math.min(y[i], g - C.cutMax - EPS)
+        if (prof.cls[i] === CLS.BORE) y[i] = Math.min(y[i], g - C.cutMax - EPS)
         else y[i] = Math.max(y[i], g - C.cutMax + EPS)
-        if (wasBridge) y[i] = Math.max(y[i], g + C.fillMax + EPS)
-        else y[i] = Math.min(y[i], g + C.fillMax - EPS)
+        y[i] = Math.min(y[i], g + C.fillMax - EPS)
     }
     // Guarantee 3: keep the largest feasible blend toward the smoothed line. t = 0 (the solved
     // profile) is feasible by construction, so this always terminates with something legal.

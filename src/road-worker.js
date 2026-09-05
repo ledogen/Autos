@@ -6,12 +6,13 @@
 // synchronous fallback calls — the FEAT-68 no-mirror fence. The 1300-line ROAD_WORKER_SOURCE
 // verbatim-mirror string (and its route-worker-sync byte-equality gate) died with the v1 router.
 //
-// TWO+ CONSUMERS, ONE CONTRACT (all are RoadSystem instances):
-//   - the play network (main.js) — client 'play'
-//   - the Map2D read-only network (map2d.js) — client 'map'
-//   - the story mission planner (main.js) — client 'mission'
-// The 'client' tag rides the envelope both ways so onmessage forwards each reply to the right
-// instance's ingestRoutedConnections (which rejects stale epochs PER INSTANCE).
+// ONE CONSUMER since QUAL-27: the network Worker's NESTED pool (road-network-worker.js, PERF-31
+// W2.2), which pre-warms a build's whole route demand across cores before assembling. The main
+// thread used to run a second pool of its own for the play / map / mission RoadSystems; PERF-30
+// moved every one of those builds into the network Worker, so that pool sat spawned, seeded and
+// idle without ever being handed a job. The 'client' tag still rides the envelope both ways so
+// onmessage forwards each reply to the right instance's ingestRoutedConnections (which rejects
+// stale epochs PER INSTANCE).
 
 /**
  * Pool of route workers with PULL-model dispatch (PERF-15: jobs queue centrally; each worker

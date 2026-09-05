@@ -11,7 +11,7 @@
 //   • Behind a loading screen, PRE-ROUTE the whole region once, then FREEZE THE ROUTER: the play
 //     RoadSystem is widened to the region, every connection in it is warmed on the road Worker, the
 //     network is registered once at that wide radius, and from then on the frame loop makes no
-//     roadSystem.update() / warmRoutes() calls at all. That is the FEAT-43 perf + correctness win.
+//     roadSystem.update() calls at all. That is the FEAT-43 perf + correctness win.
 //   • Bound the region with a hard circular wall at REGION_RADIUS_M around the spawn.
 //
 // WHY ROUTING ONLY (owner decision, 2026-07-25 — "Option A"): routing and terrain have inverted
@@ -104,7 +104,7 @@ export class StorySystem {
 
   isActive () { return this._active }
   /**
-   * THE freeze gate the frame loop reads. True ⇒ skip roadSystem.update()/warmRoutes() entirely.
+   * THE freeze gate the frame loop reads. True ⇒ skip roadSystem.update() entirely.
    * False during entry (the region is still warming) and in free roam.
    */
   isRoutingFrozen () { return this._frozen }

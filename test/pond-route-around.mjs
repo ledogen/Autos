@@ -6,10 +6,10 @@
 //   Part B — anchor SITES inside a pond+skirt disc are dropped from the alive set (_aliveSitesIn),
 //            so no graph node/junction sits in the water.
 //   Part A — every route SPEC carries the overlapping pond+skirt discs as pure DATA
-//            (opts.pondDiscs), and arcPrimitiveConnect hard-rejects primitives entering one. This is
-//            the actual guarantee: two dry anchors on opposite sides of a pond would otherwise be
-//            joined straight through it — and worse than neutral, the router's wAlt valley-seeking
-//            term makes pond floors (valley minima) the CHEAPEST cells, so it is actively drawn in.
+//            (opts.pondDiscs), and the corridor search refuses to enter one. This is the actual
+//            guarantee: two dry anchors on opposite sides of a pond would otherwise be joined
+//            straight through it — and worse than neutral, a pond floor is a valley minimum, which
+//            is exactly the low ground a cost-minimising route is drawn to.
 //
 // Checks (seed 6, default params, 1600 m band streamed at the pond cluster near spawn):
 //   1. NON-VACUOUS  — WITHOUT the injection, streamed centerlines DO cross pond discs (the router

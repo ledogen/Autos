@@ -18,7 +18,7 @@ const g = road._proto.graph
 
 for (const K of [2, 3]) {
   const hTrunc = truncatedHeightField(road._noiseCoarse, RANGER_PARAMS, K)
-  let n = 0, infeasible = 0, bores = 0, bridges = 0, boreLen = 0, bridgeLen = 0
+  let n = 0, infeasible = 0, bores = 0, boreLen = 0
   let detourSum = 0, detourMax = 0, steep = 0 /* edges with any grade > 0.30 */, totalLen = 0
   let g20 = 0 // total m over 20%
   const t0 = performance.now()
@@ -43,12 +43,11 @@ for (const K of [2, 3]) {
     if (hasSteep) steep++
     for (const sg of res.profile.segs) {
       if (sg.cls === CLS.BORE) { bores++; boreLen += sg.len }
-      if (sg.cls === CLS.BRIDGE) { bridges++; bridgeLen += sg.len }
     }
   }
   const ms = performance.now() - t0
   console.log(`K=${K}: ${n} edges in ${ms.toFixed(0)} ms (${(ms / n).toFixed(1)} ms/edge) | infeasible ${infeasible} | ` +
     `detour mean x${(detourSum / (n - infeasible)).toFixed(2)} max x${detourMax.toFixed(2)} | ` +
-    `bores ${bores} (${boreLen.toFixed(0)} m) | bridges ${bridges} (${bridgeLen.toFixed(0)} m) | ` +
+    `bores ${bores} (${boreLen.toFixed(0)} m) | ` +
     `edges w/ >30% ${steep} | m over 20%: ${g20.toFixed(0)} of ${totalLen.toFixed(0)}`)
 }

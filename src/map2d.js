@@ -386,7 +386,6 @@ export class Map2D {
 
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
-        this._routeWorker = null         // QUAL-08: dedicated road-network Worker (client 'map'); set via setRouteWorker
         this._netClient = null           // PERF-30: network-Worker client (whole builds off-thread); set via setNetworkClient
         this._playNetSource = null       // PERF-30: live play RoadSystem getter; set via setPlayNetworkSource
         this._sharedRouteSource = null   // QUAL-14 perf: getter for the play RoadSystem (shared route cache)
@@ -444,7 +443,6 @@ export class Map2D {
     // QUAL-08: attach the dedicated road-network routing Worker so the map's read-only RoadSystem routes
     // OFF the main thread (client 'map'), decoupled from the play/terrain pipeline. Optional — without it
     // the map falls back to synchronous routing (its prior behaviour). Wired in _buildRoad on (re)build.
-    setRouteWorker(rw) { this._routeWorker = rw }
 
     /** PERF-30: the network-Worker client — the whole map build runs off-thread (client 'map'). */
     setNetworkClient(c) { this._netClient = c }
@@ -670,13 +668,6 @@ export class Map2D {
         this._streamAt = null
         this._streamFull = false
         this._streamStep = 0
-        // QUAL-08: route this instance off-thread via the shared road-network Worker (client 'map'). The
-        // stable 'map' id swaps the instance on rebuild; old in-flight replies drop by the new instance's
-        // epoch. warmRoutes() (see _pump) then pre-warms the map cache off the main thread.
-        if (this._routeWorker) {
-            this._routeWorker.registerClient('map', this._road)
-            this._road.setRouteDispatcher((jobs, epoch) => this._routeWorker.postRouteJobs('map', jobs, epoch))
-        }
         // FEAT-17: re-apply the water no-go so the fresh instance routes around ponds like play does.
         if (this._waterNoGoFns) this._road.setWaterNoGo(this._waterNoGoFns[0], this._waterNoGoFns[1])
         // PERF-30: register with the network-Worker client (whole builds off-thread — see _pump).
@@ -768,11 +759,9 @@ export class Map2D {
         }
         const R = this._radiusSteps()[this._streamStep]
         this._road.setRadius(R)
-        // Route OFF-THREAD first (owner-reported freeze fix): poll warmBandComplete until the road
-        // Worker has cached every connection in this radius band, and only THEN run the synchronous
-        // update — with a warm cache it is the cheap registration pass (~0.2 s at full radius), not
-        // the multi-second routing hang that froze panning. Without a worker, warmBandComplete
-        // returns true immediately and this collapses to the old sync path (headless/tests).
+        // No network client (USE_NETWORK_WORKER off, or no Worker at all): warmBandComplete has no
+        // dispatcher, returns true immediately, and this collapses to the fully synchronous path the
+        // headless gates run. QUAL-27 removed the main-thread route pool that used to feed it.
         const token = ++this._pumpToken
         const t0 = performance.now()
         const poll = () => {

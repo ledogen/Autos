@@ -283,61 +283,10 @@ export function signedCurvature(T0x, T0z, T1x, T1z, ds) {
 
 // ── Junction polygon utilities (P9 plan 04) ──────────────────────────────────
 // No imports — Worker-safe discipline maintained for future use.
-// NOTE: junction footprint is main-thread only; these are NOT synced into WORKER_SOURCE.
-// Used by road-mesh.js buildJunctionFootprint + road.js _detectJunctions.
-
-/**
- * Test if a closed polygon (array of {x,z}) is convex.
- * Returns true if all cross-products of consecutive edge pairs have the same sign.
- * A polygon with < 3 points is treated as degenerate (returns false).
- *
- * Pure function — deterministic (D-16).
- * @param {Array<{x:number,z:number}>} poly — closed polygon vertices (last → first implicit)
- * @returns {boolean}
- */
-export function isConvexPolygon(poly) {
-    const n = poly.length
-    if (n < 3) return false
-    let sign = 0
-    for (let i = 0; i < n; i++) {
-        const a = poly[i]
-        const b = poly[(i + 1) % n]
-        const c = poly[(i + 2) % n]
-        const cross = (b.x - a.x) * (c.z - b.z) - (b.z - a.z) * (c.x - b.x)
-        if (Math.abs(cross) < 1e-10) continue  // collinear edge — skip
-        if (sign === 0) {
-            sign = Math.sign(cross)
-        } else if (Math.sign(cross) !== sign) {
-            return false  // mixed sign → non-convex
-        }
-    }
-    return sign !== 0  // degenerate (all collinear) → treated as non-convex
-}
-
-/**
- * Triangulate a convex polygon using a fan from its centroid.
- *
- * Returns a flat array of triangle vertex indices. The centroid is appended by the
- * caller at index poly.length in their position array; this function generates
- * indices referencing that slot as `cIdx = poly.length`.
- *
- * Triangle winding: (centroid, poly[i], poly[i+1]) — CCW if polygon is CCW.
- *
- * @param {Array<{x:number,z:number}>} poly — closed polygon (CCW expected)
- * @returns {number[]} Flat triangle index array; centroid index = poly.length
- *
- * Pure function — deterministic (D-16).
- */
-export function triangulateConvexFan(poly) {
-    const n = poly.length
-    if (n < 3) return []
-    const cIdx = n  // centroid will be appended by caller at this index
-    const tris = []
-    for (let i = 0; i < n; i++) {
-        tris.push(cIdx, i, (i + 1) % n)
-    }
-    return tris
-}
+// NOTE: junction footprint is main-thread only; this is NOT synced into WORKER_SOURCE.
+// Used by road-mesh.js buildJunctionFootprint.
+// QUAL-27: isConvexPolygon + triangulateConvexFan deleted — earClip handles convex rings too and
+// was the only one anything called.
 
 /**
  * Ear-clipping polygon triangulation. Works on simple (non-self-intersecting) polygons,

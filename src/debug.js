@@ -491,11 +491,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   roadFolder.add(_roadState, 'roadViz').name('Show Road Splines').onChange(v => {
     if (typeof callbacks.onRoadVizToggle === 'function') callbacks.onRoadVizToggle(v)
   })
-  // D-09 dominant cost-weight sliders (08-07): bound directly to the live `params` object, each
-  // firing onRoadParamChange so main.js invalidates + re-streams the valley-trunk network with the
-  // updated weights (D-03 deterministic re-route). These replace the retired roadSlopePenalty /
-  // roadAltWeight sliders (per-tile router params, removed in 08-05). The full "Valley Trunk (proto)"
-  // subfolder is gone — there is ONE road system and ONE viz now (Show Road Splines above).
+  // Every road slider binds directly to the live `params` object and fires onRoadParamChange, so
+  // main.js invalidates + re-streams the network against the edited value (D-03 deterministic
+  // re-route). There is ONE road system and ONE viz (Show Road Splines above).
   const fireRoadParam = () => { if (typeof callbacks.onRoadParamChange === 'function') callbacks.onRoadParamChange() }
   // ── Topology (which nodes exist, which pairs connect) — SURVIVES router v2 ────────────────
   // Blue-noise sites + Urquhart + the degree cap. FEAT-68 deleted the crossing/clearance culls
@@ -570,9 +568,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   Delete Detour Cap (BUG-55 phase 5): an unmergeable tear-grade pair loses its LONGER member
   //   iff its endpoints reconnect within this many hops (0 = never delete). Higher clears more
   //   doubled roads at the cost of longer real drives where a leg is removed.
-  //   Class boundaries: deeper than cutMax below ground becomes a BORE; higher than fillMax above
-  //   it would become a bridge (bridges are de-scoped — owner ruling 2026-08-18 — so fill is
-  //   capped there instead). A 12-20 m trench is an open rock cutting, not a tunnel.
+  //   Class boundaries: deeper than cutMax below ground becomes a BORE; fillMax is the fill
+  //   CEILING — above it nothing is buildable and the price is Infinity (bridges were de-scoped by
+  //   the owner 2026-08-18 and QUAL-27 deleted their machinery). A 12-20 m trench is an open rock
+  //   cutting, not a tunnel.
   v2Folder.add(params.roadV2, 'cutMax', 6, 40, 1).name('Cut→Bore Depth (m)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'fillMax', 2, 20, 0.5).name('Max Fill (m)').onChange(fireRoadParam)
 
@@ -701,11 +700,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadGraphMargin:       'Extra cells beyond the streamed area the graph is built into, so edges near the border still connect.',
     roadGraphMaxDegree:    'Cap junction connectivity: nodes above this degree lose their longest redundant edge (detour-safe). 0 = off; 3 = thin 4-ways.',
     roadGraphDegreeDetourHops: 'How redundant an edge must be before the degree cap may drop it. 3 = thin about half the 4-ways (measured); 8 = drop any edge with a detour (kills all 4-ways).',
-    roadGraphCullCrossings:'Drops redundant crossings from the graph, thinning tangled intersection clusters.',
     roadMergeBand:         'Tolerance (m) for treating an edge\'s two endpoints as the "same" node (skips a collapsed edge).',
-    '0':                   'Widest radius in the turn palette (m) — used for sweeping turns on mild ground.',
-    '1':                   'Second-widest turn radius in the palette (m).',
-    '2':                   'Mid turn radius in the palette (m).',
     // Road Surface
     roadWidth:             'Total drivable width of the road surface (m).',
     crownHeight:           'Height of the centerline crown (m) — the slight peak that sheds water to the edges.',

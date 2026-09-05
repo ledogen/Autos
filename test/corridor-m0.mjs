@@ -53,11 +53,10 @@ function repriceIndependent(res, C) {
     else if (d < 0 && d >= -C.cutMax) rate = C.cRoadM + C.cCutM * (-d) + (C.cCut2 ?? 0) * d * d
     else if (d < 0) rate = C.cBoreM
     else if (d <= C.fillMax) rate = C.cRoadM + C.cFillM * d
-    else rate = C.bridgesOn ? C.cBridgeM : Infinity
+    else rate = Infinity
     const grade = (p.y[i] - p.y[i - 1]) / ds
     tot += ds * rate + ds * C.cRoadM * C.wGrade * grade * grade
     if ((clsAt(i - 1) === CLS.BORE) !== (clsAt(i) === CLS.BORE)) tot += C.cPortal
-    if ((clsAt(i - 1) === CLS.BRIDGE) !== (clsAt(i) === CLS.BRIDGE)) tot += C.cAbutment
   }
   return tot
 }
@@ -88,7 +87,7 @@ function runEdge(name, a, b) {
   }
   console.log(`   max grade ${(100 * maxG).toFixed(1)}%   grade mix: ${gh[0].toFixed(0)} m ≤10% | ${gh[1].toFixed(0)} m 10–20% | ${gh[2].toFixed(0)} m 20–35%`)
   console.log(`   max cut depth ${maxCut.toFixed(1)} m, max fill height ${maxFill.toFixed(1)} m`)
-  for (const sg of res.profile.segs.filter(s => s.len > 40 || s.cls === CLS.BORE || s.cls === CLS.BRIDGE)) {
+  for (const sg of res.profile.segs.filter(s => s.len > 40 || s.cls === CLS.BORE)) {
     let extra = ''
     if (sg.cls === CLS.BORE) {
       let maxCover = 0, maxBg = 0
@@ -110,7 +109,7 @@ function runEdge(name, a, b) {
 runEdge('CANONICAL ridge edge 0,-1,2 : -1,0,2', [0, -1, 2], [-1, 0, 2])
 if (benign) runEdge(`benign control ${g.key(benign.a)} : ${g.key(benign.b)} (cover ${benign.cover.toFixed(0)} m)`, benign.a, benign.b)
 
-// gully check: benign edge, deck vs ground through the bridge span
+// gully check: benign edge, deck vs ground through the gully
 {
   const A = posOf.get(g.key(benign.a)), B = posOf.get(g.key(benign.b))
   const res = corridorConnect({ x: A.x, z: A.z, y: hFull(A.x, A.z) }, { x: B.x, z: B.z, y: hFull(B.x, B.z) }, hTrunc, hFull)

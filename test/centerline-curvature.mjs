@@ -1,7 +1,7 @@
 // test/centerline-curvature.mjs — Road Overhaul, Phase A gate (graph edges).
 //
-// Asserts the routed primitive centerline (each URQUHART edge via _edgeCenterline → arcPrimitiveConnect
-// {emitPrimitives} → Centerline, stored as network entry `.centerline`) is min-turn-radius VALID BY
+// Asserts the routed primitive centerline (each URQUHART edge via _edgeCenterline → routeEdgeV2 →
+// Centerline, stored as network entry `.centerline`) is min-turn-radius VALID BY
 // CONSTRUCTION, measured on the EXACT curve: the analytic min |1/curvatureAt(s)| over every edge. There
 // is nothing to re-interpolate, so curvature is exact, not estimated. The ribbon samples this curve, so
 // it physically cannot fold (every primitive has radius ≥ hardR by construction; the Catmull-Rom
@@ -72,7 +72,7 @@ function freshRoad(center) {
     for (const { cl } of edges(road)) {
         for (const p of cl.primitives) {
             total++
-            const k = Math.max(Math.abs(p.kappa0), Math.abs(p.kappa1))
+            const k = Math.abs(p.kappa)   // QUAL-27: primitives are constant-curvature (line | arc)
             worstK = Math.max(worstK, k)
             if (k > 1e-9 && 1 / k < FLOOR) bad++
         }
@@ -98,7 +98,7 @@ function freshRoad(center) {
             const p = cl.primitives[i], q = other.primitives[i]
             const d = Math.max(
                 Math.abs(p.x0 - q.x0), Math.abs(p.z0 - q.z0), Math.abs(p.theta0 - q.theta0),
-                Math.abs(p.length - q.length), Math.abs(p.kappa0 - q.kappa0), Math.abs(p.kappa1 - q.kappa1))
+                Math.abs(p.length - q.length), Math.abs(p.kappa - q.kappa))
             if (d > worstD) worstD = d
             if (d > 1e-9) { mismatched++; break }
         }

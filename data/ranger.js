@@ -504,17 +504,15 @@ export const RANGER_PARAMS = {
     // compliance identical at all three — it trades hairpin density against sweep, nothing else.
     // Owner review 2026-08-21 (set from the live sliders): 55 -> 45.
     cTurn: 45,
-    // Bridges are DE-SCOPED from the vocabulary (owner 2026-08-18): real forest bridges are short,
-    // same-elevation water crossings, not grade machines — and valley-spanning decks raise "why is
-    // there no road down there". Machinery stays; flip bridgesOn to re-enable. The planned way back
-    // is a post-router conversion of stream/water crossings only.
-    bridgesOn: false,
-    cBridgeM: 20.0,   // bridge deck, per m (only read when bridgesOn)
-    cAbutment: 100,   // fixed, per bridge end (only read when bridgesOn)
     cutMax: 20,       // m below ground where a cut becomes a BORE — a 12–20 m trench is an open rock
                       // cutting at road grade cap, not a tunnel; at 12 the bore's 18% cap
                       // rate-limited legitimate cliff descents through deep-cut pockets
-    fillMax: 8,       // m above ground where a fill would become a bridge (so: the fill ceiling)
+    // QUAL-27: the fill CEILING — above it there is no buildable state and the price is Infinity, so
+    // the corridor must find another way. Bridges were de-scoped by the owner 2026-08-18 (real forest
+    // bridges are short, same-elevation water crossings, not grade machines, and valley-spanning
+    // decks raise "why is there no road down there"); their machinery is now deleted rather than
+    // parked. The way back is a post-router conversion of stream/water crossings only.
+    fillMax: 8,       // m above ground beyond which a deck is unbuildable
     // Vertical corner-rounding window in METRES (0 = off). The solved profile is defined at ~10 m
     // stations and lerped onto the 4 m polyline, so grade is constant within a station and changes
     // INSTANTANEOUSLY at each one — a corner every 10 m, which reads as a periodic tick through the
