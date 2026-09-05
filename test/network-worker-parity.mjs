@@ -21,7 +21,9 @@ import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
-import { snapshotRoadParams, buildNetworkSnapshot, pondDiscPad } from '../src/road-network-worker.js'
+import { snapshotRoadParams, buildNetworkSnapshot, makeNetworkInstance, pondDiscPad } from '../src/road-network-worker.js'
+import { buildRouteFields } from '../src/road-route-worker.js'
+import { routeEdgeV2 } from '../src/corridor-router.js'
 
 const SEED = 6
 const R = 1600
@@ -202,6 +204,48 @@ for (const [wi, c] of CENTERS.entries()) {
     rs.adoptNetwork(structuredClone(wkData), { regen: true })
     log(rs._generation === gen0 + 1, 'dispatcher: regen adopt performs the deferred generation bump',
         `generation ${gen0}→${rs._generation} (ribbon + carve rebuild signal fires at the swap, not before)`)
+}
+
+// ── 5: PERF-31 W2 — the in-worker pre-warm is invisible in the output ────────────────────────
+// A build on an instance that first pre-warmed its whole route demand (warmPlanDemand: the
+// registered band + the plan layer's settle/census/pass-2 keys) through a dispatcher must be
+// byte-identical to the cold sync build: every cache entry the warm ingests comes from the same
+// routeEdgeV2 the sync fallback calls (the no-mirror fence), so the build must only ever WALK
+// the cache, never depend on who filled it. Tallies are skipped by design — the warm ingests a
+// handful of keys the build never demands, and per-instance diagnostics may count them.
+{
+    const c = CENTERS[0]
+    const req = { seed: SEED, params: snap, center: { x: c.x, z: c.z }, radius: R, pondDiscs: discSnapshot(c) }
+    const rs = makeNetworkInstance(req)
+    const fields = buildRouteFields(SEED, RANGER_PARAMS)
+    rs.warmPlanDemand = true
+    rs.setRouteDispatcher((jobs, epoch) => {
+        rs.ingestRoutedConnections(jobs.map((job) => {
+            const res = routeEdgeV2(job, fields.hTrunc, fields.hCoarse)
+            return { key: job.key, prims: res.cl.primitives, v2Dirs: !!job.dirs,
+                     pinFallback: !!(res.pinRequested && res.feasible && !res.usedPin) }
+        }), epoch)
+    })
+    rs.setRadius(R)
+    rs.beginPrewarmedBuild()   // the worker's carry: rev+bounds at warm start, build reuses the warm's plan memos
+    const cv = new THREE.Vector3(c.x, 0, c.z)
+    let pumps = 0
+    while (!rs.warmBandComplete(cv) && ++pumps < 200) {}
+    const prewarmed = buildNetworkSnapshot(req, rs)
+    log(pumps < 200, 'pre-warm: warm pump converges', `${pumps + 1} pumps to complete`)
+    compareExports('pre-warm (W2 plan waves + carry) == sync build', exportsByWindow[0].ref.exportNetwork(),
+                   structuredClone(prewarmed.data), { skipTallies: true })
+    // Moved center on the SAME pre-warmed instance — the carry must not leak window 0's frozen
+    // delete set or plan memos into window 1 (beginPrewarmedBuild advances the rev per pair).
+    const c1 = CENTERS[1]
+    const req1 = { seed: SEED, params: snap, center: { x: c1.x, z: c1.z }, radius: R, pondDiscs: discSnapshot(c1) }
+    rs.beginPrewarmedBuild()
+    const cv1 = new THREE.Vector3(c1.x, 0, c1.z)
+    let pumps1 = 0
+    while (!rs.warmBandComplete(cv1) && ++pumps1 < 200) {}
+    const prewarmed1 = buildNetworkSnapshot(req1, rs)
+    compareExports('pre-warm carry, moved center == sync build', exportsByWindow[1].ref.exportNetwork(),
+                   structuredClone(prewarmed1.data), { skipTallies: true })
 }
 
 console.log(`\n${fail === 0 ? 'ALL NETWORK-WORKER-PARITY CHECKS PASSED' : `${fail} CHECK(S) FAILED`} (${pass} passed)`)

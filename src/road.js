@@ -1721,6 +1721,25 @@ export class RoadSystem {
     setRouteDispatcher(fn) { this._routeDispatch = fn }
 
     /**
+     * PERF-31 W2.2 — begin a pre-warmed build (network-worker use only; never call this on a
+     * main-thread instance). The rebuild's rev bump and CR-02 memo bounds move HERE, to the
+     * START of the warm→build pair: the rev still advances exactly once per real rebuild (so a
+     * moved window's warm never reads the previous window's frozen delete set — the closed-set
+     * rule stays rev-scoped), the bounds run before the warm fills the caches (so the build
+     * cannot evict its own pre-warm), and the rebuild itself then SKIPS both via _prewarmCarry,
+     * carrying the warm's rev-keyed pass-1 plan memos (delete verdicts, conflict pairs, samples
+     * — pure fns of the cached routes) into the build instead of re-deriving them (measured:
+     * the settle re-derivation ate nearly the whole off-thread routing win). Call once per
+     * build request, BEFORE the first warmBandComplete pump; consumed by the next rebuild.
+     */
+    beginPrewarmedBuild() {
+        this._networkRev++
+        if (this._proto.anchors.size > 4000) { this._proto.anchors.clear(); this._proto.mergedAnchors.clear() }
+        if (this._proto.cls && this._proto.cls.size > 1500) this._proto.cls.clear()
+        this._prewarmCarry = true
+    }
+
+    /**
      * PERF-30: wire the network-Worker dispatcher. `fn({x, z, radius, reason})` asks the network
      * Worker (src/road-network-client.js) for a full off-thread build; the reply comes back
      * through adoptNetwork(). reason: 'move' = window change (stale-until-replaced), 'params' =
@@ -5950,16 +5969,23 @@ export class RoadSystem {
         this._proto.lastCenter = center.clone()
         this._proto.dirty = false
         this._lastBandSig = bandSig
-        this._networkRev++   // real rebuild → invalidate per-run profile/adjacency caches (lazy)
-        // Refresh live D-09 weights from this._params (debug sliders mutate it in place) so this
-        // re-stream uses the current slider values — deterministic re-route (D-03).
-        // Bound the proto caches BEFORE building (CR-02). anchors/cls are pure functions of
-        // coords, so a cache miss recomputes the identical value — evicting them is always benign.
-        // Doing it pre-build (rather than post-build) makes the result independent of WHEN the
-        // size threshold trips, preserving the module's purity contract (a network is a pure
-        // function of seed+center+params, caches are memoization only).
-        if (this._proto.anchors.size > 4000) { this._proto.anchors.clear(); this._proto.mergedAnchors.clear() }
-        if (this._proto.cls && this._proto.cls.size > 1500) this._proto.cls.clear()
+        // PERF-31 W2.2: a rebuild the caller just PRE-WARMED for exactly this window (the
+        // network worker's serialized warm→build) already took its rev bump and CR-02 bounds at
+        // beginPrewarmedBuild() — skip both here so the warm's rev-keyed pass-1 plan memos and
+        // route cache carry into this build instead of being re-derived/evicted.
+        if (this._prewarmCarry) this._prewarmCarry = false
+        else {
+            this._networkRev++   // real rebuild → invalidate per-run profile/adjacency caches (lazy)
+            // Refresh live D-09 weights from this._params (debug sliders mutate it in place) so this
+            // re-stream uses the current slider values — deterministic re-route (D-03).
+            // Bound the proto caches BEFORE building (CR-02). anchors/cls are pure functions of
+            // coords, so a cache miss recomputes the identical value — evicting them is always benign.
+            // Doing it pre-build (rather than post-build) makes the result independent of WHEN the
+            // size threshold trips, preserving the module's purity contract (a network is a pure
+            // function of seed+center+params, caches are memoization only).
+            if (this._proto.anchors.size > 4000) { this._proto.anchors.clear(); this._proto.mergedAnchors.clear() }
+            if (this._proto.cls && this._proto.cls.size > 1500) this._proto.cls.clear()
+        }
         this._network.clear()
         // D1: do NOT bump _generation here. A positional re-stream produces window-INVARIANT
         // geometry (D-16: the network is a pure function of seed+world-coords+params), so an

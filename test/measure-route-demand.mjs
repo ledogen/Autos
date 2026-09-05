@@ -24,6 +24,14 @@
 //   build total 17.4 s · inside _edgeCenterline 7.8 s (45%)
 //   demanded 214 keys · predicted 136 · predictable 112 (52%) · #g 0 · plan-only 102
 //
+// PERF-31 W1+W2 (2026-09-05, same windows/machine):
+//   flip fix (sibs carried through the reversed spelling): predictable 52% -> 62%
+//   + plan-warm waves (warmPlanDemand): predictable 178/186 computed = 95.7% (bar was ≥90%);
+//     residual = 8 keys, all 2-ring _v2NodeMerges demand (~0.5 s)
+//   worker-thread cost, warm->carried build vs cold build (scratch bench, same windows):
+//     18.2 s cold -> 6.0 s warm scans + 5.2 s carried build = 11.1 s on-thread,
+//     6.5 s of routing CPU fanned to the pool (~1.6 s wall at 4 workers, overlapped)
+//
 // Run: node test/measure-route-demand.mjs
 
 import * as THREE from 'three'

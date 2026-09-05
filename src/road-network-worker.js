@@ -23,6 +23,7 @@
 
 import * as THREE from 'three'
 import { RoadSystem } from './road.js'
+import { RoadRouteWorker } from './road-worker.js'
 
 /**
  * The params snapshot the worker builds from: keep primitives and plain containers of them
@@ -101,14 +102,19 @@ export function buildNoGoFns(discs) {
  * the worker message loop and the parity gate (which calls it from node, no Worker involved).
  * `rs` is an optional warm RoadSystem to reuse (same seed + params identity).
  */
-export function buildNetworkSnapshot(req, rs = null) {
-    if (!rs) {
-        rs = new RoadSystem(req.seed, req.params)
-        if (req.pondDiscs && req.pondDiscs.length) {
-            const { noGo, discsInBBox } = buildNoGoFns(req.pondDiscs)
-            rs.setWaterNoGo(noGo, discsInBBox)
-        }
+/** Construct the worker's private RoadSystem for a request (split out of buildNetworkSnapshot
+ *  so the PERF-31 pre-warm can hold the instance before calling update()). */
+export function makeNetworkInstance(req) {
+    const rs = new RoadSystem(req.seed, req.params)
+    if (req.pondDiscs && req.pondDiscs.length) {
+        const { noGo, discsInBBox } = buildNoGoFns(req.pondDiscs)
+        rs.setWaterNoGo(noGo, discsInBBox)
     }
+    return rs
+}
+
+export function buildNetworkSnapshot(req, rs = null) {
+    if (!rs) rs = makeNetworkInstance(req)
     rs.setRadius(req.radius)
     rs.update(new THREE.Vector3(req.center.x, 0, req.center.z))
     return { rs, data: rs.exportNetwork() }
@@ -121,20 +127,63 @@ export function buildNetworkSnapshot(req, rs = null) {
 // thread's own one-instance-per-consumer layout and keep each one's warm caches coherent.
 if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
     const instances = new Map()   // client id → { rs, epoch, seed }
-    self.onmessage = (e) => {
-        const d = e.data
-        if (d.type !== 'build') return
+    // PERF-31 W2.2: a NESTED route-worker pool (support-checked — Safari 16.4+ exposes Worker in
+    // worker scope). Before update(), the private instance pre-warms its whole route demand —
+    // the registered band AND the plan layer's demand (warmPlanDemand → _warmPlanJobs: settle
+    // 1-ring, census partners, pass-2 pins) — through the pool, so the build's routing is a pure
+    // cache walk fanned across cores instead of a serial crawl on this thread. The pre-warm is
+    // invisible in the output by the no-mirror fence (pool workers run the same routeEdgeV2, and
+    // test/network-worker-parity.mjs pins a pre-warmed build == a cold sync build).
+    // One pool for all clients; builds are serialized through `chain` (they were serial before —
+    // one message at a time — but the pre-warm awaits, so the loop must queue explicitly).
+    const canNest = typeof Worker === 'function'
+    let pool = null, poolSig = null
+    let chain = Promise.resolve()
+    async function prewarm(d, rs, cid) {
+        const sig = `${d.seed}:${d.epoch}`
+        if (!pool) pool = new RoadRouteWorker()
+        if (poolSig !== sig) { pool.init(d.seed, d.params); poolSig = sig }
+        pool.registerClient(cid, rs)
+        rs.warmPlanDemand = true
+        rs.setRouteDispatcher((jobs, epoch) => pool.postRouteJobs(cid, jobs, epoch))
+        rs.setRadius(d.radius)
+        rs.beginPrewarmedBuild()   // rev bump + CR-02 bounds move to warm start; the build skips both and reuses the warm's plan memos (see road.js)
+        const center = new THREE.Vector3(d.center.x, 0, d.center.z)
+        const t0 = performance.now()
+        while (!rs.warmBandComplete(center)) {
+            // Deadline, not a hang: if the pool dies or stalls, the build below routes whatever
+            // is missing synchronously — the pre-warm is an optimization, never a dependency.
+            if (performance.now() - t0 > 60000) break
+            await new Promise((r) => setTimeout(r, 8))
+        }
+    }
+    async function handleBuild(d) {
         const cid = d.client ?? 'default'
         let inst = instances.get(cid)
         // Epoch/seed change = params or water changed → the warm instance's caches are poisoned;
         // rebuild from scratch. Same epoch + seed = a moved center → reuse everything warm.
         if (inst && (inst.epoch !== d.epoch || inst.seed !== d.seed)) inst = null
-        const built = buildNetworkSnapshot(d, inst ? inst.rs : null)
+        let rs = inst ? inst.rs : null
+        if (canNest) {
+            try {
+                if (!rs) rs = makeNetworkInstance(d)
+                await prewarm(d, rs, cid)
+            } catch (err) { console.warn('[network-worker] pre-warm failed, building cold', err) }
+        }
+        const built = buildNetworkSnapshot(d, rs)
         instances.set(cid, { rs: built.rs, epoch: d.epoch, seed: d.seed })
         // Transfer every run's typed-array buffers — exportNetwork hands out copies, so detaching
         // them here never touches the live entries the next warm build reuses.
         const transfer = []
         for (const r of built.data.runs) transfer.push(r.pts.buffer, r.polyCum.buffer, r.clArc.buffer)
         self.postMessage({ type: 'network', client: cid, epoch: d.epoch, seed: d.seed, data: built.data }, transfer)
+    }
+    self.onmessage = (e) => {
+        const d = e.data
+        if (d.type !== 'build') return
+        // A failed build logs and keeps the chain alive for the next request (pre-worker
+        // behaviour was an uncaught throw that also never replied — the client-side epoch/seed
+        // guards own staleness either way).
+        chain = chain.then(() => handleBuild(d)).catch((err) => console.error('[network-worker] build failed', err))
     }
 }
