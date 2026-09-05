@@ -117,8 +117,33 @@ carry, both byte-identical to the cold sync build); `wye-release`, `world-determ
 (`junction-stitch`, `mission-network`, `paper-tour`, `pond-route-around`) all reproduced at
 `9863058` before this work, deterministic numbers bit-identical.
 
-**W3 not entered.** The thread cost is 11.1 s against the ≤ 8 s bench target, so the serial
-remainder (levers 2–4) is still open — but the binding owner requirement (slow-device entry
+**W3 — lever 3 (profile solves) PULLED 2026-09-05 (`420ed8e`).** Profiling the worker thread
+*after* W2 moved routing to the pool showed the PROFILE SOLVERS, not `corridorSearch`, dominate
+what is left: `profileSolveBundle` 11.7 % · `profileSolve` 8.4 % · `stationRateCls` 7.0 % · the
+`makeStepCost` closure 8.8 % · `classOf` 13.8 %. The old sampled profile hid this by mixing in
+routing, which no longer runs on that thread.
+
+All three DP loops walked transitions (station i−1, elev k) → (station i, elev j) calling
+`stepCost` per (j, k) pair — but the ARRIVAL class + station rate depend only on j and the
+DEPARTURE class only on k, so each was recomputed kMax× / ny× per station. `makeStationTables()`
+fills them once per station step. Float op ORDER is preserved exactly (the `ds * rate` product,
+the `(ds·cRoadM·wGrade)·g·g` grouping, portal/abutment order, and `makeStepCost`'s
+`cap + yStep/(2·ds) + 1e-9` grouping) — **battery network hash byte-identical on all 9 windows**.
+
+| measure | after W1+W2 | after W3 |
+|---|---|---|
+| network-worker thread cost, 3× 1400 m | 12.2 s | **~8.2 s** (warm 6.7→4.5, build 5.5→3.3) |
+| story entry, cpu ×4 (alternating A/B, same load) | 15.9 / 16.5 s | **14.9 / 13.8 s** |
+
+That is essentially the ≤ 8 s bench target. Routing is unchanged (~7.1 s) — it is
+`corridorSearch`-bound and `profileSolve` runs only at the end of a route.
+
+MEASUREMENT TRAP recorded: an earlier browser batch read 21–24 s on BOTH sides of the A/B. Cause
+was the harness itself — 267 leaked `rangersim-cdp-*` profile dirs and stray Chrome instances had
+the load average at 6.4. Clean up CDP chromes between runs, and prefer an ALTERNATING A/B over
+comparing against a baseline measured earlier in a session.
+
+**Levers 2 and 4 still open** (margin-box cost for plan-only samples; R4 pass-2 scope) — but the binding owner requirement (slow-device entry
 under 30 s) has margin, so the next session should re-price W3 against W1's untouched half:
 route count is still 215 demanded keys vs v2-at-birth's 64, and the classifier in
 `test/measure-route-demand.mjs` now names each producer (`_v2ConflictPairs<_v2DeleteFor`
