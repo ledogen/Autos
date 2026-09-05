@@ -4006,6 +4006,15 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
   })
   netClient.register('play', roadSystem, {
     onAdopted: (reason) => {
+      // EVERY adopt, not just 'params': a positional move-adopt is precisely when runs the old
+      // window never registered enter the network, which is what strands props on roads. The
+      // predicate comes from makePropSamplers() so it can never drift from the one the scatter
+      // itself used. Usually drops nothing and costs one bounded pass over live placements.
+      if (propSystem) {
+        const dropped = propSystem.invalidateRoadIntrusions(
+          makePropSamplers().roadClear, FLORA_PARAMS.scatter.roadExclusion)
+        if (dropped) perfEvent('props.roadIntrusion')   // re-scatter lands via the normal ensure path
+      }
       if (reason !== 'params') return
       // The deferred half of debouncedRoadRebuild (see there): the swap just bumped _generation,
       // so clear the ribbon tiles and re-bake the carve against the ADOPTED geometry — doing this

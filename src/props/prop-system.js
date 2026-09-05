@@ -128,6 +128,7 @@ export class PropSystem {
     // bake's tile source reads matrices from here (pool-independent).
     this._chunks = new Map()
     this._dirty = new Set()        // 3D mesh keys needing instanceMatrix/instanceColor upload
+    this._roadScanCursor = 0       // round-robin cursor for invalidateRoadIntrusions' chunk budget
     this._overflowWarned = false
 
     // ── PERF-21 billboard impostor LOD ─────────────────────────────────────────────────
@@ -637,6 +638,75 @@ export class PropSystem {
     // departed silhouettes (a neighbour still in-ring re-bakes without them; its own tile is reused
     // by whichever chunk lands on the toroidal slot next). Billboard-only chunks never baked.
     if (this._shadowBake && !wasBBOnly) this._shadowBake.markWithNeighbors(cx, cz)
+  }
+
+  /**
+   * Drop every chunk a road has moved INTO, so it re-scatters against the network that now exists.
+   *
+   * Why this is needed at all: the scatter asks `roadClear(x, z, keepOut)`, and the road system can
+   * only answer for runs REGISTERED in its current streamed window. Road GEOMETRY is window-
+   * invariant, but run MEMBERSHIP is not — a run whose edge falls outside the band is simply not
+   * there to be found — so "no road here" and "no road here YET" are the same answer. Props are
+   * permanent and the play window is a rolling 320 m band, so a tree placed on honestly-empty
+   * ground can have a road appear through it later, and nothing ever re-checked it. Measured
+   * 2026-09-05 on story→free-roam→reseed: 21 trees/bushes/rocks inside the 9 m exclusion, worst a
+   * bush 1.35 m off the centreline — placed by a scatter whose 990 road queries all ran against a
+   * present, covering network. That is why no "regenerate at time T" fix works (all three attempts
+   * produced byte-identical violations): at any single instant the registered set is incomplete
+   * relative to what it becomes. Re-testing when the ROADS change is the only thing that closes it.
+   *
+   * TERMINATION (the part to preserve if this is ever edited): small rocks are skipped, because
+   * they IGNORE the road exclusion by design ("dense on the shoulder, sparse ON the road surface")
+   * — testing them would drop the same chunk on every adopt, forever. Everything else is tested at
+   * the BASE exclusion while the scatter rejects at `exclusion + the prop's own bound radius`, so a
+   * prop that trips this is always rejected by the re-scatter and the chunk settles clean.
+   *
+   * BUDGETED, because this runs on every network adopt — i.e. on every band move while driving,
+   * which is exactly where PERF-26/28 spent their effort. The naive full sweep measured 14.15 ms
+   * for 4016 live placements (≈0.29 ms/chunk), which is a visible stutter on its own and ~4× that
+   * on the slow-device proxy. Two bounds, both cheap:
+   *   • a chunk-level pre-filter — ONE query at the chunk centre out to (half-diagonal + exclusion)
+   *     rules out every prop in it at once, since a prop can be at most half a diagonal from centre;
+   *   • a per-call chunk budget with a round-robin cursor, so a sweep costs a bounded few ms and
+   *     the rest of the ring is covered by the next adopts.
+   * Budgeting is safe because the guarantee is EVENTUAL: a road that appears under a tree is a
+   * cosmetic defect for the couple of adopts it takes the cursor to come round, not a correctness
+   * one — nothing downstream reads prop placement.
+   *
+   * @param {(x, z, keepOut) => boolean} roadClear - true when NO road centreline is within keepOut.
+   * @param {number} exclusion - FLORA_PARAMS.scatter.roadExclusion.
+   * @param {number} budget - chunks to examine this call.
+   * @returns {number} chunks dropped (0 on the overwhelmingly common no-change adopt).
+   */
+  invalidateRoadIntrusions(roadClear, exclusion, budget = 10) {
+    if (!roadClear || !(exclusion > 0) || this._chunks.size === 0) return 0
+    const keys = [...this._chunks.keys()]
+    const n = keys.length
+    // Half the chunk's diagonal: the furthest a placement can sit from its centre.
+    const CH = this._chunkSize
+    const reach = CH * Math.SQRT1_2 + exclusion
+    const start = this._roadScanCursor % n
+    const take = Math.min(budget, n)
+    const doomed = []
+    for (let i = 0; i < take; i++) {
+      const ck = keys[(start + i) % n]
+      const chunk = this._chunks.get(ck)
+      if (!chunk) continue
+      const comma = ck.indexOf(',')
+      const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
+      // Whole-chunk reject: no road anywhere near it ⇒ no placement in it can be intruded.
+      if (roadClear(cx * CH + CH / 2, cz * CH + CH / 2, reach)) continue
+      for (const p of chunk.places || []) {
+        // Skip the categories the scatter deliberately allows onto the road surface.
+        if (typeof p.key === 'string' && p.key.startsWith('smallRock')) continue
+        if (roadClear(p.x, p.z, exclusion)) continue
+        doomed.push([cx, cz])
+        break                    // one intruded prop condemns the chunk; no need to price the rest
+      }
+    }
+    this._roadScanCursor = (start + take) % n
+    for (const [cx, cz] of doomed) this.releaseChunk(cx, cz)
+    return doomed.length
   }
 
   /**
