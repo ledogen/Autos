@@ -48,3 +48,23 @@ CPU profile at head: `corridorSearch` 70.7% · `profileSolve`/`profileSolveBundl
 - [ ] Every lever pulled is measured before/after in the commit message; every lever declined
       is measured too (why it wasn't worth it)
 - [ ] No relaxation of priced==built without an explicit owner ruling
+
+## Lever 5 — parallel routing (added 2026-09-04, from ROUTER-REUSE-AND-PARALLELISM.md §2)
+
+The play build runs on one core inside the network worker; the route pool sits idle during it.
+Predictive pre-warm (warmBandComplete/_warmScan re-pointed at the build instance) fans the
+per-edge pure `routeEdgeV2` out to the pool, then the serial build walks a warm cache.
+
+**Go/no-go MEASURED 2026-09-04** (`test/measure-route-demand.mjs`, three 1400 m windows, seed 6):
+build 17.4 s wall; routing on the build thread 7.8 s (**45 %**, not the sampled profile's 70.7 %);
+demanded keys 214, warm-scan predictable **52 %**; zero `#g` rungs; the unpredictable half is
+pin-variant mismatch (settle-pass fringe pins + direction variants the scan doesn't derive).
+So lever 5 requires pin parity in the warm scan first (bar: ≥ 90 % predictable), and it lands
+AFTER lever 1 — route count multiplies into everything. Full sequencing:
+`.planning/PLAN-2026-09-04-PERF31-PARALLEL.md`. The plan layer itself stays single-threaded
+(parallelisable share ~10 % of total; not worth the determinism risk — recorded there).
+
+**Owner target clarification (2026-09-04):** the 8 s bench stands, but the binding concern is
+absolute cost on slow devices — a >30 s loading screen hampers a slow-machine player. Record
+story-mode entry at --cpu=4 alongside every lever; >30 s there fails the real requirement
+whatever the bench says. FEAT-76 confirmed sequenced AFTER this ticket.
