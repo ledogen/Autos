@@ -173,7 +173,10 @@ Z_VAL0 = 0.285                   # bottom of the grey valance
 
 # --- Rear ---
 Z_TAIL0, Z_TAIL1 = 0.722, 0.998  # tail lamp band
-Z_RBUMP0, Z_RBUMP1 = 0.383, 0.539
+# Raised 0.045 so the bumper TOP overlaps the bedside's tapered sill instead of
+# hanging in space below it (owner, 2026-09-04).  Sill at the tailgate is
+# Z_ROCKER + 0.040 = 0.482; the bumper now runs through that.
+Z_RBUMP0, Z_RBUMP1 = 0.428, 0.584
 Y_TAILGATE = -2.5405             # outer face of the tailgate.  The step bumper stands
                                  # 0.111 m PROUD of this, back to Y_TAIL — measured, and
                                  # the single thing that stops the rear reading planar.
@@ -522,10 +525,12 @@ def clip_ring(y):
     """12-point closed section for the front clip (hood + fenders + nose)."""
     wo, wb, ztop, crown = _interp(CLIP_ST, y)
     zb = arch_z(y, AX_F)
-    r = [(0.0, Z_UNDER), (W_UNDER, Z_UNDER), (W_UNDER, zb), (wo, zb),
+    r = [(0.0, Z_UNDER),
+         (W_UNDER - UND_EDGE, Z_UNDER), (W_UNDER, Z_UNDER + UND_EDGE),   # pan corner
+         (W_UNDER, zb), (wo, zb),
          (wo, Z_HIP), (wb, ztop - crown), (0.0, ztop)]
     return ([(x, y, z) for x, z in r]
-            + [(-x, y, z) for x, z in reversed(r[1:6])])
+            + [(-x, y, z) for x, z in reversed(r[1:7])])
 
 
 def cab_ring(y):
@@ -534,14 +539,23 @@ def cab_ring(y):
     height behind the glass, which is exactly what the interior exists to avoid."""
     wo, wb, zbelt = _interp(CAB_ST, y)
     zb = arch_z(y, AX_F)                   # the front arch stops short of the cowl
-    r = [(0.0, Z_UNDER), (W_UNDER, Z_UNDER), (W_UNDER, zb), (wo, zb),
+    r = [(0.0, Z_UNDER),
+         (W_UNDER - UND_EDGE, Z_UNDER), (W_UNDER, Z_UNDER + UND_EDGE),   # pan corner
+         (W_UNDER, zb), (wo, zb),
          (wo, Z_HIP), (wb, zbelt), (W_DOORCARD, zbelt),
          (W_DOORCARD, Z_FLOOR), (0.0, Z_FLOOR)]
     return ([(x, y, z) for x, z in r]
-            + [(-x, y, z) for x, z in reversed(r[1:8])])
+            + [(-x, y, z) for x, z in reversed(r[1:9])])
 
 
 BED_EDGE = 0.020                   # chamfer on the bed's top and bottom edges
+UND_EDGE = 0.055                   # chamfer on the UNDERBODY pan's outer corner.
+                                   # Owner, 2026-09-04: "the bottom of the truck
+                                   # doesn't need detail, but it shouldn't be a void
+                                   # cube."  A flat black plate with hard vertical
+                                   # sides reads as a box from any low angle; one
+                                   # chamfer per side turns it into a tapered pan
+                                   # and gives flat shading a highlight to work with.
 
 
 def bed_bottom(y):
@@ -555,7 +569,9 @@ def bed_bottom(y):
     y0, y1 = AX_R - ARCH_R - 0.08, Y_BED_R
     if y < y0:
         t = min(1.0, (y0 - y) / (y0 - y1))
-        zb = max(zb, Z_ROCKER + (Z_RBUMP1 - 0.010 - Z_ROCKER) * t * t)
+        # 0.040, not the full rise to the bumper: at 0.087 the swoop was too
+        # aggressive (owner, 2026-09-04) and the sill looked hacked away.
+        zb = max(zb, Z_ROCKER + 0.040 * t * t)
     return zb
 
 
@@ -571,24 +587,35 @@ def bed_ring(y):
     zb = bed_bottom(y)
     d = abs(y - AX_R)
     wh = W_WHEELHOUSE if d < ARCH_R + 0.055 else W_BED_IN   # box, not a curve
-    r = [(0.0, Z_UNDER), (W_UNDER, Z_UNDER), (W_UNDER, zb),
-         (W_FLANK - BED_EDGE, zb), (W_FLANK, zb + BED_EDGE),          # bottom edge
+    r = [(0.0, Z_UNDER),
+         (W_UNDER - UND_EDGE, Z_UNDER), (W_UNDER, Z_UNDER + UND_EDGE),   # pan corner
+         (W_UNDER, zb),
+         (W_FLANK - BED_EDGE, zb), (W_FLANK, zb + BED_EDGE),             # bottom edge
          (W_FLANK, Z_HIP),
-         (W_BED_OUT, Z_RAIL - BED_EDGE), (W_BED_OUT - BED_EDGE, Z_RAIL),  # top edge
+         (W_BED_OUT, Z_RAIL - BED_EDGE), (W_BED_OUT - BED_EDGE, Z_RAIL), # top edge
          (W_BED_IN, Z_RAIL),
          (W_BED_IN, Z_WHEELHOUSE), (wh, Z_WHEELHOUSE), (wh, Z_BEDFLOOR),
          (0.0, Z_BEDFLOOR)]
     return ([(x, y, z) for x, z in r]
-            + [(-x, y, z) for x, z in reversed(r[1:12])])
+            + [(-x, y, z) for x, z in reversed(r[1:13])])
+
+
+# Landmark indices into bed_ring()'s output.  Named because build_rear_end() takes
+# the rear panels' OUTLINE from them point-for-point; a literal 7 buried in that
+# function would silently mean something else the next time a chamfer is added.
+BED_I_FLANK_LO = 5      # (W_FLANK, zb + BED_EDGE)   flank bottom, above the chamfer
+BED_I_HIP = 6           # (W_FLANK, Z_HIP)
+BED_I_RAIL_OUT = 7      # (W_BED_OUT, Z_RAIL - BED_EDGE)
+BED_I_RAIL_TOP = 8      # (W_BED_OUT - BED_EDGE, Z_RAIL)
+BED_I_RAIL_IN = 9       # (W_BED_IN, Z_RAIL)
 
 
 # Section-edge -> material.  Index k is the face spanning ring point k -> k+1.
 DARK = "RangerInterior"
-CLIP_BANDS = {0: DARK, 1: DARK, 2: DARK, 9: DARK, 10: DARK, 11: DARK}
-CAB_BANDS = {0: DARK, 1: DARK, 2: DARK, 6: DARK, 7: DARK, 8: DARK, 9: DARK,
-             13: DARK, 14: DARK, 15: DARK}
-# Indices shifted when bed_ring gained its two chamfers (20 points -> 24).
-BED_BANDS = {0: DARK, 1: DARK, 2: DARK, 21: DARK, 22: DARK, 23: DARK}
+# All three shifted by one point per half when the pan gained its chamfer.
+CLIP_BANDS = {k: DARK for k in (0, 1, 2, 3, 10, 11, 12, 13)}
+CAB_BANDS = {k: DARK for k in (0, 1, 2, 3, 7, 8, 9, 10, 14, 15, 16, 17)}
+BED_BANDS = {k: DARK for k in (0, 1, 2, 3, 22, 23, 24, 25)}
 
 
 # ---------------------------------------------------------------------------
@@ -781,7 +808,10 @@ def tail_rim_ring(spec, base):
     z0, z1 = min(zs), max(zs)
     out = []
     for x, _y, z in base:
-        if abs(x) > W_BED_IN + 0.001:
+        # Tuck the outer skin AND the underbody pan; only the tub's inner wall and
+        # floor stay square, because the tailgate closes those off.  Leaving the pan
+        # untucked left the underside ending in a hard rectangular corner.
+        if abs(x) > W_BED_IN + 0.001 or z < Z_BEDFLOOR - 0.010:
             nx = x * scale
             t = (z - z0) / (z1 - z0)
             nz = z + rise * (1.0 - t) - drop * t
@@ -875,9 +905,18 @@ def build_front_end(p):
     # The nose cap, as a frame around the lamp/grille opening.  Point order matches
     # the rim ring; the duplicated corners collapse into triangles, which is what
     # turns a 12-point body outline into a rectangular hole.
-    inner = [(0.0, OPEN_Z0), (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0),
-             (OPEN_X, 0.5 * (OPEN_Z0 + OPEN_Z1)), (OPEN_X, OPEN_Z1), (0.0, OPEN_Z1)]
-    inner = inner + [(-x, z) for x, z in reversed(inner[1:6])]
+    # ONE ENTRY PER RIM-RING POINT — frame() pairs them off by index, so this list
+    # has to track clip_ring()'s topology exactly.  It grew by one per half when the
+    # underbody pan gained its chamfer.  The repeated corners collapse to triangles,
+    # which is what turns a 14-point body outline into a rectangular hole.
+    inner = [(0.0, OPEN_Z0),
+             (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0),        # pan chamfer
+             (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0),        # pan side, arch soffit
+             (OPEN_X, 0.5 * (OPEN_Z0 + OPEN_Z1)),         # flank
+             (OPEN_X, OPEN_Z1), (0.0, OPEN_Z1)]
+    inner = inner + [(-x, z) for x, z in reversed(inner[1:7])]
+    assert len(inner) == len(nose_rim_ring(NOSE_RIM[-1])), \
+        "nose frame inner ring must match clip_ring()'s point count"
     # NOSE_RIM[-1], not [1]: the frame has to sit on the OUTERMOST rim ring, and that
     # index moved when the rim went from two rings to four.
     frame(p, nose_rim_ring(NOSE_RIM[-1]),
@@ -1020,53 +1059,86 @@ def build_rear_end(p):
     # 3 mm PROUD of the bed loft's rear cap, which the tail rim ring moved onto
     # exactly this plane — flush, the dark cap and the painted panel z-fight.
     Y_P0, Y_P1 = Y_TAILGATE - 0.003, Y_TAILGATE + 0.050
-    # The panels fit INSIDE the bed's rear rim, which tucked the outer skin by
-    # TAIL_TUCK and dropped the rail by TAIL_DROP.  Both extents are derived from
-    # those constants, never typed, so a change to the rim cannot leave the panels
-    # behind.  The width comes off the FLANK (the widest thing the rim tucks), not
-    # off the rail — at the lamps' height that is what the corner actually is.
-    W_PANEL = W_FLANK * (1.0 - TAIL_TUCK) - 0.006
-    Z_P0, Z_P1 = 0.690, Z_RAIL - TAIL_DROP - 0.002
-    # Tailgate, and the two body-colour corner panels the lamps are let into.  The
-    # gap between them at |x| 0.545 is the tailgate shut line, for free.
+    # THE REFACTOR (owner, 2026-09-04: "fix the dark triangle, refactor").
     #
-    # Both are LOFTED up their own height rather than boxed, so the top edge can ROLL
-    # FORWARD to follow the bed's rear rim — owner, 2026-09-04: "the tailgate also
-    # rounds away at the top".  A flat-topped box punches straight through the rim
-    # once the rim starts turning.
-    def rear_panel(x0, x1):
-        # The forward roll is tail_lean(z) itself, so the panel's top edge lands on
-        # the rim's rail line instead of chasing it with typed offsets.
-        #
-        # The OUTER edge has to narrow with height too.  The rim tucks the rail in
-        # further than the flank (the rail is already inboard of W_FLANK before the
-        # tuck is applied), so a panel of constant width stands ~36 mm proud of the
-        # rim at the top and leaves a dark sliver at each corner.
-        def wx(z, x):
-            if abs(x) < 0.560:                       # the tailgate: no taper needed
-                return x
-            t = min(1.0, max(0.0, (z - 0.940) / (Z_P1 - 0.940)))
-            return x - (x / abs(x)) * 0.042 * t * t
+    # The rear wall panels used to be rectangles whose width and height were derived
+    # from the rim's CONSTANTS.  That is one step better than typing them, but still
+    # a reconstruction: the rim's actual outline is a tucked, chamfered, leaning
+    # polygon, and a rectangle approximating it left a dark triangle at each top
+    # corner.  Every offset I added chased the error around rather than removing it.
+    #
+    # They now take their outline from the RIM RING ITSELF, point-for-point.  The
+    # panel's outer edge IS the ring's outer-skin arc — same x, same y, same z — so
+    # it cannot disagree with the bed it closes off, whatever the rim does next.
+    ring = tail_rim_ring(TAIL_RIM[-1], bed_ring(Y_BED_R))
+    n = len(ring)
+    Z_P0 = 0.690
+    Z_P1 = ring[BED_I_RAIL_IN][2]        # the rail, as the rim actually left it
+    def ring_pt(i, sx):
+        """Ring point i on side sx.  The ring's right half is 0..n//2; a left-hand
+        point is its mirror, so read the right one and negate x — that keeps both
+        panels driven by the SAME arc rather than two independently indexed ones."""
+        x, y, z = ring[i]
+        return (sx * abs(x), y, z)
 
-        zs = [Z_P0, 0.940, Z_P1 - 0.058, Z_P1 - 0.024, Z_P1]
-        loft(p, [[(wx(z, x0), Y_P0 + tail_lean(z), z),
-                  (wx(z, x1), Y_P0 + tail_lean(z), z),
-                  (wx(z, x1), Y_P1, z), (wx(z, x0), Y_P1, z)] for z in zs],
-             "RangerPaint")
+    def wall_outline(sx):
+        """The bed side wall's rear face, as the rim actually left it.
 
-    rear_panel(-0.545, 0.545)
+        Outer edge = the ring's arc from the flank up over the rail to the inner
+        rail (indices FLANK_LO..RAIL_IN).  Inner edge = straight down the aperture
+        at the inner rail's own x.  Closed along Z_P0 at the bottom.
+        """
+        # Pulled 5 mm inboard of the skin.  Sitting exactly ON it, the panel's outer
+        # side face is coplanar with the bed's last loft segment and z-fights it;
+        # inset, the sliver of dark cap that shows reads as a panel gap, which is
+        # what a real one looks like anyway.
+        arc = [ring_pt(i, sx) for i in
+               (BED_I_FLANK_LO, BED_I_HIP, BED_I_RAIL_OUT, BED_I_RAIL_TOP,
+                BED_I_RAIL_IN)]
+        arc = [(x * 0.994, y, z) for x, y, z in arc]
+        # Where the flank crosses Z_P0, interpolated along its own segment so the
+        # panel starts exactly on the skin rather than near it.
+        a, b = arc[0], arc[1]
+        t = (Z_P0 - a[2]) / (b[2] - a[2])
+        low = tuple(a[k] + (b[k] - a[k]) * t for k in range(3))
+        inner_x, inner_y = arc[-1][0], arc[-1][1]
+        return [low] + arc[1:] + [(inner_x, inner_y, Z_P0)]
+
+    def slab(poly, back, front, mat):
+        """Prism between two copies of a polygon, offset in y."""
+        loft(p, [[(x, y + back, z) for x, y, z in poly],
+                 [(x, y + front, z) for x, y, z in poly]], mat)
+
     for sx in (1, -1):
-        rear_panel(sx * 0.551, sx * W_PANEL)
-        # Tail lamp: red / clear / red, top to bottom, per the reference unit.  The
-        # dark bezel is not decoration — with a red default body the red lens would
-        # otherwise vanish into the paint and only the clear band would read.
-        box(p, sx * 0.558, sx * (W_PANEL - 0.008), Y_P0 - 0.004, Y_P0 + 0.016,
+        slab(wall_outline(sx), -0.004, 0.050, "RangerPaint")
+
+    # Tailgate: spans the aperture between the two inner walls.  Its top corners sit
+    # on the ring's inner-rail point, so the shut line closes exactly.
+    tg_x = abs(ring[BED_I_RAIL_IN][0]) - 0.006
+    tg_top_y = ring[BED_I_RAIL_IN][1]
+    tg = []
+    for z in (Z_P0, 0.940, Z_P1 - 0.058, Z_P1 - 0.024, Z_P1):
+        f = tail_lean(z) - tail_lean(Z_P1) + (tg_top_y - Y_TAILGATE)
+        tg.append([(-tg_x, Y_P0 + f, z), (tg_x, Y_P0 + f, z),
+                   (tg_x, Y_P1, z), (-tg_x, Y_P1, z)])
+    loft(p, tg, "RangerPaint")
+
+    # Tail lamps, let into the wall panels.  Their extents come off the SAME ring
+    # points the panels do, so they cannot drift outside the metal they sit in.
+    # Red / clear / red top to bottom, per the reference unit.  The dark bezel is
+    # not decoration — with a red default body the red lens would otherwise vanish
+    # into the paint and only the clear band would read.
+    lamp_in = abs(ring[BED_I_RAIL_IN][0]) + 0.006
+    lamp_out = abs(ring[BED_I_HIP][0]) - 0.010
+    lamp_y = ring[BED_I_HIP][1]
+    for sx in (1, -1):
+        box(p, sx * lamp_in, sx * lamp_out, lamp_y - 0.026, lamp_y - 0.002,
             Z_TAIL0 - 0.014, Z_TAIL1 + 0.014, DARK)
         for z0, z1, mt in ((0.906, Z_TAIL1, "RangerTail"),
                            (0.812, 0.902, "RangerLens"),
                            (Z_TAIL0, 0.808, "RangerTail")):
-            box(p, sx * 0.570, sx * (W_PANEL - 0.020), Y_P0 - 0.024, Y_P0 + 0.010,
-                z0, z1, mt)
+            box(p, sx * (lamp_in + 0.012), sx * (lamp_out - 0.012),
+                lamp_y - 0.042, lamp_y - 0.010, z0, z1, mt)
 
     # STEP BUMPER.  Nine-point section — rolled top, convex face, tuck under, and a
     # deep return back to its mounting plane at the tailgate.  111 mm of protrusion
@@ -1100,7 +1172,9 @@ def build_rear_end(p):
     tube(p, (0.470, -2.020, 0.330), (0.470, -2.470, 0.312), 0.038, 6, "RangerTrim")
     # Mud flaps, nearly as wide as the tyre.
     for sx in (1, -1):
-        box(p, sx * 0.590, sx * 0.816, -2.132, -2.100, 0.108, 0.442, "RangerTrim")
+        # Top at 0.436, not 0.442: the bedside sill is exactly 0.442 there and the
+        # two faces were coplanar.
+        box(p, sx * 0.590, sx * 0.816, -2.132, -2.100, 0.108, 0.436, "RangerTrim")
 
 
 # ---------------------------------------------------------------------------

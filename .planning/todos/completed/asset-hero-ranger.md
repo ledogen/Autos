@@ -416,3 +416,52 @@ and had ended up 32 mm behind the tailgate, floating inside the bumper.
 **Residual, stated:** a small dark triangle survives at each top corner of the tailgate where the
 tapered panel meets the tucked rim. Chasing it fully means making the panel's outline follow the rim
 ring point-for-point, which is a bigger refactor than it is worth right now.
+
+---
+
+## Rear panel refactor, sill/bumper, undercarriage — 2026-09-04 (second pass)
+
+**3630 tris / 4000**, audit clean.
+
+### The dark triangle — refactored away, not offset away
+
+The rear wall panels were rectangles whose extents were *derived from the rim's constants*. Better
+than typing them, but still a **reconstruction**: the rim's real outline is a tucked, chamfered,
+leaning polygon, and a rectangle approximating it leaves a triangle at each top corner. Every offset
+I added chased the error around instead of removing it — first a typed width, then a width from
+`W_BED_OUT`, then from `W_FLANK`, then a `wx(z)` taper. All of them were the same mistake.
+
+They now take their outline **from the rim ring itself, point-for-point**. `build_rear_end()` calls
+`tail_rim_ring()` and reads named landmark indices (`BED_I_FLANK_LO`, `BED_I_HIP`, `BED_I_RAIL_OUT`,
+`BED_I_RAIL_TOP`, `BED_I_RAIL_IN`) — same x, same y, same z as the bed it closes off. The tailgate
+now genuinely fills the bed aperture and the corner panels are the wall thickness, which is what a
+styleside pickup actually is. The tail lamps are keyed to the same points, so they cannot drift
+outside the metal they sit in.
+
+The landmarks are **named constants next to `bed_ring()`**, because a literal `7` buried in
+`build_rear_end()` would silently mean something else the next time a chamfer is added — which is
+exactly what happened to `NOSE_RIM[1]` two passes ago.
+
+### Sill and bumper
+
+The kick was rising the full 0.087 m to the bumper and read as too aggressive; it is now 0.040. The
+step bumper moved **up 0.045** (0.428–0.584) so its top runs *through* the tapered sill rather than
+hanging below it in space.
+
+### Undercarriage
+
+`UND_EDGE = 0.055` chamfers the underbody pan's outer corner in all three sections, and the tail rim
+now tucks the pan as well as the outer skin (the test was `|x| > W_BED_IN`, which the pan at 0.560
+never satisfied, so the underside ended in a hard rectangular corner). Owner: *"the bottom of the
+truck doesn't need detail, but it shouldn't be a void cube."*
+
+### Caught on the way
+
+- Adding one point per half to every section shifted `CLIP_BANDS` / `CAB_BANDS` / `BED_BANDS`, and
+  broke the nose frame's inner ring, which `frame()` pairs off by index. There is now an **assert**
+  that the two ring lengths match, so the next section change fails loudly instead of raising an
+  `IndexError` deep inside `frame()`.
+- Two new z-fights, both flushed by the audit: the mud flap's top face was coplanar with the bedside
+  sill at exactly 0.442, and the wall panel's outer face lay on the bed's last loft segment. The
+  panel is now inset 5 mm — and the sliver of dark cap that shows reads as a panel gap, which is
+  what a real one looks like.
