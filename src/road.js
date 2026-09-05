@@ -2624,10 +2624,16 @@ export class RoadSystem {
         // its EXACT reverse (reversePrimitives), so both are one pure geometry.
         const canon = (c1[0] - c2[0] || c1[1] - c2[1] || c1[2] - c2[2]) <= 0
         if (!canon) {
-            // reversed traversal: leave B along −goalDir, arrive at A along −startDir
+            // reversed traversal: leave B along −goalDir, arrive at A along −startDir. Sibling
+            // bearings SWAP ends unnegated — they are node-local bearings toward the node's other
+            // neighbours, not directions of travel. PERF-31 W1: dropping them here minted a
+            // sib-less forward key per reversed request (a guaranteed cache miss beside the warm
+            // scan's sib-ful entry — 39 of the 214 demanded keys, a full extra routeEdgeV2 each).
             const neg = (d) => d ? { x: -d.x, z: -d.z } : undefined
             const flip = dirs ? { startDir: neg(dirs.goalDir), goalDir: neg(dirs.startDir) } : undefined
             if (flip && dirs._built) flip._built = true
+            if (flip && dirs.sibGoal) flip.sibStart = dirs.sibGoal
+            if (flip && dirs.sibStart) flip.sibGoal = dirs.sibStart
             const fwd = this._edgeCenterline(c2, c1, flip, hardGrade)
             const cl = new Centerline(reversePrimitives(fwd.primitives))
             if (fwd._v2Dirs) cl._v2Dirs = true
