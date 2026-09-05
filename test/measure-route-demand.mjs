@@ -76,6 +76,7 @@ const msByKey = new Map()                    // key -> wall-clock ms attributed 
 let routeMs = 0, totalMs = 0
 for (const C of CENTERS) {
   const w = mk()
+  w.warmPlanDemand = true   // PERF-31 W2: opt into the plan-layer warm waves (worker-side flag)
   w.setRouteDispatcher((jobs, epoch) => {
     const results = jobs.map((job) => {
       predictedAll.add(job.key)

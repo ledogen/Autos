@@ -1663,6 +1663,7 @@ export class RoadSystem {
         this._routeEpoch     = 0           // bumped on every _invalidateProto (param/route change)
         this._lastWarmCenter = null        // throttle: only rescan the pre-warm band after moving
         this._warmCursor     = 0           // PERF-26: resume index for the eval-budgeted _warmScan
+        this.warmPlanDemand  = false       // PERF-31 W2: opt-in — warmBandComplete also warms the plan layer's route demand (worker pre-warm only; see _warmPlanJobs)
         this._urqMemo        = new Map()   // PERF-26: sig -> graph for the persist=false builds
     }
 
@@ -2016,7 +2017,136 @@ export class RoadSystem {
         const edges = g.edges.filter(([c1, c2]) => !drop.has(g.key(c1) + '|' + g.key(c2)) && (inBand(c1) || inBand(c2)))
         const { jobs, deferred } = this._warmScan(g, drop, edges, Infinity)
         if (jobs.length > 0) this._routeDispatch(jobs, this._routeEpoch)
-        return jobs.length === 0 && !deferred
+        if (jobs.length > 0 || deferred) return false
+        // PERF-31 W2 (pin parity): the registered band is cached — now warm the PLAN layer's
+        // demand (settle 1-ring incident edges, then census discovery partners) so the build
+        // thread routes ~nothing. Multi-round by construction: partners need the settle edges'
+        // routes to exist, so each pump advances one wave and the caller keeps pumping.
+        // OPT-IN (warmPlanDemand): the wave-3 settle derivation is a single ~4.6 s synchronous
+        // bite (measured, 1400 m window) — fine inside the network worker's pre-warm where it
+        // replaces the build's own settle cost, a freeze anywhere a main-thread caller pumps
+        // this (mission warm, map2d). Main-thread callers keep the wave-1-only behaviour.
+        if (!this.warmPlanDemand) return true
+        const p = this._warmPlanJobs(center)
+        if (p.jobs.length > 0) this._routeDispatch(p.jobs, this._routeEpoch)
+        return p.jobs.length === 0 && !p.deferred
+    }
+
+    /**
+     * PERF-31 W2 (pin parity): enumerate the PLAN layer's route demand beyond the registered
+     * band, with the same pins the build will derive, so warmBandComplete can pre-route it
+     * off-thread. Two waves, mirrored from the build:
+     *   1. the settle set — _v2SettleDeletions's selection verbatim: post-drop edges incident
+     *      to any endpoint node of an in-band edge (the 1-ring whose deletions can flip an
+     *      in-band pin);
+     *   2. census partners — _v2ConflictPairs's discovery bound verbatim: wide-graph edges
+     *      whose chord comes within censusChordM(+stride slack) of a settle edge's route,
+     *      pin-derived through the SAME graph the census will sample them with (band graph
+     *      when the edge is spelled there, the degree-drop wide graph otherwise).
+     * Wave 2 needs wave 1's routes in cache, so a pump that dispatches wave-1 jobs stops
+     * there and the next pump discovers partners against the cached routes.
+     * Read-only on plan state: routes nothing itself, never calls _v2DeleteFor — it only
+     * derives job specs via the shared _warmScan/_v2EdgeDirs machinery. The graphs/bounds are
+     * the BUILD's own (no prewarm margin), so cache keys match what _assembleGraphEdges and
+     * its plan passes will demand.
+     */
+    _warmPlanJobs(center) {
+        const R = this._proto.radius
+        const cmx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
+        const HW = this._bandHalfWidth()
+        const mx0 = cmx - HW, mx1 = cmx + HW
+        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
+        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
+        const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
+        const { drop, wide } = this._degreeDrops(mx0, mx1, mz0, mz1)
+        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
+        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
+        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+        const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
+        // Wave 1 — the settle set (selection mirrors _v2SettleDeletions).
+        const coreNodes = new Set()
+        for (const [c1, c2] of g.edges) {
+            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
+            if (!inBand(c1) && !inBand(c2)) continue
+            coreNodes.add(g.key(c1)); coreNodes.add(g.key(c2))
+        }
+        const settleEdges = []
+        for (const [c1, c2] of g.edges) {
+            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
+            if (!coreNodes.has(g.key(c1)) && !coreNodes.has(g.key(c2))) continue
+            const A = this._nodePos(c1), B = this._nodePos(c2)
+            { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
+            settleEdges.push([c1, c2])
+        }
+        const s1 = this._warmScan(g, drop, settleEdges, Infinity)
+        if (s1.jobs.length || s1.deferred) return s1
+        // Wave 2 — census discovery partners against the (now cached) settle routes.
+        const CHORD = (this._v2Costs().censusChordM ?? 300)
+        const spell = this._v2EdgeSpellings(g)
+        const seen = new Set()
+        for (const [c1, c2] of settleEdges) {
+            const kA = g.key(c1), kB = g.key(c2)
+            seen.add(kA < kB ? kA + '|' + kB : kB + '|' + kA)   // settle edges are already warmed
+        }
+        const partnersG = [], partnersW = []
+        for (const [c1, c2] of settleEdges) {
+            // The census samples `own` at PROTO_SAMPLE_DS and strides 8 — reproduce that walk on
+            // the cached centerline (pure cache hit after wave 1; XZ only, no height needed).
+            const cl = this._edgeCenterline(c1, c2, this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2)))
+            if (!cl || cl.length < 1e-6) continue
+            const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
+            const own = []
+            for (let i = 0; i <= n; i += 8) own.push(cl.pointAt(cl.length * i / n))
+            let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
+            for (const p of own) {
+                if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
+                if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
+            }
+            for (const [q1, q2] of wide.edges) {
+                const qA = wide.key(q1), qB = wide.key(q2)
+                const qck = qA < qB ? qA + '|' + qB : qB + '|' + qA
+                if (seen.has(qck)) continue
+                if (drop.has(qA + '|' + qB)) continue
+                const A2 = this._nodePos(q1), B2 = this._nodePos(q2)
+                { const ex = A2.x - B2.x, ez = A2.z - B2.z; if (ex * ex + ez * ez <= _mband2) continue }
+                if (Math.max(A2.x, B2.x) < minx - CHORD || Math.min(A2.x, B2.x) > maxx + CHORD
+                    || Math.max(A2.z, B2.z) < minz - CHORD || Math.min(A2.z, B2.z) > maxz + CHORD) continue
+                const cnx = Math.min(A2.x, B2.x) - CHORD, cxx = Math.max(A2.x, B2.x) + CHORD
+                const cnz = Math.min(A2.z, B2.z) - CHORD, cxz = Math.max(A2.z, B2.z) + CHORD
+                let dDisc = Infinity
+                for (const p of own) {
+                    if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
+                    const dd = _segSegDistXZ(p, p, A2, B2)
+                    if (dd < dDisc) { dDisc = dd; if (dDisc <= 0) break }
+                }
+                if (dDisc > CHORD + 16) continue
+                seen.add(qck)
+                const spQ = spell.get(qck)
+                if (spQ) partnersG.push(spQ)
+                else partnersW.push([q1, q2])
+            }
+        }
+        const s2g = this._warmScan(g, drop, partnersG, Infinity)
+        const s2w = this._warmScan(wide, drop, partnersW, Infinity)
+        if (s2g.jobs.length || s2w.jobs.length || s2g.deferred || s2w.deferred)
+            return { jobs: [...s2g.jobs, ...s2w.jobs], deferred: s2g.deferred || s2w.deferred }
+        // Wave 3 — the settle pass's PASS-2 pins. Run the same _v2SettleDeletions the build will
+        // run (a pure fn of pass-1 routes, which are all cached now — its _v2DeleteFor calls are
+        // memo/cache walks, and the odd 2-ring sample it still needs routes synchronously here
+        // and lands in cache). This is enumeration ONLY from the build's perspective:
+        // _streamNetwork bumps _networkRev before _assembleGraphEdges, so every rev-keyed
+        // verdict/frozen set minted here dies at the bump and the build re-derives its own from
+        // the same cached routes. If any node's pin CLASS flipped, rescan everything —
+        // _v2EdgeDirs now reads the frozen sets and yields the flipped (built-degree) keys the
+        // plan's pass 2 will demand; _warmScan skips all the unflipped (already cached) keys.
+        if (this._v2SettleDeletions(g, drop, wide, mx0, mx1, mz0, mz1)) {
+            const s3 = this._warmScan(g, drop, settleEdges, Infinity)
+            const s3g = this._warmScan(g, drop, partnersG, Infinity)
+            const s3w = this._warmScan(wide, drop, partnersW, Infinity)
+            return { jobs: [...s3.jobs, ...s3g.jobs, ...s3w.jobs],
+                     deferred: s3.deferred || s3g.deferred || s3w.deferred }
+        }
+        return { jobs: [], deferred: false }
     }
 
     /**
