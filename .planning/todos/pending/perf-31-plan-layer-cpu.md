@@ -68,3 +68,62 @@ AFTER lever 1 — route count multiplies into everything. Full sequencing:
 absolute cost on slow devices — a >30 s loading screen hampers a slow-machine player. Record
 story-mode entry at --cpu=4 alongside every lever; >30 s there fails the real requirement
 whatever the bench says. FEAT-76 confirmed sequenced AFTER this ticket.
+
+## W1 + W2 — SHIPPED 2026-09-05 (`61a9221`, `9f60056`, `894c9b9`)
+
+Worked the plan in `.planning/PLAN-2026-09-04-PERF31-PARALLEL.md`. Levers pulled, each measured:
+
+**W1 — the reversed-spelling flip dropped sibling bearings** (`61a9221`). `_edgeCenterline`'s
+reversed-traversal path derived the forward spelling's pins but discarded `sibStart`/`sibGoal`,
+minting a sib-less forward key per reversed request — a guaranteed miss beside the warm scan's
+sib-ful entry, one full `routeEdgeV2` each (39 of 214 demanded keys). Sibs are node-local
+bearings toward the node's other neighbours, not directions of travel, so the flip swaps ends
+unnegated. Predictable share **52 % → 62 %**; battery network hash byte-identical on all 9
+windows; junction-stitch row count unchanged (91 with and without).
+
+**W2.1 — pin parity** (`9f60056`). `warmBandComplete` grew an opt-in phase (`warmPlanDemand`,
+default OFF) enumerating the plan layer's demand with the pins the build derives, in waves:
+settle 1-ring (mirrors `_v2SettleDeletions`'s selection), census partners (mirrors
+`_v2ConflictPairs`'s bound), then the settle pass run at warm time to yield the pass-2
+built-degree keys. Pure enumeration from the build's view — `_streamNetwork` bumps `_networkRev`
+before `_assembleGraphEdges`, so warm-minted verdicts die at the bump. **Predictable 95.7 %
+(178/186)** — past the ≥ 90 % go/no-go bar. Residual 8 keys, all 2-ring `_v2NodeMerges` (~0.5 s).
+
+**W2.2 — nested route pool in the network worker** (`894c9b9`). The worker spawns its own
+`RoadRouteWorker` pool and pre-warms its private instance before `update()`; falls back to a
+cold build on any failure or a 60 s deadline. `beginPrewarmedBuild()` moves the rebuild's rev
+bump + CR-02 bounds to the START of the warm→build pair, so the warm's rev-keyed pass-1 plan
+memos carry into the build — without it they were re-derived and that ate nearly the whole
+off-thread win. Rev still advances once per real rebuild, so a moved window cannot read the
+previous window's frozen delete set (parity gate has a moved-center leg for exactly this).
+
+### Numbers
+
+| measure | before | after |
+|---|---|---|
+| network-worker THREAD cost, 3× 1400 m windows | 18.2 s | **11.1 s** (6.0 warm scans + 5.2 carried build) |
+| routing CPU moved to the pool | 0 | 6.5 s (~1.6 s wall at 4 workers, overlapped) |
+| warm-scan predictable share | 52 % | **95.7 %** |
+| story entry, cpu ×4, seed 6, cold (4 samples) | 18.0/18.1/19.1/20.6 s | **15.4/15.5/15.7/15.7 s** |
+
+Story entry stays far under the owner's 30 s bar and its spread tightened sharply. The
+end-to-end win (~3 s) is smaller than the thread-cost win because story entry builds ONE region
+and much of its wall-clock is terrain, POI placement and carve re-bake — untouched by this work.
+Instrument for it: `node test/story-entry-time.mjs --cpu=4` (rainy-day, needs the dev server).
+
+Gates: `network-worker-parity` 13/13 (two new legs — a pre-warmed build and a moved-center
+carry, both byte-identical to the cold sync build); `wye-release`, `world-determinism`,
+`restream-invariance`, `road-worker-parity` green; affected suite 32/36 with the four reds
+(`junction-stitch`, `mission-network`, `paper-tour`, `pond-route-around`) all reproduced at
+`9863058` before this work, deterministic numbers bit-identical.
+
+**W3 not entered.** The thread cost is 11.1 s against the ≤ 8 s bench target, so the serial
+remainder (levers 2–4) is still open — but the binding owner requirement (slow-device entry
+under 30 s) has margin, so the next session should re-price W3 against W1's untouched half:
+route count is still 215 demanded keys vs v2-at-birth's 64, and the classifier in
+`test/measure-route-demand.mjs` now names each producer (`_v2ConflictPairs<_v2DeleteFor`
+dominates at 145 keys / 4.5 s). A measured candidate recorded and NOT pulled: the census
+discovery bound (`censusChordM` 300 m) — over the battery, 3627 partner routes are probed and
+only 149 bear a crossing; tightening the bound to 50 m would keep 146/149 while still routing
+3339 of the 3478 empty probes, i.e. the bound is not what makes them empty. The waste is the
+probe set itself, which is a route-reuse question (FEAT-76), not a threshold question.
