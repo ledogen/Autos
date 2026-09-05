@@ -18,6 +18,21 @@ two accidental near-parallel runs.
 Background analysis, measurements, and the code trace behind every claim below:
 `.planning/research/ROUTER-REUSE-AND-PARALLELISM.md`.
 
+## Sequencing — blocked behind QUAL-28 (owner, 2026-09-05)
+
+**QUAL-28 goes first.** Its Half 2 rules what road character we are targeting — the owner's position
+is that v1 after the par reanchor was pretty much perfect and v2 should be retuned to land in the
+same place. Until that ruling exists, this ticket's central acceptance line ("T-junctions visibly
+emerge at a ρ that leaves road character intact") has no reference to be judged against, and any A/B
+run now would be scored against a baseline QUAL-28 is about to move.
+
+Consequence for the build order below: **do not open step 2 or later until QUAL-28 has landed on
+main.** Step 1 is unaffected in principle — it touches no router code — but it is also cheap enough
+to run after, against the settled baseline, which is where its numbers are worth the most.
+
+Also: branch the worktree off main *after* the QUAL-28 merge. A worktree cut now would carry a stale
+base straight through a retune of the very knobs this feature is judged on.
+
 ## Why this is not a small change
 
 Routing today is a **pure function of one edge**. `routeEdgeV2` (`corridor-router.js:1001`) sees only
@@ -47,9 +62,22 @@ post-drop graph — the same discipline the deg-2 departure pins already follow 
 This turns "who went first" into a fixed dependency DAG. Route level by level; edges of equal rank
 are mutually independent and still dispatch together.
 
-**Open decision (owner):** what ranks an edge. Candidates — trunk-ness / expected traffic; chord
-length; canonical key order (arbitrary but free). Prefer a rank that makes the *important* road the
-trunk, so minor roads join major ones rather than the reverse.
+**RULED (owner, 2026-09-05): rank = chord length, descending, with the canonical edge key as
+tiebreak.** The longer edge outranks the shorter, so the long-haul road is the trunk and the short
+spur joins it — which is how road networks actually accrete. It is a pure function of the two node
+positions, so window-invariance is immediate and needs no separate derivation; the tiebreak makes it
+a strict total order, which D1 requires (reuse is only permitted *strictly* up-rank, so ties must
+never be mutually reusable).
+
+Rejected, with reasons, so they are not re-proposed:
+
+- *Trunk-ness / expected traffic.* There is no road-class, traffic, or site-importance score
+  anywhere in the road graph today — verified 2026-09-05. It would have to be invented first.
+- *Local degree / betweenness.* The closest honest proxy for traffic, but betweenness is inherently
+  a global measure; clamping it to the radius-bounded neighbourhood the cache requires turns it into
+  a different and much less meaningful number, and makes the invariance proof harder for no gain.
+- *Canonical key alone.* Free and invariant, but gives no reason a minor road would not become the
+  trunk a major road joins — the outcome this section exists to prevent.
 
 ### D2 — reuse is a SNAP, not a discount
 
@@ -91,6 +119,12 @@ goes idle. Removal is a follow-up, once the residue is characterised.
 1. **Instrument first.** Count how much sharing exists today: registered-run pairs within
    `mergeProxM`, their span lengths, how many produce a merge vs a shove vs nothing. This is the
    baseline the feature has to beat, and it is cheap.
+   **Output shape RULED (owner, 2026-09-05): a headless rainy-day script in `test/` that walks
+   several seeds and prints the sharing census per seed** — pair count within `mergeProxM`, the
+   span-length distribution, and the merge / shove / nothing split. Multi-seed is the point: a
+   single-seed dump explains the mechanism but cannot say whether a later change generalises. Not a
+   registered gate (it measures, it does not assert). A Map2D overlay of shared spans was considered
+   and deferred — the numbers come first.
 2. **D1 rank + neighbourhood**, with a headless test proving rank is window-invariant (same edge,
    several stream windows, identical rank set) before any router change.
 3. **D2 lattice injection** behind a debug slider (ρ, turn penalty), no graph-node split yet — roads
