@@ -81,7 +81,7 @@ export const RANGER_PARAMS = {
   // interpolation runs on vehicleState.engineHealth (absent ⇒ 1 ⇒ ignitionCatchTime flat), which is
   // the seam the SM-3 wear model plugs into — NOT a per-vehicle scripted timer.
   ignitionCatchTime:     0.25,  // s — crank time before the engine catches at full engine health
-  ignitionCatchTimeWorn: 4.0,   // s — crank time at zero engine health (a beater, cranking forever)
+  ignitionCatchTimeWorn: 1.0,   // s — crank time as engine health approaches zero (owner 2026-09-04: linear 0.25→1.0; AT exactly 0 the engine never catches at all — see ignition.js catchTime)
   ignitionCrankRPM:      250,   // rpm — speed the starter turns the engine at (makes no drive torque)
   ignitionCrankRpmLag:   0.12,  // s — RPM lag while the starter picks the engine up
   // Key OFF but still in gear: the driveline drags the dead engine round through the converter, so

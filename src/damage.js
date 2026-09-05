@@ -997,6 +997,7 @@ export class DamageModel {
     // freeze — a debug session should always start from the same known state (owner, 2026-08-19).
     if (!P.enabled) {
       this.setAll(P.nominalCondition)
+      vehicleState.engineHealth = this.get('engine')   // the FEAT-33 crank-time seam follows the lock
       this.publish(params)
       return
     }
@@ -1128,6 +1129,10 @@ export class DamageModel {
         this.wear('airFilter', insult * P.filterDustMult * dt, P.durFilter)
       }
     }
+
+    // FEAT-33 seam (owner ruling 2026-09-04): the engine track IS the crank-time input. ignition.js
+    // interpolates catch time 0.25 s → 1 s on this, and at exactly 0 the engine never catches.
+    vehicleState.engineHealth = this.get('engine')
 
     this.publish(params)
   }

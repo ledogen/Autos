@@ -42,13 +42,16 @@ export function makeIgnitionState (state = RUNNING) {
 }
 
 /**
- * Catch time [s] for the current engine condition. health 1 → ignitionCatchTime, health 0 →
- * ignitionCatchTimeWorn, linear between. Absent health reads as 1 (no wear model wired yet).
+ * Catch time [s] for the current engine condition. health 1 → ignitionCatchTime, approaching 0 →
+ * ignitionCatchTimeWorn, linear between. AT health 0 the engine never catches (owner, 2026-09-04:
+ * a dead engine cranks forever — Infinity, so the starter grinds and nothing fires). Absent health
+ * reads as 1 (headless gates build vehicleState by hand with no wear model).
  */
 export function catchTime (vehicleState, params) {
   const health = Math.max(0, Math.min(1, vehicleState.engineHealth ?? 1))
+  if (health <= 0) return Infinity
   const fresh = params.ignitionCatchTime ?? 0.25
-  const worn = params.ignitionCatchTimeWorn ?? 4.0
+  const worn = params.ignitionCatchTimeWorn ?? 1.0
   return fresh + (1 - health) * (worn - fresh)
 }
 

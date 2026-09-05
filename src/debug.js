@@ -161,6 +161,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   ignFolder.add(params, 'engineOffDrag', 0, 250, 5).name('Dead-Engine Drag (N·m/1000rpm)')
   ignFolder.add(params, 'engineOffCouplingRPM', 300, 2500, 50).name('Off-Coast Couple RPM')
   ignFolder.add(params, 'engineOffRpmLag', 0.05, 3, 0.05).name('Coast-Down Lag (s)')
+  // SM-3 wiring (owner 2026-09-04): the damage model's engine track writes vehicleState.engineHealth
+  // every step, so this slider drives THAT track (via the callback), not the field directly — a
+  // direct write would be silently overwritten on the next physics step. With damage disabled the
+  // track is locked at nominal and the slider is inert (use the Damage panel's enable toggle first).
   const ignState = { engineHealth: 1 }
   ignFolder.add(ignState, 'engineHealth', 0, 1, 0.05).name('Engine Health (1 = fresh)')
     .onChange(v => callbacks.setEngineHealth?.(v))

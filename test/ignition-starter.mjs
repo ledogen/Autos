@@ -68,10 +68,15 @@ console.log('\n── 2. releasing early aborts and discards the crank ───
 
 console.log('\n── 3. catch time scales with engine health (the SM-3 wear seam) ──────────────')
 {
-  const worn = crankFor(P.ignitionCatchTimeWorn + 4 * DT, 0)
-  check(worn.vs.ignition.state === RUNNING, 'a zero-health engine does eventually catch')
-  check(Math.abs(worn.caught - P.ignitionCatchTimeWorn) <= 2 * DT + 1e-9,
-    `health 0 catches at ${worn.caught.toFixed(2)}s ≈ ignitionCatchTimeWorn ${P.ignitionCatchTimeWorn}s`)
+  // Owner ruling 2026-09-04: linear 0.25 s → ignitionCatchTimeWorn as health → 0, but AT health 0
+  // the engine never catches at all — crank forever, nothing fires.
+  const dead = crankFor(P.ignitionCatchTimeWorn * 4, 0)
+  check(dead.vs.ignition.state === CRANKING && dead.caught === null,
+    `health 0 NEVER catches (cranked ${(P.ignitionCatchTimeWorn * 4).toFixed(1)}s, still grinding)`)
+  const nearDead = crankFor(P.ignitionCatchTimeWorn + 4 * DT, 0.02)
+  const nearWorn = P.ignitionCatchTime + 0.98 * (P.ignitionCatchTimeWorn - P.ignitionCatchTime)
+  check(Math.abs(nearDead.caught - nearWorn) <= 2 * DT + 1e-9,
+    `health 0.02 catches at ${nearDead.caught.toFixed(2)}s ≈ ${nearWorn.toFixed(2)}s (just shy of ignitionCatchTimeWorn ${P.ignitionCatchTimeWorn}s)`)
   const half = crankFor(P.ignitionCatchTimeWorn + 4 * DT, 0.5)
   const mid = 0.5 * (P.ignitionCatchTime + P.ignitionCatchTimeWorn)
   check(Math.abs(half.caught - mid) <= 2 * DT + 1e-9, `health 0.5 catches at ${half.caught.toFixed(2)}s ≈ midpoint ${mid.toFixed(2)}s`)
