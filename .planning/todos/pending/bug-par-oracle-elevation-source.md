@@ -1,11 +1,12 @@
 ---
 id: BUG-41
 type: bug
-status: wontfix
+status: open
 opened: 2026-08-02
 closed: 2026-08-03
+reopened: "2026-09-05: the drift alarm fired exactly as designed — see the RE-OPENED section"
 renumbered: "2026-08-03: filed as BUG-40, which collided with the closed deg-2 connector hump bug"
-severity: minor
+severity: medium   # 2026-09-05: raised from minor — par misprices DISTANCE on merged runs (up to 6.39%), and par is the FEAT-53 payout denominator
 source: discovered while fixing FEAT-39 GPS defects (feature/gps-fix)
 relates_to: src/par.js (computePar / gradeRun), src/road.js (_gradeSampler, edgeParData,
   runProfile), src/mission.js (segments[].gradeAt), FEAT-29 (par oracle), FEAT-30 (par
@@ -134,3 +135,50 @@ slope, where the offset cancels and the end bands are speed-capped anyway.
 - [x] `gates.mjs` desc updated so the alarm is discoverable from the registry.
 - ~~If switched: `runProfile`-backed `gradeAt` with an unstreamed-run fallback~~ — not switched.
 - ~~If switched: re-run `test/calibrate-par.mjs` and re-derive `k`~~ — not switched.
+
+
+---
+
+# RE-OPENED 2026-09-05 — the alarm fired, and it is NOT the failure it was written to describe
+
+`test/mission-network.mjs` §7 went RED: interior p99 **3.241 m** (licensed < 0.5), band p99
+**400 m** (licensed ≤ 250). Per this ticket's own rule, that means re-open. Diagnosed the same
+day; full evidence and the sequencing call:
+`.planning/handoffs/HANDOFF-2026-09-05-BUG-41-diagnosed.md`.
+
+**It is an ARC-DOMAIN bug, not an elevation one.** `edgeParData()` hands out a sampler
+parameterised by `clArc` (the PRE-MERGE routed centerline arc) while the run's real geometry is
+its polyline (`polyCum`). BUG-53/55/57 merge machinery re-seats a losing run onto the winner's
+course (`offCurveSpans`), at which point the two domains come apart.
+
+- Compared at matched XZ instead of matched `s`, the worst run's "disagreement" collapses from
+  **3.156 m to 0.298 m**; the arc-domain offset reaches **17.3 m**.
+- The 2026-08-03 premise still HOLDS on unmerged road — plain-road interior p99 **0.265 m**,
+  inside the original bar. 100% of the drift is inside the merge spans. The ruling was not wrong;
+  it predated machinery that re-seats runs.
+- **The part that matters to the game:** `centerline.length` is `clArc`'s, so par prices a road
+  SHORTER than the one driven — 11 of 51 runs off by 0.19%–**6.39%** (worst −46.5 m and −41.5 m).
+  Par is the denominator of the FEAT-53 payout/rank scale, so this is an economy defect, not a
+  cosmetic one.
+
+The frontmatter's original warning stands and is now the crux: correcting this shifts par times.
+The handoff's §1 lays out the three options (re-parameterise to `polyCum` and move all four
+consumers; correct `.length` only; or something else) — the sampler's `clArc` was DELIBERATE
+(BUG-53 kept it so existing `s` values stayed meaningful), so this is a domain change with
+consumers in `par.js`, `mission.js`, `gps.js`, `poi.js`, not a typo fix.
+
+**Prerequisite:** `mission-network`'s "registered centerline object" check is nondeterministic
+run-to-run (30/38 then 27/34 on an unchanged tree) — make it deterministic first or you cannot
+read your own result.
+
+**Sequencing:** par-side, and par never feeds routing, so this parallelises safely with QUAL-28
+on its own worktree. Do NOT take a carve-side fix — that changes geometry and would collide with
+QUAL-28's character bar.
+
+## Acceptance — re-opened
+
+- [ ] Ruling on the three options in the handoff §1.
+- [ ] `centerline.length` equals the true driven length on off-curve runs.
+- [ ] `mission-network` §7's two failing BUG-41 checks green, the third still passing.
+- [ ] The gate stops comparing two samplers at the same `s` without asserting the domains match.
+- [ ] Par-time delta quantified and the `PAR_REF` / `k` fit checked against it.
