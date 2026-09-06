@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs'
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { validateCapture } from '../src/capture.js'
-import { sampleRegion } from './lib/road-headless.mjs'
+import { sampleRegion, HARD_RADIUS_FLOOR_M } from './lib/road-headless.mjs'
 
 const path = process.argv[2]
 if (!path) { console.error('usage: node test/replay.mjs <capture.json>'); process.exit(2) }
@@ -102,12 +102,12 @@ if (capture.kind === 'place') {
     if (!surfaceOk) { console.log('        → SURFACE TEAR present at this location (drivable height is window-variant).'); fail = 1 }
 
     // ── (3) fold / kink metric at the mark ────────────────────────────────────────────
-    // The arc router is min-turn-radius VALID BY CONSTRUCTION, so any local centerline radius below
-    // the design min (roadMinTurnRadius) is a construction breach = a kink/fold. Severity by how far
-    // under: < hard floor (roadArcHardRadius) is egregious.
+    // A local centerline radius below the design min (roadMinTurnRadius) is a construction breach =
+    // a kink/fold. Severity by how far under: below the hard floor is egregious. QUAL-28: the floor
+    // is a fixed 8 m bar, not the deleted v1 roadArcHardRadius it used to be read from.
     const minR = got.minR ?? 9999
     const designMin = params.roadMinTurnRadius ?? 45
-    const hardFloor = params.roadArcHardRadius ?? 8
+    const hardFloor = HARD_RADIUS_FLOOR_M
     console.log(`\n  (3) FOLD METRIC @ mark`)
     console.log(`        local centerline turn radius = ${minR.toFixed(1)} m  (design min ${designMin} m, hard floor ${hardFloor} m)`)
     if (minR < hardFloor)        console.log(`        → SEVERE KINK: radius below the hard floor — a fold.`)

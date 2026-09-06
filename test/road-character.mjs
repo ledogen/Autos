@@ -6,7 +6,8 @@
 //   STRAIGHTNESS  straight-span length histogram (|κ| < 1/2000 sustained), % of network length
 //                 in straights > 200 m (PRIMARY number — target 0), worst spans with x/z coords
 //   RHYTHM        length-weighted turn-radius distribution (sweep/gentle/medium/hairpin bands)
-//   GRADE         max / p95 (length-weighted), % of length over the soft grade target
+//   GRADE         max / p95 (length-weighted), % of length over the v2 grade cap (roadV2.gMaxRoad),
+//                 alongside g* = 1/sqrt(roadV2.wGrade) — the grade the price list WANTS to climb at
 //   EARTHWORK     mean/max |designY − rawTerrainY| (the fill/cut the carve must build)
 //   CREST         max |Δgrade/Δs| → implied vertical radius → vertical accel at 25 m/s in g
 //                 (target ≤ ~0.25 g — above that a crest reads as a launch ramp)
@@ -17,7 +18,7 @@
 //
 //   node test/road-character.mjs                    # seed 6, landmark window, defaults
 //   node test/road-character.mjs seed=11 r=1200     # other seed / stream radius
-//   node test/road-character.mjs roadWGrade=400 roadGraphMaxGrade=0.12   # param overrides
+//   node test/road-character.mjs roadV2.cTurn=60 wGrade=120     # v2 price overrides (bare or dotted)
 //   node test/road-character.mjs --json             # machine-readable (sweep driver)
 //
 // Reserved keys: seed, cx, cz, r (stream window). Everything else k=v is a RANGER_PARAMS override
@@ -28,23 +29,17 @@
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
+import { parseParamArgs, withOverrides } from './lib/param-overrides.mjs'
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
 const reserved = { seed: 6, cx: -975, cz: 765, r: 1400 }
-const overrides = {}
-for (const a of argv) {
-    const m = a.match(/^([A-Za-z][A-Za-z0-9]*)=(.+)$/)
-    if (!m) continue
-    const v = m[2] === 'true' ? true : m[2] === 'false' ? false : Number(m[2])
-    if (m[1] in reserved) reserved[m[1]] = v
-    else overrides[m[1]] = v
-}
+const overrides = parseParamArgs(argv, reserved)
 const { seed: SEED, cx: CX, cz: CZ, r: RADIUS } = reserved
 
 // ── build the network ────────────────────────────────────────────────────────
-const P = { ...RANGER_PARAMS, ...overrides }
+const P = withOverrides(RANGER_PARAMS, overrides)
 const road = new RoadSystem(SEED, P)
 road.setRadius(RADIUS)
 road.update(new THREE.Vector3(CX, 0, CZ))
@@ -57,7 +52,12 @@ const SB_WINDOW    = 300         // m — switchback detection window
 const SB_TURN      = 150 * Math.PI / 180   // rad — net heading change that counts as a reversal
 const STEEP_TERRAIN = 0.10       // raw-terrain grade that classifies a switchback as "alpine"
 const V_REF        = 25          // m/s — crest vertical-g reference speed
-const maxGradeTarget = P.roadGraphMaxGrade ?? 0.15
+// QUAL-28: was `roadGraphMaxGrade ?? 0.15` — a v1 parameter deleted by FEAT-68, so the bar was a
+// silent hard-coded 0.15 wearing its name. The live v2 knobs: gMaxRoad is the hard vocabulary cap
+// the router may not exceed, and g* = 1/sqrt(wGrade) is the grade its price list is minimised at,
+// i.e. the one it WANTS. Compliance is reported against the cap, comfort against g*.
+const maxGradeTarget = P.roadV2?.gMaxRoad ?? 0.24
+const gStar = 1 / Math.sqrt(P.roadV2?.wGrade ?? 180)
 
 // Arc-length box smooth (two-pointer, mirrors smoothGradeInPlace's window semantics).
 function boxSmooth(vals, arc, half) {
@@ -94,6 +94,7 @@ let straightSpanCount = 0, longStraightLen = 0
 const worstStraights = []            // { len, x, z, runKey }
 const gradeSamples = []              // [g, segLen] length-weighted
 let gradeOverLen = 0, gradeMax = 0, gradeMaxAt = null
+let gradeOverGStarLen = 0   // QUAL-28: length above g* = 1/sqrt(wGrade), the comfort grade
 let earthSum = 0, earthMax = 0, earthMaxAt = null
 const crests = []                    // { dgds, x, z }
 const switchbacks = []               // { x, z, steep }
@@ -176,6 +177,7 @@ for (const [runKey, e] of road._network) {
         const g = Math.abs(segG[i])
         gradeSamples.push([g, segL[i]])
         if (g > maxGradeTarget) gradeOverLen += segL[i]
+        if (g > gStar) gradeOverGStarLen += segL[i]
         if (g > gradeMax) { gradeMax = g; gradeMaxAt = { x: r1(pts[i].x), z: r1(pts[i].z) } }
         const raw = road._coarseH(pts[i].x, pts[i].z)
         const dev = Math.abs(pts[i].y - raw)
@@ -239,7 +241,9 @@ const report = {
         max: r3(gradeMax), maxAt: gradeMaxAt,
         p95: r3(gradeP95),
         pctOverTarget: pctOf(gradeOverLen, totalLen),
-        target: maxGradeTarget,
+        target: maxGradeTarget,               // roadV2.gMaxRoad — the hard cap
+        pctOverGStar: pctOf(gradeOverGStarLen, totalLen),
+        gStar: Math.round(gStar * 1e4) / 1e4,  // 1/sqrt(roadV2.wGrade) — the grade the prices want
     },
     earthwork: {
         meanM: r2(earthSum / (totalLen || 1)),
@@ -267,7 +271,8 @@ if (JSON_OUT) {
     for (const w of report.straightness.worst) console.log(`  worst: ${w.len} m @ (${w.x}, ${w.z})`)
     console.log(`\nRHYTHM  (% length by turn radius)`)
     for (const [k, v] of Object.entries(report.rhythm)) console.log(`  ${k.padEnd(20)} ${v}%`)
-    console.log(`\nGRADE   max=${f(report.grade.max * 100)}% @ (${gradeMaxAt?.x}, ${gradeMaxAt?.z})   p95=${f(report.grade.p95 * 100)}%   over ${f(maxGradeTarget * 100, 0)}% target: ${report.grade.pctOverTarget}% of length`)
+    console.log(`\nGRADE   max=${f(report.grade.max * 100)}% @ (${gradeMaxAt?.x}, ${gradeMaxAt?.z})   p95=${f(report.grade.p95 * 100)}%   over ${f(maxGradeTarget * 100, 0)}% cap (roadV2.gMaxRoad): ${report.grade.pctOverTarget}% of length`)
+    console.log(`        over g*=${f(gStar * 100)}% (1/\u221AroadV2.wGrade, the grade the price list wants): ${report.grade.pctOverGStar}% of length`)
     console.log(`EARTHWORK   mean=${report.earthwork.meanM} m   max=${report.earthwork.maxM} m @ (${earthMaxAt?.x}, ${earthMaxAt?.z})`)
     console.log(`CREST   vertical accel @25 m/s: max=${report.crest.gAt25ms} g (Rv≈${report.crest.impliedVRadiusM} m) @ (${crestMax.x}, ${crestMax.z})   p99=${report.crest.p99gAt25ms} g   (target ≤ 0.25 g)`)
     console.log(`SWITCHBACKS   ${report.switchbacks.total} total — ${sbSteep} on steep terrain, ${report.switchbacks.gentleTerrain} on gentle`)

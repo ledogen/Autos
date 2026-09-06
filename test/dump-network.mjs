@@ -5,30 +5,24 @@
 // summary counts. Pair of dumps → node test/feel-diff.mjs a.json b.json.
 //
 //   node test/dump-network.mjs out=/tmp/a.json                 # seed 6, landmark window
-//   node test/dump-network.mjs seed=42 r=1400 out=/tmp/b.json roadArcHeurWeight=2
+//   node test/dump-network.mjs seed=42 r=1400 out=/tmp/b.json roadV2.cTurn=60   # v2 price override
 //
-// Reserved keys: seed, cx, cz, r, out. Everything else k=v is a RANGER_PARAMS override.
+// Reserved keys: seed, cx, cz, r, out. Everything else k=v is a RANGER_PARAMS override; a v2
+// price knob is reachable bare (cTurn=60) or dotted (roadV2.cTurn=60) — see lib/param-overrides.mjs.
 // Not a gate — a workbench tool for the routing-perf work (pairs with test/feel-diff.mjs).
 
 import * as THREE from 'three'
 import { writeFileSync } from 'node:fs'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
+import { parseParamArgs, withOverrides } from './lib/param-overrides.mjs'
 
 const argv = process.argv.slice(2)
 const reserved = { seed: 6, cx: -975, cz: 765, r: 1400, out: '' }
-const overrides = {}
-for (const a of argv) {
-    const m = a.match(/^([A-Za-z][A-Za-z0-9]*)=(.+)$/)
-    if (!m) continue
-    if (m[1] === 'out') { reserved.out = m[2]; continue }
-    const v = m[2] === 'true' ? true : m[2] === 'false' ? false : Number(m[2])
-    if (m[1] in reserved) reserved[m[1]] = v
-    else overrides[m[1]] = v
-}
+const overrides = parseParamArgs(argv, reserved)
 if (!reserved.out) { console.error('usage: node test/dump-network.mjs out=<file.json> [seed= cx= cz= r= k=v...]'); process.exit(2) }
 
-const P = { ...RANGER_PARAMS, ...overrides }
+const P = withOverrides(RANGER_PARAMS, overrides)
 const t0 = performance.now()
 const road = new RoadSystem(reserved.seed, P)
 road.setRadius(reserved.r)
