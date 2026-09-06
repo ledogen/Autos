@@ -246,6 +246,17 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     const discs = opts.blockedDiscs
     const blockedArr = discs && discs.length ? new Uint8Array(W * Hn) : null
     const exempt2 = (2 * cell) * (2 * cell)
+    // THE ANCHOR EXEMPTION IS PER-DISC (FEAT-17, 2026-09-06). It exists so a node that sits IN the
+    // water is still reachable — without it that edge has no route at all. It used to exempt a cell
+    // near either anchor from EVERY disc, which is a different and much larger licence: on seed 1
+    // @(0,0) a node 74 m from a pond centre — 14 m clear of a 60 m disc, so a legitimately DRY node
+    // — departed straight through the water for 40 m, because the whole disc lay inside the 2-cell
+    // exemption around it. A dry node has no excuse. So a cell is exempt only from the disc its own
+    // anchor is standing in.
+    const inDisc = (px, pz, d) => {
+        const dx = px - discs[d], dz = pz - discs[d + 1], r = discs[d + 2]
+        return dx * dx + dz * dz <= r * r
+    }
     const isBlocked = (cx2, cz2) => {
         if (!blockedArr) return false
         const i = idx(cx2, cz2)
@@ -253,11 +264,13 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
         const x = wx(cx2), z = wz(cz2)
         let b = 1
         const dax = x - ax, daz = z - az, dbx = x - bx, dbz = z - bz
-        if (dax * dax + daz * daz > exempt2 && dbx * dbx + dbz * dbz > exempt2) {
-            for (let d = 0; d < discs.length; d += 3) {
-                const dx = x - discs[d], dz = z - discs[d + 1]
-                if (dx * dx + dz * dz <= discs[d + 2] * discs[d + 2]) { b = 2; break }
-            }
+        const nearA = dax * dax + daz * daz <= exempt2
+        const nearB = dbx * dbx + dbz * dbz <= exempt2
+        for (let d = 0; d < discs.length; d += 3) {
+            if (!inDisc(x, z, d)) continue
+            if (nearA && inDisc(ax, az, d)) continue     // this anchor is IN this pond — let it out
+            if (nearB && inDisc(bx, bz, d)) continue
+            b = 2; break
         }
         blockedArr[i] = b
         return b === 2
@@ -1108,15 +1121,46 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
     const rungs = pin
         ? [[pin, {}], [null, sib ?? {}], [pin, { structureCap: false }], [null, sib ? { structureCap: false, ...sib } : { structureCap: false }]]
         : [[null, {}], [null, { structureCap: false }]]
-    let cl = null, first = null, usedPin = false
+    // FEAT-17 — A POND OUTRANKS A HEADING PIN, and the test is on the FITTED line.
+    //
+    // The no-go discs are enforced inside the search, at cell centres, and that does not settle
+    // where the road ends up: stage 3 runs the corridor path through simplifyRDP at 32-44 m and
+    // then repairs it to the 8.5 m fold floor, and `enforceMinRadius` removes the vertices it
+    // cannot round. When the pinned rung's only way past a pond is a hairpin — which is what a
+    // blocked disc plus a forced departure bearing produces — the repair eats the whole detour and
+    // the fit collapses back onto the chord, through the water. Measured on seed 1 @(0,0), edge
+    // (435,-2333)→(996,-1765): the pinned corridor path clears the disc by 115 m and its fit sits
+    // 4.2 m INSIDE it, unchanged even when the discs were padded to push the corridor 263 m clear.
+    // Padding cannot fix it; the sharper the detour, the more of it the repair removes.
+    //
+    // The ladder already ranks these correctly — "heading pins are the FIRST thing sacrificed" —
+    // it just was not being told. So a rung whose fitted line enters a disc is not acceptable and
+    // falls through to the next, and the unpinned rung routes around the same pond honestly (that
+    // edge: 125 m clear at 942 m against the pinned 800 m). A grazing curve is still kept as the
+    // very last resort, below even a profile-infeasible clean one — the network never disconnects.
+    const DISC_STEP = 4                      // sampling stride, m — well under the 8.5 m fold floor
+    const clearsDiscs = (cl2) => {
+        if (!blockedDiscs?.length) return true
+        const L = cl2.length
+        for (let s = 0; s <= L; s += DISC_STEP) {
+            const p2 = cl2.pointAt(Math.min(s, L))
+            for (let d = 0; d < blockedDiscs.length; d += 3) {
+                const dx = p2.x - blockedDiscs[d], dz = p2.z - blockedDiscs[d + 1], r = blockedDiscs[d + 2]
+                if (dx * dx + dz * dz <= r * r) return false
+            }
+        }
+        return true
+    }
+    let cl = null, first = null, usedPin = false, wet = null
     for (const [p, extra] of rungs) {
         const c = attempt(p, extra)
         if (!c || !(c.length > 1e-6)) continue
+        if (!clearsDiscs(c)) { wet ??= c; continue }
         if (!first) first = c
         if (profileFeasible(c, yA, yB, hCoarse, { costs })) { cl = c; usedPin = !!p; break }
     }
     return {
-        cl: cl ?? first ?? new Centerline([]),
+        cl: cl ?? first ?? wet ?? new Centerline([]),
         feasible: !!cl,
         usedPin: !!(cl && usedPin),
         pinRequested: !!pin,
