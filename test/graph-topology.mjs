@@ -129,38 +129,19 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
 // places the check flagged; the reversed-goalHeading bug it guarded is covered by (b) INVARIANCE +
 // the driven acceptance. BUG-56's junction-departure work owns this surface now.
 
-// (g) SELF-CLEARANCE (QUAL-14, replaces the ≤200°-turn NO-LOOPS check — that bound was
-// anti-switchback by design once the honest-grade router made 300°+ alpine stacks intentional).
-// The contract the router's repair loop enforces: no two samples of ONE edge's centerline with
-// arc-separation > roadSelfClearGap may lie closer than D_self = roadWidth + 2·shoulder +
-// selfClearMargin in XZ — no lollipop self-intersections, no hairpin legs sharing a carve wall.
-// 0.6 m tolerance absorbs polyline-vs-primitive sampling phase noise. (Bumped 0.5→0.6 when the default
-// selfClearGap dropped 80→50: the tighter gap re-threads long alpine switchback edges, and one seed-6
-// stack's legs — 255 m apart along-arc, i.e. a genuine far-apart hairpin, not a carve-wall stack — land
-// at 17.4 m sampled vs the 18 m in-router target. The router's clearance contract is unchanged; this is
-// the sampled-proxy's noise margin, not the contract.)
-{
-    const D = 2 * (P.roadHalfWidth ?? 5) + 2 * (P.roadShoulderWidth ?? 2.5) + (P.roadSelfClearMargin ?? 3) - 0.6
-    const GAP = P.roadSelfClearGap ?? 80
-    let viol = 0, worst = 1e9, worstAt = ''
-    for (const [k, e] of roadA._network) {
-        const pts = e.points, ss = new Float64Array(pts.length)
-        for (let i = 1; i < pts.length; i++) ss[i] = ss[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
-        for (let i = 0; i < pts.length; i++) for (let j = 0; j < i; j++) {
-            if (ss[i] - ss[j] <= GAP) continue
-            const d = Math.hypot(pts[i].x - pts[j].x, pts[i].z - pts[j].z)
-            if (d < D) { viol++; if (d < worst) { worst = d; worstAt = `${k} @(${pts[i].x.toFixed(0)},${pts[i].z.toFixed(0)})` } }
-        }
-    }
-    log(viol === 0, 'GRAPH-SELF-CLEARANCE',
-        `sample pairs closer than ${D.toFixed(1)} m at arcSep>${GAP} m: ${viol}${viol ? ` worst=${worst.toFixed(1)} m ${worstAt}` : ''} — no self-intersection / carve-wall stacking`)
-}
+// (g) SELF-CLEARANCE — RETIRED (QUAL-28, owner ruling 2026-09-05). It asserted that no two samples
+// of ONE edge's centerline more than roadSelfClearGap apart along-arc could lie closer than
+// roadWidth + 2*shoulder + roadSelfClearMargin. Both governing parameters were deleted with the v1
+// culls (QUAL-27), so the check had degraded into hard-coded 80 m / 3 m wearing dead parameter
+// names: it was enforcing a contract no code in src/ still has. The crossing invariant (BUG-57)
+// owns "two pieces of road may not occupy the same ground" now, and it covers an edge against
+// itself. (j) below still asserts the pairwise case on live geometry knobs.
 
 // (j) CORRIDOR-CLEARANCE (QUAL-14 Part B) — no two REGISTERED edges run closer than the carve
 // footprint (D_self, the _cullClearance floor) outside the exemption zone around the pair's
 // endpoint nodes (merges/approaches into junctions may converge; mid-span they may not).
 // Corridor avoidance prevents this at routing time; the clearance cull backstops it — this
-// asserts the end result. Same 0.5 m sampling tolerance as (g).
+// asserts the end result. 0.5 m absorbs polyline-vs-primitive sampling phase noise.
 {
     // R8 re-baseline (owner ruling 2026-09-01): over ONE ROAD WIDTH of centre separation, two
     // roads are two roads — each gets its own full deck, own camber, own grade. The old floor
@@ -168,7 +149,11 @@ const edgeKey = (r, e) => { const a = posKey(r._nodePos(e.cellA)), b = posKey(r.
     // shared-earthworks ground as a defect; the QUALITY of that band (deck-height compatibility)
     // is junction-stitch's and wye-release's business now, not a distance floor's.
     const D = 2 * (P.roadHalfWidth ?? 5) - 0.5
-    const EXEMPT = P.roadCorridorExempt ?? (Math.max(P.roadGraphGoalBlend ?? 60, P.roadJunctionBlendLength ?? 30, 60) + 20)
+    // QUAL-28: was `roadCorridorExempt ?? max(roadGraphGoalBlend ?? 60, roadJunctionBlendLength, 60) + 20`.
+    // roadCorridorExempt and roadGraphGoalBlend died with the v1 culls and roadJunctionBlendLength
+    // (30 m) never won that max, so the expression always evaluated to 80. Stated honestly: the
+    // approach zone around a pair's endpoint nodes, where converging into a junction is intended.
+    const EXEMPT = 80   // m — fixed bar; no live parameter governs it
     const runs = [...roadA._network.entries()]
     let viol = 0, worst = 1e9, worstAt = ''
     for (let x = 0; x < runs.length; x++) for (let y = 0; y < x; y++) {

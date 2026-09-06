@@ -527,8 +527,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   Grade Discomfort: cost/m multiplier is 1 + wGrade·g². Climbing H m at grade g costs about
   //   H·(1/g + wGrade·g), minimised at g* = 1/sqrt(wGrade) — so this sets the grade the router
   //   WANTS to climb at. 120 puts g* near 9% (forest-road grade); 40 put it at 16% and the solver
-  //   just took steep straights.
-  v2Folder.add(params.roadV2, 'wGrade', 10, 300, 5).name('Grade Discomfort').onChange(fireRoadParam)
+  //   just took steep straights. QUAL-28: upper bound raised 300 -> 600 — the par-reanchor character
+  //   sweep found the closest match to v1 sits near 320 (g* = 5.6%), off the top of the old slider.
+  v2Folder.add(params.roadV2, 'wGrade', 10, 600, 5).name('Grade Discomfort').onChange(fireRoadParam)
   //   Earthworks: cut is priced per m of length per m of depth, plus a QUADRATIC depth term (real
   //   cuttings go superlinear past ~8 m: rock walls, stabilisation). The quadratic term is what
   //   makes a portal emerge at bench depth instead of the solver trenching to the class boundary.

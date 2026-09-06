@@ -40,18 +40,34 @@ export const TEST_PARAMS = {
     // them to build the simplex closure; harmless).
     coarseAmplitude: 150, coarseFreq: 0.0005, coarseOctaves: 4, ridgeSharpness: 1.6, terrainAmplitude: 1.0,
 
-    // D-09 locked cost model (valley-trunk routing).
-    maxRoadGrade: 0.15, roadWDist: 1, roadWAlt: 0.85, roadWGrade: 400, roadWOver: 8000, roadWTurn: 120,
+    // QUAL-28: the v1 arc-lattice weight family (maxRoadGrade, roadWDist/WAlt/WGrade/WOver/WTurn,
+    // roadArcHardRadius/GentleRadius/HeurWeight) is GONE — FEAT-68 deleted the router that priced
+    // with them and QUAL-27 deleted its last consumers. They lingered here as fixture keys nothing
+    // read. Do not re-add a key here without a live reader in src/; the v2 price list is
+    // RANGER_PARAMS.roadV2 and it is physical, not a weight set.
     spurProbability: 0.15,
 
-    // Arc-primitive router (D-arc) — defaults match _protoConnect's `?? ` fallbacks; set explicitly
-    // so the harness is independent of those defaults drifting.
-    roadArcHardRadius: 8, roadArcGentleRadius: 30, roadClearanceMargin: 0.5, roadArcHeurWeight: 1.5,
+    // Geometry the surface + clearance paths genuinely read.
+    roadClearanceMargin: 0.5,
     roadMinTurnRadius: 45,
 
     // Phase 9 surface / query geometry (queryNearest footprint + grade smoothing window).
     roadHalfWidth: 5, roadShoulderWidth: 2.5, designGradeWindow: 50,
 }
+
+// ── Fold floor ─────────────────────────────────────────────────────────────────
+/**
+ * HARD_RADIUS_FLOOR_M — the centerline turn radius below which a corner is a FOLD, not a corner.
+ *
+ * QUAL-28 (owner ruling, 2026-09-05): an honest fixed physical bar, deliberately NOT tracking any
+ * parameter. It used to be read as `roadArcHardRadius ?? 8` — v1's arc-lattice knob — which has not
+ * existed since FEAT-68, so every reader silently took the 8 and named a dead parameter while doing
+ * it. 8 m is kept because the road deck is ~10 m wide: at any radius near that the ribbon
+ * self-intersects long before the geometric radius floor is reached, so self-intersection is the
+ * real failure and 8 m is all this bar has to cover. It is NOT roadMinTurnRadius (15 m) — that is
+ * the design/carve-footprint knob and is a quality target, whereas this is the breach line.
+ */
+export const HARD_RADIUS_FLOOR_M = 8
 
 const WORLD_SEED = 6   // matches the seed used in the BUG-14 instrumented logs (memory)
 

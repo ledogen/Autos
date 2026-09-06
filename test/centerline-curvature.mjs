@@ -16,7 +16,7 @@
 
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
-import { COARSE_HEIGHT, TEST_PARAMS } from './lib/road-headless.mjs'
+import { COARSE_HEIGHT, TEST_PARAMS, HARD_RADIUS_FLOOR_M } from './lib/road-headless.mjs'
 
 const SEED = 6
 
@@ -46,7 +46,7 @@ function freshRoad(center) {
 // ── Gate 1: exact min radius ≥ fold floor over every edge across several centers ───────────────────
 {
     const FLOOR = foldFloor(TEST_PARAMS)
-    const HARD = TEST_PARAMS.roadArcHardRadius ?? 8
+    const HARD = HARD_RADIUS_FLOOR_M   // QUAL-28: a fixed bar, not a parameter
     const centers = [{ x: 0, z: 0 }, { x: 512, z: 256 }, { x: -512, z: -256 }, { x: 256, z: -512 }]
     let worst = { r: Infinity, key: '', center: null }
     let count = 0

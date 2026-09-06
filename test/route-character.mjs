@@ -4,7 +4,7 @@
 //   node test/route-character.mjs <place-capture.json>
 //
 // The discriminator it prints last is the one that matters: net endpoint grade DEMAND divided by the
-// router's soft grade target (roadGraphMaxGrade). Below 1 the router goes straight; above 1 it MUST
+// router's grade cap (roadV2.gMaxRoad). Below 1 the router goes straight; above 1 it MUST
 // lengthen the route by at least that ratio to gain the height inside the cap, and the only way to
 // buy length inside a corridor is to switchback — so the road wiggles. Wiggliness is not a style
 // choice anywhere in the cost model; it is that ratio crossing 1.
@@ -62,7 +62,10 @@ const P = e.points
 const a = P[0], b = P.at(-1)
 const straight = Math.hypot(b.x-a.x, b.z-a.z)
 const demand = Math.abs(road._coarseH(b.x, b.z) - road._coarseH(a.x, a.z)) / straight
-const softCap = params.roadGraphMaxGrade ?? 0.20
+// QUAL-28: was `roadGraphMaxGrade ?? 0.20` — deleted with the v1 router, so this headline
+// discriminator was being divided by a hard-coded 0.20 named after nothing. gMaxRoad is the live
+// v2 cap; captures predating FEAT-68 carry neither, hence the fallback.
+const softCap = params.roadV2?.gMaxRoad ?? 0.24
 console.log(`ROUTE DEMAND: straight ${straight.toFixed(0)} m, route ${L.toFixed(0)} m → detour ×${(L/straight).toFixed(2)}`)
-console.log(`  endpoint grade demand ${(demand*100).toFixed(1)}%  ÷ soft cap ${(softCap*100).toFixed(0)}% (roadGraphMaxGrade)`
+console.log(`  endpoint grade demand ${(demand*100).toFixed(1)}%  ÷ soft cap ${(softCap*100).toFixed(0)}% (roadV2.gMaxRoad)`
     + `  = FORCING RATIO ${(demand/softCap).toFixed(2)}  → ${demand/softCap > 1 ? 'SWITCHBACKS FORCED' : 'free to run straight'}`)

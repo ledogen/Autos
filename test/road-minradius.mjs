@@ -18,7 +18,7 @@
 //
 // Run: node test/road-minradius.mjs   (exit 0 = all green)
 
-import { buildNetwork, TEST_PARAMS } from './lib/road-headless.mjs'
+import { buildNetwork, TEST_PARAMS, HARD_RADIUS_FLOOR_M } from './lib/road-headless.mjs'
 
 let pass = 0, fail = 0
 const log = (ok, name, msg) => {
@@ -91,7 +91,7 @@ const foldFloor = (params) => (params.roadHalfWidth ?? 5) + (params.roadClearanc
 // ── Fixture 1: synthetic headless network (broad coverage over several stream centers) ───────────
 {
     const FLOOR = foldFloor(TEST_PARAMS)
-    const HARD = TEST_PARAMS.roadArcHardRadius ?? 8
+    const HARD = HARD_RADIUS_FLOOR_M   // QUAL-28: a fixed bar, not a parameter
     const centers = [{ x: 0, z: 0 }, { x: 512, z: 256 }, { x: -512, z: -256 }, { x: 256, z: -512 }]
     let worst = { min: Infinity, atX: 0, atZ: 0, runKey: null, center: null }
     for (const c of centers) {
