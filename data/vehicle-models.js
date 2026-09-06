@@ -44,7 +44,11 @@ export const VEHICLE_MODELS = {
   // ASSET-34 — the hero truck, and the only model authored specifically for this game.
   // Modelled to the PHYSICS PRESET rather than to the real truck: `assets/models/src/ranger.py`
   // places the wheel arches on data/ranger.js's axles (car-local z -1.2825 / +1.5675) and sizes
-  // the body to bodyLength 4.61, so the procedural wheels land in the openings. targetLength,
+  // the body to bodyLength, so the procedural wheels land in the openings.  targetLength MUST
+  // equal the model's own length or the loader rescales it and the wheels leave the arches —
+  // it went 4.61 -> 4.705 on 2026-09-06: the front overhang was restored to its measured
+  // 0.731 m, then pushed to 0.771 so the chrome blade stands 100 mm proud of the sheet metal
+  // instead of 60.  targetLength,
   // shiftRear and shiftDown below are PRINTED BY THE GENERATOR — re-run it and copy them across
   // rather than eyeballing them, because they encode the loader's bounding-box re-centring.
   //
@@ -57,10 +61,10 @@ export const VEHICLE_MODELS = {
   // local Z it was built about onto glTF local Y.
   ranger: {
     url: 'assets/models/ranger.glb',
-    targetLength: 4.61,
+    targetLength: 4.705,
     bodyScale: 1.0,
     yaw: 0,
-    shiftRear: 0.3465,
+    shiftRear: 0.2990,
     // -0.007 = -(model's lowest point, 0.108) + (static suspension sag, 0.101).  The
     // loader plants box.min at car-local y = -cgHeight, which assumes the suspension is
     // fully extended; at rest it sags ~0.10 m and the truck visibly floats without this.

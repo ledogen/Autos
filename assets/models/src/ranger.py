@@ -68,7 +68,7 @@ OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/ranger.blend"
 
 # --- Hard numbers from data/ranger.js.  Do not drift from these. ---
 WHEELBASE = 2.85
-BODY_LEN = 4.61
+BODY_LEN = 4.705
 WEIGHT_F, WEIGHT_R = 0.55, 0.45
 MASS = 1360.0                    # kg, data/ranger.js
 K_SUSP = 33000.0                 # N/m per corner, front and rear are the same there
@@ -85,14 +85,36 @@ SAG_R = (MASS * WEIGHT_R / 2) * 9.81 / K_SUSP      # 0.091 m
 SAG = (SAG_F + SAG_R) * 0.5                        # 0.101 m
 AX_F = WHEELBASE * WEIGHT_R      # +1.2825  front axle, blender y
 AX_R = -WHEELBASE * WEIGHT_F     # -1.5675  rear axle
-FRONT_OH, REAR_OH = 0.676, 1.084  # see the tiling note below
+FRONT_OH, REAR_OH = 0.771, 1.084  # see the tiling note below
 Y_NOSE = AX_F + FRONT_OH         # +1.9585  extreme front (bumper face)
 Y_TAIL = AX_R - REAR_OH          # -2.6515  extreme rear (bumper face)
 
-# THE LONGITUDINAL TILING.  4.610 = 0.064 front bumper + 1.311 hood + 1.214 cab
-# + 0.080 cab/bed gap + 1.831 bed + 0.111 rear bumper.  Only the OVERHANGS are
-# scaled to fit the physics preset (by 1.76/1.903); the cab and bed keep their real
-# lengths, because shrinking those is what a viewer actually notices.
+# THE LONGITUDINAL TILING.  4.665 = 0.064 front bumper + 1.366 hood + 1.214 cab
+# + 0.080 cab/bed gap + 1.831 bed + 0.111 rear bumper.  The cab and bed keep their
+# real lengths, because shrinking those is what a viewer actually notices.
+#
+# THE FRONT OVERHANG IS REAL AGAIN (owner, 2026-09-06: "the ranger from the reference
+# photos has a nose and front bumper that sticks out well past its front tires.  ours
+# ends pretty much right in front").  Both overhangs used to be scaled by 1.76/1.903
+# to make the total fit the preset's old bodyLength of 4.61; the front is now back at
+# its measured 0.731, and BODY_LEN went with it rather than the other way round.
+# Measured off IMG_0873: the reference nose clears the front tyre by 0.370 m and the
+# ARCH by 0.290; at 0.676 of overhang ours cleared them by 0.308 and 0.206.
+#
+# THE REAR IS STILL SHORT — 1.084 against a measured 1.172 — and it is NOT an overhang
+# problem, which is why it was left alone.  The bed is already at its real 1.8305 (a
+# 6 ft box), so moving the tailgate the 88 mm further back that the reference wants
+# either stretches the bed or drives its front through the 80 mm cab/bed gap.  The
+# only places that 88 mm can come from are the cab, that gap, or the hood — i.e. a
+# re-tile of the middle of the truck, not a change to the ends.  Do not "fix" it by
+# deepening the step bumper: its 111 mm of protrusion is measured and load-bearing.
+#
+# ANYTHING THAT MOVES WITH Y_NOSE.  Y_FACE_C is the sheet metal's own apex and has to
+# travel with the bumper face or the chrome blade floats — the blade is pinned to
+# Y_NOSE at the centreline (BUMP_PIN), so the 38 mm between them is the standoff, not
+# a coincidence.  The nose rim then deepens on its own: it spans CLIP_ST[0] (pinned to
+# the arch tangent) to nose_y(), so the extra length lands in the bullet where it
+# belongs and every fitting that rides nose_y() — grille, lamps, valance — follows.
 #
 # HOW THE HEIGHTS AND OVERHANGS WERE GOT.  Off IMG_0873, the one near-ORTHOGRAPHIC
 # side shot in the reference set: its scale comes out at 287.5 px/m from the roof
@@ -175,20 +197,21 @@ N_RIBS = 8                       # bed-floor rib crests across the full width
 RIB_H = 0.028
 
 # --- Front clip ---
-Y_NOSE_SHEET = 1.630             # sheet-metal nose; the bumper fills to Y_NOSE
 Z_LAMP0, Z_LAMP1 = 0.772, 0.990  # headlamp / grille opening.  Re-measured off the
                                  # DEAD-ON reference (547 px/m there): the first pass
                                  # took these off the profile shot and left a 28 cm
                                  # blank painted band between the grille and the
                                  # bumper, where the real truck has about 10 cm.
-Z_BUMP0, Z_BUMP1 = 0.566, 0.722  # chrome blade.  Raised 74 mm (owner, 2026-09-05:
-                                 # "bumper still a little too low to fit in the gap
-                                 # naturally left for it").  On the reference the blade's
-                                 # top edge runs about 50 mm under the lamp/grille
-                                 # aperture; at 0.648 it left 124 mm of bare paint there
-                                 # and the blade read as hung below the front end rather
-                                 # than filling it.  Z_LAMP0 - Z_BUMP1 IS that gap — move
-                                 # either one and the other has to follow.
+Z_BUMP0, Z_BUMP1 = 0.541, 0.697  # chrome blade.  Raised 74 mm on 2026-09-05 ("bumper
+                                 # still a little too low to fit in the gap naturally left
+                                 # for it"), then lowered 25 of those on 2026-09-06 ("move
+                                 # the front bumper forward and down a bit").  THE TWO ARE
+                                 # NOT IN CONFLICT: the first was about the blade hanging
+                                 # below the front end with 124 mm of bare paint above it,
+                                 # this one is about the reference showing more daylight
+                                 # between the lamp and the chrome than 50 mm.
+                                 # Z_LAMP0 - Z_BUMP1 IS that gap, now 75 mm — move either
+                                 # one and the other has to follow.
 Z_VAL0 = 0.300                   # bottom of the grey air dam.  DECOUPLED from Z_UNDER
                                  # (they were both 0.285).  The dam is meant to hang below
                                  # the pan — on the reference it drops most of the way to
@@ -541,7 +564,7 @@ CLIP_ST = [
     # the transition too abrupt.  So the total is unchanged at ~0.14 m but it is now
     # shared: dead flat from the cowl to y 1.05, 0.064 m of gentle descent from there
     # to the last station, and the remaining 0.076 m in the rim's quarter-ellipse.
-    (1.7525, 0.824, 0.738, 1.108, 0.022),  # last FULL station.  MUST equal AX_F+ARCH_R
+    (1.7525, 0.824, 0.738, 1.108, 0.022, 1.00),  # last FULL station.  MUST equal AX_F+ARCH_R
                                            # exactly (asserted in report()): 2.5 mm off it
                                            # and the arch sample lands beside this station
                                            # instead of on it, leaving a sliver face that
@@ -549,13 +572,35 @@ CLIP_ST = [
     # The FENDER ties into the nose (owner, 2026-08-27): it carries its crown past
     # the axle, then tucks in over the last 0.30 m to hand off to the prow.  Left
     # prismatic to the arch tangent, the bullet would look grafted onto a slab.
-    (1.620, 0.838, 0.754, 1.126, 0.022),
-    (1.450, 0.845, 0.768, 1.142, 0.020),   # fender crown carried forward of the axle
-    (1.2825, 0.845, 0.774, 1.156, 0.018),  # front axle
-    (1.050, 0.842, 0.778, 1.166, 0.012),
-    (0.820, 0.832, 0.779, 1.171, 0.007),
-    (0.584, 0.816, 0.778, 1.172, 0.003),   # cowl
+    (1.620, 0.838, 0.754, 1.126, 0.022, 1.00),
+    (1.450, 0.845, 0.768, 1.142, 0.020, 0.95),   # fender crown carried past the axle
+    (1.2825, 0.845, 0.774, 1.156, 0.018, 0.85),  # front axle
+    (1.050, 0.842, 0.778, 1.166, 0.012, 0.60),
+    (0.820, 0.832, 0.779, 1.171, 0.007, 0.30),
+    (0.584, 0.816, 0.778, 1.172, 0.003, 0.00),   # cowl — see SQUARE below
 ]
+
+# THE FENDER IS SQUARE ABOVE THE ARCH (owner, 2026-09-05): "add another fender
+# horizontal subdivision between the top of the wheel arch and the hood line.  this
+# should help squareify the front end which will allow us to make the indicator more
+# rectangular".  Both halves of that are right, and the second is the point of it.
+#
+# Between the hip and the shoulder the section used to be ONE straight segment, so the
+# flank started tucking in the moment it cleared the arch and was already 60% of the
+# way to the hood line's width by the top of the lamp band.  That is what forced the
+# aperture's outer edge to slant, which is what kept squeezing the amber into a wedge.
+# One more point, held out near full width, keeps the flank vertical up past the lamp
+# and puts the whole tuck in the last stretch — a boxy fender, and room for a
+# rectangular lens.
+#
+# IT TAPERS TO NOTHING AT THE COWL, which is why it is a per-station term rather than
+# a constant.  cab_ring has no such point — it does not need one, its flank is already
+# near-vertical from the hip to the beltline — so a bulge carried all the way back
+# would step 18 mm against the door skin at the shut line.  At square = 0 the new
+# point lands exactly on the hip-to-shoulder chord: collinear, no shape change, and
+# the two shells still meet flush.
+SQUARE_Z = 0.15    # how far DOWN from the shoulder toward the hip the point sits
+SQUARE_W = 0.18    # ...and how little of the tuck it has spent by then
 
 # Cab: (y, w_flank, w_shoulder, z_belt).  Meets CLIP_ST's numbers at the cowl so the
 # fender-to-door transition has no step.
@@ -575,13 +620,18 @@ W_DOORCARD = 0.700                         # inner face of the door trim
 # after it shifted by two, and BED_BANDS painted the whole left flank with the
 # underbody's dark band.  The owner saw it as "left bedside turned black".
 def clip_ring(y):
-    """12-point closed section for the front clip (hood + fenders + nose)."""
-    wo, wb, ztop, crown = _interp(CLIP_ST, y)
+    """16-point closed section for the front clip (hood + fenders + nose)."""
+    wo, wb, ztop, crown, sq = _interp(CLIP_ST, y)
     zb = arch_z(y, AX_F)
+    z_sh = ztop - crown                                # shoulder, at the hood line
+    z_sq = z_sh - SQUARE_Z * (z_sh - Z_HIP)            # the squaring point's height
+    t = (z_sq - Z_HIP) / max(1e-6, z_sh - Z_HIP)       # ...where it falls on the chord
+    x_ch = wo + (wb - wo) * t                          # the chord it replaces
+    x_sq = x_ch + (wo - SQUARE_W * (wo - wb) - x_ch) * sq
     r = [(0.0, Z_UNDER),
          (W_UNDER - UND_EDGE, Z_UNDER), (W_UNDER, Z_UNDER + UND_EDGE),   # pan corner
          (W_UNDER, zb), (wo, zb),
-         (wo, Z_HIP), (wb, ztop - crown), (0.0, ztop)]
+         (wo, Z_HIP), (x_sq, z_sq), (wb, z_sh), (0.0, ztop)]
     return ([(x, y, z) for x, z in r]
             + [(-x, y, z) for x, z in reversed(r[1:-1])])
 
@@ -681,7 +731,7 @@ BED_I_ARC = (BED_I_SILL, BED_I_HIP, BED_I_RAIL_OUT, BED_I_RAIL_TOP, BED_I_RAIL_I
 # Section-edge -> material.  Index k is the face spanning ring point k -> k+1.
 DARK = "RangerInterior"
 # All three shifted by one point per half when the pan gained its chamfer.
-CLIP_BANDS = {k: DARK for k in (0, 1, 2, 3, 10, 11, 12, 13)}
+CLIP_BANDS = {k: DARK for k in (0, 1, 2, 3, 12, 13, 14, 15)}
 CAB_BANDS = {k: DARK for k in (0, 1, 2, 3, 7, 8, 9, 10, 14, 15, 16, 17)}
 BED_BANDS = {k: DARK for k in (0, 1, 2, 3, 20, 21, 22, 23)}
 
@@ -715,7 +765,8 @@ BED_BANDS = {k: DARK for k in (0, 1, 2, 3, 20, 21, 22, 23)}
 # — rides nose_y(x, z) through _sweep(), so the whole assembly is the same surface
 # and cannot delaminate from it.
 # ---------------------------------------------------------------------------
-Y_FACE_C = 1.920                 # the APEX: frontmost sheet metal, on the centreline
+Y_FACE_C = 1.975                 # the APEX: frontmost sheet metal, on the centreline.
+                                 # Tracks Y_NOSE — see the tiling note.
 Z_NOSE_APEX = 0.880              # ...and at this height — the middle of the lamp band
 NOSE_PROW = 0.115                # plan: how far the apex leads |x| = NOSE_PROW_W
 NOSE_PROW_W = 0.820
@@ -831,11 +882,11 @@ def corner_y(x, z):
     return tbl[-1][1]
 
 
-def ring_flank(ring, z, idx=(4, 5, 6)):
+def ring_flank(ring, z, idx=(4, 5, 6, 7)):
     """(x, y) on a ring's OUTER FLANK at height z, walking the arc `idx`.
 
     Only the arc is the body's side; the rest of any section is the pan, the face and
-    the mirror half.  Defaults to the front clip's (arch soffit, hip, shoulder); the
+    the mirror half.  Defaults to the front clip's (arch soffit, hip, square, shoulder); the
     bed passes BED_I_ARC.  Published because both corner lamps WRAP onto the flank
     and have to read its real plan position at their own height rather than guess it
     from a constant.
@@ -1188,7 +1239,7 @@ def _sweep(part, xs, prof, mat, cap=True, surf=None):
 def build_front_end(p):
     # The opening is bounded by the nose outline, which tapers toward the top —
     # push it wider than this and the frame inverts.
-    OPEN_X, OPEN_Z0, OPEN_Z1 = 0.684, Z_LAMP0, Z_LAMP1
+    OPEN_X, OPEN_Z0, OPEN_Z1 = 0.724, Z_LAMP0, Z_LAMP1
 
     # THE APERTURE'S TOP-OUTER CORNER HAS TO TUCK IN — this is the "small tear near
     # the headlights" (owner, 2026-09-05), and it was never a hole: the mesh has no
@@ -1220,28 +1271,46 @@ def build_front_end(p):
     # The width the aperture gives up is NOT lost: the lamp keeps going past it, on
     # corner_lamp() below, which is what turns the corner onto the fender flank.
     # Both limits are asserted below rather than left as a comment to drift.
-    OPEN_X_TOP = 0.646               # aperture's top-outer corner, inboard of rim pt 6
-    OPEN_Z_CNR = 0.972               # ...and how high its outer edge reaches
-
-    def open_top(x):
-        """Top edge of the lamp aperture at |x| — flat inboard, slanting down to the
-        outer corner.  Anything let into the hole reads its own ceiling off this."""
-        ax = abs(x)
-        if ax <= OPEN_X_TOP:
-            return OPEN_Z1
-        t = min(1.0, (ax - OPEN_X_TOP) / (OPEN_X - OPEN_X_TOP))
-        return OPEN_Z1 + (OPEN_Z_CNR - OPEN_Z1) * t
+    LAMP_LEAN_IN = 0.022             # how far the cluster's INBOARD end leans outboard
+                                     # between its base and its top.  Shared with the
+                                     # grille surround, which has to lean by the same
+                                     # amount or the bezel between them is a wedge.
+    OPEN_X_TOP = 0.664               # where the aperture's FLAT TOP breaks inboard to
+                                     # clear the rim's shoulder (pt 7 — the fender gained
+                                     # a squaring point at 6, between hip and shoulder)
+    # THE APERTURE IS A PLAIN RECTANGLE AGAIN (2026-09-05).  It moved outboard with the
+    # fender: squaring the flank above the arch holds it at 0.736 all the way to the top
+    # of the lamp band, where it used to have narrowed to 0.683.  Aperture 0.684 -> 0.724,
+    # so the cluster is 80 mm wider across the nose and the amber gets 60 mm of FRONT
+    # face instead of 38.
+    #
+    # AND THE SLANT IS GONE.  There used to be an OPEN_Z_CNR that dropped the outer edge
+    # below OPEN_Z1, because the fender narrowed THROUGH the lamp band and the hole could
+    # not be as tall out there as it was inboard.  That is what kept turning the amber
+    # into a wedge — the nick landed on exactly the span the amber occupies, so a 15 mm
+    # fall over 60 mm raked the whole lens.  With the flank held out past the top of the
+    # band there is nothing left for it to earn: the outer edge is vertical at OPEN_X for
+    # the full 202 mm and the top is flat at OPEN_Z1 across the whole width.
+    #
+    # The corner still has to break inboard SOMEWHERE — frame() pairs inner point 7 with
+    # the rim's shoulder at x 0.672, and an inner point outboard of its own rim partner
+    # is the twisted quad that reads as a crack up the fender.  It now breaks
+    # HORIZONTALLY, at OPEN_Z1, so the break is a segment of the top edge rather than a
+    # rake down the outer one.  Owner, 2026-09-05: "see if you can get the indicators
+    # truly square".
 
     _rim = nose_rim_ring(NOSE_RIM[-1])
 
     def _body_half_width(z):
-        """The rim's own flank width at height z, hip to shoulder."""
-        (xa, _ya, za), (xb, _yb, zb) = _rim[5], _rim[6]
-        return xa + (xb - xa) * min(1.0, max(0.0, (z - za) / (zb - za)))
+        """The rim's own flank width at height z.  Walks the WHOLE arc, not the
+        hip-to-shoulder chord: since the fender gained its squaring point that chord
+        runs well inside the metal, and reading the limit off it would give away
+        exactly the width this exercise was meant to buy."""
+        return ring_flank(_rim, z)[0]
 
-    assert OPEN_X_TOP < abs(_rim[6][0]), \
+    assert OPEN_X_TOP < abs(_rim[7][0]), \
         "aperture top corner must sit INBOARD of the rim's fender shoulder"
-    assert OPEN_X < _body_half_width(OPEN_Z_CNR), \
+    assert OPEN_X < _body_half_width(OPEN_Z1), \
         "aperture outer edge reaches above the height the fender is still that wide"
 
     # The nose cap, as a frame around the lamp/grille opening.  Point order matches
@@ -1249,14 +1318,19 @@ def build_front_end(p):
     # turns a 12-point body outline into a rectangular hole.
     # ONE ENTRY PER RIM-RING POINT — frame() pairs them off by index, so this list
     # has to track clip_ring()'s topology exactly.  It grew by one per half when the
-    # underbody pan gained its chamfer.  The repeated corners collapse to triangles,
-    # which is what turns a 14-point body outline into a rectangular hole.
+    # underbody pan gained its chamfer, and again when the fender gained its squaring
+    # point.  The repeated corners collapse to triangles, which is what turns a
+    # 16-point body outline into a rectangular hole.
+    # MIRROR WITH inner[1:-1], never a literal slice — the two centreline entries are
+    # the first and last, and a hard-coded end index silently duplicates one the next
+    # time the section changes length.  (That exact bug painted the bed's left flank
+    # black on 2026-09-05; same shape of mistake, different list.)
     inner = [(0.0, OPEN_Z0),
              (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0),        # pan chamfer
              (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0),        # pan side, arch soffit
-             (OPEN_X, OPEN_Z_CNR),                        # flank
+             (OPEN_X, OPEN_Z1), (OPEN_X, OPEN_Z1),        # flank, squaring point
              (OPEN_X_TOP, OPEN_Z1), (0.0, OPEN_Z1)]       # tucked corner — see above
-    inner = inner + [(-x, z) for x, z in reversed(inner[1:7])]
+    inner = inner + [(-x, z) for x, z in reversed(inner[1:-1])]
     assert len(inner) == len(nose_rim_ring(NOSE_RIM[-1])), \
         "nose frame inner ring must match clip_ring()'s point count"
     # NOSE_RIM[-1], not [1]: the frame has to sit on the OUTERMOST rim ring, and that
@@ -1290,10 +1364,31 @@ def build_front_end(p):
         _sweep(p, gxs, lambda x, z=z, h=half: [(0.058, z - h), (0.058, z + h),
                                                (0.020, z + h * 0.84), (0.020, z - h * 0.84)],
                "RangerChrome")
-    for sx in (1, -1):                        # grille surround uprights
-        _sweep(p, [sx * gx, sx * (gx + 0.022)],
-               lambda x: [(0.060, OPEN_Z0), (0.060, OPEN_Z1),
-                          (0.004, OPEN_Z1), (0.004, OPEN_Z0)], "RangerPaint")
+    # GRILLE SURROUND UPRIGHTS, and their OUTER edge leans with the lamp.
+    #
+    # Owner, 2026-09-06: "wherever there's a dark background behind the headlight, make
+    # sure it matches the headlights profile".  The dark is the backing panel, seen
+    # through the gap between the lamp and whatever bounds the aperture beside it — and
+    # the moment the cluster's inboard end gained its lean, that gap stopped being a
+    # constant-width bezel and opened into a triangle toward the hood.  Leaning this
+    # edge by the SAME LAMP_LEAN_IN closes it back to a parallel shut line.
+    #
+    # Only the outer edge moves.  The inner one stays at gx because the grille bars die
+    # into it, and widening the surround there would open a second gap behind them.
+    # It cannot be a _sweep(): that lays sections along x, and this needs x to be a
+    # function of z.  The reference has the same shape — its grille is visibly wider at
+    # the top than at the bottom.
+    for sx in (1, -1):
+        prof = ((0.060, OPEN_Z0), (0.060, OPEN_Z1), (0.004, OPEN_Z1), (0.004, OPEN_Z0))
+        rings = []
+        for out in (0.0, 1.0):
+            ring = []
+            for dy, z in prof:
+                t = (z - OPEN_Z0) / (OPEN_Z1 - OPEN_Z0)
+                x = gx + out * (0.022 + LAMP_LEAN_IN * t)
+                ring.append((sx * x, nose_y(x, z) - dy, z))
+            rings.append(ring)
+        loft(p, rings, "RangerPaint")
 
     # ONE CLUSTER, ONE LOFT (2026-09-05).
     #
@@ -1360,9 +1455,47 @@ def build_front_end(p):
     # with the hood line right round the corner while the lower edge lifts away.  ZERO
     # across every front-face station — that whole stretch is the single rectangle
     # with one top edge that the reference cluster is.
-    NOSE_LAMP_SHRINK = (0.0, 0.0, 0.0, 0.0, 0.0,
-                        0.02, 0.10, 0.22, 0.36, 0.58)
-    NOSE_LAMP_BIAS = 0.66
+    # THERE IS NO TAPER.  The lamp is a constant 202 mm from the grille to the point it
+    # dies on the flank, and it ends on a flat bezelled cap rather than running out to
+    # a point.
+    #
+    # It took three passes to get here because the taper was retreating rather than
+    # going: first it started at the aperture edge, then at the first rim ring, and each
+    # time it was pushed further outboard the remaining wedge simply moved to wherever
+    # the next view looked from.  The last one only showed in a SIDE view, because by
+    # then the only tapered stations left were the ones on the flank — which is
+    # precisely what a side view is made of.  Owner, 2026-09-06: "still clearly tapering
+    # down from a side view".  A lens that is square from every angle has no taper
+    # anywhere; there was no number to tune, only a feature to delete.
+    #
+    # AND WATCH THE MEASUREMENT, NOT THE SCREEN, when judging this one.  In a
+    # three-quarter view the lamp's outboard end is nearer the camera and its top edge
+    # sits above the eye, so a true rectangle still PROJECTS raked and reads as a wedge.
+    # Check the height at each station instead — it is 202 mm at all ten.
+    # THE ASSEMBLY IS A TRAPEZOID IN ELEVATION — its base is longer than its top, at
+    # BOTH ends (owner, 2026-09-06: "pull the upper inside corner on the front out a
+    # little bit", "push the side upper corner forwards a tiny bit.  so the 'base' edges
+    # are longer than the top edges on the headlight assy").  The reference has it at
+    # both: the grille surround is wider at the top, so the cluster's inboard edge leans
+    # out as it rises; and on the fender the amber's trailing edge rakes forward.
+    #
+    # It is a displacement ALONG THE PATH TANGENT, scaled by height — positive is toward
+    # the outboard end of the path.  So the inboard station takes a POSITIVE lean (its
+    # top pulls outboard, shortening the top edge) and the flank station a NEGATIVE one
+    # (its top pulls forward).  Only the two END stations lean; everything between keeps
+    # its plan position, so what slants is the pair of end faces and nothing else.
+    NOSE_LAMP_LEAN = (LAMP_LEAN_IN, 0.0, 0.0, 0.0, 0.0,
+                      0.0, 0.0, 0.0, 0.0, -0.014)
+    # ROUND ON THE TOP OUTER CORNER (owner, 2026-09-06).  This is the one place the lens
+    # is allowed to lose height, and it is a corner radius, not the taper that was
+    # deleted: it comes off the TOP EDGE ONLY, starts outboard of the aperture, and the
+    # base stays dead flat the whole way — so it cannot read as a wedge from any angle.
+    # It grows to the end, which rounds the corner in the front view where the lens turns
+    # AND at the trailing edge on the fender, the two places the reference shows a
+    # radius.  If this ever starts reading as a taper again, it has crept inboard of
+    # station 5; that is the line it must not cross.
+    NOSE_LAMP_ROUND = (0.0, 0.0, 0.0, 0.0, 0.0,
+                       0.004, 0.010, 0.016, 0.024, 0.034)
     NOSE_LAMP_TAIL = 0.060           # how far back along the STRAIGHT fender the lamp
                                      # runs past the rim blend.  Measured off IMG_0879:
                                      # the reference amber shows ~135 mm from the side
@@ -1394,9 +1527,10 @@ def build_front_end(p):
             return (sx * abs(x), y)
 
         n = N_FACE + len(NOSE_RIM) + 2      # face, every rim ring, base, flank
-        for sched in (NOSE_LAMP_FACE, NOSE_LAMP_BULGE, NOSE_LAMP_SHRINK):
+        for sched in (NOSE_LAMP_FACE, NOSE_LAMP_BULGE, NOSE_LAMP_LEAN,
+                      NOSE_LAMP_ROUND):
             assert len(sched) == n, "one entry per path station"
-        zm = 0.5 * (z0w + open_top(OPEN_X) - 0.008)
+        zm = 0.5 * (z0w + OPEN_Z1 - 0.008)
         path = [station(i, zm) for i in range(n)]
         rings = []
         for i in range(n):
@@ -1408,20 +1542,19 @@ def build_front_end(p):
             tx, ty = b[0] - a[0], b[1] - a[1]
             L = math.hypot(tx, ty) or 1.0
             nx, ny = -sx * ty / L, sx * tx / L
-            # The ceiling is open_top()'s, clamped at the aperture edge: flat inboard,
-            # then the nick off the top outer corner, then flat again round the fender.
-            # ONE line for the clear lens and the amber both, which is what makes them
-            # read as a single unit rather than two lamps that nearly line up.
-            top = open_top(min(abs(path[i][0]), OPEN_X)) - 0.008
-            span, sh = top - z0w, NOSE_LAMP_SHRINK[i]
-            z0 = z0w + span * sh * NOSE_LAMP_BIAS
-            z1 = top - span * sh * (1.0 - NOSE_LAMP_BIAS)
+            ux, uy = tx / L, ty / L                      # unit tangent, for the lean
+            # ONE floor for every station, clear lens and amber alike — that is the
+            # whole of "square", and the floor never varies.  The ceiling only comes
+            # down for the corner radius, and only outboard of the aperture.
+            z0, z1 = z0w, OPEN_Z1 - 0.008 - NOSE_LAMP_ROUND[i]
             h, off, bul = z1 - z0, NOSE_LAMP_FACE[i], NOSE_LAMP_BULGE[i]
+            lean = NOSE_LAMP_LEAN[i]
 
-            def at(o, u, i=i, nx=nx, ny=ny, z0=z0, h=h):
+            def at(o, u, i=i, nx=nx, ny=ny, ux=ux, uy=uy, z0=z0, h=h, lean=lean):
                 z = z0 + h * u
                 bx, by = station(i, z)
-                return (bx + nx * o, by + ny * o, z)
+                d = lean * u                             # zero at the base, full at the top
+                return (bx + nx * o + ux * d, by + ny * o + uy * d, z)
             rings.append([at(off - NOSE_LAMP_BACK, 0.0), at(off, 0.06),
                           at(off + bul, 0.5), at(off, 0.94),
                           at(off - NOSE_LAMP_BACK, 1.0)])
@@ -1451,8 +1584,23 @@ def build_front_end(p):
     # the blade simply tracks it.  The offset is PINNED at the centreline: the crown
     # has to land exactly on Y_NOSE, because Y_NOSE is the truck's front extent and
     # report() asserts the overall length against the physics preset.
+    # THE BLADE STOPS BEFORE THE WHEEL ARCH.  Owner, 2026-09-06: "so the wraparound
+    # sides arent in the wheel arch zone".  It used to run to |x| 0.836, and corner_y()
+    # answers y 1.45 out there — 300 mm BEHIND the arch's forward tangent at 1.7525 — so
+    # the blade's tips curled round and sat across the opening.  Ending at 0.820 puts
+    # them at y 1.756 — level with the arch's leading edge instead of 300 mm behind it.
+    #
+    # 0.820 AND NOT LESS.  The first cut stopped at 0.800, and the 36 mm of fender
+    # corner that left uncovered came straight back as the RED WEDGE this file has now
+    # chased four times: a painted strip down the outside of the blade, between it and
+    # the sheet metal it is meant to die into.  Wherever the blade ends it has to land
+    # ON the metal, and corner_y() is the only thing that knows where that is.
+    #
+    # Note it is the ENDS that had to move, not the height: the arch opening spans z
+    # 0.442..0.854 and the blade lives inside that band either way, so lowering it does
+    # not clear the arch.  Only stopping short of it does.
     ZBM = 0.5 * (Z_BUMP0 + Z_BUMP1)
-    xs = [-0.836, -0.800, -0.740, -0.560, 0.0, 0.560, 0.740, 0.800, 0.836]
+    xs = [-0.820, -0.790, -0.730, -0.560, 0.0, 0.560, 0.730, 0.790, 0.820]
     BUMP_PIN = Y_NOSE - corner_y(0.0, ZBM)     # ~0.060 — the blade's standoff
     dys = [Y_NOSE - (corner_y(x, ZBM) + BUMP_PIN) for x in xs]
 

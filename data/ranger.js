@@ -41,7 +41,10 @@ export const RANGER_PARAMS = {
   // Radial tires run ≈0.5-1.5, roughly a tenth of cornering stiffness. 0 disables camber thrust
   // (the geometric lean of the lateral axis stays).
   camberThrustCoeff: 0.9,
-  bodyLength:   4.61,   // m — approximate exterior length (2002 Ford Ranger)
+  bodyLength:   4.705,  // m — approximate exterior length (2002 Ford Ranger).  Documentation
+                        // only; nothing reads it.  The model's real length is set in
+                        // assets/models/src/ranger.py and mirrored by targetLength in
+                        // data/vehicle-models.js, which IS read.  Keep all three in step.
   bodyWidth:    1.66,   // m — track(1.46) + wheel width(0.25) - 0.05 margin so wheels visible from side
   bodyHeight:   1.60,   // m — approximate exterior height (2002 Ford Ranger)
 
