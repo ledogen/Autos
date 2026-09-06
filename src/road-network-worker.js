@@ -139,8 +139,8 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
     const canNest = typeof Worker === 'function'
     let pool = null, poolSig = null
     let chain = Promise.resolve()
-    async function prewarm(d, rs, cid) {
-        const sig = `${d.seed}:${d.epoch}`
+    async function prewarm(d, rs, cid, psig) {
+        const sig = `${d.seed}:${d.epoch}:${psig}`
         if (!pool) pool = new RoadRouteWorker()
         if (poolSig !== sig) { pool.init(d.seed, d.params); poolSig = sig }
         pool.registerClient(cid, rs)
@@ -160,18 +160,25 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
     async function handleBuild(d) {
         const cid = d.client ?? 'default'
         let inst = instances.get(cid)
-        // Epoch/seed change = params or water changed → the warm instance's caches are poisoned;
-        // rebuild from scratch. Same epoch + seed = a moved center → reuse everything warm.
-        if (inst && (inst.epoch !== d.epoch || inst.seed !== d.seed)) inst = null
+        // The warm instance's PRICES were bound at construction — buildNetworkSnapshot(req, rs)
+        // only re-applies radius and center, never req.params — so the reuse key must cover the
+        // params too. Epoch alone does NOT: it is per main-side instance, and a client that
+        // REBUILDS its RoadSystem on a param change (map2d._buildRoad) resets _routeEpoch to the
+        // same value every time, so epoch+seed compared equal and the map kept re-adopting a
+        // network priced with the old roadV2 list while play — one long-lived instance whose
+        // epoch strictly increases — updated correctly. Stringify is once per BUILD (seconds),
+        // so its cost is not measurable here.
+        const psig = JSON.stringify(d.params)
+        if (inst && (inst.epoch !== d.epoch || inst.seed !== d.seed || inst.psig !== psig)) inst = null
         let rs = inst ? inst.rs : null
         if (canNest) {
             try {
                 if (!rs) rs = makeNetworkInstance(d)
-                await prewarm(d, rs, cid)
+                await prewarm(d, rs, cid, psig)
             } catch (err) { console.warn('[network-worker] pre-warm failed, building cold', err) }
         }
         const built = buildNetworkSnapshot(d, rs)
-        instances.set(cid, { rs: built.rs, epoch: d.epoch, seed: d.seed })
+        instances.set(cid, { rs: built.rs, epoch: d.epoch, seed: d.seed, psig })
         // Transfer every run's typed-array buffers — exportNetwork hands out copies, so detaching
         // them here never touches the live entries the next warm build reuses.
         const transfer = []
