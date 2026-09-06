@@ -399,8 +399,11 @@ export class GpsSystem {
    * network (the far end of a long route is often not streamed yet at offer time), so bakeRoute
    * can fall back and flag the bake `partial`; `update` then re-bakes as the network grows.
    *
-   * runProfile is keyed on the run's own arc, this passes the centerline arc. They coincide here:
-   * measured over 5 k route samples on seed 6 the resulting elevation matches the carved surface to
+   * runProfile is keyed on the run's own DRIVEN arc, and so is the `s` that reaches here: BUG-41
+   * re-parameterised edgeParData's sampler onto that same domain, so the two indices name the same
+   * physical point by construction. They did NOT before — on a merged run the sampler still carried
+   * the pre-merge centerline arc, and one `s` named points up to 17.3 m apart along the road.
+   * Measured over 5 k route samples on seed 6 the resulting elevation matches the carved surface to
    * 0.09 m at p90 (0.26 m worst within 10 m of a run end, where the junction arrow stands) — pinned
    * by test/gps-route.mjs so a re-parameterisation of either arc cannot drift this silently.
    */

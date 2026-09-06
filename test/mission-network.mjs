@@ -112,19 +112,58 @@ const ms = new MissionSystem({
 }
 
 // ── 2. the route uses the world's OWN centerline, not a re-route ─────────────────────────────────
+// Routing an edge in isolation loses its neighbours' corridor context and lands a visibly different
+// curve, so the mission's blue line must be the white line the world actually built.
+//
+// For a PLAIN run that is object identity with the registered centerline, and this asserted exactly
+// that. But a MERGED run's registered `centerline` is a stale primitive record — BUG-53: its points
+// were re-seated onto the winner's course, so the primitive no longer describes the road underneath
+// them. edgeParData deliberately hands those runs a points-backed sampler instead, which is the
+// CORRECT geometry and is necessarily not the registered object. Identity therefore reported a
+// permanent 33/39 (all 6 misses off-curve, 0 plain) — it was testing the wrong property for merged
+// runs, not catching a defect. So the check splits by run class: identity where the primitive is
+// still the road, and geometric agreement with the REGISTERED POLYLINE where it is not.
 {
   reseed(1002)
-  let same = 0, total = 0
+  let same = 0, plain = 0, tracked = 0, merged = 0, worstDev = 0, worstKey = ''
   for (let i = 0; i < 8; i++) {
     const m = ms._roll()
     if (!m) continue
     for (const sg of m.segments) {
-      total++
-      if (road._network.get(sg.runKey)?.centerline === sg.centerline) same++
+      const e = road._network.get(sg.runKey)
+      if (!e) continue
+      if (!e.offCurveSpans) {
+        plain++
+        if (e.centerline === sg.centerline) same++
+        continue
+      }
+      // Merged: the sampler must interpolate the registered points, so every sampled position sits
+      // ON that polyline. Deviation is floating-point noise if it is the same geometry, and metres
+      // if the segment carried a re-route or a stale primitive.
+      merged++
+      let dev = 0
+      const L = sg.centerline.length
+      for (let k = 0; k <= 20; k++) {
+        const q = sg.centerline.pointAt(L * k / 20)
+        let best = Infinity
+        for (let j = 1; j < e.points.length; j++) {
+          const a = e.points[j - 1], b = e.points[j]
+          const dx = b.x - a.x, dz = b.z - a.z
+          const len2 = dx * dx + dz * dz
+          const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.z - a.z) * dz) / len2)) : 0
+          best = Math.min(best, Math.hypot(q.x - (a.x + dx * t), q.z - (a.z + dz * t)))
+        }
+        dev = Math.max(dev, best)
+      }
+      if (dev > worstDev) { worstDev = dev; worstKey = sg.runKey }
+      if (dev < 0.01) tracked++
     }
   }
   check('mission segments use the REGISTERED centerline object (blue line IS the white line)',
-    total > 0 && same === total, `${same}/${total} identical`)
+    plain > 0 && same === plain, `${same}/${plain} plain runs identical`)
+  check('merged-run segments track the REGISTERED polyline (BUG-53 sampler is the real road)',
+    merged > 0 && tracked === merged,
+    `${tracked}/${merged} within 0.01 m; worst ${worstDev.toFixed(4)} m on ${worstKey}`)
 }
 
 // ── 3. edgeParData returns the registered key spelling (roadQuality hashes it) ───────────────────
@@ -237,32 +276,46 @@ const ms = new MissionSystem({
   check('no region ⇒ unchanged free-roam planning', free >= 5, `${free}/6 rolls`)
 }
 
-// ── 7. DRIFT ALARM (BUG-41): par prices a DIFFERENT elevation series than the world carves ───────
-// This does NOT assert the two agree. They deliberately do not, and that was ruled WONTFIX
-// (2026-08-03): `edgeParData().gradeAt` samples the ROUTED design polyline, while the carve, the
-// ribbon, the physics and the GPS overlay all read `runProfile().gradeY`, a later pipeline stage.
-// Par integrates a slope over a 2 m step (par.js DS), so it is insensitive to what that later stage
-// mostly adds, and PAR_REF was calibrated (FEAT-30) against real drives through this same sampler —
-// the basis is a convention, and switching it would invalidate the fit to buy ~0.6% of par time.
+// ── 7. ARC DOMAIN + ELEVATION AGREEMENT (BUG-41) ─────────────────────────────────────────────────
+// `edgeParData()` and `runProfile()` must index the SAME road by the SAME arc. Par integrates over
+// the first; the carve, the ribbon, the physics and the GPS overlay all read the second. If the two
+// disagree, par prices a road the player does not drive — and par is the FEAT-53 payout denominator.
 //
-// What makes that ruling SAFE is the measured SHAPE of the disagreement, and that is what this pins:
-//   - in the run INTERIOR the two series are the same road to within centimetres;
-//   - the disagreement is confined to END BANDS, where the later stage reconciles the run onto its
-//     shared junction/pad elevation — and where par has already clamped the truck to a junction
-//     speed cap, so a grade error there buys little time either way.
-// If a future carve stage widens those bands into the interior, par silently starts pricing hills
-// the truck does not climb, at a magnitude nobody measured. That is the regression this catches. It
-// is an alarm, not a correctness check: a FAIL here means "re-open BUG-41", not "revert the carve".
+// HISTORY, because this section previously asserted the opposite. Until 2026-09-06 the two series
+// deliberately differed and that was ruled WONTFIX (2026-08-03): the disagreement was measured as
+// centimetres in the run INTERIOR and confined to junction END BANDS, where par has already clamped
+// the truck to a junction speed cap. This section pinned that SHAPE, as an alarm rather than a
+// correctness check. The alarm then fired (interior p99 3.241 m, band p99 400 m) — and the diagnosis
+// was that it had never been an elevation problem at all. `edgeParData` handed out a sampler keyed
+// on `clArc`, the PRE-MERGE routed centerline arc, while a merged run's points follow the winner's
+// course, whose arc is `polyCum`. Compared at matched XZ the worst run's "elevation disagreement"
+// collapsed from 3.156 m to 0.298 m; the arc offset between the two domains reached 17.3 m, and
+// `centerline.length` was short by up to 6.80% (33.3 m) on 10 of 52 runs. BUG-41 re-parameterised
+// the sampler onto the driven arc, so the two now agree BY CONSTRUCTION and the checks below assert
+// agreement rather than a licensed shape.
+//
+// The instrument was wrong too, and that is fixed here: comparing two samplers at the same `s` is
+// only meaningful while their domains agree, which is exactly what had silently stopped being true.
+// So the domain is now asserted FIRST, per run. A FAIL below means some later stage has re-seated a
+// run without moving its par arc with it — re-open BUG-41; it does not mean "revert the carve".
 {
-  const MARGIN = 250     // m from each end — beyond the widest measured band (232 m)
+  const MARGIN = 250     // m from each end — beyond the widest measured band
   const STEP = 4
   const iAbs = [], bands = [], peaks = []
   let runs = 0
+  let domMax = 0, domWorst = ''      // |par arc length - driven arc length|, over every run
   for (const [, e] of road._network) {
     if (!e.cellA || !e.cellB) continue
     const ed = road.edgeParData(e.cellA, e.cellB)
     if (!ed || !ed.centerline) continue
     const L = ed.centerline.length
+    // THE DOMAIN CHECK (BUG-41). The elevation comparisons below sample both series at the same `s`,
+    // which only means anything if `s` names the same point in each. `polyCum` is the run's driven
+    // arc and the domain runProfile indexes, so the par centerline must measure the same length.
+    if (e.polyCum) {
+      const d = Math.abs(L - e.polyCum[e.polyCum.length - 1])
+      if (d > domMax) { domMax = d; domWorst = ed.key }
+    }
     const dAt = (s) => ed.gradeAt(s) - road.runProfile(s, ed.key).gradeY
 
     if (L >= 2 * MARGIN + 100) {
@@ -285,18 +338,25 @@ const ms = new MissionSystem({
   const bMax = Math.max(...bands), bP99 = pct(bands, 0.99)
   const pMax = Math.max(...peaks)
 
+  // FIRST: the two series are indexed by the same arc. Every check below is vacuous without it.
+  // 0.5 m absorbs the chord-vs-arc sampling difference on a plain run (measured max 0.39 m over a
+  // multi-hundred-metre run, 0.040%); a re-seated run without its par arc shows up here at tens of m.
+  check('BUG-41: par and runProfile index the run by the SAME arc',
+    domMax < 0.5, `worst |par length - driven length| ${domMax.toFixed(3)} m on ${domWorst}`)
+
   // The load-bearing property: away from the junctions, par's hills ARE the carved hills.
-  check('BUG-41 alarm: the two elevation series agree in the run INTERIOR',
+  check('BUG-41: the two elevation series agree in the run INTERIOR',
     iAbs.length > 500 && iMax < 2.0 && iP99 < 0.5,
     `${iAbs.length} samples over ${runs} runs: p99 ${iP99.toFixed(3)} m, max ${iMax.toFixed(3)} m`)
 
-  // The disagreement must stay a junction-approach phenomenon, not creep along the run.
-  check('BUG-41 alarm: the disagreement stays confined to the junction END BANDS',
+  // Residual disagreement is the junction approach, where the later stage reconciles the run onto
+  // its shared node/pad elevation. It must stay there rather than creep along the run.
+  check('BUG-41: residual disagreement stays confined to the junction END BANDS',
     bP99 <= 250 && bMax <= 320,
     `band width over ${bands.length} run ends: p99 ${bP99} m, max ${bMax} m`)
 
-  // ...and stay the size it was when the WONTFIX was measured (peak 30.8 m across seeds 6/1/42).
-  check('BUG-41 alarm: end-band divergence stays within its measured magnitude',
+  // ...and stay within the magnitude the junction reconciliation is worth.
+  check('BUG-41: end-band divergence stays within its measured magnitude',
     pMax <= 45, `peak |Δelevation| ${pMax.toFixed(2)} m`)
 
   console.log(`       interior p99 ${iP99.toFixed(3)} m / max ${iMax.toFixed(3)} m · band p99 ${bP99} m / max ${bMax} m · peak ${pMax.toFixed(1)} m`)

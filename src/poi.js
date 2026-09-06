@@ -846,6 +846,10 @@ export class PoiSystem {
             // Seed-pure: merge plans are pure functions of the graph, so every window rejects
             // identically. The TAPER band stays eligible — it is the loser's own road, and it
             // owns its surface there (the ceded exclusion ends at the ceded boundary).
+            // BUG-41: `s` and cededSpans are both the run's DRIVEN arc now. They were not — the
+            // spans are built from polyCum while edgeParData's sampler carried the pre-merge
+            // centerline arc, so this compared two domains up to 33 m apart through a ±20 m
+            // tolerance, and the guard could pass a pad onto ceded ground (or reject clear ground).
             if ((ed.cededSpans || []).some((sp) => s >= sp.s0 - 20 && s <= sp.s1 + 20)) continue
             // WHICH SIDE is decided by the ground, not by the hash: try both and take the one that
             // needs less earthwork. On a mountain road the two sides are wildly asymmetric — one is
