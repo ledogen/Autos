@@ -38,7 +38,44 @@ One caveat carried in from QUAL-29's measurements: **BUG-58** (isolated stations
 dominate the earthwork MAX and the crest MAX in any report this ticket produces. Compare on means
 and p99s, or fix BUG-58 first — do not read an outlier as a reuse regression.
 
+## RE-SCOPED to junction legs (owner, 2026-09-06) — and the case is now thin
+
+Step 1's census killed the original framing: there is no pool of accidental overlap between
+unrelated roads to convert (zero disjoint sharing pairs at radius 1400, 1 of 44 at 2400). The owner
+re-scoped to the class that DOES exist — the 39 node-anchored spans where two legs of the same
+junction share ground. Two follow-up measurements then narrowed the case further; both are written
+up in the research memo.
+
+**The re-scope makes D3 evaporate, which is the good news.** If reuse only happens between legs of
+one junction, the shared span starts AT the existing node and the spur is still one edge from that
+node to its own far end. No vertex is promoted to a graph node, no degree changes, no pins change —
+so the pins→routes→degree→pins fixpoint that D3 calls "THE HARD PART" does not arise. D1's rank also
+collapses from a radius-bounded neighbourhood to the node's own 1-ring, which `_v2NodeMerges` already
+uses and which is already proven window-invariant (the BUG-25 argument at `road.js:2875`). Cache
+validity stops being a concern for the same reason.
+
+**The bad news is what the prize turned out to be.**
+
+- **R5's sibling knob does nothing.** `wSibDepart` swept 0 / 3 (shipped) / 12 moves sharing from
+  3.11% → 3.18% → 2.93% of network length, 39 / 40 / 39 pairs. Sibling-leg sharing is
+  terrain-determined, not bearing-determined: the two legs take the same line because it is the only
+  line the cost model buys. If a 4× penalty cannot push them apart, a discount will not pull them
+  together. **So reuse cannot buy MORE sharing here — only EXACT sharing**, i.e. the spur walking the
+  trunk's own polyline so the merge is by construction and the taper band is never built.
+- **The taper bands are mostly already fine.** `test/taper-band-census.mjs`: per-band tightest corner
+  median 41.4 m against `roadMinTurnRadius` 15 m; only **4 of 37 bands** are tighter than the road's
+  own minimum radius (tightest 7.5 m), 1 of 37 tighter than open road's 1st percentile. BUG-56 B5's
+  band ladder is doing its job.
+
+**So the measured prize for building this is four bad corners in 191 km**, plus whatever aesthetic
+gain comes from a fork that was routed rather than retrofitted. The A/B risk (a cost-sharing router
+tending tree-like, per Risks below) has not gone down. **Owner go/no-go wanted before step 2** — the
+build order below still describes the original scope and should not be followed as written.
+
+---
+
 ## Why this is not a small change
+
 
 Routing today is a **pure function of one edge**. `routeEdgeV2` (`corridor-router.js:1001`) sees only
 the spec built by `_v2EdgeSpec` (`road.js:2661`): two node positions, their pinned heights, pond

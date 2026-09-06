@@ -103,6 +103,69 @@ Decline histogram for context (why the ladder skipped what it skipped): `pin-ove
 every seed (15–27), then `pad` (0–16), then a long tail of `flare` / `short` / `steep-fork` /
 `seam` / `taper` / `role` in low single digits.
 
+### MEASURED — R5's sibling-departure cost does not move sharing (2026-09-06)
+
+Owner re-scoped the ticket to junction legs on the census above (option 2, 2026-09-06). The obvious
+lever there is R5 — `wSibDepart` (`corridor-router.js:383`), a per-metre surcharge on departing
+within `sibConeDeg` (25°) of a sibling's bearing, out to `sibReachM` (120 m). Its own comment names
+this as "the measured generator of the node-sharing overlap class". Reuse would be that cost with
+the sign flipped, so: does the knob actually do anything? Re-ran the census with `wSibDepart` at 0,
+the shipped 3, and 12 (seeds 6/20/11/7/3 @1400, 191 km):
+
+| `wSibDepart` | sharing pairs | shared m | % of net | merges |
+|---|---|---|---|---|
+| 0 (off) | 39 | 5934 | 3.11% | 37 |
+| **3 (shipped)** | **40** | **6068** | **3.18%** | **38** |
+| 12 (4×) | 39 | 5578 | 2.93% | 37 |
+
+**Nothing. Not even monotone.** Turning the penalty off entirely and quadrupling it both land on 39
+pairs; the whole 0→12 sweep moves shared ground by 0.25 percentage points across 191 km of road.
+
+The reading is that **sibling-leg sharing is terrain-determined, not bearing-determined**. Two legs
+leaving one node into the same valley take the same line because it is the only line the cost model
+will buy, and a departure surcharge cannot price them out of it. That cuts both ways, and the second
+way is the one that matters here: if a 4× penalty cannot push them apart, a discount is unlikely to
+pull them together — they are already on the corridor a discount would steer them to.
+
+Two consequences:
+
+- **What a junction-leg reuse could still buy is EXACTNESS, not more sharing.** The runs are already
+  within 18 m; they are not *coincident*, so the plan layer has to throw the loser's vertices away
+  and taper back. Routing the spur along the trunk's own polyline would make the shared span exact
+  by construction and delete the band. That is D2's snap-not-discount idea, scoped to the node — and
+  it is the only version of this ticket the measurements still support.
+- **R5 itself looks like dead weight**: a cone test in the A\* inner loop (the hoisting comment
+  upstream counts ~114 M step evaluations) buying a one-pair difference. Not this ticket's business
+  to delete, but it should not be defended as load-bearing either.
+
+### MEASURED — what post-hoc merging actually costs: the taper bands (2026-09-06)
+
+`node test/taper-band-census.mjs [seeds] [radius]`. If exactness is the prize, the band is the thing
+that gets deleted, so its corner radius is the acceptance metric. Band vertices are `offCurveSpans`
+minus `cededSpans` (ceded vertices are the winner's own road, not a retrofit); radius is Menger
+curvature over the registered 4 m polyline, i.e. shipped geometry rather than planner intent. Seeds
+6/20/11/7/3 @1400, `roadMinTurnRadius` = 15 m:
+
+| | min | 1% | 5% | median | mean |
+|---|---|---|---|---|---|
+| taper band (835 verts, 37 bands) | 7.5 | 14.4 | 27.9 | 134.8 | 1231.8 |
+| open road (2534 verts) | 11.9 | 12.0 | 33.6 | 176.5 | 3488.9 |
+
+Per-band tightest corner: min 7.5 m, **median 41.4 m**, p90 70.2 m. **4 of 37 bands are tighter than
+`roadMinTurnRadius`; 1 of 37 is tighter than open road's 1st percentile.**
+
+**The bands are mostly fine.** BUG-56 B5's ladder (take the gentlest band at or above the road's own
+radius, fall back to `RFLOOR_MIN` only if nothing clears) is evidently doing its job — the median
+band corner sits at 41 m, comfortably above both the road's contract and open road's 1st percentile.
+What is left is a **four-band tail** below the road's own minimum radius, tightest 7.5 m. (Not
+directly comparable with BUG-56's 2026-08-27 figures — that census measured `buildTaper`'s swept
+curve, this one measures registered vertices, and its open-road 1st percentile was 24.8 m against
+12.0 m here. Different instruments; use this one for before/after.)
+
+So the prize for building junction-leg reuse is **four bad corners in 191 km of road**, plus whatever
+aesthetic gain comes from a fork that was routed rather than retrofitted. That is the number the
+go/no-go should be made on.
+
 ---
 
 ## 2. The perf finding: the play build runs on one core
