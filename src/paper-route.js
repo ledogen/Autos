@@ -140,6 +140,28 @@ export function radiusForTier (tier = runPaper.tier) {
 }
 
 /**
+ * The ladder as SELECTION sees it: every rung up to and including `tier`, ascending, as
+ * cumulative `{n, r}` quotas — [{4,1000},{9,1500},{12,2000}] at the third rung.
+ *
+ * This is what makes the ladder NEST (SM-INV-12: the tier picks who is on the route, never what
+ * exists). The rungs widen the ring as well as lengthening the list, and a single greedy chain run
+ * over the WIDER pool is not a superset of the same chain run over the narrower one — the extra
+ * houses divert it. Measured on seed 6 (@4500,600): rung 3 dropped rung 2's ninth customer and came
+ * out SHORTER than rung 2 (10.39 km against 11.00 km), so par went backwards up the ladder. Growing
+ * rung by rung — take rung k's quota from rung k's ring, then carry on from that chain's tail into
+ * the wider one — makes the nesting true by construction rather than by luck.
+ *
+ * Not `houseRungs`: that one collapses rungs sharing a radius because PLACEMENT only needs a quota
+ * per ring, while selection needs one entry per rung.
+ */
+export function tierRungs (tier = runPaper.tier, P = PAPER_PARAMS) {
+    const t = Math.min(Math.max(0, tier | 0), P.tiers.length - 1)
+    const out = []
+    for (let i = 0; i <= t; i++) out.push({ n: P.tiers[i], r: P.tierR[Math.min(i, P.tierR.length - 1)] })
+    return out
+}
+
+/**
  * The rungs as placement sees them: cumulative (radius, count) quotas, ascending by radius, one
  * entry per DISTINCT radius carrying that ring's largest count. [4@1km, 9@1.5km, 12@2km, 15@2km]
  * collapses to [4@1km, 9@1.5km, 15@2km] — the two rungs that share a ring share one quota.
@@ -387,9 +409,15 @@ function _pathBack (prev, startK, goalK) {
  *                           widen the neighbourhood as well as lengthening the list, and the ring
  *                           is applied HERE rather than at the call site so it is one rule that
  *                           the tour, the gate and any future re-plan all share.
+ * @param {Array<{n:number,r:number}>|null} rungs  the LADDER this route sits on (tierRungs), so the
+ *                           selection grows rung by rung and a lower tier's people are all on a
+ *                           higher tier's route. Null — a re-plan, or any caller that is not a
+ *                           ladder rung — means one stage of (want, ringR), which is what the
+ *                           planner did before the schedule existed.
  */
-export function planTour (road, larry, allCust, want, region = null, margin = 100, ringR = Infinity) {
-    const it = planTourJob(road, larry, allCust, want, region, margin, ringR)
+export function planTour (road, larry, allCust, want, region = null, margin = 100, ringR = Infinity,
+                          rungs = null) {
+    const it = planTourJob(road, larry, allCust, want, region, margin, ringR, rungs)
     let r = it.next()
     while (!r.done) r = it.next()
     return r.value
@@ -412,10 +440,20 @@ export function planTour (road, larry, allCust, want, region = null, margin = 10
  *
  * Same arguments, same return value as planTour.
  */
-export function* planTourJob (road, larry, allCust, want, region = null, margin = 100, ringR = Infinity) {
+export function* planTourJob (road, larry, allCust, want, region = null, margin = 100,
+                              ringR = Infinity, rungs = null) {
     if (!road || !larry || !allCust?.length || !(want > 0)) return null
-    if (region && isFinite(ringR)) {
-        allCust = allCust.filter(c => Math.hypot(c.x - region.x, c.z - region.z) <= ringR)
+    // The selection SCHEDULE: one stage per ladder rung, ascending, capped at what was asked for.
+    // Without a ladder (a re-plan) it collapses to the single stage the planner always had.
+    const stages = (rungs?.length ? rungs : [{ n: want, r: ringR }])
+        .map(g => ({ n: Math.min(want, g.n | 0), r: g.r ?? ringR }))
+        .filter(g => g.n > 0)
+    if (stages.length) stages[stages.length - 1].n = want
+    const outerR = Math.max(...stages.map(g => g.r))
+    // Filtered at the WIDEST ring only — narrower rungs gate which candidate the chain may take
+    // next, not which customers exist, so the split graph below is the same one the top rung sees.
+    if (region && isFinite(outerR)) {
+        allCust = allCust.filter(c => Math.hypot(c.x - region.x, c.z - region.z) <= outerR)
         if (!allCust.length) return null
     }
     const g = road.networkGraph?.()
@@ -536,26 +574,38 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
     // counts. Nearest-to-Larry picks a STAR: four houses in four directions, which forces a return
     // through the middle between every pair (seed 6 tier 1: 5.94 km against the chain's 3.78 km for
     // the same four-customer route). Chaining follows the road outward and picks a run of houses,
-    // which is shorter to drive AND is what a paper route actually looks like. The ladder still
-    // nests — a tier takes a prefix of the same chain, so its people are all on the next tier's
-    // route (SM-INV-12).
+    // which is shorter to drive AND is what a paper route actually looks like.
+    //
+    // ONE CHAIN, GROWN RUNG BY RUNG. The chain nests only while the pool is fixed, and the ladder
+    // widens the ring at every rung — so the chain is grown in STAGES, rung k's quota taken from
+    // rung k's ring before the next rung's wider one opens. A tier's people are then all on the
+    // next tier's route by construction (SM-INV-12). Run as one pass over the widest ring it is
+    // not: on seed 6 the third rung diverted onto three nearer houses, dropped the second rung's
+    // ninth customer, and came out shorter than the rung below it.
     const stops = allCust.filter(c => ptKeyOf.has(c.id))
     if (!stops.length) return null
     const remaining = stops.slice()
+    const distC = new Map(stops.map(c => [c.id,
+        region ? Math.hypot(c.x - region.x, c.z - region.z) : 0]))
     const order = []
     let curK = larryK
-    while (order.length < want && remaining.length) {
-        const { dist } = searchFrom(curK)
-        if (fresh) yield
-        let bi = -1, bd = Infinity
-        for (let i = 0; i < remaining.length; i++) {
-            const d = dist.get(ptKeyOf.get(remaining[i].id)) ?? Infinity
-            if (d < bd) { bd = d; bi = i }
+    for (const stage of stages) {
+        while (order.length < stage.n && remaining.length) {
+            const { dist } = searchFrom(curK)
+            if (fresh) yield
+            let bi = -1, bd = Infinity
+            for (let i = 0; i < remaining.length; i++) {
+                if (distC.get(remaining[i].id) > stage.r) continue   // outside this rung's ring
+                const d = dist.get(ptKeyOf.get(remaining[i].id)) ?? Infinity
+                if (d < bd) { bd = d; bi = i }
+            }
+            // Nothing left this rung can reach — carry on into the next, wider one rather than
+            // giving up: a thin ring must not cost the rungs above it their customers.
+            if (bi < 0 || !isFinite(bd)) break
+            const c = remaining.splice(bi, 1)[0]
+            order.push(c)
+            curK = ptKeyOf.get(c.id)
         }
-        if (bi < 0 || !isFinite(bd)) break               // the rest of the region is unreachable
-        const c = remaining.splice(bi, 1)[0]
-        order.push(c)
-        curK = ptKeyOf.get(c.id)
     }
     if (!order.length) return null
 
@@ -935,7 +985,7 @@ export class PaperRouteSystem {
             const larry = this.giver
             const want = customersForTier()
             this.route = planTour(this._getRoad(), larry, pois?.customers() ?? [], want,
-                                  this._getRegion(), 100, radiusForTier())
+                                  this._getRegion(), 100, radiusForTier(), tierRungs())
             if (!this.route) this.error = 'no route could be routed from here'
         } catch (e) {
             console.warn('[paper] tour planning failed', e)
