@@ -175,10 +175,112 @@ read your own result.
 on its own worktree. Do NOT take a carve-side fix — that changes geometry and would collide with
 QUAL-28's character bar.
 
-## Acceptance — re-opened
+---
+
+# FIX DIRECTION (owner, 2026-09-06) — this ticket now carries the WHOLE par correction
+
+The owner clarified the origin of the request: *"the old one after par reanchor was pretty much
+perfect and we should seek to replicate it"* was about the **driven par-time feel**, not road
+character — *"we reanchored par well and want to recreate that par generator on the new router."*
+(QUAL-28/29 misread it as a road-character target and chased that instead; see QUAL-29's CORRECTION
+section. No road change came of it and none is owed.)
+
+So the ask is not just "fix the arc-domain bug". It is **par, end to end, correct on v2**. Three
+stages, and **the order is forced** — do not reorder them.
+
+## Stage 1 — fix what par MEASURES (the arc-domain bug, this ticket's original body)
+
+Everything above. Ruling still needed on the handoff §1 options: re-parameterise the sampler onto
+`polyCum` and move all four consumers (`par.js`, `mission.js`, `gps.js`, `poi.js`), correct
+`.length` alone, or something else. The `clArc` domain was deliberate (BUG-53 preserved it so
+existing `s` values kept meaning what they meant), so this is a domain change, not a typo fix.
+
+Prerequisite is **already done**: `25a7aa3` made `mission-network` deterministic so it can referee
+its own fix.
+
+## Stage 2 — fix what par ASSUMES (re-anchor `PAR_REF` on v2 roads)
+
+**`PAR_REF` has never been anchored on the roads it now prices.** The dates are unambiguous:
+
+| | date |
+|---|---|
+| `PAR_REF` pass (4), THE re-anchor (`src/par.js`) | **2026-08-16** |
+| router v2 takes over the full network (`7cff01d`) | **2026-08-18** |
+| every labelled drive in `runs/*.json` (30 files) | Jul 21 – **Aug 18** |
+
+So `mu: 0.80` / `accel: 3.0` / `brake: 7.0` were fitted against human drives on **v1 roads**, and v2
+shipped two days later with measurably different geometry — QUAL-28 measured it as straighter
+(10.4 % vs 5.2 % of length in >200 m straights), a third the switchbacks (17 vs 52), and a shifted
+turn-radius distribution. Par's dominant dial is `mu`, i.e. CORNER SPEED, and v2 changed the corners.
+This is the actual "recreate that par generator on the new router" work.
+
+**Method:** unchanged from FEAT-30 — record drives, label each with the subjective felt class on the
+mission result card, export, `node test/calibrate-par.mjs [runsDir]`. Two things to respect:
+
+- **Record into a NEW directory, not `runs/`.** The v1 corpus must stay intact as the historical
+  record of the anchor being replicated, and it must not be averaged into a v2 fit.
+- **More drives is the single biggest quality lever.** The harness's own health warning on the
+  existing corpus: 20 runs give *"a hint, not a fit"*, and the felt labels were *"partly INVERTED
+  against the clock"*. If the point is to re-anchor as well as it was anchored, the corpus is where
+  that is won or lost — not in the sweep.
+
+`mu` is OWNER-SET, not fitted (`calibrate-par.mjs` method note 3) — the script's recommendation is
+advisory. The re-anchor is a ruling informed by numbers, exactly like the 2026-08-16 one.
+
+## Stage 3 — fix what par PAYS (re-derive FEAT-53 `k`)
+
+Par is the denominator of the payout/rank scale. Stages 1 and 2 both move par times, so `k` must be
+re-derived after them, not between them. Precedent: `30544cb`. The frontmatter's original warning —
+*"correcting this shifts every par time"* — is discharged here, once, rather than twice.
+
+## Why the order cannot change
+
+Calibration fits `PAR_REF` so a felt-par drive lands on a target ratio. If route length is still
+systematically short by up to 6.39 % on merged runs, the fit has to absorb that error somewhere, and
+the only places it can go are `mu` / `accel` / `brake` — turning a design constant into a fudge
+factor for a geometry bug, in the exact way pass (3) and pass (4) both had to unwind. **Fix what par
+measures, then fit how fast it thinks you go, then price it.**
+
+Corollary: do not judge Stage 1 by whether par times "feel right" afterwards. They will not — the
+anchor is still v1's at that point. Stage 1 is judged on geometry (does `.length` equal the driven
+length) and Stage 2 on feel.
+
+## Sequencing
+
+**Parallel with FEAT-76** (owner, 2026-09-06). Par never feeds routing, so the two share no code —
+FEAT-76 is corridor/plan-layer, this is the par/mission consumer side. Own worktree.
+
+Do NOT take a carve-side fix for Stage 1: that changes geometry, and geometry is FEAT-76's subject.
+
+## Acceptance — re-opened, and expanded 2026-09-06
+
+**Stage 1 — the domain fix**
 
 - [ ] Ruling on the three options in the handoff §1.
 - [ ] `centerline.length` equals the true driven length on off-curve runs.
 - [ ] `mission-network` §7's two failing BUG-41 checks green, the third still passing.
 - [ ] The gate stops comparing two samplers at the same `s` without asserting the domains match.
-- [ ] Par-time delta quantified and the `PAR_REF` / `k` fit checked against it.
+- [ ] Par-time delta quantified across seeds — the headline number for Stage 3.
+- [ ] All four `clArc` consumers (`par.js`, `mission.js`, `gps.js`, `poi.js`) audited against
+      whatever domain ruling lands, not just `par.js`.
+
+**Stage 2 — the v2 re-anchor**
+
+- [ ] A v2-road labelled corpus recorded in its own directory; `runs/` left untouched.
+- [ ] Corpus size stated, and stated honestly against the harness's "20 is a hint, not a fit" bar.
+- [ ] `calibrate-par.mjs` run on it; the recommendation recorded alongside the owner's ruling on
+      `mu` (advisory, not authoritative — `mu` is owner-set).
+- [ ] `PAR_REF` updated with a pass (5) comment block in `src/par.js` matching the style of passes
+      (1)-(4): what moved, why, and what it was measured against.
+- [ ] `par-oracle` gate green — SM-INV-2 still holds (par bit-identical before/after mutating
+      vehicle params).
+
+**Stage 3 — the economy**
+
+- [ ] FEAT-53 `k` re-derived against the new par, once, after both stages.
+- [ ] Rank-threshold sanity check: the letter bands still mean what DESIGN.md says they mean.
+
+**Throughout**
+
+- [ ] `npm run test:all` no worse than the documented standing reds — and `mission-network` is
+      expected to LEAVE that list, since its §7 failure is this ticket.
