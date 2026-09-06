@@ -18,20 +18,25 @@ two accidental near-parallel runs.
 Background analysis, measurements, and the code trace behind every claim below:
 `.planning/research/ROUTER-REUSE-AND-PARALLELISM.md`.
 
-## Sequencing — blocked behind QUAL-28 (owner, 2026-09-05)
+## Sequencing — UNBLOCKED 2026-09-06
 
-**QUAL-28 goes first.** Its Half 2 rules what road character we are targeting — the owner's position
-is that v1 after the par reanchor was pretty much perfect and v2 should be retuned to land in the
-same place. Until that ruling exists, this ticket's central acceptance line ("T-junctions visibly
-emerge at a ρ that leaves road character intact") has no reference to be judged against, and any A/B
-run now would be scored against a baseline QUAL-28 is about to move.
+This ticket was held behind the character retune, because its central acceptance line ("T-junctions
+visibly emerge at a ρ that leaves road character intact") had no settled reference to be judged
+against. That reference now exists, and it is the CURRENT SHIPPED DEFAULTS.
 
-Consequence for the build order below: **do not open step 2 or later until QUAL-28 has landed on
-main.** Step 1 is unaffected in principle — it touches no router code — but it is also cheap enough
-to run after, against the settled baseline, which is where its numbers are worth the most.
+QUAL-28 landed (the gate cleanup) and QUAL-29 closed with **no knob change**: the owner drove the
+whole bracket and kept `roadV2` exactly as shipped — `cTurn: 45`, `wGrade: 180`. Read QUAL-29's
+resolution before touching ρ; it records why the v1-at-reanchor column is a historical reference and
+NOT a target, so a character A/B here is scored against main as it stands, not against v1.
 
-Also: branch the worktree off main *after* the QUAL-28 merge. A worktree cut now would carry a stale
-base straight through a retune of the very knobs this feature is judged on.
+**The baseline for this ticket's A/B is therefore main's road at the shipped defaults.** Capture the
+`road-character.mjs` column before the first ρ change so the comparison is like-for-like; the shipped
+column is tabulated in QUAL-29 and can be copied rather than re-measured.
+
+One caveat carried in from QUAL-29's measurements: **BUG-58** (isolated stations blowing past
+`cutMax` and single 6 m-vertical-radius crests) is live at the shipped defaults. Those outliers
+dominate the earthwork MAX and the crest MAX in any report this ticket produces. Compare on means
+and p99s, or fix BUG-58 first — do not read an outlier as a reuse regression.
 
 ## Why this is not a small change
 
