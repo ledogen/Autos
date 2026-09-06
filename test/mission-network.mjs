@@ -20,6 +20,24 @@ import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { MissionSystem, MISSION_PLAN_RADIUS } from '../src/mission.js'
+import { mulberry32 } from '../src/seed.js'
+
+// ── DETERMINISM: this gate pins its own dice ────────────────────────────────────────────────────
+// Every roll-based check below calls `ms._roll()`, and `_roll` uses Math.random BY DESIGN (mission
+// rolls are run-layer randomness, SM-INV-12 — that is correct in the game and must not change).
+// The consequence for the gate was that its own denominators wandered: the centerline-identity
+// check in section 2 reported 30/38, then 27/34, on an UNCHANGED tree, and other runs gave 31/42,
+// 29/37, 28/36. A check whose sample set re-rolls every run cannot tell a fix from noise — which
+// matters especially here, because this file is BUG-41's referee.
+//
+// So the gate replaces Math.random with a seeded mulberry32 for the whole process, and each
+// roll-based section re-seeds from its OWN constant. Per-section seeding keeps the sections
+// independent: adding or removing a roll in section 1 no longer shifts section 5's sample. The
+// stream is installed before the network is built so nothing in the run can escape it. Coverage is
+// unchanged — same generator, same number of rolls — only the dice are fixed.
+let _rng = mulberry32(0x5EED)
+Math.random = () => _rng()
+const reseed = (s) => { _rng = mulberry32(s >>> 0) }
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -66,6 +84,7 @@ const ms = new MissionSystem({
   teleport () {}, setMapOpen () {}, onChange () {},
 })
 {
+  reseed(1001)
   let phantom = 0, present = 0, rolls = 0
   let untagged = 0, minDeg = Infinity, realJunctions = 0
   const bad = []
@@ -94,6 +113,7 @@ const ms = new MissionSystem({
 
 // ── 2. the route uses the world's OWN centerline, not a re-route ─────────────────────────────────
 {
+  reseed(1002)
   let same = 0, total = 0
   for (let i = 0; i < 8; i++) {
     const m = ms._roll()
@@ -130,6 +150,7 @@ const ms = new MissionSystem({
 // evaporates on arrival — which is exactly what "freecamming confirms it" would look like. Routes
 // now reach ~5.6 km, so this is worth pinning rather than assuming.
 {
+  reseed(1004)
   let missing = 0, total = 0
   const bad = []
   for (let i = 0; i < 6; i++) {
@@ -156,6 +177,7 @@ const ms = new MissionSystem({
 
 // ── 5. mission size envelope ────────────────────────────────────────────────────────────────────
 {
+  reseed(1005)
   const lens = []
   for (let i = 0; i < 10; i++) { const m = ms._roll(); if (m) lens.push(m.distance / 1000) }
   const lo = Math.min(...lens), hi = Math.max(...lens)
@@ -186,6 +208,7 @@ const ms = new MissionSystem({
     teleport () {}, setMapOpen () {}, onChange () {},
   })
   const dist = (p) => Math.hypot(p.x - region.x, p.z - region.z)
+  reseed(1006)
   let rolls = 0, escaped = 0, worst = 0
   for (let i = 0; i < 25; i++) {
     const m = msR._roll()
@@ -208,6 +231,7 @@ const ms = new MissionSystem({
 
   // And it must stay OPT-IN: free roam (no region) keeps the original unconfined behaviour, which
   // is what every section above has been exercising all along.
+  reseed(1007)
   let free = 0
   for (let i = 0; i < 6; i++) if (ms._roll()) free++
   check('no region ⇒ unchanged free-roam planning', free >= 5, `${free}/6 rolls`)
