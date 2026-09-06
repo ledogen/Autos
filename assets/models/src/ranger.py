@@ -109,7 +109,20 @@ Y_TAIL = AX_R - REAR_OH          # -2.6515  extreme rear (bumper face)
 
 # --- Heights (z = 0 is the tyre contact plane) ---
 Z_GROUND = 0.0
-Z_UNDER = 0.285                  # frame / underbody pan — the model's lowest point
+Z_UNDER = 0.415                  # underbody pan.  Owner, 2026-09-05: "i want it raised
+                                 # /gone.  there's an ugly black box practically dragging
+                                 # on the ground.  a flat pan is fine but should be roughly
+                                 # in line with the bumpers."  At 0.285 the pan's SIDE WALL
+                                 # (x = W_UNDER, running the whole length) showed as a black
+                                 # bar 157 mm deep under the rocker from every side angle.
+                                 # At 0.415 it is level with the rear bumper's underside
+                                 # (0.416) and only 27 mm of it clears the rocker, so the
+                                 # bar is gone without the pan having to be modelled at all.
+                                 # HARD CEILING: Z_UNDER + UND_EDGE must stay under Z_ROCKER
+                                 # (0.442) or the pan corner overtakes the flank bottom in
+                                 # every section ring and the loft folds.
+                                 # The truck's lowest point is NOT this — it is the mud
+                                 # flaps at 0.108, so shiftDown is unaffected by moving it.
 Z_ROCKER = 0.442                 # rocker step: flank bottom out of the arch zones
 Z_HIP = 0.86                     # widest point of the flank
 Z_BELT = 1.183                   # door beltline = base of the side glass.  Dropped 20 mm
@@ -168,15 +181,31 @@ Z_LAMP0, Z_LAMP1 = 0.772, 0.990  # headlamp / grille opening.  Re-measured off t
                                  # took these off the profile shot and left a 28 cm
                                  # blank painted band between the grille and the
                                  # bumper, where the real truck has about 10 cm.
-Z_BUMP0, Z_BUMP1 = 0.492, 0.648  # chrome blade
-Z_VAL0 = 0.285                   # bottom of the grey valance
+Z_BUMP0, Z_BUMP1 = 0.566, 0.722  # chrome blade.  Raised 74 mm (owner, 2026-09-05:
+                                 # "bumper still a little too low to fit in the gap
+                                 # naturally left for it").  On the reference the blade's
+                                 # top edge runs about 50 mm under the lamp/grille
+                                 # aperture; at 0.648 it left 124 mm of bare paint there
+                                 # and the blade read as hung below the front end rather
+                                 # than filling it.  Z_LAMP0 - Z_BUMP1 IS that gap — move
+                                 # either one and the other has to follow.
+Z_VAL0 = 0.300                   # bottom of the grey air dam.  DECOUPLED from Z_UNDER
+                                 # (they were both 0.285).  The dam is meant to hang below
+                                 # the pan — on the reference it drops most of the way to
+                                 # the tyre's contact patch and is the lowest thing at the
+                                 # front — whereas the pan is not meant to be seen at all.
+                                 # Tying them together meant raising one raised the other.
 
 # --- Rear ---
 Z_TAIL0, Z_TAIL1 = 0.722, 0.998  # tail lamp band
-# Raised 0.045 so the bumper TOP overlaps the bedside's tapered sill instead of
-# hanging in space below it (owner, 2026-09-04).  Sill at the tailgate is
-# Z_ROCKER + 0.040 = 0.482; the bumper now runs through that.
-Z_RBUMP0, Z_RBUMP1 = 0.428, 0.584
+# THE BUMPER'S LOWER EDGE IS THE BEDSIDE'S LOWER EDGE.  Owner, 2026-09-05: "raise
+# the rear bumper so its lower edge meets the lower edge of the bedside where it
+# terminates".  The bedside's sill kicks up behind the rear arch (bed_bottom) and the
+# rim's rise lifts it a little further, landing at 0.490 on the last section — so
+# that is where the bumper's bottom goes, and the whole 156 mm section moves up with
+# it rather than the bumper being stretched.  build_rear_end() asserts the match
+# against the ring itself, because both ends of it are derived numbers.
+Z_RBUMP0, Z_RBUMP1 = 0.490, 0.646
 Y_TAILGATE = -2.5405             # outer face of the tailgate.  The step bumper stands
                                  # 0.111 m PROUD of this, back to Y_TAIL — measured, and
                                  # the single thing that stops the rear reading planar.
@@ -246,7 +275,14 @@ class Part:
             self.m.append(mat)
 
 
-BOX_F = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4],
+# THE BOTTOM LOOP IS WOUND BACKWARDS ON PURPOSE.  Traversed 0-1-2-3 the bottom face
+# runs counter-clockwise seen from ABOVE, so its normal points UP — into the box —
+# while every other face here points out.  orient_islands() cannot rescue that: it
+# flips a whole shell or none of it, so a single odd face out survives whatever it
+# decides.  Every box in the model carried an inverted underside because of this, and
+# check_normals() only caught it when a ray happened to strike one steeply enough to
+# clear its grazing filter, which is why the count moved with unrelated edits.
+BOX_F = [[3, 2, 1, 0], [4, 5, 6, 7], [0, 1, 5, 4],
          [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
 
 
@@ -408,11 +444,21 @@ def arch_z(y, axle):
     rocker again.  Keeping it a max() (rather than letting the circle run to its
     tangent points) is what makes the flank bottom continuous — an un-clamped
     version puts a 5 cm notch below the rocker at each end of the arch.
+
+    AND CLAMPED AT THE TOP, which is the other half of the same problem.  The
+    circle's crown lands at ARCH_Z + ARCH_R = 0.860 — EXACTLY Z_HIP, by coincidence
+    of two numbers that were chosen for unrelated reasons.  With the sill point and
+    the hip both at (W_FLANK, ...), a crown that reached Z_HIP made the section cross
+    itself and loft into a dark V-shaped notch at the top of each rear arch.
+    Ceiling = the hip less a little slack, so the ring stays strictly ordered.  The
+    slack used to have to clear the bottom chamfer as well; with that gone the clamp
+    costs 6 mm off the crown of the opening instead of 26, and nothing anywhere else.
     """
     d = abs(y - axle)
     if d >= ARCH_R:
         return Z_ROCKER
-    return max(Z_ROCKER, ARCH_Z + math.sqrt(ARCH_R * ARCH_R - d * d))
+    top = Z_HIP - 0.006
+    return max(Z_ROCKER, min(top, ARCH_Z + math.sqrt(ARCH_R * ARCH_R - d * d)))
 
 
 def arch_samples(axle):
@@ -521,6 +567,13 @@ CAB_ST = [
 W_DOORCARD = 0.700                         # inner face of the door trim
 
 
+# EVERY SECTION MIRRORS WITH r[1:-1], NEVER A LITERAL SLICE.  The two centreline
+# points are r[0] and r[-1] and must not be duplicated in the mirrored half.  These
+# used to be hand-written indices, and dropping ONE point from bed_ring() (the sill
+# chamfer, 2026-09-05) turned r[1:13] into a slice that copied the last centreline
+# point as well: the ring gained a point instead of losing one, every band index
+# after it shifted by two, and BED_BANDS painted the whole left flank with the
+# underbody's dark band.  The owner saw it as "left bedside turned black".
 def clip_ring(y):
     """12-point closed section for the front clip (hood + fenders + nose)."""
     wo, wb, ztop, crown = _interp(CLIP_ST, y)
@@ -530,7 +583,7 @@ def clip_ring(y):
          (W_UNDER, zb), (wo, zb),
          (wo, Z_HIP), (wb, ztop - crown), (0.0, ztop)]
     return ([(x, y, z) for x, z in r]
-            + [(-x, y, z) for x, z in reversed(r[1:7])])
+            + [(-x, y, z) for x, z in reversed(r[1:-1])])
 
 
 def cab_ring(y):
@@ -545,17 +598,21 @@ def cab_ring(y):
          (wo, Z_HIP), (wb, zbelt), (W_DOORCARD, zbelt),
          (W_DOORCARD, Z_FLOOR), (0.0, Z_FLOOR)]
     return ([(x, y, z) for x, z in r]
-            + [(-x, y, z) for x, z in reversed(r[1:9])])
+            + [(-x, y, z) for x, z in reversed(r[1:-1])])
 
 
-BED_EDGE = 0.020                   # chamfer on the bed's top and bottom edges
-UND_EDGE = 0.055                   # chamfer on the UNDERBODY pan's outer corner.
-                                   # Owner, 2026-09-04: "the bottom of the truck
-                                   # doesn't need detail, but it shouldn't be a void
-                                   # cube."  A flat black plate with hard vertical
-                                   # sides reads as a box from any low angle; one
-                                   # chamfer per side turns it into a tapered pan
-                                   # and gives flat shading a highlight to work with.
+BED_EDGE = 0.020                   # chamfer on the bed's TOP edge only.  The bottom
+                                   # one was removed 2026-09-05 (owner); BED_EDGE is
+                                   # still what keeps arch_z()'s crown clamp honest,
+                                   # so it did not become a free constant.
+UND_EDGE = 0.018                   # chamfer on the UNDERBODY pan's outer corner.
+                                   # Was 0.055 to soften the deep pan; the owner's
+                                   # answer to that (2026-09-05) was "i didnt want it
+                                   # rounded, i want it raised" — so the fix is
+                                   # Z_UNDER, and the chamfer drops to a token 18 mm.
+                                   # It is not deleted: the ring POINT has to survive
+                                   # or CLIP_BANDS / CAB_BANDS / BED_BANDS and the nose
+                                   # frame's inner list all shift by one per half.
 
 
 def bed_bottom(y):
@@ -579,10 +636,16 @@ def bed_ring(y):
     """24-point closed section for the bed: outer skin up, over the rail, down the
     inner wall (stepping in over the wheelhouse), across the floor and back.
 
-    Both outer corners are CHAMFERED (owner, 2026-09-04: "the whole bed is rounded
-    on top and bottom edges").  One extra point per corner rather than a full
-    fillet: at this scale a 20 mm bevel already reads as a radius, and flat shading
-    turns it into a highlight line down the length of the bed for free.
+    The TOP outer corner is CHAMFERED (owner, 2026-09-04: "the whole bed is rounded
+    on top and bottom edges").  One extra point rather than a full fillet: at this
+    scale a 20 mm bevel already reads as a radius, and flat shading turns it into a
+    highlight line down the length of the bed for free.
+
+    The BOTTOM corner is NOT, since 2026-09-05: "the bottom edge of the bedsides and
+    wheel arches dont need a chamfer but have one - remove".  It was never earning
+    its keep — it is in shadow under the flank and never catches a highlight — and it
+    cost a point on every station of the longest loft in the model.  clip_ring has
+    never had one, so the front and rear sills now match.
     """
     zb = bed_bottom(y)
     d = abs(y - AX_R)
@@ -590,24 +653,29 @@ def bed_ring(y):
     r = [(0.0, Z_UNDER),
          (W_UNDER - UND_EDGE, Z_UNDER), (W_UNDER, Z_UNDER + UND_EDGE),   # pan corner
          (W_UNDER, zb),
-         (W_FLANK - BED_EDGE, zb), (W_FLANK, zb + BED_EDGE),             # bottom edge
+         (W_FLANK, zb),                            # sill, a hard corner — see BED_EDGE
          (W_FLANK, Z_HIP),
          (W_BED_OUT, Z_RAIL - BED_EDGE), (W_BED_OUT - BED_EDGE, Z_RAIL), # top edge
          (W_BED_IN, Z_RAIL),
          (W_BED_IN, Z_WHEELHOUSE), (wh, Z_WHEELHOUSE), (wh, Z_BEDFLOOR),
          (0.0, Z_BEDFLOOR)]
     return ([(x, y, z) for x, z in r]
-            + [(-x, y, z) for x, z in reversed(r[1:13])])
+            + [(-x, y, z) for x, z in reversed(r[1:-1])])
 
 
 # Landmark indices into bed_ring()'s output.  Named because build_rear_end() takes
 # the rear panels' OUTLINE from them point-for-point; a literal 7 buried in that
 # function would silently mean something else the next time a chamfer is added.
-BED_I_FLANK_LO = 5      # (W_FLANK, zb + BED_EDGE)   flank bottom, above the chamfer
-BED_I_HIP = 6           # (W_FLANK, Z_HIP)
-BED_I_RAIL_OUT = 7      # (W_BED_OUT, Z_RAIL - BED_EDGE)
-BED_I_RAIL_TOP = 8      # (W_BED_OUT - BED_EDGE, Z_RAIL)
-BED_I_RAIL_IN = 9       # (W_BED_IN, Z_RAIL)
+BED_I_PAN_EDGE = 3      # (W_UNDER, zb)              where the pan meets the sill
+BED_I_SILL = 4          # (W_FLANK, zb)              sill / flank bottom, one point
+BED_I_HIP = 5           # (W_FLANK, Z_HIP)
+BED_I_RAIL_OUT = 6      # (W_BED_OUT, Z_RAIL - BED_EDGE)
+BED_I_RAIL_TOP = 7      # (W_BED_OUT - BED_EDGE, Z_RAIL)
+BED_I_RAIL_IN = 8       # (W_BED_IN, Z_RAIL)
+# BED_I_SILL..BED_I_RAIL_IN is the OUTER ARC — the bedside's own outline, and the
+# rear face takes its outer edge from it point-for-point.  It lost a point when the
+# bottom chamfer went, which is why every index below 5 shifted.
+BED_I_ARC = (BED_I_SILL, BED_I_HIP, BED_I_RAIL_OUT, BED_I_RAIL_TOP, BED_I_RAIL_IN)
 
 
 # Section-edge -> material.  Index k is the face spanning ring point k -> k+1.
@@ -615,7 +683,7 @@ DARK = "RangerInterior"
 # All three shifted by one point per half when the pan gained its chamfer.
 CLIP_BANDS = {k: DARK for k in (0, 1, 2, 3, 10, 11, 12, 13)}
 CAB_BANDS = {k: DARK for k in (0, 1, 2, 3, 7, 8, 9, 10, 14, 15, 16, 17)}
-BED_BANDS = {k: DARK for k in (0, 1, 2, 3, 22, 23, 24, 25)}
+BED_BANDS = {k: DARK for k in (0, 1, 2, 3, 20, 21, 22, 23)}
 
 
 # ---------------------------------------------------------------------------
@@ -672,7 +740,10 @@ NOSE_Z_BOT = Z_ROCKER
 # the ring advances as sin(theta), and the tuck, drop and rise ease in as
 # (1 - cos theta).  That makes the blend a real quarter-ELLIPSE — tangent to the
 # hood and to the flank where it starts, perpendicular where it meets the face.
-NOSE_RIM_N = 5
+NOSE_RIM_N = 3        # five until 2026-09-05.  The owner's call: the front radius
+                      # "can lose a couple faces and still read well".  It can —
+                      # the blend is a quarter-ellipse either way, and at three
+                      # stations the facets are still under 30 degrees apart.
 NOSE_TUCK = 0.090      # plan-view corner radius on the vertical edges.  Smaller than
                        # before, because NOSE_PROW now does most of the plan work.
 NOSE_DROP = 0.070      # how far the hood line falls across the rim
@@ -729,6 +800,56 @@ def nose_rim_ring(spec):
     return out
 
 
+# THE FRONT CORNER IN PLAN.  nose_y() only describes the bullet — it is the surface
+# the rim rings land on, and it stops meaning anything outboard of them.  But the
+# bumper and the air dam both have to keep hugging the sheet metal PAST that point,
+# where the fender has already turned and is running back toward the arch.  So:
+# CLIP_ST's half-widths, inverted, truncated at the widest station (past it the table
+# narrows again toward the cowl and inverting it would jump the answer 1.2 m back).
+CLIP_PLAN = []
+for _w, _y in [(s[1], s[0]) for s in CLIP_ST]:
+    if CLIP_PLAN and _w <= CLIP_PLAN[-1][0]:
+        break
+    CLIP_PLAN.append((_w, _y))
+
+
+def corner_y(x, z):
+    """Plan position of the front sheet metal at (x, z), valid outboard of the rim.
+
+    Inside the rim it IS nose_y().  Past it, the first station whose flank is wide
+    enough to reach this x.  Anything that must die into the front corner rather
+    than float in front of it rides this — see the blade and the air dam.
+    """
+    rim_x = abs(nose_rim_ring(NOSE_RIM[-1])[5][0])
+    ax = min(abs(x), CLIP_PLAN[-1][0])
+    if ax <= rim_x:
+        return nose_y(ax, z)
+    tbl = [(rim_x, nose_y(rim_x, z))] + CLIP_PLAN
+    for (xa, ya), (xb, yb) in zip(tbl, tbl[1:]):
+        if xa <= ax <= xb:
+            return ya + (yb - ya) * (ax - xa) / max(1e-6, xb - xa)
+    return tbl[-1][1]
+
+
+def ring_flank(ring, z, idx=(4, 5, 6)):
+    """(x, y) on a ring's OUTER FLANK at height z, walking the arc `idx`.
+
+    Only the arc is the body's side; the rest of any section is the pan, the face and
+    the mirror half.  Defaults to the front clip's (arch soffit, hip, shoulder); the
+    bed passes BED_I_ARC.  Published because both corner lamps WRAP onto the flank
+    and have to read its real plan position at their own height rather than guess it
+    from a constant.
+    """
+    seg = [ring[i] for i in idx]
+    if z <= seg[0][2]:
+        return (seg[0][0], seg[0][1])
+    for (xa, ya, za), (xb, yb, zb) in zip(seg, seg[1:]):
+        if za <= z <= zb:
+            t = (z - za) / max(1e-6, zb - za)
+            return (xa + (xb - xa) * t, ya + (yb - ya) * t)
+    return (seg[-1][0], seg[-1][1])
+
+
 def build_front_clip(p):
     ys = sorted({round(s[0], 5) for s in CLIP_ST}
                 | {round(v, 5) for v in arch_samples(AX_F)}, reverse=True)
@@ -763,7 +884,7 @@ def build_cab(p):
 #   - the rim needs room to do it, which is why Y_BED_R now sits 100 mm ahead of
 #     the tailgate plane instead of 30.  At 30 mm the prow plus the lean exceeded
 #     the span and the rings folded forward.
-TAIL_RIM_N = 3
+TAIL_RIM_N = 4
 TAIL_TUCK = 0.032                  # plan-view corner radius on the rear verticals
 TAIL_DROP = 0.026                  # rail line rolls down across the rim
 TAIL_RISE = 0.012
@@ -772,12 +893,29 @@ Z_TAIL_APEX = 0.900                # rearmost height, mid-tailgate
 TAIL_LEAN_UP = 0.050               # how far the face rolls forward by the rail
 TAIL_LEAN_DN = 0.016
 
+# THE BEDSIDE CLOSES ITSELF (2026-09-05).  Owner: "the bedside end caps are jarring
+# because theyre still subtly visibly caps.  can we merge them into the bedsides?"
+#
+# They were caps because they were a SEPARATE SOLID laid over the bed's rear opening,
+# and no amount of matching its outline to the skin hides that: it needs a shut line
+# to avoid z-fighting the bed's last loft band, and that line traces the whole panel.
+#
+# So the rear face is not a panel any more.  The rim's LAST ring now carries the
+# outer arc all the way in to the tailgate shut line, which makes the rear face the
+# bed loft's OWN last band — same mesh, same vertices, welded, no outline to see.
+# That is also why TAIL_RIM_N went 3 -> 4: with the arc travelling 133 mm instead of
+# 27, three stations turned the corner in visible facets.
+TAIL_SHUT_X = W_BED_IN + 0.012     # where the bedside's rear face dies inboard: far
+                                   # enough outboard of the tub wall to leave a real
+                                   # shut face rather than a zero-width sliver.
+TAIL_SHUT = 0.006                  # ...and the gap between it and the tailgate.
+
 TAIL_RIM = []
 for _i in range(1, TAIL_RIM_N + 1):
     _th = 0.5 * math.pi * _i / TAIL_RIM_N
     _e = 1.0 - math.cos(_th)
     TAIL_RIM.append((math.sin(_th), 1.0 - TAIL_TUCK * _e,
-                     TAIL_DROP * _e, TAIL_RISE * _e))
+                     TAIL_DROP * _e, TAIL_RISE * _e, _e))
 
 
 def tail_lean(z):
@@ -799,26 +937,148 @@ def tail_y(x, z):
 
 
 def tail_rim_ring(spec, base):
-    """One tail rim ring.  Only the OUTER skin moves onto the tail surface: the
-    tub's inner wall and floor just advance rearward, because the tailgate closes
-    them off and tucking them too would visibly pinch the bed."""
-    frac, scale, drop, rise = spec
+    """One tail rim ring.  Only the outer skin is TUCKED IN PLAN; the tub's inner
+    wall and floor keep their x, because pinching those would visibly narrow the bed.
+
+    EVERY POINT LANDS ON tail_y() THOUGH, inner wall included (2026-09-05).  The
+    inner points used to be pinned to the flat Y_TAILGATE plane while the outer skin
+    rode the tail surface, which spread the 26 mm of TAIL_PROW across the rear as a
+    WARP: the loft's rear cap, the painted panels laid over it and the tail lamps
+    sitting on those were then each on a slightly different surface, and the lamps
+    came out proud at one end and sunk at the other.  Owner, 2026-09-05: the rear
+    faces "are their own unique and totally flat surface".  One surface fixes the
+    whole family at once — and the tuck, which is what actually rounds the corner,
+    is untouched.
+    """
+    frac, scale, drop, rise, close = spec
     y_last = Y_BED_R
     zs = [q[2] for q in base]
     z0, z1 = min(zs), max(zs)
+    n = len(base)
+    half = (n + 2) // 2         # a section is r + mirror(r[1:-1]), so this is len(r)
     out = []
-    for x, _y, z in base:
-        # Tuck the outer skin AND the underbody pan; only the tub's inner wall and
-        # floor stay square, because the tailgate closes those off.  Leaving the pan
-        # untucked left the underside ending in a hard rectangular corner.
+    for i, (x, _y, z) in enumerate(base):
+        k = i if i < half else n - i        # fold the mirror back onto the right half
+        # Tuck the outer skin AND the underbody pan; the tub's inner wall and floor
+        # keep their x.  Leaving the pan untucked left the underside ending in a hard
+        # rectangular corner.
         if abs(x) > W_BED_IN + 0.001 or z < Z_BEDFLOOR - 0.010:
             nx = x * scale
             t = (z - z0) / (z1 - z0)
             nz = z + rise * (1.0 - t) - drop * t
-            out.append((nx, y_last + frac * (tail_y(nx, nz) - y_last), nz))
         else:
-            out.append((x, y_last + frac * (Y_TAILGATE - y_last), z))
+            nx, nz = x, z
+        # ...and the OUTER ARC alone closes onto the shut line as `close` eases to 1.
+        # Keyed to the landmark indices, not to a width test: the pan is narrower than
+        # the tub wall and would otherwise have to be excluded by a second rule.
+        if BED_I_SILL <= k <= BED_I_RAIL_TOP:
+            nx += (math.copysign(TAIL_SHUT_X, nx) - nx) * close
+        out.append((nx, y_last + frac * (tail_y(nx, nz) - y_last), nz))
     return out
+
+
+# ---------------------------------------------------------------------------
+# THE TAIL LAMPS WRAP THE CORNER — rewritten 2026-09-05.
+#
+# Owner: "the taillight looks like a flat light bolted on a flat surface while the
+# actual ranger has corner lights that wrap around and follow the body lines."
+# Correct, and it was structural, exactly like the nose was: the unit was four
+# AXIS-ALIGNED BOXES let into the rear panel, so it lived on one plane, stopped
+# dead at the bed's corner, and showed nothing at all from the side.  No amount of
+# extra boxes fixes that — a lamp that turns a corner is a SWEEP, not a stack.
+#
+# It is now one loft swept along a plan path, and the path is taken from the RIM
+# STATIONS THEMSELVES: the same (frac, scale) pairs build_bed() lofts the corner
+# with.  So the lens rides the skin whatever TAIL_TUCK / TAIL_PROW do next, the
+# way the rear panels already take their outline from the rim ring point-for-point.
+#
+# ONE loft, not three stacked ones: loft()'s band_mats splits a single 8-point
+# section into bezel / red / clear / red, which is ~90 tris a side instead of ~270.
+TAIL_LAMP_PROUD = 0.012     # lens face stands this far off the skin along its normal.
+                            # Measured off tail_y() and nothing else: since 2026-09-05
+                            # the rear face IS on tail_y() (build_rear_end's ribs), so
+                            # there is no second datum to track.  It only has to be
+                            # enough to clear that face — flush, the two z-fight.
+TAIL_LAMP_DEEP = 0.028      # ...and this far into it.  The two solids simply overlap;
+                            # that is fine, it is coplanar faces that are not.  It has
+                            # to stay UNDER the rear panel's 54 mm thickness, or the
+                            # section's top and bottom bezel returns — which are nearly
+                            # horizontal, so they present a big face for their depth —
+                            # come out the back of the panel as black wedges.
+# Section heights as fractions of the lamp's own span: bottom bezel return, then
+# red / clear / red per the reference unit, then the top bezel return.
+# FOUR STATIONS, NOT SIX.  There were dark DIVIDER bands between the red and clear
+# sections; at this scale they are one pixel of a different dark, and they cost two
+# faces on every one of the sweep's five bands — 48 tris across both lamps for an
+# edge that flat shading already draws for free where the material changes.
+TAIL_LAMP_U = (0.036, 0.318, 0.660, 0.964)
+# Face k spans section point k -> k+1.  1 and 3 fall through to the loft's own
+# "RangerTail"; 5 is the buried inner face.
+TAIL_LAMP_MATS = {0: DARK, 2: "RangerLens", 4: DARK, 5: DARK}
+# How much of the lamp's height is eaten, per path station, as it turns onto the
+# flank.  Ends at 0.46 — a little over half height — so the lens dies into the
+# bedside as a wedge rather than running down it as a stripe.  ONE ENTRY PER RING:
+# the rim rings rearmost-first, then the last full section.
+TAIL_LAMP_SHRINK = (0.0, 0.02, 0.10, 0.24, 0.46)
+
+
+def tail_skin_path(sx, z):
+    """Plan path (x, y) of the bed's outer skin at height z: from the tailgate shut
+    line, out across the rear face, round the corner and forward down the flank.
+
+    THE STATIONS ARE THE BED'S OWN RINGS, read at the lamp's height — the rearmost
+    rim ring first, then each one forward, then the last full section at Y_BED_R.
+    Since the rear face became the bed's own last band, that list simply IS where the
+    skin is; it used to reconstruct the same curve from TAIL_RIM's scale factors,
+    which stopped being the whole story the moment the arc gained its close term.
+    """
+    base = bed_ring(Y_BED_R)
+    pts = []
+    for spec in reversed(TAIL_RIM):
+        x, y = ring_flank(tail_rim_ring(spec, base), z, BED_I_ARC)
+        pts.append((sx * abs(x), y))
+    x, y = ring_flank(base, z, BED_I_ARC)
+    pts.append((sx * abs(x), y))
+    # Step the inboard end clear of the shut line, so the lens sits on the rear face
+    # rather than straddling the gap it is supposed to stop short of.
+    pts[0] = (pts[0][0] + sx * 0.014, pts[0][1])
+    return pts
+
+
+def tail_lamp(p, sx):
+    """One wrapped tail lamp, swept along tail_skin_path()."""
+    zm = 0.5 * (Z_TAIL0 + Z_TAIL1)
+    path = tail_skin_path(sx, zm)
+    span = Z_TAIL1 - Z_TAIL0
+    rings = []
+    for i, (x, y) in enumerate(path):
+        # Outward normal = the plan tangent turned a quarter turn.  Taken from the
+        # NEIGHBOURS rather than per-segment so consecutive sections share it and the
+        # sweep cannot kink at a station.  The sx factor flips the turn with the side.
+        a, b = path[max(0, i - 1)], path[min(len(path) - 1, i + 1)]
+        tx, ty = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(tx, ty) or 1.0
+        nx, ny = sx * ty / L, -sx * tx / L
+        sh = TAIL_LAMP_SHRINK[i]
+        z0, z1 = Z_TAIL0 + span * sh * 0.5, Z_TAIL1 - span * sh * 0.5
+        h = z1 - z0
+
+        def at(off, u):
+            # THE PATH IS SOLVED AT ONE HEIGHT (zm) but the tail surface ROLLS FORWARD
+            # as it climbs — up to 8 mm over the lamp's own span.  Extruded straight,
+            # the lens ends up that far behind the panel at its top, and the bezel
+            # return (near-horizontal, so a big face for its depth) shows through the
+            # back as a black wedge.  Carrying the lean delta puts every section point
+            # on the skin at its OWN height instead.
+            z = z0 + h * u
+            return (x + nx * off, y + ny * off + tail_lean(z) - tail_lean(zm), z)
+        rings.append([at(-TAIL_LAMP_DEEP, 0.0)]
+                     + [at(TAIL_LAMP_PROUD, u) for u in TAIL_LAMP_U]
+                     + [at(-TAIL_LAMP_DEEP, 1.0)])
+    # Both caps are seen — the inboard one is the shut line beside the tailgate, the
+    # outboard one is where the lens dies on the flank — so both are bezel-dark.
+    loft(p, rings, "RangerTail", band_mats=TAIL_LAMP_MATS,
+         cap_first_mat=DARK, cap_last_mat=DARK)
 
 
 def build_bed(p):
@@ -832,7 +1092,24 @@ def build_bed(p):
     # Rear rim: three rings that turn the bedsides INTO the tail and roll the rail
     # line forward as it meets the tailgate.
     for spec in TAIL_RIM:
-        rings.append(tail_rim_ring(spec, rings[0 if False else -1] if False else base_last))
+        rings.append(tail_rim_ring(spec, base_last))
+    # THE REAR CAP IS PAINT, NOT DARK, AND THAT IS THE WHOLE FIX (2026-09-05).
+    #
+    # It is ONE n-gon over a 24-point ring whose y spans 66 mm: TAIL_LEAN_UP rolls
+    # the rail 50 mm forward while the tub floor stays put, so the rear opening is a
+    # steeply leaning loop, not a plane.  A non-planar n-gon gets TRIANGULATED, and
+    # those triangles chord straight across the lean — MEASURED at up to 28 mm
+    # rearward of the tail surface over the rail corner.  Dark, that chord sat in
+    # front of the painted rear panels as a grey wedge above each tail lamp: the
+    # owner's "dark grey body showing through where it clips" (2026-09-05).
+    #
+    # No offset fixes it.  Standing the panels 28 mm proud DOES hide it (swept and
+    # measured), but 28 mm is a visible lip round the whole bed — trading the owner's
+    # other complaint, the awkward step, for this one.  Painting the cap removes the
+    # fault instead of hiding it: a body-colour chord behind body-colour panels is
+    # invisible whatever it does, and the cap is only ever SEEN through the slot under
+    # the tailgate, which now gets its darkness from an explicit plate that cannot
+    # wobble.  See build_rear_end().
     loft(p, rings, "RangerPaint", cap_first=True, cap_last=True,
          band_mats=BED_BANDS, cap_last_mat=DARK)
 
@@ -864,13 +1141,18 @@ def build_bed_detail(p):
                      (Y_TAILGATE + 0.094, Y_TAILGATE + 0.060)):
         box(p, -0.560, 0.560, yb, yf, Z_BEDFLOOR + 0.055, Z_RAIL - 0.075, "RangerPaint")
 
-    # Tailgate outer: the horizontal crease that splits the panel, and the handle.
-    # Keyed to the TAILGATE plane.  These were hardcoded at the old Y_TAIL and ended
-    # up 32 mm behind the tailgate, i.e. floating inside the bumper.
-    box(p, -0.500, 0.500, Y_TAILGATE - 0.019, Y_TAILGATE - 0.003, 0.985, 1.045,
-        "RangerPaint")
-    box(p, -0.115, 0.115, Y_TAILGATE - 0.023, Y_TAILGATE - 0.003, 0.880, 0.935,
-        "RangerTrim")
+    # Tailgate outer: the handle, and nothing else.  There USED to be a body-colour
+    # crease box above it, standing 16 mm proud across the middle of the gate; the
+    # owner's verdict (2026-09-05) was "there is a red rectangular body on the
+    # tailgate above the handle.  this can be removed".  The reference gate is a
+    # plain stamping with the handle and the Ford oval on it — the crease was a
+    # feature the real truck does not have.
+    # Keyed to the GATE'S OWN FACE at its own height, not to the Y_TAILGATE plane —
+    # the gate rides tail_y(), so a constant offset leaves trim floating behind the
+    # panel it is supposed to be pressed into.
+    for x0, x1, z0, z1, proud, mat in ((-0.115, 0.115, 0.880, 0.935, 0.020, "RangerTrim"),):
+        yg = tail_y(0.0, 0.5 * (z0 + z1)) - 0.003
+        box(p, x0, x1, yg - proud, yg, z0, z1, mat)
 
     # Stake pockets — two per rail.  Tiny, but they are the only thing that says
     # "this rail is a folded steel channel" rather than a solid bar.
@@ -883,7 +1165,7 @@ def build_bed_detail(p):
 # ---------------------------------------------------------------------------
 # FRONT END
 # ---------------------------------------------------------------------------
-def _sweep(part, xs, prof, mat, cap=True):
+def _sweep(part, xs, prof, mat, cap=True, surf=None):
     """Sweep a y-z profile along x, laying each station on the nose's barrel curve.
 
     `prof(x)` returns the section at that x as (dy, z) pairs measured BACK from the
@@ -892,15 +1174,75 @@ def _sweep(part, xs, prof, mat, cap=True):
     at the profile point's own z is what makes a headlamp sweep back at its top and
     bottom the way the sheet metal around it does; using only x would leave every
     fitting on a vertical plane inside a bullet-shaped hole.
+
+    `surf` overrides WHICH surface that is.  Parts living inside the nose rim take
+    the default; parts that wrap past it — the air dam's corner return — pass
+    corner_y, or their outboard stations hang in front of a fender that turned back
+    300 mm ago.
     """
-    rings = [[(x, nose_y(x, z) - dy, z) for dy, z in prof(x)] for x in xs]
+    surf = surf or nose_y
+    rings = [[(x, surf(x, z) - dy, z) for dy, z in prof(x)] for x in xs]
     loft(part, rings, mat, cap_first=cap, cap_last=cap)
 
 
 def build_front_end(p):
     # The opening is bounded by the nose outline, which tapers toward the top —
     # push it wider than this and the frame inverts.
-    OPEN_X, OPEN_Z0, OPEN_Z1 = 0.712, Z_LAMP0, Z_LAMP1
+    OPEN_X, OPEN_Z0, OPEN_Z1 = 0.684, Z_LAMP0, Z_LAMP1
+
+    # THE APERTURE'S TOP-OUTER CORNER HAS TO TUCK IN — this is the "small tear near
+    # the headlights" (owner, 2026-09-05), and it was never a hole: the mesh has no
+    # boundary edge there.  frame() pairs rim-ring point k with inner point k, and
+    # rim point 6 (the fender shoulder) sits at x 0.672, which is 40 mm INBOARD of
+    # OPEN_X.  With the aperture's top corner left at (OPEN_X, OPEN_Z1) that one quad
+    # ran outside-in: a twisted, near-edge-on sliver of paint that flat shading
+    # renders almost black, and it reads as a crack up the fender.
+    #
+    # Pulling the corner in to OPEN_X_TOP un-twists it.  HOW MUCH SLANT IS THE
+    # MINIMUM, and the answer has now been wrong in both directions.  The first cut
+    # dropped the outer edge to the aperture's mid-height; the second left it at
+    # 0.700 / 0.930, which is a 60 mm fall over the outer 40 mm of the hole.  Both
+    # got the same verdict from the owner — "the front indicator lights are awkwardly
+    # crushed ... they appear as trapezoids when they should be simple rectangular.
+    # maybe the outside top corner can round to meet the hood/fascia line but overall
+    # should be a rectangle" (2026-09-05).
+    #
+    # What constrains it is the FENDER'S OWN WIDTH.  Between the rim's hip (x 0.750
+    # at z 0.824) and its shoulder (x 0.672 at z 1.019) the body narrows as it climbs,
+    # so the aperture's outer edge can only be as tall as the point where the sheet
+    # metal is still that wide.  That is a TRADE, not a fixed slant: every millimetre
+    # off OPEN_X buys ~2.5 mm of height at that edge.  Spending 16 mm of width buys
+    # enough height to run the outer edge to 0.972 — 18 mm short of the aperture's
+    # own top — so what is left is a rectangle with a 38 x 18 mm nick off its top
+    # outer corner, i.e. exactly the "round to meet the hood line" the owner allowed.
+    # The lens is now 202 mm tall everywhere except that last 38 mm.
+    #
+    # The width the aperture gives up is NOT lost: the lamp keeps going past it, on
+    # corner_lamp() below, which is what turns the corner onto the fender flank.
+    # Both limits are asserted below rather than left as a comment to drift.
+    OPEN_X_TOP = 0.646               # aperture's top-outer corner, inboard of rim pt 6
+    OPEN_Z_CNR = 0.972               # ...and how high its outer edge reaches
+
+    def open_top(x):
+        """Top edge of the lamp aperture at |x| — flat inboard, slanting down to the
+        outer corner.  Anything let into the hole reads its own ceiling off this."""
+        ax = abs(x)
+        if ax <= OPEN_X_TOP:
+            return OPEN_Z1
+        t = min(1.0, (ax - OPEN_X_TOP) / (OPEN_X - OPEN_X_TOP))
+        return OPEN_Z1 + (OPEN_Z_CNR - OPEN_Z1) * t
+
+    _rim = nose_rim_ring(NOSE_RIM[-1])
+
+    def _body_half_width(z):
+        """The rim's own flank width at height z, hip to shoulder."""
+        (xa, _ya, za), (xb, _yb, zb) = _rim[5], _rim[6]
+        return xa + (xb - xa) * min(1.0, max(0.0, (z - za) / (zb - za)))
+
+    assert OPEN_X_TOP < abs(_rim[6][0]), \
+        "aperture top corner must sit INBOARD of the rim's fender shoulder"
+    assert OPEN_X < _body_half_width(OPEN_Z_CNR), \
+        "aperture outer edge reaches above the height the fender is still that wide"
 
     # The nose cap, as a frame around the lamp/grille opening.  Point order matches
     # the rim ring; the duplicated corners collapse into triangles, which is what
@@ -912,8 +1254,8 @@ def build_front_end(p):
     inner = [(0.0, OPEN_Z0),
              (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0),        # pan chamfer
              (OPEN_X, OPEN_Z0), (OPEN_X, OPEN_Z0),        # pan side, arch soffit
-             (OPEN_X, 0.5 * (OPEN_Z0 + OPEN_Z1)),         # flank
-             (OPEN_X, OPEN_Z1), (0.0, OPEN_Z1)]
+             (OPEN_X, OPEN_Z_CNR),                        # flank
+             (OPEN_X_TOP, OPEN_Z1), (0.0, OPEN_Z1)]       # tucked corner — see above
     inner = inner + [(-x, z) for x, z in reversed(inner[1:7])]
     assert len(inner) == len(nose_rim_ring(NOSE_RIM[-1])), \
         "nose frame inner ring must match clip_ring()'s point count"
@@ -929,8 +1271,8 @@ def build_front_end(p):
     # punched through the fenders as two dark notches.  Constant setback behind
     # nose_y() instead, so it is parallel to the face everywhere.
     _sweep(p, [-0.775, -0.500, -0.250, 0.0, 0.250, 0.500, 0.775],
-           lambda x: [(0.150, Z_VAL0 + 0.020), (0.150, OPEN_Z1 + 0.006),
-                      (0.112, OPEN_Z1 + 0.006), (0.112, Z_VAL0 + 0.020)], DARK)
+           lambda x: [(0.150, OPEN_Z0 - 0.030), (0.150, OPEN_Z1 + 0.006),
+                      (0.112, OPEN_Z1 + 0.006), (0.112, OPEN_Z0 - 0.030)], DARK)
 
     # Grille: a body-colour surround with four chrome bars, every one of them swept
     # along the barrel curve so the grille reads ROUNDED, not flat (owner: "the
@@ -953,38 +1295,166 @@ def build_front_end(p):
                lambda x: [(0.060, OPEN_Z0), (0.060, OPEN_Z1),
                           (0.004, OPEN_Z1), (0.004, OPEN_Z0)], "RangerPaint")
 
-    # Headlamps.  Six-point section, not a box: the lens face is convex and rolls
-    # back at the top and bottom, and the whole unit follows the barrel curve, so it
-    # reads as a moulded object rather than a rectangle stuck on the front (owner:
-    # "the headlights are smooth curved objects, not rectangles").
-    def lens_prof(z0, z1, deep):
-        zm = 0.5 * (z0 + z1)
-        return lambda x: [(deep, z0), (deep * 0.34, z0 + 0.016), (0.008, zm),
-                          (deep * 0.34, z1 - 0.016), (deep, z1), (deep + 0.030, zm)]
+    # ONE CLUSTER, ONE LOFT (2026-09-05).
+    #
+    # This has now been wrong three ways in a row, and every time the fault was the
+    # same: the lamp was built as SEPARATE BODIES that had to be made to agree.
+    # First a swept lens in the aperture plus a lofted wrap round the corner — "its
+    # also clear they're a different body than the front indicator light surface".
+    # Merging those two left the headlamp still on its own sweep, its own profile and
+    # its own depth, so the clear-to-amber join was a STEP rather than a divider, and
+    # the amber sat proud on the corner instead of in it.  On the reference the whole
+    # cluster is ONE moulded assembly: one outline, one lens plane, and the amber is
+    # simply where that surface stops being clear.
+    #
+    # So it is one loft now — grille surround, across the front face, round the corner
+    # onto the fender — and the clear/amber divider is a BAND MATERIAL change part way
+    # along it.  Flat shading draws that edge for free, exactly as it does on the tail
+    # lamps.  There is no join left to misalign: one z schedule gives one top edge and
+    # one bottom edge across the whole unit, and one face schedule gives one plane.
+    #
+    # The path stations still come from the RIM RINGS past the aperture, because the
+    # fender has turned there and a swept surface y = f(x) cannot describe it — see
+    # the note on ring_flank().  Every knee of the blend is a station: the rim is
+    # convex in plan, so a chord across two of its rings lies INSIDE the metal and the
+    # skin pokes out through the lens.
+    NOSE_LAMP_BACK = 0.026           # how far the section sits BEHIND its own face.
+                                     # Relative, not absolute: the face itself travels
+                                     # 34 mm from recessed to proud along the path, and
+                                     # a fixed back plane collapsed the section at the
+                                     # inboard end where the two met.
+    FACE_X = (0.422, 0.500, 0.575, OPEN_X_TOP, OPEN_X)
+    N_FACE = len(FACE_X)             # stations on the nose face, before the corner
+    N_CLEAR = 3                      # ...and how many BANDS of it are the headlamp.
+                                     # THE DIVIDER LANDS ON OPEN_X_TOP, so the amber
+                                     # gets 38 mm of front face and everything else is
+                                     # round the corner.  Measured off the reference
+                                     # front shot, the amber is only ~15% of the
+                                     # cluster's projected width — it reads big in a
+                                     # three-quarter view because that is where the
+                                     # wrap faces the camera, and putting the divider
+                                     # where the three-quarter view suggests made the
+                                     # front view 38% orange.
+    # Face offset along the outward normal, per station.  NEGATIVE is recessed into
+    # the aperture, positive is proud on sheet metal.  ONE ramp for the whole cluster
+    # is the point of this rework: the headlamp is deep in a hole at the grille and
+    # the lamp is flush with the fender at the corner, and everything between is
+    # interpolated rather than being two schedules meeting at a seam.
+    # IT REACHES +0.009 ON THE FENDER, and that is a clearance, not a styling choice.
+    # The clip section has a KNEE at Z_HIP where the flank stops going straight up and
+    # starts tucking toward the shoulder — that is the body's widest point.  The lens
+    # samples its own height at five fixed fractions, so between two of them it chords
+    # STRAIGHT ACROSS that knee, measured 3.7 mm inside the metal at the worst station.
+    # At 4 mm the fender came out through the lens as a red splinter.  9 mm clears it
+    # with margin and still reads flush; a real lens stands off its wing about that.
+    NOSE_LAMP_FACE = (-0.030, -0.028, -0.024, -0.012, 0.002,
+                      0.009, 0.009, 0.009, 0.009, 0.009)
+    # Convex apex added to the face at mid height.  The owner's note from 2026-09-04
+    # stands — "the headlights are smooth curved objects, not rectangles" — so the
+    # clear end keeps a real bulge; it fades out round the corner, where the lens is
+    # following the fender's curvature instead of its own.
+    NOSE_LAMP_BULGE = (0.022, 0.022, 0.020, 0.012, 0.006,
+                       0.004, 0.002, 0.0, 0.0, 0.0)
+    # How much of the lamp's height is eaten per station as it dies onto the flank,
+    # and 66% of that comes off the BOTTOM: on the reference the top edge runs level
+    # with the hood line right round the corner while the lower edge lifts away.  ZERO
+    # across every front-face station — that whole stretch is the single rectangle
+    # with one top edge that the reference cluster is.
+    NOSE_LAMP_SHRINK = (0.0, 0.0, 0.0, 0.0, 0.0,
+                        0.02, 0.10, 0.22, 0.36, 0.58)
+    NOSE_LAMP_BIAS = 0.66
+    NOSE_LAMP_TAIL = 0.060           # how far back along the STRAIGHT fender the lamp
+                                     # runs past the rim blend.  Measured off IMG_0879:
+                                     # the reference amber shows ~135 mm from the side
+                                     # and the rim is only 84 mm deep.
+
+    def head_lamp(sx):
+        z0w = OPEN_Z0 + 0.008
+
+        def station(i, z):
+            """Plan position of the skin at path station i, AT ITS OWN HEIGHT z.
+
+            Solving per height rather than once at mid height is what keeps the lens
+            ON the skin: the nose rolls back as it climbs, and a section extruded
+            straight from a mid-height path ends up ~10 mm behind the panel at its
+            top — the fault tail_lamp() carries its lean delta to avoid.
+            """
+            if i < N_FACE:
+                return (sx * FACE_X[i], nose_y(FACE_X[i], z))
+            j = i - N_FACE
+            if j < len(NOSE_RIM):
+                x, y = ring_flank(nose_rim_ring(NOSE_RIM[-1 - j]), z)
+            else:
+                # ...then the base station where the blend ends, and one more on the
+                # STRAIGHT fender behind it.  Without that last one the lamp has
+                # nowhere to die and stops dead on the corner as a wedge — the rim is
+                # only 84 mm deep and the reference lamp shows 135 from the side.
+                yb = CLIP_ST[0][0] - NOSE_LAMP_TAIL * (j - len(NOSE_RIM))
+                x, y = ring_flank(clip_ring(yb), z)
+            return (sx * abs(x), y)
+
+        n = N_FACE + len(NOSE_RIM) + 2      # face, every rim ring, base, flank
+        for sched in (NOSE_LAMP_FACE, NOSE_LAMP_BULGE, NOSE_LAMP_SHRINK):
+            assert len(sched) == n, "one entry per path station"
+        zm = 0.5 * (z0w + open_top(OPEN_X) - 0.008)
+        path = [station(i, zm) for i in range(n)]
+        rings = []
+        for i in range(n):
+            # Outward normal = the plan tangent turned a quarter turn, taken from the
+            # NEIGHBOURS so consecutive sections share it and the sweep cannot kink.
+            # It points +y (forward) along the nose face and swings to +x (outboard)
+            # as the path turns back down the flank.  sx flips the turn with the side.
+            a, b = path[max(0, i - 1)], path[min(n - 1, i + 1)]
+            tx, ty = b[0] - a[0], b[1] - a[1]
+            L = math.hypot(tx, ty) or 1.0
+            nx, ny = -sx * ty / L, sx * tx / L
+            # The ceiling is open_top()'s, clamped at the aperture edge: flat inboard,
+            # then the nick off the top outer corner, then flat again round the fender.
+            # ONE line for the clear lens and the amber both, which is what makes them
+            # read as a single unit rather than two lamps that nearly line up.
+            top = open_top(min(abs(path[i][0]), OPEN_X)) - 0.008
+            span, sh = top - z0w, NOSE_LAMP_SHRINK[i]
+            z0 = z0w + span * sh * NOSE_LAMP_BIAS
+            z1 = top - span * sh * (1.0 - NOSE_LAMP_BIAS)
+            h, off, bul = z1 - z0, NOSE_LAMP_FACE[i], NOSE_LAMP_BULGE[i]
+
+            def at(o, u, i=i, nx=nx, ny=ny, z0=z0, h=h):
+                z = z0 + h * u
+                bx, by = station(i, z)
+                return (bx + nx * o, by + ny * o, z)
+            rings.append([at(off - NOSE_LAMP_BACK, 0.0), at(off, 0.06),
+                          at(off + bul, 0.5), at(off, 0.94),
+                          at(off - NOSE_LAMP_BACK, 1.0)])
+        # The divider is a band material, not a body boundary — see the note above.
+        def lens_mat(seg, _k):
+            return "RangerLens" if seg < N_CLEAR else "RangerAmber"
+        # Both caps are bezel-dark: the inboard one butts the grille surround, the
+        # outboard one is where the lens dies on the fender.
+        loft(p, rings, "RangerLens", band_mats=lens_mat,
+             cap_first_mat=DARK, cap_last_mat=DARK)
+
     for sx in (1, -1):
-        # Inboard station is gx + 0.030, i.e. CLEAR of the grille surround upright
-        # (which spans gx..gx+0.022).  At 0.404 it sat inside the upright, and the
-        # lens's convex apex poked out through its side as a bump at mid height
-        # (owner, 2026-09-04).
-        _sweep(p, [sx * (gx + 0.030), sx * 0.520, sx * 0.612],
-               lens_prof(OPEN_Z0 + 0.008, OPEN_Z1 - 0.010, 0.052), "RangerLens")
-        # Amber corner: shorter, and it wraps harder because it is out where the
-        # nose is already turning back into the fender.
-        _sweep(p, [sx * 0.616, sx * 0.668, sx * 0.712],
-               lens_prof(OPEN_Z0 + 0.010, OPEN_Z1 - 0.042, 0.056), "RangerAmber")
+        head_lamp(sx)
 
     # Chrome bumper blade.  Seven-point ROUND section — a rolled top, a convex face
     # and a tuck under — swept along X so the ends wrap back.  Owner: "the bumpers
     # are especially rounded and they stick out pretty far", so the crown sits a
     # full 60 mm ahead of the face centre and the section is 100 mm deep.
-    # The blade's plan curve is DERIVED from the prow, not hand-typed: a bumper that
-    # wraps less than the nose it hangs off looks bolted on, and one that wraps more
-    # disappears in profile.  BUMP_WRAP is a little deeper than NOSE_PROW because a
-    # real bumper does turn harder at its ends than the sheet metal behind it.
-    BUMP_WRAP, BUMP_W = 0.150, 0.836
-    xs = [-0.836, -0.780, -0.560, 0.0, 0.560, 0.780, 0.836]
-    dys = [BUMP_WRAP * (min(1.0, abs(x) / BUMP_W) ** 2) for x in xs]
+    # THE BLADE'S PLAN CURVE IS THE BODY'S OWN, offset forward by a constant.  It used
+    # to be a quadratic (BUMP_WRAP * (x/W)^2) tuned against the prow, which was close
+    # enough while the blade sat 74 mm lower and the fender behind it was hidden by
+    # the arch.  At its new height that guess put the blade's ends ~300 mm AHEAD of
+    # the fender they are meant to die into, and daylight under each end showed 118 mm
+    # of painted flank — the owner's "red wedges", back for the third time.
+    #
+    # corner_y() answers where the metal actually is, inside the rim and past it, so
+    # the blade simply tracks it.  The offset is PINNED at the centreline: the crown
+    # has to land exactly on Y_NOSE, because Y_NOSE is the truck's front extent and
+    # report() asserts the overall length against the physics preset.
     ZBM = 0.5 * (Z_BUMP0 + Z_BUMP1)
+    xs = [-0.836, -0.800, -0.740, -0.560, 0.0, 0.560, 0.740, 0.800, 0.836]
+    BUMP_PIN = Y_NOSE - corner_y(0.0, ZBM)     # ~0.060 — the blade's standoff
+    dys = [Y_NOSE - (corner_y(x, ZBM) + BUMP_PIN) for x in xs]
 
     def bprof(x, dy):
         yf = Y_NOSE - dy                       # this blade's own front plane
@@ -1006,14 +1476,23 @@ def build_front_end(p):
     # and the painted nose face showed beside it: the two red wedges the owner
     # arrowed (2026-09-04).  Its lower edge now rises to the rocker line across the
     # same span the body does.
-    vxs = [-0.786, -0.700, -0.560, -0.300, 0.0, 0.300, 0.560, 0.700, 0.786]
+    # It now WRAPS THE CORNER on corner_y() rather than stopping on the front face at
+    # 0.786.  Under the raised blade the flank between the rocker and the blade's
+    # underside is 118 mm of bare paint at the corner, and only a dam that follows the
+    # fender round covers it — which is also what the reference car's dam does, right
+    # back to the arch.
+    vxs = [-0.828, -0.790, -0.740, -0.640, -0.480, -0.240, 0.0,
+           0.240, 0.480, 0.640, 0.740, 0.790, 0.828]
 
     def val_bottom(x):
-        # Lands EXACTLY on the body's own lower edge — Z_UNDER under the pan, the
-        # rocker outboard of it — so there is no sliver of painted face left showing
-        # below the fascia at any x.
-        t = min(1.0, max(0.0, (abs(x) - W_UNDER) / (0.720 - W_UNDER)))
-        return Z_UNDER + (Z_ROCKER - Z_UNDER) * t * t
+        # Hangs BELOW the pan on the centreline and tucks up to the rocker outboard,
+        # so there is no sliver of painted face left showing below the fascia at any
+        # x.  Keyed to Z_VAL0, not Z_UNDER: since 2026-09-05 the pan is up at 0.415
+        # and the dam is the front's lowest part, which is what the reference does.
+        # The tuck now runs over 0.62..0.83, not 0.56..0.72 — the dam is wider, so
+        # the same rise spread over the same short span would have pinched it.
+        t = min(1.0, max(0.0, (abs(x) - 0.620) / (0.830 - 0.620)))
+        return Z_VAL0 + (Z_ROCKER - Z_VAL0) * t * t
     # NEGATIVE dy = PROUD of the sheet metal.  Below the bumper the nose frame is
     # still painted body panel, so a valance recessed behind it simply vanished and
     # the truck showed body colour under the chrome — which is not what the fascia
@@ -1026,15 +1505,19 @@ def build_front_end(p):
                               (-0.010, val_bottom(x) + 0.018),
                               (-0.022, 0.5 * (val_bottom(x) + Z_BUMP0) + 0.018),
                               (-0.004, Z_BUMP0 + 0.004),
-                              (0.012, Z_BUMP0 + 0.004)], "RangerTrim")
+                              (0.012, Z_BUMP0 + 0.004)], "RangerTrim",
+           surf=corner_y)
     _sweep(p, [-0.360, -0.180, 0.0, 0.180, 0.360],
            lambda x: [(0.048, Z_VAL0 + 0.036), (0.048, Z_BUMP0 - 0.036),
                       (0.014, Z_BUMP0 - 0.036), (0.014, Z_VAL0 + 0.036)], DARK)
-    # Licence-plate bracket, hung off the valance dead centre (as on the ref car).
-    # Proud of the valance face (which is at Y_NOSE - 0.046 on the centreline), not
-    # behind it — at 0.050 back the bracket was buried inside the plastic.
-    box(p, -0.150, 0.150, Y_FACE_C + 0.016, Y_FACE_C + 0.026, Z_VAL0 + 0.058,
-        Z_VAL0 + 0.178, DARK)
+    # Licence-plate bracket, hung off the air dam dead centre (as on the ref car),
+    # BELOW the chrome now that the blade has moved up.  Its back plane is READ OFF
+    # nose_y() at its own height plus the dam's crown offset, rather than typed as an
+    # offset from Y_FACE_C: the apex is 0.88 m up, so a constant taken there sits
+    # ~70 mm ahead of the sheet metal down at plate height and the bracket floated.
+    zb0, zb1 = Z_VAL0 + 0.058, Z_VAL0 + 0.178
+    y_dam = nose_y(0.0, 0.5 * (zb0 + zb1)) + 0.022
+    box(p, -0.150, 0.150, y_dam - 0.006, y_dam + 0.010, zb0, zb1, DARK)
 
 
 # ---------------------------------------------------------------------------
@@ -1058,7 +1541,6 @@ def build_rear_end(p):
     # z-fights.
     # 3 mm PROUD of the bed loft's rear cap, which the tail rim ring moved onto
     # exactly this plane — flush, the dark cap and the painted panel z-fight.
-    Y_P0, Y_P1 = Y_TAILGATE - 0.003, Y_TAILGATE + 0.050
     # THE REFACTOR (owner, 2026-09-04: "fix the dark triangle, refactor").
     #
     # The rear wall panels used to be rectangles whose width and height were derived
@@ -1081,64 +1563,72 @@ def build_rear_end(p):
         x, y, z = ring[i]
         return (sx * abs(x), y, z)
 
-    def wall_outline(sx):
-        """The bed side wall's rear face, as the rim actually left it.
+    # THE REAR FACE IS NOT BUILT HERE ANY MORE (2026-09-05).  It used to be a solid
+    # laid over the bed's rear opening — first a prism, then a rib loft — and the
+    # owner's verdict on the second one was that it still read as what it was: "the
+    # bedside end caps are jarring because theyre still subtly visibly caps.  can we
+    # merge them into the bedsides?"  They are merged: TAIL_RIM's last ring carries
+    # the outer arc in to the shut line, so the rear face is the bed loft's own last
+    # band.  What is left down here is only what genuinely is not bedside — the
+    # tailgate, the shadow slot behind it, and the lamps let into the corner.
+    TG_X = TAIL_SHUT_X - TAIL_SHUT                 # the tailgate's own edge
+    TAIL_SET = 0.004            # how far the gate stands off tail_y().  Small, because
+                                # the bedside beside it now IS tail_y() and a step at
+                                # the shut line is exactly what this whole rework was
+                                # about — but not zero: the bed loft's rear cap is
+                                # painted and sits on that surface too, and flush the
+                                # two z-fight.
+    # THE GATE IS SUBDIVIDED ON THE BEDSIDE'S OWN HEIGHTS.  Two panels sharing a shut
+    # line have to share their subdivision or the leaned surface facets differently
+    # either side of the gap and the line kinks; the gate used to carry hand-typed z
+    # stations for exactly that reason.
+    TG_Z = [Z_P0] + [ring[i][2] for i in BED_I_ARC if ring[i][2] > Z_P0 + 0.030]
+    assert abs(Z_RBUMP0 - ring[BED_I_SILL][2]) < 0.004, \
+        "step bumper's lower edge must land on the bedside's sill where it terminates"
 
-        Outer edge = the ring's arc from the flank up over the rail to the inner
-        rail (indices FLANK_LO..RAIL_IN).  Inner edge = straight down the aperture
-        at the inner rail's own x.  Closed along Z_P0 at the bottom.
-        """
-        # Pulled 5 mm inboard of the skin.  Sitting exactly ON it, the panel's outer
-        # side face is coplanar with the bed's last loft segment and z-fights it;
-        # inset, the sliver of dark cap that shows reads as a panel gap, which is
-        # what a real one looks like anyway.
-        arc = [ring_pt(i, sx) for i in
-               (BED_I_FLANK_LO, BED_I_HIP, BED_I_RAIL_OUT, BED_I_RAIL_TOP,
-                BED_I_RAIL_IN)]
-        arc = [(x * 0.994, y, z) for x, y, z in arc]
-        # Where the flank crosses Z_P0, interpolated along its own segment so the
-        # panel starts exactly on the skin rather than near it.
-        a, b = arc[0], arc[1]
-        t = (Z_P0 - a[2]) / (b[2] - a[2])
-        low = tuple(a[k] + (b[k] - a[k]) * t for k in range(3))
-        inner_x, inner_y = arc[-1][0], arc[-1][1]
-        return [low] + arc[1:] + [(inner_x, inner_y, Z_P0)]
+    # THE SHADOW SLOT IS THE BED'S OWN REAR CAP, and it is dark again (2026-09-05).
+    #
+    # There is a gap between the tailgate's bottom edge and the step bumper's top
+    # face, and on the reference truck it reads black — it is most of what stops the
+    # tail looking like a slab.  That used to be the cap's job, then the cap had to
+    # be PAINTED because its triangulation chorded in front of the separate rear
+    # panel and showed as a grey wedge above the lamps, and the slot had to be faked
+    # with two hand-placed plates instead.
+    #
+    # With the rear face merged into the bedside there is no panel left for the cap
+    # to spoil: its outline now stops AT the shut line, so it cannot appear outboard
+    # of it at all, and everything inboard is behind the tailgate.  Measured on a
+    # 2000-ray grid, the only places it is visible are the shut line itself and the
+    # slot under the gate — which is exactly where a dark interior belongs.  Both
+    # plates deleted; the cap is the backstop it was always meant to be.
 
-    def slab(poly, back, front, mat):
-        """Prism between two copies of a polygon, offset in y."""
-        loft(p, [[(x, y + back, z) for x, y, z in poly],
-                 [(x, y + front, z) for x, y, z in poly]], mat)
-
-    for sx in (1, -1):
-        slab(wall_outline(sx), -0.004, 0.050, "RangerPaint")
-
-    # Tailgate: spans the aperture between the two inner walls.  Its top corners sit
-    # on the ring's inner-rail point, so the shut line closes exactly.
-    tg_x = abs(ring[BED_I_RAIL_IN][0]) - 0.006
-    tg_top_y = ring[BED_I_RAIL_IN][1]
+    # TAILGATE.  It spans the aperture between the bedsides, ON THE TAIL SURFACE like
+    # everything else back here, and on the SAME z stations they are — see TG_Z.
+    #
+    # It used to be anchored to the RAIL and pushed BACK by the lean everywhere below
+    # it, which bulged it 48 mm behind the tailgate plane at mid height and quietly
+    # ate nearly half of the step bumper's 111 mm of protrusion — the one number this
+    # whole tail was rebuilt around.
+    #
+    # THREE STATIONS ACROSS, not two, so the face carries TAIL_PROW.  A gate that is
+    # flat across while the bedsides either side of it round forward is precisely the
+    # "not following the body lines" the owner called out.
+    tg_x = TG_X
+    TG_T = 0.050                                  # panel thickness, on the surface
     tg = []
-    for z in (Z_P0, 0.940, Z_P1 - 0.058, Z_P1 - 0.024, Z_P1):
-        f = tail_lean(z) - tail_lean(Z_P1) + (tg_top_y - Y_TAILGATE)
-        tg.append([(-tg_x, Y_P0 + f, z), (tg_x, Y_P0 + f, z),
-                   (tg_x, Y_P1, z), (-tg_x, Y_P1, z)])
+    for z in TG_Z:
+        def gy(x, z=z):
+            return tail_y(x, z) - TAIL_SET
+        tg.append([(-tg_x, gy(tg_x), z), (0.0, gy(0.0), z), (tg_x, gy(tg_x), z),
+                   (tg_x, gy(tg_x) + TG_T, z), (0.0, gy(0.0) + TG_T, z),
+                   (-tg_x, gy(tg_x) + TG_T, z)])
     loft(p, tg, "RangerPaint")
 
-    # Tail lamps, let into the wall panels.  Their extents come off the SAME ring
-    # points the panels do, so they cannot drift outside the metal they sit in.
-    # Red / clear / red top to bottom, per the reference unit.  The dark bezel is
-    # not decoration — with a red default body the red lens would otherwise vanish
-    # into the paint and only the clear band would read.
-    lamp_in = abs(ring[BED_I_RAIL_IN][0]) + 0.006
-    lamp_out = abs(ring[BED_I_HIP][0]) - 0.010
-    lamp_y = ring[BED_I_HIP][1]
+    # Tail lamps — see the note above tail_skin_path().  They wrap the bed's rear
+    # corner and die on the flank, so there is no separate bezel box: the dark
+    # returns at the top and bottom of the swept section ARE the bezel.
     for sx in (1, -1):
-        box(p, sx * lamp_in, sx * lamp_out, lamp_y - 0.026, lamp_y - 0.002,
-            Z_TAIL0 - 0.014, Z_TAIL1 + 0.014, DARK)
-        for z0, z1, mt in ((0.906, Z_TAIL1, "RangerTail"),
-                           (0.812, 0.902, "RangerLens"),
-                           (Z_TAIL0, 0.808, "RangerTail")):
-            box(p, sx * (lamp_in + 0.012), sx * (lamp_out - 0.012),
-                lamp_y - 0.042, lamp_y - 0.010, z0, z1, mt)
+        tail_lamp(p, sx)
 
     # STEP BUMPER.  Nine-point section — rolled top, convex face, tuck under, and a
     # deep return back to its mounting plane at the tailgate.  111 mm of protrusion
