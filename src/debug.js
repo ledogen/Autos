@@ -558,9 +558,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   doubled; lower it to merge only hard overlaps; 0 disables merging entirely (an A/B, not a
   //   shipping value — it restores the doubled roads).
   v2Folder.add(params.roadV2, 'mergeProxM', 0, 40, 1).name('Merge Distance (m)').onChange(fireRoadParam)
-  // FEAT-76: 1 = OFF (no road rides another). Below 1, a road running along an OLDER road's deck
-  // pays only rho x its station+grade rate, because that earthwork is already paid for.
-  v2Folder.add(params.roadV2, 'rideRho', 0.1, 1, 0.05).name('Ride Older Road (rho)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'wyeCreaseMaxDeg', 0, 45, 1).name('Wye Crease Cap (deg)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'sibConeDeg', 0, 60, 1).name('Sibling Cone (deg)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'wSibDepart', 0, 20, 0.5).name('Sibling Depart Cost').onChange(fireRoadParam)

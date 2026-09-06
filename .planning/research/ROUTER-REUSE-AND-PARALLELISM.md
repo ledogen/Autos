@@ -1,5 +1,13 @@
 # Router: shared-corridor reuse, and the unclaimed parallelism (2026-09-04)
 
+> **SUPERSEDED IN PART, 2026-09-06.** §3's reuse architecture (a router-side discount that CREATES
+> shared corridors) was built, driven, and **rejected by the owner**: it changes where roads go, and
+> the world came out worse. FEAT-76 was rewritten to want the opposite — keep today's routing exactly
+> as it is, and change only the DEPARTURE at the end of a shared corridor from a wye to a real T.
+> See `.planning/todos/pending/feat-76-wye-to-t-promotion.md`. The MEASURED sections in §1 below all
+> stand and are the reason the rewrite is scoped the way it is; read them before touching the merge
+> ladder.
+
 Session findings, no code written. Two independent conclusions came out of one question, and they
 are **multiplicative, not competing**:
 

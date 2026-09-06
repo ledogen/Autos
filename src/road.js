@@ -606,10 +606,6 @@ export const CHUNK_SIZE = 64
 const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
-// FEAT-76: how many generations of add-on a single route may walk back through. A rides B rides C
-// is real accretion; the cap only stops a pathological chain from routing the whole neighbourhood
-// to place one spur. Constant, so it costs the rank layer no window-invariance.
-const RIDE_MAX_DEPTH       = 3
 // BUG-53 merge machinery: minimum spacing at a splice seam. A boundary vertex a centimetre from
 // the spliced point leaves a stub segment between two full ones, and the ribbon's centripetal
 // Catmull-Rom overshoots that into a corner far tighter than the control polyline shows. The planner
@@ -2628,13 +2624,9 @@ export class RoadSystem {
             if (flip && dirs._built) flip._built = true
             if (flip && dirs.sibGoal) flip.sibStart = dirs.sibGoal
             if (flip && dirs.sibStart) flip.sibGoal = dirs.sibStart
-            if (flip && dirs.ride) flip.ride = dirs.ride   // FEAT-76: direction-free, carries across the flip
             const fwd = this._edgeCenterline(c2, c1, flip, hardGrade)
             const cl = new Centerline(reversePrimitives(fwd.primitives))
             if (fwd._v2Dirs) cl._v2Dirs = true
-            // FEAT-76: the ride span is an arc FRACTION of the forward curve; the reverse mirrors it.
-            if (fwd._rideSpan) cl._rideSpan = { key: fwd._rideSpan.key, len: fwd._rideSpan.len,
-                                                f0: 1 - fwd._rideSpan.f1, f1: 1 - fwd._rideSpan.f0 }
             cl._v2DirsSpec = dirs
             this._proto.cls.set(key, cl)
             this._pendingRoutes.delete(key)
@@ -2675,8 +2667,6 @@ export class RoadSystem {
             ax: A.x, az: A.z, yA: this._v2NodeHeight(A.x, A.z),
             bx: B.x, bz: B.z, yB: this._v2NodeHeight(B.x, B.z),
             margin, blockedDiscs, dirs,
-            ...(dirs?.ride ? { ride: dirs.ride } : {}),   // FEAT-76: older roads this edge may ride
-
             // BUG-56 C — the RE-ROUTE price list. gMaxRoad is UNCHANGED: the owner ruled out
             // tightening the cap, because that trades connectivity for grade and connectivity wins.
             // What changes is wGrade, the length-vs-grade dial (cost/m = 1 + wGrade·g², minimised at
@@ -2721,14 +2711,7 @@ export class RoadSystem {
         if (!dirs) return ''
         const f = (d) => d ? `${d.x.toFixed(5)},${d.z.toFixed(5)}` : 'x'
         const fs = (a) => a ? a.map((d) => `${d.x.toFixed(3)},${d.z.toFixed(3)}`).join('|') : 'x'
-        // FEAT-76: ride payload is part of the route's identity — an edge routed against a trunk
-        // must not share a cache entry with the same edge routed without one. Fingerprint the
-        // candidate keys and each polyline's length/extent rather than the points: the polyline is
-        // a pure function of (key, seed, params, rank chain) already, so the key plus its measured
-        // shape pins it without carrying thousands of numbers into a cache string.
-        const fr = (rs) => rs ? rs.map((r) => `${r.key}@${r.cum[r.cum.length - 1].toFixed(1)}:${r.pts.length}`).join('|') : 'x'
         return `#p${f(dirs.startDir)};${f(dirs.goalDir)};${fs(dirs.sibStart)};${fs(dirs.sibGoal)}`
-             + (dirs.ride ? `#r${fr(dirs.ride)}` : '')
     }
 
     // FEAT-68 deg-2 canonical approach headings: a pass-through node is a POINT ON a longer
@@ -2831,12 +2814,6 @@ export class RoadSystem {
         // own cache namespace ('#b') — its pins differ from the layer-0 pins the warm path derives,
         // and the two geometries must never collide on one cache key.
         if (delF && (delF.flip.has(kA) || delF.flip.has(kB))) dirs._built = true
-        // FEAT-76: the older roads this edge may be an add-on to. Direction-independent — a set of
-        // neighbour polylines, not a direction of travel — so it survives the canonical/reversed
-        // spelling flip unchanged (unlike the sibling bearings just above, which swap ends).
-        const spellR = this._v2EdgeSpellings(g)
-        const spR = spellR.get(kA < kB ? kA + '|' + kB : kB + '|' + kA)
-        if (spR) { const ride = this._v2RideFor(g, drop, ...spR); if (ride) dirs.ride = ride }
         return dirs
     }
 
@@ -3741,147 +3718,6 @@ export class RoadSystem {
                        longer: own.L > SQ.L || (own.L === SQ.L && ck < qck) })
         }
         return fin(out)
-    }
-
-    // ── FEAT-76: RANK + RIDE CANDIDATES — which older roads may this edge be an add-on to? ──
-    // Owner framing (2026-09-06): the lower-ranked leg is an ADD-ON to an older road. Rank IS the
-    // accretion order — chord length descending, canonical edge key as tiebreak (owner ruling
-    // 2026-09-05) — so the long-haul road is the trunk and the short spur joins it, which is how
-    // road networks actually accrete. The older road was already built, so it does not move: a
-    // promoted T slices the trunk's registered polyline, it never re-routes it (owner ruling
-    // 2026-09-06, option (a); a through road that bends for the side road is a wye again).
-    //
-    // CHORD, not route length. Chord is a pure function of the two node positions, so rank needs no
-    // routes, no global sort and no window state — `_v2Outranks` is a two-edge comparison and there
-    // is no rank TABLE that could drift between windows. (The crossing rung's own `longer` field
-    // uses ROUTE length with the same lexicographic tiebreak; that one is settled after routing and
-    // is a different question. Do not unify them.)
-    //
-    // Squared chord throughout: order-equivalent to the length, and it keeps the comparison exact
-    // (no sqrt rounding deciding a tie that the key tiebreak is supposed to decide).
-    _v2EdgeChord2(c1, c2) {
-        const A = this._nodePos(c1), B = this._nodePos(c2)
-        const ex = A.x - B.x, ez = A.z - B.z
-        return ex * ex + ez * ez
-    }
-
-    // Strict total order. Reuse is permitted only STRICTLY up-rank, so ties must never be mutually
-    // reusable — the key tiebreak is what makes the dependency acyclic rather than merely sparse.
-    _v2Outranks(chord2P, ckP, chord2Q, ckQ) {
-        return chord2P > chord2Q || (chord2P === chord2Q && ckP < ckQ)
-    }
-
-    // Every wide-graph edge that STRICTLY outranks this one and whose chord passes within
-    // rideChordM of it. GEOMETRY ONLY, and only NODE POSITIONS at that — no routes, no planner
-    // lookups, no `drop`-dependent ordering — so the set reads identically from every window that
-    // contains the edge (gated: test/ride-rank-invariance.mjs). Dropped edges are excluded because
-    // they never register and so can never be ridden.
-    //
-    // This is the CANDIDATE set, not the decision: whether the spur actually rides a candidate is
-    // the router's business (the injected-lattice pass), and most candidates will be declined.
-    // Returned in canonical-key order so consumers cannot introduce an ordering of their own.
-    _v2RideCandidates(g, drop, wide, c1, c2) {
-        const kA = wide.key(c1), kB = wide.key(c2)
-        const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
-        if (!this._v2RideMemo || this._v2RideMemo.rev !== this._planRev())
-            this._v2RideMemo = { rev: this._planRev(), map: new Map() }
-        const memo = this._v2RideMemo.map
-        if (memo.has(ck)) return memo.get(ck)
-        const fin = (v) => { memo.set(ck, v); return v }
-        const C = this._v2Costs()
-        const CHORD = C.rideChordM ?? 300
-        const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
-        const own2 = this._v2EdgeChord2(c1, c2)
-        if (own2 <= _mband2) return fin([])
-        const A = this._nodePos(c1), B = this._nodePos(c2)
-        const spell = this._v2EdgeSpellings(g)
-        const out = []
-        for (const [q1, q2] of wide.edges) {
-            const qA = wide.key(q1), qB = wide.key(q2)
-            if (drop.has(qA + '|' + qB)) continue
-            const qck = qA < qB ? qA + '|' + qB : qB + '|' + qA
-            if (qck === ck) continue
-            const q2c = this._v2EdgeChord2(q1, q2)
-            if (q2c <= _mband2) continue
-            if (!this._v2Outranks(q2c, qck, own2, ck)) continue   // strictly up-rank only
-            const P = this._nodePos(q1), Q = this._nodePos(q2)
-            if (Math.max(P.x, Q.x) < Math.min(A.x, B.x) - CHORD || Math.min(P.x, Q.x) > Math.max(A.x, B.x) + CHORD
-                || Math.max(P.z, Q.z) < Math.min(A.z, B.z) - CHORD || Math.min(P.z, Q.z) > Math.max(A.z, B.z) + CHORD) continue
-            if (_segSegDistXZ(A, B, P, Q) > CHORD) continue
-            out.push({ qck, spQ: spell.get(qck) ?? [q1, q2], inG: spell.has(qck), chord2: q2c })
-        }
-        out.sort((a, b) => (a.qck < b.qck ? -1 : a.qck > b.qck ? 1 : 0))
-        return fin(out)
-    }
-
-    // The wide graph that produced this `drop` set. _degreeDrops memoizes {drop, wide} per window
-    // signature, so the pairing is recoverable by identity — which keeps _v2EdgeDirs' signature
-    // (and its six call sites) untouched. Ride candidates MUST come from `wide`, not the band
-    // graph: an edge near the band frontier would otherwise see fewer candidates than the same
-    // edge seen from a window centred on it, and the candidate set would stop being invariant.
-    _v2WideFor(drop) {
-        const m = this._degreeDropsMemo
-        if (!m || m.rev !== this._networkRev) return null
-        for (const e of m.map.values()) if (e.drop === drop) return e.wide
-        return null
-    }
-
-    // FEAT-76: the ride payload for one edge — the registered-shape polylines of the older roads
-    // it may be an add-on to. Empty unless rideRho < 1, so at the shipped default this allocates
-    // nothing and every route spec is byte-identical to its pre-FEAT-76 self (which is what keeps
-    // road-worker-parity and world-determinism honest while ride is being tuned).
-    //
-    // DEPTH. A candidate's own polyline is its ride-enabled route, so a second-generation add-on
-    // rides a road that itself rode something — which is what accretion means. Strict up-rank makes
-    // that acyclic, and RIDE_MAX_DEPTH caps the chain anyway: the cap is a constant, so it is as
-    // window-invariant as the rank it walks.
-    _v2RideFor(g, drop, c1, c2) {
-        const C = this._v2Costs()
-        if ((C.rideRho ?? 1) >= 1) return null
-        const depth = this._v2RideDepth || 0
-        if (depth >= RIDE_MAX_DEPTH) return null
-        const wide = this._v2WideFor(drop)
-        if (!wide) return null
-        const cands = this._v2RideCandidates(g, drop, wide, c1, c2)
-        if (!cands.length) return null
-        const out = []
-        this._v2RideDepth = depth + 1
-        try {
-            for (const r of cands) {
-                const S = this._v2RunSample(r.inG ? g : wide, drop, ...r.spQ)
-                if (!S || S.L < 60) continue
-                out.push({ key: r.qck, pts: S.pts.map((p) => ({ x: p.x, y: p.y, z: p.z })), cum: [...S.polyCum] })
-            }
-        } finally { this._v2RideDepth = depth }
-        return out.length ? out : null
-    }
-
-    // Read-only census of the rank layer for the CURRENT window — the surface
-    // test/ride-rank-invariance.mjs reads. Returns Map<edgeCanonKey, string[]> of ride-candidate
-    // keys. Rebuilds the band graph exactly as _streamNetwork does; touches no plan state.
-    debugRideCensus() {
-        const center = this._networkCenter
-        if (!center) return new Map()
-        const R = this._proto.radius
-        const HW = this._bandHalfWidth()
-        const cmx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
-        const mx0 = cmx - HW, mx1 = cmx + HW
-        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
-        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
-        const g = this._buildUrquhart(mx0, mx1, mz0, mz1)
-        const { drop, wide } = this._degreeDrops(mx0, mx1, mz0, mz1)
-        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
-        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
-        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
-        const out = new Map()
-        for (const [c1, c2] of g.edges) {
-            const a = g.key(c1), b = g.key(c2)
-            if (drop.has(a + '|' + b)) continue
-            if (!inBand(c1) && !inBand(c2)) continue
-            const ck = a < b ? a + '|' + b : b + '|' + a
-            out.set(ck, this._v2RideCandidates(g, drop, wide, c1, c2).map((r) => r.qck))
-        }
-        return out
     }
 
     // ── BUG-57: the CROSSING RUNG (owner ruling 2026-08-25 — the crossing invariant) ─────────
