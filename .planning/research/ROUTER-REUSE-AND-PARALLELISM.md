@@ -48,6 +48,61 @@ One crumb of neighbour-awareness already lives in the router: R5's `sibStart` / 
 (`corridor-router.js:1018`), a sibling-departure cost. But it applies **only at the node exit**, and
 only as a **penalty** — never a discount.
 
+### MEASURED — the step-1 sharing census (2026-09-06, main `4a0016b`, shipped defaults)
+
+`node test/route-sharing-census.mjs [seeds] [radius]`. Walks every unordered pair of registered
+runs, finds the maximal spans where the two centrelines stay within `mergeProxM` (18 m), and reads
+each pair's OUTCOME off the registered geometry rather than the tallies — `cededSpans` naming the
+partner is a merge, `offCurveSpans` without a ceded span is a shove, neither is nothing. Spans under
+`MINREG` (30 m) are excluded as pad-dressing, the same floor `_v2NodeMerges` uses. Rainy-day script,
+not a gate. Baseline is `RANGER_PARAMS` per QUAL-29 — main as it stands, not the v1-at-reanchor
+column.
+
+Seeds 6/20/11/7/3 at radius 1400 (191 km of road, 251 runs, 6192 pairs):
+
+| seed | runs | km | sharing pairs | disjoint | node-anchored | mid-span | MERGE | SHOVE | NOTHING |
+|---|---|---|---|---|---|---|---|---|---|
+| 6 | 51 | 37.9 | 9 | 0 | 8 | 1 | 9 | 0 | 0 |
+| 20 | 55 | 41.4 | 6 | 0 | 6 | 0 | 6 | 0 | 0 |
+| 11 | 49 | 38.8 | 11 | 0 | 11 | 0 | 8 | 0 | 3 |
+| 7 | 48 | 37.2 | 7 | 0 | 7 | 0 | 5 | 0 | 2 |
+| 3 | 48 | 35.7 | 7 | 0 | 7 | 0 | 7 | 0 | 0 |
+| **total** | **251** | **190.9** | **40** | **0** | **39** | **1** | **35** | **0** | **5** |
+
+Shared ground totals **6068 m of 190.9 km — 3.2% of network length**. Span median 108 m, p90 335 m,
+max 463 m.
+
+**Three findings, and the first one is a problem for the premise.**
+
+1. **Disjoint sharing is essentially zero.** All 40 sharing pairs at radius 1400 are *legs of the
+   same junction*. Not one pair of unrelated roads — no node in common — runs the same ground for
+   30 m. Re-checked at radius 2400 on seeds 6 and 20 (191 km, 245 runs): **1 disjoint pair out of
+   44**, and the shared fraction holds at 3.6–4.0%, so this is structural, not a window artefact.
+   It is also explicable: the graph is Urquhart over blue-noise sites and BUG-57 made the crossing
+   invariant hold, so two unrelated edges of a near-planar graph converging to within 18 m is a
+   shape the topology already excludes.
+
+   That is the honest reading of D2's opportunity. The reuse FEAT-76 proposes is *not* mostly the
+   conversion of existing accidental overlap — there is almost none to convert. It would be the
+   creation of NEW sharing that today's independent routing does not produce. Which is still the
+   ticket's stated aim ("let a routing centerline see that a neighbour has already justified a
+   path"), but it means the baseline cannot be beaten by tidying up coincidences; ρ has to actively
+   pull routes together, and that is precisely the setting the character A/B is most at risk from.
+
+2. **The merge ladder already catches 35 of 40 (88%).** The NOTHING residue is 5 pairs / 263 m =
+   **0.14% of network length**, and 3 of the 5 are a single 32 m span apiece. D4's question — how
+   much of `_v2NodeMerges` goes idle — starts from a ladder that is already near-complete on the
+   sharing that exists. The residue is not the argument for this ticket.
+
+3. **The shove rung fires ZERO times at radius 1400 on all five seeds** (`_v2Shoves` = 0 each), and
+   once per seed at 2400. Shoves are *attempted* — the `shove` decline reason fires 1–4 times a
+   seed — but essentially never land. Not FEAT-76's business; recorded because any before/after
+   here starts from zero and a single shove will look like a large relative movement.
+
+Decline histogram for context (why the ladder skipped what it skipped): `pin-overwrite` dominates
+every seed (15–27), then `pad` (0–16), then a long tail of `flare` / `short` / `steep-fork` /
+`seam` / `taper` / `role` in low single digits.
+
 ---
 
 ## 2. The perf finding: the play build runs on one core

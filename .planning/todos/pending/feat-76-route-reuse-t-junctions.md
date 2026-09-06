@@ -121,7 +121,15 @@ goes idle. Removal is a follow-up, once the residue is characterised.
 
 ## Build order
 
-1. **Instrument first.** Count how much sharing exists today: registered-run pairs within
+1. **Instrument first.** ✅ DONE 2026-09-06 — `test/route-sharing-census.mjs`; numbers and reading
+   in the research memo (§1, "MEASURED — the step-1 sharing census"). Headline: **3.2% of network
+   length is shared, and ZERO of it is between disjoint roads** — all 40 sharing pairs across 5
+   seeds at radius 1400 are legs of the same junction (1 of 44 at radius 2400). The merge ladder
+   already sanctions 35 of 40; the NOTHING residue is 0.14% of network. **This changes what D2 has
+   to prove:** there is no pool of accidental overlap to convert, so reuse must CREATE sharing that
+   independent routing does not produce — which puts the whole weight of the ticket on the ρ
+   character A/B rather than on tidying up coincidences. Owner ruling wanted before step 2.
+   Count how much sharing exists today: registered-run pairs within
    `mergeProxM`, their span lengths, how many produce a merge vs a shove vs nothing. This is the
    baseline the feature has to beat, and it is cheap.
    **Output shape RULED (owner, 2026-09-05): a headless rainy-day script in `test/` that walks
