@@ -263,6 +263,65 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
         return b === 2
     }
 
+    // ── FEAT-76: RIDE INJECTION — an older road this edge may be an add-on to ────────────────
+    // `opts.ride` carries the registered polylines of higher-ranked neighbours (the accretion
+    // rank; see road.js _v2RideCandidates). Their earthwork is ALREADY PAID, so a step that runs
+    // ALONG one is charged rideRho x its station+grade rate. The turn charge is NOT discounted —
+    // the spur still has to physically turn — and neither is the portal, so a ride can never buy
+    // a structure for free.
+    //
+    // Rasterised into the lattice once per search: each cell within ~0.6 cell of a trunk records
+    // that trunk's index, its arc there, and its DECK HEIGHT. Height matters — without it a spur
+    // 40 m above the trunk would collect the discount for ground it is nowhere near. A step is
+    // "along" only when both cells carry the same trunk, the arc advances by roughly the step
+    // length (moving along it, not across it), and the deck sits within rideYTolM of the trunk's.
+    //
+    // rideRho == 1 means OFF and nothing below allocates: the search is then byte-identical to
+    // one with no ride data at all, which is what keeps the parity gates honest while this is
+    // being tuned.
+    const RIDE_RHO = C.rideRho ?? 1
+    const rides = (RIDE_RHO < 1 && opts.ride?.length) ? opts.ride : null
+    let rideId = null, rideArc = null, rideY = null
+    if (rides) {
+        rideId = new Int32Array(W * Hn).fill(-1)
+        rideArc = new Float64Array(W * Hn)
+        rideY = new Float64Array(W * Hn)
+        const bestD = new Float64Array(W * Hn).fill(Infinity)
+        const REACH = cell * 0.6, REACH2 = REACH * REACH
+        const stamp = (ri, px, pz, py, arc) => {
+            const ccx = Math.round((px - x0) / cell), ccz = Math.round((pz - z0) / cell)
+            for (let oz = -1; oz <= 1; oz++) for (let ox = -1; ox <= 1; ox++) {
+                const cx2 = ccx + ox, cz2 = ccz + oz
+                if (cx2 < 0 || cz2 < 0 || cx2 >= W || cz2 >= Hn) continue
+                const ddx = wx(cx2) - px, ddz = wz(cz2) - pz
+                const d2 = ddx * ddx + ddz * ddz
+                if (d2 > REACH2) continue
+                const i = idx(cx2, cz2)
+                if (d2 >= bestD[i]) continue
+                bestD[i] = d2; rideId[i] = ri; rideArc[i] = arc; rideY[i] = py
+            }
+        }
+        for (let ri = 0; ri < rides.length; ri++) {
+            const pts = rides[ri].pts, cum = rides[ri].cum
+            if (!pts || pts.length < 2) continue
+            // resample at half a cell so no cell the trunk crosses is missed between vertices
+            const step = cell * 0.5
+            for (let k = 1; k < pts.length; k++) {
+                const px0 = pts[k - 1].x, pz0 = pts[k - 1].z, py0 = pts[k - 1].y
+                const px1 = pts[k].x, pz1 = pts[k].z, py1 = pts[k].y
+                const segL = Math.hypot(px1 - px0, pz1 - pz0)
+                const n = Math.max(1, Math.ceil(segL / step))
+                for (let t = 0; t < n; t++) {
+                    const f = t / n
+                    stamp(ri, px0 + f * (px1 - px0), pz0 + f * (pz1 - pz0), py0 + f * (py1 - py0),
+                          cum[k - 1] + f * (cum[k] - cum[k - 1]))
+                }
+            }
+            stamp(ri, pts[pts.length - 1].x, pts[pts.length - 1].z, pts[pts.length - 1].y, cum[cum.length - 1])
+        }
+    }
+    const RIDE_YTOL = C.rideYTolM ?? 6
+
     const noBore = opts.structureCap === false
     // Bore states live in the anchor elevation BAND: a bore must surface at portal height at both
     // ends, so decks far above/below the anchors are never usefully underground — without this
@@ -340,6 +399,11 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
         const y0 = yOf(curB)
         const cls0 = classOf(y0 - hAt(cx2, cz2), C)
         const bore0 = cls0 === CLS.BORE
+        // FEAT-76: is the popped state ON a rideable trunk (same cell, and at its deck height)?
+        const curCellRide = rideId ? rideId[curCell] : -1
+        const rideHere = (curCellRide >= 0 && Math.abs(y0 - rideY[curCell]) <= RIDE_YTOL)
+            ? curCellRide : -1
+        const rideArcHere = rideHere >= 0 ? rideArc[curCell] : 0
         for (let di = 0; di < 8; di++) {
             const D = DIR[di], dx = D.dx, dz = D.dz
             const nx = cx2 + dx, nz = cz2 + dz
@@ -399,7 +463,16 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
                 const g = (y1 - y0) / ds
                 const cap = (bore0 || bore1) ? C_gMaxBore : C_gMaxRoad
                 if (Math.abs(g) > cap + slack) continue
-                let c = gc + ds * stationRateCls(cls1, d1, C) + ds * C_cRoadM * C_wGrade * g * g
+                let stepC = ds * stationRateCls(cls1, d1, C) + ds * C_cRoadM * C_wGrade * g * g
+                // FEAT-76: an ALONG-trunk step rides earthwork that is already paid. Same trunk at
+                // both ends, deck within tolerance of its deck, and the arc advanced by roughly one
+                // step — the arc test is what distinguishes running ALONG the road from crossing it.
+                if (rideHere >= 0 && rideId[nCell] === rideHere
+                    && Math.abs(y1 - rideY[nCell]) <= RIDE_YTOL) {
+                    const dArc = Math.abs(rideArc[nCell] - rideArcHere)
+                    if (dArc >= 0.4 * ds && dArc <= 2.2 * ds) stepC *= RIDE_RHO
+                }
+                let c = gc + stepC
                 c += turnC
                 if (bore0 !== bore1) c += C_cPortal
                 const ni = ni0 + nb
@@ -1089,10 +1162,10 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
     // `costs` rides the spec so a Worker (a SEPARATE module instance with its own V2_COSTS) prices
     // exactly what the main thread does — without it, live knob edits would apply only to
     // synchronously-routed edges and the network would be priced two different ways.
-    const { ax, az, yA, bx, bz, yB, margin, blockedDiscs, dirs, costs, cell, yBin, epsW } = spec
+    const { ax, az, yA, bx, bz, yB, margin, blockedDiscs, dirs, costs, cell, yBin, epsW, ride } = spec
     const attempt = (pin, extra) => {
         const c = corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, {
-            margin, blockedDiscs, costs, cell, yBin, epsW,
+            margin, blockedDiscs, costs, cell, yBin, epsW, ride,
             ...(pin ? { startDir: pin.startDir, goalDir: pin.goalDir } : {}),
             ...extra,
         })

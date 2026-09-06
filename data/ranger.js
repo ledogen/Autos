@@ -599,6 +599,13 @@ export const RANGER_PARAMS = {
     // censusChordM because it answers the same shape of question (what is in this edge's
     // neighbourhood) and the warm path already routes that neighbourhood.
     rideChordM: 300,
+    // FEAT-76: the RIDE DISCOUNT. A step running along an older road's deck is charged rho x its
+    // station+grade rate — that earthwork is already paid for. 1 = OFF (nothing is injected, no
+    // spec changes, routes byte-identical to pre-FEAT-76). 0 would be degenerate: every road would
+    // snake to the nearest existing one. The useful band is ~0.2-0.4; it is an A/B on road
+    // character, not a number that can be asserted.
+    rideRho: 1,
+    rideYTolM: 6,   // m — how far a rider's deck may sit off the trunk's and still be "on" it
   },
 
   // roadSiteCandidates: seeded candidate sites PER cell before Poisson-disk thinning. >1 breaks the

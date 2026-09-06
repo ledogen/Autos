@@ -606,6 +606,10 @@ export const CHUNK_SIZE = 64
 const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
+// FEAT-76: how many generations of add-on a single route may walk back through. A rides B rides C
+// is real accretion; the cap only stops a pathological chain from routing the whole neighbourhood
+// to place one spur. Constant, so it costs the rank layer no window-invariance.
+const RIDE_MAX_DEPTH       = 3
 // BUG-53 merge machinery: minimum spacing at a splice seam. A boundary vertex a centimetre from
 // the spliced point leaves a stub segment between two full ones, and the ribbon's centripetal
 // Catmull-Rom overshoots that into a corner far tighter than the control polyline shows. The planner
@@ -2624,6 +2628,7 @@ export class RoadSystem {
             if (flip && dirs._built) flip._built = true
             if (flip && dirs.sibGoal) flip.sibStart = dirs.sibGoal
             if (flip && dirs.sibStart) flip.sibGoal = dirs.sibStart
+            if (flip && dirs.ride) flip.ride = dirs.ride   // FEAT-76: direction-free, carries across the flip
             const fwd = this._edgeCenterline(c2, c1, flip, hardGrade)
             const cl = new Centerline(reversePrimitives(fwd.primitives))
             if (fwd._v2Dirs) cl._v2Dirs = true
@@ -2667,6 +2672,8 @@ export class RoadSystem {
             ax: A.x, az: A.z, yA: this._v2NodeHeight(A.x, A.z),
             bx: B.x, bz: B.z, yB: this._v2NodeHeight(B.x, B.z),
             margin, blockedDiscs, dirs,
+            ...(dirs?.ride ? { ride: dirs.ride } : {}),   // FEAT-76: older roads this edge may ride
+
             // BUG-56 C — the RE-ROUTE price list. gMaxRoad is UNCHANGED: the owner ruled out
             // tightening the cap, because that trades connectivity for grade and connectivity wins.
             // What changes is wGrade, the length-vs-grade dial (cost/m = 1 + wGrade·g², minimised at
@@ -2711,7 +2718,14 @@ export class RoadSystem {
         if (!dirs) return ''
         const f = (d) => d ? `${d.x.toFixed(5)},${d.z.toFixed(5)}` : 'x'
         const fs = (a) => a ? a.map((d) => `${d.x.toFixed(3)},${d.z.toFixed(3)}`).join('|') : 'x'
+        // FEAT-76: ride payload is part of the route's identity — an edge routed against a trunk
+        // must not share a cache entry with the same edge routed without one. Fingerprint the
+        // candidate keys and each polyline's length/extent rather than the points: the polyline is
+        // a pure function of (key, seed, params, rank chain) already, so the key plus its measured
+        // shape pins it without carrying thousands of numbers into a cache string.
+        const fr = (rs) => rs ? rs.map((r) => `${r.key}@${r.cum[r.cum.length - 1].toFixed(1)}:${r.pts.length}`).join('|') : 'x'
         return `#p${f(dirs.startDir)};${f(dirs.goalDir)};${fs(dirs.sibStart)};${fs(dirs.sibGoal)}`
+             + (dirs.ride ? `#r${fr(dirs.ride)}` : '')
     }
 
     // FEAT-68 deg-2 canonical approach headings: a pass-through node is a POINT ON a longer
@@ -2814,6 +2828,12 @@ export class RoadSystem {
         // own cache namespace ('#b') — its pins differ from the layer-0 pins the warm path derives,
         // and the two geometries must never collide on one cache key.
         if (delF && (delF.flip.has(kA) || delF.flip.has(kB))) dirs._built = true
+        // FEAT-76: the older roads this edge may be an add-on to. Direction-independent — a set of
+        // neighbour polylines, not a direction of travel — so it survives the canonical/reversed
+        // spelling flip unchanged (unlike the sibling bearings just above, which swap ends).
+        const spellR = this._v2EdgeSpellings(g)
+        const spR = spellR.get(kA < kB ? kA + '|' + kB : kB + '|' + kA)
+        if (spR) { const ride = this._v2RideFor(g, drop, ...spR); if (ride) dirs.ride = ride }
         return dirs
     }
 
@@ -3789,6 +3809,48 @@ export class RoadSystem {
         }
         out.sort((a, b) => (a.qck < b.qck ? -1 : a.qck > b.qck ? 1 : 0))
         return fin(out)
+    }
+
+    // The wide graph that produced this `drop` set. _degreeDrops memoizes {drop, wide} per window
+    // signature, so the pairing is recoverable by identity — which keeps _v2EdgeDirs' signature
+    // (and its six call sites) untouched. Ride candidates MUST come from `wide`, not the band
+    // graph: an edge near the band frontier would otherwise see fewer candidates than the same
+    // edge seen from a window centred on it, and the candidate set would stop being invariant.
+    _v2WideFor(drop) {
+        const m = this._degreeDropsMemo
+        if (!m || m.rev !== this._networkRev) return null
+        for (const e of m.map.values()) if (e.drop === drop) return e.wide
+        return null
+    }
+
+    // FEAT-76: the ride payload for one edge — the registered-shape polylines of the older roads
+    // it may be an add-on to. Empty unless rideRho < 1, so at the shipped default this allocates
+    // nothing and every route spec is byte-identical to its pre-FEAT-76 self (which is what keeps
+    // road-worker-parity and world-determinism honest while ride is being tuned).
+    //
+    // DEPTH. A candidate's own polyline is its ride-enabled route, so a second-generation add-on
+    // rides a road that itself rode something — which is what accretion means. Strict up-rank makes
+    // that acyclic, and RIDE_MAX_DEPTH caps the chain anyway: the cap is a constant, so it is as
+    // window-invariant as the rank it walks.
+    _v2RideFor(g, drop, c1, c2) {
+        const C = this._v2Costs()
+        if ((C.rideRho ?? 1) >= 1) return null
+        const depth = this._v2RideDepth || 0
+        if (depth >= RIDE_MAX_DEPTH) return null
+        const wide = this._v2WideFor(drop)
+        if (!wide) return null
+        const cands = this._v2RideCandidates(g, drop, wide, c1, c2)
+        if (!cands.length) return null
+        const out = []
+        this._v2RideDepth = depth + 1
+        try {
+            for (const r of cands) {
+                const S = this._v2RunSample(r.inG ? g : wide, drop, ...r.spQ)
+                if (!S || S.L < 60) continue
+                out.push({ key: r.qck, pts: S.pts.map((p) => ({ x: p.x, y: p.y, z: p.z })), cum: [...S.polyCum] })
+            }
+        } finally { this._v2RideDepth = depth }
+        return out.length ? out : null
     }
 
     // Read-only census of the rank layer for the CURRENT window — the surface
