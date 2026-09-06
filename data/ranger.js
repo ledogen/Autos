@@ -593,6 +593,12 @@ export const RANGER_PARAMS = {
     // overlap-census reports each real conflict's best-direction chord-to-route distance so this
     // stays measurably above the max.
     censusChordM: 300,
+    // FEAT-76: how far apart two edges' CHORDS may be and still be ride candidates — the bound on
+    // "which older roads could this edge be an add-on to". Chord-to-chord, so the candidate set is
+    // a pure function of node positions: no routes, no global sort, no window state. Same scale as
+    // censusChordM because it answers the same shape of question (what is in this edge's
+    // neighbourhood) and the warm path already routes that neighbourhood.
+    rideChordM: 300,
   },
 
   // roadSiteCandidates: seeded candidate sites PER cell before Poisson-disk thinning. >1 breaks the

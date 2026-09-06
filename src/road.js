@@ -3720,6 +3720,105 @@ export class RoadSystem {
         return fin(out)
     }
 
+    // ── FEAT-76: RANK + RIDE CANDIDATES — which older roads may this edge be an add-on to? ──
+    // Owner framing (2026-09-06): the lower-ranked leg is an ADD-ON to an older road. Rank IS the
+    // accretion order — chord length descending, canonical edge key as tiebreak (owner ruling
+    // 2026-09-05) — so the long-haul road is the trunk and the short spur joins it, which is how
+    // road networks actually accrete. The older road was already built, so it does not move: a
+    // promoted T slices the trunk's registered polyline, it never re-routes it (owner ruling
+    // 2026-09-06, option (a); a through road that bends for the side road is a wye again).
+    //
+    // CHORD, not route length. Chord is a pure function of the two node positions, so rank needs no
+    // routes, no global sort and no window state — `_v2Outranks` is a two-edge comparison and there
+    // is no rank TABLE that could drift between windows. (The crossing rung's own `longer` field
+    // uses ROUTE length with the same lexicographic tiebreak; that one is settled after routing and
+    // is a different question. Do not unify them.)
+    //
+    // Squared chord throughout: order-equivalent to the length, and it keeps the comparison exact
+    // (no sqrt rounding deciding a tie that the key tiebreak is supposed to decide).
+    _v2EdgeChord2(c1, c2) {
+        const A = this._nodePos(c1), B = this._nodePos(c2)
+        const ex = A.x - B.x, ez = A.z - B.z
+        return ex * ex + ez * ez
+    }
+
+    // Strict total order. Reuse is permitted only STRICTLY up-rank, so ties must never be mutually
+    // reusable — the key tiebreak is what makes the dependency acyclic rather than merely sparse.
+    _v2Outranks(chord2P, ckP, chord2Q, ckQ) {
+        return chord2P > chord2Q || (chord2P === chord2Q && ckP < ckQ)
+    }
+
+    // Every wide-graph edge that STRICTLY outranks this one and whose chord passes within
+    // rideChordM of it. GEOMETRY ONLY, and only NODE POSITIONS at that — no routes, no planner
+    // lookups, no `drop`-dependent ordering — so the set reads identically from every window that
+    // contains the edge (gated: test/ride-rank-invariance.mjs). Dropped edges are excluded because
+    // they never register and so can never be ridden.
+    //
+    // This is the CANDIDATE set, not the decision: whether the spur actually rides a candidate is
+    // the router's business (the injected-lattice pass), and most candidates will be declined.
+    // Returned in canonical-key order so consumers cannot introduce an ordering of their own.
+    _v2RideCandidates(g, drop, wide, c1, c2) {
+        const kA = wide.key(c1), kB = wide.key(c2)
+        const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
+        if (!this._v2RideMemo || this._v2RideMemo.rev !== this._planRev())
+            this._v2RideMemo = { rev: this._planRev(), map: new Map() }
+        const memo = this._v2RideMemo.map
+        if (memo.has(ck)) return memo.get(ck)
+        const fin = (v) => { memo.set(ck, v); return v }
+        const C = this._v2Costs()
+        const CHORD = C.rideChordM ?? 300
+        const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
+        const own2 = this._v2EdgeChord2(c1, c2)
+        if (own2 <= _mband2) return fin([])
+        const A = this._nodePos(c1), B = this._nodePos(c2)
+        const spell = this._v2EdgeSpellings(g)
+        const out = []
+        for (const [q1, q2] of wide.edges) {
+            const qA = wide.key(q1), qB = wide.key(q2)
+            if (drop.has(qA + '|' + qB)) continue
+            const qck = qA < qB ? qA + '|' + qB : qB + '|' + qA
+            if (qck === ck) continue
+            const q2c = this._v2EdgeChord2(q1, q2)
+            if (q2c <= _mband2) continue
+            if (!this._v2Outranks(q2c, qck, own2, ck)) continue   // strictly up-rank only
+            const P = this._nodePos(q1), Q = this._nodePos(q2)
+            if (Math.max(P.x, Q.x) < Math.min(A.x, B.x) - CHORD || Math.min(P.x, Q.x) > Math.max(A.x, B.x) + CHORD
+                || Math.max(P.z, Q.z) < Math.min(A.z, B.z) - CHORD || Math.min(P.z, Q.z) > Math.max(A.z, B.z) + CHORD) continue
+            if (_segSegDistXZ(A, B, P, Q) > CHORD) continue
+            out.push({ qck, spQ: spell.get(qck) ?? [q1, q2], inG: spell.has(qck), chord2: q2c })
+        }
+        out.sort((a, b) => (a.qck < b.qck ? -1 : a.qck > b.qck ? 1 : 0))
+        return fin(out)
+    }
+
+    // Read-only census of the rank layer for the CURRENT window — the surface
+    // test/ride-rank-invariance.mjs reads. Returns Map<edgeCanonKey, string[]> of ride-candidate
+    // keys. Rebuilds the band graph exactly as _streamNetwork does; touches no plan state.
+    debugRideCensus() {
+        const center = this._networkCenter
+        if (!center) return new Map()
+        const R = this._proto.radius
+        const HW = this._bandHalfWidth()
+        const cmx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
+        const mx0 = cmx - HW, mx1 = cmx + HW
+        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
+        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
+        const g = this._buildUrquhart(mx0, mx1, mz0, mz1)
+        const { drop, wide } = this._degreeDrops(mx0, mx1, mz0, mz1)
+        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
+        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
+        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+        const out = new Map()
+        for (const [c1, c2] of g.edges) {
+            const a = g.key(c1), b = g.key(c2)
+            if (drop.has(a + '|' + b)) continue
+            if (!inBand(c1) && !inBand(c2)) continue
+            const ck = a < b ? a + '|' + b : b + '|' + a
+            out.set(ck, this._v2RideCandidates(g, drop, wide, c1, c2).map((r) => r.qck))
+        }
+        return out
+    }
+
     // ── BUG-57: the CROSSING RUNG (owner ruling 2026-08-25 — the crossing invariant) ─────────
     // "If two legs cross on the way from one node to another, get rid of one of those legs so no
     // crossings are left." After the merge ladder, an edge DIES iff some conflict pair has an
