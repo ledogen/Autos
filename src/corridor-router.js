@@ -487,12 +487,23 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     if (found < 0) return null
 
     const path = []
+    // FEAT-76: which trunk (if any) each path vertex was riding, recorded in the same walk. A
+    // vertex counts as ridden only if its cell carries a trunk AND its deck is within tolerance of
+    // that trunk's — the same test the step discount used, so the span reported here is exactly the
+    // ground the discount was granted on.
+    const rode = rides ? [] : null
     for (let i = found; i !== -1; i = from[i]) {
         const ci = (i / NY) | 0
         const cz2 = (ci / W) | 0, cx2 = ci - cz2 * W
-        path.push({ x: wx(cx2), z: wz(cz2), y: yOf(i - ci * NY) })
+        const yv = yOf(i - ci * NY)
+        path.push({ x: wx(cx2), z: wz(cz2), y: yv })
+        if (rode) {
+            const r = rideId[ci]
+            rode.push(r >= 0 && Math.abs(yv - rideY[ci]) <= RIDE_YTOL ? r : -1)
+        }
     }
     path.reverse()
+    if (rode) rode.reverse()
     // Exact endpoints (the lattice snapped them): pin A and B, and ABSORB lattice vertices closer
     // than ~a cell to each anchor — the pin can land up to half a cell diagonal away from its
     // snapped cell, and a leftover vertex that close makes a short-leg kink no smoothing pass can
@@ -501,9 +512,33 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     // and absorbing it would eat exactly the geometry the cone paid for.
     path[0] = { x: ax, z: az, y: yA }
     path[path.length - 1] = { x: bx, z: bz, y: yB }
-    if (!sDir) while (path.length > 2 && Math.hypot(path[1].x - ax, path[1].z - az) < cell * 1.6) path.splice(1, 1)
-    if (!gDir) while (path.length > 2 && Math.hypot(path[path.length - 2].x - bx, path[path.length - 2].z - bz) < cell * 1.6) path.splice(path.length - 2, 1)
-    return { path, cost: gCost[found], expanded }
+    if (!sDir) while (path.length > 2 && Math.hypot(path[1].x - ax, path[1].z - az) < cell * 1.6) { path.splice(1, 1); if (rode) rode.splice(1, 1) }
+    if (!gDir) while (path.length > 2 && Math.hypot(path[path.length - 2].x - bx, path[path.length - 2].z - bz) < cell * 1.6) { path.splice(path.length - 2, 1); if (rode) rode.splice(rode.length - 2, 1) }
+
+    // FEAT-76: the RIDE SPAN — the longest contiguous stretch of this path that ran along ONE
+    // older road. This is where a T-junction would be promoted: the span's two ends are the points
+    // at which the add-on joins and leaves the trunk, and the ground between them is the trunk's,
+    // not a second road's. Reported in path-arc so the caller can slice its own geometry there.
+    // The LONGEST span only — a path that dips onto two different trunks is not an add-on to
+    // either, and picking one by length is deterministic (ties break toward the earlier span).
+    let rideSpan = null
+    if (rode) {
+        const arc = new Float64Array(path.length)
+        for (let i = 1; i < path.length; i++)
+            arc[i] = arc[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z)
+        let i = 0
+        while (i < rode.length) {
+            if (rode[i] < 0) { i++; continue }
+            let j = i
+            while (j + 1 < rode.length && rode[j + 1] === rode[i]) j++
+            const len = arc[j] - arc[i]
+            if (j > i && (!rideSpan || len > rideSpan.len))
+                rideSpan = { ri: rode[i], key: rides[rode[i]].key, i0: i, i1: j, s0: arc[i], s1: arc[j], len }
+            i = j + 1
+        }
+        if (rideSpan) rideSpan.pathL = arc[path.length - 1]
+    }
+    return { path, cost: gCost[found], expanded, rideSpan }
 }
 
 // ── Station resampling ─────────────────────────────────────────────────────────────────────────
@@ -1169,8 +1204,16 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
             ...(pin ? { startDir: pin.startDir, goalDir: pin.goalDir } : {}),
             ...extra,
         })
-        return c ? corridorCenterline(c.path,
-            pin ? { keepStart: !!pin.startDir, keepEnd: !!pin.goalDir } : {}) : null
+        if (!c) return null
+        const cl = corridorCenterline(c.path, pin ? { keepStart: !!pin.startDir, keepEnd: !!pin.goalDir } : {})
+        // FEAT-76: carry the ride span onto the centerline. Arc is reported in PATH arc; the fitted
+        // curve is shorter (smoothing cuts corners), so the fraction is what survives the fit — the
+        // consumer re-reads it against the centerline's own length.
+        if (cl && c.rideSpan && c.rideSpan.pathL > 1e-6) cl._rideSpan = {
+            key: c.rideSpan.key, len: c.rideSpan.len,
+            f0: c.rideSpan.s0 / c.rideSpan.pathL, f1: c.rideSpan.s1 / c.rideSpan.pathL,
+        }
+        return cl
     }
     const pin = dirs && (dirs.startDir || dirs.goalDir) ? dirs : null
     // R5: the demoted rungs carry the sibling-departure cost — the pinned rungs don't need it (the

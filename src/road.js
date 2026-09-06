@@ -2632,6 +2632,9 @@ export class RoadSystem {
             const fwd = this._edgeCenterline(c2, c1, flip, hardGrade)
             const cl = new Centerline(reversePrimitives(fwd.primitives))
             if (fwd._v2Dirs) cl._v2Dirs = true
+            // FEAT-76: the ride span is an arc FRACTION of the forward curve; the reverse mirrors it.
+            if (fwd._rideSpan) cl._rideSpan = { key: fwd._rideSpan.key, len: fwd._rideSpan.len,
+                                                f0: 1 - fwd._rideSpan.f1, f1: 1 - fwd._rideSpan.f0 }
             cl._v2DirsSpec = dirs
             this._proto.cls.set(key, cl)
             this._pendingRoutes.delete(key)
