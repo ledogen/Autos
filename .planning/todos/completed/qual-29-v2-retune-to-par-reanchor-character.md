@@ -75,6 +75,28 @@ So `roadV2` stays exactly as shipped — `cTurn: 45`, `wGrade: 180` — which is
 already put them from the live sliders (owner review 2026-08-21 and 2026-08-20, comments in
 `data/ranger.js`). **This ticket ships no diff.**
 
+### CORRECTION 2026-09-06 — the founding quote was misread, and it was not about roads at all
+
+**The owner's remark meant PAR, not road character.** *"The old one after par reanchor was pretty
+much perfect and we should seek to replicate it"* was pointing at the **driven par-time feel** — the
+2026-08-16 par re-anchor (`PAR_REF` pass 4) — and the ask was to recreate that quality of par
+anchoring on the v2 router. It was never a claim about how the road looks or drives.
+
+QUAL-28 read "par reanchor" as a date stamp identifying a v1 ROAD to replicate, and built a whole
+character-matching exercise on it. That is the actual error, upstream of the "difference ⇒ worse"
+one below. The road was never the subject.
+
+**What survives the correction:** the ratification of `cTurn: 45` / `wGrade: 180` stands on its own
+merits — the owner drove the alternatives and preferred the shipped values, independently of why
+the exercise was started. QUAL-28's Half 1 gate cleanup was real work and stays. The two bugs found
+while driving it are real and are fixed.
+
+**What does NOT survive:** the premise that v2's road character was owed a retune. Nobody ever
+asked for that. Do not resurrect it from this ticket.
+
+**The real work the remark was asking for is par, and it is tracked in BUG-41** (re-opened
+2026-09-05) plus the v2 par re-anchor that follows it. See that ticket, not this one.
+
 ### Why the ticket existed at all, and what was actually wrong with it
 
 Worth writing down, because the reasoning looked sound at every step and the conclusion was still
