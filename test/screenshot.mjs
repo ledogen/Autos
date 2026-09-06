@@ -56,7 +56,7 @@ const PORT = Number(flag('port', 8000)), CDP = 9222
 // loads the bare URL (a ?seed= query has proven flaky to load headlessly).
 // Fog is DISABLED by default (?nofog=1 — the main.js fog kill-switch): distance shots exist to show
 // geometry, and FogExp2 whites out anything past ~300 m. Pass --fog to keep the shipped look.
-const QS = []
+const QS = ['nomenu=1']   // FEAT-41: skip the menu; this tool wants the world on screen
 if (SEED && SEED !== '6') QS.push(`seed=${SEED}`)
 if (!process.argv.includes('--fog')) QS.push('nofog=1')
 const APP = `http://localhost:${PORT}/index.html${QS.length ? '?' + QS.join('&') : ''}`

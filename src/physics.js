@@ -191,7 +191,7 @@ const CHASSIS_PROFILE = {
  * @returns {Array<number>} `out`.
  */
 export function readRimStrikes (engine, chassis, out, dt) {
-  const rims = _chassisRims.get(chassis)
+  const rims = _rimsFor(engine).get(chassis)
   if (!rims) return out
   if (!_shapeImpulseScratch || _shapeImpulseScratch.length < 64) _shapeImpulseScratch = new Float64Array(64)
   engine.maxContactImpulse(chassis, _shapeImpulseScratch)
@@ -255,7 +255,17 @@ export function classifyImpactRegion (localPoint, localNormal) {
  * Mass + rotational inertia are OVERRIDDEN with the tuned params values — the driving feel is
  * calibration, not collider geometry (a compound's shape-derived tensor never applies).
  */
-export function createVehicleChassis (engine, vehicleState, params) {
+/**
+ * @param {object} [opts]
+ * @param {object|null} [opts.bed] - an OPEN bed well (floor, four walls, wheelhouse boxes) built to
+ *   the given body-local dimensions, replacing the solid tonneau deck of shape 4. Null by default,
+ *   and the world truck keeps the solid deck: FEAT-41's menu stage is the only caller that passes
+ *   one, because its beat sheet drops rocks INTO the bed, and against the closed deck they land on
+ *   the lid at rail height and roll straight off. Fields (all metres, body frame, forward = -Z):
+ *   floorY, railY, wheelhouseY, innerHalfW, outerHalfW, wheelhouseHalfW, frontZ, tailZ, gateZ,
+ *   archZ0, archZ1. The caller owns the numbers because they belong to a specific .glb.
+ */
+export function createVehicleChassis (engine, vehicleState, params, { bed = null } = {}) {
   const P = CHASSIS_PROFILE
   const undY = params.wheelRadius - params.cgHeight        // undercarriage bottom (unchanged)
 
@@ -306,10 +316,32 @@ export function createVehicleChassis (engine, vehicleState, params) {
     [P.cowlZ, 0.14], [P.cowlZ, P.hoodCowlY], [P.roofFrontZ, P.roofY],
     [P.roofRearZ, P.roofY], [P.cabRearZ, P.railY], [P.cabRearZ, 0.14],
   ], P.cabHalfW), mat)
-  // 4. Bed deck: cab back to the tail at rail height — SOLID (tonneau, see header note).
-  engine.addHull(chassis, extrude([
-    [P.cabRearZ, 0.14], [P.cabRearZ, P.railY], [P.tailZ, P.railY], [P.tailZ, 0.14],
-  ], P.deckHalfW), mat)
+  // 4. Bed deck: cab back to the tail at rail height — SOLID (tonneau, see header note),
+  //    unless the caller supplied an open-bed spec, in which case the same region is built as a
+  //    WELL — floor, four walls and the two wheelhouse boxes — so something dropped from above
+  //    lands on the bed FLOOR and is held by the rails.
+  if (bed) {
+    const T = 0.06   // wall/floor thickness, taken inward from each face
+    // Axis-aligned box as an 8-point hull. Cheaper to read than extrude() here because the bed
+    // pieces are boxes in three different orientations, not one z–y profile swept across the width.
+    const slab = (x0, x1, y0, y1, z0, z1) => engine.addHull(chassis, [
+      x0, y0, z0, x1, y0, z0, x0, y1, z0, x1, y1, z0,
+      x0, y0, z1, x1, y0, z1, x0, y1, z1, x1, y1, z1,
+    ], mat)
+    const { floorY, railY, wheelhouseY, innerHalfW: wi, outerHalfW: wo,
+            wheelhouseHalfW: ww, frontZ, tailZ, gateZ, archZ0, archZ1 } = bed
+    slab(-wo, wo, floorY - T, floorY, frontZ, tailZ)          // floor pan
+    slab(-wo, wo, floorY, railY, frontZ - T, frontZ)          // front wall (cab back panel)
+    slab(-wo, wo, floorY, railY, tailZ, gateZ)                // tailgate (its own slab, as authored)
+    slab(-wo, -wi, floorY, railY, frontZ, tailZ)              // left bedside
+    slab(wi, wo, floorY, railY, frontZ, tailZ)                // right bedside
+    slab(-wi, -ww, floorY, wheelhouseY, archZ0, archZ1)       // left wheelhouse
+    slab(ww, wi, floorY, wheelhouseY, archZ0, archZ1)         // right wheelhouse
+  } else {
+    engine.addHull(chassis, extrude([
+      [P.cabRearZ, 0.14], [P.cabRearZ, P.railY], [P.tailZ, P.railY], [P.tailZ, 0.14],
+    ], P.deckHalfW), mat)
+  }
 
   // 5. Wheel HARD CORES — spheres at the nominal hub positions that collide with DEBRIS ONLY
   // (never terrain/road — driving feel is untouched by construction). The tire itself stays the
@@ -346,16 +378,24 @@ export function createVehicleChassis (engine, vehicleState, params) {
   // real truck owns: quick honest roll (rollovers!), stately dive/squat.
   engine.setMassData(chassis, params.mass,
     { x: params.inertiaPitch, y: params.inertiaYaw, z: params.inertiaRoll })
-  _chassisRims.set(chassis, rims)
+  _rimsFor(engine).set(chassis, rims)
   return chassis
 }
 
-// chassis handle → rim tracking metadata (module-scoped: gates create their own chassis).
-const _chassisRims = new Map()
+// engine → (chassis handle → rim tracking metadata). Module-scoped: gates create their own chassis.
+// KEYED BY ENGINE, not by the bare handle (FEAT-41). Body handles are per-world integers starting
+// at 1, so the menu stage's second PhysicsEngine hands out handle 1 for ITS chassis too — a flat
+// Map would have the two trucks overwrite each other's rim metadata and re-seat the wrong cores.
+const _rimsByEngine = new WeakMap()
+function _rimsFor (engine) {
+  let m = _rimsByEngine.get(engine)
+  if (!m) { m = new Map(); _rimsByEngine.set(engine, m) }
+  return m
+}
 
 /** Re-seat the rim cores at the strut-derived hub positions (hubLocal = mount − strutLen·ŷ). */
 function updateWheelRims (engine, chassis, vehicleState, params) {
-  const rims = _chassisRims.get(chassis)
+  const rims = _rimsFor(engine).get(chassis)
   if (!rims || !vehicleState.strutComp) return
   for (let i = 0; i < 4; i++) {
     const r = rims[i]

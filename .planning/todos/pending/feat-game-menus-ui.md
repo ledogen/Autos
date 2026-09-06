@@ -3,7 +3,7 @@ id: FEAT-41
 type: feature
 status: open
 opened: 2026-07-20
-updated: 2026-08-15
+updated: 2026-09-06
 severity: major
 source: user-request
 relates_to: >
@@ -20,6 +20,52 @@ every other player-facing feature (assists, cluster, story mode, scenarios) dock
 ---
 
 # FEAT-41: Game menus + UI improvements (major)
+
+## Build state — phase (a) SHIPPED 2026-09-06 (`feature/menus`)
+
+The **menu shell and the live 3D stage are built**; the settings pages and the chrome pass are not.
+What landed:
+
+- **`src/stage.js` — MenuStage**, the beat sheet in §1b, built as specified: the truck dropped 0.46 m
+  so its front-left wheel lands on a raised-cosine mound, real physics doing all of it, rocks into
+  the bed after ~2.2 s, ±5° cursor-follow camera parallax. Its own scene, camera, Box3D world,
+  vehicleState, chassis, truck model and DebrisSystem — it touches nothing the world sim owns.
+- **The stage IS the loading screen** (owner scope-add, 2026-09-06). It runs its own rAF loop from
+  just after the renderer is built, so it animates through main.js's remaining top-level awaits, and
+  `loop()` takes over the driving on its first frame. `#story-loading` — an opaque full-cover panel —
+  became `#load-caption`, a caption strip over the stage.
+- **Cold boot lands on the main menu** with the stage behind it (owner ruling). Options are
+  free roam · story mode · testing lab · settings.
+- **The seed dialog now fronts free roam as well as story** (owner ruling). Blank box,
+  placeholder "leave blank for random", blank → a rolled seed. Free roam re-seeds behind the stage
+  only when the chosen seed differs from the standing world.
+- **Settings is a stub** with a back button — owner ruling: the frame, no wiring.
+- Pause gained a **main menu** entry; Esc is inert while the stage owns the screen.
+- Drop policy: **one shot per showing** (owner ruling — it does NOT re-drop or trickle within a
+  showing), but re-entering the stage replays it, which is what makes a load worth watching.
+
+Three fixes fell out of running a second truck, and they are the interesting part of the diff:
+
+1. **`initPhysicsEngine()` was not re-entrant.** `if (!_b3) _b3 = await Box3DFactory()` is idempotent
+   for sequential callers only; two concurrent ones each instantiated the WASM module and the second
+   replaced the first's instance, so the stage's world lost its bodies and `b3World_Step` spun
+   forever on the garbage ids. Now caches the promise. Latent on main; nothing could reach it until
+   something else called it during boot.
+2. **`_chassisRims` was keyed by the bare body handle**, which is a per-world integer starting at 1 —
+   two trucks in two worlds overwrote each other. Re-keyed `WeakMap<engine, Map<chassis, rims>>`.
+3. **The bed is a solid tonneau deck** in `CHASSIS_PROFILE`, so rocks land on the lid at rail height
+   and roll off. `createVehicleChassis` gained an opt-in `bed` spec that builds the well instead
+   (floor, four walls, both wheelhouses); the stage passes ranger.glb's ACTUAL bed coordinates,
+   derived from `assets/models/src/ranger.py`'s named constants through the loader transform. The
+   world truck keeps the solid deck.
+
+Also extracted `src/vehicle-state.js` — the canonical vehicleState factory — so the two trucks cannot
+drift, and `createVehicleModel` gained `setHeadlightMode` + a `keyBindings` opt-out (a second model
+was answering the 'L' key, and its headlight pool was washing the stage's foreground).
+
+**Still open on this ticket:** §2 settings/options (video/quality, audio, controls, the FEAT-39
+assists page), §3's pause-discipline work beyond the sim hold, §4 the UI-chrome/visual-language pass
+and the toast generalisation, and one-off scenarios (no scenarios exist yet to select).
 
 ## Context
 

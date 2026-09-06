@@ -50,9 +50,21 @@ function _rotateByQuat (v, q) {
   }
 }
 
-/** Load the engine WASM once. Idempotent. Call at boot (and at gate setup). */
+// The IN-FLIGHT load, not just the finished one. `if (!_b3) _b3 = await Box3DFactory()` is idempotent
+// for SEQUENTIAL callers and quietly broken for CONCURRENT ones: both see _b3 null, both instantiate
+// the module, and the second assignment replaces the instance the first caller's world was created
+// in. Every later _b3.* call then addresses the wrong module — bodies vanish from their world, ids
+// resolve to garbage, and b3World_Step spins on it. FEAT-41's menu stage is the first thing to call
+// this concurrently with main.js's own boot, which is how it surfaced. Cache the PROMISE so both
+// callers await one load and end up on one module.
+let _b3Loading = null
+
+/** Load the engine WASM once. Idempotent, including under concurrent callers. */
 export async function initPhysicsEngine () {
-  if (!_b3) _b3 = await Box3DFactory()
+  if (!_b3) {
+    _b3Loading ??= Box3DFactory()
+    _b3 = await _b3Loading
+  }
   return true
 }
 

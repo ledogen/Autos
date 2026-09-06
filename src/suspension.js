@@ -640,3 +640,40 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
 // the retired hand-rolled body solver and its debug spheres; the chassis is an engine hull
 // compound now, measured off the vehicle model in physics.js createVehicleChassis.)
 
+// ── Static equilibrium at startup (RESEARCH §Pattern 4, Phase 4.1 D-11) ─────────────────────────────────────
+// Pre-compute strutComp and body Y so the car spawns pre-settled with no visible drop.
+// Phase 4.1 D-11 formula: strutComp[i] = m_sprung_corner * g / k_S_i
+//   m_sprung_corner = mass * weight_i / 2  (sprung mass only — excludes wheelMass from hub ODE)
+//   Verified numerically: strutComp ≈ 0.111 m at current params
+// Body Y derivation (via series-spring geometry):
+//   tireComp  = cornerMass * g / k_T   (full corner mass including wheel)
+//   hubY      = wheelRadius - tireComp  (hub sits above ground by tireComp)
+//   bodyY[i]  = hubY + (L_S - strutComp[i]) + (cgHeight - wheelRadius)
+//   vehicleState.position.y = average of front bodyY values (body is rigid; one CG)
+export function computeStaticEquilibrium (p) {
+  const g          = 9.81
+  const strutComp  = [0, 0, 0, 0]
+  const bodyYCorner = [0, 0, 0, 0]
+  for (let i = 0; i < 4; i++) {
+    const isFront    = i < 2
+    const cornerMass = p.mass * (isFront ? p.weightFront : p.weightRear) / 2 + p.wheelMass
+    const k_T = p.tireStiffness
+    const k_S = isFront ? p.suspensionStiffnessFront : p.suspensionStiffnessRear
+    const L_S = isFront ? p.suspensionRestLengthFront : p.suspensionRestLengthRear
+    const sprung    = p.mass * (isFront ? p.weightFront : p.weightRear) / 2  // D-11: sprung only
+    strutComp[i]    = sprung * g / k_S  // ≈ 0.111 m at current params
+    // Derive bodyY from strutComp (D-11 geometry):
+    //   hubY = wheelRadius - tireComp (where tireComp uses full corner mass incl wheel)
+    //   bodyY = hubY + (L_S - strutComp[i]) + (cgHeight - wheelRadius)
+    const tireComp   = cornerMass * g / k_T
+    const hubY       = p.wheelRadius - tireComp
+    // Subtract suspensionBodyOffset to invert getWheelPosition's mount-Y (which now includes it,
+    // BUG-05) — keeps the spawn height exact at any ride-height tuning instead of settling a frame.
+    const bodyOffset = isFront ? (p.suspensionBodyOffsetFront || 0) : (p.suspensionBodyOffsetRear || 0)
+    bodyYCorner[i]   = hubY + (L_S - strutComp[i]) + (p.cgHeight - p.wheelRadius) - bodyOffset
+  }
+  // Use average of front-pair bodyY for initial CG height (front/rear should be nearly equal
+  // with balanced tuning; minor front-rear offset settles within a frame via hub dynamics).
+  const bodyY = (bodyYCorner[0] + bodyYCorner[1]) / 2
+  return { bodyY, strutComp }
+}

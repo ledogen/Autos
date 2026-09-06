@@ -48,7 +48,7 @@ const HEADED   = has('headed')
 const PORT = Number(flag('port', 8000)), CDP_PORT = Number(flag('cdp', 9222))
 if (!['drive', 'stream'].includes(SCENARIO)) { console.error(`unknown scenario ${SCENARIO}`); process.exit(1) }
 
-const qs = new URLSearchParams({ prof: '1', hitch: String(HITCH_MS) })
+const qs = new URLSearchParams({ prof: '1', hitch: String(HITCH_MS), nomenu: '1' })   // FEAT-41: skip the menu; this harness wants the world on screen
 if (SEED && SEED !== '6') qs.set('seed', SEED)
 const APP = `http://localhost:${PORT}/index.html?${qs}`
 

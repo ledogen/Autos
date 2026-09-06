@@ -22,7 +22,9 @@ import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
 import { DebrisSystem } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
-import { getWheelPosition } from './suspension.js'
+import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
+import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
+import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
 import { DamageModel } from './damage.js'                   // SM-3: component condition model
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the V-key condition readout
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
@@ -299,44 +301,6 @@ RANGER_PARAMS._hubNormalXZ = [
   { x: 0, y: 0, z: 0 },
   { x: 0, y: 0, z: 0 }
 ]
-
-// ── Static equilibrium at startup (RESEARCH §Pattern 4, Phase 4.1 D-11) ─────────────────────────────────────
-// Pre-compute strutComp and body Y so the car spawns pre-settled with no visible drop.
-// Phase 4.1 D-11 formula: strutComp[i] = m_sprung_corner * g / k_S_i
-//   m_sprung_corner = mass * weight_i / 2  (sprung mass only — excludes wheelMass from hub ODE)
-//   Verified numerically: strutComp ≈ 0.111 m at current params
-// Body Y derivation (via series-spring geometry):
-//   tireComp  = cornerMass * g / k_T   (full corner mass including wheel)
-//   hubY      = wheelRadius - tireComp  (hub sits above ground by tireComp)
-//   bodyY[i]  = hubY + (L_S - strutComp[i]) + (cgHeight - wheelRadius)
-//   vehicleState.position.y = average of front bodyY values (body is rigid; one CG)
-function computeStaticEquilibrium (p) {
-  const g          = 9.81
-  const strutComp  = [0, 0, 0, 0]
-  const bodyYCorner = [0, 0, 0, 0]
-  for (let i = 0; i < 4; i++) {
-    const isFront    = i < 2
-    const cornerMass = p.mass * (isFront ? p.weightFront : p.weightRear) / 2 + p.wheelMass
-    const k_T = p.tireStiffness
-    const k_S = isFront ? p.suspensionStiffnessFront : p.suspensionStiffnessRear
-    const L_S = isFront ? p.suspensionRestLengthFront : p.suspensionRestLengthRear
-    const sprung    = p.mass * (isFront ? p.weightFront : p.weightRear) / 2  // D-11: sprung only
-    strutComp[i]    = sprung * g / k_S  // ≈ 0.111 m at current params
-    // Derive bodyY from strutComp (D-11 geometry):
-    //   hubY = wheelRadius - tireComp (where tireComp uses full corner mass incl wheel)
-    //   bodyY = hubY + (L_S - strutComp[i]) + (cgHeight - wheelRadius)
-    const tireComp   = cornerMass * g / k_T
-    const hubY       = p.wheelRadius - tireComp
-    // Subtract suspensionBodyOffset to invert getWheelPosition's mount-Y (which now includes it,
-    // BUG-05) — keeps the spawn height exact at any ride-height tuning instead of settling a frame.
-    const bodyOffset = isFront ? (p.suspensionBodyOffsetFront || 0) : (p.suspensionBodyOffsetRear || 0)
-    bodyYCorner[i]   = hubY + (L_S - strutComp[i]) + (p.cgHeight - p.wheelRadius) - bodyOffset
-  }
-  // Use average of front-pair bodyY for initial CG height (front/rear should be nearly equal
-  // with balanced tuning; minor front-rear offset settles within a frame via hub dynamics).
-  const bodyY = (bodyYCorner[0] + bodyYCorner[1]) / 2
-  return { bodyY, strutComp }
-}
 
 // PERF-30: the network Worker builds the ENTIRE network (routing + BUG-56 plan layer + assembly)
 // off-thread; play adopts finished networks atomically between frames (stale-until-replaced). It runs
@@ -1009,48 +973,13 @@ const _prevRenderPos  = new THREE.Vector3()
 const _prevRenderQuat = new THREE.Quaternion()
 let currentTime = performance.now() / 1000
 
-// ── Vehicle state placeholder ────────────────────────────────────────────────
-// Vehicle state shape — see GLOSSARY.md. Mutated each physics step by Plan 02's
-// vehicle.js / physics.js. Wave 1 leaves it static.
-// Wheel index convention (GLOSSARY.md §Wheel Index): 0=FL, 1=FR, 2=RL, 3=RR
-//
-// Phase 4.1: position.y and strutComp[] are set from static equilibrium so the car spawns pre-settled
-// with no visible drop. computeStaticEquilibrium() must be called after RANGER_PARAMS is loaded.
-const _spawnEq = computeStaticEquilibrium(RANGER_PARAMS)
-const vehicleState = {
-  position:        new THREE.Vector3(0, _spawnEq.bodyY, 0),
-  velocity:        new THREE.Vector3(),
-  quaternion:      new THREE.Quaternion(),       // identity — car points down -Z
-  angularVelocity: new THREE.Vector3(),
-  steerAngle:      0,                             // rad scalar, see GLOSSARY.md §Sign Conventions
-  throttle:        0,
-  brake:           0,
-  smoothThrottle:  0,                             // FEAT-01: ramped throttle accumulator; read+written by updateVehicle
-  smoothBrake:     0,                             // FEAT-01: ramped brake accumulator; read+written by updateVehicle
-  wheelSteerAngles: [0, 0, 0, 0],               // Per-wheel Ackermann steer angles [rad]; set by updateVehicle each step; read by stepPhysics for lateral force decomposition.
-  // Phase 4.1 strut state (D-01): strut compression and velocity per corner.
-  // Initialized to static equilibrium — strutComp ≈ 0.111 m at current params.
-  strutComp:    [..._spawnEq.strutComp],  // m   — strut compression per corner (0=FL,1=FR,2=RL,3=RR)
-  strutCompVel: [0, 0, 0, 0],            // m/s — strut compression velocity per corner (D-01)
-  wheelDebug:      [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ],  // per-wheel debug data written by stepPhysics; read by logger; fz=tire spring force (D-12)
-  wheelOmega:      [0, 0, 0, 0],                   // per-wheel angular velocity [rad/s]; integrated by physics.js omega integrator
-  // ── SM-3 damage signals: honest per-corner quantities the physics already computes, published
-  // here so src/damage.js can integrate wear without importing anything from the physics stack.
-  slipVel:         [0, 0, 0, 0],                   // m/s — raw contact-patch sliding speed (tire wear, dominant term)
-  tireFlat:        [0, 0, 0, 0],                   // N   — cornering force magnitude (tire wear, minor term)
-  bumpForce:       [0, 0, 0, 0],                   // N   — peak bump-stop force this step (spring wear)
-  rimForceRoad:    [0, 0, 0, 0],                   // N   — rim load from ROAD/terrain: the squashed-carcass load past full compression (a different measurement from rimForce — see suspension.js)
-  rimForce:        [0, 0, 0, 0],                   // N   — engine contact FORCE on each WHEEL HARD CORE (QUAL-25). Non-zero only when the rim itself is hit — rim damage
-  brakeTorque:     [0, 0, 0, 0],                   // N·m — applied brake torque (brake wear)
-  wheelPhase:      [0, 0, 0, 0],                   // per-wheel spin phase [rad], fixed-step; feeds the out-of-round radius (params.wheelRunout)
-  drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
-  ignition:        makeIgnitionState(),               // FEAT-33 key state (OFF/CRANKING/RUNNING); stepped by updateVehicle, read by stepDrivetrain + the cluster. Free roam spawns RUNNING.
-  engineHealth:    1,                                 // FEAT-33 seam for the SM-3 wear model: 1 = fresh engine (quarter-second catch), 0 = beater (ignitionCatchTimeWorn). Nothing writes it yet.
-  handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque
-  parked:          true,                              // spawn/teleport hold (feature/teleport): handbrake held until first driver input
-  submerged:       false,                            // FEAT-22: CG below a water surface (set per-frame from WaterSystem.submergedAt)
-  submergedDepth:  0,                                // FEAT-22: m below the water surface (0 when dry)
-}
+// ── Vehicle state ────────────────────────────────────────────────────────────
+// The player's truck. Mutated each physics step by vehicle.js (input) and physics.js (dynamics);
+// units, sign conventions and the wheel index (0=FL, 1=FR, 2=RL, 3=RR) are in GLOSSARY.md.
+// The SHAPE and its static-equilibrium seeding live in src/vehicle-state.js — FEAT-41's menu stage
+// runs a SECOND truck in its own physics world, and two copies of that literal would drift the
+// first time a field was added to one and not the other.
+const vehicleState = makeVehicleState(RANGER_PARAMS)
 
 // ── SM-3 damage model ────────────────────────────────────────────────────────────────────────────
 // One instance per run. Starts at 100% (a new truck); the jalopy generator will replace this with a
@@ -1089,6 +1018,37 @@ installShadowEdgeFade({ fadeStart: 0.82 })
 // sun moved, world geometry streamed, or the vehicle is in motion). First frame needs one render.
 renderer.shadowMap.autoUpdate  = false
 renderer.shadowMap.needsUpdate = true
+
+// ── FEAT-41: the menu stage ──────────────────────────────────────────────────
+// The live 3D scene behind the main menu, and the loading screen for every mode entry after that.
+// Constructed HERE — right after the renderer, long before the world exists — because everything
+// below is a run of top-level awaits, and the stage's own rAF loop animates through the gaps
+// between them. That is what turns the cold-boot wait into the truck drop rather than a black
+// screen with text. loop() takes the driving off it the moment it starts (stopStandalone).
+//
+// `?nomenu=1` BYPASSES the menu and boots straight into free roam, the way the game did before this
+// feature. The headless harnesses that drive a real page — test/screenshot.mjs, profile.mjs,
+// hitch-report.mjs, story-coldload.mjs — all pass it: they wait on window.__rsReady and then expect
+// to be looking at the WORLD, and a menu in front of it would leave them screenshotting a truck on
+// a dirt mound. The stage is still constructed (so the pause menu's way back to it works), just
+// never raised.
+const _noMenu = _urlParams.has('nomenu')
+const menuStage = new MenuStage({
+  active: !_noMenu,
+  // The boot splash must not lift before there is something behind it: this fires after the
+  // stage's first PAINTED frame, not merely when it is built.
+  onFirstFrame: () => { const bl = document.getElementById('boot-loading'); if (bl) bl.style.display = 'none' },
+})
+void menuStage.begin(renderer)   // deliberately not awaited — it must run DURING the init below
+if (_noMenu) {
+  document.body.classList.remove('stage-on')
+  const mm = document.getElementById('main-menu'); if (mm) mm.style.display = 'none'
+}
+// While the stage owns the screen the world sim is HELD: nothing should be driving the truck behind
+// a menu. The hold skips only the fixed-step block, so storySystem.update() — the region-entry pump,
+// which lives after it — keeps running, and terrain/roads keep streaming. That is the whole trick
+// behind "the load animates".
+let _simHeld = !_noMenu
 
 // ── Camera ───────────────────────────────────────────────────────────────────
 // Spring-follow camera managed by src/camera.js (Plan 04). updateCamera() called each frame.
@@ -4102,7 +4062,7 @@ _gui.foldersRecursive().forEach((f) => f.close())
 
 // Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
-// This overrides the vehicleState.position set during declaration (which used origin + _spawnEq.bodyY).
+// This overrides the vehicleState.position set by makeVehicleState (origin at static-equilibrium bodyY).
 perfMark('init: systems created, before spawn reseat')  // TEMP (D-arc)
 // PERF-11/12: apply the default tier ONCE at boot. Until now "Normal == construction defaults"
 // held by convention; Normal now differs (resHeight 1200, shadow 1536@±160), so the preset must
@@ -4433,12 +4393,10 @@ const storySystem = new StorySystem({
   onSeedRejected: (seed, report) => _showSeedModal(report, seed),
   hidePauseMenu: () => _hidePauseMenu(),
   setQuickJobVisible: (visible) => { const el = document.getElementById('quickjob-btn'); if (el) el.style.display = visible ? 'block' : 'none' },
-  setLoading: (visible, text) => {
-    const el = document.getElementById('story-loading')
-    if (el) el.style.display = visible ? 'flex' : 'none'
-    const t = document.getElementById('sl-text')
-    if (t && text) t.textContent = text
-  },
+  // FEAT-41: the entry load is now WATCHED, not waited out behind a black panel. This is the one
+  // signal that covers every story entry (main menu, pause button, a rejected-seed retry), so the
+  // stage is raised and dropped from here rather than at each call site.
+  setLoading: (visible, text) => { if (visible) _enterStageLoad(text); else _exitStageLoad() },
   getVehiclePosition: () => ({ x: vehicleState.position.x, z: vehicleState.position.z }),
   isMissionActive: () => !!missionSystem?.isActive(),
   /**
@@ -4570,12 +4528,20 @@ const storySystem = new StorySystem({
  * is told plainly and asked for a different one. Nothing rerolls — that was the owner's ruling
  * (2026-08-27), and it is why story mode does not need a nine-tile play area to be safe.
  */
-function _showSeedModal (report = null, rejectedSeed = null) {
+// FEAT-41: the same dialog now fronts FREE ROAM as well as story mode — both are "pick a world and
+// go", and there was no reason for free roam to be the one mode you could not choose a seed for.
+// The refusal block below stays story-only: free roam has no region to validate, so there is nothing
+// for world-validate.js to refuse.
+let _seedModalMode = 'story'   // 'story' | 'freeroam'
+function _showSeedModal (report = null, rejectedSeed = null, mode = 'story') {
+  _seedModalMode = mode
   const el = document.getElementById('story-seed-modal')
   if (el) {
     el.style.display = 'flex'
     el.classList.toggle('rejected', !!report)
   }
+  const title = document.getElementById('ss-title')
+  if (title) title.textContent = mode === 'freeroam' ? 'free roam' : 'story mode'
   if (report) {
     const why = document.getElementById('ss-reject-why')
     const detail = document.getElementById('ss-reject-detail')
@@ -4588,20 +4554,102 @@ function _showSeedModal (report = null, rejectedSeed = null) {
       detail.textContent = bits.join('  ·  ')
     }
   }
+  // Always blank (owner, 2026-09-06): the placeholder offers a random world, and pre-filling the
+  // standing seed would quietly make "just press start" mean "replay the same world forever".
   const inp = document.getElementById('ss-seed')
-  if (inp) { inp.value = report ? '' : _seedString; inp.focus(); inp.select() }
+  if (inp) { inp.value = ''; inp.focus() }
+}
+
+/** Blank ⇒ a fresh random world. Any other text is a seed verbatim (parseWorldSeed hashes it). */
+function _resolveSeedInput () {
+  const raw = (document.getElementById('ss-seed')?.value ?? '').trim()
+  return raw || String((Math.random() * 0x100000000) >>> 0)
 }
 function _hideSeedModal () {
   const el = document.getElementById('story-seed-modal')
   if (el) { el.style.display = 'none'; el.classList.remove('rejected') }
 }
-function _startStoryFromModal () {
-  const seed = document.getElementById('ss-seed')?.value ?? '6'
+// ── FEAT-41: the menu / loading screen state machine ─────────────────────────────────────────────
+// Three states, all sharing ONE 3D scene (src/stage.js): the menu (stage + buttons), a load (stage +
+// caption strip) and the world (stage off). The stage is what the player looks at for the first two,
+// which is why loop() renders it INSTEAD of the world scene rather than behind it.
+function _showMainMenu () {
+  _hidePauseMenu()
   _hideSeedModal()
+  const cap = document.getElementById('load-caption')
+  if (cap) cap.style.display = 'none'
+  const el = document.getElementById('main-menu')
+  if (el) { el.style.display = 'flex'; el.classList.remove('settings') }
+  menuStage.setActive(true)   // re-runs the drop when arriving from the world; a no-op at boot
+  _simHeld = true
+  document.body.classList.add('stage-on')
+}
+function _hideMainMenu () {
+  const el = document.getElementById('main-menu')
+  if (el) { el.style.display = 'none'; el.classList.remove('settings') }
+}
+/** Raise the stage over a load. Idempotent — story.js pumps setLoading with fresh text each stage. */
+function _enterStageLoad (text) {
+  _hideMainMenu()
+  menuStage.setActive(true)
+  _simHeld = true
+  document.body.classList.add('stage-on')
+  const cap = document.getElementById('load-caption')
+  if (cap) cap.style.display = 'flex'
+  const t = document.getElementById('sl-text')
+  if (t && text) t.textContent = text
+}
+/** The world is ready: drop the stage and hand the screen (and the fixed-step block) back. */
+function _exitStageLoad () {
+  const cap = document.getElementById('load-caption')
+  if (cap) cap.style.display = 'none'
+  _hideMainMenu()
+  menuStage.setActive(false)
+  _simHeld = false
+  document.body.classList.remove('stage-on')
+}
+
+/**
+ * Free roam on a chosen seed. The world standing behind the menu was built on the boot seed, so
+ * picking that same one costs nothing but a re-seat; anything else pays one full rebuild — behind
+ * the stage, which is the entire point of the stage existing.
+ */
+async function _startFreeRoam (seedStr) {
+  if (storySystem.isActive()) storySystem.exit()
+  if (_labActive) exitLab()
+  window.__setGameMode('freeroam')
+  _enterStageLoad('building the world\u2026')
+  if (parseWorldSeed(seedStr) !== worldSeed) await applyWorldSeed(seedStr)
+  else await _reseatTruckAtSpawn()
+  _exitStageLoad()
+}
+
+function _startStoryFromModal () {
+  const seed = _resolveSeedInput()
+  _hideSeedModal()
+  if (_seedModalMode === 'freeroam') { void _startFreeRoam(seed); return }
+  if (_labActive) exitLab()
+  _enterStageLoad('entering the region\u2026')   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
   storySystem.enter(seed)
 }
 document.getElementById('ss-start')?.addEventListener('click', _startStoryFromModal)
+
+// Main-menu buttons. Free roam and story both go through the seed dialog; the lab is a debug rig
+// with no world of its own, so it just enters.
+document.getElementById('mm-freeroam')?.addEventListener('click', () => _showSeedModal(null, null, 'freeroam'))
+document.getElementById('mm-story')?.addEventListener('click', () => _showSeedModal(null, null, 'story'))
+document.getElementById('mm-lab')?.addEventListener('click', () => {
+  _hideMainMenu()
+  _exitStageLoad()
+  if (!_labActive) enterLab()
+})
+document.getElementById('mm-settings')?.addEventListener('click', () => {
+  document.getElementById('main-menu')?.classList.add('settings')
+})
+document.getElementById('mm-settings-back')?.addEventListener('click', () => {
+  document.getElementById('main-menu')?.classList.remove('settings')
+})
 // "start anyway": the region behind the disclaimer is already built and frozen, so honouring this
 // costs nothing but a call. Story mode is a sandbox while it is being designed and going to LOOK at
 // what broke is a legitimate thing to want — the warning has been read, so this is informed.
@@ -4629,6 +4677,14 @@ document.getElementById('quickjob-btn')?.addEventListener('click', () => { if (m
 // an unguarded deref would throw at module-eval and abort the whole sim if an id is
 // renamed/removed from index.html (WR-04).
 document.getElementById('pm-resume')?.addEventListener('click', () => _hidePauseMenu())
+// FEAT-41: back out to the main menu. The mode is left FIRST — dropping to a menu while story mode
+// still holds a frozen region and a live day clock would leave both running behind the scene.
+document.getElementById('pm-menu')?.addEventListener('click', () => {
+  if (missionSystem?.isActive()) missionSystem.exit()
+  if (storySystem.isActive()) storySystem.exit()
+  if (_labActive) exitLab()
+  _showMainMenu()
+})
 // Story mode is opt-in from this menu ONLY — a first-time visitor lands in free roam and is
 // never thrust into an unfinished mode. Switching the game mode also disables free-roam-only
 // affordances (teleport), which is the point of _gameMode existing.
@@ -4706,6 +4762,10 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return
   if (document.pointerLockElement) return   // this Esc is the browser's lock-release
+  // FEAT-41: there is nothing to pause while the stage owns the screen — the sim is held, and the
+  // pause menu is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back
+  // out of the settings page and is otherwise inert until the world is handed back.
+  if (menuStage.isActive()) { document.getElementById('main-menu')?.classList.remove('settings'); return }
   const el = document.getElementById('pause-menu')
   if (!el) return
   if (el.style.display === 'none' || el.style.display === '') {
@@ -4790,9 +4850,13 @@ function loop () {
   if (!_firstFrameMarked) {
     _firstFrameMarked = true
     perfMark('first animate frame')  // TEMP (D-arc)
-    // PERF-30 (owner 2026-09-04): drop the boot loading screen — visible since HTML parse, and
-    // everything that used to freeze the first seconds (spawn build, planner warm) is off-thread
-    // now, so the first frame really is a playable one.
+    // FEAT-41: one rAF loop, not two. The stage has been animating on its own since just after the
+    // renderer was made; from here it is a passenger and this loop drives it.
+    menuStage.stopStandalone()
+    // PERF-30's boot-splash hide normally fires from the stage's first painted frame (so the splash
+    // never lifts onto an empty canvas). This is the fallback for the one case that cannot: the
+    // stage failed to build at all. Without it a stage-side error would leave the splash up forever
+    // over a perfectly playable game.
     const bl = document.getElementById('boot-loading')
     if (bl) bl.style.display = 'none'
   }
@@ -4815,6 +4879,9 @@ function loop () {
   _fpsLastTime = newTime
 
   accumulator += frameTime
+  // FEAT-41: sim hold. Zeroing the accumulator is not optional — leaving the debt to grow while the
+  // menu is up would fire a spiral of catch-up steps the instant the world was handed back.
+  if (_simHeld) accumulator = 0
   damageHUD.update(frameTime)   // SM-3 readout (V) — returns on the first line while hidden
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
@@ -5438,7 +5505,10 @@ function loop () {
 
   const _ptR = performance.now()
   perfAdd('frame.postStream', _ptR - _ptPost)   // PERF-26 INSTRUMENT
-  renderer.render(scene, camera)
+  // FEAT-41: whichever scene owns the screen. Skipping the world render behind a menu or a load is
+  // not just tidiness — it hands the GPU to the build that is running underneath.
+  if (menuStage.isActive()) { menuStage.update(frameTime); menuStage.render(renderer) }
+  else renderer.render(scene, camera)
   perfAdd('frame.render', performance.now() - _ptR)  // TEMP: the ~8.5s uninstrumented load cost suspect
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
   // +N on the hitch record rather than as unexplained time outside every bucket.
@@ -5474,6 +5544,7 @@ prewarmLightPrograms(renderer, scene, camera)
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
+  menuStage.resize()   // FEAT-41: the stage has its own camera
   // PERF-06: applyRenderResolution re-clamps pixelRatio (the resHeight cap depends on innerHeight) AND
   // re-stamps the backing buffer — replaces the bare setSize so a Low-tier 720p cap survives a resize.
   applyRenderResolution()

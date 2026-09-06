@@ -128,7 +128,13 @@ function splitRearGroup (mesh, rearZ) {
  * @param {object} [spec]  visual spec from data/vehicle-models.js (model file, alignment, lights).
  *                         Defaults to the project default vehicle; pass another to swap models.
  */
-export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL) {
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.keyBindings] - bind 'L' to cycle the headlights. True for the player's
+ *   truck; FEAT-41's menu stage builds a SECOND model in its own scene and passes false, or one
+ *   keypress would toggle the lamps on both trucks at once.
+ */
+export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL, { keyBindings = true } = {}) {
   // carGroup: parent Object3D for body + wheels — wheels inherit body pitch/roll (Bug 5 fix).
   // syncMeshesToState drives carGroup.position and carGroup.quaternion; children follow automatically.
   const carGroup = new THREE.Object3D()
@@ -338,7 +344,9 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     }
   }
   applyHeadlights()
-  if (typeof window !== 'undefined') {
+  /** Set the lamps directly: 0 = off, 1 = low, 2 = high. The stage parks a DEAD truck, so it wants 0. */
+  const setHeadlightMode = (m) => { headlightMode = m & 3; applyHeadlights() }
+  if (keyBindings && typeof window !== 'undefined') {
     window.addEventListener('keydown', (e) => {
       if (e.key === 'l' || e.key === 'L') { headlightMode = (headlightMode + 1) % 3; applyHeadlights() }
     })
@@ -860,5 +868,5 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL)
     // syncMeshesToState re-asserts real visibility from intensities on the next frame.
   }
 
-  return { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, prewarmLightPrograms }
+  return { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms }
 }
