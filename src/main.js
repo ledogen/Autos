@@ -3970,6 +3970,17 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
       // so clear the ribbon tiles and re-bake the carve against the ADOPTED geometry — doing this
       // at invalidate time would have rebuilt against the stale network and then again here.
       if (roadMeshSystem) roadMeshSystem.clearAll()
+      // ORDER MATTERS, exactly as in debouncedRoadRebuild's synchronous path — and this call was
+      // MISSING here, which is the whole bug. adoptNetwork() installs the runs but explicitly drops
+      // the slices (`_tiles.clear()`, `_slicedFrom = null`), so between the swap and the next
+      // _sliceNetwork() the road exists as runs and does NOT exist as tiles. The carve reads TILES.
+      // Rebuilding the terrain in that gap bakes chunks against an empty road: the deck sits at its
+      // design height with no embankment or bench under it, and the ribbon tile for that key was
+      // just cleared — a road spline drawn through open air, the truck resting on whatever the
+      // uncarved ground left behind. Driving away and back masked it because a chunk streamed in
+      // LATER re-carves against a by-then-sliced network. Re-slice first, then rebuild.
+      const _adoptC = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+      roadSystem.update(_adoptC)   // adopted window ⇒ short-circuits the rebuild, just re-slices
       if (terrainSystem) {
         terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
         terrainSystem.rebuildAllChunksFromWorker()

@@ -1183,8 +1183,16 @@ export class TerrainSystem {
             let recarved = 0
             for (const [key, chunk] of this._chunkMap) {
                 if (recarved >= MAX_BUILDS_PER_FRAME || performance.now() >= recarveDeadline) break
-                if (chunk.builtRoadGeneration === currentRoadGen) continue
                 const [cx, cz] = key.split(',').map(Number)
+                // Two independent reasons a live chunk's carve is stale:
+                //   (a) the road CHANGED SHAPE under it   → generation differs (param re-route);
+                //   (b) the road ARRIVED over it          → it was carved outside network coverage
+                //       and the window has since grown to include it. A 'move' adopt deliberately
+                //       does not bump the generation, so (a) cannot see this — which left a
+                //       teleport destination permanently uncarved (deck in the air, no ribbon)
+                //       until the chunk happened to be evicted and re-streamed.
+                const covered = this._roadCoversChunk(cx, cz)
+                if (chunk.builtRoadGeneration === currentRoadGen && chunk.builtRoadCovered === covered) continue
                 const newCarveData = this._buildCarveTable(cx, cz, chunk.heights)   // PERF-03 #1: reuse stored raw heights
                 // Re-apply heights + carve blend to the mesh Y positions (same formula as _flushPendingQueue).
                 // FEAT-18: chunk.streamData is reused as-is — streams are a pure fn of (seed, water
@@ -1203,6 +1211,7 @@ export class TerrainSystem {
                 // Stamp the new generation so we don't re-carve this chunk again until the next re-route.
                 chunk.carveData = newCarveData ?? null
                 chunk.builtRoadGeneration = currentRoadGen
+                chunk.builtRoadCovered = covered
                 this._physicsHook?.syncChunk(key, cx, cz, pos, N, CHUNK_SIZE)  // FEAT-48: recarved Y ⇒ rebuild collider
                 recarved++
             }
@@ -1355,6 +1364,21 @@ export class TerrainSystem {
     // instead of re-evaluating the multi-octave `height()` noise — byte-identical (same fn, same inputs),
     // just not recomputed. Available now that the table is built in _flushPendingQueue (has the heights)
     // and the re-carve path (chunk.heights). Callers without it (none currently) fall back to height().
+    /**
+     * Does the road network reach this chunk? Tested at the chunk's four corners plus its centre —
+     * the coverage boundary is a circle and a chunk is 64 m square, so a corner can be inside while
+     * the centre is not. Cheap (five squared-distance tests) and it runs once per live chunk per
+     * ring-sync tick, alongside the generation check it complements.
+     */
+    _roadCoversChunk(cx, cz) {
+        const rs = this._roadSystem
+        if (!rs || typeof rs.networkCoversXZ !== 'function') return true   // no road wired: nothing to wait for
+        const S = CHUNK_SIZE, x0 = cx * S, z0 = cz * S
+        return rs.networkCoversXZ(x0, z0) || rs.networkCoversXZ(x0 + S, z0)
+            || rs.networkCoversXZ(x0, z0 + S) || rs.networkCoversXZ(x0 + S, z0 + S)
+            || rs.networkCoversXZ(x0 + S / 2, z0 + S / 2)
+    }
+
     _buildCarveTable(cx, cz, rawHeights = null) {
         // Reached through the prototype, not `this`: the headless gates and bench-worldgen call this
         // method as TerrainSystem.prototype._buildCarveTable.call(fakeThis, …) with a plain object
@@ -1996,6 +2020,11 @@ export class TerrainSystem {
                 mesh, heights, carveData: carveData ?? null,
                 streamData: streamData ?? null,   // FEAT-18: stream table (sampleHeight + recarve/amp paths reuse it)
                 builtRoadGeneration: this._roadSystem?.roadGeneration() ?? -1,
+                // Was the road network actually REACHING this chunk when its carve was built? A
+                // chunk carved outside coverage is flat because the network had not arrived, not
+                // because there is no road — and a positional adopt never bumps roadGeneration, so
+                // the generation check alone can never reconcile it. See _roadCoversChunk.
+                builtRoadCovered: this._roadCoversChunk(cx, cz),
             })
 
             // Release the pending reservation only after _chunkMap is updated.

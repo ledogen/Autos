@@ -1596,6 +1596,25 @@ export class RoadSystem {
     roadGeneration() { return this._generation }
 
     /**
+     * Does the STREAMED network actually reach (x, z)?
+     *
+     * The carve and the ribbon read the network; when it does not cover a point, "no road here" and
+     * "the road has not arrived yet" are indistinguishable to them. That ambiguity is the whole of
+     * the teleport bug: jump to a spot the current window does not cover, terrain streams in and
+     * carves flat (correctly, against what it can see), then the positional build lands — and a
+     * 'move' adopt does NOT bump _generation (by design: window-invariant geometry must not
+     * re-carve in-range tiles on every frame of driving), so nothing ever reconciles those chunks.
+     * They stayed raw until evicted. terrain.js pairs this with builtRoadGeneration so a chunk
+     * carved OUTSIDE coverage is re-carved once coverage arrives, without re-carving everything.
+     */
+    networkCoversXZ(x, z) {
+        const c = this._proto.lastCenter, r = this._proto.radius
+        if (!c || !(r > 0)) return false
+        const dx = x - c.x, dz = z - c.z
+        return dx * dx + dz * dz <= r * r
+    }
+
+    /**
      * Wire the carve-free raw-height sampler used by sampleDesignGradeAt (CR-01, plan 09-08).
      * Must be rawHeightWorld — NOT analyticHeight (which re-introduces carve and would recurse).
      * Called from main.js after terrainSystem is constructed.

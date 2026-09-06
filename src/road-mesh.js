@@ -646,6 +646,20 @@ export class RoadMeshSystem {
      * @param {number} tileX — tile column (integer, same scale as terrain chunk cx)
      * @param {number} tileZ — tile row
      */
+    /**
+     * Does the streamed road network reach this tile? Corners + centre, because coverage is a
+     * circle and a tile is CHUNK_SIZE square. Mirrors TerrainSystem._roadCoversChunk — the ribbon
+     * and the carve have to agree about when a tile's emptiness is real.
+     */
+    _roadCoversTile(tileX, tileZ) {
+        const rs = this._road
+        if (!rs || typeof rs.networkCoversXZ !== 'function') return true
+        const S = CHUNK_SIZE, x0 = tileX * S, z0 = tileZ * S
+        return rs.networkCoversXZ(x0, z0) || rs.networkCoversXZ(x0 + S, z0)
+            || rs.networkCoversXZ(x0, z0 + S) || rs.networkCoversXZ(x0 + S, z0 + S)
+            || rs.networkCoversXZ(x0 + S / 2, z0 + S / 2)
+    }
+
     ensureRoadTile(tileX, tileZ) {
         const key = `${tileX},${tileZ}`
         if (this._tileMeshMap.has(key) || this._pendingSet.has(key)) return
@@ -790,8 +804,17 @@ export class RoadMeshSystem {
         for (const key of builtKeys) {
             const entry = this._tileMeshMap.get(key)
             if (!entry) continue
-            if (activeKeys.has(key) && entry.builtGeneration !== currentGen) {
-                const [cx, cz] = key.split(',').map(Number)
+            if (!activeKeys.has(key)) continue
+            const [cx, cz] = key.split(',').map(Number)
+            // Two reasons a built tile is stale. The generation check catches a re-ROUTE. It cannot
+            // catch a network that simply had not ARRIVED yet: a tile sliced while the streamed
+            // network did not reach it builds legitimately empty (the comment in _buildRoadTile is
+            // explicit that empty slices are normal at a junction node, so it must not early-return),
+            // caches that empty entry, and ensureRoadTile then refuses to re-queue it forever —
+            // while a positional adopt never bumps the generation. That is a teleport destination
+            // with no ribbon on it until the tile is evicted. Pair the stamp with coverage.
+            const covered = this._roadCoversTile(cx, cz)
+            if (entry.builtGeneration !== currentGen || entry.builtCovered !== covered) {
                 this.disposeRoadTile(key)   // remove meshes + geometry; deletes from _tileMeshMap
                 this.ensureRoadTile(cx, cz) // re-enqueue for rebuild against current spline
             }
@@ -1043,7 +1066,11 @@ export class RoadMeshSystem {
 
         // D1 (plan 09-19): stamp the road generation this tile was built against so
         // syncToChunkRing can detect stale tiles and re-enqueue them on mismatch.
-        this._tileMeshMap.set(key, { meshes, geometries, builtGeneration: this._road.roadGeneration() })
+        this._tileMeshMap.set(key, {
+            meshes, geometries,
+            builtGeneration: this._road.roadGeneration(),
+            builtCovered: this._roadCoversTile(tileX, tileZ),   // see the rebuild pass
+        })
         this._physicsHook?.syncTile(key, geometries)   // FEAT-48: asphalt/pads/bores → engine trimeshes
     }
 
