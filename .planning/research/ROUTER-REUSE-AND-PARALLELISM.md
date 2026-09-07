@@ -1,5 +1,13 @@
 # Router: shared-corridor reuse, and the unclaimed parallelism (2026-09-04)
 
+> **SUPERSEDED IN PART, 2026-09-06.** §3's reuse architecture (a router-side discount that CREATES
+> shared corridors) was built, driven, and **rejected by the owner**: it changes where roads go, and
+> the world came out worse. FEAT-76 was rewritten to want the opposite — keep today's routing exactly
+> as it is, and change only the DEPARTURE at the end of a shared corridor from a wye to a real T.
+> See `.planning/todos/pending/feat-76-wye-to-t-promotion.md`. The MEASURED sections in §1 below all
+> stand and are the reason the rewrite is scoped the way it is; read them before touching the merge
+> ladder.
+
 Session findings, no code written. Two independent conclusions came out of one question, and they
 are **multiplicative, not competing**:
 
@@ -47,6 +55,124 @@ other, stitched together afterwards.
 One crumb of neighbour-awareness already lives in the router: R5's `sibStart` / `sibGoal`
 (`corridor-router.js:1018`), a sibling-departure cost. But it applies **only at the node exit**, and
 only as a **penalty** — never a discount.
+
+### MEASURED — the step-1 sharing census (2026-09-06, main `4a0016b`, shipped defaults)
+
+`node test/route-sharing-census.mjs [seeds] [radius]`. Walks every unordered pair of registered
+runs, finds the maximal spans where the two centrelines stay within `mergeProxM` (18 m), and reads
+each pair's OUTCOME off the registered geometry rather than the tallies — `cededSpans` naming the
+partner is a merge, `offCurveSpans` without a ceded span is a shove, neither is nothing. Spans under
+`MINREG` (30 m) are excluded as pad-dressing, the same floor `_v2NodeMerges` uses. Rainy-day script,
+not a gate. Baseline is `RANGER_PARAMS` per QUAL-29 — main as it stands, not the v1-at-reanchor
+column.
+
+Seeds 6/20/11/7/3 at radius 1400 (191 km of road, 251 runs, 6192 pairs):
+
+| seed | runs | km | sharing pairs | disjoint | node-anchored | mid-span | MERGE | SHOVE | NOTHING |
+|---|---|---|---|---|---|---|---|---|---|
+| 6 | 51 | 37.9 | 9 | 0 | 8 | 1 | 9 | 0 | 0 |
+| 20 | 55 | 41.4 | 6 | 0 | 6 | 0 | 6 | 0 | 0 |
+| 11 | 49 | 38.8 | 11 | 0 | 11 | 0 | 8 | 0 | 3 |
+| 7 | 48 | 37.2 | 7 | 0 | 7 | 0 | 5 | 0 | 2 |
+| 3 | 48 | 35.7 | 7 | 0 | 7 | 0 | 7 | 0 | 0 |
+| **total** | **251** | **190.9** | **40** | **0** | **39** | **1** | **35** | **0** | **5** |
+
+Shared ground totals **6068 m of 190.9 km — 3.2% of network length**. Span median 108 m, p90 335 m,
+max 463 m.
+
+**Three findings, and the first one is a problem for the premise.**
+
+1. **Disjoint sharing is essentially zero.** All 40 sharing pairs at radius 1400 are *legs of the
+   same junction*. Not one pair of unrelated roads — no node in common — runs the same ground for
+   30 m. Re-checked at radius 2400 on seeds 6 and 20 (191 km, 245 runs): **1 disjoint pair out of
+   44**, and the shared fraction holds at 3.6–4.0%, so this is structural, not a window artefact.
+   It is also explicable: the graph is Urquhart over blue-noise sites and BUG-57 made the crossing
+   invariant hold, so two unrelated edges of a near-planar graph converging to within 18 m is a
+   shape the topology already excludes.
+
+   That is the honest reading of D2's opportunity. The reuse FEAT-76 proposes is *not* mostly the
+   conversion of existing accidental overlap — there is almost none to convert. It would be the
+   creation of NEW sharing that today's independent routing does not produce. Which is still the
+   ticket's stated aim ("let a routing centerline see that a neighbour has already justified a
+   path"), but it means the baseline cannot be beaten by tidying up coincidences; ρ has to actively
+   pull routes together, and that is precisely the setting the character A/B is most at risk from.
+
+2. **The merge ladder already catches 35 of 40 (88%).** The NOTHING residue is 5 pairs / 263 m =
+   **0.14% of network length**, and 3 of the 5 are a single 32 m span apiece. D4's question — how
+   much of `_v2NodeMerges` goes idle — starts from a ladder that is already near-complete on the
+   sharing that exists. The residue is not the argument for this ticket.
+
+3. **The shove rung fires ZERO times at radius 1400 on all five seeds** (`_v2Shoves` = 0 each), and
+   once per seed at 2400. Shoves are *attempted* — the `shove` decline reason fires 1–4 times a
+   seed — but essentially never land. Not FEAT-76's business; recorded because any before/after
+   here starts from zero and a single shove will look like a large relative movement.
+
+Decline histogram for context (why the ladder skipped what it skipped): `pin-overwrite` dominates
+every seed (15–27), then `pad` (0–16), then a long tail of `flare` / `short` / `steep-fork` /
+`seam` / `taper` / `role` in low single digits.
+
+### MEASURED — R5's sibling-departure cost does not move sharing (2026-09-06)
+
+Owner re-scoped the ticket to junction legs on the census above (option 2, 2026-09-06). The obvious
+lever there is R5 — `wSibDepart` (`corridor-router.js:383`), a per-metre surcharge on departing
+within `sibConeDeg` (25°) of a sibling's bearing, out to `sibReachM` (120 m). Its own comment names
+this as "the measured generator of the node-sharing overlap class". Reuse would be that cost with
+the sign flipped, so: does the knob actually do anything? Re-ran the census with `wSibDepart` at 0,
+the shipped 3, and 12 (seeds 6/20/11/7/3 @1400, 191 km):
+
+| `wSibDepart` | sharing pairs | shared m | % of net | merges |
+|---|---|---|---|---|
+| 0 (off) | 39 | 5934 | 3.11% | 37 |
+| **3 (shipped)** | **40** | **6068** | **3.18%** | **38** |
+| 12 (4×) | 39 | 5578 | 2.93% | 37 |
+
+**Nothing. Not even monotone.** Turning the penalty off entirely and quadrupling it both land on 39
+pairs; the whole 0→12 sweep moves shared ground by 0.25 percentage points across 191 km of road.
+
+The reading is that **sibling-leg sharing is terrain-determined, not bearing-determined**. Two legs
+leaving one node into the same valley take the same line because it is the only line the cost model
+will buy, and a departure surcharge cannot price them out of it. That cuts both ways, and the second
+way is the one that matters here: if a 4× penalty cannot push them apart, a discount is unlikely to
+pull them together — they are already on the corridor a discount would steer them to.
+
+Two consequences:
+
+- **What a junction-leg reuse could still buy is EXACTNESS, not more sharing.** The runs are already
+  within 18 m; they are not *coincident*, so the plan layer has to throw the loser's vertices away
+  and taper back. Routing the spur along the trunk's own polyline would make the shared span exact
+  by construction and delete the band. That is D2's snap-not-discount idea, scoped to the node — and
+  it is the only version of this ticket the measurements still support.
+- **R5 itself looks like dead weight**: a cone test in the A\* inner loop (the hoisting comment
+  upstream counts ~114 M step evaluations) buying a one-pair difference. Not this ticket's business
+  to delete, but it should not be defended as load-bearing either.
+
+### MEASURED — what post-hoc merging actually costs: the taper bands (2026-09-06)
+
+`node test/taper-band-census.mjs [seeds] [radius]`. If exactness is the prize, the band is the thing
+that gets deleted, so its corner radius is the acceptance metric. Band vertices are `offCurveSpans`
+minus `cededSpans` (ceded vertices are the winner's own road, not a retrofit); radius is Menger
+curvature over the registered 4 m polyline, i.e. shipped geometry rather than planner intent. Seeds
+6/20/11/7/3 @1400, `roadMinTurnRadius` = 15 m:
+
+| | min | 1% | 5% | median | mean |
+|---|---|---|---|---|---|
+| taper band (835 verts, 37 bands) | 7.5 | 14.4 | 27.9 | 134.8 | 1231.8 |
+| open road (2534 verts) | 11.9 | 12.0 | 33.6 | 176.5 | 3488.9 |
+
+Per-band tightest corner: min 7.5 m, **median 41.4 m**, p90 70.2 m. **4 of 37 bands are tighter than
+`roadMinTurnRadius`; 1 of 37 is tighter than open road's 1st percentile.**
+
+**The bands are mostly fine.** BUG-56 B5's ladder (take the gentlest band at or above the road's own
+radius, fall back to `RFLOOR_MIN` only if nothing clears) is evidently doing its job — the median
+band corner sits at 41 m, comfortably above both the road's contract and open road's 1st percentile.
+What is left is a **four-band tail** below the road's own minimum radius, tightest 7.5 m. (Not
+directly comparable with BUG-56's 2026-08-27 figures — that census measured `buildTaper`'s swept
+curve, this one measures registered vertices, and its open-road 1st percentile was 24.8 m against
+12.0 m here. Different instruments; use this one for before/after.)
+
+So the prize for building junction-leg reuse is **four bad corners in 191 km of road**, plus whatever
+aesthetic gain comes from a fork that was routed rather than retrofitted. That is the number the
+go/no-go should be made on.
 
 ---
 
