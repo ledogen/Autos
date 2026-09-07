@@ -26,7 +26,7 @@ import { PoiSystem, POI_PARAMS } from '../src/poi.js'
 import { PAR_SLACK } from '../src/par.js'
 import { TRACE_HZ } from '../src/mission.js'
 import { planTour, PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun,
-         deadlineFor, stockForTier, customersForTier, radiusForTier } from '../src/paper-route.js'
+         deadlineFor, stockForTier, customersForTier, radiusForTier, tierRungs } from '../src/paper-route.js'
 import { computePar } from '../src/par.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
@@ -82,7 +82,7 @@ const tours = []
 for (let tier = 0; tier < PAPER_PARAMS.tiers.length; tier++) {
     const want = customersForTier(tier)
     const t0 = Date.now()
-    const t = planTour(W.road, larry, customers, want, region, 100, radiusForTier(tier))
+    const t = planTour(W.road, larry, customers, want, region, 100, radiusForTier(tier), tierRungs(tier))
     const ms = Date.now() - t0
     tours.push(t)
     check(`tier ${tier + 1} (${want} customers, ${radiusForTier(tier)} m ring) plans a route`, !!t)
