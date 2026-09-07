@@ -262,6 +262,33 @@ export class Centerline {
         return out
     }
 
+    /**
+     * FEAT-76: the sub-curve over [s0, s1], re-based so the slice starts at arc 0.
+     *
+     * EXACT, not a re-fit: a constant-curvature primitive cut anywhere is two constant-curvature
+     * primitives, so the result is still a Centerline of typed primitives and keeps every
+     * guarantee that buys — bounded curvature by construction (BUG-12), analytic pointAt/nearest,
+     * a truthful minRadius(). Used when a T promotion splits a trunk run at a departure node:
+     * each half has to be ORDINARY road, which means an ordinary centerline, not a sampler shim.
+     */
+    slice(s0, s1) {
+        const a = Math.max(0, Math.min(this.length, Math.min(s0, s1)))
+        const b = Math.max(0, Math.min(this.length, Math.max(s0, s1)))
+        const out = []
+        for (let i = 0; i < this.primitives.length; i++) {
+            const p = this.primitives[i]
+            const ps = this.starts[i], pe = ps + p.length
+            if (pe <= a + 1e-9 || ps >= b - 1e-9) continue
+            const c0 = Math.max(a, ps) - ps, c1 = Math.min(b, pe) - ps
+            const L = c1 - c0
+            if (!(L > 1e-9)) continue
+            if (c0 <= 1e-9 && c1 >= p.length - 1e-9) { out.push(p); continue }   // whole primitive
+            const q = primPose(p, c0)
+            out.push(makePrimitive(q.x, q.z, q.theta, L, p.kappa))
+        }
+        return new Centerline(out)
+    }
+
     // Nearest point on the centerline to (x,z): coarse arc-length scan + one Newton refine.
     // Optional [sMin, sMax] window bounds the scan (cheaper, and disambiguates switchbacks/loops by
     // searching only near an expected arc) — used by per-slice projection in road.js.

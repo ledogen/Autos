@@ -87,6 +87,8 @@ export const GATES = [
     desc: 'BUG-56 B0: every >=3-leg junction gets a pad. The ring ladder could end in null — 27 of 176 real junctions (15%) shipped a naked gap where the intersection should be, the owner\'s seed 6 (-3862,884) among them. Also reports which rung each pad landed on; the hull floor is a symptom counter.' },
   { file: 'node-pin.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-56 B2: every run ENDS at the node it shares. A shove or a mid-span merge that walks an endpoint past the 3.75 m cluster radius costs that node both the leg and its junction pad — the owner\'s "road that just ends in a field" (seed 6 -870,2468 was 17.3 m off).' },
+  { file: 'promoted-node-id.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'FEAT-76: a promoted T is the same node from every direction. Its id is synthetic (millimetre-quantised XZ, k = -1) and four modules outside the road system carry it as an opaque triple, so a T that derived a different id per stream window would surface as missing POIs / a broken mission / a "disconnected" world, not a crash. Gates byte-identical id, position, deck height and degree 3 across four overlapping windows per seed.' },
   { file: 'graph-topology.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-13 v2: blue-noise + Urquhart: reachability (known-accepted 78% red, see BUG-35), window-invariance, direction variety, step-free surface, junction-at-grade' },
   { file: 'props.mjs', subsystem: 'props', cost: 'fast', extraDeps: [],
