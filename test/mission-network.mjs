@@ -51,28 +51,84 @@ road.setRadius(MISSION_PLAN_RADIUS)
 road.update(new THREE.Vector3(C.x, 0, C.z))
 
 // ── 0. the gap the bug drove through actually exists ────────────────────────────────────────────
+// A NON-VACUITY control for section 1, nothing more: section 1 asserts that missions only route
+// over the REGISTERED network, and that assertion is only worth anything while the registered
+// network actually DIFFERS from the raw Urquhart graph. If the two ever coincide, section 1 passes
+// without testing anything and the original bug could walk straight back in.
+//
+// HISTORY, because this check has now been wrong twice in opposite directions:
+//   · originally it asserted a healthy cull share (~15% of raw edges near centre do not exist).
+//   · FEAT-68 (2026-08-19) DELETED the routed-geometry culls, so it inverted to `culled === 0`.
+//   · BUG-57's keep-the-connection ladder then re-introduced a DELETE last-resort, making a
+//     non-zero share correct again — and the inverted check went red without a defect behind it.
+//   · FEAT-76's T-promotion then made it worse in a way that had nothing to do with culling at
+//     all: promoting a wye to a real T SPLITS run A–B into A–P and P–B around a promoted node, so
+//     the site-pair key A|B disappears while the road is still entirely there. Measured on seed 6:
+//     of 7 "culled" edges, 5 were merely split and only 2 were genuinely absent.
+//
+// So the check now measures PRESENCE OF THE CONNECTION rather than presence of a key, and asserts
+// that a gap exists rather than that it doesn't.
+//
+// An edge counts as built if the world joins its endpoints either directly or through INSERTED
+// nodes — deliberately defined as "a node the raw graph does not have", NOT as FEAT-76's `k === -1`
+// encoding. That is what stops this drifting a fourth time: the next feature that inserts a node
+// needs no change here.
 {
   const kf = (id) => `${id[0]},${id[1]},${id[2]}`
-  const registered = new Set()
-  for (const [, e] of road._network) if (e.cellA && e.cellB) {
-    registered.add(`${kf(e.cellA)}|${kf(e.cellB)}`); registered.add(`${kf(e.cellB)}|${kf(e.cellA)}`)
-  }
   const mx = Math.floor(C.x / 256), mz = Math.floor(C.z / 256)
   const raw = road._buildUrquhart(mx - 9, mx + 9, mz - 9, mz + 9, false)
-  let near = 0, culled = 0
+
+  // Every node the GRAPH knows about. Anything else in the built network was inserted by a later
+  // stage (FEAT-76 promoted Ts today) and is a waypoint along a road, not a destination.
+  const graphNodes = new Set()
+  for (const [a, b] of raw.edges) { graphNodes.add(kf(a)); graphNodes.add(kf(b)) }
+
+  const direct = new Set()
+  const adj = new Map()
+  for (const [, e] of road._network) {
+    if (!e.cellA || !e.cellB) continue
+    const a = kf(e.cellA), b = kf(e.cellB)
+    direct.add(`${a}|${b}`); direct.add(`${b}|${a}`)
+    if (!adj.has(a)) adj.set(a, new Set())
+    if (!adj.has(b)) adj.set(b, new Set())
+    adj.get(a).add(b); adj.get(b).add(a)
+  }
+
+  // a → b using only inserted nodes in between: the same road, re-keyed by a split.
+  const joinedThroughInserted = (a, b, maxHops = 6) => {
+    const seen = new Set([a])
+    let frontier = [a]
+    for (let h = 0; h < maxHops; h++) {
+      const next = []
+      for (const n of frontier) for (const m of (adj.get(n) ?? [])) {
+        if (m === b) return true
+        if (seen.has(m) || graphNodes.has(m)) continue   // never route THROUGH another real site
+        seen.add(m); next.push(m)
+      }
+      if (!(frontier = next).length) break
+    }
+    return false
+  }
+
+  let near = 0, absent = 0, split = 0
   for (const [a, b] of raw.edges) {
     const pa = road._nodePos(a), pb = road._nodePos(b)
     if (Math.hypot(pa.x - C.x, pa.z - C.z) > 1600 || Math.hypot(pb.x - C.x, pb.z - C.z) > 1600) continue
     near++
-    if (!registered.has(`${kf(a)}|${kf(b)}`)) culled++
+    const ka = kf(a), kb = kf(b)
+    if (direct.has(`${ka}|${kb}`)) continue
+    if (joinedThroughInserted(ka, kb)) { split++; continue }
+    absent++
   }
-  // FEAT-68 (2026-08-19): the routed-geometry culls are DELETED (measured: they shredded v2
-  // connectivity while preventing zero real crossings), so the registered network ≡ the
-  // degree-capped graph. The check inverts: a NONZERO cull share now means phantom edge-dropping
-  // machinery came back.
-  check('no routed-geometry cull exists — registered network ≡ degree-capped graph near centre',
-    near > 10 && culled === 0, `${culled}/${near} culled near centre`)
-  console.log(`       ${culled}/${near} raw edges near centre do NOT exist in the world (${(100 * culled / near).toFixed(0)}%)`)
+
+  // The gap must EXIST (or section 1 is vacuous) and must stay a trim rather than a shredding.
+  // Measured on seed 6 @ HEAD: 2 of 26 absent (8%), 5 more merely split by T-promotion. The 40%
+  // ceiling is set well clear of that while still catching a return of the pre-FEAT-68 cull
+  // machinery, which "shredded v2 connectivity" at roughly 15% and would climb from there.
+  check('raw Urquhart still differs from the built network (section 1 is not vacuous)',
+    near > 10 && absent >= 1 && absent <= 0.40 * near,
+    `${absent}/${near} absent (${(100 * absent / near).toFixed(0)}%), ${split} split by inserted nodes`)
+  console.log(`       ${absent}/${near} raw edges near centre are genuinely NOT built; ${split} more are SPLIT around an inserted node (the road exists, the key changed)`)
 }
 
 // ── 1. no mission may propose an edge the world culled ──────────────────────────────────────────

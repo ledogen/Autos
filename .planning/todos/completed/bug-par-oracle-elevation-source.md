@@ -1,9 +1,9 @@
 ---
 id: BUG-41
 type: bug
-status: open
+status: closed
 opened: 2026-08-02
-closed: 2026-08-03
+closed: 2026-09-07   # first closed 2026-08-03 as WONTFIX; re-opened 2026-09-05; all three stages done
 reopened: "2026-09-05: the drift alarm fired exactly as designed — see the RE-OPENED section"
 renumbered: "2026-08-03: filed as BUG-40, which collided with the closed deg-2 connector hump bug"
 severity: medium   # 2026-09-05: raised from minor — par misprices DISTANCE on merged runs (up to 6.39%), and par is the FEAT-53 payout denominator
@@ -362,6 +362,54 @@ stays on the standing-reds list for that one check, which the Stage-1 acceptance
 Stages 2 and 3. Stage 2 is gated on a labelled corpus of recorded drives on v2 roads — owner work,
 into a NEW directory, `runs/` left intact.
 
+---
+
+# CLOSED 2026-09-07 — all three stages done, two of them by ruling
+
+Merged to main as **`4b42ef4`**. Handoff: `.planning/handoffs/HANDOFF-2026-09-06-BUG-41-merge.md`.
+
+| stage | outcome |
+|---|---|
+| 1 — what par MEASURES | **fixed.** `edgeParData` re-parameterised onto `polyCum`, the driven arc. |
+| 2 — what par ASSUMES | **measured, ratified unchanged.** `PAR_REF` pass (5). |
+| 3 — what par PAYS | **ruled no change.** `k` stays 0.30. |
+
+The shape of the answer is worth keeping: the bug was real and the fix was real, but *neither*
+constant it threatened turned out to need moving. Par was measuring the wrong road; once it measured
+the right one, the v1-fitted reference and the v1-derived `k` were both still correct.
+
+## The last standing red went with it
+
+`mission-network` §0 was **re-expressed, not deleted** (2026-09-07), and the gate is now FULLY GREEN
+— the first time since FEAT-68. It had been wrong twice in opposite directions:
+
+- it asserted `culled === 0` on FEAT-68's premise that the routed-geometry culls were deleted;
+- BUG-57's keep-the-connection ladder re-added a DELETE last-resort, making non-zero correct again;
+- then FEAT-76 made it worse for a reason that was not culling at all. **Measured: of 7 "culled"
+  edges, 5 were merely SPLIT** — promoting a wye to a real T turns run A–B into A–P and P–B, so the
+  site-pair key disappears while the road is entirely there. Only **2 of 26** were genuinely absent,
+  which is exactly the pre-FEAT-76 reading.
+
+It now measures **presence of the CONNECTION, not of a key**, and asserts that a gap EXISTS (which
+is what makes §1's "missions route only over the registered network" non-vacuous) with a 40% ceiling
+to catch a return of the pre-FEAT-68 shredding. An edge counts as built if its endpoints are joined
+through **inserted nodes**, defined as *"a node the raw graph does not have"* rather than FEAT-76's
+`k === -1` encoding — deliberately, so the next node-inserting feature needs no change here and this
+does not drift a fourth time.
+
+## Nothing left on the table
+
+Everything the re-opened ticket asked for is ticked. Two things were found ALONGSIDE and are neither
+owed nor forgotten:
+
+- **`paper-tour`'s SM-INV-12 customer drop** (`house:7,2,1|7,3,0:3`, tier 3 dropping a tier-2
+  customer) — a design-invariant question, always the owner's, and separately fixed on
+  `feature/red-gates` 2026-09-06.
+- **The v2 corpus is a hint, not a fit.** `runs-v2/` holds 12 runs / 11 fittable against
+  calibrate-par's own "20 is a hint, not a fit" bar. Pass (5) ratifies rather than proves, and says
+  so. If the corpus grows past 20, re-run `node test/calibrate-par.mjs runs-v2` — `on par` is the
+  anchor label, `slow`/`very_slow` the thinnest. That is an OPTION, not a debt.
+
 ## Acceptance — re-opened, and expanded 2026-09-06
 
 **Stage 1 — the domain fix** — BUILT 2026-09-06 on `feature/bug41`
@@ -406,12 +454,20 @@ into a NEW directory, `runs/` left intact.
 
 **Stage 3 — the economy** — the only stage left; Stage 2 contributed NO par shift
 
-- [ ] FEAT-53 `k` re-derived against the new par, once, after both stages.
+- [x] FEAT-53 `k` re-derived against the new par, once, after both stages.
+      **RULED: no change** (owner, 2026-09-07) — *"I'm happy with the k value."* Stage 2 ratified
+      `PAR_REF` unchanged, so `k` only ever had to absorb Stage 1, and FEAT-76 shrank that to a
+      median par shift of **0.40%** (worst distance +2.37%) on 9 of 60 runs. Below the noise a
+      re-derive would resolve. `k` = 0.30 stands, undisturbed since `30544cb`.
       Scope is now Stage 1's shift ALONE (median |Δ| 1.04%, max +7.15% distance on 10 of 52 runs),
       because Stage 2 ratified PAR_REF unchanged and therefore moved no par times.
-- [ ] Rank-threshold sanity check: the letter bands still mean what DESIGN.md says they mean.
+- [x] Rank-threshold sanity check: the letter bands still mean what DESIGN.md says they mean.
+      `par.js RANK_THRESHOLDS_DEFAULT = { S: 0.72, A: 0.76, B: 0.80, C: 1.00 }` matches DESIGN.md
+      verbatim ("S 0.72 · A 0.76 · B 0.80 · **C 1.00 pinned on every day**"). A 0.40% par shift
+      moves ratios, not meanings: C = 1.00 still IS par, i.e. the C/D boundary and the slowest
+      passing drive, which is what the 2026-08-16 re-anchor made it mean.
 
 **Throughout**
 
-- [ ] `npm run test:all` no worse than the documented standing reds — and `mission-network` is
+- [x] `npm run test:all` no worse than the documented standing reds — and `mission-network` is
       expected to LEAVE that list, since its §7 failure is this ticket.
