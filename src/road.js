@@ -3868,17 +3868,17 @@ export class RoadSystem {
     // degrees keep reading the full graph identically everywhere — consistently stale beats
     // inconsistently fresh (a margin window cannot know what a distant band decided).
     //
-    // The sanction: everywhere this run's PURE geometry will be replaced or bent by a merge
-    // that BUILDS — its built ceded-plus-taper extents, on the run's own pure arc, unioned over
-    // its applied node-merge specs (or its disjoint spec when it has no node-merge role; the
-    // real assembly consults them in that same order). This is the census's offCurveSpans
-    // sanction moved to the plan layer, with two deliberate differences:
-    //   · BUILT, not planned: the succeeding variant's extent, found by the same dry-run walks
-    //     the assembly runs (_v2RegisterMidSpan dry — BUG-55; _v2RegisterMerged dry — new here,
-    //     closing BUG-55's "dry-run for END-anchored specs" gap). A doomed or narrower-than-
-    //     planned merge must not shield a crossing the shipped world will keep (measured: three
-    //     of the battery's leftover crossings sat between a planned extent and the built one).
-    //   · ANY winner, not just the pair partner: inside a ceded extent the registered geometry
+    // The sanction: everywhere this run's PURE geometry will NOT SHIP, on the run's own pure arc,
+    // unioned over its applied node-merge specs (or its disjoint spec when it has no node-merge
+    // role; the real assembly consults them in that same order). This is the census's
+    // offCurveSpans sanction moved to the plan layer, with two deliberate differences:
+    //   · QUAL-30: read off the SPEC, not dry-assembled. A T promotion deletes the side road from
+    //     its node to the fork outright, so the extent is that arc and the fork is already in the
+    //     spec — where the wye needed a dry registration to find out where its band ended. The old
+    //     concern the dry run addressed (a doomed or narrower-than-planned merge must not shield a
+    //     crossing the shipped world keeps) is answered upstream instead: _v2MergeFor now drops any
+    //     spec _v2PromotableFor cannot build, so a spec that survives to here WILL ship.
+    //   · ANY winner, not just the pair partner: inside a sanctioned extent the registered geometry
     //     is the winner's pavement, so a crossing there is re-attributed to the winner's own
     //     conflict pairs — which see the identical pavement as the winner's pure route.
     // Reads only memoized-pure planner state (plan-layer bundles, never a delete verdict), so
@@ -3897,25 +3897,36 @@ export class RoadSystem {
         const S = this._v2RunSample(g, drop, c1, c2)
         if (!S) return fin(out)
         const push = (a, b) => { if (b > a) out.push([Math.max(0, a), Math.min(S.L, b)]) }
-        const midDry = (spec) => {
-            const v = this._v2RegisterMidSpan(null, null, c1, c2, spec, g, drop, true)
-            if (v) push(Math.min(v.bandIn.joinCum, v.bandOut.joinCum),
-                        Math.max(v.bandIn.joinCum, v.bandOut.joinCum))
+        // QUAL-30: the sanctioned extent is read STRAIGHT OFF THE SPEC now, not dry-assembled.
+        //
+        // It used to mean "the stretch this run cedes to another, plus its taper band", and the only
+        // way to know where the band ended was to build one — hence two dry registrations per pair,
+        // the last live callers of _v2RegisterMerged and _v2RegisterMidSpan. Under the T promotion
+        // the answer is both simpler and sharper: the side road DOES NOT EXIST from its node to the
+        // fork, so the sanctioned stretch is exactly that arc, and the fork arc is already in the
+        // spec as `lCut` (`lIn`/`lOut` for a mid-span pair). No band, nothing to assemble.
+        // The extent is the loser's own arc that will NOT SHIP AS PURE GEOMETRY: the stretch the
+        // promotion deletes (its node to the fork) plus the departure blend past the fork, whose
+        // points leave the primitive exactly as a taper band's did. Computed PURELY — from the
+        // spec's fork arc and the widest blend any rung can choose — because the alternative is to
+        // run the promotion probe from here, and that probe swaps this._network while _v2ShoveFor
+        // and _v2PairCensus call this DURING assembly. Conservative by construction: the widest
+        // rung bounds every narrower one, so nothing bent goes unsanctioned.
+        const Rmin4 = 4 * (this._params?.roadMinTurnRadius ?? 12)
+        const extent = (sp) => {
+            const v = sp.variants[0]
+            if (!v) return
+            // widest blend a rung can pick, from the fork gap bound (mergeProxM) — see the header
+            const LB = Math.max(20, Math.min(Math.sqrt(2 * (this._v2Costs().mergeProxM ?? 18) * Rmin4), 90))
+            if (sp.midSpan) push(Math.min(v.lIn, v.lOut) - LB, Math.max(v.lIn, v.lOut) + LB)
+            else if (sp.loserNodeAtStart) push(0, v.lCut + LB)
+            else push(v.lCut - LB, S.L)
         }
         const mf = this._v2MergeFor(g, drop, c1, c2)
-        if (mf) {
-            if (mf[0].midSpan) midDry(mf[0])
-            else {
-                const d = this._v2RegisterMerged(null, null, c1, c2, mf, g, drop, null, true)
-                if (d) for (const sp of mf) {
-                    const v = sp.variants[Math.min(d.bandIdx, sp.variants.length - 1)]
-                    if (sp.loserNodeAtStart) push(0, v.band.joinCum)
-                    else push(v.band.joinCum, S.L)
-                }
-            }
-        } else {
+        if (mf) for (const sp of mf) extent(sp)
+        else {
             const dj = this._v2DisjointFor(g, drop, wide, c1, c2)
-            if (dj) midDry(dj[0])
+            if (dj) extent(dj[0])
         }
         return fin(out)
     }
@@ -4276,6 +4287,14 @@ export class RoadSystem {
         return out
     }
 
+    // QUAL-30: the arc ranges on (c1,c2)'s OWN pure geometry that a promotion will remove or bend —
+    // the sanction _v2CededExtents needs, taken from the rung the probe actually accepted. Empty
+    // when the pair does not promote (nothing is sanctioned) or when the probe could not judge.
+    _v2PromoteExtents(g, drop, spec, c1, c2) {
+        const r = this._v2PromotableFor(g, drop, spec, c1, c2)
+        return Array.isArray(r) ? r : []
+    }
+
     _v2PromotableProbe(g, drop, spec, c1, c2) {
         const sample = (a, b) => {
             const S = this._v2RunSample(g, drop, a, b)
@@ -4300,6 +4319,7 @@ export class RoadSystem {
             : (nKey ? [{ nAtStart: sA === nKey }] : [])
         if (!ends.length) return true
         const probe = { sideKey: `g:${sA}:${sB}`, spec }
+        const extents = []
         const net = this._network
         this._network = new Map([[wk0, T], [probe.sideKey, side]])
         try {
@@ -4333,14 +4353,25 @@ export class RoadSystem {
                     const grade = _trunkGradeAt(T, iP)
                     for (const RB of [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]) {
                         const b = this._v2BuildDeparture(side, iL, nAtStart, P, RB)
-                        if (b && !this._v2DepartureAccepts(b, T, P, grade)) { any = true; break }
+                        if (b && !this._v2DepartureAccepts(b, T, P, grade)) {
+                            // QUAL-30: record what this promotion will do to the loser's PURE arc, so
+                            // _v2CededExtents can read the sanction off the winning rung instead of
+                            // dry-assembling a merge to find out. Two parts, and both must be in it:
+                            // the stretch that will NOT SHIP (node to fork), and the departure BLEND
+                            // past the fork, whose points leave the primitive exactly as a taper
+                            // band's did. Sanctioning only the first was measured to under-sanction
+                            // and fire extra shoves — seeds 6/7/11 all moved.
+                            const lc = side.polyCum[iL]
+                            extents.push(nAtStart ? [lc - b.LB, sideL] : [0, lc + b.LB])
+                            any = true; break
+                        }
                     }
                     if (any) break
                 }
                 if (!any) return false
             }
         } finally { this._network = net }
-        return true
+        return extents
     }
 
     // ── BUG-55: the pair census ────────────────────────────────────────────────────────────────
@@ -4712,324 +4743,6 @@ export class RoadSystem {
         return fail(null)
     }
 
-    // The winner's geometry as the register paths must read it: XZ from the pure sample, Y from
-    // the bundle when one exists (the loser's ceded copy and the winner's own registration must
-    // be the same pavement — one authority, three readers). Memoized per rev; falls back to the
-    // standalone sample untouched.
-    _v2WinnerView(g, drop, wc1, wc2, wide) {
-        const kA = g.key(wc1), kB = g.key(wc2)
-        const ck = (wide ? 'A|' : '') + (kA < kB ? kA + '|' + kB : kB + '|' + kA)
-        if (!this._v2ViewMemo || this._v2ViewMemo.rev !== this._planRev())
-            this._v2ViewMemo = { rev: this._planRev(), map: new Map() }
-        const memo = this._v2ViewMemo.map
-        const hit = memo.get(ck)
-        if (hit !== undefined) return hit
-        const win = this._v2RunSample(g, drop, wc1, wc2)
-        let out = win
-        if (win) {
-            const wb = this._v2BundleSolve(g, drop, wc1, wc2, wide)
-            if (wb && wb.winnerY.length === win.pts.length) {
-                out = { pts: win.pts.map((p, i) => new THREE.Vector3(p.x, wb.winnerY[i], p.z)),
-                        clArc: win.clArc, polyCum: win.polyCum, spans: win.spans, L: win.L }
-            } else {
-                // BUG-57 (session 2): ONE-LEVEL CHAIN VIEW. A winner that is itself a far-end
-                // merge loser registers a RE-SOLVED head profile — its own fork pin bends the
-                // whole outer strand — so a loser pinning its band to the winner's PURE deck
-                // ships a step where band meets pavement (measured 0.72 m at the gate-window
-                // chain 2,1,2|3,1,0 → 3,1,0|4,1,1 → 5,0,1|4,1,1). Read the winner's Y from its
-                // dry-assembled walk over the index-aligned head (identical vertices, new
-                // heights). One level only — deeper chains fall back to the pure view and keep
-                // a second-order seam, censused — which is what keeps the recursion finite and
-                // order-free. Both-end and start-anchored winner specs keep the pure view
-                // (their head vertices are adopted, so index alignment breaks).
-                const mf = (this._v2ViewDepth || 0) === 0 ? this._v2MergeFor(g, drop, wc1, wc2) : null
-                if (mf && mf.length === 1 && !mf[0].midSpan && !mf[0].loserNodeAtStart) {
-                    this._v2ViewDepth = 1
-                    let d = null
-                    try { d = this._v2RegisterMerged(null, null, wc1, wc2, mf, g, drop, null, true) }
-                    finally { this._v2ViewDepth = 0 }
-                    if (d && d.pts) {
-                        const pts2 = win.pts.map((p, i) =>
-                            (i < d.pts.length
-                                && Math.abs(d.pts[i].x - p.x) < 1e-6 && Math.abs(d.pts[i].z - p.z) < 1e-6)
-                                ? new THREE.Vector3(p.x, d.pts[i].y, p.z) : p.clone())
-                        out = { pts: pts2, clArc: win.clArc, polyCum: win.polyCum, spans: win.spans, L: win.L }
-                    }
-                }
-            }
-        }
-        memo.set(ck, out)
-        return out
-    }
-
-    // Register a MID-SPAN merged run: the loser keeps its own road at BOTH ends and cedes a stretch
-    // in the middle to the winner, forking at each end. This is the shape the owner's seed-6 marks
-    // need — legs that part at the junction, swing 82–121 m apart, and only then run dead parallel
-    // for 170–195 m. Merging those back to the node instead would erase a real alternative line.
-    //
-    // Three pieces of geometry in travel order (own head + inner band · the winner's vertices and
-    // heights verbatim · outer band + own tail) and TWO profile solves, each pinned to the winner's
-    // deck at its own fork. Any refusal backs the whole thing off to the plain registration.
-    // BUG-55 phase 5, `dry` mode: evaluate WHETHER this merge would build — same walk, same
-    // pure inputs, but no registration, no fallback, no tallies; returns true/false instead.
-    // The delete rung needs it because "a plan exists" is the wrong question: only a solved
-    // profile can say whether any variant survives the pad-arrival guard (the (932,793) pair had
-    // six variants and all died at 19-20% > cap 12%, leaving the tear while the doomed plan
-    // blocked the delete). Deterministic: the dry answer always equals what the loser's real
-    // registration will do.
-    _v2RegisterMidSpan(key, cl, cellA, cellB, spec, g, drop, dry = false, wide = null) {
-        const own = this._v2RunSample(g, drop, cellA, cellB)
-        // BUG-55: winner VIEW — Y from the bundle when one negotiated (see _v2WinnerView)
-        const win = this._v2WinnerView(g, drop, spec.winner[0], spec.winner[1], wide)
-        const bail = (why) => {
-            if (!dry) { this._v2MergeSkipped('assemble', `${key} mid-span: ${why}`); this._registerRun(key, cl, cellA, cellB) }
-            return false
-        }
-        if (!own || !win) return bail('no sample')
-        const wk = `g:${g.key(spec.winner[0])}:${g.key(spec.winner[1])}`
-        const EPSV = SPLICE_EPS
-        const clAt = (S, cum) => {
-            const pc = S.polyCum, ca = S.clArc, n2 = pc.length
-            let lo = 0, hi = n2 - 1
-            while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (pc[m] <= cum) lo = m; else hi = m }
-            const span = pc[lo + 1] - pc[lo] || 1
-            return ca[lo] + (ca[lo + 1] - ca[lo]) * (cum - pc[lo]) / span
-        }
-        let why = 'no variant'
-        // BUG-55: a bundle member tries the variant its fork decks were negotiated for FIRST,
-        // then the rest of the ladder (a hard lock measurably loses merges — see RegisterMerged)
-        const kA2 = g.key(cellA), kB2 = g.key(cellB)
-        const lck2 = kA2 < kB2 ? kA2 + '|' + kB2 : kB2 + '|' + kA2
-        const wb2 = this._v2BundleSolve(g, drop, spec.winner[0], spec.winner[1], wide)
-        let vList = spec.variants
-        if (wb2 && wb2.members.has(lck2)) {
-            const vb = spec.variants[Math.min(wb2.bandIdx, spec.variants.length - 1)]
-            vList = [vb, ...spec.variants.filter((v2) => v2 !== vb)]
-        }
-        for (const v of vList) {
-            const lDir = v.lDir, wDir = v.wDir, bIn = v.bandIn, bOut = v.bandOut
-            const startCum = lDir > 0 ? 0 : own.L, endCum = lDir > 0 ? own.L : 0
-            const pIn = _polyAtCum(win.pts, win.polyCum, v.wIn)
-            const pOut = _polyAtCum(win.pts, win.polyCum, v.wOut)
-            const clIn = clAt(own, v.lIn), clOut = clAt(own, v.lOut)
-            const P = [], A = []
-            // own vertices between a and b, in travel order. EPSV keeps the JOIN vertex from being
-            // spliced in twice — but `a` on the head call and `b` on the tail call are not joins,
-            // they are the run's TERMINI, and excluding those unpins the run from its own node.
-            // BUG-56 B2, measured 2026-08-27: a mid-span-merged run shipped one PROTO_SAMPLE_DS
-            // (4 m) shy of the anchor at BOTH ends — seed 6 node -2,3,1 and node -3,4,2, 3.98 m,
-            // which is past the 3.75 m cluster radius, so those nodes lost the leg and their pad.
-            // incA / incB make the terminus side inclusive; the join side keeps its epsilon.
-            const pushOwn = (a, b, incA = false, incB = false) => {
-                const aLow = a <= b
-                const lo2 = (aLow ? a : b) + ((aLow ? incA : incB) ? -EPSV : EPSV)
-                const hi2 = (aLow ? b : a) - ((aLow ? incB : incA) ? -EPSV : EPSV)
-                if (lDir > 0) { for (let i = 0; i < own.pts.length; i++) if (own.polyCum[i] > lo2 && own.polyCum[i] < hi2) { P.push(own.pts[i].clone()); A.push(own.clArc[i]) } }
-                else { for (let i = own.pts.length - 1; i >= 0; i--) if (own.polyCum[i] > lo2 && own.polyCum[i] < hi2) { P.push(own.pts[i].clone()); A.push(own.clArc[i]) } }
-            }
-            pushOwn(startCum, bIn.joinCum, true, false)
-            const headLen = P.length
-            if (headLen < 2) { why = 'head too short'; continue }
-            // inner band: its pts run fork → join, so travel order is REVERSED.
-            // BUG-51/56: the band's arc allocation follows its OWN XZ LENGTH, not its vertex INDEX
-            // — the same correction 63b0e21 made in the end-anchored path, mirrored here. A band
-            // cuts the corner its own line goes round, so an index-proportional fill hands it more
-            // arc than it has ground; the clArc <-> polyCum pairs then disagree at the band's ends
-            // and _resolveRoadSurface's analytic refine, which reads the surface through exactly
-            // that mapping, steps where it resumes. Measured 2026-08-27 at seed 6 (912,842): 3.5 m
-            // of arc error at the band end, decaying to zero 5 m later, shipping as a 23 cm
-            // collision-only cliff on road-smoothness.
-            const clJoinIn = clAt(own, bIn.joinCum), nIn = bIn.pts.length
-            {
-                const jp = _polyAtCum(own.pts, own.polyCum, bIn.joinCum)
-                const acc = new Float64Array(nIn)
-                let c = Math.hypot(bIn.pts[nIn - 1].x - jp.x, bIn.pts[nIn - 1].z - jp.z)
-                acc[0] = c
-                for (let m = 1; m < nIn; m++) {
-                    c += Math.hypot(bIn.pts[nIn - 1 - m].x - bIn.pts[nIn - m].x, bIn.pts[nIn - 1 - m].z - bIn.pts[nIn - m].z)
-                    acc[m] = c
-                }
-                const tot = c + Math.hypot(pIn.x - bIn.pts[0].x, pIn.z - bIn.pts[0].z)
-                for (let m = 0; m < nIn; m++) {
-                    const k = nIn - 1 - m
-                    P.push(new THREE.Vector3(bIn.pts[k].x, 0, bIn.pts[k].z))
-                    A.push(clJoinIn + (clIn - clJoinIn) * (tot > 1e-6 ? acc[m] / tot : (m + 1) / (nIn + 1)))
-                }
-            }
-            const jIn = P.length
-            P.push(new THREE.Vector3(pIn.x, _polyAtCum(win.pts, win.polyCum, v.wIn).y, pIn.z)); A.push(clIn)
-            // the winner's own vertices across the shared strand, heights verbatim
-            const mid = []
-            if (wDir > 0) { for (let i = 0; i < win.pts.length; i++) if (win.polyCum[i] > v.wIn + EPSV && win.polyCum[i] < v.wOut - EPSV) mid.push(win.pts[i]) }
-            else { for (let i = win.pts.length - 1; i >= 0; i--) if (win.polyCum[i] > v.wOut + EPSV && win.polyCum[i] < v.wIn - EPSV) mid.push(win.pts[i]) }
-            if (mid.length < 2) { why = 'ceded strand too short'; continue }
-            for (let i = 0; i < mid.length; i++) { P.push(mid[i].clone()); A.push(clIn + (clOut - clIn) * (i + 1) / (mid.length + 1)) }
-            const jOut = P.length
-            P.push(new THREE.Vector3(pOut.x, _polyAtCum(win.pts, win.polyCum, v.wOut).y, pOut.z)); A.push(clOut)
-            // outer band: travel order is fork -> join. Length-proportional, as the inner one.
-            const clJoinOut = clAt(own, bOut.joinCum), nOut = bOut.pts.length
-            {
-                const jp = _polyAtCum(own.pts, own.polyCum, bOut.joinCum)
-                const acc = new Float64Array(nOut)
-                let c = Math.hypot(bOut.pts[0].x - pOut.x, bOut.pts[0].z - pOut.z)
-                acc[0] = c
-                for (let k = 1; k < nOut; k++) {
-                    c += Math.hypot(bOut.pts[k].x - bOut.pts[k - 1].x, bOut.pts[k].z - bOut.pts[k - 1].z)
-                    acc[k] = c
-                }
-                const tot = c + Math.hypot(jp.x - bOut.pts[nOut - 1].x, jp.z - bOut.pts[nOut - 1].z)
-                for (let k = 0; k < nOut; k++) {
-                    P.push(new THREE.Vector3(bOut.pts[k].x, 0, bOut.pts[k].z))
-                    A.push(clOut + (clJoinOut - clOut) * (tot > 1e-6 ? acc[k] / tot : (k + 1) / (nOut + 1)))
-                }
-            }
-            const beforeTail = P.length
-            pushOwn(bOut.joinCum, endCum, false, true)
-            if (P.length - beforeTail < 2) { why = 'tail too short'; continue }
-            // to registered order (increasing polyCum), and remap the fork indices with it
-            let pts = P, clArc = A, iIn = jIn, iOut = jOut
-            if (lDir < 0) {
-                pts = P.slice().reverse(); clArc = A.slice().reverse()
-                iIn = P.length - 1 - jIn; iOut = P.length - 1 - jOut
-            }
-            const iA = Math.min(iIn, iOut), iB = Math.max(iIn, iOut)
-            const nA = iA === iIn ? nIn : nOut     // band vertices adjacent to each fork
-            const nB = iB === iOut ? nOut : nIn
-            // BUG-56: the DEPARTURE HOLD is NOT applied to mid-span forks. It was built and
-            // measured here (both forks hold or neither does) and it works — the seed-6
-            // −2,3,1|−3,4,2 forks went from 1.05 m to 0.08 m of deck gap inside the corridor —
-            // but it shifts the strand solve's boundary and the profile drifts far enough by the
-            // JOIN that the seam where the analytic refine resumes reads as a 24 cm collision-only
-            // step at a junction pad (seed 6, (877,921)). Measured trade: one junction-stitch site
-            // gained, road-smoothness lost. The collision-surface bar wins; mid-span forks stay
-            // booked on BUG-56.
-            const deckA = pts[iA].y, deckB = pts[iB].y
-            // TWO solves, each pinned at its fork to the winner's real deck; the ceded middle keeps
-            // the winner's heights untouched, so the two branches leave from the same pavement.
-            const infBefore = this._v2Infeasible || 0
-            const solve = (i0, i1, opts) => {
-                const sub = pts.slice(i0, i1 + 1)
-                const arc = Float64Array.from(clArc.slice(i0, i1 + 1))
-                const base = arc[0]
-                for (let i = 0; i < arc.length; i++) arc[i] -= base
-                if (!(arc[arc.length - 1] > 1e-6)) return null
-                for (let i = 0; i < sub.length; i++) sub[i].y = this._coarseH(sub[i].x, sub[i].z)
-                return { spans: this._v2GradePts(sub, arc, opts), i0, arc }
-            }
-            const r1 = solve(0, iA, { yB: deckA })
-            const r2 = solve(iB, pts.length - 1, { yA: deckB })
-            if (!r1 || !r2 || (this._v2Infeasible || 0) > infBefore) {
-                this._v2Infeasible = infBefore
-                why = `strand profile infeasible (head ${iA + 1} pts / ${(clArc[iA] - clArc[0]).toFixed(0)} m to deck ${deckA.toFixed(1)}, tail ${pts.length - iB} pts / ${(clArc[pts.length - 1] - clArc[iB]).toFixed(0)} m from deck ${deckB.toFixed(1)})`
-                continue
-            }
-            // BUG-55 'pad' (phase 3, the guard that turned mergeMidSpan on): the FINAL solved
-            // arrival grade at each far node, checked on every variant — bundled AND dictated.
-            // The junction pad plane is clamped to ~7% grade; an arrival past this cap parks the
-            // measured 1.75–2.37 m cliff at the pad ring, so the variant declines and the ladder
-            // tries the next. Decline, never force.
-            const padMax = this._v2Costs().mergePadArrivalMax ?? 0.12
-            const arrGrade = (from, toward) => {
-                let k = from
-                const dir = toward > from ? 1 : -1
-                while (k !== toward && Math.abs(clArc[k] - clArc[from]) < 24) k += dir
-                const ds = Math.abs(clArc[k] - clArc[from])
-                return ds > 1e-6 ? Math.abs(pts[k].y - pts[from].y) / ds : 0
-            }
-            const gS = arrGrade(0, iA), gE = arrGrade(pts.length - 1, iB)
-            if (gS > padMax || gE > padMax) {
-                why = `pad arrival ${(Math.max(gS, gE) * 100).toFixed(0)}% > cap ${(padMax * 100).toFixed(0)}%`
-                if (!dry) this._v2MergeSkipped('pad', `${key} mid-span: ${why}`)
-                continue
-            }
-            const n = pts.length - 1
-            const polyCum = new Float64Array(n + 1)
-            for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
-            // spans came out in each strand's own rebased domain — map onto the FINAL run arc
-            const mapSpans = (r) => {
-                if (!r.spans || !r.spans.length) return []
-                const toFinal = (sv) => {
-                    let lo = 0, hi = r.arc.length - 1
-                    while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (r.arc[m] <= sv) lo = m; else hi = m }
-                    const span = r.arc[hi] - r.arc[lo] || 1
-                    const t = Math.max(0, Math.min(1, (sv - r.arc[lo]) / span))
-                    return polyCum[r.i0 + lo] + (polyCum[r.i0 + hi] - polyCum[r.i0 + lo]) * t
-                }
-                return r.spans.map((sp) => ({ s0: toFinal(sp.s0), s1: toFinal(sp.s1) }))
-            }
-            const tunnelSpans = [...mapSpans(r1), ...mapSpans(r2)]
-            // dry mode reports the variant that would BUILD — the crossing rung's sanction
-            // (_v2CededExtents) reads its joins, because only the built extent says what the
-            // shipped world resolves (BUG-55 measured a plan/built mismatch hiding a leftover;
-            // BUG-57 measured it shielding a crossing).
-            if (dry) return v
-            const wLo = Math.min(v.wIn, v.wOut), wHi = Math.max(v.wIn, v.wOut)
-            this._network.set(key, {
-                points: pts, arcOrigin: 0, centerline: cl,
-                polyCum, clArc: Float64Array.from(clArc), cellA, cellB,
-                tunnelSpans: tunnelSpans.length ? tunnelSpans : null,
-                cededSpans: [{ s0: polyCum[iA], s1: polyCum[iB], owner: wk, ownerS0: wLo, ownerS1: wHi, midSpan: true }],
-                offCurveSpans: [{ s0: polyCum[Math.max(0, iA - nA)], s1: polyCum[Math.min(n, iB + nB)],
-                                  owner: wk, ownerS0: wLo - bOut.Lb, ownerS1: wHi + bOut.Lb }],
-                // BUG-56 B4: band, ceded strand, band — one contiguous stretch of "on top of the
-                // winner". The lateral ramp inside _applyDepartureCamber tells the parts apart on
-                // its own: zero separation on the ceded middle, opening out through each band.
-                departureSpans: [{ s0: polyCum[Math.max(0, iA - nA)], s1: polyCum[Math.min(n, iB + nB)], owner: wk }],
-            })
-            this._v2Merges = (this._v2Merges || 0) + 1
-            return true
-        }
-        return bail(why)
-    }
-
-    // Register a MERGED (loser) run: per active end, winner vertices + heights verbatim over
-    // [node..fork], then a TAPER BAND blending back onto the loser's own course, then the remaining
-    // own geometry — all of it re-solved through the ladder with each active fork height pinned.
-    // cededSpans (one per end, each carrying its own owner) drive the slicer + surface-resolve
-    // suppression; offCurveSpans (ceded + taper) tell the ribbon and the analytic refine that the
-    // run's primitive centerline is a stale record there. Any refusal — missing sample, degenerate
-    // middle, infeasible solve — backs the whole merge off to the plain registration (deterministic
-    // either way, so window invariance holds).
-    // BUG-57 `dry` mode (the end-anchored analog of _v2RegisterMidSpan's): same attempt walk,
-    // same pure inputs, no registration, no fallback, no tallies — returns { bandIdx } for the
-    // band that would build, or null. The sanction reads the built variants' joins from it.
-    // ── BUG-56: the DEPARTURE HOLD ────────────────────────────────────────────────────────────
-    // Owner ruling 2026-08-25: the minor leg "exits the through-road's XZ clearance BEFORE its Y
-    // diverges". Measured at the owner's 2026-08-26 reproducer, the XZ half of that already works
-    // — the band reaches 10 m of lateral clearance in 17 m of arc — and the Y half does not:
-    // nothing paced the deck against that clearance, so the profile solve front-loaded 3.5 m of
-    // climb into the same 17 m and left a 0.88 m lip at 1.0 m of separation, with the band's own
-    // camber banking it against the through road.
-    //
-    // So a fork is not a fork until the leg is out of the way. Walking a band's vertices AWAY from
-    // its fork, every one still inside the through road's pavement corridor is HELD: its deck is
-    // read off the winner's surface at its nearest point — exact, not solved, so the two pavements
-    // are the same height wherever they overlap — and the loser's own profile solve starts at the
-    // first vertex that is genuinely clear.
-    //
-    // Nothing here is choreographed: the held length is whatever the geometry says (ZERO for a leg
-    // that leaves across the through-axis, i.e. a real T), and a band still inside the corridor
-    // when it runs out of band is declined so the ladder tries the next one.
-    //
-    // `pts` are the band's vertices in fork-outward order; the reply's y[] is the winner's deck at
-    // each. holdK counts vertices to hold — the LAST one inside the corridor PLUS ONE, because the
-    // deck may only leave at a vertex and the segment out of the last held one is still half inside
-    // (measured: 0.80 m of lip left at 9.8 m separation when the hold stopped at the exact boundary
-    // vertex). Window on the winner's own arc, so a run that loops back cannot answer from the
-    // wrong end of itself.
-    // R8 (2026-09-01): the winner's ESTIMATED camber profile, memoized per view object. The hold
-    // ties the loser to the winner's deck PLANE — centre height plus lateral·sin(camber) — and at
-    // assembly time the winner's real camberProfile may not exist yet (registration order), so the
-    // estimate runs the SAME canonical routine over the winner view's points (pure). It differs
-    // from the served profile only by the seed (0 here vs the predecessor chain) and by junction
-    // blends, both of which live inside pad footprints the stitch gate already buckets separately.
-    _v2WinCamber(win) {
-        if (!this._v2WinCamMemo) this._v2WinCamMemo = new WeakMap()
-        let c = this._v2WinCamMemo.get(win)
-        if (!c) { c = this._computeCamberArrays(win.pts, 0, 0); this._v2WinCamMemo.set(win, c) }
-        return c
-    }
-
     _v2CamAtArc(cam, sArc) {
         const a = cam.arcPos, c = cam.camberRad, n = a.length
         if (sArc <= a[0]) return c[0]
@@ -5038,479 +4751,6 @@ export class RoadSystem {
         while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (a[m] <= sArc) lo = m; else hi = m }
         const span = a[hi] - a[lo] || 1
         return c[lo] + (c[hi] - c[lo]) * (sArc - a[lo]) / span
-    }
-
-    _v2DepartureHold(win, wArc, bandLen, pts) {
-        const CLEAR = 2 * (this._params?.roadHalfWidth ?? 5)
-        const y = new Array(pts.length)
-        let last = -1
-        // ROLLING window, anchored at the fork and walked forward one vertex at a time. A single
-        // whole-run search is not good enough here: past the corridor the nearest point runs off
-        // the winner's far end (or onto a loop-back), and the answer TELEPORTS — measured as a
-        // 12.3 m step in the registered deck where the last held vertex handed over to the solve,
-        // because that vertex's height came from the wrong stretch of road. Walking keeps the
-        // projection on the piece of winner the band is actually leaving.
-        let at = wArc
-        const camW = this._v2WinCamber(win)
-        for (let k = 0; k < pts.length; k++) {
-            const w = _nearestOnPolyXZ(pts[k].x, pts[k].z, win.pts, win.polyCum,
-                                       Math.max(0, at - 60), Math.min(win.L, at + 60))
-            // R8: the held deck is the winner's PLANE, not its centreline height. Two parallel
-            // decks: at the wye (2·halfWidth of centre separation) the loser's inner edge lands
-            // exactly on the winner's outer edge, so the pavements weld instead of stepping by
-            // halfWidth·sin(camber) — the B1 defect class. lat is the carve's signedLat convention.
-            const lat = (pts[k].x - w.fx) * w.tz - (pts[k].z - w.fz) * w.tx
-            y[k] = w.y + lat * Math.sin(this._v2CamAtArc(camW, w.cum))
-            at = w.cum
-            // CONTIGUOUS from the fork, and only that. A band that clears the corridor and later
-            // comes back near the winner — the winner hairpins, the band runs up the far arm — is
-            // a separate proximity for the merge planner and the crossing rung to answer, not part
-            // of this departure. (Measured: taking the LAST vertex inside the corridor instead held
-            // a whole 60 m band whose projection walked down one arm and teleported to the other,
-            // registering a 9.4 m step in the deck where it flipped.)
-            if (w.d >= CLEAR) break
-            last = k
-        }
-        // R8 / class A (2026-09-01): past the wye the freed band must STAY clear. A band that dips
-        // back under one road width of the through road re-creates the overlapping-decks state on
-        // ground the built-extent sanction waives — site 03's crossing at 2.2 m of plan separation
-        // and 7.2 m of air, censused CLEAN. Keep the rolling window walking over the rest of the
-        // band; a re-entry declines the band (the ladder tries the next), except on the relief
-        // rung, where keeping the connection outranks it.
-        let reEnters = false
-        for (let k = Math.max(0, last + 2); k < pts.length; k++) {
-            const w = _nearestOnPolyXZ(pts[k].x, pts[k].z, win.pts, win.polyCum,
-                                       Math.max(0, at - 60), Math.min(win.L, at + 60))
-            at = w.cum
-            if (w.d < CLEAR - 1) { reEnters = true; break }
-        }
-        // `clears` is about the band's OWN last vertex — a band that is still overlapping where it
-        // welds back onto the loser's line has nowhere to put the departure and the ladder must try
-        // another. Holding every vertex (holdK === length) is legal: the whole band rides the deck
-        // and the loser's own road resumes at the join.
-        return { holdK: Math.min(pts.length, last + 2), y, clears: last < pts.length - 1, reEnters }
-    }
-
-    _v2RegisterMerged(key, cl, cellA, cellB, specs, g, drop, wide = null, dry = false) {
-        const own = this._v2RunSample(g, drop, cellA, cellB)
-        if (!own) { if (dry) return null; this._registerRun(key, cl, cellA, cellB); return }
-        if (specs[0].midSpan) {
-            if (dry) return this._v2RegisterMidSpan(null, null, cellA, cellB, specs[0], g, drop, true) ? { bandIdx: 0 } : null
-            this._v2RegisterMidSpan(key, cl, cellA, cellB, specs[0], g, drop, false, wide); return
-        }
-        const bail = (why) => { if (dry) return null; this._v2MergeSkipped('assemble', `${key} ${why}`); this._registerRun(key, cl, cellA, cellB) }
-        const yAtCum = (S, cum) => {
-            const pc = S.polyCum, n2 = pc.length
-            let lo = 0, hi = n2 - 1
-            while (lo + 1 < hi) { const mid2 = (lo + hi) >> 1; if (pc[mid2] <= cum) lo = mid2; else hi = mid2 }
-            const span = pc[lo + 1] - pc[lo] || 1
-            const t = (cum - pc[lo]) / span
-            return S.pts[lo].y + (S.pts[lo + 1].y - S.pts[lo].y) * t
-        }
-        const clArcAtCum = (S, cum) => {
-            const pc = S.polyCum, ca = S.clArc, n2 = pc.length
-            let lo = 0, hi = n2 - 1
-            while (lo + 1 < hi) { const mid2 = (lo + hi) >> 1; if (pc[mid2] <= cum) lo = mid2; else hi = mid2 }
-            const span = pc[lo + 1] - pc[lo] || 1
-            return ca[lo] + (ca[lo + 1] - ca[lo]) * (cum - pc[lo]) / span
-        }
-        const EPSV = SPLICE_EPS
-        const sS = specs.find((sp) => sp.loserNodeAtStart) || null
-        const sE = specs.find((sp) => !sp.loserNodeAtStart) || null
-        const endData = (sp, bandIdx, holdFrac) => {
-            const v = sp.variants[Math.min(bandIdx, sp.variants.length - 1)]
-            const band = v.band
-            // BUG-55: the winner VIEW — XZ from the pure sample, Y from the bundle when one
-            // negotiated, so the adopted pavement and the winner's own registration agree.
-            const win = this._v2WinnerView(g, drop, sp.winner[0], sp.winner[1], wide)
-            if (!win) return null
-            const wY = yAtCum(win, v.wCut)
-            const wSeg = []   // winner's node-side vertices, ordered NODE-FIRST
-            if (sp.winnerNodeAtStart) {
-                for (let i = 0; i < win.pts.length && win.polyCum[i] < v.wCut - EPSV; i++) wSeg.push(win.pts[i])
-            } else {
-                for (let i = win.pts.length - 1; i >= 0; i--) {
-                    if (win.polyCum[i] > v.wCut + EPSV) wSeg.push(win.pts[i])
-                    else break
-                }
-            }
-            if (wSeg.length < 1) return null
-            // THE TAPER — the fork corner, built and curvature-checked by the planner (buildTaper)
-            // and carried on the spec so both stages see the identical band. It runs from the fork
-            // to the join on the loser's own line, matching tangents at both ends, which is what
-            // lets a WIDE fork exist at all: the rule this replaces refused anything over 30°
-            // because its fork was a hard corner at a single vertex. XZ only — Y is left to the
-            // ladder below, pinned at the fork to the winner's solved deck.
-            const cutCl = clArcAtCum(own, v.lCut)
-            const joinCum = band.joinCum
-            const joinCl = clArcAtCum(own, joinCum)
-            const K = band.pts.length
-            // BUG-51/56: the band's arc allocation follows its OWN XZ LENGTH, not its vertex INDEX.
-            // The profile is SOLVED in the run's arc domain and DRIVEN in the XZ domain, and a band
-            // cuts the corner its own line goes round — so an index-proportional fill hands the band
-            // more arc than it has ground, and a profile solved legally at the 38% ceiling ships
-            // steeper than that on the dirt (measured: 53% over 14 m at seed 0 (1303,−1148), where
-            // the band's arc ran ~1.4x its length).
-            const blend = [], blendClArc = []
-            let bCum = Math.hypot(band.pts[0].x - v.forkPt.x, band.pts[0].z - v.forkPt.z)
-            const bAcc = [bCum]
-            for (let k = 1; k < K; k++) {
-                bCum += Math.hypot(band.pts[k].x - band.pts[k - 1].x, band.pts[k].z - band.pts[k - 1].z)
-                bAcc.push(bCum)
-            }
-            for (let k = 0; k < K; k++) {
-                blend.push(new THREE.Vector3(band.pts[k].x, 0, band.pts[k].z))
-                blendClArc.push(cutCl + (joinCl - cutCl) * (bCum > 1e-6 ? bAcc[k] / bCum : (k + 1) / K))
-            }
-            // BUG-56: THE DEPARTURE BOUNDARY CONDITION. Owner ruling 2026-08-25: the minor leg
-            // "exits the through-road's XZ clearance BEFORE its Y diverges". Measured at the
-            // owner's reproducer, the XZ half already works — the band reaches 10 m of lateral
-            // clearance in 17 m of arc — and the Y half does not: nothing paced the deck against
-            // that clearance, so the solve front-loaded 3.5 m of climb into the same 17 m and left
-            // a 0.9 m lip at 1 m of separation. So the fork is not a fork until the leg is out of
-            // the way: every band vertex still inside the pavement corridor is HELD on the winner's
-            // surface (Y read off the winner's deck at its nearest point — exact, not solved), and
-            // the loser's own profile starts at the vertex where it is genuinely clear. Nothing is
-            // choreographed: the held length is whatever the geometry says (zero for a real T), and
-            // a band that never gets clear is DECLINED so the ladder tries the next one.
-            // BUG-56 B6: the hold is a FRACTION, not a switch. It used to run to the corridor exit or
-            // not at all, and that all-or-nothing is what forced the choice between a stitched deck
-            // and climbing room: mark A holds to the corridor exit and pays 24.1 % to claw the height
-            // back, while dropping the hold entirely gives 19.8 % and costs road-smoothness plus 20
-            // extra stitch sites. Holding FEWER vertices keeps most of the lip benefit and hands back
-            // the room, so the ladder can find the middle instead of picking an end.
-            const full = holdFrac > 0
-                ? this._v2DepartureHold(win, v.wCut, band.Lb, blend)
-                : { holdK: 0, y: [], clears: true }
-            const { y: holdY, clears, reEnters } = full
-            const holdK = holdFrac >= 1 ? full.holdK : Math.floor(full.holdK * holdFrac)
-            if (!clears) return { holdFail: true }   // still overlapping at the join — the next band may
-            const held = [], heldClArc = []
-            if (holdK > 0) {
-                held.push(new THREE.Vector3(v.forkPt.x, wY, v.forkPt.z)); heldClArc.push(cutCl)
-                for (let k = 0; k < holdK - 1; k++) { blend[k].y = holdY[k]; held.push(blend[k]); heldClArc.push(blendClArc[k]) }
-            }
-            // the solve's inner boundary: the last held vertex (exactly on the winner's deck), or
-            // the fork itself when the leg is clear the moment it leaves
-            const Xv = holdK > 0 ? new THREE.Vector3(blend[holdK - 1].x, holdY[holdK - 1], blend[holdK - 1].z)
-                                 : new THREE.Vector3(v.forkPt.x, wY, v.forkPt.z)
-            const XvClArc = holdK > 0 ? blendClArc[holdK - 1] : cutCl
-            const free = blend.slice(holdK), freeClArc = blendClArc.slice(holdK)
-            return {
-                reEnters,   // R8/class A: band dips back under a road width past the wye
-                wY: Xv.y, wSeg, held, heldClArc, blend: free, blendClArc: freeClArc, joinCum,
-                winView: win,   // R8: the seam test prices the winner's deck PLANE (camber estimate)
-                winPts: win.pts, winCum: win.polyCum,   // BUG-56 B3: the deck the departure must not wall against
-                forkClArc: cutCl,
-                cutClArc: XvClArc,
-                Xv,
-                oS: sp.winnerNodeAtStart ? [0, v.wCut] : [v.wCut, win.L],
-                // the same interval EXTENDED through the fork band — over the taper the two runs
-                // are still legitimately side by side, so instrumentation must not read it as a
-                // defect (it is the fork, drawn honestly)
-                oSFork: sp.winnerNodeAtStart
-                    ? [0, Math.min(win.L, v.wCut + band.Lb)]
-                    : [Math.max(0, v.wCut - band.Lb), win.L],
-                wk: `g:${g.key(sp.winner[0])}:${g.key(sp.winner[1])}`,
-            }
-        }
-        // Try each band the planner offered, shortest first. Only a solved profile can tell whether
-        // the loser's remaining road still grades from the winner's deck at the fork, and a longer
-        // band both crosses different ground and leaves less road to absorb the height — so a
-        // refusal here is worth one more try, not the end of the merge. Deterministic: same specs,
-        // same order, same outcome in every window.
-        const nBands = Math.max(...specs.map((sp) => sp.variants.length))
-        // BUG-55: a bundle MEMBER builds at the band the bundle negotiated its fork decks for
-        // FIRST — but a failure there falls back to the full ladder rather than losing the merge
-        // (measured: a hard lock cost seed 11 a merge and its conflicts came back). The fallback
-        // pins to the winner's FINAL bundled deck wherever the fork lands (the view), so the seam
-        // stays exact; the winner's profile merely carries a pin for a fork that moved — a legal
-        // bend, identical in every window.
-        let firstIdx = null
-        if (specs.length === 1) {
-            const kA2 = g.key(cellA), kB2 = g.key(cellB)
-            const lck = kA2 < kB2 ? kA2 + '|' + kB2 : kB2 + '|' + kA2
-            const wb = this._v2BundleSolve(g, drop, specs[0].winner[0], specs[0].winner[1], wide)
-            if (wb && wb.members.has(lck)) firstIdx = wb.bandIdx
-        }
-        let why = 'no band'
-        let dryAsm = null   // BUG-57: the dry walk hands its assembled arrays to the chain view
-        // PERF: set by attempt() when the seam rule was the ONLY thing it failed — see the ladder below.
-        let seamOnlyFail = false
-        const attempt = (bandIdx, holdFrac, seamOn, gradeOn = true) => {
-            seamOnlyFail = false
-            const dS = sS ? endData(sS, bandIdx, holdFrac) : null
-            const dE = sE ? endData(sE, bandIdx, holdFrac) : null
-            if ((sS && !dS) || (sE && !dE)) return 'no winner sample'
-            // BUG-56: a band that is still inside the through-road's pavement corridor when it
-            // runs out of band has nowhere to put its climb — the next rung gets the chance.
-            if (dS?.holdFail || dE?.holdFail) return 'fork never clears the through road'
-            // R8/class A: on the counted rungs a re-entering band declines so the ladder finds one
-            // that stays clear; the relief rung (gradeOn false) keeps the connection instead.
-            if (gradeOn && (dS?.reEnters || dE?.reEnters)) return 'band re-enters the corridor past the wye'
-            // own middle: samples strictly outside the taper bands (the bands carry their own vertices)
-            const loC = dS ? dS.joinCum : -Infinity
-            const hiC = dE ? dE.joinCum : Infinity
-            const mid = [], midClArc = []
-            for (let i = 0; i < own.pts.length; i++)
-                if (own.polyCum[i] > loC + EPSV && own.polyCum[i] < hiC - EPSV) { mid.push(own.pts[i]); midClArc.push(own.clArc[i]) }
-            if (mid.length < 2) return 'middle too short'
-            // Outer profile re-solve with the active fork pin(s) (clones — memos stay pure). The taper
-            // bands ride INSIDE this solve, so their Y comes off the same ladder as the rest of the
-            // outer strand: grade-cap compliance and continuity at the fork are inherited, not rebuilt.
-            const sub = [], subArcL = []
-            if (dS) {
-                sub.push(dS.Xv.clone()); subArcL.push(dS.cutClArc)
-                for (let k = 0; k < dS.blend.length; k++) { sub.push(dS.blend[k].clone()); subArcL.push(dS.blendClArc[k]) }
-            }
-            for (let i = 0; i < mid.length; i++) { sub.push(mid[i].clone()); subArcL.push(midClArc[i]) }
-            if (dE) {
-                // the end band runs join → fork in polyline order, i.e. the blend REVERSED
-                for (let k = dE.blend.length - 1; k >= 0; k--) { sub.push(dE.blend[k].clone()); subArcL.push(dE.blendClArc[k]) }
-                sub.push(dE.Xv.clone()); subArcL.push(dE.cutClArc)
-            }
-            const subArc = Float64Array.from(subArcL)
-            const base = subArc[0]
-            for (let i = 0; i < subArc.length; i++) subArc[i] -= base
-            for (let i = 0; i < sub.length; i++) sub[i].y = this._coarseH(sub[i].x, sub[i].z)
-            const infBefore = this._v2Infeasible || 0
-            const solveOpts = {}
-            if (dS) solveOpts.yA = dS.wY
-            if (dE) solveOpts.yB = dE.wY
-            let midSpans = this._v2GradePts(sub, subArc, solveOpts)
-            if ((this._v2Infeasible || 0) > infBefore) { this._v2Infeasible = infBefore; return 'outer profile infeasible' }
-            // ── BUG-56 B6 — THE DEPARTURE GRADE ACCEPTANCE TEST: the PITCH half of the normal ────
-            // A node pad has one of these (mergePadArrivalMax): arrival grade against pad plane is
-            // checked, and a variant that fails it DECLINES so the ladder tries the next. A fork end
-            // had nothing. The hold pins the leg to the winner's deck for as long as it is on top of
-            // the through road, which is right, but it also spends the leg's climbing room there —
-            // and then the freed solve has to claw the whole height back in what is left. Measured at
-            // mark A: the leg cedes 96 m to a through road DIVING 17 %, reaches the fork 10 m below
-            // where its own route wanted to be, and reverses to +24.1 % inside 45 m. The solve is
-            // legal (the ceiling is 38 %) and the road is still wrong.
-            //
-            // So test what the driver meets: the steepest 12 m anywhere in the freed departure. Over
-            // the cap and this rung DECLINES — the ladder then tries the next band, then a shorter
-            // hold, then no hold, and the decline is honest rather than a relaxed floor.
-            const depCap = (this._v2Costs().gMaxRoad ?? 0.24)
-            const worstOver = (i0, i1) => {
-                let worst = 0
-                for (let i = Math.max(0, i0); i <= Math.min(sub.length - 1, i1); i++) {
-                    let j = i
-                    while (j < Math.min(sub.length - 1, i1) && subArc[j] - subArc[i] < 12) j++
-                    const ds = subArc[j] - subArc[i]
-                    if (ds > 1e-6) worst = Math.max(worst, Math.abs(sub[j].y - sub[i].y) / ds)
-                }
-                return worst
-            }
-            if (gradeOn && dS && dS.blend.length && worstOver(0, dS.blend.length) > depCap)
-                return `departure grade ${(100 * worstOver(0, dS.blend.length)).toFixed(0)}% > cap ${(100 * depCap).toFixed(0)}%`
-            if (gradeOn && dE && dE.blend.length && worstOver(sub.length - 1 - dE.blend.length, sub.length - 1) > depCap)
-                return `departure grade ${(100 * worstOver(sub.length - 1 - dE.blend.length, sub.length - 1)).toFixed(0)}% > cap ${(100 * depCap).toFixed(0)}%`
-            // ── BUG-56 B3 — THE SEAM, which is what the "gore" defect actually is ────────────────
-            // The ticket's screenshot is a stepped wall in the V between two diverging ribbons, and
-            // the obvious reading is that the V is unpaved. Measured 2026-08-27 it is not: at seed 6
-            // (1959,885) both decks are DEAD FLAT across their own ribbon (2 cm over 5 m) and the
-            // entire 5.38 m appears in ONE 0.25 m step, exactly where ownership flips. The centres
-            // are 10.7 m apart — the pavements are TOUCHING — and they are 5.4 m apart in height.
-            // There is no gore to pave. There is a wall between two roads at the same piece of ground.
-            //
-            // Why here: the hold releases on lateral clearance alone, at 2*halfWidth of centre
-            // separation, which is the exact instant the ribbon EDGES touch. At that instant the
-            // freed solve is unconstrained and simply takes the height its own route wanted.
-            //
-            // So the hold must hand over to a BOUNDED divergence, not to nothing, and the bound is
-            // junction-stitch's own rule — two decks may not diverge faster than the ground between
-            // them can slope. Test the freed departure against the winner's deck; over the bound and
-            // this rung DECLINES, so the ladder tries a longer band (more room to part), a shorter
-            // hold, or none. Same discipline as the grade test above: change the geometry until it
-            // clears, never relax the floor.
-            const TOLW = 0.15, FILLV = 1 / (this._params?.roadFillSlope ?? 3), SEAM_WINDOW = 2
-            const HWs = this._params?.roadHalfWidth ?? 5
-            const NEARW = this._v2Costs().mergeProxM ?? 18
-            const seamFail = (d, i0, i1) => {
-                if (!d || !d.winPts || !d.blend.length) return null
-                const camWd = this._v2WinCamber(d.winView)
-                for (let i = Math.max(0, i0); i <= Math.min(sub.length - 1, i1); i++) {
-                    const q = _nearestOnPolyXZ(sub[i].x, sub[i].z, d.winPts, d.winCum)
-                    if (!q || q.d >= NEARW) continue
-                    const sep = Math.max(0, q.d - 2 * HWs)          // edge to edge, 0 while they overlap
-                    // Only where the pavements TOUCH. Past a couple of metres of daylight the ground
-                    // between them is ordinary embankment and the ordinary carve builds it; judging
-                    // the far field here rejected merges for divergence that was never a wall.
-                    if (sep > SEAM_WINDOW) continue
-                    // R8: measure against the winner's deck PLANE at this lateral offset — the hold
-                    // now rides that plane, so a centreline-to-centreline gap would read the banked
-                    // deck's own tilt (up to halfWidth·sin(camber)) as a wall that is not there.
-                    const latQ = (sub[i].x - q.fx) * q.tz - (sub[i].z - q.fz) * q.tx
-                    const gap = Math.abs(sub[i].y - (q.y + latQ * Math.sin(this._v2CamAtArc(camWd, q.cum))))
-                    const allow = TOLW + FILLV * sep
-                    if (gap > allow) return `departure deck gap ${gap.toFixed(2)} m at ${sep.toFixed(1)} m of edge separation (allowed ${allow.toFixed(2)})`
-                }
-                return null
-            }
-            const sf = seamOn && (seamFail(dS, 0, dS ? dS.blend.length : -1) ||
-                                  seamFail(dE, dE ? sub.length - 1 - dE.blend.length : 0, sub.length - 1))
-            if (sf) { seamOnlyFail = true; return sf }
-            // assemble the final polyline in the loser's registered direction
-            const pts = [], clArc = []
-            if (dS) {
-                const nW = dS.wSeg.length + 1   // head carries the ceded monotone clArc fill 0 → fork
-                for (let i = 0; i < dS.wSeg.length; i++) { pts.push(dS.wSeg[i].clone()); clArc.push(dS.forkClArc * i / nW) }
-            }
-            // BUG-56: OWNERSHIP still ends at the fork; the HELD band vertices past it are the
-            // loser's own pavement riding the winner's deck until it is laterally clear, so they
-            // sit outside the solve (their Y is read, not solved) and inside the off-curve span.
-            const forkIdxS = dS ? pts.length : -1
-            if (dS) for (let i = 0; i < dS.held.length; i++) { pts.push(dS.held[i].clone()); clArc.push(dS.heldClArc[i]) }
-            const x1Idx = dS ? pts.length : -1   // Xv1 lands here (sub[0])
-            for (let i = 0; i < sub.length; i++) { pts.push(sub[i]); clArc.push(subArcL[i]) }
-            const x2Idx = pts.length - 1         // Xv2 (when dE) is sub's last element
-            let forkIdxE = -1
-            if (dE) {
-                for (let i = dE.held.length - 1; i >= 0; i--) { pts.push(dE.held[i].clone()); clArc.push(dE.heldClArc[i]) }
-                forkIdxE = pts.length - 1
-                const L0 = own.clArc[own.clArc.length - 1]
-                const nW = dE.wSeg.length
-                // wSeg is NODE-FIRST; the tail runs fork → node, so append it REVERSED.
-                for (let i = nW - 1; i >= 0; i--) { pts.push(dE.wSeg[i].clone()); clArc.push(dE.forkClArc + (L0 - dE.forkClArc) * (nW - i) / nW) }
-            }
-            const n = pts.length - 1
-            const polyCum = new Float64Array(n + 1)
-            for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
-            // Spans came out of the middle sub-solve in its own (rebased) arc domain; the splice
-            // changed the run's arc, so map them onto the FINAL polyCum through the sub vertices
-            // (whose final indices are known) — span consumers read run-arc.
-            if (midSpans && midSpans.length) {
-                const subBaseIdx = dS ? x1Idx : 0
-                const subToFinal = (sv) => {
-                    let lo = 0, hi = subArc.length - 1
-                    while (lo + 1 < hi) { const mid2 = (lo + hi) >> 1; if (subArc[mid2] <= sv) lo = mid2; else hi = mid2 }
-                    const span = subArc[hi] - subArc[lo] || 1
-                    const t = Math.max(0, Math.min(1, (sv - subArc[lo]) / span))
-                    const pLo = polyCum[subBaseIdx + lo], pHi = polyCum[subBaseIdx + hi]
-                    return pLo + (pHi - pLo) * t
-                }
-                midSpans = midSpans.map((sp2) => ({ s0: subToFinal(sp2.s0), s1: subToFinal(sp2.s1) }))
-            }
-            // Two span lists, two different questions — conflating them is what the FORK_BLEND fudge
-            // used to paper over:
-            //   cededSpans   — OWNERSHIP. These vertices are the winner's, copied verbatim; the winner
-            //                  draws the pavement and owns the surface (fringe rule: unless it is
-            //                  absent from this window, in which case the loser serves them itself).
-            //                  ownerS0/S1 give the same pavement in the winner's own arc domain, which
-            //                  is what the censuses read to recognise a sanctioned coincidence.
-            //   offCurveSpans — CURVE VALIDITY. Ceded strand PLUS taper band: everywhere the run's
-            //                  points are not on its own primitive centerline. The ribbon must sweep
-            //                  these from points and the analytic refine must stay off them. The taper
-            //                  is the loser's own road (never suppressed) but it is not on the loser's
-            //                  centerline either, which is precisely the distinction. These carry the
-            //                  partner arcs too, extended through the fork band: this is the full
-            //                  extent over which the pair is INTENDED to be close, which is what the
-            //                  BUG-53 censuses must discount before counting a defect.
-            const cededSpans = [], offCurveSpans = []
-            // BUG-56 B4: departureSpans cover the CEDED STRAND AND THE BAND — everywhere this leg is
-            // riding on, or still on top of, the winner's pavement. The band obviously needs it. The
-            // ceded strand needs it too, and that is not obvious: its vertices ARE the winner's, so
-            // one would expect its bank to follow for free, and it does not. _computeCamberArrays
-            // reads curvature over a +/-10 m window and marches a slew limit forward, so within a
-            // window of the fork the leg's window already straddles the band's turn while the
-            // winner's sees only its own continuation. Measured at mark A: at arc 90, ZERO lateral
-            // separation, leg +2.6 deg against winner -5.9 deg. Same pavement, 8.5 deg apart.
-            const departureSpans = []
-            // R8 (owner, 2026-09-01): a ceded strand releases at ONE ROAD WIDTH of centre
-            // separation, not at the fork. s1/s0 land on the wye vertex (Xv — the hold's first
-            // clear vertex, ≥ 2·halfWidth by construction), so the slicer suppresses the loser's
-            // ribbon over the whole one-surface stretch (the gore's double deck is gone) and the
-            // censuses sanction it. exS1/exS0 keep the SURFACE-RESOLVE exclusion at the verbatim
-            // boundary: past the fork the held vertices are the loser's own line riding the
-            // winner's plane, and excluding the loser there was measured worse (2026-08-22 —
-            // steps to 489 cm where nobody owned the gore).
-            if (dS) {
-                cededSpans.push({ s0: 0, s1: polyCum[x1Idx], exS1: polyCum[forkIdxS], owner: dS.wk, ownerS0: dS.oS[0], ownerS1: dS.oS[1] })
-                offCurveSpans.push({ s0: 0, s1: polyCum[x1Idx + dS.blend.length], owner: dS.wk, ownerS0: dS.oSFork[0], ownerS1: dS.oSFork[1] })
-                departureSpans.push({ s0: 0, s1: polyCum[x1Idx + dS.blend.length], owner: dS.wk })
-            }
-            if (dE) {
-                cededSpans.push({ s0: polyCum[x2Idx], s1: polyCum[n], exS0: polyCum[forkIdxE], owner: dE.wk, ownerS0: dE.oS[0], ownerS1: dE.oS[1] })
-                offCurveSpans.push({ s0: polyCum[x2Idx - dE.blend.length], s1: polyCum[n], owner: dE.wk, ownerS0: dE.oSFork[0], ownerS1: dE.oSFork[1] })
-                departureSpans.push({ s0: polyCum[x2Idx - dE.blend.length], s1: polyCum[n], owner: dE.wk })
-            }
-            if (dry) dryAsm = { pts, polyCum }
-            else this._network.set(key, {
-                points: pts, arcOrigin: 0, centerline: cl,
-                polyCum, clArc: Float64Array.from(clArc), cellA, cellB,
-                tunnelSpans: midSpans && midSpans.length ? midSpans : null,
-                cededSpans, offCurveSpans,
-                ...(departureSpans.length ? { departureSpans } : {}),
-            })
-            return null   // built
-        }
-        const order = []
-        if (firstIdx !== null) order.push(firstIdx)
-        for (let bandIdx = 0; bandIdx < nBands; bandIdx++) if (bandIdx !== firstIdx) order.push(bandIdx)
-        // BUG-56: the departure hold is a PREFERENCE, not an ultimatum. Holding the through deck
-        // costs the strand its climbing room, and where no variant can pay that a lost merge costs
-        // a CONNECTION — BUG-57's ruling puts connectivity first (an unsanctioned crossing then
-        // condemns a leg). So walk the whole ladder at a FULL hold; then at HALF (B6 — most of the
-        // lip benefit, half the climbing room back); then unheld. Every fallback is COUNTED, so
-        // junction-stitch's residue stays attributable rather than mysterious.
-        // BUG-56 B3: the seam rule is a PREFERENCE with a counted fallback, and it took four
-        // measured attempts to be sure of that. As a hard acceptance criterion it is the better
-        // SURFACE — 470 wall steps across four windows down to 173, worst 5.38 m down to 2.28 —
-        // but it declines 16 of 67 merges, and a declined merge leaves the pair in conflict, which
-        // hands the crossing rung a leg to delete: seed 7 SPLIT INTO TWO COMPONENTS. That is the
-        // one outcome that is never worth any surface. Relaxing it in steps (strict, x4, off) made
-        // no difference at all, because the failing seams are an order of magnitude over the rule
-        // (5.38 m where 0.38 is allowed), not marginally over it. So: walk the whole ladder with
-        // the rule on, and only if every rung refuses walk it again without, and COUNT that.
-        // The ladder is walked ONCE, not twice. It used to be wrapped in `for (const seamOn of [true,
-        // false])`, which re-walked every band x hold rung with the seam rule off — re-SOLVING each
-        // profile even though `seamOn` gates nothing but a post-solve acceptance test. Measured on a
-        // seed-3 region: _v2RegisterMerged was making 305 of the 617 profile solves for 141 edges.
-        //
-        // It is the same outcome by construction. If any rung had cleared both grade AND seam, the
-        // old first pass would have returned there; so reaching the old second pass meant none did,
-        // and the first rung it then accepted was the first that cleared GRADE — which is exactly the
-        // first rung that failed on the seam alone. Remember that one and re-attempt only it.
-        const succeed = (bandIdx, holdFrac, seamRelaxed) => {
-            if (seamRelaxed && !dry) this._v2MergeSkipped('seam', `${key} keeps its merge with a walled fork — no rung cleared the deck-gap rule (BUG-56 B3)`)
-            if (dry) return { bandIdx, pts: dryAsm?.pts, polyCum: dryAsm?.polyCum }
-            this._v2Merges = (this._v2Merges || 0) + specs.length
-            return true
-        }
-        let seamFallback = null
-        // R8 (owner, 2026-09-01): the B6 holdFrac rungs [0.5, 0] are DELETED. A shortened hold is
-        // the illegal state R8 names — two overlapping decks below one road width of separation —
-        // so a merge either grades from the wye (full hold, release at 2·halfWidth) or declines
-        // down the band ladder and, past it, registers plain and is censused. Measure the merge
-        // count either side of this: a drop in merges is what split seed 7 (B3's lesson).
-        for (const holdFrac of [1]) {
-            for (const bandIdx of order) {
-                why = attempt(bandIdx, holdFrac, true)
-                if (!why) { const r = succeed(bandIdx, holdFrac, false); return dry ? r : undefined }
-                if (seamOnlyFail && !seamFallback) seamFallback = [bandIdx, holdFrac]
-            }
-        }
-        if (seamFallback) {
-            why = attempt(seamFallback[0], seamFallback[1], false)
-            if (!why) { const r = succeed(seamFallback[0], seamFallback[1], true); return dry ? r : undefined }
-        }
-        // R8 RELIEF RUNG (2026-09-01): full hold, seam AND departure-grade acceptances both off.
-        // Deleting the holdFrac rungs handed legs to the delete rung — measured immediately as the
-        // seed-7 split (the exact failure B3's hard-rule experiment produced). A steep or walled
-        // fork is a censused quality residue; a deleted road is a lost connection, and the owner's
-        // standing BUG-56 ruling is that grade failure ranks below connectivity violation. The
-        // geometry stays R8-legal (one surface to the wye, release at 2·halfWidth) — only the
-        // ACCEPTANCE tests relax, and every use is counted ('steep-fork').
-        for (const bandIdx of order) {
-            why = attempt(bandIdx, 1, false, false)
-            if (!why) {
-                if (!dry) this._v2MergeSkipped('steep-fork', `${key} keeps its merge past the departure grade/seam caps (R8 relief — the alternative was the delete rung)`)
-                const r = succeed(bandIdx, 1, true); return dry ? r : undefined
-            }
-        }
-        return bail(`${why} (tried ${nBands} variant${nBands === 1 ? '' : 's'})`)
     }
 
     // Smooth a polyline's Y in place (shared by the rows row-polyline and the graph per-edge polyline).
@@ -6443,8 +5683,17 @@ export class RoadSystem {
                 for (const spec of merge) promos.push({ sideKey: key, spec })
             }
             else {
+                // QUAL-30: a DISJOINT pair (BUG-55 shape E — two runs sharing no node yet carving
+                // the same dirt) resolves through the SAME T promotion as everything else. Its spec
+                // is already the mid-span shape _v2PromoteMidSpan consumes, and that path never
+                // reads a shared node — it works off spec.winner and the variants' wIn/wOut/lIn/lOut
+                // alone — so a disjoint pair promotes to two Ts with no machinery of its own. This
+                // is what retires _v2RegisterMidSpan, and with it _v2RegisterMerged.
                 const dj = (this._v2DisjointFor(g, drop, wide, c1, c2) || []).filter(alive)
-                if (dj.length) this._v2RegisterMidSpan(key, cl, c1, c2, dj[0], g, drop, false, wide)
+                if (dj.length) {
+                    this._registerRun(key, cl, c1, c2)
+                    promos.push({ sideKey: key, spec: dj[0] })
+                }
                 else {
                     // BUG-57 rung: a nick-crossed run with no merge-family role registers SHOVED —
                     // deflected clear of its crossing partners (_v2ShoveFor; plan-layer pure). An
