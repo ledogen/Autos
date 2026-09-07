@@ -236,7 +236,6 @@ const W = makeWorld(C.x, C.z, R)
 {
     const ms = new MissionSystem({
         getRoad: () => W.road,
-        makePlanner: () => W.road,
         getCar: () => ({ x: C.x, z: C.z, speed: 0 }),
         getSeed: () => SEED,
         teleport () {}, setMapOpen () {}, onChange () {},
@@ -280,7 +279,6 @@ const W = makeWorld(C.x, C.z, R)
     let day = 1
     const ms = new MissionSystem({
         getRoad: () => W.road,
-        makePlanner: () => W.road,
         getCar: () => ({ x: C.x, z: C.z, speed: 0 }),
         getSeed: () => SEED,
         getTerms: () => ({ day, dayTier: 1, thresholds: undefined }),
@@ -316,8 +314,8 @@ const W = makeWorld(C.x, C.z, R)
     await tick()
     check('...and the post-accept roll is not the taken job', ms.mission !== taken)
 
-    ms.invalidatePlan()
-    check('invalidatePlan clears the offer cache (no dead-RoadSystem pinning)', ms._offers.size === 0)
+    ms.clearOffers()
+    check('clearOffers empties the offer cache (no dead-RoadSystem pinning)', ms._offers.size === 0)
     ms.exit()
 }
 
@@ -331,7 +329,6 @@ const W = makeWorld(C.x, C.z, R)
     const car = { x: 0, z: 0, speed: 0 }
     const ms = new MissionSystem({
         getRoad: () => W.road,
-        makePlanner: () => W.road,
         getCar: () => car,
         getSeed: () => SEED,
         teleport (x, z) { car.x = x; car.z = z },
@@ -383,7 +380,6 @@ const W = makeWorld(C.x, C.z, R)
 {
     const ms = new MissionSystem({
         getRoad: () => W.road,
-        makePlanner: () => W.road,
         getCar: () => ({ x: C.x, z: C.z, speed: 0 }),
         getSeed: () => SEED,
         teleport () {}, setMapOpen () {}, onChange () {},

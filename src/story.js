@@ -120,8 +120,8 @@ export class StorySystem {
   isRoadStreamSuspended () { return this._frozen || this._phase === 'warming' || this._phase === 'rejected' }
   /**
    * True while the mode is loading (reseat/reseed settling, or the region routing warm running).
-   * Callers that also use the road Worker (the Quick Job planner pre-warm) hold off while this is
-   * true so the two warms don't fight for the same worker pool and stretch the loading screen.
+   * The park triggers and prompts gate on it: until the region is live there are no POIs, no
+   * network to plan on, and nothing the player can interact with.
    */
   isEntering () { return this._active && this._phase !== 'live' }
   /**
@@ -166,8 +166,8 @@ export class StorySystem {
     // machine in the live path, which test/world-determinism.mjs asserts headlessly.
     this._d.clearSpawnOverride?.()
     this._d.setLoading(true, 'entering the region…')
-    // Quick Job stays hidden until the region is live — its planner would fight the region warm
-    // for the road Worker, and there is nothing to drive to yet.
+    // Quick Job stays hidden until the region is live — it plans on the region network, so before
+    // the warm finishes there is quite literally nothing to drive to.
     this._d.setQuickJobVisible(false)
 
     this._seed = seed          // the disclaimer names the seed that was refused
@@ -324,8 +324,8 @@ export class StorySystem {
     }
 
     // ── live: the boundary ──────────────────────────────────────────────────────────────────
-    // A Quick Job teleports the truck up to the planner radius and expects a free drive — don't
-    // fence it. The wall re-arms only after the player is back inside the region.
+    // A Quick Job can teleport the truck to a start pin near the wall and expects a free drive —
+    // don't fence it. The wall re-arms only after the player is back inside the region.
     if (this._d.isMissionActive && this._d.isMissionActive()) { this._armed = false; return }
 
     const dx = vehicleState.position.x - this._center.x
