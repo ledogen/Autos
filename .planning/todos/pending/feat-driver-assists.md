@@ -26,7 +26,7 @@ the *hardware* ABS/TCS parts are the separate FEAT-57 — reconcile the overlap.
 
 ## Context
 
-RangerSim's core value is *honest physics* — a truck that drifts, rolls, and rewards literacy. That
+AUTOS's core value is *honest physics* — a truck that drifts, rolls, and rewards literacy. That
 same honesty makes it punishing for newer players and hard to dial as a difficulty axis. This ticket
 adds an optional **driver-assist layer** that modulates the player's raw steer/throttle/brake input
 before it reaches the physics, plus a menu to tune it. Inspiration: **BeamNG.drive's assists.**

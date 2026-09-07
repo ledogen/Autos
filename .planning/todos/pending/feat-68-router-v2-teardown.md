@@ -1135,7 +1135,7 @@ both. Ladder use is instrumented (`_v2Rung`), so "which rung did this edge land 
 
 ### The captured tear is NODE-SHARING OVERLAP — see the BUG-53 section below
 
-`rangersim-capture-1787289162055.json` (seed 6, mark −4420, 1535, *"4 roads converging mostly to one
+`autos-capture-1787289162055.json` (seed 6, mark −4420, 1535, *"4 roads converging mostly to one
 spot, huge tear in terrain"*). Replay says the world is **fine by every contract**: window-invariance
 gradeΔ 0.000 m over 88 on-road points, fold radius 938 m against a 15 m design minimum. It is a
 **degree-3** node (not four roads) whose three run ends agree to **0.000 m**.
@@ -1194,7 +1194,7 @@ Ranked in the quote, and worth honouring in this order:
 
 ### MEASURED 2026-08-20 — the dominant class is NODE-SHARING overlap, not disjoint crossings
 
-The owner captured a spot on seed 6 (`rangersim-capture-1787289162055.json`, mark −4420, 1535) —
+The owner captured a spot on seed 6 (`autos-capture-1787289162055.json`, mark −4420, 1535) —
 *"4 roads converging mostly to one spot, huge tear in terrain."* Replayed and probed:
 
 - `test/replay.mjs` says the world is **fine by every contract**: surface window-invariance holds

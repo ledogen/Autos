@@ -45,7 +45,8 @@ chassis factory, debris translation) · `tire.js` (Pacejka, pure math) · `suspe
 (spring-damper struts, out-of-round tire radius) · `alignment.js` (static toe/camber signs,
 pure math — read by `physics.js` and `vehicle-model.js`) · `terrain-physics.js` (streamed heightfield colliders, MESH == PHYSICS) ·
 `drivetrain.js` (engine/converter/gearbox, FEAT-23) · `ignition.js` (key/starter state machine,
-FEAT-33 — pure, no DOM) · `vehicle.js` (state, Ackermann, input) ·
+FEAT-33 — pure, no DOM) · `vehicle.js` (Ackermann, input) · `vehicle-state.js` (THE canonical
+vehicleState shape — one factory, so the world truck and the FEAT-41 menu-stage truck cannot drift) ·
 `debris.js` (FEAT-36 dynamic props) · `physics-debug.js` (collider wireframes).
 
 **World generation** — `seed.js` (PRNG, pure, worker-paste-able) · `terrain.js` (chunk ring +
@@ -85,5 +86,10 @@ clustering) · `lab.js` (FEAT-31 testing lab world).
 **Dev & harness bridge** — `debug.js` (lil-gui panel, HUD) · `capture.js` (game↔harness capture
 schema) · `logger.js` (frame logger + IC loader) · `perf.js` (bucketed profiler) · `version.js`
 (build marker).
+
+**Menus & shell** — `stage.js` (FEAT-41 MenuStage: the live 3D scene behind the main menu AND
+every mode-entry load — its OWN scene, camera, physics world and truck, so it keeps animating while
+the real world is being reseeded and routed. Only `main.js` constructs it; the pure-node gates never
+touch it, same rule as `debris.js`).
 
 **Entry** — `main.js` (scene setup, fixed-step accumulator loop, wires everything).

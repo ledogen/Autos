@@ -1,4 +1,4 @@
-// test/lib/cdp.mjs — shared Chrome DevTools Protocol client for RangerSim tools (PERF-08 harness).
+// test/lib/cdp.mjs — shared Chrome DevTools Protocol client for AUTOS tools (PERF-08 harness).
 //
 // Extracted from test/screenshot.mjs so screenshot + profiling drivers share one scaffold:
 // launch headless Chrome (node's built-in WebSocket + fetch — no playwright), a promise-based
@@ -22,7 +22,7 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms))
 // Returns { chrome, cleanup }; cleanup kills the process and removes the profile dir
 // (also wired to process exit/SIGINT so orphans don't accumulate).
 export function launchChrome (url, { port = 9222, headed = false, audio = false, windowSize = '1400,900', extraArgs = [] } = {}) {
-  const userDir = mkdtempSync(join(tmpdir(), 'rangersim-cdp-'))
+  const userDir = mkdtempSync(join(tmpdir(), 'autos-cdp-'))
   const args = [
     // --mute-audio is the DEFAULT on every harness launch, headed or not: CDP-synthesized keydowns
     // count as a user gesture, so the harness DOES unlock WebAudio and a run would otherwise play

@@ -1,5 +1,5 @@
 /**
- * src/road-mesh.js — RoadMeshSystem for RangerSim v1.1
+ * src/road-mesh.js — RoadMeshSystem for AUTOS v1.1
  *
  * Sweeps a crowned, cambered ribbon mesh along per-tile Catmull-Rom road splines.
  * Road tiles are keyed "X,Z" (same format as terrain chunks) and stream in/out

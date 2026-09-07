@@ -74,7 +74,7 @@ const waitFor = async (expr, timeoutMs, label, pollMs = 100) => {
 
 if (CPU > 1) { await client.cmd('Emulation.setCPUThrottlingRate', { rate: CPU }); await sleep(500) }
 
-const url = `http://localhost:${PORT}/index.html?prof=1${BOOTSEED ? `&seed=${BOOTSEED}` : ''}`
+const url = `http://localhost:${PORT}/index.html?prof=1&nomenu=1${BOOTSEED ? `&seed=${BOOTSEED}` : ''}`   // FEAT-41: skip the menu; this harness wants the world on screen
 console.log(`\n▶ story cold load — mode ${MODE} · cpu ${CPU}× · seed ${SEED} · ${url}`)
 console.log(`  (fresh Chrome profile ⇒ HTTP cache cold; route-cache assets re-downloaded)\n`)
 

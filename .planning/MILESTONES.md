@@ -1,4 +1,4 @@
-# Milestones: RangerSim
+# Milestones: AUTOS
 
 ## v1.0 — MVP
 

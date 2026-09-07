@@ -1,4 +1,4 @@
-// test/profile.mjs — external performance profiler for RangerSim (PERF-08 harness).
+// test/profile.mjs — external performance profiler for AUTOS (PERF-08 harness).
 //
 // Drives the app over CDP (test/lib/cdp.mjs) against the ?prof=1 dev handles in src/main.js
 // (__q quality preset, __ri renderer.info, __perfData perf buckets + frame-dt ring, __world
@@ -46,7 +46,7 @@ const LABEL    = flag('label', '')
 const PORT = Number(flag('port', 8000)), CDP_PORT = Number(flag('cdp', 9222))
 if (!['coldload', 'idle', 'drive', 'stream'].includes(SCENARIO)) { console.error(`unknown scenario ${SCENARIO}`); process.exit(1) }
 
-const qs = new URLSearchParams({ prof: '1' })
+const qs = new URLSearchParams({ prof: '1', nomenu: '1' })   // FEAT-41: skip the menu; this harness wants the world on screen
 if (SEED && SEED !== '6') qs.set('seed', SEED)
 if (NOAA) qs.set('noaa', '1')
 const APP = `http://localhost:${PORT}/index.html?${qs}`

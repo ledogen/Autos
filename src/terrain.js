@@ -1,5 +1,5 @@
 /**
- * src/terrain.js — TerrainSystem for RangerSim
+ * src/terrain.js — TerrainSystem for AUTOS
  *
  * Responsibilities:
  *  - Chunk ring management (5×5, RING_RADIUS=2, 64 m tiles)

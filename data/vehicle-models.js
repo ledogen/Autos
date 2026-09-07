@@ -75,7 +75,7 @@ export const VEHICLE_MODELS = {
     // One lens material serves the headlamps AND the reverse lamps; rearZ = 0 splits them, since
     // the headlamps sit near model-local z -1.9 and the reverse lenses near +2.5.
     reverse: { material: 'RangerLens', rearZ: 0 },
-    credit: 'Own work — 2002 Ford Ranger, built for RangerSim (ASSET-34)',
+    credit: 'Own work — 2002 Ford Ranger, built for AUTOS (ASSET-34)',
   },
 }
 

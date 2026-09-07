@@ -1,4 +1,4 @@
-# Art Style: what RangerSim looks like
+# Art Style: what AUTOS looks like
 
 **Read this before modelling anything.** It is the visual brief. `ASSETS.md` (sibling file) covers
 the mechanical conventions — format, paths, export settings, pivots. This file covers what the thing

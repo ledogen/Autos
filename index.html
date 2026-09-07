@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>RangerSim</title>
+  <title>AUTOS</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #111; overflow: hidden; }
@@ -75,7 +75,11 @@
       flex-direction: column;
       align-items: center;
       gap: 12px;
-      z-index: 101;
+      /* ABOVE #main-menu (205). It was 101 — from when the only thing over the world was the pause
+         menu — so the menu's full-viewport gradient covered it: the dialog rendered dimmed and every
+         click on it landed on the gradient instead. Keyboard still reached the input (it is focused
+         on open), so the only way through was to type a seed and press Enter. */
+      z-index: 215;
       min-width: 220px;
     }
     #story-seed-modal .ss-title {
@@ -93,7 +97,7 @@
       font-size: 16px;
       text-align: center;
       padding: 6px 10px;
-      width: 160px;
+      width: 260px;   /* wide enough for the "leave blank for random" placeholder, which clipped at 160 */
     }
     #story-seed-modal .ss-actions { display: flex; gap: 10px; }
     #story-seed-modal button {
@@ -134,12 +138,10 @@
     #story-seed-modal .ss-reject-detail { color: #8a7a5e; font-size: 11px; line-height: 1.6; text-align: center; }
     #story-seed-modal #ss-anyway { display: none; border-color: #7a5a1a; color: #c9a45a; }
     #story-seed-modal.rejected #ss-anyway { display: block; }
-    /* FEAT-43: Story Mode entry loading screen. Full-cover (not a panel) — the world behind it is
-       mid-reseed and mid-warm, so showing it would read as a broken frame. Opaque, above everything
-       including the pause menu. Minimal styling; FEAT-41 owns the real menu look. */
-    /* PERF-30 (owner 2026-09-04): the boot loading screen — the initial page load was a black
-       screen for the whole module-load + worldgen stretch. Visible by DEFAULT (it paints the
-       instant the HTML parses, before any JS); main.js hides it on the first animate frame. */
+    /* PERF-30: the boot splash — the initial page load was a black screen for the whole
+       module-load stretch. Visible by DEFAULT (it paints the instant the HTML parses, before any
+       JS). FEAT-41 moved the hide out of loop() and onto the menu stage's FIRST PAINTED FRAME:
+       the splash must not lift before there is a scene behind it. */
     #boot-loading {
       display: flex;
       position: fixed;
@@ -151,7 +153,7 @@
       align-items: center;
       justify-content: center;
       gap: 14px;
-      z-index: 210;
+      z-index: 220;   /* over the seed modal (215) — nothing outranks the boot splash */
     }
     #boot-loading .sl-title {
       color: #00ff88;
@@ -160,27 +162,105 @@
       text-transform: uppercase;
     }
     #boot-loading .sl-sub { font-size: 13px; color: #8fa0b0; }
-    #story-loading {
-      display: none;
+
+    /* FEAT-41 main menu. Not opaque — the whole point is the stage behind it (src/stage.js): the
+       truck drop IS the background. A left-anchored scrim keeps the type legible against it while
+       leaving the front-left corner of the truck, which is the shot, in clear air on the right. */
+    #main-menu {
+      display: flex;
       position: fixed;
       inset: 0;
-      background: #05070a;
-      color: #cfd6dd;
+      z-index: 205;
+      flex-direction: column;
+      justify-content: center;
+      gap: 10px;
+      padding: 0 0 0 68px;
       font-family: monospace;
+      background: linear-gradient(100deg, rgba(4,7,10,0.92) 0%, rgba(4,7,10,0.72) 34%, rgba(4,7,10,0.0) 62%);
+    }
+    #mm-root { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+    #main-menu .mm-title {
+      color: #00ff88;
+      font-size: 30px;
+      letter-spacing: 9px;
+      text-transform: uppercase;
+      margin-bottom: 26px;
+    }
+    #main-menu button {
+      background: none;
+      border: none;
+      border-left: 2px solid transparent;
+      color: #b9c4cd;
+      font-family: monospace;
+      font-size: 16px;
+      letter-spacing: 1px;
+      padding: 8px 18px;
+      cursor: pointer;
+      width: 260px;
+      text-align: left;
+      transition: color 0.12s, border-color 0.12s, padding-left 0.12s;
+    }
+    #main-menu button:hover {
+      color: #ffffff;
+      border-left-color: #00ff88;
+      padding-left: 26px;
+    }
+    #main-menu .mm-foot {
+      position: fixed;
+      left: 68px;
+      bottom: 26px;
+      color: #55636f;
+      font-size: 11px;
+    }
+    /* Settings stub (FEAT-41 ships the frame; the pages themselves are still open on the ticket). */
+    #mm-settings-panel {
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #main-menu.settings #mm-root { display: none; }
+    #main-menu.settings #mm-settings-panel { display: flex; }
+    #mm-settings-panel .mm-note {
+      color: #6a7a88;
+      font-size: 12px;
+      line-height: 1.7;
+      max-width: 380px;
+      margin-bottom: 10px;
+    }
+
+    /* FEAT-41: while the stage owns the screen, the in-world chrome must be off it — the menu's
+       scrim is deliberately transparent on the right, so anything left standing (the gauge cluster,
+       the controls box, lil-gui, stats) would sit on top of the shot. !important so a later inline
+       style.display from main.js cannot leak a panel onto the menu, and so simply dropping the class
+       restores every element's own display without main.js re-asserting any of them. */
+    body.stage-on > div:not(#main-menu):not(#load-caption):not(#story-seed-modal):not(#boot-loading),
+    body.stage-on > canvas#map2d,
+    body.stage-on > canvas#cluster { display: none !important; }
+
+    /* FEAT-41: the load caption. This used to be #story-loading, an OPAQUE full-cover panel — it
+       had to be, because what was behind it was a world mid-reseed and mid-warm, which reads as a
+       broken frame. The menu stage is behind it now, so the cover is not only unnecessary, it was
+       hiding the thing worth looking at. A strip of text over the drop is all that is left. */
+    #load-caption {
+      display: none;
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 200;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      gap: 14px;
-      z-index: 200;
+      gap: 8px;
+      padding: 26px 40px 34px;
+      font-family: monospace;
+      background: linear-gradient(to top, rgba(4,7,10,0.94) 0%, rgba(4,7,10,0.72) 55%, rgba(4,7,10,0) 100%);
     }
-    #story-loading .sl-title {
+    #load-caption .sl-title {
       color: #00ff88;
       font-size: 15px;
       letter-spacing: 4px;
       text-transform: uppercase;
     }
-    #story-loading #sl-text { font-size: 13px; color: #8fa0b0; }
-    #story-loading .sl-hint { font-size: 11px; color: #55636f; max-width: 460px; text-align: center; line-height: 1.6; }
+    #load-caption #sl-text { font-size: 13px; color: #8fa0b0; }
+    #load-caption .sl-hint { font-size: 11px; color: #55636f; max-width: 520px; text-align: center; line-height: 1.6; }
     /* FEAT-49: gauge cluster overlay (src/cluster.js draws it). Bottom-right; z 86 keeps it
        under the map (90), mission panel (95) and quickjob button (96). */
     #cluster {
@@ -805,7 +885,7 @@
   <!-- Bare specifiers ('three', 'three/addons/*', 'simplex-noise') are resolved by Vite from
        node_modules (PERF-04/PERF-20.5) — the old CDN importmap is retired. See vite.config.js. -->
 </head>
-<body>
+<body class="stage-on">
   <!-- Canvas queried by main.js via document.querySelector('canvas') — no id required -->
   <canvas></canvas>
 
@@ -847,12 +927,13 @@
     <button id="pm-resume">resume</button>
     <button id="pm-story">story mode</button>
     <button id="pm-lab">testing lab</button>
+    <button id="pm-menu">main menu</button>
   </div>
 
   <!-- FEAT-43: Story Mode seed prompt. Minimal for now (full menu styling is FEAT-41); pre-filled
        with the pre-baked default seed 6 so it boots instantly for testing. Wired in main.js. -->
   <div id="story-seed-modal">
-    <div class="ss-title">story mode</div>
+    <div class="ss-title" id="ss-title">story mode</div>
     <!-- The refusal block. Populated by main.js from src/world-validate.js's report; the modal gets
          class="rejected" to reveal it and the "start anyway" button. -->
     <div id="ss-reject">
@@ -864,28 +945,49 @@
       <div class="ss-reject-detail" id="ss-reject-detail"></div>
     </div>
     <div class="ss-label">world seed</div>
-    <input id="ss-seed" type="text" maxlength="24" spellcheck="false" value="6">
+    <input id="ss-seed" type="text" maxlength="24" spellcheck="false" placeholder="leave blank for random">
     <div class="ss-actions">
       <button id="ss-start">start</button>
       <button id="ss-anyway">start anyway</button>
       <button id="ss-cancel">cancel</button>
     </div>
-    <div class="ss-hint">default seed 6 is pre-baked — loads instantly</div>
+    <!-- The old "seed 6 is pre-baked" line went with the bake subsystem (deleted 2026-08-19);
+         router v2 routes fast enough live. Any seed now costs the same. -->
+    <div class="ss-hint">any text works as a seed — the same seed always builds the same world</div>
   </div>
 
-  <!-- FEAT-43: Story Mode entry loading screen. Covers the reseed + the one-time region routing
-       warm; once it clears, the router is FROZEN for the whole region (no streaming/routing cost
-       while driving). Text is set from src/story.js via the setLoading dep. -->
+  <!-- PERF-30 boot splash. Painted the instant the HTML parses; taken down by the menu stage's
+       first rendered frame (src/stage.js onFirstFrame), so it never lifts onto an empty canvas. -->
   <div id="boot-loading">
-    <div class="sl-title">rangersim</div>
-    <div class="sl-sub">building the world&hellip;</div>
+    <div class="sl-title">autos</div>
+    <div class="sl-sub">warming up&hellip;</div>
   </div>
 
-  <div id="story-loading">
-    <div class="sl-title">story mode</div>
-    <div id="sl-text">entering the region&hellip;</div>
-    <div class="sl-hint">routing the whole region once, up front — after this the roads are frozen
-      and no routing runs while you drive. A fresh seed pays this once; seed 6 is pre-baked.</div>
+  <!-- FEAT-41 main menu. The 3D behind it is the live stage (src/stage.js), not menu geometry:
+       buttons never live in WebGL, the truck never lives in the DOM. -->
+  <div id="main-menu">
+    <div id="mm-root">
+      <div class="mm-title">autos</div>
+      <button id="mm-freeroam">free roam</button>
+      <button id="mm-story">story mode</button>
+      <button id="mm-lab">testing lab</button>
+      <button id="mm-settings">settings</button>
+    </div>
+    <div id="mm-settings-panel">
+      <div class="mm-title">settings</div>
+      <div class="mm-note">Nothing is wired here yet. Video quality, audio levels, controls and the
+        driver-assist page are still open on FEAT-41 — the debug panel (backtick) owns them for now.</div>
+      <button id="mm-settings-back">back</button>
+    </div>
+    <div class="mm-foot">esc pauses &middot; backtick opens the debug panel (free roam only)</div>
+  </div>
+
+  <!-- FEAT-41: load caption. Text is set from src/story.js via the setLoading dep, and from the
+       free-roam seed start in main.js. It is a strip, not a cover — the stage is what is behind it. -->
+  <div id="load-caption">
+    <div class="sl-title">loading</div>
+    <div id="sl-text">building the world&hellip;</div>
+    <div class="sl-hint" id="sl-hint"></div>
   </div>
 
   <!-- Story-mode beta: mission offer panel (shown over the 2D map before the start countdown)

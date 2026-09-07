@@ -117,7 +117,7 @@ plumbed (`missions.md` §3c: *"no new wear plumbing"*). It also gives the visibl
 Open, and the owner's to settle:
 
 - **Is the budget a hard refusal or a soft one?** Refusing to load is clean; letting you load it and
-  watching the truck squat onto the bump stops is more honest and more RangerSim. The middle option —
+  watching the truck squat onto the bump stops is more honest and more AUTOS. The middle option —
   it loads, but the giver tells you it's a bad idea — is probably the answer.
 - **Does this survive the run?** Suspension and tires are run-layer purchases, so the *budget* dies
   with the run (SM-INV-8/9). Fine — but say so, because "upgrade to carry more" is the exact sentence
@@ -401,7 +401,7 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 >   describing where you can sleep, and the zone disc — which is deliberately never drawn — starts
 >   to matter. Pick a number that keeps the corridor reading true.
 > - **⚠ The fiction assumes on-foot movement, which the game does not have.** A backpack means you
->   carry your kit in from the parked truck. There is no walking in RangerSim. So either the item is
+>   carry your kit in from the parked truck. There is no walking in AUTOS. So either the item is
 >   really a *driving* permission ("you can hump the gear in from wherever you got the truck to") and
 >   the name is doing fictional work the mechanic doesn't, or it wants an out-of-truck mode, which is
 >   a much larger ask. **Owner's call** — the mechanic is clean either way, only the name is at risk.

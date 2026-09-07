@@ -12,7 +12,7 @@ relates_to: getDriveTorque (src/physics.js), RANGER_PARAMS.Drivetrain (data/rang
 
 ## Vision
 
-RangerSim should let the player **modify the vehicle's drivetrain architecture** through a simplified
+AUTOS should let the player **modify the vehicle's drivetrain architecture** through a simplified
 in-game parts selector, and have the physics respond honestly (per the project's core value: "tuning
 parameters produces the expected result"). The full scope — deliberately left OPEN as a standing reminder
 after Phase 1 ships — is:

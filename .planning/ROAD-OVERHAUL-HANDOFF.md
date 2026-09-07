@@ -242,7 +242,7 @@ keep arc body + clothoid joins. Cleanest is all-primitive.
 git status                      # clean Phase-2 baseline, uncommitted
 npm test                        # 6/7 green; road-minradius.mjs 2/4 (the residual)
 node test/road-minradius.mjs    # the BUG-12 gate (per-slice arc-spaced min radius)
-node test/replay.mjs Logs/rangersim-capture-1782102756225.json   # capture-1 repro (the 119° splice corner)
+node test/replay.mjs Logs/autos-capture-1782102756225.json   # capture-1 repro (the 119° splice corner)
 ```
 Decide first: **commit/stash the Phase-2 work** (canonical heading + Dubins are keepers) or branch
 fresh. Then start Phase A. Keep every commit green; build new beside old; delete old last.

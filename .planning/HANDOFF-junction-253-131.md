@@ -125,7 +125,7 @@ the visual/driving goal; fix root not symptom; worldgen character must EMERGE fr
   --pitch=-1.45 --wait=7000 --out=/tmp/x.png` — launches its own Chrome on CDP 9222, fresh page load,
   reads current disk (picks up edits without a build). Node ~(253,−131); good angles used: overhead
   `--pitch=-1.45`, ground `--height=6 --zoff=20 --pitch=-0.5`.
-- **Replay the capture:** `node test/replay.mjs /Users/ledogen/Downloads/rangersim-capture-1784696173802.json`
+- **Replay the capture:** `node test/replay.mjs /Users/ledogen/Downloads/autos-capture-1784696173802.json`
   (there are several newer captures in ~/Downloads too). Confirms headless==game at a mark.
 - **Live CDP introspection:** temporarily add `window.__rs = () => roadSystem; window.__rms =
   () => roadMeshSystem` right after the RoadMeshSystem ctor in main.js (line ~1857), then drive a small

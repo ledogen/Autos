@@ -1,11 +1,11 @@
-# RangerSim capture schema (game ↔ harness bridge)
+# AUTOS capture schema (game ↔ harness bridge)
 
 A **capture** is the single artifact that turns an in-sim "this is broken HERE / THIS happened"
 observation into a deterministic, replayable bug report. You mark it in-game, send the JSON, and
 `node test/replay.mjs <capture.json>` reproduces it headlessly and reports.
 
 Defined + built/validated in `src/capture.js` (pure module — the game and the harness both use it).
-Schema version: **1** (`rangersimCapture: 1`).
+Schema version: **1** (`autosCapture: 1`).
 
 ## Why it reproduces
 
@@ -18,7 +18,7 @@ class. `observed` records what the live game resolved, so replay can **diff** an
 
 ```jsonc
 {
-  "rangersimCapture": 1,
+  "autosCapture": 1,
   "kind": "place" | "event",
   "complaint": "free text — what's wrong (human/LLM signal)",
   "world": {                       // reproduction context (shared by both kinds)
@@ -59,11 +59,11 @@ class. `observed` records what the live game resolved, so replay can **diff** an
 
 ## How to capture (in-game)
 
-- **`p` → place capture.** Drive to the bad spot, press `p`. Downloads `rangersim-capture-<ts>.json`
+- **`p` → place capture.** Drive to the bad spot, press `p`. Downloads `autos-capture-<ts>.json`
   with `kind:"place"` (incl. `observed` from `debugSampleAt` + the live terrain sample).
 - **`\` → event capture.** Press `\` to start recording, drive through the bug, press `\` to stop.
-  Downloads `rangersim-capture-<ts>.json` with `kind:"event"` (world + initial state + input timeline +
-  the columnar telemetry in `event.frames`). (Falls back to a raw `rangersim-log` if no capture
+  Downloads `autos-capture-<ts>.json` with `kind:"event"` (world + initial state + input timeline +
+  the columnar telemetry in `event.frames`). (Falls back to a raw `autos-log` if no capture
   context is registered.)
 
 ## How to replay (headless)

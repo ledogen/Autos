@@ -1,5 +1,5 @@
 /**
- * src/logger.js — Frame logger and initial condition loader for RangerSim.
+ * src/logger.js — Frame logger and initial condition loader for AUTOS.
  *
  * Purpose: Enables bug reporting. User reproduces a physics issue, captures a log
  * with the \ key, and shares the downloaded JSON alongside a description.
@@ -101,10 +101,10 @@ function _downloadLog () {
       fields:              FIELDS,
       frames:              _frames,
     })
-    name = 'rangersim-capture-' + Date.now() + '.json'
+    name = 'autos-capture-' + Date.now() + '.json'
   } else {
     payload = { fields: FIELDS, frames: _frames }   // legacy raw-log fallback
-    name = 'rangersim-log-' + Date.now() + '.json'
+    name = 'autos-log-' + Date.now() + '.json'
   }
   const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)

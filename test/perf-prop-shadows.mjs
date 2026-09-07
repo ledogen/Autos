@@ -28,7 +28,7 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 const server = spawn('npx', ['serve', ROOT, '-l', String(PORT)], { stdio: 'ignore' })
-const userDir = mkdtempSync(join(tmpdir(), 'rangersim-perf-'))
+const userDir = mkdtempSync(join(tmpdir(), 'autos-perf-'))
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${CDP}`, `--user-data-dir=${userDir}`,
     '--use-angle=metal', '--window-size=1400,900',
     // Muted like every other harness launch — CDP input unlocks WebAudio, so an unmuted run drones

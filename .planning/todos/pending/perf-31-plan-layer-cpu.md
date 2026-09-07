@@ -139,7 +139,7 @@ That is essentially the ≤ 8 s bench target. Routing is unchanged (~7.1 s) — 
 `corridorSearch`-bound and `profileSolve` runs only at the end of a route.
 
 MEASUREMENT TRAP recorded: an earlier browser batch read 21–24 s on BOTH sides of the A/B. Cause
-was the harness itself — 267 leaked `rangersim-cdp-*` profile dirs and stray Chrome instances had
+was the harness itself — 267 leaked `autos-cdp-*` profile dirs and stray Chrome instances had
 the load average at 6.4. Clean up CDP chromes between runs, and prefer an ALTERNATING A/B over
 comparing against a baseline measured earlier in a session.
 

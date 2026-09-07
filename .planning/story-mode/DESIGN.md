@@ -218,7 +218,7 @@ asset burn-down surface), [spirits-and-pacts.md](spirits-and-pacts.md) (the spir
 
 ## The premise [RATIFIED]
 
-RangerSim becomes a **roguelike**. A **run** is as many in-game days as you survive. You die
+AUTOS becomes a **roguelike**. A **run** is as many in-game days as you survive. You die
 by **crashing** or **breaking down** — nothing else. A day is a **24-minute sky cycle** — **16 waking
 hours plus 8 hours' sleep**, and the clock **pauses in shops, service stations and camp** — so it
 costs **~18 real minutes** to live through (see "Run shape and saving"); a run is **20 days**. Every run

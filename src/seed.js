@@ -1,5 +1,5 @@
 /**
- * src/seed.js — World-seed foundation for RangerSim v1.1
+ * src/seed.js — World-seed foundation for AUTOS v1.1
  *
  * HARD RULE: The four function bodies below (djb2, parseWorldSeed, seedFor,
  * mulberry32) are copied VERBATIM into src/terrain.js, inside the WORKER_SOURCE
