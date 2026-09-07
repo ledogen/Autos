@@ -81,8 +81,9 @@ function compareExports(name, A, B, { skipTallies = false } = {}) {
         if (!f64eq(ra.polyCum, rb.polyCum)) { bad.push(`${ra.key}: polyCum`); continue }
         if (!f64eq(ra.clArc, rb.clArc)) { bad.push(`${ra.key}: clArc`); continue }
         if (!jsonEq(ra.prims, rb.prims)) { bad.push(`${ra.key}: prims`); continue }
-        for (const f of ['cellA', 'cellB', 'arcOrigin', 'v2Dirs', 'tunnelSpans', 'cededSpans',
-                         'offCurveSpans', 'departureSpans', 'rerouted', 'condemned']) {
+        // QUAL-30: cededSpans and departureSpans left the entry shape with the wye machinery.
+        for (const f of ['cellA', 'cellB', 'arcOrigin', 'v2Dirs', 'tunnelSpans',
+                         'offCurveSpans', 'rerouted', 'condemned']) {
             if (!jsonEq(ra[f], rb[f])) { bad.push(`${ra.key}: ${f}`); break }
         }
     }

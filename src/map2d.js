@@ -1729,8 +1729,11 @@ export class Map2D {
     // draws when the owner is absent from this window (the surface resolver's absent-winner rule).
     _surfaceSlices(e) {
         const { points, polyCum: cum, tunnelSpans } = e
-        const ceded = (e.cededSpans || []).filter((sp) => this._road?._network?.has(sp.owner))
-        const spans = [...(tunnelSpans || []), ...ceded]
+        // QUAL-30: the ceded-span subtraction is gone with cededSpans itself. It existed because a
+        // wye's loser carried the winner's vertices verbatim, so both runs stroked the same road and
+        // doubled the ink. Under the T promotion the side road does not exist over the shared
+        // ground at all — there is one run there and one stroke.
+        const spans = [...(tunnelSpans || [])]
         if (!spans.length || !cum) return [points]
         const out = []
         let s = 0

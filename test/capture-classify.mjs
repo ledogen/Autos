@@ -6,7 +6,7 @@
 //
 //   1. WHAT IS IT — for every pair of runs at the mark: do they share a node, how far do they run
 //      within shared-earthworks distance, how far apart are their decks, and do they cross?
-//   2. DID THE FIX FIRE — is either run carrying a merge (cededSpans / offCurveSpans), and if not,
+//   2. DID THE FIX FIRE — is either run carrying a T departure (offCurveSpans), and if not,
 //      which guard skipped it (the per-reason tally every guard writes via _v2MergeSkipped).
 //
 // Proximity that lies inside a merge's own extent is the FIX WORKING, not a defect, so it is
@@ -87,7 +87,7 @@ for (const rec of (road._v2Deleted || new Map()).values()) {
   console.log(`     resolved by DELETING ${rec.key} (${why})${nest} · pairs: ${rec.pairs.join(', ')}${dMin < LOOK ? '   <<< AT THE MARK' : ''}`)
 }
 for (const o of atMark) {
-  const ceded = (o.r.e.cededSpans || []).map((s) => `${s.s0.toFixed(0)}–${s.s1.toFixed(0)} m to ${s.owner}`)
+  const ceded = []   // QUAL-30: ceded stretches no longer exist — a T's side road starts at its node
   console.log(`     ${o.r.k}  ${o.r.len.toFixed(0)} m · ${o.hit.d.toFixed(0)} m from mark` +
               (ceded.length ? `  · MERGED: cedes ${ceded.join(', ')}` : ''))
 }

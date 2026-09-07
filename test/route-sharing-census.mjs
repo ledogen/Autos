@@ -15,7 +15,7 @@
 //   T       — FEAT-76: the pair's fork was PROMOTED to a real degree-3 node. One run's endpoint is a
 //             promoted id (k = -1) sitting on the other, or on a run that is a slice of the other's
 //             trunk. This is the outcome the ticket converts every wye into.
-//   merged  — one run's cededSpans names the other (its vertices ARE the winner's), or both cede
+//   merged  — HISTORIC, cannot occur since QUAL-30: one run's cededSpans named the other, or both ceded
 //             to the same third-party winner (a shared throat that forks twice)
 //   shoved  — a run carries offCurveSpans naming the partner but cedes nothing to it: the
 //             deflection rung, roads kept apart rather than made one
@@ -80,10 +80,9 @@ for (const seed of SEEDS) {
   const promKeys = new Set(road._promoted ? road._promoted.keys() : [])
   const endsAtProm = (R) => [R.a, R.b].filter((c) => promKeys.has(c))
   const isT = (A, B) => endsAtProm(A).some((c) => endsAtProm(B).includes(c))
-  const cedesTo = (R, other) => (R.e.cededSpans || []).some((s) => s.owner === other.k)
+  const cedesTo = () => false          // QUAL-30: no run cedes any more — kept so the row still prints 0
   const offFor  = (R, other) => (R.e.offCurveSpans || []).some((s) => s.owner === other.k)
-  const sharedWinner = (A, B) => (A.e.cededSpans || []).some((s) =>
-                                  (B.e.cededSpans || []).some((o) => o.owner === s.owner))
+  const sharedWinner = () => false     // QUAL-30: likewise
 
   const spans = []          // every shared span, one entry each
   const pairs = []          // one entry per sharing pair

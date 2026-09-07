@@ -843,14 +843,10 @@ export class PoiSystem {
             // BUG-55 phase 5: never seat a pad on a CEDED stretch — that ground is the WINNER's
             // pavement (the loser's points are the winner's verbatim), so the winner's own edge
             // can seat a pad on the same physical spot and the two lay-bys would overlap.
-            // Seed-pure: merge plans are pure functions of the graph, so every window rejects
-            // identically. The TAPER band stays eligible — it is the loser's own road, and it
-            // owns its surface there (the ceded exclusion ends at the ceded boundary).
-            // BUG-41: `s` and cededSpans are both the run's DRIVEN arc now. They were not — the
-            // spans are built from polyCum while edgeParData's sampler carried the pre-merge
-            // centerline arc, so this compared two domains up to 33 m apart through a ±20 m
-            // tolerance, and the guard could pass a pad onto ceded ground (or reject clear ground).
-            if ((ed.cededSpans || []).some((sp) => s >= sp.s0 - 20 && s <= sp.s1 + 20)) continue
+            // QUAL-30: the ceded-ground exclusion is gone with cededSpans. It stopped a lay-by pad
+            // being seated on a stretch the loser had ceded to a winner — ground where the winner's
+            // own edge could seat a pad on the same spot. Under the T promotion the side road has no
+            // ceded stretch: it starts at the departure node, so every metre of it is its own.
             // WHICH SIDE is decided by the ground, not by the hash: try both and take the one that
             // needs less earthwork. On a mountain road the two sides are wildly asymmetric — one is
             // a 1:1 cut bank, the other a 3:1 fill slope — so letting the terrain choose is both the

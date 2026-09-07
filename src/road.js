@@ -1887,7 +1887,6 @@ export class RoadSystem {
         // winner's course, so its clArc is no longer the arc of the road underneath them — measured
         // on seed 6, 10 of 52 runs off by 2.10% (p50) to 6.80% (33.3 m), which made par price a road
         // SHORTER than the one driven, and par is the FEAT-53 payout denominator. Worse, the
-        // cededSpans returned alongside are built from polyCum (see _v2MergeRuns), so the object
         // handed out spoke two arc domains at once — poi.js's ceded-road rejection compared them
         // directly with a ±20 m tolerance against a ≤33 m error.
         //
@@ -1905,7 +1904,7 @@ export class RoadSystem {
             // driven arc out from under the sampler and silently restore the bug. Measured 0 on
             // every run; fail loudly rather than assume it stays that way.
             if (hit.arcOrigin) throw new Error(`BUG-41: run ${k} has arcOrigin ${hit.arcOrigin}; edgeParData assumes 0`)
-            return { key: k, centerline: clOf(hit), gradeAt: _gradeSampler(hit.points, arcOf(hit)), cededSpans: hit.cededSpans }
+            return { key: k, centerline: clOf(hit), gradeAt: _gradeSampler(hit.points, arcOf(hit)) }
         }
         if (this._network.has(key)) return par(key, this._network.get(key))
         if (this._network.has(alt)) return par(alt, this._network.get(alt))
@@ -2175,9 +2174,7 @@ export class RoadSystem {
                 v2Dirs: !!(e.centerline && e.centerline._v2Dirs),
                 dirsSpec: e.centerline?._v2DirsSpec ?? null,
                 tunnelSpans: e.tunnelSpans ?? null,
-                cededSpans: e.cededSpans ?? null,
                 offCurveSpans: e.offCurveSpans ?? null,
-                departureSpans: e.departureSpans ?? null,
                 rerouted: !!e.rerouted, condemned: !!e.condemned,
             })
         }
@@ -2273,9 +2270,7 @@ export class RoadSystem {
             }
             // Optional fields mirror the registration sites: absent on a plain run, present on a
             // merged/shoved one — consumers distinguish by presence.
-            if (r.cededSpans) entry.cededSpans = r.cededSpans
             if (r.offCurveSpans) entry.offCurveSpans = r.offCurveSpans
-            if (r.departureSpans) entry.departureSpans = r.departureSpans
             if (r.rerouted) entry.rerouted = true
             if (r.condemned) entry.condemned = true
             this._network.set(r.key, entry)
@@ -5011,7 +5006,7 @@ export class RoadSystem {
         // The blend is the one stretch whose points have left the primitive centerline; declare it
         // so the analytic refine and the par sampler stay on the polyline there (the same
         // convention _v2RegisterShoved uses for a deflected run — this is why offCurveSpans stays
-        // even though the wye's cededSpans/departureSpans go).
+        // even though the wye's ceded and departure spans are gone).
         const offCurveSpans = [{
             s0: Math.max(0, polyCum[Math.max(0, jLo)] - 2),
             s1: Math.min(polyCum[n - 1], polyCum[Math.min(n - 1, jHi)] + 2),
@@ -5666,36 +5661,12 @@ export class RoadSystem {
             // seam harness's single-.spline-per-tile comparison green by construction.
             const runWeight = points.length
 
-            // BUG-53: a merged run's ceded interval belongs to its winner — never slice it, or the
-            // duplicate ribbon z-fights the winner's. A ceded span can sit anywhere in the run:
-            // node-anchored merges cede a prefix or a suffix, MID-SPAN merges cede a stretch out of
-            // the middle and keep the loser's own road on BOTH sides. So this builds a list of kept
-            // index ranges, not one window. (Assuming a single window is what silently deleted the
-            // ribbon past an interior ceded span, leaving its earthworks carved with no road on
-            // them — the carve reads _resolveRoadSurface, which had the interval right all along.)
-            const pc = entry.polyCum
-            let keep = [[0, points.length - 1]]
-            for (const csp of entry.cededSpans || []) {
-                if (!this._network.has(csp.owner)) continue   // fringe: the loser serves this span itself
-                // R8 deck-hole fix (owner screenshots, seed 6 (-1571,1304) / (127,1882)): suppress
-                // only the VERBATIM interval (exS0/exS1), exactly like the surface resolver. The
-                // extended interval reaches the wye, but the winner's ribbon is one half-width wide
-                // — past ~5 m of separation the loser's held pavement is the ONLY deck on that
-                // ground, and suppressing it shipped carved earthwork with no asphalt (the same
-                // failure the 2026-08-22 resolver experiment measured, now on the mesh side).
-                const cs0 = csp.exS0 ?? csp.s0, cs1 = csp.exS1 ?? csp.s1
-                const next = []
-                for (const [a0, a1] of keep) {
-                    let lo = a0
-                    while (lo <= a1 && pc[lo] < cs0 - 1e-6) lo++
-                    let hi = a1
-                    while (hi >= a0 && pc[hi] > cs1 + 1e-6) hi--
-                    // [a0..lo-1] survives below the span, [hi+1..a1] above it
-                    if (lo - 1 - a0 >= 1) next.push([a0, lo - 1])
-                    if (a1 - (hi + 1) >= 1) next.push([hi + 1, a1])
-                }
-                keep = next
-            }
+            // QUAL-30: the ceded-hole slicer is gone with cededSpans. A wye's loser carried the
+            // winner's vertices verbatim over the ceded interval, so slicing it shipped a duplicate
+            // ribbon that z-fought the winner's — hence a list of kept ranges rather than one
+            // window. The T promotion removes the loser's geometry there outright, so every
+            // registered run is a single unbroken window again.
+            const keep = [[0, points.length - 1]]
 
             // Walk the polyline, cutting at every x/z integer-multiple-of-S boundary crossing.
             // `current` accumulates the active sub-polyline; on a cut we push the boundary point to
@@ -6543,30 +6514,10 @@ export class RoadSystem {
         // C0 with the sibling arm, which shares the anchor (synced run-end camber, BUG-19/QUAL-05).
         let bestEndD2 = Infinity, bestEndPr = null, bestEndRunKey = ''
         const consider = (runKey, pr) => {
-            // BUG-53: a ceded interval belongs to its winner — the loser's coincident points must
-            // not compete for surface ownership there. ONLY while the winner's pavement exists in
-            // this window: at the window fringe the loser can register without its owner (in-band
-            // by its far endpoint only), and then the loser IS the road — its spliced points carry
-            // the winner's course verbatim, so serving them keeps the surface window-invariant.
-            const neC = this._network.get(runKey)
-            if (neC && neC.cededSpans) {
-                // The exclusion ends exactly at the ceded boundary. NEGATIVE RESULT (measured
-                // 2026-08-22): extending it past the fork the way the pre-taper code did makes
-                // things far WORSE (steps up to 489 cm), because past the fork the loser's taper
-                // band is the only road there — the winner has pulled away — so excluding the loser
-                // leaves nobody owning the surface and the terrain reverts to raw under it.
-                const aC = pr.arcS + (neC.arcOrigin ?? 0)
-                for (const csp of neC.cededSpans) {
-                    // R8: the exclusion is the VERBATIM interval (exS0/exS1 when the span was
-                    // extended to the wye) — over the gore the loser's plane-held deck is the
-                    // only continuous surface at its own line and must keep serving it.
-                    const lo2 = (csp.exS0 ?? csp.s0) - 0.5, hi2 = (csp.exS1 ?? csp.s1) + 0.5
-                    if (aC >= lo2 && aC <= hi2) {
-                        if (this._network.has(csp.owner)) return
-                        break
-                    }
-                }
-            }
+            // QUAL-30: the ceded-ownership exclusion is gone with cededSpans. A wye's loser had
+            // the winner's course verbatim over its ceded stretch, so both runs' points competed
+            // for surface ownership on the same ground and the loser had to stand down. A promoted
+            // T's side road does not exist there, so there is nothing to arbitrate.
             const latDist = Math.abs(pr.signedLat)
             if (pr.offEnd) {   // BUG-21 apex-sliver candidate (radial gate, weakest priority)
                 // BUG-57: the gate widened endHW → footHW as part of the polar-cap continuation
@@ -9566,94 +9517,6 @@ export class RoadSystem {
         }
     }
 
-    /**
-     * BUG-56 B4 — THE DEPARTURE CAMBER MATCH: the ROLL half of the normal invariant.
-     *
-     * Owner ruling 2026-08-27, correcting the earlier gore framing:
-     *
-     *     "the v gore is mostly a fill not a smooth driveable surface. i think the most important
-     *      thing is the road normal direction matches the mid edge."
-     *
-     * A deck's normal is set by two things — transverse CAMBER and longitudinal GRADE. Through the
-     * departure the joining leg's deck plane must be the through road's deck plane: camber gives it
-     * the roll, grade gives it the pitch, and without both the car is thrown. The height half is
-     * already enforced by the departure hold; this is the roll half.
-     *
-     * A ≥3-way node pad gets this for free (_applyJunctionBlend eases camber to zero at flatCamber
-     * nodes). A FORK gets nothing: _computeCamberArrays sees only the band's own curvature, and a
-     * band is the tightest geometry in the network — median turn radius 23 m against open road's
-     * 308 m — so it banks hard, in whatever direction its own corner happens to go. Measured at the
-     * owner's two marks, with the winner banked 13-15 deg the whole way through:
-     *
-     *     mark A  seed 6 (-1585,1336)   leg camber  15.4 deg   vs winner  -0.2 deg
-     *     mark B  seed 6 (-2505,4204)   leg camber   0.0 deg   vs winner -14.6 deg
-     *
-     * Both are ~15 deg of deck mismatch between two pavements at ZERO lateral separation, and both
-     * printed CLEAN through a centreline-only stitching gate.
-     *
-     * THE RULE — match, then ease off, ramped on LATERAL SEPARATION rather than arc, because the
-     * invariant is about position, not progress:
-     *
-     *     while you are on top of the through road, your bank is its bank
-     *
-     * Fully the winner's while the ribbons still overlap (d <= 2·halfWidth), fully this leg's own
-     * once they no longer share earthworks (d >= mergeProxM), smoothstep between. It does NOT ramp
-     * to zero at the fork: the winner is banked 13 deg there, so flattening the leg would re-create
-     * the very mismatch at the very spot being fixed.
-     *
-     * Applied in BOTH consumers — _buildCamberProfile (ribbon + carve) and _buildRunProfile
-     * (physics) — so MESH == PHYSICS holds. Pure fn of the two registered runs, hence
-     * window-invariant; acyclic because a winner never departs onto its own loser, which is
-     * asserted rather than assumed (a cycle here would recurse forever, not just read wrong).
-     */
-    _applyDepartureCamber(runKey, arcPos, camberRad) {
-        if (!camberRad) return
-        const e = this._network?.get(runKey)
-        const spans = e?.departureSpans
-        if (!spans || !spans.length || !e.points) return
-        const hw = this._params?.roadHalfWidth ?? 5
-        // R8 (owner, 2026-09-01): the blend is a WYE boundary condition, not a shared-earthworks
-        // ramp. Below D0 = 2·halfWidth there is ONE surface (the strand is ceded; this profile is
-        // not served there, but it must arrive at the wye ON the winner's plane); the crease then
-        // develops over one road width of gore opening, and past D1 the road is fully its own.
-        // mergeProxM measures shared earthworks — a different question — so it no longer appears.
-        // The crease across the shared edge is capped at wyeCreaseMaxDeg (owner: 30°, at the wye
-        // only), clamped on the blend TARGET so the cap relaxes exactly as the blend does.
-        const D0 = 2 * hw                                   // the wye: decks share an edge
-        const D1 = 2 * D0                                   // gore fully open: own bank, no cap
-        const capRad = (this._v2Costs?.().wyeCreaseMaxDeg ?? 30) * (Math.PI / 180)
-        for (const sp of spans) {
-            const w = this._network.get(sp.owner)
-            if (!w || !w.points || w.points.length < 2 || !w.polyCum) continue
-            if ((w.departureSpans || []).some((q) => q.owner === runKey)) continue   // the acyclic check
-            const wOrigin = w.arcOrigin ?? 0
-            for (let i = 0; i < arcPos.length && i < e.points.length; i++) {
-                const a = arcPos[i]
-                if (a < sp.s0 - 1e-6 || a > sp.s1 + 1e-6) continue
-                const P = e.points[i]
-                const nr = _nearestOnPolyXZ(P.x, P.z, w.points, w.polyCum)
-                if (!nr || nr.d >= D1) continue
-                const t = Math.max(0, Math.min(1, (nr.d - D0) / (D1 - D0)))
-                const f = 1 - t * t * (3 - 2 * t)            // 1 on top of the winner, 0 once clear
-                if (f <= 0) continue
-                // ORIENTATION (2026-08-28). Camber is a RUN-FRAME angle: +camber banks toward that
-                // run's own +lateral axis (t.z, -t.x). A leg that cedes its START to the winner's END
-                // walks the shared stretch BACKWARDS, so its +lateral axis is the winner's -lateral,
-                // and the winner's bank is -wc in THIS run's frame. Copying the raw angle banked the
-                // leg the opposite way IN THE WORLD — two pavements on one piece of ground tilted 2x
-                // camber apart, +/-2.5 m of edge disagreement at the owner's seed-21 fork (218,255),
-                // on 35 of the battery's 64 departure spans. Match the FRAMES, then the angle.
-                const j = Math.max(1, Math.min(i, e.points.length - 1))
-                const q0 = e.points[j - 1], q1 = e.points[j]
-                const lx = q1.x - q0.x, lz = q1.z - q0.z, ll = Math.hypot(lx, lz) || 1
-                const orient = (lx / ll) * nr.tx + (lz / ll) * nr.tz < 0 ? -1 : 1
-                const wc = orient * this.camberProfile(nr.cum - wOrigin, sp.owner)
-                const target = wc + Math.max(-capRad, Math.min(capRad, camberRad[i] - wc))   // R8 crease cap
-                camberRad[i] = target + (wc - target) * f
-            }
-        }
-    }
-
     _buildCamberProfile(runKey) {
         const netEntry = this._network?.get(runKey)
         if (!netEntry || !netEntry.points || netEntry.points.length < 2) return null
@@ -9662,7 +9525,6 @@ export class RoadSystem {
         const prof = this._computeCamberArrays(netEntry.points, netEntry.arcOrigin, this._runStartCamber(runKey))
         // BUG-56 B4 first, junction blend second: a ≥3-way node is a flat plaza and outranks a fork's
         // bank, so the node's camber-kill must be the last word where the two reaches overlap.
-        this._applyDepartureCamber(runKey, prof.arcPos, prof.camberRad)       // BUG-56 B4: fork bank matches the through road
         this._applyJunctionBlend(runKey, prof.arcPos, null, prof.camberRad)   // FEAT-10: camber→0 at shared-anchor junctions
         this._applyMidspanJunctionBlend(runKey, prof.arcPos, null, prof.camberRad)   // FEAT-07 Step 2: camber→0 at AT_GRADE crossings
         return prof
@@ -9797,7 +9659,6 @@ export class RoadSystem {
         // FEAT-10: flatten grade → nodeY and camber → 0 near merged junction endpoints so crossing
         // runs agree at the node (no invisible collision step, no banking jolt). Same blend as
         // _buildCamberProfile → the ribbon (camberProfile) and the run profile stay in sync at junctions.
-        this._applyDepartureCamber(runKey, arcPos, camberRad)   // BUG-56 B4 — MESH == PHYSICS: same blend, same order
         this._applyJunctionBlend(runKey, arcPos, gradeY, camberRad)
         // FEAT-07 Step 2: same flatten at AT_GRADE mid-span crossings (both strands → one shared node Y).
         this._applyMidspanJunctionBlend(runKey, arcPos, gradeY, camberRad)

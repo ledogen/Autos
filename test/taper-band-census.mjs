@@ -1,13 +1,15 @@
 // test/taper-band-census.mjs — how tight are the taper bands the merge ladder builds?
 //
-// A merge hands the loser's vertices to the winner (`cededSpans` — real road, the winner's own
+// QUAL-30: this measures T DEPARTURE BLENDS now, not taper bands — the wye is gone. Kept under
+// its old name so the before/after numbers in FEAT-76 and QUAL-30 stay comparable.
+// (Historic: a merge handed the loser's vertices to the winner (`cededSpans` — real road, the winner's own
 // geometry) and then needs a TAPER BAND to get the loser back onto its own line at the wye. The
 // band is a retrofit: it exists only because the two runs were routed independently and merged
 // afterwards. Its corner radius is the quality cost of doing it post-hoc, and it is the metric any
 // change to how junctions are formed has to be scored on — FEAT-76's junction-leg re-scope,
 // BUG-56 B5's band ladder, and the R1-R8 wye work all move this number.
 //
-// Band vertices = `offCurveSpans` minus `cededSpans`. Radius is Menger curvature over consecutive
+// Band vertices = `offCurveSpans`. Radius is Menger curvature over consecutive
 // registered polyline vertices (4 m spacing), so it measures the SHIPPED geometry, not the planner's
 // intent. Open-road vertices (neither ceded nor off-curve) are the control.
 //
@@ -36,7 +38,7 @@ for (const seed of SEEDS) {
   road.setRadius(RADIUS)
   road.update(new THREE.Vector3(0, 0, 0))
   for (const [, e] of road._network) {
-    const off = e.offCurveSpans || [], ced = e.cededSpans || []
+    const off = e.offCurveSpans || [], ced = []
     if (!off.length) continue
     const cum = e.polyCum, p = e.points
     const inSpan = (s, spans) => spans.some((x) => s >= x.s0 - 1e-6 && s <= x.s1 + 1e-6)

@@ -248,7 +248,8 @@ const scan = (road) => {
     // What the planner CALLS this site, so a red is legible against capture-classify: does EITHER
     // run carry merge geometry naming the other? That is the fork class; anything else is two
     // legs of a junction diverging on their own.
-    const names = (e, o) => (e.cededSpans || []).some((sp) => sp.owner === o) || (e.offCurveSpans || []).some((sp) => sp.owner === o)
+    // QUAL-30: cededSpans is gone; a sanctioned overlap is now only an offCurve departure blend.
+    const names = (e, o) => (e.offCurveSpans || []).some((sp) => sp.owner === o)
     lip.tag = (names(A.e, B.k) || names(B.e, A.k)) ? 'fork' : shared.length ? 'leg' : 'midspan'
     lips.push(lip)
   }
