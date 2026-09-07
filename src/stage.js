@@ -471,10 +471,10 @@ export class MenuStage {
     this._myS += (this._my - this._myS) * k
 
     this._camOff.copy(this._camBase).sub(this._camTarget)
-    this._qYaw.setFromAxisAngle(this._axisY, -this._mxS * PARALLAX)
+    this._qYaw.setFromAxisAngle(this._axisY, this._mxS * PARALLAX)
     this._camOff.applyQuaternion(this._qYaw)
     this._axisRight.copy(this._camOff).cross(this._axisY).normalize()
-    this._qPitch.setFromAxisAngle(this._axisRight, this._myS * PARALLAX)
+    this._qPitch.setFromAxisAngle(this._axisRight, -this._myS * PARALLAX)
     this._camOff.applyQuaternion(this._qPitch)
 
     this.camera.position.copy(this._camTarget).add(this._camOff)
