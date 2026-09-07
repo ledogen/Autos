@@ -396,6 +396,29 @@ function _segSegDistXZ(a, b, c, d) {
                     pt(c.x, c.z, a.x, a.z, b.x, b.z), pt(d.x, d.z, a.x, a.z, b.x, b.z))
 }
 
+// FEAT-76: the trunk's longitudinal grade VECTOR at vertex i — dy/ds carried on the XZ tangent.
+// The promoted node's pad plane is this, exactly: a plane through a point on a built road, tilted
+// the way that road is already tilted.
+function _trunkGradeAt(T, i) {
+    const n = T.points.length - 1
+    const j0 = Math.max(0, i - 2), j1 = Math.min(n, i + 2)
+    const ds = T.polyCum[j1] - T.polyCum[j0]
+    const m = ds > 1e-6 ? (T.points[j1].y - T.points[j0].y) / ds : 0
+    const tx = T.points[j1].x - T.points[j0].x, tz = T.points[j1].z - T.points[j0].z
+    const tl = Math.hypot(tx, tz) || 1
+    return { gx: m * tx / tl, gz: m * tz / tl }
+}
+
+// FEAT-76: the polyline VERTEX index nearest an arc position. A T is split at a real vertex, never
+// between two, so the promoted node names a point that exists in the geometry — the id, the pad
+// plane, the junction cluster and both trunk halves then agree exactly instead of to within a lerp.
+function _nearestVertexAtCum(polyCum, cum) {
+    const n = polyCum.length
+    let lo = 0, hi = n - 1
+    while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (polyCum[m] <= cum) lo = m; else hi = m }
+    return (cum - polyCum[lo] <= polyCum[hi] - cum) ? lo : hi
+}
+
 /** BUG-53/55 merge machinery: polyCum → clArc, the paired-table interpolation. */
 function _clArcOfCum(S, cum) {
     const pc = S.polyCum, ca = S.clArc, n = pc.length
@@ -777,6 +800,24 @@ function _coarseHeight(wx, wz, noiseCoarse, params) {
 // Elevation sampler over a graded edge polyline: centerline arc s → routed design Y.
 // `clArc` is the (monotone) centerline arc position of each polyline point, so this is the exact
 // inverse of the sampling in _assembleGraphEdges. Used by edgeParData → par oracle (FEAT-29).
+// ── FEAT-76: PROMOTED node identity ────────────────────────────────────────────────────────────
+// A promoted node is the point where a side road departs an existing trunk — the T that replaces
+// the old wye. It is NOT a blue-noise site, so it has no site id; it needs a synthetic one that
+// four modules outside the road system (mission.js, map2d.js, paper-route.js, world-validate.js)
+// can carry as an opaque triple.
+//
+// The id is the millimetre-quantised world XZ with k = -1:
+//   · it CANNOT collide with a real site id, structurally — every real candidate index is >= 0.
+//     This does not depend on the quantisation being lucky.
+//   · it survives the `${a},${b},${c}` / .split(',').map(Number) round trip those modules use, and
+//     contains no ':' so the four places that split a run key on ':' are unaffected.
+//   · it is window-invariant because the point it names is a VERTEX of the trunk's registered
+//     polyline, which is bit-identical in every window (same route, same profile solve, same
+//     inputs). The quantisation is belt-and-braces, not the guarantee.
+const PROMOTED_K = -1
+const _promotedId = (x, z) => [Math.round(x * 1000), Math.round(z * 1000), PROMOTED_K]
+const _isPromotedId = (id) => !!id && id.length === 3 && id[2] === PROMOTED_K
+
 // BUG-53: points-backed stand-in for a trimmed run's centerline — .pointAt(s)/.length in the
 // same clArc domain _gradeSampler uses, interpolating the REGISTERED (spliced) polyline.
 function _pointSampler(points, clArc) {
@@ -835,6 +876,11 @@ export class RoadSystem {
         // (08-06) Old per-tile router caches (_tileCache/_waypointCache) removed — the canonical
         // stores are this._network (08-05) sliced into this._tiles (this plan). No per-tile cache.
         this._debugLines         = []         // THREE.Line objects added to scene on demand
+        // FEAT-76: the T-promotion tables, rebuilt by every _assembleGraphEdges.
+        //   _promoted     nodeKey -> { id, pos, trunkKey, gx, gz }   (a departure node on a trunk)
+        //   _promotedAway 'nodeKey|nbrKey'                           (edges that no longer START there)
+        this._promoted           = new Map()
+        this._promotedAway       = new Set()
         this._scene              = null       // set via init(scene)
         this._debugVisible       = false      // D-05: clean by default; toggled via setDebugVisible()
         this._noiseCoarse        = null       // built by _reinitNoise()
@@ -2125,6 +2171,15 @@ export class RoadSystem {
             graph: g ? { sig: g.sig, edges: g.edges, dropped } : null,
             delFrozen: delF ? [...delF.del] : [],
             delFlip: delF ? [...delF.flip] : [],
+            // FEAT-76: the promoted-T tables. The adopter cannot re-derive these — they are a
+            // product of the build, not of the coordinates — and without them _graphDegreeOf reads
+            // the raw graph, so a node the T turned into a two-leg bend comes back as a phantom
+            // three-way junction (measured: degree 3 vs 4 at [-3,1,1], network-worker-parity red).
+            promoted: [...this._promoted].map(([k, r]) => [k, {
+                id: r.id, x: r.pos.x, y: r.pos.y, z: r.pos.z,
+                halves: r.halves, sideKey: r.sideKey, gx: r.gx, gz: r.gz,
+            }]),
+            promotedAway: [...this._promotedAway],
             condemnedKeys: this._v2CondemnedKeys ? [...this._v2CondemnedKeys] : [],
             tallies: {
                 merges: this._v2Merges || 0, shoves: this._v2Shoves || 0,
@@ -2192,6 +2247,12 @@ export class RoadSystem {
         // R4 frozen deletes at THIS instance's new rev — _graphDegreeOf subtracts them, so pads,
         // leaf tapers and pins classify by the built network exactly as the builder did.
         this._v2DelFrozen = { rev: this._networkRev, del: new Set(data.delFrozen || []), flip: new Set(data.delFlip || []) }
+        // FEAT-76: the promoted-T tables ride across with the runs (see exportNetwork).
+        this._promoted = new Map((data.promoted || []).map(([k, r]) => [k, {
+            id: r.id, pos: new THREE.Vector3(r.x, r.y, r.z),
+            halves: r.halves, sideKey: r.sideKey, gx: r.gx, gz: r.gz,
+        }]))
+        this._promotedAway = new Set(data.promotedAway || [])
         this._v2CondemnedKeys = data.condemnedKeys ? [...data.condemnedKeys] : []
         if (data.tallies) {
             this._v2Merges = data.tallies.merges; this._v2Shoves = data.tallies.shoves
@@ -2339,8 +2400,17 @@ export class RoadSystem {
         return out
     }
 
-    // World position for a site id [cmx,cmz,k].
+    // World position for a site id [cmx,cmz,k]. FEAT-76: a PROMOTED id (k = -1) is not a site — it
+    // names a point on a trunk run, and its position (deck height included) comes from the
+    // promotion table this rev's assembly built. The fallback is only reached for an id that
+    // outlived its network (a stale capture), and reads terrain rather than throwing.
     _siteAt(id) {
+        if (_isPromotedId(id)) {
+            const rec = this._promoted?.get(`${id[0]},${id[1]},${id[2]}`)
+            if (rec) return rec.pos
+            const px = id[0] / 1000, pz = id[1] / 1000
+            return new THREE.Vector3(px, this._coarseH(px, pz), pz)
+        }
         for (const s of this._anchorSites(id[0], id[1])) if (s.id[2] === id[2]) return s.pos
         return this._coarseAnchorFallback(id)
     }
@@ -2433,12 +2503,27 @@ export class RoadSystem {
         const g = this._proto.graph
         if (!g) return 2
         const nk = g.key(id)
+        // FEAT-76: a promoted node is not in the Urquhart graph at all — its degree is what
+        // REGISTERED there (trunk in, trunk out, side road out = 3 by construction).
+        if (_isPromotedId(id)) return this._proto.nodeInc.get(nk)?.length ?? 3
         const nbrs = g.adj.get(nk)
         if (!nbrs) return 0
         const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen.del : null
-        if (!delF || !delF.size) return nbrs.size
+        // FEAT-76: subtract edges that were PROMOTED AWAY from this node — the side road of a T no
+        // longer starts here, it starts out on the trunk. Same shape as the R4 frozen delete set
+        // above, and for the same reason: _graphDegreeOf is a CONSUMER of the settled plan (pads,
+        // camber flattening, leaf tapers), never an input to routing, so subtracting here cannot
+        // reach back into the departure pins. Without it a node that is now a two-leg bend would
+        // still fit a three-way pad plane and flatten its camber. Directed on purpose: the edge is
+        // gone from THIS end only — its far end still has the road arriving.
+        const promAway = this._promotedAway
+        if ((!delF || !delF.size) && (!promAway || !promAway.size)) return nbrs.size
         let n = 0
-        for (const o of nbrs) if (!delF.has(nk + '|' + o)) n++
+        for (const o of nbrs) {
+            if (delF && delF.has(nk + '|' + o)) continue
+            if (promAway && promAway.has(nk + '|' + o)) continue
+            n++
+        }
         return n
     }
 
@@ -4096,12 +4181,22 @@ export class RoadSystem {
         // A MID-SPAN merge cedes a stretch in the middle of the run, so it cannot be combined with
         // an end merge on the same run — the assembly would have to splice three ceded regions and
         // solve four strands. Take the longer one alone.
+        // FEAT-76: a spec the promotion cannot build is not a plan — drop it here so the crossing
+        // rungs below stop standing down for a resolution that never arrives.
+        const promotable = (sp) => {
+            if (!sp) return null
+            if (this._v2PromotableFor(g, drop, sp, c1, c2)) return sp
+            this._v2MergeSkipped('promote-infeasible', `${ck} has no T`)
+            return null
+        }
         if (sA?.midSpan || sB?.midSpan) {
-            const both = [sA, sB].filter(Boolean)
+            const both = [sA, sB].filter(Boolean).map(promotable).filter(Boolean)
+            if (!both.length) return null
             return [both.reduce((x, y) => (y.region > x.region ? y : x))]
         }
         if (sA && !winnerOk(sA)) { this._v2MergeSkipped('winner'); sA = null }
         if (sB && !winnerOk(sB)) { this._v2MergeSkipped('winner'); sB = null }
+        sA = promotable(sA); sB = promotable(sB)
         if (sA && sB) {
             const st = sA.loserNodeAtStart ? sA : (sB.loserNodeAtStart ? sB : null)
             const en = !sB.loserNodeAtStart ? sB : (!sA.loserNodeAtStart ? sA : null)
@@ -4114,6 +4209,103 @@ export class RoadSystem {
         }
         const one = sA || sB
         return one ? [one] : null
+    }
+
+    /**
+     * FEAT-76: CAN THIS PAIR ACTUALLY BE A T? — asked at PLAN time, on the pure samples.
+     *
+     * The crossing rungs (_v2ShoveFor, _v2DeleteFor, _v2DisjointFor) all stand down when a merge is
+     * planned, on the reasoning that the merge is going to resolve the conflict. That reasoning was
+     * sound while a merge always assembled SOMETHING — the band ladder had a rung for nearly every
+     * shape. A T is stricter: it has no hold and no ceded strand, so a pair whose two roads run a
+     * road width apart at five metres of height difference (seed 67, g:-3,-1,1:-3,0,1, two roads on
+     * one hillside) has nowhere to put a junction. If the plan still claims that pair, the rungs
+     * stand down for a resolution that never arrives and the crossing ships — measured, that was
+     * road-connectivity's seed-67 red.
+     *
+     * So the plan layer asks the assembly layer's own question, using the assembly layer's own code
+     * on the pre-registration samples (the `dry` pattern _v2RegisterMerged used for the same reason).
+     * No second implementation to drift: identical candidate generation, identical departure build,
+     * identical acceptance. Memoized per plan rev — one answer per pair per build.
+     */
+    _v2PromotableFor(g, drop, spec, c1, c2) {
+        if (!this._v2PromoMemo || this._v2PromoMemo.rev !== this._planRev())
+            this._v2PromoMemo = { rev: this._planRev(), map: new Map() }
+        const kA = g.key(c1), kB = g.key(c2)
+        const mk = `${kA}|${kB}|${spec.midSpan ? 'm' : 'n'}|${spec.region.toFixed(1)}`
+        const hit = this._v2PromoMemo.map.get(mk)
+        if (hit !== undefined) return hit
+        this._v2PromoMemo.map.set(mk, true)   // optimistic: bars re-entry, never observed as an answer
+        const out = this._v2PromotableProbe(g, drop, spec, c1, c2)
+        this._v2PromoMemo.map.set(mk, out)
+        return out
+    }
+
+    _v2PromotableProbe(g, drop, spec, c1, c2) {
+        const sample = (a, b) => {
+            const S = this._v2RunSample(g, drop, a, b)
+            if (!S) return null
+            const cl = this._edgeCenterline(a, b, this._v2EdgeDirs(g, drop, g.key(a), g.key(b)))
+            if (!cl || !cl.slice) return null
+            return { points: S.pts, polyCum: S.polyCum, clArc: S.clArc, centerline: cl, cellA: a, cellB: b }
+        }
+        const side = sample(c1, c2), T = sample(spec.winner[0], spec.winner[1])
+        if (!side || !T) return true          // cannot judge — leave the plan alone
+        const MINREG = 30
+        const Rmin = this._params?.roadMinTurnRadius ?? 12
+        const sideL = side.polyCum[side.polyCum.length - 1]
+        const tL = T.polyCum[T.polyCum.length - 1]
+        const wk0 = `g:${g.key(spec.winner[0])}:${g.key(spec.winner[1])}`
+        const wCells = [g.key(spec.winner[0]), g.key(spec.winner[1])]
+        const sA = g.key(side.cellA), sB = g.key(side.cellB)
+        const nKey = wCells.includes(sA) ? sA : (wCells.includes(sB) ? sB : null)
+        const ends = spec.midSpan
+            ? (spec.variants[0] ? [{ lArc: spec.variants[0].lIn, nAtStart: spec.variants[0].lDir < 0 },
+                                   { lArc: spec.variants[0].lOut, nAtStart: spec.variants[0].lDir > 0 }] : [])
+            : (nKey ? [{ nAtStart: sA === nKey }] : [])
+        if (!ends.length) return true
+        const probe = { sideKey: `g:${sA}:${sB}`, spec }
+        const net = this._network
+        this._network = new Map([[wk0, T], [probe.sideKey, side]])
+        try {
+            for (const en of ends) {
+                const nAtStart = en.nAtStart
+                const cands = spec.midSpan
+                    ? [{ wCut: null, lArc: en.lArc }]
+                    : this._v2ForkCandidates(g, probe, side, nAtStart, sideL, wk0, wCells)
+                let any = false
+                for (const c of cands) {
+                    let iL, P, iP
+                    if (spec.midSpan) {
+                        const wArc = en === ends[0] ? spec.variants[0].wIn : spec.variants[0].wOut
+                        if (wArc < MINREG || wArc > tL - MINREG) continue
+                        iP = _nearestVertexAtCum(T.polyCum, wArc)
+                        P = T.points[iP]
+                        iL = _nearestVertexAtCum(side.polyCum, c.lArc)
+                    } else {
+                        const h = _nearestOnPolyXZ(c.forkPt.x, c.forkPt.z, T.points, T.polyCum)
+                        if (!h || h.d > 4) continue
+                        iP = _nearestVertexAtCum(T.polyCum, h.cum)
+                        if (T.polyCum[iP] < MINREG || tL - T.polyCum[iP] < MINREG) continue
+                        P = T.points[iP]
+                        const lo = nAtStart ? 0 : sideL * 0.15, hi = nAtStart ? sideL * 0.85 : sideL
+                        const lh = _nearestOnPolyXZ(P.x, P.z, side.points, side.polyCum, lo, hi)
+                        if (!lh) continue
+                        iL = _nearestVertexAtCum(side.polyCum, lh.cum)
+                    }
+                    const kept = nAtStart ? sideL - side.polyCum[iL] : side.polyCum[iL]
+                    if (kept < MINREG) continue
+                    const grade = _trunkGradeAt(T, iP)
+                    for (const RB of [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]) {
+                        const b = this._v2BuildDeparture(side, iL, nAtStart, P, RB)
+                        if (b && !this._v2DepartureAccepts(b, T, P, grade)) { any = true; break }
+                    }
+                    if (any) break
+                }
+                if (!any) return false
+            }
+        } finally { this._network = net }
+        return true
     }
 
     // ── BUG-55: the pair census ────────────────────────────────────────────────────────────────
@@ -5543,6 +5735,615 @@ export class RoadSystem {
         return flip.size > 0
     }
 
+    // ── FEAT-76: WYE → T PROMOTION ─────────────────────────────────────────────────────────────
+    // Two roads that share a corridor part company at a fork. The wye built that fork as a
+    // one-sided taper band: the side road ceded its first stretch to the through road, then peeled
+    // off through a band whose start tangent was FORCED to the through road's heading. That forcing
+    // is what made it a wye — smooth as a fork in one direction of travel, an ambiguous merge in the
+    // other — and it is what made the bands tight (median corner 23.3 m against open road's 1st
+    // percentile of 24.8 m).
+    //
+    // A T is symmetric. It drives the same from all three approaches, it needs no band, no gore and
+    // no ownership bookkeeping, and it is a shape the junction pad machinery already builds because
+    // it is just a degree-3 node. So: SPLIT the trunk at the fork point P, start the side road AT P
+    // on its OWN heading, and let the pad dress the corner.
+    //
+    //   BEFORE (wye)                          AFTER (T)
+    //     N ==================\___ B            N =========P=========== A
+    //       ==================                            \___ B
+    //
+    // THE ROUTING DOES NOT CHANGE. This runs in the ASSEMBLY layer, after every route is settled:
+    // `g`, `g.adj`, the drop set, the frozen deletes and every departure pin are byte-identical to
+    // what they were before this ticket. `A–P` and `P–A` are exact SLICES of the trunk's registered
+    // geometry (Centerline.slice cuts constant-curvature primitives exactly, so a slice is still
+    // ordinary road with an ordinary analytic centerline), and the side road keeps the geometry it
+    // already had past the fork. Nothing re-solves that could feed back into a pin, so the
+    // pins → routes → degree → pins cycle never closes. (Full argument:
+    // .planning/research/T-PROMOTION-FIXPOINT.md.)
+    //
+    // What DOES re-solve is the side road's own vertical profile, because its start is now pinned to
+    // the trunk's deck at P instead of to a node height at N. That is one run's profile, downstream
+    // of everything, and it cannot move a road in plan.
+    _v2PromoteTs(g, promos) {
+        this._promoteStats = { done: 0, declined: 0 }
+        if (!promos || !promos.length) return
+        // A run key can be replaced (the side road re-keys onto P) or split in two (a trunk with a
+        // fork on it), and a trunk can carry more than one fork — so every lookup goes through the
+        // live-pieces table rather than the key the plan layer named.
+        const pieces = new Map()
+        for (const pr of promos) {
+            const ok = this._v2PromoteOne(g, pr, pieces)
+            if (ok) this._promoteStats.done++
+            else this._promoteStats.declined++
+        }
+    }
+
+    _v2PromoteOne(g, pr, pieces) {
+        const decline = (why) => { this._v2MergeSkipped('promote', `${pr.sideKey} ${why}`); return false }
+        if (pr.spec.midSpan) return this._v2PromoteMidSpan(g, pr, pieces)
+        const MINREG = 30
+        const C = this._v2Costs()
+        const PROX = C.mergeProxM ?? 18
+        const sideKeys = pieces.get(pr.sideKey) || [pr.sideKey]
+        if (sideKeys.length !== 1) return decline('side run already promoted')
+        const sideKey = sideKeys[0]
+        const side = this._network.get(sideKey)
+        if (!side || !side.points || side.points.length < 4 || !side.centerline?.slice) return decline('no side run')
+        // The shared node: the one id both the side edge and the winner touch. A pair with none is
+        // a mid-span or disjoint conflict, which this promotion does not build.
+        const wCells = [g.key(pr.spec.winner[0]), g.key(pr.spec.winner[1])]
+        const sA = g.key(side.cellA), sB = g.key(side.cellB)
+        const nKey = wCells.includes(sA) ? sA : (wCells.includes(sB) ? sB : null)
+        if (!nKey) return decline('no shared node')
+        const nAtStart = sA === nKey
+        const sideL = side.polyCum[side.polyCum.length - 1]
+        const wk0 = `g:${wCells[0]}:${wCells[1]}`
+        const vs = this._v2ForkCandidates(g, pr, side, nAtStart, sideL, wk0, wCells)
+        if (!vs.length) return decline('no node-anchored variant')
+        for (const v of vs) {
+            // Which piece of the trunk carries this fork (it may already have been split).
+            let T = null, tKey = null, tHit = null
+            for (const k of (pieces.get(wk0) || [wk0])) {
+                const e = this._network.get(k)
+                if (!e || !e.points || e.points.length < 4 || !e.centerline?.slice) continue
+                const h = _nearestOnPolyXZ(v.forkPt.x, v.forkPt.z, e.points, e.polyCum)
+                if (h && (!tHit || h.d < tHit.d)) { T = e; tKey = k; tHit = h }
+            }
+            if (!T) continue
+            if (tHit.d > 4) continue                       // the trunk rerouted out from under the plan
+            // P is a real VERTEX of the trunk, so the split is exact and the synthetic id names a
+            // point that EXISTS in the geometry rather than one interpolated onto it.
+            const iP = _nearestVertexAtCum(T.polyCum, tHit.cum)
+            const tL = T.polyCum[T.polyCum.length - 1]
+            if (T.polyCum[iP] < MINREG || tL - T.polyCum[iP] < MINREG) continue
+            const P = T.points[iP]
+            const pid = _promotedId(P.x, P.z), pKey = g.key(pid)
+            if (this._promoted.has(pKey)) continue         // two forks on one vertex — degenerate
+            // Where the side road's OWN line resumes: its point abreast of P. Windowed to the half
+            // of the run that leaves the shared node, so a run that loops back cannot answer with a
+            // point from its far end.
+            const lo = nAtStart ? 0 : sideL * 0.15, hi = nAtStart ? sideL * 0.85 : sideL
+            const lHit = _nearestOnPolyXZ(P.x, P.z, side.points, side.polyCum, lo, hi)
+            if (!lHit || lHit.d > PROX * 1.6) continue
+            const iL = _nearestVertexAtCum(side.polyCum, lHit.cum)
+            const fromNode = nAtStart ? side.polyCum[iL] : sideL - side.polyCum[iL]
+            const ownLeft = sideL - fromNode
+            if (fromNode < MINREG || ownLeft < MINREG) continue
+            const grade = _trunkGradeAt(T, iP)
+            // The band-radius ladder, GENTLEST FIRST. A long band is a nicer corner but it holds the
+            // departure inside the through road's corridor for longer, and that is what the deck
+            // seam catches; a shorter one clears the trunk sooner at the cost of a tighter turn.
+            // Walk down to roadMinTurnRadius and no further — a band is road and may not be tighter
+            // than road (BUG-56 B5) — and let the acceptance tests, not a guess, pick the rung.
+            const Rmin = this._params?.roadMinTurnRadius ?? 12
+            for (const RB of [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]) {
+                const built = this._v2BuildDeparture(side, iL, nAtStart, P, Math.max(RB, Rmin))
+                if (!built) continue
+                const why = this._v2DepartureAccepts(built, T, P, grade)
+                if (why) { this._v2MergeSkipped('promote-accept', `${pr.sideKey} ${why}`); continue }
+                this._v2CommitPromotion(g, pieces, pr, { T, tKey, wk0, iP, P, pid, pKey, side, sideKey, nAtStart, nKey, built, grade })
+                return true
+            }
+        }
+        return decline('no variant promoted')
+    }
+
+    /**
+     * A MID-SPAN pair — two roads that part at their shared node, go their own way, and come back
+     * together further out — promotes to TWO Ts, and the road between them is the through road.
+     *
+     *   BEFORE (mid-span wye)              AFTER (two Ts)
+     *     ----\________/----                 ----\        /----
+     *     ================                   ======P1====P2======
+     *
+     * The side road is CUT: it exists up to P1, does not exist over the shared middle (that ground
+     * is one road, the trunk), and resumes at P2. Both its original endpoints survive, so nothing
+     * is added to _promotedAway and no node loses a leg — connectivity is untouched, and the two
+     * halves reach each other along the trunk, which is what the geometry was already saying.
+     *
+     * Mechanically it is the node-anchored graft applied twice with no new machinery: one call each
+     * for the piece before P1 and the piece after P2. Both must build and both must pass, or
+     * neither is applied — half a mid-span promotion would leave the middle overlapping, which is
+     * the defect this is meant to remove.
+     */
+    _v2PromoteMidSpan(g, pr, pieces) {
+        const decline = (why) => { this._v2MergeSkipped('promote', `${pr.sideKey} mid-span ${why}`); return false }
+        const MINREG = 30
+        const sideKeys = pieces.get(pr.sideKey) || [pr.sideKey]
+        if (sideKeys.length !== 1) return decline('side run already promoted')
+        const sideKey = sideKeys[0]
+        const side = this._network.get(sideKey)
+        if (!side || !side.points || side.points.length < 6 || !side.centerline?.slice) return decline('no side run')
+        const wCells = [g.key(pr.spec.winner[0]), g.key(pr.spec.winner[1])]
+        const wk0 = `g:${wCells[0]}:${wCells[1]}`
+        const Rmin = this._params?.roadMinTurnRadius ?? 12
+        for (const v of pr.spec.variants) {
+            if (!v.midSpan) continue
+            // The two ends, each treated exactly as a node-anchored graft: the piece at lIn keeps
+            // the side of the run the loser arrives from, the piece at lOut keeps the side it
+            // leaves on. lDir says which way round the loser walks the shared middle.
+            const ends = [
+                { wArc: v.wIn,  lArc: v.lIn,  nAtStart: v.lDir < 0 },
+                { wArc: v.wOut, lArc: v.lOut, nAtStart: v.lDir > 0 },
+            ]
+            const plans = []
+            let ok = true
+            for (const en of ends) {
+                // Which trunk piece carries this end (the first end's commit may already have split it).
+                const wp = this._v2TrunkPieceAt(pieces, wk0, en.wArc, plans)
+                if (!wp) { ok = false; break }
+                const { T, tKey } = wp
+                const iP = _nearestVertexAtCum(T.polyCum, wp.cum)
+                const tLen = T.polyCum[T.polyCum.length - 1]
+                if (T.polyCum[iP] < MINREG || tLen - T.polyCum[iP] < MINREG) { ok = false; break }
+                const P = T.points[iP]
+                const pid = _promotedId(P.x, P.z), pKey = g.key(pid)
+                if (this._promoted.has(pKey) || plans.some((q) => q.pKey === pKey)) { ok = false; break }
+                const iL = _nearestVertexAtCum(side.polyCum, en.lArc)
+                const kept = en.nAtStart ? side.polyCum[side.polyCum.length - 1] - side.polyCum[iL] : side.polyCum[iL]
+                if (kept < MINREG) { ok = false; break }
+                const grade = _trunkGradeAt(T, iP)
+                let built = null
+                for (const RB of [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]) {
+                    const b = this._v2BuildDeparture(side, iL, en.nAtStart, P, RB)
+                    if (!b) continue
+                    const why = this._v2DepartureAccepts(b, T, P, grade)
+                    if (why) { this._v2MergeSkipped('promote-accept', `${pr.sideKey} mid-span ${why}`); continue }
+                    built = b; break
+                }
+                if (!built) { ok = false; break }
+                plans.push({ T, tKey, wk0, iP, P, pid, pKey, side, sideKey, nAtStart: en.nAtStart, nKey: null, built, grade })
+            }
+            if (!ok || plans.length !== 2) continue
+            // ONE commit for both ends. They were planned against the same snapshot of the trunk,
+            // so committing them one after the other would slice the FULL trunk twice and leave two
+            // overlapping copies of every piece (measured on seed 67: five runs where three belong,
+            // two of them lying on top of each other, which is what road-connectivity read as a
+            // crossing). Cut once, at both arcs, into three.
+            if (plans[0].tKey !== plans[1].tKey) { this._v2MergeSkipped('promote', `${pr.sideKey} mid-span ends landed on different trunk pieces`); continue }
+            if (Math.abs(plans[0].T.polyCum[plans[0].iP] - plans[1].T.polyCum[plans[1].iP]) < MINREG) continue
+            this._v2CommitMidSpan(g, pieces, pr, plans)
+            return true
+        }
+        return decline('no variant promoted')
+    }
+
+    // The live trunk piece covering a plan-layer arc on the original winner run, plus that arc
+    // re-expressed in the piece's own domain. `staged` carries commits not yet applied within this
+    // pair, so the second end of a mid-span sees the first end's split.
+    _v2TrunkPieceAt(pieces, wk0, wArc, staged) {
+        const T0 = this._network.get(wk0)
+        let q = null
+        if (T0) q = _polyAtCum(T0.points, T0.polyCum, wArc)
+        else {
+            for (const st of staged) { const h = _polyAtCum(st.T.points, st.T.polyCum, wArc); if (h) { q = h; break } }
+        }
+        if (!q) return null
+        let best = null
+        for (const k of (pieces.get(wk0) || [wk0])) {
+            const e = this._network.get(k)
+            if (!e || !e.points || e.points.length < 4 || !e.centerline?.slice) continue
+            const h = _nearestOnPolyXZ(q.x, q.z, e.points, e.polyCum)
+            if (h && (!best || h.d < best.d)) best = { T: e, tKey: k, cum: h.cum, d: h.d }
+        }
+        return best && best.d <= 4 ? best : null
+    }
+
+    /**
+     * WHERE TO PUT THE T — and this is the one placement rule a wye never needed.
+     *
+     * A wye did not have to care where along the shared stretch it forked: the loser rode the
+     * winner's DECK up to the fork (the departure hold), so the two heights agreed there by
+     * construction, wherever "there" was. A T has no hold. Its side road leaves P at the through
+     * road's deck and is on its own profile immediately, so if P sits where the through road runs
+     * five metres above the line the side road wants, the leg has to claw that back in the first
+     * few tens of metres — which is a 30 % departure, and B6 rightly condemns it.
+     *
+     * So: PUT THE JUNCTION WHERE THE TWO ROADS CAN ACTUALLY MEET. Scan the legal fork window (from
+     * MINREG out to the furthest arc the merge ladder itself was willing to fork at — the plan
+     * layer still decides how much ground the pair shares, this only chooses a point inside it) and
+     * rank by |through-road deck − side-road's own deck abreast of it|. Cheap: two polyline lookups
+     * per candidate, no profile solve, so only the handful that survive the ranking pay for one.
+     *
+     * Window-invariant: a pure function of two registered polylines and the plan's own bound, with
+     * a total order (deck error, then arc) to break ties.
+     */
+    _v2ForkCandidates(g, pr, side, nAtStart, sideL, wk0, wCells) {
+        const MINREG = 30
+        const spec = pr.spec
+        const T0 = this._network.get(wk0)
+        const cand = []
+        const push = (arc, forkPt) => cand.push({ wCut: arc, forkPt })
+        // The plan's own rungs stay in the list — they are where the merge ladder wanted to fork,
+        // and where the deck happens to agree they are still the best answer.
+        const seen = new Set()
+        for (const v of spec.variants) {
+            if (v.midSpan || !v.forkPt) continue
+            const k = v.wCut.toFixed(2)
+            if (seen.has(k)) continue
+            seen.add(k); push(v.wCut, v.forkPt); cand[cand.length - 1].fromPlan = true
+        }
+        if (!T0 || !T0.points || !cand.length) return cand
+        const tL = T0.polyCum[T0.polyCum.length - 1]
+        const wAtStart = !!spec.winnerNodeAtStart
+        const fromNode = (a) => (wAtStart ? a : tL - a)
+        let wMax = 0
+        for (const c of cand) wMax = Math.max(wMax, fromNode(c.wCut))
+        for (let a = MINREG; a <= Math.min(wMax, tL - MINREG); a += 8) {
+            const arc = fromNode(a)
+            if (arc < MINREG || arc > tL - MINREG) continue
+            const q = _polyAtCum(T0.points, T0.polyCum, arc)
+            const k = arc.toFixed(2)
+            if (seen.has(k)) continue
+            seen.add(k); push(arc, { x: q.x, z: q.z })
+        }
+        // THE PARTING POINT, added explicitly rather than hoped for. Everything above is bounded by
+        // where the MERGE ladder was willing to fork, which is where the pair stops being within
+        // mergeProxM (18 m) — a wye's question, because a wye owned the ground up to its fork. A T
+        // owns nothing: it needs the place past which the two roads never come back inside one road
+        // width, and on a pair that parts slowly that is further out than any rung the ladder
+        // proposed. Walk the side road out from its node, find the last arc that is still too close,
+        // and offer the trunk abreast of it (and a little past) as candidates.
+        {
+            const HW0 = this._params?.roadHalfWidth ?? 5
+            const nSide = side.points.length
+            let lastClose = -1
+            for (let i = 0; i < nSide; i++) {
+                const q = _nearestOnPolyXZ(side.points[i].x, side.points[i].z, T0.points, T0.polyCum)
+                if (q && q.d <= 2 * HW0 + 2) lastClose = i
+            }
+            if (lastClose >= 0) {
+                const base = _nearestOnPolyXZ(side.points[lastClose].x, side.points[lastClose].z, T0.points, T0.polyCum)
+                for (const extra of [0, 20, 45]) {
+                    const arc = Math.min(tL - MINREG, Math.max(MINREG, base.cum + (wAtStart ? extra : -extra)))
+                    const k = arc.toFixed(2)
+                    if (seen.has(k)) continue
+                    const q = _polyAtCum(T0.points, T0.polyCum, arc)
+                    seen.add(k); push(arc, { x: q.x, z: q.z })
+                }
+            }
+        }
+        // Rank by how far apart the two decks are where they would meet — and first, THROW OUT ANY
+        // FORK THAT DOES NOT ACTUALLY END THE SHARING.
+        //
+        // This is the trap the deck ranking walks into on its own. Put P halfway along a 400 m
+        // shared stretch and the arithmetic is delighted — the decks agree there — but the side
+        // road now EXISTS over the remaining 200 m of shared ground, running inside the through
+        // road's corridor with a deck of its own. That is the defect the ticket removes, rebuilt by
+        // accident, and it is what left seed 67 with three real crossings (road-connectivity red).
+        // A fork is only a fork if the road past it is clear of the road it left: require the side
+        // road's own line, beyond the departure band, to stay more than one road width plus the
+        // seam window away from the trunk. Two polyline walks, no profile solve — this runs before
+        // anything expensive.
+        const HW = this._params?.roadHalfWidth ?? 5
+        const CLEAR = 2 * HW + 2
+        const lo = nAtStart ? 0 : sideL * 0.15, hi = nAtStart ? sideL * 0.85 : sideL
+        for (const c of cand) {
+            const h = _nearestOnPolyXZ(c.forkPt.x, c.forkPt.z, side.points, side.polyCum, lo, hi)
+            const t = _nearestOnPolyXZ(c.forkPt.x, c.forkPt.z, T0.points, T0.polyCum)
+            c.dY = (h && t) ? Math.abs(t.y - h.y) : Infinity
+            c.gap = h ? h.d : Infinity
+            c.clears = false
+            if (!h) continue
+            // the longest band this fork could use, so the check starts past every rung
+            const LBmax = Math.sqrt(2 * Math.max(c.gap, 0.5) * 4 * (this._params?.roadMinTurnRadius ?? 12))
+            let worstAfter = Infinity
+            for (let i = 0; i < side.points.length; i++) {
+                const d = nAtStart ? side.polyCum[i] - h.cum : h.cum - side.polyCum[i]
+                if (d <= LBmax) continue
+                const q = _nearestOnPolyXZ(side.points[i].x, side.points[i].z, T0.points, T0.polyCum)
+                if (q && q.d < worstAfter) worstAfter = q.d
+            }
+            c.clears = worstAfter > CLEAR
+        }
+        const ok = cand.filter((c) => c.clears && c.gap < (this._v2Costs().mergeProxM ?? 18) * 1.6 && Number.isFinite(c.dY))
+                       .sort((a, b) => (a.dY - b.dY) || (a.wCut - b.wCut))
+        // Best deck agreement first, then whatever the merge ladder itself proposed that the cut
+        // dropped — a plan rung that survives every acceptance test is still a valid T even if its
+        // decks are not the closest pair on the run, and truncating them out cost promotions.
+        const out = ok.slice(0, 10)
+        for (const c of ok.slice(10)) if (c.fromPlan) out.push(c)
+        return out
+    }
+
+    /**
+     * The side road's departure geometry: its OWN routed line from the fork onward, translated onto
+     * P by an offset that decays to nothing.
+     *
+     * This is the taper's one good idea kept and its one bad idea dropped. The good idea: work in
+     * the side road's own frame — the fork is a <= 18 m offset decaying over tens of metres, which
+     * is a gentle shift, where a free curve from P to a point downstream is badly conditioned
+     * exactly at the fork (its start curvature goes as the angle between start tangent and chord).
+     * The bad idea, now gone: forcing the start tangent to the TRUNK's heading.
+     *
+     * THE DECAY IS w(u) = (1-u)^2, AND THE SHAPE OF IT IS THE WHOLE TICKET.
+     *   w(0) = 1        the departure starts exactly on P
+     *   w'(0) = -2      it leaves at atan(2*g0/LB) OFF the through road — an ANGLE, at the node
+     *   w(1) = w'(1) = 0  it joins its own routed line tangentially, no crease
+     *   w'' = const     the turn is spread evenly over the band, not piled up in the middle
+     *
+     * A smoothstep (w'(0) = 0) was tried first and is exactly the wrong curve: it leaves P PARALLEL
+     * to the through road and only bends away later, which is a wye drawn a different way — it hugs
+     * the trunk for tens of metres and every one of seed 6's forks failed the deck-seam test on it.
+     * Putting the angle AT P instead is what makes the corner the junction pad's business, which is
+     * where a T's corner belongs, and it leaves the band itself gentle.
+     *
+     * Band length is sized from the curvature the offset induces: |k| = 2*g0/LB^2, so LB =
+     * sqrt(2*g0*R) buys a chosen radius. R is set well above roadMinTurnRadius on purpose — a band
+     * is road and may not be tighter than road (BUG-56 B5).
+     */
+    _v2BuildDeparture(side, iL, nAtStart, P, RB) {
+        const i0 = nAtStart ? iL : 0
+        const i1 = nAtStart ? side.points.length - 1 : iL
+        if (i1 - i0 < 3) return null
+        const cumL = side.polyCum[iL]
+        const ownLen = Math.abs(side.polyCum[i1] - side.polyCum[i0])
+        const dx0 = P.x - side.points[iL].x, dz0 = P.z - side.points[iL].z
+        const g0 = Math.hypot(dx0, dz0)
+        const LB = Math.max(20, Math.min(Math.sqrt(2 * Math.max(g0, 0.5) * RB), 90, ownLen * 0.6))
+        const n = i1 - i0 + 1
+        const pts = new Array(n)
+        const clArc = new Float64Array(n)
+        const cl0 = side.clArc[i0]
+        let jLo = n - 1, jHi = 0                    // output indices the offset actually touches
+        for (let i = i0; i <= i1; i++) {
+            const u = Math.min(1, Math.abs(side.polyCum[i] - cumL) / LB)
+            const w = (1 - u) * (1 - u)                // see the header — the angle belongs AT the node
+            const q = side.points[i]
+            pts[i - i0] = new THREE.Vector3(q.x + dx0 * w, q.y, q.z + dz0 * w)
+            clArc[i - i0] = side.clArc[i] - cl0
+            if (u < 1) { jLo = Math.min(jLo, i - i0); jHi = Math.max(jHi, i - i0) }
+        }
+        // Land the P end EXACTLY on the trunk vertex — the id, the pad plane and the junction
+        // cluster all name that point, and a millimetre of drift here is a millimetre of gap.
+        const pIdx = nAtStart ? 0 : n - 1
+        pts[pIdx].set(P.x, P.y, P.z)
+        const polyCum = new Float64Array(n)
+        for (let i = 1; i < n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
+        // The blend is the one stretch whose points have left the primitive centerline; declare it
+        // so the analytic refine and the par sampler stay on the polyline there (the same
+        // convention _v2RegisterShoved uses for a deflected run — this is why offCurveSpans stays
+        // even though the wye's cededSpans/departureSpans go).
+        const offCurveSpans = [{
+            s0: Math.max(0, polyCum[Math.max(0, jLo)] - 2),
+            s1: Math.min(polyCum[n - 1], polyCum[Math.min(n - 1, jHi)] + 2),
+        }]
+        // The profile re-solves with the P end pinned to the TRUNK'S DECK — the two roads leave the
+        // same real surface. The far end keeps the ordinary node-height pin.
+        const inf0 = this._v2Infeasible || 0
+        const tunnelSpans = this._v2GradePts(pts, clArc, nAtStart ? { yA: P.y } : { yB: P.y })
+        if ((this._v2Infeasible || 0) > inf0) { this._v2Infeasible = inf0; return null }   // draped — try the next fork
+        const centerline = side.centerline.slice(cl0, side.clArc[i1])
+        return { pts, clArc, polyCum, centerline, tunnelSpans, offCurveSpans, nAtStart, LB, g0 }
+    }
+
+    /**
+     * The two acceptance tests BUG-56 bought with real defects, ported off the band ladder they
+     * used to live on. A T departure still needs both; it just does not need them expressed as a
+     * rung of a taper.
+     */
+    _v2DepartureAccepts(built, T, P, grade) {
+        const { pts, polyCum, nAtStart } = built
+        const n = pts.length
+        // Both tests run on the departure AS IT WILL SHIP, which means after the ordinary junction
+        // grade reconciliation: the side road leaves P at the trunk's deck, on the trunk's slope,
+        // and recovers its own solved profile over roadJunctionBlendLength via _applyJunctionBlend's
+        // smoothstep. Testing the raw solve instead would condemn every T for a wall the pad
+        // dresses — measured, it rejected all 11 of seed 6's. THIS is why a T needs no departure
+        // hold: the fork is a NODE, so the reconciliation that ties any two legs together applies.
+        const Rj = this._params?.roadJunctionBlendLength ?? 30
+        const dOf = (i) => Math.abs(polyCum[i] - polyCum[nAtStart ? 0 : n - 1])
+        const iEnd = nAtStart ? 1 : n - 2
+        const wx = pts[iEnd].x - pts[nAtStart ? 0 : n - 1].x, wz = pts[iEnd].z - pts[nAtStart ? 0 : n - 1].z
+        const wl = Math.hypot(wx, wz) || 1
+        const slopeAway = grade.gx * wx / wl + grade.gz * wz / wl
+        const yb = new Float64Array(n)
+        for (let i = 0; i < n; i++) {
+            const d = dOf(i)
+            yb[i] = pts[i].y
+            if (d < Rj) {
+                const t = 1 - d / Rj, f = t * t * (3 - 2 * t)
+                yb[i] += (P.y + slopeAway * d - pts[i].y) * f
+            }
+        }
+        // Both tests start OUTSIDE the junction pad. Inside it there is no ribbon to judge: the pad
+        // plane is the surface, and the pad's own rules govern it (roadJunctionPadMaxGrade for the
+        // plane, roadJunctionBlendMaxGrade for the arrival ramp) — the ticket's "mergePadArrivalMax
+        // is the pad-side equivalent already in place for ordinary junctions". Measured without this
+        // exclusion, 7 of seed 6's 10 forks were condemned for deck gaps 4-10 m from the node, which
+        // is paved plaza, not a wall between two ribbons.
+        const padR = (this._params?.roadJunctionCutback ?? 10) + (this._params?.roadHalfWidth ?? 5)
+        // ── B6: the departure grade — the steepest 12 m the driver actually meets leaving the T.
+        //
+        // The CAP is the road's own grade, not a fixed number, and that is a change from how the
+        // wye ran this test. There, a fixed gMaxRoad was right: the hold spent the leg's climbing
+        // room riding the through road's deck and the freed solve then clawed the height back, so
+        // any steepness at the fork was an artefact of the merge and gMaxRoad was the standard it
+        // had failed. A T has no hold — its departure grade is simply the grade of the road there.
+        // Measured at seed 6 (3455,1758), g:5,1,0:5,2,2 already ships 25 % somewhere along its own
+        // length; condemning its T for a 25 % departure condemns the terrain, not the junction, and
+        // it cost that pair its merge and left two roads 7.7 m apart (graph-topology red).
+        //
+        // So the rule is: A T MAY NOT PUT A HUMP IN A ROAD. Cap at the worst 12 m this same run meets
+        // away from the junction, plus the grade a junction arrival ramp is already allowed to add
+        // anywhere else in the network (roadJunctionBlendMaxGrade — this is that same allowance,
+        // not a new number); floored at gMaxRoad so a gentle road still gets a gentle departure, and
+        // hard-stopped at the network's own ceiling. The ceiling is not the load-bearing half:
+        // _v2GradePts already refuses to drape, so a candidate that cannot solve legally is declined
+        // before it reaches here. What this test adds is "and it must match the road it joins".
+        const Cst = this._v2Costs()
+        const ceiling = (Cst.gMaxRoad ?? 0.24) + (Cst.gradeTol ?? 0.14)
+        const inBand = (i) => dOf(i) >= padR && dOf(i) <= built.LB + padR
+        const i0 = nAtStart ? 0 : Math.max(0, n - 1 - Math.ceil((built.LB + padR) / PROTO_SAMPLE_DS))
+        const i1 = nAtStart ? Math.min(n - 1, Math.ceil((built.LB + padR) / PROTO_SAMPLE_DS)) : n - 1
+        const worst12 = (from, to, band) => {
+            let w = 0
+            for (let i = from; i <= to; i++) {
+                if (band !== inBand(i)) continue
+                let j = i
+                while (j < to && polyCum[j] - polyCum[i] < 12) j++
+                const ds = polyCum[j] - polyCum[i]
+                if (ds > 1e-6) w = Math.max(w, Math.abs(yb[j] - yb[i]) / ds)
+            }
+            return w
+        }
+        const worst = worst12(i0, i1, true)
+        const own = worst12(0, n - 1, false)
+        const ramp = this._params?.roadJunctionBlendMaxGrade ?? 0.12
+        const depCap = Math.min(ceiling, Math.max(Cst.gMaxRoad ?? 0.24, own + ramp))
+        if (worst > depCap) return `departure grade ${(100 * worst).toFixed(0)}% > cap ${(100 * depCap).toFixed(0)}% (the run's own worst 12 m is ${(100 * own).toFixed(0)}%)`
+        // ── B3: the seam — two decks may not diverge faster than the ground between them can slope.
+        // Only where the pavements TOUCH; past a couple of metres of daylight the ground between
+        // them is ordinary embankment and the ordinary carve builds it.
+        const TOLW = 0.15, FILLV = 1 / (this._params?.roadFillSlope ?? 3), SEAM_WINDOW = 2
+        const HWs = this._params?.roadHalfWidth ?? 5
+        const NEARW = this._v2Costs().mergeProxM ?? 18
+        const cam = this._computeCamberArrays(T.points, 0, 0)
+        for (let i = i0; i <= i1; i++) {
+            if (!inBand(i)) continue
+            const q = _nearestOnPolyXZ(pts[i].x, pts[i].z, T.points, T.polyCum)
+            if (!q || q.d >= NEARW) continue
+            const sep = Math.max(0, q.d - 2 * HWs)
+            if (sep > SEAM_WINDOW) continue
+            const latQ = (pts[i].x - q.fx) * q.tz - (pts[i].z - q.fz) * q.tx
+            const gap = Math.abs(yb[i] - (q.y + latQ * Math.sin(this._v2CamAtArc(cam, q.cum))))
+            const allow = TOLW + FILLV * sep
+            if (gap > allow) return `departure deck gap ${gap.toFixed(2)} m at ${sep.toFixed(1)} m of edge separation, ${dOf(i).toFixed(0)} m out from the T (allowed ${allow.toFixed(2)})`
+        }
+        return null
+    }
+
+    // Apply the promotion: split the trunk at P into two ordinary runs, replace the side run with
+    // its departure, and register P as a node the rest of the system can see.
+    _v2CommitPromotion(g, pieces, pr, c, midSpan = false) {
+        const { T, tKey, wk0, iP, P, pid, pKey, side, sideKey, nAtStart, nKey, built } = c
+        if (!this._network.has(tKey)) { this._v2MergeSkipped('promote', `${pr.sideKey} trunk piece ${tKey} went stale`); return }
+        const tL = T.polyCum.length - 1
+        const kA = g.key(T.cellA), kB = g.key(T.cellB)
+        const aKey = `g:${kA}:${pKey}`, bKey = `g:${pKey}:${kB}`
+        this._network.delete(tKey)
+        this._network.set(aKey, this._v2SliceRun(T, 0, iP, T.cellA, pid))
+        this._network.set(bKey, this._v2SliceRun(T, iP, tL, pid, T.cellB))
+        // The side road: same run, new start. Its key names P instead of the shared node.
+        const farKey = nAtStart ? g.key(side.cellB) : g.key(side.cellA)
+        const newSideKey = nAtStart ? `g:${pKey}:${farKey}` : `g:${farKey}:${pKey}`
+        this._network.delete(sideKey)   // mid-span: harmless on the second half, the entry is captured
+        this._network.set(newSideKey, {
+            points: built.pts, arcOrigin: 0, centerline: built.centerline,
+            polyCum: built.polyCum, clArc: built.clArc,
+            cellA: nAtStart ? pid : side.cellA, cellB: nAtStart ? side.cellB : pid,
+            tunnelSpans: built.tunnelSpans, offCurveSpans: built.offCurveSpans,
+            condemned: side.condemned, rerouted: side.rerouted,
+        })
+        // The pad plane at P rides the trunk's own longitudinal grade, so the through road keeps its
+        // slope straight through the junction instead of being levelled onto a plaza. halves/sideKey
+        // are what _runEndpointJunctions reads to leave the trunk alone and reconcile only the leg.
+        this._promoted.set(pKey, {
+            id: pid, pos: new THREE.Vector3(P.x, P.y, P.z),
+            trunkKey: tKey, halves: [aKey, bKey], sideKey: newSideKey,
+            gx: c.grade.gx, gz: c.grade.gz,
+        })
+        // The side edge no longer STARTS at the shared node — directed, because its far end still
+        // has the road arriving. _graphDegreeOf subtracts these so a node that is now a two-leg
+        // bend stops being treated as a three-way junction.
+        // A mid-span cut takes no leg off any node — both original endpoints survive on the two
+        // halves — so only a node-anchored promotion has an edge to subtract.
+        if (nKey) this._promotedAway.add(nKey + '|' + farKey)
+        pieces.set(pr.sideKey, [...(midSpan ? (pieces.get(pr.sideKey) || []).filter((k) => k !== sideKey) : []), newSideKey])
+        pieces.set(wk0, [...(pieces.get(wk0) || [wk0]).filter((k) => k !== tKey), aKey, bKey])
+    }
+
+    // Both ends of a mid-span promotion, applied together: the trunk is cut at BOTH departure
+    // points into three ordinary runs, and the side road becomes its two surviving halves. Doing
+    // this as two independent commits is wrong — see the caller.
+    _v2CommitMidSpan(g, pieces, pr, plans) {
+        const ps = plans.slice().sort((a, b) => a.iP - b.iP)
+        const T = ps[0].T, tKey = ps[0].tKey
+        const tEnd = T.polyCum.length - 1
+        const kA = g.key(T.cellA), kB = g.key(T.cellB)
+        const k1 = ps[0].pKey, k2 = ps[1].pKey
+        this._network.delete(tKey)
+        const cuts = [
+            [`g:${kA}:${k1}`, 0, ps[0].iP, T.cellA, ps[0].pid],
+            [`g:${k1}:${k2}`, ps[0].iP, ps[1].iP, ps[0].pid, ps[1].pid],
+            [`g:${k2}:${kB}`, ps[1].iP, tEnd, ps[1].pid, T.cellB],
+        ]
+        for (const [key, i0, i1, cA, cB] of cuts) this._network.set(key, this._v2SliceRun(T, i0, i1, cA, cB))
+        pieces.set(ps[0].wk0, [...(pieces.get(ps[0].wk0) || [tKey]).filter((k) => k !== tKey), ...cuts.map((c) => c[0])])
+        const side = ps[0].side
+        this._network.delete(ps[0].sideKey)
+        const halves = []
+        for (const c of ps) {
+            const farKey = c.nAtStart ? g.key(side.cellB) : g.key(side.cellA)
+            const key = c.nAtStart ? `g:${c.pKey}:${farKey}` : `g:${farKey}:${c.pKey}`
+            this._network.set(key, {
+                points: c.built.pts, arcOrigin: 0, centerline: c.built.centerline,
+                polyCum: c.built.polyCum, clArc: c.built.clArc,
+                cellA: c.nAtStart ? c.pid : side.cellA, cellB: c.nAtStart ? side.cellB : c.pid,
+                tunnelSpans: c.built.tunnelSpans, offCurveSpans: c.built.offCurveSpans,
+                condemned: side.condemned, rerouted: side.rerouted,
+            })
+            halves.push(key)
+            this._promoted.set(c.pKey, {
+                id: c.pid, pos: new THREE.Vector3(c.P.x, c.P.y, c.P.z),
+                trunkKey: tKey, halves: cuts.map((x) => x[0]), sideKey: key,
+                gx: c.grade.gx, gz: c.grade.gz,
+            })
+        }
+        pieces.set(pr.sideKey, halves)
+    }
+
+    // One half of a split trunk, as an ORDINARY run: exact sub-centerline (constant-curvature
+    // primitives cut exactly), the same vertices, arc tables re-based to start at zero. Nothing is
+    // re-routed and nothing is re-graded — the through road does not move.
+    _v2SliceRun(T, i0, i1, cellA, cellB) {
+        const n = i1 - i0 + 1
+        const pts = new Array(n)
+        const clArc = new Float64Array(n)
+        const polyCum = new Float64Array(n)
+        const c0 = T.clArc[i0], p0 = T.polyCum[i0]
+        for (let i = 0; i < n; i++) {
+            pts[i] = T.points[i0 + i].clone()
+            clArc[i] = T.clArc[i0 + i] - c0
+            polyCum[i] = T.polyCum[i0 + i] - p0
+        }
+        const clip = (spans, off, lim) => spans
+            ? spans.map((s) => ({ s0: Math.max(0, s.s0 - off), s1: Math.min(lim, s.s1 - off) }))
+                   .filter((s) => s.s1 - s.s0 > 1e-6)
+            : undefined
+        const out = {
+            points: pts, arcOrigin: 0,
+            centerline: T.centerline.slice(c0, T.clArc[i1]),
+            polyCum, clArc, cellA, cellB,
+            tunnelSpans: clip(T.tunnelSpans, c0, clArc[n - 1]),
+        }
+        const off = clip(T.offCurveSpans, p0, polyCum[n - 1])
+        if (off && off.length) out.offCurveSpans = off
+        if (T.condemned) out.condemned = true
+        if (T.rerouted) out.rerouted = true
+        return out
+    }
+
     _assembleGraphEdges(mx0, mx1, mz0, mz1) {
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         // in-band test is by WORLD extent now (site ids live on a different grid than the macro band).
@@ -5572,7 +6373,10 @@ export class RoadSystem {
         // registration builds). Phase 1: measures + counts the disjoint class; resolution follows.
         this._v2PairCensus(mx0, mx1, mz0, mz1, g, drop, wide)
         this._proto.nodeInc.clear()
+        this._promoted = new Map()
+        this._promotedAway = new Set()
         const addInc = (idKey, runKey) => { const a = this._proto.nodeInc.get(idKey) || this._proto.nodeInc.set(idKey, []).get(idKey); a.push(runKey) }
+        const promos = []
         for (const [c1, c2] of g.edges) {
             if (drop.has(g.key(c1) + '|' + g.key(c2))) continue   // degree-capped: settled spec-time, never routed
             if (!inBand(c1) && !inBand(c2)) continue   // fully-margin edge: not registered (frontier, like rows pad)
@@ -5596,7 +6400,13 @@ export class RoadSystem {
             // _v2DeleteFor never consults other edges' delete verdicts.
             const alive = (spec) => !this._v2DeleteFor(g, drop, wide, spec.winner[0], spec.winner[1])
             const merge = (this._v2MergeFor(g, drop, c1, c2) || []).filter(alive)
-            if (merge.length) this._v2RegisterMerged(key, cl, c1, c2, merge, g, drop, wide)
+            if (merge.length) {
+                // FEAT-76: the side road registers PLAIN, full length, on its OWN line — no ceded
+                // strand, no taper band. _v2PromoteTs (after this loop, once every route is
+                // registered) trims it back to the fork and re-keys it onto a node ON the trunk.
+                this._registerRun(key, cl, c1, c2)
+                for (const spec of merge) promos.push({ sideKey: key, spec })
+            }
             else {
                 const dj = (this._v2DisjointFor(g, drop, wide, c1, c2) || []).filter(alive)
                 if (dj.length) this._v2RegisterMidSpan(key, cl, c1, c2, dj[0], g, drop, false, wide)
@@ -5612,7 +6422,15 @@ export class RoadSystem {
                     else this._registerRun(key, cl, c1, c2, wb)
                 }
             }
-            addInc(g.key(c1), key); addInc(g.key(c2), key)
+        }
+        // FEAT-76: promote every planned wye to a T. Assembly-layer only — see _v2PromoteTs.
+        this._v2PromoteTs(g, promos)
+        // Node incidence is derived from the REGISTERED network, AFTER promotion: a T changes both
+        // the run keys along its trunk and which node the side road starts from, and every consumer
+        // of nodeInc (pad planes, strands, leaf tapers) has to see the roads that exist.
+        for (const [runKey, e] of this._network) {
+            if (!e.cellA || !e.cellB) continue
+            addInc(g.key(e.cellA), runKey); addInc(g.key(e.cellB), runKey)
         }
     }
 
@@ -9514,6 +10332,19 @@ export class RoadSystem {
         // `thisStrand` = this run's away-from-node tangent at the endpoint; slopeAway projects the node's
         // dominant grade VECTOR onto it (FEAT-19) — the through axis's slope, carried into this run.
         const nodeInfo = (id, thisStrand) => {
+            // FEAT-76: at a promoted T the through road needs NO reconciliation — the two halves are
+            // slices of one polyline and already agree at P to the last bit, and easing them toward
+            // a line would be the one thing this ticket forbids (moving the trunk). The side road
+            // does reconcile, onto the pad plane, which here IS the trunk's own surface: it leaves P
+            // at the trunk's deck and on the trunk's slope, then recovers its own profile over
+            // roadJunctionBlendLength. That is the whole departure treatment — a T needs no hold.
+            if (_isPromotedId(id)) {
+                const prom = this._promoted?.get(this._proto.graph.key(id))
+                if (!prom) return NONE
+                if (runKey !== prom.sideKey) return NONE
+                return { is: true, flatCamber: true, y: prom.pos.y,
+                         slopeAway: thisStrand ? prom.gx * thisStrand.wx + prom.gz * thisStrand.wz : 0 }
+            }
             const d = this._graphDegreeOf(id)
             const is = d >= 2
             let flatCamber = d >= 3
@@ -9661,6 +10492,19 @@ export class RoadSystem {
         const maxG = p.roadJunctionPadMaxGrade ?? 0.07
         const strands = this._graphNodeStrands(id)
         if (!strands || strands.length < 2) return null
+        // FEAT-76: a PROMOTED node's plane is NAILED to the trunk — y0 is the trunk's own deck at
+        // the departure point and the grade vector is the trunk's own longitudinal grade there.
+        // No least-squares fit over the three strands, and above all no terrain bias: an ordinary
+        // site node has no deck of its own and is right to be pulled toward the ground, but this
+        // node IS a point on a road that is already built. Letting the bias move it (up to
+        // roadJunctionPadTerrainBias, 3 m) would put a step in the middle of a previously smooth
+        // through road — the one thing this ticket's ruling forbids. There is no freedom here.
+        // roadJunctionPadMaxGrade is NOT applied here. It exists so a plaza fitted through several
+        // legs' arrival slopes cannot come out as a cliff; this plane is not fitted, it IS the
+        // through road's own surface, and that road already grades inside the network's contract.
+        // Clamping it would tilt the pad away from the trunk and put the step back.
+        const prom = _isPromotedId(id) ? this._promoted?.get(this._proto.graph.key(id)) : null
+        if (prom) return { cx: prom.pos.x, cz: prom.pos.z, y0: prom.pos.y, gx: prom.gx, gz: prom.gz }
         const site = this._siteAt(id)
         const cx = site.x, cz = site.z
         // Least-squares grade vector from arrival slopes (2×2 normal equations).

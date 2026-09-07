@@ -12,6 +12,9 @@
 //   - the outcome each sharing pair actually got: MERGE / SHOVE / NOTHING
 //
 // Outcome is read off the registered geometry, not the tallies:
+//   T       — FEAT-76: the pair's fork was PROMOTED to a real degree-3 node. One run's endpoint is a
+//             promoted id (k = -1) sitting on the other, or on a run that is a slice of the other's
+//             trunk. This is the outcome the ticket converts every wye into.
 //   merged  — one run's cededSpans names the other (its vertices ARE the winner's), or both cede
 //             to the same third-party winner (a shared throat that forks twice)
 //   shoved  — a run carries offCurveSpans naming the partner but cedes nothing to it: the
@@ -71,6 +74,12 @@ for (const seed of SEEDS) {
              L: e.polyCum[e.polyCum.length - 1] }
   })
 
+  // FEAT-76: the promoted-T relation. A departure node is a synthetic id (k = -1) and it lives ON
+  // the through road, so the two runs of a promoted pair meet at one: the side road starts there and
+  // one half of the split trunk ends there.
+  const promKeys = new Set(road._promoted ? road._promoted.keys() : [])
+  const endsAtProm = (R) => [R.a, R.b].filter((c) => promKeys.has(c))
+  const isT = (A, B) => endsAtProm(A).some((c) => endsAtProm(B).includes(c))
   const cedesTo = (R, other) => (R.e.cededSpans || []).some((s) => s.owner === other.k)
   const offFor  = (R, other) => (R.e.offCurveSpans || []).some((s) => s.owner === other.k)
   const sharedWinner = (A, B) => (A.e.cededSpans || []).some((s) =>
@@ -100,7 +109,8 @@ for (const seed of SEEDS) {
     const shareN = [A.a, A.b].filter((n) => n === B.a || n === B.b).length > 0
     const LA = cA[cA.length - 1]
     let outcome = 'nothing'
-    if (cedesTo(A, B) || cedesTo(B, A)) outcome = 'merge'
+    if (isT(A, B)) outcome = 'T'
+    else if (cedesTo(A, B) || cedesTo(B, A)) outcome = 'merge'
     else if (sharedWinner(A, B)) outcome = 'merge*'          // both ceded to the same third winner
     else if (offFor(A, B) || offFor(B, A)) outcome = 'shove'
 
@@ -137,7 +147,8 @@ for (const seed of SEEDS) {
   console.log(`  pair kinship: ${real.length - disj.length} share a node (junction legs) · ${disj.length} DISJOINT (unrelated roads on the same ground)`)
   for (const p of disj.slice(0, 3))
     console.log(`     DISJOINT ${p.longest.toFixed(0)} m · outcome ${p.outcome} · ${p.kA} x ${p.kB}`)
-  console.log(`  outcome of the ${real.length} real sharing pairs: MERGE ${by('merge')} · merge-via-shared-winner ${by('merge*')} · SHOVE ${by('shove')} · NOTHING ${by('nothing')}`)
+  console.log(`  outcome of the ${real.length} real sharing pairs: T ${by('T')} · MERGE ${by('merge')} · merge-via-shared-winner ${by('merge*')} · SHOVE ${by('shove')} · NOTHING ${by('nothing')}`)
+  console.log(`  promoted T nodes: ${road._promoted ? road._promoted.size : 0} (plan-layer promote/decline ${road._promoteStats ? road._promoteStats.done + '/' + road._promoteStats.declined : 'n/a'})`)
   const nothing = real.filter((p) => p.outcome === 'nothing').sort((a, b) => b.longest - a.longest)
   const nothingM = sum(nothing.map((p) => p.total))
   console.log(`  the NOTHING bucket: ${nothing.length} pairs, ${nothingM.toFixed(0)} m of unsanctioned shared ground (${(100*nothingM/netL).toFixed(1)}% of network)`)
@@ -150,16 +161,16 @@ for (const seed of SEEDS) {
 
   all.push({ seed, runs: runs.length, netL, pairs: real.length, sharedM: sum(lens), spans: realSpans.length,
              anchored: anchoredS.length, mid: midS.length, lens, disjoint: disj.length,
-             merge: by('merge') + by('merge*'), shove: by('shove'), nothing: nothing.length, nothingM })
+             T: by('T'), merge: by('merge') + by('merge*'), shove: by('shove'), nothing: nothing.length, nothingM })
 }
 
 console.log(`\n=== across ${all.length} seeds ===`)
-console.log(`seed   runs    km  pairs  disj  anch  mid   med  p90   max   MERGE SHOVE NOTHING   nothing m  % net`)
+console.log(`seed   runs    km  pairs  disj  anch  mid   med  p90   max     T MERGE SHOVE NOTHING   nothing m  % net`)
 for (const a of all)
-  console.log(`${String(a.seed).padStart(4)} ${String(a.runs).padStart(6)} ${(a.netL/1000).toFixed(1).padStart(5)} ${String(a.pairs).padStart(6)} ${String(a.disjoint).padStart(5)} ${String(a.anchored).padStart(5)} ${String(a.mid).padStart(4)} ${pct(a.lens,0.5).toFixed(0).padStart(5)} ${pct(a.lens,0.9).toFixed(0).padStart(4)} ${(a.lens.length?Math.max(...a.lens):0).toFixed(0).padStart(5)} ${String(a.merge).padStart(7)} ${String(a.shove).padStart(5)} ${String(a.nothing).padStart(7)} ${a.nothingM.toFixed(0).padStart(11)} ${(100*a.nothingM/a.netL).toFixed(1).padStart(6)}`)
+  console.log(`${String(a.seed).padStart(4)} ${String(a.runs).padStart(6)} ${(a.netL/1000).toFixed(1).padStart(5)} ${String(a.pairs).padStart(6)} ${String(a.disjoint).padStart(5)} ${String(a.anchored).padStart(5)} ${String(a.mid).padStart(4)} ${pct(a.lens,0.5).toFixed(0).padStart(5)} ${pct(a.lens,0.9).toFixed(0).padStart(4)} ${(a.lens.length?Math.max(...a.lens):0).toFixed(0).padStart(5)} ${String(a.T).padStart(5)} ${String(a.merge).padStart(5)} ${String(a.shove).padStart(5)} ${String(a.nothing).padStart(7)} ${a.nothingM.toFixed(0).padStart(11)} ${(100*a.nothingM/a.netL).toFixed(1).padStart(6)}`)
 const T = (f) => sum(all.map(f))
 const allLens = all.flatMap((a) => a.lens)
 console.log(`\ntotals: ${T((a)=>a.pairs)} sharing pairs · ${T((a)=>a.sharedM).toFixed(0)} m shared of ${(T((a)=>a.netL)/1000).toFixed(1)} km (${(100*T((a)=>a.sharedM)/T((a)=>a.netL)).toFixed(1)}%)`)
-console.log(`        outcome MERGE ${T((a)=>a.merge)} · SHOVE ${T((a)=>a.shove)} · NOTHING ${T((a)=>a.nothing)}`)
+console.log(`        outcome T ${T((a)=>a.T)} · MERGE ${T((a)=>a.merge)} · SHOVE ${T((a)=>a.shove)} · NOTHING ${T((a)=>a.nothing)}`)
 console.log(`        span median ${pct(allLens,0.5).toFixed(0)} m · p90 ${pct(allLens,0.9).toFixed(0)} m · anchored ${T((a)=>a.anchored)} vs mid-span ${T((a)=>a.mid)}`)
 console.log(`        kinship ${T((a)=>a.pairs) - T((a)=>a.disjoint)} junction-leg pairs vs ${T((a)=>a.disjoint)} DISJOINT — the latter is the reuse opportunity FEAT-76 is aimed at`)
