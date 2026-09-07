@@ -877,7 +877,8 @@ export class RoadSystem {
         // stores are this._network (08-05) sliced into this._tiles (this plan). No per-tile cache.
         this._debugLines         = []         // THREE.Line objects added to scene on demand
         // FEAT-76: the T-promotion tables, rebuilt by every _assembleGraphEdges.
-        //   _promoted     nodeKey -> { id, pos, trunkKey, gx, gz }   (a departure node on a trunk)
+        //   _promoted     nodeKey -> { id, pos, gx, gz }   (a departure node on a trunk; which leg
+        //                 is the through road is derived from the built tangents, see _v2PromotedRole)
         //   _promotedAway 'nodeKey|nbrKey'                           (edges that no longer START there)
         this._promoted           = new Map()
         this._promotedAway       = new Set()
@@ -2176,8 +2177,7 @@ export class RoadSystem {
             // the raw graph, so a node the T turned into a two-leg bend comes back as a phantom
             // three-way junction (measured: degree 3 vs 4 at [-3,1,1], network-worker-parity red).
             promoted: [...this._promoted].map(([k, r]) => [k, {
-                id: r.id, x: r.pos.x, y: r.pos.y, z: r.pos.z,
-                halves: r.halves, sideKey: r.sideKey, gx: r.gx, gz: r.gz,
+                id: r.id, x: r.pos.x, y: r.pos.y, z: r.pos.z, gx: r.gx, gz: r.gz,
             }]),
             promotedAway: [...this._promotedAway],
             condemnedKeys: this._v2CondemnedKeys ? [...this._v2CondemnedKeys] : [],
@@ -2249,8 +2249,7 @@ export class RoadSystem {
         this._v2DelFrozen = { rev: this._networkRev, del: new Set(data.delFrozen || []), flip: new Set(data.delFlip || []) }
         // FEAT-76: the promoted-T tables ride across with the runs (see exportNetwork).
         this._promoted = new Map((data.promoted || []).map(([k, r]) => [k, {
-            id: r.id, pos: new THREE.Vector3(r.x, r.y, r.z),
-            halves: r.halves, sideKey: r.sideKey, gx: r.gx, gz: r.gz,
+            id: r.id, pos: new THREE.Vector3(r.x, r.y, r.z), gx: r.gx, gz: r.gz,
         }]))
         this._promotedAway = new Set(data.promotedAway || [])
         this._v2CondemnedKeys = data.condemnedKeys ? [...data.condemnedKeys] : []
@@ -6256,11 +6255,11 @@ export class RoadSystem {
             condemned: side.condemned, rerouted: side.rerouted,
         })
         // The pad plane at P rides the trunk's own longitudinal grade, so the through road keeps its
-        // slope straight through the junction instead of being levelled onto a plaza. halves/sideKey
-        // are what _runEndpointJunctions reads to leave the trunk alone and reconcile only the leg.
+        // slope straight through the junction instead of being levelled onto a plaza. Which leg is
+        // the through road is NOT recorded here — _v2PromotedRole derives it from the built tangents,
+        // because a later promotion can split one of these runs again and a stored key would rot.
         this._promoted.set(pKey, {
             id: pid, pos: new THREE.Vector3(P.x, P.y, P.z),
-            trunkKey: tKey, halves: [aKey, bKey], sideKey: newSideKey,
             gx: c.grade.gx, gz: c.grade.gz,
         })
         // The side edge no longer STARTS at the shared node — directed, because its far end still
@@ -6306,7 +6305,6 @@ export class RoadSystem {
             halves.push(key)
             this._promoted.set(c.pKey, {
                 id: c.pid, pos: new THREE.Vector3(c.P.x, c.P.y, c.P.z),
-                trunkKey: tKey, halves: cuts.map((x) => x[0]), sideKey: key,
                 gx: c.grade.gx, gz: c.grade.gz,
             })
         }
@@ -6375,6 +6373,7 @@ export class RoadSystem {
         this._proto.nodeInc.clear()
         this._promoted = new Map()
         this._promotedAway = new Set()
+        this._promotedRoleMemo = null
         const addInc = (idKey, runKey) => { const a = this._proto.nodeInc.get(idKey) || this._proto.nodeInc.set(idKey, []).get(idKey); a.push(runKey) }
         const promos = []
         for (const [c1, c2] of g.edges) {
@@ -10341,7 +10340,7 @@ export class RoadSystem {
             if (_isPromotedId(id)) {
                 const prom = this._promoted?.get(this._proto.graph.key(id))
                 if (!prom) return NONE
-                if (runKey !== prom.sideKey) return NONE
+                if (this._v2PromotedRole(id, runKey) !== 'side') return NONE
                 return { is: true, flatCamber: true, y: prom.pos.y,
                          slopeAway: thisStrand ? prom.gx * thisStrand.wx + prom.gz * thisStrand.wz : 0 }
             }
@@ -10395,6 +10394,40 @@ export class RoadSystem {
     }
 
     // FEAT-19: incident strands at a GRAPH node (away-tangent + away-slope per registered incident edge).
+    /**
+     * FEAT-76: at a promoted T, WHICH LEG IS THE THROUGH ROAD?
+     *
+     * Derived from the built tangents, never from a stored run key. The commit knows which runs it
+     * made, but a later promotion can split one of them again (a trunk that carries two forks, a
+     * side road that becomes someone else's trunk) and then a stored key names a run that no longer
+     * exists — at which point the junction blend stops recognising the departing leg and ships a
+     * step at the node. The geometry cannot go stale: the two legs whose away-tangents are most
+     * nearly anti-parallel ARE the through road, which is the same thing a driver sees.
+     *
+     * Returns 'through' | 'side' | null (not a promoted node, or not yet three legs).
+     */
+    _v2PromotedRole(id, runKey) {
+        if (!_isPromotedId(id)) return null
+        const nk = this._proto.graph.key(id)
+        if (!this._promotedRoleMemo || this._promotedRoleMemo.rev !== this._networkRev)
+            this._promotedRoleMemo = { rev: this._networkRev, map: new Map() }
+        let roles = this._promotedRoleMemo.map.get(nk)
+        if (!roles) {
+            roles = new Map()
+            const strands = this._graphNodeStrands(id)
+            if (strands.length >= 3) {
+                let bi = 0, bj = 1, bDot = Infinity
+                for (let i = 0; i < strands.length; i++) for (let j = i + 1; j < strands.length; j++) {
+                    const d = strands[i].wx * strands[j].wx + strands[i].wz * strands[j].wz
+                    if (d < bDot) { bDot = d; bi = i; bj = j }
+                }
+                for (let i = 0; i < strands.length; i++) roles.set(strands[i].key, (i === bi || i === bj) ? 'through' : 'side')
+            }
+            this._promotedRoleMemo.map.set(nk, roles)
+        }
+        return roles.get(runKey) || null
+    }
+
     _graphNodeStrands(id) {
         const g = this._proto.graph
         const inc = g ? this._proto.nodeInc.get(g.key(id)) : null

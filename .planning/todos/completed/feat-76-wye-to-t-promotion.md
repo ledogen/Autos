@@ -1,10 +1,84 @@
 ---
 id: FEAT-76
 type: feature
-status: pending
+status: completed
 severity: medium
 ---
 
+# FEAT-76 — promote wye departures to real T intersections
+
+## RESOLUTION — closed 2026-09-06 (owner: "overall it looks fantastic")
+
+Shipped on `feature/feat76` as `da187f2` + the role fix that followed it. The trunk is sliced at the
+departure point P into two ordinary runs, P is a real degree-3 node with an ordinary junction pad, and
+the side road starts there — it does not exist over the shared ground at all. **The routing did not
+change**: `g`, `g.adj`, the drop set, the frozen deletes and every departure pin are byte-identical, so
+the pins→routes→degree→pins cycle never closed. The argument was written and checked before any code:
+`.planning/research/T-PROMOTION-FIXPOINT.md`.
+
+Measured, 5 seeds at 1400 m, against the wye baseline:
+
+| | wye | T |
+|---|---|---|
+| pairs sharing >= 30 m | 40 | 8 |
+| shared ground | 3.2% of network | 0.2% |
+| forks built as wye / as T | 35 / 0 | 0 / 4 |
+| departure corner, tightest (median) | 41.4 m | 60.8 m |
+| under `roadMinTurnRadius` (15 m) | 4 of 37 | 1 of 37 |
+| ceded vertices in shipped geometry | 946 | 0 |
+| `junction-stitch` unstitched stretches | 91 | 79 |
+| fork camber residual (BUG-56 B4) | 46 rows | 0 |
+| worldgen, seed 6 | 41 s | 5 s |
+
+Owner reviewed ten junctions as before/after plates with an overhead render of each:
+https://claude.ai/code/artifact/8ba8cd2f-7a4a-491c-bff0-58286163a765
+
+Gates: no new reds. `junction-stitch`, `mission-network`, `paper-tour` and `pond-route-around` were
+already red on main and stay red. New gate `promoted-node-id.mjs` proves a T derives a byte-identical
+id, position, deck height and degree from four overlapping stream windows.
+
+### Decisions taken during the build that differ from the ticket text below
+
+- **`offCurveSpans` is KEPT.** The ticket listed it for deletion with `cededSpans`/`departureSpans`,
+  but `_v2RegisterShoved` owns it independently for the BUG-57 shove rung, and the T's departure blend
+  needs it for the same honest reason (points off the primitive). The other two go.
+- **B6's cap changed.** For a wye a fixed `gMaxRoad` was right, because steepness at the fork was the
+  departure hold's artefact. A T has no hold, so its departure grade is just the grade of the road
+  there — seed 6's `g:5,1,0:5,2,2` already ships 25% on its own length. The rule is now "a T may not
+  put a hump in a road": the run's own worst 12 m plus `roadJunctionBlendMaxGrade`, the allowance every
+  other junction arrival already gets. Testing against the old fixed cap condemned real roads and cost
+  a pair its merge, which shipped as a `road-connectivity` crossing.
+- **B3 is measured on the junction-blended departure, outside the pad footprint.** Inside the pad the
+  pad plane IS the surface and the pad's own rules govern it. Measured on the raw solve instead, it
+  rejected all 11 of seed 6's forks for a wall the pad dresses.
+- **The departure blend decays as `(1-u)^2`, not a smoothstep.** `w'(0) = -2` puts the ANGLE at the
+  node where the pad owns it. A smoothstep leaves P parallel to the trunk, which is a wye drawn a
+  different way, and every one of seed 6's forks failed the deck seam on it.
+- **Fork placement got a rule the wye never needed**: rank candidates by deck agreement, and reject any
+  fork that does not actually END the sharing. A wye owned the ground up to its fork; a T owns nothing,
+  so a fork placed mid-stretch rebuilds the defect by accident.
+- **`_v2PromotableFor` asks the question at plan time**, on the samples, so a pair with no possible T
+  stops blocking the crossing rung. Without it seed 67 shipped real crossings.
+
+### What did NOT land
+
+**The deletion.** It is dead in the live path but still in the file, and it is now **QUAL-30**, which
+carries the full inventory and the one design question (routing disjoint pairs through the promotion)
+that has to be settled before `_v2RegisterMidSpan` can go.
+
+### Residue, stated plainly
+
+Two of the ten reviewed plates carry a deck step where the two roads part slowly and the departure has
+least room: 1.00 m at 20 m out (seed 7, -1633.6,-40.2) and 2.17 m at 20 m out (seed 3, -1787.7,1336.7),
+both where the roads are still about 11 m apart. Everything else on the ten measures zero. Four sharing
+pairs across the five seeds still promote to nothing and are counted, not hidden
+(`_v2MergeSkipped('promote'|'promote-accept'|'promote-infeasible')`).
+
+Separately, the review turned up **BUG-59**: junction pads across the network sit on a 13.5 m floor
+rather than a size derived from their legs — 47 of 70 junctions on three seeds. It predates this work
+(site nodes and promoted Ts floor at the same rate); the T promotion only made it visible.
+
+---
 # FEAT-76 — promote wye departures to real T intersections
 
 **Owner, 2026-09-06 (this ticket is a REWRITE — see "What was tried and rejected" before starting):**
