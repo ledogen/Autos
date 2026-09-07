@@ -90,6 +90,14 @@ Owner pass 2026-09-06 (second round):
   truck settled straight through it), and the top must be sheared FLAT — on a dome the free-rolling
   front wheel walks off over ~20 s. With both, the pose is stable to the millimetre over 30 s.
 
+- **The tire visibly sinks into the rock on the way down, and that is LEFT IN** — see **BUG-60**.
+  Measured: zero missed contacts, one physics step per rendered frame, no pacing artefact; the wheel
+  sphere overlaps the solid by 55 mm at rest and 92 mm at the landing peak, which is what the model
+  currently means by tire deflection. A cosmetic fix (squash the stage's tire meshes by their own
+  overlap) was built and REVERTED on owner review — a tire that deforms while the steelie inside it
+  stays rigid looks worse than the clipping. Owner's ruling: leave it visible as pressure to fix the
+  seam properly. Do not patch it in the stage.
+
 **Still open on this ticket:** §2 settings/options (video/quality, audio, controls, the FEAT-39
 assists page), §3's pause-discipline work beyond the sim hold, §4 the UI-chrome/visual-language pass
 and the toast generalisation, and one-off scenarios (no scenarios exist yet to select).
