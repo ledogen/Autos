@@ -64,6 +64,102 @@ Owner's read is that the conversion layer is misbehaving; the measurements above
 refute it — they establish that whatever is happening is deterministic, contact-complete, and inside
 the soft band, which rules out the cheap explanations.
 
+## ROOT CAUSE FOUND 2026-09-06 — `destroyBody` leaks shape-keyed maps; the rock's collider stops answering
+
+**Owner was right: it is the adapter.** Earlier passes on this ticket chased the wrong thing (tire
+deflection and occlusion, kept below for the record). The real defect is reproducible and is in
+`src/physics-engine.js`.
+
+### The symptom, measured
+
+The front-left wheel settles INSIDE the rock, at ground height, with the rock drawn around it — and
+sometimes hops ~10 cm frame to frame on the way there. In 40 scripted drops, ~10 ended with the
+wheel at hub height 333 mm (resting on the ground plane) instead of 579 mm (on the rock), reporting
+**no rock contact for 228 of 252 frames**. The solver is asking the right question — traced its own
+calls: query centred 13 mm from the rock's axis, wheel radius, real 96 mm overlap — and getting
+nothing back. An identical query issued immediately afterwards also returns nothing, so it is not a
+stale read.
+
+### What is NOT wrong
+
+- Rock body transform: **unchanged and correct** (−1.035, −0.055, −1.052) after failure.
+- `_shapeToHandle` still maps the rock's shape key to the rock's handle.
+- The hull data is intact: a **2.0 m** query sphere still returns exactly the right depth (1860 mm,
+  matching a cap top at y = 0.26).
+- The query is not order-dependent: the same call repeated 8× with far queries, debris-group queries
+  and small probes interleaved returns 28 mm every single time.
+
+### What IS wrong
+
+The same shape, at the same place, answers a 2.0 m sphere correctly and a 0.368 m sphere not at all.
+Probing before and after failure inverts exactly:
+
+| probe | fresh page | after failure |
+|---|---|---|
+| r 0.368 at the rock's SURFACE (y 0.60) | **28 mm** | **null** |
+| r 0.368 low, reaching past the body origin (y 0.10) | 528 mm | 528 mm |
+| r 0.05 at the BODY ORIGIN (y −0.055) | null | **365 mm** |
+| r 0.05 at the SURFACE (y 0.25) | null | null |
+
+After the fault the shape only answers queries that reach its **body origin**, and the 365 mm it
+reports there is exactly `0.315 + 0.05` — a shape of the cap's half-height centred on the origin
+rather than the authored geometry. Before the fault it answers at its surface and is silent at its
+origin. The collider has stopped being where it is drawn.
+
+### The trigger, and the leak behind it
+
+**One `DebrisSystem.clear()` + respawn cycle is enough** — reproduced after as few as 1 reset, and
+within 9 every time. That churn is the only thing happening between "works" and "does not".
+
+`destroyBody` prunes ONE of the three shape-keyed maps:
+
+```js
+for (const s of rec.shapes) this._shapeToHandle.delete(this._shapeKey(s))
+_b3.b3DestroyBody(rec.id)
+```
+
+`_shapeHulls` and `_shapeSizeR` are never pruned. Measured live: `_shapeToHandle.size` **19** against
+`_shapeHulls.size` **24** — five stale entries for shapes that no longer exist. Keys are
+`shapeId.index1 * 0x10000 + generation`, and Box3D recycles shape slots, so a newly created debris
+shape can be issued a key that a stale entry already occupies; `_register` then writes the new hull
+over whatever was there. `contactSphere`'s hull branch reads straight out of that map:
+
+```js
+const hull = this._shapeHulls.get(this._shapeKey(shapeId))
+if (!hull) return true
+```
+
+so a shape can end up narrow-phased against hull data that is not its own.
+
+### Why it looks rock-only
+
+Nothing else in the project puts a long-lived STATIC hull in the same id space as bodies being
+created and destroyed every few seconds. Terrain is heightfields and meshes (skipped by
+`contactSphere`'s type switch entirely), the chassis is rebuilt with the world, and debris churns
+against debris. The menu stage is the first place a permanent hull shares that space with a
+revolving door of temporary ones.
+
+### Fix direction
+
+`destroyBody` must prune `_shapeHulls` and `_shapeSizeR` with the same loop that prunes
+`_shapeToHandle`; on current code they grow for the life of the process. Then confirm whether that
+alone closes it, or whether the key itself needs to be collision-proof — `index1 * 0x10000 +
+generation` silently aliases once `generation` exceeds 65535, and nothing asserts it does not.
+
+### Acceptance
+
+- `destroyBody` leaves no entry in ANY shape-keyed map for a destroyed shape; assert
+  `_shapeToHandle.size === _shapeHulls.size` after a create/destroy cycle.
+- A permanent static hull keeps answering wheel-sized queries at its surface across ≥100 debris
+  create/destroy cycles. The menu stage is the reproducer: 40 drops with zero runs ending at hub
+  height 333 mm.
+- Consider whether `_shapeKey` should carry `generation` in its own field rather than added.
+
+---
+
+*Everything below is the earlier investigation. It explains why penetration is normal and why you
+only ever SEE it on a rock — both still true, and both a separate matter from the defect above.*
+
 ## INVESTIGATED 2026-09-06 — the visual is not a bug; a different seam asymmetry is
 
 ### The contact sources agree. There is no conversion discrepancy behind this symptom.
