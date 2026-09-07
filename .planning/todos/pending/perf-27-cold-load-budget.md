@@ -12,6 +12,34 @@ being mistaken for a shipping load-time optimization — it is a DEV convenience
 making the cold load WORSE for real players."
 ---
 
+> **2026-09-07 — RE-BASELINED after the merge train** (FEAT-76 wye→T, QUAL-30's 1 415-line deletion,
+> FEAT-41 menus, BUG-41 par, red-gates). Owner asked for it because worldgen timing moved a lot.
+> `test/story-coldload.mjs` against the BUILT app on `vite preview`, fresh Chrome profile per run.
+>
+> | | boot (`ready`) | ring | region routed (`live`) | **cold → DRIVING** |
+> |---|---|---|---|---|
+> | seed 6, cpu 1× | 2.71 s | 4.11 s | 16.13 s | **16.82 s** |
+> | seed 6, cpu 4× | 5.05 s | 14.04 s | 27.93 s | **33.44 s** |
+> | seed 811 (uncached region), cpu 4× | 4.91 s | 13.17 s | 27.73 s | **32.27 s** |
+>
+> **Against the last recorded figures — 14.7 s baked / 42.8 s unbaked at 4× — there is now ONE
+> column, and it is 33.4 s.** The bake subsystem was deleted 2026-08-19, so the 14.7 s never applied
+> to anyone but seed 6 on the owner's machine, and this ticket's central complaint goes with it: the
+> 8.31 MB gzip route-cache asset that "every byte of is downloaded by everyone on every cold load"
+> no longer exists. The honest player-facing number improved **42.8 s → 33.4 s (−22%)**, and it is
+> now the same for every seed — seed 811, which used to be the uncached worst case, is 32.3 s,
+> INDISTINGUISHABLE from the formerly-baked seed 6. That is the shape this ticket wanted.
+>
+> Where the remaining 33 s sits at 4×: boot 5 s, then 9 s filling the free-roam chunk ring before
+> story entry is even called, then 14 s routing the region, then 5 s refilling terrain. **Two thirds
+> of it is terrain, not routing** — the reverse of the assumption the 2026-08-27 table above was
+> collected under, and it is the load-bearing change for anyone picking up this ticket. Routing got
+> cheap: the same seed-6 network that took 41 s to build headlessly before FEAT-76 takes 5 s now
+> (the band ladder's dry profile solves are gone), and `bench-worldgen` puts a cold r1400 road
+> network at 1.4–2.0 s per seed.
+>
+> Bundle for the record: `index-*.js` 1 416 kB / 436 kB gzip, `box3d.wasm` 838 kB / 319 kB gzip.
+>
 > **2026-08-27 — cold ROUTING measured on `feature/corridor-router`**, since this ticket's job is to
 > hold the numbers. Single-threaded, headless, road network only (no terrain, mesh or POIs):
 >
