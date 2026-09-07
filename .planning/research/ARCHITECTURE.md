@@ -1,7 +1,7 @@
 # Architecture Research — v1.1 Mountains & Roads
 
 **Domain:** Browser-based 6DOF car physics simulation — adding seeded layered terrain, switchback road routing, road surface ribbon, free-fly camera, and POI anchor hooks to a shipped sim.
-**Project:** RangerSim
+**Project:** AUTOS
 **Researched:** 2026-06-05
 **Confidence:** HIGH — derived from direct reading of live src/terrain.js, src/main.js, src/camera.js, .planning/v1.1-BLUEPRINT-DRAFT.md, and sibling research files. MEDIUM for road tile-graph integration specifics (no shipped code yet).
 
@@ -509,5 +509,5 @@ This is a browser sim, not a web service. "Scale" here means terrain/road comple
 - MDN Web Workers API: module worker browser support gaps (confirmed Firefox does not support module workers as of mid-2026). https://developer.mozilla.org/en-US/docs/Web/API/Worker/Worker
 
 ---
-*Architecture research for: v1.1 Mountains & Roads (RangerSim)*
+*Architecture research for: v1.1 Mountains & Roads (AUTOS)*
 *Researched: 2026-06-05*

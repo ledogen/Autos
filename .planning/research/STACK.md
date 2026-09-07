@@ -1,4 +1,4 @@
-# Technology Stack: RangerSim
+# Technology Stack: AUTOS
 
 **Project:** Browser-based 6DOF car physics simulation (Ford Ranger)
 **Researched:** 2026-05-10 (v1.0), updated 2026-06-05 (v1.1 Mountains & Roads additions)
@@ -469,7 +469,7 @@ No npm, no install. The full setup is:
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>RangerSim</title>
+  <title>AUTOS</title>
   <script type="importmap">
   {
     "imports": {

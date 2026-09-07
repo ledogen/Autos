@@ -1,5 +1,5 @@
 /**
- * src/road.js — RoadSystem for RangerSim v1.1
+ * src/road.js — RoadSystem for AUTOS v1.1
  *
  * VALLEY-TRUNK STREAMING MODEL (the real routing core):
  *  - Endless roads are a deterministic chain of valley-snapped macro-anchors (256 m grid),

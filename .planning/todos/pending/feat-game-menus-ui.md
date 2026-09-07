@@ -63,6 +63,28 @@ Also extracted `src/vehicle-state.js` — the canonical vehicleState factory —
 drift, and `createVehicleModel` gained `setHeadlightMode` + a `keyBindings` opt-out (a second model
 was answering the 'L' key, and its headlight pool was washing the stage's foreground).
 
+Owner pass 2026-09-06 (second round):
+
+- **Title is AUTOS**, the vehicle flavour line is gone, and the rename went repo-wide (the GitHub
+  repo is already `/autos`). The one thing deliberately NOT renamed is `rangersim-run-export/N` and
+  the `rangersim-run-*.json` filename convention — that is a wire-format tag stamped into every
+  recorded run in `runs/`, and renaming it would orphan them from `runs:add` / `runs:report`.
+- **The seed dialog was unclickable.** It sat at z 101 under `#main-menu`'s 205 scrim, so it
+  rendered dimmed and the scrim ate every click; only typing a seed and pressing Enter got through.
+  Esc could not close it either (the stage guard swallowed the key), so it was a genuine soft lock.
+- **The menu is wired at the top of main.js now, not the bottom.** Listeners registered after the
+  module's top-level awaits do not exist for the whole of worldgen, so the buttons were dead for the
+  first ~10 s. Clicking now works immediately and holds on the load caption until `_worldReady`
+  resolves — which is deliberately after `prewarmLightPrograms` settles, or a reseed races an
+  in-flight `compileAsync` and disposes materials under it.
+- **The camera snaps on hand-off** (`snapCamera()` in `src/camera.js`) instead of springing onto the
+  truck over ~1 s, which read as the camera arriving rather than the world simply being there.
+- **Floor is black and the mound is gone** — the front-left wheel now lands on a real rock body.
+  It is pinned where it settles rather than made artificially heavy: the wheel query only unions
+  DYNAMIC engine bodies (`qcPlus`), so it has to stay dynamic, but a loose 50 kg cobble under a
+  free-rolling front wheel squirts straight out. Holding its pose says "set in the ground"; a fake
+  density would have said something untrue about a rock that size.
+
 **Still open on this ticket:** §2 settings/options (video/quality, audio, controls, the FEAT-39
 assists page), §3's pause-discipline work beyond the sim hold, §4 the UI-chrome/visual-language pass
 and the toast generalisation, and one-off scenarios (no scenarios exist yet to select).

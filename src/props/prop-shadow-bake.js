@@ -3,7 +3,7 @@
  *
  * Props are otherwise realtime shadow CASTERS: every scattered tree/rock/log re-renders into the
  * sun's directional shadow map every frame (~1.86 ms/frame on an M4 — test/perf-prop-shadows.mjs),
- * and because RangerSim is always in motion the PERF-16 on-demand skip never fires while driving.
+ * and because AUTOS is always in motion the PERF-16 on-demand skip never fires while driving.
  * A prop's shadow is a fixed world-space shape FOR A GIVEN SUN DIRECTION, so it is baked once when
  * its terrain chunk streams in — and re-baked when the key light has moved far enough to matter.
  *

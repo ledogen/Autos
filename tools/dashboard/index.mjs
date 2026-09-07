@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * RangerSim planning dashboard — indexer + static server.
+ * AUTOS planning dashboard — indexer + static server.
  *
  * Scans .planning/todos/{pending,completed} into tickets.json and measures the
  * repo into stats.json, then serves tools/dashboard/ as a static site.

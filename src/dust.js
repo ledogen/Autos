@@ -1,5 +1,5 @@
 /**
- * src/dust.js — RangerSim wheel dust trails (FEAT — visual polish)
+ * src/dust.js — AUTOS wheel dust trails (FEAT — visual polish)
  *
  * Dirt-cheap, self-contained dust/dirt kick-up behind the wheels. Stylized soft
  * billboard puffs drawn from a fixed pool — no per-frame allocation, one shared

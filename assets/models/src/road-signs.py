@@ -1,5 +1,5 @@
 """
-ASSET-31 - Californian roadside signage on a timber 4x4.  RangerSim.
+ASSET-31 - Californian roadside signage on a timber 4x4.  AUTOS.
 
     blender --background --python road-signs.py -- export
     (or paste into Blender's text editor and call export())

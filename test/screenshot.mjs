@@ -1,4 +1,4 @@
-// test/screenshot.mjs — headless in-browser screenshot tool for RangerSim (visual troubleshooting).
+// test/screenshot.mjs — headless in-browser screenshot tool for AUTOS (visual troubleshooting).
 //
 // Drives Chrome over the DevTools Protocol (shared client in test/lib/cdp.mjs — no playwright)
 // to load the running app, jump the freecam to a world position, and save a PNG. Use it to eyeball any

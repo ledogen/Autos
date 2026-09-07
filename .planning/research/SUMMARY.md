@@ -1,6 +1,6 @@
 # Project Research Summary
 
-**Project:** RangerSim
+**Project:** AUTOS
 **Domain:** Browser procedural terrain + road generation for a 6DOF car-physics sim (milestone v1.1 "Mountains & Roads")
 **Researched:** 2026-06-05
 **Confidence:** HIGH (terrain/seed/camera/spline mechanisms), MEDIUM (infinite tile-graph switchback road routing)

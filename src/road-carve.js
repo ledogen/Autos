@@ -1,5 +1,5 @@
 /**
- * src/road-carve.js — Pure no-import carve functions for RangerSim road surface.
+ * src/road-carve.js — Pure no-import carve functions for AUTOS road surface.
  *
  * Worker-safe: NO imports. Function BODIES (no `export` keyword) are copied verbatim
  * into terrain.js WORKER_SOURCE — same discipline as the height() / seed utility sync

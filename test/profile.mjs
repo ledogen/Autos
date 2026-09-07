@@ -1,4 +1,4 @@
-// test/profile.mjs — external performance profiler for RangerSim (PERF-08 harness).
+// test/profile.mjs — external performance profiler for AUTOS (PERF-08 harness).
 //
 // Drives the app over CDP (test/lib/cdp.mjs) against the ?prof=1 dev handles in src/main.js
 // (__q quality preset, __ri renderer.info, __perfData perf buckets + frame-dt ring, __world

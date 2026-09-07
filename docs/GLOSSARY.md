@@ -1,12 +1,12 @@
-# RangerSim Physics Glossary
+# AUTOS Physics Glossary
 
-This glossary defines the coordinate system, sign conventions, and physics terms used by every `src/*.js` file in RangerSim. It is the source of truth — when a code comment refers to `slip angle` or `forward vector` or `quaternion integration`, the definition lives here. New terms must be added to this file before they appear in code.
+This glossary defines the coordinate system, sign conventions, and physics terms used by every `src/*.js` file in AUTOS. It is the source of truth — when a code comment refers to `slip angle` or `forward vector` or `quaternion integration`, the definition lives here. New terms must be added to this file before they appear in code.
 
 ---
 
 ## Coordinate System
 
-Three.js uses a **Y-up right-handed world space**. RangerSim adopts this system without modification:
+Three.js uses a **Y-up right-handed world space**. AUTOS adopts this system without modification:
 
 | Axis | Direction | Meaning at heading 0 |
 |------|-----------|----------------------|
@@ -205,7 +205,7 @@ Rear-only braking applied via the Space key. Engages at full `params.maxHandbrak
 - **State:** `vehicleState.handbrake = true` while Space held; written by `updateVehicle` each step
 - **Force path:** `getBrakeTorque(i, vehicleState, params)` in `src/physics.js` — rear wheels (i ≥ 2) receive `params.maxHandbrakeTorque` when `vehicleState.handbrake === true`
 - **Drift mechanics:** Rear wheels slow down → negative longitudinal slip ratio → reduced `Flong` → friction circle frees up lateral budget → Pacejka `Flat` can approach peak → drift develops naturally (not a hard omega lock)
-- **Debug slider:** `maxHandbrakeTorque` in the RangerSim Debug panel (range 500–5000 N·m)
+- **Debug slider:** `maxHandbrakeTorque` in the AUTOS Debug panel (range 500–5000 N·m)
 
 ### Ackermann Geometry
 
@@ -316,11 +316,11 @@ The following terms are introduced in Phase 4 with the quarter-car suspension mo
 
 ### Sprung Mass
 
-The portion of vehicle mass supported by the suspension springs — the body, chassis, and drivetrain components that sit above the springs. In RangerSim: `mass · weightFront / 2` ≈ 374 kg per front corner and `mass · weightRear / 2` ≈ 306 kg per rear corner. Used in the natural-frequency formula `f_n = (1/2π)·√(k/m_sprung)` to derive `suspensionStiffness{Front,Rear}`.
+The portion of vehicle mass supported by the suspension springs — the body, chassis, and drivetrain components that sit above the springs. In AUTOS: `mass · weightFront / 2` ≈ 374 kg per front corner and `mass · weightRear / 2` ≈ 306 kg per rear corner. Used in the natural-frequency formula `f_n = (1/2π)·√(k/m_sprung)` to derive `suspensionStiffness{Front,Rear}`.
 
 ### Unsprung Mass
 
-The portion of vehicle mass NOT supported by the suspension springs — wheels, hubs, brake rotors, and stub axles. These components follow the road surface directly. In RangerSim: `params.wheelMass` ≈ 18 kg per corner, integrated as `vehicleState.hubY[i]` (vertical position) and `vehicleState.hubVy[i]` (vertical velocity) each physics substep.
+The portion of vehicle mass NOT supported by the suspension springs — wheels, hubs, brake rotors, and stub axles. These components follow the road surface directly. In AUTOS: `params.wheelMass` ≈ 18 kg per corner, integrated as `vehicleState.hubY[i]` (vertical position) and `vehicleState.hubVy[i]` (vertical velocity) each physics substep.
 
 ### Suspension Travel
 
@@ -328,11 +328,11 @@ The displacement of the wheel hub relative to the body mount point along the spr
 
 ### Ride Height
 
-The height of the vehicle body above the ground at static equilibrium — where spring compression and gravity balance. In RangerSim: computed at spawn by `computeStaticEquilibrium(params)` in `src/main.js`. Formula per corner: `tireComp = cornerMass · g / k_T`; `suspComp = sprungMass · g / k_S`; `hubY = wheelRadius − tireComp`; `bodyY_at_mount = hubY + restLength − suspComp`. The CG height at spawn is approximately 0.42 m (lower than the tuning estimate of `cgHeight = 0.55 m` because suspension compresses under load — this is correct physics).
+The height of the vehicle body above the ground at static equilibrium — where spring compression and gravity balance. In AUTOS: computed at spawn by `computeStaticEquilibrium(params)` in `src/main.js`. Formula per corner: `tireComp = cornerMass · g / k_T`; `suspComp = sprungMass · g / k_S`; `hubY = wheelRadius − tireComp`; `bodyY_at_mount = hubY + restLength − suspComp`. The CG height at spawn is approximately 0.42 m (lower than the tuning estimate of `cgHeight = 0.55 m` because suspension compresses under load — this is correct physics).
 
 ### Anti-Roll Bar (ARB)
 
-A torsional spring linking the left and right wheels of an axle that resists differential compression (body roll). When the left spring compresses more than the right, the ARB applies an equal and opposite force to each side, stiffening the axle against roll. In RangerSim: bilinear-spring approximation (D-07) where `F_arb = arbStiffness{Front,Rear} · (suspComp[left] − suspComp[right])` per axle; `−F_arb` applied to the left hub, `+F_arb` to the right hub. Tunable via `arbStiffnessFront` and `arbStiffnessRear` sliders. A stiffer front ARB relative to rear promotes understeer balance.
+A torsional spring linking the left and right wheels of an axle that resists differential compression (body roll). When the left spring compresses more than the right, the ARB applies an equal and opposite force to each side, stiffening the axle against roll. In AUTOS: bilinear-spring approximation (D-07) where `F_arb = arbStiffness{Front,Rear} · (suspComp[left] − suspComp[right])` per axle; `−F_arb` applied to the left hub, `+F_arb` to the right hub. Tunable via `arbStiffnessFront` and `arbStiffnessRear` sliders. A stiffer front ARB relative to rear promotes understeer balance.
 
 ### Substep / Physics Timestep Convention
 

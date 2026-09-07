@@ -331,5 +331,5 @@ The existing `MAX_BUILDS_PER_FRAME = 2` cap and the `_pendingWorker` reservation
 - First-principles algorithm analysis: deterministic tile-graph routing, central-difference normal, bilinear interpolation O(1) cost.
 
 ---
-*Pitfalls research for: v1.1 Mountains & Roads (RangerSim)*
+*Pitfalls research for: v1.1 Mountains & Roads (AUTOS)*
 *Researched: 2026-06-05*

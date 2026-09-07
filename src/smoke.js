@@ -1,5 +1,5 @@
 /**
- * src/smoke.js — RangerSim tire smoke (FEAT — visual polish)
+ * src/smoke.js — AUTOS tire smoke (FEAT — visual polish)
  *
  * Grey burnout/wheelspin smoke, structurally identical to src/dust.js's instanced-billboard
  * puff pool (see that file's header for the rendering rationale — one InstancedMesh, one draw

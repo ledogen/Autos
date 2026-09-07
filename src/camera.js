@@ -1,5 +1,5 @@
 /**
- * Camera module for RangerSim. Spring-follow chase mode, fixed-offset hood cam,
+ * Camera module for AUTOS. Spring-follow chase mode, fixed-offset hood cam,
  * and free-fly dev mode. C key toggles chase/hood; Shift+C enters/exits freecam.
  * Does NOT parent camera to car mesh — parenting propagates jitter.
  * Uses lerp-to-goal per RESEARCH.md §Pattern 6. See GLOSSARY.md §Named Vectors
@@ -75,6 +75,13 @@ const freecamKeys   = { w: false, a: false, s: false, d: false, space: false, ct
 // Stores the most recent vehicleState so the C-key handler (registered at module load,
 // before any vehicleState is available) can read the truck position for freecam entry.
 let _lastVehicleState = null
+
+// One-shot: place the camera exactly at its goal on the NEXT updateCamera instead of easing in.
+// The chase camera is a spring, which is right while driving and wrong the instant the world is
+// handed to the player — it starts wherever it was left and visibly slides onto the truck. main.js
+// fires this when a mode goes live (FEAT-41).
+let _snapNext = false
+export function snapCamera () { _snapNext = true }
 
 // ── Focus override (FEAT-45: camp) ─────────────────────────────────────────────
 // A world point the camera orbits instead of the truck. Set while camp is established so the view
@@ -286,6 +293,8 @@ function _exitFreecam () {
 export function updateCamera (camera, vehicleState, dt) {
   // Store latest vehicleState reference so the C-key listener can read truck position.
   _lastVehicleState = vehicleState
+  const snap = _snapNext   // consumed here, whichever branch below runs
+  _snapNext = false
 
   if (cameraMode === 'freecam') {
     // ── Freecam branch: WASD fly along look direction, Space/Ctrl vertical, Shift boost ──
@@ -317,7 +326,7 @@ export function updateCamera (camera, vehicleState, dt) {
       focusTarget.y + FOCUS_RADIUS * Math.sin(orbitPhi),
       focusTarget.z + FOCUS_RADIUS * cosP * Math.cos(orbitTheta)
     )
-    camera.position.lerp(goalPos, 1 - Math.exp(-CHASE_STIFFNESS * dt))
+    camera.position.lerp(goalPos, snap ? 1 : 1 - Math.exp(-CHASE_STIFFNESS * dt))
     camera.lookAt(focusTarget)
     return
   }
@@ -348,12 +357,15 @@ export function updateCamera (camera, vehicleState, dt) {
       // bumps (only sustained grade changes survive the slow exp-decay). The smoothed pitch then
       // tilts the goal offset about the yawed local-right (X) axis: nose-up drops the camera lower
       // behind the car, and the lookAt below re-aims at the body, so the view leans up the hill.
-      smoothedPitch += (euler.x - smoothedPitch) * (1 - Math.exp(-CHASE_PITCH_STIFFNESS * dt))
+      // The pitch low-pass has to snap too, or the camera arrives at the right PLACE with the wrong
+      // TILT and then rolls into position over the next second — the same slide, just rotational.
+      if (snap) smoothedPitch = euler.x
+      else smoothedPitch += (euler.x - smoothedPitch) * (1 - Math.exp(-CHASE_PITCH_STIFFNESS * dt))
       const tiltQ      = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), smoothedPitch * CHASE_PITCH_FOLLOW)
       const goalRot    = yawQ.clone().multiply(tiltQ)  // yaw (world Y) first, then pitch about resulting local X
       const goalOffset = CHASE_OFFSET_LOCAL.clone().applyQuaternion(goalRot)
       const goalPos    = vehicleState.position.clone().add(goalOffset)
-      const alpha = 1 - Math.exp(-CHASE_STIFFNESS * dt)
+      const alpha = snap ? 1 : 1 - Math.exp(-CHASE_STIFFNESS * dt)
       camera.position.lerp(goalPos, alpha)
       camera.lookAt(vehicleState.position)
 

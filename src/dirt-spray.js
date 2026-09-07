@@ -1,5 +1,5 @@
 /**
- * src/dirt-spray.js — RangerSim dirt spray off a slipping tyre (FEAT — visual polish)
+ * src/dirt-spray.js — AUTOS dirt spray off a slipping tyre (FEAT — visual polish)
  *
  * The loose-surface counterpart to src/smoke.js. Smoke is friction heat off the rubber and reads
  * strongest on tarmac; THIS system is the material the tyre digs out of dirt and throws — so it is

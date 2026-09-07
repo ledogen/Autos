@@ -1,4 +1,4 @@
-# Requirements: RangerSim — Milestone v1.1 Mountains & Roads
+# Requirements: AUTOS — Milestone v1.1 Mountains & Roads
 
 **Defined:** 2026-06-07
 **Core Value:** Physics that feel honest: a car that can roll over naturally, drift on the limit, and behave predictably enough that tuning parameters produces the expected result.

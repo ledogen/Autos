@@ -78,7 +78,7 @@ ok(Math.abs(vySettle) < 0.02, `truck settled on flat ground (|vy| ${Math.abs(vyS
 // The step is sized so the post-step contact depth lands in the CRITICAL WINDOW (0.3 m, wheelRadius):
 // the OLD flat-0.3 threshold fires here (teleport) while the BUG-24 fix (depth > wheelRadius) does not.
 // In-game this window is reached by the intended ~0.25 m road-over-shoulder step PLUS the loaded outer
-// wheel's standing deflection (~0.06 m) → ~0.31 m (capture rangersim-capture-1782632966689, f111/f236).
+// wheel's standing deflection (~0.06 m) → ~0.31 m (capture autos-capture-1782632966689, f111/f236).
 console.log('\nA) ground steps up into the critical depth window (0.3 m, wheelRadius):')
 groundY = 0.30
 const hubA = getWheelPosition(0, vs, P)   // _rotateVector set by the last stepPhysics call (settle)

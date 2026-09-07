@@ -1,4 +1,4 @@
-# Deploy RangerSim to GitHub Pages from the Vite build (PERF-04 / PERF-20.5).
+# Deploy AUTOS to GitHub Pages from the Vite build (PERF-04 / PERF-20.5).
 #
 # One-time repo setting the user MUST flip: Settings → Pages → Source = "GitHub Actions"
 # (source stays clean — no committed dist/; the build output is deployed as a Pages artifact).

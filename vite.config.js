@@ -1,4 +1,4 @@
-// vite.config.js — RangerSim build (PERF-04 / PERF-20.5).
+// vite.config.js — AUTOS build (PERF-04 / PERF-20.5).
 //
 // Replaces the retired CDN importmap: `npm run dev` serves src/main.js on :8000 (dev port kept so
 // test/screenshot.mjs + test/profile.mjs `--port` default and `?prof=1&seed=` query strings keep
@@ -50,7 +50,7 @@ const DIAGNOSTIC_ASSETS = [
 function copyRuntimeAssets () {
   let root = process.cwd()
   return {
-    name: 'rangersim-copy-runtime-assets',
+    name: 'autos-copy-runtime-assets',
     configResolved (cfg) { root = cfg.root },
     closeBundle () {
       const outDir = resolve(root, 'dist')

@@ -1,6 +1,6 @@
 # Feature Research
 
-**Domain:** Procedural terrain generation + road routing for browser-based car physics sim (RangerSim v1.1 Mountains & Roads)
+**Domain:** Procedural terrain generation + road routing for browser-based car physics sim (AUTOS v1.1 Mountains & Roads)
 **Researched:** 2026-06-05
 **Confidence:** HIGH (terrain techniques, seed/cam/spline patterns), MEDIUM (road routing tile-graph for infinite world)
 
@@ -571,5 +571,5 @@ For original research on these, see git history of this file (pre-2026-06-05 ver
 - [Three.js FlyControls example](https://threejs.org/examples/misc_controls_fly.html)
 
 ---
-*Feature research for: RangerSim v1.1 Mountains & Roads*
+*Feature research for: AUTOS v1.1 Mountains & Roads*
 *Researched: 2026-06-05*

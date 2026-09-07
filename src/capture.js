@@ -109,7 +109,7 @@ export function buildPlaceCapture(a) {
         observed.wheelGroundY = a.terrainSample.wheelGroundY
     }
     return {
-        rangersimCapture: CAPTURE_VERSION,
+        autosCapture: CAPTURE_VERSION,
         kind:      'place',
         complaint: a.complaint ?? '',
         world: {
@@ -155,7 +155,7 @@ export function buildEventCapture(a) {
         t: at(r, 't'), steer: at(r, 'steer'), thr: at(r, 'thr'), brk: at(r, 'brk'),
     }))
     return {
-        rangersimCapture: CAPTURE_VERSION,
+        autosCapture: CAPTURE_VERSION,
         kind:      'event',
         complaint: a.complaint ?? '',
         world: {
@@ -182,7 +182,7 @@ export function buildEventCapture(a) {
 export function validateCapture(c) {
     const errors = []
     if (!c || typeof c !== 'object') return { ok: false, errors: ['not an object'] }
-    if (c.rangersimCapture !== CAPTURE_VERSION) errors.push(`version: expected ${CAPTURE_VERSION}, got ${c.rangersimCapture}`)
+    if (c.autosCapture !== CAPTURE_VERSION) errors.push(`version: expected ${CAPTURE_VERSION}, got ${c.autosCapture}`)
     if (c.kind !== 'place' && c.kind !== 'event') errors.push(`kind: expected place|event, got ${c.kind}`)
     if (!c.world || typeof c.world.seed !== 'number') errors.push('world.seed missing/not a number')
     if (!c.world || typeof c.world.params !== 'object') errors.push('world.params missing')

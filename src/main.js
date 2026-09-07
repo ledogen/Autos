@@ -1,5 +1,5 @@
 /**
- * src/main.js — RangerSim Walking Skeleton
+ * src/main.js — AUTOS Walking Skeleton
  *
  * Entry point for the browser app. Responsibilities:
  *  - Three.js scene setup (renderer, camera, lighting, ground)
@@ -29,7 +29,7 @@ import { DamageModel } from './damage.js'                   // SM-3: component c
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the V-key condition readout
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
-import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, snapCamera } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
@@ -362,7 +362,7 @@ function _importSessionRoutes () {
 }
 
 // One-time cleanup of the short-lived IndexedDB persistence experiment (32cde75, reverted same day).
-try { indexedDB.deleteDatabase('rangersim-routes') } catch { /* private mode etc. */ }
+try { indexedDB.deleteDatabase('autos-routes') } catch { /* private mode etc. */ }
 
 let _spawnWarmActive = false   // frame loop skips road stream/warm while a spawn-band warm is pumping
 async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
@@ -1049,6 +1049,63 @@ if (_noMenu) {
 // which lives after it — keeps running, and terrain/roads keep streaming. That is the whole trick
 // behind "the load animates".
 let _simHeld = !_noMenu
+
+// THE MENU IS WIRED HERE, not at the bottom of this module with every other listener. main.js's
+// remaining body is a long run of top-level awaits, so a listener registered down there does not
+// exist for the whole of worldgen — the buttons were visibly dead for the first ~10 s and a click
+// did nothing at all (owner, 2026-09-06). Registered here they respond immediately; the two
+// handlers that actually reach into the world await _worldReady first and sit on the load caption
+// until it resolves, which is what "click, then hang on loading" means.
+//
+// Everything these listeners call before that await must be either a hoisted function or a binding
+// declared ABOVE this line — a const further down is in its temporal dead zone (unreachable, and
+// touching it throws) until the module body gets there.
+let _worldInit = false
+let _resolveWorldReady
+const _worldReady = new Promise((res) => { _resolveWorldReady = res })
+let _seedModalMode = 'story'   // 'story' | 'freeroam' — read by _startStoryFromModal
+
+document.getElementById('ss-start')?.addEventListener('click', _startStoryFromModal)
+
+// Main-menu buttons. Free roam and story both go through the seed dialog; the lab is a debug rig
+// with no world of its own, so it just enters.
+document.getElementById('mm-freeroam')?.addEventListener('click', () => _showSeedModal(null, null, 'freeroam'))
+document.getElementById('mm-story')?.addEventListener('click', () => _showSeedModal(null, null, 'story'))
+document.getElementById('mm-lab')?.addEventListener('click', async () => {
+  _hideMainMenu()
+  _enterStageLoad('building the world\u2026')   // the lab still needs the world's systems built
+  await _worldReady
+  _exitStageLoad()
+  if (!_labActive) enterLab()
+})
+document.getElementById('mm-settings')?.addEventListener('click', () => {
+  document.getElementById('main-menu')?.classList.add('settings')
+})
+document.getElementById('mm-settings-back')?.addEventListener('click', () => {
+  document.getElementById('main-menu')?.classList.remove('settings')
+})
+// "start anyway": the region behind the disclaimer is already built and frozen, so honouring this
+// costs nothing but a call. Story mode is a sandbox while it is being designed and going to LOOK at
+// what broke is a legitimate thing to want — the warning has been read, so this is informed.
+document.getElementById('ss-anyway')?.addEventListener('click', () => {
+  _hideSeedModal()
+  storySystem.acceptRejectedSeed()
+})
+// Cancel out of a REFUSED entry leaves story mode entirely — the region is built but the player has
+// declined it, and leaving them standing in a world the check refused would be the silent failure
+// this whole feature exists to avoid.
+document.getElementById('ss-cancel')?.addEventListener('click', () => {
+  if (!_worldInit) { _hideSeedModal(); return }   // nothing to back out of yet
+  const wasRejected = storySystem.isSeedRejected()
+  _hideSeedModal()
+  if (wasRejected) storySystem.exit()
+})
+document.getElementById('ss-seed')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); _startStoryFromModal() }
+  else if (e.key === 'Escape') { e.preventDefault(); _hideSeedModal() }
+  e.stopPropagation()   // keep WASD/M/Esc out of the world while typing a seed
+})
+
 
 // ── Camera ───────────────────────────────────────────────────────────────────
 // Spring-follow camera managed by src/camera.js (Plan 04). updateCamera() called each frame.
@@ -4396,7 +4453,7 @@ const storySystem = new StorySystem({
   // FEAT-41: the entry load is now WATCHED, not waited out behind a black panel. This is the one
   // signal that covers every story entry (main menu, pause button, a rejected-seed retry), so the
   // stage is raised and dropped from here rather than at each call site.
-  setLoading: (visible, text) => { if (visible) _enterStageLoad(text); else _exitStageLoad() },
+  setLoading: (visible, text) => { if (visible) _enterStageLoad(text, LOAD_HINT_STORY); else _exitStageLoad() },
   getVehiclePosition: () => ({ x: vehicleState.position.x, z: vehicleState.position.z }),
   isMissionActive: () => !!missionSystem?.isActive(),
   /**
@@ -4532,7 +4589,6 @@ const storySystem = new StorySystem({
 // go", and there was no reason for free roam to be the one mode you could not choose a seed for.
 // The refusal block below stays story-only: free roam has no region to validate, so there is nothing
 // for world-validate.js to refuse.
-let _seedModalMode = 'story'   // 'story' | 'freeroam'
 function _showSeedModal (report = null, rejectedSeed = null, mode = 'story') {
   _seedModalMode = mode
   const el = document.getElementById('story-seed-modal')
@@ -4588,8 +4644,11 @@ function _hideMainMenu () {
   const el = document.getElementById('main-menu')
   if (el) { el.style.display = 'none'; el.classList.remove('settings') }
 }
+// The region-freeze blurb is a STORY-MODE fact; it was showing on free-roam and lab loads too.
+const LOAD_HINT_STORY = 'the whole region is routed once, up front — after this the roads are frozen and no routing runs while you drive.'
+
 /** Raise the stage over a load. Idempotent — story.js pumps setLoading with fresh text each stage. */
-function _enterStageLoad (text) {
+function _enterStageLoad (text, hint = '') {
   _hideMainMenu()
   menuStage.setActive(true)
   _simHeld = true
@@ -4598,6 +4657,8 @@ function _enterStageLoad (text) {
   if (cap) cap.style.display = 'flex'
   const t = document.getElementById('sl-text')
   if (t && text) t.textContent = text
+  const hintEl = document.getElementById('sl-hint')
+  if (hintEl) hintEl.textContent = hint
 }
 /** The world is ready: drop the stage and hand the screen (and the fixed-step block) back. */
 function _exitStageLoad () {
@@ -4607,6 +4668,10 @@ function _exitStageLoad () {
   menuStage.setActive(false)
   _simHeld = false
   document.body.classList.remove('stage-on')
+  // The chase camera is a spring and it has been sitting wherever the last mode left it. Without
+  // this it slides onto the truck over about a second the moment the world appears, which reads as
+  // the camera "arriving" rather than the world simply being there (owner, 2026-09-06).
+  snapCamera()
 }
 
 /**
@@ -4618,58 +4683,24 @@ async function _startFreeRoam (seedStr) {
   if (storySystem.isActive()) storySystem.exit()
   if (_labActive) exitLab()
   window.__setGameMode('freeroam')
-  _enterStageLoad('building the world\u2026')
   if (parseWorldSeed(seedStr) !== worldSeed) await applyWorldSeed(seedStr)
   else await _reseatTruckAtSpawn()
   _exitStageLoad()
 }
 
-function _startStoryFromModal () {
+async function _startStoryFromModal () {
   const seed = _resolveSeedInput()
   _hideSeedModal()
-  if (_seedModalMode === 'freeroam') { void _startFreeRoam(seed); return }
+  // The caption goes up BEFORE the await, not after: the player clicked, and the whole point of
+  // wiring these buttons early is that the click is acknowledged even while init is still running.
+  _enterStageLoad('building the world\u2026')
+  await _worldReady
+  if (_seedModalMode === 'freeroam') { await _startFreeRoam(seed); return }
   if (_labActive) exitLab()
-  _enterStageLoad('entering the region\u2026')   // ahead of enter(), so the world is never on screen mid-reseed
+  _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
   storySystem.enter(seed)
 }
-document.getElementById('ss-start')?.addEventListener('click', _startStoryFromModal)
-
-// Main-menu buttons. Free roam and story both go through the seed dialog; the lab is a debug rig
-// with no world of its own, so it just enters.
-document.getElementById('mm-freeroam')?.addEventListener('click', () => _showSeedModal(null, null, 'freeroam'))
-document.getElementById('mm-story')?.addEventListener('click', () => _showSeedModal(null, null, 'story'))
-document.getElementById('mm-lab')?.addEventListener('click', () => {
-  _hideMainMenu()
-  _exitStageLoad()
-  if (!_labActive) enterLab()
-})
-document.getElementById('mm-settings')?.addEventListener('click', () => {
-  document.getElementById('main-menu')?.classList.add('settings')
-})
-document.getElementById('mm-settings-back')?.addEventListener('click', () => {
-  document.getElementById('main-menu')?.classList.remove('settings')
-})
-// "start anyway": the region behind the disclaimer is already built and frozen, so honouring this
-// costs nothing but a call. Story mode is a sandbox while it is being designed and going to LOOK at
-// what broke is a legitimate thing to want — the warning has been read, so this is informed.
-document.getElementById('ss-anyway')?.addEventListener('click', () => {
-  _hideSeedModal()
-  storySystem.acceptRejectedSeed()
-})
-// Cancel out of a REFUSED entry leaves story mode entirely — the region is built but the player has
-// declined it, and leaving them standing in a world the check refused would be the silent failure
-// this whole feature exists to avoid.
-document.getElementById('ss-cancel')?.addEventListener('click', () => {
-  const wasRejected = storySystem.isSeedRejected()
-  _hideSeedModal()
-  if (wasRejected) storySystem.exit()
-})
-document.getElementById('ss-seed')?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); _startStoryFromModal() }
-  else if (e.key === 'Escape') { e.preventDefault(); _hideSeedModal() }
-  e.stopPropagation()   // keep WASD/M/Esc out of the world while typing a seed
-})
 // Quick Job launcher — the beta mission generator, now surfaced only inside story mode.
 document.getElementById('quickjob-btn')?.addEventListener('click', () => { if (missionSystem) missionSystem.enter() })
 
@@ -4848,7 +4879,7 @@ document.addEventListener('keydown', e => {
       roadSystem, worldSeed, seedString: _seedString, params: RANGER_PARAMS,
       mark: { x: px, z: pz }, streamCenterHistory: _streamCenterRing.slice(), terrainSample,
     })
-    _downloadJSON(capture, 'rangersim-capture-' + Date.now() + '.json')
+    _downloadJSON(capture, 'autos-capture-' + Date.now() + '.json')
     console.log(`[capture] place @(${px.toFixed(1)},${pz.toFixed(1)}) run ${capture.place.observed.runKey} gradeY ${capture.place.observed.gradeY?.toFixed(2)} minR ${capture.place.observed.minRadius?.toFixed(1)}`)
   }
 })
@@ -5550,7 +5581,16 @@ window.__rsReady = true
 requestAnimationFrame(loop)
 // PERF-21: precompile the light-count shader variants (lamps off/brake/night/reverse) off the
 // critical path so the first brake or headlight toggle doesn't compile shaders mid-drive.
-prewarmLightPrograms(renderer, scene, camera)
+//
+// _worldReady resolves AFTER this settles, not before. A menu pick made during init now runs the
+// moment it can, and a reseed racing an in-flight compileAsync disposes materials out from under
+// three's checkMaterialsReady poll ("Cannot read properties of undefined (reading 'isReady')").
+// It is also the honest meaning of ready: shaders warmed, so the first frame of driving is clean.
+// .finally, not .then — a failed prewarm is a best-effort miss, never a reason to strand the menu.
+prewarmLightPrograms(renderer, scene, camera).finally(() => {
+  _worldInit = true
+  _resolveWorldReady()   // release any menu pick the player made while this was still building
+})
 
 // ── Resize handler ───────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {

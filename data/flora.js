@@ -1,5 +1,5 @@
 /**
- * data/flora.js — Procedural prop (tree/rock/bush) parameters for RangerSim FEAT-06.
+ * data/flora.js — Procedural prop (tree/rock/bush) parameters for AUTOS FEAT-06.
  *
  * Exported const config in the spirit of data/ranger.js. Drives the three procedural geometry
  * primitives (prop-geometry.js), the baked palette (prop-palette.js), and the deterministic

@@ -1,5 +1,5 @@
 /**
- * Debug panel for RangerSim.
+ * Debug panel for AUTOS.
  *
  * Phase 1: backtick (`) toggle, lateralDampingCoeff, tireStiffness, and tireDamping sliders
  *   (plus a slider that was removed in Phase 2 per D-09).
@@ -61,7 +61,7 @@ export function setDebugLockout (locked) {
  * @returns {GUI} the lil-gui GUI instance
  */
 export function initDebug (params, callbacks = {}, options = {}) {
-  const gui = new GUI({ title: 'RangerSim Debug' })
+  const gui = new GUI({ title: 'AUTOS Debug' })
   gui.domElement.style.display = 'none'  // hidden by default; backtick reveals it
 
   // QUAL-04: build marker — confirms which build the browser actually loaded (deploy lag + cache).

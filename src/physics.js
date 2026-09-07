@@ -1,5 +1,5 @@
 /**
- * src/physics.js — Vehicle physics step for RangerSim (FEAT-48: engine-backed).
+ * src/physics.js — Vehicle physics step for AUTOS (FEAT-48: engine-backed).
  *
  * The rigid-body core is the physics ENGINE behind the adapter seam
  * (physics-engine.js): the chassis is an engine dynamic body; integration
