@@ -3228,18 +3228,23 @@ export class RoadSystem {
                 // a declined pair at 10–18 m of separation is legal R8 ground, but past 80 m from
                 // the node it would trip the 17.5 m parallel-runs floor — so a LONG hug merges
                 // (counted) even off a pinned approach. Seed 21's 175 m pair is the counted case.
-                // OWNER RULING 2026-09-07 — R8 WINS OVER R6 AT 10 m.
-                // R6 (2026-08-31) declined a merge that would overwrite a pinned approach whenever
-                // the pair kept 2*halfWidth of centre separation. R8 (2026-09-01, the next day) says
-                // "under 10 m centre-to-centre -> ONE surface; AT 10 m -> the decks share an edge".
-                // At exactly 10 m those disagree: R6 leaves two independent roads, R8 requires their
-                // decks to agree, and nothing enforced the second once the first had declined. Every
-                // junction-stitch violation lived in that gap — 10.0 to 12.1 m of centre separation,
-                // edges touching, decks a median 2.1 m apart. Owner ruled R8: touching edges are one
-                // surface, so the pair merges and T's out at the divergence instead of running as
-                // two roads sharing a cut wall. The decline now needs REAL daylight — one road width
-                // plus 4 m of actual ground between the pavements.
-                if (!xingsEarly.length && minSep >= 2 * HWn + 4 && fLw <= (C.mergePinDeclineMaxM ?? 80)) {
+                // R6 vs R8 AT EXACTLY 10 m — A KNOWN CONTRADICTION, DELIBERATELY LEFT STANDING.
+                // R6 (2026-08-31) declines here whenever the pair keeps 2*halfWidth of centre
+                // separation. R8 (2026-09-01, the next day) says "under 10 m centre-to-centre ->
+                // ONE surface; AT 10 m -> the decks share an edge". Those disagree at exactly 10 m:
+                // R6 leaves two independent roads, R8 requires their decks to agree, and nothing
+                // enforces the second once R6 has declined. junction-stitch's violations sit in
+                // that gap — 10.0-12.1 m of centre separation, edges touching, decks a median
+                // 2.1 m apart.
+                //
+                // The owner ruled R8 wins (2026-09-07) and the fix was built and measured: raising
+                // this bar to 2*HWn + 4 (real daylight, not just one road width) buys 3 stitch
+                // violations and 4 T promotions. That was the SMALLEST of the three changes in the
+                // set and the owner dropped it on the numbers, keeping the two that carry their
+                // weight. The ruling stands and is recorded here; the code has not been changed to
+                // match it, so anyone re-opening this should apply `minSep >= 2 * HWn + 4` rather
+                // than re-litigate which rule wins.
+                if (!xingsEarly.length && minSep >= 2 * HWn && fLw <= (C.mergePinDeclineMaxM ?? 80)) {
                     this._v2MergeSkipped('pin-decline', `${L2.ck} keeps its pinned approach @${nk} (R6 — overlap ${fLw.toFixed(0)} m at >=${minSep.toFixed(1)} m, no crossings)`)
                     continue
                 }
