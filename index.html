@@ -75,7 +75,11 @@
       flex-direction: column;
       align-items: center;
       gap: 12px;
-      z-index: 101;
+      /* ABOVE #main-menu (205). It was 101 — from when the only thing over the world was the pause
+         menu — so the menu's full-viewport gradient covered it: the dialog rendered dimmed and every
+         click on it landed on the gradient instead. Keyboard still reached the input (it is focused
+         on open), so the only way through was to type a seed and press Enter. */
+      z-index: 215;
       min-width: 220px;
     }
     #story-seed-modal .ss-title {
@@ -93,7 +97,7 @@
       font-size: 16px;
       text-align: center;
       padding: 6px 10px;
-      width: 160px;
+      width: 260px;   /* wide enough for the "leave blank for random" placeholder, which clipped at 160 */
     }
     #story-seed-modal .ss-actions { display: flex; gap: 10px; }
     #story-seed-modal button {
@@ -149,7 +153,7 @@
       align-items: center;
       justify-content: center;
       gap: 14px;
-      z-index: 210;
+      z-index: 220;   /* over the seed modal (215) — nothing outranks the boot splash */
     }
     #boot-loading .sl-title {
       color: #00ff88;
@@ -180,12 +184,6 @@
       font-size: 30px;
       letter-spacing: 9px;
       text-transform: uppercase;
-      margin-bottom: 2px;
-    }
-    #main-menu .mm-sub {
-      color: #6a7a88;
-      font-size: 11px;
-      letter-spacing: 2px;
       margin-bottom: 26px;
     }
     #main-menu button {
@@ -961,7 +959,7 @@
   <!-- PERF-30 boot splash. Painted the instant the HTML parses; taken down by the menu stage's
        first rendered frame (src/stage.js onFirstFrame), so it never lifts onto an empty canvas. -->
   <div id="boot-loading">
-    <div class="sl-title">rangersim</div>
+    <div class="sl-title">autos</div>
     <div class="sl-sub">warming up&hellip;</div>
   </div>
 
@@ -969,8 +967,7 @@
        buttons never live in WebGL, the truck never lives in the DOM. -->
   <div id="main-menu">
     <div id="mm-root">
-      <div class="mm-title">rangersim</div>
-      <div class="mm-sub">2002 ford ranger &middot; rwd &middot; open diff</div>
+      <div class="mm-title">autos</div>
       <button id="mm-freeroam">free roam</button>
       <button id="mm-story">story mode</button>
       <button id="mm-lab">testing lab</button>

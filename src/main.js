@@ -4762,9 +4762,21 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return
   if (document.pointerLockElement) return   // this Esc is the browser's lock-release
-  // FEAT-41: there is nothing to pause while the stage owns the screen — the sim is held, and the
-  // pause menu is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back
-  // out of the settings page and is otherwise inert until the world is handed back.
+  // FEAT-41: the seed dialog gets Esc FIRST, or it is a dead end. The input's own handler only
+  // fires while the input has focus, and the stage guard below would otherwise swallow the key —
+  // so a player who clicked away from the field had no way back out of the dialog at all.
+  // Same semantics as the cancel button: backing out of a REFUSED story seed leaves story mode,
+  // because the alternative is standing in a region the playability check just rejected.
+  const seedModal = document.getElementById('story-seed-modal')
+  if (seedModal && seedModal.style.display === 'flex') {
+    const wasRejected = storySystem.isSeedRejected()
+    _hideSeedModal()
+    if (wasRejected) storySystem.exit()
+    return
+  }
+  // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
+  // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
+  // settings page and is otherwise inert until the world is handed back.
   if (menuStage.isActive()) { document.getElementById('main-menu')?.classList.remove('settings'); return }
   const el = document.getElementById('pause-menu')
   if (!el) return
