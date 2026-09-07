@@ -11,9 +11,11 @@ severity: medium
 
 **1 415 lines out of `src/road.js`** (10 062 lines remain), across four commits with gates green
 between each. `npm run test:all` on the result: **67 of 68 gates green**, failing only
-`junction-stitch`, which is BUG-56's own bar and has been red throughout. `mission-network` went
-GREEN in the process — its stale section-0 cull control now reads zero, so it leaves the standing-red
-list after all, contrary to what the BUG-41 handoff expected.
+`junction-stitch`, which is BUG-56's own bar and has been red throughout.
+
+`mission-network` is also green in that run, but **not because of this ticket** — a concurrent
+session re-expressed its stale section-0 cull control in `79b9d45` and closed BUG-41. Recorded
+because the suite result above would otherwise read as this ticket's doing.
 
 | stage | deleted |
 |---|---|
