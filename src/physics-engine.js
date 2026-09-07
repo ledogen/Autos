@@ -36,6 +36,25 @@ export const GROUP_ALL     = 0xffffffffffffffffn
  *  matters in the per-shape filter test below. */
 function _group32 (group) { return Number(BigInt.asUintN(32, group ?? GROUP_STATIC)) }
 
+/** Obstacle size reported to the tire model as `sizeR`. NOT the same thing as _specReach: this is
+ *  a feel parameter the tire envelope consumes, so a sphere reports its own radius and ignores any
+ *  body-local offset, and shapes with no pair test wired report nothing (contactSphere falls back
+ *  to 0.3). Changing these values changes how the tire climbs obstacles. */
+function _specSizeR (spec) {
+  if (!spec) return undefined
+  switch (spec.shape) {
+    case 'sphere': return spec.radius
+    case 'cylinder': return Math.hypot(spec.radius, spec.height / 2 + Math.abs(spec.yOffset))
+    case 'hull': {
+      let m = 0
+      const p = spec.positions
+      for (let i = 0; i < p.length; i += 3) m = Math.max(m, Math.hypot(p[i], p[i + 1], p[i + 2]))
+      return m
+    }
+    default: return undefined
+  }
+}
+
 /** Bounding radius of a collider about its BODY origin — the cheap reject in contactSphere. */
 function _specReach (spec) {
   if (!spec) return Infinity
@@ -112,9 +131,11 @@ export class PhysicsEngine {
     this._nextHandle = 1
     this._heightfields = new Map()         // handle → b3HeightFieldData (owned, freed on destroy)
     this._meshDatas = new Map()            // handle → b3MeshData[] (owned, freed on destroy)
-    this._hulls = []                       // shared hull data to free on dispose
-    this._shapeHulls = new Map()           // shapeKey → b3HullData (for exact pair-test contacts)
-    this._shapeSizeR = new Map()           // shapeKey → bounding radius (tire obstacle-enveloping)
+    // Hull data and the tire size hint live on the BODY RECORD, indexed by shape slot — they used
+    // to be shapeKey-keyed Maps, which is precisely the surface BUG-60/61/62 all failed on: entries
+    // outliving their shape, or colliding with a recycled slot's key. Per-slot storage dies with the
+    // body and cannot alias. (_shapeToHandle has to stay a Map: engine contact callbacks hand us a
+    // shape id and nothing else.)
 
     // Scratch out-params — the bindings write into caller-provided arrays; reuse
     // to keep the per-frame allocation at zero on the hot read paths.
@@ -155,7 +176,7 @@ export class PhysicsEngine {
     const id = _b3.b3CreateBody(this._world, bd)
     const handle = this._nextHandle++
     this._bodies.set(handle, { id, shapes: [], specs: [], userData,
-      isStatic: type === 'static', groups: [], reach: [],
+      isStatic: type === 'static', groups: [], reach: [], hulls: [], sizeR: [],
       xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null })
     this._rev++
     return handle
@@ -166,14 +187,12 @@ export class PhysicsEngine {
     const rec = this._bodies.get(handle)
     if (!rec) return
     this._rev++
-    // BUG-60: prune ALL THREE shape-keyed maps, not just the handle lookup — replaceHullLocal
-    // already does. Keys are index1+generation and Box3D RECYCLES shape slots, so a stale
-    // _shapeHulls entry is hull data waiting to be read for a DIFFERENT, live shape.
-    for (const s of rec.shapes) {
-      const k = this._shapeKey(s)
-      this._shapeToHandle.delete(k)
-      this._shapeHulls.delete(k)
-      this._shapeSizeR.delete(k)
+    // BUG-60: a stale _shapeToHandle entry is a live shape's slot waiting to be misattributed once
+    // Box3D recycles it. BUG-62: the body owns its hull copies, so they go with it — this used to
+    // be the only reclaim path and it was dispose(), i.e. never during play.
+    for (let i = 0; i < rec.shapes.length; i++) {
+      this._shapeToHandle.delete(this._shapeKey(rec.shapes[i]))
+      this._freeHull(rec.hulls[i])
     }
     _b3.b3DestroyBody(rec.id)              // destroys attached shapes with it
     const hf = this._heightfields.get(handle)
@@ -210,18 +229,41 @@ export class PhysicsEngine {
     return sd
   }
 
-  _shapeKey (shapeId) { return shapeId.index1 * 0x10000 + shapeId.generation }
+  /** Shape identity for _shapeToHandle. The multiplier MUST exceed any reachable `generation`:
+   *  Box3D recycles shape slots and bumps the generation each time, and updateWheelRims rebuilds
+   *  four wheel-core hulls per step (~55/s per wheel while the suspension works), so a slot passed
+   *  the old 0x10000 multiplier in ~20 minutes of driving and slot n aliased slot n+1 (BUG-61).
+   *  2**32 keeps the product exact for index1 up to ~2M slots, well inside Number.MAX_SAFE_INTEGER. */
+  _shapeKey (shapeId) { return shapeId.index1 * 4294967296 + shapeId.generation }
 
   /** spec: a plain descriptor of the shape as CREATED (body-local geometry) — the debug
    *  wireframe source of truth (physics-debug.js). Never read by the engine. */
-  _register (handle, shapeId, spec = null, material = {}) {
+  _register (handle, shapeId, spec = null, material = {}, hull = null) {
     const rec = this._bodies.get(handle)
     rec.shapes.push(shapeId)
     if (spec) rec.specs.push(spec)
     rec.groups.push(_group32(material.group))
     rec.reach.push(_specReach(spec))
+    rec.hulls.push(hull)                   // BUG-62: this body owns it; freed with the slot
+    rec.sizeR.push(_specSizeR(spec))
     this._shapeToHandle.set(this._shapeKey(shapeId), handle)
     return shapeId
+  }
+
+  /**
+   * Release one slot's hull (BUG-62). Safe because the world COPIES hull data into its own database
+   * on shape creation — vendor/box3d README: "safe — world keeps its own copy" — so the copy we
+   * hold exists only for OUR narrow-phase in contactSphere. Mesh and heightfield data are NOT
+   * copied and are freed on their own paths; do not follow this pattern for those.
+   *
+   * b3DestroyHull and the handle's own .delete() are ALTERNATIVES, not a pair. Calling both is a
+   * double free that corrupts the WASM allocator, and it does not fail where you would notice it:
+   * 60 000 standalone hulls took both calls without complaint, but through this method the next
+   * b3CreateHull went out of bounds on the FIFTH wheel-core rebuild. Destroy only.
+   */
+  _freeHull (hull) {
+    if (!hull) return
+    _b3.b3DestroyHull(hull)
   }
 
   /** Cached body transform. The bindings' GetTransform is a WASM call; contactSphere reads every
@@ -247,7 +289,6 @@ export class PhysicsEngine {
     const rec = this._bodies.get(handle)
     const shapeId = this._register(handle, _b3.b3CreateSphereShape(rec.id, this._shapeDef(material),
       { center: [offset.x, offset.y, offset.z], radius }), { shape: 'sphere', radius, offset: { ...offset } }, material)
-    this._shapeSizeR.set(this._shapeKey(shapeId), radius)
     return rec.shapes.length - 1
   }
 
@@ -271,22 +312,21 @@ export class PhysicsEngine {
   replaceHullLocal (handle, shapeIndex, positions, material = {}) {
     const rec = this._bodies.get(handle)
     const oldId = rec.shapes[shapeIndex]
+    const oldHull = rec.hulls[shapeIndex]
     this._shapeToHandle.delete(this._shapeKey(oldId))
-    this._shapeHulls.delete(this._shapeKey(oldId))
-    this._shapeSizeR.delete(this._shapeKey(oldId))
     _b3.b3DestroyShape(oldId, false)
     const hull = _b3.b3CreateHull(positions)
-    this._hulls.push(hull)
     const shapeId = _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull)
     rec.shapes[shapeIndex] = shapeId
     rec.specs[shapeIndex] = { shape: 'hull', positions: Array.from(positions) }
     rec.groups[shapeIndex] = _group32(material.group)
     rec.reach[shapeIndex] = _specReach(rec.specs[shapeIndex])
+    rec.hulls[shapeIndex] = hull
+    rec.sizeR[shapeIndex] = _specSizeR(rec.specs[shapeIndex])
     this._shapeToHandle.set(this._shapeKey(shapeId), handle)
-    this._shapeHulls.set(this._shapeKey(shapeId), hull)
-    let m = 0
-    for (let i = 0; i < positions.length; i += 3) m = Math.max(m, Math.hypot(positions[i], positions[i + 1], positions[i + 2]))
-    this._shapeSizeR.set(this._shapeKey(shapeId), m)
+    // BUG-62: the shape this hull built is gone, so its copy goes too. This runs EVERY step per
+    // wheel — retaining them leaked ~1.5 KB a rebuild for as long as the player kept driving.
+    this._freeHull(oldHull)
     this._rev++
     return shapeId
   }
@@ -306,22 +346,16 @@ export class PhysicsEngine {
   addCylinder (handle, height, radius, material = {}, yOffset = 0, sides = 12) {
     const rec = this._bodies.get(handle)
     const hull = _b3.b3CreateCylinder(height, radius, yOffset, sides)
-    this._hulls.push(hull)                // hull data is shared/copied by the shape; free on dispose
-    const shapeId = this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
-      { shape: 'cylinder', height, radius, yOffset, sides }, material)
-      this._shapeHulls.set(this._shapeKey(shapeId), hull)   // narrow-phase pair tests need the data
-      this._shapeSizeR.set(this._shapeKey(shapeId), Math.hypot(radius, height / 2 + Math.abs(yOffset)))
+    this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
+      { shape: 'cylinder', height, radius, yOffset, sides }, material, hull)
   }
 
   /** Convex hull collider from a flat [x0,y0,z0, x1,…] position array. */
   addHull (handle, positions, material = {}) {
     const rec = this._bodies.get(handle)
     const hull = _b3.b3CreateHull(positions)
-    this._hulls.push(hull)
-    const shapeId = this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
-      { shape: 'hull', positions: Array.from(positions) }, material)
-      this._shapeHulls.set(this._shapeKey(shapeId), hull)   // narrow-phase pair tests need the data
-      { let m = 0; for (let i = 0; i < positions.length; i += 3) m = Math.max(m, Math.hypot(positions[i], positions[i + 1], positions[i + 2])); this._shapeSizeR.set(this._shapeKey(shapeId), m) }
+    this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
+      { shape: 'hull', positions: Array.from(positions) }, material, hull)
   }
 
   /**
@@ -530,7 +564,7 @@ export class PhysicsEngine {
             manifold = { normal: [-manifold.normal[0], -manifold.normal[1], -manifold.normal[2]], points: manifold.points }
           }
         } else if (type === _b3.b3ShapeType.b3_hullShape.value) {
-          const hull = this._shapeHulls.get(this._shapeKey(shapeId))
+          const hull = rec.hulls[si]
           if (!hull) continue
           // Express the sphere in the hull's (= body's) local frame: l = q⁻¹·(c − p)
           const qx = -bq[0], qy = -bq[1], qz = -bq[2], qw = bq[3]
@@ -572,7 +606,7 @@ export class PhysicsEngine {
           normal: { x: n[0], y: n[1], z: n[2] },
           depth: -deep.separation,
           contactPoint: { x: cp[0], y: cp[1], z: cp[2] },
-          sizeR: this._shapeSizeR.get(this._shapeKey(shapeId)) ?? 0.3,   // obstacle size for tire enveloping
+          sizeR: rec.sizeR[si] ?? 0.3,   // obstacle size for tire enveloping
         })
       }
     }
@@ -701,8 +735,7 @@ export class PhysicsEngine {
     this._heightfields.clear()
     for (const list of this._meshDatas.values()) for (const m of list) _b3.b3DestroyMesh(m)
     this._meshDatas.clear()
-    for (const h of this._hulls) _b3.b3DestroyHull(h)
-    this._hulls.length = 0
+    for (const rec of this._bodies.values()) for (const h of rec.hulls) this._freeHull(h)
     this._bodies.clear()
     this._shapeToHandle.clear()
   }

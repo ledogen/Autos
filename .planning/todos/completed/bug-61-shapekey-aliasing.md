@@ -1,12 +1,27 @@
 ---
 id: BUG-61
 type: bug
-status: pending
+status: done
 severity: minor
 opened: 2026-09-07
+closed: 2026-09-07
 source: split out of BUG-60 by its handoff — one of three defects found in the adapter seam, and the only one of the three that has not yet caused an observed failure
 relates: BUG-60, BUG-62, FEAT-48
 ---
+
+> ## RESOLVED 2026-09-07 (folded into the BUG-60 branch)
+>
+> `_shapeKey` now multiplies by `2**32` instead of `0x10000`, so a recycled slot's generation cannot
+> reach the next slot's key (exact for index1 up to ~2M, well inside `Number.MAX_SAFE_INTEGER`).
+>
+> Two of the three maps it fed are **gone entirely**: `_shapeHulls` and `_shapeSizeR` moved onto the
+> body record, indexed by shape slot, so they die with the body and cannot alias at all.
+> `_shapeToHandle` survives because engine contact callbacks hand us a shape id and nothing else.
+>
+> Gated in `test/collider-seam-churn.mjs`, which sweeps the 65535/65536 boundary against `_shapeKey`
+> **as the pure function it is**. An earlier draft drove a real slot past 65536 generations with
+> ~70k engine rebuilds; that is slow and stresses the engine rather than the invariant, and it was
+> what surfaced the double free recorded in BUG-62.
 
 # BUG-61: `_shapeKey` aliases silently once a shape slot's generation passes 65535
 

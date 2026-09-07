@@ -1,12 +1,35 @@
 ---
 id: BUG-62
 type: bug
-status: pending
+status: done
 severity: major
 opened: 2026-09-07
+closed: 2026-09-07
 source: split out of BUG-60 by its handoff — measured while fixing it; this is the one that leaks continuously while DRIVING, not just on the menu stage
 relates: BUG-60, BUG-61, FEAT-48, QUAL-25
 ---
+
+> ## RESOLVED 2026-09-07 (folded into the BUG-60 branch)
+>
+> **Ownership settled from the vendored README, which states it outright:** *"Hull data IS copied
+> into the world's internal database on shape creation, so the handle can be destroyed immediately
+> after"* — with the explicit contrast that mesh, compound and heightfield data are NOT copied (the
+> adapter already treats those correctly). So freeing our copy is not a use-after-free.
+>
+> **The leak was the global `this._hulls` array holding a hard reference to every hull forever.**
+> That array is deleted. Hull data now lives on the body record, one per live hull shape, freed when
+> the slot is replaced (`replaceHullLocal`) or the body dies (`destroyBody`). Measured through the
+> adapter on a dynamic body, driving the wheel cores exactly as `updateWheelRims` does:
+> **400 000 rebuilds per core (~2 hours of driving) with RSS flat at ~32 MB and 4 hulls held.**
+>
+> **CORRECTION to this ticket's own acceptance note — `b3DestroyHull` and the handle's `.delete()`
+> are ALTERNATIVES, not a pair.** Calling both is a double free that corrupts the WASM allocator.
+> It hides well: 60 000 standalone hulls accepted both calls without complaint and appeared to be
+> the tidiest option by RSS, but through the adapter the next `b3CreateHull` went out of bounds on
+> the **fifth** wheel-core rebuild. The handoff's warning was exactly right. Destroy only.
+>
+> `dispose()` was doing the right thing all along (`b3DestroyHull` only); it was simply the only
+> reclaim path, i.e. never during play.
 
 # BUG-62: every hull `replaceHullLocal` ever built is retained until `dispose()`
 
