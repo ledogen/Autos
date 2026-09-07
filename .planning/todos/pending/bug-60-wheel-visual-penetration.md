@@ -64,6 +64,10 @@ Owner's read is that the conversion layer is misbehaving; the measurements above
 refute it — they establish that whatever is happening is deterministic, contact-complete, and inside
 the soft band, which rules out the cheap explanations.
 
+> **HANDOFF: `.planning/handoffs/HANDOFF-2026-09-06-BUG-60-collider-seam.md`** — reproducer,
+> baseline numbers, the patch, the verification bar, and the dead ends already burned.
+> Reproduce with `node test/bug60-rock-contact.mjs` (needs `npm run dev`).
+
 ## ROOT CAUSE FOUND 2026-09-06 — `destroyBody` leaks shape-keyed maps; the rock's collider stops answering
 
 **Owner was right: it is the adapter.** Earlier passes on this ticket chased the wrong thing (tire
