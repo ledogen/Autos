@@ -2,10 +2,11 @@
  * src/stage.js — MenuStage: the sim in a bottle (FEAT-41).
  *
  * The live 3D scene behind the main menu, and — the reason it earns its keep — the LOADING screen.
- * A black void with a ground plane and one rock; the rock drops first, the hero truck is dropped 18
- * inches so its front-left wheel lands ON that rock, and once the suspension settles a few more fall
- * into the bed and squat the rear. No animation curves anywhere: the real Pacejka/strut stack does
- * all of it, and the rock under the tire is a real 50 kg body that takes the load.
+ * A black void with a ground plane and one part-buried rock. The hero truck is dropped 18 inches so
+ * its front-left wheel lands ON that rock, and once the suspension settles a few more fall into the
+ * bed and squat the rear. No animation curves anywhere: the real Pacejka/strut stack does all of it,
+ * and the truck stays cocked on the rock because the rock is static geometry, not a prop it can
+ * shove aside.
  *
  * WHY IT IS A SECOND WORLD, NOT A CORNER OF THE REAL ONE
  * The scene has to keep moving while the real world is being reseeded, routed and carved — that is
@@ -30,7 +31,7 @@
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { createPhysicsEngine, GROUP_TERRAIN } from './physics-engine.js'
+import { createPhysicsEngine, GROUP_TERRAIN, GROUP_STATIC } from './physics-engine.js'
 import { stepPhysics, createVehicleChassis } from './physics.js'
 import { createVehicleModel } from './vehicle-model.js'
 import { makeVehicleState } from './vehicle-state.js'
@@ -39,15 +40,24 @@ import { OFF as IGN_OFF } from './ignition.js'
 import { DebrisSystem } from './debris.js'
 
 const PHYSICS_DT = 1 / 60
-const ZERO3 = { x: 0, y: 0, z: 0 }   // reused for the pre-roll velocity clamp; never mutated
 
 // ── The beat sheet (FEAT-41, owner-specified) ────────────────────────────────────────────────────
 const DROP_H      = 0.46    // m — 18 in, the specified drop height above flat ground
 const TRUCK_YAW   = 0.26    // rad (~15°) — off-axis so the camera reads three-quarter, not side-on
-const ROCK_SPAWN_H = 0.25   // m — the under-tire rock is DROPPED, not placed: settling it on the
-                            // plane is one less made-up number than computing its rest height
-const RELEASE_AT  = 0.60    // s — the truck hangs at drop height until the rock has landed and gone
-                            // still, so the front-left wheel meets a rock that is already at rest
+// The rock the front-left wheel lands on. STATIC and part-buried, like every other rock in the
+// world — a boulder set in the ground, not a cobble lying on it. Radii are the blob's unperturbed
+// half-extents; PROUD is how much of it stands above the plane.
+const ROCK_R      = 0.62    // m — horizontal radius; 1.24 m across, so a 0.74 m tire sits ON it
+const ROCK_RY     = 0.45    // m — vertical radius before the cap below
+const ROCK_FLAT   = 0.70    // fraction of ROCK_RY at which the top is sheared flat. A DOMED rock is
+                            // a slope, and the stage truck's front wheels free-wheel (the handbrake
+                            // is rear-only, correctly) — so on a dome the wheel rolls off over about
+                            // twenty seconds and the truck settles flat. A flat cap ~0.87 m across
+                            // is a real seat: the contact normal is vertical, so there is nothing
+                            // pulling the truck anywhere. Clamping y is exact for the collider too —
+                            // intersecting a convex solid with a half-space leaves it convex, so the
+                            // hull of the clamped points is still the surface being drawn.
+const ROCK_PROUD  = 0.26    // m — height of that cap above the plane; the rest is buried
 const ROCKS_AT    = 2.2     // s of sim time after release — "once the suspension settles (~2 s)"
 const ROCK_N      = 3
 const ROCK_GAP    = 0.20    // s between rocks: staggered so three 50 kg impulses cannot stack
@@ -86,6 +96,7 @@ const MAX_STEPS_PER_FRAME = 4
 
 // ── Palette (ART-STYLE.md: flat colours, no textures, faceted, desaturated nature) ───────────────
 const COL_VOID   = 0x0a0d11   // the empty stage around the plane
+const COL_ROCK   = 0x6b6b6e   // cool grey stone — the one thing on the plane, so it carries the shot
 const COL_GROUND = 0x000000   // black (owner, 2026-09-06) — the truck reads as lit object in a void,
                               // and its shadow simply stops existing, which is the point
 
@@ -96,6 +107,19 @@ const COL_GROUND = 0x000000   // black (owner, 2026-09-06) — the truck reads a
 // would survive into the world for the rest of the session.
 const STAGE_EXPOSURE = 1.45   // lifted when the floor went black: a black plane returns no bounce,
                               // so the truck's lower half lost the fill it used to get for free
+
+/** Collapse a non-indexed position array to its distinct points (1 µm buckets). */
+function _uniquePoints (arr) {
+  const seen = new Set(), out = []
+  for (let i = 0; i < arr.length; i += 3) {
+    const x = arr[i], y = arr[i + 1], z = arr[i + 2]
+    const k = `${Math.round(x * 1e6)},${Math.round(y * 1e6)},${Math.round(z * 1e6)}`
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(x, y, z)
+  }
+  return out
+}
 
 export class MenuStage {
   /**
@@ -214,7 +238,7 @@ export class MenuStage {
 
   /**
    * The ground: one black plane and the static slab under it. Nothing else — the shape the front
-   * wheel lands on is a real rock body now (see _placeUnderTireRock), not a sculpted heightfield.
+   * wheel lands on is a static, part-buried rock body (see _buildRock), not a sculpted heightfield.
    */
   _buildGround () {
     const plane = new THREE.Mesh(
@@ -232,9 +256,61 @@ export class MenuStage {
     this._rockSpot.y = 0
 
     // Collider: a slab whose top face is y=0 (the plane). The WHEELS never use it — they ride the
-    // analytic _queryContacts below — it is here so the rocks have something to land on.
+    // analytic _queryContacts below — it is here so the bed rocks have something to land on.
     const ground = this._engine.createBody({ type: 'static', position: { x: 0, y: -5, z: 0 }, userData: { kind: 'stage-ground' } })
     this._engine.addBox(ground, { x: 90, y: 5, z: 90 }, { friction: 0.9, group: GROUP_TERRAIN })
+
+    this._buildRock()
+  }
+
+  /**
+   * The rock under the front-left tire: a one-off blob, STATIC, part-buried (owner, 2026-09-06).
+   *
+   * WHY IT IS A ONE-OFF AND NOT A DEBRIS PROP. It has to be immovable, and a debris rock cannot be:
+   * stepPhysics's wheel query (qcPlus) unions only DYNAMIC engine bodies, so a static prop is
+   * invisible to a tire. A dynamic one IS visible — and squirts straight out from under a
+   * free-rolling front wheel, which is what the first attempt did. The stage owns its own
+   * _queryContacts, so it can run the static contact test itself (see below) and have both: a rock
+   * that cannot move and a tire that can climb it.
+   *
+   * The geometry IS the collider — the same vertex array feeds the mesh and addHull, so MESH ==
+   * PHYSICS holds exactly. That is why the radial perturbation is kept gentle: at this amplitude a
+   * smooth star-shaped blob is convex, so the hull of its vertices is the surface it is drawn as.
+   */
+  _buildRock () {
+    // Icosahedron, one subdivision: 80 flat faces, the right density for a faceted low-poly rock
+    // (ART-STYLE.md — detail as geometry, never smooth-shaded). Non-indexed, so vertices are
+    // duplicated per face: the perturbation is a function of DIRECTION, not of vertex index, or the
+    // copies of a shared corner would move apart and tear the surface open.
+    const geo = new THREE.IcosahedronGeometry(1, 1)
+    const pos = geo.attributes.position
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i)
+      const k = 1 + 0.15 * Math.sin(3.1 * x + 1.7) * Math.cos(2.3 * z - 0.9) + 0.09 * Math.sin(5.1 * y)
+      pos.setXYZ(i, x * k * ROCK_R, Math.min(y * k * ROCK_RY, ROCK_RY * ROCK_FLAT), z * k * ROCK_R)
+    }
+    geo.computeVertexNormals()
+
+    const mesh = new THREE.Mesh(geo,
+      new THREE.MeshStandardMaterial({ color: COL_ROCK, roughness: 1, flatShading: true }))
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    // BURIED: the body sits low enough that only ROCK_PROUD of it stands above the plane. The
+    // plane has no depth to hide the rest in, but it is opaque and the camera never goes below it.
+    mesh.position.set(this._rockSpot.x, ROCK_PROUD - ROCK_RY * ROCK_FLAT, this._rockSpot.z)
+    this.scene.add(mesh)
+
+    this._rockBody = this._engine.createBody({
+      type: 'static',
+      position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
+      userData: { kind: 'stage-rock' },
+    })
+    // UNIQUE vertices only. The geometry is non-indexed, so pos.array carries every corner once per
+    // face it belongs to — 240 points for 80 faces, where the shape has 42. Handing all 240 to
+    // b3CreateHull produced a hull that only reported contacts once a query sphere was deep inside
+    // it: shallow overlaps, which is every overlap a tire rolling onto a rock has, came back empty
+    // and the truck settled straight through it. Deduped it is the same solid, described honestly.
+    this._engine.addHull(this._rockBody, _uniquePoints(pos.array), { friction: 0.95, group: GROUP_STATIC })
   }
 
   _buildTruck () {
@@ -249,19 +325,31 @@ export class MenuStage {
     this._model.setHeadlightMode(0)
     this._model.setNightFactor(0)   // the stage is a lit void, not a time of day — never night
 
-    // Flat-plane ground query. The world's version sweeps a 32-sample tire envelope because it has
-    // road EDGES to climb; this surface is one plane, where every sample agrees. The ROCK is not in
-    // here and does not need to be: stepPhysics's qcPlus already unions this with the engine's
-    // dynamic bodies (contactSphere, GROUP_DEBRIS), which is exactly the FEAT-36 coupling that lets
-    // a wheel climb a rock. That is why the under-tire shape is a body and not a heightfield bump.
+    // Ground query: the flat plane, PLUS the static rock.
+    //
+    // The plane needs no tire envelope — the world's version sweeps 32 samples because it has road
+    // EDGES to climb, and one plane has none. The rock is the opposite: it is exactly the kind of
+    // shape an envelope exists for, so it is not approximated here at all. contactSphere runs the
+    // ENGINE's own narrow-phase hull-vs-sphere test against the real collider, which is the same
+    // machinery stepPhysics uses for debris — the only difference is that this call does not pass
+    // dynamicOnly, which is precisely why a STATIC rock is reachable here and is not reachable from
+    // qcPlus. Depth is continuous through the whole overlap and the normal never degenerates.
+    //
+    // `body` is stripped from the hits: carrying it would send them down physics.js's dynamic-support
+    // path (relative velocity, depthRate) for a body that is bolted to the world. `sizeR` is kept —
+    // it is the obstacle scale the tire envelope wants.
     this._queryContacts = (cx, cy, cz, r) => {
+      const hits = []
       const depth = r - cy
-      if (depth <= 0) return []
-      return [{
-        normal: new THREE.Vector3(0, 1, 0),
-        depth,
-        contactPoint: new THREE.Vector3(cx, 0, cz),
-      }]
+      if (depth > 0) {
+        hits.push({ normal: new THREE.Vector3(0, 1, 0), depth, contactPoint: new THREE.Vector3(cx, 0, cz) })
+      }
+      const rock = this._engine.contactSphere({ x: cx, y: cy, z: cz }, r, { collidesWith: GROUP_STATIC })
+      for (let i = 0; i < rock.length; i++) {
+        const h = rock[i]
+        hits.push({ normal: h.normal, depth: h.depth, contactPoint: h.contactPoint, sizeR: h.sizeR })
+      }
+      return hits
     }
   }
 
@@ -330,8 +418,6 @@ export class MenuStage {
     this._simT = 0
     this._acc = 0
     this._rocksDone = 0
-    this._rockBody = null
-    this._rockPose = null
   }
 
   // ── Per-frame ──────────────────────────────────────────────────────────────────────────────────
@@ -341,19 +427,9 @@ export class MenuStage {
     this._acc += dt
     let n = 0
     while (this._acc >= PHYSICS_DT && n < MAX_STEPS_PER_FRAME) {
-      this._placeUnderTireRock()
-      this._pinRock()
-      if (this._simT < RELEASE_AT) {
-        // PRE-ROLL. The truck is HELD at drop height — re-asserted into the engine each step, since
-        // its body is dynamic and would otherwise fall while stepPhysics is not driving it — while
-        // the world steps on its own so the under-tire rock lands and goes still. Without this the
-        // truck and the rock arrive together and the wheel meets something still bouncing.
-        this._engine.setTransform(this._chassis, this._vs.position, this._vs.quaternion)
-        this._engine.setVelocity(this._chassis, ZERO3, ZERO3)
-        this._engine.step(PHYSICS_DT, RANGER_PARAMS.engineSubsteps ?? 8)
-      } else {
-        stepPhysics(this._vs, RANGER_PARAMS, PHYSICS_DT, this._queryContacts, this._ctx)
-      }
+      // No pre-roll any more: the rock is part of the ground, built once and already there, so the
+      // truck can be released on the first step.
+      stepPhysics(this._vs, RANGER_PARAMS, PHYSICS_DT, this._queryContacts, this._ctx)
       this._simT += PHYSICS_DT
       this._acc -= PHYSICS_DT
       n++
@@ -364,47 +440,6 @@ export class MenuStage {
     this._model.syncMeshesToState(this._vs)
     this._debris.update()
     this._updateCamera(dt)
-  }
-
-  /**
-   * The first beat: the rock the front-left wheel is going to land on. Dropped from a few
-   * centimetres rather than placed, so its rest height is the engine's answer and not a number I
-   * made up; RELEASE_AT holds the truck until it has settled. Retried every step while spawn()
-   * returns null — on a cold boot the rock GLB may still be in flight.
-   */
-  _placeUnderTireRock () {
-    if (this._rockBody) return
-    this._rockBody = this._debris.spawn('rock',
-      { x: this._rockSpot.x, y: ROCK_SPAWN_H, z: this._rockSpot.z }, { x: 0, y: 0, z: 0 }) || null
-    // spawn() hands every rock a random ±3 rad/s tumble — right for one thrown out of a truck bed,
-    // wrong for this one, which has a spot to land on: it rolled clear of the wheel before settling
-    // and the truck came down flat beside it. Zeroed here rather than made an option on spawn(),
-    // because "the thrown ones tumble" is the correct default for the system that owns it.
-    if (this._rockBody) this._engine.setVelocity(this._rockBody, ZERO3, ZERO3)
-  }
-
-  /**
-   * PIN the under-tire rock where it settled. It has to stay a DYNAMIC body — stepPhysics only
-   * unions the engine's dynamic bodies into the wheel query (qcPlus, `dynamicOnly: true`), and that
-   * union is the entire reason a wheel can climb a rock at all — but a loose 50 kg cobble under a
-   * FREE-ROLLING front wheel (the handbrake is rear-only, correctly) gets squirted straight out,
-   * and the truck settles flat with the rock lying beside it.
-   *
-   * So it is held, not weighted. Inflating its density to make it immovable would be a lie about a
-   * rock this size in a sim whose whole premise is that the numbers are honest; re-asserting the
-   * pose each step says the true thing instead — this rock is SET IN THE GROUND, not lying on it.
-   * The truck still takes its full reaction from the contact; only the rock's own response is
-   * suppressed, which is what the ground under a buried rock does.
-   */
-  _pinRock () {
-    if (!this._rockBody) return
-    if (!this._rockPose) {
-      if (this._simT < RELEASE_AT) return   // still settling; let the engine choose where it lands
-      this._rockPose = { p: new THREE.Vector3(), q: new THREE.Quaternion() }
-      this._engine.getTransform(this._rockBody, this._rockPose.p, this._rockPose.q)
-    }
-    this._engine.setTransform(this._rockBody, this._rockPose.p, this._rockPose.q)
-    this._engine.setVelocity(this._rockBody, ZERO3, ZERO3)
   }
 
   /**

@@ -79,11 +79,16 @@ Owner pass 2026-09-06 (second round):
   in-flight `compileAsync` and disposes materials under it.
 - **The camera snaps on hand-off** (`snapCamera()` in `src/camera.js`) instead of springing onto the
   truck over ~1 s, which read as the camera arriving rather than the world simply being there.
-- **Floor is black and the mound is gone** — the front-left wheel now lands on a real rock body.
-  It is pinned where it settles rather than made artificially heavy: the wheel query only unions
-  DYNAMIC engine bodies (`qcPlus`), so it has to stay dynamic, but a loose 50 kg cobble under a
-  free-rolling front wheel squirts straight out. Holding its pose says "set in the ground"; a fake
-  density would have said something untrue about a rock that size.
+- **Floor is black and the mound is gone** — the front-left wheel lands on a STATIC, part-buried
+  rock (owner ruling; a one-off blob, explicitly sanctioned over making it work through the prop
+  path). The reason it is a one-off: `stepPhysics`'s wheel query (`qcPlus`) unions only DYNAMIC
+  engine bodies, so a static prop is invisible to a tire, and a dynamic one gets squirted out from
+  under a free-rolling front wheel. The stage owns its own `_queryContacts`, so it runs the engine's
+  hull-vs-sphere narrow phase itself WITHOUT `dynamicOnly` — same machinery, static bodies reachable.
+  Two things had to be right for it to hold: the hull must be built from UNIQUE vertices (the
+  non-indexed 240-point array produced a hull that only reported contacts at deep overlap, so the
+  truck settled straight through it), and the top must be sheared FLAT — on a dome the free-rolling
+  front wheel walks off over ~20 s. With both, the pose is stable to the millimetre over 30 s.
 
 **Still open on this ticket:** §2 settings/options (video/quality, audio, controls, the FEAT-39
 assists page), §3's pause-discipline work beyond the sim hold, §4 the UI-chrome/visual-language pass
