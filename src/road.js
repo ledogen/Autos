@@ -623,6 +623,21 @@ function _interpArcTable(key, val, k) {
  */
 export const CHUNK_SIZE = 64
 
+/**
+ * Which router built the roads this build drives on. Stamped into every calibration run export
+ * (`rangersim-run-export/2`, mission.js/paper-route.js) for the same reason `par_ref` carries
+ * PAR_SLACK: a drive recorded on different ROADS is a drive against a different standard, and a
+ * corpus that cannot tell the two apart lets a future refit silently mix them.
+ *
+ * That is not hypothetical — it is BUG-41 Stage 2. PAR_REF was fitted 2026-08-16 against human
+ * drives on v1 roads; router v2 took over the whole network 2026-08-18 (`7cff01d`) with measurably
+ * different geometry (QUAL-28: 10.4% vs 5.2% of length in >200 m straights, 17 switchbacks against
+ * 52). Par's dominant dial is corner speed, and v2 changed the corners — so the v1 corpus in `runs/`
+ * and a v2 corpus must never be fitted together. Bump this whenever the router's OUTPUT geometry
+ * changes enough that old drives stop describing the roads being priced.
+ */
+export const ROAD_ROUTER_VERSION = 'v2'
+
 // ── PROTOTYPE constants (valley-following streaming trunk — spike) ─────────────
 // Non-destructive experimental routing for the Phase-8 redesign. Endless roads as a
 // deterministic chain of valley-anchor connections, streamed around the view like terrain.
@@ -797,9 +812,6 @@ function _coarseHeight(wx, wz, noiseCoarse, params) {
  * new RoadSystem(ws, params, mockCoarseHeight) — replaces the simplex closure
  * with the provided function, allowing switchback tests on synthetic terrain.
  */
-// Elevation sampler over a graded edge polyline: centerline arc s → routed design Y.
-// `clArc` is the (monotone) centerline arc position of each polyline point, so this is the exact
-// inverse of the sampling in _assembleGraphEdges. Used by edgeParData → par oracle (FEAT-29).
 // ── FEAT-76: PROMOTED node identity ────────────────────────────────────────────────────────────
 // A promoted node is the point where a side road departs an existing trunk — the T that replaces
 // the old wye. It is NOT a blue-noise site, so it has no site id; it needs a synthetic one that
@@ -818,31 +830,36 @@ const PROMOTED_K = -1
 const _promotedId = (x, z) => [Math.round(x * 1000), Math.round(z * 1000), PROMOTED_K]
 const _isPromotedId = (id) => !!id && id.length === 3 && id[2] === PROMOTED_K
 
-// BUG-53: points-backed stand-in for a trimmed run's centerline — .pointAt(s)/.length in the
-// same clArc domain _gradeSampler uses, interpolating the REGISTERED (spliced) polyline.
-function _pointSampler(points, clArc) {
-    const n = clArc.length
+// Samplers over a graded edge polyline: arc s → position / routed design Y.
+// `arc` is ANY monotone per-point arc array — the caller picks the domain. edgeParData passes
+// `clArc` (the routed centerline arc, exact inverse of the sampling in _assembleGraphEdges) for a
+// plain run and `polyCum` (the driven chord-sum arc) for a merged one; see the BUG-41 invariant
+// there. Used by edgeParData → par oracle (FEAT-29).
+// BUG-53: points-backed stand-in for a trimmed run's centerline — .pointAt(s)/.length over the
+// REGISTERED (spliced) polyline, in whichever domain _gradeSampler is given.
+function _pointSampler(points, arc) {
+    const n = arc.length
     return {
-        length: clArc[n - 1],
+        length: arc[n - 1],
         pointAt(s) {
-            if (s <= clArc[0]) return { x: points[0].x, z: points[0].z }
-            if (s >= clArc[n - 1]) return { x: points[n - 1].x, z: points[n - 1].z }
+            if (s <= arc[0]) return { x: points[0].x, z: points[0].z }
+            if (s >= arc[n - 1]) return { x: points[n - 1].x, z: points[n - 1].z }
             let lo = 0, hi = n - 1
-            while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (clArc[mid] <= s) lo = mid; else hi = mid }
-            const span = clArc[hi] - clArc[lo]
-            const t = span > 1e-9 ? (s - clArc[lo]) / span : 0
+            while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (arc[mid] <= s) lo = mid; else hi = mid }
+            const span = arc[hi] - arc[lo]
+            const t = span > 1e-9 ? (s - arc[lo]) / span : 0
             return { x: points[lo].x + (points[hi].x - points[lo].x) * t, z: points[lo].z + (points[hi].z - points[lo].z) * t }
         },
         tangentAt(s) {
-            const a = this.pointAt(Math.max(clArc[0], s - 2))
-            const b = this.pointAt(Math.min(clArc[n - 1], s + 2))
+            const a = this.pointAt(Math.max(arc[0], s - 2))
+            const b = this.pointAt(Math.min(arc[n - 1], s + 2))
             const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz)
             return l > 1e-9 ? { x: dx / l, z: dz / l } : { x: 1, z: 0 }
         },
         curvatureAt(s) {
             const h = 3
-            const t0 = this.tangentAt(Math.max(clArc[0] + h, s - h))
-            const t1 = this.tangentAt(Math.min(clArc[n - 1] - h, s + h))
+            const t0 = this.tangentAt(Math.max(arc[0] + h, s - h))
+            const t1 = this.tangentAt(Math.min(arc[n - 1] - h, s + h))
             const cross = t0.x * t1.z - t0.z * t1.x
             const dot = Math.max(-1, Math.min(1, t0.x * t1.x + t0.z * t1.z))
             return Math.atan2(cross, dot) / (2 * h)
@@ -850,16 +867,16 @@ function _pointSampler(points, clArc) {
     }
 }
 
-function _gradeSampler(points, clArc) {
-    const n = clArc.length
+function _gradeSampler(points, arc) {
+    const n = arc.length
     return (s) => {
         if (n === 0) return 0
-        if (s <= clArc[0]) return points[0].y
-        if (s >= clArc[n - 1]) return points[n - 1].y
+        if (s <= arc[0]) return points[0].y
+        if (s >= arc[n - 1]) return points[n - 1].y
         let lo = 0, hi = n - 1
-        while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (clArc[mid] <= s) lo = mid; else hi = mid }
-        const span = clArc[hi] - clArc[lo]
-        const t = span > 1e-9 ? (s - clArc[lo]) / span : 0
+        while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (arc[mid] <= s) lo = mid; else hi = mid }
+        const span = arc[hi] - arc[lo]
+        const t = span > 1e-9 ? (s - arc[lo]) / span : 0
         return points[lo].y + (points[hi].y - points[lo].y) * t
     }
 }
@@ -1861,18 +1878,37 @@ export class RoadSystem {
         // yields a different surface-quality series for the same stretch of tarmac.
         // BUG-53: a MERGED run's primitive centerline is a stale record wherever its points left it
         // (the ceded strand follows the winner; the taper band blends off it) — hand consumers a
-        // points-backed sampler in the same arc domain instead, so GPS/mission lines follow the road
-        // that actually exists. The shim covers the consumed surface: .pointAt(s) and .length
-        // (mission.js/gps.js/poi.js).
-        const clOf = (hit) => hit.offCurveSpans ? _pointSampler(hit.points, hit.clArc) : hit.centerline
-        if (this._network.has(key)) {
-            const hit = this._network.get(key)
-            return { key, centerline: clOf(hit), gradeAt: _gradeSampler(hit.points, hit.clArc), cededSpans: hit.cededSpans }
+        // points-backed sampler instead, so GPS/mission lines follow the road that actually exists.
+        // The shim covers the consumed surface: .pointAt(s) and .length
+        // (mission.js/gps.js/poi.js/paper-route.js).
+        //
+        // BUG-41: that shim originally kept the PRE-MERGE centerline arc (`clArc`) so existing `s`
+        // values would keep their meaning. That was the defect. A merged run's points follow the
+        // winner's course, so its clArc is no longer the arc of the road underneath them — measured
+        // on seed 6, 10 of 52 runs off by 2.10% (p50) to 6.80% (33.3 m), which made par price a road
+        // SHORTER than the one driven, and par is the FEAT-53 payout denominator. Worse, the
+        // cededSpans returned alongside are built from polyCum (see _v2MergeRuns), so the object
+        // handed out spoke two arc domains at once — poi.js's ceded-road rejection compared them
+        // directly with a ±20 m tolerance against a ≤33 m error.
+        //
+        // INVARIANT: what this returns speaks ONE arc domain throughout, and it is the run's DRIVEN
+        // arc — the same domain as runProfile().gradeY, the carve, the ribbon, the physics and every
+        // span record. For a merged run that is polyCum. For a plain run the analytic centerline IS
+        // that road (its length matches clArc's end exactly, and polyCum — the chord sum of its own
+        // samples — agrees to 0.040% worst case), so it is kept: its curvatureAt is exact, and par
+        // integrates curvature as its dominant term. Do not "unify" that to a sampler; the ±3 m
+        // finite difference would smear curvature on every plain run to buy 0.04%.
+        const clOf = (hit) => hit.offCurveSpans ? _pointSampler(hit.points, hit.polyCum) : hit.centerline
+        const arcOf = (hit) => hit.offCurveSpans ? hit.polyCum : hit.clArc
+        const par = (k, hit) => {
+            // runProfile indexes arcPos from -(arcOrigin), so a non-zero origin would shift the
+            // driven arc out from under the sampler and silently restore the bug. Measured 0 on
+            // every run; fail loudly rather than assume it stays that way.
+            if (hit.arcOrigin) throw new Error(`BUG-41: run ${k} has arcOrigin ${hit.arcOrigin}; edgeParData assumes 0`)
+            return { key: k, centerline: clOf(hit), gradeAt: _gradeSampler(hit.points, arcOf(hit)), cededSpans: hit.cededSpans }
         }
-        if (this._network.has(alt)) {
-            const hit = this._network.get(alt)
-            return { key: alt, centerline: clOf(hit), gradeAt: _gradeSampler(hit.points, hit.clArc), cededSpans: hit.cededSpans }
-        }
+        if (this._network.has(key)) return par(key, this._network.get(key))
+        if (this._network.has(alt)) return par(alt, this._network.get(alt))
         // (QUAL-24 chain-span view removed with the merge — runs are 1:1 with edges.)
         // Dirless on purpose: this fallback only touches never-registered edges (no settled
         // adjacency to derive deg-2 heading pins from). If the edge later registers, the

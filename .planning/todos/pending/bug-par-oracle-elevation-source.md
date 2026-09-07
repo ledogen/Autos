@@ -252,32 +252,163 @@ FEAT-76 is corridor/plan-layer, this is the par/mission consumer side. Own workt
 
 Do NOT take a carve-side fix for Stage 1: that changes geometry, and geometry is FEAT-76's subject.
 
+---
+
+# STAGE 1 — BUILT 2026-09-06 (`feature/bug41`, worktree `CarGame-bug41`)
+
+## The ruling: (a), re-parameterise onto `polyCum`
+
+Owner, 2026-09-06. Two findings made (b) untenable — the codebase had already moved to `polyCum`
+everywhere else, and the split domain was causing a second, unmeasured defect:
+
+- `_buildRunProfile` (`src/road.js`) accumulates `arcPos` from the actual XZ segment lengths of
+  `points`, so `runProfile` — and therefore the carve, ribbon and physics — is `polyCum`-domain.
+- Every span record (`cededSpans` / `offCurveSpans` / `departureSpans`) is built from `polyCum`.
+- `edgeParData` was the **only** remaining `clArc` speaker. This was a correction toward the
+  existing convention, not a new one.
+- **`arcOrigin` is 0.000 on all 52 runs**, so `runProfile`'s domain equals `polyCum` exactly. There
+  is now an explicit throw if that ever stops being true, rather than a silent re-introduction.
+
+## What shipped
+
+`edgeParData` returns ONE arc domain throughout, and it is the run's driven arc. Merged run →
+`polyCum` for both the point sampler and the grade sampler. Plain run → the analytic centerline is
+kept: measured, its length matches `clArc`'s end **exactly**, `polyCum` agrees to 0.040% worst case,
+and its `curvatureAt` is exact where a sampler's ±3 m finite difference is not. Par integrates
+curvature as its dominant term, so unifying that would have smeared all 42 plain runs to buy 0.04%.
+
+**A second live defect fell out of the same cause.** `poi.js` compared an `s` from the `clArc`
+sampler against `polyCum`-domain `cededSpans` through a ±20 m tolerance — against an error up to
+33 m. That is the guard stopping a lay-by pad being seated on ceded road (the winner's pavement), so
+it could seat a pad where the winner's own edge also seats one. Same-domain now.
+
+### Measured, seed 6 @ (4500,600), `MISSION_PLAN_RADIUS`
+
+| | n | p50 | p90 | max |
+|---|---|---|---|---|
+| plain runs, `polyCum` vs `clArc` | 42 | 0.005% | 0.022% | 0.040% (0.39 m) |
+| off-curve runs | 10 | 2.10% | 6.80% | **6.80% (33.3 m)** |
+
+`mission-network` §7, before → after: interior p99 **3.241 → 0.045 m**, interior max 4.713 → 0.050,
+band p99 **400 → 152 m**, peak 6.49 → 3.59 m. All four checks green (the fourth is the new domain
+assertion). Most of what read as "junction end band" divergence was the arc offset.
+
+## Par-time delta — the Stage 3 input
+
+10 affected runs of 52. Distance −2.02% … **+7.15%**. Par time −2.14% … +2.04%, median |Δ| **1.04%**.
+
+Par moves less than distance and sometimes opposite it (`g:7,-1,0:6,0,0`: distance +7.15%, par
+−2.09%). That is correct, not an anomaly: `curvatureAt` is `Δangle / 2h` with `h` in arc units, so
+spreading the same bend over its true longer arc gives genuinely gentler curvature per metre and a
+higher corner-speed envelope. **Do not treat these as final Stage 3 numbers** — they are one seed,
+and FEAT-76 will move the merge set (handoff §4).
+
+## Gate work
+
+- §7 rewritten. It asserted a WONTFIX shape that no longer holds; it now asserts the domains match
+  FIRST (per run, `|par length − driven length| < 0.5 m`) and only then compares elevations. The
+  old form compared two samplers at the same `s` without checking `s` meant the same thing in each,
+  which is precisely how this went unnoticed.
+- §2's centerline-identity check fixed — **same root cause, not a new one**. It asserted object
+  identity with the registered centerline, but BUG-53 deliberately hands merged runs a sampler
+  because their registered primitive is stale. It sat at a permanent 33/39 (all 6 misses off-curve,
+  0 plain): testing the wrong property, not catching a defect. Now identity for plain runs, and
+  geometric tracking of the registered polyline for merged ones.
+
+## Gate movement across the whole suite
+
+`npm test` (37 affected gates): **33/37 green**. Failures are `junction-stitch`, `mission-network`,
+`paper-tour`, `pond-route-around` — exactly the standing-red set the handoff §5 predicted, with two
+of them REDUCED. Nothing new went red. `story-poi` and `world-determinism` are unchanged (11 viable
+pads, roster 11/14, byte-identical rebuilds), so POI placement is still seed-pure.
+
+| gate | main | after Stage 1 |
+|---|---|---|
+| `mission-network` | 4 FAIL | **1 FAIL** (stale §0 only, see below) |
+| `paper-tour` | 2 FAIL | **1 FAIL** (SM-INV-12 only) |
+| `par-oracle` | PASS | PASS (SM-INV-2 holds) |
+
+### `paper-tour`'s par-growth failure was OURS, and it is fixed
+
+This corrects the handoff §6, which attributed BOTH paper-tour failures to one cause (tier 3 dropping
+a tier-2 customer, SM-INV-12). Only one of them was. The other — *"par grows with the route"*,
+failing at **78 → 661 → 655 → 979** — was this ticket's arc-domain bug: tier 3's route was being
+measured short. With the driven arc it reads **144 → 631 → 796 → 950**, monotonic, and the check
+passes. Tier 3 is 12.81 km against tier 2's 10.47 km, i.e. genuinely longer, which is what the
+invariant was trying to say all along.
+
+The SM-INV-12 drop (`house:7,2,1|7,3,0:3`) is real, unchanged, and still the owner's call.
+
+### Expected ripple: POI/route content moves on merged runs
+
+Correcting the arc moves `L` and the ceded-span guard in `poi.js`, so house and pad sites shift on
+the 10 merged runs, which changes paper-route customer sets and therefore routes (tier 1 0.84 →
+2.11 km). That is the intended consequence of the ruling, not a side effect to be suppressed: those
+sites were previously placed against an arc that did not describe the road. `poi.js` reads the graph
+and writes nothing back, so **routing is untouched and the FEAT-76 parallelism still holds**.
+
+## STILL RED, and NOT this ticket
+
+`mission-network` §0 — *"no routed-geometry cull exists"* — fails at 2/26 (8%) culled, identically
+on `main` and here. It asserts `culled === 0` on the FEAT-68 (2026-08-19) premise that the routed-
+geometry culls were deleted. BUG-57's keep-the-connection ladder later re-introduced a **delete
+last-resort**, so a non-zero cull share is now correct behaviour and the control is stale. That is
+router/crossing territory (BUG-57), not par — same shape as `pond-route-around`'s NON-VACUOUS
+control. **Do not delete it**; re-express it for the post-BUG-57 world. Until then `mission-network`
+stays on the standing-reds list for that one check, which the Stage-1 acceptance did not anticipate.
+
+## Not started
+
+Stages 2 and 3. Stage 2 is gated on a labelled corpus of recorded drives on v2 roads — owner work,
+into a NEW directory, `runs/` left intact.
+
 ## Acceptance — re-opened, and expanded 2026-09-06
 
-**Stage 1 — the domain fix**
+**Stage 1 — the domain fix** — BUILT 2026-09-06 on `feature/bug41`
 
-- [ ] Ruling on the three options in the handoff §1.
-- [ ] `centerline.length` equals the true driven length on off-curve runs.
-- [ ] `mission-network` §7's two failing BUG-41 checks green, the third still passing.
-- [ ] The gate stops comparing two samplers at the same `s` without asserting the domains match.
-- [ ] Par-time delta quantified across seeds — the headline number for Stage 3.
-- [ ] All four `clArc` consumers (`par.js`, `mission.js`, `gps.js`, `poi.js`) audited against
-      whatever domain ruling lands, not just `par.js`.
+- [x] Ruling on the three options in the handoff §1 — **(a)**, owner, 2026-09-06. See STAGE 1 below.
+- [x] `centerline.length` equals the true driven length on off-curve runs.
+- [x] `mission-network` §7's two failing BUG-41 checks green, the third still passing.
+- [x] The gate stops comparing two samplers at the same `s` without asserting the domains match.
+- [x] Par-time delta quantified — the headline number for Stage 3 (seed 6; re-measure across seeds
+      when Stage 3 is actually taken, and after FEAT-76 moves the merge set).
+- [x] All `clArc` consumers audited — **five, not four**: the handoff missed `paper-route.js`.
 
-**Stage 2 — the v2 re-anchor**
+**Stage 2 — the v2 re-anchor** — corpus STARTED 2026-09-06, not yet fittable
 
-- [ ] A v2-road labelled corpus recorded in its own directory; `runs/` left untouched.
-- [ ] Corpus size stated, and stated honestly against the harness's "20 is a hint, not a fit" bar.
-- [ ] `calibrate-par.mjs` run on it; the recommendation recorded alongside the owner's ruling on
+- [x] A v2-road labelled corpus recorded in its own directory; `runs/` left untouched.
+      `runs-v2/` (+ README), 9 runs, seeds 97/69. `runs/` verified untouched at 30 json.
+      Every run carries a **`road_router`** flag so the split survives files moving — stamped at
+      capture from `road.js ROAD_ROUTER_VERSION`, backfilled at import for older exports.
+      `runs-add.mjs` / `runs-report.mjs` took a `--dir=` target (both were hardcoded to `runs/`,
+      which would have dumped the v2 corpus straight into the v1 one).
+- [x] Corpus size stated, and stated honestly against the harness's "20 is a hint, not a fit" bar.
+      **8 fittable (1 of the 9 is a paper round, never fitted with point-to-point jobs). Well under
+      the bar.** `runs-report` declines to call it: it wants ≥3 `on par` runs and there is **1**.
+      `calibrate-par.mjs runs-v2` recommends mu 0.615 / accel 3.2 / brake 6.5 (loss 0.1647 vs
+      0.1773 at the shipped 0.80/3.0/7.0) — **NOT taken.** mu is owner-set and this is n=8 with the
+      single `par` run scoring 0.969, the slowest of all eight, which is what n=1 looks like.
+      More `on par` drives are the gating need; the ordering elsewhere is already sane.
+- [x] `calibrate-par.mjs` run on it; the recommendation recorded alongside the owner's ruling on
       `mu` (advisory, not authoritative — `mu` is owner-set).
-- [ ] `PAR_REF` updated with a pass (5) comment block in `src/par.js` matching the style of passes
+      Recommended mu 0.77 / accel 3.2 / brake 5.5 (loss 0.1897 vs 0.1957 shipped). **DECLINED**,
+      owner 2026-09-06: the mu loss surface is flat (0.74→0.1901, 0.78→0.1897, 0.82→0.1910) so the
+      corpus barely identifies mu and 0.80 is inside the band; and brake 5.5 is the value pass (3)
+      rejected as under-pricing corner entry when it moved to the measured 7.0.
+- [x] `PAR_REF` updated with a pass (5) comment block in `src/par.js` matching the style of passes
       (1)-(4): what moved, why, and what it was measured against.
-- [ ] `par-oracle` gate green — SM-INV-2 still holds (par bit-identical before/after mutating
+      **Nothing moved.** Pass (5) RATIFIES mu 0.80 / accel 3.0 / brake 7.0 as already correct on v2
+      roads: the four felt-par drives land at mean ratio 0.879 against the ~0.88 target, and
+      `runs-report`'s verdict is "the standard is well calibrated on 'felt on par' runs". v2 changed
+      the corners; the constants did not need to change with them.
+- [x] `par-oracle` gate green — SM-INV-2 still holds (par bit-identical before/after mutating
       vehicle params).
 
-**Stage 3 — the economy**
+**Stage 3 — the economy** — the only stage left; Stage 2 contributed NO par shift
 
 - [ ] FEAT-53 `k` re-derived against the new par, once, after both stages.
+      Scope is now Stage 1's shift ALONE (median |Δ| 1.04%, max +7.15% distance on 10 of 52 runs),
+      because Stage 2 ratified PAR_REF unchanged and therefore moved no par times.
 - [ ] Rank-threshold sanity check: the letter bands still mean what DESIGN.md says they mean.
 
 **Throughout**

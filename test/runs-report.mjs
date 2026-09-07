@@ -8,14 +8,17 @@
 // (error tracks descent fraction) from a bad accel/vMax (error tracks straight fraction).
 //
 //   npm run runs:report            npm run runs:report -- --verbose
+//   npm run runs:report -- --dir=runs-v2        # a different library (see runs-add.mjs on WHY)
 //
 // Not a gate.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PAR_REF, PAR_SLACK } from '../src/par.js'
 
-const RUNS = resolve(new URL('..', import.meta.url).pathname, 'runs')
+const _dir = process.argv.find(a => a.startsWith('--dir='))
+const RUNS = resolve(new URL('..', import.meta.url).pathname, _dir ? _dir.slice(6) : 'runs')
 const VERBOSE = process.argv.includes('--verbose')
+console.log(`library: ${RUNS}`)
 const runs = readdirSync(RUNS).filter(f => f.endsWith('.json'))
   .map(f => ({ file: f, ...JSON.parse(readFileSync(join(RUNS, f), 'utf8')) }))
   // Only mission run-exports are calibration data; the library also holds other artifacts

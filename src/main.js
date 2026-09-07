@@ -44,7 +44,7 @@ import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineA
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes, playTireBlowout } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
-import { RoadSystem, CHUNK_SIZE } from './road.js'
+import { RoadSystem, CHUNK_SIZE, ROAD_ROUTER_VERSION } from './road.js'
 import { perfAdd, perfMark, perfDump, perfReset, perfSnapshot, perfEnableUserTiming, perfFrameDt,
          perfEnableHitchLog, perfFrameBegin, perfFrameEnd, perfHitchReport, perfHitchDump, perfHitchReset, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-08 / PERF-26)
 let _perfFrame = 0  // TEMP: frame counter for auto-dump at load
@@ -3923,6 +3923,13 @@ for (const b of document.querySelectorAll('.mp-felt')) {
     data.felt = b.dataset.felt
     data.driver = document.getElementById('mp-driver')?.value?.trim() || null
     data.seed = worldSeed
+    // WHICH ROADS this was driven on. Same contract as `par_ref.slack` inside the blob: a drive
+    // recorded on different roads is measured against a different standard, so the corpus has to
+    // carry the router version or a later refit cannot tell two incompatible corpora apart. This
+    // is BUG-41 Stage 2's whole problem — PAR_REF was fitted on v1 roads two days before v2 shipped
+    // and nothing in `runs/` records that. Stamped here beside seed/driver/felt because this is
+    // where the run's CONTEXT is attached; buildRunExport knows the drive, not the world.
+    data.road_router = ROAD_ROUTER_VERSION
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
