@@ -102,6 +102,8 @@ export const GATES = [
   { file: 'box3d-determinism-gate.mjs', subsystem: 'physics', cost: 'fast',
     extraDeps: ['vendor/box3d/dist/box3d.mjs', 'test/box3d-determinism.expected'],
     desc: 'FEAT-48: the physics engine is bit-deterministic — 10k-step state hash reproduces in-process and matches the recorded Phase 0 expectation (engine/bindings drift alarm)' },
+  { file: 'collider-seam-churn.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'BUG-60: a long-lived STATIC hull keeps answering wheel-sized contactSphere queries while shapes are created and destroyed around it. The wheel hard cores rebuild four hulls EVERY step (a hull has no setter), and under that churn the engine\'s world broad phase stopped reporting the FEAT-41 stage rock — the wheel settled inside it, at ground height, with the rock still drawn around it. Two invariants: the static hull answers the same surface depth on every cycle (contactSphere now enumerates candidates itself rather than trusting b3World_OverlapShape), and the shape-keyed maps return to baseline after each cycle (destroyBody used to prune only _shapeToHandle, leaving _shapeHulls/_shapeSizeR to grow — stale hull data waiting to be read for a DIFFERENT, live shape once Box3D recycles the slot)' },
   { file: 'debris-coupling.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-48/FEAT-36: wheel-vs-debris coupling is two-way through the translation layer — the truck shoves the barrel, the chassis feels the hit, both settle, no NaN' },
   { file: 'penetration-failsafe.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],

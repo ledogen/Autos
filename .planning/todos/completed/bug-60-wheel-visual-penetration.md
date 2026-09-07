@@ -1,8 +1,9 @@
 ---
 id: BUG-60
 type: bug
-status: pending
+status: done
 severity: medium
+closed: 2026-09-07
 opened: 2026-09-06
 source: >
   owner, seeing the menu stage's front-left tire visibly sink into the rock it lands on (FEAT-41).
@@ -15,6 +16,47 @@ relates_to: >
   src/vehicle-model.js (the rigid wheel mesh), FEAT-48 (the Box3D cutover),
   FEAT-41 (where it became visible), QUAL-25 (wheel hard cores)
 ---
+
+> ## RESOLVED 2026-09-07 — and the diagnosis below is WRONG about the cause. Read this first.
+>
+> **Fixed.** `node test/bug60-rock-contact.mjs --drops=40` → **0 of 40 fall-throughs** (was 9/30,
+> then 13/40 on re-measure). Gate: `test/collider-seam-churn.mjs`, pure node, ~15 s, no browser.
+>
+> **The section below names `destroyBody`'s map leak as the root cause. It is not.** That leak is
+> real and is fixed here — `destroyBody` pruned only `_shapeToHandle`, leaving `_shapeHulls` and
+> `_shapeSizeR` to grow — but fixing it ALONE left the fall-through rate exactly where it was
+> (13/40 before, 13/40 after, maps balanced at boot values throughout). It was a bookkeeping bug
+> that happened to be visible in the same numbers, not the defect.
+>
+> **The actual cause: the engine's world broad phase drops a healthy static shape under shape
+> churn.** At every failing sample the rock's body transform, shape id, hull data, a per-body
+> `b3Body_OverlapShape` and the raw `b3CollideHullAndSphere` were ALL correct — the wheel was
+> measured 295–324 mm inside the rock while `contactSphere` returned nothing. Only
+> `b3World_OverlapShape` disagreed, and only for wheel-sized spheres: a 2 m query found the same
+> rock in the same frame. The trigger is `updateWheelRims` → `replaceHullLocal`, which destroys and
+> recreates four wheel-core hulls EVERY step (a hull has no setter) — ~1000 shape create/destroys
+> per second. Turn that churn off and the fault never appears; move the churning body away from the
+> rock and it never appears. Debris create/destroy is not involved, and neither are contact pairs
+> (the cores already filter to `GROUP_DEBRIS`, so they never pair with the rock).
+>
+> **The fix is at the seam, because the engine is vendored WASM:** `contactSphere` now enumerates
+> its own candidates — a sphere reject about each body origin against a per-shape bounding radius
+> recorded at registration — instead of trusting `b3World_OverlapShape`. Body poses are cached per
+> step (`_bodyXf`), heightfield/mesh bodies are skipped before they cost anything, and group
+> filtering matches the engine's own rule on 32-bit numbers. Measured **1.6 µs/call at 14 bodies,
+> 3.6 µs at 126**, against a flat ~2.4 µs for the engine query it replaces — faster in the small
+> worlds this actually runs in, and ~0.23 ms per 60 Hz frame at 126 bodies. The new per-shape data
+> lives on the body record, NOT in a fourth shape-keyed map: this bug family is those maps drifting.
+>
+> `b3World_RebuildStaticTree` was tried and **rejected** — it repaired a weaker headless
+> approximation but neither the gate nor the browser reproducer.
+>
+> Split out, both still open: **BUG-61** (`_shapeKey` aliases past generation 65535 — a ~20-minute
+> fuse at the measured rebuild rate) and **BUG-62** (`_hulls` grows without bound, ~275 per drop and
+> continuously while driving; the ownership rule must be read out of the bindings before freeing).
+>
+> The tire-penetration investigation further down remains correct and remains NOT this bug: a
+> loaded tire is *supposed* to be inside the surface, by construction.
 
 # BUG-60: a loaded wheel is drawn rigid while the tire model penetrates the surface
 
