@@ -157,7 +157,11 @@ Z_BEDFLOOR = 0.700               # bed floor pan (rib crests sit RIB_H above)
 Z_HEADLINER = 1.526              # underside of the roof slab
 
 # --- Wheel arches.  Tyre is 0.736 dia x 0.25 wide on a 1.46 track. ---
-ARCH_R = 0.470                   # opening radius (tyre radius 0.368 + 0.10 clearance)
+R_TYRE = 0.368                   # data/ranger.js wheelRadius.  Named because three
+                                 # things size themselves off it and it was a magic
+                                 # number in a comment before.
+SUSP_TRAVEL = 0.25               # data/ranger.js suspensionTravel{Front,Rear}
+ARCH_R = 0.470                   # opening radius (R_TYRE + 0.10 clearance)
 ARCH_Z = 0.390                   # arch circle centre height (below the axle: the
                                  # opening is a segment, not a full semicircle)
 ARCH_SAMP = 7                    # y samples across each arch — the faceting is the look
@@ -175,7 +179,34 @@ W_BED_OUT = 0.822                # bed side at the RAIL — tucks in above the
                                  # instead of the 16 cm slab the first pass gave
 W_BED_IN = 0.700                 # bed inner wall
 W_WHEELHOUSE = 0.545             # bed inner wall over the rear arch
-Z_WHEELHOUSE = 0.965             # wheelhouse box top
+Z_WHEELHOUSE = 0.935             # wheelhouse box top, 0.965 until 2026-09-07
+WHEELHOUSE_HALF_L = 0.40         # ...and how far it runs each side of the axle.  This is
+                                 # the dimension that makes it look big: it was
+                                 # ARCH_R + 0.055, a 1.05 m box in a 1.83 m bed — 57% of
+                                 # the floor's length, where the reference is nearer 43%.
+                                 # Owner, 2026-09-07: "inner bed arches should be
+                                 # smaller".  The other two barely move (see below), so
+                                 # length is the only one with room in it.
+# THE OTHER TWO DIMENSIONS ARE ALMOST FULLY CONSTRAINED, which is worth knowing before
+# reaching for them:
+#   - W_WHEELHOUSE must stay INBOARD OF THE PAN.  The bed floor runs from the centreline
+#     out to it at Z_BEDFLOOR, and the underbody pan's side wall climbs at W_UNDER from
+#     the pan up to the arch.  Push the wheelhouse past W_UNDER and those two segments
+#     CROSS: the section self-intersects and lofts into a black wedge along the floor.
+#     Tried at 0.585 on 2026-09-07 and that is exactly what it did.
+#   - Z_WHEELHOUSE is the roof of the box the tyre travels inside, so it has to clear the
+#     tyre at FULL BUMP, not at rest.  The rear sags SAG_R out of a SUSP_TRAVEL strut and
+#     can still take up the remainder, putting the tyre's crown at 0.917.
+assert W_WHEELHOUSE < W_UNDER, \
+    "wheelhouse inner wall must stay inboard of the pan, or the section self-intersects"
+assert Z_WHEELHOUSE >= ARCH_Z + R_TYRE + (SUSP_TRAVEL - SAG_R) + 0.010, \
+    "wheelhouse roof must clear the tyre at full bump"
+WH_EDGE = 0.030                  # chamfer on the wheelhouse's top inner corner (owner,
+                                 # 2026-09-07).  It SWITCHES OFF with the wheelhouse
+                                 # itself — see bed_ring(), where wh collapses to
+                                 # W_BED_IN outside the arch zone and a chamfer left at
+                                 # full size would push the point OUTBOARD of the tub's
+                                 # own wall and fold the section.
 
 # --- Cab / greenhouse (all y MEASURED, see above) ---
 Y_COWL = 0.584                   # base of the windscreen.  The cab was 1.100 long and read
@@ -202,7 +233,11 @@ Z_LAMP0, Z_LAMP1 = 0.772, 0.990  # headlamp / grille opening.  Re-measured off t
                                  # took these off the profile shot and left a 28 cm
                                  # blank painted band between the grille and the
                                  # bumper, where the real truck has about 10 cm.
-Z_BUMP0, Z_BUMP1 = 0.541, 0.697  # chrome blade.  Raised 74 mm on 2026-09-05 ("bumper
+Z_BUMP0, Z_BUMP1 = 0.490, 0.697  # THE BUMPER IS THE WHOLE OF THE FRONT'S LOWER END since
+                                 # the grey air dam was deleted (2026-09-06).  Z_BUMP1 is
+                                 # its top edge AND the line clip_ring cuts the fender to;
+                                 # Z_BUMP0 is its lower edge on the centreline, dropping a
+                                 # further BUMP_FLARE at the tips.  Chrome blade.  Raised 74 mm on 2026-09-05 ("bumper
                                  # still a little too low to fit in the gap naturally left
                                  # for it"), then lowered 25 of those on 2026-09-06 ("move
                                  # the front bumper forward and down a bit").  THE TWO ARE
@@ -212,15 +247,25 @@ Z_BUMP0, Z_BUMP1 = 0.541, 0.697  # chrome blade.  Raised 74 mm on 2026-09-05 ("b
                                  # between the lamp and the chrome than 50 mm.
                                  # Z_LAMP0 - Z_BUMP1 IS that gap, now 75 mm — move either
                                  # one and the other has to follow.
-Z_VAL0 = 0.300                   # bottom of the grey air dam.  DECOUPLED from Z_UNDER
-                                 # (they were both 0.285).  The dam is meant to hang below
-                                 # the pan — on the reference it drops most of the way to
-                                 # the tyre's contact patch and is the lowest thing at the
-                                 # front — whereas the pan is not meant to be seen at all.
-                                 # Tying them together meant raising one raised the other.
+                                 # MADE TALLER DOWNWARD ONLY on 2026-09-06 ("make the
+                                 # front bumper taller overall"), 156 -> 207 mm.  The TOP
+                                 # deliberately did not move: it is the lamp gap above,
+                                 # which had just been opened to 75 mm, and growing the
+                                 # blade upward would have closed it again.
+BUMP_FLARE_X = 0.520             # where the bumper's lower edge starts sweeping down...
+BUMP_FLARE = 0.035               # ...and how far it has dropped by the tips, so the ends
+                                 # run into the wheel arch instead of stopping above it.
+VAL_KNEE_X = 0.824               # CLIP_PLAN's first breakpoint — the fender's own
+                                 # half-width at the arch tangent.  The fascia clamps
+                                 # its plan here; see the note at vxs.
 
 # --- Rear ---
-Z_TAIL0, Z_TAIL1 = 0.722, 0.998  # tail lamp band
+Z_TAIL0, Z_TAIL1 = 0.680, 1.045  # tail lamp band.  0.722..0.998 until 2026-09-07
+                                 # (owner: "taillights need to be bigger") — 365 mm now
+                                 # against 276, which is 56% of the bedside's rear height
+                                 # rather than 42%.  Bottom sits just above the step
+                                 # bumper's top face, top ~100 mm under the rail, both
+                                 # off the reference.
 # THE BUMPER'S LOWER EDGE IS THE BEDSIDE'S LOWER EDGE.  Owner, 2026-09-05: "raise
 # the rear bumper so its lower edge meets the lower edge of the bedside where it
 # terminates".  The bedside's sill kicks up behind the rear arch (bed_bottom) and the
@@ -623,6 +668,21 @@ def clip_ring(y):
     """16-point closed section for the front clip (hood + fenders + nose)."""
     wo, wb, ztop, crown, sq = _interp(CLIP_ST, y)
     zb = arch_z(y, AX_F)
+    # THE FLANK IS CUT TO THE BUMPER'S TOP LINE AHEAD OF THE ARCH (owner, 2026-09-06:
+    # "trim the fender and front fascia to the bumper line").  Below Z_BUMP1 and forward
+    # of the opening there is no sheet metal on the real truck — the bumper is the whole
+    # of it — and leaving the fender there meant a strip of body colour beside whatever
+    # was in front of it, which is the fault this file has chased under four different
+    # names.  Cut, not covered: nothing can re-expose it later.
+    #
+    # It is a max() against the arch, so the two meet where the arch curve crosses
+    # Z_BUMP1 (d = 0.356, y 1.6385) and the cut line runs on flat from there forward.
+    # That continuity is why it is a max and not a branch on y — the owner drew exactly
+    # this: along the bumper's top, then turning down round the front of the arch.
+    # FORWARD OF THE AXLE ONLY.  Behind it this is the rocker line and the door's sill,
+    # and cab_ring shares arch_z() for the same opening.
+    if y > AX_F:
+        zb = max(zb, Z_BUMP1)
     z_sh = ztop - crown                                # shoulder, at the hood line
     z_sq = z_sh - SQUARE_Z * (z_sh - Z_HIP)            # the squaring point's height
     t = (z_sq - Z_HIP) / max(1e-6, z_sh - Z_HIP)       # ...where it falls on the chord
@@ -651,7 +711,14 @@ def cab_ring(y):
             + [(-x, y, z) for x, z in reversed(r[1:-1])])
 
 
-BED_EDGE = 0.020                   # chamfer on the bed's TOP edge only.  The bottom
+BED_EDGE = 0.038                   # chamfer on the bed's TOP edge only.  20 mm until
+                                   # 2026-09-07 (owner: "bedside exterior top edge should
+                                   # get a bigger chamfer to make the bedsides look
+                                   # skinnier") — and it does, because the chamfer is a
+                                   # flat-shaded highlight band running the length of the
+                                   # bed and everything it takes comes off the RAIL CAP,
+                                   # which is the surface reading as thickness.  The
+                                   # bottom
                                    # one was removed 2026-09-05 (owner); BED_EDGE is
                                    # still what keeps arch_z()'s crown clamp honest,
                                    # so it did not become a free constant.
@@ -699,7 +766,12 @@ def bed_ring(y):
     """
     zb = bed_bottom(y)
     d = abs(y - AX_R)
-    wh = W_WHEELHOUSE if d < ARCH_R + 0.055 else W_BED_IN   # box, not a curve
+    # BOX, NOT A CURVE — and build_bed() carries a station either side of the switch so
+    # it stays one.  Without them the ring collapses over whatever gap happens to be
+    # there and the box's end wall lofts as a long diagonal; at WHEELHOUSE_HALF_L 0.40
+    # the nearest stations were 172 mm apart and one of those faces came out inverted.
+    wh = W_WHEELHOUSE if d < WHEELHOUSE_HALF_L else W_BED_IN
+    whe = WH_EDGE if wh < W_BED_IN - 1e-6 else 0.0         # ...and its chamfer with it
     r = [(0.0, Z_UNDER),
          (W_UNDER - UND_EDGE, Z_UNDER), (W_UNDER, Z_UNDER + UND_EDGE),   # pan corner
          (W_UNDER, zb),
@@ -707,7 +779,8 @@ def bed_ring(y):
          (W_FLANK, Z_HIP),
          (W_BED_OUT, Z_RAIL - BED_EDGE), (W_BED_OUT - BED_EDGE, Z_RAIL), # top edge
          (W_BED_IN, Z_RAIL),
-         (W_BED_IN, Z_WHEELHOUSE), (wh, Z_WHEELHOUSE), (wh, Z_BEDFLOOR),
+         (W_BED_IN, Z_WHEELHOUSE), (wh + whe, Z_WHEELHOUSE),
+         (wh, Z_WHEELHOUSE - whe), (wh, Z_BEDFLOOR),
          (0.0, Z_BEDFLOOR)]
     return ([(x, y, z) for x, z in r]
             + [(-x, y, z) for x, z in reversed(r[1:-1])])
@@ -733,7 +806,7 @@ DARK = "RangerInterior"
 # All three shifted by one point per half when the pan gained its chamfer.
 CLIP_BANDS = {k: DARK for k in (0, 1, 2, 3, 12, 13, 14, 15)}
 CAB_BANDS = {k: DARK for k in (0, 1, 2, 3, 7, 8, 9, 10, 14, 15, 16, 17)}
-BED_BANDS = {k: DARK for k in (0, 1, 2, 3, 20, 21, 22, 23)}
+BED_BANDS = {k: DARK for k in (0, 1, 2, 3, 22, 23, 24, 25)}
 
 
 # ---------------------------------------------------------------------------
@@ -925,6 +998,23 @@ def build_cab(p):
     loft(p, rings, "RangerPaint", cap_first=False, cap_last=True,
          band_mats=CAB_BANDS)
 
+    # THE CAB'S REAR SKIN, below the beltline.
+    #
+    # cab_ring is a U — its top IS the cabin floor, see the docstring — so the shell's
+    # rear cap has the cabin void punched straight through it, and from behind the truck
+    # you looked at the interior's dark rear wall with no panel in front of it.  Owner,
+    # 2026-09-07: "back of cab went black, likely an inversion".  It was not: the ray
+    # test passes and the committed build does the same thing.  There was simply never a
+    # panel here, and it went unnoticed because the bed's front wall hid it from every
+    # angle except a high one looking down into the gap.
+    #
+    # build_greenhouse() closes the band ABOVE the beltline, either side of the
+    # backlight.  This closes the band below it, from the cabin floor up to meet that.
+    # Width stops at W_DOORCARD because outboard of there the U's own cap is already
+    # solid; depth overlaps the interior's rear wall so the two cannot leave a seam.
+    box(p, -W_DOORCARD, W_DOORCARD, Y_CAB_REAR - 0.004, Y_CAB_REAR + 0.024,
+        Z_FLOOR, Z_BELT, "RangerPaint")
+
 
 # THE TAIL GETS THE NOSE'S TREATMENT (owner, 2026-09-04).  Same architecture as
 # nose_y()/nose_rim_ring(), with the signs flipped and much smaller numbers: a
@@ -1067,10 +1157,13 @@ TAIL_LAMP_U = (0.036, 0.318, 0.660, 0.964)
 # "RangerTail"; 5 is the buried inner face.
 TAIL_LAMP_MATS = {0: DARK, 2: "RangerLens", 4: DARK, 5: DARK}
 # How much of the lamp's height is eaten, per path station, as it turns onto the
-# flank.  Ends at 0.46 — a little over half height — so the lens dies into the
-# bedside as a wedge rather than running down it as a stripe.  ONE ENTRY PER RING:
-# the rim rings rearmost-first, then the last full section.
-TAIL_LAMP_SHRINK = (0.0, 0.02, 0.10, 0.24, 0.46)
+# flank — and ALL OF IT COMES OFF THE TOP.  Owner, 2026-09-07: "bottom edge needs to be
+# horizontal.  top can have a slight taper".  It used to be split evenly between the two
+# edges, which made the lens a lozenge; the floor is dead flat now and only the ceiling
+# rakes.  Values are lower to suit, because a taper that used to be shared is twice as
+# visible once it is all on one edge.  ONE ENTRY PER RING: the rim rings rearmost-first,
+# then the last full section.
+TAIL_LAMP_SHRINK = (0.0, 0.02, 0.06, 0.14, 0.28)
 
 
 def tail_skin_path(sx, z):
@@ -1110,8 +1203,8 @@ def tail_lamp(p, sx):
         tx, ty = b[0] - a[0], b[1] - a[1]
         L = math.hypot(tx, ty) or 1.0
         nx, ny = sx * ty / L, -sx * tx / L
-        sh = TAIL_LAMP_SHRINK[i]
-        z0, z1 = Z_TAIL0 + span * sh * 0.5, Z_TAIL1 - span * sh * 0.5
+        # FLOOR IS A CONSTANT, ceiling takes the whole taper — see TAIL_LAMP_SHRINK.
+        z0, z1 = Z_TAIL0, Z_TAIL1 - span * TAIL_LAMP_SHRINK[i]
         h = z1 - z0
 
         def at(off, u):
@@ -1135,7 +1228,8 @@ def tail_lamp(p, sx):
 def build_bed(p):
     ys = sorted({Y_BED_F, -0.980, Y_BED_R, -2.200, -2.330}
                 | {round(v, 5) for v in arch_samples(AX_R)}
-                | {AX_R - ARCH_R - 0.06, AX_R + ARCH_R + 0.06}, reverse=True)
+                | {AX_R + sx * (WHEELHOUSE_HALF_L + e)
+                   for sx in (1, -1) for e in (0.005, -0.005)}, reverse=True)
     ys = [y for y in ys if Y_BED_R <= y <= Y_BED_F]
     ys = simplify_stations(ys, bed_ring)
     rings = [bed_ring(y) for y in ys]
@@ -1569,103 +1663,133 @@ def build_front_end(p):
     for sx in (1, -1):
         head_lamp(sx)
 
-    # Chrome bumper blade.  Seven-point ROUND section — a rolled top, a convex face
-    # and a tuck under — swept along X so the ends wrap back.  Owner: "the bumpers
-    # are especially rounded and they stick out pretty far", so the crown sits a
-    # full 60 mm ahead of the face centre and the section is 100 mm deep.
-    # THE BLADE'S PLAN CURVE IS THE BODY'S OWN, offset forward by a constant.  It used
-    # to be a quadratic (BUMP_WRAP * (x/W)^2) tuned against the prow, which was close
-    # enough while the blade sat 74 mm lower and the fender behind it was hidden by
-    # the arch.  At its new height that guess put the blade's ends ~300 mm AHEAD of
-    # the fender they are meant to die into, and daylight under each end showed 118 mm
-    # of painted flank — the owner's "red wedges", back for the third time.
+    # THE FRONT BUMPER IS ONE PART AND IT IS THE FRONT'S LOWEST THING (2026-09-06).
     #
-    # corner_y() answers where the metal actually is, inside the rim and past it, so
-    # the blade simply tracks it.  The offset is PINNED at the centreline: the crown
-    # has to land exactly on Y_NOSE, because Y_NOSE is the truck's front extent and
-    # report() asserts the overall length against the physics preset.
-    # THE BLADE STOPS BEFORE THE WHEEL ARCH.  Owner, 2026-09-06: "so the wraparound
-    # sides arent in the wheel arch zone".  It used to run to |x| 0.836, and corner_y()
-    # answers y 1.45 out there — 300 mm BEHIND the arch's forward tangent at 1.7525 — so
-    # the blade's tips curled round and sat across the opening.  Ending at 0.820 puts
-    # them at y 1.756 — level with the arch's leading edge instead of 300 mm behind it.
+    # There used to be a slim chrome blade with a separate grey air dam under it, and
+    # the two never agreed: whichever one moved, the other left a strip of painted
+    # fender showing between them or between itself and the arch.  Owner's ruling, when
+    # asked what should fill that corner: "nothing.  i was going to ask you to delete
+    # the grey air dam alltogether.  bumper is the [lowest] part... ok the bumper is top
+    # chrome and bottom grey plastic but our bumper is fully chrome and im cool w that".
+    # So the dam is gone and the blade now runs all the way down to where the dam's
+    # bottom edge was — one part, one material, nothing to disagree with.
     #
-    # 0.820 AND NOT LESS.  The first cut stopped at 0.800, and the 36 mm of fender
-    # corner that left uncovered came straight back as the RED WEDGE this file has now
-    # chased four times: a painted strip down the outside of the blade, between it and
-    # the sheet metal it is meant to die into.  Wherever the blade ends it has to land
-    # ON the metal, and corner_y() is the only thing that knows where that is.
+    # It keeps its OWN height though — see bump_z0().  Taking over the dam's job is not
+    # the same as taking over its dimensions.
     #
-    # Note it is the ENDS that had to move, not the height: the arch opening spans z
-    # 0.442..0.854 and the blade lives inside that band either way, so lowering it does
-    # not clear the arch.  Only stopping short of it does.
+    # THE PLAN CURVE IS THE BODY'S OWN, offset forward by a constant, and PINNED at the
+    # centreline: the crown has to land exactly on Y_NOSE, because Y_NOSE is the truck's
+    # front extent and report() asserts the overall length against the physics preset.
+    # corner_y() answers where the metal actually is, inside the rim and past it.  The
+    # owner's "red wedges" have come back four times, every one of them something in
+    # front of the fender placed by a hand-typed curve instead of the body's own.
+    #
+    # IT REACHES THE ARCH.  The last station is 8 mm OUTBOARD of the fender with its
+    # plan CLAMPED to corner_y()'s knee at VAL_KNEE_X — CLIP_PLAN's first breakpoint,
+    # where the curve bends at the arch tangent.  Two faults, one station: a chord from
+    # 0.790 straight to 0.828 cut across that bend and landed on the same y as the sheet
+    # metal to the millimetre, so the fender won; and putting the station exactly ON the
+    # knee fixed the y but broke the x, because the fender's own half-width there IS
+    # 0.824 and the end cap then sits edge-on against the metal it is meant to hide.
     ZBM = 0.5 * (Z_BUMP0 + Z_BUMP1)
-    xs = [-0.820, -0.790, -0.730, -0.560, 0.0, 0.560, 0.730, 0.790, 0.820]
-    BUMP_PIN = Y_NOSE - corner_y(0.0, ZBM)     # ~0.060 — the blade's standoff
-    dys = [Y_NOSE - (corner_y(x, ZBM) + BUMP_PIN) for x in xs]
+    xs = [-0.832, -0.806, -0.770, -0.700, -0.560, -0.300, 0.0,
+          0.300, 0.560, 0.700, 0.770, 0.806, 0.832]
+
+    def bump_plan(x, z):
+        return corner_y(math.copysign(min(abs(x), VAL_KNEE_X), x), z)
+
+    BUMP_PIN = Y_NOSE - bump_plan(0.0, ZBM)    # the blade's standoff
+    dys = [Y_NOSE - (bump_plan(x, ZBM) + BUMP_PIN) for x in xs]
+
+    def bump_z0(x):
+        """The bumper's lower edge: flat across the middle, sweeping DOWN toward the arch
+        over the outer stations — quadratic, so it leaves the flat run tangentially
+        instead of kinking at BUMP_FLARE_X.
+
+        THIS IS NOT THE DELETED AIR DAM'S BOTTOM.  When the dam was merged in, this was
+        briefly set to the dam's lower edge, 190 mm further down, and the bumper grew from
+        207 to 397 mm tall — owner: "the bumper grew to be super tall".  Merging
+        the dam meant taking over its JOB (being the front's lowest part in the places it
+        covered), not its dimensions.
+        """
+        t = min(1.0, max(0.0, (abs(x) - BUMP_FLARE_X) / (0.820 - BUMP_FLARE_X)))
+        return Z_BUMP0 - BUMP_FLARE * t * t
+
+    # WHERE THE ARCH IS AT THE BUMPER'S TOP LINE.  The opening is a circle of ARCH_R
+    # about (AX_F, ARCH_Z), so this is simply that circle solved at z = Z_BUMP1.  Solved
+    # rather than typed: the bumper's top has moved three times and the arch's radius
+    # once, and a hand-copied 1.6385 would have gone stale at the first of them.
+    Y_ARCH_TOP = AX_F + math.sqrt(max(0.0, ARCH_R ** 2 - (Z_BUMP1 - ARCH_Z) ** 2))
+
+    def bump_back(x, yf):
+        """y of the section's TOP-REAR corner: the flat 104 mm return across the middle,
+        reaching the ARCH ITSELF at the tips.
+
+        Owner, 2026-09-06: "pull the top corners of the bumper back to meet the wheel
+        arch ... the bumper should complete the arch as in the reference".  The rear cap
+        used to stop square at yf - 0.104, which at the outermost station is y 1.7315 —
+        93 mm short of the opening — so a dark wedge of arch showed between the bumper
+        and the fender's cut edge.  Pulling only the TOP back makes the rear face slant,
+        and that slant IS the arch's leading edge: it runs from y 1.7315 at the bumper's
+        lower corner to Y_ARCH_TOP at its upper one, which is within a few mm of the
+        circle the whole way.
+
+        It cannot foul the tyre.  The opening is ARCH_R (0.470) where the tyre is only
+        0.368, so anything that tracks the arch clears the rubber by ~150 mm at this
+        height — that margin is the arch's whole reason for being bigger than the wheel.
+        """
+        t = min(1.0, max(0.0, (abs(x) - BUMP_FLARE_X) / (0.820 - BUMP_FLARE_X)))
+        back = yf - 0.104
+        return back + (Y_ARCH_TOP - back) * t * t
 
     def bprof(x, dy):
-        yf = Y_NOSE - dy                       # this blade's own front plane
-        return [(x, yf - 0.104, Z_BUMP0), (x, yf - 0.040, Z_BUMP0 - 0.006),
-                (x, yf - 0.008, Z_BUMP0 + 0.026), (x, yf, ZBM),
+        yf = Y_NOSE - dy                       # this station's own front plane
+        z0 = bump_z0(x)
+        zm = 0.5 * (z0 + Z_BUMP1)              # the crown rides the station's own middle
+        # The 0.006 / 0.026 / 0.024 offsets are ROLL RADII, not fractions of the height —
+        # they stay put as the section grows, or the rolled edges scale with it and the
+        # bumper stops reading as folded steel of one gauge.
+        return [(x, yf - 0.104, z0), (x, yf - 0.040, z0 - 0.006),
+                (x, yf - 0.008, z0 + 0.026), (x, yf, zm),
                 (x, yf - 0.010, Z_BUMP1 - 0.024), (x, yf - 0.044, Z_BUMP1),
-                (x, yf - 0.104, Z_BUMP1)]
+                (x, bump_back(x, yf), Z_BUMP1)]
     loft(p, [bprof(x, dy) for x, dy in zip(xs, dys)], "RangerChrome")
 
-    # Grey lower valance.  It rides nose_y() like everything else on the nose — a
-    # hand-typed wrap schedule put its ENDS 60 mm BEHIND the nose rim, so the body
-    # showed through in body colour at both bottom corners.  Anything that has to
-    # stay proud of a curved panel must be driven by the same curve, not by a
-    # separate table that happens to look similar.
-    # THE AIR DAM'S BOTTOM FOLLOWS THE BODY, not a constant z.  The nose section only
-    # reaches down to Z_UNDER for |x| <= W_UNDER (0.560) — the underbody pan — and
-    # stops at the rocker (0.442) outboard of that.  A valance with a flat bottom at
-    # 0.285 therefore hung in mid-air from x 0.560 outward with nothing behind it,
-    # and the painted nose face showed beside it: the two red wedges the owner
-    # arrowed (2026-09-04).  Its lower edge now rises to the rocker line across the
-    # same span the body does.
-    # It now WRAPS THE CORNER on corner_y() rather than stopping on the front face at
-    # 0.786.  Under the raised blade the flank between the rocker and the blade's
-    # underside is 118 mm of bare paint at the corner, and only a dam that follows the
-    # fender round covers it — which is also what the reference car's dam does, right
-    # back to the arch.
-    vxs = [-0.828, -0.790, -0.740, -0.640, -0.480, -0.240, 0.0,
-           0.240, 0.480, 0.640, 0.740, 0.790, 0.828]
+    # DARK BAND UNDER THE BUMPER, on the centre section only.
+    #
+    # The bumper is the front's lowest part everywhere the FENDER used to be, because
+    # clip_ring cuts the flank to Z_BUMP1 forward of the arch.  It is not the lowest
+    # thing on the CENTRELINE though: the underbody pan reaches down to Z_UNDER for
+    # |x| <= W_UNDER, and the nose frame's paint runs down over it.  With the air dam
+    # deleted that paint is what shows under the chrome, in body colour — on the
+    # reference that band is shadow and black plastic.
+    #
+    # It stops at W_UNDER because that is where the pan stops; outboard of it there is
+    # nothing to cover, the fender having already been cut away.
+    _sweep(p, [-0.560, -0.300, 0.0, 0.300, 0.560],
+           lambda x: [(-0.010, 0.432), (-0.010, Z_BUMP0 + 0.006),
+                      (0.014, Z_BUMP0 + 0.006), (0.014, 0.432)], DARK)
 
-    def val_bottom(x):
-        # Hangs BELOW the pan on the centreline and tucks up to the rocker outboard,
-        # so there is no sliver of painted face left showing below the fascia at any
-        # x.  Keyed to Z_VAL0, not Z_UNDER: since 2026-09-05 the pan is up at 0.415
-        # and the dam is the front's lowest part, which is what the reference does.
-        # The tuck now runs over 0.62..0.83, not 0.56..0.72 — the dam is wider, so
-        # the same rise spread over the same short span would have pinched it.
-        t = min(1.0, max(0.0, (abs(x) - 0.620) / (0.830 - 0.620)))
-        return Z_VAL0 + (Z_ROCKER - Z_VAL0) * t * t
-    # NEGATIVE dy = PROUD of the sheet metal.  Below the bumper the nose frame is
-    # still painted body panel, so a valance recessed behind it simply vanished and
-    # the truck showed body colour under the chrome — which is not what the fascia
-    # does on the reference car.  It now stands 14 mm ahead of the face at its crown,
-    # with the bumper another 40 mm ahead of that.
-    # The back edge HUGS the face (dy 0.012), it does not return 150 mm into the
-    # truck.  At 0.150 the fascia's own bottom lip sat that far behind the painted
-    # nose, so the body showed in front of it as two red wedges under the bumper.
-    _sweep(p, vxs, lambda x: [(0.012, val_bottom(x)),
-                              (-0.010, val_bottom(x) + 0.018),
-                              (-0.022, 0.5 * (val_bottom(x) + Z_BUMP0) + 0.018),
-                              (-0.004, Z_BUMP0 + 0.004),
-                              (0.012, Z_BUMP0 + 0.004)], "RangerTrim",
-           surf=corner_y)
-    _sweep(p, [-0.360, -0.180, 0.0, 0.180, 0.360],
-           lambda x: [(0.048, Z_VAL0 + 0.036), (0.048, Z_BUMP0 - 0.036),
-                      (0.014, Z_BUMP0 - 0.036), (0.014, Z_VAL0 + 0.036)], DARK)
-    # Licence-plate bracket, hung off the air dam dead centre (as on the ref car),
-    # BELOW the chrome now that the blade has moved up.  Its back plane is READ OFF
-    # nose_y() at its own height plus the dam's crown offset, rather than typed as an
-    # offset from Y_FACE_C: the apex is 0.88 m up, so a constant taken there sits
-    # ~70 mm ahead of the sheet metal down at plate height and the bracket floated.
-    zb0, zb1 = Z_VAL0 + 0.058, Z_VAL0 + 0.178
-    y_dam = nose_y(0.0, 0.5 * (zb0 + zb1)) + 0.022
-    box(p, -0.150, 0.150, y_dam - 0.006, y_dam + 0.010, zb0, zb1, DARK)
+    # Licence-plate bracket, dead centre on the BUMPER'S OWN FACE (as on the ref car).
+    # It used to hang off the air dam; with the dam merged into the bumper its datum is
+    # the bumper, and the bumper's face is the loft's crown — Y_NOSE on the centreline.
+    # Read from there, never typed as an offset from Y_FACE_C: the sheet metal's apex is
+    # 0.88 m up and a constant taken there sits ~70 mm ahead of the panel down at plate
+    # height, which is how the bracket came to be floating in the first place.
+    # IT MUST NOT OWN Y_NOSE.  The bumper's crown does — report() asserts the overall
+    # length against the physics preset and Y_NOSE is the truck's front extent — so the
+    # bracket stops 2 mm short of it, which still leaves it a couple of millimetres proud
+    # of the bumper's own face down at plate height (the section has rolled back ~4 mm
+    # from the crown by then).  This is the opposite of the REAR plate, where the plate
+    # deliberately owns Y_TAIL because a flat panel reads better there than a curve.
+    # It sits JUST BELOW THE CROWN, never across it.  The bumper's face is convex, so
+    # the crown is its frontmost line and anything flat spanning it is proud at one end
+    # and buried at the other — it came out as a notch rather than a plate.  Between the
+    # lower edge and the crown the face has rolled back 4..8 mm, which a flat bracket
+    # clears evenly.  (It used to hang off the air dam, which was flat and made this
+    # easy; with the dam gone there is no flat panel down here to mount it on.)
+    zb0, zb1 = Z_BUMP0 + 0.015, Z_BUMP0 + 0.085
+    box(p, -0.150, 0.150, Y_NOSE - 0.020, Y_NOSE - 0.002, zb0, zb1, DARK)
 
 
 # ---------------------------------------------------------------------------
@@ -1894,8 +2018,12 @@ def build_interior(p):
              (-W_TUNNEL + 0.045, Y_COWL, Z_TUNNEL + 0.060)], DARK)
 
     # Rear cab wall, set 15 mm inboard of the painted panel so the two never z-fight.
+    # It stops 12 mm SHORT of the beltline: build_cab()'s rear skin tops out exactly at
+    # Z_BELT, and two boxes sharing a top face is the one way an inset can still z-fight.
+    # The strip it gives up shows the painted panel behind, which is what a real cab has
+    # above the rear trim anyway.
     box(p, -0.692, 0.692, Y_CAB_REAR + 0.015, Y_CAB_REAR + 0.045, Z_FLOOR + 0.008,
-        Z_BELT, DARK)
+        Z_BELT - 0.012, DARK)
 
     # --- Dash --------------------------------------------------------------
     Y_DASH = 0.322                          # rear edge of the pad
