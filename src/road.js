@@ -3697,9 +3697,9 @@ export class RoadSystem {
                 SQ.pts) <= CHORD
             const weWin = ownDisc && (own.L > SQ.L || (own.L === SQ.L && ck < qck))
             if (weWin) continue   // we are untouched; the loser plans this pair from its side
-            // the winner must be PLAIN (see header): in-graph, no node-merge role, no bundle
-            if (!spQ || this._v2MergeFor(g, drop, spQ[0], spQ[1])
-                || this._v2BundleSolve(g, drop, spQ[0], spQ[1])) {
+            // the winner must be PLAIN (see header): in-graph and holding no node-merge role.
+            // (QUAL-30: the "no bundle" clause went with _v2BundleSolve — there are no bundles.)
+            if (!spQ || this._v2MergeFor(g, drop, spQ[0], spQ[1])) {
                 this._v2MergeSkipped('winner', `${ck} x ${qck} disjoint`)
                 continue
             }
@@ -3955,7 +3955,6 @@ export class RoadSystem {
         // one machinery per run: any merge-family role keeps its resolution
         if (this._v2MergeFor(g, drop, c1, c2)) return fin(null)
         if (this._v2DisjointFor(g, drop, wide, c1, c2)) return fin(null)
-        if (this._v2BundleSolve(g, drop, c1, c2)) return fin(null)
         const pairs = this._v2ConflictPairs(g, drop, wide, c1, c2)
         if (!pairs.length) return fin(null)
         const own = this._v2RunSample(g, drop, c1, c2)
@@ -4545,202 +4544,6 @@ export class RoadSystem {
                 : (this._v2Deleted?.has(delCk(d.a)) || this._v2Deleted?.has(delCk(d.b))) ? 'deleted' : false
         }
         return cs
-    }
-
-    // ── BUG-55: the bundle solve — negotiated fork decks ──────────────────────────────────────
-    // The Wall-2/Wall-1 fix. Today's shipped merge solves each loser strand ALONE, pinned to the
-    // winner's independently-solved deck at the fork — so a stacked pair can never reach it, and
-    // a re-solved tail steepens into a junction pad that took no part in the solve. Here the
-    // winner's trunk and every member loser's outer strand solve JOINTLY (profileSolveBundle):
-    // the fork elevation is negotiated under the caps, then the winner re-solves through the
-    // ordinary ladder with the negotiated decks as interior pins and the losers pin to the
-    // winner's FINAL deck exactly as before. All shipped finish machinery is inherited.
-    //
-    // Membership is deliberately narrow, which is what keeps evaluation order irrelevant:
-    //   · the winner must not itself be a loser anywhere (_v2MergeFor null) — an edge solved by
-    //     someone else's bundle cannot head its own, or two windows could disagree about it;
-    //   · a member loser's applied spec set must be exactly [this spec] — a both-ends loser
-    //     bridges two winners' bundles and would couple them, so it keeps dictated decks.
-    // Everything read is memoized-pure (plans, samples, terrain), so the result is a pure fn of
-    // the pair plans — every window computes the identical bundle (the BUG-25 argument again).
-    //
-    // The 'pad' guard: a branch whose RAW solved arrival grade at its far node exceeds
-    // mergePadArrivalMax declines the rung — the junction pad plane is clamped to ~7% grade, so
-    // (arrival − plane) × pad reach is the measured 1.75–2.37 m collision cliff class, and the
-    // arrival grade at the node is the quantity that predicts it. (NOT negative result #10, which
-    // capped the strand's own max grade — that lives in the junction-BLENDED profile and never
-    // fired.) Declines are counted, never forced.
-    // BUG-57: TWO-LAYER bundles. Plan mode (no `wide`) is what discovery, dry-runs and the
-    // crossing-rung sanction read — pure planner state, never a delete verdict, so the delete
-    // rung stays acyclic. Assembly mode (`wide` passed — every real registration path) DROPS a
-    // deleted loser from membership, the mirror of the dead-winner rule: the deleted member
-    // never registers, so the winner's profile must not carry a pin for its fork (measured:
-    // deleting one leg of a solved bundle left an 87 m carve crease at the shared node's
-    // chunk). Window-invariant either way — delete verdicts are per-pair pure. The narrow
-    // residue: a dry-run answers with plan-layer decks, so when a co-member is deleted the real
-    // solve can differ from the dry answer for this rev — deterministic, censused, not silent.
-    _v2BundleSolve(g, drop, wc1, wc2, wide) {
-        const wkA = g.key(wc1), wkB = g.key(wc2)
-        const wck = wkA < wkB ? wkA + '|' + wkB : wkB + '|' + wkA
-        if (!this._v2BundleMemo || this._v2BundleMemo.rev !== this._planRev())
-            this._v2BundleMemo = { rev: this._planRev(), map: new Map() }
-        const memo = this._v2BundleMemo.map
-        const mk = (wide ? 'A|' : '') + wck
-        if (memo.has(mk)) return memo.get(mk)
-        const fail = (v) => { memo.set(mk, v); return v }
-        if (this._v2MergeFor(g, drop, wc1, wc2)) return fail(null)   // a loser heads no bundle
-        const spell = this._v2EdgeSpellings(g)
-        // member losers: applied spec set is exactly [spec] and spec.winner is this edge
-        const members = []
-        for (const nk of [wkA, wkB]) {
-            for (const [lck, spec] of this._v2NodeMerges(g, drop, nk)) {
-                const sA = g.key(spec.winner[0]), sB = g.key(spec.winner[1])
-                if ((sA < sB ? sA + '|' + sB : sB + '|' + sA) !== wck) continue
-                const lsp = spell.get(lck)
-                if (!lsp) continue
-                const mf = this._v2MergeFor(g, drop, lsp[0], lsp[1])
-                if (!mf || mf.length !== 1 || mf[0] !== spec) continue
-                // BUG-57 (assembly layer only): a DELETED loser never registers — its strand
-                // must not pin the winner's profile (see the method header).
-                if (wide && this._v2DeleteFor(g, drop, wide, lsp[0], lsp[1])) continue
-                const own = this._v2RunSample(g, drop, lsp[0], lsp[1])
-                if (!own) continue
-                members.push({ lck, spec, own })
-            }
-        }
-        if (!members.length) return fail(null)
-        const win = this._v2RunSample(g, drop, wc1, wc2)
-        if (!win) return fail(null)
-        const C = this._v2Costs()
-        const padMax = C.mergePadArrivalMax ?? 0.12
-        const clArcAtCum = (S, cum) => {
-            const pc = S.polyCum, ca = S.clArc, n2 = pc.length
-            let lo = 0, hi = n2 - 1
-            while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (pc[m] <= cum) lo = m; else hi = m }
-            const span = pc[lo + 1] - pc[lo] || 1
-            return ca[lo] + (ca[lo + 1] - ca[lo]) * (cum - pc[lo]) / span
-        }
-        // ~10 m stations over an XZ polyline (the strand's own arc domain)
-        const stationsOf = (P) => {
-            const cum = [0]
-            for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].z - P[i - 1].z))
-            const L = cum[cum.length - 1]
-            if (!(L > 1e-6)) return null
-            const nSt = Math.max(2, Math.round(L / 10))
-            const s = new Array(nSt + 1), ground = new Array(nSt + 1)
-            let j = 1
-            for (let i = 0; i <= nSt; i++) {
-                const t = L * i / nSt
-                while (j < P.length - 1 && cum[j] < t) j++
-                const u = (t - cum[j - 1]) / Math.max(1e-9, cum[j] - cum[j - 1])
-                const x = P[j - 1].x + (P[j].x - P[j - 1].x) * u
-                const z = P[j - 1].z + (P[j].z - P[j - 1].z) * u
-                s[i] = t
-                ground[i] = this._coarseH(x, z)
-            }
-            return { s, ground }
-        }
-        // A branch's XZ course, fork-first: fork point, taper band (fork → join), then the
-        // loser's own vertices from the join AWAY toward its pinned end. Reversed to pinned-first
-        // before stationing. Pure geometry; heights are the solver's business.
-        const strandOf = (own, forkPt, bandPts, joinCum, away) => {
-            const P = [{ x: forkPt.x, z: forkPt.z }]
-            for (const q of bandPts) P.push({ x: q.x, z: q.z })
-            if (away > 0) { for (let i = 0; i < own.pts.length; i++) if (own.polyCum[i] > joinCum + SPLICE_EPS) P.push({ x: own.pts[i].x, z: own.pts[i].z }) }
-            else { for (let i = own.pts.length - 1; i >= 0; i--) if (own.polyCum[i] < joinCum - SPLICE_EPS) P.push({ x: own.pts[i].x, z: own.pts[i].z }) }
-            if (P.length < 3) return null
-            P.reverse()
-            return P
-        }
-        const bandRungs = Math.max(...members.map((m) => m.spec.variants.length))
-        let sawPad = false
-        for (let bandIdx = 0; bandIdx < bandRungs; bandIdx++) {
-            // branch geometry for this rung — any member failing to build voids the whole rung
-            // (the ladder is uniform across the bundle, like the shipped cross-end rule)
-            const branches = []   // {P (pinned-first), forkArc (winner clArc), yPin}
-            let ok = true
-            for (const m of members) {
-                const v = m.spec.variants[Math.min(bandIdx, m.spec.variants.length - 1)]
-                if (m.spec.midSpan) {
-                    const pIn = _polyAtCum(win.pts, win.polyCum, v.wIn)
-                    const pOut = _polyAtCum(win.pts, win.polyCum, v.wOut)
-                    const head = strandOf(m.own, pIn, v.bandIn.pts, v.bandIn.joinCum, -v.lDir)
-                    const tail = strandOf(m.own, pOut, v.bandOut.pts, v.bandOut.joinCum, v.lDir)
-                    if (!head || !tail) { ok = false; break }
-                    branches.push({ P: head, forkArc: clArcAtCum(win, v.wIn) })
-                    branches.push({ P: tail, forkArc: clArcAtCum(win, v.wOut) })
-                } else {
-                    const away = m.spec.loserNodeAtStart ? 1 : -1
-                    const strand = strandOf(m.own, v.forkPt, v.band.pts, v.band.joinCum, away)
-                    if (!strand) { ok = false; break }
-                    branches.push({ P: strand, forkArc: clArcAtCum(win, v.wCut) })
-                }
-            }
-            if (!ok) continue
-            // trunk stations over the winner, with a station inserted at each fork
-            const wL = win.clArc[win.clArc.length - 1]
-            const base = stationsOf(win.pts)
-            if (!base) return fail(null)
-            const s = base.s.slice(), ground = base.ground.slice()
-            const forkIdxOf = []
-            for (const b of branches) {
-                const f = Math.max(1, Math.min(wL - 1, b.forkArc))
-                let i = 1
-                for (let k2 = 2; k2 < s.length - 1; k2++) if (Math.abs(s[k2] - f) < Math.abs(s[i] - f)) i = k2
-                if (Math.abs(s[i] - f) > 2) {
-                    const j2 = s.findIndex((sv) => sv > f)
-                    const p = _polyAtCum(win.pts, win.polyCum, f)   // clArc≈polyCum drift is sub-station here
-                    s.splice(j2, 0, f)
-                    ground.splice(j2, 0, this._coarseH(p.x, p.z))
-                    i = j2
-                    for (let q = 0; q < forkIdxOf.length; q++) if (forkIdxOf[q] >= j2) forkIdxOf[q]++
-                }
-                forkIdxOf.push(i)
-            }
-            const trunk = { s, ground,
-                            yA: this._v2NodeHeight(win.pts[0].x, win.pts[0].z),
-                            yB: this._v2NodeHeight(win.pts[win.pts.length - 1].x, win.pts[win.pts.length - 1].z) }
-            const solverBranches = branches.map((b, bi) => {
-                const st = stationsOf(b.P)
-                if (!st) return null
-                const far = b.P[0]
-                return { s: st.s, ground: st.ground, forkIdx: forkIdxOf[bi],
-                         yPin: this._v2NodeHeight(far.x, far.z) }
-            })
-            if (solverBranches.some((b) => !b)) continue
-            // the same 4-rung ladder the ordinary solve walks
-            const ceiling = C.gMaxRoad + (C.gradeTol ?? 0.14)
-            const reliefCap = Math.min(ceiling, C.gMaxRoad + 0.03)
-            let res = profileSolveBundle(trunk, solverBranches, { costs: C })
-            if (!res) res = profileSolveBundle(trunk, solverBranches, { yStep: 0.25, costs: C })
-            if (!res) res = profileSolveBundle(trunk, solverBranches, { yStep: 0.25, costs: { ...C, gMaxRoad: reliefCap } })
-            if (!res && reliefCap < ceiling) res = profileSolveBundle(trunk, solverBranches, { yStep: 0.25, costs: { ...C, gMaxRoad: ceiling } })
-            if (!res) continue
-            // 'pad' guard: raw arrival grade at each strand's far node
-            let padHit = false
-            for (let bi = 0; bi < solverBranches.length; bi++) {
-                const b = solverBranches[bi], y = res.branchY[bi]
-                let k2 = 1
-                while (k2 < b.s.length - 1 && b.s[k2] < 24) k2++
-                const gArr = Math.abs(y[k2] - b.yPin) / Math.max(1e-9, b.s[k2])
-                if (gArr > padMax) { padHit = true; break }
-            }
-            if (padHit) { sawPad = true; continue }
-            // winner finish: the ordinary ladder with the negotiated decks pinned
-            const wpts = win.pts.map((p) => p.clone())
-            const infBefore = this._v2Infeasible || 0
-            const pins = branches.map((b, bi) => ({ s: Math.max(1, Math.min(wL - 1, b.forkArc)), y: res.forkY[bi] }))
-            const winnerSpans = this._v2GradePts(wpts, win.clArc, { pins })
-            if ((this._v2Infeasible || 0) > infBefore) { this._v2Infeasible = infBefore; continue }
-            const winnerY = new Float64Array(wpts.length)
-            for (let i = 0; i < wpts.length; i++) winnerY[i] = wpts[i].y
-            const out = { bandIdx, winnerY, winnerSpans,
-                          members: new Set(members.map((m) => m.lck)) }
-            memo.set(mk, out)
-            return out
-        }
-        this._v2MergeSkipped(sawPad ? 'pad' : 'bundle', `${wck} bundle (${members.length} loser${members.length === 1 ? '' : 's'})`)
-        return fail(null)
     }
 
     _v2CamAtArc(cam, sArc) {
@@ -5696,14 +5499,10 @@ export class RoadSystem {
                 }
                 else {
                     // BUG-57 rung: a nick-crossed run with no merge-family role registers SHOVED —
-                    // deflected clear of its crossing partners (_v2ShoveFor; plan-layer pure). An
-                    // assembly-layer bundle head keeps its winner duty instead — its losers pin to
-                    // its pure geometry — and the unapplied shove's crossing then ships for this
-                    // rev, censused (the dead-winner residue class).
-                    const wb = this._v2BundleSolve(g, drop, c1, c2, wide)
-                    const shove = wb ? null : this._v2ShoveFor(g, drop, wide, c1, c2)
+                    // deflected clear of its crossing partners (_v2ShoveFor; plan-layer pure).
+                    const shove = this._v2ShoveFor(g, drop, wide, c1, c2)
                     if (shove) this._v2RegisterShoved(key, cl, c1, c2, shove, g, drop)
-                    else this._registerRun(key, cl, c1, c2, wb)
+                    else this._registerRun(key, cl, c1, c2)
                 }
             }
         }
@@ -5724,7 +5523,7 @@ export class RoadSystem {
      * chain merge can register a MERGED centerline through exactly the same path — a merged run must be
      * built the same way an ordinary one is, or it would not be ordinary road.
      */
-    _registerRun(key, cl, cellA, cellB, bundle) {
+    _registerRun(key, cl, cellA, cellB) {
         const sample = (curve) => {
             const n = Math.max(1, Math.ceil(curve.length / PROTO_SAMPLE_DS))
             const pts = new Array(n + 1)
@@ -5741,14 +5540,13 @@ export class RoadSystem {
         // FEAT-68 (v2): exact profile solve replaces design-grading + the FEAT-40 tunnel pass.
         // Bore stretches come back as FEAT-40-shaped spans (carve-skip + lining + collider through
         // the existing machinery). QUAL-27: bridges are gone from the vocabulary entirely.
-        // BUG-55: a bundled WINNER ships the bundle's solved profile instead — same sampling
-        // formula as _v2RunSample, so the y arrays align index-for-index; anything else falls
-        // through to the ordinary solve.
+        // QUAL-30: the BUG-55 bundled-winner branch is gone with _v2BundleSolve. A bundle existed
+        // to bend a winner's profile so the fork DECKS its losers pinned to would agree — and under
+        // the T there are no fork decks: the side road pins to the trunk's existing deck at P and
+        // the trunk is not asked to move for it. Keeping the bundle would have gone on bending
+        // through roads for forks that no longer exist, against FEAT-76's own ruling.
         let tunnelSpans, rerouted = false, condemned = false
-        if (bundle && bundle.winnerY && bundle.winnerY.length === n + 1) {
-            for (let i = 0; i <= n; i++) pts[i].y = bundle.winnerY[i]
-            tunnelSpans = bundle.winnerSpans
-        } else {
+        {
             const inf0 = this._v2Infeasible || 0
             tunnelSpans = this._v2GradePts(pts, clArc)
             if ((this._v2Infeasible || 0) > inf0) {
