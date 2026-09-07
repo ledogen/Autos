@@ -600,6 +600,21 @@ function _interpArcTable(key, val, k) {
  */
 export const CHUNK_SIZE = 64
 
+/**
+ * Which router built the roads this build drives on. Stamped into every calibration run export
+ * (`rangersim-run-export/2`, mission.js/paper-route.js) for the same reason `par_ref` carries
+ * PAR_SLACK: a drive recorded on different ROADS is a drive against a different standard, and a
+ * corpus that cannot tell the two apart lets a future refit silently mix them.
+ *
+ * That is not hypothetical — it is BUG-41 Stage 2. PAR_REF was fitted 2026-08-16 against human
+ * drives on v1 roads; router v2 took over the whole network 2026-08-18 (`7cff01d`) with measurably
+ * different geometry (QUAL-28: 10.4% vs 5.2% of length in >200 m straights, 17 switchbacks against
+ * 52). Par's dominant dial is corner speed, and v2 changed the corners — so the v1 corpus in `runs/`
+ * and a v2 corpus must never be fitted together. Bump this whenever the router's OUTPUT geometry
+ * changes enough that old drives stop describing the roads being priced.
+ */
+export const ROAD_ROUTER_VERSION = 'v2'
+
 // ── PROTOTYPE constants (valley-following streaming trunk — spike) ─────────────
 // Non-destructive experimental routing for the Phase-8 redesign. Endless roads as a
 // deterministic chain of valley-anchor connections, streamed around the view like terrain.
