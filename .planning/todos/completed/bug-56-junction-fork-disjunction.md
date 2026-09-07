@@ -1,7 +1,7 @@
 ---
 id: BUG-56
 type: bug
-status: in-progress
+status: completed
 severity: major
 opened: 2026-08-24
 closed: 2026-08-27

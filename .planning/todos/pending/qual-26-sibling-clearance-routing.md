@@ -134,3 +134,84 @@ prices departures within `sibConeDeg` of one on the demoted rungs only (`wSibDep
 knobs in `roadV2`). That is deliberately NOT this ticket's full two-pass — corridors are still not
 priced as occupied. Re-measure the demoted-rung population after the corridor-router branch merges;
 this ticket's scope is what remains.
+
+---
+
+## Status 2026-09-07 — junction-stitch's remaining 80, decomposed. THE PREMISE HAS MOVED.
+
+`junction-stitch` is the last red gate in the suite (67 of 68 green). BUG-56 booked that red here at
+its close — *"both now QUAL-26's subject (two roads routed to the same ground)"* — so this is where
+the measurement belongs. It was 105 sites then; R1–R8, FEAT-76 and QUAL-30 have taken it to **80**.
+
+### Read this first: two thirds of this ticket's framing is obsolete
+
+**Taper bands no longer exist.** QUAL-30 (2026-09-06) deleted `_v2BuildTaper` and the whole band
+ladder; FEAT-76 replaced the wye with a T promotion where the side road simply does not exist over
+the shared ground. So:
+
+- the ⚑ OPTIONAL trigger above — *"taper-band smoothness is unacceptable and the band geometry has
+  already been tuned"* — **can never fire.** There is no band to be unsatisfied with.
+- the first acceptance bullet — *"departures (taper bands) across the road battery fall
+  substantially"* — measures a quantity that is now always zero.
+- the last acceptance bullet — *"the route cache is re-baked"* — the bake subsystem was deleted
+  2026-08-19. Void.
+
+What survives untouched is the **A0 measurement** (49 of 59 hugs avoidable at median 1.00× length)
+and the **two-pass design**, both of which are about ROUTING and are unaffected by the wye's removal.
+
+### What the 80 actually are (measured 2026-09-07, do not re-derive)
+
+79 of 80 are `leg/edge` — two legs of the SAME junction — and one is `midspan/edge`:
+
+| | |
+|---|---|
+| distance from the node | 10–28 m, **median 12** (the gate's ruled pad bar is 10 m) |
+| edge separation | 0.0–2.1 m, **median 0.5** — the pavements are touching |
+| deck gap across that contact | 0.25–6.40 m, **median 2.13** |
+| overshoot past what the ground can slope | **median 1.64 m**, max 6.00 |
+
+Worst reproducers: seed 11 (−1756, −266) at 6.40 m; seed 20 (−467, −341) at 6.19 m.
+
+**Three candidate causes ruled out, with numbers:**
+
+- **NOT the undersized pads of BUG-59.** The 10–17 m clustering brackets BUG-59's 13.5 m pad floor
+  and looks like the same defect. It is not: the gate's `PADR = 10` is R3's *ruled* bar, explicitly
+  "not the built reach", so growing pads improves the world and moves this gate not at all.
+- **NOT camber**, despite 43 of 80 carrying reversed bank. Camber explains **11 % of the gap at the
+  median** and more than half of it in only **7 of 80**. This is deck, not banking.
+- **NOT the junction blend reach.** Swept live: `roadJunctionBlendLength` 30 (shipped) → **80**,
+  45 → **83**, 60 → **81**. Stretching it is *worse* — it does not make two legs agree with each
+  other, it only moves where each one sits, and it flattens more road so fresh pairs open.
+
+### The mechanism
+
+`_applyJunctionBlend` eases **each leg individually** toward a grade line (`nodeY + slopeAway·d`).
+**Nothing anywhere bounds the PAIR.** At 12 m the smoothstep is ~65 % applied, so each leg still
+carries ~35 % of its own solved profile; where two legs' own profiles differ by several metres that
+residual is the ~1.6 m median overshoot — exactly where their edges are in contact.
+
+### So there are now TWO candidate fixes, not one. This is an owner decision.
+
+1. **This ticket's design — stop them sharing the ground.** Two-pass routing, losers re-routed with
+   the winner's pass-1 corridor priced as occupied. A0 says 49 of 59 hugs are avoidable at median
+   1.00× length. It would remove the touching pavements, so the deck question never arises.
+   **It moves roads**, which is the whole reason it was banked.
+
+   Its cost estimate is now *stale in this ticket's favour*: the ~1.15× was written when routing was
+   the expensive half of world build. It no longer is. FEAT-76 took the seed-6 network from 41 s to
+   5 s headless, `bench-worldgen` puts a cold r1400 network at 1.4–2.0 s per seed, and the
+   2026-09-07 cold-load re-baseline (PERF-27) found **two thirds of the remaining 33 s is terrain,
+   not routing**. A 15 % surcharge on the cheap half is smaller than it was when this was banked.
+
+2. **A rule nobody has written down — let them share, but bound the divergence.** Apply BUG-56's own
+   **B3 seam rule** (two decks may not diverge faster than the ground between them can slope)
+   **pairwise at junction legs**, which it has never been. FEAT-76 already ports exactly this rule
+   for T departures, where it is what makes a promoted T's departure honest; ordinary legs of a node
+   have never been subject to it. The profile solve would treat a node's legs as a system: pin them
+   jointly while their edges overlap, or price the divergence so the plan layer moves one.
+   **This moves no road in plan**, which fits the owner's standing position that sharing is correct
+   and emergent (FEAT-76's rejected reuse discount).
+
+The measurement above points at (2) as the direct cause and (1) as an upstream fix that also works.
+**Which one to build — or whether the 80 are worth building anything for — is the owner's call, and
+is deliberately not answered here.**
