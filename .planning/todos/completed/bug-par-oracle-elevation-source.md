@@ -471,3 +471,11 @@ owed nor forgotten:
 
 - [x] `npm run test:all` no worse than the documented standing reds — and `mission-network` is
       expected to LEAVE that list, since its §7 failure is this ticket.
+      **`mission-network` has left it: PASS, fully green.** What was actually run, stated plainly:
+      the 37-gate AFFECTED suite pre-merge (33/37, failures exactly the four documented reds), and
+      `mission-network` / `par-oracle` individually since. A full `test:all` on current main was
+      NOT run, deliberately — another session has QUAL-30 uncommitted in `src/road.js`, so a sweep
+      now would grade their work in progress rather than main. **Whoever lands QUAL-30 should run
+      it**; of the four reds, `pond-route-around` and `paper-tour` were cleared by
+      `feature/red-gates` (2026-09-06) and `mission-network` here, leaving `junction-stitch`
+      (BUG-56's departure pass) as the only one this ticket expects to see.
