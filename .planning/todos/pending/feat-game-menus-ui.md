@@ -90,17 +90,6 @@ Owner pass 2026-09-06 (second round):
   truck settled straight through it), and the top must be sheared FLAT — on a dome the free-rolling
   front wheel walks off over ~20 s. With both, the pose is stable to the millimetre over 30 s.
 
-- **The tire visibly sank into the rock** on the way down. Measured first: zero missed contacts,
-  one physics step per rendered frame, no pacing artefact — the tire is a SPRING, and the overlap of
-  the wheel sphere with the ground IS its deflection by construction (~5.5 cm at rest, 9.2 cm through
-  the landing bounce). The whole truck has always done this; `computeStaticEquilibrium` seats the hub
-  at `wheelRadius − tireComp` deliberately. It is invisible against a road and glaring against a
-  convex rock. Fixed by DRAWING the loaded tire — `_flexTires()` squashes the stage's tire meshes by
-  the drawn wheel's own re-queried overlap, so the crown holds still and only the contact patch
-  rises. Taken from geometry, not from tire force: force lags the overlap on rebound and leaves up
-  to 6 cm. Rest intrusion 55 mm → ~0. Stage-only, and it depends on the stage truck being parked
-  (the squash is applied in the wheel's frame, which spin/steer would rotate out of vertical).
-
 **Still open on this ticket:** §2 settings/options (video/quality, audio, controls, the FEAT-39
 assists page), §3's pause-discipline work beyond the sim hold, §4 the UI-chrome/visual-language pass
 and the toast generalisation, and one-off scenarios (no scenarios exist yet to select).

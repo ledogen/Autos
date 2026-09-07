@@ -35,7 +35,7 @@ import { createPhysicsEngine, GROUP_TERRAIN, GROUP_STATIC } from './physics-engi
 import { stepPhysics, createVehicleChassis } from './physics.js'
 import { createVehicleModel } from './vehicle-model.js'
 import { makeVehicleState } from './vehicle-state.js'
-import { computeStaticEquilibrium, WHEEL_SOFT_BAND } from './suspension.js'
+import { computeStaticEquilibrium } from './suspension.js'
 import { OFF as IGN_OFF } from './ignition.js'
 import { DebrisSystem } from './debris.js'
 
@@ -166,7 +166,6 @@ export class MenuStage {
     this._axisY = new THREE.Vector3(0, 1, 0)
     this._axisRight = new THREE.Vector3()
     this._bedWorld = new THREE.Vector3()
-    this._hubProbe = new THREE.Vector3()   // scratch for the per-wheel overlap re-query in _flexTires
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────────────────────────
@@ -439,48 +438,8 @@ export class MenuStage {
     if (this._acc >= PHYSICS_DT) this._acc = 0   // see MAX_STEPS_PER_FRAME: drop the debt, don't pay it
 
     this._model.syncMeshesToState(this._vs)
-    this._flexTires()
     this._debris.update()
     this._updateCamera(dt)
-  }
-
-  /**
-   * DRAW THE TIRE LOADED. This is the fix for "the wheel drops through the rock".
-   *
-   * Nothing was wrong with the contact — measured across the whole drop there are zero missed
-   * contacts and exactly one physics step per rendered frame. The tire is a SPRING: the wheel query
-   * hands the solver a sphere of wheelRadius at the hub, and that sphere's overlap with the ground
-   * IS the tire's deflection, by construction. At rest the loaded front corner sits ~5.5 cm into
-   * whatever it is on, and through the landing bounce it reaches 9.2 cm. The truck has always done
-   * this — a wheel mesh sinks into the road by the same amount, and computeStaticEquilibrium seats
-   * it there deliberately — you simply cannot SEE it against a road. Against a discrete convex rock
-   * you watch a quarter of the tire disappear.
-   *
-   * So draw the tire where a loaded tire actually is, rather than nudging the rock to hide it. The
-   * squash is taken from the DRAWN wheel's own overlap with the ground, re-queried here at render
-   * time: cancelling a geometric overlap with the geometry that caused it needs no force model and
-   * cannot lag it. (Deriving it from the tire FORCE instead leaves up to 6 cm during a rebound,
-   * where the damper drops fz while the overlap is still deep.) Scale and offset together hold the
-   * crown still and raise only the contact patch — the axle drops toward the road, the top does not.
-   *
-   * Stage-only, and it relies on the stage truck being parked: the scale is applied in the wheel's
-   * own frame, which the spin and steer quaternions would otherwise rotate out of vertical.
-   */
-  _flexTires () {
-    const r = RANGER_PARAMS.wheelRadius
-    const wheels = this._model.wheelMeshes
-    for (let i = 0; i < 4; i++) {
-      const wheel = wheels[i]
-      const tire = wheel?.children[0]?.children[0]
-      if (!tire) continue
-      wheel.getWorldPosition(this._hubProbe)
-      const hits = this._queryContacts(this._hubProbe.x, this._hubProbe.y, this._hubProbe.z, r)
-      let depth = 0
-      for (let h = 0; h < hits.length; h++) if (hits[h].depth > depth) depth = hits[h].depth
-      const defl = Math.min(WHEEL_SOFT_BAND, depth)   // past the soft band it is the RIM, not rubber
-      tire.scale.y = 1 - defl / (2 * r)   // span 2r − defl …
-      tire.position.y = defl / 2          // … re-centred so the crown stays and the patch rises
-    }
   }
 
   /**
