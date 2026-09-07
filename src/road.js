@@ -3050,11 +3050,8 @@ export class RoadSystem {
         // gentlest band at or above the road's own radius, and only if NOTHING clears it fall back to
         // RFLOOR_MIN — the ribbon FOLD limit (5.5 m, BUG-12, gated by road-minradius) plus margin,
         // which is a safety floor rather than a quality one and is never relaxed.
-        const RFLOOR = this._params?.roadMinTurnRadius ?? 12
-        const RFLOOR_MIN = 6
         // Band lengths tried, shortest first: a gentle fork settles at 40 m, a wide one needs the
         // upper rungs to swing the whole turn at road radius.
-        const TAPER_LADDER = [40, 55, 70, 90, 110, 130]
         const out = new Map()
         const nbrsRaw = g.adj.get(nk)
         const nbrs = nbrsRaw ? [...nbrsRaw].filter((o) => !drop || !drop.has(nk + '|' + o)).sort() : []
@@ -3151,7 +3148,7 @@ export class RoadSystem {
         // The fork machinery — buildTaper and midSpanPair — lives as methods now
         // (_v2BuildTaper/_v2MidSpanPair) so the BUG-55 disjoint planner reuses the IDENTICAL
         // taper construction and guards; ctx carries this planner's constants and report tag.
-        const ctx = { PROX, GAPM, FLARE, MINREG, MINSPAN, RFLOOR, RFLOOR_MIN, TAPER_LADDER, tag: `@${nk}` }
+        const ctx = { PROX, GAPM, FLARE, MINREG, MINSPAN, tag: `@${nk}` }
         const pairs = []
         for (let i = 0; i < inc.length; i++) for (let j = i + 1; j < inc.length; j++) {
             const A = inc[i], B = inc[j]
@@ -3289,14 +3286,20 @@ export class RoadSystem {
                     return
                 }
                 if (_winnerBoreAtFork(W.S, W.nodeAtStart, wCutF)) { if (report) this._v2MergeSkipped('bore', `${L2.ck} x ${W.ck} @${nk}`); return }
-                const taper = this._v2BuildTaper(ctx, W, wCutF, W.nodeAtStart ? -1 : 1, L2, lCutF, L2.nodeAtStart ? 1 : -1, tangled)
-                if (taper.fail) { if (report) this._v2MergeSkipped('taper', `${L2.ck} x ${W.ck} @${nk} best R ${taper.bestR.toFixed(1)} m at a ${taper.bestLb} m band (floor ${RFLOOR})`); return }
-                for (const band of taper.bands) {
-                    const ownLeft = L2.nodeAtStart ? L2.S.L - band.joinCum : band.joinCum
-                    if (ownLeft < MINREG) continue   // no road left past the join to carry on along
-                    if (tangled && fromNode(L2, band.joinCum) < maxCrossL + 10) continue   // must span the mess
-                    variants.push({ wCut: wCutF, lCut: lCutF, forkPt: { x: wPtF.x, z: wPtF.z }, band, region: fLf })
-                }
+                // QUAL-30: NO BAND IS SIZED HERE any more, and the ladder that sized one is gone.
+                // A T's departure is built and judged at promotion time — _v2BuildDeparture walks
+                // its own radius ladder, _v2DepartureAccepts rules on the result — so the plan
+                // layer's whole job is to name WHERE the fork could go. One variant per fraction.
+                const ownLeft = L2.nodeAtStart ? L2.S.L - lCutF : lCutF
+                if (ownLeft < MINREG) return                  // no road left past the fork to carry on along
+                // The extent that must span the mess is the fork PLUS the departure blend, the same
+                // reach _v2CededExtents sanctions — not the bare fork. Testing the bare fork was
+                // measured to reject forks the wye's band join had cleared, and the pairs it dropped
+                // ran unsanctioned instead: 66 sample pairs under 9.5 m, worst 0.7 m
+                // (graph-topology GRAPH-CORRIDOR-CLEARANCE red at seed 6 (4060,2268)).
+                const LBmax = Math.max(20, Math.min(Math.sqrt(2 * PROX * 4 * (this._params?.roadMinTurnRadius ?? 12)), 90))
+                if (tangled && fLf + LBmax < maxCrossL + 10) return
+                variants.push({ wCut: wCutF, lCut: lCutF, forkPt: { x: wPtF.x, z: wPtF.z }, region: fLf })
             }
             for (const frac of [1, 0.75, 0.5]) tryFrac(frac, frac === 1)
             // OUTWARD rungs — "skip the points up to past the mess, connect further out".
@@ -3336,191 +3339,6 @@ export class RoadSystem {
         return out
     }
 
-    // Build the fork corner and measure it.
-    //
-    // The band is the LOSER'S OWN COURSE carrying a decaying lateral offset — not a free curve
-    // from the fork to some point downstream. At the fork the offset is exactly the gap to the
-    // winner (so the band starts on the winner's pavement); by the join it is zero and its slope
-    // is zero (so the band ends welded to the loser's own line). Everything in between is the
-    // loser's real routed geometry, shifted sideways.
-    //
-    // This matters because the obvious construction — a cubic Hermite straight from fork to
-    // join — is badly conditioned exactly where it is needed. Its curvature at the start goes as
-    // the angle between the START TANGENT and the CHORD, and at a fork those differ by most of
-    // a right angle, so it bulged to a 3.4 m radius on an ordinary 23° fork and got no better
-    // with a longer band. In the loser's frame the same fork is a 16 m offset decaying over
-    // 40 m, which is a gentle shift.
-    //
-    // Then MEASURE: the min circumradius of the curve the ribbon will actually sweep (same
-    // centripetal Catmull-Rom, three real vertices of context at each end so the ends are
-    // conditioned by the roads, and only the band itself scored), stepping up the ladder until
-    // it clears the floor. Returns {fail} with the best score when nothing does.
-    // wInto: direction along the WINNER's arc that points INTO the shared strand (the context
-    // vertices come from that side, and the band's tangent is the winner's heading AWAY from it).
-    // lAway: direction along the LOSER's arc that the band extends, i.e. away from the strand.
-    // A node-anchored merge forks at its outer end only; a MID-SPAN one has a fork at each end,
-    // and the two differ purely in these two signs.
-    _v2BuildTaper(ctx, W, wCut, wInto, L2, lCut, lAway, allowDirect = false) {
-            const sgnL = lAway
-            const P0 = _polyAtCum(W.S.pts, W.S.polyCum, wCut)
-            const prevs = _spliceNeighbourDir(W.S, wCut, wInto, 3)
-            if (!prevs) return { fail: true, bestR: 0, bestLb: 0 }
-            const tW = _unitXZ(P0.x - prevs[0].x, P0.z - prevs[0].z)
-            const base0 = _polyAtCum(L2.S.pts, L2.S.polyCum, lCut)
-            const tL0raw = _polyTangentAtCum(L2.S.pts, L2.S.polyCum, lCut, true)
-            const tL0 = lAway > 0 ? tL0raw : { x: -tL0raw.x, z: -tL0raw.z }
-            const nL0 = { x: -tL0.z, z: tL0.x }
-            const g0 = (P0.x - base0.x) * nL0.x + (P0.z - base0.z) * nL0.z   // signed gap at the fork
-            // Offset SLOPE at the fork = tan of the signed angle from the loser's heading to the
-            // winner's, so the band leaves along the winner. Clamped: past 60° the band would have
-            // to start sideways, and what is left is a genuine fork corner, not a taper — the
-            // measurement below is what decides whether that corner is buildable.
-            const ang = Math.atan2(tL0.x * tW.z - tL0.z * tW.x, tL0.x * tW.x + tL0.z * tW.z)
-            const s0 = Math.tan(Math.max(-1.047, Math.min(1.047, ang)))
-            // Every rung that clears a floor is kept, GENTLEST first (B5): the SHAPE is settled here,
-            // but whether the loser's remaining road can still be graded from the winner's deck is
-            // only known once the profile is solved, and a different band length changes both the
-            // ground it crosses and how much road is left to absorb the fork height. The assembly
-            // walks these in order, so a gentle band that blows the grade still falls to the next.
-            const cand = []
-            // B5 ORDERING, and this is the load-bearing half. Do not DROP candidates — REORDER them.
-            // Swapping the floor outright cost 3 merges and turned one into 50 sample pairs at 1.3 m
-            // separation (graph-topology corridor-clearance, seed 6 g:4,1,1:5,1,0). The merges were
-            // not lost to the floor: they were lost to keeping only the gentlest three and throwing
-            // away the short bands the assembly's grade and stitch tests would have fallen back to.
-            // So hand the assembly everything that clears the SAFETY floor, gentlest-legal first,
-            // then the rest — it walks them in order and the downstream tests still have the last
-            // word. Capped at four because each variant costs a profile solve × three hold rungs.
-            const pick = () => {
-                const ok = (c) => c.minR >= ctx.RFLOOR
-                const all = cand.filter((c) => c.minR >= ctx.RFLOOR_MIN)
-                // Gentlest-legal first — then the REST BY LENGTH, not by radius. That tail is the
-                // old behaviour verbatim (shortest first), and keeping it verbatim is the point:
-                // ordering by radius all the way down quietly dropped the short bands the assembly
-                // used to fall back to, which cost merges rather than tightening anything.
-                return [...all.filter(ok).sort((a, b) => b.minR - a.minR),
-                        ...all.filter((c) => !ok(c)).sort((a, b) => a.Lb - b.Lb)].slice(0, 5)
-            }
-            let bestR = 0, bestLb = 0
-            for (const Lb of ctx.TAPER_LADDER) {
-                const joinCum = lCut + sgnL * Lb
-                if (joinCum < 0 || joinCum > L2.S.L) continue
-                const nexts = _spliceNeighbourDir(L2.S, joinCum, lAway, 3)
-                if (!nexts) continue
-                const K = Math.max(2, Math.round(Lb / PROTO_SAMPLE_DS))
-                const pts = []
-                for (let k = 1; k <= K; k++) {
-                    const t = k / K, t2 = t * t, t3 = t2 * t
-                    const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t
-                    const off = h00 * g0 + h10 * Lb * s0        // → 0 with zero slope at the join
-                    const a = lCut + sgnL * t * Lb
-                    const b = _polyAtCum(L2.S.pts, L2.S.polyCum, a)
-                    const tlr = _polyTangentAtCum(L2.S.pts, L2.S.polyCum, a, true)
-                    const tl = lAway > 0 ? tlr : { x: -tlr.x, z: -tlr.z }
-                    pts.push({ x: b.x - tl.z * off, z: b.z + tl.x * off })
-                }
-                const chain = [...prevs.slice().reverse(), P0, ...pts, ...nexts]
-                    .map((q) => new THREE.Vector3(q.x, 0, q.z))
-                const curve = new THREE.CatmullRomCurve3(chain, false, 'centripetal', 0.5)
-                const dense = curve.getSpacedPoints(Math.max(16, Math.ceil(curve.getLength() / 1.0)))
-                const nearestIdx = (t) => {
-                    let bi = 0, bd = Infinity
-                    for (let q = 0; q < dense.length; q++) {
-                        const d2 = (dense[q].x - t.x) ** 2 + (dense[q].z - t.z) ** 2
-                        if (d2 < bd) { bd = d2; bi = q }
-                    }
-                    return bi
-                }
-                const q0 = nearestIdx(P0), q1 = nearestIdx(pts[pts.length - 1])
-                let minR = Infinity
-                for (let q = Math.max(1, Math.min(q0, q1)); q <= Math.min(dense.length - 2, Math.max(q0, q1)); q++) {
-                    const a = dense[q - 1], b = dense[q], c = dense[q + 1]
-                    const la = Math.hypot(c.x - b.x, c.z - b.z), lb = Math.hypot(a.x - c.x, a.z - c.z)
-                    const lc = Math.hypot(b.x - a.x, b.z - a.z)
-                    const area2 = Math.abs((b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x))
-                    if (area2 < 1e-9) continue
-                    minR = Math.min(minR, (la * lb * lc) / (2 * area2))
-                }
-                if (minR > bestR) { bestR = minR; bestLb = Lb }
-                cand.push({ Lb, joinCum, pts, minR })
-                if (cand.filter((c) => c.minR >= ctx.RFLOOR).length >= 3) break
-            }
-            {
-                const bands = pick()
-                if (bands.length) return { bands }
-            }
-            // BUG-57 rung: DIRECT SPAN — tangled pairs only (allowDirect). The offset construction
-            // above is the loser's own course carrying a decaying lateral shift, so when that
-            // course is itself switchbacky near the fork the band inherits its curvature and no
-            // ladder length helps (measured: 130 m band, best R 2.5 m). Here the band abandons
-            // the loser's line entirely: a cubic HERMITE from the fork to the join with the
-            // travel tangents pinned at both ends — the winner's heading at the fork, the
-            // loser's own heading at the join — over a ladder of join distances × tangent
-            // magnitudes. (A Catmull-Rom through just fork+join was tried first and measured
-            // useless for exactly the reason the file header predicts: its fork tangent points
-            // at the JOIN, not along the winner, so a waived 153° fork read as a hard corner —
-            // R 0.9 m.) Every candidate is measured with the same context-conditioned
-            // min-circumradius rule against the same floor; grade feasibility stays the profile
-            // solve's business downstream (declines fall through exactly as before).
-            if (allowDirect) {
-                for (const Lb of DIRECT_SPAN_LADDER) {
-                    if (cand.filter((c) => c.minR >= ctx.RFLOOR).length >= 3) break
-                    const joinCum = lCut + sgnL * Lb
-                    if (joinCum < 0 || joinCum > L2.S.L) continue
-                    const nexts = _spliceNeighbourDir(L2.S, joinCum, lAway, 3)
-                    if (!nexts) continue
-                    const PjP = _polyAtCum(L2.S.pts, L2.S.polyCum, joinCum)
-                    const tjr = _polyTangentAtCum(L2.S.pts, L2.S.polyCum, joinCum, true)
-                    const tJ = lAway > 0 ? tjr : { x: -tjr.x, z: -tjr.z }
-                    const chord = Math.hypot(PjP.x - P0.x, PjP.z - P0.z)
-                    if (chord < 20) continue
-                    for (const cmag of [0.8, 1.2, 1.8]) {
-                        const m = cmag * chord
-                        const K = Math.max(4, Math.round(chord * (1 + 0.6 * cmag) / PROTO_SAMPLE_DS))
-                        const pts = []
-                        for (let k = 1; k <= K; k++) {
-                            const t = k / K, t2 = t * t, t3 = t2 * t
-                            const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t
-                            const h01 = -2 * t3 + 3 * t2, h11 = t3 - t2
-                            pts.push({
-                                x: h00 * P0.x + h10 * m * tW.x + h01 * PjP.x + h11 * m * tJ.x,
-                                z: h00 * P0.z + h10 * m * tW.z + h01 * PjP.z + h11 * m * tJ.z,
-                            })
-                        }
-                        const chain = [...prevs.slice().reverse(), P0, ...pts, ...nexts]
-                            .map((q) => new THREE.Vector3(q.x, 0, q.z))
-                        const curve = new THREE.CatmullRomCurve3(chain, false, 'centripetal', 0.5)
-                        const dense = curve.getSpacedPoints(Math.max(16, Math.ceil(curve.getLength() / 1.0)))
-                        const nearestIdx = (t) => {
-                            let bi = 0, bd = Infinity
-                            for (let q = 0; q < dense.length; q++) {
-                                const d2 = (dense[q].x - t.x) ** 2 + (dense[q].z - t.z) ** 2
-                                if (d2 < bd) { bd = d2; bi = q }
-                            }
-                            return bi
-                        }
-                        const q0 = nearestIdx(P0), q1 = nearestIdx(pts[pts.length - 1])
-                        if (q1 <= q0 + 2) continue
-                        let minR = Infinity
-                        for (let q = Math.max(1, q0); q <= Math.min(dense.length - 2, q1); q++) {
-                            const a = dense[q - 1], b = dense[q], c = dense[q + 1]
-                            const la = Math.hypot(c.x - b.x, c.z - b.z), lb = Math.hypot(a.x - c.x, a.z - c.z)
-                            const lc = Math.hypot(b.x - a.x, b.z - a.z)
-                            const area2 = Math.abs((b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x))
-                            if (area2 < 1e-9) continue
-                            minR = Math.min(minR, (la * lb * lc) / (2 * area2))
-                        }
-                        if (minR > bestR) { bestR = minR; bestLb = Lb }
-                        if (minR < ctx.RFLOOR_MIN) continue
-                        cand.push({ Lb, joinCum, pts, minR, direct: true })
-                        break   // one band per join distance — the next rung varies Lb, not magnitude
-                    }
-                }
-                const bands = pick()                     // BUG-56 B5: gentlest-legal first, rest after
-                if (bands.length) return { bands }
-            }
-            return { fail: true, bestR, bestLb }
-    }
     // A MID-SPAN merge: the two legs part at the node, go their own way, and later run
     // together. The loser cedes only that middle stretch and forks at BOTH ends, so its own
     // road either side of the shared strand survives — which is the point. Deleting the whole
@@ -3578,20 +3396,12 @@ export class RoadSystem {
                 }
                 // Two forks. INNER: the loser arrives onto the winner, so its band runs BACK toward
                 // its own head (-lDir) and the strand lies ahead on the winner (+wDir). OUTER: mirror.
-                const tIn = this._v2BuildTaper(ctx, W, onW0.cum, wDir, L2, onL0.cum, -lDir, tangled)
-                if (tIn.fail) { if (report) this._v2MergeSkipped('taper', `${L2.ck} x ${W.ck} ${ctx.tag} mid-span in: best R ${tIn.bestR.toFixed(1)} m`); continue }
-                const tOut = this._v2BuildTaper(ctx, W, onW1.cum, -wDir, L2, onL1.cum, lDir, tangled)
-                if (tOut.fail) { if (report) this._v2MergeSkipped('taper', `${L2.ck} x ${W.ck} ${ctx.tag} mid-span out: best R ${tOut.bestR.toFixed(1)} m`); continue }
-                for (let i = 0; i < Math.min(tIn.bands.length, tOut.bands.length); i++) {
-                    const bIn = tIn.bands[i], bOut = tOut.bands[i]
-                    if (Math.abs(bOut.joinCum - bIn.joinCum) < ctx.MINSPAN) continue
-                    const hr = lDir > 0 ? bIn.joinCum : L2.S.L - bIn.joinCum
-                    const tr = lDir > 0 ? L2.S.L - bOut.joinCum : bOut.joinCum
-                    if (hr < ctx.MINREG || tr < ctx.MINREG) continue
-                    variants.push({ midSpan: true, lDir, wDir,
-                                    wIn: onW0.cum, wOut: onW1.cum, lIn: onL0.cum, lOut: onL1.cum,
-                                    bandIn: bIn, bandOut: bOut, region: f1 - f0 })
-                }
+                // QUAL-30: two forks, no bands — same reason as the node-anchored ladder above. The
+                // head/tail room this used to re-check off the band joins was already checked off
+                // onL0/onL1 a few lines up, so it is not re-stated here.
+                variants.push({ midSpan: true, lDir, wDir,
+                                wIn: onW0.cum, wOut: onW1.cum, lIn: onL0.cum, lOut: onL1.cum,
+                                region: f1 - f0 })
                 if (variants.length >= 6) break
             }
             if (!variants.length) return null
@@ -3640,8 +3450,6 @@ export class RoadSystem {
         const PROX = C.mergeProxM ?? 18, GAPM = C.mergeGapM ?? 200, FLARE = C.mergeFlareM ?? 60
         const CHORD = C.censusChordM ?? 300
         const MINREG = 30, MINSPAN = 60                                   // BUG-56 B5: two floors,
-        const RFLOOR = this._params?.roadMinTurnRadius ?? 12, RFLOOR_MIN = 6   // quality then safety
-        const TAPER_LADDER = [40, 55, 70, 90, 110, 130]
         if (!own || own.L < 2 * MINREG) return fail(null)
         let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
         for (const p of own.pts) {
@@ -3703,7 +3511,7 @@ export class RoadSystem {
                 this._v2MergeSkipped('winner', `${ck} x ${qck} disjoint`)
                 continue
             }
-            const ctx = { PROX, GAPM, FLARE, MINREG, MINSPAN, RFLOOR, RFLOOR_MIN, TAPER_LADDER,
+            const ctx = { PROX, GAPM, FLARE, MINREG, MINSPAN,
                           tag: 'disjoint', allIntervals: true, winnerCk: qck }
             const mid = this._v2MidSpanPair(ctx, { ck, S: own, nodeAtStart: true },
                                                  { ck: qck, S: SQ, nodeAtStart: true }, ivs)
@@ -4247,8 +4055,10 @@ export class RoadSystem {
             const en = !sB.loserNodeAtStart ? sB : (!sA.loserNodeAtStart ? sA : null)
             // the two ends' TAPER BANDS must clear each other too, not just the ceded strands —
             // the middle re-solve needs real own geometry between them
+            // QUAL-30: the two ends' FORKS must clear each other (was: their taper bands) — the
+            // loser needs real own road between them either way.
             if (st && en && st !== en &&
-                st.variants[0].band.joinCum + 30 < en.variants[0].band.joinCum) return [st, en]
+                st.variants[0].lCut + 30 < en.variants[0].lCut) return [st, en]
             this._v2MergeSkipped('bothEnds')
             return [sA.region >= sB.region ? sA : sB]
         }
