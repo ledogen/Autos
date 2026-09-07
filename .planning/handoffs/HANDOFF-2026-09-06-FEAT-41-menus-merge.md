@@ -114,11 +114,10 @@ to address the seam properly.
 
 ## 5. Verification state
 
-- **Gates**: `npm run test:all` — the four standing reds on main (`junction-stitch`,
-  `mission-network`, `paper-tour`, `pond-route-around`) and nothing else, matching the pre-change
-  baseline captured on this worktree before any edits. Re-run after merging: main gained FEAT-76's
-  gates (`promoted-node-id`, `route-sharing-census`, `taper-band-census`) which this branch has
-  never had reason to move.
+- **Gates**: `npm run test:all` on the merged branch — **64/68 green, failing only the four
+  standing reds on main** (`junction-stitch`, `mission-network`, `paper-tour`, `pond-route-around`).
+  That matches the pre-change baseline captured on this worktree before any edits (63/67 with the
+  same four); the suite grew by one because main brought FEAT-76's gates, and they pass here.
 - **`npm run build`** clean.
 - **Flows driven end to end over CDP**, repeatedly and after the merge: cold boot → menu; free roam
   (typed seed and blank/random); free roam → pause → main menu → story mode (the owner's stated
