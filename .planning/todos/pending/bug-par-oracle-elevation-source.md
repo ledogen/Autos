@@ -374,20 +374,41 @@ into a NEW directory, `runs/` left intact.
       when Stage 3 is actually taken, and after FEAT-76 moves the merge set).
 - [x] All `clArc` consumers audited — **five, not four**: the handoff missed `paper-route.js`.
 
-**Stage 2 — the v2 re-anchor**
+**Stage 2 — the v2 re-anchor** — corpus STARTED 2026-09-06, not yet fittable
 
-- [ ] A v2-road labelled corpus recorded in its own directory; `runs/` left untouched.
-- [ ] Corpus size stated, and stated honestly against the harness's "20 is a hint, not a fit" bar.
-- [ ] `calibrate-par.mjs` run on it; the recommendation recorded alongside the owner's ruling on
+- [x] A v2-road labelled corpus recorded in its own directory; `runs/` left untouched.
+      `runs-v2/` (+ README), 9 runs, seeds 97/69. `runs/` verified untouched at 30 json.
+      Every run carries a **`road_router`** flag so the split survives files moving — stamped at
+      capture from `road.js ROAD_ROUTER_VERSION`, backfilled at import for older exports.
+      `runs-add.mjs` / `runs-report.mjs` took a `--dir=` target (both were hardcoded to `runs/`,
+      which would have dumped the v2 corpus straight into the v1 one).
+- [x] Corpus size stated, and stated honestly against the harness's "20 is a hint, not a fit" bar.
+      **8 fittable (1 of the 9 is a paper round, never fitted with point-to-point jobs). Well under
+      the bar.** `runs-report` declines to call it: it wants ≥3 `on par` runs and there is **1**.
+      `calibrate-par.mjs runs-v2` recommends mu 0.615 / accel 3.2 / brake 6.5 (loss 0.1647 vs
+      0.1773 at the shipped 0.80/3.0/7.0) — **NOT taken.** mu is owner-set and this is n=8 with the
+      single `par` run scoring 0.969, the slowest of all eight, which is what n=1 looks like.
+      More `on par` drives are the gating need; the ordering elsewhere is already sane.
+- [x] `calibrate-par.mjs` run on it; the recommendation recorded alongside the owner's ruling on
       `mu` (advisory, not authoritative — `mu` is owner-set).
-- [ ] `PAR_REF` updated with a pass (5) comment block in `src/par.js` matching the style of passes
+      Recommended mu 0.77 / accel 3.2 / brake 5.5 (loss 0.1897 vs 0.1957 shipped). **DECLINED**,
+      owner 2026-09-06: the mu loss surface is flat (0.74→0.1901, 0.78→0.1897, 0.82→0.1910) so the
+      corpus barely identifies mu and 0.80 is inside the band; and brake 5.5 is the value pass (3)
+      rejected as under-pricing corner entry when it moved to the measured 7.0.
+- [x] `PAR_REF` updated with a pass (5) comment block in `src/par.js` matching the style of passes
       (1)-(4): what moved, why, and what it was measured against.
-- [ ] `par-oracle` gate green — SM-INV-2 still holds (par bit-identical before/after mutating
+      **Nothing moved.** Pass (5) RATIFIES mu 0.80 / accel 3.0 / brake 7.0 as already correct on v2
+      roads: the four felt-par drives land at mean ratio 0.879 against the ~0.88 target, and
+      `runs-report`'s verdict is "the standard is well calibrated on 'felt on par' runs". v2 changed
+      the corners; the constants did not need to change with them.
+- [x] `par-oracle` gate green — SM-INV-2 still holds (par bit-identical before/after mutating
       vehicle params).
 
-**Stage 3 — the economy**
+**Stage 3 — the economy** — the only stage left; Stage 2 contributed NO par shift
 
 - [ ] FEAT-53 `k` re-derived against the new par, once, after both stages.
+      Scope is now Stage 1's shift ALONE (median |Δ| 1.04%, max +7.15% distance on 10 of 52 runs),
+      because Stage 2 ratified PAR_REF unchanged and therefore moved no par times.
 - [ ] Rank-threshold sanity check: the letter bands still mean what DESIGN.md says they mean.
 
 **Throughout**

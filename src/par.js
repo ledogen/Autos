@@ -81,10 +81,36 @@ export const PAR_REF = {
     // exactly as pass (1) said. Do not "fix" accel to match the truck without re-cutting the rank
     // thresholds in the same pass: it would slash par and inflate every letter.
     //
+    // (5) 2026-09-06, THE v2 RE-ANCHOR (owner) — MEASURED, AND NOTHING MOVED.
+    //     Passes (1)-(4) were all fitted against drives on ROUTER-V1 roads. Pass (4) landed
+    //     2026-08-16; router v2 took over the whole network 2026-08-18 (`7cff01d`) with measurably
+    //     different geometry — QUAL-28 measured 10.4% of length in >200 m straights against v1's
+    //     5.2%, and 17 switchbacks against 52. Since mu prices CORNER SPEED and v2 changed the
+    //     corners, PAR_REF had never been anchored on the roads it prices (BUG-41 Stage 2).
+    //
+    //     Re-measured on a fresh v2 corpus — `runs-v2/`, 12 runs / 11 fittable, seeds 97/69/0,
+    //     kept apart from the v1 corpus in `runs/` and tagged `road_router` per run so the two can
+    //     never be fitted together by accident. Result: the four felt-par drives land at mean
+    //     ratio 0.879 against the post-(4) target of ~0.88. **The v1-fitted constants were already
+    //     correct on v2 roads**, so mu 0.80 / accel 3.0 / brake 7.0 are RATIFIED, not re-fitted.
+    //
+    //     calibrate-par's own recommendation (mu 0.77 / accel 3.2 / brake 5.5, loss 0.1897 against
+    //     0.1957) was declined on two grounds, both worth keeping so it is not re-litigated:
+    //       • the mu loss surface is FLAT — 0.74 → 0.1901, 0.78 → 0.1897, 0.82 → 0.1910. This
+    //         corpus barely identifies mu at all, and 0.80 sits inside that band.
+    //       • brake 5.5 is the value pass (3) explicitly rejected when it moved to the MEASURED
+    //         7.0, noting 5.5 "under-priced every corner entry". A fit walking that back at n=11
+    //         is fitting noise, not physics.
+    //     11 fittable runs is still under calibrate-par's own "20 is a hint, not a fit" bar, so
+    //     this ratifies rather than proves. Re-run if the corpus grows; `on par` is the anchor
+    //     label and `slow`/`very_slow` are the thinnest (n=1, n=2).
+    //
     // Note from pass (1): mu is the DOMINANT dial. vMax is nearly free (these roads are
     // curvature-limited essentially everywhere — 42.6 vs 30.0 m/s moved par by under a second),
     // and accel/brake are secondary. Tune HERE, never by touching the vehicle (SM-INV-2) — and
-    // re-run test/calibrate-par.mjs when new labelled runs land in runs/.
+    // re-run test/calibrate-par.mjs when new labelled runs land. NOTE THE DIRECTORY: v2 drives go
+    // to `runs-v2/` (`node test/calibrate-par.mjs runs-v2`); `runs/` is the frozen v1 corpus and
+    // must never be fitted together with it — see (5) and runs-v2/README.md.
     mu: 0.80,          // EFFECTIVE centerline friction — see (3)/(4): line-cutting, not tire grip
     accel: 3.0,        // powertrain-limited longitudinal accel on the flat (m/s²) — measured
     brake: 7.0,        // braking decel cap (m/s²) — measured; friction-circle limited below
