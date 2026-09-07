@@ -3014,7 +3014,13 @@ export class RoadSystem {
         const PROX = C.mergeProxM ?? 18   // m — centre separation that counts as one shared road
         const GAPM = C.mergeGapM ?? 200    // m — longest flare the merge may bridge, along the run
         const FLARE = C.mergeFlareM ?? 60  // m — widest the pair may swing apart inside a merge
-        const MINREG = 30    // m — a merge shorter than this is pad-dressing territory
+        // m — the shortest shared throat worth merging. WAS 30, "pad-dressing territory" — but a pad
+        // reaches 10 m by rule and 13.5 m as built (BUG-59), so 13-30 m was owned by NEITHER the pad
+        // nor a merge, and every one of junction-stitch's 80 violations sat in that hole (10-28 m
+        // from the node, median 12). Lowered so the two regimes meet. Below ~20 it gets worse again
+        // (measured: 30 -> 80 sites, 20 -> 75, 14 -> 77) — a throat shorter than this cannot host a
+        // departure band at all, so admitting it only produces declines.
+        const MINREG = 20
         const MAXFRAC = 0.85 // sanity only — cross-node conflicts are checked PRECISELY at apply
                              // time (_v2MergeFor: the winner's own loser-region must not overlap the
                              // adopted strand). The old blanket 0.5 rejected the owner's captured
@@ -3222,7 +3228,18 @@ export class RoadSystem {
                 // a declined pair at 10–18 m of separation is legal R8 ground, but past 80 m from
                 // the node it would trip the 17.5 m parallel-runs floor — so a LONG hug merges
                 // (counted) even off a pinned approach. Seed 21's 175 m pair is the counted case.
-                if (!xingsEarly.length && minSep >= 2 * HWn && fLw <= (C.mergePinDeclineMaxM ?? 80)) {
+                // OWNER RULING 2026-09-07 — R8 WINS OVER R6 AT 10 m.
+                // R6 (2026-08-31) declined a merge that would overwrite a pinned approach whenever
+                // the pair kept 2*halfWidth of centre separation. R8 (2026-09-01, the next day) says
+                // "under 10 m centre-to-centre -> ONE surface; AT 10 m -> the decks share an edge".
+                // At exactly 10 m those disagree: R6 leaves two independent roads, R8 requires their
+                // decks to agree, and nothing enforced the second once the first had declined. Every
+                // junction-stitch violation lived in that gap — 10.0 to 12.1 m of centre separation,
+                // edges touching, decks a median 2.1 m apart. Owner ruled R8: touching edges are one
+                // surface, so the pair merges and T's out at the divergence instead of running as
+                // two roads sharing a cut wall. The decline now needs REAL daylight — one road width
+                // plus 4 m of actual ground between the pavements.
+                if (!xingsEarly.length && minSep >= 2 * HWn + 4 && fLw <= (C.mergePinDeclineMaxM ?? 80)) {
                     this._v2MergeSkipped('pin-decline', `${L2.ck} keeps its pinned approach @${nk} (R6 — overlap ${fLw.toFixed(0)} m at >=${minSep.toFixed(1)} m, no crossings)`)
                     continue
                 }
@@ -5055,7 +5072,13 @@ export class RoadSystem {
         // is the pad-side equivalent already in place for ordinary junctions". Measured without this
         // exclusion, 7 of seed 6's 10 forks were condemned for deck gaps 4-10 m from the node, which
         // is paved plaza, not a wall between two ribbons.
-        const padR = (this._params?.roadJunctionCutback ?? 10) + (this._params?.roadHalfWidth ?? 5)
+        // R3 (owner, 2026-08-31): A PAD REACHES 10 m AT MOST — "the ruled bar, not the built reach".
+        // FEAT-76 used roadJunctionCutback + roadHalfWidth = 15 m here, which is exactly the
+        // "instrument margin" R3 tightened away, so the departure was being judged from 5 m further
+        // out than the ruling allows. Measured 2026-09-07: 31 of the 34 junction-stitch violations
+        // that sit at a promoted T fall in that 10-15 m ring — they were real, and this test was
+        // looking past them.
+        const padR = 10
         // ── B6: the departure grade — the steepest 12 m the driver actually meets leaving the T.
         //
         // The CAP is the road's own grade, not a fixed number, and that is a change from how the
