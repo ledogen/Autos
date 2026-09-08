@@ -294,6 +294,29 @@ export class Centerline {
     // searching only near an expected arc) — used by per-slice projection in road.js.
     // PERF-25: runs on _poseInto (fused _locate+primPose, zero-alloc) — identical scan grid,
     // identical refine, identical returned values; only the intermediate allocations are gone.
+    //
+    // PERF-32 (LIPSCHITZ SKIP — same grid, same argmin, fewer evaluations):
+    // The scan is a linear walk over a fixed grid, and callers hand it wide windows: _runGradeAt asks
+    // for +/-20 m at ds 0.25 (162 poses) because the polyline foot it centres on can be ~2 m off. Nearly
+    // all of that window is far from the foot and cannot possibly win, but the plain walk still poses
+    // every point of it — and the wheel contact path calls this ~1600 times per physics step on a
+    // connector (8.5 ms of a 16.7 ms frame; the PERF-32 lag).
+    //
+    // Primitives are ARC-LENGTH parameterized, so chord <= arc gives |P(s2)-P(s1)| <= |s2-s1| exactly,
+    // and therefore d(s) = |P(s)-q| is 1-Lipschitz: knowing d at one grid point bounds it at every
+    // other. After posing s_i we can skip the next k-1 points, k = floor((d_i - dBound)/step), because
+    // each of them satisfies d >= d_i - (k-1)*step >= dBound + step — a FULL grid step clear of the
+    // best distance seen anywhere, so none can strictly beat it. (float slack here is ~1e-12 against a
+    // 0.25 m margin.)
+    //
+    // Why the result is bit-identical, not merely close:
+    //   · the surviving points are posed on the SAME grid, in the SAME increasing-index order;
+    //   · bestS/bestD2 still update on strict `<` only, so ties resolve to the same lowest index;
+    //   · every skipped point is proven to lie STRICTLY above dBound >= the grid minimum, so it is not
+    //     an argmin and could not have updated bestS even if it had been posed.
+    // dBound is a pure pruning bound and never writes bestS, which is why the mid-window warm probe
+    // below (out of index order, to arm the skip before the walk reaches the foot) cannot bias the
+    // tie-break. Verified against the unpruned scan by the `centerline-nearest-parity` gate.
     nearest(x, z, ds = 1.0, sMin = 0, sMax = this.length) {
         if (this.primitives.length === 0) return null
         const lo = Math.max(0, Math.min(this.length, sMin))
@@ -301,11 +324,26 @@ export class Centerline {
         let bestS = lo, bestD2 = Infinity
         const n = Math.max(1, Math.ceil((hi - lo) / ds))
         const q = this._scratchPose || (this._scratchPose = { x: 0, z: 0, theta: 0, kappa: 0 })
+        const step = (hi - lo) / n
+        // Warm probe at the window centre — callers centre the window on their best estimate of the
+        // foot, so this is usually within a metre of the winner and arms the skip immediately. Prune
+        // bound only: it must not touch bestS (see the tie-break note above).
+        let dBound = Infinity
+        if (n > 3) {
+            this._poseInto(lo + (hi - lo) * (n >> 1) / n, q)
+            dBound = Math.hypot(q.x - x, q.z - z)
+        }
         for (let i = 0; i <= n; i++) {
             const s = lo + (hi - lo) * i / n
             this._poseInto(s, q)
             const d2 = (q.x - x) * (q.x - x) + (q.z - z) * (q.z - z)
             if (d2 < bestD2) { bestD2 = d2; bestS = s }
+            const d = Math.sqrt(d2)
+            if (d < dBound) dBound = d
+            if (step > 0) {
+                const k = Math.floor((d - dBound) / step)
+                if (k > 1) i += k - 1
+            }
         }
         // One projection refine: step along/against the tangent toward the foot of the perpendicular.
         this._poseInto(bestS, q)

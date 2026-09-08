@@ -26,6 +26,8 @@ export const GATES = [
     desc: 'BUG-12: DENSE realized centerline min-radius the ribbon sweeps (incl. capture fixtures) — the fold metric' },
   { file: 'centerline-curvature.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'EXACT per-primitive min-radius + two-center invariance (construction-level, complements road-minradius realized geometry)' },
+  { file: 'centerline-nearest-parity.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'PERF-32: the Lipschitz-pruned Centerline.nearest scan is BIT-identical to the unpruned linear scan (+ the unit-speed premise the prune stands on)' },
   { file: 'invariance.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'two-center network invariance: arcS + gradeY stable across streaming windows' },
   { file: 'road-band-coverage.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
