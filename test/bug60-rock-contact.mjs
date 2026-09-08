@@ -57,8 +57,10 @@ const out = JSON.parse(await ev(`(() => {
   const V = new (s.camera.position.constructor)()
   const orig = s.update.bind(s)
   s.update = () => {}                       // take the rAF loop off it; step by hand, fixed dt
-  const maps = () => ({ live: E.counters().shapes, toHandle: E._shapeToHandle.size,
-                        hulls: E._shapeHulls.size, sizeR: E._shapeSizeR.size, hullData: E._hulls.length })
+  // Hull data and the tire size hint live on the BODY RECORD now (one per live hull shape), not in
+  // shapeKey-keyed Maps — that storage was the BUG-60/61/62 failure surface. Census them.
+  const held = () => { let n = 0; for (const r of E._bodies.values()) for (const h of r.hulls) if (h) n++; return n }
+  const maps = () => ({ live: E.counters().shapes, toHandle: E._shapeToHandle.size, hullData: held() })
   const before = maps()
   const runs = []
   for (let n = 0; n < ${DROPS}; n++) {
@@ -84,12 +86,11 @@ const out = JSON.parse(await ev(`(() => {
 client.close()
 
 const bad = out.runs.filter(r => r.hubMM < ON_ROCK_MM)
-const stale = out.after.hulls - out.after.toHandle
+const stale = (out.after.toHandle - out.before.toHandle) + (out.after.hullData - out.before.hullData)
 
-console.log(`\nshape-keyed maps   live shapes ${out.after.live} · _shapeToHandle ${out.after.toHandle}` +
-            ` · _shapeHulls ${out.after.hulls} · _shapeSizeR ${out.after.sizeR}`)
-console.log(`                   (at boot: ${out.before.toHandle} / ${out.before.hulls} / ${out.before.sizeR})`)
-console.log(`_hulls retained    ${out.before.hullData} → ${out.after.hullData}`)
+console.log(`\nshapes             live ${out.after.live} · _shapeToHandle ${out.after.toHandle}` +
+            `   (at boot: ${out.before.live} / ${out.before.toHandle})`)
+console.log(`hulls held         ${out.before.hullData} → ${out.after.hullData}   (one per live hull shape; BUG-62)`)
 console.log(`\nfell through the rock: ${bad.length} of ${out.runs.length} drops`)
 for (const r of bad.slice(0, 6))
   console.log(`  run ${String(r.run).padStart(2)}  hub ${r.hubMM} mm  (on the rock ≈ 579)` +

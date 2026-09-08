@@ -31,6 +31,49 @@ export const GROUP_DEBRIS  = 1n << 2n   // dynamic props (barrels, rocks)
 export const GROUP_STATIC  = 1n << 3n   // static props / POI solids
 export const GROUP_ALL     = 0xffffffffffffffffn
 
+/** Category bits as a 32-bit number. Every real group is a single low bit and GROUP_ALL is all
+ *  ones, so the low half is exact — and `&` on numbers is far cheaper than on BigInts, which
+ *  matters in the per-shape filter test below. */
+function _group32 (group) { return Number(BigInt.asUintN(32, group ?? GROUP_STATIC)) }
+
+/** Obstacle size reported to the tire model as `sizeR`. NOT the same thing as _specReach: this is
+ *  a feel parameter the tire envelope consumes, so a sphere reports its own radius and ignores any
+ *  body-local offset, and shapes with no pair test wired report nothing (contactSphere falls back
+ *  to 0.3). Changing these values changes how the tire climbs obstacles. */
+function _specSizeR (spec) {
+  if (!spec) return undefined
+  switch (spec.shape) {
+    case 'sphere': return spec.radius
+    case 'cylinder': return Math.hypot(spec.radius, spec.height / 2 + Math.abs(spec.yOffset))
+    case 'hull': {
+      let m = 0
+      const p = spec.positions
+      for (let i = 0; i < p.length; i += 3) m = Math.max(m, Math.hypot(p[i], p[i + 1], p[i + 2]))
+      return m
+    }
+    default: return undefined
+  }
+}
+
+/** Bounding radius of a collider about its BODY origin — the cheap reject in contactSphere. */
+function _specReach (spec) {
+  if (!spec) return Infinity
+  switch (spec.shape) {
+    case 'box': return Math.hypot(spec.halfExtents.x, spec.halfExtents.y, spec.halfExtents.z)
+    case 'sphere': return spec.radius + Math.hypot(spec.offset.x, spec.offset.y, spec.offset.z)
+    case 'capsule': return spec.radius +
+      Math.max(Math.hypot(spec.p1.x, spec.p1.y, spec.p1.z), Math.hypot(spec.p2.x, spec.p2.y, spec.p2.z))
+    case 'cylinder': return Math.hypot(spec.radius, spec.height / 2 + Math.abs(spec.yOffset))
+    case 'hull': {
+      let m = 0
+      const p = spec.positions
+      for (let i = 0; i < p.length; i += 3) m = Math.max(m, Math.hypot(p[i], p[i + 1], p[i + 2]))
+      return m
+    }
+    default: return Infinity   // mesh / heightfield — contactSphere skips those bodies outright
+  }
+}
+
 let _b3 = null            // the loaded engine module — module-private, never exported
 
 /**
@@ -88,20 +131,24 @@ export class PhysicsEngine {
     this._nextHandle = 1
     this._heightfields = new Map()         // handle → b3HeightFieldData (owned, freed on destroy)
     this._meshDatas = new Map()            // handle → b3MeshData[] (owned, freed on destroy)
-    this._hulls = []                       // shared hull data to free on dispose
-    this._shapeHulls = new Map()           // shapeKey → b3HullData (for exact pair-test contacts)
-    this._shapeSizeR = new Map()           // shapeKey → bounding radius (tire obstacle-enveloping)
+    // Hull data and the tire size hint live on the BODY RECORD, indexed by shape slot — they used
+    // to be shapeKey-keyed Maps, which is precisely the surface BUG-60/61/62 all failed on: entries
+    // outliving their shape, or colliding with a recycled slot's key. Per-slot storage dies with the
+    // body and cannot alias. (_shapeToHandle has to stay a Map: engine contact callbacks hand us a
+    // shape id and nothing else.)
 
     // Scratch out-params — the bindings write into caller-provided arrays; reuse
     // to keep the per-frame allocation at zero on the hot read paths.
     this._p = [0, 0, 0]; this._q = [0, 0, 0, 0]
     this._v = [0, 0, 0]; this._w = [0, 0, 0]
     this._rev = 0                          // bumped on body create/destroy — debug viz change detection
+    this._xfStamp = 1                      // bumped per step — invalidates the per-body transform cache
   }
 
   /** Advance the world by dt with the given solver substep count. Synchronous. */
   step (dt, substeps = 4) {
     _b3.b3World_Step(this._world, dt, substeps)
+    this._xfStamp++          // every cached body transform is now stale (see _bodyXf)
   }
 
   // ── Bodies ────────────────────────────────────────────────────────────────
@@ -128,7 +175,9 @@ export class PhysicsEngine {
     bd.isBullet = bullet
     const id = _b3.b3CreateBody(this._world, bd)
     const handle = this._nextHandle++
-    this._bodies.set(handle, { id, shapes: [], specs: [], userData })
+    this._bodies.set(handle, { id, shapes: [], specs: [], userData,
+      isStatic: type === 'static', groups: [], reach: [], hulls: [], sizeR: [],
+      xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null })
     this._rev++
     return handle
   }
@@ -138,7 +187,13 @@ export class PhysicsEngine {
     const rec = this._bodies.get(handle)
     if (!rec) return
     this._rev++
-    for (const s of rec.shapes) this._shapeToHandle.delete(this._shapeKey(s))
+    // BUG-60: a stale _shapeToHandle entry is a live shape's slot waiting to be misattributed once
+    // Box3D recycles it. BUG-62: the body owns its hull copies, so they go with it — this used to
+    // be the only reclaim path and it was dispose(), i.e. never during play.
+    for (let i = 0; i < rec.shapes.length; i++) {
+      this._shapeToHandle.delete(this._shapeKey(rec.shapes[i]))
+      this._freeHull(rec.hulls[i])
+    }
     _b3.b3DestroyBody(rec.id)              // destroys attached shapes with it
     const hf = this._heightfields.get(handle)
     if (hf) { _b3.b3DestroyHeightField(hf); this._heightfields.delete(handle) }
@@ -174,23 +229,58 @@ export class PhysicsEngine {
     return sd
   }
 
-  _shapeKey (shapeId) { return shapeId.index1 * 0x10000 + shapeId.generation }
+  /** Shape identity for _shapeToHandle. The multiplier MUST exceed any reachable `generation`:
+   *  Box3D recycles shape slots and bumps the generation each time, and updateWheelRims rebuilds
+   *  four wheel-core hulls per step (~55/s per wheel while the suspension works), so a slot passed
+   *  the old 0x10000 multiplier in ~20 minutes of driving and slot n aliased slot n+1 (BUG-61).
+   *  2**32 keeps the product exact for index1 up to ~2M slots, well inside Number.MAX_SAFE_INTEGER. */
+  _shapeKey (shapeId) { return shapeId.index1 * 4294967296 + shapeId.generation }
 
   /** spec: a plain descriptor of the shape as CREATED (body-local geometry) — the debug
    *  wireframe source of truth (physics-debug.js). Never read by the engine. */
-  _register (handle, shapeId, spec = null) {
+  _register (handle, shapeId, spec = null, material = {}, hull = null) {
     const rec = this._bodies.get(handle)
     rec.shapes.push(shapeId)
     if (spec) rec.specs.push(spec)
+    rec.groups.push(_group32(material.group))
+    rec.reach.push(_specReach(spec))
+    rec.hulls.push(hull)                   // BUG-62: this body owns it; freed with the slot
+    rec.sizeR.push(_specSizeR(spec))
     this._shapeToHandle.set(this._shapeKey(shapeId), handle)
     return shapeId
+  }
+
+  /**
+   * Release one slot's hull (BUG-62). Safe because the world COPIES hull data into its own database
+   * on shape creation — vendor/box3d README: "safe — world keeps its own copy" — so the copy we
+   * hold exists only for OUR narrow-phase in contactSphere. Mesh and heightfield data are NOT
+   * copied and are freed on their own paths; do not follow this pattern for those.
+   *
+   * b3DestroyHull and the handle's own .delete() are ALTERNATIVES, not a pair. Calling both is a
+   * double free that corrupts the WASM allocator, and it does not fail where you would notice it:
+   * 60 000 standalone hulls took both calls without complaint, but through this method the next
+   * b3CreateHull went out of bounds on the FIFTH wheel-core rebuild. Destroy only.
+   */
+  _freeHull (hull) {
+    if (!hull) return
+    _b3.b3DestroyHull(hull)
+  }
+
+  /** Cached body transform. The bindings' GetTransform is a WASM call; contactSphere reads every
+   *  body's pose and runs ~16x per step, so fetching per call cost more than the query itself.
+   *  Poses only change when the world steps (_xfStamp) or setTransform runs — statics not even
+   *  then, so they are fetched once and held. */
+  _bodyXf (rec) {
+    if (rec.isStatic ? rec.xfStamp === -1 : rec.xfStamp === this._xfStamp) return
+    _b3.b3Body_GetTransform(rec.xfP, rec.xfQ, rec.id)
+    rec.xfStamp = rec.isStatic ? -1 : this._xfStamp
   }
 
   /** Box collider. halfExtents {x,y,z}; centered on the body origin. */
   addBox (handle, halfExtents, material = {}) {
     const rec = this._bodies.get(handle)
     this._register(handle, _b3.b3CreateBoxShape(rec.id, this._shapeDef(material),
-      halfExtents.x, halfExtents.y, halfExtents.z), { shape: 'box', halfExtents: { ...halfExtents } })
+      halfExtents.x, halfExtents.y, halfExtents.z), { shape: 'box', halfExtents: { ...halfExtents } }, material)
   }
 
   /** Sphere collider at local offset (default body origin). Returns the shape INDEX on the
@@ -198,8 +288,7 @@ export class PhysicsEngine {
   addSphere (handle, radius, material = {}, offset = { x: 0, y: 0, z: 0 }) {
     const rec = this._bodies.get(handle)
     const shapeId = this._register(handle, _b3.b3CreateSphereShape(rec.id, this._shapeDef(material),
-      { center: [offset.x, offset.y, offset.z], radius }), { shape: 'sphere', radius, offset: { ...offset } })
-    this._shapeSizeR.set(this._shapeKey(shapeId), radius)
+      { center: [offset.x, offset.y, offset.z], radius }), { shape: 'sphere', radius, offset: { ...offset } }, material)
     return rec.shapes.length - 1
   }
 
@@ -223,20 +312,21 @@ export class PhysicsEngine {
   replaceHullLocal (handle, shapeIndex, positions, material = {}) {
     const rec = this._bodies.get(handle)
     const oldId = rec.shapes[shapeIndex]
+    const oldHull = rec.hulls[shapeIndex]
     this._shapeToHandle.delete(this._shapeKey(oldId))
-    this._shapeHulls.delete(this._shapeKey(oldId))
-    this._shapeSizeR.delete(this._shapeKey(oldId))
     _b3.b3DestroyShape(oldId, false)
     const hull = _b3.b3CreateHull(positions)
-    this._hulls.push(hull)
     const shapeId = _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull)
     rec.shapes[shapeIndex] = shapeId
     rec.specs[shapeIndex] = { shape: 'hull', positions: Array.from(positions) }
+    rec.groups[shapeIndex] = _group32(material.group)
+    rec.reach[shapeIndex] = _specReach(rec.specs[shapeIndex])
+    rec.hulls[shapeIndex] = hull
+    rec.sizeR[shapeIndex] = _specSizeR(rec.specs[shapeIndex])
     this._shapeToHandle.set(this._shapeKey(shapeId), handle)
-    this._shapeHulls.set(this._shapeKey(shapeId), hull)
-    let m = 0
-    for (let i = 0; i < positions.length; i += 3) m = Math.max(m, Math.hypot(positions[i], positions[i + 1], positions[i + 2]))
-    this._shapeSizeR.set(this._shapeKey(shapeId), m)
+    // BUG-62: the shape this hull built is gone, so its copy goes too. This runs EVERY step per
+    // wheel — retaining them leaked ~1.5 KB a rebuild for as long as the player kept driving.
+    this._freeHull(oldHull)
     this._rev++
     return shapeId
   }
@@ -246,7 +336,7 @@ export class PhysicsEngine {
     const rec = this._bodies.get(handle)
     this._register(handle, _b3.b3CreateCapsuleShape(rec.id, this._shapeDef(material),
       { center1: [p1.x, p1.y, p1.z], center2: [p2.x, p2.y, p2.z], radius }),
-    { shape: 'capsule', p1: { ...p1 }, p2: { ...p2 }, radius })
+    { shape: 'capsule', p1: { ...p1 }, p2: { ...p2 }, radius }, material)
   }
 
   /**
@@ -256,22 +346,16 @@ export class PhysicsEngine {
   addCylinder (handle, height, radius, material = {}, yOffset = 0, sides = 12) {
     const rec = this._bodies.get(handle)
     const hull = _b3.b3CreateCylinder(height, radius, yOffset, sides)
-    this._hulls.push(hull)                // hull data is shared/copied by the shape; free on dispose
-    const shapeId = this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
-      { shape: 'cylinder', height, radius, yOffset, sides })
-      this._shapeHulls.set(this._shapeKey(shapeId), hull)   // narrow-phase pair tests need the data
-      this._shapeSizeR.set(this._shapeKey(shapeId), Math.hypot(radius, height / 2 + Math.abs(yOffset)))
+    this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
+      { shape: 'cylinder', height, radius, yOffset, sides }, material, hull)
   }
 
   /** Convex hull collider from a flat [x0,y0,z0, x1,…] position array. */
   addHull (handle, positions, material = {}) {
     const rec = this._bodies.get(handle)
     const hull = _b3.b3CreateHull(positions)
-    this._hulls.push(hull)
-    const shapeId = this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
-      { shape: 'hull', positions: Array.from(positions) })
-      this._shapeHulls.set(this._shapeKey(shapeId), hull)   // narrow-phase pair tests need the data
-      { let m = 0; for (let i = 0; i < positions.length; i += 3) m = Math.max(m, Math.hypot(positions[i], positions[i + 1], positions[i + 2])); this._shapeSizeR.set(this._shapeKey(shapeId), m) }
+    this._register(handle, _b3.b3CreateHullShape(rec.id, this._shapeDef(material), hull),
+      { shape: 'hull', positions: Array.from(positions) }, material, hull)
   }
 
   /**
@@ -289,7 +373,7 @@ export class PhysicsEngine {
     if (!list) this._meshDatas.set(handle, list = [])
     list.push(mesh)
     this._register(handle, _b3.b3CreateMeshShape(rec.id, this._shapeDef(material), mesh, [1, 1, 1]),
-      { shape: 'mesh', positions, indices })   // references, not copies — same arrays the caller owns
+      { shape: 'mesh', positions, indices }, material)   // references, not copies — same arrays the caller owns
     return true
   }
 
@@ -304,7 +388,7 @@ export class PhysicsEngine {
     const hf = _b3.b3CreateHeightField(heights, countX, countZ, [cellSize, 1, cellSize])
     this._heightfields.set(handle, hf)
     this._register(handle, _b3.b3CreateHeightFieldShape(rec.id, this._shapeDef({ group: GROUP_TERRAIN, ...material }), hf),
-      { shape: 'heightfield' })   // viz skips these — the terrain mesh IS the collider
+      { shape: 'heightfield' }, { group: GROUP_TERRAIN, ...material })   // viz skips these — the terrain mesh IS the collider
   }
 
   // ── State access ──────────────────────────────────────────────────────────
@@ -321,6 +405,7 @@ export class PhysicsEngine {
     const rec = this._bodies.get(handle)
     _b3.b3Body_SetTransform(rec.id, [position.x, position.y, position.z],
       [quaternion.x, quaternion.y, quaternion.z, quaternion.w])
+    rec.xfStamp = null       // a static body just moved: drop its cached transform
   }
 
   getVelocity (handle, outLin, outAng) {
@@ -425,81 +510,106 @@ export class PhysicsEngine {
    * 2026-08-15 rock-contact defect family). Convention out: normal points OUT of the solid
    * toward the sphere center; depth > 0 is penetration.
    *
+   * CANDIDATES ARE ENUMERATED HERE, NOT BY b3World_OverlapShape (BUG-60, 2026-09-07).
+   * The engine's world query intermittently stops reporting a perfectly healthy shape while
+   * shapes are being created and destroyed near it — and updateWheelRims does exactly that,
+   * rebuilding four wheel-core hulls every step (a hull has no setter), ~1000 shape
+   * create/destroys per second. On the FEAT-41 menu stage that dropped the static rock out of
+   * this query for whole runs at a time and the wheel settled INSIDE it, at ground height, with
+   * the rock still drawn around it. Measured at every failing sample: the rock's body transform,
+   * shape id, hull data, a per-body b3Body_OverlapShape and the raw b3CollideHullAndSphere were
+   * ALL correct — only the world broad phase disagreed, and only for wheel-sized query spheres
+   * (a 2 m one still found it). So the geometry was never the casualty; the spatial index was.
+   *
+   * Walking our own bodies is not the downgrade it looks like. The reject is a sphere test about
+   * the body origin against `rec.reach[]` (each shape's bounding radius, computed once at
+   * registration), body poses are cached per step by _bodyXf, and heightfield/mesh bodies are
+   * skipped before they cost anything. Measured 1.6 us/call at 14 bodies and 3.6 us at 126,
+   * against a flat ~2.4 us for the engine query it replaces — i.e. faster in the small worlds
+   * this runs in and ~0.23 ms per 60 Hz frame at 126 bodies. Group filtering matches the engine's
+   * rule (shape.categoryBits & query.maskBits), on 32-bit numbers rather than BigInts.
+   * Gate: test/collider-seam-churn.mjs.
+   *
    * Manifold conventions (probed empirically 2026-08-15):
    *   b3CollideSpheres(A, B, xfB)        → normal A→B, separation = −penetration
    *   b3CollideHullAndSphere(hull, s, xf) → hull is at IDENTITY (its own frame); normal
    *                                         hull→sphere; results in hull-local coordinates.
    */
   contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false } = {}) {
-    const f = _b3.b3DefaultQueryFilter()
-    f.maskBits = collidesWith
     const hits = []
-    _b3.b3World_OverlapShape(this._world, [center.x, center.y, center.z], [[0, 0, 0]], radius, f, (shapeId) => {
-      const handle = this._shapeToHandle.get(this._shapeKey(shapeId))
-      if (handle == null) return true
-      if (dynamicOnly && !this.isDynamic(handle)) return true
-      const rec = this._bodies.get(handle)
-      _b3.b3Body_GetTransform(this._p, this._q, rec.id)
-      const bp = this._p, bq = this._q
-      const type = _b3.b3Shape_GetType(shapeId).value
-      let manifold = null
-      let toWorld = null   // hull results come back hull-local — rotate/translate out
-      if (type === _b3.b3ShapeType.b3_sphereShape.value) {
-        const sph = _b3.b3Shape_GetSphere(shapeId)
-        manifold = _b3.b3CollideSpheres({ center: [center.x, center.y, center.z], radius }, sph,
-          { position: [bp[0], bp[1], bp[2]], quaternion: [bq[0], bq[1], bq[2], bq[3]] })
-        // normal is A→B = wheel→solid; our convention wants solid→wheel
-        if (manifold && manifold.points.length) {
-          manifold = { normal: [-manifold.normal[0], -manifold.normal[1], -manifold.normal[2]], points: manifold.points }
+    const mask = _group32(collidesWith)
+    for (const [handle, rec] of this._bodies) {
+      // Heightfields and meshes have no sphere pair test wired (the analytic terrain query owns
+      // those surfaces), so skip them before paying for a transform.
+      if (this._heightfields.has(handle) || this._meshDatas.has(handle)) continue
+      if (dynamicOnly && !this.isDynamic(handle)) continue
+      this._bodyXf(rec)
+      const bp = rec.xfP, bq = rec.xfQ
+      const dx = center.x - bp[0], dy = center.y - bp[1], dz = center.z - bp[2]
+      const d2 = dx * dx + dy * dy + dz * dz
+      for (let si = 0; si < rec.shapes.length; si++) {
+        if ((rec.groups[si] & mask) === 0) continue
+        const span = radius + rec.reach[si]
+        if (d2 > span * span) continue          // cheap reject about the body origin
+        const shapeId = rec.shapes[si]
+        const type = _b3.b3Shape_GetType(shapeId).value
+        let manifold = null
+        let toWorld = null   // hull results come back hull-local — rotate/translate out
+        if (type === _b3.b3ShapeType.b3_sphereShape.value) {
+          const sph = _b3.b3Shape_GetSphere(shapeId)
+          manifold = _b3.b3CollideSpheres({ center: [center.x, center.y, center.z], radius }, sph,
+            { position: [bp[0], bp[1], bp[2]], quaternion: [bq[0], bq[1], bq[2], bq[3]] })
+          // normal is A→B = wheel→solid; our convention wants solid→wheel
+          if (manifold && manifold.points.length) {
+            manifold = { normal: [-manifold.normal[0], -manifold.normal[1], -manifold.normal[2]], points: manifold.points }
+          }
+        } else if (type === _b3.b3ShapeType.b3_hullShape.value) {
+          const hull = rec.hulls[si]
+          if (!hull) continue
+          // Express the sphere in the hull's (= body's) local frame: l = q⁻¹·(c − p)
+          const qx = -bq[0], qy = -bq[1], qz = -bq[2], qw = bq[3]
+          const ix = qw * dx + qy * dz - qz * dy, iy = qw * dy + qz * dx - qx * dz
+          const iz = qw * dz + qx * dy - qy * dx, iw = -qx * dx - qy * dy - qz * dz
+          const lx = ix * qw + iw * -qx + iy * -qz - iz * -qy
+          const ly = iy * qw + iw * -qy + iz * -qx - ix * -qz
+          const lz = iz * qw + iw * -qz + ix * -qy - iy * -qx
+          manifold = _b3.b3CollideHullAndSphere(hull, { center: [0, 0, 0], radius },
+            { position: [lx, ly, lz], quaternion: [0, 0, 0, 1] })
+          toWorld = (v) => {   // rotate a hull-local vector into world with bq
+            const jx = bq[3] * v[0] + bq[1] * v[2] - bq[2] * v[1]
+            const jy = bq[3] * v[1] + bq[2] * v[0] - bq[0] * v[2]
+            const jz = bq[3] * v[2] + bq[0] * v[1] - bq[1] * v[0]
+            const jw = -bq[0] * v[0] - bq[1] * v[1] - bq[2] * v[2]
+            return [
+              jx * bq[3] + jw * -bq[0] + jy * -bq[2] - jz * -bq[1],
+              jy * bq[3] + jw * -bq[1] + jz * -bq[0] - jx * -bq[2],
+              jz * bq[3] + jw * -bq[2] + jx * -bq[1] - jy * -bq[0],
+            ]
+          }
+        } else {
+          continue   // debris is spheres and hulls today; other types have no pair test wired
         }
-      } else if (type === _b3.b3ShapeType.b3_hullShape.value) {
-        const hull = this._shapeHulls.get(this._shapeKey(shapeId))
-        if (!hull) return true
-        // Express the sphere in the hull's (= body's) local frame: l = q⁻¹·(c − p)
-        const qx = -bq[0], qy = -bq[1], qz = -bq[2], qw = bq[3]
-        const dx = center.x - bp[0], dy = center.y - bp[1], dz = center.z - bp[2]
-        const ix = qw * dx + qy * dz - qz * dy, iy = qw * dy + qz * dx - qx * dz
-        const iz = qw * dz + qx * dy - qy * dx, iw = -qx * dx - qy * dy - qz * dz
-        const lx = ix * qw + iw * -qx + iy * -qz - iz * -qy
-        const ly = iy * qw + iw * -qy + iz * -qx - ix * -qz
-        const lz = iz * qw + iw * -qz + ix * -qy - iy * -qx
-        manifold = _b3.b3CollideHullAndSphere(hull, { center: [0, 0, 0], radius },
-          { position: [lx, ly, lz], quaternion: [0, 0, 0, 1] })
-        toWorld = (v) => {   // rotate a hull-local vector into world with bq
-          const jx = bq[3] * v[0] + bq[1] * v[2] - bq[2] * v[1]
-          const jy = bq[3] * v[1] + bq[2] * v[0] - bq[0] * v[2]
-          const jz = bq[3] * v[2] + bq[0] * v[1] - bq[1] * v[0]
-          const jw = -bq[0] * v[0] - bq[1] * v[1] - bq[2] * v[2]
-          return [
-            jx * bq[3] + jw * -bq[0] + jy * -bq[2] - jz * -bq[1],
-            jy * bq[3] + jw * -bq[1] + jz * -bq[0] - jx * -bq[2],
-            jz * bq[3] + jw * -bq[2] + jx * -bq[1] - jy * -bq[0],
-          ]
+        if (!manifold || !manifold.points.length) continue
+        // Deepest manifold point carries the contact
+        let deep = manifold.points[0]
+        for (const pt of manifold.points) if (pt.separation < deep.separation) deep = pt
+        if (deep.separation >= 0) continue
+        let n = manifold.normal
+        let cp = deep.point
+        if (toWorld) {
+          n = toWorld(n)
+          cp = toWorld(cp)
+          cp = [cp[0] + bp[0], cp[1] + bp[1], cp[2] + bp[2]]
         }
-      } else {
-        return true   // debris is spheres and hulls today; other types have no pair test wired
+        hits.push({
+          body: handle,
+          normal: { x: n[0], y: n[1], z: n[2] },
+          depth: -deep.separation,
+          contactPoint: { x: cp[0], y: cp[1], z: cp[2] },
+          sizeR: rec.sizeR[si] ?? 0.3,   // obstacle size for tire enveloping
+        })
       }
-      if (!manifold || !manifold.points.length) return true
-      // Deepest manifold point carries the contact
-      let deep = manifold.points[0]
-      for (const pt of manifold.points) if (pt.separation < deep.separation) deep = pt
-      if (deep.separation >= 0) return true
-      let n = manifold.normal
-      let cp = deep.point
-      if (toWorld) {
-        n = toWorld(n)
-        cp = toWorld(cp)
-        cp = [cp[0] + bp[0], cp[1] + bp[1], cp[2] + bp[2]]
-      }
-      hits.push({
-        body: handle,
-        normal: { x: n[0], y: n[1], z: n[2] },
-        depth: -deep.separation,
-        contactPoint: { x: cp[0], y: cp[1], z: cp[2] },
-        sizeR: this._shapeSizeR.get(this._shapeKey(shapeId)) ?? 0.3,   // obstacle size for tire enveloping
-      })
-      return true
-    })
+    }
     return hits
   }
 
@@ -625,8 +735,7 @@ export class PhysicsEngine {
     this._heightfields.clear()
     for (const list of this._meshDatas.values()) for (const m of list) _b3.b3DestroyMesh(m)
     this._meshDatas.clear()
-    for (const h of this._hulls) _b3.b3DestroyHull(h)
-    this._hulls.length = 0
+    for (const rec of this._bodies.values()) for (const h of rec.hulls) this._freeHull(h)
     this._bodies.clear()
     this._shapeToHandle.clear()
   }
