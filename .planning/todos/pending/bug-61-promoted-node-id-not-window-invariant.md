@@ -24,6 +24,55 @@ and the ranking both depend on what is registered in that window. Move the windo
 a few metres away — and since the id is the millimetre-quantised position, a few metres is a
 different node, a different run key, and a road that "evaporates" for anything holding the old key.
 
+## DIAGNOSIS — the invariance argument was sound when written, and I invalidated it
+
+This is the part worth reading before touching the fix, because the bug is not a missing check. It
+is a design that was correct on paper and was quietly changed out from under its own proof.
+
+**`.planning/research/T-PROMOTION-FIXPOINT.md` was written before any code, as the ticket demanded,
+and its argument is valid for the design it describes.** That design put the fork at the PLAN
+layer's own answer:
+
+> the promotion is derived FROM its output (`variants[0].wCut` is already the fork arc — that IS
+> `P`), never fed back into it. *(memo line 27, and again in the table at line 90)*
+
+`_v2NodeMerges` is a pure function of `(g, drop, node)`. Its `variants[0].wCut` is therefore
+window-invariant by construction, and so was `P`. **The memo proves invariance for a `P` the shipped
+code does not use.**
+
+During the build, plan variants started failing the departure acceptance, and I added
+`_v2ForkCandidates` — a scan-and-rank that proposes its own fork positions and orders them by deck
+agreement. It **overrides** `variants[0].wCut`. That change moved the fork decision out of the pure
+plan layer and into the assembly layer, and the fixpoint memo was never revisited. Nothing flagged
+it because the memo's conclusion ("nothing feeds back into routing") stayed true — routing really is
+untouched. The conclusion that quietly stopped being true is a different one: that **P itself** is a
+pure function of the graph.
+
+### What actually varies, concretely
+
+`_v2ForkCandidates` and the commit path read three things that are NOT window-invariant:
+
+1. **The trunk's and side run's REGISTERED polylines** — the parting-point scan (`lastClose`), the
+   `clears` filter and the `dY` deck-agreement ranking all walk registered geometry. Which runs
+   register, and how far they extend, depends on the band.
+2. **`_v2TrunkPieceAt` / the `pieces` table** — a promotion lands on whatever piece a PREVIOUS
+   promotion left behind. The set of prior promotions is the set of in-band merge pairs, which is
+   window-dependent. So promotion order and available trunk length both vary.
+3. **The ranking itself is continuous.** `dY` is a float; two candidates a few metres apart routinely
+   score within centimetres. A near-tie flips under any perturbation, and a flip is 4 m of node
+   movement — which is a different id. This is why the failure is intermittent rather than
+   systematic, and why it got more likely on `feature/stitch`: ranking selects among more candidates.
+
+### Why the gate I wrote to prove this passed anyway
+
+`test/promoted-node-id.mjs` exists specifically to assert this property. It uses four windows within
+~1 km of origin at the same radius — heavily overlapping, nearly identical band boxes, so items 1
+and 2 above barely differ and the ranking agrees. **I sampled the windows most likely to agree and
+read the result as proof.** An invariance gate has to sample DISSIMILAR windows: different radii,
+kilometres apart, and specifically the mission-radius-versus-play-radius pair (320 m) that is the
+seam the game actually crosses. That is fix step 3, and it should land even if step 1 makes it
+redundant, because the next person to touch the fork ranking needs a gate that can catch them.
+
 ## Reproducer
 
 `test/mission-network.mjs`, "the drop-point road still exists when the PLAY system streams there".
