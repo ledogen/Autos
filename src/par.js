@@ -393,8 +393,10 @@ export function formatTime(sec) {
  * Two facts made that unambiguous rather than a matter of taste:
  *   • the ONE run that scored S (`0015`, ratio 0.668) did not drive the route it was priced on. Its
  *     trace skips 471 m of a 2762 m route (17%), peaking 210 m off the centerline — driven path
- *     2274 m against a routed 2762 m. Excluded as a driving data point; the off-route shortcut is a
- *     separate problem (mission.js has no corridor check), tracked as its own ticket.
+ *     2274 m against a routed 2762 m. Excluded as a driving data point. The off-route shortcut is a
+ *     separate problem AND ALREADY RULED ON — it is the Highway's intentional-non-shortcut-skip
+ *     (>~200 m of road distance saved off-network), priced by a graded penalty, and the detector is
+ *     owed by FEAT-52 §5. Do not propose a fix here and do not add a corridor check to mission.js.
  *   • with it excluded, **no honest drive in 17 has ever gone below ratio 0.740** — the old S line
  *     of 0.72 had never been cleared by anyone, and A (0.76) exactly once.
  * Residual correlations from `runs-report` against curvature, grade, straight-fraction and distance

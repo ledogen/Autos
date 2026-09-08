@@ -39,14 +39,15 @@ price stops at all.
 
 Seeds so far: 97, 69, 0, 1, 526302544, 1625430154 + 3 more from the 2026-09-07 batch.
 
-### ⚠ `0015-very_fast-S-105s-2.8km.json` is EXCLUDED from calibration (BUG-63)
+### ⚠ `0015-very_fast-S-105s-2.8km.json` is EXCLUDED from calibration
 
 It scores 0.668 — the best number in the library — because it **did not drive the route it was
 priced on**. Its trace skips 471 m of a 2762 m route (17%, peaking 210 m off the centerline), driven
 path 2274 m against a routed 2762 m. Every other capture here stays inside ~2 m mean / 12 m max.
 
-It is kept because it is real recorded data and it is the existence proof for BUG-63, but it must
-never anchor a threshold or a `PAR_REF` fit. **The best HONEST drive on record is ratio 0.740**
+It is kept because it is real recorded data and it is the fixture for FEAT-52 §5's
+intentional-non-shortcut-skip detector (the skip is ~2.4× that ruling's ~200 m threshold), but it
+must never anchor a threshold or a `PAR_REF` fit. **The best HONEST drive on record is ratio 0.740**
 (`0003`), and that is the number `test/economy.mjs` pins day-20 S against.
 
 `calibrate-par.mjs` does not know about this — it has no corridor check either. If you re-fit,

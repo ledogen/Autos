@@ -162,6 +162,32 @@ rejoin *downstream*, so they never skip road distance. ⚠ **Verify against junc
 geometry** — graded pads are wide, and a pad chain might let a player save ~200 m without leaving the
 road surface. *(Owner: if it breaks in practice, that is a bug to fix, not a reason to redesign.)*
 
+**MEASURED — a real recorded drive that this detector must catch** [2026-09-07]. Recorded while
+re-cutting the rank bands, and the first hard evidence of the skip in the wild rather than in theory:
+`runs-v2/0015-very_fast-S-105s-2.8km.json`. Checked frame-by-frame against the route topology the
+export carries —
+
+| | |
+|---|---|
+| routed distance | 2761.6 m |
+| driven path (XZ) | 2274 m |
+| route arc never approached within 10 m | **s 1224 → 1696, i.e. 471 m of road skipped (17%)** |
+| peak distance from the centerline | **210 m** |
+
+so the skip is **~2.4× the ratified ~200 m threshold** — comfortably inside the "impossible to trip by
+accident" margin, and a useful low-end calibration point for the graded penalty. For contrast, the
+five honest captures recorded the same day stay inside **~2 m mean / 12 m max** of the centerline,
+which is the noise floor a false positive has to clear. Nothing here changes the ruling; it is a
+fixture for it.
+
+**Until this detector exists the skip is unpriced, and it is currently the highest-paying strategy in
+the game** — that run scored ratio 0.668, the best number in the whole 18-run library, against a best
+*honest* drive of 0.740. There is no separate bug ticket for that: the ruling was made 2026-08-02 and
+the work is this section. Two live consequences that do NOT wait for it, both already shipped:
+`runs-v2/README.md` marks `0015` as excluded from every calibration, and `test/economy.mjs` pins the
+day-20 S threshold against the best *honest* drive so a shortcut run can never certify a threshold.
+Anyone re-fitting `PAR_REF` should know `calibrate-par.mjs` has no corridor check either.
+
 **Precision matters here more than it looks.** A false positive costs the player their Highway favour
 and a visibly worse world, so the event must fire on a genuine through-passage only — **in from one
 road, out onto a different road.** Reversing back out the way you came is not a completion. Parking on

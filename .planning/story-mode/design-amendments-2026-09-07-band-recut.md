@@ -79,10 +79,16 @@ unchanged. That falls out of the re-cut; it was not a separate decision.
 
 ## Left open — deliberately, both recorded so they are not rediscovered
 
-1. **The off-route shortcut is a real hole and is NOT closed by this.** `mission.js` has no corridor
-   check, so leaving the road and rejoining it later beats a par computed on the route you were
-   given. Run `0015` is the existence proof. Needs its own ticket and its own ruling (fail the
-   mission? re-price the route actually driven? a soft corridor?) — a design call, not a tuning one.
+1. **The off-route shortcut is a real hole and is NOT closed by this — but it is already ruled on,
+   and nothing new should be proposed for it.** The offense is the **intentional non-shortcut skip**
+   (leaving the maintained network and rejoining having saved >~200 m of road distance by a path that
+   was not a cut), the penalty is **graded by the distance skipped** and cumulative, and it is priced
+   through the **Highway** relationship — not by voiding a payout and not by walling off-road driving
+   off, both of which the 2026-08-02 rebuild explicitly rejected (`spirits-and-pacts.md` #05/#06:
+   *"the game keeps the shortcut legal and expressive and simply prices it"*). The detector is
+   **owed by FEAT-52 §5**, alongside the cut-traversal event that suppresses it. Run `0015` skipped
+   471 m — ~2.4× the ratified threshold — and is recorded there as a fixture. See DESIGN.md
+   "Ratification pass 2026-08-02 — the route domain is rebuilt".
 2. **D is unreachable and the ratio range is too narrow.** The whole observed spread from flat-out
    to dawdling is 0.74 → 0.97; both drives the owner labelled "very slow" scored 0.903 and 0.950,
    comfortably passing. Par is meant to be where careless driving starts to fail, and on v2 roads
