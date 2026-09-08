@@ -148,9 +148,12 @@ before chasing. **Do not attack it by moving `PAR_SLACK`.**
 ## 6. Verification
 
 - **Affected gates: 10/10 green** (`npm test`, 1076 s wall, story subsystem, from 17 changed files).
-- `npm run test:all` was running at handoff time → `/tmp/wt-rank-weights-testall.log`. Check it
-  before merging; nothing outside the story subsystem should be able to see these constants, so a
-  failure there would be a surprise worth reading rather than a re-tune.
+- **Full suite: 68/69 green** (`npm run test:all`, 481 s wall, 69 gates). The one failure is
+  **`junction-stitch.mjs`, and it is PRE-EXISTING on main** — verified by running the gate against
+  the main worktree, which produces the identical result: **9 FAIL rows, 66 unstitched
+  pair-stretches, same BUG-56 message, same exit 1**. Nothing on this branch can reach it; it is the
+  BUG-56 / BUG-59 deck-divergence work, tracked there. **Do not treat it as a merge blocker and do
+  not re-tune anything here to chase it.**
 - No live verification needed in-browser — this is four numbers and their gated consequences. The
   dev server on :3311 is there if you want to see a result card.
 
