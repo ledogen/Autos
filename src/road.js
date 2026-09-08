@@ -36,7 +36,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
-import { truncatedHeightField, routeEdgeV2, profileSolve, profileSolveBundle, dequantizeProfile, CLS, V2_COSTS, V2_TRUNC_K } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve
+import { truncatedHeightField, routeEdgeV2, profileSolve, profileSolveBundle, dequantizeProfile, roundCrests, stationSpeeds, CLS, V2_COSTS, V2_TRUNC_K } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, reversePrimitives } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
 
@@ -561,6 +561,7 @@ function _interpolateCamber(arcPos, camberRad, s) {
  *
  * @param {number[]} arcPos    — monotone arc-length positions (metres)
  * @param {number[]} gradeY    — Y-height per sample
+ * @param {number[]|null} gradeM — FEAT-81: dY/d(arc) per sample (from _profileTangents); null = linear
  * @param {number[]} camberRad — banking angle (radians) per sample
  * @param {number[]} tx        — unit XZ tangent X per sample
  * @param {number[]} tz        — unit XZ tangent Z per sample
@@ -568,7 +569,7 @@ function _interpolateCamber(arcPos, camberRad, s) {
  * @param {object}   out       — { gradeY, camberRad, tx, tz } object to write into
  * @returns {object} out — mutated with interpolated values
  */
-function _interpolateRunProfile(arcPos, gradeY, camberRad, tx, tz, s, out) {
+function _interpolateRunProfile(arcPos, gradeY, gradeM, camberRad, tx, tz, s, out) {
     const N = arcPos.length
     if (N === 0) {
         out.gradeY = 0; out.camberRad = 0; out.tx = 1; out.tz = 0
@@ -594,11 +595,39 @@ function _interpolateRunProfile(arcPos, gradeY, camberRad, tx, tz, s, out) {
         return out
     }
     const t = (s - arcPos[lo]) / span
-    out.gradeY    = gradeY[lo]    + t * (gradeY[hi]    - gradeY[lo])
+    if (gradeM) {
+        // FEAT-81: cubic Hermite through the samples with the precomputed tangents — the profile is
+        // C¹ in arc, so a crest reads as one vertical curve instead of a corner at every 4 m polyline
+        // vertex. Measured before this: every vertex on a crest was a grade step of 4/R rad (2.3° at
+        // R 100 m), i.e. a ~1 m/s vertical-velocity kick every 4 m at speed — the owner's "tiny
+        // wobbles". The curve passes through every sample exactly, so run ends (node heights),
+        // priced == built at the stations, and every seam contract are untouched; the only change is
+        // BETWEEN samples, by at most the chord mid-ordinate (span²/8R ≈ 2 cm at R 100 m).
+        const t2 = t * t, t3 = t2 * t
+        const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2
+        out.gradeY = h00 * gradeY[lo] + h10 * span * gradeM[lo] + h01 * gradeY[hi] + h11 * span * gradeM[hi]
+    } else {
+        out.gradeY = gradeY[lo] + t * (gradeY[hi] - gradeY[lo])
+    }
     out.camberRad = camberRad[lo] + t * (camberRad[hi] - camberRad[lo])
     out.tx        = tx[lo]        + t * (tx[hi]        - tx[lo])
     out.tz        = tz[lo]        + t * (tz[hi]        - tz[lo])
     return out
+}
+
+// FEAT-81: per-sample profile tangents dY/d(arc) for the cubic Hermite in _interpolateRunProfile —
+// the non-uniform Catmull-Rom estimate (centred secant over the two neighbouring spans, one-sided at
+// the ends). Built ONCE per run at cache time on the FINAL gradeY (after the junction blends), never
+// on the raw points, so the curve is the shipped profile's own.
+function _profileTangents(arcPos, gradeY) {
+    const N = arcPos.length
+    const m = new Array(N)
+    if (N < 2) { if (N === 1) m[0] = 0; return m }
+    const secant = (a, b) => { const d = arcPos[b] - arcPos[a]; return d > 1e-9 ? (gradeY[b] - gradeY[a]) / d : 0 }
+    m[0] = secant(0, 1)
+    m[N - 1] = secant(N - 2, N - 1)
+    for (let i = 1; i < N - 1; i++) m[i] = secant(i - 1, i + 1)
+    return m
 }
 
 // Interpolate a monotonic table key[]→val[] (both ascending Float64Array, same length) at `k`.
@@ -4533,6 +4562,22 @@ export class RoadSystem {
         // steady grade would ship as a 0%/±5% staircase — micro-crests the suspension feels. This
         // low-passes them out, pins the endpoints, preserves every span, and re-prices.
         prof = dequantizeProfile(st, prof, C)
+        // FEAT-81: crest/sag rounding at the design speed the corners here allow (owner ruling
+        // 2026-09-08 — replaces "crest airtime is a FEATURE"). Curvature per station from the
+        // routed XZ polyline (the same 3-point estimate par prices with); interior pins stay put.
+        if ((C.crestHold ?? 0) > 0) {
+            const cl = _pointSampler(pts, clArc)
+            const kappa = new Float64Array(nSt + 1)
+            for (let i = 0; i <= nSt; i++) kappa[i] = Math.abs(cl.curvatureAt(st.s[i]))
+            const pinnedIdx = pins ? new Set(pins.map((p) => p.i)) : undefined
+            const before = prof
+            const t0 = performance.now()
+            prof = roundCrests(st, prof, C, stationSpeeds(st, kappa), pinnedIdx)
+            this._v2CrestMs = (this._v2CrestMs || 0) + (performance.now() - t0)
+            // Census counter (headless probes read it): how many edges the crest rule reshaped.
+            if (prof !== before) this._v2CrestRounded = (this._v2CrestRounded || 0) + 1
+            this._v2CrestSeen = (this._v2CrestSeen || 0) + 1
+        }
         let k = 1
         for (let i = 0; i < n; i++) {
             const t = clArc[i]
@@ -9756,7 +9801,9 @@ export class RoadSystem {
         // FEAT-07 Step 2: same flatten at AT_GRADE mid-span crossings (both strands → one shared node Y).
         this._applyMidspanJunctionBlend(runKey, arcPos, gradeY, camberRad)
 
-        return { arcPos, gradeY, camberRad, tx, tz }
+        // FEAT-81: tangents for the C¹ profile, on the FINAL gradeY (post-blend).
+        const gradeM = _profileTangents(arcPos, gradeY)
+        return { arcPos, gradeY, gradeM, camberRad, tx, tz }
     }
 
     /**
@@ -9801,7 +9848,7 @@ export class RoadSystem {
      * so anything read by arcS is C0 by construction — seam-continuity is guaranteed.
      *
      * Cache: lazy-init `this._runProfileCache` Map, entries keyed by runKey carrying
-     *   { generation, arcPos, gradeY, camberRad, tx, tz }.
+     *   { generation, arcPos, gradeY, gradeM, camberRad, tx, tz }.
      * Invalidation: D1 — rebuilt when `this._generation` differs from stored (same discipline
      *   as camberProfile / _camberProfileCache).
      * Query: ONE binary search on arcPos via _interpolateRunProfile, O(log N) per call.
@@ -9833,7 +9880,7 @@ export class RoadSystem {
         if (cached && cached.rev === currentRev) {
             // Fast path: ONE binary search, interpolate all four arrays.
             return _interpolateRunProfile(
-                cached.arcPos, cached.gradeY, cached.camberRad, cached.tx, cached.tz,
+                cached.arcPos, cached.gradeY, cached.gradeM, cached.camberRad, cached.tx, cached.tz,
                 arcS, result
             )
         }
@@ -9852,7 +9899,7 @@ export class RoadSystem {
 
         this._runProfileCache.set(runKey, { rev: currentRev, ...profile })
         return _interpolateRunProfile(
-            profile.arcPos, profile.gradeY, profile.camberRad, profile.tx, profile.tz,
+            profile.arcPos, profile.gradeY, profile.gradeM, profile.camberRad, profile.tx, profile.tz,
             arcS, result
         )
     }
