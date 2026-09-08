@@ -27,17 +27,19 @@
 // Contact model is the clean infinite plane used by drivetrain-climb.mjs / steep-rest.mjs, so this
 // measures the VEHICLE, not terrain or road effects.
 //
-// Run: node test/measure-vehicle-limits.mjs [--quick]
+// Run: node test/measure-vehicle-limits.mjs [--quick] [--verbose]
 // Not a gate — a measurement instrument. Prints a table and a suggested PAR_REF.
 
 import * as THREE from 'three'
 import { stepPhysics } from '../src/physics.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { PAR_REF } from '../src/par.js'
+import { makeEngineCtx } from './lib/engine-ctx.mjs'
 
 const DT = 1 / 60
 const G = 9.81
 const QUICK = process.argv.includes('--quick')
+const VERBOSE = process.argv.includes('--verbose')   // print every (steer, speed) trim and why it broke
 
 // ── harness ─────────────────────────────────────────────────────────────────────────────────────
 function freshParams () {
@@ -106,6 +108,10 @@ function applySteer (vs, P, phiCmd) {
 const fwdOf = (vs) => new THREE.Vector3(0, 0, -1).applyQuaternion(vs.quaternion)
 const upOf = (vs) => new THREE.Vector3(0, 1, 0).applyQuaternion(vs.quaternion)
 
+// FEAT-48: one engine world for every scenario (as drivetrain-climb.mjs) — collider-free, the wheels
+// ride the analytic plane above; the engine supplies gravity + integration.
+const ctx = await makeEngineCtx(makeVehicle(freshParams()), RANGER_PARAMS)
+
 // ── A. straight-line acceleration ───────────────────────────────────────────────────────────────
 function measureAccel () {
   const P = freshParams()
@@ -116,7 +122,7 @@ function measureAccel () {
   for (let s = 0; s < steps; s++) {
     vs.throttle = 1; vs.brake = 0
     applySteer(vs, P, 0)
-    stepPhysics(vs, P, DT, queryContacts)
+    stepPhysics(vs, P, DT, queryContacts, ctx)
     t += DT
     const v = vs.velocity.dot(fwdOf(vs))
     dist += v * DT
@@ -138,7 +144,7 @@ function measureBraking (fromKph = 100) {
   for (let s = 0; s < 60 * 60; s++) {
     vs.throttle = 0; vs.brake = 1
     applySteer(vs, P, 0)
-    stepPhysics(vs, P, DT, queryContacts)
+    stepPhysics(vs, P, DT, queryContacts, ctx)
     const v = vs.velocity.dot(fwdOf(vs))
     if (v <= 0.2) break
     dist += v * DT; t += DT
@@ -167,7 +173,7 @@ function skidpad (phiCmd, targetV, { hold = 14, settle = 6 } = {}) {
     const u = Math.max(-1, Math.min(1, err * 0.35 + integ))
     vs.throttle = Math.max(0, u); vs.brake = Math.max(0, -u) * 0.5
 
-    stepPhysics(vs, P, DT, queryContacts)
+    stepPhysics(vs, P, DT, queryContacts, ctx)
 
     // Departure guards: rolled over, or launched.
     if (upOf(vs).y < 0.6) return { departed: 'rollover' }
@@ -203,6 +209,7 @@ function skidpadLimit (phiCmd) {
   const vs0 = QUICK ? [6, 9, 12, 15, 18, 21, 24, 27] : [5, 6.5, 8, 9.5, 11, 12.5, 14, 15.5, 17, 18.5, 20, 22, 24, 26, 28, 30]
   for (const v of vs0) {
     const r = skidpad(phiCmd, v)
+    if (VERBOSE) console.log(`   [skidpad] steer ${(phiCmd * 180 / Math.PI).toFixed(0)}° v ${v} m/s → ${r.stable ? `stable R ${r.R.toFixed(1)} m ay ${r.mu.toFixed(3)} g` : `DEPARTED ${r.departed}`}`)
     if (r.stable) best = r
     else if (best) break     // it held, then broke → that's the edge
   }

@@ -191,9 +191,9 @@ The E coefficient in the Pacejka Magic Formula. Controls the post-peak falloff s
 
 ### Friction Circle
 
-The combined lateral/longitudinal force envelope for a tire contact patch. A tire can only produce a limited total force proportional to `frictionCoeff * Fn`. If the vector sum of lateral and longitudinal forces exceeds this budget, both are scaled down proportionally.
+The combined lateral/longitudinal force envelope for a tire contact patch. A tire can only produce a limited total force proportional to `frictionCoeff * gripLoad(Fn)` — FEAT-80: the grip-carrying load falls behind the normal load as load rises and drops hard past `tireRatedLoad` (see `tire.js gripLoad`). If the vector sum of lateral and longitudinal forces exceeds this budget, both are scaled down proportionally.
 
-- **Formula:** `combinedForce = sqrt(Flat² + Flong²)`; if `combinedForce > frictionCoeff * Fn`, both `Flat` and `Flong` are multiplied by `frictionBudget / combinedForce`
+- **Formula:** `combinedForce = sqrt(Flat² + Flong²)`; if `combinedForce > frictionCoeff * gripLoad(Fn)`, both `Flat` and `Flong` are multiplied by `frictionBudget / combinedForce`
 - **Implemented in:** `src/physics.js` friction circle scaling block (runs after force computation, before omega integration — constraint #5)
 - **Effect:** Drifting consumes longitudinal traction budget; hard braking reduces available lateral cornering force
 
