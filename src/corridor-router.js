@@ -1059,6 +1059,104 @@ export function stationSpeeds(st, kappa, ref = PAR_REF) {
  * @param {Set<number>} [pinned] interior station indices that must not move (BUG-55 pins)
  * @returns {object} a profile of the same shape — the input untouched when the rule is off
  */
+/**
+ * FEAT-81/82 — the PROJECTION ENGINE under roundCrests and the junction blend's recovery. Cyclic
+ * projection of a sampled profile y(s) onto, per sweep: box limits (boxLo/boxHi), the grade cap
+ * between neighbours (|Δy| ≤ cap(i)·ds), and the second-difference limits (−cCrest[i] ≤ Δ²y ≤
+ * cSag[i]) — each a convex set, so the sweeps converge to a point in their intersection when one
+ * exists. Pinned samples (free(i) false) never move; a constraint with no free sample is skipped.
+ * Mutates y in place. Returns the worst residual step of the last sweep (0 when everything held).
+ *
+ * @param {ArrayLike<number>} s  arc positions (monotone)
+ * @param {number[]|Float64Array} y  profile, mutated
+ * @param {object} o  { cCrest, cSag, cap:(i)=>number, boxLo?, boxHi?, free:(i)=>boolean, maxIt=2000, tol=1e-5 }
+ */
+export function projectProfile(s, y, o) {
+    const n = s.length
+    const maxIt = o.maxIt ?? 2000, tol = o.tol ?? 1e-5
+    const free = o.free
+    let worst = Infinity
+    for (let it = 0; it < maxIt; it++) {
+        worst = 0
+        if (o.boxLo) {
+            for (let i = 0; i < n; i++) {
+                if (!free(i)) continue
+                if (y[i] < o.boxLo[i]) { worst = Math.max(worst, o.boxLo[i] - y[i]); y[i] = o.boxLo[i] }
+                else if (y[i] > o.boxHi[i]) { worst = Math.max(worst, y[i] - o.boxHi[i]); y[i] = o.boxHi[i] }
+            }
+        }
+        for (let i = 0; i < n - 1; i++) {
+            const ds = s[i + 1] - s[i]
+            if (!(ds > 1e-9)) continue
+            const cap = o.cap(i) * ds
+            if (!Number.isFinite(cap)) continue
+            const dy = y[i + 1] - y[i]
+            let target
+            if (dy > cap) target = cap
+            else if (dy < -cap) target = -cap
+            else continue
+            const f0 = free(i) ? 1 : 0, f1 = free(i + 1) ? 1 : 0
+            const norm2 = f0 + f1
+            if (norm2 === 0) continue
+            const d = (target - dy) / norm2
+            if (f0) y[i] -= d
+            if (f1) y[i + 1] += d
+            if (Math.abs(d) > worst) worst = Math.abs(d)
+        }
+        for (let i = 1; i < n - 1; i++) {
+            const d2 = y[i - 1] - 2 * y[i] + y[i + 1]
+            let target
+            if (d2 < -o.cCrest[i]) target = -o.cCrest[i]
+            else if (d2 > o.cSag[i]) target = o.cSag[i]
+            else continue
+            const f0 = free(i - 1) ? 1 : 0, f1 = free(i) ? 1 : 0, f2 = free(i + 1) ? 1 : 0
+            const norm2 = f0 + 4 * f1 + f2
+            if (norm2 === 0) continue
+            const d = (target - d2) / norm2
+            if (f0) y[i - 1] += d
+            if (f1) y[i] -= 2 * d
+            if (f2) y[i + 1] += d
+            if (Math.abs(d) > worst) worst = Math.abs(d)
+        }
+        if (worst < tol) break
+    }
+    return worst
+}
+
+/**
+ * FEAT-81 CREST ROUNDING (owner 2026-09-08: "crests that fall away quickly enough for the car to
+ * become airborne … I want to ride the edge of fast/difficult, not difficult/technical", and on
+ * the design speed: "use the run solver to determine the allowable speed for the corners in that
+ * area and set crest rate off that"). This OVERRULES the "crest airtime is a FEATURE" note on
+ * profileSolve: the DP has no term on the CHANGE of grade, so a crest may go +24 % → −24 % across
+ * one 10 m station (vertical radius ~20 m, airborne above 14 m/s). Measured on 55 km of shipped
+ * road (test/ride-probe.mjs): solver crests of R 40–115 m under 27 m/s par speed lifted the car
+ * 0.8–1.3 g.
+ *
+ * The rule: at every interior station the second difference of the deck is bounded so that at the
+ * design speed v (stationSpeeds) the wheels keep ≥ crestHold·g over a crest and gain ≤ sagLoad·g in
+ * a sag: |Δ²y| ≤ ds²/R with R_crest = v²/(g·crestHold), R_sag = v²/(g·sagLoad).
+ *
+ * Why a post-pass and not a DP term: a curvature constraint needs the previous grade in the DP state
+ * — (station, y, prev-y) — about 11× the transitions of today's solve for a rule that only ever
+ * bites at a handful of stations per edge. So, like dequantizeProfile, this reshapes the SOLVED
+ * profile and RE-PRICES it: priced == built holds on the shipped array. The reshaping is
+ * projectProfile with the STRICT grade cap (priceProfile's — no DP half-quantum tolerance, so a
+ * solve that rode that tolerance comes out legal and cheaper) and the bore/fill box, all in one
+ * sweep: rounding a crest raises its flanks, and a flank already at the cap would otherwise fail
+ * the re-price and the bisect would hand the crest straight back. Endpoints and interior pins never
+ * move; a residual cap breach bisects toward the solved profile (safety net only).
+ * A crest of radius R across a grade change Δg moves the deck R·Δg²/8 — 1.5 m at R 51 m,
+ * Δg 0.48 — which is why this cannot live inside the ±0.25 m corner-rounding bound downstream.
+ *
+ * @param {{s:number[],ground:number[]}} st stations
+ * @param {object} prof the solved (and dequantised) profile
+ * @param {object} C the price list (reads crestHold, sagLoad; 0/absent = off)
+ * @param {Float64Array|number[]} v design speed per station (stationSpeeds)
+ * @param {Set<number>} [pinned] interior station indices that must not move (BUG-55 pins)
+ * @param {object} [stats] census counters (viol / converged / full / partial / refused / why)
+ * @returns {object} a profile of the same shape — the input untouched when the rule is off
+ */
 export function roundCrests(st, prof, C, v, pinned, stats) {
     const n = st.s.length
     const hold = C.crestHold ?? 0
@@ -1085,20 +1183,9 @@ export function roundCrests(st, prof, C, v, pinned, stats) {
     }
     if (!viol) return prof
     if (stats) stats.viol = (stats.viol || 0) + 1
-    // Cyclic projection onto the half-spaces. Curvature: a = [1, −2, 1] on (i−1, i, i+1). GRADE CAP:
-    // a = [−1, 1] on (i, i+1) — in the projection set too, because rounding a crest raises its
-    // flanks, and a flank already at the cap (the common case on a big hill: the DP runs both sides
-    // at gMaxRoad) would otherwise fail the re-price and the bisect would hand the crest straight
-    // back. With both sets projected the result is legal by construction and the bisect is only a
-    // safety net. The strict cap is priceProfile's (no DP half-quantum tolerance), so a solve that
-    // rode that tolerance also comes out legal here. Both masked by `free`.
     // Cap margin 2e-4 (0.02 % grade): the projection converges to ~1e-5 residuals, and the re-price
     // is strict, so the target sits a hair inside the cap or every blend would be refused.
     const capOf = (i) => ((prof.cls[i] === CLS.BORE || prof.cls[i + 1] === CLS.BORE) ? C.gMaxBore : C.gMaxRoad) - 2e-4
-    // Guarantee 2 as BOX constraints inside the same sweep (not a clamp after it — a clamp after
-    // convergence dragged a station to the fill ceiling and broke the grade into it, and the strict
-    // re-price refused the whole pass): no station changes bore status, none breaches the fill
-    // ceiling. Both dequantizeProfile guarantees, projected with everything else.
     const EPS = 1e-3
     const boxLo = new Float64Array(n), boxHi = new Float64Array(n)
     for (let i = 0; i < n; i++) {
@@ -1106,48 +1193,8 @@ export function roundCrests(st, prof, C, v, pinned, stats) {
         if (prof.cls[i] === CLS.BORE) { boxLo[i] = -Infinity; boxHi[i] = gr - C.cutMax - EPS }
         else { boxLo[i] = gr - C.cutMax + EPS; boxHi[i] = gr + C.fillMax - EPS }
     }
-    for (let it = 0; it < 2000; it++) {
-        let worst = 0
-        for (let i = 1; i < n - 1; i++) {
-            if (!free(i)) continue
-            if (y[i] < boxLo[i]) { worst = Math.max(worst, boxLo[i] - y[i]); y[i] = boxLo[i] }
-            else if (y[i] > boxHi[i]) { worst = Math.max(worst, y[i] - boxHi[i]); y[i] = boxHi[i] }
-        }
-        for (let i = 0; i < n - 1; i++) {
-            const ds = st.s[i + 1] - st.s[i]
-            if (!(ds > 1e-9)) continue
-            const cap = capOf(i) * ds
-            const dy = y[i + 1] - y[i]
-            let target
-            if (dy > cap) target = cap
-            else if (dy < -cap) target = -cap
-            else continue
-            const f0 = free(i) ? 1 : 0, f1 = free(i + 1) ? 1 : 0
-            const norm2 = f0 + f1
-            if (norm2 === 0) continue
-            const d = (target - dy) / norm2
-            if (f0) y[i] -= d
-            if (f1) y[i + 1] += d
-            if (Math.abs(d) > worst) worst = Math.abs(d)
-        }
-        for (let i = 1; i < n - 1; i++) {
-            const d2 = y[i - 1] - 2 * y[i] + y[i + 1]
-            let target
-            if (d2 < -cCrest[i]) target = -cCrest[i]
-            else if (d2 > cSag[i]) target = cSag[i]
-            else continue
-            const f0 = free(i - 1) ? 1 : 0, f1 = free(i) ? 1 : 0, f2 = free(i + 1) ? 1 : 0
-            const norm2 = f0 + 4 * f1 + f2
-            if (norm2 === 0) continue
-            const d = (target - d2) / norm2
-            if (f0) y[i - 1] += d
-            if (f1) y[i] -= 2 * d
-            if (f2) y[i + 1] += d
-            if (Math.abs(d) > worst) worst = Math.abs(d)
-        }
-        if (worst < 1e-5) { if (stats) stats.converged = (stats.converged || 0) + 1; break }
-        if (stats && it === 1999) { stats.unconverged = (stats.unconverged || 0) + 1; stats.lastWorst = worst }
-    }
+    const worst = projectProfile(st.s, y, { cCrest, cSag, cap: capOf, boxLo, boxHi, free })
+    if (stats) { if (worst < 1e-5) stats.converged = (stats.converged || 0) + 1; else { stats.unconverged = (stats.unconverged || 0) + 1; stats.lastWorst = worst } }
     for (let i = 1; i < n - 1; i++) if (!free(i)) y[i] = y0[i]
     // Guarantee 3: re-price; on a cap breach keep the largest feasible blend toward the rounded line.
     const blend = (t) => {
@@ -1161,11 +1208,11 @@ export function roundCrests(st, prof, C, v, pinned, stats) {
         // Diagnose the refusal: first station whose grade or fill breaks the strict price.
         const yy = blend(1)
         for (let i = 1; i < n; i++) {
-            const ds = st.s[i] - st.s[i - 1], g = (yy[i] - yy[i - 1]) / ds
+            const ds = st.s[i] - st.s[i - 1], gg = (yy[i] - yy[i - 1]) / ds
             const c0 = classOf(yy[i - 1] - st.ground[i - 1], C), c1 = classOf(yy[i] - st.ground[i], C)
             const cap = (c0 === CLS.BORE || c1 === CLS.BORE) ? C.gMaxBore : C.gMaxRoad
             const fill = yy[i] - st.ground[i]
-            if (Math.abs(g) > cap + 1e-9 || fill > C.fillMax) { stats.why = { i, g: +g.toFixed(5), cap, c0, c1, fill: +fill.toFixed(2), origCls: prof.cls[i], moved: +(yy[i] - y0[i]).toFixed(3) }; break }
+            if (Math.abs(gg) > cap + 1e-9 || fill > C.fillMax) { stats.why = { i, g: +gg.toFixed(5), cap, c0, c1, fill: +fill.toFixed(2), origCls: prof.cls[i], moved: +(yy[i] - y0[i]).toFixed(3) }; break }
         }
     }
     let lo = 0, hi = 1

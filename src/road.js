@@ -36,7 +36,8 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
-import { truncatedHeightField, routeEdgeV2, profileSolve, profileSolveBundle, dequantizeProfile, roundCrests, stationSpeeds, CLS, V2_COSTS, V2_TRUNC_K } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule
+import { truncatedHeightField, routeEdgeV2, profileSolve, profileSolveBundle, dequantizeProfile, roundCrests, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule
+import { PAR_REF } from './par.js'   // FEAT-82: the junction recovery is a vertical curve at par's junction-approach speed
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, reversePrimitives } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
 
@@ -9959,6 +9960,83 @@ export class RoadSystem {
             if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
             if (camberRad && fC > 0) camberRad[i] += (nc - camberRad[i]) * fC
         }
+        // FEAT-82 (owner 2026-09-08): the recovery past the hold is a VERTICAL CURVE, not a ramp.
+        // Measured after the deck hold landed: the worst crests on 54 km of road were all 35–47 m
+        // from a node — the leg rode the pad plane out to the hold and then bent back to its own
+        // solved line over the grade-limited reach (a slope handoff of up to 0.15 over ~30 m, R
+        // 24–40 m, 1.2–1.7 g of lift at the 20 m/s a driver still carries there). The smoothstep
+        // above stays as the initial guess (it closes the height gap and keeps the correction grade
+        // ≤ roadJunctionBlendMaxGrade); projectProfile then bounds the second difference of the
+        // shipped samples past the hold to the FEAT-81 crest/sag rule at the junction-approach
+        // design speed — brake-limited outward from par's junction corner speed, capped by the
+        // run's own curvature envelope and PAR_REF.vMax — widening the free window (×1.5, up to the
+        // 45 % run cap) until the curve fits. Samples inside the hold and past the window are
+        // pinned, so the pad plane and the run's own profile are untouched; only the handoff bends.
+        if (gradeY && havePts) {
+            const crestHold = this._params?.roadV2?.crestHold ?? 0
+            if (crestHold > 0) {
+                if (ej.jStart.is) this._recoverFromHold(arcPos, gradeY, pts, true, hS, RgS, reachCap, crestHold)
+                if (ej.jEnd.is) this._recoverFromHold(arcPos, gradeY, pts, false, hE, RgE, reachCap, crestHold)
+            }
+        }
+    }
+
+    // FEAT-82: bend the handoff past a deck hold into a vertical curve that satisfies the crest/sag
+    // rule at the junction-approach design speed. See _applyJunctionBlend.
+    _recoverFromHold(arcPos, gradeY, pts, fromStart, hold, reach0, reachCap, crestHold) {
+        const N = arcPos.length
+        if (N < 4) return
+        const g = PAR_REF.g
+        const sagLoad = this._params?.roadV2?.sagLoad ?? 0
+        const gmu = PAR_REF.mu * g
+        const vNode2 = gmu * PAR_REF.junctionRadius          // par's corner speed THROUGH the node, squared
+        const dOf = (i) => fromStart ? arcPos[i] - arcPos[0] : arcPos[N - 1] - arcPos[i]
+        // Design speed at sample i: brake-limited outward from the node, under the run's own
+        // curvature envelope (3-point, as par prices it) and the flat terminal speed.
+        const vAt = (i) => {
+            const a = pts[Math.max(0, i - 1)], b = pts[i], c = pts[Math.min(N - 1, i + 1)]
+            const ux = b.x - a.x, uz = b.z - a.z, wx = c.x - b.x, wz = c.z - b.z
+            const lu = Math.hypot(ux, uz) || 1e-9, lw = Math.hypot(wx, wz) || 1e-9
+            const cross = (ux * wz - uz * wx) / (lu * lw), dot = Math.max(-1, Math.min(1, (ux * wx + uz * wz) / (lu * lw)))
+            const kappa = Math.abs(Math.atan2(cross, dot)) / (0.5 * (lu + lw))
+            const vEnv = kappa > 1e-6 ? Math.sqrt(gmu / kappa) : PAR_REF.vMax
+            return Math.min(PAR_REF.vMax, vEnv, Math.sqrt(vNode2 + 2 * PAR_REF.brake * dOf(i)))
+        }
+        const cCrest = new Float64Array(N), cSag = new Float64Array(N)
+        for (let i = 1; i < N - 1; i++) {
+            const ds = 0.5 * (arcPos[i + 1] - arcPos[i - 1])
+            const vv = Math.max(1, vAt(i)) ** 2
+            cCrest[i] = ds * ds * g * crestHold / vv
+            cSag[i] = sagLoad > 0 ? ds * ds * g * sagLoad / vv : Infinity
+        }
+        const C = this._v2Costs()
+        const capG = (C.gMaxRoad ?? 0.24) + (C.gradeTol ?? 0.14)   // the ceiling — a leg may be steep, never illegal
+        const maxReach = Math.max(0, reachCap - hold)
+        let reach = Math.min(maxReach, Math.max(reach0, 1))
+        const start = gradeY.slice()
+        let best = null, bestResid = Infinity, bestFree = null
+        for (let attempt = 0; attempt < 6; attempt++) {
+            const y = start.slice()
+            const r = reach
+            const free = (i) => { const d = dOf(i); return i > 0 && i < N - 1 && d > hold && d < hold + r }
+            projectProfile(arcPos, y, { cCrest, cSag, cap: () => capG, free, maxIt: 600 })
+            // Residual curvature violation (m of second difference over the limit) across the window
+            // AND its pinned neighbours — the handoff into the pinned own profile is where an
+            // undersized window shows. Judged on the residual, not the projection's last step size:
+            // the sweeps creep for a long time at ~1e-3 while the curve is already within 2 mm.
+            let resid = 0
+            for (let i = 1; i < N - 1; i++) {
+                const d = dOf(i); if (d < hold - 8 || d > hold + r + 8) continue
+                const d2 = y[i - 1] - 2 * y[i] + y[i + 1]
+                resid = Math.max(resid, -d2 - cCrest[i], d2 - cSag[i])
+            }
+            if (resid < bestResid) { best = y; bestResid = resid; bestFree = free }
+            if (resid < 0.02 || reach >= maxReach - 1e-6) break
+            reach = Math.min(maxReach, reach * 1.5)
+        }
+        // Ship the best attempt even when no window satisfied the rule — it is never worse than the
+        // smoothstep it started from on the measure that matters (the residual).
+        if (best) for (let i = 0; i < N; i++) if (bestFree(i)) gradeY[i] = best[i]
     }
 
     // FEAT-07 Step 2 + FEAT-19: reconcile this run toward each AT_GRADE MID-SPAN crossing within

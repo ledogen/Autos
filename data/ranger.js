@@ -752,7 +752,15 @@ export const RANGER_PARAMS = {
   // The pad's elevation may shift from the mean approach-Y toward the terrain median over the pad
   // disc (L1 fit) by at most this many metres — shrinks uphill cut walls without letting the pad
   // chase a gully/ridge far from every approach road. 0 = off (elevation = mean approach Y).
-  roadJunctionPadTerrainBias: 3.0, // m — cap on terrain-seeking pad elevation shift
+  // FEAT-82 (owner 2026-09-08): 3.0 → 0. The owner's diagnosis — "the pad resembles the road
+  // surface being painted onto the terrain … you drop 50 cm off the road into the intersection and
+  // climb back out" — measured: at 6 of 15 three-leg nodes on seeds 6/7 every leg agreed with its
+  // siblings and every one was bent by exactly 3.00 m (this cap) onto a plane the terrain median
+  // had pulled off the roads' consensus height. The node height already comes from the terrain
+  // neighbourhood (_v2NodeHeight) when the roads are solved, so the bias double-counted the ground
+  // and left the roads to absorb it in a 30 m ramp. 0 = the pad plane passes through the roads'
+  // shared node height; the terrain is carved to the roads, not the roads bent to the terrain.
+  roadJunctionPadTerrainBias: 0.0, // m — cap on terrain-seeking pad elevation shift (0 = off)
   // Adaptive approach-blend reach: when a run's own graded endpoint sits far above/below the pad
   // plane, easing it over the fixed roadJunctionBlendLength would create a 60–130% artificial
   // grade spike (the QUAL-13 junction grade artifact). The grade blend stretches so the
