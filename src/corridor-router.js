@@ -1059,7 +1059,7 @@ export function stationSpeeds(st, kappa, ref = PAR_REF) {
  * @param {Set<number>} [pinned] interior station indices that must not move (BUG-55 pins)
  * @returns {object} a profile of the same shape — the input untouched when the rule is off
  */
-export function roundCrests(st, prof, C, v, pinned) {
+export function roundCrests(st, prof, C, v, pinned, stats) {
     const n = st.s.length
     const hold = C.crestHold ?? 0
     const sag = C.sagLoad ?? 0
@@ -1084,6 +1084,7 @@ export function roundCrests(st, prof, C, v, pinned) {
         if (d2 < -cCrest[i] || d2 > cSag[i]) viol = true
     }
     if (!viol) return prof
+    if (stats) stats.viol = (stats.viol || 0) + 1
     // Cyclic projection onto the half-spaces. Curvature: a = [1, −2, 1] on (i−1, i, i+1). GRADE CAP:
     // a = [−1, 1] on (i, i+1) — in the projection set too, because rounding a crest raises its
     // flanks, and a flank already at the cap (the common case on a big hill: the DP runs both sides
@@ -1094,8 +1095,24 @@ export function roundCrests(st, prof, C, v, pinned) {
     // Cap margin 2e-4 (0.02 % grade): the projection converges to ~1e-5 residuals, and the re-price
     // is strict, so the target sits a hair inside the cap or every blend would be refused.
     const capOf = (i) => ((prof.cls[i] === CLS.BORE || prof.cls[i + 1] === CLS.BORE) ? C.gMaxBore : C.gMaxRoad) - 2e-4
+    // Guarantee 2 as BOX constraints inside the same sweep (not a clamp after it — a clamp after
+    // convergence dragged a station to the fill ceiling and broke the grade into it, and the strict
+    // re-price refused the whole pass): no station changes bore status, none breaches the fill
+    // ceiling. Both dequantizeProfile guarantees, projected with everything else.
+    const EPS = 1e-3
+    const boxLo = new Float64Array(n), boxHi = new Float64Array(n)
+    for (let i = 0; i < n; i++) {
+        const gr = st.ground[i]
+        if (prof.cls[i] === CLS.BORE) { boxLo[i] = -Infinity; boxHi[i] = gr - C.cutMax - EPS }
+        else { boxLo[i] = gr - C.cutMax + EPS; boxHi[i] = gr + C.fillMax - EPS }
+    }
     for (let it = 0; it < 2000; it++) {
         let worst = 0
+        for (let i = 1; i < n - 1; i++) {
+            if (!free(i)) continue
+            if (y[i] < boxLo[i]) { worst = Math.max(worst, boxLo[i] - y[i]); y[i] = boxLo[i] }
+            else if (y[i] > boxHi[i]) { worst = Math.max(worst, y[i] - boxHi[i]); y[i] = boxHi[i] }
+        }
         for (let i = 0; i < n - 1; i++) {
             const ds = st.s[i + 1] - st.s[i]
             if (!(ds > 1e-9)) continue
@@ -1128,17 +1145,10 @@ export function roundCrests(st, prof, C, v, pinned) {
             if (f2) y[i + 1] += d
             if (Math.abs(d) > worst) worst = Math.abs(d)
         }
-        if (worst < 1e-5) break
+        if (worst < 1e-5) { if (stats) stats.converged = (stats.converged || 0) + 1; break }
+        if (stats && it === 1999) { stats.unconverged = (stats.unconverged || 0) + 1; stats.lastWorst = worst }
     }
-    // Guarantee 2: bore status and the fill ceiling (as dequantizeProfile).
-    const EPS = 1e-3
-    for (let i = 1; i < n - 1; i++) {
-        if (!free(i)) { y[i] = y0[i]; continue }
-        const gr = st.ground[i]
-        if (prof.cls[i] === CLS.BORE) y[i] = Math.min(y[i], gr - C.cutMax - EPS)
-        else y[i] = Math.max(y[i], gr - C.cutMax + EPS)
-        y[i] = Math.min(y[i], gr + C.fillMax - EPS)
-    }
+    for (let i = 1; i < n - 1; i++) if (!free(i)) y[i] = y0[i]
     // Guarantee 3: re-price; on a cap breach keep the largest feasible blend toward the rounded line.
     const blend = (t) => {
         const out = new Array(n)
@@ -1146,13 +1156,25 @@ export function roundCrests(st, prof, C, v, pinned) {
         return out
     }
     let best = priceProfile(st, blend(1), C)
-    if (best) return best
+    if (best) { if (stats) stats.full = (stats.full || 0) + 1; return best }
+    if (stats) {
+        // Diagnose the refusal: first station whose grade or fill breaks the strict price.
+        const yy = blend(1)
+        for (let i = 1; i < n; i++) {
+            const ds = st.s[i] - st.s[i - 1], g = (yy[i] - yy[i - 1]) / ds
+            const c0 = classOf(yy[i - 1] - st.ground[i - 1], C), c1 = classOf(yy[i] - st.ground[i], C)
+            const cap = (c0 === CLS.BORE || c1 === CLS.BORE) ? C.gMaxBore : C.gMaxRoad
+            const fill = yy[i] - st.ground[i]
+            if (Math.abs(g) > cap + 1e-9 || fill > C.fillMax) { stats.why = { i, g: +g.toFixed(5), cap, c0, c1, fill: +fill.toFixed(2), origCls: prof.cls[i], moved: +(yy[i] - y0[i]).toFixed(3) }; break }
+        }
+    }
     let lo = 0, hi = 1
     for (let it = 0; it < 12; it++) {
         const mid = (lo + hi) / 2
         const pr = priceProfile(st, blend(mid), C)
         if (pr) { best = pr; lo = mid } else hi = mid
     }
+    if (stats) { if (best) stats.partial = (stats.partial || 0) + 1; else stats.refused = (stats.refused || 0) + 1 }
     return best || prof
 }
 
