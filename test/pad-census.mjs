@@ -52,6 +52,17 @@ const rungOf = (road, node) => {
 
 let fails = 0
 const tot = { clusters: 0, deg2: 0, weld: 0, circle: 0, hull: 0, NONE: 0 }
+// BUG-59 — PAD SIZE, not just pad existence. Before 2026-09-07 two thirds of the network's
+// junctions shared one ring reach, 13.46 m: the mouth corner at cutback + halfWidth/2 = 12.5 m
+// out, hypot(12.5, 5). That is a floor being hit, not a distribution — the exact weld
+// self-intersected at every narrow throat and fell to the circle pad. The ruling: pave the gore
+// to where the pavements PART. Each leg now carries its own cutback (leg.cutback, the parting
+// walk _legPartingReach), so the ring must reach at least the furthest leg's parting point. A
+// wide-angle crossroads legitimately stays at 13.46 m — its ribbons part inside the default
+// cutback — so the gate does not fail on the value; it fails on a pad SHORT of its own legs.
+const reach = []
+let shortPads = 0
+const shortRows = []
 
 for (const W of WINDOWS) {
   if (ONLY && !W.name.includes(ONLY)) continue
@@ -65,6 +76,12 @@ for (const W of WINDOWS) {
     if (node.deg2 || node.legs.length < 3) { deg2++; continue }
     const r = rungOf(road, node)
     by[r]++
+    const need = Math.max(...node.legs.map((l) => l.cutback ?? 0))
+    reach.push(node.ringMaxR ?? 0)
+    if (node.ring && (node.ringMaxR ?? 0) < need - 0.5) {
+      shortPads++
+      if (shortRows.length < 8) shortRows.push(`${W.name} (${node.pos.x.toFixed(0)},${node.pos.z.toFixed(0)}) ring ${(node.ringMaxR ?? 0).toFixed(1)} m, legs part at ${need.toFixed(1)} m (${r})`)
+    }
     // node.ring is what actually shipped — the census must agree with it, not just with the ladder.
     if (r === 'NONE' || !node.ring || node.ring.length < 3)
       bad.push({ nk, legs: node.legs.length, x: node.pos.x, z: node.pos.z })
@@ -86,5 +103,14 @@ console.log(`\npad-census: ${tot.clusters} clusters · ${tot.deg2} degree-2 (con
             `${real} real junctions`)
 console.log(`            rungs — weld ${tot.weld} · circle ${tot.circle} · ` +
             `hull ${tot.hull} (${real ? (100 * tot.hull / real).toFixed(0) : 0}% on the floor) · NONE ${tot.NONE}`)
+reach.sort((a, b) => a - b)
+const q = (f) => reach.length ? reach[Math.min(reach.length - 1, Math.floor(f * reach.length))].toFixed(1) : '-'
+const floor = reach.filter((v) => Math.abs(v - 13.46) < 0.15).length
+console.log(`            BUG-59 pad reach (ringMaxR, m) — min ${q(0)} · p10 ${q(0.1)} · p50 ${q(0.5)} · p90 ${q(0.9)} · max ${q(0.999)} · at the 13.46 m mouth corner ${floor} of ${reach.length}`)
+if (shortPads) {
+  console.log(`            ${shortPads} pad(s) reach SHORT of their own legs' parting point:`)
+  for (const row of shortRows) console.log(`              ${row}`)
+}
 if (fails) { console.log('FAIL — a ≥3-leg junction has no pad; the legs are cut back and nothing paves the gap (BUG-56 B0)'); process.exit(1) }
+if (shortPads) { console.log('FAIL — a pad does not reach where its own legs part; the gore between them is two overlapping ribbons, not a plaza (BUG-59)'); process.exit(1) }
 console.log('PASS')

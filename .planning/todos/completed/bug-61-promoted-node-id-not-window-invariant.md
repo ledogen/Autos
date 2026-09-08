@@ -1,7 +1,7 @@
 ---
 id: BUG-61
 type: bug
-status: pending
+status: completed
 severity: major
 ---
 
@@ -139,3 +139,37 @@ real invariance break behind a workaround, and BUG-25 is the precedent for how e
   guard was reverted. It was masking this, not fixing it.
 - **Not the ranking change** on `feature/stitch`. Ranking promotes more Ts, so it raised the odds
   until a gate caught it. The defect is on main.
+
+
+---
+
+## RESOLUTION — 2026-09-07, `feature/junction-stitch`
+
+**Both fix steps 1 and 3 landed; step 2 (quantising) was not needed. The 45 m guard is deleted at
+both sites. `mission-network` is green on its own merits (16/16), `promoted-node-id` is green on the
+dissimilar-window sweep (far 1400 m bands vs 320 m play windows, 21 core Ts, 0 violations).**
+
+1. **The fork is decided ONCE, at plan time, on the pure samples.** `_v2PromotableProbe` now runs
+   the assembly's own ranking (deck-agreement candidates × the band ladder, first clear wins, else
+   best score) and memoizes `{ extents, fork: { x, z, RB } }`. `_v2PromoteOne` looks that record up
+   and APPLIES it: finds the trunk piece under the fork XZ, snaps to the vertex, builds at the
+   recorded rung. The registered-network ranking survives only as the fallback for a rerouted pair
+   (BUG-56 C's never-drape rung changes the polyline), counted `promote-replan`.
+   `_registerRun` and `_v2RunSample` are the one sampler, so the vertex the plan chose is bit-for-bit
+   present on the registered trunk.
+
+2. **The reproducer had a SECOND mechanism the ticket did not see.** With the id stable, the drop-point
+   road STILL evaporated: `3059681,1000775,-1|3087815,978415,-1` present in the mission band, absent
+   in the play band. The missing T's side road (`g:3,1,0:4,1,1`) had already been SPLIT — a third road
+   (`g:2,1,2:3,1,0`, in the play band but outside the mission band) had used it as ITS trunk — and
+   `_v2PromoteOne` declined any side run in pieces ("side run already promoted"). So the T's
+   existence depended on which third roads the band held. Now the piece that meets the trunk
+   promotes; `_promotedAway` is keyed on the graph edge from `pr.sideKey` (the piece's far cell may
+   be a promoted vertex); the departure's far end is pinned to that vertex's deck when it is one
+   (the first build put it 6 m off — graph-topology SURFACE-SMOOTH caught it).
+
+3. `test/promoted-node-id.mjs` gained the far-band-vs-play-radius sweep the ticket asked for.
+
+Measured on the road battery: promoted Ts 44 → 73 across the nine windows (the guard and the
+split-side decline were both suppressing legitimate Ts). See BUG-63 for the mid-span defect found
+alongside (pre-existing on main, out of this ticket's scope).

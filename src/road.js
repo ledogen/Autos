@@ -90,6 +90,21 @@ const MAX_LEG_SLOPE = 0.30
 // blended (that raised gore steps where two unrelated roads cross far from the node). FADE_IN covers the
 // pad + near gore; FADE_OUT is set past the trident's slow-diverging crease (~r24) but short of where legs
 // become distinct roads (~r40+).
+// JUNCTION DECK HOLD (owner ruling 2026-09-07, junction-stitch's last 66): a leg leaving a node RIDES
+// THE JUNCTION PLANE until its pavement has parted from every sibling leg's pavement, and only then
+// recovers its own grade. Two ribbons that still overlap the same ground must be at the same height
+// — the pad plane — or the drawn asphalt is a lip (median 1.3 m at 12 m out, measured on the
+// shipped series). JN_HOLD_MARGIN: edge-to-edge daylight (m) that counts as "parted" — a touch is
+// not a part. JN_HOLD_MAX_PLANE: the furthest a hold onto a site node's PAD PLANE may reach — the
+// plane is the pad's model of the ground, and 60 m out it was 7 m off a leg that hugs a 13 %
+// trunk (seed 7 (-1663,1613), measured); a pair still overlapping past 30 m is a merge shape,
+// not a junction gore, and the leg is better off on its own line. JN_HOLD_MAX_SURFACE: the
+// reach when the target is a promoted T's TRUNK SURFACE, which is the sibling itself and stays
+// right as long as the two share ground. Both feed _junctionHoldReach; the fade below is the
+// CARVE's inter-leg blend and is a separate reach.
+const JN_HOLD_MARGIN = 1.0
+const JN_HOLD_MAX_PLANE = 30.0
+const JN_HOLD_MAX_SURFACE = 60.0
 const JN_FADE_IN = 22.0
 const JN_FADE_OUT = 34.0
 // Junction-pad ring geometry (moved from road-mesh.js so the CARVE path is the single source of the
@@ -109,20 +124,12 @@ const LEGACY_PAD_FLARE = 1.6
 // works. Not a cap change: gMaxRoad is untouched, per the owner's ruling that tightening it trades
 // away connectivity.
 const HARD_GRADE_RUNGS = [2, 3, 6]
-// THROAT_*: narrow-gore paving for a Y-throat. When two consecutive legs diverge slowly (small gap),
-// the node-centred corner arc cuts across the throat far too close to the node, leaving the gore (the V
-// between the two diverging ribbons) as raw terrain even though it's carved flush — a tan wedge piercing
-// the asphalt (seed-6 node 253,-131, E↔SE mouths). Fix: when the gap is narrow AND the two facing mouth
-// edges start closer than THROAT_SEP, sweep the boundary OUT along both ribbon inner edges until they
-// separate by THROAT_SEP (a full road-width — past that the ribbons are genuinely distinct roads and the
-// median between them is legit terrain), then cap across. Hardcoded consts, NOT road* params (carve-time
-// geometry only, no route-cache-signature effect — same rationale as STRAIGHT_GAP).
-const THROAT_GAP = 1.9        // rad (~109°): only narrow road-side gaps get the outward sweep
-const THROAT_SEP_MULT = 2.0   // × halfWidth: pave the gore until the ribbon inner edges are this far apart
-const THROAT_TRIG_MULT = 1.0  // × halfWidth: TRIGGER the sweep only when the mouths start closer than this —
-                              // ribbons basically merged (trident E↔SE wedge, sep 4.0). Ordinary crossroad
-                              // corners (sep 6.6–9.6 at seed-6 939,-1410) take the interior fillet instead;
-                              // the old trigger (= THROAT_SEP_MULT) swallowed them and swept their corners out.
+// (THROAT_* and _throatSweep — the narrow-gore OUTWARD sweep that paved a Y-throat until its ribbon
+// inner edges were a road width apart — were deleted 2026-09-07. Pad reach is now a property of the
+// legs themselves: each leg's cutback runs out to where its pavement has PARTED from every sibling's
+// (_legPartingReach, the same walk the deck hold uses), so the mouth chords never overlap, the exact
+// weld no longer self-intersects at a narrow throat, and the gore is paved exactly to the parting
+// point — the owner's ruling for BUG-59, over "a road width apart" and over the 13.5 m floor.)
 // PAD_RIM_HOLD: full-depth carve band OUTSIDE the pad ring (m) — ≥ the terrain-grid cell diagonal
 // (1 m grid → 1.42 m) so no terrain triangle straddling the ring boundary can interpolate above the
 // pad asphalt (see _junctionPadCarve). Hardcoded: geometry only, no route-cache-signature effect.
@@ -453,25 +460,34 @@ function _winnerBoreAtFork(S, nodeAtStart, cutCum) {
  * walks disjoint pairs with `fromStart` true. `onFlare` fires when a flare exceeds the bound
  * (genuinely two roads) so the planner's skip-and-count telemetry stays attached.
  */
-function _conflictIntervalsXZ(PS, fromStart, QS, PROX, GAPM, FLARE, onFlare) {
+// FEAT-77: `near(pa, hit)` is the CONFLICT PREDICATE (RoadSystem._v2Near) — the old fixed PROX
+// became a function of the two samples' heights and the earthwork between them. FLARE stays a
+// plain distance: it bounds how far the pair may swing apart inside a gap, not whether they touch.
+function _conflictIntervalsXZ(PS, fromStart, QS, near, GAPM, FLARE, onFlare) {
     const n = PS.pts.length
     const idx = (k) => (fromStart ? k : n - 1 - k)
-    const sepAt = (k) => _nearestOnPolyXZ(PS.pts[idx(k)].x, PS.pts[idx(k)].z, QS.pts, QS.polyCum).d
     const arcAt = (k) => (fromStart ? PS.polyCum[idx(k)] : PS.L - PS.polyCum[idx(k)])
+    let lastD = Infinity
+    const nearAt = (k) => {
+        const pa = PS.pts[idx(k)]
+        const h = _nearestOnPolyXZ(pa.x, pa.z, QS.pts, QS.polyCum)
+        lastD = h.d
+        return near(pa, h, arcAt(k))
+    }
     const out = []
     let k = 0
     while (k < n) {
-        while (k < n && sepAt(k) > PROX) k++
+        while (k < n && !nearAt(k)) k++
         if (k >= n) break
         const s0 = arcAt(k)
         let end = arcAt(k)
-        while (k < n && sepAt(k) <= PROX) { end = arcAt(k); k++ }
+        while (k < n && nearAt(k)) { end = arcAt(k); k++ }
         for (;;) {
-            let j = k, flare = 0, sp2 = Infinity
-            while (j < n && (sp2 = sepAt(j)) > PROX && arcAt(j) - end <= GAPM) { flare = Math.max(flare, sp2); j++ }
-            if (j >= n || sp2 > PROX) break             // parted for good
+            let j = k, flare = 0, apart = true
+            while (j < n && (apart = !nearAt(j)) && arcAt(j) - end <= GAPM) { flare = Math.max(flare, lastD); j++ }
+            if (j >= n || apart) break                  // parted for good
             if (flare > FLARE) { if (onFlare) onFlare(); break } // genuinely two roads
-            while (j < n && sepAt(j) <= PROX) { end = arcAt(j); j++ }
+            while (j < n && nearAt(j)) { end = arcAt(j); j++ }
             k = j
         }
         out.push({ s0, s1: end })
@@ -825,7 +841,9 @@ function _coarseHeight(wx, wz, noiseCoarse, params) {
 //     contains no ':' so the four places that split a run key on ':' are unaffected.
 //   · it is window-invariant because the point it names is a VERTEX of the trunk's registered
 //     polyline, which is bit-identical in every window (same route, same profile solve, same
-//     inputs). The quantisation is belt-and-braces, not the guarantee.
+//     inputs), AND because WHICH vertex is chosen is decided at plan time on the pure samples
+//     (_v2PromotableProbe, BUG-61) — the assembly applies that choice, it never re-ranks. The
+//     quantisation is belt-and-braces, not the guarantee.
 const PROMOTED_K = -1
 const _promotedId = (x, z) => [Math.round(x * 1000), Math.round(z * 1000), PROMOTED_K]
 const _isPromotedId = (id) => !!id && id.length === 3 && id[2] === PROMOTED_K
@@ -2801,6 +2819,76 @@ export class RoadSystem {
      */
     _v2Costs() { return this._params?.roadV2 ?? V2_COSTS }
 
+    /**
+     * FEAT-77 — HOW FAR APART TWO ROADS MUST BE HERE (owner ruling 2026-09-07). Two adjacent
+     * roads keep `clearEdgeM` of daylight between their pavement edges, AND neither road's
+     * earthwork may reach the other. The earthwork is exactly what the carve builds
+     * (_carveCrossSection): a fill embankment at roadFillSlope, a cut face at roadCutSlope, both
+     * starting past the shoulder and CAPPED at carveHalfWidth + roadMaxEmbankmentToe. So each
+     * road's footprint toward the other is `min(cap, carveHalfWidth + shoulder + slope·|deck −
+     * ground|)` at the edge that faces the other road, and the rule is
+     *
+     *     centre separation >= max(2·halfWidth + clearEdgeM, footA + footB)
+     *
+     * 22 m for two roads on grade, at most 36 m for two capped aprons. Deck-to-deck height
+     * difference is NOT the height (it gave 65 m at the owner's photo site and was rejected): a
+     * hillside carries most of that difference, and the carve's cap is why a hillside road's
+     * theoretical toe never ships either.
+     *
+     * `pa` is a sample on one route (deck in `.y`), `hit` the nearest point on the other
+     * (_nearestOnPolyXZ: d, y, fx, fz). Ground is _coarseH — the field the profile solved against —
+     * so this is a pure function of the two pure samples and the params: window-invariant like the
+     * PROX it replaces, and identical on every thread.
+     */
+    _v2ClearReq(pa, hit) {
+        const p = this._params || {}
+        const HW = p.roadHalfWidth ?? 5
+        const floor = 2 * HW + (this._v2Costs().clearEdgeM ?? 12)
+        const ux = hit.fx - pa.x, uz = hit.fz - pa.z
+        const d = Math.hypot(ux, uz)
+        if (d < 1e-6) return floor
+        const sh = p.roadShoulderWidth ?? 2.5
+        const chw = Math.min(HW + (p.roadCarveExtraWidth ?? 3.0), p.roadMinTurnRadius ?? 12)
+        const cap = chw + (p.roadMaxEmbankmentToe ?? 10)
+        const fill = p.roadFillSlope ?? 3.0, cut = p.roadCutSlope ?? 1.0
+        const foot = (x, z, deck) => {
+            const h = deck - this._coarseH(x, z)
+            return Math.min(cap, chw + sh + (h > 0 ? fill * h : cut * -h))
+        }
+        const nx = ux / d * HW, nz = uz / d * HW
+        return Math.max(floor, foot(pa.x + nx, pa.z + nz, pa.y) + foot(hit.fx - nx, hit.fz - nz, hit.y))
+    }
+
+    /** The largest _v2ClearReq can return — two capped aprons. The coarse pair gates use it. */
+    _v2ClearMax() {
+        const p = this._params || {}
+        const HW = p.roadHalfWidth ?? 5
+        const chw = Math.min(HW + (p.roadCarveExtraWidth ?? 3.0), p.roadMinTurnRadius ?? 12)
+        return Math.max(2 * HW + (this._v2Costs().clearEdgeM ?? 12), 2 * (chw + (p.roadMaxEmbankmentToe ?? 10)))
+    }
+
+    /**
+     * The conflict predicate the walkers take: are these two samples inside the rule? `s` is the
+     * walk's arc from its start; `throat(s)` says whether that arc is inside a shared node's throat
+     * (clearThroatM), where the rule is not owed and the old proximity (mergeProxM) still decides.
+     */
+    _v2Near(throat = null) {
+        const PROX = this._v2Costs().mergeProxM ?? 18
+        return (pa, hit, s) => hit.d <= (throat && s !== undefined && throat(s) ? PROX : this._v2ClearReq(pa, hit))
+    }
+
+    /**
+     * The predicate for run (c1→c2, length L) walked from its START against a partner whose graph
+     * nodes are `qKeys`: the throat is the first/last clearThroatM metres wherever the two share
+     * that end's node. A disjoint partner shares neither and gets the rule end to end.
+     */
+    _v2NearVs(g, c1, c2, L, qKeys) {
+        const T = this._v2Costs().clearThroatM ?? 30
+        const sA = qKeys.includes(g.key(c1)), sB = qKeys.includes(g.key(c2))
+        if (!sA && !sB) return this._v2Near()
+        return this._v2Near((s) => (sA && s < T) || (sB && s > L - T))
+    }
+
     // R4 (2026-09-01): the PLAN REV. The plan layer (samples, conflict pairs, merge/shove/ceded/
     // disjoint/bundle/census/view memos) is versioned by this tag rather than _networkRev, so the
     // assembly can run it TWICE per re-stream when the crossing rung's deletions flip a node's
@@ -3089,19 +3177,24 @@ export class RoadSystem {
         // sits between the node and 170–195 m of dead-parallel road.
         // Just the node-anchored interval's far end, walked lazily — most pairs at a junction part
         // company within a few samples, so this never touches the rest of the run.
+        // FEAT-77: "within PROX" is now the height-aware conflict predicate (_v2ClearReq), with the
+        // old proximity kept inside the shared node's throat (every walk here starts at the node).
+        const THROAT = C.clearThroatM ?? 30
+        const near = this._v2Near((s) => s < THROAT)
         const firstInterval = (P, Q) => {
             const n = P.S.pts.length
             const idx = (k) => (P.nodeAtStart ? k : n - 1 - k)
-            const sepAt = (k) => _nearestOnPolyXZ(P.S.pts[idx(k)].x, P.S.pts[idx(k)].z, Q.S.pts, Q.S.polyCum).d
             const arcAt = (k) => fromNode(P, P.S.polyCum[idx(k)])
+            let lastD = Infinity
+            const nearAt = (k) => { const pa = P.S.pts[idx(k)]; const h = _nearestOnPolyXZ(pa.x, pa.z, Q.S.pts, Q.S.polyCum); lastD = h.d; return near(pa, h, arcAt(k)) }
             let k = 0, end = 0
-            while (k < n && sepAt(k) <= PROX) { end = arcAt(k); k++ }
+            while (k < n && nearAt(k)) { end = arcAt(k); k++ }
             if (!k) return 0
             for (;;) {
-                let j = k, flare = 0, sp2 = Infinity
-                while (j < n && (sp2 = sepAt(j)) > PROX && arcAt(j) - end <= GAPM) { flare = Math.max(flare, sp2); j++ }
-                if (j >= n || sp2 > PROX || flare > FLARE) break
-                while (j < n && sepAt(j) <= PROX) { end = arcAt(j); j++ }
+                let j = k, flare = 0, apart = true
+                while (j < n && (apart = !nearAt(j)) && arcAt(j) - end <= GAPM) { flare = Math.max(flare, lastD); j++ }
+                if (j >= n || apart || flare > FLARE) break
+                while (j < n && nearAt(j)) { end = arcAt(j); j++ }
                 k = j
             }
             return end
@@ -3127,7 +3220,7 @@ export class RoadSystem {
             return out
         }
         const maybeMidSpan = (P, Q, nodeEnd) => {
-            const lim = PROX + MIDSTRIDE * PROTO_SAMPLE_DS
+            const lim = this._v2ClearMax() + MIDSTRIDE * PROTO_SAMPLE_DS   // FEAT-77: the widest the rule can reach
             const lim2 = lim * lim
             const cq = coarseOf(Q), n = P.S.pts.length
             for (let k = 0; k < n; k += MIDSTRIDE) {
@@ -3144,7 +3237,7 @@ export class RoadSystem {
         // BUG-55: the walk itself lives at module scope (_conflictIntervalsXZ) so the pair census
         // can run it on DISJOINT pairs too; anchored here at this node, exactly as before.
         const conflictIntervals = (P, Q) =>
-            _conflictIntervalsXZ(P.S, P.nodeAtStart, Q.S, PROX, GAPM, FLARE, () => this._v2MergeSkipped('flare'))
+            _conflictIntervalsXZ(P.S, P.nodeAtStart, Q.S, near, GAPM, FLARE, () => this._v2MergeSkipped('flare'))
 
         // The fork machinery — buildTaper and midSpanPair — lives as methods now
         // (_v2BuildTaper/_v2MidSpanPair) so the BUG-55 disjoint planner reuses the IDENTICAL
@@ -3208,10 +3301,13 @@ export class RoadSystem {
             }
             const xingsEarly = _pairProperCrossingsXZ(A.S, A.nodeAtStart, B.S, B.nodeAtStart, true)
             if (pinHeld(L2)) {
-                // R8 refines "safe": beyond the pad the pair must never come under ONE ROAD WIDTH
-                // of separation — 10–18 m is legal shared earthworks, under 10 m is overlapping
-                // decks and MUST resolve (merge), pinned approach or not.
-                const HWn = this._params?.roadHalfWidth ?? 5
+                // R8 refined "safe" as one road width beyond the pad. FEAT-77 (owner, 2026-09-07)
+                // supersedes it: the floor R6 declines at is THE CLEARANCE RULE (_v2ClearReq) —
+                // neither road's earthwork may reach the other. A pair that kept 16 m over 28 m
+                // used to be legal two roads and kept its pin; it is now a conflict, and declining
+                // the merge for it left it unresolved (measured the moment the predicate widened:
+                // declines 7 → 182, and the clearance residue was made of exactly those pairs).
+                // `minSep` is the worst SLACK against the rule, and a decline needs it non-negative.
                 let minSep = Infinity
                 {
                     const nP = L2.S.pts.length
@@ -3220,35 +3316,23 @@ export class RoadSystem {
                         const arc2 = fromNode(L2, L2.S.polyCum[i2])
                         if (arc2 < 15) continue
                         if (arc2 > fLw) break
-                        const d2 = _nearestOnPolyXZ(L2.S.pts[i2].x, L2.S.pts[i2].z, W.S.pts, W.S.polyCum).d
-                        if (d2 < minSep) minSep = d2
+                        const h2 = _nearestOnPolyXZ(L2.S.pts[i2].x, L2.S.pts[i2].z, W.S.pts, W.S.polyCum)
+                        const slack = h2.d - this._v2ClearReq(L2.S.pts[i2], h2)
+                        if (slack < minSep) minSep = slack
                     }
                 }
                 // The 80 m bound is graph-topology corridor-clearance's own endpoint exemption:
                 // a declined pair at 10–18 m of separation is legal R8 ground, but past 80 m from
                 // the node it would trip the 17.5 m parallel-runs floor — so a LONG hug merges
                 // (counted) even off a pinned approach. Seed 21's 175 m pair is the counted case.
-                // R6 vs R8 AT EXACTLY 10 m — A KNOWN CONTRADICTION, DELIBERATELY LEFT STANDING.
-                // R6 (2026-08-31) declines here whenever the pair keeps 2*halfWidth of centre
-                // separation. R8 (2026-09-01, the next day) says "under 10 m centre-to-centre ->
-                // ONE surface; AT 10 m -> the decks share an edge". Those disagree at exactly 10 m:
-                // R6 leaves two independent roads, R8 requires their decks to agree, and nothing
-                // enforces the second once R6 has declined. junction-stitch's violations sit in
-                // that gap — 10.0-12.1 m of centre separation, edges touching, decks a median
-                // 2.1 m apart.
-                //
-                // The owner ruled R8 wins (2026-09-07) and the fix was built and measured: raising
-                // this bar to 2*HWn + 4 (real daylight, not just one road width) buys 3 stitch
-                // violations and 4 T promotions. That was the SMALLEST of the three changes in the
-                // set and the owner dropped it on the numbers, keeping the two that carry their
-                // weight. The ruling stands and is recorded here; the code has not been changed to
-                // match it, so anyone re-opening this should apply `minSep >= 2 * HWn + 4` rather
-                // than re-litigate which rule wins.
-                if (!xingsEarly.length && minSep >= 2 * HWn && fLw <= (C.mergePinDeclineMaxM ?? 80)) {
-                    this._v2MergeSkipped('pin-decline', `${L2.ck} keeps its pinned approach @${nk} (R6 — overlap ${fLw.toFixed(0)} m at >=${minSep.toFixed(1)} m, no crossings)`)
+                // (History: R6 at 2·halfWidth and R8 at exactly 10 m contradicted each other, the
+                // owner ruled R8 wins and then dropped the 2·HW + 4 fix on the numbers. FEAT-77's
+                // rule settles it from above — it is stricter than both — so that record is closed.)
+                if (!xingsEarly.length && minSep >= 0 && fLw <= (C.mergePinDeclineMaxM ?? 80)) {
+                    this._v2MergeSkipped('pin-decline', `${L2.ck} keeps its pinned approach @${nk} (R6 — overlap ${fLw.toFixed(0)} m, clear of the rule by ${minSep.toFixed(1)} m, no crossings)`)
                     continue
                 }
-                this._v2MergeSkipped('pin-overwrite', `${L2.ck} @${nk} (R6 counted — ${xingsEarly.length ? 'tangled' : `minSep ${minSep.toFixed(1)} m over ${fLw.toFixed(0)} m`})`)
+                this._v2MergeSkipped('pin-overwrite', `${L2.ck} @${nk} (R6 counted — ${xingsEarly.length ? 'tangled' : `inside the rule by ${(-minSep).toFixed(1)} m over ${fLw.toFixed(0)} m`})`)
             }
             // VARIANTS: the full merge first, then progressively shorter ones. Only a solved profile
             // can say whether the loser's remaining road still grades from the winner's DECK at the
@@ -3501,7 +3585,7 @@ export class RoadSystem {
             const SQ = this._v2RunSample(spQ ? g : wide, drop, ...(spQ ?? [q1, q2]))
             if (!SQ || SQ.L < 2 * MINREG) continue
             // the coarse both-sides gate before a full walk (as the planner and census use)
-            const lim = PROX + 8 * PROTO_SAMPLE_DS
+            const lim = this._v2ClearMax() + 8 * PROTO_SAMPLE_DS   // FEAT-77: the widest the rule can reach
             const lim2 = lim * lim
             let near = false
             for (let ip = 0; ip < own.pts.length && !near; ip += 8) {
@@ -3512,7 +3596,7 @@ export class RoadSystem {
                 }
             }
             if (!near) continue
-            const ivs = _conflictIntervalsXZ(own, true, SQ, PROX, GAPM, FLARE, null)
+            const ivs = _conflictIntervalsXZ(own, true, SQ, this._v2NearVs(g, c1, c2, own.L, (spQ ?? [q1, q2]).map((c) => (spQ ? g : wide).key(c))), GAPM, FLARE, null)
             if (!ivs.length) continue
             // roles: the partner is always discoverable from OUR route (that is how it was
             // found); we are an eligible winner only if OUR chord sits near ITS route
@@ -3560,7 +3644,7 @@ export class RoadSystem {
         if (memo.has(ck)) return memo.get(ck)
         const fin = (v) => { memo.set(ck, v); return v }
         const C = this._v2Costs()
-        const PROX = C.mergeProxM ?? 18, GAPM = C.mergeGapM ?? 200, FLARE = C.mergeFlareM ?? 60
+        const GAPM = C.mergeGapM ?? 200, FLARE = C.mergeFlareM ?? 60
         const CHORD = C.censusChordM ?? 300
         const spell = this._v2EdgeSpellings(g)
         const spOwn = spell.get(ck)
@@ -3599,7 +3683,7 @@ export class RoadSystem {
             const spQ = spell.get(qck)
             const SQ = this._v2RunSample(spQ ? g : wide, drop, ...(spQ ?? [q1, q2]))
             if (!SQ || SQ.L < 60) continue
-            const lim = PROX + 8 * PROTO_SAMPLE_DS, lim2 = lim * lim
+            const lim = this._v2ClearMax() + 8 * PROTO_SAMPLE_DS, lim2 = lim * lim   // FEAT-77
             let near = false
             for (let ip = 0; ip < own.pts.length && !near; ip += 8) {
                 const px = own.pts[ip].x, pz = own.pts[ip].z
@@ -3609,7 +3693,7 @@ export class RoadSystem {
                 }
             }
             if (!near) continue
-            const ivs0 = _conflictIntervalsXZ(own, true, SQ, PROX, GAPM, FLARE, null)
+            const ivs0 = _conflictIntervalsXZ(own, true, SQ, this._v2NearVs(g, c1, c2, own.L, (spQ ?? [q1, q2]).map((c) => (spQ ? g : wide).key(c))), GAPM, FLARE, null)
             if (!ivs0.length) continue
             // BUG-57: PROPER CROSSINGS between the two pure routes — the crossing invariant's
             // raw material (owner ruling 2026-08-25: mid-span crossings are always defects; the
@@ -3826,12 +3910,17 @@ export class RoadSystem {
             while (iLo < nS - 1 && own.polyCum[iLo + 1] < aLo - 200) iLo++
             while (iHi > 0 && own.polyCum[iHi - 1] > aHi + 200) iHi--
             const sep = new Float64Array(nS).fill(Infinity), sideS = new Int8Array(nS)
+            // FEAT-77: the floor each sample must clear — the height-aware rule outside a shared
+            // node's throat, never below shoveClearM
+            const nearQ = this._v2NearVs(g, c1, c2, own.L, t.spQ.map((c) => (t.inG ? g : wide).key(c)))
+            const need = new Float64Array(nS).fill(CLEAR)
             const tqx = new Float64Array(nS), tqz = new Float64Array(nS)
             for (let i = iLo; i <= iHi; i++) {
                 const qn = _nearestOnPolyXZ(own.pts[i].x, own.pts[i].z, SQ.pts, SQ.polyCum)
                 const foot = _polyAtCum(SQ.pts, SQ.polyCum, qn.cum)
                 const tq = _polyTangentAtCum(SQ.pts, SQ.polyCum, qn.cum, true)
                 sep[i] = qn.d
+                need[i] = Math.max(CLEAR, nearQ(own.pts[i], qn, own.polyCum[i]) ? this._v2ClearReq(own.pts[i], qn) : CLEAR)
                 tqx[i] = tq.x; tqz[i] = tq.z
                 const cr = tq.x * (own.pts[i].z - foot.z) - tq.z * (own.pts[i].x - foot.x)
                 sideS[i] = cr >= 0 ? 1 : -1
@@ -3843,8 +3932,8 @@ export class RoadSystem {
                 let i = iLo
                 while (i < iHi && own.polyCum[i + 1] < x.sOwn) i++
                 let r0 = i, r1 = Math.min(i + 1, iHi)
-                while (r0 > iLo && sep[r0 - 1] < CLEAR) r0--
-                while (r1 < iHi && sep[r1 + 1] < CLEAR) r1++
+                while (r0 > iLo && sep[r0 - 1] < need[r0 - 1]) r0--
+                while (r1 < iHi && sep[r1 + 1] < need[r1 + 1]) r1++
                 const prev = regions.find((r) => r0 <= r[1] + 1 && r1 >= r[0] - 1)
                 if (prev) { prev[0] = Math.min(prev[0], r0); prev[1] = Math.max(prev[1], r1) }
                 else regions.push([r0, r1])
@@ -3867,7 +3956,7 @@ export class RoadSystem {
                     let want = 0
                     for (let j = r0; j <= r1; j++) {
                         const signedS = sideS[j] === S ? sep[j] : -sep[j]
-                        const dj = CLEAR + 4 - signedS   // +4: headroom the smoothing passes consume
+                        const dj = need[j] + 4 - signedS   // +4: headroom the smoothing passes consume
                         if (dj <= 0) continue
                         const u = Math.max(0, 1 - Math.abs(own.polyCum[i] - own.polyCum[j]) / RAMPL)
                         want = Math.max(want, dj * u * u * (3 - 2 * u))
@@ -4099,6 +4188,12 @@ export class RoadSystem {
      * on the pre-registration samples (the `dry` pattern _v2RegisterMerged used for the same reason).
      * No second implementation to drift: identical candidate generation, identical departure build,
      * identical acceptance. Memoized per plan rev — one answer per pair per build.
+     *
+     * BUG-61: the answer also CARRIES THE FORK (`{ extents, fork }`): which trunk vertex and
+     * which band radius won the ranking. _v2PromoteOne applies that record rather than ranking
+     * again on the registered network, because the registered network is what varies with the
+     * window (trunk pieces, promotion order) and the id IS the vertex. `true` still means
+     * "could not judge — leave the plan alone", `false` means no T can be built.
      */
     _v2PromotableFor(g, drop, spec, c1, c2) {
         if (!this._v2PromoMemo || this._v2PromoMemo.rev !== this._planRev())
@@ -4118,7 +4213,7 @@ export class RoadSystem {
     // when the pair does not promote (nothing is sanctioned) or when the probe could not judge.
     _v2PromoteExtents(g, drop, spec, c1, c2) {
         const r = this._v2PromotableFor(g, drop, spec, c1, c2)
-        return Array.isArray(r) ? r : []
+        return r && r.extents ? r.extents : []
     }
 
     _v2PromotableProbe(g, drop, spec, c1, c2) {
@@ -4146,15 +4241,52 @@ export class RoadSystem {
         if (!ends.length) return true
         const probe = { sideKey: `g:${sA}:${sB}`, spec }
         const extents = []
+        let fork = null
+        // FEAT-77: SIBLING LOSERS SHARE THE TRUNK. When one winner serves several losers at this
+        // node (a shared throat that forks twice — the owner's 1668/7534 capture, and seed 6's
+        // 4,1,1 where two side roads leave alongside one trunk), each fork needs MINREG of trunk to
+        // itself, and the assembly declines the second when it lands on a piece with no trunk left
+        // ("no trunk left past the fork on this piece"). The probe is per pair, so the stagger is
+        // made here from the node's own merge plans: losers of the same winner in canonical order,
+        // and every EARLIER loser's decided fork is ground this one may not fork within MINREG of.
+        // Pure: the order is the canonical key order, the earlier forks come from this same memoized
+        // probe, and nothing feeds back — acyclic by the ordering.
+        const taken = []
+        if (!spec.midSpan && nKey) {
+            const own = sA < sB ? `${sA}|${sB}` : `${sB}|${sA}`
+            const wA = g.key(spec.winner[0]), wB = g.key(spec.winner[1])
+            for (const [ck, sp] of this._v2NodeMerges(g, drop, nKey)) {
+                if (ck >= own || sp.midSpan) continue
+                const a = g.key(sp.winner[0]), b = g.key(sp.winner[1])
+                if (!((a === wA && b === wB) || (a === wB && b === wA))) continue
+                const [q1, q2] = ck.split('|').map((k) => k.split(',').map(Number))
+                const r = this._v2PromotableFor(g, drop, sp, q1, q2)
+                if (r && r.fork) { const h = _nearestOnPolyXZ(r.fork.x, r.fork.z, T.points, T.polyCum); if (h) taken.push(h.cum) }
+            }
+        }
         const net = this._network
         this._network = new Map([[wk0, T], [probe.sideKey, side]])
         try {
+            // BUG-61: THE FORK IS DECIDED HERE, ONCE, AND THE ASSEMBLY APPLIES IT. FEAT-76's fixpoint
+            // memo proved the node id window-invariant for a fork read off the plan layer's own
+            // answer; the build then let the assembly RE-RANK forks over the registered network,
+            // whose trunk pieces and promotion order vary with the window, and the same T landed
+            // 4 m apart in two windows — a different id, a different run key, a road that
+            // evaporates for anything holding the old key (mission-network's drop point). So the
+            // ranking below is the assembly's own ranking, run on the PURE samples (full edges,
+            // no pieces, no earlier promotions in sight): every window computes the identical
+            // (fork vertex, band radius), and _v2PromoteOne only has to find that vertex on
+            // whatever piece of the trunk it lives on. The order is the assembly's: candidates by
+            // deck agreement, the band ladder gentlest first, the first (fork, rung) that CLEARS
+            // wins, else the best score ships (owner ruling 2026-09-07 — a T always beats no T).
+            const PROX = this._v2Costs().mergeProxM ?? 18
+            const ladder = [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]
             for (const en of ends) {
                 const nAtStart = en.nAtStart
                 const cands = spec.midSpan
                     ? [{ wCut: null, lArc: en.lArc }]
                     : this._v2ForkCandidates(g, probe, side, nAtStart, sideL, wk0, wCells)
-                let any = false
+                let chosen = null, best = null
                 for (const c of cands) {
                     let iL, P, iP
                     if (spec.midSpan) {
@@ -4167,60 +4299,52 @@ export class RoadSystem {
                         const h = _nearestOnPolyXZ(c.forkPt.x, c.forkPt.z, T.points, T.polyCum)
                         if (!h || h.d > 4) continue
                         iP = _nearestVertexAtCum(T.polyCum, h.cum)
-                        // ⚠ TEMPORARY MITIGATION FOR BUG-61 — NOT A DESIGN RULE. REMOVE WITH THAT TICKET.
-                        //
-                        // This 45 m says "a promoted T must clear the pads at both ends of its trunk", and the
-                        // owner has explicitly ruled that it is NOT a rule this project holds:
-                        //   "a T within 45m of another junction is fine as long as its deterministic. many
-                        //    roads have spontaneous spurs not everything is neatly grouped into 4 ways"
-                        //   — owner, 2026-09-07
-                        // Crowding is legitimate road. Do not harden this into a spacing convention.
-                        //
-                        // It survives only because it MASKS BUG-61: a promoted node's id is not window-invariant
-                        // (the fork is ranked over REGISTERED geometry, so it lands a few metres apart in
-                        // different windows, and the id IS the run key). Crowded Ts are where that bites hardest,
-                        // so widening the spacing hides the symptom — mission-network's drop-point check passes
-                        // with this and fails without it. Removing it before BUG-61 lands buys a red gate and no
-                        // correctness. Removing it AFTER is the point.
-                        //
-                        // Partial by construction: the mid-span site below still uses MINREG, so even as a
-                        // mitigation this only covers the node-anchored path.
-                        if (T.polyCum[iP] < 45 || tL - T.polyCum[iP] < 45) continue
+                        // Road must be left on BOTH sides of the fork to carry on along. Nothing
+                        // more: the owner has ruled that a T beside another junction is legitimate
+                        // road ("many roads have spontaneous spurs") — BUG-61.
+                        if (T.polyCum[iP] < MINREG || tL - T.polyCum[iP] < MINREG) continue
+                        if (taken.some((a) => Math.abs(a - T.polyCum[iP]) < MINREG)) continue   // FEAT-77 stagger
                         P = T.points[iP]
+                        // Where the side road's OWN line resumes: its point abreast of P, windowed to
+                        // the half of the run that leaves the shared node so a run that loops back
+                        // cannot answer with a point from its far end.
                         const lo = nAtStart ? 0 : sideL * 0.15, hi = nAtStart ? sideL * 0.85 : sideL
                         const lh = _nearestOnPolyXZ(P.x, P.z, side.points, side.polyCum, lo, hi)
-                        if (!lh) continue
+                        if (!lh || lh.d > Math.max(PROX * 1.6, this._v2ClearMax())) continue   // FEAT-77: a fork may sit as far abreast as the rule can push it
                         iL = _nearestVertexAtCum(side.polyCum, lh.cum)
                     }
                     const kept = nAtStart ? sideL - side.polyCum[iL] : side.polyCum[iL]
                     if (kept < MINREG) continue
                     const grade = _trunkGradeAt(T, iP)
-                    // Promotable iff a departure BUILDS. Whether it CLEARS the acceptance tests no
-                    // longer decides — the assembly ships the best available T either way (owner
-                    // ruling 2026-09-07), so a probe that answered "no" on a failed test would stand
-                    // the crossing rung down for a resolution that does in fact arrive.
-                    for (const RB of [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]) {
+                    let cleared = false
+                    for (const RB of ladder) {
                         const b = this._v2BuildDeparture(side, iL, nAtStart, P, RB)
-                        if (b) {
-                            this._v2DepartureAccepts(b, T, P, grade)   // scores it; verdict unused
-                            // QUAL-30: record what this promotion will do to the loser's PURE arc, so
-                            // _v2CededExtents can read the sanction off the winning rung instead of
-                            // dry-assembling a merge to find out. Two parts, and both must be in it:
-                            // the stretch that will NOT SHIP (node to fork), and the departure BLEND
-                            // past the fork, whose points leave the primitive exactly as a taper
-                            // band's did. Sanctioning only the first was measured to under-sanction
-                            // and fire extra shoves — seeds 6/7/11 all moved.
-                            const lc = side.polyCum[iL]
-                            extents.push(nAtStart ? [lc - b.LB, sideL] : [0, lc + b.LB])
-                            any = true; break
-                        }
+                        if (!b) continue
+                        const why = this._v2DepartureAccepts(b, T, P, grade)
+                        const pick = { P, iL, RB, b, why }
+                        if (!why) { chosen = pick; cleared = true; break }
+                        if (!best || b._score < best.b._score) best = pick
                     }
-                    if (any) break
+                    if (cleared) break
                 }
-                if (!any) return false
+                if (!chosen) chosen = best
+                if (!chosen) return false
+                // QUAL-30: record what this promotion will do to the loser's PURE arc, so
+                // _v2CededExtents can read the sanction off the winning rung instead of
+                // dry-assembling a merge to find out. Two parts, and both must be in it: the
+                // stretch that will NOT SHIP (node to fork), and the departure BLEND past the
+                // fork, whose points leave the primitive exactly as a taper band's did.
+                // Sanctioning only the first was measured to under-sanction and fire extra
+                // shoves — seeds 6/7/11 all moved.
+                const lc = side.polyCum[chosen.iL]
+                extents.push(nAtStart ? [lc - chosen.b.LB, sideL] : [0, lc + chosen.b.LB])
+                // The decision the assembly applies: the fork VERTEX (world XZ — the registered
+                // trunk carries the identical vertex) and the band radius that won. A mid-span
+                // pair's two forks are already pure (spec.variants wIn/wOut), so it records none.
+                if (!spec.midSpan) fork = { x: chosen.P.x, z: chosen.P.z, RB: chosen.RB, why: chosen.why }
             }
         } finally { this._network = net }
-        return extents
+        return { extents, fork }
     }
 
     // ── BUG-55: the pair census ────────────────────────────────────────────────────────────────
@@ -4254,7 +4378,7 @@ export class RoadSystem {
         if (hit) { this._v2Census = hit; return hit }
         const C = this._v2Costs()
         const CHORD = C.censusChordM ?? 300
-        const PROX = C.mergeProxM ?? 18
+        const isNear = this._v2Near()   // FEAT-77: the conflict predicate, in place of a fixed PROX
         const GAPM = C.mergeGapM ?? 200
         const FLARE = C.mergeFlareM ?? 60
         const out = { regEdges: 0, wideChords: 0, candPairs: 0, walked: 0, routedFresh: 0, disjoint: [] }
@@ -4334,7 +4458,7 @@ export class RoadSystem {
             const SP = P.S
             // the same coarse both-sides gate the mid-span planner uses, before paying for a
             // full point-to-polyline walk
-            const lim = PROX + 8 * PROTO_SAMPLE_DS
+            const lim = this._v2ClearMax() + 8 * PROTO_SAMPLE_DS   // FEAT-77: the widest the rule can reach
             const lim2 = lim * lim
             let near = false
             for (let ip = 0; ip < SP.pts.length && !near; ip += 8) {
@@ -4346,7 +4470,7 @@ export class RoadSystem {
             }
             if (!near) continue
             out.walked++
-            const ivs = _conflictIntervalsXZ(SP, true, SQ, PROX, GAPM, FLARE, null)
+            const ivs = _conflictIntervalsXZ(SP, true, SQ, isNear, GAPM, FLARE, null)
             if (!ivs.length) continue
             let nearLen = 0, minSep = Infinity, maxDy = 0
             for (const iv of ivs) nearLen += iv.s1 - iv.s0
@@ -4354,7 +4478,7 @@ export class RoadSystem {
                 const s = SP.polyCum[ip]
                 if (!ivs.some((iv) => s >= iv.s0 - 1 && s <= iv.s1 + 1)) continue
                 const q = _nearestOnPolyXZ(SP.pts[ip].x, SP.pts[ip].z, SQ.pts, SQ.polyCum)
-                if (q.d > PROX) continue
+                if (!isNear(SP.pts[ip], q)) continue   // FEAT-77: the same rule that drew the interval
                 if (q.d < minSep) minSep = q.d
                 const dy = Math.abs(SP.pts[ip].y - q.y)
                 if (dy > maxDy) maxDy = dy
@@ -4692,7 +4816,7 @@ export class RoadSystem {
     // What DOES re-solve is the side road's own vertical profile, because its start is now pinned to
     // the trunk's deck at P instead of to a node height at N. That is one run's profile, downstream
     // of everything, and it cannot move a road in plan.
-    _v2PromoteTs(g, promos) {
+    _v2PromoteTs(g, drop, promos) {
         this._promoteStats = { done: 0, declined: 0 }
         if (!promos || !promos.length) return
         // A run key can be replaced (the side road re-keys onto P) or split in two (a trunk with a
@@ -4700,85 +4824,80 @@ export class RoadSystem {
         // live-pieces table rather than the key the plan layer named.
         const pieces = new Map()
         for (const pr of promos) {
-            const ok = this._v2PromoteOne(g, pr, pieces)
+            const ok = this._v2PromoteOne(g, drop, pr, pieces)
             if (ok) this._promoteStats.done++
             else this._promoteStats.declined++
         }
     }
 
-    _v2PromoteOne(g, pr, pieces) {
+    _v2PromoteOne(g, drop, pr, pieces) {
         const decline = (why) => { this._v2MergeSkipped('promote', `${pr.sideKey} ${why}`); return false }
         if (pr.spec.midSpan) return this._v2PromoteMidSpan(g, pr, pieces)
         const MINREG = 30
         const C = this._v2Costs()
         const PROX = C.mergeProxM ?? 18
-        const sideKeys = pieces.get(pr.sideKey) || [pr.sideKey]
-        if (sideKeys.length !== 1) return decline('side run already promoted')
-        const sideKey = sideKeys[0]
-        const side = this._network.get(sideKey)
-        if (!side || !side.points || side.points.length < 4 || !side.centerline?.slice) return decline('no side run')
-        // The shared node: the one id both the side edge and the winner touch. A pair with none is
-        // a mid-span or disjoint conflict, which this promotion does not build.
         const wCells = [g.key(pr.spec.winner[0]), g.key(pr.spec.winner[1])]
-        const sA = g.key(side.cellA), sB = g.key(side.cellB)
-        const nKey = wCells.includes(sA) ? sA : (wCells.includes(sB) ? sB : null)
-        if (!nKey) return decline('no shared node')
-        const nAtStart = sA === nKey
+        // The side run, and the shared node: the one id both the side edge and the winner touch.
+        //
+        // BUG-61: the side road may already be in PIECES — another T used it as ITS trunk and
+        // split it — and whether that third road is in the window at all is a band question. So
+        // declining a split side run ("side run already promoted") made this T's existence
+        // window-dependent: mission-network's drop point sat between two Ts in the mission band
+        // and beside one in the play band, because the play band also held the road that split
+        // the side run first. The end that meets the shared node is still this promotion's run
+        // whatever happened further along it: take the piece that touches the trunk. No piece
+        // touching it means this END was already promoted, which is the one honest decline.
+        let sideKey = null, side = null, nKey = null
+        for (const k of (pieces.get(pr.sideKey) || [pr.sideKey])) {
+            const e = this._network.get(k)
+            if (!e || !e.points || e.points.length < 4 || !e.centerline?.slice) continue
+            const a = g.key(e.cellA), b = g.key(e.cellB)
+            const n = wCells.includes(a) ? a : (wCells.includes(b) ? b : null)
+            if (!n) continue
+            sideKey = k; side = e; nKey = n; break
+        }
+        if (!side) return decline('no side piece meets the trunk')
+        const nAtStart = g.key(side.cellA) === nKey
         const sideL = side.polyCum[side.polyCum.length - 1]
         const wk0 = `g:${wCells[0]}:${wCells[1]}`
-        const vs = this._v2ForkCandidates(g, pr, side, nAtStart, sideL, wk0, wCells)
-        if (!vs.length) return decline('no node-anchored variant')
-        // OWNER RULING 2026-09-07: A T IS ALWAYS PREFERRED TO NO T. The acceptance tests RANK the
-        // candidates; they do not veto. See the note at the fallback below for why.
-        let best = null
-        for (const v of vs) {
-            // Which piece of the trunk carries this fork (it may already have been split).
+        const Rmin = this._params?.roadMinTurnRadius ?? 12
+        const ladder = [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]
+        // The far end of the side run: a site node (ordinary pin) or, on a split piece, another T's
+        // vertex — whose deck the departure must land on (see _v2BuildDeparture).
+        const farCell = nAtStart ? side.cellB : side.cellA
+        const farY = _isPromotedId(farCell) ? this._promoted.get(g.key(farCell))?.pos.y : undefined
+        // Everything a commit needs, for a fork at world XZ (fx,fz): the live trunk piece under it,
+        // the trunk VERTEX P (the split is exact and the synthetic id names a point that EXISTS in
+        // the geometry rather than one interpolated onto it), and the side road's own vertex abreast
+        // of P. null, with a reason, when the fork cannot be built on the pieces as they stand.
+        const ctxAt = (fx, fz) => {
             let T = null, tKey = null, tHit = null
             for (const k of (pieces.get(wk0) || [wk0])) {
                 const e = this._network.get(k)
                 if (!e || !e.points || e.points.length < 4 || !e.centerline?.slice) continue
-                const h = _nearestOnPolyXZ(v.forkPt.x, v.forkPt.z, e.points, e.polyCum)
+                const h = _nearestOnPolyXZ(fx, fz, e.points, e.polyCum)
                 if (h && (!tHit || h.d < tHit.d)) { T = e; tKey = k; tHit = h }
             }
-            if (!T) continue
-            if (tHit.d > 4) continue                       // the trunk rerouted out from under the plan
-            // P is a real VERTEX of the trunk, so the split is exact and the synthetic id names a
-            // point that EXISTS in the geometry rather than one interpolated onto it.
+            if (!T || tHit.d > 4) return { why: 'the trunk rerouted out from under the plan' }
             const iP = _nearestVertexAtCum(T.polyCum, tHit.cum)
             const tL = T.polyCum[T.polyCum.length - 1]
-            // ⚠ TEMPORARY MITIGATION FOR BUG-61 — NOT A DESIGN RULE. See the twin at the plan-time
-            // probe above for the owner's ruling that crowded Ts are legitimate. Remove with BUG-61.
-            if (T.polyCum[iP] < 45 || tL - T.polyCum[iP] < 45) continue
+            // Road must be left on BOTH sides of the fork. That is the whole spacing rule: the owner
+            // ruled that a T beside another junction is legitimate road (BUG-61) — the 45 m guard
+            // that once sat here only hid the id instability this ticket fixed.
+            if (T.polyCum[iP] < MINREG || tL - T.polyCum[iP] < MINREG) return { why: 'no trunk left past the fork on this piece' }
             const P = T.points[iP]
             const pid = _promotedId(P.x, P.z), pKey = g.key(pid)
-            if (this._promoted.has(pKey)) continue         // two forks on one vertex — degenerate
-            // Where the side road's OWN line resumes: its point abreast of P. Windowed to the half
-            // of the run that leaves the shared node, so a run that loops back cannot answer with a
-            // point from its far end.
+            if (this._promoted.has(pKey)) return { why: 'two forks on one vertex' }
             const lo = nAtStart ? 0 : sideL * 0.15, hi = nAtStart ? sideL * 0.85 : sideL
             const lHit = _nearestOnPolyXZ(P.x, P.z, side.points, side.polyCum, lo, hi)
-            if (!lHit || lHit.d > PROX * 1.6) continue
+            if (!lHit || lHit.d > Math.max(PROX * 1.6, this._v2ClearMax())) return { why: 'side road is not abreast of the fork' }
             const iL = _nearestVertexAtCum(side.polyCum, lHit.cum)
             const fromNode = nAtStart ? side.polyCum[iL] : sideL - side.polyCum[iL]
-            const ownLeft = sideL - fromNode
-            if (fromNode < MINREG || ownLeft < MINREG) continue
+            if (fromNode < MINREG || sideL - fromNode < MINREG) return { why: 'no side road left past the fork' }
             const grade = _trunkGradeAt(T, iP)
-            // The band-radius ladder, GENTLEST FIRST. A long band is a nicer corner but it holds the
-            // departure inside the through road's corridor for longer, and that is what the deck
-            // seam catches; a shorter one clears the trunk sooner at the cost of a tighter turn.
-            // Walk down to roadMinTurnRadius and no further — a band is road and may not be tighter
-            // than road (BUG-56 B5) — and let the acceptance tests, not a guess, pick the rung.
-            const Rmin = this._params?.roadMinTurnRadius ?? 12
-            for (const RB of [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]) {
-                const built = this._v2BuildDeparture(side, iL, nAtStart, P, Math.max(RB, Rmin))
-                if (!built) continue
-                const why = this._v2DepartureAccepts(built, T, P, grade)
-                const ctx = { T, tKey, wk0, iP, P, pid, pKey, side, sideKey, nAtStart, nKey, built, grade }
-                if (!why) { this._v2CommitPromotion(g, pieces, pr, ctx); return true }
-                if (!best || built._score < best.score) best = { score: built._score, ctx, why }
-            }
+            return { T, tKey, wk0, iP, P, pid, pKey, iL, side, sideKey, nAtStart, nKey, grade }
         }
-        if (best) {
+        const ship = (c, built, why) => {
             // NOTHING CLEARED — SO SHIP THE BEST ONE ANYWAY. Owner ruling 2026-09-07: "the wye
             // geometry is generally a bad thing to have, we would prefer them to be Ts."
             //
@@ -4794,10 +4913,58 @@ export class RoadSystem {
             // So the test keeps its job, which is choosing the best fork and rung, and loses the one
             // it should never have had: refusing the whole junction on a defect that gets worse
             // without it. The residual is counted, not hidden, and it is junction-stitch's subject.
-            this._v2MergeSkipped('promote-residual', `${pr.sideKey} shipped as the best available T — ${best.why}`)
-            this._v2CommitPromotion(g, pieces, pr, best.ctx)
+            if (why) this._v2MergeSkipped('promote-residual', `${pr.sideKey} shipped as the best available T — ${why}`)
+            this._v2CommitPromotion(g, pieces, pr, { ...c, built })
             return true
         }
+        // ── BUG-61: APPLY THE PLAN'S FORK. The probe already ran this very ranking on the pure
+        // samples and recorded the vertex and rung that won; every window recorded the same one.
+        // The registered polyline is that sample (same centerline, same solve — _registerRun and
+        // _v2RunSample are the one sampler), so the vertex is here to be found on whichever piece
+        // of the trunk carries it. Ranking again here is exactly what the ticket forbids.
+        // Looked up by the GRAPH edge the plan judged (pr.sideKey spells its two graph nodes), not by
+        // the piece's cells: a split side run's near cell is another T's vertex, which is no graph
+        // edge, and the probe would answer "cannot judge" — sending the promotion to the registered
+        // ranking, whose fork is exactly the window-dependent one BUG-61 removed (seed 6 (3069,994):
+        // it landed 44 m from the node and left the next side road no trunk to fork on).
+        const [sk0, sk1] = pr.sideKey.slice(2).split(':').map((k) => k.split(',').map(Number))
+        const plan = this._v2PromotableFor(g, drop, pr.spec, sk0, sk1)
+        const fork = plan && plan.fork ? plan.fork : null
+        if (fork) {
+            const c = ctxAt(fork.x, fork.z)
+            if (c.T && Math.hypot(c.P.x - fork.x, c.P.z - fork.z) < 0.5) {
+                // The planned rung first; the rest of the ladder only if this piece will not take it.
+                const r0 = Math.max(0, ladder.indexOf(fork.RB))
+                for (let r = r0; r < ladder.length; r++) {
+                    const built = this._v2BuildDeparture(side, c.iL, nAtStart, c.P, ladder[r], farY)
+                    if (!built) continue
+                    return ship(c, built, this._v2DepartureAccepts(built, c.T, c.P, c.grade))
+                }
+            }
+            // A rerouted trunk or side road (BUG-56 C's never-drape rung re-plans the corridor)
+            // carries a different polyline from the sample the plan judged, so the vertex is not
+            // there. Rare, counted, and the reroute verdict is itself per-edge pure — so the
+            // ranking below is still the same in every window that built the same reroute.
+            this._v2MergeSkipped('promote-replan', `${pr.sideKey} ${c.T ? 'plan fork is not a vertex of the registered trunk' : c.why}`)
+        }
+        // ── Registered-geometry ranking: the fallback for a rerouted pair (and a plan with no
+        // fork record). Same order as the probe: deck agreement, ladder gentlest first, first
+        // clear wins, else best score.
+        const vs = this._v2ForkCandidates(g, pr, side, nAtStart, sideL, wk0, wCells)
+        if (!vs.length) return decline('no node-anchored variant')
+        let best = null
+        for (const v of vs) {
+            const c = ctxAt(v.forkPt.x, v.forkPt.z)
+            if (!c.T) continue
+            for (const RB of ladder) {
+                const built = this._v2BuildDeparture(side, c.iL, nAtStart, c.P, Math.max(RB, Rmin), farY)
+                if (!built) continue
+                const why = this._v2DepartureAccepts(built, c.T, c.P, c.grade)
+                if (!why) return ship(c, built, null)
+                if (!best || built._score < best.score) best = { score: built._score, c, built, why }
+            }
+        }
+        if (best) return ship(best.c, best.built, best.why)
         return decline('no variant promoted')
     }
 
@@ -4923,8 +5090,11 @@ export class RoadSystem {
      * rank by |through-road deck − side-road's own deck abreast of it|. Cheap: two polyline lookups
      * per candidate, no profile solve, so only the handful that survive the ranking pay for one.
      *
-     * Window-invariant: a pure function of two registered polylines and the plan's own bound, with
-     * a total order (deck error, then arc) to break ties.
+     * Window-invariant ONLY when run on the plan's PURE samples (_v2PromotableProbe, BUG-61): there
+     * the two polylines are full edges with no earlier promotion in sight, and the total order
+     * (deck error, then arc) breaks ties identically in every window. On the registered network the
+     * trunk may already be a piece, and the answer moves with the window — that path is now the
+     * rerouted-pair fallback in _v2PromoteOne, nothing more.
      */
     _v2ForkCandidates(g, pr, side, nAtStart, sideL, wk0, wCells) {
         const MINREG = 30
@@ -4963,12 +5133,14 @@ export class RoadSystem {
         // proposed. Walk the side road out from its node, find the last arc that is still too close,
         // and offer the trunk abreast of it (and a little past) as candidates.
         {
-            const HW0 = this._params?.roadHalfWidth ?? 5
+            // FEAT-77: "too close" is the clearance rule, not one road width — the parting point
+            // is the last sample still inside the earthwork the rule protects.
+            const nearT = this._v2Near()
             const nSide = side.points.length
             let lastClose = -1
             for (let i = 0; i < nSide; i++) {
                 const q = _nearestOnPolyXZ(side.points[i].x, side.points[i].z, T0.points, T0.polyCum)
-                if (q && q.d <= 2 * HW0 + 2) lastClose = i
+                if (q && nearT(side.points[i], q)) lastClose = i
             }
             if (lastClose >= 0) {
                 const base = _nearestOnPolyXZ(side.points[lastClose].x, side.points[lastClose].z, T0.points, T0.polyCum)
@@ -4993,8 +5165,10 @@ export class RoadSystem {
         // road's own line, beyond the departure band, to stay more than one road width plus the
         // seam window away from the trunk. Two polyline walks, no profile solve — this runs before
         // anything expensive.
-        const HW = this._params?.roadHalfWidth ?? 5
-        const CLEAR = 2 * HW + 2
+        // FEAT-77: "clear of the road it left" is the owner's earthwork rule (_v2ClearReq), not one
+        // road width plus a seam window — 46 of the battery's 52 clearance violators were T sides
+        // whose fork had been accepted at that old 12 m bar.
+        const near = this._v2Near()
         const lo = nAtStart ? 0 : sideL * 0.15, hi = nAtStart ? sideL * 0.85 : sideL
         for (const c of cand) {
             const h = _nearestOnPolyXZ(c.forkPt.x, c.forkPt.z, side.points, side.polyCum, lo, hi)
@@ -5005,16 +5179,16 @@ export class RoadSystem {
             if (!h) continue
             // the longest band this fork could use, so the check starts past every rung
             const LBmax = Math.sqrt(2 * Math.max(c.gap, 0.5) * 4 * (this._params?.roadMinTurnRadius ?? 12))
-            let worstAfter = Infinity
-            for (let i = 0; i < side.points.length; i++) {
+            let clears = true
+            for (let i = 0; i < side.points.length && clears; i++) {
                 const d = nAtStart ? side.polyCum[i] - h.cum : h.cum - side.polyCum[i]
                 if (d <= LBmax) continue
                 const q = _nearestOnPolyXZ(side.points[i].x, side.points[i].z, T0.points, T0.polyCum)
-                if (q && q.d < worstAfter) worstAfter = q.d
+                if (q && near(side.points[i], q)) clears = false
             }
-            c.clears = worstAfter > CLEAR
+            c.clears = clears
         }
-        const ok = cand.filter((c) => c.clears && c.gap < (this._v2Costs().mergeProxM ?? 18) * 1.6 && Number.isFinite(c.dY))
+        const ok = cand.filter((c) => c.clears && c.gap < Math.max((this._v2Costs().mergeProxM ?? 18) * 1.6, this._v2ClearMax()) && Number.isFinite(c.dY))
                        .sort((a, b) => (a.dY - b.dY) || (a.wCut - b.wCut))
         // Best deck agreement first, then whatever the merge ladder itself proposed that the cut
         // dropped — a plan rung that survives every acceptance test is still a valid T even if its
@@ -5050,7 +5224,7 @@ export class RoadSystem {
      * sqrt(2*g0*R) buys a chosen radius. R is set well above roadMinTurnRadius on purpose — a band
      * is road and may not be tighter than road (BUG-56 B5).
      */
-    _v2BuildDeparture(side, iL, nAtStart, P, RB) {
+    _v2BuildDeparture(side, iL, nAtStart, P, RB, farY) {
         const i0 = nAtStart ? iL : 0
         const i1 = nAtStart ? side.points.length - 1 : iL
         if (i1 - i0 < 3) return null
@@ -5087,9 +5261,14 @@ export class RoadSystem {
             s1: Math.min(polyCum[n - 1], polyCum[Math.min(n - 1, jHi)] + 2),
         }]
         // The profile re-solves with the P end pinned to the TRUNK'S DECK — the two roads leave the
-        // same real surface. The far end keeps the ordinary node-height pin.
+        // same real surface. The far end keeps the ordinary node-height pin, unless the caller
+        // names one: a side road that was split as another T's trunk (BUG-61) is promoted on its
+        // PIECE, whose far end is that other T — a deck, not a site, and _v2NodeHeight would put
+        // it 6 m off (graph-topology's SURFACE-SMOOTH caught exactly that step).
         const inf0 = this._v2Infeasible || 0
-        const tunnelSpans = this._v2GradePts(pts, clArc, nAtStart ? { yA: P.y } : { yB: P.y })
+        const ends = nAtStart ? { yA: P.y } : { yB: P.y }
+        if (farY !== undefined) { if (nAtStart) ends.yB = farY; else ends.yA = farY }
+        const tunnelSpans = this._v2GradePts(pts, clArc, ends)
         if ((this._v2Infeasible || 0) > inf0) { this._v2Infeasible = inf0; return null }   // draped — try the next fork
         const centerline = side.centerline.slice(cl0, side.clArc[i1])
         return { pts, clArc, polyCum, centerline, tunnelSpans, offCurveSpans, nAtStart, LB, g0 }
@@ -5211,7 +5390,7 @@ export class RoadSystem {
 
     // Apply the promotion: split the trunk at P into two ordinary runs, replace the side run with
     // its departure, and register P as a node the rest of the system can see.
-    _v2CommitPromotion(g, pieces, pr, c, midSpan = false) {
+    _v2CommitPromotion(g, pieces, pr, c) {
         const { T, tKey, wk0, iP, P, pid, pKey, side, sideKey, nAtStart, nKey, built } = c
         if (!this._network.has(tKey)) { this._v2MergeSkipped('promote', `${pr.sideKey} trunk piece ${tKey} went stale`); return }
         const tL = T.polyCum.length - 1
@@ -5244,8 +5423,13 @@ export class RoadSystem {
         // bend stops being treated as a three-way junction.
         // A mid-span cut takes no leg off any node — both original endpoints survive on the two
         // halves — so only a node-anchored promotion has an edge to subtract.
-        if (nKey) this._promotedAway.add(nKey + '|' + farKey)
-        pieces.set(pr.sideKey, [...(midSpan ? (pieces.get(pr.sideKey) || []).filter((k) => k !== sideKey) : []), newSideKey])
+        // Keyed on the GRAPH edge this side road was planned as — pr.sideKey spells its two graph
+        // nodes — because _graphDegreeOf walks graph neighbours, and the piece's own far cell may
+        // be a promoted vertex when the side road was split as another T's trunk (BUG-61).
+        if (nKey) { const ends = pr.sideKey.slice(2).split(':'); this._promotedAway.add(nKey + '|' + (ends[0] === nKey ? ends[1] : ends[0])) }
+        // The pieces table: this piece is replaced by its departure; any OTHER piece of the same
+        // side road (a split, or a mid-span's other half) stays listed.
+        pieces.set(pr.sideKey, [...(pieces.get(pr.sideKey) || []).filter((k) => k !== sideKey), newSideKey])
         pieces.set(wk0, [...(pieces.get(wk0) || [wk0]).filter((k) => k !== tKey), aKey, bKey])
     }
 
@@ -5405,7 +5589,7 @@ export class RoadSystem {
             }
         }
         // FEAT-76: promote every planned wye to a T. Assembly-layer only — see _v2PromoteTs.
-        this._v2PromoteTs(g, promos)
+        this._v2PromoteTs(g, drop, promos)
         // Node incidence is derived from the REGISTERED network, AFTER promotion: a T changes both
         // the run keys along its trunk and which node the side road starts from, and every consumer
         // of nodeInc (pad planes, strands, leaf tapers) has to see the roads that exist.
@@ -5909,6 +6093,14 @@ export class RoadSystem {
                     seenPairs.add(pk)
                     const ix = _segCrossParam(S.x0, S.z0, S.x1, S.z1, T.x0, T.z0, T.x1, T.z1)
                     if (!ix) continue
+                    // Two legs of ONE node crossing inside that node's hold reach are the junction's
+                    // own throat, not a mid-span crossing. The deck hold (_applyJunctionBlend) owns
+                    // that ground; the AT_GRADE flatten this would register runs AFTER the hold,
+                    // eases the leg toward a straight line through the crossing and kills the
+                    // banking the hold just set — measured 2026-09-07 as the last roll residue in
+                    // junction-stitch: seed 7 (-573,-428) (a side road wiggling across its trunk
+                    // 35 m out), seed 6 (-890,2486) (two legs crossing 10 m out).
+                    if (S.runKey !== T.runKey && this._legsOfOneNode(S, T, ix)) continue
                     this._recordCrossing(S, T, ix, angleMin)
                 }
             }
@@ -5963,6 +6155,22 @@ export class RoadSystem {
             const slope = r.mB * (r.tBx * r.tAx + r.tBz * r.tAz)
             this._addCrossingByRun(r.runA, r.arcA, r.yB, slope)
         }
+    }
+
+    // Do runs S and T share an endpoint node, with this crossing within JN_HOLD_MAX_SURFACE of it
+    // along either run? Pure fn of the two registered runs. See the call site.
+    _legsOfOneNode(S, T, ix) {
+        const eS = this._network.get(S.runKey), eT = this._network.get(T.runKey)
+        if (!eS || !eT || !eS.cellA || !eT.cellA) return false
+        const same = (a, b) => !!a && !!b && a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
+        let shared = null
+        for (const c of [eS.cellA, eS.cellB]) if (same(c, eT.cellA) || same(c, eT.cellB)) { shared = c; break }
+        if (!shared) return false
+        const arcS = S.a0 + (S.a1 - S.a0) * ix.t, arcT = T.a0 + (T.a1 - T.a0) * ix.u
+        const LS = eS.polyCum[eS.polyCum.length - 1], LT = eT.polyCum[eT.polyCum.length - 1]
+        const dS = same(eS.cellA, shared) ? arcS : LS - arcS
+        const dT = same(eT.cellA, shared) ? arcT : LT - arcT
+        return Math.min(dS, dT) <= JN_HOLD_MAX_SURFACE
     }
 
     _addCrossingByRun(runKey, arc, nodeY, slope = 0) {
@@ -7332,6 +7540,31 @@ export class RoadSystem {
             // (_connectorCarve + collectConnectorSamples, which feeds the terrain skip guard), and the leg
             // ribbons are cut back only as far as the connector's own mouths — no naked gap. ring = null
             // makes every consumer (pad carve, padReachNodes, the mesh's ring branch) skip the node.
+            // BUG-59 (owner ruling 2026-09-07: pave the gore to where the pavements part). Each leg of
+            // a real (≥3-leg) junction is cut back to the FURTHER of the default cutback and the
+            // arc at which its pavement has parted from every sibling's — the same walk the deck
+            // hold uses (_legPartingReach), so the pad ends exactly where the profiles let go of the
+            // plane. Mouths then never overlap, the exact weld stops self-intersecting at narrow
+            // throats (which is what put 47 of 70 junctions on the 13.5 m circle-pad floor), and
+            // the ring's reach becomes a property of the junction's own geometry. The ribbon mesh
+            // and the marking feather read leg.cutback off the carve-arc record below.
+            if (!node.deg2 && c.legs.length >= 3) {
+                const cut0 = this.junctionCutbackDist()
+                const reach = JN_HOLD_MAX_PLANE + 2 * halfWidth + JN_HOLD_MARGIN
+                for (const a of c.legs) {
+                    const e = this._network.get(a.runKey)
+                    if (!e || !e.polyCum) { a.cutback = cut0; continue }
+                    const sibs = []
+                    for (const b of c.legs) {
+                        if (b === a) continue
+                        const sb = this._network.get(b.runKey)
+                        if (!sb || !sb.points || !sb.polyCum) continue
+                        const L = sb.polyCum[sb.polyCum.length - 1], bAtStart = b.arc < 1e-6
+                        sibs.push({ pts: sb.points, cum: sb.polyCum, lo: bAtStart ? 0 : Math.max(0, L - reach), hi: bAtStart ? Math.min(L, reach) : L })
+                    }
+                    a.cutback = Math.max(cut0, this._legPartingReach(e, a.arc < 1e-6, sibs, JN_HOLD_MAX_PLANE))
+                }
+            }
             node.ring = node.deg2 ? null : this._buildJunctionRing(node)
             if (node.ring) {
                 let mr = 0
@@ -7344,7 +7577,7 @@ export class RoadSystem {
                 // node ref rides along so _carveDirtY can enumerate the SIBLING legs and blend their grades
                 // by lateral proximity (the ruled inter-leg surface that kills the Voronoi crease). The node
                 // carries pos + legs + plane; the open-rim fallback still reads node.plane in _junctionPadCarve.
-                arr.push({ arc: a.arc, node })
+                arr.push({ arc: a.arc, node, cutback: a.cutback })
             }
         }
         this._nodeJunctions = nodes
@@ -7446,7 +7679,10 @@ export class RoadSystem {
             const len = cum ? cum[cum.length - 1] : 0
             if (!(len > 1e-3)) return null
             const s = leg.arc < 1e-6 ? 1 : -1                       // +arc direction away from node?
-            const mouthArc = leg.arc + s * Math.min(T, len * 0.45)  // short node↔node run: pull the mouth in
+            // BUG-59: the mouth sits at THIS leg's cutback — the default, or further out where the
+            // leg's pavement is still overlapping a sibling's (leg.cutback, _detectNodeJunctions).
+            const Tl = (leg.cutback ?? cutback) + halfWidth * 0.5
+            const mouthArc = leg.arc + s * Math.min(Tl, len * 0.45)  // short node↔node run: pull the mouth in
             const c = road.runPointAt(leg.runKey, mouthArc)
             if (!c) return null
             const prof = road.runProfile(mouthArc, leg.runKey)
@@ -7490,15 +7726,10 @@ export class RoadSystem {
                 for (const p of this._nodeBackArc(nx, nz, eA, eB, A.bear + gap / 2)) ring.push(p)
                 continue
             }
-            // Narrow Y-throat: two slowly-diverging legs. If their facing mouth edges start closer than
-            // THROAT_SEP, the corner arc would cut across the throat near the node and leave the diverging
-            // gore as raw terrain — sweep the boundary OUT along both ribbon inner edges instead so the pad
-            // hugs both ribbons out to where they part by a road-width. (Paves seed-6 253,-131 E↔SE wedge.)
-            const throatSep = halfWidth * THROAT_SEP_MULT
-            if (n >= 3 && gap < THROAT_GAP && Math.hypot(eA.x - eB.x, eA.z - eB.z) < halfWidth * THROAT_TRIG_MULT) {
-                const sweep = this._throatSweep(A, B, halfWidth, throatSep, T)
-                if (sweep) { for (const p of sweep) ring.push(p); continue }
-            }
+            // A narrow Y-throat needs no special rung any more (BUG-59): its two mouths sit past the
+            // point where the ribbons parted (per-leg cutback, _detectNodeJunctions), so the facing
+            // mouth edges are already clear of each other and the ordinary crotch fillet below
+            // closes the gore at the parting point.
             // Deg-2 kink corners: keep the legacy farther-from-node pick, but with a DIRECTION-CORRECT
             // node arc — _nodeBackArc sweeps through THIS corner's own angular sector (midBear), where
             // the old short-way _nodeCornerArc ran a reflex corner's arc through the OPPOSITE (crotch)
@@ -7516,7 +7747,7 @@ export class RoadSystem {
             // Road-side crotch: INTERIOR fillet — tuck the pad boundary concavely into the crotch,
             // tangent to both ribbon edges (a real curb return). The old node-centred OUTWARD-arc
             // override made every corner bulge; the "exposed flat throat" it guarded against is covered
-            // by the pad fill itself and by _throatSweep for genuinely narrow gores. Prefer the TRUE-edge
+            // by the pad fill itself (mouths sit past the parting point, BUG-59). Prefer the TRUE-edge
             // walk (_cornerEdgeFillet): on curved legs the straight edge-LINE intersection _cornerJoin
             // uses lands wrong (or misses) and un-tucks the corner; the walk follows the real ribbon
             // edges to the real crotch apex. _ringSelfIntersects remains the gate.
@@ -7594,45 +7825,9 @@ export class RoadSystem {
     }
 
     /**
-     * Narrow-throat OUTWARD sweep between two slowly-diverging legs. Walks each leg's ribbon INNER edge
-     * (A's departing side −1, B's arriving side +1) outward from its mouth, following the true curved
-     * centerline offset by halfWidth, until the two edges part by `throatSep`; then caps straight across.
-     * Returns the boundary points strictly BETWEEN eA and eB (both pushed by the caller) tracing out one
-     * ribbon edge, across the throat cap, and back down the other — paving the gore. null if the walk
-     * can't advance (caller falls back to the corner/arc). Pure fn of the streamed network (D-16).
-     */
-    _throatSweep(A, B, halfWidth, throatSep, T) {
-        const walk = (l, side, maxExt) => {
-            const pts = []
-            for (let ext = 0; ext <= maxExt + 1e-6; ext += 1.5) {
-                const a = l.mouthArc + l.s * ext
-                if (a < 0 || a > l.len) break
-                const c = this.runPointAt(l.runKey, a)
-                if (!c) break
-                const prof = this.runProfile(a, l.runKey)
-                let dx = prof.tx * l.s, dz = prof.tz * l.s
-                const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl
-                pts.push({ x: c.x + (-dz) * side * halfWidth, z: c.z + dx * side * halfWidth })
-            }
-            return pts
-        }
-        const maxExt = T * 1.6
-        const wA = walk(A, -1, maxExt)
-        const wB = walk(B, +1, maxExt)
-        if (wA.length < 2 || wB.length < 2) return null
-        let k = 0
-        const kMax = Math.min(wA.length, wB.length) - 1
-        while (k < kMax && Math.hypot(wA[k].x - wB[k].x, wA[k].z - wB[k].z) < throatSep) k++
-        const out = []
-        for (let j = 1; j <= k; j++) out.push(wA[j])   // out along A's inner edge (eA already pushed)
-        for (let j = k; j >= 1; j--) out.push(wB[j])    // cap + back down B's inner edge (eB pushed next)
-        return out.length ? out : null
-    }
-
-    /**
      * Interior corner via TRUE ribbon edges: walk leg A's departing edge (side −1) and leg B's
      * arriving edge (side +1) from the node out to their mouths along the real curved centerlines
-     * (runPointAt/runProfile — same frame family as _throatSweep, but inbound of the mouths), find
+     * (runPointAt/runProfile — the mouth frame family, walked inbound of the mouths), find
      * the OUTERMOST crossing of the two edge polylines (the real crotch apex), and join with a small
      * tangent fillet built from the crossing's LOCAL edge directions. Straight edge-LINE intersection
      * (_cornerJoin) gets this wrong on curved legs — three of four corners at seed-6 (939,−1410)
@@ -7751,7 +7946,8 @@ export class RoadSystem {
         if (Math.hypot(sx, sz) / n > 0.55) return null
 
         const cutback = this.junctionCutbackDist ? this.junctionCutbackDist() : halfWidth * 2
-        const T = cutback + halfWidth * 0.5
+        // BUG-59: the fallback disc reaches at least as far as the furthest leg's parting point.
+        const T = Math.max(cutback, ...node.legs.map((l) => l.cutback ?? cutback)) + halfWidth * 0.5
         let minHalf = Math.PI / 2
         for (let i = 0; i < n; i++) {
             const a = legs[i].dir, b = legs[(i + 1) % n].dir
@@ -9267,7 +9463,7 @@ export class RoadSystem {
         // pass-through keeps its banking/flow. (id = a blue-noise site id [cmx,cmz,k].)
         // `thisStrand` = this run's away-from-node tangent at the endpoint; slopeAway projects the node's
         // dominant grade VECTOR onto it (FEAT-19) — the through axis's slope, carried into this run.
-        const nodeInfo = (id, thisStrand) => {
+        const nodeInfo = (id, thisStrand, isStart) => {
             // FEAT-76: at a promoted T the through road needs NO reconciliation — the two halves are
             // slices of one polyline and already agree at P to the last bit, and easing them toward
             // a line would be the one thing this ticket forbids (moving the trunk). The side road
@@ -9279,7 +9475,10 @@ export class RoadSystem {
                 if (!prom) return NONE
                 if (this._v2PromotedRole(id, runKey) !== 'side') return NONE
                 return { is: true, flatCamber: true, y: prom.pos.y,
-                         slopeAway: thisStrand ? prom.gx * thisStrand.wx + prom.gz * thisStrand.wz : 0 }
+                         slopeAway: thisStrand ? prom.gx * thisStrand.wx + prom.gz * thisStrand.wz : 0,
+                         plane: { cx: prom.pos.x, cz: prom.pos.z, y0: prom.pos.y, gx: prom.gx, gz: prom.gz },
+                         surface: this._promotedTrunkSurface(id),
+                         hold: this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_SURFACE) }
             }
             const d = this._graphDegreeOf(id)
             const is = d >= 2
@@ -9312,9 +9511,106 @@ export class RoadSystem {
                 const strands = this._graphNodeStrands(id)
                 if (strands) { const G = this._junctionGradeVector(strands); slopeAway = G.gx * thisStrand.wx + G.gz * thisStrand.wz }
             }
-            return { is, flatCamber, y, slopeAway }
+            // The plane is handed on so the hold can evaluate it AT each sample's XZ: two legs held on
+            // one plane then agree wherever their ribbons overlap, which a per-leg grade LINE (arc
+            // distance × slope along the leg's own departure) only approximates on a curving leg.
+            return { is, flatCamber, y, slopeAway, plane: plane || null, hold: is ? this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_PLANE) : 0 }
         }
-        return { jStart: nodeInfo(e.cellA, this._strandAtEnd(e.points, true)), jEnd: nodeInfo(e.cellB, this._strandAtEnd(e.points, false)) }
+        return { jStart: nodeInfo(e.cellA, this._strandAtEnd(e.points, true), true), jEnd: nodeInfo(e.cellB, this._strandAtEnd(e.points, false), false) }
+    }
+
+    /**
+     * The THROUGH ROAD'S BUILT SURFACE at a promoted T, as a height field over XZ — what the side
+     * road is held to. A plane through P with the trunk's grade was measured insufficient: the
+     * trunk is BANKED there (its own camber, untouched by the promotion — the through legs get no
+     * blend at all), and a side road banked to the grade plane alone still met the trunk's edge
+     * 0.4–2.5 m off across the overlap (junction-stitch's last twelve rows, 2026-09-07, every one
+     * at a T with the trunk cambered 5–15°). So sample the trunk itself: project onto the nearer
+     * through piece, take its shipped deck plus its camber tilt at that lateral — the same
+     * arithmetic the ribbon sweep and _carveDirtY use — and the two ribbons share one surface
+     * wherever they share ground. Reads the through pieces' profiles, which never read the side's
+     * (nodeInfo returns NONE for a through leg), so there is no cycle. null when the roles are not
+     * known yet (fewer than three legs registered at P).
+     */
+    _promotedTrunkSurface(id) {
+        const strands = this._graphNodeStrands(id)
+        const through = strands.filter((st) => this._v2PromotedRole(id, st.key) === 'through')
+                               .map((st) => this._network.get(st.key)).filter((e) => e && e.points && e.polyCum)
+        if (through.length < 2) return null
+        return (x, z) => {
+            let best = null, bestE = null
+            for (const e of through) {
+                const h = _nearestOnPolyXZ(x, z, e.points, e.polyCum)
+                if (h && (!best || h.d < best.d)) { best = h; bestE = e }
+            }
+            if (!best) return null
+            const arc = best.cum - (bestE.arcOrigin ?? 0)
+            const key = [...this._network.entries()].find(([, v]) => v === bestE)?.[0]
+            const lat = (x - best.fx) * best.tz - (z - best.fz) * best.tx
+            return this.runProfile(arc, key).gradeY + lat * Math.sin(this.camberProfile(arc, key))
+        }
+    }
+
+    /**
+     * THE DECK HOLD REACH — how far out from node `id` this run's pavement still overlaps a sibling
+     * leg's pavement (owner ruling 2026-09-07). Walk this run's own polyline out from the node and
+     * find the LAST sample within `maxReach` at which any other run incident to the node passes
+     * closer than one road width plus JN_HOLD_MARGIN, centre to centre. Up to that arc the two
+     * ribbons share ground and the junction plane owns both; past it they are two roads.
+     *
+     * 0 when no sibling comes that close (an open crossroads), which leaves the blend exactly as it
+     * was. Pure function of the registered polylines incident to the node — window-invariant over
+     * the domain where the node's runs are streamed, like everything else the node blend reads.
+     * Cheap: a few dozen point-to-polyline lookups per run end, once per profile build.
+     */
+    _junctionHoldReach(runKey, e, atStart, id, maxReach) {
+        const g = this._proto.graph
+        if (!g) return 0
+        const nk = g.key(id)
+        const inc = this._proto.nodeInc.get(nk)
+        if (!inc || inc.length < 2) return 0
+        const HW = this._params?.roadHalfWidth ?? 5
+        const reach = maxReach + 2 * HW + JN_HOLD_MARGIN
+        const sibs = []
+        for (const k of inc) {
+            if (k === runKey) continue
+            const s = this._network.get(k)
+            if (!s || !s.points || s.points.length < 2 || !s.polyCum) continue
+            const L = s.polyCum[s.polyCum.length - 1]
+            const sAtStart = g.key(s.cellA) === nk
+            sibs.push({ pts: s.points, cum: s.polyCum, lo: sAtStart ? 0 : Math.max(0, L - reach), hi: sAtStart ? Math.min(L, reach) : L })
+        }
+        return this._legPartingReach(e, atStart, sibs, maxReach)
+    }
+
+    /**
+     * The parting walk itself: along run `e` from its `atStart` end, the LAST arc within `maxReach`
+     * at which any of `sibs` (registered polylines, each with the arc window to search) passes
+     * closer than one road width plus JN_HOLD_MARGIN, centre to centre. 0 if none ever does. Shared
+     * by the deck hold (_junctionHoldReach, siblings from the graph incidence) and the pad's per-leg
+     * cutback (_detectNodeJunctions, siblings from the endpoint cluster) so the pad ends exactly
+     * where the profiles let go of the plane. Pure fn of its inputs.
+     */
+    _legPartingReach(e, atStart, sibs, maxReach) {
+        if (!sibs.length) return 0
+        const HW = this._params?.roadHalfWidth ?? 5
+        const CLEAR = 2 * HW + JN_HOLD_MARGIN
+        const pts = e.points, n = pts.length
+        let hold = 0, arc = 0
+        for (let i = 0; i < n; i++) {
+            const idx = atStart ? i : n - 1 - i
+            if (i > 0) {
+                const q = pts[atStart ? idx - 1 : idx + 1]
+                arc += Math.hypot(pts[idx].x - q.x, pts[idx].z - q.z)
+                if (arc > maxReach) break
+            }
+            const p = pts[idx]
+            for (const sb of sibs) {
+                const h = _nearestOnPolyXZ(p.x, p.z, sb.pts, sb.cum, sb.lo, sb.hi)
+                if (h && h.d < CLEAR) { hold = arc; break }
+            }
+        }
+        return hold
     }
 
     // FEAT-19: one run END at a node → unit XZ tangent pointing AWAY from the node + the longitudinal grade
@@ -9530,43 +9826,93 @@ export class RoadSystem {
     // slope moving AWAY from the node, so the through road holds its grade across the node (no level pad)
     // while both runs still meet at endpoint.y AT the node (d = 0) → C0 step-free. Camber is unchanged
     // (still → 0 only at flatCamber ≥3-way nodes): inclination handling stays as-is.
-    _applyJunctionBlend(runKey, arcPos, gradeY, camberRad) {
+    _applyJunctionBlend(runKey, arcPos, gradeY, camberRad, pts) {
         const ej = this._runEndpointJunctions(runKey)
         if (!ej.jStart.is && !ej.jEnd.is) return
         const Rj = this._params?.roadJunctionBlendLength ?? 30
         if (Rj <= 0) return
         const N = arcPos.length, aStart = arcPos[0], aEnd = arcPos[N - 1]
-        // QUAL-13: adaptive GRADE reach. When the pad target sits far above/below this run's own
-        // graded endpoint, easing the full ΔY over the fixed 30 m manufactures a 60–130% grade
-        // spike at the mouth (the road-character "max grade pinned at junction blends" artifact).
-        // Stretch each endpoint's grade blend so the correction grade itself stays ≤
-        // roadJunctionBlendMaxGrade, capped at 45% of the run so both ends never fight across the
-        // middle. Camber keeps the fixed Rj reach (banking should still recover near the pad).
-        const maxBG = this._params?.roadJunctionBlendMaxGrade ?? 0.12
-        const reachCap = Math.max(Rj, (aEnd - aStart) * 0.45)
-        const gradeReach = (j, yEndpoint) => {
-            if (!j.is || !gradeY || maxBG <= 0) return Rj
-            return Math.min(reachCap, Math.max(Rj, Math.abs(yEndpoint - j.y) / maxBG))
+        const ss = (t) => t * t * (3 - 2 * t)
+        const havePts = !!pts && pts.length === N
+        // The height this run is reconciled TO at sample i, `d` metres out from endpoint j: the pad
+        // PLANE at the sample's own XZ when the node has one (a ≥3-way junction, or a promoted T's
+        // side road — the plane there IS the trunk's surface), else FEAT-19's grade line.
+        const target = (j, i, d) => {
+            if (havePts && j.surface) { const y = j.surface(pts[i].x, pts[i].z); if (y != null) return y }
+            return (j.plane && havePts) ? this._padPlaneY(j.plane, pts[i].x, pts[i].z) : j.y + j.slopeAway * d
         }
-        const RgS = gradeReach(ej.jStart, gradeY ? gradeY[0] : 0)
-        const RgE = gradeReach(ej.jEnd,   gradeY ? gradeY[N - 1] : 0)
+        // DECK HOLD (owner ruling 2026-09-07): the leg rides the plane out to `hold` — where its
+        // pavement has parted from every sibling's (_junctionHoldReach) — and only then eases back
+        // to its own solved profile. Capped so both ends of a short run never fight across the middle.
+        const reachCap = Math.max(Rj, (aEnd - aStart) * 0.45)
+        const hS = Math.min(ej.jStart.hold || 0, (aEnd - aStart) * 0.45)
+        const hE = Math.min(ej.jEnd.hold || 0, (aEnd - aStart) * 0.45)
+        // QUAL-13: adaptive GRADE reach past the hold. When the plane sits far above/below this
+        // run's own profile where the hold lets go, easing the full ΔY over the fixed 30 m
+        // manufactures a 60–130 % grade spike at the mouth (the road-character "max grade pinned
+        // at junction blends" artifact). Stretch the recovery so the correction grade itself stays
+        // ≤ roadJunctionBlendMaxGrade. Camber keeps the fixed Rj reach (banking should still
+        // recover near the pad).
+        const maxBG = this._params?.roadJunctionBlendMaxGrade ?? 0.12
+        const gradeReach = (j, hold, fromStart) => {
+            if (!j.is || !gradeY || maxBG <= 0) return Rj
+            // the run's own profile at the first sample past the hold, against the plane there
+            let i = fromStart ? 0 : N - 1
+            while (fromStart ? (i < N - 1 && arcPos[i] - aStart < hold) : (i > 0 && aEnd - arcPos[i] < hold)) i += fromStart ? 1 : -1
+            const d = fromStart ? arcPos[i] - aStart : aEnd - arcPos[i]
+            return Math.min(Math.max(Rj, reachCap - hold), Math.max(Rj, Math.abs(target(j, i, d) - gradeY[i]) / maxBG))
+        }
+        const RgS = gradeReach(ej.jStart, hS, true)
+        const RgE = gradeReach(ej.jEnd, hE, false)
+        // weight at `d` metres out: 1 inside the hold, smoothstep down over `reach` past it
+        const w = (d, hold, reach) => d <= hold ? 1 : (d < hold + reach ? ss(1 - (d - hold) / reach) : 0)
+        // THE ROLL HALF of normal matching (owner, BUG-56: "camber gives the roll, grade gives the
+        // pitch — both, or the car is thrown"). A leg held on a sloping plane with a FLAT
+        // cross-section has its edges off that plane by halfWidth × the plane's cross-slope, and
+        // two such legs 45° apart on a 7 % plane still disagreed by 0.67 m where their edges
+        // touched (seed 6 (-892,-499), measured after the grade hold alone). So inside the hold
+        // the banking is not killed but SET: the plane's cross-slope in this run's own frame —
+        // +lateral is (tz, -tx) and tilt rises toward +lateral for +camber, the convention
+        // _carveDirtY and the ribbon sweep both read. No plane (a degree-2 pass-through) keeps
+        // the old kill-to-flat.
+        const HWc = this._params?.roadHalfWidth ?? 5
+        const planeCam = (j, i) => {
+            if (!j.plane || !havePts) return 0
+            const a = pts[Math.max(0, i - 1)], b = pts[Math.min(N - 1, i + 1)]
+            const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1
+            const tx = dx / l, tz = dz / l
+            if (j.surface) {
+                // the trunk's built surface: its cross-slope across THIS run, read AT THE RIBBON
+                // EDGES (±halfWidth). Read 1 m either side it was a tangent, and the trunk's
+                // banking changes along its arc, so this run's edges — which land on the trunk
+                // up to halfWidth·sin(angle) apart along it — sat 0.2–0.3 m off (junction-stitch
+                // 2026-09-07). Fitting through the edges puts the edges ON the trunk, which is
+                // where two ribbons meet.
+                const x = pts[i].x, z = pts[i].z
+                const yp = j.surface(x + HWc * tz, z - HWc * tx), ym = j.surface(x - HWc * tz, z + HWc * tx)
+                if (yp != null && ym != null) return Math.atan((yp - ym) / (2 * HWc))
+            }
+            return Math.atan(j.plane.gx * tz - j.plane.gz * tx)
+        }
         for (let i = 0; i < N; i++) {
-            // fG = grade-reconcile weight (any junction endpoint); fC = camber-kill weight (only a
+            // fG = grade-reconcile weight (any junction endpoint); fC = camber weight (only a
             // flatCamber endpoint, i.e. a true ≥3-way intersection — a degree-2 graph pass-through keeps
             // its banking while still reconciling grade to C0).
-            let fG = 0, ny = 0, fC = 0
+            let fG = 0, ny = 0, fC = 0, nc = 0
             if (ej.jStart.is) {
                 const d = arcPos[i] - aStart
-                if (d < RgS) { const t = 1 - d / RgS; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jStart.y + ej.jStart.slopeAway * d } }
-                if (ej.jStart.flatCamber && d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fC) fC = fs }
+                const fs = w(d, hS, RgS)
+                if (fs > fG) { fG = fs; ny = target(ej.jStart, i, d) }
+                if (ej.jStart.flatCamber) { const fc = w(d, hS, Rj); if (fc > fC) { fC = fc; nc = planeCam(ej.jStart, i) } }
             }
             if (ej.jEnd.is) {
                 const d = aEnd - arcPos[i]
-                if (d < RgE) { const t = 1 - d / RgE; const fs = t * t * (3 - 2 * t); if (fs > fG) { fG = fs; ny = ej.jEnd.y + ej.jEnd.slopeAway * d } }
-                if (ej.jEnd.flatCamber && d < Rj) { const t = 1 - d / Rj; const fs = t * t * (3 - 2 * t); if (fs > fC) fC = fs }
+                const fs = w(d, hE, RgE)
+                if (fs > fG) { fG = fs; ny = target(ej.jEnd, i, d) }
+                if (ej.jEnd.flatCamber) { const fc = w(d, hE, Rj); if (fc > fC) { fC = fc; nc = planeCam(ej.jEnd, i) } }
             }
             if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
-            if (camberRad && fC > 0) camberRad[i] *= (1 - fC)
+            if (camberRad && fC > 0) camberRad[i] += (nc - camberRad[i]) * fC
         }
     }
 
@@ -9618,7 +9964,7 @@ export class RoadSystem {
         const prof = this._computeCamberArrays(netEntry.points, netEntry.arcOrigin, this._runStartCamber(runKey))
         // BUG-56 B4 first, junction blend second: a ≥3-way node is a flat plaza and outranks a fork's
         // bank, so the node's camber-kill must be the last word where the two reaches overlap.
-        this._applyJunctionBlend(runKey, prof.arcPos, null, prof.camberRad)   // FEAT-10: camber→0 at shared-anchor junctions
+        this._applyJunctionBlend(runKey, prof.arcPos, null, prof.camberRad, netEntry.points)   // FEAT-10: camber→0 at shared-anchor junctions
         this._applyMidspanJunctionBlend(runKey, prof.arcPos, null, prof.camberRad)   // FEAT-07 Step 2: camber→0 at AT_GRADE crossings
         return prof
     }
@@ -9752,7 +10098,7 @@ export class RoadSystem {
         // FEAT-10: flatten grade → nodeY and camber → 0 near merged junction endpoints so crossing
         // runs agree at the node (no invisible collision step, no banking jolt). Same blend as
         // _buildCamberProfile → the ribbon (camberProfile) and the run profile stay in sync at junctions.
-        this._applyJunctionBlend(runKey, arcPos, gradeY, camberRad)
+        this._applyJunctionBlend(runKey, arcPos, gradeY, camberRad, pts)
         // FEAT-07 Step 2: same flatten at AT_GRADE mid-span crossings (both strands → one shared node Y).
         this._applyMidspanJunctionBlend(runKey, arcPos, gradeY, camberRad)
 
