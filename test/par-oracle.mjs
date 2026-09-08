@@ -13,7 +13,7 @@
 //
 // Pure node, no THREE, no worldgen: the centerlines here are duck-typed analytic curves, which is
 // the whole point of par.js taking geometry by interface.
-import { computePar, PAR_REF, PAR_SLACK, gradeRun, formatTime } from '../src/par.js'
+import { computePar, PAR_REF, PAR_SLACK, gradeRun, formatTime, RANK_THRESHOLDS_DEFAULT } from '../src/par.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { headingToFace, facingFromHeading } from '../src/mission.js'
 
@@ -182,8 +182,15 @@ const seg = (centerline, gradeAt = flat, s0 = 0, s1 = centerline.length) => ({ c
   // [RE-ANCHORED 2026-08-16] "grade B brackets par" lived here — a second copy of the old
   // "B contains par" rule, hiding in the par gate rather than the economy gate where you would
   // look for it. Par is now the C/D boundary: driving exactly par is the slowest PASS, a C.
-  check('grade S needs a genuinely quick drive', gradeRun(0.65 * par, par).letter === 'S')
-  check('grade A is the committed-drive band', gradeRun(0.75 * par, par).letter === 'A')
+  // The two fast bands are probed at the MIDPOINT of whatever RANK_THRESHOLDS_DEFAULT currently
+  // says, not at frozen ratios. The old fixtures were 0.65 and 0.75, and the 2026-09-07 v2 re-cut
+  // (S 0.72 → 0.77) swallowed 0.75 into S — a band move should not be able to make this gate
+  // assert a letter the table no longer gives.
+  const mid = (lo, hi) => 0.5 * (lo + hi)
+  const T = RANK_THRESHOLDS_DEFAULT
+  check('grade S needs a genuinely quick drive', gradeRun(mid(0.60, T.S) * par, par).letter === 'S')
+  check('grade A is the committed-drive band', gradeRun(mid(T.S, T.A) * par, par).letter === 'A')
+  check('grade B is the band below A', gradeRun(mid(T.A, T.B) * par, par).letter === 'B')
   check('par itself is a C — the slowest passing drive, NOT the middle band',
     gradeRun(300, par).letter === 'C')
   check('a hair over par is already a D', gradeRun(300.01, par).letter === 'D')

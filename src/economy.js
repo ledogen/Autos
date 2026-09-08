@@ -7,14 +7,17 @@
 //     parBase = k × par
 //
 // SM-INV-4 anchors [RE-ANCHORED 2026-08-16, owner], by construction:
-//   • BREAK-EVEN IS THE B/C BOUNDARY (ratio 0.80), not par. A B/C drive covers the day's rising
+//   • BREAK-EVEN IS THE B/C BOUNDARY (ratio 0.85 since the 2026-09-07 band re-cut), not par. A B/C
+//     drive covers the day's rising
 //     maintenance and keeps the player going; it does NOT fund upgrades. Upgrades need real B's.
-//     It tracks the B/C threshold, so refitting the rank bands moves this and `k` with them.
+//     It tracks the B/C threshold, so refitting the rank bands moves this and `k` with them — as
+//     it did on 2026-09-07, when B went 0.80 → 0.85. The gate asserts the identity, not the number.
 //   • PAR NOW LOSES MONEY. Ratio 1.0 is the C/D boundary — the slowest passing drive — and pays
 //     half a day's maintenance (m = 0.5). Scraping past the standard is survival, not a living.
-//     `payoutZero` is chosen to hold that half-a-unit property: z = 2·breakEven − ... in practice,
-//     pick z so (z−1)/(z−breakEven) == 0.5, which for breakEven 0.80 gives z = 1.20.
-//   • Zero at ratio 1.20: a drive well past par earns nothing from margin.
+//     `payoutZero` is chosen to hold that half-a-unit property: pick z so
+//     (z−1)/(z−breakEven) == 0.5, i.e. z = 2 − breakEven, which for breakEven 0.85 gives z = 1.15.
+//     It is SOLVED, never picked — a band re-cut that moves breakEven must re-solve it (gated).
+//   • Zero at ratio 1.15: a drive well past par earns nothing from margin.
 //   • The cap (~3×) is unchanged insurance against an oracle-mispriced route. With this line it is
 //     unreachable in practice (it would need ratio 0.0) — insurance, not a dial.
 // Payout floors at zero — a mission never charges the player; the loss is the day and the wear.
@@ -53,15 +56,28 @@
  *     k_old × b. This holds the dollar VALUE of a break-even day fixed across the re-anchor, so
  *     the $130-190 region-1 day and SM-3's repair bills authored against it stay valid — even
  *     though par itself grew by PAR_SLACK and mu dropped 0.90 → 0.80.
+ *     RE-DERIVED AGAIN 2026-09-07 by the SAME rule, for the v2 band re-cut (see par.js
+ *     RANK_THRESHOLDS_DEFAULT): breakEven rode B from 0.80 to 0.85, so k ∝ b gives
+ *     k = 0.024 × 0.85/0.80 = 0.0255. A break-even day is worth exactly the same dollars as before
+ *     — 0.024 × T/0.80 === 0.0255 × T/0.85 === 0.03·T — which is the whole point of the rule: the
+ *     letters moved, the wage did not.
  *   • dayTierTable steps PER DAY so the ratified "accept at 1 a.m., buy tomorrow's rate"
  *     seduction is live at EVERY midnight. Shipped ~×1.15 compounding through day 8 (2.66),
  *     then a soft approach to a ~5× asymptote (owner-picked ceiling, 2026-08-02):
  *     tier(d) = 5 − 2.34·e^((8−d)/7) for d 9..30, ~4.9 by day 30 — escalation stays live for
  *     the whole ratified 20-day run instead of dying on day 8 (run-shape.md "Code deltas").
- *   • rankDayLate tightens S/A/B ~3% by day 20 — the brake on the rising tier. SOFTENED from the
- *     old ~7% [owner, 2026-08-16]: at 7% the S threshold outran the best drive anyone had ever
- *     recorded, so S was mathematically dead from roughly mid-run (0 of 20 corpus drives could
- *     reach day-20 S). At 3% the best drive still clears it and S stays a live goal to day 20.
+ *   • payoutZero was re-solved alongside breakEven in the 2026-09-07 re-cut, from the SAME anchor
+ *     that fixed it at 1.20 before: par (ratio 1.0) pays exactly half a unit. m(1) = 0.5 with
+ *     b = 0.85 gives (z − 1)/(z − 0.85) = 0.5 ⇒ z = 1.15. Consequence worth knowing: the anchors
+ *     now sit 0.30 of ratio apart instead of 0.40, so the payout LINE is ~33% steeper — margin is
+ *     worth more per unit of ratio, while both anchor VALUES are unchanged. That steepening falls
+ *     out of the band re-cut; it was not a separate decision.
+ *   • rankDayLate tightens S/A/B by a flat −0.02 of ratio by day 20 — the brake on the rising tier.
+ *     SOFTENED from the old ~7% [owner, 2026-08-16]: at 7% the S threshold outran the best drive
+ *     anyone had ever recorded, so S was mathematically dead from roughly mid-run (0 of 20 corpus
+ *     drives could reach day-20 S). The −0.02 was carried through the 2026-09-07 re-cut unchanged,
+ *     so day-20 S is 0.75 and the best HONEST drive on record (0.740 in runs-v2/) still clears it —
+ *     the same live-to-day-20 invariant, re-checked against the v2 corpus.
  *   • **C DOES NOT TIGHTEN. It is pinned at exactly 1.0 on every day.** Par is the pass line by
  *     definition; if C drifted below 1.0 a drive exactly at par would start failing and par would
  *     stop meaning the one thing the 2026-08-16 re-anchor exists to make it mean. The ramp
@@ -75,18 +91,18 @@ export const ECONOMY_PARAMS = {
     // cut: a day-1 region-1 job (par ~360 s, tier 1, a B-grade drive) pays ~$9. ✓
     // ⚠ The matching end-of-run target ("~$500-1500") is NOT reached by this cut and cannot be
     //   reached by k at all — see the note under dayTierTable.
-    k:          0.024,  // $ per second of par-driving — THE one economy tunable (SM-INV-4)
+    k:          0.0255, // $ per second of par-driving — THE one economy tunable (SM-INV-4)
     payoutCap:  3.0,    // clamp ceiling; unreachable in practice now (mispriced-route insurance)
 
     // The payout line, as two named anchors rather than magic numbers in the formula.
-    breakEven:  0.80,   // ratio paying exactly one day-tier unit — the day-1 B/C boundary
-    payoutZero: 1.20,   // ratio where margin money runs out (keeps par at exactly m = 0.5)
+    breakEven:  0.85,   // ratio paying exactly one day-tier unit — the day-1 B/C boundary
+    payoutZero: 1.15,   // ratio where margin money runs out (keeps par at exactly m = 0.5)
 
     // Rank thresholds (ratio = elapsed/par). rankDay1 MUST equal par.js RANK_THRESHOLDS_DEFAULT
     // (this module imports nothing, so it's a mirrored constant — the economy gate asserts the
     // equality). Linear interpolation day 1 → rankTightenDays, clamped flat on both sides.
-    rankDay1:   { S: 0.72, A: 0.76, B: 0.80, C: 1.00 },
-    rankDayLate:{ S: 0.70, A: 0.74, B: 0.78, C: 1.00 },   // C pinned — see the note above
+    rankDay1:   { S: 0.77, A: 0.81, B: 0.85, C: 1.00 },
+    rankDayLate:{ S: 0.75, A: 0.79, B: 0.83, C: 1.00 },   // C pinned — see the note above
     rankTightenDays: 20,
 
     // ⚠ THE END-OF-RUN PAYOUT CEILING [measured 2026-08-17]. The owner's stated targets are ~$5-15
