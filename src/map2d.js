@@ -19,31 +19,32 @@
 
 import * as THREE from 'three'
 import { RoadSystem } from './road.js'
-import { MISSION_PLAN_RADIUS } from './mission.js'
 import { POI_ICONS, POI_ICON_PX, NEWSPAPER } from '../data/map-icons.js'   // FEAT-60: map glyphs
 import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN }
     from './map-cover.js'
 import { biomeAt, isWetGround, BIOME } from './biome.js'
 import { FLORA_PARAMS } from '../data/flora.js'
 
-// Streamed radius of the map's own RoadSystem around the pan cursor. UNIFIED with the story-mode
-// planner's radius: the two are the big read-only networks in the app and they share route caches,
-// so matching radii means whichever streams first pays and the other rides warm — mismatched radii
-// (map 1500 vs planner 1400, as shipped) made the map re-route a ring the planner never covers.
-const MAP_RADIUS      = MISSION_PLAN_RADIUS
+// Streamed radius of the map's own RoadSystem around the pan cursor. Sized by the AREA it covers,
+// not the radius: the streamed band carries a wide margin, so 2200 actually built a 6.3 × 6.2 km
+// network. Measured coverage vs radius (default-seed spawn):
+//   1200 → 4.0 × 3.6 km (38 edges) · 1400 → ~4.3 × 4.0 km · 1800 → 5.6 × 4.8 km · 2200 → 6.3 × 6.2 km
+// (This used to be pinned to the mission planner's own radius, back when planning streamed a
+// second private network. Planning is on the play instance now, so this number is the map's alone.)
+const MAP_RADIUS      = 1400
 // Progressive (chunked) streaming radii. Growing the radius in steps fills the network
 // incrementally (first ring paints fast, then the rest streams in) instead of one long freeze.
 // Each step yields between chunks (PROGRESSIVE_GAP), and each step's routing is warmed on the
 // road Worker BEFORE the synchronous update runs — see _pump.
 const MAP_RADIUS_STEPS = [400, 650, 900, 1150, MAP_RADIUS]
-// Story mode plans over a WIDER network than the map streams by default (MISSION_PLAN_RADIUS in
-// mission.js), so a mission route can run past the edge of what the map has built — which reads
-// exactly like the route being drawn over empty ground. setRadiusTarget lets the mission tell the
-// map how far it must reach; the extra rings are appended to the progressive stream.
+// Story mode plans over a WIDER network than the map streams by default (the frozen region band,
+// REGION_RADIUS_M + WARM_MARGIN_M), so a mission route can run past the edge of what the map has
+// built — which reads exactly like the route being drawn over empty ground. setRadiusTarget lets
+// the mission tell the map how far it must reach; the extra rings append to the progressive stream.
 // Capped so the map never streams more than ~4 x 4 km of world: at 3000 m it built a 6 km-wide
 // network and took 20+ s, which is the load the owner was seeing. The mission ROUTE is drawn from
-// the planner's own data regardless, so the map's network is context, not the subject — it does not
-// need to reach the far end of every route.
+// the mission's own segment data regardless, so the map's network is context, not the subject — it
+// does not need to reach the far end of every route.
 // FEAT-43 raises this cap in story mode via setRadiusCap(): the 20+ s cost the cap exists to avoid
 // is ROUTING, and story mode has already routed its whole region up front (the warm behind the
 // loading screen). The map adopts the play instance's route cache, so those rings are cache hits.

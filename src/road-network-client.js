@@ -4,10 +4,9 @@
 // build inside a private RoadSystem per client) and serves EVERY main-thread RoadSystem that
 // needs off-thread builds, keyed by client id — the RoadRouteWorker registry pattern:
 //   'play'    — the live play network (main.js): per-frame dispatcher + the cold-flow buildNow()s
-//   'mission' — the Quick-Job planner warm (main.js): its final synchronous update() carried the
-//               whole BUG-56 plan layer (~4 s frozen frame a few seconds after boot — measured
-//               2026-09-04, the owner's "freeze after the first frames")
 //   'map'     — the Map2D overlay's read-only instance (map2d.js cold open / restream)
+// ('mission' was a third client — the Quick-Job planner's own warm. Missions plan on the 'play'
+//  network as of 2026-09-07, so that instance and its warm are gone.)
 // One build runs at a time (a whole-window job; a second concurrent build would only steal the
 // CPU the first is using); further requests queue. A queued 'move' for the same client coalesces
 // onto the newest center instead of stacking.

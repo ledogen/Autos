@@ -19,7 +19,7 @@
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { MissionSystem, MISSION_PLAN_RADIUS } from '../src/mission.js'
+import { MissionSystem } from '../src/mission.js'
 import { mulberry32 } from '../src/seed.js'
 
 // ── DETERMINISM: this gate pins its own dice ────────────────────────────────────────────────────
@@ -45,9 +45,14 @@ const check = (label, ok, detail = '') => {
   if (!ok) fails++
 }
 
+// The band the gate plans on. Missions read the PLAY RoadSystem (2026-09-07: story mode's frozen
+// region band IS the planning network — there is no second instance any more), and every claim
+// below is radius-independent, so this streams one representative wide network and rolls on it
+// rather than paying for the region's full 2800 m.
+const PLAN_R = 1400
 const C = { x: 4500, z: 600 }
 const road = new RoadSystem(6, RANGER_PARAMS)
-road.setRadius(MISSION_PLAN_RADIUS)
+road.setRadius(PLAN_R)
 road.update(new THREE.Vector3(C.x, 0, C.z))
 
 // ── 0. the gap the bug drove through actually exists ────────────────────────────────────────────
@@ -134,7 +139,6 @@ road.update(new THREE.Vector3(C.x, 0, C.z))
 // ── 1. no mission may propose an edge the world culled ──────────────────────────────────────────
 const ms = new MissionSystem({
   getRoad: () => road,
-  makePlanner: () => road,
   getCar: () => ({ x: C.x, z: C.z, speed: 0 }),
   getSeed: () => 6,
   teleport () {}, setMapOpen () {}, onChange () {},
@@ -240,10 +244,12 @@ const ms = new MissionSystem({
 }
 
 // ── 4. the far end must still be there when you DRIVE to it ─────────────────────────────────────
-// The planner streams a MISSION_PLAN_RADIUS band around the player; the play system streams ~320 m
-// around the truck. If the cull disagreed between those windows, a mission could be planned onto a road that
-// evaporates on arrival — which is exactly what "freecamming confirms it" would look like. Routes
-// now reach ~5.6 km, so this is worth pinning rather than assuming.
+// The gate plans on a PLAN_R band; the play system in free roam streams ~320 m around the truck. If
+// the cull disagreed between those windows, a mission could be planned onto a road that evaporates
+// on arrival — which is exactly what "freecamming confirms it" would look like. Story mode now
+// plans on the play instance itself, frozen, so the two windows are the same object there — but the
+// degraded entry path (a timed-out region warm leaves streaming live) can still narrow the window
+// under a live mission, so the agreement stays worth pinning.
 {
   reseed(1004)
   let missing = 0, total = 0
@@ -283,11 +289,11 @@ const ms = new MissionSystem({
 
 // ── 6. FEAT-43: a story region CONFINES the mission ─────────────────────────────────────────────
 // Story mode fences the player inside REGION_RADIUS_M, but Quick Job rolls BOTH endpoints freely
-// from the planner's node set — and that set reaches well past the planner's nominal radius,
-// because the streamed band carries a wide margin. Measured on seed 6 before the fix: a planner at
-// MISSION_PLAN_RADIUS centred ON the region centre still offered nodes out to 2783 m, 4 of 43
-// beyond a 2500 m wall, so roughly one roll in ten sent the player outside the world they were
-// allowed to be in. Regenerating just re-rolled the dice.
+// from the network's node set — and that set reaches well past its nominal radius, because the
+// streamed band carries a wide margin. Measured on seed 6 before the fix: a 1400 m band centred ON
+// the region centre still offered nodes out to 2783 m, 4 of 43 beyond a 2500 m wall, so roughly one
+// roll in ten sent the player outside the world they were allowed to be in. Regenerating just
+// re-rolled the dice. The guard matters more now that the real network is the whole region band.
 //
 // Pinned here rather than in a story-mode test because the containment lives in the PLANNER: it is
 // _roll's candidate filter plus the finished-polyline re-check, and both are mission-side.
@@ -296,7 +302,6 @@ const ms = new MissionSystem({
   const region = { x: C.x, z: C.z, r: R }
   const msR = new MissionSystem({
     getRoad: () => road,
-    makePlanner: () => road,
     getCar: () => ({ x: C.x, z: C.z, speed: 0 }),
     getSeed: () => 6,
     getRegion: () => region,

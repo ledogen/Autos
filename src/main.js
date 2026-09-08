@@ -59,7 +59,7 @@ import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
-import { MissionSystem, MISSION_PLAN_RADIUS, PLAN_RESTREAM_MOVE } from './mission.js'  // story mode (beta)
+import { MissionSystem } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
@@ -188,10 +188,10 @@ function rebuildWaterSystem () {
   // The map's own read-only RoadSystem must route with the identical exclusion (it validates the
   // network the player drives).
   map2d.setWaterNoGo(waterNoGoFn, pondDiscsFn)
-  // Same for the story-mode mission planner: it proposes routes the player then drives, so it has
-  // to route around exactly the same ponds. Stashed because the planner is built lazily.
-  _waterNoGoFns = [waterNoGoFn, pondDiscsFn]
-  missionSystem?.invalidatePlan()
+  // The mission planner needs no injection of its own: it plans on the play instance, which was
+  // handed the same exclusion two lines up. Cached POI offers still hold centerlines from the
+  // pre-change network, so they must go.
+  missionSystem?.clearOffers()
   // FEAT-18: stream channels carve the terrain (bed + banks) — inject the pure sampler into the
   // terrain height paths (see terrain.setWaterCarve for the composition + bridge-deck rule).
   // sampleAt keeps a 1-entry windowed stream cache: physics contact queries are spatially coherent,
@@ -364,7 +364,7 @@ function _importSessionRoutes () {
 // One-time cleanup of the short-lived IndexedDB persistence experiment (32cde75, reverted same day).
 try { indexedDB.deleteDatabase('autos-routes') } catch { /* private mode etc. */ }
 
-let _spawnWarmActive = false   // frame loop skips road stream/warm while a spawn-band warm is pumping
+let _spawnWarmActive = false   // frame loop skips the road stream while a spawn-band warm is pumping
 async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
   const { spawnSeed, baseX, baseZ, tightR, spawnR } = _spawnProbeBase(wseed, params)
 
@@ -633,7 +633,7 @@ async function _rebuildFullNow () {
 }
 
 // Canonical "change the world seed" op: update the seed + reference string, drop the spawn override
-// and mission plan, force a fresh planner warm, and fire the debounced Path-B rebuild. Shared by the
+// and any cached mission offers, and fire the debounced Path-B rebuild. Shared by the
 // debug seed field (changeSeed) and Story Mode's seed prompt (StorySystem) so both reseed identically.
 // Returns the rebuild promise (FEAT-43: story-mode entry awaits it before centering its region).
 function applyWorldSeed (v) {
@@ -641,8 +641,7 @@ function applyWorldSeed (v) {
   worldSeed = parseWorldSeed(v)
   _seedString = String(v)
   _spawnOverride = null
-  missionSystem?.invalidatePlan()
-  _plannerWarm = null; _plannerWarmAt = -Infinity
+  missionSystem?.clearOffers()   // they pin centerlines from the outgoing network
   return debouncedRebuildFull()
 }
 
@@ -1294,7 +1293,6 @@ const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, applyW
 // touches the live roadSystem/play network (see src/map2d.js). Accessors are injected so map2d
 // stays decoupled from main's module state. Body forward is the -Z axis (vehicle.js); we pass
 // the world-forward XZ so the marker's heading is convention-agnostic.
-let _waterNoGoFns = null   // [noGoFn, pondDiscsFn] — see rebuildWaterSystem
 const _mapFwd = new THREE.Vector3()
 // Story mode (beta) — constructed below, after roadSystem exists. Declared here so map2d can
 // read its markers without the two modules knowing about each other.
@@ -2103,69 +2101,6 @@ roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  //
 // the visible terrain ring with margin while cutting cold-stream + per-crossing re-stream cost.
 roadSystem.setRadius(320)
 
-// ── Story mode (beta): par-graded missions ───────────────────────────────────
-// The testing harness for the par economy — see src/mission.js and .planning/story-mode/DESIGN.md.
-// Entered from the pause menu so a visitor is never dropped into an unfinished mode by default.
-// getRoad is a GETTER: roadSystem is swapped on seed regen (see the regen path above).
-// ── Story-mode planner pre-warm ──────────────────────────────────────────────
-// Routing is ~99% of the cost of building the 2.2 km planning network (measured: 19.5 s cold vs
-// 0.21 s once the per-connection route cache is populated). So rather than making the player wait
-// on "planning a job", we pre-route the band OFF-THREAD on the road Worker and keep a ready
-// instance around. Story mode then opens instantly, and regenerates are ~0.2 s.
-//
-// Kicked off after boot, on any seed change, and when the player drifts past PLAN_RESTREAM_MOVE.
-// The warm is pure worker traffic plus one ~0.2 s stream at the end — no main-thread hitch.
-let _plannerWarm = null      // { seed, road, center, ready, timer }
-// -Infinity, NOT 0: with 0 the throttle below reads as "last warmed at page-load time", so the
-// FIRST warm could not start until 20 s in — and a refresh-then-story-mode hit the cold path
-// every time, which is exactly the hang this is meant to remove.
-let _plannerWarmAt = -Infinity   // last warm start (throttles drift re-warms only)
-
-function _buildPlannerRoad (seed) {
-  const r = new RoadSystem(seed, RANGER_PARAMS)
-  // Ponds first: setWaterNoGo calls _invalidateProto, which clears the route caches it can see —
-  // it must run BEFORE adopting play's warm ones or it would wipe them.
-  if (_waterNoGoFns) r.setWaterNoGo(_waterNoGoFns[0], _waterNoGoFns[1])
-  if (roadSystem && roadSystem._worldSeed === seed) {
-    const p = roadSystem._proto, q = r._proto
-    q.cls = (p.cls ??= new Map())
-  }
-  return r
-}
-
-function _startPlannerWarm (seed, cx, cz) {
-  if (_plannerWarm?.timer) clearTimeout(_plannerWarm.timer)
-  const road = _buildPlannerRoad(seed)
-  road.setRadius(MISSION_PLAN_RADIUS)
-  const center = new THREE.Vector3(cx, 0, cz)
-  const rec = { seed, road, center: { x: cx, z: cz }, ready: false, timer: 0 }
-  _plannerWarm = rec
-  _plannerWarmAt = performance.now()
-  // PERF-30 (owner freeze, measured 2026-09-04): the pump's final road.update() was "the cheap
-  // registration pass (~0.2 s)" when routing dominated — since the corridor merge it carries the
-  // whole BUG-56 plan layer, a ~4 s synchronous build landing a few seconds after boot (the
-  // "freeze after the first frames"). Build on the network Worker instead and adopt the result;
-  // a stale reply (seed changed mid-warm) just leaves ready=false — the seed-change path kicks a
-  // fresh warm anyway.
-  if (netClient) {
-    netClient.register('mission', road, { wireDispatcher: false })
-    netClient.buildNow('mission', cx, cz, MISSION_PLAN_RADIUS).then((ok) => {
-      if (_plannerWarm === rec && ok) rec.ready = true
-    })
-    return
-  }
-  const pump = () => {
-    if (_plannerWarm !== rec) return                     // superseded by a newer warm
-    let done = false
-    try { done = road.warmBandComplete(center) } catch (e) { console.warn('[mission] warm failed', e); return }
-    if (!done) { rec.timer = setTimeout(pump, 250); return }
-    // Every connection is cached now, so this last step is the cheap one.
-    road.update(center)
-    rec.ready = true
-  }
-  rec.timer = setTimeout(pump, 0)
-}
-
 // ── FEAT-46: story-mode POIs — orange marker cubes on their own lay-by pads ─────────────────
 // Story mode only. The pads are handed to the RoadSystem carve AFTER the region is routed and
 // frozen (story.js's onRegionLive), which is what keeps the ratified rule — POIs never influence
@@ -2935,27 +2870,17 @@ function mountExportRow (panelId, beforeId) {
   row.style.display = 'block'
 }
 
+// ── Story mode (beta): par-graded missions ───────────────────────────────────
+// The testing harness for the par economy — see src/mission.js and .planning/story-mode/DESIGN.md.
+// Entered from the pause menu so a visitor is never dropped into an unfinished mode by default.
+// getRoad is a GETTER: roadSystem is swapped on seed regen (see the regen path above).
 const _misFwd = new THREE.Vector3()
 missionSystem = new MissionSystem({
+  // Missions plan on the PLAY network — the frozen region band story mode built behind its own
+  // loading screen (see the header note in mission.js). It is real and CULLED, so a mission can
+  // only ever propose roads that actually exist, and there is nothing left to pre-warm.
   getRoad:  () => roadSystem,
   getSeed:  () => worldSeed,
-  // A DEDICATED read-only RoadSystem for planning, built the same way map2d builds its own.
-  // The play instance only holds a ~320 m window, and widening it would re-shape the road under
-  // the truck (the crossing cull is window-sensitive — BUG-25). The planner streams a real,
-  // CULLED network so a mission can only ever propose roads that actually exist.
-  makePlanner: (seed, cx, cz, radius) => {
-    // Warm instance ready and still centred near the player? Then this is ~0.2 s, not ~5 s.
-    const w = _plannerWarm
-    if (w?.ready && w.seed === seed && Math.hypot(w.center.x - cx, w.center.z - cz) < PLAN_RESTREAM_MOVE) {
-      w.road.setRadius(radius)
-      w.road.update(new THREE.Vector3(cx, 0, cz))
-      return w.road
-    }
-    const r = _buildPlannerRoad(seed)
-    r.setRadius(radius)
-    r.update(new THREE.Vector3(cx, 0, cz))   // cold path: routes uncached, this is the hang
-    return r
-  },
   // Richer than the arrival check needs: the run export records a driven trace, and throttle /
   // brake / steer are what make it useful for fitting anything later.
   getCar:   () => {
@@ -2989,11 +2914,10 @@ missionSystem = new MissionSystem({
 // Larry's route. A SIBLING of missionSystem — the two can never run at once (each one's park
 // trigger and prompt yields to the other's active state), but neither is a mode inside the other.
 //
-// It plans on missionSystem's planner network: the region is warmed once at story entry and its
-// edges are already routed, so a second 1400 m planner would re-stream roads that exist a metre
-// away in memory.
+// It plans on the same network missionSystem does — the play instance, frozen at the region radius
+// behind story mode's loading screen. Nothing here streams a network of its own.
 const paperRouteSystem = new PaperRouteSystem({
-  getRoad:   () => missionSystem?.planner() ?? roadSystem,
+  getRoad:   () => roadSystem,
   getPois:   () => poiSystem,
   getRegion: () => storySystem?.region() ?? null,
   // Full telemetry, not just position: the start-zone check only needs x/z, but the FEAT-30
@@ -5387,22 +5311,6 @@ function loop () {
     _lastHudWrite = _hudNow
 
     if (_labActive) _renderLabUI()
-
-    // Story-mode planner: keep a warm planning network near the player so "story mode" opens
-    // instantly. Throttled — a re-warm is worker traffic, but there is no point starting one every
-    // few seconds while driving across country.
-    // Hold off until the spawn band has finished warming so the two do not fight for the Worker.
-    // FEAT-43: also hold off while story mode is still entering — its region warm owns the network
-    // Worker until the loading screen clears, and a competing planner warm just stretches it.
-    if (netClient && !_labActive && !_spawnWarmActive && !storySystem.isEntering()) {
-      const drift = _plannerWarm
-        ? Math.hypot(_plannerWarm.center.x - vehicleState.position.x, _plannerWarm.center.z - vehicleState.position.z)
-        : Infinity
-      const stale = !_plannerWarm || _plannerWarm.seed !== worldSeed || drift > PLAN_RESTREAM_MOVE
-      if (stale && performance.now() - _plannerWarmAt > 20000) {
-        _startPlannerWarm(worldSeed, vehicleState.position.x, vehicleState.position.z)
-      }
-    }
 
     // Story mode (beta): the countdown digit and the elapsed/distance readout are live values,
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step. ('staging' is a

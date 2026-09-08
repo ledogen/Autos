@@ -30,18 +30,19 @@
 import { computePar, sampleRoute, gradeRun, formatTime, PAR_REF, PAR_SLACK } from './par.js'
 import { roadQuality } from './road-quality.js'
 
-// Planning radius for the dedicated planner RoadSystem. The planner must stream the network for
-// real — cull included — so it can only ever propose roads that exist. That costs a one-off load,
-// which story mode can afford; it is then REUSED across regenerates and only re-streamed when the
-// seed changes or the player leaves PLAN_RESTREAM_MOVE behind.
-// Sized by the AREA it covers, not the radius: the streamed band carries a wide margin, so
-// radius 2200 actually built a 6.3 × 6.2 km network — far more than missions need, and every
-// extra edge is routing time and bundle bytes. Measured coverage vs radius (default-seed spawn):
-//   1200 → 4.0 × 3.6 km (38 edges) · 1400 → ~4.3 × 4.0 km · 1800 → 5.6 × 4.8 km · 2200 → 6.3 × 6.2 km
-export const MISSION_PLAN_RADIUS = 1400   // m — ≈ 4 × 4 km of network
-export const PLAN_RESTREAM_MOVE = 700     // m — drift before the planner re-streams
+// THE PLANNING NETWORK IS THE PLAY NETWORK (owner, 2026-09-07). Missions used to plan on a second,
+// PRIVATE RoadSystem streamed to its own 1400 m radius. That was necessary while Quick Job was a
+// free-roam affordance and the play instance only ever held a ~320 m window. It is not necessary
+// now: missions exist ONLY inside story mode — the Quick Job button is hidden outside it and POI
+// givers are placed and dropped with the region — and story mode has already built the play
+// instance out to REGION_RADIUS_M + WARM_MARGIN_M around the region centre and FROZEN it. That
+// band is a strict superset of anything a mission may propose (the wall clips candidates well
+// inside it), so the private instance was duplicated plan-layer work whose pre-warm could not even
+// begin until the loading screen cleared. Rushing straight into a Quick Job beat the warm and paid
+// the build synchronously on the main thread — that was "building the road network for this area".
+// If free-roam missions ever return they need their own wide band again: blueprint it from here.
 // Leg bounds are measured on STRAIGHT-LINE graph distance (the planner's cheap metric); the
-// routed road is empirically ~1.5× that, so these bracket a ~1.4-3 km drive that fits the radius.
+// routed road is empirically ~1.5× that, so these bracket a ~1.4-3 km drive.
 const LEG_MIN = 1500                // m
 const LEG_MAX = 4000                // m
 const MAX_EDGES = 9                 // routing cap: each edge is tens of ms on a cache miss
@@ -69,12 +70,14 @@ export const START_ZONE_R = 25      // m — POI start threshold, measured from 
 const PAID_JOB_DO_OVERS = false
 const EDGE_T_MARGIN = 0.12          // keep endpoints off the junction pads at both ends
 // FEAT-43: when story mode supplies a region, the whole mission must fit INSIDE its wall.
-// The planner network reaches well past its nominal radius — the streamed band carries a wide
-// margin, and measured on seed 6, MISSION_PLAN_RADIUS 1400 centred ON the region centre still
-// yields nodes out to 2783 m, 4 of 43 beyond the 2500 m wall. _roll picks BOTH endpoints freely
-// from that set, so ~1 roll in 10 landed outside, and worse once the planner re-centred on a car
-// that had driven away. Two guards: node candidates are filtered to the region, and the finished
-// polyline is re-checked — a centerline between two in-region nodes can still bow past the wall.
+// The planning network ALWAYS reaches past that wall — story mode warms the play band to
+// REGION_RADIUS_M + WARM_MARGIN_M precisely so the boundary roads are whole, and a streamed band
+// carries a wide margin on top. Measured on seed 6 back when planning had its own 1400 m instance,
+// it already offered nodes out to 2783 m, 4 of 43 beyond the 2500 m wall; _roll picks BOTH
+// endpoints freely from that set, so ~1 roll in 10 landed outside. These two guards therefore
+// carry MORE weight now that the candidate set is the whole region band: node candidates are
+// filtered to the region, and the finished polyline is re-checked — a centerline between two
+// in-region nodes can still bow past the wall.
 // Exported (FEAT-61): the paper route's customers must be sited inside the SAME wall, or they are
 // people no route can reach. One constant, so the two can never disagree about where the edge is.
 export const REGION_MARGIN = 100    // m — keep missions this far clear of the wall itself
@@ -148,8 +151,7 @@ export class MissionSystem {
      * @param {()=>number} [o.getSeed] — world seed; road-surface quality is seeded from it
      * @param {()=>void} [o.onChange] — called whenever the UI-visible state changes
      * @param {()=>({x:number,z:number,r:number}|null)} [o.getRegion] — FEAT-43 story region, when
-     *        one is active. Missions are confined to it, and the planner ANCHORS on its centre
-     *        instead of following the car (see _planner).
+     *        one is active. Missions are confined to it (see REGION_MARGIN).
      * @param {()=>{day:number,dayTier:number,thresholds:object}} [o.getTerms] — FEAT-53: the
      *        economy's terms at this moment (EconomySystem.terms()). Stamped onto the mission at
      *        ACCEPT and read back at settlement. Optional — without it, jobs grade on the day-1
@@ -157,10 +159,8 @@ export class MissionSystem {
      * @param {(result:object, mission:object)=>{payout:number,points:number}} [o.onSettle] —
      *        FEAT-53: settle a finished POI job (EconomySystem.settle). Optional, POI jobs only.
      */
-    constructor({ getRoad, makePlanner, getCar, getSeed, getRegion, teleport, setSpawn, setMapOpen, onChange, getTerms, onSettle }) {
+    constructor({ getRoad, getCar, getSeed, getRegion, teleport, setSpawn, setMapOpen, onChange, getTerms, onSettle }) {
         this._getRoad = getRoad
-        this._makePlanner = makePlanner || null
-        this._plan = null            // { road, seed, center } — the streamed planning network
         this._getCar = getCar
         this._getRegion = getRegion || (() => null)
         this._getSeed = getSeed || (() => 0)
@@ -191,53 +191,12 @@ export class MissionSystem {
         // walking away and re-parking presents the SAME job — a giver you can decline-and-re-park
         // into a fresh roll is the same slot machine as the regenerate button. Keyed
         // `${poiId}|${day}`, so the offer re-rolls only at a day boundary. Holds live centerline
-        // references (mission.segments) — clearOffers() from invalidatePlan()/region exit is
-        // MANDATORY or a seed regen leaves this pinning a dead RoadSystem.
+        // references (mission.segments) — clearOffers() on seed change / region exit is MANDATORY
+        // or a seed regen leaves this pinning a dead RoadSystem.
         this._offers = new Map()
     }
 
     // ── lifecycle ───────────────────────────────────────────────────────────────────────────
-    /**
-     * The planning network: a dedicated read-only RoadSystem streamed around the player, exactly
-     * the way map2d gets trustworthy data. It is the ONLY way the planner sees the same roads the
-     * player does — the play RoadSystem only holds a ~320 m window, and widening THAT would
-     * re-shape the road under the truck (the cull is window-sensitive; see BUG-25).
-     *
-     * Streamed once and reused: regenerating a mission is then instant, and only a seed change or
-     * walking PLAN_RESTREAM_MOVE away pays the load again.
-     */
-    _planner() {
-        if (!this._makePlanner) return this._getRoad()      // headless/tests: use what we're given
-        const seed = this._getSeed()
-        // FEAT-43: in story mode the planner ANCHORS on the region centre, not the car. A
-        // car-following window slides outward as you drive, which both re-streams for nothing (the
-        // region's roads are already routed and frozen) and drags the candidate node set past the
-        // wall. Anchored, the window is the same every roll — and PLAN_RESTREAM_MOVE can never fire.
-        const region = this._getRegion()
-        const c = region || this._getCar()
-        const stale = !this._plan || this._plan.seed !== seed
-            || Math.hypot(this._plan.center.x - c.x, this._plan.center.z - c.z) > PLAN_RESTREAM_MOVE
-        if (stale) {
-            // main.js owns the streaming call: RoadSystem.update wants a THREE.Vector3 (it calls
-            // distanceTo on it), and keeping THREE out of this module keeps it cheap to import.
-            const road = this._makePlanner(seed, c.x, c.z, MISSION_PLAN_RADIUS)
-            if (!road) return null
-            this._plan = { road, seed, center: { x: c.x, z: c.z } }
-        }
-        return this._plan.road
-    }
-
-    /**
-     * The planning network, streamed on demand. Public because FEAT-61's paper route plans its tour
-     * on the SAME one — the region is warmed once and its edges are already routed, so a second
-     * planner would re-stream a network that exists a metre away in memory. Shared read-only: the
-     * tour reads networkGraph/edgeParData and writes nothing.
-     */
-    planner() { return this._planner() }
-
-    /** Drop the planning network (seed change / explicit reset) so the next roll re-streams. */
-    invalidatePlan() { this._plan = null; this.clearOffers() }
-
     /** FEAT-53: forget all cached POI offers (region enter/exit, seed change). */
     clearOffers() { this._offers.clear() }
 
@@ -602,7 +561,7 @@ export class MissionSystem {
      *   (graph edge, arc) point instead of rolling it. The END still rolls freely.
      */
     _roll(anchor = null) {
-        const road = this._planner()
+        const road = this._getRoad()
         if (!road) return null
         // The POST-CULL registered network — the roads that actually exist. Planning off the raw
         // Urquhart set (what this did originally) invents routes across empty hillsides.
@@ -623,10 +582,10 @@ export class MissionSystem {
         // to the car threw away nearly the whole streamed network as possible origins and made every
         // mission radiate from one point — a handful of shortest-path fans that all shared a long
         // common prefix ("a couple of options with subtle variations"). Rolling BOTH endpoints freely
-        // turns the pool from O(endpoints) into O(pairs) at zero extra streaming cost (the planner
-        // already holds these roads). The planner still streams AROUND THE CAR, so "the whole network"
-        // is the ~4 km footprint by the player — that windowing, and the shortest-path route body, are
-        // both intentional (a quick job stays in warm near country and takes the natural line).
+        // turns the pool from O(endpoints) into O(pairs) at zero extra streaming cost (the network
+        // already holds these roads). "The whole network" is now the frozen region band, so the
+        // thing that bounds a job is the WALL rather than a window that slid about with the truck;
+        // the shortest-path route body stays intentional (a quick job takes the natural line).
 
         // Dijkstra over straight-line graph edges from one start → reachable nodes in the leg band,
         // capped at MAX_EDGES hops. No routing here (graph metric only), so it's cheap to run per
@@ -733,10 +692,12 @@ export class MissionSystem {
             // the turn angle alone cannot tell the two apart. The GPS assist filters on this.
             const endDeg = (adj.get(nodePath[i + 1]) || []).length
             // QUAL-24: carry the ABSTRACT EDGE (site pair) alongside the runKey. A runKey names a run
-            // GROUPING, and a deg-2 chain merge groups by the streamed band — so a mission planned at
-            // MISSION_PLAN_RADIUS can name a chain the 320 m play stream never forms, and the drop
-            // point looks like it evaporated. The site pair is stable across windows, so this is what
-            // anything re-resolving the road later should key on.
+            // GROUPING, and a deg-2 chain merge groups by the streamed band — so a mission planned on
+            // one window could name a chain another never forms, and the drop point looked like it
+            // evaporated. Planning on the play instance itself makes that class structurally
+            // impossible in a frozen region, but NOT on the degraded entry path (a timed-out region
+            // warm leaves streaming live), and the site pair is stable across windows either way —
+            // so it stays what anything re-resolving the road later should key on.
             segments.push({ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key, cellA: a, cellB: b, endDeg })
 
             // Map polyline for this traversed range.
