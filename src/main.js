@@ -4391,8 +4391,9 @@ const storySystem = new StorySystem({
    * One step of the region routing warm. Widens the play RoadSystem to the region radius and pumps
    * warmBandComplete(), which dispatches every un-cached connection in the band to the road Worker
    * and returns true only when nothing is outstanding.
-   * Mirrors the _startPlannerWarm pump above, but on the PLAY instance, because the
-   * play network is the one the frame loop is about to stop updating.
+   * The play network is the only network there is — the private planner instance this pump used
+   * to mirror was deleted when missions moved onto the play band — and it is the one the frame
+   * loop is about to stop updating.
    *
    * On the final step it registers the whole region ONCE at the wide radius (roadSystem.update):
    * that runs the crossing cull at the wide radius, which post-BUG-25 is a pure fn of (seed,
