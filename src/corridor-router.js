@@ -257,6 +257,20 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
         const dx = px - discs[d], dz = pz - discs[d + 1], r = discs[d + 2]
         return dx * dx + dz * dz <= r * r
     }
+    // A CELL is blocked when ANY PART of it lies in the disc, not when its centre does (2026-09-07).
+    // The centre-only test made the exclusion accurate only to ±cell/2 — with cell 32 m that is ±16 m,
+    // and 22.6 m at a corner, while the pond skirt is 10 m. The skirt was finer than the lattice
+    // quantum enforcing it, so a corridor whose every cell centre tested clear could still pass well
+    // inside the disc: measured on seed 6, edge g:1,-1,1:2,0,0 came to 51.2 m of a 60 m disc — 8.8 m
+    // in, comfortably under a half-cell. Every rung's fit then failed clearsDiscs and the last-resort
+    // `wet` branch shipped it. Testing the cell SQUARE makes the lattice sound: an open cell lies
+    // wholly outside the disc, so the polyline through open cell centres does too.
+    const cellTouchesDisc = (px, pz, d) => {
+        const r = discs[d + 2], h = cell / 2
+        const dx = Math.max(Math.abs(px - discs[d]) - h, 0)
+        const dz = Math.max(Math.abs(pz - discs[d + 1]) - h, 0)
+        return dx * dx + dz * dz <= r * r
+    }
     const isBlocked = (cx2, cz2) => {
         if (!blockedArr) return false
         const i = idx(cx2, cz2)
@@ -267,7 +281,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
         const nearA = dax * dax + daz * daz <= exempt2
         const nearB = dbx * dbx + dbz * dbz <= exempt2
         for (let d = 0; d < discs.length; d += 3) {
-            if (!inDisc(x, z, d)) continue
+            if (!cellTouchesDisc(x, z, d)) continue
             if (nearA && inDisc(ax, az, d)) continue     // this anchor is IN this pond — let it out
             if (nearB && inDisc(bx, bz, d)) continue
             b = 2; break

@@ -61,8 +61,12 @@ for (const [, e] of tunneled) {
   for (let i = 1; i < pts.length; i++) {
     const ds = cum[i] - cum[i - 1]
     if (ds < 1e-6) continue
-    const mid = (cum[i] + cum[i - 1]) / 2
-    if (!e.tunnelSpans.some(s => mid >= s.s0 && mid <= s.s1)) continue
+    // The WHOLE sample must lie inside the span, not just its midpoint. A 4 m sample straddling a
+    // portal measures the road→bore TRANSITION, where the road side is legally capped at gMaxRoad
+    // (0.24) rather than gMaxBore (0.18) — so admitting it on the midpoint scores a legal transition
+    // as an illegal bore grade. Measured 2026-09-07 on seed 6: sample [851.3, 855.3] against a span
+    // starting at 851.5 reported 22.5% while the bore behind it runs at 13.7%.
+    if (!e.tunnelSpans.some(s => cum[i - 1] >= s.s0 && cum[i] <= s.s1)) continue
     const dy = Math.abs(pts[i].y - pts[i - 1].y)
     worstG = Math.max(worstG, dy / ds)
     worstStep = Math.max(worstStep, dy)
