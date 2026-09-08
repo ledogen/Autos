@@ -117,5 +117,5 @@ at 60 m; ordinary road and off-road unchanged.
       byte-identical numbers with and without the change (it fails identically before and after; that
       failure is pre-existing BUG-56)
 - [x] no regression on ordinary road or off-road cost
-- [ ] decide root cause 3: is a permanent deg-2 connector in the played area a merge bug (QUAL-24) or
-      a stale doc comment?
+- [x] root cause 3 split out as **QUAL-31** — it is a road-graph/doc question, not a perf one, and
+      PERF-32 does not wait on it (the halo fix helps every connector wherever it sits)
