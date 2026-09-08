@@ -4167,13 +4167,24 @@ export class RoadSystem {
                         const h = _nearestOnPolyXZ(c.forkPt.x, c.forkPt.z, T.points, T.polyCum)
                         if (!h || h.d > 4) continue
                         iP = _nearestVertexAtCum(T.polyCum, h.cum)
-                        // A T MAY NOT CROWD AN EXISTING JUNCTION. MINREG only asks that road be left over; it does not
-                        // ask that the new node clear the pads at either end of the trunk. At 30 m a promoted T
-                        // lands beside an existing junction, both cut their ribbons back 10 m, and the run between
-                        // them ships ~11 m of asphalt under two overlapping pads (owner's render 04: seed 7,
-                        // -1666/1632 and -1684/1658, 31.6 m apart with 5.9 m of height between them). Worse, that
-                        // stub is what mission-network caught EVAPORATING between stream windows. 45 m clears both
-                        // pads plus a real length of road.
+                        // ⚠ TEMPORARY MITIGATION FOR BUG-61 — NOT A DESIGN RULE. REMOVE WITH THAT TICKET.
+                        //
+                        // This 45 m says "a promoted T must clear the pads at both ends of its trunk", and the
+                        // owner has explicitly ruled that it is NOT a rule this project holds:
+                        //   "a T within 45m of another junction is fine as long as its deterministic. many
+                        //    roads have spontaneous spurs not everything is neatly grouped into 4 ways"
+                        //   — owner, 2026-09-07
+                        // Crowding is legitimate road. Do not harden this into a spacing convention.
+                        //
+                        // It survives only because it MASKS BUG-61: a promoted node's id is not window-invariant
+                        // (the fork is ranked over REGISTERED geometry, so it lands a few metres apart in
+                        // different windows, and the id IS the run key). Crowded Ts are where that bites hardest,
+                        // so widening the spacing hides the symptom — mission-network's drop-point check passes
+                        // with this and fails without it. Removing it before BUG-61 lands buys a red gate and no
+                        // correctness. Removing it AFTER is the point.
+                        //
+                        // Partial by construction: the mid-span site below still uses MINREG, so even as a
+                        // mitigation this only covers the node-anchored path.
                         if (T.polyCum[iP] < 45 || tL - T.polyCum[iP] < 45) continue
                         P = T.points[iP]
                         const lo = nAtStart ? 0 : sideL * 0.15, hi = nAtStart ? sideL * 0.85 : sideL
@@ -4735,14 +4746,9 @@ export class RoadSystem {
             // point that EXISTS in the geometry rather than one interpolated onto it.
             const iP = _nearestVertexAtCum(T.polyCum, tHit.cum)
             const tL = T.polyCum[T.polyCum.length - 1]
-            // A T MAY NOT CROWD AN EXISTING JUNCTION. MINREG only asks that road be left over; it does not
-                        // ask that the new node clear the pads at either end of the trunk. At 30 m a promoted T
-                        // lands beside an existing junction, both cut their ribbons back 10 m, and the run between
-                        // them ships ~11 m of asphalt under two overlapping pads (owner's render 04: seed 7,
-                        // -1666/1632 and -1684/1658, 31.6 m apart with 5.9 m of height between them). Worse, that
-                        // stub is what mission-network caught EVAPORATING between stream windows. 45 m clears both
-                        // pads plus a real length of road.
-                        if (T.polyCum[iP] < 45 || tL - T.polyCum[iP] < 45) continue
+            // ⚠ TEMPORARY MITIGATION FOR BUG-61 — NOT A DESIGN RULE. See the twin at the plan-time
+            // probe above for the owner's ruling that crowded Ts are legitimate. Remove with BUG-61.
+            if (T.polyCum[iP] < 45 || tL - T.polyCum[iP] < 45) continue
             const P = T.points[iP]
             const pid = _promotedId(P.x, P.z), pKey = g.key(pid)
             if (this._promoted.has(pKey)) continue         // two forks on one vertex — degenerate

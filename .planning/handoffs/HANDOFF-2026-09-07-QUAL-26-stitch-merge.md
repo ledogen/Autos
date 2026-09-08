@@ -119,7 +119,7 @@ it is exactly the 4 Ts §1 gives up. The owner dropped it on those numbers.
 **The ruling stands; the code does not yet match it.** A comment at the decline site records this so
 the next person applies `minSep >= 2 * HWn + 4` rather than re-opening which rule wins.
 
-## 6. NOW IN THE BRANCH (was a recommendation) — the crowding guard
+## 6. SUPERSEDED BY BUG-61 — the crowding guard is a mitigation, not a fix
 
 Found from the owner's review of render 04 (seed 7, −1666/1632), which they called *"really fucked
 up… a different bug class"*. It is:
@@ -140,7 +140,22 @@ existing junction by design**. Raising that specific guard to 45 m was measured:
 | promoted Ts | 39 | 36 |
 | `junction-stitch` | 62 | 64 |
 
-**Shipped**, after `mission-network` proved it was a correctness issue and not only a cosmetic one.
+**⚠ THIS SECTION WAS WRONG AND IS CORRECTED HERE (2026-09-07, after merge).** It claimed the guard
+was a correctness fix because `mission-network` failed without it. It is not. The guard MASKS
+**BUG-61**: a promoted node's id is not window-invariant — the fork is ranked over REGISTERED
+geometry, so it lands a few metres apart in different windows, and the id IS the run key. Crowded Ts
+are simply where that bites hardest, so widening the spacing hides the symptom without touching the
+cause.
+
+The owner has ruled the spacing itself is not a rule this project holds:
+
+> "a T within 45m of another junction is fine as long as its deterministic. many roads have
+> spontaneous spurs not everything is neatly grouped into 4 ways" — owner, 2026-09-07
+
+The guard therefore ships as a labelled temporary mitigation and is to be **removed with BUG-61**,
+not kept. Both sites in `src/road.js` carry that label. Note it is partial: the mid-span promotion
+site still uses `MINREG`, so it only covers the node-anchored path.
+
 Relates to BUG-59 (pads sized without regard to their neighbours).
 
 ## 7. Merge

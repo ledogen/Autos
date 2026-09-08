@@ -99,6 +99,23 @@ ids as opaque triples: `mission.js`, `map2d.js`, `paper-route.js`, `world-valida
 that stores a run key or a cell id across a re-stream with different coverage can lose its road.
 `mission-network` caught the mission case; the paper route stores customer edges the same way.
 
+## A MITIGATION IS LIVE ON MAIN — REMOVE IT AS PART OF THIS TICKET
+
+`src/road.js` carries a **45 m trunk-slice guard at both node-anchored promotion sites** (the
+plan-time probe and `_v2PromoteOne`), labelled in place as a temporary mitigation for this bug. It
+stops a T landing near an existing junction, which is where the id instability bites hardest, so it
+hides the symptom: `mission-network`'s drop-point check passes with it and fails without it.
+
+**It is not a rule this project holds.** The owner ruled otherwise:
+
+> "a T within 45m of another junction is fine as long as its deterministic. many roads have
+> spontaneous spurs not everything is neatly grouped into 4 ways" — owner, 2026-09-07
+
+So the acceptance for this ticket includes **deleting that guard and having `mission-network` stay
+green on its own merits.** If the fix lands and the guard is left in, the ticket is not done — the
+project would keep a spacing convention it has explicitly rejected, with nothing but a comment
+saying so. The mid-span site (still `MINREG`) shows the guard was never a coherent rule anyway.
+
 ## The fix, in the order it should be attempted
 
 1. **Make the fork choice a pure function of window-invariant inputs.** The information is already
