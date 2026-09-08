@@ -607,6 +607,19 @@ export const RANGER_PARAMS = {
     // registers deflected laterally until the pair stays this far apart over the contact —
     // above the census's 9 m tear floor, below mergeProxM. Deflection declines (fold floor,
     // transit, >30 m) fall through to the delete rung.
+    // clearEdgeM (FEAT-77, owner ruling 2026-09-07): two adjacent roads keep at least this much
+    // DAYLIGHT between their pavement edges, AND neither road's earthwork may reach the other. The
+    // taper is not a knob of its own — it is the carve's own apron (roadFillSlope / roadCutSlope,
+    // capped at carveHalfWidth + roadMaxEmbankmentToe), read from the same params the carve reads,
+    // so the rule and the earthwork can never disagree (RoadSystem._v2ClearReq). A pair inside the
+    // rule is a CONFLICT, and conflicts resolve through the merge planner into a T. Photo site:
+    // seed 1517161527 near (-162,-458), two legs 21 m apart with 14 m of height between them.
+    clearEdgeM: 12,
+    // clearThroatM: inside this distance of a node the two roads SHARE, the clearance rule is not
+    // owed — they leave one pad, the deck hold and the junction plane own that ground, and two legs
+    // at 60° are inside 22 m of each other for the first 22 m out by geometry. There the planner
+    // keeps its old proximity (mergeProxM).
+    clearThroatM: 30,
     shoveClearM: 12,
     // BUG-55 pair census: an edge is a CANDIDATE conflict partner of a registering edge when its
     // node-to-node CHORD comes within this of the registering edge's ROUTE polyline. Chord-to-

@@ -215,3 +215,18 @@ residual is the ~1.6 m median overshoot — exactly where their edges are in con
 The measurement above points at (2) as the direct cause and (1) as an upstream fix that also works.
 **Which one to build — or whether the 80 are worth building anything for — is the owner's call, and
 is deliberately not answered here.**
+
+
+---
+
+## Status 2026-09-07 (later) — option (2) was BUILT; the 80 are 2, and neither is this ticket
+
+The owner chose (2) — let them share, bound the divergence — and it shipped on
+`feature/junction-stitch` as the DECK HOLD in `_applyJunctionBlend`: a leg rides the junction plane
+(or, at a promoted T, the trunk's built surface, banking included) until its pavement has parted
+from its sibling's, then recovers its own grade at ≤ `roadJunctionBlendMaxGrade`. With BUG-59's
+per-leg pad cutback and a same-node crossing exemption in `_detectJunctions`, `junction-stitch` went
+66 → 2. The two residues are planner topology: BUG-63 (mid-span run-key collision) and one BUG-55
+shape-E pair the disjoint census never resolved — seed 7 (-1652,1626), `g:-4,2,2:-3,2,2` passing
+through the T at (-1661.7,1625.0) at 0.0 m of separation with opposite banking. THAT pair is the
+only thing left in this ticket's remit, and it is one site.

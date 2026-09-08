@@ -364,7 +364,7 @@ export class RoadMeshSystem {
                 // this ribbon's own dash phase (road.js markPhase), so feathering here would punch a
                 // 20 m marking hole into a continuous road. Real (≥3-leg, padded) junctions still feather.
                 if (j.node && j.node.deg2) continue
-                const d = (Math.abs(aS - j.arc) - jCutback) / MARK_JUNCTION_FEATHER
+                const d = (Math.abs(aS - j.arc) - (j.cutback ?? jCutback)) / MARK_JUNCTION_FEATHER
                 if (d < f) f = d
             }
             return f < 0 ? 0 : (f > 1 ? 1 : f)
@@ -938,7 +938,9 @@ export class RoadMeshSystem {
                 for (let _i = 0; _i < Np; _i++) {
                     const aS = arcS0 + (arcS1 - arcS0) * (cum[_i] / tot)
                     let trimmed = false
-                    for (const j of jArcs) { if (Math.abs(aS - j.arc) < cutback) { trimmed = true; break } }
+                    // BUG-59: a leg whose pavement overlaps a sibling's past the default cutback is
+                    // trimmed to ITS parting point (j.cutback) — the pad owns that ground.
+                    for (const j of jArcs) { if (Math.abs(aS - j.arc) < (j.cutback ?? cutback)) { trimmed = true; break } }
                     if (!trimmed) { if (k0 < 0) k0 = _i; k1 = _i }
                 }
                 if (k0 < 0 || k1 - k0 < 1) { _bTrim += performance.now() - _ptTrim; continue }   // fully trimmed → the pad(s) cover this stub

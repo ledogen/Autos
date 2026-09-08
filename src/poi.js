@@ -494,6 +494,24 @@ export class PoiSystem {
      * earthwork to cap and no cross-slope to keep water off a pullout. What remains is "is there
      * real road here, and is the target on believable ground".
      */
+    /**
+     * THE OTHER-ROAD KEEP-OUT (owner, 2026-09-07). A site is evaluated against ITS edge: `lat`
+     * metres off that centreline, past its shoulder. Nothing checked the OTHER roads. Two legs of
+     * a junction leave it a road width and a half apart, and a house target 13 m off one of them
+     * landed 2.6 m from the other's centreline — the first customer of seed 1517161527's paper
+     * route sat on the neighbouring road's asphalt. So: the road nearest the site must be the
+     * site's own, and nothing else may pass inside the same `lat` the site keeps from its own road.
+     * One query, no routing change — a router-side keep-out would move roads for a placement
+     * problem.
+     */
+    _otherRoadNear (road, ownKey, cx, cz, lat) {
+        if (!road.queryNearest) return false
+        const hit = road.queryNearest(cx, cz, lat)
+        if (!hit || !hit.point) return false
+        if (hit.runKey === ownKey) return false
+        return Math.hypot(hit.point.x - cx, hit.point.z - cz) < lat
+    }
+
     _evaluateHouse (road, ed, s, side, P) {
         const cl = ed.centerline
         const cp = cl.pointAt(s)
@@ -511,6 +529,8 @@ export class PoiSystem {
         for (const nd of road.padReachNodes()) {
             if (Math.hypot(nd.x - cx, nd.z - cz) <= nd.reach) return null
         }
+        // 2b. OTHER roads (owner, 2026-09-07): see _otherRoadNear.
+        if (this._otherRoadNear(road, ed.key, cx, cz, lat)) return null
 
         // 3. There must actually be road to throw FROM. Null means the resolver found none here.
         const edgeLat = P.roadHalfWidth + P.roadShoulderWidth
@@ -897,6 +917,8 @@ export class PoiSystem {
         for (const nd of road.padReachNodes()) {
             if (Math.hypot(nd.x - cx, nd.z - cz) <= nd.reach) return null
         }
+        // 2b. OTHER roads (owner, 2026-09-07): see _otherRoadNear.
+        if (this._otherRoadNear(road, ed.key, cx, cz, lat)) return null
 
         // 3. The road's own surface at the shoulder edge on the pad side IS the pad's design top:
         //    carve the pad flush with the carved shoulder dirt and the lay-by is driveable-onto with

@@ -19,6 +19,10 @@
 //
 // Windows per seed are concentric-ish: the same ground reached from four different centres, which
 // is exactly how the streamer meets a T in play.
+//
+// BUG-61 added a second sweep with DISSIMILAR windows (a far 1400 m band versus 320 m play windows
+// centred on its Ts): the concentric set agreed among itself while the fork ranking still varied
+// with the window, because heavily overlapping bands rank the same. See the sweep below.
 
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
@@ -77,6 +81,46 @@ for (const seed of SEEDS) {
     }
   }
   console.log(`seed ${seed}: ${byKey.size} distinct T nodes across ${CENTERS.length} windows, ${[...byKey.values()].filter((o) => o.some((x) => x.inCore)).length} in core`)
+}
+
+// ── BUG-61: DISSIMILAR windows — the seam the game actually crosses ──────────────────────────
+// The four centres above overlap so heavily that they build nearly the same band, and the fork
+// ranking agreed between them while disagreeing at scale: the same T came out 4.0 m apart between
+// a 1400 m mission band centred 4.5 km out and the 320 m play window streamed at its drop point.
+// A determinism sweep over similar windows found 0 of 24 differing; the mission gate found the
+// bug. So: build a wide band far from the origin, then stream a PLAY-radius window centred on
+// each core T it contains, and demand the identical id, position and deck height. Different
+// radius, different centre, different set of in-band pairs — nothing but the plan in common.
+const FAR = [{ seed: '6', c: [4500, 600] }, { seed: '20', c: [-3800, 2200] }, { seed: '11', c: [2600, -3900] }]
+const PLAY_R = 320
+const PER_SEED = 10
+for (const { seed, c } of FAR) {
+  const wide = build(seed, c[0], c[1])
+  const core = [...wide._promoted].filter(([, r]) => Math.hypot(r.pos.x - c[0], r.pos.z - c[1]) < CORE)
+  // Deterministic sample: nearest to the centre first, so a re-run judges the same Ts.
+  core.sort((a, b) => Math.hypot(a[1].pos.x - c[0], a[1].pos.z - c[1]) - Math.hypot(b[1].pos.x - c[0], b[1].pos.z - c[1]))
+  let judged = 0
+  for (const [k, rec] of core.slice(0, PER_SEED)) {
+    const play = new RoadSystem(parseWorldSeed(seed), P)
+    play.setRadius(PLAY_R)
+    play.update(new THREE.Vector3(rec.pos.x, 0, rec.pos.z))
+    judged++; checked++
+    const hit = play._promoted.get(k)
+    if (!hit) {
+      // Name the nearest T the play window DID build, so a moved id reads as a moved id.
+      let near = null
+      for (const [pk, pr] of play._promoted) { const d = pr.pos.distanceTo(rec.pos); if (!near || d < near.d) near = { pk, d } }
+      console.log(`  FAIL ${seed}: T ${k} at (${rec.pos.x.toFixed(1)},${rec.pos.z.toFixed(1)}) in the ${RADIUS} m band is absent from the ${PLAY_R} m play window at its own position` +
+                  (near ? ` — nearest play T is ${near.pk}, ${near.d.toFixed(2)} m away` : ' — no T at all there'))
+      fails++; continue
+    }
+    const d = hit.pos.distanceTo(rec.pos)
+    if (d > 1e-9) { console.log(`  FAIL ${seed}: T ${k} moved ${d.toExponential(2)} m between the ${RADIUS} m band and the ${PLAY_R} m play window`); fails++ }
+    const deg = (play._proto.nodeInc.get(k) || []).length
+    if (deg !== 3) { console.log(`  FAIL ${seed}: T ${k} has degree ${deg} in the ${PLAY_R} m play window (want 3)`); fails++ }
+  }
+  console.log(`seed ${seed} @ (${c[0]},${c[1]}): ${core.length} core T nodes in the far band, ${judged} re-streamed at play radius`)
+  if (!judged) { console.log(`  FAIL ${seed}: the far band built no core T — the dissimilar-window sweep proved nothing`); fails++ }
 }
 
 // A promotion that never fires proves nothing — say so loudly rather than passing an empty gate.
