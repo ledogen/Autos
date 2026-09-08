@@ -3014,7 +3014,13 @@ export class RoadSystem {
         const PROX = C.mergeProxM ?? 18   // m — centre separation that counts as one shared road
         const GAPM = C.mergeGapM ?? 200    // m — longest flare the merge may bridge, along the run
         const FLARE = C.mergeFlareM ?? 60  // m — widest the pair may swing apart inside a merge
-        const MINREG = 30    // m — a merge shorter than this is pad-dressing territory
+        // m — the shortest shared throat worth merging. WAS 30, "pad-dressing territory" — but a pad
+        // reaches 10 m by rule and 13.5 m as built (BUG-59), so 13-30 m was owned by NEITHER the pad
+        // nor a merge, and every one of junction-stitch's 80 violations sat in that hole (10-28 m
+        // from the node, median 12). Lowered so the two regimes meet. Below ~20 it gets worse again
+        // (measured: 30 -> 80 sites, 20 -> 75, 14 -> 77) — a throat shorter than this cannot host a
+        // departure band at all, so admitting it only produces declines.
+        const MINREG = 20
         const MAXFRAC = 0.85 // sanity only — cross-node conflicts are checked PRECISELY at apply
                              // time (_v2MergeFor: the winner's own loser-region must not overlap the
                              // adopted strand). The old blanket 0.5 rejected the owner's captured
@@ -3222,6 +3228,22 @@ export class RoadSystem {
                 // a declined pair at 10–18 m of separation is legal R8 ground, but past 80 m from
                 // the node it would trip the 17.5 m parallel-runs floor — so a LONG hug merges
                 // (counted) even off a pinned approach. Seed 21's 175 m pair is the counted case.
+                // R6 vs R8 AT EXACTLY 10 m — A KNOWN CONTRADICTION, DELIBERATELY LEFT STANDING.
+                // R6 (2026-08-31) declines here whenever the pair keeps 2*halfWidth of centre
+                // separation. R8 (2026-09-01, the next day) says "under 10 m centre-to-centre ->
+                // ONE surface; AT 10 m -> the decks share an edge". Those disagree at exactly 10 m:
+                // R6 leaves two independent roads, R8 requires their decks to agree, and nothing
+                // enforces the second once R6 has declined. junction-stitch's violations sit in
+                // that gap — 10.0-12.1 m of centre separation, edges touching, decks a median
+                // 2.1 m apart.
+                //
+                // The owner ruled R8 wins (2026-09-07) and the fix was built and measured: raising
+                // this bar to 2*HWn + 4 (real daylight, not just one road width) buys 3 stitch
+                // violations and 4 T promotions. That was the SMALLEST of the three changes in the
+                // set and the owner dropped it on the numbers, keeping the two that carry their
+                // weight. The ruling stands and is recorded here; the code has not been changed to
+                // match it, so anyone re-opening this should apply `minSep >= 2 * HWn + 4` rather
+                // than re-litigate which rule wins.
                 if (!xingsEarly.length && minSep >= 2 * HWn && fLw <= (C.mergePinDeclineMaxM ?? 80)) {
                     this._v2MergeSkipped('pin-decline', `${L2.ck} keeps its pinned approach @${nk} (R6 — overlap ${fLw.toFixed(0)} m at >=${minSep.toFixed(1)} m, no crossings)`)
                     continue
@@ -4145,7 +4167,14 @@ export class RoadSystem {
                         const h = _nearestOnPolyXZ(c.forkPt.x, c.forkPt.z, T.points, T.polyCum)
                         if (!h || h.d > 4) continue
                         iP = _nearestVertexAtCum(T.polyCum, h.cum)
-                        if (T.polyCum[iP] < MINREG || tL - T.polyCum[iP] < MINREG) continue
+                        // A T MAY NOT CROWD AN EXISTING JUNCTION. MINREG only asks that road be left over; it does not
+                        // ask that the new node clear the pads at either end of the trunk. At 30 m a promoted T
+                        // lands beside an existing junction, both cut their ribbons back 10 m, and the run between
+                        // them ships ~11 m of asphalt under two overlapping pads (owner's render 04: seed 7,
+                        // -1666/1632 and -1684/1658, 31.6 m apart with 5.9 m of height between them). Worse, that
+                        // stub is what mission-network caught EVAPORATING between stream windows. 45 m clears both
+                        // pads plus a real length of road.
+                        if (T.polyCum[iP] < 45 || tL - T.polyCum[iP] < 45) continue
                         P = T.points[iP]
                         const lo = nAtStart ? 0 : sideL * 0.15, hi = nAtStart ? sideL * 0.85 : sideL
                         const lh = _nearestOnPolyXZ(P.x, P.z, side.points, side.polyCum, lo, hi)
@@ -4155,9 +4184,14 @@ export class RoadSystem {
                     const kept = nAtStart ? sideL - side.polyCum[iL] : side.polyCum[iL]
                     if (kept < MINREG) continue
                     const grade = _trunkGradeAt(T, iP)
+                    // Promotable iff a departure BUILDS. Whether it CLEARS the acceptance tests no
+                    // longer decides — the assembly ships the best available T either way (owner
+                    // ruling 2026-09-07), so a probe that answered "no" on a failed test would stand
+                    // the crossing rung down for a resolution that does in fact arrive.
                     for (const RB of [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]) {
                         const b = this._v2BuildDeparture(side, iL, nAtStart, P, RB)
-                        if (b && !this._v2DepartureAccepts(b, T, P, grade)) {
+                        if (b) {
+                            this._v2DepartureAccepts(b, T, P, grade)   // scores it; verdict unused
                             // QUAL-30: record what this promotion will do to the loser's PURE arc, so
                             // _v2CededExtents can read the sanction off the winning rung instead of
                             // dry-assembling a merge to find out. Two parts, and both must be in it:
@@ -4683,6 +4717,9 @@ export class RoadSystem {
         const wk0 = `g:${wCells[0]}:${wCells[1]}`
         const vs = this._v2ForkCandidates(g, pr, side, nAtStart, sideL, wk0, wCells)
         if (!vs.length) return decline('no node-anchored variant')
+        // OWNER RULING 2026-09-07: A T IS ALWAYS PREFERRED TO NO T. The acceptance tests RANK the
+        // candidates; they do not veto. See the note at the fallback below for why.
+        let best = null
         for (const v of vs) {
             // Which piece of the trunk carries this fork (it may already have been split).
             let T = null, tKey = null, tHit = null
@@ -4698,7 +4735,14 @@ export class RoadSystem {
             // point that EXISTS in the geometry rather than one interpolated onto it.
             const iP = _nearestVertexAtCum(T.polyCum, tHit.cum)
             const tL = T.polyCum[T.polyCum.length - 1]
-            if (T.polyCum[iP] < MINREG || tL - T.polyCum[iP] < MINREG) continue
+            // A T MAY NOT CROWD AN EXISTING JUNCTION. MINREG only asks that road be left over; it does not
+                        // ask that the new node clear the pads at either end of the trunk. At 30 m a promoted T
+                        // lands beside an existing junction, both cut their ribbons back 10 m, and the run between
+                        // them ships ~11 m of asphalt under two overlapping pads (owner's render 04: seed 7,
+                        // -1666/1632 and -1684/1658, 31.6 m apart with 5.9 m of height between them). Worse, that
+                        // stub is what mission-network caught EVAPORATING between stream windows. 45 m clears both
+                        // pads plus a real length of road.
+                        if (T.polyCum[iP] < 45 || tL - T.polyCum[iP] < 45) continue
             const P = T.points[iP]
             const pid = _promotedId(P.x, P.z), pKey = g.key(pid)
             if (this._promoted.has(pKey)) continue         // two forks on one vertex — degenerate
@@ -4723,10 +4767,30 @@ export class RoadSystem {
                 const built = this._v2BuildDeparture(side, iL, nAtStart, P, Math.max(RB, Rmin))
                 if (!built) continue
                 const why = this._v2DepartureAccepts(built, T, P, grade)
-                if (why) { this._v2MergeSkipped('promote-accept', `${pr.sideKey} ${why}`); continue }
-                this._v2CommitPromotion(g, pieces, pr, { T, tKey, wk0, iP, P, pid, pKey, side, sideKey, nAtStart, nKey, built, grade })
-                return true
+                const ctx = { T, tKey, wk0, iP, P, pid, pKey, side, sideKey, nAtStart, nKey, built, grade }
+                if (!why) { this._v2CommitPromotion(g, pieces, pr, ctx); return true }
+                if (!best || built._score < best.score) best = { score: built._score, ctx, why }
             }
+        }
+        if (best) {
+            // NOTHING CLEARED — SO SHIP THE BEST ONE ANYWAY. Owner ruling 2026-09-07: "the wye
+            // geometry is generally a bad thing to have, we would prefer them to be Ts."
+            //
+            // This is not indulgence, it is what the measurement says. Declining a promotion does
+            // NOT remove the deck step the test is objecting to — the two roads still run a road
+            // width apart with the same profiles. It removes the JUNCTION and leaves the step. And
+            // it is worse than that: promoting PINS the side road's start to the trunk's deck at P,
+            // and that constraint is what was holding the two decks together. Measured over the
+            // seven junctions this used to decline, the worst nearby deck step went the wrong way
+            // in five of them — 5.04 m -> 13.20 m at seed 11 (-1754,-280), 2.81 -> 4.70 at seed 7
+            // (-221,885) — because a declined side road solves its profile freely from its own node.
+            //
+            // So the test keeps its job, which is choosing the best fork and rung, and loses the one
+            // it should never have had: refusing the whole junction on a defect that gets worse
+            // without it. The residual is counted, not hidden, and it is junction-stitch's subject.
+            this._v2MergeSkipped('promote-residual', `${pr.sideKey} shipped as the best available T — ${best.why}`)
+            this._v2CommitPromotion(g, pieces, pr, best.ctx)
+            return true
         }
         return decline('no variant promoted')
     }
@@ -4786,13 +4850,18 @@ export class RoadSystem {
                 const kept = en.nAtStart ? side.polyCum[side.polyCum.length - 1] - side.polyCum[iL] : side.polyCum[iL]
                 if (kept < MINREG) { ok = false; break }
                 const grade = _trunkGradeAt(T, iP)
-                let built = null
+                // Same ruling as the node-anchored path: the tests rank, they do not veto.
+                let built = null, bestB = null, bestWhy = null
                 for (const RB of [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]) {
                     const b = this._v2BuildDeparture(side, iL, en.nAtStart, P, RB)
                     if (!b) continue
                     const why = this._v2DepartureAccepts(b, T, P, grade)
-                    if (why) { this._v2MergeSkipped('promote-accept', `${pr.sideKey} mid-span ${why}`); continue }
-                    built = b; break
+                    if (!why) { built = b; break }
+                    if (!bestB || b._score < bestB._score) { bestB = b; bestWhy = why }
+                }
+                if (!built && bestB) {
+                    this._v2MergeSkipped('promote-residual', `${pr.sideKey} mid-span shipped as the best available T — ${bestWhy}`)
+                    built = bestB
                 }
                 if (!built) { ok = false; break }
                 plans.push({ T, tKey, wk0, iP, P, pid, pKey, side, sideKey, nAtStart: en.nAtStart, nKey: null, built, grade })
@@ -5055,7 +5124,13 @@ export class RoadSystem {
         // is the pad-side equivalent already in place for ordinary junctions". Measured without this
         // exclusion, 7 of seed 6's 10 forks were condemned for deck gaps 4-10 m from the node, which
         // is paved plaza, not a wall between two ribbons.
-        const padR = (this._params?.roadJunctionCutback ?? 10) + (this._params?.roadHalfWidth ?? 5)
+        // R3 (owner, 2026-08-31): A PAD REACHES 10 m AT MOST — "the ruled bar, not the built reach".
+        // FEAT-76 used roadJunctionCutback + roadHalfWidth = 15 m here, which is exactly the
+        // "instrument margin" R3 tightened away, so the departure was being judged from 5 m further
+        // out than the ruling allows. Measured 2026-09-07: 31 of the 34 junction-stitch violations
+        // that sit at a promoted T fall in that 10-15 m ring — they were real, and this test was
+        // looking past them.
+        const padR = 10
         // ── B6: the departure grade — the steepest 12 m the driver actually meets leaving the T.
         //
         // The CAP is the road's own grade, not a fixed number, and that is a change from how the
@@ -5094,7 +5169,10 @@ export class RoadSystem {
         const own = worst12(0, n - 1, false)
         const ramp = this._params?.roadJunctionBlendMaxGrade ?? 0.12
         const depCap = Math.min(ceiling, Math.max(Cst.gMaxRoad ?? 0.24, own + ramp))
-        if (worst > depCap) return `departure grade ${(100 * worst).toFixed(0)}% > cap ${(100 * depCap).toFixed(0)}% (the run's own worst 12 m is ${(100 * own).toFixed(0)}%)`
+        built._gradeOver = Math.max(0, worst - depCap)
+        const gradeWhy = worst > depCap
+            ? `departure grade ${(100 * worst).toFixed(0)}% > cap ${(100 * depCap).toFixed(0)}% (the run's own worst 12 m is ${(100 * own).toFixed(0)}%)`
+            : null
         // ── B3: the seam — two decks may not diverge faster than the ground between them can slope.
         // Only where the pavements TOUCH; past a couple of metres of daylight the ground between
         // them is ordinary embankment and the ordinary carve builds it.
@@ -5102,6 +5180,7 @@ export class RoadSystem {
         const HWs = this._params?.roadHalfWidth ?? 5
         const NEARW = this._v2Costs().mergeProxM ?? 18
         const cam = this._computeCamberArrays(T.points, 0, 0)
+        let seamOver = 0, seamWhy = null
         for (let i = i0; i <= i1; i++) {
             if (!inBand(i)) continue
             const q = _nearestOnPolyXZ(pts[i].x, pts[i].z, T.points, T.polyCum)
@@ -5111,9 +5190,17 @@ export class RoadSystem {
             const latQ = (pts[i].x - q.fx) * q.tz - (pts[i].z - q.fz) * q.tx
             const gap = Math.abs(yb[i] - (q.y + latQ * Math.sin(this._v2CamAtArc(cam, q.cum))))
             const allow = TOLW + FILLV * sep
-            if (gap > allow) return `departure deck gap ${gap.toFixed(2)} m at ${sep.toFixed(1)} m of edge separation, ${dOf(i).toFixed(0)} m out from the T (allowed ${allow.toFixed(2)})`
+            void 0
+            if (gap - allow > seamOver) {
+                seamOver = gap - allow
+                seamWhy = `departure deck gap ${gap.toFixed(2)} m at ${sep.toFixed(1)} m of edge separation, ${dOf(i).toFixed(0)} m out from the T (allowed ${allow.toFixed(2)})`
+            }
         }
-        return null
+        built._seamOver = seamOver
+        // The SCORE is what ranks candidates when none of them clears. Deck step in metres dominates;
+        // grade excess is weighted to be comparable (a 1 % overshoot ~ 10 cm of step).
+        built._score = seamOver + built._gradeOver * 10
+        return gradeWhy || seamWhy
     }
 
     // Apply the promotion: split the trunk at P into two ordinary runs, replace the side run with
