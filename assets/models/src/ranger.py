@@ -368,6 +368,22 @@ def quad(part, a, b, c, d, mat):
     part.add([a, b, c, d], [[0, 1, 2, 3]], mat)
 
 
+def oriented_quad(part, a, b, c, d, mat, facing):
+    """One quad, wound so its normal points along `facing`.
+
+    For OPEN ribbons.  orient_islands() flips closed shells and deliberately leaves
+    an open island as authored, so a ribbon's winding is the author's problem — same
+    reason frame() orients per-face rather than trusting a normal recalc.
+    """
+    import mathutils
+    va, vb, vc = (mathutils.Vector(v) for v in (a, b, c))
+    cr = (vb - va).cross(vc - va)
+    pts = [a, b, c, d]
+    if cr.length > 1e-9 and cr.normalized().dot(mathutils.Vector(facing)) < 0:
+        pts.reverse()
+    part.add(pts, [[0, 1, 2, 3]], mat)
+
+
 def frame(part, outer, inner, mat, facing=(0.0, 1.0, 0.0)):
     """Flat annulus between two same-plane rings: a panel WITH A HOLE IN IT.
 
@@ -664,6 +680,24 @@ W_DOORCARD = 0.700                         # inner face of the door trim
 # point as well: the ring gained a point instead of losing one, every band index
 # after it shifted by two, and BED_BANDS painted the whole left flank with the
 # underbody's dark band.  The owner saw it as "left bedside turned black".
+def bevel_ring(ring, idx, inset):
+    """Copy of `ring` with the points in `idx` — the section's OUTER arc — pulled inboard
+    by `inset`.
+
+    Used as a loft's END ring it turns a square cap into a chamfer for one extra ring:
+    the band between it and the full section behind it IS the bevel.  That is the cheapest
+    honest way to round a panel's end edge, and flat shading gives the result a highlight
+    line for free.  `idx` is folded onto the right half, so one index covers both sides.
+    """
+    n = len(ring)
+    half = (n + 2) // 2
+    out = []
+    for i, (x, y, z) in enumerate(ring):
+        k = i if i < half else n - i
+        out.append((x - math.copysign(inset, x) if k in idx else x, y, z))
+    return out
+
+
 def clip_ring(y):
     """16-point closed section for the front clip (hood + fenders + nose)."""
     wo, wb, ztop, crown, sq = _interp(CLIP_ST, y)
@@ -711,6 +745,10 @@ def cab_ring(y):
             + [(-x, y, z) for x, z in reversed(r[1:-1])])
 
 
+BED_END_EDGE = 0.022               # chamfer on the bed's LEADING vertical edge, and
+CAB_END_EDGE = 0.022               # on the cab's TRAILING one.  They face each other
+                                   # across an 80 mm gap, so the pair must not eat it:
+                                   # 22 + 22 leaves 36 mm of daylight between them.
 BED_EDGE = 0.038                   # chamfer on the bed's TOP edge only.  20 mm until
                                    # 2026-09-07 (owner: "bedside exterior top edge should
                                    # get a bigger chamfer to make the bedsides look
@@ -993,6 +1031,18 @@ def build_front_clip(p):
 def build_cab(p):
     ys = simplify_stations([Y_COWL, 0.300, -0.080, -0.400, Y_CAB_REAR], cab_ring)
     rings = [cab_ring(y) for y in ys]
+    # A CHAMFERED TRAILING EDGE (owner, 2026-09-07: "the leading edge of the bed should
+    # have a chamfer as should the trailing edge of the cab").  These two face each other
+    # across an 80 mm gap and are the only vertical panel ends on the truck that are read
+    # at close range from a three-quarter view; square, they look stamped off.
+    #
+    # The inserted ring is a FULL section one bevel back, so the last ring can be the
+    # inset one at Y_CAB_REAR itself — the bed's end does not move, only its corner.
+    # It has to go in AFTER simplify_stations(): the two sections are identical apart
+    # from the inset, so the simplifier would drop the inserted one and stretch the
+    # bevel over the whole 230 mm to the next real station.
+    rings.insert(len(rings) - 1, cab_ring(Y_CAB_REAR + CAB_END_EDGE))
+    rings[-1] = bevel_ring(rings[-1], (4, 5, 6), CAB_END_EDGE)
     # cap_first at the cowl would z-fight the firewall the front clip already put
     # there, so it is omitted; loft() still orients from the virtual closed volume.
     loft(p, rings, "RangerPaint", cap_first=False, cap_last=True,
@@ -1010,10 +1060,13 @@ def build_cab(p):
     #
     # build_greenhouse() closes the band ABOVE the beltline, either side of the
     # backlight.  This closes the band below it, from the cabin floor up to meet that.
-    # Width stops at W_DOORCARD because outboard of there the U's own cap is already
-    # solid; depth overlaps the interior's rear wall so the two cannot leave a seam.
-    box(p, -W_DOORCARD, W_DOORCARD, Y_CAB_REAR - 0.004, Y_CAB_REAR + 0.024,
-        Z_FLOOR, Z_BELT, "RangerPaint")
+    # It is deliberately a few mm BIGGER than the void it fills, on both axes.  Sized to
+    # W_DOORCARD and Z_FLOOR exactly, its side and bottom faces land on the U's own door
+    # card and floor — coplanar, and the audit caught all three.  Oversizing buries them
+    # in the shell instead; undersizing would have left a hairline of dark interior
+    # showing round the panel's edge, which is the fault this is here to fix.
+    box(p, -W_DOORCARD - 0.006, W_DOORCARD + 0.006, Y_CAB_REAR - 0.004,
+        Y_CAB_REAR + 0.024, Z_FLOOR - 0.008, Z_BELT, "RangerPaint")
 
 
 # THE TAIL GETS THE NOSE'S TREATMENT (owner, 2026-09-04).  Same architecture as
@@ -1160,10 +1213,19 @@ TAIL_LAMP_MATS = {0: DARK, 2: "RangerLens", 4: DARK, 5: DARK}
 # flank — and ALL OF IT COMES OFF THE TOP.  Owner, 2026-09-07: "bottom edge needs to be
 # horizontal.  top can have a slight taper".  It used to be split evenly between the two
 # edges, which made the lens a lozenge; the floor is dead flat now and only the ceiling
-# rakes.  Values are lower to suit, because a taper that used to be shared is twice as
-# visible once it is all on one edge.  ONE ENTRY PER RING: the rim rings rearmost-first,
-# then the last full section.
-TAIL_LAMP_SHRINK = (0.0, 0.02, 0.06, 0.14, 0.28)
+# rakes.  Quartered again on the same day ("much less taper on top of taillight like 25%
+# of current size"): all it has to do now is stop the lens ending on a hard square corner
+# where it dies on the flank.  ONE ENTRY PER RING: the rim rings rearmost-first, then the
+# last full section.
+TAIL_LAMP_SHRINK = (0.0, 0.005, 0.015, 0.035, 0.070)
+# ROUND ON THE FORWARD END'S CORNERS — the pair where the lens dies on the flank.  Owner,
+# 2026-09-07: "round the front corners of the taillight.  the corners adjacent to the
+# tailgate can stay sharp".  So this is zero at station 0, which IS the tailgate end, and
+# grows only over the last few.  Unlike the shrink it comes off BOTH edges, because a
+# corner radius is not a taper: confined to the forward stations it rounds an end, and the
+# bottom stays dead level everywhere the lens is actually seen face-on.  Metres, not a
+# fraction of the span, so it reads as a radius and does not scale if the band grows.
+TAIL_LAMP_ROUND = (0.0, 0.0, 0.004, 0.014, 0.034)
 
 
 def tail_skin_path(sx, z):
@@ -1203,8 +1265,11 @@ def tail_lamp(p, sx):
         tx, ty = b[0] - a[0], b[1] - a[1]
         L = math.hypot(tx, ty) or 1.0
         nx, ny = sx * ty / L, -sx * tx / L
-        # FLOOR IS A CONSTANT, ceiling takes the whole taper — see TAIL_LAMP_SHRINK.
-        z0, z1 = Z_TAIL0, Z_TAIL1 - span * TAIL_LAMP_SHRINK[i]
+        # FLOOR IS A CONSTANT and the ceiling takes the whole taper (TAIL_LAMP_SHRINK);
+        # both then give up TAIL_LAMP_ROUND at the forward end, which is the corner radius.
+        rnd = TAIL_LAMP_ROUND[i]
+        z0 = Z_TAIL0 + rnd
+        z1 = Z_TAIL1 - span * TAIL_LAMP_SHRINK[i] - rnd
         h = z1 - z0
 
         def at(off, u):
@@ -1233,6 +1298,12 @@ def build_bed(p):
     ys = [y for y in ys if Y_BED_R <= y <= Y_BED_F]
     ys = simplify_stations(ys, bed_ring)
     rings = [bed_ring(y) for y in ys]
+    # ...and the bed's LEADING edge, the same way — see build_cab().  The arc stops at
+    # BED_I_RAIL_TOP: BED_I_RAIL_IN is the tub's own wall, not outer skin, and pulling it
+    # in would narrow the bed's mouth rather than round its corner.
+    rings.insert(1, bed_ring(Y_BED_F - BED_END_EDGE))
+    rings[0] = bevel_ring(rings[0], (BED_I_SILL, BED_I_HIP,
+                                     BED_I_RAIL_OUT, BED_I_RAIL_TOP), BED_END_EDGE)
     base_last = rings[-1]
     # Rear rim: three rings that turn the bedsides INTO the tail and roll the rail
     # line forward as it meets the tailgate.
@@ -1590,10 +1661,22 @@ def build_front_end(p):
     # station 5; that is the line it must not cross.
     NOSE_LAMP_ROUND = (0.0, 0.0, 0.0, 0.0, 0.0,
                        0.004, 0.010, 0.016, 0.024, 0.034)
-    NOSE_LAMP_TAIL = 0.060           # how far back along the STRAIGHT fender the lamp
-                                     # runs past the rim blend.  Measured off IMG_0879:
-                                     # the reference amber shows ~135 mm from the side
-                                     # and the rim is only 84 mm deep.
+    LAMP_REVEAL = 0.008              # the shadow gap between the frame's edge and the
+                                     # lens.  NOT a free number: the nose aperture
+                                     # already has exactly this gap (the lamp's section
+                                     # runs z0w = OPEN_Z0 + 0.008 to OPEN_Z1 - 0.008
+                                     # inside a hole cut at OPEN_Z0..OPEN_Z1), and the
+                                     # fender reveal has to be the same width or the
+                                     # cutout visibly changes section at the corner.
+    NOSE_LAMP_TAIL = 0.035           # how far back along the STRAIGHT fender the lamp
+                                     # runs past the rim blend.  60 mm off IMG_0879
+                                     # originally — the reference amber shows ~135 mm from
+                                     # the side and the rim is only 84 mm deep — pulled to
+                                     # 35 on 2026-09-07 ("pull the rear edges of the
+                                     # ambers forward a little"), leaving ~112 mm.  This
+                                     # is the ONLY station it moves: everything ahead of
+                                     # it is pinned to a rim ring, so shortening the lamp
+                                     # never disturbs the corner it wraps.
 
     def head_lamp(sx):
         z0w = OPEN_Z0 + 0.008
@@ -1627,6 +1710,7 @@ def build_front_end(p):
         zm = 0.5 * (z0w + OPEN_Z1 - 0.008)
         path = [station(i, zm) for i in range(n)]
         rings = []
+        edges = []                       # reveal geometry per station — see below
         for i in range(n):
             # Outward normal = the plan tangent turned a quarter turn, taken from the
             # NEIGHBOURS so consecutive sections share it and the sweep cannot kink.
@@ -1649,9 +1733,16 @@ def build_front_end(p):
                 bx, by = station(i, z)
                 d = lean * u                             # zero at the base, full at the top
                 return (bx + nx * o + ux * d, by + ny * o + uy * d, z)
-            rings.append([at(off - NOSE_LAMP_BACK, 0.0), at(off, 0.06),
-                          at(off + bul, 0.5), at(off, 0.94),
-                          at(off - NOSE_LAMP_BACK, 1.0)])
+            ring = [at(off - NOSE_LAMP_BACK, 0.0), at(off, 0.06),
+                    at(off + bul, 0.5), at(off, 0.94),
+                    at(off - NOSE_LAMP_BACK, 1.0)]
+            rings.append(ring)
+            # Offset 0 IS the skin, and u is allowed outside [0, 1] on purpose: it
+            # extrapolates the section's own z ramp AND its lean together, so the
+            # reveal keeps a constant width against a leaning end face instead of
+            # opening up at the top corner.
+            ub, ut = -LAMP_REVEAL / h, 1.0 + LAMP_REVEAL / h
+            edges.append((ring[1], ring[3], at(0.0, ub), at(0.0, ut), (ux, uy)))
         # The divider is a band material, not a body boundary — see the note above.
         def lens_mat(seg, _k):
             return "RangerLens" if seg < N_CLEAR else "RangerAmber"
@@ -1659,6 +1750,38 @@ def build_front_end(p):
         # outboard one is where the lens dies on the fender.
         loft(p, rings, "RangerLens", band_mats=lens_mat,
              cap_first_mat=DARK, cap_last_mat=DARK)
+
+        # THE CUTOUT CONTINUES ONTO THE FENDER (owner, 2026-09-07: "continue that
+        # cutout around on the fender so it frames the entire light cluster").
+        #
+        # On the nose the cluster sits in a real opening: frame() cuts the hole, and
+        # the 8 mm of nothing between the frame's inner edge and the lens is what
+        # reads as a cutout.  Outboard of station N_FACE-1 the frame stops — the nose
+        # cap has run out of nose — and the lamp simply carries on across the fender
+        # standing 9 mm proud of it, which is a lamp GLUED ON, not one let in.
+        #
+        # This is that 8 mm continued.  A ribbon from the lens's own silhouette edge
+        # back down to the skin, dark, so the eye reads a shadow gap all the way round
+        # and the paint outboard of it becomes the frame.  It is a WALL, not a flat
+        # strip lying on the fender: a strip would be coplanar with the skin and
+        # z-fight it under engine lighting.
+        #
+        # It starts at N_FACE-1, where the aperture's outer edge is, and the seam is
+        # exact rather than close — at that station the ribbon's outer edge solves to
+        # (OPEN_X, nose_y, OPEN_Z0) and (OPEN_X, nose_y, OPEN_Z1), which are the
+        # frame's own inner corners.  So the two hand off with no step, and the
+        # ribbon's depth grows from ~2 mm there to the full 9 mm on the flank exactly
+        # as NOSE_LAMP_FACE ramps the lens out of its hole.
+        #
+        # The top edge follows NOSE_LAMP_ROUND down, so the frame rounds the cluster's
+        # top outer corner WITH the lens instead of cutting across it.
+        for i in range(N_FACE - 1, n - 1):
+            lb0, lt0, sb0, st0, _ = edges[i]
+            lb1, lt1, sb1, st1, _ = edges[i + 1]
+            oriented_quad(p, sb0, sb1, lb1, lb0, DARK, (0.0, 0.0, -1.0))
+            oriented_quad(p, st0, st1, lt1, lt0, DARK, (0.0, 0.0, 1.0))
+        lb, lt, sb, st, (ux, uy) = edges[n - 1]
+        oriented_quad(p, sb, st, lt, lb, DARK, (ux, uy, 0.0))
 
     for sx in (1, -1):
         head_lamp(sx)
