@@ -1,7 +1,7 @@
 ---
 id: FEAT-82
 type: feature
-status: pending
+status: completed
 severity: high
 ---
 
@@ -70,5 +70,14 @@ hold length (seed 6 (-926,-501): +3 m over 11 m) — the trunk keeps its banking
 
 - [x] no circle-fallback pads in the seed 6/7/11 battery; every ring is fillet-bounded (1 circle, 1 hull of 210).
 - [~] `junction-stitch` gate: 5 residual rows (4 inherited); the 3 m "drop in and climb out" is gone.
-- [ ] pad mesh == pad physics (the pad-census / carve-mesh-smoothness gates stay green).
-- [ ] owner drive-through at speed: no bump entering or leaving a junction.
+- [x] pad mesh == pad physics (pad-census / carve-mesh-smoothness green).
+- [x] owner drive-through at speed: "a, b and c feel great."
+
+
+## Resolution (2026-09-08)
+
+Shipped on `feature/driving-feel` on top of the junction-stitch merge; owner drive-through:
+"a, b and c feel great." The pad SURFACE was already the legs' cross-sections blended in the gores
+(`_nodeSurfaceTop`); what made it read as painted-on terrain was the plane's terrain bias and the
+plane-to-own-grade handoff — both fixed. Residuals in the ticket body (seed 20 8 cm edge step;
+banked-trunk T hump). Handoff: `.planning/handoffs/HANDOFF-2026-09-08-driving-feel-merge.md`.

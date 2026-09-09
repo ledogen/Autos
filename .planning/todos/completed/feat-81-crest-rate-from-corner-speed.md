@@ -1,7 +1,7 @@
 ---
 id: FEAT-81
 type: feature
-status: pending
+status: completed
 severity: high
 ---
 
@@ -63,5 +63,13 @@ the trunk deck). That is FEAT-82 / junction-stitch ground, not the solver's.
 - [x] a headless ride probe walks every road at par's local speed and reports vertical acceleration;
       nothing exceeds 1 g on a crest at that speed (the car stays planted) — outside junction blends.
 - [x] the same probe reports the residual "wobble" spectrum on straights; the 4 m polyline corner is gone (C¹).
-- [ ] earthwork totals and route choice change only where crests were illegal (no re-route storm).
-- [ ] `priced == built` gates stay green; the network hash gate is re-baselined deliberately, not by accident.
+- [~] route choice unchanged by construction (post-pass); earthwork totals not measured.
+- [x] `priced == built` gates stay green; no hash re-baseline was needed.
+
+
+## Resolution (2026-09-08)
+
+Shipped on `feature/driving-feel`; owner: "a, b and c feel great." Route choice is untouched by
+construction (the crest rule is a post-pass on the solved profile); earthwork totals were not
+measured. The determinism / parity gates stayed green through the change, so no hash was
+re-baselined. Handoff: `.planning/handoffs/HANDOFF-2026-09-08-driving-feel-merge.md`.

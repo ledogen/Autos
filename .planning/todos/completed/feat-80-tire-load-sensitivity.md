@@ -1,7 +1,7 @@
 ---
 id: FEAT-80
 type: feature
-status: pending
+status: completed
 severity: high
 ---
 
@@ -52,4 +52,12 @@ sideways for the frame it was loaded, four to five times its static grip (static
 - [x] grip load peaks near the rated load and falls to < ½ peak by 2× rated; never below the floor.
 - [x] weight transfer reduces the axle grip sum for every Δ.
 - [x] all physics gates green (`npm test`, 13 physics gates, 2026-09-08).
-- [ ] owner feel-test: bumps at speed no longer kick the tail; skidpad still lands near μ 0.72–0.74.
+- [x] owner feel-test: "feels great"; skidpad lands at μ 0.64–0.65 (kept; par re-anchored instead).
+
+
+## Resolution (2026-09-08)
+
+Shipped on `feature/driving-feel`. Owner feel-test: "a, b and c feel great." Lab skidpad on the
+merged tree: mu 0.654 / 0.645 / 0.643 at 25 / 60 / 150 m (was 0.72–0.74) — an 11 % uniform grip
+cut the owner kept, and par's mu was re-anchored 0.80 → 0.72 to match (par.js note (6), runs-v2
+0013–0020). Handoff: `.planning/handoffs/HANDOFF-2026-09-08-driving-feel-merge.md`.
