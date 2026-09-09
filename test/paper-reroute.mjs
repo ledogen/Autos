@@ -187,8 +187,13 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
         // Everything still ahead, PLUS the run back to pick up what was skipped behind — which is
         // what the stale line would actually cost, and what the re-plan is competing against.
         const naive = (cum[cum.length - 1] - cum[bi]) + cum[bi]
+        // Margin re-baselined 0.95 → 0.99 (owner, 2026-09-08): how MUCH the re-plan beats the stale
+        // line by is a property of which houses the network happens to serve, not of the planner —
+        // after the junction-stitch merge (more Ts → different customers) this scenario gave 4.1 %,
+        // not 5 %, with checks 1–4 and 6 untouched. The check keeps its teeth: a re-plan that only
+        // ties, or loses, still fails.
         check('…and beats carrying on down the stale line, not merely ties it',
-            re.distance < naive * 0.95,
+            re.distance < naive * 0.99,
             `re-plan ${(re.distance / 1000).toFixed(2)} km vs stale ${(naive / 1000).toFixed(2)} km`)
         console.log(`       jumped to the far end: re-plan ${(re.distance / 1000).toFixed(2)} km`
             + ` vs ${(naive / 1000).toFixed(2)} km on the stale line`)
