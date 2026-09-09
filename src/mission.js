@@ -571,7 +571,17 @@ export class MissionSystem {
         // FEAT-43 guard 1: drop everything outside the story region before any planning happens.
         // buildGraphAdj applies it per EDGE — see the note there for why that is the part that
         // matters. Guard 2 (the routed polyline) is further down.
+        // FEAT-77 follow-up (2026-09-08): with no story region, fence the roll to the BAND the
+        // network was streamed on, less the same margin. The streamed graph reaches well past its
+        // nominal radius (FEAT-43 measured 2783 m of nodes on a 1400 m band), and a T on that
+        // frontier can exist in this band and not in the 320 m play band the truck streams on
+        // arrival — its side road's far node lies beyond the other band's graph margin. A mission
+        // planned onto a frontier edge then "evaporates" (mission-network's drop-point check,
+        // seed 6 (3825,-1225): 1.95 km from a 1400 m band centre). Ground inside the radius is
+        // complete in both bands; the frontier is not, and it is not the planner's to roll on.
         const region = this._getRegion()
+            ?? (road._networkCenter && road._proto?.radius
+                ? { x: road._networkCenter.x, z: road._networkCenter.z, r: road._proto.radius } : null)
         const rMax = region ? region.r - REGION_MARGIN : Infinity
         const inRegion = (p) => !region || Math.hypot(p.x - region.x, p.z - region.z) <= rMax
 
