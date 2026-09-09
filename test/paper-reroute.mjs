@@ -170,29 +170,107 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
 // customer near the far END of the route and re-plans from there, which is exactly the "ignored the
 // GPS and drove to a different house" case. Here the original order is genuinely bad, and the
 // re-plan has to be measurably better or the feature is not earning its frames.
+// TWO FIXES HERE, 2026-09-07.
+//
+// (1) THE STALE METRIC WAS DEGENERATE. It read `(cum[last] - cum[bi]) + cum[bi]`, in which `bi`
+//     cancels — algebraically just `cum[last]`, the whole baked tour length, no matter where the
+//     player jumped. So the comparison was "13-stop re-plan vs the full 15-stop tour", not "carry on
+//     from here". The honest stale cost is the one the comment above always described: drive the tail
+//     forward from the jump point, THEN run back for the earliest customer you skipped behind.
+//
+// (2) THE 5% BAR WAS A PROPERTY OF ONE DRAW, not of the feature. The planner is exact (Held-Karp,
+//     paper-route.js:307), so a thin margin never means a weak planner — it means that particular
+//     stale order happened to be near-optimal. Which customers get drawn is keyed to graph edge
+//     endpoints (poi.js `house:${ka}|${kb}:${k}`), so ANY worldgen change reshuffles the draw and with
+//     it the margin: a cutMax 20 -> 25 slider move took this single scenario from 19% to 1.7% and
+//     turned the gate red while the feature was working perfectly.
+//
+// So: sweep every jump point across the tier ladder in two worlds and assert the DISTRIBUTION.
+// Measured over 4 seeds × 39 scenarios with the corrected metric — median gain 20.5/25.7/31.5/46.1%,
+// worst single scenario −1.3%, and zero scenarios below −2% anywhere. Bars sit ~2x below the weakest
+// seed's median with the per-scenario floor reusing the same 1.02 metric-artefact slack as the
+// mid-route check above (the DP minimises the planner's mixed chord/arc graph metric while `distance`
+// is computePar's true arc, so a hairline overshoot is an artefact; a large one is a real regression).
+//
+// Seeds are the expensive axis (~10 s of road.update() each) and jump points are free (~4 ms a
+// re-plan), so two worlds × 39 scenarios buys far more evidence than four worlds × one scenario would.
+// Add a seed to FAR_END_WORLDS if that ever stops being enough.
 {
-    const far = base.customers[base.customers.length - 2]
-    const left = base.customers.filter(c => c.id !== far.id && c.id !== base.customers[0].id)
-    const re = plan(far, left, left.length, Infinity)
-    check('a re-plan after jumping to the far end of the route succeeds', !!re)
-    if (re) {
-        // Carrying on from the far stop in the ORIGINAL order means driving the tail, then all the
-        // way back for everything skipped. Priced the same way as above, along the original poly.
-        const cum = base.polyCum, poly = base.poly
+    const idxOf = (poly, p) => {
         let bi = 0, bd = Infinity
         for (let i = 0; i < poly.length; i++) {
-            const d = (poly[i].x - far.x) ** 2 + (poly[i].z - far.z) ** 2
+            const d = (poly[i].x - p.x) ** 2 + (poly[i].z - p.z) ** 2
             if (d < bd) { bd = d; bi = i }
         }
-        // Everything still ahead, PLUS the run back to pick up what was skipped behind — which is
-        // what the stale line would actually cost, and what the re-plan is competing against.
-        const naive = (cum[cum.length - 1] - cum[bi]) + cum[bi]
-        check('…and beats carrying on down the stale line, not merely ties it',
-            re.distance < naive * 0.95,
-            `re-plan ${(re.distance / 1000).toFixed(2)} km vs stale ${(naive / 1000).toFixed(2)} km`)
-        console.log(`       jumped to the far end: re-plan ${(re.distance / 1000).toFixed(2)} km`
-            + ` vs ${(naive / 1000).toFixed(2)} km on the stale line`)
+        return bi
     }
+
+    // Every jump point on every tier of one world. `tour` is the baked stale line; for each customer
+    // we could have jumped to, price carrying on down it against re-planning from there.
+    const sweepWorld = (rd, rg, origin, cust, tag) => {
+        const out = []
+        for (const tier of [2, 3]) {   // tiers 3 and 4 both cap at 15 stops — the same tour
+            const tour = planTour(rd, origin, cust, customersForTier(tier), rg, 100, radiusForTier(tier))
+            if (!tour || tour.customers.length < 4) continue
+            const cum = tour.polyCum, poly = tour.poly, L = cum[cum.length - 1]
+            for (let j = 1; j < tour.customers.length; j++) {
+                const jump = tour.customers[j]
+                const left = tour.customers.filter(c => c.id !== jump.id && c.id !== tour.customers[0].id)
+                if (!left.length) continue
+                const re = planTour(rd, jump, left, left.length, rg, 100, Infinity)
+                if (!re) continue
+                const bi = idxOf(poly, jump)
+                // The earliest undelivered customer BEHIND the jump point — how far back the stale
+                // line has to double back once the tail is done.
+                let minBehind = Infinity
+                for (const c of left) {
+                    const ca = cum[idxOf(poly, c)]
+                    if (ca < cum[bi] && ca < minBehind) minBehind = ca
+                }
+                const naive = (L - cum[bi]) + (Number.isFinite(minBehind) ? (L - minBehind) : 0)
+                if (!(naive > 1)) continue
+                out.push({ tag, tier, j, gain: 1 - re.distance / naive, re: re.distance, naive })
+            }
+        }
+        return out
+    }
+
+    const scen = sweepWorld(road, region, larry, customers, `seed${SEED}`)
+    // A second world, so the bars can never again be a property of one seed's customer draw.
+    const S2 = 20, C2 = { x: 4500, z: 600 }, R2 = 2500
+    const road2 = new RoadSystem(S2, RANGER_PARAMS)
+    road2.setRadius(R2); road2.update(new THREE.Vector3(C2.x, 0, C2.z))
+    const terrain2 = makeTerrainHeadless(S2, RANGER_PARAMS, road2)
+    const water2 = new WaterSystem(S2, RANGER_PARAMS, (x, z) => terrain2.rawHeightWorld(x, z))
+    const poi2 = new PoiSystem({
+        getRoad: () => road2, getWater: () => water2, getTerrain: () => terrain2,
+        getSeed: () => S2, getParams: () => RANGER_PARAMS,
+    })
+    poi2.build(C2, R2); poi2.buildHouses(C2, R2)
+    const larry2 = poi2.list().find(q => q.type === 'larrysHouse')
+    if (larry2 && poi2.customers().length) {
+        scen.push(...sweepWorld(road2, { x: C2.x, z: C2.z, r: R2 }, larry2, poi2.customers(), `seed${S2}`))
+    }
+
+    const gains = scen.map(s => s.gain).sort((a, b) => a - b)
+    const med = gains.length ? gains[Math.floor(gains.length / 2)] : 0
+    const worst = gains.length ? gains[0] : 0
+    const over5 = gains.filter(g => g > 0.05).length
+
+    check('a re-plan after jumping off the route succeeds, at every jump point', scen.length >= 20,
+        `only ${scen.length} scenarios — the sweep went vacuous`)
+    // Never meaningfully worse than carrying on — the hard per-scenario floor.
+    check('…and is never meaningfully worse than the stale line, at ANY jump point', worst >= -0.02,
+        `worst scenario ${(worst * 100).toFixed(1)}% (floor -2.0%)`)
+    // And it has to be worth the frames: the typical jump is a big win.
+    check('…and the typical jump is a large win, not a tie', med > 0.10,
+        `median gain ${(med * 100).toFixed(1)}% over ${scen.length} scenarios (bar 10%)`)
+    // NON-VACUOUS: if almost nothing gains, the feature is not earning its frames even with a healthy
+    // median — the same reasoning as pond-route-around.mjs's corpus check.
+    check('…and most jumps beat the stale line by >5%', over5 >= 0.6 * gains.length,
+        `${over5}/${gains.length} scenarios gain >5%`)
+    console.log(`       far-end sweep: ${scen.length} scenarios, gain ${(worst * 100).toFixed(1)}% … `
+        + `${(gains[gains.length - 1] * 100).toFixed(1)}%, median ${(med * 100).toFixed(1)}%`)
 }
 
 // ── BUG-48: the line never contains someone who already has their paper ─────────────────────────
