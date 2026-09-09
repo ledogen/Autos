@@ -379,25 +379,50 @@ export function formatTime(sec) {
  * thing this whole re-anchor exists to make it mean. The ramp squeezes the GOOD letters instead.
  * (Gated: test/economy.mjs pins C === 1.0 on every day — the replacement for the old B > 1.0 pin.)
  *
- * Fitted 2026-08-16, then REFITTED the same day against four drives the owner recorded on the
- * re-anchored build and labelled with the letter each SHOULD have earned (a far better signal than
- * the felt-pace labels, which are demonstrably inverted in the older corpus). Those four targets —
- * ratio 0.687 "solid S" · 0.712 "barely S" · 0.809 "mid C" · 0.910 "middle C" — are all hit.
- * Spread over the combined 24 runs: S 5 · A 2 · B 6 · C 8 · D 3.
+ * Fitted 2026-08-16 against four v1-road drives the owner labelled with the letter each SHOULD
+ * have earned — ratio 0.687 "solid S" · 0.712 "barely S" · 0.809 "mid C" · 0.910 "middle C" — which
+ * forced S 0.72 / A 0.76 / B 0.80 with two 0.04-wide middle bands.
  *
- * ⚠ KNOWN AND DELIBERATE: **A and B are narrow** (0.04 of ratio each) and C is very wide. That is
- * forced by the owner's own targets — 0.712 must be S and 0.809 must be C, which leaves only
- * 0.72–0.80 for both middle letters. It is arguably right for the design (par is the failing line,
- * so most of the passing range IS "just passing", and A has to feel earned), but it does mean small
- * differences in driving flip A/B. If A/B start feeling like coin-flips, the fix is to relax one of
- * those two anchors — not to widen the bands and silently break the targets.
+ * [RE-CUT 2026-09-07, owner — THE v2 BAND RE-CUT.] Those anchors were recorded on ROUTER-V1 roads,
+ * and v2 took the whole network on 2026-08-18. PAR_REF survived that transition unchanged (pass (5)
+ * above re-measured it and nothing moved), but the LETTERS did not: v2 geometry shifted where
+ * committed human driving actually lands, and the bands stayed where v1 put them. Measured over the
+ * 18-run `runs-v2/` corpus, the old cut graded S 0 · A 1 · B 5 · C 11 · D 0 — S was unreachable and
+ * C held two thirds of every drive ever recorded.
  *
- * ⚠ UNRESOLVED, recorded so it is not rediscovered: the owner's two "slow" drives sit at ratio
- * 0.809 and 0.910 — 0.10 apart — and were BOTH labelled "middle C". No threshold set can satisfy
- * that; it is par pricing two routes ~10% differently for the same felt pace. A threshold refit
- * cannot fix a spread, only par can. Needs more labelled runs before chasing.
+ * Two facts made that unambiguous rather than a matter of taste:
+ *   • the ONE run that scored S (`0015`, ratio 0.668) did not drive the route it was priced on. Its
+ *     trace skips 471 m of a 2762 m route (17%), peaking 210 m off the centerline — driven path
+ *     2274 m against a routed 2762 m. Excluded as a driving data point. The off-route shortcut is a
+ *     separate problem AND ALREADY RULED ON — it is the Highway's intentional-non-shortcut-skip
+ *     (>~200 m of road distance saved off-network), priced by a graded penalty, and the detector is
+ *     owed by FEAT-52 §5. Do not propose a fix here and do not add a corridor check to mission.js.
+ *   • with it excluded, **no honest drive in 17 has ever gone below ratio 0.740** — the old S line
+ *     of 0.72 had never been cleared by anyone, and A (0.76) exactly once.
+ * Residual correlations from `runs-report` against curvature, grade, straight-fraction and distance
+ * are all |r| < 0.4, so par is not biased by route type. This is a pure re-cut of the letters, NOT
+ * evidence against PAR_REF — do not "fix" it by touching mu.
+ *
+ * The new cut lands S 2 · A 5 · B 5 · C 5 · D 0 over the 17 honest v2 runs, i.e. every band is
+ * populated and the best drive on record earns an S. It relaxes the 2026-08-16 anchors deliberately
+ * — the owner ruled that a felt-"slow" drive landing B (0.830) and a felt-"par" one landing A
+ * (0.803) is the price worth paying, on the grounds recorded below.
+ *
+ * ⚠ THE FELT LABELS CANNOT ARBITRATE THIS and no future refit should let them. The corpus has a
+ * felt-"very fast" drive at 0.833 and a felt-"par" drive at 0.803 — the label ordering is partly
+ * INVERTED against the clock, exactly as calibrate-par.mjs's own health warning says. Fit the bands
+ * to the ratio DISTRIBUTION and to owner letter-targets; use `felt` only as a tie-break.
+ *
+ * ⚠ UNRESOLVED, recorded so it is not rediscovered (and now WORSE on v2, not better): the whole
+ * observed dynamic range from flat-out to dawdling is ratio 0.74 → 0.97. **D has never been
+ * reached** — both drives the owner labelled "very slow" scored 0.903 and 0.950, comfortably
+ * passing. Par is supposed to be the line where careless driving starts to fail, and on v2 roads
+ * nothing fails. That is a SPREAD problem: par prices two routes ~10% apart for the same felt pace,
+ * so no threshold set and no PAR_SLACK value can fix both ends at once (slack is a pure rescale —
+ * it slides every ratio together and thresholds absorb it exactly). Only par discriminating better
+ * between routes can widen the range. Needs more labelled runs before chasing.
  */
-export const RANK_THRESHOLDS_DEFAULT = { S: 0.72, A: 0.76, B: 0.80, C: 1.00 }
+export const RANK_THRESHOLDS_DEFAULT = { S: 0.77, A: 0.81, B: 0.85, C: 1.00 }
 
 /**
  * Grade a finished run against par. Margin is par-relative so it reads the same on a 2-minute

@@ -112,22 +112,23 @@ stranding (SM-INV-7).
 ```
 par    = referenceTime × PAR_SLACK        PAR_SLACK 1.15 — the standard; PAR_REF is the physics
 ratio  = elapsed / par                    ratio 1.0 IS the C/D boundary
-payout = parBase × dayTier × clamp((1.20 − ratio) / 0.40, 0, cap)     break-even 0.80 · k 0.024
+payout = parBase × dayTier × clamp((1.15 − ratio) / 0.30, 0, cap)     break-even 0.85 · k 0.0255
 ```
 
 - **`parBase = k × par`** — the base scales with the road. This is load-bearing: it is what keeps
   *same driving quality, more road, more money* true, and it is why payout could not simply be the
   rank letter. A discrete rank would flatten a twelve-minute haul onto a sixty-second errand and
   hand the player back the tiny-job farming loop that absolute-seconds payout was chosen to close.
-- **The line** *(re-anchored 2026-08-16)*: **1.0 at ratio 0.80** (the B/C boundary) · **0.5 at par**
-  · **0 at 1.20**. Linear between, floored at zero.
+- **The line** *(re-anchored 2026-08-16; anchors moved with the bands 2026-09-07)*: **1.0 at ratio
+  0.85** (the B/C boundary) · **0.5 at par** · **0 at 1.15**. Linear between, floored at zero.
   *(Was: 0 at 1.2 · 1.0 at par · 2.0 at 0.8 — which encoded par-as-the-expected-drive.)*
 - **The anchor** *(re-anchored 2026-08-16)*: *a day driven entirely at the **B/C boundary** is
   break-even.* **Par itself loses money** — a bare pass pays half a day's maintenance. The owner's
   framing: B/C meets the growing cost of maintenance so you can keep going, but it does not pay for
   upgrades; you need to be hitting B's for that. This still resolves Q4 as an identity rather than a
   tuning target, and still reduces the economy to one number — `k` (0.30 → 0.24 → **0.024** after the 2026-08-17 ×0.1 currency rescale, re-derived as
-  `k × breakEven` so a break-even day is worth the same dollars as before).
+  `k × breakEven` so a break-even day is worth the same dollars as before; **0.0255** since the
+  2026-09-07 band re-cut carried break-even to 0.85 under that same rule).
 - **`dayTier`** is a step function of run day, **locked at mission accept**, rising as the run ages so
   payouts keep pace with escalating maintenance (Q9A). See DESIGN.md "The performance model" for why
   the rising tier does not double-count with the tightening rank thresholds.
@@ -140,8 +141,9 @@ The player never sees par. They see **a letter and a number.** Ranks are **D · 
 (already implemented — `gradeRun()` in `src/par.js`), coloured **red · orange · yellow · white ·
 blue**, with **C containing par** *(re-anchored 2026-08-16 — was B)* so that par means the slowest
 drive that is still a pass, and every letter above it is something you actually earned. Thresholds
-**S 0.72 · A 0.76 · B 0.80 · C 1.00**, with C pinned at 1.0 on every day of the run — the difficulty
-ramp squeezes S/A/B and never the pass line itself.
+**S 0.77 · A 0.81 · B 0.85 · C 1.00** *(re-cut 2026-09-07 for router-v2 roads — was S 0.72 · A 0.76 ·
+B 0.80)*, with C pinned at 1.0 on every day of the run — the difficulty ramp squeezes S/A/B and never
+the pass line itself.
 
 Rank is **display only** — a legible skin over the continuous payout, not a set of bins — and
 **result-card only, never live**, because a live rank is a countdown by proxy (SM-INV-3).

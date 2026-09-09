@@ -31,43 +31,33 @@ node test/calibrate-par.mjs runs-v2
 `~/Downloads` is sandbox-restricted for directory listing on this machine, so pass explicit file
 paths rather than relying on the bare `npm run runs:add` default.
 
-## Corpus state (2026-09-06)
+## Corpus state (2026-09-07)
 
-**12 runs — 11 fittable, 1 paper round.** Paper rounds are collected but never fitted with
-point-to-point jobs: a round's par is dominated by a full stop at every porch, and `mu` does not
+**18 runs — 15 fittable, 2 paper rounds, 1 excluded.** Paper rounds are collected but never fitted
+with point-to-point jobs: a round's par is dominated by a full stop at every porch, and `mu` does not
 price stops at all.
 
-Seeds so far: 97, 69, 0.
+Seeds so far: 97, 69, 0, 1, 526302544, 1625430154 + 3 more from the 2026-09-07 batch.
 
-| felt | n | mean ratio |
-|---|---|---|
-| very_fast | 3 | 0.787 |
-| fast | 2 | 0.806 |
-| **on par** | **4** | **0.879** |
-| slow | 1 | 0.830 |
-| very_slow | 2 | 0.926 |
+### ⚠ `0015-very_fast-S-105s-2.8km.json` is EXCLUDED from calibration
 
-`runs-report`'s verdict: **"the standard is well calibrated on 'felt on par' runs (mean 0.879,
-target ~0.88)."** Under the 2026-08-16 re-anchor par is the C/D boundary, so a felt-par drive should
-land near 0.88 (a comfortable pass), not 1.00 — and it does.
+It scores 0.668 — the best number in the library — because it **did not drive the route it was
+priced on**. Its trace skips 471 m of a 2762 m route (17%, peaking 210 m off the centerline), driven
+path 2274 m against a routed 2762 m. Every other capture here stays inside ~2 m mean / 12 m max.
 
-### The fit says leave it alone
+It is kept because it is real recorded data and it is the fixture for FEAT-52 §5's
+intentional-non-shortcut-skip detector (the skip is ~2.4× that ruling's ~200 m threshold), but it
+must never anchor a threshold or a `PAR_REF` fit. **The best HONEST drive on record is ratio 0.740**
+(`0003`), and that is the number `test/economy.mjs` pins day-20 S against.
 
-`calibrate-par.mjs runs-v2` recommends mu 0.77 / accel 3.2 / brake 5.5, loss 0.1897 against 0.1957
-for the shipped 0.80 / 3.0 / 7.0. **That is a 3% loss improvement and should not be taken as-is:**
+`calibrate-par.mjs` does not know about this — it has no corridor check either. If you re-fit,
+move the file aside first.
 
-- **The mu surface is nearly flat.** 0.740 → 0.1901, 0.780 → 0.1897, 0.820 → 0.1910. Everything from
-  0.74 to 0.86 sits within ~1% of the optimum, so this data barely identifies mu at all. The shipped
-  0.80 is inside that band.
-- **The recommended `brake` 5.5 is a value the record already rejected.** PAR_REF pass (3) moved
-  brake to 7.0 *because it is the measured truck value*, noting "the old brake 5.5 under-priced every
-  corner entry". A fit that wants to walk it back is fitting noise, not physics.
-- **11 fittable runs is still under the bar.** `calibrate-par.mjs`'s own health warning is that 20
-  runs give "a hint, not a fit".
+## What this corpus was used for
 
-No residual correlation clears the action threshold (|r| > 0.6): mean curvature −0.50 and
-tight+hairpin −0.50 are the largest, at n=12.
-
-**So the evidence so far is that `PAR_REF` as shipped is already right on v2 roads** — the corners
-changed but the constants did not need to. That is a finding, not a non-result. More drives would
-firm it up; `on par` runs remain the highest-value label because they are the anchor.
+- **2026-09-06** — `PAR_REF` re-anchor on v2 roads (BUG-41 Stage 2). Measured; **nothing moved**.
+  mu 0.80 / accel 3.0 / brake 7.0 ratified, not re-fitted.
+- **2026-09-07** — **the band re-cut.** Under the v1-fitted thresholds this library graded
+  S 1 · A 1 · B 5 · C 11 · D 0, and the single S was the excluded shortcut above. Re-cut to
+  S 0.77 · A 0.81 · B 0.85 · C 1.00, which grades the 17 honest runs S 2 · A 5 · B 5 · C 5.
+  Reasoning: `.planning/story-mode/design-amendments-2026-09-07-band-recut.md`.

@@ -37,10 +37,15 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps
 
 // Pin the provisional defaults this gate asserts against (a debug-slider default drifting should
 // fail loudly HERE, not silently re-tune the gate).
-check('pinned: k 0.024, cap 3.0', ECONOMY_PARAMS.k === 0.024 && ECONOMY_PARAMS.payoutCap === 3.0)
+check('pinned: k 0.0255, cap 3.0', ECONOMY_PARAMS.k === 0.0255 && ECONOMY_PARAMS.payoutCap === 3.0)
 check('pinned: tier table has 30 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTable.length === 30 && dayTier(1) === 1)
-check('pinned: break-even 0.80 (the day-1 B/C boundary), zero 1.20',
-  ECONOMY_PARAMS.breakEven === 0.80 && ECONOMY_PARAMS.payoutZero === 1.20)
+check('pinned: break-even 0.85 (the day-1 B/C boundary), zero 1.15',
+  ECONOMY_PARAMS.breakEven === 0.85 && ECONOMY_PARAMS.payoutZero === 1.15)
+// payoutZero is not free either: it is solved from the anchor "par pays exactly half a unit", so it
+// must move with breakEven. Assert the identity rather than the number, so a future band re-cut
+// that forgets to re-solve z fails here instead of quietly re-pricing par.
+check('payoutZero is solved from m(1.0) === 0.5, not picked',
+  near(ECONOMY_PARAMS.payoutZero, 2 * 1.0 - ECONOMY_PARAMS.breakEven))
 // The break-even ratio is not a free number: it IS the B/C threshold, so a rank refit must move it
 // (and k with it) or the economy silently decouples from the letters.
 check('break-even IS the day-1 B/C threshold, not an independent constant',
@@ -54,16 +59,24 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   const par = 180, tier = 1.0
   const unit = ECONOMY_PARAMS.k * par * tier          // one day-tier unit of maintenance
   const atBreakEven = payoutFor(par, ECONOMY_PARAMS.breakEven, tier)
-  check('break-even ratio 0.80 → exactly one day-tier unit (k·par·tier)',
+  check('break-even ratio 0.85 → exactly one day-tier unit (k·par·tier)',
     near(atBreakEven, unit), `got ${atBreakEven}`)
-  check('ratio 1.20 → 0 (well past par, margin money is gone)', payoutFor(par, 1.20, tier) === 0)
+  check('ratio 1.15 → 0 (well past par, margin money is gone)', payoutFor(par, 1.15, tier) === 0)
   check('ratio 1.50 → still 0 (floored, never negative)', payoutFor(par, 1.50, tier) === 0)
   // The headline consequence of the re-anchor, pinned so it cannot quietly drift back: PAR LOSES
   // MONEY. If this ever reads 1.0 units again, the re-anchor has been undone somewhere upstream.
   check('par (ratio 1.0) pays HALF a unit — a bare pass does not cover the day',
     near(payoutFor(par, 1.0, tier), 0.5 * unit), `got ${(payoutFor(par, 1.0, tier) / unit).toFixed(3)} units`)
   check('par pays strictly less than break-even', payoutFor(par, 1.0, tier) < atBreakEven)
-  check('ratio 0.72 (the S/A boundary) → 1.2 units', near(payoutFor(par, 0.72, tier), 1.2 * unit))
+  // The S/A boundary rides the bands, so express what it PAYS as the line evaluated there rather
+  // than as a frozen multiple — the 2026-09-07 re-cut moved both the boundary (0.72 → 0.77) and the
+  // line's slope, and a hard-coded 1.2 would have encoded the old geometry as if it were a rule.
+  {
+    const sa = ECONOMY_PARAMS.rankDay1.A
+    const mSA = (ECONOMY_PARAMS.payoutZero - sa) / (ECONOMY_PARAMS.payoutZero - ECONOMY_PARAMS.breakEven)
+    check(`ratio ${sa} (the S/A boundary) → ${mSA.toFixed(3)} units, and strictly above break-even`,
+      near(payoutFor(par, sa, tier), mSA * unit) && payoutFor(par, sa, tier) > atBreakEven)
+  }
   // The cap is unreachable under this line (it would need ratio 0), so assert it still CLAMPS
   // rather than asserting a bite point that no longer exists.
   check('cap clamps degenerate fast ratios', near(payoutFor(par, -5, tier), ECONOMY_PARAMS.payoutCap * unit))
@@ -141,7 +154,8 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   // the owner's $500-1500 band while a day-1 region-1 job stays in $5-15. Both ends pinned, because
   // a well-meaning tweak to either table silently breaks the progression curve.
   const m = (r) => Math.max(0, (ECONOMY_PARAMS.payoutZero - r) / (ECONOMY_PARAMS.payoutZero - ECONOMY_PARAMS.breakEven))
-  const pay = (par, day, region) => ECONOMY_PARAMS.k * par * dayTier(day) * regionTier(region) * m(0.78)
+  const B_DRIVE = 0.83   // mid-B under rankDay1 (A 0.81 < 0.83 ≤ B 0.85) — the reference drive
+  const pay = (par, day, region) => ECONOMY_PARAMS.k * par * dayTier(day) * regionTier(region) * m(B_DRIVE)
   const start = pay(360, 1, 1), end = pay(720, 20, 6)
   check('a day-1 region-1 job pays $5-15', start >= 5 && start <= 15, `got $${start.toFixed(2)}`)
   check('a day-20 region-6 job pays $500-1500', end >= 500 && end <= 1500, `got $${end.toFixed(0)}`)
@@ -174,8 +188,8 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   check('gradeRun default arg IS day 1 (3-arg === 2-arg at day 1)',
     gradeRun(170, 180).letter === gradeRun(170, 180, rankThresholds(1)).letter)
   check('day ramp changes the letter, never the ratio', (() => {
-    const early = gradeRun(0.71 * 180, 180, rankThresholds(1))   // S on day 1 (S ≤ 0.72)
-    const late = gradeRun(0.71 * 180, 180, rankThresholds(20))   // A on day 20 (S has tightened to 0.70)
+    const early = gradeRun(0.76 * 180, 180, rankThresholds(1))   // S on day 1 (S ≤ 0.77)
+    const late = gradeRun(0.76 * 180, 180, rankThresholds(20))   // A on day 20 (S has tightened to 0.75)
     return early.letter === 'S' && late.letter === 'A' && near(early.ratio, late.ratio)
   })())
   // S MUST STILL BE REACHABLE ON THE LAST DAY. This is the regression that prompted the whole
@@ -183,16 +197,21 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   // ANY of the 20 recorded drives in runs/, so S was mathematically dead for the back half of
   // every run and nobody had decided that. The best drive in the corpus sits at ratio 0.654; keep
   // day-20 S at or above it or the letter goes extinct again, silently.
-  check('S survives day 20 (threshold ≥ the best recorded human drive, 0.654)',
-    rankThresholds(20).S >= 0.654, `day-20 S = ${rankThresholds(20).S.toFixed(3)}`)
+  //
+  // The bar is now the best HONEST drive in runs-v2/, ratio 0.740 [2026-09-07]. The corpus also
+  // holds a 0.668, but that run skipped 471 m of its 2762 m route (17%, peaking 210 m off the
+  // centerline) — it was never a driving result and must not be allowed to certify a threshold.
+  // The v1 figure this replaced was 0.654, measured on roads the router no longer builds.
+  check('S survives day 20 (threshold ≥ the best HONEST recorded drive, 0.740)',
+    rankThresholds(20).S >= 0.740, `day-20 S = ${rankThresholds(20).S.toFixed(3)}`)
 }
 
 // ── 7. Points accrue as exact integer halves ────────────────────────────────────────────────────
 {
   const eco = new EconomySystem({ getDay: () => 1 })
   eco.start()
-  // ratio 0.95 IS a C under the re-anchored bands (B 0.90 < 0.95 ≤ C 1.00). It used to read 1.1,
-  // which is now a D — the fixture would have been quietly self-contradictory.
+  // ratio 0.95 IS a C under the re-cut bands (B 0.85 < 0.95 ≤ C 1.00). It used to read 1.1, which
+  // is now a D — the fixture would have been quietly self-contradictory.
   for (let i = 0; i < 20; i++) eco.settle({ par: 180, ratio: 0.95, letter: 'C' }, { terms: eco.terms() })
   check('20 C-grades === exactly 10.0 points (integer halves, no float drift)', eco.points() === 10.0)
   check('formatDeeds renders halves as a decimal, not the ½ glyph (owner, 2026-08-09 — the fraction was a smudge at HUD size)',
@@ -206,9 +225,10 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   eco.start()
   check('start() zeroes the run wallet/points/missions',
     runEconomy.money === 0 && runEconomy.halfPoints === 0 && runEconomy.missions === 0)
-  // ratio 0.78 IS a B under the re-anchored bands (A 0.76 < 0.78 ≤ B 0.80). It used to read 1.0,
-  // which is now the C/D boundary — the fixture claimed a letter the ratio no longer earns.
-  const r = eco.settle({ par: 180, ratio: 0.78, letter: 'B' }, { terms: eco.terms() })
+  // ratio 0.83 IS a B under the re-cut bands (A 0.81 < 0.83 ≤ B 0.85). Kept in step with the bands
+  // on purpose: the fixture asserts a letter, so a band move that leaves it behind would have it
+  // claiming a letter the ratio no longer earns (it read 0.78 before 2026-09-07, now an A).
+  const r = eco.settle({ par: 180, ratio: 0.83, letter: 'B' }, { terms: eco.terms() })
   check('settle accrues money + points + mission count',
     runEconomy.money === r.payout && eco.points() === 1 && eco.missionCount() === 1)
   check('payout is whole dollars', Number.isInteger(r.payout))

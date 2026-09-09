@@ -97,7 +97,11 @@ check('…and the tips at par are already banked on top', atPar.spot > 0)
 // A tip is a fixed gratuity on a growing fare: the premium is biggest where the fare is smallest
 // and tapers as you drive faster. What it must never do is invert — that was the old bug.
 let prem = [], monotone = true, prev = Infinity
-for (const r of [1.00, 0.90, 0.80, 0.72, 0.65, 0.60]) {
+// index 2 IS the break-even pace, and it is read from ECONOMY_PARAMS rather than written as a
+// number: the paperTip check below asserts the premium THERE, so a band re-cut that moves
+// break-even (2026-09-07: 0.80 → 0.85) must carry this probe with it or the check silently starts
+// measuring the tip at some other pace.
+for (const r of [1.00, 0.90, ECONOMY_PARAMS.breakEven, 0.72, 0.65, 0.60]) {
     const round = scoreRoute(Array(9).fill(1), 9, PAR * r, PAR, PT)
     const x = round.total / payoutFor(PAR, r, PT)
     prem.push(x)

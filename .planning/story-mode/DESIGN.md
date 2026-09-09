@@ -123,6 +123,17 @@ rewritten from a tempo boon (retired — it was a number on the truck, which SM-
 itself untouched**. Priced in darkness and a hostile morning only; the world does **not** close at
 night.
 
+**Amendment 2026-09-07** (project owner): **THE v2 BAND RE-CUT.** Thresholds move to
+**S 0.77 · A 0.81 · B 0.85 · C 1.00** (day 1), tightening a flat −0.02 to S 0.75 · A 0.79 · B 0.83 by
+day 20; `breakEven` rides B to **0.85**, `k` to **0.0255** and `payoutZero` to **1.15** by their
+existing derivation rules, holding a break-even day's dollar value fixed. Nothing else moves —
+`PAR_REF`, `PAR_SLACK`, "C is pinned at 1.00" and every invariant are untouched. Cause: the bands
+were fitted on **router-v1** roads and never followed v2; measured over the 18-run `runs-v2/` corpus
+the old cut graded **S 0 · A 1 · B 5 · C 11**, and the one S was a run that skipped 17% of its own
+route. Full reasoning, the measurements, and two problems left deliberately open (the off-route
+shortcut hole; D being unreachable) are in
+[`design-amendments-2026-09-07-band-recut.md`](design-amendments-2026-09-07-band-recut.md).
+
 **Ratification pass 2026-08-16** (project owner): **THE PAR RE-ANCHOR — par means "the slowest you
 can drive without failing".** Par moves from the middle of the B band to the **C/D boundary**,
 reversing the "B contains par" ruling of 2026-08-01 (item 3 below) and the 2026-08-14 confirmation
@@ -130,7 +141,8 @@ of it for the paper route; the reversal is game-wide. Six parts: (1) **par the N
 `par = referenceTime × PAR_SLACK` (1.15), splitting the physics from the judgment so SM-INV-2's
 "par is geometric" survives intact; `PAR_REF.mu` 0.90 → 0.80 alongside it. (2) **Thresholds re-cut**
 to S 0.72 · A 0.76 · B 0.80 · **C 1.00 pinned on every day** — the ramp squeezes the good letters and
-never the pass line. (3) **Break-even moves to the B/C boundary**; par pays half a day's maintenance,
+never the pass line. *(The three numbers were re-cut on router-v2 roads 2026-09-07 to* **S 0.77 ·
+A 0.81 · B 0.85**, *C still pinned — see the amendment below. The RULE stated here is untouched.)* (3) **Break-even moves to the B/C boundary**; par pays half a day's maintenance,
 so a bare pass loses money and only B and better funds upgrades (`k` 0.30 → 0.24, re-derived to hold
 a break-even day's dollar value fixed). (4) **Par is deleted from the player-facing UI** — a letter
 and a number, nothing else. (5) **The paper route's timer becomes par exactly**, so finishing at par
@@ -467,7 +479,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > 08-16 keeps hidden is *par itself* — a duration, the thing that invites a stopwatch — while what
   > 08-17 shows is *where the letters fall*, which is the player-facing surface par was given in the
   > first place. The live display reads the re-anchored constants automatically (thresholds
-  > S 0.72 · A 0.76 · B 0.80 · C 1.00, C pinned), so it needs no separate tuning; but it now sits on
+  > S 0.77 · A 0.81 · B 0.85 · C 1.00 since the 2026-09-07 re-cut, C pinned), so it needs no separate tuning; but it now sits on
   > a scale where **C contains par**, which is the band a live readout will spend most of its time
   > in. Whoever implements the live surface should check it reads sensibly there rather than
   > assuming the old B-centred spacing.
@@ -500,7 +512,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > So the ladder is: below par you are losing ground, at par you are surviving badly, at B/C you
   > are level, and at B and better you are actually building something.
   >
-  > *`k` re-derived, value preserved.* `k_new = k_old × breakEven = 0.30 × 0.80 = 0.24`, then a flat ×0.1 currency rescale on 2026-08-17 → **k = 0.024** (scale only; every ratio, letter and relative price is unchanged). This holds
+  > *`k` re-derived, value preserved.* `k_new = k_old × breakEven = 0.30 × 0.80 = 0.24`, then a flat ×0.1 currency rescale on 2026-08-17 → **k = 0.024**, then the same rule again on 2026-09-07 when breakEven rode B to 0.85 → **k = 0.0255** (scale only; every ratio, letter and relative price is unchanged). This holds
   > the dollar value of a break-even day fixed across the re-anchor, so the ~$130-190 region-1 day
   > and the repair bills authored against it stay valid even though par grew and mu dropped.
   >
@@ -718,7 +730,7 @@ another's job.
 par    = referenceTime × PAR_SLACK          PAR_SLACK 1.15 — the standard; referenceTime is physics
 ratio  = elapsed / par                      ratio 1.0 IS the C/D boundary, by construction
 payout = parBase × dayTier × regionTier × clamp((payoutZero − ratio) / (payoutZero − breakEven), 0, cap)
-                                            breakEven 0.80 · payoutZero 1.20 · k 0.024 · cap 3.0
+                                            breakEven 0.85 · payoutZero 1.15 · k 0.0255 · cap 3.0
 ```
 
 - **`parBase = k × par`.** The base scales with the road, so a twelve-minute haul at par pays more

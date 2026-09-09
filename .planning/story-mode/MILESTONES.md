@@ -204,8 +204,8 @@ This rebalance IS Phase D item 2, plus a re-do of item 1 (`k` 0.30 → 0.24, the
 
 ```
 par    = referenceTime × PAR_SLACK   PAR_SLACK 1.15 — the standard; PAR_REF stays the physics
-ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.20 − ratio)/0.40, 0, cap)
-                                     break-even 0.80 · par 1.0 pays half · zero at 1.20 · k 0.024
+ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.15 − ratio)/0.30, 0, cap)
+                                     break-even 0.85 · par 1.0 pays half · zero at 1.15 · k 0.0255
 ```
 - **`parBase = k × par`** — base scales with the road (stops tiny-job farming). `k` is the one
   economy tunable: maintenance cost per second of par-driving.
@@ -214,7 +214,9 @@ ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.20 
 - **Rank thresholds tighten with run day** — the brake on the rising tier. **Par never moves**
   (SM-INV-2 as amended 2026-08-01). Since 2026-08-16 only **S/A/B** tighten: **C is pinned at 1.0**
   on every day, because par IS the pass line and a drifting C would make a drive at par start failing.
-  Thresholds **S 0.72 · A 0.76 · B 0.80 · C 1.00**; day-20 S must stay reachable (gated).
+  Thresholds **S 0.77 · A 0.81 · B 0.85 · C 1.00** *(re-cut 2026-09-07 on router-v2 roads — the
+  v1-fitted S 0.72 had never once been cleared by an honest drive)*; day-20 S must stay reachable
+  (gated, against the best HONEST drive on record).
 - **Rank is display only, result-card only, never live** (SM-INV-3 as amended).
 - **Progress = mission points**, not XP: 1 at B+, ½ at C, 0 at D; authored per-region counts
   `6·6·6·4·3·2` = **27 points** over **six regions**, against a day budget of `4·4·4·3·3·2` = 20 days
