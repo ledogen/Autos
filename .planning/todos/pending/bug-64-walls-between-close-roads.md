@@ -45,3 +45,9 @@ one road's cut face meets the other's fill.
 - [ ] Class B: the census's ten unexplained walls go to zero with no road moving
 - [ ] Class A: the owner's rule is enforced by whichever route is chosen, and the photo site
       reads as two roads on their own earthworks
+
+## Status 2026-09-08
+
+Class A is FEAT-77 (built on `feature/junction-stitch`: the rule in the conflict walk + a second
+routing pass; residue tracked by `test/road-clearance.mjs`). Class B stays here: the gate's
+report line counts the carve-made walls (41–49 across the battery as the network moves).

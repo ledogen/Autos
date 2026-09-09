@@ -201,6 +201,49 @@ class Heap {
  * @returns {{path:{x:number,z:number,y:number}[], cost:number, expanded:number}|null}
  */
 const TERM_R = 2.5   // cells — reach of a heading pin's no-backtracking terminal region
+// ── FEAT-77: THE CLEARANCE RULE, pure ────────────────────────────────────────────────────────────
+// How far apart two roads must be at a pair of facing samples (owner rulings 2026-09-07/08). Lives
+// here so the planner (RoadSystem._v2ClearReq) and a Worker's search price the identical thing
+// with no second copy. `pa` = {x, y, z} on one road (deck in y), `hit` = {d, y, fx, fz} the nearest
+// point on the other, `ground(x, z)` the coarse field the profile solved against, `prm` =
+// { HW, floor, edge, cap, fill, cut }:
+//   floor = 2·HW + clearEdgeM (daylight between pavement edges)
+//   edge  = carveHalfWidth + shoulder, cap = carveHalfWidth + roadMaxEmbankmentToe (the carve's apron)
+// A violation is (i) the UPPER road's fill embankment still above the lower road's deck at the
+// lower's shoulder edge, or (ii) the LOWER road's cut face still below the upper's deck under the
+// upper's shoulder — each needs 2·edge + slope·Δy of separation, but an apron reaches only `cap`
+// from its own centre, so past cap + edge the case cannot arise. Two fills merging, two cuts
+// meeting, and aprons that end short are benign (that is what makes this the physical case and
+// not "any overlap"). Result: max(floor, min(2·edge + fill·Δy, cap + edge) if upper on fill,
+// min(2·edge + cut·Δy, cap + edge) if lower in cut).
+export function clearReq(pa, hit, ground, prm) {
+    const ux = hit.fx - pa.x, uz = hit.fz - pa.z
+    const d = Math.hypot(ux, uz)
+    if (d < 1e-6) return prm.floor
+    const nx = ux / d * prm.HW, nz = uz / d * prm.HW
+    const hA = pa.y - ground(pa.x + nx, pa.z + nz)
+    const hB = hit.y - ground(hit.fx - nx, hit.fz - nz)
+    const dy = Math.abs(pa.y - hit.y)
+    const upperFill = pa.y >= hit.y ? hA : hB, lowerCut = pa.y >= hit.y ? hB : hA
+    let req = prm.floor
+    if (upperFill > 0) req = Math.max(req, Math.min(2 * prm.edge + prm.fill * dy, prm.cap + prm.edge))
+    if (lowerCut < 0) req = Math.max(req, Math.min(2 * prm.edge + prm.cut * dy, prm.cap + prm.edge))
+    return req
+}
+/** Nearest point on a flat [x,y,z,…] polyline to (px,pz) in XZ: { d, y, fx, fz } (pure). */
+export function nearestOnFlat(px, pz, a) {
+    let d = Infinity, y = 0, fx = 0, fz = 0
+    for (let i = 3; i < a.length; i += 3) {
+        const ax = a[i - 3], az = a[i - 1], bx = a[i], bz = a[i + 2]
+        const ex = bx - ax, ez = bz - az, l2 = ex * ex + ez * ez
+        const t = l2 > 1e-12 ? Math.max(0, Math.min(1, ((px - ax) * ex + (pz - az) * ez) / l2)) : 0
+        const qx = ax + t * ex, qz = az + t * ez
+        const dd = Math.hypot(px - qx, pz - qz)
+        if (dd < d) { d = dd; y = a[i - 2] + t * (a[i + 1] - a[i - 2]); fx = qx; fz = qz }
+    }
+    return { d, y, fx, fz }
+}
+
 export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     const _unit = (d) => { if (!d) return null; const l = Math.hypot(d.x, d.z); return l > 1e-9 ? { x: d.x / l, z: d.z / l } : null }
     const sDir = _unit(opts.startDir), gDir = _unit(opts.goalDir)
@@ -228,6 +271,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     const wx = cx => x0 + cx * cell, wz = cz => z0 + cz * cell
 
     // Terrain memo for this search only (pure per call — no cross-edge state).
+    const hCoarse = opts.hCoarse ?? hTrunc   // FEAT-77: the rule prices against the field the profile solves on
     const hMemo = new Float64Array(W * Hn).fill(NaN)
     const hAt = (cx, cz) => {
         const i = idx(cx, cz)
@@ -250,6 +294,40 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     const yOf = b => yLo + b * yBin
     const bOf = y => Math.max(0, Math.min(NY - 1, Math.round((y - yLo) / yBin)))
 
+    // FEAT-77 second pass: OCCUPIED corridors — the routes this edge must keep the clearance rule
+    // from (its winners' pass-1 lines, with heights). Per-cell memo of the nearest occupied point
+    // and the two edge-ground samples the rule needs, filled lazily like hAt; the per-bin part of
+    // the rule is then arithmetic. Cells inside an exempt node's throat pay nothing.
+    const occ = opts.occupied
+    const occLines = occ && occ.lines && occ.lines.length ? occ.lines : null
+    const occD = occLines ? new Float64Array(W * Hn).fill(NaN) : null
+    const occY = occLines ? new Float64Array(W * Hn) : null
+    const occHb = occLines ? new Float64Array(W * Hn) : null   // winner deck − ground at ITS facing edge
+    const occGa = occLines ? new Float64Array(W * Hn) : null   // ground at THIS road's facing edge
+    const occAt = (cx2, cz2) => {
+        const i = idx(cx2, cz2)
+        if (!Number.isNaN(occD[i])) return occD[i]
+        const px = wx(cx2), pz = wz(cz2)
+        let best = null
+        for (const ln of occLines) { const h = nearestOnFlat(px, pz, ln); if (!best || h.d < best.d) best = h }
+        let ex = false
+        if (occ.exempt) for (let k = 0; k < occ.exempt.length; k += 2) if (Math.hypot(px - occ.exempt[k], pz - occ.exempt[k + 1]) < occ.exemptM) { ex = true; break }
+        if (!best || ex || best.d < 1e-6) { occD[i] = Infinity; return Infinity }
+        const ux = (best.fx - px) / best.d, uz = (best.fz - pz) / best.d
+        occD[i] = best.d; occY[i] = best.y
+        occHb[i] = best.y - hCoarse(best.fx - ux * occ.prm.HW, best.fz - uz * occ.prm.HW)
+        occGa[i] = hCoarse(px + ux * occ.prm.HW, pz + uz * occ.prm.HW)
+        return best.d
+    }
+    const occReq = (i, y1) => {
+        const prm = occ.prm, hA = y1 - occGa[i], hB = occHb[i], dy = Math.abs(y1 - occY[i])
+        const upperFill = y1 >= occY[i] ? hA : hB, lowerCut = y1 >= occY[i] ? hB : hA
+        let req = prm.floor
+        if (upperFill > 0) req = Math.max(req, Math.min(2 * prm.edge + prm.fill * dy, prm.cap + prm.edge))
+        if (lowerCut < 0) req = Math.max(req, Math.min(2 * prm.edge + prm.cut * dy, prm.cap + prm.edge))
+        return req
+    }
+    const C_wClear = C.wClear ?? 12
     // Hard no-go cells (pond+skirt discs): 0 unknown, 1 open, 2 blocked — resolved lazily.
     const discs = opts.blockedDiscs
     const blockedArr = discs && discs.length ? new Uint8Array(W * Hn) : null
@@ -437,6 +515,13 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
                 let c = gc + ds * stationRateCls(cls1, d1, C) + ds * C_cRoadM * C_wGrade * g * g
                 c += turnC
                 if (bore0 !== bore1) c += C_cPortal
+                // FEAT-77: inside another road's clearance the metre costs wClear more, graded so
+                // further is cheaper. Non-negative, so the heuristic stays admissible. A COST,
+                // never a gate — a gated search returns null and costs the connection.
+                if (occLines && !bore1) {
+                    const od = occAt(nx, nz)
+                    if (od < Infinity) { const rq = occReq(nCell, y1); if (od < rq) c += ds * C_wClear * (1 - od / rq) }
+                }
                 const ni = ni0 + nb
                 if (c < gCost[ni]) {
                     gCost[ni] = c
@@ -1356,9 +1441,10 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
     // exactly what the main thread does — without it, live knob edits would apply only to
     // synchronously-routed edges and the network would be priced two different ways.
     const { ax, az, yA, bx, bz, yB, margin, blockedDiscs, dirs, costs, cell, yBin, epsW } = spec
+    const occupied = dirs && dirs.occupied ? dirs.occupied : undefined   // FEAT-77 second pass
     const attempt = (pin, extra) => {
         const c = corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, {
-            margin, blockedDiscs, costs, cell, yBin, epsW,
+            margin, blockedDiscs, costs, cell, yBin, epsW, occupied, hCoarse,
             ...(pin ? { startDir: pin.startDir, goalDir: pin.goalDir } : {}),
             ...extra,
         })
