@@ -68,7 +68,14 @@
 // Beyond 18 m the two roads do not share earthworks: two roads on a hillside, not a junction.
 // Tunnel bores are excluded (a bore genuinely passes under). Nothing else is.
 //
-// RED until BUG-56's departure pass lands — see .planning/ROAD-CLOSEOUT-PLAN.md.
+// History of the bar: 105 (R1–R8) → 91 (FEAT-76) → 80 → 66 (QUAL-26, main 2a5e275) → 2 (2026-09-07,
+// feature/junction-stitch: the shipped-series ruler, the DECK HOLD in _applyJunctionBlend — grade
+// AND roll held to the junction plane, or to the trunk's built surface at a promoted T, until the
+// pavements part — the per-leg pad cutback of BUG-59, and the same-node crossing exemption in
+// _detectJunctions). The two that remain are planner topology, not stitching: BUG-63 (a mid-span
+// promotion's run-key collision leaves a two-legged T, seed 6 (-3160,5163)) and a BUG-55 shape-E
+// pair the disjoint census never resolved (seed 7 (-1652,1626), a road passing through a T at
+// 0.0 m of separation with opposite banking) — QUAL-26's subject.
 
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { WINDOWS, buildWindow } from './lib/road-battery.mjs'
@@ -85,7 +92,20 @@ const STEP  = 2.0                                   // m — sampling pitch alon
 // R3 (owner, 2026-08-31): a pad reaches 10 m AT MOST — from the node OR from a fork's divergence
 // point. That is the ruled bar, not the built reach; ground past 10 m is span ground and the deck
 // rule owns it. (Was roadJunctionCutback + roadFilletRadius = 15 m of instrument margin.)
+//
+// BUG-59 (owner, 2026-09-07) refines that for the THROAT: the pad paves the gore out to where the
+// two pavements PART, and each leg's ribbon is trimmed to that point (leg.cutback on the carve-arc
+// record, _detectNodeJunctions). Ground inside a leg's own cutback is pad — the pad polygon is what
+// is drawn there and the physics rides it — so the pad bucket follows the leg's cutback where that
+// exceeds 10 m. The ribbons under it are still probed and still counted in the pad bucket, so a
+// pad that grows to hide a lip stays visible; it just stops being the span bar's business.
 const PADR  = 10
+const padReach = (road, key, s, L) => {
+  const arcs = road._junctionCarveArcs?.get(key)
+  let r = PADR
+  if (arcs) for (const j of arcs) { const d = Math.abs(s - j.arc); if (d < (j.cutback ?? PADR) && (j.cutback ?? PADR) > r) r = j.cutback }
+  return r
+}
 const HW    = P.roadHalfWidth ?? 5                  // m — the ribbon reaches +/-HW from centreline
 
 const allowed = (d) => TOL + FILLV * d
@@ -98,6 +118,16 @@ const camberAt = (road, key, arc) => {
   const jc = road._junctionCarve(key, arc)
   return jc && jc.frac > 0 ? c * (1 - jc.frac) : c
 }
+
+// The deck height the car actually meets — the SHIPPED series. road-mesh.js puts every ribbon
+// vertex at runProfile(arcS).gradeY (+ crown + camber tilt), and that series carries the junction
+// blend (_applyJunctionBlend: each leg eased onto the pad plane near a node). `points[].y` is the
+// solver's raw output BEFORE that blend, and this gate read it until 2026-09-07: it was measuring
+// heights that never ship, within 30 m of every node — which is where every one of its rows sits.
+// Measured the day it switched: 66 rows raw -> 60 rows shipped, median lip 2.13 -> 1.34 m. The
+// rows are real; the ruler was five per cent off. arcPos = polyCum - arcOrigin (registered runs
+// carry arcOrigin 0; slices re-origin, so subtract it rather than assume).
+const shippedY = (R, s) => R.road.runProfile(s - (R.e.arcOrigin ?? 0), R.k).gradeY
 
 const nearestOn = (px, pz, pts, cum) => {
   let d = Infinity, s = 0, y = 0, fx = 0, fz = 0, tx = 1, tz = 0
@@ -135,7 +165,7 @@ const bboxOf = (pts) => {
 
 const scan = (road) => {
   const runs = [...road._network.entries()]
-    .map(([k, e]) => ({ k, e, a: e.cellA?.join(','), b: e.cellB?.join(',') }))
+    .map(([k, e]) => ({ k, e, road, a: e.cellA?.join(','), b: e.cellB?.join(',') }))
     .filter((r) => r.a && r.b && r.e.points?.length > 1)
   for (const r of runs) r.bb = bboxOf(r.e.points)
   const lips = []
@@ -174,7 +204,7 @@ const scan = (road) => {
       const u = (s - cA[lo]) / Math.max(1e-9, cA[lo + 1] - cA[lo])
       const ax = pA[lo].x + (pA[lo + 1].x - pA[lo].x) * u
       const az = pA[lo].z + (pA[lo + 1].z - pA[lo].z) * u
-      const ay = pA[lo].y + (pA[lo + 1].y - pA[lo].y) * u
+      const ay = shippedY(A, s)
       const n = nearestOn(ax, az, B.e.points, B.e.polyCum)
       if (n.d >= NEAR) continue
       if (inBore(A.e, s) || inBore(B.e, n.s)) continue
@@ -189,7 +219,7 @@ const scan = (road) => {
 
       // RULE 1 — CENTRELINES. Two crowns at one height each; the original bar.
       let worst = null
-      const dyC = Math.abs(ay - n.y)
+      const dyC = Math.abs(ay - shippedY(B, n.s))
       const exC = dyC - allowed(n.d)
       if (exC > 0) worst = { rule: 'deck', excess: exC, dy: dyC, sep: n.d, camA: 0, camB: 0 }
 
@@ -208,7 +238,7 @@ const scan = (road) => {
       const ls  = Math.hypot(dxs, dzs) || 1
       const txA = dxs / ls, tzA = dzs / ls
       const camA = camberAt(road, A.k, s)
-      const aEnds = s < PADR || s > LA - PADR
+      const aEnds = s < padReach(road, A.k, s, LA) || s > LA - padReach(road, A.k, s, LA)
       for (let sgn = 1; sgn >= -1; sgn -= 2) {
         const qx = ax + sgn * HW * tzA, qz = az - sgn * HW * txA
         const m = nearestOn(qx, qz, B.e.points, B.e.polyCum)
@@ -220,11 +250,11 @@ const scan = (road) => {
         const camB = camberAt(road, B.k, m.s)
         const latB = Math.max(-HW, Math.min(HW, latOf(qx, qz, m)))
         const yAe = ay + sgn * HW * Math.sin(camA)
-        const yBe = m.y + latB * Math.sin(camB)
+        const yBe = shippedY(B, m.s) + latB * Math.sin(camB)
         const dyE = Math.abs(yAe - yBe)
         const exE = dyE - allowed(sepE)
         if (exE <= 0) continue
-        if (aEnds || m.s < PADR || m.s > LB - PADR) { edgePad = true; continue }
+        if (aEnds || m.s < padReach(road, B.k, m.s, LB) || m.s > LB - padReach(road, B.k, m.s, LB)) { edgePad = true; continue }
         if (!worst || exE > worst.excess)
           // `orient`: do the two runs walk this ground the same way round? Camber is a RUN-FRAME
           // angle, so the winner's bank reads as -camB in A's frame when the two oppose. The GAP
@@ -238,7 +268,7 @@ const scan = (road) => {
 
       if (edgePad) sawPadEdge = true
       if (!worst) continue
-      if (dNode <= PADR) { if (worst.rule === 'edge') sawPadEdge = true; else sawPad = true; continue }
+      if (dNode <= Math.max(PADR, padReach(road, A.k, s, LA))) { if (worst.rule === 'edge') sawPadEdge = true; else sawPad = true; continue }
       if (!lip || worst.excess > lip.excess) lip = { ...worst, x: ax, z: az, sA: s, dNode }
     }
     if (sawPad) padPairs++

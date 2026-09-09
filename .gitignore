@@ -72,3 +72,4 @@ perf-runs/
 # Planning-dashboard index (tools/dashboard) — regenerated on every `npm run dash`
 tools/dashboard/tickets.json
 tools/dashboard/stats.json
+test/.scratch/

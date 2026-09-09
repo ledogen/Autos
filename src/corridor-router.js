@@ -17,6 +17,7 @@
 // arrive as closures. Importable by a Worker as a real module (no verbatim mirror — FEAT-68 fence).
 
 import { Centerline, makePrimitive, primitivePose } from './centerline.js'
+import { PAR_REF } from './par.js'   // FEAT-81: the crest rule is keyed to par's corner-speed model
 
 // ── Physical knobs (FEAT-68 item 8 — engineer-priced, money units per metre of plain road) ──────
 // cRoadM is the numéraire: 1.0 = one metre of flat on-grade road. Everything else is priced
@@ -63,6 +64,13 @@ export const V2_COSTS = {
     // is cheaper than a connectivity violation. wGrade keeps its job as the routing preference that
     // holds AVERAGE grade pleasant; the ceiling is only the backstop that decides condemnation.
     gradeTol: 0.14,
+    // FEAT-81 (owner 2026-09-08): CREST RATE keyed to the speed the road allows. A crest's vertical
+    // radius must keep at least crestHold·g of load on the wheels at the par corner speed there
+    // (R ≥ v²/(g·crestHold), v = the par envelope capped at PAR_REF.vMax); a sag may add at most
+    // sagLoad·g. Applied by roundCrests as a re-priced post-pass — see it for why not a DP term.
+    // 0 = off (the pre-FEAT-81 "crest airtime is a feature" behaviour).
+    crestHold: 0.5,
+    sagLoad: 1.0,
 }
 
 // The corridor stage's octave depth. 4 == the full coarse field at default params: the 2.5D plan
@@ -998,6 +1006,237 @@ export function priceProfile(st, y, C) {
     }
     for (const sg of segs) sg.len = sg.s1 - sg.s0
     return { y, cls, cost, segs }
+}
+
+/**
+ * FEAT-81: the DESIGN SPEED per station — what par's reference driver carries through here.
+ * Curvature envelope v² ≤ μ·g/κ (PAR_REF.mu), then accel-limited forward and brake-limited backward
+ * passes with PAR_REF.accel/brake so a straight after a hairpin builds speed at the truck's real
+ * rate, NOT from rest at the run ends: a run is one edge, and a through road does not stop at a
+ * node, so both ends are seeded at the cap. Capped at PAR_REF.vMax (flat terminal speed) — the par
+ * oracle lets its reference exceed that downhill (up to vCeil 46 m/s), and a crest rule keyed to
+ * 46 m/s would demand 430 m radii on every straight descent. "Fast" is the flat terminal speed.
+ * Pure: no RANGER_PARAMS, so par (SM-INV-2) is read, never written.
+ *
+ * @param {{s:number[]}} st stations
+ * @param {number[]} kappa |curvature| (1/m) at each station
+ * @returns {Float64Array} v (m/s) per station
+ */
+export function stationSpeeds(st, kappa, ref = PAR_REF) {
+    const n = st.s.length
+    const v = new Float64Array(n)
+    const gmu = ref.mu * ref.g
+    for (let i = 0; i < n; i++) {
+        const k = kappa[i]
+        v[i] = Math.min(ref.vMax, k > 1e-9 ? Math.sqrt(gmu / k) : ref.vMax)
+    }
+    for (let i = 1; i < n; i++) {
+        const ds = st.s[i] - st.s[i - 1]
+        v[i] = Math.min(v[i], Math.sqrt(v[i - 1] * v[i - 1] + 2 * ref.accel * ds))
+    }
+    for (let i = n - 2; i >= 0; i--) {
+        const ds = st.s[i + 1] - st.s[i]
+        v[i] = Math.min(v[i], Math.sqrt(v[i + 1] * v[i + 1] + 2 * ref.brake * ds))
+    }
+    return v
+}
+
+/**
+ * FEAT-81 CREST ROUNDING (owner 2026-09-08: "crests that fall away quickly enough for the car to
+ * become airborne … I want to ride the edge of fast/difficult, not difficult/technical", and on
+ * the design speed: "use the run solver to determine the allowable speed for the corners in that
+ * area and set crest rate off that"). This OVERRULES the "crest airtime is a FEATURE" note on
+ * profileSolve: the DP has no term on the CHANGE of grade, so a crest may go +24 % → −24 % across
+ * one 10 m station (vertical radius ~20 m, airborne above 14 m/s). Measured on 55 km of shipped
+ * road (test/ride-probe.mjs): solver crests of R 40–115 m under 27 m/s par speed lifted the car
+ * 0.8–1.3 g.
+ *
+ * The rule: at every interior station the second difference of the deck is bounded so that at the
+ * design speed v (stationSpeeds) the wheels keep ≥ crestHold·g over a crest and gain ≤ sagLoad·g in
+ * a sag: |Δ²y| ≤ ds²/R with R_crest = v²/(g·crestHold), R_sag = v²/(g·sagLoad).
+ *
+ * Why a post-pass and not a DP term: a curvature constraint needs the previous grade in the DP state
+ * — (station, y, prev-y) — about 11× the transitions of today's solve for a rule that only ever
+ * bites at a handful of stations per edge. So, like dequantizeProfile, this reshapes the SOLVED
+ * profile and RE-PRICES it: priced == built holds on the shipped array. The reshaping is the
+ * least-squares projection onto the constraint set (cyclic projection onto each station's
+ * |Δ²y| ≤ c half-spaces, the crest station lowered and its flanks raised), with the three
+ * dequantise guarantees: endpoints (and interior pins) never move, no station changes bore status
+ * or breaches the fill ceiling, and a grade-cap breach bisects back toward the solved profile.
+ * A crest of radius R across a grade change Δg moves the deck R·Δg²/8 — 1.5 m at R 51 m,
+ * Δg 0.48 — which is why this cannot live inside the ±0.25 m corner-rounding bound downstream.
+ *
+ * @param {{s:number[],ground:number[]}} st stations
+ * @param {object} prof the solved (and dequantised) profile
+ * @param {object} C the price list (reads crestHold, sagLoad; 0/absent = off)
+ * @param {Float64Array|number[]} v design speed per station (stationSpeeds)
+ * @param {Set<number>} [pinned] interior station indices that must not move (BUG-55 pins)
+ * @returns {object} a profile of the same shape — the input untouched when the rule is off
+ */
+/**
+ * FEAT-81/82 — the PROJECTION ENGINE under roundCrests and the junction blend's recovery. Cyclic
+ * projection of a sampled profile y(s) onto, per sweep: box limits (boxLo/boxHi), the grade cap
+ * between neighbours (|Δy| ≤ cap(i)·ds), and the second-difference limits (−cCrest[i] ≤ Δ²y ≤
+ * cSag[i]) — each a convex set, so the sweeps converge to a point in their intersection when one
+ * exists. Pinned samples (free(i) false) never move; a constraint with no free sample is skipped.
+ * Mutates y in place. Returns the worst residual step of the last sweep (0 when everything held).
+ *
+ * @param {ArrayLike<number>} s  arc positions (monotone)
+ * @param {number[]|Float64Array} y  profile, mutated
+ * @param {object} o  { cCrest, cSag, cap:(i)=>number, boxLo?, boxHi?, free:(i)=>boolean, maxIt=2000, tol=1e-5 }
+ */
+export function projectProfile(s, y, o) {
+    const n = s.length
+    const maxIt = o.maxIt ?? 2000, tol = o.tol ?? 1e-5
+    const free = o.free
+    let worst = Infinity
+    for (let it = 0; it < maxIt; it++) {
+        worst = 0
+        if (o.boxLo) {
+            for (let i = 0; i < n; i++) {
+                if (!free(i)) continue
+                if (y[i] < o.boxLo[i]) { worst = Math.max(worst, o.boxLo[i] - y[i]); y[i] = o.boxLo[i] }
+                else if (y[i] > o.boxHi[i]) { worst = Math.max(worst, y[i] - o.boxHi[i]); y[i] = o.boxHi[i] }
+            }
+        }
+        for (let i = 0; i < n - 1; i++) {
+            const ds = s[i + 1] - s[i]
+            if (!(ds > 1e-9)) continue
+            const cap = o.cap(i) * ds
+            if (!Number.isFinite(cap)) continue
+            const dy = y[i + 1] - y[i]
+            let target
+            if (dy > cap) target = cap
+            else if (dy < -cap) target = -cap
+            else continue
+            const f0 = free(i) ? 1 : 0, f1 = free(i + 1) ? 1 : 0
+            const norm2 = f0 + f1
+            if (norm2 === 0) continue
+            const d = (target - dy) / norm2
+            if (f0) y[i] -= d
+            if (f1) y[i + 1] += d
+            if (Math.abs(d) > worst) worst = Math.abs(d)
+        }
+        for (let i = 1; i < n - 1; i++) {
+            const d2 = y[i - 1] - 2 * y[i] + y[i + 1]
+            let target
+            if (d2 < -o.cCrest[i]) target = -o.cCrest[i]
+            else if (d2 > o.cSag[i]) target = o.cSag[i]
+            else continue
+            const f0 = free(i - 1) ? 1 : 0, f1 = free(i) ? 1 : 0, f2 = free(i + 1) ? 1 : 0
+            const norm2 = f0 + 4 * f1 + f2
+            if (norm2 === 0) continue
+            const d = (target - d2) / norm2
+            if (f0) y[i - 1] += d
+            if (f1) y[i] -= 2 * d
+            if (f2) y[i + 1] += d
+            if (Math.abs(d) > worst) worst = Math.abs(d)
+        }
+        if (worst < tol) break
+    }
+    return worst
+}
+
+/**
+ * FEAT-81 CREST ROUNDING (owner 2026-09-08: "crests that fall away quickly enough for the car to
+ * become airborne … I want to ride the edge of fast/difficult, not difficult/technical", and on
+ * the design speed: "use the run solver to determine the allowable speed for the corners in that
+ * area and set crest rate off that"). This OVERRULES the "crest airtime is a FEATURE" note on
+ * profileSolve: the DP has no term on the CHANGE of grade, so a crest may go +24 % → −24 % across
+ * one 10 m station (vertical radius ~20 m, airborne above 14 m/s). Measured on 55 km of shipped
+ * road (test/ride-probe.mjs): solver crests of R 40–115 m under 27 m/s par speed lifted the car
+ * 0.8–1.3 g.
+ *
+ * The rule: at every interior station the second difference of the deck is bounded so that at the
+ * design speed v (stationSpeeds) the wheels keep ≥ crestHold·g over a crest and gain ≤ sagLoad·g in
+ * a sag: |Δ²y| ≤ ds²/R with R_crest = v²/(g·crestHold), R_sag = v²/(g·sagLoad).
+ *
+ * Why a post-pass and not a DP term: a curvature constraint needs the previous grade in the DP state
+ * — (station, y, prev-y) — about 11× the transitions of today's solve for a rule that only ever
+ * bites at a handful of stations per edge. So, like dequantizeProfile, this reshapes the SOLVED
+ * profile and RE-PRICES it: priced == built holds on the shipped array. The reshaping is
+ * projectProfile with the STRICT grade cap (priceProfile's — no DP half-quantum tolerance, so a
+ * solve that rode that tolerance comes out legal and cheaper) and the bore/fill box, all in one
+ * sweep: rounding a crest raises its flanks, and a flank already at the cap would otherwise fail
+ * the re-price and the bisect would hand the crest straight back. Endpoints and interior pins never
+ * move; a residual cap breach bisects toward the solved profile (safety net only).
+ * A crest of radius R across a grade change Δg moves the deck R·Δg²/8 — 1.5 m at R 51 m,
+ * Δg 0.48 — which is why this cannot live inside the ±0.25 m corner-rounding bound downstream.
+ *
+ * @param {{s:number[],ground:number[]}} st stations
+ * @param {object} prof the solved (and dequantised) profile
+ * @param {object} C the price list (reads crestHold, sagLoad; 0/absent = off)
+ * @param {Float64Array|number[]} v design speed per station (stationSpeeds)
+ * @param {Set<number>} [pinned] interior station indices that must not move (BUG-55 pins)
+ * @param {object} [stats] census counters (viol / converged / full / partial / refused / why)
+ * @returns {object} a profile of the same shape — the input untouched when the rule is off
+ */
+export function roundCrests(st, prof, C, v, pinned, stats) {
+    const n = st.s.length
+    const hold = C.crestHold ?? 0
+    const sag = C.sagLoad ?? 0
+    if (n < 4 || !(hold > 0)) return prof
+    const g = PAR_REF.g
+    const y0 = prof.y
+    const y = y0.slice()
+    const free = (i) => i > 0 && i < n - 1 && !(pinned && pinned.has(i))
+    // Per-station limits on the second difference (m), from the local design speed.
+    const cCrest = new Float64Array(n), cSag = new Float64Array(n)
+    for (let i = 1; i < n - 1; i++) {
+        const ds = 0.5 * (st.s[i + 1] - st.s[i - 1])
+        const vv = Math.max(1, v[i]) ** 2
+        cCrest[i] = ds * ds * g * hold / vv
+        cSag[i] = sag > 0 ? ds * ds * g * sag / vv : Infinity
+    }
+    // Is there anything to do? (The common case: no station is over the limit — return untouched,
+    // so a compliant solve ships bit-identical and pays nothing.)
+    let viol = false
+    for (let i = 1; i < n - 1 && !viol; i++) {
+        const d2 = y[i - 1] - 2 * y[i] + y[i + 1]
+        if (d2 < -cCrest[i] || d2 > cSag[i]) viol = true
+    }
+    if (!viol) return prof
+    if (stats) stats.viol = (stats.viol || 0) + 1
+    // Cap margin 2e-4 (0.02 % grade): the projection converges to ~1e-5 residuals, and the re-price
+    // is strict, so the target sits a hair inside the cap or every blend would be refused.
+    const capOf = (i) => ((prof.cls[i] === CLS.BORE || prof.cls[i + 1] === CLS.BORE) ? C.gMaxBore : C.gMaxRoad) - 2e-4
+    const EPS = 1e-3
+    const boxLo = new Float64Array(n), boxHi = new Float64Array(n)
+    for (let i = 0; i < n; i++) {
+        const gr = st.ground[i]
+        if (prof.cls[i] === CLS.BORE) { boxLo[i] = -Infinity; boxHi[i] = gr - C.cutMax - EPS }
+        else { boxLo[i] = gr - C.cutMax + EPS; boxHi[i] = gr + C.fillMax - EPS }
+    }
+    const worst = projectProfile(st.s, y, { cCrest, cSag, cap: capOf, boxLo, boxHi, free })
+    if (stats) { if (worst < 1e-5) stats.converged = (stats.converged || 0) + 1; else { stats.unconverged = (stats.unconverged || 0) + 1; stats.lastWorst = worst } }
+    for (let i = 1; i < n - 1; i++) if (!free(i)) y[i] = y0[i]
+    // Guarantee 3: re-price; on a cap breach keep the largest feasible blend toward the rounded line.
+    const blend = (t) => {
+        const out = new Array(n)
+        for (let i = 0; i < n; i++) out[i] = y0[i] + t * (y[i] - y0[i])
+        return out
+    }
+    let best = priceProfile(st, blend(1), C)
+    if (best) { if (stats) stats.full = (stats.full || 0) + 1; return best }
+    if (stats) {
+        // Diagnose the refusal: first station whose grade or fill breaks the strict price.
+        const yy = blend(1)
+        for (let i = 1; i < n; i++) {
+            const ds = st.s[i] - st.s[i - 1], gg = (yy[i] - yy[i - 1]) / ds
+            const c0 = classOf(yy[i - 1] - st.ground[i - 1], C), c1 = classOf(yy[i] - st.ground[i], C)
+            const cap = (c0 === CLS.BORE || c1 === CLS.BORE) ? C.gMaxBore : C.gMaxRoad
+            const fill = yy[i] - st.ground[i]
+            if (Math.abs(gg) > cap + 1e-9 || fill > C.fillMax) { stats.why = { i, g: +gg.toFixed(5), cap, c0, c1, fill: +fill.toFixed(2), origCls: prof.cls[i], moved: +(yy[i] - y0[i]).toFixed(3) }; break }
+        }
+    }
+    let lo = 0, hi = 1
+    for (let it = 0; it < 12; it++) {
+        const mid = (lo + hi) / 2
+        const pr = priceProfile(st, blend(mid), C)
+        if (pr) { best = pr; lo = mid } else hi = mid
+    }
+    if (stats) { if (best) stats.partial = (stats.partial || 0) + 1; else stats.refused = (stats.refused || 0) + 1 }
+    return best || prof
 }
 
 /**

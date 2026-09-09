@@ -1,7 +1,7 @@
 ---
 id: BUG-59
 type: bug
-status: pending
+status: completed
 severity: medium
 ---
 
@@ -86,3 +86,36 @@ bounds the ring directly. It has never been retuned against v2 geometry.
 
 The 1.00 m deck step at plate 08 is a separate finding, recorded on FEAT-76's close-out: the two roads
 part slowly there and the departure has little room. A bigger pad may hide it; it will not fix it.
+
+
+---
+
+## RESOLUTION — 2026-09-07, `feature/junction-stitch`
+
+**The mechanism, named.** The 13.5 m floor is the mouth corner: `_junctionMouths` put every mouth at
+`roadJunctionCutback + halfWidth/2 = 12.5 m` and the corner sits at `hypot(12.5, 5) = 13.46 m`. At a
+narrow throat the two mouth CHORDS overlap, the exact weld self-intersects, and `_buildJunctionRing`
+falls to the circle pad — whose reach is that same corner. The throat sweep existed for exactly these
+junctions and never got to run, because the weld had already failed above it. 22 of the 64
+junction-stitch offenders sat on that rung.
+
+**The fix (owner ruling 2026-09-07: pave the gore to where the pavements PART, not to a road width
+apart, not the compact floor).** Each leg of a ≥3-leg junction now carries its own `cutback`: the
+further of the default and the arc at which its pavement has parted from every sibling's
+(`_legPartingReach` — the same walk the deck hold in `_applyJunctionBlend` uses, so the pad ends
+exactly where the profiles let go of the plane). Mouths sit at that cutback, so chords never overlap
+and the weld holds; the ribbon mesh trims and the marking feather read `leg.cutback` off the
+carve-arc record; the circle fallback reaches at least the furthest leg. `_throatSweep` and the
+`THROAT_*` constants are deleted — the mouths now do their job.
+
+Measured, seeds 6/7/11 @1400 m, 75 junctions ≥3 legs: rungs weld 74 · circle 1 · hull 0 (was
+mostly circle/hull among the offenders); ringMaxR p10 13.5 · p50 14.1 · p75 15.4 · max 31.0; 12 at
+the 13.46 m corner, every one a wide-angle crossroads whose ribbons part inside the default cutback;
+**0 pads short of their own legs' parting point**. Battery-wide (`pad-census`): weld 207 of 208.
+
+**Gate:** `pad-census` now prints the reach distribution and FAILS on any pad that reaches short of
+its own legs' parting point — the honest floor test (a wide-angle crossroads is allowed its 13.5 m).
+
+**Not done here:** the owner's drive of plate 08 (seed 7, -1633.6,-40.2 — the nearest junction is at
+(-1615.9,-24.1), three legs, weld, reach 15.4 m, one leg cut back to 12.0 m). Dev server on the
+worktree for that.

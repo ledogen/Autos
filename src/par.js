@@ -111,7 +111,16 @@ export const PAR_REF = {
     // re-run test/calibrate-par.mjs when new labelled runs land. NOTE THE DIRECTORY: v2 drives go
     // to `runs-v2/` (`node test/calibrate-par.mjs runs-v2`); `runs/` is the frozen v1 corpus and
     // must never be fitted together with it — see (5) and runs-v2/README.md.
-    mu: 0.80,          // EFFECTIVE centerline friction — see (3)/(4): line-cutting, not tire grip
+    // (6) 2026-09-08, FEAT-80 (owner: "weaken par to match this new default friction coef").
+    //     The tire model gained load sensitivity and the lab skidpad fell from mu 0.72–0.74 to
+    //     0.64–0.65 across 25/60/150 m — an 11 % grip cut, uniform across radii, that the owner
+    //     kept ("a, b and c feel great"). Corner speed goes as √mu, so par's mu scales with the
+    //     grip: 0.80 × 0.65/0.73 = 0.71. Cross-checked against 8 fresh drives on the new grip
+    //     (runs-v2 0013–0020, 20 runs total): calibrate-par's basin is FLAT from 0.70 to 0.80
+    //     (loss 0.289–0.293), best 0.76, felt-par mean 0.860 against a 0.88 target — the corpus
+    //     cannot tell 0.71 from 0.76, so the physics ratio decides. 0.72 = the old physical
+    //     skidpad number, and nothing else in PAR_REF moves.
+    mu: 0.72,          // EFFECTIVE centerline friction — see (3)/(4)/(6): line-cutting, not tire grip
     accel: 3.0,        // powertrain-limited longitudinal accel on the flat (m/s²) — measured
     brake: 7.0,        // braking decel cap (m/s²) — measured; friction-circle limited below
     // vMax is the FLAT terminal speed, and it sets the drag coefficient (k = accel / vMax²)

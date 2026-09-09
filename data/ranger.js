@@ -197,7 +197,7 @@ export const RANGER_PARAMS = {
   // but kept so existing debug sliders do not break.
   lateralDampingCoeff:    4000,  // N/(m/s) — damps lateral contact-patch velocity (unused, kept for slider compat)
   corneringStiffness: 50000,     // N/rad — linear tire lateral stiffness; used by computeLateralForce (Bug 6 fix)
-  frictionCoeff:      0.8,       // peak tire-road friction coefficient; caps Flat and Flong at μ*Fn
+  frictionCoeff:      0.8,       // peak tire-road friction coefficient; caps Flat and Flong at μ·gripLoad(Fn) (FEAT-80)
 
   // ── Body Contact (collision against walls/ramp faces) ────────────────────
   bodyContactStiffness: 200000,  // N/m — stiffer than tire; metal-on-terrain response
@@ -212,11 +212,25 @@ export const RANGER_PARAMS = {
   // ── Phase 3 Pacejka Tire Model (D-07) ────────────────────────────────────
   // Combined-slip Pacejka in SLIP-VELOCITY space (m/s). One isotropic curve, evaluated at
   // |s| = √(s_long² + s_lat²) where s is the relaxation-length-filtered slip displacement.
-  // Peak force per wheel = frictionCoeff × pacejkaD × Fn. Hard-clamped at C=[1.0,1.99] in tire.js.
+  // Peak force per wheel = frictionCoeff × pacejkaD × gripLoad(Fn) (FEAT-80, below). Hard-clamped at C=[1.0,1.99] in tire.js.
   pacejkaB:  10.0,   // stiffness factor — initial slope of force curve
   pacejkaC:   1.9,   // shape factor — C<2 required; hard-clamped in computeTireForces
   pacejkaD:   1.0,   // peak factor — peak force = frictionCoeff × D × Fn
   pacejkaE:  0.97,   // curvature — near 1.0 produces realistic post-peak falloff
+
+  // FEAT-80 — tire LOAD SENSITIVITY (owner ruling 2026-09-08; see tire.js gripLoad). Peak force is
+  // frictionCoeff × pacejkaD × gripLoad(Fn), NOT × Fn. Two effects:
+  //   · linear falloff: μ loses tireLoadSensitivity of itself per tireNominalLoad of extra load
+  //     (Pacejka pDy2 ≈ −0.1…−0.2 for a passenger tire). Weight transfer now COSTS an axle grip.
+  //   · hard knee at tireRatedLoad (P235/75R15: 2028 lbf = 9.0 kN at 35 psi): past it every extra
+  //     newton removes tireOverloadDrop newtons of grip load, floored at 15 % of the rated load.
+  // With these defaults: static 3.4 kN → Fg 3.4 kN (unchanged); 6.8 kN (full transfer) → 5.96 kN;
+  // 9.0 kN (rated) → 6.9 kN, the peak; 12 kN → 6.5 kN; 18 kN (a measured landing spike) → 3.3 kN.
+  // tireLoadSensitivity 0 + tireOverloadDrop 0 = the pre-FEAT-80 linear model, bit-for-bit.
+  tireNominalLoad:      3400,  // N — static per-wheel load (1360 kg / 4); the λ = 1 reference
+  tireLoadSensitivity:  0.12,  // fraction of μ lost per tireNominalLoad of extra load (pDy2-like)
+  tireRatedLoad:        9000,  // N — carcass rated load; the knee (2028 lbf OE tire at 35 psi)
+  tireOverloadDrop:     0.60,  // N of grip load removed per N of load past the knee
 
   // Slip-velocity tire model parameters (added with combined-slip rewrite).
   // BUG-20: the steady-state grip curve depends only on the RATIO tireRelaxationLength/tireSlipVelRef
@@ -534,6 +548,15 @@ export const RANGER_PARAMS = {
     // stations; the bound is half the solver's own elevation quantum, so the shipped road never
     // departs from the priced one by more than the solver could resolve in the first place.
     vSmoothM: 15,
+    // FEAT-81 (owner 2026-09-08): CREST RATE keyed to the corner speed par allows there. At the
+    // design speed v (par's curvature envelope with its accel/brake passes, capped at the 28 m/s
+    // flat terminal speed) a crest must keep crestHold·g on the wheels — R_crest ≥ v²/(g·crestHold)
+    // — and a sag may add at most sagLoad·g. 0.5 means: at par you keep half your weight; at 1.41×
+    // par you are weightless; beyond that you fly. At 28 m/s that is R ≥ 160 m; at a 15 m/s
+    // corner, 46 m. Applied as a re-priced post-pass on the solved profile (corridor-router.js
+    // roundCrests). 0 = off = the old "crest airtime is a feature" behaviour.
+    crestHold: 0.5,
+    sagLoad: 1.0,
     onTol: 0.75,      // m — |deck − ground| within this counts as on-grade
     // Owner review 2026-08-21 (set from the live sliders): 0.35 -> 0.24. The ladder's relief rung
     // then solves refusals at min(0.38, 0.27), and the ceiling rung still guards the 0.38 contract.
@@ -588,6 +611,19 @@ export const RANGER_PARAMS = {
     // registers deflected laterally until the pair stays this far apart over the contact —
     // above the census's 9 m tear floor, below mergeProxM. Deflection declines (fold floor,
     // transit, >30 m) fall through to the delete rung.
+    // clearEdgeM (FEAT-77, owner ruling 2026-09-07): two adjacent roads keep at least this much
+    // DAYLIGHT between their pavement edges, AND neither road's earthwork may reach the other. The
+    // taper is not a knob of its own — it is the carve's own apron (roadFillSlope / roadCutSlope,
+    // capped at carveHalfWidth + roadMaxEmbankmentToe), read from the same params the carve reads,
+    // so the rule and the earthwork can never disagree (RoadSystem._v2ClearReq). A pair inside the
+    // rule is a CONFLICT, and conflicts resolve through the merge planner into a T. Photo site:
+    // seed 1517161527 near (-162,-458), two legs 21 m apart with 14 m of height between them.
+    clearEdgeM: 12,
+    // clearThroatM: inside this distance of a node the two roads SHARE, the clearance rule is not
+    // owed — they leave one pad, the deck hold and the junction plane own that ground, and two legs
+    // at 60° are inside 22 m of each other for the first 22 m out by geometry. There the planner
+    // keeps its old proximity (mergeProxM).
+    clearThroatM: 30,
     shoveClearM: 12,
     // BUG-55 pair census: an edge is a CANDIDATE conflict partner of a registering edge when its
     // node-to-node CHORD comes within this of the registering edge's ROUTE polyline. Chord-to-
@@ -720,7 +756,15 @@ export const RANGER_PARAMS = {
   // The pad's elevation may shift from the mean approach-Y toward the terrain median over the pad
   // disc (L1 fit) by at most this many metres — shrinks uphill cut walls without letting the pad
   // chase a gully/ridge far from every approach road. 0 = off (elevation = mean approach Y).
-  roadJunctionPadTerrainBias: 3.0, // m — cap on terrain-seeking pad elevation shift
+  // FEAT-82 (owner 2026-09-08): 3.0 → 0. The owner's diagnosis — "the pad resembles the road
+  // surface being painted onto the terrain … you drop 50 cm off the road into the intersection and
+  // climb back out" — measured: at 6 of 15 three-leg nodes on seeds 6/7 every leg agreed with its
+  // siblings and every one was bent by exactly 3.00 m (this cap) onto a plane the terrain median
+  // had pulled off the roads' consensus height. The node height already comes from the terrain
+  // neighbourhood (_v2NodeHeight) when the roads are solved, so the bias double-counted the ground
+  // and left the roads to absorb it in a 30 m ramp. 0 = the pad plane passes through the roads'
+  // shared node height; the terrain is carved to the roads, not the roads bent to the terrain.
+  roadJunctionPadTerrainBias: 0.0, // m — cap on terrain-seeking pad elevation shift (0 = off)
   // Adaptive approach-blend reach: when a run's own graded endpoint sits far above/below the pad
   // plane, easing it over the fixed roadJunctionBlendLength would create a 60–130% artificial
   // grade spike (the QUAL-13 junction grade artifact). The grade blend stretches so the

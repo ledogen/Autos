@@ -26,6 +26,7 @@
  */
 
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
+import { gripLoad } from './tire.js'
 import { VEHICLES } from '../data/vehicles.js'
 import { resolveBuild } from './version.js'
 import { THROW_PARAMS } from './throw.js'                      // FEAT-61 Phase F: throw feel
@@ -234,6 +235,21 @@ export function initDebug (params, callbacks = {}, options = {}) {
   tiresFolder.add(params, 'pacejkaC', 1.0, 1.99, 0.01).name('C - Shape [1.0-1.99]')
   tiresFolder.add(params, 'pacejkaD', 0.5, 2.0, 0.05).name('D - Peak Factor')
   tiresFolder.add(params, 'pacejkaE', -1.0, 1.0, 0.05).name('E - Curvature')
+  // FEAT-80 load sensitivity — see tire.js gripLoad(). The readout below the sliders prints the
+  // grip-carrying load at static / full-transfer / rated / landing loads so a slider drag is legible.
+  const loadFolder = tiresFolder.addFolder('Load Sensitivity (FEAT-80)')
+  loadFolder.close()
+  const loadRead = { curve: '' }
+  const _loadReadout = () => {
+    const pts = [params.tireNominalLoad, 2 * params.tireNominalLoad, params.tireRatedLoad, 18000]
+    loadRead.curve = pts.map(f => `${(f / 1000).toFixed(1)}→${(gripLoad(f, params) / 1000).toFixed(2)}`).join('  ')
+  }
+  _loadReadout()
+  loadFolder.add(params, 'tireNominalLoad', 1000, 8000, 100).name('Nominal Load (N)').onChange(_loadReadout)
+  loadFolder.add(params, 'tireLoadSensitivity', 0, 0.4, 0.01).name('Falloff / nominal').onChange(_loadReadout)
+  loadFolder.add(params, 'tireRatedLoad', 4000, 20000, 250).name('Rated Load (N)').onChange(_loadReadout)
+  loadFolder.add(params, 'tireOverloadDrop', 0, 1.5, 0.05).name('Overload Drop').onChange(_loadReadout)
+  loadFolder.add(loadRead, 'curve').name('Fn→Fg kN').listen().disable()
   // BUG-20: carcass length (L) and slip-vel ref (vRef) are tuned as a COUPLED pair, never
   // independently — moving one alone silently rescales grip. The grip curve depends only on the ratio
   // L/vRef; the stored carcass displacement (slide-to-stop slosh energy) scales with L. So:
@@ -548,6 +564,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   20 m/s runs 0 m → 0.51 g, 15 m → 0.24 g, 30 m → 0.48 g, because past ~2 stations the
   //   displacement bound clips and clipping puts corners back. 15 is the floor; 25 is the cap.
   v2Folder.add(params.roadV2, 'vSmoothM', 0, 25, 2.5).name('Corner Rounding (m)').onChange(fireRoadParam)
+  // FEAT-81: crest/sag rate at the local par speed (fraction of g kept over a crest / added in a sag).
+  v2Folder.add(params.roadV2, 'crestHold', 0, 1, 0.05).name('Crest Hold (g at par)').onChange(fireRoadParam)
+  v2Folder.add(params.roadV2, 'sagLoad', 0, 2, 0.1).name('Sag Load (g at par)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'gMaxRoad', 0.15, 0.40, 0.01).name('Max Road Grade').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'gMaxBore', 0.05, 0.30, 0.01).name('Max Bore Grade').onChange(fireRoadParam)
   //   Merge Distance (BUG-53): two roads leaving the same junction count as ONE road while their
