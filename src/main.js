@@ -4964,6 +4964,30 @@ function loop () {
     }
     captureFrame(simTime, vehicleState, vehicleState.wheelDebug, roadDebug)
     accumulator -= PHYSICS_DT
+
+    // PERF-32: WALL-CLOCK CATCH-UP BUDGET — the spiral brake the MAX_FRAME_TIME clamp is not.
+    //
+    // The clamp bounds the debt one frame may ADD (0.25 s), which is 15 catch-up steps: it caps how
+    // deep the hole gets, not whether we are digging. The runaway needs no big frame to start. Once
+    // ONE step costs more wall time than PHYSICS_DT of sim time, every frame ends owing more than it
+    // paid, so the next frame dispatches two steps, then three, and it settles at the clamp — 15
+    // steps per frame, ~4 fps, self-sustaining until the cost goes away. That is the PERF-32 lock: at
+    // a deg-2 connector the ground query alone was 8.5 ms of a 16.7 ms step, and a near-stationary
+    // truck (the capture is creeping at 0.5 m/s) sits in it. carveHint's memo comment has named this
+    // failure since PERF-24 — "the death-spiral fires when the truck is ~STATIONARY (a slow frame
+    // dispatches many catch-up steps at one spot)" — as a thing to be survived by making each step
+    // cheaper. Cheaper steps raise the bar; they do not remove it, because the bar is a ratio.
+    //
+    // So measure the ratio directly instead of guessing a step count: if the loop has already burned
+    // a full PHYSICS_DT of WALL time, real time is outrunning us and further catch-up cannot converge
+    // — abandon the debt and render. The first step is unconditional, so the sim never stalls; under
+    // overload it runs in slow motion (sim time lags wall time), which is the standard trade and the
+    // one the 0.25 s clamp already makes, just without waiting for 4 fps to make it. Costs nothing on
+    // a healthy frame, where the loop exits on `accumulator < PHYSICS_DT` long before the budget.
+    if (accumulator >= PHYSICS_DT && performance.now() - _ptP > PHYSICS_DT * 1000) {
+      accumulator = 0
+      break
+    }
   }
   perfAdd('frame.physics', performance.now() - _ptP)
 

@@ -8571,6 +8571,19 @@ export class RoadSystem {
             }
         }
         if (!bestArc) return null
+        // PERF-32: reject on the STRUCTURAL lateral ceiling BEFORE pricing the design. The real gate is
+        // `bestLat > toeExt` below, which needs cd.grade — but toeExt is Math.min(..., latCeiling), so
+        // toeExt <= latCeiling always and anything past the ceiling is rejected either way. Hoisting the
+        // half of the test that needs no design is therefore exact, not an approximation.
+        //
+        // It matters because _connectorDesignAt is the most expensive call in the whole surface path:
+        // two _runGradeAt, each a full run-polyline projection PLUS a 40 m analytic-centreline scan at
+        // 0.25 m DS (162 pose evaluations). The arc list is a 3x3 CHUNK block = 192 m, so without this
+        // line every ground sample within 192 m of a connector paid ~250 us for a guaranteed-null
+        // return — and the wheel contact path takes 33 tire-envelope samples x 24 queries per physics
+        // step. Measured on the PERF-32 capture, 30 m off the connector: 7.3 -> 1.5 ms/step.
+        const latCeiling = carveHalfWidth + maxEmbankmentToe
+        if (bestLat > latCeiling) return null
         const cd = this._connectorDesignAt(bestArc, wx, wz, _CD_OUT)
         if (cd == null) return null
         const designY = cd.grade - clearanceMargin
