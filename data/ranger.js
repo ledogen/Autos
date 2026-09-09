@@ -507,7 +507,11 @@ export const RANGER_PARAMS = {
     // compliance identical at all three — it trades hairpin density against sweep, nothing else.
     // Owner review 2026-08-21 (set from the live sliders): 55 -> 45.
     cTurn: 45,
-    cutMax: 20,       // m below ground where a cut becomes a BORE — a 12–20 m trench is an open rock
+    // Owner review 2026-09-07: 20 -> 25. Short bores were NOT price-sensitive — a 20 m bore under
+    // 30 m of rock survived cPortal 1000 — because above cutMax there is no cut state to buy, so the
+    // router was not choosing a tunnel over a cutting, it had no cutting to choose. 25 gives the
+    // 25-30 m pinches an open-cutting answer instead of a portal pair as long as they are tall.
+    cutMax: 25,       // m below ground where a cut becomes a BORE — a 12–25 m trench is an open rock
                       // cutting at road grade cap, not a tunnel; at 12 the bore's 18% cap
                       // rate-limited legitimate cliff descents through deep-cut pockets
     // QUAL-27: the fill CEILING — above it there is no buildable state and the price is Infinity, so

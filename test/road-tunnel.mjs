@@ -54,25 +54,48 @@ check(tunneled.length >= 1, `seed ${SEED} region has tunneled edges: ${tunneled.
 // L/round(L/10) ≈ 9.5-10.5 m → up to ~2.6 pp; see the M0 record), and the vSmooth corner
 // rounding may add a hair within its ±0.25 m bound. +0.03 covers both (measured worst 20.53%);
 // anything above it is a real solver violation, not quantisation.
-const maxGrade = 0.18 + 0.03
-let worstG = 0, worstStep = 0
+// THE PORTAL IS A TRANSITION, NOT A LINE (owner ruling 2026-09-07). A span boundary does NOT sit on
+// the profile's own station grid: _v2GradePts solves at nSt = round(L/10) stations, but a spliced run
+// carries spans shifted arithmetically into its new arc domain (road.js `clip(T.tunnelSpans, …)`), so
+// the mouth lands mid-station. The first station inside a span therefore still carries the SURFACE
+// approach grade — measured on seed 11, run g:641157,…:1,-1,1, span starting 617.82 on a station grid
+// of 9.9922: the deck runs 25.1% (legal road) to 619.5, blends to 22.6% across one 4 m sample, then
+// settles to 20.1% (legal bore) for the rest of the 90 m span.
+//
+// So the bore cap is enforced on the INTERIOR and the road cap within a grace band of each mouth. The
+// band is sized by that mechanism, not fitted: one station (~10 m) plus one polyline sample (4 m) = 15 m,
+// bounded to 20% of the span so a short bore keeps ≥60% of itself strictly enforced. MEASURED over 350
+// bores (6 seeds × cutMax 12/20/25/32/40 — the debug slider's range is 6–40, so the whole range has to
+// hold): only 2 bores need any grace at all (12.1 m at cutMax 20, 8.1 m at 32), and the worst INTERIOR
+// grade at every setting is 20.4%, inside the cap. The gate keeps teeth on both bands.
+//
+// The +0.03 on each cap is the SOLVER's own tolerance, not a round number: the DP allows a half-quantum
+// overshoot (yStep 0.5 over a station of L/round(L/10) ≈ 9.5-10.5 m → up to ~2.6 pp; see the M0 record)
+// and vSmooth corner rounding adds a hair within its ±0.25 m bound. Anything above is a real violation.
+const maxGrade = 0.18 + 0.03           // interior of a bore
+const maxGradeMouth = 0.24 + 0.03      // within the grace band — the road cap still binds here
+const GRACE_M = 15
+let worstG = 0, worstMouthG = 0, worstStep = 0
 for (const [, e] of tunneled) {
   const pts = e.points, cum = e.polyCum
   for (let i = 1; i < pts.length; i++) {
     const ds = cum[i] - cum[i - 1]
     if (ds < 1e-6) continue
-    // The WHOLE sample must lie inside the span, not just its midpoint. A 4 m sample straddling a
-    // portal measures the road→bore TRANSITION, where the road side is legally capped at gMaxRoad
-    // (0.24) rather than gMaxBore (0.18) — so admitting it on the midpoint scores a legal transition
-    // as an illegal bore grade. Measured 2026-09-07 on seed 6: sample [851.3, 855.3] against a span
-    // starting at 851.5 reported 22.5% while the bore behind it runs at 13.7%.
-    if (!e.tunnelSpans.some(s => cum[i - 1] >= s.s0 && cum[i] <= s.s1)) continue
+    // The WHOLE sample must lie inside the span, not just its midpoint — admitting it on the midpoint
+    // scores a road→bore transition as an illegal bore grade (seed 6: sample [851.3, 855.3] against a
+    // span starting at 851.5 read 22.5% while the bore behind it runs at 13.7%).
+    const sp = e.tunnelSpans.find(s => cum[i - 1] >= s.s0 && cum[i] <= s.s1)
+    if (!sp) continue
+    const grace = Math.min(GRACE_M, 0.2 * (sp.s1 - sp.s0))
+    const inMouth = cum[i - 1] < sp.s0 + grace || cum[i] > sp.s1 - grace
     const dy = Math.abs(pts[i].y - pts[i - 1].y)
-    worstG = Math.max(worstG, dy / ds)
+    if (inMouth) worstMouthG = Math.max(worstMouthG, dy / ds)
+    else worstG = Math.max(worstG, dy / ds)
     worstStep = Math.max(worstStep, dy)
   }
 }
-check(worstG <= maxGrade, `bore grade ≤ ${(maxGrade * 100).toFixed(0)}%: worst ${(worstG * 100).toFixed(1)}%`)
+check(worstG <= maxGrade, `bore INTERIOR grade ≤ ${(maxGrade * 100).toFixed(0)}%: worst ${(worstG * 100).toFixed(1)}%`)
+check(worstMouthG <= maxGradeMouth, `bore MOUTH (±${GRACE_M} m) grade ≤ ${(maxGradeMouth * 100).toFixed(0)}%: worst ${(worstMouthG * 100).toFixed(1)}%`)
 check(worstStep <= 1.0, `no vertical step inside a bore: worst ${worstStep.toFixed(2)} m/sample`)
 
 // ── (3) physics floor vs terrain skin diverge inside a bore, agree at the portals ──────────────

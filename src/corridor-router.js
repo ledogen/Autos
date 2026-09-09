@@ -44,7 +44,7 @@ export const V2_COSTS = {
     // costs money. Evaluated greedily against the parent step's direction (not part of the state
     // — exact turn accounting would 8× the state space for a tie-shaping term).
     cTurn: 45,
-    cutMax: 20,       // m below ground where a cut becomes a bore — a 12–20 m trench is an open
+    cutMax: 25,       // m below ground where a cut becomes a bore (owner 2026-09-07: 20 -> 25) — a 12–25 m trench is an open
                       // rock CUTTING (road grade cap, priced linearly per m of depth), not a
                       // tunnel; at 12 the bore's 18% grade cap rate-limited legitimate cliff
                       // descents through incidental deep-cut pockets (seed 67, 31.7%-mean drop)

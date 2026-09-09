@@ -364,7 +364,7 @@ const ms = new MissionSystem({
   const STEP = 4
   const iAbs = [], bands = [], peaks = []
   let runs = 0
-  let domMax = 0, domWorst = ''      // |par arc length - driven arc length|, over every run
+  let domMax = 0, domWorst = '', domRel = 0, domL = 0   // |par arc length - driven arc length|, over every run
   for (const [, e] of road._network) {
     if (!e.cellA || !e.cellB) continue
     const ed = road.edgeParData(e.cellA, e.cellB)
@@ -375,7 +375,10 @@ const ms = new MissionSystem({
     // arc and the domain runProfile indexes, so the par centerline must measure the same length.
     if (e.polyCum) {
       const d = Math.abs(L - e.polyCum[e.polyCum.length - 1])
-      if (d > domMax) { domMax = d; domWorst = ed.key }
+      // Scored RELATIVE to run length: the residual is chord-vs-arc SAMPLING, which scales with the
+      // run (and its curviness), so a fixed metre bar silently tightens as runs get longer.
+      const rel = d / Math.max(1, e.polyCum[e.polyCum.length - 1])
+      if (rel > domRel) { domRel = rel; domMax = d; domWorst = ed.key; domL = e.polyCum[e.polyCum.length - 1] }
     }
     const dAt = (s) => ed.gradeAt(s) - road.runProfile(s, ed.key).gradeY
 
@@ -400,10 +403,17 @@ const ms = new MissionSystem({
   const pMax = Math.max(...peaks)
 
   // FIRST: the two series are indexed by the same arc. Every check below is vacuous without it.
-  // 0.5 m absorbs the chord-vs-arc sampling difference on a plain run (measured max 0.39 m over a
-  // multi-hundred-metre run, 0.040%); a re-seated run without its par arc shows up here at tens of m.
+  //
+  // The residual is chord-vs-arc SAMPLING and it is proportional to run length, not constant: measured
+  // 2026-09-07 over 415 runs (seeds 6/11/3/20, cutMax 20 and 25) the gap is 0.02-0.06% of length with
+  // no bimodality — median 0.027 m, max 0.062%. So the bar is RELATIVE. The old fixed 0.5 m encoded only
+  // half of what this comment already said ("max 0.39 m ... 0.040%") and therefore tightened silently as
+  // runs got longer: a curvy 899 m run at 0.062% is 0.560 m and failed a bar its 0.040% sibling passed.
+  // 0.15% keeps >2x headroom over the measured worst while staying ~500x below the failure this guards —
+  // a run re-seated without its par arc shows up here at TENS OF METRES, not fractions of one.
+  const domBar = Math.max(0.5, 0.0015 * domL)
   check('BUG-41: par and runProfile index the run by the SAME arc',
-    domMax < 0.5, `worst |par length - driven length| ${domMax.toFixed(3)} m on ${domWorst}`)
+    domMax < domBar, `worst |par length - driven length| ${domMax.toFixed(3)} m (${(domRel * 100).toFixed(4)}% of a ${domL.toFixed(0)} m run, bar ${domBar.toFixed(2)} m) on ${domWorst}`)
 
   // The load-bearing property: away from the junctions, par's hills ARE the carved hills.
   check('BUG-41: the two elevation series agree in the run INTERIOR',
