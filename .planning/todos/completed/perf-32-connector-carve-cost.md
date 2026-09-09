@@ -1,7 +1,7 @@
 ---
 id: PERF-32
 type: perf
-status: pending
+status: completed
 severity: high
 opened: 2026-09-07
 source: >
@@ -119,3 +119,11 @@ at 60 m; ordinary road and off-road unchanged.
 - [x] no regression on ordinary road or off-road cost
 - [x] root cause 3 split out as **QUAL-31** — it is a road-graph/doc question, not a perf one, and
       PERF-32 does not wait on it (the halo fix helps every connector wherever it sits)
+
+## Resolution (2026-09-09)
+
+Merged to main from `feature/connector-cost` (`cadf13d`) in the 2026-09-09 merge train. Every
+acceptance box was ticked on the branch; the 18 m lateral reject hoist, the Lipschitz-pruned
+`Centerline.nearest` (gate `centerline-nearest-parity`) and the accumulator catch-up budget in
+`main.js` all shipped. QUAL-31 carries the leftover question of why a deg-2 connector sits in the
+play area at all.

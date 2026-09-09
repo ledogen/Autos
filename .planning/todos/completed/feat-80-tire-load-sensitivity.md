@@ -60,4 +60,4 @@ sideways for the frame it was loaded, four to five times its static grip (static
 Shipped on `feature/driving-feel`. Owner feel-test: "a, b and c feel great." Lab skidpad on the
 merged tree: mu 0.654 / 0.645 / 0.643 at 25 / 60 / 150 m (was 0.72–0.74) — an 11 % uniform grip
 cut the owner kept, and par's mu was re-anchored 0.80 → 0.72 to match (par.js note (6), runs-v2
-0013–0020). Handoff: `.planning/handoffs/HANDOFF-2026-09-08-driving-feel-merge.md`.
+0019–0026, renumbered from 0013–0020 at the 2026-09-09 merge). Handoff: `.planning/handoffs/HANDOFF-2026-09-08-driving-feel-merge.md`.

@@ -27,7 +27,7 @@ the snapshot was taken and its tree was not otherwise touched.
 | FEAT-80 | `tire.js gripLoad(Fn)`: μ falls with load (pDy2) and grip drops hard past the 9 kN rated load, floored. Peak force = μ·D·gripLoad(Fn). | `tireNominalLoad` 3400 · `tireLoadSensitivity` 0.12 · `tireRatedLoad` 9000 · `tireOverloadDrop` 0.60 (Vehicle → Tires → Load Sensitivity) |
 | FEAT-81 | `_interpolateRunProfile` is a cubic Hermite (C¹ shipped profile); `corridor-router.js roundCrests` reshapes the solved profile so the wheels keep `crestHold`·g at the local par corner speed, re-priced. | `roadV2.crestHold` 0.5 · `roadV2.sagLoad` 1.0 (Roads → Router v2); 0 = the old behaviour |
 | FEAT-82 | `roadJunctionPadTerrainBias` 3.0 → 0 (pad plane through the roads, not the terrain median); `_recoverFromHold` bends the deck-hold handoff into a vertical curve under the same rule. | `roadJunctionPadTerrainBias` 0 |
-| par | `PAR_REF.mu` 0.80 → 0.72, note (6) in `src/par.js`. 8 new drives in `runs-v2/` (0013–0020). | — |
+| par | `PAR_REF.mu` 0.80 → 0.72, note (6) in `src/par.js`. 8 new drives in `runs-v2/` (0013–0020 on the branch; renumbered 0019–0026 at the merge). | — |
 | junction-stitch | deck hold, BUG-59 per-leg pad reach, BUG-61, the FEAT-77 road-clearance rule + gate, BUG-63/64 tickets. | `roadV2.clearEdgeM` 12 · `clearThroatM` 30 |
 
 The "crest airtime is a FEATURE" ruling is overruled by the owner (2026-09-08); the notes on

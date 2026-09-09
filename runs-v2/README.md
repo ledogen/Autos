@@ -61,3 +61,13 @@ move the file aside first.
   S 1 · A 1 · B 5 · C 11 · D 0, and the single S was the excluded shortcut above. Re-cut to
   S 0.77 · A 0.81 · B 0.85 · C 1.00, which grades the 17 honest runs S 2 · A 5 · B 5 · C 5.
   Reasoning: `.planning/story-mode/design-amendments-2026-09-07-band-recut.md`.
+- **2026-09-08** — **FEAT-80 grip re-anchor.** The tire model gained load sensitivity (skidpad
+  mu 0.72–0.74 → 0.64–0.65) and `PAR_REF.mu` followed, 0.80 → 0.72 (note (6) in `src/par.js`).
+  Eight drives on the new grip were added — **`0019`–`0026`** (they were `0013`–`0020` on the
+  branch; renumbered at the 2026-09-09 merge because the band re-cut had already claimed
+  `0013`–`0018`). Their stored `par_ref.mu` is still 0.8: they were captured before the re-anchor,
+  so their file-name ratios and letters are the OLD par. **The corpus is now mixed-grip**: `0001`–
+  `0018` on the pre-FEAT-80 tire, `0019`–`0026` on the new one. A future `calibrate-par` fit should
+  say which population it is fitting.
+- **2026-09-09** — merge of both. The band re-cut (mu 0.80) and the grip re-anchor (mu 0.72) have
+  not been re-graded against each other; see the merge note above `RANK_THRESHOLDS_DEFAULT`.

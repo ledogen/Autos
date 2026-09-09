@@ -116,7 +116,7 @@ export const PAR_REF = {
     //     0.64–0.65 across 25/60/150 m — an 11 % grip cut, uniform across radii, that the owner
     //     kept ("a, b and c feel great"). Corner speed goes as √mu, so par's mu scales with the
     //     grip: 0.80 × 0.65/0.73 = 0.71. Cross-checked against 8 fresh drives on the new grip
-    //     (runs-v2 0013–0020, 20 runs total): calibrate-par's basin is FLAT from 0.70 to 0.80
+    //     (runs-v2 0019–0026 — renumbered from 0013–0020 at the 2026-09-09 merge, where rank-weights had already claimed 0013–0018; 20 runs total at the time): calibrate-par's basin is FLAT from 0.70 to 0.80
     //     (loss 0.289–0.293), best 0.76, felt-par mean 0.860 against a 0.88 target — the corpus
     //     cannot tell 0.71 from 0.76, so the physics ratio decides. 0.72 = the old physical
     //     skidpad number, and nothing else in PAR_REF moves.
@@ -430,6 +430,13 @@ export function formatTime(sec) {
  * so no threshold set and no PAR_SLACK value can fix both ends at once (slack is a pure rescale —
  * it slides every ratio together and thresholds absorb it exactly). Only par discriminating better
  * between routes can widen the range. Needs more labelled runs before chasing.
+ *
+ * ⚠ [MERGE NOTE 2026-09-09] The re-cut above was measured at PAR_REF.mu 0.80. The same day's
+ * sibling branch (FEAT-80, note (6) above) moved mu to 0.72 — for TIRE GRIP, not for the letters —
+ * and the two landed on main together. The 0.85/0.81/0.77 lines have NOT been re-graded under
+ * mu 0.72, and the corpus is now mixed-grip: `runs-v2/` 0001–0018 were driven on the pre-FEAT-80
+ * tire, 0019–0026 on the new one. Owner's call whether the bands follow; do not move them from a
+ * one-session re-grade (see the 2026-09-09 merge handoff for the numbers).
  */
 export const RANK_THRESHOLDS_DEFAULT = { S: 0.77, A: 0.81, B: 0.85, C: 1.00 }
 
