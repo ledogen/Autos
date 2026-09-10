@@ -3129,9 +3129,39 @@ export class RoadSystem {
         const memo = this._v2Sample1Memo.map
         const hit = memo.get(key)
         if (hit !== undefined) return hit
-        const out = this._v2SampleCenterline(this._edgeCenterline(c1, c2, this._v2EdgeDirsBase(g, drop, g.key(c1), g.key(c2))))
+        const out = this._v2SampleEdge(c1, c2, this._v2EdgeDirsBase(g, drop, g.key(c1), g.key(c2)))
         if (memo.size > 500) memo.clear()
         memo.set(key, out)
+        return out
+    }
+
+    // THE PLAN LAYER SEES THE LINE THAT SHIPS. _registerRun re-routes an edge whose profile cannot
+    // solve on its corridor (BUG-56 C: wGrade priced hard, HARD_GRADE_RUNGS) — and until now only
+    // registration knew. The merge planner, the T probe and the clearance pass all read the PURE
+    // line, so a re-route that bought its length by running down a sibling's valley (seed 11
+    // g:-3,0,1:-3,1,0: 776 m pure, 1342 m re-routed, hugging BOTH neighbours for 80 and 150 m)
+    // was invisible to every rule that exists to stop exactly that, and the T probe declined the
+    // pair because every departure it tried was solved on the corridor that cannot solve. Same
+    // ladder, same order, same cached corridors as registration, so the sample IS the registered
+    // line by construction; only edges that drape pay (a handful per window). Pure per edge:
+    // window-invariant for the same reason the re-route is.
+    _v2SampleEdge(c1, c2, dirs) {
+        const inf0 = this._v2Infeasible || 0
+        const cl = this._edgeCenterline(c1, c2, dirs)
+        let out = this._v2SampleCenterline(cl)
+        if (out) out.cl = cl
+        if (out && (this._v2Infeasible || 0) > inf0) {
+            for (const mult of HARD_GRADE_RUNGS) {
+                const alt = this._edgeCenterline(c1, c2, dirs, mult)
+                if (!alt || !(alt.length > 1e-6)) continue
+                const inf1 = this._v2Infeasible || 0
+                const s2 = this._v2SampleCenterline(alt)
+                if (!s2) continue
+                if ((this._v2Infeasible || 0) > inf1) { this._v2Infeasible = inf1; continue }
+                out = s2; out.cl = alt; out.hardGrade = mult
+                break
+            }
+        }
         return out
     }
 
@@ -3232,7 +3262,7 @@ export class RoadSystem {
         const hit = memo.get(key)
         if (hit !== undefined) return hit
         // FEAT-77: pass 2 by construction — _v2EdgeDirs carries the loser's occupied lines.
-        const out = this._v2SampleCenterline(this._edgeCenterline(c1, c2, this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2))))
+        const out = this._v2SampleEdge(c1, c2, this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2)))
         if (memo.size > 500) memo.clear()
         memo.set(key, out)
         return out
@@ -4396,7 +4426,7 @@ export class RoadSystem {
         const sample = (a, b) => {
             const S = this._v2RunSample(g, drop, a, b)
             if (!S) return null
-            const cl = this._edgeCenterline(a, b, this._v2EdgeDirs(g, drop, g.key(a), g.key(b)))
+            const cl = S.cl ?? this._edgeCenterline(a, b, this._v2EdgeDirs(g, drop, g.key(a), g.key(b)))   // the sample's own line — a re-routed edge is not its pure corridor
             if (!cl || !cl.slice) return null
             return { points: S.pts, polyCum: S.polyCum, clArc: S.clArc, centerline: cl, cellA: a, cellB: b }
         }

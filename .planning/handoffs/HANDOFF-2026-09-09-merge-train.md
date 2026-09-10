@@ -124,7 +124,7 @@ takes 3 stitch stretches and 3 clearance pairs away together. The fourth stitch 
 (−467,−341), is a 0.45 m edge gap against a 0.45 m allowance 17 m from the node: a rounding-margin
 case at the throat, one comparison.
 
-**The other 15 clearance pairs are a different shape, and new with FEAT-82.** Eleven are
+**The other 15 clearance pairs are a different shape.** (RETRACTED 2026-09-10: they are NOT new with FEAT-82 — measured by rebuilding main with `roadJunctionPadTerrainBias` back at 3.0 (19 pairs) and with `crestHold` 0, which disables the hold recovery (18 pairs): neither FEAT-82 piece creates or removes them. The tree-to-tree differences came from FEAT-77's d1b1263 and cutMax 25 changing the worlds.) Eleven are
 25–28.5 m apart against a 28.5 m rule over only 4–16 m of run, carrying 5–12 m of HEIGHT
 difference between two legs of the same node just past the 30 m throat exemption. That height
 split is what the deck hold + hold recovery now produce when one leg climbs off the pad and its
@@ -134,6 +134,16 @@ node. Two levers, both design: extend the throat exemption to where the pavement
 shared vertical curve so the earthwork of one cannot reach the other. FEAT-77's routing levers
 (finer corridor grid near an occupied line, post-fit shove, berth) address the long-overlap class
 above, not this one.
+
+**UPDATE 2026-09-10 — the coincident-leg class was NOT a T-promotion decline; it was a re-route the
+planner never saw.** `g:-3,0,1:-3,1,0`'s plan-time line (776 m) cannot solve a legal profile, so
+`_registerRun` re-routed it with a hard grade price (BUG-56 C) — the shipped line is 1342 m and
+bought its length by running down BOTH siblings' valleys (150 m on one, 80 m on the other). The
+merge planner, the T probe and the clearance pass all read the pure line, so nothing saw the hug,
+and the T probe declined the pair because every departure it tried was solved on the corridor that
+cannot solve. Fix shipped: `_v2SampleEdge` runs the same re-route ladder in the plan layer, so the
+sample IS the registered line. Seed 11: 7 → 5 clearance pairs, 3 → 1 stitch stretches; battery
+18 → 16 pairs (0.7 → 0.4 km), stitch 4 → 2; invariance/parity/connectivity gates green; build +4 %.
 
 So all-green is two pieces of work, not a tuning pass: (1) why T promotion declines the seed-11
 coincident pairs — a FEAT-77 / T-promotion ticket, worth doing first because it clears rows in
