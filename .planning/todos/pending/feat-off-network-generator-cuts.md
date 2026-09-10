@@ -164,7 +164,7 @@ road surface. *(Owner: if it breaks in practice, that is a bug to fix, not a rea
 
 **MEASURED — a real recorded drive that this detector must catch** [2026-09-07]. Recorded while
 re-cutting the rank bands, and the first hard evidence of the skip in the wild rather than in theory:
-`runs-v2/0015-very_fast-S-105s-2.8km.json`. Checked frame-by-frame against the route topology the
+`runs-v2/pre-feat80-grip/0015-very_fast-S-105s-2.8km.json` (archived 2026-09-10 with the other pre-FEAT-80 drives). Checked frame-by-frame against the route topology the
 export carries —
 
 | | |

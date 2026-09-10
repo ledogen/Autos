@@ -198,7 +198,8 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   // every run and nobody had decided that. The best drive in the corpus sits at ratio 0.654; keep
   // day-20 S at or above it or the letter goes extinct again, silently.
   //
-  // The bar is now the best HONEST drive in runs-v2/, ratio 0.740 [2026-09-07]. The corpus also
+  // The bar is now the best HONEST drive in runs-v2/, ratio 0.740 [2026-09-07; that drive, 0003, was
+  // archived to runs-v2/pre-feat80-grip/ on 2026-09-10 — the best new-grip drive, 0019, is also 0.740]. The corpus also
   // holds a 0.668, but that run skipped 471 m of its 2762 m route (17%, peaking 210 m off the
   // centerline) — it was never a driving result and must not be allowed to certify a threshold.
   // The v1 figure this replaced was 0.654, measured on roads the router no longer builds.

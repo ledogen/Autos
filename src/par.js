@@ -120,7 +120,16 @@ export const PAR_REF = {
     //     (loss 0.289–0.293), best 0.76, felt-par mean 0.860 against a 0.88 target — the corpus
     //     cannot tell 0.71 from 0.76, so the physics ratio decides. 0.72 = the old physical
     //     skidpad number, and nothing else in PAR_REF moves.
-    mu: 0.72,          // EFFECTIVE centerline friction — see (3)/(4)/(6): line-cutting, not tire grip
+    // (7) 2026-09-10 (owner: "archive the old-grip runs, make sure par is based on new-grip runs").
+    //     runs-v2/ now holds ONLY drives on the FEAT-80 tire (0019–0026); the pre-FEAT-80 corpus is
+    //     archived in runs-v2/pre-feat80-grip/. calibrate-par over the 7 fittable new-grip runs:
+    //     loss 0.089–0.096 across mu 0.66–0.90 — FLAT again — with the minimum at 0.85 only because
+    //     the fitter also drops accel 3.0→2.8 and brake 7.0→5.5, both MEASURED numbers it must not
+    //     move. Seven runs with partly inverted felt labels (a "very fast" 0.805 above a "par"
+    //     0.785) cannot tell 0.72 from 0.85, and 0.85 would put par ABOVE the pre-FEAT-80 0.80 on
+    //     11 % less grip, which is physically backwards. 0.72 stands on the grip ratio; re-fit when
+    //     the new-grip corpus reaches ~15 labelled point-to-point drives.
+    mu: 0.72,          // EFFECTIVE centerline friction — see (3)/(4)/(6)/(7): line-cutting, not tire grip
     accel: 3.0,        // powertrain-limited longitudinal accel on the flat (m/s²) — measured
     brake: 7.0,        // braking decel cap (m/s²) — measured; friction-circle limited below
     // vMax is the FLAT terminal speed, and it sets the drag coefficient (k = accel / vMax²)

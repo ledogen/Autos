@@ -31,7 +31,16 @@ node test/calibrate-par.mjs runs-v2
 `~/Downloads` is sandbox-restricted for directory listing on this machine, so pass explicit file
 paths rather than relying on the bare `npm run runs:add` default.
 
-## Corpus state (2026-09-07)
+## Corpus state (2026-09-10) — NEW-GRIP RUNS ONLY at the top level
+
+**`pre-feat80-grip/` holds every drive recorded before FEAT-80** (`0001`–`0018`, the old linear
+tire). Owner ruling 2026-09-10: par is anchored on **new-grip** drives only, so the fitting tools
+read the top level (`calibrate-par.mjs` and `runs-report.mjs` do not recurse — the sub-directory is
+outside the fit by construction). Nothing in `pre-feat80-grip/` is deleted: `0015` there is still
+the FEAT-52 §5 shortcut fixture, and the 2026-09-07 band re-cut below was measured on that set.
+Add new drives at the top level; never move a pre-FEAT-80 file back up.
+
+## Corpus state (2026-09-07) — the pre-FEAT-80 set, now archived
 
 **18 runs — 15 fittable, 2 paper rounds, 1 excluded.** Paper rounds are collected but never fitted
 with point-to-point jobs: a round's par is dominated by a full stop at every porch, and `mu` does not
@@ -39,7 +48,7 @@ price stops at all.
 
 Seeds so far: 97, 69, 0, 1, 526302544, 1625430154 + 3 more from the 2026-09-07 batch.
 
-### ⚠ `0015-very_fast-S-105s-2.8km.json` is EXCLUDED from calibration
+### ⚠ `pre-feat80-grip/0015-very_fast-S-105s-2.8km.json` is EXCLUDED from calibration
 
 It scores 0.668 — the best number in the library — because it **did not drive the route it was
 priced on**. Its trace skips 471 m of a 2762 m route (17%, peaking 210 m off the centerline), driven
