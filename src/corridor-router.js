@@ -311,7 +311,8 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
         let best = null
         for (const ln of occLines) { const h = nearestOnFlat(px, pz, ln); if (!best || h.d < best.d) best = h }
         let ex = false
-        if (occ.exempt) for (let k = 0; k < occ.exempt.length; k += 2) if (Math.hypot(px - occ.exempt[k], pz - occ.exempt[k + 1]) < occ.exemptM) { ex = true; break }
+        // exempt = [x, z, r, …] — each shared node with its own (geometric) throat radius; exemptM is the floor
+        if (occ.exempt) for (let k = 0; k + 2 < occ.exempt.length; k += 3) if (Math.hypot(px - occ.exempt[k], pz - occ.exempt[k + 1]) < Math.max(occ.exempt[k + 2] || 0, occ.exemptM)) { ex = true; break }
         if (!best || ex || best.d < 1e-6) { occD[i] = Infinity; return Infinity }
         const ux = (best.fx - px) / best.d, uz = (best.fz - pz) / best.d
         occD[i] = best.d; occY[i] = best.y

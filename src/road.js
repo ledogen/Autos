@@ -2932,6 +2932,37 @@ export class RoadSystem {
         return this._v2Near((s) => (sA && s < T) || (sB && s > L - T))
     }
 
+    /**
+     * FEAT-77 — THE THROAT IS GEOMETRIC (owner ruling 2026-09-10). Two legs of one node owe each
+     * other the clearance rule only once their PAVEMENTS HAVE PARTED: walking P out from the
+     * shared node, the throat ends at the first sample whose centreline is `floor` (2·HW +
+     * clearEdgeM, the daylight separation) from Q — never shorter than clearThroatM (the pad and
+     * the deck hold own that much regardless) and never longer than 4× it (legs still inside the
+     * floor 120 m out are a hug, and the rule's floor is exactly what they violate; inside the
+     * throat the old proximity still decides, so a hug is a conflict either way). Before this,
+     * a fixed 30 m throat put 11 of the battery's 16 residue rows 30–80 m past a node, where two
+     * legs leaving at an ordinary angle are 20–28 m apart with a few metres of height between
+     * them — the junction's own geometry, not two roads sharing earthwork. Pure per pair.
+     * Applies to the RULE as JUDGED — the road-clearance gate and the re-convergence test
+     * (_v2ConflictPairs). T formation (_v2NodeMerges), the crossing invariant and the pass-2
+     * loser walk (_v2ClearanceFor) keep the fixed 30 m — see the notes at each.
+     */
+    _v2ThroatLen(PS, fromStart, QS) {
+        const T = this._v2Costs().clearThroatM ?? 30
+        const CAP = 4 * T
+        const floor = this._v2ClearPrm().floor
+        const n = PS.pts.length
+        for (let k = 0; k < n; k++) {
+            const i = fromStart ? k : n - 1 - k
+            const s = fromStart ? PS.polyCum[i] : PS.L - PS.polyCum[i]
+            if (s > CAP) return CAP
+            if (s < T) continue
+            const h = _nearestOnPolyXZ(PS.pts[i].x, PS.pts[i].z, QS.pts, QS.polyCum)
+            if (h && h.d >= floor) return Math.max(T, s)
+        }
+        return CAP
+    }
+
     // R4 (2026-09-01): the PLAN REV. The plan layer (samples, conflict pairs, merge/shove/ceded/
     // disjoint/bundle/census/view memos) is versioned by this tag rather than _networkRev, so the
     // assembly can run it TWICE per re-stream when the crossing rung's deletions flip a node's
@@ -3229,10 +3260,16 @@ export class RoadSystem {
             if (!Q) continue
             const qA = g.key(q1), qB = g.key(q2)
             const shA = qA === kA || qB === kA, shB = qA === kB || qB === kB
+            // The pass-2 loser test keeps the FIXED throat (measured 2026-09-10): with the geometric
+            // one, legs only marginally inside the rule 30–120 m out stop being losers, are never
+            // re-routed against their winner's line, and the Ts those re-routes used to fold them
+            // into vanish — seed 20's far band lost all three (promoted-node-id red). The gate
+            // exempts that band (_v2ThroatLen); the router is still allowed to want more berth.
+            const tA = shA ? THROAT : 0, tB = shB ? THROAT : 0
             let violates = false, merges = false
             for (let i = 0; i < S.pts.length; i++) {
                 const s = S.polyCum[i]
-                if ((shA && s < THROAT) || (shB && s > S.L - THROAT)) continue
+                if ((shA && s < tA) || (shB && s > S.L - tB)) continue
                 if ((S.spans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)) continue
                 const h = _nearestOnPolyXZ(S.pts[i].x, S.pts[i].z, Q.pts, Q.polyCum)
                 if (!h || h.d > 60) continue
@@ -3246,7 +3283,8 @@ export class RoadSystem {
             const flat = new Float64Array(Q.pts.length * 3)
             for (let i = 0; i < Q.pts.length; i++) { flat[3 * i] = Q.pts[i].x; flat[3 * i + 1] = Q.pts[i].y; flat[3 * i + 2] = Q.pts[i].z }
             lines.push(flat)
-            for (const nk of [kA, kB]) if (nk === qA || nk === qB) { const p = this._nodePos(nk.split(',').map(Number)); exempt.push(p.x, p.z) }
+            // exempt = [x, z, r, …]: the shared node and ITS geometric throat radius (corridor-router occAt)
+            for (const nk of [kA, kB]) if (nk === qA || nk === qB) { const p = this._nodePos(nk.split(',').map(Number)); exempt.push(p.x, p.z, nk === kA ? tA : tB) }
         }
         if (!lines.length) return null
         const out = { lines, exempt, exemptM: THROAT, prm: this._v2ClearPrm() }
@@ -3378,6 +3416,11 @@ export class RoadSystem {
         // FEAT-77: "within PROX" is now the height-aware conflict predicate (_v2ClearReq), with the
         // old proximity kept inside the shared node's throat (every walk here starts at the node).
         const THROAT = C.clearThroatM ?? 30
+        // The T-forming conflict keeps the FIXED throat on purpose (2026-09-10): the geometric
+        // throat (_v2ThroatLen) says where two legs stop OWING each other the rule — the gate and
+        // the pass-2 walk read that — but a pair that rides 22–28 m apart with a height split for
+        // the next hundred metres is still a T worth building (owner: main's Ts beat two roads).
+        // Measured when this walk used the geometric throat: seed 20's far band lost all 3 Ts.
         const near = legacy ? (pa, h) => h.d <= PROX : this._v2Near((s) => s < THROAT)
         const firstInterval = (P, Q) => {
             const n = P.S.pts.length
@@ -3941,8 +3984,31 @@ export class RoadSystem {
             // Ruling-3 cleanup: the tear grades (nearLen/minSep/maxDy against the census
             // thresholds) fed the retired BFS vetting — the rung's consumers are crossing-
             // driven, so only crossing-bearing pairs are emitted now.
-            if (!crossings.length) continue
-            out.push({ qck, spQ: spQ ?? [q1, q2], inG: !!spQ, shared, crossings,
+            // RE-CONVERGENCE (owner ruling 2026-09-10): two legs of ONE node that part, go their
+            // own way, and come back inside the rule for a real stretch further out are not
+            // solving a routing problem for the player — they go to the same places. Such a pair
+            // is emitted with the interval, and the delete rung culls the longer member when its
+            // endpoints keep a detour (_v2DeleteFor). The node-anchored interval (touching a
+            // shared node's throat) is the junction's own business and never counts.
+            let reconverge = null
+            if (shared.length) {
+                const MINSPAN = 60
+                // "past the throat" is the GEOMETRIC throat here (_v2ThroatLen): an interval that
+                // starts before the legs have parted is the junction's own approach, not a return.
+                const throatOf = new Map()
+                for (const sk of shared) throatOf.set(sk, this._v2ThroatLen(own, sk === ownStartKey, SQ))
+                for (const iv of ivs0) {
+                    let touches = false
+                    for (const sk of shared) {
+                        const tOwn = throatOf.get(sk)
+                        if (sk === ownStartKey ? iv.s0 < tOwn : iv.s1 > own.L - tOwn) { touches = true; break }
+                    }
+                    if (touches || iv.s1 - iv.s0 < MINSPAN) continue
+                    if (!reconverge || iv.s1 - iv.s0 > reconverge.s1 - reconverge.s0) reconverge = { s0: iv.s0, s1: iv.s1 }
+                }
+            }
+            if (!crossings.length && !reconverge) continue
+            out.push({ qck, spQ: spQ ?? [q1, q2], inG: !!spQ, shared, crossings, reconverge,
                        longer: own.L > SQ.L || (own.L === SQ.L && ck < qck) })
         }
         return fin(out)
@@ -4274,7 +4340,24 @@ export class RoadSystem {
         const spOwn0 = spellG.get(ck)
         const shoveOwn = this._v2ShoveFor(g, drop, wide, ...(spOwn0 ?? [c1, c2]))
         const hitPairs = [], pts = []
+        let reconverged = false
         for (const t of pairs) {
+            // RE-CONVERGENCE rung (owner ruling 2026-09-10): the longer member of a pair of legs
+            // that re-converge past the throat dies, IF its endpoints keep a bounded-hop detour
+            // through the rest of the graph ("it cannot be a connectivity problem if there is
+            // another edge that runs to that exact destination"). Unsanctioned like a crossing:
+            // a merge plan that already cedes the stretch resolves it instead.
+            if (t.longer && t.reconverge) {
+                const spOwn = spellG.get(ck)
+                const sancOwn = this._v2CededExtents(g, drop, wide, ...(spOwn ?? [c1, c2]))
+                const mid = 0.5 * (t.reconverge.s0 + t.reconverge.s1)
+                if (!inSpans(sancOwn, mid) && this._v2DetourSafe(wide, drop, kA, kB)) {
+                    hitPairs.push(t.qck); reconverged = true
+                    const own = this._v2RunSample(g, drop, c1, c2)
+                    if (own) { const q = _polyAtCum(own.pts, own.polyCum, mid); pts.push({ x: q.x, z: q.z }) }
+                    continue
+                }
+            }
             // Victim = the LONGER member, full stop (tie → lexicographic; cull ONE leg of a
             // tangle, never both — the shorter member survives this pair by construction, so
             // per-pair verdicts are order-free and no victim chain can form).
@@ -4295,10 +4378,30 @@ export class RoadSystem {
         }
         if (!hitPairs.length) return fin(null)
         const rec = { ck, key: `g:${g.key(c1)}:${g.key(c2)}`, pairs: hitPairs,
-                      crossings: pts.length, at: pts,
+                      crossings: pts.length, at: pts, reconverged,
                       pts: this._v2RunSample(g, drop, c1, c2)?.pts ?? null }
         this._v2Deleted.set(ck, rec)
         return fin(rec)
+    }
+
+    // The re-convergence rung's connectivity guard: do a and b reconnect within
+    // roadGraphDegreeDetourHops hops of the wide graph WITHOUT the edge a|b (or any dropped
+    // edge)? The same bounded-hop test the degree pass uses (_degreeDropSet), on the same
+    // margin graph, so a window that sees the pair sees the detour. Pure topology.
+    _v2DetourSafe(wide, drop, a, b) {
+        const hopCap = this._params?.roadGraphDegreeDetourHops ?? 4
+        const q = [[a, 0]], seen = new Set([a])
+        while (q.length) {
+            const [u, d] = q.shift()
+            if (d >= hopCap) continue
+            for (const v of wide.adj.get(u) || []) {
+                if ((u === a && v === b) || (u === b && v === a)) continue
+                if (drop && drop.has(u + '|' + v)) continue
+                if (v === b) return true
+                if (!seen.has(v)) { seen.add(v); q.push([v, d + 1]) }
+            }
+        }
+        return false
     }
 
     // Guard telemetry: every merge guard SKIPS AND COUNTS, never forces. Read by

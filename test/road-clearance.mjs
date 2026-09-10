@@ -41,7 +41,14 @@ const ONLY = (argv.find((a) => a.startsWith('--window=')) || '').split('=')[1]
 const HW = P.roadHalfWidth ?? 5
 const SH = P.roadShoulderWidth ?? 2.5
 const NEAR = 60          // m — beyond this no rule can reach (two capped aprons are 36 m)
-const THROAT = 30        // m — from a shared node: the pad and the deck hold own it
+const THROAT = 30        // m — from a shared node: the pad and the deck hold own it (the MINIMUM)
+// FEAT-77 (owner ruling 2026-09-10): the throat is GEOMETRIC — two legs of one node owe each
+// other the rule only once their pavements have parted, i.e. from the first sample where the
+// centrelines are `floor` (2·HW + clearEdgeM) apart; never less than THROAT, never more than
+// 4·THROAT (a pair that has not parted by then is a hug, and the rule's floor applies). The
+// same definition the planner uses (RoadSystem._v2ThroatLen).
+const FLOOR = 2 * HW + (P.roadV2?.clearEdgeM ?? 12)
+const THROAT_CAP = 4 * THROAT
 const STEP = 4
 const CUT = P.roadCutSlope ?? 1.0
 
@@ -60,6 +67,17 @@ const inBore = (e, s) => (e.tunnelSpans || []).some((sp) => s >= sp.s0 - 80 && s
 const inBlend = (e, s) => (e.offCurveSpans || []).some((sp) => s >= sp.s0 - 2 && s <= sp.s1 + 2)
 const sameCell = (a, b) => !!a && !!b && a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
 
+const throatLen = (A, fromStart, B) => {
+  const n = A.points.length, L = A.polyCum[n - 1]
+  for (let k = 0; k < n; k++) {
+    const i = fromStart ? k : n - 1 - k
+    const s = fromStart ? A.polyCum[i] : L - A.polyCum[i]
+    if (s > THROAT_CAP) return THROAT_CAP
+    if (s < THROAT) continue
+    if (nearestOn(A.points[i].x, A.points[i].z, B.points, B.polyCum).d >= FLOOR) return Math.max(THROAT, s)
+  }
+  return THROAT_CAP
+}
 const scan = (road, terrain) => {
   const runs = [...road._network.entries()].filter(([, e]) => e.points?.length > 1)
   const rows = [], walls = []
@@ -67,6 +85,11 @@ const scan = (road, terrain) => {
     if (ka >= kb) continue
     const shared = [A.cellA, A.cellB].some((c) => sameCell(c, B.cellA) || sameCell(c, B.cellB))
     const LA = A.polyCum[A.polyCum.length - 1], LB = B.polyCum[B.polyCum.length - 1]
+    // the geometric throat at each shared end, measured along each run from that node
+    const shAs = sameCell(A.cellA, B.cellA) || sameCell(A.cellA, B.cellB), shAe = sameCell(A.cellB, B.cellA) || sameCell(A.cellB, B.cellB)
+    const shBs = sameCell(B.cellA, A.cellA) || sameCell(B.cellA, A.cellB), shBe = sameCell(B.cellB, A.cellA) || sameCell(B.cellB, A.cellB)
+    const tAs = shAs ? throatLen(A, true, B) : 0, tAe = shAe ? throatLen(A, false, B) : 0
+    const tBs = shBs ? throatLen(B, true, A) : 0, tBe = shBe ? throatLen(B, false, A) : 0
     let viol = 0, worst = null, wall = null
     for (let s = 0; s <= LA; s += STEP) {
       let lo = 0; while (lo + 2 < A.polyCum.length && A.polyCum[lo + 1] <= s) lo++
@@ -76,7 +99,7 @@ const scan = (road, terrain) => {
       const n = nearestOn(ax, az, B.points, B.polyCum)
       if (n.d > NEAR || n.d < 1e-6) continue
       if (inBore(A, s) || inBore(B, n.s) || inBlend(A, s) || inBlend(B, n.s)) continue
-      if (shared && (Math.min(s, LA - s) < THROAT || Math.min(n.s, LB - n.s) < THROAT)) continue
+      if (shared && (s < tAs || LA - s < tAe || n.s < tBs || LB - n.s < tBe)) continue
       const ay = road.runProfile(s - (A.arcOrigin ?? 0), ka).gradeY
       const by = road.runProfile(n.s - (B.arcOrigin ?? 0), kb).gradeY
       const pa = { x: ax, y: ay, z: az }, hit = { d: n.d, y: by, fx: n.fx, fz: n.fz }

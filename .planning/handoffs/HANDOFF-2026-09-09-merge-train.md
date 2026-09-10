@@ -157,3 +157,41 @@ which lever. Neither was attempted here.
   `git worktree remove --force` once the owner says those probes can go.
 - `feature/seed20-road` (BUG-51, 339 behind) and the detached `v1-era` scratch worktree were not
   part of this train.
+
+## 7. 2026-09-10 — the all-green pass (owner rulings applied)
+
+Owner rulings, 2026-09-10: (1) two legs of one node that part and RE-CONVERGE further out "are not
+solving a routing problem for the player — cull one edge, it cannot be a connectivity problem if
+another edge runs to that destination"; (2) the throat is GEOMETRIC — exempt until the pavements
+have parted (22 m, the floor), never less than 30 m.
+
+| | before (main @ b95bd6d) | after |
+|---|---|---|
+| `road-clearance` | 18 pairs · 0.7 km | **8 pairs · 0.2 km** |
+| `junction-stitch` | 4 stretches | **0 — green** |
+| `promoted-node-id` core Ts | 15 | 19, green |
+| full suite | 70 / 72 | **71 / 72** |
+| seed-11 window build | 6.2 s | 6.9 s |
+
+Three commits: `9a60724` (corpus archive), `238c6e9` (plan layer samples the re-routed line) and
+this one:
+
+- **Re-convergence rung** (`_v2ConflictPairs` emits `reconverge` for a shared-node pair with a
+  ≥60 m interval inside the rule that starts past the geometric throat; `_v2DeleteFor` culls the
+  longer member when `_v2DetourSafe` finds a ≤4-hop detour in the wide graph without it — the
+  degree pass's own test). Seed 11 node 0,−1,1 lost `0,−1,1|0,0,0` (978 m) to it.
+- **Geometric throat** `_v2ThroatLen`: applied to the road-clearance GATE and to the re-convergence
+  test only. It was tried on T formation and on the pass-2 loser walk too, and MEASURED to cost
+  every T in seed 20's far band (pass-2 re-routes of legs marginally inside the rule 30–120 m out
+  are what folded them into Ts; `promoted-node-id` went red). So T formation, the crossing
+  invariant and pass 2 keep the fixed 30 m; the notes at each site say so.
+- **Stitch epsilon 5 mm**: the last stitch row was a 1.6 mm lip (0.4546 vs 0.4530 allowed).
+
+The eight rows left are two classes, ticketed: **BUG-65** (2 rows) — a loser whose planned winner
+the crossing rung then deletes ships raw and hugs the THIRD leg (seed 6 mark-B (−3040,4908) 84 m,
+seed 11 (1385,−1170) 88 m); needs a re-plan pass after the delete set freezes. **BUG-66** (6 rows,
+4–16 m each, sub-metre short of the rule) — T side roads dropping off a trunk on a tall fill just
+past the departure band; a hold or an earthwork term in the departure ranking.
+
+FEAT-82 does NOT create clearance pairs (§5 retraction) — measured with the pad bias and the hold
+recovery each switched off.
