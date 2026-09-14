@@ -212,7 +212,8 @@ export const DAMAGE_PARAMS = {
   // STRESS, once: a spring that sees 20 kN for an instant is damaged, one that sees 4 kN all day
   // is not. So each bump-stop contact is now one event, priced on its peak, square-law.
   //
-  //   damage = ((F_peak − floor) / (springBumpFullN − floor))^2, per corner, onto that axle's track
+  //   damage = ((F_peak − floor) / (fullN − floor))^2, per corner, onto that axle's track
+  //   (both floor and fullN are per-axle — see springForceFloorFront / springBumpFullNFront below)
   //
   // Measured on the lab ramp: a 30 mph landing costs the front axle ~3% (about 32 landings), a
   // 40 mph landing ~6% (about 16). durSpring no longer applies to this track — the curve IS the
@@ -221,13 +222,37 @@ export const DAMAGE_PARAMS = {
   // landing — the truck lands nose-first and the front carries more static load — so a single floor
   // meant the front wore faster on every ordinary bump. Raising the front's floor is the honest
   // knob for that: it is a statement about which hits are harmless, not a fudge on the rate.
-  springForceFloorFront: 5000,  // N (owner, 2026-08-23: "up a little")
+  //
+  // REDUCED FOR THE FRONT AXLE, 2026-09-14 (owner: "reduce front spring damage from both collisions
+  // and over travel"). The front was the axle that kept dying: measured, an in-game 2 m landing cost
+  // springFront 14.6% with both front corners on the stops, so seven of them wrote the front springs
+  // off. Both ends of the front's curve moved, because the floor alone has almost no leverage under
+  // a square law with a 300 kN denominator — raising it 5 -> 12 kN only took a 2 m landing from
+  // 5.8% to 4.9% per corner.
+  springForceFloorFront: 12000, // N (owner 2026-08-23 "up a little" 3 -> 5 kN; 2026-09-14 5 -> 12 kN)
   springForceFloorRear:  3000,  // N — unchanged
   // RESCALED 2026-08-22 for the progressive tire carcass. A stiff tire transmits far more into the
   // stops than the old linear one did: a 2 m drop measured 75.6 kN of bump-stop force where a 4 m
   // drop used to measure 15. At the old 85 kN a 2 m drop destroyed the springs outright.
-  springBumpFullN:  300000,  // N — a single bump-stop hit this hard destroys the spring outright
+  //
+  // PER AXLE since 2026-09-14, and this one is a statement about the BUMP STOPS, not about the
+  // springs being tougher at one end. On this truck the front jounce bumper is a long progressive
+  // elastomer that soaks up most of a landing before the coil ever sees peak stress; the rear pack
+  // bottoms onto a short rubber snubber on the axle that hands the load straight to the leaves. So
+  // the force that kills a front spring outright genuinely IS higher than the rear's.
+  springBumpFullNFront: 450000, // N — one bump-stop hit this hard destroys a FRONT spring outright
+  springBumpFullNRear:  300000, // N — …and this hard a REAR one (unchanged)
   springBumpExp:    2,       // square law: peak stress, the same reason armor is square-law
+  //
+  // What the front change is worth, at the drop anchors measured with test/collision-drop-lab.mjs
+  // (per corner; the in-game axle cost is roughly double, both front corners landing together):
+  //
+  //     1 m drop   23.0 kN     0.37% -> 0.06%     (-83%)
+  //     2 m drop   75.6 kN     5.79% -> 2.11%     (-64%)
+  //     3 m drop   87.5 kN     7.82% -> 2.97%     (-62%)
+  //
+  // So a 2 m landing goes from writing the front springs off in about 7 to about 24. Ordinary
+  // bumps are now free outright: everything under 12 kN never opens an event at all.
 
   // Dampers: suspension displacement RATE above a no-harm floor.
   // Two changes on 2026-08-20 (owner: "basically no damper wear, make it more sensitive to wheel
@@ -268,7 +293,14 @@ export const DAMAGE_PARAMS = {
   // Wheels sit behind the armor and want a THRESHOLD (owner, 2026-08-20): a light knock should not
   // bend a rim at all, a real collision should. Floored square law, same shape as the armor curve.
   impactWheel:     { floorMph: 15, fullMph: 80, n: 2 },
-  impactSpring:    { d10: 0.03, d60: 0.30 },
+  // Springs are PER AXLE here too (owner, 2026-09-14), and the reason is EXPOSURE, not fragility —
+  // the same kind of correction the bump-stop floor got. Look at what reaches each track: springFront
+  // is listed against three armor regions (front, left, right), springRear against two (left, right),
+  // and in play the front is simply the end a truck hits things with. One shared curve therefore wore
+  // the front out several times faster from identical driving. The front's scale is cut to a third;
+  // the exponent is untouched, so only the height of the curve moves, not its shape.
+  impactSpringFront: { d10: 0.01, d60: 0.10 },
+  impactSpringRear:  { d10: 0.03, d60: 0.30 },
   impactDamper:    { d10: 0.03, d60: 0.30 },
 
   // Armor absorbs a fraction of what it stands in front of, proportional to its own condition.
@@ -816,14 +848,17 @@ export class DamageModel {
     if (armorId) this.wear(armorId, impactDamage(v, P.impactArmor), 1)
 
     const curveFor = {
-      wheel: P.impactWheel, spring: P.impactSpring, damper: P.impactDamper,
+      wheel: P.impactWheel, damper: P.impactDamper,
       engine: P.impactEngine, radiator: P.impactRadiator, headlights: P.impactHeadlight,
     }
+    // The spring curves are per AXLE, so they are keyed by track id rather than by class — the two
+    // spring tracks share a class but not a curve (see impactSpringFront).
+    const curveById = { springFront: P.impactSpringFront, springRear: P.impactSpringRear }
     for (const id of TRACK_IDS) {
       const t = TRACKS[id]
       if (t.cls === 'armor' || t.cls === 'alignment') continue
       if (!t.regions.includes(region)) continue
-      const curve = curveFor[t.cls]
+      const curve = curveById[id] ?? curveFor[t.cls]
       if (!curve) continue
       // Headlights are per-side and a side impact only reaches its own: a left-side hit does not
       // break the right headlight. A FRONT hit reaches both.
@@ -913,13 +948,16 @@ export class DamageModel {
    */
   _landBumpStop (corner, peakN) {
     const P = DAMAGE_PARAMS
-    const floorN = corner < 2 ? P.springForceFloorFront : P.springForceFloorRear
+    const front  = corner < 2
+    const floorN = front ? P.springForceFloorFront : P.springForceFloorRear
     if (peakN <= floorN) return
 
-    // Spring: square law between the no-harm floor and the one-hit-kills force.
-    const t = (peakN - floorN) / (P.springBumpFullN - floorN)
+    // Spring: square law between the no-harm floor and the one-hit-kills force. BOTH ends of the
+    // curve are per-axle — see springBumpFullNFront for why the front's destroy force is higher.
+    const fullN = front ? P.springBumpFullNFront : P.springBumpFullNRear
+    const t = (peakN - floorN) / (fullN - floorN)
     const dmg = Math.pow(Math.max(0, t), P.springBumpExp)
-    const id = corner < 2 ? 'springFront' : 'springRear'
+    const id = front ? 'springFront' : 'springRear'
     // durability 1 = the insult IS the damage fraction, the same idiom applyImpact uses. There is
     // no durSpring any more: for an event-priced track the CURVE is the calibration. The parts
     // durability multiplier (SM-INV-10) and the wear-speed slider still apply inside wear().

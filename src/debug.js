@@ -343,6 +343,17 @@ export function initDebug (params, callbacks = {}, options = {}) {
   for (const k of ['tire', 'brake', 'spring', 'damper', 'wheel', 'engine', 'filter']) {
     wearFolder.add(DAMAGE_PARAMS.wearScale, k, 0, 10, 0.1).name(k)
   }
+
+  // ── Front springs, the two curves that are per-axle ──────────────────────────────────────────
+  // wearScale.spring above moves BOTH axles together, so it cannot express the asymmetry these
+  // four numbers exist for (owner, 2026-09-14: "reduce front spring damage from both collisions
+  // and over travel"). Live for the same reason the wear rates are: the reduction is a feel call,
+  // and a reload per guess is the slow way to make it. See DAMAGE_PARAMS for what each one means.
+  const frontSpringFolder = dmgFolder.addFolder('Front Springs (per-axle curves)')
+  frontSpringFolder.add(DAMAGE_PARAMS, 'springForceFloorFront', 0, 60000, 500).name('bump: no-harm floor (N)')
+  frontSpringFolder.add(DAMAGE_PARAMS, 'springBumpFullNFront', 100000, 900000, 10000).name('bump: destroys it (N)')
+  frontSpringFolder.add(DAMAGE_PARAMS.impactSpringFront, 'd10', 0, 0.2, 0.005).name('crash: dmg at 10 mph')
+  frontSpringFolder.add(DAMAGE_PARAMS.impactSpringFront, 'd60', 0, 1, 0.01).name('crash: dmg at 60 mph')
   wearFolder.close()
 
   // Phase 6 (TERR-06): Terrain folder — amplitude tuning + ramp visibility toggle.

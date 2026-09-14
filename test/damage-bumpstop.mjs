@@ -66,8 +66,13 @@ console.log('\n§2 the floor is absolute, and the curve is square')
   const ratio = (1 - b.get('springFront')) / (1 - a.get('springFront'))
   ok(Math.abs(ratio - 4) < 0.05, `doubling force-over-floor quadruples the damage (x${ratio.toFixed(2)}) — peak stress, square-law`)
 
-  const kill = fresh(); bump(kill, D.springBumpFullN)
-  ok(kill.get('springFront') <= 0.001, `one hit at ${D.springBumpFullN / 1000} kN destroys the spring outright`)
+  // The destroy force is per axle too (2026-09-14): the front's jounce bumper is a long progressive
+  // elastomer that takes most of a landing, the rear's is a short snubber that hands it to the pack.
+  const kill = fresh(); bump(kill, D.springBumpFullNFront)
+  ok(kill.get('springFront') <= 0.001, `one hit at ${D.springBumpFullNFront / 1000} kN destroys a FRONT spring outright`)
+  const killR = fresh(); bump(killR, D.springBumpFullNRear, 2)
+  ok(killR.get('springRear') <= 0.001, `one hit at ${D.springBumpFullNRear / 1000} kN destroys a REAR spring outright`)
+  ok(D.springBumpFullNFront > D.springBumpFullNRear, 'the front survives a harder single hit than the rear')
 }
 
 console.log('\n§3 the hit lands on the axle that took it')
@@ -117,7 +122,13 @@ console.log('\n§5 the drop anchors, re-measured after the progressive tire carc
   // springBumpFullN was rescaled with them (85 kN -> 300 kN); at the old value a 2 m drop destroyed
   // the springs outright. NOTE these drive ONE corner, so the whole-axle cost in game is roughly
   // double — the measured 2 m drop cost springFront 14.6% with both front corners landing.
-  for (const [h, peakN, lo, hi] of [[0.5, 2400, 0, 0.01], [1.0, 23000, 0.3, 3], [2.0, 75600, 4, 12]]) {
+  //
+  // BANDS RE-ANCHORED 2026-09-14 for the front's own curve (owner: "reduce front spring damage from
+  // both collisions and over travel"). The 14.6% above is exactly the complaint — seven 2 m landings
+  // wrote the front springs off. Floor 5 -> 12 kN and destroy force 300 -> 450 kN put a 2 m landing
+  // at about 2.1% per corner (~4% per axle, ~24 landings), and take ordinary bumps under 12 kN to
+  // nothing at all. The PEAK FORCES are unchanged measurements — only what they cost moved.
+  for (const [h, peakN, lo, hi] of [[0.5, 2400, 0, 0.01], [1.0, 23000, 0.02, 0.5], [2.0, 75600, 1.2, 4]]) {
     const d = fresh()
     bump(d, peakN)
     const lost = (1 - d.get('springFront')) * 100
