@@ -23,6 +23,7 @@ import { POI_ICONS, POI_ICON_PX, NEWSPAPER } from '../data/map-icons.js'   // FE
 import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN }
     from './map-cover.js'
 import { biomeAt, isWetGround, BIOME } from './biome.js'
+import { REGION_RADIUS_M } from './story.js'   // MIN_VIEW_SPAN_M — the widest the map may zoom out to
 import { FLORA_PARAMS } from '../data/flora.js'
 
 // Streamed radius of the map's own RoadSystem around the pan cursor. Sized by the AREA it covers,
@@ -49,6 +50,20 @@ const MAP_RADIUS_STEPS = [400, 650, 900, 1150, MAP_RADIUS]
 // is ROUTING, and story mode has already routed its whole region up front (the warm behind the
 // loading screen). The map adopts the play instance's route cache, so those rings are cache hits.
 const MAP_RADIUS_MAX = 2000
+// HOW FAR OUT THE MAP MAY ZOOM (owner, 2026-09-14: "limit map minimum zoom so we don't freeze
+// framing a huge region"). The freeze is a WORLD-SPAN cost, not a pixel cost: every contour cell,
+// cover texel, road polyline and glyph in view is walked per redraw, so the bill scales with the
+// square of the metres on screen and is indifferent to how big the window is. The cap is therefore
+// stated as a world span and converted to a px/m floor against the live sheet — a small window and
+// a large one both stop at the same amount of WORLD.
+//
+// Sized at 20% past the story-mode region (owner: "20% bigger than the story mode region is
+// sufficient for max zoomed out"), so the whole 5 km-wide bounded region plus a margin of context
+// fits the short edge of the sheet and nothing a player can drive to is ever off the map. Read
+// from REGION_RADIUS_M rather than written out, so moving the region moves this with it.
+const MIN_VIEW_SPAN_M  = 2 * REGION_RADIUS_M * 1.2   // 6000 m — the widest view the map will give
+const ZOOM_MAX         = 4       // px/m — the tight end, unchanged
+const ZOOM_FLOOR_ABS   = 0.005   // px/m — backstop for a degenerate (unsized) sheet only
 const PROGRESSIVE_GAP  = 16    // ms — yield between stream chunks so the page stays responsive
 const STREAM_DEBOUNCE = 120    // ms — re-stream only after a pan settles (a stream is expensive)
 const RESTREAM_MOVE   = 300    // m — floor; see _anchorDrifted (threshold scales with streamed radius)
@@ -617,7 +632,7 @@ export class Map2D {
         this._panZ = (minZ + maxZ) / 2
         const spanX = Math.max(1, maxX - minX), spanZ = Math.max(1, maxZ - minZ)
         const fit = Math.min(w / spanX, h / spanZ) * (1 - marginFrac)
-        this._zoom = Math.max(0.005, Math.min(4, fit))
+        this._zoom = this._clampZoom(fit)
         this._zoomInit = true
         this._bgDirty = true
         // A programmatic pan has no mouse-up to hang the usual debounced re-stream off, so without
@@ -828,6 +843,20 @@ export class Map2D {
         return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }
     }
 
+    /**
+     * Zoom limits, px per world metre. The floor is MIN_VIEW_SPAN_M of world fitted to the SHORT
+     * edge of the sheet: fitting the short edge (not the long one) is what guarantees the whole
+     * span is visible on both axes. Recomputed per call because the sheet changes with the window.
+     */
+    _minZoom() {
+        const s = this._sheet()
+        const short = Math.min(s.w, s.h)
+        return short > 0 ? Math.max(ZOOM_FLOOR_ABS, short / MIN_VIEW_SPAN_M) : ZOOM_FLOOR_ABS
+    }
+
+    /** Clamp a proposed zoom into [_minZoom(), ZOOM_MAX]. The one place either limit is applied. */
+    _clampZoom(z) { return Math.max(this._minZoom(), Math.min(ZOOM_MAX, z)) }
+
     _sx(wx) { return (wx - this._panX) * this._zoom + this._sheet().cx }
     _sy(wz) { return (wz - this._panZ) * this._zoom + this._sheet().cy }
 
@@ -849,7 +878,7 @@ export class Map2D {
         // of the network under the border.
         if (!this._zoomInit) {
             const s = this._sheet()
-            this._zoom = Math.min(s.w, s.h) / (MAP_RADIUS * 2)
+            this._zoom = this._clampZoom(Math.min(s.w, s.h) / (MAP_RADIUS * 2))
             this._zoomInit = true
         }
         this._bgDirty = true
@@ -911,7 +940,7 @@ export class Map2D {
         const wx = (mx - s.cx) / this._zoom + this._panX
         const wz = (my - s.cy) / this._zoom + this._panZ
         const factor = Math.exp(-e.deltaY * 0.0015)
-        this._zoom = Math.max(0.005, Math.min(4, this._zoom * factor))
+        this._zoom = this._clampZoom(this._zoom * factor)
         // Keep that same world point under the cursor after zoom.
         this._panX = wx - (mx - s.cx) / this._zoom
         this._panZ = wz - (my - s.cy) / this._zoom
