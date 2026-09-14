@@ -3331,7 +3331,21 @@ export class RoadSystem {
         if (!this._v2MergeMemo || this._v2MergeMemo.rev !== this._planRev())
             this._v2MergeMemo = { rev: this._planRev(), map: new Map() }
         const memo = this._v2MergeMemo.map
-        const mk = legacy ? nk + '#L' : nk
+        // BUG-65: once the crossing rung's delete set is FROZEN for this rev (R4, after plan pass 1),
+        // a leg that died is not a road and cannot be anyone's winner — a loser planned against it
+        // would find no trunk at assembly and ship on its pure line, hugging the THIRD leg it was
+        // never planned against (seed 6 node −5,7,1: 13 m apart for 84 m). So after the freeze the
+        // node plans over its SURVIVING legs, and the memo key names the dead ones, so the pass-1
+        // answer (which had to see the whole graph — the verdicts read plans through
+        // _v2CededExtents) is never returned for the post-freeze question. Acyclic: pre-freeze this
+        // is the pure pass-1 plan exactly as before (delF is null), and post-freeze _v2DeleteFor
+        // mints no verdict, so nothing planned here can reach back into the delete set. Untouched
+        // nodes keep the pass-1 key and its memo hit — only nodes that lost a leg re-plan.
+        const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen.del : null
+        const nbrsRaw = g.adj.get(nk)
+        const nbrs0 = nbrsRaw ? [...nbrsRaw].filter((o) => !drop || !drop.has(nk + '|' + o)).sort() : []
+        const dead = delF && delF.size ? nbrs0.filter((o) => delF.has(nk + '|' + o)) : []
+        const mk = nk + (legacy ? '#L' : '') + (dead.length ? '#d' + dead.join(';') : '')
         const hit = memo.get(mk)
         if (hit !== undefined) return hit
         const C = this._v2Costs()
@@ -3378,8 +3392,7 @@ export class RoadSystem {
         // Band lengths tried, shortest first: a gentle fork settles at 40 m, a wide one needs the
         // upper rungs to swing the whole turn at road radius.
         const out = new Map()
-        const nbrsRaw = g.adj.get(nk)
-        const nbrs = nbrsRaw ? [...nbrsRaw].filter((o) => !drop || !drop.has(nk + '|' + o)).sort() : []
+        const nbrs = dead.length ? nbrs0.filter((o) => !dead.includes(o)) : nbrs0
         if (nbrs.length < 2) { memo.set(mk, out); return out }
         const spell = this._v2EdgeSpellings(g)
         const inc = []
@@ -4056,9 +4069,10 @@ export class RoadSystem {
     //     is the winner's pavement, so a crossing there is re-attributed to the winner's own
     //     conflict pairs — which see the identical pavement as the winner's pure route.
     // Reads only memoized-pure planner state (plan-layer bundles, never a delete verdict), so
-    // _v2DeleteFor stays acyclic. Known residue, deterministic and censused: the dead-winner
-    // rule can void a plan at assembly after this layer sanctioned by it — the crossing then
-    // ships for this rev and the census reports it (same residue class BUG-55 accepted).
+    // _v2DeleteFor stays acyclic. The dead-winner rule can void a pass-1 plan at assembly after
+    // this layer sanctioned by it — the crossing then ships for this rev and the census reports
+    // it (same residue class BUG-55 accepted); BUG-65 re-plans such a node over its surviving
+    // legs once the delete set is frozen (_v2NodeMerges), so the loser gets a live trunk instead.
     _v2CededExtents(g, drop, wide, c1, c2) {
         const kA = g.key(c1), kB = g.key(c2)
         const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
@@ -4508,7 +4522,9 @@ export class RoadSystem {
         if (!this._v2PromoMemo || this._v2PromoMemo.rev !== this._planRev())
             this._v2PromoMemo = { rev: this._planRev(), map: new Map() }
         const kA = g.key(c1), kB = g.key(c2)
-        const mk = `${kA}|${kB}|${spec.midSpan ? 'm' : 'n'}${spec.legacy ? 'L' : ''}|${spec.region.toFixed(1)}`
+        // BUG-65: the winner is in the key — a post-freeze re-plan can hand the same loser a
+        // different winner at a region the pass-1 spec also had.
+        const mk = `${kA}|${kB}|${spec.midSpan ? 'm' : 'n'}${spec.legacy ? 'L' : ''}|${spec.region.toFixed(1)}|${g.key(spec.winner[0])}:${g.key(spec.winner[1])}`
         const hit = this._v2PromoMemo.map.get(mk)
         if (hit !== undefined) return hit
         this._v2PromoMemo.map.set(mk, true)   // optimistic: bars re-entry, never observed as an answer
@@ -5724,10 +5740,68 @@ export class RoadSystem {
             }
         }
         built._seamOver = seamOver
+        // ── B7 (BUG-66): CLEARANCE — past the band and the junction's own throat, the side road's
+        // BUILT deck must clear the trunk under the earthwork rule. The candidate prefilter
+        // (_v2ForkCandidates) judged the side's PURE profile there, pinned at its old node's height;
+        // the departure that ships is pinned to the TRUNK'S deck at P and re-solved, and on a trunk
+        // riding a fill above a gully that puts the side 6–15 m below the trunk while it is still
+        // 24–28 m abreast — the rule then asks 28.5 m (seven of the battery's eight road-clearance
+        // rows, 4–16 m each, all promoted-T sides just past their band). Judged exactly as the gate
+        // will measure the shipped pair: not inside the departure band (offCurveSpans ± 2), not
+        // inside either run's geometric throat from P (_v2ThroatLen), not beyond 60 m of
+        // separation (no apron reaches). A shortfall is a decline like the other two, and it ranks:
+        // a metre of apron inside the other road's shoulder counts as a metre of deck step, so when
+        // nothing clears, the fork that leaves the least earthwork conflict ships.
+        const NEARC = 60
+        const SS = { pts, polyCum, L: polyCum[n - 1] }, TS = { pts: T.points, polyCum: T.polyCum }
+        const throatS = this._v2ThroatLen(SS, nAtStart, TS)
+        const pOnT = _nearestOnPolyXZ(P.x, P.z, T.points, T.polyCum)
+        const pCum = pOnT ? pOnT.cum : 0
+        // the trunk's own throat from P, each way: the first sample ≥ clearThroatM out that is a
+        // daylight-floor clear of the built side, capped like _v2ThroatLen
+        const Tth = this._v2Costs().clearThroatM ?? 30, Tcap = 4 * Tth, floorC = this._v2ClearPrm().floor
+        const trunkThroat = (dir) => {
+            for (let j = 0; j < T.points.length; j++) {
+                const c = pCum + dir * (T.polyCum[j] - T.polyCum[0])
+                const s = dir * (c - pCum)
+                if (s > Tcap) return Tcap
+                if (c < T.polyCum[0] || c > T.polyCum[T.points.length - 1]) return Math.max(Tth, s)   // trunk ends: nothing past it to owe
+                if (s < Tth) continue
+                const q = _polyAtCum(T.points, T.polyCum, c)
+                const h = _nearestOnPolyXZ(q.x, q.z, pts, polyCum)
+                if (h && h.d >= floorC) return Math.max(Tth, s)
+            }
+            return Tcap
+        }
+        const thF = trunkThroat(1), thB = trunkThroat(-1)
+        const [bs0, bs1] = built.offCurveSpans?.[0] ? [built.offCurveSpans[0].s0 - 2, built.offCurveSpans[0].s1 + 2] : [Infinity, -Infinity]
+        // The MOUTH only: from P out to where the side first leaves the trunk's 60 m reach past
+        // the band. What the side does further along (a mid-span pair's second strand, which the
+        // other fork cuts away; a hug 400 m out) belongs to the plan layer, not to this fork.
+        let clearOver = 0, clearWhy = null
+        for (let k = 0; k < n; k++) {
+            const i = nAtStart ? k : n - 1 - k
+            const d = dOf(i)
+            const s = polyCum[i]
+            const inBandC = s >= bs0 && s <= bs1
+            const q = _nearestOnPolyXZ(pts[i].x, pts[i].z, T.points, T.polyCum)
+            if (!q) continue
+            if (q.d > NEARC) { if (inBandC) continue; break }
+            if (d < throatS || inBandC || q.d < 1e-6) continue
+            const dT = q.cum - pCum
+            if ((dT >= 0 && dT < thF) || (dT < 0 && -dT < thB)) continue
+            const need = this._v2ClearReq({ x: pts[i].x, y: yb[i], z: pts[i].z }, q)
+            if (need - q.d > clearOver) {
+                clearOver = need - q.d
+                clearWhy = `side ${q.d.toFixed(1)} m from the trunk where the rule wants ${need.toFixed(1)} (${Math.abs(yb[i] - q.y).toFixed(1)} m of height), ${d.toFixed(0)} m out from the T`
+            }
+        }
+        built._clearOver = clearOver
         // The SCORE is what ranks candidates when none of them clears. Deck step in metres dominates;
-        // grade excess is weighted to be comparable (a 1 % overshoot ~ 10 cm of step).
-        built._score = seamOver + built._gradeOver * 10
-        return gradeWhy || seamWhy
+        // grade excess is weighted to be comparable (a 1 % overshoot ~ 10 cm of step); a clearance
+        // shortfall counts metre for metre.
+        built._score = seamOver + built._gradeOver * 10 + clearOver
+        return gradeWhy || seamWhy || clearWhy
     }
 
     // Apply the promotion: split the trunk at P into two ordinary runs, replace the side run with
