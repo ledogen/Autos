@@ -33,10 +33,32 @@ died, with the dead edges in the node's `drop` set, so the loser pairs with the 
 memo bump. Alternatively the role pass could rank winners by "survives the crossing invariant",
 but that is the same cycle by another name.
 
+## State on main @ 9bf4545 (2026-09-14)
+
+One row left: seed 6 mark-B (−3040,4908), 13.2 m over 84 m with 6.1 m of height. The seed 11
+(1385,−1170) row went away when the pass-2 loser walk kept the fixed throat (variant B of the
+2026-09-10 pass) — its planned winner is no longer deleted there, so the plan holds. Same mechanism
+elsewhere, from the nine fresh windows of 2026-09-11: seed 90 (−837,1618) is a planned pair whose
+T probe answers "no T" three times and ships raw (88 m at 16 m, 17.7 m of height); seed 526302544
+(−736,−308) is two legs of node −1,−1,0 with NO plan at all (80 m at 11 m) and may be a sibling
+class; seed 67 (−1688,165) is a promoted side road hugging its sibling near its far node (28 m).
+
+## Pictures
+
+- Seed 6 (−3040,4908) overhead + plan drawing (the arms of a switchback whose apex is the node):
+  https://claude.ai/code/artifact/28c7b3aa-0137-44ec-a97d-a9b235a41ad2
+
+## Cost estimate
+
+A re-plan pass touches only nodes with a dead planned winner — two or three per window. Each is a
+node plan (~2 ms) plus one T probe (~40 ms, measured on seed 11), so 50–150 ms on a 6–7 s build:
+1–2 %. The memo (`_v2MergeMemo`, keyed by node) needs a second key for the re-plan so the first
+pass's answer is not returned.
+
 ## Acceptance
 
-- [ ] seed 6 mark-B (−3040,4908) and seed 11 origin (1385,−1170) gone from `road-clearance`
-- [ ] seed 11 (1385,−1172) gone from `junction-stitch`
+- [ ] seed 6 mark-B (−3040,4908) gone from `road-clearance` (seed 11 (1385,−1170) already is); seed 90 (−837,1618) too if it is the same mechanism
+- [ ] `junction-stitch` stays green
 - [ ] `promoted-node-id`, `restream-invariance`, `world-determinism`, `road-connectivity` green
 
 ## Ruling 2026-09-14 (owner) and what it did not cover
