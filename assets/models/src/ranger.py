@@ -1663,10 +1663,12 @@ def build_front_end(p):
                                      # what "a light on a flat surface" means.
     FACE_X = (0.422, 0.438, 0.500, 0.575, 0.664, 0.724)
     N_FACE = len(FACE_X)             # stations on the nose face, before the corner
-    N_BEZEL = 1                      # ...of which the first BAND is the inboard bezel.
-                                     # 16 mm at the base, and it leans with the rest of
-                                     # the end so it stays 16 mm all the way up — the
-                                     # same width as the top and bottom returns.
+    N_BEZEL = 1                      # ...of which the first BAND is the inboard bezel —
+                                     # and the LAST band of the whole path is the trailing
+                                     # one, out on the fender.  16 mm each, and each leans
+                                     # with the end face beside it so it stays 16 mm all
+                                     # the way up: the same width as the top and bottom
+                                     # returns, so the cluster is framed on all four sides.
     N_CLEAR = 4                      # ...and how many BANDS of it are the headlamp.
                                      # THE DIVIDER LANDS AT 0.664, so the amber gets
                                      # 60 mm of front face and everything else is round
@@ -1682,7 +1684,7 @@ def build_front_end(p):
     # clear end keeps a real bulge; it fades out round the corner, where the lens is
     # following the fender's curvature instead of its own.
     NOSE_LAMP_BULGE = (0.022, 0.022, 0.022, 0.020, 0.012, 0.006,
-                       0.004, 0.002, 0.0, 0.0, 0.0)
+                       0.004, 0.002, 0.0, 0.0, 0.0, 0.0)
     # How much of the lamp's height is eaten per station as it dies onto the flank,
     # and 66% of that comes off the BOTTOM: on the reference the top edge runs level
     # with the hood line right round the corner while the lower edge lifts away.  ZERO
@@ -1717,11 +1719,14 @@ def build_front_end(p):
     # front out a little bit"), which is REVERSED here — see the opening's own note.
     #
     # It is a displacement ALONG THE PATH TANGENT, scaled by height — positive is toward
-    # the outboard end of the path, so the flank station's NEGATIVE lean pulls its top
-    # forward.  Only that one station moves; everything else keeps its plan position, so
-    # what slants is one end face and nothing else.
+    # the outboard end of the path, so the flank stations' NEGATIVE lean pulls their tops
+    # forward.  BOTH trailing stations take the SAME lean, which is what keeps the bezel
+    # band between them a constant 16 mm instead of a wedge: the band's two edges rake
+    # together, so the frame follows the raked trailing edge rather than being pinched by
+    # it.  The amber band ahead of them absorbs the width change, and absorbs it
+    # invisibly — it is amber on both sides, so there is no material edge to see.
     NOSE_LAMP_LEAN = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, -0.014)
+                      0.0, 0.0, 0.0, 0.0, -0.014, -0.014)
     # ROUND ON THE TOP OUTER CORNER (owner, 2026-09-06).  This is the one place the lens
     # is allowed to lose height, and it is a corner radius, not the taper that was
     # deleted: it comes off the TOP EDGE ONLY, starts outboard of the aperture, and the
@@ -1731,16 +1736,30 @@ def build_front_end(p):
     # radius.  If this ever starts reading as a taper again, it has crept inboard of
     # station 5; that is the line it must not cross.
     NOSE_LAMP_ROUND = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                       0.004, 0.010, 0.016, 0.024, 0.034)
-    NOSE_LAMP_TAIL = 0.035           # how far back along the STRAIGHT fender the lamp
-                                     # runs past the rim blend.  60 mm off IMG_0879
-                                     # originally — the reference amber shows ~135 mm from
-                                     # the side and the rim is only 84 mm deep — pulled to
-                                     # 35 on 2026-09-07 ("pull the rear edges of the
-                                     # ambers forward a little"), leaving ~112 mm.  This
-                                     # is the ONLY station it moves: everything ahead of
-                                     # it is pinned to a rim ring, so shortening the lamp
-                                     # never disturbs the corner it wraps.
+                       0.004, 0.010, 0.016, 0.024, 0.029, 0.034)
+    NOSE_LAMP_TAIL = (0.0, 0.019, 0.035)
+                                     # how far back along the STRAIGHT fender the lamp runs
+                                     # past the rim blend, per station.  The LAST entry is
+                                     # the trailing edge: 60 mm off IMG_0879 originally —
+                                     # the reference amber shows ~135 mm from the side and
+                                     # the rim is only 84 mm deep — pulled to 35 on
+                                     # 2026-09-07 ("pull the rear edges of the ambers
+                                     # forward a little"), leaving ~112 mm.  These are the
+                                     # ONLY stations that move: everything ahead of them is
+                                     # pinned to a rim ring, so shortening the lamp never
+                                     # disturbs the corner it wraps.
+                                     # THE MIDDLE ONE EXISTS TO CARRY THE BEZEL (owner,
+                                     # 2026-09-10: "extend the headlight bezel on the
+                                     # rearward side so that it frames the marker light
+                                     # from the side just as it frames the headlight from
+                                     # the front").  The trailing end used to be nothing but
+                                     # the loft's dark end CAP, which is perpendicular to
+                                     # the path — so from a side view, the one view the
+                                     # marker light is actually seen in, it is edge-on and
+                                     # the amber ran straight into the paint.  35 - 19 is
+                                     # 16 mm, the same width as BEZEL_U's returns and the
+                                     # inboard band, so all four sides of the cluster now
+                                     # carry one frame.
 
     def head_lamp(sx):
         def station(i, z):
@@ -1761,11 +1780,11 @@ def build_front_end(p):
                 # STRAIGHT fender behind it.  Without that last one the lamp has
                 # nowhere to die and stops dead on the corner as a wedge — the rim is
                 # only 84 mm deep and the reference lamp shows 135 from the side.
-                yb = CLIP_ST[0][0] - NOSE_LAMP_TAIL * (j - len(NOSE_RIM))
+                yb = CLIP_ST[0][0] - NOSE_LAMP_TAIL[j - len(NOSE_RIM)]
                 x, y = ring_flank(clip_ring(yb), z)
             return (sx * abs(x), y)
 
-        n = N_FACE + len(NOSE_RIM) + 2      # face, every rim ring, base, flank
+        n = N_FACE + len(NOSE_RIM) + len(NOSE_LAMP_TAIL)   # face, rim rings, flank
         for sched in (NOSE_LAMP_BULGE, NOSE_LAMP_LEAN, NOSE_LAMP_ROUND):
             assert len(sched) == n, "one entry per path station"
         zm = 0.5 * (OPEN_Z0 + OPEN_Z1)
@@ -1804,7 +1823,7 @@ def build_front_end(p):
         # above — and so is the bezel: section bands 2 and 3 are the lit face, everything
         # else is dark, and the whole FIRST path band is dark to bezel the inboard end.
         def lens_mat(seg, k):
-            if k not in (2, 3) or seg < N_BEZEL:
+            if k not in (2, 3) or seg < N_BEZEL or seg >= n - 1 - N_BEZEL:
                 return DARK
             return "RangerLens" if seg < N_CLEAR else "RangerAmber"
         # Both caps are bezel-dark: the inboard one butts the grille surround, the
