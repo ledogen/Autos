@@ -38,3 +38,13 @@ but that is the same cycle by another name.
 - [ ] seed 6 mark-B (−3040,4908) and seed 11 origin (1385,−1170) gone from `road-clearance`
 - [ ] seed 11 (1385,−1172) gone from `junction-stitch`
 - [ ] `promoted-node-id`, `restream-invariance`, `world-determinism`, `road-connectivity` green
+
+## Ruling 2026-09-14 (owner) and what it did not cover
+
+The owner exempted the two arms of a SWITCHBACK from the clearance rule (legs of one node that
+leave it within ~30° of each other are one road doubling back). `test/road-clearance.mjs` now
+carries that exemption (`HAIRPIN_DEG` 30, bearing over the first 24 m). Measured, the seed 6
+(−3040, 4908) pair does not meet it: its arms leave the apex 43° apart (5.8 m apart at 4 m out,
+24.7 m at 40 m) and then PINCH back to 19.8 m at 80 m as the −5,6,1 leg curls toward its sibling.
+So this row stays, it is still the dead-winner mechanism above, and the gate stays red on it —
+the owner's rule is "true clearance is necessary to enforce; leave red or fix verifiably".

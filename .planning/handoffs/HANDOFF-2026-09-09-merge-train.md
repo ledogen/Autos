@@ -195,3 +195,23 @@ past the departure band; a hold or an earthwork term in the departure ranking.
 
 FEAT-82 does NOT create clearance pairs (§5 retraction) — measured with the pad bias and the hold
 recovery each switched off.
+
+## 8. 2026-09-14 — wrap-up rulings and the push
+
+Owner rulings after reviewing the FEAT-77 page's sites against current main
+(https://claude.ai/code/artifact/9e8d5edd-a7eb-4d97-aaa7-3539cbfe5a2e — then/now for every site
+they commented on; every "now violating" site of 2026-09-08 is clear on main, the "persisting"
+seed 3 row shrank 140 → 16 m, and the "five roads" tangle and the red mission edge are gone
+because the crossing rung deleted a leg at each — identical on main before and after the
+2026-09-10 fixes, so that came in with the merge train):
+
+- **road-clearance stays red until BUG-65/66 land.** "Length is not the only thing that matters;
+  true clearance is necessary to enforce, otherwise roads potentially intersect. Leave red or fix
+  verifiably." No length threshold, no report-only.
+- **Hairpin arms are exempt** (legs of one node leaving within 30° are one switchback). Built in
+  the gate; it does NOT catch the seed 6 (−3040, 4908) row, whose arms leave 43° apart and pinch
+  later — that row remains BUG-65 (note in the ticket).
+- **Ranger assets committed** (`8a3bc99`) and pushed with everything else.
+
+Pushed to origin/main. The two standing tickets for green: BUG-65 (dead-winner re-plan) and
+BUG-66 (T mouth on a tall fill).

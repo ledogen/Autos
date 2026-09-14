@@ -78,6 +78,25 @@ const throatLen = (A, fromStart, B) => {
   }
   return THROAT_CAP
 }
+// HAIRPIN ARMS (owner ruling 2026-09-14): two legs of one node that leave it within HAIRPIN_DEG of
+// each other are the two arms of a switchback, one road doubling back, not two roads sharing a
+// hillside — the T ladder already refuses to merge a leg that doubles back past 135°, for the same
+// reason. Their earthwork is one bank. Measured on seed 6 (−3040, 4908): 13 m apart for 84 m with
+// 6 m of height, the last long row on the battery. Bearing is taken over the first 24 m out of the
+// shared node on each leg.
+const HAIRPIN_DEG = 30
+const bearingFrom = (A, fromStart) => {
+  const n = A.points.length, L = A.polyCum[n - 1]
+  const i0 = fromStart ? 0 : n - 1
+  let i = i0
+  while (fromStart ? (i < n - 1 && A.polyCum[i] < 24) : (i > 0 && L - A.polyCum[i] < 24)) i += fromStart ? 1 : -1
+  const dx = A.points[i].x - A.points[i0].x, dz = A.points[i].z - A.points[i0].z, l = Math.hypot(dx, dz) || 1
+  return [dx / l, dz / l]
+}
+const hairpin = (A, aFromStart, B, bFromStart) => {
+  const [ax, az] = bearingFrom(A, aFromStart), [bx, bz] = bearingFrom(B, bFromStart)
+  return Math.acos(Math.max(-1, Math.min(1, ax * bx + az * bz))) * 180 / Math.PI < HAIRPIN_DEG
+}
 const scan = (road, terrain) => {
   const runs = [...road._network.entries()].filter(([, e]) => e.points?.length > 1)
   const rows = [], walls = []
@@ -90,6 +109,11 @@ const scan = (road, terrain) => {
     const shBs = sameCell(B.cellA, A.cellA) || sameCell(B.cellA, A.cellB), shBe = sameCell(B.cellB, A.cellA) || sameCell(B.cellB, A.cellB)
     const tAs = shAs ? throatLen(A, true, B) : 0, tAe = shAe ? throatLen(A, false, B) : 0
     const tBs = shBs ? throatLen(B, true, A) : 0, tBe = shBe ? throatLen(B, false, A) : 0
+    // the two arms of a switchback: one shared node, both legs leaving it on nearly the same bearing
+    if (shared) {
+      const aFS = shAs, bFS = sameCell(B.cellA, aFS ? A.cellA : A.cellB)
+      if (hairpin(A, aFS, B, bFS)) { hairpins++; continue }
+    }
     let viol = 0, worst = null, wall = null
     for (let s = 0; s <= LA; s += STEP) {
       let lo = 0; while (lo + 2 < A.polyCum.length && A.polyCum[lo + 1] <= s) lo++
@@ -127,7 +151,7 @@ const scan = (road, terrain) => {
   return { rows, walls, runs: runs.length }
 }
 
-let fails = 0, totPairs = 0, totLen = 0, totShared = 0, totWalls = 0
+let fails = 0, totPairs = 0, totLen = 0, totShared = 0, totWalls = 0, hairpins = 0
 for (const W of WINDOWS) {
   if (ONLY && !W.name.includes(ONLY)) continue
   const road = buildWindow(W, P)
@@ -146,6 +170,6 @@ for (const W of WINDOWS) {
   if (VERBOSE) for (const w of walls) console.log(`         wall (report): (${w.x.toFixed(0)},${w.z.toFixed(0)}) composed ${(Math.atan(w.gc) * 180 / Math.PI).toFixed(0)}° where raw is ${(Math.atan(w.gr) * 180 / Math.PI).toFixed(0)}°, roads ${w.sep.toFixed(0)} m apart   ${w.ka} × ${w.kb}`)
 }
 
-console.log(`\nroad-clearance: ${totPairs} pair(s) inside each other's earthwork · ${(totLen / 1000).toFixed(1)} km · ${totShared} share a node · carve-made walls between roads (report, BUG-64 B): ${totWalls}`)
+console.log(`\nroad-clearance: ${totPairs} pair(s) inside each other's earthwork · ${(totLen / 1000).toFixed(1)} km · ${totShared} share a node · carve-made walls between roads (report, BUG-64 B): ${totWalls} · hairpin arms exempt: ${hairpins}`)
 if (fails) { console.log('FAIL — two roads sit closer than the daylight and earthwork the carve needs between them (FEAT-77)'); process.exit(1) }
 console.log('PASS')
