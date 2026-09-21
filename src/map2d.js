@@ -46,9 +46,12 @@ const MAP_RADIUS_STEPS = [400, 650, 900, 1150, MAP_RADIUS]
 // network and took 20+ s, which is the load the owner was seeing. The mission ROUTE is drawn from
 // the mission's own segment data regardless, so the map's network is context, not the subject — it
 // does not need to reach the far end of every route.
-// FEAT-43 raises this cap in story mode via setRadiusCap(): the 20+ s cost the cap exists to avoid
+// Story mode raises this cap past MAP_RADIUS_MAX (FEAT-43): the 20+ s cost the cap exists to avoid
 // is ROUTING, and story mode has already routed its whole region up front (the warm behind the
 // loading screen). The map adopts the play instance's route cache, so those rings are cache hits.
+// BUG-68 moved that raise INTO the map (_syncRegionWindow) — main.js's M handler used to be the
+// only thing that did it, so every other way of opening the map left the cap at the free-roam
+// value and the region lock could not engage.
 const MAP_RADIUS_MAX = 2000
 // HOW FAR OUT THE MAP MAY ZOOM (owner, 2026-09-14: "limit map minimum zoom so we don't freeze
 // framing a huge region"). The freeze is a WORLD-SPAN cost, not a pixel cost: every contour cell,
@@ -62,6 +65,11 @@ const MAP_RADIUS_MAX = 2000
 // fits the short edge of the sheet and nothing a player can drive to is ever off the map. Read
 // from REGION_RADIUS_M rather than written out, so moving the region moves this with it.
 const MIN_VIEW_SPAN_M  = 2 * REGION_RADIUS_M * 1.2   // 6000 m — the widest view the map will give
+// BUG-68: how far past a story region's wall the map builds. The COVERAGE requirement is the
+// region radius itself; these are cosmetic fringe, so the drawn boundary ring sits on drawn road
+// instead of on the ragged edge of the built network.
+const REGION_PAD_M     = 200     // m — streamed past the wall
+const REGION_CAP_PAD_M = 400     // m — the cap that pad is allowed to grow into
 const ZOOM_MAX         = 4       // px/m — the tight end, unchanged
 const ZOOM_FLOOR_ABS   = 0.005   // px/m — backstop for a degenerate (unsized) sheet only
 const PROGRESSIVE_GAP  = 16    // ms — yield between stream chunks so the page stays responsive
@@ -417,6 +425,11 @@ export class Map2D {
         this._radiusTarget = MAP_RADIUS  // grown by setRadiusTarget (story mode)
         this._radiusCap    = MAP_RADIUS_MAX   // FEAT-43: raised by setRadiusCap inside story mode
         this._streamFull  = false        // network is streamed out to the final radius around _streamAt
+        // BUG-68: _regionKey() of the story region the map BUILT for itself, which it does only
+        // when play's own region is not adoptable. Story mode generates its roads ONCE (owner,
+        // 2026-09-17: "we don't need to regenerate any roads once they are initially mapped"), so
+        // that build is never repeated. The ADOPT path does not set this — see _playOutgrewMap.
+        this._regionFrozen = null
         this._pumpTimer   = 0            // setTimeout handle between chunks
         this._pumpToken   = 0            // invalidates in-flight warm polls when a new stream starts
 
@@ -501,6 +514,7 @@ export class Map2D {
         this._radiusCap = MAP_RADIUS_MAX
         this._radiusTarget = MAP_RADIUS
         this._streamFull = false
+        this._regionFrozen = null   // BUG-68: story exit releases the freeze with the window
         if (had > MAP_RADIUS && this._open) this._startStream()
     }
 
@@ -525,12 +539,62 @@ export class Map2D {
      * covered, an 850 m pan dropped 21 edges off the trailing side while gaining 15 on the leading
      * one — strictly less map, for seconds of main-thread work.
      *
-     * Returns the region when one stream from its centre covers it, else null (→ cursor-follow).
+     * Returns the region whenever there is one — BUG-68 removed the coverage TEST that used to
+     * gate this, because _syncRegionWindow() now makes coverage true instead of checking for it.
      */
     _regionLock() {
         const reg = this._getRegion()
         if (!reg) return null
-        return this._radiusTarget >= reg.r ? reg : null
+        // BUG-68: no coverage test any more — _syncRegionWindow() GUARANTEES the streaming window
+        // covers the region, so a story region is always locked. The old `_radiusTarget >= reg.r`
+        // test is what let the lock silently not engage; see that method for the failure it caused.
+        return reg
+    }
+
+    /**
+     * BUG-68 — make one stream from the region centre COVER the region, rather than testing whether
+     * it happens to. Called on open and every frame the map is open, so the map self-manages its
+     * story window no matter who opened it.
+     *
+     * This used to live ONLY in main.js's M-key handler, which is why the region lock could quietly
+     * fail to engage. Anything that opened or re-targeted the map without going through that
+     * keypress left `_radiusCap` at the free-roam MAP_RADIUS_MAX (2000 m) — mission framing is the
+     * live path, it calls frameBounds() + setRadiusTarget() when an offer appears. setRadiusTarget
+     * then clamped to that 2000 m cap, which is SHORT of a 2500 m region, so _regionLock() returned
+     * null and the map fell back to free roam's cursor-follow streaming.
+     *
+     * What the owner saw (2026-09-17): panning past the wall streamed a fresh window around the
+     * CURSOR — roads built outside the region, and the ones behind the drag dropped off the
+     * trailing edge of the disc. "Generates roads outside the area and erases the ones inside it."
+     */
+    _syncRegionWindow() {
+        const reg = this._getRegion()
+        if (!reg) return
+        // setRadiusCap is the free-roam-UNSAFE door ("those rings would route cold"); calling it
+        // here is safe because we are already inside the "a story region exists" guard, and the
+        // `<` keeps it monotonic so a wider cap set by a tool (test/map-shot.mjs) is never lowered.
+        const cap = reg.r + REGION_CAP_PAD_M
+        if (this._radiusCap < cap) this.setRadiusCap(cap)
+        this.setRadiusTarget(reg.r + REGION_PAD_M)
+    }
+
+    /**
+     * BUG-68: is play showing more road than we are? adoptNetwork() copies play's network
+     * wholesale, so straight after an adopt the two sizes are EQUAL — which makes "play is bigger"
+     * a self-extinguishing trigger rather than a per-frame re-copy. True only inside a locked
+     * story region, and only while nothing is already in flight.
+     */
+    _playOutgrewMap() {
+        if (this._streaming || !this._regionLock()) return false
+        const play = this._playNetSource?.()
+        if (!play?._network || play._worldSeed !== this._getSeed()) return false
+        return play._network.size > (this._road?._network?.size ?? 0)
+    }
+
+    /** Identity of the region currently frozen — seed + geometry. Null outside a story region. */
+    _regionKey() {
+        const reg = this._getRegion()
+        return reg ? `${this._getSeed()}|${reg.x}|${reg.z}|${reg.r}` : null
     }
 
     // The world point the network is streamed around: the region centre when locked, else the pan
@@ -544,6 +608,10 @@ export class Map2D {
     // Has the anchor moved far enough from what we last streamed around to need another pass?
     // Always false once a locked region is fully streamed — which is the whole point.
     _anchorDrifted() {
+        // BUG-68: a frozen story region is done, permanently. This is the explicit half of the
+        // freeze — the lock already keeps the anchor pinned to the region centre, but stating it
+        // here means no future caller can re-open the question by resetting _streamAt.
+        if (this._regionFrozen && this._regionFrozen === this._regionKey()) return false
         if (!this._streamAt) return true
         const a = this._streamAnchor()
         // PERF (owner, 2026-09-01: "map regenerates the whole thing even when zooming"): the flat
@@ -606,8 +674,12 @@ export class Map2D {
             this._panX = car.x; this._panZ = car.z
             this._centeredOnce = true
         }
-        // Resume/begin the chunked stream unless the anchor is already fully streamed.
-        if (!this._streamFull || this._anchorDrifted()) this._startStream()
+        // BUG-68: cover the story region before the stream decision below reads the lock.
+        this._syncRegionWindow()
+        // Resume/begin the chunked stream unless the anchor is already fully streamed — or the
+        // story region is already built and frozen, which is the end of the matter.
+        const frozen = this._regionFrozen && this._regionFrozen === this._regionKey()
+        if (!frozen && (!this._streamFull || this._anchorDrifted() || this._playOutgrewMap())) this._startStream()
 
         this._canvas.addEventListener('mousedown', this._onDown)
         window.addEventListener('mousemove', this._onMove)
@@ -703,6 +775,7 @@ export class Map2D {
         this._streamAt = null
         this._streamFull = false
         this._streamStep = 0
+        this._regionFrozen = null   // BUG-68: a new seed / road params is a new world to freeze
         // FEAT-17: re-apply the water no-go so the fresh instance routes around ponds like play does.
         if (this._waterNoGoFns) this._road.setWaterNoGo(this._waterNoGoFns[0], this._waterNoGoFns[1])
         // PERF-30: register with the network-Worker client (whole builds off-thread — see _pump).
@@ -772,6 +845,12 @@ export class Map2D {
                 this._road.setRadius(steps[steps.length - 1])
                 this._road.adoptNetwork(play.exportNetwork())
                 done()
+                // BUG-68: deliberately NOT frozen. Adoption is a COPY of play's region, not a
+                // generation of one — the "generate once" already happened on the play instance,
+                // behind the entry loading screen. Play REGISTERS that region progressively while
+                // it warms, so a map opened mid-warm adopts a partial network: measured, the map
+                // took 8 edges and play went on to 163. Freezing there would have pinned a nearly
+                // empty map for the rest of the run. _playOutgrewMap() re-takes the copy instead.
                 return
             }
             // COLD opens paint the FIRST ring, then jump straight to the final radius — two
@@ -798,7 +877,7 @@ export class Map2D {
                 this._bgDirty = true
                 this._streamStep = cold ? 1 : steps.length
                 if (this._streamStep < steps.length) this._pumpTimer = setTimeout(() => this._pump(), PROGRESSIVE_GAP)
-                else { this._streaming = false; this._streamFull = true }
+                else { this._streaming = false; this._streamFull = true; this._regionFrozen = this._regionKey() }
             })
             return
         }
@@ -980,6 +1059,11 @@ export class Map2D {
         // each frame and rebuild+restream when the seed or a road* param drifts. Debounced (like
         // main.js's 150ms road rebuild) so dragging a slider doesn't thrash the expensive stream.
         this._checkParamChange()
+        // BUG-68: the region is captured a beat AFTER story entry, so a map opened during the
+        // settle grace would otherwise never learn about it. Idempotent once the window covers it.
+        this._syncRegionWindow()
+        // …and if play has registered more of its region since we copied it, re-take the copy.
+        if (this._playOutgrewMap()) this._startStream()
         if (this._canvas.width !== Math.round(window.innerWidth * (window.devicePixelRatio || 1))) this._resize()
         if (this._bgDirty) { this._drawBackground(); this._bgDirty = false }
 

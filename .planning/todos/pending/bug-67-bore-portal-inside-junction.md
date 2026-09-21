@@ -88,6 +88,12 @@ the TAIL of a deep bore and dropping it punches a hole in the tunnel.
   out of each portal, and bore-vs-bore separation for any seed list.
 - `test/scratch-bore-prevalence.mjs` — rainy-day: the whole-sweep version, plus node-burial stats.
 
+## Ruling (owner, 2026-09-17)
+
+**Ticket it, do not fix now.** Asked to choose between the two remedies below, the owner's answer
+was to mint the ticket and leave it. So this stays `pending` with no remedy selected — the choice
+is still open and still theirs, and the ceiling gate holds the line in the meantime.
+
 ## Acceptance
 
 - [ ] Owner picks remedy (1) or (2) above
