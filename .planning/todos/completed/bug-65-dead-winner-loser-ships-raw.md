@@ -1,7 +1,7 @@
 ---
 id: BUG-65
 type: bug
-status: pending
+status: closed
 severity: medium
 opened: 2026-09-10
 source: >
@@ -70,3 +70,31 @@ carries that exemption (`HAIRPIN_DEG` 30, bearing over the first 24 m). Measured
 24.7 m at 40 m) and then PINCH back to 19.8 m at 80 m as the −5,6,1 leg curls toward its sibling.
 So this row stays, it is still the dead-winner mechanism above, and the gate stays red on it —
 the owner's rule is "true clearance is necessary to enforce; leave red or fix verifiably".
+
+## Resolution 2026-09-14 (feature/bug-65-66)
+
+**Fixed as the ticket proposed: a second plan pass after the delete set is frozen.** `_v2NodeMerges`
+now reads the R4 frozen delete set (`_v2DelFrozen`) and plans a node over its SURVIVING legs; the
+memo key names the dead legs (`nk#d<dead…>`) so the pass-1 answer — which had to see the whole
+graph, because the delete verdicts read plans through `_v2CededExtents` — is never returned for the
+post-freeze question. Pre-freeze the function is byte-for-byte the pass-1 plan (delF is null);
+post-freeze `_v2DeleteFor` mints no verdict, so nothing planned here reaches back into the delete
+set — the cycle the ticket worried about does not close. Untouched nodes keep the pass-1 key and its
+memo hit; only nodes that lost a leg re-plan (two or three per window). `_v2PromotableFor`'s memo
+key carries the winner too, so a re-planned loser with a new winner at the same region gets its own
+probe.
+
+Measured: seed 6 mark-B (−3040,4908) — node −5,7,1's loser now pairs with the third leg and ships as
+a T at (−3025,4917); the 84 m / 13 m row is gone; runs 30 → 31. Battery `road-clearance` 8 → 2 rows
+(the other six were BUG-66's), `junction-stitch` green, `promoted-node-id` (T ids window-invariant),
+`restream-invariance`, `world-determinism`, `road-connectivity`, `mission-network`, `paper-reroute`
+all green — 38/39 affected gates, the one red being `road-clearance` on two rows that are not this
+mechanism (see BUG-66's state note).
+
+**Seed 90 (−837,1618) is NOT this mechanism** (checked, acceptance's "if it is the same"): its winner
+is alive; every departure build at every fork station on the ladder DRAPES (`_v2GradePts` cannot
+solve a legal profile for the side road once its start is pinned to the trunk's deck — 17.7 m of
+height between the legs), so the probe answers "no T" honestly. That is the re-routed/hard-grade
+class of the 2026-09-10 note (`entry.rerouted` / `S.hardGrade`), and it stays red there.
+Seed 526302544 (−736,−308) (no plan at all at node −1,−1,0) is likewise unchanged — a sibling
+class, not the dead-winner one.
