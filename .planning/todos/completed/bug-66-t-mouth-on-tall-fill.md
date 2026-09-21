@@ -1,7 +1,7 @@
 ---
 id: BUG-66
 type: bug
-status: pending
+status: closed
 severity: low
 opened: 2026-09-10
 source: >
@@ -107,3 +107,30 @@ other classes, see BUG-65's resolution). 38/39 affected gates green; `junction-s
 2026-09-14 ruling ("leave red or fix verifiably"). Closing this ticket against them would need either
 a route-side fix (QUAL-26) or a ruling that a sub-metre apron shortfall over ≤ 16 m is inside the
 carve's tolerance — neither is this ticket's to decide.
+
+## Resolution 2026-09-20 — owner ruling: the mechanism is the ticket, and it is fixed
+
+**Closed on B7.** BUG-66 was "a T side road leaving a trunk on a tall fill trips the clearance rule";
+`_v2DepartureAccepts`'s B7 test judges the BUILT departure deck against the trunk exactly as the gate
+measures it, mouth-bounded, and declines/ranks metre-for-metre. Six of the seven battery rows gone,
+3 of 5 fresh-window rows of this shape gone, six Ts moved 8–17 m along their trunks, and the shipped
+departure grade did not move (worst 12 m of the first 60 m of every T side, 76 → 77 sides: mean
+23.4 % → 23.4 %, max 39 % → 39 %). 38/39 affected gates green.
+
+**The two rows left are other mechanisms and are re-ticketed as minor** (owner, 2026-09-20 — "plates
+1 and 2 show good improvements; plates 3 and 4 might technically violate but are playable as is;
+would be nice to get to green here but seems like we're not there yet"):
+
+- lone-pine (−68,320) — the side's OWN ROUTE hugs the trunk past the band → **BUG-69**
+  (the lever is QUAL-26 occupancy pricing, not a longer hold).
+- seed 3 (1976,−889) — a RE-CONVERGENCE 470 m from node 2,−1,2, not a junction mouth → **BUG-70**
+  (the 2026-09-10 cull rung's 60 m interval floor / the mid-span planner).
+
+`road-clearance` therefore **stays red on two rows**, per the 2026-09-14 ruling ("true clearance is
+necessary to enforce; leave red or fix verifiably" — no length threshold, no report-only).
+
+**Un-ticketed fresh-window residue, recorded here so it is not lost:** seed 90 (−837,1618) and
+seed 526302544 (−736,−308) are the hard-grade/drape class — every departure build drapes because
+`_v2GradePts` cannot solve a legal profile once the side's start is pinned to the trunk's deck
+(17.7 m of height between the legs at seed 90). Diagnosed under BUG-65's resolution; not gating
+(the battery does not carry these windows) and not minted as a ticket.
