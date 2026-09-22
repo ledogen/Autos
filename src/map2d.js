@@ -60,11 +60,17 @@ const MAP_RADIUS_MAX = 2000
 // stated as a world span and converted to a px/m floor against the live sheet — a small window and
 // a large one both stop at the same amount of WORLD.
 //
-// Sized at 20% past the story-mode region (owner: "20% bigger than the story mode region is
-// sufficient for max zoomed out"), so the whole 5 km-wide bounded region plus a margin of context
-// fits the short edge of the sheet and nothing a player can drive to is ever off the map. Read
-// from REGION_RADIUS_M rather than written out, so moving the region moves this with it.
-const MIN_VIEW_SPAN_M  = 2 * REGION_RADIUS_M * 1.2   // 6000 m — the widest view the map will give
+// First sized at 20% PAST the story-mode region (owner, 2026-09-14: "20% bigger than the story mode
+// region is sufficient for max zoomed out"), then pulled in on 2026-09-21 after driving it:
+// "minimum zoom should be limited to a slightly smaller map size. about 20%". 6000 -> 4800 m.
+//
+// Worth naming, because it crosses a line: 4800 m is UNDER the 5 km region, so at full zoom-out you
+// no longer quite fit the whole region on the short edge — about 96% of it, where the first sizing
+// deliberately left 20% of context around it. That is the owner's call after seeing it; if the
+// intent were "the region exactly, no margin" the factor is 1.0, not 0.96.
+//
+// Still read from REGION_RADIUS_M rather than written out, so moving the region moves this with it.
+const MIN_VIEW_SPAN_M  = 2 * REGION_RADIUS_M * 0.96   // 4800 m — the widest view the map will give
 // BUG-68: how far past a story region's wall the map builds. The COVERAGE requirement is the
 // region radius itself; these are cosmetic fringe, so the drawn boundary ring sits on drawn road
 // instead of on the ragged edge of the built network.
