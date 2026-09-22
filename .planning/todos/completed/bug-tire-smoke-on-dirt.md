@@ -77,9 +77,8 @@ multiplier normalised against `dustPavedFactor` itself — so the ribbon lands o
 terrain on exactly the floor, and retuning `dustPavedFactor` cannot drift it. Sampled per WHEEL at
 the contact patch, not at the body: two wheels straddling the road edge must not smoke alike. The
 term multiplies `targetIntensity`, so the existing `RAMP_TIME` easing smooths the surface transition
-on top of the geometric feather. Omitting the callback means pavement — which is what the testing
-lab passes (`looseSurfaceFactor` returns 1 everywhere there, i.e. "all dirt", and a lab burnout on
-the flat is meant to look like a burnout).
+on top of the geometric feather. Omitting the callback still means pavement, which is what
+the headless gates get.
 
 **Measured** (identical slipping + loaded wheel, only the surface differs; steady-state intensity):
 
@@ -100,3 +99,31 @@ which is why there's no on-road fade knob here"), and two `debug.js` tooltips. N
 **FEAT-38 (dirt roads) note, as this ticket asked:** when a dirt road surface class lands it should
 read as unpaved here and take the floor. `looseSurfaceFactor` keys off `carveHint`, so a dirt road
 that reports itself unpaved gets the right answer with no change to `smoke.js`.
+
+## AMENDMENT — the testing lab is its own surface (owner ruling, 2026-09-21)
+
+The first cut of this fix gave smoke a lab special-case (`_labActive ? null : looseSurfaceFactor`),
+leaning on the "no callback → pavement" default so a lab burnout would still read as a burnout.
+**Owner: "lab should be considered as its own surface and it can share the pavement effect class
+for now."** That is a decision about the surface model, not about smoke, so it belongs in the one
+function that decides it — and the special-case is gone.
+
+`looseSurfaceFactor` (`src/main.js`) now has an explicit lab branch returning `dustPavedFactor`,
+above the `!roadSystem` fallthrough. Those two cases had been sharing a line and they are NOT the
+same thing: no roadSystem means genuinely raw terrain with nothing streamed yet, and stays 1. The
+lab is a bare instrumented plate — neither road nor terrain — and now says so.
+
+**This changes the lab for all four FX consumers, which is the point of the ruling.** They all read
+the one function, so they cannot disagree about what the tyre is standing on. At `loose = 0.1`:
+
+| consumer | in the lab, before | in the lab, now |
+|---|---|---|
+| tire smoke | full (via the special-case) | full — unchanged, now for a stated reason |
+| dust (`dust.js`) | full | `loose01` normalises to 0 → the paved haze |
+| dirt spray (`dirt-spray.js`) | firing (1 > `LOOSE_FLOOR` 0.25) | **off** — 0.1 is below the floor |
+| tire audio (`tire-audio.js`) | dirt (`loose` 1) | screech (`paved` 0.9) |
+
+So the lab stops throwing clods off a flat test plate and stops playing dirt roll under a car on
+what is effectively tarmac. "For now" is the owner's word and is load-bearing: when the lab wants
+its own effect character (a bare concrete plate is not asphalt), it is one branch in one function,
+and nothing else moves.

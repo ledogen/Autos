@@ -269,10 +269,21 @@ let _labSavedSpawn = null    // player's spawn override, saved across a lab visi
  * nearest-road query the physics path already warmed at these wheel positions, so this is ~free.
  * Shared by the dust system (dust is reduced on asphalt), dirt spray (off below LOOSE_FLOOR), tire
  * audio (screech ↔ dirt blend), and — read inverted — tire smoke (BUG-38: full on the ribbon,
- * SMOKE_OFFROAD_FLOOR off it).
+ * SMOKE_OFFROAD_FLOOR off it). This is the ONE place the surface class is decided; every FX
+ * consumer reads it, so they can never disagree about what the tyre is standing on.
+ *
+ * THREE SURFACES, and the lab is one of them (owner, 2026-09-21). The FEAT-31 testing lab is a
+ * bare instrumented plate — not road, not terrain — so it gets its own branch and **shares the
+ * pavement effect class for now**: a lab burnout should smoke and screech like tarmac, not throw
+ * clods off a test plate. It used to fall through to 1 ("all dirt") purely because there is no
+ * roadSystem to query there, which is an accident of plumbing rather than a decision, and it made
+ * the lab the one place where dust, spray, audio and smoke all read the surface wrong at once.
+ * The `!roadSystem` fallthrough below stays 1 on purpose — that is genuinely raw terrain with no
+ * network streamed yet, not a third class.
  */
 function looseSurfaceFactor (x, z) {
-  if (_labActive || !roadSystem) return 1
+  if (_labActive) return RANGER_PARAMS.dustPavedFactor ?? 0.1   // lab: own surface, paved FX for now
+  if (!roadSystem) return 1
   const nr = roadSystem.carveHint(x, z)
   if (!nr || !nr.point) return 1                          // off-road → fully loose
   const lat = Math.hypot(x - nr.point.x, z - nr.point.z)
@@ -5049,12 +5060,11 @@ function loop () {
 
   // Tire smoke — same render-pose timing and ground sampler as dust above, and BUG-38 gives it the
   // same looseSurfaceFactor too: smoke reads it INVERTED (full on pavement, a thin floor off it)
-  // while dust and spray read it forward. In the lab the helper returns 1 everywhere, which smoke
-  // would read as "all dirt" — so pass it only in the world and let the lab default to pavement,
-  // where a burnout on the flat is meant to look like a burnout.
+  // while dust and spray read it forward. No lab special-case here — looseSurfaceFactor answers for
+  // the lab itself (its own surface, on the pavement effect class), so all four consumers agree.
   smokeSystem.update(frameTime, vehicleState, RANGER_PARAMS,
     (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
-    _labActive ? null : looseSurfaceFactor)
+    looseSurfaceFactor)
 
   // Dirt spray — same render-pose timing and ground sampler; additionally gated by
   // looseSurfaceFactor so clods only fly where there is loose material to throw.
