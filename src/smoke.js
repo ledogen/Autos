@@ -4,9 +4,14 @@
  * Grey burnout/wheelspin smoke, structurally identical to src/dust.js's instanced-billboard
  * puff pool (see that file's header for the rendering rationale — one InstancedMesh, one draw
  * call, no per-frame allocation). Kept as a SEPARATE system rather than folded into dust.js:
- * dust is dirt kicked up by a rolling/slipping tyre and fades on pavement (onRoadFactorAt);
- * smoke is friction heat off the rubber itself, happens on ANY surface (pavement included —
- * that is where burnouts read strongest), and needs its own emission model.
+ * dust is dirt kicked up by a rolling/slipping tyre and fades on pavement; smoke is friction
+ * heat off the rubber itself and needs its own emission model.
+ *
+ * BUG-38 (owner, 2026-09-21): smoke used to emit identically on ANY surface, on the argument that
+ * pavement is where burnouts read strongest — true, but it made a wheel spinning on raw dirt smoke
+ * like one on asphalt, on top of the clods dirt-spray.js is already throwing there. Emission is now
+ * scaled by pavedness: full on the ribbon, SMOKE_OFFROAD_FLOOR off it. The floor is not zero on
+ * purpose — a dirt burnout does smoke, just thinner (owner's call, 0.15).
  *
  * Emission (the point of this system): quantity is gated by contact-patch slip velocity AND
  * normal force TOGETHER (product, not sum) — vehicleState.wheelDebug[i].sa (slip, m/s) times
@@ -36,6 +41,10 @@ const DRAG              = 3.5  // 1/s — horizontal velocity damping (kills the
 const PEAK_OPACITY     = 0.36  // alpha at a puff's strongest, before intensity scaling
 const CONTACT_BAND     = 0.28  // m — wheel-bottom within this of the ground counts as in-contact
 const SLIP_KICK         = 0.5  // fraction of contact-patch slip velocity kicked out backward
+const SMOKE_OFFROAD_FLOOR = 0.15  // BUG-38 — emission multiplier on raw terrain; 1 on the paved
+                               // ribbon. Not 0: rubber burning on dirt still smokes, thinner. The
+                               // ramp below and looseSurfaceFactor's own 1.5 m shoulder feather
+                               // between them keep the road edge from popping.
 const SLIP_REF          = 20.0 // m/s — vLong at which the slip factor saturates to 1 (probe: hard
                                // grip-limited launches hit 2-4 m/s, burnouts 15-23 m/s — this only
                                // reaches full density in a near-max-slip burnout)
@@ -242,6 +251,10 @@ export class TireSmokeSystem {
    * @param {object} vehicleState
    * @param {object} params      RANGER_PARAMS
    * @param {(x:number,z:number)=>number} groundYAt  ground surface height sampler
+   * @param {((x:number,z:number)=>number)} [looseFactorAt]  optional 0..1 loose-surface factor —
+   *        THE SAME callback dust/dirt-spray/tire-audio take (main.js looseSurfaceFactor:
+   *        ~dustPavedFactor on the ribbon, 1 off it, feathered across the shoulder). BUG-38 reads
+   *        it INVERTED: pavement smokes, dirt barely does. Omitted (lab, headless) → all pavement.
    */
   /**
    * Push the day/night irradiance multiplier (SkySystem.particleLight) into the shader. Called once
@@ -255,11 +268,22 @@ export class TireSmokeSystem {
     u.uLightA.value = alpha
   }
 
-  update (dt, vehicleState, params, groundYAt) {
+  update (dt, vehicleState, params, groundYAt, looseFactorAt) {
     if (dt <= 0) return
     if (dt > 0.1) dt = 0.1
     const enabled = params.smokeEnabled !== false
     const amount = params.smokeAmount ?? 1.0
+    // BUG-38: map the shared loose-surface factor to a pavedness multiplier. loose runs
+    // [dustPavedFactor .. 1] (0.1 on the ribbon, 1 off it), so normalising against that same knob
+    // puts the ribbon at exactly 1 and raw terrain at exactly the floor — no second edge feather,
+    // and no drift if dustPavedFactor is retuned.
+    const floor = params.smokeOffRoadFloor ?? SMOKE_OFFROAD_FLOOR
+    const pavedRef = 1 - (params.dustPavedFactor ?? 0.1)
+    const surfaceFactorAt = (x, z) => {
+      if (!looseFactorAt) return 1
+      const paved = pavedRef > 0 ? (1 - looseFactorAt(x, z)) / pavedRef : 1
+      return floor + (1 - floor) * Math.max(0, Math.min(1, paved))
+    }
 
     for (let i = 0; i < POOL_SIZE; i++) {
       const part = this._p[i]
@@ -323,7 +347,11 @@ export class TireSmokeSystem {
         // product of the two normalized factors, not a sum. Either at zero kills the smoke.
         const slipFactor = Math.min(1, slipV / SLIP_REF)
         const loadFactor = Math.min(1.5, fn / fzRef)
-        targetIntensity = Math.min(1, slipFactor * loadFactor * amount)
+        // BUG-38: surface term sampled at THIS wheel's contact patch, not the body — two wheels
+        // straddling the road edge should not smoke alike. carveHint is memoized at exactly these
+        // positions by the physics path, so the query is ~free.
+        const surfaceFactor = surfaceFactorAt(wx, wz)
+        targetIntensity = Math.min(1, slipFactor * loadFactor * amount * surfaceFactor)
       }
 
       // Ramp toward the target linearly over RAMP_TIME — smoke builds up and dies down instead

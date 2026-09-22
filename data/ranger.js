@@ -886,11 +886,14 @@ export const RANGER_PARAMS = {
   // ── Tire smoke (src/smoke.js — visual polish) ─────────────────────────────────
   // Grey burnout/wheelspin smoke, structurally reused from dust.js's puff pool but with its
   // own emission model: quantity needs slip velocity AND normal force together (a loaded,
-  // slipping tyre), not either alone — see smoke.js header. Works on any surface, unlike dust,
-  // which is why there's no on-road fade knob here.
+  // slipping tyre), not either alone — see smoke.js header. BUG-38: it also fades OFF the paved
+  // ribbon — the inverse of dust — down to smokeOffRoadFloor rather than to zero.
   smokeEnabled: true,
   smokeColor: 0xcfcfcf,        // hex RGB — light grey smoke tint
   smokeAmount: 1.0,            // [-] emission density multiplier
+  smokeOffRoadFloor: 0.15,     // BUG-38 — [-] emission multiplier off the paved ribbon (1 = on it).
+                               // 0 kills dirt burnouts entirely; 0.15 leaves the thin haze real
+                               // rubber gives on dirt while letting dirt-spray.js carry that surface.
 
   // ── Dirt spray (src/dirt-spray.js — visual polish) ────────────────────────────
   // The loose-surface counterpart to tire smoke: a slipping tyre on dirt throws a dense stream of

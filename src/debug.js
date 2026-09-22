@@ -797,15 +797,17 @@ export function initDebug (params, callbacks = {}, options = {}) {
   fxFolder.addColor(params, 'dirtSprayColor').name('Dirt Spray Color')
   fxFolder.add(params, 'smokeEnabled').name('Tire Smoke')
   fxFolder.add(params, 'smokeAmount', 0, 2, 0.05).name('Smoke Amount')
+  fxFolder.add(params, 'smokeOffRoadFloor', 0, 1, 0.05).name('Smoke Off-Road')
   fxFolder.add(params, 'dustEnabled').name('Wheel Dust')
   fxFolder.add(params, 'dustAmount', 0, 2, 0.05).name('Dust Amount')
   fxFolder.close()
   const FX_INFO = {
-    dirtSprayEnabled: 'Slip-driven dirt thrown off the tyres on loose surfaces: a stream of dark clods fired backwards out of the contact patch, plus the slow floating dust motes that shed off them. Off on asphalt (tire smoke covers that).',
+    dirtSprayEnabled: 'Slip-driven dirt thrown off the tyres on loose surfaces: a stream of dark clods fired backwards out of the contact patch, plus the slow floating dust motes that shed off them. Off on asphalt, where tire smoke takes over instead.',
     dirtSprayAmount:  'Density multiplier for the dirt clod stream (floaters scale with it). 0 = off, 1 = default.',
     dirtSprayColor:   'Base tint of thrown earth — clods render darker than this, the floating motes lighter.',
-    smokeEnabled:     'Grey friction smoke off the rubber. Needs a tyre that is BOTH slipping and loaded; works on any surface.',
+    smokeEnabled:     'Grey friction smoke off the rubber. Needs a tyre that is BOTH slipping and loaded. Strongest on pavement; off the road it drops to the Smoke Off-Road floor and dirt spray takes the surface.',
     smokeAmount:      'Density multiplier for tire smoke. 0 = off, 1 = default.',
+    smokeOffRoadFloor: 'How much tire smoke survives off the paved ribbon, as a fraction of the on-road amount. 1 = smokes the same everywhere (the pre-BUG-38 behaviour), 0 = pavement only. Default 0.15 — a dirt burnout still hazes, thinly.',
     dustEnabled:      'Ambient dust haze kicked up by rolling/slipping wheels, faded down on the paved ribbon.',
     dustAmount:       'Density multiplier for wheel dust. 0 = off, 1 = default.',
   }

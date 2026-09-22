@@ -267,7 +267,9 @@ let _labSavedSpawn = null    // player's spawn override, saved across a lab visi
  * Loose-surface factor at a world XZ: ~dustPavedFactor on the paved ribbon, 1 off it, feathered
  * across a band into the shoulder so the edge isn't a hard line. carveHint is the memoized
  * nearest-road query the physics path already warmed at these wheel positions, so this is ~free.
- * Shared by the dust system (dust is reduced on asphalt) and tire audio (screech ↔ dirt blend).
+ * Shared by the dust system (dust is reduced on asphalt), dirt spray (off below LOOSE_FLOOR), tire
+ * audio (screech ↔ dirt blend), and — read inverted — tire smoke (BUG-38: full on the ribbon,
+ * SMOKE_OFFROAD_FLOOR off it).
  */
 function looseSurfaceFactor (x, z) {
   if (_labActive || !roadSystem) return 1
@@ -5045,10 +5047,14 @@ function loop () {
     (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
     looseSurfaceFactor)
 
-  // Tire smoke — same render-pose timing as dust above; ground sampler shared verbatim (smoke
-  // has no on-road fade, so no third callback).
+  // Tire smoke — same render-pose timing and ground sampler as dust above, and BUG-38 gives it the
+  // same looseSurfaceFactor too: smoke reads it INVERTED (full on pavement, a thin floor off it)
+  // while dust and spray read it forward. In the lab the helper returns 1 everywhere, which smoke
+  // would read as "all dirt" — so pass it only in the world and let the lab default to pavement,
+  // where a burnout on the flat is meant to look like a burnout.
   smokeSystem.update(frameTime, vehicleState, RANGER_PARAMS,
-    (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0))
+    (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
+    _labActive ? null : looseSurfaceFactor)
 
   // Dirt spray — same render-pose timing and ground sampler; additionally gated by
   // looseSurfaceFactor so clods only fly where there is loose material to throw.
