@@ -2028,6 +2028,20 @@ const _gui = initDebug(RANGER_PARAMS, {
   // writes vehicleState.engineHealth every step), so the slider pokes the track itself. Inert while
   // damage is disabled — the track is locked at nominal there, by design.
   setEngineHealth:     (v) => { damageModel.set('engine', v); damageModel.publish(RANGER_PARAMS) },
+  // FEAT-36 gap 3: drop a settled barrel pyramid on the ground ahead of the truck. The one pile
+  // the game has — everything else debris does is player-thrown, so this is the only way to watch
+  // object↔object stacking. 8 m out along the truck's own forward (−Z in body space), seated on
+  // the analytic terrain height so it settles rather than falling in from altitude.
+  spawnDebrisStack: () => {
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+    fwd.y = 0
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1)
+    fwd.normalize()
+    const x = vehicleState.position.x + fwd.x * 8
+    const z = vehicleState.position.z + fwd.z * 8
+    const y = terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
+    debrisSystem.spawnStack('barrel', { x, y, z }, 6)
+  },
   // SM-3: re-bake the out-of-round tire carcass so the mesh matches the new contact radius.
   onWheelRunoutChange: (v) => applyWheelRunout(v),
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)

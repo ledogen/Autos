@@ -34,6 +34,69 @@ export const DEBRIS_TYPES = {
   rock: { model: 'testRock', density: 2500, friction: 0.7, restitution: 0.15 },
 }
 
+/**
+ * drum-closed's chime radius [m] — the widest ring, which is what a stacked drum actually rests
+ * on. Same 0.290 the density note above derives the hull volume from; kept as a named export so
+ * the headless gate lays out its cylinders on the SAME number rather than a copy that can drift.
+ */
+export const STACK_RADIUS = 0.29
+
+/**
+ * drum-closed's barrel length [m] — the flat-end-to-flat-end stacking pitch.
+ */
+export const STACK_HEIGHT = 0.85
+
+/**
+ * Drums stack UPRIGHT, and the model's axis is already +Y, so the stacking attitude is identity.
+ *
+ * Not a shrug — it is the finding. The first cut of this laid the barrels on their sides in a
+ * hex-close-packed 3-2-1 pyramid, which is the picture everyone has of stacked barrels, and it
+ * collapsed in the gate every time: a side-lying cylinder ROLLS, so the outer base barrels squirt
+ * out sideways under the load from above and the pyramid flattens to two rows (measured 0.65 m of
+ * base spread). That is honest physics — a real barrel pyramid needs chocks or a wall, which the
+ * ground does not provide. Upright drums rest flat circular face on flat circular face, which is
+ * how a real yard stacks them and the only arrangement that is stable unaided.
+ */
+export const STACK_QUAT = { x: 0, y: 0, z: 0, w: 1 }
+
+/**
+ * A stack of upright drums — ground-relative offsets, bottom layer first.
+ *
+ * PURE and DETERMINISTIC: no Math.random, no time, no engine, no THREE. Same arguments ⇒ same
+ * array, every call, in any realm. That is the whole point — `test/debris-stack.mjs` asserts the
+ * settled pile is reproducible, and it can only do that if the SETUP is reproducible first.
+ *
+ * Layers of three in a triangle, each drum resting squarely on the one below. Three mutually
+ * touching circles of radius R have their centres 2R apart, which puts each on a circumradius of
+ * 2R/√3 from the stack axis. Layers are one barrel height apart plus `gap`, which starts them a
+ * hair clear so the stack SETTLES into contact under gravity rather than spawning interpenetrated
+ * — an overlapping spawn kicks the solver on step one and is not what a pile at rest looks like.
+ *
+ * A remainder fills its layer partially; two drums lean, one stands alone, both of which are what
+ * a half-finished stack actually looks like.
+ *
+ * @param {number} count - how many barrels.
+ * @param {number} radius - barrel radius [m].
+ * @param {number} height - barrel length [m].
+ * @param {number} gap - initial clearance between layers [m].
+ * @returns {Array<{x:number,y:number,z:number}>} centres, relative to the stack's ground origin.
+ */
+export function stackLayout (count = 6, radius = STACK_RADIUS, height = STACK_HEIGHT, gap = 0.01) {
+  const out = []
+  const ring = 2 * radius / Math.sqrt(3)     // circumradius of three mutually touching circles
+  const pitch = height + gap
+  for (let i = 0; i < count; i++) {
+    const layer = Math.floor(i / 3)
+    const a = (i % 3) * (2 * Math.PI / 3) + Math.PI / 2
+    out.push({
+      x: ring * Math.cos(a),
+      y: height / 2 + layer * pitch,
+      z: ring * Math.sin(a),
+    })
+  }
+  return out
+}
+
 // Hard cap (FEAT-36: "a couple at a time", with debug headroom). Oldest body is reclaimed —
 // same discipline as the thrown-roll cap, so an evening of debug throwing cannot leak bodies.
 const DEBRIS_CAP = 12
@@ -98,20 +161,24 @@ export class DebrisSystem {
    * Spawn one debris body with an initial velocity (the throw). Tumble comes free from the
    * off-centre first contact; a small random spin sells the launch.
    */
-  spawn (kind, position, velocity) {
+  spawn (kind, position, velocity, opts = {}) {
     const spec = DEBRIS_TYPES[kind]
     const proto = this._proto.get(kind)
     if (!spec || !proto) return null   // model still loading (first seconds of a cold boot)
 
+    // The random tumble sells a THROW and must not leak into a stack: `spin` and `quaternion` let
+    // a deterministic caller (spawnStack) opt out of Math.random entirely. Default stays random.
+    const spin = opts.spin ?? {
+      x: (Math.random() * 2 - 1) * 3,
+      y: (Math.random() * 2 - 1) * 3,
+      z: (Math.random() * 2 - 1) * 3,
+    }
     const body = this._eng.createBody({
       type: 'dynamic',
       position,
+      quaternion: opts.quaternion,
       linearVelocity: velocity,
-      angularVelocity: {
-        x: (Math.random() * 2 - 1) * 3,
-        y: (Math.random() * 2 - 1) * 3,
-        z: (Math.random() * 2 - 1) * 3,
-      },
+      angularVelocity: spin,
       userData: { kind: 'debris', debrisType: kind },
     })
     this._eng.addHull(body, proto.hull, {
@@ -135,6 +202,35 @@ export class DebrisSystem {
     this._live.push({ body, mesh: spawned, kind })
     while (this._live.length > DEBRIS_CAP) this._reclaim(this._live.shift())
     return body
+  }
+
+  /**
+   * Spawn a settled-by-gravity barrel pyramid at a ground point (FEAT-36 gap 3: object↔object).
+   *
+   * Fully deterministic — zero velocity, zero spin, fixed attitude, `stackLayout` geometry. The
+   * only pile the game has ever had: everything else here is player-thrown, which is why stacking
+   * was the one acceptance line the throw slice could not exercise.
+   *
+   * `origin.y` is GROUND level, not a centre: the layout lifts each barrel by its own radius.
+   * Respects DEBRIS_CAP through spawn(), so a stack bigger than the cap eats its own base — the
+   * caller clamps rather than relying on that.
+   *
+   * @param {string} kind - DEBRIS_TYPES key.
+   * @param {{x:number,y:number,z:number}} origin - ground point under the pyramid's apex.
+   * @param {number} count - barrels in the stack.
+   * @returns {Array<*>} the spawned body handles (empty if the model is still loading).
+   */
+  spawnStack (kind, origin, count = 6) {
+    const zero = { x: 0, y: 0, z: 0 }
+    const bodies = []
+    for (const off of stackLayout(count)) {
+      const body = this.spawn(kind,
+        { x: origin.x + off.x, y: origin.y + off.y, z: origin.z + off.z },
+        zero, { spin: zero, quaternion: STACK_QUAT })
+      if (!body) break        // model not loaded yet — don't leave half a pyramid
+      bodies.push(body)
+    }
+    return bodies
   }
 
   _reclaim (rec) {

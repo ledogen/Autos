@@ -341,7 +341,13 @@ export class PhysicsEngine {
 
   /**
    * Upright cylinder collider (a convex hull under the hood — the engine has no
-   * native cylinder shape). height along local Y, centered at yOffset.
+   * native cylinder shape). height along local Y, BASE at yOffset — the shape
+   * spans yOffset … yOffset + height, it is not centred there.
+   *
+   * (Measured 2026-09-22: dropped with yOffset 0, a cylinder rests with its body
+   * origin at ground level, not half a height up. The docstring said "centered"
+   * and callers placing a cylinder by its centre were silently half a height out
+   * — pass yOffset = −height/2 to centre it on the body origin.)
    */
   addCylinder (handle, height, radius, material = {}, yOffset = 0, sides = 12) {
     const rec = this._bodies.get(handle)

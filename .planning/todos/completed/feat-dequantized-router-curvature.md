@@ -1,8 +1,9 @@
 ---
 id: FEAT-20
 type: feature
-status: open
+status: closed
 opened: 2026-06-30
+closed: 2026-07-01
 severity: minor
 source: user-observation
 note: "Roads read TOO QUANTIZED: the router builds every curve from a 4-entry discrete curvature palette
@@ -127,3 +128,28 @@ Window-invariant + deterministic (pure fn of the primitive chain + opts + height
 pre-warm and sync fallback refit identically). Gate `test/road-dequantize.mjs`; all 31 gates green.
 Cold-route perf: refit ON measured ~4.6% FASTER end-to-end (fewer emitted primitives shrink
 downstream assembly), router-only overhead ≈ 0–6% — within the ≤ +25% budget.
+
+## Superseded by router v2 (2026-09-22)
+
+Everything described in the resolution above is **gone from the tree**. The two-pass refit lived
+inside the v1 arc-lattice router, and that router was deleted wholesale:
+
+- **QUAL-27** removed `arcPrimitiveConnect` and the whole v1 hybrid-A* palette router from
+  `src/road-carve.js`, along with the main-thread route pool.
+- **FEAT-68** removed the `ROUTE SYNC` region and its verbatim `WORKER_SOURCE` mirror, plus the
+  `route-worker-sync` byte-equality gate. The road workers now **import** `routeEdgeV2`, so
+  worker/sync parity is by construction (the no-mirror fence).
+
+So the following no longer exist anywhere: the `roadRefitShortcut` / `roadRefitWindow` params and
+their debug sliders, the 4-entry `roadArcRadii` palette this ticket was written against, the
+corridor Dubins shortcut, and the `test/road-dequantize.mjs` gate. Only a prose mention of
+`arcPrimitiveConnect` survives, in the header comment of `src/road-carve.js`.
+
+**The problem this ticket named is not re-opened by that deletion.** Router v2 builds
+constant-curvature primitives with continuous radii from the cost model directly — there is no
+discrete palette to quantize, so the de-quantize pass has nothing left to de-quantize. Character
+tuning for v2 lives on its own knobs (`cTurn` / `wGrade`), ratified as-is in **QUAL-29**, which
+explicitly closed the retune.
+
+**Do not re-open this ticket.** If roads read quantized again it is a v2 cost-model issue and gets a
+fresh ticket — the fix here does not apply and the code it refers to cannot be consulted.

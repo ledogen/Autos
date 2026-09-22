@@ -1,9 +1,10 @@
 ---
 id: FEAT-36
 type: feature
-status: open
+status: closed
 opened: 2026-07-17
-updated: 2026-08-15
+updated: 2026-09-22
+closed: 2026-09-22
 severity: minor
 source: user-request
 relates_to: FEAT-06 (props), FEAT-35 (multi-vehicle), FEAT-26/27 (rockslides), story mode (the log
@@ -17,6 +18,105 @@ sits on top of it, which removes most of what was hard here: solver generalizati
 colliders, object↔object narrow phase, sleeping and two-way coupling all come from the engine. What
 remains is authoring: shapes, masses, spawn/despawn, a causesDamage flag."
 ---
+
+## ⚑ STATUS 2026-09-22 — gap 1 INVERTED, gap 4 CLOSED; still open on gaps 2 + 3
+
+**⚑ CLOSED 2026-09-22 — owner ruling: "close now, spin out the rest."**
+
+The close condition churned twice on 2026-09-22 (first "close once lawn furniture settles in
+world", then "rigid bodies don't belong in the lawn-furniture ticket at all", which left FEAT-71
+unable to carry it) and the owner settled it by closing this ticket on what has shipped and moving
+the remainder to a fresh ticket rather than holding this one open indefinitely.
+
+**This deliberately overrides the 2026-08-15 no-partial-close ruling.** That ruling existed to stop
+a requirement quietly becoming a non-requirement; the requirement has not been dropped, it has been
+re-homed with its reasoning intact, which is the thing that ruling was protecting against. Closing
+by decision, not by drift.
+
+### What shipped under FEAT-36
+
+- `src/debris.js` — dynamic rigid-body props entirely against the `physics-engine.js` adapter, no
+  engine type leaks. Convex hull from the GLB's own vertices (every mesh, in template space),
+  density-derived mass/inertia, hard cap with oldest-reclaim.
+- Two-way truck↔debris coupling from the engine's shared impulse pass. Gate `test/debris-coupling.mjs`.
+- The throw mechanic (debug panel → Physics Props → F: paper / barrel / rock) and its tunables.
+- Real art: ASSET-30's `drum-closed.glb` replaced the placeholder barrel; ASSET-29/30 both closed.
+- **Stacking, 2026-09-22 (the last gap closed here).** `stackLayout()` + `spawnStack()` build a
+  deterministic stack of upright drums — two layers of three, each resting squarely on the one
+  below — plus a **Spawn Barrel Stack** debug button that drops one 8 m ahead of the truck on the
+  terrain. New gate `test/debris-stack.mjs` asserts the layout is pure, the stack settles without
+  drift and sleeps, and two fresh worlds settle to **bit-identical** transforms (measured Δ = 0).
+  That discharges gap 3 (object↔object) and pins the determinism gap 2's successor will build on.
+
+  Two findings worth keeping, both from building it:
+  - A side-lying hex-packed barrel pyramid — the obvious picture of "stacked barrels" — collapses
+    every run, because cylinders on their sides roll out from under the load (measured 0.65 m of
+    base spread). That is honest physics; real pyramids need chocks. Drums stack upright, flat end
+    on flat end, and that is what `STACK_QUAT` records.
+  - `PhysicsEngine.addCylinder` anchors a cylinder by its **base**, not its centre, while its
+    docstring claimed "centered at yOffset". Docstring corrected (`src/physics-engine.js`). Callers
+    placing a cylinder by its centre are half a height out — including two scenarios in
+    `test/debris-coupling.mjs`, which still pass and were left alone, but the next author should
+    know.
+
+### What was spun out — **FEAT-83**
+
+`feat-83-world-placed-dynamic-debris.md` carries the remainder, undiminished:
+
+- **Gap 2** — deterministic `(seed, coords)` world-fixture spawn/despawn against streaming
+  (SM-INV-12). Nothing in the world places a body; everything is player-thrown or debug-spawned.
+- **Gap 1** — `causesDamage` per prop type. Not merely unbuilt: SM-3 shipped without it, so the
+  default is ON for everything. Harmless while debris is a debug surface, a gameplay bug the day a
+  body stands beside a road. FEAT-83 lists it first for that reason.
+
+Gap 4 (real art) closed here. Placement of static POI dressing is **FEAT-71** and is explicitly not
+this lineage — the owner ruled rigid bodies out of that ticket the same day.
+
+The 2026-08-15 ruling stands — this ticket does not close on the landed throw slice. But two of the
+four gaps have moved underneath it, in opposite directions. **The architecture is NOT superseded:**
+the FEAT-48 adapter is the physics core and `src/debris.js` is intact and unchanged. Only the
+*status* of the gaps has changed.
+
+**Gap 1 — `causesDamage` has INVERTED. It is now a gate on a LIVE subscriber, not an emit-and-wait.**
+The 2026-08-15 text says "SM-3 owns the subscriber and does not exist yet; emit at the seam and let
+the wear model subscribe when it lands." SM-3 has since landed on main: `src/damage.js`
+(`DamageModel`, `feedContact`) is stepped every fixed physics step from `src/main.js` (~4940), and
+`PhysicsEngine.maxContactImpulse` now has two live consumers — that chassis impact read, and
+`readRimStrikes` (`src/physics.js:194`).
+
+It landed **without the flag**, so the default flipped from off to on: today *every* non-ground
+chassis contact feeds the wear model regardless of what hit the truck. The only filter is
+`DAMAGE_PARAMS.impactMinMph` (a speed floor derived from the impulse) plus
+`classifyImpactRegion` returning null for ground contacts — neither of which knows a rock from a
+trash can. A hard-thrown 18 kg drum is therefore already priced as a crash.
+
+That reverses the work item. It was "add an emitter"; it is now "add the gate before non-damaging
+props are shipped into the world." The 2026-07-29 ruling it has to satisfy is unchanged — *boxes
+and trash cans don't hurt; rocks and logs do* — and so is the property that made it cheap: the flag
+gates the **report**, never the contact, so the physics is byte-identical either way. Consumer side
+is no longer hypothetical: wire `DEBRIS_TYPES` (`src/debris.js:24`) through to the `feedContact`
+call rather than inventing a new seam.
+
+**Gap 4 — real art is CLOSED as far as this ticket can close it. Do not re-open an ASSET ticket.**
+ASSET-29 (plastic barrel) and ASSET-30 (steel drum) are both in `completed/`, and all four barrels
+ship: `barrel-plastic.glb`, `drum-closed.glb`, `drum-open.glb`, `drum-crushed.glb`. The orphaned
+`test-barrel.glb` / `.blend` / `.py` noted on 2026-08-15 are gone from disk. Three of the four
+barrels are modelled but unregistered in `data/prop-models.js` (only `drumClosed` and `testRock`
+are) — per the asset-closure posture (owner, 2026-08-24) that is **not** an open asset ticket:
+an ASSET ticket closes when the `.glb` ships, and getting a model into the world is the consumer's
+job. Here that consumer is gap 2.
+
+The one genuine placeholder left is `test-rock.glb` (20 tris), which has no ASSET ticket of its
+own. If world-placed rockpiles want real rock art, mint an ASSET ticket for it — do not hold this
+one open on it.
+
+**Gaps 2 and 3 are unchanged and are the whole remaining scope.** Nothing in the world places a
+body; debris is still player-thrown only, so deterministic `(seed, coords)` spawn/despawn against
+streaming (SM-INV-12) is untouched, and with no stacks, pile behaviour is still untested. The
+neighbouring placement tickets to coordinate with rather than duplicate: **FEAT-71**
+(POI-satellite placement) and **FEAT-74** (POI model pools) are the scatter solvers for static
+props, and **FEAT-26 / FEAT-27** (rockslides) are the hazard consumers — FEAT-26 already carves
+this ticket's remaining scope out of its own.
 
 ## ⚑ STATUS 2026-08-15 — first slice LANDED, ticket STAYS OPEN
 

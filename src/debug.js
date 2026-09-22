@@ -181,6 +181,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // and 'rock' spawn dynamic engine debris to drive over (src/debris.js) — the physics test rig.
   const debrisFolder = vehicleFolder.addFolder('Physics Props (FEAT-36)')
   debrisFolder.add(params, 'throwProjectile', ['paper', 'barrel', 'rock']).name('Throw Projectile (F)')
+  // FEAT-36 gap 3: a 3-2-1 barrel pyramid on the ground 8 m ahead — the object↔object test rig.
+  // Deterministic by construction (no Math.random in the stack path), so the pile it settles
+  // into is the same one test/debris-stack.mjs asserts headlessly.
+  debrisFolder.add({ stack: () => callbacks.spawnDebrisStack?.() }, 'stack').name('Spawn Barrel Stack')
   debrisFolder.add({ clear: () => window.__debris?.clear() }, 'clear').name('Clear Debris')
   // Collider wireframes (physics-debug.js) — same toggle the backtick key drives. The checkbox
   // won't visually follow a key toggle (one-way onChange), which is fine for a debug control.

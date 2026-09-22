@@ -4,9 +4,25 @@ type: feature
 status: open
 severity: minor
 opened: 2026-08-23
-updated: 2026-08-25
-relates: FEAT-46, FEAT-59, ASSET-01, ASSET-02, ASSET-03, ASSET-04, ASSET-05, ASSET-06, ASSET-07, ASSET-08, ASSET-27, ASSET-28, ASSET-29, ASSET-30
+updated: 2026-09-22
+relates: FEAT-46, FEAT-59, ASSET-01, ASSET-02, ASSET-03, ASSET-04, ASSET-05, ASSET-06, ASSET-07, ASSET-08, ASSET-27, ASSET-28, ASSET-29, ASSET-30, FEAT-36
 ---
+
+## ⚑ OWNER RULING 2026-09-22 — no rigid bodies in this ticket
+
+> **Rigid bodies don't belong in the lawn furniture ticket at all.**
+
+Satellites are **static dressing**, full stop. The Scope line below saying so stands and is no
+longer in question. This ticket places meshes, not bodies: no use of the `physics-engine.js`
+adapter, no dynamic props, no settling, no `causesDamage`. `drumClosed`'s separate life as a thrown
+physics prop (`src/debris.js`) stays separate — the two paths are not to be conflated, which is
+what the Scope line always said.
+
+**Supersedes the earlier ruling recorded here the same day** ("Close FEAT-36 once lawn furniture is
+built and settles in world"). That reading turned satellites into dynamic bodies so they could
+discharge FEAT-36's gaps; the owner has since ruled the opposite way. **FEAT-71 therefore does not
+close FEAT-36** — placing meshes discharges neither the deterministic world-fixture *body* spawn
+(gap 2) nor object↔object settling (gap 3). Do not close FEAT-36 from this ticket.
 
 # FEAT-71: POI-satellite placement — lawn furniture and yard clutter
 
@@ -97,7 +113,7 @@ Which pool a POI draws from comes from that POI's role.
 - The pool tags, the zone solver, and the roster wiring that consumes them.
 - Satellites are **static dressing**. Whether any of it is knockable is a later question and not
   this ticket's — `drumClosed` already has a separate life as a physics prop and the two paths
-  should not be conflated.
+  should not be conflated. **Re-affirmed by owner ruling 2026-09-22** (top of ticket).
 
 ## Acceptance
 

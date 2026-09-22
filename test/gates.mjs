@@ -112,6 +112,8 @@ export const GATES = [
     desc: 'BUG-60: a long-lived STATIC hull keeps answering wheel-sized contactSphere queries while shapes are created and destroyed around it. The wheel hard cores rebuild four hulls EVERY step (a hull has no setter), and under that churn the engine\'s world broad phase stopped reporting the FEAT-41 stage rock — the wheel settled inside it, at ground height, with the rock still drawn around it. Two invariants: the static hull answers the same surface depth on every cycle (contactSphere now enumerates candidates itself rather than trusting b3World_OverlapShape), and the shape-keyed maps return to baseline after each cycle (destroyBody used to prune only _shapeToHandle, leaving _shapeHulls/_shapeSizeR to grow — stale hull data waiting to be read for a DIFFERENT, live shape once Box3D recycles the slot)' },
   { file: 'debris-coupling.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-48/FEAT-36: wheel-vs-debris coupling is two-way through the translation layer — the truck shoves the barrel, the chassis feels the hit, both settle, no NaN' },
+  { file: 'debris-stack.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'FEAT-36: a stack of barrels settles, holds its footprint, sleeps — and two fresh worlds settle to bit-identical transforms (the pile the throw slice could never test)' },
   { file: 'penetration-failsafe.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-24: catastrophic-penetration failsafe fires only on true tunnels (depth>2·wheelRadius = wheel fully swallowed), not resolvable deep contact — no teleport on the shoulder step or in the sub-2R band' },
   { file: 'body-contact-energy.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
