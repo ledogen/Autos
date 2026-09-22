@@ -4076,10 +4076,11 @@ document.addEventListener('keydown', e => {
   }
   // FEAT-16: M toggles the 2D top-down map overlay (sim keeps running underneath).
   if (e.key === 'm' || e.key === 'M') {
-    // FEAT-43: in story mode, make the map build out to the region boundary so the drawn wall sits
-    // on drawn roads instead of on blank map. Cheap here — the region's routes are already cached.
-    const _reg = storySystem.region()
-    if (_reg) { map2d.setRadiusCap(_reg.r + 400); map2d.setRadiusTarget(_reg.r + 200) }
+    // FEAT-43's region window used to be set here, on the keypress. BUG-68 moved it INTO the map
+    // (Map2D._syncRegionWindow, run on open and per frame): doing it only here meant any other way
+    // of opening or re-targeting the map — mission framing is the live one — left the map's cap at
+    // the free-roam 2000 m, short of a 2500 m region, so the region lock never engaged and panning
+    // re-streamed around the cursor. The map now covers its own region whoever opened it.
     map2d.toggle()
     // Freecam pointer-lock swallows the mouse for FPS look — release it so the map is
     // interactive. The canvas click handler in camera.js re-locks it on return to freecam.
