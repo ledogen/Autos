@@ -618,7 +618,6 @@ async function _rebuildFullNow () {
       roadSystem.init(scene)
       // Re-apply the new-API config the initial instance got (surface placement + stream radius).
       roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
-      roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  // CR-01: carve-free sampler for sampleDesignGradeAt
       roadSystem.setRadius(320)   // PERF (Tier 1): match the terrain ring, not 640 m — see initial setup
       // PERF-30: re-register the new instance with the network-Worker client (opts persist from
       // the boot register). The worker notices the seed change on the next build request and
@@ -707,12 +706,7 @@ function debouncedRoadSurfaceRebuild () {
     // _buildCarveTable again with the updated carve params (roadWidth, slopes, etc.).
     terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
     terrainSystem.rebuildAllChunksFromWorker()
-    // CR-04 stale-cache fix: drop memoized design-grade entries so the next ribbon sweep
-    // recomputes smoothed grade against the new params (crownHeight / terrainAmplitude).
-    // Spline objects persist across rebuilds — WeakMap would return stale pre-change profiles
-    // without this invalidation call.
     if (roadSystem) {
-      roadSystem.invalidateDesignGradeCache()
       // Camber (camberMaxAngleDeg / camberKneeRadiusM / roadCamberRate) is baked into the
       // _networkRev-keyed run/camber
       // profile caches, which a surface-param change does NOT otherwise invalidate — bump the rev
@@ -2158,7 +2152,6 @@ roadSystem.init(scene)
 // Place the centerline viz on the rendered terrain surface, and stream the valley-trunk
 // network at roughly the terrain view radius (08-07: setRadius replaces the retired setProtoRadius).
 roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
-roadSystem.setRawHeightSampler((x, z) => terrainSystem.rawHeightWorld(x, z))  // CR-01: carve-free sampler for sampleDesignGradeAt
 // PERF (Tier 1): road stream radius ~matches the terrain ring (5×5 chunks ≈ 160–226 m), not 640 m.
 // Routing/slicing cost scales with this area; 640 m routed ~16× the terrain footprint. 320 m covers
 // the visible terrain ring with margin while cutting cold-stream + per-crossing re-stream cost.

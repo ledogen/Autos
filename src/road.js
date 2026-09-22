@@ -1261,10 +1261,9 @@ export class RoadSystem {
             // BUG-10: arcS is now the RUN-GLOBAL arc (arcS0 + (arcS1−arcS0)·refinedU), NOT tile-local,
             // so camberProfile/roadQuality index the continuous run profile (no per-tile sawtooth).
             // camberSign maps the run-frame signed camber into a slice that may run E→W (reversed).
-            // spline exposed for sampleDesignGradeAt (CR-01, plan 09-08) — WeakMap cache key.
             const runArcS = bestArcS0 + (bestArcS1 - bestArcS0) * refinedU
             const camberSign = bestArcS1 >= bestArcS0 ? 1 : -1
-            return { point, tangent, runKey: bestRunKey, arcS: runArcS, camberSign, spline: bestSpline }
+            return { point, tangent, runKey: bestRunKey, arcS: runArcS, camberSign }
         }
 
         // Fallback: no sliced spline came within radius — probe the raw network polylines
@@ -1725,14 +1724,6 @@ export class RoadSystem {
         const dx = x - c.x, dz = z - c.z
         return dx * dx + dz * dz <= r * r
     }
-
-    /**
-     * Wire the carve-free raw-height sampler used by sampleDesignGradeAt (CR-01, plan 09-08).
-     * Must be rawHeightWorld — NOT analyticHeight (which re-introduces carve and would recurse).
-     * Called from main.js after terrainSystem is constructed.
-     * @param {Function} fn — (wx, wz) => number  carve-free raw terrain height (metres)
-     */
-    setRawHeightSampler(fn) { this._rawHeightSampler = fn }
 
     _invalidateProto() {
         this._proto.anchors.clear()
@@ -2300,7 +2291,6 @@ export class RoadSystem {
         if (this._tileObjects) this._tileObjects.clear()
         if (this._junctions) this._junctions.clear()
         this._junctionsRev = -1
-        this._designGradeCache = new WeakMap()
         for (const r of data.runs) {
             const n = r.pts.length / 3
             const points = new Array(n)
@@ -4855,18 +4845,6 @@ export class RoadSystem {
         return c[lo] + (c[hi] - c[lo]) * (sArc - a[lo]) / span
     }
 
-    // Smooth a polyline's Y in place (shared by the rows row-polyline and the graph per-edge polyline).
-    // Off-earthwork: legacy ±designGradeWindow terrain-following smoothing. Earthwork: (1) wide-smooth raw
-    // → the gentle bridged/cut design line; (2) a legacy-window-smooth terrain reference; (3) SOFT-clamp the
-    // design toward ±deviationCap of that SMOOTH reference — clamping against raw would let the design follow
-    // raw bumps where the cap bites, putting near-vertical steps into the collision surface (road-smoothness).
-    //
-    // The clamp is a tanh saturation, NOT a hard min/max. A hard clamp injects a C1 (slope) discontinuity at
-    // the exact arc where the design first crosses ±cap: the profile snaps from the flat design line onto the
-    // terrain-tracking `ref±cap` line, a felt "bump" the router never priced (the router chose the gentle
-    // design; the cap yanks it back). tanh approaches ±cap asymptotically instead, so the profile bends into
-    // the terrain-following region smoothly. Bounded by ±cap (never floats past it), near-identity for
-    // |dev|≪cap so unclamped roads are unchanged, and window-invariant (pointwise fn of two box means). D-16.
     // FEAT-68: _gradeEdgeInPlace (v1 design-grade smoothing: wide-smooth + tanh deviation clamp)
     // and _tunnelPassOpts (FEAT-40's taut-string tunnel DETECTION pass) are DELETED. Both were
     // already unreachable: _v2GradePts solves the exact profile instead, and a bore is no longer
@@ -6248,7 +6226,6 @@ export class RoadSystem {
         // clear needed (replaces the old BUG-14 clear-on-restream band-aid). With owner-anchored arc
         // origins (D-16 Phase 2) the arcS↔gradeY domain is window-invariant, so the only thing a real
         // rebuild changes is run EXTENT at the frontier; the rev bump re-derives those lazily.
-        this._designGradeCache = new WeakMap()
 
         // ── Graph edge assembly (FEAT-13 v2) ─────────────────────────────────────
         // Build the URQUHART network into this._network: each undirected edge is routed once (canonical
@@ -9517,123 +9494,17 @@ export class RoadSystem {
         return { blendW: w, gradeY: rawAmp + (h - rawAmp) / w }
     }
 
-    // ── Phase 9: Design grade smoothing (D-06) ────────────────────────────────────
-    // NOTE: since FEAT-68 there is NO longitudinal grade SMOOTHER at all — _v2GradePts solves the
-    // exact profile (priced == built) onto the canonical run polyline that BOTH consumers read
-    // (physics via _buildRunProfile.gradeY, ribbon via _buildRoadTile slicing). Smoothing a solved
-    // profile would break priced == built, and crest airtime is a FEATURE (character spec).
-    // The per-spline _smoothDesignGrade below is a BYPASSED legacy path (reachable only via the
-    // dead sampleDesignGradeAt → test harness) — a deletion candidate, not a live smoother.
-    /**
-     * Compute a smoothed "design grade" Y array for a per-tile spline.
-     * Purpose: suppress fine-noise terrain texture (±0.5 m) from the road vertical profile
-     * while preserving coarse terrain grade (mountains / valleys). The smoothed grade is used
-     * as the target elevation for cut-and-fill carve (carveBlend in road-carve.js).
-     *
-     * Algorithm: Arc-length sliding window average over `analyticHeight` samples.
-     *   For each sample point i with arc-length position s_i:
-     *     designGradeY[i] = mean(analyticHeight at all samples j where |s_j - s_i| < window)
-     *   Window half-width = params.designGradeWindow (default 50 m).
-     *
-     * Boundary stability: the spline is sampled 2 extra samples past each tile endpoint so the
-     * sliding window has valid values at the tile edges (Pitfall 7). The returned array matches
-     * the sampled `points` array 1:1.
-     *
-     * Memoized: the result is cached by spline + window identity. Re-calling with the same spline
-     * object and same window returns the cached array without re-computing. The cache is a
-     * WeakMap keyed by the spline object — cleared automatically when the spline is GC'd.
-     *
-     * @param {THREE.CatmullRomCurve3} spline     — per-tile slice spline (from this._tiles)
-     * @param {Function}               terrainRef — `(wx, wz) => number` analytic height sampler
-     *                                              (pass terrain.analyticHeight.bind(terrain))
-     * @param {object}                 params     — RANGER_PARAMS (reads designGradeWindow)
-     * @returns {{ points: THREE.Vector3[], designGradeY: Float32Array }}
-     *   points: arc-length-sampled spline positions (N samples × tile length ~2 m apart)
-     *   designGradeY: smoothed height at each sample position (metres, terrainAmplitude included)
-     *
-     * Pure function of (spline, terrainRef, params) — no side effects (D-16).
-     */
-    _smoothDesignGrade(spline, terrainRef, params) {
-        // Lazy-init the per-instance WeakMap cache.
-        if (!this._designGradeCache) this._designGradeCache = new WeakMap()
-
-        const window = params.designGradeWindow ?? 50   // half-width in metres
-        const cacheKey = spline   // WeakMap key — unique per spline object
-
-        // Return cached result if still valid (same window value).
-        const cached = this._designGradeCache.get(cacheKey)
-        if (cached && cached.window === window) return cached.result
-
-        // ── Sample the spline at ~2 m arc-length intervals ────────────────────────
-        // Use at least 32 samples even for short splines; cap at 512.
-        const arcLen = spline.getLength ? spline.getLength() : 64
-        const N = Math.max(32, Math.min(512, Math.ceil(arcLen / 2) + 1))
-
-        const pts = []
-        for (let i = 0; i < N; i++) {
-            const u = i / (N - 1)
-            pts.push(spline.getPointAt(u))
-        }
-
-        // ── Evaluate analyticHeight at each sample point ───────────────────────────
-        const rawY = new Float32Array(N)
-        for (let i = 0; i < N; i++) {
-            rawY[i] = terrainRef(pts[i].x, pts[i].z)
-        }
-
-        // ── Compute arc-length positions for sliding window indexing ───────────────
-        const arcPos = new Float32Array(N)
-        arcPos[0] = 0
-        for (let i = 1; i < N; i++) {
-            const dx = pts[i].x - pts[i-1].x
-            const dz = pts[i].z - pts[i-1].z
-            arcPos[i] = arcPos[i-1] + Math.sqrt(dx*dx + dz*dz)
-        }
-
-        // ── Sliding window average ─────────────────────────────────────────────────
-        // For each sample i, sum rawY[j] for all j where |arcPos[j] - arcPos[i]| < window.
-        // Use two-pointer technique for O(N) total cost.
-        const designGradeY = new Float32Array(N)
-        let lo = 0
-        let hi = 0
-        let sum = 0
-        // Initialize window around sample 0
-        while (hi < N && arcPos[hi] - arcPos[0] < window) {
-            sum += rawY[hi]
-            hi++
-        }
-
-        for (let i = 0; i < N; i++) {
-            designGradeY[i] = sum / (hi - lo)
-
-            // Advance window: add next sample within window
-            while (hi < N && arcPos[hi] - arcPos[i+1 < N ? i+1 : i] < window) {
-                sum += rawY[hi]
-                hi++
-            }
-            // Drop samples that fell behind the window
-            while (lo < hi && arcPos[i+1 < N ? i+1 : i] - arcPos[lo] >= window) {
-                sum -= rawY[lo]
-                lo++
-            }
-        }
-
-        // Expose arcPos alongside points and designGradeY — sampleDesignGradeAt needs it for
-        // arc-length interpolation without re-computing arc positions on each call.
-        const result = { points: pts, designGradeY, arcPos }
-        this._designGradeCache.set(cacheKey, { window, result })
-        return result
-    }
-
-    /**
-     * Drop all memoized design-grade entries so the next ribbon sweep recomputes smoothed grade.
-     * Call this whenever surface-param sliders (crownHeight, terrainAmplitude) change via
-     * debouncedRoadSurfaceRebuild — the spline objects persist across rebuilds, so the WeakMap
-     * would otherwise return stale pre-change profiles (CR-04 stale-cache fix).
-     */
-    invalidateDesignGradeCache() {
-        this._designGradeCache = new WeakMap()
-    }
+    // ── Longitudinal grade: there is NO smoother (FEAT-68) ────────────────────────
+    // _v2GradePts solves the exact profile (priced == built) onto the canonical run polyline that
+    // BOTH consumers read (physics via _buildRunProfile.gradeY, ribbon via _buildRoadTile slicing).
+    // Smoothing that solved profile after the fact would break priced == built. Crest SHAPE is the
+    // solver's business, not a post-pass's: FEAT-81 keys the crest rate to par corner speed, which
+    // OVERRULED the older "crest airtime is a feature" reading — so a "too jumpy / too flat"
+    // complaint belongs in that rule, never in a smoother bolted on here.
+    // The D-06 per-spline design-grade smoother is DELETED (FEAT-68 close,
+    // 2026-09-22): _smoothDesignGrade, sampleDesignGradeAt, invalidateDesignGradeCache, the
+    // _designGradeCache WeakMap, setRawHeightSampler and the designGradeWindow knob had no caller
+    // left in src/ — the last one went with _gradeEdgeInPlace. Do not reintroduce a smoother here.
 
     /**
      * Invalidate the per-run profile caches (runProfile/camberProfile/adjacency/junction), which
@@ -10836,44 +10707,6 @@ export class RoadSystem {
         sample.camber = (nr.camberSign ?? 1) * sample.camber
 
         return sample
-    }
-
-    /**
-     * Return the smoothed design-grade Y at arc-length position arcS along spline.
-     * Delegates to _smoothDesignGrade (shared WeakMap memo — O(1) after first sweep per spline).
-     * arcS is clamped to [arcPos[0], arcPos[N-1]] before interpolation.
-     *
-     * This is the SINGLE shared elevation source for plan 09-08 carve sites. Calling it at
-     * nr.arcS from both _sampleCarveWorld and _buildCarveTable gives a clean, cache-coherent,
-     * carve-free grade that does NOT double-count crown/camber/pothole.
-     *
-     * @param {THREE.CatmullRomCurve3} spline  — spline object (WeakMap key)
-     * @param {number}                 arcS    — arc-length position along spline (metres)
-     * @param {Function}               terrainRef — carve-free raw-height sampler (rawHeightWorld)
-     * @param {object}                 params  — RANGER_PARAMS (for designGradeWindow)
-     * @returns {number} Smoothed design-grade height in metres.
-     */
-    sampleDesignGradeAt(spline, arcS, terrainRef, params) {
-        const { designGradeY, arcPos } = this._smoothDesignGrade(spline, terrainRef, params)
-        const N = arcPos.length
-        if (N === 0) return 0
-
-        // Clamp to sampled arc range.
-        const s = Math.max(arcPos[0], Math.min(arcPos[N - 1], arcS))
-
-        // Binary search for the interval containing s.
-        let lo = 0
-        let hi = N - 1
-        while (lo < hi - 1) {
-            const mid = (lo + hi) >> 1
-            if (arcPos[mid] <= s) lo = mid; else hi = mid
-        }
-
-        // Linear interpolation between lo and hi.
-        const span = arcPos[hi] - arcPos[lo]
-        if (span < 1e-9) return designGradeY[lo]
-        const t = (s - arcPos[lo]) / span
-        return designGradeY[lo] + t * (designGradeY[hi] - designGradeY[lo])
     }
 
     /**

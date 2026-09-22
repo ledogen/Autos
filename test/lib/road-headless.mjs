@@ -51,8 +51,8 @@ export const TEST_PARAMS = {
     roadClearanceMargin: 0.5,
     roadMinTurnRadius: 45,
 
-    // Phase 9 surface / query geometry (queryNearest footprint + grade smoothing window).
-    roadHalfWidth: 5, roadShoulderWidth: 2.5, designGradeWindow: 50,
+    // Phase 9 surface / query geometry (the queryNearest footprint).
+    roadHalfWidth: 5, roadShoulderWidth: 2.5,
 }
 
 // ── Fold floor ─────────────────────────────────────────────────────────────────
