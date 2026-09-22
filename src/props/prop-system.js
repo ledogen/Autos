@@ -673,9 +673,15 @@ export class PropSystem {
    * cosmetic defect for the couple of adopts it takes the cursor to come round, not a correctness
    * one — nothing downstream reads prop placement.
    *
+   * BUG-71 (2026-09-21): budgeting is safe ONLY where more adopts are coming. Two callers now pass
+   * Infinity — the whole ring in one pass — because in their case they are not: a parked truck after
+   * a reseed moves no band, and story mode's region freeze means no adopt EVER fires. The caller
+   * decides (see sweepPropIntrusions / queuePropFullSweeps in main.js); this method just honours the
+   * number it is given.
+   *
    * @param {(x, z, keepOut) => boolean} roadClear - true when NO road centreline is within keepOut.
    * @param {number} exclusion - FLORA_PARAMS.scatter.roadExclusion.
-   * @param {number} budget - chunks to examine this call.
+   * @param {number} budget - chunks to examine this call; Infinity = the whole live ring.
    * @returns {number} chunks dropped (0 on the overwhelmingly common no-change adopt).
    */
   invalidateRoadIntrusions(roadClear, exclusion, budget = 10) {

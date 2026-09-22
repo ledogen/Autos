@@ -253,6 +253,38 @@ const makePropSamplers = () => ({
 })
 const _sunShearScratch = new THREE.Vector2()
 
+// ── BUG-71: prop road-intrusion sweeps — trigger and budget are two different problems ──────────
+// PropSystem.invalidateRoadIntrusions() re-tests live placements whenever the ROADS change, because
+// a scatter can only ask about runs registered in the window it ran against (see the method's
+// header for why no "regenerate at time T" fix exists). It was wired to the network adopt with a
+// 10-chunk round-robin budget, which is right for the driving frontier and wrong everywhere a
+// WORLD arrives at once. Two measured failures (2026-09-21, seeds 11/14 at Normal→49 live chunks):
+//   • Reseed, then stand still: 79–118 props inside the 9 m exclusion, worst 0.01 m off the
+//     centreline. Four adopts fire while the network settles, then stop — a parked truck moves no
+//     band — so the cursor covers 40 of 49 chunks and the last 9 keep their props FOREVER.
+//   • Story mode: the region freeze means the frame loop makes no roadSystem.update() call at all,
+//     so there is no adopt, so the sweep never runs once in a whole run. Measured 26 props in the
+//     road, unchanged over 55 s of idling AND driving.
+// So: keep the budget on the steady-state adopt, and sweep the WHOLE ring on the handful of adopts
+// that follow a world change — plus directly, where a mode has no adopts to hang it on.
+const FULL_SWEEP_ADOPTS = 6   // covers the settle: measured reseeds reveal new runs over ~4 adopts
+let _propFullSweeps = 0
+/** Arm the next `n` adopts to sweep the whole prop ring instead of a 10-chunk slice. */
+const queuePropFullSweeps = (n = FULL_SWEEP_ADOPTS) => { _propFullSweeps = Math.max(_propFullSweeps, n) }
+/**
+ * Re-test live placements against the roads that exist NOW. `budget` is chunks to examine;
+ * Infinity means the whole ring in one pass (~2–25 ms — fine behind a load, or on the few adopts
+ * after a world change; never on a steady-state band move, which is the PERF-26/28 surface).
+ * The predicate is makePropSamplers()' own roadClear, so it can never drift from the scatter's.
+ */
+function sweepPropIntrusions (budget) {
+  if (!propSystem) return 0
+  const dropped = propSystem.invalidateRoadIntrusions(
+    makePropSamplers().roadClear, FLORA_PARAMS.scatter.roadExclusion, budget)
+  if (dropped) perfEvent('props.roadIntrusion')   // re-scatter lands via the normal ensure path
+  return dropped
+}
+
 // FEAT-31 testing-lab mode flag. When true: the world is torn down (streaming stopped AND meshes
 // hidden — see enterLab), the ground is the lab's own surface (flat, except the rumble lanes), the
 // ramp rig is collidable, and carve/prop/water queries are skipped.
@@ -732,6 +764,10 @@ function debouncedRoadRebuild () {
 // state — the R lands right after the current one finishes, on the fully-loaded road.
 let _reseatChain = Promise.resolve()
 function _reseatTruckAtSpawn () {
+  // BUG-71: a seat is ALWAYS a world arriving at once — cold load, R-reset, or a Path-B reseed —
+  // and the band the props scattered against is still filling in behind it. Arm the whole-ring
+  // sweeps here rather than at each of those three call sites, so no future spawn path can forget.
+  queuePropFullSweeps()
   const run = () => _reseatTruckAtSpawnInner()
   _reseatChain = _reseatChain.then(run, run)
   return _reseatChain
@@ -3908,11 +3944,10 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
       // window never registered enter the network, which is what strands props on roads. The
       // predicate comes from makePropSamplers() so it can never drift from the one the scatter
       // itself used. Usually drops nothing and costs one bounded pass over live placements.
-      if (propSystem) {
-        const dropped = propSystem.invalidateRoadIntrusions(
-          makePropSamplers().roadClear, FLORA_PARAMS.scatter.roadExclusion)
-        if (dropped) perfEvent('props.roadIntrusion')   // re-scatter lands via the normal ensure path
-      }
+      // BUG-71: budgeted on the frontier, WHOLE-RING while a world change is still settling —
+      // queuePropFullSweeps() arms that window; see the helper for the measurements.
+      if (_propFullSweeps > 0) { _propFullSweeps--; sweepPropIntrusions(Infinity) }
+      else sweepPropIntrusions()
       if (reason !== 'params') return
       // The deferred half of debouncedRoadRebuild (see there): the swap just bumped _generation,
       // so clear the ribbon tiles and re-bake the carve against the ADOPTED geometry — doing this
@@ -4466,6 +4501,12 @@ const storySystem = new StorySystem({
     campSystem.build(center, radius, poiSystem.list().find(q => q.type === 'momsHouse') ?? null)
     _rebuildPoiMarkers()
     terrainSystem?.rebuildAllChunksFromWorker()
+    // BUG-71: this mode FREEZES the road stream, so the adopt that normally drives the intrusion
+    // sweep never comes — measured 26 props standing in the road for a whole run, idle and driving
+    // alike. Go-live is the one and only moment that matters here, and it is the right one: the
+    // region was just registered WHOLE at the wide radius, so every chunk scattered from here on
+    // tests against the final network. One unbounded pass, behind the loading screen.
+    sweepPropIntrusions(Infinity)
     // Props scattered BEFORE the pads existed are still standing in them (the scatter's road
     // keep-out now covers a pad, but only for chunks scattered after this point). Release just the
     // chunks a pad touches so they re-scatter against the finished ground — a handful, not a rebuild.
