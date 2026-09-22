@@ -241,7 +241,13 @@ export const DAMAGE_PARAMS = {
   // bottoms onto a short rubber snubber on the axle that hands the load straight to the leaves. So
   // the force that kills a front spring outright genuinely IS higher than the rear's.
   springBumpFullNFront: 450000, // N — one bump-stop hit this hard destroys a FRONT spring outright
-  springBumpFullNRear:  300000, // N — …and this hard a REAR one (unchanged)
+  // Rear raised 300 -> 335 kN on 2026-09-21 (owner: "rear springs should suffer 20% less damage").
+  // Only the DENOMINATOR moves, so the reduction is a clean, uniform 20% at every hit size — the
+  // no-harm floor is untouched, because the ask was "less damage", not "more hits are harmless".
+  // Arithmetic: damage goes as 1/(fullN − floor)², so 20% less needs the span divided by √0.8 —
+  // 297 kN / 0.8944 = 332 kN, i.e. fullN 335 kN. Measured back: ×0.8003, so 19.97% less.
+  // The front is still the tougher end (450 > 335), which is the bump-stop story above intact.
+  springBumpFullNRear:  335000, // N — …and this hard a REAR one
   springBumpExp:    2,       // square law: peak stress, the same reason armor is square-law
   //
   // What the front change is worth, at the drop anchors measured with test/collision-drop-lab.mjs
@@ -299,8 +305,11 @@ export const DAMAGE_PARAMS = {
   // and in play the front is simply the end a truck hits things with. One shared curve therefore wore
   // the front out several times faster from identical driving. The front's scale is cut to a third;
   // the exponent is untouched, so only the height of the curve moves, not its shape.
-  impactSpringFront: { d10: 0.01, d60: 0.10 },
-  impactSpringRear:  { d10: 0.03, d60: 0.30 },
+  // Rear scaled by 0.8 on 2026-09-21, same owner ask, same 20%. BOTH points scale together, so the
+  // exponent is bit-identical (ln(0.24/0.024) == ln(0.30/0.03)) — the curve's height moves, its
+  // shape does not, exactly as with the front.
+  impactSpringFront: { d10: 0.01,  d60: 0.10 },
+  impactSpringRear:  { d10: 0.024, d60: 0.24 },
   impactDamper:    { d10: 0.03, d60: 0.30 },
 
   // Armor absorbs a fraction of what it stands in front of, proportional to its own condition.

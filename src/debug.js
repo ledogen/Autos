@@ -354,6 +354,14 @@ export function initDebug (params, callbacks = {}, options = {}) {
   frontSpringFolder.add(DAMAGE_PARAMS, 'springBumpFullNFront', 100000, 900000, 10000).name('bump: destroys it (N)')
   frontSpringFolder.add(DAMAGE_PARAMS.impactSpringFront, 'd10', 0, 0.2, 0.005).name('crash: dmg at 10 mph')
   frontSpringFolder.add(DAMAGE_PARAMS.impactSpringFront, 'd60', 0, 1, 0.01).name('crash: dmg at 60 mph')
+
+  // The rear has the same four knobs, and the same reason to be live: the owner tuned it by feel
+  // too (2026-09-21, "rear springs should suffer 20% less damage").
+  const rearSpringFolder = dmgFolder.addFolder('Rear Springs (per-axle curves)')
+  rearSpringFolder.add(DAMAGE_PARAMS, 'springForceFloorRear', 0, 60000, 500).name('bump: no-harm floor (N)')
+  rearSpringFolder.add(DAMAGE_PARAMS, 'springBumpFullNRear', 100000, 900000, 10000).name('bump: destroys it (N)')
+  rearSpringFolder.add(DAMAGE_PARAMS.impactSpringRear, 'd10', 0, 0.2, 0.005).name('crash: dmg at 10 mph')
+  rearSpringFolder.add(DAMAGE_PARAMS.impactSpringRear, 'd60', 0, 1, 0.01).name('crash: dmg at 60 mph')
   wearFolder.close()
 
   // Phase 6 (TERR-06): Terrain folder — amplitude tuning + ramp visibility toggle.
