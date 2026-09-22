@@ -68,8 +68,11 @@ a pad went 51 → 50 over the same 20 seeds, because most cases are not the deep
    the same shape as the existing FEAT-40 bore-ownership rule. Contained, no reroute, but it sits
    inside the junction-pad machinery that junction-stitch / BUG-59 are actively editing.
 
-Both land AFTER the BUG-65/66 junction work merges: (1) moves every baseline those tickets are
-measured against, and (2) collides with them directly.
+Sequencing: both were held behind the BUG-65/66 junction work, which **merged 2026-09-20**
+(`9b38013` — dead-winner re-plan + B7 departure clearance). The ceiling gate was re-run against it:
+the corpus gained one bore (62 -> 63) and all three ceilings still hold, so nothing is blocked any
+more. Remedy (2) still lands inside the junction-pad machinery those tickets touched, so check
+BUG-69 / BUG-70 (their re-ticketed residue) before starting it.
 
 ## Not the fix (recorded so it is not retried)
 
