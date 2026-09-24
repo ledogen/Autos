@@ -74,6 +74,7 @@ import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './th
 import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
+import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
 import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read-only tree re-roll (camp shade score)
@@ -410,7 +411,24 @@ function _importSessionRoutes () {
 try { indexedDB.deleteDatabase('autos-routes') } catch { /* private mode etc. */ }
 
 let _spawnWarmActive = false   // frame loop skips the road stream while a spawn-band warm is pumping
-async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-vars
+// The seed spawn is a pure function of (seed, params) — test/world-determinism.mjs proves it is
+// identical under every streaming history — so R does not need to re-run the search. It did: every
+// press awaited two network-worker builds (the tight tier + the re-centre), queued behind whatever
+// build the worker already had in flight — ~1.3 s per press measured on 2026-09-22, and much longer
+// before the worker kept its warm instance. Keyed on the router's own param snapshot, so a slider
+// change misses and re-resolves. In-session memory only; nothing is saved.
+let _spawnMemo = null   // { key, point, tangent }
+async function resolveSpawn (wseed, params) {
+  const memoKey = wseed + '|' + JSON.stringify(snapshotRoadParams(params))
+  // Use the memo only while the STREAMED network still holds the road there. Far away, the full
+  // path below re-streams around the spawn first, so the truck is never seated beside a road that
+  // has not arrived yet (BUG-11).
+  if (_spawnMemo && _spawnMemo.key === memoKey && roadSystem?.networkCoversXZ(_spawnMemo.point.x, _spawnMemo.point.z)
+      && roadSystem.queryNearest(_spawnMemo.point.x, _spawnMemo.point.z, 5)) {
+    const { point, tangent } = _spawnMemo
+    const surfaceY = terrainSystem ? terrainSystem.analyticHeight(point.x, point.z) : 0
+    return { position: new THREE.Vector3(point.x, surfaceY, point.z), heading: Math.atan2(tangent.x, tangent.z) }
+  }
   const { spawnSeed, baseX, baseZ, tightR, spawnR } = _spawnProbeBase(wseed, params)
 
   // ── Phase 8: road-graph probe (D-07) ─────────────────────────────────────────
@@ -502,6 +520,8 @@ async function resolveSpawn (wseed, params) {  // eslint-disable-line no-unused-
       // analyticHeight for placement so the truck rests on the rendered terrain surface.
       // (router used raw coarseHeight for grade; spawn PLACEMENT uses analyticHeight — visual match)
       const surfaceY = terrainSystem ? terrainSystem.analyticHeight(nearest.point.x, nearest.point.z) : 0
+      _spawnMemo = { key: memoKey, point: { x: nearest.point.x, z: nearest.point.z },
+                     tangent: { x: nearest.tangent.x, z: nearest.tangent.z } }
       return {
         position: new THREE.Vector3(nearest.point.x, surfaceY, nearest.point.z),
         heading:  Math.atan2(nearest.tangent.x, nearest.tangent.z)  // face down the road
@@ -4440,6 +4460,7 @@ const storySystem = new StorySystem({
   // FEAT-41: the entry load is now WATCHED, not waited out behind a black panel. This is the one
   // signal that covers every story entry (main menu, pause button, a rejected-seed retry), so the
   // stage is raised and dropped from here rather than at each call site.
+  isGroundReady: () => !terrainSystem || terrainSystem.isRingSettled(),
   setLoading: (visible, text) => { if (visible) _enterStageLoad(text, LOAD_HINT_STORY); else _exitStageLoad() },
   getVehiclePosition: () => ({ x: vehicleState.position.x, z: vehicleState.position.z }),
   isMissionActive: () => !!missionSystem?.isActive(),
@@ -4468,7 +4489,7 @@ const storySystem = new StorySystem({
       const key = `${center.x}:${center.z}:${radius}`
       if (_regionNetBuild && _regionNetBuild.key === key && _regionNetBuild.done) {
         _regionNetBuild = null
-        terrainSystem?.rebuildAllChunksFromWorker()   // same live-ring re-bake as the sync path below
+        terrainSystem?.recarveInPlace()   // same live-ring re-bake as the sync path below
         return true
       }
       if (!_regionNetBuild || _regionNetBuild.key !== key) {
@@ -4488,8 +4509,9 @@ const storySystem = new StorySystem({
     // chunk-request time, so any chunk built while the region was still warming carries the carve
     // of the OLD 320 m network. Re-bake the live ring against the now-registered region — ~25
     // chunks behind the loading screen, and it removes a whole class of "the road is drawn but not
-    // carved" seams near the spawn.
-    terrainSystem?.rebuildAllChunksFromWorker()
+    // carved" seams near the spawn. IN PLACE: the seed did not change, so the raw heights, meshes and
+    // colliders all stay; disposing them left the truck on no ground for the whole refill.
+    terrainSystem?.recarveInPlace()
     return true
   },
   /**
@@ -4520,7 +4542,10 @@ const storySystem = new StorySystem({
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
     campSystem.build(center, radius, poiSystem.list().find(q => q.type === 'momsHouse') ?? null)
     _rebuildPoiMarkers()
-    terrainSystem?.rebuildAllChunksFromWorker()
+    // Only the chunks a pad reaches: pads are the one carve input that changed here. Pads never bump
+    // roadGeneration, so these must be marked stale explicitly (terrain.js recarveInPlace). This was a
+    // full dispose + worker refill, which discarded the warm's re-bake 1.5 s after it was queued.
+    terrainSystem?.recarveInPlace(roadSystem?.storyPadReach() ?? null)
     // BUG-71: this mode FREEZES the road stream, so the adopt that normally drives the intrusion
     // sweep never comes — measured 26 props standing in the road for a whole run, idle and driving
     // alike. Go-live is the one and only moment that matters here, and it is the right one: the
@@ -4918,7 +4943,16 @@ function loop () {
   accumulator += frameTime
   // FEAT-41: sim hold. Zeroing the accumulator is not optional — leaving the debt to grow while the
   // menu is up would fire a spiral of catch-up steps the instant the world was handed back.
-  if (_simHeld) accumulator = 0
+  // The interpolation pose must follow too. With no step running, _prevRenderPos is never refreshed,
+  // and at alpha 0 the render pose IS _prevRenderPos — so a reseat behind the stage (story entry,
+  // free-roam reseed) left the rendered truck, and the terrain ring streaming around it, parked at the
+  // OLD spawn for the whole load (measured 2026-09-22: ring built ~280 m from the truck, then
+  // rebuilt from scratch the moment the stage lifted).
+  if (_simHeld) {
+    accumulator = 0
+    _prevRenderPos.copy(vehicleState.position)
+    _prevRenderQuat.copy(vehicleState.quaternion)
+  }
   damageHUD.update(frameTime)   // SM-3 readout (V) — returns on the first line while hidden
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes

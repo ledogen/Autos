@@ -60,6 +60,7 @@ const SETTLE_MIN_MS = 400
 const SETTLE_MAX_MS = 20000    // if a rebuild throws, don't hang the loading screen forever
 const WARM_PUMP_MS  = 250      // warmBandComplete() rebuilds a band graph — pump it, don't spin it
 const WARM_MAX_MS   = 180000   // cold uncached seed at this radius can be minutes; still bounded
+const HANDOFF_MAX_MS = 15000   // go-live waits for the terrain ring; bounded so a stuck ring cannot strand the player
 
 export class StorySystem {
   /**
@@ -74,6 +75,8 @@ export class StorySystem {
    *   hidePauseMenu()            — close the pause menu
    *   setQuickJobVisible(v)      — show/hide the in-mode Quick Job button
    *   setLoading(visible, text)  — the mode-entry loading overlay
+   *   isGroundReady()            — true once the visible terrain ring is built + carved (go-live
+   *                                holds the loading screen until then; optional ⇒ no hold)
    *   getVehiclePosition()       — {x,z} of the truck (region-center source, sampled post-reseat)
    *   isMissionActive()          — true while a Quick Job is accepted/counting/running
    *   pumpRegionWarm(c, r)       — widen the play RoadSystem to r around c and pump one warm step;
@@ -91,6 +94,7 @@ export class StorySystem {
     // 'idle' | 'settling' | 'warming' | 'rejected' | 'live'. `rejected` is a TERMINAL entry state:
     // the region is built and frozen behind the disclaimer, so "start anyway" costs nothing to
     // honour and typing a new seed just re-enters (the token invalidates this attempt).
+    this._handoff = false     // go-live done, loading screen held until the terrain ring settles
     this._phase = 'idle'
     this._seed = null
     this._report = null
@@ -123,7 +127,7 @@ export class StorySystem {
    * The park triggers and prompts gate on it: until the region is live there are no POIs, no
    * network to plan on, and nothing the player can interact with.
    */
-  isEntering () { return this._active && this._phase !== 'live' }
+  isEntering () { return this._active && (this._phase !== 'live' || this._handoff) }
   /**
    * A deliberate teleport happened (map double-click, free-cam button, Shift+R). Disarm the wall
    * the same way an active Quick Job does: the player ASKED to be somewhere, so don't clamp them
@@ -154,6 +158,7 @@ export class StorySystem {
     this._elapsed = 0
     this._pumpAcc = 0
     this._armed = false
+    this._handoff = false
     this._phase = 'settling'
     // THE SEED DECIDES WHERE THE WORLD IS BUILT, AND NOTHING ELSE (owner, 2026-08-11).
     //
@@ -257,6 +262,23 @@ export class StorySystem {
     // behind the loading screen, because it re-bakes the carve tables of the chunks already built
     // around the spawn so the new pads are actually flattened in them.
     this._d.onRegionLive?.(this._center, this._R)
+    // Hold the loading screen until the ground under the player is finished. onRegionLive just
+    // re-carved the ring for the pads; lifting the screen here handed the player a world with the
+    // terrain still streaming in (measured 2026-09-22: 0 chunks and 0 ground colliders for 0.8 s at
+    // 1×, 4 s at 4×). The hold also keeps the sim held, so physics catch-up does not compete with
+    // the build. update() finishes the handover.
+    this._handoff = true
+    this._handoffMs = 0
+    this._pumpHandoff(0)
+  }
+
+  /** Finish _goLive once the ground is ready — or after HANDOFF_MAX_MS, so nothing can strand the player. */
+  _pumpHandoff (dtMs) {
+    this._handoffMs += dtMs
+    const ready = !this._d.isGroundReady || this._d.isGroundReady()
+    if (!ready && this._handoffMs < HANDOFF_MAX_MS) return
+    if (!ready) console.warn('[story] terrain ring not settled after', HANDOFF_MAX_MS, 'ms — handing over anyway')
+    this._handoff = false
     this._d.setLoading(false)
     this._d.setQuickJobVisible(true)
   }
@@ -267,6 +289,7 @@ export class StorySystem {
     this._token++            // abandon any in-flight entry work
     this._active = false
     this._phase = 'idle'
+    this._handoff = false
     this._frozen = false
     this._center = null
     this._report = null
@@ -322,6 +345,8 @@ export class StorySystem {
       }
       return
     }
+
+    if (this._handoff) { this._pumpHandoff(dtMs); return }
 
     // ── live: the boundary ──────────────────────────────────────────────────────────────────
     // A Quick Job can teleport the truck to a start pin near the wall and expects a free drive —
