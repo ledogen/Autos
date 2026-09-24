@@ -947,13 +947,16 @@ export const RANGER_PARAMS = {
   terrainTexTileGrass:  2.0,   // m — tuft field repeat (1.6 was unreadable a few metres from the truck)
   terrainTexTileDirt:   2.4,   // m — clod/pebble field repeat
   terrainTexTileRock:   8.0,   // m — fractured-plate field repeat (~1.5–2 m plates; 5 m read as cobbles)
+  // Owner 2026-09-24: the green under the dirt should be more vibrant on FLAT dirt (fine on the
+  // hills). Extra green saturation in the dirt hollows, scaled by flatness (0 = off).
+  terrainDirtFlatGreen: 0.4,
   // Grass splotches (owner 2026-09-23): round, crisp-edged mats of colour over the meadow — the
   // splotchy creep of California native shrubs — as two cellular blob layers (terrain.js
   // tsBlobs): big mats on a terrainSplotchSize-metre lattice, small ones at 0.4× laid on top. Each
   // mat takes one of the three absolute colours below; the ground between them keeps the picker's
   // meadow/fertile colour.
   terrainGrassPale:     0x7f9650, // pale "sedum" green mats
-  terrainGrassStraw:    0x8a7a48, // dead-grass straw mats
+  terrainGrassStraw:    0x4a3a26, // dark-brown earth mats (owner 2026-09-24: straw read as "cow pattern" against the greens)
   terrainGrassDark:     0x384f24, // darker, more desaturated green mats
   terrainSplotchSize:   8.0,      // m — lattice cell of the big mats (blob radius = cover × this)
   terrainSplotchCover:  0.45,     // [-] max blob radius in cells (0.5 = mats touch; lower = sparser)

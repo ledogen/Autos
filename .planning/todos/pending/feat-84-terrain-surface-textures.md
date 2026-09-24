@@ -104,6 +104,11 @@ blend "at their interfaces" rather than crossfade.
 - [x] Pass 5: grass tuft strokes widened (brightness 0.78–1.22, yellowing ±0.16, normal 2.4) —
       "texture still isn't really visible" — secondary to the splotch rewrite above.
 
+- [x] Owner pass 6 (2026-09-24, before sleep): the straw mats read as "cow pattern" against the
+      greens → `terrainGrassStraw` is now a dark-brown earth tone (0x4a3a26; picker label "earth").
+      Green under the dirt: more vibrant on FLAT dirt, hills as they were → `terrainDirtFlatGreen`
+      (0.4): extra green saturation in the dirt hollows × flatness (slider "Dirt flat green").
+
 ## Known limits / follow-ups
 
 - Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second

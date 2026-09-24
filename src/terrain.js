@@ -506,6 +506,7 @@ export class TerrainSystem {
             uSplotchCover:    { value: params.terrainSplotchCover    ?? 0.45 },
             uSplotchEdge:     { value: params.terrainSplotchEdge     ?? 0.35 },
             uSplotchStrength: { value: params.terrainSplotchStrength ?? 0.7  },
+            uDirtFlatGreen:   { value: params.terrainDirtFlatGreen   ?? 0.4  },
         }
         this._syncSurfacePalette()
         this._material.onBeforeCompile = (shader) => {
@@ -520,7 +521,7 @@ export class TerrainSystem {
             shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
                 'uniform sampler2D uSurfAlbG, uSurfNrmG, uSurfAlbD, uSurfNrmD, uSurfAlbR, uSurfNrmR;\n' +
                 'uniform vec3 uSurfScale; uniform float uSurfDepth, uSurfAlbedo, uSurfNormal;\n' +
-                'uniform float uSplotchSize, uSplotchCover, uSplotchEdge, uSplotchStrength;\n' +
+                'uniform float uSplotchSize, uSplotchCover, uSplotchEdge, uSplotchStrength, uDirtFlatGreen;\n' +
                 'uniform vec3 uColGrass, uColDirt, uColRock, uGrassPale, uGrassStraw, uGrassDark;\n' +
                 'varying vec3 vSurf;\n' +
                 // FEAT-84: blended tangent-space normal (xy), written at <color_fragment> where the
@@ -634,6 +635,11 @@ export class TerrainSystem {
                     diffuseColor.rgb = mix(diffuseColor.rgb, ts_spl, ts_b.x * uSplotchStrength * uDetailScale);
                     vec3 ts_alb = (ts_g.rgb * ts_b.x + ts_d.rgb * ts_b.y + ts_r.rgb * ts_b.z) * 4.0;
                     diffuseColor.rgb *= mix(vec3(1.0), ts_alb, uSurfAlbedo * uDetailScale);
+                    // Flat dirt: the green in the hollows (low dirt texel height) gets more
+                    // saturated as the ground flattens (owner 2026-09-24); hills keep the baked tone.
+                    float ts_flat = 1.0 - smoothstep(0.06, 0.22, 1.0 - clamp(vWorldNrm.y, 0.0, 1.0));
+                    float ts_hollow = 1.0 - smoothstep(0.2, 0.55, ts_d.a);
+                    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.82, 1.18, 0.72), ts_b.y * ts_flat * ts_hollow * uDirtFlatGreen * uDetailScale);
                     vec2 ts_ng = texture2D(uSurfNrmG, ts_p * uSurfScale.x).xy * 2.0 - 1.0;
                     vec2 ts_nd = texture2D(uSurfNrmD, ts_p * uSurfScale.y).xy * 2.0 - 1.0;
                     vec2 ts_nr = texture2D(uSurfNrmR, ts_p * uSurfScale.z).xy * 2.0 - 1.0;
@@ -2094,12 +2100,13 @@ export class TerrainSystem {
         U.uColDirt.value.setRGB(...hx(p.terrainDirtColor ?? 0x69481b))
         U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x72604b))
         U.uGrassPale.value.setRGB(...hx(p.terrainGrassPale  ?? 0x7f9650))
-        U.uGrassStraw.value.setRGB(...hx(p.terrainGrassStraw ?? 0x8a7a48))
+        U.uGrassStraw.value.setRGB(...hx(p.terrainGrassStraw ?? 0x4a3a26))
         U.uGrassDark.value.setRGB(...hx(p.terrainGrassDark  ?? 0x384f24))
         U.uSplotchSize.value     = p.terrainSplotchSize     ?? 8.0
         U.uSplotchCover.value    = p.terrainSplotchCover    ?? 0.45
         U.uSplotchEdge.value     = p.terrainSplotchEdge     ?? 0.35
         U.uSplotchStrength.value = p.terrainSplotchStrength ?? 0.7
+        U.uDirtFlatGreen.value   = p.terrainDirtFlatGreen   ?? 0.4
     }
 
     /**
