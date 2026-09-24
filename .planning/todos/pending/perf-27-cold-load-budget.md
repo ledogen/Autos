@@ -12,6 +12,35 @@ being mistaken for a shipping load-time optimization — it is a DEV convenience
 making the cold load WORSE for real players."
 ---
 
+> **2026-09-22 — THE FRAME FOR EVERYTHING BELOW: every load is a cold generation.** The typical
+> session is Minecraft-style: a fresh random seed and a world nobody has built before; a custom seed
+> or a resumed save regenerates from nothing too (owner; recorded in DESIGN.md, "Every world is
+> generated cold"). Saving generation data to speed up a resume was declined — the save stays
+> kilobytes. So **only pure generation wins count**. That rules out the per-region / per-seed route
+> cache suggested further down ("baking a cache per region"); caches are fine only inside ONE load.
+>
+> **Measure on a seed the session has not built.** A blank story seed rolls `Math.random()`, so a
+> real entry ALWAYS reseeds; `story-coldload.mjs --seed=6` (the boot seed) skips that and is the
+> wrong path. Use `--seed=811` or any other.
+>
+> **Correction to the 2026-09-07 "two thirds is terrain" reading below.** Per-phase bucket diffs
+> put terrain's main-thread work at ~3% of cold→driving at 1× and ~9% at 4×; the `ring` and refill
+> windows were mostly prop scatter and physics catch-up. The cost is road generation.
+>
+> **Landed on `feature/terrain-coldload` (A/B vs main, seed 811, loaded box): 1× 33.2 → 25.3 s,
+> 4× 50.4 → 36.3 s cold→driving.** All pure generation:
+> - The network worker discarded its warm RoadSystem on EVERY build: its reuse key hashed
+>   RANGER_PARAMS' per-frame physics scratch (`_tireFz`, …). One load builds the same new seed 3–4
+>   times (spawn tiers, then the 2800 m region); each now reuses the last one's routes.
+> - FEAT-77 clearance pass-1 routes (~6 s of the region pre-warm) ran inline on the network worker's
+>   one thread; now dispatched to the route pool as a first wave (`_warmPass1`).
+> - `_nearestOnPolyXZ` squared-distance pre-tests (self time 2.2 → 1.1 s).
+> - Terrain: story entry re-carves in place instead of disposing the ring twice; the loading screen
+>   holds until the ring is carved; a held sim no longer strands the render pose (and the terrain
+>   ring streaming around it) at the OLD spawn for the whole load.
+>
+> **Remaining, largest first (1×, seed 811, on the branch):** see the 2026-09-22 section at the end.
+
 > **2026-09-07 — RE-BASELINED after the merge train** (FEAT-76 wye→T, QUAL-30's 1 415-line deletion,
 > FEAT-41 menus, BUG-41 par, red-gates). Owner asked for it because worldgen timing moved a lot.
 > `test/story-coldload.mjs` against the BUILT app on `vite preview`, fresh Chrome profile per run.
@@ -198,9 +227,10 @@ the region warm actually matters (a slower machine, or after the rebuild is fixe
   flow implies. Worth deciding there rather than bolting a special case onto story entry.
 - **Do not shrink `REGION_RADIUS_M` for load reasons.** It costs play area and buys ~2.5 s. If the
   radius changes, let it be a design call about the play area.
-- If shipped story mode ends up with a fixed set of regions (FEAT-28 macro tiles), baking a cache
+- ~~If shipped story mode ends up with a fixed set of regions (FEAT-28 macro tiles), baking a cache
   per region removes the region warm entirely — but that is ~4 MB per region, and the warm is only
-  5.5 s, so it is a poor trade until the rebuild cost is gone.
+  5.5 s, so it is a poor trade until the rebuild cost is gone.~~ **RULED OUT 2026-09-22** — every
+  world is generated cold; no generation data ships or saves (see the frame at the top).
 - Terrain-side cost (PERF-22) is not implicated: the post-entry ring refill is 0.4 s at 1× / 2.4 s
   at 4×.
 
@@ -296,3 +326,20 @@ as a baseline.
       **DONE 2026-07-28** — `--mode=reseed` fixed (the lever did not exist; see item 4) and the
       answer is neither of the three as framed: 65% is main-thread `road.streamNetwork`, 19% prop
       scatter, terrain ~1%, route warm 2%.
+
+## 2026-09-22 — where the remaining cold load sits (pure generation only)
+
+Branch `feature/terrain-coldload`, seed 811, 1×, quiet-box run: **~16–20 s cold → driving**. Story
+entry, from click to driving, splits as below. The sizes are MEASURED; the "worth" column is an ESTIMATE, and
+each estimate is the thing to verify first.
+
+| Where | Measured | Lever | Worth (est.) |
+|---|---|---|---|
+| Region build, network-worker pre-warm | 5.4–6.2 s | route waves wait on their slowest job (0.7–0.9 s outliers, some on E-cores): dispatch longest-first, and merge waves where the dependency allows | 1–2 s |
+| Region build, serial plan layer | ~2.7 s pre-warm + ~2.0–2.5 s build | the pre-warm's wave 3 runs `_v2SettleDeletions`, then the build re-derives it after the rev bump — carry it instead; the other plan passes are one thread | 1–2 s |
+| Spawn resolve on the new seed | ~2 s (672 m + 228 m builds) | routes now carry into the region build, so the residue is the plan layer run twice on a small window | ≤1 s |
+| Go-live POI placement | 0.9 s + houses 0.3 s, main thread | dominated by cold water queries (`streamsInBBox`, `pondsInBBox`) | ~0.5–1 s |
+| Entry pump latency | ~0.5 s | `SETTLE_MIN_MS` 400 ms before the region build is issued; the done flag is polled every 250 ms | ~0.4 s |
+| **Build the story world behind the menu** | the whole ~12 s entry | pre-roll the blank-seed `Math.random()` at boot and generate THAT world (region included) while the player is in the menu. Still pure generation — nothing saved. Design call: free roam's boot world would then be random too, or be built second | hides up to all of it |
+
+The last row is the only one that changes the order of magnitude; the rest are each a second or so.

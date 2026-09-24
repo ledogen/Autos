@@ -92,3 +92,6 @@ the standing intent; story mode has no do-overs.
 - `REGION_RADIUS_M` is a story-layer value and must stay **out of** `routeCacheSig` — changing it
   must not invalidate a baked route cache. `REGION_WARM_RADIUS_M` is exported for the bake target;
   the bake derives from it, so do not re-introduce a literal.
+  *(2026-09-22: the bake subsystem was deleted 2026-08-19, and a per-region or per-seed route cache is
+  now ruled out as a load lever — every world is generated cold; see DESIGN.md, "Every world is
+  generated cold". The radius rule still holds for its own sake: routing must not depend on it.)*
