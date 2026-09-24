@@ -97,7 +97,7 @@ const MARK_EDGE_DASH_ON       = 8   // m: painted length per Mid-tier edge cycle
 export class RoadMeshSystem {
     /**
      * @param {THREE.Scene}     scene      — Three.js scene to add/remove road meshes
-     * @param {object}          roadSystem — RoadSystem instance (provides _tiles, ensureTile, _smoothDesignGrade)
+     * @param {object}          roadSystem — RoadSystem instance (provides _tiles, ensureTile, runProfile)
      * @param {Function}        terrainRef — (wx,wz)=>number  analytic height sampler
      * @param {object}          params     — RANGER_PARAMS (roadWidth, roadHalfWidth, crownHeight, camberMaxAngleDeg, ...)
      * @param {number}          [worldSeed=0] — world seed for roadQuality determinism (D-03)
@@ -885,9 +885,9 @@ export class RoadMeshSystem {
             // The slice spline's control points carry the routed network polyline .y, and
             // adjacent tile slices SHARE the exact boundary control point (C0) and tangent (C1)
             // by construction (D-06), so spline.getPointAt(u).y is continuous across tile seams.
-            // This replaces the per-tile _smoothDesignGrade call (which disagreed at slice
-            // boundaries and cache-missed on every stream — the Phase 9 seam-step + lag source).
-            // ~2 m longitudinal sampling resolution (same as prior _smoothDesignGrade output).
+            // This replaced the per-tile D-06 design-grade smoother (deleted FEAT-68), which
+            // disagreed at slice boundaries and cache-missed on every stream — the Phase 9
+            // seam-step + lag source. ~2 m longitudinal sampling resolution.
             // Split getLength from the sampling loop: getLength() is what BUILDS the Curve
             // arc-length LUT (getLengths, 200 divisions of getPoint) — getPointAt then only
             // binary-searches it. If the cost is LUT construction the fix is a different shape

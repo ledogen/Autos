@@ -925,10 +925,10 @@ export class TerrainSystem {
     /**
      * Sample terrain height at world-space (wx, wz) with NO carve hook applied.
      * Returns exactly the `raw` value from analyticHeight — height()*terrainAmplitude — but
-     * skips the _sampleCarveWorld blend entirely. This is the carve-free design-grade input
-     * source for _smoothDesignGrade (CR-04 fix): feeding the smoothing window a carve-inclusive
-     * value caused crown/camber/pothole to be baked into the design grade and then re-added
-     * downstream (double-count). rawHeightWorld removes that structural error.
+     * skips the _sampleCarveWorld blend entirely. The carve-free height every consumer that must
+     * not double-count the carve reads: the water system, the headless harness, and the pond /
+     * stream gates. (It was introduced as the CR-04 fix for the D-06 design-grade smoother, which
+     * baked crown/camber/pothole in and re-added them downstream; that smoother is gone.)
      *
      * Lives only on the main-thread TerrainSystem class — NOT in the worker (WORKER_SOURCE).
      * The Worker already stores raw heights and applies no carve blend; this method is a
