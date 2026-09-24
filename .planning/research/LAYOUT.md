@@ -52,7 +52,8 @@ vehicleState shape — one factory, so the world truck and the FEAT-41 menu-stag
 **World generation** — `seed.js` (PRNG, pure, worker-paste-able) · `terrain.js` (chunk ring +
 `WORKER_SOURCE`) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
 rock classification) · `map-cover.js` (map-resolution forest cover) · `water.js` (ponds/streams
-generation) · `water-render.js` · `stone-texture.js` (procedural riverbed texture).
+generation) · `water-render.js` · `stone-texture.js` (procedural riverbed texture) ·
+`terrain-texture.js` (FEAT-84: procedural grass/dirt/rock surface maps, DataTexture, headless-safe).
 
 **Road network** — `road.js` (RoadSystem: streaming, resolve, surface queries) · `road-graph.js`
 (blue-noise anchors + Urquhart topology) · `road-carve.js` (carve bodies, canonical for worker
@@ -65,9 +66,10 @@ network Worker's nested pool) · `road-route-worker.js` (route Worker module ent
 (The bundled route cache / `route-store.js` was deleted 2026-08-19 — owner call; the in-session
 cache in main.js is what remains.)
 
-**Props** — `props/`: `prop-system.js` (orchestrator) · `prop-palette.js` · `prop-geometry.js` ·
-`prop-scatter.js` · `prop-collider.js` · `prop-impostor.js` · `prop-shadow-bake.js` ·
-`prop-debug.js`.
+**Props** — `props/`: `prop-system.js` (orchestrator) · `prop-palette.js` (variant bake + the
+FEAT-85 cover material: wind sway + distance fade) · `prop-geometry.js` (blobs/tubes/cones + the
+FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `prop-collider.js` ·
+`prop-impostor.js` · `prop-shadow-bake.js` · `prop-debug.js`.
 
 **Rendering & atmosphere** — `sky.js` (time-of-day, ACES) · `moon.js` · `shadow-fade.js` ·
 `camera.js` (chase/cockpit/fly) · `vehicle-model.js` (procedural truck + cast lights) ·

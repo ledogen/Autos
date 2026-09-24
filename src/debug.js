@@ -484,6 +484,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'terrainRelRadius', 10, 120, 5).name('Meadow radius (m)').onChange(_recolor)
   lookFolder.add(params, 'terrainMeadowRelLo', -30, 0, 1).name('Meadow full at (m)').onChange(_recolor)
   lookFolder.add(params, 'terrainMeadowRelHi', -15, 2, 0.5).name('Meadow start at (m)').onChange(_recolor)
+  lookFolder.add(params, 'terrainKnollRelLo', 0, 15, 0.5).name('Knoll rock from (m)').onChange(_recolor)
+  lookFolder.add(params, 'terrainKnollRelHi', 0, 30, 0.5).name('Knoll rock full at (m)').onChange(_recolor)
+  lookFolder.add(params, 'terrainKnollRock', 0, 1, 0.05).name('Knoll rock share').onChange(_recolor)
   lookFolder.add(params, 'terrainTreelineLo', 0, 200, 5).name('Treeline low (m)').onChange(v => { _setU('uTreeLo', v); _recolor() })
   lookFolder.add(params, 'terrainTreelineHi', 0, 300, 5).name('Treeline high (m)').onChange(v => { _setU('uTreeHi', v); _recolor() })
   lookFolder.add(params, 'terrainDetailScale', 0, 1, 0.05).name('Detail scale (0=off)').onChange(v => _setU('uDetailScale', v))
@@ -491,6 +494,22 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'terrainMottleStrength', 0, 0.6, 0.02).name('Mottle strength').onChange(v => _setU('uMottle', v))
   lookFolder.add(params, 'terrainBumpStrength', 0, 2.0, 0.05).name('Rock bump strength').onChange(v => _setU('uBump', v))
   lookFolder.add(params, 'roadShoulderBump', 0, 2.0, 0.05).name('Shoulder bump').onChange(v => _setU('uShoulderBump', v))
+  // FEAT-84: surface texture blend — live uniforms, no rebuild. Tile sizes are metres/repeat and
+  // land in the uSurfScale vec3 (repeats/m) through the same callback (name → component).
+  lookFolder.add(params, 'terrainTexNormal', 0, 2.0, 0.05).name('Surface relief').onChange(v => _setU('uSurfNormal', v))
+  lookFolder.add(params, 'terrainTexAlbedo', 0, 1.0, 0.05).name('Surface albedo').onChange(v => _setU('uSurfAlbedo', v))
+  lookFolder.add(params, 'terrainTexBlendDepth', 0.02, 1.0, 0.02).name('Surface blend depth').onChange(v => _setU('uSurfDepth', v))
+  lookFolder.add(params, 'terrainTexTileGrass', 0.5, 6, 0.1).name('Grass tile (m)').onChange(v => _setU('uSurfScale.x', 1 / v))
+  lookFolder.add(params, 'terrainTexTileDirt', 0.5, 8, 0.1).name('Dirt tile (m)').onChange(v => _setU('uSurfScale.y', 1 / v))
+  lookFolder.add(params, 'terrainTexTileRock', 1, 16, 0.25).name('Rock tile (m)').onChange(v => _setU('uSurfScale.z', 1 / v))
+  // Grass splotch palette — routed through the recolour so _syncSurfacePalette re-derives the factors.
+  lookFolder.addColor(params, 'terrainGrassPale').name('Grass splotch: pale').onChange(_recolor)
+  lookFolder.addColor(params, 'terrainGrassStraw').name('Grass splotch: straw').onChange(_recolor)
+  lookFolder.addColor(params, 'terrainGrassDark').name('Grass splotch: dark').onChange(_recolor)
+  lookFolder.add(params, 'terrainSplotchSize', 2, 30, 0.5).name('Splotch size (m)').onChange(v => _setU('uSplotchSize', v))
+  lookFolder.add(params, 'terrainSplotchCover', 0.1, 0.7, 0.02).name('Splotch cover').onChange(v => _setU('uSplotchCover', v))
+  lookFolder.add(params, 'terrainSplotchEdge', 0.05, 3, 0.05).name('Splotch edge (m)').onChange(v => _setU('uSplotchEdge', v))
+  lookFolder.add(params, 'terrainSplotchStrength', 0, 1, 0.05).name('Splotch strength').onChange(v => _setU('uSplotchStrength', v))
 
   // ── Water folder (FEAT-24 meadow meander streams; FEAT-17/18 rarity dials) ────────────
   // Every dial reshapes the deterministic water records + the terrain stream carve, so all

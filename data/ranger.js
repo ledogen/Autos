@@ -928,6 +928,12 @@ export const RANGER_PARAMS = {
   terrainRelRadius:    40,     // m — neighbourhood radius for the local-mean low-pass (valley scale)
   terrainMeadowRelLo:  -12,    // m — rel at/below this (deep basin) reads full meadow
   terrainMeadowRelHi:  -2,     // m — rel at/above this (flat bench) reads fertile, not meadow
+  // FEAT-84 knolls: ground standing this far ABOVE its neighbourhood picks up rock share (the
+  // fragment texture pokes through the grass on local maxima). Capped by terrainKnollRock so the
+  // vertex stays a mix and the height contest decides texel by texel.
+  terrainKnollRelLo:    1.5,   // m — rel where the knoll rock begins
+  terrainKnollRelHi:    6,     // m — rel where it reaches terrainKnollRock
+  terrainKnollRock:     0.55,  // [-] max rock share a knoll adds (0 = off)
 
   // Procedural fbm detail (shared shader in terrain-detail.js — terrain + road shoulder).
   // terrainDetailScale is the master multiplier AND a perf kill-switch: 0 disables the
@@ -937,4 +943,26 @@ export const RANGER_PARAMS = {
   terrainMottleStrength: 0.22, // [-] albedo mottle depth (multiplies biome colour)
   terrainBumpStrength:   0.7,  // [-] normal-perturbation strength on rocky/high terrain
   roadShoulderBump:      0.5,  // [-] gravel bump strength on the dirt road shoulder only
+
+  // FEAT-84: per-zone surface detail maps (terrain-texture.js — procedural grass / dirt / rock,
+  // blended by the vertex biome weights, height-weighted at the interfaces). All behind the
+  // terrainDetailScale kill-switch. Tile sizes are metres per texture repeat.
+  terrainTexNormal:     0.8,   // [-] strength of the per-zone normal (relief) maps (0 = off)
+  terrainTexAlbedo:     0.55,  // [-] how much the albedo modulation shows (0 = flat palette colour)
+  terrainTexBlendDepth: 0.22,  // [-] interface softness: 0 = hard height contest, 1 = plain crossfade
+  terrainTexTileGrass:  2.0,   // m — tuft field repeat (1.6 was unreadable a few metres from the truck)
+  terrainTexTileDirt:   2.4,   // m — clod/pebble field repeat
+  terrainTexTileRock:   8.0,   // m — fractured-plate field repeat (~1.5–2 m plates; 5 m read as cobbles)
+  // Grass splotches (owner 2026-09-23): round, crisp-edged mats of colour over the meadow — the
+  // splotchy creep of California native shrubs — as two cellular blob layers (terrain.js
+  // tsBlobs): big mats on a terrainSplotchSize-metre lattice, small ones at 0.4× laid on top. Each
+  // mat takes one of the three absolute colours below; the ground between them keeps the picker's
+  // meadow/fertile colour.
+  terrainGrassPale:     0x7f9650, // pale "sedum" green mats
+  terrainGrassStraw:    0x8a7a48, // dead-grass straw mats
+  terrainGrassDark:     0x384f24, // darker, more desaturated green mats
+  terrainSplotchSize:   8.0,      // m — lattice cell of the big mats (blob radius = cover × this)
+  terrainSplotchCover:  0.45,     // [-] max blob radius in cells (0.5 = mats touch; lower = sparser)
+  terrainSplotchEdge:   0.35,     // m — edge softness (the "relatively clearly defined" edge)
+  terrainSplotchStrength: 0.7,    // [-] how far a mat replaces the palette colour (0 = off)
 };

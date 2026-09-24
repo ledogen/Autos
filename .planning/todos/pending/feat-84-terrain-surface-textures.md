@@ -1,0 +1,113 @@
+---
+id: FEAT-84
+type: feature
+status: in-progress
+severity: minor
+opened: 2026-09-22
+source: owner request 2026-09-22 ("distinct textures for rock, dirt, and grass … blending normals or textures together at these three interfaces")
+relates: FEAT-05 (the alpine biome colour + fbm detail this sits on), FEAT-25 (stone-texture.js — the procedural-texture precedent), FEAT-85 (roadside cover, built alongside), ART-STYLE.md rule 1 (the style exception ruled below)
+branch: feature/roadside-cover (worktree CarGame-roadside-cover, :3754)
+---
+
+# FEAT-84: Per-zone surface textures — grass / dirt / rock, height-blended at the interfaces
+
+## Request
+
+The terrain is coloured per vertex into three natural zones (dirt, vegetation, rock — slope and
+altitude decide) plus the engineered cut/fill zones, with a monochrome fbm mottle and a rock-only
+noise bump on top. The owner wants each zone to carry its own surface detail and the three to
+blend "at their interfaces" rather than crossfade.
+
+## Rulings (owner, 2026-09-22)
+
+- **Style exception, scoped.** ART-STYLE.md rule 1 says no textures. Ruled: a texture *generated
+  at boot from a seed* ships no asset and stays in the "generate the artwork" spirit
+  (`stone-texture.js` is the precedent). Hand-painted images remain out.
+- **Channel:** normal (relief) + a *subtle* albedo modulation. The maps multiply the vertex palette
+  colour (0.5 = ×1), so the colour pickers still drive the look and the palette stays flat.
+- **Blend:** height-weighted. Each map carries its height in alpha; at an interface the taller
+  feature wins, feathered over a depth — rock plates poke through thinning grass instead of a
+  dissolve.
+
+## What shipped (this branch)
+
+- `src/terrain-texture.js` — `makeSurfaceTextures(seed, size, bases)`: three tileable
+  (toroidal) DataTexture pairs. GRASS = thousands of tapered strokes (tufts) over soft fbm; DIRT =
+  fbm clods + pebbles in a sun-washed brown + grey palette (absolute targets relative to the dirt
+  colour; the albedo packs ×4 so a grey pebble can sit on a brown base); ROCK (owner's second
+  pass: the bevelled-Voronoi first cut read as a cracked mud flat) = tilted plate facets with
+  hard-edged joints, long random-walk fissures, and hundreds of small angular rubble polygons on
+  top — both scales at once. Pure typed arrays (no canvas — a 2D canvas premultiplies colour by
+  alpha and would corrupt the albedo where the height is low), so it runs headless and is gated.
+- `src/terrain.js` — `_writeChunkVertexColors` also writes `aSurf` = (grass, dirt, rock) weights
+  from the same feathered decision the colour is made from (cut face → rock, fill → dirt). The
+  fragment blend at `<color_fragment>`: `w' = w · (1 + h)`, `b = max(w' − (max(w') − depth), 0)`
+  normalised; albedo modulation mixed in by `uSurfAlbedo`; the blended tangent normal applied at
+  `<normal_fragment_begin>` next to the FEAT-05 bump, scaled by `uSurfNormal`. All behind
+  `uDetailScale > 0` (Low's kill-switch).
+- **Local colouring** (owner: "if we want rocks poking through dirt we have to colour the rocks
+  locally"): the share a zone GAINS in the height contest over its vertex weight pulls the
+  fragment toward that zone's palette colour (`uColRock/Dirt/Grass`, synced from the params by
+  `_syncSurfacePalette` on every recolour), so a rock plate surfacing in dirt is grey, not brown
+  relief.
+- **Grass splotches**: a world-space ~25 m field (`terrainSplotchFreq`) picks between pale
+  "sedum" green, dead-grass straw and a darker desaturated green (`terrainGrassPale/Straw/Dark`,
+  relative to the grass colour so the picker moves the family); pickers under Terrain Look.
+- Params (`data/ranger.js`): `terrainTexNormal 0.8`, `terrainTexAlbedo 0.55`,
+  `terrainTexBlendDepth 0.22`, tiles grass 2.0 m / dirt 2.4 m / rock 8 m. Live sliders under
+  Terrain Look (alpine). `vegBlendOf()` exported — the ONE vegetation rule, also read by FEAT-85.
+- Gate `test/terrain-texture.mjs` (fast): determinism, seamless wrap, height span, modulation
+  centred on ×1, upward normals.
+
+## Acceptance
+
+- [x] Three distinct surfaces visible in-game on grass / dirt / rock ground; cut faces read rock,
+      fill embankments read dirt.
+- [x] Interfaces interlock (taller wins) rather than crossfade; `terrainTexBlendDepth` → 1 gives
+      the plain crossfade back.
+- [x] Colour pickers still recolour each zone; `terrainDetailScale 0` removes everything.
+- [x] No image assets; gate green; headless imports unaffected.
+- [x] Rock reads as relief, not ink (close-up 2026-09-23): plate shoulders roll into the joints,
+      facets at ~6° (normal scale 12 — the physical unit is ~0.25 m per height unit over 3 cm
+      texels), rubble collects along the fissures, joints only slightly darker in albedo.
+- [x] Pebbles read as stones, not salt (targets kept close to the soil value; ~300 per tile).
+- [x] Steep faces (owner pass 3, 2026-09-23: "traced-out paths and crumbs on top"): the angular
+      fragments ARE the surface now — packed to 80 % cover (gated), 0.1–0.85 m, big blocks first —
+      and the plate/fissure field only fills the gaps. The rock zone is also projected from the
+      SIDE on steep ground (ZY/XY by the face normal, mirrored per side, blended by steepness) so a
+      cliff keeps fragment shapes instead of streaking the top-down projection down its face.
+- [x] Dirt pebbles (owner pass 4): ANGULAR fragments like the rock crumbs, ~50 % cover (gated
+      42–60 %), patchy by an in-tile fbm mask (gravelly stretches vs bare clods).
+- [x] Knolls: ground standing 1.5–6 m above its 40 m neighbourhood (the meadow rule's `rel`,
+      positive) picks up to 0.55 rock share (`terrainKnollRelLo/Hi`, `terrainKnollRock`), so the
+      fragment texture pokes through the grass on local maxima with local colouring. NOT yet
+      eyeballed on an actual knoll — the verification framings were all basin floor.
+- [x] Owner pass 5 (2026-09-23, first DRIVE): "the frequency of large shapes on the bumpmap is
+      perfect" — the rock relief is ruled done, do not touch the fragment/plate recipe.
+- [x] Pass 5: GREEN UNDER THE ROCKS — the 20 % of the rock tile between fragments (the plate
+      filler + joints) is now a foliage green (`ROCK_GAP_GREEN`, absolute target relative to the
+      rock picker, relief shading kept), "to suggest foliage hiding beneath the larger rocks".
+- [x] Pass 5: GREEN UNDER THE DIRT — the soil between the pebbles pulls toward a dusty green in
+      the HOLLOWS (`DIRT_UNDER_GREEN` × (1 − clod crown), 0.75 mix); the clod crowns and the pebble
+      "splashes of colour" stay brown/grey.
+- [x] Pass 5: GRASS SPLOTCHES REWRITTEN — the fbm field (three soft thresholds over a ~25 m fbm)
+      never read: fbm sits near 0.5 so the meadow was one dark colour with rare soft patches
+      ("it still looks all the same colour to me"). Now two CELLULAR blob layers (`tsBlobs` in the
+      terrain shader): every lattice cell of `terrainSplotchSize` m (8) drops one round blob of
+      radius 0.55–1 × `terrainSplotchCover` cells, a second layer at 0.4× the size on top, edges
+      crisp over `terrainSplotchEdge` m (0.35), lattice domain-warped by two fbm octaves so the
+      mats creep instead of reading as circles. Each blob takes pale / straw / dark by its hash;
+      the ground between mats keeps the picker's meadow colour. Blended at
+      `terrainSplotchStrength` (0.7), independent of the albedo slider. Seen overhead + eye level:
+      irregular mats with defined edges. Sliders: Terrain Look → Splotch size / cover / edge /
+      strength + the three pickers. Owner to tune — the colours are still the pass-2 guesses.
+- [x] Pass 5: grass tuft strokes widened (brightness 0.78–1.22, yellowing ±0.16, normal 2.4) —
+      "texture still isn't really visible" — secondary to the splotch rewrite above.
+
+## Known limits / follow-ups
+
+- Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second
+  rotated tap blended by low-frequency noise is the standard fix (doubles the texture cost).
+- The road-mesh dirt skirt (the vertical shoulder wall in `road-mesh.js`) keeps its fbm gravel
+  bump only; it is a near-vertical strip and a planar XZ texture would smear on it.
+- Meadow vs fertile green share one grass map.
