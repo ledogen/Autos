@@ -22,7 +22,7 @@ export const FLORA_PARAMS = {
     clustersPerChunk: 4,        // tree cluster centres seeded per chunk (grouping)
     clusterRadius:    18,       // m — individuals scatter within this of a cluster centre
     treesPerCluster:  [4, 11],  // [min,max] individuals per cluster
-    rocksPerChunk:    [12, 26], // collidable rocks (independent scatter) — denser per user
+    rocksPerChunk:    [8, 18],  // collidable rocks (independent scatter) — 12–26 × 0.7, owner 2026-09-24 ("medium and large −30 %")
     smallRocksPerChunk:[60, 110],// decorative <0.1 m rocks (non-collidable; also shoulder + road) — owner 2026-09-23: "a ton more"; the zone pass below adds the localised ones
     streamRockBoost:  3,        // FEAT-25: extra channel-rock attempts = base small-rock attempts × this
                                 //   (denser cobble scatter in stream beds/banks; USER-OWNED density dial)
@@ -69,7 +69,7 @@ export const FLORA_PARAMS = {
       onRock:     1.0,          // keep weight where the ground is rock
       onDirt:     0.35,         //   … dirt (owner: "more … but not as much as the rocky terrain")
       onGrass:    0.06,         //   … grass
-      mix:        [0.58, 0.32, 0.10],   // share small / medium / large
+      mix:        [0.58, 0.224, 0.07],  // share small / medium / large of the attempts (need not sum to 1 — the rest are skipped); med+large × 0.7, owner 2026-09-24
     },
 
     // ── FEAT-85: roadside cover — where grass tufts and brush stand ───────────────────────

@@ -345,7 +345,7 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
   const Z = S.zoneRocks
   if (Z && Z.attempts > 0 && samplers.groundAt && P.medRock) {
     const zrng = mulberry32(seedFor(worldSeed, 'zoneRocks', cx, cz))
-    const mixS = Z.mix[0], mixM = mixS + Z.mix[1]
+    const mixS = Z.mix[0], mixM = mixS + Z.mix[1], mixL = mixM + Z.mix[2]   // shares of the attempts; past mixL → none
     for (let i = 0; i < Z.attempts; i++) {
       const x = ox + zrng() * size, z = oz + zrng() * size
       // three draws per candidate regardless of the gate, so the stream stays aligned
@@ -364,7 +364,7 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
       } else if (uSize < mixM) {
         if (!roadClear(x, z, S.roadHalfWidth + 0.5 + blobBoundR(P.medRock))) continue
         placeBlob('medRock', x, z, P.medRock.buryFrac, true, zrng)
-      } else {
+      } else if (uSize < mixL) {
         placeBlob('rock', x, z, P.rock.buryFrac, false, zrng)     // collidable: full keep-out inside placeBlob
       }
     }
