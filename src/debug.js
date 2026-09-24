@@ -662,7 +662,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   roadCutSlope:        0.5–2 H:V (default 1.0, step 0.05 — D-08)
   //   roadFillSlope:       1.5–5 H:V (default 3.0, step 0.1 — D-08)
   //   roadShoulderWidth:   1–6 m (default 2.5, step 0.5 — D-05)
-  //   designGradeWindow:   10–150 m (default 50, step 5 — D-06)
   //   roadCliffSlopeLo/Hi: slope thresholds for cliff shading (D-11)
   const fireSurface = () => { if (typeof callbacks.onRoadSurfaceChange === 'function') callbacks.onRoadSurfaceChange() }
   const surfaceFolder = roadFolder.addFolder('Road Surface')
@@ -680,7 +679,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // banks + fewer fan-shaped shards at tight turns; higher = gentler banks but more cross-arm overlap.
   surfaceFolder.add(params, 'roadMaxEmbankmentToe', 3,   20,    0.5 ).name('Max Embankment Toe (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadShoulderWidth',    1,    6,    0.5 ).name('Shoulder Width (m)').onChange(fireSurface)
-  surfaceFolder.add(params, 'designGradeWindow',   10,  150,   5   ).name('Grade Window (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCliffSlopeLo',     0,    0.5,  0.02).name('Cliff Slope Lo').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCliffSlopeHi',     0.3,  0.9,  0.02).name('Cliff Slope Hi').onChange(fireSurface)
 
@@ -772,7 +770,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadFillSlope:         'Steepness of fill banks where the road is built up, as H:V (lower = steeper).',
     roadMaxEmbankmentToe:  'Caps how far (m) the embankment apron spreads past the road. Lower = tighter banks, fewer shards at tight turns.',
     roadShoulderWidth:     'Width (m) of the dirt shoulder flanking each side of the paved surface.',
-    designGradeWindow:     "Smoothing window (m) for the road's lengthwise grade profile. Larger = smoother rises and dips.",
     roadCliffSlopeLo:      'Lower slope threshold where terrain starts shading as cliff rock.',
     roadCliffSlopeHi:      'Upper slope threshold where terrain is fully cliff rock.',
     roadSkirtDepth:        'How far (m) the road-edge skirt drops below the ribbon to hide seams against terrain.',

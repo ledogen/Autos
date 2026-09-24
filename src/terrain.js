@@ -902,6 +902,7 @@ export class TerrainSystem {
         if (this._enabled === false) return
         this._syncTunnelUniforms(carPos)
         const { cx: ccx, cz: ccz } = this._worldToChunk(carPos.x, carPos.z)
+        this._lastCcx = ccx; this._lastCcz = ccz   // isRingSettled() asks about the ring the LAST update built
         let _pt = performance.now()
         this._updateChunkRing(ccx, ccz)
         perfAdd('terrain.updateChunkRing', performance.now() - _pt)   // TEMP: includes dispatch-path carve + re-carve pass
@@ -1017,6 +1018,67 @@ export class TerrainSystem {
      * The _pendingWorker race-fix ordering is preserved: _pendingWorker is cleared here
      * so all keys are releasable, and the next update() will re-request the ring cleanly.
      */
+    /**
+     * Re-carve live chunks IN PLACE, keeping their meshes, colliders and raw heights. Use it when
+     * the carve INPUTS changed but the seed did not: a newly adopted road network, or pads handed
+     * to the carve. rebuildAllChunksFromWorker is for a new seed, where the heights themselves change.
+     *
+     * The difference matters behind story entry. Disposing the ring put the player on ZERO chunks and
+     * ZERO ground colliders for the whole refill (0.8 s at 1×, 4 s at 4×-throttled CPU, measured
+     * 2026-09-22), and paid the worker round-trip for heights that were already in memory. Here the
+     * old ground stays on screen and on the collider until each chunk's new carve lands.
+     *
+     * Pads never bump roadGeneration (road.js setPoiPads: by design, so the route caches survive),
+     * so the generation check in the re-carve pass cannot see them. That is why this marks chunks
+     * stale EXPLICITLY (chunk.carveStale) rather than faking a generation.
+     *
+     * @param {Array<{x:number,z:number,reach:number}>|null} regions — only chunks a region's disc
+     *   touches are re-carved (same overlap test _carveTableGen uses for pads). null ⇒ every chunk.
+     */
+    recarveInPlace(regions = null) {
+        const S = CHUNK_SIZE, cell = S / (GRID_SAMPLES - 1)
+        const touches = (cx, cz) => {
+            if (!regions) return true
+            const x0 = cx * S, z0 = cz * S
+            for (const r of regions) {
+                const px = Math.max(x0, Math.min(x0 + S, r.x)), pz = Math.max(z0, Math.min(z0 + S, r.z))
+                if (Math.hypot(r.x - px, r.z - pz) <= r.reach + cell) return true
+            }
+            return false
+        }
+        let marked = 0
+        for (const [key, chunk] of this._chunkMap) {
+            const ci = key.indexOf(',')
+            if (touches(+key.slice(0, ci), +key.slice(ci + 1))) { chunk.carveStale = true; marked++ }
+        }
+        // A chunk mid-carve captured the OLD inputs (pad list, spline samples) when its generator was
+        // made — restart it. Queued chunks have not started, so they will read the new inputs anyway.
+        const job = this._activeBuild
+        if (job && touches(job.cx, job.cz)) job.gen = this._carveTableGen(job.cx, job.cz, job.heights)
+        // Behind a loading screen nobody sees a hitch, so spend the burst budget on these (the same
+        // reasoning as PERF-13's initial fill). Cleared by the re-carve pass once nothing is stale.
+        if (marked) this._recarveBurst = true
+        return marked
+    }
+
+    /**
+     * True when the VISIBLE ring around the last update's centre is fully built and carved against
+     * the current inputs — the moment a loading screen can hand the world over. The warm margin is
+     * left out on purpose: it exists to be built before it is seen, not to hold the handover.
+     */
+    isRingSettled() {
+        if (this._lastCcx === undefined || this._activeBuild) return false
+        const r = this._ringRadius ?? RING_RADIUS
+        const gen = this._roadSystem ? this._roadSystem.roadGeneration() : null
+        for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+            const cx = this._lastCcx + dx, cz = this._lastCcz + dz
+            const chunk = this._chunkMap.get(this._chunkKey(cx, cz))
+            if (!chunk || chunk.carveStale) return false
+            if (this._roadSystem && (chunk.builtRoadGeneration !== gen || chunk.builtRoadCovered !== this._roadCoversChunk(cx, cz))) return false
+        }
+        return true
+    }
+
     rebuildAllChunksFromWorker() {
         console.log(`[terrain] rebuildAllChunksFromWorker — disposing ${this._chunkMap.size} chunks (FULL terrain regen)`)  // TEMP probe (D-arc)
         // Dispose all built chunk meshes and remove from scene
@@ -1076,10 +1138,10 @@ export class TerrainSystem {
     /**
      * Sample terrain height at world-space (wx, wz) with NO carve hook applied.
      * Returns exactly the `raw` value from analyticHeight — height()*terrainAmplitude — but
-     * skips the _sampleCarveWorld blend entirely. This is the carve-free design-grade input
-     * source for _smoothDesignGrade (CR-04 fix): feeding the smoothing window a carve-inclusive
-     * value caused crown/camber/pothole to be baked into the design grade and then re-added
-     * downstream (double-count). rawHeightWorld removes that structural error.
+     * skips the _sampleCarveWorld blend entirely. The carve-free height every consumer that must
+     * not double-count the carve reads: the water system, the headless harness, and the pond /
+     * stream gates. (It was introduced as the CR-04 fix for the D-06 design-grade smoother, which
+     * baked crown/camber/pothole in and re-added them downstream; that smoother is gone.)
      *
      * Lives only on the main-thread TerrainSystem class — NOT in the worker (WORKER_SOURCE).
      * The Worker already stores raw heights and applies no carve blend; this method is a
@@ -1330,10 +1392,13 @@ export class TerrainSystem {
         // CARVE SYNC: carve never enters the worker (WORKER_SOURCE) — it is a post-read main-thread blend.
         if (this._roadSystem) {
             const currentRoadGen = this._roadSystem.roadGeneration()
-            const recarveDeadline = performance.now() + BUILD_MS_BUDGET   // PERF-02: time-slice, not fixed count
-            let recarved = 0
+            // recarveInPlace() arms a burst: it only ever runs behind a loading screen (story entry).
+            const burst = this._recarveBurst === true
+            const recarveDeadline = performance.now() + (burst ? 16 : BUILD_MS_BUDGET)   // PERF-02: time-slice, not fixed count
+            const maxRecarves = burst ? 8 : MAX_BUILDS_PER_FRAME
+            let recarved = 0, anyStale = false
             for (const [key, chunk] of this._chunkMap) {
-                if (recarved >= MAX_BUILDS_PER_FRAME || performance.now() >= recarveDeadline) break
+                if (recarved >= maxRecarves || performance.now() >= recarveDeadline) { anyStale = true; break }
                 const [cx, cz] = key.split(',').map(Number)
                 // Two independent reasons a live chunk's carve is stale:
                 //   (a) the road CHANGED SHAPE under it   → generation differs (param re-route);
@@ -1343,7 +1408,7 @@ export class TerrainSystem {
                 //       teleport destination permanently uncarved (deck in the air, no ribbon)
                 //       until the chunk happened to be evicted and re-streamed.
                 const covered = this._roadCoversChunk(cx, cz)
-                if (chunk.builtRoadGeneration === currentRoadGen && chunk.builtRoadCovered === covered) continue
+                if (chunk.builtRoadGeneration === currentRoadGen && chunk.builtRoadCovered === covered && !chunk.carveStale) continue
                 const newCarveData = this._buildCarveTable(cx, cz, chunk.heights)   // PERF-03 #1: reuse stored raw heights
                 // Re-apply heights + carve blend to the mesh Y positions (same formula as _flushPendingQueue).
                 // FEAT-18: chunk.streamData is reused as-is — streams are a pure fn of (seed, water
@@ -1363,9 +1428,12 @@ export class TerrainSystem {
                 chunk.carveData = newCarveData ?? null
                 chunk.builtRoadGeneration = currentRoadGen
                 chunk.builtRoadCovered = covered
+                chunk.carveStale = false
                 this._physicsHook?.syncChunk(key, cx, cz, pos, N, CHUNK_SIZE)  // FEAT-48: recarved Y ⇒ rebuild collider
                 recarved++
             }
+            // A full pass that recarved nothing ⇒ nothing is stale any more: disarm the burst.
+            if (burst && recarved === 0 && !anyStale) this._recarveBurst = false
         }
 
         // Request new chunks not yet loaded or pending.

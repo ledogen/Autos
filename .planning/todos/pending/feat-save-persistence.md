@@ -79,6 +79,12 @@ Not a checkpoint. A pause button that survives closing the browser.
 Contents (per `run-shape.md` — kilobytes, because worldgen is meta-free so **the world is never
 serialized**):
 
+> **Owner, 2026-09-22: no generation data in the save, not even as a load-time cache.** A resume
+> regenerates the world from `worldSeed` cold, exactly like a new run (DESIGN.md, "Every world is
+> generated cold"). Caching routes / networks / carve tables in the save to speed up a resume was
+> considered and declined — it would inflate the save for a cost every new run pays anyway. Resume
+> load time is PERF-27's problem, solved by faster generation, not by this ticket.
+
 ```
 runSave = {
   version, worldSeed,

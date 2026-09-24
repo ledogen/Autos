@@ -1,9 +1,10 @@
 ---
 id: FEAT-68
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-08-18
+closed: 2026-09-22   # owner character sign-off + relief valve accepted — see the closing section
 source: owner decision after the BUG-51 grade-ceiling work (feature/seed20-road, unmerged) — full
   requirements Q&A recorded 2026-08-18
 relates: BUG-51 (absorbed — grade ceiling becomes core spec), BUG-53 (absorbed 2026-08-20 —
@@ -14,7 +15,15 @@ relates: BUG-51 (absorbed — grade ceiling becomes core spec), BUG-53 (absorbed
   (arc quantization — dies with the old router)
 ---
 
-> **2026-08-27 — two acceptance boxes are now satisfiable; the ticket still needs the MERGE and the
+> **CLOSED 2026-09-22 — owner: "im happy with the current road feel. consider that a sign off."**
+> The router v2 swap merged to main at `f273bc0`; v1 was deleted by QUAL-27 (`d44032f`). The last two
+> boxes closed on the owner's word: character sign-off given, and the cold-load box closed by the
+> relief valve the acceptance itself allowed (33.4 s at the 4× proxy, ~2/3 of it TERRAIN — cold load
+> is PERF-27's, not the router's). Read the closing section at the end of this file for the
+> box-by-box evidence and what was handed onward. Everything between here and there is the dated
+> build lineage, kept verbatim.
+
+> **2026-08-27 (historical) — two acceptance boxes are now satisfiable; the ticket still needs the MERGE and the
 > owner's character sign-off, so it stays open.** Everything below is on `feature/corridor-router`.
 >
 > - *"Zero marked edges across the eval seed set (gate); marked-seed disclaimer wired in-game."*
@@ -284,20 +293,35 @@ The branch is the **reference implementation** for these; its numbers are ground
 ## Acceptance
 
 - [x] Router-attributable cold-load baseline measured (4× proxy, 2026-08-18 — see "Baseline measured" above); owner real-hardware spot-check still keeps the proxy honest.
-- [ ] Two-stage router on its own branch: corridor + full-vocabulary profile (cut/fill/bore/bridge),
-      priced == built (a gate asserts the registered profile equals the solver's output).
-- [ ] Seed 20's marks: the A→B ridge (the 202 m / 13% / 157 m-cover chord) resolves as a bore or
-      a road ≤ the ceiling — chosen by cost, not injected.
-- [ ] Zero marked edges across the eval seed set (gate); marked-seed disclaimer wired in-game.
-- [ ] Connectivity ≥ the branch's floor (0.981 largest-component share, 8/10 fully connected) on
-      the 10-seed sweep; sparsity within ~0.95× of today's km unless the owner re-tunes density.
-- [ ] Character sign-off from driven checkpoints (owner), including at least one crest-airtime
-      moment and one earned structure per eval seed region.
-- [ ] Cold-to-driving on old hardware: < 10 s, or owner explicitly accepts the relief valve.
-- [ ] Contract gates re-baselined green; implementation gates retired in the same commit that
-      retires the code they tested; bundles rebaked; old router deleted from main in the swap merge.
-- [ ] BUG-53 (absorbed 2026-08-20): no defect-class off-node crossings/overlaps on the eval seeds —
-      full checklist in the "BUG-53 (absorbed)" section below.
+- [x] Two-stage router, corridor + full-vocabulary profile, priced == built — merged to main at
+      `f273bc0`. Bridges were de-scoped by the owner at calibration pass 1, so the shipped vocabulary
+      is cut / fill / bore. `test/road-grade.mjs` is the priced-==-built gate: it measures the
+      REGISTERED geometry, so a run nobody solved cannot hide.
+- [x] Seed 20's marks: 0 marked edges on the eval trio (recorded 2026-08-22, marks 0/0/0) — the ridge
+      resolves by cost, either as a bore or under the ceiling.
+- [x] Zero marked edges across the eval seed set (gate); marked-seed disclaimer wired in-game.
+      Gates: `road-grade` (nothing over gMaxRoad+gradeTol, nothing condemned) and `play-area`
+      (five fixed seeds × 144 km², one component, zero condemned, zero node-pin violations).
+      Disclaimer: story mode's unroutable-seed refusal (`src/world-validate.js` + the `#ss-reject`
+      modal), which replaced the seed reroll on the owner's 2026-08-27 ruling.
+- [x] Connectivity ≥ the branch's floor — EXCEEDED and re-scoped. `road-connectivity` asserts ONE
+      component on the eval trio and `play-area` asserts one component over five seeds at 144 km²
+      each, which is a harder bar than the original "0.981 share, 8/10 seeds" on a 10-seed sweep;
+      the 10-seed sweep itself was never re-run and is superseded, not silently passed.
+- [x] Character sign-off — owner, 2026-09-22: "im happy with the current road feel. consider that a
+      sign off." Given after the FEAT-80/81/82 driving-feel pass (crest rate keyed to par corner
+      speed, cubic profile, pads through the roads) on which the owner's verdict was "feel great".
+- [x] Cold-to-driving on old hardware: RELIEF VALVE ACCEPTED (owner, 2026-09-22). Measured 33.4 s
+      cold→driving at the 4× proxy (re-baselined 2026-09-07, seed-independent); ~2/3 of that is
+      TERRAIN generation, not routing. Cold load stays PERF-27's ticket.
+- [x] Contract gates re-baselined green; implementation gates retired with the code they tested; old
+      router deleted from main in the swap merge (QUAL-27, `d44032f` — 1415 lines of wye machinery
+      went with QUAL-30). "Bundles rebaked" is MOOT: the bake subsystem was deleted 2026-08-19 (v2
+      routes fast enough live). The three re-baselines this ticket owed are done and re-verified
+      green on main 2026-09-22 — see the closing section.
+- [x] BUG-53 (absorbed 2026-08-20): closed via its own lineage — BUG-53 → BUG-55 (re-design mandate,
+      closed 2026-08-26) → BUG-57 (crossing invariant + keep-the-connection ladder, zero census
+      crossings). `graph-topology`'s GRAPH-FLAT-MERGES reports 0 crossings on main.
 
 ## Junction plan (owner-confirmed 2026-08-18: geometry deferred, heights are not)
 
@@ -1530,6 +1554,22 @@ guard makes the two ends' regions disjoint so cross-node interactions cannot cha
 lookups, no influence chains). Every window that registers an edge at N derives the same incident
 set, the same routes, the same plans.
 
+**How to TEST that claim when the trim ships (learned closing BUG-25, 2026-09-21).** Measure the
+road SURFACE, never the edge-key set. BUG-25's own gate compared post-cull abstract edge keys
+between a 320 m and a 1500 m build; run as-written on today's main it reports up to 8 "phantom map
+roads" per seed and every one is false — a FEAT-76 mid-span T promotion inserts a node (`k = -1`)
+that splits one edge into two, so identical asphalt reads as one edge gone and another appeared.
+The trim will do exactly the same thing to that unit (a ceded span changes what a run IS), so a
+key-diff gate against it would be unreadable from day one. The unit that worked: sample a grid over
+the play disc and ask "is there road within 6 m of this point in both builds", then classify any
+divergence by whether the carrying run has both endpoints outside the narrow build's registration
+band (structural truncation, not a flip). On main that measures **zero divergence at r =
+320/576/1024/1500 across 8 fixture centres on 4 seeds** — the baseline the trim must preserve.
+Two traps that will otherwise eat a day: the band is much larger than the radius, so comparing over
+the whole band charges you for edges the narrow build structurally cannot register (inset ≥ 512 m,
+or compare inside a play disc); and a road 1000 m out is not streamed at play radius, so it cannot
+be a T partner there — a promotion that only happens in the wide build is truncation, not variance.
+
 ### Guards (all skip + report, never force)
 
 Region ≥ 30 m on both runs · region ≤ 0.5 × each run's length · no bore overlap on either region ·
@@ -1820,7 +1860,7 @@ component, infeasible 0) · build 2.3–4.1 s at 1× headless.
 
 ---
 
-# CURRENT HANDOFF (2026-08-22) — read this one
+# HANDOFF — SUPERSEDED (2026-08-22; the ticket closed 2026-09-22, see the closing section at the end)
 
 **The mid-edge crossing/overlap class has MOVED to its own ticket: `BUG-55`** (owner instruction
 2026-08-22 — "bring out a more powerful model to reassess and figure out how to clean up all the
@@ -1830,7 +1870,7 @@ negative results. Everything below in this file stays the build lineage. **Start
 about crossings, overlaps or merging; start here for the router itself.**
 
 **Where the rest of the work lives.** ONE ticket — this file. Everything above is a dated record, appended in
-order; this section is the only live "what now". (BUG-53 — the road-overlap defects filed
+order; this section WAS the live "what now" until the close. (BUG-53 — the road-overlap defects filed
 2026-08-20 from the owner's capture — was ABSORBED into this ticket 2026-08-20 so handoffs stay a
 single document: its full record + acceptance is the "BUG-53 (absorbed)" section above, its
 measured verdicts + the shipped junction-chord-pin fix are the "BUG-53 worked" section above, its
@@ -1965,3 +2005,80 @@ shared vertex of the exactly-coincident trim chains as a crossing (168 phantoms 
 old `perf-runs/weave-probe.mjs` still has the inclusive test, so don't trust its counts on trimmed
 pairs. And the owner's two captures both sat OUTSIDE the radius-1400 origin window the censuses
 measure — when a capture arrives, stream AT the capture point before concluding anything.
+
+# CLOSING SECTION (2026-09-22) — the gate tidy, and what was handed onward
+
+**Owner sign-off:** *"im happy with the current road feel. consider that a sign off."* That closed the
+character box. The cold-load box closed the other way the acceptance allowed — the owner accepted the
+relief valve, with cold load handed to **PERF-27** (33.4 s at the 4× proxy, ~2/3 terrain).
+
+## The three gate re-baselines this ticket owed were already banked — re-verified green on main
+
+The 2026-08-22 handoff booked five reds. Four of them died in the intervening work and the fifth is
+someone else's ticket now. Re-run on main 2026-09-22, no changes needed:
+
+| gate | booked as | measured 2026-09-22 |
+|---|---|---|
+| `graph-topology` | re-baseline owed (node-departure encoded v1's rule; two sub-checks tested deleted culls) + a SURFACE-SMOOTH tear | **7/7 green.** (f) NODE DEPARTURE retired by BUG-57 ruling 7; (g) SELF-CLEARANCE retired by QUAL-28 (it was enforcing a contract no code in `src/` still had, wearing dead parameter names); (j) CORRIDOR-CLEARANCE re-based to the R8 one-road-width floor. SURFACE-SMOOTH walks 102 840 samples, **0 steps**. |
+| `road-smoothness` | lone-pine tear + two 15 cm portal-face lips + one naive-meet step | **3/3 green.** 44 km of centerline across seeds lone-pine/6/7, **0 collision-only steps, worst 0 cm.** The portal-face lips are gone — no fix-or-book decision left to make. |
+| `pond-route-around` | GUARANTEE passed, the non-vacuity PRECONDITION failed at the new weights | **5/5 green.** Non-vacuity was re-based 2026-09-06 from one pinned window to a 2-site corpus, because temptation turned out to be a property of the SITE, not of the router: v2 prices elevation with money, so a basin is no longer free to fall into. Seed 1 @(0,0) carries the teeth (37/13 084 wet un-injected); seed 6 sits at 0 and still proves the guarantee. |
+| `mission-network` | "the one real unexplained defect", p99 2.4 m interior drift | **CLOSED** as BUG-41, 2026-09-07, all three stages. |
+| `paper-tour` | tier-2/3 customer-consistency margin, network-shape-sensitive | belongs to the story/mission lane, not the router. |
+
+## Dead code deleted in the closing commit
+
+The D-06 per-spline design-grade smoother, whose last live caller went with `_gradeEdgeInPlace`.
+Verified caller-free before deletion (`sampleDesignGradeAt`: zero references anywhere in `src/`,
+`test/` or `perf-runs/`):
+
+- `src/road.js` — `_smoothDesignGrade`, `sampleDesignGradeAt`, `invalidateDesignGradeCache`, the
+  `_designGradeCache` WeakMap and its two clear sites, `setRawHeightSampler` / `_rawHeightSampler`,
+  and the now-unread `spline` field on the `queryNearest` return. Also collapsed the orphaned
+  12-line comment block that documented `_gradeEdgeInPlace`'s tanh deviation clamp as if it were
+  live code — the algorithm has been deleted since the v1 cull; only its tombstone remains.
+- `data/ranger.js` + `src/debug.js` — the `designGradeWindow` knob, its "Grade Window (m)" slider in
+  Roads → Road Surface, and its tooltip. **The slider was live in the panel and moved nothing.**
+- `src/main.js` — two `setRawHeightSampler` wirings and the CR-04 `invalidateDesignGradeCache` call.
+- `src/terrain.js` / `src/road-mesh.js` / `test/lib/road-headless.mjs` — comments and a params
+  literal that still named the deleted symbol. `rawHeightWorld` itself STAYS: the water system, the
+  headless harness and the pond/stream gates all read it.
+
+A tombstone at the old site says there is no longer a longitudinal smoother of any kind, and why
+re-adding one would break priced == built.
+
+## What was NOT done, and where it went
+
+- **Cold load under 10 s** — relief valve accepted; PERF-27 owns it.
+- **The 10-seed connectivity sweep** was never re-run. It is superseded rather than passed:
+  `play-area` asserts ONE component (zero condemned, zero node-pin violations) on five fixed seeds
+  at 144 km² each, which is a harder bar than "0.981 largest-component share, 8/10 fully connected".
+- **Bundles rebaked** is moot — the whole bake subsystem was deleted 2026-08-19.
+- **Junction geometry** (next-steps item 3 in the superseded handoff) shipped on its own lineage:
+  junction pads, the DECK HOLD grade+roll rule, per-leg pad cutback (BUG-59), the R1–R8 stitch
+  classes, FEAT-76 wye-as-real-T, and FEAT-82 pads-through-the-roads.
+- **Mid-span merges** (`roadV2.mergeMidSpan`, built but OFF) were superseded by the BUG-55 → BUG-57
+  re-design; the crossing invariant and the keep-the-connection ladder replaced them.
+- Standing road reds are the re-route residue tracked as **BUG-69** (a side route hugs the trunk past
+  the band) and **BUG-70** (two legs of one node re-converge 470 m out). Neither is a FEAT-68 box.
+
+## Suite state at the close (`npm run test:all`, 2026-09-22, on the closing branch)
+
+**73/74 gates green in 575 s wall / 2669 s gate-CPU. The one red is `road-clearance`, red BY RULING**
+since the BUG-65/66 clearance drop 8 → 2, and it is the BUG-69/70 residue, not a router box: two
+violating pairs, both `[two legs of one node]`, and both sub-metre misses — lone-pine spawn at
+(-68,320) 28.3 m apart where the rule wants 28.5, and seed 3 origin at (1976,-889) 27.8 m against the
+same 28.5. Eight of the ten fixtures are clean.
+
+`play-area` (the acceptance gate for "zero marked edges" and connectivity) on five fixed seeds ×
+144 km² each:
+
+| seed | runs | km | components | condemned | unpinned | worst grade |
+|---|---|---|---|---|---|---|
+| 6  | 625 | 384 | 1 | 0 | 0 | 38 % |
+| 3  | 647 | 385 | 1 | 0 | 0 | 38 % |
+| 7  | 633 | 379 | 1 | 0 | 0 | 38 % |
+| 20 | 608 | 378 | 1 | 0 | 0 | 38 % |
+| 11 | 609 | 379 | 1 | 0 | 0 | 37 % |
+
+Per-region road km is flat across all 45 tiles (36–46 km), which is the sparsity half of the
+connectivity box: density did not drift while the router was rebuilt.

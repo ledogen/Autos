@@ -709,12 +709,6 @@ export const RANGER_PARAMS = {
   // the fill-support gate green (slope stays < 1.5 for the strongest fills) while killing the shards.
   roadMaxEmbankmentToe: 10, // m — max embankment apron width beyond the carve core (FEAT-10 shard cap)
 
-  // designGradeWindow: sliding-window half-width for design grade smoothing.
-  // The smoothed road profile is a windowed average of analyticHeight over this half-width
-  // on both sides of each spline sample. 50 m suppresses the 20 m fine-noise wavelength
-  // (fineFreq 0.05/m) while preserving coarse terrain grade. D-06.
-  designGradeWindow: 50,    // m — sliding-window smoothing half-width for design grade (D-06)
-
   // crownHeight: height of the centerline crown above the ribbon edges (metres).
   // The crown is a parabolic cross-section: peak at centerline, tapers to 0 at ribbon edge.
   // Default 0.05 m = 5 cm (1% cross-slope on a 5 m half-width) — subtle water-shedding

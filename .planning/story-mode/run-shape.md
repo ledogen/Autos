@@ -377,6 +377,12 @@ time of day, sleepiness, currency, active missions, cleared logs
 
 That's kilobytes. The 2026-07-29 worldgen decoupling paid for the save system as a side effect.
 
+**The flip side: every load is a cold generation** [owner, 2026-09-22]. A resume rebuilds the world
+from `worldSeed` exactly as a new run does, and a new run (the common case: a fresh random seed) has
+nothing to reuse at all. Storing generation data in the save to speed up a resume was declined, so
+the save does not grow. Load time is bought only with faster generation — see DESIGN.md, "Every
+world is generated cold".
+
 *Flag:* input-trace replay for leaderboard validation needs to survive a save boundary — either
 traces are per-route rather than per-run, or a resume records a trace discontinuity. Per-route is
 almost certainly right, since boarded runs are single time trials anyway.

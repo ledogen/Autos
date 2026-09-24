@@ -1222,6 +1222,20 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
   serializing. A save is seed + `runState` + truck condition + inventory + position + time of day +
   sleepiness + currency + active missions + cleared logs. Kilobytes. The worldgen decoupling paid
   for the save system as a side effect.
+- **Every world is generated cold — that IS the gameplay loop** [owner, 2026-09-22]. The typical
+  session is Minecraft-style: a new run rolls a new random seed and generates a world no one has
+  loaded before. A custom seed and a resumed save are no different: the world is rebuilt from the
+  seed, from nothing, every time. Consequences that bind load-time work:
+  - **No worldgen data is ever saved or shipped.** Routes, road networks, carve tables and terrain
+    stay out of the save (it stays kilobytes) and out of the bundle (the bake subsystem was deleted
+    2026-08-19 for this reason). Saving generation data to speed up a resume was considered and
+    declined: it would inflate the save, for a cost a new run pays anyway.
+  - **Load-time wins must be pure generation wins.** Doing less work, doing it in parallel, or
+    doing it while the player is busy elsewhere (behind the menu) all count. A cache counts only
+    if it lives inside ONE load and is thrown away after — e.g. the network worker reusing the
+    spawn build's routes for the region build of the same seed.
+  - **Measure on a seed the session has never built.** A boot-seed story entry skips the reseed
+    and flatters every number (PERF-27, 2026-09-22).
 - **Production consequence:** most players will die repeatedly and never finish a run, which is
   intended — but it means **the first two regions get played fifty times more than the last two.**
   Authoring effort and polish weight toward the early game, and the early game must survive dozens
