@@ -43,6 +43,13 @@ export function snapshotRoadParams(v) {
     if (v && t === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
         const out = {}
         for (const k of Object.keys(v)) {
+            // `_`-prefixed keys are per-frame PHYSICS SCRATCH that main.js hangs on RANGER_PARAMS
+            // (_tireFz, _suspForceAccum, _lateralVelocity, …: plain number arrays, so the type filter
+            // keeps them). No road code reads them, and they change every physics step, which made
+            // the worker's psig reuse key differ on EVERY build: the warm RoadSystem, and every
+            // route it had cached, was thrown away each time (measured 2026-09-22: the 2800 m story
+            // region routed from scratch right after the spawn build had routed its core).
+            if (k.charCodeAt(0) === 95) continue
             const s = snapshotRoadParams(v[k])
             if (s !== undefined) out[k] = s
         }

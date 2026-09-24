@@ -13,6 +13,7 @@
 //   ring        the chunk ring around spawn is full — the honest "could drive away" moment
 //   enter       story entry called (script-side; the human cost before it is menu navigation)
 //   live        __story()._phase === 'live' — region pre-routed, router frozen, wall armed
+//   handed      the loading screen lifted — the player sees the world (held until the ring is carved)
 //
 // --mode=reseed reports two extra things (PERF-27 item 3): `rebuild`, the moment the awaitable
 // Path-B rebuild promise settles, and a per-step wall breakdown of _rebuildFullNow read back from
@@ -156,6 +157,15 @@ const LIVE = MODE === 'reseed'
 const tLive = await waitFor(LIVE, BASE_TIMEOUT * 3, MODE === 'reseed' ? 'route warm drained' : 'story live', 200)
 console.log(`  live        ${(tLive / 1000).toFixed(2)} s   ${MODE === 'reseed' ? 'route warm drained' : 'region routed + frozen'}`)
 
+// `handed`: the loading screen lifted (stage off). Since 2026-09-22 story holds the screen past
+// `live` until the visible terrain ring is carved, so this is when the player first sees the world.
+let tHanded = null
+if (MODE !== 'reseed') {
+  try { tHanded = await waitFor(`!document.body.classList.contains('stage-on')`, BASE_TIMEOUT, 'loading screen lifted', 100) }
+  catch { console.log('  handed      (loading screen never lifted — reported as null)') }
+  if (tHanded) console.log(`  handed      ${(tHanded / 1000).toFixed(2)} s   loading screen lifted — world on screen`)
+}
+
 // `live` is NOT yet drivable: entry reseats/reseeds, which drops the chunk ring and rebuilds it
 // around the region spawn. The honest time-to-drive is when that ring is full again.
 let tDrivable = null
@@ -195,7 +205,7 @@ if (exceptions.length) console.log(`\n  ⚠ ${exceptions.length} page exception(
 
 const result = {
   meta: { cpu: CPU, seed: SEED, mode: MODE, url, headed: HEADED, at: new Date().toISOString() },
-  ms: { ready: tReady, ring: tRing, enter: tEnter, live: tLive, drivable: tDrivable, rebuild: tRebuild,
+  ms: { ready: tReady, ring: tRing, enter: tEnter, live: tLive, handed: tHanded, drivable: tDrivable, rebuild: tRebuild,
         storyEntry: tLive - tEnter, entryToDrivable: tDrivable ? tDrivable - tEnter : null,
         rebuildWork: tRebuild ? tRebuild - tEnter : null },
   state, reseedSteps, frameDelta, assets, exceptions,

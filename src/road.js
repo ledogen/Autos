@@ -285,12 +285,19 @@ function _nearestOnPolyXZ(px, pz, pts, polyCum, lo = -Infinity, hi = Infinity) {
         const a = pts[i - 1], b = pts[i]
         // triangle inequality: no point of this segment can beat `d` if its start is further away
         // than d plus the segment's own length. Cheap, and it skips most of a long run.
-        if (Math.hypot(px - a.x, pz - a.z) - (polyCum[i] - polyCum[i - 1]) > d) continue
+        // Compared SQUARED (Math.hypot is the expensive call in V8, and this loop is the plan
+        // layer's hottest self-time: 2.2 s of a 12 s 2800 m region build, measured 2026-09-22). The
+        // 1e-9 slack keeps the prune conservative: it skips only segments hypot would also skip.
+        const sx = px - a.x, sz = pz - a.z, r = d + (polyCum[i] - polyCum[i - 1])
+        if (sx * sx + sz * sz > r * r * (1 + 1e-9)) continue
         const ex = b.x - a.x, ez = b.z - a.z
         const l2 = ex * ex + ez * ez
         const t = l2 > 1e-12 ? Math.max(0, Math.min(1, ((px - a.x) * ex + (pz - a.z) * ez) / l2)) : 0
         const qx = a.x + t * ex, qz = a.z + t * ez
-        const dd = Math.hypot(px - qx, pz - qz)
+        // Same squared pre-test; the winner's distance is still Math.hypot, so `d` is unchanged.
+        const wx = px - qx, wz = pz - qz
+        if (wx * wx + wz * wz > d * d * (1 + 1e-9)) continue
+        const dd = Math.hypot(wx, wz)
         if (dd < d) {
             d = dd; cum = polyCum[i - 1] + t * (polyCum[i] - polyCum[i - 1]); y = a.y + t * (b.y - a.y)
             // tx/tz — the unit XZ tangent of the winning segment, in the polyline's own direction.
@@ -1847,6 +1854,13 @@ export class RoadSystem {
      * always passed Infinity for both.
      */
     _warmScan(g, drop, edges) {
+        // FEAT-77's clearance pass (inside _v2EdgeDirs) needs the PASS-1 route of each edge and of
+        // every partner it compares against, and a cache miss there routes SYNCHRONOUSLY on the
+        // calling thread. Dispatch those first so the pool does them (measured 2026-09-22, seed 811
+        // 2800 m story region: ~6 s of the 7.8 s pre-warm was pass-1 routes run inline on the
+        // network worker's one thread, against ~0.7 s through the 4-worker pool).
+        const pre = this._warmPass1(g, drop, edges)
+        if (pre.jobs.length || pre.deferred) return pre
         const jobs = []
         let deferred = false
         for (let i = 0; i < edges.length; i++) {
@@ -1860,6 +1874,40 @@ export class RoadSystem {
             const spec = this._v2EdgeSpec(c1, c2, dirs)
             this._pendingRoutes.add(key)
             jobs.push(spec)
+        }
+        return { jobs, deferred }
+    }
+
+    /**
+     * The pass-1 wave ahead of _warmScan. Two stages, because partner discovery needs the edge's
+     * own pass-1 line: (1) each edge's pass-1 route; (2) once those are cached, the pass-1 routes of
+     * every clearance partner (_v2ClearPartners — the same set _v2ClearanceFor will sample).
+     * Pure dispatch: routes nothing itself beyond what _v2RunSample1 already would, and every key it
+     * warms is one the clearance pass demands, so the output is unchanged (network-worker-parity).
+     */
+    _warmPass1(g, drop, edges) {
+        const jobs = []
+        let deferred = false
+        const seen = new Set()
+        const want = (c1, c2) => {
+            if ((c1[0] - c2[0] || c1[1] - c2[1] || c1[2] - c2[2]) > 0) [c1, c2] = [c2, c1]   // canonical spelling
+            const kA = g.key(c1), kB = g.key(c2)
+            if (seen.has(kA + '|' + kB)) return
+            seen.add(kA + '|' + kB)
+            const dirs = this._v2EdgeDirsBase(g, drop, kA, kB)
+            const key = this._edgeClsKey(c1, c2) + this._v2DirsNS(dirs)
+            if (this._pendingRoutes.has(key)) { deferred = true; return }
+            const cached = this._proto.cls?.get(key)
+            if (cached && (!dirs || cached._v2Dirs)) return
+            this._pendingRoutes.add(key)
+            jobs.push(this._v2EdgeSpec(c1, c2, dirs))
+        }
+        for (const [c1, c2] of edges) want(c1, c2)
+        if (jobs.length || deferred) return { jobs, deferred }
+        for (const [c1, c2] of edges) {
+            const S = this._v2RunSample1(g, drop, c1, c2)
+            if (!S) continue
+            for (const [, [q1, q2]] of this._v2ClearPartners(g, drop, g.key(c1), g.key(c2), S)) want(q1, q2)
         }
         return { jobs, deferred }
     }
@@ -3231,29 +3279,8 @@ export class RoadSystem {
         const S = this._v2RunSample1(g, drop, c1, c2)
         if (!S) return null
         const C = this._v2Costs()
-        const PROX = C.mergeProxM ?? 18, THROAT = C.clearThroatM ?? 30, CHORD = C.censusChordM ?? 300
-        const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen.del : null
-        const dropped = (a, b) => (drop && drop.has(a + '|' + b)) || (delF && delF.size && delF.has(a + '|' + b))
-        // partners: node-sharing first, then chords the pass-1 line passes within CHORD of
-        const partners = new Map()
-        for (const [nk, other] of [[kA, kB], [kB, kA]]) for (const o of (g.adj.get(nk) || [])) {
-            if (o === other || dropped(nk, o)) continue
-            const pk = nk < o ? nk + '|' + o : o + '|' + nk
-            if (pk !== ck) partners.set(pk, [nk.split(',').map(Number), o.split(',').map(Number)])
-        }
-        let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
-        for (const p of S.pts) { if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x; if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z }
-        for (const [q1, q2] of g.edges) {
-            const a = g.key(q1), b = g.key(q2)
-            if (a === kA || a === kB || b === kA || b === kB || dropped(a, b)) continue
-            const pk = a < b ? a + '|' + b : b + '|' + a
-            if (partners.has(pk)) continue
-            const A = this._nodePos(q1), B = this._nodePos(q2)
-            if (Math.max(A.x, B.x) + CHORD < minx || Math.min(A.x, B.x) - CHORD > maxx || Math.max(A.z, B.z) + CHORD < minz || Math.min(A.z, B.z) - CHORD > maxz) continue
-            let d = Infinity
-            for (let i = 0; i < S.pts.length && d > CHORD; i += 4) d = Math.min(d, _segSegDistXZ(S.pts[i], S.pts[i], A, B))
-            if (d <= CHORD) partners.set(pk, [q1, q2])
-        }
+        const PROX = C.mergeProxM ?? 18, THROAT = C.clearThroatM ?? 30
+        const partners = this._v2ClearPartners(g, drop, kA, kB, S)
         const lines = [], exempt = []
         for (const [pk, [q1, q2]] of partners) {
             const Q = this._v2RunSample1(g, drop, q1, q2)
@@ -3290,6 +3317,41 @@ export class RoadSystem {
         const out = { lines, exempt, exemptM: THROAT, prm: this._v2ClearPrm() }
         memo.set(ck, out)
         return out
+    }
+
+    /**
+     * The partners FEAT-77's clearance pass compares edge (kA,kB) against: node-sharing edges first,
+     * then every edge whose chord the pass-1 line `S` passes within censusChordM of. Shared by
+     * _v2ClearanceFor and the warm's pass-1 wave (_warmPass1), so the set the pre-warm routes
+     * off-thread can never drift from the set the clearance pass will sample.
+     * @returns {Map<string, [number[], number[]]>} canonical pair key → the partner's node ids
+     */
+    _v2ClearPartners(g, drop, kA, kB, S) {
+        const CHORD = this._v2Costs().censusChordM ?? 300
+        const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen.del : null
+        const dropped = (a, b) => (drop && drop.has(a + '|' + b)) || (delF && delF.size && delF.has(a + '|' + b))
+        const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
+        // partners: node-sharing first, then chords the pass-1 line passes within CHORD of
+        const partners = new Map()
+        for (const [nk, other] of [[kA, kB], [kB, kA]]) for (const o of (g.adj.get(nk) || [])) {
+            if (o === other || dropped(nk, o)) continue
+            const pk = nk < o ? nk + '|' + o : o + '|' + nk
+            if (pk !== ck) partners.set(pk, [nk.split(',').map(Number), o.split(',').map(Number)])
+        }
+        let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
+        for (const p of S.pts) { if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x; if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z }
+        for (const [q1, q2] of g.edges) {
+            const a = g.key(q1), b = g.key(q2)
+            if (a === kA || a === kB || b === kA || b === kB || dropped(a, b)) continue
+            const pk = a < b ? a + '|' + b : b + '|' + a
+            if (partners.has(pk)) continue
+            const A = this._nodePos(q1), B = this._nodePos(q2)
+            if (Math.max(A.x, B.x) + CHORD < minx || Math.min(A.x, B.x) - CHORD > maxx || Math.max(A.z, B.z) + CHORD < minz || Math.min(A.z, B.z) - CHORD > maxz) continue
+            let d = Infinity
+            for (let i = 0; i < S.pts.length && d > CHORD; i += 4) d = Math.min(d, _segSegDistXZ(S.pts[i], S.pts[i], A, B))
+            if (d <= CHORD) partners.set(pk, [q1, q2])
+        }
+        return partners
     }
 
     _v2RunSample(g, drop, c1, c2) {
@@ -8627,10 +8689,20 @@ export class RoadSystem {
             if (n.ring) out.push({ x: n.pos.x, z: n.pos.z, reach: (n.ringMaxR ?? 0) + extra })
             else if (n.deg2) out.push({ x: n.pos.x, z: n.pos.z, reach: (n.deg2MaxR ?? 0) + extra })
         }
-        if (this._padsAll) for (const q of this._padsAll) {
-            out.push({ x: q.x, z: q.z, reach: Math.hypot(q.halfLen, q.halfWid) + extra })
-        }
+        out.push(...this.storyPadReach())
         return out
+    }
+
+    /**
+     * The story-layer share of padReachNodes(): the POI + camp pads alone, same reach. It is what
+     * the terrain must re-carve when pads arrive — pads do not bump roadGeneration, so nothing else
+     * marks those chunks stale (terrain.js recarveInPlace).
+     */
+    storyPadReach() {
+        if (!this._padsAll) return []
+        const p = this._params
+        const extra = PAD_RIM_HOLD + (p.roadShoulderWidth ?? 2.5) + (p.roadMaxEmbankmentToe ?? 10)
+        return this._padsAll.map(q => ({ x: q.x, z: q.z, reach: Math.hypot(q.halfLen, q.halfWid) + extra }))
     }
 
     /**
