@@ -13,7 +13,7 @@
 import * as THREE from 'three'
 import { makeBlob, makeKinkedTube, makeConeStack } from '../src/props/prop-geometry.js'
 import { buildPalette } from '../src/props/prop-palette.js'
-import { scatterChunk } from '../src/props/prop-scatter.js'
+import { scatterChunk, scatterChunkGen, scatterLitterGen } from '../src/props/prop-scatter.js'
 import { PropSystem } from '../src/props/prop-system.js'
 import { sphereVsSphere, sphereVsCapsuleY, sphereVsCapsule, bushDrag } from '../src/props/prop-collider.js'
 import { FLORA_PARAMS } from '../data/flora.js'
@@ -250,6 +250,28 @@ console.log('8. BUG-71 road-intrusion sweep is a fixed point of the scatter (no 
   ok(doomed === 0, `sweep condemns no chunk of a fresh scatter (${doomed} doomed)`)
   ok(sys.liveCount() === before, `live count unchanged across the sweep (${before} → ${sys.liveCount()})`)
   sys.dispose()
+}
+
+console.log('9. litter deferral: scatter without litter + litter alone == the inline scatter')
+{
+  // The bbonly ring scatters { litter: false } and runs scatterLitterGen on promotion; the two
+  // halves must reproduce the inline scatter exactly (same records, same order per pass).
+  const roadClear = (x, z, keepOut) => Math.abs(x - 40) >= keepOut
+  const samplers = {
+    heightAt: (x, z) => 20 + 3 * Math.sin(x * 0.05) * Math.cos(z * 0.04), normalAt: () => ({ x: 0, y: 0.99, z: 0 }),
+    roadBlocked: (x) => Math.abs(x - 40) < 9, roadClear, roadDist: (x) => Math.abs(x - 40),
+    roadWalk: (cx, cz, step) => { const samples = []; for (let z = cz * 64; z < (cz + 1) * 64; z += step) samples.push({ x: 40, z, tx: 0, tz: 1, arcS: z + 900, bore: false }); return [{ runKey: 'r', samples }] },
+    groundAt: (x, z) => (x < 100 ? { green: 1, rock: 0 } : { green: 0.2, rock: 0.5 }),
+    padBlocked: () => false,
+  }
+  const drain = (g) => { let r; do { r = g.next() } while (!r.done); return r.value }
+  const inline = scatterChunk(1, 2, 77, samplers)
+  const base = drain(scatterChunkGen(1, 2, 77, samplers, undefined, { litter: false }))
+  const litter = drain(scatterLitterGen(1, 2, 77, samplers))
+  const key = (p) => `${p.cat}#${p.variant}@${p.x.toFixed(4)},${p.z.toFixed(4)},${p.y.toFixed(4)}/${p.scale.toFixed(4)}/${p.rotY.toFixed(4)}`
+  const A = inline.map(key), B = base.concat(litter).map(key)
+  ok(litter.length > 50 && base.length > 20, `fixture yields base ${base.length} + litter ${litter.length} placements`)
+  ok(A.length === B.length && A.every((k, i) => k === B[i]), `deferred litter reproduces the inline scatter (${A.length} records)`)
 }
 
 console.log(fails === 0 ? '\nPROPS GATE: PASS' : `\nPROPS GATE: FAIL (${fails})`)

@@ -29,7 +29,7 @@ export const FLORA_PARAMS = {
     streamMedRockBoost: 10,     // FEAT-25 rework: MEDIUM ('rock' class) stones in the channel bed —
                                 //   in-bed density ≈ this × ambient rock density (USER-OWNED, "10x med stones")
     bushesPerChunk:   [6, 14],
-    boulderChance:    0.04,     // per chunk, a rare large buried boulder
+    boulderChance:    0.08,     // per chunk, a rare large buried boulder (0.04 → 0.08, owner 2026-09-24 "double boulders")
     logsPerChunk:     [0, 2],   // FEAT-15: fallen trunks (hard obstacle) — sparse forest debris
     logSlopeMax:      0.45,     // FEAT-15: no logs on near-cliffs (they'd visibly float/slide)
     logPitchMax:      0.55,     // rad — reject a log whose two ends span a step this steep (float guard)

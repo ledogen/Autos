@@ -507,6 +507,9 @@ export class TerrainSystem {
             uSplotchEdge:     { value: params.terrainSplotchEdge     ?? 0.35 },
             uSplotchStrength: { value: params.terrainSplotchStrength ?? 0.7  },
             uDirtFlatGreen:   { value: params.terrainDirtFlatGreen   ?? 0.4  },
+            // A/B lever (owner 2026-09-24): 0 skips the whole FEAT-84 block — six texture taps,
+            // the blend, the splotch lattices — leaving the FEAT-05 flat palette + fbm mottle.
+            uSurfOn:          { value: params.terrainTexEnabled === false ? 0 : 1 },
         }
         this._syncSurfacePalette()
         this._material.onBeforeCompile = (shader) => {
@@ -521,7 +524,7 @@ export class TerrainSystem {
             shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
                 'uniform sampler2D uSurfAlbG, uSurfNrmG, uSurfAlbD, uSurfNrmD, uSurfAlbR, uSurfNrmR;\n' +
                 'uniform vec3 uSurfScale; uniform float uSurfDepth, uSurfAlbedo, uSurfNormal;\n' +
-                'uniform float uSplotchSize, uSplotchCover, uSplotchEdge, uSplotchStrength, uDirtFlatGreen;\n' +
+                'uniform float uSplotchSize, uSplotchCover, uSplotchEdge, uSplotchStrength, uDirtFlatGreen, uSurfOn;\n' +
                 'uniform vec3 uColGrass, uColDirt, uColRock, uGrassPale, uGrassStraw, uGrassDark;\n' +
                 'varying vec3 vSurf;\n' +
                 // FEAT-84: blended tangent-space normal (xy), written at <color_fragment> where the
@@ -589,6 +592,7 @@ export class TerrainSystem {
                     // rock interface the rock plates poke through the thinning tufts instead of a
                     // dissolve, while a zone with zero vertex weight can never show (its height is
                     // scaled away — an additive form let rock plates surface in every dirt hollow).
+                    if (uSurfOn > 0.5) {
                     vec2 ts_p = vWorldPos.xz;
                     vec4 ts_g = texture2D(uSurfAlbG, ts_p * uSurfScale.x);
                     vec4 ts_d = texture2D(uSurfAlbD, ts_p * uSurfScale.y);
@@ -624,6 +628,7 @@ export class TerrainSystem {
                     // in at uSplotchStrength (never a multiply — a factor over a dark base washed
                     // the whole meadow out); the meadow between the mats keeps its picker colour.
                     // Two warp octaves: a slow one bends the whole mat, a ~3 m one frays its edge.
+                    if (uSplotchStrength > 0.0 && ts_b.x > 0.0) {   // strength 0 = the lattices are not evaluated
                     vec2 ts_pw = ts_p + (vec2(tdFbm(ts_p * 0.16), tdFbm(ts_p * 0.16 + 31.7)) - 0.5) * (0.5 * uSplotchSize)
                                       + (vec2(tdFbm(ts_p * 0.55 + 7.1), tdFbm(ts_p * 0.55 + 53.3)) - 0.5) * (0.22 * uSplotchSize);
                     float ts_idA, ts_idB;
@@ -633,6 +638,7 @@ export class TerrainSystem {
                     vec3 ts_spl = mix(diffuseColor.rgb, tsSplotchColour(ts_idA), ts_cA);
                     ts_spl = mix(ts_spl, tsSplotchColour(ts_idB + 0.37), ts_cB);
                     diffuseColor.rgb = mix(diffuseColor.rgb, ts_spl, ts_b.x * uSplotchStrength * uDetailScale);
+                    }
                     vec3 ts_alb = (ts_g.rgb * ts_b.x + ts_d.rgb * ts_b.y + ts_r.rgb * ts_b.z) * 4.0;
                     diffuseColor.rgb *= mix(vec3(1.0), ts_alb, uSurfAlbedo * uDetailScale);
                     // Flat dirt: the green in the hollows (low dirt texel height) gets more
@@ -649,6 +655,7 @@ export class TerrainSystem {
                     vec2 ts_nrs = texture2D(uSurfNrmR, ts_ps).xy * 2.0 - 1.0;
                     tsNrmSide = (ts_xf ? vec3(0.0, ts_nrs.y, ts_nrs.x * ts_sgn) : vec3(ts_nrs.x * ts_sgn, ts_nrs.y, 0.0))
                               * (ts_steep * ts_b.z * uSurfNormal * uDetailScale);
+                    }   // uSurfOn
                 }
                 // PERF-07: baked prop-shadow atlas. World XZ → toroidal tile (cx,cz mod N) → atlas UV
                 // (a pure fn of position, so no per-chunk uniform). A 5-tap in-tile blur softens the
@@ -2125,7 +2132,8 @@ export class TerrainSystem {
         const green = vegBlendOf(slope, h, p.terrainGrassSlopeMax ?? 0.16, treeLo, treeHi)
         const sm = (e0, e1, x) => { if (x <= e0) return 0; if (x >= e1) return 1; const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t) }
         const rock = Math.max(sm(p.roadCliffSlopeLo ?? 0.3, p.roadCliffSlopeHi ?? 0.6, slope), sm(treeLo, treeHi, h))
-        return { green, rock }
+        // h + slope ride along so the scatter's litter passes never re-sample ground they hold.
+        return { green, rock, h, slope }
     }
     /**
      * PERF-03 (Workstream B): write per-vertex normals from central differences over the carved

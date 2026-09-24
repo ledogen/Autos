@@ -107,6 +107,35 @@ NOT done, proposed (owner's call): make sagebrush a soft-drag collidable like th
 8 m grid-cell lookup, no engine body, so "so many bushes" is a triangle question, not a physics
 one). Bushes then scale with the cover density and the far-ring swap like the rest.
 
+### Owner pass 7 (2026-09-24) — the cost, measured, and paid back
+
+Owner: stutters on an unloaded M4 Air "due to prop generation"; intent was a negligible cost.
+`test/bench-scatter.mjs` (new; real road + headless terrain, the game's sampler set, ring-2 window):
+
+| per chunk, seed 6 / 42 | mean ms | what it was |
+|---|---|---|
+| main-equivalent densities | ~2 (first-chunk JIT outlier excluded) | |
+| pass 5 as first built | 26.7 / — | roadClear 59 % (1246 `queryNearest`/chunk), groundAt 30 % (1378 × 5 terrain samples) |
+| after this pass | 5.4 / 3.7 | roadClear 82 / 52, groundAt 289 |
+
+What paid it back (all in `litterPasses`, prop-scatter.js):
+- **Ground grid**: `groundAt` on 4 m nodes (289/chunk), bilinear for the green/rock/slope
+  decision; a clump that stands takes one exact `heightAt`. Was one groundAt per candidate.
+- **Road grid**: the walk slices (1.8 m) bucketed into 12 m cells; a litter candidate's distance
+  to the nearest sample is the centreline distance ± 0.9 m, so only the band around its keep-out
+  pays `queryNearest`. One road-reach probe per chunk short-circuits chunks with no road near.
+  Collidable large rocks always ask exactly (pads count as road; the sweep would churn).
+- **Litter deferral**: chunks scattered in the billboard-only ring skip the litter passes (nothing
+  of it is drawn there — at Normal that was 24 of 49 chunks paying for nothing); a promotion
+  queues `scatterLitterGen` as a time-sliced job (`_commitLitter` appends). Gate: deferred ==
+  inline, byte for byte.
+- Boulders ×2 (`boulderChance` 0.08), owner ask.
+
+GPU side is UNMEASURED headless (vsync-locked). The FEAT-84 block per terrain fragment: 6 texture
+taps + the blend, 2 fbm for the mottle, 4 fbm + 2 × 9-cell lattices for the splotches. New A/B:
+*Terrain Look → Surface textures* (uSurfOn) skips the whole block; *Splotch strength 0* skips the
+lattices. Measure on the Air with the stats panel before deciding the look.
+
 ## Acceptance
 
 - [x] A dense, irregular grass/brush line along both shoulders on green ground; sparser on dirt, bare on rock.

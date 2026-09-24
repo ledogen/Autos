@@ -941,6 +941,7 @@ export const RANGER_PARAMS = {
   // FEAT-84: per-zone surface detail maps (terrain-texture.js — procedural grass / dirt / rock,
   // blended by the vertex biome weights, height-weighted at the interfaces). All behind the
   // terrainDetailScale kill-switch. Tile sizes are metres per texture repeat.
+  terrainTexEnabled:    true,  // A/B lever: false = the FEAT-05 flat look (no taps, no blend, no splotches)
   terrainTexNormal:     0.8,   // [-] strength of the per-zone normal (relief) maps (0 = off)
   terrainTexAlbedo:     0.55,  // [-] how much the albedo modulation shows (0 = flat palette colour)
   terrainTexBlendDepth: 0.22,  // [-] interface softness: 0 = hard height contest, 1 = plain crossfade

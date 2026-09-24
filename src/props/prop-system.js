@@ -28,7 +28,7 @@
 
 import * as THREE from 'three'
 import { buildPalette, COVER_CATS, COVER_FAR_CAT, FADE_CATS } from './prop-palette.js'
-import { scatterChunk, scatterChunkGen } from './prop-scatter.js'
+import { scatterChunk, scatterChunkGen, scatterLitterGen } from './prop-scatter.js'
 import { sphereVsSphere, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
 import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
 import { PropImpostors } from './prop-impostor.js'                     // PERF-21: distant-prop billboards
@@ -409,7 +409,7 @@ export class PropSystem {
     // the truck's 3×3 collision chunks must exist this frame — i.e. exactly on a slow machine.
     perfEvent('props.hardScatter')
     let placements
-    if (this._activeScatter && this._activeScatter.ck === ck) {
+    if (this._activeScatter && this._activeScatter.ck === ck && !this._activeScatter.litter) {
       const gen = this._activeScatter.gen
       let r; do { r = gen.next() } while (!r.done)
       placements = r.value
@@ -425,14 +425,12 @@ export class PropSystem {
   _dequeueScatter(ck) {
     if (!this._scatterSet.has(ck)) return
     this._scatterSet.delete(ck)
-    const i = this._scatterQueue.findIndex(j => j.ck === ck)
+    const i = this._scatterQueue.findIndex(j => j.ck === ck && !j.litter)
     if (i >= 0) this._scatterQueue.splice(i, 1)
   }
 
-  _commitChunk(ck, placements) {
-    perfEvent('props.chunk')   // PERF-26: commit point — instance slots fill + shadow tile marks dirty
-    const places = []
-    const collidables = []
+  /** Placement records → retained place records + collidable descriptors (shared by both commits). */
+  _buildPlaces(placements, places, collidables) {
     for (const pl of placements) {
       const key = pl.cat + '#' + pl.variant
       const rec = this._meshes.get(key)
@@ -513,9 +511,18 @@ export class PropSystem {
         rotY: pl.rotY, tris: col.tris,   // rotY/tris used by 'mesh' (boulder) contacts; undefined otherwise
       })
     }
+  }
+
+  _commitChunk(ck, placements, withLitter = true) {
+    perfEvent('props.chunk')   // PERF-26: commit point — instance slots fill + shadow tile marks dirty
+    const places = []
+    const collidables = []
+    this._buildPlaces(placements, places, collidables)
     const comma = ck.indexOf(',')
     const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
-    const chunk = { places, owned: [], mode: this._chunkMode(cx, cz) }
+    // litter: false ⇒ scattered without the cover + zone-rock passes (bbonly ring); a promotion
+    // queues scatterLitterGen for it and _commitLitter appends the result.
+    const chunk = { places, owned: [], mode: this._chunkMode(cx, cz), litter: withLitter }
     this._chunks.set(ck, chunk)
     this._placeChunk(chunk, chunk.mode)
     if (collidables.length) {
@@ -527,6 +534,25 @@ export class PropSystem {
     // cross chunk seams). The bake system slices the work; a no-op when realtime casting / headless.
     // Billboard-only ring chunks take NO tiles (see _chunkMode) — they mark on promotion instead.
     if (this._shadowBake && chunk.mode !== 'bbonly') this._shadowBake.markWithNeighbors(cx, cz)
+  }
+
+  /** The deferred litter of a promoted chunk: append its records and place only those. */
+  _commitLitter(ck, placements) {
+    const chunk = this._chunks.get(ck)
+    if (!chunk || chunk.litter) return          // released meanwhile, or already carried
+    perfEvent('props.litter')
+    const from = chunk.places.length
+    const collidables = this._collidables.get(ck) || []
+    const nCol = collidables.length
+    this._buildPlaces(placements, chunk.places, collidables)
+    chunk.litter = true
+    this._placeChunk(chunk, chunk.mode, from)
+    if (collidables.length !== nCol) {          // zone rocks' large class is collidable
+      this._collidables.set(ck, collidables); this._gridDirty = true
+      this._physicsHook?.syncChunk(ck, collidables)
+    }
+    const comma = ck.indexOf(',')
+    if (this._shadowBake && chunk.mode !== 'bbonly') this._shadowBake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
   }
 
   /**
@@ -547,9 +573,10 @@ export class PropSystem {
   }
 
   /** Allocate render-pool slots for a chunk's retained placements (see _chunkMode for modes). */
-  _placeChunk(chunk, mode) {
+  _placeChunk(chunk, mode, from = 0) {
     chunk.mode = mode
-    for (const pr of chunk.places) {
+    for (let pi = from; pi < chunk.places.length; pi++) {
+      const pr = chunk.places[pi]
       // Billboardable categories go to the impostor pool when far; anything else stays 3D —
       // except in the billboard-only outer ring, where non-billboardable categories are skipped
       // (sub-pixel 3D noise at that range) UNLESS they're landmark-scale (BBONLY_3D_CATS).
@@ -661,6 +688,12 @@ export class PropSystem {
       // bake now that its ground shadows are within the visible/fade range. (Demotion needs no
       // mark: the trees haven't moved, the already-baked tile stays valid.)
       if (promoted && this._shadowBake) this._shadowBake.markWithNeighbors(cx, cz)
+      // Promoted without its litter (scattered in the bbonly ring): queue the litter-only job,
+      // time-sliced like a scatter. Keyed ck#L in _scatterSet so a full scatter can't collide.
+      if (promoted && !chunk.litter && !this._scatterSet.has(ck + '#L')) {
+        this._scatterQueue.push({ ck, cx, cz, d2: 0, litter: true })
+        this._scatterSet.add(ck + '#L')
+      }
       if (--budget <= 0) break
     }
   }
@@ -669,6 +702,12 @@ export class PropSystem {
     const ck = cx + ',' + cz
     const chunk = this._chunks.get(ck)
     if (!chunk) return
+    if (this._scatterSet.has(ck + '#L')) {      // a pending litter job for a chunk that is going away
+      this._scatterSet.delete(ck + '#L')
+      const i = this._scatterQueue.findIndex(j => j.ck === ck && j.litter)
+      if (i >= 0) this._scatterQueue.splice(i, 1)
+      if (this._activeScatter && this._activeScatter.ck === ck && this._activeScatter.litter) this._activeScatter = null
+    }
     this._unplaceChunk(chunk)
     const wasBBOnly = chunk.mode === 'bbonly'
     this._chunks.delete(ck)
@@ -789,8 +828,9 @@ export class PropSystem {
     if (enqueued) this._scatterQueue.sort((a, b) => a.d2 - b.d2)
     // Drop queued/active work that scrolled out of the ring.
     for (let i = this._scatterQueue.length - 1; i >= 0; i--) {
-      if (!want.has(this._scatterQueue[i].ck)) {
-        this._scatterSet.delete(this._scatterQueue[i].ck)
+      const q = this._scatterQueue[i]
+      if (!want.has(q.ck)) {
+        this._scatterSet.delete(q.litter ? q.ck + '#L' : q.ck)
         this._scatterQueue.splice(i, 1)
       }
     }
@@ -820,15 +860,24 @@ export class PropSystem {
       if (!this._activeScatter) {
         const next = this._scatterQueue.shift()
         if (!next) break
-        this._activeScatter = { ...next, gen: scatterChunkGen(next.cx, next.cz, this._seed, this._samplers, this._params) }
+        // Litter deferral: a chunk that will only billboard (bbonly ring) scatters WITHOUT the
+        // litter passes (cover + zone rocks — the expensive half, and nothing of it is drawn
+        // there). When it is later promoted, _syncChunkLod queues a litter-only job for it.
+        const litterOnly = !!next.litter
+        const withLitter = litterOnly || this._chunkMode(next.cx, next.cz) !== 'bbonly'
+        const gen = litterOnly
+          ? scatterLitterGen(next.cx, next.cz, this._seed, this._samplers, this._params)
+          : scatterChunkGen(next.cx, next.cz, this._seed, this._samplers, this._params, { litter: withLitter })
+        this._activeScatter = { ...next, gen, withLitter }
       }
       const job = this._activeScatter
       let r = null
       while (performance.now() < deadline) { r = job.gen.next(); if (r.done) break }
       if (r && r.done) {
         this._activeScatter = null
-        this._scatterSet.delete(job.ck)
-        this._commitChunk(job.ck, r.value)
+        this._scatterSet.delete(job.litter ? job.ck + '#L' : job.ck)
+        if (job.litter) this._commitLitter(job.ck, r.value)
+        else this._commitChunk(job.ck, r.value, job.withLitter)
       }
     }
     if (!this._scatterFillDone && !this._activeScatter && this._scatterQueue.length === 0) this._scatterFillDone = true
@@ -844,13 +893,18 @@ export class PropSystem {
       const job = this._activeScatter
       let r; do { r = job.gen.next() } while (!r.done)
       this._activeScatter = null
-      this._scatterSet.delete(job.ck)
-      this._commitChunk(job.ck, r.value)
+      this._scatterSet.delete(job.litter ? job.ck + '#L' : job.ck)
+      if (job.litter) this._commitLitter(job.ck, r.value)
+      else this._commitChunk(job.ck, r.value, job.withLitter)
     }
     while (this._scatterQueue.length) {
-      const { ck, cx, cz } = this._scatterQueue.shift()
-      this._scatterSet.delete(ck)
-      this._commitChunk(ck, scatterChunk(cx, cz, this._seed, this._samplers, this._params))
+      const { ck, cx, cz, litter } = this._scatterQueue.shift()
+      this._scatterSet.delete(litter ? ck + '#L' : ck)
+      if (litter) {
+        const g = scatterLitterGen(cx, cz, this._seed, this._samplers, this._params)
+        let r; do { r = g.next() } while (!r.done)
+        this._commitLitter(ck, r.value)
+      } else this._commitChunk(ck, scatterChunk(cx, cz, this._seed, this._samplers, this._params))
     }
     this._flush()
   }

@@ -496,6 +496,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'roadShoulderBump', 0, 2.0, 0.05).name('Shoulder bump').onChange(v => _setU('uShoulderBump', v))
   // FEAT-84: surface texture blend — live uniforms, no rebuild. Tile sizes are metres/repeat and
   // land in the uSurfScale vec3 (repeats/m) through the same callback (name → component).
+  lookFolder.add(params, 'terrainTexEnabled').name('Surface textures (A/B)').onChange(v => _setU('uSurfOn', v ? 1 : 0))
   lookFolder.add(params, 'terrainTexNormal', 0, 2.0, 0.05).name('Surface relief').onChange(v => _setU('uSurfNormal', v))
   lookFolder.add(params, 'terrainTexAlbedo', 0, 1.0, 0.05).name('Surface albedo').onChange(v => _setU('uSurfAlbedo', v))
   lookFolder.add(params, 'terrainTexBlendDepth', 0.02, 1.0, 0.02).name('Surface blend depth').onChange(v => _setU('uSurfDepth', v))

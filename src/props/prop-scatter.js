@@ -15,8 +15,9 @@
  *                                          //   (radius-aware keep-out; legacy sets may omit it)
  *   roadWalk(cx,cz,stepM) -> [{runKey, samples:[{x,z,tx,tz,arcS,bore}]}]   // FEAT-85 (optional):
  *                                          //   road slices around the chunk, sampled along the arc
- *   groundAt(x,z)  -> {green, rock}        // FEAT-85 (optional): terrain.groundAt — the cover stands
- *                                          //   where the ground reads green (sparser on dirt, never rock)
+ *   groundAt(x,z)  -> {green, rock, slope?}  // FEAT-85 (optional): terrain.groundAt — the cover
+ *                                          //   stands where the ground reads green (sparser on dirt,
+ *                                          //   never rock); read on a 4 m grid per chunk (litterPasses)
  *   padBlocked(x,z,keepOut) -> boolean     // FEAT-85 (optional): on a junction / lay-by pad
  * }
  *
@@ -167,7 +168,7 @@ export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS)
  * is the placement list. Determinism/window-invariance untouched: the rng streams and candidate
  * order are byte-identical to the wrapper above, only wall-clock interleaving changes.
  */
-export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PARAMS) {
+export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PARAMS, opts = {}) {
   const P = params, S = P.scatter
   const rng = mulberry32(seedFor(worldSeed, P.worldSeedTag, cx, cz))
   const size = P.chunkSize
@@ -338,12 +339,109 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
   }
   yield* scatterN(irange(rng, S.logsPerChunk), placeLog)
 
+  // ── Litter: zone rocks + FEAT-85 cover — additive, last, own rng streams ─────────────
+  // Skipped for a chunk that will only ever billboard (opts.litter === false — PropSystem's
+  // bbonly ring): nothing in these passes is drawn there, and they are the expensive half of
+  // the scatter. scatterLitterGen runs them alone when such a chunk is promoted.
+  if (opts.litter !== false) yield* litterPasses(out, cx, cz, worldSeed, samplers, P, { roadClear, inPondWater, inStreamChannel, slopeAt, placeBlob, blobBoundR })
+
+  return out
+}
+
+
+/**
+ * The two LITTER passes — zone rocks and the FEAT-85 cover. Both are additive (own seeded
+ * streams, keyed by chunk / world position) and read nothing from the passes before them, so
+ * they can run inline at the end of scatterChunkGen OR later on their own (scatterLitterGen)
+ * with byte-identical output — the props gate pins that equivalence.
+ *
+ * Cost discipline (measured 2026-09-24, real terrain + road: the litter was 85 % of a chunk's
+ * scatter, and roadClear — a queryNearest per candidate — 59 % of it): ONE road-reach probe per
+ * chunk decides whether any per-candidate roadClear is needed at all; a candidate that reaches
+ * the samplers pays groundAt once and reuses its height/slope for the stand.
+ */
+function* litterPasses(out, cx, cz, worldSeed, samplers, P, h) {
+  const S = P.scatter
+  const size = P.chunkSize
+  const ox = cx * size, oz = cz * size
+  const { heightAt } = samplers
+  const { inPondWater, inStreamChannel, slopeAt, placeBlob, blobBoundR } = h
+  const Z = S.zoneRocks, C = S.cover
+  // Road reach: the widest keep-out any litter candidate asks about. If no road centreline lies
+  // within (half the chunk diagonal + that) of the chunk centre, every roadClear below is true.
+  const reach = Math.max(
+    Z && P.medRock ? S.roadExclusion + blobBoundR(P.rock) : 0,
+    C ? S.roadHalfWidth + C.wallBeatBack[1] : 0)
+  const roadNear = !h.roadClear(ox + size / 2, oz + size / 2, size * 0.7072 + reach)
+  // Road occupancy grid (8 m cells) from the walk slices: a candidate in an unmarked cell is
+  // clear of every road by construction; only candidates in a marked cell pay the exact
+  // queryNearest (which also knows the lay-by pads). Without roadWalk (older fixtures) every
+  // candidate pays, as before.
+  // Centreline samples (1.8 m apart) bucketed into 12 m cells over the chunk + a margin. A
+  // candidate's distance to the nearest sample is the centreline distance ± 0.9 m, so only a
+  // candidate inside that band around its keep-out pays the exact queryNearest. Litter only —
+  // the collidable large rock always asks exactly (a lay-by pad counts as road there, and the
+  // BUG-71 sweep would otherwise condemn its chunk).
+  const RC = 12, RM = 2, RN = Math.ceil(size / RC) + 2 * RM, RBAND = 0.9   // 3×3 cells reach 12 m ≥ the widest litter keep-out (9.9)
+  let cells = null
+  if (roadNear && samplers.roadWalk) {
+    cells = new Array(RN * RN).fill(null)
+    for (const run of samplers.roadWalk(cx, cz, 1.8)) for (const sm of run.samples) {
+      const gx = Math.floor((sm.x - ox) / RC) + RM, gz = Math.floor((sm.z - oz) / RC) + RM
+      if (gx < 0 || gz < 0 || gx >= RN || gz >= RN) continue
+      const i = gz * RN + gx
+      if (!cells[i]) cells[i] = []
+      cells[i].push(sm.x, sm.z)
+    }
+  }
+  const nearestSampleD2 = (x, z, cap) => {
+    const gx = Math.floor((x - ox) / RC) + RM, gz = Math.floor((z - oz) / RC) + RM
+    let best = cap * cap
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const cx2 = gx + dx, cz2 = gz + dz
+      if (cx2 < 0 || cz2 < 0 || cx2 >= RN || cz2 >= RN) continue
+      const c = cells[cz2 * RN + cx2]
+      if (!c) continue
+      for (let k = 0; k < c.length; k += 2) { const ddx = c[k] - x, ddz = c[k + 1] - z; const d2 = ddx * ddx + ddz * ddz; if (d2 < best) best = d2 }
+    }
+    return best
+  }
+  const roadClear = !roadNear ? () => true : !cells ? h.roadClear : (x, z, keepOut) => {
+    if (keepOut + RBAND > RC) return h.roadClear(x, z, keepOut)      // beyond the 3×3-cell reach: exact
+    const d = Math.sqrt(nearestSampleD2(x, z, RC))
+    if (d > keepOut + RBAND) return true
+    if (d < keepOut - RBAND) return false
+    return h.roadClear(x, z, keepOut)
+  }
+  const padBlocked = samplers.padBlocked || (() => false)
+  // Ground grid: groundAt on 4 m nodes across the chunk (289 samples), bilinear between them for
+  // the green / rock / slope DECISION. It replaces one groundAt (five terrain samples) per
+  // candidate; a clump that stands still takes its exact height from heightAt. Fixtures whose
+  // groundAt is a step function interpolate across the step — the gates allow for that.
+  const GC = 4, GN = size / GC + 1
+  let gridG = null
+  const groundAt = !samplers.groundAt ? null : (x, z) => {
+    if (!gridG) {
+      gridG = new Float32Array(GN * GN * 4)
+      for (let gz = 0; gz < GN; gz++) for (let gx = 0; gx < GN; gx++) {
+        const g = samplers.groundAt(ox + gx * GC, oz + gz * GC)
+        const i = (gz * GN + gx) * 4
+        gridG[i] = g.green; gridG[i + 1] = g.rock; gridG[i + 2] = g.slope ?? NaN; gridG[i + 3] = 0
+      }
+    }
+    const fx = Math.min(GN - 1.0001, Math.max(0, (x - ox) / GC)), fz = Math.min(GN - 1.0001, Math.max(0, (z - oz) / GC))
+    const gx = Math.floor(fx), gz = Math.floor(fz), tx = fx - gx, tz = fz - gz
+    const i00 = (gz * GN + gx) * 4, i10 = i00 + 4, i01 = i00 + GN * 4, i11 = i01 + 4
+    const bl = (k) => (gridG[i00 + k] * (1 - tx) + gridG[i10 + k] * tx) * (1 - tz) + (gridG[i01 + k] * (1 - tx) + gridG[i11 + k] * tx) * tz
+    const slope = bl(2)
+    return { green: bl(0), rock: bl(1), slope: Number.isNaN(slope) ? undefined : slope }
+  }
+  const gs = groundAt ? { ...samplers, groundAt } : samplers
   // ── Zone rocks — small / medium / large rocks following the ground texture ────────────
   // Additive, on its own seeded stream (the streamRocks discipline), gated by the terrain's
   // own ground reading (samplers.groundAt — absent in older fixtures → no zone rocks) and by a
   // patchiness field so they gather in fans. See data/flora.js scatter.zoneRocks.
-  const Z = S.zoneRocks
-  if (Z && Z.attempts > 0 && samplers.groundAt && P.medRock) {
+  if (Z && Z.attempts > 0 && gs.groundAt && P.medRock) {
     const zrng = mulberry32(seedFor(worldSeed, 'zoneRocks', cx, cz))
     const mixS = Z.mix[0], mixM = mixS + Z.mix[1], mixL = mixM + Z.mix[2]   // shares of the attempts; past mixL → none
     for (let i = 0; i < Z.attempts; i++) {
@@ -353,29 +451,62 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
       const gate = _smooth01(Z.patchMin, Z.patchMin + 0.2, noise2(x * Z.patchFreq, z * Z.patchFreq, worldSeed ^ 0x2545f491))
       if (gate <= 0) continue                                     // bare patch — no sampler cost
       if ((i & 3) === 3) yield
-      const g = samplers.groundAt(x, z)
+      const g = gs.groundAt(x, z)
       const dirt = Math.max(0, 1 - g.green - g.rock)
       const w = g.rock * Z.onRock + dirt * Z.onDirt + g.green * Z.onGrass
       if (uKeep > w * gate) continue
       if (inPondWater(x, z)) continue
       if (uSize < mixS) {
-        if (!roadClear(x, z, S.roadHalfWidth + 0.5)) continue     // off the pavement (the base pass owns the shoulder)
+        if (!roadClear(x, z, S.roadHalfWidth + 0.5) || padBlocked(x, z, 0.5)) continue   // off the pavement + pads (the base pass owns the shoulder)
         placeBlob('smallRock', x, z, P.smallRock.buryFrac, true, zrng)
       } else if (uSize < mixM) {
-        if (!roadClear(x, z, S.roadHalfWidth + 0.5 + blobBoundR(P.medRock))) continue
+        if (!roadClear(x, z, S.roadHalfWidth + 0.5 + blobBoundR(P.medRock)) || padBlocked(x, z, 0.5)) continue
         placeBlob('medRock', x, z, P.medRock.buryFrac, true, zrng)
       } else if (uSize < mixL) {
-        placeBlob('rock', x, z, P.rock.buryFrac, false, zrng)     // collidable: full keep-out inside placeBlob
+        if (!h.roadClear(x, z, S.roadExclusion + blobBoundR(P.rock))) continue   // collidable: EXACT keep-out (pads included)
+        placeBlob('rock', x, z, P.rock.buryFrac, true, zrng)
       }
     }
   }
 
   // ── FEAT-85: roadside cover — ricegrass, wild rye, sagebrush ─────────────────────────
-  // Additive and LAST, on its own seeded stream, so every placement above keeps its exact draws.
-  // Optional samplers (roadWalk / greenAt / padBlocked) — absent (older fixtures, gates) → no
+  // Optional samplers (roadWalk / groundAt / padBlocked) — absent (older fixtures, gates) → no
   // cover, output byte-unchanged. See data/flora.js scatter.cover for the two sources.
-  yield* coverPass(out, cx, cz, worldSeed, samplers, P, { roadClear, inPondWater, inStreamChannel, slopeAt })
+  yield* coverPass(out, cx, cz, worldSeed, gs, P, { roadClear, inPondWater, inStreamChannel, slopeAt })
 
+}
+
+/**
+ * The litter passes ALONE, for a chunk that was scattered with `{ litter: false }` and has now
+ * been promoted into a drawn ring. Same helpers as scatterChunkGen builds (rebuilt here from the
+ * samplers — pure functions, so the output matches the inline run byte for byte).
+ */
+export function* scatterLitterGen(cx, cz, worldSeed, samplers, params = FLORA_PARAMS) {
+  const P = params, S = P.scatter
+  const out = []
+  const { heightAt, roadBlocked, roadClear: roadClearFn } = samplers
+  const roadClear = roadClearFn || ((x, z) => !roadBlocked(x, z))
+  const inPondWater = (x, z) => inPondWaterAt(samplers, x, z)
+  const inStreamChannel = (x, z) => inStreamChannelAt(samplers, x, z)
+  const slopeAt = (x, z) => slopeFrom(samplers, x, z)
+  const blobBoundR = (cfg) =>
+    cfg.blob.radius[1] * Math.max(cfg.blob.axisScale[0], cfg.blob.axisScale[2]) *
+    (1 + cfg.blob.irregularity) * cfg.instScale[1]
+  // Same body as scatterChunkGen's placeBlob minus the chunk-rng default (every litter caller
+  // passes its own stream). Kept in step by the gate's inline-vs-deferred equality check.
+  const placeBlob = (cat, x, z, buryRange, ignoreRoad, rngArg, allowChannel = false) => {
+    const cfg = P[cat]
+    if (!ignoreRoad && !roadClear(x, z, S.roadExclusion + blobBoundR(cfg))) return
+    if (inPondWater(x, z)) return
+    if (!allowChannel && cat !== 'smallRock' && inStreamChannel(x, z)) return
+    const variant = (rngArg() * cfg.variants) | 0
+    const scale = frange(rngArg, cfg.instScale)
+    const bury = frange(rngArg, buryRange)
+    const halfH = cfg.blob.radius[1] * cfg.blob.axisScale[1] * scale
+    const gy = heightAt(x, z)
+    out.push({ cat, variant, x, z, y: gy + halfH * (0.5 - bury), gy, scale, rotY: rngArg() * Math.PI * 2, tint: tintFor(rngArg, cfg.color, cfg.colorJitter) })
+  }
+  yield* litterPasses(out, cx, cz, worldSeed, samplers, P, { roadClear, inPondWater, inStreamChannel, slopeAt, placeBlob, blobBoundR })
   return out
 }
 
@@ -435,11 +566,13 @@ function* coverPass(out, cx, cz, worldSeed, samplers, P, h) {
   }
 
   // Stand one clump. `prng` is the candidate's position-keyed stream (already used for its
-  // keep/skip draws); the remaining draws pick variant, scale, yaw and tint.
-  const stand = (x, z, cat, prng) => {
+  // keep/skip draws); the remaining draws pick variant, scale, yaw and tint. `g` is the
+  // groundAt reading already paid for — its height/slope stand in for two more terrain samples
+  // (fixtures that return only {green, rock} fall back to the samplers).
+  const stand = (x, z, cat, prng, g) => {
     if (inPondWater(x, z) || inStreamChannel(x, z)) return
     if (padBlocked(x, z, 0.5)) return
-    if (slopeAt(x, z) > C.slopeMax) return
+    if ((g && g.slope != null ? g.slope : slopeAt(x, z)) > C.slopeMax) return
     const cfg = P[cat]
     if (!cfg) return
     const gy = heightAt(x, z)
@@ -481,8 +614,9 @@ function* coverPass(out, cx, cz, worldSeed, samplers, P, h) {
             if (Math.floor(x / size) !== cx || Math.floor(z / size) !== cz) continue   // the landing chunk owns it
             if (!roadClear(x, z, halfW + 0.5)) continue                                  // another leg's pavement (throats)
             const cat = pickKind(prng() < (C.wallTallFrac ?? 0.175) * (0.4 + 1.2 * hedge), prng)
-            if (prng() > standProb(cat, groundAt(x, z))) { yield; continue }
-            stand(x, z, cat, prng)
+            const g = groundAt(x, z)
+            if (prng() > standProb(cat, g)) { yield; continue }
+            stand(x, z, cat, prng, g)
             yield   // PERF-14: every candidate that reached the samplers is a slice point
           }
         }
@@ -502,8 +636,9 @@ function* coverPass(out, cx, cz, worldSeed, samplers, P, h) {
       if (!roadClear(x, z, halfW + bb1)) continue                 // never inside the mown verge
       const prng = mulberry32(seedFor(worldSeed, 'coverBackPt', Math.round(x * 4), Math.round(z * 4)))
       const cat = pickKind(prng() < (C.backTallFrac ?? 0.1), prng)
-      if (prng() > standProb(cat, groundAt(x, z)) * gate) continue
-      stand(x, z, cat, prng)
+      const g = groundAt(x, z)
+      if (prng() > standProb(cat, g) * gate) continue
+      stand(x, z, cat, prng, g)
       yield
     }
   }
