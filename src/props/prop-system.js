@@ -57,6 +57,13 @@ const CAPACITY = {
 // FEAT-85: "cat#v" → is this a cover key (grass/brush)? Cover skips the shadow bake, the realtime
 // caster flag and the road-intrusion sweep (it stands beside the road ON PURPOSE).
 const isCoverKey = (key) => COVER_CATS.has(key.slice(0, key.indexOf('#')))
+// Keys the BUG-71 road-intrusion sweep must IGNORE: ground litter the scatter deliberately stands
+// inside the road exclusion (smallRock on the shoulder + road, medRock on the shoulder — FADE_CATS)
+// and the FEAT-85 cover, which stands beside the road by design. A category missing from this
+// list that the scatter places near a road condemns its chunk every sweep: release → re-scatter →
+// the same prop → release … (seen 2026-09-24 with medRock: props popping in and out, stutter).
+const sweepIgnoresKey = (key) => typeof key === 'string' &&
+  (FADE_CATS.has(key.slice(0, key.indexOf('#'))) || isCoverKey(key))
 
 const _m = new THREE.Matrix4()
 const _q = new THREE.Quaternion()
@@ -735,9 +742,7 @@ export class PropSystem {
       // Whole-chunk reject: no road anywhere near it ⇒ no placement in it can be intruded.
       if (roadClear(cx * CH + CH / 2, cz * CH + CH / 2, reach)) continue
       for (const p of chunk.places || []) {
-        // Skip the categories the scatter deliberately allows onto the road surface — and the
-        // FEAT-85 cover, which stands INSIDE the exclusion beside the road by design.
-        if (typeof p.key === 'string' && (p.key.startsWith('smallRock') || isCoverKey(p.key))) continue
+        if (sweepIgnoresKey(p.key)) continue   // litter + cover stand inside the exclusion by design
         if (roadClear(p.x, p.z, exclusion)) continue
         doomed.push([cx, cz])
         break                    // one intruded prop condemns the chunk; no need to price the rest

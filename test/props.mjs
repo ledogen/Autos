@@ -220,5 +220,37 @@ console.log('7. riverbed medium stones (FEAT-25 rework)')
     'bed-stone scatter deterministic across runs')
 }
 
+console.log('8. BUG-71 road-intrusion sweep is a fixed point of the scatter (no release → re-scatter churn)')
+{
+  // A road along x = 0 through every chunk, with the FULL sampler set (FEAT-85 cover + the zone
+  // rocks that stand medRock on the shoulder). Whatever the scatter places near the road on
+  // purpose, the sweep must ignore — one condemned chunk here means the live game releases and
+  // re-scatters that chunk on every sweep forever (seen 2026-09-24: props popping in and out).
+  const scene = new THREE.Scene()
+  const roadClear = (x, z, keepOut) => Math.abs(x) >= keepOut
+  const samplers = {
+    heightAt: () => 20, normalAt: () => ({ x: 0, y: 0.995, z: 0 }),
+    roadBlocked: (x) => Math.abs(x) < 9, roadClear, roadDist: (x) => Math.abs(x),
+    roadWalk: (cx, cz, step) => {
+      const samples = []
+      for (let z = cz * 64; z < (cz + 1) * 64; z += step) samples.push({ x: 0, z, tx: 0, tz: 1, arcS: z + 5000, bore: false })
+      return [{ runKey: 'run-X', samples }]
+    },
+    groundAt: (x) => (Math.abs(x) < 30 ? { green: 1, rock: 0 } : { green: 0, rock: 0.6 }),
+    padBlocked: () => false,
+  }
+  const sys = new PropSystem({ scene, worldSeed: 31, samplers })
+  sys.update(0, 0, 1)
+  sys.drainScatter()
+  const cats = new Set(); for (const c of sys._chunks.values()) for (const p of c.places) cats.add(p.key.slice(0, p.key.indexOf('#')))
+  ok(cats.has('medRock') && cats.has('grass'), `fixture stands the shoulder litter + cover (${[...cats].sort().join(' ')})`)
+  const before = sys.liveCount()
+  const doomed = sys.invalidateRoadIntrusions(roadClear, 9, 100)
+  sys.drainScatter()
+  ok(doomed === 0, `sweep condemns no chunk of a fresh scatter (${doomed} doomed)`)
+  ok(sys.liveCount() === before, `live count unchanged across the sweep (${before} → ${sys.liveCount()})`)
+  sys.dispose()
+}
+
 console.log(fails === 0 ? '\nPROPS GATE: PASS' : `\nPROPS GATE: FAIL (${fails})`)
 process.exit(fails === 0 ? 0 : 1)
