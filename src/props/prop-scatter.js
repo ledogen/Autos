@@ -13,13 +13,18 @@
  *   roadBlocked(x,z)-> boolean             // true if within FLORA_PARAMS.scatter.roadExclusion of road
  *   roadClear(x,z,keepOut) -> boolean      // BUG-23: true if NO road centreline within keepOut metres
  *                                          //   (radius-aware keep-out; legacy sets may omit it)
+ *   roadWalk(cx,cz,stepM) -> [{runKey, samples:[{x,z,tx,tz,arcS,bore}]}]   // FEAT-85 (optional):
+ *                                          //   road slices around the chunk, sampled along the arc
+ *   groundAt(x,z)  -> {green, rock}        // FEAT-85 (optional): terrain.groundAt — the cover stands
+ *                                          //   where the ground reads green (sparser on dirt, never rock)
+ *   padBlocked(x,z,keepOut) -> boolean     // FEAT-85 (optional): on a junction / lay-by pad
  * }
  *
  * Placement record: { cat, variant, x, y, z, scale, rotY, tint:[r,g,b] }
  *   y = world Y of the instance ORIGIN (trees: ground; blobs: sunk by buryFrac).
  */
 
-import { mulberry32, seedFor } from '../seed.js'
+import { mulberry32, seedFor, djb2 } from '../seed.js'
 import { FLORA_PARAMS } from '../../data/flora.js'
 import { biomeAt, BIOME } from '../biome.js'
 
@@ -333,5 +338,173 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
   }
   yield* scatterN(irange(rng, S.logsPerChunk), placeLog)
 
+  // ── Zone rocks — small / medium / large rocks following the ground texture ────────────
+  // Additive, on its own seeded stream (the streamRocks discipline), gated by the terrain's
+  // own ground reading (samplers.groundAt — absent in older fixtures → no zone rocks) and by a
+  // patchiness field so they gather in fans. See data/flora.js scatter.zoneRocks.
+  const Z = S.zoneRocks
+  if (Z && Z.attempts > 0 && samplers.groundAt && P.medRock) {
+    const zrng = mulberry32(seedFor(worldSeed, 'zoneRocks', cx, cz))
+    const mixS = Z.mix[0], mixM = mixS + Z.mix[1]
+    for (let i = 0; i < Z.attempts; i++) {
+      const x = ox + zrng() * size, z = oz + zrng() * size
+      // three draws per candidate regardless of the gate, so the stream stays aligned
+      const uKeep = zrng(), uSize = zrng()
+      const gate = _smooth01(Z.patchMin, Z.patchMin + 0.2, noise2(x * Z.patchFreq, z * Z.patchFreq, worldSeed ^ 0x2545f491))
+      if (gate <= 0) continue                                     // bare patch — no sampler cost
+      if ((i & 3) === 3) yield
+      const g = samplers.groundAt(x, z)
+      const dirt = Math.max(0, 1 - g.green - g.rock)
+      const w = g.rock * Z.onRock + dirt * Z.onDirt + g.green * Z.onGrass
+      if (uKeep > w * gate) continue
+      if (inPondWater(x, z)) continue
+      if (uSize < mixS) {
+        if (!roadClear(x, z, S.roadHalfWidth + 0.5)) continue     // off the pavement (the base pass owns the shoulder)
+        placeBlob('smallRock', x, z, P.smallRock.buryFrac, true, zrng)
+      } else if (uSize < mixM) {
+        if (!roadClear(x, z, S.roadHalfWidth + 0.5 + blobBoundR(P.medRock))) continue
+        placeBlob('medRock', x, z, P.medRock.buryFrac, true, zrng)
+      } else {
+        placeBlob('rock', x, z, P.rock.buryFrac, false, zrng)     // collidable: full keep-out inside placeBlob
+      }
+    }
+  }
+
+  // ── FEAT-85: roadside cover — ricegrass, wild rye, sagebrush ─────────────────────────
+  // Additive and LAST, on its own seeded stream, so every placement above keeps its exact draws.
+  // Optional samplers (roadWalk / greenAt / padBlocked) — absent (older fixtures, gates) → no
+  // cover, output byte-unchanged. See data/flora.js scatter.cover for the two sources.
+  yield* coverPass(out, cx, cz, worldSeed, samplers, P, { roadClear, inPondWater, inStreamChannel, slopeAt })
+
   return out
+}
+
+// Cheap 2D value noise in [0,1] (world-space, seed-keyed) — the cover's patchiness fields.
+function _hash2(ix, iz, seed) {
+  let h = seed | 0
+  h = Math.imul(h ^ (ix | 0), 0x9e3779b9)
+  h = Math.imul(h ^ (iz | 0), 0x85ebca6b)
+  h ^= h >>> 15; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 13
+  return (h >>> 0) / 4294967296
+}
+const _sm = (t) => t * t * (3 - 2 * t)
+function noise2(x, z, seed) {
+  const x0 = Math.floor(x), z0 = Math.floor(z)
+  const fx = _sm(x - x0), fz = _sm(z - z0)
+  const a = _hash2(x0, z0, seed), b = _hash2(x0 + 1, z0, seed)
+  const c = _hash2(x0, z0 + 1, seed), d = _hash2(x0 + 1, z0 + 1, seed)
+  return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fz
+}
+function noise1(t, seed) {
+  const i = Math.floor(t), f = _sm(t - i)
+  return _hash2(i, 0, seed) + (_hash2(i + 1, 0, seed) - _hash2(i, 0, seed)) * f
+}
+const _smooth01 = (e0, e1, x) => x <= e0 ? 0 : x >= e1 ? 1 : _sm((x - e0) / (e1 - e0))
+
+/**
+ * FEAT-85: the cover pass. Two sources (data/flora.js scatter.cover explains the intent):
+ *   THE WALL — walks the road slices around this chunk (samplers.roadWalk) and, per sample and
+ *   side, stands `wallRows` candidates in a band whose inner face sits halfWidth + beatBack off
+ *   the centreline, beatBack wandering along the run's arc by a noise field. A second field
+ *   picks hedge (brush) vs verge (grass) per stretch. Only candidates that LAND in this chunk are
+ *   kept (the 3×3 walk means the neighbour's slice fills the edge from the other side).
+ *   THE BACKCOUNTRY — chunk-rng candidates kept with probability ground × patchiness, held off
+ *   the road by the widest beat-back so they never stand in the mown verge.
+ * Every per-candidate draw comes from a stream seeded by the candidate's WORLD POSITION, so the
+ * result does not depend on which neighbours' roads were registered at scatter time.
+ */
+function* coverPass(out, cx, cz, worldSeed, samplers, P, h) {
+  const S = P.scatter, C = S.cover
+  if (!C || C.enabled === false || (!samplers.roadWalk && !samplers.groundAt)) return
+  const { heightAt } = samplers
+  const { roadClear, inPondWater, inStreamChannel, slopeAt } = h
+  const size = P.chunkSize
+  const ox = cx * size, oz = cz * size
+  const halfW = S.roadHalfWidth
+  const padBlocked = samplers.padBlocked || (() => false)
+  const groundAt = samplers.groundAt || (() => ({ green: 1, rock: 0 }))
+  const bb0 = C.wallBeatBack[0], bb1 = C.wallBeatBack[1]
+  const dirtFrac = C.dirtFrac ?? 0
+
+  // Which kind, and does it stand on THIS ground? Small grass and sagebrush thin onto dirt at
+  // dirtFrac of their green density; wild rye is green-only; nothing stands on rock.
+  const pickKind = (tall, prng) => tall ? (prng() < (C.sageFrac ?? 0.5) ? 'sage' : 'rye') : 'grass'
+  const standProb = (cat, g) => {
+    const dirt = Math.max(0, 1 - g.green - g.rock)
+    return cat === 'rye' ? g.green : g.green + dirt * dirtFrac
+  }
+
+  // Stand one clump. `prng` is the candidate's position-keyed stream (already used for its
+  // keep/skip draws); the remaining draws pick variant, scale, yaw and tint.
+  const stand = (x, z, cat, prng) => {
+    if (inPondWater(x, z) || inStreamChannel(x, z)) return
+    if (padBlocked(x, z, 0.5)) return
+    if (slopeAt(x, z) > C.slopeMax) return
+    const cfg = P[cat]
+    if (!cfg) return
+    const gy = heightAt(x, z)
+    // Brightness-only tint (like trees): the clump's colours are baked per vertex (base → tip),
+    // and instanceColor MULTIPLIES them, so a coloured tint would square the green.
+    const b = 1 + (prng() * 2 - 1) * cfg.colorJitter
+    out.push({
+      cat, variant: (prng() * cfg.variants) | 0, x, z,
+      y: gy - C.sink, gy,
+      scale: frange(prng, cfg.instScale), rotY: prng() * Math.PI * 2,
+      tint: [b, b, b],
+    })
+  }
+
+  // ── the wall ──────────────────────────────────────────────────────────────────────────
+  if (samplers.roadWalk && P.grass) {
+    const walk = samplers.roadWalk(cx, cz, C.wallStep)
+    for (const run of walk) {
+      const rh = djb2(run.runKey || '') ^ worldSeed
+      for (const s of run.samples) {
+        if (s.bore) continue
+        const nx = s.tz, nz = -s.tx                       // right-hand normal (road-mesh rightDir)
+        for (let side = -1; side <= 1; side += 2) {
+          const bb = bb0 + (bb1 - bb0) * noise1(s.arcS * C.wallNoiseFreq + side * 37.1, rh)
+          const hedge = noise1(s.arcS * C.wallBrushNoiseFreq + side * 11.3 + 100, rh ^ 0x5bd1e995)
+          // Sporadic (owner 2026-09-23): a stretch is populated or bare by a third field along the
+          // arc, so the thinning reads as gaps between clumps, not a thinner hedge everywhere.
+          const patch = C.wallPatchFreq
+            ? _smooth01(C.wallPatchMin ?? 0.45, (C.wallPatchMin ?? 0.45) + 0.2, noise1(s.arcS * C.wallPatchFreq + side * 5.7 + 200, rh ^ 0x27d4eb2f))
+            : 1
+          if (patch <= 0) continue
+          for (let k = 0; k < C.wallRows; k++) {
+            const prng = mulberry32(seedFor(worldSeed, 'coverWall', Math.round(s.x * 4), Math.round(s.z * 4), side, k))
+            if (prng() > C.wallDensity * patch) continue
+            const lat = halfW + bb + prng() * C.wallDepth
+            const along = (prng() - 0.5) * C.wallStep
+            const x = s.x + nx * lat * side + s.tx * along
+            const z = s.z + nz * lat * side + s.tz * along
+            if (Math.floor(x / size) !== cx || Math.floor(z / size) !== cz) continue   // the landing chunk owns it
+            if (!roadClear(x, z, halfW + 0.5)) continue                                  // another leg's pavement (throats)
+            const cat = pickKind(prng() < (C.wallTallFrac ?? 0.175) * (0.4 + 1.2 * hedge), prng)
+            if (prng() > standProb(cat, groundAt(x, z))) { yield; continue }
+            stand(x, z, cat, prng)
+            yield   // PERF-14: every candidate that reached the samplers is a slice point
+          }
+        }
+      }
+    }
+  }
+
+  // ── the backcountry ───────────────────────────────────────────────────────────────────
+  const backN = Math.round(C.backAttempts * (C.density ?? 1))   // tier-scaled (Normal 1×)
+  if (samplers.groundAt && P.grass && backN > 0) {
+    const crng = mulberry32(seedFor(worldSeed, 'coverBack', cx, cz))
+    for (let i = 0; i < backN; i++) {
+      const x = ox + crng() * size, z = oz + crng() * size
+      const gate = _smooth01(C.backNoiseMin, C.backNoiseMin + 0.25, noise2(x * C.backNoiseFreq, z * C.backNoiseFreq, worldSeed ^ 0x9e3779b9))
+      if (gate <= 0) continue                                     // bare patch — no sampler cost
+      if ((i & 3) === 3) yield
+      if (!roadClear(x, z, halfW + bb1)) continue                 // never inside the mown verge
+      const prng = mulberry32(seedFor(worldSeed, 'coverBackPt', Math.round(x * 4), Math.round(z * 4)))
+      const cat = pickKind(prng() < (C.backTallFrac ?? 0.1), prng)
+      if (prng() > standProb(cat, groundAt(x, z)) * gate) continue
+      stand(x, z, cat, prng)
+      yield
+    }
+  }
 }

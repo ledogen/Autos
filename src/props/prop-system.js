@@ -27,7 +27,7 @@
  */
 
 import * as THREE from 'three'
-import { buildPalette } from './prop-palette.js'
+import { buildPalette, COVER_CATS, COVER_FAR_CAT, FADE_CATS } from './prop-palette.js'
 import { scatterChunk, scatterChunkGen } from './prop-scatter.js'
 import { sphereVsSphere, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
 import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
@@ -45,9 +45,18 @@ const CAPACITY = {
   // Trees sized for the PERF-21 billboard-only outer ring: Ultra streams trees out to the built-
   // terrain edge (ring+warm = 8 → 17² = 289 chunks × ~30 trees ≈ 8.7k, biome-split aspen/pine).
   // Other categories only live within the full propRing (≤ ring-4, 81 chunks) as before.
-  aspen: 8000, pine: 8000, rock: 3000, boulder: 200, smallRock: 9000, bush: 4000,
+  aspen: 8000, pine: 8000, rock: 4000, boulder: 200, smallRock: 30000, bush: 4000,
   log: 300,   // FEAT-15: sparse ([0,2]/chunk) — 300 covers a ring-4 Ultra window with slack
+  medRock: 12000,   // zone rocks (2026-09-23): ~120/rocky chunk × 81 at Ultra
+  // FEAT-85: cover lives in the near+far rings only (never bbonly). Sized for "blanket
+  // everything": ~600 clumps per green chunk at Normal density, ×2.2 at Ultra over 81 chunks —
+  // but the far ring stands the *Lo pools instead, so each pool carries only its own ring.
+  grass: 40000, rye: 6000, sage: 8000,
+  grassLo: 80000, ryeLo: 10000, sageLo: 14000,
 }
+// FEAT-85: "cat#v" → is this a cover key (grass/brush)? Cover skips the shadow bake, the realtime
+// caster flag and the road-intrusion sweep (it stands beside the road ON PURPOSE).
+const isCoverKey = (key) => COVER_CATS.has(key.slice(0, key.indexOf('#')))
 
 const _m = new THREE.Matrix4()
 const _q = new THREE.Quaternion()
@@ -70,8 +79,11 @@ export class PropSystem {
     this._params = params
     this._chunkSize = params.chunkSize
 
-    const { variants, material } = buildPalette(this._seed, params)
+    const { variants, material, coverMaterial, groundMaterial, coverUniforms } = buildPalette(this._seed, params)
     this._material = material
+    this._coverMaterial = coverMaterial   // FEAT-85: wind + distance fade (uniforms shared below)
+    this._groundMaterial = groundMaterial // small/medium rocks: the fade alone
+    this._coverUniforms = coverUniforms
     this._variants = variants          // PERF-21: impostor bake needs the variant geometries
 
     // PERF-07: prop shadow mode. castRealtime=false (default) drops props from the sun's realtime
@@ -86,12 +98,13 @@ export class PropSystem {
     for (const cat of Object.keys(variants)) {
       const entries = variants[cat]
       const perVariant = Math.max(1, Math.floor((CAPACITY[cat] ?? 1000) / entries.length))
+      const isCover = COVER_CATS.has(cat)  // FEAT-85: cover material, no casting, no bake
       entries.forEach((entry, v) => {
-        const mesh = new THREE.InstancedMesh(entry.geo, material, perVariant)
+        const mesh = new THREE.InstancedMesh(entry.geo, isCover ? coverMaterial : (FADE_CATS.has(cat) ? groundMaterial : material), perVariant)
         mesh.frustumCulled = false           // PERF-05: chunk streaming bounds these
-        mesh.castShadow = castRealtime       // PERF-07: realtime shadow only when baking is off
+        mesh.castShadow = castRealtime && !isCover   // PERF-07: realtime shadow only when baking is off
         mesh.receiveShadow = true
-        mesh.layers.enable(BAKE_LAYER)       // PERF-07: also visible to the shadow-bake camera
+        if (!isCover) mesh.layers.enable(BAKE_LAYER)   // PERF-07: also visible to the shadow-bake camera
         // PERF-10: draw only the occupied slot prefix. mesh.count is maintained at `top` (the
         // high-water occupied index + 1) by _flush(); drawing full capacity pushed EVERY hidden
         // zero-scale slot through the vertex stage of the main AND shadow passes — measured 85 %
@@ -246,6 +259,7 @@ export class PropSystem {
     this._bakeScene = new THREE.Scene()
     this._bakeMeshes = new Map()
     for (const [key, rec] of this._meshes) {
+      if (isCoverKey(key)) continue        // FEAT-85: grass casts no baked shadow (mush at 0.25 m/texel)
       const src = rec.mesh.geometry
       const geo = new THREE.BufferGeometry()
       geo.setAttribute('position', src.getAttribute('position'))   // shared — no duplicate VRAM
@@ -301,8 +315,17 @@ export class PropSystem {
    * The terrain-atlas strength + bake activity are toggled by the caller (main.js) alongside this.
    */
   setShadowCasting(v) {
-    for (const rec of this._meshes.values()) rec.mesh.castShadow = v
+    for (const [key, rec] of this._meshes) rec.mesh.castShadow = v && !isCoverKey(key)
   }
+
+  // ── FEAT-85 roadside cover (live dials — uniforms on the shared cover material) ─────────
+  /** Distance fade window (m): clumps shrink toward the ground from `start`, gone by `end`. */
+  setCoverFade(start, end) {
+    this._coverUniforms.uFadeStart.value = start
+    this._coverUniforms.uFadeEnd.value = Math.max(end, start + 0.01)
+  }
+  /** Wind sway amplitude multiplier (0 = still). */
+  setCoverWind(strength) { this._coverUniforms.uWind.value = strength }
 
   // ── PERF-21 billboard impostors ───────────────────────────────────────────────────────
   /**
@@ -550,10 +573,19 @@ export class PropSystem {
           console.warn('[PropSystem] impostor pool full for', pr.key, '— falling back to 3D'); this._overflowWarned = true
         }
       }
-      const rec = this._meshes.get(pr.key)
+      // FEAT-85 far-ring LOD: cover in the 'far' ring stands its cheap stand-in (grass → grassLo,
+      // 3–4 tris for 40–85) — the pool key is swapped here, so a promote/demote re-place moves
+      // the clump between the two pools with the placement untouched. Live-toggled by
+      // cover.farLod (re-place through the GUI rebuild).
+      let key = pr.key
+      if (mode === 'far' && this._params.scatter?.cover?.farLod !== false) {
+        const hash = key.indexOf('#'), lo = COVER_FAR_CAT[key.slice(0, hash)]
+        if (lo) key = lo + key.slice(hash)
+      }
+      const rec = this._meshes.get(key)
       if (!rec || rec.free.length === 0) {
         if (!this._overflowWarned) {
-          console.warn('[PropSystem] instance pool full for', pr.key, '— raise CAPACITY'); this._overflowWarned = true
+          console.warn('[PropSystem] instance pool full for', key, '— raise CAPACITY'); this._overflowWarned = true
         }
         continue
       }
@@ -565,10 +597,10 @@ export class PropSystem {
       _col.setRGB(pr.tint[0], pr.tint[1], pr.tint[2])
       rec.mesh.setColorAt(slot, _col)
       rec.mesh.geometry.attributes.aShadowK.setX(slot, pr.k)
-      this._dirty.add(pr.key)
+      this._dirty.add(key)
       if (slot < rec.dirtyLo) rec.dirtyLo = slot
       if (slot > rec.dirtyHi) rec.dirtyHi = slot
-      chunk.owned.push({ key: pr.key, slot, imp: false })
+      chunk.owned.push({ key, slot, imp: false })
     }
   }
 
@@ -703,8 +735,9 @@ export class PropSystem {
       // Whole-chunk reject: no road anywhere near it ⇒ no placement in it can be intruded.
       if (roadClear(cx * CH + CH / 2, cz * CH + CH / 2, reach)) continue
       for (const p of chunk.places || []) {
-        // Skip the categories the scatter deliberately allows onto the road surface.
-        if (typeof p.key === 'string' && p.key.startsWith('smallRock')) continue
+        // Skip the categories the scatter deliberately allows onto the road surface — and the
+        // FEAT-85 cover, which stands INSIDE the exclusion beside the road by design.
+        if (typeof p.key === 'string' && (p.key.startsWith('smallRock') || isCoverKey(p.key))) continue
         if (roadClear(p.x, p.z, exclusion)) continue
         doomed.push([cx, cz])
         break                    // one intruded prop condemns the chunk; no need to price the rest
@@ -797,6 +830,7 @@ export class PropSystem {
 
     this._syncChunkLod()                            // PERF-21: pool swaps after streaming settles
     this._flush()
+    this._coverUniforms.uTime.value = performance.now() * 0.001   // FEAT-85: wind clock
   }
 
   /** Drain all queued/in-flight scatter synchronously (gates + teleports). */
@@ -989,6 +1023,8 @@ export class PropSystem {
     }
     if (this._impostors) { this._impostors.dispose(); this._impostors = null }
     this._material.dispose()
+    this._coverMaterial.dispose()   // FEAT-85
+    this._groundMaterial.dispose()
     this._meshes.clear()
     this._chunks.clear()
     this._collidables.clear()

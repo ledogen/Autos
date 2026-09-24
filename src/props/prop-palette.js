@@ -17,7 +17,17 @@ import { mulberry32, seedFor } from '../seed.js'
 import { FLORA_PARAMS } from '../../data/flora.js'
 import {
   makeBlob, makeKinkedTube, makeConeStack, fillColor, fleckColor, assembleTree,
+  makeGrassClump, makeRyeClump, makeSageClump, makeGrassLo, makeRyeLo, makeSageLo,
 } from './prop-geometry.js'
+
+// FEAT-85: categories rendered through the COVER material (wind sway + distance fade, DoubleSide,
+// no collision, no shadow casting, no shadow bake, no billboard). prop-system keys off this set.
+// The *Lo cats are the far-ring stand-ins (COVER_FAR_KEY below); never placed by the scatter.
+export const COVER_CATS = new Set(['grass', 'rye', 'sage', 'grassLo', 'ryeLo', 'sageLo'])
+export const COVER_FAR_CAT = { grass: 'grassLo', rye: 'ryeLo', sage: 'sageLo' }
+// Ground litter drawn through the GROUND material: the cover's distance shrink (so a pebble costs
+// no fragments past the fade), no wind, single-sided. Still baked into the shadow atlas.
+export const FADE_CATS = new Set(['smallRock', 'medRock'])
 
 const rr = (rng, [lo, hi]) => lo + (hi - lo) * rng()
 
@@ -170,6 +180,76 @@ export function buildPalette(worldSeed, params = FLORA_PARAMS) {
     bush:      bakeBlobs(params.bush, rng, 'bush'),
     log:       bakeLogs(params.log, rng),   // FEAT-15: fallen trunks (hard logCapsule obstacle)
   }
+  // FEAT-85: cover clumps draw AFTER every existing category so their bake never shifts the rng
+  // draws the older variants are built from (their geometry stays byte-identical).
+  const bakeCover = (cfg, fn) => Array.from({ length: cfg.variants }, () => ({ geo: fn(cfg, rng), collision: null }))
+  if (params.grass) variants.grass = bakeCover(params.grass, makeGrassClump)
+  if (params.rye)   variants.rye   = bakeCover(params.rye, makeRyeClump)
+  if (params.sage)  variants.sage  = bakeCover(params.sage, makeSageClump)
+  // Later additions draw after the cover for the same reason (medium rocks 2026-09-23, then the
+  // far-ring Lo stand-ins — one per full variant so the key swap is index-for-index).
+  if (params.medRock) variants.medRock = bakeBlobs(params.medRock, rng, 'none')
+  if (params.grass) variants.grassLo = bakeCover(params.grass, makeGrassLo)
+  if (params.rye)   variants.ryeLo   = bakeCover(params.rye, makeRyeLo)
+  if (params.sage)  variants.sageLo  = bakeCover(params.sage, makeSageLo)
   const material = new THREE.MeshLambertMaterial({ vertexColors: true })
-  return { variants, material, params }
+  const { coverMaterial, groundMaterial, coverUniforms } = buildCoverMaterial(params.scatter?.cover)
+  return { variants, material, coverMaterial, groundMaterial, coverUniforms, params }
+}
+
+/**
+ * FEAT-85: the cover material — Lambert like the rest, but DoubleSide (a blade is one strip, seen
+ * from both sides) with two vertex-stage effects patched in:
+ *   • DISTANCE FADE: each instance shrinks toward its root between uFadeStart and uFadeEnd (view
+ *     distance from the instance origin), so the cover thins into the fog with no pop and past
+ *     uFadeEnd costs zero fragments. Instances stay resident (the chunk owns them either way).
+ *   • WIND: a slow sway of the tips (`aSway` 0 root → 1 tip), phase keyed by world position and
+ *     modulated by a gust term, so neighbouring clumps move together but not in lockstep.
+ * Uniforms are shared with PropSystem, which advances uTime per frame and writes the fade/wind
+ * dials from the params (tier + GUI).
+ */
+export function buildCoverMaterial(cover = {}) {
+  const coverUniforms = {
+    uTime:      { value: 0 },
+    uWind:      { value: cover.windStrength ?? 1 },
+    uFadeStart: { value: cover.fadeStart ?? 60 },
+    uFadeEnd:   { value: cover.fadeEnd ?? 95 },
+  }
+  // The shrink. STAGGERED per instance (owner 2026-09-23: the cover "abruptly stops"): each
+  // clump hashes its own start inside the window, so across the band the cover THINS — a few
+  // clumps gone at the start, most by the end — instead of every clump shrinking in step, which
+  // read as a line. `k` scales the window (ground litter is invisible sooner than a 0.5 m tuft).
+  const fadeGLSL = (k) => `
+      #ifdef USE_INSTANCING
+        vec3 cvOrigin = instanceMatrix[3].xyz;
+      #else
+        vec3 cvOrigin = vec3(0.0);
+      #endif
+        float cvJit = fract(sin(dot(cvOrigin.xz, vec2(12.9898, 78.233))) * 43758.5453);
+        float cvEnd = uFadeEnd * ${k.toFixed(2)};
+        float cvStart = mix(uFadeStart * ${k.toFixed(2)}, cvEnd, cvJit * 0.75);
+        float cvFade = 1.0 - smoothstep(cvStart, cvEnd, distance(cvOrigin, cameraPosition));
+        transformed *= cvFade;`
+  const coverMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })
+  coverMaterial.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, coverUniforms)
+    shader.vertexShader = 'uniform float uTime, uWind, uFadeStart, uFadeEnd;\nattribute float aSway;\n' + shader.vertexShader
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>` + fadeGLSL(1.0) + `
+        float cvPh = uTime * 1.4 + cvOrigin.x * 0.13 + cvOrigin.z * 0.11;
+        float cvGust = 0.6 + 0.4 * sin(uTime * 0.37 + cvOrigin.x * 0.02 + cvOrigin.z * 0.017);
+        transformed.xz += vec2(sin(cvPh), cos(cvPh * 0.8 + 0.9)) * (0.10 * uWind * cvGust * aSway * cvFade);   // 0.10: doubled, owner 2026-09-22`
+    )
+  }
+  coverMaterial.customProgramCacheKey = () => 'feat85-cover'
+  // Ground litter (FADE_CATS): the same shrink at 0.7× the window, no wind, front faces only.
+  const groundMaterial = new THREE.MeshLambertMaterial({ vertexColors: true })
+  groundMaterial.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, coverUniforms)
+    shader.vertexShader = 'uniform float uFadeStart, uFadeEnd;\n' + shader.vertexShader
+    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>` + fadeGLSL(0.7))
+  }
+  groundMaterial.customProgramCacheKey = () => 'feat85-ground'
+  return { coverMaterial, groundMaterial, coverUniforms }
 }

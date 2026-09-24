@@ -250,6 +250,13 @@ const makePropSamplers = () => ({
   // Reads the live key-light direction at call time (same convention); absent headless (gates build
   // PropSystem without this key → the bake attribute stays at its flat-ground default).
   sunShear:    () => shearFromSun(skySystem.sunDirection, _sunShearScratch),
+  // FEAT-85: roadside cover. roadWalk hands the scatter the road slices around a chunk (sampled
+  // along the arc) so the wall stands beside the road without a nearest-road query per clump;
+  // groundAt is the terrain's own green/rock/dirt reading; padBlocked keeps the cover off
+  // junction aprons and lay-by pads (graded ground, not verge).
+  roadWalk:    (cx, cz, stepM) => roadSystem.walkTileRoads(cx, cz, stepM),
+  groundAt:    (x, z) => terrainSystem.groundAt(x, z),
+  padBlocked:  (x, z, keepOut) => roadSystem.poiPadBlocked(x, z, keepOut) || roadSystem.junctionPadBlocked(x, z, keepOut),
 })
 const _sunShearScratch = new THREE.Vector2()
 
@@ -1807,11 +1814,19 @@ let _lastHudWrite = 0  // PERF-16: wall-clock (ms) of the last HUD DOM/canvas wr
 // PERF-21 bbRing: billboard-only outer prop ring — trees stream as impostor quads out to the
 //   BUILT terrain edge (ring + warm; built chunks are in the scene and drawn), so no drawn
 //   mountainside is bare. Beyond propRing only trees commit (no rock/bush slots, no shadow tiles).
+// FEAT-85 cover: the roadside grass/brush fade window (m) and whether new chunks scatter it at
+//   all. Low fades everything to nothing (zero fragments) and stops scattering; the others widen
+//   the window with the tier's reach. Written to FLORA_PARAMS.scatter.cover, pushed by the same
+//   sync hook as the impostors (applyPropImpostors), GUI-overridable live.
+// coverDensity: × on the backcountry cover attempts (owner 2026-09-23: grass scales with the
+//   quality slider; rocks do NOT — they are what ties the props to the ground texture). The far
+//   prop ring stands 3–4-tri stand-ins (COVER_FAR_CAT), so the vertex cost of the extra density
+//   lands mostly inside lodRing.
 const QUALITY_PRESETS = {
-  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 20, shadowTilePx: 0   },
-  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 1536, shadowExtent: 20, shadowTilePx: 256 },
-  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 2048, shadowExtent: 20, shadowTilePx: 384 },
-  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 3072, shadowExtent: 20, shadowTilePx: 512 },
+  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 20, shadowTilePx: 0,   cover: false, coverFade: [0, 0],     coverDensity: 0   },
+  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 1536, shadowExtent: 20, shadowTilePx: 256, cover: true,  coverFade: [50, 110],  coverDensity: 1.0 },
+  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 2048, shadowExtent: 20, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6 },
+  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 3072, shadowExtent: 20, shadowTilePx: 512, cover: true,  coverFade: [100, 190], coverDensity: 2.2 },
 }
 
 // PERF-07: set once the bake system exists (browser only — headless never constructs it), so
@@ -1875,6 +1890,15 @@ function applyQuality (name) {
     FLORA_PARAMS.lod.ring3d = p.lodRing
     if (_syncImpostors) _syncImpostors()
   }
+  // FEAT-85 roadside cover: same write-the-param-then-sync pattern (the impostor hook also
+  // pushes the cover dials). `enabled` only affects chunks scattered from now on.
+  if (p.coverFade && FLORA_PARAMS.scatter?.cover) {
+    const C = FLORA_PARAMS.scatter.cover
+    C.enabled = p.cover !== false
+    C.density = p.coverDensity ?? 1
+    C.fadeStart = p.coverFade[0]; C.fadeEnd = p.coverFade[1]
+    if (_syncImpostors) _syncImpostors()
+  }
   // PERF-07 baked prop shadows: the tier owns the atlas density (0 on Low = off). Write the param
   // (source of truth + what the GUI slider binds to), then let the sync hook reallocate + re-bake.
   if (p.shadowTilePx !== undefined && FLORA_PARAMS.shadows) {
@@ -1907,6 +1931,9 @@ if (_PROF) {
     programs: renderer.info.programs?.length ?? 0,
   })
   window.__perfData = () => perfSnapshot()
+  // FEAT-84: the terrain system, so an external probe can zero the surface-texture uniforms and
+  // price them (same read-only precedent as __props / __road).
+  window.__terrain = () => terrainSystem
   // FEAT-43: story-mode handle, so the external profiler can measure INSIDE the mode (enter it,
   // wait out the region warm, then drive) instead of only ever profiling free roam.
   window.__story = () => storySystem
@@ -2068,6 +2095,13 @@ const _gui = initDebug(RANGER_PARAMS, {
   // materials (shared names like uDetailScale/uNoiseScale update both; material-specific names hit
   // only the one that has them). No rebuild — the change shows on the next frame.
   setTerrainUniform: (name, value) => {
+    // FEAT-84: 'uSurfScale.x' addresses one component of a vector uniform.
+    const dot = name.indexOf('.')
+    if (dot > 0) {
+      const u = terrainSystem?._terrainUniforms?.[name.slice(0, dot)]
+      if (u) u.value[name.slice(dot + 1)] = value
+      return
+    }
     if (terrainSystem?._terrainUniforms?.[name]) terrainSystem._terrainUniforms[name].value = value
     if (roadMeshSystem?._roadUniforms?.[name])   roadMeshSystem._roadUniforms[name].value = value
   },
@@ -4064,6 +4098,10 @@ const applyPropImpostors = () => {
   const _impostorKey = { color: sun.color, get intensity () { return sun.intensity + sunFar.intensity } }
   propSystem.setImpostors(renderer, { sun: _impostorKey, ambient, sunDir: skySystem.sunDirection })
   propSystem.setLodRing(FLORA_PARAMS.lod?.ring3d ?? 2)
+  // FEAT-85: the cover's live dials ride the same hook — every path that recreates the
+  // PropSystem (GUI rebuild, reseed) or switches tier lands here.
+  const C = FLORA_PARAMS.scatter?.cover
+  if (C) { propSystem.setCoverFade(C.fadeStart, C.fadeEnd); propSystem.setCoverWind(C.windStrength) }
 }
 _syncImpostors = applyPropImpostors
 applyPropImpostors()

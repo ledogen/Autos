@@ -8679,6 +8679,69 @@ export class RoadSystem {
      * is for, and the bench is graded ground, not forest floor. Same stadium test the carve uses.
      * Always false in free roam (no pads set), so the scatter is unchanged there.
      */
+    /**
+     * FEAT-85: is (wx,wz) within `keepOut` of a junction's graded pad? The roadside cover must not
+     * stand on the apron (graded ground, not verge). Disc test against each node's ring reach —
+     * the same radius the ring hull was built to; deg-2 fillets use their own reach. Read-only.
+     */
+    junctionPadBlocked(wx, wz, keepOut = 0) {
+        if (this._nodeJunctionsRev !== this._networkRev) this._detectNodeJunctions()
+        const nodes = this._nodeJunctions
+        if (!nodes) return false
+        for (const n of nodes.values()) {
+            const r = (n.ring ? (n.ringMaxR ?? 0) : (n.deg2 ? (n.deg2MaxR ?? 0) : 0)) + keepOut
+            if (r <= 0) continue
+            const dx = wx - n.pos.x, dz = wz - n.pos.z
+            if (dx * dx + dz * dz <= r * r) return true
+        }
+        return false
+    }
+
+    /**
+     * FEAT-85: walk every per-tile road slice in the 3×3 tiles around chunk (cx, cz), sampled at
+     * ~stepM along the arc, so the roadside cover scatter can stand clumps beside the road without
+     * a nearest-road query per candidate. Read-only. Samples carry position, the unit XZ tangent,
+     * the run-arc arcS (for along-road noise fields) and a `bore` flag (inside or within 8 m of a
+     * tunnel span — nothing grows in the tube or on the headwall). The 3×3 reach is what keeps a
+     * chunk's cover complete at its edges: a clump belongs to the chunk it LANDS in, and a road
+     * running past a chunk boundary contributes from the neighbour's slice.
+     *
+     * @returns {Array<{ runKey: string, samples: Array<{x, z, tx, tz, arcS, bore}> }>}
+     */
+    walkTileRoads(cx, cz, stepM = 1) {
+        const out = []
+        if (!this._tiles) return out
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+            const segs = this._tiles.get(`${cx + dx},${cz + dz}`)
+            if (!segs || !segs.length) continue
+            for (const s of segs) {
+                const spline = s.spline
+                if (!spline || !spline.getLength) continue
+                const len = spline.getLength()
+                if (!(len > 0.5)) continue
+                const n = Math.max(2, Math.ceil(len / stepM))
+                const runKey = s.runKey ?? ''
+                const a0 = s.arcS0 ?? 0, a1 = s.arcS1 ?? (a0 + len)
+                const samples = new Array(n + 1)
+                for (let i = 0; i <= n; i++) {
+                    const u = i / n
+                    spline.getPointAt(u, _scratchPt)
+                    spline.getTangentAt(u, _scratchTan)
+                    const tl = Math.hypot(_scratchTan.x, _scratchTan.z) || 1
+                    const arcS = a0 + (a1 - a0) * u
+                    samples[i] = {
+                        x: _scratchPt.x, z: _scratchPt.z,
+                        tx: _scratchTan.x / tl, tz: _scratchTan.z / tl,
+                        arcS,
+                        bore: !!this.tunnelSpanAt(runKey, arcS, -8),
+                    }
+                }
+                out.push({ runKey, samples })
+            }
+        }
+        return out
+    }
+
     poiPadBlocked(wx, wz, keepOut = 0) {
         const pads = this._padsAll
         if (!pads) return false
