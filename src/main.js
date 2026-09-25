@@ -266,16 +266,24 @@ const _sunShearScratch = new THREE.Vector2()
 //   • Story mode: the region freeze means the frame loop makes no roadSystem.update() call at all,
 //     so there is no adopt, so the sweep never runs once in a whole run. Measured 26 props in the
 //     road, unchanged over 55 s of idling AND driving.
-// So: keep the budget on the steady-state adopt, and sweep the WHOLE ring on the handful of adopts
-// that follow a world change — plus directly, where a mode has no adopts to hang it on.
-const FULL_SWEEP_ADOPTS = 6   // covers the settle: measured reseeds reveal new runs over ~4 adopts
-let _propFullSweeps = 0
-/** Arm the next `n` adopts to sweep the whole prop ring instead of a 10-chunk slice. */
-const queuePropFullSweeps = (n = FULL_SWEEP_ADOPTS) => { _propFullSweeps = Math.max(_propFullSweeps, n) }
+// PERF-33: so an adopt no longer SWEEPS, it OWES — every adopt (and every seat) owes one whole-ring
+// pass, and the frame loop pays it off PROP_SWEEP_PER_FRAME chunks at a time. That closes both
+// failures above without an unbounded pass on an adopt: the debt is paid whether or not another
+// adopt ever comes (parked truck), and each settle adopt simply re-arms a full pass. The previous
+// "whole ring on the next 6 adopts" arming ran a 25–46 ms (cpu×4) sweep inside the adopt message
+// handler — and once duplicate adopts stopped burning the 6 during load, those landed while driving.
+const PROP_SWEEP_PER_FRAME = 2   // ≈0.3 ms/chunk (measured, see invalidateRoadIntrusions) → 49-chunk ring in ~25 frames
+let _propSweepOwed = 0           // chunks still to examine in the current owed pass
+/** Owe one whole-ring intrusion pass — at least the full streamed ring, since a seat can arrive
+ *  before the props have scattered (live count 0) and the pass must still cover them once they do. */
+const owePropSweep = () => {
+  const ring = (2 * Math.max(_propRing, _bbRing) + 1) ** 2
+  _propSweepOwed = Math.max(_propSweepOwed, ring, propSystem ? propSystem.liveChunkCount() : 0)
+}
 /**
  * Re-test live placements against the roads that exist NOW. `budget` is chunks to examine;
- * Infinity means the whole ring in one pass (~2–25 ms — fine behind a load, or on the few adopts
- * after a world change; never on a steady-state band move, which is the PERF-26/28 surface).
+ * Infinity means the whole ring in one pass (~2–25 ms — only ever behind a loading screen; play
+ * pays the owed pass per frame instead, see owePropSweep).
  * The predicate is makePropSamplers()' own roadClear, so it can never drift from the scatter's.
  */
 function sweepPropIntrusions (budget) {
@@ -792,9 +800,9 @@ function debouncedRoadRebuild () {
 let _reseatChain = Promise.resolve()
 function _reseatTruckAtSpawn () {
   // BUG-71: a seat is ALWAYS a world arriving at once — cold load, R-reset, or a Path-B reseed —
-  // and the band the props scattered against is still filling in behind it. Arm the whole-ring
-  // sweeps here rather than at each of those three call sites, so no future spawn path can forget.
-  queuePropFullSweeps()
+  // and the band the props scattered against is still filling in behind it. Owe a whole-ring pass
+  // here rather than at each of those three call sites, so no future spawn path can forget.
+  owePropSweep()
   const run = () => _reseatTruckAtSpawnInner()
   _reseatChain = _reseatChain.then(run, run)
   return _reseatChain
@@ -3983,11 +3991,9 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
       // EVERY adopt, not just 'params': a positional move-adopt is precisely when runs the old
       // window never registered enter the network, which is what strands props on roads. The
       // predicate comes from makePropSamplers() so it can never drift from the one the scatter
-      // itself used. Usually drops nothing and costs one bounded pass over live placements.
-      // BUG-71: budgeted on the frontier, WHOLE-RING while a world change is still settling —
-      // queuePropFullSweeps() arms that window; see the helper for the measurements.
-      if (_propFullSweeps > 0) { _propFullSweeps--; sweepPropIntrusions(Infinity) }
-      else sweepPropIntrusions()
+      // itself used. BUG-71 + PERF-33: owe a whole-ring pass; the frame loop pays it off in slices
+      // (this handler runs between frames, so any sweep here is an unbudgeted stall).
+      owePropSweep()
       if (reason !== 'params') return
       // The deferred half of debouncedRoadRebuild (see there): the swap just bumped _generation,
       // so clear the ribbon tiles and re-bake the carve against the ADOPTED geometry — doing this
@@ -5301,6 +5307,8 @@ function loop () {
   // collision always exists under the truck, while the visual ring drips in budget-bound.
   _pt = performance.now()
   if (propSystem && !_labActive) propSystem.update(streamCenter.x, streamCenter.z, _propRing, vehicleState.position.x, vehicleState.position.z, _bbRing)
+  // BUG-71 / PERF-33: pay down the owed road-intrusion pass (see owePropSweep).
+  if (_propSweepOwed > 0 && !_labActive) { sweepPropIntrusions(PROP_SWEEP_PER_FRAME); _propSweepOwed -= PROP_SWEEP_PER_FRAME }
   perfAdd('frame.props.update', performance.now() - _pt)   // TEMP (D-arc)
   // PERF-07: bake freshly-committed chunks' prop shadows into the world atlas (sliced; no-op when the
   // queue is empty, i.e. the steady state). Off the frame's shadow pass entirely once baked.

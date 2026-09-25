@@ -1823,6 +1823,45 @@ export class RoadSystem {
     }
 
     /**
+     * The streamed window (macro-cell box + signature) for a view center at the active radius — THE
+     * one derivation of the band, shared by _streamNetwork and holdsWindow() so the "is this window
+     * already built" question can never be answered two ways (PERF-33).
+     */
+    _bandAt(x, z) {
+        const R = this._proto.radius
+        const center_mx = Math.floor(x / PROTO_ANCHOR_SPACING)
+        const HW = this._bandHalfWidth()
+        const mx0 = center_mx - HW
+        const mx1 = center_mx + HW
+        const mz0 = Math.floor((z - R) / PROTO_ANCHOR_SPACING)
+        const mz1 = Math.ceil((z + R) / PROTO_ANCHOR_SPACING)
+        return { mx0, mx1, mz0, mz1, sig: `${mz0}:${mz1}:${mx0}:${mx1}:${this._generation}` }
+    }
+
+    /**
+     * PERF-33: true when the network already installed IS the window a build at (x, z, radius) would
+     * produce — the network is a pure function of the band (D-16), so such a build is a no-op. The
+     * network client asks this before dispatching a queued 'move', which is how a request coalesced
+     * while an earlier build was in flight dies instead of paying a second full adopt on arrival.
+     */
+    holdsWindow(x, z, radius) {
+        return !this._proto.dirty && radius === this._proto.radius && this._network.size > 0
+            && this._bandAt(x, z).sig === this._lastBandSig
+    }
+
+    /**
+     * PERF-33: forget the stream center, so the next update() decides by BAND alone. The network
+     * worker's instance persists across builds and has its own PROTO_REGEN_MOVE lazy gate: a request
+     * landing < 96 m from the worker's previous center returned the OLD window unchanged, while the
+     * main thread (which decides by band) kept re-requesting — a chain of full adopts, one per build
+     * cycle, until the car cleared 96 m. A request IS the decision; an identical band still
+     * short-circuits cheaply in _streamNetwork.
+     */
+    forgetStreamCenter() {
+        this._networkCenter = null
+    }
+
+    /**
      * Warm-scan core (FEAT-68 v2 rewrite): collect ≤ `cap` dispatchable route jobs for `edges`.
      * A v2 route is a PURE fn of (terrain, anchor pair, node heights, deg-2 pins) — no sibling
      * deps, no solo routes, no corridor discs — so a job is just the edge's _v2EdgeSpec and the
@@ -6214,14 +6253,7 @@ export class RoadSystem {
         // and per-row geometry is a pure fn of (mz, band). So if this signature is unchanged since the
         // last build and nothing is dirty, a re-stream would reproduce byte-identical geometry — skip
         // the whole rebuild/re-slice and KEEP every cache (the common case: moving within one 256 m cell).
-        const R = this._proto.radius
-        const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
-        const HW = this._bandHalfWidth()
-        const mx0 = center_mx - HW
-        const mx1 = center_mx + HW
-        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
-        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
-        const bandSig = `${mz0}:${mz1}:${mx0}:${mx1}:${this._generation}`
+        const { mx0, mx1, mz0, mz1, sig: bandSig } = this._bandAt(center.x, center.z)
         if (!this._proto.dirty && bandSig === this._lastBandSig && this._network.size > 0 && this._tiles && this._tiles.size > 0) {
             // Identical window → network/slices/profiles all still valid; just track the new center
             // so the next <PROTO_REGEN_MOVE move short-circuits at the lazy gate above.

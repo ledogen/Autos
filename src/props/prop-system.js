@@ -640,6 +640,9 @@ export class PropSystem {
     if (this._shadowBake && !wasBBOnly) this._shadowBake.markWithNeighbors(cx, cz)
   }
 
+  /** Live (committed) prop chunks — the size of one whole-ring intrusion pass. */
+  liveChunkCount() { return this._chunks.size }
+
   /**
    * Drop every chunk a road has moved INTO, so it re-scatters against the network that now exists.
    *
@@ -673,11 +676,11 @@ export class PropSystem {
    * cosmetic defect for the couple of adopts it takes the cursor to come round, not a correctness
    * one — nothing downstream reads prop placement.
    *
-   * BUG-71 (2026-09-21): budgeting is safe ONLY where more adopts are coming. Two callers now pass
-   * Infinity — the whole ring in one pass — because in their case they are not: a parked truck after
-   * a reseed moves no band, and story mode's region freeze means no adopt EVER fires. The caller
-   * decides (see sweepPropIntrusions / queuePropFullSweeps in main.js); this method just honours the
-   * number it is given.
+   * BUG-71 (2026-09-21): budgeting is safe ONLY where the rest of the pass is guaranteed to come.
+   * PERF-33 moved that guarantee off the adopt: an adopt now OWES a whole-ring pass and the frame
+   * loop pays it a couple of chunks per frame (owePropSweep in main.js), so a parked truck completes
+   * it too. Story mode's go-live passes Infinity — one pass behind the loading screen, since its
+   * region freeze means no adopt ever fires. The caller decides; this method honours the number.
    *
    * @param {(x, z, keepOut) => boolean} roadClear - true when NO road centreline is within keepOut.
    * @param {number} exclusion - FLORA_PARAMS.scatter.roadExclusion.

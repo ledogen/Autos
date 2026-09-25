@@ -105,6 +105,15 @@ export class RoadNetworkClient {
         const entry = this._queue.shift()
         const rec = this._clients.get(entry.id)
         if (!rec) { for (const w of entry.waiters) w(false); this._pump(); return }
+        // PERF-33: a 'move' coalesced while an earlier build was in flight often asks for the very
+        // window that build just installed. Building it again is a pure no-op (the network is a
+        // function of the band) that still costs a full main-thread adopt — the driving hitch.
+        if (entry.reason === 'move' && entry.epoch === rec.road.routeEpoch()
+            && rec.road.holdsWindow(entry.x, entry.z, entry.radius)) {
+            for (const w of entry.waiters) w(true)
+            this._pump()
+            return
+        }
         this._active = entry
         const pad = pondDiscPad(this._getParams())
         const discs = this._getPondDiscs(entry.x - entry.radius - pad, entry.z - entry.radius - pad,
