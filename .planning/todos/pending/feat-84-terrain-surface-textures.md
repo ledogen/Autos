@@ -157,6 +157,17 @@ blend "at their interfaces" rather than crossfade.
       captured in the run the laptop slept through; three fresh captures render correctly. Filed
       as BUG-73 (vertex colours written before heights are real) — not a shader rule.
 
+- [x] Owner pass 12 (2026-09-25, scenes 20 vs 22): **one colour key for "rock with foliage
+      underneath"** — wherever rock is present the ground BETWEEN the rocks (grass, dirt, and the
+      rock zone's own joints) pulls toward `terrainRockGapGreen` (`terrainUnderRockGreen` 0.8,
+      gated by inclination, engineered faces exempt), applied before the rock mix so only the
+      non-rock texels carry it. The green no longer lives in ANY map: the rock map's joints and the
+      dirt map's hollows are neutral (relief only), so the picker is a live uniform (no re-bake).
+      The "dirt flat green" rule is gone — it was my misreading of this ask. Scene 20's shoulder
+      was the FILL skirt with the dirt albedo forced on (baked hollow green + pale pebbles = "green
+      with rocks poking through"): dirt albedo is now off everywhere, the carve override keeps the
+      rock albedo on cut faces only. Sliders: Under-rock green (key) picker + amount.
+
 ## Known limits / follow-ups
 
 - Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second

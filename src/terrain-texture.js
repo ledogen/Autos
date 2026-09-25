@@ -216,9 +216,6 @@ export function grassFields(seed, size) {
 }
 
 // ── DIRT: fbm clods + pebbles + a few stones ──────────────────────────────────────────────────
-// Foliage tone under the clods (linear rgb) and how far a hollow goes toward it (0 = plain soil).
-const DIRT_UNDER_GREEN = [0.24, 0.31, 0.15]
-const DIRT_UNDER_MIX = 0.75
 export function dirtFields(seed, size, base = _hexLin(0x69481b)) {
   const rng = mulberry32(seed >>> 0)
   // Pebble palette — sun-washed browns + greys (owner, 2026-09-22), as absolute linear colours the
@@ -262,11 +259,10 @@ export function dirtFields(seed, size, base = _hexLin(0x69481b)) {
     if ((p & 63) === 63 && covered() >= PEBBLE_COVER) break
   }
   const pebbleCover = covered()
-  // The soil between the pebbles: crowns of the clods stay the brown base (lighter on top), the
-  // HOLLOWS pull toward a dusty foliage green — owner 2026-09-23: "add some green underneath the
-  // dirt rock texture", low ground cover showing through where the soil dips. An absolute target
-  // (like the pebbles) so the picker's brown stays the brown.
-  const under = _toward(DIRT_UNDER_GREEN, base)
+  // The soil between the pebbles: relief shading only (low clods darker, crowns lighter). The
+  // "green under the rocks" is the shader's colour key (terrain.js uRockGapGreen), never baked
+  // here — a baked tint on the fill skirt read as "green with rocks poking through" (owner
+  // 2026-09-25).
   for (let i = 0; i < N; i++) {
     const j = i * 4
     const o = owner[i]
@@ -274,12 +270,8 @@ export function dirtFields(seed, size, base = _hexLin(0x69481b)) {
       const t = tint[o]
       mod[j] = t[0]; mod[j + 1] = t[1]; mod[j + 2] = t[2]
     } else {
-      const crown = clamp01(H[i] / 0.45)                 // 0 in a hollow → 1 on a clod crown
-      const lift = 0.86 + 0.28 * crown
-      const g = (1 - crown) * DIRT_UNDER_MIX
-      mod[j]     = lift        + (under[0] * lift - lift)        * g
-      mod[j + 1] = lift * 0.99 + (under[1] * lift - lift * 0.99) * g
-      mod[j + 2] = lift * 0.96 + (under[2] * lift - lift * 0.96) * g
+      const lift = 0.86 + 0.28 * clamp01(H[i] / 0.45)   // low clods darker, crowns lighter
+      mod[j] = lift; mod[j + 1] = lift * 0.99; mod[j + 2] = lift * 0.96
     }
   }
   return { H: _normalise(H), mod, normalStrength: 2.2, pebbleCover }
@@ -322,11 +314,10 @@ function _convexPoly(rng, cx, cz, r) {
   return angs.map(a => [cx + Math.cos(a) * r * (0.6 + rng() * 0.4), cz + Math.sin(a) * r * (0.6 + rng() * 0.4)])
 }
 
-// Foliage tone in the gaps between the fragments (linear rgb) — owner 2026-09-23: "make the
-// background of the rock colour map take on a green tone to suggest foliage hiding beneath the
-// larger rocks". An absolute target relative to the rock picker colour, like the dirt pebbles.
-const ROCK_GAP_GREEN = [0.18, 0.22, 0.16]   // default (0x2d372a); the picker (terrainRockGapGreen) overrides
-export function rockFields(seed, size, paletteBase = _hexLin(0x5a5b5e), gapGreen = ROCK_GAP_GREEN) {
+// The gaps between the fragments are NEUTRAL here (relief shading only): the "foliage under the
+// rocks" green is a shader colour key (terrain.js uRockGapGreen / uUnderRockGreen) applied to
+// every biome's ground-between-rocks alike, so it never lives in this map (owner 2026-09-25).
+export function rockFields(seed, size, paletteBase = _hexLin(0x5a5b5e)) {
   const rng = mulberry32(seed >>> 0)
   const N = size * size
   const H = new Float32Array(N)
@@ -431,17 +422,11 @@ export function rockFields(seed, size, paletteBase = _hexLin(0x5a5b5e), gapGreen
   }
   cover = covered()
 
-  const gap = _toward(gapGreen, paletteBase)
   for (let i = 0; i < N; i++) {
     const j = i * 4
     const o = owner[i]
     if (o >= 0) { const t = rubTint[o]; mod[j] = t[0]; mod[j + 1] = t[1]; mod[j + 2] = t[2] }
-    else {
-      // plateTint carries the relief shading (joints darker, faces lighter); the hue is the
-      // foliage target, so a deep joint is dark green and an exposed filler face pale green.
-      const f = plateTint[i] * 1.15
-      mod[j] = gap[0] * f; mod[j + 1] = gap[1] * f; mod[j + 2] = gap[2] * f
-    }
+    else { const f = plateTint[i]; mod[j] = f; mod[j + 1] = f; mod[j + 2] = f * 1.02 }   // joints: relief shading only
   }
   // Normal scale in physical terms: the height unit is ~0.25 m and a texel is 3 cm at the 8 m
   // tile, so ~12 puts a 0.3-high facet across a 1.5 m plate at ~6°; joints and rubble edges
@@ -453,8 +438,7 @@ export function rockFields(seed, size, paletteBase = _hexLin(0x5a5b5e), gapGreen
  * Bake the three surface texture pairs.
  * @param {number} seed  deterministic (world-independent — one shared look, like the riverbed)
  * @param {number} size  texture edge in px (power of two)
- * @param {{dirt?:number, rock?:number, rockGap?:number}} bases  palette hex colours the absolute-target
- *   palettes are relative to, and the rock-gap foliage colour itself
+ * @param {{dirt?:number, rock?:number}} bases  palette hex colours the absolute-target palettes are relative to
  * @returns {{ grass: {map, normalMap}, dirt: {map, normalMap}, rock: {map, normalMap} }}
  */
 export function makeSurfaceTextures(seed = 8401, size = 256, bases = {}) {
@@ -465,6 +449,6 @@ export function makeSurfaceTextures(seed = 8401, size = 256, bases = {}) {
   return {
     grass: build(grassFields(seed, size)),
     dirt:  build(dirtFields(seed + 1, size, bases.dirt ? _hexLin(bases.dirt) : undefined)),
-    rock:  build(rockFields(seed + 2, size, bases.rock ? _hexLin(bases.rock) : undefined, bases.rockGap ? _hexLin(bases.rockGap) : undefined)),
+    rock:  build(rockFields(seed + 2, size, bases.rock ? _hexLin(bases.rock) : undefined)),
   }
 }

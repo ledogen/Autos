@@ -490,8 +490,8 @@ export class TerrainSystem {
                 1 / (params.terrainTexTileRock  ?? 8.0)) },
             uSurfDepth:  { value: params.terrainTexBlendDepth ?? 0.22 },
             // Albedo (colour) modulation per zone — owner 2026-09-25: on rock and on engineered
-            // cut/fill faces (vSurf.w forces it there), OFF on grass and dirt where it read as
-            // "gravel wallpaper" against the flat palette. Relief stays on every zone.
+            // cut faces (vSurf.w forces it there), OFF on grass and dirt (fill included) where it
+            // read as "gravel wallpaper" against the flat palette. Relief stays on every zone.
             uSurfAlbW:   { value: new THREE.Vector3(
                 params.terrainTexAlbedoGrass ?? 0,
                 params.terrainTexAlbedoDirt  ?? 0,
@@ -502,8 +502,14 @@ export class TerrainSystem {
             // palette colour — otherwise a rock texel is just dirt-coloured relief. Written from the
             // params in _syncSurfacePalette, so the colour pickers keep driving them.
             uColGrass: { value: new THREE.Color() }, uColDirt: { value: new THREE.Color() }, uColRock: { value: new THREE.Color() },
-            uDirtFlatGreen:   { value: params.terrainDirtFlatGreen   ?? 0.4  },
-            uRockGapGreen:    { value: new THREE.Color() },   // the joint green, also the flat-dirt hollow key
+            // THE colour key for "rock with foliage underneath" (owner 2026-09-25, scenes 20 vs
+            // 22): wherever rock is present, the ground BETWEEN the rocks — grass, dirt, or the
+            // rock zone's own joints — pulls toward uRockGapGreen, gated by inclination
+            // (uRockGreenSlope: steep faces go bare). One key for every biome, so a rock poking
+            // through grass reads the same as a rock in a scree. Not the albedo map: that only
+            // carries the fragment tints now.
+            uRockGapGreen:    { value: new THREE.Color() },
+            uUnderRockGreen:  { value: params.terrainUnderRockGreen  ?? 0.8  },
             // Rock coverage curve (owner 2026-09-25, scene 10): rock may occupy share^γ of the
             // tile, tallest fragments first — a light blend is a few rocks poking through, not a
             // faint rock wash. 1 = linear; higher = sparser at the soft end.
@@ -538,7 +544,7 @@ export class TerrainSystem {
             shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
                 'uniform sampler2D uSurfAlbG, uSurfNrmG, uSurfAlbD, uSurfNrmD, uSurfAlbR, uSurfNrmR;\n' +
                 'uniform vec3 uSurfScale, uSurfAlbW; uniform float uSurfDepth, uSurfNormal;\n' +
-                'uniform float uDirtFlatGreen, uSurfOn, uRockSparsity, uDirtRockFloor, uDirtPebbleGrey; uniform vec2 uRockGreenSlope;\n' +
+                'uniform float uUnderRockGreen, uSurfOn, uRockSparsity, uDirtRockFloor, uDirtPebbleGrey; uniform vec2 uRockGreenSlope;\n' +
                 'uniform vec3 uColGrass, uColDirt, uColRock, uRockGapGreen;\n' +
                 'varying vec4 vSurf;\n' +
                 // FEAT-84: blended tangent-space normal (xy), written at <color_fragment> where the
@@ -618,7 +624,19 @@ export class TerrainSystem {
                     ts_b2 /= max(ts_b2.x + ts_b2.y, 1e-5);
                     vec3 ts_b = vec3(ts_b2 * (1.0 - ts_rw), ts_rw);
                     ts_rockW = ts_b.z * (1.0 - vSurf.w);
+                    // Rock with foliage underneath — one key for every biome: as rock becomes
+                    // present the ground between the rocks pulls toward the gap green (applied
+                    // before the rock mix, so only the non-rock texels keep it), except on steep
+                    // natural faces (they slide) and engineered faces (their own look).
+                    float ts_rslope = 1.0 - clamp(vWorldNrm.y, 0.0, 1.0);
+                    float ts_keep = (1.0 - smoothstep(uRockGreenSlope.x, uRockGreenSlope.y, ts_rslope)) * (1.0 - vSurf.w);
+                    float ts_under = smoothstep(0.02, 0.45, vSurf.z) * ts_keep * uUnderRockGreen * uDetailScale;
+                    diffuseColor.rgb = mix(diffuseColor.rgb, uRockGapGreen, ts_under);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_rockW);
+                    // …and inside the rock zone the joints between fragments (the map's low
+                    // texels) take the same key, so a scree and a grassy knoll share one read.
+                    float ts_joint = 1.0 - smoothstep(0.30, 0.45, ts_r.a);
+                    diffuseColor.rgb = mix(diffuseColor.rgb, uRockGapGreen, ts_rockW * ts_joint * ts_keep * uUnderRockGreen);
                     // Dirt pebbles are rocks, and rocks are grey: the dirt map's pebbles (texels
                     // above the clod ceiling, ~0.40 after normalisation) take the rock colour —
                     // tallest first, uDirtPebbleGrey of them on pure dirt, all of them once the
@@ -632,26 +650,14 @@ export class TerrainSystem {
                     vec2 ts_gain = max(ts_b.xy - vSurf.xy, 0.0) * uDetailScale;
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColDirt,  ts_gain.y);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColGrass, ts_gain.x);
-                    // Per-zone albedo weights; the carve zone (vSurf.w) forces dirt + rock on.
-                    vec3 ts_aw = vec3(uSurfAlbW.x, max(uSurfAlbW.y, vSurf.w), max(uSurfAlbW.z, vSurf.w)) * uDetailScale;
-                    // Steep natural rock loses the joint green: the rock map's low texels (the
-                    // filler between fragments) are desaturated to their own brightness by
-                    // steepness, so hill tops and shoulders keep it and faces go bare grey.
-                    float ts_rslope = 1.0 - clamp(vWorldNrm.y, 0.0, 1.0);
-                    float ts_bare = smoothstep(uRockGreenSlope.x, uRockGreenSlope.y, ts_rslope) * (1.0 - vSurf.w);
-                    float ts_joint = 1.0 - smoothstep(0.30, 0.45, ts_r.a);
-                    vec3 ts_rgrey = vec3(dot(ts_r.rgb, vec3(0.30, 0.59, 0.11)));
-                    ts_r.rgb = mix(ts_r.rgb, ts_rgrey, ts_bare * ts_joint);
+                    // Per-zone albedo weights; an engineered CUT face (vSurf.w, rock) forces the
+                    // rock albedo on. Fill embankments take no dirt albedo (owner 2026-09-25: the
+                    // skirt read as "green with rocks poking through" — the map's baked tint).
+                    vec3 ts_aw = vec3(uSurfAlbW.x, uSurfAlbW.y, max(uSurfAlbW.z, vSurf.w)) * uDetailScale;
                     vec3 ts_alb = vec3(1.0) + (ts_g.rgb * 4.0 - 1.0) * ts_b.x * ts_aw.x
                                             + (ts_d.rgb * 4.0 - 1.0) * ts_b.y * ts_aw.y
                                             + (ts_r.rgb * 4.0 - 1.0) * ts_b.z * ts_aw.z;
                     diffuseColor.rgb *= ts_alb;
-                    // Flat dirt: the hollows (low dirt texel height) pull toward the rock gap green
-                    // as the ground flattens — the same foliage key as the joints (owner
-                    // 2026-09-25); hills keep the plain dirt. Independent of the dirt albedo weight.
-                    float ts_flat = 1.0 - smoothstep(0.06, 0.22, 1.0 - clamp(vWorldNrm.y, 0.0, 1.0));
-                    float ts_hollow = 1.0 - smoothstep(0.2, 0.55, ts_d.a);
-                    diffuseColor.rgb = mix(diffuseColor.rgb, uRockGapGreen, ts_b.y * ts_flat * ts_hollow * uDirtFlatGreen * uDetailScale * (1.0 - vSurf.w));
                     vec2 ts_ng = texture2D(uSurfNrmG, ts_p * uSurfScale.x).xy * 2.0 - 1.0;
                     vec2 ts_nd = texture2D(uSurfNrmD, ts_p * uSurfScale.y).xy * 2.0 - 1.0;
                     vec2 ts_nr = texture2D(uSurfNrmR, ts_p * uSurfScale.z).xy * 2.0 - 1.0;
@@ -2113,7 +2119,7 @@ export class TerrainSystem {
         U.uColDirt.value.setRGB(...hx(p.terrainDirtColor ?? 0x69481b))
         U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x5a5b5e))
         U.uSurfAlbW.value.set(p.terrainTexAlbedoGrass ?? 0, p.terrainTexAlbedoDirt ?? 0, p.terrainTexAlbedoRock ?? 0.55)
-        U.uDirtFlatGreen.value   = p.terrainDirtFlatGreen   ?? 0.4
+        U.uUnderRockGreen.value  = p.terrainUnderRockGreen  ?? 0.8
         U.uRockGapGreen.value.setRGB(...hx(p.terrainRockGapGreen ?? 0x2d372a))
         U.uRockSparsity.value    = p.terrainRockSparsity    ?? 2.0
         U.uDirtRockFloor.value   = p.terrainDirtRockFloor   ?? 0.03
@@ -2134,11 +2140,11 @@ export class TerrainSystem {
 
     _surfTexKey() {
         const p = this._params
-        return `${p.terrainDirtColor ?? 0x69481b}/${p.terrainRockColor ?? 0x5a5b5e}/${p.terrainRockGapGreen ?? 0x2d372a}`
+        return `${p.terrainDirtColor ?? 0x69481b}/${p.terrainRockColor ?? 0x5a5b5e}`
     }
     _bakeSurfaceTextures() {
         const p = this._params
-        const t = makeSurfaceTextures(8401, 256, { dirt: p.terrainDirtColor ?? 0x69481b, rock: p.terrainRockColor ?? 0x5a5b5e, rockGap: p.terrainRockGapGreen ?? 0x2d372a })
+        const t = makeSurfaceTextures(8401, 256, { dirt: p.terrainDirtColor ?? 0x69481b, rock: p.terrainRockColor ?? 0x5a5b5e })
         t.key = this._surfTexKey()
         return t
     }

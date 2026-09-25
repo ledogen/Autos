@@ -500,18 +500,18 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'terrainTexNormal', 0, 2.0, 0.05).name('Surface relief').onChange(v => _setU('uSurfNormal', v))
   lookFolder.add(params, 'terrainTexAlbedoGrass', 0, 1.0, 0.05).name('Albedo: grass').onChange(v => _setU('uSurfAlbW.x', v))
   lookFolder.add(params, 'terrainTexAlbedoDirt', 0, 1.0, 0.05).name('Albedo: dirt').onChange(v => _setU('uSurfAlbW.y', v))
-  lookFolder.add(params, 'terrainTexAlbedoRock', 0, 1.0, 0.05).name('Albedo: rock + cut/fill').onChange(v => _setU('uSurfAlbW.z', v))
+  lookFolder.add(params, 'terrainTexAlbedoRock', 0, 1.0, 0.05).name('Albedo: rock + cut faces').onChange(v => _setU('uSurfAlbW.z', v))
   lookFolder.add(params, 'terrainRockSparsity', 0.5, 5, 0.1).name('Rock sparsity (γ)').onChange(v => _setU('uRockSparsity', v))
   lookFolder.add(params, 'terrainDirtRockFloor', 0, 0.3, 0.01).name('Dirt rock floor').onChange(v => _setU('uDirtRockFloor', v))
   lookFolder.add(params, 'terrainDirtPebbleGrey', 0, 1, 0.05).name('Dirt pebbles grey').onChange(v => _setU('uDirtPebbleGrey', v))
-  lookFolder.addColor(params, 'terrainRockGapGreen').name('Rock gap green').onChange(_recolor)
+  lookFolder.addColor(params, 'terrainRockGapGreen').name('Under-rock green (key)').onChange(_recolor)
+  lookFolder.add(params, 'terrainUnderRockGreen', 0, 1, 0.05).name('Under-rock green amount').onChange(v => _setU('uUnderRockGreen', v))
   lookFolder.add(params, 'terrainRockGreenSlopeLo', 0, 1, 0.01).name('Rock green: bare from slope').onChange(v => _setU('uRockGreenSlope.x', v))
   lookFolder.add(params, 'terrainRockGreenSlopeHi', 0, 1, 0.01).name('Rock green: bare by slope').onChange(v => _setU('uRockGreenSlope.y', v))
   lookFolder.add(params, 'terrainTexBlendDepth', 0.02, 1.0, 0.02).name('Surface blend depth').onChange(v => _setU('uSurfDepth', v))
   lookFolder.add(params, 'terrainTexTileGrass', 0.5, 6, 0.1).name('Grass tile (m)').onChange(v => _setU('uSurfScale.x', 1 / v))
   lookFolder.add(params, 'terrainTexTileDirt', 0.5, 8, 0.1).name('Dirt tile (m)').onChange(v => _setU('uSurfScale.y', 1 / v))
   lookFolder.add(params, 'terrainTexTileRock', 1, 16, 0.25).name('Rock tile (m)').onChange(v => _setU('uSurfScale.z', 1 / v))
-  lookFolder.add(params, 'terrainDirtFlatGreen', 0, 1, 0.05).name('Dirt flat green (→ gap green)').onChange(v => _setU('uDirtFlatGreen', v))
 
   // ── Water folder (FEAT-24 meadow meander streams; FEAT-17/18 rarity dials) ────────────
   // Every dial reshapes the deterministic water records + the terrain stream carve, so all

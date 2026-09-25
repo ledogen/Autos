@@ -958,7 +958,11 @@ export const RANGER_PARAMS = {
   // A pebble is a rock and rocks are grey (owner 2026-09-25): this share of the dirt map's own
   // pebbles (tallest first) takes the rock colour on pure dirt; all of them by rock share ~1/3.
   terrainDirtPebbleGrey: 0.35,
+  // THE key for "rock with foliage underneath": wherever rock is present, the ground between
+  // the rocks — on grass, on dirt, and in the rock zone's own joints — pulls toward this colour
+  // (owner 2026-09-25: one base key for every biome, not the albedo). Live uniform, no re-bake.
   terrainRockGapGreen:  0x2d372a,
+  terrainUnderRockGreen: 0.8,  // [-] how far the ground between rocks goes to the key (0 = off)
   // …only on low-inclination rock (owner 2026-09-25: steep faces slide, nothing grows in the
   // joints): the joint green fades to bare grey as slope (1 − normal.y) passes Lo → Hi.
   // Engineered cut faces keep their stripes.
@@ -970,5 +974,4 @@ export const RANGER_PARAMS = {
   terrainTexTileRock:   8.0,   // m — fractured-plate field repeat (~1.5–2 m plates; 5 m read as cobbles)
   // Owner 2026-09-24: the green under the dirt should be more vibrant on FLAT dirt (fine on the
   // hills). Extra green saturation in the dirt hollows, scaled by flatness (0 = off).
-  terrainDirtFlatGreen: 0.4,   // [-] how far the hollows of FLAT dirt pull toward the rock gap green (same key as the joints)
 };
