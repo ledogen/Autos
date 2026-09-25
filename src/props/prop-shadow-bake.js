@@ -178,6 +178,12 @@ export class ShadowBakeSystem {
 
     this._dirty    = []           // FIFO of "cx,cz" keys awaiting bake
     this._dirtySet = new Set()
+    // PERF-33: which chunk each tile's pixels currently belong to ("cx,cz", null = clear). The atlas is
+    // toroidal, so a tile is shared by every chunk ATLAS_N apart; without this a chunk streaming into a
+    // slot showed the PREVIOUS owner's shadows (a chunk ~768 m away) until its own props baked over
+    // them — shadows on bare ground, then a blink as the scatter's bake replaced them.
+    this._owner    = new Array(ATLAS_N * ATLAS_N).fill(null)
+    this._ccx = null; this._ccz = null   // window centre chunk (syncCenter)
     this._tileSource = null       // PERF-21: (cx,cz) => THREE.Scene with only that tile's casters
     this._shear    = new THREE.Vector2(0, 0)
     this._haveSun  = false
@@ -205,6 +211,7 @@ export class ShadowBakeSystem {
     if (this._rt) { this._rt.dispose(); this._rt = null }
     this._dirty.length = 0
     this._dirtySet.clear()
+    this._owner.fill(null)
     if (px === 0) return true                       // disabled: no atlas, update()/marks are no-ops
 
     const size = ATLAS_N * px
@@ -260,6 +267,51 @@ export class ShadowBakeSystem {
   }
 
   hasWork() { return this._dirty.length > 0 }
+
+  /** PERF-33: the chunk tile t maps to inside the window centred on (ccx, ccz) — the ONE location
+   *  per tile the terrain near the player samples it for. Window = [c − N/2, c + N/2 − 1]. */
+  _nearOf(t, c) {
+    const lo = c - (ATLAS_N >> 1)
+    return lo + pmod(t - lo, ATLAS_N)
+  }
+
+  /** PERF-33: true when chunk (cx, cz) is inside the current window (its tile is its own). */
+  _inWindow(cx, cz) {
+    if (this._ccx === null) return true
+    const h = ATLAS_N >> 1
+    return cx >= this._ccx - h && cx < this._ccx + h && cz >= this._ccz - h && cz < this._ccz + h
+  }
+
+  /**
+   * PERF-33: follow the stream centre. When the centre chunk changes, every tile whose pixels belong to
+   * a chunk that is no longer the one the tile maps to near the player is CLEARED on the spot — a
+   * scissored clear, far cheaper than a bake — so ground that just streamed in reads "no shadow" until
+   * its own props bake, never another chunk's shadows. Call every frame (early-outs when unchanged).
+   */
+  syncCenter(ccx, ccz) {
+    if (!this._rt || (ccx === this._ccx && ccz === this._ccz)) return
+    this._ccx = ccx; this._ccz = ccz
+    const r = this._renderer, tp = this._tilePx
+    let prevTarget = null, bound = false
+    for (let tz = 0; tz < ATLAS_N; tz++) {
+      for (let tx = 0; tx < ATLAS_N; tx++) {
+        const t = tz * ATLAS_N + tx
+        const own = this._owner[t]
+        if (own === null || own === this._nearOf(tx, ccx) + ',' + this._nearOf(tz, ccz)) continue
+        if (!bound) { prevTarget = r.getRenderTarget(); r.getClearColor(this._prevClear); bound = true }
+        this._rt.viewport.set(tx * tp, tz * tp, tp, tp)
+        this._rt.scissor.set(tx * tp, tz * tp, tp, tp)
+        this._rt.scissorTest = true
+        r.setRenderTarget(this._rt)
+        const a = r.getClearAlpha()
+        r.setClearColor(0x000000, 0)
+        r.clear(true, false, false)
+        r.setClearColor(this._prevClear, a)
+        this._owner[t] = null
+      }
+    }
+    if (bound) r.setRenderTarget(prevTarget)
+  }
 
   /**
    * How far the shadow TIP of a SHEAR_REF_HEIGHT caster would move if the committed shear were
@@ -329,8 +381,12 @@ export class ShadowBakeSystem {
       const comma = k.indexOf(',')
       const cx = parseInt(k.slice(0, comma), 10)
       const cz = parseInt(k.slice(comma + 1), 10)
+      // PERF-33: a tile queued for a chunk that has since left the window would stamp shadows into a
+      // slot the terrain now samples for a DIFFERENT chunk — drop it (it re-queues if it comes back).
+      if (!this._inWindow(cx, cz)) { i--; if (!this._dirty.length) break; continue }
       const tp = this._tilePx
       const tx = pmod(cx, ATLAS_N), tz = pmod(cz, ATLAS_N)
+      this._owner[tz * ATLAS_N + tx] = k
       const px = tx * tp, py = tz * tp
 
       const wx = cx * CHUNK + CHUNK / 2, wz = cz * CHUNK + CHUNK / 2
@@ -371,6 +427,7 @@ export class ShadowBakeSystem {
   clear() {
     this._dirty.length = 0
     this._dirtySet.clear()
+    this._owner.fill(null)
     if (!this._rt) return                     // baked shadows off (tilePx 0) — nothing to clear
     const r = this._renderer
     const prevTarget = r.getRenderTarget()
