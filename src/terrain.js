@@ -1900,7 +1900,18 @@ export class TerrainSystem {
         const nrmAttr = geom.attributes.normal
         const nVerts = N * N
 
-        const colorArr = new Float32Array(nVerts * 3)
+        // Write INTO the geometry's existing colour attribute (pooled geometries always have one after
+        // their first build). Replacing it with a new BufferAttribute every write stranded the old one's
+        // GPU buffer: three.js frees attribute buffers only on geometry.dispose(), and a pooled geometry
+        // is never disposed — so every chunk build AND every re-carve leaked ~50 KB of VRAM (measured
+        // +39 MB per minute of fast free-cam). Under that pressure uploads start failing, and a chunk
+        // whose colour buffer never uploaded renders BLACK (the long-standing "black chunk" bug).
+        let colorAttr = geom.attributes.color
+        if (!colorAttr || colorAttr.count !== nVerts) {
+            colorAttr = new THREE.BufferAttribute(new Float32Array(nVerts * 3), 3)
+            geom.setAttribute('color', colorAttr)
+        }
+        const colorArr = colorAttr.array
 
         // ── Alpine biome palette (FEAT-05) — decoded from params as LINEAR RGB (/255) ───
         // Replaces the old desert warm-brown set. Natural biome is dirt→grass→rock, selected
@@ -1999,7 +2010,7 @@ export class TerrainSystem {
             colorArr[idx3 + 2] = b
         }
 
-        geom.setAttribute('color', new THREE.BufferAttribute(colorArr, 3))
+        colorAttr.needsUpdate = true
     }
 
     /**
