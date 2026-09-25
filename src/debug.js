@@ -915,6 +915,16 @@ export function initDebug (params, callbacks = {}, options = {}) {
     }
   })
 
+  // Mouse wheel scrolls the panel, never edits a value. lil-gui binds 'wheel' on every number
+  // controller (the slider track, and the text box while focused) and nudges the value by one
+  // step, so scrolling down the list with the pointer over a slider silently retuned it. A
+  // capture-phase listener on the root runs before those target handlers; stopPropagation keeps
+  // the event from reaching them, and since nothing calls preventDefault the browser's native
+  // scroll of the panel still happens. Values change only by click-and-drag or typing.
+  gui.domElement.addEventListener('wheel', (e) => {
+    if (e.target.closest?.('.controller.number')) e.stopPropagation()
+  }, { capture: true })
+
   // Keyboard must stay with the GAME after clicking the panel. lil-gui's root element calls
   // stopPropagation on EVERY keydown/keyup once focus is inside it, so a click on any slider /
   // checkbox / folder header silently froze driving, respawn (R) and pause (Esc) until the user
