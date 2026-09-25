@@ -8,6 +8,7 @@
 //   node test/ab-shots.mjs 8000 9222 out/before     # main checkout
 //   node test/ab-shots.mjs 3754 9333 out/after      # a worktree
 //   node test/ab-shots.mjs 3754 9333 out/after 09,25 # only the cases whose id starts with these
+//   node test/ab-shots.mjs 3754 9333 out/x 22 "window.terrain._terrainUniforms.uSurfOn.value=0"   # knob A/B
 // Not a gate — never run by `npm test`. Seed 6 only (the vantages were scouted on it).
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { launchChrome, connect, sleep } from './lib/cdp.mjs'
@@ -15,6 +16,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 const [PORT, CDP, OUT] = [Number(process.argv[2]), Number(process.argv[3]), process.argv[4]]
 const ONLY = process.argv[5] ? process.argv[5].split(',') : null   // optional: comma-separated case id prefixes
+const EVAL = process.argv[6] || null   // optional: JS run in the page before the shots (knob A/Bs — e.g. "window.terrain._terrainUniforms.uSurfOn.value=0")
 mkdirSync(OUT, { recursive: true })
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
@@ -70,6 +72,7 @@ const client = await connect({ port: CDP })
 await sleep(10000)
 for (let i = 0; i < 30; i++) { const r = await client.evalJS(`typeof window.__view==='function'`); if (r.val) break; await sleep(500) }
 await client.evalJS(`const st=document.createElement('style'); st.textContent='#hud,#cluster,#teleport-btn,#controls{display:none!important}'; document.head.appendChild(st)`)
+if (EVAL) { const r = await client.evalJS(EVAL); if (r.err) console.error('eval:', r.err) }
 for (const c of CASES) {
   if (ONLY && !ONLY.some(k => c.id.startsWith(k))) continue
   const [cx, cy, cz] = c.cam, [tx, ty, tz] = c.tgt

@@ -505,6 +505,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'terrainDirtRockFloor', 0, 0.3, 0.01).name('Dirt rock floor').onChange(v => _setU('uDirtRockFloor', v))
   lookFolder.add(params, 'terrainDirtPebbleGrey', 0, 1, 0.05).name('Dirt pebbles grey').onChange(v => _setU('uDirtPebbleGrey', v))
   lookFolder.addColor(params, 'terrainRockGapGreen').name('Rock gap green').onChange(_recolor)
+  lookFolder.add(params, 'terrainRockGreenSlopeLo', 0, 1, 0.01).name('Rock green: bare from slope').onChange(v => _setU('uRockGreenSlope.x', v))
+  lookFolder.add(params, 'terrainRockGreenSlopeHi', 0, 1, 0.01).name('Rock green: bare by slope').onChange(v => _setU('uRockGreenSlope.y', v))
   lookFolder.add(params, 'terrainTexBlendDepth', 0.02, 1.0, 0.02).name('Surface blend depth').onChange(v => _setU('uSurfDepth', v))
   lookFolder.add(params, 'terrainTexTileGrass', 0.5, 6, 0.1).name('Grass tile (m)').onChange(v => _setU('uSurfScale.x', 1 / v))
   lookFolder.add(params, 'terrainTexTileDirt', 0.5, 8, 0.1).name('Dirt tile (m)').onChange(v => _setU('uSurfScale.y', 1 / v))

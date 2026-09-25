@@ -515,6 +515,11 @@ export class TerrainSystem {
             // pure dirt, all of them as the rock share rises — so across a dirt→rock blend only
             // the NUMBER of grey rocks changes, never their colour.
             uDirtPebbleGrey:  { value: params.terrainDirtPebbleGrey  ?? 0.35 },
+            // Green between the rock fragments only on low-inclination rock — shoulders, hill
+            // tops (owner 2026-09-25: steep faces slide, nothing grows in the joints). The joint
+            // texels' green goes to a grey of the same brightness as the slope passes Lo→Hi.
+            // Engineered cut faces are exempt (the owner likes the stripes there).
+            uRockGreenSlope:  { value: new THREE.Vector2(params.terrainRockGreenSlopeLo ?? 0.25, params.terrainRockGreenSlopeHi ?? 0.5) },
             // A/B lever (owner 2026-09-24): 0 skips the whole FEAT-84 block — six texture taps,
             // the blend, the splotch lattices — leaving the FEAT-05 flat palette + fbm mottle.
             uSurfOn:          { value: params.terrainTexEnabled === false ? 0 : 1 },
@@ -532,7 +537,7 @@ export class TerrainSystem {
             shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
                 'uniform sampler2D uSurfAlbG, uSurfNrmG, uSurfAlbD, uSurfNrmD, uSurfAlbR, uSurfNrmR;\n' +
                 'uniform vec3 uSurfScale, uSurfAlbW; uniform float uSurfDepth, uSurfNormal;\n' +
-                'uniform float uDirtFlatGreen, uSurfOn, uRockSparsity, uDirtRockFloor, uDirtPebbleGrey;\n' +
+                'uniform float uDirtFlatGreen, uSurfOn, uRockSparsity, uDirtRockFloor, uDirtPebbleGrey; uniform vec2 uRockGreenSlope;\n' +
                 'uniform vec3 uColGrass, uColDirt, uColRock;\n' +
                 'varying vec4 vSurf;\n' +
                 // FEAT-84: blended tangent-space normal (xy), written at <color_fragment> where the
@@ -628,6 +633,14 @@ export class TerrainSystem {
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColGrass, ts_gain.x);
                     // Per-zone albedo weights; the carve zone (vSurf.w) forces dirt + rock on.
                     vec3 ts_aw = vec3(uSurfAlbW.x, max(uSurfAlbW.y, vSurf.w), max(uSurfAlbW.z, vSurf.w)) * uDetailScale;
+                    // Steep natural rock loses the joint green: the rock map's low texels (the
+                    // filler between fragments) are desaturated to their own brightness by
+                    // steepness, so hill tops and shoulders keep it and faces go bare grey.
+                    float ts_rslope = 1.0 - clamp(vWorldNrm.y, 0.0, 1.0);
+                    float ts_bare = smoothstep(uRockGreenSlope.x, uRockGreenSlope.y, ts_rslope) * (1.0 - vSurf.w);
+                    float ts_joint = 1.0 - smoothstep(0.30, 0.45, ts_r.a);
+                    vec3 ts_rgrey = vec3(dot(ts_r.rgb, vec3(0.30, 0.59, 0.11)));
+                    ts_r.rgb = mix(ts_r.rgb, ts_rgrey, ts_bare * ts_joint);
                     vec3 ts_alb = vec3(1.0) + (ts_g.rgb * 4.0 - 1.0) * ts_b.x * ts_aw.x
                                             + (ts_d.rgb * 4.0 - 1.0) * ts_b.y * ts_aw.y
                                             + (ts_r.rgb * 4.0 - 1.0) * ts_b.z * ts_aw.z;
@@ -2102,6 +2115,7 @@ export class TerrainSystem {
         U.uRockSparsity.value    = p.terrainRockSparsity    ?? 2.0
         U.uDirtRockFloor.value   = p.terrainDirtRockFloor   ?? 0.03
         U.uDirtPebbleGrey.value  = p.terrainDirtPebbleGrey  ?? 0.35
+        U.uRockGreenSlope.value.set(p.terrainRockGreenSlopeLo ?? 0.25, p.terrainRockGreenSlopeHi ?? 0.5)
         // The texture palettes are ABSOLUTE targets relative to the picker colours (dirt pebbles,
         // rock gap green), so a picker change re-bakes the maps (~40 ms) and swaps the uniforms.
         const key = this._surfTexKey()

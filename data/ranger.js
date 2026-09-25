@@ -958,7 +958,12 @@ export const RANGER_PARAMS = {
   // A pebble is a rock and rocks are grey (owner 2026-09-25): this share of the dirt map's own
   // pebbles (tallest first) takes the rock colour on pure dirt; all of them by rock share ~1/3.
   terrainDirtPebbleGrey: 0.35,
-  terrainRockGapGreen:  0x2a4522, // the foliage green between the rock fragments (the dark stripes in the joints) — darker/richer, owner 2026-09-25
+  terrainRockGapGreen:  0x2a4522,
+  // …only on low-inclination rock (owner 2026-09-25: steep faces slide, nothing grows in the
+  // joints): the joint green fades to bare grey as slope (1 − normal.y) passes Lo → Hi.
+  // Engineered cut faces keep their stripes.
+  terrainRockGreenSlopeLo: 0.25,
+  terrainRockGreenSlopeHi: 0.5, // the foliage green between the rock fragments (the dark stripes in the joints) — darker/richer, owner 2026-09-25
   terrainTexBlendDepth: 0.22,  // [-] interface softness: 0 = hard height contest, 1 = plain crossfade
   terrainTexTileGrass:  2.0,   // m — tuft field repeat (1.6 was unreadable a few metres from the truck)
   terrainTexTileDirt:   2.4,   // m — clod/pebble field repeat

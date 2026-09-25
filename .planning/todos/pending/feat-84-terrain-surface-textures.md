@@ -147,6 +147,16 @@ blend "at their interfaces" rather than crossfade.
       their colour. `terrainDirtRockFloor` 0.06 → 0.03 (the pebbles now carry the rim).
       Slider "Dirt pebbles grey". Engineered fill keeps its own look (vSurf.w).
 
+- [x] Owner pass 11 (2026-09-25): **joint green only on low-inclination rock** — the rock map's
+      low texels (the filler between fragments, h < ~0.4) are desaturated to their own brightness
+      as slope passes `terrainRockGreenSlopeLo/Hi` (0.25 → 0.5), so hill tops and shoulders keep the
+      green and faces go bare grey ("steep faces slide, nothing grows in the joints"). Engineered
+      cut faces are exempt (the stripes there were liked). Sliders "Rock green: bare from / by
+      slope". Lichen on rock is the owner's stated eventual direction (FEAT-86), not yet.
+- [ ] Scene 22 "seam" (green flats, grey cliff band, hard edge at the cliff threshold) was a ONE-OFF
+      captured in the run the laptop slept through; three fresh captures render correctly. Filed
+      as BUG-73 (vertex colours written before heights are real) — not a shader rule.
+
 ## Known limits / follow-ups
 
 - Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second
