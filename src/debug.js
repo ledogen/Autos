@@ -511,7 +511,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'terrainTexTileGrass', 0.5, 6, 0.1).name('Grass tile (m)').onChange(v => _setU('uSurfScale.x', 1 / v))
   lookFolder.add(params, 'terrainTexTileDirt', 0.5, 8, 0.1).name('Dirt tile (m)').onChange(v => _setU('uSurfScale.y', 1 / v))
   lookFolder.add(params, 'terrainTexTileRock', 1, 16, 0.25).name('Rock tile (m)').onChange(v => _setU('uSurfScale.z', 1 / v))
-  lookFolder.add(params, 'terrainDirtFlatGreen', 0, 1, 0.05).name('Dirt flat green').onChange(v => _setU('uDirtFlatGreen', v))
+  lookFolder.add(params, 'terrainDirtFlatGreen', 0, 1, 0.05).name('Dirt flat green (→ gap green)').onChange(v => _setU('uDirtFlatGreen', v))
 
   // ── Water folder (FEAT-24 meadow meander streams; FEAT-17/18 rarity dials) ────────────
   // Every dial reshapes the deterministic water records + the terrain stream carve, so all

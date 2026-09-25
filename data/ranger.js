@@ -905,7 +905,7 @@ export const RANGER_PARAMS = {
   // ARE the linear vertex-colour values, NOT sRGB, so a colour picker round-trips exactly).
   // Tuned for high-altitude Eastern Sierra / Lone Pine: granite-grey rock, decomposed-granite
   // soil, muted sage-meadow green. Replaces the old desert warm-brown palette.
-  terrainRockColor:  0x7a7c80, // granite grey — steep faces AND high (above-treeline) terrain. Was 0x72604b, a
+  terrainRockColor:  0x5a5b5e, // granite grey (owner 2026-09-25) — steep faces AND high (above-treeline) terrain. Was 0x72604b, a
                                // warm BROWN despite this comment: the source of "brown dirt turning into brown
                                // rocks" (owner 2026-09-25) once the shader painted rock by the share it wins.
   terrainDirtColor:  0x69481b, // alpine soil/decomposed-granite — moderate slopes (the "general" mid)
@@ -935,8 +935,8 @@ export const RANGER_PARAMS = {
   // terrainDetailScale is the master multiplier AND a perf kill-switch: 0 disables the
   // per-pixel noise entirely (escape hatch for weak GPUs — PERF-05 coordination).
   terrainDetailScale:    1.0,  // [-] master 0..1 (0 = no fbm mottle/bump at all)
-  terrainNoiseScale:     0.15, // 1/m — fbm spatial frequency (~6.7 m period)
-  terrainMottleStrength: 0.22, // [-] albedo mottle depth (multiplies biome colour)
+  terrainNoiseScale:     0.3,  // 1/m — fbm spatial frequency (~3.3 m period; 0.15 → 0.3, owner 2026-09-25)
+  terrainMottleStrength: 0.6,  // [-] albedo mottle depth (multiplies biome colour) — 0.22 → 0.6, owner 2026-09-25 ("how it makes the rocks and dirt look")
   terrainBumpStrength:   0.7,  // [-] normal-perturbation strength on rocky/high terrain
   roadShoulderBump:      0.5,  // [-] gravel bump strength on the dirt road shoulder only
 
@@ -958,7 +958,7 @@ export const RANGER_PARAMS = {
   // A pebble is a rock and rocks are grey (owner 2026-09-25): this share of the dirt map's own
   // pebbles (tallest first) takes the rock colour on pure dirt; all of them by rock share ~1/3.
   terrainDirtPebbleGrey: 0.35,
-  terrainRockGapGreen:  0x2a4522,
+  terrainRockGapGreen:  0x2d372a,
   // …only on low-inclination rock (owner 2026-09-25: steep faces slide, nothing grows in the
   // joints): the joint green fades to bare grey as slope (1 − normal.y) passes Lo → Hi.
   // Engineered cut faces keep their stripes.
@@ -970,5 +970,5 @@ export const RANGER_PARAMS = {
   terrainTexTileRock:   8.0,   // m — fractured-plate field repeat (~1.5–2 m plates; 5 m read as cobbles)
   // Owner 2026-09-24: the green under the dirt should be more vibrant on FLAT dirt (fine on the
   // hills). Extra green saturation in the dirt hollows, scaled by flatness (0 = off).
-  terrainDirtFlatGreen: 0.4,
+  terrainDirtFlatGreen: 0.4,   // [-] how far the hollows of FLAT dirt pull toward the rock gap green (same key as the joints)
 };

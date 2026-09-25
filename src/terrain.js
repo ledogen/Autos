@@ -446,8 +446,8 @@ export class TerrainSystem {
         // shader compiles once (not per chunk).
         this._terrainUniforms = {
             uDetailScale: { value: params.terrainDetailScale    ?? 1.0  },
-            uNoiseScale:  { value: params.terrainNoiseScale      ?? 0.15 },
-            uMottle:      { value: params.terrainMottleStrength  ?? 0.22 },
+            uNoiseScale:  { value: params.terrainNoiseScale      ?? 0.3 },
+            uMottle:      { value: params.terrainMottleStrength  ?? 0.6 },
             uBump:        { value: params.terrainBumpStrength    ?? 0.7  },
             uCliffLo:     { value: params.roadCliffSlopeLo       ?? 0.3  },
             uCliffHi:     { value: params.roadCliffSlopeHi       ?? 0.6  },
@@ -503,6 +503,7 @@ export class TerrainSystem {
             // params in _syncSurfacePalette, so the colour pickers keep driving them.
             uColGrass: { value: new THREE.Color() }, uColDirt: { value: new THREE.Color() }, uColRock: { value: new THREE.Color() },
             uDirtFlatGreen:   { value: params.terrainDirtFlatGreen   ?? 0.4  },
+            uRockGapGreen:    { value: new THREE.Color() },   // the joint green, also the flat-dirt hollow key
             // Rock coverage curve (owner 2026-09-25, scene 10): rock may occupy share^γ of the
             // tile, tallest fragments first — a light blend is a few rocks poking through, not a
             // faint rock wash. 1 = linear; higher = sparser at the soft end.
@@ -538,7 +539,7 @@ export class TerrainSystem {
                 'uniform sampler2D uSurfAlbG, uSurfNrmG, uSurfAlbD, uSurfNrmD, uSurfAlbR, uSurfNrmR;\n' +
                 'uniform vec3 uSurfScale, uSurfAlbW; uniform float uSurfDepth, uSurfNormal;\n' +
                 'uniform float uDirtFlatGreen, uSurfOn, uRockSparsity, uDirtRockFloor, uDirtPebbleGrey; uniform vec2 uRockGreenSlope;\n' +
-                'uniform vec3 uColGrass, uColDirt, uColRock;\n' +
+                'uniform vec3 uColGrass, uColDirt, uColRock, uRockGapGreen;\n' +
                 'varying vec4 vSurf;\n' +
                 // FEAT-84: blended tangent-space normal (xy), written at <color_fragment> where the
                 // blend weights are computed, consumed at <normal_fragment_begin> (separate scope).
@@ -645,11 +646,12 @@ export class TerrainSystem {
                                             + (ts_d.rgb * 4.0 - 1.0) * ts_b.y * ts_aw.y
                                             + (ts_r.rgb * 4.0 - 1.0) * ts_b.z * ts_aw.z;
                     diffuseColor.rgb *= ts_alb;
-                    // Flat dirt: the green in the hollows (low dirt texel height) gets more
-                    // saturated as the ground flattens (owner 2026-09-24); hills keep the baked tone.
+                    // Flat dirt: the hollows (low dirt texel height) pull toward the rock gap green
+                    // as the ground flattens — the same foliage key as the joints (owner
+                    // 2026-09-25); hills keep the plain dirt. Independent of the dirt albedo weight.
                     float ts_flat = 1.0 - smoothstep(0.06, 0.22, 1.0 - clamp(vWorldNrm.y, 0.0, 1.0));
                     float ts_hollow = 1.0 - smoothstep(0.2, 0.55, ts_d.a);
-                    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.82, 1.18, 0.72), ts_b.y * ts_flat * ts_hollow * uDirtFlatGreen * ts_aw.y);
+                    diffuseColor.rgb = mix(diffuseColor.rgb, uRockGapGreen, ts_b.y * ts_flat * ts_hollow * uDirtFlatGreen * uDetailScale * (1.0 - vSurf.w));
                     vec2 ts_ng = texture2D(uSurfNrmG, ts_p * uSurfScale.x).xy * 2.0 - 1.0;
                     vec2 ts_nd = texture2D(uSurfNrmD, ts_p * uSurfScale.y).xy * 2.0 - 1.0;
                     vec2 ts_nr = texture2D(uSurfNrmR, ts_p * uSurfScale.z).xy * 2.0 - 1.0;
@@ -2109,9 +2111,10 @@ export class TerrainSystem {
         const grass = hx(p.terrainGrassColor ?? 0x426917)
         U.uColGrass.value.setRGB(...grass)
         U.uColDirt.value.setRGB(...hx(p.terrainDirtColor ?? 0x69481b))
-        U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x7a7c80))
+        U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x5a5b5e))
         U.uSurfAlbW.value.set(p.terrainTexAlbedoGrass ?? 0, p.terrainTexAlbedoDirt ?? 0, p.terrainTexAlbedoRock ?? 0.55)
         U.uDirtFlatGreen.value   = p.terrainDirtFlatGreen   ?? 0.4
+        U.uRockGapGreen.value.setRGB(...hx(p.terrainRockGapGreen ?? 0x2d372a))
         U.uRockSparsity.value    = p.terrainRockSparsity    ?? 2.0
         U.uDirtRockFloor.value   = p.terrainDirtRockFloor   ?? 0.03
         U.uDirtPebbleGrey.value  = p.terrainDirtPebbleGrey  ?? 0.35
@@ -2131,11 +2134,11 @@ export class TerrainSystem {
 
     _surfTexKey() {
         const p = this._params
-        return `${p.terrainDirtColor ?? 0x69481b}/${p.terrainRockColor ?? 0x7a7c80}/${p.terrainRockGapGreen ?? 0x2a4522}`
+        return `${p.terrainDirtColor ?? 0x69481b}/${p.terrainRockColor ?? 0x5a5b5e}/${p.terrainRockGapGreen ?? 0x2d372a}`
     }
     _bakeSurfaceTextures() {
         const p = this._params
-        const t = makeSurfaceTextures(8401, 256, { dirt: p.terrainDirtColor ?? 0x69481b, rock: p.terrainRockColor ?? 0x7a7c80, rockGap: p.terrainRockGapGreen ?? 0x2a4522 })
+        const t = makeSurfaceTextures(8401, 256, { dirt: p.terrainDirtColor ?? 0x69481b, rock: p.terrainRockColor ?? 0x5a5b5e, rockGap: p.terrainRockGapGreen ?? 0x2d372a })
         t.key = this._surfTexKey()
         return t
     }

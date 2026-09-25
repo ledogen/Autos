@@ -325,8 +325,8 @@ function _convexPoly(rng, cx, cz, r) {
 // Foliage tone in the gaps between the fragments (linear rgb) — owner 2026-09-23: "make the
 // background of the rock colour map take on a green tone to suggest foliage hiding beneath the
 // larger rocks". An absolute target relative to the rock picker colour, like the dirt pebbles.
-const ROCK_GAP_GREEN = [0.16, 0.27, 0.13]   // default (0x2a4522); the picker (terrainRockGapGreen) overrides
-export function rockFields(seed, size, paletteBase = _hexLin(0x7a7c80), gapGreen = ROCK_GAP_GREEN) {
+const ROCK_GAP_GREEN = [0.18, 0.22, 0.16]   // default (0x2d372a); the picker (terrainRockGapGreen) overrides
+export function rockFields(seed, size, paletteBase = _hexLin(0x5a5b5e), gapGreen = ROCK_GAP_GREEN) {
   const rng = mulberry32(seed >>> 0)
   const N = size * size
   const H = new Float32Array(N)
