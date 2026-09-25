@@ -498,19 +498,14 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // land in the uSurfScale vec3 (repeats/m) through the same callback (name → component).
   lookFolder.add(params, 'terrainTexEnabled').name('Surface textures (A/B)').onChange(v => _setU('uSurfOn', v ? 1 : 0))
   lookFolder.add(params, 'terrainTexNormal', 0, 2.0, 0.05).name('Surface relief').onChange(v => _setU('uSurfNormal', v))
-  lookFolder.add(params, 'terrainTexAlbedo', 0, 1.0, 0.05).name('Surface albedo').onChange(v => _setU('uSurfAlbedo', v))
+  lookFolder.add(params, 'terrainTexAlbedoGrass', 0, 1.0, 0.05).name('Albedo: grass').onChange(v => _setU('uSurfAlbW.x', v))
+  lookFolder.add(params, 'terrainTexAlbedoDirt', 0, 1.0, 0.05).name('Albedo: dirt').onChange(v => _setU('uSurfAlbW.y', v))
+  lookFolder.add(params, 'terrainTexAlbedoRock', 0, 1.0, 0.05).name('Albedo: rock + cut/fill').onChange(v => _setU('uSurfAlbW.z', v))
+  lookFolder.addColor(params, 'terrainRockGapGreen').name('Rock gap green').onChange(_recolor)
   lookFolder.add(params, 'terrainTexBlendDepth', 0.02, 1.0, 0.02).name('Surface blend depth').onChange(v => _setU('uSurfDepth', v))
   lookFolder.add(params, 'terrainTexTileGrass', 0.5, 6, 0.1).name('Grass tile (m)').onChange(v => _setU('uSurfScale.x', 1 / v))
   lookFolder.add(params, 'terrainTexTileDirt', 0.5, 8, 0.1).name('Dirt tile (m)').onChange(v => _setU('uSurfScale.y', 1 / v))
   lookFolder.add(params, 'terrainTexTileRock', 1, 16, 0.25).name('Rock tile (m)').onChange(v => _setU('uSurfScale.z', 1 / v))
-  // Grass splotch palette — routed through the recolour so _syncSurfacePalette re-derives the factors.
-  lookFolder.addColor(params, 'terrainGrassPale').name('Grass splotch: pale').onChange(_recolor)
-  lookFolder.addColor(params, 'terrainGrassStraw').name('Grass splotch: earth').onChange(_recolor)
-  lookFolder.addColor(params, 'terrainGrassDark').name('Grass splotch: dark').onChange(_recolor)
-  lookFolder.add(params, 'terrainSplotchSize', 2, 30, 0.5).name('Splotch size (m)').onChange(v => _setU('uSplotchSize', v))
-  lookFolder.add(params, 'terrainSplotchCover', 0.1, 0.7, 0.02).name('Splotch cover').onChange(v => _setU('uSplotchCover', v))
-  lookFolder.add(params, 'terrainSplotchEdge', 0.05, 3, 0.05).name('Splotch edge (m)').onChange(v => _setU('uSplotchEdge', v))
-  lookFolder.add(params, 'terrainSplotchStrength', 0, 1, 0.05).name('Splotch strength').onChange(v => _setU('uSplotchStrength', v))
   lookFolder.add(params, 'terrainDirtFlatGreen', 0, 1, 0.05).name('Dirt flat green').onChange(v => _setU('uDirtFlatGreen', v))
 
   // ── Water folder (FEAT-24 meadow meander streams; FEAT-17/18 rarity dials) ────────────

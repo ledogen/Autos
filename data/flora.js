@@ -109,6 +109,13 @@ export const FLORA_PARAMS = {
       backNoiseFreq:    0.025,    // 1/m — patchiness field (~40 m)
       backNoiseMin:     0.38,     // field value below which the ground stays bare
       backTallFrac:     0.1,      // share of tall kinds away from the road
+      // the riverbanks (owner 2026-09-25): the stream BANK band (water.streamChannelAt inBank —
+      // the ramp between the channel and grade) grows regardless of the green rule, rye-heavy
+      // (it wants the moisture), sage rare. Candidates in the channel itself never stand.
+      bankAttempts:     360,      // candidates per chunk (kept only where they land in a bank)
+      bankDensity:      0.85,     // probability a bank candidate stands
+      bankTallFrac:     0.45,     // share of tall kinds on the bank
+      bankSageFrac:     0.15,     // of the tall kinds, sage (rest wild rye)
       // Off green ground: small grass + sage continue onto DIRT at this fraction of their green
       // density (owner: "the grass can and should continue on to dirt slopes, sparser"); rye is
       // green-only (it wants moisture). Nothing stands on rock (steep / above the treeline).

@@ -303,8 +303,8 @@ function _convexPoly(rng, cx, cz, r) {
 // Foliage tone in the gaps between the fragments (linear rgb) — owner 2026-09-23: "make the
 // background of the rock colour map take on a green tone to suggest foliage hiding beneath the
 // larger rocks". An absolute target relative to the rock picker colour, like the dirt pebbles.
-const ROCK_GAP_GREEN = [0.27, 0.33, 0.19]
-export function rockFields(seed, size, paletteBase = _hexLin(0x808287)) {
+const ROCK_GAP_GREEN = [0.16, 0.27, 0.13]   // default (0x2a4522); the picker (terrainRockGapGreen) overrides
+export function rockFields(seed, size, paletteBase = _hexLin(0x7a7c80), gapGreen = ROCK_GAP_GREEN) {
   const rng = mulberry32(seed >>> 0)
   const N = size * size
   const H = new Float32Array(N)
@@ -409,7 +409,7 @@ export function rockFields(seed, size, paletteBase = _hexLin(0x808287)) {
   }
   cover = covered()
 
-  const gap = _toward(ROCK_GAP_GREEN, paletteBase)
+  const gap = _toward(gapGreen, paletteBase)
   for (let i = 0; i < N; i++) {
     const j = i * 4
     const o = owner[i]
@@ -431,7 +431,8 @@ export function rockFields(seed, size, paletteBase = _hexLin(0x808287)) {
  * Bake the three surface texture pairs.
  * @param {number} seed  deterministic (world-independent — one shared look, like the riverbed)
  * @param {number} size  texture edge in px (power of two)
- * @param {{dirt?:number, rock?:number}} bases  palette hex colours the absolute-target palettes are relative to
+ * @param {{dirt?:number, rock?:number, rockGap?:number}} bases  palette hex colours the absolute-target
+ *   palettes are relative to, and the rock-gap foliage colour itself
  * @returns {{ grass: {map, normalMap}, dirt: {map, normalMap}, rock: {map, normalMap} }}
  */
 export function makeSurfaceTextures(seed = 8401, size = 256, bases = {}) {
@@ -442,6 +443,6 @@ export function makeSurfaceTextures(seed = 8401, size = 256, bases = {}) {
   return {
     grass: build(grassFields(seed, size)),
     dirt:  build(dirtFields(seed + 1, size, bases.dirt ? _hexLin(bases.dirt) : undefined)),
-    rock:  build(rockFields(seed + 2, size, bases.rock ? _hexLin(bases.rock) : undefined)),
+    rock:  build(rockFields(seed + 2, size, bases.rock ? _hexLin(bases.rock) : undefined, bases.rockGap ? _hexLin(bases.rockGap) : undefined)),
   }
 }

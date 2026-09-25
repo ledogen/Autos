@@ -905,7 +905,9 @@ export const RANGER_PARAMS = {
   // ARE the linear vertex-colour values, NOT sRGB, so a colour picker round-trips exactly).
   // Tuned for high-altitude Eastern Sierra / Lone Pine: granite-grey rock, decomposed-granite
   // soil, muted sage-meadow green. Replaces the old desert warm-brown palette.
-  terrainRockColor:  0x72604b, // granite grey — steep faces AND high (above-treeline) terrain
+  terrainRockColor:  0x7a7c80, // granite grey — steep faces AND high (above-treeline) terrain. Was 0x72604b, a
+                               // warm BROWN despite this comment: the source of "brown dirt turning into brown
+                               // rocks" (owner 2026-09-25) once the shader painted rock by the share it wins.
   terrainDirtColor:  0x69481b, // alpine soil/decomposed-granite — moderate slopes (the "general" mid)
   terrainGrassColor: 0x426917, // muted sage — FERTILE/forest flats (above the basin floors; trees go here)
   terrainMeadowColor: 0x1c270c, // lush green — MEADOW basins (local lows where water collects)
@@ -943,7 +945,13 @@ export const RANGER_PARAMS = {
   // terrainDetailScale kill-switch. Tile sizes are metres per texture repeat.
   terrainTexEnabled:    true,  // A/B lever: false = the FEAT-05 flat look (no taps, no blend, no splotches)
   terrainTexNormal:     0.8,   // [-] strength of the per-zone normal (relief) maps (0 = off)
-  terrainTexAlbedo:     0.55,  // [-] how much the albedo modulation shows (0 = flat palette colour)
+  // Albedo (colour) modulation per zone. Owner 2026-09-25: ON for rock (and always on engineered
+  // cut/fill faces), OFF for grass and dirt — on the soft zones it read as gravel wallpaper
+  // against the flat palette; relief alone carries them.
+  terrainTexAlbedoGrass: 0,
+  terrainTexAlbedoDirt:  0,
+  terrainTexAlbedoRock:  0.55,
+  terrainRockGapGreen:  0x2a4522, // the foliage green between the rock fragments (the dark stripes in the joints) — darker/richer, owner 2026-09-25
   terrainTexBlendDepth: 0.22,  // [-] interface softness: 0 = hard height contest, 1 = plain crossfade
   terrainTexTileGrass:  2.0,   // m — tuft field repeat (1.6 was unreadable a few metres from the truck)
   terrainTexTileDirt:   2.4,   // m — clod/pebble field repeat
@@ -951,16 +959,4 @@ export const RANGER_PARAMS = {
   // Owner 2026-09-24: the green under the dirt should be more vibrant on FLAT dirt (fine on the
   // hills). Extra green saturation in the dirt hollows, scaled by flatness (0 = off).
   terrainDirtFlatGreen: 0.4,
-  // Grass splotches (owner 2026-09-23): round, crisp-edged mats of colour over the meadow — the
-  // splotchy creep of California native shrubs — as two cellular blob layers (terrain.js
-  // tsBlobs): big mats on a terrainSplotchSize-metre lattice, small ones at 0.4× laid on top. Each
-  // mat takes one of the three absolute colours below; the ground between them keeps the picker's
-  // meadow/fertile colour.
-  terrainGrassPale:     0x7f9650, // pale "sedum" green mats
-  terrainGrassStraw:    0x4a3a26, // dark-brown earth mats (owner 2026-09-24: straw read as "cow pattern" against the greens)
-  terrainGrassDark:     0x384f24, // darker, more desaturated green mats
-  terrainSplotchSize:   8.0,      // m — lattice cell of the big mats (blob radius = cover × this)
-  terrainSplotchCover:  0.45,     // [-] max blob radius in cells (0.5 = mats touch; lower = sparser)
-  terrainSplotchEdge:   0.35,     // m — edge softness (the "relatively clearly defined" edge)
-  terrainSplotchStrength: 0.7,    // [-] how far a mat replaces the palette colour (0 = off)
 };

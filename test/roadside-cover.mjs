@@ -157,5 +157,24 @@ console.log('5. additive; green-gated')
   ok(!dirt.some(p => p.cat === 'rye'), 'wild rye never stands on dirt')
 }
 
+console.log('6. riverbanks: clumps stand in the stream bank, never in the channel, no green gate')
+{
+  // A stream along z = 3.5 chunks: channel |dz| ≤ 3 m, bank 3–9 m. Ground reads dirt everywhere.
+  const ZS = 3.5 * SIZE
+  const streamAt = (x, z) => { const d = Math.abs(z - ZS); return d <= 3 ? { inChannel: true, inBank: false } : d <= 9 ? { inChannel: false, inBank: true } : { inChannel: false, inBank: false } }
+  const s = makeSamplers({ groundAt: () => ({ green: 0, rock: 0 }) })
+  const withBank = scatterChunk(0, 3, 606, { ...s, streamAt }).filter(isCover)
+  const bank = withBank.filter(p => Math.abs(p.z - ZS) > 3 && Math.abs(p.z - ZS) <= 9)
+  const chan = withBank.filter(p => Math.abs(p.z - ZS) <= 3)
+  ok(bank.length > 40, `bank populated on dirt ground (${bank.length} clumps in the 3–9 m band)`)
+  ok(chan.length === 0, `nothing stands in the channel (${chan.length})`)
+  ok(bank.some(p => p.cat === 'rye'), 'wild rye stands on the bank (moisture) even though the ground is dirt')
+  // The same band without a stream still gets wall + backcountry clumps (dirt at dirtFrac); the
+  // bank pass must add on top of that, clearly.
+  const dry = scatterChunk(0, 3, 606, { ...s, streamAt: () => ({ inChannel: false, inBank: false }) }).filter(isCover)
+  const dryBand = dry.filter(p => Math.abs(p.z - ZS) > 3 && Math.abs(p.z - ZS) <= 9).length
+  ok(bank.length > dryBand * 1.5, `the bank pass adds on top of the dry scatter (${bank.length} vs ${dryBand} in the band)`)
+}
+
 console.log(fails ? `\nROADSIDE-COVER GATE: ${fails} FAILED` : '\nROADSIDE-COVER GATE: PASS')
 process.exit(fails ? 1 : 0)

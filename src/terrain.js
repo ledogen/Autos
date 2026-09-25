@@ -437,7 +437,7 @@ export class TerrainSystem {
         this._material = new THREE.MeshPhongMaterial({ vertexColors: true })
         // FEAT-84: one shared set of grass/dirt/rock detail maps, baked once from a fixed seed
         // (world-independent — a texture is a look, not a place). ~40 ms, pure typed arrays.
-        this._surfTex = makeSurfaceTextures(8401, 256, { dirt: params.terrainDirtColor ?? 0x69481b, rock: params.terrainRockColor ?? 0x808287 })
+        this._surfTex = this._bakeSurfaceTextures()
 
         // FEAT-05: per-pixel procedural detail on top of the per-vertex biome colour — fbm
         // albedo mottle + a normal bump that ramps in with rockiness (steep OR above-treeline),
@@ -478,7 +478,7 @@ export class TerrainSystem {
             // FEAT-84: per-zone surface detail (terrain-texture.js). The vertex `aSurf` weights
             // (grass, dirt, rock) pick between three tileable albedo-modulation+height / normal
             // pairs, height-weighted so the taller feature wins at an interface. uSurfScale is
-            // repeats per metre per zone; uSurfDepth the blend transition width; uSurfAlbedo and
+            // repeats per metre per zone; uSurfDepth the blend transition width; uSurfAlbW and
             // uSurfNormal the two strengths (0 = palette colour / geometric normal untouched).
             // Everything sits behind uDetailScale > 0 like the fbm, so Low's kill-switch holds.
             uSurfAlbG: { value: this._surfTex.grass.map }, uSurfNrmG: { value: this._surfTex.grass.normalMap },
@@ -489,23 +489,19 @@ export class TerrainSystem {
                 1 / (params.terrainTexTileDirt  ?? 2.4),
                 1 / (params.terrainTexTileRock  ?? 8.0)) },
             uSurfDepth:  { value: params.terrainTexBlendDepth ?? 0.22 },
-            uSurfAlbedo: { value: params.terrainTexAlbedo     ?? 0.55 },
+            // Albedo (colour) modulation per zone — owner 2026-09-25: on rock and on engineered
+            // cut/fill faces (vSurf.w forces it there), OFF on grass and dirt where it read as
+            // "gravel wallpaper" against the flat palette. Relief stays on every zone.
+            uSurfAlbW:   { value: new THREE.Vector3(
+                params.terrainTexAlbedoGrass ?? 0,
+                params.terrainTexAlbedoDirt  ?? 0,
+                params.terrainTexAlbedoRock  ?? 0.55) },
             uSurfNormal: { value: params.terrainTexNormal     ?? 0.8  },
             // FEAT-84 local colouring: where the height contest hands a zone MORE share than its
             // vertex weight (rock poking through dirt), the fragment is pulled toward that zone's
             // palette colour — otherwise a rock texel is just dirt-coloured relief. Written from the
             // params in _syncSurfacePalette, so the colour pickers keep driving them.
             uColGrass: { value: new THREE.Color() }, uColDirt: { value: new THREE.Color() }, uColRock: { value: new THREE.Color() },
-            // FEAT-84 grass splotches: a world-space low-frequency field picks between three
-            // Eastern-Sierra greens (pale sedum, dead straw, darker neutral) — absolute linear
-            // colours from the params (terrainGrassPale/Straw/Dark).
-            uGrassPale:  { value: new THREE.Color() },
-            uGrassStraw: { value: new THREE.Color() },
-            uGrassDark:  { value: new THREE.Color() },
-            uSplotchSize:     { value: params.terrainSplotchSize     ?? 8.0  },
-            uSplotchCover:    { value: params.terrainSplotchCover    ?? 0.45 },
-            uSplotchEdge:     { value: params.terrainSplotchEdge     ?? 0.35 },
-            uSplotchStrength: { value: params.terrainSplotchStrength ?? 0.7  },
             uDirtFlatGreen:   { value: params.terrainDirtFlatGreen   ?? 0.4  },
             // A/B lever (owner 2026-09-24): 0 skips the whole FEAT-84 block — six texture taps,
             // the blend, the splotch lattices — leaving the FEAT-05 flat palette + fbm mottle.
@@ -516,17 +512,17 @@ export class TerrainSystem {
             Object.assign(shader.uniforms, this._terrainUniforms)
             addWorldVaryings(shader)
             // FEAT-84: the per-vertex surface weights ride to the fragment as a varying.
-            shader.vertexShader = 'attribute vec3 aSurf;\nvarying vec3 vSurf;\n' + shader.vertexShader
+            shader.vertexShader = 'attribute vec4 aSurf;\nvarying vec4 vSurf;\n' + shader.vertexShader
             shader.vertexShader = shader.vertexShader.replace(
                 '#include <begin_vertex>',
                 '#include <begin_vertex>\n  vSurf = aSurf;'
             )
             shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
                 'uniform sampler2D uSurfAlbG, uSurfNrmG, uSurfAlbD, uSurfNrmD, uSurfAlbR, uSurfNrmR;\n' +
-                'uniform vec3 uSurfScale; uniform float uSurfDepth, uSurfAlbedo, uSurfNormal;\n' +
-                'uniform float uSplotchSize, uSplotchCover, uSplotchEdge, uSplotchStrength, uDirtFlatGreen, uSurfOn;\n' +
-                'uniform vec3 uColGrass, uColDirt, uColRock, uGrassPale, uGrassStraw, uGrassDark;\n' +
-                'varying vec3 vSurf;\n' +
+                'uniform vec3 uSurfScale, uSurfAlbW; uniform float uSurfDepth, uSurfNormal;\n' +
+                'uniform float uDirtFlatGreen, uSurfOn;\n' +
+                'uniform vec3 uColGrass, uColDirt, uColRock;\n' +
+                'varying vec4 vSurf;\n' +
                 // FEAT-84: blended tangent-space normal (xy), written at <color_fragment> where the
                 // blend weights are computed, consumed at <normal_fragment_begin> (separate scope).
                 'vec2 tsNrm = vec2(0.0); vec3 tsNrmSide = vec3(0.0);\n' +
@@ -535,32 +531,6 @@ export class TerrainSystem {
                 // Baked prop-shadow occlusion, written at <color_fragment> and consumed by the
                 // directional-light patch below. Global because those two chunks are separate scopes.
                 'float rsBakedShade = 1.0;\n' + shader.fragmentShader
-            // FEAT-84 grass splotches (owner 2026-09-23: "a mottled pattern with relatively
-            // clearly defined edges … mostly round and blobby" — the creeping mats of California
-            // native shrubs). One blob layer = a cellular field: every lattice cell drops one blob
-            // of radius rLo–rHi cells at a jittered point; a fragment takes the nearest blob that
-            // covers it, with a CRISP edge (smoothstep over uSplotchEdge metres, not the soft fbm
-            // gradient the first pass used). `id` is the blob's hash → colour. Spliced in at
-            // main() so it lands AFTER the terrain-detail NOISE_GLSL it calls tdHash from.
-            shader.fragmentShader = shader.fragmentShader.replace('void main() {',
-                `float tsBlobs(vec2 q, float rLo, float rHi, float edgeC, out float id) {
-                    vec2 i0 = floor(q);
-                    float best = 0.0; id = 0.0;
-                    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-                        vec2 c = i0 + vec2(float(x), float(y));
-                        float h1 = tdHash(c), h2 = tdHash(c + 17.3);
-                        float h3 = fract(h1 * 7.31 + h2 * 3.17);
-                        vec2 fp = c + 0.1 + vec2(h1, h2) * 0.8;
-                        float r = mix(rLo, rHi, h3);
-                        float cov = 1.0 - smoothstep(r - edgeC, r, length(q - fp));
-                        if (cov > best) { best = cov; id = h3; }
-                    }
-                    return best;
-                }
-                vec3 tsSplotchColour(float id) {
-                    return id < 0.42 ? uGrassPale : (id < 0.72 ? uGrassStraw : uGrassDark);
-                }
-                void main() {`)
             // FEAT-40: cut the skin at tunnel mouths — capsule test in world space, then discard.
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <clipping_planes_fragment>',
@@ -583,6 +553,13 @@ export class TerrainSystem {
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <color_fragment>',
                 `#include <color_fragment>
+                // Rock colouring (owner 2026-09-25: "brown dirt turning into brown rocks turning
+                // into grey rocks"): the vertex colour carries NO rock share any more — dirt/grass
+                // only — and rock is painted here by the share rock WINS: the vertex share when the
+                // textures are off, the per-texel height contest when they are on. So a half-rock
+                // vertex is brown dirt with grey fragments on it, never a brown-grey average.
+                // Engineered faces (vSurf.w) keep their own cut/fill colour.
+                float ts_rockW = vSurf.z * (1.0 - vSurf.w);
                 if (uDetailScale > 0.0) {
                     float td_n = tdFbm(vWorldPos.xz * uNoiseScale);
                     diffuseColor.rgb *= 1.0 + uMottle * uDetailScale * (td_n - 0.5);
@@ -610,42 +587,28 @@ export class TerrainSystem {
                     vec2 ts_ps = (ts_xf ? vec2(vWorldPos.z * ts_sgn, vWorldPos.y) : vec2(vWorldPos.x * ts_sgn, vWorldPos.y)) * uSurfScale.z;
                     vec4 ts_rs = texture2D(uSurfAlbR, ts_ps);
                     ts_r = mix(ts_r, ts_rs, ts_steep);
-                    vec3 ts_h = vSurf * (1.0 + vec3(ts_g.a, ts_d.a, ts_r.a));
+                    vec3 ts_h = vSurf.xyz * (1.0 + vec3(ts_g.a, ts_d.a, ts_r.a));
                     float ts_ma = max(ts_h.x, max(ts_h.y, ts_h.z)) - uSurfDepth;
                     vec3 ts_b = max(ts_h - ts_ma, 0.0);
                     ts_b /= (ts_b.x + ts_b.y + ts_b.z);
-                    // Local colouring: the share a zone GAINED over its vertex weight pulls the
-                    // fragment toward that zone's own palette colour (a rock plate surfacing in dirt
-                    // is grey, not brown relief).
-                    vec3 ts_gain = max(ts_b - vSurf, 0.0) * uDetailScale;
-                    diffuseColor.rgb = mix(diffuseColor.rgb, uColRock,  ts_gain.z);
+                    ts_rockW = ts_b.z * (1.0 - vSurf.w);
+                    diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_rockW);
+                    // Local colouring for the two soft zones: the share grass/dirt GAINED over its
+                    // vertex weight pulls the fragment toward that zone's own palette colour.
+                    vec2 ts_gain = max(ts_b.xy - vSurf.xy, 0.0) * uDetailScale;
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColDirt,  ts_gain.y);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColGrass, ts_gain.x);
-                    // Grass splotches: two cellular blob layers (tsBlobs above) — big mats at
-                    // uSplotchSize cells, small ones at 0.4× that laid on top — over the palette
-                    // colour as the ground state. The lattice is domain-warped by a metre-scale fbm
-                    // so the outlines creep instead of reading as circles. Absolute colours blended
-                    // in at uSplotchStrength (never a multiply — a factor over a dark base washed
-                    // the whole meadow out); the meadow between the mats keeps its picker colour.
-                    // Two warp octaves: a slow one bends the whole mat, a ~3 m one frays its edge.
-                    if (uSplotchStrength > 0.0 && ts_b.x > 0.0) {   // strength 0 = the lattices are not evaluated
-                    vec2 ts_pw = ts_p + (vec2(tdFbm(ts_p * 0.16), tdFbm(ts_p * 0.16 + 31.7)) - 0.5) * (0.5 * uSplotchSize)
-                                      + (vec2(tdFbm(ts_p * 0.55 + 7.1), tdFbm(ts_p * 0.55 + 53.3)) - 0.5) * (0.22 * uSplotchSize);
-                    float ts_idA, ts_idB;
-                    float ts_cA = tsBlobs(ts_pw / uSplotchSize, uSplotchCover * 0.55, uSplotchCover, uSplotchEdge / uSplotchSize, ts_idA);
-                    float ts_szB = uSplotchSize * 0.4;
-                    float ts_cB = tsBlobs(ts_pw / ts_szB + 7.3, uSplotchCover * 0.5, uSplotchCover * 0.9, uSplotchEdge / ts_szB, ts_idB);
-                    vec3 ts_spl = mix(diffuseColor.rgb, tsSplotchColour(ts_idA), ts_cA);
-                    ts_spl = mix(ts_spl, tsSplotchColour(ts_idB + 0.37), ts_cB);
-                    diffuseColor.rgb = mix(diffuseColor.rgb, ts_spl, ts_b.x * uSplotchStrength * uDetailScale);
-                    }
-                    vec3 ts_alb = (ts_g.rgb * ts_b.x + ts_d.rgb * ts_b.y + ts_r.rgb * ts_b.z) * 4.0;
-                    diffuseColor.rgb *= mix(vec3(1.0), ts_alb, uSurfAlbedo * uDetailScale);
+                    // Per-zone albedo weights; the carve zone (vSurf.w) forces dirt + rock on.
+                    vec3 ts_aw = vec3(uSurfAlbW.x, max(uSurfAlbW.y, vSurf.w), max(uSurfAlbW.z, vSurf.w)) * uDetailScale;
+                    vec3 ts_alb = vec3(1.0) + (ts_g.rgb * 4.0 - 1.0) * ts_b.x * ts_aw.x
+                                            + (ts_d.rgb * 4.0 - 1.0) * ts_b.y * ts_aw.y
+                                            + (ts_r.rgb * 4.0 - 1.0) * ts_b.z * ts_aw.z;
+                    diffuseColor.rgb *= ts_alb;
                     // Flat dirt: the green in the hollows (low dirt texel height) gets more
                     // saturated as the ground flattens (owner 2026-09-24); hills keep the baked tone.
                     float ts_flat = 1.0 - smoothstep(0.06, 0.22, 1.0 - clamp(vWorldNrm.y, 0.0, 1.0));
                     float ts_hollow = 1.0 - smoothstep(0.2, 0.55, ts_d.a);
-                    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.82, 1.18, 0.72), ts_b.y * ts_flat * ts_hollow * uDirtFlatGreen * uDetailScale);
+                    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.82, 1.18, 0.72), ts_b.y * ts_flat * ts_hollow * uDirtFlatGreen * ts_aw.y);
                     vec2 ts_ng = texture2D(uSurfNrmG, ts_p * uSurfScale.x).xy * 2.0 - 1.0;
                     vec2 ts_nd = texture2D(uSurfNrmD, ts_p * uSurfScale.y).xy * 2.0 - 1.0;
                     vec2 ts_nr = texture2D(uSurfNrmR, ts_p * uSurfScale.z).xy * 2.0 - 1.0;
@@ -655,8 +618,8 @@ export class TerrainSystem {
                     vec2 ts_nrs = texture2D(uSurfNrmR, ts_ps).xy * 2.0 - 1.0;
                     tsNrmSide = (ts_xf ? vec3(0.0, ts_nrs.y, ts_nrs.x * ts_sgn) : vec3(ts_nrs.x * ts_sgn, ts_nrs.y, 0.0))
                               * (ts_steep * ts_b.z * uSurfNormal * uDetailScale);
-                    }   // uSurfOn
-                }
+                    } else diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_rockW);   // textures off
+                } else diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_rockW);       // Low tier
                 // PERF-07: baked prop-shadow atlas. World XZ → toroidal tile (cx,cz mod N) → atlas UV
                 // (a pure fn of position, so no per-chunk uniform). A 5-tap in-tile blur softens the
                 // 0.5 m/texel silhouette; inTile is clamped to the tile interior so linear filtering
@@ -1969,7 +1932,7 @@ export class TerrainSystem {
         this._syncSurfacePalette()   // FEAT-84: recolours re-run this, so the pickers reach the textures
         // FEAT-84: (grass, dirt, rock) surface weights, sum 1 — the shader's texture blend reads
         // these; they are the same feathered biome decision the colour below is made from.
-        const surfArr = new Float32Array(nVerts * 3)
+        const surfArr = new Float32Array(nVerts * 4)
 
         // ── Alpine biome palette (FEAT-05) — decoded from params as LINEAR RGB (/255) ───
         // Replaces the old desert warm-brown set. Natural biome is dirt→grass→rock, selected
@@ -1979,7 +1942,7 @@ export class TerrainSystem {
         const [DT_R, DT_G, DT_B] = _hx(p.terrainDirtColor   ?? 0x66543d) // dirt — the "general" mid
         const [GR_R, GR_G, GR_B] = _hx(p.terrainGrassColor  ?? 0x4c5e38) // FERTILE/forest green (flat bench)
         const [MD_R, MD_G, MD_B] = _hx(p.terrainMeadowColor ?? 0x5c7a30) // MEADOW green (local basins)
-        const [RK_R, RK_G, RK_B] = _hx(p.terrainRockColor   ?? 0x808287) // granite (steep OR above treeline)
+        // (granite — terrainRockColor — is painted by the SHADER by the share rock wins; see uColRock)
         const [CO_R, CO_G, CO_B] = _hx(p.terrainCutoutColor ?? 0x757066) // engineered cut face (D-10)
         const [DF_R, DF_G, DF_B] = _hx(p.terrainFillColor   ?? 0x6b5740) // dirt fill foundation (D-07)
         // Biome thresholds (slope = 1 - normal.y; altitude = raw terrain world Y).
@@ -2052,13 +2015,12 @@ export class TerrainSystem {
             const knoll = smooth(knollLo, knollHi, rel) * knollRock
             const rockBlend = Math.max(cliffBlend, smooth(treeLo, treeHi, worldH), knoll)
 
-            // Step 1: dirt → vegetation (fertile/meadow) → rock
+            // Step 1: dirt → vegetation (fertile/meadow). Rock is NOT blended into the vertex
+            // colour (owner 2026-09-25) — the shader paints it by the share rock wins (sRock, or
+            // the per-texel height contest), so a mixed vertex is brown WITH grey on it.
             let r = DT_R + (VG_R - DT_R) * vegBlend
             let g = DT_G + (VG_G - DT_G) * vegBlend
             let b = DT_B + (VG_B - DT_B) * vegBlend
-            r = r + (RK_R - r) * rockBlend
-            g = g + (RK_G - g) * rockBlend
-            b = b + (RK_B - b) * rockBlend
 
             // FEAT-84: surface weights follow the same ladder — rock takes what steepness/altitude
             // claims, grass what is left of the vegetated share, dirt the remainder.
@@ -2084,13 +2046,14 @@ export class TerrainSystem {
             colorArr[idx3    ] = r
             colorArr[idx3 + 1] = g
             colorArr[idx3 + 2] = b
-            surfArr[idx3    ] = sGrass
-            surfArr[idx3 + 1] = sDirt
-            surfArr[idx3 + 2] = sRock
+            surfArr[i * 4    ] = sGrass
+            surfArr[i * 4 + 1] = sDirt
+            surfArr[i * 4 + 2] = sRock
+            surfArr[i * 4 + 3] = carveZoneBlend   // engineered face: keeps its cut/fill colour, gets albedo
         }
 
         geom.setAttribute('color', new THREE.BufferAttribute(colorArr, 3))
-        geom.setAttribute('aSurf', new THREE.BufferAttribute(surfArr, 3))
+        geom.setAttribute('aSurf', new THREE.BufferAttribute(surfArr, 4))
     }
 
     /**
@@ -2105,15 +2068,31 @@ export class TerrainSystem {
         const grass = hx(p.terrainGrassColor ?? 0x426917)
         U.uColGrass.value.setRGB(...grass)
         U.uColDirt.value.setRGB(...hx(p.terrainDirtColor ?? 0x69481b))
-        U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x72604b))
-        U.uGrassPale.value.setRGB(...hx(p.terrainGrassPale  ?? 0x7f9650))
-        U.uGrassStraw.value.setRGB(...hx(p.terrainGrassStraw ?? 0x4a3a26))
-        U.uGrassDark.value.setRGB(...hx(p.terrainGrassDark  ?? 0x384f24))
-        U.uSplotchSize.value     = p.terrainSplotchSize     ?? 8.0
-        U.uSplotchCover.value    = p.terrainSplotchCover    ?? 0.45
-        U.uSplotchEdge.value     = p.terrainSplotchEdge     ?? 0.35
-        U.uSplotchStrength.value = p.terrainSplotchStrength ?? 0.7
+        U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x7a7c80))
+        U.uSurfAlbW.value.set(p.terrainTexAlbedoGrass ?? 0, p.terrainTexAlbedoDirt ?? 0, p.terrainTexAlbedoRock ?? 0.55)
         U.uDirtFlatGreen.value   = p.terrainDirtFlatGreen   ?? 0.4
+        // The texture palettes are ABSOLUTE targets relative to the picker colours (dirt pebbles,
+        // rock gap green), so a picker change re-bakes the maps (~40 ms) and swaps the uniforms.
+        const key = this._surfTexKey()
+        if (key !== this._surfTex.key) {
+            const old = this._surfTex
+            this._surfTex = this._bakeSurfaceTextures()
+            U.uSurfAlbG.value = this._surfTex.grass.map; U.uSurfNrmG.value = this._surfTex.grass.normalMap
+            U.uSurfAlbD.value = this._surfTex.dirt.map;  U.uSurfNrmD.value = this._surfTex.dirt.normalMap
+            U.uSurfAlbR.value = this._surfTex.rock.map;  U.uSurfNrmR.value = this._surfTex.rock.normalMap
+            for (const z of ['grass', 'dirt', 'rock']) { old[z].map.dispose(); old[z].normalMap.dispose() }
+        }
+    }
+
+    _surfTexKey() {
+        const p = this._params
+        return `${p.terrainDirtColor ?? 0x69481b}/${p.terrainRockColor ?? 0x7a7c80}/${p.terrainRockGapGreen ?? 0x2a4522}`
+    }
+    _bakeSurfaceTextures() {
+        const p = this._params
+        const t = makeSurfaceTextures(8401, 256, { dirt: p.terrainDirtColor ?? 0x69481b, rock: p.terrainRockColor ?? 0x7a7c80, rockGap: p.terrainRockGapGreen ?? 0x2a4522 })
+        t.key = this._surfTexKey()
+        return t
     }
 
     /**

@@ -109,6 +109,23 @@ blend "at their interfaces" rather than crossfade.
       Green under the dirt: more vibrant on FLAT dirt, hills as they were → `terrainDirtFlatGreen`
       (0.4): extra green saturation in the dirt hollows × flatness (slider "Dirt flat green").
 
+- [x] Owner pass 8 (2026-09-25, after the A/B portfolio + my read): **albedo per zone** —
+      `terrainTexAlbedoGrass/Dirt/Rock` (0 / 0 / 0.55; sliders "Albedo: grass / dirt / rock +
+      cut/fill"); the carve zone (`aSurf.w` = carveZoneBlend, a new 4th component) forces dirt +
+      rock albedo ON so engineered faces keep their busy look. Relief stays on every zone.
+      **Splotches DELETED** (tsBlobs, the four uniforms, three pickers, four sliders — ruled out
+      after seeing the meadow without them). **Rock gap green** is a picker
+      (`terrainRockGapGreen` 0x2a4522, darker/richer) — a change re-bakes the maps (~40 ms) and
+      swaps the uniforms (`_syncSurfacePalette` keys on dirt/rock/gap colours).
+- [x] Pass 8, the dirt→rock read ("brown dirt turning into brown rocks turning into grey rocks"):
+      two causes, both fixed. (1) The vertex colour blended rock INTO the ladder, so a half-rock
+      vertex was a brown-grey average that the fragment map then multiplied — now the vertex
+      colour carries dirt/grass only and the shader paints rock by the share rock WINS (the
+      per-texel height contest with textures on, `vSurf.z` without), so a mixed vertex is brown
+      dirt with grey fragments on it. (2) `terrainRockColor` was 0x72604b, a warm brown behind a
+      "granite grey" comment — ground rock had always been brown while the prop rocks were grey.
+      Now 0x7a7c80 (0x84868a read near-white on a sunlit face). Picker as before.
+
 ## Known limits / follow-ups
 
 - Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second

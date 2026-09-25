@@ -136,6 +136,15 @@ taps + the blend, 2 fbm for the mottle, 4 fbm + 2 × 9-cell lattices for the spl
 *Terrain Look → Surface textures* (uSurfOn) skips the whole block; *Splotch strength 0* skips the
 lattices. Measure on the Air with the stats panel before deciding the look.
 
+### Owner pass 8 (2026-09-25) — riverbanks
+
+Ricegrass, wild rye and sage on the stream BANKS (`cover.bankAttempts` 360 / `bankDensity` 0.85
+/ `bankTallFrac` 0.45 / `bankSageFrac` 0.15): a third cover source keyed on
+`streamAt(x,z).inBank` (the ramp between the channel and grade), no green gate (riparian ground
+grows on dirt), rye-heavy, never in the channel. A 16 m coarse probe skips the pass in chunks with
+no stream (a `streamAt` is a segment walk). Gate check 6 pins bank-only, channel-free, on top of
+the dry scatter. Sliders under Roadside cover.
+
 ## Acceptance
 
 - [x] A dense, irregular grass/brush line along both shoulders on green ground; sparser on dirt, bare on rock.

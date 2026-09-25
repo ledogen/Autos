@@ -624,6 +624,34 @@ function* coverPass(out, cx, cz, worldSeed, samplers, P, h) {
     }
   }
 
+  // ── the riverbanks ────────────────────────────────────────────────────────────────────
+  // Needs the stream sampler (absent in older fixtures → no bank cover). A coarse 16 m probe
+  // decides whether any bank crosses this chunk before the per-candidate streamAt walks — a
+  // streamAt is a segment walk, hundreds of them in a stream-less chunk were 12–19 ms (FEAT-25).
+  if (samplers.streamAt && P.grass && (C.bankAttempts ?? 0) > 0) {
+    let bankHere = false
+    for (let gz = 8; gz < size && !bankHere; gz += 16) for (let gx = 8; gx < size; gx += 16) {
+      const st = samplers.streamAt(ox + gx, oz + gz)
+      if (st && (st.inBank || st.inChannel)) { bankHere = true; break }
+    }
+    if (bankHere) {
+      const brng = mulberry32(seedFor(worldSeed, 'coverBank', cx, cz))
+      for (let i = 0; i < C.bankAttempts; i++) {
+        const x = ox + brng() * size, z = oz + brng() * size
+        if ((i & 3) === 3) yield
+        const st = samplers.streamAt(x, z)
+        if (!st || !st.inBank) continue
+        if (!roadClear(x, z, halfW + 0.5)) continue
+        const prng = mulberry32(seedFor(worldSeed, 'coverBankPt', Math.round(x * 4), Math.round(z * 4)))
+        if (prng() > (C.bankDensity ?? 0.85)) continue
+        const tall = prng() < (C.bankTallFrac ?? 0.45)
+        const cat = tall ? (prng() < (C.bankSageFrac ?? 0.15) ? 'sage' : 'rye') : 'grass'
+        stand(x, z, cat, prng, groundAt(x, z))   // no green gate: riparian ground grows on dirt too
+        yield
+      }
+    }
+  }
+
   // ── the backcountry ───────────────────────────────────────────────────────────────────
   const backN = Math.round(C.backAttempts * (C.density ?? 1))   // tier-scaled (Normal 1×)
   if (samplers.groundAt && P.grass && backN > 0) {
