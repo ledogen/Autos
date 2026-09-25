@@ -138,6 +138,15 @@ blend "at their interfaces" rather than crossfade.
       survives mipmapping at 30–80 m: the meadow reads as a bumpy shrubby turf instead of a plane
       ("too flat esp. at distance … twiggy / shrubby").
 
+- [x] Owner pass 10 (2026-09-25, scene 21: "brown rocks on grey dirt"): the dirt map's own
+      angular pebbles were relief-only and so dirt-brown, which read as brown rocks wherever the
+      rock fragments had taken the ground around them. **A pebble is a rock and rocks are grey**:
+      dirt texels above the clod ceiling (~0.40 after normalisation) take the rock colour, tallest
+      first — `terrainDirtPebbleGrey` 0.35 of them on pure dirt, all of them once the rock share
+      passes ~1/3 — so across a dirt→rock blend only the NUMBER of grey rocks changes, never
+      their colour. `terrainDirtRockFloor` 0.06 → 0.03 (the pebbles now carry the rim).
+      Slider "Dirt pebbles grey". Engineered fill keeps its own look (vSurf.w).
+
 ## Known limits / follow-ups
 
 - Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second

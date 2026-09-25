@@ -954,7 +954,10 @@ export const RANGER_PARAMS = {
   // Rock coverage curve: a vertex with rock share s shows rock on s^γ of the tile, tallest
   // fragments first (owner 2026-09-25: "taper the sparsity, not the strength"). 1 = linear.
   terrainRockSparsity:  2.0,   // γ — 1 = linear; higher = sparser at the soft end
-  terrainDirtRockFloor: 0.06,  // fraction of the tile rock may cover on PURE DIRT (a basin's rim); grass gets none
+  terrainDirtRockFloor: 0.03,  // fraction of the tile the ROCK MAP may cover on pure dirt (a basin's rim); grass gets none
+  // A pebble is a rock and rocks are grey (owner 2026-09-25): this share of the dirt map's own
+  // pebbles (tallest first) takes the rock colour on pure dirt; all of them by rock share ~1/3.
+  terrainDirtPebbleGrey: 0.35,
   terrainRockGapGreen:  0x2a4522, // the foliage green between the rock fragments (the dark stripes in the joints) — darker/richer, owner 2026-09-25
   terrainTexBlendDepth: 0.22,  // [-] interface softness: 0 = hard height contest, 1 = plain crossfade
   terrainTexTileGrass:  2.0,   // m — tuft field repeat (1.6 was unreadable a few metres from the truck)
