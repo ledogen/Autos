@@ -34,6 +34,7 @@ import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-0
 import { PropImpostors } from './prop-impostor.js'                     // PERF-21: distant-prop billboards
 import { FLORA_PARAMS } from '../../data/flora.js'
 import { perfEvent } from '../perf.js'   // PERF-26: streaming-event tags (zero-dep module; no-op unless ?hitch)
+import { streamScore } from '../stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
 // the ring-4 (Ultra, 81-chunk) worst case; pure typed-array memory (64 B/instance), cheap.
@@ -58,6 +59,8 @@ const _p = new THREE.Vector3()
 const _s = new THREE.Vector3()
 const _col = new THREE.Color()
 const _HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0)
+const LOD_SWAPS_MAX = 6      // PERF-21: per-frame chunk re-pool ceiling
+const PREEMPT_MARGIN = 1.0   // PERF-33: streamScore units (≈ chunks) a queued chunk must beat the active one by
 
 export class PropSystem {
   /**
@@ -150,7 +153,7 @@ export class PropSystem {
     // commit atomically per chunk when the generator finishes. Determinism untouched (same rng
     // stream + order — see scatterChunkGen). The 3×3 around the VEHICLE is force-completed
     // synchronously (collision correctness beats a rare hitch); everything else drips in.
-    this._scatterQueue = []        // [{ ck, cx, cz, d2 }] nearest-first
+    this._scatterQueue = []        // [{ ck, cx, cz, score }] near-then-ahead (PERF-33 streamScore)
     this._scatterSet = new Set()   // cks queued or active (dedup)
     this._activeScatter = null     // { ck, cx, cz, gen } — the generator being stepped
     this._scatterFillDone = false  // false → burst budget until the first queue drain (PERF-13 spirit)
@@ -607,8 +610,11 @@ export class PropSystem {
    * so a fast drive never spends more than `budget` re-places in one frame. The swap is a pure
    * slot move from retained records (no scatter, no samplers, no shadow re-bake).
    */
-  _syncChunkLod(budget = 6) {
+  _syncChunkLod(streamBudget = null) {
     if (!this._impMeshes || this._ccx === null) return
+    // PERF-33: up to 6 swaps, but past the first only while the shared streaming budget has time left
+    // (6 in one frame measured ~16 ms at cpu×4). The first is always allowed so LOD never stalls.
+    let budget = LOD_SWAPS_MAX
     for (const [ck, chunk] of this._chunks) {
       const comma = ck.indexOf(',')
       const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
@@ -622,7 +628,7 @@ export class PropSystem {
       // bake now that its ground shadows are within the visible/fade range. (Demotion needs no
       // mark: the trees haven't moved, the already-baked tile stays valid.)
       if (promoted && this._shadowBake) this._shadowBake.markWithNeighbors(cx, cz)
-      if (--budget <= 0) break
+      if (--budget <= 0 || (streamBudget && streamBudget.remaining() <= 0)) break
     }
   }
 
@@ -642,6 +648,8 @@ export class PropSystem {
 
   /** Live (committed) prop chunks — the size of one whole-ring intrusion pass. */
   liveChunkCount() { return this._chunks.size }
+  /** True when chunk (cx, cz) has been scattered and committed. */
+  hasChunk(cx, cz) { return this._chunks.has(cx + ',' + cz) }
 
   /**
    * Drop every chunk a road has moved INTO, so it re-scatters against the network that now exists.
@@ -730,7 +738,7 @@ export class PropSystem {
    * (hardX, hardZ) to force-complete the 3×3 chunks around it synchronously (prop collision must
    * exist under the truck; freecam passes nothing and just streams visually).
    */
-  update(worldX, worldZ, ringChunks, hardX = null, hardZ = null, bbRingChunks = null) {
+  update(worldX, worldZ, ringChunks, hardX = null, hardZ = null, bbRingChunks = null, motion = null, budget = null) {
     const cs = this._chunkSize
     const ccx = Math.floor(worldX / cs), ccz = Math.floor(worldZ / cs)
     this._ccx = ccx; this._ccz = ccz               // PERF-21: LOD ring centre
@@ -746,12 +754,16 @@ export class PropSystem {
         const ck = cx + ',' + cz
         want.add(ck)
         if (!this._chunks.has(ck) && !this._scatterSet.has(ck)) {
-          this._scatterQueue.push({ ck, cx, cz, d2: dx * dx + dz * dz })
+          this._scatterQueue.push({ ck, cx, cz, score: 0 })
           this._scatterSet.add(ck)
           enqueued = true
         }
       }
-    if (enqueued) this._scatterQueue.sort((a, b) => a.d2 - b.d2)
+    // PERF-33: re-score EVERY frame against the current centre + travel direction. The score used to
+    // be frozen at enqueue time and re-sorted only when something new arrived, so after moving, the
+    // queue served chunks by where the player USED to be. ≤ a few dozen entries — trivial.
+    for (const q of this._scatterQueue) q.score = streamScore(q.cx - ccx, q.cz - ccz, motion)
+    if (this._scatterQueue.length > 1) this._scatterQueue.sort((a, b) => a.score - b.score)
     // Drop queued/active work that scrolled out of the ring.
     for (let i = this._scatterQueue.length - 1; i >= 0; i--) {
       if (!want.has(this._scatterQueue[i].ck)) {
@@ -762,6 +774,17 @@ export class PropSystem {
     if (this._activeScatter && !want.has(this._activeScatter.ck)) {
       this._scatterSet.delete(this._activeScatter.ck)
       this._activeScatter = null
+    }
+    // PERF-33: pre-empt a far chunk mid-scatter when a clearly more urgent one is waiting (the ground
+    // around the player, or a whole chunk-step nearer). It goes back in the queue and restarts later;
+    // a 20–40 ms scatter restarting is cheaper than an empty patch next to the truck.
+    if (this._activeScatter && this._scatterQueue.length) {
+      const a = this._activeScatter
+      const aScore = streamScore(a.cx - ccx, a.cz - ccz, motion)
+      if (this._scatterQueue[0].score < aScore - PREEMPT_MARGIN) {
+        this._scatterQueue.push({ ck: a.ck, cx: a.cx, cz: a.cz, score: aScore })
+        this._activeScatter = null
+      }
     }
     for (const ck of [...this._chunks.keys()]) {
       if (!want.has(ck)) { const [x, z] = ck.split(',').map(Number); this.releaseChunk(x, z) }
@@ -779,8 +802,9 @@ export class PropSystem {
 
     // Budgeted scatter: step the active generator (then the queue) until the deadline. Burst
     // until the first full drain (initial fill — PERF-13 spirit: pre-drivable hitches are free).
+    // PERF-33: capped by the shared streaming budget when wired — props spend after terrain and road.
     const budgetMs = this._scatterFillDone ? 3 : 50
-    const deadline = performance.now() + budgetMs
+    const deadline = budget ? budget.deadline(budgetMs) : performance.now() + budgetMs
     while (performance.now() < deadline) {
       if (!this._activeScatter) {
         const next = this._scatterQueue.shift()
@@ -798,9 +822,22 @@ export class PropSystem {
     }
     if (!this._scatterFillDone && !this._activeScatter && this._scatterQueue.length === 0) this._scatterFillDone = true
 
-    this._syncChunkLod()                            // PERF-21: pool swaps after streaming settles
+    this._syncChunkLod(budget)                      // PERF-21: pool swaps after streaming settles
     this._flush()
   }
+
+  /**
+   * PERF-33: the stream centre JUMPED (teleport, spawn, free-cam placement). update() already drops
+   * queued and active work that left the ring and re-scores the rest near-then-ahead every frame, so
+   * the stale backlog clears itself; what a jump adds is the fill burst, so the ground around the
+   * arrival point fills at load speed instead of the 3 ms play drip.
+   */
+  onStreamJump() {
+    this._scatterFillDone = false
+  }
+
+  /** PERF-33: true while the scatter is in its fill burst (the frame loop lifts the shared budget). */
+  isFilling() { return !this._scatterFillDone }
 
   /** Drain all queued/in-flight scatter synchronously (gates + teleports). */
   drainScatter() {

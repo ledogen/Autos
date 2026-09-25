@@ -300,8 +300,10 @@ export class ShadowBakeSystem {
    * Bake up to MAX_BAKES_PER_CALL queued tiles. `propScene` is the main scene (props live on it,
    * flagged BAKE_LAYER); everything else is invisible to the bake camera. Called each frame after
    * prop streaming so freshly-committed chunks bake within a frame or two.
+   * @param {number} deadline PERF-33: performance.now() cutoff from the shared streaming budget (the bake
+   *   spends LAST). One tile always bakes so a starved budget can never stall the atlas.
    */
-  update(propScene) {
+  update(propScene, deadline = Infinity) {
     if (!this._dirty.length || !this._rt) return
     const r = this._renderer
     const useTiles     = !!this._tileSource
@@ -321,6 +323,7 @@ export class ShadowBakeSystem {
 
     const n = Math.min(MAX_BAKES_PER_CALL, this._dirty.length)
     for (let i = 0; i < n; i++) {
+      if (i > 0 && performance.now() >= deadline) break
       const k = this._dirty.shift()
       this._dirtySet.delete(k)
       const comma = k.indexOf(',')

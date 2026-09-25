@@ -112,3 +112,44 @@ the cost ran between frames, in the network client's `onmessage` (unbucketed unt
 
 After (perf33-fix2-drive): 1 adopt instead of 6; adopt frame 25 ms (was 67–84); p99 20.3.
 The remaining ~100 ms frame is the harness's first W press (one-time, every run) — not streaming.
+
+## Owner ruling (2026-09-25) — order of work
+
+Steps 2–6 now; step 1 (terrain finishing → Workers) only if valuable later. **Benchmark for step
+1: it goes in only if its benefit outweighs its cost on a `--cpu=4` hitch-report run** (cost
+includes forwarding each adopted network to every terrain Worker on the main thread).
+
+## Steps 2–5 landed (2026-09-25) — step 6 measured and REJECTED
+
+- **Shared budget** (`src/stream-budget.js`): one per-frame allowance = what a 60 fps frame has left
+  after the smoothed non-streaming CPU (clamped 1.5–6 ms; FILL 30 ms during fills / a hold). Spent
+  in order terrain → ribbon (moved ahead of props) → props scatter + LOD swaps → owed prop sweep →
+  shadow bake → water pre-warm. Terrain re-carve is now SLICED (`_activeRecarve`, the same resumable
+  `_carveTableGen`) — the last unsliced carve on the main thread.
+- **Freeze guard** (main.js `_updateGenHold`): holds the sim when ready ground (terrain chunk ready +
+  ribbon tile built + network coverage) runs out < 2 s ahead; releases at 3 s; gives up after 8 s
+  (5 s cooldown). Yellow triangle top-right (below the run HUD), lingers 3 s. Driving only.
+  Verified: invalidating 2 chunks ahead of a 14.5 m/s truck → one short hold, triangle shown, release.
+- **Near-then-ahead ordering** (`src/stream-priority.js` `streamScore`): terrain requests, builds,
+  re-carves, ribbon tiles, props (re-scored every frame, far active scatter pre-empted). In-flight
+  cap 3/Worker; out-of-ring replies/active builds dropped; regen replies epoch-tagged (also fixes old-
+  seed heights arriving after a reseed).
+- **Teleport reset**: a stream-centre jump (>128 m/frame) re-arms the fill budgets; stale backlog is
+  dropped lazily where it is out of range (a spawn warm's queue AT the destination survives).
+- **Step 6 (road window ahead) REJECTED by measurement**: shifting the network centre 64 m moved its
+  coverage circle too — 13 re-carve hitches + a 50 ms synchronous network build per freecam run —
+  and bought nothing (the network already leads the visible terrain). Code deleted.
+
+**A/B, cpu×4, seed 6, 3 interleaved rounds vs main d3e72b7 (medians):**
+
+| | p95 | p99 | over-24 ms |
+|---|---|---|---|
+| stream base → new | 20.6 → 18.6 | 25.4 → 22.2 | 1.72 % → 0.56 % |
+| drive base → new | 17.7 → 17.6 | 20.9 → 20.3 | 0.56 % → 0.36 % |
+
+Drive outliers on both sides (3.53 % base r1, 2.28 % new r3) are physics-bound (~21 ms physics per
+hitch frame, no streaming events — the truck in a contact-heavy wedge), not streaming.
+
+**Teleport fill** (`node test/teleport-fill.mjs --cpu=4`, 2 km free-cam jumps, median of 4):
+props 3×3 5.0 s → 1.6 s, 5×5 13.9 s → 3.8 s; ground 3×3 0.41 s → 0.22 s, 5×5 0.73 s → 0.32 s
+(terrain first under the shared budget).
