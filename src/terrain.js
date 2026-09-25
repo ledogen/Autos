@@ -503,6 +503,13 @@ export class TerrainSystem {
             // params in _syncSurfacePalette, so the colour pickers keep driving them.
             uColGrass: { value: new THREE.Color() }, uColDirt: { value: new THREE.Color() }, uColRock: { value: new THREE.Color() },
             uDirtFlatGreen:   { value: params.terrainDirtFlatGreen   ?? 0.4  },
+            // Rock coverage curve (owner 2026-09-25, scene 10): rock may occupy share^γ of the
+            // tile, tallest fragments first — a light blend is a few rocks poking through, not a
+            // faint rock wash. 1 = linear; higher = sparser at the soft end.
+            uRockSparsity:    { value: params.terrainRockSparsity    ?? 2.0  },
+            // … and pure dirt keeps a small floor of its own (a few rocks poking through a
+            // basin's dirt rim); grass contributes nothing, so a lowland meadow shows none.
+            uDirtRockFloor:   { value: params.terrainDirtRockFloor   ?? 0.06 },
             // A/B lever (owner 2026-09-24): 0 skips the whole FEAT-84 block — six texture taps,
             // the blend, the splotch lattices — leaving the FEAT-05 flat palette + fbm mottle.
             uSurfOn:          { value: params.terrainTexEnabled === false ? 0 : 1 },
@@ -520,7 +527,7 @@ export class TerrainSystem {
             shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
                 'uniform sampler2D uSurfAlbG, uSurfNrmG, uSurfAlbD, uSurfNrmD, uSurfAlbR, uSurfNrmR;\n' +
                 'uniform vec3 uSurfScale, uSurfAlbW; uniform float uSurfDepth, uSurfNormal;\n' +
-                'uniform float uDirtFlatGreen, uSurfOn;\n' +
+                'uniform float uDirtFlatGreen, uSurfOn, uRockSparsity, uDirtRockFloor;\n' +
                 'uniform vec3 uColGrass, uColDirt, uColRock;\n' +
                 'varying vec4 vSurf;\n' +
                 // FEAT-84: blended tangent-space normal (xy), written at <color_fragment> where the
@@ -587,10 +594,18 @@ export class TerrainSystem {
                     vec2 ts_ps = (ts_xf ? vec2(vWorldPos.z * ts_sgn, vWorldPos.y) : vec2(vWorldPos.x * ts_sgn, vWorldPos.y)) * uSurfScale.z;
                     vec4 ts_rs = texture2D(uSurfAlbR, ts_ps);
                     ts_r = mix(ts_r, ts_rs, ts_steep);
-                    vec3 ts_h = vSurf.xyz * (1.0 + vec3(ts_g.a, ts_d.a, ts_r.a));
-                    float ts_ma = max(ts_h.x, max(ts_h.y, ts_h.z)) - uSurfDepth;
-                    vec3 ts_b = max(ts_h - ts_ma, 0.0);
-                    ts_b /= (ts_b.x + ts_b.y + ts_b.z);
+                    // Rock by COVERAGE, not by contest (owner 2026-09-25): the rock share s admits
+                    // s^γ of the tile, and the map's own heights rank the texels — tallest fragments
+                    // claim it first, the joint filler last — so thinning rock gets SPARSER, not
+                    // fainter. A short smoothstep anti-aliases the cut.
+                    float ts_cov = max(pow(clamp(vSurf.z, 0.0, 1.0), uRockSparsity), vSurf.y * uDirtRockFloor);
+                    float ts_rw = (1.0 - smoothstep(ts_cov - 0.04, ts_cov + 0.04, 1.0 - ts_r.a)) * step(0.001, ts_cov);
+                    // Grass and dirt contest the remainder by height as before.
+                    vec2 ts_h2 = vSurf.xy * (1.0 + vec2(ts_g.a, ts_d.a));
+                    float ts_ma = max(ts_h2.x, ts_h2.y) - uSurfDepth;
+                    vec2 ts_b2 = max(ts_h2 - ts_ma, 0.0);
+                    ts_b2 /= max(ts_b2.x + ts_b2.y, 1e-5);
+                    vec3 ts_b = vec3(ts_b2 * (1.0 - ts_rw), ts_rw);
                     ts_rockW = ts_b.z * (1.0 - vSurf.w);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_rockW);
                     // Local colouring for the two soft zones: the share grass/dirt GAINED over its
@@ -2071,6 +2086,8 @@ export class TerrainSystem {
         U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x7a7c80))
         U.uSurfAlbW.value.set(p.terrainTexAlbedoGrass ?? 0, p.terrainTexAlbedoDirt ?? 0, p.terrainTexAlbedoRock ?? 0.55)
         U.uDirtFlatGreen.value   = p.terrainDirtFlatGreen   ?? 0.4
+        U.uRockSparsity.value    = p.terrainRockSparsity    ?? 2.0
+        U.uDirtRockFloor.value   = p.terrainDirtRockFloor   ?? 0.06
         // The texture palettes are ABSOLUTE targets relative to the picker colours (dirt pebbles,
         // rock gap green), so a picker change re-bakes the maps (~40 ms) and swaps the uniforms.
         const key = this._surfTexKey()

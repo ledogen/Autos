@@ -126,6 +126,18 @@ blend "at their interfaces" rather than crossfade.
       "granite grey" comment — ground rock had always been brown while the prop rocks were grey.
       Now 0x7a7c80 (0x84868a read near-white on a sunlit face). Picker as before.
 
+- [x] Owner pass 9 (2026-09-25, scenes 10 + 12 of the portfolio): **rock by coverage, not by
+      contest** — a vertex with rock share s shows rock on s^γ of the tile (`terrainRockSparsity`
+      2.0), the map's own fragment heights ranking texels tallest-first, so thinning rock gets
+      SPARSER instead of fainter ("taper the sparsity, not the strength"). Pure dirt keeps a floor
+      (`terrainDirtRockFloor` 0.06) so a basin's dirt rim has a few rocks poking through; grass
+      contributes nothing (lowland meadow relies on the prop rocks). Grass and dirt still contest
+      each other by height for the remainder. Sliders: Rock sparsity (γ), Dirt rock floor.
+- [x] Pass 9: **tussocks** in the grass map — ~73 irregular mounds (12–24 cm radius, rim wobble
+      so they read as clumps, not bubbles) under the strokes, normal 2.4 → 3.0. The relief that
+      survives mipmapping at 30–80 m: the meadow reads as a bumpy shrubby turf instead of a plane
+      ("too flat esp. at distance … twiggy / shrubby").
+
 ## Known limits / follow-ups
 
 - Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second

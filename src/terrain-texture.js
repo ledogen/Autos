@@ -155,6 +155,28 @@ export function grassFields(seed, size) {
   for (let z = 0; z < size; z++) for (let x = 0; x < size; x++) {
     H[z * size + x] = 0.22 * _fbmWrap(x, z, size, 8, 2, seed)
   }
+  // Tussocks (owner 2026-09-25: the meadow "reads as too flat esp. at distance … twiggy /
+  // shrubby"): mounded bunchgrass 0.25–0.5 m across at the 2 m tile, packed ~55 %, each an
+  // irregular dome (radius wobbles around the rim) so they read as clumps, not bubbles. This is
+  // the relief that survives mipmapping at 30–80 m; the 5 cm strokes below ride on top of it.
+  const nTuss = Math.round(size * size / 900)          // ~73 at 256²
+  for (let t = 0; t < nTuss; t++) {
+    const cx = rng() * size, cz = rng() * size
+    const r = size * (0.06 + rng() * 0.06)              // 15–30 px = 12–24 cm radius
+    const h = 0.42 + rng() * 0.22
+    const p1 = rng() * Math.PI * 2, p2 = rng() * Math.PI * 2, a1 = 0.12 + rng() * 0.12, a2 = 0.08 + rng() * 0.1
+    const ir = Math.ceil(r * 1.3)
+    const x0 = Math.floor(cx), z0 = Math.floor(cz)
+    for (let oz = -ir; oz <= ir; oz++) for (let ox = -ir; ox <= ir; ox++) {
+      const ang = Math.atan2(oz, ox)
+      const re = r * (1 + a1 * Math.sin(3 * ang + p1) + a2 * Math.sin(5 * ang + p2))
+      const d = Math.hypot(ox, oz)
+      if (d > re) continue
+      const v = h * smooth(1 - d / re) * (0.85 + 0.15 * rng())
+      const i = (((z0 + oz) % size + size) % size) * size + (((x0 + ox) % size + size) % size)
+      if (v > H[i]) H[i] = v
+    }
+  }
   const strokeB = new Float32Array(N).fill(0.84)    // brightness factor per pixel (base: shaded ground)
   const strokeY = new Float32Array(N)               // yellowing per pixel [-1,1]
   const nStrokes = Math.round(size * size / 22)      // ~3000 at 256²
@@ -190,7 +212,7 @@ export function grassFields(seed, size) {
     mod[j + 1] = b * (1 + 0.04 * y)
     mod[j + 2] = b * (1 - 0.18 * y)
   }
-  return { H: _normalise(H), mod, normalStrength: 2.4 }
+  return { H: _normalise(H), mod, normalStrength: 3.0 }
 }
 
 // ── DIRT: fbm clods + pebbles + a few stones ──────────────────────────────────────────────────
