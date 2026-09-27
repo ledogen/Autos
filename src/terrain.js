@@ -510,6 +510,11 @@ export class TerrainSystem {
             // carries the fragment tints now.
             uRockGapGreen:    { value: new THREE.Color() },
             uUnderRockGreen:  { value: params.terrainUnderRockGreen  ?? 0.8  },
+            // Biome dither (owner 2026-09-27): the rock share is perturbed per texel by a
+            // world-space noise field before the coverage rule, so a dirt↔rock boundary is a
+            // wide band of rock islands and dirt pockets, not a line. Weighted by s·(1−s) so pure
+            // meadow and pure rock stay pure. x = amplitude, y = frequency (1/m).
+            uBiomeDither:     { value: new THREE.Vector2(params.terrainBiomeDither ?? 0.45, params.terrainBiomeDitherFreq ?? 0.12) },
             // Rock coverage curve (owner 2026-09-25, scene 10): rock may occupy share^γ of the
             // tile, tallest fragments first — a light blend is a few rocks poking through, not a
             // faint rock wash. 1 = linear; higher = sparser at the soft end.
@@ -544,7 +549,7 @@ export class TerrainSystem {
             shader.fragmentShader = 'uniform float uDetailScale, uNoiseScale, uMottle, uBump, uCliffLo, uCliffHi, uTreeLo, uTreeHi;\n' +
                 'uniform sampler2D uSurfAlbG, uSurfNrmG, uSurfAlbD, uSurfNrmD, uSurfAlbR, uSurfNrmR;\n' +
                 'uniform vec3 uSurfScale, uSurfAlbW; uniform float uSurfDepth, uSurfNormal;\n' +
-                'uniform float uUnderRockGreen, uSurfOn, uRockSparsity, uDirtRockFloor, uDirtPebbleGrey; uniform vec2 uRockGreenSlope;\n' +
+                'uniform float uUnderRockGreen, uSurfOn, uRockSparsity, uDirtRockFloor, uDirtPebbleGrey; uniform vec2 uRockGreenSlope, uBiomeDither;\n' +
                 'uniform vec3 uColGrass, uColDirt, uColRock, uRockGapGreen;\n' +
                 'varying vec4 vSurf;\n' +
                 // FEAT-84: blended tangent-space normal (xy), written at <color_fragment> where the
@@ -615,7 +620,12 @@ export class TerrainSystem {
                     // s^γ of the tile, and the map's own heights rank the texels — tallest fragments
                     // claim it first, the joint filler last — so thinning rock gets SPARSER, not
                     // fainter. A short smoothstep anti-aliases the cut.
-                    float ts_cov = max(pow(clamp(vSurf.z, 0.0, 1.0), uRockSparsity), vSurf.y * uDirtRockFloor);
+                    // Dithered rock share: two noise octaves (~8 m and ~2 m) push the share up
+                    // and down across the boundary band; the s·(1−s) weight pins the pure ends.
+                    float ts_s0 = clamp(vSurf.z, 0.0, 1.0);
+                    float ts_dn0 = tdFbm(ts_p * uBiomeDither.y) * 0.7 + tdFbm(ts_p * uBiomeDither.y * 3.7 + 17.0) * 0.3 - 0.5;
+                    float ts_s = clamp(ts_s0 + ts_dn0 * uBiomeDither.x * 4.0 * ts_s0 * (1.0 - ts_s0) * 2.0, 0.0, 1.0);
+                    float ts_cov = max(pow(ts_s, uRockSparsity), vSurf.y * uDirtRockFloor);
                     float ts_rw = (1.0 - smoothstep(ts_cov - 0.04, ts_cov + 0.04, 1.0 - ts_r.a)) * step(0.001, ts_cov);
                     // Grass and dirt contest the remainder by height as before.
                     vec2 ts_h2 = vSurf.xy * (1.0 + vec2(ts_g.a, ts_d.a));
@@ -630,7 +640,7 @@ export class TerrainSystem {
                     // natural faces (they slide) and engineered faces (their own look).
                     float ts_rslope = 1.0 - clamp(vWorldNrm.y, 0.0, 1.0);
                     float ts_keep = (1.0 - smoothstep(uRockGreenSlope.x, uRockGreenSlope.y, ts_rslope)) * (1.0 - vSurf.w);
-                    float ts_under = smoothstep(0.02, 0.45, vSurf.z) * ts_keep * uUnderRockGreen * uDetailScale;
+                    float ts_under = smoothstep(0.02, 0.45, ts_s) * ts_keep * uUnderRockGreen * uDetailScale;
                     diffuseColor.rgb = mix(diffuseColor.rgb, uRockGapGreen, ts_under);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_rockW);
                     // …and inside the rock zone the joints between fragments (the map's low
@@ -642,7 +652,7 @@ export class TerrainSystem {
                     // tallest first, uDirtPebbleGrey of them on pure dirt, all of them once the
                     // rock share passes ~1/3. Engineered fill keeps its own look.
                     float ts_pr = clamp((ts_d.a - 0.40) / 0.60, 0.0, 1.0);
-                    float ts_pcov = mix(uDirtPebbleGrey, 1.0, clamp(vSurf.z * 3.0, 0.0, 1.0));
+                    float ts_pcov = mix(uDirtPebbleGrey, 1.0, clamp(ts_s * 3.0, 0.0, 1.0));
                     float ts_pg = (1.0 - smoothstep(ts_pcov - 0.05, ts_pcov + 0.05, 1.0 - ts_pr)) * step(0.02, ts_pr);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_b.y * ts_pg * (1.0 - vSurf.w));
                     // Local colouring for the two soft zones: the share grass/dirt GAINED over its
@@ -2124,6 +2134,7 @@ export class TerrainSystem {
         U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x5a5b5e))
         U.uSurfAlbW.value.set(p.terrainTexAlbedoGrass ?? 0, p.terrainTexAlbedoDirt ?? 0, p.terrainTexAlbedoRock ?? 0.55)
         U.uUnderRockGreen.value  = p.terrainUnderRockGreen  ?? 0.8
+        U.uBiomeDither.value.set(p.terrainBiomeDither ?? 0.45, p.terrainBiomeDitherFreq ?? 0.12)
         U.uRockGapGreen.value.setRGB(...hx(p.terrainRockGapGreen ?? 0x2d372a))
         U.uRockSparsity.value    = p.terrainRockSparsity    ?? 2.0
         U.uDirtRockFloor.value   = p.terrainDirtRockFloor   ?? 0.03

@@ -174,6 +174,15 @@ blend "at their interfaces" rather than crossfade.
       dirt normal map is suppressed on pebble texels that are not grey, so dirt is clods plus the
       grey stones, and the stone count still rises toward the rock zone. Shader-only, 4 lines.
 
+- [x] Owner pass 14 (2026-09-27, seed w (197,616): "the clearly defined thresholds bother me"):
+      **biome dither** — the rock share is perturbed per texel by a world-space noise field (two
+      octaves, ~8 m + ~2 m, `terrainBiomeDither` 0.45 / `terrainBiomeDitherFreq` 0.12) before the
+      coverage rule, weighted by s·(1−s) so pure meadow and pure rock stay pure; the dithered share
+      also drives the pebble-grey share and the under-rock green. A dirt↔rock boundary is now a
+      wide ragged band of rock islands and dirt pockets. Sliders "Biome dither" / "… freq".
+      Grass↔dirt is NOT dithered (it goes through the height contest, already soft) — same
+      treatment is a one-line extension if wanted.
+
 ## Known limits / follow-ups
 
 - Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second

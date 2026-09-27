@@ -963,6 +963,11 @@ export const RANGER_PARAMS = {
   // (owner 2026-09-25: one base key for every biome, not the albedo). Live uniform, no re-bake.
   terrainRockGapGreen:  0x2d372a,
   terrainUnderRockGreen: 0.8,  // [-] how far the ground between rocks goes to the key (0 = off)
+  // Biome dither (owner 2026-09-27: "the clearly defined thresholds bother me"): the rock share
+  // is perturbed per texel by a ~8 m + ~2 m noise field before the coverage rule, weighted by
+  // s·(1−s), so a dirt↔rock boundary is a wide ragged band, not a line. Pure ends stay pure.
+  terrainBiomeDither:     0.45, // [-] amplitude (0 = the raw ramp)
+  terrainBiomeDitherFreq: 0.12, // 1/m — coarse octave (~8 m); a fine one rides at 3.7×
   // …only on low-inclination rock (owner 2026-09-25: steep faces slide, nothing grows in the
   // joints): the joint green fades to bare grey as slope (1 − normal.y) passes Lo → Hi.
   // Engineered cut faces keep their stripes.
