@@ -12,7 +12,7 @@ or delete a file, update the relevant line here in the same commit — it's one 
 |---|---|
 | `index.html` | The single entry point (Vite root). |
 | `src/` | The product — shippable game engine, ES6 modules. No diagnostics, no dead code (see CLAUDE.md "src/ is the product"). |
-| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, and the bundled route caches (`route-cache-*.json.gz`, fetched by URL — never ES-import them). |
+| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), and the bundled route caches (`route-cache-*.json.gz`, fetched by URL — never ES-import them). |
 | `assets/models/` | Hand-authored `.glb` assets + `CREDITS.md`. Convention: `.planning/research/ASSETS.md`; style: `ART-STYLE.md`. |
 | `vendor/box3d/` | Vendored Box3D WASM bindings. Imported ONLY by `src/physics-engine.js` (FEAT-48 seam). |
 | `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts. Pure node — never touches Vite. |
