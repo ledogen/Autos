@@ -587,8 +587,9 @@ export class TerrainSystem {
                 // only — and rock is painted here by the share rock WINS: the vertex share when the
                 // textures are off, the per-texel height contest when they are on. So a half-rock
                 // vertex is brown dirt with grey fragments on it, never a brown-grey average.
-                // Engineered faces (vSurf.w) keep their own cut/fill colour.
-                float ts_rockW = vSurf.z * (1.0 - vSurf.w);
+                // Engineered CUT faces (vSurf.w < 0) keep their own colour; fill behaves as dirt.
+                float ts_cut = max(-vSurf.w, 0.0);        // engineered CUT weight (fill is + and behaves as dirt)
+                float ts_rockW = vSurf.z * (1.0 - ts_cut);
                 if (uDetailScale > 0.0) {
                     float td_n = tdFbm(vWorldPos.xz * uNoiseScale);
                     diffuseColor.rgb *= 1.0 + uMottle * uDetailScale * (td_n - 0.5);
@@ -633,13 +634,13 @@ export class TerrainSystem {
                     vec2 ts_b2 = max(ts_h2 - ts_ma, 0.0);
                     ts_b2 /= max(ts_b2.x + ts_b2.y, 1e-5);
                     vec3 ts_b = vec3(ts_b2 * (1.0 - ts_rw), ts_rw);
-                    ts_rockW = ts_b.z * (1.0 - vSurf.w);
+                    ts_rockW = ts_b.z * (1.0 - ts_cut);
                     // Rock with foliage underneath — one key for every biome: as rock becomes
                     // present the ground between the rocks pulls toward the gap green (applied
                     // before the rock mix, so only the non-rock texels keep it), except on steep
                     // natural faces (they slide) and engineered faces (their own look).
                     float ts_rslope = 1.0 - clamp(vWorldNrm.y, 0.0, 1.0);
-                    float ts_keep = (1.0 - smoothstep(uRockGreenSlope.x, uRockGreenSlope.y, ts_rslope)) * (1.0 - vSurf.w);
+                    float ts_keep = (1.0 - smoothstep(uRockGreenSlope.x, uRockGreenSlope.y, ts_rslope)) * (1.0 - ts_cut);
                     float ts_under = smoothstep(0.02, 0.45, ts_s) * ts_keep * uUnderRockGreen * uDetailScale;
                     diffuseColor.rgb = mix(diffuseColor.rgb, uRockGapGreen, ts_under);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_rockW);
@@ -654,7 +655,7 @@ export class TerrainSystem {
                     float ts_pr = clamp((ts_d.a - 0.40) / 0.60, 0.0, 1.0);
                     float ts_pcov = mix(uDirtPebbleGrey, 1.0, clamp(ts_s * 3.0, 0.0, 1.0));
                     float ts_pg = (1.0 - smoothstep(ts_pcov - 0.05, ts_pcov + 0.05, 1.0 - ts_pr)) * step(0.02, ts_pr);
-                    diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_b.y * ts_pg * (1.0 - vSurf.w));
+                    diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_b.y * ts_pg * (1.0 - ts_cut));
                     // Local colouring for the two soft zones: the share grass/dirt GAINED over its
                     // vertex weight pulls the fragment toward that zone's own palette colour.
                     vec2 ts_gain = max(ts_b.xy - vSurf.xy, 0.0) * uDetailScale;
@@ -663,7 +664,7 @@ export class TerrainSystem {
                     // Per-zone albedo weights; an engineered CUT face (vSurf.w, rock) forces the
                     // rock albedo on. Fill embankments take no dirt albedo (owner 2026-09-25: the
                     // skirt read as "green with rocks poking through" — the map's baked tint).
-                    vec3 ts_aw = vec3(uSurfAlbW.x, uSurfAlbW.y, max(uSurfAlbW.z, vSurf.w)) * uDetailScale;
+                    vec3 ts_aw = vec3(uSurfAlbW.x, uSurfAlbW.y, max(uSurfAlbW.z, ts_cut)) * uDetailScale;
                     vec3 ts_alb = vec3(1.0) + (ts_g.rgb * 4.0 - 1.0) * ts_b.x * ts_aw.x
                                             + (ts_d.rgb * 4.0 - 1.0) * ts_b.y * ts_aw.y
                                             + (ts_r.rgb * 4.0 - 1.0) * ts_b.z * ts_aw.z;
@@ -2112,7 +2113,11 @@ export class TerrainSystem {
             surfArr[i * 4    ] = sGrass
             surfArr[i * 4 + 1] = sDirt
             surfArr[i * 4 + 2] = sRock
-            surfArr[i * 4 + 3] = carveZoneBlend   // engineered face: keeps its cut/fill colour, gets albedo
+            // Signed engineered weight: + fill, − cut. A CUT wall keeps its own look in the shader
+            // (own colour, albedo on, no dither/stones/green); a FILL embankment is dirt dumped
+            // beside whatever was there and behaves as natural dirt (owner 2026-09-27: the fill
+            // skirts were the sharp "dirt" patches inside rock — every rule was skipping them).
+            surfArr[i * 4 + 3] = isFill ? carveZoneBlend : -carveZoneBlend
         }
 
         geom.setAttribute('color', new THREE.BufferAttribute(colorArr, 3))

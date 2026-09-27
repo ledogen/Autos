@@ -183,6 +183,13 @@ blend "at their interfaces" rather than crossfade.
       Grass↔dirt is NOT dithered (it goes through the height contest, already soft) — same
       treatment is a one-line extension if wanted.
 
+- [x] Owner pass 15 (2026-09-27, the place capture at seed w (197,616)): the sharp "dirt" patches
+      inside rock were the road's FILL embankments — the carve weight exempted every engineered
+      zone from the rock mix, the dither, the stones and the under-rock green, on top of the vertex
+      blend already fading rock out, so the 10–25 m carve feather collapsed to a line. `aSurf.w` is
+      now SIGNED (+ fill, − cut): only cut walls keep their own look; fill behaves as natural dirt
+      and dithers into the rock around it. Owner keeps dither 0.5 / freq 0.3.
+
 ## Known limits / follow-ups
 
 - Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second
