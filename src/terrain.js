@@ -514,7 +514,7 @@ export class TerrainSystem {
             // world-space noise field before the coverage rule, so a dirt↔rock boundary is a
             // wide band of rock islands and dirt pockets, not a line. Weighted by s·(1−s) so pure
             // meadow and pure rock stay pure. x = amplitude, y = frequency (1/m).
-            uBiomeDither:     { value: new THREE.Vector2(params.terrainBiomeDither ?? 0.45, params.terrainBiomeDitherFreq ?? 0.12) },
+            uBiomeDither:     { value: new THREE.Vector2(params.terrainBiomeDither ?? 0.5, params.terrainBiomeDitherFreq ?? 0.3) },
             // Rock coverage curve (owner 2026-09-25, scene 10): rock may occupy share^γ of the
             // tile, tallest fragments first — a light blend is a few rocks poking through, not a
             // faint rock wash. 1 = linear; higher = sparser at the soft end.
@@ -2139,7 +2139,7 @@ export class TerrainSystem {
         U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x5a5b5e))
         U.uSurfAlbW.value.set(p.terrainTexAlbedoGrass ?? 0, p.terrainTexAlbedoDirt ?? 0, p.terrainTexAlbedoRock ?? 0.55)
         U.uUnderRockGreen.value  = p.terrainUnderRockGreen  ?? 0.8
-        U.uBiomeDither.value.set(p.terrainBiomeDither ?? 0.45, p.terrainBiomeDitherFreq ?? 0.12)
+        U.uBiomeDither.value.set(p.terrainBiomeDither ?? 0.5, p.terrainBiomeDitherFreq ?? 0.3)
         U.uRockGapGreen.value.setRGB(...hx(p.terrainRockGapGreen ?? 0x2d372a))
         U.uRockSparsity.value    = p.terrainRockSparsity    ?? 2.0
         U.uDirtRockFloor.value   = p.terrainDirtRockFloor   ?? 0.03

@@ -34,6 +34,19 @@ slope term (from the normal attribute) produced rock. That is exactly the seam p
 the run the machine SLEPT during (lid closed): a wall-clock jump across a budgeted/async step is
 the kind of thing that reorders "heights arrived" vs "colours written".
 
+## 2026-09-27 — seen again, and what the audit says
+
+Reproduced once more on the branch dev server: the FIRST load after a source edit to terrain.js,
+seed w, camera over (197, 616) — the whole above-treeline flat right of the road rendered fertile
+green; the identical camera a minute later rendered rock. `test/chunk-audit.mjs` (new) was then
+run on two more forced reloads (a `touch`, and a real content edit): 49 chunks each time, every
+chunk's geometry mean Y == its stored `heights` mean, grass share 0–0.04 on the high chunks, no
+high-but-green chunk. So EITHER the race is rarer than "first load after an edit", OR the bad
+frame is not in the vertex data at all (a shader-side transient — textures not yet uploaded,
+uniforms not yet synced — would need a different probe: read the uniforms + texture `version`s
+at capture time). Next occurrence: run the audit immediately, and dump
+`__terrainSystem()._terrainUniforms` (uSurfAlbR.value.version, uColRock, uTreeHi) alongside.
+
 ## Acceptance
 
 - Reproduce: stream a fresh region, suspend the process mid-stream (or stub the Worker to delay
