@@ -210,6 +210,11 @@ badly enough that leaning on it always reads as an admission of a bad day. Tunin
 route's payout can never be balanced purely as an onboarding mission — it is also the economy's
 backstop, and FEAT-53's k-curve has to hold both jobs at once.
 
+> **Amended 2026-09-26 (owner, FEAT-67).** The route is no longer "reliably available": on the
+> mission board Larry is one slot that recycles 12–24 h after each round (you can't paper the same
+> customer twice in a day). **The income floor is the board itself** — there are always more live
+> offers than the player can finish before one recycles; food-vendor gigs are the bottom rung.
+
 **The route has a deadline** [RATIFIED 2026-08-05, FEAT-61]. *Struck: "The budget is a day-fraction,
 not a clock. The route ends when the light goes… this doesn't need the SM-INV-3 timer allowance — it
 isn't a timer, it's an inventory and a sunset."* It is a timer, and it should be: papers have to land

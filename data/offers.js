@@ -30,10 +30,34 @@ export const THINGS = [
       pools: ['burgerJoint'] },
     { id: 'groceries',  phrase: 'a week of groceries',    family: 'delivery', massKg: [10, 25],
       pools: ['generalStore', 'missionGiver'] },
-    { id: 'medication', phrase: 'her prescription',        family: 'delivery', massKg: [0.2, 0.5],
+    { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
       pools: ['missionGiver'] },
     { id: 'vase',       phrase: "grandma's vase",          family: 'fragile',  massKg: [3, 6],
       pools: ['missionGiver'] },
+
+    // Larry posts papers and nothing else (owner, 2026-09-26).
+    { id: 'papers',     phrase: 'the morning papers',      family: 'papers',   massKg: [5, 8],
+      pools: ['larrysHouse'] },
+
+    // Service shop parts (owner, 2026-09-26). The windshield is fragile, so it waits for that family.
+    { id: 'muffler',       phrase: 'a muffler',              family: 'delivery', massKg: [8, 15],
+      pools: ['serviceShop'] },
+    { id: 'wheelBearings', phrase: 'a set of wheel bearings', family: 'delivery', massKg: [2, 4],
+      pools: ['serviceShop'] },
+    { id: 'driveShaft',    phrase: 'a drive shaft',          family: 'delivery', massKg: [12, 20],
+      pools: ['serviceShop'] },
+    { id: 'bodyPanel',     phrase: 'a body panel',           family: 'delivery', massKg: [10, 25],
+      pools: ['serviceShop'] },
+    { id: 'windshield',    phrase: 'a windshield',           family: 'fragile',  massKg: [12, 18],
+      pools: ['serviceShop'] },
+    { id: 'hubcap',        phrase: 'a hubcap',               family: 'delivery', massKg: [1, 2],
+      pools: ['serviceShop'] },
+    { id: 'tailgate',      phrase: 'a tailgate',             family: 'delivery', massKg: [20, 30],
+      pools: ['serviceShop'] },
+    { id: 'headlight',     phrase: 'a headlight',            family: 'delivery', massKg: [1.5, 3],
+      pools: ['serviceShop'] },
+    { id: 'taillight',     phrase: 'a taillight',            family: 'delivery', massKg: [0.5, 1.5],
+      pools: ['serviceShop'] },
 ]
 
 // ── Rewards — the named bonus items ─────────────────────────────────────────────────────────
@@ -60,13 +84,18 @@ export const REWARDS = [
 // Keyed by POI roster type (src/poi.js POI_ROSTER). A type that is NOT listed here posts nothing
 // (gas station, tackle shop, mom's house — "some stores are just stores").
 //
-//   slots      live offers at once. Every slot is always full, except during a recycle.
+//   slots      live offers at once. Every slot is always full, except after a completion or an abandon.
 //   expiryH    offer lifetime in game-hours, as the centre value; EXPIRY_NOISE applies on top.
 //              A [lo, hi] pair means the centre is rolled once per POI in that range.
 //   nameForm   'owned' | 'plain' | 'fixed' — which POI-name grammar (data/offer-names.js).
 //              'fixed' keeps the roster's own label (Larry's).
 //   families   which families this source may post
 
+// burgerJoint means ANY FOOD VENDOR (owner, 2026-09-26): the player delivers ready-made meals as an
+// independent contractor (a Grubhub-style gig), not as staff — so this does not break opening.md's
+// "never work there again". Later regions add more food vendors under their own rolled names. Food
+// jobs are the bottom of the barrel: short, low-paying, posted often — filler for the last hours of
+// a day when no good job fits.
 export const SOURCES = {
     generalStore: { slots: 2, expiryH: 24,       nameForm: 'plain', families: ['delivery', 'fragile'] },
     burgerJoint:  { slots: 3, expiryH: 2,        nameForm: 'owned', families: ['delivery'] },
@@ -78,5 +107,34 @@ export const SOURCES = {
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
 export const EXPIRY_NOISE = 0.3
 
-/** Game-hours a slot sits empty after its mission is completed, rolled in [lo, hi]. */
-export const RECYCLE_H = [12, 24]
+// AFTER A COMPLETION (owner, 2026-09-27): no separate timer. The offer's original expiry keeps
+// running while it is taken; the slot stays empty until it runs out, then rolls a new offer.
+//
+// AFTER AN ABANDON: the slot locks for min(2R, R + ABANDON_ADD_H), R = time left on the original
+// timer — the giver is unhappy with you. Without it, accepting jobs you won't finish costs nothing.
+
+/** Game-hours added by an abandon, when that is shorter than doubling the remainder. */
+export const ABANDON_ADD_H = 24
+
+// ── Roll shares (owner, 2026-09-26) ─────────────────────────────────────────────────────────
+
+/** 0..1 — share of offers that carry a bonus item. */
+export const BONUS_CHANCE = 0.25
+
+/**
+ * Pay multiplier on an offer that carries a bonus. Bonus offers must pay LESS cash, or there is no
+ * reason ever to skip one: take them only when you want the item. PLACEHOLDER — owner to set.
+ */
+export const BONUS_PAY_MULT = 0.5
+
+/**
+ * Gate weights — equal (owner, 2026-09-26). Reward value tracks gate difficulty through item
+ * rarity (common → legendary), which arrives when items are fleshed out.
+ */
+export const GATE_WEIGHTS = { C: 1, B: 1, A: 1, S: 1 }
+
+/** 0..1 — share of destinations that are another POI; the rest are roadside (LANDMARKS / place). */
+export const DEST_POI_CHANCE = 0.5
+
+/** People per source POI: usually one, sometimes two, rarely three. Relative weights. */
+export const PEOPLE_PER_POI = { 1: 0.75, 2: 0.2, 3: 0.05 }

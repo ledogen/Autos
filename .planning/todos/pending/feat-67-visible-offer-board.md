@@ -62,8 +62,14 @@ offer appears there. It is the only always-on addition.
 - **Slots, not a posting rate** (ruling 2026-09-26). Each source POI has a fixed number of **slots**,
   and **every slot is always full**. There is no separate posting pace: when an offer expires, a new
   one is rolled into its slot straight away. So the expiry length IS the turnover rate.
-  - **Recycle timer:** after the player *completes* a slot's mission, that slot sits empty for
-    **12–24 game-hours** before it rolls a new offer. This is the one way a slot is ever empty.
+  - **Completion keeps the original clock** (ruling 2026-09-27, replaces the 12–24 h recycle). A
+    taken offer's expiry timer keeps running. After completion the slot stays empty until that
+    original expiry, then rolls a new offer. Completed after expiry → re-rolls at completion.
+  - **Abandon penalty** (ruling 2026-09-27): abandoning a taken offer locks the slot for
+    `min(2R, R + 24 h)`, where R is the time left on the original timer — the giver is unhappy with
+    you and won't offer work. Without it, accepting jobs you don't mean to finish would be free.
+    (See the handoff for the R ≈ 0 hole and the proposed floor.)
+  - These two are the only ways a slot is ever empty.
   - *Single-slot* (Grandma's): one offer at a time. What she needs varies (medication, groceries),
     and so does the reward. *Multi-slot* (food): several live at once, so the player picks the best.
 - **Every offer expires.** Reaching the POI before expiry is the player's problem.
@@ -105,7 +111,7 @@ Expiry lengths below are the centre value; each roll gets ±30 %. Units are game
 | Auto service station | 1 | 2 days | |
 | Generic POI (today's orange diamond) | 1 | 1–3 days | Centre rolled per POI in 1–3 d, then ±30 % |
 
-Recycle after completion: 12–24 h for every source.
+After completion a slot waits out the offer's original expiry; after abandonment, `min(2R, R + 24 h)`.
 
 ## Content tables (the big authoring job — owner co-authors the lists)
 
@@ -129,6 +135,35 @@ table each, all seed-driven:
 - **Reward pools** — per source family, drawing from `.planning/story-mode/items.md` (consumables,
   tools, parts), each entry with the rank gate(s) it may appear at.
 - **Source table** — the table above, plus which thing/reward pools each source draws from.
+
+## Rulings 2026-09-26 (plan review)
+
+- **Food vendor, not the burger joint you were fired from.** `burgerJoint` reads as *any food
+  vendor*. You deliver ready-made meals as an independent contractor (a Grubhub-style gig), not as
+  staff, so opening.md's "never work there again" holds. Later regions add more vendors (donuts,
+  hot dogs, pizza) under rolled names. Food jobs are the bottom of the barrel: short, low-paying,
+  posted often — filler for the last hours of a day.
+- **Larry's slot empties after a round like everyone else's, and the income floor moves.** You can't deliver a second paper
+  to the same customer on the same day. The floor is now the board itself: there are always more
+  offers live than the player can finish before one turns over. This amends missions.md's
+  "reliably available" paper-route floor.
+- **Larry is just "Larry"** and posts papers only.
+- **Bonus share 25 %.** A bonus offer **pays less cash** (`BONUS_PAY_MULT`, placeholder 0.5): take it
+  only if you want the item. This is a multiplier on the whole payout line, so pay stays continuous.
+- **Gates are equally likely** (C/B/A/S 25 % each). Reward value will track gate difficulty through an
+  item rarity ladder (common → legendary) once items are fleshed out.
+- **Destinations: 50 % POI, 50 % roadside.** Destination POIs use the same name lists.
+- **People per POI:** usually 1, sometimes 2, rarely 3 (weights 0.75 / 0.20 / 0.05).
+- **Service shop things:** muffler, wheel bearings, drive shaft, body panel, windshield (fragile —
+  waits for that family), hubcap, tailgate, headlight, taillight.
+- **Giver naming by model** (ruling 2026-09-27): many generic givers are not homes (an RV, a
+  broken-down car, later a hitchhiker). Each giver model carries a flag in `data/prop-models.js`:
+  home-style models get "the Hadley place"; the rest are named by the person alone.
+- **Bonus pay cut confirmed** at 0.5×.
+- **Pronouns:** phrases stay neutral ("their prescription").
+- **Smaller calls — proposed defaults accepted:** completion = any settled result, D included; Larry's
+  card shows base pay only; hovering an offer mid-mission temporarily replaces the drawn route; an
+  empty or recycling diamond draws grey; same seed gives the same board.
 
 ## Map icon changes (bundled here)
 
@@ -169,7 +204,7 @@ brakes fade, and it overheats on long climbs. So the freight card differs from t
 ## Shape
 
 - **Phase A — offer model.** `_offers` in `src/mission.js` becomes a per-POI board: people, always-full slots,
-  noisy expiry + recycle on the game clock, bonus (item + gate + optional tiers), and a par-pay figure that
+  noisy expiry, completion wait and abandon lockout on the game clock, bonus (item + gate + optional tiers), and a par-pay figure that
   **recomputes from `ECONOMY_PARAMS`, never cached** (FEAT-53 Phase D will retune those tables).
 - **Phase B — content tables.** People / things / places / reward pools / source table, seed-rolled.
 - **Phase C — map surface.** Hover card, Q/E cycling, single drawn route, turnover timer under
@@ -182,7 +217,8 @@ brakes fade, and it overheats on long climbs. So the freight card differs from t
       distance, cargo weight, expiry, and bonus + rank gate when present; the offer's route is drawn
 - [ ] Q / E cycle through a POI's live offers; the card and route follow; only one route is drawn
 - [ ] Sources show the shortest slot-turnover time under their icon; non-source POIs show nothing new
-- [ ] Every slot is always full except during a 12–24 h post-completion recycle; expiry rolls ±30 %
+- [ ] Every slot is always full except after a completion (until the original expiry) or an abandon
+      (`min(2R, R + 24 h)`); expiry rolls ±30 %
       on the game clock; slots start desynchronised (no two slots of a POI turn over together at load)
 - [ ] Offers are accepted only by driving to the POI; only one mission can be active at a time
 - [ ] The quoted base pay equals what settlement pays for an at-par drive, from `ECONOMY_PARAMS`
