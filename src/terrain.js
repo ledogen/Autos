@@ -661,7 +661,11 @@ export class TerrainSystem {
                     vec2 ts_ng = texture2D(uSurfNrmG, ts_p * uSurfScale.x).xy * 2.0 - 1.0;
                     vec2 ts_nd = texture2D(uSurfNrmD, ts_p * uSurfScale.y).xy * 2.0 - 1.0;
                     vec2 ts_nr = texture2D(uSurfNrmR, ts_p * uSurfScale.z).xy * 2.0 - 1.0;
-                    tsNrm = (ts_ng * ts_b.x + ts_nd * ts_b.y + ts_nr * (1.0 - ts_steep) * ts_b.z) * (uSurfNormal * uDetailScale);
+                    // Option B (owner 2026-09-26): a dirt pebble that did NOT become a grey stone
+                    // loses its relief too, so it stops reading as a brown rock — dirt is clods
+                    // plus the grey stones, and the stone count still rises toward the rock zone.
+                    float ts_dn = 1.0 - step(0.02, ts_pr) * (1.0 - ts_pg);
+                    tsNrm = (ts_ng * ts_b.x + ts_nd * ts_b.y * ts_dn + ts_nr * (1.0 - ts_steep) * ts_b.z) * (uSurfNormal * uDetailScale);
                     // Side-projected rock normal: tangent (u, v) → world (u along the face's
                     // horizontal axis, mirrored by ts_sgn; v up). Applied at <normal_fragment_begin>.
                     vec2 ts_nrs = texture2D(uSurfNrmR, ts_ps).xy * 2.0 - 1.0;

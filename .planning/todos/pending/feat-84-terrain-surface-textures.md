@@ -168,6 +168,12 @@ blend "at their interfaces" rather than crossfade.
       with rocks poking through"): dirt albedo is now off everywhere, the carve override keeps the
       rock albedo on cut faces only. Sliders: Under-rock green (key) picker + amount.
 
+- [x] Owner pass 13 (2026-09-26, "brown rocks" in scenes 1–3): a dirt pebble that did not become
+      a grey stone was still a lit, shadowed, angular bump in the dirt colour — i.e. a brown rock.
+      Option B chosen (of: all pebbles grey / flatten the non-grey ones / re-bake sparser): the
+      dirt normal map is suppressed on pebble texels that are not grey, so dirt is clods plus the
+      grey stones, and the stone count still rises toward the rock zone. Shader-only, 4 lines.
+
 ## Known limits / follow-ups
 
 - Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second
