@@ -32,7 +32,6 @@ import * as THREE from 'three'
 // QUAL-07: crownProfile no longer imported — the crown/camber fold moved into the one shared
 // RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
-import { DEEP_BANK_TOE_EXTRA } from './road-carve.js'   // FEAT-40: deep-bank toe (carve maxExt sync)
 import { perfAdd, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-26)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
@@ -903,8 +902,11 @@ export class TerrainSystem {
      *
      * @param {Array<{x:number,z:number,reach:number}>|null} regions — only chunks a region's disc
      *   touches are re-carved (same overlap test _carveTableGen uses for pads). null ⇒ every chunk.
+     * @param {{burst?:boolean}} [opts] — burst:false drains at the normal driving budget instead of
+     *   the loading-screen burst (BUG-76: a positional adopt re-carves the chunks it re-shaped while
+     *   the player is driving, where a burst would hitch).
      */
-    recarveInPlace(regions = null) {
+    recarveInPlace(regions = null, { burst = true } = {}) {
         const S = CHUNK_SIZE, cell = S / (GRID_SAMPLES - 1)
         const touches = (cx, cz) => {
             if (!regions) return true
@@ -928,7 +930,7 @@ export class TerrainSystem {
         if (rj && touches(rj.cx, rj.cz)) rj.gen = this._carveTableGen(rj.cx, rj.cz, this._chunkMap.get(rj.key).heights)
         // Behind a loading screen nobody sees a hitch, so spend the burst budget on these (the same
         // reasoning as PERF-13's initial fill). Cleared by the re-carve pass once nothing is stale.
-        if (marked) this._recarveBurst = true
+        if (marked && burst) this._recarveBurst = true
         return marked
     }
 
@@ -1296,7 +1298,8 @@ export class TerrainSystem {
         // CARVE SYNC: carve never enters the worker (WORKER_SOURCE) — it is a post-read main-thread blend.
         if (this._roadSystem) {
             const currentRoadGen = this._roadSystem.roadGeneration()
-            // recarveInPlace() arms a burst: it only ever runs behind a loading screen (story entry).
+            // recarveInPlace() arms a burst behind a loading screen (story entry); the BUG-76 adopt
+            // reconciliation calls it with burst:false and drains at the driving budget below.
             const burst = this._recarveBurst === true
             const recarveDeadline = this._deadline(burst ? 16 : BUILD_MS_BUDGET)   // PERF-02: time-slice, not fixed count
             const maxRecarves = burst ? 8 : MAX_BUILDS_PER_FRAME
@@ -1308,6 +1311,8 @@ export class TerrainSystem {
             //       does not bump the generation, so (a) cannot see this — which left a
             //       teleport destination permanently uncarved (deck in the air, no ribbon)
             //       until the chunk happened to be evicted and re-streamed.
+            //   (c) the road MOVED under it on a positional adopt (BUG-76) → carveStale, set by
+            //       recarveInPlace() from RoadSystem's adopt diff.
             // PERF-33: collect first, then recarve near-then-ahead (was _chunkMap insertion order,
             // i.e. oldest chunk first — often the one about to be evicted behind the truck).
             const stale = []
@@ -1588,15 +1593,14 @@ export class TerrainSystem {
         // QUAL-07: crown/camber/clearance fold + fill/cut toe + blend now live in the ONE shared
         // RoadSystem._carveCrossSection (the same fn physics uses). The per-vertex loop only RESOLVES
         // (signedLat, arcS) and calls it; crownHeight/clearanceMargin/maxEmbankmentToe/carveHalfWidth are
-        // read inside that fn. carveExtraWidth stays here for the conservative query-radius bound (maxExt).
-        const carveExtraWidth   = p.roadCarveExtraWidth  ?? 3.0
-        const maxEmbankmentToe  = p.roadMaxEmbankmentToe ?? 10
+        // read inside that fn.
 
         // Maximum lateral extent to bother querying: ribbon + carve core + the capped embankment apron.
         // Mirrors the toe cap in _carveCrossSection (carveHalfWidth + maxEmbankmentToe +
         // DEEP_BANK_TOE_EXTRA, FEAT-40 deep banks) — the real bound on how far the fill/cut bank
-        // spreads — so no carved vertex is ever missed by this early-reject.
-        const maxExt = halfWidth + shoulderWidth + carveExtraWidth + maxEmbankmentToe + DEEP_BANK_TOE_EXTRA + 4
+        // spreads — so no carved vertex is ever missed by this early-reject. BUG-76: RoadSystem owns
+        // the one definition, because the adopt diff sizes its dirty discs with the same number.
+        const maxExt = this._roadSystem.carveReach()
 
         const originX = cx * S
         const originZ = cz * S

@@ -845,6 +845,35 @@ export class RoadMeshSystem {
     }
 
     /**
+     * BUG-76: rebuild the built tiles a positional adopt re-shaped. `regions` are the
+     * `{x, z, reach}` discs RoadSystem._adoptDirtyRegions() returns — the same ones the terrain
+     * re-carves — so the ribbon, its road trimesh and the carve under it move together. Neither
+     * the generation stamp nor the coverage stamp above can see this case: the generation is not
+     * bumped on a move and the tile stays covered. A disc centred on a changed junction node always
+     * touches the tile that owns its pad (pads belong to the tile holding the node centre).
+     * Frame-spread like the stale pass: tiles are only re-enqueued, flushPendingQueue drains them.
+     * @returns {number} tiles re-enqueued
+     */
+    invalidateRegions(regions) {
+        if (!regions || !regions.length) return 0
+        const S = CHUNK_SIZE
+        let n = 0
+        for (const key of [...this._tileMeshMap.keys()]) {
+            const [cx, cz] = key.split(',').map(Number)
+            const x0 = cx * S, z0 = cz * S
+            for (const r of regions) {
+                const px = Math.max(x0, Math.min(x0 + S, r.x)), pz = Math.max(z0, Math.min(z0 + S, r.z))
+                if (Math.hypot(r.x - px, r.z - pz) > r.reach) continue
+                this.disposeRoadTile(key)
+                this.ensureRoadTile(cx, cz)
+                n++
+                break
+            }
+        }
+        return n
+    }
+
+    /**
      * Clear all built and pending road tiles — used when the road network re-streams.
      * All tile meshes are removed from the scene and geometries disposed.
      */
