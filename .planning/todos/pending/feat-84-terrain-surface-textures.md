@@ -194,6 +194,9 @@ blend "at their interfaces" rather than crossfade.
       carve feather — the gravel-bed overspill), BUG-75 fixed (border normals from the carved
       analytic neighbour), QUAL-32 fixed (matte terrain, faint asphalt sheen, "Sun shine" slider).
 
+- [x] 2026-09-28: BUG-74 simplified by ruling — the cut exemption set is DELETED; a cut is rock by
+      depth (`roadCutRockDepth` 4 m, slider) under the ordinary rules. `ts_cut` no longer exists.
+
 ## Known limits / follow-ups
 
 - Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second

@@ -487,6 +487,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'terrainKnollRelLo', 0, 15, 0.5).name('Knoll rock from (m)').onChange(_recolor)
   lookFolder.add(params, 'terrainKnollRelHi', 0, 30, 0.5).name('Knoll rock full at (m)').onChange(_recolor)
   lookFolder.add(params, 'terrainKnollRock', 0, 1, 0.05).name('Knoll rock share').onChange(_recolor)
+  lookFolder.add(params, 'roadCutRockDepth', 0.5, 12, 0.5).name('Cut rock depth (m)').onChange(_recolor)
   lookFolder.add(params, 'terrainTreelineLo', 0, 200, 5).name('Treeline low (m)').onChange(v => { _setU('uTreeLo', v); _recolor() })
   lookFolder.add(params, 'terrainTreelineHi', 0, 300, 5).name('Treeline high (m)').onChange(v => { _setU('uTreeHi', v); _recolor() })
   lookFolder.add(params, 'terrainDetailScale', 0, 1, 0.05).name('Detail scale (0=off)').onChange(v => _setU('uDetailScale', v))

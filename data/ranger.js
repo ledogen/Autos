@@ -915,7 +915,7 @@ export const RANGER_PARAMS = {
   // BUG-74: a road cut reads as broken rock in proportion to its DEPTH — full at this many metres
   // of excavation, dirt like a fill below it — so the scree ramps in along the road instead of
   // switching on at the cut/fill crossover.
-  roadCutRockDepth:   1.5, // engineered road cut face (man-made grey-tan, distinct from cliff)
+  roadCutRockDepth:   4.0,     // 1.5 → 4 (owner 2026-09-28: "make it gentler") — the cut's rock share ramps over this depth // engineered road cut face (man-made grey-tan, distinct from cliff)
   terrainFillColor:   0x6b5740, // dirt fill embankment / road foundation
 
   // Biome split (slope + altitude). slope = 1 - vertexNormal.y. Altitude = raw terrain world Y.

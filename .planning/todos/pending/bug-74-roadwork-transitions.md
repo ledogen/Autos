@@ -59,6 +59,19 @@ road as the excavation deepens, fades toward its daylight line, and a shallow sc
 a fill. Overhead at the spot: scree → tan → green as a graded band. Both classes now have the one
 mechanism; owner to judge in play.
 
+## 2026-09-28 — owner: "still starts abruptly … not sure the complexity was worth it … just fade it"
+
+Ruled and done: the CUT no longer has rules of its own. The set of exemptions a cut carried (own
+cutout colour kept, rock albedo forced, no dither, no stones, no under-rock green) was itself the
+edge — each switched on at cutness 0.5. Deleted (`ts_cut` gone from the shader). A cut is now
+ground whose rock share rises with excavation depth (`cutness`, `roadCutRockDepth` 1.5 → **4 m**,
+slider "Cut rock depth (m)"), and the ORDINARY rock rules do the rest: coverage s^γ with the biome
+dither (shallow cut → low share → the fragments sink under the dirt — the "height wiring" the
+owner asked for), grey rock, stones, inclination-gated green. Fill keeps its one rule (texture
+ramps in with the feather). Net: fewer rules than before this bug was filed. Cut faces lose their
+green stripes (steep = bare, the pass-11 ruling); the cutout colour only shows through where rock
+does not win. Owner to judge in play; the knob is the depth.
+
 ## Acceptance
 
 - At the capture spot, driver's-eye and 30 m overhead: no continuous line between the skirt and
