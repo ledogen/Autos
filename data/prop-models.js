@@ -29,7 +29,11 @@
 //                       -Z at the road). The pad is 14 m along the road x 8 m across, so an asset
 //                       whose length runs down its own -Z has only 8 m to live in unless it is
 //                       turned. Default 0.
-//   palette    object — CURATED RECOLOUR POOL, { <material name substring>: [[r,g,b], ...] }.
+//   giverName  'home' | 'person' — FEAT-67, missionGiver models only: how the mission board names a
+//                       giver standing on this model. 'home' → "the Hadley place"; 'person' → the
+//                       person alone ("Earl"), for givers that are not a home (an RV, a broken-down
+//                       car, later a hitchhiker). Owner ruling 2026-09-27.
+//   palette   object — CURATED RECOLOUR POOL, { <material name substring>: [[r,g,b], ...] }.
 //                       Owner ruling 2026-08-21: recolouring is not a free-for-all tint. Each
 //                       model that wants variety declares a short, hand-picked list of colours it
 //                       is ALLOWED to be, and spawners pick an index. The look stays art-directed;
@@ -271,6 +275,8 @@ export const PROP_MODELS = {
     // road — the only orientation it fits a 14 x 8 m pad in. Hence no yawOffset.
     collision: { shape: 'box', size: [12.0, 3.15, 3.5] },
     tags: ['missionGiver'],
+    // FEAT-67 giver naming (owner, 2026-09-27): a home — the board calls it "the Hadley place".
+    giverName: 'home',
   },
 
   // ASSET-09 — Winnebago RV, 1818 tris. Somebody living out of it, handing out work.
@@ -284,6 +290,8 @@ export const PROP_MODELS = {
     // 14 m and only 2.4 m crosses it, which is also how a real one parks in a lay-by.
     yawOffset: Math.PI * 0.5,
     tags: ['missionGiver'],
+    // FEAT-67: not a home — the board names the giver by the person alone ("Earl").
+    giverName: 'person',
   },
 
   // ASSET-18 — broken-down car, 2464 tris (BrokenCar + BrokenCarGlass). The stranded-motorist
@@ -304,6 +312,7 @@ export const PROP_MODELS = {
     // quadrants), so the damage faces the driver. -PI/2 would park the wreck's good side out.
     yawOffset: Math.PI * 0.5,
     tags: ['missionGiver'],
+    giverName: 'person',   // FEAT-67: a stranded motorist, named by the person alone
   },
 
   // ASSET-14 — the lone gas pump, 592 tris, 2.50 x 4.55 x 1.40 m. RESHAPED BY THE OWNER

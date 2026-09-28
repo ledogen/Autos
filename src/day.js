@@ -173,6 +173,14 @@ export class DaySystem {
     /** Current 1-based day index of the run (mirrors runState.day). */
     day () { return runState.day }
 
+    /**
+     * FEAT-67: the run's ABSOLUTE game clock, in game-hours since midnight before day 1 —
+     * `(day − 1)·24 + hour`. Continuous across midnight and across a sleep jump, which is what the
+     * mission board's expiry timers need: hour() wraps at 24, and a timer on a wrapping clock would
+     * expire every offer at midnight.
+     */
+    clockH () { return (runState.day - 1) * 24 + this._hour }
+
     // ── Energy, stages, coffee ────────────────────────────────────────────────────────────────
     //
     // THE ENERGY LADDER (ratified 2026-07-30; tank 18 → 16 h 2026-08-02, run-shape.md). Energy is

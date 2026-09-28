@@ -28,7 +28,10 @@ refined ticket, the FEAT-87 split, the owner's name lists, and design-doc amendm
   world start (random age uniform over the rolled lifetime). All timers on the **game clock**.
 - **After completion:** the offer's original expiry keeps running; slot stays empty until it ends,
   then re-rolls (completed after expiry → re-roll at completion). **No 12–24 h recycle** (retired).
-- **After abandon:** slot locks `min(2R, R + 24 h)`, R = time left on the original timer.
+- **After cancel:** slot locks for the offer's full expiry length L from the moment of cancel
+  (`nowH + L`). Cancel is an explicit button only ("call the customer"); leaving the route/region
+  never cancels; pause-menu exits end the run, they are not cancels. (Owner ruling 2026-09-27,
+  settles questions 1 and 3 below.)
 - Accept only by driving to the POI and parking. **One active mission at a time.** Terms lock at accept.
 - Bonus: 25 % of offers; gates C/B/A/S equally likely; "X or better"; **D never earns**; bonus
   offers pay **0.5×** cash (`BONUS_PAY_MULT`, a multiplier on the whole curve → still continuous).
@@ -49,18 +52,13 @@ refined ticket, the FEAT-87 split, the owner's name lists, and design-doc amendm
 
 ## Resolve with the owner BEFORE Phase A code (each has a proposed default)
 
-1. **Abandon hole at R ≈ 0.** If the original timer has already run out (easy on a 2 h food offer),
-   `min(2R, R+24)` = 0 → abandoning is free. *Proposed:* base the lockout on the offer's full
-   lifetime L when R is small — `min(2·max(R, L/2), max(R, L/2) + 24)`, or simply use L. Ask.
-2. **Larry can paper twice in a day.** Under "keep the original clock", a round accepted late in a
-   72 h offer's life that finishes after expiry re-rolls at once → a second round the same day, the
-   thing the owner ruled out. *Proposed:* a per-source floor `minEmptyH` (Larry 24, others 0) in
-   `SOURCES`. Ask.
-3. **What counts as "abandon"?** Lab/menu exit buttons (`main.js:4733-4752`), region exit mid-mission,
-   leaving story mode. *Proposed:* all of those in story mode; nothing outside story mode. Ask.
-4. **Giver-model naming flag values** — proposed `giverName: 'home' | 'person'`: trailer home
-   (ASSET-21) → home; Winnebago (ASSET-09) → person ("Earl's RV"? or just "Earl"?); broken car
-   (ASSET-18) → person. Confirm, and the exact person-only phrasing.
+1. ~~Abandon hole at R ≈ 0.~~ **SETTLED 2026-09-27:** lockout = full lifetime L from cancel.
+2. ~~Larry can paper twice in a day.~~ **SETTLED 2026-09-27:** per-source `minEmptyH` in `SOURCES`
+   (Larry 24, others 0) — a slot never re-rolls sooner than that after a completion.
+3. ~~What counts as "abandon"?~~ **SETTLED 2026-09-27:** only the cancel button. Phase A adds
+   it (delivery + paper round); `board.abandon` has that one caller.
+4. ~~Giver-model naming.~~ **SETTLED 2026-09-27:** `giverName: 'home' | 'person'` — trailer home →
+   'home' ("the Hadley place"); Winnebago + broken car → 'person', **just the name** ("Earl").
 
 ## Code map (verified 2026-09-26 by a read-only planning pass; re-check line numbers)
 
@@ -105,7 +103,7 @@ timers, seeded rolls, name grammar, family filter, card view-model. Add to `LAYO
   bonus|null, bornH, expiresH, route: null|…, dest: null|… }` — route/dest filled lazily and
   deterministically.
 - **Slot states:** `live` → `taken` (hidden, original timer keeps running) → on settle `empty until
-  expiresH` / on abandon `locked until now + min(2R, R+24)`.
+  expiresH` / on cancel `locked until now + L`.
 - `economy.js` gains `basePay(par, payTier)`, `RANKS`, `bonusEarned(letter, gate)`.
 
 ## Phases (commit at each boundary; `npm test` while working, `npm run test:all` pre-commit)
@@ -118,7 +116,7 @@ back); `planOffer`; `enterFromPoi` presents board offers, `cycle(delta)`, accept
 regenerate half of `PAID_JOB_DO_OVERS` (no dead code). Paper route: `open(giver, offer=null)`.
 `main.js`: build the board in `onRegionLive`, drop on exit/seed change (replace `clearOffers` at
 `:195, 708, 4534, 4573`); park trigger with no live offers shows the turnover time; route pump next
-to the paper reroute pump (`:5610`); `onSettle` → `board.complete`; abandon paths → `board.abandon`.
+to the paper reroute pump (`:5610`); `onSettle` → `board.complete`; new cancel button (delivery + paper) → `board.abandon`.
 Gates: **new `test/offer-board.mjs`** (register in `test/gates.mjs`, subsystem story, cost fast):
 determinism; slot counts; always-full; lifetimes within ±30 %; desync (no shared `expiresH` at t0;
 age/L uniform over 2000 seeds); lazy == stepped (one 30 h jump vs 1800 one-minute steps); completion

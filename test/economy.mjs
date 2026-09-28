@@ -22,7 +22,7 @@
 // Pure node: no THREE, no worldgen, no DOM.
 import {
   ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankThresholds, payoutFor, pointsFor,
-  runEconomy, EconomySystem, formatDeeds,
+  runEconomy, EconomySystem, formatDeeds, basePay, bonusEarned, RANKS,
 } from '../src/economy.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT } from '../src/par.js'
 import { runState } from '../src/day.js'
@@ -269,6 +269,47 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
     `got ${settled.payout}`)
   check('region locks at ACCEPT, not at settle — same rule as the day tier',
     settled.payout !== Math.round(ECONOMY_PARAMS.k * 180 * dayTier(1) * regionTier(5)))
+}
+
+// ── 9c. FEAT-67: the board's base-pay quote, bonus gates, and the bonus cash multiplier ─────────
+{
+  const eco = new EconomySystem({ getDay: () => 5 })
+  eco.start()
+  const terms = eco.terms()
+  const par = 312.4
+  const atPar = eco.settle({ par, ratio: 1, letter: 'C' }, { terms })
+  check('basePay === what settle pays for an AT-PAR drive (the card never lies)',
+    basePay(par, terms.payTier) === atPar.payout, `${basePay(par, terms.payTier)} vs ${atPar.payout}`)
+  const k0 = ECONOMY_PARAMS.k
+  const b1 = payoutFor(par, 1, terms.payTier)
+  ECONOMY_PARAMS.k = k0 * 2
+  check('doubling k doubles basePay (recomputed from the tables, never cached)',
+    near(payoutFor(par, 1, terms.payTier), 2 * b1) && basePay(par, terms.payTier) === Math.round(2 * b1))
+  ECONOMY_PARAMS.k = k0
+
+  // bonusEarned truth table: X earns at X or better, S is S only, D never earns.
+  const want = { S: ['S'], A: ['S', 'A'], B: ['S', 'A', 'B'], C: ['S', 'A', 'B', 'C'] }
+  let tt = true
+  for (const gate of RANKS) for (const letter of RANKS) {
+    const exp = gate !== 'D' && (want[gate] || []).includes(letter)
+    if (bonusEarned(letter, gate) !== exp) tt = false
+  }
+  check('bonusEarned: X or better, S only, D never earns (full 5×5 truth table)', tt)
+
+  // Money is IDENTICAL with and without a bonus record, apart from BONUS_PAY_MULT.
+  runEconomy.money = 0
+  const plain = eco.settle({ par, ratio: 0.8, letter: 'A' }, { terms })
+  const withRec = eco.settle({ par, ratio: 0.8, letter: 'A' }, { terms, bonus: { rewardId: 'x', name: 'X', gate: 'B' } })
+  const halved = eco.settle({ par, ratio: 0.8, letter: 'A' },
+                            { terms, bonus: { rewardId: 'x', name: 'X', gate: 'B' }, payMult: 0.5 })
+  check('a bonus record alone never changes the money', plain.payout === withRec.payout)
+  check('the cash cut is payMult on the whole line (continuous in ratio)',
+    halved.payout === Math.round(payoutFor(par, 0.8, terms.payTier) * 0.5))
+  check('an earned bonus is recorded as an award', withRec.award?.rewardId === 'x' && runEconomy.awards.length >= 1)
+  const missed = eco.settle({ par, ratio: 1.1, letter: 'D' }, { terms, bonus: { rewardId: 'y', name: 'Y', gate: 'C' } })
+  check('a D earns no award, whatever the gate', missed.award === null)
+  eco.start()
+  check('start() clears the run\'s awards', runEconomy.awards.length === 0)
 }
 
 // ── 10. Purity ──────────────────────────────────────────────────────────────────────────────────

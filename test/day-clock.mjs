@@ -237,5 +237,24 @@ const mkDay = () => {
   check('no blink survives a skip', sys.eyelidFactor() === 0 && sys.attenuation() === 1)
 }
 
+// ── 9. FEAT-67: clockH — the absolute game clock the mission board runs on ───────────────────────
+{
+  const { sys } = mkDay()
+  sys.start()
+  let prev = sys.clockH(), mono = true, jumpOk = true
+  for (let i = 0; i < 2000; i++) {           // ~33 in-game hours of 1 s ticks, across a midnight
+    sys.update(1)
+    const c = sys.clockH()
+    if (!(c > prev) || c - prev > 1 / 60 + 1e-9) mono = false
+    prev = c
+  }
+  check('clockH is continuous across midnight (never wraps, never jumps)', mono && runState.day >= 2)
+  check('clockH === (day − 1)·24 + hour', Math.abs(sys.clockH() - ((sys.day() - 1) * 24 + sys.hour())) < 1e-9)
+  const before = sys.clockH()
+  sys.sleep(10, 0.5)
+  jumpOk = Math.abs(sys.clockH() - before - 10) < 1e-9
+  check('a 10 h sleep advances clockH by exactly 10', jumpOk, `${sys.clockH() - before}`)
+}
+
 console.log(fails === 0 ? '\nPASS day-clock' : `\nFAIL day-clock (${fails})`)
 process.exit(fails === 0 ? 0 : 1)

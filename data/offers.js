@@ -84,11 +84,15 @@ export const REWARDS = [
 // Keyed by POI roster type (src/poi.js POI_ROSTER). A type that is NOT listed here posts nothing
 // (gas station, tackle shop, mom's house — "some stores are just stores").
 //
-//   slots      live offers at once. Every slot is always full, except after a completion or an abandon.
+//   slots      live offers at once. Every slot is always full, except after a completion or a cancel.
 //   expiryH    offer lifetime in game-hours, as the centre value; EXPIRY_NOISE applies on top.
 //              A [lo, hi] pair means the centre is rolled once per POI in that range.
+//   minEmptyH  (optional, default 0) after a COMPLETION the slot never re-rolls sooner than this.
+//              Larry's 24 h is what stops two paper rounds in one day (owner, 2026-09-27).
 //   nameForm   'owned' | 'plain' | 'fixed' — which POI-name grammar (data/offer-names.js).
-//              'fixed' keeps the roster's own label (Larry's).
+//              'fixed' keeps the roster's own label (Larry's). A missionGiver is named by its MODEL
+//              instead (`giverName` in data/prop-models.js): 'home' → "the Hadley place", 'person' →
+//              just the person ("Earl").
 //   families   which families this source may post
 
 // burgerJoint means ANY FOOD VENDOR (owner, 2026-09-26): the player delivers ready-made meals as an
@@ -99,7 +103,7 @@ export const REWARDS = [
 export const SOURCES = {
     generalStore: { slots: 2, expiryH: 24,       nameForm: 'plain', families: ['delivery', 'fragile'] },
     burgerJoint:  { slots: 3, expiryH: 2,        nameForm: 'owned', families: ['delivery'] },
-    larrysHouse:  { slots: 1, expiryH: 72,       nameForm: 'fixed', families: ['papers'] },
+    larrysHouse:  { slots: 1, expiryH: 72,       nameForm: 'fixed', families: ['papers'], minEmptyH: 24 },
     serviceShop:  { slots: 1, expiryH: 48,       nameForm: 'owned', families: ['delivery', 'freight'] },
     missionGiver: { slots: 1, expiryH: [24, 72], nameForm: 'plain', families: ['delivery', 'fragile', 'demolition'] },
 }
@@ -108,13 +112,13 @@ export const SOURCES = {
 export const EXPIRY_NOISE = 0.3
 
 // AFTER A COMPLETION (owner, 2026-09-27): no separate timer. The offer's original expiry keeps
-// running while it is taken; the slot stays empty until it runs out, then rolls a new offer.
+// running while it is taken; the slot stays empty until it runs out (and at least `minEmptyH`
+// after the completion), then rolls a new offer.
 //
-// AFTER AN ABANDON: the slot locks for min(2R, R + ABANDON_ADD_H), R = time left on the original
-// timer — the giver is unhappy with you. Without it, accepting jobs you won't finish costs nothing.
-
-/** Game-hours added by an abandon, when that is shorter than doubling the remainder. */
-export const ABANDON_ADD_H = 24
+// AFTER A CANCEL (owner, 2026-09-27): the slot locks for the offer's FULL expiry length, counted
+// from the moment of cancel — the giver is unhappy with you. The time left on the original timer
+// plays no part, so cancelling an offer that has already expired is not free. Cancelling is a
+// button (the player phones the customer); nothing else cancels a job.
 
 // ── Roll shares (owner, 2026-09-26) ─────────────────────────────────────────────────────────
 

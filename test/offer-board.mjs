@@ -1,0 +1,324 @@
+// GATE (FEAT-67): the mission board — slots, timers, seeded rolls, names, the card view-model.
+//
+// Pure: no network, no terrain. The board (src/offer-board.js) is a function of (seed, POI list,
+// clock, completion/cancel log), so a synthetic roster exercises all of it. The route half (a board
+// offer planned into a mission) lives in test/story-poi.mjs, which has a real region.
+//
+// What is pinned, and why each matters:
+//   1. DETERMINISM — same seed, same board, down to every name and every roll. Different seed, a
+//      different board.
+//   2. SLOTS — every source has exactly SOURCES[type].slots slots; non-sources post nothing.
+//   3. ALWAYS FULL — with no completions or cancels, every slot holds a live offer at every time.
+//   4. EXPIRY NOISE — every lifetime is inside centre ± 30 % (the generic giver's centre rolled per
+//      POI in its [lo, hi]).
+//   5. DESYNC — no two slots at a POI share an expiry at world start, and the starting age / life
+//      fraction is uniform over 2000 seeds (the L/2 line-up is the thing to avoid).
+//   6. LAZY == STEPPED — one 30 h jump and 1800 one-minute steps land on the identical board.
+//   7. COMPLETION keeps the original clock; completed after expiry re-rolls at once; Larry's
+//      minEmptyH (24 h) stops a second round the same day.
+//   8. CANCEL locks the slot for the offer's FULL life from the cancel — including a cancel after
+//      expiry, which the retired min(2R, R+24) made free.
+//   9. TAKEN offers are hidden and do not count toward the turnover timer.
+//  10. ONLY BUILT FAMILIES roll (delivery, papers) — fragile/demolition/freight never appear.
+//  11. NAMES — deduplicated within a region; a 'home' giver is "the <last> place", a 'person'
+//      giver is one person and no place name.
+//  12. THE CARD — base pay equals economy.basePay at the offer's multiplier (0.5× on a bonus
+//      offer), the gate reads "X or better" / "S only", a freight card quotes no base pay.
+//  13. BONUS SHARE ≈ 25 % where the source has rewards; never where it has none.
+//  14. IMPORT DISCIPLINE — the board imports only its tables, seed.js and economy.js, and never
+//      reads Math.random.
+import { readFileSync } from 'node:fs'
+import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration } from '../src/offer-board.js'
+import { SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT } from '../data/offers.js'
+import { PROP_MODELS } from '../data/prop-models.js'
+import { basePay } from '../src/economy.js'
+
+let fails = 0
+const check = (label, ok, detail = '') => {
+    console.log(`${ok ? '[ ok ]' : '[FAIL]'} ${label}${ok ? '' : '  ' + detail}`)
+    if (!ok) fails++
+}
+
+// A full roster in the shape PoiSystem.list() hands over (ids + types + model keys).
+const POIS = [
+    { id: 'poi:1|2',   type: 'momsHouse',    modelKey: 'trailerHomeA' },
+    { id: 'poi:3|4',   type: 'larrysHouse',  modelKey: 'trailerHomeA' },
+    { id: 'poi:5|6',   type: 'gasStation' },
+    { id: 'poi:7|8',   type: 'gasStation' },
+    { id: 'poi:9|10',  type: 'serviceShop' },
+    { id: 'poi:11|12', type: 'serviceShop' },
+    { id: 'poi:13|14', type: 'burgerJoint' },
+    { id: 'poi:15|16', type: 'generalStore' },
+    { id: 'poi:17|18', type: 'tackleShop' },
+    { id: 'poi:19|20', type: 'missionGiver', modelKey: 'trailerHomeA' },
+    { id: 'poi:21|22', type: 'missionGiver', modelKey: 'winnebago' },
+    { id: 'poi:23|24', type: 'missionGiver', modelKey: 'brokenCar' },
+    { id: 'poi:25|26', type: 'missionGiver', modelKey: 'trailerHomeA' },
+    { id: 'poi:27|28', type: 'missionGiver', modelKey: 'winnebago' },
+]
+const T0 = 6   // dayStartHour: the clock a run opens on
+const giverNameOf = (k) => PROP_MODELS[k]?.giverName
+const make = (seed, nowH = T0) => new OfferBoard({ seed, pois: POIS, nowH, giverNameOf })
+const slotsOf = (b, id) => b._bySource.get(id) || []
+const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFixed(9)}:${s.state}`).join('|')
+
+// ── 1. determinism ──────────────────────────────────────────────────────────────────────────────
+{
+    const a = make(6), b = make(6), c = make(7)
+    const dump = (x) => x.sources().map(id => [x.poiName(id), JSON.stringify(x.people(id)),
+        ...x.offers(id, T0).map(o => JSON.stringify(x.spec(o)))].join(';')).join('\n') + snapshot(x)
+    check('same seed → identical board (names, people, specs, timers)', dump(a) === dump(b))
+    check('different seed → a different board', dump(a) !== dump(c))
+}
+
+// ── 2. slot counts ──────────────────────────────────────────────────────────────────────────────
+{
+    const b = make(6)
+    const bad = POIS.filter(q => slotsOf(b, q.id).length !== (SOURCES[q.type]?.slots ?? 0))
+    check('every source has exactly its slot count; non-sources post nothing', bad.length === 0,
+        bad.map(q => `${q.type} ${slotsOf(b, q.id).length}`).join(', '))
+}
+
+// ── 3. always full ──────────────────────────────────────────────────────────────────────────────
+{
+    const b = make(11)
+    let worst = Infinity
+    for (let t = T0; t < T0 + 24 * 10; t += 0.37) {
+        b.advance(t)
+        for (const id of b.sources()) worst = Math.min(worst, b.offers(id, t).length / slotsOf(b, id).length)
+    }
+    check('with no completions or cancels every slot holds a live offer, always (10 days sampled)', worst === 1)
+}
+
+// ── 4. expiry noise ─────────────────────────────────────────────────────────────────────────────
+{
+    let bad = 0, n = 0
+    for (let seed = 1; seed <= 40; seed++) {
+        const b = make(seed)
+        b.advance(T0 + 24 * 6)
+        for (const s of b._slots) {
+            const src = SOURCES[s.type]
+            const lo = (Array.isArray(src.expiryH) ? src.expiryH[0] : src.expiryH) * (1 - EXPIRY_NOISE)
+            const hi = (Array.isArray(src.expiryH) ? src.expiryH[1] : src.expiryH) * (1 + EXPIRY_NOISE)
+            n++
+            if (!(s.offer.lifeH >= lo - 1e-9 && s.offer.lifeH <= hi + 1e-9)) bad++
+        }
+        // The generic giver's centre is rolled ONCE per POI: all its offers sit within ±30 % of it.
+        for (const q of POIS.filter(p => p.type === 'missionGiver')) {
+            const lifes = []
+            for (let k = 0; k < 20; k++) lifes.push(b._lifeH(q.id, q.type, 0, k))
+            const c = lifes.reduce((x, y) => x + y) / lifes.length
+            if (Math.max(...lifes) / Math.min(...lifes) > (1 + EXPIRY_NOISE) / (1 - EXPIRY_NOISE) + 1e-9) bad++
+            if (!(c >= 24 * 0.7 && c <= 72 * 1.3)) bad++
+        }
+    }
+    check('every lifetime is inside centre ± 30 % (generic giver: one centre per POI in 1–3 d)', bad === 0, `${bad} of ${n}`)
+}
+
+// ── 5. desync ───────────────────────────────────────────────────────────────────────────────────
+{
+    let shared = 0
+    const bins = new Array(10).fill(0)
+    let samples = 0
+    for (let seed = 1; seed <= 2000; seed++) {
+        const b = make(seed)
+        for (const id of b.sources()) {
+            const ex = slotsOf(b, id).map(s => s.offer.expiresH)
+            if (new Set(ex.map(x => x.toFixed(6))).size !== ex.length) shared++
+            for (const s of slotsOf(b, id)) {
+                const f = (T0 - s.offer.bornH) / s.offer.lifeH
+                bins[Math.min(9, Math.floor(f * 10))]++; samples++
+            }
+        }
+    }
+    check('no two slots at a POI share an expiry at world start (2000 seeds)', shared === 0, `${shared}`)
+    const worst = Math.max(...bins.map(c => Math.abs(c / samples - 0.1)))
+    check('starting age / life is uniform over 2000 seeds (every decile 10 % ± 1.5 %)', worst < 0.015,
+        bins.map(c => (100 * c / samples).toFixed(1)).join(' '))
+}
+
+// ── 6. lazy == stepped ──────────────────────────────────────────────────────────────────────────
+{
+    const a = make(21), b = make(21)
+    a.advance(T0 + 30)
+    for (let i = 1; i <= 1800; i++) b.advance(T0 + i / 60)
+    check('one 30 h jump == 1800 one-minute steps (identical ids, expiries, states)', snapshot(a) === snapshot(b))
+    // …and the lazy offer CONTENT does not depend on when it was first read.
+    const idA = a.sources()[0], oA = a.offers(idA, T0 + 30)[0], oB = b.offers(idA, T0 + 30)[0]
+    check('an offer rolls the same content whenever it is first read',
+        JSON.stringify(a.spec(oA)) === JSON.stringify(b.spec(oB)))
+}
+
+// ── 7. completion ───────────────────────────────────────────────────────────────────────────────
+{
+    const b = make(31)
+    const store = POIS.find(q => q.type === 'generalStore').id
+    const o = b.offers(store, T0)[0]
+    const t = T0 + 0.5
+    check('take removes a live offer from the board', !!b.take(o.id, t) && !b.offers(store, t).some(x => x.id === o.id))
+    b.complete(o.id, t + 0.1)
+    const s = slotsOf(b, store)[o.slot]
+    check('completed before expiry: the slot waits out the ORIGINAL expiry',
+        s.state === 'empty' && Math.abs(s.until - o.expiresH) < 1e-9)
+    b.advance(o.expiresH + 1e-6)
+    check('…then re-rolls, the new offer born at that expiry', s.state === 'live' && s.offer.k === o.k + 1
+        && Math.abs(s.offer.bornH - o.expiresH) < 1e-9)
+
+    // Completed AFTER expiry → re-rolls at completion.
+    const o2 = b.offers(store, o.expiresH + 1e-6).find(x => x.slot === o.slot)
+    b.take(o2.id, o2.bornH + 0.01)
+    const late = o2.expiresH + 3
+    b.complete(o2.id, late)
+    check('completed after expiry: the slot re-rolls at completion',
+        s.state === 'live' && Math.abs(s.offer.bornH - late) < 1e-9)
+
+    // Larry: minEmptyH 24 — no second round the same day even when finished after expiry.
+    const larry = POIS.find(q => q.type === 'larrysHouse').id
+    const lo = b.offers(larry, late)[0]
+    b.take(lo.id, late)
+    const fin = lo.expiresH + 1
+    b.complete(lo.id, fin)
+    const ls = slotsOf(b, larry)[0]
+    check("Larry's slot stays empty ≥ 24 h after a round (minEmptyH)", ls.state === 'empty'
+        && Math.abs(ls.until - (fin + SOURCES.larrysHouse.minEmptyH)) < 1e-9, `until ${ls.until} fin ${fin}`)
+    check('…and completing twice is a no-op', b.complete(lo.id, fin + 1) === false)
+}
+
+// ── 8. cancel ───────────────────────────────────────────────────────────────────────────────────
+{
+    const b = make(41)
+    const food = POIS.find(q => q.type === 'burgerJoint').id
+    const o = b.offers(food, T0)[0]
+    b.take(o.id, T0)
+    const t = T0 + 0.2
+    b.abandon(o.id, t)
+    const s = slotsOf(b, food)[o.slot]
+    check('cancel locks the slot for the full life from the cancel',
+        s.state === 'locked' && Math.abs(s.until - (t + o.lifeH)) < 1e-9)
+
+    // Cancel AFTER the original expiry: still the full life (the retired formula gave 0).
+    b.advance(s.until + 1e-6)
+    const o2 = b.offers(food, s.until + 1e-6).find(x => x.slot === o.slot)
+    b.take(o2.id, o2.bornH)
+    const late = o2.expiresH + 5
+    b.abandon(o2.id, late)
+    check('a cancel after expiry is NOT free — locked for the full life from the cancel',
+        s.state === 'locked' && Math.abs(s.until - (late + o2.lifeH)) < 1e-9)
+    check('cancel of an offer that is not taken is refused', b.abandon(b.offers(food, late)[0]?.id, late) === false)
+}
+
+// ── 9. taken offers are hidden ──────────────────────────────────────────────────────────────────
+{
+    const b = make(51)
+    const food = POIS.find(q => q.type === 'burgerJoint').id
+    const before = b.offers(food, T0)
+    const o = before[0]
+    b.take(o.id, T0)
+    const after = b.offers(food, T0)
+    check('a taken offer disappears from offers()', after.length === before.length - 1 && !after.some(x => x.id === o.id))
+    check('isLive is false for a taken offer', !b.isLive(o.id, T0))
+    const others = slotsOf(b, food).filter(s => s.state === 'live').map(s => s.offer.expiresH)
+    check('the turnover timer ignores the taken slot', b.nextTurnoverH(food, T0) === Math.min(...others))
+    check('a taken offer cannot be taken twice', b.take(o.id, T0) === null)
+}
+
+// ── 10. only built families ─────────────────────────────────────────────────────────────────────
+{
+    const seen = new Set()
+    for (let seed = 1; seed <= 60; seed++) {
+        const b = make(seed)
+        for (let t = T0; t < T0 + 24 * 5; t += 3) for (const id of b.sources()) for (const o of b.offers(id, t)) seen.add(b.spec(o).family)
+    }
+    check('only built families ever roll', [...seen].every(f => BUILT_FAMILIES.has(f)), [...seen].join(','))
+    check('both built families appear', seen.has('delivery') && seen.has('papers'))
+}
+
+// ── 11. names ───────────────────────────────────────────────────────────────────────────────────
+{
+    let dupPoi = 0, dupPerson = 0, homeBad = 0, personBad = 0
+    for (let seed = 1; seed <= 300; seed++) {
+        const b = make(seed)
+        // Fixed placeholder names (the two gas stations) are exempt — they are not rolled.
+        const FIXED = new Set(["Larry's", "Mom's", 'the gas station', 'the tackle shop'])
+        const names = POIS.map(q => b.poiName(q.id)).filter(n => n && !FIXED.has(n))
+        if (new Set(names).size !== names.length) dupPoi++
+        const full = POIS.flatMap(q => b.people(q.id)).filter(p => p.last).map(p => `${p.first} ${p.last}`)
+        if (new Set(full).size !== full.length) dupPerson++
+        for (const q of POIS.filter(p => p.type === 'missionGiver')) {
+            const gn = PROP_MODELS[q.modelKey].giverName
+            if (gn === 'home' && !/^the \S+ place$/.test(b.poiName(q.id) ?? '')) homeBad++
+            if (gn === 'person' && (b.poiName(q.id) !== null || b.people(q.id).length !== 1
+                || b.placeLabel(q.id) !== b.people(q.id)[0].first + (b.people(q.id)[0].nick ? ` "${b.people(q.id)[0].nick}"` : ''))) personBad++
+        }
+    }
+    check('POI names are unique within a region (300 seeds)', dupPoi === 0, `${dupPoi}`)
+    check('people are unique within a region (300 seeds)', dupPerson === 0, `${dupPerson}`)
+    check("a 'home' giver is named \"the <last> place\"", homeBad === 0, `${homeBad}`)
+    check("a 'person' giver is ONE person, no place name — just the person", personBad === 0, `${personBad}`)
+    const b = make(6)
+    const larry = POIS.find(q => q.type === 'larrysHouse').id
+    check('Larry is just "Larry" at "Larry\'s"', b.poiName(larry) === "Larry's"
+        && b.people(larry).length === 1 && b.people(larry)[0].first === 'Larry')
+}
+
+// ── 12. the card ────────────────────────────────────────────────────────────────────────────────
+{
+    const b = make(6)
+    const route = { par: 360, distance: 2400, endPoiId: null }
+    let plain = null, bonused = null
+    for (let t = T0; t < T0 + 24 * 30 && !(plain && bonused); t += 1) {
+        for (const id of b.sources()) for (const o of b.offers(id, t)) {
+            const sp = b.spec(o)
+            if (sp.family !== 'delivery') continue
+            if (sp.bonus && !bonused) bonused = { o, t }
+            if (!sp.bonus && !plain) plain = { o, t }
+        }
+    }
+    const cp = b.card(plain.o, { nowH: plain.t, payTier: 1.52, route })
+    check('base pay == economy.basePay at ratio 1 for a plain offer',
+        cp.pay === `Base pay $${basePay(360, 1.52).toLocaleString('en-US')}`, cp.pay)
+    const cb = b.card(bonused.o, { nowH: bonused.t, payTier: 1.52, route })
+    check(`a bonus offer quotes ${BONUS_PAY_MULT}× base pay`,
+        cb.pay === `Base pay $${basePay(360, 1.52, BONUS_PAY_MULT).toLocaleString('en-US')}`, cb.pay)
+    check('the bonus line names the item and its gate', cb.bonus?.includes(b.spec(bonused.o).bonus.name)
+        && cb.bonus.includes(gateText(b.spec(bonused.o).bonus.gate)))
+    check('gate text: "S only" / "X or better"', gateText('S') === 'S only' && gateText('B') === 'B or better')
+    check('the card states distance, weight and expiry', cp.terms.length === 3 && cp.terms[0] === '2.4 km'
+        && cp.terms[2] === `expires in ${formatGameDuration(plain.o.expiresH - plain.t)}`, cp.terms.join(' | '))
+    check('a roadside drop names its rolled place', cp.sentence.some(r => r.t === b.spec(plain.o).placeName))
+    const dest = POIS.find(q => q.type === 'gasStation').id
+    const cd = b.card(plain.o, { nowH: plain.t, route: { ...route, endPoiId: dest } })
+    check('a POI drop names the destination POI', cd.sentence.some(r => r.t === b.placeLabel(dest)))
+    // Freight is not built, but its card must already quote no par-based pay.
+    const fake = { ...plain.o, _spec: { ...b.spec(plain.o), family: 'freight' } }
+    check('a freight card quotes no base pay (flat-pay variant)', b.card(fake, { nowH: plain.t, route }).pay === null)
+}
+
+// ── 13. bonus share ─────────────────────────────────────────────────────────────────────────────
+{
+    const count = { burgerJoint: [0, 0], missionGiver: [0, 0], larrysHouse: [0, 0] }
+    for (let seed = 1; seed <= 200; seed++) {
+        const b = make(seed)
+        for (let t = T0; t < T0 + 24 * 3; t += 2) for (const q of POIS) {
+            if (!count[q.type]) continue
+            for (const o of b.offers(q.id, t)) { count[q.type][1]++; if (b.spec(o).bonus) count[q.type][0]++ }
+        }
+    }
+    const share = count.burgerJoint[0] / count.burgerJoint[1]
+    check('bonus share ≈ 25 % where the source has rewards', Math.abs(share - 0.25) < 0.03, share.toFixed(3))
+    check('no bonus where the source has no rewards (givers, Larry)',
+        count.missionGiver[0] === 0 && count.larrysHouse[0] === 0)
+}
+
+// ── 14. import discipline ───────────────────────────────────────────────────────────────────────
+{
+    const src = readFileSync(new URL('../src/offer-board.js', import.meta.url), 'utf8')
+    const imports = [...src.matchAll(/from\s+'([^']+)'/g)].map(m => m[1]).sort()
+    const allowed = ['../data/offer-names.js', '../data/offers.js', './economy.js', './seed.js']
+    check('offer-board.js imports only its tables, seed.js and economy.js',
+        JSON.stringify(imports) === JSON.stringify(allowed), imports.join(', '))
+    check('offer-board.js never reads Math.random', !/Math\.random/.test(src.replace(/\/\/.*$/gm, '')))
+}
+
+console.log(fails ? `\n${fails} FAILED` : '\nall offer-board checks passed')
+process.exit(fails ? 1 : 0)

@@ -65,10 +65,23 @@ offer appears there. It is the only always-on addition.
   - **Completion keeps the original clock** (ruling 2026-09-27, replaces the 12–24 h recycle). A
     taken offer's expiry timer keeps running. After completion the slot stays empty until that
     original expiry, then rolls a new offer. Completed after expiry → re-rolls at completion.
-  - **Abandon penalty** (ruling 2026-09-27): abandoning a taken offer locks the slot for
-    `min(2R, R + 24 h)`, where R is the time left on the original timer — the giver is unhappy with
-    you and won't offer work. Without it, accepting jobs you don't mean to finish would be free.
-    (See the handoff for the R ≈ 0 hole and the proposed floor.)
+  - **Cancel penalty** (ruling 2026-09-27, revised same day — replaces `min(2R, R + 24 h)`):
+    cancelling a taken offer locks the slot for the offer's **full expiry length L**
+    (`expiresH − bornH`), counted **from the moment of cancel** — lock ends at `nowH + L`. The time
+    left on the original timer plays no part, so cancelling an offer that has already expired is
+    not free (the old formula gave 0 lockout at R = 0). The giver is unhappy with you and won't
+    offer work. Without it, accepting jobs you don't mean to finish would be free.
+  - **Cancel is a button, and only a button** (ruling 2026-09-27). Canon: the player character
+    phones the customer and cancels on them. It is the ONLY thing that abandons a job:
+    - Route freedom — driving off the route, going anywhere, leaving the region never cancels.
+    - Story mode can't be stopped once started, except by quick save (run-shape.md: save on quit,
+      load deletes). A quick save suspends the run with the job still active; it is not a cancel.
+    - So `board.abandon` has exactly one caller: the cancel button. The pause-menu exits that end
+      story mode today (`pm-menu` / `pm-lab` / `pm-story`) end the whole run and drop the board with
+      it — they never call `abandon`. Replacing them with quick save is the save system's job, not
+      this ticket's.
+    - The button covers both built families: a delivery job (`missionSystem`) and a paper round
+      (`paperRouteSystem`) — neither has a mid-job cancel today.
   - These two are the only ways a slot is ever empty.
   - *Single-slot* (Grandma's): one offer at a time. What she needs varies (medication, groceries),
     and so does the reward. *Multi-slot* (food): several live at once, so the player picks the best.
@@ -111,7 +124,7 @@ Expiry lengths below are the centre value; each roll gets ±30 %. Units are game
 | Auto service station | 1 | 2 days | |
 | Generic POI (today's orange diamond) | 1 | 1–3 days | Centre rolled per POI in 1–3 d, then ±30 % |
 
-After completion a slot waits out the offer's original expiry; after abandonment, `min(2R, R + 24 h)`.
+After completion a slot waits out the offer's original expiry; after a cancel, the offer's full expiry length from the moment of cancel.
 
 ## Content tables (the big authoring job — owner co-authors the lists)
 
@@ -204,7 +217,7 @@ brakes fade, and it overheats on long climbs. So the freight card differs from t
 ## Shape
 
 - **Phase A — offer model.** `_offers` in `src/mission.js` becomes a per-POI board: people, always-full slots,
-  noisy expiry, completion wait and abandon lockout on the game clock, bonus (item + gate + optional tiers), and a par-pay figure that
+  noisy expiry, completion wait and cancel lockout on the game clock, bonus (item + gate + optional tiers), and a par-pay figure that
   **recomputes from `ECONOMY_PARAMS`, never cached** (FEAT-53 Phase D will retune those tables).
 - **Phase B — content tables.** People / things / places / reward pools / source table, seed-rolled.
 - **Phase C — map surface.** Hover card, Q/E cycling, single drawn route, turnover timer under
@@ -217,10 +230,12 @@ brakes fade, and it overheats on long climbs. So the freight card differs from t
       distance, cargo weight, expiry, and bonus + rank gate when present; the offer's route is drawn
 - [ ] Q / E cycle through a POI's live offers; the card and route follow; only one route is drawn
 - [ ] Sources show the shortest slot-turnover time under their icon; non-source POIs show nothing new
-- [ ] Every slot is always full except after a completion (until the original expiry) or an abandon
-      (`min(2R, R + 24 h)`); expiry rolls ±30 %
+- [ ] Every slot is always full except after a completion (until the original expiry) or a cancel
+      (locked `nowH + L`, L = the offer's full expiry length — never free, even past expiry); expiry rolls ±30 %
       on the game clock; slots start desynchronised (no two slots of a POI turn over together at load)
 - [ ] Offers are accepted only by driving to the POI; only one mission can be active at a time
+- [ ] An active job (delivery or paper round) can be cancelled only by an explicit cancel button
+      ("call the customer"); leaving the route or region never cancels
 - [ ] The quoted base pay equals what settlement pays for an at-par drive, from `ECONOMY_PARAMS`
 - [ ] The card supports a flat-pay variant (freight) with no par-based figures, and a blue diamond
 - [ ] D never earns a bonus; a gate of X+ is earned at X or better

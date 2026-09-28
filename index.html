@@ -925,6 +925,9 @@
   <div id="pause-menu">
     <div class="pm-title">paused</div>
     <button id="pm-resume">resume</button>
+    <!-- FEAT-67: cancel the job in hand — the player phones the customer. Shown only while a story
+         job is taken; the ONLY thing that cancels a job (owner, 2026-09-27). -->
+    <button id="pm-cancel">call and cancel the job</button>
     <button id="pm-story">story mode</button>
     <button id="pm-lab">testing lab</button>
     <button id="pm-menu">main menu</button>
@@ -1017,6 +1020,9 @@
          (The seed control that used to sit under here is gone: you chose the world when you entered
          story mode, and offering it again mid-run invited a world rebuild under a live planner.) -->
     <div id="mp-actions">
+      <!-- FEAT-67: step through the POI's live offers (also Q / E). Hidden when there is one. -->
+      <button id="mp-prev" title="previous offer (Q)">&lsaquo; Q</button>
+      <button id="mp-next" title="next offer (E)">E &rsaquo;</button>
       <button id="mp-decline" title="the same brake tap that releases the truck">decline (space)</button>
       <button id="mp-retry" title="testing only — real story mode has no do-overs">retry</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>

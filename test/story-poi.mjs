@@ -21,9 +21,9 @@
 //   4. THE REJECT RULES BITE. Nothing on water, nothing stacked on a junction's ground, earthwork
 //      inside the cap.
 //
-//   5. A JOB TAKEN FROM A POI STARTS AT THAT POI — every roll, including every regenerate. The
-//      anchor has to survive a re-roll, or the second offer from a marker is a free Quick Job
-//      starting somewhere across the region while the player is parked in a pullout.
+//   5. A JOB TAKEN FROM A POI STARTS AT THAT POI — on every offer. FEAT-67: the board's offers are
+//      seeded (same offer → same route), a POI destination ends at that POI, and the parked panel
+//      presents the board's live offers (cycle, memoised re-park, accept takes, cancel locks).
 //
 // Heavy: needs a real streamed, routed network.
 import * as THREE from 'three'
@@ -33,6 +33,9 @@ import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS, POI_ROSTER, POI_COUNT } from '../src/poi.js'
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'
 import { MissionSystem } from '../src/mission.js'
+import { OfferBoard } from '../src/offer-board.js'
+import { SOURCES } from '../data/offers.js'
+import { mulberry32 } from '../src/seed.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 let fails = 0
@@ -227,12 +230,12 @@ const W = makeWorld(C.x, C.z, R)
         `worst cut/fill ${worstCut.toFixed(2)} m vs cap ${POI_PARAMS.poiMaxCutFill} m`)
 }
 
-// ── 6. a job taken from a POI STARTS at that POI — including every regenerate ────────────────────
+// ── 6. a job taken from a POI STARTS at that POI — on every offer ────────────────────────────────
 // The anchored roll pins the start to the marker's own (edge, arcS) and prepends that partial
-// stretch as the first par segment. Regenerating must re-roll the DESTINATION ONLY: it used to drop
-// the anchor and hand back a free anywhere-to-anywhere Quick Job, so the second offer from a marker
-// had nothing to do with the marker — you would accept a job starting across the region while
-// parked in a pullout. A quest giver offers a different job, not a different place to stand.
+// stretch as the first par segment. Every board offer at a POI is an anchored roll, so every one of
+// them must start there — a quest giver offers a different job, not a different place to stand.
+// FEAT-67 adds: the roll is SEEDED (same offer stream → the same route), and a POI destination ends
+// on that POI's own edge, entered from the nearer node.
 {
     const ms = new MissionSystem({
         getRoad: () => W.road,
@@ -244,8 +247,7 @@ const W = makeWorld(C.x, C.z, R)
     const tried = []
     for (const q of W.poi.list()) {
         const anchor = { aId: q.aId, bId: q.bId, s: q.s, poiId: q.id }
-        // Ten independent rolls per POI stands in for "accept, then hit regenerate nine times":
-        // _roll is what regenerate re-runs, and the destination is Math.random per roll.
+        // Ten independent rolls per POI stand in for ten different offers from that marker.
         let got = 0
         for (let i = 0; i < 10; i++) {
             const m = ms._roll(anchor)
@@ -257,74 +259,135 @@ const W = makeWorld(C.x, C.z, R)
         }
         tried.push(got)
     }
-    check('every anchored roll starts AT the POI (regenerate re-rolls the destination only)',
+    check('every anchored roll starts AT the POI (every offer from a marker starts there)',
         rolls > 0 && strays === 0,
         `${strays}/${rolls} strayed, worst ${worst.toFixed(2)} m from the marker`)
     console.log(`       ${rolls} anchored rolls over ${tried.length} POIs `
         + `(${noRoute} found no qualifying leg — a dead-end marker, not a stray)`)
 
-    // The wiring: _generate must REMEMBER the anchor, or regenerate() has nothing to pass on.
-    const a0 = { aId: W.poi.list()[0].aId, bId: W.poi.list()[0].bId, s: W.poi.list()[0].s, poiId: 'x' }
-    ms._generate(a0)
-    check('the offer remembers its anchor, so regenerate() can re-use it', ms._anchor === a0)
-    ms._generate(null)
-    check('a free Quick Job roll clears the anchor', ms._anchor === null)
+    // FEAT-67: seeded — the same stream plans the same route, twice.
+    const src = W.poi.list().find(q => q.type === 'burgerJoint') ?? W.poi.list()[0]
+    const rngOf = (k) => mulberry32(k)
+    const pois = W.poi.list().filter(q => q.id !== src.id)
+    let same = true, planned = 0
+    for (let k = 1; k <= 12; k++) {
+        const a = ms.planOffer(src, { rng: rngOf(k), dest: { kind: k % 2 ? 'poi' : 'roadside', pick: k / 13, pois } })
+        const b = ms.planOffer(src, { rng: rngOf(k), dest: { kind: k % 2 ? 'poi' : 'roadside', pick: k / 13, pois } })
+        if (!a !== !b) { same = false; continue }
+        if (!a) continue
+        planned++
+        if (JSON.stringify(a.poly) !== JSON.stringify(b.poly) || a.endPoiId !== b.endPoiId) same = false
+    }
+    check('planOffer is deterministic in its stream (same offer → the same route)', same && planned > 0, `${planned} planned`)
+
+    // FEAT-67: a POI destination ends AT that POI's road point, on its own edge.
+    let poiEnds = 0, farEnds = 0, worstEnd = 0, fellBack = 0
+    for (const q of W.poi.list()) {
+        for (let k = 0; k < 6; k++) {
+            const m = ms.planOffer(q, { rng: rngOf(1000 + k), dest: { kind: 'poi', pick: k / 6,
+                pois: W.poi.list().filter(p => p.id !== q.id) } })
+            if (!m) continue
+            if (!m.endPoiId) { fellBack++; continue }
+            poiEnds++
+            const d = W.poi.list().find(p => p.id === m.endPoiId)
+            const e = Math.hypot(m.end.x - d.roadX, m.end.z - d.roadZ)
+            if (e > worstEnd) worstEnd = e
+            if (e > 1.0) farEnds++
+            if (m.endPoiId === q.id) farEnds++
+        }
+    }
+    check('a POI destination ends AT that POI (never the source)', poiEnds > 0 && farEnds === 0,
+        `${farEnds}/${poiEnds} off, worst ${worstEnd.toFixed(2)} m`)
+    console.log(`       ${poiEnds} POI-destination plans, ${fellBack} fell back to roadside (no POI in reach)`)
+    // Report-only (wall clock is flaky): the map plans a hovered offer synchronously, so the cost of
+    // one plan is the hitch a hover can cause.
+    {
+        const t0 = performance.now(); let n = 0
+        for (const q of W.poi.list()) for (let k = 0; k < 4; k++) {
+            ms.planOffer(q, { rng: rngOf(5000 + k), dest: { kind: k % 2 ? 'poi' : 'roadside', pick: 0.3, pois } }); n++
+        }
+        console.log(`       planOffer: ${((performance.now() - t0) / n).toFixed(2)} ms per offer (mean of ${n}, report-only)`)
+    }
+    const rb = ms.planOffer(src, { rng: rngOf(7), dest: { kind: 'poi', pick: 0.5, pois: [] } })
+    check('a POI wish with no candidate falls back to a roadside drop', !rb || rb.endPoiId === null)
 }
 
-// ── 7. FEAT-53 single-offer rule: one job per (POI, day), re-park = same offer ───────────────────
-// A giver you can decline-and-re-park into a fresh roll is the same slot machine as the regenerate
-// button. The offer is cached per (poi.id, day): identical object on re-entry, re-rolled only at a
-// day boundary, consumed by accept.
+// A board + plan callback in the shape main.js wires them (the parked panel's inputs).
+const giverNameOf = (k) => PROP_MODELS[k]?.giverName
+function boardRig (ms, nowH = 6) {
+    const board = new OfferBoard({ seed: SEED, pois: W.poi.list(), nowH, giverNameOf })
+    const plan = (o) => {
+        if (o.route !== undefined) return o.route
+        const sp = board.spec(o)
+        const poi = W.poi.list().find(q => q.id === o.poiId)
+        if (!sp || sp.family === 'papers') return (o.route = null)
+        const dest = sp.destKind === 'poi'
+            ? { kind: 'poi', pick: sp.destPick, pois: W.poi.list().filter(q => q.id !== poi.id) }
+            : { kind: 'roadside' }
+        const m = ms.planOffer(poi, { rng: board.routeRng(o), dest })
+        if (m) { m.offerId = o.id; m.bonus = sp.bonus; m.payMult = sp.payMult }
+        return (o.route = m)
+    }
+    // A POI whose live offers actually route (some markers are dead ends with no leg in band).
+    const plannable = () => W.poi.list().find(q => q.jobs && q.type !== 'larrysHouse'
+        && board.offers(q.id, nowH).some(o => plan(o)))
+    return { board, plan, plannable }
+}
+
+// ── 7. FEAT-67: the parked panel presents the BOARD's live offers ────────────────────────────────
+// Replaces FEAT-53's single hidden offer per POI per day. Parking shows the POI's live offers one at
+// a time; Q/E (cycle) steps through them; re-parking presents the same offers (memoised routes — no
+// reroll farming); accept takes the offer OFF the board.
 {
-    let day = 1
     const ms = new MissionSystem({
         getRoad: () => W.road,
         getCar: () => ({ x: C.x, z: C.z, speed: 0 }),
         getSeed: () => SEED,
-        getTerms: () => ({ day, dayTier: 1, thresholds: undefined }),
+        getTerms: () => ({ day: 1, dayTier: 1, payTier: 1, thresholds: undefined }),
         teleport () {}, setMapOpen () {}, onChange () {},
     })
-    const tick = () => new Promise(r => setTimeout(r, 5))
-    const poi = W.poi.list()[0]
-
-    ms.enterFromPoi(poi); await tick()
-    const m1 = ms.mission
-    check('first park of the day rolls an offer', ms.state === 'offer' && !!m1)
-
+    const { board, plan } = boardRig(ms)
+    const food = W.poi.list().find(q => q.type === 'burgerJoint')
+    const offers = board.offers(food.id, 6)
+    ms.enterFromPoi(food, offers, plan)
+    check('parking opens the board offers synchronously', ms.state === 'offer' && !!ms.mission && !!ms.offer)
+    check('the panel holds every plannable live offer', ms.offers.length >= 1 && ms.offers.length <= offers.length,
+        `${ms.offers.length}/${offers.length}`)
+    check('the mission IS the shown offer (offerId stamped)', ms.mission.offerId === ms.offer.id)
+    if (ms.offers.length > 1) {
+        const first = ms.mission
+        ms.cycle(+1)
+        check('cycle(+1) steps to the next offer', ms.offerIdx === 1 && ms.mission !== first)
+        ms.cycle(-1)
+        check('cycle(−1) steps back to the SAME planned mission (memoised)', ms.offerIdx === 0 && ms.mission === first)
+    }
+    const shown = ms.mission
     ms.exit()
-    ms.enterFromPoi(poi)     // cache hit is synchronous — no generate, no spinner
-    check('re-park presents the IDENTICAL mission object (no reroll farming)',
-        ms.state === 'offer' && ms.mission === m1)
+    ms.enterFromPoi(food, board.offers(food.id, 6), plan)
+    check('re-park presents the IDENTICAL mission object (no reroll farming)', ms.mission === shown)
 
-    day = 2
-    ms.exit()
-    ms.enterFromPoi(poi)
-    check('a day boundary re-rolls the offer', ms.state === 'generating')
-    await tick()
-    check('the new day\'s offer is a fresh roll', ms.state === 'offer' && ms.mission !== m1)
+    // Determinism across a rebuild: a fresh board on the same seed plans the same route.
+    const rig2 = boardRig(ms)
+    const again = rig2.plan(rig2.board.offers(food.id, 6).find(o => o.id === shown.offerId))
+    check('the same offer on a fresh board plans the same route',
+        !!again && JSON.stringify(again.poly) === JSON.stringify(shown.poly))
 
+    const taken = board.take(ms.offer.id, 6)
     ms.accept()
-    check('accept stamps the frozen terms onto the mission (SM-INV-4 lock)',
-        ms.mission.terms && ms.mission.terms.day === 2)
-    const taken = ms.mission
-    ms.exit()
-    ms.enterFromPoi(poi)
-    check('accept CONSUMES the offer — the next park generates, not re-presents',
-        ms.state === 'generating')
-    await tick()
-    check('...and the post-accept roll is not the taken job', ms.mission !== taken)
-
-    ms.clearOffers()
-    check('clearOffers empties the offer cache (no dead-RoadSystem pinning)', ms._offers.size === 0)
+    check('accept stamps the frozen terms onto the mission (SM-INV-4 lock)', ms.mission.terms?.day === 1)
+    check('a taken offer leaves the board', !!taken && !board.offers(food.id, 6).some(o => o.id === taken.id))
+    const cancelled = ms.cancel()
+    check('cancel() drops the job and hands back its board offer id', cancelled === taken.id && ms.state === 'idle')
+    check('…and the board locks that slot for the full life', board.abandon(cancelled, 6.1)
+        && board._slotOf(cancelled).state === 'locked')
     ms.exit()
 }
 
 // ── 7b. The POI start zone: no countdown, no hold, the clock starts at the threshold ────────────
 // Owner, 2026-08-02: a POI job must not launch on a 3-2-1 handbrake count — you are parked on a pad
-// and may be facing the wrong way, and the old fix for that was declining and re-opening the same
-// offer. Accept puts the job in 'staging' instead: free to manoeuvre, timed from the moment you
-// cross out of the marker's radius. Quick Job is untouched — it teleports you to a pin already
-// pointing the right way, so its countdown is still the right ritual.
+// and may be facing the wrong way. Accept puts the job in 'staging' instead: free to manoeuvre,
+// timed from the moment you cross out of the marker's radius. Quick Job is untouched — it teleports
+// you to a pin already pointing the right way, so its countdown is still the right ritual.
 {
     const car = { x: 0, z: 0, speed: 0 }
     const ms = new MissionSystem({
@@ -335,10 +398,11 @@ const W = makeWorld(C.x, C.z, R)
         setMapOpen () {}, onChange () {},
     })
     const tick = () => new Promise(r => setTimeout(r, 5))
-    const poi = W.poi.list()[0]
+    const { board, plan, plannable } = boardRig(ms)
+    const poi = plannable()
     car.x = poi.x; car.z = poi.z
 
-    ms.enterFromPoi(poi); await tick()
+    ms.enterFromPoi(poi, board.offers(poi.id, 6), plan)
     ms.accept()
     check('a POI job stages instead of counting down', ms.state === 'staging')
     check('...and does NOT hold the truck (manoeuvring room is the whole point)', ms.isHeld() === false)
@@ -365,7 +429,7 @@ const W = makeWorld(C.x, C.z, R)
 
     // Quick Job keeps the countdown + the hold.
     ms.exit()
-    ms._generate(null); await tick()
+    ms._generate(); await tick()
     if (ms.state === 'offer') {
         ms.accept()
         check('a Quick Job still counts down', ms.state === 'countdown' && ms.startZone() === null)
@@ -376,7 +440,7 @@ const W = makeWorld(C.x, C.z, R)
     ms.exit()
 }
 
-// ── 8. FEAT-53 do-over lockout: paid jobs have no regenerate/retry; Quick Job keeps both ─────────
+// ── 8. do-over lockout: paid jobs have no regenerate/retry; Quick Job keeps both ─────────────────
 {
     const ms = new MissionSystem({
         getRoad: () => W.road,
@@ -385,12 +449,13 @@ const W = makeWorld(C.x, C.z, R)
         teleport () {}, setMapOpen () {}, onChange () {},
     })
     const tick = () => new Promise(r => setTimeout(r, 5))
-    const poi = W.poi.list()[0]
+    const { board, plan, plannable } = boardRig(ms)
+    const poi = plannable()
 
-    ms.enterFromPoi(poi); await tick()
+    ms.enterFromPoi(poi, board.offers(poi.id, 6), plan)
     const offered = ms.mission
     ms.regenerate()
-    check('regenerate is INERT on a POI job (no do-overs on paid work)',
+    check('regenerate is INERT on a POI job (its offers are the board\'s)',
         ms.state === 'offer' && ms.mission === offered)
     ms.state = 'done'; ms.result = { elapsed: 1, par: 1 }
     ms.retry()
@@ -475,7 +540,9 @@ const W = makeWorld(C.x, C.z, R)
     // Larry joined the givers when FEAT-61 Phase E2 landed: his brake opens the PAPER ROUTE, not an
     // errand, so he passes the test this check is actually making. The day fuel or repairs ship,
     // their types come off the false side of this line the same way — by having something to say.
-    const GIVERS = new Set(['missionGiver', 'larrysHouse'])
+    // FEAT-67: the flag is DERIVED from the board's source table — a type posts work iff it has a
+    // SOURCES row. The gas station, tackle shop and mom's house do not.
+    const GIVERS = new Set(Object.keys(SOURCES))
     check('exactly the markers with a mechanic source jobs',
         list.every(q => q.jobs === GIVERS.has(q.type)),
         list.filter(q => q.jobs !== GIVERS.has(q.type)).map(q => q.type).join(', '))
