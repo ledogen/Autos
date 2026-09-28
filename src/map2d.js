@@ -2426,26 +2426,31 @@ export class Map2D {
         ctx.textBaseline = 'top'; ctx.textAlign = 'left'
         const inL = x + PAD + B.BAR * k
         let ty = y + PAD
-        // Header: the family in small caps, the offer counter on the right.
+        // Header: the family in small caps on the left; on the right "offer 2 / 3" and then the Q and E
+        // keys as KEYCAPS. Every element is centred on ONE line through the middle of the row
+        // (textBaseline 'middle'), so the boxes and the text cannot drift apart vertically.
+        const midY = ty + (B.FSS * k) / 2
         ctx.font = fS
+        ctx.textBaseline = 'middle'
         ctx.fillStyle = '#6a6458'
-        ctx.fillText(c ? c.family.toUpperCase() : 'NO WORK', inL, ty)
+        ctx.fillText(c ? c.family.toUpperCase() : 'NO WORK', inL, midY)
         if (v.count > 1) {
-            // "offer 2 / 3", then the Q and E keys drawn as KEYCAPS, well apart — as bare text the
-            // counter and the prompt ran together into one string of letters and numbers.
-            const cap = B.FSS * k + 6 * k
+            const cap = Math.round(B.FSS * k + 7 * k)      // keycap edge, px
+            const gap = Math.round(4 * k)
             let kx = x + W - PAD - cap
             for (const key of ['E', 'Q']) {
-                ctx.strokeStyle = '#6a6458'; ctx.lineWidth = Math.max(1, 0.8 * k)
-                ctx.strokeRect(kx + 0.5, ty - 3 * k + 0.5, cap - 1, cap - 1)
+                const top = Math.round(midY - cap / 2) + 0.5
+                ctx.strokeStyle = '#6a6458'; ctx.lineWidth = 1
+                ctx.strokeRect(Math.round(kx) + 0.5, top, cap - 1, cap - 1)
                 ctx.textAlign = 'center'; ctx.fillStyle = '#4a453c'
-                ctx.fillText(key, kx + cap / 2, ty)
-                kx -= cap + 4 * k
+                ctx.fillText(key, Math.round(kx) + cap / 2, midY + 0.5)
+                kx -= cap + gap
             }
             ctx.textAlign = 'right'; ctx.fillStyle = '#6a6458'
-            ctx.fillText(`offer ${v.idx + 1} / ${v.count}`, kx - 10 * k, ty)
+            ctx.fillText(`offer ${v.idx + 1} / ${v.count}`, kx + gap - 12 * k, midY)
             ctx.textAlign = 'left'
         }
+        ctx.textBaseline = 'top'
         ty += HEAD
         if (!c) {
             ctx.font = fB; ctx.fillStyle = '#1a1a1a'
