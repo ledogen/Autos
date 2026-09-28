@@ -2370,9 +2370,9 @@ export class Map2D {
      * offer gets a second FORM tacked onto the bottom of that card, so "this one carries an item"
      * reads as a shape before a word is read.
      *
-     * SIZE: laid out in base units, then scaled by `k` — 2× by default (owner: the first cut read too
-     * small and insubstantial), shrinking only if the sheet is too small to hold it (a low-res screen
-     * gets a smaller card rather than one that covers the map).
+     * SIZE: laid out in base units, then scaled by `k` — 1.6× by default (owner: 1× read too small
+     * and insubstantial, 2× too big), shrinking only if the sheet is too small to hold it (a low-res
+     * screen gets a smaller card rather than one that covers the map).
      *
      * PLACEMENT: docked in whichever CORNER of the sheet its rectangle covers the least of the drawn
      * route (and the hovered POI). One small scan of the route's screen points per corner — cheaper
@@ -2388,7 +2388,7 @@ export class Map2D {
         const B = { W: 340, PAD: 14, LH: 19, HEAD: 16, FS: 13, FSS: 11, BAR: 6, INSET: 4, BONUS: 44 }
         const baseH = B.PAD * 2 + B.HEAD + 5 * B.LH
         const baseFull = baseH + B.BONUS
-        const k = Math.max(1, Math.min(2, (s.w * 0.46) / B.W, (s.h * 0.62) / baseFull))
+        const k = Math.max(1, Math.min(1.6, (s.w * 0.46) / B.W, (s.h * 0.62) / baseFull))
         const W = B.W * k, PAD = B.PAD * k, LH = B.LH * k, HEAD = B.HEAD * k
         const PORT = 3 * LH                               // portrait spans the sentence block
         const TX = PAD + B.BAR * k + PORT + 12 * k        // text column, right of the portrait
