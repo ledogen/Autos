@@ -943,6 +943,13 @@ export const RANGER_PARAMS = {
   // FEAT-84: per-zone surface detail maps (terrain-texture.js — procedural grass / dirt / rock,
   // blended by the vertex biome weights, height-weighted at the interfaces). All behind the
   // terrainDetailScale kill-switch. Tile sizes are metres per texture repeat.
+  // QUAL-32 sun shine. Phong specular colour (grey level) + shininess. Terrain is matte: soil and
+  // rock in this style have no sheen, and a low sun over the relief normals painted a broad band
+  // across every dirt skirt. The road keeps a faint asphalt sheen. Slider: Terrain Look → Sun shine.
+  terrainSpecular:      0x000000,
+  terrainShininess:     4,
+  roadSpecular:         0x0a0a0a,
+  roadShininess:        20,
   terrainTexEnabled:    true,  // A/B lever: false = the FEAT-05 flat look (no taps, no blend, no splotches)
   terrainTexNormal:     0.8,   // [-] strength of the per-zone normal (relief) maps (0 = off)
   // Albedo (colour) modulation per zone. Owner 2026-09-25: ON for rock (and always on engineered

@@ -127,6 +127,9 @@ export class RoadMeshSystem {
         this._material = new THREE.MeshPhongMaterial({
             vertexColors: true,
             side: THREE.FrontSide,
+            // QUAL-32: asphalt keeps a faint sheen, the dirt shoulder none (terrain is matte too).
+            specular: new THREE.Color(params.roadSpecular ?? 0x0a0a0a),
+            shininess: params.roadShininess ?? 20,
             polygonOffset: true,
             polygonOffsetFactor: params.roadPolygonOffsetFactor ?? -1,
             polygonOffsetUnits:  params.roadPolygonOffsetUnits  ?? -1,

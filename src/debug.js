@@ -496,6 +496,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'roadShoulderBump', 0, 2.0, 0.05).name('Shoulder bump').onChange(v => _setU('uShoulderBump', v))
   // FEAT-84: surface texture blend — live uniforms, no rebuild. Tile sizes are metres/repeat and
   // land in the uSurfScale vec3 (repeats/m) through the same callback (name → component).
+  // QUAL-32: sun shine on the ground — 0 = matte (default), 1 = three's old default sheen.
+  const _shine = { v: 0 }
+  lookFolder.add(_shine, 'v', 0, 1, 0.05).name('Sun shine (terrain)').onChange(v => { const t = window.__terrainSystem && window.__terrainSystem(); if (t && t._material) { t._material.specular.setScalar(v * 0.067); t._material.shininess = 4 + v * 26 } })
   lookFolder.add(params, 'terrainTexEnabled').name('Surface textures (A/B)').onChange(v => _setU('uSurfOn', v ? 1 : 0))
   lookFolder.add(params, 'terrainTexNormal', 0, 2.0, 0.05).name('Surface relief').onChange(v => _setU('uSurfNormal', v))
   lookFolder.add(params, 'terrainTexAlbedoGrass', 0, 1.0, 0.05).name('Albedo: grass').onChange(v => _setU('uSurfAlbW.x', v))

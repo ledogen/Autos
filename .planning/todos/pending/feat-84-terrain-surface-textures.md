@@ -190,6 +190,10 @@ blend "at their interfaces" rather than crossfade.
       now SIGNED (+ fill, − cut): only cut walls keep their own look; fill behaves as natural dirt
       and dithers into the rock around it. Owner keeps dither 0.5 / freq 0.3.
 
+- [x] 2026-09-27 (post-handoff): BUG-74 first mechanism (fill relief + stones ramp in with the
+      carve feather — the gravel-bed overspill), BUG-75 fixed (border normals from the carved
+      analytic neighbour), QUAL-32 fixed (matte terrain, faint asphalt sheen, "Sun shine" slider).
+
 ## Known limits / follow-ups
 
 - Single tap per zone — repetition of the 8 m rock tile may show on big open faces. A second

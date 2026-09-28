@@ -434,7 +434,14 @@ export class TerrainSystem {
         // vertexColors:true enables the 5-zone feathered material system (D-09/D-10/D-11,
         // Plan 09-05). Per-vertex colors written in _flushPendingQueue.
         // Do NOT dispose this per-chunk (matches wheelMat shared pattern).
-        this._material = new THREE.MeshPhongMaterial({ vertexColors: true })
+        // QUAL-32: matte ground. Phong's default specular (0x111111, shininess 30) under a sun at
+        // intensity 3–5 painted a broad sheen across dirt at low sun once the relief normals gave
+        // the lobe something to catch. Soil and rock have no sheen in this style.
+        this._material = new THREE.MeshPhongMaterial({
+            vertexColors: true,
+            specular: new THREE.Color(params.terrainSpecular ?? 0x000000),
+            shininess: params.terrainShininess ?? 4,
+        })
         // FEAT-84: one shared set of grass/dirt/rock detail maps, baked once from a fixed seed
         // (world-independent — a texture is a look, not a place). ~40 ms, pure typed arrays.
         this._surfTex = this._bakeSurfaceTextures()
@@ -589,6 +596,7 @@ export class TerrainSystem {
                 // vertex is brown dirt with grey fragments on it, never a brown-grey average.
                 // Engineered CUT faces (vSurf.w < 0) keep their own colour; fill behaves as dirt.
                 float ts_cut = max(-vSurf.w, 0.0);        // engineered CUT weight (fill is + and behaves as dirt)
+                float ts_fill = max(vSurf.w, 0.0);        // engineered FILL weight — its texture ramps in with the feather (BUG-74)
                 float ts_rockW = vSurf.z * (1.0 - ts_cut);
                 if (uDetailScale > 0.0) {
                     float td_n = tdFbm(vWorldPos.xz * uNoiseScale);
@@ -655,7 +663,7 @@ export class TerrainSystem {
                     float ts_pr = clamp((ts_d.a - 0.40) / 0.60, 0.0, 1.0);
                     float ts_pcov = mix(uDirtPebbleGrey, 1.0, clamp(ts_s * 3.0, 0.0, 1.0));
                     float ts_pg = (1.0 - smoothstep(ts_pcov - 0.05, ts_pcov + 0.05, 1.0 - ts_pr)) * step(0.02, ts_pr);
-                    diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_b.y * ts_pg * (1.0 - ts_cut));
+                    diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_b.y * ts_pg * (1.0 - ts_cut) * (1.0 - ts_fill));
                     // Local colouring for the two soft zones: the share grass/dirt GAINED over its
                     // vertex weight pulls the fragment toward that zone's own palette colour.
                     vec2 ts_gain = max(ts_b.xy - vSurf.xy, 0.0) * uDetailScale;
@@ -676,7 +684,11 @@ export class TerrainSystem {
                     // loses its relief too, so it stops reading as a brown rock — dirt is clods
                     // plus the grey stones, and the stone count still rises toward the rock zone.
                     float ts_dn = 1.0 - step(0.02, ts_pr) * (1.0 - ts_pg);
-                    tsNrm = (ts_ng * ts_b.x + ts_nd * ts_b.y * ts_dn + ts_nr * (1.0 - ts_steep) * ts_b.z) * (uSurfNormal * uDetailScale);
+                    // BUG-74 overspill: on a FILL embankment the dirt relief ramps in with the carve
+                    // feather (smooth at the pavement, where it meets the road mesh's own smooth
+                    // shoulder lip, full texture where the feather ends) — the gravel bed spilling
+                    // out, not a lip edge against textured ground. ts_fill = max(vSurf.w, 0).
+                    tsNrm = (ts_ng * ts_b.x + ts_nd * ts_b.y * ts_dn * (1.0 - ts_fill) + ts_nr * (1.0 - ts_steep) * ts_b.z) * (uSurfNormal * uDetailScale);
                     // Side-projected rock normal: tangent (u, v) → world (u along the face's
                     // horizontal axis, mirrored by ts_sgn; v up). Applied at <normal_fragment_begin>.
                     vec2 ts_nrs = texture2D(uSurfNrmR, ts_ps).xy * 2.0 - 1.0;
@@ -1462,7 +1474,7 @@ export class TerrainSystem {
                 pos.needsUpdate = true
                 perfEvent('terrain.recarve')   // PERF-26: full-grid Y rewrite + re-upload of a LIVE chunk
                 chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
-                this._computeGridNormals(chunk.mesh.geometry)  // PERF-03: grid-FD normals
+                this._computeGridNormals(chunk.mesh.geometry, cx, cz)  // PERF-03: grid-FD normals (BUG-75: border rows need the chunk coords)
                 this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, amp, cx, cz)
                 // Stamp the new generation so we don't re-carve this chunk again until the next re-route.
                 chunk.carveData = newCarveData ?? null
@@ -1538,7 +1550,7 @@ export class TerrainSystem {
             }
             pos.needsUpdate = true
             chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
-            this._computeGridNormals(chunk.mesh.geometry)  // PERF-03: grid-FD normals
+            this._computeGridNormals(chunk.mesh.geometry, cx, cz)  // PERF-03: grid-FD normals (BUG-75: border rows need the chunk coords)
             // Re-write vertex colors after Y + normals are updated (D-09/D-10/D-11).
             this._writeChunkVertexColors(chunk.mesh.geometry, carveData, chunk.heights, amp, cx, cz)
             this._physicsHook?.syncChunk(key, cx, cz, pos, N, CHUNK_SIZE)  // FEAT-48: amp-rescaled Y ⇒ rebuild collider
@@ -2202,7 +2214,7 @@ export class TerrainSystem {
      * @param {THREE.BufferGeometry} geom — geometry whose position.Y holds the carved heights
      * @private
      */
-    _computeGridNormals(geom) {
+    _computeGridNormals(geom, cx, cz) {
         const N    = GRID_SAMPLES
         const cell = CHUNK_SIZE / (N - 1)
         const pos  = geom.attributes.position
@@ -2212,16 +2224,24 @@ export class TerrainSystem {
             geom.setAttribute('normal', nrm)
         }
         const inv2c = 1 / (2 * cell)
+        // BUG-75: the border rows get a REAL neighbour — the carved analytic height one cell
+        // outside the chunk (the same surface the neighbour's own Y grid is composed from), so
+        // both chunks compute the same normal along a shared border whatever the load order.
+        // One-sided differences here were the straight shading step across every chunk edge,
+        // and every slope-keyed rule (cliff share, bare-rock, under-rock green) stepped with it.
+        // 4 × N analytic samples per chunk (~1 ms).
+        const ox = cx * CHUNK_SIZE + CHUNK_SIZE / 2, oz = cz * CHUNK_SIZE + CHUNK_SIZE / 2   // mesh origin
+        const outside = (xi, zi) => this.analyticHeight(ox + (xi - (N - 1) / 2) * cell, oz + (zi - (N - 1) / 2) * cell)
         for (let zi = 0; zi < N; zi++) {
             for (let xi = 0; xi < N; xi++) {
                 const i = zi * N + xi
                 let dhx, dhz
-                if      (xi === 0)     dhx = (pos.getY(i + 1) - pos.getY(i))     / cell
-                else if (xi === N - 1) dhx = (pos.getY(i)     - pos.getY(i - 1)) / cell
-                else                   dhx = (pos.getY(i + 1) - pos.getY(i - 1)) * inv2c
-                if      (zi === 0)     dhz = (pos.getY(i + N) - pos.getY(i))     / cell
-                else if (zi === N - 1) dhz = (pos.getY(i)     - pos.getY(i - N)) / cell
-                else                   dhz = (pos.getY(i + N) - pos.getY(i - N)) * inv2c
+                if      (xi === 0)     dhx = (pos.getY(i + 1) - outside(-1, zi))    * inv2c
+                else if (xi === N - 1) dhx = (outside(N, zi)  - pos.getY(i - 1))    * inv2c
+                else                   dhx = (pos.getY(i + 1) - pos.getY(i - 1))    * inv2c
+                if      (zi === 0)     dhz = (pos.getY(i + N) - outside(xi, -1))    * inv2c
+                else if (zi === N - 1) dhz = (outside(xi, N)  - pos.getY(i - N))    * inv2c
+                else                   dhz = (pos.getY(i + N) - pos.getY(i - N))    * inv2c
                 const nx = -dhx, ny = 1, nz = -dhz
                 const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1
                 nrm.setXYZ(i, nx / len, ny / len, nz / len)
@@ -2325,7 +2345,7 @@ export class TerrainSystem {
             // in/out as the camera moves. Recompute from the freshly written positions.
             geom.computeBoundingSphere()
             _pt = performance.now()
-            this._computeGridNormals(geom)  // PERF-03: grid-FD normals (rendering only; physics uses analyticNormal)
+            this._computeGridNormals(geom, cx, cz)  // PERF-03: grid-FD normals (rendering only; physics uses analyticNormal); BUG-75: border rows use the carved analytic neighbour
             perfAdd('flush.gridNormals', performance.now() - _pt)
 
             // ── Alpine biome vertex colors (FEAT-05; D-09/D-10/D-11 feathering kept) ─────
