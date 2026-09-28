@@ -19,7 +19,7 @@
 
 import * as THREE from 'three'
 import { RoadSystem } from './road.js'
-import { POI_ICONS, POI_ICON_PX, NEWSPAPER } from '../data/map-icons.js'   // FEAT-60: map glyphs
+import { POI_ICONS, POI_ICON_PX, NEWSPAPER, FAMILY_COLOR, EMPTY_DIAMOND_COLOR } from '../data/map-icons.js'   // FEAT-60/67: map glyphs
 import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN }
     from './map-cover.js'
 import { biomeAt, isWetGround, BIOME } from './biome.js'
@@ -142,6 +142,7 @@ const INDEX_EVERY   = 5           // every Nth contour is an index contour (so 5
 // humanist grotesque otherwise. Deliberately NOT monospace: the rest of the HUD is a terminal, the
 // map is a printed sheet.
 const MAP_LABEL_FONT = `'Open Sans', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif`
+
 
 // Contour interval, metres — a CONSTANT, the way a printed quadrangle states one interval for the
 // whole sheet (owner, 2026-08-11). An earlier pass chose it per redraw from the terrain's slope so
@@ -374,8 +375,16 @@ export class Map2D {
      * @param {() => boolean} [o.canTeleport] — gate: teleport prompt + double-click only when true (free-roam)
      * @param {() => ?{start:{x,z}, end:{x,z}, poly:{x,z}[]}} [o.getMission]
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
+     * @param {() => ?object} [o.getBoard] — FEAT-67: the mission board as a VIEW (main.js builds it;
+     *        this module stays economy-free). null outside story mode. Shape:
+     *          status(poiId) → { source:boolean, family:string|null, nextText:string|null }
+     *          view(poiId, idx) → { count, idx, card, poly, start, end, nextText } | null
+     *        `card` is OfferBoard.card()'s view-model; `nextText` is the time to the next turnover,
+     *        already formatted ("18 min") — main.js owns the one duration format.
+     * @param {(delta:number)=>void} [o.onCycle] — FEAT-67: Q/E pressed while NOT hovering a source —
+     *        main.js steps the parked offer panel (the map is open behind it).
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater, getRouteState }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -396,6 +405,12 @@ export class Map2D {
         // arrow is the start direction of whatever mission line is drawn (see _drawStartArrow), and
         // the two are independent — a POI mission has an arrow and onRoute false.
         this._getRouteState = getRouteState || (() => null)
+        // FEAT-67: the mission board view + the parked-panel cycle hook (see the constructor doc).
+        this._getBoard = getBoard || (() => null)
+        this._onCycle = onCycle || null
+        this._hoverPoi = null      // the source POI under the cursor, or null
+        this._hoverIdx = 0         // which of its live offers the card shows (Q / E)
+        this._hoverView = null     // this frame's board view for it (card + route)
         // FEAT-45: story-mode dispersed-camping zones — `{x,z,r}[]`, empty outside story mode. NOT
         // drawn as discs: see _drawCampZones.
         this._getCampZones = getCampZones || (() => null)
@@ -473,6 +488,8 @@ export class Map2D {
         this._onUp    = this._onMouseUp.bind(this)
         this._onWheel = this._onWheelEvent.bind(this)
         this._onDbl   = this._onDblClick.bind(this)
+        this._onKey   = this._onKeyDown.bind(this)
+        this._onLeave = () => { this._hoverX = undefined; this._hoverPoi = null }
     }
 
     // QUAL-08: attach the dedicated road-network routing Worker so the map's read-only RoadSystem routes
@@ -692,6 +709,8 @@ export class Map2D {
         window.addEventListener('mouseup', this._onUp)
         this._canvas.addEventListener('wheel', this._onWheel, { passive: false })
         this._canvas.addEventListener('dblclick', this._onDbl)
+        this._canvas.addEventListener('mouseleave', this._onLeave)
+        window.addEventListener('keydown', this._onKey)   // FEAT-67: Q / E cycle offers
         this._bgDirty = true
     }
 
@@ -737,6 +756,53 @@ export class Map2D {
         window.removeEventListener('mouseup', this._onUp)
         this._canvas.removeEventListener('wheel', this._onWheel)
         this._canvas.removeEventListener('dblclick', this._onDbl)
+        this._canvas.removeEventListener('mouseleave', this._onLeave)
+        window.removeEventListener('keydown', this._onKey)
+        this._hoverPoi = null
+        this._hoverView = null
+    }
+
+    /**
+     * FEAT-67: Q / E — previous / next offer. Over a source POI they step its hover card (and the
+     * route drawn with it); anywhere else they go to main.js, which steps the parked offer panel
+     * that the map is open behind. Q and E are bound nowhere else in the game.
+     */
+    _onKeyDown(e) {
+        if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
+        const t = e.target
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+        const d = e.code === 'KeyQ' ? -1 : e.code === 'KeyE' ? 1 : 0
+        if (!d) return
+        if (this._hoverPoi) {
+            const n = this._hoverView?.count ?? 0
+            if (n > 1) this._hoverIdx = ((this._hoverIdx + d) % n + n) % n
+        } else if (this._onCycle) {
+            this._onCycle(d)
+        }
+    }
+
+    /**
+     * FEAT-67: which source POI is under the cursor, and its board view for this frame. Hit radius
+     * is the drawn icon's, so what you point at is what answers. A new POI starts at its first offer.
+     */
+    _updateHover() {
+        const board = this._getBoard()
+        const pois = this._getPois()
+        if (!board || !pois?.length || this._hoverX === undefined || this._dragging) {
+            this._hoverPoi = null; this._hoverView = null; return
+        }
+        const R = POI_ICON_PX * 0.75
+        let best = null, bestD = R * R
+        for (const q of pois) {
+            const dx = this._sx(q.x) - this._hoverX, dy = this._sy(q.z) - this._hoverY
+            const d = dx * dx + dy * dy
+            if (d < bestD && board.status(q.id)?.source) { bestD = d; best = q }
+        }
+        if (!best) { this._hoverPoi = null; this._hoverView = null; return }
+        if (best.id !== this._hoverPoi) { this._hoverPoi = best.id; this._hoverIdx = 0 }
+        const v = board.view(best.id, this._hoverIdx)
+        if (v) this._hoverIdx = v.idx ?? 0
+        this._hoverView = v ? { ...v, x: best.x, z: best.z } : null
     }
 
     // ── RoadSystem (the map's own read-only instance) ────────────────────────────────────────
@@ -1091,6 +1157,7 @@ export class Map2D {
                       dx - k * this._bgOffX, dy - k * this._bgOffY,
                       W * BG_OVERSCAN * k, H * BG_OVERSCAN * k)
 
+        this._updateHover()      // FEAT-67: before the layers — the hovered offer replaces the drawn route
         this._drawRegion(ctx)    // under the mission route — it's world furniture, not the subject
         this._drawCampZones(ctx) // FEAT-45: yellow casing on the road stretches inside a camp zone
         this._drawTunnels(ctx)   // FEAT-40: over the casing — a bore inside a zone must still read
@@ -1101,6 +1168,7 @@ export class Map2D {
         this._drawStartArrow(ctx)   // FEAT-61: which way to set off, on any drawn mission line
         this._drawCar(ctx)
         this._drawCollar(ctx)    // LAST of the map layers: it masks the margin (see _drawCollar)
+        this._drawOfferCard(ctx) // FEAT-67: over everything, clamped inside the sheet
         this._drawCursorCoords(ctx)
         if (this._canTeleport()) this._drawTeleportPrompt(ctx)
         if (this._streaming) this._drawStreamingBadge(ctx)
@@ -2007,7 +2075,10 @@ export class Map2D {
     // arbitrary points on an edge, not nodes (DESIGN.md "Where missions and POIs live") — the pins
     // land mid-road on purpose.
     _drawMission(ctx) {
-        const m = this._getMission()
+        // FEAT-67: a hovered offer's route TEMPORARILY REPLACES the drawn one (mid-mission too) —
+        // only one route is ever on the sheet. It goes back the moment the cursor leaves the POI.
+        const hv = this._hoverView
+        const m = hv?.poly?.length > 1 ? { poly: hv.poly, start: hv.start, end: hv.end } : this._getMission()
         if (!m) return
         if (m.poly && m.poly.length > 1) {
             ctx.strokeStyle = 'rgba(90,180,255,0.85)'
@@ -2152,12 +2223,17 @@ export class Map2D {
         // (an unstroked glow colour is what used to sit invisibly on PAPER_GREEN).
         const onRoute = !!this._getRouteState()?.onRoute
         if (!onRoute) {
+            // Small white DIAMONDS (FEAT-67, owner 2026-09-26 — were circles): the same shape family
+            // as the giver diamonds, in the papers white, so a customer reads as "papers go here".
             ctx.lineWidth = 1.2
             ctx.strokeStyle = '#101010'
             ctx.fillStyle = '#ffffff'
+            const r = 4.5
             for (const c of list) {
+                const sx = this._sx(c.x), sy = this._sy(c.z)
                 ctx.beginPath()
-                ctx.arc(this._sx(c.x), this._sy(c.z), 3.5, 0, Math.PI * 2)
+                ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r, sy)
+                ctx.closePath()
                 ctx.fill(); ctx.stroke()
             }
             return
@@ -2188,6 +2264,7 @@ export class Map2D {
      * Placement is main.js's `_startArrow`; this method only draws what it is handed.
      */
     _drawStartArrow(ctx) {
+        if (this._hoverView?.poly?.length > 1) return   // FEAT-67: its line is not the one on the sheet
         const a = this._getRouteState()?.arrow
         if (!a) return
         const sx = this._sx(a.x), sy = this._sy(a.z)
@@ -2217,12 +2294,18 @@ export class Map2D {
     _drawPois(ctx) {
         const list = this._getPois()
         if (!list || !list.length) return
+        const board = this._getBoard()
         for (const q of list) {
             const ico = POI_ICONS[q.type] ?? POI_ICONS.missionGiver
             const sx = this._sx(q.x), sy = this._sy(q.z)
+            const st = board?.status(q.id) ?? null
             ctx.lineWidth = 1.5
             ctx.strokeStyle = '#101010'
-            ctx.fillStyle = ico.color
+            // FEAT-67: ONLY diamonds take a family colour (their single slot's offer); grey when there
+            // is nothing on offer. Glyph POIs keep their own colour.
+            ctx.fillStyle = (!ico.path && st?.source)
+                ? (st.family ? FAMILY_COLOR[st.family] ?? ico.color : EMPTY_DIAMOND_COLOR)
+                : ico.color
             if (ico.path) {
                 this._drawGlyph(ctx, q.type, ico.path, sx, sy)
             } else {
@@ -2254,7 +2337,99 @@ export class Map2D {
                 ctx.textAlign = 'left'
                 ctx.textBaseline = 'alphabetic'
             }
+            // FEAT-67: the one always-on addition — under every source, the shortest time until any
+            // of its slots turns over (the moment a new offer appears there).
+            if (st?.source && st.nextText) {
+                const ty = sy + POI_ICON_PX / 2 + (ico.label ? 17 : 3)
+                const txt = st.nextText
+                ctx.font = `600 10px ${MAP_LABEL_FONT}`
+                ctx.textAlign = 'center'; ctx.textBaseline = 'top'
+                ctx.strokeStyle = 'rgba(207,226,189,0.9)'; ctx.lineWidth = 3; ctx.lineJoin = 'round'
+                ctx.strokeText(txt, sx, ty)
+                ctx.fillStyle = '#6b4a00'
+                ctx.fillText(txt, sx, ty)
+                ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+            }
         }
+    }
+
+    /**
+     * FEAT-67: the hover card — one offer, as a sentence and then its terms. Drawn beside the POI and
+     * clamped inside the sheet so it never runs under the collar. A family-colour bar down its left
+     * edge ties it to the diamond. The view-model is OfferBoard.card(); this only lays it out.
+     */
+    _drawOfferCard(ctx) {
+        const v = this._hoverView
+        if (!v) return
+        const PAD = 10, W = 300, LH = 18
+        const fN = `13px ${MAP_LABEL_FONT}`, fB = `700 13px ${MAP_LABEL_FONT}`, fS = `11px ${MAP_LABEL_FONT}`
+        const lines = []     // [{runs:[{t,b}], font?, color?}]
+        const c = v.card
+        if (!c) {
+            lines.push({ runs: [{ t: 'No work here right now.', b: true }] })
+            if (v.nextText) lines.push({ runs: [{ t: `New offer in ${v.nextText}` }], color: '#555' })
+        } else {
+            for (const l of this._wrapRuns(ctx, c.sentence, W - 2 * PAD - 6, fN, fB)) lines.push({ runs: l })
+            if (c.pay) lines.push({ runs: [{ t: c.pay, b: true }], color: '#1d7a33' })
+            else if (c.family === 'papers') lines.push({ runs: [{ t: 'planning the route…' }], color: '#777' })
+            lines.push({ runs: [{ t: c.terms.join(' · ') }], color: '#444' })
+            if (c.bonus) lines.push({ runs: [{ t: c.bonus }], color: '#6b4a00' })
+        }
+        const header = v.count > 1 ? `${v.idx + 1} / ${v.count}   Q / E` : null
+        const H = PAD * 2 + lines.length * LH + (header ? 14 : 0)
+        const s = this._sheet()
+        const px = this._sx(v.x), py = this._sy(v.z)
+        let x = px + POI_ICON_PX * 0.8
+        if (x + W > s.x1 - 6) x = px - POI_ICON_PX * 0.8 - W
+        x = Math.max(s.x0 + 6, Math.min(s.x1 - 6 - W, x))
+        const y = Math.max(s.y0 + 6, Math.min(s.y1 - 6 - H, py - H / 2))
+
+        ctx.fillStyle = 'rgba(242,239,228,0.97)'
+        ctx.fillRect(x, y, W, H)
+        ctx.strokeStyle = MAP_INK; ctx.lineWidth = 1
+        ctx.strokeRect(x + 0.5, y + 0.5, W - 1, H - 1)
+        ctx.fillStyle = c ? (FAMILY_COLOR[c.family] ?? EMPTY_DIAMOND_COLOR) : EMPTY_DIAMOND_COLOR
+        ctx.fillRect(x + 1, y + 1, 5, H - 2)
+        ctx.textBaseline = 'top'; ctx.textAlign = 'left'
+        let ty = y + PAD
+        if (header) {
+            ctx.font = fS; ctx.fillStyle = '#777'
+            ctx.textAlign = 'right'; ctx.fillText(header, x + W - PAD, ty - 2); ctx.textAlign = 'left'
+            ty += 14
+        }
+        for (const l of lines) {
+            let tx = x + PAD + 6
+            for (const r of l.runs) {
+                ctx.font = r.b ? fB : fN
+                ctx.fillStyle = l.color ?? '#1a1a1a'
+                ctx.fillText(r.t, tx, ty)
+                tx += ctx.measureText(r.t).width
+            }
+            ty += LH
+        }
+        ctx.textBaseline = 'alphabetic'
+    }
+
+    /** Word-wrap rich text runs ({t, b}) to `maxW` px, keeping each word's weight. */
+    _wrapRuns(ctx, runs, maxW, fN, fB) {
+        const lines = [[]]
+        let x = 0
+        for (const r of runs) {
+            for (const tok of String(r.t).split(/(\s+)/)) {
+                if (!tok) continue
+                ctx.font = r.b ? fB : fN
+                const w = ctx.measureText(tok).width
+                const space = /^\s+$/.test(tok)
+                if (!space && x > 0 && x + w > maxW) { lines.push([]); x = 0 }
+                if (space && x === 0) continue
+                const line = lines[lines.length - 1]
+                const last = line[line.length - 1]
+                if (last && last.b === !!r.b) last.t += tok
+                else line.push({ t: tok, b: !!r.b })
+                x += w
+            }
+        }
+        return lines
     }
 
     // (5) Car marker — a triangle at the car's world XZ, pointing along its world-forward XZ.

@@ -63,7 +63,9 @@ export const POI_ICONS = {
     // Mom's house — where you can sleep. NOT a camp (see camp.js build()); it is a POI with a
     // building on it that happens to have a bed.
     momsHouse:    { label: "Mom's",   color: '#ff8fd0', path: HOUSE },
-    larrysHouse:  { label: "Larry's", color: '#8fd0ff', path: HOUSE },
+    // FEAT-67: Larry is the newspaper now (owner, 2026-09-26) — his offer is the paper route, and the
+    // glyph says so before you ever hover him.
+    larrysHouse:  { label: "Larry's", color: '#8fd0ff', path: NEWSPAPER },
     // Burger: domed top bun, flat-bottomed heel, one slot for the patty.
     burgerJoint:  { label: 'Burger',  color: '#ffc84a', path:
         'M2 11.5 A10 7.5 0 0 1 22 11.5 L22 16.5 A10 4.5 0 0 1 2 16.5 Z'
@@ -130,11 +132,29 @@ export const POI_ICONS = {
         'M12.8 10.16 A4.2 4.2 0 1 1 15.6 10.16 L15.6 17.6 A4.4 4.4 0 0 1 6.8 17.6'
       + ' L6.8 14.1 L5.6 10.9 L9.6 15.1 L9.6 17.6 A1.6 1.6 0 0 0 12.8 17.6 Z'
       + 'M12.3 6.2 A1.9 1.9 0 1 0 16.1 6.2 A1.9 1.9 0 1 0 12.3 6.2 Z' },
-    // Mission givers stay the anonymous orange diamond, unlabelled: there are five of them, they
-    // are interchangeable, and naming each one would turn the map into a wall of text. Finding out
-    // what a marker offers is what driving to it is for.
+    // Mission givers are the diamond, unlabelled: there are five of them and naming each would turn
+    // the map into a wall of text. FEAT-67 SUPERSEDES the old "finding out what a marker offers is
+    // what driving to it is for": the story map is now the mission board, and hovering a diamond
+    // shows its offer. The diamond's fill is its current offer's FAMILY (FAMILY_COLOR below); this
+    // orange is only the fallback when no board is live (free roam never draws POIs anyway).
     missionGiver: { label: null,      color: '#ff7a18', path: null },
 }
+
+/**
+ * FEAT-67: diamond fill by mission family (owner, 2026-09-26) — a table lookup, not code. ONLY
+ * diamonds take a family colour; glyph POIs (burger, store, service, Larry) keep their own. A
+ * diamond is single-slot, so its colour is simply its current offer's family.
+ */
+export const FAMILY_COLOR = {
+    delivery:   '#5ad06a',   // green
+    fragile:    '#ff9f43',   // orange
+    papers:     '#ffffff',   // white
+    demolition: '#ff5a4e',   // red — smash the props (FEAT-65)
+    freight:    '#5ab6ff',   // blue
+}
+
+/** An empty, taken or locked diamond: nothing on offer there right now. */
+export const EMPTY_DIAMOND_COLOR = '#9aa0a6'
 
 /**
  * Rendered size of a pictogram on the map, in px (the 24-unit viewBox scales to this).

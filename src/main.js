@@ -73,7 +73,8 @@ import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential 
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
-import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor } from './paper-route.js'
+import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor,
+         planTourJob, customersForTier, radiusForTier, tierRungs } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -195,6 +196,7 @@ function rebuildWaterSystem () {
   // handed the same exclusion two lines up. The board's memoised offer routes still hold
   // centerlines from the pre-change network, so they must go (FEAT-67).
   offerBoard?.clearRoutes()
+  _dropLarryTour()
   // FEAT-18: stream channels carve the terrain (bed + banks) — inject the pure sampler into the
   // terrain height paths (see terrain.setWaterCarve for the composition + bridge-deck rule).
   // sampleAt keeps a 1-entry windowed stream cache: physics contact queries are spatially coherent,
@@ -708,6 +710,7 @@ function applyWorldSeed (v) {
   _seedString = String(v)
   _spawnOverride = null
   offerBoard?.clearRoutes()   // FEAT-67: memoised offer routes pin centerlines from the outgoing network
+  _dropLarryTour()
   return debouncedRebuildFull()
 }
 
@@ -1367,6 +1370,11 @@ let missionSystem = null
 // exit. Null outside story mode. Declared up here because the water/seed paths above clear its
 // memoised routes.
 let offerBoard = null
+// FEAT-67: Larry's hover card needs his tour, which is the paper route's planner — Held-Karp, up to
+// ~14 ms at fifteen stops. It runs as a RESUMABLE job pumped a couple of ms per frame while the map
+// is open (planTourJob, the same generator the route itself uses), never blocking a hover.
+// { offerId, tier, it, done, route }. See _larryRoute / _pumpLarryTour.
+let _larryTour = null
 // FEAT-31 testing lab — assigned below, after the scene exists. Declared here (not `const` at the
 // construction site) because the contact queries above reference it: a const would sit in the
 // temporal dead zone and throw if anything probed the ground during boot.
@@ -1450,6 +1458,12 @@ const map2d = new Map2D({
   // FEAT-45: dispersed-camping zones, drawn as a yellow casing on the roads inside them. Empty
   // outside story mode (build() only ever runs from the story deps).
   getCampZones: () => campSystem.zones(),
+  // FEAT-67: the mission board as a view — hover cards, the drawn offer route, turnover timers,
+  // diamond colours. map2d stays economy-free: the card is offer-board's view-model, and every
+  // number on it is computed here from the live board, clock and terms.
+  getBoard: () => (offerBoard && storySystem?.isActive() ? _boardView : null),
+  // Q / E with no source under the cursor: step the parked offer panel the map is open behind.
+  onCycle: (d) => { if (missionSystem?.state === 'offer') missionSystem.cycle(d) },
   // (FEAT-60 dropped getMomsHouse: mom's house is a POI now, so it arrives through getPois with
   // its own glyph — the map no longer needs a second, separate channel for the same place.)
   onTeleport: ({ x, z, heading }) => {
@@ -3050,6 +3064,7 @@ const paperRouteSystem = new PaperRouteSystem({
   onChange:  () => _renderPaperUI(),
 })
 window.__paperRoute = () => paperRouteSystem
+window.__board = () => offerBoard   // FEAT-67: read-only dev handle (CDP map checks), same precedent as __story
 // FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
 const _recalcEl = document.getElementById('gps-recalc')
 let _recalcOn = false
@@ -3118,6 +3133,89 @@ labSystem = new LabSystem(scene, () => ({
 // re-opens an offer you just declined — you must release and re-pull. The run then launches with
 // your own parking brake still latched, which is fine: W both drops the latch and drives away in one
 // motion (vehicle.js's park state machine), the same as pulling away for real.
+/**
+ * FEAT-67: the board view map2d reads (see Map2D's getBoard doc). One object for the session; every
+ * method reads the live board, clock and terms at call time.
+ */
+const _boardView = {
+  status (poiId) {
+    const now = daySystem.clockH()
+    const slots = offerBoard.slotStates(poiId, now)
+    if (!slots.length) return { source: false, family: null, nextText: null }
+    const next = offerBoard.nextTurnoverH(poiId, now)
+    return {
+      source: true,
+      family: slots.find(x => x.state === 'live')?.family ?? null,
+      nextText: next != null ? formatGameDuration(next - now) : null,
+    }
+  },
+  view (poiId, idx) {
+    const now = daySystem.clockH()
+    const offers = offerBoard.offers(poiId, now)
+    const next = offerBoard.nextTurnoverH(poiId, now)
+    const nextText = next != null ? formatGameDuration(next - now) : null
+    const n = offers.length
+    if (!n) return { count: 0, idx: 0, card: null, poly: null, nextText }
+    const i = ((idx % n) + n) % n
+    const o = offers[i]
+    const papers = offerBoard.spec(o)?.family === 'papers'
+    const route = papers ? _larryRoute(o) : _planOffer(o)
+    const card = offerBoard.card(o, {
+      nowH: now, payTier: economySystem.terms().payTier,
+      route: route ? { par: route.par, distance: route.distance, endPoiId: route.endPoiId ?? null } : null,
+      customers: papers ? route?.customers?.length ?? null : null,
+    })
+    const poly = route?.poly ?? null
+    return { count: n, idx: i, card, poly,
+             start: route?.start ?? poly?.[0] ?? null, end: route?.end ?? poly?.[poly.length - 1] ?? null,
+             nextText }
+  },
+}
+
+/**
+ * FEAT-67: Larry's tour for his hover card, or null while it is still planning. Starts (or restarts,
+ * when the offer or the paper tier changed) the resumable job; _pumpLarryTour advances it.
+ */
+function _larryRoute (offer) {
+  const tier = runPaper.tier
+  const j = _larryTour
+  if (j && j.offerId === offer.id && j.tier === tier) return j.done ? j.route : null
+  _dropLarryTour()
+  const larry = poiSystem.list().find(q => q.id === offer.poiId)
+  if (!larry || !roadSystem) return null
+  _larryTour = {
+    offerId: offer.id, tier, done: false, route: null,
+    it: planTourJob(roadSystem, larry, poiSystem.customers(), customersForTier(),
+                    storySystem.region(), 100, radiusForTier(), tierRungs()),
+  }
+  return null
+}
+
+/** Advance Larry's tour job by up to `budgetMs`. Each next() is well under half a millisecond. */
+function _pumpLarryTour (budgetMs) {
+  const j = _larryTour
+  if (!j || j.done) return
+  const t0 = performance.now()
+  try {
+    while (performance.now() - t0 < budgetMs) {
+      const r = j.it.next()
+      if (r.done) { j.done = true; j.route = r.value ?? null; j.it = null; break }
+    }
+  } catch (e) {
+    console.warn('[board] Larry tour planning failed', e)
+    j.done = true; j.route = null; j.it = null
+  }
+}
+
+/**
+ * Abandon Larry's tour job. return() runs the generator's `finally`, which hands its Held-Karp table
+ * lease back — an abandoned job that skipped it would strand the lease (see planTourJob).
+ */
+function _dropLarryTour () {
+  try { _larryTour?.it?.return() } catch (e) { /* already closed */ }
+  _larryTour = null
+}
+
 /**
  * FEAT-67: price one board offer — the offer→mission callback the parked panel and the map's hover
  * card share. Memoised ON THE OFFER (offerBoard.clearRoutes drops it with the network), so hovering
@@ -4689,6 +4787,7 @@ const storySystem = new StorySystem({
     economySystem.stop()                // FEAT-53: wallet dormant (start() re-zeroes on next run)
     offerBoard?.clearRoutes()           // FEAT-67: routes hold live centerlines — never keep them across a region
     offerBoard = null                   // …and the board belongs to the run that just ended
+    _dropLarryTour()
     _setRunHudVisible(false)
     dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
     _renderDialogue()
@@ -5700,7 +5799,7 @@ function loop () {
   }
 
   // FEAT-16: redraw the 2D map overlay only while it's open (off the hot path otherwise).
-  if (map2d.isOpen()) map2d.render()
+  if (map2d.isOpen()) { _pumpLarryTour(2); map2d.render() }   // FEAT-67: Larry's hover tour, sliced
 
   // FEAT-49: gauge cluster — every frame (needles must be smooth, unlike the 10 Hz text HUD),
   // hidden while the map is open, live in chase/hood/freecam alike. update() early-outs when hidden.

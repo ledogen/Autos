@@ -226,21 +226,21 @@ brakes fade, and it overheats on long climbs. So the freight card differs from t
 
 ## Acceptance
 
-- [ ] Hovering a mission-source POI on the story map shows a card: person, thing, place, base pay,
+- [x] (awaiting owner review) Hovering a mission-source POI on the story map shows a card: person, thing, place, base pay,
       distance, cargo weight, expiry, and bonus + rank gate when present; the offer's route is drawn
-- [ ] Q / E cycle through a POI's live offers; the card and route follow; only one route is drawn
-- [ ] Sources show the shortest slot-turnover time under their icon; non-source POIs show nothing new
-- [ ] Every slot is always full except after a completion (until the original expiry) or a cancel
+- [x] Q / E cycle through a POI's live offers; the card and route follow; only one route is drawn
+- [x] Sources show the shortest slot-turnover time under their icon; non-source POIs show nothing new
+- [x] Every slot is always full except after a completion (until the original expiry) or a cancel
       (locked `nowH + L`, L = the offer's full expiry length — never free, even past expiry); expiry rolls ±30 %
       on the game clock; slots start desynchronised (no two slots of a POI turn over together at load)
-- [ ] Offers are accepted only by driving to the POI; only one mission can be active at a time
-- [ ] An active job (delivery or paper round) can be cancelled only by an explicit cancel button
+- [x] Offers are accepted only by driving to the POI; only one mission can be active at a time
+- [x] An active job (delivery or paper round) can be cancelled only by an explicit cancel button
       ("call the customer"); leaving the route or region never cancels
-- [ ] The quoted base pay equals what settlement pays for an at-par drive, from `ECONOMY_PARAMS`
-- [ ] The card supports a flat-pay variant (freight) with no par-based figures, and a blue diamond
-- [ ] D never earns a bonus; a gate of X+ is earned at X or better
-- [ ] Larry's POI draws the newspaper glyph; customers draw as small white diamonds off-route
-- [ ] Gates: extend `test/economy.mjs` (base pay tracks the tables; bonus gate resolution) and
+- [x] The quoted base pay equals what settlement pays for an at-par drive, from `ECONOMY_PARAMS`
+- [x] The card supports a flat-pay variant (freight) with no par-based figures, and a blue diamond
+- [x] D never earns a bonus; a gate of X+ is earned at X or better
+- [x] Larry's POI draws the newspaper glyph; customers draw as small white diamonds off-route
+- [x] Gates: extend `test/economy.mjs` (base pay tracks the tables; bonus gate resolution) and
       `test/story-poi.mjs` (§7 single-offer expectations → the board model)
 - [ ] `npm run test:all` green pre-commit
 
