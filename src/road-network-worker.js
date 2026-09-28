@@ -123,6 +123,7 @@ export function makeNetworkInstance(req) {
 export function buildNetworkSnapshot(req, rs = null) {
     if (!rs) rs = makeNetworkInstance(req)
     rs.setRadius(req.radius)
+    rs.forgetStreamCenter()   // PERF-33: build exactly the requested band — never the previous one kept by the 96 m gate
     rs.update(new THREE.Vector3(req.center.x, 0, req.center.z))
     return { rs, data: rs.exportNetwork() }
 }

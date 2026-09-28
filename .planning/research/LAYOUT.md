@@ -52,7 +52,9 @@ vehicleState shape — one factory, so the world truck and the FEAT-41 menu-stag
 **World generation** — `seed.js` (PRNG, pure, worker-paste-able) · `terrain.js` (chunk ring +
 `WORKER_SOURCE`) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
 rock classification) · `map-cover.js` (map-resolution forest cover) · `water.js` (ponds/streams
-generation) · `water-render.js` · `stone-texture.js` (procedural riverbed texture).
+generation) · `water-render.js` · `stone-texture.js` (procedural riverbed texture) ·
+`stream-priority.js` (PERF-33 near-then-ahead queue order + stream-centre motion/jump detection,
+zero-dep) · `stream-budget.js` (PERF-33 the one shared per-frame streaming budget, zero-dep).
 
 **Road network** — `road.js` (RoadSystem: streaming, resolve, surface queries) · `road-graph.js`
 (blue-noise anchors + Urquhart topology) · `road-carve.js` (carve bodies, canonical for worker

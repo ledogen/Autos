@@ -46,6 +46,7 @@ import { crownProfile, potholeNoise, signedCurvature, earClip } from './road-car
 export { roadQuality, hashRunKey, ROAD_QUALITY_STRETCH, ROAD_QUALITY_BLEND } from './road-quality.js'
 import { roadQuality, ROAD_QUALITY_STRETCH, ROAD_QUALITY_BLEND } from './road-quality.js'
 import { perfAdd, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-26)
+import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
 // ── Module-scope scratch vectors (GC-free per-sample allocation guard) ────────
 // sweepRibbon is called for every tile's every segment, multiple times per stream.
@@ -716,14 +717,26 @@ export class RoadMeshSystem {
     /**
      * Process the pending build queue — build up to MAX_ROAD_BUILDS_PER_FRAME tiles.
      * Called once per frame from the streaming loop in main.js.
+     * @param {number|null} ccx stream-centre tile X (PERF-33: with ccz, orders the queue near-then-ahead;
+     *   null keeps enqueue order — headless callers)
+     * @param {number|null} ccz
+     * @param {import('./stream-priority.js').StreamMotion|null} motion
+     * @param {number} deadline PERF-33: performance.now() cutoff from the shared streaming budget. A tile
+     *   build is not sliced, so this only decides whether to START one (Infinity ⇒ count cap only).
      */
-    flushPendingQueue() {
+    flushPendingQueue(ccx = null, ccz = null, motion = null, deadline = Infinity) {
         // PERF-13: initial-fill burst — until the queue first drains empty (the spawn ring's tiles
         // have all been built once), build up to 8 tiles/frame; pre-drivable hitches are free.
         // After that the steady MAX_ROAD_BUILDS_PER_FRAME=1 cap owns the frame.
         const cap = this._initialFillDone ? MAX_ROAD_BUILDS_PER_FRAME : 8
+        // PERF-33: was FIFO (enqueue order = the terrain ring's key order), so a tile beside the truck
+        // could wait behind the whole far edge. Same streamScore as terrain and props.
+        if (ccx != null && this._pendingQueue.length > 1) {
+            for (const q of this._pendingQueue) q.score = streamScore(q.tileX - ccx, q.tileZ - ccz, motion)
+            this._pendingQueue.sort((a, b) => a.score - b.score)
+        }
         let built = 0
-        while (this._pendingQueue.length > 0 && built < cap) {
+        while (this._pendingQueue.length > 0 && built < cap && performance.now() < deadline) {
             const { tileX, tileZ, key } = this._pendingQueue.shift()
             this._pendingSet.delete(key)
             this._buildRoadTile(tileX, tileZ, key)
@@ -731,6 +744,16 @@ export class RoadMeshSystem {
             built++
         }
         if (!this._initialFillDone && built > 0 && this._pendingQueue.length === 0) this._initialFillDone = true
+    }
+
+    /** PERF-33: true while the ribbon is in its initial-fill burst (the frame loop lifts the budget). */
+    isFilling() { return !this._initialFillDone }
+
+    /** PERF-33: tile (tileX, tileZ) is built against the current road (freeze-guard lookahead). An
+     *  empty tile — no road through it — is a built, ready tile. */
+    isTileReady(tileX, tileZ) {
+        const key = `${tileX},${tileZ}`
+        return this._tileMeshMap.has(key) && !this._pendingSet.has(key)
     }
 
     /**
