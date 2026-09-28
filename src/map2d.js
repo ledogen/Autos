@@ -2431,8 +2431,19 @@ export class Map2D {
         ctx.fillStyle = '#6a6458'
         ctx.fillText(c ? c.family.toUpperCase() : 'NO WORK', inL, ty)
         if (v.count > 1) {
-            ctx.textAlign = 'right'
-            ctx.fillText(`${v.idx + 1} / ${v.count}   Q / E`, x + W - PAD, ty)
+            // "offer 2 / 3", then the Q and E keys drawn as KEYCAPS, well apart — as bare text the
+            // counter and the prompt ran together into one string of letters and numbers.
+            const cap = B.FSS * k + 6 * k
+            let kx = x + W - PAD - cap
+            for (const key of ['E', 'Q']) {
+                ctx.strokeStyle = '#6a6458'; ctx.lineWidth = Math.max(1, 0.8 * k)
+                ctx.strokeRect(kx + 0.5, ty - 3 * k + 0.5, cap - 1, cap - 1)
+                ctx.textAlign = 'center'; ctx.fillStyle = '#4a453c'
+                ctx.fillText(key, kx + cap / 2, ty)
+                kx -= cap + 4 * k
+            }
+            ctx.textAlign = 'right'; ctx.fillStyle = '#6a6458'
+            ctx.fillText(`offer ${v.idx + 1} / ${v.count}`, kx - 10 * k, ty)
             ctx.textAlign = 'left'
         }
         ty += HEAD

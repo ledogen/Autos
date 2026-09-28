@@ -310,6 +310,49 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
         count.missionGiver[0] === 0 && count.larrysHouse[0] === 0)
 }
 
+// ── 13b. no two offers at a POI are the same job ────────────────────────────────────────────────
+// Owner, 2026-09-27: two identical takeout orders to the gas station. A fake planner that ALWAYS
+// wants the same destination (unless told to avoid it) forces the collision planDistinct must break.
+{
+    const food = POIS.find(q => q.type === 'burgerJoint').id   // 3 slots, takeout only
+    const sigOf = (b, o) => `${b.spec(o).thingId}|${b.spec(o).bonus?.rewardId ?? ''}|${o.route?.endPoiId ?? 'road:' + o.route?.placeName}`
+    let dupPoi = 0, dupRoad = 0, older = 0, n = 0
+    for (let seed = 1; seed <= 60; seed++) {
+        // (a) POI destinations: every offer wants the gas station first, then the next in a list.
+        const b = make(seed)
+        const prefs = ['poi:5|6', 'poi:7|8', 'poi:17|18', 'poi:1|2']
+        const planPoi = (o, ex) => ({ par: 300, distance: 2000, endPoiId: prefs.find(id => !ex.has(id)) ?? null })
+        const live = b.offers(food, T0)
+        const firstWant = live.map(() => null)
+        for (const o of live) b.planDistinct(o, planPoi)
+        const sig = live.map(o => sigOf(b, o))
+        if (new Set(sig).size !== sig.length) dupPoi++
+        // The OLDEST offer keeps its first choice — only newcomers yield.
+        const oldest = [...live].sort((x, y) => x.bornH - y.bornH || x.slot - y.slot)[0]
+        if (oldest.route.endPoiId !== prefs[0]) older++
+        // (b) roadside: every offer is a roadside drop with the SAME rolled name.
+        const b2 = make(seed)
+        const live2 = b2.offers(food, T0)
+        for (const o of live2) b2.spec(o).placeName = 'the drop point'
+        for (const o of live2) b2.planDistinct(o, () => ({ par: 300, distance: 2000, endPoiId: null }))
+        const sig2 = live2.map(o => sigOf(b2, o))
+        if (new Set(sig2).size !== sig2.length) dupRoad++
+        n++
+    }
+    check('forced POI collisions: siblings with the same thing + reward never share a destination', dupPoi === 0, `${dupPoi}/${n}`)
+    check('forced roadside collisions: a clashing place name re-rolls until it differs', dupRoad === 0, `${dupRoad}/${n}`)
+    check('the oldest offer keeps its destination — only the newcomer yields', older === 0, `${older}/${n}`)
+    // A sibling that differs in reward may share the destination (it is a different job).
+    const b = make(3)
+    const live = b.offers(food, T0)
+    b.spec(live[0]).bonus = null
+    b.spec(live[1]).bonus = { rewardId: 'coffee', name: 'Coffee', gate: 'C' }
+    b.spec(live[1]).thingId = b.spec(live[0]).thingId
+    const same = (o, ex) => ({ par: 300, distance: 2000, endPoiId: 'poi:5|6' })
+    b.planDistinct(live[0], same); b.planDistinct(live[1], same)
+    check('a different reward is a different job — the destination may repeat', live[0].route.endPoiId === live[1].route.endPoiId)
+}
+
 // ── 14. import discipline ───────────────────────────────────────────────────────────────────────
 {
     const src = readFileSync(new URL('../src/offer-board.js', import.meta.url), 'utf8')

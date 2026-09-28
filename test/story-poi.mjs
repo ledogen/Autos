@@ -321,17 +321,20 @@ const W = makeWorld(C.x, C.z, R)
 const giverNameOf = (k) => PROP_MODELS[k]?.giverName
 function boardRig (ms, nowH = 6) {
     const board = new OfferBoard({ seed: SEED, pois: W.poi.list(), nowH, giverNameOf })
+    // The same planner main.js wires (_planOffer): board.planDistinct owns the no-duplicates rule.
     const plan = (o) => {
-        if (o.route !== undefined) return o.route
         const sp = board.spec(o)
-        const poi = W.poi.list().find(q => q.id === o.poiId)
-        if (!sp || sp.family === 'papers') return (o.route = null)
-        const dest = sp.destKind === 'poi'
-            ? { kind: 'poi', pick: sp.destPick, pois: W.poi.list().filter(q => q.id !== poi.id) }
-            : { kind: 'roadside' }
-        const m = ms.planOffer(poi, { rng: board.routeRng(o), dest })
-        if (m) { m.offerId = o.id; m.bonus = sp.bonus; m.payMult = sp.payMult }
-        return (o.route = m)
+        if (!sp || sp.family === 'papers') return null
+        return board.planDistinct(o, (x, exclude) => {
+            const s = board.spec(x)
+            const poi = W.poi.list().find(q => q.id === x.poiId)
+            const dest = s.destKind === 'poi'
+                ? { kind: 'poi', pick: s.destPick, pois: W.poi.list().filter(q => q.id !== poi.id && !exclude.has(q.id)) }
+                : { kind: 'roadside' }
+            const m = ms.planOffer(poi, { rng: board.routeRng(x), dest })
+            if (m) { m.offerId = x.id; m.bonus = s.bonus; m.payMult = s.payMult }
+            return m
+        })
     }
     // A POI whose live offers actually route (some markers are dead ends with no leg in band).
     const plannable = () => W.poi.list().find(q => q.jobs && q.type !== 'larrysHouse'
@@ -407,6 +410,21 @@ function boardRig (ms, nowH = 6) {
             if (!plan(o)) bad.push(W.poi.list().find(q => q.id === id)?.type)
         }
     }
+    // …and NO TWO LIVE OFFERS AT A POI ARE THE SAME JOB (owner, 2026-09-27): same thing + same
+    // reward + same destination is a duplicate. Checked on every POI at every sampled time.
+    let dups = 0, pairs = 0
+    for (let t = 6; t < 6 + 24 * 3; t += 0.5) {
+        for (const id of board.sources()) {
+            const sig = board.offers(id, t).filter(o => board.spec(o).family !== 'papers').map(o => {
+                const r = plan(o), sp = board.spec(o)
+                return `${sp.thingId}|${sp.bonus?.rewardId ?? ''}|${r?.endPoiId ?? 'road:' + r?.placeName}`
+            })
+            pairs += sig.length
+            if (new Set(sig).size !== sig.length) dups++
+        }
+    }
+    check('no two live offers at a POI are the same job (thing + reward + destination)', dups === 0,
+        `${dups} duplicate sets over ${pairs} offer-samples`)
     check('every delivery offer a source posts plans a route (no route-less cards)', bad.length === 0,
         `${bad.length}/${n} failed: ${[...new Set(bad)].join(', ')}`)
     console.log(`       ${n} offers planned over 3 days of turnover`)

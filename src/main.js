@@ -1375,6 +1375,7 @@ let offerBoard = null
 // is open (planTourJob, the same generator the route itself uses), never blocking a hover.
 // { offerId, tier, it, done, route }. See _larryRoute / _pumpLarryTour.
 let _larryTour = null
+let _mapOpenClass = false   // mirrors body.map-open (see the frame loop)
 // FEAT-31 testing lab — assigned below, after the scene exists. Declared here (not `const` at the
 // construction site) because the contact queries above reference it: a const would sit in the
 // temporal dead zone and throw if anything probed the ground during boot.
@@ -3162,7 +3163,7 @@ const _boardView = {
     const route = papers ? _larryRoute(o) : _planOffer(o)
     const card = offerBoard.card(o, {
       nowH: now, payTier: economySystem.terms().payTier,
-      route: route ? { par: route.par, distance: route.distance, endPoiId: route.endPoiId ?? null } : null,
+      route: route ? { par: route.par, distance: route.distance, endPoiId: route.endPoiId ?? null, placeName: route.placeName } : null,
       customers: papers ? route?.customers?.length ?? null : null,
     })
     const poly = route?.poly ?? null
@@ -3224,22 +3225,27 @@ function _dropLarryTour () {
  */
 function _planOffer (offer) {
   if (!offerBoard || !offer) return null
-  if (offer.route !== undefined) return offer.route
   const sp = offerBoard.spec(offer)
-  const poi = poiSystem.list().find(q => q.id === offer.poiId)
-  if (!sp || !poi || sp.family === 'papers') return (offer.route = null)
-  const dest = sp.destKind === 'poi'
-    ? { kind: 'poi', pick: sp.destPick, pois: poiSystem.list().filter(q => q.id !== poi.id) }
-    : { kind: 'roadside' }
-  const m = missionSystem.planOffer(poi, { rng: offerBoard.routeRng(offer), dest })
-  if (m) {
-    // The contract's board-side terms ride on the mission: which offer it is (complete/cancel),
-    // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).
-    m.offerId = offer.id
-    m.bonus = sp.bonus
-    m.payMult = sp.payMult
-  }
-  return (offer.route = m)
+  if (sp?.family === 'papers') return null
+  // planDistinct resolves "no two offers at a POI are the same job" oldest-first and memoises on the
+  // offer; this callback is the planner for ONE offer, told which destination POIs to avoid.
+  return offerBoard.planDistinct(offer, (o, exclude) => {
+    const s = offerBoard.spec(o)
+    const poi = poiSystem.list().find(q => q.id === o.poiId)
+    if (!s || !poi || s.family === 'papers') return null
+    const dest = s.destKind === 'poi'
+      ? { kind: 'poi', pick: s.destPick, pois: poiSystem.list().filter(q => q.id !== poi.id && !exclude.has(q.id)) }
+      : { kind: 'roadside' }
+    const m = missionSystem.planOffer(poi, { rng: offerBoard.routeRng(o), dest })
+    if (m) {
+      // The contract's board-side terms ride on the mission: which offer it is (complete/cancel),
+      // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).
+      m.offerId = o.id
+      m.bonus = s.bonus
+      m.payMult = s.payMult
+    }
+    return m
+  })
 }
 
 /**
@@ -5800,6 +5806,9 @@ function loop () {
 
   // FEAT-16: redraw the 2D map overlay only while it's open (off the hot path otherwise).
   if (map2d.isOpen()) { _pumpLarryTour(2); map2d.render() }   // FEAT-67: Larry's hover tour, sliced
+  // FEAT-67: `map-open` on <body> while the map is up, so page chrome that would sit on top of the
+  // offer card (the Quick Job corner button) can step aside in CSS. Written only on change.
+  if (map2d.isOpen() !== _mapOpenClass) { _mapOpenClass = map2d.isOpen(); document.body.classList.toggle('map-open', _mapOpenClass) }
 
   // FEAT-49: gauge cluster — every frame (needles must be smooth, unlike the 10 Hz text HUD),
   // hidden while the map is open, live in chase/hood/freecam alike. update() early-outs when hidden.

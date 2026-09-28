@@ -881,6 +881,8 @@
     .cp-view  { color: #b98ae0; }
     .cp-trees { color: #7fd86a; }
     .cp-water { color: #4aa8d8; }
+      /* FEAT-67: the offer card docks in the map's corners — nothing may sit on top of it. */
+    body.map-open #quickjob-btn { visibility: hidden; }
   </style>
   <!-- Bare specifiers ('three', 'three/addons/*', 'simplex-noise') are resolved by Vite from
        node_modules (PERF-04/PERF-20.5) — the old CDN importmap is retired. See vite.config.js. -->

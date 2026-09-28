@@ -346,6 +346,56 @@ export class OfferBoard {
         })
     }
 
+    /**
+     * The offers currently in the OTHER slots at this offer's POI (live or taken) that were rolled
+     * BEFORE it — ties broken by slot. Every sibling that is live alongside this offer is in here:
+     * an older offer still in its slot was necessarily live when this one was born.
+     */
+    olderSiblings (offer) {
+        return (this._bySource.get(offer.poiId) || [])
+            .filter(s => s.slot !== offer.slot && (s.state === 'live' || s.state === 'taken')
+                && (s.offer.bornH < offer.bornH || (s.offer.bornH === offer.bornH && s.slot < offer.slot)))
+            .map(s => s.offer)
+    }
+
+    /**
+     * Plan an offer's route so that NO TWO OFFERS AT A POI ARE THE SAME JOB (owner, 2026-09-27: two
+     * identical takeout orders to the gas station). Two offers are the same job when they carry the
+     * same thing AND the same reward AND go to the same place; the burger joint posts only takeout,
+     * so for it the destination is what has to differ.
+     *
+     * The rule is resolved oldest-first: each older sibling is planned first (memoised), and an
+     * offer whose thing + reward match a sibling's must avoid that sibling's destination — its
+     * planner is handed those POI ids to exclude, and a roadside drop re-rolls its place name until
+     * it differs. Older offers therefore never change under the player; only the newcomer yields.
+     *
+     * @param {object} offer
+     * @param {(offer:object, excludePoiIds:Set<string>) => object|null} planOne — the mission
+     *        planner for one offer (main.js wraps MissionSystem.planOffer); memoised here on
+     *        `offer.route`, and `route.placeName` is set on a roadside drop.
+     */
+    planDistinct (offer, planOne) {
+        if (offer.route !== undefined) return offer.route
+        const sp = this.spec(offer)
+        if (!sp) return (offer.route = null)
+        const same = []
+        for (const o of this.olderSiblings(offer)) {
+            const r = this.planDistinct(o, planOne), so = this.spec(o)
+            if (r && so && so.thingId === sp.thingId
+                && (so.bonus?.rewardId ?? null) === (sp.bonus?.rewardId ?? null)) same.push(r)
+        }
+        const m = planOne(offer, new Set(same.map(r => r.endPoiId).filter(Boolean)))
+        if (m && !m.endPoiId) {
+            const used = new Set(same.filter(r => !r.endPoiId).map(r => r.placeName))
+            let name = sp.placeName
+            for (let n = 1; used.has(name) && n <= 32; n++) {
+                name = this._placeName(rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:place:${n}`))
+            }
+            m.placeName = name
+        }
+        return (offer.route = m)
+    }
+
     /** A seeded stream for the mission planner's own rolls on this offer (route determinism). */
     routeRng (offer) { return rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:route`) }
 
@@ -453,7 +503,7 @@ export class OfferBoard {
      * @param {object} ctx
      * @param {number} ctx.nowH
      * @param {number} [ctx.payTier]    economySystem.terms().payTier NOW (terms only freeze at accept)
-     * @param {object|null} [ctx.route] the planned mission ({par, distance, endPoiId}) or null
+     * @param {object|null} [ctx.route] the planned mission ({par, distance, endPoiId, placeName}) or null
      * @param {number} [ctx.customers]  paper route: stops on the planned tour
      * @returns {{family, portrait: {sex,name}|null, sentence: Array<{t:string,b?:boolean}>,
      *            pay: string|null, terms: string[], bonus: string|null, expiresInH: number}|null}
@@ -469,7 +519,7 @@ export class OfferBoard {
             sentence.push({ t: '.' })
         } else {
             if (n?.name) sentence.push({ t: ` at ${n.name}` })
-            const dest = route?.endPoiId ? this.placeLabel(route.endPoiId) : sp.placeName
+            const dest = route?.endPoiId ? this.placeLabel(route.endPoiId) : (route?.placeName ?? sp.placeName)
             sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' delivered to ' },
                           { t: dest, b: true }, { t: '.' })
         }
