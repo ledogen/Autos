@@ -8,7 +8,7 @@ source: owner, scene 22 of the surface A/B portfolio ("a super visible seam") �
 relates: FEAT-84 (the biome ladder that made it visible), PERF-27 (in-place recarve — one of the three `_writeChunkVertexColors` callers), PERF-03 (`chunk.heights` reuse)
 ---
 
-# BUG-73: a chunk's vertex colours can be written before its heights are real (seen once, after a sleep/resume)
+# BUG-73: a chunk renders FLAT (aSurf not bound for its draw) — seen as a green flash and as a standing olive tile
 
 ## What was seen
 
@@ -46,6 +46,27 @@ frame is not in the vertex data at all (a shader-side transient — textures not
 uniforms not yet synced — would need a different probe: read the uniforms + texture `version`s
 at capture time). Next occurrence: run the audit immediately, and dump
 `__terrainSystem()._terrainUniforms` (uSurfAlbR.value.version, uColRock, uTreeHi) alongside.
+
+## 2026-09-27 (evening) — the owner caught it standing: a whole FLAT chunk
+
+Two screenshots (seed w, freecamming fast far from spawn, (−1244, 787) and (−1569, 1173)): one
+64 m chunk rendered flat olive — vertex colour + mottle only, no relief, no rock, no stones,
+square edges. That is precisely what the shader draws when the `aSurf` attribute is NOT BOUND for
+the draw: a missing attribute reads (0,0,0,1) → no zone wins, relief 0, carve weight 1. A six-hop
+freecam replay of the owner's route (test tool, since deleted; `test/chunk-audit.mjs` has the
+audit) found every resident chunk's aSurf present, itemSize 4, weights summing to ~1 after each
+hop — so the CPU-side data is right and the fault is in the GPU binding state for that chunk.
+
+The one thing the vertex writer did differently from the normals code: it REPLACED the `color`
+and `aSurf` attribute objects (`setAttribute(new BufferAttribute)`) on every build, including on
+pooled geometries recycled from evicted chunks, while `_computeGridNormals` writes into the
+existing attribute. Fix applied: the writer now reuses the existing colour/aSurf attributes when
+they fit and sets `needsUpdate`, creating them only on a pool miss. Cannot be proven headless
+(the bad tile never reproduced under audit); if a flat tile is seen again after this, the next
+suspect is three's VAO cache for a recycled geometry — force a fresh geometry on pool reuse.
+
+The earlier "green flash" frames are the same fault seen in a rock zone: aSurf unbound → carve
+weight 1 → the old shader exempted everything → the vertex colour (dirt/veg ladder) showed.
 
 ## Acceptance
 

@@ -2004,11 +2004,19 @@ export class TerrainSystem {
         const nrmAttr = geom.attributes.normal
         const nVerts = N * N
 
-        const colorArr = new Float32Array(nVerts * 3)
+        // BUG-73: write INTO the geometry's existing colour/surface attributes when they fit (the
+        // same in-place discipline _computeGridNormals uses) instead of replacing the attribute
+        // objects on every build. A pooled geometry is recycled across chunks; replacing its
+        // attribute objects while three's binding state for it is live is the prime suspect for
+        // the "flat tile" (a draw without its aSurf binding reads (0,0,0,1): no zone, no relief).
+        let colAttr = geom.attributes.color, surfAttr = geom.attributes.aSurf
+        if (!colAttr || colAttr.itemSize !== 3 || colAttr.count !== nVerts) { colAttr = new THREE.BufferAttribute(new Float32Array(nVerts * 3), 3); geom.setAttribute('color', colAttr) }
+        if (!surfAttr || surfAttr.itemSize !== 4 || surfAttr.count !== nVerts) { surfAttr = new THREE.BufferAttribute(new Float32Array(nVerts * 4), 4); geom.setAttribute('aSurf', surfAttr) }
+        const colorArr = colAttr.array
         this._syncSurfacePalette()   // FEAT-84: recolours re-run this, so the pickers reach the textures
         // FEAT-84: (grass, dirt, rock) surface weights, sum 1 — the shader's texture blend reads
         // these; they are the same feathered biome decision the colour below is made from.
-        const surfArr = new Float32Array(nVerts * 4)
+        const surfArr = surfAttr.array
 
         // ── Alpine biome palette (FEAT-05) — decoded from params as LINEAR RGB (/255) ───
         // Replaces the old desert warm-brown set. Natural biome is dirt→grass→rock, selected
@@ -2132,8 +2140,8 @@ export class TerrainSystem {
             surfArr[i * 4 + 3] = isFill ? carveZoneBlend : -carveZoneBlend
         }
 
-        geom.setAttribute('color', new THREE.BufferAttribute(colorArr, 3))
-        geom.setAttribute('aSurf', new THREE.BufferAttribute(surfArr, 4))
+        colAttr.needsUpdate = true
+        surfAttr.needsUpdate = true
     }
 
     /**
