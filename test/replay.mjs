@@ -20,6 +20,8 @@ import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { validateCapture } from '../src/capture.js'
 import { sampleRegion, HARD_RADIUS_FLOOR_M } from './lib/road-headless.mjs'
+import { WaterSystem } from '../src/water.js'
+import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 const path = process.argv[2]
 if (!path) { console.error('usage: node test/replay.mjs <capture.json>'); process.exit(2) }
@@ -36,8 +38,19 @@ console.log(`[replay] ${capture.kind} capture  seed=${seed}${seedString ? ` (${s
 if (capture.complaint) console.log(`         complaint: "${capture.complaint}"`)
 
 // ── build the real road headless (pure fn of seed+params+coords) ────────────────────
+// The game routes AROUND ponds (setWaterNoGo, main.js); without the same water the replay prices a
+// different network and reports a false MISMATCH on any capture near a pond (BUG-76's capture did).
+// Wired exactly as network-worker-parity.mjs does it.
+const { rawHeightWorld } = makeTerrainHeadless(seed, params, null)
+const water = new WaterSystem(seed, params, rawHeightWorld)
+const pondDiscs = (minX, minZ, maxX, maxZ) => {
+    const discs = []
+    for (const p of water.pondsNear(minX, minZ, maxX, maxZ)) discs.push(p.floorX, p.floorZ, p.radius + p.skirt)
+    return discs
+}
 const buildRoad = (cx, cz) => {
     const road = new RoadSystem(seed, params)         // NO override → the game's real coarse height
+    road.setWaterNoGo((x, z) => water.isRoadNoGo(x, z), pondDiscs)
     road.update(new THREE.Vector3(cx, 0, cz))
     return road
 }

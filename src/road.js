@@ -2325,6 +2325,14 @@ export class RoadSystem {
         // adopt must NOT bump it (D1: window-invariant geometry — rebuilding in-range tiles is
         // pure waste and flickers).
         if (opts && opts.regen) this._generation++
+        // BUG-76: a POSITIONAL adopt can still change geometry inside chunks that are already carved —
+        // a mid-span T promotion exists or not depending on the window (the FEAT-77 clearance re-route
+        // sees different neighbours, so the plan declines the T), and a flip has been measured 114 m
+        // from the car. No generation bump reaches those chunks, so capture the OLD network here
+        // (entries are never mutated, only the Map is cleared) and diff it after the swap.
+        const diffOld = !(opts && opts.regen) && this._network.size > 0
+            ? { runs: new Map(this._network), pads: this.padReachNodes() }
+            : null
         this._networkCenter = data.center ? new THREE.Vector3(data.center.x, 0, data.center.z) : null
         this._proto.lastCenter = this._networkCenter ? this._networkCenter.clone() : null
         this._proto.dirty = false
@@ -2413,7 +2421,88 @@ export class RoadSystem {
         // run profile is built (the AT_GRADE mid-span flatten reads it), then slices.
         this._detectJunctions()
         this._sliceNetwork()
+        this._lastAdoptDirty = diffOld ? this._adoptDirtyRegions(diffOld) : null
         return this._network
+    }
+
+    /** BUG-76: the dirty discs of the last positional adopt (see _adoptDirtyRegions), or null. */
+    lastAdoptDirty() { return this._lastAdoptDirty ?? null }
+
+    /**
+     * Conservative lateral reach of a road's carve from its centerline (m): ribbon + carve core +
+     * the capped embankment apron. The ONE definition — terrain.js's _carveTableGen early-reject
+     * and the BUG-76 adopt diff both read it, so the dirty region can never be narrower than what a
+     * run actually carves.
+     */
+    carveReach() {
+        const p = this._params
+        return (p.roadHalfWidth ?? 5) + (p.roadShoulderWidth ?? 2.5) + (p.roadCarveExtraWidth ?? 3.0)
+             + (p.roadMaxEmbankmentToe ?? 10) + DEEP_BANK_TOE_EXTRA + 4
+    }
+
+    /**
+     * BUG-76: the ground a positional adopt re-shaped, as `{x, z, reach}` discs — the shape
+     * TerrainSystem.recarveInPlace() and RoadMeshSystem.invalidateRegions() take. Null when nothing
+     * changed (the common case: the window slid and every in-range run is byte-identical).
+     *
+     * A run is DIRTY when it was added, removed, or its geometry changed (points incl. Y, arc origin,
+     * tunnel / off-curve spans). Discs go down both the OLD and the NEW polyline, since the old carve
+     * has to be undone where the road left. The carve follows each run's PROFILE, and profiles couple
+     * at shared nodes (deck hold, junction blend, leaf tapers) — but only NEAR the node: a neighbour
+     * run recovers its own profile within roadJunctionBlendLength. So each dirty run's endpoints get
+     * one wider disc (carve reach + blend + 10 m) instead of walking every neighbour's full length,
+     * which re-carved ~2× the chunks for nothing (almost every adopt adds or drops a frontier run, and
+     * its neighbours reach into the built ring). Pads whose position or reach changed add their own
+     * disc. test/adopt-reconcile.mjs holds the soundness side: it streams a route, adopts every
+     * network change, and fails if any built chunk is left carving a road that is no longer there.
+     */
+    _adoptDirtyRegions(old) {
+        const sameArr = (a, b) => {
+            if (a === b) return true
+            if (!a || !b || a.length !== b.length) return false
+            for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+            return true
+        }
+        const sameRun = (a, b) => {
+            if (a.arcOrigin !== b.arcOrigin || a.points.length !== b.points.length) return false
+            for (let i = 0; i < a.points.length; i++) {
+                const p = a.points[i], q = b.points[i]
+                if (p.x !== q.x || p.y !== q.y || p.z !== q.z) return false
+            }
+            return JSON.stringify(a.tunnelSpans || null) === JSON.stringify(b.tunnelSpans || null)
+                && JSON.stringify(a.offCurveSpans || null) === JSON.stringify(b.offCurveSpans || null)
+                && !!a.condemned === !!b.condemned
+                && sameArr(a.clArc, b.clArc)
+        }
+        const changed = new Set()
+        for (const [k, e] of this._network) { const o = old.runs.get(k); if (!o || !sameRun(o, e)) changed.add(k) }
+        for (const k of old.runs.keys()) if (!this._network.has(k)) changed.add(k)
+
+        const regions = []
+        const reach = this.carveReach(), STEP = 24
+        const nodeReach = reach + (this._params.roadJunctionBlendLength ?? 30) + 10
+        const walk = (e) => {
+            const pts = e.points; let acc = STEP
+            for (let i = 0; i < pts.length; i++) {
+                if (i > 0) acc += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
+                if (acc >= STEP || i === pts.length - 1) { regions.push({ x: pts[i].x, z: pts[i].z, reach: reach + STEP }); acc = 0 }
+            }
+            const a = pts[0], b = pts[pts.length - 1]
+            if (a) regions.push({ x: a.x, z: a.z, reach: nodeReach })
+            if (b) regions.push({ x: b.x, z: b.z, reach: nodeReach })
+        }
+        for (const k of changed) {
+            const a = old.runs.get(k), b = this._network.get(k)
+            if (a) walk(a)
+            if (b && b !== a) walk(b)
+        }
+        const padSig = (n) => `${n.x}|${n.z}|${n.reach}`
+        const newPads = this.padReachNodes()
+        const oldSet = new Set(old.pads.map(padSig)), newSet = new Set(newPads.map(padSig))
+        for (const n of old.pads) if (!newSet.has(padSig(n))) regions.push({ ...n })
+        for (const n of newPads) if (!oldSet.has(padSig(n))) regions.push({ ...n })
+
+        return regions.length ? regions : null
     }
 
     // FEAT-13: the terminal heading the routed edge `at → toward` leaves the anchor `at` with (and the

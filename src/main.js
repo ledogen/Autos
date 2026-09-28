@@ -3988,7 +3988,20 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
       // queuePropFullSweeps() arms that window; see the helper for the measurements.
       if (_propFullSweeps > 0) { _propFullSweeps--; sweepPropIntrusions(Infinity) }
       else sweepPropIntrusions()
-      if (reason !== 'params') return
+      if (reason !== 'params') {
+        // BUG-76: a positional adopt does not bump the generation, yet it can still re-shape road
+        // inside chunks already carved (a window-dependent T promotion, measured flipping 114 m from
+        // the car). Left alone, the mesh + heightfield + road trimesh keep the OLD road while the
+        // wheels read the new analyticHeight — tyres sink, the chassis rides the stale collider.
+        // adoptNetwork() diffed the swap and has already re-sliced, so both consumers rebuild
+        // against the adopted network. Driving budget (burst:false): these land ≥100 m out.
+        const dirty = roadSystem.lastAdoptDirty()
+        if (dirty) {
+          terrainSystem?.recarveInPlace(dirty, { burst: false })
+          roadMeshSystem?.invalidateRegions(dirty)
+        }
+        return
+      }
       // The deferred half of debouncedRoadRebuild (see there): the swap just bumped _generation,
       // so clear the ribbon tiles and re-bake the carve against the ADOPTED geometry — doing this
       // at invalidate time would have rebuilt against the stale network and then again here.
