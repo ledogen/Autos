@@ -594,14 +594,8 @@ export class TerrainSystem {
                 // only — and rock is painted here by the share rock WINS: the vertex share when the
                 // textures are off, the per-texel height contest when they are on. So a half-rock
                 // vertex is brown dirt with grey fragments on it, never a brown-grey average.
-                // Engineered CUT faces (vSurf.w < 0) keep their own colour; fill behaves as dirt.
-                // BUG-74: a road CUT has no rules of its own any more — it is ground whose rock share
-                // rises with excavation depth (the vertex writer's cutness), and then the ordinary
-                // rock rules apply: coverage with dither, grey rock, stones, inclination-gated green.
-                // That is what makes it fade: shallow cut → low share → the fragments sink under the
-                // dirt. Only FILL keeps one rule — its texture ramps in with the carve feather.
-                float ts_fill = max(vSurf.w, 0.0);
-                float ts_rockW = vSurf.z;
+                // Engineered faces (vSurf.w) keep their own cut/fill colour.
+                float ts_rockW = vSurf.z * (1.0 - vSurf.w);
                 if (uDetailScale > 0.0) {
                     float td_n = tdFbm(vWorldPos.xz * uNoiseScale);
                     diffuseColor.rgb *= 1.0 + uMottle * uDetailScale * (td_n - 0.5);
@@ -646,13 +640,13 @@ export class TerrainSystem {
                     vec2 ts_b2 = max(ts_h2 - ts_ma, 0.0);
                     ts_b2 /= max(ts_b2.x + ts_b2.y, 1e-5);
                     vec3 ts_b = vec3(ts_b2 * (1.0 - ts_rw), ts_rw);
-                    ts_rockW = ts_b.z;
+                    ts_rockW = ts_b.z * (1.0 - vSurf.w);
                     // Rock with foliage underneath — one key for every biome: as rock becomes
                     // present the ground between the rocks pulls toward the gap green (applied
                     // before the rock mix, so only the non-rock texels keep it), except on steep
                     // natural faces (they slide) and engineered faces (their own look).
                     float ts_rslope = 1.0 - clamp(vWorldNrm.y, 0.0, 1.0);
-                    float ts_keep = 1.0 - smoothstep(uRockGreenSlope.x, uRockGreenSlope.y, ts_rslope);
+                    float ts_keep = (1.0 - smoothstep(uRockGreenSlope.x, uRockGreenSlope.y, ts_rslope)) * (1.0 - vSurf.w);
                     float ts_under = smoothstep(0.02, 0.45, ts_s) * ts_keep * uUnderRockGreen * uDetailScale;
                     diffuseColor.rgb = mix(diffuseColor.rgb, uRockGapGreen, ts_under);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_rockW);
@@ -667,14 +661,16 @@ export class TerrainSystem {
                     float ts_pr = clamp((ts_d.a - 0.40) / 0.60, 0.0, 1.0);
                     float ts_pcov = mix(uDirtPebbleGrey, 1.0, clamp(ts_s * 3.0, 0.0, 1.0));
                     float ts_pg = (1.0 - smoothstep(ts_pcov - 0.05, ts_pcov + 0.05, 1.0 - ts_pr)) * step(0.02, ts_pr);
-                    diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_b.y * ts_pg * (1.0 - ts_fill));
+                    diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_b.y * ts_pg * (1.0 - vSurf.w));
                     // Local colouring for the two soft zones: the share grass/dirt GAINED over its
                     // vertex weight pulls the fragment toward that zone's own palette colour.
                     vec2 ts_gain = max(ts_b.xy - vSurf.xy, 0.0) * uDetailScale;
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColDirt,  ts_gain.y);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColGrass, ts_gain.x);
-                    // Per-zone albedo weights (rock only by default; a cut is rock by its share).
-                    vec3 ts_aw = uSurfAlbW * uDetailScale;
+                    // Per-zone albedo weights; an engineered CUT face (vSurf.w, rock) forces the
+                    // rock albedo on. Fill embankments take no dirt albedo (owner 2026-09-25: the
+                    // skirt read as "green with rocks poking through" — the map's baked tint).
+                    vec3 ts_aw = vec3(uSurfAlbW.x, uSurfAlbW.y, max(uSurfAlbW.z, vSurf.w)) * uDetailScale;
                     vec3 ts_alb = vec3(1.0) + (ts_g.rgb * 4.0 - 1.0) * ts_b.x * ts_aw.x
                                             + (ts_d.rgb * 4.0 - 1.0) * ts_b.y * ts_aw.y
                                             + (ts_r.rgb * 4.0 - 1.0) * ts_b.z * ts_aw.z;
@@ -686,11 +682,7 @@ export class TerrainSystem {
                     // loses its relief too, so it stops reading as a brown rock — dirt is clods
                     // plus the grey stones, and the stone count still rises toward the rock zone.
                     float ts_dn = 1.0 - step(0.02, ts_pr) * (1.0 - ts_pg);
-                    // BUG-74 overspill: on a FILL embankment the dirt relief ramps in with the carve
-                    // feather (smooth at the pavement, where it meets the road mesh's own smooth
-                    // shoulder lip, full texture where the feather ends) — the gravel bed spilling
-                    // out, not a lip edge against textured ground. ts_fill = max(vSurf.w, 0).
-                    tsNrm = (ts_ng * ts_b.x + ts_nd * ts_b.y * ts_dn * (1.0 - ts_fill) + ts_nr * (1.0 - ts_steep) * ts_b.z) * (uSurfNormal * uDetailScale);
+                    tsNrm = (ts_ng * ts_b.x + ts_nd * ts_b.y * ts_dn + ts_nr * (1.0 - ts_steep) * ts_b.z) * (uSurfNormal * uDetailScale);
                     // Side-projected rock normal: tangent (u, v) → world (u along the face's
                     // horizontal axis, mirrored by ts_sgn; v up). Applied at <normal_fragment_begin>.
                     vec2 ts_nrs = texture2D(uSurfNrmR, ts_ps).xy * 2.0 - 1.0;
@@ -2039,7 +2031,6 @@ export class TerrainSystem {
         const relLo = p.terrainMeadowRelLo ?? -12
         const relHi = p.terrainMeadowRelHi ?? -2
         const knollLo = p.terrainKnollRelLo ?? 1.5, knollHi = p.terrainKnollRelHi ?? 6
-        const cutRockDepth = p.roadCutRockDepth ?? 4.0   // m of excavation at which a cut reads as full broken rock
         const knollRock = p.terrainKnollRock ?? 0.55
         const localMean = this._localMeanGrid(cx, cz)  // per-vertex low-pass landform (seam-free)
         const smooth = (e0, e1, x) => {
@@ -2065,12 +2056,7 @@ export class TerrainSystem {
 
             // ── Road zone blend (cutout/dirt from carveData) ─────────────────
             let carveZoneBlend = 0  // 0 = general terrain; 1 = fully in cutout or dirt zone
-            // BUG-74 (second class): cut-ness is CONTINUOUS with depth, not a sign test. A cut reads
-            // as broken rock in proportion to how deep it is — full at roadCutRockDepth (1.5 m) —
-            // so the scree ramps in along the road as the excavation deepens and fades out toward
-            // its daylight line; a shallow scrape is dirt like a fill. `isFill = delta > 0` made one
-            // centimetre of cut full rock against one centimetre of fill dirt: a line under the truck.
-            let cutness = 0         // 0 = fill / shallow scrape (dirt) … 1 = deep cut (broken rock)
+            let isFill = false      // true = dirt foundation; false = engineered cutout
 
             if (carveData) {
                 const blendW = carveData[i * 2]
@@ -2078,7 +2064,7 @@ export class TerrainSystem {
                     const gradeY = carveData[i * 2 + 1] * amp
                     const rawH   = heights[i] * amp
                     const delta  = gradeY - rawH  // positive = fill, negative = cut
-                    cutness = smooth(0, cutRockDepth, -delta)
+                    isFill = delta > 0
                     carveZoneBlend = blendW
                 }
             }
@@ -2122,14 +2108,14 @@ export class TerrainSystem {
 
             // Step 2: blend road zone on top (feathered by blendW — free from carve system)
             if (carveZoneBlend > 1e-6) {
-                const zr = DF_R + (CO_R - DF_R) * cutness
-                const zg = DF_G + (CO_G - DF_G) * cutness
-                const zb = DF_B + (CO_B - DF_B) * cutness
+                const zr = isFill ? DF_R : CO_R
+                const zg = isFill ? DF_G : CO_G
+                const zb = isFill ? DF_B : CO_B
                 r = r + (zr - r) * carveZoneBlend
                 g = g + (zg - g) * carveZoneBlend
                 b = b + (zb - b) * carveZoneBlend
-                // An engineered fill embankment is dirt; a cut face is broken rock — by depth.
-                const zRock = cutness, zDirt = 1 - cutness
+                // An engineered fill embankment is dirt; a cut face is broken rock.
+                const zRock = isFill ? 0 : 1, zDirt = isFill ? 1 : 0
                 sRock  += (zRock - sRock)  * carveZoneBlend
                 sDirt  += (zDirt - sDirt)  * carveZoneBlend
                 sGrass += (0     - sGrass) * carveZoneBlend
@@ -2141,11 +2127,7 @@ export class TerrainSystem {
             surfArr[i * 4    ] = sGrass
             surfArr[i * 4 + 1] = sDirt
             surfArr[i * 4 + 2] = sRock
-            // Signed engineered weight: + fill, − cut. A CUT wall keeps its own look in the shader
-            // (own colour, albedo on, no dither/stones/green); a FILL embankment is dirt dumped
-            // beside whatever was there and behaves as natural dirt (owner 2026-09-27: the fill
-            // skirts were the sharp "dirt" patches inside rock — every rule was skipping them).
-            surfArr[i * 4 + 3] = carveZoneBlend * (1 - 2 * cutness)   // + fill … − deep cut, continuous
+            surfArr[i * 4 + 3] = carveZoneBlend   // engineered face: keeps its cut/fill colour, gets albedo
         }
 
         colAttr.needsUpdate = true

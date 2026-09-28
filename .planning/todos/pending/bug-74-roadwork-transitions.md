@@ -72,6 +72,24 @@ ramps in with the feather). Net: fewer rules than before this bug was filed. Cut
 green stripes (steep = bare, the pass-11 ruling); the cutout colour only shows through where rock
 does not win. Owner to judge in play; the knob is the depth.
 
+## 2026-09-28 — RULING: all of it reverted except the dither
+
+Owner: "didn't work. revert all attempts at smoothing the transition except dithering." Reverted
+in the code (the ticket history above stays as the record of what was tried):
+- signed carve weight / fill-as-dirt (pass 15, `5f5ff4a`),
+- fill relief + stones ramping with the carve feather (`880e7a4`, the BUG-74 part only),
+- cut-ness continuous with depth (`45b768b`), the cut-rule deletion and `roadCutRockDepth`
+  (`2fdde36`).
+Kept: the biome dither (`a161026`, defaults 0.5 / 0.3), and the unrelated fixes from the same
+commits (BUG-75 border normals, QUAL-32 matte terrain, BUG-73 in-place attributes).
+
+State now: `aSurf.w` = unsigned carve weight; cut = rock 1 + cutout colour + rock albedo forced,
+fill = dirt 1 + fill colour; engineered zones exempt from the rock mix, dither, stones and the
+under-rock green (all × (1 − w)); `isFill = delta > 0`. The roadwork seam is as it was at the
+dither commit. OPEN — next attempt should be a different idea, not another rule on the carve
+weight; the owner's own suggestions were "blur it or fade it" and "use the height wiring to bring
+the rocks below the dirt" (i.e. make the transition happen in the height contest, not in colour).
+
 ## Acceptance
 
 - At the capture spot, driver's-eye and 30 m overhead: no continuous line between the skirt and

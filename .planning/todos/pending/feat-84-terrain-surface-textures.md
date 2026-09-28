@@ -194,8 +194,9 @@ blend "at their interfaces" rather than crossfade.
       carve feather — the gravel-bed overspill), BUG-75 fixed (border normals from the carved
       analytic neighbour), QUAL-32 fixed (matte terrain, faint asphalt sheen, "Sun shine" slider).
 
-- [x] 2026-09-28: BUG-74 simplified by ruling — the cut exemption set is DELETED; a cut is rock by
-      depth (`roadCutRockDepth` 4 m, slider) under the ordinary rules. `ts_cut` no longer exists.
+- [ ] 2026-09-28: every BUG-74 attempt REVERTED by ruling except the biome dither (signed carve
+      weight, fill ramp, cut-by-depth, cut-rule deletion all gone; `aSurf.w` unsigned again). The
+      roadwork seam is open; see BUG-74 for what was tried and the owner's own suggestions.
 
 ## Known limits / follow-ups
 
