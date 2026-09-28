@@ -2037,6 +2037,7 @@ export class TerrainSystem {
         const relLo = p.terrainMeadowRelLo ?? -12
         const relHi = p.terrainMeadowRelHi ?? -2
         const knollLo = p.terrainKnollRelLo ?? 1.5, knollHi = p.terrainKnollRelHi ?? 6
+        const cutRockDepth = p.roadCutRockDepth ?? 1.5   // m of excavation at which a cut reads as full broken rock
         const knollRock = p.terrainKnollRock ?? 0.55
         const localMean = this._localMeanGrid(cx, cz)  // per-vertex low-pass landform (seam-free)
         const smooth = (e0, e1, x) => {
@@ -2062,7 +2063,12 @@ export class TerrainSystem {
 
             // ── Road zone blend (cutout/dirt from carveData) ─────────────────
             let carveZoneBlend = 0  // 0 = general terrain; 1 = fully in cutout or dirt zone
-            let isFill = false      // true = dirt foundation; false = engineered cutout
+            // BUG-74 (second class): cut-ness is CONTINUOUS with depth, not a sign test. A cut reads
+            // as broken rock in proportion to how deep it is — full at roadCutRockDepth (1.5 m) —
+            // so the scree ramps in along the road as the excavation deepens and fades out toward
+            // its daylight line; a shallow scrape is dirt like a fill. `isFill = delta > 0` made one
+            // centimetre of cut full rock against one centimetre of fill dirt: a line under the truck.
+            let cutness = 0         // 0 = fill / shallow scrape (dirt) … 1 = deep cut (broken rock)
 
             if (carveData) {
                 const blendW = carveData[i * 2]
@@ -2070,7 +2076,7 @@ export class TerrainSystem {
                     const gradeY = carveData[i * 2 + 1] * amp
                     const rawH   = heights[i] * amp
                     const delta  = gradeY - rawH  // positive = fill, negative = cut
-                    isFill = delta > 0
+                    cutness = smooth(0, cutRockDepth, -delta)
                     carveZoneBlend = blendW
                 }
             }
@@ -2114,14 +2120,14 @@ export class TerrainSystem {
 
             // Step 2: blend road zone on top (feathered by blendW — free from carve system)
             if (carveZoneBlend > 1e-6) {
-                const zr = isFill ? DF_R : CO_R
-                const zg = isFill ? DF_G : CO_G
-                const zb = isFill ? DF_B : CO_B
+                const zr = DF_R + (CO_R - DF_R) * cutness
+                const zg = DF_G + (CO_G - DF_G) * cutness
+                const zb = DF_B + (CO_B - DF_B) * cutness
                 r = r + (zr - r) * carveZoneBlend
                 g = g + (zg - g) * carveZoneBlend
                 b = b + (zb - b) * carveZoneBlend
-                // An engineered fill embankment is dirt; a cut face is broken rock.
-                const zRock = isFill ? 0 : 1, zDirt = isFill ? 1 : 0
+                // An engineered fill embankment is dirt; a cut face is broken rock — by depth.
+                const zRock = cutness, zDirt = 1 - cutness
                 sRock  += (zRock - sRock)  * carveZoneBlend
                 sDirt  += (zDirt - sDirt)  * carveZoneBlend
                 sGrass += (0     - sGrass) * carveZoneBlend
@@ -2137,7 +2143,7 @@ export class TerrainSystem {
             // (own colour, albedo on, no dither/stones/green); a FILL embankment is dirt dumped
             // beside whatever was there and behaves as natural dirt (owner 2026-09-27: the fill
             // skirts were the sharp "dirt" patches inside rock — every rule was skipping them).
-            surfArr[i * 4 + 3] = isFill ? carveZoneBlend : -carveZoneBlend
+            surfArr[i * 4 + 3] = carveZoneBlend * (1 - 2 * cutness)   // + fill … − deep cut, continuous
         }
 
         colAttr.needsUpdate = true

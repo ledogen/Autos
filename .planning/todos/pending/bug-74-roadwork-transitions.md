@@ -44,6 +44,21 @@ edge is gone; what remains at seed w (197, 616) is the tan→rock front, softene
 dither. If it still reads as a band, the next lever is the same dither applied to the carve
 weight itself (wider field), not a new zone rule.
 
+## 2026-09-27 (evening) — second class: the cut/fill crossover
+
+Owner's frame (seed 1666428418, (−1391, −536)): the grey scree of a road CUT stopped dead along
+the road where the cut became fill — scree → tan skirt on one side, scree → grass on the other,
+a transverse line. Cause: the vertex writer classified the carve zone by SIGN (`isFill = delta >
+0`), so one centimetre of cut was full broken rock (rock share 1, rock albedo forced, cutout
+colour, exempt from dither/stones/green) against one centimetre of fill as dirt.
+
+Fix — the same single mechanism extended, no new rule: cut-ness is continuous with DEPTH,
+`cutness = smooth(0, roadCutRockDepth, −delta)` (1.5 m). Rock share, cutout colour and the signed
+carve weight (`aSurf.w = blend × (1 − 2·cutness)`) all follow it, so the scree ramps in along the
+road as the excavation deepens, fades toward its daylight line, and a shallow scrape is dirt like
+a fill. Overhead at the spot: scree → tan → green as a graded band. Both classes now have the one
+mechanism; owner to judge in play.
+
 ## Acceptance
 
 - At the capture spot, driver's-eye and 30 m overhead: no continuous line between the skirt and

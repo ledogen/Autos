@@ -911,7 +911,11 @@ export const RANGER_PARAMS = {
   terrainDirtColor:  0x69481b, // alpine soil/decomposed-granite — moderate slopes (the "general" mid)
   terrainGrassColor: 0x426917, // muted sage — FERTILE/forest flats (above the basin floors; trees go here)
   terrainMeadowColor: 0x1c270c, // lush green — MEADOW basins (local lows where water collects)
-  terrainCutoutColor: 0x757066, // engineered road cut face (man-made grey-tan, distinct from cliff)
+  terrainCutoutColor: 0x757066,
+  // BUG-74: a road cut reads as broken rock in proportion to its DEPTH — full at this many metres
+  // of excavation, dirt like a fill below it — so the scree ramps in along the road instead of
+  // switching on at the cut/fill crossover.
+  roadCutRockDepth:   1.5, // engineered road cut face (man-made grey-tan, distinct from cliff)
   terrainFillColor:   0x6b5740, // dirt fill embankment / road foundation
 
   // Biome split (slope + altitude). slope = 1 - vertexNormal.y. Altitude = raw terrain world Y.
