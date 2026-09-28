@@ -90,8 +90,14 @@ export function formatGameDuration (h) {
     return `${Math.floor(hrs / 24)}d ${hrs % 24}h`
 }
 
-/** "Deb" / 'Earl "Two-Tone"' — how a sentence names a person. */
-export function personLabel (p) { return p ? p.first + (p.nick ? ` "${p.nick}"` : '') : '' }
+/**
+ * 'Deb Hadley' / 'Earl "Two-Tone" Pruitt' — how a sentence names a person: the full grammar,
+ * [first] "[nickname]"? [last] (owner, 2026-09-28: last names on the card). Larry has no last name.
+ */
+export function personLabel (p) {
+    if (!p) return ''
+    return p.first + (p.nick ? ` "${p.nick}"` : '') + (p.last ? ` ${p.last}` : '')
+}
 
 export class OfferBoard {
     /**

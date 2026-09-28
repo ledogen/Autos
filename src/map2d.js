@@ -2385,7 +2385,9 @@ export class Map2D {
         const s = this._sheet()
         const c = v.card
         // Base units (k = 1).
-        const B = { W: 340, PAD: 14, LH: 19, HEAD: 16, FS: 13, FSS: 11, BAR: 6, INSET: 4, BONUS: 44 }
+        // Body 13 → 11 for full names (owner, 2026-09-28): measured over 174 k sentences on 30 seeds, 11 is
+        // the largest size at which no sentence needs a fourth line (11.5 overflowed 44).
+        const B = { W: 340, PAD: 14, LH: 17, HEAD: 16, FS: 11, FSS: 10.5, BAR: 6, INSET: 4, BONUS: 42 }
         const baseH = B.PAD * 2 + B.HEAD + 5 * B.LH
         const baseFull = baseH + B.BONUS
         const k = Math.max(1, Math.min(1.6, (s.w * 0.46) / B.W, (s.h * 0.62) / baseFull))

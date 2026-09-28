@@ -28,7 +28,7 @@
 //  14. IMPORT DISCIPLINE — the board imports only its tables, seed.js and economy.js, and never
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
-import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration } from '../src/offer-board.js'
+import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel } from '../src/offer-board.js'
 import { SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT } from '../data/offers.js'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { basePay } from '../src/economy.js'
@@ -248,7 +248,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
             const gn = PROP_MODELS[q.modelKey].giverName
             if (gn === 'home' && !/^the \S+ place$/.test(b.poiName(q.id) ?? '')) homeBad++
             if (gn === 'person' && (b.poiName(q.id) !== null || b.people(q.id).length !== 1
-                || b.placeLabel(q.id) !== b.people(q.id)[0].first + (b.people(q.id)[0].nick ? ` "${b.people(q.id)[0].nick}"` : ''))) personBad++
+                || b.placeLabel(q.id) !== personLabel(b.people(q.id)[0]))) personBad++
         }
     }
     check('POI names are unique within a region (300 seeds)', dupPoi === 0, `${dupPoi}`)
@@ -257,6 +257,9 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
     check("a 'person' giver is ONE person, no place name — just the person", personBad === 0, `${personBad}`)
     const b = make(6)
     const larry = POIS.find(q => q.type === 'larrysHouse').id
+    const p = { first: 'Earl', nick: 'Two-Tone', last: 'Pruitt' }
+    check('a person reads by the full grammar: first "nick" last', personLabel(p) === 'Earl "Two-Tone" Pruitt'
+        && personLabel({ first: 'Deb', nick: null, last: 'Hadley' }) === 'Deb Hadley')
     check('Larry is just "Larry" at "Larry\'s"', b.poiName(larry) === "Larry's"
         && b.people(larry).length === 1 && b.people(larry)[0].first === 'Larry')
 }
