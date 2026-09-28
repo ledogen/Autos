@@ -509,7 +509,8 @@ export const RANGER_PARAMS = {
     // Quadratic cut term (owner 2026-08-18: "no visual difference in the mountaintop above a tunnel —
     // just carve a clean hole"): real cuttings go superlinear past ~8 m (rock walls, stabilisation),
     // and without it the solver trenched to the 20 m class boundary before conceding a portal.
-    // Cut ≈ bore at ~9 m now, so portals emerge at bench depth and approach notches stay small.
+    // Cut ≈ bore at ~9 m. The solver can't act on that (a bore only exists past cutMax), so
+    // extendBorePortals slides each existing bore's portals out to where it holds.
     cCut2: 0.12,
     cFillM: 0.12,     // fill, per m of length per m of height
     cBoreM: 12.0,     // bore, per m (owner 2026-08-18: "too happy to tunnel" — raised 8 → 12)
@@ -525,6 +526,10 @@ export const RANGER_PARAMS = {
     // 30 m of rock survived cPortal 1000 — because above cutMax there is no cut state to buy, so the
     // router was not choosing a tunnel over a cutting, it had no cutting to choose. 25 gives the
     // 25-30 m pinches an open-cutting answer instead of a portal pair as long as they are tall.
+    // Rock over the tube crown at a portal: a portal needs deck ≥ tunnelBoreRadius + portalCover
+    // below ground. With the default 8 m bore that is 10 m, just past the ~9 m cut = bore price
+    // crossover, so portals land at the buildability floor (extendBorePortals).
+    portalCover: 2,
     cutMax: 25,       // m below ground where a cut becomes a BORE — a 12–25 m trench is an open rock
                       // cutting at road grade cap, not a tunnel; at 12 the bore's 18% cap
                       // rate-limited legitimate cliff descents through deep-cut pockets

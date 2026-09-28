@@ -36,7 +36,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
-import { truncatedHeightField, routeEdgeV2, profileSolve, profileSolveBundle, dequantizeProfile, roundCrests, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule
+import { truncatedHeightField, routeEdgeV2, profileSolve, profileSolveBundle, dequantizeProfile, roundCrests, extendBorePortals, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule · portal placement
 import { PAR_REF } from './par.js'   // FEAT-82: the junction recovery is a vertical curve at par's junction-approach speed
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, reversePrimitives } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
@@ -5110,9 +5110,16 @@ export class RoadSystem {
                 pts[i].y = y0[i] + Math.max(-BOUND, Math.min(BOUND, cur[i] - y0[i]))
             }
         }
+        // Portal placement: slide each bore's portals out to the cheapest buildable spot (the deck
+        // is untouched — only which stations are bored changes). Last, because it breaks the
+        // class-from-depth rule every pass above relies on (see extendBorePortals).
+        // The end guard is the junction reach _clipTunnelSpansAtCrossings clears (blend + 10 m).
+        const MIN_BORE = 12   // m — a shorter bore reads as noise and is dropped
+        prof = extendBorePortals(st, prof, C, this._params?.tunnelBoreRadius ?? 8,
+            (this._params?.roadJunctionBlendLength ?? 30) + 10, MIN_BORE)
         const spans = []
         for (const sg of prof.segs) {
-            if (sg.cls === CLS.BORE && sg.len >= 12) spans.push({ s0: sg.s0, s1: sg.s1 })
+            if (sg.cls === CLS.BORE && sg.len >= MIN_BORE) spans.push({ s0: sg.s0, s1: sg.s1 })
         }
         return spans.length ? spans : null
     }

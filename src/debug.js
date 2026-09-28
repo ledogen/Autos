@@ -616,6 +616,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   the owner 2026-08-18 and QUAL-27 deleted their machinery). A 12-20 m trench is an open rock
   //   cutting, not a tunnel.
   v2Folder.add(params.roadV2, 'cutMax', 6, 40, 1).name('Cut→Bore Depth (m)').onChange(fireRoadParam)
+  // Portal placement: an existing bore's portals slide out to where the deck is Bore Radius + this
+  // below ground (and boring is still cheaper than cutting). Lower = shallower portals, shorter
+  // approach trenches. Never creates a bore — Cut→Bore Depth still decides that.
+  v2Folder.add(params.roadV2, 'portalCover', 0, 20, 0.5).name('Portal Rock Cover (m)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'fillMax', 2, 20, 0.5).name('Max Fill (m)').onChange(fireRoadParam)
 
   // Bore GEOMETRY (rendering + collider + the containment test), as opposed to bore PRICING above.
