@@ -2431,17 +2431,22 @@ export class Map2D {
         ctx.fillStyle = '#6a6458'
         ctx.fillText(c ? c.family.toUpperCase() : 'NO WORK', inL, ty)
         if (v.count > 1) {
-            // "offer 2 / 3", then the Q and E keys drawn as KEYCAPS, well apart — as bare text the
-            // counter and the prompt ran together into one string of letters and numbers.
+            // "offer 2 / 3", then the Q and E keys drawn as KEYCAPS — as bare text the counter and
+            // the prompt ran together into one string of letters and numbers. The keys sit TUCKED INTO
+            // THE TOP-RIGHT CORNER, just inside the inner rule (owner, 2026-09-28): in the header row
+            // they crowded the body text below them.
             const cap = B.FSS * k + 6 * k
-            let kx = x + W - PAD - cap
+            const ins = 4 * k + 3 * k                        // inner rule inset + breathing room
+            const ktop = y + ins
+            let kx = x + W - ins - cap
             for (const key of ['E', 'Q']) {
                 ctx.strokeStyle = '#6a6458'; ctx.lineWidth = Math.max(1, 0.8 * k)
-                ctx.strokeRect(kx + 0.5, ty - 3 * k + 0.5, cap - 1, cap - 1)
-                ctx.textAlign = 'center'; ctx.fillStyle = '#4a453c'
-                ctx.fillText(key, kx + cap / 2, ty)
+                ctx.strokeRect(kx + 0.5, ktop + 0.5, cap - 1, cap - 1)
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#4a453c'
+                ctx.fillText(key, kx + cap / 2, ktop + cap / 2 + 0.5)
                 kx -= cap + 4 * k
             }
+            ctx.textBaseline = 'top'
             ctx.textAlign = 'right'; ctx.fillStyle = '#6a6458'
             ctx.fillText(`offer ${v.idx + 1} / ${v.count}`, kx - 10 * k, ty)
             ctx.textAlign = 'left'
