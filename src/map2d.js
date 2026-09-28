@@ -136,6 +136,7 @@ const MAP_INK       = '#1a1a1a'   // rules — neatline, collar ticks, scale bar
 // hunt for), both alpha over the paper so they sit down into it rather than on top.
 const MAP_TEXT      = 'rgba(26,26,26,0.5)'    // collar index, scale/interval notes, coords
 const MAP_TEXT_POI  = 'rgba(16,16,16,0.68)'   // POI + mission-pin labels — still findable
+const ROUTE_BLUE    = '#2f55d4'   // FEAT-67: the drawn mission route + its start chevron (royal blue)
 const INDEX_EVERY   = 5           // every Nth contour is an index contour (so 50 m at CONTOUR_IV)
 // Map lettering. No web font is loaded (browser-only, single origin, no external requests — see
 // CLAUDE.md), so this is a stack that lands on Open Sans where it's installed and on the nearest
@@ -2081,13 +2082,20 @@ export class Map2D {
         const m = hv?.poly?.length > 1 ? { poly: hv.poly, start: hv.start, end: hv.end } : this._getMission()
         if (!m) return
         if (m.poly && m.poly.length > 1) {
-            ctx.strokeStyle = 'rgba(90,180,255,0.85)'
-            ctx.lineWidth = 3
-            ctx.lineJoin = 'round'
+            // ROYAL BLUE over a paper-coloured halo (owner, 2026-09-27: the pale blue was hard to
+            // read against the black road). The halo is what separates the line from the road it
+            // runs along; the deeper blue is what makes it read as the route and not as water.
+            ctx.lineJoin = 'round'; ctx.lineCap = 'round'
             ctx.beginPath()
             ctx.moveTo(this._sx(m.poly[0].x), this._sy(m.poly[0].z))
             for (let i = 1; i < m.poly.length; i++) ctx.lineTo(this._sx(m.poly[i].x), this._sy(m.poly[i].z))
+            ctx.strokeStyle = 'rgba(244,241,230,0.95)'
+            ctx.lineWidth = 7
             ctx.stroke()
+            ctx.strokeStyle = ROUTE_BLUE
+            ctx.lineWidth = 4
+            ctx.stroke()
+            ctx.lineCap = 'butt'
         }
         const pin = (p, fill, label) => {
             if (!p) return
@@ -2280,7 +2288,7 @@ export class Map2D {
         ctx.stroke()
         // The ROUTE's blue, not a warning yellow (owner, 2026-08-15): this marker is a statement
         // about the blue line it sits on, so it belongs to that line rather than competing with it.
-        ctx.strokeStyle = '#5ab4ff'; ctx.lineWidth = 3.5
+        ctx.strokeStyle = ROUTE_BLUE; ctx.lineWidth = 3.5
         ctx.stroke()
         ctx.lineJoin = 'miter'; ctx.lineCap = 'butt'
     }
@@ -2354,63 +2362,151 @@ export class Map2D {
     }
 
     /**
-     * FEAT-67: the hover card — one offer, as a sentence and then its terms. Drawn beside the POI and
-     * clamped inside the sheet so it never runs under the collar. A family-colour bar down its left
-     * edge ties it to the diamond. The view-model is OfferBoard.card(); this only lays it out.
+     * FEAT-67: the hover card — one offer, as a sentence and then its terms. The view-model is
+     * OfferBoard.card(); this only lays it out.
+     *
+     * FIXED SIZE (owner, 2026-09-27): every card is the same size rather than trimmed to its text —
+     * a header row, a three-line sentence block beside the portrait, then pay and terms. A bonus
+     * offer gets a second FORM tacked onto the bottom of that card, so "this one carries an item"
+     * reads as a shape before a word is read.
+     *
+     * SIZE: laid out in base units, then scaled by `k` — 2× by default (owner: the first cut read too
+     * small and insubstantial), shrinking only if the sheet is too small to hold it (a low-res screen
+     * gets a smaller card rather than one that covers the map).
+     *
+     * PLACEMENT: docked in whichever CORNER of the sheet its rectangle covers the least of the drawn
+     * route (and the hovered POI). One small scan of the route's screen points per corner — cheaper
+     * and far less jumpy than chasing the cursor, and it keeps the route readable. Ties keep the
+     * previous corner, so the card only moves when it has to.
      */
     _drawOfferCard(ctx) {
         const v = this._hoverView
         if (!v) return
-        // PORTRAIT: two text lines tall, top-left; every text line sits in the column to its right.
-        const PAD = 10, W = 340, LH = 18, PORT = 2 * LH, TX = PAD + 6 + PORT + 10
-        const fN = `13px ${MAP_LABEL_FONT}`, fB = `700 13px ${MAP_LABEL_FONT}`, fS = `11px ${MAP_LABEL_FONT}`
-        const lines = []     // [{runs:[{t,b}], font?, color?}]
-        const c = v.card
-        if (!c) {
-            lines.push({ runs: [{ t: 'No work here right now.', b: true }] })
-            if (v.nextText) lines.push({ runs: [{ t: `New offer in ${v.nextText}` }], color: '#555' })
-        } else {
-            for (const l of this._wrapRuns(ctx, c.sentence, W - TX - PAD, fN, fB)) lines.push({ runs: l })
-            if (c.pay) lines.push({ runs: [{ t: c.pay, b: true }], color: '#1d7a33' })
-            else if (c.family === 'papers') lines.push({ runs: [{ t: 'planning the route…' }], color: '#777' })
-            lines.push({ runs: [{ t: c.terms.join(' · ') }], color: '#444' })
-            if (c.bonus) lines.push({ runs: [{ t: c.bonus }], color: '#6b4a00' })
-        }
-        const header = v.count > 1 ? `${v.idx + 1} / ${v.count}   Q / E` : null
-        const H = PAD * 2 + Math.max(lines.length * LH, c?.portrait ? PORT : 0) + (header ? 14 : 0)
         const s = this._sheet()
-        const px = this._sx(v.x), py = this._sy(v.z)
-        let x = px + POI_ICON_PX * 0.8
-        if (x + W > s.x1 - 6) x = px - POI_ICON_PX * 0.8 - W
-        x = Math.max(s.x0 + 6, Math.min(s.x1 - 6 - W, x))
-        const y = Math.max(s.y0 + 6, Math.min(s.y1 - 6 - H, py - H / 2))
+        const c = v.card
+        // Base units (k = 1).
+        const B = { W: 340, PAD: 14, LH: 19, HEAD: 16, FS: 13, FSS: 11, BAR: 6, INSET: 4, BONUS: 44 }
+        const baseH = B.PAD * 2 + B.HEAD + 5 * B.LH
+        const baseFull = baseH + B.BONUS
+        const k = Math.max(1, Math.min(2, (s.w * 0.46) / B.W, (s.h * 0.62) / baseFull))
+        const W = B.W * k, PAD = B.PAD * k, LH = B.LH * k, HEAD = B.HEAD * k
+        const PORT = 3 * LH                               // portrait spans the sentence block
+        const TX = PAD + B.BAR * k + PORT + 12 * k        // text column, right of the portrait
+        const fN = `${B.FS * k}px ${MAP_LABEL_FONT}`, fB = `700 ${B.FS * k}px ${MAP_LABEL_FONT}`
+        const fS = `600 ${B.FSS * k}px ${MAP_LABEL_FONT}`
+        const H = baseH * k
+        const bonusH = c?.bonus ? B.BONUS * k : 0
+        const M = 12 * k                                  // margin from the sheet's edge
 
-        ctx.fillStyle = 'rgba(242,239,228,0.97)'
-        ctx.fillRect(x, y, W, H)
-        ctx.strokeStyle = MAP_INK; ctx.lineWidth = 1
-        ctx.strokeRect(x + 0.5, y + 0.5, W - 1, H - 1)
-        ctx.fillStyle = c ? (FAMILY_COLOR[c.family] ?? EMPTY_DIAMOND_COLOR) : EMPTY_DIAMOND_COLOR
-        ctx.fillRect(x + 1, y + 1, 5, H - 2)
-        ctx.textBaseline = 'top'; ctx.textAlign = 'left'
-        let ty = y + PAD
-        if (header) {
-            ctx.font = fS; ctx.fillStyle = '#777'
-            ctx.textAlign = 'right'; ctx.fillText(header, x + W - PAD, ty - 2); ctx.textAlign = 'left'
-            ty += 14
+        // ── placement: the corner that hides the least of the route ──
+        const corners = {
+            tl: [s.x0 + M, s.y0 + M], tr: [s.x1 - M - W, s.y0 + M],
+            bl: [s.x0 + M, s.y1 - M - H - bonusH], br: [s.x1 - M - W, s.y1 - M - H - bonusH],
         }
-        if (c?.portrait) this._drawPortrait(ctx, c.portrait, x + PAD + 6, ty, PORT)
-        const tx0 = x + (c?.portrait ? TX : PAD + 6)
-        for (const l of lines) {
-            let tx = tx0
-            for (const r of l.runs) {
-                ctx.font = r.b ? fB : fN
-                ctx.fillStyle = l.color ?? '#1a1a1a'
-                ctx.fillText(r.t, tx, ty)
-                tx += ctx.measureText(r.t).width
+        const poly = v.poly || []
+        const px = this._sx(v.x), py = this._sy(v.z)
+        let best = null, bestScore = Infinity
+        for (const key of ['tr', 'br', 'tl', 'bl']) {
+            const [cx, cy] = corners[key]
+            const x1 = cx + W, y1 = cy + H + bonusH
+            let score = 0
+            for (const p of poly) {
+                const sx = this._sx(p.x), sy = this._sy(p.z)
+                if (sx >= cx - 8 && sx <= x1 + 8 && sy >= cy - 8 && sy <= y1 + 8) score++
             }
-            ty += LH
+            if (px >= cx - 16 && px <= x1 + 16 && py >= cy - 16 && py <= y1 + 16) score += 1000
+            if (score < bestScore || (score === bestScore && key === this._cardCorner)) { bestScore = score; best = key }
+        }
+        this._cardCorner = best
+        const [x, y] = corners[best]
+
+        // ── the card body ──
+        const accent = c ? (FAMILY_COLOR[c.family] ?? EMPTY_DIAMOND_COLOR) : EMPTY_DIAMOND_COLOR
+        this._cardFrame(ctx, x, y, W, H, k, accent)
+        ctx.textBaseline = 'top'; ctx.textAlign = 'left'
+        const inL = x + PAD + B.BAR * k
+        let ty = y + PAD
+        // Header: the family in small caps, the offer counter on the right.
+        ctx.font = fS
+        ctx.fillStyle = '#6a6458'
+        ctx.fillText(c ? c.family.toUpperCase() : 'NO WORK', inL, ty)
+        if (v.count > 1) {
+            ctx.textAlign = 'right'
+            ctx.fillText(`${v.idx + 1} / ${v.count}   Q / E`, x + W - PAD, ty)
+            ctx.textAlign = 'left'
+        }
+        ty += HEAD
+        if (!c) {
+            ctx.font = fB; ctx.fillStyle = '#1a1a1a'
+            ctx.fillText('No work here right now.', inL, ty + LH * 0.5)
+            if (v.nextText) {
+                ctx.font = fN; ctx.fillStyle = '#555'
+                ctx.fillText(`New offer in ${v.nextText}`, inL, ty + LH * 1.7)
+            }
+            ctx.textBaseline = 'alphabetic'
+            return
+        }
+        if (c.portrait) this._drawPortrait(ctx, c.portrait, inL, ty, PORT)
+        const tx0 = x + (c.portrait ? TX : PAD + B.BAR * k)
+        const colW = x + W - PAD - tx0
+        let sent = this._wrapRuns(ctx, c.sentence, colW, fN, fB)
+        if (sent.length > 3) {                              // the block is three lines; never overflow
+            sent = sent.slice(0, 3)
+            const last = sent[2][sent[2].length - 1]
+            last.t = last.t.replace(/\s*\S*$/, '') + '…'
+        }
+        let ly = ty
+        for (const l of sent) { this._drawRuns(ctx, l, tx0, ly, fN, fB, '#1a1a1a'); ly += LH }
+        ty += 3 * LH + 4 * k
+        if (c.pay) this._drawRuns(ctx, [{ t: c.pay, b: true }], inL, ty, fN, fB, '#1d7a33')
+        else if (c.family === 'papers') this._drawRuns(ctx, [{ t: 'planning the route…' }], inL, ty, fN, fB, '#777')
+        ty += LH
+        this._drawRuns(ctx, [{ t: c.terms.join('  ·  ') }], inL, ty, fN, fB, '#444')
+
+        // ── the bonus form, tacked onto the bottom ──
+        if (c.bonus) {
+            const by = y + H - 1.5 * k
+            this._cardFrame(ctx, x, by, W, bonusH + 1.5 * k, k, '#d4a017')
+            ctx.font = fS; ctx.fillStyle = '#8a6a00'
+            ctx.fillText('BONUS', inL, by + 9 * k)
+            ctx.font = fB; ctx.fillStyle = '#4a3a00'
+            ctx.fillText(c.bonus.replace(/^Bonus:\s*/, ''), inL, by + 23 * k)
         }
         ctx.textBaseline = 'alphabetic'
+    }
+
+    /**
+     * A card panel: paper fill, a soft drop shadow for weight, a DOUBLE RULE border (a heavy outer
+     * line and a hairline inset inside it — the cartouche treatment a printed map puts round its
+     * legend), and an accent bar down the left edge inside the rules.
+     */
+    _cardFrame(ctx, x, y, W, H, k, accent) {
+        ctx.save()
+        ctx.shadowColor = 'rgba(0,0,0,0.28)'
+        ctx.shadowBlur = 10 * k
+        ctx.shadowOffsetY = 3 * k
+        ctx.fillStyle = 'rgba(244,241,230,0.98)'
+        ctx.fillRect(x, y, W, H)
+        ctx.restore()
+        ctx.strokeStyle = MAP_INK
+        ctx.lineWidth = 1.5 * k
+        ctx.strokeRect(x, y, W, H)
+        const ins = 4 * k
+        ctx.lineWidth = Math.max(1, 0.6 * k)
+        ctx.strokeRect(x + ins, y + ins, W - 2 * ins, H - 2 * ins)
+        ctx.fillStyle = accent
+        ctx.fillRect(x + ins + 1, y + ins + 1, 6 * k - 2, H - 2 * ins - 2)
+    }
+
+    /** Draw one line of rich runs ({t, b}) left to right. */
+    _drawRuns(ctx, runs, x, y, fN, fB, color) {
+        let tx = x
+        ctx.fillStyle = color
+        for (const r of runs) {
+            ctx.font = r.b ? fB : fN
+            ctx.fillText(r.t, tx, y)
+            tx += ctx.measureText(r.t).width
+        }
     }
 
     /**
