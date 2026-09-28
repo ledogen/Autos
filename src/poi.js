@@ -344,6 +344,8 @@ export class PoiSystem {
         // is how a region can be guaranteed a gas station.
         const pool = []
         const seen = new Set()
+        const wall = radius - REGION_MARGIN
+        const edgeInWall = (id) => { const q = g.pos(id); return Math.hypot(q.x - center.x, q.z - center.z) <= wall }
         for (const e of canon) {
             const ek = `${e.ka}|${e.kb}`
             if (seen.has(ek)) continue      // networkGraph can list an edge twice (both run keys)
@@ -356,6 +358,13 @@ export class PoiSystem {
             // POI 400 m inside the wall then moved when the window moved. Window-invariance means
             // the edge decides where its POI goes; the region only decides whether it is kept.
             if (Math.hypot(poi.x - center.x, poi.z - center.z) > radius - poi.halfLen - 20) continue
+            // FEAT-67: …and its EDGE must be one the mission planner can use. The planner drops any
+            // edge with a node past the wall less REGION_MARGIN (mission.js buildGraphAdj), so a POI
+            // standing on one posts offers no route can serve — owner-reported, seed 2987375593: a
+            // general store 2403 m out on a 2500 m region showed cards with no route and no pay.
+            // The newspaper customers already obey this exact rule (buildHouses); POIs now match.
+            // Still a post-filter on (edge, region), so placement stays window-invariant.
+            if (!edgeInWall(e.a) || !edgeInWall(e.b)) continue
             pool.push(poi)
         }
 

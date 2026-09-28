@@ -455,8 +455,8 @@ export class OfferBoard {
      * @param {number} [ctx.payTier]    economySystem.terms().payTier NOW (terms only freeze at accept)
      * @param {object|null} [ctx.route] the planned mission ({par, distance, endPoiId}) or null
      * @param {number} [ctx.customers]  paper route: stops on the planned tour
-     * @returns {{family, sentence: Array<{t:string,b?:boolean}>, pay: string|null, terms: string[],
-     *            bonus: string|null, expiresInH: number}|null}
+     * @returns {{family, portrait: {sex,name}|null, sentence: Array<{t:string,b?:boolean}>,
+     *            pay: string|null, terms: string[], bonus: string|null, expiresInH: number}|null}
      */
     card (offer, { nowH, payTier = 1, route = null, customers = null } = {}) {
         const sp = this.spec(offer)
@@ -486,6 +486,9 @@ export class OfferBoard {
         terms.push(`expires in ${formatGameDuration(expiresInH)}`)
         return {
             family: sp.family,
+            // The giver's portrait. PLACEHOLDER art today; `sex` is the field that will pick the
+            // portrait pool (ruled 2026-09-26: sex is rolled first so name and picture agree).
+            portrait: sp.person ? { sex: sp.person.sex, name: sp.person.first } : null,
             sentence,
             pay,
             terms,

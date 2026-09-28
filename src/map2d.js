@@ -2361,7 +2361,8 @@ export class Map2D {
     _drawOfferCard(ctx) {
         const v = this._hoverView
         if (!v) return
-        const PAD = 10, W = 300, LH = 18
+        // PORTRAIT: two text lines tall, top-left; every text line sits in the column to its right.
+        const PAD = 10, W = 340, LH = 18, PORT = 2 * LH, TX = PAD + 6 + PORT + 10
         const fN = `13px ${MAP_LABEL_FONT}`, fB = `700 13px ${MAP_LABEL_FONT}`, fS = `11px ${MAP_LABEL_FONT}`
         const lines = []     // [{runs:[{t,b}], font?, color?}]
         const c = v.card
@@ -2369,14 +2370,14 @@ export class Map2D {
             lines.push({ runs: [{ t: 'No work here right now.', b: true }] })
             if (v.nextText) lines.push({ runs: [{ t: `New offer in ${v.nextText}` }], color: '#555' })
         } else {
-            for (const l of this._wrapRuns(ctx, c.sentence, W - 2 * PAD - 6, fN, fB)) lines.push({ runs: l })
+            for (const l of this._wrapRuns(ctx, c.sentence, W - TX - PAD, fN, fB)) lines.push({ runs: l })
             if (c.pay) lines.push({ runs: [{ t: c.pay, b: true }], color: '#1d7a33' })
             else if (c.family === 'papers') lines.push({ runs: [{ t: 'planning the route…' }], color: '#777' })
             lines.push({ runs: [{ t: c.terms.join(' · ') }], color: '#444' })
             if (c.bonus) lines.push({ runs: [{ t: c.bonus }], color: '#6b4a00' })
         }
         const header = v.count > 1 ? `${v.idx + 1} / ${v.count}   Q / E` : null
-        const H = PAD * 2 + lines.length * LH + (header ? 14 : 0)
+        const H = PAD * 2 + Math.max(lines.length * LH, c?.portrait ? PORT : 0) + (header ? 14 : 0)
         const s = this._sheet()
         const px = this._sx(v.x), py = this._sy(v.z)
         let x = px + POI_ICON_PX * 0.8
@@ -2397,8 +2398,10 @@ export class Map2D {
             ctx.textAlign = 'right'; ctx.fillText(header, x + W - PAD, ty - 2); ctx.textAlign = 'left'
             ty += 14
         }
+        if (c?.portrait) this._drawPortrait(ctx, c.portrait, x + PAD + 6, ty, PORT)
+        const tx0 = x + (c?.portrait ? TX : PAD + 6)
         for (const l of lines) {
-            let tx = x + PAD + 6
+            let tx = tx0
             for (const r of l.runs) {
                 ctx.font = r.b ? fB : fN
                 ctx.fillStyle = l.color ?? '#1a1a1a'
@@ -2408,6 +2411,28 @@ export class Map2D {
             ty += LH
         }
         ctx.textBaseline = 'alphabetic'
+    }
+
+    /**
+     * FEAT-67: the giver's portrait — PLACEHOLDER. A flat tile with a head-and-shoulders silhouette
+     * (flat colour, faceted-simple, per ART-STYLE). The real art will be an RPG-style portrait picked
+     * from a pool by `p.sex`; swapping it in touches only this method.
+     */
+    _drawPortrait(ctx, p, x, y, S) {
+        ctx.fillStyle = '#d9d3c1'
+        ctx.fillRect(x, y, S, S)
+        ctx.fillStyle = '#8a8272'
+        ctx.beginPath()
+        ctx.arc(x + S / 2, y + S * 0.38, S * 0.2, 0, Math.PI * 2)                // head
+        ctx.fill()
+        ctx.beginPath()
+        ctx.moveTo(x + S * 0.14, y + S)                                            // shoulders
+        ctx.quadraticCurveTo(x + S * 0.16, y + S * 0.64, x + S / 2, y + S * 0.64)
+        ctx.quadraticCurveTo(x + S * 0.84, y + S * 0.64, x + S * 0.86, y + S)
+        ctx.closePath()
+        ctx.fill()
+        ctx.strokeStyle = MAP_INK; ctx.lineWidth = 1
+        ctx.strokeRect(x + 0.5, y + 0.5, S - 1, S - 1)
     }
 
     /** Word-wrap rich text runs ({t, b}) to `maxW` px, keeping each word's weight. */

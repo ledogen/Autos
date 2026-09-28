@@ -32,7 +32,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS, POI_ROSTER, POI_COUNT } from '../src/poi.js'
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'
-import { MissionSystem } from '../src/mission.js'
+import { MissionSystem, REGION_MARGIN } from '../src/mission.js'
 import { OfferBoard } from '../src/offer-board.js'
 import { SOURCES } from '../data/offers.js'
 import { mulberry32 } from '../src/seed.js'
@@ -146,6 +146,11 @@ const W = makeWorld(C.x, C.z, R)
         // Only compare POIs comfortably inside BOTH windows — an edge clipped by one window's
         // region test is legitimately absent there, and that is the region filter, not drift.
         if (Math.hypot(q.x - (C.x + 640), q.z - (C.z - 384)) > R - 400) continue
+        // FEAT-67: the region test also demands the pad's EDGE sits inside the planner wall
+        // (R − REGION_MARGIN) — a long edge running out past one window's wall is clipped there.
+        const g = W.road.networkGraph()
+        const inWall2 = (id) => { const p = g.pos(id); return Math.hypot(p.x - (C.x + 640), p.z - (C.z - 384)) <= R - REGION_MARGIN }
+        if (!inWall2(q.aId) || !inWall2(q.bId)) continue
         const o = byId.get(q.id)
         if (!o) { moved++; continue }
         shared++
@@ -381,6 +386,30 @@ function boardRig (ms, nowH = 6) {
     check('…and the board locks that slot for the full life', board.abandon(cancelled, 6.1)
         && board._slotOf(cancelled).state === 'locked')
     ms.exit()
+}
+
+// ── 7a. FEAT-67: every offer a source posts can be driven ───────────────────────────────────────
+// Owner-reported (seed 2987375593): a store past the planner wall showed cards with no route and no
+// pay. A card with no route is an offer the player cannot take, so every source's offers must plan
+// — over several days of turnover, not just the first roll.
+{
+    const ms = new MissionSystem({
+        getRoad: () => W.road, getCar: () => ({ x: C.x, z: C.z, speed: 0 }), getSeed: () => SEED,
+        teleport () {}, setMapOpen () {}, onChange () {},
+    })
+    const { board, plan } = boardRig(ms)
+    let n = 0
+    const bad = []
+    for (let t = 6; t < 6 + 24 * 3; t += 4) {
+        for (const id of board.sources()) for (const o of board.offers(id, t)) {
+            if (board.spec(o).family === 'papers') continue
+            n++
+            if (!plan(o)) bad.push(W.poi.list().find(q => q.id === id)?.type)
+        }
+    }
+    check('every delivery offer a source posts plans a route (no route-less cards)', bad.length === 0,
+        `${bad.length}/${n} failed: ${[...new Set(bad)].join(', ')}`)
+    console.log(`       ${n} offers planned over 3 days of turnover`)
 }
 
 // ── 7b. The POI start zone: no countdown, no hold, the clock starts at the threshold ────────────
