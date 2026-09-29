@@ -81,7 +81,7 @@ import { StreamMotion } from './stream-priority.js'         // PERF-33: travel d
 import { StreamBudget } from './stream-budget.js'           // PERF-33: one shared per-frame streaming budget
 import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read-only tree re-roll (camp shade score)
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
-import { installShadowEdgeFade } from './shadow-fade.js'   // QUAL-18: soft realtime shadow-map edge
+import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.js'   // QUAL-18 edge fade · BUG-78 near/far coupling
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
 import { FLORA_PARAMS } from '../data/flora.js'
@@ -1185,6 +1185,9 @@ renderer.shadowMap.enabled = true
 // extent for texel size, so the dissolve has to start later or it eats a visible chunk of the
 // shadowed world. 0.82 of ±170 m ⇒ full shadows to ~139 m, gone by 170 m.
 installShadowEdgeFade({ fadeStart: 0.82 })
+// BUG-78: the near map's shadow also gates the far cascade, so the truck can be kept OUT of the
+// far map (see the wrapped shadow pass by sunFar) without its shadow dropping to the near light's 40 % share.
+installNearShadowCoupling()
 // PERF-16: stop re-rendering the sun's whole shadow pass every frame. Three defaults autoUpdate=true,
 // so the 1536²/2048² shadow map is re-rendered each frame even parked under a static sun (measured
 // ~9 pp renderer-main, ~3 pp GPU). We drive needsUpdate on-demand from the shadow-follow block in
@@ -1345,10 +1348,14 @@ scene.add(sun.target)   // FEAT-06: target must be in-scene for the per-frame sh
 //    centre moves, the sun direction changes, or geometry streams — see the follow in loop().
 //    Driving in a straight line re-renders it roughly once per SHADOW_FAR_SNAP metres, not per frame.
 //
-// KNOWN TRADE-OFF: three has no per-light caster set (WebGLShadowMap tests object.layers against the
-// VIEW camera, not the light), so the truck casts into BOTH maps. Its far-map shadow is ~0.25 m/texel,
-// which shows up as a soft penumbra around the crisp near shadow. It reads as softening, not as a
-// double shadow, and SHADOW_FAR_SPLIT is the dial if it ever needs pulling back.
+// BUG-78 — THE TRUCK IS NOT IN THIS MAP. three has no per-light caster set (WebGLShadowMap tests
+// object.layers against the VIEW camera, not the light), so at first the truck cast into both maps.
+// With this one re-rendered only every SHADOW_FAR_SNAP metres, its copy of the truck's shadow stayed
+// pinned where the last pass drew it while the truck drove on — a stale blob left on the road at
+// speed (or displaced down a slope) until the next far pass wiped it. So the far pass is now run
+// with the vehicle hidden (the wrapped shadow pass just below the light's setup), and the
+// shader couples the two lights (installNearShadowCoupling) so the near map alone throws the
+// truck's shadow at full strength. Anything else that MOVES and casts belongs in that hide list.
 const SHADOW_FAR_EXTENT = 256   // half-width in m (the box is 512 m across)
 const SHADOW_FAR_MAP    = 2048  // 512 m / 2048 = EXACTLY 0.25 m per texel — the round number matters,
                                 // because SHADOW_FAR_SNAP below has to be an integer multiple of it
@@ -1370,11 +1377,43 @@ sunFar.shadow.camera.far  = 2600            // spans the standoff + the world's 
 // mountain shadows off their ridges). ~2 far-texels.
 sunFar.shadow.normalBias = 0.5
 sunFar.shadow.bias = -0.0005
-// PERF: opt out of the global on-demand shadow trigger — re-armed explicitly by the far-follow.
+// PERF: opt out of the global on-demand shadow trigger. Its needsUpdate is never armed directly —
+// the far-follow in loop() raises _farShadowPending and the wrapped shadow pass below draws it.
 sunFar.shadow.autoUpdate = false
-sunFar.shadow.needsUpdate = true
+let _farShadowPending = true   // first frame needs one render
 scene.add(sunFar)
 scene.add(sunFar.target)
+// BUG-78: the far cascade is drawn with the VEHICLE HIDDEN, so nothing that moves is baked into a
+// map that is only refreshed every SHADOW_FAR_SNAP metres. three's shadow pass is one call over
+// every shadow-casting light, made from inside render() (it must be — per-draw setup reads the
+// render state that only exists there, so it cannot be run from the frame loop). Wrap that call:
+// the near light(s) go through untouched, honouring the global on-demand gate as before; then, if
+// the far-follow asked for it, the far light is drawn on its own with carGroup hidden and shown
+// again before the world pass. Geometry matrices are fresh here (render() walks the graph first),
+// and the far map still lands in the same frame as the streaming step that requested it.
+// `this` must be the WebGLShadowMap: the original reads its own `type` through it.
+// FAR_SHADOW_HIDE is the list of moving casters; the vehicle root joins it once it exists (the
+// sky's cube-map prewarm renders — and so runs this pass — before the vehicle is built).
+const FAR_SHADOW_HIDE = []
+{
+  const shadowPass = renderer.shadowMap.render
+  renderer.shadowMap.render = function (lights, sceneArg, camera) {
+    shadowPass.call(this, lights.filter(l => l !== sunFar), sceneArg, camera)
+    // LOAD-BEARING: only the WORLD scene feeds the far map. The prop-impostor re-bake (several
+    // small renders of its own scene, on every sky look change) runs BEFORE the world render in the
+    // same frame; without this guard a far pass due on such a frame drew the cascade from the bake
+    // scene AND consumed the global gate, so the world render then skipped the near map — the
+    // truck's whole shadow sat still for a frame and caught up on the next (owner saw it, 2026-09-29).
+    if (!_farShadowPending || !sunFar.castShadow || sceneArg !== scene) return
+    _farShadowPending = false
+    const wasVisible = FAR_SHADOW_HIDE.map(o => o.visible)
+    for (const o of FAR_SHADOW_HIDE) o.visible = false
+    this.needsUpdate = true          // global gate (already consumed by the near pass above)
+    sunFar.shadow.needsUpdate = true // per-light gate
+    shadowPass.call(this, [sunFar], sceneArg, camera)
+    FAR_SHADOW_HIDE.forEach((o, i) => { o.visible = wasVisible[i] })
+  }
+}
 // Far-cascade follow state (mirrors the near light's, at the coarse snap).
 let _lastFarSnapR = NaN, _lastFarSnapU = NaN, _lastFarGeomSig = NaN
 const _lastFarSunDir = new THREE.Vector3(NaN, NaN, NaN)
@@ -1462,6 +1501,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 // src/vehicle-model.js. carGroup/bodyMesh/wheelMeshes are returned for back-compat;
 // syncMeshesToState(state) is called once per render frame below.
 const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
+FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
 // Owns a SEPARATE read-only RoadSystem instance streamed around its own pan cursor — it never
@@ -1990,7 +2030,7 @@ function applyQuality (name) {
   // The terrain cascade rides the same tier switch (Low kills both passes). Re-arm its private
   // needsUpdate on the way back on — it opted out of the global trigger, so nothing else would.
   sunFar.castShadow = p.shadows
-  if (p.shadows) { sunFar.shadow.needsUpdate = true; renderer.shadowMap.needsUpdate = true }
+  if (p.shadows) { _farShadowPending = true; renderer.shadowMap.needsUpdate = true }
   // PERF-12: per-tier shadow map size + ortho extent, applied as one texel-size decision.
   applyShadowResolution(p.shadowMap, p.shadowExtent)
   // PERF-06 prop radius: thin out the scattered-prop ring on Low (read by the loop's propSystem.update).
@@ -2106,7 +2146,7 @@ if (_PROF) {
   const _eachPropMesh = (fn) => { if (propSystem) for (const rec of propSystem._meshes.values()) fn(rec) }
   const LEVERS = {
     // PERF-16 re-arm. Both cascades move together — the lever means "realtime sun shadows on/off".
-    sunShadow:        v => { sun.castShadow = sunFar.castShadow = !!v; sunFar.shadow.needsUpdate = true; renderer.shadowMap.needsUpdate = true },
+    sunShadow:        v => { sun.castShadow = sunFar.castShadow = !!v; _farShadowPending = true; renderer.shadowMap.needsUpdate = true },
     propCastShadow:   v => _eachPropMesh(r => { r.mesh.castShadow = !!v }),
     // Re-enabling culling needs real instance bounds (geometry bounds ≠ world spread). Hidden
     // zero-scale slots collapse to origin, inflating the sphere — acceptable for an A/B.
@@ -5399,8 +5439,7 @@ function loop () {
       || sd.x !== _lastFarSunDir.x || sd.y !== _lastFarSunDir.y || sd.z !== _lastFarSunDir.z
       || geomSig !== _lastFarGeomSig) {
       perfEvent('shadow.far')
-      sunFar.shadow.needsUpdate = true      // per-light gate (this light opted out of autoUpdate)
-      renderer.shadowMap.needsUpdate = true // ...and the global gate, or the whole pass is skipped
+      _farShadowPending = true              // BUG-78: drawn by the wrapped shadow pass, vehicle hidden
       _lastFarSnapR = fSnapR
       _lastFarSnapU = fSnapU
       _lastFarSunDir.copy(sd)
