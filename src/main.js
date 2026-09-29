@@ -252,6 +252,8 @@ const makePropSamplers = () => Object.fromEntries(Object.entries({
   // FEAT-25: stream channel membership ({inChannel,inBank,stream}) — the scatter keeps trees/rocks
   // out of the channel and BOOSTS decorative small-rock density inside it. Same call-time convention.
   streamAt:    (x, z) => waterSystem ? waterSystem.streamChannelAt(x, z) : null,
+  // PERF-34: per-chunk early-out for both water samplers (see WaterSystem.waterNearBBox).
+  waterNear:   (x0, z0, x1, z1) => waterSystem ? waterSystem.waterNearBBox(x0, z0, x1, z1) : { ponds: false, streams: false },
   // PERF-07: sun shear for the per-instance shadow ground-fit (shadowShearScale at prop commit).
   // Reads the live key-light direction at call time (same convention); absent headless (gates build
   // PropSystem without this key → the bake attribute stays at its flat-ground default).

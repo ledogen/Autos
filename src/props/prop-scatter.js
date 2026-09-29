@@ -184,6 +184,14 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
   // FEAT-17: optional pond sampler (waterAt(x,z) → {inWater, inSkirt}) — nothing scatters IN a pond
   // (underwater trees). The skirt stays plantable (vegetated shoreline). Absent (older fixtures /
   // gates) → no exclusion, placements byte-unchanged. Pure fn of seed/coords → window-invariant.
+  // PERF-34: ONE "any water near this chunk?" query, then constant-"no" samplers where there is
+  // none — a streamAt walks a whole centreline per call and the bed-rock boost passes ask hundreds
+  // of times per chunk (two-thirds of a chunk's scatter at 200 mph, on stream-less ground). The
+  // boost passes draw from their OWN seeded streams and place nothing off-channel, so skipping
+  // them where no stream is near is byte-identical. Older fixtures (no waterNear) keep both.
+  const near = samplers.waterNear ? samplers.waterNear(ox, oz, ox + size, oz + size) : { ponds: !!samplers.waterAt, streams: !!samplers.streamAt }
+  samplers = (near.streams || !samplers.streamAt) && (near.ponds || !samplers.waterAt) ? samplers
+    : { ...samplers, streamAt: near.streams ? samplers.streamAt : null, waterAt: near.ponds ? samplers.waterAt : null }
   const inPondWater = (x, z) => inPondWaterAt(samplers, x, z)
 
   // FEAT-25: optional stream-channel sampler (streamAt(x,z) → {inChannel, inBank, stream}). Trees,
@@ -514,6 +522,12 @@ export function* scatterLitterGen(cx, cz, worldSeed, samplers, params = FLORA_PA
   const out = []
   const { heightAt, roadBlocked, roadClear: roadClearFn } = samplers
   const roadClear = roadClearFn || ((x, z) => !roadBlocked(x, z))
+  {   // PERF-34: the same per-chunk water early-out as scatterChunkGen (deferred == inline).
+    const size = P.chunkSize, ox = cx * size, oz = cz * size
+    const near = samplers.waterNear ? samplers.waterNear(ox, oz, ox + size, oz + size) : { ponds: !!samplers.waterAt, streams: !!samplers.streamAt }
+    if ((!near.streams && samplers.streamAt) || (!near.ponds && samplers.waterAt))
+      samplers = { ...samplers, streamAt: near.streams ? samplers.streamAt : null, waterAt: near.ponds ? samplers.waterAt : null }
+  }
   const inPondWater = (x, z) => inPondWaterAt(samplers, x, z)
   const inStreamChannel = (x, z) => inStreamChannelAt(samplers, x, z)
   const slopeAt = (x, z) => slopeFrom(samplers, x, z)

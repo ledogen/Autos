@@ -76,6 +76,7 @@ const _s = new THREE.Vector3()
 const _col = new THREE.Color()
 const _HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0)
 const LOD_SWAPS_MAX = 6      // PERF-21: per-frame chunk re-pool ceiling
+const LITTER_DEFER = 1.5     // PERF-34: streamScore units a litter-only job yields to base scatters by
 const PREEMPT_MARGIN = 1.0   // PERF-33: streamScore units (≈ chunks) a queued chunk must beat the active one by
 
 export class PropSystem {
@@ -864,7 +865,11 @@ export class PropSystem {
     // PERF-33: re-score EVERY frame against the current centre + travel direction. The score used to
     // be frozen at enqueue time and re-sorted only when something new arrived, so after moving, the
     // queue served chunks by where the player USED to be. ≤ a few dozen entries — trivial.
-    for (const q of this._scatterQueue) q.score = streamScore(q.cx - ccx, q.cz - ccz, motion)
+    // PERF-34: a litter-only job (cover + zone rocks of a chunk that already has its base props)
+    // yields to every BASE scatter within LITTER_DEFER chunks of it — otherwise the truck's own
+    // chunk's litter, at score ≈ 0, starved the base scatter of the chunks ahead and the hard
+    // path fired on every crossing at 200 mph.
+    for (const q of this._scatterQueue) q.score = streamScore(q.cx - ccx, q.cz - ccz, motion) + (q.litter ? LITTER_DEFER : 0)
     if (this._scatterQueue.length > 1) this._scatterQueue.sort((a, b) => a.score - b.score)
     // Drop queued/active work that scrolled out of the ring.
     for (let i = this._scatterQueue.length - 1; i >= 0; i--) {
