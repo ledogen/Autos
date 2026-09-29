@@ -62,10 +62,26 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
   density.add(S.logsPerChunk, '1', 0, 8, 1).name('logs max').onFinishChange(done)
   density.add(S, 'streamRockBoost', 0, 12, 0.5).name('bed small-rock boost').onFinishChange(done)
   density.add(S, 'streamMedRockBoost', 0, 30, 1).name('bed med-stone boost').onFinishChange(done)
+  // Zone rocks (2026-09-23): rocks following the ground texture, in patches.
+  if (S.zoneRocks) {
+    const Z = S.zoneRocks
+    const zr = density.addFolder('Zone rocks'); zr.close()
+    zr.add(Z, 'attempts', 0, 3000, 50).name('attempts / chunk').onFinishChange(done)
+    zr.add(Z, 'patchMin', 0, 1, 0.02).name('bare threshold').onFinishChange(done)
+    zr.add(Z, 'patchFreq', 0.005, 0.2, 0.005).name('patch freq (1/m)').onFinishChange(done)
+    zr.add(Z, 'onRock', 0, 1, 0.05).name('on rock').onFinishChange(done)
+    zr.add(Z, 'onDirt', 0, 1, 0.05).name('on dirt').onFinishChange(done)
+    zr.add(Z, 'onGrass', 0, 1, 0.05).name('on grass').onFinishChange(done)
+    zr.add(Z.mix, '0', 0, 1, 0.02).name('small share').onFinishChange(done)
+    zr.add(Z.mix, '1', 0, 1, 0.02).name('medium share').onFinishChange(done)
+    zr.add(Z.mix, '2', 0, 1, 0.02).name('large share (collidable)').onFinishChange(done)
+    if (params.medRock) zr.add(params.medRock.blob.radius, '1', 0.1, 0.6, 0.01).name('medium r max').onFinishChange(done)
+  }
 
   const place = f.addFolder('Placement'); place.close()
   place.add(S, 'groundSink', 0, 2, 0.05).name('ground sink (m)').onFinishChange(done)
   place.add(S, 'treeTiltMax', 0, 0.6, 0.01).name('tree tilt max (rad)').onFinishChange(done)
+  place.add(S, 'rockTiltMax', 0, 1.57, 0.01).name('rock tumble max (rad)').onFinishChange(done)
   place.add(S, 'roadExclusion', 0, 20, 0.5).name('road exclusion (m)').onFinishChange(done)
   place.add(S, 'slopeMeadowMax', 0, 1, 0.01).name('aspen slope max').onFinishChange(done)
   place.add(S, 'slopeSteepMin', 0, 1, 0.01).name('pine slope min').onFinishChange(done)
@@ -92,6 +108,45 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
   coll.add(params.collision, 'rockRadiusScale', 0.5, 2, 0.05).name('rock sphere ×').onChange(_resync)
   coll.add(params.collision.bush, 'k', 0, 200, 1).name('bush drag k')
   coll.add(params.collision.bush, 'fMax', 0, 800, 10).name('bush drag cap (N)')
+
+  // FEAT-85: roadside cover. Placement dials rebuild (re-scatter); fade + wind are live uniforms.
+  if (S.cover) {
+    const CV = S.cover
+    const cover = f.addFolder('Roadside cover (FEAT-85)'); cover.close()
+    const live = () => {
+      const ps = getPropSystem && getPropSystem()
+      if (ps) { ps.setCoverFade(CV.fadeStart, CV.fadeEnd); ps.setCoverWind(CV.windStrength) }
+    }
+    cover.add(CV, 'enabled').name('enabled').onFinishChange(done)
+    cover.add(CV, 'density', 0, 4, 0.1).name('density × (tier writes)').onFinishChange(done)
+    cover.add(CV, 'farLod').name('far ring: cheap clumps').onFinishChange(done)
+    cover.add(CV.wallBeatBack, '0', 0, 6, 0.25).name('beat-back min (m)').onFinishChange(done)
+    cover.add(CV.wallBeatBack, '1', 0, 10, 0.25).name('beat-back max (m)').onFinishChange(done)
+    cover.add(CV, 'wallDepth', 0.5, 6, 0.1).name('wall depth (m)').onFinishChange(done)
+    cover.add(CV, 'wallRows', 0, 4, 1).name('wall rows').onFinishChange(done)
+    cover.add(CV, 'wallDensity', 0, 1, 0.05).name('wall density').onFinishChange(done)
+    cover.add(CV, 'wallPatchMin', 0, 1, 0.02).name('wall bare threshold').onFinishChange(done)
+    cover.add(CV, 'wallPatchFreq', 0.005, 0.2, 0.005).name('wall patch freq (1/m)').onFinishChange(done)
+    cover.add(CV, 'wallTallFrac', 0, 1, 0.025).name('wall tall share (rye+sage)').onFinishChange(done)
+    cover.add(CV, 'sageFrac', 0, 1, 0.05).name('sage share of tall').onFinishChange(done)
+    cover.add(CV, 'backAttempts', 0, 1600, 20).name('backcountry attempts').onFinishChange(done)
+    cover.add(CV, 'backNoiseMin', 0, 1, 0.02).name('backcountry bare threshold').onFinishChange(done)
+    cover.add(CV, 'backTallFrac', 0, 1, 0.05).name('backcountry tall share').onFinishChange(done)
+    cover.add(CV, 'bankAttempts', 0, 1200, 20).name('riverbank attempts').onFinishChange(done)
+    cover.add(CV, 'bankDensity', 0, 1, 0.05).name('riverbank density').onFinishChange(done)
+    cover.add(CV, 'bankTallFrac', 0, 1, 0.05).name('riverbank tall share').onFinishChange(done)
+    cover.add(CV, 'dirtFrac', 0, 1, 0.05).name('on-dirt density (× green)').onFinishChange(done)
+    cover.add(CV, 'fadeStart', 0, 300, 5).name('fade start (m)').onChange(live)
+    cover.add(CV, 'fadeEnd', 0, 400, 5).name('fade end (m)').onChange(live)
+    cover.add(CV, 'windStrength', 0, 3, 0.05).name('wind').onChange(live)
+    if (params.grass && params.rye && params.sage) {
+      cover.addColor(params.grass, 'color').name('ricegrass base').onFinishChange(done)
+      cover.addColor(params.grass, 'tipColor').name('ricegrass tip').onFinishChange(done)
+      cover.addColor(params.rye, 'color').name('wild rye base').onFinishChange(done)
+      cover.addColor(params.rye, 'spikeColor').name('wild rye spike').onFinishChange(done)
+      cover.addColor(params.sage, 'leafColor').name('sagebrush leaf').onFinishChange(done)
+    }
+  }
 
   f.add({ rebuild: () => rebuild() }, 'rebuild').name('↻ Rebuild props')
   return f

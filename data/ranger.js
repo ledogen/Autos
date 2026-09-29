@@ -791,6 +791,12 @@ export const RANGER_PARAMS = {
   // At slope=0.6 (~54° from vertical) terrain reads fully as weathered cliff rock.
   roadCliffSlopeHi: 0.6,       // [-] slope upper threshold for full cliff color (D-11 / A10)
 
+  // BUG-74 (cut): inside a road's carve zone, rock (the ballast bench + cut face) is keyed on
+  // excavation depth through a fade CENTRED on the cut/fill crossover — half rock where the
+  // grade meets the raw hill, full rock this many metres into it, shoulder dirt this many metres
+  // up on fill. Replaces the sign test that drew a hard tan-vs-rock line along the flat bench.
+  roadCutRockFade: 2.0,        // m — half-width of the rock↔dirt fade, in metres of cut/fill depth
+
   // ── Phase 9 Plan 06 — Pothole / Crack Micro-Noise (SURF-06 / D-03) ──────────
   // potholeEnabled: master toggle. When false, potholeNoise always returns 0 and the
   // road surface is perfectly smooth (crown + camber only). Allows A/B comparison.
@@ -910,11 +916,13 @@ export const RANGER_PARAMS = {
   // ARE the linear vertex-colour values, NOT sRGB, so a colour picker round-trips exactly).
   // Tuned for high-altitude Eastern Sierra / Lone Pine: granite-grey rock, decomposed-granite
   // soil, muted sage-meadow green. Replaces the old desert warm-brown palette.
-  terrainRockColor:  0x72604b, // granite grey — steep faces AND high (above-treeline) terrain
-  terrainDirtColor:  0x69481b, // alpine soil/decomposed-granite — moderate slopes (the "general" mid)
+  terrainRockColor:  0x59544f, // warm granite grey (owner 2026-09-28; was 0x5a5b5e) — steep faces AND high (above-treeline) terrain. Was 0x72604b, a
+                               // warm BROWN despite this comment: the source of "brown dirt turning into brown
+                               // rocks" (owner 2026-09-25) once the shader painted rock by the share it wins.
+  terrainDirtColor:  0x7c6346, // alpine soil/decomposed-granite — moderate slopes (the "general" mid); owner 2026-09-28 (was 0x69481b)
   terrainGrassColor: 0x426917, // muted sage — FERTILE/forest flats (above the basin floors; trees go here)
   terrainMeadowColor: 0x1c270c, // lush green — MEADOW basins (local lows where water collects)
-  terrainCutoutColor: 0x757066, // engineered road cut face (man-made grey-tan, distinct from cliff)
+  terrainCutoutColor: 0x757066,
   terrainFillColor:   0x6b5740, // dirt fill embankment / road foundation
 
   // Biome split (slope + altitude). slope = 1 - vertexNormal.y. Altitude = raw terrain world Y.
@@ -927,13 +935,73 @@ export const RANGER_PARAMS = {
   terrainRelRadius:    40,     // m — neighbourhood radius for the local-mean low-pass (valley scale)
   terrainMeadowRelLo:  -12,    // m — rel at/below this (deep basin) reads full meadow
   terrainMeadowRelHi:  -2,     // m — rel at/above this (flat bench) reads fertile, not meadow
+  // FEAT-84 knolls: ground standing this far ABOVE its neighbourhood picks up rock share (the
+  // fragment texture pokes through the grass on local maxima). Capped by terrainKnollRock so the
+  // vertex stays a mix and the height contest decides texel by texel.
+  terrainKnollRelLo:    1.5,   // m — rel where the knoll rock begins
+  terrainKnollRelHi:    6,     // m — rel where it reaches terrainKnollRock
+  terrainKnollRock:     0.55,  // [-] max rock share a knoll adds (0 = off)
 
   // Procedural fbm detail (shared shader in terrain-detail.js — terrain + road shoulder).
   // terrainDetailScale is the master multiplier AND a perf kill-switch: 0 disables the
   // per-pixel noise entirely (escape hatch for weak GPUs — PERF-05 coordination).
   terrainDetailScale:    1.0,  // [-] master 0..1 (0 = no fbm mottle/bump at all)
-  terrainNoiseScale:     0.15, // 1/m — fbm spatial frequency (~6.7 m period)
-  terrainMottleStrength: 0.22, // [-] albedo mottle depth (multiplies biome colour)
+  terrainNoiseScale:     0.3,  // 1/m — fbm spatial frequency (~3.3 m period; 0.15 → 0.3, owner 2026-09-25)
+  terrainMottleStrength: 0.6,  // [-] albedo mottle depth (multiplies biome colour) — 0.22 → 0.6, owner 2026-09-25 ("how it makes the rocks and dirt look")
   terrainBumpStrength:   0.7,  // [-] normal-perturbation strength on rocky/high terrain
   roadShoulderBump:      0.5,  // [-] gravel bump strength on the dirt road shoulder only
+
+  // FEAT-84: per-zone surface detail maps (terrain-texture.js — procedural grass / dirt / rock,
+  // blended by the vertex biome weights, height-weighted at the interfaces). All behind the
+  // terrainDetailScale kill-switch. Tile sizes are metres per texture repeat.
+  // QUAL-32 sun shine. Phong specular colour (grey level) + shininess. Terrain is matte: soil and
+  // rock in this style have no sheen, and a low sun over the relief normals painted a broad band
+  // across every dirt skirt. The road keeps a faint asphalt sheen. Slider: Terrain Look → Sun shine.
+  terrainSpecular:      0x000000,
+  terrainShininess:     4,
+  roadSpecular:         0x0a0a0a,
+  roadShininess:        20,
+  terrainTexEnabled:    true,  // A/B lever: false = the FEAT-05 flat look (no taps, no blend, no splotches)
+  terrainTexNormal:     0.8,   // [-] strength of the per-zone normal (relief) maps (0 = off)
+  // Albedo (colour) modulation per zone. Owner 2026-09-25: ON for rock (and always on engineered
+  // cut/fill faces), OFF for grass and dirt — on the soft zones it read as gravel wallpaper
+  // against the flat palette; relief alone carries them.
+  terrainTexAlbedoGrass: 0,
+  terrainTexAlbedoDirt:  0,
+  terrainTexAlbedoRock:  0.55,
+  // Rock coverage curve: a vertex with rock share s shows rock on s^γ of the tile, tallest
+  // fragments first (owner 2026-09-25: "taper the sparsity, not the strength"). 1 = linear.
+  // 2026-09-28: the shader now ranks texels by a TRUE quantile (terrain-texture.js _rankOf), so
+  // s^γ is the fraction of the tile it says. With the old min–max height the effective curve was a
+  // cliff (0.4 % at s 0.5, 13 % at 0.7, 60 % at 0.8); γ 6 reproduces the approved look
+  // (1.6 / 12 / 26 %) without the cliff, and makes the floor and pebble dials below mean something.
+  terrainRockSparsity:  6.0,   // γ — 1 = linear; higher = sparser at the soft end
+  terrainDirtRockFloor: 0.03,  // fraction of the tile the ROCK MAP may cover on pure dirt (a basin's rim); grass gets none.
+                               // Owner 2026-09-28: dirt always has a few plates poking through, in patches (the shader
+                               // modulates this floor by the biome-dither field, 0–2×); the rock share amplifies from
+                               // there via s^γ. Now an honest 3 %; the grey pebbles below carry most of the baseline.
+  // A pebble is a rock and rocks are grey (owner 2026-09-25): this share of the dirt map's own
+  // pebbles (tallest first) takes the rock colour on pure dirt; all of them by rock share ~1/3.
+  terrainDirtPebbleGrey: 0.35,
+  // THE key for "rock with foliage underneath": wherever rock is present, the ground between
+  // the rocks — on grass, on dirt, and in the rock zone's own joints — pulls toward this colour
+  // (owner 2026-09-25: one base key for every biome, not the albedo). Live uniform, no re-bake.
+  terrainRockGapGreen:  0x2d372a,
+  terrainUnderRockGreen: 0.8,  // [-] how far the ground between rocks goes to the key (0 = off)
+  // Biome dither (owner 2026-09-27: "the clearly defined thresholds bother me"): the rock share
+  // is perturbed per texel by a ~8 m + ~2 m noise field before the coverage rule, weighted by
+  // s·(1−s), so a dirt↔rock boundary is a wide ragged band, not a line. Pure ends stay pure.
+  terrainBiomeDither:     0.5,  // [-] amplitude (0 = the raw ramp) — owner 2026-09-27
+  terrainBiomeDitherFreq: 0.3,  // 1/m — coarse octave (~3 m); a fine one rides at 3.7× — owner 2026-09-27
+  // …only on low-inclination rock (owner 2026-09-25: steep faces slide, nothing grows in the
+  // joints): the joint green fades to bare grey as slope (1 − normal.y) passes Lo → Hi.
+  // Engineered cut faces keep their stripes.
+  terrainRockGreenSlopeLo: 0.25,
+  terrainRockGreenSlopeHi: 0.5, // the foliage green between the rock fragments (the dark stripes in the joints) — darker/richer, owner 2026-09-25
+  terrainTexBlendDepth: 0.22,  // [-] interface softness: 0 = hard height contest, 1 = plain crossfade
+  terrainTexTileGrass:  2.0,   // m — tuft field repeat (1.6 was unreadable a few metres from the truck)
+  terrainTexTileDirt:   2.4,   // m — clod/pebble field repeat
+  terrainTexTileRock:   8.0,   // m — fractured-plate field repeat (~1.5–2 m plates; 5 m read as cobbles)
+  // Owner 2026-09-24: the green under the dirt should be more vibrant on FLAT dirt (fine on the
+  // hills). Extra green saturation in the dirt hollows, scaled by flatness (0 = off).
 };

@@ -484,6 +484,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'terrainRelRadius', 10, 120, 5).name('Meadow radius (m)').onChange(_recolor)
   lookFolder.add(params, 'terrainMeadowRelLo', -30, 0, 1).name('Meadow full at (m)').onChange(_recolor)
   lookFolder.add(params, 'terrainMeadowRelHi', -15, 2, 0.5).name('Meadow start at (m)').onChange(_recolor)
+  lookFolder.add(params, 'terrainKnollRelLo', 0, 15, 0.5).name('Knoll rock from (m)').onChange(_recolor)
+  lookFolder.add(params, 'terrainKnollRelHi', 0, 30, 0.5).name('Knoll rock full at (m)').onChange(_recolor)
+  lookFolder.add(params, 'terrainKnollRock', 0, 1, 0.05).name('Knoll rock share').onChange(_recolor)
   lookFolder.add(params, 'terrainTreelineLo', 0, 200, 5).name('Treeline low (m)').onChange(v => { _setU('uTreeLo', v); _recolor() })
   lookFolder.add(params, 'terrainTreelineHi', 0, 300, 5).name('Treeline high (m)').onChange(v => { _setU('uTreeHi', v); _recolor() })
   lookFolder.add(params, 'terrainDetailScale', 0, 1, 0.05).name('Detail scale (0=off)').onChange(v => _setU('uDetailScale', v))
@@ -491,6 +494,29 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'terrainMottleStrength', 0, 0.6, 0.02).name('Mottle strength').onChange(v => _setU('uMottle', v))
   lookFolder.add(params, 'terrainBumpStrength', 0, 2.0, 0.05).name('Rock bump strength').onChange(v => _setU('uBump', v))
   lookFolder.add(params, 'roadShoulderBump', 0, 2.0, 0.05).name('Shoulder bump').onChange(v => _setU('uShoulderBump', v))
+  // FEAT-84: surface texture blend — live uniforms, no rebuild. Tile sizes are metres/repeat and
+  // land in the uSurfScale vec3 (repeats/m) through the same callback (name → component).
+  // QUAL-32: sun shine on the ground — 0 = matte (default), 1 = three's old default sheen.
+  const _shine = { v: 0 }
+  lookFolder.add(_shine, 'v', 0, 1, 0.05).name('Sun shine (terrain)').onChange(v => { const t = window.__terrainSystem && window.__terrainSystem(); if (t && t._material) { t._material.specular.setScalar(v * 0.067); t._material.shininess = 4 + v * 26 } })
+  lookFolder.add(params, 'terrainTexEnabled').name('Surface textures (A/B)').onChange(v => _setU('uSurfOn', v ? 1 : 0))
+  lookFolder.add(params, 'terrainTexNormal', 0, 2.0, 0.05).name('Surface relief').onChange(v => _setU('uSurfNormal', v))
+  lookFolder.add(params, 'terrainTexAlbedoGrass', 0, 1.0, 0.05).name('Albedo: grass').onChange(v => _setU('uSurfAlbW.x', v))
+  lookFolder.add(params, 'terrainTexAlbedoDirt', 0, 1.0, 0.05).name('Albedo: dirt').onChange(v => _setU('uSurfAlbW.y', v))
+  lookFolder.add(params, 'terrainTexAlbedoRock', 0, 1.0, 0.05).name('Albedo: rock + cut faces').onChange(v => _setU('uSurfAlbW.z', v))
+  lookFolder.add(params, 'terrainRockSparsity', 0.5, 10, 0.1).name('Rock sparsity (γ)').onChange(v => _setU('uRockSparsity', v))
+  lookFolder.add(params, 'terrainDirtRockFloor', 0, 0.3, 0.01).name('Dirt rock floor').onChange(v => _setU('uDirtRockFloor', v))
+  lookFolder.add(params, 'terrainDirtPebbleGrey', 0, 1, 0.05).name('Dirt pebbles grey').onChange(v => _setU('uDirtPebbleGrey', v))
+  lookFolder.addColor(params, 'terrainRockGapGreen').name('Under-rock green (key)').onChange(_recolor)
+  lookFolder.add(params, 'terrainUnderRockGreen', 0, 1, 0.05).name('Under-rock green amount').onChange(v => _setU('uUnderRockGreen', v))
+  lookFolder.add(params, 'terrainBiomeDither', 0, 1, 0.05).name('Biome dither').onChange(v => _setU('uBiomeDither.x', v))
+  lookFolder.add(params, 'terrainBiomeDitherFreq', 0.02, 0.5, 0.01).name('Biome dither freq (1/m)').onChange(v => _setU('uBiomeDither.y', v))
+  lookFolder.add(params, 'terrainRockGreenSlopeLo', 0, 1, 0.01).name('Rock green: bare from slope').onChange(v => _setU('uRockGreenSlope.x', v))
+  lookFolder.add(params, 'terrainRockGreenSlopeHi', 0, 1, 0.01).name('Rock green: bare by slope').onChange(v => _setU('uRockGreenSlope.y', v))
+  lookFolder.add(params, 'terrainTexBlendDepth', 0.02, 1.0, 0.02).name('Surface blend depth').onChange(v => _setU('uSurfDepth', v))
+  lookFolder.add(params, 'terrainTexTileGrass', 0.5, 6, 0.1).name('Grass tile (m)').onChange(v => _setU('uSurfScale.x', 1 / v))
+  lookFolder.add(params, 'terrainTexTileDirt', 0.5, 8, 0.1).name('Dirt tile (m)').onChange(v => _setU('uSurfScale.y', 1 / v))
+  lookFolder.add(params, 'terrainTexTileRock', 1, 16, 0.25).name('Rock tile (m)').onChange(v => _setU('uSurfScale.z', 1 / v))
 
   // ── Water folder (FEAT-24 meadow meander streams; FEAT-17/18 rarity dials) ────────────
   // Every dial reshapes the deterministic water records + the terrain stream carve, so all
@@ -666,6 +692,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   surfaceFolder.add(params, 'roadShoulderWidth',    1,    6,    0.5 ).name('Shoulder Width (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCliffSlopeLo',     0,    0.5,  0.02).name('Cliff Slope Lo').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCliffSlopeHi',     0.3,  0.9,  0.02).name('Cliff Slope Hi').onChange(fireSurface)
+  // BUG-74: the cut's rock fades in/out over this much cut/fill depth either side of the crossover.
+  surfaceFolder.add(params, 'roadCutRockFade',      0.25, 6,    0.25).name('Cut Rock Fade (m)').onChange(fireSurface)
 
   // Plan 09-10 — Decal ribbon depth-bias + edge skirts.
   // roadSkirtDepth is geometry → fires fireSurface (full road rebuild).
@@ -757,6 +785,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadShoulderWidth:     'Width (m) of the dirt shoulder flanking each side of the paved surface.',
     roadCliffSlopeLo:      'Lower slope threshold where terrain starts shading as cliff rock.',
     roadCliffSlopeHi:      'Upper slope threshold where terrain is fully cliff rock.',
+    roadCutRockFade:       'Half-width (m of cut/fill depth) of the fade between the cut\'s broken rock and shoulder dirt, centred where the road grade meets the hill.',
     roadSkirtDepth:        'How far (m) the road-edge skirt drops below the ribbon to hide seams against terrain.',
     roadPolygonOffsetFactor:'Depth-bias factor pushing the road decal above terrain to prevent z-fighting.',
     roadPolygonOffsetUnits: 'Depth-bias units for the road decal (pairs with PolyOffset Factor).',

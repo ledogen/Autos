@@ -271,4 +271,204 @@ export function assembleTree(trunk, canopy, barkHex, canopyHex, canopyDrop = 0, 
   return mergeGeometries([trunk.geo, canopy])
 }
 
+// ── FEAT-85: roadside cover clumps — three Eastern Sierra natives ────────────────────
+// All OPAQUE flat-shaded surfaces (ART-STYLE.md rule 7: no cutout foliage): grasses are fans of
+// tapered blade strips with seed stalks, sagebrush is arching stems carrying crowns of small leaf
+// cards. They render DoubleSide through the cover material (prop-palette.js), which also reads the
+// `aSway` attribute baked here (0 at the root → ~1 at the tip, so the wind moves tips and never
+// roots) and shrinks the clump toward its base past the fade distance.
+
+class _TriBuilder {
+  constructor() { this.pos = []; this.col = []; this.sway = [] }
+  tri(a, b, c, ca, cb, cc, sa, sb, sc) {
+    this.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2])
+    this.col.push(ca[0], ca[1], ca[2], cb[0], cb[1], cb[2], cc[0], cc[1], cc[2])
+    this.sway.push(sa, sb, sc)
+  }
+  build() {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3))
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3))
+    geo.setAttribute('aSway', new THREE.Float32BufferAttribute(this.sway, 1))
+    geo.computeVertexNormals()   // non-indexed → flat per-face normals
+    geo.computeBoundingSphere()
+    return geo
+  }
+}
+const _hexLin = (hex) => { const c = new THREE.Color(hex); return [c.r, c.g, c.b] }
+const _lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+const _scale3 = (c, k) => [c[0] * k, c[1] * k, c[2] * k]
+
+// One blade: a quad from the root to mid-height then a tip triangle, bending outward on a
+// quadratic. `swayK` scales the tip motion (rye is heavier than ricegrass).
+function _blade(B, rng, o, base, tip, hMax, swayK = 1) {
+  const az = rng() * Math.PI * 2
+  const ox = Math.cos(az), oz = Math.sin(az)              // outward direction of this blade
+  const lx = -oz, lz = ox                                 // across the blade (its face looks outward)
+  const r0 = rng() * o.spread[0] * 0.5                    // root offset from the clump centre
+  const h = _range(rng, o.height[0], o.height[1])
+  const lean = _range(rng, 0.25, 1.0) * o.spread[1]       // tip reach outward, fraction of height
+  const w0 = o.width * _range(rng, 0.8, 1.2), w1 = w0 * 0.55
+  const bx = ox * r0, bz = oz * r0
+  const spine = (t) => [bx + ox * lean * h * t * t, h * (t - 0.18 * t * t * lean), bz + oz * lean * h * t * t]
+  const shade = _range(rng, 0.86, 1.14)
+  const col = (t) => _scale3(_lerp3(base, tip, t), shade)
+  const sway = (t) => Math.pow(t, 1.4) * (h / hMax) * swayK
+  const P0 = spine(0), P1 = spine(0.55), P2 = spine(1)
+  const A0 = [P0[0] + lx * w0, P0[1], P0[2] + lz * w0], A1 = [P0[0] - lx * w0, P0[1], P0[2] - lz * w0]
+  const M0 = [P1[0] + lx * w1, P1[1], P1[2] + lz * w1], M1 = [P1[0] - lx * w1, P1[1], P1[2] - lz * w1]
+  B.tri(A0, A1, M1, col(0), col(0), col(0.55), sway(0), sway(0), sway(0.55))
+  B.tri(A0, M1, M0, col(0), col(0.55), col(0.55), sway(0), sway(0.55), sway(0.55))
+  B.tri(M0, M1, P2, col(0.55), col(0.55), col(1), sway(0.55), sway(0.55), sway(1))
+}
+
+// One seed stalk: a thin near-vertical strip with a diamond head (an airy ricegrass panicle or a
+// wild-rye spike, by `headW`/`headL`). Straw-coloured.
+function _stalk(B, rng, h, headW, headL, colour, hMax, swayK = 1) {
+  const az = rng() * Math.PI * 2
+  const ox = Math.cos(az), oz = Math.sin(az)
+  const lx = -oz, lz = ox
+  const lean = _range(rng, 0.05, 0.25)
+  const r0 = rng() * 0.08
+  const bx = ox * r0, bz = oz * r0
+  const top = [bx + ox * lean * h, h, bz + oz * lean * h]
+  const w = 0.012
+  const sway = (t) => Math.pow(t, 1.3) * (h / hMax) * swayK
+  B.tri([bx + lx * w, 0, bz + lz * w], [bx - lx * w, 0, bz - lz * w], [top[0] - lx * w, top[1], top[2] - lz * w], colour, colour, colour, sway(0), sway(0), sway(0.85))
+  B.tri([bx + lx * w, 0, bz + lz * w], [top[0] - lx * w, top[1], top[2] - lz * w], [top[0] + lx * w, top[1], top[2] + lz * w], colour, colour, colour, sway(0), sway(0.85), sway(0.85))
+  // head: diamond continuing up the stalk direction
+  const ux = ox * lean, uy = 1, uz = oz * lean
+  const ul = Math.hypot(ux, uy, uz)
+  const dx = ux / ul, dy = uy / ul, dz = uz / ul
+  const mid = [top[0] + dx * headL * 0.5, top[1] + dy * headL * 0.5, top[2] + dz * headL * 0.5]
+  const end = [top[0] + dx * headL, top[1] + dy * headL, top[2] + dz * headL]
+  const hc = _scale3(colour, 1.08)
+  B.tri(top, [mid[0] + lx * headW, mid[1], mid[2] + lz * headW], end, hc, hc, hc, sway(0.85), sway(1), sway(1))
+  B.tri(top, end, [mid[0] - lx * headW, mid[1], mid[2] - lz * headW], hc, hc, hc, sway(0.85), sway(1), sway(1))
+}
+
+/**
+ * Small bunchgrass (Indian ricegrass): fine wiry blades fanning from the root plus a few airy
+ * seed stalks with small open heads. ~3 tris a blade + 4 a stalk.
+ * @param {{blades:[number,number], height:[number,number], spread:[number,number], width:number,
+ *          stalks:[number,number], color:number, tipColor:number, stalkColor:number}} o
+ */
+export function makeGrassClump(o, rng) {
+  const B = new _TriBuilder()
+  const nb = Math.round(_range(rng, o.blades[0], o.blades[1]))
+  const hMax = o.height[1] * 1.25
+  const base = _hexLin(o.color), tip = _hexLin(o.tipColor), stalk = _hexLin(o.stalkColor)
+  for (let i = 0; i < nb; i++) _blade(B, rng, o, base, tip, hMax, 1)
+  const ns = o.stalks ? Math.round(_range(rng, o.stalks[0], o.stalks[1])) : 0
+  for (let i = 0; i < ns; i++) _stalk(B, rng, o.height[1] * _range(rng, 0.95, 1.15), 0.035, 0.08, stalk, hMax, 1)
+  return B.build()
+}
+
+/**
+ * Great Basin wild rye: a big bunchgrass — broad, long, arching blue-green blades and tall
+ * straight seed spikes standing above the clump. Heavier sway than ricegrass (0.8×).
+ * @param {{blades:[number,number], height:[number,number], spread:[number,number], width:number,
+ *          spikes:[number,number], color:number, tipColor:number, spikeColor:number}} o
+ */
+export function makeRyeClump(o, rng) {
+  const B = new _TriBuilder()
+  const nb = Math.round(_range(rng, o.blades[0], o.blades[1]))
+  const hMax = o.height[1] * 1.3
+  const base = _hexLin(o.color), tip = _hexLin(o.tipColor), spike = _hexLin(o.spikeColor)
+  for (let i = 0; i < nb; i++) _blade(B, rng, o, base, tip, hMax, 0.8)
+  const ns = o.spikes ? Math.round(_range(rng, o.spikes[0], o.spikes[1])) : 0
+  for (let i = 0; i < ns; i++) _stalk(B, rng, o.height[1] * _range(rng, 0.95, 1.1), 0.025, 0.18, spike, hMax, 0.8)
+  return B.build()
+}
+
+/**
+ * Big sagebrush: gnarled stems arching out from a common base, each carrying two crowns of
+ * three small grey-green leaf cards (tilted up from horizontal at random yaw). 14 tris a stem.
+ * Woody — sways at 0.35×.
+ * @param {{stems:[number,number], height:[number,number], spread:[number,number], leaf:number,
+ *          stemColor:number, leafColor:number}} o
+ */
+export function makeSageClump(o, rng) {
+  const B = new _TriBuilder()
+  const ns = Math.round(_range(rng, o.stems[0], o.stems[1]))
+  const hMax = o.height[1]
+  const stemC = _hexLin(o.stemColor), leafC = _hexLin(o.leafColor)
+  for (let i = 0; i < ns; i++) {
+    const az = i * (Math.PI * 2 / ns) + rng() * (Math.PI / ns)   // spread the stems around the clump
+    const ox = Math.cos(az), oz = Math.sin(az)
+    const lx = -oz, lz = ox
+    const h = _range(rng, o.height[0], o.height[1])
+    const reach = _range(rng, 0.35, 1.0) * o.spread[1]
+    const r0 = rng() * o.spread[0] * 0.3
+    const bx = ox * r0, bz = oz * r0
+    const kink = (rng() - 0.5) * 0.3                              // gnarl: a sideways jog mid-stem
+    const spine = (t) => [bx + ox * reach * h * t * t * 0.9 + lx * kink * h * Math.sin(t * Math.PI), h * t * (1 - 0.15 * t), bz + oz * reach * h * t * t * 0.9 + lz * kink * h * Math.sin(t * Math.PI)]
+    const sway = (t) => Math.pow(t, 1.3) * 0.35 * (h / hMax)
+    const P0 = spine(0), P1 = spine(1)
+    const w0 = 0.04, w1 = 0.014
+    const S0 = [P0[0] + lx * w0, P0[1], P0[2] + lz * w0], S1 = [P0[0] - lx * w0, P0[1], P0[2] - lz * w0]
+    const T0 = [P1[0] + lx * w1, P1[1], P1[2] + lz * w1], T1 = [P1[0] - lx * w1, P1[1], P1[2] - lz * w1]
+    B.tri(S0, S1, T1, stemC, stemC, stemC, sway(0), sway(0), sway(1))
+    B.tri(S0, T1, T0, stemC, stemC, stemC, sway(0), sway(1), sway(1))
+    for (const t of [0.62, 1.0]) {
+      const c = spine(t)
+      const sw = sway(t)
+      for (let k = 0; k < 3; k++) {
+        const yaw = rng() * Math.PI * 2
+        const pitch = _range(rng, 0.3, 1.1)                       // rad up from horizontal
+        const L = o.leaf * _range(rng, 0.75, 1.25)
+        const ux = Math.cos(yaw) * Math.cos(pitch), uy = Math.sin(pitch), uz = Math.sin(yaw) * Math.cos(pitch)
+        const vx = -Math.sin(yaw), vz = Math.cos(yaw)
+        const cx = c[0] + ux * L * 0.5, cy = c[1] + uy * L * 0.5, cz = c[2] + uz * L * 0.5
+        const hw = L * 0.42
+        const tipP = [c[0] + ux * L, c[1] + uy * L, c[2] + uz * L]
+        const sL = [cx + vx * hw, cy, cz + vz * hw], sR = [cx - vx * hw, cy, cz - vz * hw]
+        const lc = _scale3(leafC, _range(rng, 0.84, 1.16))
+        B.tri(c, sL, tipP, lc, lc, lc, sw, sw, sw)
+        B.tri(c, tipP, sR, lc, lc, lc, sw, sw, sw)
+      }
+    }
+  }
+  return B.build()
+}
+
+/**
+ * FEAT-85 far-ring LOD: the cheap stand-ins the 'far' prop ring draws in place of the clumps
+ * above (prop-system _placeChunk swaps the pool by key). Same silhouette and baked colours, a
+ * fraction of the triangles — a tuft of `blades` tall triangles fanning from the root (3 tris for
+ * ricegrass, 4 for rye) and a squat tent of leaf cards for sage (4 tris). At 60 m+ a clump is a
+ * few pixels of colour and sway, which is all these carry. Opaque geometry like everything else.
+ */
+function _loTuft(o, rng, blades, colour, tipColour, hScale, swayK) {
+  const B = new _TriBuilder()
+  const base = _hexLin(colour), tip = _hexLin(tipColour)
+  const h = _range(rng, o.height[0], o.height[1]) * hScale
+  const w = o.spread[0] * 0.45
+  for (let i = 0; i < blades; i++) {
+    const az = i * (Math.PI * 2 / blades) + rng() * 0.6
+    const ox = Math.cos(az), oz = Math.sin(az), lx = -oz, lz = ox
+    const lean = _range(rng, 0.2, 0.6) * o.spread[1]
+    const shade = _range(rng, 0.88, 1.12)
+    const c0 = _scale3(base, shade), c1 = _scale3(tip, shade)
+    B.tri([lx * w, 0, lz * w], [-lx * w, 0, -lz * w], [ox * lean * h, h, oz * lean * h], c0, c0, c1, 0, 0, swayK)
+  }
+  return B.build()
+}
+export function makeGrassLo(o, rng) { return _loTuft(o, rng, 3, o.color, o.tipColor, 1.0, 1.0) }
+export function makeRyeLo(o, rng)   { return _loTuft(o, rng, 4, o.color, o.tipColor, 1.0, 0.8) }
+export function makeSageLo(o, rng) {
+  const B = new _TriBuilder()
+  const leaf = _hexLin(o.leafColor)
+  const h = _range(rng, o.height[0], o.height[1]) * 0.8
+  const r = _range(rng, o.spread[0], o.spread[1]) * 0.9
+  const apex = [0, h, 0]
+  const n = 4
+  for (let i = 0; i < n; i++) {
+    const a0 = i * (Math.PI * 2 / n) + rng() * 0.4, a1 = a0 + Math.PI * 2 / n
+    const c = _scale3(leaf, _range(rng, 0.84, 1.1))
+    B.tri([Math.cos(a0) * r, 0.05, Math.sin(a0) * r], [Math.cos(a1) * r, 0.05, Math.sin(a1) * r], apex, c, c, c, 0, 0, 0.35)
+  }
+  return B.build()
+}
+
 export const _internal = { valueNoise3: _valueNoise3, range: _range }

@@ -349,6 +349,18 @@ export class WaterSystem {
 
     // Ponds whose footprint (radius+skirt) intersects the bbox. Ponds are local
     // (≤ pondSearchRadius) so a 1-cell margin covers any pond overlapping the bbox.
+    /**
+     * PERF-34: is ANY water within reach of a bbox? One call per chunk lets the prop scatter swap
+     * its per-candidate pond/stream samplers for constant "no" — streamChannelAt walks a whole
+     * centreline per call and the bed-rock boost passes ask hundreds of times per chunk, which was
+     * two-thirds of a chunk's scatter at 200 mph (sampler.streamAt 45 ms + waterAt 13 ms per 3
+     * chunks) on ground with no stream in sight. Same padding as the InBBox queries, so "no" here
+     * means every per-point query inside the bbox would have said no too.
+     */
+    waterNearBBox(minX, minZ, maxX, maxZ) {
+        return { ponds: this.pondsInBBox(minX, minZ, maxX, maxZ).length > 0, streams: this.streamsInBBox(minX, minZ, maxX, maxZ).length > 0 }
+    }
+
     pondsInBBox(minX, minZ, maxX, maxZ) {
         const reach = this.k.pondMaxRadius + this.k.pondSkirtWidth
         const marginCells = Math.ceil(reach / WATER_CELL) + 1

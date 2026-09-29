@@ -22,20 +22,21 @@ export const FLORA_PARAMS = {
     clustersPerChunk: 4,        // tree cluster centres seeded per chunk (grouping)
     clusterRadius:    18,       // m — individuals scatter within this of a cluster centre
     treesPerCluster:  [4, 11],  // [min,max] individuals per cluster
-    rocksPerChunk:    [12, 26], // collidable rocks (independent scatter) — denser per user
-    smallRocksPerChunk:[30, 60],// decorative <0.1 m rocks (non-collidable; also shoulder + road)
+    rocksPerChunk:    [8, 18],  // collidable rocks (independent scatter) — 12–26 × 0.7, owner 2026-09-24 ("medium and large −30 %")
+    smallRocksPerChunk:[60, 110],// decorative <0.1 m rocks (non-collidable; also shoulder + road) — owner 2026-09-23: "a ton more"; the zone pass below adds the localised ones
     streamRockBoost:  3,        // FEAT-25: extra channel-rock attempts = base small-rock attempts × this
                                 //   (denser cobble scatter in stream beds/banks; USER-OWNED density dial)
     streamMedRockBoost: 10,     // FEAT-25 rework: MEDIUM ('rock' class) stones in the channel bed —
                                 //   in-bed density ≈ this × ambient rock density (USER-OWNED, "10x med stones")
     bushesPerChunk:   [6, 14],
-    boulderChance:    0.04,     // per chunk, a rare large buried boulder
+    boulderChance:    0.08,     // per chunk, a rare large buried boulder (0.04 → 0.08, owner 2026-09-24 "double boulders")
     logsPerChunk:     [0, 2],   // FEAT-15: fallen trunks (hard obstacle) — sparse forest debris
     logSlopeMax:      0.45,     // FEAT-15: no logs on near-cliffs (they'd visibly float/slide)
     logPitchMax:      0.55,     // rad — reject a log whose two ends span a step this steep (float guard)
     roadExclusion:    9,        // m — reject TREES + collidable rocks within this of the road
     groundSink:       0.3,      // m — sink trees + bushes so the base digs in (kills slope-float)
     treeTiltMax:      0.18,     // rad (~10°) — per-tree random lean from vertical (pivots at base)
+    rockTiltMax:      1.0,      // rad (~57°) — rocks tumble (random lean about a random axis; boulders stay yaw-only, owner 2026-09-28)
     // Small-rock road bands: dense on the shoulder, SPARSE on the road surface itself.
     roadHalfWidth:    5,        // ~ RANGER_PARAMS.roadHalfWidth (road surface half-width)
     roadShoulderOuter:8.5,      // outer edge of the shoulder band
@@ -54,6 +55,77 @@ export const FLORA_PARAMS = {
     // Aspen gets MORE common with elevation; pine ~uniform. Weight = 1 + k*(elev/elevRef).
     aspenElevBias:    0.6,
     elevRef:          120,      // m — elevation normaliser for the bias term
+
+    // ── Zone rocks (owner 2026-09-23): rocks that FOLLOW THE GROUND TEXTURE. The base rock
+    // passes above are chunk-uniform; this additive pass stands small / medium / large rocks
+    // where the ground reads rock (the fragment texture), fewer on dirt, a trace on grass, and
+    // LOCALISED — its own patchiness field (~30 m) so a rocky slope has rubble fans and bare
+    // stretches, not a stipple. Not tier-scaled: rocks are what tie the props to the bump map,
+    // and the owner wants them on every quality setting. Small + medium are non-collidable
+    // (medium is ground-clearance scale, half-buried); large are the collidable `rock` class.
+    zoneRocks: {
+      attempts:   900,          // candidates per 64 m chunk (kept ≈ zone weight × patchiness)
+      patchFreq:  0.033,        // 1/m — patchiness field (~30 m)
+      patchMin:   0.42,         // field value below which the ground stays bare of zone rocks
+      onRock:     1.0,          // keep weight where the ground is rock
+      onDirt:     0.35,         //   … dirt (owner: "more … but not as much as the rocky terrain")
+      onGrass:    0.06,         //   … grass
+      mix:        [0.58, 0.224, 0.07],  // share small / medium / large of the attempts (need not sum to 1 — the rest are skipped); med+large × 0.7, owner 2026-09-24
+    },
+
+    // ── FEAT-85: roadside cover — where grass tufts and brush stand ───────────────────────
+    // Two sources, both only where the ground reads green (terrain.vegetationAt — the same rule
+    // the terrain paints green with, so the cover never stands on brown or grey ground):
+    //  • THE WALL: road maintenance beats the brush back from the pavement edge, so it stands as
+    //    a band whose inner face wanders 1–4 m off the edge along the road (a noise field over the
+    //    run's arc-length, per side) — never a straight hedge. Inside the band the placement is
+    //    dense; behind it the backcountry rule takes over. A second, slower noise field decides
+    //    whether a stretch is a grassy verge or a woody hedge.
+    //  • THE BACKCOUNTRY: a sparse general scatter gated by ITS OWN patchiness field (~40 m
+    //    wavelength) so open ground has bare stretches and thick stretches, not a uniform stipple.
+    // Randomness is keyed by world POSITION (not the chunk rng), so a chunk's cover is the same
+    // whichever neighbours were streamed when it was scattered.
+    cover: {
+      enabled:          true,     // tier-written: Low turns it off (new chunks skip the pass)
+      density:          1.0,      // tier-written: × on the BACKCOUNTRY attempts (Normal 1, High/Ultra more; the wall is a road feature and does not scale)
+      farLod:           true,     // chunks in the 'far' prop ring stand the cheap Lo clumps (3–4 tris) in place of the full ones (see prop-system _placeChunk)
+      sink:             0.05,     // m — clump origin below ground so the roots dig in on slopes
+      slopeMax:         0.30,     // reject above this slope (1 - normal.y) regardless of greenness
+      // the wall — owner 2026-09-23: 80 % less than the 4-row / 0.9 band, and SPORADIC: a third
+      // noise field along the road (wallPatchFreq) gates whole stretches to bare, so what is left
+      // stands in clumps with gaps rather than as a thinner hedge.
+      wallStep:         0.9,      // m — candidate spacing along the road, per side
+      wallRows:         2,        // candidates per step per side, spread across wallDepth
+      wallBeatBack:     [1, 4],   // m — inner face distance from the PAVEMENT EDGE (halfWidth), wanders by noise
+      wallNoiseFreq:    0.045,    // 1/m — beat-back wander (~22 m wavelength along the road)
+      wallDepth:        2.2,      // m — thickness of the dense band behind the inner face
+      wallDensity:      0.55,     // probability a candidate stands, inside a populated stretch
+      wallPatchFreq:    0.06,     // 1/m — populated-vs-bare stretches along the road (~17 m)
+      wallPatchMin:     0.45,     // field value below which the stretch is bare (mean gate ≈ 0.4)
+      wallTallFrac:     0.175,    // mean share of TALL kinds (rye/sage) in the wall; the hedge/verge field scales it 0.4×–1.6×
+      wallBrushNoiseFreq: 0.018,  // 1/m — hedge-vs-verge wander (~55 m)
+      sageFrac:         0.5,      // of the tall kinds, the sagebrush share (rest wild rye)
+      // the backcountry
+      backAttempts:     1100,     // candidates per 64 m chunk at density 1 (kept ≈ green × patchiness) — owner 2026-09-23: "blanket everything"; scaled by `density` per tier
+      backNoiseFreq:    0.025,    // 1/m — patchiness field (~40 m)
+      backNoiseMin:     0.38,     // field value below which the ground stays bare
+      backTallFrac:     0.1,      // share of tall kinds away from the road
+      // the riverbanks (owner 2026-09-25): the stream BANK band (water.streamChannelAt inBank —
+      // the ramp between the channel and grade) grows regardless of the green rule, rye-heavy
+      // (it wants the moisture), sage rare. Candidates in the channel itself never stand.
+      bankAttempts:     360,      // candidates per chunk (kept only where they land in a bank)
+      bankDensity:      0.85,     // probability a bank candidate stands
+      bankTallFrac:     0.45,     // share of tall kinds on the bank
+      bankSageFrac:     0.15,     // of the tall kinds, sage (rest wild rye)
+      // Off green ground: small grass + sage continue onto DIRT at this fraction of their green
+      // density (owner: "the grass can and should continue on to dirt slopes, sparser"); rye is
+      // green-only (it wants moisture). Nothing stands on rock (steep / above the treeline).
+      dirtFrac:         0.5,      // 0.3 → 0.5, owner 2026-09-23: more of the ricegrass on the dirt slopes
+      // rendering (live, no rebuild) — tier-written like lod.ring3d
+      fadeStart:        60,       // m — clumps start shrinking toward the ground
+      fadeEnd:          95,       // m — gone (zero fragments; instances stay resident)
+      windStrength:     1.0,      // [-] vertex sway amplitude (0 = still)
+    },
   },
 
   // ── Aspen: tall white trunk (kinked tapered tube) + rounded blob canopy ─────────
@@ -103,6 +175,19 @@ export const FLORA_PARAMS = {
     instScale: [0.7, 1.2],
   },
 
+  // Medium rocks (owner 2026-09-23): the missing size between the pebbles and the collidable
+  // rocks, 0.16–0.36 m drawn radius, 30–60 % buried, so what stands proud is ground-clearance
+  // scale. NON-collidable: a collidable rock is an engine body per instance, and the zone pass
+  // stands hundreds of these per rocky chunk (the BUG-60 broad-phase churn is the ceiling).
+  medRock: {
+    variants: 4, collidable: false,
+    blob:  { radius: [0.16, 0.36], axisScale: [1.25, 0.7, 1.0], irregularity: 0.5,
+             noiseFreq: 2.4, subdiv: 0 },
+    color: 0xa3a09b, colorJitter: 0.12,
+    buryFrac: [0.3, 0.6],
+    instScale: [0.8, 1.35],
+  },
+
   // Small decorative rocks (<0.1 m) — NON-collidable (06b: drive straight over).
   smallRock: {
     variants: 3, collidable: false,
@@ -125,6 +210,32 @@ export const FLORA_PARAMS = {
     barkColor: 0x6f5c46, barkFleck: 0x40362b, fleckChance: 0.30,   // weathered dead wood
     color: 0x6f5c46, colorJitter: 0.10,   // instance tint (multiplies the baked bark colours)
     instScale: [0.65, 1.5],
+  },
+
+  // ── FEAT-85: roadside cover — three Eastern Sierra natives (no collision, no shadow bake) ──
+  // Small bunchgrass (Indian ricegrass): fine wiry blades + a few airy straw seed stalks. ~40 tris.
+  grass: {
+    variants: 4,
+    blades: [12, 18], height: [0.32, 0.64], spread: [0.28, 0.4], width: 0.035,
+    stalks: [2, 4],
+    color: 0x5e8a3a, tipColor: 0xa8b060, stalkColor: 0xc2b07a, colorJitter: 0.14,
+    instScale: [0.8, 1.3],
+  },
+  // Great Basin wild rye: broad long arching blue-green blades + tall straight seed spikes. ~70 tris.
+  rye: {
+    variants: 4,
+    blades: [10, 16], height: [1.2, 1.9], spread: [0.45, 0.7], width: 0.07,
+    spikes: [3, 5],
+    color: 0x56755a, tipColor: 0x9dab77, spikeColor: 0xb8a56a, colorJitter: 0.12,
+    instScale: [0.8, 1.25],
+  },
+  // Big sagebrush: gnarled arching stems with clusters of small grey-green leaf cards. ~85 tris.
+  // (The physics `bush` blob stays — this is visual cover only; owner 2026-09-22.)
+  sage: {
+    variants: 4,
+    stems: [5, 8], height: [0.8, 1.4], spread: [0.5, 0.9], leaf: 0.17,
+    stemColor: 0x6b5f4e, leafColor: 0x8c9c7e, colorJitter: 0.12,
+    instScale: [0.8, 1.3],
   },
 
   // ── Bushes: squat blobs, 0.5–1.5 m (06b: soft velocity-drag, size-proportional) ─

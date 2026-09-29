@@ -27,13 +27,13 @@
  */
 
 import * as THREE from 'three'
-import { buildPalette } from './prop-palette.js'
-import { scatterChunk, scatterChunkGen } from './prop-scatter.js'
+import { buildPalette, COVER_CATS, COVER_FAR_CAT, FADE_CATS } from './prop-palette.js'
+import { scatterChunk, scatterChunkGen, scatterLitterGen } from './prop-scatter.js'
 import { sphereVsSphere, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
 import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
 import { PropImpostors } from './prop-impostor.js'                     // PERF-21: distant-prop billboards
 import { FLORA_PARAMS } from '../../data/flora.js'
-import { perfEvent } from '../perf.js'   // PERF-26: streaming-event tags (zero-dep module; no-op unless ?hitch)
+import { perfEvent, perfAdd } from '../perf.js'   // PERF-26: streaming-event tags + timed buckets (zero-dep module; no-op unless ?hitch)
 import { streamScore } from '../stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
@@ -46,9 +46,25 @@ const CAPACITY = {
   // Trees sized for the PERF-21 billboard-only outer ring: Ultra streams trees out to the built-
   // terrain edge (ring+warm = 8 → 17² = 289 chunks × ~30 trees ≈ 8.7k, biome-split aspen/pine).
   // Other categories only live within the full propRing (≤ ring-4, 81 chunks) as before.
-  aspen: 8000, pine: 8000, rock: 3000, boulder: 200, smallRock: 9000, bush: 4000,
+  aspen: 8000, pine: 8000, rock: 4000, boulder: 200, smallRock: 30000, bush: 4000,
   log: 300,   // FEAT-15: sparse ([0,2]/chunk) — 300 covers a ring-4 Ultra window with slack
+  medRock: 12000,   // zone rocks (2026-09-23): ~120/rocky chunk × 81 at Ultra
+  // FEAT-85: cover lives in the near+far rings only (never bbonly). Sized for "blanket
+  // everything": ~600 clumps per green chunk at Normal density, ×2.2 at Ultra over 81 chunks —
+  // but the far ring stands the *Lo pools instead, so each pool carries only its own ring.
+  grass: 40000, rye: 6000, sage: 8000,
+  grassLo: 80000, ryeLo: 10000, sageLo: 14000,
 }
+// FEAT-85: "cat#v" → is this a cover key (grass/brush)? Cover skips the shadow bake, the realtime
+// caster flag and the road-intrusion sweep (it stands beside the road ON PURPOSE).
+const isCoverKey = (key) => COVER_CATS.has(key.slice(0, key.indexOf('#')))
+// Keys the BUG-71 road-intrusion sweep must IGNORE: ground litter the scatter deliberately stands
+// inside the road exclusion (smallRock on the shoulder + road, medRock on the shoulder — FADE_CATS)
+// and the FEAT-85 cover, which stands beside the road by design. A category missing from this
+// list that the scatter places near a road condemns its chunk every sweep: release → re-scatter →
+// the same prop → release … (seen 2026-09-24 with medRock: props popping in and out, stutter).
+const sweepIgnoresKey = (key) => typeof key === 'string' &&
+  (FADE_CATS.has(key.slice(0, key.indexOf('#'))) || isCoverKey(key))
 
 const _m = new THREE.Matrix4()
 const _q = new THREE.Quaternion()
@@ -60,6 +76,7 @@ const _s = new THREE.Vector3()
 const _col = new THREE.Color()
 const _HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0)
 const LOD_SWAPS_MAX = 6      // PERF-21: per-frame chunk re-pool ceiling
+const LITTER_DEFER = 1.5     // PERF-34: streamScore units a litter-only job yields to base scatters by
 const PREEMPT_MARGIN = 1.0   // PERF-33: streamScore units (≈ chunks) a queued chunk must beat the active one by
 
 export class PropSystem {
@@ -73,8 +90,11 @@ export class PropSystem {
     this._params = params
     this._chunkSize = params.chunkSize
 
-    const { variants, material } = buildPalette(this._seed, params)
+    const { variants, material, coverMaterial, groundMaterial, coverUniforms } = buildPalette(this._seed, params)
     this._material = material
+    this._coverMaterial = coverMaterial   // FEAT-85: wind + distance fade (uniforms shared below)
+    this._groundMaterial = groundMaterial // small/medium rocks: the fade alone
+    this._coverUniforms = coverUniforms
     this._variants = variants          // PERF-21: impostor bake needs the variant geometries
 
     // PERF-07: prop shadow mode. castRealtime=false (default) drops props from the sun's realtime
@@ -89,12 +109,13 @@ export class PropSystem {
     for (const cat of Object.keys(variants)) {
       const entries = variants[cat]
       const perVariant = Math.max(1, Math.floor((CAPACITY[cat] ?? 1000) / entries.length))
+      const isCover = COVER_CATS.has(cat)  // FEAT-85: cover material, no casting, no bake
       entries.forEach((entry, v) => {
-        const mesh = new THREE.InstancedMesh(entry.geo, material, perVariant)
+        const mesh = new THREE.InstancedMesh(entry.geo, isCover ? coverMaterial : (FADE_CATS.has(cat) ? groundMaterial : material), perVariant)
         mesh.frustumCulled = false           // PERF-05: chunk streaming bounds these
-        mesh.castShadow = castRealtime       // PERF-07: realtime shadow only when baking is off
+        mesh.castShadow = castRealtime && !isCover   // PERF-07: realtime shadow only when baking is off
         mesh.receiveShadow = true
-        mesh.layers.enable(BAKE_LAYER)       // PERF-07: also visible to the shadow-bake camera
+        if (!isCover) mesh.layers.enable(BAKE_LAYER)   // PERF-07: also visible to the shadow-bake camera
         // PERF-10: draw only the occupied slot prefix. mesh.count is maintained at `top` (the
         // high-water occupied index + 1) by _flush(); drawing full capacity pushed EVERY hidden
         // zero-scale slot through the vertex stage of the main AND shadow passes — measured 85 %
@@ -249,6 +270,7 @@ export class PropSystem {
     this._bakeScene = new THREE.Scene()
     this._bakeMeshes = new Map()
     for (const [key, rec] of this._meshes) {
+      if (isCoverKey(key)) continue        // FEAT-85: grass casts no baked shadow (mush at 0.25 m/texel)
       const src = rec.mesh.geometry
       const geo = new THREE.BufferGeometry()
       geo.setAttribute('position', src.getAttribute('position'))   // shared — no duplicate VRAM
@@ -304,8 +326,17 @@ export class PropSystem {
    * The terrain-atlas strength + bake activity are toggled by the caller (main.js) alongside this.
    */
   setShadowCasting(v) {
-    for (const rec of this._meshes.values()) rec.mesh.castShadow = v
+    for (const [key, rec] of this._meshes) rec.mesh.castShadow = v && !isCoverKey(key)
   }
+
+  // ── FEAT-85 roadside cover (live dials — uniforms on the shared cover material) ─────────
+  /** Distance fade window (m): clumps shrink toward the ground from `start`, gone by `end`. */
+  setCoverFade(start, end) {
+    this._coverUniforms.uFadeStart.value = start
+    this._coverUniforms.uFadeEnd.value = Math.max(end, start + 0.01)
+  }
+  /** Wind sway amplitude multiplier (0 = still). */
+  setCoverWind(strength) { this._coverUniforms.uWind.value = strength }
 
   // ── PERF-21 billboard impostors ───────────────────────────────────────────────────────
   /**
@@ -381,31 +412,50 @@ export class PropSystem {
     // PERF-26: the ONE unbudgeted scatter path. Fires when driving outruns the 3 ms/frame drip and
     // the truck's 3×3 collision chunks must exist this frame — i.e. exactly on a slow machine.
     perfEvent('props.hardScatter')
+    const _t0 = performance.now()
+    // PERF-34 (2026-09-29): the hard path scatters the BASE passes only — trees, collidable rocks,
+    // boulders, bushes, logs: what the 3×3 exists for — and queues the litter (cover + zone
+    // rocks, FEAT-84/85) at the FRONT of the drip, exactly like a bbonly→near promotion. Measured
+    // at 200 mph (test/hitch-report.mjs --truck --speed=89): the full scatter was 55–60 ms per
+    // chunk in the page (its litter alone makes ~1,450 carved-height queries), 2–3 chunks per
+    // crossing → 120–180 ms frames, 47 hitches / 40 s; main's base-only cost is ~7 ms. The
+    // cover and pebbles then land a few frames after the ground, which nobody at 89 m/s can see.
     let placements
-    if (this._activeScatter && this._activeScatter.ck === ck) {
-      const gen = this._activeScatter.gen
+    if (this._activeScatter && this._activeScatter.ck === ck && !this._activeScatter.litter && !this._activeScatter.withLitter) {
+      const gen = this._activeScatter.gen          // a base-only job already in flight: finish it
       let r; do { r = gen.next() } while (!r.done)
       placements = r.value
       this._activeScatter = null
       this._scatterSet.delete(ck)
     } else {
+      if (this._activeScatter && this._activeScatter.ck === ck && !this._activeScatter.litter) {
+        this._activeScatter = null                 // a full job in flight: drop it, its litter re-queues below
+        this._scatterSet.delete(ck)
+      }
       this._dequeueScatter(ck)
-      placements = scatterChunk(cx, cz, this._seed, this._samplers, this._params)
+      const gen = scatterChunkGen(cx, cz, this._seed, this._samplers, this._params, { litter: false })
+      let r; do { r = gen.next() } while (!r.done)
+      placements = r.value
     }
-    this._commitChunk(ck, placements)
+    const _t1 = performance.now()
+    perfAdd('props.hard.scatter', _t1 - _t0)
+    this._commitChunk(ck, placements, false)
+    if (!this._scatterSet.has(ck + '#L')) {
+      this._scatterQueue.unshift({ ck, cx, cz, score: 0, litter: true })
+      this._scatterSet.add(ck + '#L')
+    }
+    perfAdd('props.hard.commit', performance.now() - _t1)
   }
 
   _dequeueScatter(ck) {
     if (!this._scatterSet.has(ck)) return
     this._scatterSet.delete(ck)
-    const i = this._scatterQueue.findIndex(j => j.ck === ck)
+    const i = this._scatterQueue.findIndex(j => j.ck === ck && !j.litter)
     if (i >= 0) this._scatterQueue.splice(i, 1)
   }
 
-  _commitChunk(ck, placements) {
-    perfEvent('props.chunk')   // PERF-26: commit point — instance slots fill + shadow tile marks dirty
-    const places = []
-    const collidables = []
+  /** Placement records → retained place records + collidable descriptors (shared by both commits). */
+  _buildPlaces(placements, places, collidables) {
     for (const pl of placements) {
       const key = pl.cat + '#' + pl.variant
       const rec = this._meshes.get(key)
@@ -486,20 +536,52 @@ export class PropSystem {
         rotY: pl.rotY, tris: col.tris,   // rotY/tris used by 'mesh' (boulder) contacts; undefined otherwise
       })
     }
+  }
+
+  _commitChunk(ck, placements, withLitter = true) {
+    perfEvent('props.chunk')   // PERF-26: commit point — instance slots fill + shadow tile marks dirty
+    const _c0 = performance.now()
+    const places = []
+    const collidables = []
+    this._buildPlaces(placements, places, collidables)
+    const _c1 = performance.now(); perfAdd('props.commit.build', _c1 - _c0)
     const comma = ck.indexOf(',')
     const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
-    const chunk = { places, owned: [], mode: this._chunkMode(cx, cz) }
+    // litter: false ⇒ scattered without the cover + zone-rock passes (bbonly ring); a promotion
+    // queues scatterLitterGen for it and _commitLitter appends the result.
+    const chunk = { places, owned: [], mode: this._chunkMode(cx, cz), litter: withLitter }
     this._chunks.set(ck, chunk)
     this._placeChunk(chunk, chunk.mode)
+    const _c2 = performance.now(); perfAdd('props.commit.place', _c2 - _c1)
     if (collidables.length) {
       this._collidables.set(ck, collidables); this._gridDirty = true
       this._physicsHook?.syncChunk(ck, collidables)   // FEAT-48: rigid engine colliders for the chassis/debris
     }
+    perfAdd('props.commit.collide', performance.now() - _c2)
 
     // PERF-07: this chunk's props changed → (re)bake its shadow tile and its neighbours' (silhouettes
     // cross chunk seams). The bake system slices the work; a no-op when realtime casting / headless.
     // Billboard-only ring chunks take NO tiles (see _chunkMode) — they mark on promotion instead.
     if (this._shadowBake && chunk.mode !== 'bbonly') this._shadowBake.markWithNeighbors(cx, cz)
+  }
+
+  /** The deferred litter of a promoted chunk: append its records and place only those. */
+  _commitLitter(ck, placements) {
+    const chunk = this._chunks.get(ck)
+    if (!chunk || chunk.litter) return          // released meanwhile, or already carried
+    perfEvent('props.litter')
+    const from = chunk.places.length
+    const collidables = this._collidables.get(ck) || []
+    const nCol = collidables.length
+    this._buildPlaces(placements, chunk.places, collidables)
+    chunk.litter = true
+    this._placeChunk(chunk, chunk.mode, from)
+    if (collidables.length !== nCol) {          // zone rocks' large class is collidable
+      this._collidables.set(ck, collidables); this._gridDirty = true
+      this._physicsHook?.syncChunk(ck, collidables)
+    }
+    const comma = ck.indexOf(',')
+    if (this._shadowBake && chunk.mode !== 'bbonly') this._shadowBake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
   }
 
   /**
@@ -520,9 +602,10 @@ export class PropSystem {
   }
 
   /** Allocate render-pool slots for a chunk's retained placements (see _chunkMode for modes). */
-  _placeChunk(chunk, mode) {
+  _placeChunk(chunk, mode, from = 0) {
     chunk.mode = mode
-    for (const pr of chunk.places) {
+    for (let pi = from; pi < chunk.places.length; pi++) {
+      const pr = chunk.places[pi]
       // Billboardable categories go to the impostor pool when far; anything else stays 3D —
       // except in the billboard-only outer ring, where non-billboardable categories are skipped
       // (sub-pixel 3D noise at that range) UNLESS they're landmark-scale (BBONLY_3D_CATS).
@@ -553,10 +636,19 @@ export class PropSystem {
           console.warn('[PropSystem] impostor pool full for', pr.key, '— falling back to 3D'); this._overflowWarned = true
         }
       }
-      const rec = this._meshes.get(pr.key)
+      // FEAT-85 far-ring LOD: cover in the 'far' ring stands its cheap stand-in (grass → grassLo,
+      // 3–4 tris for 40–85) — the pool key is swapped here, so a promote/demote re-place moves
+      // the clump between the two pools with the placement untouched. Live-toggled by
+      // cover.farLod (re-place through the GUI rebuild).
+      let key = pr.key
+      if (mode === 'far' && this._params.scatter?.cover?.farLod !== false) {
+        const hash = key.indexOf('#'), lo = COVER_FAR_CAT[key.slice(0, hash)]
+        if (lo) key = lo + key.slice(hash)
+      }
+      const rec = this._meshes.get(key)
       if (!rec || rec.free.length === 0) {
         if (!this._overflowWarned) {
-          console.warn('[PropSystem] instance pool full for', pr.key, '— raise CAPACITY'); this._overflowWarned = true
+          console.warn('[PropSystem] instance pool full for', key, '— raise CAPACITY'); this._overflowWarned = true
         }
         continue
       }
@@ -568,10 +660,10 @@ export class PropSystem {
       _col.setRGB(pr.tint[0], pr.tint[1], pr.tint[2])
       rec.mesh.setColorAt(slot, _col)
       rec.mesh.geometry.attributes.aShadowK.setX(slot, pr.k)
-      this._dirty.add(pr.key)
+      this._dirty.add(key)
       if (slot < rec.dirtyLo) rec.dirtyLo = slot
       if (slot > rec.dirtyHi) rec.dirtyHi = slot
-      chunk.owned.push({ key: pr.key, slot, imp: false })
+      chunk.owned.push({ key, slot, imp: false })
     }
   }
 
@@ -628,6 +720,12 @@ export class PropSystem {
       // bake now that its ground shadows are within the visible/fade range. (Demotion needs no
       // mark: the trees haven't moved, the already-baked tile stays valid.)
       if (promoted && this._shadowBake) this._shadowBake.markWithNeighbors(cx, cz)
+      // Promoted without its litter (scattered in the bbonly ring): queue the litter-only job,
+      // time-sliced like a scatter. Keyed ck#L in _scatterSet so a full scatter can't collide.
+      if (promoted && !chunk.litter && !this._scatterSet.has(ck + '#L')) {
+        this._scatterQueue.push({ ck, cx, cz, score: 0, litter: true })
+        this._scatterSet.add(ck + '#L')
+      }
       if (--budget <= 0 || (streamBudget && streamBudget.remaining() <= 0)) break
     }
   }
@@ -636,6 +734,12 @@ export class PropSystem {
     const ck = cx + ',' + cz
     const chunk = this._chunks.get(ck)
     if (!chunk) return
+    if (this._scatterSet.has(ck + '#L')) {      // a pending litter job for a chunk that is going away
+      this._scatterSet.delete(ck + '#L')
+      const i = this._scatterQueue.findIndex(j => j.ck === ck && j.litter)
+      if (i >= 0) this._scatterQueue.splice(i, 1)
+      if (this._activeScatter && this._activeScatter.ck === ck && this._activeScatter.litter) this._activeScatter = null
+    }
     this._unplaceChunk(chunk)
     const wasBBOnly = chunk.mode === 'bbonly'
     this._chunks.delete(ck)
@@ -714,8 +818,7 @@ export class PropSystem {
       // Whole-chunk reject: no road anywhere near it ⇒ no placement in it can be intruded.
       if (roadClear(cx * CH + CH / 2, cz * CH + CH / 2, reach)) continue
       for (const p of chunk.places || []) {
-        // Skip the categories the scatter deliberately allows onto the road surface.
-        if (typeof p.key === 'string' && p.key.startsWith('smallRock')) continue
+        if (sweepIgnoresKey(p.key)) continue   // litter + cover stand inside the exclusion by design
         if (roadClear(p.x, p.z, exclusion)) continue
         doomed.push([cx, cz])
         break                    // one intruded prop condemns the chunk; no need to price the rest
@@ -762,12 +865,17 @@ export class PropSystem {
     // PERF-33: re-score EVERY frame against the current centre + travel direction. The score used to
     // be frozen at enqueue time and re-sorted only when something new arrived, so after moving, the
     // queue served chunks by where the player USED to be. ≤ a few dozen entries — trivial.
-    for (const q of this._scatterQueue) q.score = streamScore(q.cx - ccx, q.cz - ccz, motion)
+    // PERF-34: a litter-only job (cover + zone rocks of a chunk that already has its base props)
+    // yields to every BASE scatter within LITTER_DEFER chunks of it — otherwise the truck's own
+    // chunk's litter, at score ≈ 0, starved the base scatter of the chunks ahead and the hard
+    // path fired on every crossing at 200 mph.
+    for (const q of this._scatterQueue) q.score = streamScore(q.cx - ccx, q.cz - ccz, motion) + (q.litter ? LITTER_DEFER : 0)
     if (this._scatterQueue.length > 1) this._scatterQueue.sort((a, b) => a.score - b.score)
     // Drop queued/active work that scrolled out of the ring.
     for (let i = this._scatterQueue.length - 1; i >= 0; i--) {
-      if (!want.has(this._scatterQueue[i].ck)) {
-        this._scatterSet.delete(this._scatterQueue[i].ck)
+      const q = this._scatterQueue[i]
+      if (!want.has(q.ck)) {
+        this._scatterSet.delete(q.litter ? q.ck + '#L' : q.ck)
         this._scatterQueue.splice(i, 1)
       }
     }
@@ -809,21 +917,31 @@ export class PropSystem {
       if (!this._activeScatter) {
         const next = this._scatterQueue.shift()
         if (!next) break
-        this._activeScatter = { ...next, gen: scatterChunkGen(next.cx, next.cz, this._seed, this._samplers, this._params) }
+        // Litter deferral: a chunk that will only billboard (bbonly ring) scatters WITHOUT the
+        // litter passes (cover + zone rocks — the expensive half, and nothing of it is drawn
+        // there). When it is later promoted, _syncChunkLod queues a litter-only job for it.
+        const litterOnly = !!next.litter
+        const withLitter = litterOnly || this._chunkMode(next.cx, next.cz) !== 'bbonly'
+        const gen = litterOnly
+          ? scatterLitterGen(next.cx, next.cz, this._seed, this._samplers, this._params)
+          : scatterChunkGen(next.cx, next.cz, this._seed, this._samplers, this._params, { litter: withLitter })
+        this._activeScatter = { ...next, gen, withLitter }
       }
       const job = this._activeScatter
       let r = null
       while (performance.now() < deadline) { r = job.gen.next(); if (r.done) break }
       if (r && r.done) {
         this._activeScatter = null
-        this._scatterSet.delete(job.ck)
-        this._commitChunk(job.ck, r.value)
+        this._scatterSet.delete(job.litter ? job.ck + '#L' : job.ck)
+        if (job.litter) this._commitLitter(job.ck, r.value)
+        else this._commitChunk(job.ck, r.value, job.withLitter)
       }
     }
     if (!this._scatterFillDone && !this._activeScatter && this._scatterQueue.length === 0) this._scatterFillDone = true
 
     this._syncChunkLod(budget)                      // PERF-21: pool swaps after streaming settles
     this._flush()
+    this._coverUniforms.uTime.value = performance.now() * 0.001   // FEAT-85: wind clock
   }
 
   /**
@@ -845,13 +963,18 @@ export class PropSystem {
       const job = this._activeScatter
       let r; do { r = job.gen.next() } while (!r.done)
       this._activeScatter = null
-      this._scatterSet.delete(job.ck)
-      this._commitChunk(job.ck, r.value)
+      this._scatterSet.delete(job.litter ? job.ck + '#L' : job.ck)
+      if (job.litter) this._commitLitter(job.ck, r.value)
+      else this._commitChunk(job.ck, r.value, job.withLitter)
     }
     while (this._scatterQueue.length) {
-      const { ck, cx, cz } = this._scatterQueue.shift()
-      this._scatterSet.delete(ck)
-      this._commitChunk(ck, scatterChunk(cx, cz, this._seed, this._samplers, this._params))
+      const { ck, cx, cz, litter } = this._scatterQueue.shift()
+      this._scatterSet.delete(litter ? ck + '#L' : ck)
+      if (litter) {
+        const g = scatterLitterGen(cx, cz, this._seed, this._samplers, this._params)
+        let r; do { r = g.next() } while (!r.done)
+        this._commitLitter(ck, r.value)
+      } else this._commitChunk(ck, scatterChunk(cx, cz, this._seed, this._samplers, this._params))
     }
     this._flush()
   }
@@ -1029,6 +1152,8 @@ export class PropSystem {
     }
     if (this._impostors) { this._impostors.dispose(); this._impostors = null }
     this._material.dispose()
+    this._coverMaterial.dispose()   // FEAT-85
+    this._groundMaterial.dispose()
     this._meshes.clear()
     this._chunks.clear()
     this._collidables.clear()
