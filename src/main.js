@@ -3741,6 +3741,20 @@ document.getElementById('cp-sleep-back')?.addEventListener('click', () => {
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
 document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
 
+/**
+ * FEAT-67: the head of a parked offer panel — the giver's portrait beside their line of dialogue.
+ * Both are PLACEHOLDERS (owner, 2026-09-28): the portrait is the same flat silhouette the map card
+ * draws, and a missing line shows a bracketed marker so an unwritten one is obvious in play.
+ * `flavorHtml` is trusted markup (authored constants or the escaped card flavor), never player input.
+ */
+function _panelHead (flavorHtml) {
+  return '<div class="mp-head">'
+    + '<div class="mp-portrait" title="portrait (placeholder)"><svg viewBox="0 0 36 36" aria-hidden="true">'
+    + '<circle cx="18" cy="13.7" r="7.2"/><path d="M5 36 Q5.8 23 18 23 Q30.2 23 31 36 Z"/></svg></div>'
+    + `<div class="mp-flavor">${flavorHtml ?? '&ldquo;<span class="mp-dim">[flavor line]</span>&rdquo;'}</div>`
+    + '</div>'
+}
+
 // Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
 // SM-INV-3 — par NEVER appears while driving; the result card is the only place it is shown.
 function _renderMissionUI () {
@@ -3774,7 +3788,8 @@ function _renderMissionUI () {
         : null
       const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       body.innerHTML = (card
-        ? (m.offers.length > 1 ? `<span class="mp-dim">offer ${m.offerIdx + 1} / ${m.offers.length}</span><br>` : '')
+        ? _panelHead(card.flavor != null ? `&ldquo;${esc(card.flavor)}&rdquo;` : null)
+          + (m.offers.length > 1 ? `<span class="mp-dim">offer ${m.offerIdx + 1} / ${m.offers.length}</span><br>` : '')
           + card.sentence.map(r => r.b ? `<b>${esc(r.t)}</b>` : esc(r.t)).join('') + '<br>'
           + (card.pay ? `<span class="mp-pay">${esc(card.pay)}</span> &nbsp;` : '')
           + `<span class="mp-dim">${card.terms.map(esc).join(' &middot; ')}</span><br>`
@@ -3913,16 +3928,18 @@ function _renderPaperUI () {
       // THE THREE HEADLINE NUMBERS, one line, one size (owner, 2026-08-14): who, how far, how long.
       // The deadline used to be dim text on the last line, which made the one number with a bell
       // attached to it the least legible thing on the card.
-      body.innerHTML = `<span class="mp-big">${r.customers.length}</span> `
+      // FEAT-67: Larry's portrait and his line head the panel, like every giver's. His line was
+      // already written (the spare-papers aside), so it moves up into the dialogue slot.
+      body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;')
+        + `<span class="mp-big">${r.customers.length}</span> `
         + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'}</span> `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span> `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
         + `<span class="mp-big">${formatTime(deadlineFor(r.par))}</span><br>`
         + `${stock} papers in the truck `
         + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
-        + `<span class="mp-dim">i gave you a couple extra, feel free to keep what you don&rsquo;t deliver</span>`
         // FEAT-67: Larry's card states base pay only — the fare at par, before the tips.
-        + `<br><span class="mp-pay">Base pay $${basePay(r.par, economySystem.terms().payTier).toLocaleString('en-US')}</span>`
+        + `<span class="mp-pay">Base pay $${basePay(r.par, economySystem.terms().payTier).toLocaleString('en-US')}</span>`
         + (p.offer ? ` &nbsp;<span class="mp-dim">expires in ${formatGameDuration(p.offer.expiresH - daySystem.clockH())}</span>` : '')
       break
     }

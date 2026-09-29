@@ -881,7 +881,13 @@
     .cp-view  { color: #b98ae0; }
     .cp-trees { color: #7fd86a; }
     .cp-water { color: #4aa8d8; }
-      /* FEAT-67: the offer card docks in the map's corners — nothing may sit on top of it. */
+      /* FEAT-67: parked-panel head — the giver's portrait (placeholder) beside their line. */
+    .mp-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; text-align: left; }
+    .mp-portrait { flex: 0 0 64px; width: 64px; height: 64px; background: #d9d3c1;
+                   border: 1px solid #8fa2b4; }
+    .mp-portrait svg { display: block; width: 100%; height: 100%; fill: #8a8272; }
+    .mp-flavor { font-style: italic; line-height: 1.45; }
+    /* FEAT-67: the offer card docks in the map's corners — nothing may sit on top of it. */
     body.map-open #quickjob-btn { visibility: hidden; }
   </style>
   <!-- Bare specifiers ('three', 'three/addons/*', 'simplex-noise') are resolved by Vite from

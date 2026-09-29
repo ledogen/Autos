@@ -511,7 +511,7 @@ export class OfferBoard {
      * @param {number} [ctx.payTier]    economySystem.terms().payTier NOW (terms only freeze at accept)
      * @param {object|null} [ctx.route] the planned mission ({par, distance, endPoiId, placeName}) or null
      * @param {number} [ctx.customers]  paper route: stops on the planned tour
-     * @returns {{family, portrait: {sex,name}|null, sentence: Array<{t:string,b?:boolean}>,
+     * @returns {{family, portrait: {sex,name}|null, flavor: string|null, sentence: Array<{t:string,b?:boolean}>,
      *            pay: string|null, terms: string[], bonus: string|null, expiresInH: number}|null}
      */
     card (offer, { nowH, payTier = 1, route = null, customers = null } = {}) {
@@ -545,6 +545,10 @@ export class OfferBoard {
             // The giver's portrait. PLACEHOLDER art today; `sex` is the field that will pick the
             // portrait pool (ruled 2026-09-26: sex is rolled first so name and picture agree).
             portrait: sp.person ? { sex: sp.person.sex, name: sp.person.first } : null,
+            // The giver's short line of dialogue on the parked panel. OWNER-AUTHORED and not written
+            // yet (2026-09-28) — null means the panel shows its placeholder. When the lines exist
+            // they belong in a data table (data/offers.js), picked here from the offer's spec stream.
+            flavor: null,
             sentence,
             pay,
             terms,
