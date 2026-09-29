@@ -33,8 +33,9 @@ export const V2_COSTS = {
     // Quadratic cut term (owner 2026-08-18: "no visual difference in the mountaintop above a tunnel —
     // just carve a clean hole"): real cuttings go superlinear past ~8 m (rock walls, stabilization),
     // and without this the solver trenched to the 20 m class boundary before conceding a portal
-    // (measured: ~60 m × 19 m exit trench on the canonical bore). Cut ≈ bore at ~9 m now, so portals
-    // emerge at portal-bench depth and approach notches stay small.
+    // (measured: ~60 m × 19 m exit trench on the canonical bore). Cut ≈ bore at ~9 m — the solver
+    // can't act on that (a bore only exists past cutMax), so extendBorePortals moves each existing
+    // bore's portals out to where it holds.
     cCut2: 0.12,      // cut, per m of length per m² of depth
     cFillM: 0.12,     // fill, per m of length per m of height
     cBoreM: 12.0,     // bore, per m (owner 2026-08-18: "too happy to tunnel" — raised 8 → 12)
@@ -45,6 +46,7 @@ export const V2_COSTS = {
     // costs money. Evaluated greedily against the parent step's direction (not part of the state
     // — exact turn accounting would 8× the state space for a tie-shaping term).
     cTurn: 45,
+    portalCover: 2,   // m of rock over the tube crown at a portal (extendBorePortals)
     cutMax: 25,       // m below ground where a cut becomes a bore (owner 2026-09-07: 20 -> 25) — a 12–25 m trench is an open
                       // rock CUTTING (road grade cap, priced linearly per m of depth), not a
                       // tunnel; at 12 the bore's 18% grade cap rate-limited legitimate cliff
@@ -1092,6 +1094,100 @@ export function priceProfile(st, y, C) {
     }
     for (const sg of segs) sg.len = sg.s1 - sg.s0
     return { y, cls, cost, segs }
+}
+
+/**
+ * Portal placement: move each bore's portals OUT to the cheapest buildable spot.
+ *
+ * classOf makes a bore FORCED at cutMax, so the solver can only ever open a portal on the cutMax
+ * cover contour — every portal sat under ~25 m of ground at the bottom of a 25 m approach trench,
+ * although a cut costs more than a bore from ~9 m down (the search has no bored state at that depth
+ * to buy). This pass fixes WHERE a bore's portals go without changing WHETHER it exists: cutMax
+ * still decides that, so stubby pop-through bores stay dead (no bore is ever created here).
+ *
+ * The deck is held exactly as solved; only the class of stations flanking an existing bore
+ * changes. Walking outward from each portal, a station joins the bore while
+ *   (1) boring it is cheaper than cutting it — the same stationRate the solver prices with,
+ *   (2) a portal is buildable there — deck ≥ boreRadius + portalCover below ground, and
+ *   (3) the step into it respects gMaxBore (a bore's own grade cap), and
+ *   (4) it lies outside `endGuard` of either run end — a run end is a junction node, and a portal
+ *       inside the junction pad's reach is BUG-67's failure (the pad carves that ground flat and
+ *       cuts the headwall off). Measured without this guard: portals within 12 m of their node
+ *       15 → 76 over 20 seeds, because nodes buried in a deep cut let the bore run to the node.
+ * The portal count is unchanged, so cPortal drops out and every converted station strictly lowers
+ * the price — the solver's own economics, applied to a decision its depth-derived class could not
+ * represent. Two bores whose extensions meet merge (two portals saved). The final portal is then
+ * interpolated past the outermost bore station to where the depth falls to the stopping depth,
+ * when the grade allows that step.
+ *
+ * MUST run last: cls is no longer a pure function of deck − ground after it, so nothing may
+ * re-derive classes from y afterwards (priceProfile, dequantizeProfile and roundCrests all do).
+ * prof.cost is left as solved (nothing downstream reads it; the pass only lowers it).
+ *
+ * @param {{s:number[],ground:number[]}} st stations
+ * @param {{y:number[],cls:number[],segs:object[]}} prof the finished profile
+ * @param {object} C the price list (reads portalCover, cBoreM, cCutM, cCut2, gMaxBore)
+ * @param {number} boreRadius m — tube radius (params.tunnelBoreRadius)
+ * @param {number} endGuard m — no portal moves to within this of a run end (junction reach)
+ * @param {number} minLen m — only bores at least this long grow: a shorter stub is dropped by the
+ *        caller, so growing it past the cut-off would CREATE a tunnel (measured: one such stub,
+ *        rescued at a node, was the only new portal-at-node in the BUG-67 corpus)
+ * @returns {object} a profile of the same shape; the input itself when no portal moves
+ */
+export function extendBorePortals(st, prof, C, boreRadius, endGuard, minLen) {
+    const n = st.s.length
+    if (!prof.cls.includes(CLS.BORE)) return prof
+    const y = prof.y, orig = prof.cls, cls = orig.slice()
+    const depth = (i) => st.ground[i] - y[i]
+    const gradeOk = (a, b) => Math.abs((y[b] - y[a]) / Math.max(1e-9, st.s[b] - st.s[a])) <= C.gMaxBore + 1e-9
+    // Stopping depth: the deeper of the buildability floor and the cut = bore price crossover
+    // (cRoadM + cCutM·d + cCut2·d² = cBoreM; ≈ 9.0 m at the defaults).
+    const dMin = boreRadius + (C.portalCover ?? 2)
+    const a2 = C.cCut2 ?? 0, a1 = C.cCutM, a0 = C.cRoadM - C.cBoreM
+    const dCross = a2 > 0 ? (-a1 + Math.sqrt(a1 * a1 - 4 * a2 * a0)) / (2 * a2) : -a0 / a1
+    const dStop = Math.max(dMin, dCross)
+    const sLo = endGuard, sHi = st.s[n - 1] - endGuard
+    const ok = (i) => depth(i) >= dStop && st.s[i] >= sLo && st.s[i] <= sHi
+    // Grow outward from every ORIGINAL bore station. Stations 0 and n−1 are node-pinned run ends
+    // and are never re-classed. Where a walk meets another bore (a merge), the joining step must
+    // hold the bore cap too — otherwise the merged tube carries one unchecked surface-grade step.
+    const grows = new Uint8Array(n)
+    for (const sg of prof.segs) if (sg.cls === CLS.BORE && sg.len >= minLen)
+        for (let i = 0; i < n; i++) if (st.s[i] >= sg.s0 && st.s[i] <= sg.s1) grows[i] = 1
+    let moved = false
+    for (let i = 1; i < n - 1; i++) {
+        if (!grows[i]) continue
+        if (orig[i - 1] !== CLS.BORE) for (let j = i - 1; j >= 1 && cls[j] !== CLS.BORE && ok(j) && gradeOk(j, j + 1) &&
+            (cls[j - 1] !== CLS.BORE || gradeOk(j - 1, j)); j--) { cls[j] = CLS.BORE; moved = true }
+        if (orig[i + 1] !== CLS.BORE) for (let j = i + 1; j <= n - 2 && cls[j] !== CLS.BORE && ok(j) && gradeOk(j - 1, j) &&
+            (cls[j + 1] !== CLS.BORE || gradeOk(j, j + 1)); j++) { cls[j] = CLS.BORE; moved = true }
+    }
+    const segs = []
+    for (let i = 0; i < n; i++) {
+        const last = segs[segs.length - 1]
+        if (last && last.cls === cls[i]) last.s1 = st.s[i]
+        else segs.push({ cls: cls[i], s0: st.s[i], s1: st.s[i], i0: i, i1: i })
+        segs[segs.length - 1].i1 = i
+    }
+    // Sub-station portal: between the outermost bore station b and its surface neighbour o, the
+    // portal sits where the depth falls to dStop (linear in s), if the step b→o is within the cap.
+    const portalS = (b, o) => {
+        const db = depth(b), dO = depth(o)
+        if (!(dO < dStop) || !(db >= dStop) || !gradeOk(Math.min(b, o), Math.max(b, o))) return st.s[b]
+        const s = st.s[b] + (st.s[o] - st.s[b]) * (db - dStop) / (db - dO)
+        return Math.min(Math.max(s, Math.min(sLo, st.s[b])), Math.max(sHi, st.s[b]))
+    }
+    for (const sg of segs) {
+        let grown = false
+        for (let i = sg.i0; i <= sg.i1 && !grown; i++) grown = grows[i] === 1 || cls[i] !== orig[i]
+        if (sg.cls === CLS.BORE && grown) {
+            if (sg.i0 > 0) { const s = portalS(sg.i0, sg.i0 - 1); if (s !== sg.s0) { sg.s0 = s; moved = true } }
+            if (sg.i1 < n - 1) { const s = portalS(sg.i1, sg.i1 + 1); if (s !== sg.s1) { sg.s1 = s; moved = true } }
+        }
+        delete sg.i0; delete sg.i1
+        sg.len = sg.s1 - sg.s0
+    }
+    return moved ? { ...prof, cls, segs } : prof
 }
 
 /**

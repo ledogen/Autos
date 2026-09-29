@@ -78,3 +78,22 @@ in `perf-runs/perf30-after-{stream,drive}.json`):
 
 So: this ticket's remaining scope is the PERF-19-deferred terrain worker items (+ the
 props.lodSwap / shadow.bake spikes visible in the tables). The road half is done.
+
+## 2026-09-24 — owner can no longer reproduce at idle; load-dependent suspects
+
+The owner can't reproduce the stutter on an idle machine and suspects it only shows under heavy
+background load (e.g. a test suite running). Every per-subsystem ms budget is wall-clock based, so
+it self-limits under load, but these steps are NOT sliced and scale directly with CPU contention:
+
+- Terrain in-place recarve (`_updateChunkRing` re-carve pass): one full `_buildCarveTable` per
+  chunk, unsliced (the deadline is only checked before starting a chunk). Fires on every adopt that
+  changes coverage. Iterates `_chunkMap` insertion order, not nearest-first.
+- Ribbon tile build (`road-mesh.js flushPendingQueue`): count-capped (1/frame), no ms budget.
+- Prop hard radius (`prop-system.js update` → `ensureChunk`): synchronous 20–40 ms scatter per
+  chunk (PERF-14 figure) whenever the 3 ms drip feed falls behind the truck.
+- Engine heightfield rebuild (`_physicsHook.syncChunk`) on every chunk commit/recarve.
+- Any slow frame then pays physics catch-up substeps (PERF-32 accumulator).
+
+Repro idea for later: run `hitch-report --scenario=drive` at `--cpu=4` WITH `npm run test:all`
+running alongside, and compare against the idle baseline. The structural fix is the shared
+per-frame streaming budget in the priority-scheduling work on `feature/stutter`.

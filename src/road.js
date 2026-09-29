@@ -36,7 +36,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
-import { truncatedHeightField, routeEdgeV2, profileSolve, profileSolveBundle, dequantizeProfile, roundCrests, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule
+import { truncatedHeightField, routeEdgeV2, profileSolve, profileSolveBundle, dequantizeProfile, roundCrests, extendBorePortals, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule · portal placement
 import { PAR_REF } from './par.js'   // FEAT-82: the junction recovery is a vertical curve at par's junction-approach speed
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, reversePrimitives } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
@@ -1823,6 +1823,45 @@ export class RoadSystem {
     }
 
     /**
+     * The streamed window (macro-cell box + signature) for a view center at the active radius — THE
+     * one derivation of the band, shared by _streamNetwork and holdsWindow() so the "is this window
+     * already built" question can never be answered two ways (PERF-33).
+     */
+    _bandAt(x, z) {
+        const R = this._proto.radius
+        const center_mx = Math.floor(x / PROTO_ANCHOR_SPACING)
+        const HW = this._bandHalfWidth()
+        const mx0 = center_mx - HW
+        const mx1 = center_mx + HW
+        const mz0 = Math.floor((z - R) / PROTO_ANCHOR_SPACING)
+        const mz1 = Math.ceil((z + R) / PROTO_ANCHOR_SPACING)
+        return { mx0, mx1, mz0, mz1, sig: `${mz0}:${mz1}:${mx0}:${mx1}:${this._generation}` }
+    }
+
+    /**
+     * PERF-33: true when the network already installed IS the window a build at (x, z, radius) would
+     * produce — the network is a pure function of the band (D-16), so such a build is a no-op. The
+     * network client asks this before dispatching a queued 'move', which is how a request coalesced
+     * while an earlier build was in flight dies instead of paying a second full adopt on arrival.
+     */
+    holdsWindow(x, z, radius) {
+        return !this._proto.dirty && radius === this._proto.radius && this._network.size > 0
+            && this._bandAt(x, z).sig === this._lastBandSig
+    }
+
+    /**
+     * PERF-33: forget the stream center, so the next update() decides by BAND alone. The network
+     * worker's instance persists across builds and has its own PROTO_REGEN_MOVE lazy gate: a request
+     * landing < 96 m from the worker's previous center returned the OLD window unchanged, while the
+     * main thread (which decides by band) kept re-requesting — a chain of full adopts, one per build
+     * cycle, until the car cleared 96 m. A request IS the decision; an identical band still
+     * short-circuits cheaply in _streamNetwork.
+     */
+    forgetStreamCenter() {
+        this._networkCenter = null
+    }
+
+    /**
      * Warm-scan core (FEAT-68 v2 rewrite): collect ≤ `cap` dispatchable route jobs for `edges`.
      * A v2 route is a PURE fn of (terrain, anchor pair, node heights, deg-2 pins) — no sibling
      * deps, no solo routes, no corridor discs — so a job is just the edge's _v2EdgeSpec and the
@@ -2325,6 +2364,14 @@ export class RoadSystem {
         // adopt must NOT bump it (D1: window-invariant geometry — rebuilding in-range tiles is
         // pure waste and flickers).
         if (opts && opts.regen) this._generation++
+        // BUG-76: a POSITIONAL adopt can still change geometry inside chunks that are already carved —
+        // a mid-span T promotion exists or not depending on the window (the FEAT-77 clearance re-route
+        // sees different neighbours, so the plan declines the T), and a flip has been measured 114 m
+        // from the car. No generation bump reaches those chunks, so capture the OLD network here
+        // (entries are never mutated, only the Map is cleared) and diff it after the swap.
+        const diffOld = !(opts && opts.regen) && this._network.size > 0
+            ? { runs: new Map(this._network), pads: this.padReachNodes() }
+            : null
         this._networkCenter = data.center ? new THREE.Vector3(data.center.x, 0, data.center.z) : null
         this._proto.lastCenter = this._networkCenter ? this._networkCenter.clone() : null
         this._proto.dirty = false
@@ -2413,7 +2460,88 @@ export class RoadSystem {
         // run profile is built (the AT_GRADE mid-span flatten reads it), then slices.
         this._detectJunctions()
         this._sliceNetwork()
+        this._lastAdoptDirty = diffOld ? this._adoptDirtyRegions(diffOld) : null
         return this._network
+    }
+
+    /** BUG-76: the dirty discs of the last positional adopt (see _adoptDirtyRegions), or null. */
+    lastAdoptDirty() { return this._lastAdoptDirty ?? null }
+
+    /**
+     * Conservative lateral reach of a road's carve from its centerline (m): ribbon + carve core +
+     * the capped embankment apron. The ONE definition — terrain.js's _carveTableGen early-reject
+     * and the BUG-76 adopt diff both read it, so the dirty region can never be narrower than what a
+     * run actually carves.
+     */
+    carveReach() {
+        const p = this._params
+        return (p.roadHalfWidth ?? 5) + (p.roadShoulderWidth ?? 2.5) + (p.roadCarveExtraWidth ?? 3.0)
+             + (p.roadMaxEmbankmentToe ?? 10) + DEEP_BANK_TOE_EXTRA + 4
+    }
+
+    /**
+     * BUG-76: the ground a positional adopt re-shaped, as `{x, z, reach}` discs — the shape
+     * TerrainSystem.recarveInPlace() and RoadMeshSystem.invalidateRegions() take. Null when nothing
+     * changed (the common case: the window slid and every in-range run is byte-identical).
+     *
+     * A run is DIRTY when it was added, removed, or its geometry changed (points incl. Y, arc origin,
+     * tunnel / off-curve spans). Discs go down both the OLD and the NEW polyline, since the old carve
+     * has to be undone where the road left. The carve follows each run's PROFILE, and profiles couple
+     * at shared nodes (deck hold, junction blend, leaf tapers) — but only NEAR the node: a neighbour
+     * run recovers its own profile within roadJunctionBlendLength. So each dirty run's endpoints get
+     * one wider disc (carve reach + blend + 10 m) instead of walking every neighbour's full length,
+     * which re-carved ~2× the chunks for nothing (almost every adopt adds or drops a frontier run, and
+     * its neighbours reach into the built ring). Pads whose position or reach changed add their own
+     * disc. test/adopt-reconcile.mjs holds the soundness side: it streams a route, adopts every
+     * network change, and fails if any built chunk is left carving a road that is no longer there.
+     */
+    _adoptDirtyRegions(old) {
+        const sameArr = (a, b) => {
+            if (a === b) return true
+            if (!a || !b || a.length !== b.length) return false
+            for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+            return true
+        }
+        const sameRun = (a, b) => {
+            if (a.arcOrigin !== b.arcOrigin || a.points.length !== b.points.length) return false
+            for (let i = 0; i < a.points.length; i++) {
+                const p = a.points[i], q = b.points[i]
+                if (p.x !== q.x || p.y !== q.y || p.z !== q.z) return false
+            }
+            return JSON.stringify(a.tunnelSpans || null) === JSON.stringify(b.tunnelSpans || null)
+                && JSON.stringify(a.offCurveSpans || null) === JSON.stringify(b.offCurveSpans || null)
+                && !!a.condemned === !!b.condemned
+                && sameArr(a.clArc, b.clArc)
+        }
+        const changed = new Set()
+        for (const [k, e] of this._network) { const o = old.runs.get(k); if (!o || !sameRun(o, e)) changed.add(k) }
+        for (const k of old.runs.keys()) if (!this._network.has(k)) changed.add(k)
+
+        const regions = []
+        const reach = this.carveReach(), STEP = 24
+        const nodeReach = reach + (this._params.roadJunctionBlendLength ?? 30) + 10
+        const walk = (e) => {
+            const pts = e.points; let acc = STEP
+            for (let i = 0; i < pts.length; i++) {
+                if (i > 0) acc += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
+                if (acc >= STEP || i === pts.length - 1) { regions.push({ x: pts[i].x, z: pts[i].z, reach: reach + STEP }); acc = 0 }
+            }
+            const a = pts[0], b = pts[pts.length - 1]
+            if (a) regions.push({ x: a.x, z: a.z, reach: nodeReach })
+            if (b) regions.push({ x: b.x, z: b.z, reach: nodeReach })
+        }
+        for (const k of changed) {
+            const a = old.runs.get(k), b = this._network.get(k)
+            if (a) walk(a)
+            if (b && b !== a) walk(b)
+        }
+        const padSig = (n) => `${n.x}|${n.z}|${n.reach}`
+        const newPads = this.padReachNodes()
+        const oldSet = new Set(old.pads.map(padSig)), newSet = new Set(newPads.map(padSig))
+        for (const n of old.pads) if (!newSet.has(padSig(n))) regions.push({ ...n })
+        for (const n of newPads) if (!oldSet.has(padSig(n))) regions.push({ ...n })
+
+        return regions.length ? regions : null
     }
 
     // FEAT-13: the terminal heading the routed edge `at → toward` leaves the anchor `at` with (and the
@@ -5071,9 +5199,16 @@ export class RoadSystem {
                 pts[i].y = y0[i] + Math.max(-BOUND, Math.min(BOUND, cur[i] - y0[i]))
             }
         }
+        // Portal placement: slide each bore's portals out to the cheapest buildable spot (the deck
+        // is untouched — only which stations are bored changes). Last, because it breaks the
+        // class-from-depth rule every pass above relies on (see extendBorePortals).
+        // The end guard is the junction reach _clipTunnelSpansAtCrossings clears (blend + 10 m).
+        const MIN_BORE = 12   // m — a shorter bore reads as noise and is dropped
+        prof = extendBorePortals(st, prof, C, this._params?.tunnelBoreRadius ?? 8,
+            (this._params?.roadJunctionBlendLength ?? 30) + 10, MIN_BORE)
         const spans = []
         for (const sg of prof.segs) {
-            if (sg.cls === CLS.BORE && sg.len >= 12) spans.push({ s0: sg.s0, s1: sg.s1 })
+            if (sg.cls === CLS.BORE && sg.len >= MIN_BORE) spans.push({ s0: sg.s0, s1: sg.s1 })
         }
         return spans.length ? spans : null
     }
@@ -6214,14 +6349,7 @@ export class RoadSystem {
         // and per-row geometry is a pure fn of (mz, band). So if this signature is unchanged since the
         // last build and nothing is dirty, a re-stream would reproduce byte-identical geometry — skip
         // the whole rebuild/re-slice and KEEP every cache (the common case: moving within one 256 m cell).
-        const R = this._proto.radius
-        const center_mx = Math.floor(center.x / PROTO_ANCHOR_SPACING)
-        const HW = this._bandHalfWidth()
-        const mx0 = center_mx - HW
-        const mx1 = center_mx + HW
-        const mz0 = Math.floor((center.z - R) / PROTO_ANCHOR_SPACING)
-        const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
-        const bandSig = `${mz0}:${mz1}:${mx0}:${mx1}:${this._generation}`
+        const { mx0, mx1, mz0, mz1, sig: bandSig } = this._bandAt(center.x, center.z)
         if (!this._proto.dirty && bandSig === this._lastBandSig && this._network.size > 0 && this._tiles && this._tiles.size > 0) {
             // Identical window → network/slices/profiles all still valid; just track the new center
             // so the next <PROTO_REGEN_MOVE move short-circuits at the lazy gate above.

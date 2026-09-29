@@ -54,6 +54,8 @@ vehicleState shape — one factory, so the world truck and the FEAT-41 menu-stag
 rock classification) · `map-cover.js` (map-resolution forest cover) · `water.js` (ponds/streams
 generation) · `water-render.js` · `stone-texture.js` (procedural riverbed texture) ·
 `terrain-texture.js` (FEAT-84: procedural grass/dirt/rock surface maps, DataTexture, headless-safe).
+`stream-priority.js` (PERF-33 near-then-ahead queue order + stream-centre motion/jump detection,
+zero-dep) · `stream-budget.js` (PERF-33 the one shared per-frame streaming budget, zero-dep).
 
 **Road network** — `road.js` (RoadSystem: streaming, resolve, surface queries) · `road-graph.js`
 (blue-noise anchors + Urquhart topology) · `road-carve.js` (carve bodies, canonical for worker

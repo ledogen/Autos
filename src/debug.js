@@ -642,6 +642,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   the owner 2026-08-18 and QUAL-27 deleted their machinery). A 12-20 m trench is an open rock
   //   cutting, not a tunnel.
   v2Folder.add(params.roadV2, 'cutMax', 6, 40, 1).name('Cut→Bore Depth (m)').onChange(fireRoadParam)
+  // Portal placement: an existing bore's portals slide out to where the deck is Bore Radius + this
+  // below ground (and boring is still cheaper than cutting). Lower = shallower portals, shorter
+  // approach trenches. Never creates a bore — Cut→Bore Depth still decides that.
+  v2Folder.add(params.roadV2, 'portalCover', 0, 20, 0.5).name('Portal Rock Cover (m)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'fillMax', 2, 20, 0.5).name('Max Fill (m)').onChange(fireRoadParam)
 
   // Bore GEOMETRY (rendering + collider + the containment test), as opposed to bore PRICING above.
@@ -944,28 +948,82 @@ export function initDebug (params, callbacks = {}, options = {}) {
     }
   })
 
-  // Keyboard must stay with the GAME after clicking the panel. lil-gui's root element calls
-  // stopPropagation on EVERY keydown/keyup once focus is inside it, so a click on any slider /
-  // checkbox / folder header silently froze driving, respawn (R) and pause (Esc) until the user
-  // happened to click back out. Only genuine text entry (the World Seed field, typing a number)
-  // should hold the keyboard — so after any click whose target is not a text input, drop focus
-  // back to the page. Clicking INTO a text input keeps focus, as it should.
-  gui.domElement.addEventListener('pointerup', (e) => {
+  // Mouse wheel scrolls the panel, never edits a value. lil-gui binds 'wheel' on every number
+  // controller (the slider track, and the text box while focused) and nudges the value by one
+  // step, so scrolling down the list with the pointer over a slider silently retuned it. A
+  // capture-phase listener on the root runs before those target handlers; stopPropagation keeps
+  // the event from reaching them, and since nothing calls preventDefault the browser's native
+  // scroll of the panel still happens. Values change only by click-and-drag or typing.
+  gui.domElement.addEventListener('wheel', (e) => {
+    if (e.target.closest?.('.controller.number')) e.stopPropagation()
+  }, { capture: true })
+
+  // The debug panel is MOUSE-ONLY; the keyboard always belongs to the GAME (owner ruling
+  // 2026-09-25 — keyboard menu navigation is for the Esc menus, never the backtick panel).
+  // lil-gui's root calls stopPropagation on EVERY keydown/keyup once focus is inside it, so any
+  // focused control (checkbox, folder header, a Tab-focused anything) froze driving, respawn (R)
+  // and pause (Esc). So nothing in the panel may hold focus except genuine text entry (the World
+  // Seed field, typing a number) — every other focus is dropped back to the page the instant it
+  // lands. focusin covers click AND Tab focus in one place.
+  gui.domElement.addEventListener('focusin', (e) => {
     const t = e.target
     const isTextEntry = t instanceof HTMLInputElement && (t.type === 'text' || t.type === 'number')
-    // A <select> (Quality, Vehicle preset, …) MUST keep focus while its native dropdown is open —
-    // blurring it here snaps the popup shut on mouse-release before the user can pick an option.
-    // Dropdowns instead release the keyboard on their 'change' below, once a value is chosen.
-    const isSelect = t instanceof HTMLSelectElement
-    if (isTextEntry || isSelect) return
-    const ae = document.activeElement
-    if (ae && ae !== document.body && gui.domElement.contains(ae)) ae.blur()
+    if (!isTextEntry) t.blur()
   })
-  // Return the keyboard to the game after a dropdown selection completes (the pointerup handler
-  // above deliberately leaves an open <select> focused so its popup survives to be clicked).
-  gui.domElement.addEventListener('change', (e) => {
-    if (e.target instanceof HTMLSelectElement) e.target.blur()
-  })
+
+  // Dropdowns (Quality, Vehicle preset, …) never open the NATIVE <select> popup. On macOS that
+  // popup is an OS menu that swallows every key event while open — no page listener, capture
+  // phase or not, ever sees them — so a steer key released with the popup open never delivered
+  // its keyup and stayed STUCK ON until pressed again. Instead the native open is cancelled
+  // (preventDefault on mousedown also keeps focus off the select) and a plain-div list is shown;
+  // picking an entry sets selectedIndex and fires 'change', which is exactly what lil-gui's
+  // OptionController listens to, so onChange/onFinishChange run as before.
+  let optionMenu = null
+  const closeOptionMenu = () => { optionMenu?.remove(); optionMenu = null }
+  gui.domElement.addEventListener('mousedown', (e) => {
+    const sel = e.target
+    if (!(sel instanceof HTMLSelectElement)) return
+    e.preventDefault()
+    e.stopPropagation()             // keep the document-level outside-click closer below from firing
+    const reopening = optionMenu?._select === sel
+    closeOptionMenu()
+    if (reopening || sel.disabled) return
+    const r = sel.getBoundingClientRect()
+    const menu = document.createElement('div')
+    menu._select = sel
+    Object.assign(menu.style, {
+      position: 'fixed', left: `${r.left}px`, top: `${r.bottom}px`, minWidth: `${r.width}px`,
+      maxHeight: `${Math.max(120, window.innerHeight - r.bottom - 8)}px`, overflowY: 'auto',
+      zIndex: 10000, background: '#1f1f1f', border: '1px solid #555', borderRadius: '2px',
+      font: '11px -apple-system, system-ui, sans-serif', color: '#ebebeb', userSelect: 'none',
+    })
+    const idleBg = (i) => (i === sel.selectedIndex ? '#2cc9ff33' : '')
+    Array.from(sel.options).forEach((opt, i) => {
+      const item = document.createElement('div')
+      item.textContent = opt.textContent
+      Object.assign(item.style, { padding: '3px 8px', cursor: 'pointer', whiteSpace: 'nowrap', background: idleBg(i) })
+      item.addEventListener('mouseenter', () => { item.style.background = '#444' })
+      item.addEventListener('mouseleave', () => { item.style.background = idleBg(i) })
+      item.addEventListener('mousedown', (ev) => {
+        ev.preventDefault()
+        ev.stopPropagation()
+        closeOptionMenu()
+        if (i === sel.selectedIndex) return
+        sel.selectedIndex = i
+        sel.dispatchEvent(new Event('change'))
+      })
+      menu.appendChild(item)
+    })
+    menu.addEventListener('mousedown', (ev) => ev.stopPropagation())   // scrollbar drag must not close it
+    document.body.appendChild(menu)
+    optionMenu = menu
+  }, { capture: true })
+  // A click anywhere else, scrolling the panel (the list is fixed-position and would detach from
+  // its row — capture phase, since the slider wheel guard above stops propagation before bubble),
+  // or hiding the panel with backtick closes the list without choosing.
+  document.addEventListener('mousedown', closeOptionMenu)
+  gui.domElement.addEventListener('wheel', closeOptionMenu, { capture: true })
+  document.addEventListener('keydown', (e) => { if (e.key === '`') closeOptionMenu() })
 
   return gui
 }

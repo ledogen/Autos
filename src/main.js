@@ -77,9 +77,11 @@ import { formatTime } from './par.js'                    // FEAT-29: par oracle 
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
+import { StreamMotion } from './stream-priority.js'         // PERF-33: travel direction + jump detection for streaming order
+import { StreamBudget } from './stream-budget.js'           // PERF-33: one shared per-frame streaming budget
 import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read-only tree re-roll (camp shade score)
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
-import { installShadowEdgeFade } from './shadow-fade.js'   // QUAL-18: soft realtime shadow-map edge
+import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.js'   // QUAL-18 edge fade · BUG-78 near/far coupling
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
 import { FLORA_PARAMS } from '../data/flora.js'
@@ -277,18 +279,129 @@ const _sunShearScratch = new THREE.Vector2()
 //   • Story mode: the region freeze means the frame loop makes no roadSystem.update() call at all,
 //     so there is no adopt, so the sweep never runs once in a whole run. Measured 26 props in the
 //     road, unchanged over 55 s of idling AND driving.
-// So: keep the budget on the steady-state adopt, and sweep the WHOLE ring on the handful of adopts
-// that follow a world change — plus directly, where a mode has no adopts to hang it on.
-const FULL_SWEEP_ADOPTS = 6   // covers the settle: measured reseeds reveal new runs over ~4 adopts
-let _propFullSweeps = 0
-/** Arm the next `n` adopts to sweep the whole prop ring instead of a 10-chunk slice. */
-const queuePropFullSweeps = (n = FULL_SWEEP_ADOPTS) => { _propFullSweeps = Math.max(_propFullSweeps, n) }
+// PERF-33: so an adopt no longer SWEEPS, it OWES — every adopt (and every seat) owes one whole-ring
+// pass, and the frame loop pays it off PROP_SWEEP_PER_FRAME chunks at a time. That closes both
+// failures above without an unbounded pass on an adopt: the debt is paid whether or not another
+// adopt ever comes (parked truck), and each settle adopt simply re-arms a full pass. The previous
+// "whole ring on the next 6 adopts" arming ran a 25–46 ms (cpu×4) sweep inside the adopt message
+// handler — and once duplicate adopts stopped burning the 6 during load, those landed while driving.
+const PROP_SWEEP_PER_FRAME = 2   // ≈0.3 ms/chunk (measured, see invalidateRoadIntrusions) → 49-chunk ring in ~25 frames
+let _propSweepOwed = 0           // chunks still to examine in the current owed pass
+/** Owe one whole-ring intrusion pass — at least the full streamed ring, since a seat can arrive
+ *  before the props have scattered (live count 0) and the pass must still cover them once they do. */
+const owePropSweep = () => {
+  const ring = (2 * Math.max(_propRing, _bbRing) + 1) ** 2
+  _propSweepOwed = Math.max(_propSweepOwed, ring, propSystem ? propSystem.liveChunkCount() : 0)
+}
 /**
  * Re-test live placements against the roads that exist NOW. `budget` is chunks to examine;
- * Infinity means the whole ring in one pass (~2–25 ms — fine behind a load, or on the few adopts
- * after a world change; never on a steady-state band move, which is the PERF-26/28 surface).
+ * Infinity means the whole ring in one pass (~2–25 ms — only ever behind a loading screen; play
+ * pays the owed pass per frame instead, see owePropSweep).
  * The predicate is makePropSamplers()' own roadClear, so it can never drift from the scatter's.
  */
+// ── PERF-33: streaming motion ─────────────────────────────────────────────────────────────────
+// _streamMotion is the stream centre's smoothed velocity (truck, or camera in free-cam). Every
+// streaming queue orders itself near-then-ahead by it (stream-priority.js), and a JUMP — a move no
+// vehicle makes in a frame (teleport, spawn, free-cam placement) — re-arms the fill budgets.
+// (A road window shifted AHEAD of travel was built and measured, 2026-09-25: it moved the network's
+// coverage circle forward, so chunks behind the truck re-carved flat and road queries behind it
+// forced 50 ms synchronous builds — and bought nothing, the network already leads the visible
+// terrain by ~64 m+. Deleted; see PERF-33.)
+const _streamMotion = new StreamMotion()
+const STREAM_JUMP_M = 128          // m in one frame = a jump (two chunks; 60 mph is ~0.45 m/frame)
+/** The centre play streams the road network around — the one the frame loop uses, so the param and
+ *  adopt re-slice paths can never compute a different band and re-dispatch. */
+function roadStreamCenter () {
+  return getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+}
+
+// ── PERF-33: shared streaming budget + the freeze guard ─────────────────────────────────────────
+// Owner ruling 2026-09-24: smooth driving beats everything EXCEPT at the edge of generation — if the
+// truck would reach ground that is not ready (terrain built + carved, ribbon tile built, road network
+// covering it) within HOLD_ENTER_S at its current speed, it is OK to freeze until drivable road exists.
+// The hold is a silent sim pause (last frame stays up, streaming gets the FILL budget) plus a small
+// yellow warning triangle — the FPS-game "network issue" idiom — telling a slow machine to drop a
+// graphics preset. Driving only: free-cam never holds (nothing to protect, and it outruns everything).
+const _streamBudget = new StreamBudget()
+let _streamSpentMs = 0
+const HOLD_ENTER_S = 2.0       // hold when ready ground ahead < this many seconds of travel
+const HOLD_EXIT_S = 3.0        // release once this much is ready (hysteresis — no hold/release flapping)
+const HOLD_MAX_S = 8           // a hold that has not cleared by now gives up (never soft-lock the game)…
+const HOLD_COOLDOWN_S = 5      // …and the guard stands down this long before it may hold again
+const HOLD_MIN_SPEED = 1.0     // m/s — below this there is no "ahead"
+const HOLD_STEP_M = 16         // lookahead sample spacing (quarter chunk)
+const HOLD_WARN_LINGER_S = 3   // the triangle outlives the hold so a sub-second one is still seen
+let _genHold = false
+let _genHoldSince = 0
+let _genHoldCooldownUntil = 0
+let _genWarnUntil = 0
+let _genWarnEl = null
+/** Is the ground at world (x, z) ready to drive on? */
+function _groundReadyAt (x, z) {
+  const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE)
+  if (!terrainSystem.isChunkReady(cx, cz)) return false
+  if (roadMeshSystem && !roadMeshSystem.isTileReady(cx, cz)) return false
+  // Story mode freezes the road stream on a pre-built region — coverage there is the region, not a window.
+  if (roadSystem && !storySystem.isRoadStreamSuspended() && !roadSystem.networkCoversXZ(x, z)) return false
+  return true
+}
+/** Seconds of travel before the truck reaches ground that is not ready, looking `lookS` ahead
+ *  (Infinity when everything in that window is ready, or the truck is ~stopped). */
+function _readyAheadS (lookS) {
+  const v = vehicleState.velocity, p = vehicleState.position
+  const sp = Math.hypot(v.x, v.z)
+  if (sp < HOLD_MIN_SPEED) return Infinity
+  const ux = v.x / sp, uz = v.z / sp, L = sp * lookS
+  for (let d = 0; d <= L; d += HOLD_STEP_M) {
+    if (!_groundReadyAt(p.x + ux * d, p.z + uz * d)) return d / sp
+  }
+  return Infinity
+}
+function _updateGenHold (nowS) {
+  const guardOn = terrainSystem && !_labActive && !_simHeld && !_spawnWarmActive && getCameraMode() !== 'freecam'
+  if (!guardOn) {
+    _genHold = false
+  } else if (_genHold) {
+    const timedOut = nowS - _genHoldSince > HOLD_MAX_S
+    if (timedOut || _readyAheadS(HOLD_EXIT_S) >= HOLD_EXIT_S) {
+      _genHold = false
+      if (timedOut) _genHoldCooldownUntil = nowS + HOLD_COOLDOWN_S
+    }
+  } else if (nowS >= _genHoldCooldownUntil && _readyAheadS(HOLD_ENTER_S) < HOLD_ENTER_S) {
+    _genHold = true
+    _genHoldSince = nowS
+    perfEvent('stream.hold')
+  }
+  if (_genHold) _genWarnUntil = nowS + HOLD_WARN_LINGER_S
+  _setGenWarning(nowS < _genWarnUntil)
+}
+function _setGenWarning (on) {
+  if (!on && !_genWarnEl) return
+  if (!_genWarnEl) {
+    const el = document.createElement('div')
+    el.id = 'gen-warning'
+    el.title = 'World generation is falling behind — try a lower graphics preset'
+    el.innerHTML = '<svg viewBox="0 0 24 22" width="28" height="26" aria-hidden="true">'
+      + '<path d="M12 1.5 L22.5 20.5 H1.5 Z" fill="#f5c518" stroke="#1a1a1a" stroke-width="1.5" stroke-linejoin="round"/>'
+      + '<rect x="11" y="7.5" width="2" height="7" rx="1" fill="#1a1a1a"/><circle cx="12" cy="17.2" r="1.2" fill="#1a1a1a"/></svg>'
+    Object.assign(el.style, {
+      position: 'fixed', right: '14px', top: '14px', zIndex: '90', display: 'none',
+      pointerEvents: 'none', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))',
+    })
+    document.body.appendChild(el)
+    _genWarnEl = el
+  }
+  const want = on ? 'block' : 'none'
+  if (_genWarnEl.style.display === want) return
+  if (on) {
+    // Top-right corner, below the story run HUD when that is up (it owns the corner in a run).
+    const run = document.getElementById('run-hud')
+    const r = run && run.offsetParent !== null ? run.getBoundingClientRect() : null
+    _genWarnEl.style.top = r ? `${Math.round(r.bottom + 8)}px` : '14px'
+  }
+  _genWarnEl.style.display = want
+}
+
 function sweepPropIntrusions (budget) {
   if (!propSystem) return 0
   const dropped = propSystem.invalidateRoadIntrusions(
@@ -780,8 +893,7 @@ function debouncedRoadRebuild () {
     // was also gated on _debugVisible, so with the centerline viz OFF the road never re-streamed on
     // a slider change at all. Re-stream first, unconditionally; update() rebuilds viz lines only if
     // visible (internal _debugVisible check), so this is safe regardless of viz state.
-    const c = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
-    roadSystem.update(c)   // re-streams (dirty) + re-slices; rebuilds viz lines only if visible
+    roadSystem.update(roadStreamCenter())   // re-streams (dirty) + re-slices; rebuilds viz lines only if visible
     // D3 (plan 09-22): the carve footprint bound reads roadMinTurnRadius directly from
     // _roadSystem._params, so a re-route (min-radius change) must also re-bake the carve. Now that
     // the road is re-streamed above, _buildCarveTable reads the NEW road geometry.
@@ -803,9 +915,9 @@ function debouncedRoadRebuild () {
 let _reseatChain = Promise.resolve()
 function _reseatTruckAtSpawn () {
   // BUG-71: a seat is ALWAYS a world arriving at once — cold load, R-reset, or a Path-B reseed —
-  // and the band the props scattered against is still filling in behind it. Arm the whole-ring
-  // sweeps here rather than at each of those three call sites, so no future spawn path can forget.
-  queuePropFullSweeps()
+  // and the band the props scattered against is still filling in behind it. Owe a whole-ring pass
+  // here rather than at each of those three call sites, so no future spawn path can forget.
+  owePropSweep()
   const run = () => _reseatTruckAtSpawnInner()
   _reseatChain = _reseatChain.then(run, run)
   return _reseatChain
@@ -1084,6 +1196,9 @@ renderer.shadowMap.enabled = true
 // extent for texel size, so the dissolve has to start later or it eats a visible chunk of the
 // shadowed world. 0.82 of ±170 m ⇒ full shadows to ~139 m, gone by 170 m.
 installShadowEdgeFade({ fadeStart: 0.82 })
+// BUG-78: the near map's shadow also gates the far cascade, so the truck can be kept OUT of the
+// far map (see the wrapped shadow pass by sunFar) without its shadow dropping to the near light's 40 % share.
+installNearShadowCoupling()
 // PERF-16: stop re-rendering the sun's whole shadow pass every frame. Three defaults autoUpdate=true,
 // so the 1536²/2048² shadow map is re-rendered each frame even parked under a static sun (measured
 // ~9 pp renderer-main, ~3 pp GPU). We drive needsUpdate on-demand from the shadow-follow block in
@@ -1244,10 +1359,14 @@ scene.add(sun.target)   // FEAT-06: target must be in-scene for the per-frame sh
 //    centre moves, the sun direction changes, or geometry streams — see the follow in loop().
 //    Driving in a straight line re-renders it roughly once per SHADOW_FAR_SNAP metres, not per frame.
 //
-// KNOWN TRADE-OFF: three has no per-light caster set (WebGLShadowMap tests object.layers against the
-// VIEW camera, not the light), so the truck casts into BOTH maps. Its far-map shadow is ~0.25 m/texel,
-// which shows up as a soft penumbra around the crisp near shadow. It reads as softening, not as a
-// double shadow, and SHADOW_FAR_SPLIT is the dial if it ever needs pulling back.
+// BUG-78 — THE TRUCK IS NOT IN THIS MAP. three has no per-light caster set (WebGLShadowMap tests
+// object.layers against the VIEW camera, not the light), so at first the truck cast into both maps.
+// With this one re-rendered only every SHADOW_FAR_SNAP metres, its copy of the truck's shadow stayed
+// pinned where the last pass drew it while the truck drove on — a stale blob left on the road at
+// speed (or displaced down a slope) until the next far pass wiped it. So the far pass is now run
+// with the vehicle hidden (the wrapped shadow pass just below the light's setup), and the
+// shader couples the two lights (installNearShadowCoupling) so the near map alone throws the
+// truck's shadow at full strength. Anything else that MOVES and casts belongs in that hide list.
 const SHADOW_FAR_EXTENT = 256   // half-width in m (the box is 512 m across)
 const SHADOW_FAR_MAP    = 2048  // 512 m / 2048 = EXACTLY 0.25 m per texel — the round number matters,
                                 // because SHADOW_FAR_SNAP below has to be an integer multiple of it
@@ -1269,11 +1388,43 @@ sunFar.shadow.camera.far  = 2600            // spans the standoff + the world's 
 // mountain shadows off their ridges). ~2 far-texels.
 sunFar.shadow.normalBias = 0.5
 sunFar.shadow.bias = -0.0005
-// PERF: opt out of the global on-demand shadow trigger — re-armed explicitly by the far-follow.
+// PERF: opt out of the global on-demand shadow trigger. Its needsUpdate is never armed directly —
+// the far-follow in loop() raises _farShadowPending and the wrapped shadow pass below draws it.
 sunFar.shadow.autoUpdate = false
-sunFar.shadow.needsUpdate = true
+let _farShadowPending = true   // first frame needs one render
 scene.add(sunFar)
 scene.add(sunFar.target)
+// BUG-78: the far cascade is drawn with the VEHICLE HIDDEN, so nothing that moves is baked into a
+// map that is only refreshed every SHADOW_FAR_SNAP metres. three's shadow pass is one call over
+// every shadow-casting light, made from inside render() (it must be — per-draw setup reads the
+// render state that only exists there, so it cannot be run from the frame loop). Wrap that call:
+// the near light(s) go through untouched, honouring the global on-demand gate as before; then, if
+// the far-follow asked for it, the far light is drawn on its own with carGroup hidden and shown
+// again before the world pass. Geometry matrices are fresh here (render() walks the graph first),
+// and the far map still lands in the same frame as the streaming step that requested it.
+// `this` must be the WebGLShadowMap: the original reads its own `type` through it.
+// FAR_SHADOW_HIDE is the list of moving casters; the vehicle root joins it once it exists (the
+// sky's cube-map prewarm renders — and so runs this pass — before the vehicle is built).
+const FAR_SHADOW_HIDE = []
+{
+  const shadowPass = renderer.shadowMap.render
+  renderer.shadowMap.render = function (lights, sceneArg, camera) {
+    shadowPass.call(this, lights.filter(l => l !== sunFar), sceneArg, camera)
+    // LOAD-BEARING: only the WORLD scene feeds the far map. The prop-impostor re-bake (several
+    // small renders of its own scene, on every sky look change) runs BEFORE the world render in the
+    // same frame; without this guard a far pass due on such a frame drew the cascade from the bake
+    // scene AND consumed the global gate, so the world render then skipped the near map — the
+    // truck's whole shadow sat still for a frame and caught up on the next (owner saw it, 2026-09-29).
+    if (!_farShadowPending || !sunFar.castShadow || sceneArg !== scene) return
+    _farShadowPending = false
+    const wasVisible = FAR_SHADOW_HIDE.map(o => o.visible)
+    for (const o of FAR_SHADOW_HIDE) o.visible = false
+    this.needsUpdate = true          // global gate (already consumed by the near pass above)
+    sunFar.shadow.needsUpdate = true // per-light gate
+    shadowPass.call(this, [sunFar], sceneArg, camera)
+    FAR_SHADOW_HIDE.forEach((o, i) => { o.visible = wasVisible[i] })
+  }
+}
 // Far-cascade follow state (mirrors the near light's, at the coarse snap).
 let _lastFarSnapR = NaN, _lastFarSnapU = NaN, _lastFarGeomSig = NaN
 const _lastFarSunDir = new THREE.Vector3(NaN, NaN, NaN)
@@ -1361,6 +1512,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 // src/vehicle-model.js. carGroup/bodyMesh/wheelMeshes are returned for back-compat;
 // syncMeshesToState(state) is called once per render frame below.
 const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
+FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
 // Owns a SEPARATE read-only RoadSystem instance streamed around its own pan cursor — it never
@@ -1897,7 +2049,7 @@ function applyQuality (name) {
   // The terrain cascade rides the same tier switch (Low kills both passes). Re-arm its private
   // needsUpdate on the way back on — it opted out of the global trigger, so nothing else would.
   sunFar.castShadow = p.shadows
-  if (p.shadows) { sunFar.shadow.needsUpdate = true; renderer.shadowMap.needsUpdate = true }
+  if (p.shadows) { _farShadowPending = true; renderer.shadowMap.needsUpdate = true }
   // PERF-12: per-tier shadow map size + ortho extent, applied as one texel-size decision.
   applyShadowResolution(p.shadowMap, p.shadowExtent)
   // PERF-06 prop radius: thin out the scattered-prop ring on Low (read by the loop's propSystem.update).
@@ -2006,6 +2158,10 @@ if (_PROF) {
 
     pos:    { x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z },
     speed:  Math.hypot(vehicleState.velocity.x, vehicleState.velocity.y, vehicleState.velocity.z),
+    propChunks: propSystem ? propSystem.liveChunkCount() : 0,
+    // PERF-33: chunk keys live around a world XZ (the teleport-fill harness polls these)
+    hasProps:   (cx, cz) => !!propSystem && propSystem.hasChunk(cx, cz),
+    hasGround:  (cx, cz) => !!terrainSystem && terrainSystem._chunkMap.has(cx + ',' + cz),
   })
   // FEAT-39: the GPS system, so the CDP harness can inspect the baked route + live arrow/chevrons
   // (the overlay only draws near the car, so it can't otherwise be probed without driving a run).
@@ -2021,7 +2177,7 @@ if (_PROF) {
   const _eachPropMesh = (fn) => { if (propSystem) for (const rec of propSystem._meshes.values()) fn(rec) }
   const LEVERS = {
     // PERF-16 re-arm. Both cascades move together — the lever means "realtime sun shadows on/off".
-    sunShadow:        v => { sun.castShadow = sunFar.castShadow = !!v; sunFar.shadow.needsUpdate = true; renderer.shadowMap.needsUpdate = true },
+    sunShadow:        v => { sun.castShadow = sunFar.castShadow = !!v; _farShadowPending = true; renderer.shadowMap.needsUpdate = true },
     propCastShadow:   v => _eachPropMesh(r => { r.mesh.castShadow = !!v }),
     // Re-enabling culling needs real instance bounds (geometry bounds ≠ world spread). Hidden
     // zero-scale slots collapse to origin, inflating the sphere — acceptable for an A/B.
@@ -4021,12 +4177,23 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
       // EVERY adopt, not just 'params': a positional move-adopt is precisely when runs the old
       // window never registered enter the network, which is what strands props on roads. The
       // predicate comes from makePropSamplers() so it can never drift from the one the scatter
-      // itself used. Usually drops nothing and costs one bounded pass over live placements.
-      // BUG-71: budgeted on the frontier, WHOLE-RING while a world change is still settling —
-      // queuePropFullSweeps() arms that window; see the helper for the measurements.
-      if (_propFullSweeps > 0) { _propFullSweeps--; sweepPropIntrusions(Infinity) }
-      else sweepPropIntrusions()
-      if (reason !== 'params') return
+      // itself used. BUG-71 + PERF-33: owe a whole-ring pass; the frame loop pays it off in slices
+      // (this handler runs between frames, so any sweep here is an unbudgeted stall).
+      owePropSweep()
+      if (reason !== 'params') {
+        // BUG-76: a positional adopt does not bump the generation, yet it can still re-shape road
+        // inside chunks already carved (a window-dependent T promotion, measured flipping 114 m from
+        // the car). Left alone, the mesh + heightfield + road trimesh keep the OLD road while the
+        // wheels read the new analyticHeight — tyres sink, the chassis rides the stale collider.
+        // adoptNetwork() diffed the swap and has already re-sliced, so both consumers rebuild
+        // against the adopted network. Driving budget (burst:false): these land ≥100 m out.
+        const dirty = roadSystem.lastAdoptDirty()
+        if (dirty) {
+          terrainSystem?.recarveInPlace(dirty, { burst: false })
+          roadMeshSystem?.invalidateRegions(dirty)
+        }
+        return
+      }
       // The deferred half of debouncedRoadRebuild (see there): the swap just bumped _generation,
       // so clear the ribbon tiles and re-bake the carve against the ADOPTED geometry — doing this
       // at invalidate time would have rebuilt against the stale network and then again here.
@@ -4040,8 +4207,7 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
       // just cleared — a road spline drawn through open air, the truck resting on whatever the
       // uncarved ground left behind. Driving away and back masked it because a chunk streamed in
       // LATER re-carves against a by-then-sliced network. Re-slice first, then rebuild.
-      const _adoptC = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
-      roadSystem.update(_adoptC)   // adopted window ⇒ short-circuits the rebuild, just re-slices
+      roadSystem.update(roadStreamCenter())   // adopted window ⇒ short-circuits the rebuild, just re-slices (PERF-33: the SAME centre play streams by, or the band would differ and re-dispatch)
       if (terrainSystem) {
         terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
         terrainSystem.rebuildAllChunksFromWorker()
@@ -4635,7 +4801,7 @@ const storySystem = new StorySystem({
     map2d?.resetRadiusTarget()
     if (!roadSystem) return
     roadSystem.setRadius(320)   // PERF (Tier 1) play radius — matches the terrain ring
-    roadSystem.update(getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position)
+    roadSystem.update(roadStreamCenter())
   },
 })
 
@@ -4990,7 +5156,7 @@ function loop () {
   // free-roam reseed) left the rendered truck, and the terrain ring streaming around it, parked at the
   // OLD spawn for the whole load (measured 2026-09-22: ring built ~280 m from the truck, then
   // rebuilt from scratch the moment the stage lifted).
-  if (_simHeld) {
+  if (_simHeld || _genHold) {   // PERF-33: the freeze guard holds the sim the same way
     accumulator = 0
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
@@ -5203,6 +5369,11 @@ function loop () {
   // Reverts to truck position on exit so the ring stays anchored to the car in normal mode.
   const streamCenter = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
   _trackStreamCenter(simTime, streamCenter.x, streamCenter.z)   // capture ring (Phase 4/5)
+  // PERF-33: travel direction for near-then-ahead ordering; a jump drops every queue's backlog.
+  if (_streamMotion.update(streamCenter.x, streamCenter.z, frameTime, STREAM_JUMP_M) && !_labActive) {
+    terrainSystem?.onStreamJump()
+    propSystem?.onStreamJump()
+  }
   // FEAT-06: keep the sun's shadow frustum centred on the view, else only tiles near origin get
   // shadows. QUAL-02: the direction now comes from SkySystem.sunDirection (so shadows align with the
   // visible sun in the sky) — place the light along that direction at a fixed standoff, target the
@@ -5310,8 +5481,7 @@ function loop () {
       || sd.x !== _lastFarSunDir.x || sd.y !== _lastFarSunDir.y || sd.z !== _lastFarSunDir.z
       || geomSig !== _lastFarGeomSig) {
       perfEvent('shadow.far')
-      sunFar.shadow.needsUpdate = true      // per-light gate (this light opted out of autoUpdate)
-      renderer.shadowMap.needsUpdate = true // ...and the global gate, or the whole pass is skipped
+      _farShadowPending = true              // BUG-78: drawn by the wrapped shadow pass, vehicle hidden
       _lastFarSnapR = fSnapR
       _lastFarSnapU = fSnapU
       _lastFarSunDir.copy(sd)
@@ -5325,7 +5495,12 @@ function loop () {
   // pixels. Nothing is disposed, so leaving the lab re-streams from warm caches.
   let _pt = performance.now()
   perfAdd('frame.preStream', _pt - _ptPre)   // PERF-26 INSTRUMENT: physics-end → streaming-block start
-  if (!_labActive) terrainSystem.update(streamCenter)
+  // PERF-33: open the shared streaming budget. The systems below spend it in the owner's order —
+  // terrain → road surface → props → shadow bake / water pre-warm. FILL (a big budget) while anything
+  // is filling or the freeze guard holds: those are the edge-of-generation moments a hitch is allowed.
+  const _streamT0 = _pt
+  _streamBudget.begin(_genHold || !!terrainSystem?.isFilling() || !!propSystem?.isFilling() || !!roadMeshSystem?.isFilling())
+  if (!_labActive) terrainSystem.update(streamCenter, _streamMotion, _streamBudget)
   perfAdd('frame.terrain.update', performance.now() - _pt)
   // Phase 8: stream the valley-trunk network around the same center as terrain (08-07: the
   // unified update() replaces the retired updateProto — streams + slices + redraws viz if visible).
@@ -5338,11 +5513,25 @@ function loop () {
   // window and undo the freeze. This skip IS the mode's perf win.
   if (roadSystem && !_spawnWarmActive && !_labActive && !storySystem.isRoadStreamSuspended()) roadSystem.update(streamCenter)
   perfAdd('frame.road.update', performance.now() - _pt)
+  // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
+  // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.
+  // flushPendingQueue builds up to MAX_ROAD_BUILDS_PER_FRAME tiles per frame.
+  // PERF-33: moved up from the end of the block — the road surface outranks props (owner ruling).
+  if (roadMeshSystem && terrainSystem && !_labActive) {
+    _pt = performance.now()
+    roadMeshSystem.syncToChunkRing(terrainSystem.getActiveChunkKeys())
+    perfAdd('frame.ribbon.sync', performance.now() - _pt)
+    _pt = performance.now()
+    roadMeshSystem.flushPendingQueue(Math.floor(streamCenter.x / CHUNK_SIZE), Math.floor(streamCenter.z / CHUNK_SIZE), _streamMotion, _streamBudget.deadline())
+    perfAdd('frame.ribbon.flush', performance.now() - _pt)
+  }
   // FEAT-06: stream props around the same center. PERF-14: scatter is queued + time-sliced inside
   // update(); the vehicle position is the HARD radius — its 3×3 chunks force-complete so prop
   // collision always exists under the truck, while the visual ring drips in budget-bound.
   _pt = performance.now()
-  if (propSystem && !_labActive) propSystem.update(streamCenter.x, streamCenter.z, _propRing, vehicleState.position.x, vehicleState.position.z, _bbRing)
+  if (propSystem && !_labActive) propSystem.update(streamCenter.x, streamCenter.z, _propRing, vehicleState.position.x, vehicleState.position.z, _bbRing, _streamMotion, _streamBudget)
+  // BUG-71 / PERF-33: pay down the owed road-intrusion pass (see owePropSweep).
+  if (_propSweepOwed > 0 && !_labActive && _streamBudget.remaining() > 0) { sweepPropIntrusions(PROP_SWEEP_PER_FRAME); _propSweepOwed -= PROP_SWEEP_PER_FRAME }
   perfAdd('frame.props.update', performance.now() - _pt)   // TEMP (D-arc)
   // PERF-07: bake freshly-committed chunks' prop shadows into the world atlas (sliced; no-op when the
   // queue is empty, i.e. the steady state). Off the frame's shadow pass entirely once baked.
@@ -5369,7 +5558,10 @@ function loop () {
     }
   }
   _pt = performance.now()
-  if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(scene) }   // PERF-26 tag
+  // PERF-33: clear atlas tiles that still hold a departed chunk's shadows (toroidal slot reuse) the
+  // moment the window moves — early-outs unless the stream centre changed chunk.
+  if (shadowBake && !_labActive) shadowBake.syncCenter(Math.floor(streamCenter.x / CHUNK_SIZE), Math.floor(streamCenter.z / CHUNK_SIZE))
+  if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(scene, _streamBudget.deadline()) }   // PERF-26 tag
   perfAdd('frame.shadowBake', performance.now() - _pt)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   _pt = performance.now()
@@ -5389,20 +5581,10 @@ function loop () {
   _pt = performance.now()
   if (waterSystem && !_labActive) {
     const WW = 768
-    waterSystem.warmRegion(streamCenter.x - WW, streamCenter.z - WW, streamCenter.x + WW, streamCenter.z + WW, 2)
+    // PERF-33: its 2 ms ceiling now comes out of the shared budget (last in line — pure lookahead).
+    waterSystem.warmRegion(streamCenter.x - WW, streamCenter.z - WW, streamCenter.x + WW, streamCenter.z + WW, Math.max(0, Math.min(2, _streamBudget.remaining())))
   }
   perfAdd('frame.water.warm', performance.now() - _pt)   // TEMP (D-arc)
-  // Phase 9 (SURF-01): sync road ribbon tiles with the active terrain chunk ring.
-  // syncToChunkRing enqueues new tiles and disposes evicted ones co-located with chunk lifetime.
-  // flushPendingQueue builds up to MAX_ROAD_BUILDS_PER_FRAME tiles per frame.
-  if (roadMeshSystem && terrainSystem && !_labActive) {
-    _pt = performance.now()
-    roadMeshSystem.syncToChunkRing(terrainSystem.getActiveChunkKeys())
-    perfAdd('frame.ribbon.sync', performance.now() - _pt)
-    _pt = performance.now()
-    roadMeshSystem.flushPendingQueue()
-    perfAdd('frame.ribbon.flush', performance.now() - _pt)
-  }
   // TEMP (D-arc): auto-dump the perf profile at ~load (frame 180 ≈ 3s) and steady-state (frame 600).
   _perfFrame++
   // PERF-27: the reset is a console-triage convenience, and under ?prof=1 it actively destroys
@@ -5411,6 +5593,9 @@ function loop () {
   if (_perfFrame === 180) { perfDump('load ~3s'); if (!_PROF) perfReset() }
   else if (_perfFrame === 600) { perfDump('steady ~10s') }
   const _ptPost = performance.now()   // PERF-26 INSTRUMENT: streaming-block end → render start
+  _streamSpentMs = _ptPost - _streamT0
+  // PERF-33: decide next frame's hold from the ground this frame's streaming left ready.
+  _updateGenHold(newTime)
 
   // Lab: recenter the floor pad on the view each frame so it reads as infinite. No snapping is
   // needed any more — the grid is drawn from WORLD xz in the fragment shader, so it stays welded to
@@ -5649,6 +5834,8 @@ function loop () {
   // hasReplan(), not isRerouting(): a delivery's re-plan is quiet and shows no indicator, but it
   // still has to be computed — gating the pump on the indicator would leave those jobs suspended
   // forever, which is the bug the indicator was never meant to be able to cause.
+  // PERF-33: what the rest of the frame cost — next frame's streaming budget is what that leaves.
+  _streamBudget.noteOther(performance.now() - newTime * 1000 - _streamSpentMs)
   if (paperRouteSystem?.hasReplan()) {
     const spentMs = performance.now() - newTime * 1000
     paperRouteSystem.pumpReroute(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - spentMs))

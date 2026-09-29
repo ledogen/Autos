@@ -33,8 +33,8 @@ import * as THREE from 'three'
 // RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
 import { makeSurfaceTextures } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
-import { DEEP_BANK_TOE_EXTRA } from './road-carve.js'   // FEAT-40: deep-bank toe (carve maxExt sync)
 import { perfAdd, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-26)
+import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
 // FEAT-05/FEAT-85: the vegetation share of a ground sample — flat enough (below grassSlopeMax,
 // feathered from half of it) AND below the treeline (feathered lo→hi). One definition, two
@@ -57,6 +57,7 @@ const        GEOM_POOL_MAX        = 32  // PERF-05: recycled chunk-geometry pool
 const        MAX_BUILDS_PER_FRAME = 1   // PERF-05: one chunk build/recarve per frame. On slow GPUs a single chunk's carve already blows BUILD_MS_BUDGET, so building 2+ in a frame only deepens the hitch; capping at 1 bounds the worst frame and evens the physics-substep catch-up. Fast machines still fill the ring at 60 chunks/s. (BUILD_MS_BUDGET remains the adaptive limiter.)
 const        BUILD_MS_BUDGET      = 3.0 // PERF-02: per-frame ms budget for geometry build + re-carve — adapts to machine speed (vs a fixed count)
 const        CARVE_ROWS_PER_SLICE = 4   // PERF-26: carve-table rows per resumable slice (65 rows → ~16 slices ≈ 1.5 ms each on a fast machine). Smaller = smoother but more generator overhead; this is the granularity that lets BUILD_MS_BUDGET actually bind.
+const        MAX_IN_FLIGHT_PER_WORKER = 3 // PERF-33: posted-but-unanswered generate requests per Worker (a Worker answers one in a few ms; 3 keeps it fed across a frame without a deep unrecallable backlog)
 const        MAX_REQUESTS_PER_FRAME = 8 // PERF-02: cap worker `generate` dispatches per frame — bounds the postMessage flood at large rings (raised for the deeper warm rings at Far/Ultra)
 
 // ── Embedded worker source ─────────────────────────────────────────────────
@@ -315,7 +316,7 @@ self.onmessage = function(e) {
     // The main thread _flushPendingQueue applies the carve blend from chunk.carveData after
     // receiving raw heights — this ensures chunk.heights is never overwritten (Pitfall 1).
     // CARVE SYNC: carveTable validation present; blend applied identically by main-thread paths.
-    const { cx, cz, key, carveTable } = e.data
+    const { cx, cz, key, carveTable, epoch } = e.data
     const N    = GRID_SAMPLES
     const S    = CHUNK_SIZE
     const cell = CELL_SIZE
@@ -334,7 +335,7 @@ self.onmessage = function(e) {
     }
 
     // Transfer heights buffer to main thread (zero-copy transferable)
-    self.postMessage({ key, cx, cz, heights }, [heights.buffer])
+    self.postMessage({ key, cx, cz, heights, epoch }, [heights.buffer])   // PERF-33: epoch echoed so stale replies drop
 }
 `
 
@@ -413,6 +414,10 @@ export class TerrainSystem {
         this._pendingWorker = new Set()   // keys requested but not yet received
         this._pendingQueue  = []          // FIFO of received {key,cx,cz,heights} awaiting geometry build
         this._activeBuild   = null        // PERF-26: the chunk whose carve table is mid-build, carried across frames
+        this._activeRecarve = null        // PERF-33: the LIVE chunk whose re-carve is mid-build, carried across frames
+        this._epoch         = 0           // PERF-33: bumped on a full regen — replies to older requests (old seed) are dropped
+        this._inFlight      = 0           // PERF-33: generate requests posted and not yet answered (any epoch — a stale one still occupies its Worker)
+        this._motion        = null        // PERF-33: StreamMotion of the stream centre (near-then-ahead ordering)
         this._geomPool      = []          // PERF-05: recycled chunk BufferGeometry (65×65 XZ plane; only Y/normal/color change per chunk) — avoids per-chunk PlaneGeometry alloc + GC
         this._physicsHook   = null        // FEAT-48: TerrainPhysics (engine heightfield colliders) — syncChunk/disposeChunk/clear
 
@@ -831,8 +836,13 @@ export class TerrainSystem {
         // _chunkMap. This keeps the !_pendingWorker.has(key) guard in
         // _updateChunkRing effective for the full request→built window, preventing
         // the duplicate-request race that orphaned spawn-chunk meshes.
+        // PERF-33: a reply from before a stream jump / full regen (older epoch) is dropped — its key was
+        // already released, and after a regen its heights belong to the OLD seed (the Worker answers its
+        // FIFO of pre-init generates before it reaches the new init).
         const onMsg = (e) => {
-            const { key, cx, cz, heights } = e.data
+            const { key, cx, cz, heights, epoch } = e.data
+            this._inFlight = Math.max(0, this._inFlight - 1)
+            if (epoch !== this._epoch) return
             this._pendingQueue.push({ key, cx, cz, heights })
         }
         for (let i = 0; i < poolSize; i++) {
@@ -966,9 +976,18 @@ export class TerrainSystem {
         this._terrainUniforms.uTunnelN.value = sel.length
     }
 
-    update(carPos) {
+    /**
+     * @param {{x:number,z:number}} carPos stream centre (truck, or camera in free-cam)
+     * @param {import('./stream-priority.js').StreamMotion|null} motion PERF-33: travel direction for
+     *   near-then-ahead ordering (null ⇒ nearest-first)
+     * @param {import('./stream-budget.js').StreamBudget|null} budget PERF-33: the shared per-frame
+     *   streaming budget (terrain spends first); null ⇒ this system's own ceilings only (headless)
+     */
+    update(carPos, motion = null, budget = null) {
         // Streaming paused (FEAT-31 testing lab) — no-op to prevent chunk ring changes while there.
         if (this._enabled === false) return
+        this._motion = motion
+        this._budget = budget
         this._syncTunnelUniforms(carPos)
         const { cx: ccx, cz: ccz } = this._worldToChunk(carPos.x, carPos.z)
         this._lastCcx = ccx; this._lastCcz = ccz   // isRingSettled() asks about the ring the LAST update built
@@ -1103,8 +1122,11 @@ export class TerrainSystem {
      *
      * @param {Array<{x:number,z:number,reach:number}>|null} regions — only chunks a region's disc
      *   touches are re-carved (same overlap test _carveTableGen uses for pads). null ⇒ every chunk.
+     * @param {{burst?:boolean}} [opts] — burst:false drains at the normal driving budget instead of
+     *   the loading-screen burst (BUG-76: a positional adopt re-carves the chunks it re-shaped while
+     *   the player is driving, where a burst would hitch).
      */
-    recarveInPlace(regions = null) {
+    recarveInPlace(regions = null, { burst = true } = {}) {
         const S = CHUNK_SIZE, cell = S / (GRID_SAMPLES - 1)
         const touches = (cx, cz) => {
             if (!regions) return true
@@ -1124,9 +1146,11 @@ export class TerrainSystem {
         // made — restart it. Queued chunks have not started, so they will read the new inputs anyway.
         const job = this._activeBuild
         if (job && touches(job.cx, job.cz)) job.gen = this._carveTableGen(job.cx, job.cz, job.heights)
+        const rj = this._activeRecarve   // PERF-33: same for a re-carve in flight
+        if (rj && touches(rj.cx, rj.cz)) rj.gen = this._carveTableGen(rj.cx, rj.cz, this._chunkMap.get(rj.key).heights)
         // Behind a loading screen nobody sees a hitch, so spend the burst budget on these (the same
         // reasoning as PERF-13's initial fill). Cleared by the re-carve pass once nothing is stale.
-        if (marked) this._recarveBurst = true
+        if (marked && burst) this._recarveBurst = true
         return marked
     }
 
@@ -1135,17 +1159,48 @@ export class TerrainSystem {
      * the current inputs — the moment a loading screen can hand the world over. The warm margin is
      * left out on purpose: it exists to be built before it is seen, not to hold the handover.
      */
+    /**
+     * PERF-33: chunk (cx, cz) is built AND carved against the current road inputs — the per-chunk test
+     * isRingSettled() applies to the whole visible ring, used alone by the freeze guard's lookahead.
+     */
+    isChunkReady(cx, cz) {
+        const chunk = this._chunkMap.get(this._chunkKey(cx, cz))
+        if (!chunk || chunk.carveStale) return false
+        if (!this._roadSystem) return true
+        return chunk.builtRoadGeneration === this._roadSystem.roadGeneration()
+            && chunk.builtRoadCovered === this._roadCoversChunk(cx, cz)
+    }
+
     isRingSettled() {
-        if (this._lastCcx === undefined || this._activeBuild) return false
+        if (this._lastCcx === undefined || this._activeBuild || this._activeRecarve) return false
         const r = this._ringRadius ?? RING_RADIUS
-        const gen = this._roadSystem ? this._roadSystem.roadGeneration() : null
         for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
-            const cx = this._lastCcx + dx, cz = this._lastCcz + dz
-            const chunk = this._chunkMap.get(this._chunkKey(cx, cz))
-            if (!chunk || chunk.carveStale) return false
-            if (this._roadSystem && (chunk.builtRoadGeneration !== gen || chunk.builtRoadCovered !== this._roadCoversChunk(cx, cz))) return false
+            if (!this.isChunkReady(this._lastCcx + dx, this._lastCcz + dz)) return false
         }
         return true
+    }
+
+    /** PERF-33: deadline for `capMs` of work — capped by the shared frame budget when one is wired. */
+    _deadline(capMs) {
+        return this._budget ? this._budget.deadline(capMs) : performance.now() + capMs
+    }
+
+    /** PERF-33: true while terrain is filling (initial fill / post-jump refill / behind-a-load recarve) —
+     *  the frame loop lifts the shared budget to FILL for these, the moments a hitch is allowed. */
+    isFilling() {
+        return !this._initialFillDone || this._recarveBurst === true
+    }
+
+    /**
+     * PERF-33: the stream centre JUMPED (teleport, spawn, free-cam placement). The backlog for the old
+     * spot is dropped lazily and ONLY where it is out of range — _flushPendingQueue discards replies and
+     * an active carve outside the keep ring, and the in-flight cap bounds what a Worker still owes —
+     * so work a spawn warm already queued AT the destination survives. What this adds is the refill
+     * budget: the initial-fill burst, since the player is at the edge of generation by definition,
+     * which is where a hitch is allowed.
+     */
+    onStreamJump() {
+        this._initialFillDone = false
     }
 
     rebuildAllChunksFromWorker() {
@@ -1158,11 +1213,13 @@ export class TerrainSystem {
         this._chunkMap.clear()
         this._physicsHook?.clear()      // FEAT-48: full regen drops every engine terrain collider
         this._initialFillDone = false   // PERF-13: a full regen is a load — burst the refill too
+        this._epoch++                   // PERF-33: in-flight replies were generated for the old seed — drop them
 
         // Clear pending state — Worker will process new generate requests after reinit
         this._pendingWorker.clear()
         this._pendingQueue.length = 0
         this._activeBuild = null   // PERF-26: its chunk was just disposed — drop the half-built carve
+        this._activeRecarve = null // PERF-33: likewise a half-built re-carve
     }
 
     /**
@@ -1461,24 +1518,66 @@ export class TerrainSystem {
         // CARVE SYNC: carve never enters the worker (WORKER_SOURCE) — it is a post-read main-thread blend.
         if (this._roadSystem) {
             const currentRoadGen = this._roadSystem.roadGeneration()
-            // recarveInPlace() arms a burst: it only ever runs behind a loading screen (story entry).
+            // recarveInPlace() arms a burst behind a loading screen (story entry); the BUG-76 adopt
+            // reconciliation calls it with burst:false and drains at the driving budget below.
             const burst = this._recarveBurst === true
-            const recarveDeadline = performance.now() + (burst ? 16 : BUILD_MS_BUDGET)   // PERF-02: time-slice, not fixed count
+            const recarveDeadline = this._deadline(burst ? 16 : BUILD_MS_BUDGET)   // PERF-02: time-slice, not fixed count
             const maxRecarves = burst ? 8 : MAX_BUILDS_PER_FRAME
             let recarved = 0, anyStale = false
+            // Two independent reasons a live chunk's carve is stale:
+            //   (a) the road CHANGED SHAPE under it   → generation differs (param re-route);
+            //   (b) the road ARRIVED over it          → it was carved outside network coverage
+            //       and the window has since grown to include it. A 'move' adopt deliberately
+            //       does not bump the generation, so (a) cannot see this — which left a
+            //       teleport destination permanently uncarved (deck in the air, no ribbon)
+            //       until the chunk happened to be evicted and re-streamed.
+            //   (c) the road MOVED under it on a positional adopt (BUG-76) → carveStale, set by
+            //       recarveInPlace() from RoadSystem's adopt diff.
+            // PERF-33: collect first, then recarve near-then-ahead (was _chunkMap insertion order,
+            // i.e. oldest chunk first — often the one about to be evicted behind the truck).
+            const stale = []
             for (const [key, chunk] of this._chunkMap) {
-                if (recarved >= maxRecarves || performance.now() >= recarveDeadline) { anyStale = true; break }
-                const [cx, cz] = key.split(',').map(Number)
-                // Two independent reasons a live chunk's carve is stale:
-                //   (a) the road CHANGED SHAPE under it   → generation differs (param re-route);
-                //   (b) the road ARRIVED over it          → it was carved outside network coverage
-                //       and the window has since grown to include it. A 'move' adopt deliberately
-                //       does not bump the generation, so (a) cannot see this — which left a
-                //       teleport destination permanently uncarved (deck in the air, no ribbon)
-                //       until the chunk happened to be evicted and re-streamed.
+                const ci = key.indexOf(',')
+                const cx = +key.slice(0, ci), cz = +key.slice(ci + 1)
                 const covered = this._roadCoversChunk(cx, cz)
                 if (chunk.builtRoadGeneration === currentRoadGen && chunk.builtRoadCovered === covered && !chunk.carveStale) continue
-                const newCarveData = this._buildCarveTable(cx, cz, chunk.heights)   // PERF-03 #1: reuse stored raw heights
+                stale.push({ key, chunk, cx, cz, covered, score: streamScore(cx - ccx, cz - ccz, this._motion) })
+            }
+            stale.sort((a, b) => a.score - b.score)
+            // PERF-33: SLICED re-carve — the same resumable _carveTableGen the new-chunk build uses
+            // (PERF-26). The whole-table _buildCarveTable call here was the one unsliced carve left on
+            // the main thread: 25–42 ms per chunk at cpu×4, fired on every adopt that moved coverage.
+            // One chunk is carried across frames in _activeRecarve; the first slice each frame is free
+            // (so it always progresses), the rest runs to the shared deadline.
+            const byKey = new Map(stale.map((e) => [e.key, e]))
+            let first = true
+            while (recarved < maxRecarves) {
+                let job = this._activeRecarve
+                if (job && (!this._chunkMap.has(job.key) || !byKey.has(job.key))) job = this._activeRecarve = null   // evicted, or no longer stale
+                if (!job) {
+                    const next = stale.find((e) => !e.done)
+                    if (!next || (!first && performance.now() >= recarveDeadline)) { if (next) anyStale = true; break }
+                    next.done = true
+                    job = this._activeRecarve = {
+                        key: next.key, cx: next.cx, cz: next.cz, covered: next.covered,
+                        roadGen: currentRoadGen, gen: this._carveTableGen(next.cx, next.cz, next.chunk.heights),
+                    }
+                } else {
+                    const e = byKey.get(job.key); if (e) e.done = true
+                    // A re-route landing mid-carve would splice two road generations into one table.
+                    if (job.roadGen !== currentRoadGen) {
+                        job.gen = this._carveTableGen(job.cx, job.cz, this._chunkMap.get(job.key).heights)
+                        job.roadGen = currentRoadGen
+                        job.covered = this._roadCoversChunk(job.cx, job.cz)
+                    }
+                }
+                let r = job.gen.next(); first = false            // always advance one slice
+                while (!r.done && performance.now() < recarveDeadline) r = job.gen.next()
+                if (!r.done) { anyStale = true; break }          // budget spent mid-chunk — resume next frame
+                this._activeRecarve = null
+                const { key, cx, cz, covered } = job
+                const chunk = this._chunkMap.get(key)
+                const newCarveData = r.value
                 // Re-apply heights + carve blend to the mesh Y positions (same formula as _flushPendingQueue).
                 // FEAT-18: chunk.streamData is reused as-is — streams are a pure fn of (seed, water
                 // params), independent of the road generation this pass reconciles.
@@ -1493,9 +1592,10 @@ export class TerrainSystem {
                 chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
                 this._computeGridNormals(chunk.mesh.geometry, cx, cz)  // PERF-03: grid-FD normals (BUG-75: border rows need the chunk coords)
                 this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, amp, cx, cz)
-                // Stamp the new generation so we don't re-carve this chunk again until the next re-route.
+                // Stamp the inputs this carve was BUILT against (generation + coverage at its start), so a
+                // change that landed while it was in flight is still seen as stale by the next pass.
                 chunk.carveData = newCarveData ?? null
-                chunk.builtRoadGeneration = currentRoadGen
+                chunk.builtRoadGeneration = job.roadGen
                 chunk.builtRoadCovered = covered
                 chunk.carveStale = false
                 this._physicsHook?.syncChunk(key, cx, cz, pos, N, CHUNK_SIZE)  // FEAT-48: recarved Y ⇒ rebuild collider
@@ -1522,15 +1622,18 @@ export class TerrainSystem {
             if (!this._chunkMap.has(key) && !this._pendingWorker.has(key)) {
                 const ci = key.indexOf(',')
                 const cx = +key.slice(0, ci), cz = +key.slice(ci + 1)
-                const dx = cx - ccx, dz = cz - ccz
-                missing.push({ key, cx, cz, d2: dx * dx + dz * dz })
+                missing.push({ key, cx, cz, score: streamScore(cx - ccx, cz - ccz, this._motion) })
             }
         }
-        missing.sort((a, b) => a.d2 - b.d2)
+        missing.sort((a, b) => a.score - b.score)   // PERF-33: near-then-ahead (was nearest-first)
         // PERF-19.2: scale the per-frame dispatch budget with the pool size so N workers stay fed
         // (an 8/frame cap would leave a 3-worker pool starved — dispatch, not generation, would
         // become the limiter). ×1 for the single-worker fallback = the old PERF-02 behaviour.
-        const reqBudget = Math.min(missing.length, MAX_REQUESTS_PER_FRAME * this._workers.length)
+        // PERF-33: plus an IN-FLIGHT cap. A posted request cannot be recalled, so everything queued
+        // inside a Worker is work a teleport or a turn has to wait behind; keeping only a few per
+        // Worker keeps that backlog short and lets the ordering above re-decide every frame.
+        const inFlightRoom = MAX_IN_FLIGHT_PER_WORKER * this._workers.length - this._inFlight
+        const reqBudget = Math.max(0, Math.min(missing.length, MAX_REQUESTS_PER_FRAME * this._workers.length, inFlightRoom))
         // PERF-19.2: round-robin the nearest-first requests across the worker pool so N chunks
         // generate concurrently. Nearest-first ordering is preserved in aggregate (adjacent chunks
         // land on different workers and finish in ~parallel); _flushPendingQueue re-sorts on drain.
@@ -1539,7 +1642,8 @@ export class TerrainSystem {
             this._pendingWorker.add(key)
             const w = this._workers[this._rrCursor]
             this._rrCursor = (this._rrCursor + 1) % this._workers.length
-            w.postMessage({ type: 'generate', cx, cz, key })
+            w.postMessage({ type: 'generate', cx, cz, key, epoch: this._epoch })
+            this._inFlight++
         }
     }
 
@@ -1709,15 +1813,14 @@ export class TerrainSystem {
         // QUAL-07: crown/camber/clearance fold + fill/cut toe + blend now live in the ONE shared
         // RoadSystem._carveCrossSection (the same fn physics uses). The per-vertex loop only RESOLVES
         // (signedLat, arcS) and calls it; crownHeight/clearanceMargin/maxEmbankmentToe/carveHalfWidth are
-        // read inside that fn. carveExtraWidth stays here for the conservative query-radius bound (maxExt).
-        const carveExtraWidth   = p.roadCarveExtraWidth  ?? 3.0
-        const maxEmbankmentToe  = p.roadMaxEmbankmentToe ?? 10
+        // read inside that fn.
 
         // Maximum lateral extent to bother querying: ribbon + carve core + the capped embankment apron.
         // Mirrors the toe cap in _carveCrossSection (carveHalfWidth + maxEmbankmentToe +
         // DEEP_BANK_TOE_EXTRA, FEAT-40 deep banks) — the real bound on how far the fill/cut bank
-        // spreads — so no carved vertex is ever missed by this early-reject.
-        const maxExt = halfWidth + shoulderWidth + carveExtraWidth + maxEmbankmentToe + DEEP_BANK_TOE_EXTRA + 4
+        // spreads — so no carved vertex is ever missed by this early-reject. BUG-76: RoadSystem owns
+        // the one definition, because the adopt diff sizes its dirty discs with the same number.
+        const maxExt = this._roadSystem.carveReach()
 
         const originX = cx * S
         const originZ = cz * S
@@ -2028,11 +2131,12 @@ export class TerrainSystem {
         const nrmAttr = geom.attributes.normal
         const nVerts = N * N
 
-        // BUG-73: write INTO the geometry's existing colour/surface attributes when they fit (the
-        // same in-place discipline _computeGridNormals uses) instead of replacing the attribute
-        // objects on every build. A pooled geometry is recycled across chunks; replacing its
-        // attribute objects while three's binding state for it is live is the prime suspect for
-        // the "flat tile" (a draw without its aSurf binding reads (0,0,0,1): no zone, no relief).
+        // BUG-72 (main) / BUG-73 (branch): write INTO the geometry's existing colour and aSurf
+        // attributes when they fit. Replacing them with new BufferAttributes every write stranded
+        // the old ones' GPU buffers — three.js frees attribute buffers only on geometry.dispose(),
+        // and a pooled geometry is never disposed — so every chunk build AND every re-carve leaked
+        // ~50 KB of VRAM (+39 MB per minute of fast free-cam); under that pressure uploads start
+        // failing and a chunk renders BLACK (BUG-72) or, with aSurf unbound, as a flat tile (BUG-73).
         let colAttr = geom.attributes.color, surfAttr = geom.attributes.aSurf
         if (!colAttr || colAttr.itemSize !== 3 || colAttr.count !== nVerts) { colAttr = new THREE.BufferAttribute(new Float32Array(nVerts * 3), 3); geom.setAttribute('color', colAttr) }
         if (!surfAttr || surfAttr.itemSize !== 4 || surfAttr.count !== nVerts) { surfAttr = new THREE.BufferAttribute(new Float32Array(nVerts * 4), 4); geom.setAttribute('aSurf', surfAttr) }
@@ -2300,13 +2404,29 @@ export class TerrainSystem {
         // (and re-arms on rebuildAllChunksFromWorker — a full regen is a load, not play).
         const burst = !this._initialFillDone
         const maxBuilds = burst ? 8 : MAX_BUILDS_PER_FRAME
-        const deadline = performance.now() + (burst ? 16 : BUILD_MS_BUDGET)   // PERF-02: time-slice the build (vs a fixed count)
-        // PERF-02: nearest-first drain. Replies usually arrive nearest-first already (worker FIFO over
-        // nearest-first dispatch), but sort defensively so a future worker pool / out-of-order arrival
-        // still builds the truck's surroundings before the periphery.
+        const deadline = this._deadline(burst ? 16 : BUILD_MS_BUDGET)   // PERF-02: time-slice the build (vs a fixed count)
+        // PERF-33: drop replies that scrolled out of the keep ring while in flight — building them
+        // only for the ring pass to evict them next frame was a full carve of pure waste.
+        const keepR = (this._ringRadius ?? RING_RADIUS) + (this._warmMargin ?? 0) + RING_KEEP_MARGIN
+        const job0 = this._activeBuild
+        if (job0 && Math.max(Math.abs(job0.cx - ccx), Math.abs(job0.cz - ccz)) > keepR) {
+            this._pendingWorker.delete(job0.key)   // a half-built carve for a spot we left (jump / fast turn)
+            this._activeBuild = null
+        }
+        if (this._pendingQueue.length) {
+            const kept = []
+            for (const q of this._pendingQueue) {
+                if (Math.max(Math.abs(q.cx - ccx), Math.abs(q.cz - ccz)) > keepR) this._pendingWorker.delete(q.key)
+                else kept.push(q)
+            }
+            this._pendingQueue = kept
+        }
+        // PERF-02 → PERF-33: near-then-ahead drain (the same streamScore the requests were posted by;
+        // replies from a round-robin pool arrive only roughly in that order).
         if (this._pendingQueue.length > 1) {
-            this._pendingQueue.sort((a, b) =>
-                ((a.cx - ccx) ** 2 + (a.cz - ccz) ** 2) - ((b.cx - ccx) ** 2 + (b.cz - ccz) ** 2))
+            const m = this._motion
+            for (const q of this._pendingQueue) q.score = streamScore(q.cx - ccx, q.cz - ccz, m)
+            this._pendingQueue.sort((a, b) => a.score - b.score)
         }
         let built = 0
         // Deadline checked AFTER the first iteration so the queue can never starve. PERF-26: that
