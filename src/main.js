@@ -65,13 +65,16 @@ import { StorySystem } from './story.js'                 // FEAT-43: sandboxed S
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
 import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
-import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney } from './economy.js'  // FEAT-53: payout, wallet, good deeds
+import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
+import { OfferBoard, formatGameDuration, gateText } from './offer-board.js'   // FEAT-67: the mission board
+import { PROP_MODELS } from '../data/prop-models.js'   // FEAT-67: giverName (how the board names a giver)
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
-import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor } from './paper-route.js'
+import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor,
+         planTourJob, customersForTier, radiusForTier, tierRungs } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -192,9 +195,10 @@ function rebuildWaterSystem () {
   // network the player drives).
   map2d.setWaterNoGo(waterNoGoFn, pondDiscsFn)
   // The mission planner needs no injection of its own: it plans on the play instance, which was
-  // handed the same exclusion two lines up. Cached POI offers still hold centerlines from the
-  // pre-change network, so they must go.
-  missionSystem?.clearOffers()
+  // handed the same exclusion two lines up. The board's memoised offer routes still hold
+  // centerlines from the pre-change network, so they must go (FEAT-67).
+  offerBoard?.clearRoutes()
+  _dropLarryTour()
   // FEAT-18: stream channels carve the terrain (bed + banks) — inject the pure sampler into the
   // terrain height paths (see terrain.setWaterCarve for the composition + bridge-deck rule).
   // sampleAt keeps a 1-entry windowed stream cache: physics contact queries are spatially coherent,
@@ -831,7 +835,8 @@ function applyWorldSeed (v) {
   worldSeed = parseWorldSeed(v)
   _seedString = String(v)
   _spawnOverride = null
-  missionSystem?.clearOffers()   // they pin centerlines from the outgoing network
+  offerBoard?.clearRoutes()   // FEAT-67: memoised offer routes pin centerlines from the outgoing network
+  _dropLarryTour()
   return debouncedRebuildFull()
 }
 
@@ -1525,6 +1530,17 @@ const _mapFwd = new THREE.Vector3()
 // Story mode (beta) — constructed below, after roadSystem exists. Declared here so map2d can
 // read its markers without the two modules knowing about each other.
 let missionSystem = null
+// FEAT-67: the mission board (src/offer-board.js) — every source POI's live offers, their timers and
+// the completion/cancel log. Built when a story region goes live (onRegionLive), dropped on region
+// exit. Null outside story mode. Declared up here because the water/seed paths above clear its
+// memoised routes.
+let offerBoard = null
+// FEAT-67: Larry's hover card needs his tour, which is the paper route's planner — Held-Karp, up to
+// ~14 ms at fifteen stops. It runs as a RESUMABLE job pumped a couple of ms per frame while the map
+// is open (planTourJob, the same generator the route itself uses), never blocking a hover.
+// { offerId, tier, it, done, route }. See _larryRoute / _pumpLarryTour.
+let _larryTour = null
+let _mapOpenClass = false   // mirrors body.map-open (see the frame loop)
 // FEAT-31 testing lab — assigned below, after the scene exists. Declared here (not `const` at the
 // construction site) because the contact queries above reference it: a const would sit in the
 // temporal dead zone and throw if anything probed the ground during boot.
@@ -1608,6 +1624,12 @@ const map2d = new Map2D({
   // FEAT-45: dispersed-camping zones, drawn as a yellow casing on the roads inside them. Empty
   // outside story mode (build() only ever runs from the story deps).
   getCampZones: () => campSystem.zones(),
+  // FEAT-67: the mission board as a view — hover cards, the drawn offer route, turnover timers,
+  // diamond colours. map2d stays economy-free: the card is offer-board's view-model, and every
+  // number on it is computed here from the live board, clock and terms.
+  getBoard: () => (offerBoard && storySystem?.isActive() ? _boardView : null),
+  // Q / E with no source under the cursor: step the parked offer panel the map is open behind.
+  onCycle: (d) => { if (missionSystem?.state === 'offer') missionSystem.cycle(d) },
   // (FEAT-60 dropped getMomsHouse: mom's house is a POI now, so it arrives through getPois with
   // its own glyph — the map no longer needs a second, separate channel for the same place.)
   onTeleport: ({ x, z, heading }) => {
@@ -3178,7 +3200,13 @@ missionSystem = new MissionSystem({
   // FEAT-53: the economy seams. Terms (day tier + rank thresholds) freeze at ACCEPT; a finished
   // POI job settles into the run wallet. Quick Job never settles — it pays nothing by design.
   getTerms: () => economySystem.terms(),
-  onSettle: (result, mission) => economySystem.settle(result, mission),
+  // FEAT-67: a settled board job — ANY letter, D included — completes its offer, and the slot then
+  // waits out that offer's original expiry before re-rolling.
+  onSettle: (result, mission) => {
+    const s = economySystem.settle(result, mission)
+    if (mission?.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
+    return s
+  },
   onChange: () => _renderMissionUI(),
 })
 
@@ -3209,7 +3237,12 @@ const paperRouteSystem = new PaperRouteSystem({
   getTargetR: () => POI_PARAMS.poiHouseTargetR,
   // The ONE money path (FEAT-53). This mission prices itself on its own axis and hands over a
   // finished number; the wallet, the deeds and the mission count still accrue in economy.js.
-  onSettle:  (payout, letter) => economySystem.settleFlat(payout, letter),
+  onSettle:  (payout, letter) => {
+    const s = economySystem.settleFlat(payout, letter)
+    const id = paperRouteSystem.offer?.id
+    if (id) offerBoard?.complete(id, daySystem.clockH())   // FEAT-67: Larry's slot then empties
+    return s
+  },
   // FEAT-61: accuracy money, banked as each paper lands. Same wallet, same module — but no points
   // and no mission count, because a delivery is not a settlement.
   onSpot:    (amount) => economySystem.addSpot(amount),
@@ -3228,6 +3261,7 @@ const paperRouteSystem = new PaperRouteSystem({
   onChange:  () => _renderPaperUI(),
 })
 window.__paperRoute = () => paperRouteSystem
+window.__board = () => offerBoard   // FEAT-67: read-only dev handle (CDP map checks), same precedent as __story
 // FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
 const _recalcEl = document.getElementById('gps-recalc')
 let _recalcOn = false
@@ -3296,6 +3330,120 @@ labSystem = new LabSystem(scene, () => ({
 // re-opens an offer you just declined — you must release and re-pull. The run then launches with
 // your own parking brake still latched, which is fine: W both drops the latch and drives away in one
 // motion (vehicle.js's park state machine), the same as pulling away for real.
+/**
+ * FEAT-67: the board view map2d reads (see Map2D's getBoard doc). One object for the session; every
+ * method reads the live board, clock and terms at call time.
+ */
+const _boardView = {
+  status (poiId) {
+    const now = daySystem.clockH()
+    const slots = offerBoard.slotStates(poiId, now)
+    if (!slots.length) return { source: false, family: null, nextText: null }
+    const next = offerBoard.nextTurnoverH(poiId, now)
+    return {
+      source: true,
+      family: slots.find(x => x.state === 'live')?.family ?? null,
+      nextText: next != null ? formatGameDuration(next - now) : null,
+    }
+  },
+  view (poiId, idx) {
+    const now = daySystem.clockH()
+    const offers = offerBoard.offers(poiId, now)
+    const next = offerBoard.nextTurnoverH(poiId, now)
+    const nextText = next != null ? formatGameDuration(next - now) : null
+    const n = offers.length
+    if (!n) return { count: 0, idx: 0, card: null, poly: null, nextText }
+    const i = ((idx % n) + n) % n
+    const o = offers[i]
+    const papers = offerBoard.spec(o)?.family === 'papers'
+    const route = papers ? _larryRoute(o) : _planOffer(o)
+    const card = offerBoard.card(o, {
+      nowH: now, payTier: economySystem.terms().payTier,
+      route: route ? { par: route.par, distance: route.distance, endPoiId: route.endPoiId ?? null, placeName: route.placeName } : null,
+      customers: papers ? route?.customers?.length ?? null : null,
+    })
+    const poly = route?.poly ?? null
+    return { count: n, idx: i, card, poly,
+             start: route?.start ?? poly?.[0] ?? null, end: route?.end ?? poly?.[poly.length - 1] ?? null,
+             nextText }
+  },
+}
+
+/**
+ * FEAT-67: Larry's tour for his hover card, or null while it is still planning. Starts (or restarts,
+ * when the offer or the paper tier changed) the resumable job; _pumpLarryTour advances it.
+ */
+function _larryRoute (offer) {
+  const tier = runPaper.tier
+  const j = _larryTour
+  if (j && j.offerId === offer.id && j.tier === tier) return j.done ? j.route : null
+  _dropLarryTour()
+  const larry = poiSystem.list().find(q => q.id === offer.poiId)
+  if (!larry || !roadSystem) return null
+  _larryTour = {
+    offerId: offer.id, tier, done: false, route: null,
+    it: planTourJob(roadSystem, larry, poiSystem.customers(), customersForTier(),
+                    storySystem.region(), 100, radiusForTier(), tierRungs()),
+  }
+  return null
+}
+
+/** Advance Larry's tour job by up to `budgetMs`. Each next() is well under half a millisecond. */
+function _pumpLarryTour (budgetMs) {
+  const j = _larryTour
+  if (!j || j.done) return
+  const t0 = performance.now()
+  try {
+    while (performance.now() - t0 < budgetMs) {
+      const r = j.it.next()
+      if (r.done) { j.done = true; j.route = r.value ?? null; j.it = null; break }
+    }
+  } catch (e) {
+    console.warn('[board] Larry tour planning failed', e)
+    j.done = true; j.route = null; j.it = null
+  }
+}
+
+/**
+ * Abandon Larry's tour job. return() runs the generator's `finally`, which hands its Held-Karp table
+ * lease back — an abandoned job that skipped it would strand the lease (see planTourJob).
+ */
+function _dropLarryTour () {
+  try { _larryTour?.it?.return() } catch (e) { /* already closed */ }
+  _larryTour = null
+}
+
+/**
+ * FEAT-67: price one board offer — the offer→mission callback the parked panel and the map's hover
+ * card share. Memoised ON THE OFFER (offerBoard.clearRoutes drops it with the network), so hovering
+ * back and forth or cycling the panel plans each offer once. Deterministic: the planner draws from
+ * the offer's own seeded stream. Papers return null — Larry's tour is the paper route's to plan.
+ */
+function _planOffer (offer) {
+  if (!offerBoard || !offer) return null
+  const sp = offerBoard.spec(offer)
+  if (sp?.family === 'papers') return null
+  // planDistinct resolves "no two offers at a POI are the same job" oldest-first and memoises on the
+  // offer; this callback is the planner for ONE offer, told which destination POIs to avoid.
+  return offerBoard.planDistinct(offer, (o, exclude) => {
+    const s = offerBoard.spec(o)
+    const poi = poiSystem.list().find(q => q.id === o.poiId)
+    if (!s || !poi || s.family === 'papers') return null
+    const dest = s.destKind === 'poi'
+      ? { kind: 'poi', pick: s.destPick, pois: poiSystem.list().filter(q => q.id !== poi.id && !exclude.has(q.id)) }
+      : { kind: 'roadside' }
+    const m = missionSystem.planOffer(poi, { rng: offerBoard.routeRng(o), dest })
+    if (m) {
+      // The contract's board-side terms ride on the mission: which offer it is (complete/cancel),
+      // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).
+      m.offerId = o.id
+      m.bonus = s.bonus
+      m.payMult = s.payMult
+    }
+    return m
+  })
+}
+
 /**
  * The POI whose offer the player could open from here, or null. Proximity + mode only: there is no
  * speed gate, because the parking-brake latch IS the speed gate — vehicle.js only lets it engage
@@ -3451,8 +3599,12 @@ function _updateParkTriggers () {
     // FEAT-61: Larry is the one giver whose offer is a different mission. Branching on the type
     // here (rather than teaching MissionSystem a second shape) is what keeps the two systems
     // siblings — each leaves 'idle' and each other's reach test then returns null.
-    if (poi.type === 'larrysHouse') paperRouteSystem.open(poi)
-    else missionSystem.enterFromPoi(poi)
+    // FEAT-67: what is on offer is the BOARD's — live offers only. With nothing live the brake opens
+    // nothing and the prompt says when the next offer turns up (the prompt shows it; see below).
+    const offers = offerBoard ? offerBoard.offers(poi.id, daySystem.clockH()) : []
+    if (!offers.length) return
+    if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
+    else missionSystem.enterFromPoi(poi, offers, _planOffer)
     if (poiEl) poiEl.style.display = 'none'
     if (campEl) campEl.style.display = 'none'
     return
@@ -3480,8 +3632,17 @@ function _updateParkTriggers () {
     // Name what the brake will actually do. Larry hands out a route, not an errand, and a prompt
     // that says "mission" at the one marker that gives you the paper route is the same small lie as
     // a ring drawn wider than its trigger.
-    if (poi) poiEl.textContent = poi.type === 'larrysHouse' ? 'park to take the paper route'
-                                                           : 'park to begin mission'
+    if (poi) {
+      // FEAT-67: an empty board says when it fills, rather than inviting a park that opens nothing.
+      const now = daySystem.clockH()
+      const live = offerBoard ? offerBoard.offers(poi.id, now).length : 0
+      const next = offerBoard?.nextTurnoverH(poi.id, now)
+      poiEl.textContent = !live
+        ? (next != null ? `no work here right now — new offer in ${formatGameDuration(next - now)}`
+                        : 'no work here right now')
+        : poi.type === 'larrysHouse' ? 'park to take the paper route'
+        : live > 1 ? `park to see ${live} offers` : 'park to see the offer'
+    }
   }
   if (!campEl) return
   const showCamp = !poi && (camp || moms) && !_campUi
@@ -3776,6 +3937,20 @@ document.getElementById('cp-sleep-back')?.addEventListener('click', () => {
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
 document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
 
+/**
+ * FEAT-67: the head of a parked offer panel — the giver's portrait beside their line of dialogue.
+ * Both are PLACEHOLDERS (owner, 2026-09-28): the portrait is the same flat silhouette the map card
+ * draws, and a missing line shows a bracketed marker so an unwritten one is obvious in play.
+ * `flavorHtml` is trusted markup (authored constants or the escaped card flavor), never player input.
+ */
+function _panelHead (flavorHtml) {
+  return '<div class="mp-head">'
+    + '<div class="mp-portrait" title="portrait (placeholder)"><svg viewBox="0 0 36 36" aria-hidden="true">'
+    + '<circle cx="18" cy="13.7" r="7.2"/><path d="M5 36 Q5.8 23 18 23 Q30.2 23 31 36 Z"/></svg></div>'
+    + `<div class="mp-flavor">${flavorHtml ?? '&ldquo;<span class="mp-dim">[flavor line]</span>&rdquo;'}</div>`
+    + '</div>'
+}
+
 // Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
 // SM-INV-3 — par NEVER appears while driving; the result card is the only place it is shown.
 function _renderMissionUI () {
@@ -3802,8 +3977,21 @@ function _renderMissionUI () {
     case 'offer': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const j = m.mission
-      body.innerHTML = `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
-        + `${j.edges} leg${j.edges === 1 ? '' : 's'}</span><br>`
+      // FEAT-67: a board offer reads as its card — the sentence, then base pay and the terms, then
+      // the bonus. The same view-model the map's hover card draws, so the two can never disagree.
+      const card = m.offer && offerBoard
+        ? offerBoard.card(m.offer, { nowH: daySystem.clockH(), payTier: economySystem.terms().payTier, route: j })
+        : null
+      const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      body.innerHTML = (card
+        ? _panelHead(card.flavor != null ? `&ldquo;${esc(card.flavor)}&rdquo;` : null)
+          + (m.offers.length > 1 ? `<span class="mp-dim">offer ${m.offerIdx + 1} / ${m.offers.length}</span><br>` : '')
+          + card.sentence.map(r => r.b ? `<b>${esc(r.t)}</b>` : esc(r.t)).join('') + '<br>'
+          + (card.pay ? `<span class="mp-pay">${esc(card.pay)}</span> &nbsp;` : '')
+          + `<span class="mp-dim">${card.terms.map(esc).join(' &middot; ')}</span><br>`
+          + (card.bonus ? `${esc(card.bonus)}<br>` : '')
+        : `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
+          + `${j.edges} leg${j.edges === 1 ? '' : 's'}</span><br>`)
         // FEAT-46: a POI job does NOT move you — you are already parked at the marker, and claiming
         // otherwise would have the panel lying about the one thing the player is about to feel.
         + (j.fromPoi
@@ -3815,6 +4003,7 @@ function _renderMissionUI () {
       // against a devtools click; Quick Job (the unpaid calibration rig) keeps the button.
       btn('mp-accept', true); btn('mp-decline', true); btn('mp-retry', false)
       btn('mp-regen', !j.fromPoi); btn('mp-quit', false)
+      btn('mp-prev', m.offers.length > 1); btn('mp-next', m.offers.length > 1)
       unmountExportRow('mission-panel')
       // Clear the per-run note so the previous run's note cannot ride along with the next export.
       // The DRIVER name is deliberately NOT cleared — it is per-session, and re-typing it every run
@@ -3865,12 +4054,19 @@ function _renderMissionUI () {
               ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
               : '')
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
+        // FEAT-67: the offer's bonus — earned, or what it needed. The grant itself is stubbed.
+        + (m.mission?.bonus
+          ? (r.award
+            ? `<br><span class="mp-pay">Bonus: ${m.mission.bonus.name} &check;</span>`
+            : `<br><span class="mp-dim">Bonus: ${m.mission.bonus.name} missed (needed ${gateText(m.mission.bonus.gate)})</span>`)
+          : '')
       // The result card is exactly three actions: retry · continue · back to free roam (that is the
       // DOM order too). The calibration form above them stays — the subjective read is the ground
       // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
       // FEAT-53: no retry on a paid job (the payout exploit) — hidden here, gated in mission.js.
       btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', !m.mission?.fromPoi)
       btn('mp-regen', false); btn('mp-quit', true)
+      btn('mp-prev', false); btn('mp-next', false)
       // Reclaim the shared felt buttons for the POI job — a paper round finishing first
       // would otherwise leave them pointed at paperRouteSystem (see _exportSource), and would
       // also have left the form parented to the paper panel.
@@ -3928,14 +4124,19 @@ function _renderPaperUI () {
       // THE THREE HEADLINE NUMBERS, one line, one size (owner, 2026-08-14): who, how far, how long.
       // The deadline used to be dim text on the last line, which made the one number with a bell
       // attached to it the least legible thing on the card.
-      body.innerHTML = `<span class="mp-big">${r.customers.length}</span> `
+      // FEAT-67: Larry's portrait and his line head the panel, like every giver's. His line was
+      // already written (the spare-papers aside), so it moves up into the dialogue slot.
+      body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;')
+        + `<span class="mp-big">${r.customers.length}</span> `
         + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'}</span> `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span> `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
         + `<span class="mp-big">${formatTime(deadlineFor(r.par))}</span><br>`
         + `${stock} papers in the truck `
         + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
-        + `<span class="mp-dim">i gave you a couple extra, feel free to keep what you don&rsquo;t deliver</span>`
+        // FEAT-67: Larry's card states base pay only — the fare at par, before the tips.
+        + `<span class="mp-pay">Base pay $${basePay(r.par, economySystem.terms().payTier).toLocaleString('en-US')}</span>`
+        + (p.offer ? ` &nbsp;<span class="mp-dim">expires in ${formatGameDuration(p.offer.expiresH - daySystem.clockH())}</span>` : '')
       break
     }
     case 'staging':
@@ -3998,8 +4199,14 @@ function _renderPaperUI () {
 }
 
 document.getElementById('pp-accept')?.addEventListener('click', () => {
-  if (paperRouteSystem.state === 'done') paperRouteSystem.dismiss()
-  else paperRouteSystem.accept()
+  if (paperRouteSystem.state === 'done') { paperRouteSystem.dismiss(); return }
+  // FEAT-67: Larry's offer comes off the board at accept, if it is still there.
+  const o = paperRouteSystem.offer
+  if (paperRouteSystem.state === 'offer' && o && offerBoard && !offerBoard.take(o.id, daySystem.clockH())) {
+    paperRouteSystem.decline()
+    return
+  }
+  paperRouteSystem.accept()
 })
 document.getElementById('pp-decline')?.addEventListener('click', () => paperRouteSystem.decline())
 
@@ -4098,8 +4305,30 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   // On the result card this button is CONTINUE: put the finished run down and carry on driving in
   // story mode. It no longer auto-rolls the next job — with POIs as the job source, the next one is
   // something you go and find, not something handed to you at the drop point.
-  if (missionSystem.state === 'done') missionSystem.exit(); else missionSystem.accept()
+  if (missionSystem.state === 'done') { missionSystem.exit(); return }
+  // FEAT-67: take the offer OFF THE BOARD first, re-checking it is still live — a food offer lives
+  // ~2 real minutes, so it can expire with the panel up. If it has gone, the panel re-presents what
+  // is live now instead of accepting a job the board no longer has.
+  const o = missionSystem.offer
+  if (o && offerBoard && !offerBoard.take(o.id, daySystem.clockH())) { _refreshParkedOffers(); return }
+  missionSystem.accept()
 })
+document.getElementById('mp-prev')?.addEventListener('click', () => missionSystem.cycle(-1))
+document.getElementById('mp-next')?.addEventListener('click', () => missionSystem.cycle(+1))
+
+/**
+ * FEAT-67: the parked panel's offer expired (or was taken) under it — re-present the POI's live
+ * offers, or close with a note when none are left. Called from the accept guard and the 10 Hz poll.
+ */
+function _refreshParkedOffers () {
+  if (missionSystem.state !== 'offer' || !missionSystem.mission?.fromPoi) return
+  const poi = poiSystem.list().find(q => q.id === missionSystem.mission.fromPoi)
+  const offers = offerBoard && poi ? offerBoard.offers(poi.id, daySystem.clockH()) : []
+  if (!offers.length) { missionSystem.exit(); return }
+  const keep = offers.findIndex(o => o.id === missionSystem.offer?.id)
+  missionSystem.enterFromPoi(poi, offers, _planOffer)
+  if (keep > 0) { missionSystem.offerIdx = keep; missionSystem.cycle(0) }
+}
 // FEAT-46: DECLINE puts the job down and leaves you in story mode with nothing active — it does not
 // leave the mode. (Leaving is the pause menu's job, and #mp-quit in the result card.) Walking away
 // from an offer is an ordinary thing to do; quitting the game mode is not.
@@ -4625,6 +4854,10 @@ function _showPauseMenu () {
   // the way OUT ("free roam") while story mode is active.
   const storyBtn = document.getElementById('pm-story')
   if (storyBtn) storyBtn.textContent = storySystem.isActive() ? 'free roam' : 'story mode'
+  // FEAT-67: the cancel button exists only while a story job is taken — it is the ONE way to cancel.
+  const cancelBtn = document.getElementById('pm-cancel')
+  if (cancelBtn) cancelBtn.style.display =
+    storySystem.isActive() && (missionSystem?.isOnJob() || paperRouteSystem.isCarrying()) ? '' : 'none'
 }
 
 function _hidePauseMenu () {
@@ -4743,12 +4976,17 @@ const storySystem = new StorySystem({
     paperRouteSystem.abort()
     _renderDialogue()
     _renderPaperUI()
-    missionSystem.clearOffers()      // …and no offer cached from a previous run survives into this one
     poiSystem.build(center, radius)
     // FEAT-61: AFTER build() — mom is a newspaper customer, and she is a roster POI, so the roster
     // has to exist before customers() can be asked who receives a paper. Houses carve nothing and
     // touch no pads, so unlike build() this needs no re-bake behind it.
     poiSystem.buildHouses(center, radius)
+    // FEAT-67: the mission board — AFTER build() (it reads the roster) and AFTER daySystem.start()
+    // (it starts on the run's clock). A new run, a new board: nothing survives from the last one.
+    offerBoard = new OfferBoard({
+      seed: worldSeed, pois: poiSystem.list(), nowH: daySystem.clockH(),
+      giverNameOf: (k) => PROP_MODELS[k]?.giverName,
+    })
     // ORDER MATTERS: the roster decides where mom lives, and camping is handed that answer.
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
@@ -4782,7 +5020,9 @@ const storySystem = new StorySystem({
     daySystem.setBlinksEnabled(false)   // …and the eyelids can never fire in free roam
     setControlAttenuation(1)            // belt-and-braces: leave the driver's inputs whole
     economySystem.stop()                // FEAT-53: wallet dormant (start() re-zeroes on next run)
-    missionSystem.clearOffers()         // cached offers hold live centerlines — never keep them across a region
+    offerBoard?.clearRoutes()           // FEAT-67: routes hold live centerlines — never keep them across a region
+    offerBoard = null                   // …and the board belongs to the run that just ended
+    _dropLarryTour()
     _setRunHudVisible(false)
     dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
     _renderDialogue()
@@ -4939,6 +5179,15 @@ document.getElementById('quickjob-btn')?.addEventListener('click', () => { if (m
 // an unguarded deref would throw at module-eval and abort the whole sim if an id is
 // renamed/removed from index.html (WR-04).
 document.getElementById('pm-resume')?.addEventListener('click', () => _hidePauseMenu())
+// FEAT-67: CANCEL the job in hand — canon: the player phones the customer and cancels on them. The
+// only thing that cancels a job (owner, 2026-09-27): leaving the route or region never does, and the
+// exits below end the whole run rather than cancel. The giver's slot then locks for the offer's FULL
+// expiry length from now — cancelling an offer that already expired is not free.
+document.getElementById('pm-cancel')?.addEventListener('click', () => {
+  const id = paperRouteSystem.isCarrying() ? paperRouteSystem.cancel() : missionSystem?.cancel()
+  if (id) offerBoard?.abandon(id, daySystem.clockH())
+  _hidePauseMenu()
+})
 // FEAT-41: back out to the main menu. The mode is left FIRST — dropping to a menu while story mode
 // still holds a frozen region and a live day clock would leave both running behind the scene.
 document.getElementById('pm-menu')?.addEventListener('click', () => {
@@ -5672,6 +5921,11 @@ function loop () {
     // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
                           || missionSystem.state === 'running')) _renderMissionUI()
+    // FEAT-67: a parked offer panel carries a live expiry, and the offer can expire under it.
+    if (missionSystem?.state === 'offer' && missionSystem.offer && offerBoard) {
+      if (!offerBoard.isLive(missionSystem.offer.id, daySystem.clockH())) _refreshParkedOffers()
+      else _renderMissionUI()
+    }
     // FEAT-61: the route's HUD carries three live values (the bell, the count, the inventory), so
     // it repaints on the same poll for the same reason. ('staging' is a static line, but it costs
     // one string write and keeps the state→HUD mapping in one place.)
@@ -5799,7 +6053,10 @@ function loop () {
   }
 
   // FEAT-16: redraw the 2D map overlay only while it's open (off the hot path otherwise).
-  if (map2d.isOpen()) map2d.render()
+  if (map2d.isOpen()) { _pumpLarryTour(2); map2d.render() }   // FEAT-67: Larry's hover tour, sliced
+  // FEAT-67: `map-open` on <body> while the map is up, so page chrome that would sit on top of the
+  // offer card (the Quick Job corner button) can step aside in CSS. Written only on change.
+  if (map2d.isOpen() !== _mapOpenClass) { _mapOpenClass = map2d.isOpen(); document.body.classList.toggle('map-open', _mapOpenClass) }
 
   // FEAT-49: gauge cluster — every frame (needles must be smooth, unlike the 10 Hz text HUD),
   // hidden while the map is open, live in chase/hood/freecam alike. update() early-outs when hidden.

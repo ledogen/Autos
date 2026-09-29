@@ -881,6 +881,14 @@
     .cp-view  { color: #b98ae0; }
     .cp-trees { color: #7fd86a; }
     .cp-water { color: #4aa8d8; }
+      /* FEAT-67: parked-panel head — the giver's portrait (placeholder) beside their line. */
+    .mp-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; text-align: left; }
+    .mp-portrait { flex: 0 0 64px; width: 64px; height: 64px; background: #d9d3c1;
+                   border: 1px solid #8fa2b4; }
+    .mp-portrait svg { display: block; width: 100%; height: 100%; fill: #8a8272; }
+    .mp-flavor { font-style: italic; line-height: 1.45; }
+    /* FEAT-67: the offer card docks in the map's corners — nothing may sit on top of it. */
+    body.map-open #quickjob-btn { visibility: hidden; }
   </style>
   <!-- Bare specifiers ('three', 'three/addons/*', 'simplex-noise') are resolved by Vite from
        node_modules (PERF-04/PERF-20.5) — the old CDN importmap is retired. See vite.config.js. -->
@@ -925,6 +933,9 @@
   <div id="pause-menu">
     <div class="pm-title">paused</div>
     <button id="pm-resume">resume</button>
+    <!-- FEAT-67: cancel the job in hand — the player phones the customer. Shown only while a story
+         job is taken; the ONLY thing that cancels a job (owner, 2026-09-27). -->
+    <button id="pm-cancel">call and cancel the job</button>
     <button id="pm-story">story mode</button>
     <button id="pm-lab">testing lab</button>
     <button id="pm-menu">main menu</button>
@@ -1017,6 +1028,9 @@
          (The seed control that used to sit under here is gone: you chose the world when you entered
          story mode, and offering it again mid-run invited a world rebuild under a live planner.) -->
     <div id="mp-actions">
+      <!-- FEAT-67: step through the POI's live offers (also Q / E). Hidden when there is one. -->
+      <button id="mp-prev" title="previous offer (Q)">&lsaquo; Q</button>
+      <button id="mp-next" title="next offer (E)">E &rsaquo;</button>
       <button id="mp-decline" title="the same brake tap that releases the truck">decline (space)</button>
       <button id="mp-retry" title="testing only — real story mode has no do-overs">retry</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>

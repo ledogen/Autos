@@ -16,8 +16,13 @@
  *   - SM-INV-3 — no par countdown on the HUD while driving. The player sees elapsed time and
  *     distance-to-go; par is revealed only in the result card, after arrival.
  *   - REGENERATE/RETRY are testing affordances and are labelled as such. Real story mode has no
- *     do-overs: FEAT-53 gates both OFF for paid (POI-anchored) jobs — see PAID_JOB_DO_OVERS.
- *     Quick Job keeps them; it is the calibration rig and pays nothing.
+ *     do-overs: regenerate exists only for Quick Job (a POI job's offers come from the mission
+ *     board, FEAT-67), and retry is gated off for paid jobs by PAID_JOB_DO_OVERS. Quick Job keeps
+ *     both; it is the calibration rig and pays nothing.
+ *   - FEAT-67 — a POI job is one of the MISSION BOARD's offers (src/offer-board.js). This module
+ *     never imports the board: main.js hands enterFromPoi the POI's live offers plus a `plan`
+ *     callback that turns one into a priced mission (planOffer below), and owns take/complete/
+ *     cancel on the board around accept, settle and cancel().
  *   - SM-INV-4 (FEAT-53) — a POI job settles through the economy on arrival: terms (day tier +
  *     rank thresholds) are FROZEN at accept, payout/points fold into the result card. The
  *     economy arrives through the deps adapter (getTerms/onSettle); this module never imports
@@ -62,12 +67,16 @@ const COUNTDOWN = 3.0               // s — the start countdown (a START count,
 // the same reason — you are parked on a pad, possibly facing the wrong way, and the round should
 // not be timing you while you sort that out.
 export const START_ZONE_R = 25      // m — POI start threshold, measured from the marker
-// FEAT-53: real story mode has no do-overs (DESIGN.md — "a marker you can re-roll is a slot
-// machine", and a retried paid job is a direct payout exploit: drive badly, retry, get paid for
-// the good lap). Held as a const flag in the DEBUG_LOCKOUT house style (story.js): flip to true
-// to re-open regenerate/retry on POI jobs for a calibration session. Quick Job (fromPoi === null)
-// is untouched either way — it pays nothing, so its do-overs are harmless and useful.
+// FEAT-53: real story mode has no do-overs (DESIGN.md — a retried paid job is a direct payout
+// exploit: drive badly, retry, get paid for the good lap). Held as a const flag in the
+// DEBUG_LOCKOUT house style (story.js): flip to true to re-open retry on POI jobs for a calibration
+// session. (Its regenerate half went with FEAT-67: a POI job's offers are the board's, and there is
+// nothing to re-roll.) Quick Job (fromPoi === null) is untouched — it pays nothing.
 const PAID_JOB_DO_OVERS = false
+// FEAT-67: straight-line graph distance band for a POI DESTINATION. Wider at the bottom than the
+// roadside band (LEG_MIN): a region holds ~14 POIs, so demanding 1.5 km would leave most offers
+// with no POI in range and quietly turn the 50 % POI share into a roadside one.
+const POI_LEG_MIN = 800             // m
 const EDGE_T_MARGIN = 0.12          // keep endpoints off the junction pads at both ends
 // FEAT-43: when story mode supplies a region, the whole mission must fit INSIDE its wall.
 // The planning network ALWAYS reaches past that wall — story mode warms the play band to
@@ -183,22 +192,15 @@ export class MissionSystem {
         this.error = null
         this._trace = []         // driven trace rows (see update); reset on accept
         this._traceTick = 0
-        // FEAT-46: the anchor the CURRENT offer was generated from ({aId,bId,s,poiId}), or null for
-        // a free Quick Job roll. Held so `regenerate` re-rolls the DESTINATION while keeping the
-        // start pinned to the POI you are standing at — see regenerate().
-        this._anchor = null
-        // FEAT-53: the single-offer rule (owner, 2026-08-01). One offer per POI per day, cached so
-        // walking away and re-parking presents the SAME job — a giver you can decline-and-re-park
-        // into a fresh roll is the same slot machine as the regenerate button. Keyed
-        // `${poiId}|${day}`, so the offer re-rolls only at a day boundary. Holds live centerline
-        // references (mission.segments) — clearOffers() on seed change / region exit is MANDATORY
-        // or a seed regen leaves this pinning a dead RoadSystem.
-        this._offers = new Map()
+        // FEAT-67: the parked POI's live board offers and which one the panel shows. `_plan` is
+        // main.js's offer→mission callback (memoised on the offer, so cycling back is instant).
+        this.offers = []
+        this.offerIdx = 0
+        this.offer = null
+        this._plan = null
     }
 
     // ── lifecycle ───────────────────────────────────────────────────────────────────────────
-    /** FEAT-53: forget all cached POI offers (region enter/exit, seed change). */
-    clearOffers() { this._offers.clear() }
 
     /** Enter story mode: roll a mission and offer it on the map. */
     enter() {
@@ -211,63 +213,73 @@ export class MissionSystem {
     }
 
     /**
-     * FEAT-46: take a job from the POI you are parked at. Same generator, but the start is PINNED to
-     * the marker's own (edge, arc) point and accepting does NOT teleport — you are already standing
-     * there, and the run begins when you drive out of the marker's start zone (START_ZONE_R).
+     * FEAT-46/67: take a job from the POI you are parked at. The offers are the MISSION BOARD's live
+     * offers at that POI (FEAT-67 — the single hidden offer per POI per day is gone); the panel
+     * shows one at a time and cycle() steps through them. Each is priced by main.js's `plan`
+     * callback — the start is PINNED to the marker's own (edge, arc) point and accepting does NOT
+     * teleport — you are already standing there, and the run begins when you drive out of the
+     * marker's start zone (START_ZONE_R).
      *
-     * FEAT-53: the single-offer rule. The first park of the day rolls the offer; every later park
-     * at the same POI (same day) presents the SAME cached job, instantly — no _generate, no
-     * spinner. The cache entry dies when the job is accepted or the day rolls over.
+     * Offers whose route cannot be planned are dropped from the list; if none survive, the panel
+     * says so and nothing opens.
      *
      * @param {object} poi — a record from PoiSystem.list()
+     * @param {object[]} offers — the board's live offers at this POI (opaque here; `.id` is read)
+     * @param {(offer:object)=>object|null} plan — offer → priced mission (see planOffer), or null
      */
-    enterFromPoi (poi) {
-        if (!poi) return
-        const day = this._getTerms ? this._getTerms().day : 1
-        const key = `${poi.id}|${day}`
-        const cached = this._offers.get(key)
-        if (cached) {
-            this._anchor = cached.anchor
-            this.mission = cached.mission
-            this.result = null
-            this.error = null
-            this.state = 'offer'
-            this._setMapOpen(true)
-            this._onChange()
-            return
-        }
-        this.state = 'generating'
+    enterFromPoi (poi, offers = [], plan = null) {
+        if (!poi || !plan) return
+        this.offers = offers.slice()
+        this.offerIdx = 0
+        this._plan = plan
         this.result = null
         this.error = null
+        this._present()
+    }
+
+    /** FEAT-67: step the parked panel to the previous (−1) / next (+1) live offer. */
+    cycle (delta) {
+        if (this.state !== 'offer' || this.offers.length < 2) return
+        const n = this.offers.length
+        this.offerIdx = ((this.offerIdx + delta) % n + n) % n
+        this._present(Math.sign(delta) || 1)
+    }
+
+    /** Show offers[offerIdx], skipping (and dropping) any whose route cannot be planned. */
+    _present (step = 1) {
+        while (this.offers.length) {
+            const o = this.offers[this.offerIdx]
+            let m = null
+            try { m = this._plan(o) } catch (e) { console.warn('[mission] offer planning failed', e) }
+            if (m) {
+                this.offer = o
+                this.mission = m
+                this.state = 'offer'
+                this._setMapOpen(true)
+                this._onChange()
+                return
+            }
+            this.offers.splice(this.offerIdx, 1)
+            if (step < 0) this.offerIdx--
+            const n = this.offers.length
+            if (n) this.offerIdx = ((this.offerIdx % n) + n) % n
+        }
+        this.offer = null
+        this.mission = null
+        this.state = 'idle'
+        this.error = 'no route found for any offer here'
         this._onChange()
-        // poiX/poiZ ride along for the start zone: the threshold is centred on the MARKER (where you
-        // are parked), not on the mission's road-side start pin ~11 m out across the shoulder.
-        setTimeout(() => this._generate({
-            aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id, offerKey: key,
-            poiX: poi.x, poiZ: poi.z, poiY: poi.y,
-        }), 0)
     }
 
     /**
-     * Re-roll the offer. TESTING ONLY — real story mode has no do-overs.
-     *
-     * FEAT-46: an ANCHORED offer re-rolls its DESTINATION ONLY; the start stays pinned to the POI
-     * you are standing at. Regenerating used to drop the anchor and hand back a free
-     * anywhere-to-anywhere Quick Job, which meant the second offer from a marker had nothing to do
-     * with the marker — you would accept a job that started somewhere across the region while
-     * parked in a pullout (owner, 2026-07-28). A quest giver offers you a different job, not a
-     * different place to be standing.
-     *
-     * FEAT-53: that "longer term" arrived — paid (POI) jobs have NO do-overs unless
-     * PAID_JOB_DO_OVERS is flipped for a calibration session. Quick Job keeps the button.
+     * Re-roll the offer. TESTING ONLY, and QUICK JOB ONLY — real story mode has no do-overs, and
+     * since FEAT-67 a POI job's offers are the board's: there is nothing at a POI to re-roll.
      */
     regenerate() {
-        if (this.state !== 'offer') return
-        if (!PAID_JOB_DO_OVERS && this.mission?.fromPoi) return
+        if (this.state !== 'offer' || this.mission?.fromPoi) return
         this.state = 'generating'
         this._onChange()
-        const anchor = this._anchor
-        setTimeout(() => this._generate(anchor), 0)
+        setTimeout(() => this._generate(), 0)
     }
 
     /**
@@ -287,8 +299,8 @@ export class MissionSystem {
         // The converse — accepting at 1 a.m. to buy tomorrow's HIGHER tier — is a RATIFIED feature
         // (DESIGN.md: "Nobody authored it; do not 'fix' it").
         if (this._getTerms) this.mission.terms = this._getTerms()
-        // The job is taken: the giver's offer is spent (single-offer rule).
-        if (this.mission.offerKey) this._offers.delete(this.mission.offerKey)
+        // FEAT-67: taking the offer OFF THE BOARD is main.js's job, done just before this call (it
+        // owns the board and re-checks the offer is still live — a food offer lives ~2 real minutes).
         this._launch({ seat: !this.mission.fromPoi, setSpawn: true })
     }
 
@@ -352,12 +364,28 @@ export class MissionSystem {
         this.state = 'idle'
         this.mission = null
         this.result = null
-        this._anchor = null
-        // NOTE: _offers is deliberately NOT cleared — declining is exactly what the single-offer
-        // cache exists for. Re-park at the same POI today and you face the same job (FEAT-53).
+        this.offers = []
+        this.offer = null
+        this._plan = null
         this._setMapOpen(false)
         this._onChange()
     }
+
+    /**
+     * FEAT-67: CANCEL the job in hand — the player phones the customer. The cancel button is the
+     * only caller: leaving the route or the region never cancels (owner, 2026-09-27). Returns the
+     * board offer id that was cancelled (null for a Quick Job, which has none) so main.js can lock
+     * the slot; nothing settles.
+     */
+    cancel() {
+        if (!['countdown', 'staging', 'running'].includes(this.state)) return null
+        const id = this.mission?.offerId ?? null
+        this.exit()
+        return id
+    }
+
+    /** True while a job is taken and not yet finished — the states the cancel button applies to. */
+    isOnJob() { return ['countdown', 'staging', 'running'].includes(this.state) }
 
     isActive() { return this.state !== 'idle' }
 
@@ -491,7 +519,7 @@ export class MissionSystem {
                 this.mission._settled = true
                 try {
                     const s = this._onSettle(this.result, this.mission)
-                    if (s) { this.result.payout = s.payout; this.result.points = s.points }
+                    if (s) { this.result.payout = s.payout; this.result.points = s.points; this.result.award = s.award ?? null }
                 } catch (e) {
                     console.warn('[mission] settle failed — run graded but unpaid', e)
                 }
@@ -510,10 +538,7 @@ export class MissionSystem {
     isHeld() { return this.state === 'countdown' }
 
     // ── generation ──────────────────────────────────────────────────────────────────────────
-    _generate(anchor = null) {
-        // Remember what this offer is anchored to (null = a free Quick Job roll) so `regenerate`
-        // can re-roll the destination without losing the POI start.
-        this._anchor = anchor
+    _generate() {
         try {
             // A roll can come up empty because the FEAT-43 region rejected the leg it happened to
             // draw (guard 2 only fires after the route is built), so inside a region we re-roll
@@ -522,22 +547,8 @@ export class MissionSystem {
             // reports immediately — retrying could route live edges and block for seconds.
             const tries = this._getRegion() ? REGION_ROLL_TRIES : 1
             this.mission = null
-            for (let i = 0; i < tries && !this.mission; i++) this.mission = this._roll(anchor)
-            if (this.mission) {
-                this.mission.fromPoi = anchor ? anchor.poiId : null
-                // The start threshold, for a POI job only. Held on the MISSION (not on the system)
-                // so the cached single-offer entry carries it and a re-park presents the same zone.
-                this.mission.startZone = anchor
-                    ? { x: anchor.poiX, z: anchor.poiZ, y: anchor.poiY ?? 0, r: START_ZONE_R }
-                    : null
-                // FEAT-53: a POI roll is cached under its (poi, day) key — the giver's one offer
-                // for today. regenerate() can only reach here for Quick Jobs (or with
-                // PAID_JOB_DO_OVERS flipped, where overwriting the entry is the point).
-                if (anchor?.offerKey) {
-                    this.mission.offerKey = anchor.offerKey
-                    this._offers.set(anchor.offerKey, { mission: this.mission, anchor })
-                }
-            }
+            for (let i = 0; i < tries && !this.mission; i++) this.mission = this._roll(null)
+            if (this.mission) { this.mission.fromPoi = null; this.mission.startZone = null }
             this.state = this.mission ? 'offer' : 'idle'
             if (!this.mission) this.error = 'no route found near here — try again'
             if (this.mission) this._setMapOpen(true)
@@ -550,6 +561,33 @@ export class MissionSystem {
     }
 
     /**
+     * FEAT-67: price one board offer from `poi` WITHOUT touching the system's state — the map's
+     * hover card and the parked panel both call this (through main.js, which memoises the result on
+     * the offer). Same retry rule as _generate, but every roll draws from the offer's own seeded
+     * stream, so the same offer always plans the same route.
+     *
+     * @param {object} poi — the source POI (PoiSystem record)
+     * @param {object} o
+     * @param {()=>number} o.rng — the offer's route stream (OfferBoard.routeRng)
+     * @param {{kind:'poi'|'roadside', pick:number, pois:object[]}|null} o.dest — destination wish:
+     *        a POI (chosen by `pick` among the reachable candidates in `pois`) or a roadside point.
+     *        A POI wish that finds no reachable candidate falls back to roadside.
+     * @returns {object|null} the mission, with fromPoi / startZone / endPoiId set
+     */
+    planOffer (poi, { rng, dest = null } = {}) {
+        const anchor = { aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id }
+        const tries = this._getRegion() ? REGION_ROLL_TRIES : 1
+        let m = null
+        for (let i = 0; i < tries && !m; i++) m = this._roll(anchor, { rng, dest })
+        if (!m) return null
+        m.fromPoi = poi.id
+        // The start threshold is centred on the MARKER (where you are parked), not on the mission's
+        // road-side start pin ~11 m out across the shoulder.
+        m.startZone = { x: poi.x, z: poi.z, y: poi.y ?? 0, r: START_ZONE_R }
+        return m
+    }
+
+    /**
      * Roll one mission. Plan on the node graph with straight-line edge lengths (cheap — anchors
      * only, no routing), then route ONLY the chosen path and price it with the par oracle.
      *
@@ -558,9 +596,13 @@ export class MissionSystem {
      * routes; a cleverer line through the network could beat par for reasons that aren't driving.
      *
      * @param {{aId:any,bId:any,s:number}|null} [anchor] — FEAT-46: pin the START to a POI's exact
-     *   (graph edge, arc) point instead of rolling it. The END still rolls freely.
+     *   (graph edge, arc) point instead of rolling it.
+     * @param {object} [o]
+     * @param {()=>number} [o.rng] — FEAT-67: the roll's randomness. A board offer passes its own
+     *   seeded stream (same offer → same route); Quick Job keeps Math.random (SM-INV-12 run layer).
+     * @param {object|null} [o.dest] — FEAT-67: destination wish (see planOffer). Anchored rolls only.
      */
-    _roll(anchor = null) {
+    _roll(anchor = null, { rng = Math.random, dest = null } = {}) {
         const road = this._getRoad()
         if (!road) return null
         // The POST-CULL registered network — the roads that actually exist. Planning off the raw
@@ -600,7 +642,7 @@ export class MissionSystem {
         // Dijkstra over straight-line graph edges from one start → reachable nodes in the leg band,
         // capped at MAX_EDGES hops. No routing here (graph metric only), so it's cheap to run per
         // start candidate. Returns the parent chain plus the qualifying endpoints.
-        const legCandidates = (startK) => {
+        const legCandidates = (startK, lo = LEG_MIN) => {
             const dist = new Map([[startK, 0]]), prev = new Map()
             const queue = [{ k: startK, d: 0 }]
             while (queue.length) {
@@ -616,9 +658,9 @@ export class MissionSystem {
                 }
             }
             const ends = [...dist.entries()]
-                .filter(([k, d]) => d >= LEG_MIN && d <= LEG_MAX && k !== startK)
+                .filter(([k, d]) => d >= lo && d <= LEG_MAX && k !== startK)
                 .filter(([k]) => _pathLength(prev, k, startK) <= MAX_EDGES)
-            return { prev, ends }
+            return { prev, ends, dist }
         }
 
         let startK = null, prev = null, endK = null
@@ -628,35 +670,67 @@ export class MissionSystem {
         // teleported — they are already standing on the pad — so unlike the free roll there is no
         // freedom in where this begins.
         let exitK = null
+        // FEAT-67: a destination POI, when the offer wants one and one is reachable. `entry` is the
+        // node of the destination's edge the route comes in through — the NEARER one by graph
+        // distance, so the route never drives past the POI and doubles back to it. (The path to the
+        // nearer node cannot pass through the farther one: that node would then be nearer.)
+        let destPoi = null
         if (anchor) {
             const ka = g.key(anchor.aId), kb = g.key(anchor.bId)
             if (!adj.has(ka) || !adj.has(kb)) return null      // POI edge outside the planner's set
-            const pair = Math.random() < 0.5 ? [[ka, kb], [kb, ka]] : [[kb, ka], [ka, kb]]
-            for (const [ex, other] of pair) {
-                const c = legCandidates(ex)
-                // Reject any leg whose FIRST hop doubles back along the anchor edge — the route
-                // would drive off the pad, past the POI, and traverse the same stretch twice.
-                const ends = c.ends.filter(([k]) => _firstHop(c.prev, k, ex) !== other)
-                if (!ends.length) continue
-                exitK = ex; startK = ex; prev = c.prev
-                endK = ends[(Math.random() * ends.length) | 0][0]
-                break
+            const pair = rng() < 0.5 ? [[ka, kb], [kb, ka]] : [[kb, ka], [ka, kb]]
+            const edgeKey = (x, y) => (x < y ? `${x}|${y}` : `${y}|${x}`)
+            const srcEdge = edgeKey(ka, kb)
+            if (dest?.kind === 'poi' && dest.pois?.length) {
+                for (const [ex, other] of pair) {
+                    const c = legCandidates(ex, POI_LEG_MIN)
+                    const opts = []
+                    for (const q of dest.pois) {
+                        const qa = g.key(q.aId), qb = g.key(q.bId)
+                        if (!adj.has(qa) || !adj.has(qb) || edgeKey(qa, qb) === srcEdge) continue
+                        const da = c.dist.get(qa) ?? Infinity, db = c.dist.get(qb) ?? Infinity
+                        const entry = da <= db ? qa : qb
+                        const d = Math.min(da, db)
+                        if (!(d >= POI_LEG_MIN && d <= LEG_MAX)) continue
+                        if (_pathLength(c.prev, entry, ex) > MAX_EDGES) continue
+                        // Same doubling-back rule as the roadside leg: never leave along the anchor edge.
+                        if (_firstHop(c.prev, entry, ex) === other) continue
+                        opts.push({ q, entry })
+                    }
+                    if (!opts.length) continue
+                    opts.sort((a, b) => (a.q.id < b.q.id ? -1 : a.q.id > b.q.id ? 1 : 0))
+                    const o = opts[Math.min(opts.length - 1, Math.floor(dest.pick * opts.length))]
+                    exitK = ex; startK = ex; prev = c.prev; endK = o.entry; destPoi = o.q
+                    break
+                }
+            }
+            if (!destPoi) {
+                for (const [ex, other] of pair) {
+                    const c = legCandidates(ex)
+                    // Reject any leg whose FIRST hop doubles back along the anchor edge — the route
+                    // would drive off the pad, past the POI, and traverse the same stretch twice.
+                    const ends = c.ends.filter(([k]) => _firstHop(c.prev, k, ex) !== other)
+                    if (!ends.length) continue
+                    exitK = ex; startK = ex; prev = c.prev
+                    endK = ends[(rng() * ends.length) | 0][0]
+                    break
+                }
             }
         } else {
             // Shuffle the node set and take the first start with a reachable endpoint in the leg band.
             // Most nodes qualify; the loop just skips the few dead-end / window-edge nodes whose whole
-            // leg band falls off the streamed network. Mission rolls are run-layer randomness — free to
-            // use Math.random (SM-INV-12).
+            // leg band falls off the streamed network. Quick Job rolls are run-layer randomness — free
+            // to use Math.random (SM-INV-12).
             const starts = [...posOf.keys()]
             for (let i = starts.length - 1; i > 0; i--) {           // Fisher-Yates
-                const j = (Math.random() * (i + 1)) | 0
+                const j = (rng() * (i + 1)) | 0
                 ;[starts[i], starts[j]] = [starts[j], starts[i]]
             }
             for (const s of starts) {
                 const c = legCandidates(s)
                 if (!c.ends.length) continue
                 startK = s; prev = c.prev
-                endK = c.ends[(Math.random() * c.ends.length) | 0][0]
+                endK = c.ends[(rng() * c.ends.length) | 0][0]
                 break
             }
         }
@@ -689,11 +763,13 @@ export class MissionSystem {
             // Mid-edge endpoints on the first and last edge. An ANCHORED roll has no freedom at the
             // start — the POI's own partial stretch is prepended below and IS the first segment.
             if (i === 0 && !anchor) {
-                const t = EDGE_T_MARGIN + Math.random() * (0.55 - EDGE_T_MARGIN)
+                const t = EDGE_T_MARGIN + rng() * (0.55 - EDGE_T_MARGIN)
                 s0 = off + (forward ? L * t : L * (1 - t))
             }
-            if (i === nodePath.length - 2) {
-                const t = EDGE_T_MARGIN + Math.random() * (0.55 - EDGE_T_MARGIN)
+            // A POI destination ends on its OWN edge (appended below), so the last node-path edge is
+            // driven whole, right up to the entry node.
+            if (i === nodePath.length - 2 && !destPoi) {
+                const t = EDGE_T_MARGIN + rng() * (0.55 - EDGE_T_MARGIN)
                 s1 = off + (forward ? L * (1 - t) : L * t)
             }
             // FEAT-39: DEGREE of the node this edge ends at. A join is a real intersection — a
@@ -749,6 +825,32 @@ export class MissionSystem {
             poly.unshift(...head)
         }
 
+        // FEAT-67: append the destination POI's own partial stretch — from the entry node in to the
+        // marker's arc position. The mirror of the FEAT-46 head above, and just as free: par already
+        // integrates partial edges.
+        if (destPoi) {
+            const ed = road.edgeParData(destPoi.aId, destPoi.bId)
+            if (!ed) return null
+            const off = ed.arcOffset ?? 0
+            const L = ed.arcLength ?? ed.centerline.length
+            const en = posOf.get(endK)
+            const pEnd = ed.centerline.pointAt(off + L), pStart = ed.centerline.pointAt(off)
+            const s0 = Math.hypot(pEnd.x - en.x, pEnd.z - en.z) < Math.hypot(pStart.x - en.x, pStart.z - en.z) ? off + L : off
+            const s1 = Math.max(off, Math.min(off + L, destPoi.s))
+            if (Math.abs(s1 - s0) >= 1) {
+                const n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))
+                for (let j = 1; j <= n; j++) {
+                    const p = ed.centerline.pointAt(s0 + (s1 - s0) * (j / n))
+                    poly.push({ x: p.x, z: p.z })
+                }
+                segments.push({
+                    centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key,
+                    cellA: destPoi.aId, cellB: destPoi.bId,   // QUAL-24: window-stable edge identity
+                    endDeg: 2,                                // ends mid-edge: no junction to announce
+                })
+            }
+        }
+
         const { time, distance } = computePar(segments)
         if (!(time > 0)) return null
 
@@ -777,6 +879,8 @@ export class MissionSystem {
             poly,
             polyCum,
             edges: segments.length,
+            // FEAT-67: the destination POI, or null for a roadside drop. The card names it.
+            endPoiId: destPoi?.id ?? null,
             // The priced route, retained so par can be recomputed under a different PAR_REF
             // without re-routing (FEAT-30 calibration). Not read by gameplay.
             segments,

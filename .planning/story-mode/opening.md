@@ -38,6 +38,11 @@ fallback. Anything that needs a reliable-but-pathetic floor under the economy is
 route's** job (see `missions.md`) — that is what the route is *for*, and it is the only thing playing
 that role.
 
+> **Amended 2026-09-26 (owner, FEAT-67).** The joint *does* post food-delivery gigs on the mission
+> board — as an independent contractor (Grubhub-style), never as staff, so "never work there again"
+> still holds. It stands for *any food vendor*; later regions add more under rolled names. And the
+> income floor is no longer the paper route alone — it is the board (see missions.md).
+
 The roguelike loop's central arithmetic is unchanged: *bare completion pays nothing*, cruise all day
 and you end poorer than you started. The paper route is the floor under that. It guarantees a run
 can't dead-end into zero, while paying so badly that leaning on it is always an admission of a bad

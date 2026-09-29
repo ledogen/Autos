@@ -200,6 +200,31 @@ export function payoutFor(par, ratio, tier) {
     return P.k * par * tier * m
 }
 
+/**
+ * FEAT-67: the "Base pay" an offer card quotes — what an AT-PAR drive (ratio 1.00, the C/D line)
+ * pays under `payTier`, times the offer's cash multiplier (BONUS_PAY_MULT on a bonus offer, else 1).
+ *
+ * Rounded exactly the way settle() rounds, so the card and the result card can never disagree by a
+ * dollar for a drive that lands on par. Recomputed on every call from ECONOMY_PARAMS — never cached —
+ * because the balancing pass retunes those tables and a quote frozen at roll time would lie.
+ */
+export function basePay (par, payTier, payMult = 1) {
+    return Math.round(payoutFor(par, 1, payTier) * payMult)
+}
+
+/** Rank letters, best first. Index order IS the "or better" order bonusEarned reads. */
+export const RANKS = ['S', 'A', 'B', 'C', 'D']
+
+/**
+ * FEAT-67: is an offer's bonus earned by this letter? A gate of X is earned at X or better; 'S' is
+ * S only; D never earns (D exists to tell you that you were slow), whatever the gate says.
+ */
+export function bonusEarned (letter, gate) {
+    const i = RANKS.indexOf(letter), g = RANKS.indexOf(gate)
+    if (i < 0 || g < 0 || letter === 'D' || gate === 'D') return false
+    return i <= g
+}
+
 /** SM-INV-14: 1 point at B or better, ½ at C, 0 at D. Never a function of time taken. */
 export function pointsFor(letter) {
     if (letter === 'S' || letter === 'A' || letter === 'B') return 1
@@ -223,6 +248,9 @@ export const runEconomy = {
                      // additions cannot drift into 20.700000000000003 — see addSpot()
     halfPoints: 0,   // mission points × 2
     missions: 0,     // settled (paid) missions this run
+    // FEAT-67: bonus items EARNED this run, in order — `{ rewardId, name, gate, letter }`. The grant
+    // is STUBBED: nothing reads this yet but the result card. Items die with the run (SM-INV-8).
+    awards: [],
 }
 
 /** Round to whole cents. Money is added a paper at a time now, so drift is a real hazard. */
@@ -260,6 +288,7 @@ export class EconomySystem {
         runEconomy.money = 0
         runEconomy.halfPoints = 0
         runEconomy.missions = 0
+        runEconomy.awards = []
     }
 
     /** Leave story mode. The wallet keeps its value until the next start() — nothing reads it in free roam. */
@@ -295,12 +324,28 @@ export class EconomySystem {
      */
     settle (result, mission) {
         const t = mission?.terms ?? { payTier: dayTier(1) * regionTier(1) }
-        const payout = Math.round(payoutFor(result.par, result.ratio, t.payTier ?? t.dayTier ?? 1))
+        // FEAT-67: a bonus offer pays `payMult` (BONUS_PAY_MULT) of the line — a multiplier on the
+        // whole curve, so pay stays continuous in the ratio (SM-INV-4). Frozen on the mission at
+        // accept with the rest of the terms; a job with no board offer behind it pays the full line.
+        const mult = isFinite(mission?.payMult) ? mission.payMult : 1
+        const payout = Math.round(payoutFor(result.par, result.ratio, t.payTier ?? t.dayTier ?? 1) * mult)
         const points = pointsFor(result.letter)
         runEconomy.money = _cents(runEconomy.money + payout)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
-        return { payout, points }
+        return { payout, points, award: this._award(mission?.bonus, result.letter) }
+    }
+
+    /**
+     * FEAT-67: record the offer's bonus if the letter earned it. Returns the award, or null. The
+     * grant is STUBBED — this only records. Money is untouched either way: the item and the cash are
+     * separate, and the cash side of a bonus offer is already priced by `payMult`.
+     */
+    _award (bonus, letter) {
+        if (!bonus || !bonusEarned(letter, bonus.gate)) return null
+        const a = { rewardId: bonus.rewardId, name: bonus.name, gate: bonus.gate, letter }
+        runEconomy.awards.push(a)
+        return a
     }
 
     /**
@@ -315,13 +360,13 @@ export class EconomySystem {
      * through the same three lines settle() uses, so there is exactly one place run money is made.
      * pointsFor() is shared deliberately — a letter is worth the same deeds whatever earned it.
      */
-    settleFlat (payout, letter) {
+    settleFlat (payout, letter, bonus = null) {
         const paid = _cents(Math.max(0, isFinite(payout) ? payout : 0))
         const points = pointsFor(letter)
         runEconomy.money = _cents(runEconomy.money + paid)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
-        return { payout: paid, points }
+        return { payout: paid, points, award: this._award(bonus, letter) }
     }
 
     /**

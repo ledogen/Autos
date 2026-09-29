@@ -12,7 +12,7 @@ or delete a file, update the relevant line here in the same commit — it's one 
 |---|---|
 | `index.html` | The single entry point (Vite root). |
 | `src/` | The product — shippable game engine, ES6 modules. No diagnostics, no dead code (see CLAUDE.md "src/ is the product"). |
-| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, and the bundled route caches (`route-cache-*.json.gz`, fetched by URL — never ES-import them). |
+| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), and the bundled route caches (`route-cache-*.json.gz`, fetched by URL — never ES-import them). |
 | `assets/models/` | Hand-authored `.glb` assets + `CREDITS.md`. Convention: `.planning/research/ASSETS.md`; style: `ART-STYLE.md`. |
 | `vendor/box3d/` | Vendored Box3D WASM bindings. Imported ONLY by `src/physics-engine.js` (FEAT-48 seam). |
 | `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts. Pure node — never touches Vite. |
@@ -81,8 +81,9 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 **Audio** — `engine-audio.js` · `tire-audio.js` (tonal stick-slip) · `wind-audio.js`.
 
 **Story mode & gameplay** — `story.js` (FEAT-43 gamemode sandbox) · `day.js` (day clock, FEAT-47) ·
-`economy.js` (payout/wallet/points spine, FEAT-53) · `mission.js` (mission generator + run state
-machine) · `par.js` (FEAT-29 par oracle) · `poi.js` (lay-by POIs, FEAT-46) · `camp.js` (dispersed
+`economy.js` (payout/wallet/points spine, FEAT-53) · `offer-board.js` (FEAT-67 mission board —
+slots, expiry timers, seeded offers, names, card view-model; pure) · `mission.js` (mission generator
++ run state machine) · `par.js` (FEAT-29 par oracle) · `poi.js` (lay-by POIs, FEAT-46) · `camp.js` (dispersed
 camping, FEAT-45) · `dialogue.js` (character channel) · `paper-route.js` + `throw.js` (FEAT-61) ·
 `gps.js` (FEAT-39 nav overlay) · `cluster.js` (FEAT-49 gauge cluster — instrument panel, not
 clustering) · `lab.js` (FEAT-31 testing lab world).

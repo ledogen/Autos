@@ -823,6 +823,7 @@ export class PaperRouteSystem {
         this.run = null          // the live route — see accept()
         this.result = null
         this.giver = null        // the POI the route was taken from
+        this.offer = null        // FEAT-67: the mission-board offer this route is (null outside the board)
         this._startZone = null   // the green threshold at Larry's while staging
         this._briefed = false
         this._planned = false
@@ -960,9 +961,10 @@ export class PaperRouteSystem {
      * free (owner ruling). The offer is held until BOTH are finished, so a slow plan reads as a
      * long-winded uncle rather than as a hang.
      */
-    open (giver) {
+    open (giver, offer = null) {
         if (this.state !== 'idle' || !giver) return
         this.giver = giver
+        this.offer = offer
         this.error = null
         this.result = null
         this.route = null
@@ -1045,6 +1047,18 @@ export class PaperRouteSystem {
         this._reset()
     }
 
+    /**
+     * FEAT-67: CANCEL the round — the player phones Larry. The cancel button is the only caller:
+     * leaving the route or the region never cancels (owner, 2026-09-27). Returns the board offer id
+     * so main.js can lock Larry's slot; nothing settles, and the papers come off the lawns.
+     */
+    cancel () {
+        if (!this.isCarrying()) return null
+        const id = this.offer?.id ?? null
+        this._reset()
+        return id
+    }
+
     /** Leaving the region / the run: drop everything WITHOUT settling. */
     abort () {
         if (this.state === 'idle') return
@@ -1066,6 +1080,7 @@ export class PaperRouteSystem {
         this.guide = null
         this.run = null
         this.giver = null
+        this.offer = null
         this.error = null
         this._startZone = null
         this._briefed = this._planned = false

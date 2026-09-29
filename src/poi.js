@@ -25,6 +25,7 @@
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
 import { REGION_MARGIN } from './mission.js'          // FEAT-61: the wall a customer must sit inside
 import { houseRungs } from './paper-route.js'         // FEAT-61: the ladder placement has to serve
+import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
 
 /** Tunables. Geometry + siting only — none of this may ever enter RANGER_PARAMS. */
 export const POI_PARAMS = {
@@ -146,12 +147,13 @@ export const POI_PARAMS = {
  *   'coverage'  — the set that minimises the worst drive from any pad to its nearest member.
  *   'any'       — anywhere in the pool.
  *
- * `jobs` is WHETHER PARKING HERE OPENS AN OFFER, and it is deliberately false for most of the
- * roster. The services (fuel, repair, shopping, tackle) are in-run mechanics nobody has built yet,
- * mom's house is a bed, and the burger joint is scenery — so today only mission givers do anything
- * when you pull the brake. A marker that wears the interaction ring but answers nothing is the
- * same lie as a prompt drawn wider than its trigger, which this module already refuses to tell.
- * Turn a row true the day its mechanic lands.
+ * `jobs` is WHETHER PARKING HERE OPENS AN OFFER, and it is DERIVED, not hand-set (FEAT-67): a
+ * type posts offers iff it has a row in data/offers.js SOURCES (the mission board's source table).
+ * The gas station, the tackle shop and mom's house have none — "some stores are just stores" — so
+ * they wear no interaction ring and answer no park trigger. A marker that wears the ring but answers
+ * nothing is the same lie as a prompt drawn wider than its trigger, which this module already
+ * refuses to tell; deriving the flag from the one table that decides who posts work is what makes
+ * that impossible to get out of step.
  *
  * TAGS vs TYPE (FEAT-61, owner 2026-08-05). `type` is the roster slot — one identity, the thing
  * the POI IS. `tags` is everything it also PARTICIPATES IN, and a POI can carry several: mom's
@@ -163,26 +165,26 @@ export const POI_PARAMS = {
  */
 export const POI_ROSTER = [
     // Exactly one of each per world, and both houses are a short drive from where you wake up.
-    { type: 'momsHouse',    count: 1, model: 'trailerHomeA', jobs: false, siting: 'nearSpawn',
+    { type: 'momsHouse',    count: 1, model: 'trailerHomeA', siting: 'nearSpawn',
       tags: ['newsCustomer', 'sleepable'] },
-    // Larry hands out the paper route (FEAT-61 Phase E2). His `jobs` is true like any other giver's,
+    // Larry hands out the paper route (FEAT-61 Phase E2). He posts offers like any other source,
     // but the brake at his place opens the PaperRouteSystem rather than a point-to-point errand —
     // main.js branches on the type, because he is the only POI whose offer is a different mission.
-    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', jobs: true, siting: 'nearSpawn' },
+    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn' },
     // "Never too far from a station" — the reason these two slots exist and the reason they are
     // sited by coverage rather than by a spacing rule. Gas and service are solved INDEPENDENTLY:
     // no constraint was ratified between them, and a service shop sharing a corner with a pump
     // reads fine.
-    { type: 'gasStation',   count: 2, model: null, jobs: false, siting: 'coverage' },
-    { type: 'serviceShop',  count: 2, model: null, jobs: false, siting: 'coverage' },
-    // The place the player is fired from in the opening (FEAT-60 ruling, 2026-08-05): a story
-    // landmark, NOT a food vendor and not a hub. Sited anywhere — the point is that you keep
-    // driving past it.
-    { type: 'burgerJoint',  count: 1, model: null, jobs: false, siting: 'any' },
-    { type: 'generalStore', count: 1, model: null, jobs: false, siting: 'any' },
+    { type: 'gasStation',   count: 2, model: null, siting: 'coverage' },
+    { type: 'serviceShop',  count: 2, model: null, siting: 'coverage' },
+    // `burgerJoint` means ANY FOOD VENDOR (FEAT-67 ruling, 2026-09-26; opening.md amended): the
+    // player delivers ready-made meals from it as an independent gig contractor, not as staff, so
+    // the opening's "never work there again" still holds. Sited anywhere.
+    { type: 'burgerJoint',  count: 1, model: null, siting: 'any' },
+    { type: 'generalStore', count: 1, model: null, siting: 'any' },
     // The type exists so the roster is whole; fishing and The Confluence stay deferred. Do not
     // build its systems off the back of this line.
-    { type: 'tackleShop',   count: 1, model: null, jobs: false, siting: 'any' },
+    { type: 'tackleShop',   count: 1, model: null, siting: 'any' },
     // Everything left over. Most POIs are mission givers, and a mission giver MAY present as a
     // food vendor (owner, 2026-08-05) — food vendors get no reservation of their own because a
     // vendor that also hands out work costs the region nothing.
@@ -193,7 +195,7 @@ export const POI_ROSTER = [
     // one-line edit to the registry — and the owner has ruled that widening it MAY reshuffle which
     // marker wears what on an existing seed. That is the licence this design is built on; do not
     // add a stability guarantee here without re-reading that sentence.
-    { type: 'missionGiver', count: 5, modelPool: 'missionGiver', jobs: true, siting: 'any' },
+    { type: 'missionGiver', count: 5, modelPool: 'missionGiver', siting: 'any' },
 ]
 
 /** Region population: 14, derived from the roster so the two can never drift apart. */
@@ -342,6 +344,8 @@ export class PoiSystem {
         // is how a region can be guaranteed a gas station.
         const pool = []
         const seen = new Set()
+        const wall = radius - REGION_MARGIN
+        const edgeInWall = (id) => { const q = g.pos(id); return Math.hypot(q.x - center.x, q.z - center.z) <= wall }
         for (const e of canon) {
             const ek = `${e.ka}|${e.kb}`
             if (seen.has(ek)) continue      // networkGraph can list an edge twice (both run keys)
@@ -354,6 +358,13 @@ export class PoiSystem {
             // POI 400 m inside the wall then moved when the window moved. Window-invariance means
             // the edge decides where its POI goes; the region only decides whether it is kept.
             if (Math.hypot(poi.x - center.x, poi.z - center.z) > radius - poi.halfLen - 20) continue
+            // FEAT-67: …and its EDGE must be one the mission planner can use. The planner drops any
+            // edge with a node past the wall less REGION_MARGIN (mission.js buildGraphAdj), so a POI
+            // standing on one posts offers no route can serve — owner-reported, seed 2987375593: a
+            // general store 2403 m out on a 2500 m region showed cards with no route and no pay.
+            // The newspaper customers already obey this exact rule (buildHouses); POIs now match.
+            // Still a post-filter on (edge, region), so placement stays window-invariant.
+            if (!edgeInWall(e.a) || !edgeInWall(e.b)) continue
             pool.push(poi)
         }
 
@@ -630,7 +641,7 @@ export class PoiSystem {
             for (const q of picks) {
                 q.type = slot.type
                 q.tags = slot.tags ? slot.tags.slice() : []   // FEAT-61 — see the TAGS note above
-                q.jobs = !!slot.jobs
+                q.jobs = !!SOURCES[slot.type]   // FEAT-67 — see the `jobs` note above
                 q.modelKey = models?.length
                     // Keyed to the pad's own id, the same discipline as _pickStable and for the
                     // same reason: the choice must depend on WHICH pad this is, never on how many
