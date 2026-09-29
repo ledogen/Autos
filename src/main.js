@@ -4173,6 +4173,8 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
       for (const p of waterSystem.pondsNear(minX, minZ, maxX, maxZ)) discs.push(p.floorX, p.floorZ, p.radius + p.skirt)
       return discs
     },
+    // PERF-34: prime the water caches for the request window in slices before the discs are read.
+    warmRegion: (minX, minZ, maxX, maxZ, ms) => waterSystem ? waterSystem.warmRegion(minX, minZ, maxX, maxZ, ms) : true,
   })
   netClient.register('play', roadSystem, {
     onAdopted: (reason) => {

@@ -20,6 +20,7 @@
 //   - The swap is atomic between frames: onmessage runs as its own macrotask, never mid-frame.
 
 import { snapshotRoadParams, pondDiscPad } from './road-network-worker.js'
+import { perfAdd } from './perf.js'   // PERF-34: dispatch-cost buckets
 
 export class RoadNetworkClient {
     /**
@@ -29,10 +30,18 @@ export class RoadNetworkClient {
      * @param {(minX, minZ, maxX, maxZ) => number[]} deps.getPondDiscs — flat [cx,cz,r,…] for a bbox
      *        (null-safe: return [] before water exists)
      */
-    constructor({ getSeed, getParams, getPondDiscs }) {
+    constructor({ getSeed, getParams, getPondDiscs, warmRegion = null }) {
         this._getSeed = getSeed
         this._getParams = getParams
         this._getPondDiscs = getPondDiscs
+        // PERF-34: optional (minX, minZ, maxX, maxZ, deadlineMs) => boolean — the water system's
+        // budget-pumped detection pre-warm. getPondDiscs over a fresh 760 m window forced the lazy
+        // cell scans + rim casts synchronously INSIDE road.update (road.dispatch.pondDiscs 20–22 ms,
+        // one frame per band at 200 mph). The dispatch now primes those caches in ≤2 ms slices
+        // between frames and posts the build once the region reports warm; the old network keeps
+        // serving meanwhile (stale-until-replaced), so the few frames of delay cost nothing.
+        this._warmRegion = warmRegion
+        this._warmTimer = 0
         this._clients = new Map()   // id → { road, onAdopted }
         this._queue = []            // pending build entries (see request())
         this._active = null         // the entry the worker is building right now
@@ -114,16 +123,32 @@ export class RoadNetworkClient {
             this._pump()
             return
         }
-        this._active = entry
         const pad = pondDiscPad(this._getParams())
-        const discs = this._getPondDiscs(entry.x - entry.radius - pad, entry.z - entry.radius - pad,
-                                         entry.x + entry.radius + pad, entry.z + entry.radius + pad) || []
+        const x0 = entry.x - entry.radius - pad, z0 = entry.z - entry.radius - pad
+        const x1 = entry.x + entry.radius + pad, z1 = entry.z + entry.radius + pad
+        if (this._warmRegion) {
+            const _tw = performance.now()
+            const warm = this._warmRegion(x0, z0, x1, z1, 2)
+            perfAdd('road.dispatch.warm', performance.now() - _tw)
+            if (!warm) {                              // PERF-34: not primed yet — head of the queue, retry between frames
+                this._queue.unshift(entry)
+                if (!this._warmTimer) this._warmTimer = setTimeout(() => { this._warmTimer = 0; this._pump() }, 0)
+                return
+            }
+        }
+        this._active = entry
+        const _t0 = performance.now()
+        const discs = this._getPondDiscs(x0, z0, x1, z1) || []
+        perfAdd('road.dispatch.pondDiscs', performance.now() - _t0)
+        const _t1 = performance.now()
+        const params = snapshotRoadParams(this._getParams())
+        perfAdd('road.dispatch.params', performance.now() - _t1)
         this._worker.postMessage({
             type: 'build',
             client: entry.id,
             epoch: entry.epoch,
             seed: this._getSeed(),
-            params: snapshotRoadParams(this._getParams()),
+            params,
             center: { x: entry.x, z: entry.z },
             radius: entry.radius,
             pondDiscs: Float64Array.from(discs),
