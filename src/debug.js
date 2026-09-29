@@ -504,7 +504,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   lookFolder.add(params, 'terrainTexAlbedoGrass', 0, 1.0, 0.05).name('Albedo: grass').onChange(v => _setU('uSurfAlbW.x', v))
   lookFolder.add(params, 'terrainTexAlbedoDirt', 0, 1.0, 0.05).name('Albedo: dirt').onChange(v => _setU('uSurfAlbW.y', v))
   lookFolder.add(params, 'terrainTexAlbedoRock', 0, 1.0, 0.05).name('Albedo: rock + cut faces').onChange(v => _setU('uSurfAlbW.z', v))
-  lookFolder.add(params, 'terrainRockSparsity', 0.5, 5, 0.1).name('Rock sparsity (γ)').onChange(v => _setU('uRockSparsity', v))
+  lookFolder.add(params, 'terrainRockSparsity', 0.5, 10, 0.1).name('Rock sparsity (γ)').onChange(v => _setU('uRockSparsity', v))
   lookFolder.add(params, 'terrainDirtRockFloor', 0, 0.3, 0.01).name('Dirt rock floor').onChange(v => _setU('uDirtRockFloor', v))
   lookFolder.add(params, 'terrainDirtPebbleGrey', 0, 1, 0.05).name('Dirt pebbles grey').onChange(v => _setU('uDirtPebbleGrey', v))
   lookFolder.addColor(params, 'terrainRockGapGreen').name('Under-rock green (key)').onChange(_recolor)
@@ -688,6 +688,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   surfaceFolder.add(params, 'roadShoulderWidth',    1,    6,    0.5 ).name('Shoulder Width (m)').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCliffSlopeLo',     0,    0.5,  0.02).name('Cliff Slope Lo').onChange(fireSurface)
   surfaceFolder.add(params, 'roadCliffSlopeHi',     0.3,  0.9,  0.02).name('Cliff Slope Hi').onChange(fireSurface)
+  // BUG-74: the cut's rock fades in/out over this much cut/fill depth either side of the crossover.
+  surfaceFolder.add(params, 'roadCutRockFade',      0.25, 6,    0.25).name('Cut Rock Fade (m)').onChange(fireSurface)
 
   // Plan 09-10 — Decal ribbon depth-bias + edge skirts.
   // roadSkirtDepth is geometry → fires fireSurface (full road rebuild).
@@ -779,6 +781,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadShoulderWidth:     'Width (m) of the dirt shoulder flanking each side of the paved surface.',
     roadCliffSlopeLo:      'Lower slope threshold where terrain starts shading as cliff rock.',
     roadCliffSlopeHi:      'Upper slope threshold where terrain is fully cliff rock.',
+    roadCutRockFade:       'Half-width (m of cut/fill depth) of the fade between the cut\'s broken rock and shoulder dirt, centred where the road grade meets the hill.',
     roadSkirtDepth:        'How far (m) the road-edge skirt drops below the ribbon to hide seams against terrain.',
     roadPolygonOffsetFactor:'Depth-bias factor pushing the road decal above terrain to prevent z-fighting.',
     roadPolygonOffsetUnits: 'Depth-bias units for the road decal (pairs with PolyOffset Factor).',

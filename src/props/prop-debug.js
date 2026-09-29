@@ -81,6 +81,7 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
   const place = f.addFolder('Placement'); place.close()
   place.add(S, 'groundSink', 0, 2, 0.05).name('ground sink (m)').onFinishChange(done)
   place.add(S, 'treeTiltMax', 0, 0.6, 0.01).name('tree tilt max (rad)').onFinishChange(done)
+  place.add(S, 'rockTiltMax', 0, 1.57, 0.01).name('rock tumble max (rad)').onFinishChange(done)
   place.add(S, 'roadExclusion', 0, 20, 0.5).name('road exclusion (m)').onFinishChange(done)
   place.add(S, 'slopeMeadowMax', 0, 1, 0.01).name('aspen slope max').onFinishChange(done)
   place.add(S, 'slopeSteepMin', 0, 1, 0.01).name('pine slope min').onFinishChange(done)

@@ -46,6 +46,15 @@ const SPEED    = Number(flag('speed', 20))
 const OUT      = flag('out', '')
 const HEADED   = has('headed')
 const PORT = Number(flag('port', 8000)), CDP_PORT = Number(flag('cdp', 9222))
+// GPU-side reproduction (2026-09-29): --window=W,H --dpr=N put the render at the owner's retina pixel
+// count (an Air is ~2× DPR, 4× the pixels of the default 1400×900 window), and --eval=JS runs once
+// after the settle, before the window — e.g. "window.__terrainSystem()._terrainUniforms.uSurfOn.value=0"
+// for a textures-off A/B.
+const WINDOW = flag('window', '1400,900'), DPR = Number(flag('dpr', 1)), EVAL = flag('eval', '')
+// --truck: the stream sweep carries the TRUCK (teleported along the sweep at --speed) instead of the
+// freecam, so the chase camera and the truck's synchronous ensureChunk 3×3 — the path a freecam
+// never exercises — are the ones measured. 200 mph = --speed=89.
+const TRUCK = has('truck')
 if (!['drive', 'stream'].includes(SCENARIO)) { console.error(`unknown scenario ${SCENARIO}`); process.exit(1) }
 
 const qs = new URLSearchParams({ prof: '1', hitch: String(HITCH_MS), nomenu: '1' })   // FEAT-41: skip the menu; this harness wants the world on screen
@@ -55,7 +64,7 @@ const APP = `http://localhost:${PORT}/index.html?${qs}`
 try { const r = await fetch(`http://localhost:${PORT}/index.html`); if (!r.ok) throw 0 }
 catch { console.error(`No server on :${PORT}. Run \`npm run dev\` first.`); process.exit(1) }
 
-launchChrome(APP, { port: CDP_PORT, headed: HEADED })
+launchChrome(APP, { port: CDP_PORT, headed: HEADED, windowSize: WINDOW, extraArgs: DPR !== 1 ? [`--force-device-scale-factor=${DPR}`] : [] })
 const client = await connect({ port: CDP_PORT })
 const evalOk = async expr => { const r = await client.evalJS(expr); if (r.err) throw new Error(`eval: ${r.err}`); return r.val }
 const waitFor = async (expr, timeoutMs, pollMs = 250) => {
@@ -76,6 +85,7 @@ if (PRESET !== 'Normal') { await evalOk(`window.__q(${JSON.stringify(PRESET)})`)
 await waitFor('(()=>{ const r = window.__road && window.__road(); return r ? (r.pending === 0 && r.lastWarm) : true })()', 90000, 500)
   .catch(() => console.error('warn: route warm never drained'))
 await sleep(4000)
+if (EVAL) { await evalOk(EVAL); await sleep(1500) }
 
 // Throttle AFTER settling — a 4× CPU penalty applied during load just makes the wait long, and the
 // question is about steady-state play on a slow machine, not about load.
@@ -93,7 +103,8 @@ if (SCENARIO === 'stream') {
 while (performance.now() - t0 < DURATION * 1000) {
   if (sweep) {
     const dx = ((performance.now() - t0) / 1000) * SPEED
-    await evalOk(`(()=>{ const x=${sweep.x0} + ${dx}, z=${sweep.z0}; const y=(typeof window.terrain==='function')? window.terrain(x,z):100; window.__view(x, y+45, z, ${Math.PI / 2}, -0.55); return true })()`)
+    if (TRUCK) await evalOk(`(()=>{ window.__teleport(${sweep.x0} + ${dx}, ${sweep.z0}, ${Math.PI / 2}, 0.5); return true })()`)
+    else await evalOk(`(()=>{ const x=${sweep.x0} + ${dx}, z=${sweep.z0}; const y=(typeof window.terrain==='function')? window.terrain(x,z):100; window.__view(x, y+45, z, ${Math.PI / 2}, -0.55); return true })()`)
   }
   await sleep(sweep ? 500 : 2000)
 }
@@ -112,7 +123,7 @@ const stats = {
   droppedPct: +(100 * frames.filter(v => v > HITCH_MS).length / (frames.length || 1)).toFixed(2),
 }
 const q = rep.quiet
-console.log(`\n════ hitch report — ${SCENARIO}, preset ${PRESET}, cpu ×${CPU}, ${DURATION}s ════`)
+console.log(`\n════ hitch report — ${SCENARIO}, preset ${PRESET}, cpu ×${CPU}, ${DURATION}s, ${WINDOW} @${DPR}x${EVAL ? ', eval' : ''} ════`)
 console.log(`frame:  p50 ${stats.p50}  p95 ${stats.p95}  p99 ${stats.p99}  max ${stats.maxMs} ms   over-${HITCH_MS}ms ${stats.droppedPct}%`)
 console.log(`window: ${rep.frames} frames, ${rep.hitches.length} hitches recorded`)
 if (q) console.log(`quiet:  ${q.frames} frames with NO streaming event — mean ${q.meanMs.toFixed(1)} ms (cpu ${q.meanCpuMs.toFixed(1)}), max ${q.maxMs.toFixed(1)}\n`)

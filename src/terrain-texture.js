@@ -90,7 +90,24 @@ function _dome(H, size, cx, cz, r, h, owner, id) {
 }
 
 /** Central-difference tangent-space normal map (RG = xy, B unused) of a wrapped heightfield. */
-function _normalBytes(H, size, strength) {
+// Rank (quantile) of every texel's height: 0 = the lowest texel of the tile, 1 = the tallest,
+// uniformly distributed BY CONSTRUCTION. The shader's coverage rules ("rock on s^γ of the tile,
+// tallest fragments first"; "this share of the pebbles, tallest first") need a quantile, and the
+// min–max normalised height is not one — measured 2026-09-28: only 1.8 % of the rock tile is
+// above 0.5 and 0.3 % above 0.73, so "cov 0.27" admitted ~0.3 % of texels and the floor / pebble
+// dials were dead below share ~0.7 (the whole rock front lived between s 0.7 and 0.8). The rank
+// rides in the normal map's blue channel (the shader reads only .xy of it); relief, joints and the
+// height contest keep the absolute height.
+function _rankOf(H) {
+  const N = H.length, idx = new Uint32Array(N)
+  for (let i = 0; i < N; i++) idx[i] = i
+  idx.sort((a, b) => H[a] - H[b])
+  const rank = new Float32Array(N), k = 1 / (N - 1)
+  for (let r = 0; r < N; r++) rank[idx[r]] = r * k
+  return rank
+}
+
+function _normalBytes(H, size, strength, rank = null) {
   const out = new Uint8Array(size * size * 4)
   const at = (x, z) => H[(((z % size) + size) % size) * size + (((x % size) + size) % size)]
   for (let z = 0; z < size; z++) {
@@ -101,7 +118,7 @@ function _normalBytes(H, size, strength) {
       const j = (z * size + x) * 4
       out[j]     = (dX * inv * 0.5 + 0.5) * 255
       out[j + 1] = (dZ * inv * 0.5 + 0.5) * 255
-      out[j + 2] = (inv * 0.5 + 0.5) * 255
+      out[j + 2] = rank ? rank[z * size + x] * 255 : (inv * 0.5 + 0.5) * 255   // B = height RANK (see _rankOf)
       out[j + 3] = 255
     }
   }
@@ -274,7 +291,21 @@ export function dirtFields(seed, size, base = _hexLin(0x69481b)) {
       mod[j] = lift; mod[j + 1] = lift * 0.99; mod[j + 2] = lift * 0.96
     }
   }
-  return { H: _normalise(H), mod, normalStrength: 2.2, pebbleCover }
+  // Per-PEBBLE rank (owner pass 16, 2026-09-28): the shader's "this share of the pebbles goes
+  // grey, tallest first" flips WHOLE pebbles, ranked by their peak height and weighted by their
+  // texel count (so the share is a share of pebble AREA). Soil = 0; a pebble's texels all carry
+  // (0.05, 1]. Ranking texels by height instead left every pebble's lower half — and every small
+  // pebble — classed as a clod: brown, relief kept, no slider could reach it ("still brown").
+  const nPeb = tint.length
+  const peak = new Float32Array(nPeb), area = new Uint32Array(nPeb)
+  for (let i = 0; i < N; i++) { const o = owner[i]; if (o >= 0) { area[o]++; if (H[i] > peak[o]) peak[o] = H[i] } }
+  const order = Array.from({ length: nPeb }, (_, k) => k).sort((a, b) => peak[a] - peak[b])
+  const pebRank = new Float32Array(nPeb)
+  let cum = 0, total = 0; for (let k = 0; k < nPeb; k++) total += area[k]
+  for (const k of order) { cum += area[k]; pebRank[k] = total > 0 ? 0.05 + 0.95 * (cum / total) : 1 }
+  const rank = new Float32Array(N)
+  for (let i = 0; i < N; i++) { const o = owner[i]; rank[i] = o >= 0 ? pebRank[o] : 0 }
+  return { H: _normalise(H), mod, normalStrength: 2.2, pebbleCover, rank }
 }
 
 // ── ROCK: fractured plates + fissures + angular rubble ────────────────────────────────────────
@@ -442,9 +473,11 @@ export function rockFields(seed, size, paletteBase = _hexLin(0x5a5b5e)) {
  * @returns {{ grass: {map, normalMap}, dirt: {map, normalMap}, rock: {map, normalMap} }}
  */
 export function makeSurfaceTextures(seed = 8401, size = 256, bases = {}) {
+  // Normal map .b = the field's own rank when the bake supplies one (dirt: per-pebble, 0 = soil),
+  // else the per-texel height rank (rock: coverage, tallest fragments first; grass: unused).
   const build = (fields) => ({
     map:       _tex(_packAlbedo(fields.mod, fields.H, size), size),
-    normalMap: _tex(_normalBytes(fields.H, size, fields.normalStrength), size),
+    normalMap: _tex(_normalBytes(fields.H, size, fields.normalStrength, fields.rank ?? _rankOf(fields.H)), size),
   })
   return {
     grass: build(grassFields(seed, size)),

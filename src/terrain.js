@@ -623,6 +623,15 @@ export class TerrainSystem {
                     vec2 ts_ps = (ts_xf ? vec2(vWorldPos.z * ts_sgn, vWorldPos.y) : vec2(vWorldPos.x * ts_sgn, vWorldPos.y)) * uSurfScale.z;
                     vec4 ts_rs = texture2D(uSurfAlbR, ts_ps);
                     ts_r = mix(ts_r, ts_rs, ts_steep);
+                    // Normal maps, sampled here so their .b — the height RANK (a true quantile,
+                    // terrain-texture.js _rankOf) — can rank texels for the coverage rules below;
+                    // .xy feed the relief at the end of the block. The absolute height ts_*.a stays
+                    // the input of the height contest and the joint test.
+                    vec4 ts_nG = texture2D(uSurfNrmG, ts_p * uSurfScale.x);
+                    vec4 ts_nD = texture2D(uSurfNrmD, ts_p * uSurfScale.y);
+                    vec4 ts_nR = texture2D(uSurfNrmR, ts_p * uSurfScale.z);
+                    vec4 ts_nRs = texture2D(uSurfNrmR, ts_ps);
+                    float ts_rq = mix(ts_nR.b, ts_nRs.b, ts_steep);   // rock rank, side-projected on steep faces like ts_r
                     // Rock by COVERAGE, not by contest (owner 2026-09-25): the rock share s admits
                     // s^γ of the tile, and the map's own heights rank the texels — tallest fragments
                     // claim it first, the joint filler last — so thinning rock gets SPARSER, not
@@ -632,8 +641,12 @@ export class TerrainSystem {
                     float ts_s0 = clamp(vSurf.z, 0.0, 1.0);
                     float ts_dn0 = tdFbm(ts_p * uBiomeDither.y) * 0.7 + tdFbm(ts_p * uBiomeDither.y * 3.7 + 17.0) * 0.3 - 0.5;
                     float ts_s = clamp(ts_s0 + ts_dn0 * uBiomeDither.x * 4.0 * ts_s0 * (1.0 - ts_s0) * 2.0, 0.0, 1.0);
-                    float ts_cov = max(pow(ts_s, uRockSparsity), vSurf.y * uDirtRockFloor);
-                    float ts_rw = (1.0 - smoothstep(ts_cov - 0.04, ts_cov + 0.04, 1.0 - ts_r.a)) * step(0.001, ts_cov);
+                    // Dirt floor in PATCHES (owner 2026-09-28: "a small baseline of rocks poking through,
+                    // strongly amplified by the rock biome"): the same dither field scales the floor
+                    // 0–2× so pure dirt carries drifts of plates, not a uniform sprinkle; s^γ is the
+                    // amplification and takes over as soon as the rock share exceeds the floor.
+                    float ts_cov = max(pow(ts_s, uRockSparsity), vSurf.y * uDirtRockFloor * clamp(1.0 + 2.0 * ts_dn0, 0.0, 2.0));
+                    float ts_rw = (1.0 - smoothstep(ts_cov - 0.04, ts_cov + 0.04, 1.0 - ts_rq)) * step(0.001, ts_cov);
                     // Grass and dirt contest the remainder by height as before.
                     vec2 ts_h2 = vSurf.xy * (1.0 + vec2(ts_g.a, ts_d.a));
                     float ts_ma = max(ts_h2.x, ts_h2.y) - uSurfDepth;
@@ -654,30 +667,40 @@ export class TerrainSystem {
                     // texels) take the same key, so a scree and a grassy knoll share one read.
                     float ts_joint = 1.0 - smoothstep(0.30, 0.45, ts_r.a);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uRockGapGreen, ts_rockW * ts_joint * ts_keep * uUnderRockGreen);
-                    // Dirt pebbles are rocks, and rocks are grey: the dirt map's pebbles (texels
-                    // above the clod ceiling, ~0.40 after normalisation) take the rock colour —
-                    // tallest first, uDirtPebbleGrey of them on pure dirt, all of them once the
-                    // rock share passes ~1/3. Engineered fill keeps its own look.
-                    float ts_pr = clamp((ts_d.a - 0.40) / 0.60, 0.0, 1.0);
+                    // Dirt pebbles are rocks, and rocks are grey: the dirt map's pebbles take the
+                    // rock colour — tallest first, uDirtPebbleGrey of them (by area) on pure dirt,
+                    // all of them once the rock share passes ~1/3. ts_pr is the bake's per-PEBBLE
+                    // rank (normal map .b: 0 = soil, (0.05, 1] = a whole pebble by its peak), so the
+                    // share is honest and a pebble flips as one piece — never a grey crown on a
+                    // brown skirt. Engineered fill keeps its own look.
+                    float ts_pr = ts_nD.b;
                     float ts_pcov = mix(uDirtPebbleGrey, 1.0, clamp(ts_s * 3.0, 0.0, 1.0));
                     float ts_pg = (1.0 - smoothstep(ts_pcov - 0.05, ts_pcov + 0.05, 1.0 - ts_pr)) * step(0.02, ts_pr);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_b.y * ts_pg * (1.0 - vSurf.w));
                     // Local colouring for the two soft zones: the share grass/dirt GAINED over its
                     // vertex weight pulls the fragment toward that zone's own palette colour.
-                    vec2 ts_gain = max(ts_b.xy - vSurf.xy, 0.0) * uDetailScale;
+                    // Engineered faces exempt (× (1 − w)) like every other zone rule — BUG-74: this
+                    // pull was the "gravel seam" at the asphalt edge: the mixed rock/dirt band of a
+                    // cut bench (the interpolation band under the sign test, the whole fade now)
+                    // had dirt winning texels over its vertex weight and went orange.
+                    vec2 ts_gain = max(ts_b.xy - vSurf.xy, 0.0) * uDetailScale * (1.0 - vSurf.w);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColDirt,  ts_gain.y);
                     diffuseColor.rgb = mix(diffuseColor.rgb, uColGrass, ts_gain.x);
                     // Per-zone albedo weights; an engineered CUT face (vSurf.w, rock) forces the
                     // rock albedo on. Fill embankments take no dirt albedo (owner 2026-09-25: the
                     // skirt read as "green with rocks poking through" — the map's baked tint).
                     vec3 ts_aw = vec3(uSurfAlbW.x, uSurfAlbW.y, max(uSurfAlbW.z, vSurf.w)) * uDetailScale;
+                    // A grey pebble is a rock (owner 2026-09-28 "they're brown"): it takes the rock
+                    // map's albedo flecks too — the flat rock colour alone reads brown on sunlit
+                    // dirt; the bright fragment flecks are what make a rock face read grey.
+                    float ts_pebW = ts_b.y * ts_pg * (1.0 - vSurf.w);
                     vec3 ts_alb = vec3(1.0) + (ts_g.rgb * 4.0 - 1.0) * ts_b.x * ts_aw.x
                                             + (ts_d.rgb * 4.0 - 1.0) * ts_b.y * ts_aw.y
-                                            + (ts_r.rgb * 4.0 - 1.0) * ts_b.z * ts_aw.z;
+                                            + (ts_r.rgb * 4.0 - 1.0) * (ts_b.z + ts_pebW) * ts_aw.z;
                     diffuseColor.rgb *= ts_alb;
-                    vec2 ts_ng = texture2D(uSurfNrmG, ts_p * uSurfScale.x).xy * 2.0 - 1.0;
-                    vec2 ts_nd = texture2D(uSurfNrmD, ts_p * uSurfScale.y).xy * 2.0 - 1.0;
-                    vec2 ts_nr = texture2D(uSurfNrmR, ts_p * uSurfScale.z).xy * 2.0 - 1.0;
+                    vec2 ts_ng = ts_nG.xy * 2.0 - 1.0;
+                    vec2 ts_nd = ts_nD.xy * 2.0 - 1.0;
+                    vec2 ts_nr = ts_nR.xy * 2.0 - 1.0;
                     // Option B (owner 2026-09-26): a dirt pebble that did NOT become a grey stone
                     // loses its relief too, so it stops reading as a brown rock — dirt is clods
                     // plus the grey stones, and the stone count still rises toward the rock zone.
@@ -685,7 +708,7 @@ export class TerrainSystem {
                     tsNrm = (ts_ng * ts_b.x + ts_nd * ts_b.y * ts_dn + ts_nr * (1.0 - ts_steep) * ts_b.z) * (uSurfNormal * uDetailScale);
                     // Side-projected rock normal: tangent (u, v) → world (u along the face's
                     // horizontal axis, mirrored by ts_sgn; v up). Applied at <normal_fragment_begin>.
-                    vec2 ts_nrs = texture2D(uSurfNrmR, ts_ps).xy * 2.0 - 1.0;
+                    vec2 ts_nrs = ts_nRs.xy * 2.0 - 1.0;
                     tsNrmSide = (ts_xf ? vec3(0.0, ts_nrs.y, ts_nrs.x * ts_sgn) : vec3(ts_nrs.x * ts_sgn, ts_nrs.y, 0.0))
                               * (ts_steep * ts_b.z * uSurfNormal * uDetailScale);
                     } else diffuseColor.rgb = mix(diffuseColor.rgb, uColRock, ts_rockW);   // textures off
@@ -1975,9 +1998,14 @@ export class TerrainSystem {
      * Zone priority (all blended/feathered — no hard lines, D-09):
      *   dirt → vegetation → granite rock  (vegetation = fertile↔meadow by relative elevation;
      *     rock driven by slope cliff band D-11 OR above-treeline altitude — FEAT-05)
-     *   → Engineered cutout (driven by blendW where delta<0, D-10)
-     *   → Dirt foundation  (driven by blendW where delta>0, D-07)
-     * Cut/fill zones are further feathered by blendW (from carve system, free side effect).
+     *   → Engineered carve zone (feathered by blendW from the carve system): shoulder dirt
+     *     (D-07 fill colour) ↔ broken rock (D-10 cutout colour) by excavation depth through a
+     *     fade CENTRED on the cut/fill crossover (roadCutRockFade). BUG-74: was the SIGN of
+     *     grade−raw, which flipped along the flat 3 m bench beside the asphalt wherever the raw
+     *     hill happened to cross the grade — a hard tan strip against the rock bench (case 25:
+     *     bench fill +2 → +0.4 m, rock 1 from the first vertex past 8 m; a 0.5 m scrape as a
+     *     full scree wall). The rock bench itself is wanted (owner: the ballast a road is built
+     *     on, like a railroad) — only its edge had to become a fade.
      * Cutout color is distinct from natural cliff/rock color (D-10).
      *
      * @param {THREE.BufferGeometry} geom      — geometry with position + normal attributes
@@ -1994,6 +2022,8 @@ export class TerrainSystem {
         // Cliff thresholds from params (D-11). Fall back to defaults if not in params.
         const cliffLo = this._params.roadCliffSlopeLo ?? 0.3
         const cliffHi = this._params.roadCliffSlopeHi ?? 0.6
+        // BUG-74: half-width (m of excavation) of the rock↔dirt fade centred on the cut/fill crossover.
+        const cutRockFade = this._params.roadCutRockFade ?? 2.0
 
         const nrmAttr = geom.attributes.normal
         const nVerts = N * N
@@ -2017,7 +2047,7 @@ export class TerrainSystem {
         // by slope + altitude (treeline); engineered cut/fill zones still override via carve.
         const p = this._params
         const _hx = (c) => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255]
-        const [DT_R, DT_G, DT_B] = _hx(p.terrainDirtColor   ?? 0x66543d) // dirt — the "general" mid
+        const [DT_R, DT_G, DT_B] = _hx(p.terrainDirtColor   ?? 0x7c6346) // dirt — the "general" mid
         const [GR_R, GR_G, GR_B] = _hx(p.terrainGrassColor  ?? 0x4c5e38) // FERTILE/forest green (flat bench)
         const [MD_R, MD_G, MD_B] = _hx(p.terrainMeadowColor ?? 0x5c7a30) // MEADOW green (local basins)
         // (granite — terrainRockColor — is painted by the SHADER by the share rock wins; see uColRock)
@@ -2054,18 +2084,21 @@ export class TerrainSystem {
                 cliffBlend = tC * tC * (3 - 2 * tC)
             }
 
-            // ── Road zone blend (cutout/dirt from carveData) ─────────────────
-            let carveZoneBlend = 0  // 0 = general terrain; 1 = fully in cutout or dirt zone
-            let isFill = false      // true = dirt foundation; false = engineered cutout
-
+            // ── Road zone blend (carveData) ──────────────────────────────────
+            // BUG-74: cut-ness is excavation DEPTH through a fade CENTRED on the cut/fill crossover
+            // — 0.5 where the grade meets the raw hill, full broken rock once the road sits
+            // cutRockFade m into it (the ballast bench the road is built on), shoulder dirt once it
+            // rides that far up on fill. Was a sign test (isFill = delta > 0), which painted a hard
+            // tan-vs-rock line wherever the raw hill crossed grade on the flat bench.
+            let carveZoneBlend = 0  // 0 = general terrain; 1 = fully in the carve zone
+            let cutness = 0         // 0 = shoulder dirt; 1 = broken-rock ballast / cut face
             if (carveData) {
                 const blendW = carveData[i * 2]
                 if (blendW > 1e-6) {
                     const gradeY = carveData[i * 2 + 1] * amp
-                    const rawH   = heights[i] * amp
-                    const delta  = gradeY - rawH  // positive = fill, negative = cut
-                    isFill = delta > 0
+                    const delta  = gradeY - heights[i] * amp   // positive = fill, negative = cut
                     carveZoneBlend = blendW
+                    cutness = smooth(-cutRockFade, cutRockFade, -delta)
                 }
             }
 
@@ -2108,17 +2141,17 @@ export class TerrainSystem {
 
             // Step 2: blend road zone on top (feathered by blendW — free from carve system)
             if (carveZoneBlend > 1e-6) {
-                const zr = isFill ? DF_R : CO_R
-                const zg = isFill ? DF_G : CO_G
-                const zb = isFill ? DF_B : CO_B
+                // Shoulder dirt (fill colour) → cutout colour by cut-ness; the shader paints the
+                // rock share on top, so a wall's toe is dirt with fragments thickening up the face.
+                const zr = DF_R + (CO_R - DF_R) * cutness
+                const zg = DF_G + (CO_G - DF_G) * cutness
+                const zb = DF_B + (CO_B - DF_B) * cutness
                 r = r + (zr - r) * carveZoneBlend
                 g = g + (zg - g) * carveZoneBlend
                 b = b + (zb - b) * carveZoneBlend
-                // An engineered fill embankment is dirt; a cut face is broken rock.
-                const zRock = isFill ? 0 : 1, zDirt = isFill ? 1 : 0
-                sRock  += (zRock - sRock)  * carveZoneBlend
-                sDirt  += (zDirt - sDirt)  * carveZoneBlend
-                sGrass += (0     - sGrass) * carveZoneBlend
+                sRock  += (cutness       - sRock)  * carveZoneBlend
+                sDirt  += ((1 - cutness) - sDirt)  * carveZoneBlend
+                sGrass += (0             - sGrass) * carveZoneBlend
             }
 
             colorArr[idx3    ] = r
@@ -2145,8 +2178,8 @@ export class TerrainSystem {
         const hx = (c) => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255]
         const grass = hx(p.terrainGrassColor ?? 0x426917)
         U.uColGrass.value.setRGB(...grass)
-        U.uColDirt.value.setRGB(...hx(p.terrainDirtColor ?? 0x69481b))
-        U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x5a5b5e))
+        U.uColDirt.value.setRGB(...hx(p.terrainDirtColor ?? 0x7c6346))
+        U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x59544f))
         U.uSurfAlbW.value.set(p.terrainTexAlbedoGrass ?? 0, p.terrainTexAlbedoDirt ?? 0, p.terrainTexAlbedoRock ?? 0.55)
         U.uUnderRockGreen.value  = p.terrainUnderRockGreen  ?? 0.8
         U.uBiomeDither.value.set(p.terrainBiomeDither ?? 0.5, p.terrainBiomeDitherFreq ?? 0.3)
@@ -2170,11 +2203,11 @@ export class TerrainSystem {
 
     _surfTexKey() {
         const p = this._params
-        return `${p.terrainDirtColor ?? 0x69481b}/${p.terrainRockColor ?? 0x5a5b5e}`
+        return `${p.terrainDirtColor ?? 0x7c6346}/${p.terrainRockColor ?? 0x59544f}`
     }
     _bakeSurfaceTextures() {
         const p = this._params
-        const t = makeSurfaceTextures(8401, 256, { dirt: p.terrainDirtColor ?? 0x69481b, rock: p.terrainRockColor ?? 0x5a5b5e })
+        const t = makeSurfaceTextures(8401, 256, { dirt: p.terrainDirtColor ?? 0x7c6346, rock: p.terrainRockColor ?? 0x59544f })
         t.key = this._surfTexKey()
         return t
     }
@@ -2187,16 +2220,22 @@ export class TerrainSystem {
      * seed + coords like every other scatter sampler. Meadow-vs-fertile is not split here.
      */
     groundAt(wx, wz) {
-        const p = this._params
         const n = this.analyticNormal(wx, wz)
         const slope = 1 - Math.max(0, Math.min(1, n.y))
         const h = this.analyticHeight(wx, wz)
+        const g = this.groundClassify(slope, h)
+        // h + slope ride along so the scatter's litter passes never re-sample ground they hold.
+        return { green: g.green, rock: g.rock, h, slope }
+    }
+    /** The green/rock rule alone, on a (slope, height) the caller already holds (PERF-34: the
+     *  litter's ground grid takes its slope from its own height grid instead of analyticNormal). */
+    groundClassify(slope, h) {
+        const p = this._params
         const treeLo = p.terrainTreelineLo ?? 60, treeHi = p.terrainTreelineHi ?? 105
         const green = vegBlendOf(slope, h, p.terrainGrassSlopeMax ?? 0.16, treeLo, treeHi)
         const sm = (e0, e1, x) => { if (x <= e0) return 0; if (x >= e1) return 1; const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t) }
         const rock = Math.max(sm(p.roadCliffSlopeLo ?? 0.3, p.roadCliffSlopeHi ?? 0.6, slope), sm(treeLo, treeHi, h))
-        // h + slope ride along so the scatter's litter passes never re-sample ground they hold.
-        return { green, rock, h, slope }
+        return { green, rock }
     }
     /**
      * PERF-03 (Workstream B): write per-vertex normals from central differences over the carved

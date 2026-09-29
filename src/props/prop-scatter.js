@@ -222,13 +222,23 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
     // approximate exposed half-height from the variant's nominal radius * axis-y
     const halfH = cfg.blob.radius[1] * cfg.blob.axisScale[1] * scale
     const gy = heightAt(x, z)          // analyticHeight → includes the stream carve, so channel rocks sit on the bed
-    out.push({
+    const pl = {
       cat, variant, x, z,
       y: gy + halfH * (0.5 - bury),     // bury 0.5 → centre at ground; →1 sinks it
       gy,                               // PERF-14: ground Y captured here so commit never re-samples
       scale, rotY: rngArg() * Math.PI * 2,
       tint: tintFor(rngArg, cfg.color, cfg.colorJitter),
-    })
+    }
+    // Owner 2026-09-28: rocks TUMBLE — a random lean (tilt about a random horizontal axis, then
+    // the yaw; the blob is centred at its origin so it stays bedded) instead of every rock sitting
+    // upright on a hillside like it was set down. Boulders keep yaw only: their mesh collider
+    // (sphereVsMeshInstance) is yaw-only, and it must match what is drawn. Drawn AFTER the
+    // record's own rng draws so every earlier placement decision is unchanged.
+    if ((cat === 'rock' || cat === 'medRock' || cat === 'smallRock') && S.rockTiltMax > 0) {
+      pl.tilt = rngArg() * S.rockTiltMax
+      pl.tiltAz = rngArg() * Math.PI * 2
+    }
+    out.push(pl)
   }
 
   // ── tree clusters (grouping) ──────────────────────────────────────────────────────────
@@ -423,10 +433,28 @@ function* litterPasses(out, cx, cz, worldSeed, samplers, P, h) {
   const groundAt = !samplers.groundAt ? null : (x, z) => {
     if (!gridG) {
       gridG = new Float32Array(GN * GN * 4)
-      for (let gz = 0; gz < GN; gz++) for (let gx = 0; gx < GN; gx++) {
-        const g = samplers.groundAt(ox + gx * GC, oz + gz * GC)
-        const i = (gz * GN + gx) * 4
-        gridG[i] = g.green; gridG[i + 1] = g.rock; gridG[i + 2] = g.slope ?? NaN; gridG[i + 3] = 0
+      if (samplers.groundClassify && samplers.heightAt) {
+        // PERF-34: ONE carved-height query per node (+ a one-node apron) and the slope from
+        // central differences over this grid, then the terrain's own green/rock rule on
+        // (slope, h). groundAt per node was five queries (analyticNormal's four + the height):
+        // 1,445 per chunk against the full road network — the bulk of the 55 ms a chunk's
+        // scatter cost in play at 200 mph. 361 queries now.
+        const AN = GN + 2, H = new Float32Array(AN * AN)
+        for (let az = 0; az < AN; az++) for (let ax = 0; ax < AN; ax++) H[az * AN + ax] = samplers.heightAt(ox + (ax - 1) * GC, oz + (az - 1) * GC)
+        for (let gz = 0; gz < GN; gz++) for (let gx = 0; gx < GN; gx++) {
+          const a = (gz + 1) * AN + (gx + 1)
+          const dhx = (H[a + 1] - H[a - 1]) / (2 * GC), dhz = (H[a + AN] - H[a - AN]) / (2 * GC)
+          const slope = 1 - 1 / Math.sqrt(1 + dhx * dhx + dhz * dhz)     // 1 − n.y of normalize(−dh/dx, 1, −dh/dz)
+          const g = samplers.groundClassify(slope, H[a])
+          const i = (gz * GN + gx) * 4
+          gridG[i] = g.green; gridG[i + 1] = g.rock; gridG[i + 2] = slope; gridG[i + 3] = 0
+        }
+      } else {
+        for (let gz = 0; gz < GN; gz++) for (let gx = 0; gx < GN; gx++) {
+          const g = samplers.groundAt(ox + gx * GC, oz + gz * GC)
+          const i = (gz * GN + gx) * 4
+          gridG[i] = g.green; gridG[i + 1] = g.rock; gridG[i + 2] = g.slope ?? NaN; gridG[i + 3] = 0
+        }
       }
     }
     const fx = Math.min(GN - 1.0001, Math.max(0, (x - ox) / GC)), fz = Math.min(GN - 1.0001, Math.max(0, (z - oz) / GC))
@@ -504,7 +532,13 @@ export function* scatterLitterGen(cx, cz, worldSeed, samplers, params = FLORA_PA
     const bury = frange(rngArg, buryRange)
     const halfH = cfg.blob.radius[1] * cfg.blob.axisScale[1] * scale
     const gy = heightAt(x, z)
-    out.push({ cat, variant, x, z, y: gy + halfH * (0.5 - bury), gy, scale, rotY: rngArg() * Math.PI * 2, tint: tintFor(rngArg, cfg.color, cfg.colorJitter) })
+    const pl = { cat, variant, x, z, y: gy + halfH * (0.5 - bury), gy, scale, rotY: rngArg() * Math.PI * 2, tint: tintFor(rngArg, cfg.color, cfg.colorJitter) }
+    // Rock tumble — SAME draws, same order as scatterChunk's placeBlob (deferred == inline gate).
+    if ((cat === 'rock' || cat === 'medRock' || cat === 'smallRock') && S.rockTiltMax > 0) {
+      pl.tilt = rngArg() * S.rockTiltMax
+      pl.tiltAz = rngArg() * Math.PI * 2
+    }
+    out.push(pl)
   }
   yield* litterPasses(out, cx, cz, worldSeed, samplers, P, { roadClear, inPondWater, inStreamChannel, slopeAt, placeBlob, blobBoundR })
   return out

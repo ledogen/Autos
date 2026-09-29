@@ -786,6 +786,12 @@ export const RANGER_PARAMS = {
   // At slope=0.6 (~54° from vertical) terrain reads fully as weathered cliff rock.
   roadCliffSlopeHi: 0.6,       // [-] slope upper threshold for full cliff color (D-11 / A10)
 
+  // BUG-74 (cut): inside a road's carve zone, rock (the ballast bench + cut face) is keyed on
+  // excavation depth through a fade CENTRED on the cut/fill crossover — half rock where the
+  // grade meets the raw hill, full rock this many metres into it, shoulder dirt this many metres
+  // up on fill. Replaces the sign test that drew a hard tan-vs-rock line along the flat bench.
+  roadCutRockFade: 2.0,        // m — half-width of the rock↔dirt fade, in metres of cut/fill depth
+
   // ── Phase 9 Plan 06 — Pothole / Crack Micro-Noise (SURF-06 / D-03) ──────────
   // potholeEnabled: master toggle. When false, potholeNoise always returns 0 and the
   // road surface is perfectly smooth (crown + camber only). Allows A/B comparison.
@@ -905,10 +911,10 @@ export const RANGER_PARAMS = {
   // ARE the linear vertex-colour values, NOT sRGB, so a colour picker round-trips exactly).
   // Tuned for high-altitude Eastern Sierra / Lone Pine: granite-grey rock, decomposed-granite
   // soil, muted sage-meadow green. Replaces the old desert warm-brown palette.
-  terrainRockColor:  0x5a5b5e, // granite grey (owner 2026-09-25) — steep faces AND high (above-treeline) terrain. Was 0x72604b, a
+  terrainRockColor:  0x59544f, // warm granite grey (owner 2026-09-28; was 0x5a5b5e) — steep faces AND high (above-treeline) terrain. Was 0x72604b, a
                                // warm BROWN despite this comment: the source of "brown dirt turning into brown
                                // rocks" (owner 2026-09-25) once the shader painted rock by the share it wins.
-  terrainDirtColor:  0x69481b, // alpine soil/decomposed-granite — moderate slopes (the "general" mid)
+  terrainDirtColor:  0x7c6346, // alpine soil/decomposed-granite — moderate slopes (the "general" mid); owner 2026-09-28 (was 0x69481b)
   terrainGrassColor: 0x426917, // muted sage — FERTILE/forest flats (above the basin floors; trees go here)
   terrainMeadowColor: 0x1c270c, // lush green — MEADOW basins (local lows where water collects)
   terrainCutoutColor: 0x757066,
@@ -960,8 +966,15 @@ export const RANGER_PARAMS = {
   terrainTexAlbedoRock:  0.55,
   // Rock coverage curve: a vertex with rock share s shows rock on s^γ of the tile, tallest
   // fragments first (owner 2026-09-25: "taper the sparsity, not the strength"). 1 = linear.
-  terrainRockSparsity:  2.0,   // γ — 1 = linear; higher = sparser at the soft end
-  terrainDirtRockFloor: 0.03,  // fraction of the tile the ROCK MAP may cover on pure dirt (a basin's rim); grass gets none
+  // 2026-09-28: the shader now ranks texels by a TRUE quantile (terrain-texture.js _rankOf), so
+  // s^γ is the fraction of the tile it says. With the old min–max height the effective curve was a
+  // cliff (0.4 % at s 0.5, 13 % at 0.7, 60 % at 0.8); γ 6 reproduces the approved look
+  // (1.6 / 12 / 26 %) without the cliff, and makes the floor and pebble dials below mean something.
+  terrainRockSparsity:  6.0,   // γ — 1 = linear; higher = sparser at the soft end
+  terrainDirtRockFloor: 0.03,  // fraction of the tile the ROCK MAP may cover on pure dirt (a basin's rim); grass gets none.
+                               // Owner 2026-09-28: dirt always has a few plates poking through, in patches (the shader
+                               // modulates this floor by the biome-dither field, 0–2×); the rock share amplifies from
+                               // there via s^γ. Now an honest 3 %; the grey pebbles below carry most of the baseline.
   // A pebble is a rock and rocks are grey (owner 2026-09-25): this share of the dirt map's own
   // pebbles (tallest first) takes the rock colour on pure dirt; all of them by rock share ~1/3.
   terrainDirtPebbleGrey: 0.35,

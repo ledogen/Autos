@@ -164,3 +164,14 @@ the dry scatter. Sliders under Roadside cover.
 - Cover instances stay resident (vertex stage) out to the far ring; only fragments are culled by
   the fade. If the vertex cost shows on Low-class hardware, gate cover to the near ring.
 - No collision (drive through), no baked shadow.
+
+## Owner pass 9 (2026-09-28) — rocks tumble
+
+"put some random rotation on prop rocks they really stick out on the side of hills" (seed
+4005740076 (37, 13): every rock upright on a 1:1 cut face). `rock` / `medRock` / `smallRock`
+placements now carry the existing `tilt` / `tiltAz` lean (random axis, up to `rockTiltMax` 1.0 rad,
+slider "rock tumble max (rad)"), applied after the yaw so the set spans every orientation; the
+blob is centred at its origin so a lean keeps it bedded. Boulders stay yaw-only — their mesh
+collider (`sphereVsMeshInstance`) is yaw-only and must match what is drawn. Both `placeBlob`
+copies (scatterChunk + scatterLitterGen) draw the same two rng values AFTER the record's own
+draws, so every earlier placement decision is unchanged and the deferred-litter gate holds.

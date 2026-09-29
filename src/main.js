@@ -224,7 +224,10 @@ function rebuildWaterSystem () {
   })
 }
 const _bushDragF = { x: 0, y: 0, z: 0 }   // FEAT-06b: reused bush soft-drag accumulator (no per-substep alloc)
-const makePropSamplers = () => ({
+// PERF-34: every sampler is timed into a perf bucket (sampler.<name>) so the hitch report can say
+// WHICH ground query a scatter spends its frame in. perfAdd is two Map writes; ~2k calls per chunk.
+const _timed = (name, fn) => (a, b, c) => { const t = performance.now(); const r = fn(a, b, c); perfAdd('sampler.' + name, performance.now() - t); return r }
+const makePropSamplers = () => Object.fromEntries(Object.entries({
   heightAt:    (x, z) => terrainSystem.analyticHeight(x, z),
   normalAt:    (x, z) => terrainSystem.analyticNormal(x, z),
   // FEAT-46: a POI lay-by pad counts as road here. It is graded ground with a marker on it, and a
@@ -257,8 +260,9 @@ const makePropSamplers = () => ({
   // junction aprons and lay-by pads (graded ground, not verge).
   roadWalk:    (cx, cz, stepM) => roadSystem.walkTileRoads(cx, cz, stepM),
   groundAt:    (x, z) => terrainSystem.groundAt(x, z),
+  groundClassify: (slope, h) => terrainSystem.groundClassify(slope, h),   // PERF-34: the litter grid's own slope
   padBlocked:  (x, z, keepOut) => roadSystem.poiPadBlocked(x, z, keepOut) || roadSystem.junctionPadBlocked(x, z, keepOut),
-})
+}).map(([k, fn]) => [k, k === 'sunShear' ? fn : _timed(k, fn)]))
 const _sunShearScratch = new THREE.Vector2()
 
 // ── BUG-71: prop road-intrusion sweeps — trigger and budget are two different problems ──────────
@@ -658,7 +662,7 @@ async function _rebuildFullNow () {
       if (roadMeshSystem) roadMeshSystem.clearAll()
       roadMeshSystem = new RoadMeshSystem(
         scene, roadSystem,
-        (x, z) => terrainSystem.analyticHeight(x, z),
+        (x, z) => terrainSystem.rawHeightWorld(x, z),  // CR-04 / BUG-74: raw, like the boot-time construction below
         RANGER_PARAMS,
         worldSeed  // D-03: roadQuality determinism
       )

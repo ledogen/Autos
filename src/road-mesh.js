@@ -98,7 +98,8 @@ export class RoadMeshSystem {
     /**
      * @param {THREE.Scene}     scene      — Three.js scene to add/remove road meshes
      * @param {object}          roadSystem — RoadSystem instance (provides _tiles, ensureTile, runProfile)
-     * @param {Function}        terrainRef — (wx,wz)=>number  analytic height sampler
+     * @param {Function}        terrainRef — (wx,wz)=>number  RAW (carve-free) terrain height sampler
+     *                                        (CR-04; BUG-74 reads it for the skirt's cut fade)
      * @param {object}          params     — RANGER_PARAMS (roadWidth, roadHalfWidth, crownHeight, camberMaxAngleDeg, ...)
      * @param {number}          [worldSeed=0] — world seed for roadQuality determinism (D-03)
      */
@@ -335,6 +336,23 @@ export class RoadMeshSystem {
         const dirtR = ((dirtHex >> 16) & 0xff) / 255
         const dirtG = ((dirtHex >>  8) & 0xff) / 255
         const dirtB =  (dirtHex        & 0xff) / 255
+        // BUG-74: the skirt follows the terrain's cut fade — where the road sits IN the hill the
+        // 0.15 m face under the asphalt edge is the same broken rock as the ballast bench beside it
+        // (terrainCutoutColor), not a tan dirt line against it. Same centred depth fade as
+        // terrain.js _writeChunkVertexColors: delta = dirt grade − raw hill, cutness = smooth(−F, F, −delta).
+        const cutHex = params.terrainCutoutColor ?? 0x757066
+        const cutR = ((cutHex >> 16) & 0xff) / 255
+        const cutG = ((cutHex >>  8) & 0xff) / 255
+        const cutB =  (cutHex        & 0xff) / 255
+        const cutFade  = params.roadCutRockFade ?? 2.0
+        const clearanceMargin = params.roadClearanceMargin ?? 0.25
+        const skirtCutness = (edgeX, edgeY, edgeZ) => {
+            const raw = this._terrainRef ? this._terrainRef(edgeX, edgeZ) : NaN
+            if (!Number.isFinite(raw)) return 0                        // headless stub → plain dirt skirt
+            const delta = (edgeY - clearanceMargin) - raw              // + fill, − cut
+            const t = Math.max(0, Math.min(1, (-delta + cutFade) / (2 * cutFade)))
+            return t * t * (3 - 2 * t)
+        }
 
         // 09-32 SEAM FIX: map section index → run-arc by the polyline's CUMULATIVE XZ arc-length,
         // not uniform u. `points[]` come from spline.getPointAt(u), which is parameterised by 3D
@@ -483,9 +501,11 @@ export class RoadMeshSystem {
             positions[leftSkirtBase    ] = leftEdgeVx
             positions[leftSkirtBase + 1] = leftEdgeVy - skirtDepth
             positions[leftSkirtBase + 2] = leftEdgeVz
-            colors[leftSkirtBase    ] = dirtR
-            colors[leftSkirtBase + 1] = dirtG
-            colors[leftSkirtBase + 2] = dirtB
+            // BUG-74: dirt → cutout rock by the cut fade at this edge (see skirtCutness above).
+            const cutL = skirtCutness(leftEdgeVx, leftEdgeVy, leftEdgeVz)
+            colors[leftSkirtBase    ] = dirtR + (cutR - dirtR) * cutL
+            colors[leftSkirtBase + 1] = dirtG + (cutG - dirtG) * cutL
+            colors[leftSkirtBase + 2] = dirtB + (cutB - dirtB) * cutL
             // BUG-28: markEnable=0 — the dirt skirt is the vertical shoulder wall; no stripes.
             marks[(i * vertsPerSection + (CROSS_SEGS + 1)) * 4 + 3] = 0
 
@@ -493,9 +513,10 @@ export class RoadMeshSystem {
             positions[rightSkirtBase    ] = rightEdgeVx
             positions[rightSkirtBase + 1] = rightEdgeVy - skirtDepth
             positions[rightSkirtBase + 2] = rightEdgeVz
-            colors[rightSkirtBase    ] = dirtR
-            colors[rightSkirtBase + 1] = dirtG
-            colors[rightSkirtBase + 2] = dirtB
+            const cutRt = skirtCutness(rightEdgeVx, rightEdgeVy, rightEdgeVz)
+            colors[rightSkirtBase    ] = dirtR + (cutR - dirtR) * cutRt
+            colors[rightSkirtBase + 1] = dirtG + (cutG - dirtG) * cutRt
+            colors[rightSkirtBase + 2] = dirtB + (cutB - dirtB) * cutRt
             marks[(i * vertsPerSection + (CROSS_SEGS + 2)) * 4 + 3] = 0
         }
 

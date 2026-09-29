@@ -64,10 +64,20 @@ console.log('textures')
   const t = makeSurfaceTextures(8401, SIZE)
   for (const z of ['grass', 'dirt', 'rock']) {
     const n = t[z].normalMap.image.data
-    let zMin = 255, xSum = 0, ySum = 0
-    for (let i = 0; i < n.length; i += 4) { zMin = Math.min(zMin, n[i + 2]); xSum += n[i]; ySum += n[i + 1] }
-    const cnt = n.length / 4
-    ok(zMin >= 127, `${z}: normal z ≥ 0.5 everywhere (min byte ${zMin})`)
+    // Pass 16 (2026-09-28): .b is the height RANK (a uniform quantile the shader's coverage rules
+    // read — terrain-texture.js _rankOf), not nz. Pin that: it spans the byte range and the top
+    // fifth of the range holds a fifth of the texels (min–max height failed this by ~10×).
+    // Dirt's .b is the per-PEBBLE rank instead: 0 on the soil (~half the tile), (0.05, 1] on the
+    // pebbles by area — so the top fifth of the range holds a fifth of the PEBBLE texels.
+    let bMin = 255, bMax = 0, bTop = 0, bZero = 0, xSum = 0, ySum = 0
+    for (let i = 0; i < n.length; i += 4) { const b = n[i + 2]; if (b < bMin) bMin = b; if (b > bMax) bMax = b; if (b >= 204) bTop++; if (b === 0) bZero++; xSum += n[i]; ySum += n[i + 1] }
+    const cnt = n.length / 4, topFrac = bTop / cnt, zeroFrac = bZero / cnt
+    if (z === 'dirt') {
+      ok(bMin === 0 && bMax === 255 && zeroFrac > 0.4 && zeroFrac < 0.6 && Math.abs(topFrac - 0.2 * (1 - zeroFrac)) < 0.03,
+        `dirt: normal .b is the per-pebble rank (soil 0 on ${(zeroFrac * 100).toFixed(0)}%, top fifth holds ${(topFrac * 100).toFixed(1)}% ≈ a fifth of the pebbles)`)
+    } else {
+      ok(bMin === 0 && bMax === 255 && Math.abs(topFrac - 0.2) < 0.02, `${z}: normal .b is a uniform height rank (spans ${bMin}–${bMax}, top fifth holds ${(topFrac * 100).toFixed(1)}% of texels)`)
+    }
     ok(Math.abs(xSum / cnt - 127.5) < 6 && Math.abs(ySum / cnt - 127.5) < 6, `${z}: normal xy centred (${(xSum / cnt).toFixed(1)}, ${(ySum / cnt).toFixed(1)})`)
     ok(t[z].map.image.width === SIZE && t[z].normalMap.wrapS === t[z].map.wrapS, `${z}: DataTexture pair built with matching wrap`)
   }

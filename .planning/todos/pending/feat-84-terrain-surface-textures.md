@@ -205,3 +205,44 @@ blend "at their interfaces" rather than crossfade.
 - The road-mesh dirt skirt (the vertical shoulder wall in `road-mesh.js`) keeps its fbm gravel
   bump only; it is a near-vertical strip and a planar XZ texture would smear on it.
 - Meadow vs fertile green share one grass map.
+
+## Owner pass 16 (2026-09-28) — dirt 0x7c6346, rock 0x59544f, "a small baseline of rocks poking through"
+
+Owner: "dirt texture to include a small baseline amount of rocks poking through … a small baseline
+level of rock texture noise that is then strongly amplified by the rock biome input" (reference:
+seed 871429083 (107, 26), natural share ≈ 0.5 by altitude).
+
+That mechanism already existed twice (`uDirtRockFloor` + `s^γ`; `uDirtPebbleGrey`) and BOTH dials
+were dead. Measured (scratchpad `rock-cdf.mjs` / `rock-curve.mjs`): the coverage rules treat
+`1 − height` as a quantile, but `_normalise` is min–max — only 1.8 % of rock texels exceed 0.5 and
+0.3 % exceed 0.73. So "cov 0.27" admitted ~0.3 % of texels, the effective curve was a cliff (0.4 %
+at s 0.5 → 13 % at 0.7 → 60 % at 0.8 — the "abrupt" rock front in every pass), and floor 0.03 vs
+0.30 rendered identically (a first A/B was void: `_syncSurfacePalette` re-reads params per chunk,
+so poke `_params` and call it, never the uniform). Pebbles the same: "35 % of the pebbles grey" was
+0.1 % of the tile; the chips in the owner's reference are the rule saturating to "all" at s ≥ ⅓.
+
+Fix at the root: `_rankOf(H)` (a true quantile) is baked into each normal map's unused .b; the
+shader ranks rock coverage by it and turns the dirt rank into a rank-within-the-pebbles via
+`uDirtPebbleFrac` (from the bake). Relief, joints and the height contest keep the absolute height
+— the ruled-done relief recipe is untouched. Defaults: γ 2 → 6 (reproduces the approved curve,
+1.6 / 12 / 26 % at s 0.5 / 0.7 / 0.8, without the cliff); floor 0.03 now an honest 3 %, in patches
+(× (1 + 2·dither)); pebbles 0.35 honest ≈ 8 % of the tile as grey chips = the baseline. Gate
+`terrain-texture` re-pinned: .b is a uniform quantile. Shots: scratchpad `shots/rank-before|after`
+(03 dirt, 09 dirt→rock, 10 treeline, 22): chips appear on dirt, rock faces and treeline unchanged,
+the 09 front is gradual. Both dials now do what their labels say — owner to tune.
+
+### Pass 16 addendum — "they're brown … even with dirt pebbles grey maxed"
+
+Owner: the baseline pebbles read brown, not grey. Two findings, both proven with in-page shots
+(scratchpad `shots/redA|redB|neutral`, rock colour forced red / neutral):
+1. Per-TEXEL rank left every pebble's lower half and every small pebble classed as a clod (brown,
+   relief kept, no slider reached it). The dirt bake now ranks WHOLE pebbles by peak height,
+   weighted by area (`rank` from `dirtFields`, soil = 0, pebble (0.05, 1]); the shader reads it
+   straight (`ts_pr = ts_nD.b`; `uDirtPebbleFrac` gone). Red test: exactly the 35 % share, whole
+   pebbles, and B=255 floods the tile → the rule is right.
+2. With the rule right they STILL read brown: `terrainRockColor` 0x59544f (owner's pick) is a
+   WARM grey (r > g > b, linear); a small warm chip on sunlit tan reads brown, while the prop rocks
+   are neutral (0xb7b6b4 / 0xa3a09b / 0x8a8782 sRGB). Grey pebbles now also take the rock map's
+   albedo flecks (`ts_pebW` in `ts_alb`) — helps little. A neutral grey of the same lightness
+   (0x555555) reads grey at once. DECISION FOR THE OWNER: cool the rock picker (faces + pebbles,
+   one colour per the "a pebble is a rock" ruling) or give pebbles the small-rock prop grey.

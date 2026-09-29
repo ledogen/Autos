@@ -33,7 +33,7 @@ import { sphereVsSphere, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from 
 import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
 import { PropImpostors } from './prop-impostor.js'                     // PERF-21: distant-prop billboards
 import { FLORA_PARAMS } from '../../data/flora.js'
-import { perfEvent } from '../perf.js'   // PERF-26: streaming-event tags (zero-dep module; no-op unless ?hitch)
+import { perfEvent, perfAdd } from '../perf.js'   // PERF-26: streaming-event tags + timed buckets (zero-dep module; no-op unless ?hitch)
 
 // Per-category global instance capacity (split evenly across that category's variants). Sized for
 // the ring-4 (Ultra, 81-chunk) worst case; pure typed-array memory (64 B/instance), cheap.
@@ -408,18 +408,39 @@ export class PropSystem {
     // PERF-26: the ONE unbudgeted scatter path. Fires when driving outruns the 3 ms/frame drip and
     // the truck's 3×3 collision chunks must exist this frame — i.e. exactly on a slow machine.
     perfEvent('props.hardScatter')
+    const _t0 = performance.now()
+    // PERF-34 (2026-09-29): the hard path scatters the BASE passes only — trees, collidable rocks,
+    // boulders, bushes, logs: what the 3×3 exists for — and queues the litter (cover + zone
+    // rocks, FEAT-84/85) at the FRONT of the drip, exactly like a bbonly→near promotion. Measured
+    // at 200 mph (test/hitch-report.mjs --truck --speed=89): the full scatter was 55–60 ms per
+    // chunk in the page (its litter alone makes ~1,450 carved-height queries), 2–3 chunks per
+    // crossing → 120–180 ms frames, 47 hitches / 40 s; main's base-only cost is ~7 ms. The
+    // cover and pebbles then land a few frames after the ground, which nobody at 89 m/s can see.
     let placements
-    if (this._activeScatter && this._activeScatter.ck === ck && !this._activeScatter.litter) {
-      const gen = this._activeScatter.gen
+    if (this._activeScatter && this._activeScatter.ck === ck && !this._activeScatter.litter && !this._activeScatter.withLitter) {
+      const gen = this._activeScatter.gen          // a base-only job already in flight: finish it
       let r; do { r = gen.next() } while (!r.done)
       placements = r.value
       this._activeScatter = null
       this._scatterSet.delete(ck)
     } else {
+      if (this._activeScatter && this._activeScatter.ck === ck && !this._activeScatter.litter) {
+        this._activeScatter = null                 // a full job in flight: drop it, its litter re-queues below
+        this._scatterSet.delete(ck)
+      }
       this._dequeueScatter(ck)
-      placements = scatterChunk(cx, cz, this._seed, this._samplers, this._params)
+      const gen = scatterChunkGen(cx, cz, this._seed, this._samplers, this._params, { litter: false })
+      let r; do { r = gen.next() } while (!r.done)
+      placements = r.value
     }
-    this._commitChunk(ck, placements)
+    const _t1 = performance.now()
+    perfAdd('props.hard.scatter', _t1 - _t0)
+    this._commitChunk(ck, placements, false)
+    if (!this._scatterSet.has(ck + '#L')) {
+      this._scatterQueue.unshift({ ck, cx, cz, d2: 0, litter: true })
+      this._scatterSet.add(ck + '#L')
+    }
+    perfAdd('props.hard.commit', performance.now() - _t1)
   }
 
   _dequeueScatter(ck) {
@@ -515,9 +536,11 @@ export class PropSystem {
 
   _commitChunk(ck, placements, withLitter = true) {
     perfEvent('props.chunk')   // PERF-26: commit point — instance slots fill + shadow tile marks dirty
+    const _c0 = performance.now()
     const places = []
     const collidables = []
     this._buildPlaces(placements, places, collidables)
+    const _c1 = performance.now(); perfAdd('props.commit.build', _c1 - _c0)
     const comma = ck.indexOf(',')
     const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
     // litter: false ⇒ scattered without the cover + zone-rock passes (bbonly ring); a promotion
@@ -525,10 +548,12 @@ export class PropSystem {
     const chunk = { places, owned: [], mode: this._chunkMode(cx, cz), litter: withLitter }
     this._chunks.set(ck, chunk)
     this._placeChunk(chunk, chunk.mode)
+    const _c2 = performance.now(); perfAdd('props.commit.place', _c2 - _c1)
     if (collidables.length) {
       this._collidables.set(ck, collidables); this._gridDirty = true
       this._physicsHook?.syncChunk(ck, collidables)   // FEAT-48: rigid engine colliders for the chassis/debris
     }
+    perfAdd('props.commit.collide', performance.now() - _c2)
 
     // PERF-07: this chunk's props changed → (re)bake its shadow tile and its neighbours' (silhouettes
     // cross chunk seams). The bake system slices the work; a no-op when realtime casting / headless.

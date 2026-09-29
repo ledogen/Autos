@@ -90,6 +90,55 @@ dither commit. OPEN — next attempt should be a different idea, not another rul
 weight; the owner's own suggestions were "blur it or fade it" and "use the height wiring to bring
 the rocks below the dirt" (i.e. make the transition happen in the height contest, not in colour).
 
+## 2026-09-28 (later) — the CUT "gravel seam": the bench was classified by a sign test
+
+Owner: fix the "gravel seams under roads at earthwork cut sections". Probed (headless
+`_sampleCarveWorld` across the section; scratchpad `probe-cut.mjs`), three spots:
+
+| spot | cut-side bench (5–8 m) | sign flip | wall |
+|---|---|---|---|
+| seed 6 (427,−82) case 22 | cut −1.3…−3.5 m | at 4.2 m, UNDER the asphalt | 3.5 m rise |
+| seed 6 (−40,192) case 25 | FILL +2.1…+0.4 m | at 8.0 m — exactly the core edge | 2.8 m rise |
+| seed 1666428418 (−1391,−536) | FILL +0.7…+0.1 m | at 9 m in the ramp | a 0.5 m scrape |
+
+The carve holds a flat 3 m bench at road grade beside the asphalt (`carveHalfWidth` 8 vs ribbon
+5). `_writeChunkVertexColors` classified every carve-zone vertex by `isFill = grade − raw > 0`,
+so on that flat bench the tan-vs-rock decision was whether the raw hill happened to sit a few cm
+above or below grade: case 25 = a tan bench with a hard line to a rock-1 wall at 8 m; case 22 = a
+≤1 m tan interpolation strip (+ the tan road-mesh skirt) against a rock bench; the scrape = a full
+scree wall for 0.5 m of excavation. That strip is a classification artefact, not the ground.
+
+First cut keyed rock on the carved bank's STEEPNESS (bench = dirt both sides, wall → rock).
+It removed the strip but also the rock bench — owner: "I kinda liked how there was gravel fill
+that the road was built on top of, kinda like railroads … bring back the rock texture at cuts
+but do a better job of blending the edge." So, what shipped:
+
+**Fix (one driver replacing the sign test; `vSurf.w` stays unsigned, exemptions untouched):**
+cut-ness = `smooth(−F, F, −delta)` with `roadCutRockFade` F = 2 m (slider "Cut Rock Fade (m)",
+Road Surface) — half rock exactly where the grade meets the raw hill, full ballast once the road
+sits F into it, shoulder dirt once it rides F up on fill. The fade spans 2F of depth in every
+direction (across the section AND along the road at a crossover) and the biome dither rags the
+front. Vertex colour = fill → cutout by cut-ness; rock share = cut-ness. Differs from the reverted
+depth ramp (`45b768b`) in being CENTRED on the crossover (that one switched on AT the line) and in
+moving nothing else.
+
+**The strip itself was the shader, not the writer:** experiment (terrain material hidden → no
+strip; ribbons alone → none) proved it terrain. The local-colouring rule `ts_gain` (dirt winning
+texels over its vertex weight → pull toward `uColDirt`, a saturated orange-brown) was the ONE
+zone rule without `× (1 − vSurf.w)`; the mixed rock/dirt band of a cut (the 1 m interpolation band
+under the sign test, the whole fade now) went orange. Exempted like the others — one token.
+
+Also: the road mesh's 0.15 m skirt face takes the same fade (dirt → cutout by `delta` at the edge
+vertex, raw height via `_terrainRef`, which is now the RAW sampler at BOTH construction sites in
+main.js — the seed-rebuild one passed `analyticHeight`, unused until now). Invisible from the
+road (FrontSide), matches the bench from outside.
+
+Result (scratchpad `shots/before` → `after4`): case 22 grades straight from asphalt into the rock
+bench, no strip; case 25 keeps the ballast bench, ragged fade into the shoulder, no orange; the
+0.5 m scrape is a gravel spill fading along the road, not a scree wall; pass walls unchanged.
+**Class 1 (fill skirt toe vs natural rock ground, seed w) is NOT touched** — still open. Owner to
+judge in play.
+
 ## Acceptance
 
 - At the capture spot, driver's-eye and 30 m overhead: no continuous line between the skirt and
