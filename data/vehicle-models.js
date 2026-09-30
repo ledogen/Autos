@@ -69,6 +69,29 @@ export const VEHICLE_MODELS = {
     // loader plants box.min at car-local y = -cgHeight, which assumes the suspension is
     // fully extended; at rest it sags ~0.10 m and the truck visibly floats without this.
     shiftDown: -0.007,
+    // The OPEN-BED collider (physics.js createVehicleChassis `bed`): floor, walls, tailgate and
+    // wheelhouse boxes, in body-local metres (forward = -Z, origin at the CG). Every number is a
+    // named constant from ranger.py mapped through the loader's transform: the glTF export puts
+    // Blender +Z on model +Y and Blender -Y on model +Z, auto-scale is exactly 1.0, and the ground
+    // plant lands the model root at body-local y = -0.651. So body y = <ranger.py Z> - 0.651 and
+    // body z = -<ranger.py Y>; x is unchanged. RE-DERIVE after any re-export that moves the bed or
+    // what hangs lowest: read root.scale.x and root.position off the loaded GLB group. Both the
+    // world truck and the menu stage (src/stage.js) build from this, so cargo rides in the bed.
+    bed: {
+      floorY:          0.077,   // Z_BEDFLOOR 0.700 + RIB_H 0.028 — the rib CRESTS, which is what cargo
+                                // actually rests on (the pan between them is 0.049)
+      railY:           0.490,   // Z_RAIL 1.141 — bed rail top
+      wheelhouseY:     0.284,   // Z_WHEELHOUSE 0.935 — wheelhouse box top
+      innerHalfW:      0.700,   // W_BED_IN — inner wall
+      outerHalfW:      0.822,   // W_BED_OUT — bed side at the rail
+      wheelhouseHalfW: 0.545,   // W_WHEELHOUSE — inner wall over the rear arch
+      frontZ:          0.605,   // Y_BED_F -0.605 — front wall, 8 cm behind the cab (cab moved 105 mm
+                                // forward in the 2026-09-25 proportions pass; the bed front came with it)
+      tailZ:           2.4405,  // Y_BED_R -2.4405 — bed loft tail
+      gateZ:           2.5405,  // Y_TAILGATE -2.5405 — outer face of the closed tailgate
+      archZ0:          1.0975,  // AX_R 1.5675 ∓ ARCH_R 0.470 — the rear arch the wheelhouse covers
+      archZ1:          2.0375,
+    },
     ownWheels: false,
     paint: 'RangerPaint',
     tail: 'RangerTail',

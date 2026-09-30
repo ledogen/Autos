@@ -21,6 +21,14 @@ import * as THREE from 'three'
 import { GROUP_DEBRIS } from './physics-engine.js'
 import { getModel } from './model-service.js'
 
+// Scratch for beforeStep()/update() — no per-body allocation on the per-step path.
+const _cp = new THREE.Vector3(), _cq = new THREE.Quaternion(), _cqi = new THREE.Quaternion()
+const _p = new THREE.Vector3(), _q = new THREE.Quaternion()
+// How far outside the bed well a body still counts as cargo: a rock bouncing on the floor or
+// riding against a wall must not flicker in and out of the flag.
+const CARGO_MARGIN = 0.1     // m, round the floor, walls and tailgate
+const CARGO_ABOVE  = 0.6     // m above the rail — a rock on the way in, or heaped above it
+
 export const DEBRIS_TYPES = {
   // density kg/m³ of the SOLID hull (the engine integrates ρ over the hull volume) — these are
   // NOT material densities, they are whatever lands the real mass of a HOLLOW object on its solid
@@ -199,7 +207,10 @@ export class DebrisSystem {
     })
     this._scene.add(spawned)
 
-    this._live.push({ body, mesh: spawned, kind })
+    this._live.push({ body, mesh: spawned, kind, cargo: false,
+      prevP: new THREE.Vector3(position.x, position.y, position.z),
+      prevQ: opts.quaternion ? new THREE.Quaternion(opts.quaternion.x, opts.quaternion.y, opts.quaternion.z, opts.quaternion.w)
+        : new THREE.Quaternion() })
     while (this._live.length > DEBRIS_CAP) this._reclaim(this._live.shift())
     return body
   }
@@ -238,10 +249,55 @@ export class DebrisSystem {
     this._scene.remove(rec.mesh)
   }
 
-  /** Frame-loop sync: engine transform → mesh. ≤ DEBRIS_CAP bodies — flat cost, no culling. */
-  update () {
+  /**
+   * Call once per physics step, BEFORE the engine steps. Two jobs, both about debris riding the
+   * truck:
+   *
+   * 1. SNAPSHOT the pre-step pose, so update() can draw debris at the same sub-step time as the
+   *    truck. The world truck is drawn interpolated between its last two steps; debris drawn at the
+   *    latest step sits up to one step AHEAD of it — 0.45 m at 60 mph — and the lead changes every
+   *    frame, which read as cargo stuttering forward and snapping back (owner, 2026-09-29).
+   *
+   * 2. FLAG CARGO as bullets. The chassis is a Box3D bullet (continuous collision, so it cannot
+   *    tunnel through a barrel it hits at speed). A bullet's sweep stops at the first dynamic body it
+   *    would touch, and a rock resting in the bed touches it at t = 0 — so above ~21 m/s (where the
+   *    chassis counts as "fast") every step froze the truck at its start pose while the rocks flew
+   *    on, and they left through the cab or the tailgate. Measured headless: escape at 22 m/s and
+   *    up, none at 20. A bullet never sweeps against another bullet, so a body inside the bed well
+   *    is flagged one and the truck ignores it in the sweep; ordinary contact still carries it.
+   *    Anything outside the bed stays a plain body, so the truck still sweeps against debris ahead.
+   *
+   * @param {*} chassis - the truck's engine body handle.
+   * @param {object|null} bed - the model's open-bed spec (data/vehicle-models.js); null = no cargo.
+   */
+  beforeStep (chassis, bed) {
+    if (bed) {
+      this._eng.getTransform(chassis, _cp, _cq)
+      _cqi.copy(_cq).invert()
+    }
     for (const rec of this._live) {
-      this._eng.getTransform(rec.body, rec.mesh.position, rec.mesh.quaternion)
+      this._eng.getTransform(rec.body, rec.prevP, rec.prevQ)
+      if (!bed) continue
+      _p.copy(rec.prevP).sub(_cp).applyQuaternion(_cqi)
+      const inBed = Math.abs(_p.x) < bed.outerHalfW + CARGO_MARGIN &&
+        _p.z > bed.frontZ - CARGO_MARGIN && _p.z < bed.gateZ + CARGO_MARGIN &&
+        _p.y > bed.floorY - CARGO_MARGIN && _p.y < bed.railY + CARGO_ABOVE
+      if (inBed !== rec.cargo) { rec.cargo = inBed; this._eng.setBullet(rec.body, inBed) }
+    }
+  }
+
+  /**
+   * Frame-loop sync: engine transform → mesh. ≤ DEBRIS_CAP bodies — flat cost, no culling.
+   * @param {number} [alpha=1] - render interpolation between the beforeStep() snapshot (0) and the
+   *   current pose (1). Pass the truck's own render alpha so cargo and truck are drawn at the same
+   *   instant; a caller that draws its truck un-interpolated (the menu stage) leaves it at 1.
+   */
+  update (alpha = 1) {
+    for (const rec of this._live) {
+      this._eng.getTransform(rec.body, _p, _q)
+      if (alpha >= 1) { rec.mesh.position.copy(_p); rec.mesh.quaternion.copy(_q); continue }
+      rec.mesh.position.copy(rec.prevP).lerp(_p, alpha)
+      rec.mesh.quaternion.copy(rec.prevQ).slerp(_q, alpha)
     }
   }
 

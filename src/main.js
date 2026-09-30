@@ -18,6 +18,7 @@
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes } from './physics.js'
+import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
 import { DebrisSystem } from './debris.js'
@@ -2267,6 +2268,20 @@ const _gui = initDebug(RANGER_PARAMS, {
     const y = terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
     debrisSystem.spawnStack('barrel', { x, y, z }, 6)
   },
+  // Drop one ~50 kg rock into the truck's bed, to drive around with a load. A random spot inside
+  // the wheelhouse walls, 0.8 m above the floor, in the truck's CURRENT pose and carrying its
+  // velocity so it falls in even while moving. Inert on a model without an open bed.
+  dropRockInBed: () => {
+    const bed = DEFAULT_VEHICLE_MODEL.bed
+    if (!bed) return
+    const local = new THREE.Vector3(
+      (Math.random() * 2 - 1) * (bed.wheelhouseHalfW - 0.25),
+      bed.floorY + 0.8,
+      bed.frontZ + 0.3 + Math.random() * (bed.tailZ - bed.frontZ - 0.6))
+    const p = local.applyQuaternion(vehicleState.quaternion).add(vehicleState.position)
+    const v = vehicleState.velocity
+    debrisSystem.spawn('rock', { x: p.x, y: p.y, z: p.z }, { x: v.x, y: v.y, z: v.z })
+  },
   // SM-3: re-bake the out-of-round tire carcass so the mesh matches the new contact radius.
   onWheelRunoutChange: (v) => applyWheelRunout(v),
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
@@ -2353,7 +2368,10 @@ perfMark('init: before physics engine')
 const physicsEngine = await createPhysicsEngine()
 const terrainPhysics = new TerrainPhysics(physicsEngine, () => roadSystem)   // road spans → bore slots in the collider
 terrainSystem.setPhysicsHook(terrainPhysics)   // mirrors every chunk build/recarve/dispose
-const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS)
+// The model's open-bed spec (if it has one) builds a real well instead of the solid deck, so
+// cargo dropped in rides in it (owner, 2026-09-29: "add a couple and drive around").
+const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS,
+  { bed: DEFAULT_VEHICLE_MODEL.bed ?? null })
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
 const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
 // Road ribbon/pad/bore trimesh colliders — attached to roadMeshSystem at its creation sites
@@ -5480,6 +5498,8 @@ function loop () {
       }
     }
 
+    // FEAT-36: debris pre-step — render snapshot + cargo-in-bed bullet flag (see debris.js).
+    debrisSystem.beforeStep(vehicleChassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     // SM-3: integrate component wear on the SAME fixed step the physics ran, so condition is
     // framerate-independent like everything else (INFRA-03 determinism). Reads the honest signals
@@ -6017,7 +6037,7 @@ function loop () {
 
   updateCamera(camera, vehicleState, frameTime)
   _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
-  debrisSystem.update()           // FEAT-36: engine transform → debris meshes (physics steps them)
+  debrisSystem.update(_renderAlpha)   // FEAT-36: engine → debris meshes, at the truck's render alpha
 
   // Restore physics position/quaternion — the interpolated copies were render-only.
   vehicleState.position  = _physPos

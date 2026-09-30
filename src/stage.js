@@ -31,6 +31,7 @@
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
+import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 import { createPhysicsEngine, GROUP_TERRAIN, GROUP_STATIC } from './physics-engine.js'
 import { stepPhysics, createVehicleChassis } from './physics.js'
 import { createVehicleModel } from './vehicle-model.js'
@@ -73,31 +74,9 @@ const DRAG_PIVOT_FULL = 0.6               // rad of total drag at which the pivo
 const BED_PIVOT = new THREE.Vector3(0, 0.2, 1.0)   // body-local: between the cab and the bed, so an
                                                     // orbit keeps the whole truck and its load in frame
 
-// ── ranger.glb's ACTUAL bed, in body-local metres (forward = -Z, origin at the CG) ───────────────
-// The shared CHASSIS_PROFILE models the bed as a solid deck to rail height (a tonneau), so a rock
-// dropped on it lands on the lid and rolls off. The stage needs a container, and it has to line up
-// with the bed the player can SEE, not with an approximation of it.
-//
-// Every number below is a named constant from assets/models/src/ranger.py mapped through the
-// loader's transform (src/vehicle-model.js): the glTF export puts Blender's +Z on model +Y and
-// Blender's -Y on model +Z, the ranger spec's auto-scale comes out at exactly 1.0 (the model was
-// authored to the physics preset's 4.61 m), and the ground-plant lands the model root at body-local
-// y = -0.651. So body y = <ranger.py Z> - 0.651 and body z = -<ranger.py Y>; x is unchanged.
-// To re-derive after a re-export: read root.scale.x and root.position off the loaded GLB group.
-const RANGER_BED = {
-  floorY:          0.049,   // Z_BEDFLOOR 0.700 — the floor pan (rib crests sit RIB_H proud)
-  railY:           0.490,   // Z_RAIL 1.141 — bed rail top
-  wheelhouseY:     0.284,   // Z_WHEELHOUSE 0.935 — wheelhouse box top
-  innerHalfW:      0.700,   // W_BED_IN — inner wall
-  outerHalfW:      0.822,   // W_BED_OUT — bed side at the rail
-  wheelhouseHalfW: 0.545,   // W_WHEELHOUSE — inner wall over the rear arch
-  frontZ:          0.605,   // Y_BED_F -0.605 — front wall, 8 cm behind the cab (cab moved 105 mm
-                            // forward in the 2026-09-25 proportions pass; the bed front came with it)
-  tailZ:           2.4405,  // Y_BED_R -2.4405 — bed loft tail
-  gateZ:           2.5405,  // Y_TAILGATE -2.5405 — outer face of the closed tailgate
-  archZ0:          1.0975,  // AX_R 1.5675 ∓ ARCH_R 0.470 — the rear arch the wheelhouse covers
-  archZ1:          2.0375,
-}
+// The bed the rocks drop into is the ranger spec's open-bed collider (data/vehicle-models.js,
+// `bed`) — the same well the world truck carries, lined up with the bed the player can SEE.
+const RANGER_BED = DEFAULT_VEHICLE_MODEL.bed
 
 // Catch-up policy. A loading frame can be hundreds of ms long; paying that debt in physics steps
 // would spend the stall twice. Cap the steps and DROP the remainder — the scene briefly runs in

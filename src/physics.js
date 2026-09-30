@@ -146,9 +146,10 @@ const CHASSIS_SHAPE_MU  = BODY_FRICTION_MU * BODY_FRICTION_MU / TERRAIN_FRICTION
 // lands, this profile should move into data/vehicle-models.js as per-model hull data (the
 // QUAL-25 option-2 path) instead of growing switches here.
 //
-// This vehicle has NO OPEN BED — the model's bed top is closed (reads as a tonneau cover), so
-// the deck hull is a SOLID at rail height by owner ruling (2026-08-15). A future model with a
-// real open bed gets a hollow bin (three wall hulls + floor) so cargo can ride in it.
+// The deck hull is a SOLID at rail height by default — hilux.glb's bed top is closed (reads as a
+// tonneau cover), owner ruling 2026-08-15. A model with a real open bed carries a `bed` spec in
+// data/vehicle-models.js and gets a hollow well instead (see createVehicleChassis) so cargo can
+// ride in it; ranger.glb, the default truck, does (owner, 2026-09-29).
 const CHASSIS_PROFILE = {
   noseZ: -2.13,        // front bumper face
   tailZ: 2.77,         // rear bumper face
@@ -258,10 +259,10 @@ export function classifyImpactRegion (localPoint, localNormal) {
 /**
  * @param {object} [opts]
  * @param {object|null} [opts.bed] - an OPEN bed well (floor, four walls, wheelhouse boxes) built to
- *   the given body-local dimensions, replacing the solid tonneau deck of shape 4. Null by default,
- *   and the world truck keeps the solid deck: FEAT-41's menu stage is the only caller that passes
- *   one, because its beat sheet drops rocks INTO the bed, and against the closed deck they land on
- *   the lid at rail height and roll straight off. Fields (all metres, body frame, forward = -Z):
+ *   the given body-local dimensions, replacing the solid tonneau deck of shape 4. Null by default
+ *   (the solid deck). The world truck and FEAT-41's menu stage both pass the model's
+ *   VEHICLE_MODELS `bed` spec, so rocks dropped INTO the bed stay there — against the closed deck
+ *   they land on the lid at rail height and roll straight off. Fields (all metres, body frame, forward = -Z):
  *   floorY, railY, wheelhouseY, innerHalfW, outerHalfW, wheelhouseHalfW, frontZ, tailZ, gateZ,
  *   archZ0, archZ1. The caller owns the numbers because they belong to a specific .glb.
  */
@@ -301,27 +302,42 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   const slabBottomHalfW = 0.80
   const slabBottomNoseZ = P.noseZ + 0.43   // approach chamfer
   const slabBottomTailZ = P.tailZ - 0.37   // departure chamfer
-  engine.addHull(chassis, [
-    -P.slabHalfW, P.beltY, P.noseZ, P.slabHalfW, P.beltY, P.noseZ,
-    -P.slabHalfW, P.beltY, P.tailZ, P.slabHalfW, P.beltY, P.tailZ,
-    -slabBottomHalfW, undY, slabBottomNoseZ, slabBottomHalfW, undY, slabBottomNoseZ,
-    -slabBottomHalfW, undY, slabBottomTailZ, slabBottomHalfW, undY, slabBottomTailZ,
+  const BED_T = 0.06   // open-bed wall/floor thickness, taken inward from each face (shape 4)
+  // Top face at `topY` from z0 to z1; bottom face follows the chamfered footprint, clipped to [z0, z1].
+  const slabPart = (z0, z1, topY) => engine.addHull(chassis, [
+    -P.slabHalfW, topY, z0, P.slabHalfW, topY, z0,
+    -P.slabHalfW, topY, z1, P.slabHalfW, topY, z1,
+    -slabBottomHalfW, undY, Math.max(z0, slabBottomNoseZ), slabBottomHalfW, undY, Math.max(z0, slabBottomNoseZ),
+    -slabBottomHalfW, undY, Math.min(z1, slabBottomTailZ), slabBottomHalfW, undY, Math.min(z1, slabBottomTailZ),
   ], { ...mat, restitution: 0 })
+  if (bed) {
+    // An open bed's floor sits BELOW the beltline, so a full-length slab to beltY would fill the
+    // well and cargo would rest on its top face instead of on the bed floor (measured: 13 cm proud
+    // on the ranger). Split at the bed's front wall: full height ahead of it, and under the bed
+    // stop at the floor pan's underside so the two hulls meet with no ledge.
+    const splitZ = bed.frontZ - BED_T
+    slabPart(P.noseZ, splitZ, P.beltY)
+    slabPart(splitZ, P.tailZ, bed.floorY - BED_T)
+  } else {
+    slabPart(P.noseZ, P.tailZ, P.beltY)
+  }
   // 2. Hood wedge: grille up to the cowl.
   engine.addHull(chassis, extrude([
     [P.noseZ, 0.02], [P.noseZ, P.hoodNoseY], [P.cowlZ, P.hoodCowlY], [P.cowlZ, 0.02],
   ], P.slabHalfW * 0.95), mat)
-  // 3. Cab: cowl → raked windshield → roof → back panel down to the rail.
+  // 3. Cab: cowl → raked windshield → roof → back panel down to the rail. With an open bed the
+  //    back panel is held at the bed's front wall, or the cab hull would stand inside the well.
+  const cabRearZ = bed ? Math.min(P.cabRearZ, bed.frontZ - BED_T) : P.cabRearZ
   engine.addHull(chassis, extrude([
     [P.cowlZ, 0.14], [P.cowlZ, P.hoodCowlY], [P.roofFrontZ, P.roofY],
-    [P.roofRearZ, P.roofY], [P.cabRearZ, P.railY], [P.cabRearZ, 0.14],
+    [P.roofRearZ, P.roofY], [cabRearZ, P.railY], [cabRearZ, 0.14],
   ], P.cabHalfW), mat)
   // 4. Bed deck: cab back to the tail at rail height — SOLID (tonneau, see header note),
   //    unless the caller supplied an open-bed spec, in which case the same region is built as a
   //    WELL — floor, four walls and the two wheelhouse boxes — so something dropped from above
   //    lands on the bed FLOOR and is held by the rails.
   if (bed) {
-    const T = 0.06   // wall/floor thickness, taken inward from each face
+    const T = BED_T
     // Axis-aligned box as an 8-point hull. Cheaper to read than extrude() here because the bed
     // pieces are boxes in three different orientations, not one z–y profile swept across the width.
     const slab = (x0, x1, y0, y1, z0, z1) => engine.addHull(chassis, [

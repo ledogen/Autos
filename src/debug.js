@@ -185,6 +185,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // Deterministic by construction (no Math.random in the stack path), so the pile it settles
   // into is the same one test/debris-stack.mjs asserts headlessly.
   debrisFolder.add({ stack: () => callbacks.spawnDebrisStack?.() }, 'stack').name('Spawn Barrel Stack')
+  debrisFolder.add({ rock: () => callbacks.dropRockInBed?.() }, 'rock').name('Drop Rock in Bed')
   debrisFolder.add({ clear: () => window.__debris?.clear() }, 'clear').name('Clear Debris')
   // Collider wireframes (physics-debug.js) — same toggle the backtick key drives. The checkbox
   // won't visually follow a key toggle (one-way onChange), which is fine for a debug control.

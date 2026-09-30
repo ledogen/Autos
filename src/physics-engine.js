@@ -482,6 +482,9 @@ export class PhysicsEngine {
   }
 
   isAwake (handle) { return _b3.b3Body_IsAwake(this._bodies.get(handle).id) }
+  /** Toggle continuous (swept) collision against other dynamic bodies. A bullet never sweeps
+   *  against another bullet — the lever debris.js flagCargo() pulls for cargo riding the truck. */
+  setBullet (handle, flag) { _b3.b3Body_SetBullet(this._bodies.get(handle).id, flag) }
   wake (handle) { _b3.b3Body_SetAwake(this._bodies.get(handle).id, true) }
   sleep (handle) { _b3.b3Body_SetAwake(this._bodies.get(handle).id, false) }
 
