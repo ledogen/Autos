@@ -65,10 +65,14 @@ export const VEHICLE_MODELS = {
     bodyScale: 1.0,
     yaw: 0,
     shiftRear: 0.2990,
-    // -0.007 = -(model's lowest point, 0.108) + (static suspension sag, 0.101).  The
+    // -0.045 = -(model's lowest point, 0.146) + (static suspension sag, 0.101).  The
     // loader plants box.min at car-local y = -cgHeight, which assumes the suspension is
     // fully extended; at rest it sags ~0.10 m and the truck visibly floats without this.
-    shiftDown: -0.007,
+    // THE LOWEST POINT IS THE MUD FLAPS' BOTTOM EDGE, nothing structural — it went 0.108
+    // -> 0.146 on 2026-09-22 when they were shortened, and this number had to follow or
+    // the truck would have sat 38 mm high.  Anything that changes what hangs lowest
+    // changes this: re-run the generator and copy its printout.
+    shiftDown: -0.045,
     // The OPEN-BED collider (physics.js createVehicleChassis `bed`): floor, walls, tailgate and
     // wheelhouse boxes, in body-local metres (forward = -Z, origin at the CG). Every number is a
     // named constant from ranger.py mapped through the loader's transform: the glTF export puts

@@ -62,7 +62,8 @@ import math
 # ---------------------------------------------------------------------------
 
 NAME = "ranger"
-TRI_BUDGET = 4000
+TRI_BUDGET = 4200      # 4000 until 2026-09-26, raised by the owner to pay for the
+                       # full door shut line and the cab's rear chamfer
 OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/ranger.glb"
 OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/ranger.blend"
 
@@ -131,7 +132,7 @@ Y_TAIL = AX_R - REAR_OH          # -2.6515  extreme rear (bumper face)
 
 # --- Heights (z = 0 is the tyre contact plane) ---
 Z_GROUND = 0.0
-Z_UNDER = 0.415                  # underbody pan.  Owner, 2026-09-05: "i want it raised
+Z_UNDER = 0.368                  # underbody pan.  Owner, 2026-09-05: "i want it raised
                                  # /gone.  there's an ugly black box practically dragging
                                  # on the ground.  a flat pan is fine but should be roughly
                                  # in line with the bumpers."  At 0.285 the pan's SIDE WALL
@@ -145,16 +146,23 @@ Z_UNDER = 0.415                  # underbody pan.  Owner, 2026-09-05: "i want it
                                  # every section ring and the loft folds.
                                  # The truck's lowest point is NOT this — it is the mud
                                  # flaps at 0.108, so shiftDown is unaffected by moving it.
-Z_ROCKER = 0.442                 # rocker step: flank bottom out of the arch zones
+Z_ROCKER = 0.395                 # rocker step: flank bottom out of the arch zones
 Z_HIP = 0.86                     # widest point of the flank
-Z_BELT = 1.183                   # door beltline = base of the side glass.  Dropped 20 mm
+Z_BELT = 1.070                   # door beltline = base of the side glass.  Dropped 20 mm
                                  # from the first pass: with the roof pinned at bodyHeight the
                                  # only way to make the cab read bigger is more glass.
 Z_ROOF = 1.600                   # roof deck (bodyHeight 1.60)
 Z_ROOF_CROWN = 0.020             # centre of the roof sits this much proud of the rails
 Z_RAIL = 1.141                   # bed rail top — reads BELOW the door belt, as on the ref
 Z_BEDFLOOR = 0.700               # bed floor pan (rib crests sit RIB_H above)
-Z_HEADLINER = 1.526              # underside of the roof slab
+Z_HEADLINER = 1.556              # underside of the roof slab.  THE ROOF'S THICKNESS IS
+                                 # THIS NUMBER (owner, 2026-09-22: "the roof is too
+                                 # thick") — Z_ROOF is the physics preset's bodyHeight
+                                 # and cannot move, so the slab can only be thinned from
+                                 # below.  74 mm until then; 44 now.  Raise it and the
+                                 # overhead trim follows, because build_interior hangs
+                                 # the mirror and the visors off it rather than off
+                                 # typed heights.
 
 # --- Wheel arches.  Tyre is 0.736 dia x 0.25 wide on a 1.46 track. ---
 R_TYRE = 0.368                   # data/ranger.js wheelRadius.  Named because three
@@ -209,18 +217,24 @@ WH_EDGE = 0.030                  # chamfer on the wheelhouse's top inner corner 
                                  # own wall and fold the section.
 
 # --- Cab / greenhouse (all y MEASURED, see above) ---
-Y_COWL = 0.584                   # base of the windscreen.  The cab was 1.100 long and read
+Y_COWL = 0.689                   # base of the windscreen.  The cab was 1.100 long and read
                                  # as too short (owner, 2026-08-25); it is now 1.214, taken
                                  # out of the hood, which was generously long at 1.508.
-Y_CAB_REAR = -0.630              # cab rear panel
-Y_HDR_F = 0.085                  # windscreen header
-Y_HDR_R = -0.578                 # rear header
-W_ROOF = 0.676                   # roof half width (tumblehome from W_BELT)
-PILLAR_A = 0.038                 # A-pillar section (across the glass)
-PILLAR_C = 0.072                 # C-pillar section
+Y_CAB_REAR = -0.525              # cab rear panel
+W_ROOF = 0.676                   # roof half width.  The TOP END of gh_x(), the one
+                                 # tumblehome the whole greenhouse is built on — see
+                                 # the note above it.  The headers' y is no longer
+                                 # typed: it comes off the A / C pillar edges.
+PILLAR_A, PILLAR_T_A = 0.068, 0.050   # section across the glass, and thickness inboard.
+PILLAR_C, PILLAR_T_C = 0.072, 0.048   # The thickness is what the SCREENS seat against, so
+                                      # it sets how wide they end up — see SCREEN_REVEAL.
+                                      # A went 38 -> 68 mm on 2026-09-25: MEASURED off the
+                                      # reference, where the painted band between the
+                                      # windscreen and the door glass is 64-74 mm at every
+                                      # height.  At 38 it read as half a pillar.
 
 # --- Bed ---
-Y_BED_F = -0.710                 # bed front wall (8 cm gap behind the cab)
+Y_BED_F = -0.605                 # bed front wall (8 cm gap behind the cab)
 Y_BED_R = -2.4405                # bed loft tail; the 30 mm tailgate slab takes the
                                  # outer face to -2.510, so the bed is 1.800 m —
                                  # a real 6-foot bed, un-scaled
@@ -228,7 +242,32 @@ N_RIBS = 8                       # bed-floor rib crests across the full width
 RIB_H = 0.028
 
 # --- Front clip ---
-Z_LAMP0, Z_LAMP1 = 0.772, 0.990  # headlamp / grille opening.  Re-measured off the
+Z_LAMP0, Z_LAMP1 = 0.786, 0.946  # headlamp / grille opening.  Shrunk 218 -> 180 mm on
+                                 # 2026-09-25 (owner: "shrink the headlights slightly"),
+                                 # because the hood's new fall leaves less metal above
+                                 # them and a cramped lamp is what broke the junction.
+                                 #
+                                 # ...AND 180 -> 160 THE SAME DAY, FOR A REASON THAT IS A
+                                 # HARD GEOMETRIC FLOOR RATHER THAN TASTE.  The rim rolls
+                                 # the WHOLE last section down by NOSE_DROP as it sweeps
+                                 # onto the nose face, creases included — so the fender's
+                                 # squaring crease, which SQUARE_Z carefully keeps clear
+                                 # of the lamp band at z 0.9977, arrives on the outermost
+                                 # rim ring at 0.935.  The flank then loses 65 mm of width
+                                 # in the 34 mm above it, the lens followed the skin up
+                                 # into that, and its top band folded over itself: one
+                                 # 0.7 cm2 quad with its normal pointing BACKWARD, which
+                                 # flat shading draws as a black wedge in the amber.  The
+                                 # false "tear" again — never a hole, always a crossed
+                                 # ring.
+                                 # The clearance is therefore
+                                 #     (hood line at the nose face) - Z_LAMP1
+                                 #       >= crown + (shoulder - squaring point) + margin
+                                 #        = 22 + 24 + 6 = 52 mm,
+                                 # and it was EIGHT.  Half is paid by the rim rolling less
+                                 # (70 -> 44 mm, which the owner asked for anyway) and half
+                                 # by the lamp: 54 mm now, measured, asserted in report().
+                                 # Re-measured off the
                                  # DEAD-ON reference (547 px/m there): the first pass
                                  # took these off the profile shot and left a 28 cm
                                  # blank painted band between the grille and the
@@ -273,7 +312,7 @@ Z_TAIL0, Z_TAIL1 = 0.680, 1.045  # tail lamp band.  0.722..0.998 until 2026-09-0
 # that is where the bumper's bottom goes, and the whole 156 mm section moves up with
 # it rather than the bumper being stretched.  build_rear_end() asserts the match
 # against the ring itself, because both ends of it are derived numbers.
-Z_RBUMP0, Z_RBUMP1 = 0.490, 0.646
+Z_RBUMP0, Z_RBUMP1 = 0.443, 0.599
 Y_TAILGATE = -2.5405             # outer face of the tailgate.  The step bumper stands
                                  # 0.111 m PROUD of this, back to Y_TAIL — measured, and
                                  # the single thing that stops the rear reading planar.
@@ -287,7 +326,7 @@ W_TUNNEL = 0.195
 SEAT_X = 0.355                   # seat centres; driver at -SEAT_X (LHD)
 Z_CUSHION = 0.855
 Z_SEATBACK = 1.375               # MUST clear Z_BELT or the cabin reads as empty
-SW_AT = (-0.355, 0.186, 1.048)   # steering-wheel hub
+SW_AT = (-0.355, 0.291, 1.048)   # steering-wheel hub
 SW_TILT = math.radians(66.0)     # Euler-X of the wheel node.  66 deg puts the
                                  # column axis 24 deg off horizontal, i.e. the wheel
                                  # 24 deg off vertical — matched to the ref interior.
@@ -625,7 +664,7 @@ CLIP_ST = [
     # the transition too abrupt.  So the total is unchanged at ~0.14 m but it is now
     # shared: dead flat from the cowl to y 1.05, 0.064 m of gentle descent from there
     # to the last station, and the remaining 0.076 m in the rim's quarter-ellipse.
-    (1.7525, 0.824, 0.738, 1.108, 0.022, 1.00),  # last FULL station.  MUST equal AX_F+ARCH_R
+    (1.7525, 0.824, 0.738, 1.044, 0.022, 1.00),  # last FULL station.  MUST equal AX_F+ARCH_R
                                            # exactly (asserted in report()): 2.5 mm off it
                                            # and the arch sample lands beside this station
                                            # instead of on it, leaving a sliver face that
@@ -633,12 +672,22 @@ CLIP_ST = [
     # The FENDER ties into the nose (owner, 2026-08-27): it carries its crown past
     # the axle, then tucks in over the last 0.30 m to hand off to the prow.  Left
     # prismatic to the arch tangent, the bullet would look grafted onto a slab.
-    (1.620, 0.838, 0.754, 1.126, 0.022, 1.00),
-    (1.450, 0.845, 0.768, 1.142, 0.020, 0.95),   # fender crown carried past the axle
-    (1.2825, 0.845, 0.774, 1.156, 0.018, 0.85),  # front axle
-    (1.050, 0.842, 0.778, 1.166, 0.012, 0.60),
-    (0.820, 0.832, 0.779, 1.171, 0.007, 0.30),
-    (0.584, 0.816, 0.778, 1.172, 0.003, 0.00),   # cowl — see SQUARE below
+    (1.620, 0.838, 0.754, 1.072, 0.022, 1.00),   # ...and the last leg is SOFTENED to
+                                           # 0.211: the rim can only carry 44 mm of fall
+                                           # now (see Z_LAMP1), which over its 190 mm of
+                                           # sweep is a slope of 0.23, and a rim flatter
+                                           # than the hood arriving at it is the flat spot
+                                           # this file has already been round once.
+    (1.450, 0.845, 0.768, 1.110, 0.020, 0.95),   # fender crown carried past the axle
+    (1.2825, 0.845, 0.772, 1.134, 0.018, 0.85),  # front axle
+    (1.050, 0.838, 0.772, 1.154, 0.012, 0.60),
+    (0.820, 0.816, 0.766, 1.166, 0.007, 0.30),   # ...and THE TUCK IS SPENT BY HERE
+    (0.689, 0.807, 0.7559, 1.172, 0.003, 0.00),  # cowl — see SQUARE below, and the
+                                           # SHOULDER note under CAB_ST: 0.776 here put
+                                           # the cowl 20 mm outboard of the greenhouse
+                                           # standing on it.  The three stations ahead
+                                           # were eased with it so the hood does not
+                                           # pinch in over its last 130 mm.
 ]
 
 # THE FENDER IS SQUARE ABOVE THE ARCH (owner, 2026-09-05): "add another fender
@@ -665,10 +714,34 @@ SQUARE_W = 0.18    # ...and how little of the tuck it has spent by then
 
 # Cab: (y, w_flank, w_shoulder, z_belt).  Meets CLIP_ST's numbers at the cowl so the
 # fender-to-door transition has no step.
+#
+# MATCHING AT THE JOINT IS NOT ENOUGH — THE SLOPE HAS TO MATCH TOO (owner,
+# 2026-09-25: "the fenders are a little bit wider than the doors where they meet.
+# This is a little bit awkward so either pop the doors out or push the fenders in a
+# little bit so it's a smooth body line").  Both shells read 0.816 at the cowl and
+# always did, so there was no step THERE; what the eye saw was the flank still
+# narrowing as it crossed the shut line and then going flat 34 mm later — 10 mm of
+# taper packed into the first 34 mm of door, which reads exactly like a proud
+# fender.  The fender now spends its tuck BEFORE the joint (0.832 -> 0.816 at
+# y 0.820) and hands over at 0.807, 1 mm above the door's own constant 0.806.
+#
+# AND THE SHOULDER (`w_shoulder`) HAS TO LAND ON gh_x(), NOT NEAR IT.  The first two
+# stations top out at the COWL DECK, z 1.17, where the third and everything behind it
+# tops out at Z_BELT and hands over to the greenhouse.  At 0.776 the cowl's flank read
+# 0.782 at z 1.09 against the greenhouse's 0.767 — a 15 mm bulge 20 mm long, sitting
+# directly under the mirror, which is exactly where the owner found it (2026-09-26: "the
+# fender is still wider than the doors, but only above the belt line ... there's a little
+# bump there").  gh_x(1.172) is 0.7559 and gh_x(1.170) is 0.7563: the two surfaces now
+# describe the same place at the height where they meet, and the residual is 2 mm.
 CAB_ST = [
-    (0.584, 0.816, 0.778, 1.172),          # cowl — matches CLIP_ST so the shells weld
-    (0.300, 0.810, 0.775, Z_BELT),
-    (-0.630, 0.806, 0.775, Z_BELT),        # cab rear panel
+    (0.689, 0.807, 0.7559, 1.172),         # cowl — matches CLIP_ST so the shells weld
+    (0.672, 0.8067, 0.7563, 1.170),        # the cowl deck, under the A-pillar foot
+    (0.655, 0.8062, 0.7753, Z_BELT),       # ...and the belt, a short step behind it.  The
+                                           # step is DELIBERATELY steep: everything below
+                                           # where it lands is DLO, and the higher it
+                                           # finishes the taller the window trim has to be
+                                           # to cover the corner it cuts.
+    (-0.525, 0.806, 0.775, Z_BELT),        # cab rear panel
 ]
 W_DOORCARD = 0.700                         # inner face of the door trim
 
@@ -680,6 +753,16 @@ W_DOORCARD = 0.700                         # inner face of the door trim
 # point as well: the ring gained a point instead of losing one, every band index
 # after it shifted by two, and BED_BANDS painted the whole left flank with the
 # underbody's dark band.  The owner saw it as "left bedside turned black".
+def cab_flank_x(y, z):
+    """Half width of the CAB's outer flank at (y, z) — the surface a door seam has to lie
+    on below the beltline, where gh_x() does not reach.  One typed width there put the
+    seam 15 mm proud of the door at mid height."""
+    wo, wb, zbelt = _interp(CAB_ST, y)
+    if z <= Z_HIP:
+        return wo
+    return wo + (wb - wo) * (z - Z_HIP) / (zbelt - Z_HIP)
+
+
 def bevel_ring(ring, idx, inset):
     """Copy of `ring` with the points in `idx` — the section's OUTER arc — pulled inboard
     by `inset`.
@@ -745,6 +828,11 @@ def cab_ring(y):
             + [(-x, y, z) for x, z in reversed(r[1:-1])])
 
 
+BED_WALL_T = 0.014                 # thickness of the bed's front wall.  Sheet-metal
+                                   # thin ON PURPOSE: its INNER face is what the chase
+                                   # camera reads as the front of the bed, so every mm
+                                   # of thickness is a mm that face sits behind the
+                                   # bedsides' own front edge.
 BED_END_EDGE = 0.022               # chamfer on the bed's LEADING vertical edge, and
 CAB_END_EDGE = 0.022               # on the cab's TRAILING one.  They face each other
                                    # across an 80 mm gap, so the pair must not eat it:
@@ -878,13 +966,21 @@ BED_BANDS = {k: DARK for k in (0, 1, 2, 3, 22, 23, 24, 25)}
 # ---------------------------------------------------------------------------
 Y_FACE_C = 1.975                 # the APEX: frontmost sheet metal, on the centreline.
                                  # Tracks Y_NOSE — see the tiling note.
-Z_NOSE_APEX = 0.880              # ...and at this height — the middle of the lamp band
+Z_NOSE_APEX = 0.5 * (Z_LAMP0 + Z_LAMP1)   # ...and at this height — the MIDDLE OF THE
+                                 # LAMP BAND, derived rather than typed: it was 0.880
+                                 # against a band that has since moved twice.
 NOSE_PROW = 0.115                # plan: how far the apex leads |x| = NOSE_PROW_W
 NOSE_PROW_W = 0.820
 NOSE_LEAN_UP = 0.045             # how far the face falls back from apex to hood line
 NOSE_LEAN_DN = 0.075             # ...and from apex down to the rocker
 NOSE_FLANK_LEAN = 0.40           # fraction of the lean surviving at the flank
-NOSE_Z_TOP = 1.108               # hood line at the last full station
+NOSE_Z_TOP = CLIP_ST[0][3]       # hood line at the last full station.  DERIVED, NEVER
+                                 # TYPED.  It was a hand-copied 1.108, and when the hood
+                                 # was re-sloped on 2026-09-22 CLIP_ST moved and this did
+                                 # not: the rim then leaned its face over a 75 mm range
+                                 # that no longer existed and tore the surface open where
+                                 # it meets the headlamp.  Owner: "the hood broke where it
+                                 # meets the headlight."  One number, one source.
 NOSE_Z_BOT = Z_ROCKER
 
 # THE ARCH CONSTRAINT.  The rim is generated by shrinking CLIP_ST[0]'s section, so
@@ -908,7 +1004,37 @@ NOSE_RIM_N = 3        # five until 2026-09-05.  The owner's call: the front radi
                       # stations the facets are still under 30 degrees apart.
 NOSE_TUCK = 0.090      # plan-view corner radius on the vertical edges.  Smaller than
                        # before, because NOSE_PROW now does most of the plan work.
-NOSE_DROP = 0.070      # how far the hood line falls across the rim
+NOSE_DROP = 0.004      # how far the hood line falls across the rim — THE ROUND-OFF HALF
+NOSE_DROP_LIN = 0.040  # ...and the (much larger) half that simply CARRIES THE HOOD'S
+                       # SLOPE ON.  44 mm in total; the split is what decides whether the
+                       # fall is spread or saved up for the last band.
+                       # The rim used to spend all 70 mm on a 1-cos ease, which starts
+                       # flat: the hood arrived at the last station falling at 0.242 and
+                       # the rim took it to 0.103 for 91 mm before plunging.  Read as a
+                       # bulge (owner, 2026-09-25: "pitches down, then up briefly, then
+                       # back down.  It reads as an awkward wrinkle") because it IS one —
+                       # a flat spot between two steeper runs.  Split linear/ease, the
+                       # slope goes 0.242 -> 0.33 -> 0.57 and only ever steepens.
+                       #
+                       # 35/35 STILL SAVED TOO MUCH FOR LAST (owner, 2026-09-25: "the
+                       # hood reads as very thin and placed on top of the headlights.
+                       # needs to be a little bit more tangent").  Monotone is not the
+                       # same as tangent: at 35/35 the three bands fell at 0.235, 0.371,
+                       # 0.878 — the first is flatter than the hood arriving at 0.242, so
+                       # the roll starts by doing NOTHING and then drops almost vertically
+                       # onto the lamp, which is exactly the thin lip that was read as a
+                       # separate part.
+                       #
+                       # AND THE TOTAL CAME DOWN 70 -> 44 in the same pass, which is the
+                       # part that actually fixes the complaint: 70 mm of roll put the
+                       # hood line 8 mm above the lamp, so there was no hood there to
+                       # read.  The floor on that total is Z_LAMP1's note, and the
+                       # CEILING is the hood's own approach slope — a rim flatter than
+                       # the panel feeding it is a flat spot between two steeper runs,
+                       # which is the bulge this comment already describes.  At 40/4 the
+                       # bands fall at 0.218, 0.234, 0.292 against an approach softened
+                       # to 0.211: monotone, and the steepest band is now 1.3x the first
+                       # instead of 3.7x.
 NOSE_RISE = 0.024      # how far the valance line tucks up; deliberately far less —
                        # a symmetric squeeze pinches the face
 
@@ -917,7 +1043,8 @@ for _i in range(1, NOSE_RIM_N + 1):
     _th = 0.5 * math.pi * _i / NOSE_RIM_N
     _ease = 1.0 - math.cos(_th)
     NOSE_RIM.append((math.sin(_th), 1.0 - NOSE_TUCK * _ease,
-                     NOSE_DROP * _ease, NOSE_RISE * _ease))
+                     NOSE_DROP_LIN * math.sin(_th) + NOSE_DROP * _ease,
+                     NOSE_RISE * _ease))
 
 
 def nose_y(x, z):
@@ -1029,7 +1156,7 @@ def build_front_clip(p):
 
 
 def build_cab(p):
-    ys = simplify_stations([Y_COWL, 0.300, -0.080, -0.400, Y_CAB_REAR], cab_ring)
+    ys = simplify_stations([Y_COWL, 0.672, 0.655, 0.300, -0.100, Y_CAB_REAR], cab_ring)
     rings = [cab_ring(y) for y in ys]
     # A CHAMFERED TRAILING EDGE (owner, 2026-09-07: "the leading edge of the bed should
     # have a chamfer as should the trailing edge of the cab").  These two face each other
@@ -1212,13 +1339,19 @@ TAIL_LAMP_DEEP = 0.028      # ...and this far into it.  The two solids simply ov
 # faces on every one of the sweep's five bands — 48 tris across both lamps for an
 # edge that flat shading already draws for free where the material changes.
 TAIL_LAMP_U = (0.036, 0.318, 0.660, 0.964)
+TAIL_LAMP_MATS = {0: DARK, 2: "RangerLens", 4: DARK}
 # Face k spans section point k -> k+1.  1 and 3 fall through to the loft's own
 # "RangerTail".  5 IS NOT DRAWN AT ALL: it is the section's back plane, 28 mm inside a
 # 54 mm rear panel, so it has never been visible — it was cheap to leave in at four
 # bands and is not at nine (2026-09-08), which is 32 tris for nothing.  loft() orients
 # from the virtual CLOSED volume, so dropping a face does not disturb the winding.
-TAIL_LAMP_MATS = {0: DARK, 2: "RangerLens", 4: DARK}
 TAIL_LAMP_BURIED = 5
+# THE CLEAR SECTION RUNS THE WHOLE LENGTH, wrap included (owner, 2026-09-22: "the white
+# portion of the tail lights should also wrap around").  It was briefly stopped at the
+# corner on the reference lamp's authority; the owner's call overrules that, and it is
+# the better read anyway — one band running unbroken round the corner is what tells you
+# the lens is one piece rather than two lamps meeting at the edge.  Do not "fix" this
+# back to a per-segment material.
 # THE LENS IS A RECTANGLE WITH TWO CORNER FILLETS, and nothing else.  Owner,
 # 2026-09-08: "the rear light is still not squared off in the corners.  It's a tapered
 # trapezoidal shape.  Make it square.  Larger fillet on the top exterior.  Smaller
@@ -1241,9 +1374,28 @@ TAIL_LAMP_BURIED = 5
 # rectangular over the 80% of its length that faces the camera, and the inner corners are
 # sharp for free — s is measured from one end only.
 #
-# TAIL_LAMP_T is what makes that describable: extra rim stations bunched into the last
-# 30 mm so the fillet has somewhere to be drawn.  They cost 5 bands x 7 faces a side.
-TAIL_LAMP_T = (1.0, 0.75, 0.50, 0.30, 0.20, 0.13, 0.07, 0.025, 0.0)
+# TAIL_LAMP_F is what makes that describable: stations bunched into the last 45 mm of
+# the run, wherever that run now ends, so the fillet has somewhere to be drawn.
+#
+# THE LAMP RUNS ONTO THE FLANK (owner, 2026-09-22: "make the hero car taillights wrap
+# around further forward so its equally on the side and the back").  It used to stop
+# dead at t = 0, which is the LAST BED SECTION — i.e. exactly where the corner finishes
+# turning — so 118 mm of its 151 mm of arc was on the rear face and the "wrap" was the
+# 33 mm of corner itself.  It now carries on forward down the bedside, and the two
+# halves are measured, not eyeballed, on the plan path itself: 133 mm of arc across the
+# back against 117 mm of corner-and-flank.
+#
+# TWO STATION TABLES, because the path is two different curves.  TAIL_LAMP_T walks the
+# rim parameter from the tailgate shut line (t = 1) to the corner (t = 0); TAIL_LAMP_F
+# then walks metres forward of Y_BED_R along a bedside that is dead straight in plan.
+# The rim needs only five stations now — it used to carry nine because the outboard
+# fillet had to be drawn inside its last 31 mm, and the fillet no longer lives there.
+TAIL_LAMP_T = (1.0, 0.75, 0.50, 0.27, 0.0)
+TAIL_LAMP_FWD = 0.100              # how far forward of Y_BED_R the lens runs
+TAIL_LAMP_F = (0.27, 0.53, 0.73, 0.87, 0.95, 1.0)   # ...sampled here, bunched at the
+                                   # far end so the 45 mm top fillet has stations to
+                                   # be drawn with
+TAIL_LAMP_SHUT = 0.014             # inboard end stepped clear of the tailgate shut line
 # Fillet radii, in metres of arc.  45 mm against 9 mm is the reference's own split — its
 # outer top corner is visibly swept where the lens follows the bedside's shoulder round,
 # while the bottom is barely broken off square.  The top went 30 -> 45 on 2026-09-08
@@ -1264,6 +1416,59 @@ def edge_fillet(s, r):
     return r - math.sqrt(max(0.0, r * r - (r - s) ** 2))
 
 
+# THE LENS FACE'S MIDDLE KNOT SITS ON THE SECTION'S KNEE, NOT AT u = 0.5.
+#
+# A lens face is two chords between three heights, and a chord across a knee runs
+# INSIDE the metal — the knee class again, and this was the biggest sighting of it yet.
+# SQUARE_Z keeps the fender's squaring crease clear of the lamp band (z 0.780..0.982)
+# on the LAST FULL SECTION, and that check was never carried forward: nose_rim_ring()
+# rolls the whole section down by `drop` as it sweeps onto the nose face, which drags
+# that crease to z 0.935 — square in the middle of the band.  At the outermost rim ring
+# the face chorded 15.5 mm inside against 9 mm of NOSE_LAMP_PROUD, so the fender came
+# out through the amber as a red splinter (owner, 2026-09-25: the marker light "needs to
+# be a little bit more tangent ... use screenshots and iterate").
+#
+# Relief is measured, never guessed — and here it is not relief at all: put the knot ON
+# the worst knee and the chord stops crossing it.  It costs nothing, same seven points
+# and the same bands, and the bulge apex moves a few percent along a face that is 22 mm
+# proud at its most.
+KNEE_SLEW = 0.20        # ...BUT THE KNOT MAY NOT SLIDE FASTER THAN THIS BETWEEN
+                        # NEIGHBOURING STATIONS, and that limit is the whole reason this
+                        # is a solver rather than one max().  The dominant knee SWITCHES
+                        # as the lamp turns the corner — the rolled squaring crease at
+                        # the first rim ring, the rolled hip two stations later — so the
+                        # raw answer jumps 0.885 -> 0.301 across 55 mm of path.  The band
+                        # between those two rings is then so twisted that flat shading
+                        # renders it almost black, which is this file's oldest false
+                        # "tear": never a hole, always a ring that crossed itself.  At
+                        # 0.20 the worst residual chord is 5.2 mm, well inside the 9 mm
+                        # the lens stands proud, and no band goes dark.
+
+
+def _lens_mid_knots(station, nrm, round_z, n, z_lo, z_hi, bezel_u):
+    """Where each lens section's middle face point goes, as a fraction of lamp height."""
+    u = []
+    for i in range(n):
+        nx, ny = nrm[i][0], nrm[i][1]
+        z0, h = z_lo, (z_hi - round_z[i]) - z_lo
+        a, b = bezel_u, 1.0 - bezel_u
+
+        def dev(t, i=i, nx=nx, ny=ny, z0=z0, h=h, a=a, b=b):
+            pa, pb = station(i, z0 + h * a), station(i, z0 + h * b)
+            f = (t - a) / (b - a)
+            cx, cy = pa[0] + (pb[0] - pa[0]) * f, pa[1] + (pb[1] - pa[1]) * f
+            qx, qy = station(i, z0 + h * t)
+            return (qx - cx) * nx + (qy - cy) * ny
+
+        u.append(max((a + (b - a) * k / 64.0 for k in range(65)), key=dev))
+    for _ in range(n):
+        for i in range(1, n):
+            u[i] = min(max(u[i], u[i - 1] - KNEE_SLEW), u[i - 1] + KNEE_SLEW)
+        for i in range(n - 2, -1, -1):
+            u[i] = min(max(u[i], u[i + 1] - KNEE_SLEW), u[i + 1] + KNEE_SLEW)
+    return u
+
+
 def tail_rim_spec(t):
     """The rim's own (frac, scale, drop, rise, close) spec at arc parameter t.
 
@@ -1279,51 +1484,56 @@ def tail_rim_spec(t):
     return (math.sin(th), 1.0 - TAIL_TUCK * e, TAIL_DROP * e, TAIL_RISE * e, e)
 
 
-def tail_skin_path(sx, z, ts):
-    """Plan path (x, y) of the bed's outer skin at height z, at rim parameters `ts`:
-    from the tailgate shut line (t = 1), out across the rear face, round the corner
-    and forward down the flank (t = 0).
+def tail_stations():
+    """The lamp's path stations, as ("rim", t) across the tail and round the corner,
+    then ("flank", dy) forward along the bedside."""
+    return ([("rim", t) for t in TAIL_LAMP_T]
+            + [("flank", TAIL_LAMP_FWD * f) for f in TAIL_LAMP_F])
 
-    THE STATIONS ARE THE BED'S OWN RINGS, read at the lamp's height.  Since the rear
-    face became the bed's own last band, that curve simply IS where the skin is; it
-    used to reconstruct it from TAIL_RIM's scale factors, which stopped being the
-    whole story the moment the arc gained its close term.
 
-    THE CALLER CHOOSES THE STATIONS, and that is the point of taking `ts` (2026-09-08).
-    Pinned to TAIL_RIM's four rings, the lamp had exactly one station in the last
-    31 mm of its run — so a corner radius had nowhere to live but the outer THIRD of
-    the lens, and read as a taper rather than a fillet.  Extra stations here are free:
-    every one is a real ring off the same curve, never a chord across it, so the skin
-    can never poke out through a lens that is only 5 mm proud.
+def tail_skin_at(sx, station, z):
+    """(x, y) of the bed's outer skin at one station, AT HEIGHT z.
+
+    THE STATIONS ARE THE BED'S OWN RINGS, read at whatever height is asked for.  The
+    height mattered less when the lamp stopped at the corner — the rear face barely
+    changes width with z — but the FLANK tucks in 17 mm between the lamp's floor and
+    its ceiling as it climbs toward the rail, so a lens extruded straight up from one
+    height would stand that far proud of the bedside at its top.  Reading the ring at
+    each height instead puts every section point on the skin, and it also makes the
+    old tail_lean() correction unnecessary: the ring already carries it.
     """
-    base = bed_ring(Y_BED_R)
-    pts = []
-    for t in ts:
-        ring = base if t <= 0.0 else tail_rim_ring(tail_rim_spec(t), base)
-        x, y = ring_flank(ring, z, BED_I_ARC)
-        pts.append((sx * abs(x), y))
-    # Step the inboard end clear of the shut line, so the lens sits on the rear face
-    # rather than straddling the gap it is supposed to stop short of.
-    pts[0] = (pts[0][0] + sx * 0.014, pts[0][1])
-    return pts
+    kind, v = station
+    if kind == "rim":
+        base = bed_ring(Y_BED_R)
+        ring = base if v <= 0.0 else tail_rim_ring(tail_rim_spec(v), base)
+    else:
+        ring = bed_ring(Y_BED_R + v)
+    x, y = ring_flank(ring, z, BED_I_ARC)
+    return (sx * abs(x), y)
 
 
 def tail_lamp(p, sx):
-    """One wrapped tail lamp, swept along tail_skin_path()."""
+    """One wrapped tail lamp, swept along the bed's own skin."""
     zm = 0.5 * (Z_TAIL0 + Z_TAIL1)
-    path = tail_skin_path(sx, zm, TAIL_LAMP_T)
+    stations = tail_stations()
+    # Step the inboard end clear of the shut line, so the lens sits on the rear face
+    # rather than straddling the gap it is supposed to stop short of.  Carried at
+    # every height, not just at zm, or the lens would lean across the shut line.
+    step = [(sx * TAIL_LAMP_SHUT, 0.0)] + [(0.0, 0.0)] * (len(stations) - 1)
+    plan = [(x + dx, y + dy) for (x, y), (dx, dy)
+            in zip((tail_skin_at(sx, st, zm) for st in stations), step)]
     # Arc length remaining to the OUTBOARD end, per station — the fillets' only input.
-    # Measured on the plan path itself rather than assumed from TAIL_LAMP_T, so adding
-    # or moving a station can never change the corner's radius, only how well it is
-    # resolved.
-    seg = [math.dist(path[i], path[i + 1]) for i in range(len(path) - 1)]
-    left = [sum(seg[i:]) for i in range(len(path))]
+    # Measured on the plan path itself rather than assumed from the station tables, so
+    # adding or moving a station can never change the corner's radius, only how well
+    # it is resolved.
+    seg = [math.dist(plan[i], plan[i + 1]) for i in range(len(plan) - 1)]
+    left = [sum(seg[i:]) for i in range(len(plan))]
     rings = []
-    for i, (x, y) in enumerate(path):
+    for i, st in enumerate(stations):
         # Outward normal = the plan tangent turned a quarter turn.  Taken from the
         # NEIGHBOURS rather than per-segment so consecutive sections share it and the
         # sweep cannot kink at a station.  The sx factor flips the turn with the side.
-        a, b = path[max(0, i - 1)], path[min(len(path) - 1, i + 1)]
+        a, b = plan[max(0, i - 1)], plan[min(len(plan) - 1, i + 1)]
         tx, ty = b[0] - a[0], b[1] - a[1]
         L = math.hypot(tx, ty) or 1.0
         nx, ny = sx * ty / L, -sx * tx / L
@@ -1333,16 +1543,12 @@ def tail_lamp(p, sx):
         z0 = Z_TAIL0 + edge_fillet(left[i], TAIL_FILLET_BOT)
         z1 = Z_TAIL1 - edge_fillet(left[i], TAIL_FILLET_TOP)
         h = z1 - z0
+        dx, dy = step[i]
 
-        def at(off, u):
-            # THE PATH IS SOLVED AT ONE HEIGHT (zm) but the tail surface ROLLS FORWARD
-            # as it climbs — up to 8 mm over the lamp's own span.  Extruded straight,
-            # the lens ends up that far behind the panel at its top, and the bezel
-            # return (near-horizontal, so a big face for its depth) shows through the
-            # back as a black wedge.  Carrying the lean delta puts every section point
-            # on the skin at its OWN height instead.
+        def at(off, u, st=st, dx=dx, dy=dy, z0=z0, h=h, nx=nx, ny=ny):
             z = z0 + h * u
-            return (x + nx * off, y + ny * off + tail_lean(z) - tail_lean(zm), z)
+            x, y = tail_skin_at(sx, st, z)
+            return (x + dx + nx * off, y + dy + ny * off, z)
         rings.append([at(-TAIL_LAMP_DEEP, 0.0)]
                      + [at(TAIL_LAMP_PROUD, u) for u in TAIL_LAMP_U]
                      + [at(-TAIL_LAMP_DEEP, 1.0)])
@@ -1405,7 +1611,7 @@ def build_bed_detail(p):
     xw = W_WHEELHOUSE - 0.012
     # Runs to just short of the tailgate's INNER face, not to the bed loft's last
     # station — the rim carries the tub another 100 mm back past that.
-    y0, y1 = Y_TAILGATE + 0.056, Y_BED_F - 0.020
+    y0, y1 = Y_TAILGATE + 0.056, Y_BED_F - BED_WALL_T + 0.004
     n = N_RIBS * 2
     top = []
     for i in range(n + 1):
@@ -1414,11 +1620,37 @@ def build_bed_detail(p):
     prof = top + [(xw, Z_BEDFLOOR - 0.010), (-xw, Z_BEDFLOOR - 0.010)]
     loft(p, [[(x, y, z) for x, z in prof] for y in (y1, y0)], "RangerPaint")
 
-    # Pressed panel on the inner face of the bed FRONT wall and the tailgate.  Both
-    # are stared at from the chase camera whenever the bed is empty.
-    for (yf, yb) in ((Y_BED_F - 0.028, Y_BED_F - 0.062),
+    # THE BED'S FRONT WALL, and it is a WALL — it closes the whole opening, floor to
+    # rail and wall to wall, with its face ON Y_BED_F.
+    #
+    # bed_ring() is a closed section around the SOLID — pan, flanks, rails, floor slab —
+    # so the loft's front cap fills the metal and not the mouth.  Nothing else ever did
+    # either: what stood there was the pressed panel, 28 mm back off the section and
+    # only spanning z 0.755..1.066, so the front of the bed was OPEN for 55 mm above the
+    # floor and 75 mm below the rail (a ray fired forward down the bed came out on the
+    # cab's rear skin) and the wall that was there read as set back from the bedsides
+    # (owner, 2026-09-27: "the front wall of the bed could move forward a little bit,
+    # it's not flush with the front edge of the bedside").
+    #
+    # Flush is safe here: the cap covers the section's SOLID only, so a face at Y_BED_F
+    # across the mouth is coplanar with nothing — it butts the cap's inner edge along
+    # the floor, both inner walls and the rail.
+    box(p, -W_BED_IN, W_BED_IN, Y_BED_F - BED_WALL_T, Y_BED_F,
+        Z_BEDFLOOR - 0.008, Z_RAIL, "RangerPaint")   # 8 mm UNDER the floor, or its
+                                                     # underside is coplanar with the
+                                                     # tub's floor and z-fights
+
+    # Pressed panel on the inner face of that wall and of the tailgate.  Both are
+    # stared at from the chase camera whenever the bed is empty.
+    # W_BED_IN, NOT A TYPED 0.560.  At 0.560 the panel stopped 140 mm short of the tub
+    # wall on each side, so the bed's front wall read as a narrow plate with the floor
+    # running past it into the corners (owner, 2026-09-26: "the front wall of the truck
+    # bed isn't wide enough to meet the bedsides").  2 mm inside the wall, not on it:
+    # flush, the panel's own side faces would be coplanar with the tub's and z-fight.
+    for (yf, yb) in ((Y_BED_F - BED_WALL_T + 0.004, Y_BED_F - BED_WALL_T - 0.014),
                      (Y_TAILGATE + 0.094, Y_TAILGATE + 0.060)):
-        box(p, -0.560, 0.560, yb, yf, Z_BEDFLOOR + 0.055, Z_RAIL - 0.075, "RangerPaint")
+        xw = W_BED_IN - 0.002
+        box(p, -xw, xw, yb, yf, Z_BEDFLOOR + 0.055, Z_RAIL - 0.075, "RangerPaint")
 
     # Tailgate outer: the handle, and nothing else.  There USED to be a body-colour
     # crease box above it, standing 16 mm proud across the middle of the gate; the
@@ -1735,8 +1967,21 @@ def build_front_end(p):
     # AND at the trailing edge on the fender, the two places the reference shows a
     # radius.  If this ever starts reading as a taper again, it has crept inboard of
     # station 5; that is the line it must not cross.
-    NOSE_LAMP_ROUND = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                       0.004, 0.010, 0.016, 0.024, 0.029, 0.034)
+    # AND IT IS SOLVED FROM ARC LENGTH, NOT TYPED PER STATION (2026-09-25).  As a
+    # hand-typed ramp it started at station 6 — 192 mm back along a 520 mm path, more
+    # than a third of the run — so the top edge left its straight line with a KINK and
+    # then sagged the whole way round the corner.  That put the break within a station
+    # of the clear/amber divider, and the owner read the result as the two lenses not
+    # agreeing: "the marker/indicator is also discontinuous with the headlight at its
+    # top edge".  This is the tail lamps' defect class exactly (see edge_fillet): a
+    # radius spread over a third of a run IS a taper, and no amount of shrinking the
+    # numbers fixes a wrong shape.
+    #
+    # edge_fillet() is a real circle measured back from the trailing tip: zero slope
+    # where it starts, so the top edge runs DEAD LEVEL from the grille right around the
+    # corner and only breaks in the last 40 mm, out on the fender where the reference
+    # shows a radius.  The divider is 273 mm from that end and now sits on the flat.
+    NOSE_LAMP_ROUND_R = 0.040
     NOSE_LAMP_TAIL = (0.0, 0.019, 0.035)
                                      # how far back along the STRAIGHT fender the lamp runs
                                      # past the rim blend, per station.  The LAST entry is
@@ -1785,25 +2030,40 @@ def build_front_end(p):
             return (sx * abs(x), y)
 
         n = N_FACE + len(NOSE_RIM) + len(NOSE_LAMP_TAIL)   # face, rim rings, flank
-        for sched in (NOSE_LAMP_BULGE, NOSE_LAMP_LEAN, NOSE_LAMP_ROUND):
+        for sched in (NOSE_LAMP_BULGE, NOSE_LAMP_LEAN):
             assert len(sched) == n, "one entry per path station"
         zm = 0.5 * (OPEN_Z0 + OPEN_Z1)
         path = [station(i, zm) for i in range(n)]
-        rings = []
+        # Cumulative arc length along the plan path, so the corner round-off can be a
+        # circle of a stated radius rather than a per-station guess — the stations are
+        # bunched hard through the rim and sparse on the face, so anything keyed to the
+        # station INDEX changes shape the moment a station is added or moved.
+        cum = [0.0]
+        for i in range(1, n):
+            cum.append(cum[-1] + math.hypot(path[i][0] - path[i - 1][0],
+                                            path[i][1] - path[i - 1][1]))
+        round_z = [edge_fillet(cum[-1] - c, NOSE_LAMP_ROUND_R) for c in cum]
+
+        # Outward normal = the plan tangent turned a quarter turn, taken from the
+        # NEIGHBOURS so consecutive sections share it and the sweep cannot kink.
+        # It points +y (forward) along the nose face and swings to +x (outboard)
+        # as the path turns back down the flank.  sx flips the turn with the side.
+        nrm = []
         for i in range(n):
-            # Outward normal = the plan tangent turned a quarter turn, taken from the
-            # NEIGHBOURS so consecutive sections share it and the sweep cannot kink.
-            # It points +y (forward) along the nose face and swings to +x (outboard)
-            # as the path turns back down the flank.  sx flips the turn with the side.
             a, b = path[max(0, i - 1)], path[min(n - 1, i + 1)]
             tx, ty = b[0] - a[0], b[1] - a[1]
             L = math.hypot(tx, ty) or 1.0
-            nx, ny = -sx * ty / L, sx * tx / L
-            ux, uy = tx / L, ty / L                      # unit tangent, for the lean
+            nrm.append((-sx * ty / L, sx * tx / L, tx / L, ty / L))
+
+        u_mid = _lens_mid_knots(station, nrm, round_z, n, OPEN_Z0, OPEN_Z1, BEZEL_U)
+
+        rings = []
+        for i in range(n):
+            nx, ny, ux, uy = nrm[i]                      # ux, uy: unit tangent, for the lean
             # ONE floor for every station, clear lens and amber alike — that is the
             # whole of "square", and the floor never varies.  The ceiling only comes
             # down for the corner radius, out where the lamp dies on the fender.
-            z0, z1 = OPEN_Z0, OPEN_Z1 - NOSE_LAMP_ROUND[i]
+            z0, z1 = OPEN_Z0, OPEN_Z1 - round_z[i]
             h, off, bul = z1 - z0, NOSE_LAMP_PROUD, NOSE_LAMP_BULGE[i]
             lean = NOSE_LAMP_LEAN[i]
 
@@ -1816,7 +2076,7 @@ def build_front_end(p):
             # lit face.  So bands 1 and 4 ARE the bezel — one visible face each — 0 and
             # 5 are inside the panel, and 6 is the back plane.
             ring = [at(off - NOSE_LAMP_BACK, 0.0), at(-BEZEL_LIP, 0.0),
-                    at(off, BEZEL_U), at(off + bul, 0.5), at(off, 1.0 - BEZEL_U),
+                    at(off, BEZEL_U), at(off + bul, u_mid[i]), at(off, 1.0 - BEZEL_U),
                     at(-BEZEL_LIP, 1.0), at(off - NOSE_LAMP_BACK, 1.0)]
             rings.append(ring)
         # The clear/amber divider is a band material, not a body boundary — see the note
@@ -2069,7 +2329,7 @@ def build_rear_end(p):
                    (-tg_x, gy(tg_x) + TG_T, z)])
     loft(p, tg, "RangerPaint")
 
-    # Tail lamps — see the note above tail_skin_path().  They wrap the bed's rear
+    # Tail lamps — see the note above tail_skin_at().  They wrap the bed's rear
     # corner and die on the flank, so there is no separate bezel box: the dark
     # returns at the top and bottom of the swept section ARE the bezel.
     for sx in (1, -1):
@@ -2109,16 +2369,30 @@ def build_rear_end(p):
     for sx in (1, -1):
         # Top at 0.436, not 0.442: the bedside sill is exactly 0.442 there and the
         # two faces were coplanar.
-        box(p, sx * 0.590, sx * 0.816, -2.132, -2.100, 0.108, 0.436, "RangerTrim")
+        #
+        # THE BOTTOM EDGE IS THE MODEL'S LOWEST POINT, so it is also what shiftDown is
+        # derived from: raise it and data/vehicle-models.js has to be re-copied from
+        # report()'s printout or the truck floats by exactly the difference.  Owner,
+        # 2026-09-22: "make the mudflaps slightly shorter" — 0.108 to 0.146, so they
+        # hang 328 -> 290 mm and clear the ground by 146 mm rather than 108.
+        box(p, sx * 0.590, sx * 0.816, -2.132, -2.100, 0.146, 0.389, "RangerTrim")
 
 
 # ---------------------------------------------------------------------------
 # EXTERIOR TRIM
 # ---------------------------------------------------------------------------
-# The root must sit ON THE DOOR SKIN, i.e. AT OR BELOW the beltline — above it
-# there is no body, only glass, and the first placement left the head hanging in
-# mid-air beside the A-pillar with a visible gap.
-MIRROR_AT = (0.776, 0.398, 1.146)   # sail-mount root on the door skin
+# THE ROOT IS ON THE SAIL PATCH (owner, 2026-09-22: "reattach the wing mirrors").  It
+# used to be pinned to the door SKIN, at or below the beltline, because above the belt
+# there was nothing but glass to bolt to.  Lowering the belt made that placement read as
+# a mirror stuck to the middle of the door, and the patch — which is where the real one
+# mounts — now exists to carry it.  x is the patch's own plane, so the wedge emerges
+# through it instead of floating beside it.
+MIRROR_AT = (0.759, 0.660, 1.120)   # sail-mount root, ON THE A-PILLAR.  It has to touch
+                                    # metal: parked in the window opening with only the
+                                    # cabin behind it, the wedge reads from three-quarter
+                                    # front as daylight between the mirror and the truck.
+                                    # The pillar is 68 mm wide now, which is enough to
+                                    # land the mount on without a patch under it.
 
 
 def build_mirror(p, sx):
@@ -2161,8 +2435,7 @@ def build_trim(p):
     for sx in (1, -1):
         build_mirror(p, sx)
         # Door handle, and the shut line that says there IS a door.
-        box(p, sx * 0.796, sx * 0.822, -0.170, -0.038, 1.062, 1.100, "RangerTrim")
-        box(p, sx * 0.800, sx * 0.812, -0.626, 0.556, 0.860, 0.874, DARK)
+        box(p, sx * 0.796, sx * 0.822, -0.320, -0.188, 0.949, 0.987, "RangerTrim")
 
     # Cowl: the black plenum strip at the base of the windscreen, plus two wipers.
     # Without it the glass runs straight into the hood and the nose reads unfinished.
@@ -2184,9 +2457,9 @@ def build_interior(p):
     # Transmission tunnel down the centre of the floor.
     # Everything standing ON the cab floor starts 8 mm above it.  Sharing the plane
     # exactly puts a coincident face pair under each fitting.
-    hexa(p, [(-W_TUNNEL, -0.520, Z_FLOOR + 0.008), (W_TUNNEL, -0.520, Z_FLOOR + 0.008),
+    hexa(p, [(-W_TUNNEL, -0.415, Z_FLOOR + 0.008), (W_TUNNEL, -0.415, Z_FLOOR + 0.008),
              (W_TUNNEL, Y_COWL, Z_FLOOR + 0.008), (-W_TUNNEL, Y_COWL, Z_FLOOR + 0.008),
-             (-W_TUNNEL + 0.045, -0.520, Z_TUNNEL), (W_TUNNEL - 0.045, -0.520, Z_TUNNEL),
+             (-W_TUNNEL + 0.045, -0.415, Z_TUNNEL), (W_TUNNEL - 0.045, -0.415, Z_TUNNEL),
              (W_TUNNEL - 0.045, Y_COWL, Z_TUNNEL + 0.060),
              (-W_TUNNEL + 0.045, Y_COWL, Z_TUNNEL + 0.060)], DARK)
 
@@ -2199,7 +2472,7 @@ def build_interior(p):
         Z_BELT - 0.012, DARK)
 
     # --- Dash --------------------------------------------------------------
-    Y_DASH = 0.322                          # rear edge of the pad
+    Y_DASH = 0.427                          # rear edge of the pad
     hexa(p, [(-0.692, Y_DASH, 1.062), (0.692, Y_DASH, 1.062),
              (0.692, Y_COWL, 1.108), (-0.692, Y_COWL, 1.108),
              (-0.692, Y_DASH, 1.118), (0.692, Y_DASH, 1.118),
@@ -2225,15 +2498,15 @@ def build_interior(p):
     for x0, x1 in ((-0.680, -0.576), (-0.098, -0.012), (0.012, 0.098), (0.576, 0.680)):
         box(p, x0, x1, Y_DASH - 0.032, Y_DASH - 0.012, 1.086, 1.126, "RangerTrim")
     # Steering column shroud (the wheel itself is a separate, animatable object).
-    strut(p, (-0.355, 0.250, 1.019), (-0.355, 0.452, 0.933), 0.086, 0.078, DARK)
+    strut(p, (-0.355, 0.355, 1.019), (-0.355, 0.557, 0.933), 0.086, 0.078, DARK)
 
     # --- Console + shifter --------------------------------------------------
-    hexa(p, [(-0.168, -0.062, Z_TUNNEL - 0.040), (0.168, -0.062, Z_TUNNEL - 0.040),
-             (0.168, 0.242, Z_TUNNEL - 0.040), (-0.168, 0.242, Z_TUNNEL - 0.040),
-             (-0.150, -0.062, 0.868), (0.150, -0.062, 0.868),
-             (0.150, 0.242, 0.842), (-0.150, 0.242, 0.842)], DARK)
-    strut(p, (-0.016, 0.104, 0.842), (-0.016, 0.028, 0.986), 0.030, 0.030, DARK)
-    box(p, -0.046, 0.014, -0.004, 0.056, 0.982, 1.028, "RangerTrim")     # shift knob
+    hexa(p, [(-0.168, 0.043, Z_TUNNEL - 0.040), (0.168, 0.043, Z_TUNNEL - 0.040),
+             (0.168, 0.347, Z_TUNNEL - 0.040), (-0.168, 0.347, Z_TUNNEL - 0.040),
+             (-0.150, 0.043, 0.868), (0.150, 0.043, 0.868),
+             (0.150, 0.347, 0.842), (-0.150, 0.347, 0.842)], DARK)
+    strut(p, (-0.016, 0.209, 0.842), (-0.016, 0.133, 0.986), 0.030, 0.030, DARK)
+    box(p, -0.046, 0.014, 0.101, 0.161, 0.982, 1.028, "RangerTrim")      # shift knob
 
     # --- Seats.  The backs MUST break the beltline or the cabin reads as empty
     # through the glass no matter how good the geometry is (ART-STYLE, the beltline
@@ -2263,33 +2536,39 @@ def build_interior(p):
         # Cushion: swept front-to-back, tapering and dropping at the front lip.
         zc = 0.5 * (0.660 + Z_CUSHION)
         hz = 0.5 * (Z_CUSHION - 0.660)
-        loft(p, [seat_section(cx, 0.230, hz, -0.420, zc, 0.030),
-                 seat_section(cx, 0.232, hz, -0.180, zc, 0.034),
-                 seat_section(cx, 0.222, hz * 0.86, 0.020, zc - 0.022, 0.030)],
+        loft(p, [seat_section(cx, 0.230, hz, -0.315, zc, 0.030),
+                 seat_section(cx, 0.232, hz, -0.075, zc, 0.034),
+                 seat_section(cx, 0.222, hz * 0.86, 0.125, zc - 0.022, 0.030)],
              "RangerSeat")
         # Back: swept BOTTOM-TO-TOP, so its slices are horizontal (x-y at fixed z),
         # not vertical like the cushion's.  Leans back and narrows into the headrest.
-        back = [(-0.424, Z_CUSHION - 0.030, 0.228, 0.056),
-                (-0.462, 1.110, 0.226, 0.054),
-                (-0.502, Z_SEATBACK - 0.130, 0.214, 0.050),
-                (-0.528, Z_SEATBACK - 0.036, 0.176, 0.046),
-                (-0.540, Z_SEATBACK, 0.140, 0.038)]
+        back = [(-0.319, Z_CUSHION - 0.030, 0.228, 0.056),
+                (-0.357, 1.110, 0.226, 0.054),
+                (-0.397, Z_SEATBACK - 0.130, 0.214, 0.050),
+                (-0.423, Z_SEATBACK - 0.036, 0.176, 0.046),
+                (-0.435, Z_SEATBACK, 0.140, 0.038)]
         loft(p, [seat_section_h(cx, hw, ht, cy, cz, 0.026)
                  for cy, cz, hw, ht in back], "RangerSeat")
 
     # --- Door cards: an armrest and a pull, both proud of the tub wall ---------
     for sx in (1, -1):
-        box(p, sx * 0.636, sx * 0.700, -0.196, 0.164, 0.930, 0.984, DARK)
-        box(p, sx * 0.660, sx * 0.700, -0.062, 0.108, 1.056, 1.096, "RangerTrim")
+        box(p, sx * 0.636, sx * 0.700, -0.091, 0.269, 0.930, 0.984, DARK)
+        box(p, sx * 0.660, sx * 0.700, 0.043, 0.213, 0.943, 0.983, "RangerTrim")
 
     # --- Overhead: mirror and two visors.  Cheap, and they sell the cockpit. ----
-    box(p, -0.062, 0.062, -0.086, 0.006, 1.446, 1.500, DARK)
-    strut(p, (-0.062, 0.062, 1.470), (-0.062, -0.060, 1.470), 0.026, 0.026, DARK)
+    # HUNG OFF Z_HEADLINER, never typed.  These were hand-placed against a 1.526
+    # ceiling; thinning the roof raised it 30 mm and left all three floating in the
+    # air.  As offsets they simply come along.
+    hl = Z_HEADLINER
+    box(p, -0.062, 0.062, 0.019, 0.111, hl - 0.080, hl - 0.026, DARK)
+    strut(p, (-0.062, 0.167, hl - 0.056), (-0.062, 0.045, hl - 0.056),
+          0.026, 0.026, DARK)
     for sx in (1, -1):
-        hexa(p, [(sx * 0.130, 0.028, 1.494), (sx * 0.560, 0.028, 1.494),
-                 (sx * 0.560, -0.062, 1.494), (sx * 0.130, -0.062, 1.494),
-                 (sx * 0.130, 0.052, 1.510), (sx * 0.560, 0.052, 1.510),
-                 (sx * 0.560, -0.040, 1.510), (sx * 0.130, -0.040, 1.510)], DARK)
+        hexa(p, [(sx * 0.130, 0.133, hl - 0.032), (sx * 0.560, 0.133, hl - 0.032),
+                 (sx * 0.560, 0.043, hl - 0.032), (sx * 0.130, 0.043, hl - 0.032),
+                 (sx * 0.130, 0.157, hl - 0.016), (sx * 0.560, 0.157, hl - 0.016),
+                 (sx * 0.560, 0.065, hl - 0.016), (sx * 0.130, 0.065, hl - 0.016)],
+             DARK)
 
 
 # ---------------------------------------------------------------------------
@@ -2476,102 +2755,205 @@ def strut(part, p0, p1, w, t, mat):
     loft(part, rings, mat)
 
 
-# Greenhouse key points (right side; x is mirrored for the left).
-GH_BELT = 1.192                    # glass sits a hair proud of the sheet-metal belt
-# PILLAR TRAP.  The first pass built these at 0.058 x 0.052 and they read as roll-
-# cage bars stuck to the outside of the cab.  A window frame is THIN and FLUSH: the
-# section is now 0.038 across, and the feet sit inboard of the beltline (0.775) by
-# just enough that half the prism's thickness lands back on the body surface.
-A_FOOT = (0.744, 0.556, 1.168)     # A-pillar foot, ON the cowl deck.  Sunk below it
-                                   # and the prism pokes out through the hood.
-A_HEAD = (0.680, 0.089, 1.540)     # A-pillar head, at the roof front corner
-C_FOOT = (0.744, -0.622, 1.176)
-C_HEAD = (0.680, -0.574, 1.540)
-B_FOOT = (0.758, -0.386, 1.184)    # rear quarter division — a real line on the ref car
-B_HEAD = (0.690, -0.370, 1.528)
+# ---------------------------------------------------------------------------
+# THE GREENHOUSE IS ONE RULED SKIN — rewritten 2026-09-22.
+#
+# Owner: "its clear they're an assortment of boxes meeting at nodes.  figure out the
+# cheapest way to blend them into one continuous face or a door face and a roof face."
+# Right, and it was structural, not a matter of nudging.  The A/B/C pillars were prisms
+# CENTRED on their own hand-typed lines, the drip rail was a box and the roof was a
+# third box — four different half widths for what is physically one panel:
+#
+#     pillar feet 0.764 | pillar heads 0.700 | drip rail 0.706 | roof side 0.676
+#
+# so the surface stepped in and out four times on the way up, and every joint was a
+# node.  No amount of tuning fixes that; the fault is that there were four numbers.
+#
+# There is ONE number now: gh_x(z), a straight tumblehome from the door shoulder
+# (W_BELT at Z_BELT, exactly where cab_ring leaves off) to the roof edge (W_ROOF at
+# Z_ROOF).  Every greenhouse part puts its OUTER FACE on it —
+#   * the pillars, from their feet up to the daylight-opening line;
+#   * the cant rail, which is not a part at all any more: it is the roof's own turned-
+#     down edge, one loft section running crown -> deck -> over the edge -> down the
+#     tumblehome -> under the rail -> back along the headliner;
+#   * the glass, one inset behind it.
+# Pillar and rail then meet BUTTED on the same plane at Z_DLO_TOP, which flat shading
+# draws as no seam at all: a door face and a roof face, which is what was asked for.
+# The two deleted drip-rail boxes paid for the roof section's extra points.
+# ---------------------------------------------------------------------------
+Z_DLO_TOP = 1.534       # daylight-opening top = the cant rail's lower edge.  Pillars
+                        # END here and the rail's outer face STARTS here, so the two
+                        # butt rather than overlap — coplanar-and-butted is a seam,
+                        # coplanar-and-overlapping is a z-fight (see audit()).
+W_RAIL_IN = 0.662       # rail inner face — the reveal the side glass tucks up behind.
+                        # IT HAS TO CLEAR THE SCREENS (asserted in report()).  The rail
+                        # hangs 36 mm below the headliner, so anywhere it overlaps a
+                        # screen in plan the aperture's top line steps down by that much
+                        # and the corner reads as a notch — which is exactly what it did
+                        # at 0.646.  Outboard of the windscreen's own edge it cannot:
+                        # the headliner is then the only thing cutting the pane, and the
+                        # top of the aperture is one straight line all the way across.
+ROOF_EDGE = 0.018       # chamfer where the roof deck turns down onto the tumblehome.
+                        # 26 mm until the roof was thinned: the band it is a chamfer ON
+                        # is only 48 mm tall now, and a chamfer that eats half of its
+                        # own face stops reading as a highlight and starts reading as
+                        # the face.
+PILLAR_TUCK = 0.014     # how far a pillar's stub above Z_DLO_TOP necks IN — outboard,
+PILLAR_TUCK_Y = 0.008   # and fore-and-aft.  The stub has to go somewhere, and left at
+                        # full section every face of it is coplanar with something: its
+                        # outer face with the rail's, its top cap with the rail's
+                        # underside, and — for the A and C pillars, whose edge lines ARE
+                        # the header planes — its front and rear faces with the roof's
+                        # own caps.  Necked on both axes it is simply buried, and the
+                        # visible pillar still dies exactly on Z_DLO_TOP.
+GLASS_INSET = 0.010     # side glass, behind the skin
+SCREEN_REVEAL = 0.040   # windscreen / backlight: how much painted pillar they leave
+                        # showing outboard.  Must stay under the pillar thickness or
+                        # the glass edge falls off the back of the front face.
+SCREEN_INSET = 0.012    # ...and how far behind the header face they sit, so the glass
+                        # and the raked cap are parallel but never coplanar.
 
 
-def pillar_frame(foot, head, width, thick, sx):
-    """Return (prism_rings, glass_edge_front, glass_edge_rear) for one window pillar.
+def gh_x(z):
+    """Half width of the cab's outer skin at height z.  THE greenhouse surface."""
+    return W_BELT + (W_ROOF - W_BELT) * (z - Z_BELT) / (Z_ROOF - Z_BELT)
 
-    THE WAVY-LINE FIX (owner, 2026-08-25: "the A pillar line where the window glass
-    meets the pillar should be much straighter and less wavy").  The first pass drew
-    the pillar, the windscreen's outboard edge and the door glass's front edge as
-    three INDEPENDENT hand-typed lines.  Three lines that are nearly-but-not-quite
-    parallel read as a wobble, and no amount of nudging the numbers fixes it because
-    the error is structural.  Here all three come off ONE line: the pillar prism is
-    centred on it, and each glass edge is that same line displaced by half the frame
-    width along the pillar's own cross-axis.  They are parallel by construction.
+
+# Pillars as (y, z) ONLY.  x is not typed anywhere: it comes off gh_x(), which is the
+# whole point of the rewrite.
+A_FOOT = (0.661, 1.168)    # A-pillar foot, on the cowl deck.  Sunk below it and the
+                           # section pokes out through the hood.
+A_HEAD = (0.1438, 1.580)   # ...and its head, buried in the roof's front corner.  The
+                           # heads are ON THE SAME RAKE as before, just carried higher:
+                           # they have to clear Z_HEADLINER so the top cap stays inside
+                           # the slab, and the slab's underside went up 30 mm.
+# THE C-PILLAR SITS ON THE CAB, not 28 mm behind it.  Its rear edge is the whole cab's
+# rear surface — the panel, the roof's rear cap and the brake light all key off it — and
+# it used to land at y -0.658 while the cab loft's own rear cap is at Y_CAB_REAR (-0.630).
+# So the entire upper rear panel overhung the lower body, and what you saw from behind
+# was the UNDERSIDE of that overhang: 62 cm2 of downward-facing paint with nothing below
+# it.  The rear edge now lands 3.6 mm inside Y_CAB_REAR at the beltline — inside, so the
+# cab's own cap hides the panel's bottom edge and the pillar's foot; not flush, because
+# flush is coplanar.  It also makes the cab-to-bed gap the same 80 mm above the beltline
+# as below, which is what Y_BED_F's comment always claimed it was.
+C_FOOT = (-0.4860, 1.063)
+C_HEAD = (-0.4178, 1.580)
+# THERE IS NO B-PILLAR (owner, 2026-09-25: "let's get rid of the split window and make it
+# just a regular window").  A regular-cab Ranger has one door glass and no quarter light;
+# the division was a line read off the reference that is not actually there.
+PILLARS = ((A_FOOT, A_HEAD, PILLAR_A, PILLAR_T_A),
+           (C_FOOT, C_HEAD, PILLAR_C, PILLAR_T_C))
+C_RAKE = (C_HEAD[0] - C_FOOT[0]) / (C_HEAD[1] - C_FOOT[1])
+A_RAKE = (A_HEAD[0] - A_FOOT[0]) / (A_HEAD[1] - A_FOOT[1])
+
+
+def pillar_rake(foot, head):
+    """(dy/dz, cosine of the rake) for a pillar given as two (y, z) points."""
+    dy, dz = head[0] - foot[0], head[1] - foot[1]
+    return dy / dz, dz / math.hypot(dy, dz)
+
+
+def pillar_edge_y(foot, head, width, z, s):
+    """y of a pillar's front (s = +1) or rear (s = -1) edge at height z.
+
+    A HORIZONTAL cut through a raked slab spans width / cos(rake), which is why this
+    is not just width/2: the pillar's face is `width` across measured square to it.
     """
-    import mathutils
-    a = mathutils.Vector((sx * foot[0], foot[1], foot[2]))
-    b = mathutils.Vector((sx * head[0], head[1], head[2]))
-    d = (b - a).normalized()
-    u = mathutils.Vector((1, 0, 0)).cross(d).normalized()   # across the frame, in y-z
-    v = d.cross(u).normalized()                             # outboard-ish normal
-    if v.x * sx < 0:
-        v, u = -v, -u
-    # Pick the sign of u that heads TOWARD the nose, so "front" means the windscreen
-    # side on both flanks of the truck rather than mirroring with sx.
-    if u.y < 0:
-        u = -u
-    rings = [[tuple(c + u * (width * 0.5) + v * (thick * 0.5)),
-              tuple(c - u * (width * 0.5) + v * (thick * 0.5)),
-              tuple(c - u * (width * 0.5) - v * (thick * 0.5)),
-              tuple(c + u * (width * 0.5) - v * (thick * 0.5))] for c in (a, b)]
-    inset = v * (thick * 0.5 + GLASS_INSET)
-    front = [tuple(c + u * (width * 0.5) - inset) for c in (a, b)]
-    rear = [tuple(c - u * (width * 0.5) - inset) for c in (a, b)]
+    m, dzn = pillar_rake(foot, head)
+    return foot[0] + m * (z - foot[1]) + s * 0.5 * width / dzn
+
+
+# THE WINDOW SURROUND IS ONE WIDTH ON ALL FOUR EDGES, AND IT IS THE WIDTH YOU SEE.
+# Until 2026-09-25 every edge inset by the same 20 mm measured in its OWN axis, which
+# is not the same thing at all: the A-pillar rakes 51 degrees, so 20 mm of y drew a
+# 12 mm band beside it, and the top edge's outer line was GLASS_TOP_Z — 16 mm ABOVE the
+# cant rail's underside — so 16 of its 20 mm were buried behind the rail and 4 mm
+# showed.  Owner: "the top is way too thin and the sides are a little too thin ... the
+# bottom can be slightly thicker than the other sides".  Each raked edge now takes
+# TRIM_VIS * hypot(rake, 1) so the band measures TRIM_VIS SQUARE TO ITSELF, and the top
+# is measured down from Z_DLO_TOP, the line the eye actually reads.
+TRIM_VIS = 0.028        # visible width of the surround on the top, front and rear...
+TRIM_VIS_B = 0.038      # ...and along the bottom, the one edge allowed to be heavier.
+
+
+def _trim_dy(m):
+    """Horizontal offset that draws a band TRIM_VIS wide SQUARE to an edge raked m.
+
+    A horizontal cut through a line raked m = dy/dz is longer than the perpendicular
+    distance by hypot(m, 1) — the same factor pillar_edge_y() applies to a pillar's
+    width, and for the same reason.
+    """
+    return TRIM_VIS * math.hypot(m, 1.0)
+
+
+def _solve_glass_bottom(dy):
+    """Height at which the window aperture's FRONT edge crosses the cab's shoulder.
+
+    THE GLASS STARTS HERE, not at the sheet-metal belt.  Lower than this the aperture's
+    front boundary has run forward of the cowl and the sill is above it, so a pane drawn
+    down to the belt gets its front corner sliced off at an angle and stops being a quad.
+    Solved, never typed: the pillar's rake, its width, the surround's own width and the
+    cowl's step have each moved this month and all four land here.  `dy` is how far the
+    aperture sits behind the pillar's rear edge — widening the surround moves the
+    crossing DOWN, which is why the solve takes it rather than assuming zero.
+    """
+    lo, hi = Z_BELT, 1.30
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        y = pillar_edge_y(A_FOOT, A_HEAD, PILLAR_A, mid, -1) - dy
+        if _interp(CAB_ST, y)[2] - mid > 0.0:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+# ...and the bottom band is whichever is TALLER: the height the quad constraint forces,
+# or TRIM_VIS_B.  Neither one alone is safe — the first can come out thinner than the
+# other three edges, the second can slice the front corner off.
+GH_BELT = max(Z_BELT + TRIM_VIS_B, _solve_glass_bottom(_trim_dy(A_RAKE)))
+
+
+def pillar_frame(foot, head, width, thick, sx, chamfer=0.0):
+    """(rings, front_edge, rear_edge) for one window pillar.
+
+    `chamfer` bevels the REAR-OUTER corner of the section, which is the cab's own
+    trailing edge above the beltline — see CAB_END_EDGE.  It adds a point, so the C
+    pillar's section is five-sided where the A's is four: the band map keys off that
+    (SKIN_BAND in build_greenhouse).
+
+    THE WAVY-LINE FIX, kept and extended (owner, 2026-08-25: "the A pillar line where
+    the window glass meets the pillar should be much straighter and less wavy").  The
+    pillar and the glass edges beside it still come off ONE line, so they are parallel
+    by construction rather than by nudging three hand-typed lines toward each other.
+    What is new is that the line lives ON gh_x(): the returned edges are the pillar's
+    front and rear edges AS DRAWN, on the skin, and every consumer insets from there.
+
+    THE RINGS ARE HORIZONTAL, not square to the pillar.  The edge lines come out the
+    same either way — see pillar_edge_y — but a horizontal top ring lands flat on
+    Z_DLO_TOP, and that is what lets the pillar butt the cant rail instead of crossing
+    it at the rake angle and leaving the notch the owner could see in the corner.
+    """
+    m, _dzn = pillar_rake(foot, head)
+
+    def yc(z):
+        return foot[0] + m * (z - foot[1])
+
+    hy = pillar_edge_y(foot, head, width, foot[1], 1) - yc(foot[1])
+
+    def ring(z, tuck=0.0, tuck_y=0.0):
+        xo, h = gh_x(z) - tuck, hy - tuck_y
+        rear = [(sx * xo, yc(z) - h, z)] if not chamfer else [
+            (sx * xo, yc(z) - h + chamfer, z), (sx * (xo - chamfer), yc(z) - h, z)]
+        return ([(sx * xo, yc(z) + h, z)] + rear
+                + [(sx * (xo - thick), yc(z) - h, z), (sx * (xo - thick), yc(z) + h, z)])
+
+    rings = [ring(foot[1]), ring(Z_DLO_TOP),
+             ring(head[1], PILLAR_TUCK, PILLAR_TUCK_Y)]
+    zs = (foot[1], head[1])
+    front = [(sx * gh_x(z), yc(z) + hy, z) for z in zs]
+    rear = [(sx * gh_x(z), yc(z) - hy, z) for z in zs]
     return rings, front, rear
-WS_BASE_Y, WS_BASE_Z = 0.580, 1.160    # windscreen bottom edge
-WS_TOP_Y, WS_TOP_Z = 0.089, 1.552      # windscreen top edge (tucked under the header)
-WS_HALF_B, WS_HALF_T = 0.704, 0.646    # half width at the bottom / top edge
-BL_BASE_Y, BL_BASE_Z = -0.622, 1.180   # backlight
-BL_TOP_Y, BL_TOP_Z = -0.575, 1.548
-BL_HALF_B, BL_HALF_T = 0.644, 0.630
-GLASS_INSET = 0.010                    # glass sits this far inboard of the pillar's outer face
-
-
-def build_greenhouse(p):
-    # Roof slab.  Rings in XZ, two stations: the underside IS the headliner, so this
-    # one box does the exterior roof and the interior ceiling with no extra geometry.
-    def roof_ring(y):
-        r = [(0.0, Z_HEADLINER), (W_ROOF, Z_HEADLINER), (W_ROOF, Z_ROOF),
-             (0.0, Z_ROOF + Z_ROOF_CROWN)]
-        return ([(x, y, z) for x, z in r]
-                + [(-x, y, z) for x, z in reversed(r[1:3])])
-    loft(p, [roof_ring(Y_HDR_F), roof_ring(Y_HDR_R)], "RangerPaint",
-         band_mats={0: DARK, 5: DARK})     # headliner underside
-
-    for sx in (1, -1):
-        for foot, head, w, t in ((A_FOOT, A_HEAD, PILLAR_A, 0.040),
-                                 (C_FOOT, C_HEAD, PILLAR_C, 0.044),
-                                 (B_FOOT, B_HEAD, 0.034, 0.038)):
-            rings, _f, _r = pillar_frame(foot, head, w, t, sx)
-            loft(p, rings, "RangerPaint")
-
-    # DRIP RAIL.  Runs the whole length of the door opening, from the A-pillar head
-    # to the C-pillar head — not just across the roof slab.  Without it there is an
-    # open slot between the top of the door glass and the roof that you can see the
-    # far side of the world through.
-    for sx in (1, -1):
-        box(p, sx * 0.646, sx * 0.706, C_HEAD[1] - 0.012, A_HEAD[1] + 0.012,
-            Z_HEADLINER - 0.036, Z_HEADLINER + 0.006, "RangerPaint")
-
-    # Cab rear panel above the beltline, either side of the backlight, plus the
-    # header strip over it — the backlight is a hole in a panel, not a floating pane.
-    for sx in (1, -1):
-        hexa(p, [(sx * BL_HALF_B, BL_BASE_Y, BL_BASE_Z - 0.03),
-                 (sx * 0.744, BL_BASE_Y, BL_BASE_Z - 0.03),
-                 (sx * 0.744, BL_BASE_Y + 0.05, BL_BASE_Z - 0.03),
-                 (sx * BL_HALF_B, BL_BASE_Y + 0.05, BL_BASE_Z - 0.03),
-                 (sx * BL_HALF_T, BL_TOP_Y, BL_TOP_Z),
-                 (sx * 0.676, BL_TOP_Y, BL_TOP_Z),
-                 (sx * 0.676, BL_TOP_Y + 0.05, BL_TOP_Z),
-                 (sx * BL_HALF_T, BL_TOP_Y + 0.05, BL_TOP_Z)], "RangerPaint")
-
-    # Third brake light, high on the cab rear — dead centre, unmistakable at night.
-    box(p, -0.105, 0.105, -0.616, -0.580, 1.498, 1.546, "RangerTail")
 
 
 def _edge_at_z(e0, e1, z):
@@ -2581,7 +2963,251 @@ def _edge_at_z(e0, e1, z):
     return tuple(e0[k] + (e1[k] - e0[k]) * t for k in range(3))
 
 
-GLASS_TOP_Z = 1.518                # side glass tucks under the drip rail here
+def _inset_line(line, sx, dx, dy=0.0):
+    """A pillar edge line moved dx inboard and dy along y.  Still a straight line, so
+    _edge_at_z() still reads it, and a pane built from two of them is still planar."""
+    return [(x - sx * dx, y + dy, z) for x, y, z in line]
+
+
+ROOF_BANDS = {4: DARK, 5: DARK, 6: DARK, 7: DARK}   # rail inner faces + headliner
+
+
+# Direction each point of roof_ring()'s outline moves when the rear ring is bevelled —
+# along its own OUTWARD normal, which bevel_ring() cannot do because it only moves x.
+# The roof's rear edge is horizontal across the top, so up there the chamfer is a drop
+# in z; by the time it reaches the cant rail it is a move inboard; the roof's own side
+# chamfer in between takes both.  The last three are the rail's inner face and the
+# headliner — inside the cabin, and they stay put.
+ROOF_BEVEL = ((0.0, -1.0), (0.0, -1.0), (-0.707, -0.707), (-1.0, 0.0),
+              (0.0, 0.0), (0.0, 0.0), (0.0, 0.0))
+
+
+def roof_ring(rake, y0, inset=0.0):
+    """Roof section at one end of the loft, LEANING at `rake` with the screen it closes.
+
+    The caps used to be vertical planes at a constant y, and the A-pillar — raked 51
+    degrees — crossed one: its head stuck out through the header, which is the notch
+    in the front corner.  A cap that leans at the SAME rake is edge-on to the screen,
+    so the pillar runs into the header and there is nothing left to see.  It costs
+    nothing: a loft ring is a list of points and they were never obliged to share a y.
+    """
+    def y(z):
+        return y0 + rake * (z - Z_DLO_TOP)
+    ze = Z_ROOF - ROOF_EDGE
+    r = [(0.0, Z_ROOF + Z_ROOF_CROWN), (W_ROOF - ROOF_EDGE, Z_ROOF),
+         (gh_x(ze), ze), (gh_x(Z_DLO_TOP), Z_DLO_TOP),
+         (W_RAIL_IN, Z_DLO_TOP), (W_RAIL_IN, Z_HEADLINER), (0.0, Z_HEADLINER)]
+    if inset:
+        r = [(x + inset * dx, z + inset * dz)
+             for (x, z), (dx, dz) in zip(r, ROOF_BEVEL)]
+    return ([(x, y(z), z) for x, z in r]
+            + [(-x, y(z), z) for x, z in reversed(r[1:-1])])
+
+
+WS_BASE_Y, WS_BASE_Z = 0.685, 1.160    # windscreen bottom edge
+WS_TOP_Y, WS_TOP_Z = 0.194, 1.566      # windscreen top edge, 10 mm up INSIDE the roof:
+                                       # the visible top of the aperture is the header's
+                                       # own lower edge at Z_HEADLINER, not the pane
+WS_HALF_B, WS_HALF_T = 0.704, 0.646    # nominal half width — report()'s clearance
+                                       # plane only; the pane's own edges are the
+                                       # A-pillar's, and always were
+BL_BASE_Z, BL_TOP_Z = Z_RAIL, 1.578    # bottom edge FLUSH WITH THE BED RAILS     # backlight.  Its y is not typed: the pane takes
+                                       # its edges from the C-pillar and the panel around
+                                       # it rides that same rear surface.
+BL_HALF_B, BL_HALF_T = 0.640, 0.545    # tapered in at the top, following the
+                                       # cab's own tumblehome (owner, ref photo 3)
+GLASS_TOP_Z = 1.550                    # side glass tucks up behind the rail's underside
+Y_DGLASS_R = -0.250                    # THE WINDOW'S TRAILING EDGE, and it is its own
+                                       # line, not the C-pillar's (owner, 2026-09-25:
+                                       # "there's a fair amount of cab body behind the
+                                       # side windows" on the reference, "whereas our side
+                                       # windows go almost all the way to the back").
+                                       # Measured there: the glass stops 264 mm ahead of
+                                       # the cab's rear, 22% of the cab's length; ours
+                                       # stopped 75 mm short of it.  It reuses the
+                                       # C-pillar's rake so the two read as parallel
+                                       # members rather than closing into a wedge.
+
+
+TRIM_SINK = 0.004       # window trim: how far the band is recessed from the skin.
+                        # Its WIDTHS are TRIM_VIS / TRIM_VIS_B, up beside GH_BELT —
+                        # the glass bottom is solved from them, so they have to exist
+                        # before it does.
+
+
+def dlo_inner(sx):
+    """(y, z) of the window APERTURE's four corners — the inside of the trim band.
+
+    The frame and the pane are cut from this one list, so the glass cannot drift out of
+    its own surround.  The top is Z_DLO_TOP - TRIM_VIS, NOT GLASS_TOP_Z - TRIM_VIS: the
+    frame's outer top edge is deliberately tucked 16 mm up behind the cant rail, so
+    measuring the band from there hides most of it.  The bottom carries TRIM_VIS_B or
+    whatever the quad constraint forces, whichever is taller — see GH_BELT.
+    """
+    af = pillar_frame(A_FOOT, A_HEAD, PILLAR_A, PILLAR_T_A, sx)[2]
+    zb, zt = GH_BELT, Z_DLO_TOP - TRIM_VIS
+    def fy(z):
+        return _edge_at_z(*af, z)[1] - _trim_dy(A_RAKE)
+    def ry(z):
+        return Y_DGLASS_R + C_RAKE * (z - GH_BELT) + _trim_dy(C_RAKE)
+    return [(fy(zb), zb), (ry(zb), zb), (ry(zt), zt), (fy(zt), zt)]
+
+
+def build_greenhouse(p):
+    # ROOF AND CANT RAIL, ONE LOFT.  Two stations, each leaning with its own screen,
+    # and the headers land exactly on the A and C pillar edges rather than near them.
+    ra, _ = pillar_rake(A_FOOT, A_HEAD)
+    rc, _ = pillar_rake(C_FOOT, C_HEAD)
+    y_hdr_f = pillar_edge_y(A_FOOT, A_HEAD, PILLAR_A, Z_DLO_TOP, 1)
+    y_hdr_r = pillar_edge_y(C_FOOT, C_HEAD, PILLAR_C, Z_DLO_TOP, -1)
+    # THREE STATIONS, NOT TWO: the last 22 mm are the cab's trailing chamfer, carried
+    # across the top of the back face so it meets the C-pillar's at the cant rail and
+    # the cab shell's below that — one unbroken bevel right round the rear opening.
+    loft(p, [roof_ring(ra, y_hdr_f),
+             roof_ring(rc, y_hdr_r + CAB_END_EDGE),
+             roof_ring(rc, y_hdr_r, CAB_END_EDGE)], "RangerPaint",
+         band_mats=ROOF_BANDS)
+
+    # THE STUB ABOVE THE RAIL IS INTERIOR-DARK, not paint.  Every face of it is buried
+    # except its inboard one, which hangs below the rail's own inner face and is seen
+    # through the backlight — as a bright wedge of body colour against the headliner,
+    # which is exactly what it looked like.  Dark, it is trim meeting trim.
+    # ...EXCEPT ITS OUTWARD FACE, which is not buried at all.  Each pillar has one:
+    # the A-pillar's front and the C-pillar's rear are the ends of the cab, and the
+    # stub stands 6 mm proud of the screen panel beside it, so dark drew a 32 x 18 mm
+    # hole at the top corner of EACH screen — the owner's "little gaps at all four
+    # corners of the rear glass", and the windscreen had the same pair.
+    #
+    # THE C-PILLAR ALSO CARRIES THE CAB'S TRAILING CHAMFER.  CAB_END_EDGE bevels the cab
+    # shell's rear corner, but the shell stops at the beltline, so the chamfer died there
+    # and the corner went square for the whole height of the greenhouse (owner,
+    # 2026-09-26: "there's a chamfer on the rear edge of the cab, but it gets cut off
+    # ... make that chamfer continuous all the way around the back face").  Same 22 mm,
+    # same corner, carried by the pillar's own section from its foot at the belt to its
+    # head in the roof — and roof_ring() picks it up from there and takes it across the
+    # top.
+    #
+    # The A-pillar's ring is outer-front, outer-rear, inner-rear, inner-front; the C's
+    # has the chamfer spliced in after outer-front.  So the SKIN bands — paint, not
+    # interior dark — are 3 on the A, and 1 (the chamfer) and 2 (the rear face) on the C.
+    SKIN_BAND = ((3,), (1, 2))
+    for sx in (1, -1):
+        for n_p, (foot, head, w, t) in enumerate(PILLARS):
+            ch = CAB_END_EDGE if n_p else 0.0
+            loft(p, pillar_frame(foot, head, w, t, sx, ch)[0], "RangerPaint",
+                 band_mats=lambda seg, k, b=SKIN_BAND[n_p]:
+                     None if (not seg or k in b) else DARK,
+                 cap_last_mat=DARK)
+
+    # QUARTER PANEL — the painted body between the window's trailing edge and the
+    # C-pillar.  Pulling the glass forward to Y_DGLASS_R left that as a hole straight
+    # into the cabin: the side glass used to run all the way to the pillar, so nothing
+    # had ever needed to fill it.  A slab on gh_x(), so its outer face is the same one
+    # surface as the pillar beside it and the rail above it.
+    # It over-runs at BOTH ends on purpose.  Its bottom sits below the beltline and its
+    # top inside the rail, because a face that lands exactly on either lands coplanar
+    # with the shell's belt ledge or the rail's underside and z-fights; and its rear
+    # face laps 10 mm INTO the C-pillar for the same reason.
+    QP_T = 0.048
+    for sx in (1, -1):
+        def ring(zs):
+            out = []
+            for z, y in zs:
+                out.append((sx * gh_x(z), y, z))
+            for z, y in reversed(zs):
+                out.append((sx * (gh_x(z) - QP_T), y, z))
+            return out
+        z0, z1 = Z_BELT - 0.030, Z_DLO_TOP + 0.014
+        front = [(z, Y_DGLASS_R + C_RAKE * (z - GH_BELT) + 0.008) for z in (z0, z1)]
+        rear = [(z, pillar_edge_y(C_FOOT, C_HEAD, PILLAR_C, z, 1) - 0.010) for z in (z0, z1)]
+        loft(p, [ring(front), ring(rear)], "RangerPaint")
+
+    # WINDOW TRIM — a dark band all the way ROUND the glass, which is what the reference
+    # has (owner, 2026-09-25: "it could look good if it framed the entire window").  It
+    # replaces the strip that ran only along the bottom, and it earns the bottom strip's
+    # height back by being the thing that covers the belt rather than sitting on top of
+    # it: the frame's outer bottom edge IS Z_BELT, its inner edge is GH_BELT.
+    for sx in (1, -1):
+        af = pillar_frame(A_FOOT, A_HEAD, PILLAR_A, PILLAR_T_A, sx)[2]
+        def pt(y, z):
+            return (sx * (gh_x(z) - TRIM_SINK), y, z)
+        outer = [pt(_edge_at_z(*af, Z_BELT)[1], Z_BELT),
+                 pt(Y_DGLASS_R + C_RAKE * (Z_BELT - GH_BELT), Z_BELT),
+                 pt(Y_DGLASS_R + C_RAKE * (GLASS_TOP_Z - GH_BELT), GLASS_TOP_Z),
+                 pt(_edge_at_z(*af, GLASS_TOP_Z)[1], GLASS_TOP_Z)]
+        frame(p, outer, [pt(y, z) for y, z in dlo_inner(sx)],
+              DARK, (sx, 0.0, 0.0))
+
+    # Cab rear panel above the beltline, either side of the backlight, plus the
+    # header strip over it — the backlight is a hole in a panel, not a floating pane.
+    #
+    # IT RIDES THE C-PILLAR'S REAR EDGE, 6 mm forward of it.  Pinned to a constant y
+    # it sat 35 mm AHEAD of that edge, so the glass — which has always taken its own
+    # edges from the pillar — hung out behind the panel and the aperture was whatever
+    # the pillar allowed rather than what BL_HALF asks for.  On the rake, the panel and
+    # the pillar are one rear surface with the post standing a little proud of it, and
+    # the pane is back inside the hole.  6 mm, not 0: flush, the two rear faces are
+    # coplanar where the panel's outer edge runs under the pillar, which z-fights.
+    # That outer edge shadows gh_x() 14 mm inboard for the same reason.
+    # ONE PLANE, AND IT IS THE PILLAR'S OWN REAR FACE.  The panels used to sit 6 mm
+    # forward of it and stop 14 mm short of the flank, so the C-pillar stood proud all
+    # the way round the backlight and the window read as a frame sunk into the back of
+    # the cab (owner, 2026-09-26: "the frame around the rear window is inset a little
+    # bit relative to the rest of the back wall ... make all of those vertices line up
+    # so it looks like one continuous piece of sheet metal").  Flush now, and the
+    # panels run out to the pillar's INNER edge — a butt joint, not an overlap, which
+    # is what the 6 mm was avoiding.  Outboard of that the pillar's own rear face and
+    # then its chamfer carry the surface to the corner.
+    def rear_face(z):
+        return pillar_edge_y(C_FOOT, C_HEAD, PILLAR_C, z, -1)
+
+    def rear_edge_x(z):
+        return gh_x(z) - PILLAR_T_C
+
+    for sx in (1, -1):
+        zb, zt = BL_BASE_Z - 0.03, BL_TOP_Z
+        yb, yt = rear_face(zb), rear_face(zt)
+        xb, xt = rear_edge_x(zb), rear_edge_x(zt)
+        hexa(p, [(sx * BL_HALF_B, yb, zb), (sx * xb, yb, zb),
+                 (sx * xb, yb + 0.05, zb), (sx * BL_HALF_B, yb + 0.05, zb),
+                 (sx * BL_HALF_T, yt, zt), (sx * xt, yt, zt),
+                 (sx * xt, yt + 0.05, zt), (sx * BL_HALF_T, yt + 0.05, zt)],
+             "RangerPaint")
+
+    # ...and the panel BELOW the backlight.  Raising the glass to the bed rail left the
+    # band between it and the beltline looking straight into the cabin: the side hexas
+    # above only close the aperture's sides, never its floor.
+    #
+    # IT RUNS OUT TO THE FLANK, not to BL_HALF_B + 30 mm.  Stopped at 0.670 it left a
+    # bare corner either side — the side hexas start 30 mm ABOVE the glass line, so
+    # between the beltline and there, outboard of 0.670, the cab rear was simply OPEN
+    # and a ray fired at it came out on the dash (owner, 2026-09-25: "there are little
+    # gaps at all four corners of the rear glass").  rear_edge_x() is the same outer
+    # edge the side panels use, so the three now share one line.
+    zb, zt = Z_BELT - 0.010, BL_BASE_Z + 0.006
+    xb, xt = rear_edge_x(zb), rear_edge_x(zt)
+    yb, yt = rear_face(zb), rear_face(zt)
+    hexa(p, [(-xb, yb, zb), (xb, yb, zb), (xb, yb + 0.05, zb), (-xb, yb + 0.05, zb),
+             (-xt, yt, zt), (xt, yt, zt), (xt, yt + 0.05, zt), (-xt, yt + 0.05, zt)],
+         "RangerPaint")
+
+    # Third brake light, high on the cab rear — dead centre, unmistakable at night.
+    # It rides the same rear surface: a box at a constant y sat buried at its bottom
+    # edge and floated off the panel at its top once that surface started leaning.
+    #
+    # ITS TOP IS Z_HEADLINER, not Z_DLO_TOP (owner, 2026-09-22: "move the center brake
+    # light up to meet the roof").  The rail's underside is 22 mm lower than the roof's
+    # own, and only outboard of W_RAIL_IN — on the centreline, where this lamp is, the
+    # backlight runs all the way up to the headliner, so keying to the rail left the
+    # lamp stranded a couple of centimetres down the glass.  The 4 mm is a shut line,
+    # not clearance: flush, its top face and the headliner are coplanar.
+    z1 = Z_HEADLINER - 0.004
+    z0 = z1 - 0.046
+    y0, y1 = rear_face(z0), rear_face(z1)
+    hexa(p, [(-0.105, y0 + 0.040, z0), (0.105, y0 + 0.040, z0),
+             (0.105, y0 - 0.011, z0), (-0.105, y0 - 0.011, z0),
+             (-0.105, y1 + 0.040, z1), (0.105, y1 + 0.040, z1),
+             (0.105, y1 - 0.011, z1), (-0.105, y1 - 0.011, z1)], "RangerTail")
 
 
 def build_glass(g):
@@ -2591,29 +3217,31 @@ def build_glass(g):
     face, so a pane wound inward reads dark from the driver's seat.
 
     All six panes take their side edges from pillar_frame(), never from hand-typed
-    coordinates — see the note there.  That is what makes the A-pillar/glass line
-    read straight instead of wandering a few millimetres along its length.
+    coordinates — see the note there.  That is what makes the A-pillar/glass line read
+    straight instead of wandering a few millimetres along its length.  The SIDE panes
+    sit GLASS_INSET behind the skin; the two screens sit SCREEN_REVEAL inboard and
+    SCREEN_INSET back, which is what leaves a painted pillar lip beside them.
     """
-    A = {sx: pillar_frame(A_FOOT, A_HEAD, PILLAR_A, 0.040, sx) for sx in (1, -1)}
-    B = {sx: pillar_frame(B_FOOT, B_HEAD, 0.034, 0.038, sx) for sx in (1, -1)}
-    C = {sx: pillar_frame(C_FOOT, C_HEAD, PILLAR_C, 0.044, sx) for sx in (1, -1)}
+    A = {sx: pillar_frame(A_FOOT, A_HEAD, PILLAR_A, PILLAR_T_A, sx) for sx in (1, -1)}
+    C = {sx: pillar_frame(C_FOOT, C_HEAD, PILLAR_C, PILLAR_T_C, sx) for sx in (1, -1)}
 
     # Windscreen: spans between the two A-pillars' nose-side edges.
-    wl, wr = A[-1][1], A[1][1]
+    wl = _inset_line(A[-1][1], -1, SCREEN_REVEAL, -SCREEN_INSET)
+    wr = _inset_line(A[1][1], 1, SCREEN_REVEAL, -SCREEN_INSET)
     pane(g, _edge_at_z(*wl, WS_BASE_Z), _edge_at_z(*wr, WS_BASE_Z),
          _edge_at_z(*wr, WS_TOP_Z), _edge_at_z(*wl, WS_TOP_Z),
          "RangerGlass", (0.0, 0.65, 0.76))
     # Backlight: between the two C-pillars' tail-side edges.
-    bl, br = C[-1][2], C[1][2]
+    bl = _inset_line(C[-1][2], -1, SCREEN_REVEAL, SCREEN_INSET)
+    br = _inset_line(C[1][2], 1, SCREEN_REVEAL, SCREEN_INSET)
     pane(g, _edge_at_z(*br, BL_BASE_Z), _edge_at_z(*bl, BL_BASE_Z),
          _edge_at_z(*bl, BL_TOP_Z), _edge_at_z(*br, BL_TOP_Z),
          "RangerGlass", (0.0, -0.99, 0.13))
-    # Door glass (A rear -> B front) and the rear quarter (B rear -> C front).
+    # ONE side window per side, and it is cut from the SAME aperture the trim is —
+    # dlo_inner() — so the pane cannot drift out of its own surround.
     for sx in (1, -1):
-        for f, r in ((A[sx][2], B[sx][1]), (B[sx][2], C[sx][1])):
-            pane(g, _edge_at_z(*f, GH_BELT), _edge_at_z(*r, GH_BELT),
-                 _edge_at_z(*r, GLASS_TOP_Z), _edge_at_z(*f, GLASS_TOP_Z),
-                 "RangerGlass", (sx * 0.97, 0.0, 0.24))
+        c = [(sx * (gh_x(z) - GLASS_INSET), y, z) for y, z in dlo_inner(sx)]
+        pane(g, c[0], c[1], c[2], c[3], "RangerGlass", (sx * 0.97, 0.0, 0.24))
 
 
 # ---------------------------------------------------------------------------
@@ -2764,6 +3392,20 @@ def report(objs):
         prev_ys = [q[1] for q in ring]
     chk("nose rim rings never fold backwards", worst_fold > 0.0,
         f"tightest gap {worst_fold:+.4f} m")
+    # THE LAMP BAND MUST CLEAR THE RIM'S ROLLED CREASE.  SQUARE_Z keeps the fender's
+    # squaring crease out of z 0.780..0.982 on the LAST FULL SECTION, and that is not
+    # the section the lamp meets: nose_rim_ring() rolls the whole thing down by the
+    # rim's drop, creases and all.  Rolled into the band, the flank loses 65 mm of
+    # width in the 34 mm above the crease, the lens follows it and its top band folds
+    # over itself.  One check, both halves of the fix — the drop AND Z_LAMP1.
+    _base = clip_ring(CLIP_ST[0][0])
+    _zs = [q[2] for q in _base]
+    _sh = CLIP_ST[0][3] - CLIP_ST[0][4]
+    _sq = _sh - SQUARE_Z * (_sh - Z_HIP)
+    _t = (_sq - min(_zs)) / (max(_zs) - min(_zs))
+    _rolled = _sq + NOSE_RISE * (1.0 - _t) - (NOSE_DROP_LIN + NOSE_DROP) * _t
+    chk("lamp band clears the rim's rolled crease", _rolled > Z_LAMP1 + 0.004,
+        f"crease rolls to {_rolled:.4f} vs lamp top {Z_LAMP1:.3f}")
     # Steering wheel vs windscreen: signed distance to the glass plane, cabin side
     # negative.  Tested on the WHEEL'S OWN vertices — a geometric filter like
     # "y > 0.3 and z > 1.0" also catches the cowl, which is legitimately ahead of
@@ -2784,6 +3426,15 @@ def report(objs):
     # the cabin read as empty through the glass no matter how good the geometry is.
     chk("seat backs break the beltline", Z_SEATBACK > Z_BELT + 0.05,
         f"{Z_SEATBACK:.3f} vs belt {Z_BELT:.3f}")
+    # The cant rail must not overhang a screen: where it does, that screen's top edge is
+    # cut 36 mm lower than the rest of the aperture and the corner reads as a notch.
+    ws_edge = gh_x(Z_HEADLINER) - SCREEN_REVEAL
+    chk("cant rail clears the screens", ws_edge < W_RAIL_IN - 0.005,
+        f"screen edge {ws_edge:.3f} vs rail inner {W_RAIL_IN:.3f}")
+    chk("screens seat inside the pillar faces",
+        SCREEN_REVEAL < min(PILLAR_T_A, PILLAR_T_C) - 0.003,
+        f"reveal {SCREEN_REVEAL:.3f} vs thinnest screen pillar "
+        f"{min(PILLAR_T_A, PILLAR_T_C):.3f}")
     print("=" * 68)
     if not ok:
         raise AssertionError("build invariants failed — see the [FAIL] lines above")
@@ -2880,11 +3531,15 @@ def audit(objs, budget=TRI_BUDGET):
         nonman = sum(1 for e in bm.edges if len(e.link_faces) not in (1, 2))
         border = sum(1 for e in bm.edges if len(e.link_faces) == 1)
         bm.free()
-        # EXPECTED, not faults: the 8 non-manifold edges are the cowl ring, where the
+        # EXPECTED, not faults.  The 10 non-manifold edges are the cowl ring, where the
         # firewall (an interior partition) is welded into the outer skin and three
-        # surfaces meet on one edge.  The 16 border edges are the nose opening's rim
-        # — a real hole with the dark recess box behind it — and the glass panes are
-        # single quads, so all 24 of their edges are borders by construction.
+        # surfaces meet on one edge.  The border edges are all deliberate openings:
+        # ~54 at the nose, which is a real hole with the dark recess box behind it;
+        # ~44 at the tails, the boundary of the back plane each lamp sweep skips
+        # (TAIL_LAMP_BURIED — it is buried 28 mm inside a 54 mm panel, and the count
+        # scales with the sweep's station count, so extending the lamp moves it);
+        # and the glass panes are single quads, so all 24 of their edges are borders
+        # by construction.
         print(f"  {ob.name:<22s} loose {loose}  non-manifold {nonman}  "
               f"border edges {border}")
     print(f"  tris {total} / {budget}  "
