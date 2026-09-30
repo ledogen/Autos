@@ -3,7 +3,7 @@
  *
  * The live 3D scene behind the main menu, and — the reason it earns its keep — the LOADING screen.
  * A black void with a ground plane and one part-buried rock. The hero truck is dropped 18 inches so
- * its front-left wheel lands ON that rock, and once the suspension settles a few more fall into the
+ * its front-left wheel lands ON that rock, and once the suspension settles ten more fall into the
  * bed and squat the rear. No animation curves anywhere: the real Pacejka/strut stack does all of it,
  * and the truck stays cocked on the rock because the rock is static geometry, not a prop it can
  * shove aside.
@@ -59,10 +59,19 @@ const ROCK_FLAT   = 0.70    // fraction of ROCK_RY at which the top is sheared f
                             // hull of the clamped points is still the surface being drawn.
 const ROCK_PROUD  = 0.26    // m — height of that cap above the plane; the rest is buried
 const ROCKS_AT    = 2.2     // s of sim time after release — "once the suspension settles (~2 s)"
-const ROCK_N      = 3
-const ROCK_GAP    = 0.20    // s between rocks: staggered so three 50 kg impulses cannot stack
+const ROCK_N      = 10    // ~50 kg each: half a tonne in the bed, so the rear squats hard (owner, 2026-09-29)
+const ROCK_GAP    = 0.20    // s between rocks: staggered so the 50 kg impulses cannot stack
 const ROCK_DROP_H = 2.6     // m above the bed floor → ~7 m/s at contact: a firm thump, not a launch
 const PARALLAX    = 5 * Math.PI / 180   // rad — cursor-follow orbit limit, both axes
+// Click-drag orbit, layered UNDER the parallax so the resting shot is unchanged until someone drags.
+const DRAG_RAD_PER_PX = 0.006             // rad of orbit per pixel dragged
+const DRAG_ELEV_MIN   = 2 * Math.PI / 180  // rad — lowest camera elevation; the parallax's extra -5°
+                                           // still leaves the lens ~0.1 m above the plane
+const DRAG_ELEV_MAX   = 80 * Math.PI / 180 // rad — near top-down, straight into the bed
+const DRAG_PIVOT_FULL = 0.6               // rad of total drag at which the pivot has fully slid
+                                           // from the front-left wheel to BED_PIVOT
+const BED_PIVOT = new THREE.Vector3(0, 0.2, 1.0)   // body-local: between the cab and the bed, so an
+                                                    // orbit keeps the whole truck and its load in frame
 
 // ── ranger.glb's ACTUAL bed, in body-local metres (forward = -Z, origin at the CG) ───────────────
 // The shared CHASSIS_PROFILE models the bed as a solid deck to rail height (a tonneau), so a rock
@@ -78,11 +87,12 @@ const PARALLAX    = 5 * Math.PI / 180   // rad — cursor-follow orbit limit, bo
 const RANGER_BED = {
   floorY:          0.049,   // Z_BEDFLOOR 0.700 — the floor pan (rib crests sit RIB_H proud)
   railY:           0.490,   // Z_RAIL 1.141 — bed rail top
-  wheelhouseY:     0.314,   // Z_WHEELHOUSE 0.965 — wheelhouse box top
+  wheelhouseY:     0.284,   // Z_WHEELHOUSE 0.935 — wheelhouse box top
   innerHalfW:      0.700,   // W_BED_IN — inner wall
   outerHalfW:      0.822,   // W_BED_OUT — bed side at the rail
   wheelhouseHalfW: 0.545,   // W_WHEELHOUSE — inner wall over the rear arch
-  frontZ:          0.710,   // Y_BED_F -0.710 — front wall, 8 cm behind the cab
+  frontZ:          0.605,   // Y_BED_F -0.605 — front wall, 8 cm behind the cab (cab moved 105 mm
+                            // forward in the 2026-09-25 proportions pass; the bed front came with it)
   tailZ:           2.4405,  // Y_BED_R -2.4405 — bed loft tail
   gateZ:           2.5405,  // Y_TAILGATE -2.5405 — outer face of the closed tailgate
   archZ0:          1.0975,  // AX_R 1.5675 ∓ ARCH_R 0.470 — the rear arch the wheelhouse covers
@@ -151,6 +161,39 @@ export class MenuStage {
     }
     window.addEventListener('pointermove', this._onMouse)
 
+    // Click-drag orbit (owner, 2026-09-29: "so I can watch the rocks drop into the bed"). Yaw is
+    // unbounded, elevation clamped. The drag is not smoothed — the camera should stay under the
+    // pointer — only the parallax on top of it is. Double-click puts the shot back.
+    this._dragYaw = 0; this._dragPitch = 0
+    this._dragging = false
+    this._dragX = 0; this._dragY = 0
+    const onUi = e => e.target?.closest?.('button, input, select, textarea, a, label, #mm-settings-panel')
+    this._onDown = (e) => {
+      if (!this._active || e.button !== 0 || onUi(e)) return
+      this._dragging = true
+      this._dragX = e.clientX; this._dragY = e.clientY
+      document.body.classList.add('stage-dragging')
+    }
+    this._onDrag = (e) => {
+      if (!this._dragging) return
+      this._dragYaw -= (e.clientX - this._dragX) * DRAG_RAD_PER_PX
+      this._dragPitch += (e.clientY - this._dragY) * DRAG_RAD_PER_PX
+      this._dragX = e.clientX; this._dragY = e.clientY
+    }
+    this._onUp = () => {
+      this._dragging = false
+      document.body.classList.remove('stage-dragging')
+    }
+    this._onDbl = (e) => {
+      if (!this._active || onUi(e)) return
+      this._dragYaw = 0; this._dragPitch = 0
+    }
+    window.addEventListener('pointerdown', this._onDown)
+    window.addEventListener('pointermove', this._onDrag)
+    window.addEventListener('pointerup', this._onUp)
+    window.addEventListener('pointercancel', this._onUp)
+    window.addEventListener('dblclick', this._onDbl)
+
     this.scene = new THREE.Scene()
     this.scene.background = new THREE.Color(COL_VOID)
     // Thin exponential fog in the void colour: it dissolves the ground plane's rim into the
@@ -165,6 +208,8 @@ export class MenuStage {
     this._qPitch = new THREE.Quaternion()
     this._axisY = new THREE.Vector3(0, 1, 0)
     this._axisRight = new THREE.Vector3()
+    this._pivot = new THREE.Vector3()
+    this._bedPivot = new THREE.Vector3()
     this._bedWorld = new THREE.Vector3()
   }
 
@@ -451,9 +496,13 @@ export class MenuStage {
     if (this._rocksDone >= ROCK_N) return
     if (this._simT < ROCKS_AT + this._rocksDone * ROCK_GAP) return
     // Bed floor, in the truck's CURRENT pose (it has settled by now, possibly tilted on the mound).
-    // Spread across the well: inside the wheelhouse walls (±0.545) and along the 1.73 m floor.
-    this._bedWorld.set((this._rocksDone - 1) * 0.34, RANGER_BED.floorY,
-      RANGER_BED.frontZ + 0.45 + this._rocksDone * 0.55)
+    // Spread across the well: a three-column zigzag inside the wheelhouse walls (±0.545), walking
+    // evenly down the floor from 0.3 m behind the front wall to 0.3 m short of the tail. Same-column
+    // neighbours land ~0.4 m apart — about one rock — so the pile spreads rather than towers.
+    const i = this._rocksDone
+    const span = RANGER_BED.tailZ - RANGER_BED.frontZ - 0.6
+    this._bedWorld.set([-0.3, 0.3, 0][i % 3], RANGER_BED.floorY,
+      RANGER_BED.frontZ + 0.3 + span * i / Math.max(1, ROCK_N - 1))
       .applyQuaternion(this._vs.quaternion).add(this._vs.position)
     const ok = this._debris.spawn('rock',
       { x: this._bedWorld.x, y: this._bedWorld.y + ROCK_DROP_H, z: this._bedWorld.z },
@@ -462,8 +511,11 @@ export class MenuStage {
   }
 
   /**
-   * Cursor-follow parallax: ±5° of yaw and pitch about the front-left corner. Not an orbit — the
-   * cursor is the only input, there is no drag, and the limits are hard.
+   * Click-drag orbit, then cursor-follow parallax (±5° of yaw and pitch) on top of it.
+   *
+   * At zero drag this is exactly the composed shot: pivot on the front-left wheel. As the drag
+   * grows the pivot slides to BED_PIVOT in the truck's CURRENT pose, so orbiting round shows the
+   * bed instead of swinging it out of frame. The offset keeps the shot's length (~6.8 m).
    */
   _updateCamera (dt) {
     const k = Math.min(1, dt * 4)          // ~250 ms EMA: follows the cursor without snapping to it
@@ -471,14 +523,23 @@ export class MenuStage {
     this._myS += (this._my - this._myS) * k
 
     this._camOff.copy(this._camBase).sub(this._camTarget)
-    this._qYaw.setFromAxisAngle(this._axisY, this._mxS * PARALLAX)
+    // Clamp the drag in elevation terms: the shot's own elevation plus the drag stays in range.
+    const elev0 = Math.asin(this._camOff.y / this._camOff.length())
+    this._dragPitch = Math.min(DRAG_ELEV_MAX - elev0, Math.max(DRAG_ELEV_MIN - elev0, this._dragPitch))
+    const yaw = this._dragYaw + this._mxS * PARALLAX
+    const pitch = this._dragPitch - this._myS * PARALLAX
+    this._qYaw.setFromAxisAngle(this._axisY, yaw)
     this._camOff.applyQuaternion(this._qYaw)
     this._axisRight.copy(this._camOff).cross(this._axisY).normalize()
-    this._qPitch.setFromAxisAngle(this._axisRight, -this._myS * PARALLAX)
+    this._qPitch.setFromAxisAngle(this._axisRight, pitch)
     this._camOff.applyQuaternion(this._qPitch)
 
-    this.camera.position.copy(this._camTarget).add(this._camOff)
-    this.camera.lookAt(this._camTarget)
+    const w = Math.min(1, (Math.abs(this._dragYaw) + Math.abs(this._dragPitch)) / DRAG_PIVOT_FULL)
+    this._bedPivot.copy(BED_PIVOT).applyQuaternion(this._vs.quaternion).add(this._vs.position)
+    this._pivot.copy(this._camTarget).lerp(this._bedPivot, w)
+
+    this.camera.position.copy(this._pivot).add(this._camOff)
+    this.camera.lookAt(this._pivot)
   }
 
   render (renderer) {

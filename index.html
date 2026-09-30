@@ -179,6 +179,9 @@
       background: linear-gradient(100deg, rgba(4,7,10,0.92) 0%, rgba(4,7,10,0.72) 34%, rgba(4,7,10,0.0) 62%);
     }
     #mm-root { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+    /* The stage behind the menu orbits on click-drag (src/stage.js) — say so with the cursor. */
+    body.stage-on { cursor: grab; user-select: none; }   /* no text selection mid-drag */
+    body.stage-on.stage-dragging, body.stage-on.stage-dragging * { cursor: grabbing !important; }
     #main-menu .mm-title {
       color: #00ff88;
       font-size: 30px;
