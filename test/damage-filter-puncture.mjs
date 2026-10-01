@@ -94,7 +94,7 @@ console.log('\n§3 punctures — fresh rubber is safe, worn rubber is not')
   ok(pop(1.0, 500000).flat[0] === false, 'a fresh tire cannot be popped at all, by any bump')
   ok(pop(D.punctureCond + 0.05, 500000).flat[0] === false, `...nor one above the ${D.punctureCond * 100}% fragility threshold`)
 
-  // The owner's two anchors, and the line between them.
+  // The anchors, and the lines between them.
   ok(pop(0.50, D.punctureAtHalf + 1000).flat[0] === true && pop(0.50, D.punctureAtHalf - 1000).flat[0] === false,
     `a 50% tire pops at ${D.punctureAtHalf / 1000} kN, not below it`)
   ok(pop(0.10, 31000).flat[0] === true && pop(0.10, 29000).flat[0] === false, 'a 10% tire pops at 30 kN, not at 29')
@@ -103,6 +103,15 @@ console.log('\n§3 punctures — fresh rubber is safe, worn rubber is not')
     const mid = d0.punctureThreshold(0.30)
     ok(pop(0.30, mid + 1000).flat[0] === true && pop(0.30, mid - 1000).flat[0] === false,
       `a 30% tire sits on the line between them, at ${(mid / 1000).toFixed(0)} kN`)
+  }
+  // The knee (owner, 2026-09-30): barely vulnerable from 50% down to 25%, then ramping hard.
+  ok(pop(D.punctureKneeC, D.punctureAtKnee + 1000).flat[0] === true && pop(D.punctureKneeC, D.punctureAtKnee - 1000).flat[0] === false,
+    `a ${D.punctureKneeC * 100}% tire pops at ${D.punctureAtKnee / 1000} kN — the knee`)
+  {
+    const slopeAbove = (d0.punctureThreshold(D.punctureCond) - d0.punctureThreshold(D.punctureKneeC)) / (D.punctureCond - D.punctureKneeC)
+    const slopeBelow = (d0.punctureThreshold(D.punctureKneeC) - d0.punctureThreshold(D.punctureFloorC)) / (D.punctureKneeC - D.punctureFloorC)
+    ok(slopeBelow > 3 * slopeAbove,
+      `below the knee the threshold falls ${(slopeBelow / slopeAbove).toFixed(1)}× faster per point of wear than above it`)
   }
 
   // Deterministic, not a probability roll: the same drive pops the same tire every replay.

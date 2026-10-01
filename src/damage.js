@@ -411,9 +411,14 @@ export const DAMAGE_PARAMS = {
   //
   // Fresh rubber does not pop at all: above `punctureCond` there is no threshold to exceed. Below
   // it, the force needed falls as the tire wears, which is DESIGN.md's wear→fragility curve made of
-  // one honest quantity instead of a probability roll. Owner anchors, linear between them:
+  // one honest quantity instead of a probability roll. Three anchors, linear between each pair:
   //
-  //     50% tire → 70 kN        10% tire and below → 30 kN
+  //     50% tire → 84 kN        25% tire → 72 kN        10% tire and below → 30 kN
+  //
+  // KNEE AT 25% (owner, 2026-09-30): "low vulnerability from 50% and below, then really start
+  // ramping the sensitivity below 25%." Between 50% and 25% the threshold barely moves, so a
+  // half-worn tire is punctureable but only by a genuinely big hit; below 25% it falls ~5× as
+  // steeply per point of wear.
   //
   // Deterministic rather than random on purpose: the same drive over the same rock pops the same
   // tire every replay (INFRA-03), and a player who knows their tires are down can read the risk.
@@ -421,6 +426,8 @@ export const DAMAGE_PARAMS = {
   // Raised 20% on 2026-08-23 (owner): a player should not be surprised by a puncture at 50% on a
   // sizeable pothole. The 10% anchor is unchanged — a nearly-bald tire is meant to be fragile.
   punctureAtHalf:  84000,    // N — bump-stop force that pops a 50% tire
+  punctureKneeC:   0.25,     // condition where the threshold stops drifting and starts falling fast
+  punctureAtKnee:  72000,    // N — bump-stop force that pops a 25% tire
   punctureFloorC:  0.10,     // at and below this condition the threshold stops falling
   punctureAtFloor: 30000,    // N — bump-stop force that pops a 10%-or-worse tire
   // A flat is not a hole in the ground: the air is gone, so the carcass carries almost nothing at
@@ -688,15 +695,19 @@ export class DamageModel {
 
   /**
    * Bump-stop force that would puncture a tire at condition `c`, in newtons — Infinity for rubber
-   * healthy enough that no bump can pop it. Linear between the owner's two anchors, flat below the
-   * floor condition.
+   * healthy enough that no bump can pop it. Piecewise linear through the three anchors (floor, knee,
+   * half), flat below the floor condition.
    */
   punctureThreshold (c) {
     const P = DAMAGE_PARAMS
     if (c > P.punctureCond) return Infinity
     if (c <= P.punctureFloorC) return P.punctureAtFloor
-    const t = (c - P.punctureFloorC) / (P.punctureCond - P.punctureFloorC)
-    return P.punctureAtFloor + t * (P.punctureAtHalf - P.punctureAtFloor)
+    if (c <= P.punctureKneeC) {
+      const t = (c - P.punctureFloorC) / (P.punctureKneeC - P.punctureFloorC)
+      return P.punctureAtFloor + t * (P.punctureAtKnee - P.punctureAtFloor)
+    }
+    const t = (c - P.punctureKneeC) / (P.punctureCond - P.punctureKneeC)
+    return P.punctureAtKnee + t * (P.punctureAtHalf - P.punctureAtKnee)
   }
 
   /** Fit a fresh tire: full condition and the air back in it. */
