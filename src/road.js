@@ -1948,11 +1948,11 @@ export class RoadSystem {
      * edge set.
      *
      * This distinction is load-bearing and cost a real bug. `_streamNetwork` runs
-     * `_assembleGraphEdges` (registers every Urquhart edge) and THEN `_cullNetwork` (drops
-     * crossings, clearance violations, excess degree). The roads that exist in the world are
-     * Urquhart MINUS the cull. A planner that reads `_buildUrquhart` directly — as missionGraph
-     * originally did — routes over edges the world deletes, and draws confident blue lines across
-     * empty hillsides.
+     * `_assembleGraphEdges`, which registers the Urquhart edges MINUS the spec-time degree drops
+     * (`_degreeDrops`), and the mid-span T promotions then split some of those edges in two. The
+     * roads that exist in the world are therefore never the raw Urquhart set. A planner that reads
+     * `_buildUrquhart` directly — as missionGraph originally did — routes over edges the world
+     * never builds, and draws confident blue lines across empty hillsides.
      *
      * Reading `_network` instead means the planner can only ever propose roads that were actually
      * built, and `edgeParData` returns their REGISTERED centerlines (identical to the ones the
@@ -2788,12 +2788,13 @@ export class RoadSystem {
     // QUAL-21 Stage 2: this is the SINGLE canonical implementation of the degree decisions —
     // returned as a drop-pair-key Set (both orders) over a wide graph. It is PURE TOPOLOGY (chords
     // + candidate-excluded BFS — no routed geometry), so it runs at SPEC TIME: _assembleGraphEdges
-    // applies the drops BEFORE routing (doomed edges are never routed — was: route then cull),
-    // the warm paths skip them, and _cullNetwork's ring excludes them. This replaced the Stage-1 _degreeCulledNbrsAt SIMULATION (a
+    // applies the drops BEFORE routing (doomed edges are never routed — was: route then cull) and
+    // the warm paths skip them. This replaced the Stage-1 _degreeCulledNbrsAt SIMULATION (a
     // hand-mirrored copy under a DEGREE SIM SYNC rule — a drift hazard with no reason to exist).
     //
-    // WINDOW-INVARIANCE (two failed designs taught this — both caught by the cull-radius gate as
-    // phantom map roads, the BUG-25 class):
+    // WINDOW-INVARIANCE (two failed designs taught this — both caught, while the routed-geometry
+    // culls still existed, by the since-deleted cull-radius gate as phantom map roads, the BUG-25
+    // class; this degree pass is now the only drop left, and it is what keeps that class closed):
     //   v1 decided over the stream window's one-ring → boundary nodes saw window-dependent
     //      candidate sets.
     //   v2 decided over the wide graph but updated degrees SEQUENTIALLY → each drop changed
@@ -6102,11 +6103,12 @@ export class RoadSystem {
         const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1)
         // QUAL-21 Stage 2: the degree pass is pure topology, so its drops apply HERE — before any
-        // routing — instead of inside _cullNetwork after every edge already paid its route search.
-        // Doomed edges never register AND never route; g.adj is updated for every dropped pair the
-        // streaming graph can see (junction degrees agree with what wide windows build — the old
-        // pass's unregistered-edge branch). _cullNetwork's ring + the warm paths apply the same
-        // memoized decisions, and _nodeThroughPairs pairs over this settled adjacency.
+        // routing — instead of after every edge has already paid for its route search, which is
+        // what the retired routed-geometry cull cost (FEAT-68). Doomed edges never register AND
+        // never route; g.adj is updated for every dropped pair the streaming graph can see
+        // (junction degrees agree with what wide windows build — the old pass's unregistered-edge
+        // branch). The warm paths apply the same memoized decisions, and _nodeThroughPairs pairs
+        // over this settled adjacency.
         const { drop, wide } = this._degreeDrops(mx0, mx1, mz0, mz1)
         for (const [c1, c2] of g.edges) {
             if (drop.has(g.key(c1) + '|' + g.key(c2))) {
@@ -6435,14 +6437,15 @@ export class RoadSystem {
         // RUNKEY-SET-INVARIANT guarantee), so the flatten is window-invariant where it is consumed; a
         // frontier crossing's short ramp (roadJunctionBlendLength) never reaches loaded geometry.
         this._detectJunctions()
-        // FEAT-13 + QUAL-14 Part B: safe-prune redundant crossing strands (at-grade intersections read as
-        // ugly; the graph is planar-abstract so a routed cross = a redundant excursion) and residual
-        // sub-footprint hugs corridor avoidance couldn't prevent. Connectivity-preserving (bounded detour
-        // test) + window-invariant (BUG-25: both passes decide over the one-ring candidate universe —
-        // see _cullNetwork). Re-detect on the culled network so _crossingsByRun / the flatten reflect
-        // the survivors.
-        // (Degree-cap drops are applied inside _assembleGraphEdges — spec-time, pre-routing.
-        // The routed-geometry culls are DELETED — see the FEAT-68 tombstone at the old site.)
+        // FEAT-68 tombstone: the routed-geometry culls (crossing strands + clearance, FEAT-13 +
+        // QUAL-14 Part B) used to run HERE and are DELETED — they shredded v2 geometry to a 54%
+        // mean largest-component share while preventing no real crossing. The only drop left is
+        // the degree cap, applied inside _assembleGraphEdges at spec time, pre-routing.
+        // BUG-25 — the window-dependent survivor flip those culls caused — went with them, and was
+        // re-measured closed on main 2026-09-21: at all 8 historical fixture centres (seeds 6, 67,
+        // 0, testig) the road surface inside the 300 m play disc is identical at r=320/576/1024/1500.
+        // _detectJunctions still runs each stream so _crossingsByRun / the flatten see the network
+        // that was actually registered.
 
         // QUAL-24: splice degree-2 chains into single runs. AFTER the cull on purpose — deg-2 sites are
         // largely cull-CREATED (a 3-way node whose third strand was pruned), and the cull, the crossing

@@ -1,9 +1,10 @@
 ---
 id: BUG-71
 type: bug
-status: pending
+status: closed
 severity: major
 opened: 2026-09-21
+closed: 2026-09-29
 source: >
   Owner observation 2026-09-21: "there are lots of seeds where right after spawning I see a bunch
   of props in the road. they eventually clear up but it takes a long time and ruins the first
@@ -72,4 +73,17 @@ Keep the budget where it was earned; sweep the whole ring where no further adopt
       on the reseed path and the story-entry path — measured, not eyeballed.
 - [x] The driving frontier keeps its per-adopt budget (no PERF-26/28 regression).
 - [x] Small rocks still ignore the exclusion by design; the termination property is untouched.
-- [ ] Owner confirms in-game that the first minute of a run is clean.
+- [x] Owner confirms in-game that the first minute of a run is clean (closed by owner 2026-09-29).
+
+## Resolution 2026-09-29 — closed by the owner
+
+The fix merged to main as `b130e14` (feature/bug71, commit `4557584`). PERF-33 (`58f1e44`) then
+reshaped the delivery without changing the guarantee: the whole-ring sweep is no longer run inside
+the adopt handler (worker `onmessage` work is invisible to the hitch buckets and was the source of
+the driving microstutter). Instead the sweep is OWED — `owePropSweep()` arms a chunk count and the
+frame loop pays it down at `PROP_SWEEP_PER_FRAME = 2` chunks per frame (~0.3 ms/chunk, a 49-chunk
+ring in ~25 frames) under the streaming budget. Story-mode go-live (`onRegionLive`) still sweeps
+unbounded behind the loading screen. FEAT-85 (`87275b2`) later made the sweep ignore medium rocks,
+matching the scatter's own exclusion so a road move no longer churns chunk release/re-scatter.
+
+Owner ruling: the first minute of a run is clean. Ticket closed.

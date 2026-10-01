@@ -1,7 +1,8 @@
 ---
 id: FEAT-05
 type: feature
-status: open
+status: completed
+closed: 2026-06-25
 opened: 2026-06-11
 source: scribe-session
 ---

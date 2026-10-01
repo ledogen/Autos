@@ -1,7 +1,7 @@
 ---
 id: BUG-16
 type: bug
-status: open
+status: closed
 opened: 2026-06-21
 severity: major
 source: user-observation (in-sim screenshot)

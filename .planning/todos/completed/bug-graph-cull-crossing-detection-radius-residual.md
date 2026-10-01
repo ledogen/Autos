@@ -1,7 +1,8 @@
 ---
 id: BUG-25
 type: bug
-status: open
+status: completed
+closed: 2026-09-21   # re-verified on main after FEAT-68 deleted the cull — see the closing section
 opened: 2026-06-30
 severity: major   # promoted 2026-07-07 — see "Escalation" below; was minor
 source: user-observation (in-sim graph-mode map vs 3D desync) + headless scan; escalated by BUG-30 investigation (merged in)
@@ -166,3 +167,51 @@ omission of a redundant drivable road) is now a **non-blocking `[WARN]`** — pr
 regression still surfaces, but it doesn't red the suite. Net: BUG-25's gameplay-affecting cases remain
 gated; the cosmetic map-omission is a documented watch. Possible future cleanup: give the map's 1500 m
 RoadSystem the same play-radius cull behavior (or none) so map == world exactly.
+
+## CLOSED 2026-09-21 — re-verified on main; the mechanism no longer exists
+
+Re-checked at `9b38013` (BUG-65/66 merge) at the owner's request. **Closed: the class is gone by
+construction, and measured gone at every historical fixture.**
+
+**Why it cannot recur.** FEAT-68 (`acb42f3`) DELETED the routed-geometry culls outright —
+`_cullCrossings`, `_cullClearance` and the `_cullNetwork` orchestrator this ticket's whole fix was
+built inside, along with its gate `test/graph-cull-radius-invariance.mjs`. There is no longer a
+pass that picks a survivor, so there is nothing left to pick a *different* survivor in a different
+window. The only drop remaining is the spec-time degree cap (`_degreeDrops`), which is order-free
+pure topology decided over a wide graph before any routing — window-invariant by construction, and
+carrying its own explanation of this ticket's trap in `src/road.js`. Four comments in `road.js`
+still named `_cullNetwork` in the present tense long after it was deleted; corrected in this pass.
+
+**Measured, three ways** (scripts were scratch, not gates — the standing gates are listed below):
+
+1. **This ticket's own gate, recovered from `acb42f3^` and run as-written: 3/6, reds on seed6,
+   testig, seed0 (`mapOnlyNear` up to 8).** That reading is an artefact of the gate's UNIT, not a
+   regression. It compares abstract edge KEYS, and FEAT-76 mid-span T promotion inserts a node
+   (`k = -1`) that splits one edge into two — identical asphalt reads as one edge vanishing and
+   another appearing. **Do not resurrect this gate as written.**
+2. **Surface level, node-id agnostic — the question this ticket actually asked.** 6 m grid over the
+   300 m play disc at all 8 historical fixture centres (seed 6 @(4500,600)/(4180,280); seed 67
+   @(-2000,-1600)/(-2000,-400); testig @(1668,713)/(1365,-1); seed 0 @(-755,-599)/(-600,-500)),
+   built at r = 320 (Normal), 576 (Ultra ceiling), 1024 and 1500 (the 2D map's radius), asking only
+   "is there road surface within 6 m of this point". **Zero divergence, every centre, every tier** —
+   no phantom map road, no world-only omission. Note the 2026-07-15 reclassification's benign
+   `worldOnly` watch is clean too: it does not reproduce. (seed 67 @(-2000,-400) has no road in its
+   disc at all, so that one centre is vacuous.)
+3. **Every key-level diff classified, and all are the same thing.** Each is a paired swap with
+   identical edge counts on both sides: the 320-only edge and the 1500-only edge share one endpoint
+   and the other is a promoted node ON THE SAME CORRIDOR. seed 6: `4,1,1|5,1,0` = (3029,1007)–
+   (3618,1186) at 320 m vs `3336655,1176687,-1|5,1,0` = (3337,1177)–(3618,1186) at 1500 m. The wide
+   window held the T partner and promoted a junction part-way along; the narrow window did not hold
+   that partner at all. Every such split sits 241–1059 m from the play centre. That is network
+   TRUNCATION — a road that is not streamed cannot be T'd into — not a flip, and the promoted-node
+   set inside the play disc is radius-invariant.
+
+**The in-play guard still passes.** The APPROACH check (same final centre, different prior
+`update()` histories — the drive-out-and-back that was the 2026-07-07 escalation) is 0 missing /
+0 extra / 0 grade mismatch on both testig fixtures.
+
+**What guards the class now** (this ticket leaves no gate of its own, deliberately — its subject
+was deleted): `invariance.mjs` + `restream-invariance.mjs` (two-centre and same-instance re-stream
+arcS/gradeY), `promoted-node-id.mjs` (far-band vs play-radius sweep, BUG-61), `graph-topology.mjs`
+(one component, no non-adjacent crossings) and `seed-determinism.mjs`, whose registry entry already
+cites this ticket by name as the link it would break.

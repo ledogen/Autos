@@ -56,3 +56,25 @@ the same two nodes are a multigraph, which nothing here represents. The candidat
 - [ ] Every promoted node has three legs in `_proto.nodeInc` — extend `promoted-node-id` (or
       `pad-census`) with a battery-wide census, not just the concentric windows
 - [ ] The reproducer above ships both roads or a counted decline, and its `junction-stitch` row goes
+
+## Side measurement from the BUG-25 closure (2026-09-21) — read before writing the census
+
+Closing BUG-25 meant diffing 320 m vs 1500 m builds at 8 centres on 4 seeds, which walks straight
+through this ticket's territory. Two facts fell out, both useful here:
+
+- **Promotion EXISTENCE legitimately varies with the window, and that is not a bug.** At seed 6
+  @(4500,600), `4,1,1|5,1,0` is one whole edge at r = 320 and is split at a promoted node
+  (3337,1177) at r = 1500; likewise seed 0 and testig, 5 such splits on seed 6 alone. In every case
+  the T partner is simply not streamed at the narrow radius — a road that is not registered cannot
+  be T'd into. So the **census in the acceptance above must be "every promoted node that EXISTS in
+  this window has three legs", never "the same Ts exist in every window"** — the latter is false by
+  construction and would give you a permanently red gate chasing nothing. BUG-61's
+  `promoted-node-id` sweep already takes the right form; keep it.
+- **Promotion makes abstract edge KEYS useless as a cross-window comparison unit**, since one
+  promotion turns one key into two. Any battery-wide check wanting "same roads?" has to measure
+  surface coverage (grid sample, "road within 6 m?") or compare against a promotion-collapsed view.
+  Measured that way, main is clean: zero surface divergence inside the 300 m play disc at r =
+  320/576/1024/1500 across all 8 centres — so whatever this ticket's collision is costing, it is
+  not visibly deleting road at those sites. The known loss is still the reproducer's seed 6 T at
+  (-3152.1, 5154.2).
+

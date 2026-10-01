@@ -1,9 +1,11 @@
 ---
 id: BUG-70
 type: bug
-status: pending
+status: closed
 severity: minor
 opened: 2026-09-20
+closed: 2026-09-29
+resolution: wont-fix (owner ruling — playable residue, accepted)
 source: >
   road-clearance residue after BUG-66's B7 departure test (feature/bug-65-66, 2026-09-14).
   Battery row: seed 3 (1976,−889), 27.8 m vs a 28.5 m rule over 16 m with 8 m of height,
@@ -49,3 +51,18 @@ length threshold, no report-only, per 2026-09-14).
       (`promoted-node-id` core count 19), no connectivity regression
 - [ ] `junction-stitch`, `restream-invariance`, `world-determinism`, `road-connectivity`,
       `mission-network` green
+
+## Resolution 2026-09-29 — closed by the owner, no code change
+
+Closed as **accepted residue**, not fixed. The seed 3 (1976,−889) row is exactly as the ticket
+describes: a 16 m re-convergence pinch at 27.8 m against the 28.5 m rule, below the cull rung's
+60 m interval floor, so the rung never sees it. Neither candidate reason was pursued because the
+owner's 2026-09-20 read stands — technically a violation, playable as is — and the two levers on
+offer (lowering the 60 m floor, or a mid-span T out there) each risk more than a 0.7 m pinch costs:
+the floor is what keeps the rung from eating short marginal overlaps, and a T always beats no T
+(2026-09-07 ruling), so deleting a leg over 16 m is the wrong-sized response.
+
+Consequence for the gates: `road-clearance` stays red on its "seed3 origin" row with no open
+ticket behind it (the "lone-pine spawn" row is BUG-69, still open). Per the 2026-09-14 ruling the
+gate carries no length threshold and no report-only mode, so the red is the intended record of
+this accepted pinch. If that ever becomes a nuisance, the decision to revisit is the owner's.
