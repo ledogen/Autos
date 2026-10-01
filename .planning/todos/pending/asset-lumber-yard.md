@@ -4,9 +4,9 @@ type: asset
 status: open
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-03
+updated: 2026-09-30
 blocked-by: FEAT-59
-relates: FEAT-46, FEAT-32, ASSET-11
+relates: FEAT-46, FEAT-32, ASSET-11, FEAT-91
 ---
 
 # ASSET-12: Lumber yard
@@ -14,6 +14,19 @@ relates: FEAT-46, FEAT-32, ASSET-11
 **POI model** — a destination, not dressing. It anchors a zone (FEAT-46 lay-by pads / FEAT-21 POI
 scatter) and gives lawn furniture (ASSET-01..08) something to belong to. A POI carries provenance:
 whatever is scattered around it should read as *its* stuff.
+
+## Amended 2026-09-30 — dressing for the sawmill (FEAT-91)
+
+Briefly ruled the region-1 haul giver (combined with a firewood yard) and then **superseded the same
+day**: firewood got its own splitting yard (ASSET-36) and lumber moved to the **sawmill in region 2**
+(ASSET-11, FEAT-91). This kit goes back to what it was — **dressing** — and its natural home is the
+sawmill premises: lumber stacks and timber racks around the mill. The sawmill's loading rack is
+ASSET-11's, not this kit's.
+
+**Art style correction.** This ticket predates `.planning/research/ART-STYLE.md`, which now rules
+**flat colours, no textures, faceted**. The texture line in the spec below is superseded — board-end
+read comes from geometry (notched ends, a darker end-grain material), not from an albedo. ART-STYLE
+wins wherever this ticket disagrees.
 
 ## Request
 
@@ -33,7 +46,7 @@ scattered at varying density), so a single monolithic model would be a fixed dio
 
 | Field | Value |
 |---|---|
-| Texture | **one shared 1024×1024 albedo across all three pieces** — sawn-end grain, board faces, banding straps |
+| Texture | ~~one shared 1024×1024 albedo~~ **none — flat colours per ART-STYLE.md** (amended 2026-09-30): board face, end grain and banding strap as separate stable materials |
 | Forward | −Z (board run along Z) |
 
 Board ends do all the work; the sawn-end grain is what makes a stack read as lumber rather than as a
@@ -46,8 +59,7 @@ silhouette.
   under `ASSETS.md` settings.
 - Sources committed: one `assets/models/src/lumber-yard.blend` + `lumber-yard.py` generating all
   three (they share a texture, so they share a source).
-- All three reference the same embedded albedo — confirm the texture is not duplicated into each
-  `.glb` at full size, or accept the cost explicitly and note it.
+- Flat-colour materials only, names stable (`LumberFace`, `LumberEnd`, `Banding` or similar).
 - Tri counts within budget; material names stable.
 - All three load and place in-world through the FEAT-59 model import service.
 

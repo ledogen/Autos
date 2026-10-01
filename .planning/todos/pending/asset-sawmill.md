@@ -4,9 +4,9 @@ type: asset
 status: open
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-03
+updated: 2026-09-30
 blocked-by: FEAT-59
-relates: FEAT-46, FEAT-32, ASSET-12
+relates: FEAT-46, FEAT-32, ASSET-12, FEAT-91, ASSET-38
 ---
 
 # ASSET-11: Sawmill
@@ -14,6 +14,22 @@ relates: FEAT-46, FEAT-32, ASSET-12
 **POI model** — a destination, not dressing. It anchors a zone (FEAT-46 lay-by pads / FEAT-21 POI
 scatter) and gives lawn furniture (ASSET-01..08) something to belong to. A POI carries provenance:
 whatever is scattered around it should read as *its* stuff.
+
+## Amended 2026-09-30 — the region-2 haul yard (FEAT-91)
+
+The sawmill is now a **working yard POI in region 2 only**: it posts **haul** jobs for a banded bundle
+of **6 ft boards** (ASSET-38) and **gives and takes courier** jobs. It is still the log-drag main
+mission's terminus; nothing about that changes. What this adds to the model:
+
+- **A loading bay** (named empty `BayBoards`, truck-sized ~3 × 6 m, bed end marked) on the road-facing
+  side, clear of the log deck.
+- **A raised board rack beside the bay** that the bundle tips off into the bed (`ReleaseBoards` at its
+  lip). The rack surface is a collider — a clean inclined plane, ~1.5 m high at the lip so the bundle
+  clears a Ranger bed rail (1.14 m).
+- Lumber stacks from the ASSET-12 kit may dress the premises; they are not part of this model.
+
+**Art style correction.** This ticket predates `.planning/research/ART-STYLE.md` (flat colours, no
+textures, faceted). The texture line below is superseded — ART-STYLE wins.
 
 ## Request
 
@@ -26,7 +42,7 @@ natural terminus for the log-drag main mission in `.planning/story-mode/missions
 | Field | Value |
 |---|---|
 | Tri budget | **≤4000** — the largest in the set |
-| Texture | one albedo, **2048×2048** (the cap in ASSETS.md) — weathered timber, corrugated iron, rust |
+| Texture | ~~one albedo, 2048×2048~~ **none — flat colours per ART-STYLE.md** (amended 2026-09-30) |
 | Real size | 14 m × 9 m footprint × 6 m tall |
 | Origin | base-seated: sill plates at y=0, centred on the footprint |
 | Forward | −Z (open working face / log deck faces −Z) |
