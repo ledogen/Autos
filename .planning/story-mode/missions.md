@@ -215,7 +215,24 @@ backstop, and FEAT-53's k-curve has to hold both jobs at once.
 > customer twice in a day). **The income floor is the board itself** — there are always more live
 > offers than the player can finish before one recycles; food-vendor gigs are the bottom rung.
 
-**The route has a deadline** [RATIFIED 2026-08-05, FEAT-61]. *Struck: "The budget is a day-fraction,
+**NO TIME LIMIT; THE FARE HAS A FLOOR** [OWNER RULING 2026-09-29 — supersedes the deadline
+section below and "The bell IS par" further down]. The route has no deadline: it ends on the last
+porch, the empty truck, or a cancel from the pause menu (FEAT-67). **Par stays exactly where it
+is** — the letter is still the par ratio and the drive is still paid up the shared margin line, so
+driving faster still pays more. What changed is the bottom — and it changed **game-wide, in the
+margin line itself** (DESIGN.md SM-INV-4 amendment 2026-09-29/30): completion alone pays **half
+the job's max** (`baseFrac` 0.5), the **guaranteed base pay** every offer card quotes, so a job
+failed on time still settles its base; the clock earns the other half as a tip (whole at S, half
+at par). For the round that means the fare never drops below the
+base, priced against par × coverage like the fare itself. Result cards state **Base pay** and
+**Tip** (what the clock paid above the base) in the offer card's own words; the paper card adds
+its **Accuracy bonus** (the per-throw money) as a third row. SM-INV-3 is unaffected — the route simply stopped being a timed flavor; the running HUD shows
+elapsed time counting up, the same read-out a POI job has, never a countdown, and the offer card
+no longer shows a duration. Same ruling: in story mode papers only fly while a route is running —
+after the round settles the throw and its accuracy read-out are off (free roam keeps the practice
+throw).
+
+~~**The route has a deadline**~~ [RATIFIED 2026-08-05, FEAT-61; **SUPERSEDED 2026-09-29**, above]. *Struck: "The budget is a day-fraction,
 not a clock. The route ends when the light goes… this doesn't need the SM-INV-3 timer allowance — it
 isn't a timer, it's an inventory and a sunset."* It is a timer, and it should be: papers have to land
 before people have their morning coffee. That is the one deadline in this game the player already
@@ -304,7 +321,8 @@ and dawdling past it is a **D**. The owner's instruction was explicitly that thi
 rather than leave the paper route on a second convention, since a paper route's B has to mean what a
 POI job's B means for the letter to be worth anything at all.
 
-**The bell IS par** [2026-08-16]. `tolerance` 1.0, so the visible countdown is par exactly: run it
+~~**The bell IS par**~~ [2026-08-16; **SUPERSEDED 2026-09-29** — no time limit, fare floored at
+half of Base pay; see the top of this section]. `tolerance` 1.0, so the visible countdown is par exactly: run it
 out and you have, by definition, failed the standard. Consequence the owner accepted explicitly: a
 route finished exactly at par settles **no time money**, keeping only the per-throw spot earnings.
 This is the one mission type allowed a visible clock — SM-INV-3 permits an authored, diegetic timer
@@ -348,6 +366,23 @@ truck and what the truck does to the cargo**.
 | **3a. Point-to-point** | light | time vs par | continuous in the par ratio, base ∝ par | crashing; earning nothing |
 | **3b. Fragile** | light to medium | shock / impulse events | flat rate; slowness is the cost | grandma's vase |
 | **3c. Freight** | **heavy** | delivery, plus what it cost you | flat rate by mass × distance | the truck |
+
+> **[AMENDED 2026-09-29, owner] Three types → two classes, split by where the item rides.** The
+> player can see *where the thing is* before accepting; they cannot see a scoring axis. So:
+>
+> | Class | Name | Rides | Scored on | Shapes | Ticket |
+> |---|---|---|---|---|---|
+> | **Small item** | **Courier** | in the cab | time vs par — §3a as written | point-to-point · multi-drop · fetch (out-and-back) | FEAT-89 |
+> | **Large item** | **Haul** | in the bed, as a **rigid body** | aboard at arrival, roughness, mass | one leg | FEAT-88 |
+>
+> **§3b and §3c fold into the large-item class.** The cargo is a real body in an open bed well;
+> "shock into the cargo" is read off the body's own contacts, not off suspension telemetry, and
+> **bouncing out is the floor-at-zero case** of the 2026-08-17 graded ruling. Mass is a continuum
+> inside the class — a light crate is §3b's restraint, a full drum is §3c's freight — and §3c's
+> flat-rate-by-mass pricing survives as the rule for that end. §3b's paved-detour argument and
+> §3c's "the load is the reason you drive carefully" both hold unchanged; what changed is that
+> they are one mission, not two. **Retired:** the telemetry-based fragile signal; freight as a
+> separate type. §3b/§3c below are kept as the reasoning behind the large-item class.
 
 #### 3a. Point-to-point — **margin**
 
@@ -603,6 +638,52 @@ sentence in the design — it is the Roamer asking you, specifically, to spend y
 evidence for the with-teeth reading, and that it plays fine under the benevolent reading too. The
 mission doesn't force the answer, which is the right property for it to have.
 
+### The second shape: the bridge site — "deliver x of y" [OWNER, 2026-09-30]
+
+> "Alongside the log drag mission to open the next region we can also have 'deliver x of y to the
+> bridge site' possibility to open it — to courier focus (deliver workers to the site) as well as
+> hauling (lumber and stones)."
+
+A second **main-mission shape** next to the log drag. Where the drag is *labor with the truck*, this
+one is *labor with the roads*: the trail is out at a crossing, and reopening it means bringing what
+the crew needs. The unlock is a **tally** — *x of y delivered to the bridge site* — and every
+delivery to it is a job of one of the two classes already ratified (§3, Courier / Haul):
+
+| class | what goes to the site | where it rides | the job it already is |
+|---|---|---|---|
+| **Courier** | the **workers** — people who have to get out to the crossing | the cab | courier multi-drop / fetch (FEAT-89) — pick them up in town, drop them at the site |
+| **Haul** | **lumber** and **stone** for the span and the abutments | the bed, as real bodies | haul (FEAT-88) — from the givers FEAT-91 already plans: the woodyard sends lumber, the quarry sends stone |
+
+So the bridge site is both career lines pointed at one place. A courier-leaning player fills the
+tally with people; a haul-leaning player fills it with loads; most will do some of each. Nothing new
+has to be scored — the deliveries are ordinary jobs against the ordinary line (base pay + tip,
+SM-INV-4 as amended 2026-09-30) and the site just counts what arrives.
+
+**What carries over from the log drag, unchanged.**
+- **It is a place** (SM-INV-13): the site sits on the trail at the region wall, and the Roamer's
+  beat is staged there. Beat/labor split holds — the scene once per profile, the tally every run.
+- **Clearance is run state** (§rule 2): the tally resets with the run, like the logs.
+- **It must be short** (§consequence): *y* is a handful of trips, not a construction season.
+  Scale it the way the drag scales — by count, and by how far the sources are from the site.
+- **Fails soft** (§rule 3): a load that goes over the side is a load, not a strike.
+- **The Roamer pays in access only** (§economy compliance).
+
+**What it changes.** The log drag spends the truck in a currency the missions don't (driveline
+shock); the bridge site spends it in exactly the currency they do — it is *more of the day job*,
+concentrated. That is the point of having both: a player whose truck cannot take another snatch
+still has a way through, and the region reads as *worked open* rather than *forced open*.
+
+**Open — the owner's to answer, not touched here:**
+1. **Alternatives or parallel?** Does a given trail offer *either* a drag *or* a site (authored per
+   region), or both at once with the player choosing — or does the drag *become* a site once the
+   logs are clear (clear the trail, then build the crossing)?
+2. **Does the labor pay?** If bridge deliveries are ordinary paid jobs, the unlock also pays cash
+   — the drag pays nothing but access. Fine, or should site deliveries pay base only?
+3. **Where does "x of y" show?** Board card vs. the site itself. SM-INV-3 has nothing to say about
+   a delivery count, but the count must not turn into a countdown.
+4. **The giver.** A foreman POI at the site (a road-furniture / POI asset, FEAT-74 pool), or the
+   uncle / the Roamer through the existing channels?
+
 ### Thematic note
 
 Expansion by **maintenance rather than conquest** — and under the Roamer frame, not maintenance of
@@ -719,6 +800,12 @@ carrying it — worth watching whether that fills the hole or makes it more obvi
 
 ## Change log
 
+**2026-09-30 — owner: the bridge site.** A second main-mission shape beside the log drag: "deliver
+x of y to the bridge site" — workers by courier, lumber and stone by haul — reusing the two ratified
+delivery classes and the FEAT-91 givers as sources. Four open questions logged with it. Same day,
+the payout re-cut (base = half the max, tip the rest, break-even is a day) is recorded in DESIGN.md
+SM-INV-4 and referenced from the paper-route deadline section.
+
 **2026-07-29 — reconciliation against DESIGN.md.** Wear language corrected to *time + engine
 intensity* (SM-INV-5). Timer "exception" for time trials withdrawn — SM-INV-3 as amended already
 licenses timed types. XP/par split added for SM-INV-2's ramp. Cargo integrity reinstated from
@@ -740,6 +827,13 @@ as the brake. *(Both shipped tables saturate on day 8 and must stretch to a 20-d
 authored per-region counts. **Rank (D·C·B·A·S) became par's player-facing surface** — display only,
 result-card only. **Bonus objectives** ("an A gets you a little extra") added as the one legal
 pre-drive target, paying in items.
+
+**2026-09-29 — owner decision: two delivery classes.** §3's three types become **two classes split
+by where the item rides** — small items in the cab (margin; point-to-point, multi-drop, fetch —
+FEAT-89) and large items in the bed as a rigid body (aboard + roughness + mass — FEAT-88). Fragile
+and freight fold into the bed class as a mass continuum; the telemetry fragile signal is retired.
+Named **Courier** / **Haul** (owner, same day — *delivery* too ambiguous, *run* collides with the
+roguelike run, *errand* mis-heard by speech-to-text). Code families become `courier` and `haul`.
 
 **Superseded phrasing — do not reuse.** *"Camping is a place, not a button"* (SM-INV-6 was reversed
 2026-07-19; camping is a **button**, gated by campable regions, with a worldgen-scored quality

@@ -635,7 +635,24 @@ different *currencies*:
 
 So the Host's boon should be reduced wear accumulation, reduced damage from contact, better
 low-light visibility, or a payout multiplier — things that make each hour worth more, since the
-player has fewer of them. Wear is the strongest candidate: it directly offsets the sleep cost in
+player has fewer of them.
+
+> **Damage resistance is the Host's, in both forms [owner 2026-09-24].** The Host's reward comes in
+> two forms that share one theme: a truck kept by a well-rested driver holds up better.
+> - **Passive:** while you stay in favour, the truck **wears more slowly and takes contact damage
+>   more lightly**. It is always on, described and never shown as a number (SM-INV-10).
+> - **Active:** the **sacred object** (`items.md` §1c), used from a quick slot while driving. It
+>   comes in two forms: a timed damage reduction, or a short invulnerability window you trigger as
+>   you see the crash coming. It is on a cooldown or single-use, and it dies with the run.
+>
+> The passive form is the Host's steady reward for margin. The active one is the moment you spend it.
+> *Scratched for now (owner, 2026-09-24): a separate maintenance spirit, "the Tinkerer" (restoration
+> and damage resistance, with no rival spirit), was considered and parked. Folding both forms into
+> the Host avoids two spirits claiming the same territory.*
+>
+> Open: what is the charm's price, beyond the cooldown? The Host's ledger is the natural candidate.
+> Maybe the charm only works while your streak of good nights is intact, or using it costs
+> standing with the Host. Wear is the strongest candidate: it directly offsets the sleep cost in
 the economy rather than in the driving.
 
 **Exclusivity (proposal).** You cannot hold both fatigue pacts. Taking one spurns the other, and

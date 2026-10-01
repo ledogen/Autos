@@ -18,9 +18,9 @@
 import { accuracyScore, ACC_FLOOR } from '../src/throw.js'
 import {
     PAPER_PARAMS, runPaper, resetPaperRun, customersForTier, stockForTier,
-    deadlineFor, scoreRoute, advancesTier,
+    scoreRoute, advancesTier,
 } from '../src/paper-route.js'
-import { EconomySystem, runEconomy, ECONOMY_PARAMS, pointsFor, payoutFor } from '../src/economy.js'
+import { EconomySystem, runEconomy, ECONOMY_PARAMS, pointsFor, payoutFor, splitPayout, basePay } from '../src/economy.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -54,7 +54,7 @@ check('1 of 9 delivered letters D', one.letter === 'D', `got ${one.letter} (scor
 // (`payout`), so a route driven exactly at par settles ZERO — every dollar was already paid. The
 // old assertions read `.payout` and were really asking about the total.
 check('…and still pays for the one', one.total > 0, `total ${one.total}`)
-check('…which is exactly one paper at the tip rate', near(one.spot, one.tip))
+check('…which is exactly one paper at the per-paper rate', near(one.spot, one.perPaper))
 const half = scoreRoute(Array(5).fill(accuracyScore(0, R)), 9, PAR, PAR, TIER)
 check('more deliveries pay strictly more', half.total > one.total)
 check('coverage is delivered/customers', near(half.coverage, 5 / 9))
@@ -97,11 +97,13 @@ check('…and the tips at par are already banked on top', atPar.spot > 0)
 // A tip is a fixed gratuity on a growing fare: the premium is biggest where the fare is smallest
 // and tapers as you drive faster. What it must never do is invert — that was the old bug.
 let prem = [], monotone = true, prev = Infinity
-// index 2 IS the break-even pace, and it is read from ECONOMY_PARAMS rather than written as a
-// number: the paperTip check below asserts the premium THERE, so a band re-cut that moves
-// break-even (2026-09-07: 0.80 → 0.85) must carry this probe with it or the check silently starts
-// measuring the tip at some other pace.
-for (const r of [1.00, 0.90, ECONOMY_PARAMS.breakEven, 0.72, 0.65, 0.60]) {
+// index 2 IS the full-tip pace (where the fare reaches its max), and it is read from
+// ECONOMY_PARAMS rather than written as a number: the paperTip check below asserts the premium
+// THERE, so a band re-cut that moves it must carry this probe with it or the check silently starts
+// measuring the accuracy pool at some other pace. [2026-09-30: was the break-even pace; the re-cut
+// line has no break-even ratio, and the pool is now defined against the MAX fare.] Past it the
+// fare is capped, so the premium goes FLAT rather than tapering further — still never inverting.
+for (const r of [1.00, 0.90, ECONOMY_PARAMS.fullTipRatio, 0.72, 0.65, 0.60]) {
     const round = scoreRoute(Array(9).fill(1), 9, PAR * r, PAR, PT)
     const x = round.total / payoutFor(PAR, r, PT)
     prem.push(x)
@@ -112,7 +114,7 @@ check('a perfect round ALWAYS out-earns the equivalent POI job (never inverts)',
     prem.every(x => x > 1.0), prem.map(x => x.toFixed(2) + 'x').join(' '))
 check('…and the premium tapers as the fare grows, like a tip', monotone,
     prem.map(x => x.toFixed(2)).join(' → '))
-check(`…worth ~${Math.round(PAPER_PARAMS.paperTip * 100)}% at the break-even pace, which is what paperTip means`,
+check(`…worth ~${Math.round(PAPER_PARAMS.paperTip * 100)}% at the full-tip pace (the max fare), which is what paperTip means`,
     Math.abs(prem[2] - (1 + PAPER_PARAMS.paperTip)) < 0.005, `${prem[2].toFixed(3)}x`)
 // The income floor is now the TIPS, not the fare: an unfinished round still banks what it placed.
 const partial = scoreRoute(Array(3).fill(1), 9, PAR * 0.9, PAR, PT)
@@ -177,12 +179,49 @@ check('the end-of-route payout is decoupled from accuracy entirely', (() => {
     const rough = scoreRoute(Array(9).fill(0.3), 9, PAR * 0.8, PAR, TIER)
     return near(sharp.payout, rough.payout) && rough.spot < sharp.spot
 })())
-// [RESHAPED 2026-08-17] The inverse of what this used to assert. Running to the bell settling
-// NOTHING was the owner-reported flaw: the bell is par, par is the slowest passing drive, and a
-// pass should pay. It now settles the margin line's value at ratio 1.0 — half a day-tier unit.
-check('a route that runs to the BELL still settles a fare — par pays', (() => {
-    const r = scoreRoute(Array(9).fill(1.0), 9, PAR * PAPER_PARAMS.tolerance, PAR, TIER)
+// [RESHAPED 2026-08-17] The inverse of what this used to assert. Running to par settling NOTHING
+// was the owner-reported flaw: par is the slowest passing drive, and a pass should pay. It settles
+// the margin line's value at ratio 1.0 — 75% of the round's max since the 2026-09-30 re-cut. (This used to be "runs to the BELL";
+// the bell was cut 2026-09-29, and par is exactly where it was.)
+check('a route driven exactly at par settles a fare — par pays', (() => {
+    const r = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
     return r.payout > 0 && r.spot > 0 && near(r.payout, payoutFor(PAR, 1.0, TIER))
+})())
+// NO TIME LIMIT, SO THE FARE NEEDS A FLOOR [owner, 2026-09-29]. Without a bell the margin line's
+// old zero (payoutZero × par) was reachable, and a round that took all morning would have settled
+// nothing for the drive. The floor is the margin line's OWN (economy.js payoutFloor — the same
+// day's ruling made it game-wide), so the fare is still payoutFor verbatim: no paper-route dial.
+check('no paper-route floor dial: the fare floor is the shared line\'s (economy.js baseFrac)',
+    PAPER_PARAMS.fareFloor === undefined && ECONOMY_PARAMS.baseFrac === 0.5)
+for (const r of [ECONOMY_PARAMS.tipZero, 1.5, 3.0, 10.0]) {
+    const round = scoreRoute(Array(9).fill(1), 9, PAR * r, PAR, TIER)
+    check(`a round at ratio ${r.toFixed(2)} settles the base pay (half the round's max), not zero`,
+        near(round.payout, ECONOMY_PARAMS.baseFrac * ECONOMY_PARAMS.k * PAR * TIER, 1e-9)
+        && near(round.payout, payoutFor(PAR, r, TIER), 1e-9),
+        `${round.payout} vs line ${payoutFor(PAR, r, TIER)}`)
+}
+check('the floor scales with coverage like the fare does — half a round, half the guarantee', (() => {
+    const half = scoreRoute(Array(4).fill(1), 8, PAR * 3.0, PAR, TIER)
+    return near(half.payout, payoutFor(PAR * 0.5, 3.0, TIER), 1e-9) && near(half.payout, 0.5 * payoutFor(PAR, 3.0, TIER), 1e-9)
+})())
+check('a slow round still letters D — the floor is money, not a grade', (() => {
+    return scoreRoute(Array(9).fill(1), 9, PAR * 1.5, PAR, TIER).letter === 'D'
+})())
+// THE TWO ROWS THE RESULT CARD STATES [owner, 2026-09-29]: base (the offer card's guaranteed
+// figure) + tip (what the clock paid above it) === the settled fare, to the dollar, and the split is
+// economy.js's own so a paper round and a POI job state their money the same way.
+check('base + tip === the rounded fare, and base is what the offer card quoted', (() => {
+    return [0.7, 0.85, 1.0, 1.1, 1.3, 4.0].every(r => {
+        const round = scoreRoute(Array(9).fill(1), 9, PAR * r, PAR, TIER)
+        const s = splitPayout(PAR, r, TIER)
+        return round.base + round.tip === Math.round(round.payout) && round.base === s.base && round.tip === s.tip
+            && round.base === basePay(PAR, TIER)
+    })
+})())
+check('the tip is $0 for a round slow enough to run the line out, and positive at par', (() => {
+    const slow = scoreRoute(Array(9).fill(1), 9, PAR * 1.3, PAR, TIER)
+    const par  = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
+    return slow.tip === 0 && slow.base > 0 && par.tip > 0 && par.base === slow.base
 })())
 // THE OWNER'S EQUIVALENCE IS RETIRED [2026-08-17], and its replacement is pinned instead so the
 // change is visible rather than merely absent. It used to say a rim-scraper blasting the round
@@ -213,7 +252,7 @@ check('spares interpolate 100% → 30% down the ladder', (() => {
     return s[0] === 4 && s[3] === 5 && s.every((v, i) => v >= 0)
         && (s[0] / 4) === 1.0 && Math.abs(s[3] / 15 - 0.333) < 0.01
 })(), JSON.stringify([0, 1, 2, 3].map(t => `${customersForTier(t)}+${stockForTier(t) - customersForTier(t)}`)))
-check('the deadline is exactly par × tolerance', near(deadlineFor(PAR), PAR * PAPER_PARAMS.tolerance))
+check('there is no tolerance dial any more — the bell was cut (owner, 2026-09-29)', PAPER_PARAMS.tolerance === undefined)
 
 console.log('\n── 5. nothing degenerate reaches the wallet ───────────────────')
 for (const [label, r] of [
@@ -242,6 +281,9 @@ const src = (await import('node:fs')).readFileSync(new URL('../src/paper-route.j
 // with different ceilings, and the route ended up paying best for driving slowly. It now calls the
 // shared function on purpose — the whole point is that one drive over one road is priced once.
 check('paper-route.js DOES price the clock through the shared margin line', /\bpayoutFor\s*\(/.test(src))
+// [2026-09-29] No deadline: nothing in the code names one. The floor lives in scoreRoute, not here.
+check('…and no bell: deadlineFor and run.deadline are gone from the code',
+    !/\bdeadlineFor\b/.test(src) && !/\.deadline\b/.test(src))
 // gradeRun IS called now [ratified 2026-08-14] — the rank is the par ratio, through the same
 // function every other mission type grades with, so a paper route's B means what a POI job's B
 // means. payoutFor is still never called: the MONEY is a flat rate, not the margin line, and
@@ -307,14 +349,14 @@ econ.settleFlat(-500, 'D')
 check('a negative payout cannot drain the wallet', runEconomy.money >= 0)
 
 console.log('\n── 7. the flat rate is anchored to par ────────────────────────')
-check('the TIP is k × par × tier × paperTip / customers', (() => {
+check('the PER-PAPER rate is k × par × tier × paperTip / customers', (() => {
     const r = scoreRoute([1], 9, PAR, PAR, 2.0)
-    return near(r.tip, ECONOMY_PARAMS.k * PAR * 2.0 * PAPER_PARAMS.paperTip / 9)
+    return near(r.perPaper, ECONOMY_PARAMS.k * PAR * 2.0 * PAPER_PARAMS.paperTip / 9)
 })())
-check('a longer route tips proportionally more per paper', (() => {
+check('a longer route pays proportionally more per paper', (() => {
     const a = scoreRoute([1], 9, PAR, PAR, TIER)
     const b = scoreRoute([1], 9, PAR, PAR * 2, TIER)
-    return near(b.tip, a.tip * 2)
+    return near(b.perPaper, a.perPaper * 2)
 })())
 check('the day tier lifts the floor with the cost curve', (() => {
     const d1 = scoreRoute(Array(9).fill(1), 9, PAR, PAR, 1.0)
@@ -331,15 +373,18 @@ check('the day tier lifts the floor with the cost curve', (() => {
 // names its yardstick explicitly: ONE DAY-TIER UNIT, which is what paperW is defined against
 // (see PAPER_PARAMS.paperW) — and asserts the identity that used to be assumed, so the next
 // re-anchor breaks this loudly instead of quietly.
-check(`a perfect route's TIPS are worth ~${Math.round(PAPER_PARAMS.paperTip * 100)}% of ONE DAY-TIER UNIT`, (() => {
+// [RE-CUT 2026-09-30] The yardstick is now THE ROUND'S MAX FARE (k·par·tier — what an S drive
+// pays), not the retired line's break-even unit. Same expression, new meaning, asserted rather
+// than assumed for the same reason as before.
+check(`a perfect route's ACCURACY MONEY is worth ~${Math.round(PAPER_PARAMS.paperTip * 100)}% of THE ROUND'S MAX FARE`, (() => {
     const r = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
-    const unit = ECONOMY_PARAMS.k * PAR * TIER           // == payoutFor at the break-even ratio
-    return near(r.spot / unit, PAPER_PARAMS.paperTip, 1e-9)
+    const max = ECONOMY_PARAMS.k * PAR * TIER            // == payoutFor at the full-tip ratio
+    return near(r.spot / max, PAPER_PARAMS.paperTip, 1e-9)
 })())
-check('…and that unit really is payoutFor at break-even (not an inlined guess)',
-    near(payoutFor(PAR, ECONOMY_PARAMS.breakEven, TIER), ECONOMY_PARAMS.k * PAR * TIER, 1e-9))
-check('…while par itself pays only half of it — the floor now beats a bare pass, deliberately',
-    near(payoutFor(PAR, 1.0, TIER), 0.5 * ECONOMY_PARAMS.k * PAR * TIER, 1e-9))
+check('…and that max really is payoutFor at the full-tip ratio (not an inlined guess)',
+    near(payoutFor(PAR, ECONOMY_PARAMS.fullTipRatio, TIER), ECONOMY_PARAMS.k * PAR * TIER, 1e-9))
+check('…while par itself pays 75% of it — base plus half the tip',
+    near(payoutFor(PAR, 1.0, TIER), 0.75 * ECONOMY_PARAMS.k * PAR * TIER, 1e-9))
 
 console.log('\n── 7b. the target circle never overlaps the road ──────────────')
 // The offset exists FOR this: a paper that lands on the tarmac must not score. Growing the radius

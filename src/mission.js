@@ -165,7 +165,7 @@ export class MissionSystem {
      *        economy's terms at this moment (EconomySystem.terms()). Stamped onto the mission at
      *        ACCEPT and read back at settlement. Optional — without it, jobs grade on the day-1
      *        default thresholds and nothing pays.
-     * @param {(result:object, mission:object)=>{payout:number,points:number}} [o.onSettle] —
+     * @param {(result:object, mission:object)=>{payout:number,base:number,tip:number,points:number}} [o.onSettle] —
      *        FEAT-53: settle a finished POI job (EconomySystem.settle). Optional, POI jobs only.
      */
     constructor({ getRoad, getCar, getSeed, getRegion, teleport, setSpawn, setMapOpen, onChange, getTerms, onSettle }) {
@@ -519,7 +519,10 @@ export class MissionSystem {
                 this.mission._settled = true
                 try {
                     const s = this._onSettle(this.result, this.mission)
-                    if (s) { this.result.payout = s.payout; this.result.points = s.points; this.result.award = s.award ?? null }
+                    if (s) {
+                        this.result.payout = s.payout; this.result.points = s.points; this.result.award = s.award ?? null
+                        this.result.base = s.base ?? s.payout; this.result.tip = s.tip ?? 0   // the result card's two rows
+                    }
                 } catch (e) {
                     console.warn('[mission] settle failed — run graded but unpaid', e)
                 }

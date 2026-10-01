@@ -218,7 +218,7 @@ was a START count, not a par clock. Removing it moves away from rendered timers,
 Implementation: `src/mission.js` (`'staging'`, `START_ZONE_R`), `HANDOFF-poi-mission-start.md`.
 
 **Companion design notes** (downstream of this bible; where they disagree with it, *it* wins):
-[missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag main mission),
+[missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag and bridge-site main missions),
 [run-shape.md](run-shape.md) (run length, day length, saving), [opening.md](opening.md) (the firing,
 the uncle), [items.md](items.md) (the items catalog — consumables, tools, parts, cargo, catch; an
 asset burn-down surface), [spirits-and-pacts.md](spirits-and-pacts.md) (the spirit cast —
@@ -483,7 +483,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > a scale where **C contains par**, which is the band a live readout will spend most of its time
   > in. Whoever implements the live surface should check it reads sensibly there rather than
   > assuming the old B-centred spacing.
-- **SM-INV-4 — Payout is continuous margin against par; bare completion pays ~nothing.**
+- **SM-INV-4 — Payout is continuous margin against par; ~~bare completion pays ~nothing~~ completion pays half the max.** *(title amended 2026-09-30 — see the last amendment below, which carries the current anchors)*
   [RATIFIED 2026-08-01 — was DEFAULT] Payout is a **continuous linear function of the par ratio**,
   not a set of bins. ~~Three anchors fix the line: **+20% over par pays ~nothing · par pays one day's
   maintenance · −20% under par pays generously (2×)**.~~ *(anchors re-set 2026-08-16 — see below)*
@@ -497,7 +497,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > **Payout floors at zero.** A disastrous run earns nothing; it never charges you. The loss is the
   > day and the wear, which is a real enough loss that it needs no arithmetic on top.
 
-  > **Amendment [RATIFIED 2026-08-16] — break-even moves to the B/C boundary; PAR LOSES MONEY.**
+  > **Amendment [RATIFIED 2026-08-16; anchors SUPERSEDED 2026-09-30, below] — break-even moves to the B/C boundary; PAR LOSES MONEY.**
   > The shape is unchanged (continuous, linear in the ratio, floored at zero); the three anchors
   > moved with par's new meaning:
   >
@@ -519,6 +519,61 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > *The payout line does NOT follow the day ramp*, even though the rank thresholds do — money must
   > never be a function of the letter (rank is display only). Past day 1 the tightening B/C boundary
   > drifts slightly off the fixed break-even point, and the rising `dayTier` is what compensates.
+
+  > **THE DAY, IN PLAIN WORDS [owner, 2026-09-30] — this is the rule; the numbers below serve it.**
+  >
+  > - Finish **two average-length jobs a day, slowly**, and you are fine.
+  > - Drive **one job very fast** and you are fine.
+  > - Only **one job finished slowly** — you got stuck and crawled out — is unsustainable.
+  > - It should be **hard to fit two jobs in a day without driving fairly fast**: working fills
+  >   about **80% of the day**, shopping and everything else fits in the other 20%.
+  > - Pay scales with the job's length, so all of this is stated for an *average-length* job.
+  >
+  > Any retune of the payout line, the day cost, mission length or day length is checked against
+  > these five sentences first. *Status 2026-09-30:* the three money sentences hold and are gated
+  > (`test/economy.mjs`). The 80% sentence: the planner rolls region-1 jobs at a **mean par of
+  > 3.0 game hours** (measured, 303 rolls), so two slow jobs are ~47% of the 16 h day in *driving*;
+  > the owner ruled that right — "working" includes the drive to the next giver and the occasional
+  > stop for food or items, and those fill the rest. **Mission length stays.** (FEAT-92, which
+  > proposed lengthening routes, was withdrawn the same day.)
+  >
+  > **Amendment [OWNER RULING 2026-09-29 / 2026-09-30] — completion pays half the max; the clock
+  > earns the other half as a tip; break-even is a day.** This SUPERSEDES the 2026-08-16 anchor
+  > table above ("break-even at B/C", "par loses money") and strikes "bare completion pays
+  > ~nothing". The owner's statement: *you get 50% of the possible max value for a mission from
+  > completion alone; going quickly and getting S rank gives you the other 50%, C rank 25%.*
+  >
+  > | ratio (day 1) | pays, of the job's max | meaning |
+  > |---|---|---|
+  > | **≤ 0.77** (S) | **100%** | the whole tip — a hard ceiling, nothing above it |
+  > | **0.85** (B/C) | ~91% | |
+  > | **1.00** (par, C/D) | **75%** | base + half the tip |
+  > | 1.00 – 1.23 (a near-miss D) | 75% → 50% | the tip runs out continuously, no cliff at the pass line |
+  > | **≥ 1.23** (D) | **50%** | **base pay — guaranteed for completion** |
+  >
+  > *The tip scales with everything else* [owner, 2026-09-30 — "it would not be fun for tips to
+  > lose their value after the first couple days; we want to keep some pressure on to drive
+  > fast"]. Base and tip are both shares of the same max, and the max rides `dayTier × regionTier`,
+  > so a whole tip always equals a base pay and is always two-thirds of a day's costs.
+  >
+  > *Still SM-INV-4 in shape:* continuous and linear in the ratio, rank display only — the letters
+  > name points on the line, they do not price it. What is day-independent is only the pair of
+  > **ratios** the tip is earned between, never its dollars. The full-tip ratio is pinned
+  > to the **day-1 S threshold** (S only tightens from there, so an S earns the whole tip on every
+  > day), and the tip's zero is solved from "par earns half the tip" (`2 − 0.77 = 1.23`).
+  >
+  > *The day-1 numbers the currency scale is set from* (the average region-1 job: par 180 s = 3 game
+  > hours, measured 2026-09-30):
+  > **a D completion pays $5 · the max pays $10 · a day's break-even is about $7.50** (1.5 base
+  > pays), scaling with `dayTier`. So a good day is **two jobs driven poorly or one driven very
+  > well**; one bare-C job is exactly level. `k` is now the MAX rate, `10/180` $ per par-second.
+  > ⚠ **Consequence for SM-3:** repair/upkeep prices were authored against the old break-even day
+  > (two B/C jobs, ~$18 on day 1). The day is now $7.50 — those bills need re-pricing against it.
+  >
+  > *No time limits.* A mission can be **failed on time and still pay its base**; the paper route's
+  > bell is gone (par untouched). **The two cards are a pair:** the offer card quotes one number,
+  > *Base pay*, the guaranteed amount; the result card answers it in the same words — *Base pay*,
+  > then *Tip* — and the tip is never mentioned on the offer.
 - **SM-INV-5 — Wear accrues on time + intensity, never distance.** Hours and engine torque
   are both integrated; wear compounds with how hard you drive, not just how long. This is
   the lever that separates intense mission driving from casual point-to-point freeroam
@@ -884,6 +939,14 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   (spontaneous); below ~50% a *moderate* bump *could* pop it but very unlikely; fresh rubber only goes
   on a real hazard. Hazards (landslide/debris — FEAT-26/09) always carry puncture risk, scaled up by
   wear.
+  **Curve re-shaped 2026-09-30 (owner):** deterministic, not a probability — a bump-stop force
+  threshold (`punctureThreshold`, `src/damage.js`). Unpunctureable above 50%; **low vulnerability from
+  50% down to 25%** (84 → 72 kN); **sensitivity ramps hard below 25%** (72 → 30 kN at 10%, flat below).
+  Tire patches + the always-carried bike pump / optional compressor make a puncture recoverable at the
+  roadside without a spare (`items.md` §7). **Roadside times (owner, 2026-09-30), all timeskips:** fit
+  the spare 30 min · patch + bike pump 2 h · patch + compressor 30 min. A patch fixes the hole only and
+  restores no condition. This supersedes the ~1–2 h swap below. Hazard punctures at any condition:
+  FEAT-93. Driving on a flat: FEAT-94.
 - **Repair = roadside self-change.** Pull over and swap the tire — **not a minigame**, it just burns
   ~1–2 in-game hours (OEM kit) and **requires a spare/replacement tire in inventory**. A found/bought
   **quick-jack or breaker-bar item cuts the time** (you still need a tire ready).

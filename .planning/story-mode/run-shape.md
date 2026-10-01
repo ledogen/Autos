@@ -115,7 +115,10 @@ run (1.5 → 1.0); what moves is how much of a day one point costs. **A day is n
 mission** — at minimum you drive from a finished job to the next POI; at most you also gas up, hit a
 service station, and shop.
 
-**Region 1 — chill, with room to fail.** Missions are **~5–7 h par**. Add ~2 h to reach the next POI
+**Region 1 — chill, with room to fail.** Missions are **~5–7 h par**. *[Measured 2026-09-30: the
+planner rolls a mean par of **3.0 h** (182 s, 303 rolls). Owner, same day: that is fine — the drive
+to the next giver and the odd stop for food or items make up the working day. The money anchor
+(`ECONOMY_PARAMS.k`) uses the measured 3 h, not this figure.]* Add ~2 h to reach the next POI
 and a mission cycle is ~8 h, so **two fit in a 16 h day** and a good player can squeeze **~8 missions
 into the 4 days** against a requirement of 6. That ~25% slack is deliberate and is what the early game
 is *for*: failing a job, and building the jalopy up into something that can survive the long missions

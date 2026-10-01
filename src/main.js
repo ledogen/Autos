@@ -74,7 +74,7 @@ import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential 
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
-import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier, deadlineFor,
+import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier,
          planTourJob, customersForTier, radiusForTier, tierRungs } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
@@ -3026,10 +3026,20 @@ function _clearThrownRolls () {
 // F is hold-to-aim. keydown repeats while held, and setAimMode is idempotent, so the repeat costs
 // nothing; the reticle appears on the first one. Nothing here fires while a briefing is up — that
 // listener runs in the capture phase and stops propagation before this one is reached.
+// IN STORY MODE, PAPERS ONLY FLY ON A ROUTE (owner, 2026-09-29). Off a route the throw used to
+// fall through to the free-roam practice path — scored against the nearest customer, with the
+// distance-and-percentage read-out — so a finished round left the player still throwing and still
+// being told how accurate they were. Free roam keeps the practice throw (it is how the target
+// circles and the ballistics were proved to agree); debris throws are a physics test and stay.
+function _canThrow () {
+  const throwingPaper = (RANGER_PARAMS.throwProjectile ?? 'paper') === 'paper'
+  return !throwingPaper || !storySystem.isActive() || paperRouteSystem.isRunning()
+}
 document.addEventListener('keydown', e => {
   if (e.key !== 'f' && e.key !== 'F') return
   if (e.ctrlKey || e.metaKey || e.altKey) return
   if (getCameraMode() !== 'chase') return      // hood and freecam own their own look
+  if (!_canThrow()) return                     // no reticle either: nothing to aim with
   clearTimeout(_aimHoldTimer)                  // re-aiming during the post-throw hold keeps the view
   setAimMode(true, _lastCursorX, _lastCursorY)
   const rt = document.getElementById('aim-reticle')
@@ -3040,6 +3050,8 @@ document.addEventListener('keyup', e => {
   if (!isAiming()) return                       // never aimed (wrong camera mode) — never throws
   const rt = document.getElementById('aim-reticle')
   if (rt) rt.style.display = 'none'
+  // The route ended while F was held (the last paper landed): drop the aim, throw nothing.
+  if (!_canThrow()) { setAimMode(false); return }
   // On a route, a throw costs a paper — and an empty truck cannot throw. Spent at RELEASE, not at
   // the landing: a paper in the air is a paper you no longer have. Off a route there is no
   // inventory and practice throws are free.
@@ -3969,6 +3981,34 @@ function _panelHead (flavorHtml) {
     + '</div>'
 }
 
+/**
+ * THE MONEY ROWS, shared by both result cards (owner, 2026-09-29: the offer card and the result
+ * card are a pair). The offer card quotes ONE number, "Base pay" — the guaranteed amount. The
+ * result card answers it row for row, in the same words and the same order:
+ *
+ *     Base pay   $B     — the same figure the offer quoted (splitPayout, so it matches to the dollar)
+ *     Tip        $T     — what the clock paid above it; $0 for a drive slow enough to run it out
+ *     [Accuracy bonus $S]  — paper route only: the per-throw money, banked as it landed
+ *     +N good deeds     — on the tip line, as before
+ *     Bonus …           — the offer's item, earned or what it needed
+ *
+ * `base`/`tip` are whole dollars from economy.js; `spot` is cents.
+ */
+function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null }) {
+  const row = (label, money) => `<br><span class="mp-dim">${label}</span> <span class="mp-pay">$${money}</span>`
+  return row('Base pay', (base ?? 0).toLocaleString('en-US'))
+    + row('Tip', (tip ?? 0).toLocaleString('en-US'))
+    + (points > 0
+      ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${points} good deed${points > 1 ? 's' : ''}</span>`
+      : '')
+    + (spot != null ? row('Accuracy bonus', formatMoney(spot)) : '')
+    + (bonus
+      ? (award
+        ? `<br><span class="mp-pay">Bonus: ${bonus.name} &check;</span>`
+        : `<br><span class="mp-dim">Bonus: ${bonus.name} missed (needed ${gateText(bonus.gate)})</span>`)
+      : '')
+}
+
 // Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
 // SM-INV-3 — par NEVER appears while driving; the result card is the only place it is shown.
 function _renderMissionUI () {
@@ -4064,20 +4104,13 @@ function _renderMissionUI () {
       // `r.par` and `r.margin` are still CARRIED on the result object — the run-export
       // (mission.js, `rangersim-run-export/2`) writes them as par_s/margin_s and the whole runs/
       // calibration corpus is keyed on that. Display change only; do not prune the fields.
+      // Then the money rows the offer card set up — Base pay answered, the tip beside it, the
+      // offer's bonus earned or missed (FEAT-67; the grant itself is stubbed). See _payRows.
       body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
-          ? `<br><span class="mp-pay">$${r.payout.toLocaleString('en-US')}</span>`
-            + (r.points > 0
-              ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
-              : '')
+          ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
-        // FEAT-67: the offer's bonus — earned, or what it needed. The grant itself is stubbed.
-        + (m.mission?.bonus
-          ? (r.award
-            ? `<br><span class="mp-pay">Bonus: ${m.mission.bonus.name} &check;</span>`
-            : `<br><span class="mp-dim">Bonus: ${m.mission.bonus.name} missed (needed ${gateText(m.mission.bonus.gate)})</span>`)
-          : '')
       // The result card is exactly three actions: retry · continue · back to free roam (that is the
       // DOM order too). The calibration form above them stays — the subjective read is the ground
       // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
@@ -4110,12 +4143,12 @@ function _renderMissionUI () {
 
 /**
  * FEAT-61: the paper route's panel and HUD. Same shape as _renderMissionUI — one switch, one
- * repaint per state change (plus the 10 Hz poll while running, because the bell and the count are
+ * repaint per state change (plus the 10 Hz poll while running, because the clock and the count are
  * live values).
  *
  * SM-INV-3: the running surface carries the clock, the count and the inventory, and nothing else.
- * No rank, no par, no payout until the route is over — the deadline is allowed only because the
- * Phase A amendment ratified it as a diegetic, par-derived one.
+ * No rank, no par, no payout until the route is over. The clock counts UP (owner, 2026-09-29: no
+ * time limit) — the same elapsed read-out a POI job shows, never a countdown.
  */
 function _renderPaperUI () {
   const panel = document.getElementById('paper-panel')
@@ -4139,17 +4172,15 @@ function _renderPaperUI () {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = p.route
       const stock = stockForTier()
-      // THE THREE HEADLINE NUMBERS, one line, one size (owner, 2026-08-14): who, how far, how long.
-      // The deadline used to be dim text on the last line, which made the one number with a bell
-      // attached to it the least legible thing on the card.
+      // THE HEADLINE NUMBERS, one line, one size (owner, 2026-08-14): who, how far. "How long" left
+      // with the bell (owner, 2026-09-29): there is no deadline, and par is not shown on any offer
+      // card (SM-INV-3).
       // FEAT-67: Larry's portrait and his line head the panel, like every giver's. His line was
       // already written (the spare-papers aside), so it moves up into the dialogue slot.
       body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;')
         + `<span class="mp-big">${r.customers.length}</span> `
         + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'}</span> `
-        + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span> `
-        + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
-        + `<span class="mp-big">${formatTime(deadlineFor(r.par))}</span><br>`
+        + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span><br>`
         + `${stock} papers in the truck `
         + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
         // FEAT-67: Larry's card states base pay only — the fare at par, before the tips.
@@ -4165,9 +4196,9 @@ function _renderPaperUI () {
       break
     case 'running': {
       show(panel, false); show(hud, true)
-      // Time LEFT, not elapsed: the bell is the thing that ends the route, so it is the thing worth
-      // reading. Delivered/total and the inventory are the other two facts you act on.
-      hud.textContent = `${formatTime(p.timeLeft())} left   `
+      // Elapsed, counting up — there is no bell to count down to (owner, 2026-09-29). Delivered/total
+      // and the inventory are the other two facts you act on.
+      hud.textContent = `${formatTime(p.elapsed())}   `
         + `${p.delivered()} / ${p.route.customers.length} delivered   `
         + `${p.stock()} paper${p.stock() === 1 ? '' : 's'}`
       break
@@ -4184,13 +4215,9 @@ function _renderPaperUI () {
         + `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
         + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span>`
-        // TWO LINES, because it is two payments: the papers were banked as they landed, and the
-        // clock is what settles now. Showing only the settlement would look like a pay cut.
-        + `<br><span class="mp-dim">accuracy bonus</span> <span class="mp-pay">$${formatMoney(r.spot)}</span>`
-        + `<br><span class="mp-dim">the drive</span> <span class="mp-pay">$${formatMoney(r.payout)}</span>`
-        + (r.points > 0
-          ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${r.points} good deed${r.points > 1 ? 's' : ''}</span>`
-          : '')
+        // The same rows the POI result card shows (_payRows), plus the accuracy bonus — a third
+        // payment, banked as the papers landed. Showing only the settlement would look like a pay cut.
+        + _payRows({ base: r.base, tip: r.tip, spot: r.spot, points: r.points })
         + (r.advanced
           ? `<br><span style="color:#ffdc3c">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
           : '')
@@ -5477,9 +5504,9 @@ function loop () {
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
-    // FEAT-61: the start threshold, then the route's clock against the bell. One distance check or
-    // one add — same discipline as above, and clocked off the fixed step so a frame spike can
-    // neither stretch the deadline nor skip the line that starts it.
+    // FEAT-61: the start threshold, then the route's clock. One distance check or one add — same
+    // discipline as above, and clocked off the fixed step so a frame spike can neither stretch the
+    // elapsed time nor skip the line that starts it.
     if (paperRouteSystem.isCarrying()) paperRouteSystem.update(PHYSICS_DT)
 
     _prevRenderPos.copy(vehicleState.position)
@@ -5946,7 +5973,7 @@ function loop () {
       if (!offerBoard.isLive(missionSystem.offer.id, daySystem.clockH())) _refreshParkedOffers()
       else _renderMissionUI()
     }
-    // FEAT-61: the route's HUD carries three live values (the bell, the count, the inventory), so
+    // FEAT-61: the route's HUD carries three live values (the clock, the count, the inventory), so
     // it repaints on the same poll for the same reason. ('staging' is a static line, but it costs
     // one string write and keeps the state→HUD mapping in one place.)
     if (paperRouteSystem.isCarrying()) _renderPaperUI()

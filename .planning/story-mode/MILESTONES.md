@@ -546,7 +546,9 @@ before it can close.
   bolted-on cutscene layer. The **main missions** gating region unlocks are the primary carriers.
   **The log drag** is the candidate main mission (`missions.md`) — and note the **beat/labor split**:
   the staged scene is once per profile (a story key on `metaState`), the chaining and clearing is
-  run-layer and re-driven every run.
+  run-layer and re-driven every run. **The bridge site** (owner, 2026-09-30) is the second shape:
+  "deliver x of y" — workers by courier, lumber and stone by haul — the career lines pointed at the
+  region wall; same split, same run-state tally.
 - **Spirits + classes — DEFERRED 2026-07-29** (DESIGN.md "The garage"): meta-progression is unlocked
   starting vehicles now, and under the narrowed SM-INV-8 spirits can no longer be permanent *world*
   additions. Not deleted; needs a pass reconciling them with the garage before any unlock plumbing.

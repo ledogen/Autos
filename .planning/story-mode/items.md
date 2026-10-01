@@ -53,7 +53,7 @@ Used up. Per-job or per-day decisions, not permanent upgrades.
 | **Coffee** | Alert now, sleepy earlier tomorrow. **A loan against tomorrow, repaid at interest.** The canonical consumable and the shape every other one is measured against. | Bought (towns, stations) | Tomorrow's hours | **RATIFIED** — DESIGN.md "The day and the clock" |
 | **Cargo straps** | Makes the **next fragile cargo** more resilient by changing the coupling between chassis and load — the cargo sees less shock than the truck does. Enables freight-grade fragile work you'd otherwise turn down. | Bought or found | Cash; a slot; trivial mass | **IDEA** — `IDEAS.md` 2026-07-29. *Open: single-use per job, degrades over several, or a reusable tool?* |
 | **Fish (eaten)** | Alertness that **does not have to be repaid** — the only honest restoration in the game. *"Coffee is debt. Fish is income."* | Caught; best at a favored water | A long relationship with the water | **PROPOSED** — `spirits-and-pacts.md` #04. ⚠ Depends on The Confluence, which is deferred |
-| **Spare tire** | Recovers from a puncture without a tow. Puncture is a hard fail state in the wear model. | Bought/found; starts in some jalopies | Real mass, all the time | **IMPLIED** — named in DESIGN.md "The car" as a stowed consumable; behavior unspecified |
+| **Spare tire** | Recovers from a puncture without a tow. **Fitting it is a 30 min timeskip** (owner, 2026-09-30). Puncture is a hard fail state in the wear model. | Bought/found; starts in some jalopies | Real mass, all the time | **IMPLIED** — named in DESIGN.md "The car" as a stowed consumable; behavior unspecified |
 | **Air filter (spare)** | Replacement for the track the player must actively *watch* — it does ~nothing until it does. | Bought/found | Cash; a slot | **IMPLIED** — same |
 | **Fuel** | The tank. Burn is a function of rpm and load, so a par-beating drive costs fuel as well as wear. **The one cost that scales with distance** — SM-INV-5 keeps wear off the distance axis, and this is what fills it. Bought at gas stations. | Gas stations (a POI type) | Cash — and the detour, if you let it get low | **RATIFIED** — owner, 2026-08-01. Reverses this row's old *NOT DESIGNED*. Ticket FEAT-50; gauge already ships (FEAT-49). See DESIGN.md "Fuel and gas stations" |
 | **Jerry can** | Fuel you carry. The cheap answer to running dry, which is otherwise the breakdown predicament (tow, or don't). | Bought/found | Cash; a slot; **real mass, always** — and it is fuel, so it is not trivial mass | **IMPLIED** — falls out of the fuel ruling; see the tools carry-cost question in §2 |
@@ -192,6 +192,80 @@ Open, and the owner's:
   interesting one.
 - **What else is on the clock?** The table above has one row filled in. Bought food, cooked fish and
   any perishable freight need figures before this is a system rather than a fish rule.
+
+### 1c. Instant-use items — the quick slots [owner-specified 2026-09-24]
+
+Owner, captured as stated — **not ratified**:
+
+> Instant-use items are bound to keys — maybe **1 2 3 4** — and trigger instantly. They can be used
+> **while driving**, and are either **consumable** or on a **cooldown**.
+
+This is the first concrete proposal for part of the deferred **item structure** (Gaps #3): a
+handful of quick slots for things you use *on the move*, separate from whatever holds tools, parts
+and cargo. Keys 1–4 are currently unbound in `src/` (checked 2026-09-24).
+
+| Item | As stated | Kind | Read |
+|---|---|---|---|
+| **Coffee** | Restores restfulness on the go | Consumable | **Already ratified as an item** (§1 row 1) — this adds *how you use it*: one keypress, mid-drive, no stopping. The loan still stands: alert now, sleepy earlier tomorrow. The quick slot changes the verb, not the price |
+| **Energy drink** | Same job as coffee | Consumable | Needs to differ from coffee or it's a duplicate. The natural split is **the shape of the loan**: coffee borrows from *tomorrow*; an energy drink hits harder and faster, and the **crash comes the same day, a few hours later**. A short, steep loan versus a long, soft one — a real choice between two slots. ⚠ As stated ("restores restfulness") it would be free alertness, which is fish's role alone (*coffee is debt, fish is income*). It has to carry a debt |
+| **Sacred object / totem / charm** | Grants a **percentage damage reduction**, or **invulnerability** — **both versions are timed** (owner 2026-09-24: "the percentage version is also either on cooldown or consumable") | Cooldown or consumable, either version | **Two versions, both kept.** *Reduction*: for a while, knocks land softer on the truck. *Invulnerability*: a **short window you trigger** — "for a moment, nothing touches the truck" — an event that asks for a timing decision (you press it as you see the crash coming). The owner's ruling that the reduction is timed too takes out the floor objection: nothing is permanent, so it doesn't raise the floor (SM-INV-9). **Still to hold:** the reduction must never be *shown* as a number (rule 1, SM-INV-10). The player feels it; no "−30%" appears anywhere. It is also exactly §1a-E ("damage resistance for the truck"), and the fiction resolves that category error: this is a spirit's gift, not food. In both versions the physics still happens (SM-INV-1; the truck still rolls), and only the damage is softened or skipped. **Source: the Host** (`spirits-and-pacts.md` #02, owner 2026-09-24). The charm is the *active* form of the Host's damage-resistance reward; the *passive* form is slower wear while you're in favour. Its price beyond the cooldown is still open, and the Host's good-nights streak is the natural candidate. It dies with the run (rule 3) |
+
+Open, and the owner's to settle:
+
+- **Cooldown vs consumable is a real fork.** A consumable is spent. A cooldown item is *owned* for
+  the rest of the run, and in practice becomes a permanent ability until the run ends. The charm can
+  be either (owner, 2026-09-24). Open: is it one item that comes in two forms, or two different
+  charms? And is "cooldown" meant for spirit gifts only?
+- **How does the player see a slot's state** (a charge left, a cooldown ticking) without a meter?
+  This is §1a's question 1 again. The quick slots are the first place it has to be answered for real.
+- **Does using an item while driving cost anything physical?** For example, one hand off the wheel
+  for a second. That's optional flavour, but it fits AUTOS, and it would make "while driving" a
+  decision rather than a free action.
+- **Four slots or fewer?** The number of slots is itself a load budget. Fewer slots make each one a
+  harder choice (rule 4).
+
+### 1d. Hunger — a rate on the energy clock, not a second meter [owner-approved direction 2026-09-30, figures open]
+
+**Hunger is not a bar.** It is a **multiplier on the energy drain** that already ships (`src/day.js`:
+awake drains 1 h of energy per in-game hour). Past a threshold since your last meal, the tank drains
+faster. Eating resets the clock. There is one clock on the driver, and it is still energy.
+
+| Hours since last meal | Energy drain | Reads as |
+|---|---|---|
+| 0 – ~6 h | ×1 (baseline) | Fed. Nothing happens |
+| ~6 h+ | **×1.25 – ×1.5, rising** | *You're running on empty* — the sleepy stage arrives earlier in the day |
+
+*(Figures proposed, not ruled. The shape is ruled: a rate, not a meter, and mild.)*
+
+**Why this shape.** A separate hunger meter would add a pressure mainly so items can relieve it, and it
+would be a second clock competing with energy for the player's attention. As a drain rate it costs
+nothing to understand: skip lunch and the day is shorter. **Ignoring it is never fatal**, it only
+spends daylight, so it can't turn into a chore. Thirst is out (owner, 2026-09-30: *too much*).
+
+**What it gives the catalog, all at once:**
+
+- **A food class.** Diner meals, a packed lunch, cooked fish, gas-station junk food. Each resets the
+  hunger clock; they differ in what else they do.
+- **The "reduce energy drain" items** the owner asked for — they are simply the meals, and the
+  effect is honest (a fed driver tires at the normal rate).
+- **A home for §1a's timed effects.** A meal is the natural carrier for *"for the next 8 h"*: a
+  hearty breakfast holds the hunger clock longer, a greasy one does it and makes you sleepy after
+  (a same-day loan, the energy drink's shape). Every effect expires on the §1b hours clock.
+- **A reason to stop.** Diners and stores become stops with a purpose, priced in the detour and the
+  time it takes to eat — the coffee test passes (cash + time for daylight).
+- **Fish stays honest.** A fish is a meal *and* the Confluence's unrepaid alertness, so *coffee is
+  debt, fish is income* still holds, and cooked fish gets a second job without becoming a buff table.
+
+**SM-INV-10.** No hunger number, no hunger bar. The driver *is hungry* — a line on the energy meter's
+stage text, or a card at a stop, never a gauge. The energy meter already shows the consequence.
+
+Open, and the owner's:
+
+- **Does sleep reset hunger?** Simplest: waking counts as a meal only if you ate at camp (cooking kit,
+  fish). Otherwise you start the day already on the clock — which gives the cooking kit its real job.
+- **Food on the spoilage clock (§1b).** Bought food needs a fresh-for figure; a packed lunch that
+  turns by afternoon is the natural first one.
+- **Quick slot or stop?** Snacks from a quick slot while driving (§1c); meals only when stopped.
 
 ## 2. Tools
 
@@ -623,6 +697,81 @@ Before authoring a species list, the axis it varies along has to exist. Candidat
 | **Story keys** | The Roamer's currency. **Not an item** in the inventory sense — knowledge and unlocks, never resources or run-layer power (SM-INV-8/9). Listed only so nobody models them as inventory | **RATIFIED** |
 | **Mission items from low country** | Open Q9A names "a specific mission item only found back down low" as the rare reason to return to unprofitable early regions | **PROPOSED** — unspecified |
 
+## 7. The function × form map — item pass 2026-09-30
+
+**The test for an item: it must act on a pressure that already hurts.** Items are thin wherever the
+pressure under them is thin, so author items against the systems that press on the player — energy,
+damage/wear, fuel, time vs par, haul cargo, camp vibe, navigation — and never add a pressure just so
+an item can relieve it (that is why hunger went in as a rate on energy, §1d, not a meter).
+
+**Two axes.** *Form* is how you use it: **consumable** (spent) · **equipable** — *fitted* (parts, the
+shop), *carried* (tools, real mass every mile), *worn* (tokens, a slot) · **active** (a §1c quick
+slot, charges or a cooldown). *Function* is what it acts on. Empty cells are where to look next.
+
+| Acts on | Consumable | Equipable | Active |
+|---|---|---|---|
+| **Driver / energy** | coffee, fish, **meals (§1d)** | camp energy gear | coffee, energy drink, snacks |
+| **Truck / damage** | spare tire, air filter, **zip ties, duct tape, coolant, tire patches** | parts (§3), quick-jack, breaker bar, **hi-lift, bike pump (always), compressor** | Host charm |
+| **Navigation / info** | — | map, beacon, GPS, shortcut GPS, **light bar**, *CB radio (blocked)* | — |
+| **Cargo / mission** | *straps (FEAT-90, parked)* | cooler, chain, **rubber bed mat, bedliner** | — |
+| **Camp / night** | — | camp vibe gear, backpack | — |
+| **Fuel / time** | jerry can | — | — |
+
+### Accepted (owner, 2026-09-30) — all PROPOSED until figures are set
+
+| Item | Form | What it does | Note |
+|---|---|---|---|
+| **Zip ties** | Consumable | Field repair: restores **~10%** condition on a light component — **headlights, body panels** (the `armor*` and `headlight*` tracks in `src/damage.js`) | Gets you home, not fixed. Cheap, light, several per pack |
+| **Duct tape** | Consumable | Field repair: **~25%** on **body panels** | The bigger patch, narrower target. Open: do field repairs hold, or fall off after some hours? |
+| **Coolant jug** | Consumable | Top up mid-climb — buys cooling headroom against the overheat → power loss → engine wear → head-gasket chain (§3a, `missions.md` §3c) | Aimed at the one wear chain already specified. Pairs with heavy hauls on long grades |
+| **Hi-lift jack** | Carried tool (real mass) | **Right a rolled truck** where it lies — Halo's flip, in a truck. Replaces the tow for a rollover that didn't break anything | ⚠ SM-INV-1 (death is crash or breakdown only): a rollover the jack can fix must not count as the crash. Needs a ruling on where "rolled" ends and "crashed" begins — likely the damage state at rest, not the rollover itself. May also be the §2 quick-jack's other job — one tool, not two, if so |
+| **Light bar** | Fitted part | See further at night | Simple and safe. Pairs with the Night Owl's nocturnal bargain: makes his hours more usable, not safe. Real mass and drag up high, if we want a cost |
+| **Tire patches** | Consumable | **Fixes the puncture and nothing else** — the tire keeps whatever condition it had when it popped. Restores **no durability**; a worn tire is still worn | Owner, 2026-09-30 (brought back from the rejected list; no small-vs-large puncture split). A patch alone leaves the tire flat — it still has to be re-inflated (pump or compressor, below). The spare trade: the spare is real mass all the time and a fresh tire; the patch is light and puts you back on the same rubber. §1's spare-tire row calls a puncture a hard fail; with patches it is recoverable at the roadside. Kept worth carrying on good tires by FEAT-93 (hazard punctures at any condition) |
+| **Bike pump** | Always in the truck — not bought, not a slot | Re-inflates a patched tire: a **2 h timeskip** | Owner, 2026-09-30. The baseline that makes a patch usable at all. The cost is daylight |
+| **Compressor** | Carried tool | Re-inflates a patched tire: a **30 min timeskip** | Owner, 2026-09-30 — **brought back** in a different job: not airing down for grip (our tire model has no pressure–grip term), but **turning a 2 h patch stop into a 30 min one**. Worthless without patches; patches are slow without it. No inflation state needed — re-inflation is just a timeskip, and the `flat[]` flag clears at the end of it |
+| **Rubber bed mat** | Carried (loose in the bed) | Raises friction between haul cargo and the bed floor. The load stops **sliding** but can still **bounce**, so you still read the road | The cheap, early version. Physically one number — the cargo-to-floor friction coefficient in the bed well. **It is the lesser option** (owner, 2026-09-30): it either grips less than the bedliner, or wears out, or both — **undecided** |
+| **Bedliner** | Fitted part (service shop) | The same friction increase as the mat, done properly: **works well, never wears out** | **The real, desirable upgrade** (owner, 2026-09-30). "Permanent" means for the run — like every part it dies with the run (SM-INV-8). Still only stops sliding, never bouncing, so the FEAT-90 objection doesn't return |
+
+### Kept, but blocked or needs a mechanism
+
+| Item | Blocker |
+|---|---|
+| **CB radio** | Hears hazard reports on the Highway's roads (rockslide, washout ahead) — hazard intel only, never mission intel (the Highway's rejected-boon line). **Blocked until the hazard system exists** |
+| **Dynamite** | Clears one hazard on one cut — locally, once, what the Shortcut's deep esteem does in bulk. **Blocked on the hazard + Shortcut systems** |
+| **Cargo net** | Keeps light items in, lets heavy ones break through. Physics is the problem: a candidate is a **drag field over the bed opening** that removes momentum from a body crossing it, with a break-through above some momentum — so light items are caught and heavy ones aren't, without a mass rule. Tough; kept as an idea |
+| **Radio tapes** | Slow energy drain at night while one plays; the tape is the consumable, the deck the part. Owner's concern: it needs enough story (what's on the tapes) to feel good rather than a stat |
+| **Chainsaw** | **Not as a general item** — clearing roads is a mission type (the log drag). Possible as a **region-2 choice**: logs you can tow *or* chainsaw |
+
+### Rejected (owner, 2026-09-30) — recorded so they aren't re-proposed
+
+- ~~**Tire plug kit.**~~ Brought back 2026-09-30 as **tire patches** (above), without the small-vs-large
+  puncture split.
+- **Airing down** (the compressor's first proposed job). Our tire model does not give more grip at
+  lower pressure, so it would promise a trade the physics doesn't deliver. The compressor itself came
+  back 2026-09-30 as the fast re-inflator for patches (above).
+- **Winch.** A whole subsystem for self-recovery in a sim that isn't pointing at towing or proper
+  off-roading. The hi-lift covers the rollover case.
+- **An item that forces a tunnel or reroutes roads.** Thin, and it would have to carry a player edit
+  into cold worldgen. Killed.
+
+### Spirit tokens — proposed pattern, not ruled
+
+The Host already has it: favour gives a **passive** boon, and the charm (§1c) is the **active** form
+you spend. Generalised: **each spirit's token is the portable form of your standing with it** —
+worthless at zero favour, stronger as the relationship warms, like the shortcut GPS. That keeps
+*items build on spirits, never arbitrate between them*.
+
+| Spirit | Passive boon | Token (proposed) |
+|---|---|---|
+| Host | slower wear | charm — damage reduction / invulnerability window (§1c) |
+| Highway | camber deepens with favour | **amulet** (owner's idea): carry your banked camber onto roads for a while. Double-edged — more bank on sweepers invites rollover on a high-CoG truck |
+| Confluence | fish as income, fords behave | a lure, or fords held down for a day |
+| Night Owl | the nocturnal inversion | open |
+
+⚠ **The Highway amulet reverses §1a-H**, which rejected "an item that increases camber" as a power
+floor. The token form answers it (earned through the relationship, and the Highway already owns
+camber), but it is a reversal of a written ruling — **owner's call**.
+
 ---
 
 ## Gaps worth knowing before burning down assets
@@ -632,11 +781,13 @@ Before authoring a species list, the axis it varies along has to exist. Candidat
    (SM-INV-10), no ruling on whether food acts on the driver or the truck. **What now exists is the
    other half — §1b's spoilage clock**, a decay timer in hours with the fish figures set. Effects
    remain unspecified; expiry does not, and anything authored later should expire on the same clock.
+   **§1d (2026-09-30) gives effects their carrier:** meals, riding a hunger rate on the energy clock.
 2. **There is no fishing system.** DESIGN.md mentions fish exactly once, in passing ("no fire, no
    fish, wake half-tired"). The whole catch category, The Confluence, and *coffee-is-debt-fish-is-
    income* rest on a minigame nobody has framed. **This is the single biggest gap in the catalog** —
    and it's upstream of any fish asset work.
-3. **The item *structure* is deferred** (`IDEAS.md`). No slot model, no weight budget, no
+3. **The item *structure* is deferred** (`IDEAS.md`). §1c proposes quick slots (keys 1–4) for
+   instant-use items, not ratified. Otherwise no slot model, no weight budget, no
    inventory UI is specified. Every "a slot" cost above is an assumption, not a rule.
 4. **Consumables-as-real-mass is stated but never quantified.** It's the rule that makes tools
    interesting (§2) and it currently has no numbers behind it.

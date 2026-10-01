@@ -3,7 +3,8 @@
 // Pins the RATIFIED performance model (DESIGN.md "The performance model", 2026-08-01) — the
 // SM-INV surface of the economy, all of it headless:
 //
-//   1. SM-INV-4 — the payout line's anchors, RE-ANCHORED 2026-08-16: break-even (the B/C boundary,
+//   1. SM-INV-4 — the payout line's anchors. [RE-CUT 2026-09-30 — see section 1: base = half the
+//      max, the tip the other half, break-even is a DAY.] As written 2026-08-16: break-even (the B/C boundary,
 //      0.80) = k·par·tier exactly · par (1.0) = HALF that, because par is the failing line now ·
 //      zero at 1.20 · the cap, and the zero floor over degenerate inputs.
 //   2. parBase ∝ par — the anti-farming property: doubling the road doubles the base, so a loop
@@ -22,7 +23,7 @@
 // Pure node: no THREE, no worldgen, no DOM.
 import {
   ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankThresholds, payoutFor, pointsFor,
-  runEconomy, EconomySystem, formatDeeds, basePay, bonusEarned, RANKS,
+  runEconomy, EconomySystem, formatDeeds, basePay, splitPayout, bonusEarned, RANKS,
 } from '../src/economy.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT } from '../src/par.js'
 import { runState } from '../src/day.js'
@@ -37,60 +38,110 @@ const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps
 
 // Pin the provisional defaults this gate asserts against (a debug-slider default drifting should
 // fail loudly HERE, not silently re-tune the gate).
-check('pinned: k 0.0255, cap 3.0', ECONOMY_PARAMS.k === 0.0255 && ECONOMY_PARAMS.payoutCap === 3.0)
-check('pinned: tier table has 30 days, tier(1) === 1', ECONOMY_PARAMS.dayTierTable.length === 30 && dayTier(1) === 1)
-check('pinned: break-even 0.85 (the day-1 B/C boundary), zero 1.15',
-  ECONOMY_PARAMS.breakEven === 0.85 && ECONOMY_PARAMS.payoutZero === 1.15)
-// payoutZero is not free either: it is solved from the anchor "par pays exactly half a unit", so it
-// must move with breakEven. Assert the identity rather than the number, so a future band re-cut
-// that forgets to re-solve z fails here instead of quietly re-pricing par.
-check('payoutZero is solved from m(1.0) === 0.5, not picked',
-  near(ECONOMY_PARAMS.payoutZero, 2 * 1.0 - ECONOMY_PARAMS.breakEven))
-// The break-even ratio is not a free number: it IS the B/C threshold, so a rank refit must move it
-// (and k with it) or the economy silently decouples from the letters.
-check('break-even IS the day-1 B/C threshold, not an independent constant',
-  ECONOMY_PARAMS.breakEven === ECONOMY_PARAMS.rankDay1.B)
+const P = ECONOMY_PARAMS
+check('pinned: tier table has 30 days, tier(1) === 1', P.dayTierTable.length === 30 && dayTier(1) === 1)
+check('pinned: baseFrac 0.5, fullTipRatio 0.77, tipZero 1.23',
+  P.baseFrac === 0.5 && P.fullTipRatio === 0.77 && P.tipZero === 1.23)
+// [RE-CUT 2026-09-30, owner] The retired line's anchors are GONE, not parked: break-even is a DAY
+// now (1.5 base pays), not a ratio, and the max is a hard ceiling so there is no cap to insure.
+check('the retired anchors are deleted (breakEven, payoutZero, payoutCap, payoutFloor)',
+  P.breakEven === undefined && P.payoutZero === undefined && P.payoutCap === undefined && P.payoutFloor === undefined)
+// Neither ratio anchor is a free number. The whole tip lands ON the day-1 S threshold, so a rank
+// refit must move it; and tipZero is solved from "par earns exactly half the tip", so it must move
+// with fullTipRatio. Assert the identities, so a band re-cut that forgets either fails here.
+check('fullTipRatio IS the day-1 S threshold, not an independent constant', P.fullTipRatio === P.rankDay1.S)
+check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 * 1.0 - P.fullTipRatio))
 
-// ── 1. SM-INV-4: the payout line's anchors [RE-ANCHORED 2026-08-16] ─────────────────────────────
-// The anchors moved with the meaning of par. They used to read "0 at 1.2 · one unit AT PAR · 2× at
-// 0.8", which encoded par-as-the-expected-drive. Par is now the C/D boundary — the slowest PASS —
-// so the unit anchor moved down to the B/C boundary and par itself pays a fraction of a day.
+// ── 1. SM-INV-4: the payout line's anchors [RE-CUT 2026-09-30, owner] ───────────────────────────
+// "You get 50% of the possible max value for a mission from completion alone; going quickly and
+// getting S rank gives you the other 50%, C rank 25%." Base is half the max, the tip is the other
+// half, and the line between is continuous in the ratio — the letters name points on it, they do
+// not price it.
 {
   const par = 180, tier = 1.0
-  const unit = ECONOMY_PARAMS.k * par * tier          // one day-tier unit of maintenance
-  const atBreakEven = payoutFor(par, ECONOMY_PARAMS.breakEven, tier)
-  check('break-even ratio 0.85 → exactly one day-tier unit (k·par·tier)',
-    near(atBreakEven, unit), `got ${atBreakEven}`)
-  check('ratio 1.15 → 0 (well past par, margin money is gone)', payoutFor(par, 1.15, tier) === 0)
-  check('ratio 1.50 → still 0 (floored, never negative)', payoutFor(par, 1.50, tier) === 0)
-  // The headline consequence of the re-anchor, pinned so it cannot quietly drift back: PAR LOSES
-  // MONEY. If this ever reads 1.0 units again, the re-anchor has been undone somewhere upstream.
-  check('par (ratio 1.0) pays HALF a unit — a bare pass does not cover the day',
-    near(payoutFor(par, 1.0, tier), 0.5 * unit), `got ${(payoutFor(par, 1.0, tier) / unit).toFixed(3)} units`)
-  check('par pays strictly less than break-even', payoutFor(par, 1.0, tier) < atBreakEven)
-  // The S/A boundary rides the bands, so express what it PAYS as the line evaluated there rather
-  // than as a frozen multiple — the 2026-09-07 re-cut moved both the boundary (0.72 → 0.77) and the
-  // line's slope, and a hard-coded 1.2 would have encoded the old geometry as if it were a rule.
-  {
-    const sa = ECONOMY_PARAMS.rankDay1.A
-    const mSA = (ECONOMY_PARAMS.payoutZero - sa) / (ECONOMY_PARAMS.payoutZero - ECONOMY_PARAMS.breakEven)
-    check(`ratio ${sa} (the S/A boundary) → ${mSA.toFixed(3)} units, and strictly above break-even`,
-      near(payoutFor(par, sa, tier), mSA * unit) && payoutFor(par, sa, tier) > atBreakEven)
-  }
-  // The cap is unreachable under this line (it would need ratio 0), so assert it still CLAMPS
-  // rather than asserting a bite point that no longer exists.
-  check('cap clamps degenerate fast ratios', near(payoutFor(par, -5, tier), ECONOMY_PARAMS.payoutCap * unit))
+  const max = P.k * par * tier, base = P.baseFrac * max
+  check('the max is k·par·tier, paid at the S threshold', near(payoutFor(par, P.fullTipRatio, tier), max))
+  check('…and it is a CEILING: a faster drive pays no more (ratio 0.5, 0, −5)',
+    near(payoutFor(par, 0.5, tier), max) && near(payoutFor(par, 0, tier), max) && near(payoutFor(par, -5, tier), max))
+  check('completion alone pays HALF the max (ratio 1.23, 1.5, 10)',
+    near(payoutFor(par, P.tipZero, tier), base) && near(payoutFor(par, 1.5, tier), base) && near(payoutFor(par, 10, tier), base))
+  check('par (ratio 1.0, a bare C) pays base + 25% of max = 75%', near(payoutFor(par, 1.0, tier), 0.75 * max),
+    `got ${(payoutFor(par, 1.0, tier) / max).toFixed(3)} of max`)
+  check('a near-miss D still earns a shrinking tip — no cliff at the pass line',
+    payoutFor(par, 1.1, tier) > base + 1e-9 && payoutFor(par, 1.1, tier) < 0.75 * max
+      && Math.abs(payoutFor(par, 1.0001, tier) - payoutFor(par, 0.9999, tier)) < 1e-3 * max)
+  check('the tip is LINEAR in ratio between the anchors (one straight line, S threshold → tipZero)', (() => {
+    const slope = (r0, r1) => (payoutFor(par, r1, tier) - payoutFor(par, r0, tier)) / (r1 - r0)
+    return near(slope(0.8, 0.9), slope(1.0, 1.2), 1e-9 * max + 1e-9)
+  })())
+  // The letters, read off the line on day 1 — what the owner's ladder comes out as.
+  const frac = (r) => payoutFor(par, r, tier) / max
+  check('day-1 ladder: every S pays 100%, every C 75–91%, a slow D 50%',
+    frac(0.77) === 1 && frac(0.70) === 1 && frac(1.0) >= 0.75 - 1e-12 && frac(0.851) < 0.92 && frac(2) === 0.5,
+    `S ${frac(0.77).toFixed(3)} · B/C ${frac(0.85).toFixed(3)} · par ${frac(1).toFixed(3)} · D ${frac(2).toFixed(3)}`)
+  check('an S earns the WHOLE tip on every day (S only tightens below fullTipRatio)', (() => {
+    for (let d = 1; d <= 30; d++) if (!near(payoutFor(par, rankThresholds(d).S, tier), max)) return false
+    return true
+  })())
   check('tier multiplies linearly', near(payoutFor(par, 1.0, 2.66), 2.66 * payoutFor(par, 1.0, 1.0)))
+  // THE TIP SCALES WITH EVERYTHING ELSE [owner, 2026-09-30: "it would not be fun for tips to lose
+  // their value after the first couple days. We want to keep some pressure on to drive fast"].
+  // Base and tip are both shares of the same max, and the max rides dayTier × regionTier — so the
+  // tip is worth the same fraction of a day's costs on day 20 as on day 1. Pinned, because a tip
+  // priced off a flat table would pass every other check here and quietly stop mattering.
+  check('the tip rides the tier exactly like the base: an S tip === the base pay, every day and region', (() => {
+    for (let d = 1; d <= 30; d++) for (const rg of [1, 3, 6]) {
+      const t = dayTier(d) * regionTier(rg)
+      const b = P.baseFrac * P.k * par * t
+      if (!near(payoutFor(par, 0.5, t) - b, b, 1e-9 * b + 1e-12)) return false        // whole tip === base
+      if (!near(payoutFor(par, 1.0, t) - b, 0.5 * b, 1e-9 * b + 1e-12)) return false   // par: half of it
+    }
+    return true
+  })())
+  check('the tip keeps its value against the day\'s costs (1.5 base pays): same share on day 1 and day 20', (() => {
+    const share = (d) => { const t = dayTier(d), b = P.baseFrac * P.k * par * t; return (payoutFor(par, 0.5, t) - b) / (1.5 * b) }
+    return near(share(1), share(20)) && near(share(1), 2 / 3)
+  })())
+
+  // THE OWNER'S DAY-1 NUMBERS, on the AVERAGE region-1 job — par 180 s, MEASURED 2026-09-30 (mean
+  // 182 s over 303 planner rolls; owner: that length is right once the commute and stops are
+  // counted). These are the anchor k is set from; if any of them moves, the currency scale has
+  // been retuned and DESIGN.md is stale. Re-measure the average before touching REF.
+  const REF = 180, t1 = dayTier(1) * regionTier(1)
+  check('day 1: a D completion pays $5', near(payoutFor(REF, 2, t1), 5, 1e-9) && basePay(REF, t1) === 5)
+  check('day 1: the max (an S) pays $10', near(payoutFor(REF, 0.77, t1), 10, 1e-9))
+  check('day 1: a bare C at par pays $7.50 — exactly the day\'s break-even on one job', near(payoutFor(REF, 1, t1), 7.5, 1e-9))
+  check('day 1 break-even ($7.50 = 1.5 base pays): two poor jobs OR one excellent job clear it, one poor job does not',
+    2 * payoutFor(REF, 2, t1) > 7.5 && payoutFor(REF, 0.77, t1) > 7.5 && payoutFor(REF, 2, t1) < 7.5)
+
+  // Base + tip, as the two cards state it (owner, 2026-09-29): the offer quotes base, the result
+  // answers base + tip, and they sum to the dollar.
+  check('basePay IS baseFrac × the max, rounded like settle', basePay(par, tier) === Math.round(base))
+  check('splitPayout: base + tip === total at every ratio, tip ≥ 0, base === basePay', (() => {
+    return [0.5, 0.77, 0.85, 1.0, 1.1, 1.23, 5].every(r => {
+      const sp = splitPayout(par, r, tier)
+      return sp.base + sp.tip === sp.total && sp.tip >= 0 && sp.base === basePay(par, tier)
+          && sp.total === Math.round(payoutFor(par, r, tier))
+    })
+  })())
+  check('splitPayout on a bonus multiplier: base and total both carry payMult', (() => {
+    const sp = splitPayout(par, 0.8, tier, 2)
+    return sp.base === basePay(par, tier, 2) && sp.total === Math.round(2 * payoutFor(par, 0.8, tier))
+  })())
+  check('splitPayout on degenerate par: everything 0', (() => {
+    const sp = splitPayout(0, 1, tier); return sp.base === 0 && sp.tip === 0 && sp.total === 0
+  })())
 }
 
-// ── 2. Floors at zero, finite, never NaN ────────────────────────────────────────────────────────
+// ── 2. Floors at the base, finite, never NaN ────────────────────────────────────────────────────
 {
   let ok = true
-  for (let r = 1.2; r <= 10; r += 0.1) {
+  const base = ECONOMY_PARAMS.baseFrac * ECONOMY_PARAMS.k * 180 * 1.5
+  for (let r = 1.3; r <= 10; r += 0.1) {
     const p = payoutFor(180, r, 1.5)
-    if (!(p >= 0 && isFinite(p))) ok = false
+    if (!(near(p, base) && isFinite(p))) ok = false
   }
-  check('payout ≥ 0 and finite over ratio 1.2..10', ok)
+  check('payout === the base pay and finite over ratio 1.3..10 (a slow job never pays less)', ok)
   check('degenerate inputs pay 0, never NaN',
     payoutFor(0, 1.0, 1) === 0 && payoutFor(180, Infinity, 1) === 0 &&
     payoutFor(180, NaN, 1) === 0 && payoutFor(NaN, 1.0, 1) === 0 && payoutFor(180, 1.0, NaN) === 0)
@@ -152,11 +203,12 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   check('six regions, matching the ratified run shape', ECONOMY_PARAMS.regionMult.length === 6)
   // The end-of-run pay target this dial exists to reach: a day-20 region-6 mission should land in
   // the owner's $500-1500 band while a day-1 region-1 job stays in $5-15. Both ends pinned, because
-  // a well-meaning tweak to either table silently breaks the progression curve.
-  const m = (r) => Math.max(0, (ECONOMY_PARAMS.payoutZero - r) / (ECONOMY_PARAMS.payoutZero - ECONOMY_PARAMS.breakEven))
+  // a well-meaning tweak to either table silently breaks the progression curve. Job lengths are
+  // the MEASURED region-1 average (180 s, 2026-09-30) and the ratified 2× for region 6 (the ladder
+  // is mission length, run-shape.md) — not the old nominal 360/720.
   const B_DRIVE = 0.83   // mid-B under rankDay1 (A 0.81 < 0.83 ≤ B 0.85) — the reference drive
-  const pay = (par, day, region) => ECONOMY_PARAMS.k * par * dayTier(day) * regionTier(region) * m(B_DRIVE)
-  const start = pay(360, 1, 1), end = pay(720, 20, 6)
+  const pay = (par, day, region) => payoutFor(par, B_DRIVE, dayTier(day) * regionTier(region))
+  const start = pay(180, 1, 1), end = pay(360, 20, 6)
   check('a day-1 region-1 job pays $5-15', start >= 5 && start <= 15, `got $${start.toFixed(2)}`)
   check('a day-20 region-6 job pays $500-1500', end >= 500 && end <= 1500, `got $${end.toFixed(0)}`)
 }
@@ -244,9 +296,9 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   eco.start()
   const terms = eco.terms()          // accepted on day 3
   day = 4                            // midnight passes mid-drive
-  // Settle AT break-even so the expected payout is exactly one day-tier unit and the arithmetic
+  // Settle AT the full-tip ratio so the expected payout is exactly the max (k·par·tier) and the arithmetic
   // below stays readable. (At ratio 1.0 it would be half a unit — see the re-anchored payout line.)
-  const settled = eco.settle({ par: 180, ratio: ECONOMY_PARAMS.breakEven, letter: 'B' }, { terms })
+  const settled = eco.settle({ par: 180, ratio: ECONOMY_PARAMS.fullTipRatio, letter: 'S' }, { terms })
   check('terms lock: day-3 tier paid despite finishing on day 4',
     settled.payout === Math.round(ECONOMY_PARAMS.k * 180 * dayTier(3)) && dayTier(3) !== dayTier(4))
   check('terms carry day-3 thresholds (frozen)',
@@ -263,7 +315,7 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   const terms = eco.terms()                 // accepted in region 2
   check('terms carry the region and its tier', terms.region === 2 && terms.regionTier === regionTier(2))
   region = 5                                // player drives on into region 5 before settling
-  const settled = eco.settle({ par: 180, ratio: ECONOMY_PARAMS.breakEven, letter: 'B' }, { terms })
+  const settled = eco.settle({ par: 180, ratio: ECONOMY_PARAMS.fullTipRatio, letter: 'S' }, { terms })
   check('region tier reaches the payout (region 2 pays 1.6× region 1)',
     settled.payout === Math.round(ECONOMY_PARAMS.k * 180 * dayTier(1) * regionTier(2)),
     `got ${settled.payout}`)
@@ -277,14 +329,22 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   eco.start()
   const terms = eco.terms()
   const par = 312.4
+  // [2026-09-29] basePay is the GUARANTEED amount — what settle pays for a drive slow enough to
+  // have run the tip out — and every settlement reports base + tip === payout. The offer card
+  // quotes base; the result card answers with base and tip in the same words.
   const atPar = eco.settle({ par, ratio: 1, letter: 'C' }, { terms })
-  check('basePay === what settle pays for an AT-PAR drive (the card never lies)',
-    basePay(par, terms.payTier) === atPar.payout, `${basePay(par, terms.payTier)} vs ${atPar.payout}`)
+  const slow  = eco.settle({ par, ratio: 3, letter: 'D' }, { terms })
+  check('basePay === what settle pays for a job FAILED on time (the card never lies)',
+    basePay(par, terms.payTier) === slow.payout && slow.tip === 0 && slow.base === slow.payout,
+    `${basePay(par, terms.payTier)} vs ${slow.payout}`)
+  check('an at-par drive settles base + half the tip pool (75% of the max)',
+    atPar.base === basePay(par, terms.payTier) && atPar.base + atPar.tip === atPar.payout
+      && atPar.payout === Math.round(0.75 * ECONOMY_PARAMS.k * par * terms.payTier))
   const k0 = ECONOMY_PARAMS.k
-  const b1 = payoutFor(par, 1, terms.payTier)
+  const b1 = ECONOMY_PARAMS.baseFrac * k0 * par * terms.payTier
   ECONOMY_PARAMS.k = k0 * 2
   check('doubling k doubles basePay (recomputed from the tables, never cached)',
-    near(payoutFor(par, 1, terms.payTier), 2 * b1) && basePay(par, terms.payTier) === Math.round(2 * b1))
+    basePay(par, terms.payTier) === Math.round(2 * b1))
   ECONOMY_PARAMS.k = k0
 
   // bonusEarned truth table: X earns at X or better, S is S only, D never earns.
@@ -308,6 +368,7 @@ check('break-even IS the day-1 B/C threshold, not an independent constant',
   check('an earned bonus is recorded as an award', withRec.award?.rewardId === 'x' && runEconomy.awards.length >= 1)
   const missed = eco.settle({ par, ratio: 1.1, letter: 'D' }, { terms, bonus: { rewardId: 'y', name: 'Y', gate: 'C' } })
   check('a D earns no award, whatever the gate', missed.award === null)
+  check('…but a D still settles its base pay (failed on time, not unpaid)', missed.payout >= basePay(par, terms.payTier))
   eco.start()
   check('start() clears the run\'s awards', runEconomy.awards.length === 0)
 }

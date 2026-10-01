@@ -3,30 +3,43 @@
 // Implements the RATIFIED performance model (DESIGN.md "The performance model", 2026-08-01):
 //
 //     ratio  = elapsed / par                    (par = referenceTime × PAR_SLACK — see par.js)
-//     payout = parBase × dayTier × clamp((PAYOUT_ZERO − ratio) / (PAYOUT_ZERO − BREAK_EVEN), 0, cap)
-//     parBase = k × par
+//     max    = k × par × payTier                the most a job can pay (payTier = dayTier × regionTier)
+//     tip    = clamp((TIP_ZERO − ratio) / (TIP_ZERO − FULL_TIP_RATIO), 0, 1)     share of the tip pool
+//     payout = max × (BASE_FRAC + (1 − BASE_FRAC) × tip)
 //
-// SM-INV-4 anchors [RE-ANCHORED 2026-08-16, owner], by construction:
-//   • BREAK-EVEN IS THE B/C BOUNDARY (ratio 0.85 since the 2026-09-07 band re-cut), not par. A B/C
-//     drive covers the day's rising
-//     maintenance and keeps the player going; it does NOT fund upgrades. Upgrades need real B's.
-//     It tracks the B/C threshold, so refitting the rank bands moves this and `k` with them — as
-//     it did on 2026-09-07, when B went 0.80 → 0.85. The gate asserts the identity, not the number.
-//   • PAR NOW LOSES MONEY. Ratio 1.0 is the C/D boundary — the slowest passing drive — and pays
-//     half a day's maintenance (m = 0.5). Scraping past the standard is survival, not a living.
-//     `payoutZero` is chosen to hold that half-a-unit property: pick z so
-//     (z−1)/(z−breakEven) == 0.5, i.e. z = 2 − breakEven, which for breakEven 0.85 gives z = 1.15.
-//     It is SOLVED, never picked — a band re-cut that moves breakEven must re-solve it (gated).
-//   • Zero at ratio 1.15: a drive well past par earns nothing from margin.
-//   • The cap (~3×) is unchanged insurance against an oracle-mispriced route. With this line it is
-//     unreachable in practice (it would need ratio 0.0) — insurance, not a dial.
-// Payout floors at zero — a mission never charges the player; the loss is the day and the wear.
+// THE LINE, RE-CUT [owner, 2026-09-30 — SM-INV-4 amended; supersedes the 2026-08-16 anchors]:
+//   • COMPLETION ALONE PAYS HALF THE MAX. `baseFrac` 0.5 — the guaranteed BASE PAY every offer card
+//     quotes. A job can be failed on time (a D) and still settle it. There is no time limit.
+//   • THE CLOCK EARNS THE OTHER HALF, AS A TIP. The whole tip at the day-1 S threshold (ratio 0.77,
+//     `fullTipRatio`) and faster — the max is a hard ceiling, there is nothing above it. Half the
+//     tip exactly at par (ratio 1.0, the C/D line), so a bare C pays base + 25 % of max = 75 %.
+//     `tipZero` is SOLVED from that, never picked: (z − 1)/(z − fullTipRatio) = 0.5 ⇒
+//     z = 2 − fullTipRatio = 1.23. Between par and z a near-miss D still earns a shrinking tip
+//     (the payout stays continuous in ratio — no cliff at the pass line); past z a D is base only.
+//   • k IS THE MAX RATE, anchored to the owner's day-1 numbers on the AVERAGE region-1 job:
+//     completion $5, max $10. The average job is par 180 s = 3 game hours — MEASURED 2026-09-30
+//     (303 anchored rolls through the real planner, seeds 6 + 90: mean 182 s, median 182 s), and
+//     the owner ruled that length right: with the drive to the next giver and the odd stop for
+//     food or parts, two such jobs fill the working day. So k = 10/180 $ per par-second. (The
+//     run-shape "~5–7 h" figure was the plan; the measurement is the fact — re-measure before
+//     moving k, never re-anchor k to a nominal length.)
+//   • BREAK-EVEN IS A DAY, NOT A RATIO [owner, 2026-09-30]. A day's costs are 1.5 × the reference
+//     job's base pay — $7.50 on day 1, scaling with dayTier. Two jobs driven poorly ($5 + $5) or
+//     one driven very well ($10) make a good day; one at-par C ($7.50) is exactly level. Nothing
+//     in this module charges that cost — it is the anchor SM-3's repair/upkeep prices are authored
+//     against, and it REPLACES the old "$13-19 region-1 day" (two break-even jobs at the old k).
+//     This retires "break-even is the B/C boundary" and "par loses money" (2026-08-16).
+//   • Never charges the player: the loss past the base is the day and the wear.
 //
-// The payout line does NOT move with the day, even though the rank thresholds do. That is
+// WHAT SCALES AND WHAT DOES NOT. The DOLLARS scale, base and tip alike: both are shares of the
+// same max, and the max rides dayTier × regionTier, so the tip is worth the same fraction of a
+// day's costs on day 20 as on day 1 (owner, 2026-09-30: tips must not lose their value; the
+// pressure to drive fast stays on for the whole run — gated). What does NOT move with the day is
+// the pair of RATIOS the tip is earned between, even though the rank thresholds do. That is
 // deliberate and required by SM-INV-4: payout is continuous in the ratio and rank is display only,
-// so money must never be a function of the letter. Consequence to know: past day 1 the tightening
-// B/C boundary drifts slightly off the fixed break-even point, and the rising dayTier is what
-// compensates. Letters get harder; the money line stays put.
+// so money must never be a function of the letter. Consequence to know: `fullTipRatio` is pinned
+// to the DAY-1 S threshold, and S only tightens from there (0.77 → 0.75 by day 20), so an S earns
+// the whole tip on every day; late in the run a drive at the top of the A band does too.
 //
 // SM-INV-2 — the difficulty ramp lives HERE (dayTier + rank thresholds), never in par. `day`
 //   flows into dayTier() and rankThresholds() and NOTHING in this module can reach computePar.
@@ -46,7 +59,14 @@
 
 /**
  * Tunables. ⚠ PROVISIONAL (FEAT-53, 2026-08-01) — the owner's balancing pass (Phase D) replaces
- * these; the SHAPE is ratified, the numbers are not. Derivation notes:
+ * these; the SHAPE is ratified, the numbers are not.
+ *
+ * ⚠ THE PAYOUT LINE WAS RE-CUT 2026-09-30 (module header). The `k` / `breakEven` / `payoutZero`
+ * bullets below are the HISTORY of the retired line — `breakEven` and the cap no longer exist, and
+ * k is now the MAX rate (10/360), not the break-even rate. They stay because they explain how the
+ * rank bands and the tier table got their values, which the re-cut did not touch.
+ *
+ * Derivation notes:
  *   • k is a pure currency-scale choice (break-even is an identity under SM-INV-4 — one day's
  *     maintenance is DEFINED as k × the day's par-seconds at the break-even ratio, so any k
  *     balances). 0.30 $/s was derived 2026-08-02 against the mu-0.90 par scale.
@@ -85,18 +105,17 @@
  *     "B > 1.0" pin, which encoded the reversed arrangement.
  */
 export const ECONOMY_PARAMS = {
-    // 0.24 → 0.024 [owner, 2026-08-17]: a flat ×0.1 currency rescale. The SHAPE of the economy is
-    // untouched — k is a pure scale factor, so every ratio, letter and relative price is identical;
-    // only the denomination changes. Target was "~$5-15 a mission at the start". Measured after the
-    // cut: a day-1 region-1 job (par ~360 s, tier 1, a B-grade drive) pays ~$9. ✓
-    // ⚠ The matching end-of-run target ("~$500-1500") is NOT reached by this cut and cannot be
-    //   reached by k at all — see the note under dayTierTable.
-    k:          0.0255, // $ per second of par-driving — THE one economy tunable (SM-INV-4)
-    payoutCap:  3.0,    // clamp ceiling; unreachable in practice now (mispriced-route insurance)
+    // THE MAX RATE [owner, 2026-09-30]: $ per second of par a job pays at its ceiling (an S drive),
+    // before the day/region tier. Anchored to the day-1 AVERAGE job — par 180 s (measured), region
+    // 1 — completing for $5 and maxing at $10. Pure currency scale: every ratio and relative price
+    // is independent of it. (History: 0.30 → 0.24 → 0.024 → 0.0255 as the BREAK-EVEN rate of the
+    // retired line; see the docblock above.)
+    k:            10 / 180,
 
-    // The payout line, as two named anchors rather than magic numbers in the formula.
-    breakEven:  0.85,   // ratio paying exactly one day-tier unit — the day-1 B/C boundary
-    payoutZero: 1.15,   // ratio where margin money runs out (keeps par at exactly m = 0.5)
+    // The payout line, as named anchors rather than magic numbers in the formula (module header).
+    baseFrac:     0.5,    // completion alone: this share of the max is guaranteed — the card's "Base pay"
+    fullTipRatio: 0.77,   // the whole tip at this ratio and faster — MUST equal rankDay1.S (gated)
+    tipZero:      1.23,   // where the tip runs out — SOLVED: 2 − fullTipRatio, so par earns half (gated)
 
     // Rank thresholds (ratio = elapsed/par). rankDay1 MUST equal par.js RANK_THRESHOLDS_DEFAULT
     // (this module imports nothing, so it's a mirrored constant — the economy gate asserts the
@@ -138,7 +157,7 @@ export const ECONOMY_PARAMS = {
     regionMult: [1.0, 1.6, 2.7, 4.4, 7.3, 12.0],
 
     // Payout multiplier per run day, 1-based; day 31+ holds the last entry. tier(1) === 1 is the
-    // anchor "a day-1 run at par pays exactly one day's maintenance". Days 1-8 are the shipped
+    // anchor: day 1 pays the bare k rate, and the day's costs (header: 1.5 × a base pay) ride the same table. Days 1-8 are the shipped
     // ×1.15 compounding; days 9-30 ease toward the ~5× asymptote (derivation in the header note).
     dayTierTable: [
         1.00, 1.15, 1.32, 1.52, 1.75, 2.01, 2.31, 2.66,                    // 1-8   shipped curve
@@ -185,31 +204,48 @@ export function rankThresholds(day) {
 }
 
 /**
- * The SM-INV-4 payout line. Continuous in ratio — the rank letter is a display skin over this
- * curve, never an input to it. Floors at 0 and returns 0 for any degenerate input (par ≤ 0,
- * non-finite ratio): a mispriced or broken route pays nothing rather than NaN-ing the wallet.
+ * The SM-INV-4 payout line [RE-CUT 2026-09-30 — module header]. Continuous in ratio — the rank
+ * letter is a display skin over this curve, never an input to it. Returns 0 for any degenerate
+ * input (par ≤ 0, non-finite ratio): a mispriced or broken route pays nothing rather than NaN-ing
+ * the wallet.
  *
- * The line is fixed by two anchors: m = 1 at `breakEven` (one day-tier unit of maintenance) and
- * m = 0 at `payoutZero`. Both are day-INDEPENDENT — see the module header on why money must not
- * follow the tightening letters.
+ * Bounded on both sides: never below the base (`baseFrac` of the max — completion alone), never
+ * above the max (the whole tip, at `fullTipRatio` and faster). Both anchors are day-INDEPENDENT —
+ * see the module header on why money must not follow the tightening letters.
  */
 export function payoutFor(par, ratio, tier) {
     if (!isFinite(par) || par <= 0 || !isFinite(ratio) || !isFinite(tier)) return 0
     const P = ECONOMY_PARAMS
-    const m = Math.min(Math.max((P.payoutZero - ratio) / (P.payoutZero - P.breakEven), 0), P.payoutCap)
-    return P.k * par * tier * m
+    const tip = Math.min(Math.max((P.tipZero - ratio) / (P.tipZero - P.fullTipRatio), 0), 1)
+    return P.k * par * tier * (P.baseFrac + (1 - P.baseFrac) * tip)
 }
 
 /**
- * FEAT-67: the "Base pay" an offer card quotes — what an AT-PAR drive (ratio 1.00, the C/D line)
- * pays under `payTier`, times the offer's cash multiplier (BONUS_PAY_MULT on a bonus offer, else 1).
+ * FEAT-67: the "Base pay" an offer card quotes — THE GUARANTEED AMOUNT [owner, 2026-09-29]:
+ * `baseFrac` of the job's max under `payTier`, times the offer's cash multiplier (BONUS_PAY_MULT on
+ * a bonus offer, else 1). It is what settle() pays for a drive slow enough that the tip has run
+ * out, and every faster drive pays this plus a tip.
  *
- * Rounded exactly the way settle() rounds, so the card and the result card can never disagree by a
- * dollar for a drive that lands on par. Recomputed on every call from ECONOMY_PARAMS — never cached —
- * because the balancing pass retunes those tables and a quote frozen at roll time would lie.
+ * Rounded exactly the way settle() rounds, so the offer card and the result card can never
+ * disagree by a dollar. Recomputed on every call from ECONOMY_PARAMS — never cached — because the
+ * balancing pass retunes those tables and a quote frozen at roll time would lie.
  */
 export function basePay (par, payTier, payMult = 1) {
-    return Math.round(payoutFor(par, 1, payTier) * payMult)
+    if (!isFinite(par) || par <= 0 || !isFinite(payTier)) return 0
+    return Math.round(ECONOMY_PARAMS.baseFrac * ECONOMY_PARAMS.k * par * payTier * payMult)
+}
+
+/**
+ * The payout as the two cards state it [owner, 2026-09-29]: `base` is the guaranteed amount the
+ * offer card quoted (basePay), `tip` is everything the line paid above it, `total` is what the
+ * wallet receives. Rounded to whole dollars the way settle() rounds, and the split is exact —
+ * base + tip === total — so the result card's rows always sum to what was paid. tip ≥ 0 by
+ * construction: the line never pays below its floor, and rounding is monotone.
+ */
+export function splitPayout (par, ratio, payTier, payMult = 1) {
+    const total = Math.round(payoutFor(par, ratio, payTier) * payMult)
+    const base  = Math.min(total, basePay(par, payTier, payMult))   // min: a non-finite ratio pays 0 for both
+    return { base, tip: total - base, total }
 }
 
 /** Rank letters, best first. Index order IS the "or better" order bonusEarned reads. */
@@ -328,12 +364,13 @@ export class EconomySystem {
         // whole curve, so pay stays continuous in the ratio (SM-INV-4). Frozen on the mission at
         // accept with the rest of the terms; a job with no board offer behind it pays the full line.
         const mult = isFinite(mission?.payMult) ? mission.payMult : 1
-        const payout = Math.round(payoutFor(result.par, result.ratio, t.payTier ?? t.dayTier ?? 1) * mult)
+        // Base + tip, as the cards state it (owner, 2026-09-29). `payout` stays the total.
+        const { base, tip, total: payout } = splitPayout(result.par, result.ratio, t.payTier ?? t.dayTier ?? 1, mult)
         const points = pointsFor(result.letter)
         runEconomy.money = _cents(runEconomy.money + payout)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
-        return { payout, points, award: this._award(mission?.bonus, result.letter) }
+        return { payout, base, tip, points, award: this._award(mission?.bonus, result.letter) }
     }
 
     /**
@@ -402,8 +439,8 @@ export class EconomySystem {
         this._ctrls.push(f.add(read, 'missions').name('missions').disable())
         this._ctrls.push(f.add(read, 'tier').name('day tier').disable())
         this._read = read
-        f.add(ECONOMY_PARAMS, 'k', 0.05, 2, 0.01).name('k ($/par-sec)')
-        f.add(ECONOMY_PARAMS, 'payoutCap', 1, 6, 0.1).name('payout cap')
+        f.add(ECONOMY_PARAMS, 'k', 0.005, 0.2, 0.0005).name('k (max $/par-sec)')
+        f.add(ECONOMY_PARAMS, 'baseFrac', 0, 1, 0.05).name('base pay (× max)')
         f.close()
         return f
     }

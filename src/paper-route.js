@@ -46,8 +46,17 @@
 //
 // It replaced coverage × meanAccuracy, which made "how well did you throw" and "how well did you
 // do" the same question and left the clock nothing to say.
+//
+// ── NO TIME LIMIT [owner, 2026-09-29] ───────────────────────────────────────────────────────────
+//
+// The bell is gone. A route ends on the last porch or the empty truck, never on a clock — the
+// deadline (par × tolerance, latterly par exactly) was cut. Par itself did NOT move: the letter is
+// still the par ratio and the fare is still the margin line, so driving faster still pays more.
+// What stops a slow round settling nothing is the margin line's own floor (economy.js `baseFrac`,
+// ruled for every mission): the fare never drops below the guaranteed base pay — half the round's
+// max — and what it pays above that is the tip. Both come from payoutFor — nothing here.
 
-import { ECONOMY_PARAMS, payoutFor } from './economy.js'
+import { ECONOMY_PARAMS, payoutFor, splitPayout } from './economy.js'
 import { buildGraphAdj, START_ZONE_R, buildRunExport, TRACE_DIV } from './mission.js'
 import { computePar, gradeRun, RANK_THRESHOLDS_DEFAULT } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
@@ -55,15 +64,8 @@ import { computePar, gradeRun, RANK_THRESHOLDS_DEFAULT } from './par.js'
 import { accuracyScore } from './throw.js'
 
 export const PAPER_PARAMS = {
-    // The route ends at par × this. Soft by construction: under flat rate the bell only stops you
-    // earning more, so it costs the papers still in the truck and nothing already banked.
-    //
-    // [1.2 → 1.0, owner 2026-08-16 — the par re-anchor.] THE BELL IS PAR. Par now means "the
-    // slowest you can drive without failing", so the one honest place for a hard timer is exactly
-    // there: run the clock out and you have, by definition, failed the standard. This is also what
-    // licenses the countdown on screen — SM-INV-3 forbids par-as-countdown on the DEFAULT mission
-    // but explicitly permits an authored, diegetic timer on a mission type that carries one.
-    tolerance:   1.0,
+    // (`tolerance`, the bell, was cut 2026-09-29 — the route has no time limit. The fare's floor is
+    // economy.js `baseFrac`, shared with every mission.)
 
     // The ladder Larry walks you up, one rung per PERFECT route (owner, 2026-08-05). Run-layer, so
     // it is re-earned every run like everything else.
@@ -98,7 +100,8 @@ export const PAPER_PARAMS = {
     // 0.70 to hold the accuracy/speed equivalence, 1.50 to hold a flat premium. One constant,
     // two equations. Reusing the margin line deletes the conflict rather than trading it off.
     //
-    // 0.30 = a perfect round tips ~30% of a day-tier unit on top of the fare [owner, 2026-08-17,
+    // 0.30 = a perfect round's accuracy money is ~30% of the round's MAX fare (k·par·tier — the
+    // yardstick moved with the 2026-09-30 payout re-cut; was a day-tier unit) on top of the fare [owner, 2026-08-17,
     // raised from the 0.20 that matched the original "about 20% more" ask]. The premium is largest
     // at par (where the fare is smallest) and tapers as you drive faster — how a tip behaves: a
     // fixed gratuity on a growing fare.
@@ -185,9 +188,6 @@ export function stockForTier (tier = runPaper.tier) {
     return n + Math.ceil(n * PAPER_PARAMS.sparesFrac[i])
 }
 
-/** The deadline for a route, in the same units as par. */
-export function deadlineFor (par, P = PAPER_PARAMS) { return par * P.tolerance }
-
 /**
  * What ONE paper is worth at full accuracy — the per-delivery flat rate.
  *
@@ -215,7 +215,9 @@ export function tipPerPaper (par, customers, payTier = 1, P = PAPER_PARAMS) {
  * @param {number}   payTier     economy.js terms().payTier — dayTier × regionTier, frozen at accept
  *                               with the rest of the terms (renamed from `dayTier` 2026-08-17 when
  *                               the region multiplier landed; it is no longer the day alone)
- * @returns {{coverage,meanAccuracy,effDeliveries,score,letter,tip,timeMoney,spot,payout,total,complete}}
+ * @returns {{coverage,meanAccuracy,effDeliveries,score,letter,perPaper,timeMoney,base,tip,spot,payout,total,complete}}
+ *          `base` + `tip` === Math.round(payout): the guaranteed base pay and the time tip, as the
+ *          result card states them (owner, 2026-09-29). `spot` is the accuracy money, banked per throw.
  */
 export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P = PAPER_PARAMS,
                             thresholds = RANK_THRESHOLDS_DEFAULT) {
@@ -256,7 +258,7 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
     // TIPS are per delivery, derived rather than authored so the round tracks the same economy
     // everything else does. Degenerate par (a broken tour) pays zero rather than NaN-ing the
     // wallet — the same guard payoutFor() carries.
-    const tip = tipPerPaper(par, n, payTier, P)
+    const perPaper = tipPerPaper(par, n, payTier, P)
 
     // THE CLOCK IS THE MARGIN LINE, NOT A SECOND CURVE [owner, 2026-08-17]. This mission used to
     // price its own time money and the module header used to boast that it never called
@@ -269,7 +271,13 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
     // serve half the round and you are paid for half the road, on the clock you actually kept.
     // Nothing needs to be gated on `complete` — an unfinished round is priced, not cliff-edged,
     // and the tips it did earn are already banked. The income floor survives in the tips.
+    //
+    // No bell any more (2026-09-29), so the line's floor is what a slow round settles: the base
+    // pay, guaranteed, priced against parEff like the fare — serve half the round and the guarantee
+    // is half as big. `base`/`tip` are the two rows the result card states, split exactly as
+    // economy.js settles a POI job (the same splitPayout, so the cards agree to the dollar).
     const timeMoney = parEff > 0 ? payoutFor(parEff, elapsed / parEff, payTier) : 0
+    const { base, tip } = parEff > 0 ? splitPayout(parEff, elapsed / parEff, payTier) : { base: 0, tip: 0 }
 
     // TWO INCOME STREAMS, PAID AT DIFFERENT TIMES [owner, 2026-08-15].
     //
@@ -278,10 +286,10 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
     //
     // The split is unchanged and the mapping got cleaner: `spot` IS the customers' tips, `payout`
     // IS the fare. What the player is told matches what the money is.
-    const spot   = Math.max(0, tip * eff)
+    const spot   = Math.max(0, perPaper * eff)
     const payout = Math.max(0, timeMoney)
-    return { coverage, meanAccuracy, effDeliveries: eff, score, letter, tip, timeMoney,
-             spot, payout, total: spot + payout, complete }
+    return { coverage, meanAccuracy, effDeliveries: eff, score, letter, perPaper, timeMoney,
+             base, tip, spot, payout, total: spot + payout, complete }
 }
 
 /**
@@ -768,7 +776,7 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
 /**
  * The paper route, as a mission. A SIBLING of MissionSystem, not a mode inside it: that system is
  * shaped end-to-end around one start and one end (and four gates pin its settle path), whereas this
- * one has no destination at all — it has an inventory, a bell, and fifteen porches.
+ * one has no destination at all — it has an inventory and fifteen porches.
  *
  * States:
  *   idle      nothing doing
@@ -778,7 +786,7 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
  *   staging   papers loaded, parked at Larry's, clock NOT running — same threshold a POI job uses
  *             (mission.js START_ZONE_R). You are on a pad facing whichever way you arrived, and the
  *             route should not be timing you while you turn around.
- *   running   papers in the truck, clock against the bell
+ *   running   papers in the truck, the clock running (against par, never against a bell)
  *   done      the result card, already settled
  *
  * Renderer-agnostic (the mission-panel pattern): it owns state, main.js owns the DOM.
@@ -818,7 +826,7 @@ export class PaperRouteSystem {
 
         this.state = 'idle'
         this.error = null
-        this.route = null        // THE CONTRACT: the tour as priced. customers, par, deadline.
+        this.route = null        // THE CONTRACT: the tour as priced. customers, par.
         this.guide = null        // FEAT-63: THE LINE TO DRIVE, re-planned. Never carries par.
         this.run = null          // the live route — see accept()
         this.result = null
@@ -874,9 +882,9 @@ export class PaperRouteSystem {
      * as priced. This is what the GPS points along and what the 2D map draws.
      *
      * Deliberately NOT `this.route`, and the split is the whole safety property of FEAT-63:
-     * `route` is the CONTRACT (who is on the round, what par is, when the bell rings) and nothing
-     * in the re-plan path may touch it, while `guide` is only a shape to follow. Scoring, the
-     * deadline and the result card all read `route`; the renderers all read this.
+     * `route` is the CONTRACT (who is on the round, what par is) and nothing in the re-plan path
+     * may touch it, while `guide` is only a shape to follow. Scoring and the result card read
+     * `route`; the renderers all read this.
      */
     /**
      * FEAT-30 calibration export for a finished paper round — the same `rangersim-run-export/2`
@@ -952,8 +960,8 @@ export class PaperRouteSystem {
     stock () { return this.run ? this.run.stock : 0 }
     hasStock () { return this.stock() > 0 }
     delivered () { return this.run ? this.run.hits.size : 0 }
-    /** Seconds left before the bell. Negative is impossible — the bell ends the route. */
-    timeLeft () { return this.run ? Math.max(0, this.run.deadline - this.run.elapsed) : 0 }
+    /** Seconds on the route's clock so far. Elapsed, not remaining: there is no bell to count to. */
+    elapsed () { return this.run ? this.run.elapsed : 0 }
 
     /**
      * Take the route from Larry. Routing starts NOW and the briefing plays over the top of it: the
@@ -1019,7 +1027,6 @@ export class PaperRouteSystem {
             stock:    stockForTier(),
             inFlight: 0,
             elapsed:  0,
-            deadline: deadlineFor(this.route.par),
             payTier:  terms.payTier ?? terms.dayTier ?? 1,   // dayTier fallback: pre-region callers
             // Frozen WITH the day tier, for the same reason (FEAT-53): the rank ramp is part of the
             // deal you accepted. Now that the letter IS the par ratio, a route straddling midnight
@@ -1067,7 +1074,7 @@ export class PaperRouteSystem {
 
     _reset () {
         // The papers stay on the lawns until the route is PUT DOWN, not until it ends. Clearing
-        // them at the bell would erase the trail of the route you just drove at the exact moment
+        // them at the settlement would erase the trail of the route you just drove at the exact moment
         // the card asks you to look at how it went.
         const hadPapers = this.state === 'running' || this.state === 'done'
         // Declining or dismissing takes the preview down with the offer that raised it.
@@ -1111,7 +1118,8 @@ export class PaperRouteSystem {
             ])
         }
         this._replanTick(dt)
-        if (this.run.elapsed >= this.run.deadline) this.finish()
+        // No bell (owner, 2026-09-29): the clock only accumulates. The last porch or the empty truck
+        // ends the route (recordLanding), or the player cancels it from the pause menu (FEAT-67).
     }
 
     // ── FEAT-63: the GPS always shows the shortest way to finish ────────────────────────────────
@@ -1347,13 +1355,13 @@ export class PaperRouteSystem {
             if (this.run.hits.has(best.id)) already = true
             else { this.run.hits.set(best.id, q); credited = true }
         }
-        // The route ends on the LAST PAPER, not on the last throw: the bell and the inventory are
-        // the only two ways out, and an empty truck with one still in the air is neither yet.
+        // The route ends on the LAST PAPER, not on the last throw: the last porch and the inventory
+        // are the only two ways out, and an empty truck with one still in the air is neither yet.
         // What that throw just banked, quoted to the player on landing. Zero unless it credited —
         // a paper onto a porch that already has one is spent, and saying it earned something would
         // be the read-out lying about the one number it exists to show.
         // BANKED ON THE SPOT (owner, 2026-08-15). Accuracy money is paid the instant the paper
-        // lands, not at the bell, so the figure the read-out quotes is already in the wallet —
+        // lands, not at the settlement, so the figure the read-out quotes is already in the wallet —
         // and the end-of-route payout is left a pure function of the clock.
         const pay = credited ? this._onSpot(this.paperValue(q)) : 0
         if (this.run.hits.size >= this.route.customers.length
@@ -1379,14 +1387,14 @@ export class PaperRouteSystem {
     }
 
     /**
-     * The bell, the empty truck, or the last porch. Prices the route, settles it through the one
-     * money path, and moves the ladder.
+     * The empty truck or the last porch. Prices the route, settles it through the one money path,
+     * and moves the ladder.
      */
     finish () {
         if (this.state !== 'running') return
         // FEAT-63: a re-plan in flight is answering a question the route no longer has. Dropping it
         // here also stops the indicator sticking: _clock only advances while papers are aboard, so
-        // a job left alive past the bell would hold RECALCULATING on screen over the result card.
+        // a job left alive past the end would hold RECALCULATING on screen over the result card.
         this._cancelReplan()
         this._rrHideAt = 0
         const n = this.route.customers.length
@@ -1405,6 +1413,8 @@ export class PaperRouteSystem {
             elapsed:   this.run.elapsed,
             par:       this.route.par,
             payout:    settled.payout ?? Math.round(r.payout),
+            base:      r.base,          // whole dollars, base + tip === payout (splitPayout)
+            tip:       r.tip,
             points:    settled.points ?? 0,
             advanced,
             nextTier:  advanced ? customersForTier() : null,

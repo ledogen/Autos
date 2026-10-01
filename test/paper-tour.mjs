@@ -14,8 +14,7 @@
 //      the couple of streets behind Larry's place, and tier 4 is those streets plus more.
 //   4. THE ROADS ARE REAL. Every segment names an edge the network registered, and the routed
 //      polyline stays inside the region wall — the same two guards the mission planner carries.
-//   5. THE DEADLINE IS REACHABLE ON PAPER. deadlineFor(par) must exceed the par it derives from,
-//      or the bell rings before the route can be driven at the oracle's own pace.
+//   5. (retired 2026-09-29 — the route has no deadline; see paper-route.mjs for the fare floor)
 //
 // Heavy: needs a real streamed, routed network (a tour routes far more edges than one errand).
 import * as THREE from 'three'
@@ -26,7 +25,7 @@ import { PoiSystem, POI_PARAMS } from '../src/poi.js'
 import { PAR_SLACK } from '../src/par.js'
 import { TRACE_HZ } from '../src/mission.js'
 import { planTour, PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun,
-         deadlineFor, stockForTier, customersForTier, radiusForTier, tierRungs } from '../src/paper-route.js'
+         stockForTier, customersForTier, radiusForTier, tierRungs } from '../src/paper-route.js'
 import { computePar } from '../src/par.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
@@ -205,18 +204,10 @@ for (const t of tours.filter(Boolean)) {
     }
 }
 
-// ── 5. the deadline IS par [RE-ANCHORED 2026-08-16] ─────────────────────────────────────────────
-// This used to assert `deadlineFor(par) > par`: the bell had to ring strictly AFTER par, because
-// par was the expected drive and the bell was a failure line somewhere beyond it. They are the
-// same instant now — par IS the failure line, so the bell sits exactly on it (tolerance 1.0).
-// The reachability this check was really protecting hasn't gone away; it moved into par itself,
-// where PAR_SLACK is what makes par a pace a human can actually hold (see src/par.js).
-for (let i = 0; i < tours.length; i++) {
-    if (!tours[i]) continue
-    check(`tier ${i + 1}'s bell rings exactly ON its par`,
-        Math.abs(deadlineFor(tours[i].par) - tours[i].par) < 1e-9,
-        `${deadlineFor(tours[i].par).toFixed(0)} s vs par ${tours[i].par.toFixed(0)} s`)
-}
+// ── 5. [RETIRED 2026-09-29] the bell ─────────────────────────────────────────────────────────────
+// This asserted deadlineFor(par) > par, then (re-anchored 2026-08-16) == par. The route has no
+// deadline now — owner ruling, no time limit — so there is nothing here to pin. Par's own
+// reachability lives in src/par.js (PAR_SLACK) and the fare's floor in test/paper-route.mjs.
 
 // ── 6. THE ROUTE, END TO END ────────────────────────────────────────────────────────────────────
 //

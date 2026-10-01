@@ -879,8 +879,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const paperFolder = gui.addFolder('Paper Route (FEAT-61)')
   paperFolder.add(THROW_PARAMS, 'throwSpeed', 8, 30, 0.5).name('Throw Speed (m/s)')
   paperFolder.add(THROW_PARAMS, 'dragK', 0, 0.1, 0.001).name('Throw Drag K (1/m)')
-  paperFolder.add(PAPER_PARAMS, 'tolerance', 1.0, 1.5, 0.01).name('Bell (× par)')
-  paperFolder.add(PAPER_PARAMS, 'paperTip', 0.0, 1.0, 0.05).name('Tip Pool (× unit)')
+  paperFolder.add(PAPER_PARAMS, 'paperTip', 0.0, 1.0, 0.05).name('Accuracy Pool (× unit)')
   paperFolder.add(RR_PARAMS, 'offM', 20, 120, 1).name('Re-plan Off-line (m)')
   paperFolder.add(RR_PARAMS, 'offS', 0.5, 5, 0.1).name('Re-plan Off-line (s)')
   paperFolder.add(RR_PARAMS, 'staleM', 20, 150, 5).name('Re-plan Stale (m)')
@@ -888,8 +887,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const PAPER_INFO = {
     throwSpeed:   'Launch speed of the rolled paper along the aim, before the truck\'s own velocity is added.',
     dragK:        'Lumped quadratic air-drag coefficient on the flying roll. 0.033 ≈ terminal 17 m/s; 0 = gravity-only sail.',
-    tolerance:    'The route ends (the bell) at par × this. Soft: it only stops further earning, nothing banked is lost.',
-    paperTip:     'The customers\' tip pool, as a fraction of one day-tier unit, split per customer and scaled by throw accuracy. Rides ON TOP of the ordinary margin-line fare, so it is also the one dial weighting accuracy against speed — the fare rewards pace without a ceiling, so raise this to make throwing matter more.',
+    paperTip:     'The accuracy-bonus pool (what the customers pay per paper), as a fraction of the round\'s max fare, split per customer and scaled by throw accuracy. Rides ON TOP of the ordinary margin-line fare (base pay + time tip), so it is also the one dial weighting accuracy against speed — the fare rewards pace without a ceiling, so raise this to make throwing matter more.',
     offM:         'Lateral distance off the guide line before the off-route re-plan trigger starts counting. Never felt in anger — tune on a drive.',
     offS:         'How long you must stay off the line before a re-plan fires. A wrong turn, not a wobble.',
     staleM:       'Drift from the re-plan\'s origin that invalidates a finished re-plan job. Should essentially never fire.',
