@@ -23,6 +23,44 @@ const CHASE_STIFFNESS = 5  // exp-decay rate (s⁻¹); ~equiv to old LERP_FACTOR
 const CHASE_PITCH_FOLLOW    = 0.6   // fraction of car pitch the camera tilts toward
 const CHASE_PITCH_STIFFNESS = 1.5   // exp-decay rate (s⁻¹) for the smoothed pitch — low = heavy inertia
 let smoothedPitch = 0               // module-level low-passed car pitch (radians)
+const CHASE_PITCH_CLAMP     = 0.6   // rad — no road is steeper; a tumbling truck's ±90° never reaches the tilt
+
+// FEAT-95 crash-calm chase heading. The camera no longer reads the body's yaw directly; it carries
+// its OWN heading (camYaw) that follows the body's but can only turn so fast. Three faults this
+// removes:
+//  1. Yaw is the ground-plane projection of the body's long axis. When the nose points near-vertical
+//     (an end-over-end, a nose-first drop) that projection shrinks to nothing and its angle is noise —
+//     and once it passes vertical it is 180° away. The heading cap is scaled by the projection's
+//     length², so a near-vertical truck barely steers the camera at all.
+//  2. The camera USED to lerp its position straight at a goal that could jump half a lap — a chord
+//     through the truck. Now the goal is placed FROM camYaw, so a heading change is an arc around it,
+//     at no more than CHASE_YAW_MAX_RATE.
+//  3. The aim was a hard lookAt on the truck: every tumble whipped the view 1:1 from 6.5 m away. The
+//     look direction now turns toward the lookAt no faster than CHASE_AIM_MAX_RATE.
+// PURE RATE LIMITERS, no springs — on purpose. The pre-FEAT-95 camera (instant heading, rigid aim,
+// world-space position lerp) is the feel the owner tuned to; heading/aim springs, and a stiff
+// sideways position spring, were both tried 2026-10-01 and read as off ("too much chassis lock").
+// Normal driving tops out around 0.4 rad/s of yaw at speed and ~0.8 rad/s in a slow hairpin, so both
+// caps sit above anything a car does on its wheels: on the road the camera is the old one exactly
+// (headless diff vs HEAD, 5–30 m/s × 0–40° slip: ≤ 0.3°), and only a spin or a crash meets a cap.
+const CHASE_YAW_MAX_RATE  = 2.0   // rad/s — the camera can never orbit the truck faster than this
+const CHASE_AIM_MAX_RATE  = 2.5   // rad/s — cap on how fast the view itself may turn
+// The reverse/forward swing is a deliberate move, not a crash — it runs every limit above (both
+// rate caps and the position lerp) CHASE_SWING_BOOST× faster until camYaw has landed.
+const CHASE_SWING_BOOST   = 4
+const CHASE_SWING_DONE    = 0.05  // rad — camYaw within this of its target ends the swing
+const CHASE_SWING_UPRIGHT  = 0.8  // body-up · world-up above this (tilt < ~37°) …
+const CHASE_SWING_MAX_SPIN = 1.5  // … and yaw rate below this (rad/s), else the swing is NOT boosted
+// Reverse: travelling backward faster than REV_ENTER swings the camera round to the front (heading
+// + π); it swings back once the truck is moving forward again. The gap between the two thresholds is
+// hysteresis — stopping mid three-point-turn leaves the view where it is instead of flickering.
+const CHASE_REV_ENTER = -1.8      // m/s along body forward
+const CHASE_REV_EXIT  =  0.5      // m/s along body forward
+let camYaw      = Math.PI         // camera heading (rad, world Y) — same convention as orbitTheta
+let reverseView = false
+let swinging    = false           // a reverse/forward swing is under way (boosted limits)
+const _fwd     = new THREE.Vector3()
+const _aimFrom = new THREE.Quaternion()
 
 // ── Drag-orbit state ───────────────────────────────────────────────────────────
 // Spherical coordinates for orbit mode. orbitTheta = yaw (radians around Y axis),
@@ -91,7 +129,7 @@ export function snapCamera () { _snapNext = true }
 // the chase follow lerp (which re-syncs orbit theta/phi/radius every frame anyway — no snap).
 // Freecam still wins outright: it is the dev tool and must never be trapped by a game state.
 let focusTarget    = null              // THREE.Vector3 or null
-const FOCUS_RADIUS = 10                // m — far enough back to read a 6 m pad and the truck beside it
+const FOCUS_RADIUS = 5                 // m — the fire fills the frame (owner, 2026-10-01: 10 → 7 → 5)
 const FOCUS_PHI    = 0.45              // rad — a gentle look-down set on entry; drag from there
 
 // ── Input listeners ────────────────────────────────────────────────────────────
@@ -328,6 +366,9 @@ export function updateCamera (camera, vehicleState, dt) {
     )
     camera.position.lerp(goalPos, snap ? 1 : 1 - Math.exp(-CHASE_STIFFNESS * dt))
     camera.lookAt(focusTarget)
+    // Keep the chase heading on the camera's bearing from the TRUCK, so leaving camp swings
+    // round from where the view actually is.
+    camYaw = Math.atan2(camera.position.x - vehicleState.position.x, camera.position.z - vehicleState.position.z)
     return
   }
 
@@ -346,28 +387,78 @@ export function updateCamera (camera, vehicleState, dt) {
       )
       camera.position.copy(vehicleState.position).add(offset)
       camera.lookAt(vehicleState.position)
+      // Hand the dragged angle to the follow heading, so releasing swings back BEHIND along an arc
+      // at the yaw rate cap instead of lerping a chord across the truck.
+      camYaw = orbitTheta
     } else {
-      // ── Follow mode: existing lerp chase logic ──────────────────────────────────
-      // Goal position: offset rotated by yaw-only quaternion — chase camera follows heading, not pitch/roll.
-      // Inheriting full vehicleState.quaternion displaces the goal position when the car tilts, causing glitches.
-      const euler      = new THREE.Euler().setFromQuaternion(vehicleState.quaternion, 'YXZ')
-      const yawQ       = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), euler.y)
+      // ── Follow mode: crash-calm chase (FEAT-95 — see the CHASE_YAW_* block) ──────
+      // Goal position: offset rotated by the camera's OWN heading (camYaw), never the body's
+      // pitch/roll — inheriting the full body quaternion displaces the goal when the car tilts.
+      _fwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+      const horiz = Math.hypot(_fwd.x, _fwd.z)   // 1 level, → 0 nose-vertical (heading undefined)
+
+      // Reverse view, with hysteresis. vFwd is velocity along the body's ground-plane heading.
+      if (horiz > 1e-3) {
+        const v    = vehicleState.velocity
+        const vFwd = (v.x * _fwd.x + v.z * _fwd.z) / horiz
+        if (!reverseView && vFwd < CHASE_REV_ENTER) reverseView = swinging = true
+        else if (reverseView && vFwd > CHASE_REV_EXIT) { reverseView = false; swinging = true }
+      }
+
+      // Step camYaw toward the body heading (+π when reversing) along the shortest arc, no faster
+      // than CHASE_YAW_MAX_RATE × horiz² — a near-vertical body, whose projected heading is noise,
+      // barely steers.
+      const bodyYaw = Math.atan2(-_fwd.x, -_fwd.z) + (reverseView ? Math.PI : 0)
+      const yawErr  = Math.atan2(Math.sin(bodyYaw - camYaw), Math.cos(bodyYaw - camYaw))
+      if (Math.abs(yawErr) < CHASE_SWING_DONE) swinging = false
+      // Boost only a swing on a truck that is upright and not spinning — a crash that happens to
+      // slide backward flips reverseView too, and must stay on the crash-calm caps.
+      const q       = vehicleState.quaternion
+      const upY     = 1 - 2 * (q.x * q.x + q.z * q.z)            // world-Y component of body up
+      const calm    = upY > CHASE_SWING_UPRIGHT && Math.abs(vehicleState.angularVelocity?.y ?? 0) < CHASE_SWING_MAX_SPIN
+      if (!calm) swinging = false   // cancelled for good, or it would resume boosted once the wreck settles
+      const boost   = swinging ? CHASE_SWING_BOOST : 1
+      if (snap) camYaw = bodyYaw
+      else {
+        const cap = CHASE_YAW_MAX_RATE * boost * horiz * horiz * dt
+        camYaw   += Math.max(-cap, Math.min(cap, yawErr))
+      }
+      const yawQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), camYaw)
 
       // Low-pass the car's raw pitch so the camera tilt has inertia and shrugs off transient
       // bumps (only sustained grade changes survive the slow exp-decay). The smoothed pitch then
       // tilts the goal offset about the yawed local-right (X) axis: nose-up drops the camera lower
       // behind the car, and the lookAt below re-aims at the body, so the view leans up the hill.
+      // Negated in reverse view (the camera is in front, so the grade it looks along is mirrored),
+      // and clamped so a tumbling truck's ±90° pitch cannot swing the camera under the ground.
       // The pitch low-pass has to snap too, or the camera arrives at the right PLACE with the wrong
       // TILT and then rolls into position over the next second — the same slide, just rotational.
-      if (snap) smoothedPitch = euler.x
-      else smoothedPitch += (euler.x - smoothedPitch) * (1 - Math.exp(-CHASE_PITCH_STIFFNESS * dt))
+      const pitch = Math.max(-CHASE_PITCH_CLAMP, Math.min(CHASE_PITCH_CLAMP,
+        Math.asin(Math.max(-1, Math.min(1, _fwd.y))) * (reverseView ? -1 : 1)))
+      if (snap) smoothedPitch = pitch
+      else smoothedPitch += (pitch - smoothedPitch) * (1 - Math.exp(-CHASE_PITCH_STIFFNESS * dt))
       const tiltQ      = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), smoothedPitch * CHASE_PITCH_FOLLOW)
-      const goalRot    = yawQ.clone().multiply(tiltQ)  // yaw (world Y) first, then pitch about resulting local X
+      const goalRot    = yawQ.multiply(tiltQ)  // yaw (world Y) first, then pitch about resulting local X
       const goalOffset = CHASE_OFFSET_LOCAL.clone().applyQuaternion(goalRot)
       const goalPos    = vehicleState.position.clone().add(goalOffset)
-      const alpha = snap ? 1 : 1 - Math.exp(-CHASE_STIFFNESS * dt)
+      // WORLD-space lerp, deliberately. The camera trails along the path the truck actually took,
+      // by ~v/CHASE_STIFFNESS metres — which is what leans the view toward the VELOCITY vector at
+      // speed and in a slide. That emergent chassis/velocity blend is the feel the owner tuned to;
+      // a stiff sideways spring (tried 2026-10-01) killed it and read as "too much chassis lock".
+      const alpha = snap ? 1 : 1 - Math.exp(-CHASE_STIFFNESS * boost * dt)
       camera.position.lerp(goalPos, alpha)
+
+      // Aim: lookAt gives the target orientation; the camera slerps toward it (the rotational
+      // equivalent of a lerp) by at most the rate cap. Both ends are roll-free, so it stays level.
+      _aimFrom.copy(camera.quaternion)
       camera.lookAt(vehicleState.position)
+      if (!snap) {
+        const ang = _aimFrom.angleTo(camera.quaternion)
+        if (ang > 1e-5) {
+          const t = Math.min(1, CHASE_AIM_MAX_RATE * boost * dt / ang)
+          camera.quaternion.copy(_aimFrom.slerp(camera.quaternion, t))
+        }
+      }
 
       // Sync orbit angles + radius from current camera position so drag handoff is seamless
       // (no jump). radius uses the ACTUAL distance (not ORBIT_RADIUS_DEFAULT) since the
@@ -406,6 +497,11 @@ export function updateCamera (camera, vehicleState, dt) {
       new THREE.Euler(hoodLookPitch, hoodLookYaw, 0, 'YXZ')
     )
     camera.quaternion.copy(vehicleState.quaternion).multiply(lookOffset)
+    // Track the body heading while hood owns the view, so toggling back to chase lands behind the
+    // truck instead of swinging round from wherever chase was left.
+    _fwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+    camYaw = Math.atan2(-_fwd.x, -_fwd.z)
+    reverseView = swinging = false
   }
 }
 
