@@ -28,7 +28,7 @@ import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonica
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
 import { DamageModel } from './damage.js'                   // SM-3: component condition model
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the V-key condition readout
-import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
+import { updateVehicle, setLaunchHold, setControlAttenuation } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, snapCamera } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
@@ -75,7 +75,7 @@ import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential 
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
-import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier,
+import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planTourJob, customersForTier, radiusForTier, tierRungs } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
@@ -1520,9 +1520,8 @@ const smokeSystem = new TireSmokeSystem(scene, RANGER_PARAMS)
 const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
-// src/vehicle-model.js. carGroup/bodyMesh/wheelMeshes are returned for back-compat;
-// syncMeshesToState(state) is called once per render frame below.
-const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
+// src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
+const { carGroup, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -2161,7 +2160,7 @@ if (_PROF) {
     // points. Two builds with the same fingerprint ARE the same roads — this is what makes a
     // router-price A/B measurable instead of eyeballed.
     let fp = 0, pts = 0, km = 0
-    for (const [key, e] of rs._network) {
+    for (const e of rs._network.values()) {
       km += (e.polyCum?.[e.polyCum.length - 1] ?? 0) / 1000
       for (const q of e.points) {
         fp = (fp + Math.round(q.x * 8) * 73856093 + Math.round(q.y * 8) * 19349663 + Math.round(q.z * 8) * 83492791) >>> 0
@@ -5123,12 +5122,7 @@ const storySystem = new StorySystem({
   // so without this, entering story mode seats the truck wherever you last teleported and the region
   // centre (and therefore every POI) follows the player instead of the seed. See _spawnOverride.
   clearSpawnOverride: () => { _spawnOverride = null },
-  setDebugLockout: (locked) => {
-    setDebugLockout(locked)
-    // Collision-sphere debug lives in main.js, not the GUI — force it off entering the lockout so
-    // spheres left on in free roam don't linger into story mode.
-    if (locked && _dbgSpheresOn) { _dbgSpheresOn = false; _dbgSpheres.forEach(m => { m.visible = false }) }
-  },
+  setDebugLockout,
   // BUG-56 workstream C: is the seed the player typed actually playable on the parameters that are
   // loaded? story.js owns WHEN (after the region warm — you have to route it to know) and WHAT TO DO
   // (the disclaimer); main.js owns the road system, so it answers. The check itself is

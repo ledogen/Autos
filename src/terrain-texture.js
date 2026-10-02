@@ -72,23 +72,6 @@ function _normalise(H) {
 // Toroidal shortest signed offset between two coordinates on a tile of `size`.
 const _wrapDelta = (a, b, size) => { let d = a - b; if (d > size / 2) d -= size; else if (d < -size / 2) d += size; return d }
 
-/** Stamp a dome of radius r and peak h at (cx,cz), MAX-composited (crowns survive, no smearing). */
-function _dome(H, size, cx, cz, r, h, owner, id) {
-  const ir = Math.ceil(r)
-  const x0 = Math.floor(cx), z0 = Math.floor(cz)
-  for (let oz = -ir; oz <= ir; oz++) {
-    for (let ox = -ir; ox <= ir; ox++) {
-      const d2 = ox * ox + oz * oz
-      if (d2 > r * r) continue
-      const v = h * smooth(1 - Math.sqrt(d2) / r)
-      const px = ((x0 + ox) % size + size) % size
-      const pz = ((z0 + oz) % size + size) % size
-      const i = pz * size + px
-      if (v > H[i]) { H[i] = v; if (owner) owner[i] = id }
-    }
-  }
-}
-
 /** Central-difference tangent-space normal map (RG = xy, B unused) of a wrapped heightfield. */
 // Rank (quantile) of every texel's height: 0 = the lowest texel of the tile, 1 = the tallest,
 // uniformly distributed BY CONSTRUCTION. The shader's coverage rules ("rock on s^γ of the tile,

@@ -23,7 +23,7 @@
  *   T-06-01: BUILD_MS_BUDGET (+ MAX_BUILDS_PER_FRAME cap) bounds main-thread geometry build cost per frame
  *   T-06-03: geometry.dispose() called in _updateChunkRing before chunkMap.delete
  *   T-07-03-SYNC: WORKER_SOURCE is the sole source of the terrain Worker (no separate file
- *                 mirror); its carve/height/seed helpers stay byte-synced with their originals.
+ *                 mirror); its height/seed helpers stay byte-synced with their originals.
  */
 
 import * as THREE from 'three'
@@ -244,33 +244,6 @@ function height(wx, wz, noiseCoarse, noiseFine, noiseRegional, params) {
     return coarse + fine
 }
 
-// ── Road carve pure functions (CARVE SYNC) ────────────────────────────────
-// Function bodies copied verbatim from src/road-carve.js (no export keyword).
-// SYNC RULE: any edit here must be reflected in road-carve.js (the canonical originals).
-// Same discipline as the height() / seed utility sync (T-07-03-SYNC).
-//
-// carveTable layout: Float32Array [blendW_0, gradeY_preamp_0, blendW_1, gradeY_preamp_1, ...]
-// gradeY_preamp = design grade Y / terrainAmplitude (pre-amplitude) so the Worker can blend
-// without knowing terrainAmplitude. gradeY_preamp * amp = world-space design grade Y.
-
-function sampleCarve(wx, wz, carveTable, N, originX, originZ, cellSize) {
-    const lx = wx - originX
-    const lz = wz - originZ
-    const xi = Math.max(0, Math.min(N - 2, Math.floor(lx / cellSize)))
-    const zi = Math.max(0, Math.min(N - 2, Math.floor(lz / cellSize)))
-    const fx = (lx / cellSize) - xi
-    const fz = (lz / cellSize) - zi
-    const i00 = (zi     * N +  xi   ) * 2
-    const i10 = (zi     * N + (xi+1)) * 2
-    const i01 = ((zi+1) * N +  xi   ) * 2
-    const i11 = ((zi+1) * N + (xi+1)) * 2
-    const w00 = (1-fx) * (1-fz), w10 = fx * (1-fz)
-    const w01 = (1-fx) *    fz,  w11 = fx *    fz
-    const blendW = carveTable[i00]*w00 + carveTable[i10]*w10 + carveTable[i01]*w01 + carveTable[i11]*w11
-    const gradeY = carveTable[i00+1]*w00 + carveTable[i10+1]*w10 + carveTable[i01+1]*w01 + carveTable[i11+1]*w11
-    return { blendW, gradeY }
-}
-
 // ── Worker constants ───────────────────────────────────────────────────────
 
 const GRID_SAMPLES = 65
@@ -309,14 +282,10 @@ self.onmessage = function(e) {
         return
     }
 
-    // CARVE SYNC: destructure carveTable (Float32Array Transferable, may be undefined/null).
-    // carveTable stores [blendW, gradeY_preamp] per vertex (pre-amplitude design grade).
-    // The Worker receives and acknowledges the carveTable (T-09-02 Transferable mitigation)
-    // but DOES NOT bake carve into heights — heights remain RAW (pre-amplitude, pre-carve).
-    // The main thread _flushPendingQueue applies the carve blend from chunk.carveData after
-    // receiving raw heights — this ensures chunk.heights is never overwritten (Pitfall 1).
-    // CARVE SYNC: carveTable validation present; blend applied identically by main-thread paths.
-    const { cx, cz, key, carveTable, epoch } = e.data
+    // Heights stay RAW (pre-amplitude, pre-carve): the road carve never enters the Worker. The main
+    // thread's _flushPendingQueue builds the carve table and applies the blend after receiving
+    // these heights, so chunk.heights is never overwritten (Pitfall 1).
+    const { cx, cz, key, epoch } = e.data
     const N    = GRID_SAMPLES
     const S    = CHUNK_SIZE
     const cell = CELL_SIZE
@@ -1425,31 +1394,6 @@ export class TerrainSystem {
         return hs
     }
 
-    /**
-     * Compute terrain surface normal at world-space (wx, wz) using central-difference
-     * finite differences over sampleHeight. Returns a plain {x, y, z} object.
-     * NOTE: Only call this when you specifically need bilinear-based normal (e.g. debug HUD).
-     * Physics contacts use analyticNormal for consistency with analyticHeight.
-     *
-     * @param {number} wx - World X coordinate.
-     * @param {number} wz - World Z coordinate.
-     * @returns {{ x: number, y: number, z: number }} Unit normal vector pointing away from surface.
-     */
-    sampleNormal(wx, wz) {
-        const EPS = 0.5  // metres — half-cell probe distance
-        const hL  = this.sampleHeight(wx - EPS, wz)
-        const hR  = this.sampleHeight(wx + EPS, wz)
-        const hD  = this.sampleHeight(wx,       wz - EPS)
-        const hU  = this.sampleHeight(wx,       wz + EPS)
-
-        // Central-difference normal: normalize(-dh/dx, 1, -dh/dz) in Y-up space
-        const nx  = -(hR - hL) / (2 * EPS)
-        const ny  = 1
-        const nz  = -(hU - hD) / (2 * EPS)
-        const len = Math.sqrt(nx*nx + ny*ny + nz*nz)
-        return { x: nx/len, y: ny/len, z: nz/len }
-    }
-
     // ── Private methods ────────────────────────────────────────────────────
 
     /**
@@ -1606,12 +1550,8 @@ export class TerrainSystem {
         }
 
         // Request new chunks not yet loaded or pending.
-        // PERF-03 #0: do NOT build/transfer the carve table here. The Worker's `generate` handler
-        // ignores any carveTable it receives (heights stay RAW — see WORKER_SOURCE: "DOES NOT bake
-        // carve into heights"); the carve blend is applied on the main thread in _flushPendingQueue,
-        // which builds the table itself. Building it here was pure waste — and worse, transferring the
-        // buffer CONSUMED it, forcing _flushPendingQueue to rebuild from scratch (the chunk was carve-
-        // tabled twice). Send a bare generate; _flushPendingQueue owns the single carve-table build.
+        // PERF-03 #0: send a bare generate — the Worker returns RAW heights and never sees the carve;
+        // _flushPendingQueue owns the single carve-table build and applies the blend on the main thread.
         // PERF-02: request missing chunks NEAREST-FIRST, budgeted per frame. The worker processes
         // `generate` messages FIFO, so posting nearest-first makes replies (and thus the build queue)
         // arrive nearest-first → the area under/ahead of the truck fills before the periphery (no
@@ -2348,7 +2288,7 @@ export class TerrainSystem {
      * averaging face normals — and because it reads the POST-carve Y it preserves carve-aware shading
      * (the road trough / fill embankment still light correctly). One-sided differences at the 64-wide
      * chunk border: equivalent to today, since each chunk builds normals independently → chunk-seam
-     * normals are already discontinuous. Convention matches analyticNormal/sampleNormal:
+     * normals are already discontinuous. Convention matches analyticNormal:
      * n = normalize(-dh/dx, 1, -dh/dz). Vertex layout is row-major i = zi*N + xi (xi→+x, zi→+z),
      * the same layout pos.setY uses, so grid-index differences map directly to world x/z.
      *

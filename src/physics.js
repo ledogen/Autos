@@ -39,7 +39,7 @@
 
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
-import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps, wheelRunoutOf, WHEEL_SOFT_BAND } from './suspension.js'
+import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps, WHEEL_SOFT_BAND } from './suspension.js'
 import { stepDrivetrain } from './drivetrain.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
@@ -126,9 +126,8 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
 // restitution IS this value).
 const BODY_RESTITUTION_DEFAULT = 0.21   // slight rebound on hard slams; 0 = fully-plastic thud
 // Restitution applies only to genuine IMPACTS. Below this approach speed there is no bounce, so
-// resting/settling contact stays dead-stopped (BUG-27-era REST_VEL_THRESHOLD, now enforced by the
-// engine's world-level restitution threshold — wired in physics-engine.js's world defaults).
-const REST_VEL_THRESHOLD = 1.0   // m/s — |vn| below this → no bounce, pure plastic stop
+// resting/settling contact stays dead-stopped (the BUG-27-era REST_VEL_THRESHOLD, 1.0 m/s — now the
+// engine's world-level restitutionThreshold, set in physics-engine.js's world defaults).
 // BUG-27b: body contact is SLIPPERY — a bumper grazing the shoulder must SLIDE, not catch and stop
 // the truck dead. Under the engine this is a friction MATERIAL on the chassis shape. Engines
 // combine pair friction by geometric mean (√(μa·μb)), and terrain colliders carry μ=0.8
@@ -375,10 +374,10 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   const axleF = -(params.wheelbase * params.weightRear)
   const axleR = params.wheelbase * params.weightFront
   const rims = []
-  for (const [i, [x, z, front]] of [
+  for (const [x, z, front] of [
     [-params.trackFront / 2, axleF, true], [params.trackFront / 2, axleF, true],
     [-params.trackRear / 2, axleR, false], [params.trackRear / 2, axleR, false],
-  ].entries()) {
+  ]) {
     const mountY = -(params.cgHeight - params.wheelRadius) +
       (front ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
     engine.addHull(chassis, wheelCorePoints(x, mountY, z, params), RIM_MATERIAL)

@@ -184,10 +184,11 @@ desaturated nature against saturated man-made objects. `trailer-home-a.glb` is t
 ### Terrain Worker
 
 The terrain Web Worker source lives only as the `WORKER_SOURCE` template string in `src/terrain.js`
-(spun up as a Blob classic worker). There is no separate worker file. Carve bodies (canonical in
-`src/road-carve.js`) and seed/height helpers (canonical in `src/seed.js`) are copied verbatim into
-`WORKER_SOURCE` — edit the canonical original and reflect it there in the same commit (search
-`CARVE SYNC` / SYNC RULE).
+(spun up as a Blob classic worker). There is no separate worker file. The seed helpers (canonical
+in `src/seed.js`) and the height functions (canonical at module scope in `src/terrain.js`) are
+copied verbatim into `WORKER_SOURCE` — edit the canonical original and reflect it there in the same
+commit (search `SYNC RULE`). The road carve is NOT mirrored: the Worker returns raw heights and the
+carve is a main-thread blend.
 
 **Routing does NOT live in this Worker, and there is no route mirror.** FEAT-68 deleted the `ROUTE
 SYNC` region, its verbatim `WORKER_SOURCE` copy and the `route-worker-sync` byte-equality gate along

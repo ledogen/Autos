@@ -1790,7 +1790,6 @@ export class Map2D {
     _drawGlyphs(ctx) {
         const g = this._coverGrid
         if (!g || !g.cover) return
-        const zoom = this._zoom
         if (!this._glyphsVisible()) return
         // ONE POP-IN FOR BOTH PLATES (owner, 2026-08-15). The marsh tufts need no cover data and the
         // conifers need the scatter replay, so on any sheet where the replay was skipped the tufts

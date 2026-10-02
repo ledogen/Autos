@@ -382,7 +382,6 @@ function* litterPasses(out, cx, cz, worldSeed, samplers, P, h) {
   const S = P.scatter
   const size = P.chunkSize
   const ox = cx * size, oz = cz * size
-  const { heightAt } = samplers
   const { inPondWater, inStreamChannel, slopeAt, placeBlob, blobBoundR } = h
   const Z = S.zoneRocks, C = S.cover
   // Road reach: the widest keep-out any litter candidate asks about. If no road centreline lies

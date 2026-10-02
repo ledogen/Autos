@@ -850,7 +850,6 @@ export class PropSystem {
     // pre-wire boots keep the classic full-prop ring exactly as before.
     const outer = (this._impMeshes && bbRingChunks != null) ? Math.max(ringChunks, bbRingChunks) : ringChunks
     const want = new Set()
-    let enqueued = false
     for (let dz = -outer; dz <= outer; dz++)
       for (let dx = -outer; dx <= outer; dx++) {
         const cx = ccx + dx, cz = ccz + dz
@@ -859,7 +858,6 @@ export class PropSystem {
         if (!this._chunks.has(ck) && !this._scatterSet.has(ck)) {
           this._scatterQueue.push({ ck, cx, cz, score: 0 })
           this._scatterSet.add(ck)
-          enqueued = true
         }
       }
     // PERF-33: re-score EVERY frame against the current centre + travel direction. The score used to

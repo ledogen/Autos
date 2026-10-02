@@ -287,7 +287,7 @@ export class PhysicsEngine {
    *  body (stable — shapes are only ever appended), and stays valid across replaceHullLocal. */
   addSphere (handle, radius, material = {}, offset = { x: 0, y: 0, z: 0 }) {
     const rec = this._bodies.get(handle)
-    const shapeId = this._register(handle, _b3.b3CreateSphereShape(rec.id, this._shapeDef(material),
+    this._register(handle, _b3.b3CreateSphereShape(rec.id, this._shapeDef(material),
       { center: [offset.x, offset.y, offset.z], radius }), { shape: 'sphere', radius, offset: { ...offset } }, material)
     return rec.shapes.length - 1
   }

@@ -29,7 +29,7 @@
  *  - T-09-04: zero-length tangent guard (NaN prevention); camber clamped ±6°.
  *  - Shared material — do NOT dispose per-tile (matches terrain._material pattern).
  *  - MAX_ROAD_BUILDS_PER_FRAME = 1 cap prevents frame spikes alongside terrain.
- *  - _scratchPt/_scratchTan: module-scope reuse avoids per-sample Vector3 alloc (GC).
+ *  - _scratchPt: module-scope reuse avoids per-sample Vector3 alloc (GC).
  *
  * Phase: 09-road-surface
  * Plan: 09-05
@@ -39,28 +39,22 @@ import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: shared procedural detail
 import { makeMasonryTextures } from './stone-texture.js' // FEAT-40: portal-ring masonry
-import { crownProfile, potholeNoise, signedCurvature, earClip } from './road-carve.js'
-// roadQuality / hashRunKey / constants moved to road-quality.js (Plan 09-06) to break the
-// terrain.js → road-mesh.js → terrain.js circular import that SURF-06 would otherwise create.
-// Re-exported here so existing callers (test harness, road.js) can still import from road-mesh.js.
-export { roadQuality, hashRunKey, ROAD_QUALITY_STRETCH, ROAD_QUALITY_BLEND } from './road-quality.js'
-import { roadQuality, ROAD_QUALITY_STRETCH, ROAD_QUALITY_BLEND } from './road-quality.js'
+import { crownProfile, potholeNoise, earClip } from './road-carve.js'
+// roadQuality lives in road-quality.js (Plan 09-06) to break the terrain.js → road-mesh.js →
+// terrain.js circular import that SURF-06 would otherwise create.
+import { roadQuality } from './road-quality.js'
 import { perfAdd, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-26)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
-// ── Module-scope scratch vectors (GC-free per-sample allocation guard) ────────
+// ── Module-scope scratch vector (GC-free per-sample allocation guard) ─────────
 // sweepRibbon is called for every tile's every segment, multiple times per stream.
-// Reusing these avoids thousands of Vector3 allocations per re-stream.
-const _scratchPt  = new THREE.Vector3()
-const _scratchTan = new THREE.Vector3()
+// Reusing this avoids thousands of Vector3 allocations per re-stream.
+const _scratchPt = new THREE.Vector3()
 
 // ── Ribbon mesh constants ─────────────────────────────────────────────────────
 // CROSS_SEGS: number of lateral segments across the road width.
 // 8 gives 1.25 m lateral resolution on a 10 m road — sufficient for crown/camber.
 const CROSS_SEGS = 8
-
-// MAX_CAMBER_DEG: camber clamp in radians (±6°), T-09-04 mitigation.
-const MAX_CAMBER_RAD = 6 * (Math.PI / 180)
 
 // Build cap: one road tile per frame alongside terrain's MAX_BUILDS_PER_FRAME.
 const MAX_ROAD_BUILDS_PER_FRAME = 1
@@ -240,38 +234,6 @@ export class RoadMeshSystem {
     }
 
     /**
-     * Compute the signed curvature of a Catmull-Rom spline at arc-length parameter u.
-     * Uses finite differences on getTangentAt. Sign: positive = left turn (bank right),
-     * negative = right turn (bank left) — matches Three.js Y-up right-hand convention.
-     *
-     * Guard: if either tangent is near-zero length (degenerate spline), returns 0 to
-     * prevent NaN propagation (T-09-04 — Research "Pitfall — NaN curvature").
-     *
-     * @param {THREE.CatmullRomCurve3} spline
-     * @param {number} u      — arc-length parameter [0,1]
-     * @param {number} arcLen — spline total arc length in metres
-     * @param {number} eps    — finite-diff step in normalized u (default 0.01)
-     * @returns {number} Signed curvature κ (1/m). Positive = left turn.
-     *
-     * Pure function — no side effects (D-16).
-     */
-    _splineCurvatureSigned(spline, u, arcLen) {
-        // CR-02 (09-08): thin wrapper over the shared signedCurvature helper.
-        // Uses a fixed world-space ds = 2.0 m so camber matches both carve sites exactly.
-        const ds = 2.0
-        const du = arcLen > 1e-6 ? ds / arcLen : 0.02
-        const u0 = Math.max(0.0, u - du * 0.5)
-        const u1 = Math.min(1.0, u + du * 0.5)
-
-        const T0 = spline.getTangentAt(u0)
-        const T1 = spline.getTangentAt(u1)
-
-        // Actual arc-length span between the two sample points.
-        const actualDs = (u1 - u0) * arcLen
-        return signedCurvature(T0.x, T0.z, T1.x, T1.z, actualDs)
-    }
-
-    /**
      * Sweep a ribbon mesh along a Catmull-Rom spline with per-section crown + camber
      * and per-500 m road-quality-tiered lane markings (SURF-02, D-01, D-02, D-03).
      *
@@ -313,7 +275,6 @@ export class RoadMeshSystem {
         const crownHeightVal = params.crownHeight      ?? 0.05
         // camber params now consumed by this._road.camberProfile() — not needed here (D2, plan 09-21)
         const skirtDepth     = params.roadSkirtDepth   ?? 0.4
-        const arcLen = spline.getLength ? spline.getLength() : 64
 
         // Plan 09-10: vertsPerSection includes the top-surface lateral strip PLUS 2 skirt
         // bottom verts (left-edge-bottom at index CROSS_SEGS+1, right-edge-bottom at CROSS_SEGS+2).
@@ -1346,32 +1307,6 @@ export class RoadMeshSystem {
     // ── Junction footprint helpers ────────────────────────────────────────────
 
     /**
-     * Compute the signed area of a 2D polygon (shoelace formula).
-     * Positive = CCW winding; negative = CW winding.
-     *
-     * @param {Array<{x:number,z:number}>} poly
-     * @returns {number} Signed area
-     */
-    _polySignedArea(poly) {
-        let area = 0
-        const n = poly.length
-        for (let i = 0; i < n; i++) {
-            const a = poly[i], b = poly[(i + 1) % n]
-            area += (a.x * b.z - b.x * a.z)
-        }
-        return area * 0.5
-    }
-
-    /**
-     * Compute shoelace area of polygon. Returns absolute value.
-     * @param {Array<{x:number,z:number}>} poly
-     * @returns {number}
-     */
-    _polyArea(poly) {
-        return Math.abs(this._polySignedArea(poly))
-    }
-
-    /**
      * Junction pad material — a clone of the shared road material with a STRONGER polygonOffset than
      * the ribbon (which sits at roadPolygonOffset -1/-1). QUAL-10: the graded apron overlaps the ribbon
      * ends COPLANARLY (both sample the same asphalt-top surface); a more-negative offset lets the apron
@@ -1607,279 +1542,6 @@ export class RoadMeshSystem {
         geo.setIndex(new THREE.BufferAttribute(new Uint32Array(tris), 1))
         geo.computeVertexNormals()
         return geo
-    }
-
-    /**
-     * QUAL-11 exact-weld pad boundary. Each leg's mouth is the run's own cross-section chord at
-     * cutback + halfWidth/2 from the node (overlapping the trimmed ribbon end by halfWidth/2, so
-     * the ribbon's ragged ~2 m trim quantisation is always covered). Corners between consecutive
-     * legs — sorted CCW by MOUTH bearing about the node (leg-dir bearing misorders side-by-side
-     * near-parallel mouths) — connect A's departing ribbon-edge line to B's arriving edge line
-     * via _cornerJoin. edgePt side +1/−1 is the arriving/departing side of each leg in walk
-     * order, so a corner always spans the angular sector between consecutive mouths (no faceSide
-     * cross-product, which degenerates for the anti-parallel legs of a through road). A wide
-     * back-side gap (> STRAIGHT_GAP, n ≥ 3) connects straight — no phantom bulge behind a
-     * through road; at n = 2 the outside of the bend takes the corner join instead.
-     *
-     * Returns the XZ boundary ring (open, deduped) or null: crossing-classifier legs (no
-     * endpoint arc to weld to), degenerate frames, or a one-sided "pitchfork" cluster
-     * (QUAL-10 guard kept as-is: the node would sit on the pad edge → crescent spike).
-     * Pure fn of node + params + streamed network (window-invariant, D-16).
-     */
-    _junctionRingWeld(node, params, filletScale) {
-        const road = this._road
-        if (!road.runPointAt || !road.runProfile || !road._network) return null
-        const halfWidth = params.roadHalfWidth ?? 5
-        const nx = node.pos.x, nz = node.pos.z
-        const cutback = road.junctionCutbackDist ? road.junctionCutbackDist() : halfWidth * 2
-        const T = cutback + halfWidth * 0.5
-
-        const legs = []
-        for (const leg of node.legs) {
-            if (leg.arc === undefined || !leg.runKey) return null
-            const e = road._network.get(leg.runKey)
-            const cum = e?.polyCum
-            const len = cum ? cum[cum.length - 1] : 0
-            if (!(len > 1e-3)) return null
-            const s = leg.arc < 1e-6 ? 1 : -1                       // +arc direction away from node?
-            const mouthArc = leg.arc + s * Math.min(T, len * 0.45)  // short node↔node run: pull the mouth in
-            const c = road.runPointAt(leg.runKey, mouthArc)
-            if (!c) return null
-            const prof = road.runProfile(mouthArc, leg.runKey)
-            let dx = prof.tx * s, dz = prof.tz * s                  // outward unit dir (away from node)
-            const dl = Math.hypot(dx, dz)
-            if (dl < 1e-6) return null
-            dx /= dl; dz /= dl
-            legs.push({ cx: c.x, cz: c.z, dx, dz, bear: Math.atan2(c.x - nx, c.z - nz) })
-        }
-        legs.sort((a, b) => a.bear - b.bear)
-        const n = legs.length
-        if (n >= 3) {
-            let sx = 0, sz = 0
-            for (const l of legs) { sx += l.dx; sz += l.dz }
-            if (Math.hypot(sx, sz) / n > 0.55) return null   // pitchfork guard (QUAL-10)
-        }
-
-        const edgePt = (l, side) => ({ x: l.cx + (-l.dz) * side * halfWidth, z: l.cz + (l.dx) * side * halfWidth })
-        const filletR = (params.roadFilletRadius ?? 5) * filletScale
-        const ring = []
-        for (let i = 0; i < n; i++) {
-            const A = legs[i], B = legs[(i + 1) % n]
-            // Mouth chord of A: arriving-corner edge (+1) → departing-corner edge (−1). This IS
-            // the ribbon end cross-section in XZ — the exact weld.
-            ring.push(edgePt(A, 1))
-            const eA = edgePt(A, -1)
-            ring.push(eA)
-            const eB = edgePt(B, 1)
-            let gap = B.bear - A.bear
-            while (gap <= 0) gap += 2 * Math.PI
-            if (gap > STRAIGHT_GAP && n >= 3) continue   // straight back side; eB is pushed next iteration
-            for (const p of this._cornerJoin(eA, A, eB, B, filletR, T)) ring.push(p)
-        }
-        // Drop consecutive duplicates (incl. the wrap seam) — a shrunk fillet can land on a mouth corner.
-        const out = []
-        for (const p of ring) {
-            const q = out[out.length - 1]
-            if (!q || Math.hypot(p.x - q.x, p.z - q.z) > 0.05) out.push(p)
-        }
-        while (out.length >= 2 && Math.hypot(out[0].x - out[out.length - 1].x, out[0].z - out[out.length - 1].z) <= 0.05) out.pop()
-        return out.length >= 3 ? out : null
-    }
-
-    /**
-     * Corner points joining leg A's departing ribbon-edge line to leg B's arriving edge line
-     * (QUAL-11). eA/eB are the mouth edge endpoints; returned points lie BETWEEN them (both
-     * exclusive). A true tangent-arc fillet where the two edge lines properly intersect on the
-     * node side (radius shrunk to fit short mouth edges); otherwise a tangent-matched cubic
-     * Hermite (near-parallel non-collinear edges, divergent lines, or an intersection so far out
-     * the fillet would excurse — e.g. the outside of a deg-2 kink bend).
-     */
-    _cornerJoin(eA, A, eB, B, filletR, T) {
-        // Edge lines walked toward the node: LA(t) = eA − t·dA, LB(u) = eB − u·dB (t, u > 0).
-        // Intersection C solves t·dA − u·dB = eA − eB.
-        const qx = eA.x - eB.x, qz = eA.z - eB.z
-        const det = B.dx * A.dz - A.dx * B.dz
-        if (Math.abs(det) > 1e-4) {
-            const t = (B.dx * qz - B.dz * qx) / det
-            const u = (A.dx * qz - A.dz * qx) / det
-            const tMax = T * 3.5
-            if (t > 0.5 && u > 0.5 && t < tMax && u < tMax) {
-                const C = { x: eA.x - A.dx * t, z: eA.z - A.dz * t }
-                const cosPhi = Math.max(-1, Math.min(1, A.dx * B.dx + A.dz * B.dz))
-                const phi = Math.acos(cosPhi)   // angle between rays C→eA (+dA) and C→eB (+dB)
-                if (phi > 0.06 && phi < Math.PI - 0.06) {
-                    const tanHalf = Math.tan(phi / 2)
-                    const r = Math.min(filletR, Math.min(t, u) * tanHalf * 0.95)
-                    if (r < 0.15) return [C]   // too tight to round — sharp apex
-                    const L = r / tanHalf
-                    const TA = { x: C.x + A.dx * L, z: C.z + A.dz * L }
-                    const TB = { x: C.x + B.dx * L, z: C.z + B.dz * L }
-                    let bx = A.dx + B.dx, bz = A.dz + B.dz
-                    const bl = Math.hypot(bx, bz) || 1
-                    const h = r / Math.sin(phi / 2)
-                    const O = { x: C.x + (bx / bl) * h, z: C.z + (bz / bl) * h }
-                    const a0 = Math.atan2(TA.x - O.x, TA.z - O.z)
-                    let dAng = Math.atan2(TB.x - O.x, TB.z - O.z) - a0
-                    while (dAng > Math.PI) dAng -= 2 * Math.PI
-                    while (dAng < -Math.PI) dAng += 2 * Math.PI
-                    const steps = Math.max(2, Math.min(16, Math.ceil(Math.abs(dAng) * r / 1.2)))
-                    const arc = [TA]
-                    for (let k = 1; k < steps; k++) {
-                        const ang = a0 + dAng * (k / steps)
-                        arc.push({ x: O.x + Math.sin(ang) * r, z: O.z + Math.cos(ang) * r })
-                    }
-                    arc.push(TB)
-                    return arc
-                }
-            }
-        }
-        // Cubic Hermite matching both endpoints + edge tangents (a single tangent arc is
-        // ill-defined here). Boundary travel: leave eA inward (−dA), arrive at eB outward (+dB).
-        const dist = Math.hypot(eB.x - eA.x, eB.z - eA.z)
-        if (dist < 0.05) return []
-        const m0x = -A.dx * dist, m0z = -A.dz * dist
-        const m1x = B.dx * dist,  m1z = B.dz * dist
-        const K = Math.max(4, Math.min(16, Math.ceil(dist / 1.5)))
-        const pts = []
-        for (let k = 1; k < K; k++) {
-            const tt = k / K, t2 = tt * tt, t3 = t2 * tt
-            const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + tt, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2
-            pts.push({
-                x: h00 * eA.x + h10 * m0x + h01 * eB.x + h11 * m1x,
-                z: h00 * eA.z + h10 * m0z + h01 * eB.z + h11 * m1z,
-            })
-        }
-        return pts
-    }
-
-    /**
-     * XZ self-intersection test for an assembled pad boundary (QUAL-11 simplicity check —
-     * guarantee constructively, then VERIFY; a failing ring falls down the fallback ladder).
-     * Proper-crossing test over all non-adjacent segment pairs, O(m²) with m ≲ 80 — once per
-     * node per build.
-     */
-    _ringSelfIntersects(ring) {
-        const m = ring.length
-        const cross = (ax, az, bx, bz) => ax * bz - az * bx
-        for (let i = 0; i < m; i++) {
-            const a = ring[i], b = ring[(i + 1) % m]
-            for (let j = i + 2; j < m; j++) {
-                if (i === 0 && j === m - 1) continue   // wrap-adjacent pair
-                const c = ring[j], d = ring[(j + 1) % m]
-                const d1 = cross(b.x - a.x, b.z - a.z, c.x - a.x, c.z - a.z)
-                const d2 = cross(b.x - a.x, b.z - a.z, d.x - a.x, d.z - a.z)
-                const d3 = cross(d.x - c.x, d.z - c.z, a.x - c.x, a.z - c.z)
-                const d4 = cross(d.x - c.x, d.z - c.z, b.x - c.x, b.z - c.z)
-                if (((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0))) return true
-            }
-        }
-        return false
-    }
-
-    /**
-     * QUAL-10 circle-pad boundary — the fallback ladder's last rung, and the only path for
-     * crossing-classifier nodes (run-interior legs carry no endpoint arc to weld to). Straight
-     * node+dir·T mouths flared 1.6× (adaptively capped so tight corners can't collide), joined
-     * by node-centred corner arcs — topologically simple by construction, at the cost of the
-     * flare-hidden seam QUAL-11 removes on the weld path. Original inline version: 9337959.
-     */
-    _junctionRingLegacy(node, params) {
-        const halfWidth = params.roadHalfWidth ?? 5
-        const nx = node.pos.x
-        const nz = node.pos.z
-
-        // Merge near-parallel legs: the graph sometimes routes two runs out of a node in almost the same
-        // direction — their overlapping mouths would self-intersect the boundary (→ flipped-sliver spikes).
-        const legs = []
-        for (const leg of node.legs) {
-            let m = null
-            for (const e of legs) { if (e.dir.x * leg.dir.x + e.dir.z * leg.dir.z > 0.94) { m = e; break } }
-            if (m) { m.dir.x += leg.dir.x; m.dir.z += leg.dir.z; const L = Math.hypot(m.dir.x, m.dir.z) || 1; m.dir.x /= L; m.dir.z /= L }
-            else legs.push({ dir: { x: leg.dir.x, z: leg.dir.z } })
-        }
-        legs.sort((a, b) => Math.atan2(a.dir.x, a.dir.z) - Math.atan2(b.dir.x, b.dir.z))
-        const n = legs.length
-        if (n < 2) return null
-        // Skip ONE-SIDED pseudo-junctions (all legs splay one way → node on the pad edge → crescent spike).
-        let sx = 0, sz = 0
-        for (const l of legs) { sx += l.dir.x; sz += l.dir.z }
-        if (Math.hypot(sx, sz) / n > 0.55) return null
-
-        // Pad mouth: STRAIGHT node+dir·T placement (keeps the boundary topologically simple → robust, no
-        // self-intersection). T is a hair past the ribbon cut so the pad overlaps the trimmed ribbon end.
-        // The mouth is FLARED wider than the ribbon (flareHW > halfWidth) so it generously covers the
-        // trimmed end even where a curved approach offsets it laterally — roads fan into the junction and
-        // the seam is hidden, riding the carved-flat plaza (_junctionCarve).
-        const cutback = this._road.junctionCutbackDist ? this._road.junctionCutbackDist() : halfWidth * 2
-        const T = cutback + halfWidth * 0.5
-        // Adaptive flare: aim for LEGACY_PAD_FLARE× the road half-width, but CAP it so adjacent mouths
-        // (θ apart, T out) never collide — a wide mouth at a tight corner would self-intersect the
-        // boundary (spike). So open junctions get the full flare (covers the curved-end seam); tight ones
-        // narrow automatically.
-        let minHalf = Math.PI / 2
-        for (let i = 0; i < n; i++) {
-            const a = legs[i].dir, b = legs[(i + 1) % n].dir
-            const dot = Math.max(-1, Math.min(1, a.x * b.x + a.z * b.z))
-            minHalf = Math.min(minHalf, Math.acos(dot) * 0.5)
-        }
-        const flareCap = Math.max(halfWidth, T * Math.sin(minHalf) * 0.9)
-        const flareHW = Math.min(halfWidth * LEGACY_PAD_FLARE, flareCap)
-        const legEdge = (leg, side) => {
-            const d = leg.dir
-            return { x: nx + d.x * T + (-d.z) * side * flareHW, z: nz + d.z * T + (d.x) * side * flareHW }
-        }
-        // Which perpendicular side (±1) of `leg` faces `other`.
-        const faceSide = (leg, other) =>
-            ((-leg.dir.z) * other.dir.x + (leg.dir.x) * other.dir.z) >= 0 ? 1 : -1
-
-        // ── Boundary polygon: leg mouths + rounded corners ─────────────────────────────────────
-        // Corner between adjacent legs = a node-centred circular arc between their facing mouth edges
-        // (bounded → no spike, unlike an edge-line intersection which flies to infinity at shallow
-        // angles). If the angular gap is wide (> STRAIGHT_GAP, i.e. a through road's back side with no
-        // road between the two legs) connect STRAIGHT so there's no phantom bulge behind the through road.
-        const ARC_SAMPLES = 5
-        const poly = []
-        for (let i = 0; i < n; i++) {
-            const legA = legs[i]
-            const legB = legs[(i + 1) % n]
-            const legP = legs[(i - 1 + n) % n]
-            // Mouth of legA: edge facing the previous leg → edge facing legB (spans the road width).
-            poly.push(legEdge(legA, faceSide(legA, legP)))
-            const eA = legEdge(legA, faceSide(legA, legB))
-            poly.push(eA)
-            const eB = legEdge(legB, faceSide(legB, legA))
-            // Angular gap between the two legs around the node.
-            let gap = Math.atan2(legB.dir.x, legB.dir.z) - Math.atan2(legA.dir.x, legA.dir.z)
-            while (gap < 0) gap += 2 * Math.PI
-            while (gap > 2 * Math.PI) gap -= 2 * Math.PI
-            const wide = Math.min(gap, 2 * Math.PI - gap) > STRAIGHT_GAP
-            if (!wide) {
-                // Node-centred arc from eA to eB (short way).
-                const rA = Math.hypot(eA.x - nx, eA.z - nz), rB = Math.hypot(eB.x - nx, eB.z - nz)
-                const r = (rA + rB) * 0.5
-                const bA = Math.atan2(eA.x - nx, eA.z - nz)
-                let dB = Math.atan2(eB.x - nx, eB.z - nz) - bA
-                while (dB >  Math.PI) dB -= 2 * Math.PI
-                while (dB < -Math.PI) dB += 2 * Math.PI
-                for (let s = 1; s < ARC_SAMPLES; s++) {
-                    const bear = bA + dB * (s / ARC_SAMPLES)
-                    poly.push({ x: nx + Math.sin(bear) * r, z: nz + Math.cos(bear) * r })
-                }
-            }
-            // else: straight — eB is pushed by the next iteration as legB's "facing previous" mouth start.
-        }
-        if (poly.length < 3) return null
-        // The boundary was walked in leg order (mouth → corner → next mouth …), so it is ALREADY an
-        // ordered simple ring — do NOT bearing-sort it (that assumes the node is interior, which fails for
-        // a one-sided "pitchfork" junction where all legs splay to one side, scrambling it into a
-        // self-intersecting polygon → spikes). Just drop consecutive duplicates (incl. the wrap seam).
-        const ring0 = []
-        for (const p of poly) {
-            const q = ring0[ring0.length - 1]
-            if (!q || Math.hypot(p.x - q.x, p.z - q.z) > 0.05) ring0.push(p)
-        }
-        while (ring0.length >= 2 && Math.hypot(ring0[0].x - ring0[ring0.length - 1].x, ring0[0].z - ring0[ring0.length - 1].z) <= 0.05) ring0.pop()
-        return ring0.length >= 3 ? ring0 : null
     }
 
     /**

@@ -32,7 +32,7 @@
  * loop. update() is a couple of distance checks per frame.
  */
 
-import { computePar, sampleRoute, gradeRun, formatTime, PAR_REF, PAR_SLACK } from './par.js'
+import { computePar, gradeRun, formatTime, PAR_REF, PAR_SLACK } from './par.js'
 import { roadQuality } from './road-quality.js'
 
 // THE PLANNING NETWORK IS THE PLAY NETWORK (owner, 2026-09-07). Missions used to plan on a second,

@@ -49,9 +49,6 @@ import { basePay } from './economy.js'
  */
 export const BUILT_FAMILIES = new Set(['delivery', 'papers'])
 
-/** Does a POI of this roster type post offers? (poi.js derives its `jobs` flag from the same table.) */
-export function postsOffers (type) { return !!SOURCES[type] }
-
 // Fixed names for roster types that are NOT sources and have no word list — they can still be a
 // DESTINATION, and "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors
 // names; add these types to BUSINESS_TYPES (data/offer-names.js) to give them rolled ones.
