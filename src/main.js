@@ -84,6 +84,7 @@ import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RANK_THRESHOLDS_DEFAULT } from './par.js'      // FEAT-87: the rank bar's fallback bands
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
+import { playHeartbeat } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -4363,8 +4364,8 @@ function _updateEnergyMeter () {
 // time axis at RT.pxPerS and scrolled under a fixed pointer by the MISSION clock (the same
 // `elapsed` the result card grades on, so the bar and the letter cannot disagree). Pure geometry
 // and the per-frame read live in rank-timer.js; this is the DOM. Per frame, like the Energy
-// meter, because the creep IS the display — and because the escalation (glow, scale, shake) runs
-// on a ~0.3 s pulse that a 10 Hz poll would stutter.
+// meter, because the creep IS the display — and because the escalation (glow, scale, heartbeat)
+// runs on a pulse up to 2 Hz that a 10 Hz poll would stutter.
 //
 // Binding (SM-INV-3 as amended 2026-08-17; FEAT-87 rulings): NO digits on this surface — the
 // only text is the letter in the title and the letters on the bands. Boundary proximity, never
@@ -4379,7 +4380,8 @@ function _updateEnergyMeter () {
 // spot the "leave the green circle" line and the elapsed readout occupy — not with the wallet.
 //
 // THE RANK: READOUT [owner, 2026-10-01 — "something dramatic"]: the band under the pointer as a
-// big letter in its colour. It pulses (scale + glow, on the same intensity as the box) as a line
+// big letter in its colour, floating centred BELOW the card (owner, 2026-10-02: "the card should
+// just be the bar"). It pulses (scale + glow, on the same intensity as the box) as a line
 // nears; when one goes past the OLD letter cracks in two and the halves tumble away
 // (_rtBreakLetter — two clipped clones, CSS-animated, self-removing) while the new one slams in.
 //
@@ -4411,7 +4413,7 @@ function _updateRankTimer () {
     if (!root) return
     _rtEls = { root, strip: document.getElementById('rt-strip'), gate: document.getElementById('rt-gate'),
                letter: document.getElementById('rt-letter'), letterBox: document.getElementById('rt-letter-box'),
-               beat: document.getElementById('rt-beat'), segs: [] }
+               beat: document.getElementById('rt-beat'), card: document.getElementById('rt-card'), segs: [] }
   }
   const src = (storySystem.isActive() && !storySystem.isEntering()) ? _rankTimerSource() : null
   if (!src) {
@@ -4419,7 +4421,7 @@ function _updateRankTimer () {
       _rtKey = null; _rtLayout = null; _rtHot = false; _rtShown = false
       _rtEls.root.style.display = 'none'
       _rtEls.root.classList.remove('rt-lost', 'rt-slow', 'rt-in')
-      _rtEls.root.style.boxShadow = ''; _rtEls.root.style.transform = ''; _rtEls.root.style.borderColor = ''
+      _rtEls.card.style.boxShadow = ''; _rtEls.card.style.borderColor = ''
       _rtEls.letter.style.scale = ''; _rtEls.letter.style.textShadow = ''
     }
     return
@@ -4495,37 +4497,40 @@ function _updateRankTimer () {
     E.root.classList.remove('rt-lost', 'rt-slow')
   }
   // The escalation. Calm = no inline style at all (reset once). Near a line: a glow in the colour
-  // of the band about to be lost, pulsing faster as it nears (1.2 s → 0.3 s), a slight grow, and —
-  // past half-way — a shake; the bonus gate and the C/D line hit harder than the S/A, A/B lines
+  // of the band about to be lost and a pulse on the letter, both beating faster as it nears, with
+  // a heartbeat thump on every peak. The card itself does NOT move (owner, 2026-10-02: the old
+  // sideways shake is gone). The bonus gate and the C/D line hit harder than the S/A, A/B lines
   // you were not banking on.
   const i = f.intensity
   if (i <= 0) {
     if (_rtHot) {
       _rtHot = false; _rtPhase = 0
-      E.root.style.boxShadow = ''; E.root.style.transform = ''; E.root.style.borderColor = ''
+      E.card.style.boxShadow = ''; E.card.style.borderColor = ''
       E.letter.style.scale = ''; E.letter.style.textShadow = ''
     }
     _rtLastNow = now
     return
   }
-  // ONE oscillator (owner: "make the shake simple"). Its frequency ramps shakeHzMin → shakeHzMax
-  // (48 → 120 bpm) with intensity² — slow and mild for most of the approach, then quickly up to a
-  // racing heartbeat at the line — and its amplitude shakePxMin → shakePxMax linearly. The phase
+  // ONE oscillator. Its frequency ramps pulseHzMin → pulseHzMax (48 → 120 bpm) with intensity² —
+  // slow for most of the approach, then quickly up to a racing heartbeat at the line. The phase
   // INTEGRATES (phase += 2π·f·dt) so the frequency ramp is continuous: no jumps as f changes.
-  // Everything the escalation moves — the box's sideways shake, the letter's scale, both glows —
-  // rides this one signal.
+  // Everything the escalation moves — the letter's scale, both glows, the heartbeat — rides this
+  // one signal. The heartbeat fires on the step the phase crosses a PEAK (sin = 1, i.e. phase =
+  // π/2 + 2πk), so the lub lands as the glow tops out.
   const dtF = _rtHot ? Math.min(0.1, now - _rtLastNow) : 0
   _rtLastNow = now; _rtHot = true
-  const freq = RT.shakeHzMin + (RT.shakeHzMax - RT.shakeHzMin) * i * i
+  const freq = RT.pulseHzMin + (RT.pulseHzMax - RT.pulseHzMin) * i * i
+  const peaksBefore = Math.floor((_rtPhase - Math.PI / 2) / (2 * Math.PI))
   _rtPhase += 2 * Math.PI * freq * dtF
   const osc = Math.sin(_rtPhase)
   const weight = f.heavy ? 1 : 0.5
+  if (Math.floor((_rtPhase - Math.PI / 2) / (2 * Math.PI)) > peaksBefore) {
+    playHeartbeat((RT.heartMin + (1 - RT.heartMin) * i) * weight)
+  }
   const pulse = 0.5 + 0.5 * osc                       // 0..1, the same rhythm for every effect
-  const amp = (RT.shakePxMin + (RT.shakePxMax - RT.shakePxMin) * i) * weight
   const colour = RANK_COLOR[f.letter]
-  E.root.style.borderColor = colour
-  E.root.style.boxShadow = `0 0 ${((3 + 16 * i * pulse) * weight).toFixed(1)}px ${colour}, 0 2px 10px rgba(0,0,0,0.45)`
-  E.root.style.transform = `translateX(${(osc * amp).toFixed(2)}px)`
+  E.card.style.borderColor = colour
+  E.card.style.boxShadow = `0 0 ${((3 + 16 * i * pulse) * weight).toFixed(1)}px ${colour}, 0 2px 10px rgba(0,0,0,0.45)`
   // The letter pulses harder than the box — it is the thing about to change.
   E.letter.style.scale = `${(1 + 0.3 * i * pulse * weight).toFixed(3)}`
   E.letter.style.textShadow = `0 1px 0 rgba(0,0,0,0.8), 0 0 ${(2 + 12 * i * pulse).toFixed(1)}px ${colour}`

@@ -182,8 +182,12 @@ const PAR = 180   // the measured day-1 average (economy.js)
   // Owner, 2026-10-01: no tick marks on the strip — they don't line up with the transitions and
   // distract from the moment. The only lines are the band edges.
   check('no tick gradient rides the strip', !/#rank-timer \.rt-strip::after/.test(html) && !/repeating-linear-gradient[^;]*#rank-timer/.test(html))
-  check('the shake is one deterministic oscillator (no Math.random in the driver)', !/Math\.random/.test(block) && /_rtPhase \+=/.test(block))
-  check('the oscillator tops out at 120 bpm (2 Hz), a heartbeat not a buzz', P.shakeHzMax === 2 && P.shakeHzMin < P.shakeHzMax)
+  check('the pulse is one deterministic oscillator (no Math.random in the driver)', !/Math\.random/.test(block) && /_rtPhase \+=/.test(block))
+  // Owner, 2026-10-02: the card does not shake — nothing in the driver writes a transform, and the
+  // pulse drives a heartbeat on its peaks.
+  check('the card never shakes (no inline transform written by the driver)', !/style\.transform\s*=/.test(block.replace(/E\.strip\.style\.transform/g, '')))
+  check('the pulse peaks fire the heartbeat', /playHeartbeat\(/.test(block))
+  check('the oscillator tops out at 120 bpm (2 Hz), a heartbeat not a buzz', P.pulseHzMax === 2 && P.pulseHzMin < P.pulseHzMax)
 }
 
 console.log(fails === 0 ? '\nrank-timer gate: ALL OK' : `\nrank-timer gate: ${fails} FAILURE(S)`)
