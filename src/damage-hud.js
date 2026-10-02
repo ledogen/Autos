@@ -1,7 +1,8 @@
 /**
- * SM-3 damage readout — the driver's-seat view of the condition model.
+ * SM-3 damage readout — the diagnostic view of the condition model.
  *
- * Toggled with **V**, hidden by default, and it costs nothing at all while hidden (the update
+ * Toggled from the debug panel (Vehicle → Damage (SM-3) → Diagnostic Readout), hidden by default,
+ * and it costs nothing at all while hidden (the update
  * returns on the first line). Visible, it refreshes at 10 Hz, not per frame — condition moves on
  * the scale of minutes, so a 60 Hz DOM rewrite would be pure waste.
  *
@@ -22,9 +23,9 @@
  *   IMPACTS — the last few landed collisions. A crash is over in a tenth of a second, so without a
  *     log there is no way to tell a registered hit from a missed one.
  *
- * This is the DIAGNOSTIC readout, not the damage GUI. The ratified GUI is a top-down schematic of
- * the truck shading green to red, and it replaces the CONDITION pane when it is built; the other
- * two panes are development instruments and go away with them.
+ * This is the DIAGNOSTIC readout, not the damage GUI. The player-facing GUI is the top-down
+ * pictogram in damage-screen.js (FEAT-90), which took over the V key; this one stays as the
+ * development instrument behind the debug panel.
  */
 
 import { TRACKS, TRACK_IDS, DAMAGE_PARAMS, MPH, DamageModel } from './damage.js'
@@ -48,8 +49,8 @@ const GROUPS = [
   ['alignment', 'Alignment'],
 ]
 
-/** Green at full health through amber to red at zero — the same ramp the ratified GUI will use. */
-function conditionColor (c) {
+/** Green at full health through amber to red at zero — the same ramp the player's damage screen uses. */
+export function conditionColor (c) {
   const h = Math.max(0, Math.min(1, c)) * 120     // 0 = red, 120 = green
   return `hsl(${h.toFixed(0)}, 70%, ${c < 0.15 ? 58 : 45}%)`
 }
@@ -116,12 +117,6 @@ export class DamageHUD {
     this.el = document.createElement('div')
     this.el.id = 'dmg-hud'
     document.body.appendChild(this.el)
-
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'v' && e.key !== 'V') return
-      if (e.ctrlKey || e.metaKey || e.altKey) return
-      this.toggle()
-    })
   }
 
   toggle (on = !this.visible) {
