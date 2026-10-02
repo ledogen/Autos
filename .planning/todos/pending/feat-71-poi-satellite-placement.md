@@ -4,7 +4,7 @@ type: feature
 status: open
 severity: minor
 opened: 2026-08-23
-updated: 2026-09-22
+updated: 2026-09-30
 relates: FEAT-46, FEAT-59, ASSET-01, ASSET-02, ASSET-03, ASSET-04, ASSET-05, ASSET-06, ASSET-07, ASSET-08, ASSET-27, ASSET-28, ASSET-29, ASSET-30, FEAT-36
 ---
 
@@ -132,3 +132,6 @@ Which pool a POI draws from comes from that POI's role.
   It belongs to FEAT-50 refuelling; the POI side is FEAT-74.
 - Camp gear (ASSET-23..26) is a different placement path: it renders at the player's own campsite
   under items.md's visible-kit rule, on a 6 m pad. Not this — FEAT-66.
+- **The rural mailbox (ASSET-22) is in this pool too** [owner, 2026-09-30]. Placed as lawn
+  furniture it is scenery only. It must **not** carry `newsCustomer`, so it never becomes its own
+  paper drop point. A mailbox that *is* a drop point is the tagged kind (missions.md §2).

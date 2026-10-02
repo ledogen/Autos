@@ -232,6 +232,20 @@ no longer shows a duration. Same ruling: in story mode papers only fly while a r
 after the round settles the throw and its accuracy read-out are off (free roam keeps the practice
 throw).
 
+**A DROP POINT IS A PORCH OR A MAILBOX** [OWNER RULING 2026-09-30]. A paper doesn't have to land on
+a porch: a **rural mailbox** (ASSET-22), or a **cluster of mailboxes** once one is modelled, can be
+the customer's drop point instead. The customer pool is already tag-driven — `POIs.customers()` is
+just `tagged('newsCustomer')` — so a mailbox joins the route by carrying that tag; nothing in the
+route planner type-matches houses. Owner clarifications, same day:
+- **Same target as any customer.** A rural mailbox can sit back from the road like a porch, so it
+  takes the normal POI target radius and accuracy scoring — no mailbox-specific tuning.
+- **A cluster is visual juice, one paper.** An occasional cluster of mailboxes is one drop point
+  receiving one paper — not several customers at one halt — so par prices it as one stop like any
+  other customer.
+- **A mailbox is a drop point only when tagged.** Mailboxes will also be used as lawn furniture
+  (FEAT-71, scattered with a POI); those are scenery and never their own delivery point. Only a
+  mailbox carrying `newsCustomer` receives a paper.
+
 ~~**The route has a deadline**~~ [RATIFIED 2026-08-05, FEAT-61; **SUPERSEDED 2026-09-29**, above]. *Struck: "The budget is a day-fraction,
 not a clock. The route ends when the light goes… this doesn't need the SM-INV-3 timer allowance — it
 isn't a timer, it's an inventory and a sunset."* It is a timer, and it should be: papers have to land
