@@ -100,6 +100,27 @@ a working texture just to reach a power of two.**
 
 Apply transforms in Blender before exporting.
 
+### Which Blender axis becomes the project's forward (derive it, don't guess)
+
+The `+Y up` conversion maps Blender `(x, y, z)` to glTF `(x, z, -y)`. So:
+
+| Blender | glTF | means |
+|---|---|---|
+| `+Y` | **`-Z`** | the project's FORWARD — model the front facing Blender **+Y** |
+| `-Y` | `+Z` | rearward |
+| `+X` | `+X` | unchanged (the conversion is a proper rotation, determinant +1 — nothing mirrors) |
+
+The trap is that **"facing you in Blender's Front view" is `-Y`**, which is the natural thing to
+type and is backwards. `road-signs.py` states the same derivation; `mailbox.py` shipped it wrong
+through three rounds of screenshots before a numeric check caught it, because a model facing the
+wrong way looks completely correct from every angle — you are simply looking at the other side of
+it. **Prove facing with a ray cast or a coordinate print, never from a render.**
+
+A rotation about Blender `+X` by angle *t* exports as a rotation about glTF `+X` by the same *t*
+with the same sign (`M·Rx(t)·M⁻¹ = Rx(t)`), so an animated child node's axis and sign carry over
+unchanged. That is worth knowing before you hand three.js a `rotation.x` — `mailbox.glb`'s flag and
+`ranger.glb`'s steering wheel both depend on it.
+
 ## Conventions the vehicle loader depends on
 
 `src/vehicle-model.js` is generic — adding a vehicle is data-only (drop the `.glb`, add a

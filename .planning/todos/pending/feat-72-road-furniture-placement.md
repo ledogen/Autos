@@ -4,6 +4,7 @@ type: feature
 status: open
 severity: minor
 opened: 2026-08-24
+updated: 2026-10-01
 relates: ASSET-22, ASSET-31, FEAT-59, FEAT-39, BUG-55, QUAL-23
 ---
 
@@ -16,8 +17,19 @@ kept ASSET-31 from being placeable the day it shipped.
 
 `assets/models/sign-{grade,curves,rockslide,tee,cross,stop,icy}.glb` are built, registered as
 `signGrade`…`signIcy`, and **nothing places them**. They carry no pool tag on purpose (see below).
-ASSET-22's rural mailbox is the other member of the class and is not modelled yet; when it arrives
-it lands on the same path.
+
+**ASSET-22 shipped 2026-09-30, extended to ELEVEN flavours 2026-10-01, and is now the other half
+of the backlog here**: `mailboxClassic`, `mailboxTube`, `mailboxLeaning`, `mailboxCluster`,
+`mailboxPillar`, `mailboxBucket`, `mailboxPlanter`, `mailboxBarn`, `mailboxLimb`, `mailboxChicken`,
+`mailboxFancy` — all built, registered, untagged, and unplaced, for the same reason. So this ticket
+now gates **eighteen** finished models instead of seven.
+
+With eleven flavours the placement question has changed shape: it is no longer "put a mailbox
+there", it is **which flavour belongs on this driveway**. They carry implied wealth and implied
+care, and that is a real signal to spend — `mailboxFancy` and `mailboxPillar` say money,
+`mailboxPlanter` says someone tends the place, `mailboxBucket` and `mailboxLimb` say make-do,
+`mailboxLeaning` says abandoned. A pool that draws uniformly throws that away. Weight the draw by
+whatever the POI already knows about its household rather than by a flat hash.
 
 Road furniture is the one asset class whose placement is *not* a scatter. It repeats along the
 network, it is never a destination, and it is positioned from the road's own geometry.
@@ -40,7 +52,7 @@ carries a real min-radius and honest 1-D EMA grade. Every sign must read that tr
 | `signCross` | a degree-4 node ahead |
 | `signStop` | a junction the player must actually stop at — a stronger claim than "a junction exists" |
 | `signRockslide` / `signIcy` | **nothing yet.** These are terrain and weather claims with no geometric truth behind them. Leave them unplaced until something can vouch for them |
-| `mailbox` (ASSET-22) | a house POI's driveway, not the road at large |
+| `mailbox*` (ASSET-22, shipped) | a house POI's driveway, not the road at large. It can be a paper-route drop point (`newsCustomer`, missions.md §2); untagged ones are also FEAT-71 lawn furniture |
 
 ## Scope
 
@@ -54,10 +66,35 @@ carries a real min-radius and honest 1-D EMA grade. Every sign must read that tr
 - **Cant and wear belong here, not in the model.** ASSET-31 deliberately ships upright and clean: a
   baked lean makes every sign on the map lean the same way. A small random roll/yaw at placement is
   what sells "faded, shot at, canted".
+  - **The mailboxes follow that rule with one deliberate exception.** Four of the five ship upright
+    and clean and want the same placement-time cant. `mailboxLeaning` does NOT — its lean, dents
+    and hanging door are baked, because they are a *character* (a derelict), not wear, and it is
+    one flavour among five rather than every instance on the map. Give it placement cant on top if
+    you like, but do not "fix" the baked lean, and do not apply a derelict's cant to the other four.
+  - **Paint variety is already solved and is free: use it.** Three curated pools, all five entries
+    long: `MAILBOX_PAINT` on `MailBox` for the nine flavours using the standard box, `BARN_PAINT`
+    for `mailboxBarn`, `FANCY_PAINT` for `mailboxFancy` (all in `data/prop-models.js`). Pass
+    `spawnModel(key, { variant: hash32(...) })` — any integer, taken modulo the pool length, and
+    the equal lengths mean one index behaves consistently whichever flavour was drawn. Placing a
+    road of mailboxes without a variant index means placing a road of identical galvanised boxes,
+    which is the clone problem this kit was shaped to avoid.
+  - **`mailboxChicken` recolours the whole bird** — its neck and tail are `MailBox`. Variant 1
+    (cream) is the white chicken of the reference and is the one to reach for.
 - Collision is the post only (`SIGN_POST_BOX`, 89 mm square, knockable) — clipping a sign should
   cost a mirror, not stop a truck.
 - Density and spacing are a budget, not a per-sign decision. Signs are the most-repeated authored
   object in the game after props; a cap belongs in this ticket.
+- **Mailboxes are the harder half of that budget, and they may need FEAT-59's deferred
+  `InstancedMesh` path first.** Each one clones at 3–5 draw calls, and a populated road wants far
+  more of them than it wants signs. ASSET-22 flagged this from the start: a handful placed by hand
+  proves the asset; a paper route planned around a dense roadside does not. Measure before
+  committing to a density.
+- **`mailboxPlanter` is the one flavour whose footprint is wider than its box** (0.554 m square,
+  the wash tub). Its collider is the tub, so it needs more shoulder than the others — do not place
+  it where only a post fits.
+- **`mailboxCluster` is one anchor serving several households**, not three POIs. It is the model
+  behind ASSET-22's 2026-09-30 multi-customer drop-point note, so its placement rule is a shared
+  driveway or a group of nearby houses, not "three times the mailbox density".
 
 ## Signs are not navigation UI and must never become it
 

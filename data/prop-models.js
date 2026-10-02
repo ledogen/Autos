@@ -58,6 +58,48 @@
 // different blank, so they share one collision box. 89 mm square, 2.18 m to the post top.
 const SIGN_POST_BOX = { shape: 'box', size: [0.089, 2.180, 0.089] }
 
+// ASSET-22 mailboxes: the standard-box flavours share one curated pool on their MailBox
+// material (the pillar, chicken, cast one and barn are the exceptions below). LINEAR RGB, and
+// index 0 MUST stay equal to the .glb's authored baseColorFactor (test/model-palette.mjs).
+// Judged rendered, not from the tuple — ART-STYLE rule 5.
+const MAILBOX_PAINT = [
+  [0.185, 0.192, 0.198],   // 0 galvanised steel — AUTHORED
+  [0.520, 0.495, 0.430],   // 1 cream
+  [0.022, 0.072, 0.038],   // 2 bottle green
+  [0.195, 0.042, 0.028],   // 3 oxide red
+  [0.026, 0.026, 0.028],   // 4 matte black
+]
+
+// Per-flavour pools (owner ruling 2026-10-01): some flavours only look right in
+// SOME paints, so they get a shorter pool rather than the kit-wide five. Pools
+// may differ in length between models — model-service takes the variant index
+// modulo each model's own pool — so the one cost is that a single seed hash no
+// longer means "the same paint" across every flavour, which nothing relies on.
+// Index 0 still has to equal each .glb's authored colour (test/model-palette.mjs),
+// which is why the pillar and the chicken carry their OWN box material
+// (PillarBox, ChickenBody) authored in an allowed colour instead of MailBox grey.
+// The barn has NO pool at all: barn red is the only barn.
+//
+// The cast one: white, black or grey only.
+const FANCY_PAINT = [
+  [0.640, 0.628, 0.608],   // 0 white — AUTHORED
+  [0.030, 0.030, 0.032],   // 1 gloss black
+  [0.215, 0.205, 0.182],   // 2 pewter
+]
+// The chicken: a white bird or a black one. 0 is MAILBOX_PAINT's cream.
+const CHICKEN_PAINT = [
+  [0.520, 0.495, 0.430],   // 0 cream — AUTHORED (the white bird of the reference)
+  [0.026, 0.026, 0.028],   // 1 matte black
+]
+// The pillar: MAILBOX_PAINT minus the galvanised grey, which read as one
+// monotone lump against grey stone. Reordered so 0 is the authored oxide red.
+const PILLAR_PAINT = [
+  [0.195, 0.042, 0.028],   // 0 oxide red — AUTHORED
+  [0.520, 0.495, 0.430],   // 1 cream
+  [0.022, 0.072, 0.038],   // 2 bottle green
+  [0.026, 0.026, 0.028],   // 3 matte black
+]
+
 export const PROP_MODELS = {
   newsRoll: {
     url: 'assets/models/news-roll.glb',
@@ -383,6 +425,178 @@ export const PROP_MODELS = {
   signCross: { url: 'assets/models/sign-cross.glb', collision: SIGN_POST_BOX },
   signStop: { url: 'assets/models/sign-stop.glb', collision: SIGN_POST_BOX },
   signIcy: { url: 'assets/models/sign-icy.glb', collision: SIGN_POST_BOX },
+
+  // ASSET-22 — ROAD FURNITURE: the rural mailbox, ELEVEN flavours. 132–248 tris each (budget
+  // 250, hard — this is the most-repeated object in the game), 2–6 flat materials, NO TEXTURES.
+  // One generator, assets/models/src/mailbox.py, the steel-drum packaging: a flavour is a .glb
+  // of its own, so a spawner brings in one mailbox, not a set.
+  //
+  // WHY ELEVEN AND NOT ONE. A single mailbox repeated down a road reads as a metronome. The kit
+  // spends its variety on SILHOUETTE — a bank of three, a masonry pillar, a barn, a chicken and a
+  // derelict do not look like the same object at 40 m — and then on the recolour pools below,
+  // which are free. SIX OF THE ELEVEN REUSE THE SAME BOX unchanged and vary only what it is
+  // mounted on; only the barn and the cast one replace the box itself. The ticket's 512x256 albedo (rust at the seams, timber grain, a faint house number)
+  // was DROPPED: three of those four are wear, which ART-STYLE rule 1 names as the
+  // anti-pattern and gas-pump already had stripped, and the fourth is sub-pixel lettering with
+  // no addressing system behind it to carry information into. Five files also cannot share one
+  // image (three.js does not dedupe across .glb loads), so a texture here costs five bakes.
+  //
+  // THE FLAG IS AN ADDRESSABLE CHILD NODE named `Flag`, parented to the body, origin ON its
+  // pivot. Down is a transform, not a second model:   flag.rotation.x = +1.35   (~77 deg,
+  // blade swings rearward to +Z). The axis is node-local X and the sign is derived, not
+  // eyeballed — mailbox.py's header has the working. mailboxLeaning has NO Flag node on
+  // purpose (its flag is snapped off): CHECK FOR THE NODE, do not assume it.
+  //
+  // NO POOL TAG, and the same rule as the flamingos and the road signs applies: do not invent
+  // one to make these appear. Road furniture is PLACED FROM ROAD GEOMETRY, not scattered —
+  // that is FEAT-72. And ASSET-22's own warning stands: a populated route wants FEAT-59's
+  // deferred InstancedMesh path first, because cloning one mailbox per driveway at 3–5 draw
+  // calls each is exactly the scatter case the per-mesh path is not for. A handful placed by
+  // hand to prove the asset is fine; a paper route planned around them is not, yet.
+  // Reachable meanwhile via spawnModel('mailboxClassic') etc.
+  //
+  // CURATED RECOLOUR POOL on MailBox (owner ruling 2026-08-21, gnome precedent). Five real
+  // mailbox colours, LINEAR RGB, index 0 = the authored galvanised grey. Post, flag, hardware,
+  // stone and cap are all FIXED. Seven flavours share it; the pillar, chicken and cast one have
+  // shorter pools of their own, and the barn is never recoloured (owner, 2026-10-01).
+  mailboxClassic: {
+    url: 'assets/models/mailbox-classic.glb',
+    // 132 tris. 0.223 wide (the flag is the widest part) x 1.235 tall (flag tip; the BOX top
+    // is at the ticket's 1.15) x 0.478 deep. Knockable set dressing, not a wall.
+    collision: { shape: 'box', size: [0.223, 1.235, 0.478] },
+    palette: { MailBox: MAILBOX_PAINT },
+  },
+  mailboxTube: {
+    url: 'assets/models/mailbox-tube.glb',
+    // 212 tris. Same box on a steel pipe post, with a newspaper tube slung under it — the
+    // paper-route drop point that reads as one from the road, and the thing news-roll.glb
+    // actually goes in. The tube is deliberately oversize (0.145 bore vs a real 0.115) and
+    // wears MailBox rather than the dark hardware colour: at true size in dark it rendered as
+    // a flat bar on a dark post and vanished. Its bore is dark so the mouth reads as a hole.
+    collision: { shape: 'box', size: [0.223, 1.235, 0.478] },
+    palette: { MailBox: MAILBOX_PAINT },
+  },
+  mailboxLeaning: {
+    url: 'assets/models/mailbox-leaning.glb',
+    // 148 tris. The derelict: post canted on two axes and sitting 54 mm low, box dented and
+    // crooked, door hanging open past horizontal over a real recessed cavity, flag snapped to
+    // a bracket stub. NO `Flag` NODE.
+    //
+    // COLLISION IS THE BODY ONLY, 0.48 deep — NOT the 0.586 the bounding box reports. The
+    // extra 106 mm is the door dangling in mid-air; boxing it would put an invisible wall out
+    // over the road for a 12 mm sheet of steel you should be able to clip.
+    collision: { shape: 'box', size: [0.285, 1.085, 0.480] },
+    palette: { MailBox: MAILBOX_PAINT },
+  },
+  mailboxCluster: {
+    url: 'assets/models/mailbox-cluster.glb',
+    // 204 tris. Three small boxes on a shared rail between two posts — the shared-driveway
+    // bank, and the multi-customer drop point ASSET-22's 2026-09-30 note anticipates ("a
+    // cluster of mailboxes can serve several customers at one stop"). The one WIDE silhouette
+    // in the kit, which is what breaks the rhythm of a road of single posts.
+    //
+    // Its three boxes use a RECESSED door (a rim ring stepping back to an inset cap) rather
+    // than the proud slab the single-box flavours carry: three proud doors do not fit in 250
+    // tris, and at a bank's viewing distance the rim shadow reads better than the slab edge.
+    // One flag up, one snapped to a stub, one bare — the `Flag` node is the up one.
+    collision: { shape: 'box', size: [0.840, 1.197, 0.400] },
+    palette: { MailBox: MAILBOX_PAINT },
+  },
+  mailboxBucket: {
+    url: 'assets/models/mailbox-bucket.glb',
+    // 192 tris. Post set in a 5-gallon pail of concrete — the renter's fix, and
+    // the cheapest thing in the kit to read as "nobody owns this place".
+    collision: { shape: 'box', size: [0.268, 1.235, 0.478] },
+    palette: { MailBox: MAILBOX_PAINT },
+  },
+  mailboxPlanter: {
+    url: 'assets/models/mailbox-planter.glb',
+    // 236 tris. Galvanised wash tub of flowers at the foot, a flat-capped post
+    // that runs past the box (the pyramid finial read as a spike — removed
+    // 2026-10-01). THE COUNTERWEIGHT TO THE
+    // DERELICT: place these where a road should read as cared for.
+    //
+    // Its post runs straight THROUGH the box — both are closed solids, so the
+    // overlap is invisible and it reads as a post standing behind the box, the
+    // way the reference does.
+    //
+    // COLLISION IS THE TUB, 0.554 square — this is the one flavour whose
+    // footprint is wider than its box, and a mailbox-sized collider would let
+    // you drive through the planter.
+    collision: { shape: 'box', size: [0.554, 1.235, 0.554] },
+    palette: { MailBox: MAILBOX_PAINT },
+  },
+  mailboxBarn: {
+    url: 'assets/models/mailbox-barn.glb',
+    // 192 tris. A barn, cut down to the three cues that survive fog: a gable, a
+    // dark roof overhanging on all four sides, and white trim on red. The
+    // X-braced barn door IS the mailbox door — the gable end is the -Z face,
+    // which is the opening, and that coincidence is why the silhouette works.
+    //
+    // NEVER RECOLOURED (owner, 2026-10-01): barn red is the only barn, so it
+    // declares no palette at all.
+    //
+    // Walls raised 2026-10-01 (ridge 1.22 m). The flag now rides outboard of
+    // the eave on a hardware standoff, so this one has a MailHardware draw call.
+    collision: { shape: 'box', size: [0.303, 1.222, 0.486] },
+  },
+  mailboxLimb: {
+    url: 'assets/models/mailbox-limb.glb',
+    // 188 tris. A tree limb for the post, standard box on top — the owner's
+    // call: reuse the box, change what it stands on. The limb WANDERS in x and
+    // y as it rises and carries a lopped branch stub; a straight tapered
+    // hexagon reads as a turned post, not as something cut out of the woodlot.
+    collision: { shape: 'box', size: [0.257, 1.235, 0.478] },
+    palette: { MailBox: MAILBOX_PAINT },
+  },
+  mailboxChicken: {
+    url: 'assets/models/mailbox-chicken.glb',
+    // 244 tris, the tightest fit in the kit. Jigsawn chicken cut-outs bolted to
+    // a standard box — which is how the real ones are made, so flat plates thin
+    // in X are both the cheap way and the honest way.
+    //
+    // THE WHOLE BIRD RECOLOURS WITH THE BOX: neck and tail share ChickenBody,
+    // so a palette swap paints the chicken too. WHITE OR BLACK ONLY (owner,
+    // 2026-10-01) — its own material and pool, authored cream. Comb and wattle reuse
+    // MailFlag; beak and legs share ChickenBeak, so the one material the bird
+    // added earns its draw call twice.
+    //
+    // 1.41 m tall — the tallest thing in the kit after the cast one. Its
+    // collision is the box footprint; the bird is cut-outs you should be able
+    // to clip.
+    collision: { shape: 'box', size: [0.223, 1.410, 0.596] },
+    palette: { ChickenBody: CHICKEN_PAINT },
+  },
+  mailboxFancy: {
+    url: 'assets/models/mailbox-fancy.glb',
+    // 248 tris, THREE MATERIALS (white casting, dark knob, flag). Rebuilt
+    // 2026-10-01 from the owner's reference photo: a chunky panelled box
+    // CANTILEVERED FORWARD (-Z, toward the road) off a square post on a wide
+    // base sleeve, scroll bracket under it, name plaque on the lid, capped post
+    // and ball above. Recolours on FancyWhite/FANCY_PAINT — white, black or
+    // pewter only (owner, 2026-10-01).
+    //
+    // COLLISION IS THE POST AND SLEEVE ONLY. Boxes here are centred on the
+    // origin with no offset, and the cantilevered box runs 0.47 m forward of
+    // it - a box big enough to cover that would be solid air behind the post.
+    // The mail box itself is clippable, like the chicken's cut-outs.
+    collision: { shape: 'box', size: [0.188, 1.507, 0.188] },
+    palette: { FancyWhite: FANCY_PAINT },
+  },
+  mailboxPillar: {
+    url: 'assets/models/mailbox-pillar.glb',
+    // 180 tris. Box on a dry-stacked stone pillar under a cast cap. The only wide dark base in
+    // the kit, so it is the only flavour that reads as a PROPERTY rather than as road
+    // furniture — use it where a driveway means money, not on a logging spur.
+    //
+    // A WALL, NOT KNOCKABLE: 0.53 x 0.50 of masonry is the one thing in this kit you should
+    // not be able to drive through.
+    //
+    // PillarBox/PILLAR_PAINT, never the galvanised grey: grey box on grey stone
+    // read as one monotone lump (owner, 2026-10-01).
+    collision: { shape: 'box', size: [0.528, 1.273, 0.497] },
+    palette: { PillarBox: PILLAR_PAINT },
+  },
 }
 
 /** Every registry key carrying `tag`, in registry order — the pool a roster slot draws from. */
