@@ -6070,7 +6070,7 @@ function loop () {
   // PERF-33: clear atlas tiles that still hold a departed chunk's shadows (toroidal slot reuse) the
   // moment the window moves — early-outs unless the stream centre changed chunk.
   if (shadowBake && !_labActive) shadowBake.syncCenter(Math.floor(streamCenter.x / CHUNK_SIZE), Math.floor(streamCenter.z / CHUNK_SIZE))
-  if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(scene, _streamBudget.deadline()) }   // PERF-26 tag
+  if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(_streamBudget.deadline()) }   // PERF-26 tag
   perfAdd('frame.shadowBake', performance.now() - _pt)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   _pt = performance.now()

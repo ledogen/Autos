@@ -145,36 +145,20 @@ export function scatterTreePositions (cx, cz, worldSeed, samplers, params = FLOR
 }
 
 /**
- * Scatter one chunk — synchronous wrapper over the generator below (identical output).
- * @param {number} cx integer chunk X
- * @param {number} cz integer chunk Z
- * @param {number} worldSeed
- * @param {object} samplers  { heightAt, normalAt, roadBlocked }
- * @param {object} [params=FLORA_PARAMS]
- * @returns {Array} placement records
+ * The per-chunk helpers both scatter entry points need — scatterChunkGen (the whole chunk) and
+ * scatterLitterGen (the deferred litter alone). ONE definition, so "deferred == inline" holds by
+ * construction rather than by keeping two copies in step.
+ *
+ * @param {Function|null} rng  the chunk's main stream: placeBlob's default. The litter passes
+ *   always hand placeBlob their own stream, so scatterLitterGen passes null.
+ * @returns {{samplers, roadClear, inPondWater, inStreamChannel, slopeAt, blobBoundR, placeBlob}}
+ *   `samplers` is the input set with the water samplers nulled where this chunk has no water.
  */
-export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS) {
-  const g = scatterChunkGen(cx, cz, worldSeed, samplers, params)
-  let r
-  do { r = g.next() } while (!r.done)
-  return r.value
-}
-
-/**
- * PERF-14: resumable scatter. Same draws, same order, same output as the old synchronous
- * scatterChunk — but a GENERATOR that yields every few candidates so PropSystem can time-slice
- * one chunk's scatter across frames (a whole chunk was 20–40 ms of sampler calls: the measured
- * cause of the one-hitch-per-chunk-crossing stutter). Yields carry no value; the final `return`
- * is the placement list. Determinism/window-invariance untouched: the rng streams and candidate
- * order are byte-identical to the wrapper above, only wall-clock interleaving changes.
- */
-export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PARAMS, opts = {}) {
-  const P = params, S = P.scatter
-  const rng = mulberry32(seedFor(worldSeed, P.worldSeedTag, cx, cz))
+function chunkHelpers (cx, cz, samplers, P, out, rng) {
+  const S = P.scatter
   const size = P.chunkSize
   const ox = cx * size, oz = cz * size
-  const out = []
-  const { heightAt, roadBlocked, roadDist, roadClear: roadClearFn } = samplers
+  const { heightAt, roadBlocked, roadClear: roadClearFn } = samplers
 
   // BUG-23: radius-aware road keep-out. roadClear(x,z,keepOut) is true when NO road centreline lies
   // within keepOut metres. Falls back to the legacy fixed-radius roadBlocked for older fixtures that
@@ -197,8 +181,7 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
   // FEAT-25: optional stream-channel sampler (streamAt(x,z) → {inChannel, inBank, stream}). Trees,
   // bushes, boulders and collidable rocks are excluded from the underwater CHANNEL (broken-looking
   // submerged props); the decorative small-rock category is instead DENSIFIED there (boost pass
-  // below). Absent (older fixtures / gates) → no exclusion/boost, placements byte-unchanged.
-  const streamAt = samplers.streamAt || null
+  // in scatterChunkGen). Absent (older fixtures / gates) → no exclusion/boost, placements byte-unchanged.
   const inStreamChannel = (x, z) => inStreamChannelAt(samplers, x, z)
 
   // Max world horizontal bounding radius of a blob category — an UPPER bound over its variants +
@@ -210,9 +193,9 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
 
   const slopeAt = (x, z) => slopeFrom(samplers, x, z)
 
-  // ── helper: place a single prop of category `cat` at (x,z) if terrain allows ──────────
-  // rngArg lets the FEAT-25 channel-rock boost pass draw from its OWN seeded stream (so the extra
-  // rocks never perturb the main scatter's rng draws → existing placements stay byte-identical).
+  // ── place a single prop of category `cat` at (x,z) if terrain allows ───────────────────
+  // rngArg lets the additive passes (FEAT-25 channel rocks, zone rocks) draw from their OWN seeded
+  // stream, so the extra rocks never perturb the main scatter's rng draws.
   const placeBlob = (cat, x, z, buryRange, ignoreRoad = false, rngArg = rng, allowChannel = false) => {
     const cfg = P[cat]
     // BUG-23: exclude road-respecting props from the road FOOTPRINT, inflating the keep-out by the
@@ -248,6 +231,44 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
     }
     out.push(pl)
   }
+  return { samplers, roadClear, inPondWater, inStreamChannel, slopeAt, blobBoundR, placeBlob }
+}
+
+/**
+ * Scatter one chunk — synchronous wrapper over the generator below (identical output).
+ * @param {number} cx integer chunk X
+ * @param {number} cz integer chunk Z
+ * @param {number} worldSeed
+ * @param {object} samplers  { heightAt, normalAt, roadBlocked }
+ * @param {object} [params=FLORA_PARAMS]
+ * @returns {Array} placement records
+ */
+export function scatterChunk(cx, cz, worldSeed, samplers, params = FLORA_PARAMS) {
+  const g = scatterChunkGen(cx, cz, worldSeed, samplers, params)
+  let r
+  do { r = g.next() } while (!r.done)
+  return r.value
+}
+
+/**
+ * PERF-14: resumable scatter. Same draws, same order, same output as the old synchronous
+ * scatterChunk — but a GENERATOR that yields every few candidates so PropSystem can time-slice
+ * one chunk's scatter across frames (a whole chunk was 20–40 ms of sampler calls: the measured
+ * cause of the one-hitch-per-chunk-crossing stutter). Yields carry no value; the final `return`
+ * is the placement list. Determinism/window-invariance untouched: the rng streams and candidate
+ * order are byte-identical to the wrapper above, only wall-clock interleaving changes.
+ */
+export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PARAMS, opts = {}) {
+  const P = params, S = P.scatter
+  const rng = mulberry32(seedFor(worldSeed, P.worldSeedTag, cx, cz))
+  const size = P.chunkSize
+  const ox = cx * size, oz = cz * size
+  const out = []
+  const H = chunkHelpers(cx, cz, samplers, P, out, rng)
+  samplers = H.samplers
+  const { roadClear, inPondWater, inStreamChannel, slopeAt, blobBoundR, placeBlob } = H
+  const { heightAt, roadDist } = samplers
+  const streamAt = samplers.streamAt || null
 
   // ── tree clusters (grouping) ──────────────────────────────────────────────────────────
   // FIRST pass in the chunk's rng stream, and extracted (treeClusterPass) so FEAT-45's camp
@@ -513,47 +534,13 @@ function* litterPasses(out, cx, cz, worldSeed, samplers, P, h) {
 
 /**
  * The litter passes ALONE, for a chunk that was scattered with `{ litter: false }` and has now
- * been promoted into a drawn ring. Same helpers as scatterChunkGen builds (rebuilt here from the
- * samplers — pure functions, so the output matches the inline run byte for byte).
+ * been promoted into a drawn ring. Same chunkHelpers as scatterChunkGen, so the output matches the
+ * inline run byte for byte (the props gate pins it).
  */
 export function* scatterLitterGen(cx, cz, worldSeed, samplers, params = FLORA_PARAMS) {
-  const P = params, S = P.scatter
   const out = []
-  const { heightAt, roadBlocked, roadClear: roadClearFn } = samplers
-  const roadClear = roadClearFn || ((x, z) => !roadBlocked(x, z))
-  {   // PERF-34: the same per-chunk water early-out as scatterChunkGen (deferred == inline).
-    const size = P.chunkSize, ox = cx * size, oz = cz * size
-    const near = samplers.waterNear ? samplers.waterNear(ox, oz, ox + size, oz + size) : { ponds: !!samplers.waterAt, streams: !!samplers.streamAt }
-    if ((!near.streams && samplers.streamAt) || (!near.ponds && samplers.waterAt))
-      samplers = { ...samplers, streamAt: near.streams ? samplers.streamAt : null, waterAt: near.ponds ? samplers.waterAt : null }
-  }
-  const inPondWater = (x, z) => inPondWaterAt(samplers, x, z)
-  const inStreamChannel = (x, z) => inStreamChannelAt(samplers, x, z)
-  const slopeAt = (x, z) => slopeFrom(samplers, x, z)
-  const blobBoundR = (cfg) =>
-    cfg.blob.radius[1] * Math.max(cfg.blob.axisScale[0], cfg.blob.axisScale[2]) *
-    (1 + cfg.blob.irregularity) * cfg.instScale[1]
-  // Same body as scatterChunkGen's placeBlob minus the chunk-rng default (every litter caller
-  // passes its own stream). Kept in step by the gate's inline-vs-deferred equality check.
-  const placeBlob = (cat, x, z, buryRange, ignoreRoad, rngArg, allowChannel = false) => {
-    const cfg = P[cat]
-    if (!ignoreRoad && !roadClear(x, z, S.roadExclusion + blobBoundR(cfg))) return
-    if (inPondWater(x, z)) return
-    if (!allowChannel && cat !== 'smallRock' && inStreamChannel(x, z)) return
-    const variant = (rngArg() * cfg.variants) | 0
-    const scale = frange(rngArg, cfg.instScale)
-    const bury = frange(rngArg, buryRange)
-    const halfH = cfg.blob.radius[1] * cfg.blob.axisScale[1] * scale
-    const gy = heightAt(x, z)
-    const pl = { cat, variant, x, z, y: gy + halfH * (0.5 - bury), gy, scale, rotY: rngArg() * Math.PI * 2, tint: tintFor(rngArg, cfg.color, cfg.colorJitter) }
-    // Rock tumble — SAME draws, same order as scatterChunk's placeBlob (deferred == inline gate).
-    if ((cat === 'rock' || cat === 'medRock' || cat === 'smallRock') && S.rockTiltMax > 0) {
-      pl.tilt = rngArg() * S.rockTiltMax
-      pl.tiltAz = rngArg() * Math.PI * 2
-    }
-    out.push(pl)
-  }
-  yield* litterPasses(out, cx, cz, worldSeed, samplers, P, { roadClear, inPondWater, inStreamChannel, slopeAt, placeBlob, blobBoundR })
+  const H = chunkHelpers(cx, cz, samplers, params, out, null)
+  yield* litterPasses(out, cx, cz, worldSeed, H.samplers, params, H)
   return out
 }
 
