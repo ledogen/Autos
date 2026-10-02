@@ -39,10 +39,8 @@
 // REGION_RADIUS_M + WARM_MARGIN_M so the network is complete right up to (and just past) the wall.
 export const REGION_RADIUS_M = 2500   // m — a 5 km-wide bounded region
 const WARM_MARGIN_M = 300             // m — route past the wall so the boundary roads are whole
-// THE radius the entry warm routes to — and therefore the radius the bundled route cache must
-// cover, or half the region routes live behind the loading screen. test/bake-route-bundle.mjs
-// imports this so the bake target can never silently fall behind the region again (it did: the
-// bake stopped at 1700 m while entry asked for 2800, leaving 104 of 216 in-band edges uncached).
+// THE radius the entry warm routes to. (The bundled route cache that once had to cover it was
+// deleted 2026-08-19 — v2 routes the region live behind the loading screen.)
 export const REGION_WARM_RADIUS_M = REGION_RADIUS_M + WARM_MARGIN_M
 
 // Story mode is DESIGNED to lock the debug GUI out (DESIGN.md "Game modes"): a shipped story run
@@ -140,10 +138,10 @@ export class StorySystem {
   region () { return this._center ? { x: this._center.x, z: this._center.z, r: this._R } : null }
 
   /**
-   * Enter story mode with the given seed. Seed '6' (the pre-baked default) ships with a bundled
-   * route cache, so its region warm is near-instant; any other seed triggers a full deterministic
-   * rebuild and pays a one-time routing warm behind the loading screen. Either way the truck is
-   * re-seated at the canonical seed spawn so the region centers there predictably.
+   * Enter story mode with the given seed. A seed other than the loaded one triggers a full
+   * deterministic rebuild; every entry pays a one-time routing warm of the region behind the
+   * loading screen. Either way the truck is re-seated at the canonical seed spawn so the region
+   * centers there predictably.
    */
   enter (seedStr) {
     const seed = (seedStr == null || seedStr === '') ? '6' : String(seedStr).trim()

@@ -871,6 +871,23 @@ export class RoadMeshSystem {
         this._initialFillDone = false   // PERF-13: a full clear precedes a regen — burst the refill
     }
 
+    /**
+     * Tear the whole system down: every tile, plus the per-instance materials and the portal's two
+     * masonry textures. main.js builds a fresh RoadMeshSystem on every reseed; without this each
+     * reseed stranded four materials and two 256² textures on the GPU.
+     */
+    dispose() {
+        this.clearAll()
+        this._material.dispose()
+        this._junctionMaterial?.dispose()
+        this._tunnelMaterial?.dispose()
+        if (this._portalMaterial) {
+            this._portalMaterial.map?.dispose()
+            this._portalMaterial.normalMap?.dispose()
+            this._portalMaterial.dispose()
+        }
+    }
+
     // ── Private ───────────────────────────────────────────────────────────────
 
     /**

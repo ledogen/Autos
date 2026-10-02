@@ -1,35 +1,30 @@
 /**
- * src/road.js — RoadSystem for AUTOS v1.1
+ * src/road.js — RoadSystem: the road network, its surface, and every query against it.
  *
- * VALLEY-TRUNK STREAMING MODEL (the real routing core):
- *  - Endless roads are a deterministic chain of valley-snapped macro-anchors (256 m grid),
- *    connected east→east per macro-row by a soft-cost turn-penalty A* over raw coarseHeight.
- *  - Each row's east connections concatenate into ONE continuous polyline, post-processed
- *    (segment dedupe + collinear-simplify + proximity loop-removal), then split into kept runs.
- *  - _streamNetwork(center) builds those canonical centerline polylines into this._network
- *    (Map keyed deterministically by macro-row "<mz>:<runIndex>"), streamed around the view
- *    center like terrain chunks. this._network is the single source of truth for slicing (08-06),
- *    viz/wiring (08-07), and queries.
- *  - Cost model (D-09, LOCKED): edgeCost = wDist·horiz + wAlt·h + wGrade·grade²
- *      + wOver·max(0, grade − maxGrade) + wTurn·(Δheading/45°). The over-cap penalty is FINITE/SOFT
- *      (D-02 REVISED) — there is NEVER an Infinity edge / hard grade block. wAlt is the dominant
- *      stay-low term, so the route wraps AROUND high ground (D-04) instead of climbing it.
+ * THE PIPELINE (a pure function of worldSeed, stream centre and params — caches are memoization):
+ *  1. TOPOLOGY — blue-noise sites (FEAT-13) joined by an Urquhart graph (_buildUrquhart), degree-
+ *     capped (_degreeDrops). Node ids are site triples [cmx,cmz,k]; FEAT-76 adds promoted T nodes.
+ *  2. ROUTING — one graph edge = one call to routeEdgeV2 (corridor-router.js: corridor A* →
+ *     exact profile solve → curvature-bounded centerline). The same function runs in the route and
+ *     network Workers, so off-thread results are identical by construction.
+ *  3. PLAN LAYER — the _v2* planners reconcile edges that crowd each other near a shared node or
+ *     mid-span (merges, T-promotion, the crossing rung, shoves) on PURE per-edge samples, so the
+ *     plan is window-invariant.
+ *  4. REGISTRATION — _streamNetwork(center) builds this._network, keyed "g:<idA>:<idB>" (one run per
+ *     surviving edge): points, polyCum, clArc, centerline, the two node ids. It is the single
+ *     source of truth for everything below.
+ *  5. SLICING — _sliceNetwork cuts each run at 64 m tile boundaries into this._tiles (the splines
+ *     queryNearest and the ribbon mesh read).
+ *  6. SURFACE — run profiles (grade, camber), junction pads and deg-2 connectors, and the carve
+ *     cross-section. _sampleCarveWorld is what physics rides; the terrain mesh carve calls the same
+ *     resolver, so MESH == PHYSICS.
  *
  * FORBIDDEN patterns:
  *   Do NOT call terrain.getChunkHeight / chunk-sampled functions (chunk-load-order dependent).
- *   Do NOT call terrain.getAmplitudeScaledHeight (multiplies by terrainAmplitude — grade wrong).
- *   Do NOT call road.js from inside the physics fixed-timestep loop (route lazily, query O(1)).
- *   Do NOT allocate new THREE.Vector3 per frame in queryNearest (GC pressure).
- *   Do NOT re-introduce a hard grade block (grade > max → Infinity) — D-02 REVISED, soft over-cap only.
- *
- * Design decisions implemented here:
- *  - D-08: Valley-following streaming-anchor model IS the real RoadSystem core (not a disabled proto).
- *  - D-09: soft-cost A* (altitude + grade² + finite over-cap + turn penalty), never "no path".
- *  - D-02 (REVISED): soft over-cap penalty, NEVER a hard Infinity grade block.
- *  - D-04: dominant wAlt term makes the route wrap AROUND high ground.
- *
- * Phase: 8-road-routing
- * Plan: 08-05 (valley-trunk core); 08-06 (slicing); 08-07 (viz + wiring)
+ *   Do NOT read amplitude-scaled terrain height for grade math (terrainAmplitude is a visual slider).
+ *   Do NOT route from inside the physics fixed-timestep loop (route lazily, query O(1)).
+ *   Do NOT allocate per call in queryNearest / the carve path (GC pressure at ~900 samples/step).
+ *   Do NOT let a query's answer depend on what happens to be streamed (D-16 window-invariance).
  */
 
 import * as THREE from 'three'
@@ -756,7 +751,6 @@ const BORE_NOTCH_SLOPE = 1.2  // V:H — mouth-funnel floor rise per metre into 
 // reads as a modest gravel turnaround with an ordinary embankment nose instead of the full-width
 // 18 m plateau + vertical stop face the un-folded, lat-only cross-section left there.
 const LEAF_END_TAPER = 30     // m
-const PROTO_PARAM_DEBOUNCE = 160   // ms — coalesce slider drags before re-routing
 
 // ── D-16: anchor-band half-width, SCALED to the active road radius ─────────────
 // _streamNetwork builds each macro-row run over a band keyed by (mz, mx0, mx1). The Z (mz) extent
@@ -813,18 +807,6 @@ function _coarseHeight(wx, wz, noiseCoarse, params) {
     return h
 }
 
-// ── RoadSystem ─────────────────────────────────────────────────────────────────
-/**
- * Per-tile deterministic road routing system.
- *
- * Pure function of (worldSeed, tileX, tileZ, params) — the tile cache is
- * memoization only, not persistent state. Clearing the cache and re-routing
- * identical inputs always produces identical results.
- *
- * Constructor optionally accepts a coarseHeightOverride function for testing:
- * new RoadSystem(ws, params, mockCoarseHeight) — replaces the simplex closure
- * with the provided function, allowing switchback tests on synthetic terrain.
- */
 // ── FEAT-76: PROMOTED node identity ────────────────────────────────────────────────────────────
 // A promoted node is the point where a side road departs an existing trunk — the T that replaces
 // the old wye. It is NOT a blue-noise site, so it has no site id; it needs a synthetic one that
@@ -896,6 +878,13 @@ function _gradeSampler(points, arc) {
     }
 }
 
+/**
+ * The road system. Every cache on it is memoization only: clearing them and re-querying identical
+ * inputs always produces identical results.
+ *
+ * The optional third constructor argument replaces the simplex coarse-height closure with a
+ * function, for gates that want synthetic terrain: new RoadSystem(ws, params, mockCoarseHeight).
+ */
 export class RoadSystem {
     /**
      * @param {number} worldSeed — uint32 from parseWorldSeed()
@@ -946,7 +935,7 @@ export class RoadSystem {
         this._v2TruncF   = null   // FEAT-68: octave-truncated corridor field re-derives from the new noise
     }
 
-    /** FEAT-68: memoized octave-truncated coarse field (K=3) — the corridor stage's terrain. */
+    /** FEAT-68: memoized octave-truncated coarse field (V2_TRUNC_K octaves) — the corridor stage's terrain. */
     _v2Trunc() {
         if (!this._v2TruncF) this._v2TruncF = truncatedHeightField(this._noiseCoarse, this._params, V2_TRUNC_K)   // shared with the route Worker's rebuild — see corridor-router.js
         return this._v2TruncF
@@ -969,12 +958,7 @@ export class RoadSystem {
         return _coarseHeight(wx, wz, this._noiseCoarse, this._params)
     }
 
-    // ── Public API (REBUILT in 08-06 / 08-07) ───────────────────────────────────
-    // NOTE (08-05): The old per-tile router that these methods routed through has been
-    // DELETED. They are retargeted onto the valley-trunk network (this._network) in 08-06
-    // (ensureTile/queryNearest) and 08-07 (viz). Until then they are benign no-op stubs so
-    // src/road.js imports cleanly and no live call path reaches removed symbols. main.js /
-    // test harnesses are re-wired in 08-07.
+    // ── Public API ──────────────────────────────────────────────────────────────
 
     /**
      * Warm + slice the valley-trunk network around tile `(tileX, tileZ)` and return that tile's
@@ -1266,96 +1250,46 @@ export class RoadSystem {
     }
 
     /**
-     * collectChunkSplinePoints — Pre-sample nearby road splines into a flat numeric array for the terrain carve hot path.
+     * collectChunkSplinePoints — pre-sample nearby road splines into a flat [x,y,z, x,y,z, …] array
+     * for the terrain carve (_carveTableGen).
      *
-     * This is the SINGLE getPointAt site for the _buildCarveTable carve path.  It performs the
-     * same tile-block scan as queryNearest (CR-01 radius-sized block) and samples every
-     * candidate spline at a fixed ~1.5 m arc interval.
-     *
-     * D4 (plan 09-20): stride widened from 3 to 5 to carry tangent XZ alongside position XYZ.
-     * Each entry is [x, y, z, tx, tz] where (tx,tz) is the unit tangent at that arc position.
-     * The carve inner loop (_buildCarveTable) uses these tangent components to apply the SAME
-     * footprint-preference arm-disambiguation as queryNearest D4 — so the carved trough and
-     * the physics height pick the same arm at switchbacks.
+     * This is the SINGLE getPointAt site on the carve path: it runs once per chunk, outside the
+     * 4225-vertex loop, and samples every candidate spline in the radius-sized tile block (the same
+     * scan as queryNearest) at ~1.5 m arc intervals. The carve uses the points only as a cheap
+     * nearest-distance probe to skip vertices no road can reach, plus their Y range to bound the
+     * widest possible toe — the surface itself comes from _resolveRoadSurface (QUAL-07).
      *
      * Samples include points slightly beyond the chunk edge (the caller passes
-     * `queryRadius = maxExt + CHUNK_SIZE * 0.71`, same as the chunk-level early-reject) so
-     * adjacent chunks share the same spline points near their shared boundary — continuity
-     * is preserved with no seam steps.
+     * `queryRadius = maxExt + CHUNK_SIZE * 0.71`) so adjacent chunks see the same spline points near
+     * their shared boundary — no seam steps.
      *
      * @param {number} centerX — chunk centre world X
      * @param {number} centerZ — chunk centre world Z
-     * @param {number} radiusM — search radius in metres (same value as queryNearest early-reject)
-     * @returns {{ pts: number[], sampleArcS: number[], sampleRunKeys: string[] }}
-     *   pts — flat [x0,y0,z0,tx0,tz0, x1,...] stride-5 (D4: position XYZ + tangent XZ).
-     *   sampleArcS[i] — arc-length along the spline (metres) for sample i (pts[i*5..i*5+4]).
-     *   sampleRunKeys[i] — canonical run key for sample i.
-     *   D3 (plan 09-22): sampleArcS + sampleRunKeys allow _buildCarveTable to call
-     *   camberProfile(arcS, runKey) per vertex (O(1) array lookup post-build — no spline eval).
+     * @param {number} radiusM — search radius in metres
+     * @returns {number[]} flat stride-3 positions (collectConnectorSamples appends the same layout)
      */
     collectChunkSplinePoints(centerX, centerZ, radiusM) {
-        if (!this._tiles) return { pts: [], sampleArcS: [], sampleRunKeys: [], sampleCamberSign: [] }
-
+        const pts = []
         const qTileX = Math.floor(centerX / CHUNK_SIZE)
         const qTileZ = Math.floor(centerZ / CHUNK_SIZE)
         const blk    = Math.ceil(radiusM / CHUNK_SIZE)
 
-        const pts          = []
-        const sampleArcS   = []
-        const sampleRunKeys = []
-        const sampleCamberSign = []   // BUG-10: per-sample run-frame→slice-frame camber sign
-
         for (let dx = -blk; dx <= blk; dx++) {
             for (let dz = -blk; dz <= blk; dz++) {
-                const key  = `${qTileX + dx},${qTileZ + dz}`
-                const segs = this._tiles.get(key)
+                const segs = this._tiles.get(`${qTileX + dx},${qTileZ + dz}`)
                 if (!segs || !segs.length) continue
-                for (const seg of segs) {
-                    const { spline } = seg
-                    if (!spline) continue
-                    // ~1 sample per 1.5 m, clamped to [2, 512].  This is the ONLY getPointAt
-                    // site on the carve path — it runs ONCE per chunk (not per vertex).
-                    const len    = spline.getLength ? (spline.getLength() || 64) : 64
-                    const n      = Math.max(2, Math.min(512, Math.ceil(len / 1.5)))
-                    const runKey = seg.runKey ?? ''
-                    // BUG-10: run-GLOBAL arc + camber sign from the slice's arcS0/arcS1. Was tile-local
-                    // (arcSOffset=0) → camber sawtoothed to the run start at every tile seam in the carve
-                    // too, desyncing the trough from the banked ribbon. arcS(u)=arcS0+(arcS1−arcS0)·u.
-                    const arcS0 = seg.arcS0 ?? 0, arcS1 = seg.arcS1 ?? len
-                    const camberSign = arcS1 >= arcS0 ? 1 : -1
-                    // 09-32: arcS keyed by CUMULATIVE XZ arc-length (identical to road-mesh.js
-                    // sweepRibbon) — NOT uniform u. getPointAt(u) is 3D-arc-parameterised, which
-                    // diverges from the run-arc (XZ) metric where the road climbs or the Catmull-Rom
-                    // overshoots a boundary cut. With uniform u here but cumulative-XZ in the ribbon,
-                    // the carved physics surface (analyticHeight, this table) drifted up to ~9 m from
-                    // the rendered ribbon → the truck sank through the visual road. Keying BOTH on
-                    // cumulative XZ makes analyticHeight == ribbon Y by construction (0 gap). Endpoints
-                    // still map to arcS0/arcS1 (cum=0, cum=total) so chunk-seam continuity is preserved.
-                    // Two-pass: getPointAt once per sample into a buffer, accumulate XZ, then emit.
-                    const _bx = new Float64Array(n + 1), _by = new Float64Array(n + 1), _bz = new Float64Array(n + 1)
-                    const _btx = new Float64Array(n + 1), _btz = new Float64Array(n + 1)
-                    const _cum = new Float64Array(n + 1)
+                for (const { spline } of segs) {
+                    // ~1 sample per 1.5 m, clamped to [2, 512].
+                    const len = spline.getLength() || 64
+                    const n   = Math.max(2, Math.min(512, Math.ceil(len / 1.5)))
                     for (let i = 0; i <= n; i++) {
-                        const u = i / n
-                        const p = spline.getPointAt(u)   // allocates; only site — pre-loop
-                        const t = spline.getTangentAt(u) // D4: tangent for arm-disambiguation
-                        _bx[i] = p.x; _by[i] = p.y; _bz[i] = p.z; _btx[i] = t.x; _btz[i] = t.z
-                        if (i > 0) _cum[i] = _cum[i - 1] + Math.hypot(_bx[i] - _bx[i - 1], _bz[i] - _bz[i - 1])
-                    }
-                    const _totXZ = _cum[n] || 1
-                    for (let i = 0; i <= n; i++) {
-                        // Stride 5: [x, y, z, tx, tz]
-                        pts.push(_bx[i], _by[i], _bz[i], _btx[i], _btz[i])
-                        // D3: parallel arc-length + runKey + camberSign arrays (indexed by sample number)
-                        sampleArcS.push(arcS0 + (arcS1 - arcS0) * (_cum[i] / _totXZ))
-                        sampleRunKeys.push(runKey)
-                        sampleCamberSign.push(camberSign)
+                        spline.getPointAt(i / n, _scratchPt)
+                        pts.push(_scratchPt.x, _scratchPt.y, _scratchPt.z)
                     }
                 }
             }
         }
-
-        return { pts, sampleArcS, sampleRunKeys, sampleCamberSign }
+        return pts
     }
 
     /**
@@ -1384,7 +1318,7 @@ export class RoadSystem {
                     const px = arc.points[i].x, pz = arc.points[i].z
                     const ex = px - centerX, ez = pz - centerZ
                     if (ex * ex + ez * ez > r2) continue
-                    out.push(px, arc.grades[i], pz, 0, 0)   // stride 5: [x, y, z, tx, tz]
+                    out.push(px, arc.grades[i], pz)   // stride 3: [x, y, z]
                 }
             }
         }
@@ -1413,11 +1347,7 @@ export class RoadSystem {
             this._networkDispatch({ x: c ? c.x : 0, z: c ? c.z : 0, radius: this._proto.radius, reason: 'params' })
             return
         }
-        for (const line of this._debugLines) {
-            if (this._scene) this._scene.remove(line)
-            if (line.geometry) line.geometry.dispose()
-        }
-        this._debugLines = []
+        this.disposeDebugLines()
         if (this._network) this._network.clear()
         if (this._tiles) this._tiles.clear()
         if (this._tileObjects) this._tileObjects.clear()
@@ -1473,19 +1403,23 @@ export class RoadSystem {
     /**
      * Rebuild the shipped centerline viz (D-05: centerline splines only) from the streamed/sliced
      * network. Clears any prior debug lines, then adds one THREE.Line per per-tile slice in
-     * `this._tiles`, lifted onto the rendered surface (`this._proto.surfaceY` sampler if set, else
-     * +1.0 m) so the lines sit on the terrain. Lines honor the current `this._debugVisible` flag.
+     * `this._tiles` at the routed spline Y + 0.5 m (the terrain is carved to meet the spline, so that
+     * sits just above the ribbon). Lines honor the current `this._debugVisible` flag.
      * Per-toggle visibility uses `setDebugVisible` (`.visible`), not a rebuild — no GC churn beyond
      * this one-shot rebuild on a new streamed window / re-route.
      */
-    buildDebugLines() {
-        // Clear prior lines (one-shot rebuild for a new streamed window / re-route).
+    /** Remove the centreline viz from the scene and free its GPU buffers (each line owns a material). */
+    disposeDebugLines() {
         for (const line of this._debugLines) {
             if (this._scene) this._scene.remove(line)
-            if (line.geometry) line.geometry.dispose()
-            if (line.material) line.material.dispose()
+            line.geometry.dispose()
+            line.material.dispose()
         }
         this._debugLines = []
+    }
+
+    buildDebugLines() {
+        this.disposeDebugLines()   // one-shot rebuild for a new streamed window / re-route
         if (!this._scene || !this._tiles) return
 
         // Draw the routed spline geometry Y (the truth) with a small constant lift (+0.5 m)
@@ -1569,18 +1503,14 @@ export class RoadSystem {
         // arc-lattice router that priced with them. v2's prices live in RANGER_PARAMS.roadV2 and
         // reach the router (main thread AND Worker) through the route spec — nothing to refresh.
         this._proto = {
-            paramDirtyAt: 0,
             radius:   640,                                   // m — streamed road radius (set from terrain stream radius)
-            anchors:  new Map(),                             // "mx,mz" → THREE.Vector3 (raw valley-snapped, pre-merge)
-            mergedAnchors: new Map(),                        // "mx,mz" → THREE.Vector3 (FEAT-10 merged graph node)
             sites:    new Map(),                             // FEAT-13 v2: "cmx,cmz" → blue-noise candidate sites
             aliveSites: new Map(),                           // FEAT-13 v2: "cmx,cmz" → Poisson-disk-accepted sites
             graph:    null,                                  // FEAT-13 v2: current band Urquhart {sig, edges, adj, key}
             nodeInc:  new Map(),                             // FEAT-13 v2: site-key → [runKey,…] incident registered edges
-            cls:      new Map(),                             // "mx,mz:…" → Centerline (per-connection primitive curve)
+            cls:      new Map(),                             // route key (_edgeClsKey: node ids + rounded positions) → Centerline
             lastCenter: null,
             dirty:    true,
-            surfaceY: null,                                  // optional (x,z)=>renderedHeight for visual line placement
         }
         // D1 — single invalidation source (plan 09-19).
         // Bumped on every re-route (invalidateCache) AND every real re-stream (_streamNetwork past
@@ -1656,12 +1586,6 @@ export class RoadSystem {
         this._urqMemo        = new Map()   // PERF-26: sig -> graph for the persist=false builds
     }
 
-    // (08-07) The proto-only viz API (setProtoEnabled / setProtoParam / setProtoRadius / updateProto)
-    // is retired — there is ONE viz now, toggled by setDebugVisible + driven by update()/buildDebugLines.
-    // Live edits arrive by debug sliders mutating this._params in place; the next re-stream reads
-    // them straight off it (v2 keeps no derived copy of the weights).
-    setSurfaceSampler(fn) { this._proto.surfaceY = fn }       // main.js passes terrainSystem.analyticHeight
-
     /**
      * D1 — generation counter accessor (plan 09-19).
      * Returns the current generation; increments whenever the road network re-routes
@@ -1692,8 +1616,6 @@ export class RoadSystem {
     }
 
     _invalidateProto() {
-        this._proto.anchors.clear()
-        this._proto.mergedAnchors.clear()   // FEAT-10: merged nodes derive from raw anchors + params
         this._proto.sites.clear()           // FEAT-13 v2: sites + Urquhart graph derive from seed + params
         this._proto.aliveSites.clear()
         this._proto.graph = null
@@ -1732,7 +1654,6 @@ export class RoadSystem {
      */
     beginPrewarmedBuild() {
         this._networkRev++
-        if (this._proto.anchors.size > 4000) { this._proto.anchors.clear(); this._proto.mergedAnchors.clear() }
         if (this._proto.cls && this._proto.cls.size > 1500) this._proto.cls.clear()
         this._prewarmCarry = true
     }
@@ -1821,7 +1742,7 @@ export class RoadSystem {
     }
 
     /**
-     * Warm-scan core (FEAT-68 v2 rewrite): collect ≤ `cap` dispatchable route jobs for `edges`.
+     * Warm-scan core (FEAT-68 v2 rewrite): collect every dispatchable route job for `edges`.
      * A v2 route is a PURE fn of (terrain, anchor pair, node heights, deg-2 pins) — no sibling
      * deps, no solo routes, no corridor discs — so a job is just the edge's _v2EdgeSpec and the
      * scan is a cache walk. The QUAL-14 dependency machinery (solo pre-warms, disc readiness,
@@ -1923,12 +1844,8 @@ export class RoadSystem {
     networkGraph() {
         const key = (id) => `${id[0]},${id[1]},${id[2]}`
         const edges = [], adj = new Map(), idOf = new Map()
-        // QUAL-24: report the ABSTRACT edges, not the runs. A deg-2 chain merge regroups GEOMETRY —
-        // it must not change topology. Collapsing a 3-edge chain to one edge here silently cut the
-        // world's edge count by a third, and everything that decides per-edge went with it: POI siting
-        // rolls once per edge, so POIs visibly vanished. Emit each merged run's MEMBER edges instead,
-        // each still pointing at the merged run that now carries its geometry (edgeParData hands back
-        // the matching arc-span view).
+        // Runs are 1:1 with abstract edges (the post-cull, post-T-promotion set). Everything that decides
+        // per-edge — POI siting rolls once per edge — depends on this staying the EDGE count.
         const emit = (a, b, runKey) => {
             const ka = key(a), kb = key(b)
             idOf.set(ka, a); idOf.set(kb, b)
@@ -2034,8 +1951,7 @@ export class RoadSystem {
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
         // Only the edges that will actually REGISTER — same in-band filter _assembleGraphEdges
         // applies. The raw band+margin Urquhart set is ~5x larger (260 vs 50 edges at a 1400 m
-        // radius), and warming all of it routes roads no mission can ever use. _warmScan still
-        // pulls in whatever SOLO dependencies these need, including ones outside the band.
+        // radius), and warming all of it routes roads no mission can ever use.
         const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
         const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
         const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
@@ -2224,7 +2140,6 @@ export class RoadSystem {
             if (r.v2Dirs) cl._v2Dirs = true
             if (r.pinFallback) {
                 this._v2DirFallbacks = (this._v2DirFallbacks || 0) + 1
-                ;(this._v2DirFallbackKeys ||= []).push(r.key)
             }
             this._proto.cls.set(r.key, cl)
         }
@@ -2623,8 +2538,8 @@ export class RoadSystem {
         return new THREE.Vector3(x, this._coarseH(x, z), z)
     }
 
-    // Generalised node-position lookup: rows id [mx,mz] → merged grid anchor; graph site id [cmx,cmz,k]
-    // → blue-noise site. The single seam between the two topologies — every graph helper reads here.
+    // Node id → world position (a blue-noise site, or a FEAT-76 promoted T node). Every graph helper
+    // reads here.
     _nodePos(id) { return this._siteAt(id) }
 
     // Build (or reuse) the Urquhart graph over the band [mx0,mx1]×[mz0,mz1] padded by roadGraphMargin
@@ -2635,11 +2550,10 @@ export class RoadSystem {
     // assemble path). The warm scans pass persist=false: they only need the edge LIST for route jobs and
     // run on their own band, so they must NOT clobber the streaming graph (degree would go stale on a
     // rebuild-skip). Window-invariance makes both bands agree on shared interior edges either way.
-    // `cacheable=false` lets a single-use window READ the memo without WRITING it (PERF-26: the
-    // QUAL-14 per-edge dep windows produced ~113 distinct sigs per scan and wiped the 6-entry memo
-    // 16 times over, evicting the warm-band and cull graphs _degreeDrops depends on; that caller
-    // is gone with the dependency machinery, but the knob is harmless and the lesson stands).
-    _buildUrquhart(mx0, mx1, mz0, mz1, persist = true, marginOverride = null, cacheable = true) {
+    // (PERF-26 lesson, kept: a caller that builds many single-use windows must not write this
+    // 6-entry memo — ~113 distinct sigs per scan once evicted the warm-band and cull graphs
+    // _degreeDrops depends on, 16 times over. No such caller exists today.)
+    _buildUrquhart(mx0, mx1, mz0, mz1, persist = true, marginOverride = null) {
         const M = marginOverride != null ? Math.max(1, Math.round(marginOverride)) : Math.max(1, Math.round(this._params?.roadGraphMargin ?? 3))
         // FEAT-13: the SITE grid is decoupled from the 256 m macro-grid. The band [mx0,mx1] is in
         // macro-cells; convert to the band's WORLD extent, then iterate SITE cells at roadSiteSpacing
@@ -2686,7 +2600,7 @@ export class RoadSystem {
         }
         const g = { sig, edges, adj, key }
         if (persist) this._proto.graph = g
-        else if (cacheable) {
+        else {
             // Bounded: warm / stream / spawn / map windows alternate between a handful of sigs, the
             // same reason _degreeDrops keeps ~6. Drop the whole map rather than tracking LRU age —
             // a rebuild is correct, just slower, so the failure mode of eviction is only perf.
@@ -2931,7 +2845,6 @@ export class RoadSystem {
         cl._v2DirsSpec = dirs   // BUG-56 C: the re-route rung needs the pins this edge was routed with
         if (res.pinRequested && res.feasible && !res.usedPin) {
             this._v2DirFallbacks = (this._v2DirFallbacks || 0) + 1
-            ;(this._v2DirFallbackKeys ||= []).push(key)
         }
         if (dirs) cl._v2Dirs = true   // tag = "a dirs-aware caller routed this" (even if pins fell back)
         this._proto.cls.set(key, cl)
@@ -6271,8 +6184,8 @@ export class RoadSystem {
      * polyCum, clArc, cellA, cellB }, where `centerline` is the edge's exact curvature-bounded primitive
      * curve the ribbon samples and cellA/cellB are its two site ids.
      *
-     * Lazy streaming: honors PROTO_REGEN_MOVE move-threshold, the dirty flag, and
-     * PROTO_PARAM_DEBOUNCE slider-settle gating. On a real re-stream this._network is cleared
+     * Lazy streaming: honors the PROTO_REGEN_MOVE move-threshold and the dirty flag (slider drags are
+     * debounced by the caller, main.js). On a real re-stream this._network is cleared
      * and rebuilt; the cache is bounded for endless play. Pure function of
      * (worldSeed, center, params) → identical inputs yield identical polylines.
      *
@@ -6280,10 +6193,7 @@ export class RoadSystem {
      * @returns {Map<string, {points: THREE.Vector3[]}>} this._network (also stored on the instance)
      */
     _streamNetwork(center, allowDefer = false) {
-        // Lazy gating (mirrors the old updateProto gating; viz-independent so it works headless).
-        if (this._proto.dirty && this._proto.paramDirtyAt && (Date.now() - this._proto.paramDirtyAt) < PROTO_PARAM_DEBOUNCE) {
-            return this._network
-        }
+        // Lazy gating (viz-independent so it works headless).
         const moved = !this._networkCenter || center.distanceTo(this._networkCenter) > PROTO_REGEN_MOVE
         if (!moved && !this._proto.dirty && this._network.size > 0) return this._network
 
@@ -6334,7 +6244,6 @@ export class RoadSystem {
             // Doing it pre-build (rather than post-build) makes the result independent of WHEN the
             // size threshold trips, preserving the module's purity contract (a network is a pure
             // function of seed+center+params, caches are memoization only).
-            if (this._proto.anchors.size > 4000) { this._proto.anchors.clear(); this._proto.mergedAnchors.clear() }
             if (this._proto.cls && this._proto.cls.size > 1500) this._proto.cls.clear()
         }
         this._network.clear()

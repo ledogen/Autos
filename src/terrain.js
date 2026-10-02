@@ -1727,15 +1727,13 @@ export class TerrainSystem {
         // above, which already includes points slightly beyond the chunk edge.  This means
         // adjacent chunks share the same set of spline samples near their shared boundary →
         // continuous carved trough, no seam steps (SURF-05 continuity preserved).
-        // D3 (plan 09-22): collectChunkSplinePoints now returns { pts, sampleArcS, sampleRunKeys }
-        // sampleArcS[i] and sampleRunKeys[i] give the arc-length and run key for pts[i*5..i*5+4].
-        // QUAL-07: only `pts` is needed now — as a cheap per-vertex distance probe to SKIP the precise
-        // resolve for vertices too far from any road. The actual surface comes from _resolveRoadSurface.
+        // QUAL-07: the samples are only a cheap per-vertex distance probe to SKIP the precise resolve
+        // for vertices too far from any road. The actual surface comes from _resolveRoadSurface.
         const _ptC = performance.now()
-        const { pts: samples } = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
+        const samples = this._roadSystem.collectChunkSplinePoints(chunkCX, chunkCZ, queryRadius)
         // QUAL-16: append deg-2 connector centreline points so the per-vertex distance SKIP below doesn't
         // drop a connector's outer flank (far from every RUN sample) → its fill/cut bench gets carved
-        // (mesh == collision; no wall at the asphalt edge). Same stride-5 layout as the run samples.
+        // (mesh == collision; no wall at the asphalt edge). Same stride-3 layout as the run samples.
         const _connSamples = this._roadSystem.collectConnectorSamples(chunkCX, chunkCZ, queryRadius)
         for (let k = 0; k < _connSamples.length; k++) samples.push(_connSamples[k])
         perfAdd('carve.collectSplines', performance.now() - _ptC)
@@ -1753,7 +1751,7 @@ export class TerrainSystem {
         // shared _carveCrossSection, so the mesh == the collision surface. The cheap squared-distance
         // probe over `samples` (no getPointAt — those were taken once in collectChunkSplinePoints) only
         // SKIPS far vertices so the heavier resolve runs on the carve band, not all 4225 vertices.
-        const STRIDE = 5  // samples stride: [x, y, z, tx, tz]
+        const STRIDE = 3  // samples stride: [x, y, z]
 
         // PERF (D-arc): conservative per-chunk lateral bound so the inner loop can SKIP the expensive
         // per-vertex work (full height() + runProfile + camberProfile) for vertices that are too far
