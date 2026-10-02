@@ -9109,10 +9109,31 @@ export class RoadSystem {
             }
         }
         pushRun(A.runKey, A.anchorArc, A.mouthArc, true)   // anchorA → cA, on the ribbon
-        const iMouthA = center.length - 1
+        let iMouthA = center.length - 1
         if (!this._pushDeg2Core(center, A, B, halfWidth, SEG, pushStraight)) return null
-        const iMouthB = center.length - 1
+        let iMouthB = center.length - 1
         pushRun(B.runKey, B.mouthArc, B.anchorArc, false)  // cB → anchorB, on the ribbon
+
+        // Drop coincident vertices (e.g. a lead-in whose anchorArc and mouthArc clamp to the same arc
+        // pushes one point twice). A zero-length segment has no tangent, so _projectOntoDeg2Arc read
+        // signedLat 0 and never rejected the overshoot past the anchor: the connector carved its full
+        // design grade over everything behind its start out to the 3×3 tile block — 35 m flat-floored
+        // pits beside the road (seed 434078763 near 728,-950). Mouth indices are remapped onto the
+        // surviving vertex at the same spot.
+        {
+            let w = 0
+            for (let r = 0; r < center.length; r++) {
+                if (w > 0 && Math.hypot(center[r].x - center[w - 1].x, center[r].z - center[w - 1].z) < 1e-6) {
+                    if (r === iMouthA) iMouthA = w - 1
+                    if (r === iMouthB) iMouthB = w - 1
+                    continue
+                }
+                if (r === iMouthA) iMouthA = w
+                if (r === iMouthB) iMouthB = w
+                center[w++] = center[r]
+            }
+            center.length = w
+        }
         if (center.length < 2) return null
 
         const polyCum = new Float64Array(center.length)

@@ -45,6 +45,13 @@ See the review artifact and the resolution note at close. Owner review 2026-09-0
 branch preferred at every now-passing site; the nine regressions of the first cut were Ts the
 wider rule declined, and are gone under the refined rule.
 
+## Known red on main
+
+2026-10-01, main `f163e6c`: `road-clearance.mjs` fails on a clean HEAD checkout — `lone-pine spawn`
+(29 runs, 1 violating pair, 2 carve walls reported) and `seed3 origin` (58 runs, 1 violating pair,
+6 carve walls). This is the open residue below, not a new regression. Any session that sees this
+red can skip re-running the gate on main to prove it.
+
 ## Open
 
 - The second pass moves few losers (1–5 of 15 on the seed-6 window at wClear 12–120): the

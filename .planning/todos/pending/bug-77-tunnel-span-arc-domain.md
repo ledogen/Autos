@@ -31,3 +31,9 @@ samples inside the mislocated span. That is the gate's only red on the merged br
   `_clArcOfCum`).
 - `road-tunnel.mjs` green (bore interior ≤ 21%) with the portal post-pass in place.
 - `bore-junction-clearance`, `road-smoothness`, `junction-stitch` no worse.
+
+## Known red on main
+
+2026-10-01, main `f163e6c`: `road-tunnel.mjs` fails on a clean HEAD checkout — `bore INTERIOR grade
+≤ 21%: worst 22.5%`. This is the symptom above, not a new regression. Any session that sees this red
+can skip re-running the gate on main to prove it.
