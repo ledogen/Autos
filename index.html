@@ -603,16 +603,17 @@
        (S·A·B·C·D in RANK_COLOR, widths = the thresholds FROZEN at accept × par, at RT px/s)
        scrolls LEFT under a fixed pointer as the mission clock runs; the pointer sits an eighth of
        the way across so seven eighths of the view is what is AHEAD, and at the pop the A–D bands
-       already hold HALF the view (the targets get the bar — owner). Above it the RANK: readout —
-       the letter under the pointer, big, pulsing as a line nears; when one goes past the old
-       letter cracks in two and the halves fall clean off the card while the new one slams in.
+       already hold HALF the view (the targets get the bar — owner). The card is JUST the bar
+       (owner, 2026-10-02); the RANK: readout floats centred BELOW it, off the card — the letter
+       under the pointer, big, pulsing as a line nears; when one goes past the old letter cracks
+       in two and the halves fall away while the new one slams in.
        NO TICKS on the strip (owner: they don't line up with the transitions and distract from
        the moment) — the only lines are the transitions themselves, each a bright edge. No digits
        anywhere — boundary proximity, never a countdown (SM-INV-3 as amended 2026-08-17). Calm for
-       most of a band; _updateRankTimer writes the border/glow/shake inline (as `transform`) as a
-       line approaches (the ticket's "flashy near the edge" — relaxed near boundaries ONLY).
-       Centred with auto margins rather than a translate so that inline transform has the box to
-       itself; the pop, slam and jolt animations use the independent `scale` / `translate`. */
+       most of a band; _updateRankTimer writes the card's border/glow inline as a line approaches
+       (the ticket's "flashy near the edge" — relaxed near boundaries ONLY). The card does NOT
+       shake (owner, 2026-10-02). #rank-timer is a bare wrapper (no box of its own) that centres
+       the card and the readout under it; the pop and jolt animations use `scale` / `translate`. */
     #rank-timer {
       display: none;
       position: fixed;
@@ -620,16 +621,18 @@
       left: 0; right: 0;
       width: fit-content;
       margin: 0 auto;
-      background: linear-gradient(180deg, rgba(14, 18, 24, 0.82), rgba(0, 0, 0, 0.7));
-      border: 1px solid #3a4450;
-      border-radius: 4px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-      padding: 6px 12px 10px;
       font-family: monospace;
       font-size: 12px;
       color: #e6ecf2;
       z-index: 88;
       pointer-events: none;
+    }
+    #rank-timer .rt-card {
+      background: linear-gradient(180deg, rgba(14, 18, 24, 0.82), rgba(0, 0, 0, 0.7));
+      border: 1px solid #3a4450;
+      border-radius: 4px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      padding: 6px;
     }
     #rank-timer.rt-in { animation: rt-pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1); }
     @keyframes rt-pop {
@@ -637,22 +640,24 @@
       60%  { scale: 1.06 0.94; }
       to   { opacity: 1; scale: 1; }
     }
-    /* The readout line: a small dim "RANK:" label indented from the strip's edge, then the letter
-       at full size. The hierarchy is the point — the label is furniture, the letter is the news. */
+    /* The readout line, floating centred under the card with no box of its own: a dim "RANK:"
+       label, then the letter at full size. The hierarchy is the point — the label is furniture,
+       the letter is the news. A dark text-shadow carries it over the road with no background. */
     #rank-timer .rt-title {
-      display: flex; align-items: baseline; gap: 8px;
-      margin: 0 0 6px 10px;
-      line-height: 28px;
+      display: flex; align-items: baseline; justify-content: center; gap: 10px;
+      margin: 8px 0 0;
+      line-height: 36px;
     }
     #rank-timer .rt-label {
-      font-size: 11px; font-weight: bold; letter-spacing: 2px; color: #7f8fa0;
+      font-size: 14px; font-weight: bold; letter-spacing: 2px; color: #c2cdd8;
       text-transform: uppercase;
+      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
     }
     /* The letter's slot: a fixed-width box the shards fall out of (overflow stays visible). A
        thin bar under it in the letter's colour (set inline) anchors the readout to the strip. */
     #rank-timer .rt-letter-box {
       position: relative; display: inline-block; width: 1.25em; text-align: center;
-      font-size: 26px; line-height: 28px; font-weight: bold;
+      font-size: 34px; line-height: 36px; font-weight: bold;
     }
     #rank-timer .rt-letter-box::after {
       content: ''; position: absolute; left: 10%; right: 10%; bottom: -2px; height: 2px;
@@ -673,8 +678,8 @@
       100% { scale: 1; }
     }
     /* The break: two clones of the OLD letter, each clipped to one side of a jagged crack, that
-       hang for a beat, then drop and tumble away in opposite directions — all the way off the
-       card (the card is ~70 px tall; they travel ~140). Removed on animationend. */
+       hang for a beat, then drop and tumble away in opposite directions (~140 px). Removed on
+       animationend. */
     #rank-timer .rt-shard {
       position: absolute; left: 0; top: 0; width: 100%;
       text-align: center;
@@ -1290,12 +1295,14 @@
        the offer's gold bonus-gate marker, the fixed pointer, and the beat overlay. The title names
        the band under the pointer in its rank colour — the letters are the only text on it. -->
   <div id="rank-timer">
-    <div class="rt-title"><span class="rt-label">Rank</span><span class="rt-letter-box" id="rt-letter-box"><span id="rt-letter">S</span></span></div>
-    <div class="rt-view">
-      <div class="rt-strip" id="rt-strip"><div class="rt-gate" id="rt-gate"></div></div>
-      <div class="rt-pointer"></div>
-      <div class="rt-beat" id="rt-beat"></div>
+    <div class="rt-card" id="rt-card">
+      <div class="rt-view">
+        <div class="rt-strip" id="rt-strip"><div class="rt-gate" id="rt-gate"></div></div>
+        <div class="rt-pointer"></div>
+        <div class="rt-beat" id="rt-beat"></div>
+      </div>
     </div>
+    <div class="rt-title"><span class="rt-label">Rank:</span><span class="rt-letter-box" id="rt-letter-box"><span id="rt-letter">S</span></span></div>
   </div>
 
   <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI cube.
