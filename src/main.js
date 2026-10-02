@@ -27,7 +27,9 @@ import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
 import { DamageModel } from './damage.js'                   // SM-3: component condition model
-import { DamageHUD } from './damage-hud.js'                 // SM-3: the V-key condition readout
+import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
+import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
+import { parkPrompt } from './park-badge.js'                // FEAT-90: the orange P-in-a-circle "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, snapCamera } from './camera.js'
@@ -1188,10 +1190,14 @@ window.__damage = damageModel   // debug panel + the damage GUI read this
 // driving the FEAT-31 lab rig and watching the per-corner signals, and a harness cannot hold a
 // target speed on the rumble lane without being able to read the speed back.
 window.__vehicleState = () => vehicleState
-// The driver's-seat readout (V). Hidden by default and free while hidden; it is how a drive is
-// evaluated at all, since condition, wear rates and a tenth-of-a-second impact are otherwise
-// invisible from behind the wheel. The ratified top-down schematic replaces its condition pane.
+// The diagnostic readout, toggled from the debug panel's Damage folder. Hidden by default and free
+// while hidden; it is how a drive's wear is evaluated, since wear rates and a tenth-of-a-second
+// impact are otherwise invisible from behind the wheel.
 const damageHUD = new DamageHUD(damageModel, vehicleState)
+window.__damageHUD = damageHUD   // the debug panel's "Diagnostic Readout" checkbox reads this
+// FEAT-90: the player's damage screen (V or the left-edge icon, parked only). The suppress
+// callback runs per frame, long after menuStage is initialised below.
+const damageScreen = new DamageScreen(damageModel, vehicleState, () => menuStage.isActive())
 
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -3670,11 +3676,12 @@ function _updateParkTriggers () {
       const now = daySystem.clockH()
       const live = offerBoard ? offerBoard.offers(poi.id, now).length : 0
       const next = offerBoard?.nextTurnoverH(poi.id, now)
-      poiEl.textContent = !live
+      // FEAT-90: every "park to …" line carries the orange P badge; the status line does not.
+      poiEl.innerHTML = !live
         ? (next != null ? `no work here right now — new offer in ${formatGameDuration(next - now)}`
                         : 'no work here right now')
-        : poi.type === 'larrysHouse' ? 'park to take the paper route'
-        : live > 1 ? `park to see ${live} offers` : 'park to see the offer'
+        : poi.type === 'larrysHouse' ? parkPrompt('park to take the paper route')
+        : live > 1 ? parkPrompt(`park to see ${live} offers`) : parkPrompt('park to see the offer')
     }
   }
   if (!campEl) return
@@ -3701,7 +3708,7 @@ function _updateParkTriggers () {
     if (legEl)  legEl.style.display = 'none'
     if (textEl) {
       textEl.style.display = moms ? 'block' : 'none'
-      if (moms) textEl.textContent = "park to sleep at mom's house"
+      if (moms) textEl.innerHTML = parkPrompt("park to sleep at mom's house")
     }
     return
   }
@@ -3714,10 +3721,10 @@ function _updateParkTriggers () {
     // road edge out to the tether — not merely that the verge beside the truck did.
     // cands 0 ⇒ every rung was rejected before grading — in practice because it crowded a road
     // (camp.js CAMP_ROAD_CLEAR_TOL_M: beside a junction or a spur there is no room for a bench).
-    textEl.textContent = !camp.withinTether ? 'too far from the road'
-                       : camp.cands === 0   ? 'no room off the road'
-                       : !camp.flat         ? 'not flat'
-                       :                      'park to make camp'
+    textEl.innerHTML = !camp.withinTether ? 'too far from the road'
+                     : camp.cands === 0   ? 'no room off the road'
+                     : !camp.flat         ? 'not flat'
+                     :                      parkPrompt('park to make camp')
   }
 }
 
@@ -5650,7 +5657,8 @@ function loop () {
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
   }
-  damageHUD.update(frameTime)   // SM-3 readout (V) — returns on the first line while hidden
+  damageHUD.update(frameTime)   // SM-3 diagnostic readout — returns on the first line while hidden
+  damageScreen.update(frameTime)   // FEAT-90: alert detection + icon tint at 10 Hz
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
   // (a 150 ms frame is followed by one paying ~9 physics steps) land in no bucket at all, and the
@@ -5738,7 +5746,7 @@ function loop () {
       const landed = damageModel.feedContact(
         classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT,
         vehicleState.velocity)
-      if (landed) damageHUD.noteImpact(landed)
+      if (landed) { damageHUD.noteImpact(landed); damageScreen.alert() }
     }
     simTime += PHYSICS_DT
     // BUG-12 diagnostic (open): while recording, log the truck run's local centerline turn radius

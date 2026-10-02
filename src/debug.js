@@ -312,6 +312,13 @@ export function initDebug (params, callbacks = {}, options = {}) {
 
   dmgFolder.add(DAMAGE_PARAMS, 'enabled').name('Damage Enabled')
   dmgFolder.add(DAMAGE_PARAMS, 'nominalCondition', 0, 1, 0.05).name('Nominal (disabled) %')
+  // The diagnostic text readout (condition + wear rate, raw wear signals, impact log). It used to
+  // own the V key; FEAT-90 gave V to the player's damage screen and parked this here.
+  const _readoutToggle = { on: false }
+  dmgFolder.add(_readoutToggle, 'on').name('Diagnostic Readout').onChange((v) => {
+    const h = typeof window !== 'undefined' ? window.__damageHUD : null
+    if (h) h.toggle(v)
+  })
 
   const _pick = { track: TRACK_IDS[0], condition: 1 }
   const _trackOptions = {}
@@ -340,7 +347,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // ── Wear speed, per class ────────────────────────────────────────────────────────────────────
   // 1 = the calibrated rate in DAMAGE_PARAMS. Live, because every one of these rates has in
   // practice been set by driving and judging, and a code edit + reload per guess is the slow way
-  // to do that. Watch the %/min column in the V readout while dialling. Anything that settles
+  // to do that. Watch the %/min column in the Diagnostic Readout while dialling. Anything that settles
   // should be folded back into the dur* constant it scales (see the note in damage.js).
   // `wheel` has no continuous wear source — wheels are damaged by impacts only — so that one
   // scales how hard impacts hit the wheels rather than a rate.
