@@ -1144,9 +1144,8 @@ function setSpawnHere () {
 }
 
 // ── Fixed-timestep loop constants (RESEARCH §Pattern 2) ─────────────────────
-// PHYSICS_DT: parameterized physics step per D-09. Single source of truth — all downstream
-// code reads this constant or params.physicsDt (same value, mirrored in ranger.js for
-// suspension.js which cannot import main.js). NEVER use 1/60 or 0.0167 literals below.
+// PHYSICS_DT: the physics step (D-09). Single source of truth — passed down as `dt` to
+// everything that steps. NEVER use 1/60 or 0.0167 literals below.
 const PHYSICS_DT = 1 / 60        // physics step: 16.667ms (D-09)
 const MAX_FRAME_TIME = 0.25       // spiral-of-death clamp: 250ms (T-01-04 mitigation)
 

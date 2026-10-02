@@ -455,11 +455,7 @@ export const DAMAGE_PARAMS = {
   // impactMinMph — the floor a contact must clear to be an impact at all. Resting on the ground is
   //   worth about 0.09 mph equivalent (one step of the truck's own weight), so 2 mph clears the
   //   noise by more than an order of magnitude while still catching a gentle nudge into a post.
-  // impactHoldMax — how long one collision is allowed to keep building before it is banked and a
-  //   fresh one is armed. A real crash peaks in tens of milliseconds; this only matters for a
-  //   sustained scrape along a wall, which becomes a series of hits rather than one endless one.
   impactMinMph:    2,
-  impactHoldMax:   0.25,
   // A step only counts toward a collision's impulse while the contact FORCE is above this. The
   // engine's per-step impulses are summed across a burst to get the collision's true impulse, and
   // without a floor a truck leaning on what it hit would keep adding to it forever.
@@ -766,7 +762,7 @@ export class DamageModel {
    * and fall away. Landing each of them separately would price one crash as dozens, and — worse —
    * would let a truck resting against a wall grind itself to scrap while parked. So this holds the
    * PEAK of the burst and banks it once, when contact drops back below the floor (or when the
-   * burst has run longer than `impactHoldMax`, which turns a sustained scrape into repeated hits
+   * burst has run longer than `impactHoldMaxCrash`, which turns a sustained scrape into repeated hits
    * rather than one that never ends).
    *
    * Peak, not sum: the ratified model prices a hit on how hard the contact was, and adding up the

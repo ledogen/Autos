@@ -270,7 +270,7 @@ export function carcassRadialOffset (corner, psi, runout) {
  *     suspensionRestLength{Front,Rear}, suspensionTravel{Front,Rear}, suspensionBodyOffset{Front,Rear},
  *     bumpStopStiffness, DROOP_STOP_STIFFNESS, arbStiffness{Front,Rear},
  *     tireStiffness, tireDamping, wheelRadius, trackFront, trackRear, wheelbase,
- *     weightFront, weightRear, cgHeight, physicsDt, _rotateVector (injected function),
+ *     weightFront, weightRear, cgHeight, _rotateVector (injected function),
  *     _hubNormalXZ[4] (initialized by main.js).
  *   Writes: _tireFz[4], _suspForceAccum[4], _hubNormalXZ[4].
  * @param {number} dt - Outer physics step in seconds (== PHYSICS_DT from main.js).

@@ -190,18 +190,10 @@ export const RANGER_PARAMS = {
   tireStiffness: 100000,  // N/m
   tireDamping:     1500,  // N·s/m — ζ≈0.56; reduced from 4000 to prevent premature wheel lift-off
 
-  // ── Phase 1 Friction Placeholders (D-10) ─────────────────────────────────
-  // Must be exposed as lil-gui sliders in Plan 03.
-  // See docs/GLOSSARY.md §Term Definitions for units and meaning.
-  // Note: lateralDampingCoeff is now unused (replaced by corneringStiffness slip-angle model)
-  // but kept so existing debug sliders do not break.
-  lateralDampingCoeff:    4000,  // N/(m/s) — damps lateral contact-patch velocity (unused, kept for slider compat)
-  corneringStiffness: 50000,     // N/rad — linear tire lateral stiffness; used by computeLateralForce (Bug 6 fix)
+  // ── Friction ─────────────────────────────────────────────────────────────
   frictionCoeff:      0.8,       // peak tire-road friction coefficient; caps Flat and Flong at μ·gripLoad(Fn) (FEAT-80)
 
-  // ── Body Contact (collision against walls/ramp faces) ────────────────────
-  bodyContactStiffness: 200000,  // N/m — stiffer than tire; metal-on-terrain response
-  bodyContactDamping:     1000,  // N·s/m
+  // ── Body Contact (collision against walls/ramp faces — an engine material, see physics.js) ──
   // Rebound on a frame/undercarriage slam: the body leaves at this fraction of its approach speed.
   // 0 = fully plastic (the old BUG-27 thud — all impact energy absorbed, no bounce); 1 = perfectly
   // elastic. Only applies above REST_VEL_THRESHOLD (physics.js), so resting contact is untouched.
@@ -326,11 +318,6 @@ export const RANGER_PARAMS = {
   // Sized so static hub weight (~18 kg) deflects < 10 mm: k > 18*9.81/0.010 = 17 658 N/m.
   // 20 000 N/m gives ~8.8 mm deflection at hub weight → meets the <10 mm target.
   DROOP_STOP_STIFFNESS:        20000,  // N/m — not a slider; fixed constant (D-08)
-
-  // ── Physics Timestep (Phase 4 — D-09) ────────────────────────────────────
-  // Mirrors the PHYSICS_DT constant in main.js. Stored here so suspension.js (pure-math,
-  // no main.js import) can verify sub-step stability against dt without importing main.js.
-  physicsDt:  1 / 60,   // s — outer physics step (≈16.667ms); substep = physicsDt/2 (D-08)
 
   // ── Phase 6/7 Terrain (TERR-06 / TERR-01–04) ─────────────────────────────
   // terrainAmplitude: live Y-rescale multiplier (Path A — instant, no Worker round-trip).
@@ -672,10 +659,6 @@ export const RANGER_PARAMS = {
   // Live-tunable via the "Min Turn Radius (m)" debug slider (src/debug.js Roads folder).
   roadMinTurnRadius: 15,   // m — arc-fillet min turn radius (D0); safety floor ≥ roadHalfWidth + clearance (~5.5 m). 15 m = user's "15–20 m" feel pick (2026-06-16); live-tunable via "Min Turn Radius (m)" slider.
 
-
-  // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
-  // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.
-  spurProbability: 0.15, // ratio [0,1] — spur chance (deferred D-01 spur pass)
 
   // ── Phase 9 Road Surface — D-04/D-05/D-07/D-08 carve params ──────────────
   // These params drive the cut-and-fill terrain carve (SURF-05) and the ribbon geometry (SURF-01).

@@ -12,8 +12,6 @@
  *  - rebuildAllChunksFromWorker(): Path B — disposes all chunks and re-requests from Worker
  *
  * Physics contract: analyticHeight never returns 0 for unloaded chunks.
- *   sampleHeight bilinear path retained for P7-2 height-agreement test only.
- *   sampleHeight multiplies by params.terrainAmplitude so results match geometry.
  * Rendering contract: chunk meshes use shared MeshPhongMaterial — do NOT dispose per-chunk.
  *
  * Anti-patterns: do NOT use Raycaster for height queries (O(N²)); do NOT call
@@ -1316,82 +1314,6 @@ export class TerrainSystem {
         const nz  = -(hU - hD) / (2 * EPS)
         const len = Math.sqrt(nx*nx + ny*ny + nz*nz)
         return { x: nx/len, y: ny/len, z: nz/len }
-    }
-
-    /**
-     * Sample terrain height at a world-space (wx, wz) position.
-     * Uses bilinear interpolation on the chunk's Float32Array heightmap.
-     * Retained for the P7-2 height-agreement test — NOT used by physics contacts.
-     * Physics uses analyticHeight (no chunk-seam gap).
-     *
-     * @param {number} wx - World X coordinate.
-     * @param {number} wz - World Z coordinate.
-     * @returns {number} Height in metres. Returns 0 when chunk not yet loaded.
-     */
-    sampleHeight(wx, wz) {
-        const { cx, cz } = this._worldToChunk(wx, wz)
-        const chunk = this._chunkMap.get(this._chunkKey(cx, cz))
-        if (!chunk || !chunk.heights) return 0  // chunk not loaded — flat ground fallback
-
-        const N    = GRID_SAMPLES
-        const S    = CHUNK_SIZE
-        const cell = S / (N - 1)  // 1.0 m
-
-        // Local coordinates within chunk (0..CHUNK_SIZE)
-        const lx = wx - cx * S
-        const lz = wz - cz * S
-
-        // Integer grid indices, clamped to valid cell range
-        const xi = Math.max(0, Math.min(N - 2, Math.floor(lx / cell)))
-        const zi = Math.max(0, Math.min(N - 2, Math.floor(lz / cell)))
-
-        // Fractional part within cell
-        const fx = (lx / cell) - xi
-        const fz = (lz / cell) - zi
-
-        // 4-corner bilinear sample (raw worker values)
-        const h00 = chunk.heights[ zi      * N +  xi   ]
-        const h10 = chunk.heights[ zi      * N + (xi+1)]
-        const h01 = chunk.heights[(zi + 1) * N +  xi   ]
-        const h11 = chunk.heights[(zi + 1) * N + (xi+1)]
-
-        // Bilinear interpolation
-        const raw = h00 * (1-fx) * (1-fz)
-                  + h10 *    fx  * (1-fz)
-                  + h01 * (1-fx) *    fz
-                  + h11 *    fx  *    fz
-
-        // Apply amplitude to match visual geometry (also applied in _flushPendingQueue)
-        const rawAmp = raw * (this._params.terrainAmplitude ?? 1.0)
-
-        // Phase 9 carve hook (SURF-04/SURF-05): same blend as analyticHeight (height-agreement path).
-        // CARVE SYNC: identical blend formula as analyticHeight, _flushPendingQueue, Worker height loop.
-        // FEAT-18 CAUSEWAY: composed with the per-chunk stream table exactly as the mesh Y write —
-        // the road carve fills the channel back to gradeY un-suppressed (see _composeCarvedY), so
-        // MESH == PHYSICS (analyticHeight) here.
-        const i00  = (zi       * N +  xi   ) * 2
-        const i10  = (zi       * N + (xi+1)) * 2
-        const i01  = ((zi + 1) * N +  xi   ) * 2
-        const i11  = ((zi + 1) * N + (xi+1)) * 2
-        const cw00 = (1-fx) * (1-fz), cw10 = fx * (1-fz)
-        const cw01 = (1-fx) * fz,     cw11 = fx * fz
-        let hs = rawAmp
-        if (chunk.streamData) {
-            const sd = chunk.streamData
-            const sw = sd[i00]*cw00 + sd[i10]*cw10 + sd[i01]*cw01 + sd[i11]*cw11
-            if (sw > 1e-6) {
-                const bedY = sd[i00+1]*cw00 + sd[i10+1]*cw10 + sd[i01+1]*cw01 + sd[i11+1]*cw11  // world-space
-                hs = rawAmp + sw * (bedY - rawAmp)
-            }
-        }
-        if (chunk.carveData) {
-            const cd   = chunk.carveData
-            const blendW = cd[i00]*cw00 + cd[i10]*cw10 + cd[i01]*cw01 + cd[i11]*cw11
-            // gradeY_preamp → world-space by multiplying by amp (CARVE SYNC)
-            const gradeY = (cd[i00+1]*cw00 + cd[i10+1]*cw10 + cd[i01+1]*cw01 + cd[i11+1]*cw11) * (this._params.terrainAmplitude ?? 1.0)
-            if (blendW > 1e-6) return hs + blendW * (gradeY - hs)
-        }
-        return hs
     }
 
     // ── Private methods ────────────────────────────────────────────────────

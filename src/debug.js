@@ -278,8 +278,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // Phase 4 (D-11): Suspension folder — 8 sliders for spring/damper/rest-length/ARB per axle.
   // Ranges per PATTERNS §lil-gui slider range/step convention (2× default within range, D-10 stability).
   // Pass-through to live params is automatic — params is the mutable RANGER_PARAMS reference.
-  // wheelMass and physicsDt are intentionally NOT exposed: wheelMass is fixed per Claude's Discretion
-  // (CONTEXT.md) and physicsDt is parameterized but not user-tunable (D-09).
+  // wheelMass is intentionally NOT exposed (fixed, CONTEXT.md).
   const suspFolder = vehicleFolder.addFolder('Suspension')
   suspFolder.add(params, 'suspensionStiffnessFront', 10000, 100000, 1000).name('Front Stiffness (N/m)')
   suspFolder.add(params, 'suspensionStiffnessRear',  10000, 100000, 1000).name('Rear Stiffness (N/m)')

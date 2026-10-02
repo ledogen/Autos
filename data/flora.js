@@ -39,7 +39,6 @@ export const FLORA_PARAMS = {
     rockTiltMax:      1.0,      // rad (~57°) — rocks tumble (random lean about a random axis; boulders stay yaw-only, owner 2026-09-28)
     // Small-rock road bands: dense on the shoulder, SPARSE on the road surface itself.
     roadHalfWidth:    5,        // ~ RANGER_PARAMS.roadHalfWidth (road surface half-width)
-    roadShoulderOuter:8.5,      // outer edge of the shoulder band
     smallRockOnRoadKeep:0.07,   // fraction of small rocks kept ON the road surface (sparse)
 
     // Species selection by terrain (slope = 1 - normal.y; 0 flat, →1 vertical):

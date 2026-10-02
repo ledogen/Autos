@@ -583,7 +583,6 @@ export function resampleStations(path, hFull, ds = 10) {
 
 // Profile state classes (derived from deck − ground, never stored independently).
 export const CLS = { ON: 0, CUT: 1, FILL: 2, BORE: 3 }
-export const CLS_NAME = ['on', 'cut', 'fill', 'bore']
 
 function classOf(d, C) {
     if (Math.abs(d) <= C.onTol) return CLS.ON
@@ -608,37 +607,10 @@ function stationRateCls(cls, d, C) {
 
 // ── Stage 2: exact profile solve ───────────────────────────────────────────────────────────────
 /**
- * 1-D dynamic programming over deck elevation along the stations. State = (station, quantized y).
- * Transition = one station step at grade g = Δy/Δs, allowed while g respects the class caps
- * (surface 35%, bore 18%). Costs: station rate (above) × ds + on-grade quadratic discomfort
- * + a fixed portal charge when the derived class crosses into/out of a bore.
- * Endpoints are PINNED to (yA, yB) — junction node heights as boundary conditions (FEAT-68
- * junction plan item 2: edges may never disagree at shared nodes).
- *
- * No vertical-curvature smoothing term: crest airtime is a FEATURE (character spec). If lattice
- * sawtooth shows up it gets handled in stage 3 (curve generation), never priced away here.
- *
- * @param {{s:number[],ground:number[]}} st stations from resampleStations
- * @param {number} yA deck height pinned at station 0
- * @param {number} yB deck height pinned at the last station
- * @param {object} [opts] { yStep=0.5, costs=V2_COSTS }
- * @returns {{y:number[], cls:number[], cost:number, segs:{cls:number,s0:number,s1:number,len:number}[]}|null}
- *          null = infeasible under the caps (mark-and-ship is the CALLER's job)
- */
-// One transition step: cost of arriving at (ground g1, deck y1) from (g0, y0) over ds.
-// Infinity when the grade cap of the classes involved is exceeded.
-// Cap check carries a HALF-QUANTUM tolerance (yStep/2 of Δy): on a y-grid the legal grades
-// come in yStep/ds increments, so a hard cap silently truncates to the next lower increment —
-// measured on seed 20 edge -5,-1,0:-5,0,1, floor(0.35·9.993/0.5)=6 made the effective cap 30%
-// and a feasible 28.5%-mean descent "infeasible". Tolerating cap + yStep/(2·ds) (≤2.5% grade
-// at defaults) biases the error to a bounded overshoot instead of an unbounded undershoot.
-// (BUG-55: factored out of profileSolve so profileSolveBundle prices with the identical rule.)
-/**
  * PERF-31 W3: the DP inner loop's form of makeStepCost, as per-station TABLES.
  *
- * The three profile DPs (profileSolve, and profileSolveBundle's branch + trunk passes) all walk
- * transitions (station i−1, elevation k) → (station i, elevation j) and called makeStepCost for
- * every (j, k) pair. But the arrival terms — the class at the new station and its per-metre
+ * The profile DP (profileSolve) walks transitions (station i−1, elevation k) → (station i,
+ * elevation j) and called makeStepCost for every (j, k) pair. But the arrival terms — the class at the new station and its per-metre
  * station rate — depend ONLY on j, and the departure class ONLY on k, so each was recomputed
  * kMax× / ny× per station respectively. Profiled 2026-09-05 on the network-worker thread, classOf
  * + stationRateCls + the stepCost closure were ~29% of sampled time.
@@ -668,6 +640,13 @@ function makeStationTables(C, yArr) {
     }
 }
 
+// One transition step: cost of arriving at (ground g1, deck y1) from (g0, y0) over ds.
+// Infinity when the grade cap of the classes involved is exceeded.
+// Cap check carries a HALF-QUANTUM tolerance (yStep/2 of Δy): on a y-grid the legal grades
+// come in yStep/ds increments, so a hard cap silently truncates to the next lower increment —
+// measured on seed 20 edge -5,-1,0:-5,0,1, floor(0.35·9.993/0.5)=6 made the effective cap 30%
+// and a feasible 28.5%-mean descent "infeasible". Tolerating cap + yStep/(2·ds) (≤2.5% grade
+// at defaults) biases the error to a bounded overshoot instead of an unbounded undershoot.
 function makeStepCost(C, yStep) {
     return (y0, g0, y1, g1, ds) => {
         const g = (y1 - y0) / ds
@@ -681,6 +660,24 @@ function makeStepCost(C, yStep) {
     }
 }
 
+/**
+ * 1-D dynamic programming over deck elevation along the stations. State = (station, quantized y).
+ * Transition = one station step at grade g = Δy/Δs, allowed while g respects the class caps
+ * (surface 35%, bore 18%). Costs: station rate (above) × ds + on-grade quadratic discomfort
+ * + a fixed portal charge when the derived class crosses into/out of a bore.
+ * Endpoints are PINNED to (yA, yB) — junction node heights as boundary conditions (FEAT-68
+ * junction plan item 2: edges may never disagree at shared nodes).
+ *
+ * No vertical-curvature smoothing term: crest airtime is a FEATURE (character spec). If lattice
+ * sawtooth shows up it gets handled in stage 3 (curve generation), never priced away here.
+ *
+ * @param {{s:number[],ground:number[]}} st stations from resampleStations
+ * @param {number} yA deck height pinned at station 0
+ * @param {number} yB deck height pinned at the last station
+ * @param {object} [opts] { yStep=0.5, costs=V2_COSTS }
+ * @returns {{y:number[], cls:number[], cost:number, segs:{cls:number,s0:number,s1:number,len:number}[]}|null}
+ *          null = infeasible under the caps (mark-and-ship is the CALLER's job)
+ */
 export function profileSolve(st, yA, yB, opts = {}) {
     const C = opts.costs ?? V2_COSTS
     const yStep = opts.yStep ?? 0.5
@@ -820,247 +817,6 @@ export function profileSolve(st, yA, yB, opts = {}) {
     }
     for (const sg of segs) sg.len = sg.s1 - sg.s0
     return { y, cls, cost: total, segs }
-}
-
-/**
- * BUG-55: the JOINT bundle solve — negotiate fork deck heights across a winner's trunk and every
- * loser strand that forks off it, instead of letting the winner solve alone and dictate.
- *
- * Structure: the trunk DP runs exactly like profileSolve (exact pinned ends, interior y-grid).
- * Each BRANCH is a loser's outer strand, solved first from its own exact pinned end (its far
- * node) up to its fork, yielding "cheapest cost to arrive at the fork at each grid elevation".
- * That array is ADDED into the trunk's cost table at the fork station, so the trunk's own
- * minimisation weighs a bend toward a branch against its own grade cost — the fork elevation is
- * negotiated under the caps, priced by the identical stepCost the ordinary solve uses (a class
- * flip at the fork pays its cPortal through the same rule; no new vocabulary).
- *
- * One shared y-grid spans every strand, so a branch's arrival cost at grid j and the trunk's cost
- * at grid j describe the same elevation — the fold-in is exact. Endpoints of every strand stay
- * exact (yA/yB/yPin), so the y-spread-0.000 node contract is preserved by construction.
- *
- * The caller consumes the negotiated FORK HEIGHTS (plus the raw branch profiles, for the pad
- * arrival-grade guard); the shipped per-strand profiles are then re-solved through the ordinary
- * ladder with these heights as pins, inheriting dequantise/finish behaviour unchanged.
- *
- * @param {{s:number[],ground:number[],yA:number,yB:number}} trunk winner stations, node to node
- * @param {{s:number[],ground:number[],yPin:number,forkIdx:number}[]} branches loser strands —
- *        station 0 = the strand's own pinned far end, last station = the fork; forkIdx names the
- *        INTERIOR trunk station the strand attaches to
- * @param {object} [opts] { yStep=0.5, costs=V2_COSTS }
- * @returns {{forkY:number[], trunkY:number[], branchY:number[][], cost:number}|null}
- *          null = no joint profile exists under the caps (the caller's ladder handles it)
- */
-export function profileSolveBundle(trunk, branches, opts = {}) {
-    const C = opts.costs ?? V2_COSTS
-    const yStep = opts.yStep ?? 0.5
-    const n = trunk.s.length
-    if (n < 4 || !branches.length) return null
-    const { yA, yB } = trunk
-
-    let lo = Math.min(yA, yB), hi = Math.max(yA, yB)
-    for (const g of trunk.ground) { if (g < lo) lo = g; if (g > hi) hi = g }
-    for (const b of branches) {
-        if (b.yPin < lo) lo = b.yPin; if (b.yPin > hi) hi = b.yPin
-        for (const g of b.ground) { if (g < lo) lo = g; if (g > hi) hi = g }
-    }
-    lo -= C.cutMax + 8
-    hi += C.fillMax + 8
-    const ny = Math.max(2, Math.round((hi - lo) / yStep) + 1)
-    const yOf = j => lo + j * yStep
-    // PERF-31 W3: see makeStationTables — identical values to yOf/makeStepCost.
-    const yArr = new Float64Array(ny)
-    for (let j = 0; j < ny; j++) yArr[j] = lo + j * yStep
-    const tab = makeStationTables(C, yArr)
-    const stepCost = makeStepCost(C, yStep)
-
-    // ── branch forward passes: arr[j] = cheapest arrival at the fork at elevation yOf(j) ──
-    const bs = []
-    for (const b of branches) {
-        const m = b.s.length
-        if (m < 2) return null
-        const forkIdx = Math.max(1, Math.min(n - 2, b.forkIdx))
-        const arr = new Float64Array(ny).fill(Infinity)
-        const arrFrom = new Int32Array(ny).fill(-1)
-        if (m === 2) {
-            const ds = b.s[1] - b.s[0]
-            for (let j = 0; j < ny; j++) {
-                arr[j] = stepCost(b.yPin, b.ground[0], yOf(j), b.ground[1], ds)
-                arrFrom[j] = -2   // direct from the exact pin
-            }
-            bs.push({ b, forkIdx, arr, arrFrom, cost: null, from: null })
-            continue
-        }
-        const cost = [], from = []
-        {   // first step: exact yPin → grid states of station 1
-            const ds = b.s[1] - b.s[0]
-            const kMax = Math.ceil(C.gMaxRoad * ds / yStep) + 1
-            const c1 = new Float64Array(ny).fill(Infinity)
-            const jNear = Math.round((b.yPin - lo) / yStep)
-            for (let j = Math.max(0, jNear - kMax); j <= Math.min(ny - 1, jNear + kMax); j++)
-                c1[j] = stepCost(b.yPin, b.ground[0], yOf(j), b.ground[1], ds)
-            cost[1] = c1
-            from[1] = null
-        }
-        for (let i = 2; i <= m - 2; i++) {
-            const ds = b.s[i] - b.s[i - 1]
-            const kMax = Math.ceil(C.gMaxRoad * ds / yStep)
-            const ci = new Float64Array(ny).fill(Infinity)
-            const fi = new Int32Array(ny).fill(-1)
-            const prev = cost[i - 1]
-            const g0 = b.ground[i - 1], g1 = b.ground[i]
-            tab.prepare(g0, g1, ds)   // PERF-31 W3 — see makeStationTables
-            const { clsFrom, clsTo, rateTo } = tab
-            const gradeW = ds * C.cRoadM * C.wGrade
-            const half = yStep / (2 * ds)
-            for (let j = 0; j < ny; j++) {
-                const y1 = yArr[j]
-                const clsJ = clsTo[j], rateJ = rateTo[j], jBore = clsJ === CLS.BORE
-                let best = Infinity, bestK = -1
-                for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
-                    const p = prev[k]
-                    if (p === Infinity) continue
-                    const g = (y1 - yArr[k]) / ds
-                    const clsK = clsFrom[k], kBore = clsK === CLS.BORE
-                    const cap = (kBore || jBore) ? C.gMaxBore : C.gMaxRoad
-                    if (Math.abs(g) > cap + half + 1e-9) continue
-                    let sc = rateJ + gradeW * g * g
-                    if (kBore !== jBore) sc += C.cPortal
-                    const c = p + sc
-                    if (c < best) { best = c; bestK = k }
-                }
-                ci[j] = best
-                fi[j] = bestK
-            }
-            cost[i] = ci
-            from[i] = fi
-        }
-        {   // last step: grid states of station m-2 → grid states of the fork
-            const ds = b.s[m - 1] - b.s[m - 2]
-            const kMax = Math.ceil(C.gMaxRoad * ds / yStep)
-            const prev = cost[m - 2]
-            const g0 = b.ground[m - 2], g1 = b.ground[m - 1]
-            tab.prepare(g0, g1, ds)   // PERF-31 W3 — see makeStationTables
-            const { clsFrom, clsTo, rateTo } = tab
-            const gradeW = ds * C.cRoadM * C.wGrade
-            const half = yStep / (2 * ds)
-            for (let j = 0; j < ny; j++) {
-                const y1 = yArr[j]
-                const clsJ = clsTo[j], rateJ = rateTo[j], jBore = clsJ === CLS.BORE
-                let best = Infinity, bestK = -1
-                for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
-                    const p = prev[k]
-                    if (p === Infinity) continue
-                    const g = (y1 - yArr[k]) / ds
-                    const clsK = clsFrom[k], kBore = clsK === CLS.BORE
-                    const cap = (kBore || jBore) ? C.gMaxBore : C.gMaxRoad
-                    if (Math.abs(g) > cap + half + 1e-9) continue
-                    let sc = rateJ + gradeW * g * g
-                    if (kBore !== jBore) sc += C.cPortal
-                    const c = p + sc
-                    if (c < best) { best = c; bestK = k }
-                }
-                arr[j] = best
-                arrFrom[j] = bestK
-            }
-        }
-        bs.push({ b, forkIdx, arr, arrFrom, cost, from })
-    }
-
-    // ── trunk pass, with each branch's arrival cost folded in at its fork station ──
-    const foldAt = (i, arr) => {
-        for (const e of bs) if (e.forkIdx === i)
-            for (let j = 0; j < ny; j++) arr[j] += e.arr[j]
-    }
-    const cost = [], from = []
-    {
-        const ds = trunk.s[1] - trunk.s[0]
-        const kMax = Math.ceil(C.gMaxRoad * ds / yStep) + 1
-        const c1 = new Float64Array(ny).fill(Infinity)
-        const jNear = Math.round((yA - lo) / yStep)
-        for (let j = Math.max(0, jNear - kMax); j <= Math.min(ny - 1, jNear + kMax); j++)
-            c1[j] = stepCost(yA, trunk.ground[0], yOf(j), trunk.ground[1], ds)
-        foldAt(1, c1)
-        cost[1] = c1
-        from[1] = null
-    }
-    for (let i = 2; i <= n - 2; i++) {
-        const ds = trunk.s[i] - trunk.s[i - 1]
-        const kMax = Math.ceil(C.gMaxRoad * ds / yStep)
-        const ci = new Float64Array(ny).fill(Infinity)
-        const fi = new Int32Array(ny).fill(-1)
-        const prev = cost[i - 1]
-        const g0 = trunk.ground[i - 1], g1 = trunk.ground[i]
-        // PERF-31 W3: per-station tables instead of a closure call per (j,k) — same arithmetic,
-        // same order (see makeStationTables). `half` keeps makeStepCost's exact cap grouping.
-        tab.prepare(g0, g1, ds)
-        const { clsFrom, clsTo, rateTo } = tab
-        const gradeW = ds * C.cRoadM * C.wGrade
-        const half = yStep / (2 * ds)
-        for (let j = 0; j < ny; j++) {
-            const y1 = yArr[j]
-            const clsJ = clsTo[j], rateJ = rateTo[j], jBore = clsJ === CLS.BORE
-            let best = Infinity, bestK = -1
-            for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
-                const p = prev[k]
-                if (p === Infinity) continue
-                const g = (y1 - yArr[k]) / ds
-                const clsK = clsFrom[k], kBore = clsK === CLS.BORE
-                const cap = (kBore || jBore) ? C.gMaxBore : C.gMaxRoad
-                if (Math.abs(g) > cap + half + 1e-9) continue
-                let sc = rateJ + gradeW * g * g
-                if (kBore !== jBore) sc += C.cPortal
-                const c = p + sc
-                if (c < best) { best = c; bestK = k }
-            }
-            ci[j] = best
-            fi[j] = bestK
-        }
-        foldAt(i, ci)
-        cost[i] = ci
-        from[i] = fi
-    }
-    let total = Infinity, jEnd = -1
-    {
-        const ds = trunk.s[n - 1] - trunk.s[n - 2]
-        const prev = cost[n - 2]
-        const g0 = trunk.ground[n - 2], g1 = trunk.ground[n - 1]
-        for (let k = 0; k < ny; k++) {
-            const p = prev[k]
-            if (p === Infinity) continue
-            const c = p + stepCost(yOf(k), g0, yB, g1, ds)
-            if (c < total) { total = c; jEnd = k }
-        }
-    }
-    if (!Number.isFinite(total)) return null
-
-    // ── backtrace: trunk first (recording the chosen grid state at every station), then each
-    //    branch from its fork's chosen state down to its own exact pin ──
-    const trunkY = new Array(n)
-    const jAt = new Int32Array(n).fill(-1)
-    trunkY[0] = yA; trunkY[n - 1] = yB
-    let j = jEnd
-    for (let i = n - 2; i >= 1; i--) {
-        trunkY[i] = yOf(j)
-        jAt[i] = j
-        j = from[i] ? from[i][j] : j
-    }
-    const forkY = [], branchY = []
-    for (const e of bs) {
-        const m = e.b.s.length
-        const jF = jAt[e.forkIdx]
-        const y = new Array(m)
-        y[m - 1] = yOf(jF)
-        forkY.push(y[m - 1])
-        let k = e.arrFrom[jF]
-        if (k === -2) { y[0] = e.b.yPin; branchY.push(y); continue }
-        for (let i = m - 2; i >= 1; i--) {
-            y[i] = yOf(k)
-            k = e.from && e.from[i] ? e.from[i][k] : k
-        }
-        y[0] = e.b.yPin
-        branchY.push(y)
-    }
-    return { forkY, trunkY, branchY, cost: total }
 }
 
 /**
@@ -1603,26 +1359,6 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
     }
 }
 
-// ── Orchestration: one anchor pair, corridor → profile ─────────────────────────────────────────
-/**
- * Route one anchor pair end to end. M0 shape: stage-3 curve generation is still the raw corridor
- * polyline — geometry smoothing lands with the first drivable checkpoint.
- * @param {object} a {x,z,y} anchor A (y = pinned node height)
- * @param {object} b {x,z,y} anchor B
- * @param {(x,z)=>number} hTrunc octave-truncated field (stage 1)
- * @param {(x,z)=>number} hFull full-resolution field (stage 2 prices real dirt)
- * @param {object} [opts] forwarded to both stages
- * @returns {{pts:{x,y,z}[], stations:object, profile:object, corridor:object}|null}
- */
-export function corridorConnect(a, b, hTrunc, hFull, opts = {}) {
-    const cor = corridorSearch(a.x, a.z, a.y, b.x, b.z, b.y, hTrunc, opts)
-    if (!cor) return null
-    const st = resampleStations(cor.path, hFull, opts.ds ?? 10)
-    const prof = profileSolve(st, a.y, b.y, opts)
-    if (!prof) return null
-    const pts = st.s.map((_, i) => ({ x: st.x[i], y: prof.y[i], z: st.z[i] }))
-    return { pts, stations: st, profile: prof, corridor: cor }
-}
 // ── Stage 3: curve generation ──────────────────────────────────────────────────────────────────
 /**
  * Douglas–Peucker polyline simplification (iterative). The lattice A* buys slope with length at

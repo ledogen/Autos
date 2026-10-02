@@ -61,7 +61,6 @@ export const WATER_DEFAULTS = {
     pondRimSamples:   24,    // rays cast outward to find the rim (lowest ring peak = spill proxy).
     pondFreeboard:    1.5,   // m — Plan-B fill: waterLevel = rimHeight − freeboard (never overflows).
     pondSkirtWidth:   10,    // m — shoreline buffer excluded from road gen + handed to scatter (FEAT-06).
-    pondMinFloorGap:  WATER_GRID,  // m — merge minima closer than this (keep the lowest) to dedup ripple.
 
     // — Saddle / stream (FEAT-18) —
     saddleMinDrop:    22,    // m — min total descent of a traced stream to keep it (rarity/prominence dial).
