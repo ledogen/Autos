@@ -84,8 +84,9 @@ export const V2_TRUNC_K = 4
 // ── Octave-truncated coarse field (scope-fenced ADDITIVE read API — world byte-identical) ──────
 /**
  * Same ridged-fBm loop as _coarseHeight()/coarseHeight() but stopped after K octaves.
- * K=2 keeps the 2000 m / 1000 m skeleton (225 of ~281 m total amplitude) — the scale where the
- * real passes and valleys live. NOT a new field: octave 0..K-1 of the shipping one, low-passed.
+ * Fewer octaves keep only the long-wavelength skeleton — the scale where the real passes and
+ * valleys live (K=2 is the 2000 m / 1000 m pair, 225 of ~281 m total amplitude; the shipped
+ * V2_TRUNC_K is 4). NOT a new field: octave 0..K-1 of the shipping one, low-passed.
  * @param {Function} noiseCoarse createNoise2D closure (the road/terrain one)
  * @param {object} params RANGER_PARAMS (coarseAmplitude/coarseFreq/ridgeSharpness/coarseOctaves)
  * @param {number} K octaves to keep (1..coarseOctaves)
@@ -160,48 +161,6 @@ class Heap {
     get size() { return this.n }
 }
 
-// ── Stage 1: the 2.5D corridor search ─────────────────────────────────────────────────────────
-/**
- * Coarse A* whose state is (cell, DECK ELEVATION BIN) — the deck's height is part of the plan,
- * not a consequence of it (owner green-light 2026-08-19). This is the structural fix for the
- * no-switchbacks class, and it replaces three dead patches at once:
- *
- *  - Grade is a HARD per-step budget on the deck (|Δdeck| ≤ cap·ds), priced on the grade you
- *    CHOOSE — one-cell dithering to dodge steep ground samples gains nothing, so the old
- *    "zigzag noise vs switchback" ambiguity never forms.
- *  - The same cell at two heights is two different states, so switchback STACKS (the road
- *    crossing the same hillside repeatedly at different benches) are expressible — the plain XZ
- *    lattice forbade them outright (each cell visitable once).
- *  - Terrain enters as deck-vs-ground offset priced through the SAME classOf/stationRate
- *    vocabulary the profile uses (on-grade/cut/bore… per metre, portal charges on class change).
- *    The old structure-cap ("everything steeper than 30% costs the bore rate") and its
- *    cover-proxy patch both dissolve: the state knows whether the deck is under or over ground.
- *
- * Still heading-free — no v1 lattice disease. The exact 1-D profile DP downstream re-solves the
- * vertical on the final stations, so priced == built is untouched; the deck plan here is the
- * corridor's own honest cost model, not the shipped profile.
- *
- * opts.structureCap === false is the fail-safe ladder's conservative mode: BORE states are
- * illegal, so the plan must stay within cut/fill of the surface — the corridor then routes
- * around anything the structure vocabulary cannot buy through.
- *
- * opts.startDir / opts.goalDir (unit {x,z}) are FEAT-68 deg-2 approach-heading pins: the first
- * step out of the start state and the arriving step into a goal state must lie within a 60° cone
- * (dot ≥ 0.5 — admits exactly the two nearest lattice directions) of the pinned heading. The
- * cone additionally BINDS OVER A TERMINAL REGION (~2.5 cells): near a pinned end no step may
- * move against the pin (dot < 0) — a literal-last-step cone was measured satisfiable by
- * overshooting the goal and hooking back with a 150° jink on the final step (letter, not
- * spirit). A constrained search can return null; the CALLER retries without pins (connectivity
- * outranks joint tangency — a cheap extra ladder rung, road.js's job).
- *
- * @param {number} ax,az anchor A world XZ · @param {number} yA deck height pinned at A
- * @param {number} bx,bz anchor B world XZ · @param {number} yB deck height pinned at B
- * @param {(x:number,z:number)=>number} hTrunc octave-truncated field
- * @param {object} [opts] { cell=32, yBin=3, margin=max(800,chord), costs=V2_COSTS,
- *                          blockedDiscs (ponds, flat [x,z,r,...]), structureCap,
- *                          startDir, goalDir }
- * @returns {{path:{x:number,z:number,y:number}[], cost:number, expanded:number}|null}
- */
 const TERM_R = 2.5   // cells — reach of a heading pin's no-backtracking terminal region
 // ── FEAT-77: THE CLEARANCE RULE, pure ────────────────────────────────────────────────────────────
 // How far apart two roads must be at a pair of facing samples (owner rulings 2026-09-07/08). Lives
@@ -246,6 +205,48 @@ export function nearestOnFlat(px, pz, a) {
     return { d, y, fx, fz }
 }
 
+// ── Stage 1: the 2.5D corridor search ─────────────────────────────────────────────────────────
+/**
+ * Coarse A* whose state is (cell, DECK ELEVATION BIN) — the deck's height is part of the plan,
+ * not a consequence of it (owner green-light 2026-08-19). This is the structural fix for the
+ * no-switchbacks class, and it replaces three dead patches at once:
+ *
+ *  - Grade is a HARD per-step budget on the deck (|Δdeck| ≤ cap·ds), priced on the grade you
+ *    CHOOSE — one-cell dithering to dodge steep ground samples gains nothing, so the old
+ *    "zigzag noise vs switchback" ambiguity never forms.
+ *  - The same cell at two heights is two different states, so switchback STACKS (the road
+ *    crossing the same hillside repeatedly at different benches) are expressible — the plain XZ
+ *    lattice forbade them outright (each cell visitable once).
+ *  - Terrain enters as deck-vs-ground offset priced through the SAME classOf/stationRate
+ *    vocabulary the profile uses (on-grade/cut/bore… per metre, portal charges on class change).
+ *    The old structure-cap ("everything steeper than 30% costs the bore rate") and its
+ *    cover-proxy patch both dissolve: the state knows whether the deck is under or over ground.
+ *
+ * Still heading-free — no v1 lattice disease. The exact 1-D profile DP downstream re-solves the
+ * vertical on the final stations, so priced == built is untouched; the deck plan here is the
+ * corridor's own honest cost model, not the shipped profile.
+ *
+ * opts.structureCap === false is the fail-safe ladder's conservative mode: BORE states are
+ * illegal, so the plan must stay within cut/fill of the surface — the corridor then routes
+ * around anything the structure vocabulary cannot buy through.
+ *
+ * opts.startDir / opts.goalDir (unit {x,z}) are FEAT-68 deg-2 approach-heading pins: the first
+ * step out of the start state and the arriving step into a goal state must lie within a 60° cone
+ * (dot ≥ 0.5 — admits exactly the two nearest lattice directions) of the pinned heading. The
+ * cone additionally BINDS OVER A TERMINAL REGION (~2.5 cells): near a pinned end no step may
+ * move against the pin (dot < 0) — a literal-last-step cone was measured satisfiable by
+ * overshooting the goal and hooking back with a 150° jink on the final step (letter, not
+ * spirit). A constrained search can return null; the CALLER retries without pins (connectivity
+ * outranks joint tangency — a cheap extra ladder rung, road.js's job).
+ *
+ * @param {number} ax,az anchor A world XZ · @param {number} yA deck height pinned at A
+ * @param {number} bx,bz anchor B world XZ · @param {number} yB deck height pinned at B
+ * @param {(x:number,z:number)=>number} hTrunc octave-truncated field
+ * @param {object} [opts] { cell=32, yBin=3, margin=max(800,chord), costs=V2_COSTS,
+ *                          blockedDiscs (ponds, flat [x,z,r,...]), structureCap,
+ *                          startDir, goalDir }
+ * @returns {{path:{x:number,z:number,y:number}[], cost:number, expanded:number}|null}
+ */
 export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     const _unit = (d) => { if (!d) return null; const l = Math.hypot(d.x, d.z); return l > 1e-9 ? { x: d.x / l, z: d.z / l } : null }
     const sDir = _unit(opts.startDir), gDir = _unit(opts.goalDir)
@@ -313,7 +314,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
         let best = null
         for (const ln of occLines) { const h = nearestOnFlat(px, pz, ln); if (!best || h.d < best.d) best = h }
         let ex = false
-        // exempt = [x, z, r, …] — each shared node with its own (geometric) throat radius; exemptM is the floor
+        // exempt = [x, z, r, …] — each shared node with its throat radius (road.js passes the fixed clearThroatM); exemptM is the floor
         if (occ.exempt) for (let k = 0; k + 2 < occ.exempt.length; k += 3) if (Math.hypot(px - occ.exempt[k], pz - occ.exempt[k + 1]) < Math.max(occ.exempt[k + 2] || 0, occ.exemptM)) { ex = true; break }
         if (!best || ex || best.d < 1e-6) { occD[i] = Infinity; return Infinity }
         const ux = (best.fx - px) / best.d, uz = (best.fz - pz) / best.d
@@ -417,6 +418,12 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     // PERF: the hot loop read these off `C` on every one of ~114 M iterations. Hoisted to locals.
     const C_cRoadM = C.cRoadM, C_wGrade = C.wGrade, C_gMaxBore = C.gMaxBore, C_gMaxRoad = C.gMaxRoad
     const C_cPortal = C.cPortal, C_cTurn = C.cTurn ?? 0
+    // …and the class thresholds + station rates: classOf / stationRateCls are written out in the
+    // bin loop below (same comparisons, same arithmetic) because as calls they were ~9 % of a
+    // region build's self time on their own.
+    const C_onTol = C.onTol, C_cutMax = C.cutMax, C_fillMax = C.fillMax
+    const C_cCutM = C.cCutM, C_cCut2 = C.cCut2 ?? 0, C_cFillM = C.cFillM, C_cBoreM = C.cBoreM
+    const BORE = CLS.BORE
     const NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
     // PERF: the per-direction quantities are LOOP-INVARIANT. dx/dz are 0/+/-1, so the step diagonal
     // factor `dl`, the ground distance `ds` and the elevation-bin reach `kMax` depend only on the
@@ -453,9 +460,12 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
         // noise against a 120 m reach).
         const dStartM = sibS.length ? Math.hypot(wx(cx2) - ax, wz(cz2) - az) : Infinity
         const dGoalM = sibG.length ? Math.hypot(wx(cx2) - bx, wz(cz2) - bz) : Infinity
+        // Is the popped cell inside the start pin's terminal region? Depends on the cell alone, so
+        // once per pop — it used to be re-derived for every direction that pointed against the pin.
+        const inStartTerm = sDir !== null && Math.hypot(wx(cx2) - ax, wz(cz2) - az) < TERM_R * cell
         const y0 = yOf(curB)
         const cls0 = classOf(y0 - hAt(cx2, cz2), C)
-        const bore0 = cls0 === CLS.BORE
+        const bore0 = cls0 === BORE
         for (let di = 0; di < 8; di++) {
             const D = DIR[di], dx = D.dx, dz = D.dz
             const nx = cx2 + dx, nz = cz2 + dz
@@ -470,8 +480,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
             // any step SOURCED within the start's terminal region may not move against the pin …
             if (sDir) {
                 if (parentCell < 0 && dx * sDir.x + dz * sDir.z < (0.5 - 1e-9) * dl) continue
-                if (dx * sDir.x + dz * sDir.z < -1e-9 &&
-                    Math.hypot(wx(cx2) - ax, wz(cz2) - az) < TERM_R * cell) continue
+                if (inStartTerm && dx * sDir.x + dz * sDir.z < -1e-9) continue
             }
             // … mirrored at the goal: no step LANDING in the goal's terminal region may move
             // against the pin, and the arriving step must lie in the strict cone (checked per-bin
@@ -505,17 +514,25 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
             }
             const nbHi = Math.min(bTop, curB + kMax)      // was re-evaluated every iteration
             const slack = D.slack
+            // The heuristic's horizontal term is the neighbour CELL's distance to the goal — the same
+            // for every elevation bin — so it is taken once, on the first bin that actually pushes.
+            let Dn = -1
             for (let nb = Math.max(0, curB - kMax); nb <= nbHi; nb++) {
                 if (gConeFail && Math.abs(nb - goalB) <= 1) continue   // off-cone goal arrival
                 const y1 = yLo + nb * yBin                 // yOf, inlined
                 const d1 = y1 - g1
-                const cls1 = classOf(d1, C)
-                const bore1 = cls1 === CLS.BORE
+                // classOf(d1) and stationRateCls(cls1, d1), inlined — keep in step with those two.
+                let bore1 = false, rate
+                if (Math.abs(d1) <= C_onTol) rate = C_cRoadM
+                else if (d1 < 0) {
+                    if (d1 < -C_cutMax) { bore1 = true; rate = C_cBoreM }
+                    else rate = C_cRoadM + C_cCutM * (-d1) + C_cCut2 * d1 * d1
+                } else rate = d1 > C_fillMax ? Infinity : C_cRoadM + C_cFillM * d1
                 if (bore1 && (noBore || nb < boreLoB || nb > boreHiB)) continue
                 const g = (y1 - y0) / ds
                 const cap = (bore0 || bore1) ? C_gMaxBore : C_gMaxRoad
                 if (Math.abs(g) > cap + slack) continue
-                let c = gc + ds * stationRateCls(cls1, d1, C) + ds * C_cRoadM * C_wGrade * g * g
+                let c = gc + ds * rate + ds * C_cRoadM * C_wGrade * g * g
                 c += turnC
                 if (bore0 !== bore1) c += C_cPortal
                 // FEAT-77: inside another road's clearance the metre costs wClear more, graded so
@@ -529,7 +546,10 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
                 if (c < gCost[ni]) {
                     gCost[ni] = c
                     from[ni] = cur
-                    open.push(ni, c + EPS_W * hEu(nx, nz, nb))
+                    // hEu(nx, nz, nb), inlined: y1 IS yOf(nb), and Dn is its Math.hypot — same values.
+                    if (Dn < 0) Dn = Math.hypot(wx(nx) - bx, wz(nz) - bz)
+                    const V = Math.abs(y1 - yB)
+                    open.push(ni, c + EPS_W * ((Dn >= V * RTWG ? Dn + C_wGrade * V * V / Math.max(1e-9, Dn) : 2 * V * RTWG) * C_cRoadM))
                 }
             }
         }
@@ -556,30 +576,6 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     return { path, cost: gCost[found], expanded }
 }
 
-// ── Station resampling ─────────────────────────────────────────────────────────────────────────
-/**
- * Resample a corridor polyline at ~ds intervals and read the FULL-resolution ground under each
- * station. Ground here is the real field the carve will use — the profile prices real dirt.
- * @returns {{s:number[], x:number[], z:number[], ground:number[]}}
- */
-export function resampleStations(path, hFull, ds = 10) {
-    const s = [0]
-    for (let i = 1; i < path.length; i++)
-        s.push(s[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z))
-    const L = s[path.length - 1]
-    const n = Math.max(2, Math.round(L / ds))
-    const out = { s: [], x: [], z: [], ground: [] }
-    let seg = 1
-    for (let i = 0; i <= n; i++) {
-        const t = L * i / n
-        while (seg < path.length - 1 && s[seg] < t) seg++
-        const a = path[seg - 1], b = path[seg]
-        const u = (t - s[seg - 1]) / Math.max(1e-9, s[seg] - s[seg - 1])
-        const x = a.x + (b.x - a.x) * u, z = a.z + (b.z - a.z) * u
-        out.s.push(t); out.x.push(x); out.z.push(z); out.ground.push(hFull(x, z))
-    }
-    return out
-}
 
 // Profile state classes (derived from deck − ground, never stored independently).
 export const CLS = { ON: 0, CUT: 1, FILL: 2, BORE: 3 }
@@ -626,10 +622,15 @@ function makeStationTables(C, yArr) {
     const clsFrom = new Uint8Array(ny)      // class at the DEPARTURE station, indexed by k
     const clsTo   = new Uint8Array(ny)      // class at the ARRIVAL station, indexed by j
     const rateTo  = new Float64Array(ny)    // ds × station rate at arrival, indexed by j
+    let prevG1 = NaN   // the ground the arrival classes currently describe
     return {
         clsFrom, clsTo, rateTo,
         prepare(g0, g1, ds) {
-            for (let k = 0; k < ny; k++) clsFrom[k] = classOf(yArr[k] - g0, C)
+            // Consecutive stations: this step departs from the ground the last step arrived on, so
+            // its departure classes are the previous arrival classes — a copy, not ny more classOf.
+            if (g0 === prevG1) clsFrom.set(clsTo)
+            else for (let k = 0; k < ny; k++) clsFrom[k] = classOf(yArr[k] - g0, C)
+            prevG1 = g1
             for (let j = 0; j < ny; j++) {
                 const d = yArr[j] - g1
                 const cls = classOf(d, C)
@@ -663,7 +664,7 @@ function makeStepCost(C, yStep) {
 /**
  * 1-D dynamic programming over deck elevation along the stations. State = (station, quantized y).
  * Transition = one station step at grade g = Δy/Δs, allowed while g respects the class caps
- * (surface 35%, bore 18%). Costs: station rate (above) × ds + on-grade quadratic discomfort
+ * (C.gMaxRoad on the surface, C.gMaxBore in a bore). Costs: station rate (above) × ds + on-grade quadratic discomfort
  * + a fixed portal charge when the derived class crosses into/out of a bore.
  * Endpoints are PINNED to (yA, yB) — junction node heights as boundary conditions (FEAT-68
  * junction plan item 2: edges may never disagree at shared nodes).
@@ -671,7 +672,7 @@ function makeStepCost(C, yStep) {
  * No vertical-curvature smoothing term: crest airtime is a FEATURE (character spec). If lattice
  * sawtooth shows up it gets handled in stage 3 (curve generation), never priced away here.
  *
- * @param {{s:number[],ground:number[]}} st stations from resampleStations
+ * @param {{s:number[],ground:number[]}} st stations (built by RoadSystem._v2GradePts)
  * @param {number} yA deck height pinned at station 0
  * @param {number} yB deck height pinned at the last station
  * @param {object} [opts] { yStep=0.5, costs=V2_COSTS }
@@ -686,7 +687,6 @@ export function profileSolve(st, yA, yB, opts = {}) {
 
     let lo = Math.min(yA, yB), hi = Math.max(yA, yB)
     for (const g of st.ground) { if (g < lo) lo = g; if (g > hi) hi = g }
-    if (opts.pins) for (const p of opts.pins) { if (p.y < lo) lo = p.y; if (p.y > hi) hi = p.y }
     lo -= C.cutMax + 8
     hi += C.fillMax + 8
     const ny = Math.max(2, Math.round((hi - lo) / yStep) + 1)
@@ -698,22 +698,6 @@ export function profileSolve(st, yA, yB, opts = {}) {
     const tab = makeStationTables(C, yArr)
 
     const stepCost = makeStepCost(C, yStep)
-
-    // BUG-55: INTERIOR PINS — [{i, y}] forces station i (interior only) to the grid state nearest
-    // y. This is how a bundled winner's trunk carries the fork decks the joint solve negotiated:
-    // the DP still owns everything between the pins, so the trunk bends toward each fork exactly
-    // as the negotiation priced it. A pin the caps cannot reach nulls the solve (the caller's
-    // ladder handles it) — never silently ignored.
-    const pinAt = new Map()
-    if (opts.pins) for (const p of opts.pins) {
-        const i = Math.max(1, Math.min(n - 2, p.i))
-        pinAt.set(i, Math.max(0, Math.min(ny - 1, Math.round((p.y - lo) / yStep))))
-    }
-    const applyPin = (i, arr) => {
-        const jPin = pinAt.get(i)
-        if (jPin === undefined) return
-        for (let j = 0; j < ny; j++) if (j !== jPin) arr[j] = Infinity
-    }
 
     // ENDPOINTS ARE EXACT, not grid states: station 0 sits at yA and station n-1 at yB precisely
     // (junction node heights are a boundary CONDITION — a grid snap there would let two edges
@@ -745,7 +729,6 @@ export function profileSolve(st, yA, yB, opts = {}) {
         for (let j = Math.max(0, jNear - kMax); j <= Math.min(ny - 1, jNear + kMax); j++) {
             c1[j] = stepCost(yA, st.ground[0], yOf(j), st.ground[1], ds)
         }
-        applyPin(1, c1)
         cost[1] = c1
         from[1] = null
     }
@@ -781,7 +764,6 @@ export function profileSolve(st, yA, yB, opts = {}) {
             ci[j] = best
             fi[j] = bestK
         }
-        applyPin(i, ci)
         cost[i] = ci
         from[i] = fi
     }
@@ -980,38 +962,6 @@ export function stationSpeeds(st, kappa, ref = PAR_REF) {
 }
 
 /**
- * FEAT-81 CREST ROUNDING (owner 2026-09-08: "crests that fall away quickly enough for the car to
- * become airborne … I want to ride the edge of fast/difficult, not difficult/technical", and on
- * the design speed: "use the run solver to determine the allowable speed for the corners in that
- * area and set crest rate off that"). This OVERRULES the "crest airtime is a FEATURE" note on
- * profileSolve: the DP has no term on the CHANGE of grade, so a crest may go +24 % → −24 % across
- * one 10 m station (vertical radius ~20 m, airborne above 14 m/s). Measured on 55 km of shipped
- * road (test/ride-probe.mjs): solver crests of R 40–115 m under 27 m/s par speed lifted the car
- * 0.8–1.3 g.
- *
- * The rule: at every interior station the second difference of the deck is bounded so that at the
- * design speed v (stationSpeeds) the wheels keep ≥ crestHold·g over a crest and gain ≤ sagLoad·g in
- * a sag: |Δ²y| ≤ ds²/R with R_crest = v²/(g·crestHold), R_sag = v²/(g·sagLoad).
- *
- * Why a post-pass and not a DP term: a curvature constraint needs the previous grade in the DP state
- * — (station, y, prev-y) — about 11× the transitions of today's solve for a rule that only ever
- * bites at a handful of stations per edge. So, like dequantizeProfile, this reshapes the SOLVED
- * profile and RE-PRICES it: priced == built holds on the shipped array. The reshaping is the
- * least-squares projection onto the constraint set (cyclic projection onto each station's
- * |Δ²y| ≤ c half-spaces, the crest station lowered and its flanks raised), with the three
- * dequantise guarantees: endpoints (and interior pins) never move, no station changes bore status
- * or breaches the fill ceiling, and a grade-cap breach bisects back toward the solved profile.
- * A crest of radius R across a grade change Δg moves the deck R·Δg²/8 — 1.5 m at R 51 m,
- * Δg 0.48 — which is why this cannot live inside the ±0.25 m corner-rounding bound downstream.
- *
- * @param {{s:number[],ground:number[]}} st stations
- * @param {object} prof the solved (and dequantised) profile
- * @param {object} C the price list (reads crestHold, sagLoad; 0/absent = off)
- * @param {Float64Array|number[]} v design speed per station (stationSpeeds)
- * @param {Set<number>} [pinned] interior station indices that must not move (BUG-55 pins)
- * @returns {object} a profile of the same shape — the input untouched when the rule is off
- */
-/**
  * FEAT-81/82 — the PROJECTION ENGINE under roundCrests and the junction blend's recovery. Cyclic
  * projection of a sampled profile y(s) onto, per sweep: box limits (boxLo/boxHi), the grade cap
  * between neighbours (|Δy| ≤ cap(i)·ds), and the second-difference limits (−cCrest[i] ≤ Δ²y ≤
@@ -1105,11 +1055,9 @@ export function projectProfile(s, y, o) {
  * @param {object} prof the solved (and dequantised) profile
  * @param {object} C the price list (reads crestHold, sagLoad; 0/absent = off)
  * @param {Float64Array|number[]} v design speed per station (stationSpeeds)
- * @param {Set<number>} [pinned] interior station indices that must not move (BUG-55 pins)
- * @param {object} [stats] census counters (viol / converged / full / partial / refused / why)
  * @returns {object} a profile of the same shape — the input untouched when the rule is off
  */
-export function roundCrests(st, prof, C, v, pinned, stats) {
+export function roundCrests(st, prof, C, v) {
     const n = st.s.length
     const hold = C.crestHold ?? 0
     const sag = C.sagLoad ?? 0
@@ -1117,7 +1065,7 @@ export function roundCrests(st, prof, C, v, pinned, stats) {
     const g = PAR_REF.g
     const y0 = prof.y
     const y = y0.slice()
-    const free = (i) => i > 0 && i < n - 1 && !(pinned && pinned.has(i))
+    const free = (i) => i > 0 && i < n - 1
     // Per-station limits on the second difference (m), from the local design speed.
     const cCrest = new Float64Array(n), cSag = new Float64Array(n)
     for (let i = 1; i < n - 1; i++) {
@@ -1134,7 +1082,6 @@ export function roundCrests(st, prof, C, v, pinned, stats) {
         if (d2 < -cCrest[i] || d2 > cSag[i]) viol = true
     }
     if (!viol) return prof
-    if (stats) stats.viol = (stats.viol || 0) + 1
     // Cap margin 2e-4 (0.02 % grade): the projection converges to ~1e-5 residuals, and the re-price
     // is strict, so the target sits a hair inside the cap or every blend would be refused.
     const capOf = (i) => ((prof.cls[i] === CLS.BORE || prof.cls[i + 1] === CLS.BORE) ? C.gMaxBore : C.gMaxRoad) - 2e-4
@@ -1145,36 +1092,9 @@ export function roundCrests(st, prof, C, v, pinned, stats) {
         if (prof.cls[i] === CLS.BORE) { boxLo[i] = -Infinity; boxHi[i] = gr - C.cutMax - EPS }
         else { boxLo[i] = gr - C.cutMax + EPS; boxHi[i] = gr + C.fillMax - EPS }
     }
-    const worst = projectProfile(st.s, y, { cCrest, cSag, cap: capOf, boxLo, boxHi, free })
-    if (stats) { if (worst < 1e-5) stats.converged = (stats.converged || 0) + 1; else { stats.unconverged = (stats.unconverged || 0) + 1; stats.lastWorst = worst } }
-    for (let i = 1; i < n - 1; i++) if (!free(i)) y[i] = y0[i]
+    projectProfile(st.s, y, { cCrest, cSag, cap: capOf, boxLo, boxHi, free })
     // Guarantee 3: re-price; on a cap breach keep the largest feasible blend toward the rounded line.
-    const blend = (t) => {
-        const out = new Array(n)
-        for (let i = 0; i < n; i++) out[i] = y0[i] + t * (y[i] - y0[i])
-        return out
-    }
-    let best = priceProfile(st, blend(1), C)
-    if (best) { if (stats) stats.full = (stats.full || 0) + 1; return best }
-    if (stats) {
-        // Diagnose the refusal: first station whose grade or fill breaks the strict price.
-        const yy = blend(1)
-        for (let i = 1; i < n; i++) {
-            const ds = st.s[i] - st.s[i - 1], gg = (yy[i] - yy[i - 1]) / ds
-            const c0 = classOf(yy[i - 1] - st.ground[i - 1], C), c1 = classOf(yy[i] - st.ground[i], C)
-            const cap = (c0 === CLS.BORE || c1 === CLS.BORE) ? C.gMaxBore : C.gMaxRoad
-            const fill = yy[i] - st.ground[i]
-            if (Math.abs(gg) > cap + 1e-9 || fill > C.fillMax) { stats.why = { i, g: +gg.toFixed(5), cap, c0, c1, fill: +fill.toFixed(2), origCls: prof.cls[i], moved: +(yy[i] - y0[i]).toFixed(3) }; break }
-        }
-    }
-    let lo = 0, hi = 1
-    for (let it = 0; it < 12; it++) {
-        const mid = (lo + hi) / 2
-        const pr = priceProfile(st, blend(mid), C)
-        if (pr) { best = pr; lo = mid } else hi = mid
-    }
-    if (stats) { if (best) stats.partial = (stats.partial || 0) + 1; else stats.refused = (stats.refused || 0) + 1 }
-    return best || prof
+    return bestFeasibleBlend(st, y0, y, C) || prof
 }
 
 /**
@@ -1206,8 +1126,8 @@ export function roundCrests(st, prof, C, v, pinned, stats) {
  *
  * @param {{s:number[],ground:number[]}} st stations
  * @param {object} prof the solved profile (from profileSolve)
- * @param {object} C the price list (reads vSmoothM, the window in metres; 0 = off)
- * @returns {object} a profile of the same shape — the input untouched when smoothing is off/unusable
+ * @param {object} C the price list (class thresholds + caps; the smoothing itself is fixed, see below)
+ * @returns {object} a profile of the same shape — the input untouched when nothing legal smooths
  */
 export function dequantizeProfile(st, prof, C) {
     const n = st.s.length
@@ -1235,8 +1155,18 @@ export function dequantizeProfile(st, prof, C) {
         else y[i] = Math.max(y[i], g - C.cutMax + EPS)
         y[i] = Math.min(y[i], g + C.fillMax - EPS)
     }
-    // Guarantee 3: keep the largest feasible blend toward the smoothed line. t = 0 (the solved
-    // profile) is feasible by construction, so this always terminates with something legal.
+    // Guarantee 3: keep the largest feasible blend toward the smoothed line; if none prices
+    // (the DP admits a half-quantum cap overshoot the strict re-price refuses), ship the solve.
+    return bestFeasibleBlend(st, y0, y, C) || prof
+}
+
+/**
+ * The shared tail of dequantizeProfile and roundCrests: re-price the reshaped line `y`, and if it
+ * breaks a cap, bisect (12 steps) back toward the solved line `y0` and keep the largest blend that
+ * prices. Null when not even the last bisection step is legal.
+ */
+function bestFeasibleBlend(st, y0, y, C) {
+    const n = y0.length
     const blend = (t) => {
         const out = new Array(n)
         for (let i = 0; i < n; i++) out[i] = y0[i] + t * (y[i] - y0[i])
@@ -1250,7 +1180,7 @@ export function dequantizeProfile(st, prof, C) {
         const p = priceProfile(st, blend(mid), C)
         if (p) { best = p; lo = mid } else hi = mid
     }
-    return best || prof
+    return best
 }
 
 // ── Orchestration: routeEdgeV2 — the ONE route function (sync path AND Worker import it) ───────

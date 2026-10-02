@@ -912,7 +912,7 @@ export class RoadMeshSystem {
         this._road._sliceNetwork()
         // QUAL-10: build the node-junction set (+ per-run cutback arcs) before sweeping so the ribbon
         // trim below sees this run's junction endpoints. Cached by network revision (cheap re-call).
-        if (this._road._detectNodeJunctions) this._road._detectNodeJunctions()
+        this._road._detectNodeJunctions()
         perfAdd('ribbon.sliceNetwork', performance.now() - _ptE)
         const segs = this._road._tiles.get(key)
 
@@ -1070,20 +1070,16 @@ export class RoadMeshSystem {
         // whose position falls inside this tile's CHUNK_SIZE × CHUNK_SIZE bounds.
         // (Open Q3 from RESEARCH: assign junction to tile containing node XZ position.)
         //
-        // FEAT-07 Step 2: render the at-grade junction pad. _detectJunctions() is now the BOUNDED,
-        // once-per-build, identity-cached crossing classifier (no longer the O(runs²×seg²) per-tile
-        // rescan that cost the 296 ms Ultra stall — _streamNetwork warms it, so this is a cache hit).
-        // Only AT_GRADE nodes get a pad. QUAL-10: the pad is a GRADED apron (buildJunctionFootprint samples
-        // sampleRoadTopY per vertex), so it rides the same FEAT-19-graded ribbon surface it overlaps
-        // (mesh == collision surface). NEAR_PARALLEL nodes are glancing grazes — they get no pad.
-        const _ptP = performance.now()   // PERF-26 INSTRUMENT: whole pad block, INCLUDING the two
-        // full-map _detect* iterations (a per-tile scan of every junction node in the network, run
-        // once per built tile — a suspect in its own right, not just buildJunctionFootprint).
+        // QUAL-10: the pad is a GRADED apron — every vertex rides the node's own surface field
+        // (_nodeSurfaceTop for a ≥3-leg pad, sampleRoadTopY for a deg-2 connector strip), the same
+        // field the collision carve reads, so mesh == collision.
+        const _ptP = performance.now()   // PERF-26 INSTRUMENT: whole pad block, INCLUDING the
+        // full-map node iteration (a per-tile scan of every junction node in the network, run once
+        // per built tile — a suspect in its own right, not just buildJunctionFootprint).
         if (this._params.roadJunctionFootprints) {
             const tileWorldX = tileX * CHUNK_SIZE
             const tileWorldZ = tileZ * CHUNK_SIZE
             const buildPad = (node) => {
-                if (node.kind !== 'AT_GRADE') return   // only flat junctions; a near-parallel graze gets no pad
                 const nx = node.pos.x, nz = node.pos.z
                 // Assign to tile if node falls inside this tile's bounds.
                 if (nx >= tileWorldX && nx < tileWorldX + CHUNK_SIZE &&
@@ -1101,12 +1097,9 @@ export class RoadMeshSystem {
                     }
                 }
             }
-            // QUAL-10: NODE junctions are the real graph T/X/Y intersections (≥3 runs meeting at a shared
-            // anchor). _detectJunctions only finds mid-span CROSSINGS, which graph mode culls — so without
-            // this the shipped network gets no pads at all. Build both (they never coincide: node = run
-            // endpoint, crossing = run interior); in graph mode _detectJunctions is empty.
-            if (this._road._detectNodeJunctions) for (const [, node] of this._road._detectNodeJunctions()) buildPad(node)
-            if (this._road._detectJunctions)     for (const [, node] of this._road._detectJunctions())     buildPad(node)
+            // Pads come from NODE junctions — the real graph T/X/Y intersections (runs meeting at a
+            // shared node). Mid-span crossings (_detectJunctions) never had a ring, so never a pad.
+            for (const node of this._road._detectNodeJunctions().values()) buildPad(node)
         }
         _bPad += performance.now() - _ptP   // PERF-26 INSTRUMENT
 
