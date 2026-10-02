@@ -175,8 +175,11 @@ export class PhysicsEngine {
     bd.isBullet = bullet
     const id = _b3.b3CreateBody(this._world, bd)
     const handle = this._nextHandle++
+    // isStatic / isDynamic are fixed at creation (the adapter has no set-type call), so the
+    // per-query filters read them here instead of asking the engine across the WASM boundary.
     this._bodies.set(handle, { id, shapes: [], specs: [], userData,
-      isStatic: type === 'static', groups: [], reach: [], hulls: [], sizeR: [],
+      isStatic: type === 'static', isDynamic: type !== 'static' && type !== 'kinematic',
+      groups: [], reach: [], hulls: [], sizeR: [],
       xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null })
     this._rev++
     return handle
@@ -205,10 +208,7 @@ export class PhysicsEngine {
   getUserData (handle) { return this._bodies.get(handle)?.userData ?? null }
 
   /** True if the handle refers to a dynamic body. */
-  isDynamic (handle) {
-    const rec = this._bodies.get(handle)
-    return !!rec && _b3.b3Body_GetType(rec.id).value === _b3.b3BodyType.b3_dynamicBody.value
-  }
+  isDynamic (handle) { return !!this._bodies.get(handle)?.isDynamic }
 
   // ── Colliders ─────────────────────────────────────────────────────────────
 
@@ -292,8 +292,6 @@ export class PhysicsEngine {
     return rec.shapes.length - 1
   }
 
-  /** Re-seat a sphere shape's LOCAL center (e.g. the wheel rim cores tracking strut travel).
-   *  Cheap (one engine call); also updates the debug-viz spec in place. */
   /** How many collider shapes a body currently has — callers hold indices into this. */
   shapeCount (handle) { return this._bodies.get(handle).shapes.length }
 
@@ -473,11 +471,14 @@ export class PhysicsEngine {
 
   getMass (handle) { return _b3.b3Body_GetMass(this._bodies.get(handle).id) }
 
-  /** Live-update friction/restitution on every shape of a body (debug sliders). */
-  setMaterial (handle, { friction = null, restitution = null } = {}) {
-    for (const s of this._bodies.get(handle).shapes) {
-      if (friction != null) _b3.b3Shape_SetFriction(s, friction)
-      if (restitution != null) _b3.b3Shape_SetRestitution(s, restitution)
+  /** Live-update friction/restitution on a body's shapes (debug sliders): every shape, or only
+   *  the shape indices in `only` when a body mixes materials (the chassis does). */
+  setMaterial (handle, { friction = null, restitution = null } = {}, only = null) {
+    const shapes = this._bodies.get(handle).shapes
+    for (let i = 0; i < shapes.length; i++) {
+      if (only && !only.includes(i)) continue
+      if (friction != null) _b3.b3Shape_SetFriction(shapes[i], friction)
+      if (restitution != null) _b3.b3Shape_SetRestitution(shapes[i], restitution)
     }
   }
 
@@ -548,10 +549,10 @@ export class PhysicsEngine {
     const hits = []
     const mask = _group32(collidesWith)
     for (const [handle, rec] of this._bodies) {
+      if (dynamicOnly && !rec.isDynamic) continue
       // Heightfields and meshes have no sphere pair test wired (the analytic terrain query owns
       // those surfaces), so skip them before paying for a transform.
       if (this._heightfields.has(handle) || this._meshDatas.has(handle)) continue
-      if (dynamicOnly && !this.isDynamic(handle)) continue
       this._bodyXf(rec)
       const bp = rec.xfP, bq = rec.xfQ
       const dx = center.x - bp[0], dy = center.y - bp[1], dz = center.z - bp[2]
@@ -560,41 +561,26 @@ export class PhysicsEngine {
         if ((rec.groups[si] & mask) === 0) continue
         const span = radius + rec.reach[si]
         if (d2 > span * span) continue          // cheap reject about the body origin
-        const shapeId = rec.shapes[si]
-        const type = _b3.b3Shape_GetType(shapeId).value
+        // What kind of shape this slot holds is known from how it was registered: a sphere spec is
+        // an engine sphere, and a slot that owns hull data (addHull / addCylinder / replaceHullLocal)
+        // is an engine hull. Boxes and capsules own no hull data and fall through.
+        const hull = rec.hulls[si]
         let manifold = null
-        let toWorld = null   // hull results come back hull-local — rotate/translate out
-        if (type === _b3.b3ShapeType.b3_sphereShape.value) {
-          const sph = _b3.b3Shape_GetSphere(shapeId)
+        let hullLocal = false   // hull results come back hull-local — rotate/translate out
+        if (rec.specs[si].shape === 'sphere') {
+          const sph = _b3.b3Shape_GetSphere(rec.shapes[si])
           manifold = _b3.b3CollideSpheres({ center: [center.x, center.y, center.z], radius }, sph,
             { position: [bp[0], bp[1], bp[2]], quaternion: [bq[0], bq[1], bq[2], bq[3]] })
           // normal is A→B = wheel→solid; our convention wants solid→wheel
           if (manifold && manifold.points.length) {
             manifold = { normal: [-manifold.normal[0], -manifold.normal[1], -manifold.normal[2]], points: manifold.points }
           }
-        } else if (type === _b3.b3ShapeType.b3_hullShape.value) {
-          const hull = rec.hulls[si]
-          if (!hull) continue
+        } else if (hull) {
           // Express the sphere in the hull's (= body's) local frame: l = q⁻¹·(c − p)
-          const qx = -bq[0], qy = -bq[1], qz = -bq[2], qw = bq[3]
-          const ix = qw * dx + qy * dz - qz * dy, iy = qw * dy + qz * dx - qx * dz
-          const iz = qw * dz + qx * dy - qy * dx, iw = -qx * dx - qy * dy - qz * dz
-          const lx = ix * qw + iw * -qx + iy * -qz - iz * -qy
-          const ly = iy * qw + iw * -qy + iz * -qx - ix * -qz
-          const lz = iz * qw + iw * -qz + ix * -qy - iy * -qx
+          const l = _rotateByQuat({ x: dx, y: dy, z: dz }, [-bq[0], -bq[1], -bq[2], bq[3]])
           manifold = _b3.b3CollideHullAndSphere(hull, { center: [0, 0, 0], radius },
-            { position: [lx, ly, lz], quaternion: [0, 0, 0, 1] })
-          toWorld = (v) => {   // rotate a hull-local vector into world with bq
-            const jx = bq[3] * v[0] + bq[1] * v[2] - bq[2] * v[1]
-            const jy = bq[3] * v[1] + bq[2] * v[0] - bq[0] * v[2]
-            const jz = bq[3] * v[2] + bq[0] * v[1] - bq[1] * v[0]
-            const jw = -bq[0] * v[0] - bq[1] * v[1] - bq[2] * v[2]
-            return [
-              jx * bq[3] + jw * -bq[0] + jy * -bq[2] - jz * -bq[1],
-              jy * bq[3] + jw * -bq[1] + jz * -bq[0] - jx * -bq[2],
-              jz * bq[3] + jw * -bq[2] + jx * -bq[1] - jy * -bq[0],
-            ]
-          }
+            { position: [l.x, l.y, l.z], quaternion: [0, 0, 0, 1] })
+          hullLocal = true
         } else {
           continue   // debris is spheres and hulls today; other types have no pair test wired
         }
@@ -603,18 +589,18 @@ export class PhysicsEngine {
         let deep = manifold.points[0]
         for (const pt of manifold.points) if (pt.separation < deep.separation) deep = pt
         if (deep.separation >= 0) continue
-        let n = manifold.normal
-        let cp = deep.point
-        if (toWorld) {
-          n = toWorld(n)
-          cp = toWorld(cp)
-          cp = [cp[0] + bp[0], cp[1] + bp[1], cp[2] + bp[2]]
+        let n  = { x: manifold.normal[0], y: manifold.normal[1], z: manifold.normal[2] }
+        let cp = { x: deep.point[0], y: deep.point[1], z: deep.point[2] }
+        if (hullLocal) {
+          n  = _rotateByQuat(n, bq)
+          cp = _rotateByQuat(cp, bq)
+          cp.x += bp[0]; cp.y += bp[1]; cp.z += bp[2]
         }
         hits.push({
           body: handle,
-          normal: { x: n[0], y: n[1], z: n[2] },
+          normal: n,
           depth: -deep.separation,
-          contactPoint: { x: cp[0], y: cp[1], z: cp[2] },
+          contactPoint: cp,
           sizeR: rec.sizeR[si] ?? 0.3,   // obstacle size for tire enveloping
         })
       }
@@ -643,7 +629,9 @@ export class PhysicsEngine {
    *   on EACH of the body's shapes (indexed as they were added); divide by dt for contact force.
    *   Lets a caller tell a wheel-core hit from a body hull hit without the engine knowing what
    *   either means. Allocation-free: reused by the caller.
-   * @returns {{impulse: number, point: {x,y,z}|null, normal: {x,y,z}|null}} body-local point/normal.
+   * @returns {{impulse: number, stepImpulse: number, point: {x,y,z}|null, normal: {x,y,z}|null}}
+   *   impulse = the hardest point's accumulated normal impulse (what point/normal describe);
+   *   stepImpulse = the hardest single-step impulse on any point; point/normal body-local.
    */
   maxContactImpulse (handle, outByShape = null) {
     const rec = this._bodies.get(handle)
@@ -663,6 +651,12 @@ export class PhysicsEngine {
       // Which side of the pair is US: the anchor is measured from that body, so picking the wrong
       // one would offset every impact by the gap between the two bodies' centers.
       const aIsSelf = this._shapeToHandle.get(this._shapeKey(contact.shapeIdA)) === handle
+      // Which of OUR shapes this contact is on — once per contact, not once per manifold point.
+      let si = -1
+      if (outByShape) {
+        const selfKey = this._shapeKey(aIsSelf ? contact.shapeIdA : contact.shapeIdB)
+        si = rec.shapes.findIndex(sh => this._shapeKey(sh) === selfKey)
+      }
       for (let m = 0; m < contact.manifoldCount; m++) {
         _b3.getManifoldAt(manifold, contact, m)
         for (let k = 0; k < manifold.pointCount; k++) {
@@ -671,15 +665,11 @@ export class PhysicsEngine {
           // four body hulls plus four wheel hard cores — and which shape took a hit is the whole
           // difference between "the bumper hit a tree" and "the rim hit a rock".
           if (pt.normalImpulse > maxStep) maxStep = pt.normalImpulse
-          if (outByShape) {
-            // THIS STEP's impulse, not the lifetime total: divided by dt it is the contact FORCE,
-            // which is what a yield criterion needs. totalNormalImpulse keeps accumulating while a
-            // contact persists, so it measures how long something was leaned on, not how hard it
-            // was hit — a slow crawl onto a rock out-reads a fast strike.
-            const selfShape = aIsSelf ? contact.shapeIdA : contact.shapeIdB
-            const si = rec.shapes.findIndex(sh => this._shapeKey(sh) === this._shapeKey(selfShape))
-            if (si >= 0 && pt.normalImpulse > outByShape[si]) outByShape[si] = pt.normalImpulse
-          }
+          // THIS STEP's impulse, not the lifetime total: divided by dt it is the contact FORCE,
+          // which is what a yield criterion needs. totalNormalImpulse keeps accumulating while a
+          // contact persists, so it measures how long something was leaned on, not how hard it
+          // was hit — a slow crawl onto a rock out-reads a fast strike.
+          if (si >= 0 && pt.normalImpulse > outByShape[si]) outByShape[si] = pt.normalImpulse
           if (pt.totalNormalImpulse <= max) continue
           max = pt.totalNormalImpulse
           const a = aIsSelf ? pt.anchorA : pt.anchorB

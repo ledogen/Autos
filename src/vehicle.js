@@ -1,6 +1,7 @@
 /**
- * Vehicle input and control module. Owns keyboard state, steer accumulation,
- * Ackermann geometry, wheel spin accumulation, and spawn-reset.
+ * Vehicle input and control module. Owns the driving keys, the throttle/brake ramps, steer
+ * accumulation + Ackermann geometry, the handbrake/park latch, and the ignition key step.
+ * updateVehicle returns true when R was pressed; main.js does the actual respawn.
  * Does NOT perform physics integration — that is physics.js.
  * Does NOT import Three.js. Pure math + DOM event listeners.
  *
@@ -101,7 +102,7 @@ export function updateVehicle (vehicleState, params, dt) {
   else
     vehicleState.smoothBrake = Math.max(vehicleState.smoothBrake - params.releaseRampRate * dt, rawBrake)
   vehicleState.throttle  = vehicleState.smoothThrottle
-  // S key: sets brake=1; getDriveTorque uses maxReverseTorque for rear wheels (Bug 4 fix in physics.js)
+  // S key: brake above walking pace, reverse below it (drivetrain.js decides which; REV_THRESHOLD).
   vehicleState.brake     = vehicleState.smoothBrake
   // ── Handbrake / parking-brake state machine (feature/teleport) ──────────────
   // Moving (>5 km/h): the handbrake is momentary — rear torque only while Space is held.

@@ -30,7 +30,9 @@
  * Exports:
  *   stepPhysics(vehicleState, params, dt, queryContacts, engineCtx)
  *     — engineCtx = { engine: PhysicsEngine, chassis: bodyHandle } (required)
- *   createVehicleChassis(engine, vehicleState, params) — build the chassis body
+ *   createVehicleChassis(engine, vehicleState, params, {bed}) — build the chassis body
+ *   readRimStrikes / classifyImpactRegion — the damage model's contact readout
+ *   setBodyRestitution / syncChassisMass — debug-panel edits that must reach the engine body
  *   getDriveTorque(wheelIndex, vehicleState, params)
  *
  * Conventions: see docs/GLOSSARY.md
@@ -177,13 +179,14 @@ const CHASSIS_PROFILE = {
  * @param {*} chassis - chassis body handle.
  * @param {Array<number>} out - length-4 scratch, written FL/FR/RL/RR.
  * @param {number} dt - physics step [s]; the engine reports an impulse, a yield criterion wants force.
- * @returns {Array<number>} `out`.
+ * @returns {{impulse:number, point:object|null, normal:object|null}} the chassis' hardest contact
+ *   this step (engine.maxContactImpulse's result) — the same engine readout serves the collision-
+ *   damage feed, so the caller does not ask twice.
  */
 export function readRimStrikes (engine, chassis, out, dt) {
   const rims = _rimsFor(engine).get(chassis)
-  if (!rims) return out
-  if (!_shapeImpulseScratch || _shapeImpulseScratch.length < 64) _shapeImpulseScratch = new Float64Array(64)
-  engine.maxContactImpulse(chassis, _shapeImpulseScratch)
+  const hit = engine.maxContactImpulse(chassis, rims ? _shapeImpulseScratch : null)
+  if (!rims) return hit
   const inv = dt > 0 ? 1 / dt : 0
   // MAX, not assign: the soft path has already written any rim contact it detected against
   // terrain this step (suspension.js), and a wheel can be taking both at once.
@@ -191,9 +194,9 @@ export function readRimStrikes (engine, chassis, out, dt) {
     const f = (_shapeImpulseScratch[rims[i].shapeIndex] || 0) * inv
     if (f > out[i]) out[i] = f
   }
-  return out
+  return hit
 }
-let _shapeImpulseScratch = null
+const _shapeImpulseScratch = new Float64Array(64)   // per-shape peak impulse; the chassis has ≤ 16 shapes
 
 /**
  * Which armor region a contact landed on: 'front' | 'left' | 'right' | 'rear', or null for a hit
@@ -298,6 +301,7 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
     -slabBottomHalfW, undY, Math.max(z0, slabBottomNoseZ), slabBottomHalfW, undY, Math.max(z0, slabBottomNoseZ),
     -slabBottomHalfW, undY, Math.min(z1, slabBottomTailZ), slabBottomHalfW, undY, Math.min(z1, slabBottomTailZ),
   ], { ...mat, restitution: 0 })
+  const bounceFrom = bed ? 2 : 1   // shapes before this index are the slab (restitution pinned 0)
   if (bed) {
     // An open bed's floor sits BELOW the beltline, so a full-length slab to beltY would fill the
     // well and cargo would rest on its top face instead of on the bed floor (measured: 13 cm proud
@@ -363,6 +367,9 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   const axleF = -(params.wheelbase * params.weightRear)
   const axleR = params.wheelbase * params.weightFront
   const rims = []
+  // The hulls between the slab and the wheel cores are the ones that carry params.bodyRestitution.
+  rims.bounceShapes = []
+  for (let i = bounceFrom; i < engine.shapeCount(chassis); i++) rims.bounceShapes.push(i)
   for (const [x, z, front] of [
     [-params.trackFront / 2, axleF, true], [params.trackFront / 2, axleF, true],
     [-params.trackRear / 2, axleR, false], [params.trackRear / 2, axleR, false],
@@ -380,10 +387,28 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   // pitch ~2699) landed on swapped axes, and traded places with heading. The cutover first
   // replicated that swap for drives-the-same fidelity; this assigns them to the axes the
   // real truck owns: quick honest roll (rollovers!), stately dive/squat.
-  engine.setMassData(chassis, params.mass,
-    { x: params.inertiaPitch, y: params.inertiaYaw, z: params.inertiaRoll })
+  syncChassisMass(engine, chassis, params)
   _rimsFor(engine).set(chassis, rims)
   return chassis
+}
+
+/**
+ * Push params.mass and the three tuned inertias onto the chassis body. The engine keeps its own
+ * copy, so a live edit of those params (the Mass slider, a vehicle preset) reaches the dynamics
+ * only through this call — without it the truck kept the mass it was created with.
+ */
+export function syncChassisMass (engine, chassis, params) {
+  engine.setMassData(chassis, params.mass,
+    { x: params.inertiaPitch, y: params.inertiaYaw, z: params.inertiaRoll })
+}
+
+/**
+ * Live-set the body rebound (the "Body Bounce" debug slider) on the hulls that carry it — hood,
+ * cab and bed. The undercarriage slab and the wheel cores are pinned to 0 at creation and stay so.
+ */
+export function setBodyRestitution (engine, chassis, restitution) {
+  const rims = _rimsFor(engine).get(chassis)
+  if (rims) engine.setMaterial(chassis, { restitution }, rims.bounceShapes)
 }
 
 // engine → (chassis handle → rim tracking metadata). Module-scoped: gates create their own chassis.
@@ -535,13 +560,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // The trigger is now `depth > 2·wheelRadius` — the hub CENTER a full wheel radius BELOW the surface,
   // i.e. the whole wheel swallowed. `depth > wheelRadius` (hub center merely AT the surface) still fired
   // on hits the solvers recover from on their own; the teleport is a last-resort escape hatch for a true
-  // tunnel (driven through a wall), and everything short of that belongs to Step 3b's Baumgarte, which
-  // bleeds penetration out at ≤ MAX_CORRECTION per step instead of snapping.
+  // tunnel (driven through a wall), and everything short of that belongs to the tire spring and the
+  // engine's own chassis contacts, which push penetration out over several steps instead of snapping.
   //
   // Only the TERRAIN contact can reach this line: its depth is a half-space measure (terrainH + r − cy)
   // that grows without bound as the hub sinks. Mesh/prop contacts compute depth = r − dist, capped at r,
-  // so they never trip the failsafe at any threshold ≥ r — they rely on Step 3b (as they already did
-  // under the old wheelRadius threshold).
+  // so they never trip the failsafe at any threshold ≥ r.
   {
     let maxEmbed = 0
     for (let i = 0; i < 4; i++) {
@@ -734,7 +758,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     // Slip-velocity tire model with relaxation length (see tire.js header).
     // Per-tire state: vehicleState.slipLong[i], slipLat[i] — the "filtered" slip
     // displacements (m), evolved per-step via implicit Euler on ds/dt = v_slip − s·|v|/L.
-    // Lazy-init so existing vehicleState shapes still work; arrays are tiny (4 floats each).
+    // makeVehicleState carries them; the lazy-init is for gates that hand-build a state.
     if (!vehicleState.slipLong) vehicleState.slipLong = [0, 0, 0, 0]
     if (!vehicleState.slipLat)  vehicleState.slipLat  = [0, 0, 0, 0]
 
@@ -774,7 +798,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     }
 
     // Phase 4: Fn for Pacejka comes from params._tireFz[i] (computed by stepSuspensionSubsteps, per
-    // D-03). computeNormalForce is a shim that reads _tireFz[i]. Body normal force is applied via
+    // D-03); computeNormalForce reads it back. Body normal force is applied via
     // suspBodyForce above, NOT here. totalGroundFn (rolling-resistance gating) is accrued once per wheel.
     const Fn = computeNormalForce(i, vehicleState, params)
     if (ground && Fn > 0) {
@@ -785,21 +809,16 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         ground.contactPoint.y - vehicleState.position.y,
         ground.contactPoint.z - vehicleState.position.z
       )
-      const contactVel = vehicleState.velocity.clone().add(
-        new THREE.Vector3().crossVectors(vehicleState.angularVelocity, rContact)
-      )
-
       params._compression = ground.depth
 
       // FEAT-48: RELATIVE contact velocity. Against static ground (analytic terrain,
       // props — no .body) the support is at rest and this reduces exactly to the old
       // absolute-velocity formulation. Against a dynamic body (a rock rolling under
-      // the wheel) slip and compression velocity are measured relative to the body's
-      // own contact-point velocity — this one mechanism is what makes driving onto a
-      // moving rock launch the car and kick the rock out, with no special cases.
-      let groundVel = null
+      // the wheel) slip is measured relative to the body's own contact-point velocity —
+      // this one mechanism is what makes driving onto a moving rock launch the car and
+      // kick the rock out, with no special cases.
       if (ground.body != null) {
-        groundVel = engine.getPointVelocity(ground.body, ground.contactPoint, _groundVelScratch)
+        const groundVel = engine.getPointVelocity(ground.body, ground.contactPoint, _groundVelScratch)
         // Fully relative — the support's own velocity enters the slip UNCLAMPED (owner,
         // 2026-08-15: the last containment-era limiter deleted). Honest forces from honest
         // kinematics; the enveloping factor and exact manifolds bound the magnitudes.
@@ -809,15 +828,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         params._longitudinalVelocity = (hubVel.x - groundVel.x) * wheelFwd.x +
                                        (hubVel.y - groundVel.y) * wheelFwd.y +
                                        (hubVel.z - groundVel.z) * wheelFwd.z
-        // Clamped: a debris body ricocheting off the rim can report a huge closing speed for a
-        // frame; the tire damper term must not turn that into another force spike (same failure
-        // family as the depth cap in qcPlus).
-        const cvRel = -((contactVel.x - groundVel.x) * ground.normal.x +
-                        (contactVel.y - groundVel.y) * ground.normal.y +
-                        (contactVel.z - groundVel.z) * ground.normal.z)
-        params._compressionVelocity = Math.max(-3, Math.min(3, cvRel))
-      } else {
-        params._compressionVelocity = -contactVel.dot(ground.normal)
       }
 
       // Phase 4.1 NOTE (D-06): do NOT add Fn*normal to totalForce here.
@@ -885,8 +895,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // REVERTED 2026-08-15 (owner): ω responds to RELATIVE slip on debris again — the
       // road-frame anchor was a containment measure from the discontinuous-depth era, when
       // force spikes launched rocks and the implicit solve chased them to 60–80 rad/s. With
-      // exact manifolds the spikes are gone, and DEBRIS_SLIP_CLAMP (±3 m/s) already bounds the
-      // chase to ~±8 rad/s around rolling — honest wheel response, no runaway possible.
+      // exact manifolds the spikes are gone — honest wheel response, and the slip itself is
+      // unclamped (see the groundVel note above).
 
       const wheelForce = wheelFwd.clone().multiplyScalar(Flong)
       // WR-02: lateral grip opposes lateral hub velocity (resists the slide), so positive Flat
@@ -910,9 +920,11 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // suspension applied for this contact (Newton's third law, symmetric), never the wheel's
       // SUMMED Fz (road + rock when straddling once over-flung the rock).
       if (ground.body != null) {
+        // Tire OBSTACLE ENGAGEMENT, reaction side. The explanation lives in src/suspension.js beside
+        // the force it scales; this mirrors that factor (Newton's third law), so edit the two together.
         const env = ground.sizeR !== undefined
           ? Math.min(1, 2 * Math.PI * ground.sizeR * Math.max(0, ground.depth) / (params.tireContactAreaM2 || 0.0166))
-          : 1   // MIRRORS suspension.js obstacle engagement EXACTLY (Newton's third law)
+          : 1
         const FnContact = Math.max(0,
           params.tireStiffness * ground.depth +
           params.tireDamping * (ground.depthRate ?? 0) * Math.min(1, ground.depth / 0.04)) * env
@@ -1103,11 +1115,5 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
 // Scratch for the dynamic-support ground velocity (avoids a per-contact alloc).
 const _groundVelScratch = { x: 0, y: 0, z: 0 }
 
-// Tire OBSTACLE ENGAGEMENT — the canonical explanation lives in src/suspension.js beside the
-// force it scales; this file only mirrors it on the reaction side (Newton's third law), so the
-// two must be edited together. Superseded the constant env = sizeR/(sizeR + 0.12) on 2026-08-21:
-// a fixed fraction softened the tire against every obstacle at every depth, which is what let
-// rocks sink to the rim. The area law is progressive instead — near-zero on first touch, full
-// flat-ground stiffness once the contact patch matches the tire's own.
-const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, take the explicit fallback
+const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, commit the rolling fixed point instead
 const EMPTY_DEPTH_MAP = new Map()           // shared immutable-by-convention first-step default

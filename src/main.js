@@ -18,7 +18,7 @@
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, syncChassisMass } from './physics.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
@@ -2391,7 +2391,9 @@ window.__propPhysics = propPhysics             // dev handle — prop-debug radi
 const physicsWireframes = new PhysicsWireframes(physicsEngine, scene)
 window.__physWireframes = physicsWireframes    // dev handle — debug.js checkbox targets it
 window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
-window.__vehicleChassis = vehicleChassis       // dev handle — debug.js restitution slider targets it
+window.__vehicleChassis = vehicleChassis       // dev handle
+window.__setBodyBounce = (e) => setBodyRestitution(physicsEngine, vehicleChassis, e)   // debug.js Body Bounce slider
+window.__syncChassisMass = () => syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS)   // debug.js Mass slider + vehicle preset
 window.__vs = vehicleState                    // dev handle — read live vehicle state from the console / CDP probes
 window.__roadSys = () => roadSystem           // dev handle — the LIVE RoadSystem instance (getter: play swaps instances on seed regen); __road() below is the stats view
 
@@ -5742,17 +5744,17 @@ function loop () {
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
     // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
-    readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
+    const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
     if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
-    // SM-3 collision damage: read the hardest contact on the chassis this step and hand it to the
-    // damage model, which decides whether that is an impact (see feedContact — a contact is not).
+    // SM-3 collision damage: hand the hardest contact on the chassis this step (`hit`, read with
+    // the rim strikes above) to the damage model, which decides whether that is an impact (see
+    // feedContact — a contact is not).
     // classifyImpactRegion turns the body-local point/normal into an armor region and returns null
     // for ground contacts, so driving over terrain never registers as a crash.
     {
-      const hit = physicsEngine.maxContactImpulse(vehicleChassis)
       const landed = damageModel.feedContact(
         classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT,
         vehicleState.velocity)
