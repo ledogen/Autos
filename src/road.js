@@ -1556,6 +1556,7 @@ export class RoadSystem {
         this._pendingRoutes  = new Set()   // cls keys requested from the Worker, awaiting a reply
         this._routeEpoch     = 0           // bumped on every _invalidateProto (param/route change)
         this.warmPlanDemand  = false       // PERF-31 W2: opt-in — warmBandComplete also warms the plan layer's route demand (worker pre-warm only; see _warmPlanJobs)
+        this.warmFailed      = false       // a route worker reported a throw — the pre-warm loop gives up and builds synchronously
         this._urqMemo        = new Map()   // PERF-26: sig -> graph for the persist=false builds
     }
 
@@ -2106,6 +2107,7 @@ export class RoadSystem {
         if (!this._proto.cls) this._proto.cls = new Map()
         for (const r of results) {
             this._pendingRoutes.delete(r.key)
+            if (r.failed) this.warmFailed = true
             if (!r.prims) continue
             const have = this._proto.cls.get(r.key)
             if (have && (have._v2Dirs || !r.v2Dirs)) continue

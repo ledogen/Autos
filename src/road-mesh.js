@@ -1,38 +1,27 @@
 /**
- * src/road-mesh.js — RoadMeshSystem for AUTOS v1.1
+ * src/road-mesh.js — RoadMeshSystem: everything of the road that is DRAWN.
  *
- * Sweeps a crowned, cambered ribbon mesh along per-tile Catmull-Rom road splines.
- * Road tiles are keyed "X,Z" (same format as terrain chunks) and stream in/out
- * co-located with terrain chunk lifetime — built on demand, disposed on evict.
+ * Per 64 m tile (keyed "X,Z", same as a terrain chunk, and streamed with it): one ribbon per road
+ * slice through the tile, the junction pad of any node inside it, and the tunnel tube + portal
+ * rings of any bore crossing it. Each geometry is also handed to RoadPhysics as a trimesh
+ * collider (setPhysicsHook) — MESH == PHYSICS.
  *
- * Crown + camber MUST match the carve gradeY formula (Plan 09-02/03) so that
- * analyticNormal returns the correct banked normal — the same crownProfile() and
- * camber tilt used in sweepRibbon() are folded into road.js _buildCarveTable().
+ * The ribbon does not own a surface. Height, tangent and camber come from the run profile
+ * (road.runProfile / camberProfile), pad heights from the node's surface field — the same
+ * functions the terrain carve and the wheels read, which is what keeps the three in agreement.
  *
- * SURF-01: fixed-width ribbon swept along splines with streaming lifecycle.
- * SURF-02: per-vertex dark-grey asphalt with per-500 m quality-tiered lane markings.
- * SURF-03: centerline crown + curvature-driven camber as real surface geometry.
- *
- * Design decisions:
- *  - D-01: Asphalt and markings are purely procedural (no asset files). Asphalt/dirt are
- *    vertex colors; lane MARKINGS are evaluated per-fragment in the road shader (BUG-28) —
- *    vertex-colour painting could not draw a 0.3 m stripe at ~1.1 m vertex spacing (it
- *    Gouraud-smeared white→dark into a ~2 m gradient). The marking spatial/dash test now
- *    runs in onBeforeCompile off an `aMark = vec4(uLat, arcS, q, markEnable)` attribute, so
- *    stripes are crisp + antialiased at any distance and dashes are real on/off.
- *  - D-02: roadQuality tiers span ROAD_QUALITY_STRETCH=500 m stretches, blended over
- *    ROAD_QUALITY_BLEND=10 m at boundaries so markings do not snap.
- *  - D-03: roadQuality is a labeled hook on each arc position — the same value drives
- *    both markings here and pothole severity in Plan 09-06.
- *  - D-04: crown + camber are REAL geometry (vertex Y) so computeVertexNormals()
- *    returns the banked normal that physics analyticNormal agrees with.
- *  - T-09-04: zero-length tangent guard (NaN prevention); camber clamped ±6°.
- *  - Shared material — do NOT dispose per-tile (matches terrain._material pattern).
- *  - MAX_ROAD_BUILDS_PER_FRAME = 1 cap prevents frame spikes alongside terrain.
- *  - _scratchPt: module-scope reuse avoids per-sample Vector3 alloc (GC).
- *
- * Phase: 09-road-surface
- * Plan: 09-05
+ * Decisions that still bind:
+ *  - D-01: no asset files. Asphalt and dirt are vertex colours; lane MARKINGS are evaluated
+ *    per fragment (BUG-28) from an `aMark = vec4(uLat, arcS, q, markEnable)` attribute — a 0.3 m
+ *    stripe cannot be painted at ~1.1 m vertex spacing (it smeared into a ~2 m gradient).
+ *  - D-02/D-03: roadQuality(arcS, runKey) is one value per arc position, in 500 m stretches. It
+ *    drives the marking tier here and pothole severity in road-carve.js.
+ *  - D-04: crown + camber are REAL geometry (vertex Y), so computeVertexNormals() returns the
+ *    banked normal that physics agrees with.
+ *  - T-09-04: zero-length tangent guard (NaN prevention).
+ *  - Materials are shared per system, never disposed per tile (dispose() releases them).
+ *  - MAX_ROAD_BUILDS_PER_FRAME = 1 after the initial fill, so a tile build never stacks on a
+ *    terrain chunk build in the same frame.
  */
 
 import * as THREE from 'three'
@@ -45,11 +34,6 @@ import { crownProfile, potholeNoise, earClip } from './road-carve.js'
 import { roadQuality } from './road-quality.js'
 import { perfAdd, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-26)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
-
-// ── Module-scope scratch vector (GC-free per-sample allocation guard) ─────────
-// sweepRibbon is called for every tile's every segment, multiple times per stream.
-// Reusing this avoids thousands of Vector3 allocations per re-stream.
-const _scratchPt = new THREE.Vector3()
 
 // ── Ribbon mesh constants ─────────────────────────────────────────────────────
 // CROSS_SEGS: number of lateral segments across the road width.
@@ -234,37 +218,31 @@ export class RoadMeshSystem {
     }
 
     /**
-     * Sweep a ribbon mesh along a Catmull-Rom spline with per-section crown + camber
-     * and per-500 m road-quality-tiered lane markings (SURF-02, D-01, D-02, D-03).
+     * Sweep one slice's ribbon: a crowned, cambered strip of CROSS_SEGS quads per section plus a
+     * dirt skirt down each edge (SURF-02, D-01..D-03).
      *
-     * Vertex Y formula (same formula as carve gradeY on-ribbon vertices — SURF-03):
-     *   vy = designGradeY[i] + crownProfile(uLat, roadHalfWidth, crownHeight)
-     *      + uLat * Math.sin(camberAngle)
+     * Every section is framed by the RUN, not by the slice: its run-global arc `arcS` picks the
+     * centreline height, tangent and camber out of road.runProfile / camberProfile, so two slices
+     * that share a seam resolve the same arc and produce the same cross-section — the edges weld by
+     * construction (BUG-12). The first and last sections sit at exactly arcS0 and arcS1.
      *
-     * This is the formula that must match what road.js folds into the carve gradeY
-     * table so analyticNormal returns the crowned/cambered normal (height-agreement gate).
+     * Vertex Y (the formula the carve folds into its gradeY table — SURF-03, height agreement):
+     *   vy = runProfile(arcS).gradeY + crownProfile(uLat) + uLat * sin(camber) + potholeNoise
      *
-     * Road quality markings (no asset files — D-01):
-     *   High quality (q >= 0.66): solid centerline + solid edge lines, full white (0.9,0.9,0.9).
-     *   Mid quality (q 0.33–0.66): solid centerline + intermittent edge (arcS%12<8), faded (0.65).
-     *   Low quality (q < 0.33): faint centerline only (brightness ~0.3), no edge lines.
-     *   Transition blended by blended roadQuality so markings fade smoothly across stretch boundary.
+     * Lane markings are NOT painted here. Each top vertex carries aMark = (uLat, arcS, q, feather)
+     * and the fragment shader draws the stripes from it (BUG-28); the feather fades them out into
+     * a junction mouth (QUAL-11).
      *
-     * Markings are INTERRUPTED inside junction footprints (D-12): this is indicated to
-     * callers via the `inJunction` parameter — when true, marking colors are suppressed
-     * (only asphalt base color) so the junction footprint can render its own clean surface.
+     * @param {THREE.Vector3[]} points   — the slice's centreline samples (~2 m apart); only XZ is read
+     * @param {object}          params   — RANGER_PARAMS
+     * @param {string}          [runKey] — the run this slice belongs to
+     * @param {number}          [arcS0]  — run-global arc at the first point (BUG-10)
+     * @param {number}          [arcS1]  — run-global arc at the last point (< arcS0 on a reversed slice)
+     * @returns {THREE.BufferGeometry} positions, normals, colours and aMark.
      *
-     * @param {THREE.CatmullRomCurve3} spline       — per-tile slice spline
-     * @param {Float32Array}           designGradeY — smoothed design grade heights (N values, 1:1 with points)
-     * @param {THREE.Vector3[]}        points       — arc-length-sampled spline positions (N values)
-     * @param {object}                 params       — RANGER_PARAMS
-     * @param {string}                 [runKey='']  — run identifier for roadQuality determinism (D-03)
-     * @param {number}                 [arcSOffset=0] — arc-length offset of this tile's slice start (m)
-     * @returns {THREE.BufferGeometry} Ribbon geometry with positions, normals, and colors.
-     *
-     * Pure function of its inputs — no side effects. Deterministic (D-16).
+     * Pure function of its inputs and the road network — deterministic (D-16).
      */
-    sweepRibbon(spline, designGradeY, points, params, runKey = '', arcS0 = 0, arcS1 = 0) {
+    sweepRibbon(points, params, runKey = '', arcS0 = 0, arcS1 = 0) {
         // BUG-10: arcS0/arcS1 are the RUN-global arc at this slice's u=0/u=1 ends. arcS(u) =
         // arcS0 + (arcS1−arcS0)·u is the continuous run arc (no per-tile sawtooth); camberSign maps
         // the run-frame signed camber into this slice's sweep frame (slice may run E→W → arcS1<arcS0).
@@ -273,7 +251,6 @@ export class RoadMeshSystem {
         const halfWidth      = params.roadHalfWidth    ?? 5
         const roadWidth      = params.roadWidth        ?? 10
         const crownHeightVal = params.crownHeight      ?? 0.05
-        // camber params now consumed by this._road.camberProfile() — not needed here (D2, plan 09-21)
         const skirtDepth     = params.roadSkirtDepth   ?? 0.4
 
         // Plan 09-10: vertsPerSection includes the top-surface lateral strip PLUS 2 skirt
@@ -353,17 +330,24 @@ export class RoadMeshSystem {
             return f < 0 ? 0 : (f > 1 ? 1 : f)
         }
 
-        for (let i = 0; i < N_LONG; i++) {
-            // Arc-length-correct position at this section.
-            _scratchPt.copy(points[i])
+        // The lateral stations and their crown lift are the same for every section.
+        const uLats  = new Float64Array(CROSS_SEGS + 1)
+        const crowns = new Float64Array(CROSS_SEGS + 1)
+        for (let j = 0; j <= CROSS_SEGS; j++) {
+            uLats[j]  = (j / CROSS_SEGS - 0.5) * roadWidth      // -halfWidth (left edge) … +halfWidth (right edge)
+            crowns[j] = crownProfile(uLats[j], halfWidth, crownHeightVal)   // parabolic, peak at the centreline
+        }
 
-            const posX  = _scratchPt.x
-            const posZ  = _scratchPt.z
+        for (let i = 0; i < N_LONG; i++) {
+            const posX  = points[i].x
+            const posZ  = points[i].z
 
             // ── Road quality at this arc position (D-02/D-03) ──────────────────
             // arcS: RUN-global arc-length (BUG-10), keyed by cumulative XZ (09-32) so gradeY/camber/
             // quality track the vertex's true XZ position, not the spline's 3D-arc parameter.
-            const arcS = arcS0 + (arcS1 - arcS0) * (cumXZ[i] / totXZ)
+            // The last section is pinned to arcS1 itself: the interpolation lands within an ulp of it,
+            // and the neighbouring slice starts at exactly that arc — the seam must be the same number.
+            const arcS = i > 0 && i === N_LONG - 1 ? arcS1 : arcS0 + (arcS1 - arcS0) * (cumXZ[i] / totXZ)
 
             // P3 (BUG-12): Section frame from the continuous run tangent (09-28).
             // runProfile(arcS, runKey).tx/tz is C0 across ALL slice seams — both sides of a
@@ -396,21 +380,18 @@ export class RoadMeshSystem {
             // One profile per canonical run, cached + generation-invalidated (D1).
             // BUG-10: keyed on run-global arcS + camberSign so banking is continuous across tile
             // seams and correctly oriented on E→W (reversed) slices.
-            const camberAngle = camberSign * this._road.camberProfile(arcS, runKey)
+            // Camber tilt is uLat * sin(camberAngle) — small-angle approximation, valid to ≤6°.
+            const sinCamber = Math.sin(camberSign * this._road.camberProfile(arcS, runKey))
+            const feather = markFeather(arcS)   // QUAL-11: 1 on open road, →0 at a pad mouth
 
             // Track edge vy values to build skirt verts after the top-surface loop.
             let leftEdgeVx = 0, leftEdgeVy = 0, leftEdgeVz = 0
             let rightEdgeVx = 0, rightEdgeVy = 0, rightEdgeVz = 0
 
             for (let j = 0; j <= CROSS_SEGS; j++) {
-                // Lateral offset: -halfWidth (left edge) to +halfWidth (right edge)
-                const uLat = (j / CROSS_SEGS - 0.5) * roadWidth
-
-                // Crown: parabolic Y offset (peak at centerline, 0 at edges)
-                const crownY = crownProfile(uLat, halfWidth, crownHeightVal)
-
-                // Camber tilt: uLat * sin(camberAngle) — small-angle approximation valid ≤6°
-                const tiltY = uLat * Math.sin(camberAngle)
+                const uLat = uLats[j]
+                const crownY = crowns[j]
+                const tiltY = uLat * sinCamber
 
                 const vx = posX + rightX * uLat
                 const vz = posZ + rightZ * uLat
@@ -441,12 +422,11 @@ export class RoadMeshSystem {
 
                 // ── Marking coord (BUG-28): vec4(uLat, arcS, q, markEnable) ───
                 // Top-surface verts are markable; the shader masks the stripe spatially.
-                // markEnable = junction feather (QUAL-11): 1 on open road, →0 at a pad mouth.
                 const midx = (i * vertsPerSection + j) * 4
                 marks[midx    ] = uLat
                 marks[midx + 1] = arcS
                 marks[midx + 2] = q
-                marks[midx + 3] = markFeather(arcS)
+                marks[midx + 3] = feather
 
                 // Capture edge vert positions for skirt generation below.
                 if (j === 0)          { leftEdgeVx  = vx; leftEdgeVy  = vy; leftEdgeVz  = vz }
@@ -480,85 +460,6 @@ export class RoadMeshSystem {
             colors[rightSkirtBase + 1] = dirtG + (cutG - dirtG) * cutRt
             colors[rightSkirtBase + 2] = dirtB + (cutB - dirtB) * cutRt
             marks[(i * vertsPerSection + (CROSS_SEGS + 2)) * 4 + 3] = 0
-        }
-
-        // ── P3 (09-28): Shared-boundary edge weld (continuity-over-roundness, BUG-12) ──────
-        // Both slices that share a seam resolve to the SAME arcS at the boundary, so
-        // runProfile already returns bit-identical tx/tz → the loop above already produces
-        // identical edge positions. This explicit snap makes that GUARANTEE by construction
-        // rather than by floating-point luck — it overwrites the first/last sections'
-        // ±halfWidth edge vertices with positions recomputed directly from the boundary arcS
-        // profile, so even a future refactor cannot accidentally break the weld.
-        // Does NOT modify spline/router geometry — position (posX,posZ) still comes from the
-        // spline control point (C0 shared by construction); only the right-vector offset is re-pinned.
-        for (const bndIdx of [0, N_LONG - 1]) {
-            if (N_LONG < 2) break
-            const bndArcS = bndIdx === 0 ? arcS0 : arcS1
-            const bndRp   = this._road.runProfile(bndArcS, runKey)
-            const bndTx   = camberSign * bndRp.tx
-            const bndTz   = camberSign * bndRp.tz
-            const bndLen  = Math.sqrt(bndTx * bndTx + bndTz * bndTz)
-            const bndRightX = bndLen > 1e-8 ? bndTz / bndLen : 1
-            const bndRightZ = bndLen > 1e-8 ? -bndTx / bndLen : 0
-
-            // Re-read the centerline XZ for this boundary section (world-space from spline).
-            const bndPt = points[bndIdx]
-            const bndPosX = bndPt.x, bndPosZ = bndPt.z
-            const bndGradeY = bndRp.gradeY
-            const bndCamberAngle = camberSign * this._road.camberProfile(bndArcS, runKey)
-            const bndQ = roadQuality(bndArcS, runKey, this._worldSeed)
-
-            for (let j = 0; j <= CROSS_SEGS; j++) {
-                const uLat = (j / CROSS_SEGS - 0.5) * roadWidth
-                const crownY  = crownProfile(uLat, halfWidth, crownHeightVal)
-                const tiltY   = uLat * Math.sin(bndCamberAngle)
-                const bndVx   = bndPosX + bndRightX * uLat
-                const bndVz   = bndPosZ + bndRightZ * uLat
-                const bndAbsP = Math.abs(uLat)
-                const bndPY   = bndAbsP < halfWidth ? potholeNoise(bndVx, bndVz, bndQ, params) : 0
-                const bndVy   = bndGradeY + crownY + tiltY + bndPY
-
-                const bndBase = (bndIdx * vertsPerSection + j) * 3
-                positions[bndBase    ] = bndVx
-                positions[bndBase + 1] = bndVy
-                positions[bndBase + 2] = bndVz
-
-                // BUG-28: base asphalt only; markings are per-fragment from aMark.
-                colors[bndBase    ] = RC
-                colors[bndBase + 1] = GC
-                colors[bndBase + 2] = BC
-
-                const bndMidx = (bndIdx * vertsPerSection + j) * 4
-                marks[bndMidx    ] = uLat
-                marks[bndMidx + 1] = bndArcS
-                marks[bndMidx + 2] = bndQ
-                marks[bndMidx + 3] = markFeather(bndArcS)   // QUAL-11: junction feather
-            }
-            // Re-snap the skirt verts at this boundary section too.
-            // Left skirt: j=0 edge
-            const bndLeftEdgeVx = bndPosX + bndRightX * (-halfWidth)
-            const bndLeftEdgeVy = bndGradeY
-                + crownProfile(-halfWidth, halfWidth, crownHeightVal)
-                + (-halfWidth) * Math.sin(bndCamberAngle)
-                + (halfWidth < halfWidth ? potholeNoise(bndLeftEdgeVx, bndPosZ + bndRightZ * (-halfWidth), bndQ, params) : 0)
-            const bndLeftEdgeVz = bndPosZ + bndRightZ * (-halfWidth)
-            const bndLeftSkirtBase = (bndIdx * vertsPerSection + (CROSS_SEGS + 1)) * 3
-            positions[bndLeftSkirtBase    ] = bndLeftEdgeVx
-            positions[bndLeftSkirtBase + 1] = bndLeftEdgeVy - skirtDepth
-            positions[bndLeftSkirtBase + 2] = bndLeftEdgeVz
-            marks[(bndIdx * vertsPerSection + (CROSS_SEGS + 1)) * 4 + 3] = 0  // BUG-28: skirt, no stripes
-            // Right skirt: j=CROSS_SEGS edge
-            const bndRightEdgeVx = bndPosX + bndRightX * halfWidth
-            const bndRightEdgeVy = bndGradeY
-                + crownProfile(halfWidth, halfWidth, crownHeightVal)
-                + halfWidth * Math.sin(bndCamberAngle)
-                + (halfWidth < halfWidth ? potholeNoise(bndRightEdgeVx, bndPosZ + bndRightZ * halfWidth, bndQ, params) : 0)
-            const bndRightEdgeVz = bndPosZ + bndRightZ * halfWidth
-            const bndRightSkirtBase = (bndIdx * vertsPerSection + (CROSS_SEGS + 2)) * 3
-            positions[bndRightSkirtBase    ] = bndRightEdgeVx
-            positions[bndRightSkirtBase + 1] = bndRightEdgeVy - skirtDepth
-            positions[bndRightSkirtBase + 2] = bndRightEdgeVz
-            marks[(bndIdx * vertsPerSection + (CROSS_SEGS + 2)) * 4 + 3] = 0  // BUG-28: skirt, no stripes
         }
 
         // ── Index buffer: quad strip → 2 triangles per quad (CCW winding) ────────
@@ -935,13 +836,8 @@ export class RoadMeshSystem {
             const { spline } = seg
             if (!spline) continue
 
-            // Design grade: derive directly from the CONTINUOUS routed centerline Y.
-            // The slice spline's control points carry the routed network polyline .y, and
-            // adjacent tile slices SHARE the exact boundary control point (C0) and tangent (C1)
-            // by construction (D-06), so spline.getPointAt(u).y is continuous across tile seams.
-            // This replaced the per-tile D-06 design-grade smoother (deleted FEAT-68), which
-            // disagreed at slice boundaries and cache-missed on every stream — the Phase 9
-            // seam-step + lag source. ~2 m longitudinal sampling resolution.
+            // Centreline samples at ~2 m: only their XZ is used — sweepRibbon takes every height
+            // from the run profile, the same one the carve and physics read.
             // Split getLength from the sampling loop: getLength() is what BUILDS the Curve
             // arc-length LUT (getLengths, 200 divisions of getPoint) — getPointAt then only
             // binary-searches it. If the cost is LUT construction the fix is a different shape
@@ -952,13 +848,7 @@ export class RoadMeshSystem {
             const _ptSamp = performance.now()
             const N = Math.max(2, Math.min(256, Math.ceil(arcLen / 2) + 1))
             const points = []
-            const designGradeY = new Float32Array(N)
-            for (let _i = 0; _i < N; _i++) {
-                const _u = _i / (N - 1)
-                const _pt = spline.getPointAt(_u)
-                points.push(_pt)
-                designGradeY[_i] = _pt.y
-            }
+            for (let _i = 0; _i < N; _i++) points.push(spline.getPointAt(_i / (N - 1)))
             _bSample += performance.now() - _ptSamp   // PERF-26 INSTRUMENT
 
             if (points.length < 2) continue
@@ -980,7 +870,7 @@ export class RoadMeshSystem {
             // `cutback` of a junction endpoint arc for this run; buildJunctionFootprint fills the cleared
             // disc at the same cutback. Skip the slice entirely if nothing survives (short run node↔node).
             const _ptTrim = performance.now()   // PERF-26 INSTRUMENT
-            let usePoints = points, useGrade = designGradeY, useArcS0 = arcS0, useArcS1 = arcS1
+            let usePoints = points, useArcS0 = arcS0, useArcS1 = arcS1
             const jArcs = this._road._junctionCarveArcs ? this._road._junctionCarveArcs.get(runKey) : null
             if (jArcs && jArcs.length) {
                 const cutback = this._road.junctionCutbackDist()
@@ -1002,14 +892,13 @@ export class RoadMeshSystem {
                     useArcS0  = arcS0 + (arcS1 - arcS0) * (cum[k0] / tot)
                     useArcS1  = arcS0 + (arcS1 - arcS0) * (cum[k1] / tot)
                     usePoints = points.slice(k0, k1 + 1)
-                    useGrade  = designGradeY.slice(k0, k1 + 1)
                 }
             }
 
             _bTrim += performance.now() - _ptTrim   // PERF-26 INSTRUMENT
 
             const _ptS = performance.now()
-            const geo  = this.sweepRibbon(spline, useGrade, usePoints, this._params, runKey, useArcS0, useArcS1)
+            const geo  = this.sweepRibbon(usePoints, this._params, runKey, useArcS0, useArcS1)
             // FEAT-48: the ribbon's edge SKIRTS are near-vertical wall strips — colliding with
             // them let the chassis slab catch a 0.4 m wall at speed (the hairpin launch+yaw kick,
             // capture 1786773473453). Physics keeps the DRIVING SURFACE only; RoadPhysics strips
@@ -1325,8 +1214,8 @@ export class RoadMeshSystem {
     _getJunctionMaterial() {
         if (!this._junctionMaterial) {
             const m = this._material.clone()
-            m.polygonOffsetFactor = this._params.roadJunctionPolyOffsetFactor ?? -4
-            m.polygonOffsetUnits  = this._params.roadJunctionPolyOffsetUnits  ?? -4
+            m.polygonOffsetFactor = -4
+            m.polygonOffsetUnits  = -4
             // THREE.Material.copy() copies a fixed property list and does NOT carry onBeforeCompile,
             // so this clone was silently rendering with the STOCK Phong shader — no aMark plumbing at
             // all. That was invisible while every junction geometry wrote aMark = 0 (pads are

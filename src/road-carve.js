@@ -20,11 +20,10 @@
 // never hits the base cap and nothing changes; the tunnel pass's summit cuts run 15–25 m deep,
 // and squeezing that wall into the 10 m base apron made a near-vertical face that staircased
 // on the terrain grid (QUAL-06 residual). The extension lets a deep cut keep its design slope
-// (roadCutSlope) out to ~28 m of depth. ONE constant, THREE synced consumers (they must agree
+// (roadCutSlope) out to ~28 m of depth. ONE constant, THREE consumers in road.js (they must agree
 // or a wheel on the outer bank falls through the mesh):
-//   road.js _carveCrossSection  (toe cap)  ·  road.js _resolveRoadSurface (interior footprint)
-//   terrain.js _buildCarveTable (maxExt query bound)
-// NOT worker-mirrored (the carve table is main-thread; the Worker stores raw heights).
+//   _carveCrossSection (toe cap)  ·  _resolveRoadSurface (interior footprint)
+//   carveReach (how far from a road the terrain carve and the adopt dirty-discs look)
 export const DEEP_BANK_TOE_EXTRA = 18  // m
 
 /**

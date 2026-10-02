@@ -2137,6 +2137,8 @@ if (_PROF) {
   window.__economy = () => economySystem
   // FEAT-45: the camp zones + grading, so a harness can find a campable spot and exercise the dig.
   window.__camp = () => campSystem
+  // The network-Worker client, so a harness can exercise the build queue (stale and failed replies).
+  window.__net = () => netClient
   // Route-dispatch probe: wraps _routeDispatch on first call to count per-key dispatches —
   // diagnoses warm-loop re-dispatch churn (a key dispatched >2× means a warm scan is spinning).
   let _rdWrap = null

@@ -251,6 +251,7 @@ export function unplayableReason(report) {
     if (!report) return 'the region could not be built'
     if (report.components > 1)
         return `the road network breaks into ${report.components} separate pieces — parts of the region cannot be driven to`
+    if (report.components === 0) return 'no roads could be built in this region'
     if (report.condemned.length)
         return `${report.condemned.length} road${report.condemned.length === 1 ? '' : 's'} could not be given a drivable profile on this terrain`
     return null

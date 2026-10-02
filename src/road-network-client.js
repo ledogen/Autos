@@ -15,8 +15,12 @@
 //   - Params go through snapshotRoadParams() — never the live RANGER_PARAMS.
 //   - Pond no-go goes as disc DATA covering the window + pondDiscPad() margins, never closures.
 //   - Replies are guarded per client: the route epoch (a slider/water change since dispatch makes
-//     the reply stale — discard wholesale, the route-worker convention) and the seed (a seed
-//     change swaps the RoadSystem instance out from under the client).
+//     the reply stale — discard wholesale, the route-worker convention), the seed, and the
+//     RoadSystem INSTANCE the build was requested for. The instance check is not redundant: a
+//     client that rebuilds its RoadSystem on a param change (the map) restarts its epoch at the
+//     same number, so epoch + seed alone let the new instance adopt the old instance's build.
+//   - Every request gets a reply, including a failed build ({error}) and a crashed worker
+//     (onerror): waiters resolve false and the queue moves on.
 //   - The swap is atomic between frames: onmessage runs as its own macrotask, never mid-frame.
 
 import { snapshotRoadParams, pondDiscPad } from './road-network-worker.js'
@@ -47,6 +51,12 @@ export class RoadNetworkClient {
         this._active = null         // the entry the worker is building right now
         this._worker = new Worker(new URL('./road-network-worker.js', import.meta.url), { type: 'module' })
         this._worker.onmessage = (e) => this._onReply(e.data)
+        // An error the worker's own catch cannot see (a module that fails to load, a throw outside
+        // the build chain) would otherwise leave _active set forever.
+        this._worker.onerror = (e) => {
+            console.error('[network-client] worker error', e?.message ?? e)
+            this._onReply({ type: 'network', error: 'worker error' })
+        }
     }
 
     /**
@@ -66,9 +76,13 @@ export class RoadNetworkClient {
         const wire = opts && 'wireDispatcher' in opts ? opts.wireDispatcher : prev ? prev.wired : true
         rec.wired = wire
         if (wire) roadSystem.setNetworkDispatcher((req) => this.request(id, req))
-        // A replaced instance's queued builds are for the old world — drop them (an in-flight one
-        // dies at the seed/epoch guard on reply).
-        this._queue = this._queue.filter((q) => q.id !== id)
+        // A replaced instance's queued builds are for the old world — resolve them stale and drop
+        // them (an in-flight one dies at the instance guard on reply).
+        this._queue = this._queue.filter((q) => {
+            if (q.id !== id) return true
+            for (const w of q.waiters) w(false)
+            return false
+        })
     }
 
     /**
@@ -83,14 +97,14 @@ export class RoadNetworkClient {
         if (!rec) return null
         const epoch = rec.road.routeEpoch()
         reason = reason || 'move'
-        const same = (q) => q.id === id && q.epoch === epoch && q.x === x && q.z === z && q.radius === radius
+        const same = (q) => q.id === id && q.road === rec.road && q.epoch === epoch && q.x === x && q.z === z && q.radius === radius
         if (this._active && same(this._active)) return this._active
         for (const q of this._queue) if (same(q)) return q
         if (reason === 'move') {
             const q = this._queue.find((q2) => q2.id === id && q2.epoch === epoch && q2.reason === 'move')
             if (q) { q.x = x; q.z = z; q.radius = radius; return q }
         }
-        const entry = { id, epoch, reason, x, z, radius, waiters: [] }
+        const entry = { id, road: rec.road, epoch, reason, x, z, radius, waiters: [] }
         this._queue.push(entry)
         this._pump()
         return entry
@@ -166,13 +180,14 @@ export class RoadNetworkClient {
         const entry = this._active
         this._active = null
         const rec = entry ? this._clients.get(entry.id) : null
-        const fresh = !!rec && msg.seed === this._getSeed() && msg.epoch === rec.road.routeEpoch()
+        const fresh = !!rec && !msg.error && rec.road === entry.road
+            && msg.seed === this._getSeed() && msg.epoch === rec.road.routeEpoch()
         if (fresh) {
             rec.road.adoptNetwork(msg.data, { regen: entry.reason === 'params' })
             rec.onAdopted?.(entry.reason)
         }
-        // Resolve waiters either way — a stale reply means the awaited build is obsolete and the
-        // caller must re-decide with current state, not hang.
+        // Resolve waiters either way — a stale or failed reply means the awaited build will never
+        // be adopted and the caller must re-decide with current state, not hang.
         if (entry) for (const w of entry.waiters) w(fresh)
         this._pump()
     }

@@ -242,9 +242,9 @@ export function nearestOnFlat(px, pz, a) {
  * @param {number} ax,az anchor A world XZ · @param {number} yA deck height pinned at A
  * @param {number} bx,bz anchor B world XZ · @param {number} yB deck height pinned at B
  * @param {(x:number,z:number)=>number} hTrunc octave-truncated field
- * @param {object} [opts] { cell=32, yBin=3, margin=max(800,chord), costs=V2_COSTS,
- *                          blockedDiscs (ponds, flat [x,z,r,...]), structureCap,
- *                          startDir, goalDir }
+ * @param {object} [opts] { margin=max(800,chord), costs=V2_COSTS, hCoarse (the profile's field,
+ *                          default hTrunc), blockedDiscs (ponds, flat [x,z,r,...]), occupied,
+ *                          structureCap, startDir, goalDir, sibStart, sibGoal }
  * @returns {{path:{x:number,z:number,y:number}[], cost:number, expanded:number}|null}
  */
 export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
@@ -263,8 +263,8 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     const COSSIB = Math.cos((C.sibConeDeg ?? 25) * Math.PI / 180)
     const C_wSib = C.wSibDepart ?? 3
     const SIB_REACH = C.sibReachM ?? 120
-    const cell = opts.cell ?? 32
-    const yBin = opts.yBin ?? 3
+    const cell = 32      // lattice pitch, m
+    const yBin = 3       // deck-elevation bin, m
     const chord = Math.hypot(bx - ax, bz - az)
     const margin = opts.margin ?? Math.max(800, chord)
     const x0 = Math.min(ax, bx) - margin, x1 = Math.max(ax, bx) + margin
@@ -411,7 +411,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     // Weighted A* (ε = 1.15): the corridor is the COARSE stage — a bounded 15% cost inflation on
     // its plan buys a several-fold expansion cut, and the exact profile DP re-prices the final
     // line regardless (priced == built is downstream of this choice).
-    const EPS_W = opts.epsW ?? 1.15
+    const EPS_W = 1.15   // weighted-A* inflation of the heuristic
     const startS = idx(sx, sz) * NY + bOf(yA)
     gCost[startS] = 0
     open.push(startS, EPS_W * hEu(sx, sz, bOf(yA)))
@@ -1223,11 +1223,11 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
     // `costs` rides the spec so a Worker (a SEPARATE module instance with its own V2_COSTS) prices
     // exactly what the main thread does — without it, live knob edits would apply only to
     // synchronously-routed edges and the network would be priced two different ways.
-    const { ax, az, yA, bx, bz, yB, margin, blockedDiscs, dirs, costs, cell, yBin, epsW } = spec
+    const { ax, az, yA, bx, bz, yB, margin, blockedDiscs, dirs, costs } = spec
     const occupied = dirs && dirs.occupied ? dirs.occupied : undefined   // FEAT-77 second pass
     const attempt = (pin, extra) => {
         const c = corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, {
-            margin, blockedDiscs, costs, cell, yBin, epsW, occupied, hCoarse,
+            margin, blockedDiscs, costs, occupied, hCoarse,
             ...(pin ? { startDir: pin.startDir, goalDir: pin.goalDir } : {}),
             ...extra,
         })
@@ -1465,16 +1465,17 @@ export function lineArcFit(path, rMin = 10, rMax = 400) {
 }
 
 /**
- * Corridor lattice path → drivable centerline: Chaikin, then line-arc fillets. Chaikin passes
- * ESCALATE (2 → 5) until every fillet clears rMin — each pass halves corner angles, roughly
- * doubling the achievable radius, so sharp lattice turns (up to 135°) converge in a pass or two.
+ * Corridor lattice path → drivable centerline: RDP simplify, radius repair, line-arc fillets.
+ * Chaikin passes ESCALATE (0 → 5) until every fillet clears rMin — each pass halves corner
+ * angles, roughly doubling the achievable radius, so sharp lattice turns (up to 135°) converge in
+ * a pass or two. opts = { keepStart, keepEnd } — the heading-pinned ends stage 3 must not re-aim.
  */
 export function corridorCenterline(path, opts = {}) {
     // 2026-08-19 owner ruling: the grade-guarded smoothing is GONE. It defended the XZ search's
     // one-cell dither as if it were switchbacks, and dither smoothed into "a little wiggle", never
     // a cut across the face — a rule protecting a symptom. Real switchbacks come from the search
     // itself (see the ticket's 2.5D corridor discussion); smoothing goes back to being plain.
-    const rMin = opts.rMin ?? 12, rMax = opts.rMax ?? 400
+    const rMin = 12, rMax = 400
     // FEAT-68 heading pins: when the corridor search ran with a start/goal direction cone, stage 3
     // must not re-aim the constrained first/last step — RDP force-keeps it and the radius repair
     // exempts it (fold floor still wins). Chaikin and the fillet fitter preserve end tangents by
@@ -1485,13 +1486,13 @@ export function corridorCenterline(path, opts = {}) {
     // wider RDP tolerance (the corridor is a ~100 m swath — the centerline owns that freedom).
     // Keep the best fit seen so the escalation can never make things worse.
     let best = null, bestR = -Infinity
-    for (const tol of [opts.rdpTol ?? 32, 44]) {
+    for (const tol of [32, 44]) {
         const base = simplifyRDP(path, tol, keep)
         // Start at ZERO Chaikin passes: the 2.5D plan's polygon is already the road's shape
         // (traverses + reversals), and corner-cutting near-180° apexes destroys the length the
         // deck's grade budget paid for (measured 1563 → 1051 m). The fillet fitter rounds sparse
         // corners fine on its own; Chaikin remains as the radius-rescue escalation only.
-        for (let passes = opts.chaikin ?? 0; passes <= 5; passes++) {
+        for (let passes = 0; passes <= 5; passes++) {
             const cl = lineArcFit(enforceMinRadius(chaikin(base, passes), 8.5, 400, keep), rMin, rMax)
             const r = cl.minRadius()
             if (r > bestR) { best = cl; bestR = r }
