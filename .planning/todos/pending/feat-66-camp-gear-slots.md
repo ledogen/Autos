@@ -4,7 +4,7 @@ type: feature
 status: open
 severity: minor
 opened: 2026-08-17
-updated: 2026-08-17
+updated: 2026-10-01
 relates: ASSET-23, ASSET-24, ASSET-25, ASSET-26, FEAT-59, FEAT-45, SM-1
 ---
 
@@ -53,6 +53,24 @@ should know:
   non-mesh children when placing the model.
 - Its footprint is 0.708 m, and the `over-fire` slot (ASSET-25's A-frame) has to straddle it without
   intersecting — that is ASSET-24's own acceptance line and it lands here.
+
+**Update 2026-10-01 — `fire` slot DONE, lit.** `src/campfire.js` (`CampfireFx`) places
+`campfire.glb` at the pad centre when camp is made (it replaced the blue placeholder cube in
+`main.js`) and supplies ASSET-24's deferred VFX: faceted unlit flame cones on FireFlameAnchor, a
+pulsing FireCoal emissive, rising embers (one instanced draw), and one flickering PointLight
+scaled by the sky's nightFactor like the lamp pools. Tunables in the "Campfire (FEAT-66)" debug
+folder. The light's shader-program variant is precompiled at boot (chained after PERF-21's
+prewarmLightPrograms), and the light is `visible=false` whenever no camp is up, so it has no
+per-pixel cost while driving.
+
+- **No fire shadows yet (owner, 2026-10-01).** The truck parks out of shot, so there is nothing
+  near the fire to cast one. Turn on `light.castShadow` when the tent/tarp land. That costs a
+  six-face cube shadow map, so it needs a quality toggle.
+- **Slot offsets still open.** The fire sits at pad-local (0, 0). When the shelter slot lands,
+  give both slots pad-frame offsets (pad record carries `tx/tz/nx/nz`). The fire is
+  yaw-randomised from a hash of the pad position.
+- Remaining scope: shelter (tent / bedroll), over-fire (ASSET-25), shade (ASSET-26), and the
+  inventory → slot mapping (visible-kit rule).
 
 ## Notes
 

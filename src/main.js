@@ -70,6 +70,7 @@ import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney, basePay } from './
 import { OfferBoard, formatGameDuration, gateText } from './offer-board.js'   // FEAT-67: the mission board
 import { PROP_MODELS } from '../data/prop-models.js'   // FEAT-67: giverName (how the board names a giver)
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
+import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
@@ -3515,20 +3516,16 @@ const CAMP_PROMPT_KPH = 20
 //   • the SITE MARKER — a ring on the ground at the spot the siting ray picked, shown while the
 //     prompt is up. The ray means the camp no longer lands where the truck is, so without this the
 //     player has no way to read where "make camp" is actually going to put them.
-//   • the CAMP CUBE — a blue box standing on the pad once camp is made, the stand-in for the tent
-//     and fire models that are deferred.
+//   • the CAMPFIRE — ASSET-24, lit by src/campfire.js (flames, coals, embers, a flickering point
+//     light), standing at the pad centre once camp is made. It replaced the blue placeholder cube.
+//     FEAT-66's other slots (shelter / over-fire / shade) are still empty — the default camp is
+//     bedroll + fire, and there is no bedroll model yet.
 // camp.js stays THREE-free (the story-layer isolation rule): it hands out a pad record and main.js
 // is the only place that becomes geometry.
 const _campGroup = new THREE.Group()
 _campGroup.name = 'camp'
 scene.add(_campGroup)
-const CAMP_CUBE_SIZE = 1
-const _campCube = new THREE.Mesh(
-  new THREE.BoxGeometry(CAMP_CUBE_SIZE, CAMP_CUBE_SIZE, CAMP_CUBE_SIZE),
-  new THREE.MeshStandardMaterial({ color: 0x3d7fd6, emissive: 0x0a1a33, roughness: 0.6 }))
-_campCube.castShadow = true
-_campCube.visible = false
-_campGroup.add(_campCube)
+const campfire = new CampfireFx(_campGroup)
 // Unit ring (inner 0.86 / outer 1.0), laid flat and scaled to the live pad half-extent, so the
 // campPadHalfM slider moves it without rebuilding geometry. No depth write: it is a read-out, and
 // it must not z-fight the ground it is describing.
@@ -3550,7 +3547,7 @@ function _updateCampMarker (site) {
 }
 
 /**
- * Camp is established: stand the cube on the pad and put the camera on it. The camera seam is
+ * Camp is established: light the fire on the pad and put the camera on it. The camera seam is
  * camera.js's focus override (setCameraFocus) — the minimal one: it reuses the chase cam's existing
  * drag-orbit angles, so the player can still look around camp, and clearing it hands back to the
  * follow lerp with no snap. Freecam is untouched and still outranks it.
@@ -3558,14 +3555,18 @@ function _updateCampMarker (site) {
 function _enterCampScene (site) {
   const pad = site?.pad
   if (!pad) return
-  _campCube.visible = true
-  _campCube.position.set(pad.x, pad.y + CAMP_CUBE_SIZE * 0.5, pad.z)
-  setCameraFocus({ x: pad.x, y: pad.y + 1, z: pad.z })
+  // Seat on the REAL ground, not pad.y: the camp bench is carved flat at pad.y − roadClearanceMargin
+  // (road.js _poiPadCarve), so pad.y floats 0.25 m. analyticHeight reads the live carve, and
+  // setCampPads has already run by the time we get here. pad.y stays as the fallback.
+  const gy = terrainSystem?.analyticHeight(pad.x, pad.z)
+  const y = Number.isFinite(gy) ? gy : pad.y
+  campfire.show(pad.x, y, pad.z)
+  setCameraFocus({ x: pad.x, y: y + 1, z: pad.z })
 }
 
-/** Break camp / leave the region: cube away, camera back on the truck. */
+/** Break camp / leave the region: fire out, camera back on the truck. */
 function _exitCampScene () {
-  _campCube.visible = false
+  campfire.hide()
   _campMarker.visible = false
   setCameraFocus(null)
 }
@@ -3711,7 +3712,10 @@ function _updateParkTriggers () {
     textEl.style.display = 'block'
     // "not flat" now means the WHOLE siting ray failed the flatness gate — every candidate from the
     // road edge out to the tether — not merely that the verge beside the truck did.
+    // cands 0 ⇒ every rung was rejected before grading — in practice because it crowded a road
+    // (camp.js CAMP_ROAD_CLEAR_TOL_M: beside a junction or a spur there is no room for a bench).
     textEl.textContent = !camp.withinTether ? 'too far from the road'
+                       : camp.cands === 0   ? 'no room off the road'
                        : !camp.flat         ? 'not flat'
                        :                      'park to make camp'
   }
@@ -3773,7 +3777,7 @@ function _makeCamp () {
     roadSystem?.setCampPads(campSystem.makeCampAt(site.pad))
     _refreshGroundAround(site.pad)
     _campUi = { mode: 'camp', site, moms: false }
-    _enterCampScene(site)   // blue cube on the pad, camera on the camp
+    _enterCampScene(site)   // fire lit on the pad, camera on the camp
     _renderCampUI()
   })
 }
@@ -4788,6 +4792,8 @@ campSystem.addGui(_gui, {
     _renderCampUI()
   },
 })
+// FEAT-66: campfire light/flame tunables.
+campfire.addGui(_gui)
 // FEAT-14: vehicle cast-light tuning folder (headlight beams + rear lamp pools).
 addLightGui(_gui)
 // User pref: every lil-gui section collapsed by default (the root panel stays open). Runs after ALL
@@ -5829,6 +5835,7 @@ function loop () {
   // FEAT-14: feed the day/night factor so headlight/lamp cast pools dim by day, brighten at night.
   setNightFactor(skySystem.nightFactor())
   syncMeshesToState(vehicleState)
+  campfire.update(frameTime, skySystem.nightFactor())   // no-op unless a camp is up
 
   // Wheel dust trails — advance + emit using the interpolated render pose (vehicleState is
   // still the render copy here; restored below). Ground sampler mirrors queryContacts: flat
@@ -6351,10 +6358,14 @@ requestAnimationFrame(loop)
 // three's checkMaterialsReady poll ("Cannot read properties of undefined (reading 'isReady')").
 // It is also the honest meaning of ready: shaders warmed, so the first frame of driving is clean.
 // .finally, not .then — a failed prewarm is a best-effort miss, never a reason to strand the menu.
-prewarmLightPrograms(renderer, scene, camera).finally(() => {
-  _worldInit = true
-  _resolveWorldReady()   // release any menu pick the player made while this was still building
-})
+// The campfire's point-light variant rides the same chain (see campfire.js header) — compiled with the
+// lamps in their final all-off prewarm state, which is how the truck sits at camp.
+prewarmLightPrograms(renderer, scene, camera)
+  .then(() => campfire.prewarm(renderer, scene, camera))
+  .finally(() => {
+    _worldInit = true
+    _resolveWorldReady()   // release any menu pick the player made while this was still building
+  })
 
 // ── Resize handler ───────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {

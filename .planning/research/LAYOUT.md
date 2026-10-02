@@ -75,7 +75,7 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 
 **Rendering & atmosphere** — `sky.js` (time-of-day, ACES) · `moon.js` · `shadow-fade.js` ·
 `camera.js` (chase/cockpit/fly) · `vehicle-model.js` (procedural truck + cast lights) ·
-`model-service.js` (FEAT-59 .glb import service) · `smoke.js` · `dust.js` · `dirt-spray.js` ·
+`model-service.js` (FEAT-59 .glb import service) · `campfire.js` (FEAT-66 lit campfire: ASSET-24 + flames/embers/point light) · `smoke.js` · `dust.js` · `dirt-spray.js` ·
 `map2d.js` (M-key dev map).
 
 **Audio** — `engine-audio.js` · `tire-audio.js` (tonal stick-slip) · `wind-audio.js`.

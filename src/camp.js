@@ -141,6 +141,20 @@ const GRADE_N = 5
 const CAMP_RAY_STEP_M = 2
 const CAMP_RESAMPLE_M = 1.5
 
+// THE PAD MUST CLEAR EVERY ROAD, NOT JUST ITS OWN (owner, 2026-10-01 capture, seed 335938443). The
+// ray is cast off the NEAREST road, and the setback lat0 keeps the pad off that road by
+// construction — but nothing kept it off a DIFFERENT one. At a junction or beside a spur the ray
+// runs straight across the other leg, and a flat rung there won: the pad landed 2.3 m from the
+// spur's centerline, i.e. on its asphalt. So every rung is checked against the whole network with
+// the same setback (halfWidth + shoulder + padGap + padHalf): no centerline of ANY road may come
+// nearer than that. A rung that fails is not a site, exactly like a rung off the terrain; a ray
+// with no surviving rung yields no pad, so "make camp" is simply not offered there.
+//
+// The tolerance lets the near rung's OWN road through — it sits at exactly lat0 from it on a
+// straight. On the inside of a bend the own road comes closer than lat0 and that rung is rejected,
+// which is correct: its bench would bite into the shoulder.
+const CAMP_ROAD_CLEAR_TOL_M = 0.25
+
 // THE COVERAGE ARITHMETIC (target ≈ 20% of map area, owner-ratified).
 //   cell area                = 1024²                       = 1.0486 km²
 //   E[r²] for r ~ U[350,650] = (a² + ab + b²)/3             = 257 500 m²
@@ -497,10 +511,14 @@ export class CampSystem {
         const AMENITY_MAX = VIBE_W.view + VIBE_W.shade + VIBE_W.water
         const flats = []
         let flattest = null
+        const road = this._d.getRoad()
+        const clearR = lat0 - CAMP_ROAD_CLEAR_TOL_M
         for (let i = 0; i <= steps; i++) {
             const t = i / steps
             const lat = lat0 + t * reach
-            const c = this._gradeFlat(nr.roadX + nr.nx * lat, nr.roadZ + nr.nz * lat, nr, P, t)
+            const cx = nr.roadX + nr.nx * lat, cz = nr.roadZ + nr.nz * lat
+            if (road.queryNearest(cx, cz, clearR)) continue   // on/against another road: not a site
+            const c = this._gradeFlat(cx, cz, nr, P, t)
             if (!c) continue                       // off the terrain: not a site
             out.cands++
             if (!flattest || c.spread < flattest.spread) flattest = c
