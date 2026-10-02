@@ -120,8 +120,8 @@ export const ECONOMY_PARAMS = {
     // Rank thresholds (ratio = elapsed/par). rankDay1 MUST equal par.js RANK_THRESHOLDS_DEFAULT
     // (this module imports nothing, so it's a mirrored constant — the economy gate asserts the
     // equality). Linear interpolation day 1 → rankTightenDays, clamped flat on both sides.
-    rankDay1:   { S: 0.77, A: 0.81, B: 0.85, C: 1.00 },
-    rankDayLate:{ S: 0.75, A: 0.79, B: 0.83, C: 1.00 },   // C pinned — see the note above
+    rankDay1:   { S: 0.77, A: 0.81, B: 0.87, C: 1.00 },   // B widened 0.85 → 0.87 (owner, 2026-10-01)
+    rankDayLate:{ S: 0.75, A: 0.79, B: 0.85, C: 1.00 },   // C pinned — see the note above
     rankTightenDays: 20,
 
     // ⚠ THE END-OF-RUN PAYOUT CEILING [measured 2026-08-17]. The owner's stated targets are ~$5-15

@@ -580,6 +580,209 @@
       border-top: 5px solid #ffffff;
     }
 
+    /* FEAT-87: the live rank timer — a RoR2-style ticker in the Energy meter's family, story-only,
+       top-CENTRE directly under #mission-hud / #paper-hud (owner, 2026-10-01: "in the middle,
+       where it says leave the circle to start"). It POPS UP 15 s before the S/A line and stays to
+       the end of the job — absent before that, when it has nothing useful to say. The band strip
+       (S·A·B·C·D in RANK_COLOR, widths = the thresholds FROZEN at accept × par, at RT px/s)
+       scrolls LEFT under a fixed pointer as the mission clock runs; the pointer sits an eighth of
+       the way across so seven eighths of the view is what is AHEAD, and at the pop the A–D bands
+       already hold HALF the view (the targets get the bar — owner). Above it the RANK: readout —
+       the letter under the pointer, big, pulsing as a line nears; when one goes past the old
+       letter cracks in two and the halves fall clean off the card while the new one slams in.
+       NO TICKS on the strip (owner: they don't line up with the transitions and distract from
+       the moment) — the only lines are the transitions themselves, each a bright edge. No digits
+       anywhere — boundary proximity, never a countdown (SM-INV-3 as amended 2026-08-17). Calm for
+       most of a band; _updateRankTimer writes the border/glow/shake inline (as `transform`) as a
+       line approaches (the ticket's "flashy near the edge" — relaxed near boundaries ONLY).
+       Centred with auto margins rather than a translate so that inline transform has the box to
+       itself; the pop, slam and jolt animations use the independent `scale` / `translate`. */
+    #rank-timer {
+      display: none;
+      position: fixed;
+      top: 60px;    /* clears the one-line mission readout (16 px type + padding + border) */
+      left: 0; right: 0;
+      width: fit-content;
+      margin: 0 auto;
+      background: linear-gradient(180deg, rgba(14, 18, 24, 0.82), rgba(0, 0, 0, 0.7));
+      border: 1px solid #3a4450;
+      border-radius: 4px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      padding: 6px 12px 10px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #e6ecf2;
+      z-index: 88;
+      pointer-events: none;
+    }
+    #rank-timer.rt-in { animation: rt-pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1); }
+    @keyframes rt-pop {
+      from { opacity: 0; scale: 0.5 1.4; }
+      60%  { scale: 1.06 0.94; }
+      to   { opacity: 1; scale: 1; }
+    }
+    /* The readout line: a small dim "RANK:" label indented from the strip's edge, then the letter
+       at full size. The hierarchy is the point — the label is furniture, the letter is the news. */
+    #rank-timer .rt-title {
+      display: flex; align-items: baseline; gap: 8px;
+      margin: 0 0 6px 10px;
+      line-height: 28px;
+    }
+    #rank-timer .rt-label {
+      font-size: 11px; font-weight: bold; letter-spacing: 2px; color: #7f8fa0;
+      text-transform: uppercase;
+    }
+    /* The letter's slot: a fixed-width box the shards fall out of (overflow stays visible). A
+       thin bar under it in the letter's colour (set inline) anchors the readout to the strip. */
+    #rank-timer .rt-letter-box {
+      position: relative; display: inline-block; width: 1.25em; text-align: center;
+      font-size: 26px; line-height: 28px; font-weight: bold;
+    }
+    #rank-timer .rt-letter-box::after {
+      content: ''; position: absolute; left: 10%; right: 10%; bottom: -2px; height: 2px;
+      background: currentColor; opacity: 0.55; border-radius: 1px;
+    }
+    #rank-timer #rt-letter {
+      display: inline-block;
+      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8), 0 0 6px rgba(0, 0, 0, 0.6);
+      /* the per-frame pulse writes `scale` + text-shadow inline; the slam animation owns scale while it runs */
+    }
+    /* The slam: the new letter lands from large with a squash on impact, plus a white flash. */
+    #rank-timer #rt-letter.rt-slam { animation: rt-slam 0.5s cubic-bezier(0.2, 1.6, 0.4, 1); }
+    @keyframes rt-slam {
+      0%   { scale: 2.6; opacity: 0; filter: brightness(3); }
+      30%  { opacity: 1; filter: brightness(2.5); }
+      55%  { scale: 0.86 1.12; filter: brightness(1); }
+      75%  { scale: 1.08 0.94; }
+      100% { scale: 1; }
+    }
+    /* The break: two clones of the OLD letter, each clipped to one side of a jagged crack, that
+       hang for a beat, then drop and tumble away in opposite directions — all the way off the
+       card (the card is ~70 px tall; they travel ~140). Removed on animationend. */
+    #rank-timer .rt-shard {
+      position: absolute; left: 0; top: 0; width: 100%;
+      text-align: center;
+      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+      pointer-events: none;
+    }
+    #rank-timer .rt-shard.l { clip-path: polygon(0 0, 56% 0, 40% 36%, 66% 60%, 46% 100%, 0 100%);
+                              animation: rt-fall-l 1.0s cubic-bezier(0.45, 0, 0.85, 0.35) forwards; }
+    #rank-timer .rt-shard.r { clip-path: polygon(56% 0, 100% 0, 100% 100%, 46% 100%, 66% 60%, 40% 36%);
+                              animation: rt-fall-r 1.1s cubic-bezier(0.45, 0, 0.85, 0.35) forwards; }
+    @keyframes rt-fall-l {
+      0%   { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+      8%   { transform: translate(-3px, 2px) rotate(-6deg); opacity: 1; }
+      80%  { opacity: 1; }
+      100% { transform: translate(-30px, 140px) rotate(-110deg); opacity: 0; }
+    }
+    @keyframes rt-fall-r {
+      0%   { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+      8%   { transform: translate(3px, 2px) rotate(7deg); opacity: 1; }
+      80%  { opacity: 1; }
+      100% { transform: translate(34px, 150px) rotate(120deg); opacity: 0; }
+    }
+    /* The strip's window: inset so the bands read as sitting IN the card. */
+    #rank-timer .rt-view {
+      position: relative;
+      width: 240px;    /* RANK_TIMER_PARAMS.viewW — keep in step: 40 s, 35 s of it ahead */
+      height: 20px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid #55606b;
+      border-radius: 3px;
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+    }
+    #rank-timer .rt-strip {
+      position: absolute;
+      left: 0; top: 0; height: 100%;
+      display: flex;
+      /* no transition: the per-frame transform IS the animation */
+    }
+    /* A band: its rank colour (inline) under a top-lit gloss, and a BRIGHT right edge — that edge
+       IS the transition, the one line on the strip that means something. */
+    #rank-timer .rt-seg {
+      height: 100%;
+      flex: none;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: bold; font-size: 12px;
+      color: rgba(0, 0, 0, 0.7);   /* dark letter on the coloured band */
+      border-right: 2px solid rgba(255, 255, 255, 0.85);
+      box-sizing: border-box;
+      background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0, rgba(255, 255, 255, 0) 45%,
+                                                rgba(0, 0, 0, 0.12) 100%);
+      overflow: hidden;
+    }
+    #rank-timer .rt-seg:last-child { border-right: none; }
+    /* A wide band (S, D) carries its letter at its LEFT edge — the S is then on screen at the
+       start line and the D rides the red edge as it approaches, instead of both sitting at the
+       centre of a band far longer than the view. The thin A/B/C bands stay centred. */
+    #rank-timer .rt-seg.wide { justify-content: flex-start; padding-left: 6px; }
+    /* The offer's bonus gate: a gold line through the band that ends where the bonus lapses, with
+       a caret so it reads as a marker and not an edge. Goes grey once it has gone past. */
+    #rank-timer .rt-gate {
+      display: none;
+      position: absolute; top: 0; height: 100%; width: 0;
+      border-left: 2px solid #ffd54a;
+      box-shadow: 0 0 5px #ffd54a, 0 0 1px #000;
+    }
+    #rank-timer .rt-gate::before {
+      content: '';
+      position: absolute; left: -5px; top: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 6px solid #ffd54a;
+    }
+    #rank-timer .rt-gate.lost { border-left-color: #6b747d; box-shadow: none; }
+    #rank-timer .rt-gate.lost::before { border-top-color: #6b747d; }
+    /* The fixed pointer the strip scrolls beneath: a lit hairline with a caret top and bottom. */
+    #rank-timer .rt-pointer {
+      position: absolute;
+      left: 12.5%; top: 0; height: 100%; width: 0;   /* RANK_TIMER_PARAMS.pointerFrac */
+      border-left: 2px solid #ffffff;
+      box-shadow: 0 0 4px rgba(255, 255, 255, 0.9), 0 0 1px #000;
+    }
+    #rank-timer .rt-pointer::before, #rank-timer .rt-pointer::after {
+      content: '';
+      position: absolute;
+      left: -6px;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+    }
+    #rank-timer .rt-pointer::before { top: 0; border-top: 5px solid #ffffff; }
+    #rank-timer .rt-pointer::after  { bottom: 0; border-bottom: 5px solid #ffffff; }
+    /* The beat: a flash over the view plus a word, played once when the bonus gate or the C/D
+       line goes past. Driven by a class toggled for RANK_TIMER_PARAMS.beatS. */
+    #rank-timer .rt-beat {
+      display: none;
+      position: absolute; inset: 0;
+      align-items: center; justify-content: center;
+      font-weight: bold; font-size: 13px; letter-spacing: 3px; text-transform: uppercase;
+      color: #fff;
+      text-shadow: 0 0 6px #000, 0 0 2px #000;
+    }
+    #rank-timer.rt-lost .rt-beat, #rank-timer.rt-slow .rt-beat {
+      display: flex;
+      animation: rt-flash 1.4s ease-out forwards;   /* RANK_TIMER_PARAMS.beatS */
+    }
+    /* While the word is up the band letters get out of its way (they bled through the flash). */
+    #rank-timer.rt-lost .rt-seg, #rank-timer.rt-slow .rt-seg { color: transparent; }
+    #rank-timer.rt-lost { animation: rt-jolt 0.5s linear; }
+    #rank-timer.rt-slow { animation: rt-jolt 0.7s linear; }
+    @keyframes rt-flash {
+      0%   { background: rgba(255, 255, 255, 0.95); color: #000; text-shadow: none; letter-spacing: 6px; }
+      18%  { background: rgba(255, 70, 50, 0.85); color: #fff; text-shadow: 0 0 6px #000, 0 0 2px #000; letter-spacing: 3px; }
+      100% { background: rgba(255, 70, 50, 0); color: rgba(255, 255, 255, 0); text-shadow: none; }
+    }
+    @keyframes rt-jolt {
+      0%, 100% { translate: 0 0; }
+      10%  { translate: -6px 3px; }
+      25%  { translate: 6px -3px; }
+      40%  { translate: -4px -1px; }
+      55%  { translate: 3px 2px; }
+      70%  { translate: -2px 0; }
+      85%  { translate: 1px 1px; }
+    }
+
     /* FEAT-53: payout / good-deeds line on the mission result card (and FEAT-61's route card). */
     #mission-panel .mp-pay, #paper-panel .mp-pay { font-size: 18px; color: #8ce99a; }
     #pp-accept { border-color: #5ad06a; color: #b6f0be; }
@@ -1063,6 +1266,19 @@
         <div class="em-seg" id="em-seg-exhausted"><span>Exhausted</span></div>
       </div>
       <div class="em-pointer"></div>
+    </div>
+  </div>
+
+  <!-- FEAT-87: the live rank timer — the ticker under the Energy meter. The band strip (five
+       .rt-seg children, built by _updateRankTimer in main.js from the job's frozen thresholds),
+       the offer's gold bonus-gate marker, the fixed pointer, and the beat overlay. The title names
+       the band under the pointer in its rank colour — the letters are the only text on it. -->
+  <div id="rank-timer">
+    <div class="rt-title"><span class="rt-label">Rank</span><span class="rt-letter-box" id="rt-letter-box"><span id="rt-letter">S</span></span></div>
+    <div class="rt-view">
+      <div class="rt-strip" id="rt-strip"><div class="rt-gate" id="rt-gate"></div></div>
+      <div class="rt-pointer"></div>
+      <div class="rt-beat" id="rt-beat"></div>
     </div>
   </div>
 

@@ -141,7 +141,7 @@ The player never sees par. They see **a letter and a number.** Ranks are **D · 
 (already implemented — `gradeRun()` in `src/par.js`), coloured **red · orange · yellow · white ·
 blue**, with **C containing par** *(re-anchored 2026-08-16 — was B)* so that par means the slowest
 drive that is still a pass, and every letter above it is something you actually earned. Thresholds
-**S 0.77 · A 0.81 · B 0.85 · C 1.00** *(re-cut 2026-09-07 for router-v2 roads — was S 0.72 · A 0.76 ·
+**S 0.77 · A 0.81 · B 0.87 · C 1.00** *(B widened 0.85 → 0.87 on 2026-10-01, owner: A tight, B wider, C wider; re-cut 2026-09-07 for router-v2 roads — was S 0.72 · A 0.76 ·
 B 0.80)*, with C pinned at 1.0 on every day of the run — the difficulty ramp squeezes S/A/B and never
 the pass line itself.
 

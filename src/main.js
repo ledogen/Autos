@@ -78,6 +78,8 @@ import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier,
          planTourJob, customersForTier, radiusForTier, tierRungs } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
+import { RANK_THRESHOLDS_DEFAULT } from './par.js'      // FEAT-87: the rank bar's fallback bands
+import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -4336,6 +4338,189 @@ function _updateEnergyMeter () {
   }
 }
 
+// ── FEAT-87: the live rank timer (RoR2 ticker, top-centre under the mission readout) ───────
+// The job's rank bands — S·A·B·C·D, cut at the thresholds FROZEN at accept × par — laid along a
+// time axis at RT.pxPerS and scrolled under a fixed pointer by the MISSION clock (the same
+// `elapsed` the result card grades on, so the bar and the letter cannot disagree). Pure geometry
+// and the per-frame read live in rank-timer.js; this is the DOM. Per frame, like the Energy
+// meter, because the creep IS the display — and because the escalation (glow, scale, shake) runs
+// on a ~0.3 s pulse that a 10 Hz poll would stutter.
+//
+// Binding (SM-INV-3 as amended 2026-08-17; FEAT-87 rulings): NO digits on this surface — the
+// only text is the letter in the title and the letters on the bands. Boundary proximity, never
+// `3:41 remaining`. Calm for the quiet middle of a band; flashy only inside RT.escalateS of the
+// next line (the "glanceable and peripheral" relaxation is local to boundaries). Crossing the
+// offer's bonus gate plays the "bonus lost" beat; crossing the C/D line plays "too slow". Both are
+// display only — the payout underneath is the same continuous line (SM-INV-4).
+//
+// NOT ON SCREEN UNTIL IT MATTERS [owner, 2026-10-01]: the bar POPS UP RT.appearS seconds before
+// the S/A line (rank-timer.js `shown`) and stays to the end of the job. Before that it has nothing
+// useful to say and is simply absent. It sits top-centre under #mission-hud / #paper-hud — the
+// spot the "leave the green circle" line and the elapsed readout occupy — not with the wallet.
+//
+// THE RANK: READOUT [owner, 2026-10-01 — "something dramatic"]: the band under the pointer as a
+// big letter in its colour. It pulses (scale + glow, on the same intensity as the box) as a line
+// nears; when one goes past the OLD letter cracks in two and the halves tumble away
+// (_rtBreakLetter — two clipped clones, CSS-animated, self-removing) while the new one slams in.
+//
+// Sources: a POI/Quick job (missionSystem — countdown / staging / running, with `mission.bonus.gate`
+// as the marked line) or a paper round (paperRouteSystem — staging / running). The paper route's
+// letter is graded on par × coverage, which is not known until the round is in; the bar draws the
+// full-coverage bands, i.e. the clock you are held to if you serve everyone, and marks no gate
+// (rounds carry no bonus item).
+const RT = RANK_TIMER_PARAMS
+let _rtEls = null, _rtKey = null, _rtLayout = null, _rtPrev = -1, _rtLetter = '', _rtHot = false
+let _rtBeatT = 0, _rtShown = false, _rtPhase = 0, _rtLastNow = 0
+function _rankTimerSource () {
+  const m = missionSystem
+  if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
+    return { key: m.mission, elapsed: m.elapsed, par: m.mission.par,
+             thresholds: m.mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT,
+             gate: m.mission.bonus?.gate ?? null }
+  }
+  const p = paperRouteSystem
+  if (p && p.isCarrying() && p.run && p.route) {
+    return { key: p.run, elapsed: p.run.elapsed, par: p.route.par,
+             thresholds: p.run.thresholds ?? RANK_THRESHOLDS_DEFAULT, gate: null }
+  }
+  return null
+}
+function _updateRankTimer () {
+  if (!_rtEls) {
+    const root = document.getElementById('rank-timer')
+    if (!root) return
+    _rtEls = { root, strip: document.getElementById('rt-strip'), gate: document.getElementById('rt-gate'),
+               letter: document.getElementById('rt-letter'), letterBox: document.getElementById('rt-letter-box'),
+               beat: document.getElementById('rt-beat'), segs: [] }
+  }
+  const src = (storySystem.isActive() && !storySystem.isEntering()) ? _rankTimerSource() : null
+  if (!src) {
+    if (_rtKey !== null) {       // the job ended or was put down: hide once, forget the layout
+      _rtKey = null; _rtLayout = null; _rtHot = false; _rtShown = false
+      _rtEls.root.style.display = 'none'
+      _rtEls.root.classList.remove('rt-lost', 'rt-slow', 'rt-in')
+      _rtEls.root.style.boxShadow = ''; _rtEls.root.style.transform = ''; _rtEls.root.style.borderColor = ''
+    }
+    return
+  }
+  const E = _rtEls
+  if (src.key !== _rtKey) {
+    // A new job in hand: rebuild the strip from its contract. One DOM build per accept.
+    _rtKey = src.key
+    _rtLayout = rankTimerLayout(src.par, src.thresholds, src.gate)
+    _rtPrev = -1; _rtLetter = ''; _rtHot = false; _rtShown = false
+    for (const el of E.segs) el.remove()
+    E.segs = []
+    for (const sh of E.letterBox.querySelectorAll('.rt-shard')) sh.remove()
+    E.letter.classList.remove('rt-slam')
+    E.root.classList.remove('rt-lost', 'rt-slow', 'rt-in')
+    E.root.style.display = 'none'
+    E.gate.classList.remove('lost')
+    if (_rtLayout) {
+      for (const b of _rtLayout.bands) {
+        const el = document.createElement('div')
+        // D runs off the end of any window the strip can show — par again, plus the view.
+        const w = (isFinite(b.t1) ? b.t1 - b.t0 : src.par + RT.viewW / RT.pxPerS) * RT.pxPerS
+        el.className = w > RT.viewW / 2 ? 'rt-seg wide' : 'rt-seg'   // wide: letter at the left edge
+        el.style.width = `${w}px`
+        el.style.background = RANK_COLOR[b.letter]
+        el.textContent = w >= 14 ? b.letter : ''   // a letter half-clipped reads worse than none
+        E.strip.insertBefore(el, E.gate)
+        E.segs.push(el)
+      }
+      if (_rtLayout.gateT != null) {
+        E.gate.style.left = `${_rtLayout.gateT * RT.pxPerS}px`
+        E.gate.style.display = 'block'
+      } else E.gate.style.display = 'none'
+    }
+  }
+  if (!_rtLayout) return
+  const e = src.elapsed
+  const f = rankTimerFrame(_rtLayout, e, _rtPrev < 0 ? e : _rtPrev, RT)
+  _rtPrev = e
+  // The pop: absent until appearS before the S/A line, then on for the rest of the job (the
+  // rt-in class runs the entrance animation once).
+  if (f.shown !== _rtShown) {
+    _rtShown = f.shown
+    E.root.style.display = f.shown ? 'block' : 'none'
+    E.root.classList.toggle('rt-in', f.shown)
+  }
+  if (!f.shown) return
+  // The scroll: the pointer is at pointerFrac of the view; the strip's origin (elapsed 0) slides
+  // left of it by elapsed × pxPerS.
+  E.strip.style.transform = `translateX(${RT.viewW * RT.pointerFrac - e * RT.pxPerS}px)`
+  if (f.letter !== _rtLetter) {
+    const old = _rtLetter
+    _rtLetter = f.letter
+    if (old) _rtBreakLetter(old)   // a line went past: the old letter breaks and falls
+    E.letter.textContent = f.letter
+    E.letter.style.color = RANK_COLOR[f.letter]
+    E.letterBox.style.color = RANK_COLOR[f.letter]   // the underline bar reads currentColor
+    if (old) { E.letter.classList.remove('rt-slam'); void E.letter.offsetWidth; E.letter.classList.add('rt-slam') }
+  }
+  // The beats. A beat holds for RT.beatS (the CSS animation runs the flash; the class is removed
+  // on the clock so a second beat can re-trigger it). Both fire once, on the crossing frame.
+  const now = performance.now() / 1000
+  if (f.lost || f.slow) {
+    E.root.classList.remove('rt-lost', 'rt-slow')
+    void E.root.offsetWidth    // restart the CSS animation if a beat is already playing
+    E.root.classList.add(f.lost ? 'rt-lost' : 'rt-slow')
+    E.beat.textContent = f.lost ? 'bonus lost' : 'too slow'
+    if (f.lost) E.gate.classList.add('lost')
+    _rtBeatT = now + RT.beatS
+  } else if (_rtBeatT && now >= _rtBeatT) {
+    _rtBeatT = 0
+    E.root.classList.remove('rt-lost', 'rt-slow')
+  }
+  // The escalation. Calm = no inline style at all (reset once). Near a line: a glow in the colour
+  // of the band about to be lost, pulsing faster as it nears (1.2 s → 0.3 s), a slight grow, and —
+  // past half-way — a shake; the bonus gate and the C/D line hit harder than the S/A, A/B lines
+  // you were not banking on.
+  const i = f.intensity
+  if (i <= 0) {
+    if (_rtHot) {
+      _rtHot = false; _rtPhase = 0
+      E.root.style.boxShadow = ''; E.root.style.transform = ''; E.root.style.borderColor = ''
+      E.letter.style.scale = ''; E.letter.style.textShadow = ''
+    }
+    _rtLastNow = now
+    return
+  }
+  // ONE oscillator (owner: "make the shake simple"). Its frequency ramps shakeHzMin → shakeHzMax
+  // (48 → 120 bpm) with intensity² — slow and mild for most of the approach, then quickly up to a
+  // racing heartbeat at the line — and its amplitude shakePxMin → shakePxMax linearly. The phase
+  // INTEGRATES (phase += 2π·f·dt) so the frequency ramp is continuous: no jumps as f changes.
+  // Everything the escalation moves — the box's sideways shake, the letter's scale, both glows —
+  // rides this one signal.
+  const dtF = _rtHot ? Math.min(0.1, now - _rtLastNow) : 0
+  _rtLastNow = now; _rtHot = true
+  const freq = RT.shakeHzMin + (RT.shakeHzMax - RT.shakeHzMin) * i * i
+  _rtPhase += 2 * Math.PI * freq * dtF
+  const osc = Math.sin(_rtPhase)
+  const weight = f.heavy ? 1 : 0.5
+  const pulse = 0.5 + 0.5 * osc                       // 0..1, the same rhythm for every effect
+  const amp = (RT.shakePxMin + (RT.shakePxMax - RT.shakePxMin) * i) * weight
+  const colour = RANK_COLOR[f.letter]
+  E.root.style.borderColor = colour
+  E.root.style.boxShadow = `0 0 ${((3 + 16 * i * pulse) * weight).toFixed(1)}px ${colour}, 0 2px 10px rgba(0,0,0,0.45)`
+  E.root.style.transform = `translateX(${(osc * amp).toFixed(2)}px)`
+  // The letter pulses harder than the box — it is the thing about to change.
+  E.letter.style.scale = `${(1 + 0.3 * i * pulse * weight).toFixed(3)}`
+  E.letter.style.textShadow = `0 1px 0 rgba(0,0,0,0.8), 0 0 ${(2 + 12 * i * pulse).toFixed(1)}px ${colour}`
+}
+// The break: two clones of `old` in its colour, each clipped (CSS) to one side of a jagged crack,
+// dropped into the letter's slot; their fall animations remove them when done.
+function _rtBreakLetter (old) {
+  for (const side of ['l', 'r']) {
+    const sh = document.createElement('span')
+    sh.className = `rt-shard ${side}`
+    sh.textContent = old
+    sh.style.color = RANK_COLOR[old]
+    sh.addEventListener('animationend', () => sh.remove(), { once: true })
+    _rtEls.letterBox.appendChild(sh)
+  }
+}
+
 // FEAT-46: the mission panel's seed control is GONE. You choose the world when you enter story mode
 // (#story-seed-modal), and offering it again in the job panel meant a full world rebuild could fire
 // under a live mission planner mid-run. The debug panel's seed field remains the one testing path.
@@ -5616,6 +5801,9 @@ function loop () {
   _updateDozeOverlay(daySystem.eyelidFactor())
   // FEAT-55: the Energy meter scrolls on the same per-frame cadence — the creep is the display.
   _updateEnergyMeter()
+  // FEAT-87: the rank timer scrolls on the mission clock, per frame for the same reason (and its
+  // near-boundary pulse runs at a rate a 10 Hz poll would stutter).
+  _updateRankTimer()
 
   // FEAT-22: water submersion flag — CG vs the local water surface (pond plane). Once per render
   // frame (not per physics substep): v1 only SETS the flag; nothing in stepPhysics consumes it yet.

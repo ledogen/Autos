@@ -124,7 +124,7 @@ itself untouched**. Priced in darkness and a hostile morning only; the world doe
 night.
 
 **Amendment 2026-09-07** (project owner): **THE v2 BAND RE-CUT.** Thresholds move to
-**S 0.77 · A 0.81 · B 0.85 · C 1.00** (day 1), tightening a flat −0.02 to S 0.75 · A 0.79 · B 0.83 by
+**S 0.77 · A 0.81 · B 0.87 · C 1.00** (day 1; B widened from 0.85 on 2026-10-01 — A tight, B wider, C wider), tightening a flat −0.02 to S 0.75 · A 0.79 · B 0.85 by
 day 20; `breakEven` rides B to **0.85**, `k` to **0.0255** and `payoutZero` to **1.15** by their
 existing derivation rules, holding a break-even day's dollar value fixed. Nothing else moves —
 `PAR_REF`, `PAR_SLACK`, "C is pinned at 1.00" and every invariant are untouched. Cause: the bands

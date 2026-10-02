@@ -447,7 +447,12 @@ export function formatTime(sec) {
  * tire, 0019–0026 on the new one. Owner's call whether the bands follow; do not move them from a
  * one-session re-grade (see the 2026-09-09 merge handoff for the numbers).
  */
-export const RANK_THRESHOLDS_DEFAULT = { S: 0.77, A: 0.81, B: 0.85, C: 1.00 }
+/*
+ * [B WIDENED 2026-10-01, owner.] B 0.85 → 0.87, on seeing the bands laid out on the live rank timer
+ * (FEAT-87): "makes sense to have A be tight, B be wider, C wider" — a 0.04 / 0.06 / 0.13 ladder
+ * instead of 0.04 / 0.04 / 0.15. S, A and C do not move; the late-day set keeps its flat −0.02.
+ */
+export const RANK_THRESHOLDS_DEFAULT = { S: 0.77, A: 0.81, B: 0.87, C: 1.00 }
 
 /**
  * Grade a finished run against par. Margin is par-relative so it reads the same on a 2-minute

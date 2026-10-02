@@ -206,7 +206,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   // a well-meaning tweak to either table silently breaks the progression curve. Job lengths are
   // the MEASURED region-1 average (180 s, 2026-09-30) and the ratified 2× for region 6 (the ladder
   // is mission length, run-shape.md) — not the old nominal 360/720.
-  const B_DRIVE = 0.83   // mid-B under rankDay1 (A 0.81 < 0.83 ≤ B 0.85) — the reference drive
+  const B_DRIVE = 0.83   // a B under rankDay1 (A 0.81 < 0.83 ≤ B 0.87) — the reference drive
   const pay = (par, day, region) => payoutFor(par, B_DRIVE, dayTier(day) * regionTier(region))
   const start = pay(180, 1, 1), end = pay(360, 20, 6)
   check('a day-1 region-1 job pays $5-15', start >= 5 && start <= 15, `got $${start.toFixed(2)}`)
@@ -263,7 +263,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
 {
   const eco = new EconomySystem({ getDay: () => 1 })
   eco.start()
-  // ratio 0.95 IS a C under the re-cut bands (B 0.85 < 0.95 ≤ C 1.00). It used to read 1.1, which
+  // ratio 0.95 IS a C under the re-cut bands (B 0.87 < 0.95 ≤ C 1.00). It used to read 1.1, which
   // is now a D — the fixture would have been quietly self-contradictory.
   for (let i = 0; i < 20; i++) eco.settle({ par: 180, ratio: 0.95, letter: 'C' }, { terms: eco.terms() })
   check('20 C-grades === exactly 10.0 points (integer halves, no float drift)', eco.points() === 10.0)
@@ -278,7 +278,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   eco.start()
   check('start() zeroes the run wallet/points/missions',
     runEconomy.money === 0 && runEconomy.halfPoints === 0 && runEconomy.missions === 0)
-  // ratio 0.83 IS a B under the re-cut bands (A 0.81 < 0.83 ≤ B 0.85). Kept in step with the bands
+  // ratio 0.83 IS a B under the re-cut bands (A 0.81 < 0.83 ≤ B 0.87). Kept in step with the bands
   // on purpose: the fixture asserts a letter, so a band move that leaves it behind would have it
   // claiming a letter the ratio no longer earns (it read 0.78 before 2026-09-07, now an A).
   const r = eco.settle({ par: 180, ratio: 0.83, letter: 'B' }, { terms: eco.terms() })

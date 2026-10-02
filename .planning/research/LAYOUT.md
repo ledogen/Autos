@@ -86,7 +86,8 @@ slots, expiry timers, seeded offers, names, card view-model; pure) · `mission.j
 + run state machine) · `par.js` (FEAT-29 par oracle) · `poi.js` (lay-by POIs, FEAT-46) · `camp.js` (dispersed
 camping, FEAT-45) · `dialogue.js` (character channel) · `paper-route.js` + `throw.js` (FEAT-61) ·
 `gps.js` (FEAT-39 nav overlay) · `cluster.js` (FEAT-49 gauge cluster — instrument panel, not
-clustering) · `lab.js` (FEAT-31 testing lab world).
+clustering) · `rank-timer.js` (FEAT-87 live rank timer — band line-up, escalation, beats; pure, the
+DOM ticker is in main.js) · `lab.js` (FEAT-31 testing lab world).
 
 **Dev & harness bridge** — `debug.js` (lil-gui panel, HUD) · `capture.js` (game↔harness capture
 schema) · `logger.js` (frame logger + IC loader) · `perf.js` (bucketed profiler) · `version.js`
