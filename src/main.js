@@ -462,6 +462,11 @@ function looseSurfaceFactor (x, z) {
   return paved + (1 - paved) * (lat - (hw - band)) / band
 }
 
+// Ground height under an effect emitter (dust / smoke / dirt spray): the lab's own surface in the
+// lab, analytic terrain otherwise — the same split queryContacts makes.
+const _fxGroundY = (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0)
+                                        : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0)
+
 // Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
 console.log('THREE.REVISION', THREE.REVISION)
 
@@ -1166,6 +1171,8 @@ let accumulator = 0
 // one-frame jitter that occurs when the render loop and physics loop drift in/out of sync.
 const _prevRenderPos  = new THREE.Vector3()
 const _prevRenderQuat = new THREE.Quaternion()
+const _renderPos      = new THREE.Vector3()      // this frame's interpolated pose (scratch, reused)
+const _renderQuat     = new THREE.Quaternion()
 let currentTime = performance.now() / 1000
 
 // ── Vehicle state ────────────────────────────────────────────────────────────
@@ -1488,7 +1495,7 @@ function applyShadowResolution (mapSize, extent) {
 // the Sky mesh and sets scene.background = null (the mesh is the background now).
 const skySystem = new SkySystem({ scene, renderer, sun, sunFar, farSplit: SHADOW_FAR_SPLIT, ambient })
 window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
-// NB `window.terrain` is the height-sampler FUNCTION, not the streaming system. This is the system
+// NB `window.terrain` is the ground-height FUNCTION (returns metres), not the streaming system. This is the system
 // itself — needed to reach _terrainUniforms (e.g. A/B-ing uShadowStrength from a CDP probe).
 window.__terrainSystem = () => terrainSystem
 
@@ -1660,12 +1667,10 @@ window.__car = () => ({ x: vehicleState.position.x, y: vehicleState.position.y, 
 const gaugeCluster = new GaugeCluster(document.getElementById('cluster'))
 gaugeCluster.seedOdometer()
 
-// ── Terrain + ramp ────────────────────────────────────────────────────────────
-// M1-13: terrain query. Phase 6 replaces body, signature unchanged.
+// ── Lab ramp ──────────────────────────────────────────────────────────────────
 // Freestanding ramp: 10°, 5m rise + 5m underrun, 6m wide, no plateau.
 // RAMP_UNDERRUN extends the slope downhill (toward spawn) so the toe is buried underground
 // along the ramp direction — not straight down. Toe sits at y ≈ −0.88 m.
-// Normal derivation: for a ramp rising in -Z, n = (0, cos(θ), sin(θ)).
 const RAMP_ANGLE    = Math.PI / 18   // 10 degrees
 const RAMP_LENGTH   = 5              // m — rise section (from ground level to crest)
 const RAMP_UNDERRUN = 5              // m — extra slope buried below terrain at the toe end
@@ -1675,9 +1680,6 @@ const RAMP_MAX_H    = RAMP_LENGTH * Math.tan(RAMP_ANGLE)  // ≈ 0.88 m — cres
 const RAMP_END_Z    = -20            // m — crest z (top of ramp)
 const RAMP_TOE_Z    = RAMP_END_Z + RAMP_LENGTH + RAMP_UNDERRUN  // -10 — toe z (near spawn)
 const RAMP_TOE_Y    = -RAMP_UNDERRUN * Math.tan(RAMP_ANGLE)     // ≈ −0.88 m — toe depth
-
-const _rampNormal   = new THREE.Vector3(0, Math.cos(RAMP_ANGLE), Math.sin(RAMP_ANGLE))
-const _flatNormal   = new THREE.Vector3(0, 1, 0)
 
 // ── Ramp triangle mesh ────────────────────────────────────────────────────────
 // Eight triangles: top incline (2), back wall (2), left side (2), right side (2).
@@ -1702,17 +1704,11 @@ const RAMP_TRIS = [
   [_TR,  _DBR, _CR ],  // right side tri 2
 ]
 
-// M1-13: terrain height-field query. Phase 6 replaces body, signature locked.
-function terrain (x, z) {
-  if (Math.abs(x) > RAMP_WIDTH / 2) return { height: 0, normal: _flatNormal }
-  const distFromCrest = RAMP_END_Z - z  // negative when z > RAMP_END_Z (toward spawn)
-  const totalLen = RAMP_LENGTH + RAMP_UNDERRUN
-  if (distFromCrest < 0 && -distFromCrest <= totalLen) {
-    return { height: RAMP_MAX_H + distFromCrest * Math.tan(RAMP_ANGLE), normal: _rampNormal }
-  }
-  return { height: 0, normal: _flatNormal }
-}
-window.terrain = terrain
+// Dev handle: ground height (m) at world (x, z). The harness tools float the freecam on it
+// (`window.terrain(x, z) + 45`), so it MUST return a number. It used to be the Phase-1 ramp stub,
+// which returned `{ height, normal }` — every freecam sweep in test/profile.mjs, hitch-report.mjs and
+// teleport-fill.mjs was therefore placed at a non-numeric height (BUG-34's lesson, un-learned).
+window.terrain = (x, z) => terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
 
 /**
  * Closest point on a filled triangle ABC to query point P.
@@ -1781,6 +1777,14 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
  * Called by stepPhysics once per wheel each physics step.
  * Phase 6: extend to query the terrain height-field for rough terrain surfaces.
  */
+// Tire-envelope stencil (see queryContacts): ring radii as a fraction of the wheel radius, and the
+// eight sample directions. Hoisted so the per-wheel query does no trig — the values are the same
+// cos/sin of o·2π/8 the loop used to evaluate on every call.
+const FOOT_RINGS = [0.35, 0.6, 0.8, 0.95]
+const FOOT_DIRS  = 8
+const FOOT_COS   = Array.from({ length: FOOT_DIRS }, (_, o) => Math.cos(o * Math.PI * 2 / FOOT_DIRS))
+const FOOT_SIN   = Array.from({ length: FOOT_DIRS }, (_, o) => Math.sin(o * Math.PI * 2 / FOOT_DIRS))
+
 function queryContacts (cx, cy, cz, r, footprint = false) {
   const hits = []
 
@@ -1837,14 +1841,11 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
     //
     // Cost is bounded by carveHint's 0.05 m memo — these offsets are distinct cells for one wheel,
     // but every suspension substep and every repeat query at the same spot reuse them.
-    const STEN = [0.35, 0.6, 0.8, 0.95]
-    const DIRS = 8
-    for (let k = 0; k < STEN.length; k++) {
-      const d    = STEN[k] * r
+    for (let k = 0; k < FOOT_RINGS.length; k++) {
+      const d    = FOOT_RINGS[k] * r
       const lift = Math.sqrt(Math.max(0, r * r - d * d))
-      for (let o = 0; o < DIRS; o++) {
-        const a = o * Math.PI * 2 / DIRS
-        const sx = cx + d * Math.cos(a), sz = cz + d * Math.sin(a)
+      for (let o = 0; o < FOOT_DIRS; o++) {
+        const sx = cx + d * FOOT_COS[o], sz = cz + d * FOOT_SIN[o]
         const h   = groundH(sx, sz)
         const top = h + lift
         if (top > bestTop) { bestTop = top; bestH = h; bestX = sx; bestZ = sz }
@@ -5650,9 +5651,6 @@ function loop () {
   // hitch report shows a fat frame with nothing explaining it.
   const _ptP = performance.now()
   while (accumulator >= PHYSICS_DT) {
-    // Terrain stub call retained for M1-13 verification (Phase 6 replaces body, not call site).
-    const _surface = terrain(vehicleState.position.x, vehicleState.position.z)  // eslint-disable-line no-unused-vars
-
     // Story-mode countdown hold — set BEFORE updateVehicle, which is where handbrake is computed.
     // (The old approach re-latched vehicleState.parked AFTER updateVehicle had already computed
     // handbrake=false for the step, so the countdown never actually held and the player could
@@ -5816,8 +5814,8 @@ function loop () {
   // Interpolate rendered position/quaternion between the last two physics steps.
   // accumulator is the residual time since the last step; alpha=0 → last step, alpha→1 → next step.
   const _renderAlpha = accumulator / PHYSICS_DT
-  const _renderPos   = _prevRenderPos.clone().lerp(vehicleState.position, _renderAlpha)
-  const _renderQuat  = _prevRenderQuat.clone().slerp(vehicleState.quaternion, _renderAlpha)
+  _renderPos.copy(_prevRenderPos).lerp(vehicleState.position, _renderAlpha)
+  _renderQuat.copy(_prevRenderQuat).slerp(vehicleState.quaternion, _renderAlpha)
 
   // Temporarily substitute interpolated pos/quat so meshes and camera both render at subframe time.
   const _physPos  = vehicleState.position
@@ -5831,25 +5829,19 @@ function loop () {
   campfire.update(frameTime, skySystem.nightFactor())   // no-op unless a camp is up
 
   // Wheel dust trails — advance + emit using the interpolated render pose (vehicleState is
-  // still the render copy here; restored below). Ground sampler mirrors queryContacts: flat
-  // the lab surface in the lab, analytic terrain height otherwise. Cheap no-op when no wheel is working.
-  dustSystem.update(frameTime, vehicleState, RANGER_PARAMS,
-    (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
-    looseSurfaceFactor)
+  // still the render copy here; restored below). Ground sampler = _fxGroundY (mirrors queryContacts).
+  // Cheap no-op when no wheel is working.
+  dustSystem.update(frameTime, vehicleState, RANGER_PARAMS, _fxGroundY, looseSurfaceFactor)
 
   // Tire smoke — same render-pose timing and ground sampler as dust above, and BUG-38 gives it the
   // same looseSurfaceFactor too: smoke reads it INVERTED (full on pavement, a thin floor off it)
   // while dust and spray read it forward. No lab special-case here — looseSurfaceFactor answers for
   // the lab itself (its own surface, on the pavement effect class), so all four consumers agree.
-  smokeSystem.update(frameTime, vehicleState, RANGER_PARAMS,
-    (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
-    looseSurfaceFactor)
+  smokeSystem.update(frameTime, vehicleState, RANGER_PARAMS, _fxGroundY, looseSurfaceFactor)
 
   // Dirt spray — same render-pose timing and ground sampler; additionally gated by
   // looseSurfaceFactor so clods only fly where there is loose material to throw.
-  dirtSpraySystem.update(frameTime, vehicleState, RANGER_PARAMS,
-    (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
-    looseSurfaceFactor)
+  dirtSpraySystem.update(frameTime, vehicleState, RANGER_PARAMS, _fxGroundY, looseSurfaceFactor)
 
   // Phase 6: update terrain chunk ring each render frame (outside physics accumulator).
   // ground.position.x/z snapping removed — ground mesh removed; terrain chunks replace it.

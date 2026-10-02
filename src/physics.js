@@ -107,17 +107,6 @@ function getBrakeTorque (wheelIndex, vehicleState, params) {
   return 0
 }
 
-/**
- * Advance vehicle physics state by one fixed timestep.
- *
- * @param {object} vehicleState - Mutable vehicleState (mutated in-place).
- * @param {object} params - RANGER_PARAMS (may be augmented with debug-slider values).
- * @param {number} dt - Fixed timestep in seconds.
- * @param {function} queryContacts - (cx,cy,cz,r) → Array<{normal,depth,contactPoint}>.
- *   Caller (main.js) implements this against all solid geometry. Replaces the old terrain(x,z)
- *   single-contact interface to support walls, slopes, and multiple contacts per wheel.
- * @returns {void}
- */
 // Body (frame/bumper/undercarriage) contact restitution — DEFAULT for params.bodyRestitution.
 // BUG-27 lore (kept because the failure mode recurs as an engine-tuning question): restitution
 // must be a bias off the PRE-solve approach velocity, never re-derived per solver pass, or it
@@ -456,6 +445,18 @@ function wheelCorePoints (cx, cy, cz, params) {
   return pts
 }
 
+/**
+ * Advance vehicle physics state by one fixed timestep.
+ *
+ * @param {object} vehicleState - Mutable vehicleState (mutated in-place).
+ * @param {object} params - RANGER_PARAMS (may be augmented with debug-slider values).
+ * @param {number} dt - Fixed timestep in seconds.
+ * @param {function} queryContacts - (cx,cy,cz,r,footprint) → Array<{normal,depth,contactPoint}>.
+ *   Caller (main.js) implements this against all analytic solid geometry (terrain, props, walls).
+ *   Must be a pure function of its arguments within one step — Step 1's answers are reused.
+ * @param {{engine: object, chassis: *}} engineCtx - the physics engine and the chassis body handle.
+ * @returns {void}
+ */
 export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx) {
   if (!engineCtx) throw new Error('stepPhysics: engineCtx {engine, chassis} is required (FEAT-48)')
   const { engine, chassis } = engineCtx
@@ -468,7 +469,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // debris under the wheel, filtered to GROUP_DEBRIS so engine terrain/props can never
   // double-count a surface the analytic query already reports. Engine hits carry .body,
   // which is what triggers the relative-velocity path in Step 3.
-  // ── Step 0.5: Wheel contact source = analytic terrain ∪ engine DYNAMIC bodies ──
+  //
   // Debris contacts come from the engine's EXACT narrow-phase pair tests (contactSphere):
   // penetration depth is continuous through any overlap and the normal never degenerates, so
   // the tire's own spring–damper law resolves the hit with no caps, clamps, or speed terms —
@@ -485,8 +486,22 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   const prevDepth = engineCtx._dynContactDepth ?? EMPTY_DEPTH_MAP
   const stepDepth = new Map()
   engineCtx._dynContactDepth = stepDepth
+  // Step 1 (the tunnelling failsafe) asks the analytic query about every wheel at the start-of-step
+  // hub, and the suspension's FIRST substep then asks the identical question — same hub (the two
+  // derive it with the same arithmetic), same radius on a round tire. firstQ hands Step 1's answer
+  // to that one repeat instead of recomputing it: 4 of the step's 24 envelope queries, each ~33
+  // ground samples. Exact-equality match and consumed once, so a moved hub (the failsafe fired, an
+  // out-of-round tire, any later substep) simply misses and takes the normal path.
+  const firstQ = [null, null, null, null]
   const qcPlus = (cx, cy, cz, r, footprint) => {
-    const list = queryContacts(cx, cy, cz, r, footprint)
+    let list = null
+    if (footprint && r === params.wheelRadius) {
+      for (let i = 0; i < 4; i++) {
+        const q = firstQ[i]
+        if (q && q.x === cx && q.y === cy && q.z === cz) { list = q.list; firstQ[i] = null; break }
+      }
+    }
+    if (!list) list = queryContacts(cx, cy, cz, r, footprint)
     const dyn = engine.contactSphere({ x: cx, y: cy, z: cz }, r, { collidesWith: GROUP_DEBRIS, dynamicOnly: true })
     for (let i = 0; i < dyn.length; i++) {
       const h = dyn[i]
@@ -532,6 +547,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     for (let i = 0; i < 4; i++) {
       const hub      = getWheelPosition(i, vehicleState, params)
       const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius, true)
+      firstQ[i] = { x: hub.x, y: hub.y, z: hub.z, list: contacts }
       for (const { depth } of contacts) {
         if (depth > maxEmbed) maxEmbed = depth
       }
@@ -540,6 +556,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     if (maxEmbed > 2 * params.wheelRadius) {
       vehicleState.position.y += maxEmbed
       vehicleState.velocity.y  = 0
+      firstQ.fill(null)   // the hubs moved — Step 1's answers no longer describe them
     }
   }
 
@@ -590,57 +607,31 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // The ~0.37 m offset along the contact normal (hub to actual contact patch) contributes a small
   // torque-arm error acceptable for body forces; a future phase may add _hubContactPoint accumulator
   // for higher accuracy.
-  {
-    // totalForce and totalTorque are declared below in Step 3; we apply here before the per-wheel loop.
-    // Use a temporary accumulator then add after Step 3 declaration — or better, declare early.
-    // Solution: the Step 2.6 XZ forces are accumulated into their own temp vectors and added to the
-    // Step 3 totalForce/totalTorque after those are declared. See the _xzForce/_xzTorque application below.
-  }
-  // Pre-compute Step 2.6 XZ contributions so they can be added after totalForce/totalTorque are declared.
-  const _xzForceX = [0, 0, 0, 0]
-  const _xzForceY = [0, 0, 0, 0]
-  const _xzForceZ = [0, 0, 0, 0]
-  const _xzTorqueX = [0, 0, 0, 0]
-  const _xzTorqueY = [0, 0, 0, 0]
-  const _xzTorqueZ = [0, 0, 0, 0]
+  //
+  // Gravity is the ENGINE's (world gravity acts on the chassis body) — starting the Step 3
+  // accumulators at zero instead of −mg is the cutover's one-source rule.
+  const totalForce  = new THREE.Vector3()
+  const totalTorque = new THREE.Vector3()
+  let totalGroundFn = 0  // accumulated normal force across all wheel contacts; gates rolling resistance
   if (params._hubNormalXZ) {
     for (let i = 0; i < 4; i++) {
       const xz = params._hubNormalXZ[i]
       if (!xz || (xz.x === 0 && xz.y === 0 && xz.z === 0)) continue
-      // Hub world position for torque arm (approximation per D-06a)
+      // Hub world position for torque arm (approximation per D-06a); torque = rHub × F_xz.
       const hub_i  = getWheelPosition(i, vehicleState, params)
       const rHubX  = hub_i.x - vehicleState.position.x
       const rHubY  = hub_i.y - vehicleState.position.y
       const rHubZ  = hub_i.z - vehicleState.position.z
-      // Cross product rHub × F_xz for torque
-      _xzForceX[i]  = xz.x
-      _xzForceY[i]  = xz.y
-      _xzForceZ[i]  = xz.z
-      _xzTorqueX[i] = rHubY * xz.z - rHubZ * xz.y
-      _xzTorqueY[i] = rHubZ * xz.x - rHubX * xz.z
-      _xzTorqueZ[i] = rHubX * xz.y - rHubY * xz.x
+      totalForce.x  += xz.x
+      totalForce.y  += xz.y
+      totalForce.z  += xz.z
+      totalTorque.x += rHubY * xz.z - rHubZ * xz.y
+      totalTorque.y += rHubZ * xz.x - rHubX * xz.z
+      totalTorque.z += rHubX * xz.y - rHubY * xz.x
     }
   }
 
   // ── Step 3: Per-wheel force accumulation ──────────────────────────────────
-  // Gravity is the ENGINE's (world gravity acts on the chassis body) — starting
-  // this accumulator at zero instead of −mg is the cutover's one-source rule.
-  const totalForce  = new THREE.Vector3()
-  const totalTorque = new THREE.Vector3()
-  let totalGroundFn = 0  // accumulated normal force across all wheel contacts; gates rolling resistance
-
-  // Apply Step 2.6 pre-computed XZ contact normal forces (D-06a)
-  for (let i = 0; i < 4; i++) {
-    if (_xzForceX[i] !== 0 || _xzForceY[i] !== 0 || _xzForceZ[i] !== 0) {
-      totalForce.x  += _xzForceX[i]
-      totalForce.y  += _xzForceY[i]
-      totalForce.z  += _xzForceZ[i]
-      totalTorque.x += _xzTorqueX[i]
-      totalTorque.y += _xzTorqueY[i]
-      totalTorque.z += _xzTorqueZ[i]
-    }
-  }
-
   for (let i = 0; i < 4; i++) {
     // Phase 4: write per-wheel fz from substep result FIRST (D-12), then airborne check (D-14).
     // Zero wheelDebug for this wheel before contacts — ensures no stale values when wheel is off-ground.
@@ -1112,10 +1103,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
 // Scratch for the dynamic-support ground velocity (avoids a per-contact alloc).
 const _groundVelScratch = { x: 0, y: 0, z: 0 }
 
-// Max contact depth a DYNAMIC body (debris under the wheel) may report into the tire spring.
-// A loaded tire's real deflection is ~0.05 m; 0.09 allows a hard bump (~2× static corner load
-// at current tireStiffness) while making the one-frame full-radius spike impossible. Static
-// terrain contacts are untouched — their depth is already continuous.
 // Tire OBSTACLE ENGAGEMENT — the canonical explanation lives in src/suspension.js beside the
 // force it scales; this file only mirrors it on the reaction side (Newton's third law), so the
 // two must be edited together. Superseded the constant env = sizeR/(sizeR + 0.12) on 2026-08-21:
