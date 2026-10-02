@@ -1,23 +1,24 @@
 /**
- * src/main.js — AUTOS Walking Skeleton
+ * src/main.js — AUTOS entry point: the glue.
  *
- * Entry point for the browser app. Responsibilities:
- *  - Three.js scene setup (renderer, camera, lighting, ground)
- *  - Vehicle mesh creation (body BoxGeometry + 4 wheel CylinderGeometry)
- *  - stats.js FPS panel init
- *  - Fixed-timestep accumulator game loop (Plan 02 inserts physics here)
- *  - terrain(x, z) stub (M1-13 — Phase 6 replaces body, signature locked)
- *  - syncMeshesToState() — meshes follow vehicleState each frame
- *  - Resize handler
+ * Owns boot order and wiring, not behaviour — each subsystem lives in its own module:
+ *  - renderer / scene / lights / shadow cascades, and the menu stage that fronts every load
+ *  - constructing and cross-wiring the world systems (terrain, roads, water, props, physics engine)
+ *  - world rebuilds: seed change, road/terrain parameter changes, spawn resolve and truck re-seat
+ *  - queryContacts — the analytic wheel-contact query stepPhysics is given
+ *  - story-mode UI: POI/camp/mission/paper-route panels, wallet, energy meter, rank timer
+ *  - the fixed-timestep accumulator loop (physics at PHYSICS_DT, render interpolated)
+ *
+ * NO automated gate covers this file — verify changes in the browser.
  *
  * Conventions: see docs/GLOSSARY.md
- * Forbidden patterns: quaternion-only body rotation (Pitfall 3), no Euler body state,
- *                     no physics library import, no legacy GUI library.
+ * Forbidden patterns: Euler angles for body rotation (quaternion only); importing the physics
+ *                     engine from anywhere but src/physics-engine.js.
  */
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, syncChassisMass } from './physics.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
@@ -30,7 +31,7 @@ import { DamageModel } from './damage.js'                   // SM-3: component c
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
 import { parkPrompt } from './park-badge.js'                // FEAT-90: the orange P-in-a-circle "park first" badge
-import { updateVehicle, setLaunchHold, setControlAttenuation, SPAWN_STATE } from './vehicle.js'
+import { updateVehicle, setLaunchHold, setControlAttenuation } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, snapCamera } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
@@ -77,7 +78,7 @@ import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential 
 import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
-import { PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun, stockForTier,
+import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planTourJob, customersForTier, radiusForTier, tierRungs } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
@@ -170,9 +171,8 @@ function rebuildWaterSystem () {
   waterSystem   = new WaterSystem(worldSeed, RANGER_PARAMS, (x, z) => terrainSystem.rawHeightWorld(x, z))
   // BUG-33: the renderer suppresses ribbon spans whose water level would stand above the
   // COMPOSED driving surface (road decks/pads pulled through the channel) — inject the same
-  // physics surface the wheels ride. Safe ordering: the frame loop streams the road network
-  // (roadSystem.update) before waterRenderer.sync, so any window the ribbons build against
-  // already has its roads streamed.
+  // physics surface the wheels ride. A network can land AFTER a ribbon was built (PERF-30 adopts
+  // are asynchronous), so the frame loop hands sync() the road revision and a change rebuilds them.
   waterRenderer = new WaterRenderer(waterSystem, {
     groundAt: (x, z) => terrainSystem.analyticHeight(x, z),
     // Road-carve blend at a point (0 = no road). Reads module-scope roadSystem at call time
@@ -239,7 +239,14 @@ function rebuildWaterSystem () {
 const _bushDragF = { x: 0, y: 0, z: 0 }   // FEAT-06b: reused bush soft-drag accumulator (no per-substep alloc)
 // PERF-34: every sampler is timed into a perf bucket (sampler.<name>) so the hitch report can say
 // WHICH ground query a scatter spends its frame in. perfAdd is two Map writes; ~2k calls per chunk.
-const _timed = (name, fn) => (a, b, c) => { const t = performance.now(); const r = fn(a, b, c); perfAdd('sampler.' + name, performance.now() - t); return r }
+// FOUR arguments, not three: waterNear takes a bbox (x0, z0, x1, z1). The three-argument form of
+// this wrapper (2026-09-29) dropped z1, so the live game told every chunk "no water here" and the
+// scatter stopped keeping trees and rocks out of ponds and channels — invisible to the gates,
+// which build their own samplers.
+const _timed = (name, fn) => {
+  const label = 'sampler.' + name
+  return (a, b, c, d) => { const t = performance.now(); const r = fn(a, b, c, d); perfAdd(label, performance.now() - t); return r }
+}
 const makePropSamplers = () => Object.fromEntries(Object.entries({
   heightAt:    (x, z) => terrainSystem.analyticHeight(x, z),
   normalAt:    (x, z) => terrainSystem.analyticNormal(x, z),
@@ -306,12 +313,6 @@ const owePropSweep = () => {
   const ring = (2 * Math.max(_propRing, _bbRing) + 1) ** 2
   _propSweepOwed = Math.max(_propSweepOwed, ring, propSystem ? propSystem.liveChunkCount() : 0)
 }
-/**
- * Re-test live placements against the roads that exist NOW. `budget` is chunks to examine;
- * Infinity means the whole ring in one pass (~2–25 ms — only ever behind a loading screen; play
- * pays the owed pass per frame instead, see owePropSweep).
- * The predicate is makePropSamplers()' own roadClear, so it can never drift from the scatter's.
- */
 // ── PERF-33: streaming motion ─────────────────────────────────────────────────────────────────
 // _streamMotion is the stream centre's smoothed velocity (truck, or camera in free-cam). Every
 // streaming queue orders itself near-then-ahead by it (stream-priority.js), and a JUMP — a move no
@@ -415,10 +416,17 @@ function _setGenWarning (on) {
   _genWarnEl.style.display = want
 }
 
+/**
+ * Re-test live placements against the roads that exist NOW. `budget` is chunks to examine;
+ * Infinity means the whole ring in one pass (~2–25 ms — only ever behind a loading screen; play
+ * pays the owed pass per frame instead, see owePropSweep).
+ * The predicate is makePropSamplers()' own roadClear, so it can never drift from the scatter's.
+ */
+const _sweepRoadClear = makePropSamplers().roadClear   // reads the live systems at call time
 function sweepPropIntrusions (budget) {
   if (!propSystem) return 0
   const dropped = propSystem.invalidateRoadIntrusions(
-    makePropSamplers().roadClear, FLORA_PARAMS.scatter.roadExclusion, budget)
+    _sweepRoadClear, FLORA_PARAMS.scatter.roadExclusion, budget)
   if (dropped) perfEvent('props.roadIntrusion')   // re-scatter lands via the normal ensure path
   return dropped
 }
@@ -465,7 +473,12 @@ function looseSurfaceFactor (x, z) {
   return paved + (1 - paved) * (lat - (hw - band)) / band
 }
 
-// Manual verification hook — console.log confirms importmap loaded r184 (FOUND-02)
+// Ground height under an effect emitter (dust / smoke / dirt spray): the lab's own surface in the
+// lab, analytic terrain otherwise — the same split queryContacts makes.
+const _fxGroundY = (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0)
+                                        : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0)
+
+// Boot marker: which three.js revision the bundle resolved
 console.log('THREE.REVISION', THREE.REVISION)
 
 
@@ -510,8 +523,7 @@ const USE_NETWORK_WORKER = true
 //      down the road (D-07).
 //   5. Null result or absent roadSystem → console.warn + Phase 7 terrain-only fallback
 //      (bounded ≤50 tries, deterministic — T-07-04-SPAWN guarantee preserved).
-// Spawn probe geometry shared by resolveSpawn and _warmSpawnRoutes (QUAL-14 perf) — one source
-// so the async pre-warm covers exactly the band the synchronous stream will route.
+// Spawn probe geometry for resolveSpawn (kept separate so test/lib/spawn-decision.mjs can mirror it).
 function _spawnProbeBase (wseed, params) {
   const spawnSeed = seedFor(wseed, 'spawn')
   return {
@@ -522,13 +534,6 @@ function _spawnProbeBase (wseed, params) {
     spawnR: Math.max(200, Math.round((params.roadSiteSpacing ?? 256) * 1.5)),
   }
 }
-
-// ── QUAL-14 perf: async cold-spawn route warm ────────────────────────────────────────────
-// resolveSpawn's ensureTile used to route the whole spawn band SYNCHRONOUSLY on the main thread —
-// the one 20 s+ cold-load block (perf log: "resolveSpawn: cold network stream"). PERF-30 replaced
-// that with awaiting netClient.buildNow() per spawn tier: the whole build (routing + plan layer +
-// assembly) happens on the network Worker while the loading screen animates, and resolveSpawn's
-// ensureTile then finds the adopted band (pure cache hits). Bounded: correctness NEVER depends on it.
 
 // ── QUAL-14 perf: in-session route cache ─────────────────────────────────────────────────
 // Nothing persists on the player's machine (user decision 2026-07-06). A regen stashes the
@@ -761,6 +766,12 @@ async function _rebuildFullNow () {
     if (_reseedRequestedAt != null) { perfAdd('reseed.debounceGap', _rt - _reseedRequestedAt); _reseedRequestedAt = null }
     terrainSystem.reinitWorker(worldSeed, RANGER_PARAMS)
     _step('terrainInit')
+    // A new world: nothing measured against the old one may outlive it. (_spawnOverride is dropped
+    // by applyWorldSeed for a seed change; a terrain-shape slider reaches here directly, and an
+    // absolute-Y spawn point under regenerated ground is exactly the stale point its comment forbids.)
+    _spawnOverride = null
+    _treeChunkCache.clear()
+    _streamCenterRing.length = 0
     // (rebuildAllChunksFromWorker moved BELOW the reseat — see the ORDER MATTERS note there.)
     // Phase 8: re-init RoadSystem with new seed — roads are pure fns of (worldSeed, coords, params)
     // so a new seed produces a different deterministic road network. Preserve viz state.
@@ -771,10 +782,9 @@ async function _rebuildFullNow () {
       if (roadSystem._proto?.cls?.size) {
         _sessionRouteCache.set(String(roadSystem._worldSeed), roadSystem.exportRouteCache())
       }
+      roadSystem.disposeDebugLines()   // the old seed's centreline viz must not outlive its network
       roadSystem = new RoadSystem(worldSeed, RANGER_PARAMS)
       roadSystem.init(scene)
-      // Re-apply the new-API config the initial instance got (surface placement + stream radius).
-      roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
       roadSystem.setRadius(320)   // PERF (Tier 1): match the terrain ring, not 640 m — see initial setup
       // PERF-30: re-register the new instance with the network-Worker client (opts persist from
       // the boot register). The worker notices the seed change on the next build request and
@@ -785,7 +795,7 @@ async function _rebuildFullNow () {
       roadSystem.setDebugVisible(wasVisible)
       // Phase 9 (SURF-01): clear + re-create RoadMeshSystem with the new road system so
       // ribbon tiles rebuild from the new network. Road is a pure fn of (seed, coords, params).
-      if (roadMeshSystem) roadMeshSystem.clearAll()
+      if (roadMeshSystem) roadMeshSystem.dispose()   // tiles AND the per-instance materials/textures
       roadMeshSystem = new RoadMeshSystem(
         scene, roadSystem,
         (x, z) => terrainSystem.rawHeightWorld(x, z),  // CR-04 / BUG-74: raw, like the boot-time construction below
@@ -1147,9 +1157,8 @@ function setSpawnHere () {
 }
 
 // ── Fixed-timestep loop constants (RESEARCH §Pattern 2) ─────────────────────
-// PHYSICS_DT: parameterized physics step per D-09. Single source of truth — all downstream
-// code reads this constant or params.physicsDt (same value, mirrored in ranger.js for
-// suspension.js which cannot import main.js). NEVER use 1/60 or 0.0167 literals below.
+// PHYSICS_DT: the physics step (D-09). Single source of truth — passed down as `dt` to
+// everything that steps. NEVER use 1/60 or 0.0167 literals below.
 const PHYSICS_DT = 1 / 60        // physics step: 16.667ms (D-09)
 const MAX_FRAME_TIME = 0.25       // spiral-of-death clamp: 250ms (T-01-04 mitigation)
 
@@ -1161,7 +1170,7 @@ const FRAME_BUDGET_MS = 1000 / 60
 const PUMP_MARGIN_MS  = 2
 const PUMP_FLOOR_MS   = 0.5
 
-let simTime = 0  // accumulated simulation time in seconds; incremented by FIXED_DT each physics step
+let simTime = 0  // accumulated simulation time in seconds; incremented by PHYSICS_DT each physics step
 
 let accumulator = 0
 
@@ -1170,6 +1179,8 @@ let accumulator = 0
 // one-frame jitter that occurs when the render loop and physics loop drift in/out of sync.
 const _prevRenderPos  = new THREE.Vector3()
 const _prevRenderQuat = new THREE.Quaternion()
+const _renderPos      = new THREE.Vector3()      // this frame's interpolated pose (scratch, reused)
+const _renderQuat     = new THREE.Quaternion()
 let currentTime = performance.now() / 1000
 
 // ── Vehicle state ────────────────────────────────────────────────────────────
@@ -1212,7 +1223,7 @@ renderer.shadowMap.enabled = true
 // their own distance fade in the terrain shader; this covers the truck's realtime map.
 // fadeStart 0.82 (up from the 0.72 default): the frustum is tighter now that the presets trade
 // extent for texel size, so the dissolve has to start later or it eats a visible chunk of the
-// shadowed world. 0.82 of ±170 m ⇒ full shadows to ~139 m, gone by 170 m.
+// shadowed world. 0.82 of the ±20 m near frustum ⇒ full shadows to ~16 m, gone by 20 m.
 installShadowEdgeFade({ fadeStart: 0.82 })
 // BUG-78: the near map's shadow also gates the far cascade, so the truck can be kept OUT of the
 // far map (see the wrapped shadow pass by sunFar) without its shadow dropping to the near light's 40 % share.
@@ -1300,15 +1311,13 @@ document.getElementById('ss-anyway')?.addEventListener('click', () => {
 // Cancel out of a REFUSED entry leaves story mode entirely — the region is built but the player has
 // declined it, and leaving them standing in a world the check refused would be the silent failure
 // this whole feature exists to avoid.
-document.getElementById('ss-cancel')?.addEventListener('click', () => {
-  if (!_worldInit) { _hideSeedModal(); return }   // nothing to back out of yet
-  const wasRejected = storySystem.isSeedRejected()
-  _hideSeedModal()
-  if (wasRejected) storySystem.exit()
-})
+document.getElementById('ss-cancel')?.addEventListener('click', () => _cancelSeedModal())
 document.getElementById('ss-seed')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); _startStoryFromModal() }
-  else if (e.key === 'Escape') { e.preventDefault(); _hideSeedModal() }
+  // The input is focused whenever the prompt is up, so THIS is the Esc the player actually presses —
+  // it must do what cancel does. It used to only hide the prompt, which on a refused seed left
+  // story mode active in its 'rejected' phase: no POIs, no wallet, and the region wall still on.
+  else if (e.key === 'Escape') { e.preventDefault(); _cancelSeedModal() }
   e.stopPropagation()   // keep WASD/M/Esc out of the world while typing a seed
 })
 
@@ -1496,7 +1505,7 @@ function applyShadowResolution (mapSize, extent) {
 // the Sky mesh and sets scene.background = null (the mesh is the background now).
 const skySystem = new SkySystem({ scene, renderer, sun, sunFar, farSplit: SHADOW_FAR_SPLIT, ambient })
 window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
-// NB `window.terrain` is the height-sampler FUNCTION, not the streaming system. This is the system
+// NB `window.terrain` is the ground-height FUNCTION (returns metres), not the streaming system. This is the system
 // itself — needed to reach _terrainUniforms (e.g. A/B-ing uShadowStrength from a CDP probe).
 window.__terrainSystem = () => terrainSystem
 
@@ -1505,15 +1514,6 @@ window.__terrainSystem = () => terrainSystem
 const moonSystem = new MoonSystem(scene)
 // Scratch for the per-frame unlit-particle irradiance push (dust / smoke / dirt spray).
 const _particleLight = new THREE.Color(1, 1, 1)
-
-// Ground plane (y=0, 200m × 200m)
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(200, 200),
-  new THREE.MeshPhongMaterial({ color: 0x222222, depthWrite: false })
-)
-ground.rotation.x = -Math.PI / 2
-ground.receiveShadow = true
-scene.add(ground)
 
 // Wheel dust trails (src/dust.js). Self-contained sprite-pool puffs tinted to the dirt
 // we're driving on; driven each render frame from vehicleState (see loop). Construct here
@@ -1527,9 +1527,8 @@ const smokeSystem = new TireSmokeSystem(scene, RANGER_PARAMS)
 const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
-// src/vehicle-model.js. carGroup/bodyMesh/wheelMeshes are returned for back-compat;
-// syncMeshesToState(state) is called once per render frame below.
-const { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
+// src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
+const { carGroup, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -1669,12 +1668,10 @@ window.__car = () => ({ x: vehicleState.position.x, y: vehicleState.position.y, 
 const gaugeCluster = new GaugeCluster(document.getElementById('cluster'))
 gaugeCluster.seedOdometer()
 
-// ── Terrain + ramp ────────────────────────────────────────────────────────────
-// M1-13: terrain query. Phase 6 replaces body, signature unchanged.
+// ── Lab ramp ──────────────────────────────────────────────────────────────────
 // Freestanding ramp: 10°, 5m rise + 5m underrun, 6m wide, no plateau.
 // RAMP_UNDERRUN extends the slope downhill (toward spawn) so the toe is buried underground
 // along the ramp direction — not straight down. Toe sits at y ≈ −0.88 m.
-// Normal derivation: for a ramp rising in -Z, n = (0, cos(θ), sin(θ)).
 const RAMP_ANGLE    = Math.PI / 18   // 10 degrees
 const RAMP_LENGTH   = 5              // m — rise section (from ground level to crest)
 const RAMP_UNDERRUN = 5              // m — extra slope buried below terrain at the toe end
@@ -1684,9 +1681,6 @@ const RAMP_MAX_H    = RAMP_LENGTH * Math.tan(RAMP_ANGLE)  // ≈ 0.88 m — cres
 const RAMP_END_Z    = -20            // m — crest z (top of ramp)
 const RAMP_TOE_Z    = RAMP_END_Z + RAMP_LENGTH + RAMP_UNDERRUN  // -10 — toe z (near spawn)
 const RAMP_TOE_Y    = -RAMP_UNDERRUN * Math.tan(RAMP_ANGLE)     // ≈ −0.88 m — toe depth
-
-const _rampNormal   = new THREE.Vector3(0, Math.cos(RAMP_ANGLE), Math.sin(RAMP_ANGLE))
-const _flatNormal   = new THREE.Vector3(0, 1, 0)
 
 // ── Ramp triangle mesh ────────────────────────────────────────────────────────
 // Eight triangles: top incline (2), back wall (2), left side (2), right side (2).
@@ -1711,17 +1705,11 @@ const RAMP_TRIS = [
   [_TR,  _DBR, _CR ],  // right side tri 2
 ]
 
-// M1-13: terrain height-field query. Phase 6 replaces body, signature locked.
-function terrain (x, z) {
-  if (Math.abs(x) > RAMP_WIDTH / 2) return { height: 0, normal: _flatNormal }
-  const distFromCrest = RAMP_END_Z - z  // negative when z > RAMP_END_Z (toward spawn)
-  const totalLen = RAMP_LENGTH + RAMP_UNDERRUN
-  if (distFromCrest < 0 && -distFromCrest <= totalLen) {
-    return { height: RAMP_MAX_H + distFromCrest * Math.tan(RAMP_ANGLE), normal: _rampNormal }
-  }
-  return { height: 0, normal: _flatNormal }
-}
-window.terrain = terrain
+// Dev handle: ground height (m) at world (x, z). The harness tools float the freecam on it
+// (`window.terrain(x, z) + 45`), so it MUST return a number. It used to be the Phase-1 ramp stub,
+// which returned `{ height, normal }` — every freecam sweep in test/profile.mjs, hitch-report.mjs and
+// teleport-fill.mjs was therefore placed at a non-numeric height (BUG-34's lesson, un-learned).
+window.terrain = (x, z) => terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
 
 /**
  * Closest point on a filled triangle ABC to query point P.
@@ -1790,6 +1778,14 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
  * Called by stepPhysics once per wheel each physics step.
  * Phase 6: extend to query the terrain height-field for rough terrain surfaces.
  */
+// Tire-envelope stencil (see queryContacts): ring radii as a fraction of the wheel radius, and the
+// eight sample directions. Hoisted so the per-wheel query does no trig — the values are the same
+// cos/sin of o·2π/8 the loop used to evaluate on every call.
+const FOOT_RINGS = [0.35, 0.6, 0.8, 0.95]
+const FOOT_DIRS  = 8
+const FOOT_COS   = Array.from({ length: FOOT_DIRS }, (_, o) => Math.cos(o * Math.PI * 2 / FOOT_DIRS))
+const FOOT_SIN   = Array.from({ length: FOOT_DIRS }, (_, o) => Math.sin(o * Math.PI * 2 / FOOT_DIRS))
+
 function queryContacts (cx, cy, cz, r, footprint = false) {
   const hits = []
 
@@ -1797,7 +1793,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // Grid-world uses flat ground so physics contacts are correct on the clean flat plane (D-18).
   // PERF (contact path): resolve the road run ONCE (memoized carveHint) and thread it into EVERY
   // height/normal sample below. That collapses the per-wheel road tile-scans to ~1, and — crucially —
-  // carveHint is memoized per 0.1 m cell, so the death-spiral's ~300 queryContacts/frame at a
+  // carveHint is memoized per 0.05 m cell, so the death-spiral's ~300 queryContacts/frame at a
   // near-stationary wheel reuse one query instead of each re-scanning a switchback's many slices
   // (the slow-CPU 5fps lock that recovers airborne). Height stays accurate: at the query center the
   // projection is ~0 (perp foot) so rest height ≈ exact (≤~5 mm via the memo).
@@ -1812,7 +1808,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // the centre reaches it.
   //
   // The perf that motivated the shared hint (PERF-24) is preserved by carveHint's own memo, which is
-  // keyed per 0.05 m cell: the stencil's nine offsets are distinct cells, but every substep and every
+  // keyed per 0.05 m cell: the stencil's 33 samples are distinct cells, but every substep and every
   // repeat query at the same spot still shares them, which is what the death-spiral case needs.
   const _hintAt = (!_labActive && roadSystem) ? (x, z) => roadSystem.carveHint(x, z) : () => undefined
   // FEAT-40: cy disambiguates the two stacked surfaces in a bore span (floor vs hill overhead).
@@ -1846,14 +1842,11 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
     //
     // Cost is bounded by carveHint's 0.05 m memo — these offsets are distinct cells for one wheel,
     // but every suspension substep and every repeat query at the same spot reuse them.
-    const STEN = [0.35, 0.6, 0.8, 0.95]
-    const DIRS = 8
-    for (let k = 0; k < STEN.length; k++) {
-      const d    = STEN[k] * r
+    for (let k = 0; k < FOOT_RINGS.length; k++) {
+      const d    = FOOT_RINGS[k] * r
       const lift = Math.sqrt(Math.max(0, r * r - d * d))
-      for (let o = 0; o < DIRS; o++) {
-        const a = o * Math.PI * 2 / DIRS
-        const sx = cx + d * Math.cos(a), sz = cz + d * Math.sin(a)
+      for (let o = 0; o < FOOT_DIRS; o++) {
+        const sx = cx + d * FOOT_COS[o], sz = cz + d * FOOT_SIN[o]
         const h   = groundH(sx, sz)
         const top = h + lift
         if (top > bestTop) { bestTop = top; bestH = h; bestX = sx; bestZ = sz }
@@ -2149,6 +2142,10 @@ if (_PROF) {
   window.__mission = () => missionSystem
   // FEAT-53: the run wallet, so a harness can assert a payout/points accrual without a screenshot.
   window.__economy = () => economySystem
+  // FEAT-45: the camp zones + grading, so a harness can find a campable spot and exercise the dig.
+  window.__camp = () => campSystem
+  // The network-Worker client, so a harness can exercise the build queue (stale and failed replies).
+  window.__net = () => netClient
   // Route-dispatch probe: wraps _routeDispatch on first call to count per-key dispatches —
   // diagnoses warm-loop re-dispatch churn (a key dispatched >2× means a warm scan is spinning).
   let _rdWrap = null
@@ -2168,7 +2165,7 @@ if (_PROF) {
     // points. Two builds with the same fingerprint ARE the same roads — this is what makes a
     // router-price A/B measurable instead of eyeballed.
     let fp = 0, pts = 0, km = 0
-    for (const [key, e] of rs._network) {
+    for (const e of rs._network.values()) {
       km += (e.polyCum?.[e.polyCum.length - 1] ?? 0) / 1000
       for (const q of e.points) {
         fp = (fp + Math.round(q.x * 8) * 73856093 + Math.round(q.y * 8) * 19349663 + Math.round(q.z * 8) * 83492791) >>> 0
@@ -2259,7 +2256,12 @@ if (_PROF) {
 // Phase 7 (SEED-04 / D-09): rebuildTerrainFull = Path B debounced rebuild (Worker reinit + re-seat);
 //   changeSeed = update worldSeed then fire Path B.
 const _gui = initDebug(RANGER_PARAMS, {
-  setRampVisible:      (v) => { rampMesh.visible = v },
+  // The ramp is a LAB rig: the mesh shows only there, and the chassis's engine prism follows the
+  // toggle too (the wheels' RAMP_TRIS already did) — no invisible ramp, no ramp in free roam.
+  setRampVisible:      (v) => {
+    rampMesh.visible = v && _labActive
+    if (_labActive) { _destroyLabColliders(); _buildLabColliders() }
+  },
   // FEAT-33 × SM-3 (owner 2026-09-04): the damage model's engine track OWNS engineHealth now (it
   // writes vehicleState.engineHealth every step), so the slider pokes the track itself. Inert while
   // damage is disabled — the track is locked at nominal there, by design.
@@ -2368,7 +2370,6 @@ _gui.add({
 // are immediately available after construction (no chunk load required).
 perfMark('init: before TerrainSystem')  // TEMP (D-arc) — the ~8s load is one-time init, not the frame loop
 terrainSystem = new TerrainSystem(scene, RANGER_PARAMS, worldSeed)
-scene.remove(ground)   // Remove flat 200×200 ground mesh — terrain chunks replace it (T-06-06)
 
 // ── FEAT-48: the physics engine world ────────────────────────────────────────
 // One engine world for everything — chassis, streamed terrain colliders, debris.
@@ -2397,7 +2398,9 @@ window.__propPhysics = propPhysics             // dev handle — prop-debug radi
 const physicsWireframes = new PhysicsWireframes(physicsEngine, scene)
 window.__physWireframes = physicsWireframes    // dev handle — debug.js checkbox targets it
 window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
-window.__vehicleChassis = vehicleChassis       // dev handle — debug.js restitution slider targets it
+window.__vehicleChassis = vehicleChassis       // dev handle
+window.__setBodyBounce = (e) => setBodyRestitution(physicsEngine, vehicleChassis, e)   // debug.js Body Bounce slider
+window.__syncChassisMass = () => syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS)   // debug.js Mass slider + vehicle preset
 window.__vs = vehicleState                    // dev handle — read live vehicle state from the console / CDP probes
 window.__roadSys = () => roadSystem           // dev handle — the LIVE RoadSystem instance (getter: play swaps instances on seed regen); __road() below is the stats view
 
@@ -2415,9 +2418,7 @@ perfMark('init: physics engine ready')
 // only; same seed always produces the same roads.
 roadSystem = new RoadSystem(worldSeed, RANGER_PARAMS)
 roadSystem.init(scene)
-// Place the centerline viz on the rendered terrain surface, and stream the valley-trunk
-// network at roughly the terrain view radius (08-07: setRadius replaces the retired setProtoRadius).
-roadSystem.setSurfaceSampler((x, z) => terrainSystem.analyticHeight(x, z))
+// Stream the road network at roughly the terrain view radius.
 // PERF (Tier 1): road stream radius ~matches the terrain ring (5×5 chunks ≈ 160–226 m), not 640 m.
 // Routing/slicing cost scales with this area; 640 m routed ~16× the terrain footprint. 320 m covers
 // the visible terrain ring with margin while cutting cold-stream + per-crossing re-stream cost.
@@ -3048,6 +3049,9 @@ function _canThrow () {
 document.addEventListener('keydown', e => {
   if (e.key !== 'f' && e.key !== 'F') return
   if (e.ctrlKey || e.metaKey || e.altKey) return
+  // Not while the world is still building (storySystem is declared after the cold-spawn await, so
+  // _canThrow would throw on it) and not behind the menu/loading stage.
+  if (!_worldInit || _simHeld) return
   if (getCameraMode() !== 'chase') return      // hood and freecam own their own look
   if (!_canThrow()) return                     // no reticle either: nothing to aim with
   clearTimeout(_aimHoldTimer)                  // re-aiming during the post-throw hold keeps the view
@@ -3209,23 +3213,26 @@ function mountExportRow (panelId, beforeId) {
 // Entered from the pause menu so a visitor is never dropped into an unfinished mode by default.
 // getRoad is a GETTER: roadSystem is swapped on seed regen (see the regen path above).
 const _misFwd = new THREE.Vector3()
+// Car telemetry for the mission systems. Richer than an arrival check needs: the run export
+// records a driven trace, and throttle / brake / steer are what make it useful for fitting
+// anything later. ONE reader for the POI job and the paper route, so the two mission types
+// cannot drift apart and can share one calibration corpus (FEAT-30).
+function _carTelemetry () {
+  _misFwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+  return {
+    x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
+    speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
+    heading: Math.atan2(_misFwd.x, _misFwd.z),
+    throttle: vehicleState.throttle, brake: vehicleState.brake, steer: vehicleState.steerAngle,
+  }
+}
 missionSystem = new MissionSystem({
   // Missions plan on the PLAY network — the frozen region band story mode built behind its own
   // loading screen (see the header note in mission.js). It is real and CULLED, so a mission can
   // only ever propose roads that actually exist, and there is nothing left to pre-warm.
   getRoad:  () => roadSystem,
   getSeed:  () => worldSeed,
-  // Richer than the arrival check needs: the run export records a driven trace, and throttle /
-  // brake / steer are what make it useful for fitting anything later.
-  getCar:   () => {
-    _misFwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
-    return {
-      x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
-      speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
-      heading: Math.atan2(_misFwd.x, _misFwd.z),
-      throttle: vehicleState.throttle, brake: vehicleState.brake, steer: vehicleState.steerAngle,
-    }
-  },
+  getCar:   _carTelemetry,
   // FEAT-43: the story region, when one is live. Confines the whole mission inside the wall and
   // anchors the planner window on the region centre instead of letting it follow the car. Null in
   // free roam, which leaves Quick Job's original player-centred behaviour exactly as it was.
@@ -3260,18 +3267,7 @@ const paperRouteSystem = new PaperRouteSystem({
   getRoad:   () => roadSystem,
   getPois:   () => poiSystem,
   getRegion: () => storySystem?.region() ?? null,
-  // Full telemetry, not just position: the start-zone check only needs x/z, but the FEAT-30
-  // calibration trace (2026-08-17) records speed and controls too, and it must match the shape the
-  // POI job records or the two mission types cannot share one corpus.
-  getCar:    () => {
-    _misFwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
-    return {
-      x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
-      speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
-      heading: Math.atan2(_misFwd.x, _misFwd.z),
-      throttle: vehicleState.throttle, brake: vehicleState.brake, steer: vehicleState.steerAngle,
-    }
-  },
+  getCar:    _carTelemetry,
   getSeed:   () => worldSeed,
   getTerms:  () => economySystem.terms(),
   getTargetR: () => POI_PARAMS.poiHouseTargetR,
@@ -3747,8 +3743,11 @@ function _renderVibeBar (g, root = document.getElementById('camp-vibe')) {
 function _campFade (during) {
   const el = document.getElementById('camp-fade')
   _campBusy = true
+  const ui = _campUi   // the dialogue this fade was started from
   const finish = () => {
-    try { during() } finally {
+    // The fade overlay lets clicks through, so Cancel (or leaving the region) can close the
+    // dialogue mid-fade. The deferred action belongs to THAT dialogue: if it is gone, do nothing.
+    try { if (_campUi === ui) during() } finally {
       if (el) setTimeout(() => { el.classList.remove('on'); _campBusy = false }, 120)
       else _campBusy = false
     }
@@ -3760,12 +3759,17 @@ function _campFade (during) {
 
 /**
  * Re-realize the ground around a pad after the carve tables changed (a bench dug OR un-dug):
- * rebuild the terrain chunks, then release the covering prop chunks so the scatter re-rolls
- * against the finished ground — digging clears the site of trees via the pad keep-out
- * (poiPadBlocked); un-digging lets them come back.
+ * re-carve the terrain chunks the pad reaches, then release the covering prop chunks so the
+ * scatter re-rolls against the finished ground — digging clears the site of trees via the pad
+ * keep-out (poiPadBlocked); un-digging lets them come back.
+ *
+ * recarveInPlace, NOT rebuildAllChunksFromWorker: the heights have not changed, only the carve, and
+ * pads never bump roadGeneration. The full rebuild this used to call is the seed-change path — it
+ * disposed the WHOLE ring (and every terrain collider) and re-requested it from the Worker, so
+ * breaking camp, which has no fade, blinked the visible world out under a parked truck.
  */
 function _refreshGroundAround (pad) {
-  terrainSystem?.rebuildAllChunksFromWorker()
+  if (roadSystem) terrainSystem?.recarveInPlace([roadSystem.padReachOf(pad)], { burst: false })
   if (propSystem) {
     const S = CHUNK_SIZE, r = pad.halfLen
     const c0x = Math.floor((pad.x - r) / S), c1x = Math.floor((pad.x + r) / S)
@@ -4006,7 +4010,7 @@ function _panelHead (flavorHtml) {
  *     +N good deeds     — on the tip line, as before
  *     Bonus …           — the offer's item, earned or what it needed
  *
- * `base`/`tip` are whole dollars from economy.js; `spot` is cents.
+ * `base`/`tip` are whole dollars from economy.js; `spot` is dollars to the cent.
  */
 function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null }) {
   const row = (label, money) => `<br><span class="mp-dim">${label}</span> <span class="mp-pay">$${money}</span>`
@@ -4225,7 +4229,6 @@ function _renderPaperUI () {
         // The "+N% early" badge went with the expediency bonus it reported [2026-08-17]. Pace is
         // now paid through the shared margin line, so the letter and the time money already say it
         // and a third restatement was just the old bonus wearing a percentage.
-        + ''
         + `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; `
         + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span>`
@@ -4324,20 +4327,26 @@ function _updateEnergyMeter () {
         exhausted: document.getElementById('em-seg-exhausted'),
       },
     }
-    const full = daySystem.fullEnergyH()
-    const hours = {
-      rested:    full - DAY_PARAMS.sleepyAtH,
-      sleepy:    DAY_PARAMS.sleepyAtH - DAY_PARAMS.tiredAtH,
-      tired:     DAY_PARAMS.tiredAtH,
-      exhausted: -daySystem.debtFloorH(),
-    }
-    for (const [k, el] of Object.entries(_emEls.segs)) {
-      el.style.width = `${hours[k] * EM_PX_PER_H}px`
-      el.style.background = STAGE_COLOR[k]
-    }
   }
   const on = storySystem.isActive() && !storySystem.isEntering()
-  if (on !== _emOn) { _emOn = on; _emEls.root.style.display = on ? 'block' : 'none' }
+  if (on !== _emOn) {
+    _emOn = on
+    _emEls.root.style.display = on ? 'block' : 'none'
+    if (on) {
+      // Band widths from the LIVE thresholds — they are debug sliders, so lay the strip out each
+      // time it comes up rather than once at boot.
+      const hours = {
+        rested:    daySystem.fullEnergyH() - DAY_PARAMS.sleepyAtH,
+        sleepy:    DAY_PARAMS.sleepyAtH - DAY_PARAMS.tiredAtH,
+        tired:     DAY_PARAMS.tiredAtH,
+        exhausted: -daySystem.debtFloorH(),
+      }
+      for (const [k, el] of Object.entries(_emEls.segs)) {
+        el.style.width = `${hours[k] * EM_PX_PER_H}px`
+        el.style.background = STAGE_COLOR[k]
+      }
+    }
+  }
   if (!on) return
   const e = daySystem.energyH()
   _emEls.strip.style.transform =
@@ -4413,6 +4422,7 @@ function _updateRankTimer () {
       _rtEls.root.style.display = 'none'
       _rtEls.root.classList.remove('rt-lost', 'rt-slow', 'rt-in')
       _rtEls.card.style.boxShadow = ''; _rtEls.card.style.borderColor = ''
+      _rtEls.letter.style.scale = ''; _rtEls.letter.style.textShadow = ''
     }
     return
   }
@@ -4422,6 +4432,7 @@ function _updateRankTimer () {
     _rtKey = src.key
     _rtLayout = rankTimerLayout(src.par, src.thresholds, src.gate)
     _rtPrev = -1; _rtLetter = ''; _rtHot = false; _rtShown = false
+    E.letter.style.scale = ''; E.letter.style.textShadow = ''   // the last job may have ended mid-pulse
     for (const el of E.segs) el.remove()
     E.segs = []
     for (const sh of E.letterBox.querySelectorAll('.rt-shard')) sh.remove()
@@ -4571,8 +4582,11 @@ function _refreshParkedOffers () {
   const poi = poiSystem.list().find(q => q.id === missionSystem.mission.fromPoi)
   const offers = offerBoard && poi ? offerBoard.offers(poi.id, daySystem.clockH()) : []
   if (!offers.length) { missionSystem.exit(); return }
-  const keep = offers.findIndex(o => o.id === missionSystem.offer?.id)
+  const prevId = missionSystem.offer?.id
   missionSystem.enterFromPoi(poi, offers, _planOffer)
+  // Looked up AFTER the re-entry, in the mission's own list: enterFromPoi drops offers whose route
+  // cannot be planned, so an index into the board's list can point at a different offer.
+  const keep = missionSystem.offers.findIndex(o => o.id === prevId)
   if (keep > 0) { missionSystem.offerIdx = keep; missionSystem.cycle(0) }
 }
 // FEAT-46: DECLINE puts the job down and leaves you in story mode with nothing active — it does not
@@ -4618,11 +4632,9 @@ for (const b of document.querySelectorAll('.mp-felt')) {
 }
 document.getElementById('mp-quit')?.addEventListener('click', () => {
   missionSystem.exit()
-  // FEAT-43: Quick Job runs INSIDE story mode, so "back to free roam" leaves the whole mode —
-  // route through StorySystem.exit() to restore streaming radii + debug tooling. If a mission was
-  // somehow live outside story mode (legacy path), just drop the game mode.
+  // FEAT-43: a mission only ever runs INSIDE story mode, so "back to free roam" leaves the whole
+  // mode — route through StorySystem.exit() to restore streaming radii + debug tooling.
   if (storySystem.isActive()) storySystem.exit()
-  else window.__setGameMode('freeroam')
 })
 
 // Phase 9 (SURF-01 / SURF-03): RoadMeshSystem — ribbon mesh sweep with crown + camber.
@@ -4821,12 +4833,9 @@ perfMark('init: systems created, before spawn reseat')  // TEMP (D-arc)
 // actually run. Idempotent for the fields that do match; systems exist at this point, so the
 // ring/radius calls are real (and no-ops at the default ring).
 applyQuality('Normal')
-// QUAL-14 perf: import the bundled default-world route cache (shipped world boots without
-// routing at all; other seeds miss and route on the pool), then reseat (top-level await —
-// main.js is a module, so everything below, including the render loop start, waits).
-// resolveSpawn warms each band it streams on the worker POOL before touching it, so the old
-// 20 s+ synchronous cold-load block becomes a parallel, event-loop-friendly wait.
-_importSessionRoutes()
+// Seat the truck (top-level await — main.js is a module, so everything below, including the
+// render loop start, waits). resolveSpawn builds each band it needs on the network Worker before
+// touching it, so the cold load is an event-loop-friendly wait rather than a synchronous block.
 await _reseatTruckAtSpawn()
 perfMark('init: spawn reseated')  // TEMP (D-arc)
 
@@ -4958,6 +4967,7 @@ function _buildLabColliders () {
   const slab = physicsEngine.createBody({ type: 'static', position: { x: 0, y: -5, z: 0 }, userData: { kind: 'lab-ground' } })
   physicsEngine.addBox(slab, { x: 2000, y: 5, z: 2000 }, { friction: 0.8 })   // top face at y = 0
   _labEngineBodies.push(slab)
+  if (RANGER_PARAMS.rampEnabled === false) return   // debug toggle: no ramp for wheels OR chassis
   // Ramp prism — incline face, back wall, sides (matches the analytic RAMP_TRIS the wheels use).
   const ramp = physicsEngine.createBody({ type: 'static', position: { x: 0, y: 0, z: 0 }, userData: { kind: 'lab-ramp' } })
   const tanA = Math.tan(RAMP_ANGLE)
@@ -4975,7 +4985,6 @@ function _destroyLabColliders () {
 }
 
 function enterLab () {
-  _labActive = true
   _labActive = true            // reuse every flat-world physics gate
   window.__setGameMode('lab')
 
@@ -5012,7 +5021,6 @@ function enterLab () {
 }
 
 function exitLab () {
-  _labActive = false
   _labActive = false
   window.__setGameMode('freeroam')
 
@@ -5135,12 +5143,7 @@ const storySystem = new StorySystem({
   // so without this, entering story mode seats the truck wherever you last teleported and the region
   // centre (and therefore every POI) follows the player instead of the seed. See _spawnOverride.
   clearSpawnOverride: () => { _spawnOverride = null },
-  setDebugLockout: (locked) => {
-    setDebugLockout(locked)
-    // Collision-sphere debug lives in main.js, not the GUI — force it off entering the lockout so
-    // spheres left on in free roam don't linger into story mode.
-    if (locked && _dbgSpheresOn) { _dbgSpheresOn = false; _dbgSpheres.forEach(m => { m.visible = false }) }
-  },
+  setDebugLockout,
   // BUG-56 workstream C: is the seed the player typed actually playable on the parameters that are
   // loaded? story.js owns WHEN (after the region warm — you have to route it to know) and WHAT TO DO
   // (the disclaimer); main.js owns the road system, so it answers. The check itself is
@@ -5264,6 +5267,9 @@ const storySystem = new StorySystem({
   },
   /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
   onRegionExit: () => {
+    // A job cannot outlive its region. Every exit path used to have to remember this itself, and
+    // the ones that forgot are how a mission ended up running in the lab.
+    if (missionSystem?.isActive()) missionSystem.exit()
     daySystem.stop()    // FEAT-47: clock off, sky handed back to free roam's noon look
     daySystem.setBlinksEnabled(false)   // …and the eyelids can never fire in free roam
     setControlAttenuation(1)            // belt-and-braces: leave the driver's inputs whole
@@ -5288,7 +5294,7 @@ const storySystem = new StorySystem({
   /** Exit: hand the play RoadSystem back its normal streaming window before the loop resumes. */
   releaseRegion: () => {
     // The map's streaming window is raised to the region radius when the map is opened in story
-    // mode (the M handler below) and only ever grows — hand it back too, or free roam keeps
+    // mode (Map2D._syncRegionWindow, BUG-68) and only ever grows — hand it back too, or free roam keeps
     // routing the region's outer rings cold for the rest of the session.
     map2d?.resetRadiusTarget()
     if (!roadSystem) return
@@ -5339,6 +5345,16 @@ function _showSeedModal (report = null, rejectedSeed = null, mode = 'story') {
 function _resolveSeedInput () {
   const raw = (document.getElementById('ss-seed')?.value ?? '').trim()
   return raw || String((Math.random() * 0x100000000) >>> 0)
+}
+/**
+ * Back out of the seed prompt. Backing out of a REFUSED story seed also leaves story mode — the
+ * alternative is standing in a region the playability check just rejected.
+ */
+function _cancelSeedModal () {
+  if (!_worldInit) { _hideSeedModal(); return }   // nothing to back out of yet
+  const wasRejected = storySystem.isSeedRejected()
+  _hideSeedModal()
+  if (wasRejected) storySystem.exit()
 }
 function _hideSeedModal () {
   const el = document.getElementById('story-seed-modal')
@@ -5402,9 +5418,12 @@ async function _startFreeRoam (seedStr) {
   if (storySystem.isActive()) storySystem.exit()
   if (_labActive) exitLab()
   window.__setGameMode('freeroam')
-  if (parseWorldSeed(seedStr) !== worldSeed) await applyWorldSeed(seedStr)
-  else await _reseatTruckAtSpawn()
-  _exitStageLoad()
+  try {
+    if (parseWorldSeed(seedStr) !== worldSeed) await applyWorldSeed(seedStr)
+    else await _reseatTruckAtSpawn()
+  } finally {
+    _exitStageLoad()   // a failed reseat must not leave the loading stage up with the sim held
+  }
 }
 
 async function _startStoryFromModal () {
@@ -5421,7 +5440,13 @@ async function _startStoryFromModal () {
   storySystem.enter(seed)
 }
 // Quick Job launcher — the beta mission generator, now surfaced only inside story mode.
-document.getElementById('quickjob-btn')?.addEventListener('click', () => { if (missionSystem) missionSystem.enter() })
+// Same gates as _poiInReach: you cannot take work while doing work. Ungated, a click mid-job reset
+// a TAKEN board job to 'generating' (no cancel, no slot lock) or started a mission beside a live
+// paper route — the two siblings that must never run at once.
+document.getElementById('quickjob-btn')?.addEventListener('click', () => {
+  if (!missionSystem || missionSystem.state !== 'idle' || paperRouteSystem.isActive() || _campUi) return
+  missionSystem.enter()
+})
 
 // Wire pause-menu buttons. Null-guarded (?.) like every other DOM lookup in this file:
 // an unguarded deref would throw at module-eval and abort the whole sim if an id is
@@ -5450,6 +5475,9 @@ document.getElementById('pm-menu')?.addEventListener('click', () => {
 document.getElementById('pm-lab')?.addEventListener('click', () => {
   if (_labActive) { exitLab(); return }
   if (missionSystem?.isActive()) missionSystem.exit()   // don't run a mission inside the lab
+  // …nor a story run: its day clock, wallet and region wall would all stay live around a truck
+  // teleported to the lab strip, and exitLab would then declare free roam inside an active story.
+  if (storySystem.isActive()) storySystem.exit()
   enterLab()
 })
 // FEAT-43: pm-story is context-aware. From free roam it opens the seed prompt → StorySystem.enter()
@@ -5527,12 +5555,7 @@ document.addEventListener('keydown', e => {
   // Same semantics as the cancel button: backing out of a REFUSED story seed leaves story mode,
   // because the alternative is standing in a region the playability check just rejected.
   const seedModal = document.getElementById('story-seed-modal')
-  if (seedModal && seedModal.style.display === 'flex') {
-    const wasRejected = storySystem.isSeedRejected()
-    _hideSeedModal()
-    if (wasRejected) storySystem.exit()
-    return
-  }
+  if (seedModal && seedModal.style.display === 'flex') { _cancelSeedModal(); return }
   // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
   // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
   // settings page and is otherwise inert until the world is handed back.
@@ -5614,7 +5637,7 @@ document.addEventListener('keydown', e => {
 
 // ── Game loop ─────────────────────────────────────────────────────────────────
 // Fixed-timestep accumulator (RESEARCH §Pattern 2, gafferongames.com/post/fix_your_timestep/)
-// FIXED_DT = 1/60s; MAX_FRAME_TIME = 0.25s (T-01-04: spiral-of-death mitigation)
+// PHYSICS_DT = 1/60s; MAX_FRAME_TIME = 0.25s (T-01-04: spiral-of-death mitigation)
 function loop () {
   requestAnimationFrame(loop)
   perfFrameBegin()   // PERF-26: closes out the previous frame's attribution, arms this one (no-op unless ?hitch)
@@ -5670,9 +5693,6 @@ function loop () {
   // hitch report shows a fat frame with nothing explaining it.
   const _ptP = performance.now()
   while (accumulator >= PHYSICS_DT) {
-    // Terrain stub call retained for M1-13 verification (Phase 6 replaces body, not call site).
-    const _surface = terrain(vehicleState.position.x, vehicleState.position.z)  // eslint-disable-line no-unused-vars
-
     // Story-mode countdown hold — set BEFORE updateVehicle, which is where handbrake is computed.
     // (The old approach re-latched vehicleState.parked AFTER updateVehicle had already computed
     // handbrake=false for the step, so the countdown never actually held and the player could
@@ -5737,17 +5757,17 @@ function loop () {
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
     // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
-    readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
+    const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
     if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
-    // SM-3 collision damage: read the hardest contact on the chassis this step and hand it to the
-    // damage model, which decides whether that is an impact (see feedContact — a contact is not).
+    // SM-3 collision damage: hand the hardest contact on the chassis this step (`hit`, read with
+    // the rim strikes above) to the damage model, which decides whether that is an impact (see
+    // feedContact — a contact is not).
     // classifyImpactRegion turns the body-local point/normal into an armor region and returns null
     // for ground contacts, so driving over terrain never registers as a crash.
     {
-      const hit = physicsEngine.maxContactImpulse(vehicleChassis)
       const landed = damageModel.feedContact(
         classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT,
         vehicleState.velocity)
@@ -5836,8 +5856,8 @@ function loop () {
   // Interpolate rendered position/quaternion between the last two physics steps.
   // accumulator is the residual time since the last step; alpha=0 → last step, alpha→1 → next step.
   const _renderAlpha = accumulator / PHYSICS_DT
-  const _renderPos   = _prevRenderPos.clone().lerp(vehicleState.position, _renderAlpha)
-  const _renderQuat  = _prevRenderQuat.clone().slerp(vehicleState.quaternion, _renderAlpha)
+  _renderPos.copy(_prevRenderPos).lerp(vehicleState.position, _renderAlpha)
+  _renderQuat.copy(_prevRenderQuat).slerp(vehicleState.quaternion, _renderAlpha)
 
   // Temporarily substitute interpolated pos/quat so meshes and camera both render at subframe time.
   const _physPos  = vehicleState.position
@@ -5851,25 +5871,19 @@ function loop () {
   campfire.update(frameTime, skySystem.nightFactor())   // no-op unless a camp is up
 
   // Wheel dust trails — advance + emit using the interpolated render pose (vehicleState is
-  // still the render copy here; restored below). Ground sampler mirrors queryContacts: flat
-  // the lab surface in the lab, analytic terrain height otherwise. Cheap no-op when no wheel is working.
-  dustSystem.update(frameTime, vehicleState, RANGER_PARAMS,
-    (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
-    looseSurfaceFactor)
+  // still the render copy here; restored below). Ground sampler = _fxGroundY (mirrors queryContacts).
+  // Cheap no-op when no wheel is working.
+  dustSystem.update(frameTime, vehicleState, RANGER_PARAMS, _fxGroundY, looseSurfaceFactor)
 
   // Tire smoke — same render-pose timing and ground sampler as dust above, and BUG-38 gives it the
   // same looseSurfaceFactor too: smoke reads it INVERTED (full on pavement, a thin floor off it)
   // while dust and spray read it forward. No lab special-case here — looseSurfaceFactor answers for
   // the lab itself (its own surface, on the pavement effect class), so all four consumers agree.
-  smokeSystem.update(frameTime, vehicleState, RANGER_PARAMS,
-    (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
-    looseSurfaceFactor)
+  smokeSystem.update(frameTime, vehicleState, RANGER_PARAMS, _fxGroundY, looseSurfaceFactor)
 
   // Dirt spray — same render-pose timing and ground sampler; additionally gated by
   // looseSurfaceFactor so clods only fly where there is loose material to throw.
-  dirtSpraySystem.update(frameTime, vehicleState, RANGER_PARAMS,
-    (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0) : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0),
-    looseSurfaceFactor)
+  dirtSpraySystem.update(frameTime, vehicleState, RANGER_PARAMS, _fxGroundY, looseSurfaceFactor)
 
   // Phase 6: update terrain chunk ring each render frame (outside physics accumulator).
   // ground.position.x/z snapping removed — ground mesh removed; terrain chunks replace it.
@@ -6069,7 +6083,7 @@ function loop () {
   // PERF-33: clear atlas tiles that still hold a departed chunk's shadows (toroidal slot reuse) the
   // moment the window moves — early-outs unless the stream centre changed chunk.
   if (shadowBake && !_labActive) shadowBake.syncCenter(Math.floor(streamCenter.x / CHUNK_SIZE), Math.floor(streamCenter.z / CHUNK_SIZE))
-  if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(scene, _streamBudget.deadline()) }   // PERF-26 tag
+  if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(_streamBudget.deadline()) }   // PERF-26 tag
   perfAdd('frame.shadowBake', performance.now() - _pt)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   _pt = performance.now()
@@ -6077,7 +6091,8 @@ function loop () {
     const wr = waterSyncRadius()
     waterRenderer.sync(
       streamCenter.x - wr, streamCenter.z - wr,
-      streamCenter.x + wr, streamCenter.z + wr
+      streamCenter.x + wr, streamCenter.z + wr,
+      roadSystem ? roadSystem._networkRev : 0   // ribbons are suppressed against the road surface
     )
   }
   perfAdd('frame.water.sync', performance.now() - _pt)   // TEMP (D-arc)

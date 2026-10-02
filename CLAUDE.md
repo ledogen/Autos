@@ -181,15 +181,18 @@ desaturated nature against saturated man-made objects. `trailer-home-a.glb` is t
   (`lib/*.mjs`) and rainy-day scripts, which are not gates. Wall-clock assertions are report-only
   (flaky) — real timing budgets live in the PERF-08 profiling harness, not the gates.
 
-### Terrain Worker
+### Workers — the no-mirror fence
 
-The terrain Web Worker source lives only as the `WORKER_SOURCE` template string in `src/terrain.js`
-(spun up as a Blob classic worker). There is no separate worker file. Carve bodies (canonical in
-`src/road-carve.js`) and seed/height helpers (canonical in `src/seed.js`) are copied verbatim into
-`WORKER_SOURCE` — edit the canonical original and reflect it there in the same commit (search
-`CARVE SYNC` / SYNC RULE).
+Every Worker is a real ES module that **imports** the code the main thread runs. Nothing is pasted
+into a source string and there is no `SYNC RULE` to keep: worker/main parity is by construction.
 
-**Routing does NOT live in this Worker, and there is no route mirror.** FEAT-68 deleted the `ROUTE
+- **Terrain:** `src/terrain-worker.js` (a small pool, spun from `src/terrain.js`) builds chunk
+  heightmaps with the same `height()` from `src/terrain-height.js` that the main thread's
+  `analyticHeight`, `road.js` and the headless gates import. It returns RAW heights — the road and
+  stream carves are main-thread blends and never enter the Worker. (Until 2026-10 this Worker was a
+  `WORKER_SOURCE` template string with hand-synced copies of the seed, noise and height code.)
+
+**Routing does NOT live in the terrain Worker, and there is no route mirror.** FEAT-68 deleted the `ROUTE
 SYNC` region, its verbatim `WORKER_SOURCE` copy and the `route-worker-sync` byte-equality gate along
 with the v1 arc-lattice router they served. The road workers are real ES modules that **import** the
 same `routeEdgeV2` the synchronous path calls, so worker/sync parity is by construction — the

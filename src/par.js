@@ -366,13 +366,6 @@ function gripLimit(vv, kap, gmu) {
 }
 
 /**
- * Convenience: par for a single whole edge (the s0=0 → s1=length case).
- */
-export function parForEdge(centerline, gradeAt, ref = PAR_REF) {
-    return computePar([{ centerline, gradeAt, s0: 0, s1: centerline.length }], ref)
-}
-
-/**
  * Format a par/elapsed time as m:ss.t for HUD copy.
  */
 export function formatTime(sec) {

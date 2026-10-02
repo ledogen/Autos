@@ -1,67 +1,36 @@
 /**
- * src/suspension.js — Phase 1 suspension module.
+ * src/suspension.js — the strut model: four quarter-car spring-dampers on a rigid body.
  *
- * Exports the locked signatures for Phase 4 spring-damper replacement (D-05, D-06).
- * Phase 1 bodies return static values: equal weight distribution per axle, wheel positions
- * at fixed offsets from the vehicle CG.
+ * Each corner is a hub that slides along the body's own up/down axis (the strut). Its state is
+ * strutComp / strutCompVel (compression in metres, positive = compressed). Per physics step,
+ * stepSuspensionSubsteps integrates the four hubs at dt/4 against the tire spring (which reads the
+ * ground through queryContacts) and publishes three per-corner results for physics.js to apply:
+ *   params._tireFz[i]         strut-axis tire load      → the Pacejka normal force
+ *   params._suspForceAccum[i] spring + damper + ARB     → body force along the strut
+ *   params._hubNormalXZ[i]    off-axis contact residual → body force (what slides a truck downhill)
  *
- * Do NOT import Three.js directly — caller passes a rotation helper via params._rotateVector
- * to keep this module pure math and testable outside the browser (no CDN Three.js available
- * in Node test contexts).
+ * Pure math, no Three.js import (testable in node). The body rotation arrives as
+ * params._rotateVector, injected by physics.js each step; without it the body is taken as upright.
+ * Positions are plain {x, y, z}.
  *
- * getWheelPosition returns the wheel hub center (not the contact patch bottom).
- * physics.js passes the hub to queryContacts(hub, wheelRadius) to find actual contact patches,
- * which handles slopes, walls, and multiple simultaneous contacts correctly.
- *
- * getWheelPosition returns a plain {x, y, z} object, not THREE.Vector3, to avoid the Three.js
- * import dependency in this pure-math module. Physics.js wraps results in THREE.Vector3.
- *
- * Conventions: see docs/GLOSSARY.md
- * Wheel index convention (GLOSSARY.md §Wheel Index): 0=FL, 1=FR, 2=RL, 3=RR
+ * Conventions: see docs/GLOSSARY.md. Wheel index: 0=FL, 1=FR, 2=RL, 3=RR.
  */
 
 /**
- * Compute normal force on this wheel's contact patch.
- *
- * @param {number} corner - Wheel index 0-3 (0=FL, 1=FR, 2=RL, 3=RR per GLOSSARY.md §Wheel Index).
- * @param {object} vehicleState - Full vehicleState object (position, velocity, quaternion,
- *   angularVelocity, steerAngle, throttle, brake, wheelPhase). Unused in Phase 1 static bodies.
- * @param {object} params - RANGER_PARAMS; uses params.mass [kg], params.weightFront [-],
- *   params.weightRear [-]. Phase 4 will also use spring stiffness and compression state.
- * @returns {number} Fn [N] normal force on this wheel. Positive = pushing up against wheel.
- *   Phase 4 will compute from spring compression and body acceleration (load transfer).
- *   Phase 1: static distribution — front wheels get mass * g * weightFront / 2,
- *   rear wheels get mass * g * weightRear / 2.
- *
- * Phase 4 replacement: spring-damper Fn with load transfer between corners.
- * Phase 4 replaces this body only — signature and call site in physics.js do not change.
+ * The tire's normal load on one corner [N] — params._tireFz[corner], as written by the last
+ * stepSuspensionSubsteps. 0 before the first step and for an airborne wheel.
  */
 export function computeNormalForce (corner, vehicleState, params) {
-  // Phase 4: this is now a shim. stepSuspensionSubsteps (below) computes the actual tire-spring
-  // force per D-03 and writes it to params._tireFz[corner]. This function simply reads it back
-  // so the call site in physics.js (which expects computeNormalForce to return Fn) continues
-  // working without refactoring the caller (RESEARCH §Pitfall 7 — easiest migration path).
-  // If _tireFz is not yet populated (e.g., first call order issue), fall back to 0 safely.
   return (params._tireFz && typeof params._tireFz[corner] === 'number')
     ? params._tireFz[corner]
     : 0
 }
 
 /**
- * Compute world-space position of wheel hub center.
+ * World-space position of one wheel's hub CENTRE (not the contact patch — physics.js hands the
+ * hub and the wheel radius to queryContacts, which finds the patch on slopes and walls alike).
  *
- * Phase 4.1 (D-02): hub position is derived from strutComp and body orientation.
- * strutComp[i] positive = compressed (hub closer to body than rest).
- * hubWorld = mountWorld + strutLen * body_down, where strutLen = L_S - strutComp[i].
- *
- * NOTE on Three.js isolation strategy: This module must not import Three.js (pure-math
- * contract for testability). To rotate local offsets into world space, physics.js injects
- * a rotation helper into params before calling:
- *
- *   params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
- *
- * This keeps all Three.js usage inside physics.js while allowing suspension.js to be a
- * pure function of numbers and plain objects.
+ * hubWorld = mountWorld + strutLen * body_down, where strutLen = L_S - strutComp[i] (D-02).
  *
  * @param {number} corner - Wheel index 0-3 (0=FL, 1=FR, 2=RL, 3=RR per GLOSSARY.md §Wheel Index).
  * @param {object} vehicleState - Full vehicleState; uses .position, .quaternion, .strutComp.
@@ -83,7 +52,7 @@ export function getWheelPosition (corner, vehicleState, params) {
     :  (params.wheelbase * params.weightFront)
 
   // Wheel hub center: (cgHeight - wheelRadius) below CG in body Y (mount point in body space).
-  // MUST include suspensionBodyOffset to match stepSuspensionSubsteps (line ~251). Without it the
+  // MUST include suspensionBodyOffset to match stepSuspensionSubsteps (_mountLocal). Without it the
   // Pacejka contact query places the hub at the wrong height when ride height is tuned, so
   // queryContacts finds no ground contact while the suspension is loaded — wheels report Fn=0/SA=0
   // and the truck slides frictionlessly even though the strut is bearing weight (BUG-05 real cause).
@@ -118,17 +87,7 @@ export function getWheelPosition (corner, vehicleState, params) {
   }
 }
 
-/**
- * World-space positions of four body contact points (bumper corners).
- * These are small spheres on the car body that generate normal-only collision force,
- * stopping the body from clipping walls and ramp faces.
- *
- * @param {object} vehicleState - Full vehicleState; uses .position and .quaternion.
- * @param {object} params - RANGER_PARAMS; uses wheelbase, weightFront/Rear, trackFront, cgHeight.
- *   Also uses params._rotateVector (injected by physics.js).
- * @returns {Array<{x,y,z}>} Four world-space points: FL/FR front bumper, RL/RR rear bumper.
- */
-/**
+/*
  * ── Out-of-round tires (SM-3) ───────────────────────────────────────────────────────────────────
  *
  * `params.wheelRunout` is the PEAK-TO-PEAK radius variation in metres (0 = perfectly round), so the
@@ -159,6 +118,7 @@ export function getWheelPosition (corner, vehicleState, params) {
  * contact-query radius uses this, never getWheelPosition(). An oval tire on a straight axle is
  * exactly that: the axle runs true, the rubber around it does not.
  */
+
 /**
  * Soft band between the wheel's rigid core and the visual tire radius — the depth range the
  * analytic tire spring owns. Past it there is no rubber left and the rim is bearing directly.
@@ -166,6 +126,8 @@ export function getWheelPosition (corner, vehicleState, params) {
  * absorb fast hits before the rigid core engages — high-speed rock hits felt chassis-hard.)
  */
 export const WHEEL_SOFT_BAND = 0.15
+
+const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire damper by one static deflection of depth (see the contact loop)
 
 const RUNOUT_PHASE = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]
 export const RUNOUT_HARMONIC = 2   // 1 = eccentric (one high spot), 2 = oval (two)
@@ -242,10 +204,8 @@ export function carcassRadialOffset (corner, psi, runout) {
  * Quarter-car suspension sub-step loop. Integrates strut compression state (strutComp, strutCompVel)
  * at dt/N for stability, computes tire-spring and suspension-spring forces, applies ARB coupling.
  *
- * Phase 4.1 changes from Phase 4:
- *   - State renamed: hubY/hubVy -> strutComp/strutCompVel (D-01)
+ * The model (Phase 4.1 decisions, still binding):
  *   - Hub world position derived from strutComp along body_down axis (D-02)
- *   - Mount velocity projected onto strut axis (D-03)
  *   - Spring/damper/ARB act along strut axis; body sees reaction along body_up (D-04)
  *   - Gravity on hub = m_u * g * dot(body_up, world_up) = m_u * g * body_up.y (D-05)
  *   - Contact normal split: strut-axis component -> tireFz (hub ODE); X/Z residual -> _hubNormalXZ (D-06)
@@ -253,8 +213,8 @@ export function carcassRadialOffset (corner, psi, runout) {
  *
  * Called once per outer physics step by physics.js BEFORE the per-wheel Pacejka contacts loop.
  * Mutates vehicleState.strutComp[i] and vehicleState.strutCompVel[i] in place.
- * Writes params._tireFz[i] (averaged across N substeps) — consumed by computeNormalForce shim
- * above and directly by physics.js Step 3 Pacejka Fn feed (per D-03).
+ * Writes params._tireFz[i] (averaged across N substeps) — the Pacejka normal force physics.js
+ * Step 3 reads through computeNormalForce (D-03).
  * Writes params._suspForceAccum[i] (averaged across N substeps) — applied as body force along
  * body_up in physics.js Step 3 totalForce accumulation.
  * Writes params._hubNormalXZ[i] (averaged across N substeps) — X/Z residual contact normal force
@@ -270,14 +230,19 @@ export function carcassRadialOffset (corner, psi, runout) {
  *     suspensionRestLength{Front,Rear}, suspensionTravel{Front,Rear}, suspensionBodyOffset{Front,Rear},
  *     bumpStopStiffness, DROOP_STOP_STIFFNESS, arbStiffness{Front,Rear},
  *     tireStiffness, tireDamping, wheelRadius, trackFront, trackRear, wheelbase,
- *     weightFront, weightRear, cgHeight, physicsDt, _rotateVector (injected function),
+ *     weightFront, weightRear, cgHeight, _rotateVector (injected function),
  *     _hubNormalXZ[4] (initialized by main.js).
  *   Writes: _tireFz[4], _suspForceAccum[4], _hubNormalXZ[4].
  * @param {number} dt - Outer physics step in seconds (== PHYSICS_DT from main.js).
- * @param {function} queryContacts - (cx, cy, cz, r) → Array<{normal, depth, contactPoint}>.
- *   Same function passed to stepPhysics; used to compute tire compression depth per hub.
+ * @param {function} queryContacts - (cx, cy, cz, r, footprint) → Array<{normal, depth, contactPoint}>.
+ *   physics.js passes its qcPlus (analytic ground ∪ engine debris); gives the tire compression
+ *   depth per hub. Debris contacts also carry depthRate and sizeR.
  * @returns {void}
  */
+// Scratch for stepSuspensionSubsteps (one truck steps at a time; nothing here outlives a call).
+const _mountX = [0, 0, 0, 0], _mountY = [0, 0, 0, 0], _mountZ = [0, 0, 0, 0]
+const _arbF = [0, 0, 0, 0]
+
 export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts) {
   // SM-3: reset the per-step peak bump-stop force before the substep loop accumulates this step's.
   if (vehicleState.bumpForce) { vehicleState.bumpForce[0] = 0; vehicleState.bumpForce[1] = 0; vehicleState.bumpForce[2] = 0; vehicleState.bumpForce[3] = 0 }
@@ -354,89 +319,63 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   // the strut axis orientation rather than always pulling world-downward (the Phase 4 bug).
   const gravDot = body_up.y  // = dot((0,1,0), body_up) = Y component of body_up
 
+  // ── Per-corner mount point, in world space ───────────────────────────────────────────────────
+  // The body pose does not change inside this function, so the mount is the same for all N
+  // substeps; only the strut length under it moves. Local mount: the hub's rest offset from the
+  // CG, (cgHeight − wheelRadius) below it, plus the ride-height body offset (D-08).
+  for (let i = 0; i < 4; i++) {
+    const isFront = i < 2
+    const isLeft  = i === 0 || i === 2
+    const localX = isLeft
+      ? -(isFront ? params.trackFront : params.trackRear) / 2
+      :  (isFront ? params.trackFront : params.trackRear) / 2
+    const localZ = isFront
+      ? -(params.wheelbase * params.weightRear)
+      :  (params.wheelbase * params.weightFront)
+    const localY = -(params.cgHeight - params.wheelRadius) +
+      (isFront ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
+    const local = { x: localX, y: localY, z: localZ }
+    const rMount = typeof params._rotateVector === 'function'
+      ? params._rotateVector(local)
+      : local
+    _mountX[i] = vehicleState.position.x + rMount.x
+    _mountY[i] = vehicleState.position.y + rMount.y
+    _mountZ[i] = vehicleState.position.z + rMount.z
+  }
+
+  // Per-contact constants of the tire spring (see the contact loop for what each one models).
+  const sidewall = (params.wheelRadius || 0.368) - (params.rimRadius || 0.203)
+  const sc = vehicleState.strutComp, scv = vehicleState.strutCompVel
+
   for (let s = 0; s < N; s++) {
-    // ── 1. Per-corner geometry pass ────────────────────────────────────────────
-    // Body mount-point world position: same local X/Z as wheel hub offset, Y is body-attach height.
-    // Local mount Y: hub center is (cgHeight − wheelRadius) below CG in body space, plus body offset.
-    // Mount velocity: full 3D velocity projected onto strut axis (D-03).
-    const cornerData = []
-    for (let i = 0; i < 4; i++) {
-      const isFront = i < 2
-      const isLeft  = i === 0 || i === 2
-
-      const localX = isLeft
-        ? -(isFront ? params.trackFront : params.trackRear) / 2
-        :  (isFront ? params.trackFront : params.trackRear) / 2
-      const localZ = isFront
-        ? -(params.wheelbase * params.weightRear)
-        :  (params.wheelbase * params.weightFront)
-      // Phase 4.1 D-08: apply body offset to mount Y (default 0.0 = same as Phase 4)
-      const localY = -(params.cgHeight - params.wheelRadius) +
-        (isFront ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
-
-      // Rotate local offset to world space using injected helper (preserves pure-math contract).
-      const local = { x: localX, y: localY, z: localZ }
-      const rMount = typeof params._rotateVector === 'function'
-        ? params._rotateVector(local)
-        : local
-
-      const mountWorldX = vehicleState.position.x + rMount.x
-      const mountWorldY = vehicleState.position.y + rMount.y
-      const mountWorldZ = vehicleState.position.z + rMount.z
-
-      // Phase 4.1 D-03: Full 3D mount velocity, then projected onto strut axis.
-      // mountVel = v_body + ω × rMount  (rMount is rotated body-local offset)
-      const mountVelX = vehicleState.velocity.x +
-        (vehicleState.angularVelocity.y * rMount.z - vehicleState.angularVelocity.z * rMount.y)
-      const mountVelY = vehicleState.velocity.y +
-        (vehicleState.angularVelocity.z * rMount.x - vehicleState.angularVelocity.x * rMount.z)
-      const mountVelZ = vehicleState.velocity.z +
-        (vehicleState.angularVelocity.x * rMount.y - vehicleState.angularVelocity.y * rMount.x)
-      // mountVelStrut: scalar projection of mount velocity onto strut axis (body_down direction)
-      // Positive = mount moving along body_down = compressing strut (mount approaching hub)
-      const mountVelStrut = mountVelX * body_down.x + mountVelY * body_down.y + mountVelZ * body_down.z
-
-      const L_S = isFront ? params.suspensionRestLengthFront : params.suspensionRestLengthRear
-
-      // Phase 4.1 D-02: derive hub world position from strutComp along body_down axis.
-      // strutComp[i] positive = compressed; strutLen = L_S - strutComp < L_S.
-      const strutCompI   = vehicleState.strutComp[i]
-      const strutLen     = L_S - strutCompI
-      const hubWorldX    = mountWorldX + strutLen * body_down.x
-      const hubWorldY    = mountWorldY + strutLen * body_down.y
-      const hubWorldZ    = mountWorldZ + strutLen * body_down.z
-
-      // strutCompVel[i]: pre-step compression velocity (used in explicit-Euler force equation)
-      const strutCompVelI = vehicleState.strutCompVel[i]
-
-      cornerData.push({
-        mountWorldX, mountWorldY, mountWorldZ, rMount,
-        hubWorldX, hubWorldY, hubWorldZ,
-        strutCompI, strutCompVelI,
-        mountVelStrut,
-        isFront, L_S
-      })
-    }
-
-    // ── 2. ARB pass — must come AFTER all strutComps computed, BEFORE force application ────────
+    // ── 1. ARB pass — from every corner's compression BEFORE any corner integrates ────────────
     // (RESEARCH §Anti-Pattern: "Computing ARB after the suspension force is already applied to hub")
     // Convention: F_arb = k_ARB * (strutComp[left] - strutComp[right]) per axle.
     //   arbForce[left]  = -F_arb  (positive arbForce = pushes hub away from body, reduces compression)
     //   arbForce[right] = +F_arb
     // Pure heave (both sides compress equally): delta=0 → F_arb=0 ✓
-    const arbF = [0, 0, 0, 0]
+    const arbF = _arbF
     {
-      const dF = params.arbStiffnessFront * (cornerData[0].strutCompI - cornerData[1].strutCompI)
+      const dF = params.arbStiffnessFront * (sc[0] - sc[1])
       arbF[0] = -dF
       arbF[1] = +dF
-      const dR = params.arbStiffnessRear  * (cornerData[2].strutCompI - cornerData[3].strutCompI)
+      const dR = params.arbStiffnessRear  * (sc[2] - sc[3])
       arbF[2] = -dR
       arbF[3] = +dR
     }
 
-    // ── 3. Force + strut integration pass ────────────────────────────────────────
+    // ── 2. Force + strut integration pass ────────────────────────────────────────
+    // Corner i reads only its OWN strut state, which nothing has integrated yet this substep, so
+    // these are the pre-step values the explicit-Euler force equation wants.
     for (let i = 0; i < 4; i++) {
-      const { strutCompI, strutCompVelI, hubWorldX, hubWorldY, hubWorldZ, isFront } = cornerData[i]
+      const isFront = i < 2
+      const strutCompI    = sc[i]
+      const strutCompVelI = scv[i]
+      // D-02: hub world position = mount + strut length along body_down (compressed ⇒ shorter).
+      const strutLen  = (isFront ? params.suspensionRestLengthFront : params.suspensionRestLengthRear) - strutCompI
+      const hubWorldX = _mountX[i] + strutLen * body_down.x
+      const hubWorldY = _mountY[i] + strutLen * body_down.y
+      const hubWorldZ = _mountZ[i] + strutLen * body_down.z
       // SM-3: sagged springs and dead dampers. params._springScale{Front,Rear} and
       // params._damperScale{Front,Rear} are published by src/damage.js; absent (headless gates,
       // damage off) they read as 1 and the suspension is exactly the stock one.
@@ -467,7 +406,6 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // (depth ≈ v·dt ≥ ENGAGE), so high-speed response is undiminished, with no speed terms.
         // Terrain contacts keep the strut-velocity approximation (their transients are
         // pre-spread by the footprint envelope, and the m4 calibration history rests on it).
-        const TIRE_DAMP_ENGAGE = 0.04   // m — full damper by one static deflection of depth
         const compressionVel = (c.depthRate !== undefined)
           ? c.depthRate * Math.min(1, c.depth / TIRE_DAMP_ENGAGE)
           : -strutCompVelI
@@ -516,7 +454,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // it is 1.04, so ordinary ride and every handling gate are untouched; by 100 mm it is 1.6,
         // by 140 mm it is 3.6, and it runs away as the sidewall is used up. The tire stops the
         // truck because it has run out of rubber, not because a number was raised.
-        const sidewall = (params.wheelRadius || 0.368) - (params.rimRadius || 0.203)
+        // (`sidewall` = wheelRadius − rimRadius, hoisted above the substep loop.)
         // Clamped at 0.94 (≈8.6x rate), not at the asymptote. Past the sidewall the rim is on the
         // surface and this spring is no longer the thing resisting — letting the multiplier run to
         // 25x there produced a 5.5 cm single-frame shove on a 0.34 m shoulder step, which reads as
@@ -620,8 +558,8 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
 
       // Explicit Euler integration (D-10: same N=4 substep count as Phase 4)
       const newStrutCompVel = strutCompVelI + (F_total / m_u) * sdt
-      vehicleState.strutCompVel[i] = newStrutCompVel
-      vehicleState.strutComp[i]    += newStrutCompVel * sdt
+      scv[i] = newStrutCompVel
+      sc[i] += newStrutCompVel * sdt
 
       // Body reaction accumulator (Newton's 3rd law on the strut spring).
       // Uses pre-step strutCompVelI for consistency with explicit Euler (Pitfall 4).
@@ -635,10 +573,6 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
     }
   }
 }
-
-// (getBodyContactPoints deleted 2026-08-15 — the bumper/undercarriage/roof probe points fed
-// the retired hand-rolled body solver and its debug spheres; the chassis is an engine hull
-// compound now, measured off the vehicle model in physics.js createVehicleChassis.)
 
 // ── Static equilibrium at startup (RESEARCH §Pattern 4, Phase 4.1 D-11) ─────────────────────────────────────
 // Pre-compute strutComp and body Y so the car spawns pre-settled with no visible drop.

@@ -45,6 +45,8 @@ export function makeVehicleState (params, ignitionKey = undefined) {
     strutCompVel: [0, 0, 0, 0],            // m/s — strut compression velocity per corner (D-01)
     wheelDebug:      [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ],  // per-wheel debug data written by stepPhysics; read by logger; fz=tire spring force (D-12)
     wheelOmega:      [0, 0, 0, 0],                   // per-wheel angular velocity [rad/s]; integrated by physics.js omega integrator
+    slipLong:        [0, 0, 0, 0],                   // m — relaxation-filtered longitudinal slip displacement per tire (tire.js header)
+    slipLat:         [0, 0, 0, 0],                   // m — same, lateral
     // ── SM-3 damage signals: honest per-corner quantities the physics already computes, published
     // here so src/damage.js can integrate wear without importing anything from the physics stack.
     slipVel:         [0, 0, 0, 0],                   // m/s — raw contact-patch sliding speed (tire wear, dominant term)
@@ -56,7 +58,7 @@ export function makeVehicleState (params, ignitionKey = undefined) {
     wheelPhase:      [0, 0, 0, 0],                   // per-wheel spin phase [rad], fixed-step; feeds the out-of-round radius (params.wheelRunout)
     drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
     ignition:        makeIgnitionState(ignitionKey),    // FEAT-33 key state (OFF/CRANKING/RUNNING); stepped by updateVehicle, read by stepDrivetrain + the cluster. Free roam spawns RUNNING.
-    engineHealth:    1,                                 // FEAT-33 seam for the SM-3 wear model: 1 = fresh engine (quarter-second catch), 0 = beater (ignitionCatchTimeWorn). Nothing writes it yet.
+    engineHealth:    1,                                 // FEAT-33 seam for the SM-3 wear model: 1 = fresh engine (quarter-second catch), 0 = beater (ignitionCatchTimeWorn). Written every step by the damage model's engine track (damage.js).
     handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque
     parked:          true,                              // spawn/teleport hold (feature/teleport): handbrake held until first driver input
     submerged:       false,                            // FEAT-22: CG below a water surface (set per-frame from WaterSystem.submergedAt)

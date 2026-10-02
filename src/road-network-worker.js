@@ -11,6 +11,8 @@
 // replies against a stale epoch are discarded wholesale by the main side):
 //   {type:'build', epoch, seed, params, center:{x,z}, radius, pondDiscs}
 //     → {type:'network', epoch, seed, data: RoadSystem.exportNetwork() result}
+//     → {type:'network', epoch, seed, error} when the build threw — EVERY request gets a reply,
+//       because the client runs one build at a time and waits on it.
 //     params MUST be a snapshotRoadParams() copy (structured-clonable by construction — NEVER the
 //     live RANGER_PARAMS: engineTorqueCurve etc. clone fine but functions would throw, and the
 //     worker must not see main-thread mutations mid-build anyway).
@@ -153,12 +155,13 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
         if (poolSig !== sig) { pool.init(d.seed, d.params); poolSig = sig }
         pool.registerClient(cid, rs)
         rs.warmPlanDemand = true
+        rs.warmFailed = false
         rs.setRouteDispatcher((jobs, epoch) => pool.postRouteJobs(cid, jobs, epoch))
         rs.setRadius(d.radius)
         rs.beginPrewarmedBuild()   // rev bump + CR-02 bounds move to warm start; the build skips both and reuses the warm's plan memos (see road.js)
         const center = new THREE.Vector3(d.center.x, 0, d.center.z)
         const t0 = performance.now()
-        while (!rs.warmBandComplete(center)) {
+        while (!rs.warmFailed && !rs.warmBandComplete(center)) {
             // Deadline, not a hang: if the pool dies or stalls, the build below routes whatever
             // is missing synchronously — the pre-warm is an optimization, never a dependency.
             if (performance.now() - t0 > 60000) break
@@ -196,9 +199,12 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
     self.onmessage = (e) => {
         const d = e.data
         if (d.type !== 'build') return
-        // A failed build logs and keeps the chain alive for the next request (pre-worker
-        // behaviour was an uncaught throw that also never replied — the client-side epoch/seed
-        // guards own staleness either way).
-        chain = chain.then(() => handleBuild(d)).catch((err) => console.error('[network-worker] build failed', err))
+        // A failed build still REPLIES. The client holds one build in flight and queues the rest
+        // behind it, so a silent failure parked every later build and every buildNow() promise
+        // forever — a loading screen that never lifts.
+        chain = chain.then(() => handleBuild(d)).catch((err) => {
+            console.error('[network-worker] build failed', err)
+            self.postMessage({ type: 'network', client: d.client ?? 'default', epoch: d.epoch, seed: d.seed, error: String(err?.message ?? err) })
+        })
     }
 }

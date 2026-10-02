@@ -6,9 +6,10 @@
  * terrain.js for CHUNK_SIZE, so that direction is forbidden).
  *
  * Consumers:
- *   - road-mesh.js  (re-exports roadQuality for the markings system — D-02)
- *   - road.js       (_sampleCarveWorld pothole severity — D-03 / SURF-06)
- *   - terrain.js    (_buildCarveTable pothole severity — D-03 / SURF-06)
+ *   - road-mesh.js  (the per-vertex q the marking shader tiers on — D-02 — and ribbon potholes)
+ *   - road.js       (pothole severity on the carved surface — D-03 / SURF-06; the terrain mesh
+ *                    carve reads it through road.js's shared resolver, not directly)
+ *   - mission.js    (par oracle: a rough stretch is slower)
  *
  * D-03: same per-stretch roadQuality value drives both lane markings
  * (visual, road-mesh.js) and pothole severity (physics+mesh, SURF-06).

@@ -395,7 +395,6 @@ export class PoiSystem {
     buildHouses (center, radius) {
         const road = this._d.getRoad()
         if (!road || !center) return this._houses
-        const seed = this._d.getSeed()
         const P = { ...POI_PARAMS, ...this._d.getParams() }
 
         // Same canonical edge order as build(), for the same reason: the Map's order is a streaming

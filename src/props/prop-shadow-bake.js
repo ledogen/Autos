@@ -35,18 +35,17 @@
  *     setTileSource) holding only the 3×3 chunks around the tile — NOT the main prop meshes. The
  *     global meshes are frustumCulled=false with count=top, so rendering them re-shaded EVERY live
  *     instance in the ring (~25k at Ultra) per tile × 8 tiles/frame — the measured stream-in hitch.
- *     The scratch path bounds a tile bake to ~1k instances. Falls back to the full scene when no
- *     tile source is wired (identical output — the scissor already clipped rasterization).
+ *     The scratch path bounds a tile bake to ~1k instances. It is the ONLY path: the bake never
+ *     renders the main scene, so nothing there needs hiding or restoring around a bake.
  *
- * Isolation: props are additionally on BAKE_LAYER; the bake camera renders ONLY that layer, so
- * terrain/vehicle/water are invisible to the bake. scene.overrideMaterial swaps in the projection
- * material for the pass. Headless (node) has no renderer → the whole system is never constructed
- * (main.js guards on the WebGL renderer), exactly like the old blob decals.
+ * The scratch meshes sit on BAKE_LAYER and the bake camera renders only that layer; the scratch
+ * scene's overrideMaterial is the projection material. Headless (node) has no renderer → the
+ * whole system is never constructed (main.js guards on the WebGL renderer).
  */
 
 import * as THREE from 'three'
 
-export const BAKE_LAYER = 2          // props enable this layer; the bake camera renders only it
+export const BAKE_LAYER = 2          // the scratch caster meshes' layer; the bake camera renders only it
 export const ATLAS_N    = 12         // tiles per side (toroidal). Ring diameter ≤ 9 (Ultra) ⊂ 12.
 export const TILE_PX    = 256        // DEFAULT px per chunk tile → 0.25 m/texel at CHUNK_SIZE 64 (atlas 3072²).
                                      // Live value is per-instance (setTilePx; quality tier + GUI slider
@@ -349,28 +348,19 @@ export class ShadowBakeSystem {
   setTileSource(fn) { this._tileSource = fn }
 
   /**
-   * Bake up to MAX_BAKES_PER_CALL queued tiles. `propScene` is the main scene (props live on it,
-   * flagged BAKE_LAYER); everything else is invisible to the bake camera. Called each frame after
-   * prop streaming so freshly-committed chunks bake within a frame or two.
+   * Bake up to MAX_BAKES_PER_CALL queued tiles, each from the tile source's scratch scene (the
+   * casters of the 3×3 chunks around that tile, nothing else). Called each frame after prop
+   * streaming so freshly-committed chunks bake within a frame or two. No-op until a tile source
+   * is wired (setTileSource — prop-system.setShadowBake does it).
    * @param {number} deadline PERF-33: performance.now() cutoff from the shared streaming budget (the bake
    *   spends LAST). One tile always bakes so a starved budget can never stall the atlas.
    */
-  update(propScene, deadline = Infinity) {
-    if (!this._dirty.length || !this._rt) return
+  update(deadline = Infinity) {
+    if (!this._dirty.length || !this._rt || !this._tileSource) return
     const r = this._renderer
-    const useTiles     = !!this._tileSource
     const prevTarget   = r.getRenderTarget()
-    const prevOverride = propScene.overrideMaterial
-    const prevBg       = propScene.background
     const prevClearA   = r.getClearAlpha()
     r.getClearColor(this._prevClear)
-    // Isolate the bake: only props (BAKE_LAYER) render via the bake camera, and the sky background
-    // would otherwise fill every tile (it ignores camera layers), so null it for the pass.
-    // (Skipped on the PERF-21 tile-source path — the scratch scene holds nothing but casters.)
-    if (!useTiles) {
-      propScene.overrideMaterial = this._mat
-      propScene.background = null
-    }
     r.setClearColor(0x000000, 0)
 
     const n = Math.min(MAX_BAKES_PER_CALL, this._dirty.length)
@@ -404,20 +394,14 @@ export class ShadowBakeSystem {
       this._rt.scissor.set(px, py, tp, tp)
       this._rt.scissorTest = true
       r.setRenderTarget(this._rt)
-      if (useTiles) {
-        // PERF-21: render only the 3×3-chunk scratch scene for this tile (~1k instances) instead
-        // of the whole prop population (~25k). Same silhouettes — casters farther than one chunk
-        // can't reach this tile (shear length ≪ 64 m), and the old path scissored them out anyway.
-        const tileScene = this._tileSource(cx, cz)
-        tileScene.overrideMaterial = this._mat
-        r.render(tileScene, this._cam)
-      } else {
-        r.render(propScene, this._cam)
-      }
+      // PERF-21: render only the 3×3-chunk scratch scene for this tile (~1k instances), not the
+      // whole prop population (~25k). Casters farther than one chunk can't reach this tile (shear
+      // length ≪ 64 m).
+      const tileScene = this._tileSource(cx, cz)
+      tileScene.overrideMaterial = this._mat
+      r.render(tileScene, this._cam)
     }
 
-    propScene.overrideMaterial = prevOverride
-    propScene.background = prevBg
     r.setClearColor(this._prevClear, prevClearA)
     // Restores the canvas viewport/scissor automatically (they were never touched — only rt state).
     r.setRenderTarget(prevTarget)

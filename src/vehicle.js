@@ -1,6 +1,7 @@
 /**
- * Vehicle input and control module. Owns keyboard state, steer accumulation,
- * Ackermann geometry, wheel spin accumulation, and spawn-reset.
+ * Vehicle input and control module. Owns the driving keys, the throttle/brake ramps, steer
+ * accumulation + Ackermann geometry, the handbrake/park latch, and the ignition key step.
+ * updateVehicle returns true when R was pressed; main.js does the actual respawn.
  * Does NOT perform physics integration — that is physics.js.
  * Does NOT import Three.js. Pure math + DOM event listeners.
  *
@@ -50,45 +51,6 @@ export function setLaunchHold (on) { _launchHold = on }
 // multiply by 1, so headless gates (which never construct DaySystem) see identical vehicle input.
 let _controlAtten = 1
 export function setControlAttenuation (f) { _controlAtten = Math.max(0, Math.min(1, Number(f) || 0)) }
-
-// ── SPAWN_STATE ───────────────────────────────────────────────────────────────
-// Plain scalar values — main.js copies these into THREE.Vector3 / THREE.Quaternion
-// fields of vehicleState on R-key reset.
-// positionY is left at 0 here; main.js uses RANGER_PARAMS.cgHeight instead.
-// T-03-03: quatW = 1 explicitly (identity quaternion); no NaN on reset.
-export const SPAWN_STATE = {
-  positionX: 0, positionY: 0, positionZ: 0,
-  velocityX: 0, velocityY: 0, velocityZ: 0,
-  quatX: 0, quatY: 0, quatZ: 0, quatW: 1,        // identity quaternion
-  angVelX: 0, angVelY: 0, angVelZ: 0,
-  steerAngle: 0, throttle: 0, brake: 0,
-  // FEAT-33: the ignition is an OBJECT on the live vehicleState (see makeIgnitionState in
-  // ignition.js), not a scalar — main.js rebuilds it on reset rather than copying this field.
-  // Recorded here only so the convention stays visible: 'running' in free roam, 'off' in story.
-  ignitionState: 'running',
-  smoothThrottle: 0, smoothBrake: 0,
-  wheelPhase: [0, 0, 0, 0],
-  rimForce: [0, 0, 0, 0],
-  rimForceRoad: [0, 0, 0, 0],
-  wheelSteerAngles: [0, 0, 0, 0],
-  // ── SM-3 damage signals (written by physics.js / suspension.js, read by src/damage.js) ──────
-  slipVel:     [0, 0, 0, 0],   // m/s — raw contact-patch sliding speed per wheel (tire abrasion)
-  tireFlat:    [0, 0, 0, 0],   // N   — cornering force magnitude per wheel (tire, minor term)
-  bumpForce:   [0, 0, 0, 0],   // N   — peak bump-stop force this step per corner (springs)
-  brakeTorque: [0, 0, 0, 0],   // N·m — applied brake torque per wheel (brake pads)
-  // ── Phase 4.1 strut state (D-01) ────────────────────────────────────────────
-  // strutComp[i]:    strut compression from rest length [m]; positive = compressed.
-  // strutCompVel[i]: compression velocity [m/s]; positive = compressing.
-  // 0-placeholders overwritten by main.js computeStaticEquilibrium at init/reset.
-  strutComp:    [0, 0, 0, 0],   // m   — strut compression per corner (D-01)
-  strutCompVel: [0, 0, 0, 0],   // m/s — strut compression velocity per corner (D-01)
-  handbrake: false,
-  parked: true,                 // spawn/teleport hold — updateVehicle keeps the handbrake on until first driver input
-  // FEAT-22: water submersion flag — set per-frame by main.js from WaterSystem.submergedAt(CG).
-  // v1 SETS the flag only; buoyancy/hydrolock/drag consume it later.
-  submerged: false,
-  submergedDepth: 0             // m — CG depth below the water surface (0 when not submerged)
-}
 
 /**
  * Update vehicle input state for one fixed physics step.
@@ -140,7 +102,7 @@ export function updateVehicle (vehicleState, params, dt) {
   else
     vehicleState.smoothBrake = Math.max(vehicleState.smoothBrake - params.releaseRampRate * dt, rawBrake)
   vehicleState.throttle  = vehicleState.smoothThrottle
-  // S key: sets brake=1; getDriveTorque uses maxReverseTorque for rear wheels (Bug 4 fix in physics.js)
+  // S key: brake above walking pace, reverse below it (drivetrain.js decides which; REV_THRESHOLD).
   vehicleState.brake     = vehicleState.smoothBrake
   // ── Handbrake / parking-brake state machine (feature/teleport) ──────────────
   // Moving (>5 km/h): the handbrake is momentary — rear torque only while Space is held.

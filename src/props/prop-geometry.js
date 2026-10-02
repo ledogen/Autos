@@ -470,5 +470,3 @@ export function makeSageLo(o, rng) {
   }
   return B.build()
 }
-
-export const _internal = { valueNoise3: _valueNoise3, range: _range }

@@ -45,7 +45,6 @@ export const TEST_PARAMS = {
     // with them and QUAL-27 deleted its last consumers. They lingered here as fixture keys nothing
     // read. Do not re-add a key here without a live reader in src/; the v2 price list is
     // RANGER_PARAMS.roadV2 and it is physical, not a weight set.
-    spurProbability: 0.15,
 
     // Geometry the surface + clearance paths genuinely read.
     roadClearanceMargin: 0.5,

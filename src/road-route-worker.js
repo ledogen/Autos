@@ -15,6 +15,8 @@
 //     → {routed:true, client, epoch, results:[{key, prims, v2Dirs, pinFallback}]}
 //     jobs are RoadSystem._v2EdgeSpec objects: {key, ax, az, yA, bx, bz, yB, margin,
 //     blockedDiscs, dirs}. prims:null = raced ahead of 'init' (client re-warms the key later).
+//     prims:null + failed:true = the search threw; the client stops warming and builds, so the
+//     same throw surfaces there as a failed build instead of a silent stall.
 
 import { seedFor, mulberry32 } from './seed.js'
 import { createNoise2D } from 'simplex-noise'
@@ -24,7 +26,7 @@ import { truncatedHeightField, routeEdgeV2, V2_TRUNC_K } from './corridor-router
  * Rebuild the two route height fields from the init subset — EXACTLY the derivation RoadSystem
  * uses (noiseCoarse = createNoise2D(mulberry32(seedFor(worldSeed, 'coarse'))); hTrunc = the
  * V2_TRUNC_K-octave corridor field; hCoarse = the full-octave coarse field, float-identical to
- * road.js's _coarseHeight loop). Exported so the parity gate can pin this derivation from node.
+ * terrain-height.js's coarseHeight loop). Exported so the parity gate can pin this derivation from node.
  */
 export function buildRouteFields(worldSeed, params) {
     const noiseCoarse = createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
@@ -45,7 +47,11 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
         const results = []
         for (const job of d.jobs) {
             if (!fields) { results.push({ key: job.key, prims: null }); continue }
-            const res = routeEdgeV2(job, fields.hTrunc, fields.hCoarse)
+            // A throw here must still reply: the pool counts one in-flight job per message and the
+            // pre-warm waits on the key, so a silent failure cost a pool slot and a 60 s stall.
+            let res
+            try { res = routeEdgeV2(job, fields.hTrunc, fields.hCoarse) }
+            catch (err) { console.error('[route-worker] route failed', job.key, err); results.push({ key: job.key, prims: null, failed: true }); continue }
             results.push({
                 key: job.key,
                 prims: res.cl.primitives,

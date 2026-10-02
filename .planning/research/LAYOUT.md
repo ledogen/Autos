@@ -28,11 +28,10 @@ or delete a file, update the relevant line here in the same commit — it's one 
   keep it true when the file's job changes.
 - **Directories are earned:** a subsystem gets a subdirectory only once it splits into several
   files. `src/props/` is the only precedent (8 files). Don't pre-create directories.
-- **Worker mirrors:** the terrain worker exists only as `WORKER_SOURCE` in `src/terrain.js`;
-  carve/seed code is mirrored verbatim from its canonical file (search `CARVE SYNC`). Edit canonical
-  + mirror in the same commit. There is NO route mirror — the road workers are ES modules that
-  import the router (FEAT-68 no-mirror fence); the `ROUTE SYNC` region and its byte-equality gate
-  died with the v1 router.
+- **No worker mirrors:** every Worker is an ES module that imports the code the main thread runs
+  (the no-mirror fence — FEAT-68 for the road workers, extended to the terrain worker 2026-10).
+  There is no `WORKER_SOURCE` string and no `SYNC RULE`; shared code lives in a leaf module
+  (`terrain-height.js`, `seed.js`, `corridor-router.js`) that both sides import.
 - **New gates** register in `test/gates.mjs` with `subsystem`/`cost`/`desc`/`extraDeps`.
 
 ## src/ map
@@ -49,8 +48,9 @@ FEAT-33 — pure, no DOM) · `vehicle.js` (Ackermann, input) · `vehicle-state.j
 vehicleState shape — one factory, so the world truck and the FEAT-41 menu-stage truck cannot drift) ·
 `debris.js` (FEAT-36 dynamic props) · `physics-debug.js` (collider wireframes).
 
-**World generation** — `seed.js` (PRNG, pure, worker-paste-able) · `terrain.js` (chunk ring +
-`WORKER_SOURCE`) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
+**World generation** — `seed.js` (PRNG, pure) · `terrain.js` (chunk ring, carve table, analytic
+height) · `terrain-height.js` (THE height function + seeded noise — imported by main thread, worker,
+road.js and the headless gates) · `terrain-worker.js` (chunk heightmap Worker, module entry) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
 rock classification) · `map-cover.js` (map-resolution forest cover) · `water.js` (ponds/streams
 generation) · `water-render.js` · `stone-texture.js` (procedural riverbed texture) ·
 `terrain-texture.js` (FEAT-84: procedural grass/dirt/rock surface maps, DataTexture, headless-safe).
@@ -58,8 +58,8 @@ generation) · `water-render.js` · `stone-texture.js` (procedural riverbed text
 zero-dep) · `stream-budget.js` (PERF-33 the one shared per-frame streaming budget, zero-dep).
 
 **Road network** — `road.js` (RoadSystem: streaming, resolve, surface queries) · `road-graph.js`
-(blue-noise anchors + Urquhart topology) · `road-carve.js` (carve bodies, canonical for worker
-mirrors) · `corridor-router.js` (v2 corridor router, FEAT-68) · `road-mesh.js` (ribbon build) ·
+(blue-noise anchors + Urquhart topology) · `road-carve.js` (pure carve helpers: crown, potholes,
+curvature, ear-clip) · `corridor-router.js` (v2 corridor router, FEAT-68) · `road-mesh.js` (ribbon build) ·
 `road-worker.js` (route Worker POOL, QUAL-08/FEAT-68 — since QUAL-27 its only consumer is the
 network Worker's nested pool) · `road-route-worker.js` (route Worker module entry) ·
 `road-network-worker.js` (PERF-30 network Worker module entry — the whole build off-thread) ·

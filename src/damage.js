@@ -450,29 +450,31 @@ export const DAMAGE_PARAMS = {
 
   // ── Contact → impact gating (feedContact) ──────────────────────────────────────────────────
   // A contact is not an impact. The engine reports a manifold every step a body is touching
-  // anything, so a truck parked against a fence would be "hit" 250 times a second. Two guards:
+  // anything, so a truck parked against a fence would be "hit" 60 times a second. Two guards:
+  //
+  // (The timing comments here were written against a 240 Hz step. The physics step is 1/60 s, and
+  // the numbers below are stated for that; whether the VALUES want a retune for it is an open
+  // owner question — see impactGapS and impactPreSteps.)
   //
   // impactMinMph — the floor a contact must clear to be an impact at all. Resting on the ground is
   //   worth about 0.09 mph equivalent (one step of the truck's own weight), so 2 mph clears the
   //   noise by more than an order of magnitude while still catching a gentle nudge into a post.
-  // impactHoldMax — how long one collision is allowed to keep building before it is banked and a
-  //   fresh one is armed. A real crash peaks in tens of milliseconds; this only matters for a
-  //   sustained scrape along a wall, which becomes a series of hits rather than one endless one.
   impactMinMph:    2,
-  impactHoldMax:   0.25,
   // A step only counts toward a collision's impulse while the contact FORCE is above this. The
   // engine's per-step impulses are summed across a burst to get the collision's true impulse, and
   // without a floor a truck leaning on what it hit would keep adding to it forever.
   // How long one collision is allowed to keep accumulating before it is banked. SHORT on purpose:
   // the engine's impulse total climbs for as long as the bodies touch, so a long window lets the
-  // post-crash settle join the crash. 60 ms covers the spike and excludes the lean.
+  // post-crash settle join the crash. 60 ms covers the spike and excludes the lean (4 steps at 60 Hz).
   impactHoldMaxCrash: 0.06,
   // How long a burst survives with no contact reported before it is treated as over. The engine's
-  // manifold flickers through a collision, so this must be longer than a dropped step or two.
+  // manifold flickers through a collision, so this must be longer than a dropped step. At 60 Hz a
+  // step is 16.7 ms, so 0.02 survives exactly ONE quiet step; a second one ends the burst.
   impactGapS:      0.02,
   // How many steps of velocity history a burst reaches back through for its pre-impact speed.
-  // 10 steps is 40 ms — comfortably before the impulse crosses the trigger, and short enough that
-  // ordinary acceleration in that window is negligible against a crash.
+  // 10 steps is 167 ms at 60 Hz — comfortably before the impulse crosses the trigger. Ordinary
+  // driving in that window is not quite negligible: 0.5 g of braking over 167 ms is 0.8 m/s
+  // (1.8 mph), which lands in the priced Δv.
   impactPreSteps:  10,
 }
 
@@ -652,9 +654,8 @@ export class DamageModel {
   /** Nudge one track by a delta (the debug −25/−5/+5/+25 buttons). */
   adjust (id, delta) { this.set(id, this.get(id) + delta) }
 
-  /** Set every track at once (damage-disable lock, new run). */
   /**
-   * Set every track. Full condition also puts the air back in the tires: a puncture is STATE rather
+   * Set every track at once (damage-disable lock, new run). Full condition also puts the air back in the tires: a puncture is STATE rather
    * than a condition value, so restoring conditions alone would leave a flat tire flat — which
    * makes the debug panel's "Restore All" quietly untrue.
    */
@@ -766,7 +767,7 @@ export class DamageModel {
    * and fall away. Landing each of them separately would price one crash as dozens, and — worse —
    * would let a truck resting against a wall grind itself to scrap while parked. So this holds the
    * PEAK of the burst and banks it once, when contact drops back below the floor (or when the
-   * burst has run longer than `impactHoldMax`, which turns a sustained scrape into repeated hits
+   * burst has run longer than `impactHoldMaxCrash`, which turns a sustained scrape into repeated hits
    * rather than one that never ends).
    *
    * Peak, not sum: the ratified model prices a hit on how hard the contact was, and adding up the
@@ -818,7 +819,7 @@ export class DamageModel {
     } else if (this._burst) {
       // A collision does NOT report a contact on every single step — the engine's manifold comes
       // and goes as the pair separates and re-touches through the hit. Banking on the first quiet
-      // step measured Δv over one 4 ms step and priced a 34 mph crash at 0.4 mph, i.e. nothing at
+      // step measured Δv over one single step and priced a 34 mph crash at 0.4 mph, i.e. nothing at
       // all. So a burst survives a short gap; only a real separation ends it.
       this._burst.t += dt
       this._burst.gap += dt

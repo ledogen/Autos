@@ -2,7 +2,6 @@
  * 2002 Ford Ranger XLT 2WD parameters.
  * Values sourced from .planning/PROJECT.md; inertia tensor values are estimates
  * (box model) and are intended to be tuned via the debug menu.
- * Phase 3: Pacejka coefficients added (D-07). Spring constants (Phase 4) still pending.
  *
  * Do NOT Object.freeze() this object — Plan 03 mutates fields live via lil-gui sliders.
  */
@@ -50,14 +49,16 @@ export const RANGER_PARAMS = {
 
   // ── Mass & Inertia ────────────────────────────────────────────────────────
   // Box model formula: I = (1/12) * mass * (a² + b²) where a,b are the two
-  // body dimensions perpendicular to the rotation axis.
-  //   inertiaRoll  (Ixx): width² + height²  → (1/12)*1360*(1.85²+1.60²) ≈  800 kg·m²
-  //   inertiaPitch (Iyy): length² + height² → (1/12)*1360*(4.61²+1.60²) ≈ 3300 kg·m²
-  //   inertiaYaw   (Izz): length² + width²  → (1/12)*1360*(4.61²+1.85²) ≈ 3700 kg·m²
+  // body dimensions perpendicular to the rotation axis. In this game's body frame (forward = −Z,
+  // up = +Y) roll is about the longitudinal z axis, pitch about the lateral x axis, yaw about y —
+  // physics.js createVehicleChassis hands them to the engine as {x: pitch, y: yaw, z: roll}.
+  //   inertiaRoll : width² + height²  → (1/12)*1360*(1.85²+1.60²) =  678 kg·m²
+  //   inertiaPitch: length² + height² → (1/12)*1360*(4.61²+1.60²) = 2699 kg·m²
+  //   inertiaYaw  : length² + width²  → (1/12)*1360*(4.61²+1.85²) = 2796 kg·m²
   mass:         1360,   // kg — curb weight estimate
-  inertiaRoll:  (1 / 12) * 1360 * (1.85 ** 2 + 1.60 ** 2),  // kg·m² (Ixx — roll,  ≈  800)
-  inertiaPitch: (1 / 12) * 1360 * (4.61 ** 2 + 1.60 ** 2),  // kg·m² (Iyy — pitch, ≈ 3300)
-  inertiaYaw:   (1 / 12) * 1360 * (4.61 ** 2 + 1.85 ** 2),  // kg·m² (Izz — yaw,   ≈ 3700)
+  inertiaRoll:  (1 / 12) * 1360 * (1.85 ** 2 + 1.60 ** 2),  // kg·m² — roll,   678
+  inertiaPitch: (1 / 12) * 1360 * (4.61 ** 2 + 1.60 ** 2),  // kg·m² — pitch, 2699
+  inertiaYaw:   (1 / 12) * 1360 * (4.61 ** 2 + 1.85 ** 2),  // kg·m² — yaw,   2796
 
   // ── Drivetrain (FEAT-23 Phase 1: engine → torque converter → automatic gearbox → final drive) ──
   // Replaces the old flat maxDriveTorque/maxReverseTorque stub. The chain lives in src/drivetrain.js,
@@ -81,8 +82,8 @@ export const RANGER_PARAMS = {
   // ── Ignition + starter (FEAT-33) ────────────────────────────────────────────────────────────────
   // The key has three positions (OFF / ON / START); see src/ignition.js. Catch time is what the
   // player feels: a healthy engine fires in a quarter second, a worn one grinds for seconds. The
-  // interpolation runs on vehicleState.engineHealth (absent ⇒ 1 ⇒ ignitionCatchTime flat), which is
-  // the seam the SM-3 wear model plugs into — NOT a per-vehicle scripted timer.
+  // interpolation runs on vehicleState.engineHealth (absent ⇒ 1 ⇒ ignitionCatchTime flat), which
+  // the SM-3 damage model's engine track writes every step — NOT a per-vehicle scripted timer.
   ignitionCatchTime:     0.25,  // s — crank time before the engine catches at full engine health
   ignitionCatchTimeWorn: 2.0,   // s — crank time as engine health approaches zero (owner 2026-09-05: raised 1.0→2.0, the decay was not significant enough at 1 s; linear 0.25→2.0; AT exactly 0 the engine never catches at all — see ignition.js catchTime)
   ignitionCrankRPM:      250,   // rpm — speed the starter turns the engine at (makes no drive torque)
@@ -190,21 +191,14 @@ export const RANGER_PARAMS = {
   tireStiffness: 100000,  // N/m
   tireDamping:     1500,  // N·s/m — ζ≈0.56; reduced from 4000 to prevent premature wheel lift-off
 
-  // ── Phase 1 Friction Placeholders (D-10) ─────────────────────────────────
-  // Must be exposed as lil-gui sliders in Plan 03.
-  // See docs/GLOSSARY.md §Term Definitions for units and meaning.
-  // Note: lateralDampingCoeff is now unused (replaced by corneringStiffness slip-angle model)
-  // but kept so existing debug sliders do not break.
-  lateralDampingCoeff:    4000,  // N/(m/s) — damps lateral contact-patch velocity (unused, kept for slider compat)
-  corneringStiffness: 50000,     // N/rad — linear tire lateral stiffness; used by computeLateralForce (Bug 6 fix)
+  // ── Friction ─────────────────────────────────────────────────────────────
   frictionCoeff:      0.8,       // peak tire-road friction coefficient; caps Flat and Flong at μ·gripLoad(Fn) (FEAT-80)
 
-  // ── Body Contact (collision against walls/ramp faces) ────────────────────
-  bodyContactStiffness: 200000,  // N/m — stiffer than tire; metal-on-terrain response
-  bodyContactDamping:     1000,  // N·s/m
+  // ── Body Contact (collision against walls/ramp faces — an engine material, see physics.js) ──
   // Rebound on a frame/undercarriage slam: the body leaves at this fraction of its approach speed.
   // 0 = fully plastic (the old BUG-27 thud — all impact energy absorbed, no bounce); 1 = perfectly
-  // elastic. Only applies above REST_VEL_THRESHOLD (physics.js), so resting contact is untouched.
+  // elastic. Only applies above the engine's 1 m/s restitutionThreshold (physics-engine.js), so
+  // resting contact is untouched.
   // Tunable now that the solver uses a sampled-once bias (see BODY_RESTITUTION_DEFAULT) — the value
   // no longer compounds with probe/pass count the way BUG-27's did.
   bodyRestitution:        0.21,  // slight bounce — a 10 m drop rebounds instead of dead-stopping
@@ -215,7 +209,7 @@ export const RANGER_PARAMS = {
   // Peak force per wheel = frictionCoeff × pacejkaD × gripLoad(Fn) (FEAT-80, below). Hard-clamped at C=[1.0,1.99] in tire.js.
   pacejkaB:  10.0,   // stiffness factor — initial slope of force curve
   pacejkaC:   1.9,   // shape factor — C<2 required; hard-clamped in computeTireForces
-  pacejkaD:   1.0,   // peak factor — peak force = frictionCoeff × D × Fn
+  pacejkaD:   1.0,   // peak factor — peak force = frictionCoeff × D × gripLoad(Fn)
   pacejkaE:  0.97,   // curvature — near 1.0 produces realistic post-peak falloff
 
   // FEAT-80 — tire LOAD SENSITIVITY (owner ruling 2026-09-08; see tire.js gripLoad). Peak force is
@@ -235,12 +229,13 @@ export const RANGER_PARAMS = {
   // Slip-velocity tire model parameters (added with combined-slip rewrite).
   // BUG-20: the steady-state grip curve depends only on the RATIO tireRelaxationLength/tireSlipVelRef
   // (= Pacejka(κ·L/vRef)), while the stored carcass displacement — and hence the slide-to-stop slosh
-  // energy — scales with L alone. So L and vRef are shrunk together from the old 0.3/1.0 (ratio 0.3),
-  // holding the ratio at 0.3: identical grip, ~1/3 the carcass displacement → the slosh is gone and
-  // force builds snappier. Tune these via the coupled "Carcass Length / Slosh" + "Relax:VRef Ratio"
+  // energy — scales with L alone. So L and vRef were shrunk together from the old 0.3/1.0 (ratio 0.3):
+  // ~1/3 the carcass displacement → the slosh is gone and force builds snappier. The shipped pair
+  // has since been tuned to ratio 0.135/0.3333 = 0.405 (a firmer initial grip slope than the
+  // original 0.3). Tune these via the coupled "Carcass Length / Slosh" + "Relax:VRef Ratio"
   // sliders (debug.js), NOT independently — moving one alone silently rescales grip.
   tireRelaxationLength: 0.135,     // m — carcass length / "sloshiness" (× vRef sets grip via the ratio)
-  tireSlipVelRef:       0.3333,  // m/s — slip velocity ref; L/vRef = 0.3 reproduces the original grip curve
+  tireSlipVelRef:       0.3333,  // m/s — slip velocity ref; L/vRef = 0.405 is the shipped grip curve
   tireStiffnessLong:    1.0,   // anisotropy hook — scale longitudinal slip component (default 1.0 isotropic)
   tireStiffnessLat:     1.0,   // anisotropy hook — scale lateral slip component (real tires ≈ 0.7×Long)
   tireBreakawaySlip:    0.18,  // BUG-20: friction-circle break-away, in Pacejka-ARGUMENT space (x =
@@ -314,8 +309,10 @@ export const RANGER_PARAMS = {
   suspensionTravelRear:        0.25,   // m — strut travel before bump stop (D-08)
 
   // suspensionBodyOffset: Y shift of mount point in body space (ride-height control).
-  // Default 0 = current behavior unchanged (mount is at -(cgHeight - wheelRadius) body-Y).
-  suspensionBodyOffsetFront:   0.0,    // m — positive = mount lower in body space (raises ride height) (D-08)
+  // 0 = mount at -(cgHeight - wheelRadius) body-Y. The offset is ADDED to that, so positive moves
+  // the mount UP in the body and the body sits LOWER on its wheels (computeStaticEquilibrium
+  // subtracts it from the spawn height).
+  suspensionBodyOffsetFront:   0.0,    // m — positive = mount higher in body space (LOWERS ride height) (D-08)
   suspensionBodyOffsetRear:    0.035,  // m — (D-08)
 
   // bumpStopStiffness: penalty spring engaging at strutComp >= suspensionTravel.
@@ -326,11 +323,6 @@ export const RANGER_PARAMS = {
   // Sized so static hub weight (~18 kg) deflects < 10 mm: k > 18*9.81/0.010 = 17 658 N/m.
   // 20 000 N/m gives ~8.8 mm deflection at hub weight → meets the <10 mm target.
   DROOP_STOP_STIFFNESS:        20000,  // N/m — not a slider; fixed constant (D-08)
-
-  // ── Physics Timestep (Phase 4 — D-09) ────────────────────────────────────
-  // Mirrors the PHYSICS_DT constant in main.js. Stored here so suspension.js (pure-math,
-  // no main.js import) can verify sub-step stability against dt without importing main.js.
-  physicsDt:  1 / 60,   // s — outer physics step (≈16.667ms); substep = physicsDt/2 (D-08)
 
   // ── Phase 6/7 Terrain (TERR-06 / TERR-01–04) ─────────────────────────────
   // terrainAmplitude: live Y-rescale multiplier (Path A — instant, no Worker round-trip).
@@ -672,10 +664,6 @@ export const RANGER_PARAMS = {
   // Live-tunable via the "Min Turn Radius (m)" debug slider (src/debug.js Roads folder).
   roadMinTurnRadius: 15,   // m — arc-fillet min turn radius (D0); safety floor ≥ roadHalfWidth + clearance (~5.5 m). 15 m = user's "15–20 m" feel pick (2026-06-16); live-tunable via "Min Turn Radius (m)" slider.
 
-
-  // spurProbability: Probability that any given trunk macro-cell spawns a spur branch.
-  // Retained for the DEFERRED D-01 spur pass (trunk-only ships first). D-01 / RESEARCH A1.
-  spurProbability: 0.15, // ratio [0,1] — spur chance (deferred D-01 spur pass)
 
   // ── Phase 9 Road Surface — D-04/D-05/D-07/D-08 carve params ──────────────
   // These params drive the cut-and-fill terrain carve (SURF-05) and the ribbon geometry (SURF-01).

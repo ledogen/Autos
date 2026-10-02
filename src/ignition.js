@@ -10,8 +10,8 @@
  *
  * The catch time is the whole point of the feature: it interpolates from ignitionCatchTime (a healthy
  * engine, ~0.25 s — barely a beat) to ignitionCatchTimeWorn (a beater, seconds of grinding) on
- * vehicleState.engineHealth ∈ [0,1]. That field is the seam for the SM-3 wear/condition model
- * (FEAT-26); until it exists engineHealth is absent and reads as 1 — a single nominal catch time,
+ * vehicleState.engineHealth ∈ [0,1]. The SM-3 damage model's engine track writes that field every
+ * step (damage.js); where no damage model runs it is absent and reads as 1 — a single nominal catch time,
  * exactly as the ticket specifies. It is deliberately NOT a bespoke per-vehicle timer.
  *
  * Deterministic threshold, not a per-crank-second probability roll: "hold it this long and it fires"

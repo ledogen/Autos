@@ -20,8 +20,9 @@
  * Pure math — no Three.js import (matches module conventions). Called once per physics step from
  * stepPhysics BEFORE the per-wheel loop; writes params._driveTorque[4] which getDriveTorque reads.
  *
- * State lives on vehicleState.drivetrain = { engineRPM, gear, shiftTimer } (persists across steps
- * for shift hysteresis + HUD). gear: 0 = reverse, 1..N = forward gear index.
+ * State lives on vehicleState.drivetrain = { engineRPM, gear, shiftTimer, activeGear, SR, TR }
+ * (persists across steps for shift hysteresis + HUD). gear: 0 = reverse, 1..N = forward gear index;
+ * SR / TR = the converter's speed and torque ratios this step.
  */
 
 const RPM_PER_RAD = 60 / (2 * Math.PI)   // rad/s → rev/min

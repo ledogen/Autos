@@ -55,9 +55,6 @@ export const DAY_PARAMS = {
     // Change these two together or the "average = full in 8 h" contract quietly breaks.
     sleepRateWorstH: 4 / 3,
     sleepRateBestH:  8 / 3,
-    sleepMinH:       1,    // slider bounds for the sleep timer
-    sleepMaxH:       14,
-    sleepDefaultH:   8,
 
     // Blink cadence — MEAN IN-GAME HOURS BETWEEN BLINKS, per stage (Poisson ⇒ exponential gaps).
     // Ratified default is "on average once per in-game hour" in every blinking stage; kept as three

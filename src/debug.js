@@ -118,6 +118,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
       if (!key.startsWith('_')) params[key] = preset[key]
     }
     params._suspStabChecked = false  // re-run stability check with new params
+    // Mass and inertia live on the engine body, so a preset has to be pushed there. (Chassis
+    // GEOMETRY — hull profile, wheel-core positions — is still the one the body was built with.)
+    window.__syncChassisMass?.()
     gui.controllersRecursive().forEach(c => c.updateDisplay())
   })
 
@@ -128,6 +131,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     .onChange(v => { params.weightRear = +(1 - v).toFixed(4) })
   // D-08: live mutation of RANGER_PARAMS
   massCgFolder.add(params, 'mass', 500, 3000, 10).name('Mass (kg)')
+    .onChange(() => window.__syncChassisMass?.())   // the engine body keeps its own copy of the mass
 
   // ── Drivetrain & Brakes ─────────────────────────────────────────────────────────
   // D-08 / D-16: all write directly to RANGER_PARAMS (live mutation).
@@ -175,7 +179,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // Body-slam rebound (0 = fully-plastic thud). FEAT-48: lives on the chassis shape's engine
   // material now, so the slider pushes the new value into the engine on change.
   driveFolder.add(params, 'bodyRestitution', 0, 0.6, 0.01).name('Body Bounce (restitution)')
-    .onChange(v => { window.__physicsEngine?.setMaterial(window.__vehicleChassis, { restitution: v }) })
+    .onChange(v => { window.__setBodyBounce?.(v) })   // hood/cab/bed hulls only — slab and wheel cores stay pinned at 0
 
   // FEAT-36/FEAT-48: what the throw key (F) launches. 'paper' is the scoring newspaper; 'barrel'
   // and 'rock' spawn dynamic engine debris to drive over (src/debris.js) — the physics test rig.
@@ -278,8 +282,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // Phase 4 (D-11): Suspension folder — 8 sliders for spring/damper/rest-length/ARB per axle.
   // Ranges per PATTERNS §lil-gui slider range/step convention (2× default within range, D-10 stability).
   // Pass-through to live params is automatic — params is the mutable RANGER_PARAMS reference.
-  // wheelMass and physicsDt are intentionally NOT exposed: wheelMass is fixed per Claude's Discretion
-  // (CONTEXT.md) and physicsDt is parameterized but not user-tunable (D-09).
+  // wheelMass is intentionally NOT exposed (fixed, CONTEXT.md).
   const suspFolder = vehicleFolder.addFolder('Suspension')
   suspFolder.add(params, 'suspensionStiffnessFront', 10000, 100000, 1000).name('Front Stiffness (N/m)')
   suspFolder.add(params, 'suspensionStiffnessRear',  10000, 100000, 1000).name('Rear Stiffness (N/m)')
@@ -391,7 +394,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   and fineHeight are EXACTLY LINEAR in coarseAmplitude / fineAmplitude (the ridge+pow shaping acts
   //   on the raw noise BEFORE the amplitude multiply; the modulator depends on neither). So scaling
   //   BOTH layer amplitudes by k scales the final height by k — the same geometry the old Y-scale
-  //   produced — but through params the road router ALREADY prices (coarseAmplitude feeds _coarseHeight),
+  //   produced — but through params the road router ALREADY prices (coarseAmplitude feeds coarseHeight),
   //   and the routing worker ALREADY ships (init). Result: taller mountains RE-ROUTE (switchbacks,
   //   grade caps respected) with ZERO router or worker changes. The router
   //   only prices the coarse layer, so scaling fineAmplitude alters visual detail but never routes.

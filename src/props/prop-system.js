@@ -9,18 +9,11 @@
  * Decoupled from road/terrain: the caller injects `samplers` (heightAt / normalAt / roadBlocked),
  * so this module imports nothing from road.js/terrain.js (they're under active bugfix work).
  *
- * INTEGRATION (do at merge time — NOT wired yet):
- *   import { PropSystem } from './props/prop-system.js'
- *   const props = new PropSystem({
- *     scene, worldSeed,
- *     samplers: {
- *       heightAt:    (x,z) => terrainSystem.analyticHeight(x, z),
- *       normalAt:    (x,z) => terrainSystem.analyticNormal(x, z),
- *       roadBlocked: (x,z) => !!roadSystem.queryNearest(x, z, FLORA_PARAMS.scatter.roadExclusion),
- *     },
- *   })
- *   // once per frame (or on chunk-stream change), with the car/view centre + ring in CHUNKS:
- *   props.update(carX, carZ, ringChunks)
+ * Wiring: main.js constructs it with the sampler set from makePropSamplers() and calls
+ * update(viewX, viewZ, ringChunks, …) once per frame. Three rings, by Chebyshev chunk distance
+ * from the view: 'near' (full 3D), 'far' (trees as billboards, PERF-21), 'bbonly' (billboards
+ * only, scattered without ground litter). Scatter is time-sliced (PERF-14); the 3×3 around the
+ * truck is forced complete each frame because prop collision must exist there.
  *
  * PERF-05 gotcha: instanced meshes set frustumCulled = false (chunk streaming already bounds
  * them) so we never hit the "stale boundingSphere holes the draw" trap after matrix writes.
@@ -115,7 +108,6 @@ export class PropSystem {
         mesh.frustumCulled = false           // PERF-05: chunk streaming bounds these
         mesh.castShadow = castRealtime && !isCover   // PERF-07: realtime shadow only when baking is off
         mesh.receiveShadow = true
-        if (!isCover) mesh.layers.enable(BAKE_LAYER)   // PERF-07: also visible to the shadow-bake camera
         // PERF-10: draw only the occupied slot prefix. mesh.count is maintained at `top` (the
         // high-water occupied index + 1) by _flush(); drawing full capacity pushed EVERY hidden
         // zero-scale slot through the vertex stage of the main AND shadow passes — measured 85 %
@@ -182,8 +174,8 @@ export class PropSystem {
     // ── PERF-07 baked prop shadows ──────────────────────────────────────────────────────
     // The shadow-bake system (world atlas) is owned by main.js (it needs the WebGL renderer, absent
     // headless). setShadowBake wires it; _commitChunk marks a chunk's tile (+ neighbours) dirty so
-    // its silhouettes bake once. Caster meshes are already on BAKE_LAYER above; castShadow follows
-    // the mode (realtime OR baked, never both).
+    // its silhouettes bake once (from the scratch scene — _buildBakeScene). castShadow follows the
+    // mode (realtime OR baked, never both).
     this._shadowBake = null
     this.setShadowCasting(castRealtime)   // initial mode from params.shadows
 
@@ -199,32 +191,29 @@ export class PropSystem {
     this._gridDirty = true
   }
 
-  // ── PERF-07 shadow bake ───────────────────────────────────────────────────────────────
-  /**
-   * Attach the main-thread shadow-bake system (main.js owns it). Marks every already-committed
-   * chunk dirty so existing props bake in (props scattered before the wiring landed).
-   */
   /**
    * Show/hide every prop mesh (3D instanced pools AND the PERF-21 billboard impostor pools).
    * Used by the FEAT-31 testing lab to tear the generated world down to a bare plane —
    * visibility only, nothing is disposed or re-scattered, so returning is instant.
    */
   setVisible(visible) {
-    this._propsVisible = visible
     for (const e of this._meshes.values()) if (e.mesh) e.mesh.visible = visible
     if (this._impMeshes) for (const e of this._impMeshes.values()) if (e.mesh) e.mesh.visible = visible
   }
 
+  // ── PERF-07 shadow bake ───────────────────────────────────────────────────────────────
+  /**
+   * Attach the main-thread shadow-bake system (main.js owns it). Marks every already-committed
+   * chunk dirty so existing props bake in (props scattered before the wiring landed).
+   */
   setShadowBake(bake) {
     this._shadowBake = bake
     if (bake) {
       // PERF-21: hand the bake system a per-tile caster source so one tile bake shades only the
       // 3×3 chunks around it (~1k instances) instead of every live prop in the ring (~25k). This
       // was the stream-in hitch: 8 tiles/frame × the full population through the vertex stage.
-      if (bake.setTileSource) {
-        if (!this._bakeScene) this._buildBakeScene()
-        bake.setTileSource((cx, cz) => this._fillBakeScene(cx, cz))
-      }
+      if (!this._bakeScene) this._buildBakeScene()
+      bake.setTileSource((cx, cz) => this._fillBakeScene(cx, cz))
       for (const ck of this._chunks.keys()) {
         const comma = ck.indexOf(',')
         bake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
@@ -456,6 +445,9 @@ export class PropSystem {
 
   /** Placement records → retained place records + collidable descriptors (shared by both commits). */
   _buildPlaces(placements, places, collidables) {
+    // sunShear is absent headless (no sky); the sun does not move inside one commit.
+    const shear = this._samplers.sunShear ? this._samplers.sunShear() : null
+    const sheared = shear !== null && shear.lengthSq() > 1e-6
     for (const pl of placements) {
       const key = pl.cat + '#' + pl.variant
       const rec = this._meshes.get(key)
@@ -472,19 +464,16 @@ export class PropSystem {
       _m.compose(_p, _q, _s)
       // PERF-07: per-instance ground fit for the shadow bake — scale the flat-plane sun shear so
       // THIS prop's baked shadow lands on the real sloped terrain (shadowShearScale). h0 = canopy
-      // centre (0.65 × geometry height × scale); flat ground → k = 1. sunShear is absent headless
-      // (no sky) — the default 1 then matches the old flat projection. Computed ONCE here and
-      // kept on the placement record — LOD re-places never re-march.
+      // centre (0.65 × geometry height × scale); flat ground → k = 1, which is also the headless
+      // default (no sunShear) and matches the old flat projection. Computed ONCE here and kept on
+      // the placement record — LOD re-places never re-march.
       let k = 1
-      if (this._samplers.sunShear) {
-        const shear = this._samplers.sunShear()
+      if (sheared) {
         const h0 = rec.geoMaxY * 0.65 * pl.scale
         // March only the props whose shadows are long enough for slope error to show (trees,
         // boulders); small rocks/bushes keep the flat default — ~17 height samples each would
         // dominate the commit for zero visible gain.
-        if (h0 > 2 && shear.lengthSq() > 1e-6) {
-          k = shadowShearScale(pl.x, pl.y, pl.z, h0, shear.x, shear.y, this._samplers.heightAt)
-        }
+        if (h0 > 2) k = shadowShearScale(pl.x, pl.y, pl.z, h0, shear.x, shear.y, this._samplers.heightAt)
       }
       places.push({
         key, mat: Float32Array.from(_m.elements), k,
@@ -850,7 +839,6 @@ export class PropSystem {
     // pre-wire boots keep the classic full-prop ring exactly as before.
     const outer = (this._impMeshes && bbRingChunks != null) ? Math.max(ringChunks, bbRingChunks) : ringChunks
     const want = new Set()
-    let enqueued = false
     for (let dz = -outer; dz <= outer; dz++)
       for (let dx = -outer; dx <= outer; dx++) {
         const cx = ccx + dx, cz = ccz + dz
@@ -859,7 +847,6 @@ export class PropSystem {
         if (!this._chunks.has(ck) && !this._scatterSet.has(ck)) {
           this._scatterQueue.push({ ck, cx, cz, score: 0 })
           this._scatterSet.add(ck)
-          enqueued = true
         }
       }
     // PERF-33: re-score EVERY frame against the current centre + travel direction. The score used to
@@ -880,7 +867,8 @@ export class PropSystem {
       }
     }
     if (this._activeScatter && !want.has(this._activeScatter.ck)) {
-      this._scatterSet.delete(this._activeScatter.ck)
+      const a = this._activeScatter
+      this._scatterSet.delete(a.litter ? a.ck + '#L' : a.ck)
       this._activeScatter = null
     }
     // PERF-33: pre-empt a far chunk mid-scatter when a clearly more urgent one is waiting (the ground
@@ -890,7 +878,10 @@ export class PropSystem {
       const a = this._activeScatter
       const aScore = streamScore(a.cx - ccx, a.cz - ccz, motion)
       if (this._scatterQueue[0].score < aScore - PREEMPT_MARGIN) {
-        this._scatterQueue.push({ ck: a.ck, cx: a.cx, cz: a.cz, score: aScore })
+        // `litter` MUST ride along: a litter-only job re-queued without it came back as a FULL
+        // scatter of a chunk that was already live, and _commitChunk then replaced the chunk record
+        // without releasing its instance slots (ghost props, pools filling up).
+        this._scatterQueue.push({ ck: a.ck, cx: a.cx, cz: a.cz, score: aScore, litter: a.litter })
         this._activeScatter = null
       }
     }
