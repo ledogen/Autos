@@ -472,6 +472,22 @@
       pointer-events: none;
     }
 
+    /* FEAT-90: the "park first" badge — an orange P in a circle (the POI ring orange) — and the
+       keycap drawn beside key hints. One look everywhere a prompt asks you to park; the markup
+       comes from src/park-badge.js. */
+    .park-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 1.35em; height: 1.35em; margin-right: 0.45em; vertical-align: -0.25em;
+      border-radius: 50%; background: #ff7a18; color: #1a0f05;
+      font: bold 0.85em/1 monospace; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    }
+    .keycap {
+      display: inline-block; min-width: 1.1em; padding: 0 0.35em; margin: 0 0.1em;
+      border: 1px solid #8a96a3; border-bottom-width: 2px; border-radius: 3px;
+      background: rgba(255, 255, 255, 0.08); color: #e6ecf2;
+      font: bold 0.9em/1.35 monospace; text-align: center;
+    }
+
     /* FEAT-46: POI interaction prompt (bottom-centre) — shown while stopped within range of a
        marker cube. Orange, to match the cubes and their map icons. */
     #poi-prompt {
@@ -1306,7 +1322,7 @@
       <span><i class="lg-shade"></i>shade</span>
       <span><i class="lg-water"></i>water</span>
     </div>
-    <div id="camp-prompt-text">park to make camp</div>
+    <div id="camp-prompt-text"><span class="park-badge" aria-label="park">P</span>park to make camp</div>
   </div>
 
   <!-- FEAT-61 aim reticle + landing readout. The reticle is screen-centre because that is exactly

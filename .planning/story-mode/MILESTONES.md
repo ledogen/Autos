@@ -452,7 +452,7 @@ underlying geometry has to be introduced first.
 
 ### Tooling this milestone must ship
 
-- **Damage indicator GUI** — a simple **top-down schematic** of the truck. Each component reads
+- **Damage indicator GUI** *(BUILT — FEAT-90, `src/damage-screen.js`)* — a simple **top-down schematic** of the truck. Each component reads
   **green at full health through to red at zero**, gradient between. (Owner has a reference image
   available on request.)
 - **Debug: disable damage** — a checkbox. Disabling does **not** freeze components where they are;

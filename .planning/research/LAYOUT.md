@@ -87,9 +87,12 @@ slots, expiry timers, seeded offers, names, card view-model; pure) · `mission.j
 camping, FEAT-45) · `dialogue.js` (character channel) · `paper-route.js` + `throw.js` (FEAT-61) ·
 `gps.js` (FEAT-39 nav overlay) · `cluster.js` (FEAT-49 gauge cluster — instrument panel, not
 clustering) · `rank-timer.js` (FEAT-87 live rank timer — band line-up, escalation, beats; pure, the
-DOM ticker is in main.js) · `lab.js` (FEAT-31 testing lab world).
+DOM ticker is in main.js) · `damage-screen.js` (FEAT-90 player damage pictogram + left-edge alert
+icon, V, parked only) · `park-badge.js` (FEAT-90 orange P-in-a-circle "park first" badge + keycap
+markup) · `lab.js` (FEAT-31 testing lab world).
 
-**Dev & harness bridge** — `debug.js` (lil-gui panel, HUD) · `capture.js` (game↔harness capture
+**Dev & harness bridge** — `debug.js` (lil-gui panel, HUD) · `damage-hud.js` (SM-3 diagnostic damage readout, opened from
+the debug panel's Damage folder) · `capture.js` (game↔harness capture
 schema) · `logger.js` (frame logger + IC loader) · `perf.js` (bucketed profiler) · `version.js`
 (build marker).
 
