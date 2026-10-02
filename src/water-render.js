@@ -101,17 +101,18 @@ export function computeStreamSpans(stream, surfaceLift, bbox, groundAt, roadBlen
             const half = p.w ?? stream.width
             for (let e = -1; e <= 1; e++) {
                 const px = p.x + nx * half * e, pz = p.z + nz * half * e
+                const g = groundAt ? groundAt(px, pz) : 0   // one composed-surface sample per probe
                 // Road rule: a road core under the probe, with water NOT clearly below
                 // the deck → the deck fills the channel; water cannot stand there.
                 if (roadBlendAt && roadBlendAt(px, pz) > 0.5 &&
-                    (!groundAt || waterY > groundAt(px, pz) - 0.1)) return OVER_ROAD
+                    (!groundAt || waterY > g - 0.1)) return OVER_ROAD
                 // Pad backstop: water standing impossibly above the composed ground.
                 // Skipped at the exact edges when the bend swings the perpendicular
                 // into the rising bank (ground > bed is honest there): only fire when
                 // the probe ground is BELOW the water minus the honest stand — i.e.,
                 // something flat was pulled up under standing water.
-                if (groundAt && waterY > groundAt(px, pz) + ceiling &&
-                    (e === 0 || waterY > groundAt(px, pz) + ceiling + 0.5)) return OVER_ROAD
+                if (groundAt && waterY > g + ceiling &&
+                    (e === 0 || waterY > g + ceiling + 0.5)) return OVER_ROAD
             }
         }
         return ACTIVE
@@ -135,17 +136,22 @@ export function computeStreamSpans(stream, surfaceLift, bbox, groundAt, roadBlen
     return spans.length === 0 ? null : spans
 }
 
+/** The span set a stream's water ribbon AND its cobble bed are built on (WATER-surface lift). */
+export function streamSpans(stream, bbox, groundAt, roadBlendAt) {
+    return computeStreamSpans(stream, stream.waterDepth - stream.depth, bbox, groundAt, roadBlendAt)
+}
+
 // ── Stream ribbon following the descending centerline ──────────────────────────────────────
 // Builds a triangle strip: at each centerline point, offset ± streamWidth perpendicular to
 // the local tangent (XZ), at y = centerlineY − depth + waterDepth (the water surface, which
 // sits above the carved bed and descends with the channel). Span clipping + road/pad
 // suppression are delegated to computeStreamSpans (BUG-32 / BUG-33 above).
-export function buildStreamMesh(stream, material, bbox, groundAt, roadBlendAt) {
+// `spans` (optional): the result of streamSpans() when the caller already has it — the water and
+// the bed share one span set, and computing it is the expensive part.
+export function buildStreamMesh(stream, material, bbox, groundAt, roadBlendAt, spans = streamSpans(stream, bbox, groundAt, roadBlendAt)) {
     const pts = stream.points
     if (pts.length < 2) return null
     const surfaceLift = stream.waterDepth - stream.depth   // relative to centerline terrain y
-
-    const spans = computeStreamSpans(stream, surfaceLift, bbox, groundAt, roadBlendAt)
     if (!spans) return null
 
     let nPts = 0
@@ -203,12 +209,9 @@ export function buildStreamMesh(stream, material, bbox, groundAt, roadBlendAt) {
 //   - UVs : u = 0..1 across the strip, v = arcS / 12 → one cobble repeat per ~12 m of stream.
 // It reuses computeStreamSpans with the WATER-surface lift (waterDepth − depth) so the bed is
 // suppressed on the IDENTICAL spans as the water — never visible over a road deck or lifted pad.
-export function buildStreamBedMesh(stream, material, bbox, groundAt, roadBlendAt) {
+export function buildStreamBedMesh(stream, material, bbox, groundAt, roadBlendAt, spans = streamSpans(stream, bbox, groundAt, roadBlendAt)) {
     const pts = stream.points
     if (pts.length < 2) return null
-    const surfaceLift = stream.waterDepth - stream.depth   // WATER-surface lift → same spans as water
-
-    const spans = computeStreamSpans(stream, surfaceLift, bbox, groundAt, roadBlendAt)
     if (!spans) return null
 
     const margin = (stream.bankWidth ?? 5) * 0.5
@@ -297,11 +300,17 @@ export class WaterRenderer {
     // crossings (a still camera re-syncs for free; driving rebuilds a handful of small
     // strips per crossing, same cadence as terrain chunk streaming). Ponds are compact
     // discs — built whole, reused across windows.
-    sync(minX, minZ, maxX, maxZ) {
-        const winKey = `${Math.floor(minX / 64)},${Math.floor(minZ / 64)},${Math.floor(maxX / 64)},${Math.floor(maxZ / 64)}`
-        // PERF-19.1: early-out when neither the quantized window nor the water system's
-        // discovered content changed since the last sync — the pond/stream enumeration and
-        // mesh reconciliation below would reproduce exactly the meshes already present.
+    /**
+     * @param {number} [surfaceRev] a revision of the ROAD surface the ribbons are suppressed
+     *   against (BUG-33). Which spans draw is decided by roadBlendAt/groundAt, so a network that
+     *   lands after the ribbon was built (the async adopt) must rebuild it — otherwise the old
+     *   ribbon paints water over the new causeway, or stays cut where a road has gone.
+     */
+    sync(minX, minZ, maxX, maxZ, surfaceRev = 0) {
+        const winKey = `${Math.floor(minX / 64)},${Math.floor(minZ / 64)},${Math.floor(maxX / 64)},${Math.floor(maxZ / 64)}|${surfaceRev}`
+        // PERF-19.1: early-out when neither the quantized window (+ road revision) nor the water
+        // system's discovered content changed since the last sync — the pond/stream enumeration
+        // and mesh reconciliation below would reproduce exactly the meshes already present.
         const contentGen = this.water.contentGeneration()
         if (winKey === this._winKey && contentGen === this._contentGen) return
         this._contentGen = contentGen
@@ -327,16 +336,19 @@ export class WaterRenderer {
         const bbox = { minX, minZ, maxX, maxZ }
         for (const st of this.water.streamsInBBox(minX, minZ, maxX, maxZ)) {
             wanted.add(st.key)
-            if (!this._meshes.has(st.key)) {
-                const m = buildStreamMesh(st, this.material, bbox, this._groundAt, this._roadBlendAt)
-                if (m) { this._meshes.set(st.key, m); this.group.add(m) }
-            }
             // FEAT-25: matching cobble bed ribbon, keyed separately so it shares the _meshes
             // dispose/reuse lifecycle. Same spans as the water → never shows where water is suppressed.
             const bedKey = st.key + '|bed'
             wanted.add(bedKey)
-            if (!this._meshes.has(bedKey)) {
-                const bm = buildStreamBedMesh(st, this.bedMaterial, bbox, this._groundAt, this._roadBlendAt)
+            const needWater = !this._meshes.has(st.key), needBed = !this._meshes.has(bedKey)
+            if (!needWater && !needBed) continue
+            const spans = streamSpans(st, bbox, this._groundAt, this._roadBlendAt)   // once, for both
+            if (needWater) {
+                const m = buildStreamMesh(st, this.material, bbox, this._groundAt, this._roadBlendAt, spans)
+                if (m) { this._meshes.set(st.key, m); this.group.add(m) }
+            }
+            if (needBed) {
+                const bm = buildStreamBedMesh(st, this.bedMaterial, bbox, this._groundAt, this._roadBlendAt, spans)
                 if (bm) { this._meshes.set(bedKey, bm); this.group.add(bm) }
             }
         }

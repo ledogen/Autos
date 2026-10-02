@@ -2,8 +2,10 @@
  * src/water.js — Deterministic water-placement foundation (FEAT-22) + pond (FEAT-17)
  *                and stream (FEAT-18) generation.
  *
- * STATUS: generation core only. NOT yet wired into main.js, terrain.js WORKER_SOURCE,
- * the road router, or physics. See .planning/todos/pending/feat-water-*.md.
+ * WIRING (main.js rebuildWaterSystem): the stream-channel carve is injected into the terrain's
+ * height composition (TerrainSystem.setWaterCarve — so physics rides it too), the pond discs and
+ * isRoadNoGo go to the road router, and submergedAt feeds the vehicle's submersion flag.
+ * Rendering lives in water-render.js.
  *
  * ── The enabling fact (why this is tractable) ────────────────────────────────
  * Terrain height is a PURE analytic function of (seed, x, z, params) with no chunk
@@ -34,8 +36,7 @@
  *     feature's spatial reach), compute each source once, cache it, and filter by
  *     the query bbox. Identical from any stream center or draw distance.
  *
- * WORKER-SAFE: only imports src/seed.js (pure math). No THREE, no DOM. Mesh/shader
- * construction and the CARVE SYNC mirror live in the (later) wiring layer, not here.
+ * Pure: only imports src/seed.js. No THREE, no DOM — mesh/shader construction is water-render.js.
  */
 
 import { seedFor, mulberry32 } from './seed.js'
@@ -855,8 +856,6 @@ export class WaterSystem {
     // ── Coordinated public API (2026-07-01 handoff naming) ────────────────────
     // Thin aliases so consumers (router route-around, scatter, streams-side bridge
     // detection) speak the documented contract. bbox = (minX, minZ, maxX, maxZ).
-    basinsNear(minX, minZ, maxX, maxZ)  { return this.basinsInBBox(minX, minZ, maxX, maxZ) }
-    saddlesNear(minX, minZ, maxX, maxZ) { return this.saddlesInBBox(minX, minZ, maxX, maxZ) }
     pondsNear(minX, minZ, maxX, maxZ)   { return this.pondsInBBox(minX, minZ, maxX, maxZ) }
     streamsNear(minX, minZ, maxX, maxZ) { return this.streamsInBBox(minX, minZ, maxX, maxZ) }
 
@@ -902,10 +901,8 @@ export class WaterSystem {
     // is the perpendicular distance to the nearest centerline segment; the bed Y
     // follows the centerline's descending profile (NOT a flat plane).
     //
-    // NOT mirrored into WORKER_SOURCE — the terrain Worker returns RAW heights and
-    // every carve blend (road AND stream) is applied on the main thread (see
-    // terrain.js "carve never enters the worker"), so a Worker copy would be dead
-    // code. terrain.js consumes this via the injected setWaterCarve hook (main.js
+    // Main-thread only — the terrain Worker returns RAW heights and every carve blend (road AND
+    // stream) is applied on the main thread. terrain.js consumes this via the injected setWaterCarve hook (main.js
     // wires it; water.js stays a leaf). HOT PATH: called per physics contact sample
     // via analyticHeight — the per-stream bbox reject below keeps the common
     // (nowhere-near-water) case at a few float compares per stream.

@@ -29,6 +29,7 @@
 
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
+import { coarseHeight } from './terrain-height.js'   // the raw coarse layer — same function the terrain renders (road grade is amplitude-independent)
 import { createNoise2D } from 'simplex-noise'
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA } from './road-carve.js'
 import { truncatedHeightField, routeEdgeV2, profileSolve, dequantizeProfile, roundCrests, extendBorePortals, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule · portal placement
@@ -780,39 +781,6 @@ const ROAD_BAND_MARGIN = 1  // extra macro-cols beyond ceil(R/spacing) each side
 // ── Off-thread route pre-warm tuning (PERF-03 Workstream A) ───────────────────
 const PREWARM_MARGIN    = 2   // extra macro-cols/rows beyond the streamer band to route AHEAD of need
 
-// ── Module-scope pure height function ─────────────────────────────────────────
-/**
- * Raw coarse terrain height at world (wx, wz), pre-amplitude.
- *
- * SYNC RULE: This function body is BYTE-IDENTICAL to coarseHeight() in
- * src/terrain.js (lines 284–300). Do NOT change either without updating the other.
- * The byte-identical copy ensures road grade math uses the same raw values as the
- * terrain rendering — grade is independent of the terrainAmplitude visual slider.
- *
- * @param {number} wx — world X coordinate (metres)
- * @param {number} wz — world Z coordinate (metres)
- * @param {Function} noiseCoarse — simplex noise closure (createNoise2D result)
- * @param {object} params — RANGER_PARAMS (needs coarseAmplitude, coarseFreq, coarseOctaves, ridgeSharpness)
- * @returns {number} raw coarse height in metres (pre-amplitude)
- */
-function _coarseHeight(wx, wz, noiseCoarse, params) {
-    const { coarseAmplitude, coarseFreq, coarseOctaves, ridgeSharpness } = params
-    let h = 0
-    let freq = coarseFreq
-    let amp  = coarseAmplitude
-    const gain = 0.5
-    const lacunarity = 2.0
-    for (let o = 0; o < coarseOctaves; o++) {
-        const n = noiseCoarse(wx * freq, wz * freq)
-        const ridged = 1.0 - Math.abs(n)
-        const shaped = Math.pow(ridged, ridgeSharpness)
-        h += shaped * amp
-        freq *= lacunarity
-        amp  *= gain
-    }
-    return h
-}
-
 // ── FEAT-76: PROMOTED node identity ────────────────────────────────────────────────────────────
 // A promoted node is the point where a side road departs an existing trunk — the T that replaces
 // the old wye. It is NOT a blue-noise site, so it has no site id; it needs a synthetic one that
@@ -961,7 +929,7 @@ export class RoadSystem {
         if (this._coarseHeightOverride) {
             return this._coarseHeightOverride(wx, wz)
         }
-        return _coarseHeight(wx, wz, this._noiseCoarse, this._params)
+        return coarseHeight(wx, wz, this._noiseCoarse, this._params)
     }
 
     // ── Public API ──────────────────────────────────────────────────────────────
@@ -8617,10 +8585,14 @@ export class RoadSystem {
      * marks those chunks stale (terrain.js recarveInPlace).
      */
     storyPadReach() {
-        if (!this._padsAll) return []
+        return this._padsAll ? this._padsAll.map(q => this.padReachOf(q)) : []
+    }
+
+    /** One pad's carve footprint as a {x, z, reach} region (see storyPadReach). */
+    padReachOf(pad) {
         const p = this._params
         const extra = PAD_RIM_HOLD + (p.roadShoulderWidth ?? 2.5) + (p.roadMaxEmbankmentToe ?? 10)
-        return this._padsAll.map(q => ({ x: q.x, z: q.z, reach: Math.hypot(q.halfLen, q.halfWid) + extra }))
+        return { x: pad.x, z: pad.z, reach: Math.hypot(pad.halfLen, pad.halfWid) + extra }
     }
 
     /**

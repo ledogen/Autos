@@ -24,7 +24,7 @@ import { truncatedHeightField, routeEdgeV2, V2_TRUNC_K } from './corridor-router
  * Rebuild the two route height fields from the init subset — EXACTLY the derivation RoadSystem
  * uses (noiseCoarse = createNoise2D(mulberry32(seedFor(worldSeed, 'coarse'))); hTrunc = the
  * V2_TRUNC_K-octave corridor field; hCoarse = the full-octave coarse field, float-identical to
- * road.js's _coarseHeight loop). Exported so the parity gate can pin this derivation from node.
+ * terrain-height.js's coarseHeight loop). Exported so the parity gate can pin this derivation from node.
  */
 export function buildRouteFields(worldSeed, params) {
     const noiseCoarse = createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))

@@ -1,16 +1,13 @@
 /**
  * src/seed.js — World-seed foundation for AUTOS v1.1
  *
- * HARD RULE: The four function bodies below (djb2, parseWorldSeed, seedFor,
- * mulberry32) are copied VERBATIM into src/terrain.js, inside the WORKER_SOURCE
- * template-literal string. That copy must NOT include the `export` keyword. Any edit
- * here must be immediately reflected there (Pitfall 2, RESEARCH.md §Pitfall 2).
+ * ONE definition: every thread imports this module (the terrain and road Workers are ES modules).
+ * The old rule that these bodies be pasted verbatim into a Worker source string is retired.
  *
  * SECURITY: seed strings flow only through djb2 charCodeAt() arithmetic —
  * no string-to-code execution path exists (T-07-02-INJ threat mitigated).
  *
- * WORKER-SAFE: No import statements, no DOM references, no THREE.* here.
- * These bodies are pure math — safe to paste verbatim into Blob Worker source.
+ * WORKER-SAFE: No import statements, no DOM references, no THREE.* here — pure math.
  *
  * Domain tags used in Phase 7: "coarse", "fine", "regional", "spawn"
  */

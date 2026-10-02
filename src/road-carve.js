@@ -1,9 +1,7 @@
 /**
  * src/road-carve.js — Pure no-import carve functions for AUTOS road surface.
  *
- * NOT worker-mirrored: the terrain Worker returns raw heights and the carve is a main-thread
- * blend, so nothing here is copied into terrain.js WORKER_SOURCE (the old CARVE SYNC mirror held
- * one bilinear table lookup that neither side called — deleted).
+ * Main-thread only: the terrain Worker returns raw heights and the carve is a main-thread blend.
  *
  * Pure functions — deterministic (D-16). No Math.random, no Date, no session state.
  *
@@ -46,11 +44,11 @@ export function crownProfile(uLat, halfWidth, crownHeight) {
 }
 
 // ── SURF-06: Pothole / crack micro-noise (D-03) ───────────────────────────────
-// NOT synced into WORKER_SOURCE — carve table gradeY_preamp is built main-thread only
+// Main-thread only — the carve table gradeY_preamp is built on the main thread
 // (the Worker stores RAW heights; it never applies carve). This function is called at
 // the THREE sites where on-ribbon gradeY is produced on the main thread:
 //   (a) road.js _sampleCarveWorld     (physics — analyticHeight)
-//   (b) terrain.js _buildCarveTable   (physics/mesh — sampleHeight + _flushPendingQueue)
+//   (b) terrain.js _carveTableGen     (the terrain mesh carve — via the shared road resolver)
 //   (c) road-mesh.js sweepRibbon      (visual ribbon)
 // These three sites all have (wx, wz) world coordinates for the vertex, which is the
 // canonical key — using world position ensures identical output at each site without
@@ -198,7 +196,7 @@ export function signedCurvature(T0x, T0z, T1x, T1z, ds) {
 
 // ── Junction polygon utilities (P9 plan 04) ──────────────────────────────────
 // No imports — Worker-safe discipline maintained for future use.
-// NOTE: junction footprint is main-thread only; this is NOT synced into WORKER_SOURCE.
+// NOTE: junction footprint is main-thread only.
 // Used by road-mesh.js buildJunctionFootprint.
 // QUAL-27: isConvexPolygon + triangulateConvexFan deleted — earClip handles convex rings too and
 // was the only one anything called.
@@ -215,7 +213,7 @@ export function signedCurvature(T0x, T0z, T1x, T1z, ds) {
  * @param {Array<{x:number,z:number}>} polygon — simple polygon vertices (CCW expected)
  * @returns {number[]} Flat triangle index array (indices into the original polygon)
  *
- * Pure function — no imports (Worker-safe discipline; NOT synced to WORKER_SOURCE).
+ * Pure function — no imports.
  * Deterministic (D-16).
  */
 export function earClip(polygon) {

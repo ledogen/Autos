@@ -168,9 +168,8 @@ function rebuildWaterSystem () {
   waterSystem   = new WaterSystem(worldSeed, RANGER_PARAMS, (x, z) => terrainSystem.rawHeightWorld(x, z))
   // BUG-33: the renderer suppresses ribbon spans whose water level would stand above the
   // COMPOSED driving surface (road decks/pads pulled through the channel) — inject the same
-  // physics surface the wheels ride. Safe ordering: the frame loop streams the road network
-  // (roadSystem.update) before waterRenderer.sync, so any window the ribbons build against
-  // already has its roads streamed.
+  // physics surface the wheels ride. A network can land AFTER a ribbon was built (PERF-30 adopts
+  // are asynchronous), so the frame loop hands sync() the road revision and a change rebuilds them.
   waterRenderer = new WaterRenderer(waterSystem, {
     groundAt: (x, z) => terrainSystem.analyticHeight(x, z),
     // Road-carve blend at a point (0 = no road). Reads module-scope roadSystem at call time
@@ -2136,6 +2135,8 @@ if (_PROF) {
   window.__mission = () => missionSystem
   // FEAT-53: the run wallet, so a harness can assert a payout/points accrual without a screenshot.
   window.__economy = () => economySystem
+  // FEAT-45: the camp zones + grading, so a harness can find a campable spot and exercise the dig.
+  window.__camp = () => campSystem
   // Route-dispatch probe: wraps _routeDispatch on first call to count per-key dispatches —
   // diagnoses warm-loop re-dispatch churn (a key dispatched >2× means a warm scan is spinning).
   let _rdWrap = null
@@ -3746,12 +3747,17 @@ function _campFade (during) {
 
 /**
  * Re-realize the ground around a pad after the carve tables changed (a bench dug OR un-dug):
- * rebuild the terrain chunks, then release the covering prop chunks so the scatter re-rolls
- * against the finished ground — digging clears the site of trees via the pad keep-out
- * (poiPadBlocked); un-digging lets them come back.
+ * re-carve the terrain chunks the pad reaches, then release the covering prop chunks so the
+ * scatter re-rolls against the finished ground — digging clears the site of trees via the pad
+ * keep-out (poiPadBlocked); un-digging lets them come back.
+ *
+ * recarveInPlace, NOT rebuildAllChunksFromWorker: the heights have not changed, only the carve, and
+ * pads never bump roadGeneration. The full rebuild this used to call is the seed-change path — it
+ * disposed the WHOLE ring (and every terrain collider) and re-requested it from the Worker, so
+ * breaking camp, which has no fade, blinked the visible world out under a parked truck.
  */
 function _refreshGroundAround (pad) {
-  terrainSystem?.rebuildAllChunksFromWorker()
+  if (roadSystem) terrainSystem?.recarveInPlace([roadSystem.padReachOf(pad)], { burst: false })
   if (propSystem) {
     const S = CHUNK_SIZE, r = pad.halfLen
     const c0x = Math.floor((pad.x - r) / S), c1x = Math.floor((pad.x + r) / S)
@@ -6068,7 +6074,8 @@ function loop () {
     const wr = waterSyncRadius()
     waterRenderer.sync(
       streamCenter.x - wr, streamCenter.z - wr,
-      streamCenter.x + wr, streamCenter.z + wr
+      streamCenter.x + wr, streamCenter.z + wr,
+      roadSystem ? roadSystem._networkRev : 0   // ribbons are suppressed against the road surface
     )
   }
   perfAdd('frame.water.sync', performance.now() - _pt)   // TEMP (D-arc)

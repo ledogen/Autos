@@ -3,11 +3,10 @@
  *
  * Responsibilities:
  *  - Chunk ring management (5×5, RING_RADIUS=2, 64 m tiles)
- *  - Heightmap generation via Blob classic Web Worker (simplex noise inlined)
+ *  - Heightmap generation on a small pool of module Workers (src/terrain-worker.js)
  *  - Frame-spread geometry build (PERF-02: ms-budgeted, nearest-first; MAX_BUILDS_PER_FRAME hard cap)
- *  - O(1) bilinear height query + central-difference normal for physics pipeline
  *  - analyticHeight/analyticNormal: main-thread direct analytic sampling (no chunk lookup)
- *    — used by queryContacts/queryVertexContacts for physics contacts (no chunk-seam gap)
+ *    — used by queryContacts for physics contacts (no chunk-seam gap)
  *  - reinitWorker(worldSeed, params): sends init message to Worker, rebuilds noise closures
  *  - rebuildAllChunksFromWorker(): Path B — disposes all chunks and re-requests from Worker
  *
@@ -20,8 +19,8 @@
  * Threat mitigations:
  *   T-06-01: BUILD_MS_BUDGET (+ MAX_BUILDS_PER_FRAME cap) bounds main-thread geometry build cost per frame
  *   T-06-03: geometry.dispose() called in _updateChunkRing before chunkMap.delete
- *   T-07-03-SYNC: WORKER_SOURCE is the sole source of the terrain Worker (no separate file
- *                 mirror); its height/seed helpers stay byte-synced with their originals.
+ *   T-07-03-SYNC: retired — the Worker imports src/terrain-height.js, the same module this file
+ *                 reads, so there is no copy to keep in sync.
  */
 
 import * as THREE from 'three'
@@ -30,13 +29,14 @@ import * as THREE from 'three'
 // QUAL-07: crownProfile no longer imported — the crown/camber fold moved into the one shared
 // RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
+import { height, makeTerrainNoise } from './terrain-height.js'   // THE height function — the Worker imports the same module
 import { makeSurfaceTextures } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
 import { perfAdd, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-26)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
 // FEAT-05/FEAT-85: the vegetation share of a ground sample — flat enough (below grassSlopeMax,
 // feathered from half of it) AND below the treeline (feathered lo→hi). One definition, two
-// readers: _writeChunkVertexColors paints green by it, vegetationAt() hands it to the scatter.
+// readers: _writeChunkVertexColors paints green by it, groundAt()/groundClassify() hand it to the scatter.
 const _smooth01 = (e0, e1, x) => {
     if (x <= e0) return 0; if (x >= e1) return 1
     const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t)
@@ -57,299 +57,6 @@ const        BUILD_MS_BUDGET      = 3.0 // PERF-02: per-frame ms budget for geom
 const        CARVE_ROWS_PER_SLICE = 4   // PERF-26: carve-table rows per resumable slice (65 rows → ~16 slices ≈ 1.5 ms each on a fast machine). Smaller = smoother but more generator overhead; this is the granularity that lets BUILD_MS_BUDGET actually bind.
 const        MAX_IN_FLIGHT_PER_WORKER = 3 // PERF-33: posted-but-unanswered generate requests per Worker (a Worker answers one in a few ms; 3 keeps it fed across a frame without a deep unrecallable backlog)
 const        MAX_REQUESTS_PER_FRAME = 8 // PERF-02: cap worker `generate` dispatches per frame — bounds the postMessage flood at large rings (raised for the deeper warm rings at Far/Ultra)
-
-// ── Embedded worker source ─────────────────────────────────────────────────
-// The terrain Worker's full source as a string, spun up as a Blob classic worker (see the
-// constructor). This string IS the worker — the single source of truth (no file mirror).
-// The worker context has no importmap — all code must be self-contained (no import/export).
-
-const WORKER_SOURCE = `
-// Classic Blob worker source for TerrainSystem (embedded as WORKER_SOURCE in src/terrain.js)
-//
-// Responsibilities:
-//  - Receive {type:'init', worldSeed, params} messages — initialize seeded noise closures
-//  - Receive {type:'generate', cx, cz, key} messages — generate 65×65 heightmap
-//  - Post {key, cx, cz, heights} with heights.buffer as a transferable
-//
-// This file is NOT an ES6 module. It is read as a string by terrain.js and
-// embedded in a Blob URL classic worker. Do NOT add import/export statements.
-//
-// Minimal simplex noise 2D implementation extracted from simplex-noise@4.0.3
-// Original source: https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/dist/esm/simplex-noise.js
-// MIT License — Copyright (c) 2024 Jonas Wagner
-
-// ── Seed utilities (copied verbatim from src/seed.js — no export keyword) ──
-// SYNC: keep byte-identical with seed.js function bodies (no export).
-
-function djb2(str) {
-  let h = 5381
-  for (let i = 0; i < str.length; i++) {
-    h = (Math.imul(h, 33) ^ str.charCodeAt(i)) >>> 0
-  }
-  return h >>> 0
-}
-
-function parseWorldSeed(input) {
-  if (typeof input === 'number') return (input | 0) >>> 0
-  const s = String(input)
-  if (/^-?\d+$/.test(s)) return (parseInt(s, 10) | 0) >>> 0
-  return djb2(s)
-}
-
-function seedFor(worldSeed, domainTag, ...coords) {
-  let h = djb2(domainTag)
-  h = (Math.imul(h ^ (worldSeed >>> 0), 0x9e3779b9) >>> 0)
-  for (const coord of coords) {
-    h = (Math.imul(h ^ ((coord | 0) >>> 0), 0x85ebca6b) >>> 0)
-  }
-  return h >>> 0
-}
-
-function mulberry32(seed) {
-  return function () {
-    seed |= 0
-    seed = seed + 0x6D2B79F5 | 0
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-    t = t + Math.imul(t ^ (t >>> 7), 61 | t) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-// ── Minimal simplex-noise@4.0.3 subset (2D only) ──────────────────────────
-
-const SQRT3 = Math.sqrt(3.0);
-const F2 = 0.5 * (SQRT3 - 1.0);
-const G2 = (3.0 - SQRT3) / 6.0;
-
-const fastFloor = (x) => Math.floor(x) | 0;
-
-const grad2 = new Float64Array([
-    1, 1, -1, 1,  1, -1, -1, -1,
-    1, 0, -1,  0,  1,  0, -1,  0,
-    0, 1,  0, -1,  0,  1,  0, -1
-]);
-
-function buildPermutationTable(random) {
-    const tableSize = 512;
-    const p = new Uint8Array(tableSize);
-    for (let i = 0; i < tableSize / 2; i++) {
-        p[i] = i;
-    }
-    for (let i = 0; i < tableSize / 2 - 1; i++) {
-        const r = i + ~~(random() * (256 - i));
-        const aux = p[i];
-        p[i] = p[r];
-        p[r] = aux;
-    }
-    for (let i = 256; i < tableSize; i++) {
-        p[i] = p[i - 256];
-    }
-    return p;
-}
-
-function createNoise2D(random) {
-    if (random === undefined) random = Math.random;
-    const perm = buildPermutationTable(random);
-    const permGrad2x = new Float64Array(perm).map(function(v) { return grad2[(v % 12) * 2]; });
-    const permGrad2y = new Float64Array(perm).map(function(v) { return grad2[(v % 12) * 2 + 1]; });
-
-    return function noise2D(x, y) {
-        let n0 = 0;
-        let n1 = 0;
-        let n2 = 0;
-        const s = (x + y) * F2;
-        const i = fastFloor(x + s);
-        const j = fastFloor(y + s);
-        const t = (i + j) * G2;
-        const X0 = i - t;
-        const Y0 = j - t;
-        const x0 = x - X0;
-        const y0 = y - Y0;
-        let i1, j1;
-        if (x0 > y0) { i1 = 1; j1 = 0; }
-        else          { i1 = 0; j1 = 1; }
-        const x1 = x0 - i1 + G2;
-        const y1 = y0 - j1 + G2;
-        const x2 = x0 - 1.0 + 2.0 * G2;
-        const y2 = y0 - 1.0 + 2.0 * G2;
-        const ii = i & 255;
-        const jj = j & 255;
-        let t0 = 0.5 - x0 * x0 - y0 * y0;
-        if (t0 >= 0) {
-            const gi0 = ii + perm[jj];
-            t0 *= t0;
-            n0 = t0 * t0 * (permGrad2x[gi0] * x0 + permGrad2y[gi0] * y0);
-        }
-        let t1 = 0.5 - x1 * x1 - y1 * y1;
-        if (t1 >= 0) {
-            const gi1 = ii + i1 + perm[jj + j1];
-            t1 *= t1;
-            n1 = t1 * t1 * (permGrad2x[gi1] * x1 + permGrad2y[gi1] * y1);
-        }
-        let t2 = 0.5 - x2 * x2 - y2 * y2;
-        if (t2 >= 0) {
-            const gi2 = ii + 1 + perm[jj + 1];
-            t2 *= t2;
-            n2 = t2 * t2 * (permGrad2x[gi2] * x2 + permGrad2y[gi2] * y2);
-        }
-        return 70.0 * (n0 + n1 + n2);
-    };
-}
-
-// ── Height function (shared with Worker — keep in sync) ──────────────────
-// Three-layer height: coarse ridged-multifractal + fine FBM + regional modulator.
-// Returns RAW height (no terrainAmplitude multiply — amplitude applied at geometry setY
-// and in sampleHeight/analyticHeight, preserving the existing contract).
-// SYNC: keep byte-identical with terrain.js module-scope block below.
-
-function coarseHeight(wx, wz, noiseCoarse, params) {
-    const { coarseAmplitude, coarseFreq, coarseOctaves, ridgeSharpness } = params
-    let h = 0
-    let freq = coarseFreq
-    let amp  = coarseAmplitude
-    const gain = 0.5
-    const lacunarity = 2.0
-    for (let o = 0; o < coarseOctaves; o++) {
-        const n = noiseCoarse(wx * freq, wz * freq)
-        const ridged = 1.0 - Math.abs(n)
-        const shaped = Math.pow(ridged, ridgeSharpness)
-        h += shaped * amp
-        freq *= lacunarity
-        amp  *= gain
-    }
-    return h
-}
-
-function fineHeight(wx, wz, noiseFine, params) {
-    const { fineAmplitude, fineFreq } = params
-    return (
-        noiseFine(wx * fineFreq, wz * fineFreq) * fineAmplitude +
-        noiseFine(wx * fineFreq * 2.1, wz * fineFreq * 2.1) * fineAmplitude * 0.5
-    )
-}
-
-function regionalModulator(wx, wz, noiseRegional, params) {
-    const { regionalStrength, regionalScale } = params
-    const raw = noiseRegional(wx * (1 / regionalScale), wz * (1 / regionalScale))
-    const t = (raw + 1) * 0.5
-    return (1.0 - regionalStrength) + regionalStrength * t
-}
-
-function height(wx, wz, noiseCoarse, noiseFine, noiseRegional, params) {
-    const coarse = coarseHeight(wx, wz, noiseCoarse, params)
-    const reg    = regionalModulator(wx, wz, noiseRegional, params)
-    const fine   = fineHeight(wx, wz, noiseFine, params) * reg
-    return coarse + fine
-}
-
-// ── Worker constants ───────────────────────────────────────────────────────
-
-const GRID_SAMPLES = 65
-const CHUNK_SIZE   = 64
-const CELL_SIZE    = CHUNK_SIZE / (GRID_SAMPLES - 1)
-
-// Three seeded noise closures — initialized via 'init' message before any 'generate'.
-let noiseCoarse, noiseFine, noiseRegional
-// Worker params — set on 'init', used in 'generate'.
-let _workerParams = null
-
-// ── (routing removed — QUAL-08) ─────────────────────────────────────────────────────────────
-// The road router moved to its OWN Worker pool (src/road-worker.js; since FEAT-68 a real module
-// worker importing corridor-router.js — no mirror). Terrain is heightfield-only now so route
-// jobs can never starve terrain generate (BUG-26). Do NOT reintroduce routing here.
-
-console.log('[terrain-worker] ready — awaiting init message')
-
-// ── Message handler ────────────────────────────────────────────────────────
-
-self.onmessage = function(e) {
-    if (e.data.type === 'init') {
-        const { worldSeed, params } = e.data
-        _workerParams = params
-        noiseCoarse   = createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
-        noiseFine     = createNoise2D(mulberry32(seedFor(worldSeed, 'fine')))
-        noiseRegional = createNoise2D(mulberry32(seedFor(worldSeed, 'regional')))
-        console.log('[terrain-worker] init complete. worldSeed =', worldSeed)
-        return
-    }
-
-    if (e.data.type !== 'generate') return
-
-    if (!noiseCoarse) {
-        console.warn('[terrain-worker] generate received before init — skipping key', e.data.key)
-        return
-    }
-
-    // Heights stay RAW (pre-amplitude, pre-carve): the road carve never enters the Worker. The main
-    // thread's _flushPendingQueue builds the carve table and applies the blend after receiving
-    // these heights, so chunk.heights is never overwritten (Pitfall 1).
-    const { cx, cz, key, epoch } = e.data
-    const N    = GRID_SAMPLES
-    const S    = CHUNK_SIZE
-    const cell = CELL_SIZE
-
-    const heights  = new Float32Array(N * N)
-    const originX  = cx * S
-    const originZ  = cz * S
-
-    for (let zi = 0; zi < N; zi++) {
-        for (let xi = 0; xi < N; xi++) {
-            const wx = originX + xi * cell
-            const wz = originZ + zi * cell
-            // Raw height — no carve baked in. Carve applied by main thread in _flushPendingQueue.
-            heights[zi * N + xi] = height(wx, wz, noiseCoarse, noiseFine, noiseRegional, _workerParams)
-        }
-    }
-
-    // Transfer heights buffer to main thread (zero-copy transferable)
-    self.postMessage({ key, cx, cz, heights, epoch }, [heights.buffer])   // PERF-33: epoch echoed so stale replies drop
-}
-`
-
-// ── Height function (shared with Worker — keep in sync) ──────────────────
-// Three-layer height: coarse ridged-multifractal + fine FBM + regional modulator.
-// Returns RAW height (no terrainAmplitude multiply).
-// SYNC RULE: keep byte-identical with the same block inside WORKER_SOURCE above.
-
-function coarseHeight(wx, wz, noiseCoarse, params) {
-    const { coarseAmplitude, coarseFreq, coarseOctaves, ridgeSharpness } = params
-    let h = 0
-    let freq = coarseFreq
-    let amp  = coarseAmplitude
-    const gain = 0.5
-    const lacunarity = 2.0
-    for (let o = 0; o < coarseOctaves; o++) {
-        const n = noiseCoarse(wx * freq, wz * freq)
-        const ridged = 1.0 - Math.abs(n)
-        const shaped = Math.pow(ridged, ridgeSharpness)
-        h += shaped * amp
-        freq *= lacunarity
-        amp  *= gain
-    }
-    return h
-}
-
-function fineHeight(wx, wz, noiseFine, params) {
-    const { fineAmplitude, fineFreq } = params
-    return (
-        noiseFine(wx * fineFreq, wz * fineFreq) * fineAmplitude +
-        noiseFine(wx * fineFreq * 2.1, wz * fineFreq * 2.1) * fineAmplitude * 0.5
-    )
-}
-
-function regionalModulator(wx, wz, noiseRegional, params) {
-    const { regionalStrength, regionalScale } = params
-    const raw = noiseRegional(wx * (1 / regionalScale), wz * (1 / regionalScale))
-    const t = (raw + 1) * 0.5
-    return (1.0 - regionalStrength) + regionalStrength * t
-}
-
-function height(wx, wz, noiseCoarse, noiseFine, noiseRegional, params) {
-    const coarse = coarseHeight(wx, wz, noiseCoarse, params)
-    const reg    = regionalModulator(wx, wz, noiseRegional, params)
-    const fine   = fineHeight(wx, wz, noiseFine, params) * reg
-    return coarse + fine
-}
 
 // ── TerrainSystem class ────────────────────────────────────────────────────
 
@@ -781,20 +488,17 @@ export class TerrainSystem {
         }
         this._material.customProgramCacheKey = () => 'feat05-alpine-terrain'
 
-        // PERF-19.2: spawn a small POOL of identical Blob workers (was a single worker). The
+        // PERF-19.2: spawn a small POOL of identical workers (was a single worker). The
         // ready→ring-complete fill is bound by the SERIAL per-chunk `generate` cadence, not the
         // build budget (PERF-13), so fanning `generate` requests across N workers cuts that trickle
-        // ~N×. All workers share the byte-identical WORKER_SOURCE (same seeded noise → identical
+        // ~N×. All workers run src/terrain-worker.js (same seeded noise → identical
         // heightfields regardless of which worker serves a chunk), push into the SAME _pendingQueue
         // (replies carry the chunk key; _flushPendingQueue sorts nearest-first, so out-of-order
         // arrival across the pool is already handled), and are round-robined below. Pool size leaves
         // headroom for the main thread + the separate road worker; a 1-worker fallback keeps
         // low-core machines at parity with the old single-worker behaviour.
-        // RESEARCH.md Pattern 3: classic worker avoids module-worker CORS restrictions.
         const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4
         const poolSize = Math.max(1, Math.min(3, cores - 2))
-        const blob    = new Blob([WORKER_SOURCE], { type: 'application/javascript' })
-        const blobURL = URL.createObjectURL(blob)
         this._workers = []
         this._rrCursor = 0            // round-robin dispatch cursor across the pool
         // Worker message handler: push received heightmaps into the shared FIFO queue.
@@ -813,11 +517,12 @@ export class TerrainSystem {
             this._pendingQueue.push({ key, cx, cz, heights })
         }
         for (let i = 0; i < poolSize; i++) {
-            const w = new Worker(blobURL)
+            // A real module worker (Vite bundles it as its own chunk, like the road workers): it
+            // imports terrain-height.js, so Worker heights == main-thread heights by construction.
+            const w = new Worker(new URL('./terrain-worker.js', import.meta.url), { type: 'module' })
             w.onmessage = onMsg
             this._workers.push(w)
         }
-        URL.revokeObjectURL(blobURL)  // safe to revoke after all Worker constructions
 
         // Initialize every Worker and the main-thread noise closures with the starting seed.
         this.reinitWorker(this._worldSeed, params)
@@ -894,12 +599,6 @@ export class TerrainSystem {
         }
     }
 
-    /**
-     * Update chunk ring and build pending geometries. Call once per render frame,
-     * OUTSIDE the physics fixed-step accumulator (render rate only).
-     *
-     * @param {{ x: number, y: number, z: number }} carPos - Current car/camera world position.
-     */
     // FEAT-40: refresh the tunnel-mouth cutout uniforms. The full portal list rebuilds when the
     // road network changes (rev-guarded); the 24 uniform slots are then filled with the portals
     // NEAREST the car, re-selected when the car has moved — a dense region can carry far more
@@ -944,6 +643,9 @@ export class TerrainSystem {
     }
 
     /**
+     * Update chunk ring and build pending geometries. Call once per render frame,
+     * OUTSIDE the physics fixed-step accumulator (render rate only).
+     *
      * @param {{x:number,z:number}} carPos stream centre (truck, or camera in free-cam)
      * @param {import('./stream-priority.js').StreamMotion|null} motion PERF-33: travel direction for
      *   near-then-ahead ordering (null ⇒ nearest-first)
@@ -984,12 +686,11 @@ export class TerrainSystem {
         this._worldSeed = worldSeed
         this._params    = params
 
-        // Build main-thread noise closures (same seedFor derivation as Worker)
-        // Import-compatible: djb2/seedFor/mulberry32/createNoise2D used from module scope
-        // (they are declared as module-level functions matching the Worker copies).
-        this._noiseCoarse   = _createNoise2D(_mulberry32(_seedFor(worldSeed, 'coarse')))
-        this._noiseFine     = _createNoise2D(_mulberry32(_seedFor(worldSeed, 'fine')))
-        this._noiseRegional = _createNoise2D(_mulberry32(_seedFor(worldSeed, 'regional')))
+        // Main-thread noise closures — the same makeTerrainNoise the Worker calls on 'init'.
+        const noise = makeTerrainNoise(worldSeed)
+        this._noiseCoarse   = noise.noiseCoarse
+        this._noiseFine     = noise.noiseFine
+        this._noiseRegional = noise.noiseRegional
 
         // Send init to Worker — Worker reinitializes its own three noise closures.
         // Pass ONLY the structured-cloneable terrain-layer fields. The live params object
@@ -1027,14 +728,13 @@ export class TerrainSystem {
     /**
      * FEAT-18: attach the stream-channel carve sampler (main.js injects it over WaterSystem —
      * terrain.js never imports water.js, same decoupling as the road carve's setRoadSystem).
-     * The carve is blended MAIN-THREAD ONLY (the Worker returns raw heights — see WORKER_SOURCE
-     * "DOES NOT bake carve into heights"), so no WORKER_SOURCE mirror exists or is needed.
+     * The carve is blended MAIN-THREAD ONLY — the Worker returns raw heights and never sees it.
      *
      * THE height composition (CAUSEWAY, 2026-07-16 — MESH and PHYSICS are now IDENTICAL):
      *     hStream = raw + sw·(bedY − raw)          stream channel cuts RAW terrain
      *     surface = hStream + bw·(gradeY − hStream) road carve fills the cut back to gradeY,
-     *                                               un-suppressed, in sampleHeight + the three
-     *                                               chunk-Y writers (_composeCarvedY) AND
+     *                                               un-suppressed, in the three chunk-Y
+     *                                               writers (_composeCarvedY) AND
      *                                               analyticHeight (physics)
      * At a crossing the road embankment fills the channel to grade, forming a continuous causeway;
      * the stream is culverted under it (the water ribbon is suppressed over the crossing by BUG-33)
@@ -1067,12 +767,6 @@ export class TerrainSystem {
         }
     }
 
-    /**
-     * Path B rebuild: dispose ALL built chunk meshes, clear all state, re-request ring
-     * on the next update() call. Use after seed/coarse-param changes.
-     * The _pendingWorker race-fix ordering is preserved: _pendingWorker is cleared here
-     * so all keys are releasable, and the next update() will re-request the ring cleanly.
-     */
     /**
      * Re-carve live chunks IN PLACE, keeping their meshes, colliders and raw heights. Use it when
      * the carve INPUTS changed but the seed did not: a newly adopted road network, or pads handed
@@ -1122,11 +816,6 @@ export class TerrainSystem {
     }
 
     /**
-     * True when the VISIBLE ring around the last update's centre is fully built and carved against
-     * the current inputs — the moment a loading screen can hand the world over. The warm margin is
-     * left out on purpose: it exists to be built before it is seen, not to hold the handover.
-     */
-    /**
      * PERF-33: chunk (cx, cz) is built AND carved against the current road inputs — the per-chunk test
      * isRingSettled() applies to the whole visible ring, used alone by the freeze guard's lookahead.
      */
@@ -1138,6 +827,11 @@ export class TerrainSystem {
             && chunk.builtRoadCovered === this._roadCoversChunk(cx, cz)
     }
 
+    /**
+     * True when the VISIBLE ring around the last update's centre is fully built and carved against
+     * the current inputs — the moment a loading screen can hand the world over. The warm margin is
+     * left out on purpose: it exists to be built before it is seen, not to hold the handover.
+     */
     isRingSettled() {
         if (this._lastCcx === undefined || this._activeBuild || this._activeRecarve) return false
         const r = this._ringRadius ?? RING_RADIUS
@@ -1170,8 +864,13 @@ export class TerrainSystem {
         this._initialFillDone = false
     }
 
+    /**
+     * Path B rebuild: dispose ALL built chunk meshes, clear all state, re-request ring
+     * on the next update() call. Use after seed/coarse-param changes.
+     * The _pendingWorker race-fix ordering is preserved: _pendingWorker is cleared here
+     * so all keys are releasable, and the next update() will re-request the ring cleanly.
+     */
     rebuildAllChunksFromWorker() {
-        console.log(`[terrain] rebuildAllChunksFromWorker — disposing ${this._chunkMap.size} chunks (FULL terrain regen)`)  // TEMP probe (D-arc)
         // Dispose all built chunk meshes and remove from scene
         for (const [, chunk] of this._chunkMap) {
             this._scene.remove(chunk.mesh)
@@ -1219,16 +918,6 @@ export class TerrainSystem {
     }
 
     /**
-     * Sample terrain height at world-space (wx, wz) analytically.
-     * Uses the same three-layer formula as the Worker — never returns 0 for unloaded chunks.
-     * Multiplies by terrainAmplitude to match visual geometry.
-     * Used by queryContacts and queryVertexContacts (fixes chunk-seam gap — RESEARCH §Pitfall 6).
-     *
-     * @param {number} wx - World X coordinate.
-     * @param {number} wz - World Z coordinate.
-     * @returns {number} Height in metres (with terrainAmplitude applied).
-     */
-    /**
      * Sample terrain height at world-space (wx, wz) with NO carve hook applied.
      * Returns exactly the `raw` value from analyticHeight — height()*terrainAmplitude — but
      * skips the _sampleCarveWorld blend entirely. The carve-free height every consumer that must
@@ -1236,9 +925,7 @@ export class TerrainSystem {
      * stream gates. (It was introduced as the CR-04 fix for the D-06 design-grade smoother, which
      * baked crown/camber/pothole in and re-added them downstream; that smoother is gone.)
      *
-     * Lives only on the main-thread TerrainSystem class — NOT in the worker (WORKER_SOURCE).
-     * The Worker already stores raw heights and applies no carve blend; this method is a
-     * thin main-thread wrapper and never belongs in the Worker CARVE SYNC body.
+     * Main-thread only: the Worker returns raw heights and applies no carve blend.
      *
      * @param {number} wx - World X coordinate.
      * @param {number} wz - World Z coordinate.
@@ -1249,6 +936,15 @@ export class TerrainSystem {
         return height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params) * (this._params.terrainAmplitude ?? 1.0)
     }
 
+    /**
+     * Sample the CARVED terrain height at world-space (wx, wz) analytically: the Worker's
+     * three-layer formula × terrainAmplitude, then the road/pad carve blend. Never returns 0 for
+     * unloaded chunks — it does not read chunk data (fixes the chunk-seam gap, RESEARCH §Pitfall 6).
+     *
+     * @param {number} wx - World X coordinate.
+     * @param {number} wz - World Z coordinate.
+     * @returns {number} Height in metres (with terrainAmplitude applied).
+     */
     // nrHint (optional): a precomputed roadSystem.carveHint(wx,wz) result, threaded through so a tight
     // cluster of samples (analyticNormal's ±0.5 m offsets, queryContacts' height+normal for one wheel)
     // shares ONE road tile-scan instead of re-querying per call. undefined = query internally (legacy).
@@ -1270,12 +966,12 @@ export class TerrainSystem {
         }
 
         // Phase 9 carve hook (SURF-04): blend road design grade into terrain height at on-road positions.
-        // CARVE SYNC: identical blend formula as _flushPendingQueue, sampleHeight, and Worker height loop.
+        // The same blend the mesh writers apply (_composeCarvedY) — MESH == PHYSICS.
         // rawAmp is passed to _sampleCarveWorld to avoid re-calling analyticHeight (infinite recursion).
         // FEAT-18 CAUSEWAY: the road carve fills the stream-carved terrain back to gradeY, un-suppressed
         // — at a crossing the road core pulls the surface to gradeY (a filled embankment causeway; the
         // channel holds off-road, and the blend is smooth between). MESH == PHYSICS: the terrain mesh
-        // (_composeCarvedY / sampleHeight) uses this same un-suppressed blend, so the ribbon deck seats
+        // (_composeCarvedY) uses this same un-suppressed blend, so the ribbon deck seats
         // on the filled terrain and collision agrees with the rendered surface.
         // FEAT-40: queryY threads into the road resolve — inside a bore span the road only owns
         // below-apex probes; above-apex or Y-less queries fall through to a neighbouring surface
@@ -1290,8 +986,7 @@ export class TerrainSystem {
     /**
      * Compute terrain surface normal at world-space (wx, wz) using central-difference
      * over analyticHeight. Returns a plain {x, y, z} unit normal.
-     * Uses analyticHeight (not sampleHeight) so normal and height are always consistent
-     * (fixes normal/height mismatch noted in RESEARCH §Unified Architecture).
+     * Built on analyticHeight so normal and height are always consistent.
      *
      * @param {number} wx - World X coordinate.
      * @param {number} wz - World Z coordinate.
@@ -1381,7 +1076,7 @@ export class TerrainSystem {
         // because GRID_SAMPLES and CHUNK_SIZE are fixed, and chunk.heights holds the raw heights.
         // Frame-spread: cap re-carves at MAX_BUILDS_PER_FRAME per ring-sync tick (same discipline
         // as _flushPendingQueue) so a sudden re-route doesn't spike the main thread.
-        // CARVE SYNC: carve never enters the worker (WORKER_SOURCE) — it is a post-read main-thread blend.
+        // The carve never enters the Worker — it is a post-read main-thread blend.
         if (this._roadSystem) {
             const currentRoadGen = this._roadSystem.roadGeneration()
             // recarveInPlace() arms a burst behind a loading screen (story entry); the BUG-76 adopt
@@ -1523,7 +1218,7 @@ export class TerrainSystem {
             const pos = chunk.mesh.geometry.attributes.position
             // Re-apply the road carve blend (raw + blendW*(gradeY-raw)) — same formula as
             // _flushPendingQueue / the re-carve path. Without it the mesh snaps back to RAW
-            // height and buries the road trough (the ribbon stays at graded Y). CARVE SYNC.
+            // height and buries the road trough (the ribbon stays at graded Y).
             // FEAT-18 known debug-slider limitation: chunk.streamData bedY is WORLD-space, baked at
             // build amp — after an amplitude change the channel bed is stale until the chunk cycles
             // (water detection itself is amp-baked the same way; ponds drift too). Dev-slider only.
@@ -1601,6 +1296,21 @@ export class TerrainSystem {
     }
 
     /**
+     * Does the road network reach this chunk? Tested at the chunk's four corners plus its centre —
+     * the coverage boundary is a circle and a chunk is 64 m square, so a corner can be inside while
+     * the centre is not. Cheap (five squared-distance tests) and it runs once per live chunk per
+     * ring-sync tick, alongside the generation check it complements.
+     */
+    _roadCoversChunk(cx, cz) {
+        const rs = this._roadSystem
+        if (!rs || typeof rs.networkCoversXZ !== 'function') return true   // no road wired: nothing to wait for
+        const S = CHUNK_SIZE, x0 = cx * S, z0 = cz * S
+        return rs.networkCoversXZ(x0, z0) || rs.networkCoversXZ(x0 + S, z0)
+            || rs.networkCoversXZ(x0, z0 + S) || rs.networkCoversXZ(x0 + S, z0 + S)
+            || rs.networkCoversXZ(x0 + S / 2, z0 + S / 2)
+    }
+
+    /**
      * Build the per-chunk carve table for chunk (cx, cz).
      * Returns a Float32Array(GRID_SAMPLES * GRID_SAMPLES * 2) with layout:
      *   [blendW_0, gradeY_0, blendW_1, gradeY_1, ...]  (row-major: index = zi*N + xi)
@@ -1618,21 +1328,6 @@ export class TerrainSystem {
     // instead of re-evaluating the multi-octave `height()` noise — byte-identical (same fn, same inputs),
     // just not recomputed. Available now that the table is built in _flushPendingQueue (has the heights)
     // and the re-carve path (chunk.heights). Callers without it (none currently) fall back to height().
-    /**
-     * Does the road network reach this chunk? Tested at the chunk's four corners plus its centre —
-     * the coverage boundary is a circle and a chunk is 64 m square, so a corner can be inside while
-     * the centre is not. Cheap (five squared-distance tests) and it runs once per live chunk per
-     * ring-sync tick, alongside the generation check it complements.
-     */
-    _roadCoversChunk(cx, cz) {
-        const rs = this._roadSystem
-        if (!rs || typeof rs.networkCoversXZ !== 'function') return true   // no road wired: nothing to wait for
-        const S = CHUNK_SIZE, x0 = cx * S, z0 = cz * S
-        return rs.networkCoversXZ(x0, z0) || rs.networkCoversXZ(x0 + S, z0)
-            || rs.networkCoversXZ(x0, z0 + S) || rs.networkCoversXZ(x0 + S, z0 + S)
-            || rs.networkCoversXZ(x0 + S / 2, z0 + S / 2)
-    }
-
     _buildCarveTable(cx, cz, rawHeights = null) {
         // Reached through the prototype, not `this`: the headless gates and bench-worldgen call this
         // method as TerrainSystem.prototype._buildCarveTable.call(fakeThis, …) with a plain object
@@ -1880,8 +1575,6 @@ export class TerrainSystem {
             if (zi % CARVE_ROWS_PER_SLICE === CARVE_ROWS_PER_SLICE - 1) yield
         }
 
-        // TEMP perf probe (D-arc): log carve cost for this chunk — collect(spline sampling) vs the
-        // per-vertex loop — plus how many road sample points fell in range (windier road = more).
         return anyNonZero ? table : null
     }
 
@@ -2073,7 +1766,7 @@ export class TerrainSystem {
             // Altitude (raw terrain, pre-carve — embankments don't change biome by their cut Y).
             const worldH = heights[i] * amp
             // Vegetated where it's both flat enough AND below treeline (vegBlendOf — the ONE
-            // definition; vegetationAt() serves the same rule to the prop scatter, FEAT-85).
+            // definition; groundAt()/groundClassify() serve the same rule to the prop scatter, FEAT-85).
             const vegBlend = vegBlendOf(slope, worldH, grassSlopeMax, treeLo, treeHi)
             // Within vegetated ground, relative elevation splits MEADOW (local basin, water collects)
             // from FERTILE/forest (flat bench). rel below relLo → full meadow; at/above relHi → fertile.
@@ -2167,11 +1860,13 @@ export class TerrainSystem {
 
     _surfTexKey() {
         const p = this._params
-        return `${p.terrainDirtColor ?? 0x7c6346}/${p.terrainRockColor ?? 0x59544f}`
+        // Only the dirt base is baked in; the rock colour reaches the shader as uColRock, so a rock
+        // colour change must not trigger a ~40 ms re-bake that produces identical bytes.
+        return `${p.terrainDirtColor ?? 0x7c6346}`
     }
     _bakeSurfaceTextures() {
         const p = this._params
-        const t = makeSurfaceTextures(8401, 256, { dirt: p.terrainDirtColor ?? 0x7c6346, rock: p.terrainRockColor ?? 0x59544f })
+        const t = makeSurfaceTextures(8401, 256, { dirt: p.terrainDirtColor ?? 0x7c6346 })
         t.key = this._surfTexKey()
         return t
     }
@@ -2206,9 +1901,9 @@ export class TerrainSystem {
      * height GRID (the position attribute's Y values), replacing THREE's computeVertexNormals()
      * face-normal pass. ~65×65 reads + one normalize per vertex — far cheaper than building and
      * averaging face normals — and because it reads the POST-carve Y it preserves carve-aware shading
-     * (the road trough / fill embankment still light correctly). One-sided differences at the 64-wide
-     * chunk border: equivalent to today, since each chunk builds normals independently → chunk-seam
-     * normals are already discontinuous. Convention matches analyticNormal:
+     * (the road trough / fill embankment still light correctly). At the chunk border the neighbour
+     * sample comes from analyticHeight (BUG-75), so shading is continuous across chunk seams.
+     * Convention matches analyticNormal:
      * n = normalize(-dh/dx, 1, -dh/dz). Vertex layout is row-major i = zi*N + xi (xi→+x, zi→+z),
      * the same layout pos.setY uses, so grid-index differences map directly to world x/z.
      *
@@ -2254,7 +1949,7 @@ export class TerrainSystem {
     /**
      * Build up to MAX_BUILDS_PER_FRAME chunk geometries from the pending FIFO queue.
      * Spreading builds across frames prevents frame spikes at chunk boundaries.
-     * T-06-01: capped at 2 builds/frame.
+     * T-06-01: capped at MAX_BUILDS_PER_FRAME builds/frame (more while the fill burst is armed).
      * @private
      */
     _flushPendingQueue(ccx = 0, ccz = 0) {
@@ -2337,10 +2032,10 @@ export class TerrainSystem {
             const geom = this._acquireChunkGeometry()
 
             // Overwrite Y values from heights Float32Array (row-major: heights[zi*N+xi])
-            // Apply terrainAmplitude to match sampleHeight so physics contact surface
-            // matches visual geometry at all amplitude settings.
-            // Phase 9 carve hook (SURF-05): blend road design grade using chunk.carveData.
-            // CARVE SYNC: identical blend formula as analyticHeight, sampleHeight, Worker height loop.
+            // Apply terrainAmplitude so the visual geometry matches the physics contact surface
+            // (analyticHeight) at all amplitude settings.
+            // Phase 9 carve hook (SURF-05): blend road design grade using chunk.carveData — the
+            // same blend analyticHeight applies.
             // carveData was built above in resumable slices (PERF-26); the main thread owns it because
             // it needs road access the Worker does not have.
             // FEAT-18: stream-channel table (null when no channel touches the chunk — the common case).
@@ -2351,8 +2046,8 @@ export class TerrainSystem {
             const amp = this._params.terrainAmplitude ?? 1.0
             for (let i = 0; i < N * N; i++) {
                 // heights[i] is pre-amplitude (raw from Worker). Apply amp for world-space, then the
-                // shared stream+road composition (_composeCarvedY — FEAT-18 + CARVE SYNC formula,
-                // identical to analyticHeight's mesh branch and sampleHeight).
+                // shared stream+road composition (_composeCarvedY — the same formula analyticHeight
+                // applies from the live samplers).
                 pos.setY(i, this._composeCarvedY(heights[i] * amp, carveData, streamData, i, amp))
             }
             pos.needsUpdate = true
@@ -2402,13 +2097,12 @@ export class TerrainSystem {
             perfEvent('terrain.chunk')   // PERF-26: commit point — the frame this geometry first draws
             this._physicsHook?.syncChunk(key, cx, cz, pos, N, S)  // FEAT-48: engine heightfield from the same Y writes
 
-            // Store mesh, raw heights (heights used by sampleHeight for P7-2 test),
-            // carveData (used by sampleHeight carve blend path), and builtRoadGeneration
+            // Store mesh, raw heights (the re-carve path reuses them), carveData, and builtRoadGeneration
             // (D1, plan 09-19: the road generation at which this chunk's carve was built;
             // _updateChunkRing re-carves chunks whose stored version ≠ roadGeneration()).
             this._chunkMap.set(key, {
                 mesh, heights, carveData: carveData ?? null,
-                streamData: streamData ?? null,   // FEAT-18: stream table (sampleHeight + recarve/amp paths reuse it)
+                streamData: streamData ?? null,   // FEAT-18: stream table (recarve/amp paths reuse it)
                 builtRoadGeneration: this._roadSystem?.roadGeneration() ?? -1,
                 // Was the road network actually REACHING this chunk when its carve was built? A
                 // chunk carved outside coverage is flat because the network had not arrived, not
@@ -2424,87 +2118,5 @@ export class TerrainSystem {
             // for the entire request→built window (closes the duplicate-request race).
             this._pendingWorker.delete(key)
         }
-    }
-}
-
-// ── Module-scope noise utilities for analyticHeight/analyticNormal ─────────
-// These are the main-thread equivalents of the Worker seed utilities.
-// Named with _underscore prefix to distinguish from the worker-source function bodies above.
-// They are used only by TerrainSystem.reinitWorker() to build the main-thread noise closures.
-
-function _djb2(str) {
-  let h = 5381
-  for (let i = 0; i < str.length; i++) {
-    h = (Math.imul(h, 33) ^ str.charCodeAt(i)) >>> 0
-  }
-  return h >>> 0
-}
-
-function _seedFor(worldSeed, domainTag, ...coords) {
-  let h = _djb2(domainTag)
-  h = (Math.imul(h ^ (worldSeed >>> 0), 0x9e3779b9) >>> 0)
-  for (const coord of coords) {
-    h = (Math.imul(h ^ ((coord | 0) >>> 0), 0x85ebca6b) >>> 0)
-  }
-  return h >>> 0
-}
-
-function _mulberry32(seed) {
-  return function () {
-    seed |= 0
-    seed = seed + 0x6D2B79F5 | 0
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-    t = t + Math.imul(t ^ (t >>> 7), 61 | t) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-// Simplex noise for main-thread analytic sampling (same algorithm as Worker copy above)
-const _SQRT3 = Math.sqrt(3.0)
-const _F2 = 0.5 * (_SQRT3 - 1.0)
-const _G2 = (3.0 - _SQRT3) / 6.0
-const _fastFloor = (x) => Math.floor(x) | 0
-const _grad2 = new Float64Array([
-    1, 1, -1, 1,  1, -1, -1, -1,
-    1, 0, -1,  0,  1,  0, -1,  0,
-    0, 1,  0, -1,  0,  1,  0, -1
-])
-
-function _buildPermutationTable(random) {
-    const tableSize = 512
-    const p = new Uint8Array(tableSize)
-    for (let i = 0; i < tableSize / 2; i++) p[i] = i
-    for (let i = 0; i < tableSize / 2 - 1; i++) {
-        const r = i + ~~(random() * (256 - i))
-        const aux = p[i]; p[i] = p[r]; p[r] = aux
-    }
-    for (let i = 256; i < tableSize; i++) p[i] = p[i - 256]
-    return p
-}
-
-function _createNoise2D(random) {
-    if (random === undefined) random = Math.random
-    const perm = _buildPermutationTable(random)
-    const permGrad2x = new Float64Array(perm).map(v => _grad2[(v % 12) * 2])
-    const permGrad2y = new Float64Array(perm).map(v => _grad2[(v % 12) * 2 + 1])
-    return function noise2D(x, y) {
-        let n0 = 0, n1 = 0, n2 = 0
-        const s = (x + y) * _F2
-        const i = _fastFloor(x + s)
-        const j = _fastFloor(y + s)
-        const t = (i + j) * _G2
-        const x0 = x - (i - t), y0 = y - (j - t)
-        let i1, j1
-        if (x0 > y0) { i1 = 1; j1 = 0 } else { i1 = 0; j1 = 1 }
-        const x1 = x0 - i1 + _G2, y1 = y0 - j1 + _G2
-        const x2 = x0 - 1.0 + 2.0 * _G2, y2 = y0 - 1.0 + 2.0 * _G2
-        const ii = i & 255, jj = j & 255
-        let t0 = 0.5 - x0*x0 - y0*y0
-        if (t0 >= 0) { const gi0 = ii + perm[jj]; t0 *= t0; n0 = t0 * t0 * (permGrad2x[gi0] * x0 + permGrad2y[gi0] * y0) }
-        let t1 = 0.5 - x1*x1 - y1*y1
-        if (t1 >= 0) { const gi1 = ii + i1 + perm[jj + j1]; t1 *= t1; n1 = t1 * t1 * (permGrad2x[gi1] * x1 + permGrad2y[gi1] * y1) }
-        let t2 = 0.5 - x2*x2 - y2*y2
-        if (t2 >= 0) { const gi2 = ii + 1 + perm[jj + 1]; t2 *= t2; n2 = t2 * t2 * (permGrad2x[gi2] * x2 + permGrad2y[gi2] * y2) }
-        return 70.0 * (n0 + n1 + n2)
     }
 }

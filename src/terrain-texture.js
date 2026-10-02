@@ -72,7 +72,6 @@ function _normalise(H) {
 // Toroidal shortest signed offset between two coordinates on a tile of `size`.
 const _wrapDelta = (a, b, size) => { let d = a - b; if (d > size / 2) d -= size; else if (d < -size / 2) d += size; return d }
 
-/** Central-difference tangent-space normal map (RG = xy, B unused) of a wrapped heightfield. */
 // Rank (quantile) of every texel's height: 0 = the lowest texel of the tile, 1 = the tallest,
 // uniformly distributed BY CONSTRUCTION. The shader's coverage rules ("rock on s^γ of the tile,
 // tallest fragments first"; "this share of the pebbles, tallest first") need a quantile, and the
@@ -90,6 +89,7 @@ function _rankOf(H) {
   return rank
 }
 
+/** Central-difference tangent-space normal map of a wrapped heightfield: RG = xy, B = `rank` when given (see _rankOf). */
 function _normalBytes(H, size, strength, rank = null) {
   const out = new Uint8Array(size * size * 4)
   const at = (x, z) => H[(((z % size) + size) % size) * size + (((x % size) + size) % size)]
@@ -331,7 +331,7 @@ function _convexPoly(rng, cx, cz, r) {
 // The gaps between the fragments are NEUTRAL here (relief shading only): the "foliage under the
 // rocks" green is a shader colour key (terrain.js uRockGapGreen / uUnderRockGreen) applied to
 // every biome's ground-between-rocks alike, so it never lives in this map (owner 2026-09-25).
-export function rockFields(seed, size, paletteBase = _hexLin(0x5a5b5e)) {
+export function rockFields(seed, size) {
   const rng = mulberry32(seed >>> 0)
   const N = size * size
   const H = new Float32Array(N)
@@ -452,7 +452,7 @@ export function rockFields(seed, size, paletteBase = _hexLin(0x5a5b5e)) {
  * Bake the three surface texture pairs.
  * @param {number} seed  deterministic (world-independent — one shared look, like the riverbed)
  * @param {number} size  texture edge in px (power of two)
- * @param {{dirt?:number, rock?:number}} bases  palette hex colours the absolute-target palettes are relative to
+ * @param {{dirt?:number}} bases  palette hex colour the dirt palette is relative to (rock is coloured in the shader)
  * @returns {{ grass: {map, normalMap}, dirt: {map, normalMap}, rock: {map, normalMap} }}
  */
 export function makeSurfaceTextures(seed = 8401, size = 256, bases = {}) {
@@ -465,6 +465,6 @@ export function makeSurfaceTextures(seed = 8401, size = 256, bases = {}) {
   return {
     grass: build(grassFields(seed, size)),
     dirt:  build(dirtFields(seed + 1, size, bases.dirt ? _hexLin(bases.dirt) : undefined)),
-    rock:  build(rockFields(seed + 2, size, bases.rock ? _hexLin(bases.rock) : undefined)),
+    rock:  build(rockFields(seed + 2, size)),   // granite colour is the SHADER's (uColRock) — not baked
   }
 }

@@ -233,12 +233,9 @@ export class PropPhysics {
     const mat = { friction: 0.8, restitution: 0 }   // bark/granite; chassis pair-μ stays BUG-27b slippery
     let shapes = 0
     for (const c of collidables) {
-      if (c.kind === 'capsule') {
-        // Baked world endpoints — inherits the tree's tilt (same data the analytic query uses).
-        const r = c.radius * c.scale * C.trunkRadiusScale
-        this._eng.addCapsule(body, { x: c.ax, y: c.ay, z: c.az }, { x: c.bx, y: c.by, z: c.bz }, r, mat)
-        shapes++
-      } else if (c.kind === 'logCapsule') {
+      if (c.kind === 'capsule' || c.kind === 'logCapsule') {
+        // Baked world endpoints — a trunk inherits the tree's tilt, a log lies as scattered (same
+        // data the analytic query uses).
         const r = c.radius * c.scale * C.trunkRadiusScale
         this._eng.addCapsule(body, { x: c.ax, y: c.ay, z: c.az }, { x: c.bx, y: c.by, z: c.bz }, r, mat)
         shapes++

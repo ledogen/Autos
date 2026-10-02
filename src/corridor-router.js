@@ -83,7 +83,7 @@ export const V2_TRUNC_K = 4
 
 // ── Octave-truncated coarse field (scope-fenced ADDITIVE read API — world byte-identical) ──────
 /**
- * Same ridged-fBm loop as _coarseHeight()/coarseHeight() but stopped after K octaves.
+ * Same ridged-fBm loop as coarseHeight() (terrain-height.js) but stopped after K octaves.
  * Fewer octaves keep only the long-wavelength skeleton — the scale where the real passes and
  * valleys live (K=2 is the 2000 m / 1000 m pair, 225 of ~281 m total amplitude; the shipped
  * V2_TRUNC_K is 4). NOT a new field: octave 0..K-1 of the shipping one, low-passed.

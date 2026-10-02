@@ -383,7 +383,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   and fineHeight are EXACTLY LINEAR in coarseAmplitude / fineAmplitude (the ridge+pow shaping acts
   //   on the raw noise BEFORE the amplitude multiply; the modulator depends on neither). So scaling
   //   BOTH layer amplitudes by k scales the final height by k — the same geometry the old Y-scale
-  //   produced — but through params the road router ALREADY prices (coarseAmplitude feeds _coarseHeight),
+  //   produced — but through params the road router ALREADY prices (coarseAmplitude feeds coarseHeight),
   //   and the routing worker ALREADY ships (init). Result: taller mountains RE-ROUTE (switchbacks,
   //   grade caps respected) with ZERO router or worker changes. The router
   //   only prices the coarse layer, so scaling fineAmplitude alters visual detail but never routes.

@@ -4,11 +4,11 @@
 // test/screenshot.mjs + test/profile.mjs `--port` default and `?prof=1&seed=` query strings keep
 // working); `npm run build` bundles to dist/ for the GitHub Actions Pages deploy.
 //
-// three + simplex-noise resolve from node_modules (byte-identical to the old importmap pin). The
-// Blob-classic TERRAIN worker is built from a template STRING inside src/terrain.js and is
-// bundler-invisible; the ROUTE worker (FEAT-68) is a real module worker — src/road-worker.js does
-// `new Worker(new URL('./road-route-worker.js', import.meta.url), {type:'module'})`, which Vite
-// detects and bundles as its own chunk in dev and build.
+// three + simplex-noise resolve from node_modules (byte-identical to the old importmap pin).
+// All three Workers are real module workers, spawned as
+// `new Worker(new URL('./<entry>.js', import.meta.url), {type:'module'})`, which Vite detects and
+// bundles as their own chunks in dev and build: the terrain worker (src/terrain-worker.js), the
+// network worker (src/road-network-worker.js) and its nested route pool (src/road-route-worker.js).
 import { defineConfig } from 'vite'
 import { copyFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
