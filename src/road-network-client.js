@@ -127,8 +127,14 @@ export class RoadNetworkClient {
         const x0 = entry.x - entry.radius - pad, z0 = entry.z - entry.radius - pad
         const x1 = entry.x + entry.radius + pad, z1 = entry.z + entry.radius + pad
         if (this._warmRegion) {
+            // Sliced ONLY for the per-frame driving dispatch. An entry with waiters is a buildNow()
+            // flow (spawn, story region entry, map open) running behind a loading screen or badge —
+            // nothing on screen to hitch, and the worker idles until we post. Slicing those at 2 ms per
+            // setTimeout turn starved the warm behind cold-load long tasks: boot ready 3 → 6.5 s,
+            // story entry +6 s (bisected to 60b145f, 2026-10-01). They warm in one go.
+            const budget = entry.waiters.length ? Infinity : 2
             const _tw = performance.now()
-            const warm = this._warmRegion(x0, z0, x1, z1, 2)
+            const warm = this._warmRegion(x0, z0, x1, z1, budget)
             perfAdd('road.dispatch.warm', performance.now() - _tw)
             if (!warm) {                              // PERF-34: not primed yet — head of the queue, retry between frames
                 this._queue.unshift(entry)
