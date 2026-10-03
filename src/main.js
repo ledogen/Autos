@@ -5556,6 +5556,8 @@ document.addEventListener('keydown', e => {
   // because the alternative is standing in a region the playability check just rejected.
   const seedModal = document.getElementById('story-seed-modal')
   if (seedModal && seedModal.style.display === 'flex') { _cancelSeedModal(); return }
+  // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
+  if (damageScreen.isOpen) { damageScreen.close(); return }
   // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
   // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
   // settings page and is otherwise inert until the world is handed back.

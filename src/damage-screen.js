@@ -9,7 +9,8 @@
  * Owner rulings (2026-09-29) that shape it:
  *   - The screen is GATED BEHIND PARKING. V or a click on the icon opens it only while the parking
  *     brake is latched. Driving, the same input shows the park hint instead. Releasing the brake
- *     closes the screen, because the truck is driving away.
+ *     closes the screen, because the truck is driving away. Esc closes it too (main.js gives it
+ *     the key ahead of the pause menu).
  *   - The icon sits TRANSLUCENT on the left edge as an optional menu tab. A damage event flashes it
  *     and holds it OPAQUE with an alert card beside it until the screen is opened. Opening
  *     the screen clears the alert and the icon goes translucent again. The card says as little as
@@ -282,7 +283,7 @@ export class DamageScreen {
       `<div class="ds-card">`
       + `<div class="ds-head"><span class="ds-title">Vehicle condition</span>`
       + `<button class="ds-btn" data-act="help" title="what does the damage do?">?</button>`
-      + `<button class="ds-btn" data-act="close" title="close (V)">&times;</button></div>`
+      + `<button class="ds-btn" data-act="close" title="close (V / Esc)">&times;</button></div>`
       + buildPictogram()
       + `<div class="ds-foot"><span>broken</span><span class="ds-ramp"></span><span>sound</span></div>`
       + `<div class="ds-note">hover a part · ? adds what the damage does</div>`
