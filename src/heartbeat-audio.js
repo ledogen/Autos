@@ -28,8 +28,10 @@ const BODY_S = 0.32      // s — body decay to silence
 const CLICK_S = 0.015    // s — beater click length
 const CLICK_HP = 2500    // Hz — click highpass
 const CLICK_LEVEL = 0.35 // click peak relative to the body
-const DUB_DELAY = 0.14   // s — lub → dub. Fits inside the shortest period (0.43 s at 140 bpm).
-const DUB_LEVEL = 0.7    // dub peak relative to lub
+// Exported so the rank tile's visual thump (main.js) lands on the same two hits.
+export const HEARTBEAT_DUB_DELAY = 0.14   // s — lub → dub. Fits inside the shortest period (0.43 s at 140 bpm).
+export const HEARTBEAT_DUB_LEVEL = 0.7    // dub peak relative to lub
+const DUB_DELAY = HEARTBEAT_DUB_DELAY, DUB_LEVEL = HEARTBEAT_DUB_LEVEL
 const PEAK = 0.6         // lub body peak gain at level 1
 
 let _noise = null        // a short white-noise buffer for the click, built once per context

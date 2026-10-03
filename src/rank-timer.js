@@ -51,12 +51,13 @@ export const RANK_TIMER_PARAMS = {
     // before breakaway"; top raised 120 → 140 bpm with the kick-drum heartbeat, 2026-10-02]: ONE
     // oscillator whose frequency ramps with intensity, no randomness. 140 bpm is 2.33 Hz — a racing
     // heartbeat, not a buzz; the ramp starts under a beat a second (48 bpm) and reaches 140 at the
-    // line. It drives the glow, the letter's scale
-    // and a heartbeat sound on every peak (heartbeat-audio.js). The card no longer shakes (owner,
-    // 2026-10-02).
+    // line. It drives the card's glow, and on every peak a heartbeat kick (heartbeat-audio.js)
+    // and the rank tile's thump. The card no longer shakes (owner, 2026-10-02).
     pulseHzMin: 0.8,    // Hz — the oscillator at the start of the ramp (48 bpm)
     pulseHzMax: 140 / 60, // Hz — …at the line (140 bpm)
     heartMin:   0.35,   // heartbeat loudness at the start of the ramp (→ 1 at the line; × 0.5 for a light line)
+    punchScale: 0.22,   // the rank tile's scale kick per heartbeat at full intensity (× 0.5 for a light line)
+    punchTau:   0.08,   // s — the thump's exponential decay
     beatS:      1.4,    // s — how long the "bonus lost" / "too slow" beat holds on screen
 }
 

@@ -84,7 +84,7 @@ import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { RANK_THRESHOLDS_DEFAULT } from './par.js'      // FEAT-87: the rank bar's fallback bands
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
-import { playHeartbeat } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
+import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -4038,6 +4038,7 @@ function _renderMissionUI () {
   const hud   = document.getElementById('mission-hud')
   const acts  = document.getElementById('mp-actions')
   if (!panel || !body || !hud) return
+  const hudText = hud.querySelector('.hud-text') ?? hud   // the readout; the abandon button sits after it
   const m = missionSystem
   const show = (el, on, disp = 'block') => { el.style.display = on ? disp : 'none' }
   const km = (mm) => (mm / 1000).toFixed(2) + ' km'
@@ -4092,19 +4093,19 @@ function _renderMissionUI () {
     }
     case 'countdown':
       show(panel, false); show(hud, true)
-      hud.innerHTML = `<span class="mh-count">${Math.max(1, Math.ceil(m.countdown))}</span>`
+      hudText.innerHTML = `<span class="mh-count">${Math.max(1, Math.ceil(m.countdown))}</span>`
       break
     case 'staging':
       // The POI start. No digits and no hold — the only thing the player needs told is what starts
       // the clock, and the green ring that just replaced the marker's orange one says where.
       show(panel, false); show(hud, true)
-      hud.textContent = 'leave the green circle to start'
+      hudText.textContent = 'leave the green circle to start'
       break
     case 'running':
       show(panel, false); show(hud, true)
       // Elapsed + distance to go ALONG THE ROUTE (crow-flies grew while driving a winding route
       // correctly, which read as "wrong way"). No par, no target — SM-INV-3.
-      hud.textContent = `${formatTime(m.elapsed)}   ${km(m.routeRemaining())} to go`
+      hudText.textContent = `${formatTime(m.elapsed)}   ${km(m.routeRemaining())} to go`
       break
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
@@ -4160,6 +4161,7 @@ function _renderMissionUI () {
     const nb = document.getElementById('mp-accept')
     if (nb) nb.textContent = 'accept mission'
   }
+  _syncJobCancel(hud, storySystem.isActive() && m.isOnJob())
 }
 
 /**
@@ -4177,6 +4179,7 @@ function _renderPaperUI () {
   const hud   = document.getElementById('paper-hud')
   const acts  = document.getElementById('pp-actions')
   if (!panel || !body || !hud) return
+  const hudText = hud.querySelector('.hud-text') ?? hud   // the readout; the abandon button sits after it
   const p = paperRouteSystem
   const show = (el, on, disp = 'block') => { if (el) el.style.display = on ? disp : 'none' }
   const km = (mm) => (mm / 1000).toFixed(2) + ' km'
@@ -4213,13 +4216,13 @@ function _renderPaperUI () {
       // Same words the POI job uses, because it is the same threshold and the same promise: sort
       // yourself out on the pad for as long as you like, the clock starts at the green line.
       show(panel, false); show(hud, true); show(acts, false, 'flex')
-      hud.textContent = 'leave the green circle to start the route'
+      hudText.textContent = 'leave the green circle to start the route'
       break
     case 'running': {
       show(panel, false); show(hud, true)
       // Elapsed, counting up — there is no bell to count down to (owner, 2026-09-29). Delivered/total
       // and the inventory are the other two facts you act on.
-      hud.textContent = `${formatTime(p.elapsed())}   `
+      hudText.textContent = `${formatTime(p.elapsed())}   `
         + `${p.delivered()} / ${p.route.customers.length} delivered   `
         + `${p.stock()} paper${p.stock() === 1 ? '' : 's'}`
       break
@@ -4255,6 +4258,7 @@ function _renderPaperUI () {
       break
   }
   if (p.state !== 'done') unmountExportRow('paper-panel')
+  _syncJobCancel(hud, storySystem.isActive() && p.isCarrying())
   // Two buttons, two meanings: on the offer they are take/decline, on the result card the left one
   // is the only forward action and the right one has nothing to say.
   const acc = document.getElementById('pp-accept')
@@ -4383,10 +4387,13 @@ function _updateEnergyMeter () {
 // spot the "leave the green circle" line and the elapsed readout occupy — not with the wallet.
 //
 // THE RANK: READOUT [owner, 2026-10-01 — "something dramatic"]: the band under the pointer as a
-// big letter in its colour, floating centred BELOW the card (owner, 2026-10-02: "the card should
-// just be the bar"). It pulses (scale + glow, on the same intensity as the box) as a line
-// nears; when one goes past the OLD letter cracks in two and the halves tumble away
-// (_rtBreakLetter — two clipped clones, CSS-animated, self-removing) while the new one slams in.
+// dark letter on a solid TILE in its colour, floating centred BELOW the card (owner, 2026-10-02:
+// "the card should just be the bar"; the bare glowing letter "isn't doing it", so it is a tile).
+// As a line nears, the tile THUMPS on every kick of the heartbeat — a scale punch and a flash that
+// decay in RT.punchTau, once for the lub and softer for the dub — so it moves with the sound
+// rather than breathing on a sine. When a line goes past the OLD tile cracks in two and the halves
+// tumble away (_rtBreakLetter — two clipped clones, CSS-animated, self-removing) while the new
+// letter slams in.
 //
 // Sources: a POI/Quick job (missionSystem — countdown / staging / running, with `mission.bonus.gate`
 // as the marked line) or a paper round (paperRouteSystem — staging / running). The paper route's
@@ -4396,6 +4403,7 @@ function _updateEnergyMeter () {
 const RT = RANK_TIMER_PARAMS
 let _rtEls = null, _rtKey = null, _rtLayout = null, _rtPrev = -1, _rtLetter = '', _rtHot = false
 let _rtBeatT = 0, _rtShown = false, _rtPhase = 0, _rtLastNow = 0
+let _rtKickT = -1   // performance.now()/1000 of the last heartbeat (-1: none since calm) — drives the tile's thump
 function _rankTimerSource () {
   const m = missionSystem
   if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
@@ -4425,7 +4433,7 @@ function _updateRankTimer () {
       _rtEls.root.style.display = 'none'
       _rtEls.root.classList.remove('rt-lost', 'rt-slow', 'rt-in')
       _rtEls.card.style.boxShadow = ''; _rtEls.card.style.borderColor = ''
-      _rtEls.letter.style.scale = ''; _rtEls.letter.style.textShadow = ''
+      _rtEls.letterBox.style.scale = ''; _rtEls.letterBox.style.filter = ''
     }
     return
   }
@@ -4435,7 +4443,7 @@ function _updateRankTimer () {
     _rtKey = src.key
     _rtLayout = rankTimerLayout(src.par, src.thresholds, src.gate)
     _rtPrev = -1; _rtLetter = ''; _rtHot = false; _rtShown = false
-    E.letter.style.scale = ''; E.letter.style.textShadow = ''   // the last job may have ended mid-pulse
+    E.letterBox.style.scale = ''; E.letterBox.style.filter = ''; _rtKickT = -1   // the last job may have ended mid-thump
     for (const el of E.segs) el.remove()
     E.segs = []
     for (const sh of E.letterBox.querySelectorAll('.rt-shard')) sh.remove()
@@ -4481,8 +4489,7 @@ function _updateRankTimer () {
     _rtLetter = f.letter
     if (old) _rtBreakLetter(old)   // a line went past: the old letter breaks and falls
     E.letter.textContent = f.letter
-    E.letter.style.color = RANK_COLOR[f.letter]
-    E.letterBox.style.color = RANK_COLOR[f.letter]   // the underline bar reads currentColor
+    E.letterBox.style.background = RANK_COLOR[f.letter]   // the tile; the letter on it is dark (CSS)
     if (old) { E.letter.classList.remove('rt-slam'); void E.letter.offsetWidth; E.letter.classList.add('rt-slam') }
   }
   // The beats. A beat holds for RT.beatS (the CSS animation runs the flash; the class is removed
@@ -4500,8 +4507,8 @@ function _updateRankTimer () {
     E.root.classList.remove('rt-lost', 'rt-slow')
   }
   // The escalation. Calm = no inline style at all (reset once). Near a line: a glow in the colour
-  // of the band about to be lost and a pulse on the letter, both beating faster as it nears, with
-  // a heartbeat thump on every peak. The card itself does NOT move (owner, 2026-10-02: the old
+  // of the band about to be lost, beating faster as it nears, with a heartbeat kick on every peak
+  // that the rank tile thumps in time with. The card itself does NOT move (owner, 2026-10-02: the old
   // sideways shake is gone). The bonus gate and the C/D line hit harder than the S/A, A/B lines
   // you were not banking on.
   const i = f.intensity
@@ -4509,7 +4516,7 @@ function _updateRankTimer () {
     if (_rtHot) {
       _rtHot = false; _rtPhase = 0
       E.card.style.boxShadow = ''; E.card.style.borderColor = ''
-      E.letter.style.scale = ''; E.letter.style.textShadow = ''
+      E.letterBox.style.scale = ''; E.letterBox.style.filter = ''; _rtKickT = -1
     }
     _rtLastNow = now
     return
@@ -4517,8 +4524,8 @@ function _updateRankTimer () {
   // ONE oscillator. Its frequency ramps pulseHzMin → pulseHzMax (48 → 140 bpm) with intensity² —
   // slow for most of the approach, then quickly up to a racing heartbeat at the line. The phase
   // INTEGRATES (phase += 2π·f·dt) so the frequency ramp is continuous: no jumps as f changes.
-  // Everything the escalation moves — the letter's scale, both glows, the heartbeat — rides this
-  // one signal. The heartbeat fires on the step the phase crosses a PEAK (sin = 1, i.e. phase =
+  // Everything the escalation moves — the card's glow, the heartbeat and the tile's thump — rides
+  // this one signal. The heartbeat fires on the step the phase crosses a PEAK (sin = 1, i.e. phase =
   // π/2 + 2πk), so the lub lands as the glow tops out.
   const dtF = _rtHot ? Math.min(0.1, now - _rtLastNow) : 0
   _rtLastNow = now; _rtHot = true
@@ -4529,23 +4536,28 @@ function _updateRankTimer () {
   const weight = f.heavy ? 1 : 0.5
   if (Math.floor((_rtPhase - Math.PI / 2) / (2 * Math.PI)) > peaksBefore) {
     playHeartbeat((RT.heartMin + (1 - RT.heartMin) * i) * weight)
+    _rtKickT = now
   }
   const pulse = 0.5 + 0.5 * osc                       // 0..1, the same rhythm for every effect
   const colour = RANK_COLOR[f.letter]
   E.card.style.borderColor = colour
   E.card.style.boxShadow = `0 0 ${((3 + 16 * i * pulse) * weight).toFixed(1)}px ${colour}, 0 2px 10px rgba(0,0,0,0.45)`
-  // The letter pulses harder than the box — it is the thing about to change.
-  E.letter.style.scale = `${(1 + 0.3 * i * pulse * weight).toFixed(3)}`
-  E.letter.style.textShadow = `0 1px 0 rgba(0,0,0,0.8), 0 0 ${(2 + 12 * i * pulse).toFixed(1)}px ${colour}`
+  // The tile's thump: an exponential punch on each kick, the lub at full and the dub
+  // HEARTBEAT_DUB_DELAY later at HEARTBEAT_DUB_LEVEL — the same two hits heartbeat-audio.js plays.
+  const env = (t) => (t >= 0 ? Math.exp(-t / RT.punchTau) : 0)
+  const k = _rtKickT < 0 ? 0
+    : env(now - _rtKickT) + HEARTBEAT_DUB_LEVEL * env(now - _rtKickT - HEARTBEAT_DUB_DELAY)
+  E.letterBox.style.scale = `${(1 + RT.punchScale * (0.4 + 0.6 * i) * weight * k).toFixed(3)}`
+  E.letterBox.style.filter = `brightness(${(1 + 0.6 * k).toFixed(3)})`
 }
-// The break: two clones of `old` in its colour, each clipped (CSS) to one side of a jagged crack,
-// dropped into the letter's slot; their fall animations remove them when done.
+// The break: two clones of the OLD tile (its colour, its letter), each clipped (CSS) to one side of
+// a jagged crack, dropped over the tile; their fall animations remove them when done.
 function _rtBreakLetter (old) {
   for (const side of ['l', 'r']) {
     const sh = document.createElement('span')
     sh.className = `rt-shard ${side}`
     sh.textContent = old
-    sh.style.color = RANK_COLOR[old]
+    sh.style.background = RANK_COLOR[old]
     sh.addEventListener('animationend', () => sh.remove(), { once: true })
     _rtEls.letterBox.appendChild(sh)
   }
@@ -5113,10 +5125,6 @@ function _showPauseMenu () {
   // the way OUT ("free roam") while story mode is active.
   const storyBtn = document.getElementById('pm-story')
   if (storyBtn) storyBtn.textContent = storySystem.isActive() ? 'free roam' : 'story mode'
-  // FEAT-67: the cancel button exists only while a story job is taken — it is the ONE way to cancel.
-  const cancelBtn = document.getElementById('pm-cancel')
-  if (cancelBtn) cancelBtn.style.display =
-    storySystem.isActive() && (missionSystem?.isOnJob() || paperRouteSystem.isCarrying()) ? '' : 'none'
 }
 
 function _hidePauseMenu () {
@@ -5457,12 +5465,41 @@ document.getElementById('quickjob-btn')?.addEventListener('click', () => {
 document.getElementById('pm-resume')?.addEventListener('click', () => _hidePauseMenu())
 // FEAT-67: CANCEL the job in hand — canon: the player phones the customer and cancels on them. The
 // only thing that cancels a job (owner, 2026-09-27): leaving the route or region never does, and the
-// exits below end the whole run rather than cancel. The giver's slot then locks for the offer's FULL
-// expiry length from now — cancelling an offer that already expired is not free.
-document.getElementById('pm-cancel')?.addEventListener('click', () => {
+// pause menu's exits end the whole run rather than cancel. The giver's slot then locks for the
+// offer's FULL expiry length from now — cancelling an offer that already expired is not free.
+//
+// THE BUTTON is "abandon job", sitting to the right of the run timer in #mission-hud / #paper-hud
+// (owner, 2026-10-02 — it used to be a pause-menu entry). ONE element, moved into whichever HUD is
+// live by _syncJobCancel. Two clicks: the first ARMS it for JOB_CANCEL_ARM_S ("confirm?"),
+// the second cancels — the slot lock makes a stray click expensive. It never takes focus
+// (mousedown is prevented, tabindex -1), because a focused button eats Space, which is the brake.
+const JOB_CANCEL_ARM_S = 3
+let _jobCancelArm = 0   // setTimeout handle while armed, 0 when not
+function _disarmJobCancel () {
+  if (_jobCancelArm) clearTimeout(_jobCancelArm)
+  _jobCancelArm = 0
+  const b = document.getElementById('job-cancel')
+  if (b) { b.classList.remove('armed'); b.textContent = 'abandon job' }
+}
+function _syncJobCancel (hud, on) {
+  const b = document.getElementById('job-cancel')
+  if (!b) return
+  if (on && b.parentElement !== hud) { _disarmJobCancel(); hud.appendChild(b) }
+  if (b.parentElement !== hud) return   // the other HUD owns it; leave it alone
+  b.style.display = on ? '' : 'none'
+  if (!on && _jobCancelArm) _disarmJobCancel()
+}
+document.getElementById('job-cancel')?.addEventListener('mousedown', (e) => e.preventDefault())
+document.getElementById('job-cancel')?.addEventListener('click', (e) => {
+  const b = e.currentTarget
+  if (!_jobCancelArm) {
+    _jobCancelArm = setTimeout(_disarmJobCancel, JOB_CANCEL_ARM_S * 1000)
+    b.classList.add('armed'); b.textContent = 'confirm?'
+    return
+  }
+  _disarmJobCancel()
   const id = paperRouteSystem.isCarrying() ? paperRouteSystem.cancel() : missionSystem?.cancel()
   if (id) offerBoard?.abandon(id, daySystem.clockH())
-  _hidePauseMenu()
 })
 // FEAT-41: back out to the main menu. The mode is left FIRST — dropping to a menu while story mode
 // still holds a frozen region and a live day clock would leave both running behind the scene.

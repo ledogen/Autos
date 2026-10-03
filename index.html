@@ -450,6 +450,24 @@
       text-align: center;
       white-space: pre;
     }
+    /* FEAT-67: "abandon job", to the right of the run timer inside the same box. The HUD itself is
+       click-through; only this button takes the pointer. Muted red, armed (first click) goes hot. */
+    #job-cancel {
+      pointer-events: auto;
+      margin-left: 14px;
+      vertical-align: 2px;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 2px 8px;
+      min-width: 14ch;   /* same width armed or not, so the timer text never shifts */
+      background: rgba(120, 32, 26, 0.55);
+      border: 1px solid #8a4a44;
+      border-radius: 3px;
+      color: #f0d6d2;
+      cursor: pointer;
+    }
+    #job-cancel:hover { background: rgba(160, 44, 34, 0.75); color: #fff; }
+    #job-cancel.armed { background: #c0392b; border-color: #ff8a7a; color: #fff; }
     #mission-hud .mh-count { font-size: 44px; color: #ffcf3c; }
 
     /* FEAT-63: the GPS re-plan indicator. Bottom-right and quiet — it reports that help is on the
@@ -644,29 +662,34 @@
        label, then the letter at full size. The hierarchy is the point — the label is furniture,
        the letter is the news. A dark text-shadow carries it over the road with no background. */
     #rank-timer .rt-title {
-      display: flex; align-items: baseline; justify-content: center; gap: 10px;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
       margin: 8px 0 0;
-      line-height: 36px;
     }
     #rank-timer .rt-label {
       font-size: 14px; font-weight: bold; letter-spacing: 2px; color: #c2cdd8;
       text-transform: uppercase;
       text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
     }
-    /* The letter's slot: a fixed-width box the shards fall out of (overflow stays visible). A
-       thin bar under it in the letter's colour (set inline) anchors the readout to the strip. */
+    /* The rank TILE (owner, 2026-10-02: the bare glowing letter "isn't doing it"): a solid square
+       in the rank colour (background set inline) with the letter dark on it, top-lit like the
+       strip's bands. Near a line _updateRankTimer writes `scale` + `filter: brightness` inline on
+       every heartbeat kick — the thump. Overflow stays visible so the shards can fall out of it. */
     #rank-timer .rt-letter-box {
-      position: relative; display: inline-block; width: 1.25em; text-align: center;
-      font-size: 34px; line-height: 36px; font-weight: bold;
-    }
-    #rank-timer .rt-letter-box::after {
-      content: ''; position: absolute; left: 10%; right: 10%; bottom: -2px; height: 2px;
-      background: currentColor; opacity: 0.55; border-radius: 1px;
+      position: relative; display: inline-block;
+      width: 46px; height: 46px; line-height: 46px; text-align: center;
+      font-size: 32px; font-weight: bold;
+      color: rgba(0, 0, 0, 0.78);
+      background: #e6ecf2;
+      background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0, rgba(255, 255, 255, 0) 50%,
+                                                rgba(0, 0, 0, 0.14) 100%);
+      border: 2px solid rgba(255, 255, 255, 0.85);
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+      box-sizing: border-box;
     }
     #rank-timer #rt-letter {
       display: inline-block;
-      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8), 0 0 6px rgba(0, 0, 0, 0.6);
-      /* the per-frame pulse writes `scale` + text-shadow inline; the slam animation owns scale while it runs */
+      /* the slam animation owns this element's scale while it runs; the thump scales the tile */
     }
     /* The slam: the new letter lands from large with a squash on impact, plus a white flash. */
     #rank-timer #rt-letter.rt-slam { animation: rt-slam 0.5s cubic-bezier(0.2, 1.6, 0.4, 1); }
@@ -677,13 +700,17 @@
       75%  { scale: 1.08 0.94; }
       100% { scale: 1; }
     }
-    /* The break: two clones of the OLD letter, each clipped to one side of a jagged crack, that
-       hang for a beat, then drop and tumble away in opposite directions (~140 px). Removed on
-       animationend. */
+    /* The break: two clones of the OLD tile (its colour inline, its letter), each clipped to one
+       side of a jagged crack, that hang for a beat, then drop and tumble away in opposite
+       directions (~140 px). They sit over the tile's border box. Removed on animationend. */
     #rank-timer .rt-shard {
-      position: absolute; left: 0; top: 0; width: 100%;
+      position: absolute; left: -2px; top: -2px; width: 46px; height: 46px; line-height: 46px;
       text-align: center;
-      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+      background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0, rgba(255, 255, 255, 0) 50%,
+                                                rgba(0, 0, 0, 0.14) 100%);
+      border: 2px solid rgba(255, 255, 255, 0.85);
+      border-radius: 6px;
+      box-sizing: border-box;
       pointer-events: none;
     }
     #rank-timer .rt-shard.l { clip-path: polygon(0 0, 56% 0, 40% 36%, 66% 60%, 46% 100%, 0 100%);
@@ -1160,9 +1187,6 @@
   <div id="pause-menu">
     <div class="pm-title">paused</div>
     <button id="pm-resume">resume</button>
-    <!-- FEAT-67: cancel the job in hand — the player phones the customer. Shown only while a story
-         job is taken; the ONLY thing that cancels a job (owner, 2026-09-27). -->
-    <button id="pm-cancel">call and cancel the job</button>
     <button id="pm-story">story mode</button>
     <button id="pm-lab">testing lab</button>
     <button id="pm-menu">main menu</button>
@@ -1265,7 +1289,10 @@
       <button id="mp-quit">back to free roam</button>
     </div>
   </div>
-  <div id="mission-hud"></div>
+  <!-- The run timer. Its readout is .hud-text; FEAT-67's "abandon job" button (#job-cancel, below)
+       is moved in after it by _syncJobCancel while a story job is taken. -->
+  <div id="mission-hud"><span class="hud-text"></span></div>
+  <button id="job-cancel" tabindex="-1" style="display:none">abandon job</button>
 
   <!-- FEAT-53: the run wallet (money + good deeds), story mode only. Painted from the ~10 Hz HUD
        block off economySystem.snapshot(); deliberately its own element so the mission-hud running
@@ -1365,7 +1392,7 @@
       <button id="pp-decline">not today</button>
     </div>
   </div>
-  <div id="paper-hud"></div>
+  <div id="paper-hud"><span class="hud-text"></span></div>
   <!-- FEAT-63: shown while the GPS is re-planning the shortest way to finish. -->
   <div id="gps-recalc">RECALCULATING…</div>
 
