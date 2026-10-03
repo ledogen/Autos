@@ -41,7 +41,7 @@
 
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
-import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps, WHEEL_SOFT_BAND } from './suspension.js'
+import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps, tireContactForce, TIRE_DAMP_ENGAGE, WHEEL_SOFT_BAND } from './suspension.js'
 import { stepDrivetrain } from './drivetrain.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
@@ -478,7 +478,8 @@ function wheelCorePoints (cx, cy, cz, params) {
  * @param {number} dt - Fixed timestep in seconds.
  * @param {function} queryContacts - (cx,cy,cz,r,footprint) → Array<{normal,depth,contactPoint}>.
  *   Caller (main.js) implements this against all analytic solid geometry (terrain, props, walls).
- *   Must be a pure function of its arguments within one step — Step 1's answers are reused.
+ *   Must be a pure function of its arguments within one step — it is asked ONCE per wheel per
+ *   step (Step 1) and the answer is reused for the substeps (see qcPlus).
  * @param {{engine: object, chassis: *}} engineCtx - the physics engine and the chassis body handle.
  * @returns {void}
  */
@@ -511,19 +512,31 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   const prevDepth = engineCtx._dynContactDepth ?? EMPTY_DEPTH_MAP
   const stepDepth = new Map()
   engineCtx._dynContactDepth = stepDepth
-  // Step 1 (the tunnelling failsafe) asks the analytic query about every wheel at the start-of-step
-  // hub, and the suspension's FIRST substep then asks the identical question — same hub (the two
-  // derive it with the same arithmetic), same radius on a round tire. firstQ hands Step 1's answer
-  // to that one repeat instead of recomputing it: 4 of the step's 24 envelope queries, each ~33
-  // ground samples. Exact-equality match and consumed once, so a moved hub (the failsafe fired, an
-  // out-of-round tire, any later substep) simply misses and takes the normal path.
-  const firstQ = [null, null, null, null]
-  const qcPlus = (cx, cy, cz, r, footprint) => {
+  // ONE analytic ground query per wheel per step. Step 1 (the tunnelling failsafe) asks it at each
+  // wheel's start-of-step hub; the four suspension substeps and Step 3 then ask at hubs that have
+  // moved by one step of strut travel — millimetres — and on an out-of-round tire with a radius a
+  // few mm different. Those five re-asks each cost ~33 ground samples and came back with the same
+  // surfaces, so they now re-read Step 1's contacts with each depth shifted for the hub move along
+  // the contact normal and for the radius change: a plane, honest at this scale (a wheel that lifts
+  // off reads depth ≤ 0 and drops the contact). Terrain and static props only — debris bodies MOVE
+  // within a step, so the engine sphere test below still runs on every call (owner, 2026-10-02).
+  // Measured before: ~75 % of the 1.9 ms physics step was these queries.
+  //
+  // A wheel that is AIRBORNE at the start of the step has an empty answer, and the query reports
+  // only penetrating contacts — so a touchdown inside the step could not appear until the next
+  // one (up to a step of extra sink, ~50 mm at a 3 m/s landing). Such a corner keeps asking the
+  // real query every substep, so a landing is caught at the substep it happens, as before. Costs
+  // nothing while the wheels are on the ground.
+  const base = [null, null, null, null]   // per corner: { x, y, z, r, list } — Step 1's analytic answer
+  const qcPlus = (cx, cy, cz, r, footprint, corner) => {
     let list = null
-    if (footprint && r === params.wheelRadius) {
-      for (let i = 0; i < 4; i++) {
-        const q = firstQ[i]
-        if (q && q.x === cx && q.y === cy && q.z === cz) { list = q.list; firstQ[i] = null; break }
+    const b = corner !== undefined ? base[corner] : null
+    if (b && footprint && b.list.length) {
+      const dx = cx - b.x, dy = cy - b.y, dz = cz - b.z, dr = r - b.r
+      list = []
+      for (const c of b.list) {
+        const d = c.depth + dr - (dx * c.normal.x + dy * c.normal.y + dz * c.normal.z)
+        if (d > 0) list.push({ normal: c.normal, depth: d, contactPoint: c.contactPoint })
       }
     }
     if (!list) list = queryContacts(cx, cy, cz, r, footprint)
@@ -571,7 +584,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     for (let i = 0; i < 4; i++) {
       const hub      = getWheelPosition(i, vehicleState, params)
       const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius, true)
-      firstQ[i] = { x: hub.x, y: hub.y, z: hub.z, list: contacts }
+      base[i] = { x: hub.x, y: hub.y, z: hub.z, r: params.wheelRadius, list: contacts }
       for (const { depth } of contacts) {
         if (depth > maxEmbed) maxEmbed = depth
       }
@@ -580,7 +593,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     if (maxEmbed > 2 * params.wheelRadius) {
       vehicleState.position.y += maxEmbed
       vehicleState.velocity.y  = 0
-      firstQ.fill(null)   // the hubs moved — Step 1's answers no longer describe them
+      base.fill(null)   // the hubs moved — Step 1's answers no longer describe them
     }
   }
 
@@ -782,7 +795,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     // qcPlus = analytic terrain/props/walls ∪ engine dynamic debris (FEAT-48 translation layer).
     // Same out-of-round radius the suspension contact query uses (params.wheelRunout) — the
     // Pacejka patch has to sit on the same tire surface the vertical spring is loading.
-    const contacts = qcPlus(hub.x, hub.y, hub.z, effectiveWheelRadius(i, vehicleState, params), true)
+    const contacts = qcPlus(hub.x, hub.y, hub.z, effectiveWheelRadius(i, vehicleState, params), true, i)
 
     // BUG-38: the Pacejka tire is a per-WHEEL model with ONE slip state, so its friction must be
     // evaluated ONCE per wheel — NOT once per contact. Pick the support surface (normal most aligned
@@ -916,18 +929,16 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // AND its normal load press on the body under the wheel at the contact point.
       // (Static supports have no .body; the terrain doesn't need its reaction.)
       //
-      // The normal reaction is the CONTACT-LOCAL spring–damper force — exactly the law the
-      // suspension applied for this contact (Newton's third law, symmetric), never the wheel's
-      // SUMMED Fz (road + rock when straddling once over-flung the rock).
+      // The normal reaction is the CONTACT-LOCAL spring–damper force — THE SAME FUNCTION the
+      // suspension applied for this contact (tireContactForce: engagement, progressive carcass,
+      // air spring and damper at this tire's rate), never the wheel's SUMMED Fz (road + rock when
+      // straddling once over-flung the rock). Before 2026-10-02 this side re-implemented the law
+      // without the carcass term or the flat-tire rate: 37 % short at 0.10 m of squash, ~20× too
+      // hard on a flat.
       if (ground.body != null) {
-        // Tire OBSTACLE ENGAGEMENT, reaction side. The explanation lives in src/suspension.js beside
-        // the force it scales; this mirrors that factor (Newton's third law), so edit the two together.
-        const env = ground.sizeR !== undefined
-          ? Math.min(1, 2 * Math.PI * ground.sizeR * Math.max(0, ground.depth) / (params.tireContactAreaM2 || 0.0166))
-          : 1
-        const FnContact = Math.max(0,
-          params.tireStiffness * ground.depth +
-          params.tireDamping * (ground.depthRate ?? 0) * Math.min(1, ground.depth / 0.04)) * env
+        const rate = params._tireRateScale ? params._tireRateScale[i] : 1
+        const FnContact = tireContactForce(ground.depth,
+          (ground.depthRate ?? 0) * Math.min(1, ground.depth / TIRE_DAMP_ENGAGE), ground.sizeR, rate, params)
         engine.applyForce(ground.body, {
           x: -wheelForce.x - FnContact * ground.normal.x,
           y: -wheelForce.y - FnContact * ground.normal.y,
@@ -946,6 +957,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         vehicleState.wheelDebug[i].vLong = omegaCur - longVelCur
         vehicleState.wheelDebug[i].vLat  = latVelCur
       }
+    } else if (Fn > 0) {
+      // Loaded during the substeps but no support under the post-substep hub: the wheel lifted off
+      // inside this step (a crest, a take-off). Treat the patch as airborne for the wear signals —
+      // the ω solve below already runs with lastFn = 0, i.e. the airborne branch's physics.
+      if (vehicleState.slipVel)  vehicleState.slipVel[i]  = 0
+      if (vehicleState.tireFlat) vehicleState.tireFlat[i] = 0
     }
 
     // Omega integrator — Newton-iterated implicit Euler. Runs once per wheel per step,

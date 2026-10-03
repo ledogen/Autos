@@ -112,7 +112,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // controllersRecursive (which walks subfolders).
   const vehicleFolder = gui.addFolder('Vehicle')
   const vehicleState = { vehicle: 'Ranger' }
-  vehicleFolder.add(vehicleState, 'vehicle', Object.keys(VEHICLES)).name('Vehicle').onChange(name => {
+  vehicleFolder.add(vehicleState, 'vehicle', Object.keys(VEHICLES)).name('Vehicle (WIP)').onChange(name => {
     const preset = VEHICLES[name]
     for (const key of Object.keys(preset)) {
       if (!key.startsWith('_')) params[key] = preset[key]

@@ -63,7 +63,7 @@
  *
  * ⚠ THE PAYOUT LINE WAS RE-CUT 2026-09-30 (module header). The `k` / `breakEven` / `payoutZero`
  * bullets below are the HISTORY of the retired line — `breakEven` and the cap no longer exist, and
- * k is now the MAX rate (10/360), not the break-even rate. They stay because they explain how the
+ * k is now the MAX rate (10/180 $ per par-second, header), not the break-even rate. They stay because they explain how the
  * rank bands and the tier table got their values, which the re-cut did not touch.
  *
  * Derivation notes:

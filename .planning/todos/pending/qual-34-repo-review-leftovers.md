@@ -18,66 +18,45 @@ changes how the game plays or looks; section B is plain cleanup nobody got to.
 
 Every item quotes the place to look. Line numbers drift — search for the quoted name.
 
-## A. Owner decisions (behaviour changes — not applied on purpose)
+## A. Owner decisions — RULED 2026-10-02
+
+All 22 were ruled on and applied in the follow-up commit, except where noted.
 
 Physics
-1. **Rock reaction force is not the mirror of the tire force.** `physics.js`, the
-   `FnContact` expression in the `ground.body != null` block. The suspension side adds the
-   progressive carcass term and the flat-tire rate; the reaction applied to the rock does not.
-   At 0.10 m of squash the rock is pushed 37 % too softly; on a flat tire about 20× too hard.
-2. **"Loaded wheel, no ground found" path.** When `_tireFz > 0` but the contact query returns
-   nothing, the wheel-speed integrator runs with `lastFn = 0`: drive and brake torque still act,
-   but the slip state is left at its previous value.
-3. **Alignment damage never reaches the physics.** `damage.js` publishes `_toeOffsetDeg` /
-   `_camberOffsetDeg`; nothing reads them. The damage HUD says alignment is affected. Either wire
-   them into `alignment.js` (changes handling when damaged) or stop publishing.
-4. **Damage impact timings were tuned for a 240 Hz step.** The step is 60 Hz. `impactGapS` 0.02 s
-   survives exactly one quiet step; `impactPreSteps` 10 reaches back 167 ms, not 40 ms. Comments
-   now state the true numbers; the values are untouched.
-5. **Vehicle presets change mass but not the collision shape.** The Mass slider and presets now
-   reach the engine body (review-8). The hull profile and wheel-core positions are still the ones
-   the chassis was built with. `CHASSIS_PROFILE` is also measured off `hilux.glb`, while the
-   default model is `ranger.glb`.
-6. **Tire size comments disagree.** `wheelRadius` says 245/75R16 (radius would be 0.387 m);
-   0.368 m is a 235/75R15; `rimRadius` 0.203 m is a 16 in rim. Which tire is the truck on?
-7. **Suspension substep contact reuse (perf proposal).** About three quarters of the 1.9 ms
-   physics step is ground queries: 24 envelope queries × 33 samples. Reusing one contact plane
-   across the 4 substeps would roughly halve physics cost. It is not bit-identical.
-8. **Menu-stage truck shares `RANGER_PARAMS` with the world truck**, so it inherits the world
-   truck's damage multipliers (`_brakeScale*`, `_tireMuScale`, `_wheelRunout`). Fix is its own
-   params copy; that changes how the stage truck drops.
+1. Rock reaction force — APPLIED: one `tireContactForce` law for both sides.
+2. "Loaded wheel, no ground" — a wheel that lifts off INSIDE a step (the four substeps load it, the
+   post-substep hub finds nothing). Now treated as airborne for the wear signals.
+3. Alignment damage never reaches physics — TICKETED as BUG-79 (out of scope for this pass).
+4. Damage impact timings — no retune needed: the step was 60 Hz for the whole of SM-3 (git history
+   has no 240 Hz step), so the values were tuned at 60 Hz and only the comments were wrong.
+5. Vehicle changer — labelled "(WIP)".
+6. Tire — STOCK RANGER: P235/75R15 on a 15 in rim (`rimRadius` 0.1905 m, sidewall 178 mm).
+7. Substep contact reuse — APPLIED for terrain and static props (one analytic ground query per
+   wheel per step, 22 → 4 per step); debris bodies are still tested on every substep.
+8. Damage persistence — APPLIED: damage holds across a STORY run only; every free-roam seat
+   (cold load, R, teleport, reseed) and the menu stage start from a fresh truck.
 
 Roads / terrain
-9. **`roadQuality` blends each 500 m boundary twice.** The value snaps back at the boundary
-   (s = 499.999 → 0.605, s = 500 → 0.081, s = 510 → 0.605). Affects pothole depth and marking tier
-   in the first 10 m of every stretch.
-10. **Tunnel apron camber** reads the unwindowed `_buildRunProfile` camber (visual only).
-11. **`coarseHeightOverride` is ignored by `_v2Trunc`**, so synthetic-terrain gates still route
-    over the real simplex field.
-12. **`_initialFillDone` counts keep-margin chunks**, which lengthens the loading burst slightly.
-13. **`debugSampleAt` uses `queryNearest`**, not the resolver physics uses, so a place capture can
-    report a different surface from the one the wheels rode.
-14. **PERF-26 "TEMP" timers** are still in `_buildRoadTile` (six buckets; ticket closed). Keep as a
-    perf hook or delete?
+9. Road-quality double blend — FIXED (one-sided blend).
+10. Tunnel apron camber — FIXED (reads camberProfile like the ribbon and the carve).
+11. Synthetic-terrain gates — FIXED (the corridor search routes on the override field).
+12. Fill burst counting keep-margin chunks — FIXED (visible ring only).
+13. Place capture resolver — FIXED (the physics resolver, queryNearest as the off-road fallback).
+14. PERF-26 timers — KEPT as documented ?hitch sub-buckets; "TEMP" labels removed.
 
 Props / visuals
-15. **Shadow tiles at the billboard-ring edge after a spawn or teleport.** A chunk in the
-    billboard-only ring does not re-queue its neighbours' shadow tiles, so a ring-2 edge tile
-    baked before that chunk arrived is missing its trees' shadows until you drive toward it.
-    Measured: one tile short about 4,000 texels (≈250 m² of shadow), reproducible.
-16. **Dust and smoke "behind the truck" kick points forward** (`dust.js`, `smoke.js`: body +Z with
-    a negation; `dirt-spray.js` uses the same formula without it and is right).
-17. **`rgtZ` reads the wrong matrix element** in `dust.js` and `dirt-spray.js`.
-18. **Dust `_anySlip` branch is unreachable; tire-audio "sizzle" layer sits at zero gain; wind
-    noise taps are phase-locked.**
-19. **`map-cover.js` hand-mirrors `treeClusterPass`** for the map's forest raster (drift risk).
-20. **Wheel mesh offsets are baked at build** while physics reads geometry live, so CG-height /
-    weight sliders move the physics wheels but not the drawn ones.
+15. Shadow tiles at the billboard-ring edge — FIXED (a bbonly commit re-queues drawn neighbours).
+16. Dust/smoke kick — FIXED (body +Z is rearward; kick is now along it).
+17. `rgtZ` matrix element — FIXED in dust.js and dirt-spray.js.
+18. Inert effects — sizzle layer DELETED; dust `_anySlip` now reads `slipVel` (a burnout at rest
+    raises dust, as the comment always said); wind taps start at random offsets.
+19. map-cover — now CALLS `treeClusterPass` (no mirror).
+20. Wheel mesh offsets — now derived from live params every frame.
 
 Economy / docs
-21. **`regionMult` spread is about 220×** where the comment says 100×.
-22. **DESIGN.md carries stale numbers**; `handbook.html`, `references/backup*.html`,
-    `scratch-deg2-pop.mjs`, `scratch-runline.mjs` look abandoned — delete?
+21. `regionMult` comment — the "~100×" is the $9 → $1000 end-target spread and is right; the stale
+    `k` comment (10/360) was the error — fixed.
+22. `references/` and the two scratch scripts DELETED; `handbook.html` kept (edited 2026-09-06).
 
 ## B. Cleanup not yet done (behaviour-preserving)
 

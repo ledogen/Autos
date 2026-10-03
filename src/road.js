@@ -909,9 +909,15 @@ export class RoadSystem {
         this._v2TruncF   = null   // FEAT-68: octave-truncated corridor field re-derives from the new noise
     }
 
-    /** FEAT-68: memoized octave-truncated coarse field (V2_TRUNC_K octaves) — the corridor stage's terrain. */
+    /** FEAT-68: memoized octave-truncated coarse field (V2_TRUNC_K octaves) — the corridor stage's
+     *  terrain. Under a test's coarseHeightOverride the corridor searches THAT field (it has no
+     *  octaves to truncate), so a synthetic-terrain gate routes on the terrain it profiles on. */
     _v2Trunc() {
-        if (!this._v2TruncF) this._v2TruncF = truncatedHeightField(this._noiseCoarse, this._params, V2_TRUNC_K)   // shared with the route Worker's rebuild — see corridor-router.js
+        if (!this._v2TruncF) {
+            this._v2TruncF = this._coarseHeightOverride
+                ? (x, z) => this._coarseHeightOverride(x, z)
+                : truncatedHeightField(this._noiseCoarse, this._params, V2_TRUNC_K)   // shared with the route Worker's rebuild — see corridor-router.js
+        }
         return this._v2TruncF
     }
 
@@ -6631,7 +6637,10 @@ export class RoadSystem {
             for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) | 0
             return h & 0x7fffffff
         }
-        const nr = this.queryNearest(wx, wz, maxExt)
+        // The run the WHEELS ride (_resolveRoadSurface — the physics carve's own resolver), so a place
+        // capture describes the surface that was actually driven; queryNearest only as the off-road
+        // fallback, for a mark beside the road.
+        const nr = this._resolveRoadSurface(wx, wz) ?? this.queryNearest(wx, wz, maxExt)
         if (!nr) return { hit: 0, rk: 0, arcS: 0, gradeY: 0, pointY: 0, lat: 0, lrk: 0, minR: 9999 }
         const dx = wx - nr.point.x, dz = wz - nr.point.z
         const signedLat = dx * nr.tangent.z - dz * nr.tangent.x

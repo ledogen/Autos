@@ -31,7 +31,7 @@ import * as THREE from 'three'
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
 import { height, makeTerrainNoise } from './terrain-height.js'   // THE height function — the Worker imports the same module
 import { makeSurfaceTextures } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
-import { perfAdd, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-26)
+import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
 // FEAT-05/FEAT-85: the vegetation share of a ground sample — flat enough (below grassSlopeMax,
@@ -662,15 +662,20 @@ export class TerrainSystem {
         this._lastCcx = ccx; this._lastCcz = ccz   // isRingSettled() asks about the ring the LAST update built
         let _pt = performance.now()
         this._updateChunkRing(ccx, ccz)
-        perfAdd('terrain.updateChunkRing', performance.now() - _pt)   // TEMP: includes dispatch-path carve + re-carve pass
+        perfAdd('terrain.updateChunkRing', performance.now() - _pt)   // includes dispatch-path carve + re-carve pass
         _pt = performance.now()
         this._flushPendingQueue(ccx, ccz)
-        perfAdd('terrain.flushPendingQueue', performance.now() - _pt) // TEMP: mesh build (geometry+carve+normals+colors)
-        // PERF-13: initial-fill burst ends once the first full generated ring is built — from then
+        perfAdd('terrain.flushPendingQueue', performance.now() - _pt) // mesh build (geometry+carve+normals+colors)
+        // PERF-13: initial-fill burst ends once every chunk of the VISIBLE ring is built — from then
         // on the strict per-frame budgets own the frame (hitches only matter once the player can see).
+        // The warm margin is left out: it exists to be built before it is seen, not to hold the burst.
         if (!this._initialFillDone) {
-            const n = 2 * (this._ringRadius + this._warmMargin) + 1
-            if (this._chunkMap.size >= n * n) this._initialFillDone = true
+            const r = this._ringRadius
+            let full = true
+            for (let dx = -r; dx <= r && full; dx++) for (let dz = -r; dz <= r; dz++) {
+                if (!this._chunkMap.has(this._chunkKey(ccx + dx, ccz + dz))) { full = false; break }
+            }
+            if (full) this._initialFillDone = true
         }
     }
 

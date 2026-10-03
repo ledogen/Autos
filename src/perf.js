@@ -1,12 +1,14 @@
-// src/perf.js — TEMP lightweight bucketed profiler for load/stream perf triage (D-arc, plan 09-31).
+// src/perf.js — the bucketed profiler behind ?prof (load/stream totals) and ?hitch (per-frame
+// attribution). Call sites stay in the product: perfAdd/perfEvent are a Map lookup and an add, and
+// the frame loop only reads them when a profiling flag is on.
 //
 // Usage:
 //   import { perfAdd, perfMark, perfDump } from './perf.js'
 //   const _t = performance.now(); /* ...work... */ perfAdd('label', performance.now() - _t)
 //   perfMark('milestone')   // logs an absolute timestamp since load
 //   perfDump('load')        // prints a sorted total-time table for all buckets
-//
-// Remove all of this (and its call sites) once perf is understood. Zero deps, browser + node.
+// Bucket names are dotted: a 'ribbon.x' bucket nests under 'frame.ribbon.flush' in the hitch report
+// (see the frame.* attribution rule below). Zero deps, browser + node.
 
 const _buckets = new Map()   // label -> { ms, n }
 let _t0 = (typeof performance !== 'undefined' ? performance.now() : 0)

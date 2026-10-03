@@ -265,7 +265,7 @@ export class DustSystem {
    * a small hop up and a small drift out the back, then it lands and is gone.
    * @param {number} rgtX,rgtZ  world-space unit vector along the wheel's lateral (body +X) axis
    */
-  _spawnGrit (x, groundY, z, intensity, fwdX, fwdZ, rgtX, rgtZ, opacityScale) {
+  _spawnGrit (x, groundY, z, intensity, backX, backZ, rgtX, rgtZ, opacityScale) {
     const part = this._alloc()
     const p = this._params
 
@@ -297,12 +297,12 @@ export class DustSystem {
     // spread stays lateral through a turn, not stuck to world X/Z), plus a little isotropic noise.
     const back = GRIT_BACK_MIN + (GRIT_BACK_MAX - GRIT_BACK_MIN) * Math.random()
     const lat = (Math.random() - 0.5) * 2 * GRIT_LAT
-    part.vx = -fwdX * back + rgtX * lat + (Math.random() - 0.5) * GRIT_JITTER
+    part.vx = backX * back + rgtX * lat + (Math.random() - 0.5) * GRIT_JITTER
     part.vy = GRIT_RISE_MIN + (GRIT_RISE_MAX - GRIT_RISE_MIN) * Math.random()
-    part.vz = -fwdZ * back + rgtZ * lat + (Math.random() - 0.5) * GRIT_JITTER
+    part.vz = backZ * back + rgtZ * lat + (Math.random() - 0.5) * GRIT_JITTER
   }
 
-  _spawn (x, y, z, intensity, slipV, fwdX, fwdZ, opacityScale) {
+  _spawn (x, y, z, intensity, slipV, backX, backZ, opacityScale) {
     const part = this._alloc()
     const p = this._params
 
@@ -335,9 +335,9 @@ export class DustSystem {
     // the kick off quickly; RISE/SETTLE below are undamped so the puff still ends up floating
     // up same as before.
     const kick = slipV * SLIP_KICK
-    part.vx = (Math.random() - 0.5) * SPREAD - fwdX * kick
+    part.vx = (Math.random() - 0.5) * SPREAD + backX * kick
     part.vy = RISE_MIN + (RISE_MAX - RISE_MIN) * Math.random()
-    part.vz = (Math.random() - 0.5) * SPREAD - fwdZ * kick
+    part.vz = (Math.random() - 0.5) * SPREAD + backZ * kick
   }
 
   /** Pack live puffs into the instanced attributes and upload only the used prefix. */
@@ -442,15 +442,15 @@ export class DustSystem {
     const py = vehicleState.position.y
     const pz = vehicleState.position.z
 
-    // Vehicle forward heading (world-space -Z body axis) — same q*(0,0,-1)*q^-1 formula as
-    // vehicle.js's wheel-spin accumulation. Used to kick dust out behind the truck's nose
-    // rather than behind its (possibly sideways, mid-slide) velocity vector.
+    // World-space body axes from the quaternion's rotation matrix: body +Z (which is REARWARD —
+    // model forward is −Z) is the third column (2(xz+wy), ·, 1−2(x²+y²)); body +X (right) is the
+    // first column (1−2(y²+z²), ·, 2(xz−wy)). Dust is kicked out behind the truck's TAIL rather than
+    // behind its (possibly sideways, mid-slide) velocity vector.
     const q = vehicleState.quaternion
-    const fwdX = 2 * (q.x * q.z + q.y * q.w)
-    const fwdZ = 1 - 2 * (q.x * q.x + q.y * q.y)
-    // Body +X (right) rotated into world — the lateral axis grit scatters along.
+    const backX = 2 * (q.x * q.z + q.y * q.w)
+    const backZ = 1 - 2 * (q.x * q.x + q.y * q.y)
     const rgtX = 1 - 2 * (q.y * q.y + q.z * q.z)
-    const rgtZ = 2 * (q.x * q.y + q.z * q.w)
+    const rgtZ = 2 * (q.x * q.z - q.y * q.w)
 
     // Wheel local offsets (body space) — same geometry as main.js wheelLocalOffsets,
     // recomputed here so dust.js stays import-light. Y uses the level-stance hub height;
@@ -508,8 +508,8 @@ export class DustSystem {
         this._emitAccum[i] -= 1
         // A surface-dependent slice of the SAME budget comes out as opaque grains instead of haze —
         // the rate (and so the pool/upload cost) is unchanged, part of it just reads as material.
-        if (Math.random() < gritFraction) this._spawnGrit(wx, groundY, wz, intensity, fwdX, fwdZ, rgtX, rgtZ, opacityScale)
-        else this._spawn(wx, groundY, wz, intensity, slipVKick, fwdX, fwdZ, opacityScale)
+        if (Math.random() < gritFraction) this._spawnGrit(wx, groundY, wz, intensity, backX, backZ, rgtX, rgtZ, opacityScale)
+        else this._spawn(wx, groundY, wz, intensity, slipVKick, backX, backZ, opacityScale)
       }
       if (this._emitAccum[i] > 2) this._emitAccum[i] = 2  // don't bank a backlog
     }
@@ -533,10 +533,13 @@ function _rotate (x, y, z, q) {
   return _qv
 }
 
-// Any wheel slipping enough to kick dust even at a standstill (e.g. brake-stand wheelspin).
+// Any wheel sliding fast enough to kick dust even at a standstill (e.g. brake-stand wheelspin).
+// Reads slipVel, the raw contact-patch sliding speed in m/s. (It used to read wheelDebug.sa, the
+// relaxation-filtered slip DISPLACEMENT, which the friction circle clamps to ~0.06 m — so the
+// test could never pass and a burnout at rest raised no dust.)
 function _anySlip (vehicleState) {
-  const wd = vehicleState.wheelDebug
-  if (!wd) return false
-  for (let i = 0; i < 4; i++) if ((wd[i]?.sa || 0) > 1.0) return true
+  const sv = vehicleState.slipVel
+  if (!sv) return false
+  for (let i = 0; i < 4; i++) if (sv[i] > 1.0) return true
   return false
 }

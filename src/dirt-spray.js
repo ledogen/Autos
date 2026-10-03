@@ -420,7 +420,7 @@ export class DirtSpraySystem {
     const bx = 2 * (q.x * q.z + q.y * q.w)
     const bz = 1 - 2 * (q.x * q.x + q.y * q.y)
     const rgtX = 1 - 2 * (q.y * q.y + q.z * q.z)
-    const rgtZ = 2 * (q.x * q.y + q.z * q.w)
+    const rgtZ = 2 * (q.x * q.z - q.y * q.w)   // first column of the rotation matrix: (1−2(y²+z²), ·, 2(xz−wy))
 
     const L = params.wheelbase
     const wF = params.weightFront, wR = params.weightRear

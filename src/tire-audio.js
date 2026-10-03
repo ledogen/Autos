@@ -22,10 +22,10 @@
  *     BUT the tone alone is a SUNG note — it read as an opera "oooohh", because a shallow steady
  *     vibrato on a harmonic stack is exactly a trained voice. So the tone is mixed at half level
  *     against a noise bed that carries most of the energy: a brown-noise SCRUB (rubber dragging over
- *     aggregate) plus a white-noise SIZZLE whose bandpass cutoff wanders on two incommensurate LFOs
- *     and a random walk, with its own slow level breathing — the top end sweeps in and out instead
- *     of sitting still. The vibrato is correspondingly shallow; the irregular random walk carries
- *     the pitch instability now.
+ *     aggregate) whose cutoff breathes on two very slow sweeps. The vibrato is correspondingly
+ *     shallow; the irregular random walk carries the pitch instability now. (A white-noise SIZZLE
+ *     band sat on top until 2026-10-02; it had been silenced for diagnosis and was never brought
+ *     back, so it is gone.)
  *  2) DIRT (loose surface): looped brown noise (white through a leaky integrator, normalized) →
  *     lowpass whose cutoff opens with slip = a low roar that gets angrier, plus a quiet bandpassed
  *     white-noise "spray" layer for thrown-gravel texture.
@@ -75,43 +75,25 @@ const WANDER_STEP    = 6.0     // Hz per frame — random-walk increment
 // ── Screech noise bed ─────────────────────────────────────────────────────────────────────
 // The tonal stick-slip note is only PART of a squeal — the rest is the tread scrubbing the road, and
 // with the tone alone the voice read as a sung "oooohh". So the tone is now mixed at SCREECH_TONE_MIX
-// against two noise layers that carry most of the energy:
+// against a noise layer that carries most of the energy:
 //   · SCRUB — brown noise through a resonant lowpass: the gritty body of rubber dragging over
 //     aggregate. Its cutoff breathes on two very slow LFOs — held static at first, which made it read
 //     as undifferentiated "noise"; a surface needs motion to be identifiable. Named SCRUB rather than
 //     "tear" so it is never confused with the dirt-slip tear (DIRT_LP) below.
-//   · SIZZLE — white noise through a bandpass whose cutoff WANDERS (two incommensurate LFOs + a
-//     per-frame random walk) and whose level breathes on a third LFO. That is the "in and out" top
-//     end: the bright edge keeps sweeping in and dropping away instead of sitting still.
 const SCREECH_TONE_MIX = 0.5   // tonal core level into the screech bus (was implicitly 1.0)
 const SCRUB_LP       = 700     // Hz — centre of the scrub lowpass
 const SCRUB_Q        = 1.6     // up from 0.9: enough resonance that the moving corner below is
                                // AUDIBLE. A flat lowpass on brown noise sweeps inaudibly — it just
                                // gets duller and brighter, which reads as "noise", not as a surface.
 const SCRUB_MIX      = 0.85    // relative to the screech level. This bed sits UNDER the voice.
-// A SLIGHT sizzle on the scrub. The sizzle band failed because three independent modulators stacked
-// on one filter (two LFOs totalling ±1750 Hz, a 140 Hz/frame random walk, AND 1.7 Hz level breathing)
-// — fast enough to read as shudder. Here there is no random walk and no level AM at all, just two
-// very slow incommensurate sweeps. Everything is sub-0.3 Hz, an order of magnitude below the sizzle's
-// fast LFO, so it CANNOT shudder by construction: the band breathes over seconds, it does not flutter.
+// The scrub cutoff moves on two very slow incommensurate sweeps and nothing else: no random walk, no
+// level AM. Everything is sub-0.3 Hz, so it CANNOT shudder by construction — the band breathes over
+// seconds, it does not flutter. (Three stacked modulators on one filter read as shudder — that was
+// the retired sizzle band's failure.)
 const SCRUB_SWEEP_A_HZ = 0.23  // Hz \ incommensurate, so the pair never settles into a loop
 const SCRUB_SWEEP_B_HZ = 0.11  // Hz /
 const SCRUB_SWEEP_A    = 180   // Hz — depth of the slow sweep
 const SCRUB_SWEEP_B    = 110   // Hz — depth of the slower one (±290 Hz total ⇒ ~410-990 Hz)
-const SIZZLE_F_BASE  = 2900    // Hz — centre of the wandering bright band
-const SIZZLE_Q       = 1.4
-const SIZZLE_MIX     = 0.0     // TEMP (diagnostic): sizzle silenced alongside SCRUB_MIX. Restore to
-                               // 0.7 — its tuned value. Zeroing this also zeroes the layer's AM depth
-                               // (sizzleAmDepth is SIZZLE_MIX × SIZZLE_AM_DEPTH), so the band is fully
-                               // out, cutoff wander and level breathing included.
-const SIZZLE_LFO_A   = 0.37    // Hz \ two incommensurate sweep rates so the wander never repeats
-const SIZZLE_LFO_B   = 2.9     // Hz /
-const SIZZLE_SWEEP_A = 1100    // Hz — depth of the slow sweep
-const SIZZLE_SWEEP_B = 650     // Hz — depth of the fast sweep
-const SIZZLE_WANDER_MAX  = 900 // Hz — extra random-walk offset on the centre, ± this
-const SIZZLE_WANDER_STEP = 140 // Hz per frame
-const SIZZLE_AM_HZ    = 1.7    // Hz — level breathing on the bright band
-const SIZZLE_AM_DEPTH = 0.55   // fraction of the layer's level swung by that breathing
 const JUDDER_HZ      = 28      // Hz — amplitude-judder LFO (re-rolled 24-34 Hz as it runs)
 const JUDDER_DEPTH   = 0.30    // fraction of current level — depth scales with level, so 0 stays 0
 
@@ -200,10 +182,8 @@ let screechBp = null                        // resonant body/formant, tracks f0
 let breathBp = null                         // noise band, tracks f0
 let screechGain = null                      // level (judder LFO sums into this AudioParam)
 let judderLfo = null, judderDepth = null
-let sizzleBp = null, sizzleGain = null, sizzleAmDepth = null   // wandering bright noise band
 let scrubGain = null                        // steady brown grit bed (deliberately off the judder bus)
 let _wander = 0                             // Hz — smoothed random-walk pitch drift
-let _sizzleWander = 0                       // Hz — random-walk offset on the sizzle cutoff
 // dirt chains — same brown-noise source, one tap for the slip tear and one for rolling gravel
 let dirtLp = null, dirtGain = null, sprayGain = null
 let rollDirtLp = null, rollDirtGain = null
@@ -269,7 +249,7 @@ export function ensureTireAudio () {
   master.gain.value = 1
   master.connect(ctx.destination)
 
-  // ── Screech: tonal core (f0 + 2f0 + 3f0) + a scrub/sizzle noise bed → gain ──
+  // ── Screech: tonal core (f0 + 2f0 + 3f0) + the scrub noise bed → gain ──
   const white = _whiteNoise(ctx)
   const brown = _brownNoise(ctx)
 
@@ -349,8 +329,8 @@ export function ensureTireAudio () {
   scrubLp.connect(scrubGain)
   _loop(ctx, brown).connect(scrubLp)
 
-  // The slight sizzle: two very slow sweeps summed into the cutoff. Deliberately LFOs only — the
-  // sizzle band's random walk is what made it twitch, so there is none here.
+  // Two very slow sweeps summed into the cutoff. Deliberately LFOs only — a random walk on a
+  // filter cutoff is what reads as twitching, so there is none here.
   for (const [hz, depth] of [[SCRUB_SWEEP_A_HZ, SCRUB_SWEEP_A], [SCRUB_SWEEP_B_HZ, SCRUB_SWEEP_B]]) {
     const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = hz
     const d = ctx.createGain(); d.gain.value = depth
@@ -358,29 +338,6 @@ export function ensureTireAudio () {
     lfo.start()
   }
 
-  // Layer 2: SIZZLE — the bright band that keeps sweeping in and out. Cutoff is driven by two
-  // incommensurate LFOs summed into the frequency param (plus a per-frame random walk in update),
-  // and its level breathes on a third. Nothing about it is metered, which is the whole point.
-  sizzleGain = ctx.createGain()
-  sizzleGain.gain.value = SIZZLE_MIX
-  sizzleGain.connect(screechGain)
-  sizzleBp = ctx.createBiquadFilter()
-  sizzleBp.type = 'bandpass'
-  sizzleBp.frequency.value = SIZZLE_F_BASE
-  sizzleBp.Q.value = SIZZLE_Q
-  sizzleBp.connect(sizzleGain)
-  _loop(ctx, white).connect(sizzleBp)
-
-  for (const [hz, depth] of [[SIZZLE_LFO_A, SIZZLE_SWEEP_A], [SIZZLE_LFO_B, SIZZLE_SWEEP_B]]) {
-    const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = hz
-    const d = ctx.createGain(); d.gain.value = depth
-    lfo.connect(d); d.connect(sizzleBp.frequency)
-    lfo.start()
-  }
-  const sizzleAm = ctx.createOscillator(); sizzleAm.type = 'sine'; sizzleAm.frequency.value = SIZZLE_AM_HZ
-  sizzleAmDepth = ctx.createGain(); sizzleAmDepth.gain.value = SIZZLE_MIX * SIZZLE_AM_DEPTH
-  sizzleAm.connect(sizzleAmDepth); sizzleAmDepth.connect(sizzleGain.gain)
-  sizzleAm.start()
 
   // ── Dirt: brown noise → lowpass (cutoff tracks slip) → gain; + bandpassed white "spray" ──
   const dirtBrown = brown
@@ -571,13 +528,6 @@ export function updateTireAudio (vehicleState, params, pavedFactorAt) {
   // Irregular judder: re-roll the rate a couple of times a second so the tremolo never sounds metered.
   if (Math.random() < 0.03) judderLfo.frequency.setTargetAtTime(24 + Math.random() * 10, now, 0.2)
 
-  // Sizzle: random-walk the centre on top of the two LFO sweeps, and open the band a little with
-  // slip so a hard slide gets brighter as well as louder. The LFOs are still summed in live, so the
-  // audible cutoff is (this target ± up to ~1.75 kHz) — that is the "in and out".
-  _sizzleWander = _sizzleWander * 0.94 + (Math.random() * 2 - 1) * SIZZLE_WANDER_STEP
-  if (_sizzleWander > SIZZLE_WANDER_MAX) _sizzleWander = SIZZLE_WANDER_MAX
-  else if (_sizzleWander < -SIZZLE_WANDER_MAX) _sizzleWander = -SIZZLE_WANDER_MAX
-  sizzleBp.frequency.setTargetAtTime(SIZZLE_F_BASE + 700 * t + _sizzleWander, now, TC)
 
   // ── Dirt slip: the tear. Low sweep + resonance — see the DIRT_ constants.
   dirtLp.frequency.setTargetAtTime(DIRT_LP_BASE + DIRT_LP_RISE * t, now, TC)

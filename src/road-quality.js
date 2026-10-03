@@ -50,7 +50,9 @@ export function hashRunKey(runKey) {
  * Algorithm (D-02):
  *   stretchIdx = floor(arcS / ROAD_QUALITY_STRETCH)
  *   Each stretch: quality = mulberry32(seedFor(worldSeed, 'roadquality', hashRunKey(runKey), stretchIdx))()
- *   Within ROAD_QUALITY_BLEND metres of a stretch boundary: smoothstep-blend adjacent stretch values.
+ *   The LAST ROAD_QUALITY_BLEND metres of a stretch smoothstep-blend into the next stretch's value,
+ *   so the value is continuous across the boundary. (It used to blend on both sides of the
+ *   boundary, which snapped back to the old value right after crossing it.)
  *
  * Returns a value in [0, 1). Deterministic from (worldSeed, runKey, arcS) — D-16.
  *
@@ -80,15 +82,6 @@ export function roadQuality(arcS, runKey, worldSeed) {
         const tRaw = (fracInStretch - blendStart) / (ROAD_QUALITY_BLEND / ROAD_QUALITY_STRETCH)
         const t = tRaw * tRaw * (3 - 2 * tRaw)  // smoothstep
         return q0 + (q1 - q0) * t
-    }
-
-    // Blend at the START boundary (first ROAD_QUALITY_BLEND metres of this stretch)
-    const blendEnd = ROAD_QUALITY_BLEND / ROAD_QUALITY_STRETCH
-    if (fracInStretch < blendEnd && stretchIdx > 0) {
-        const qPrev = mulberry32(seedFor(worldSeed, 'roadquality', rk, stretchIdx - 1))()
-        const tRaw = fracInStretch / blendEnd
-        const t = tRaw * tRaw * (3 - 2 * tRaw)  // smoothstep
-        return qPrev + (q0 - qPrev) * t
     }
 
     return q0
