@@ -1082,6 +1082,9 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.strutCompVel   = [0, 0, 0, 0]
   vehicleState.submerged      = false   // FEAT-22
   vehicleState.submergedDepth = 0
+  // Every seat (R, teleport, reseed) lands the camera on the new pose outright — the chase spring
+  // would otherwise sweep across the jump and smear the frame on the way.
+  snapCamera()
 }
 
 // ── Gameplay mode gate (feature/teleport) ─────────────────────────────────────────────────

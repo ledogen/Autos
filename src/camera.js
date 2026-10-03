@@ -333,6 +333,7 @@ export function updateCamera (camera, vehicleState, dt) {
   _lastVehicleState = vehicleState
   const snap = _snapNext   // consumed here, whichever branch below runs
   _snapNext = false
+  if (snap) reverseView = swinging = false   // a fresh seat starts facing forward, no swing in flight
 
   if (cameraMode === 'freecam') {
     // ── Freecam branch: WASD fly along look direction, Space/Ctrl vertical, Shift boost ──
