@@ -36,15 +36,14 @@
  * per candidate — the single most expensive sampler in the set — to reveal ground that is about to
  * be covered in ink.
  *
- * SCATTER SYNC: treeClusterPass's rng draw order and reject tests are mirrored below. An edit to
- * the cluster loop in prop-scatter.js must be reflected here in the same commit, or the map starts
- * describing a forest the world does not have. test/map-cover.mjs is the gate that proves the
- * replay still tracks the real scatter.
+ * The tree pass itself is prop-scatter's treeClusterPass, CALLED — not mirrored — with the map's
+ * cheap samplers plugged in where the scatter expects the terrain's. test/map-cover.mjs proves the
+ * replay tracks the real scatter.
  */
 
 import { mulberry32, seedFor } from './seed.js'
 import { FLORA_PARAMS } from '../data/flora.js'
-import { biomeAt, BIOME } from './biome.js'
+import { treeClusterPass } from './props/prop-scatter.js'
 
 // Cover raster cell, metres. Sub-chunk (64 / 16 = 4×4 cells per chunk) so a cluster's 18 m disc
 // spans a couple of cells and its edge can land somewhere other than a chunk boundary — at full
@@ -88,64 +87,42 @@ export function slopeFromGradient (dx, dz) {
 }
 
 /**
- * Replay one 64 m chunk's tree pass and bin the survivors into a CELLS_PER_CHUNK² count raster.
- *
- * Mirrors treeClusterPass exactly in rng draw ORDER, which is the part that has to hold: the
- * cluster loop draws ccx, ccz, then the species mix, then n, then per tree an angle and a radius —
- * and only a PLACED tree draws the five further values. Reject early and the stream shifts, so the
- * rejects are replayed too, not skipped.
+ * Run one 64 m chunk's tree pass and bin the trees into a CELLS_PER_CHUNK² count raster.
  *
  * @param {number} cx,cz        chunk coords (world = cx * chunkSize)
  * @param {number} worldSeed
  * @param {{slopeAt:(x,z)=>number, heightAt:(x,z)=>number, rejectAt:(x,z)=>boolean}} s
  *        rejectAt covers the water tests (pond + stream channel) as one call, since the map
- *        resolves both from the same bbox-fetched lists. heightAt feeds the biome relief ring only
- *        — a placed tree's own y is of no interest to a map.
+ *        resolves both from the same bbox-fetched lists. heightAt feeds the biome relief ring and
+ *        each tree's y (which the map never reads).
  * @returns {Float32Array} tree counts, row-major, CELLS_PER_CHUNK per side
  */
 export function chunkCover (cx, cz, worldSeed, s, P = FLORA_PARAMS) {
-  const S = P.scatter
   const size = P.chunkSize
   const ox = cx * size, oz = cz * size
   const out = new Float32Array(CELLS_PER_CHUNK * CELLS_PER_CHUNK)
   const rng = mulberry32(seedFor(worldSeed, P.worldSeedTag, cx, cz))
-
-  for (let ci = 0; ci < S.clustersPerChunk; ci++) {
-    const ccx = ox + rng() * size, ccz = oz + rng() * size
-    // Species selection: one draw. The scatter samples slope, elevation and biomeNoise to build
-    // pAspen, but all three only decide aspen-vs-pine and none of them draw from the stream — a
-    // cluster yields the same NUMBER of trees either way. So the samplers are skipped and the draw
-    // is not; skipping the draw would desynchronise every cluster after this one.
-    rng()
-
-    // The ground this cluster stands on. MEADOW and ROCK clear it entirely — this is where the
-    // map's white comes from, and it is the SAME call the scatter makes, not a parallel rule.
-    const ground = biomeAt(ccx, ccz, worldSeed, s)
-
-    const n = Math.round(S.treesPerCluster[0] +
-                        (S.treesPerCluster[1] - S.treesPerCluster[0]) * rng())
-    for (let k = 0; k < n; k++) {
-      const ang = rng() * Math.PI * 2
-      const rad = Math.sqrt(rng()) * S.clusterRadius
-      const tx = ccx + Math.cos(ang) * rad, tz = ccz + Math.sin(ang) * rad
-
-      // ── placeTree's reject chain, in order. Each `continue` leaves the stream untouched,
-      //    exactly as the early `return`s in prop-scatter do.
-      if (ground !== BIOME.FOREST) continue              // meadow / bare rock
-      if (s.rejectAt(tx, tz)) continue                  // pond water + stream channel
-      if (s.slopeAt(tx, tz) > S.slopeRejectMax) continue // cliff
-      // Placed: consume the five per-tree draws (brightness, variant, scale, rotY, tilt, tiltAz).
-      rng(); rng(); rng(); rng(); rng(); rng()
-
-      // Bin into the chunk's cell raster. Trees can land OUTSIDE the chunk (a cluster centre near
-      // an edge throws up to clusterRadius past it) — those are dropped here and re-found when the
-      // neighbouring chunk replays its own clusters, so no tree is double-counted and none of the
-      // clustering that straddles a boundary is lost.
-      const li = Math.floor((tx - ox) / COVER_CELL)
-      const lj = Math.floor((tz - oz) / COVER_CELL)
-      if (li < 0 || lj < 0 || li >= CELLS_PER_CHUNK || lj >= CELLS_PER_CHUNK) continue
-      out[lj * CELLS_PER_CHUNK + li] += 1
-    }
+  // The scatter's sampler shape, from the map's: slope arrives as a normal's y (the scatter reads
+  // 1 − normal.y), both water tests as one pond test, and the road exclusion is dropped (see the
+  // header — the map inks that corridor over anyway).
+  const samplers = {
+    heightAt: s.heightAt,
+    normalAt: (x, z) => ({ y: 1 - s.slopeAt(x, z) }),
+    roadBlocked: () => false,
+    waterAt: (x, z) => ({ inWater: s.rejectAt(x, z) }),
+  }
+  const g = treeClusterPass(rng, ox, oz, worldSeed, samplers, P)
+  let r
+  do { r = g.next() } while (!r.done)
+  for (const t of r.value) {
+    // Trees can land OUTSIDE the chunk (a cluster centre near an edge throws up to clusterRadius
+    // past it) — those are dropped here and re-found when the neighbouring chunk runs its own
+    // clusters, so no tree is double-counted and none of the clustering that straddles a boundary
+    // is lost.
+    const li = Math.floor((t.x - ox) / COVER_CELL)
+    const lj = Math.floor((t.z - oz) / COVER_CELL)
+    if (li < 0 || lj < 0 || li >= CELLS_PER_CHUNK || lj >= CELLS_PER_CHUNK) continue
+    out[lj * CELLS_PER_CHUNK + li] += 1
   }
   return out
 }

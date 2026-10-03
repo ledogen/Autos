@@ -12,11 +12,11 @@ export const RANGER_PARAMS = {
   trackFront:   1.46,   // m — center-to-center wheel spacing at front axle
   trackRear:    1.46,   // m — center-to-center wheel spacing at rear axle
   cgHeight:     0.55,   // m — center of gravity above ground (estimate, laden)
-  wheelRadius:  0.368,  // m — 245/75R16 tire radius
+  wheelRadius:  0.368,  // m — stock 2002 Ranger P235/75R15 (367 mm rolling radius)
   wheelWidth:   0.25,   // m — 245-section tire tread width. Sets the WIDTH of the wheel hard core
                         // (src/physics.js wheelCorePoints), which is a disk, not a sphere.
-  rimRadius:    0.203,  // m — 16 in steel rim (0.406 m diameter). wheelRadius − rimRadius is the
-                        // SIDEWALL height, 165 mm, and that is a real dimension off the tire rather
+  rimRadius:    0.1905, // m — 15 in steel rim (0.381 m diameter). wheelRadius − rimRadius is the
+                        // SIDEWALL height, 178 mm, and that is a real dimension off the tire rather
                         // than a tuning constant: it is how far the carcass can deflect before the
                         // rim flange is taking the load. src/damage.js thresholds rim damage on it.
   wheelRunout:  0.000,  // m — PEAK-TO-PEAK radial runout (out-of-round tire). 0 = perfectly round

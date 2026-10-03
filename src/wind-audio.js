@@ -55,11 +55,13 @@ function _whiteNoise (ac) {
   return buf
 }
 
+// Each tap starts at its own random offset into the (looped) buffer: two taps of one buffer that
+// start together play the SAME samples, so the layers they feed would be fully correlated.
 function _loop (ac, buf) {
   const src = ac.createBufferSource()
   src.buffer = buf
   src.loop = true
-  src.start()
+  src.start(0, Math.random() * buf.duration)
   return src
 }
 
@@ -93,7 +95,7 @@ export function ensureWindAudio () {
   hissBp.frequency.value = HISS_BP_BASE
   hissBp.Q.value = HISS_Q
   hissBp.connect(hissGain)
-  _loop(ctx, white).connect(hissBp)   // same buffer, own source node — decorrelated by phase
+  _loop(ctx, white).connect(hissBp)   // same buffer, own source node at its own offset
 
   started = true
 }

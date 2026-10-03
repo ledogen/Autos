@@ -366,7 +366,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // an inner group (see below) — never on the wheel group itself, whose quaternion syncMeshesToState owns.
   const TIRE_W  = 0.25                 // tire section width
   const HALF_W  = TIRE_W / 2
-  const RIM_R   = params.rimRadius      // 16 in rim ≈ 0.406 m diameter — one source, shared with damage.js
+  const RIM_R   = params.rimRadius      // 15 in rim ≈ 0.381 m diameter — one source, shared with damage.js
   const DISC_T  = 0.012                // disc face thickness
   const DISC_Y  = HALF_W - 0.042       // inboard side of the disc — the dish: face sits ~30 mm in
   const wRad    = params.wheelRadius
@@ -517,9 +517,8 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     new THREE.Vector3( tR, wr - params.cgHeight,  (L * wF)),  // 3: RR — right, rear
   ]
 
-  // NOTE (Phase 4.1): hubYRest removed. Wheel mesh position is now derived from strutComp via
-  // full world-space hub position inverse-transformed into body-local space (D-07).
-  // syncMeshesToState below handles this correctly for any body orientation.
+  // Build-time rest positions only — syncMeshesToState re-derives each hub every frame from the
+  // live params and strutComp (D-07), so a slider or preset moves the drawn wheels too.
   // Each wheel is ONE Group (tire + rim children, shared geometry): syncMeshesToState writes the
   // group's position/quaternion exactly as it did the old single mesh, and the GLB import path
   // still hides a whole wheel with a single `.visible` toggle.
@@ -600,42 +599,19 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
       wheelMeshes[i].quaternion.copy(steerQ).multiply(spinQ)
       if (camberQ) wheelMeshes[i].quaternion.premultiply(camberQ)
 
-      // D-07 (Phase 4.1): Derive full hub world position from strutComp, inverse-transform to body-local.
-      // Replaces the broken world-ΔY approximation with exact body-space hub position for any orientation.
+      // Hub position in body space, from the LIVE params — the same mount suspension.js uses
+      // (getWheelPosition: track/wheelbase/weight split, (cgHeight − wheelRadius) below the CG, plus the
+      // ride-height body offset) minus the strut length along body-down, which in body space is just
+      // −Y. Read live rather than baked at build so a CG-height / weight-split slider or a vehicle
+      // preset moves the drawn wheels with the physics ones (2026-10-02).
       {
-        const isFrontMesh = i < 2
-        const L_S_mesh = isFrontMesh
-          ? params.suspensionRestLengthFront
-          : params.suspensionRestLengthRear
-        const strutComp_i = state.strutComp?.[i] ?? 0
-        const strutLen_i  = L_S_mesh - strutComp_i
-        const carQ = state.quaternion
-        const body_down_mesh = new THREE.Vector3(0, -1, 0).applyQuaternion(carQ)
-        // Mount world position: same local offset as suspension.js, rotated into world space
-        const mountLocal = wheelLocalOffsets[i].clone()
-        // BUG-05: wheelLocalOffsets bakes in (wr − cgHeight) without suspensionBodyOffset. Add it live
-        // (read from params so slider drags take effect) so the visual hub mount tracks the
-        // physics hub (getWheelPosition, which now includes the offset). Without this, positive offset
-        // renders the wheel below the physics hub — it visibly sinks into the ground; negative floats it.
-        mountLocal.y += isFrontMesh
-          ? (params.suspensionBodyOffsetFront || 0)
-          : (params.suspensionBodyOffsetRear || 0)
-        const rMount_mesh = mountLocal.clone().applyQuaternion(carQ)
-        const mountWorld = new THREE.Vector3(
-          state.position.x + rMount_mesh.x,
-          state.position.y + rMount_mesh.y,
-          state.position.z + rMount_mesh.z
-        )
-        const hubWorld = new THREE.Vector3(
-          mountWorld.x + strutLen_i * body_down_mesh.x,
-          mountWorld.y + strutLen_i * body_down_mesh.y,
-          mountWorld.z + strutLen_i * body_down_mesh.z
-        )
-        // Inverse-transform into carGroup local space (carGroup IS the body):
-        const hubLocal = hubWorld.clone()
-          .sub(state.position)
-          .applyQuaternion(carQ.clone().invert())
-        wheelMeshes[i].position.copy(hubLocal)
+        const front = i < 2
+        const mx = (i === 0 || i === 2 ? -1 : 1) * (front ? params.trackFront : params.trackRear) / 2
+        const mz = front ? -(params.wheelbase * params.weightRear) : (params.wheelbase * params.weightFront)
+        const my = -(params.cgHeight - params.wheelRadius) +
+          (front ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
+        const strutLen = (front ? params.suspensionRestLengthFront : params.suspensionRestLengthRear) - (state.strutComp?.[i] ?? 0)
+        wheelMeshes[i].position.set(mx, my - strutLen, mz)
       }
     }
 

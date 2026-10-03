@@ -1082,6 +1082,11 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.strutCompVel   = [0, 0, 0, 0]
   vehicleState.submerged      = false   // FEAT-22
   vehicleState.submergedDepth = 0
+  // Damage persists only across a STORY run (owner, 2026-10-02). Every free-roam seat — cold load,
+  // R, a teleport, a reseed — hands you a fresh truck; the condition the last drive left behind is
+  // part of that drive, not of the world. publish() so the very next physics step reads stock
+  // multipliers rather than last step's.
+  if (_gameMode !== 'story') { damageModel.setAll(1); damageModel.publish(RANGER_PARAMS) }
 }
 
 // ── Gameplay mode gate (feature/teleport) ─────────────────────────────────────────────────

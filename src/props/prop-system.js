@@ -550,8 +550,23 @@ export class PropSystem {
 
     // PERF-07: this chunk's props changed → (re)bake its shadow tile and its neighbours' (silhouettes
     // cross chunk seams). The bake system slices the work; a no-op when realtime casting / headless.
-    // Billboard-only ring chunks take NO tiles (see _chunkMode) — they mark on promotion instead.
-    if (this._shadowBake && chunk.mode !== 'bbonly') this._shadowBake.markWithNeighbors(cx, cz)
+    // Billboard-only ring chunks take NO tile of their own (see _chunkMode) — they mark on promotion
+    // instead — but their trees still shade the DRAWN neighbour beside them. Measured after a spawn
+    // (2026-10-02): a ring-edge tile baked before its outer neighbour had scattered was short ~4,000
+    // texels (≈250 m² of shadow) until that neighbour was promoted. So a bbonly commit re-queues the
+    // drawn neighbours it touches.
+    if (this._shadowBake) {
+      if (chunk.mode !== 'bbonly') this._shadowBake.markWithNeighbors(cx, cz)
+      else {
+        const keys = []
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dz) continue
+          const nk = (cx + dx) + ',' + (cz + dz), nb = this._chunks.get(nk)
+          if (nb && nb.mode !== 'bbonly') keys.push(nk)
+        }
+        if (keys.length) this._shadowBake.markAll(keys)
+      }
+    }
   }
 
   /** The deferred litter of a promoted chunk: append its records and place only those. */

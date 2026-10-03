@@ -188,7 +188,7 @@ export class TireSmokeSystem {
     return this._p[idx]
   }
 
-  _spawn (x, y, z, intensity, slipV, fwdX, fwdZ) {
+  _spawn (x, y, z, intensity, slipV, backX, backZ) {
     const part = this._alloc()
     const p = this._params
 
@@ -212,9 +212,9 @@ export class TireSmokeSystem {
     // truck's heading at half the slip speed, drag bleeds it off fast, RISE/SETTLE (undamped)
     // carry the puff up and drifting afterward.
     const kick = slipV * SLIP_KICK
-    part.vx = (Math.random() - 0.5) * SPREAD - fwdX * kick
+    part.vx = (Math.random() - 0.5) * SPREAD + backX * kick
     part.vy = RISE_MIN + (RISE_MAX - RISE_MIN) * Math.random()
-    part.vz = (Math.random() - 0.5) * SPREAD - fwdZ * kick
+    part.vz = (Math.random() - 0.5) * SPREAD + backZ * kick
   }
 
   _pack () {
@@ -306,8 +306,9 @@ export class TireSmokeSystem {
     const pz = vehicleState.position.z
 
     const q = vehicleState.quaternion
-    const fwdX = 2 * (q.x * q.z + q.y * q.w)
-    const fwdZ = 1 - 2 * (q.x * q.x + q.y * q.y)
+    // Body +Z in world — REARWARD (model forward is −Z): the direction the smoke trails.
+    const backX = 2 * (q.x * q.z + q.y * q.w)
+    const backZ = 1 - 2 * (q.x * q.x + q.y * q.y)
 
     const L = params.wheelbase
     const wF = params.weightFront, wR = params.weightRear
@@ -366,7 +367,7 @@ export class TireSmokeSystem {
       let budget = 6
       while (this._emitAccum[i] >= 1 && budget-- > 0) {
         this._emitAccum[i] -= 1
-        this._spawn(wx, groundY, wz, intensity, slipV, fwdX, fwdZ)
+        this._spawn(wx, groundY, wz, intensity, slipV, backX, backZ)
       }
       if (this._emitAccum[i] > 2) this._emitAccum[i] = 2
     }

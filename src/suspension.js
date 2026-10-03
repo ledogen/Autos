@@ -127,7 +127,42 @@ export function getWheelPosition (corner, vehicleState, params) {
  */
 export const WHEEL_SOFT_BAND = 0.15
 
-const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire damper by one static deflection of depth (see the contact loop)
+export const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire damper by one static deflection of depth (see tireContactForce)
+
+/**
+ * THE tire contact law — the normal force [N] one contact of depth `depth` [m] produces, for a
+ * tire whose air carries `rate` (1 = inflated, →0 flat) of its stiffness. Used by the suspension
+ * (the force on the hub) AND by physics.js for the equal-and-opposite force on a debris body under
+ * the wheel, so the two sides are the same law by construction (Newton's third law).
+ *
+ * Three pieces, each explained where it was derived:
+ *   · OBSTACLE ENGAGEMENT `env` (sizeR given ⇒ a debris body): the carcass wraps an object smaller
+ *     than its own patch, so the engaged fraction is the indenter's contact area over the tire's
+ *     nominal patch area — min(1, 2π·sizeR·depth / tireContactAreaM2), progressive from first touch.
+ *     Terrain and static props envelope GEOMETRICALLY in the analytic query instead (sizeR absent).
+ *   · PROGRESSIVE CARCASS `carcass − 1`: the rate climbs as the sidewall is used up,
+ *     1 / (1 − (depth/sidewall)²), clamped at 0.94 of the sidewall (≈8.6×) — deeper is the rim's
+ *     and the failsafe's problem, not this spring's. Scaled by NOTHING: a flat tire still stacks up
+ *     against its rim, which is what stops the wheel sinking through the road.
+ *   · AIR SPRING and DAMPER, both × `rate`: a puncture lets the air out; what is left is the carcass.
+ *
+ * @param {number} depth          penetration [m], ≥ 0 meaningful
+ * @param {number} compressionVel closing speed [m/s], positive = compressing (caller's convention)
+ * @param {number|undefined} sizeR obstacle size for the engagement factor; undefined = ground
+ * @param {number} rate           params._tireRateScale[i] (1 when no damage model runs)
+ * @param {object} params         RANGER_PARAMS (tireStiffness, tireDamping, wheelRadius, rimRadius, tireContactAreaM2)
+ */
+export function tireContactForce (depth, compressionVel, sizeR, rate, params) {
+  const env = (sizeR !== undefined)
+    ? Math.min(1, 2 * Math.PI * sizeR * Math.max(0, depth) / (params.tireContactAreaM2 || 0.0166))
+    : 1
+  const sidewall = (params.wheelRadius || 0.368) - (params.rimRadius || 0.1905)
+  const dNorm = Math.min(0.94, Math.max(0, depth) / sidewall)
+  const carcass = 1 / (1 - dNorm * dNorm)
+  const airTerm    = params.tireStiffness * rate * depth
+  const bottomTerm = params.tireStiffness * depth * (carcass - 1)
+  return Math.max(0, airTerm + bottomTerm + params.tireDamping * rate * compressionVel) * env
+}
 
 const RUNOUT_PHASE = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]
 export const RUNOUT_HARMONIC = 2   // 1 = eccentric (one high spot), 2 = oval (two)
@@ -234,9 +269,10 @@ export function carcassRadialOffset (corner, psi, runout) {
  *     _hubNormalXZ[4] (initialized by main.js).
  *   Writes: _tireFz[4], _suspForceAccum[4], _hubNormalXZ[4].
  * @param {number} dt - Outer physics step in seconds (== PHYSICS_DT from main.js).
- * @param {function} queryContacts - (cx, cy, cz, r, footprint) → Array<{normal, depth, contactPoint}>.
+ * @param {function} queryContacts - (cx, cy, cz, r, footprint, corner) → Array<{normal, depth, contactPoint}>.
  *   physics.js passes its qcPlus (analytic ground ∪ engine debris); gives the tire compression
- *   depth per hub. Debris contacts also carry depthRate and sizeR.
+ *   depth per hub. Debris contacts also carry depthRate and sizeR. `corner` lets the caller reuse
+ *   one ground answer per wheel per step; a plain query ignores it.
  * @returns {void}
  */
 // Scratch for stepSuspensionSubsteps (one truck steps at a time; nothing here outlives a call).
@@ -343,8 +379,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
     _mountZ[i] = vehicleState.position.z + rMount.z
   }
 
-  // Per-contact constants of the tire spring (see the contact loop for what each one models).
-  const sidewall = (params.wheelRadius || 0.368) - (params.rimRadius || 0.203)
+  const sidewall = (params.wheelRadius || 0.368) - (params.rimRadius || 0.1905)   // for the rim-load residual below
   const sc = vehicleState.strutComp, scv = vehicleState.strutCompVel
 
   for (let s = 0; s < N; s++) {
@@ -391,7 +426,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       // Out-of-round tires: the contact query uses the radius AT THIS SPIN ANGLE, so the high
       // spot digs deeper into the surface (bigger depth -> bigger tire force) once per revolution.
       const hubContacts = queryContacts(hubWorldX, hubWorldY, hubWorldZ,
-        effectiveWheelRadius(i, vehicleState, params), true)
+        effectiveWheelRadius(i, vehicleState, params), true, i)   // `i`: physics.js reuses the step's ground answer per corner
       let tireFz = 0
       for (const c of hubContacts) {
         // compressionVel sign convention: positive = hub approaching ground = tire compressing.
@@ -409,77 +444,9 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         const compressionVel = (c.depthRate !== undefined)
           ? c.depthRate * Math.min(1, c.depth / TIRE_DAMP_ENGAGE)
           : -strutCompVelI
-        // Obstacle ENVELOPING for debris (c.sizeR set): the carcass wraps objects smaller than
-        // its own scale, so effective stiffness against a small rock is a fraction of the
-        // flat-ground value — this is why real tires cross rock gardens at speed without
-        // launching the body (owner captures: 20 kN single-frame nose kicks). Mirrors the
-        // reaction-side factor in physics.js exactly (Newton's third law).
-        // ── OBSTACLE ENGAGEMENT (was a constant "enveloping" scale) ───────────────────────────
-        // A tire pressed onto a rigid object does not carry it at a fixed fraction of flat-ground
-        // stiffness. The contact AREA grows as it sinks in, and the carcass carries load in
-        // proportion to that area, so the resistance is PROGRESSIVE: nearly nothing on first touch,
-        // stiffening fast, full flat-ground stiffness once the patch is as big as the one the tire
-        // makes on the road.
-        //
-        // For a round indenter of radius a pressed a depth d into a surface, the contact radius is
-        // sqrt(2ad) to first order, so the area is 2*pi*a*d. Divide by the tire's own nominal
-        // contact-patch area and that ratio IS the engaged fraction:
-        //
-        //     engaged(d) = min(1, 2*pi*sizeR*d / tireContactAreaM2)
-        //
-        // which makes force go as d^2 until the patch saturates and linear after — the "point force
-        // on first contact, more of the profile as it penetrates" shape (owner, 2026-08-21).
-        //
-        // The constant it replaced (sizeR/(sizeR+0.12)) softened the tire UNIFORMLY against every
-        // obstacle, which is why rocks sank so far: a 0.34 m boulder was carried at 59% stiffness at
-        // every depth, so it kept sinking instead of the wheel climbing it. Under the area law that
-        // same boulder saturates to FULL stiffness within ~20 mm, and the wheel rides over it.
-        //
-        // Terrain and static props do not come through here at all — the analytic query already
-        // envelopes them GEOMETRICALLY (main.js queryContacts, the sqrt(r^2 - d^2) footprint
-        // stencil), which is the stronger treatment. Same principle, applied where each fits: how
-        // much of the tire is really touching.
-        const env = (c.sizeR !== undefined)
-          ? Math.min(1, 2 * Math.PI * c.sizeR * Math.max(0, c.depth) / (params.tireContactAreaM2 || 0.0166))
-          : 1
-        // PROGRESSIVE CARCASS RATE. A real tire cannot be squashed past its own sidewall: as the
-        // carcass runs out of travel the rate climbs steeply and the rim takes over. A LINEAR
-        // spring has no such limit, and the owner's 0.5 m drop capture shows what that costs —
-        // the strut bottoms at 299 mm, the tire becomes the only compliance left, and a 100 kN/m
-        // linear rate then crushes 264 mm into a 165 mm tire, putting the rim a hand's width below
-        // the road. That is the "floaty, clips through the ground" feel, and it is also why a rim
-        // strike was guaranteed on any landing at any pressure.
-        //
-        // rate multiplier = 1 / (1 - (d/sidewall)^2), clamped. At static deflection (~33 mm of 165)
-        // it is 1.04, so ordinary ride and every handling gate are untouched; by 100 mm it is 1.6,
-        // by 140 mm it is 3.6, and it runs away as the sidewall is used up. The tire stops the
-        // truck because it has run out of rubber, not because a number was raised.
-        // (`sidewall` = wheelRadius − rimRadius, hoisted above the substep loop.)
-        // Clamped at 0.94 (≈8.6x rate), not at the asymptote. Past the sidewall the rim is on the
-        // surface and this spring is no longer the thing resisting — letting the multiplier run to
-        // 25x there produced a 5.5 cm single-frame shove on a 0.34 m shoulder step, which reads as
-        // a teleport and trips the penetration failsafe gate. Deep penetration is the failsafe's
-        // job, not the carcass's.
-        const dNorm = Math.min(0.94, Math.max(0, c.depth) / sidewall)
-        const carcass = 1 / (1 - dNorm * dNorm)
-        // SM-3 flat tire: params._tireRateScale[i] collapses the carcass rate when the air is gone.
-        // It scales the LINEAR term only — the progressive `carcass` term stays, because a flat tire
-        // still stacks up against its rim, and that is what stops the wheel sinking through the road.
+        // SM-3 flat tire: params._tireRateScale[i] collapses the air spring when the air is gone.
         const rate = params._tireRateScale ? params._tireRateScale[i] : 1
-        // The rate scales the AIR SPRING only, never the bottoming term. Those are two different
-        // structures: the air is what a puncture lets out, and the carcass stacking against the rim
-        // is what is left when it is gone. Scaling both made a flat tire uniformly soft, so it never
-        // generated a large force at ANY depth — and since rim load is the force past full
-        // compression, a flat rim came out SAFER than an inflated one. Backwards, and the owner
-        // caught it: with no air to absorb the hit, the load goes straight to the rim.
-        //
-        // Split like this a flat tire is limp under its own load and then goes rigid the moment the
-        // rubber is squashed out — metal on road — which is exactly the failure being modelled.
-        const airTerm  = params.tireStiffness * rate * c.depth
-        const bottomTerm = params.tireStiffness * c.depth * (carcass - 1)
-        const tireFnAtContact = Math.max(0,
-          airTerm + bottomTerm + params.tireDamping * rate * compressionVel
-        ) * env
+        const tireFnAtContact = tireContactForce(c.depth, compressionVel, c.sizeR, rate, params)
 
         // RIM CONTACT from the analytic path. Depth is measured from the tire's OUTER radius, so
         // once it exceeds the soft band the contact has reached the rim. A hard enough landing over

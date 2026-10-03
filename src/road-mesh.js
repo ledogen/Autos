@@ -32,7 +32,7 @@ import { crownProfile, potholeNoise, earClip } from './road-carve.js'
 // roadQuality lives in road-quality.js (Plan 09-06) to break the terrain.js → road-mesh.js →
 // terrain.js circular import that SURF-06 would otherwise create.
 import { roadQuality } from './road-quality.js'
-import { perfAdd, perfEvent } from './perf.js'  // TEMP perf triage (D-arc / PERF-26)
+import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
 // ── Ribbon mesh constants ─────────────────────────────────────────────────────
@@ -820,10 +820,10 @@ export class RoadMeshSystem {
         const meshes     = []
         const geometries = []
 
-        // PERF-26 INSTRUMENT (measurement only): the sliced-build A/B proved the cost is NOT in
-        // sweepRibbon — a 48 ms frame had frame.ribbon.flush 19.4 ms with ribbon.sweepRibbon < 1.2.
-        // ~18 ms lives in the unbucketed remainder. Accumulate per-section here and emit once at the
-        // end so the `continue` paths below can't leak a bracket.
+        // Per-section timing buckets for the ?hitch report (perf.js is a no-op otherwise). They
+        // split frame.ribbon.flush so a tile-build hitch names its section: the PERF-26 A/B showed
+        // a 48 ms frame with 19.4 ms in the flush and < 1.2 ms in sweepRibbon — the rest was here.
+        // Accumulated per section and emitted once at the end, so the `continue` paths can't leak one.
         let _bLut = 0, _bSample = 0, _bTrim = 0, _bMesh = 0, _bTunnel = 0, _bPad = 0
 
         // NB: do NOT early-return when segs is empty. A junction NODE's tile can legitimately have zero
@@ -844,12 +844,12 @@ export class RoadMeshSystem {
             // (cache/reuse) than if it is the 256 getPointAt calls.
             const _ptLen = performance.now()
             const arcLen = spline.getLength ? spline.getLength() : 64
-            _bLut += performance.now() - _ptLen   // PERF-26 INSTRUMENT
+            _bLut += performance.now() - _ptLen
             const _ptSamp = performance.now()
             const N = Math.max(2, Math.min(256, Math.ceil(arcLen / 2) + 1))
             const points = []
             for (let _i = 0; _i < N; _i++) points.push(spline.getPointAt(_i / (N - 1)))
-            _bSample += performance.now() - _ptSamp   // PERF-26 INSTRUMENT
+            _bSample += performance.now() - _ptSamp
 
             if (points.length < 2) continue
 
@@ -869,7 +869,7 @@ export class RoadMeshSystem {
             // the node (contiguous — no mid-run split). Drop samples whose run-global arc is within
             // `cutback` of a junction endpoint arc for this run; buildJunctionFootprint fills the cleared
             // disc at the same cutback. Skip the slice entirely if nothing survives (short run node↔node).
-            const _ptTrim = performance.now()   // PERF-26 INSTRUMENT
+            const _ptTrim = performance.now()
             let usePoints = points, useArcS0 = arcS0, useArcS1 = arcS1
             const jArcs = this._road._junctionCarveArcs ? this._road._junctionCarveArcs.get(runKey) : null
             if (jArcs && jArcs.length) {
@@ -895,7 +895,7 @@ export class RoadMeshSystem {
                 }
             }
 
-            _bTrim += performance.now() - _ptTrim   // PERF-26 INSTRUMENT
+            _bTrim += performance.now() - _ptTrim
 
             const _ptS = performance.now()
             const geo  = this.sweepRibbon(usePoints, this._params, runKey, useArcS0, useArcS1)
@@ -905,7 +905,7 @@ export class RoadMeshSystem {
             // steep triangles from surface-tagged geometries. Tunnels/portals stay fully solid.
             geo.userData.colliderSurfaceOnly = true
             perfAdd('ribbon.sweepRibbon', performance.now() - _ptS)
-            const _ptM = performance.now()   // PERF-26 INSTRUMENT: Mesh ctor + scene.add (parent/matrix
+            const _ptM = performance.now()   // Mesh ctor + scene.add (parent/matrix
             // bookkeeping, and the first place a fresh BufferGeometry is seen by the renderer graph)
             const mesh = new THREE.Mesh(geo, this._material)
 
@@ -920,9 +920,9 @@ export class RoadMeshSystem {
             this._scene.add(mesh)
             meshes.push(mesh)
             geometries.push(geo)
-            _bMesh += performance.now() - _ptM   // PERF-26 INSTRUMENT
+            _bMesh += performance.now() - _ptM
 
-            const _ptT = performance.now()   // PERF-26 INSTRUMENT
+            const _ptT = performance.now()
             // ── FEAT-40: tunnel bore lining + portal headwalls over this slice ──────────────
             // Spans live on the net entry (run-global arc, set by the assembly tunnel pass).
             // Each slice builds only its own overlap [arcS0,arcS1]∩[s0,s1] and each portal is
@@ -951,7 +951,7 @@ export class RoadMeshSystem {
                     if (sp.s1 >= sLo && sp.s1 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
                 }
             }
-            _bTunnel += performance.now() - _ptT   // PERF-26 INSTRUMENT
+            _bTunnel += performance.now() - _ptT
         }
 
         // ── Junction footprints for nodes assigned to this tile ────────────────
@@ -962,7 +962,7 @@ export class RoadMeshSystem {
         // QUAL-10: the pad is a GRADED apron — every vertex rides the node's own surface field
         // (_nodeSurfaceTop for a ≥3-leg pad, sampleRoadTopY for a deg-2 connector strip), the same
         // field the collision carve reads, so mesh == collision.
-        const _ptP = performance.now()   // PERF-26 INSTRUMENT: whole pad block, INCLUDING the
+        const _ptP = performance.now()   // whole pad block, INCLUDING the
         // full-map node iteration (a per-tile scan of every junction node in the network, run once
         // per built tile — a suspect in its own right, not just buildJunctionFootprint).
         if (this._params.roadJunctionFootprints) {
@@ -990,9 +990,9 @@ export class RoadMeshSystem {
             // shared node). Mid-span crossings (_detectJunctions) never had a ring, so never a pad.
             for (const node of this._road._detectNodeJunctions().values()) buildPad(node)
         }
-        _bPad += performance.now() - _ptP   // PERF-26 INSTRUMENT
+        _bPad += performance.now() - _ptP
 
-        // PERF-26 INSTRUMENT: emit the tile's section breakdown. Names must sort under the
+        // emit the tile's section breakdown. Names must sort under the
         // frame.ribbon.flush parent in the hitch `top` list. Sub-buckets are NESTED (they are
         // inside frame.ribbon.flush) so perf.js's frame.* attributed sum does not double-count.
         if (_bLut    > 0) perfAdd('ribbon.lut',      _bLut)
@@ -1071,7 +1071,9 @@ export class RoadMeshSystem {
             const t = Math.max(0, Math.min(1, dPortal / 25))
             const shade = 1 - 0.75 * (t * t * (3 - 2 * t))
             // Dirt-apron Y (relative to gradeY) — the _carveDirtY fold at lateral L, minus the drop.
-            const sinCam = Math.sin(prof.camberRad)
+            // Camber from camberProfile, the SAME source the ribbon and the carve read — runProfile's
+            // camberRad is the physics profile's own and can differ by the stream window.
+            const sinCam = Math.sin(road.camberProfile(s, runKey))
             const dirtH = (L) => crownProfile(L, halfWidth, crownH) + L * sinCam - clearance - APRON_DROP
             for (let k = 0; k < vpr; k++) {
                 let lat, h

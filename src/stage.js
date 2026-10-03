@@ -31,6 +31,16 @@
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
+
+// The stage truck's OWN params. RANGER_PARAMS carries the world truck's per-step scratch
+// (_tireFz, _rotateVector …) and its damage multipliers (_brakeScale*, _tireMuScale, _wheelRunout …),
+// all written live by the damage model. A shared object made the menu truck inherit whatever state
+// the last drive left behind. A copy of the tuned values only (no `_` keys) is a stock truck, with
+// its own scratch arrays below (owner, 2026-10-02: the menu always shows a fresh truck).
+const STAGE_PARAMS = Object.fromEntries(Object.entries(RANGER_PARAMS).filter(([k]) => k.charCodeAt(0) !== 95))
+STAGE_PARAMS._tireFz = [0, 0, 0, 0]
+STAGE_PARAMS._suspForceAccum = [0, 0, 0, 0]
+STAGE_PARAMS._hubNormalXZ = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }]
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 import { createPhysicsEngine, GROUP_TERRAIN, GROUP_STATIC } from './physics-engine.js'
 import { stepPhysics, createVehicleChassis } from './physics.js'
@@ -273,7 +283,7 @@ export class MenuStage {
     this.scene.add(plane)
 
     // Where the rock goes: under the front-left wheel's landing spot, so the drop is asymmetric.
-    const p = RANGER_PARAMS
+    const p = STAGE_PARAMS
     const flLocal = new THREE.Vector3(-p.trackFront / 2, 0, -(p.wheelbase * p.weightRear))
     const q = new THREE.Quaternion().setFromAxisAngle(this._axisY, TRUCK_YAW)
     this._rockSpot = flLocal.clone().applyQuaternion(q)   // truck sits at world XZ origin
@@ -338,11 +348,11 @@ export class MenuStage {
   }
 
   _buildTruck () {
-    this._vs = makeVehicleState(RANGER_PARAMS, IGN_OFF)   // a parked truck: no idle, no lights
-    this._chassis = createVehicleChassis(this._engine, this._vs, RANGER_PARAMS, { bed: RANGER_BED })
+    this._vs = makeVehicleState(STAGE_PARAMS, IGN_OFF)   // a parked truck: no idle, no lights
+    this._chassis = createVehicleChassis(this._engine, this._vs, STAGE_PARAMS, { bed: RANGER_BED })
     this._ctx = { engine: this._engine, chassis: this._chassis }
     // keyBindings off: a second model would otherwise also answer the 'L' headlight key.
-    this._model = createVehicleModel(this.scene, RANGER_PARAMS, undefined, { keyBindings: false })
+    this._model = createVehicleModel(this.scene, STAGE_PARAMS, undefined, { keyBindings: false })
     // A truck that has been sitting has its lamps off. Left on low (the default), the headlight
     // spots throw a large soft pool across the foreground — which is what that grey arc in front of
     // the truck was — and the tail running lights put a red patch under the rear wheel.
@@ -381,7 +391,7 @@ export class MenuStage {
     // In front of the truck looking back at the front-left corner — the wheel on the mound is the
     // star of the shot, so the rig is anchored on it and not on the truck's centre. The body then
     // runs away to the right and back, which leaves the frame's left third for the menu type.
-    const p = RANGER_PARAMS
+    const p = STAGE_PARAMS
     const q = new THREE.Quaternion().setFromAxisAngle(this._axisY, TRUCK_YAW)
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q)    // model forward = -Z
     const left = new THREE.Vector3(-1, 0, 0).applyQuaternion(q)
@@ -415,7 +425,7 @@ export class MenuStage {
   /** Re-seat the truck at drop height, empty the bed, restart the beat clock. */
   reset () {
     if (!this._vs) return   // reset() also runs during begin(), before _ready is set
-    const eq = computeStaticEquilibrium(RANGER_PARAMS)
+    const eq = computeStaticEquilibrium(STAGE_PARAMS)
     const vs = this._vs
     // stepPhysics pushes vehicleState → body at the top of every step (physics.js), so rewriting
     // the state IS the teleport; there is no separate engine reseat to keep in sync.
@@ -453,7 +463,7 @@ export class MenuStage {
     while (this._acc >= PHYSICS_DT && n < MAX_STEPS_PER_FRAME) {
       // No pre-roll any more: the rock is part of the ground, built once and already there, so the
       // truck can be released on the first step.
-      stepPhysics(this._vs, RANGER_PARAMS, PHYSICS_DT, this._queryContacts, this._ctx)
+      stepPhysics(this._vs, STAGE_PARAMS, PHYSICS_DT, this._queryContacts, this._ctx)
       this._simT += PHYSICS_DT
       this._acc -= PHYSICS_DT
       n++
