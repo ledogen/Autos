@@ -85,6 +85,7 @@ import { formatTime } from './par.js'                    // FEAT-29: par oracle 
 import { RANK_THRESHOLDS_DEFAULT } from './par.js'      // FEAT-87: the rank bar's fallback bands
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
+import { playGlassBreak } from './glass-audio.js'   // FEAT-87: the rank tile shattering
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -4551,8 +4552,10 @@ function _updateRankTimer () {
   E.letterBox.style.filter = `brightness(${(1 + 0.6 * k).toFixed(3)})`
 }
 // The break: two clones of the OLD tile (its colour, its letter), each clipped (CSS) to one side of
-// a jagged crack, dropped over the tile; their fall animations remove them when done.
+// a jagged crack, dropped over the tile; their fall animations remove them when done. It sounds
+// like a car side window going (glass-audio.js).
 function _rtBreakLetter (old) {
+  playGlassBreak()
   for (const side of ['l', 'r']) {
     const sh = document.createElement('span')
     sh.className = `rt-shard ${side}`
