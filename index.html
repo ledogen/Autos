@@ -223,6 +223,13 @@
     }
     #main-menu.settings #mm-root { display: none; }
     #main-menu.settings #mm-settings-panel { display: flex; }
+    /* FEAT-62: the scenario list — same page-swap as settings. Buttons are built from
+       data/scenarios.js by main.js (_renderScenarioList); each carries a dim blurb line. */
+    #mm-scenarios-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
+    #mm-scenario-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
+    #main-menu.scenarios #mm-root { display: none; }
+    #main-menu.scenarios #mm-scenarios-panel { display: flex; }
+    #main-menu button .mm-sub { display: block; font-size: 11px; color: #6a7a88; margin-top: 3px; letter-spacing: 0; }
     #mm-settings-panel .mm-note {
       color: #6a7a88;
       font-size: 12px;
@@ -300,7 +307,7 @@
        start/drop pins are visible behind it; the panel is bottom-anchored, not centered. */
     /* #camp-panel (FEAT-45), #dialogue-panel and #paper-panel (FEAT-61) share the mission panel's
        chrome by selector rather than by a copied block — one place to restyle a story-mode panel. */
-    #mission-panel, #camp-panel, #dialogue-panel, #paper-panel {
+    #mission-panel, #camp-panel, #dialogue-panel, #paper-panel, #scenario-panel {
       display: none;
       position: fixed;
       left: 50%;
@@ -388,7 +395,7 @@
       color: #8a939c;
       font-size: 12px;
     }
-    #mission-panel .mp-title, #camp-panel .mp-title, #paper-panel .mp-title {
+    #mission-panel .mp-title, #camp-panel .mp-title, #paper-panel .mp-title, #scenario-panel .mp-title {
       color: #7fc2ff;
       font-size: 12px;
       letter-spacing: 2px;
@@ -402,11 +409,17 @@
       border-radius: 2px;
       letter-spacing: 1px;
     }
-    #mp-body, #pp-body { line-height: 1.7; }
-    #mp-body .mp-big, #pp-body .mp-big { font-size: 22px; color: #ffffff; }
-    #mp-body .mp-dim, #pp-body .mp-dim { color: #8a939c; }
-    #mp-actions, #pp-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
-    #mission-panel button, #camp-panel button, #paper-panel button {
+    #mp-body, #pp-body, #sp-body { line-height: 1.7; }
+    #mp-body .mp-big, #pp-body .mp-big, #sp-body .mp-big { font-size: 22px; color: #ffffff; }
+    #mp-body .mp-dim, #pp-body .mp-dim, #sp-body .mp-dim { color: #8a939c; }
+    #mp-actions, #pp-actions, #sp-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+    /* FEAT-62 finish card: the status line and the top-five board. */
+    #sp-body .sp-best { color: #2fe6ff; letter-spacing: 2px; }
+    #sp-body .sp-miss { color: #ff8a7a; }
+    #sp-body .sp-board { margin: 10px auto 0; border-collapse: collapse; font-size: 13px; }
+    #sp-body .sp-board td { padding: 1px 10px; text-align: right; }
+    #sp-body .sp-board tr.sp-you td { color: #2fe6ff; }
+    #mission-panel button, #camp-panel button, #paper-panel button, #scenario-panel button {
       background: none;
       border: 1px solid #55606b;
       color: #cfd6dd;
@@ -416,7 +429,7 @@
       cursor: pointer;
       transition: background 0.1s, color 0.1s;
     }
-    #mission-panel button:hover, #camp-panel button:hover:not(:disabled) { background: rgba(255,255,255,0.09); color: #fff; border-color: #8fa2b4; }
+    #mission-panel button:hover, #scenario-panel button:hover, #camp-panel button:hover:not(:disabled) { background: rgba(255,255,255,0.09); color: #fff; border-color: #8fa2b4; }
     #camp-panel button:disabled { color: #5c646c; border-color: #333b43; cursor: default; }
     #mp-accept { border-color: #5ad06a; color: #b6f0be; }
     #mp-decline { border-color: #6b747d; color: #a8b0b8; }
@@ -1187,6 +1200,7 @@
   <div id="pause-menu">
     <div class="pm-title">paused</div>
     <button id="pm-resume">resume</button>
+    <button id="pm-restart" style="display:none">restart</button>
     <button id="pm-story">story mode</button>
     <button id="pm-lab">testing lab</button>
     <button id="pm-menu">main menu</button>
@@ -1232,8 +1246,14 @@
       <div class="mm-title">autos</div>
       <button id="mm-freeroam">free roam</button>
       <button id="mm-story">story mode</button>
+      <button id="mm-scenarios">scenarios</button>
       <button id="mm-lab">testing lab</button>
       <button id="mm-settings">settings</button>
+    </div>
+    <div id="mm-scenarios-panel">
+      <div class="mm-title">scenarios</div>
+      <div id="mm-scenario-list"></div>
+      <button id="mm-scenarios-back">back</button>
     </div>
     <div id="mm-settings-panel">
       <div class="mm-title">settings</div>
@@ -1287,6 +1307,16 @@
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
       <button id="mp-accept">accept mission</button>
       <button id="mp-quit">back to free roam</button>
+    </div>
+  </div>
+  <!-- FEAT-62: the scenario finish card (mission-panel chrome). Filled by main.js _renderScenarioUI;
+       the run HUD while driving is #mission-hud below, the Quick Job's readout. -->
+  <div id="scenario-panel">
+    <div class="mp-title" id="sp-title">scenario</div>
+    <div id="sp-body"></div>
+    <div id="sp-actions">
+      <button id="sp-restart">restart (R)</button>
+      <button id="sp-menu">main menu</button>
     </div>
   </div>
   <!-- The run timer. Its readout is .hud-text; FEAT-67's "abandon job" button (#job-cancel, below)

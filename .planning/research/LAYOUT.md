@@ -12,7 +12,7 @@ or delete a file, update the relevant line here in the same commit — it's one 
 |---|---|
 | `index.html` | The single entry point (Vite root). |
 | `src/` | The product — shippable game engine, ES6 modules. No diagnostics, no dead code (see CLAUDE.md "src/ is the product"). |
-| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), and the bundled route caches (`route-cache-*.json.gz`, fetched by URL — never ES-import them). |
+| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), authored scenarios (`scenarios.js`, FEAT-62 — seed + world-coordinate poses, re-checked against the road by `test/scenario-route.mjs`), and the bundled route caches (`route-cache-*.json.gz`, fetched by URL — never ES-import them). |
 | `assets/models/` | Hand-authored `.glb` assets + `CREDITS.md`. Convention: `.planning/research/ASSETS.md`; style: `ART-STYLE.md`. |
 | `vendor/box3d/` | Vendored Box3D WASM bindings. Imported ONLY by `src/physics-engine.js` (FEAT-48 seam). |
 | `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts. Pure node — never touches Vite. |
@@ -89,7 +89,10 @@ camping, FEAT-45) · `dialogue.js` (character channel) · `paper-route.js` + `th
 clustering) · `rank-timer.js` (FEAT-87 live rank timer — band line-up, escalation, beats; pure, the
 DOM ticker is in main.js) · `damage-screen.js` (FEAT-90 player damage pictogram + left-edge alert
 icon, V, parked only) · `park-badge.js` (FEAT-90 orange P-in-a-circle "park first" badge + keycap
-markup) · `lab.js` (FEAT-31 testing lab world).
+markup) · `lab.js` (FEAT-31 testing lab world) · `scenario.js` (FEAT-62 scenario run rules — countdown,
+fixed-step clock, gate/finish line crossings; pure, the columns + HUD + finish card are in main.js) ·
+`leaderboard.js` (FEAT-62 best times per scenario behind a `{load, save}` store hook — session memory
+until the FEAT-42 save file; the hook is documented in its header).
 
 **Dev & harness bridge** — `debug.js` (lil-gui panel, HUD) · `damage-hud.js` (SM-3 diagnostic damage readout, opened from
 the debug panel's Damage folder) · `capture.js` (game↔harness capture

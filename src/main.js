@@ -82,6 +82,9 @@ import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planTourJob, customersForTier, radiusForTier, tierRungs } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
+import { SCENARIOS, scenarioById } from '../data/scenarios.js'   // FEAT-62: authored scenarios
+import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
+import { Leaderboard } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
 import { RANK_THRESHOLDS_DEFAULT } from './par.js'      // FEAT-87: the rank bar's fallback bands
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
@@ -1103,6 +1106,9 @@ async function _reseatTruckAtSpawnInner () {
 // The wall itself still applies: story.js clamps the truck back inside on the next tick, so a
 // teleport outside the region is a look, not a move.
 let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
+// FEAT-62: the pause menu is up. Up here, not with the scenario block, because _hidePauseMenu writes
+// it and is reachable long before the module body gets that far.
+let _pauseOpen = false
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -1303,6 +1309,32 @@ document.getElementById('mm-lab')?.addEventListener('click', async () => {
   await _worldReady
   _exitStageLoad()
   if (!_labActive) enterLab()
+})
+// FEAT-62: scenarios. The list is data (data/scenarios.js), so its buttons are built here rather
+// than written into index.html. The leaderboard lives up here too — it is pure and has no world
+// dependencies, and the list shows each scenario's best time, so it must exist before the module
+// body below has finished building the world. No store passed = session-only memory; the one-line
+// save-file hook is described in src/leaderboard.js's header.
+const scenarioLeaderboard = new Leaderboard()
+function _renderScenarioList () {
+  const list = document.getElementById('mm-scenario-list')
+  if (!list) return
+  list.textContent = ''
+  for (const def of SCENARIOS) {
+    const b = document.createElement('button')
+    const best = scenarioLeaderboard.best(def.id)
+    b.innerHTML = `${def.name}<span class="mm-sub">${def.blurb}`
+      + `${best != null ? ` &middot; best ${formatTime(best)}` : ''}</span>`
+    b.addEventListener('click', () => { void _startScenario(def) })
+    list.appendChild(b)
+  }
+}
+document.getElementById('mm-scenarios')?.addEventListener('click', () => {
+  _renderScenarioList()
+  document.getElementById('main-menu')?.classList.add('scenarios')
+})
+document.getElementById('mm-scenarios-back')?.addEventListener('click', () => {
+  document.getElementById('main-menu')?.classList.remove('scenarios')
 })
 document.getElementById('mm-settings')?.addEventListener('click', () => {
   document.getElementById('main-menu')?.classList.add('settings')
@@ -5133,11 +5165,211 @@ function _showPauseMenu () {
   // the way OUT ("free roam") while story mode is active.
   const storyBtn = document.getElementById('pm-story')
   if (storyBtn) storyBtn.textContent = storySystem.isActive() ? 'free roam' : 'story mode'
+  // FEAT-62: restart only means something inside a scenario.
+  const restartBtn = document.getElementById('pm-restart')
+  if (restartBtn) restartBtn.style.display = scenarioSystem.isActive() ? '' : 'none'
+  _pauseOpen = true
 }
 
 function _hidePauseMenu () {
   const el = document.getElementById('pause-menu')
   if (el) el.style.display = 'none'
+  _pauseOpen = false
+}
+
+// ── FEAT-62: scenarios ────────────────────────────────────────────────────────────────────────────
+// An authored run on a pinned seed: seat the truck at the scenario's spawn, stand light columns at
+// the start (white), the gates (cyan) and the finish (red), and hand the rules to ScenarioSystem
+// (src/scenario.js). It runs in the ordinary free-roam world — no region, no day clock, no wallet —
+// with teleport off (isTeleportEnabled) and the debug panel locked out, so a time is comparable.
+//
+// While a scenario is live the pause menu really PAUSES (the sim is held, so the clock stops), and
+// R restarts the run rather than just re-seating the truck. The finish card and the run HUD reuse
+// the mission panel's chrome and the Quick Job's #mission-hud readout.
+const scenarioSystem = new ScenarioSystem({
+  getCar: () => vehicleState.position,
+  leaderboard: scenarioLeaderboard,
+  onChange: () => { _syncScenarioColumns(); _renderScenarioUI() },
+})
+
+// The light columns: the POI curtain material (_ringMat — vertical alpha ramp, no tone mapping, no
+// depth write) on a thin open cylinder, one each side of the road. Tall enough to read over a crest
+// from a few hundred metres; sunk so a slope can never open a gap under one.
+const _SCN_COL_R = 0.35     // m
+const _SCN_COL_H = 14       // m
+const _SCN_COL_SINK = 1.5   // m
+const _scnColGeo = new THREE.CylinderGeometry(1, 1, 1, 12, 1, true)
+const _scnColMat = {
+  start:  _ringMat(0xffffff, 0.55),
+  gate:   _ringMat(0x2fe6ff, 0.55),
+  finish: _ringMat(0xff3030, 0.6),
+}
+let _scnGroup = null
+let _scnPairs = []   // { kind, idx, x, z, meshes:[left,right], seated }
+
+function _clearScenarioColumns () {
+  if (_scnGroup) scene.remove(_scnGroup)   // geometry + materials are shared singletons
+  _scnGroup = null
+  _scnPairs = []
+}
+function _buildScenarioColumns (def) {
+  _clearScenarioColumns()
+  _scnGroup = new THREE.Group()
+  _scnGroup.name = 'scenario-columns'
+  scene.add(_scnGroup)
+  const add = (pose, kind, idx) => {
+    // Body +X (the road's right) at this heading — the yaw rotation of (1, 0, 0).
+    const rx = Math.cos(pose.heading), rz = -Math.sin(pose.heading)
+    const meshes = [-1, 1].map(side => {
+      const m = new THREE.Mesh(_scnColGeo, _scnColMat[kind])
+      m.scale.set(_SCN_COL_R, _SCN_COL_H, _SCN_COL_R)
+      m.position.set(pose.x + rx * def.gateHalfWidth * side, 0, pose.z + rz * def.gateHalfWidth * side)
+      m.renderOrder = 5
+      _scnGroup.add(m)
+      return m
+    })
+    _scnPairs.push({ kind, idx, x: pose.x, z: pose.z, meshes, seated: false })
+  }
+  add(def.start, 'start', 0)
+  def.gates.forEach((g, i) => add(g, 'gate', i))
+  add(def.finish, 'finish', 0)
+  _seatScenarioColumns()
+}
+/**
+ * Stand each pair on the road. A gate 1.5 km away is not streamed yet, so its first height is the
+ * bare terrain; the 10 Hz poll keeps re-sampling until the road surface is under it, then stops.
+ * One height per pair (the centreline), so the pair stays level across a cambered road.
+ */
+function _seatScenarioColumns () {
+  for (const p of _scnPairs) {
+    if (p.seated) continue
+    const y = _groundSampleY(p.x, p.z)
+    for (const m of p.meshes) m.position.y = y - _SCN_COL_SINK + _SCN_COL_H * 0.5
+    if (roadSystem?.sampleRoadTopY(p.x, p.z) != null) p.seated = true
+  }
+}
+/** A gate goes dark the moment it is crossed — the crossing confirmation. */
+function _syncScenarioColumns () {
+  for (const p of _scnPairs) {
+    const on = p.kind !== 'gate' || !scenarioSystem.passed[p.idx]
+    for (const m of p.meshes) m.visible = on
+  }
+}
+
+function _renderScenarioUI () {
+  const hud = document.getElementById('mission-hud')
+  const panel = document.getElementById('scenario-panel')
+  if (!hud || !panel) return
+  const hudText = hud.querySelector('.hud-text') ?? hud
+  const sc = scenarioSystem
+  const show = (el, on) => { el.style.display = on ? 'block' : 'none' }
+  switch (sc.state) {
+    case 'countdown':
+      show(panel, false); show(hud, true)
+      hudText.innerHTML = `<span class="mh-count">${Math.max(1, Math.ceil(sc.countdown))}</span>`
+      break
+    case 'running':
+      show(panel, false); show(hud, true)
+      hudText.textContent = `${formatTime(sc.elapsed)}   gate ${sc.gatesPassed()} / ${sc.def.gates.length}`
+      break
+    case 'done': {
+      show(hud, false); show(panel, true)
+      const r = sc.result
+      const title = document.getElementById('sp-title')
+      if (title) title.textContent = `scenario · ${sc.def.name}`
+      const status = !r.valid
+        ? `<span class="sp-miss">missed ${r.missed} gate${r.missed === 1 ? '' : 's'} &mdash; time not recorded</span>`
+        : r.newBest ? '<span class="sp-best">NEW BEST</span>'
+        : r.rank ? `<span class="mp-dim">#${r.rank} on the board</span>`
+        : '<span class="mp-dim">off the board</span>'
+      const rows = scenarioLeaderboard.entries(sc.def.id).slice(0, 5)
+        .map((e, i) => `<tr class="${r.valid && r.rank === i + 1 ? 'sp-you' : ''}"><td>${i + 1}</td>`
+          + `<td>${formatTime(e.elapsed)}</td><td class="mp-dim">${new Date(e.at).toLocaleDateString()}</td></tr>`)
+        .join('')
+      document.getElementById('sp-body').innerHTML =
+        `<span class="mp-big">${formatTime(r.elapsed)}</span><br>${status}`
+        + (rows ? `<table class="sp-board">${rows}</table>` : '')
+      break
+    }
+    default:
+      show(hud, false); show(panel, false)
+  }
+}
+
+function _nextFrame () { return new Promise(res => requestAnimationFrame(() => res())) }
+
+/** One-click entry from the main menu: build/keep the seed, seat at the crest, count down. */
+async function _startScenario (def) {
+  _enterStageLoad(`loading ${def.name}\u2026`)
+  await _worldReady
+  if (scenarioSystem.isActive()) _exitScenario()
+  if (missionSystem?.isActive()) missionSystem.exit()
+  if (storySystem.isActive()) storySystem.exit()
+  if (_labActive) exitLab()
+  window.__setGameMode('scenario')
+  setDebugLockout(true)
+  try {
+    if (parseWorldSeed(def.seed) !== worldSeed) await applyWorldSeed(def.seed)
+    // AFTER the reseed: applyWorldSeed clears the override, and the rebuild's own reseat runs first.
+    _spawnOverride = { align: true, x: def.spawn.x, z: def.spawn.z, heading: def.spawn.heading, drop: 0 }
+    await _seatOnStreamedGround()
+  } finally {
+    _exitStageLoad()
+  }
+  _buildScenarioColumns(def)
+  scenarioSystem.enter(def)
+}
+
+/**
+ * Seat at the spawn override, behind the stage. The first seat may probe bare terrain — nothing is
+ * streamed there yet, and the raw terrain at the crest stands ~4.7 m above the road cut, so the
+ * truck would drop onto it. The loop keeps streaming around the truck while the sim is held, so
+ * wait until BOTH the road is under the spawn and the ground ring has settled, then seat again on
+ * the real road surface. Both, because they arrive separately: the network is built off-thread
+ * (PERF-30) and the ring can report settled ~0.3 s after a 1.5 km jump, well before the road lands
+ * (measured on the far restart, 2026-10-02). A few frames first so the ring has noticed the move.
+ */
+async function _seatOnStreamedGround () {
+  await _reseatTruckAtSpawn()
+  const o = _spawnOverride
+  for (let i = 0; i < 10; i++) await _nextFrame()
+  const t0 = performance.now()
+  const ready = () => (!terrainSystem || terrainSystem.isRingSettled())
+    && (!o || roadSystem?.sampleRoadTopY(o.x, o.z) != null)
+  while (!ready() && performance.now() - t0 < 20000) await _nextFrame()
+  await _reseatTruckAtSpawn()
+}
+
+// Beyond this the crest has streamed out from under the truck and a restart needs the staged load;
+// inside it the road at the spawn is still live and the restart is instant. Well inside the 320 m
+// play window, so "still streamed" is not a guess.
+const SCENARIO_QUICK_RESTART_M = 150
+let _scenarioRestarting = false
+
+/** Pause-menu restart, the finish card's restart, and R while a scenario is live. */
+async function _restartScenario () {
+  if (!scenarioSystem.isActive() || _scenarioRestarting) return
+  _hidePauseMenu()
+  const sp = scenarioSystem.def.spawn
+  const far = Math.hypot(vehicleState.position.x - sp.x, vehicleState.position.z - sp.z) > SCENARIO_QUICK_RESTART_M
+  if (far) {
+    _scenarioRestarting = true
+    _enterStageLoad(`back to the top of ${scenarioSystem.def.name}\u2026`)
+    try { await _seatOnStreamedGround() } finally { _exitStageLoad(); _scenarioRestarting = false }
+  } else {
+    void _reseatTruckAtSpawn()   // the override IS the scenario spawn; a non-story reseat is a fresh truck
+  }
+  scenarioSystem.restart()
+}
+
+/** Leave the scenario. Does not reseat — whatever comes next (menu, story, lab) seats the truck. */
+function _exitScenario () {
+  if (!scenarioSystem.isActive()) return
+  scenarioSystem.exit()
+  _clearScenarioColumns()
+  _spawnOverride = null
+  setDebugLockout(false)
+  window.__setGameMode('freeroam')
 }
 
 // ── Story Mode (FEAT-43) — sandboxed gamemode ─────────────────────────────────────────────
@@ -5389,14 +5621,14 @@ function _showMainMenu () {
   const cap = document.getElementById('load-caption')
   if (cap) cap.style.display = 'none'
   const el = document.getElementById('main-menu')
-  if (el) { el.style.display = 'flex'; el.classList.remove('settings') }
+  if (el) { el.style.display = 'flex'; el.classList.remove('settings', 'scenarios') }
   menuStage.setActive(true)   // re-runs the drop when arriving from the world; a no-op at boot
   _simHeld = true
   document.body.classList.add('stage-on')
 }
 function _hideMainMenu () {
   const el = document.getElementById('main-menu')
-  if (el) { el.style.display = 'none'; el.classList.remove('settings') }
+  if (el) { el.style.display = 'none'; el.classList.remove('settings', 'scenarios') }
 }
 // The region-freeze blurb is a STORY-MODE fact; it was showing on free-roam and lab loads too.
 const LOAD_HINT_STORY = 'the whole region is routed once, up front — after this the roads are frozen and no routing runs while you drive.'
@@ -5471,6 +5703,15 @@ document.getElementById('quickjob-btn')?.addEventListener('click', () => {
 // an unguarded deref would throw at module-eval and abort the whole sim if an id is
 // renamed/removed from index.html (WR-04).
 document.getElementById('pm-resume')?.addEventListener('click', () => _hidePauseMenu())
+// FEAT-62: scenario restart (the button is only shown inside a scenario) and the finish card.
+document.getElementById('pm-restart')?.addEventListener('click', () => { void _restartScenario() })
+document.getElementById('sp-restart')?.addEventListener('click', () => { void _restartScenario() })
+document.getElementById('sp-menu')?.addEventListener('click', () => { _exitScenario(); _showMainMenu() })
+// A clicked button keeps focus, and a focused button eats Space — the brake — as another click. The
+// #job-cancel trick: never take focus, so a restart cannot fire again under the next brake.
+for (const id of ['pm-restart', 'sp-restart', 'sp-menu']) {
+  document.getElementById(id)?.addEventListener('mousedown', (e) => e.preventDefault())
+}
 // FEAT-67: CANCEL the job in hand — canon: the player phones the customer and cancels on them. The
 // only thing that cancels a job (owner, 2026-09-27): leaving the route or region never does, and the
 // pause menu's exits end the whole run rather than cancel. The giver's slot then locks for the
@@ -5512,6 +5753,7 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
 // FEAT-41: back out to the main menu. The mode is left FIRST — dropping to a menu while story mode
 // still holds a frozen region and a live day clock would leave both running behind the scene.
 document.getElementById('pm-menu')?.addEventListener('click', () => {
+  _exitScenario()
   if (missionSystem?.isActive()) missionSystem.exit()
   if (storySystem.isActive()) storySystem.exit()
   if (_labActive) exitLab()
@@ -5522,6 +5764,7 @@ document.getElementById('pm-menu')?.addEventListener('click', () => {
 // affordances (teleport), which is the point of _gameMode existing.
 document.getElementById('pm-lab')?.addEventListener('click', () => {
   if (_labActive) { exitLab(); return }
+  _exitScenario()
   if (missionSystem?.isActive()) missionSystem.exit()   // don't run a mission inside the lab
   // …nor a story run: its day clock, wallet and region wall would all stay live around a truck
   // teleported to the lab strip, and exitLab would then declare free roam inside an active story.
@@ -5540,6 +5783,7 @@ document.getElementById('pm-story')?.addEventListener('click', () => {
     return
   }
   if (_labActive) exitLab()
+  _exitScenario()
   _hidePauseMenu()
   _showSeedModal()
 })
@@ -5609,7 +5853,7 @@ document.addEventListener('keydown', e => {
   // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
   // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
   // settings page and is otherwise inert until the world is handed back.
-  if (menuStage.isActive()) { document.getElementById('main-menu')?.classList.remove('settings'); return }
+  if (menuStage.isActive()) { document.getElementById('main-menu')?.classList.remove('settings', 'scenarios'); return }
   const el = document.getElementById('pause-menu')
   if (!el) return
   if (el.style.display === 'none' || el.style.display === '') {
@@ -5730,7 +5974,8 @@ function loop () {
   // free-roam reseed) left the rendered truck, and the terrain ring streaming around it, parked at the
   // OLD spawn for the whole load (measured 2026-09-22: ring built ~280 m from the truck, then
   // rebuilt from scratch the moment the stage lifted).
-  if (_simHeld || _genHold) {   // PERF-33: the freeze guard holds the sim the same way
+  // FEAT-62: a scenario's pause menu is a real pause — its clock must not run behind the menu.
+  if (_simHeld || _genHold || (_pauseOpen && scenarioSystem.isActive())) {   // PERF-33: the freeze guard holds the sim the same way
     accumulator = 0
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
@@ -5754,7 +5999,7 @@ function loop () {
     // forced, revving against it is allowed, and dropping the hold on break camp is a clean release
     // — W then behaves exactly as it does when you pull away from a mission launch, because the
     // player's own parking-brake latch (the thing that opened the dialogue) is still underneath it.
-    setLaunchHold(!!missionSystem?.isHeld() || !!_campUi || _campBusy)
+    setLaunchHold(!!missionSystem?.isHeld() || scenarioSystem.isHeld() || !!_campUi || _campBusy)
 
     const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     if (resetRequested) {
@@ -5766,7 +6011,9 @@ function loop () {
       // using the current worldSeed, seats at static equilibrium height, zeros all motion.
       // Async since QUAL-14 (spawn bands warm on the worker pool); fire-and-forget — with the
       // route cache warm this resolves within a frame or two.
-      void _reseatTruckAtSpawn()
+      // FEAT-62: inside a scenario R is RESTART — the same seat plus a fresh count and clean gates.
+      if (scenarioSystem.isActive()) void _restartScenario()
+      else void _reseatTruckAtSpawn()
     }
 
     // FEAT-31: lab gate crossings. One segment test per gate, clocked off the fixed step so a
@@ -5782,6 +6029,8 @@ function loop () {
     // discipline as above, and clocked off the fixed step so a frame spike can neither stretch the
     // elapsed time nor skip the line that starts it.
     if (paperRouteSystem.isCarrying()) paperRouteSystem.update(PHYSICS_DT)
+    // FEAT-62: the scenario's countdown, clock and line crossings — same fixed-step discipline.
+    if (scenarioSystem.isActive()) scenarioSystem.update(PHYSICS_DT)
 
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
@@ -6235,6 +6484,12 @@ function loop () {
     _lastHudWrite = _hudNow
 
     if (_labActive) _renderLabUI()
+    // FEAT-62: the countdown digit and the clock are live values; the far columns settle onto the
+    // road as it streams in.
+    if (scenarioSystem.state === 'countdown' || scenarioSystem.state === 'running') {
+      _renderScenarioUI()
+      _seatScenarioColumns()
+    }
 
     // Story mode (beta): the countdown digit and the elapsed/distance readout are live values,
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step. ('staging' is a

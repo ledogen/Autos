@@ -12,6 +12,36 @@ invariants: SM-INV-3, SM-INV-12
 
 # FEAT-62: Scenarios — a curated mission, ready to play from the main menu
 
+## Build state — the frame + first occupant SHIPPED 2026-10-02 (main, uncommitted at time of writing)
+
+The owner picked a different first scenario from the paper route this ticket drafted: **"the
+descent"**, a downhill time trial on seed `381142870` (capture `autos-capture-1791011156662.json`).
+Owner's spec: spawn at the local maximum, end at the bottom, simple timer, pause menu with reset,
+finish card with the time, leaderboard machinery (local; hook details if no save file), main menu →
+scenarios, restart; white light columns at the start, 5 cyan gates, red finish.
+
+- **Route** (extracted headless from the real routed road): crest 57 m above the node where the
+  marked run begins → 1.49 km, 163 m of drop → 25 m short of the bottom junction (a local minimum —
+  every road out of it climbs). Gate 5 is the capture mark.
+- `data/scenarios.js` — seed + world-coordinate poses (spawn, start, gates, finish). Seed-only world
+  as this ticket settled; the poses are re-checked against the road by **`test/scenario-route.mjs`**
+  (registered gate, heavy) — re-extract if it fails, never loosen it.
+- `src/scenario.js` — pure rules: Quick-Job 3-2-1 countdown holding the truck, fixed-step clock,
+  gates in any order (forwards only, gateHalfWidth + 3 m), finish always ends the run, a missed gate
+  = a time with no board entry.
+- `src/leaderboard.js` — fastest-first, top 10, behind a `{load, save}` store hook. **Session memory
+  only** until FEAT-42's save file; the one-line hook and the adapter rules are in its header.
+- main.js: main menu → scenarios page; staged entry (seat, wait for road + ground, reseat); light
+  columns (POI curtain material); run HUD in `#mission-hud`; finish card `#scenario-panel`
+  (restart / main menu); pause menu really pauses inside a scenario and gets **restart**; **R =
+  restart**; teleport off and debug panel locked out. A restart from far away re-runs the staged load.
+- It runs in the ordinary free-roam world, NOT through `StorySystem.enter()` — a time trial has no
+  region, day, wallet or tier, so the "run-layer state from the definition" item below does not apply
+  to it. It still applies to a paper-route scenario.
+
+**Still open:** owner tuning of start/end/gate poses; persistence (FEAT-42); the paper-route
+scenario and its run-layer state; the world-determinism acceptance item for the scenario entry path.
+
 ## Request
 
 > we have a working mission now. it's pretty hard lol — very challenging in a good way hard. I like
