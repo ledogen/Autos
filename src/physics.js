@@ -521,11 +521,17 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // off reads depth ≤ 0 and drops the contact). Terrain and static props only — debris bodies MOVE
   // within a step, so the engine sphere test below still runs on every call (owner, 2026-10-02).
   // Measured before: ~75 % of the 1.9 ms physics step was these queries.
+  //
+  // A wheel that is AIRBORNE at the start of the step has an empty answer, and the query reports
+  // only penetrating contacts — so a touchdown inside the step could not appear until the next
+  // one (up to a step of extra sink, ~50 mm at a 3 m/s landing). Such a corner keeps asking the
+  // real query every substep, so a landing is caught at the substep it happens, as before. Costs
+  // nothing while the wheels are on the ground.
   const base = [null, null, null, null]   // per corner: { x, y, z, r, list } — Step 1's analytic answer
   const qcPlus = (cx, cy, cz, r, footprint, corner) => {
     let list = null
     const b = corner !== undefined ? base[corner] : null
-    if (b && footprint) {
+    if (b && footprint && b.list.length) {
       const dx = cx - b.x, dy = cy - b.y, dz = cz - b.z, dr = r - b.r
       list = []
       for (const c of b.list) {
