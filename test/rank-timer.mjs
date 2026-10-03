@@ -187,7 +187,7 @@ const PAR = 180   // the measured day-1 average (economy.js)
   // pulse drives a heartbeat on its peaks.
   check('the card never shakes (no inline transform written by the driver)', !/style\.transform\s*=/.test(block.replace(/E\.strip\.style\.transform/g, '')))
   check('the pulse peaks fire the heartbeat', /playHeartbeat\(/.test(block))
-  check('the oscillator tops out at 120 bpm (2 Hz), a heartbeat not a buzz', P.pulseHzMax === 2 && P.pulseHzMin < P.pulseHzMax)
+  check('the oscillator tops out at 140 bpm, a heartbeat not a buzz', near(P.pulseHzMax * 60, 140, 1e-9) && P.pulseHzMin < P.pulseHzMax)
 }
 
 console.log(fails === 0 ? '\nrank-timer gate: ALL OK' : `\nrank-timer gate: ${fails} FAILURE(S)`)

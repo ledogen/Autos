@@ -4511,7 +4511,7 @@ function _updateRankTimer () {
     _rtLastNow = now
     return
   }
-  // ONE oscillator. Its frequency ramps pulseHzMin → pulseHzMax (48 → 120 bpm) with intensity² —
+  // ONE oscillator. Its frequency ramps pulseHzMin → pulseHzMax (48 → 140 bpm) with intensity² —
   // slow for most of the approach, then quickly up to a racing heartbeat at the line. The phase
   // INTEGRATES (phase += 2π·f·dt) so the frequency ramp is continuous: no jumps as f changes.
   // Everything the escalation moves — the letter's scale, both glows, the heartbeat — rides this

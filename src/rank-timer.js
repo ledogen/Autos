@@ -48,13 +48,14 @@ export const RANK_TIMER_PARAMS = {
     appearS:    15,     // s — the bar pops up this long before the S/A line, not before
     escalateS:  10,     // s — a line within this many seconds ramps the bar from calm to flashy
     // The pulse [owner, 2026-10-01: "slow and mild leading into fast, stronger pulsing right
-    // before breakaway", topping out at 120 bpm]: ONE oscillator whose frequency ramps with
-    // intensity, no randomness. 120 bpm is 2 Hz — a heartbeat, not a buzz; the ramp starts under a
-    // beat a second (48 bpm) and reaches 120 at the line. It drives the glow, the letter's scale
+    // before breakaway"; top raised 120 → 140 bpm with the kick-drum heartbeat, 2026-10-02]: ONE
+    // oscillator whose frequency ramps with intensity, no randomness. 140 bpm is 2.33 Hz — a racing
+    // heartbeat, not a buzz; the ramp starts under a beat a second (48 bpm) and reaches 140 at the
+    // line. It drives the glow, the letter's scale
     // and a heartbeat sound on every peak (heartbeat-audio.js). The card no longer shakes (owner,
     // 2026-10-02).
     pulseHzMin: 0.8,    // Hz — the oscillator at the start of the ramp (48 bpm)
-    pulseHzMax: 2,      // Hz — …at the line (120 bpm)
+    pulseHzMax: 140 / 60, // Hz — …at the line (140 bpm)
     heartMin:   0.35,   // heartbeat loudness at the start of the ramp (→ 1 at the line; × 0.5 for a light line)
     beatS:      1.4,    // s — how long the "bonus lost" / "too slow" beat holds on screen
 }
