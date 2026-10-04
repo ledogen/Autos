@@ -1039,6 +1039,18 @@ function _seatOnGroundPlane (cx, cz, heading, eq, drop) {
 
 async function _reseatTruckAtSpawnInner () {
   const eq = computeStaticEquilibrium(RANGER_PARAMS)
+  // A teleport (any _spawnOverride) lands somewhere the streamed network may not reach yet. The
+  // cold spawn builds its roads BEFORE seating (resolveSpawn); the teleport used to seat at once and
+  // let the per-frame dispatcher fetch the network a second or two later — so the truck fell onto
+  // raw terrain and the road popped in under it, while the PERF-33 freeze guard saw chunks carved
+  // "correctly" against the old window and let go. Build the play band at the destination first;
+  // the chunks then stream against the right roads and the guard holds until they are carved
+  // (owner, 2026-10-03). Same frame-loop park as the spawn path.
+  if (_spawnOverride && netClient && roadSystem) {
+    _spawnWarmActive = true
+    try { await netClient.buildNow('play', _spawnOverride.x, _spawnOverride.z, roadSystem._proto.radius) }
+    finally { _spawnWarmActive = false }
+  }
   if (_spawnOverride && _spawnOverride.align === false) {
     // Exact pose (free-cam "teleport here", Shift+R) — floating/off-road allowed, applied verbatim.
     vehicleState.position.set(_spawnOverride.x, _spawnOverride.y, _spawnOverride.z)

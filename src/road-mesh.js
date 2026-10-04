@@ -547,9 +547,15 @@ export class RoadMeshSystem {
             || rs.networkCoversXZ(x0 + S / 2, z0 + S / 2)
     }
 
-    ensureRoadTile(tileX, tileZ) {
+    /**
+     * Queue a tile build. `rebuild` queues a tile that is already standing: the new meshes are built
+     * FIRST and the old ones removed in the same frame (_buildRoadTile), so a stale tile never has a
+     * frame with no road in it — dispose-then-rebuild showed as the road ahead blinking out and back
+     * (owner, 2026-10-03: every time the first full-band adopt widened the coverage circle).
+     */
+    ensureRoadTile(tileX, tileZ, rebuild = false) {
         const key = `${tileX},${tileZ}`
-        if (this._tileMeshMap.has(key) || this._pendingSet.has(key)) return
+        if (this._pendingSet.has(key) || (!rebuild && this._tileMeshMap.has(key))) return
         this._pendingSet.add(key)
         this._pendingQueue.push({ tileX, tileZ, key })
     }
@@ -576,15 +582,16 @@ export class RoadMeshSystem {
     disposeRoadTile(key) {
         const entry = this._tileMeshMap.get(key)
         if (!entry) return
-        for (const mesh of entry.meshes) {
-            this._scene.remove(mesh)
-        }
-        for (const geo of entry.geometries) {
-            geo.dispose()   // T-06-03: explicit GPU memory release
-        }
+        this._releaseEntry(entry)
         this._tileMeshMap.delete(key)
         this._pendingSet.delete(key)
         this._physicsHook?.disposeTile(key)   // FEAT-48: drop the engine trimesh with the visuals
+    }
+
+    /** Remove a tile entry's meshes from the scene and free their geometry (T-06-03). */
+    _releaseEntry(entry) {
+        for (const mesh of entry.meshes) this._scene.remove(mesh)
+        for (const geo of entry.geometries) geo.dispose()
     }
 
     /**
@@ -703,7 +710,7 @@ export class RoadMeshSystem {
 
         // D1 (plan 09-19): version-mismatch rebuild pass (fixes bug #1 — stale ribbon).
         // Any built tile whose builtGeneration differs from the current road generation was
-        // built against an old spline; dispose it and re-enqueue so it rebuilds against the
+        // built against an old spline; re-enqueue it (rebuild in place) so it rebuilds against the
         // current route. Frame-spread is preserved: re-enqueue lets flushPendingQueue drain
         // at MAX_ROAD_BUILDS_PER_FRAME — never rebuilds all stale tiles in one frame.
         // Only check active tiles so we don't revive tiles that should stay evicted.
@@ -724,8 +731,7 @@ export class RoadMeshSystem {
             // with no ribbon on it until the tile is evicted. Pair the stamp with coverage.
             const covered = this._roadCoversTile(cx, cz)
             if (entry.builtGeneration !== currentGen || entry.builtCovered !== covered) {
-                this.disposeRoadTile(key)   // remove meshes + geometry; deletes from _tileMeshMap
-                this.ensureRoadTile(cx, cz) // re-enqueue for rebuild against current spline
+                this.ensureRoadTile(cx, cz, true)   // rebuild in place against the current network (old meshes stay up until then)
             }
         }
     }
@@ -750,8 +756,7 @@ export class RoadMeshSystem {
             for (const r of regions) {
                 const px = Math.max(x0, Math.min(x0 + S, r.x)), pz = Math.max(z0, Math.min(z0 + S, r.z))
                 if (Math.hypot(r.x - px, r.z - pz) > r.reach) continue
-                this.disposeRoadTile(key)
-                this.ensureRoadTile(cx, cz)
+                this.ensureRoadTile(cx, cz, true)   // rebuild in place — no empty frame
                 n++
                 break
             }
@@ -1002,6 +1007,10 @@ export class RoadMeshSystem {
         if (_bTunnel > 0) perfAdd('ribbon.tunnel',   _bTunnel)
         if (_bPad    > 0) perfAdd('ribbon.pads',     _bPad)
 
+        // A rebuild in place (ensureRoadTile(…, true)): the previous meshes come down only now that
+        // the new ones are in the scene. syncTile below replaces the key's colliders itself.
+        const prev = this._tileMeshMap.get(key)
+        if (prev) this._releaseEntry(prev)
         // D1 (plan 09-19): stamp the road generation this tile was built against so
         // syncToChunkRing can detect stale tiles and re-enqueue them on mismatch.
         this._tileMeshMap.set(key, {
