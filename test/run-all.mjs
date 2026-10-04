@@ -62,8 +62,9 @@ function buildGraph () {
     }
     return graph
 }
-// Transitive files a gate depends on. extraDeps are exact-file triggers: added but NOT traversed
-// (the coupling is to that file's literal content, e.g. a text mirror — not its imports).
+// Transitive files a gate depends on. extraDeps are file triggers: added but NOT traversed (the
+// coupling is to that file's literal content, e.g. a text mirror — not its imports). An extraDep may
+// also name a DIRECTORY ('assets/models'): any changed file under it triggers the gate (touches()).
 function reachable (gate, graph) {
     const start = `test/${gate.file}`
     const seen = new Set([start])
@@ -111,8 +112,11 @@ if (ALL) {
         // `manual` gates are never AFFECTED-selected however much of their closure changed. They are
         // for proofs that cost minutes rather than seconds and answer a settings-level question, not
         // a per-commit one — play-area routes 144 km2 per seed. --all and --only still run them.
-        gates = GATES.filter(g => !g.manual && [...reachable(g, graph)].some(f => changed.has(f)))
-        const skipped = GATES.filter(g => g.manual && [...reachable(g, graph)].some(f => changed.has(f)))
+        const changedList = [...changed]
+        const touches = (g) => [...reachable(g, graph)].some(f =>
+            changed.has(f) || changedList.some(c => c.startsWith(f + '/')))   // f may be a directory dep
+        gates = GATES.filter(g => !g.manual && touches(g))
+        const skipped = GATES.filter(g => g.manual && touches(g))
         const bySub = {}
         for (const g of gates) bySub[g.subsystem] = (bySub[g.subsystem] || 0) + 1
         const heavy = gates.filter(g => g.cost === 'heavy').length

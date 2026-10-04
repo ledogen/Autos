@@ -61,6 +61,19 @@ let reverseView = false
 let swinging    = false           // a reverse/forward swing is under way (boosted limits)
 const _fwd     = new THREE.Vector3()
 const _aimFrom = new THREE.Quaternion()
+// Per-frame scratch for updateCamera (one set per role, so no two live values ever alias).
+const _right   = new THREE.Vector3()
+const _goalPos = new THREE.Vector3()
+const _offset  = new THREE.Vector3()
+const _delta   = new THREE.Vector3()
+const _yawQ    = new THREE.Quaternion()
+const _tiltQ   = new THREE.Quaternion()
+const _lookQ   = new THREE.Quaternion()
+const _euler   = new THREE.Euler()
+const _AXIS_X  = new THREE.Vector3(1, 0, 0)
+const _AXIS_Y  = new THREE.Vector3(0, 1, 0)
+// Hood cam mount, body space — see the hood branch of updateCamera.
+const HOOD_OFFSET_LOCAL = new THREE.Vector3(0, 0.75, -1.0)
 
 // ── Drag-orbit state ───────────────────────────────────────────────────────────
 // Spherical coordinates for orbit mode. orbitTheta = yaw (radians around Y axis),
@@ -338,8 +351,8 @@ export function updateCamera (camera, vehicleState, dt) {
   if (cameraMode === 'freecam') {
     // ── Freecam branch: WASD fly along look direction, Space/Ctrl vertical, Shift boost ──
     // Forward vector derived from freecamPitch + freecamYaw in YXZ Euler order (D-03).
-    const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(freecamPitch, freecamYaw, 0, 'YXZ'))
-    const right   = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, freecamYaw, 0, 'YXZ'))
+    const forward = _fwd.set(0, 0, -1).applyEuler(_euler.set(freecamPitch, freecamYaw, 0, 'YXZ'))
+    const right   = _right.set(1, 0, 0).applyEuler(_euler.set(0, freecamYaw, 0, 'YXZ'))
     const speed   = freecamKeys.shift ? FREECAM_BOOST : FREECAM_SPEED
     if (freecamKeys.w) freecamPos.addScaledVector(forward,  speed * dt)
     if (freecamKeys.s) freecamPos.addScaledVector(forward, -speed * dt)
@@ -360,7 +373,7 @@ export function updateCamera (camera, vehicleState, dt) {
     // Same spherical parameterisation as the drag-orbit branch below, so dragging at camp steers
     // the same theta/phi and the handoff in either direction is continuous.
     const cosP   = Math.cos(orbitPhi)
-    const goalPos = new THREE.Vector3(
+    const goalPos = _goalPos.set(
       focusTarget.x + FOCUS_RADIUS * cosP * Math.sin(orbitTheta),
       focusTarget.y + FOCUS_RADIUS * Math.sin(orbitPhi),
       focusTarget.z + FOCUS_RADIUS * cosP * Math.cos(orbitTheta)
@@ -381,7 +394,7 @@ export function updateCamera (camera, vehicleState, dt) {
       // using the nominal design radius here would snap the camera on entry whenever the
       // follow-mode lerp was lagging (e.g. under acceleration).
       const cosP   = Math.cos(orbitPhi)
-      const offset = new THREE.Vector3(
+      const offset = _offset.set(
         orbitRadius * cosP * Math.sin(orbitTheta),
         orbitRadius * Math.sin(orbitPhi),
         orbitRadius * cosP * Math.cos(orbitTheta)
@@ -424,7 +437,7 @@ export function updateCamera (camera, vehicleState, dt) {
         const cap = CHASE_YAW_MAX_RATE * boost * horiz * horiz * dt
         camYaw   += Math.max(-cap, Math.min(cap, yawErr))
       }
-      const yawQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), camYaw)
+      const yawQ = _yawQ.setFromAxisAngle(_AXIS_Y, camYaw)
 
       // Low-pass the car's raw pitch so the camera tilt has inertia and shrugs off transient
       // bumps (only sustained grade changes survive the slow exp-decay). The smoothed pitch then
@@ -438,10 +451,10 @@ export function updateCamera (camera, vehicleState, dt) {
         Math.asin(Math.max(-1, Math.min(1, _fwd.y))) * (reverseView ? -1 : 1)))
       if (snap) smoothedPitch = pitch
       else smoothedPitch += (pitch - smoothedPitch) * (1 - Math.exp(-CHASE_PITCH_STIFFNESS * dt))
-      const tiltQ      = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), smoothedPitch * CHASE_PITCH_FOLLOW)
+      const tiltQ      = _tiltQ.setFromAxisAngle(_AXIS_X, smoothedPitch * CHASE_PITCH_FOLLOW)
       const goalRot    = yawQ.multiply(tiltQ)  // yaw (world Y) first, then pitch about resulting local X
-      const goalOffset = CHASE_OFFSET_LOCAL.clone().applyQuaternion(goalRot)
-      const goalPos    = vehicleState.position.clone().add(goalOffset)
+      const goalOffset = _offset.copy(CHASE_OFFSET_LOCAL).applyQuaternion(goalRot)
+      const goalPos    = _goalPos.copy(vehicleState.position).add(goalOffset)
       // WORLD-space lerp, deliberately. The camera trails along the path the truck actually took,
       // by ~v/CHASE_STIFFNESS metres — which is what leans the view toward the VELOCITY vector at
       // speed and in a slide. That emergent chassis/velocity blend is the feel the owner tuned to;
@@ -464,7 +477,7 @@ export function updateCamera (camera, vehicleState, dt) {
       // Sync orbit angles + radius from current camera position so drag handoff is seamless
       // (no jump). radius uses the ACTUAL distance (not ORBIT_RADIUS_DEFAULT) since the
       // follow lerp can lag well past the nominal offset length under acceleration.
-      const delta = camera.position.clone().sub(vehicleState.position)
+      const delta = _delta.copy(camera.position).sub(vehicleState.position)
       orbitRadius = Math.max(0.01, delta.length())
       orbitTheta  = Math.atan2(delta.x, delta.z)
       orbitPhi    = Math.asin(Math.max(-1, Math.min(1, delta.y / orbitRadius)))
@@ -475,8 +488,7 @@ export function updateCamera (camera, vehicleState, dt) {
     // top surface at y≈0.21, and the windshield/cab front face is at z≈-0.95. Placing the camera
     // at z=-1.0 (a hair ahead of the glass) and y=0.75 (~0.54 above the hood) gives a clean
     // forward view over the hood with no body interior clipping into frame.
-    const HOOD_OFFSET_LOCAL = new THREE.Vector3(0, 0.75, -1.0)  // body-space
-    const hoodOffset = HOOD_OFFSET_LOCAL.clone().applyQuaternion(vehicleState.quaternion)
+    const hoodOffset = _offset.copy(HOOD_OFFSET_LOCAL).applyQuaternion(vehicleState.quaternion)
     camera.position.copy(vehicleState.position).add(hoodOffset)
 
     // Drag-look re-center: when not actively dragging, ease the look offset back to forward so
@@ -494,9 +506,7 @@ export function updateCamera (camera, vehicleState, dt) {
     // forward/up, so the body quaternion makes the view roll/pitch 1:1 with the truck; the YXZ
     // offset (yaw about local up, then pitch about local right) lets you glance around without
     // introducing roll, relative to the body frame.
-    const lookOffset = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(hoodLookPitch, hoodLookYaw, 0, 'YXZ')
-    )
+    const lookOffset = _lookQ.setFromEuler(_euler.set(hoodLookPitch, hoodLookYaw, 0, 'YXZ'))
     camera.quaternion.copy(vehicleState.quaternion).multiply(lookOffset)
     // Track the body heading while hood owns the view, so toggling back to chase lands behind the
     // truck instead of swinging round from wherever chase was left.
@@ -506,12 +516,6 @@ export function updateCamera (camera, vehicleState, dt) {
   }
 }
 
-/**
- * Point the camera at a world spot instead of the truck (FEAT-45: the camp pad), or pass null to
- * hand it back to chase/hood. No-op on the freecam path — the dev camera outranks game states.
- *
- * @param {{x:number,y:number,z:number}|null} p
- */
 /**
  * FEAT-61 — hold-to-aim. Turns the chase orbit live without a mouse button, and seeds the drag
  * origin from the cursor's CURRENT position so the first mousemove is a delta of zero rather than
@@ -530,6 +534,12 @@ export function setAimMode (on, cursorX = dragLastX, cursorY = dragLastY) {
 /** True while hold-to-aim is engaged. */
 export function isAiming () { return aimMode }
 
+/**
+ * Point the camera at a world spot instead of the truck (FEAT-45: the camp pad), or pass null to
+ * hand it back to chase/hood. No-op on the freecam path — the dev camera outranks game states.
+ *
+ * @param {{x:number,y:number,z:number}|null} p
+ */
 export function setCameraFocus (p) {
   if (!p) { focusTarget = null; return }
   if (!focusTarget) orbitPhi = FOCUS_PHI   // seat the look-down once, on entry; drag owns it after

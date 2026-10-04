@@ -211,12 +211,6 @@ export class OfferBoard {
         return !!s && s.state === 'live' && s.offer.id === offerId
     }
 
-    /** The offer record for an id if it is still the one in its slot (live or taken), else null. */
-    get (offerId) {
-        const s = this._slotOf(offerId)
-        return s && s.offer.id === offerId ? s.offer : null
-    }
-
     /**
      * The absolute clock at which the NEXT slot at this POI turns over — an offer expiring, or an
      * empty/locked slot re-rolling. That is the moment a new offer appears there. A taken slot does
@@ -527,10 +521,7 @@ export class OfferBoard {
                           { t: dest, b: true }, { t: '.' })
         }
         const par = route?.par
-        // Freight (not built) prices flat by mass × distance: nothing on its card is par-based, so
-        // it states no base pay here (its flat figure arrives with the freight mission).
-        const pay = sp.family === 'freight' ? null
-                  : par > 0 ? `Base pay $${basePay(par, payTier, sp.payMult).toLocaleString('en-US')}`
+        const pay = par > 0 ? `Base pay $${basePay(par, payTier, sp.payMult).toLocaleString('en-US')}`
                   : null
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)

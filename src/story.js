@@ -84,6 +84,9 @@ export class StorySystem {
    *   onRegionLive(c, r)         — FEAT-46: the region is routed and about to be handed over. Place
    *                                POIs here (optional; free roam has none)
    *   onRegionExit()             — FEAT-46: drop the POIs and their pads on the way out (optional)
+   *   validateRegion(c, r)       — world-validate report for the warmed region ({playable, …});
+   *                                optional ⇒ every seed is accepted (see _checkSeed)
+   *   onSeedRejected(seed, rep)  — show the unplayable-seed disclaimer (optional)
    */
   constructor (deps) {
     this._d = deps

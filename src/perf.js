@@ -191,13 +191,19 @@ export function perfSnapshot() {
     return { sinceLoadMs: performance.now() - _t0, buckets, frames }
 }
 
+// Console output (perfMark / perfDump) prints only under ?prof or ?hitch — both turn the hitch log
+// on (main.js: _HITCH = hitch || prof) — so a normal session's console stays clean while the call
+// sites stay in the product.
+
 // Absolute milestone marker (ms since last perfReset / module load).
 export function perfMark(label) {
+    if (!_hitchOn) return
     console.log(`[perf @${(performance.now() - _t0).toFixed(0)}ms] ${label}`)
 }
 
 // Sorted dump of every bucket by total time. Call when the load/stream settles.
 export function perfDump(tag = '') {
+    if (!_hitchOn) return
     const rows = [..._buckets.entries()].sort((a, b) => b[1].ms - a[1].ms)
     let total = 0; for (const [, b] of rows) total += b.ms
     console.log(`──────── perf dump [${tag}] — ${(performance.now() - _t0).toFixed(0)}ms since load, ${total.toFixed(0)}ms in buckets ────────`)

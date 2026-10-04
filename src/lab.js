@@ -156,9 +156,10 @@ const smoothstep = (e0, e1, x) => {
  * Rumble-lane surface height at a world XZ, and its gradient.
  * Pure math, exported so the physics contact query and the visual mesh are guaranteed to be the
  * SAME surface (the road system's whole history is bugs where mesh and collision disagreed).
- * Returns { y, dydx, dydz } — y is 0 everywhere outside a lane.
+ * Returns { y, dydx, dydz } — y is 0 everywhere outside a lane. `slope = false` skips the
+ * gradient (returned as 0) for height-only callers; y is computed identically either way.
  */
-export function rumbleSurface(x, z) {
+export function rumbleSurface(x, z, slope = true) {
     for (const r of RUMBLES) {
         const dz = Math.abs(z - r.z)
         const half = RUMBLE_W / 2
@@ -175,6 +176,7 @@ export function rumbleSurface(x, z) {
         const prof = 0.5 * (1 - Math.cos(k * x))          // 0 … 1
         const dprof = 0.5 * k * Math.sin(k * x)
         const y = r.amp * prof * w
+        if (!slope) return { y, dydx: 0, dydz: 0 }
 
         // d/dx of (amp·prof·wz·wx): wz has no x dependence; wx's derivative is only non-zero in the
         // 2 m fades, where prof·dwx is a small correction — include it for an honest normal.
@@ -207,7 +209,6 @@ export class LabSystem {
         this._active = false
 
         this._prev = null            // previous car XZ, for gate-crossing tests
-        this._runs = []              // finished results, newest first
         this.best = new Map()        // track name → best result
 
         // Live run state
@@ -222,7 +223,7 @@ export class LabSystem {
 
     // ── ground surface (physics + visual read the same function) ────────────────────────────
     /** Surface height at a world XZ inside the lab. Flat except on the rumble lanes. */
-    groundHeight(x, z) { return this._active ? rumbleSurface(x, z).y : 0 }
+    groundHeight(x, z) { return this._active ? rumbleSurface(x, z, false).y : 0 }
 
     /** Surface normal at a world XZ inside the lab. Straight up except on the rumble lanes. */
     groundNormal(x, z, out) {
@@ -470,8 +471,6 @@ export class LabSystem {
      */
     spawnPose() { return { x: STAGE_X0 - 14, z: STRIP_Z, heading: -Math.PI / 2 } }
 
-    results() { return this._runs }
-
     // ── per-frame ───────────────────────────────────────────────────────────────────────────
     /**
      * Cheap: one segment-crossing test per gate. Called from the fixed step with sim dt.
@@ -622,11 +621,9 @@ export class LabSystem {
     }
 
     _finish(track, value, { unit = 's', detail = '', derived = null, mu = null } = {}) {
-        const rec = { track, value, unit, detail, derived, mu, at: this._runs.length }
-        this._runs.unshift(rec)
-        if (this._runs.length > 12) this._runs.pop()
+        const rec = { track, value, unit, detail, derived, mu }
         // Best = lowest for times AND for braking distance (both are "less is better"). A worse
-        // run never overwrites the best row — it lands in results() history only.
+        // run never overwrites the best row — it shows only in the status line.
         const prev = this.best.get(track)
         rec.newBest = !prev || value < prev.value
         if (rec.newBest) this.best.set(track, rec)

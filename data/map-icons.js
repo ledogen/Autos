@@ -22,8 +22,9 @@
 // A row with `path: null` falls back to the plain diamond in its own colour, still labelled — so
 // the map is readable before any of this is drawn, and improves one paste at a time.
 //
-// Colours are picked to stay apart from the map's existing palette (road #d8d8d0, tunnel #ffb84a,
-// mission pins, car #ff5a3c) and from each other at small size.
+// Colours are picked to stay apart from the map's existing palette (src/map2d.js: paper green
+// #e9f1db, black road ink #0b0b0b, tunnel #808c75, route blue #2f55d4, water #4da2e8, car #ff5a3c)
+// and from each other at small size.
 
 // Glyphs below are hand-authored to this file's rules (24×24, filled, one `d`, nonzero holes wound
 // against their outer subpath). They are deliberately BLUNT: the outline is a fixed 1.5 SCREEN px,

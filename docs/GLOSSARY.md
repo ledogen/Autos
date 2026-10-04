@@ -68,7 +68,9 @@ World-frame torques applied in `physics.js` accumulate into `angularVelocity` (a
 
 ## Quaternion Integration Convention
 
-`vehicleState.quaternion` (a `THREE.Quaternion`) represents the car body's orientation in world space. It is integrated each physics step as follows:
+`vehicleState.quaternion` (a `THREE.Quaternion`) represents the car body's orientation in world space.
+
+**Since FEAT-48 the integration itself runs inside Box3D** (behind `src/physics-engine.js`): each step `physics.js` writes the pose and velocities into the chassis body, the engine integrates, and `physics.js` reads them back (`getTransform` / `getVelocity`) and calls `quaternion.normalize()`. The steps below are the convention that round-trip preserves — world-frame angular velocity, world-frame (pre-multiplied) increments, normalise after every step — written as the hand-rolled integrator that originally defined it:
 
 **Step 1 — Angular velocity:** `angularVelocity` is stored in **WORLD frame** (rad/s) as a `THREE.Vector3`.
 
@@ -320,7 +322,7 @@ The portion of vehicle mass supported by the suspension springs — the body, ch
 
 ### Unsprung Mass
 
-The portion of vehicle mass NOT supported by the suspension springs — wheels, hubs, brake rotors, and stub axles. These components follow the road surface directly. In AUTOS: `params.wheelMass` ≈ 18 kg per corner, integrated as `vehicleState.hubY[i]` (vertical position) and `vehicleState.hubVy[i]` (vertical velocity) each physics substep.
+The portion of vehicle mass NOT supported by the suspension springs — wheels, hubs, brake rotors, and stub axles. These components follow the road surface directly. In AUTOS: `params.wheelMass` ≈ 18 kg per corner, integrated along the strut axis as `vehicleState.strutComp[i]` / `vehicleState.strutCompVel[i]` each physics substep (the Phase 4.1 body-frame strut model below).
 
 ### Suspension Travel
 
@@ -336,7 +338,7 @@ A torsional spring linking the left and right wheels of an axle that resists dif
 
 ### Substep / Physics Timestep Convention
 
-The outer physics step (`PHYSICS_DT = 1/60` s, per D-09) integrates the 6DOF rigid body. The suspension vertical sub-system runs at `N = 2` fixed sub-steps of `sdt = PHYSICS_DT / 2` each outer step to maintain stability of the stiff tire-spring ODE (D-08). All literals `1/60` in source code must be replaced with `PHYSICS_DT` (or `params.physicsDt`) — never hardcode `0.0167`. The substep count `N` and size `sdt` are fixed constants, not user-tunable. See `stepSuspensionSubsteps` in `src/suspension.js`.
+The outer physics step (`PHYSICS_DT = 1/60` s, per D-09) integrates the 6DOF rigid body. The suspension vertical sub-system runs at `N = 4` fixed sub-steps of `sdt = PHYSICS_DT / 4` each outer step to maintain stability of the stiff tire-spring ODE (D-08). All literals `1/60` in source code must be replaced with `PHYSICS_DT` (or `params.physicsDt`) — never hardcode `0.0167`. The substep count `N` and size `sdt` are fixed constants, not user-tunable. See `stepSuspensionSubsteps` in `src/suspension.js`.
 
 ---
 

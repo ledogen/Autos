@@ -73,7 +73,7 @@ export const FLORA_PARAMS = {
     },
 
     // ── FEAT-85: roadside cover — where grass tufts and brush stand ───────────────────────
-    // Two sources, both only where the ground reads green (terrain.vegetationAt — the same rule
+    // Two sources, both only where the ground reads green (terrain.groundAt / vegBlendOf — the same rule
     // the terrain paints green with, so the cover never stands on brown or grey ground):
     //  • THE WALL: road maintenance beats the brush back from the pavement edge, so it stands as
     //    a band whose inner face wanders 1–4 m off the edge along the road (a noise field over the
@@ -136,7 +136,7 @@ export const FLORA_PARAMS = {
               noiseFreq: 1.6, subdiv: 1 },
     // white aspen bark with black flecks (fleck = per-face dark patches baked at palette time)
     barkColor: 0xeae7df, barkFleck: 0x242424, fleckChance: 0.22,
-    canopyColor: 0x86b84a, tintJitter: 0.12,
+    canopyColor: 0x86b84a,
     instScale: [0.8, 1.35],
   },
 
@@ -149,7 +149,7 @@ export const FLORA_PARAMS = {
               overlap: 0.45, bend: 0.06, sides: 7,
               stretch: 1.5,    // vertical-only stretch of the cone stack (taller, same width)
               dropFrac: 0.6 }, // canopy base sits this fraction of a cone below the trunk tip
-    barkColor: 0x5a3d22, canopyColor: 0x3b6840, tintJitter: 0.10,
+    barkColor: 0x5a3d22, canopyColor: 0x3b6840,
     instScale: [0.9, 1.6],
   },
 
@@ -179,7 +179,7 @@ export const FLORA_PARAMS = {
   // scale. NON-collidable: a collidable rock is an engine body per instance, and the zone pass
   // stands hundreds of these per rocky chunk (the BUG-60 broad-phase churn is the ceiling).
   medRock: {
-    variants: 4, collidable: false,
+    variants: 4,
     blob:  { radius: [0.16, 0.36], axisScale: [1.25, 0.7, 1.0], irregularity: 0.5,
              noiseFreq: 2.4, subdiv: 0 },
     color: 0xa3a09b, colorJitter: 0.12,
@@ -189,7 +189,7 @@ export const FLORA_PARAMS = {
 
   // Small decorative rocks (<0.1 m) — NON-collidable (06b: drive straight over).
   smallRock: {
-    variants: 3, collidable: false,
+    variants: 3,
     blob:  { radius: [0.06, 0.135], axisScale: [1.25, 0.7, 1.0], irregularity: 0.55,
              noiseFreq: 2.6, subdiv: 0 },
     color: 0x8a8782, colorJitter: 0.12,
@@ -247,9 +247,10 @@ export const FLORA_PARAMS = {
   },
 
   // ── Collision (FEAT-06b) — analytic shapes the truck contact query tests against ────────
-  // Read LIVE at query time (collider applies these to the baked shape dims), so the sliders tune
-  // without a re-stream. Trees = vertical capsule (trunk only); rocks/boulders = sphere; bushes =
-  // soft drag (no hard contact); small rocks = none.
+  // Read LIVE at query time (PropSystem.queryProps applies these to the baked shape dims), so the
+  // sliders tune without a re-stream. Trees = capsule between baked (tilt-inclusive) trunk endpoints;
+  // fallen logs = the same capsule test; rocks = sphere; boulders = exact triangle mesh (BUG-22c);
+  // bushes = soft drag (no hard contact); medium/small rocks and roadside cover = none.
   collision: {
     trunkRadiusScale: 1.15,   // capsule radius = trunkRadius × instScale × this (bark + slop)
     rockRadiusScale:  0.92,   // sphere radius  = blob boundingSphere × instScale × this (lumpy, inset)

@@ -7,8 +7,9 @@
 
 import * as THREE from 'three'
 import { stepPhysics } from '../src/physics.js'
-import { getWheelPosition } from '../src/suspension.js'
+import { getWheelPosition, computeStaticEquilibrium } from '../src/suspension.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
+import { makeEngineCtx } from './lib/engine-ctx.mjs'
 
 const slopeDeg   = Number(process.argv[2] ?? 18)
 const headingDeg = Number(process.argv[3] ?? 0)   // 0 = facing downhill (+z), 90 = across slope
@@ -36,17 +37,7 @@ const queryContacts = (cx, cy, cz, r) => {
   return []
 }
 
-// Static equilibrium (verbatim from main.js computeStaticEquilibrium).
-function eqOf (p) {
-  const g = 9.81, strutComp = [0,0,0,0], bodyYCorner = [0,0,0,0]
-  for (let i=0;i<4;i++){const f=i<2;const cm=p.mass*(f?p.weightFront:p.weightRear)/2+p.wheelMass;
-    const kS=f?p.suspensionStiffnessFront:p.suspensionStiffnessRear;const LS=f?p.suspensionRestLengthFront:p.suspensionRestLengthRear;
-    const spr=p.mass*(f?p.weightFront:p.weightRear)/2;strutComp[i]=spr*g/kS;
-    const tc=cm*g/p.tireStiffness;const hubY=p.wheelRadius-tc;const bo=f?(p.suspensionBodyOffsetFront||0):(p.suspensionBodyOffsetRear||0);
-    bodyYCorner[i]=hubY+(LS-strutComp[i])+(p.cgHeight-p.wheelRadius)-bo}
-  return { bodyY:(bodyYCorner[0]+bodyYCorner[1])/2, strutComp }
-}
-const eq = eqOf(P)
+const eq = computeStaticEquilibrium(P)
 
 // Orient the body: align body-up (0,1,0) to the plane normal N, then yaw by heading about N.
 const qTilt = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), N)
@@ -65,12 +56,16 @@ const vs = {
   strutComp:[...eq.strutComp], strutCompVel:[0,0,0,0], handbrake:!!park,
 }
 
+// FEAT-48: stepPhysics needs an engine world. The plane goes in as a heightfield too (chassis/body
+// contact + gravity integration); the wheels still ride the analytic queryContacts above.
+const ctx = await makeEngineCtx(vs, P, { groundFn: surfaceY, extent: 256, cell: 2 })
+
 const DT = 1/60, STEPS = 360
 console.log(`slope ${slopeDeg}°  heading ${headingDeg}°  ${park?'HANDBRAKE(park)':brake?'S/reverse':'no-input'}  mu=${P.frictionCoeff}  friction-angle ${(Math.atan(P.frictionCoeff)*180/Math.PI).toFixed(1)}°`)
 console.log(`  t    speed   downhillV |  FL_fn  FR_fn  RL_fn  RR_fn  | airborne-wheels | maxDepth`)
 let chatterSteps = 0
 for (let s=1; s<=STEPS; s++){
-  stepPhysics(vs, P, DT, queryContacts)
+  stepPhysics(vs, P, DT, queryContacts, ctx)
   // downhill direction on the plane = projection of -gravity-tangent = (0,0,1) flattened; use +z comp.
   const speed = vs.velocity.length()
   const downhillV = vs.velocity.z
@@ -87,3 +82,4 @@ for (let s=1; s<=STEPS; s++){
 console.log(`\nfinal speed ${vs.velocity.length().toFixed(3)} m/s,  chatter-frames ${chatterSteps}/${STEPS}`)
 console.log(chatterSteps>STEPS*0.1 ? "  → CHATTER: wheels slamming in/out while nearly stationary (contact-model bug)."
   : (vs.velocity.length()<0.3 ? "  → RESTS cleanly." : "  → slides (check if smooth)."))
+ctx.dispose()

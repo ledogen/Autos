@@ -19,7 +19,7 @@
  * own master gain straight into ctx.destination, so wind volume is independent of engine/tire.
  */
 
-import { getAudioContext } from './engine-audio.js'
+import { getAudioContext, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
 
 const V_FLOOR   = 4.0    // m/s — below this there is no wind noise at all
 const V_REF     = 45.0   // m/s (~160 km/h) — speed at which the level curve reaches 1
@@ -47,23 +47,8 @@ let master = null
 let bodyLp = null, bodyGain = null
 let hissBp = null, hissGain = null
 
-function _whiteNoise (ac) {
-  const n = Math.floor(ac.sampleRate * NOISE_SECONDS)
-  const buf = ac.createBuffer(1, n, ac.sampleRate)
-  const d = buf.getChannelData(0)
-  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
-  return buf
-}
-
-// Each tap starts at its own random offset into the (looped) buffer: two taps of one buffer that
-// start together play the SAME samples, so the layers they feed would be fully correlated.
-function _loop (ac, buf) {
-  const src = ac.createBufferSource()
-  src.buffer = buf
-  src.loop = true
-  src.start(0, Math.random() * buf.duration)
-  return src
-}
+// Each tap (engine-audio.js loopNoise) starts at its own random offset into the looped buffer: two
+// taps of one buffer that start together play the SAME samples, so their layers would correlate.
 
 /** Build + start the wind graph (idempotent). Must be reached from a user gesture. */
 export function ensureWindAudio () {
@@ -75,7 +60,7 @@ export function ensureWindAudio () {
   master.gain.value = 1
   master.connect(ctx.destination)
 
-  const white = _whiteNoise(ctx)
+  const white = whiteNoiseBuffer(ctx, NOISE_SECONDS)
 
   bodyGain = ctx.createGain()
   bodyGain.gain.value = 0
@@ -85,7 +70,7 @@ export function ensureWindAudio () {
   bodyLp.frequency.value = BODY_LP_BASE
   bodyLp.Q.value = 0.7
   bodyLp.connect(bodyGain)
-  _loop(ctx, white).connect(bodyLp)
+  loopNoise(ctx, white).connect(bodyLp)
 
   hissGain = ctx.createGain()
   hissGain.gain.value = 0
@@ -95,7 +80,7 @@ export function ensureWindAudio () {
   hissBp.frequency.value = HISS_BP_BASE
   hissBp.Q.value = HISS_Q
   hissBp.connect(hissGain)
-  _loop(ctx, white).connect(hissBp)   // same buffer, own source node at its own offset
+  loopNoise(ctx, white).connect(hissBp)   // same buffer, own source node at its own offset
 
   started = true
 }
@@ -133,6 +118,7 @@ function _mute (now) {
 }
 
 export function setWindAudioEnabled (on) {
+  if (enabled === !!on) return   // called every frame; while off, updateWindAudio holds the mute
   enabled = !!on
   if (!on && started) _mute(ctx.currentTime)
 }

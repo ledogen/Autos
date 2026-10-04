@@ -58,67 +58,78 @@ Economy / docs
     `k` comment (10/360) was the error — fixed.
 22. `references/` and the two scratch scripts DELETED; `handbook.html` kept (edited 2026-09-06).
 
-## B. Cleanup not yet done (behaviour-preserving)
+## B. Cleanup not yet done (behaviour-preserving) — WORKED 2026-10-04
+
+Worked on branch `worktree-agent-abef5a14448e1a0f3` (commits `quality(34)` / `fix(34)` /
+`docs(34)` / `infra(34)`). DONE items are struck through; what is left open says why. Every
+duplication merge was proved numerically identical before callers switched (numbers in the commits).
+The shadow-bake marking in `prop-system._commitChunk`, `prop-shadow-bake.js` and `alignment.js` were
+out of bounds for this pass (other work in flight).
 
 Story / gameplay
-- Comment fixes: `economy.js` "k is now the MAX rate (10/360)" (code is 10/180); four places
-  still say rank is "result-card only, never live" (FEAT-87 shows it live); `dayTier` JSDoc says
-  "day 9+ holds" (table is 30 days); `day.js` `runState` JSDoc sits on `STAGE_COLOR`; `story.js`
-  deps JSDoc omits `validateRegion` / `onSeedRejected`; `mission.js` header "when FEAT-21 lands".
-- Dead: `OfferBoard.get()`, `EconomySystem.money()`, the `freight` branch, `mission.js`
+- ~~Comment fixes~~ DONE (`economy.js` 10/180 was already right; rank "never live" ×3 → FEAT-87
+  live strip; `dayTier`; `runState` JSDoc moved; `story.js` deps; `mission.js` FEAT-21 line).
+- ~~Dead: `OfferBoard.get()`, `EconomySystem.money()`, the `freight` branch, `mission.js`
   re-export of `formatTime`, `CampSystem.momsHouse()`, `LabSystem.results()` / `_runs`, the
-  `campGradeAreaM` slider (moves nothing), `paper-route` `payTier ?? dayTier` fallback.
-- Duplication: `mulberry32` exists three times (`seed.js`, `poi.js`, `damage.js` — verified
-  numerically identical); `hash32` (FNV-1a) lives in `poi.js` and is imported by camp code — move
-  to `seed.js`. Dijkstra is written twice (`paper-route._dijkstraFrom`, `mission.legCandidates`).
-- Bugs (small): `gps.js` partial re-bake resets `_idx = 0`, which snaps to the outbound pass on
-  an out-and-back route; `camp.evaluate()` copies params (`_P()`) on every 10 Hz poll even on a
-  cache hit; lab `groundHeight` computes a rumble slope it discards.
+  `campGradeAreaM` slider, `paper-route` `payTier ?? dayTier` fallback.~~ DONE (the freight card
+  check in `test/offer-board.mjs` went with its branch; `campGradeAreaM` param removed too).
+- ~~Duplication: `mulberry32` ×3, `hash32` in `poi.js`, Dijkstra twice.~~ DONE — both PRNG/hash
+  now in `seed.js`; `mission.graphDijkstra(adj, start, maxD)` serves both planners.
+- ~~Bugs (small): `gps.js` `_idx` reset; `camp.evaluate()` `_P()` per poll; lab rumble slope.~~
+  DONE.
 
 Map / camera / stage / vehicle model
-- `map2d`: `_coverMemo` is cleared only in `show()`, not on a seed change with the map open;
-  the canvas resizes on width change only; `hide()` leaves `_hoverX/_hoverY` (stale card on
-  reopen); a road-param change just before closing is lost (`_sig` adopted before the deferred
-  rebuild); `_sx/_sy` allocate and read the DOM per vertex.
-- Cluster odometer stops counting while the map is open (early return before the integration).
-- Per-frame allocations: `syncMeshesToState` (~13 per wheel), camera chase/hood/freecam.
-- Dead: `bodyMesh` return value, the runout slider callback (a per-frame refresh already does it).
-- Doc blocks on the wrong function: `setCameraFocus`, two in `map2d`, `_surfaceSlices` header,
-  `vehicle-model` export list, `map-icons` palette note.
+- ~~`map2d`: `_coverMemo`, height resize, `hide()` hover, `_sig` before the deferred rebuild,
+  `_sx/_sy` per-vertex allocation + DOM read.~~ DONE (sheet rect cached at `_resize`).
+- ~~Cluster odometer stops counting while the map is open.~~ DONE.
+- ~~Per-frame allocations: `syncMeshesToState`, camera chase/hood/freecam.~~ DONE (camera proved
+  bit-identical over 3,900 frames in every mode).
+- ~~Dead: `bodyMesh` return value, the runout slider callback.~~ DONE.
+- ~~Doc blocks on the wrong function: `setCameraFocus`, map2d, `_surfaceSlices`, `vehicle-model`
+  export list, `map-icons` palette note.~~ DONE — map2d had one misplaced block found
+  (`setRadiusTarget`'s, sitting on `setRadiusCap`); a second was not found.
 
 Particles / audio / debug
-- The four particle systems repeat the same billboard setup; a shared module is possible but
-  must keep each system's shader lines and mesh creation order.
-- Audio: six setters schedule AudioParam events every frame (cache last value);
-  `playTireBlowout` ignores the enabled flag; helper duplication.
-- `sky.setBakeRes` leaks the old target; `GROUND_FILL_LIFT`; `perf.js` header; console dumps
-  that should be gated on `?prof` / `?hitch`; dead `wyeCreaseMaxDeg` slider; several FX params
-  with no slider.
+- The four particle systems repeat the same billboard setup — OPEN, skipped: not a pure mechanical
+  extraction (each system's shader lines + mesh creation order differ), visual risk for no
+  behaviour gain; wants an in-browser A/B.
+- ~~Audio: per-frame setters, `playTireBlowout` enabled flag, helper duplication.~~ DONE
+  (`whiteNoiseBuffer` / `loopNoise` in `engine-audio.js`).
+- ~~`sky.setBakeRes` leak; `GROUND_FILL_LIFT`; console dumps gated on `?prof` / `?hitch`; dead
+  `wyeCreaseMaxDeg` slider.~~ DONE (the leak was the old CubeCamera left in the bake scene).
+- `perf.js` header — OPEN: re-read against the code, found no drift to fix; reviewer's note
+  unrecoverable. Strike if nobody remembers what it was.
+- Several FX params with no slider — OPEN, skipped: adding sliders is new UI, and which params
+  deserve one is a tuning call (owner).
 
 Props
-- `FLORA_PARAMS` keys nobody reads: `tintJitter` (two), `medRock.collidable`,
-  `smallRock.collidable`.
-- `update()` builds a chunk-key string per ring cell per frame and `_syncChunkLod` parses keys
-  back to numbers; store `cx, cz` on the chunk record.
-- Header/doc drift in `prop-collider.js`, `prop-palette.js`, `prop-geometry.js`, `flora.js`
-  (collision comment lists retired shapes; a stale `vegetationAt` pointer), `map-cover.js`
-  (0.75 vs 0.38; "five" vs six draws).
+- ~~`FLORA_PARAMS` keys nobody reads.~~ DONE.
+- `update()` chunk-key strings / `_syncChunkLod` parsing — OPEN, skipped: storing `cx, cz` on the
+  chunk record means editing `_commitChunk`, whose shadow-bake block was owned by another agent this
+  pass. Small, do it next time `prop-system.js` is free.
+- ~~Header/doc drift in `prop-collider.js`, `prop-palette.js`, `prop-geometry.js`, `flora.js`,
+  `map-cover.js`.~~ DONE (the retired vertical `sphereVsCapsuleY` deleted; map-cover 0.75 → 0.38;
+  the "five vs six draws" wording no longer exists in map-cover since it calls `treeClusterPass`).
 
 Tests / tooling / docs
-- `test/lib/physics-replay.mjs` and `test/steep-rest.mjs` call `stepPhysics` without
-  `makeEngineCtx` — they throw as written.
-- `run-all.mjs`: directory-prefix `extraDeps` are not honoured; `gates.mjs` is missing
-  `extraDeps` for paper-route, debug-sliders and `box3d.wasm`, and several descriptions are stale.
-- `eqOf` in tests duplicates `computeStaticEquilibrium`.
-- `GLOSSARY.md`, `LAYOUT.md` (missing rows: `damage.js`, `damage-hud.js`, `world-validate.js`;
-  counts), the `CLAUDE.md` import-seam table, `index.html` comments.
-- Dashboard should listen on 127.0.0.1 only.
+- ~~`test/lib/physics-replay.mjs` and `test/steep-rest.mjs` without `makeEngineCtx`.~~ DONE
+  (`makeEngineCtx` gained optional `cx, cz` to centre the heightfield on a capture).
+- ~~`run-all.mjs` directory-prefix `extraDeps`; `gates.mjs` extraDeps for paper-route,
+  debug-sliders, `box3d.wasm`.~~ DONE. Stale descriptions: only the offer-board freight clause was
+  verifiably stale and is fixed; the rest need a gate-by-gate read — OPEN.
+- ~~`eqOf` in tests duplicates `computeStaticEquilibrium`.~~ DONE (five tests).
+- ~~`GLOSSARY.md`, `LAYOUT.md`, `index.html` comments.~~ DONE.
+  The `CLAUDE.md` import-seam table — OPEN, not edited (CLAUDE.md changes need the owner, not an
+  agent): its "Everything else never imports engine types" row omits that `main.js` / `stage.js`
+  import `createPhysicsEngine` and `debris.js` / `stage.js` import `GROUP_*` constants from the
+  adapter; `terrain-physics.js` takes the engine handle injected and imports nothing from it; and
+  `suspension.js` no longer imports `tire.js`.
+- ~~Dashboard should listen on 127.0.0.1 only.~~ DONE (if you reach `npm run dash` from another
+  machine, that now needs an SSH tunnel).
 
 Road code (docs only)
-- `road.js`: stale comments at the assembly tail, `_junctionCarve` doc (retired crossing
-  source), cache docs that say `_generation` where the key is `_networkRev`, pad-surface docs
-  that predate PERF-25, `_buildDebugLine2` labelled PROTOTYPE, `_v2ConflictPairs` throat
-  predicate spelling.
+- ~~`road.js`: assembly tail, `_junctionCarve` doc, `_generation` vs `_networkRev` cache docs,
+  pad-surface docs pre-PERF-25, `_buildDebugLine2` PROTOTYPE, `_v2ConflictPairs` throat.~~ DONE.
 
 ## Acceptance
 

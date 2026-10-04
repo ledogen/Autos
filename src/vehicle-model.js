@@ -6,12 +6,13 @@
  * road / streaming code that also lives in main.js.
  *
  * Public surface:
- *   createVehicleModel(scene, params) -> { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, applyWheelRunout }
+ *   createVehicleModel(scene, params) -> { carGroup, wheelMeshes, syncMeshesToState, setBodyColor,
+ *     addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms }
  *
  *   - carGroup            parent Object3D; position/quaternion driven each frame
- *   - bodyMesh            main hull mesh (kept for back-compat / debug references)
  *   - wheelMeshes         [FL, FR, RL, RR] wheel Groups (tire + steelie rim children)
- *   - syncMeshesToState(state)  call once per render frame; updates transforms + lights
+ *   - syncMeshesToState(state)  call once per render frame; updates transforms + lights, and
+ *                         re-bakes any tire whose runout (slider or SM-3 wheel condition) moved
  *
  * Coordinate frame (carGroup local space): origin = CG, forward = -Z, right = +X,
  * up = +Y. Ground sits at y = -params.cgHeight. Car forward is -Z (GLOSSARY.md).
@@ -160,10 +161,10 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     return m
   }
 
-  // Main hull (full length lower body). Kept as `bodyMesh` for back-compat.
+  // Main hull (full length lower body).
   // Spans y ∈ [-0.35, 0.07]; the original hull was 0.8 tall centered on CG —
   // this lower, longer hull plus cab/bed above preserves the same overall mass box.
-  const bodyMesh = part(_box(1.66, 0.42, 4.40), bodyMat, 0, -0.14, 0)
+  part(_box(1.66, 0.42, 4.40), bodyMat, 0, -0.14, 0)
 
   // Hood (front deck, lower than the cab).
   part(_box(1.50, 0.14, 1.25), bodyMat, 0, 0.14, -1.575)
@@ -546,6 +547,8 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
 
   // Scratch vectors reused each frame (avoid per-frame allocation churn).
   const _fwd = new THREE.Vector3()
+  const _spinQ = new THREE.Quaternion(), _steerQ = new THREE.Quaternion(), _camberQ = new THREE.Quaternion()
+  const _AXIS_X = new THREE.Vector3(1, 0, 0), _AXIS_Y = new THREE.Vector3(0, 1, 0), _AXIS_NEG_Z = new THREE.Vector3(0, 0, -1)
 
   // Imported-model state. While modelActive, the OBJ owns the look: the procedural
   // body/wheels/lights are hidden and their per-frame updates are skipped (carGroup
@@ -581,20 +584,20 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
       // The angle comes from wheelPhase (physics fixed step), NOT a render-rate accumulator: the
       // out-of-round high spot is baked into this tire's geometry, so the mesh has to sit at the
       // exact angle effectiveWheelRadius() was evaluated at. Wrapping to [0, 2π) is invisible here.
-      const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -(state.wheelPhase?.[i] ?? 0))
+      const spinQ = _spinQ.setFromAxisAngle(_AXIS_X, -(state.wheelPhase?.[i] ?? 0))
 
       // Steer (Y) carries static toe on every corner — rear wheels are only ever toed, never steered.
       const steerInput = i < 2
         ? (state.wheelSteerAngles ? state.wheelSteerAngles[i] : state.steerAngle)
         : 0
       const steer  = steerInput + toeOffset(i, params)
-      const steerQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), steer)
+      const steerQ = _steerQ.setFromAxisAngle(_AXIS_Y, steer)
       // Camber leans the whole assembly about its forward axis (−Z), applied OUTSIDE steer+spin so
       // it reads as suspension geometry rather than something the wheel does as it turns. Same
       // signed lean physics.js uses, so what you see is what the tire model is actually doing.
       const lean = camberLean(i, params)
       const camberQ = lean !== 0
-        ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), lean)
+        ? _camberQ.setFromAxisAngle(_AXIS_NEG_Z, lean)
         : null
       wheelMeshes[i].quaternion.copy(steerQ).multiply(spinQ)
       if (camberQ) wheelMeshes[i].quaternion.premultiply(camberQ)
@@ -844,5 +847,5 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     // syncMeshesToState re-asserts real visibility from intensities on the next frame.
   }
 
-  return { carGroup, bodyMesh, wheelMeshes, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms }
+  return { carGroup, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms }
 }

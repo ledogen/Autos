@@ -57,7 +57,7 @@
 // max — and what it pays above that is the tip. Both come from payoutFor — nothing here.
 
 import { ECONOMY_PARAMS, payoutFor, splitPayout } from './economy.js'
-import { buildGraphAdj, START_ZONE_R, buildRunExport, TRACE_DIV } from './mission.js'
+import { buildGraphAdj, graphDijkstra, START_ZONE_R, buildRunExport, TRACE_DIV } from './mission.js'
 import { computePar, gradeRun, RANK_THRESHOLDS_DEFAULT } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
 // why it must have one home: a second copy is a second thing to keep in step with the gate.
@@ -365,28 +365,6 @@ function _leaseHkTables (SZ, n) {
     return best
 }
 
-/**
- * Dijkstra from one node over the straight-line graph metric — the same cheap metric the mission
- * planner uses to choose a path before anything is routed. Returns dist + parent chain to every
- * reachable node, so one run answers "which customer is nearest" AND "by which roads".
- */
-function _dijkstraFrom (adj, startK) {
-    const dist = new Map([[startK, 0]]), prev = new Map()
-    const queue = [{ k: startK, d: 0 }]
-    while (queue.length) {
-        queue.sort((a, b) => a.d - b.d)
-        const { k, d } = queue.shift()
-        if (d > (dist.get(k) ?? Infinity)) continue
-        for (const e of adj.get(k) || []) {
-            const nd = d + e.w
-            if (nd < (dist.get(e.to) ?? Infinity)) {
-                dist.set(e.to, nd); prev.set(e.to, k); queue.push({ k: e.to, d: nd })
-            }
-        }
-    }
-    return { dist, prev }
-}
-
 /** Node keys from `startK` to `goalK` inclusive, or null when the chain does not reach back. */
 function _pathBack (prev, startK, goalK) {
     const out = []
@@ -571,7 +549,7 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
     let fresh = false
     const searchFrom = (k) => {
         fresh = !searches.has(k)
-        if (fresh) searches.set(k, _dijkstraFrom(adj, k))
+        if (fresh) searches.set(k, graphDijkstra(adj, k))   // unbounded: one run answers "nearest customer" AND "by which roads"
         return searches.get(k)
     }
 
@@ -1027,7 +1005,7 @@ export class PaperRouteSystem {
             stock:    stockForTier(),
             inFlight: 0,
             elapsed:  0,
-            payTier:  terms.payTier ?? terms.dayTier ?? 1,   // dayTier fallback: pre-region callers
+            payTier:  terms.payTier ?? 1,
             // Frozen WITH the day tier, for the same reason (FEAT-53): the rank ramp is part of the
             // deal you accepted. Now that the letter IS the par ratio, a route straddling midnight
             // would otherwise be graded on tomorrow's tighter thresholds.

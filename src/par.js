@@ -452,7 +452,7 @@ export const RANK_THRESHOLDS_DEFAULT = { S: 0.77, A: 0.81, B: 0.87, C: 1.00 }
  * hop and a 20-minute haul; the letter is a bucketing of that ratio.
  *
  * The letter is DISPLAY bucketing of the continuous ratio (SM-INV-3 as amended: rank is
- * result-card only, display only) — payout is computed from the ratio, never from the letter.
+ * display only — the result card, and live on the FEAT-87 rank timer) — payout is computed from the ratio, never from the letter.
  * `thresholds` is injected by the caller (economy.js day ramp); nothing here may learn what a
  * run day is, and `day` must never reach computePar.
  */

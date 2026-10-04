@@ -17,7 +17,7 @@
  * is stopped on a schedule and left for GC.
  */
 
-import { getAudioContext } from './engine-audio.js'
+import { getAudioContext, whiteNoiseBuffer } from './engine-audio.js'
 
 const LEVEL = 0.5          // overall peak gain
 const TAIL_S = 0.3         // s — the crumble and tinkles land inside this window after the pop
@@ -27,11 +27,7 @@ const PINGS = 9            // tinkle pings
 let _noise = null          // 0.5 s of white noise, built once per context, sliced by every layer
 function _noiseBuf (ctx) {
   if (_noise && _noise.sampleRate === ctx.sampleRate) return _noise
-  const n = Math.ceil(ctx.sampleRate * 0.5)
-  _noise = ctx.createBuffer(1, n, ctx.sampleRate)
-  const d = _noise.getChannelData(0)
-  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
-  return _noise
+  return (_noise = whiteNoiseBuffer(ctx, 0.5))
 }
 
 /** One slice of filtered noise: `type` filter at `freq`/`q`, peak `g`, decaying over `dur`. */

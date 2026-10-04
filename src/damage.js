@@ -29,6 +29,13 @@
  * scored (SM-INV-10). One mechanism, used the same way by every track.
  */
 
+// Deterministic PRNG for the alignment scatter. Alignment damage is random by design, but the world
+// is a determinism machine (INFRA-03) and gates pin exact states. So the randomness is SEEDED and
+// advances only when an impact actually lands — same run, same drive, same crashes, same bent axle.
+// This is FEAT-26's flag-gated-nondeterminism pattern applied to damage. (seed.js is pure maths, so
+// the "imports nothing from the physics stack" seam below still holds.)
+import { mulberry32 } from './seed.js'
+
 // ── Track registry ────────────────────────────────────────────────────────────────────────────────
 // id → { label, cls, region }. `region` names which armor piece protects it (null = unprotected);
 // it is consumed by the impact/armor pass in slice 2, and declared here so the registry is the one
@@ -575,25 +582,7 @@ export function armorPassThrough (c) {
   return p < 0 ? 0 : p
 }
 
-/**
- * Deterministic PRNG (mulberry32) for the alignment scatter.
- *
- * Alignment damage is random by design, but the world is a determinism machine (INFRA-03) and gates
- * pin exact states. So the randomness is SEEDED and advances only when an impact actually lands —
- * same run, same drive, same crashes, same bent axle. This is FEAT-26's flag-gated-nondeterminism
- * pattern applied to damage.
- */
 const clampAbs = (x, m) => (x >  m ? m : x < -m ? -m : x)
-
-function mulberry32 (seed) {
-  let a = seed >>> 0
-  return function () {
-    a = (a + 0x6D2B79F5) >>> 0
-    let t = Math.imul(a ^ (a >>> 15), 1 | a)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 // ── The model ─────────────────────────────────────────────────────────────────────────────────────
 

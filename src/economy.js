@@ -45,8 +45,9 @@
 //   flows into dayTier() and rankThresholds() and NOTHING in this module can reach computePar.
 //   Par is priced once, by geometry, and never moves.
 // SM-INV-3 — this module computes numbers. Rank is display bucketing (par.js gradeRun), shown on
-//   the result card only, never live; nothing here renders, and no consumer may derive an
-//   ETA/countdown from these values.
+//   on the result card and, since FEAT-87, live on the rank-timer strip as boundary proximity
+//   (never digits); nothing here renders, and no consumer may derive an ETA/countdown from these
+//   values.
 // SM-INV-14 — progress is MISSION POINTS: 1 at B or better, ½ at C, 0 at D. Run-layer, resets
 //   with the run. Points buy access (region gating, SM-4); money buys parts (SM-3).
 //
@@ -182,7 +183,7 @@ export function regionTier (region) {
     return t[i]
 }
 
-/** Payout multiplier for a run day. Step function of the table; day 9+ holds; day <1 clamps. */
+/** Payout multiplier for a run day. Step function of the table; past the table's last day holds; day <1 clamps. */
 export function dayTier(day) {
     const t = ECONOMY_PARAMS.dayTierTable
     const i = Math.min(Math.max(1, Math.floor(day)), t.length) - 1
@@ -420,7 +421,6 @@ export class EconomySystem {
         return paid
     }
 
-    money () { return runEconomy.money }
     points () { return runEconomy.halfPoints / 2 }
     missionCount () { return runEconomy.missions }
 

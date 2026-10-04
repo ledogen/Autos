@@ -26,6 +26,7 @@ import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'   // FEAT-59/
 import { REGION_MARGIN } from './mission.js'          // FEAT-61: the wall a customer must sit inside
 import { houseRungs } from './paper-route.js'         // FEAT-61: the ladder placement has to serve
 import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
+import { hash32, mulberry32 } from './seed.js'        // per-edge / per-POI PRNG keys (byte-stable)
 
 /** Tunables. Geometry + siting only — none of this may ever enter RANGER_PARAMS. */
 export const POI_PARAMS = {
@@ -205,35 +206,6 @@ export const POI_COUNT = POI_ROSTER.reduce((n, s) => n + s.count, 0)
 
 // Footprint sampling for the earthwork test: a 3 × 5 lattice over the pad, plus the centre.
 const CUTFILL_NU = 5, CUTFILL_NV = 3
-
-/**
- * FNV-1a over a string → uint32. Used only to seed the per-edge PRNG; any stable hash would do,
- * but it must stay stable, so do not "improve" it — the POI layout of every existing seed rides on it.
- *
- * EXPORTED and shared with src/camp.js (FEAT-45 camping zones), which keys its per-cell PRNG the
- * same way. Two layouts now ride on this function being byte-stable, not one.
- */
-export function hash32 (str) {
-    let h = 0x811c9dc5
-    for (let i = 0; i < str.length; i++) {
-        h ^= str.charCodeAt(i)
-        h = Math.imul(h, 0x01000193) >>> 0
-    }
-    return h >>> 0
-}
-
-/**
- * mulberry32 — small, fast, well-distributed. Deterministic stream from one uint32 seed.
- * Exported alongside hash32 and shared with src/camp.js; same stability contract.
- */
-export function mulberry32 (a) {
-    return function () {
-        a = (a + 0x6D2B79F5) | 0
-        let t = Math.imul(a ^ (a >>> 15), 1 | a)
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-    }
-}
 
 const idKey = (id) => `${id[0]},${id[1]},${id[2]}`
 

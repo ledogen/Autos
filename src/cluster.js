@@ -152,11 +152,12 @@ export class GaugeCluster {
 
   /** Per-frame. dt in seconds, speedMps = vehicle speed magnitude (m/s), rpm = engine RPM. */
   update (dt, speedMps, rpm) {
+    // Odometer accumulates actual distance covered (magnitude — a jalopy drum has no idea
+    // which way the driveshaft turns). BEFORE the visibility return: the truck still covers
+    // ground while the map hides the cluster, and the drum must not lose those miles.
+    this._odoMiles += speedMps * dt / 1609.344
     if (!this._visible) return
     const mph = speedMps * 2.23694
-    // Odometer accumulates actual distance covered (magnitude — a jalopy drum has no idea
-    // which way the driveshaft turns).
-    this._odoMiles += speedMps * dt / 1609.344
 
     // Needle damping: fast lag on the driven gauges, slow crawl on fuel/temp (real senders
     // are heavily damped — and it makes the key-on sweep from 0 read as intentional).

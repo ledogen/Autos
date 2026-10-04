@@ -41,7 +41,7 @@
  * straight into ctx.destination, so tire volume is independent of engine volume.
  */
 
-import { getAudioContext } from './engine-audio.js'
+import { getAudioContext, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
 
 // ── Gating constants (user spec) ──────────────────────────────────────────────────────────
 const SLIP_FLOOR = 4.0     // m/s — combined slip below this is silent
@@ -207,27 +207,6 @@ function _brownNoise (ac) {
   return buf
 }
 
-function _whiteNoise (ac) {
-  const n = Math.floor(ac.sampleRate * NOISE_SECONDS)
-  const buf = ac.createBuffer(1, n, ac.sampleRate)
-  const d = buf.getChannelData(0)
-  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
-  return buf
-}
-
-/**
- * Loop a noise buffer. Several taps share one buffer (cheap), so each source starts at a RANDOM
- * offset — otherwise two taps of the same buffer are sample-identical and phase-locked, and summing
- * two differently-filtered copies of the same signal combs rather than thickens.
- */
-function _loop (ac, buf) {
-  const src = ac.createBufferSource()
-  src.buffer = buf
-  src.loop = true
-  src.start(0, Math.random() * buf.duration)
-  return src
-}
-
 /**
  * A band-limited pulse: harmonics 1..N with a Gaussian taper. Continuous (unlike a sawtooth) so
  * using it as an amplitude modulator produces a punch per cycle, not a click. See the SLAM_ notes.
@@ -250,7 +229,7 @@ export function ensureTireAudio () {
   master.connect(ctx.destination)
 
   // ── Screech: tonal core (f0 + 2f0 + 3f0) + the scrub noise bed → gain ──
-  const white = _whiteNoise(ctx)
+  const white = whiteNoiseBuffer(ctx, NOISE_SECONDS)
   const brown = _brownNoise(ctx)
 
   screechGain = ctx.createGain()
@@ -310,7 +289,7 @@ export function ensureTireAudio () {
   breathBp.frequency.value = SCREECH_F0
   breathBp.Q.value = 5
   const breathGain = ctx.createGain(); breathGain.gain.value = 0.07
-  _loop(ctx, white).connect(breathBp)
+  loopNoise(ctx, white).connect(breathBp)
   breathBp.connect(breathGain)
   breathGain.connect(screechBp)
 
@@ -327,7 +306,7 @@ export function ensureTireAudio () {
   scrubLp.frequency.value = SCRUB_LP
   scrubLp.Q.value = SCRUB_Q
   scrubLp.connect(scrubGain)
-  _loop(ctx, brown).connect(scrubLp)
+  loopNoise(ctx, brown).connect(scrubLp)
 
   // Two very slow sweeps summed into the cutoff. Deliberately LFOs only — a random walk on a
   // filter cutoff is what reads as twitching, so there is none here.
@@ -349,7 +328,7 @@ export function ensureTireAudio () {
   dirtLp.frequency.value = DIRT_LP_BASE
   dirtLp.Q.value = DIRT_LP_Q
   dirtLp.connect(dirtGain)
-  _loop(ctx, dirtBrown).connect(dirtLp)
+  loopNoise(ctx, dirtBrown).connect(dirtLp)
 
   // Rolling gravel: the same brown noise, its own (higher, independently swept) lowpass and gain.
   rollDirtGain = ctx.createGain()
@@ -360,7 +339,7 @@ export function ensureTireAudio () {
   rollDirtLp.frequency.value = ROLL_DIRT_LP_BASE
   rollDirtLp.Q.value = ROLL_DIRT_Q
   rollDirtLp.connect(rollDirtGain)
-  _loop(ctx, dirtBrown).connect(rollDirtLp)   // same buffer, own source node
+  loopNoise(ctx, dirtBrown).connect(rollDirtLp)   // same buffer, own source node
 
   sprayGain = ctx.createGain()
   sprayGain.gain.value = 0
@@ -370,7 +349,7 @@ export function ensureTireAudio () {
   sprayBp.frequency.value = SPRAY_F
   sprayBp.Q.value = 0.7
   sprayBp.connect(sprayGain)
-  _loop(ctx, white).connect(sprayBp)       // same buffer, own source node — grit on top of the roar
+  loopNoise(ctx, white).connect(sprayBp)       // same buffer, own source node — grit on top of the roar
 
   // ── Blacktop rolling: a low BODY + a resonant IMPACT bus, both off brown noise (no white) ──
   const roadBrown = _brownNoise(ctx)
@@ -383,7 +362,7 @@ export function ensureTireAudio () {
   roadLp.frequency.value = ROAD_LP_BASE
   roadLp.Q.value = 1.4                     // a little resonance = the weight under the impacts
   roadLp.connect(roadHumGain)
-  _loop(ctx, roadBrown).connect(roadLp)
+  loopNoise(ctx, roadBrown).connect(roadLp)
 
   // Impact bus: a resonant band around the carcass ring, hard-AM'd by the block-passage sawtooth.
   // Same LFO-summed-into-the-gain-param trick the screech judder uses — see the note on _muteAll.
@@ -395,7 +374,7 @@ export function ensureTireAudio () {
   roadSlamBp.frequency.value = ROAD_SLAM_F
   roadSlamBp.Q.value = ROAD_SLAM_Q
   roadSlamBp.connect(roadSlamGain)
-  _loop(ctx, roadBrown).connect(roadSlamBp)   // same buffer, own source node
+  loopNoise(ctx, roadBrown).connect(roadSlamBp)   // same buffer, own source node
 
   // A band-limited pulse, not a sawtooth and not a sine: peaky enough to read as a slam, continuous
   // enough not to click. (The sawtooth's reset edge WAS the popping heard above ~55 km/h.)
@@ -582,7 +561,7 @@ function _muteAll (now) {
  * nothing else in the audio graph is one-shot, so it builds and discards its own tiny chain.
  */
 export function playTireBlowout () {
-  if (!ctx || !master) return
+  if (!ctx || !master || !enabled) return
   const now = ctx.currentTime
   const src = ctx.createBufferSource()
   const len = Math.floor(ctx.sampleRate * 0.35)
@@ -603,6 +582,7 @@ export function playTireBlowout () {
 }
 
 export function setTireAudioEnabled (on) {
+  if (enabled === !!on) return   // called every frame; while off, updateTireAudio holds the mute
   enabled = !!on
   if (!on && started) _muteAll(ctx.currentTime)
 }
