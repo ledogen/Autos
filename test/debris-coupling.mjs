@@ -13,7 +13,7 @@
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics } from '../src/physics.js'
-import { getWheelPosition } from '../src/suspension.js'
+import { getWheelPosition, computeStaticEquilibrium } from '../src/suspension.js'
 import { makeEngineCtx } from './lib/engine-ctx.mjs'
 import { GROUP_DEBRIS } from '../src/physics-engine.js'
 
@@ -28,23 +28,8 @@ function freshParams () {
   return P
 }
 
-// Static-equilibrium ride height (canonical formula from drivetrain-climb.mjs).
-function eqOf (p) {
-  const g = 9.81, strutComp = [0, 0, 0, 0], bodyYCorner = [0, 0, 0, 0]
-  for (let i = 0; i < 4; i++) {
-    const f = i < 2; const cm = p.mass * (f ? p.weightFront : p.weightRear) / 2 + p.wheelMass
-    const kS = f ? p.suspensionStiffnessFront : p.suspensionStiffnessRear
-    const LS = f ? p.suspensionRestLengthFront : p.suspensionRestLengthRear
-    const spr = p.mass * (f ? p.weightFront : p.weightRear) / 2; strutComp[i] = spr * g / kS
-    const tc = cm * g / p.tireStiffness; const hubY = p.wheelRadius - tc
-    const bo = f ? (p.suspensionBodyOffsetFront || 0) : (p.suspensionBodyOffsetRear || 0)
-    bodyYCorner[i] = hubY + (LS - strutComp[i]) + (p.cgHeight - p.wheelRadius) - bo
-  }
-  return { bodyY: (bodyYCorner[0] + bodyYCorner[1]) / 2, strutComp }
-}
-
 const P = freshParams()
-const eq = eqOf(P)
+const eq = computeStaticEquilibrium(P)
 const queryContacts = (cx, cy, cz, r) => {
   const gd = 0 + r - cy
   return gd > 0
@@ -123,7 +108,7 @@ ctx.dispose()
 console.log('\nfling regression — coast over a small rock, no throttle:')
 {
   const P2 = freshParams()
-  const eq2 = eqOf(P2)
+  const eq2 = computeStaticEquilibrium(P2)
   const v0 = 3
   const vs2 = {
     position: new THREE.Vector3(0, eq2.bodyY, 0), velocity: new THREE.Vector3(0, 0, -v0),
@@ -192,7 +177,7 @@ console.log('\nfling regression — coast over a small rock, no throttle:')
 console.log('\ncrawl-over-rock — the wheel climbs it, never passes through:')
 {
   const P4 = freshParams()
-  const eq4 = eqOf(P4)
+  const eq4 = computeStaticEquilibrium(P4)
   const v0 = 1.2
   const vs4 = {
     position: new THREE.Vector3(0, eq4.bodyY, 0), velocity: new THREE.Vector3(0, 0, -v0),
@@ -248,7 +233,7 @@ console.log('\ncrawl-over-rock — the wheel climbs it, never passes through:')
 console.log('\nchassis vs tree trunk — rigid stop, not a squish:')
 {
   const P3 = freshParams()
-  const eq3 = eqOf(P3)
+  const eq3 = computeStaticEquilibrium(P3)
   const v0 = 10
   const vs3 = {
     position: new THREE.Vector3(0, eq3.bodyY, 0), velocity: new THREE.Vector3(0, 0, -v0),

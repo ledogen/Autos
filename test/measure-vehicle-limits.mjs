@@ -32,6 +32,7 @@
 
 import * as THREE from 'three'
 import { stepPhysics } from '../src/physics.js'
+import { computeStaticEquilibrium } from '../src/suspension.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { PAR_REF } from '../src/par.js'
 import { makeEngineCtx } from './lib/engine-ctx.mjs'
@@ -49,21 +50,6 @@ function freshParams () {
   return P
 }
 
-function eqOf (p) {
-  const strutComp = [0, 0, 0, 0], bodyYCorner = [0, 0, 0, 0]
-  for (let i = 0; i < 4; i++) {
-    const f = i < 2
-    const cm = p.mass * (f ? p.weightFront : p.weightRear) / 2 + p.wheelMass
-    const kS = f ? p.suspensionStiffnessFront : p.suspensionStiffnessRear
-    const LS = f ? p.suspensionRestLengthFront : p.suspensionRestLengthRear
-    strutComp[i] = (p.mass * (f ? p.weightFront : p.weightRear) / 2) * G / kS
-    const hubY = p.wheelRadius - (cm * G / p.tireStiffness)
-    const bo = f ? (p.suspensionBodyOffsetFront || 0) : (p.suspensionBodyOffsetRear || 0)
-    bodyYCorner[i] = hubY + (LS - strutComp[i]) + (p.cgHeight - p.wheelRadius) - bo
-  }
-  return { bodyY: (bodyYCorner[0] + bodyYCorner[1]) / 2, strutComp }
-}
-
 const UP = new THREE.Vector3(0, 1, 0)
 const queryContacts = (cx, cy, cz, r) => {
   const gd = r - cy
@@ -72,7 +58,7 @@ const queryContacts = (cx, cy, cz, r) => {
 
 // A vehicle state on the flat plane, optionally already rolling at v0 (body -Z is forward).
 function makeVehicle (P, v0 = 0) {
-  const eq = eqOf(P)
+  const eq = computeStaticEquilibrium(P)
   const vs = {
     position: new THREE.Vector3(0, eq.bodyY, 0), velocity: new THREE.Vector3(0, 0, -v0),
     quaternion: new THREE.Quaternion(), angularVelocity: new THREE.Vector3(),

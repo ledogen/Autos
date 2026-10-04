@@ -7,6 +7,8 @@
 //
 // Usage per scenario:
 //   const ctx = await makeEngineCtx(vs, P, { groundFn: (x, z) => -tanT * z, extent: 1024, cell: 8 })
+//   (cx, cz centre the heightfield square when the scenario is not at the origin — e.g. a replayed
+//   capture somewhere out in the world.)
 //   ... stepPhysics(vs, P, DT, queryContacts, ctx) ...
 //   ctx.dispose()
 //
@@ -15,17 +17,17 @@
 import { createPhysicsEngine } from '../../src/physics-engine.js'
 import { createVehicleChassis } from '../../src/physics.js'
 
-export async function makeEngineCtx (vs, P, { groundFn = null, extent = 128, cell = 2, friction = 0.8 } = {}) {
+export async function makeEngineCtx (vs, P, { groundFn = null, extent = 128, cell = 2, friction = 0.8, cx = 0, cz = 0 } = {}) {
   const engine = await createPhysicsEngine()
   if (groundFn) {
     const N = Math.round((2 * extent) / cell) + 1
     const h = new Float32Array(N * N)
     for (let zi = 0; zi < N; zi++) {
       for (let xi = 0; xi < N; xi++) {
-        h[zi * N + xi] = groundFn(-extent + xi * cell, -extent + zi * cell)
+        h[zi * N + xi] = groundFn(cx - extent + xi * cell, cz - extent + zi * cell)
       }
     }
-    const ground = engine.createBody({ type: 'static', position: { x: -extent, y: 0, z: -extent } })
+    const ground = engine.createBody({ type: 'static', position: { x: cx - extent, y: 0, z: cz - extent } })
     engine.addHeightfield(ground, h, N, N, cell, { friction })
   }
   const chassis = createVehicleChassis(engine, vs, P)

@@ -18,6 +18,7 @@
 import { writeFileSync, readFileSync } from 'node:fs'
 import * as THREE from 'three'
 import * as PHYS from '../src/physics.js'
+import { computeStaticEquilibrium } from '../src/suspension.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 
 const DT = 1 / 60
@@ -30,20 +31,6 @@ function freshParams () {
   return P
 }
 
-function eqOf (p) {
-  const g = 9.81, strutComp = [0, 0, 0, 0], bodyYCorner = [0, 0, 0, 0]
-  for (let i = 0; i < 4; i++) {
-    const f = i < 2; const cm = p.mass * (f ? p.weightFront : p.weightRear) / 2 + p.wheelMass
-    const kS = f ? p.suspensionStiffnessFront : p.suspensionStiffnessRear
-    const LS = f ? p.suspensionRestLengthFront : p.suspensionRestLengthRear
-    const spr = p.mass * (f ? p.weightFront : p.weightRear) / 2; strutComp[i] = spr * g / kS
-    const tc = cm * g / p.tireStiffness; const hubY = p.wheelRadius - tc
-    const bo = f ? (p.suspensionBodyOffsetFront || 0) : (p.suspensionBodyOffsetRear || 0)
-    bodyYCorner[i] = hubY + (LS - strutComp[i]) + (p.cgHeight - p.wheelRadius) - bo
-  }
-  return { bodyY: (bodyYCorner[0] + bodyYCorner[1]) / 2, strutComp }
-}
-
 const queryContacts = (cx, cy, cz, r) => {
   const gd = 0 + r - cy
   return gd > 0
@@ -52,7 +39,7 @@ const queryContacts = (cx, cy, cz, r) => {
 }
 
 function freshState (P, { y = null, vfwd = 0 } = {}) {
-  const eq = eqOf(P)
+  const eq = computeStaticEquilibrium(P)
   const vs = {
     position: new THREE.Vector3(0, y ?? eq.bodyY, 0), velocity: new THREE.Vector3(0, 0, -vfwd),
     quaternion: new THREE.Quaternion(), angularVelocity: new THREE.Vector3(),
@@ -117,7 +104,7 @@ async function main () {
   const scenarios = []
   // 1. drop-settle: start 0.25 m above equilibrium, no input — suspension transient + rest.
   scenarios.push(await runScenario('drop-settle', 360, (vs) => { vs.throttle = 0; vs.brake = 0 },
-    { y: eqOf(freshParams()).bodyY + 0.25 }))
+    { y: computeStaticEquilibrium(freshParams()).bodyY + 0.25 }))
   // 2. launch: full throttle from rest, 12 s — drivetrain, grip, gear progression.
   scenarios.push(await runScenario('launch', 720, (vs) => { vs.throttle = 1; vs.brake = 0 }))
   // 3. brake-stop: enter at 25 m/s, full brake — straight-line stop, no yaw.
@@ -130,7 +117,7 @@ async function main () {
   }, { vfwd: 18 }))
   // 5. slam: drop from 1.2 m above equilibrium — deep suspension hit + body-contact path.
   scenarios.push(await runScenario('slam', 360, (vs) => { vs.throttle = 0; vs.brake = 0 },
-    { y: eqOf(freshParams()).bodyY + 1.2 }))
+    { y: computeStaticEquilibrium(freshParams()).bodyY + 1.2 }))
 
   const out = {
     recorded: process.env.TRACE_TAG || 'untagged',
