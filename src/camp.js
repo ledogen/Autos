@@ -33,7 +33,7 @@
 // Isolation discipline (the story.js / poi.js / day.js rule): no THREE, no worldgen imports.
 // Everything arrives through the `deps` adapter main.js hands us.
 
-import { hash32, mulberry32 } from './poi.js'
+import { hash32, mulberry32 } from './seed.js'
 
 /**
  * Tunables. Zone siting + the road tether only — none of this may ever enter RANGER_PARAMS

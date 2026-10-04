@@ -35,7 +35,7 @@
 
 import * as THREE from 'three'
 import { getModel } from './model-service.js'
-import { hash32 } from './poi.js'
+import { hash32 } from './seed.js'
 
 /** Tunables — live in the debug panel (addGui). Light units are physical candela, like the lamps. */
 export const CAMPFIRE_PARAMS = {
