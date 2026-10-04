@@ -1191,7 +1191,8 @@
   </div>
 
   <!-- Pause menu overlay (D-17) — shown on Esc from chase/hood mode; hidden in free-cam.
-       Button ids are wired in main.js: pm-resume, pm-story, pm-lab.
+       Button ids are wired in main.js: pm-resume, pm-restart (FEAT-62 scenarios only), pm-story,
+       pm-lab, pm-menu.
        (D-18 "grid world" / "return to world" were removed 2026-07-20 — the testing lab
        superseded grid world, which only ever hid the terrain chunks and had no instruments.)
        FEAT-43: pm-story now opens the seed prompt and enters the sandboxed Story Mode gamemode
@@ -1362,8 +1363,8 @@
     <div class="rt-title"><span class="rt-label">Rank:</span><span class="rt-letter-box" id="rt-letter-box"><span id="rt-letter">S</span></span></div>
   </div>
 
-  <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI cube.
-       Latching the parking brake (Space) there is what opens the offer — see _updatePoiPrompt. -->
+  <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI.
+       Latching the parking brake (Space) there is what opens the offer — see _updateParkTriggers. -->
   <div id="poi-prompt"></div>
 
   <!-- FEAT-45 Phase D: the camping prompt. The vibe bar sits ABOVE the copy — you read the score,

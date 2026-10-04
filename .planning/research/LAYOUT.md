@@ -4,7 +4,7 @@
 holds the *rules* (import seams, prohibitions, workflow); this holds the *map*. When you add, move,
 or delete a file, update the relevant line here in the same commit — it's one line, keep it honest.
 
-*Last full audit: 2026-08-16 (58 files in `src/`, 8 in `src/props/`).*
+*Last full audit: 2026-10-04 (81 files in `src/`, 8 in `src/props/`).*
 
 ## Top level
 
@@ -12,7 +12,7 @@ or delete a file, update the relevant line here in the same commit — it's one 
 |---|---|
 | `index.html` | The single entry point (Vite root). |
 | `src/` | The product — shippable game engine, ES6 modules. No diagnostics, no dead code (see CLAUDE.md "src/ is the product"). |
-| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), authored scenarios (`scenarios.js`, FEAT-62 — seed + world-coordinate poses, re-checked against the road by `test/scenario-route.mjs`), and the bundled route caches (`route-cache-*.json.gz`, fetched by URL — never ES-import them). |
+| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), authored scenarios (`scenarios.js`, FEAT-62 — seed + world-coordinate poses, re-checked against the road by `test/scenario-route.mjs`). (The bundled route caches were deleted 2026-08-19 with the bake subsystem.) |
 | `assets/models/` | Hand-authored `.glb` assets + `CREDITS.md`. Convention: `.planning/research/ASSETS.md`; style: `ART-STYLE.md`. |
 | `vendor/box3d/` | Vendored Box3D WASM bindings. Imported ONLY by `src/physics-engine.js` (FEAT-48 seam). |
 | `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts. Pure node — never touches Vite. |
@@ -46,9 +46,11 @@ pure math — read by `physics.js` and `vehicle-model.js`) · `terrain-physics.j
 `drivetrain.js` (engine/converter/gearbox, FEAT-23) · `ignition.js` (key/starter state machine,
 FEAT-33 — pure, no DOM) · `vehicle.js` (Ackermann, input) · `vehicle-state.js` (THE canonical
 vehicleState shape — one factory, so the world truck and the FEAT-41 menu-stage truck cannot drift) ·
-`debris.js` (FEAT-36 dynamic props) · `physics-debug.js` (collider wireframes).
+`debris.js` (FEAT-36 dynamic props) · `physics-debug.js` (collider wireframes) · `damage.js` (SM-3
+component condition model — reads vehicleState signals, writes `params._*Scale` multipliers; the
+physics stack never imports it).
 
-**World generation** — `seed.js` (PRNG, pure) · `terrain.js` (chunk ring, carve table, analytic
+**World generation** — `seed.js` (djb2 / mulberry32 / FNV-1a hash32 / seedFor, pure) · `terrain.js` (chunk ring, carve table, analytic
 height) · `terrain-height.js` (THE height function + seeded noise — imported by main thread, worker,
 road.js and the headless gates) · `terrain-worker.js` (chunk heightmap Worker, module entry) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
 rock classification) · `map-cover.js` (map-resolution forest cover) · `water.js` (ponds/streams
@@ -64,7 +66,9 @@ curvature, ear-clip) · `corridor-router.js` (v2 corridor router, FEAT-68) · `r
 network Worker's nested pool) · `road-route-worker.js` (route Worker module entry) ·
 `road-network-worker.js` (PERF-30 network Worker module entry — the whole build off-thread) ·
 `road-network-client.js` (PERF-30 main-thread client: dispatch + atomic adopt) ·
-`road-quality.js` (per-stretch quality) · `centerline.js` (curvature-bounded centerline model).
+`road-quality.js` (per-stretch quality) · `centerline.js` (curvature-bounded centerline model) ·
+`world-validate.js` (BUG-56 "is this world playable": one routine behind story entry's seed check and
+the `play-area` gate).
 (The bundled route cache / `route-store.js` was deleted 2026-08-19 — owner call; the in-session
 cache in main.js is what remains.)
 
