@@ -258,6 +258,10 @@ export class ShadowBakeSystem {
         if (dx || dz) this._mark(cx + dx, cz + dz, false)     // neighbours after
   }
 
+  /** Queue chunk (cx, cz)'s own tile at the FRONT of the queue — the one that was just committed
+   *  or promoted is the one the player is about to look at. Neighbours go through markAll. */
+  markFront(cx, cz) { this._mark(cx, cz, true) }
+
   _mark(cx, cz, front) {
     const k = cx + ',' + cz
     if (this._dirtySet.has(k)) return

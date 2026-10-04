@@ -570,7 +570,7 @@ export class PropSystem {
   _markShadowTiles(cx, cz, own) {
     const bake = this._shadowBake
     if (!bake || !bake.enabled) return
-    if (own) bake._mark(cx, cz, true)
+    if (own) bake.markFront(cx, cz)
     const keys = []
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       if (!dx && !dz) continue
