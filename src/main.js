@@ -4163,7 +4163,7 @@ function _renderMissionUI () {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = m.result
       // FEAT-53: the letter wears its ratified rank colour (D·C·B·A·S = red·orange·yellow·white·
-      // blue), the one place a rank is ever shown (SM-INV-3: result-card only, never live). A paid
+      // blue), the final letter (SM-INV-3: display only; the FEAT-87 strip shows it live). A paid
       // job adds its payout + good deeds; Quick Job says plainly that it pays nothing.
       const paid = r.payout !== undefined
       // Letter and time share the headline, at one size (owner, 2026-08-14 — the same rule the

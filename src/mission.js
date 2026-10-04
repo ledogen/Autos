@@ -10,7 +10,7 @@
  *   - "Where missions and POIs live" [RATIFIED 2026-07-20] — mission endpoints are ARBITRARY
  *     points on road edges (an edge + arc position), never snapped to graph nodes. A store is no
  *     likelier to sit at an intersection than halfway down a road. Endpoints here are mid-edge by
- *     construction; when FEAT-21 lands, they become real POIs instead of random points.
+ *     construction. Quick Job keeps random points; POI jobs come from the mission board (FEAT-67).
  *   - SM-INV-2 — par comes from src/par.js, which reads road geometry only. Nothing here may feed
  *     it a vehicle quantity.
  *   - SM-INV-3 — no par countdown on the HUD while driving. The player sees elapsed time and
