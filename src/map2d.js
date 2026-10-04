@@ -436,6 +436,7 @@ export class Map2D {
         this._playNetSource = null       // PERF-30: live play RoadSystem getter; set via setPlayNetworkSource
         this._sharedRouteSource = null   // QUAL-14 perf: getter for the play RoadSystem (shared route cache)
         this._sig        = null          // seed+road-param signature the current _road was built for
+        this._pendingSig = null          // a newer signature whose debounced rebuild is queued
         this._streamAt   = null          // THREE.Vector3 the network was last streamed around
         this._streamTimer = 0            // pan-debounce handle
         this._paramTimer  = 0            // road-slider-change debounce handle (live rebuild while open)
@@ -473,6 +474,7 @@ export class Map2D {
         this._bgOffX  = 0                // overscan margin (px); real values set in _resize
         this._bgOffY  = 0
         this._bgDirty = true
+        this._sheetRect = this._computeSheet(0, 0)   // the drawable sheet; real values set in _resize
         this._bgPanX  = 0                // transform the cached bg was rendered at
         this._bgPanZ  = 0
         this._bgZoom  = 0
@@ -685,13 +687,7 @@ export class Map2D {
         // the kept instance, whose warm route cache makes a reopen instant. The terrain layer paints
         // immediately; the network then streams in progressively (see _startStream).
         const sig = this._paramSig()
-        if (!this._road || sig !== this._sig) {
-            this._buildRoad(); this._sig = sig
-            // The memo is keyed by chunk only, so it MUST be dropped with the signature it was
-            // resolved under — a new seed puts a different forest in the same chunk coordinates,
-            // and a stale entry would print the old world's clearings on the new one.
-            this._coverMemo.clear()
-        }
+        if (!this._road || sig !== this._sig) { this._buildRoad(); this._sig = sig }
 
         if (!this._centeredOnce) {
             const car = this._getCar()
@@ -750,6 +746,7 @@ export class Map2D {
         clearTimeout(this._pumpTimer)
         clearTimeout(this._streamTimer)
         clearTimeout(this._paramTimer)
+        this._pendingSig = null
         clearTimeout(this._bgTimer)
         this._canvas.style.display = 'none'
         this._canvas.removeEventListener('mousedown', this._onDown)
@@ -759,6 +756,7 @@ export class Map2D {
         this._canvas.removeEventListener('dblclick', this._onDbl)
         this._canvas.removeEventListener('mouseleave', this._onLeave)
         window.removeEventListener('keydown', this._onKey)
+        this._hoverX = undefined         // the cursor is not over a closed map (stale card on reopen)
         this._hoverPoi = null
         this._hoverView = null
     }
@@ -826,17 +824,20 @@ export class Map2D {
     }
 
     // Called each render frame while open: if the seed / a road* param changed since the current
-    // instance was built, adopt the new signature immediately (so we don't re-queue every frame) and
-    // debounce a full rebuild + restream. Adopting the sig up front means a settled value fires the
-    // timer once, while a still-dragging slider keeps producing new sigs → the timer keeps resetting.
+    // instance was built, note it as PENDING (so we don't re-queue every frame) and debounce a full
+    // rebuild + restream. A settled value fires the timer once, while a still-dragging slider keeps
+    // producing new sigs → the timer keeps resetting. `_sig` is adopted only when the rebuild runs:
+    // hide() cancels the timer, and a sig adopted up front would then tell the next show() the
+    // stale instance was current.
     _checkParamChange() {
         const sig = this._paramSig()
-        if (sig === this._sig) return
-        this._sig = sig
+        if (sig === (this._pendingSig ?? this._sig)) return
+        this._pendingSig = sig
         clearTimeout(this._paramTimer)
         this._paramTimer = setTimeout(() => {
+            this._pendingSig = null
             if (!this._open) return
-            this._buildRoad()     // fresh instance off the new params (resets the progressive cursor)
+            this._buildRoad(); this._sig = sig   // fresh instance off the new params (resets the progressive cursor)
             this._startStream()   // restart the chunked stream around the current pan center
         }, 150)
     }
@@ -845,6 +846,11 @@ export class Map2D {
     // cost is in streaming, which _startStream chunks. Resets the progressive cursor.
     _buildRoad() {
         this._road = new RoadSystem(this._getSeed(), this._getParams())
+        // The cover memo is keyed by chunk only, so it MUST be dropped with the network it was
+        // resolved under — a new seed puts a different forest in the same chunk coordinates, and a
+        // stale entry would print the old world's clearings on the new one. Here, not in show(), so
+        // a seed change made WHILE the map is open (the deferred rebuild below) drops it too.
+        this._coverMemo.clear()
         this._streamAt = null
         this._streamFull = false
         this._streamStep = 0
@@ -989,8 +995,12 @@ export class Map2D {
     // must go through here, or the map slides out from under its own border: _sx/_sy, the
     // wheel-zoom anchor, the double-click pick, the cached-background blit delta, and the
     // sample-grid origin in _drawTopo all share this one definition.
-    _sheet() {
-        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+    // Computed once per _resize (the canvas CSS size is set there and nowhere else) and returned
+    // by reference — _sx/_sy run per vertex, and a fresh object + a layout read each call was the
+    // map's per-vertex cost. Treat the result as read-only.
+    _sheet() { return this._sheetRect }
+
+    _computeSheet(W, H) {
         const x0 = COLLAR, y0 = COLLAR, x1 = W - COLLAR, y1 = H - COLLAR_BOTTOM
         return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }
     }
@@ -1009,8 +1019,8 @@ export class Map2D {
     /** Clamp a proposed zoom into [_minZoom(), ZOOM_MAX]. The one place either limit is applied. */
     _clampZoom(z) { return Math.max(this._minZoom(), Math.min(ZOOM_MAX, z)) }
 
-    _sx(wx) { return (wx - this._panX) * this._zoom + this._sheet().cx }
-    _sy(wz) { return (wz - this._panZ) * this._zoom + this._sheet().cy }
+    _sx(wx) { return (wx - this._panX) * this._zoom + this._sheetRect.cx }
+    _sy(wz) { return (wz - this._panZ) * this._zoom + this._sheetRect.cy }
 
     _resize() {
         const dpr = window.devicePixelRatio || 1
@@ -1024,6 +1034,7 @@ export class Map2D {
         this._bg.height = Math.round(h * BG_OVERSCAN * dpr)
         this._canvas.style.width = w + 'px'
         this._canvas.style.height = h + 'px'
+        this._sheetRect = this._computeSheet(w, h)
         this._dpr = dpr
         // Fit MAP_RADIUS*2 to the short edge of the SHEET (not the window) on the very first
         // sizing — the collar is not drawable, so fitting to the window would push the outer ring
@@ -1137,7 +1148,9 @@ export class Map2D {
         this._syncRegionWindow()
         // …and if play has registered more of its region since we copied it, re-take the copy.
         if (this._playOutgrewMap()) this._startStream()
-        if (this._canvas.width !== Math.round(window.innerWidth * (window.devicePixelRatio || 1))) this._resize()
+        const dpr = window.devicePixelRatio || 1
+        if (this._canvas.width !== Math.round(window.innerWidth * dpr)
+            || this._canvas.height !== Math.round(window.innerHeight * dpr)) this._resize()
         if (this._bgDirty) { this._drawBackground(); this._bgDirty = false }
 
         const ctx = this._ctx
