@@ -29,6 +29,13 @@
  * scored (SM-INV-10). One mechanism, used the same way by every track.
  */
 
+// Deterministic PRNG for the alignment scatter. Alignment damage is random by design, but the world
+// is a determinism machine (INFRA-03) and gates pin exact states. So the randomness is SEEDED and
+// advances only when an impact actually lands — same run, same drive, same crashes, same bent axle.
+// This is FEAT-26's flag-gated-nondeterminism pattern applied to damage. (seed.js is pure maths, so
+// the "imports nothing from the physics stack" seam below still holds.)
+import { mulberry32 } from './seed.js'
+
 // ── Track registry ────────────────────────────────────────────────────────────────────────────────
 // id → { label, cls, region }. `region` names which armor piece protects it (null = unprotected);
 // it is consumed by the impact/armor pass in slice 2, and declared here so the registry is the one
@@ -575,25 +582,7 @@ export function armorPassThrough (c) {
   return p < 0 ? 0 : p
 }
 
-/**
- * Deterministic PRNG (mulberry32) for the alignment scatter.
- *
- * Alignment damage is random by design, but the world is a determinism machine (INFRA-03) and gates
- * pin exact states. So the randomness is SEEDED and advances only when an impact actually lands —
- * same run, same drive, same crashes, same bent axle. This is FEAT-26's flag-gated-nondeterminism
- * pattern applied to damage.
- */
 const clampAbs = (x, m) => (x >  m ? m : x < -m ? -m : x)
-
-function mulberry32 (seed) {
-  let a = seed >>> 0
-  return function () {
-    a = (a + 0x6D2B79F5) >>> 0
-    let t = Math.imul(a ^ (a >>> 15), 1 | a)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 // ── The model ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -655,13 +644,21 @@ export class DamageModel {
   adjust (id, delta) { this.set(id, this.get(id) + delta) }
 
   /**
-   * Set every track at once (damage-disable lock, new run). Full condition also puts the air back in the tires: a puncture is STATE rather
-   * than a condition value, so restoring conditions alone would leave a flat tire flat — which
-   * makes the debug panel's "Restore All" quietly untrue.
+   * Set every track at once (damage-disable lock, new run, free-roam respawn). Full condition also
+   * puts the air back in the tires and straightens the wheels: a puncture and a bend are STATE
+   * rather than condition values, so restoring conditions alone would leave a flat tire flat and a
+   * bent wheel pulling — which makes the debug panel's "Restore All" quietly untrue.
    */
   setAll (v) {
     for (const id of TRACK_IDS) this.set(id, v)
-    if (v >= 1) for (let i = 0; i < 4; i++) this.flat[i] = false
+    if (v >= 1) {
+      for (let i = 0; i < 4; i++) this.flat[i] = false
+      // Full condition also straightens the wheels: the alignment TRACKS are only a readout of the
+      // two offset arrays, and those are what alignment.js steers by (BUG-79). Without this a free-
+      // roam respawn reported "Alignment 100 %" and kept pulling (owner, 2026-10-04).
+      this.toeOffsetDeg.fill(0)
+      this.camberOffsetDeg.fill(0)
+    }
   }
 
   /**

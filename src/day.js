@@ -74,6 +74,15 @@ export const DAY_PARAMS = {
 }
 
 /**
+ * Deprivation-stage colours (owner, 2026-08-02): the sleep slider + energy meter wear the stage.
+ * sleepy/tired/exhausted deliberately reuse the ratified rank hexes for B/C/D (economy.js
+ * RANK_COLOR — yellow/orange/red mean the same escalation everywhere); rested is green
+ * (owner, 2026-08-02 — was white for a day; green reads "healthy" on the energy meter).
+ */
+export const STAGE_COLOR = { rested: '#7ed957', sleepy: '#ffdc3c', tired: '#ff9f43', exhausted: '#ff5a4e' }
+
+
+/**
  * SM-INV-12 RUN-LAYER STATE. This is THE run-scoped state object: the things that belong to a story
  * run rather than to the world. The invariant it exists to keep is a timing one — run state advances
  * only at DAY / SLEEP BOUNDARIES, never per frame, so nothing downstream of it can become a function
@@ -83,14 +92,6 @@ export const DAY_PARAMS = {
  * a test drift the day. Keep it minimal — a field earns its place here only if a run boundary is the
  * only thing that may move it.
  */
-/**
- * Deprivation-stage colours (owner, 2026-08-02): the sleep slider + energy meter wear the stage.
- * sleepy/tired/exhausted deliberately reuse the ratified rank hexes for B/C/D (economy.js
- * RANK_COLOR — yellow/orange/red mean the same escalation everywhere); rested is green
- * (owner, 2026-08-02 — was white for a day; green reads "healthy" on the energy meter).
- */
-export const STAGE_COLOR = { rested: '#7ed957', sleepy: '#ffdc3c', tired: '#ff9f43', exhausted: '#ff5a4e' }
-
 export const runState = {
     day: 1,   // 1-based day index of the current run; increments at each midnight crossed
 }

@@ -77,3 +77,17 @@ export function mulberry32(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
+
+// ── hash32 — FNV-1a string→32-bit hash ───────────────────────────────────────
+// Keys the per-edge / per-cell PRNGs of poi.js (POI + customer layout), camp.js (FEAT-45 camping
+// zones) and campfire.js (log yaw). Any stable hash would do, but it must STAY stable — do not
+// "improve" it: every existing seed's POI and camp layout rides on it being byte-identical.
+// (Distinct from djb2 above, which seeds worldgen; the two are not interchangeable.)
+export function hash32(str) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h >>> 0
+}

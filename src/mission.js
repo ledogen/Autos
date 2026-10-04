@@ -10,7 +10,7 @@
  *   - "Where missions and POIs live" [RATIFIED 2026-07-20] — mission endpoints are ARBITRARY
  *     points on road edges (an edge + arc position), never snapped to graph nodes. A store is no
  *     likelier to sit at an intersection than halfway down a road. Endpoints here are mid-edge by
- *     construction; when FEAT-21 lands, they become real POIs instead of random points.
+ *     construction. Quick Job keeps random points; POI jobs come from the mission board (FEAT-67).
  *   - SM-INV-2 — par comes from src/par.js, which reads road geometry only. Nothing here may feed
  *     it a vehicle quantity.
  *   - SM-INV-3 — no par countdown on the HUD while driving. The player sees elapsed time and
@@ -32,7 +32,7 @@
  * loop. update() is a couple of distance checks per frame.
  */
 
-import { computePar, gradeRun, formatTime, PAR_REF, PAR_SLACK } from './par.js'
+import { computePar, gradeRun, PAR_REF, PAR_SLACK } from './par.js'
 import { roadQuality } from './road-quality.js'
 
 // THE PLANNING NETWORK IS THE PLAY NETWORK (owner, 2026-09-07). Missions used to plan on a second,
@@ -144,6 +144,31 @@ export function buildGraphAdj(g, inRegion = () => true) {
         adj.get(ka).push({ to: kb, w }); adj.get(kb).push({ to: ka, w })
     }
     return { posOf, idOf, adj }
+}
+
+/**
+ * Dijkstra from one node over a buildGraphAdj adjacency (straight-line graph metric — cheap, nothing
+ * is routed). Returns dist + parent chain to every reachable node. `maxD` stops expanding past that
+ * distance (the leg planner's LEG_MAX band); the paper-route tour leaves it unbounded. Shared by the
+ * mission leg planner and PaperRouteSystem so the two searches cannot drift (a linear-scan sorted
+ * queue: fine at region graph sizes, and its tie order is part of what the gates pin).
+ */
+export function graphDijkstra(adj, startK, maxD = Infinity) {
+    const dist = new Map([[startK, 0]]), prev = new Map()
+    const queue = [{ k: startK, d: 0 }]
+    while (queue.length) {
+        queue.sort((a, b) => a.d - b.d)
+        const { k, d } = queue.shift()
+        if (d > (dist.get(k) ?? Infinity)) continue
+        if (d > maxD) continue
+        for (const e of adj.get(k) || []) {
+            const nd = d + e.w
+            if (nd < (dist.get(e.to) ?? Infinity)) {
+                dist.set(e.to, nd); prev.set(e.to, k); queue.push({ k: e.to, d: nd })
+            }
+        }
+    }
+    return { dist, prev }
 }
 
 export class MissionSystem {
@@ -646,20 +671,7 @@ export class MissionSystem {
         // capped at MAX_EDGES hops. No routing here (graph metric only), so it's cheap to run per
         // start candidate. Returns the parent chain plus the qualifying endpoints.
         const legCandidates = (startK, lo = LEG_MIN) => {
-            const dist = new Map([[startK, 0]]), prev = new Map()
-            const queue = [{ k: startK, d: 0 }]
-            while (queue.length) {
-                queue.sort((a, b) => a.d - b.d)
-                const { k, d } = queue.shift()
-                if (d > (dist.get(k) ?? Infinity)) continue
-                if (d > LEG_MAX) continue
-                for (const e of adj.get(k) || []) {
-                    const nd = d + e.w
-                    if (nd < (dist.get(e.to) ?? Infinity)) {
-                        dist.set(e.to, nd); prev.set(e.to, k); queue.push({ k: e.to, d: nd })
-                    }
-                }
-            }
+            const { dist, prev } = graphDijkstra(adj, startK, LEG_MAX)
             const ends = [...dist.entries()]
                 .filter(([k, d]) => d >= lo && d <= LEG_MAX && k !== startK)
                 .filter(([k]) => _pathLength(prev, k, startK) <= MAX_EDGES)
@@ -906,8 +918,6 @@ function _pathLength(prev, k, root) {
     while (k != null && k !== root && n < 64) { k = prev.get(k); n++ }
     return k === root ? n : Infinity
 }
-
-export { formatTime }
 
 
 /**

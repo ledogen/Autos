@@ -3990,8 +3990,10 @@ export class RoadSystem {
                     if (t <= 1e-6 || t >= 1 - 1e-6 || u <= 1e-6 || u >= 1 - 1e-6) continue
                     const sOwn = own.polyCum[ip - 1] + t * (own.polyCum[ip] - own.polyCum[ip - 1])
                     const sQ = SQ.polyCum[iq - 1] + u * (SQ.polyCum[iq] - SQ.polyCum[iq - 1])
-                    // 30 m shared-node THROAT (the trim bound below): two legs of one junction
-                    // crossing inside the throat is the node planner's geometry, not a defect.
+                    // FIXED 30 m shared-node THROAT: a crossing within 30 m of a node the two edges
+                    // share, measured along EITHER leg (min of the two arc distances), is the node
+                    // planner's geometry, not a defect. Not the same throat as the re-convergence
+                    // test below, which uses the GEOMETRIC throat (_v2ThroatLen: where the legs part).
                     let throat = false
                     for (const sk of shared) {
                         const dOwn = sk === ownStartKey ? sOwn : own.L - sOwn
@@ -5945,18 +5947,18 @@ export class RoadSystem {
             if (!inBand(c1) && !inBand(c2)) continue   // fully-margin edge: not registered (frontier, like rows pad)
             const A = this._nodePos(c1), B = this._nodePos(c2)
             { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }   // degenerate (coincident) edge
-            // BUG-55 phase 5: the delete rung — a tear-grade pair past the merge ladder loses
-            // its longer member when its endpoints reconnect without leaning on any other
-            // possible victim (_v2DeleteFor). A deleted edge never builds a centerline and never
-            // registers; g.adj stays untouched (see the method header for why).
+            // The delete rung (_v2DeleteFor — BUG-57's crossing invariant, which superseded the
+            // BUG-55 tear grades): the longer member of an unsanctioned-crossing pair dies, as does
+            // the longer member of a re-converging pair whose endpoints keep a detour. A deleted
+            // edge never builds a centerline and never registers; g.adj stays untouched (see the
+            // method header for why).
             if (this._v2DeleteFor(g, drop, wide, c1, c2)) continue
             const key = `g:${g.key(c1)}:${g.key(c2)}`
             const cl = this._edgeCenterline(c1, c2, this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2)))
             if (!cl || cl.length < 1e-6) continue
-            // BUG-53: conflicting pairs MERGE — the loser adopts the winner's course node→fork,
-            // then tapers back onto its own. BUG-55: a winner registers through its bundle when
-            // one negotiated, and an edge with no node-merge role checks the DISJOINT planner
-            // (shape E) before registering plain.
+            // Conflicting pairs (BUG-53) resolve as T promotions (FEAT-76, below); an edge with no
+            // node-merge role checks the DISJOINT planner (BUG-55 shape E), then the shove, before
+            // registering plain. (The ceded-strand merge and BUG-55's bundles are gone — QUAL-30.)
             // BUG-55: a spec whose WINNER is deleted never applies — the loser registers on
             // its own line (the conflict died with the winner). Window-invariant: the winner's
             // verdict is winner-local, so every window drops the identical specs; acyclic:
@@ -7714,12 +7716,15 @@ export class RoadSystem {
 
     // ── QUAL-10: junction carve influence ────────────────────────────────────────────────────
     /**
-     * Junction carve influence for a point at run-arc `arcSEff` on `runKey`. Near an AT_GRADE crossing
-     * (FEAT-19's _crossingsByRun) the carve holds the road grade FLAT out to a WIDENED core (`widen`)
-     * so the terrain is dug/filled to the junction pad instead of clipping through it, and the
-     * cross-section eases crown/camber to flat (`frac`) so a crown isn't extrapolated across that wide
-     * core. `frac` = 1 at the node, 0 at radius R along the run. Two crossing runs each widen their own
-     * band → the union covers the pad disc. Pure fn of the network (window-invariant); 0 if no crossings.
+     * Junction carve influence for a point at run-arc `arcSEff` on `runKey`. Near a NODE junction (the
+     * run's endpoint arcs at graph T/X nodes, _junctionCarveArcs from _detectNodeJunctions) the carve
+     * holds the road grade FLAT out to a WIDENED core (`widen`) so the terrain is dug/filled to the
+     * junction pad instead of clipping through it, and the cross-section eases crown/camber to flat
+     * (`frac`) so a crown isn't extrapolated across that wide core. `frac` = 1 at the node, 0 at radius R
+     * along the run. Each leg of the node widens its own band → the union covers the pad disc; `node`
+     * rides along for _carveDirtY's inter-leg blend. Pure fn of the network (window-invariant); zero
+     * influence when the run ends at no junction. (This used to read FEAT-19's mid-span crossings,
+     * _crossingsByRun; those still feed other passes, never this carve — they carry no pad.)
      */
     _junctionCarve(runKey, arcSEff) {
         // Node junctions (graph T/X + rows cross-anchors) carry the pad locations as per-run ENDPOINT arcs.
@@ -8384,11 +8389,12 @@ export class RoadSystem {
      * Junction PAD carve at world (wx,wz): makes the entire welded pad footprint (node.ring, incl. the
      * back-arc bulb) a first-class carve region so mesh == collision everywhere on the pad — not just
      * along the leg corridors. It only EXTENDS COVERAGE; the design SURFACE it carves to is the SAME
-     * graded apron the pad MESH rides — sampleRoadTopY − clearance (= _carveDirtY, the FEAT-19-graded,
-     * plane-blended surface), falling back to the fitted pad plane only where no run resolves (the far
-     * open-side rim). So where the leg carve already covers, pad designY == leg designY (no seam, no
-     * mesh/physics step on climbing/descending legs); where the leg carve returned null (beyond its toe
-     * or outside every run footprint — the open sector), pad supplies full coverage. INSIDE the ring
+     * surface the pad MESH rides — the resolve-free node surface _nodeSurfaceTop (PERF-25: the ruled
+     * inter-leg blend road-mesh.js samplePadY also reads) minus clearance, falling back to the fitted pad
+     * plane only where no leg answers (the far open-side rim). So where the leg carve already covers,
+     * _mergeCarve keeps the leg's designY (no seam, no mesh/physics step on climbing/descending legs);
+     * where the leg carve returned null (beyond its toe or outside every run footprint — the open
+     * sector), pad supplies full coverage. INSIDE the ring
      * blendW = 1; OUTSIDE it ramps designY → raw over shoulder + fill/cut toe (the SAME run params
      * _carveCrossSection uses), driven by distance outside the ring. DIRT convention (clearance
      * subtracted), composed with the leg carve by _mergeCarve. Returns {blendW,gradeY}|null (raw terrain).
@@ -9617,8 +9623,8 @@ export class RoadSystem {
      * (within XZ_ADJACENCY_EPS). Used by _buildCamberProfile / _buildRunProfile to seed
      * the start camber from the predecessor run's end camber instead of forcing 0 (BUG-10).
      *
-     * Built once per generation into `this._runAdjacencyCache`:
-     *   { generation: number, map: Map<runKey → predecessorRunKey> }
+     * Built once per network revision into `this._runAdjacencyCache`:
+     *   { rev: number (_networkRev), map: Map<runKey → predecessorRunKey> }
      *
      * Algorithm: for each network run, record its last-point XZ in a spatial hash
      * (keyed by rounded metre). A second pass looks up each run's first-point. O(R)
@@ -9673,7 +9679,7 @@ export class RoadSystem {
      *
      * Lookup order (cycle-safe — no recursive call to _buildCamberProfile):
      *   1. Find predecessor run via _predecessorRunKey.
-     *   2. If predecessor profile is already in _camberProfileCache (current generation):
+     *   2. If predecessor profile is already in _camberProfileCache (current _networkRev):
      *      use its last camberRad value (stitched, slew-limited end camber).
      *   3. Else: compute predecessor's end camber from raw curvature only — walk the
      *      predecessor points, build rawCamber[], forward-march slew from 0 — and return
@@ -9748,7 +9754,7 @@ export class RoadSystem {
      *      by more than roadCamberRate·Δs from the stored camber at i.
      *   4. Return { arcPos: Float64Array, camberRad: Float64Array } arrays.
      *
-     * Cache: Map keyed by runKey, invalidated when this._generation changes.
+     * Cache: Map keyed by runKey, invalidated when this._networkRev changes.
      * O(N) build once per run, O(log N) binary-search per camberProfile query.
      * No allocation per query (allocation-disciplined inner loop).
      *
@@ -10581,7 +10587,8 @@ export class RoadSystem {
      * D2 (plan 09-21): ONE slew-rate-limited profile per canonical run — ribbon sweep,
      * terrain carve, and physics all call this so visual == physics banking.
      *
-     * Cache: keyed by runKey, invalidated when this._generation changes (D1).
+     * Cache: keyed by runKey, invalidated when this._networkRev changes (the rev every per-run cache
+     * keys off — see its declaration; _generation is the ribbon/carve REBUILD signal, not a cache key).
      * Query: O(log N) binary search — allocation-free in the inner loop (no new arrays).
      *
      * @param {number} arcS   — continuous arc-length position along the run (metres)
@@ -10618,8 +10625,8 @@ export class RoadSystem {
      * so anything read by arcS is C0 by construction — seam-continuity is guaranteed.
      *
      * Cache: lazy-init `this._runProfileCache` Map, entries keyed by runKey carrying
-     *   { generation, arcPos, gradeY, gradeM, camberRad, tx, tz }.
-     * Invalidation: D1 — rebuilt when `this._generation` differs from stored (same discipline
+     *   { rev, arcPos, gradeY, gradeM, camberRad, tx, tz }.
+     * Invalidation: rebuilt when `this._networkRev` differs from the stored rev (same discipline
      *   as camberProfile / _camberProfileCache).
      * Query: ONE binary search on arcPos via _interpolateRunProfile, O(log N) per call.
      * Allocation: the returned object { gradeY, camberRad, tx, tz } is the ONLY allocation
@@ -10784,7 +10791,8 @@ export class RoadSystem {
 
 }
 
-// PROTOTYPE: build a THREE.Line directly from a point array (valley-trunk proto).
+// Road-viz centerline (buildDebugLines, the debug panel's road viz toggle): a THREE.Line straight
+// from a point array.
 function _buildDebugLine2(pts, color = 0x00e5ff) {
     const geo = new THREE.BufferGeometry().setFromPoints(pts)
     const mat = new THREE.LineBasicMaterial({ color, depthTest: true })

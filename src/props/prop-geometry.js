@@ -1,16 +1,19 @@
 /**
  * src/props/prop-geometry.js — Procedural low-poly prop geometry for FEAT-06.
  *
- * Three parametric primitives, all PURE (no road/terrain/scene dependency) and DETERMINISTIC
+ * Parametric primitives, all PURE (no road/terrain/scene dependency) and DETERMINISTIC
  * (driven by an injected `rng: () => [0,1)` — pass a seeded mulberry32 for reproducibility):
  *
  *   makeBlob(opts, rng)       — amorphous low-poly blob: aspen canopy, rocks, bushes, boulders.
- *   makeKinkedTube(opts, rng) — swept tapered low-poly tube: aspen + pine trunks.
+ *   makeKinkedTube(opts, rng) — swept tapered low-poly tube: aspen + pine trunks, fallen logs.
  *   makeConeStack(opts, rng)  — stacked kinked cone skirts: pine canopy.
+ *   makeGrassClump / makeRyeClump / makeSageClump — FEAT-85 roadside cover, and their far-ring
+ *   stand-ins makeGrassLo / makeRyeLo / makeSageLo.
  *
- * Plus helpers: fillColor() (bake a uniform vertex colour), mergeGeometries() (dependency-free
- * concat — avoids the browser 'three/addons' vs node 'three/examples' path split), and
- * assembleTree() (trunk + canopy → one geometry for single-draw instancing).
+ * Plus helpers: fillColor() (bake a uniform vertex colour), fleckColor() (per-face bark flecks),
+ * mergeGeometries() (dependency-free concat — avoids the browser 'three/addons' vs node
+ * 'three/examples' path split), translateGeo(), and assembleTree() (trunk + canopy → one geometry
+ * for single-draw instancing).
  *
  * AESTHETIC: low-poly + FLAT shading is the whole look (see FEAT-06 concept art). Geometry is
  * built NON-INDEXED and normals are baked per-face (computeVertexNormals on non-indexed geometry

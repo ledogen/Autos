@@ -22,6 +22,7 @@
 import { RoadSystem } from '../../src/road.js'
 import { stepPhysics } from '../../src/physics.js'
 import { makeTerrainHeadless } from './terrain-headless.mjs'
+import { makeEngineCtx } from './engine-ctx.mjs'
 
 // Static-equilibrium strut compression fallback when a capture predates the *_sc telemetry columns.
 // (vehicle.js's SPAWN_STATE is NOT imported — it transitively pulls camera.js's DOM listeners, which
@@ -133,6 +134,12 @@ export async function replayEvent(capture, { THREE }) {
         handbrake: false,
     })
     const vs = mkState()
+    // FEAT-48: stepPhysics needs an engine world. The same analytic terrain goes in as a heightfield
+    // around the seat (chassis/body contact + gravity integration); the wheels ride queryContacts.
+    const ectx = await makeEngineCtx(vs, params, {
+        groundFn: (x, z) => terrain.analyticHeight(x, z), extent: 256, cell: 2,
+        cx: is.position.x, cz: is.position.z,
+    })
 
     // ── Replay loop: for i = 1..N-1 apply input[i], step, compare to frame[i] ───────────────────────
     const tl = ev.inputTimeline
@@ -148,7 +155,7 @@ export async function replayEvent(capture, { THREE }) {
         vs.brake = inp.brk;    vs.smoothBrake = inp.brk
         vs.wheelSteerAngles = ackermann(inp.steer, params)
 
-        stepPhysics(vs, params, 1 / 60, queryContacts)
+        stepPhysics(vs, params, 1 / 60, queryContacts, ectx)
 
         replayFz.push([0, 1, 2, 3].map(w => vs.wheelDebug[w]?.fz ?? 0))
 
@@ -158,6 +165,8 @@ export async function replayEvent(capture, { THREE }) {
         posErr.push(err)
         if (firstDiverge < 0 && err > DIVERGE_TOL) { firstDiverge = i; firstDivergeErr = err }
     }
+
+    ectx.dispose()
 
     // ── (B) First-divergence frame ─────────────────────────────────────────────────────────────────
     console.log(`\n  (B) TRAJECTORY DIFF (replay vs recorded, pos tol ${DIVERGE_TOL} m over ${N} frames)`)

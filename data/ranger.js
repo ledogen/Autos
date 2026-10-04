@@ -576,7 +576,6 @@ export const RANGER_PARAMS = {
     // side + 3 m carve extra — i.e. the separation below which the two roads write their cut/fill
     // stencils into the same terrain vertices. Owner-set 2026-08-22.
     mergeProxM: 18,
-    wyeCreaseMaxDeg: 30,   // R8: max camber crease across a wye's shared edge (binds at the wye only)
     sibConeDeg: 25,        // R5: demoted-rung departure within this cone of a sibling's bearing pays extra
     wSibDepart: 3,         // R5: the surcharge, cost per metre while inside the cone near the node
     sibReachM: 120,        // R5: how far from the node the surcharge reaches

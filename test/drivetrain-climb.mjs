@@ -10,6 +10,7 @@
 
 import * as THREE from 'three'
 import { stepPhysics } from '../src/physics.js'
+import { computeStaticEquilibrium } from '../src/suspension.js'
 import { stepDrivetrain } from '../src/drivetrain.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { makeEngineCtx } from './lib/engine-ctx.mjs'
@@ -28,21 +29,6 @@ function freshParams () {
   return P
 }
 
-// Static equilibrium ride height (verbatim from steep-rest.mjs / main.js computeStaticEquilibrium).
-function eqOf (p) {
-  const g = 9.81, strutComp = [0, 0, 0, 0], bodyYCorner = [0, 0, 0, 0]
-  for (let i = 0; i < 4; i++) {
-    const f = i < 2; const cm = p.mass * (f ? p.weightFront : p.weightRear) / 2 + p.wheelMass
-    const kS = f ? p.suspensionStiffnessFront : p.suspensionStiffnessRear
-    const LS = f ? p.suspensionRestLengthFront : p.suspensionRestLengthRear
-    const spr = p.mass * (f ? p.weightFront : p.weightRear) / 2; strutComp[i] = spr * g / kS
-    const tc = cm * g / p.tireStiffness; const hubY = p.wheelRadius - tc
-    const bo = f ? (p.suspensionBodyOffsetFront || 0) : (p.suspensionBodyOffsetRear || 0)
-    bodyYCorner[i] = hubY + (LS - strutComp[i]) + (p.cgHeight - p.wheelRadius) - bo
-  }
-  return { bodyY: (bodyYCorner[0] + bodyYCorner[1]) / 2, strutComp }
-}
-
 // Plane sloping so that the vehicle's forward direction (body -Z) points UPHILL: surfaceY = -tan(theta)·z.
 // gradePct = rise/run = tan(theta). Contact model verbatim from main.js Sierra branch.
 function runScenario (gradePct, steps, label, opts = {}) {
@@ -56,7 +42,7 @@ function runScenario (gradePct, steps, label, opts = {}) {
     return gd > 0 ? [{ normal: N.clone(), depth: gd, contactPoint: new THREE.Vector3(cx, h, cz) }] : []
   }
 
-  const eq = eqOf(P)
+  const eq = computeStaticEquilibrium(P)
   const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), N)
   const cg0 = new THREE.Vector3(0, surfaceY(0, 0), 0).addScaledVector(N, eq.bodyY)
   const vs = {

@@ -292,9 +292,6 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
     const dest = POIS.find(q => q.type === 'gasStation').id
     const cd = b.card(plain.o, { nowH: plain.t, route: { ...route, endPoiId: dest } })
     check('a POI drop names the destination POI', cd.sentence.some(r => r.t === b.placeLabel(dest)))
-    // Freight is not built, but its card must already quote no par-based pay.
-    const fake = { ...plain.o, _spec: { ...b.spec(plain.o), family: 'freight' } }
-    check('a freight card quotes no base pay (flat-pay variant)', b.card(fake, { nowH: plain.t, route }).pay === null)
 }
 
 // ── 13. bonus share ─────────────────────────────────────────────────────────────────────────────

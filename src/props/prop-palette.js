@@ -109,7 +109,8 @@ function bakeLogs(P, rng) {
   return out
 }
 
-// kind: 'sphere' (collidable rock/boulder), 'bush' (soft drag), 'none' (small rock, decorative).
+// kind: 'sphere' (collidable rock), 'mesh' (boulder — exact triangles, BUG-22c), 'bush' (soft drag),
+// 'none' (small / medium rock, decorative).
 function bakeBlobs(P, rng, kind) {
   const out = []
   for (let i = 0; i < P.variants; i++) {

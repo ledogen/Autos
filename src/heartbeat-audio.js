@@ -19,7 +19,7 @@
  * stopped and left for GC, as engine-audio.js _blip does.
  */
 
-import { getAudioContext } from './engine-audio.js'
+import { getAudioContext, whiteNoiseBuffer } from './engine-audio.js'
 
 const KICK_F0 = 150      // Hz — body pitch at the hit
 const KICK_F1 = 45       // Hz — …where it settles
@@ -37,11 +37,7 @@ const PEAK = 0.6         // lub body peak gain at level 1
 let _noise = null        // a short white-noise buffer for the click, built once per context
 function _noiseBuf (ctx) {
   if (_noise && _noise.sampleRate === ctx.sampleRate) return _noise
-  const n = Math.ceil(ctx.sampleRate * CLICK_S)
-  _noise = ctx.createBuffer(1, n, ctx.sampleRate)
-  const d = _noise.getChannelData(0)
-  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
-  return _noise
+  return (_noise = whiteNoiseBuffer(ctx, CLICK_S))
 }
 
 function _kick (ctx, t0, peak) {

@@ -45,6 +45,31 @@ export function getAudioContext () {
   return ctx
 }
 
+/**
+ * `seconds` of white noise in a mono buffer on context `ac`. Shared by every audio module (they all
+ * hang off the one context above) — the raw material for crank grind, tire roar, wind and one-shots.
+ */
+export function whiteNoiseBuffer (ac, seconds) {
+  const n = Math.floor(ac.sampleRate * seconds)
+  const buf = ac.createBuffer(1, n, ac.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
+  return buf
+}
+
+/**
+ * Loop a noise buffer from a RANDOM offset. Several taps share one buffer (cheap), so each source
+ * starts at its own offset — otherwise two taps of the same buffer are sample-identical and
+ * phase-locked, and summing two differently-filtered copies of one signal combs rather than thickens.
+ */
+export function loopNoise (ac, buf) {
+  const src = ac.createBufferSource()
+  src.buffer = buf
+  src.loop = true
+  src.start(0, Math.random() * buf.duration)
+  return src
+}
+
 /** Create + start the audio graph (idempotent). Must be called from a user gesture. */
 export function ensureEngineAudio () {
   if (started) { if (pageActive && ctx && ctx.state === 'suspended') ctx.resume(); return }
@@ -109,13 +134,16 @@ export function updateEngineAudio (rpm, throttle, firing = true) {
 }
 
 export function setEngineAudioEnabled (on) {
+  if (enabled === !!on) return   // called every frame; while off, updateEngineAudio holds the mute
   enabled = !!on
   if (!on && started && ctx) master.gain.setTargetAtTime(0, ctx.currentTime, 0.05)
   if (!on) stopCrankAudio()          // FEAT-33: the starter hangs off its own gate, not `master`
 }
 
 export function setEngineAudioVolume (v) {
-  volume = Math.min(1, Math.max(0, v))
+  const next = Math.min(1, Math.max(0, v))
+  if (next === volume) return    // called every frame; only a real change re-targets the crank gain
+  volume = next
   // The drone re-reads `volume` every frame; the crank loop is a level set once when it starts, so
   // it has to be told about a mid-crank volume change or the slider appears not to work.
   if (crankOn && crankGain && ctx) crankGain.gain.setTargetAtTime(volume * CRANK_LEVEL, ctx.currentTime, 0.05)
@@ -167,15 +195,6 @@ const CHUG_HZ = 12       // ~250 rpm × 3 firings/rev ÷ 60 — the compression 
 const MOTOR_HZ = 88      // the starter motor's own (weak, mostly masked) pitch
 const CRANK_LEVEL = 0.34 // crank loop gain, before the user volume scale
 
-/** A couple of seconds of white noise to loop — the raw material for the grind. */
-function noiseBuffer (seconds = 2) {
-  const n = Math.floor(ctx.sampleRate * seconds)
-  const buf = ctx.createBuffer(1, n, ctx.sampleRate)
-  const d = buf.getChannelData(0)
-  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
-  return buf
-}
-
 function ensureCrankGraph () {
   if (crankGain || !getAudioContext()) return
   const out = ctx.createBiquadFilter()      // final tame — keeps the noise from turning into hiss
@@ -189,7 +208,7 @@ function ensureCrankGraph () {
   crankGain.connect(ctx.destination)
 
   const noise = ctx.createBufferSource()
-  noise.buffer = noiseBuffer()
+  noise.buffer = whiteNoiseBuffer(ctx, 2)   // a couple of seconds to loop — the raw material for the grind
   noise.loop = true
 
   // Modulated branch helper: noise → filter → gain, with an LFO swinging that gain.
