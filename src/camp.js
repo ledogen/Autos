@@ -466,7 +466,6 @@ export class CampSystem {
      * prompt's gating stays live at 10 Hz while only the expensive judgement is held still.
      */
     evaluate (x, z) {
-        const P = this._P()
         const zone = this.zoneAt(x, z)
         const nr = this.nearRoadInfo(x, z)
         const tether = this.tetherM()
@@ -492,6 +491,7 @@ export class CampSystem {
         }
         this._eval = out
         if (!out.hasRoad) return out   // nothing to hang a bench off — grading has no spot to grade
+        const P = this._P()            // the params copy is for the grade only — not on a memo hit
 
         // The ray: from the road edge (the near candidate, pad snug against the shoulder gap) out to
         // the tether limit, one candidate every CAMP_RAY_STEP_M.

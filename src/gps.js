@@ -434,10 +434,13 @@ export class GpsSystem {
     // whole seam a re-plan hangs on.
     const rev = this._getRoad?.()?._networkRev ?? -1
     if (mission !== this._src || (this._route?.partial && rev !== this._bakeRev)) {
+      // Progress resets only for a NEW route. A partial re-bake of the same mission samples the
+      // same segments at the same XZ vertices (only elevation fills in), so `_idx` stays valid —
+      // resetting it would let the windowed scan snap to the outbound pass of an out-and-back.
+      if (mission !== this._src) this._idx = 0
       this._src = mission
       this._route = bakeRoute(mission.segments, (seg, s) => this._profileY(seg, s))
       this._bakeRev = rev
-      this._idx = 0
     }
     const route = this._route
     if (!route || route.n < 2) { this._hideAll(); return }
