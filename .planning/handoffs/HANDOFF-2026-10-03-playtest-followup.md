@@ -28,6 +28,13 @@ Read `HANDOFF-2026-10-03-repo-review.md` first for the review itself.
    now awaits `netClient.buildNow` at the destination before seating (the cold spawn always did).
    Arrival 0.7 s after the key; ground under the truck constant from the first frame.
 
+4. **R after Shift+R did nothing**: `RoadNetworkClient.buildNow` attached its waiter after
+   `request()` had already completed the entry (window already held). Fixed; verified in-browser.
+5. **Captures carry `session`** (both P and `\`): game mode, truck state, damage, story, streaming
+   state, sky, recent hitches — see `_captureSession()` in main.js. The owner's capture seed is in
+   `world.seed`; `session.gameMode` answers the free-roam-vs-story question for the hitch below.
+6. Owner: "collisions are good now" (debris reaction law, review-10).
+
 ## Open — the fixed-spot ~250 ms hitch after spawn
 
 Diagnosis so far (seed 3219501713, free roam, `?hitch=1`): one 91 ms frame at ~6.8 s into the
