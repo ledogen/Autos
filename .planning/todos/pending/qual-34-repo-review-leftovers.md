@@ -99,10 +99,8 @@ Particles / audio / debug
   `wyeCreaseMaxDeg` slider.~~ DONE (the leak was the old CubeCamera left in the bake scene).
 - `perf.js` header — OPEN: re-read against the code, found no drift to fix; reviewer's note
   unrecoverable. Strike if nobody remembers what it was.
-- Several FX params with no slider — OPEN, skipped: adding sliders is new UI, and which params
-  deserve one is a tuning call (owner).
-
-Props
+- Several FX params with no slider — RULED 2026-10-04 (owner): no debug sliders. These become
+  USER-FACING controls later, under pause menu → settings → audio (volumes etc.); out of scope now.
 - ~~`FLORA_PARAMS` keys nobody reads.~~ DONE.
 - `update()` chunk-key strings / `_syncChunkLod` parsing — OPEN, skipped: storing `cx, cz` on the
   chunk record means editing `_commitChunk`, whose shadow-bake block was owned by another agent this
@@ -119,11 +117,8 @@ Tests / tooling / docs
   verifiably stale and is fixed; the rest need a gate-by-gate read — OPEN.
 - ~~`eqOf` in tests duplicates `computeStaticEquilibrium`.~~ DONE (five tests).
 - ~~`GLOSSARY.md`, `LAYOUT.md`, `index.html` comments.~~ DONE.
-  The `CLAUDE.md` import-seam table — OPEN, not edited (CLAUDE.md changes need the owner, not an
-  agent): its "Everything else never imports engine types" row omits that `main.js` / `stage.js`
-  import `createPhysicsEngine` and `debris.js` / `stage.js` import `GROUP_*` constants from the
-  adapter; `terrain-physics.js` takes the engine handle injected and imports nothing from it; and
-  `suspension.js` no longer imports `tire.js`.
+  The `CLAUDE.md` import-seam table — DONE 2026-10-04 (owner: update to match the code; commit
+  c7243bb).
 - ~~Dashboard should listen on 127.0.0.1 only.~~ DONE (if you reach `npm run dash` from another
   machine, that now needs an SSH tunnel).
 
