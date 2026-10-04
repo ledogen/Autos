@@ -27,7 +27,7 @@
 //   • D IS VISUAL PRESSURE, NOT A CLIFF. `slow` fires when the C/D line goes past so the bar can
 //     make a moment of it; the payout underneath is the same continuous line (SM-INV-4) and this
 //     module never touches money. Past D nothing is ahead, so the bar goes calm — there is nothing
-//     left to sweat.
+//     left to sweat — and `closeAfterDS` later the strip closes (`barShown`), leaving only the tile.
 //
 // Pure: imports nothing, no DOM, no clock of its own (elapsed comes from the mission state
 // machine, which is what the result card grades on — the bar and the letter cannot disagree).
@@ -59,6 +59,9 @@ export const RANK_TIMER_PARAMS = {
     punchScale: 0.22,   // the rank tile's scale kick per heartbeat at full intensity (× 0.5 for a light line)
     punchTau:   0.08,   // s — the thump's exponential decay
     beatS:      1.4,    // s — how long the "bonus lost" / "too slow" beat holds on screen
+    // In D nothing is ahead, so the strip has nothing left to say. It CLOSES this long after the
+    // C/D line; the Rank: D tile stays until the job is finished (owner, 2026-10-03).
+    closeAfterDS: 30,   // s
 }
 
 /**
@@ -100,9 +103,10 @@ function letterAt (ratio, T) {
  * @param {number} elapsed — seconds on the mission clock now
  * @param {number} prevElapsed — the same, last frame (crossings are detected on the step)
  * @param {object} [P]
- * @returns {{shown:boolean, letter:string, next:{letter:string,t:number}|null, intensity:number,
+ * @returns {{shown:boolean, barShown:boolean, letter:string, next:{letter:string,t:number}|null, intensity:number,
  *            heavy:boolean, lost:boolean, slow:boolean}}
- *   `shown`     the bar is on screen — from appearS before the S/A line to the end of the job
+ *   `shown`     the timer is on screen — from appearS before the S/A line to the end of the job
+ *   `barShown`  …and its strip with it — false from closeAfterDS after the C/D line (the tile stays)
  *   `letter`    the band under the pointer now
  *   `next`      the line ahead (the letter it lapses TO and when), null once in D
  *   `intensity` 0 (calm) → 1 (on the line), ramping only inside the last escalateS seconds
@@ -111,7 +115,7 @@ function letterAt (ratio, T) {
  *   `slow`      the C/D line went past on THIS step (fires once)
  */
 export function rankTimerFrame (layout, elapsed, prevElapsed, P = RANK_TIMER_PARAMS) {
-    const calm = { shown: false, letter: 'D', next: null, intensity: 0, heavy: false, lost: false, slow: false }
+    const calm = { shown: false, barShown: false, letter: 'D', next: null, intensity: 0, heavy: false, lost: false, slow: false }
     if (!layout) return calm
     const e = Math.max(0, elapsed), T = layout.thresholds
     const shown = e >= layout.bands[0].t1 - P.appearS
@@ -128,8 +132,11 @@ export function rankTimerFrame (layout, elapsed, prevElapsed, P = RANK_TIMER_PAR
         const k = layout.bands.findIndex(b => b.t1 === t)     // the band that ends on this line
         return li <= k && i > k
     }
-    if (!next) return { ...calm, shown, lost: crossed(layout.gateT), slow: crossed(layout.slowT) }
+    if (!next) {
+        const barShown = shown && e < layout.slowT + (P.closeAfterDS ?? Infinity)
+        return { ...calm, shown, barShown, lost: crossed(layout.gateT), slow: crossed(layout.slowT) }
+    }
     const intensity = Math.min(1, Math.max(0, 1 - (next.t - e) / P.escalateS))
     const heavy = next.t === layout.gateT || next.t === layout.slowT
-    return { shown, letter, next, intensity, heavy, lost: crossed(layout.gateT), slow: crossed(layout.slowT) }
+    return { shown, barShown: shown, letter, next, intensity, heavy, lost: crossed(layout.gateT), slow: crossed(layout.slowT) }
 }

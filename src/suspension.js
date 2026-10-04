@@ -144,6 +144,10 @@ export const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire dampe
  *     1 / (1 − (depth/sidewall)²), clamped at 0.94 of the sidewall (≈8.6×) — deeper is the rim's
  *     and the failsafe's problem, not this spring's. Scaled by NOTHING: a flat tire still stacks up
  *     against its rim, which is what stops the wheel sinking through the road.
+ *     Its rate is `tireCarcassStiffness`, NOT the air rate `tireStiffness` (2026-10-03). Past the
+ *     soft band this term IS the rim contact, so tying it to the air rate made a harder-pumped tire
+ *     a harder RIM: at 200 kN/m every hit big enough to bottom the tire anyway (an angled rock, the
+ *     foot of a steep dip) met a rim twice as stiff and peaked ~√2 higher. test/rim-angle-lab.mjs.
  *   · AIR SPRING and DAMPER, both × `rate`: a puncture lets the air out; what is left is the carcass.
  *
  * @param {number} depth          penetration [m], ≥ 0 meaningful
@@ -152,6 +156,11 @@ export const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire dampe
  * @param {number} rate           params._tireRateScale[i] (1 when no damage model runs)
  * @param {object} params         RANGER_PARAMS (tireStiffness, tireDamping, wheelRadius, rimRadius, tireContactAreaM2)
  */
+/** Rate of the progressive carcass / bottoming term [N/m]; the air rate where a preset has none. */
+export function carcassStiffness (params) {
+  return params.tireCarcassStiffness ?? params.tireStiffness
+}
+
 export function tireContactForce (depth, compressionVel, sizeR, rate, params) {
   const env = (sizeR !== undefined)
     ? Math.min(1, 2 * Math.PI * sizeR * Math.max(0, depth) / (params.tireContactAreaM2 || 0.0166))
@@ -160,7 +169,7 @@ export function tireContactForce (depth, compressionVel, sizeR, rate, params) {
   const dNorm = Math.min(0.94, Math.max(0, depth) / sidewall)
   const carcass = 1 / (1 - dNorm * dNorm)
   const airTerm    = params.tireStiffness * rate * depth
-  const bottomTerm = params.tireStiffness * depth * (carcass - 1)
+  const bottomTerm = carcassStiffness(params) * depth * (carcass - 1)
   return Math.max(0, airTerm + bottomTerm + params.tireDamping * rate * compressionVel) * env
 }
 
@@ -474,7 +483,9 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
           const bandNorm = Math.min(0.98, WHEEL_SOFT_BAND / sidewall)
           // The reference is what this tire's AIR carries at full compression — for a flat that is
           // almost nothing, so almost the whole load past the band is rim load.
-          const atBand = params.tireStiffness * rate * WHEEL_SOFT_BAND / (1 - bandNorm * bandNorm)
+          // Air and carcass each at their own rate — the same split tireContactForce makes.
+          const atBand = rate * WHEEL_SOFT_BAND *
+            (params.tireStiffness + carcassStiffness(params) * (1 / (1 - bandNorm * bandNorm) - 1))
           const residual = tireFnAtContact - atBand
           if (residual > vehicleState.rimForceRoad[i]) vehicleState.rimForceRoad[i] = residual
         }

@@ -222,7 +222,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // anisotropy). (Phase 1 tireStiffness/Damping kept — lateralDampingCoeff/corneringStiffness
   // removed in Phase 3 per D-08, D-16.)
   const tiresFolder = vehicleFolder.addFolder('Tires')
-  tiresFolder.add(params, 'tireStiffness', 100000, 300000, 5000).name('Tire Stiffness (N/m)')
+  tiresFolder.add(params, 'tireStiffness', 100000, 300000, 5000).name('Tire Air Rate (N/m)')
+  tiresFolder.add(params, 'tireCarcassStiffness', 50000, 300000, 5000).name('Carcass / Rim Rate (N/m)')
   tiresFolder.add(params, 'tireDamping', 200, 4000, 100).name('Tire Damping (N·s/m)')
   // Out-of-round tire; 0 = perfectly round. The callback re-bakes the tire MESH so the visible
   // egg matches the contact radius the physics is using (see vehicle-model.js applyWheelRunout).

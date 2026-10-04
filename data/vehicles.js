@@ -43,6 +43,7 @@ export const VEHICLES = {
 
     // ── Tire ─────────────────────────────────────────────────────────────────
     tireStiffness: 180000,
+    tireCarcassStiffness: 180000,   // unchanged from when the carcass shared the air rate
     tireDamping:    1500,
     frictionCoeff:  0.95,
     rollingResistanceCoeff: 0.015,

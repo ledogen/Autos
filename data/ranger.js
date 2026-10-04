@@ -188,7 +188,11 @@ export const RANGER_PARAMS = {
   // src/suspension.js). 245-section tire at ~35 psi carrying a quarter of the truck:
   // 3.3 kN / 241 kPa = 0.0139 m2; 0.0166 leaves a little margin for a laden corner.
   tireContactAreaM2: 0.0166,  // m^2
-  tireStiffness: 100000,  // N/m
+  tireStiffness: 100000,  // N/m — the AIR spring (what tire pressure changes)
+  // The progressive carcass that takes over as the sidewall runs out, and past the 0.15 m soft band
+  // the rubber pinched against the rim. Its own rate so pumping the tire up does not stiffen the rim
+  // contact with it (src/suspension.js tireContactForce). 100 kN/m = the value it always had.
+  tireCarcassStiffness: 100000,  // N/m
   tireDamping:     1500,  // N·s/m — ζ≈0.56; reduced from 4000 to prevent premature wheel lift-off
 
   // ── Friction ─────────────────────────────────────────────────────────────

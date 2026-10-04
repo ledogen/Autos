@@ -106,6 +106,17 @@ const PAR = 180   // the measured day-1 average (economy.js)
   check('…and stays shown through A, C and D to the end of the job',
     rankTimerFrame(L, sLine + 1, sLine).shown && rankTimerFrame(L, PAR - 1, PAR - 2).shown && rankTimerFrame(L, 3 * PAR, 3 * PAR - 1).shown)
   check('a job whose S band is shorter than appearS shows from the start', rankTimerFrame(rankTimerLayout(15, T, null), 0, 0).shown)
+  // Owner, 2026-10-03: closeAfterDS into D the strip closes; the Rank: D tile (`shown`) stays.
+  const dLine = L.slowT
+  check('the strip is up with the timer before D and on the C/D line',
+    rankTimerFrame(L, sLine + 1, sLine).barShown && rankTimerFrame(L, dLine, dLine - 0.1).barShown)
+  check('…still up just short of closeAfterDS into D',
+    rankTimerFrame(L, dLine + P.closeAfterDS - 0.01, dLine + P.closeAfterDS - 0.02).barShown)
+  check('…closed closeAfterDS into D while the tile stays',
+    !rankTimerFrame(L, dLine + P.closeAfterDS, dLine + P.closeAfterDS - 0.01).barShown &&
+    rankTimerFrame(L, dLine + P.closeAfterDS, dLine + P.closeAfterDS - 0.01).shown &&
+    rankTimerFrame(L, dLine + P.closeAfterDS, dLine + P.closeAfterDS - 0.01).letter === 'D')
+  check('the strip is never up while the timer is hidden', !rankTimerFrame(L, 0, 0).barShown)
   check('appearS is inside what the view shows ahead (the line is on screen the moment the bar pops)',
     P.appearS <= (1 - P.pointerFrac) * P.viewW / P.pxPerS)
   // Owner, 2026-10-01: the targets are A–D, so from the moment the bar pops they hold at least

@@ -4420,7 +4420,9 @@ function _updateEnergyMeter () {
 // display only — the payout underneath is the same continuous line (SM-INV-4).
 //
 // NOT ON SCREEN UNTIL IT MATTERS [owner, 2026-10-01]: the bar POPS UP RT.appearS seconds before
-// the S/A line (rank-timer.js `shown`) and stays to the end of the job. Before that it has nothing
+// the S/A line (rank-timer.js `shown`) and stays to the end of the job — except the strip itself,
+// which closes RT.closeAfterDS after the C/D line (`barShown`, owner 2026-10-03): in D there is
+// nothing ahead to show. The Rank: D tile stays until the job is finished. Before that it has nothing
 // useful to say and is simply absent. It sits top-centre under #mission-hud / #paper-hud — the
 // spot the "leave the green circle" line and the elapsed readout occupy — not with the wallet.
 //
@@ -4469,7 +4471,7 @@ function _updateRankTimer () {
     if (_rtKey !== null) {       // the job ended or was put down: hide once, forget the layout
       _rtKey = null; _rtLayout = null; _rtHot = false; _rtShown = false
       _rtEls.root.style.display = 'none'
-      _rtEls.root.classList.remove('rt-lost', 'rt-slow', 'rt-in')
+      _rtEls.root.classList.remove('rt-lost', 'rt-slow', 'rt-in', 'rt-closed')
       _rtEls.card.style.boxShadow = ''; _rtEls.card.style.borderColor = ''
       _rtEls.letterBox.style.scale = ''; _rtEls.letterBox.style.filter = ''
     }
@@ -4486,7 +4488,7 @@ function _updateRankTimer () {
     E.segs = []
     for (const sh of E.letterBox.querySelectorAll('.rt-shard')) sh.remove()
     E.letter.classList.remove('rt-slam')
-    E.root.classList.remove('rt-lost', 'rt-slow', 'rt-in')
+    E.root.classList.remove('rt-lost', 'rt-slow', 'rt-in', 'rt-closed')
     E.root.style.display = 'none'
     E.gate.classList.remove('lost')
     if (_rtLayout) {
@@ -4519,6 +4521,8 @@ function _updateRankTimer () {
     E.root.classList.toggle('rt-in', f.shown)
   }
   if (!f.shown) return
+  // Deep in D the strip closes (rank-timer.js closeAfterDS); the tile below it stays to the end.
+  E.root.classList.toggle('rt-closed', !f.barShown)
   // The scroll: the pointer is at pointerFrac of the view; the strip's origin (elapsed 0) slides
   // left of it by elapsed × pxPerS.
   E.strip.style.transform = `translateX(${RT.viewW * RT.pointerFrac - e * RT.pxPerS}px)`
@@ -5473,6 +5477,10 @@ const storySystem = new StorySystem({
     daySystem.start()   // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
+    // …and a fresh truck. Entry flips the mode to 'story' BEFORE it reseats, so the seat's
+    // free-roam damage wipe (_reseatTruckAtSpawnInner) is skipped and a truck broken in free roam
+    // drove straight into the new run. Per-run state (SM-INV-8): the run starts here, so does the truck.
+    damageModel.setAll(1); damageModel.publish(RANGER_PARAMS)
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
     resetPaperRun()                  // …and starts back on Larry's four-house route (SM-INV-12)
     paperRouteSystem.abort()
