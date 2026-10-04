@@ -145,6 +145,10 @@ export const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire dampe
  *     and the failsafe's problem, not this spring's. Scaled by NOTHING: a flat tire still stacks up
  *     against its rim, which is what stops the wheel sinking through the road.
  *   · AIR SPRING and DAMPER, both × `rate`: a puncture lets the air out; what is left is the carcass.
+ *   · RIM-STRIKE LOSS: past half the soft band the damper ramps up to RIM_DAMP_MULT× (smoothstep to
+ *     the full band) — a rim driving into the ground is inelastic, where the carcass spring alone
+ *     would hand a hard landing's energy straight back (measured: a 5.7 m/s landing rebounding at
+ *     4.5 m/s). Zero effect at ordinary deflections (≤ 7.5 cm).
  *
  * @param {number} depth          penetration [m], ≥ 0 meaningful
  * @param {number} compressionVel closing speed [m/s], positive = compressing (caller's convention)
@@ -153,6 +157,17 @@ export const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire dampe
  * @param {object} params         RANGER_PARAMS (tireStiffness, tireDamping, wheelRadius, rimRadius, tireContactAreaM2)
  */
 export function tireContactForce (depth, compressionVel, sizeR, rate, params) {
+  const t = tireContactTerms(depth, sizeR, rate, params)
+  return Math.max(0, t.spring + t.damp * compressionVel)
+}
+
+/**
+ * The same law in two parts — `spring` [N] (air + carcass, engagement applied) and `damp` [N·s/m]
+ * (the damper coefficient, engagement and rim-strike multiplier applied), so a caller that
+ * integrates the damper IMPLICITLY (stepSuspensionSubsteps) can fold `damp` into its denominator.
+ * F = max(0, spring + damp · compressionVel).
+ */
+export function tireContactTerms (depth, sizeR, rate, params) {
   const env = (sizeR !== undefined)
     ? Math.min(1, 2 * Math.PI * sizeR * Math.max(0, depth) / (params.tireContactAreaM2 || 0.0166))
     : 1
@@ -161,8 +176,14 @@ export function tireContactForce (depth, compressionVel, sizeR, rate, params) {
   const carcass = 1 / (1 - dNorm * dNorm)
   const airTerm    = params.tireStiffness * rate * depth
   const bottomTerm = params.tireStiffness * depth * (carcass - 1)
-  return Math.max(0, airTerm + bottomTerm + params.tireDamping * rate * compressionVel) * env
+  const tRim = Math.max(0, Math.min(1, (depth - 0.5 * WHEEL_SOFT_BAND) / (0.5 * WHEEL_SOFT_BAND)))
+  const dampMult = 1 + (RIM_DAMP_MULT - 1) * tRim * tRim * (3 - 2 * tRim)
+  _terms.spring = (airTerm + bottomTerm) * env
+  _terms.damp = params.tireDamping * rate * dampMult * env
+  return _terms
 }
+const _terms = { spring: 0, damp: 0 }   // scratch — consumed immediately by every caller
+const RIM_DAMP_MULT = 8     // the damper is integrated implicitly on the hub, so this is a modelling choice, not a stability bound
 
 const RUNOUT_PHASE = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]
 export const RUNOUT_HARMONIC = 2   // 1 = eccentric (one high spot), 2 = oval (two)
@@ -277,7 +298,10 @@ export function carcassRadialOffset (corner, psi, runout) {
  */
 // Scratch for stepSuspensionSubsteps (one truck steps at a time; nothing here outlives a call).
 const _mountX = [0, 0, 0, 0], _mountY = [0, 0, 0, 0], _mountZ = [0, 0, 0, 0]
+const _mountVX = [0, 0, 0, 0], _mountVY = [0, 0, 0, 0], _mountVZ = [0, 0, 0, 0]
 const _arbF = [0, 0, 0, 0]
+// Per-contact scratch for the two passes over one wheel's contacts (a wheel rarely has more than 3).
+const _cSpring = new Float64Array(32), _cDamp = new Float64Array(32), _cCvE = new Float64Array(32), _cCvV = new Float64Array(32), _cBUp = new Float64Array(32), _cRate = new Float64Array(32)
 
 export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts) {
   // SM-3: reset the per-step peak bump-stop force before the substep loop accumulates this step's.
@@ -377,6 +401,12 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
     _mountX[i] = vehicleState.position.x + rMount.x
     _mountY[i] = vehicleState.position.y + rMount.y
     _mountZ[i] = vehicleState.position.z + rMount.z
+    // Mount velocity: v_body + ω × rMount. The hub rides this plus its strut motion, and the tire
+    // damper below needs the HUB's true closing speed on the ground (see compressionVel).
+    const w = vehicleState.angularVelocity, v = vehicleState.velocity
+    _mountVX[i] = v.x + (w.y * rMount.z - w.z * rMount.y)
+    _mountVY[i] = v.y + (w.z * rMount.x - w.x * rMount.z)
+    _mountVZ[i] = v.z + (w.x * rMount.y - w.y * rMount.x)
   }
 
   const sidewall = (params.wheelRadius || 0.368) - (params.rimRadius || 0.1905)   // for the rim-load residual below
@@ -427,10 +457,26 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       // spot digs deeper into the surface (bigger depth -> bigger tire force) once per revolution.
       const hubContacts = queryContacts(hubWorldX, hubWorldY, hubWorldZ,
         effectiveWheelRadius(i, vehicleState, params), true, i)   // `i`: physics.js reuses the step's ground answer per corner
-      let tireFz = 0
-      for (const c of hubContacts) {
-        // compressionVel sign convention: positive = hub approaching ground = tire compressing.
-        // strutCompVelI > 0 means strut shortening = hub moving UP = tire decompressing, so negate.
+      // Hub velocity in world: the mount's plus the strut's (strutLen shrinks as strutComp grows,
+      // so compressing moves the hub along body_up). The tire's closing speed on a surface is the
+      // hub speed INTO that surface, −(hubVel · n).
+      const hubVX = _mountVX[i] + strutCompVelI * body_up.x
+      const hubVY = _mountVY[i] + strutCompVelI * body_up.y
+      const hubVZ = _mountVZ[i] + strutCompVelI * body_up.z
+      // Pass 1 over the contacts: the parts of each tire force that do not depend on the NEW strut
+      // velocity, and the damper coefficient that does. The damper is integrated implicitly (its
+      // force is evaluated at v_new, see the hub ODE), which is what lets a rim strike be as lossy
+      // as it should be without the explicit hub step blowing up.
+      const nC = hubContacts.length
+      let tireFzExplicit = 0, cTire = 0
+      for (let ci = 0; ci < nC; ci++) {
+        const c = hubContacts[ci]
+        // SM-3 flat tire: params._tireRateScale[i] collapses the air spring when the air is gone.
+        const rate = params._tireRateScale ? params._tireRateScale[i] : 1
+        const t = tireContactTerms(c.depth, c.sizeR, rate, params)
+        // bodyUpDot = dot(c.normal, body_up): the fraction of this contact's force along the strut axis (D-06)
+        const bUp = c.normal.x * body_up.x + c.normal.y * body_up.y + c.normal.z * body_up.z
+        // compressionVel: positive = hub approaching the surface = tire compressing.
         // Damper: for DEBRIS contacts (c.depthRate set by physics.js) use the contact's TRUE
         // closing rate — hit hard → high force, roll on slow → low force, straight from the
         // spring–damper law. HUNT–CROSSLEY engagement scaling (min(1, depth/ENGAGE)): a
@@ -439,15 +485,87 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // the damper with penetration makes contact force continuous from zero — the standard
         // contact-mechanics form. A fast hit reaches full engagement within its first frame
         // (depth ≈ v·dt ≥ ENGAGE), so high-speed response is undiminished, with no speed terms.
-        // Terrain contacts keep the strut-velocity approximation (their transients are
-        // pre-spread by the footprint envelope, and the m4 calibration history rests on it).
-        const compressionVel = (c.depthRate !== undefined)
-          ? c.depthRate * Math.min(1, c.depth / TIRE_DAMP_ENGAGE)
-          : -strutCompVelI
-        // SM-3 flat tire: params._tireRateScale[i] collapses the air spring when the air is gone.
-        const rate = params._tireRateScale ? params._tireRateScale[i] : 1
-        const tireFnAtContact = tireContactForce(c.depth, compressionVel, c.sizeR, rate, params)
+        // Terrain contacts use the hub's own closing speed on the contact normal. Until 2026-10-03
+        // this was −strutCompVel, which is only right for a body at rest: on a landing the whole
+        // body is falling, the tire compresses WHILE the strut compresses, and that sign read the
+        // tire as decompressing — the damper pushed the wrong way and fed the bounce (owner capture
+        // 1791092005752: a 5.7 m/s landing rebounding at 4.5 m/s once the stop held). Split as
+        // (the mount's closing speed, explicit) − v_new · bUp (implicit).
+        let cvE, cvV
+        if (c.depthRate !== undefined) { cvE = c.depthRate * Math.min(1, c.depth / TIRE_DAMP_ENGAGE); cvV = 0 }
+        else { cvE = -(_mountVX[i] * c.normal.x + _mountVY[i] * c.normal.y + _mountVZ[i] * c.normal.z); cvV = bUp }
+        _cSpring[ci] = t.spring; _cDamp[ci] = t.damp; _cCvE[ci] = cvE; _cCvV[ci] = cvV; _cBUp[ci] = bUp; _cRate[ci] = rate
+        tireFzExplicit += (t.spring + t.damp * cvE) * bUp
+        cTire += t.damp * cvV * bUp
+      }
 
+      // Phase 4.1 D-08/D-09: bump and droop stops. The droop stop is a linear penalty spring.
+      const travel        = isFront ? (params.suspensionTravelFront || 0.12) : (params.suspensionTravelRear || 0.14)
+      const DROOP_K       = params.DROOP_STOP_STIFFNESS || 20000
+      // BUMP STOP (2026-10-03, owner capture 1791092005752). Three things changed at once:
+      //   · PROGRESSIVE: real stop rubber stiffens as it packs — rate × (1 + (x/x0)²), x0 =
+      //     bumpStopProgressiveM, capped at 8×. The old linear 330 kN/m let a loaded truck landing at
+      //     −4 m/s run 14 cm past its travel, and at full bump plus a flattened tire the undercarriage
+      //     slab is on the ground by construction (0.37 m up at rest = 0.25 travel + 0.15 tire band).
+      //     The frame then hit the hill at 150 km/h and the engine's response read as a launch.
+      //   · DAMPED on compression only (bumpStopDamping): rubber absorbs, it does not spring back.
+      //   · INTEGRATED IMPLICITLY: the stop's force is evaluated at the NEW hub velocity, so a rate of
+      //     megannewtons per metre cannot blow the explicit hub step up (the spring and damper below
+      //     stay explicit, as calibrated). Implicit Euler is also lossy, which for a stop is right.
+      //   The stop's reaction now reaches the BODY too (see suspForce) — it never did before, which is
+      //   why the body could keep sinking through the stop.
+      const bumpOvershoot = strutCompI - travel
+      let kBump = 0, cBump = 0
+      if (bumpOvershoot > 0) {
+        const u = bumpOvershoot / (params.bumpStopProgressiveM || 0.05)
+        kBump = params.bumpStopStiffness * Math.min(8, 1 + u * u)
+        cBump = strutCompVelI > 0 ? (params.bumpStopDamping || 0) : 0
+      }
+      // Droop stop: engages when strut extends past rest (strutComp < 0); pulls hub back toward body (positive)
+      const droopOvershoot = -strutCompI  // positive when strutComp < 0
+      const droopForce     = droopOvershoot > 0 ? DROOP_K * droopOvershoot : 0
+
+      // Strut-axis hub ODE (D-04/D-05):
+      //   m_u * d(strutCompVel)/dt = tireFz - springTerm - c_S * strutCompVel + arbF
+      //                              - m_u * g * gravDot + bumpForce + droopForce
+      // Sign convention (Pitfall 4):
+      //   tireFz positive: pushes hub toward body (compresses strut) — positive contribution
+      //   springTerm positive: resists compression — negative contribution
+      //   c_S * strutCompVelI: resists current compression velocity — negative contribution
+      //   gravity term: m_u*g*gravDot pulls hub away from body along strut — negative contribution
+      //   bumpForce negative (when engaged): resists over-compression — implicit in v_new, see above
+      //   droopForce positive (when engaged): resists over-extension — positive contribution
+      const F_explicit = tireFzExplicit - springTerm - c_S * strutCompVelI + arbF[i]
+                       - m_u * 9.81 * gravDot
+                       + droopForce
+      // Explicit Euler on everything above (D-10: N=4 substeps); the stop and the tire damper
+      // implicit:  v_new = (v + (F_explicit − kBump·x)·sdt/m) / (1 + (kBump·sdt² + (cBump + cTire)·sdt)/m)
+      const newStrutCompVel = (strutCompVelI + (F_explicit - kBump * bumpOvershoot) / m_u * sdt)
+                            / (1 + (kBump * sdt * sdt + (cBump + cTire) * sdt) / m_u)
+      // The stop force actually applied this substep (≤ 0: a stop pushes, it never pulls).
+      const bumpForce = kBump ? Math.min(0, -kBump * (bumpOvershoot + newStrutCompVel * sdt) - cBump * newStrutCompVel) : 0
+      // SM-3 honest wear signal: peak bump-stop force this step, per corner. src/damage.js reads it
+      // for the spring track. Peak (not mean) across substeps — a hard hit inside one substep is
+      // exactly the severity this track is supposed to notice.
+      if (vehicleState.bumpForce) {
+        const bfMag = Math.abs(bumpForce)
+        if (bfMag > vehicleState.bumpForce[i]) vehicleState.bumpForce[i] = bfMag
+      }
+      scv[i] = newStrutCompVel
+      sc[i] += newStrutCompVel * sdt
+
+      // Pass 2 over the contacts: the tire forces at v_new (clamped — a tire pushes, never pulls),
+      // the strut-axis sum the Pacejka feed reads, the X/Z residual (D-06) and the rim-load signal.
+      let tireFz = 0
+      for (let ci = 0; ci < nC; ci++) {
+        const c = hubContacts[ci], bUp = _cBUp[ci], rate = _cRate[ci]
+        const tireFnAtContact = Math.max(0, _cSpring[ci] + _cDamp[ci] * (_cCvE[ci] - newStrutCompVel * _cCvV[ci]))
+        tireFz += tireFnAtContact * bUp
+        if (params._hubNormalXZ) {
+          params._hubNormalXZ[i].x += tireFnAtContact * (c.normal.x - bUp * body_up.x) / N
+          params._hubNormalXZ[i].y += tireFnAtContact * (c.normal.y - bUp * body_up.y) / N
+          params._hubNormalXZ[i].z += tireFnAtContact * (c.normal.z - bUp * body_up.z) / N
+        }
         // RIM CONTACT from the analytic path. Depth is measured from the tire's OUTER radius, so
         // once it exceeds the soft band the contact has reached the rim. A hard enough landing over
         // a shoulder step really does kiss the rim, and the engine's hard cores can never report it
@@ -478,65 +596,23 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
           const residual = tireFnAtContact - atBand
           if (residual > vehicleState.rimForceRoad[i]) vehicleState.rimForceRoad[i] = residual
         }
-        // D-06: split contact normal force into strut-axis and X/Z residual components
-        // bodyUpDot = dot(c.normal, body_up): the fraction of contact normal force along the strut axis
-        const bodyUpDot = c.normal.x * body_up.x + c.normal.y * body_up.y + c.normal.z * body_up.z
-        const Fn_strut  = tireFnAtContact * bodyUpDot  // drives hub ODE (replaces Fn * c.normal.y)
-        tireFz += Fn_strut
-        // X/Z residual: (c.normal - bodyUpDot * body_up) * tireFnAtContact
-        // Accumulated into _hubNormalXZ (averaged across N substeps via /N pattern)
-        if (params._hubNormalXZ) {
-          params._hubNormalXZ[i].x += tireFnAtContact * (c.normal.x - bodyUpDot * body_up.x) / N
-          params._hubNormalXZ[i].y += tireFnAtContact * (c.normal.y - bodyUpDot * body_up.y) / N
-          params._hubNormalXZ[i].z += tireFnAtContact * (c.normal.z - bodyUpDot * body_up.z) / N
-        }
       }
 
-      // Phase 4.1 D-08/D-09: bump and droop stops (linear penalty springs)
-      const travel        = isFront ? (params.suspensionTravelFront || 0.12) : (params.suspensionTravelRear || 0.14)
-      const DROOP_K       = params.DROOP_STOP_STIFFNESS || 20000
-      // Bump stop: engages when strut is compressed past travel limit; pushes hub away from body (negative)
-      const bumpOvershoot  = strutCompI - travel
-      const bumpForce      = bumpOvershoot > 0 ? -params.bumpStopStiffness * bumpOvershoot : 0
-      // SM-3 honest wear signal: peak bump-stop force this step, per corner. src/damage.js reads it
-      // for the spring track. Peak (not mean) across substeps — a hard hit inside one substep is
-      // exactly the severity this track is supposed to notice.
-      if (vehicleState.bumpForce) {
-        const bfMag = Math.abs(bumpForce)
-        if (bfMag > vehicleState.bumpForce[i]) vehicleState.bumpForce[i] = bfMag
-      }
-      // Droop stop: engages when strut extends past rest (strutComp < 0); pulls hub back toward body (positive)
-      const droopOvershoot = -strutCompI  // positive when strutComp < 0
-      const droopForce     = droopOvershoot > 0 ? DROOP_K * droopOvershoot : 0
-
-      // Strut-axis hub ODE (D-04/D-05):
-      //   m_u * d(strutCompVel)/dt = tireFz - springTerm - c_S * strutCompVel + arbF
-      //                              - m_u * g * gravDot + bumpForce + droopForce
-      // Sign convention (Pitfall 4):
-      //   tireFz positive: pushes hub toward body (compresses strut) — positive contribution
-      //   springTerm positive: resists compression — negative contribution
-      //   c_S * strutCompVelI: resists current compression velocity — negative contribution
-      //   gravity term: m_u*g*gravDot pulls hub away from body along strut — negative contribution
-      //   bumpForce negative (when engaged): resists over-compression — negative contribution
-      //   droopForce positive (when engaged): resists over-extension — positive contribution
-      const F_total = tireFz - springTerm - c_S * strutCompVelI + arbF[i]
-                    - m_u * 9.81 * gravDot
-                    + bumpForce + droopForce
-
-      // Explicit Euler integration (D-10: same N=4 substep count as Phase 4)
-      const newStrutCompVel = strutCompVelI + (F_total / m_u) * sdt
-      scv[i] = newStrutCompVel
-      sc[i] += newStrutCompVel * sdt
-
-      // Body reaction accumulator (Newton's 3rd law on the strut spring).
+      // Body reaction accumulator (Newton's 3rd law on everything that acts BETWEEN hub and body:
+      // the strut spring and damper, the anti-roll bar, and the bump and droop stops — every one of
+      // them pushes the body as hard as it pushes the hub). Positive = body pushed up along the strut.
       // Uses pre-step strutCompVelI for consistency with explicit Euler (Pitfall 4).
-      // suspForce = spring + damper reaction on the body (positive = body pushed up along strut axis)
-      const suspForce = springTerm + c_S * strutCompVelI
+      //
+      // The stops were MISSING here until 2026-10-03 (owner capture 1791092005752): the bump stop
+      // pushed the hub down but never the body up, so a loaded truck landing at −4 m/s kept sinking
+      // through 14 cm of "stop" until the undercarriage slab met the hill at 150 km/h — the launch.
+      // bumpForce is negative on the hub, droopForce positive; the reactions are the negatives.
+      const suspForce = springTerm + c_S * strutCompVelI - bumpForce - droopForce
 
       // Accumulate for outer step (average force across substeps, /N pattern)
       params._tireFz[i]         += tireFz                / N  // average tire-spring Fz for Pacejka feed (D-06b)
-      params._suspForceAccum[i] += (suspForce - arbF[i]) / N  // body force along strut: spring+damper + ARB reaction
-      // _hubNormalXZ[i] accumulated in contacts loop above
+      params._suspForceAccum[i] += (suspForce - arbF[i]) / N  // body force along strut: spring+damper+stops + ARB reaction
+      // _hubNormalXZ[i] accumulated in the contacts pass above
     }
   }
 }

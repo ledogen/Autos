@@ -318,6 +318,10 @@ export const RANGER_PARAMS = {
   // bumpStopStiffness: penalty spring engaging at strutComp >= suspensionTravel.
   // At 10× front spring: k_eff ≈ 363 000 N/m. Stability: sdt^2 * k_eff / m_u = 0.35 < 4. OK.
   bumpStopStiffness:         330000,   // N/m — ~10× front spring; exposed as slider (D-08, D-14)
+  // The stop packs: its rate is × (1 + (overshoot / bumpStopProgressiveM)²), capped at 8×. 0.05 m
+  // ⇒ the rate has doubled 5 cm past the travel and is 5× at 10 cm (see suspension.js).
+  bumpStopProgressiveM:      0.05,     // m — overshoot at which the bump-stop rate has doubled
+  bumpStopDamping:           4000,     // N·s/m — stop rubber absorbs on compression only (never springs back)
 
   // DROOP_STOP_STIFFNESS: fixed constant; engages at strutComp <= 0 (fully extended).
   // Sized so static hub weight (~18 kg) deflects < 10 mm: k > 18*9.81/0.010 = 17 658 N/m.
