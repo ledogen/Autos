@@ -35,7 +35,11 @@ Read `HANDOFF-2026-10-03-repo-review.md` first for the review itself.
    `world.seed`; `session.gameMode` answers the free-roam-vs-story question for the hitch below.
 6. Owner: "collisions are good now" (debris reaction law, review-10).
 
-## Open — the fixed-spot ~250 ms hitch after spawn
+## Closed unreproduced — the fixed-spot ~250 ms hitch after spawn (owner, 2026-10-04)
+
+The owner could not reproduce it after the tile-rebuild and teleport fixes; assume good. If it
+returns, press P at the spot — the capture's `session` block now records mode, streaming state
+and recent hitches. Diagnosis notes kept below.
 
 Diagnosis so far (seed 3219501713, free roam, `?hitch=1`): one 91 ms frame at ~6.8 s into the
 drive with only 3 ms of frame CPU — work BETWEEN frames. Candidates, in order:
