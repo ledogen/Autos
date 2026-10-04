@@ -27,7 +27,7 @@ import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
-import { DamageModel } from './damage.js'                   // SM-3: component condition model
+import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
 import { parkPrompt } from './park-badge.js'                // FEAT-90: the orange P-in-a-circle "park first" badge
@@ -57,7 +57,7 @@ import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
-import { SkySystem } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
+import { SkySystem, SKY_CYCLE } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { MoonSystem } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
 import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
@@ -2102,8 +2102,10 @@ function applyRenderResolution () {
   renderer.setSize(window.innerWidth, window.innerHeight)  // re-stamp the backing buffer at the new ratio
 }
 
+let _qualityName = 'Normal'   // the tier last applied (captures record it)
 function applyQuality (name) {
   const p = QUALITY_PRESETS[name] ?? QUALITY_PRESETS.Normal
+  _qualityName = QUALITY_PRESETS[name] ? name : 'Normal'
   if (terrainSystem) terrainSystem.setRingRadius(p.ring, p.warm)
   // roadRadius DERIVED from the visible ring (PERF-06): (ring+0.5)·2·CHUNK_SIZE = 2× the terrain axis
   // half-width = the square ring's diagonal corner (×√2) with a ×√2 lead. The road network is a CIRCLE
@@ -5884,7 +5886,80 @@ setCaptureContext(() => ({
   seedString:          _seedString,
   params:              RANGER_PARAMS,
   streamCenterHistory: _streamCenterRing.slice(),
+  session:             _captureSession(),
 }))
+
+/**
+ * Everything about the live session a bug report can use, as plain JSON — written into BOTH capture
+ * kinds (P = place, \ = event) as `session` (owner, 2026-10-03: "the P dump should be giving us all
+ * this info"). Each block is guarded so a system that is not up yet costs a null, never a throw.
+ */
+function _captureSession () {
+  const vs = vehicleState
+  const r3 = (v) => Math.round(v * 1000) / 1000
+  const vec = (v) => v ? { x: r3(v.x), y: r3(v.y), z: r3(v.z) } : null
+  const arr = (a, d = 3) => Array.isArray(a) ? a.map((v) => +(+v).toFixed(d)) : null
+  const q = vs.quaternion
+  const sc = roadStreamCenter()
+  let hitches = null
+  try { const h = perfHitchReport(); hitches = { frames: h.frames, thresholdMs: h.thresholdMs, quiet: h.quiet, hitches: h.hitches.slice(-20) } } catch { /* profiler off */ }
+  return {
+    capturedAt:   new Date().toISOString(),
+    url:          location.href,
+    uptimeS:      r3(performance.now() / 1000),
+    simTimeS:     r3(simTime),
+    gameMode:     _gameMode,
+    quality:      _qualityName,
+    cameraMode:   getCameraMode(),
+    simHeld:      _simHeld,
+    spawnOverride: _spawnOverride ? { align: _spawnOverride.align, x: r3(_spawnOverride.x), z: r3(_spawnOverride.z) } : null,
+    truck: {
+      position: vec(vs.position), velocity: vec(vs.velocity), angularVelocity: vec(vs.angularVelocity),
+      quaternion: q ? { x: r3(q.x), y: r3(q.y), z: r3(q.z), w: r3(q.w) } : null,
+      speedMs: r3(Math.hypot(vs.velocity.x, vs.velocity.y, vs.velocity.z)),
+      steerAngle: r3(vs.steerAngle), throttle: r3(vs.throttle), brake: r3(vs.brake),
+      handbrake: !!vs.handbrake, parked: !!vs.parked, ignition: vs.ignition?.state ?? null,
+      gear: vs.drivetrain?.gear ?? null, engineRPM: vs.drivetrain ? Math.round(vs.drivetrain.engineRPM) : null,
+      strutComp: arr(vs.strutComp), tireFz: arr(RANGER_PARAMS._tireFz, 0), wheelOmega: arr(vs.wheelOmega, 2),
+      slipVel: arr(vs.slipVel, 2), rimForce: arr(vs.rimForce, 0), rimForceRoad: arr(vs.rimForceRoad, 0), bumpForce: arr(vs.bumpForce, 0),
+      submerged: !!vs.submerged, mass: RANGER_PARAMS.mass,
+    },
+    damage: damageModel ? {
+      enabled: !!DAMAGE_PARAMS.enabled,
+      condition: Object.fromEntries(Object.entries(damageModel.condition).map(([k, v]) => [k, +v.toFixed(3)])),
+      flat: damageModel.flat.slice(),
+      toeOffsetDeg: arr(damageModel.toeOffsetDeg, 2), camberOffsetDeg: arr(damageModel.camberOffsetDeg, 2),
+    } : null,
+    story: storySystem ? {
+      active: storySystem.isActive(), entering: storySystem.isEntering(), phase: storySystem._phase ?? null,
+      region: storySystem.region?.() ?? null, day: daySystem?.day?.() ?? null,
+      mission: missionSystem ? { state: missionSystem.state ?? null } : null,
+      paperRoute: paperRouteSystem?.isActive?.() ?? null,
+    } : null,
+    streaming: {
+      streamCenter: sc ? { x: r3(sc.x), z: r3(sc.z) } : null,
+      terrain: terrainSystem ? {
+        chunks: terrainSystem._chunkMap.size, ring: terrainSystem._ringRadius, warm: terrainSystem._warmMargin,
+        ringSettled: terrainSystem.isRingSettled(), filling: terrainSystem.isFilling(),
+      } : null,
+      road: roadSystem ? {
+        radius: roadSystem._proto.radius, runs: roadSystem._network.size, networkRev: roadSystem._networkRev,
+        generation: roadSystem.roadGeneration(), routeEpoch: roadSystem.routeEpoch(),
+        center: roadSystem._networkCenter ? { x: r3(roadSystem._networkCenter.x), z: r3(roadSystem._networkCenter.z) } : null,
+        lastAdoptDirty: roadSystem.lastAdoptDirty()?.length ?? 0,
+      } : null,
+      netClient: netClient ? {
+        active: netClient._active ? { id: netClient._active.id, reason: netClient._active.reason, x: r3(netClient._active.x), z: r3(netClient._active.z), radius: netClient._active.radius } : null,
+        queued: netClient._queue.length,
+      } : null,
+      roadTiles: roadMeshSystem ? { built: roadMeshSystem._tileMeshMap.size, pending: roadMeshSystem._pendingQueue.length } : null,
+      props: propSystem ? { chunks: propSystem.liveChunkCount(), queued: propSystem._scatterQueue.length, scattering: !!propSystem._activeScatter } : null,
+      shadowBake: shadowBake ? { enabled: shadowBake.enabled, pendingTiles: shadowBake._dirty.length } : null,
+    },
+    sky: skySystem ? { hour: +SKY_CYCLE.hour.toFixed(2), playing: !!SKY_CYCLE.playing, sun: vec(skySystem.sunDirection) } : null,
+    perf: hitches,
+  }
+}
 
 // Download a JS object as a timestamped JSON file (capture export).
 function _downloadJSON (obj, name) {
@@ -5935,6 +6010,7 @@ document.addEventListener('keydown', e => {
     const capture = buildPlaceCapture({
       roadSystem, worldSeed, seedString: _seedString, params: RANGER_PARAMS,
       mark: { x: px, z: pz }, streamCenterHistory: _streamCenterRing.slice(), terrainSample,
+      session: _captureSession(),
     })
     _downloadJSON(capture, 'autos-capture-' + Date.now() + '.json')
     console.log(`[capture] place @(${px.toFixed(1)},${pz.toFixed(1)}) run ${capture.place.observed.runKey} gradeY ${capture.place.observed.gradeY?.toFixed(2)} minR ${capture.place.observed.minRadius?.toFixed(1)}`)
