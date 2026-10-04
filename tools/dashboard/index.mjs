@@ -492,7 +492,7 @@ function serve(port) {
       'cache-control': 'no-store',
     });
     res.end(readFileSync(file));
-  }).listen(port, () => {
+  }).listen(port, '127.0.0.1', () => {   // loopback only: it serves the tracker + repo paths, not for the LAN
     console.log(`  dashboard  http://localhost:${port}/`);
   });
 }
