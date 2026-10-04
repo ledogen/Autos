@@ -163,7 +163,8 @@ export const DAMAGE_PARAMS = {
   // hour at the grip limit) destroys a tire, against ~266 h of gentle cruising. That spread is the
   // point — driving badly is what costs rubber.
   // DOUBLED again on 2026-08-20: five minutes of peel was a touch too quick in play, so ten.
-  durTire:        16100,     // m of accumulated sliding to destroy a tire
+  // 1.5x FASTER on 2026-10-03 (owner): ten minutes of peel became ~6.7 — 16100 / 1.5.
+  durTire:        10700,     // m of accumulated sliding to destroy a tire
   tireWCorner:    2.0e-4,    // N·s → m-equivalent. At 5 kN cornering that is 1 m/s of "slip".
   tireSlipFloor:  0.15,      // m/s — no-harm floor. Rolling slip is not abrasion.
 
@@ -305,7 +306,9 @@ export const DAMAGE_PARAMS = {
   // Not owner-specified — starting values, to be tuned by feel like the springs and dampers.
   // Wheels sit behind the armor and want a THRESHOLD (owner, 2026-08-20): a light knock should not
   // bend a rim at all, a real collision should. Floored square law, same shape as the armor curve.
-  impactWheel:     { floorMph: 15, fullMph: 80, n: 2 },
+  // Floor 15 -> 20 mph and write-off 80 -> 90 mph on 2026-10-03 (owner: wheels bent a little too
+  // easily, both the threshold and the severity).
+  impactWheel:     { floorMph: 20, fullMph: 90, n: 2 },
   // Springs are PER AXLE here too (owner, 2026-09-14), and the reason is EXPOSURE, not fragility —
   // the same kind of correction the bump-stop floor got. Look at what reaches each track: springFront
   // is listed against three armor regions (front, left, right), springRear against two (left, right),
@@ -386,7 +389,10 @@ export const DAMAGE_PARAMS = {
   // over a 34 cm rock reads 0.3-5.1 kN across 11-61 mph, so this sits just under the worst of those:
   // nothing at ordinary speeds, and only the hardest hits mark a wheel. That matches the owner's
   // read that a straight-on rock or kerb at 20 mph should leave the rim fine.
-  rimYieldMult:   1.5,    // x static wheel load (≈5 kN): DEBRIS core contacts — below this it springs back
+  // 2026-10-03 (owner: rims bent a little too easily — threshold AND severity): every yield up
+  // ~1/3 for debris and ~10% for road, every write-off scale up ~1/4. The road yield is held under
+  // the 2 m drop's 86 kN so that drop still marks the rim (now ~1.4% instead of ~3%).
+  rimYieldMult:   2.0,    // x static wheel load (≈6.7 kN): DEBRIS core contacts — below this it springs back
   // ROAD contacts are a different measurement (see suspension.js): the load past full carcass
   // compression, not what a rigid pinch exchanges.
   //
@@ -399,9 +405,9 @@ export const DAMAGE_PARAMS = {
   // The tire genuinely does not bottom below 2 m, so "lesser drops damage springs only" falls out
   // of the geometry rather than being thresholded in. Yield sits under the 2 m figure and the
   // overload scale puts a 2 m landing at about a tenth of a wheel.
-  rimYieldRoadMult: 18,   // x static wheel load (≈60 kN): ROAD/terrain contacts
-  rimFullRoadMult:  81,   // x static wheel load (≈270 kN) of OVERLOAD writes the wheel off
-  rimFullMult:    30,     // x static wheel load (≈100 kN) of OVERLOAD writes the wheel off
+  rimYieldRoadMult: 20,   // x static wheel load (≈67 kN): ROAD/terrain contacts
+  rimFullRoadMult: 100,   // x static wheel load (≈333 kN) of OVERLOAD writes the wheel off
+  rimFullMult:    40,     // x static wheel load (≈133 kN) of OVERLOAD writes the wheel off
   rimStrikeExp:   1.5,    // between linear and square — plastic work rises faster than the overload
 
   // Fraction of its own peak a loaded event must FALL TO before it is banked. Waiting for the load

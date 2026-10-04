@@ -666,6 +666,9 @@
       padding: 6px;
     }
     #rank-timer.rt-in { animation: rt-pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1); }
+    /* closeAfterDS into D: the strip has nothing ahead to show and closes; the tile stays. */
+    #rank-timer.rt-closed .rt-card { display: none; }
+    #rank-timer.rt-closed .rt-title { margin-top: 0; }
     @keyframes rt-pop {
       from { opacity: 0; scale: 0.5 1.4; }
       60%  { scale: 1.06 0.94; }
