@@ -92,6 +92,8 @@ export function regionAround(x, z, half = PLACE_REGION_HALF) {
  * @param {Array<{t:number,x:number,z:number}>} [a.streamCenterHistory] — recent stream centers (tear repro;
  *                                               NOT required for place repro now that the road is window-invariant)
  * @param {object} [a.terrainSample]           — { groundY, wheelGroundY:[fl,fr,rl,rr] } from the live terrain
+ * @param {object} [a.session]                 — the live-session snapshot (main.js _captureSession: game
+ *                                               mode, story/day, truck state, damage, streaming, perf)
  * @returns {object} capture envelope
  */
 export function buildPlaceCapture(a) {
@@ -117,6 +119,7 @@ export function buildPlaceCapture(a) {
             seedString: a.seedString ?? '',
             params:     serializableParams(a.params),
         },
+        session: a.session ?? null,
         place: {
             mark:                a.mark,
             region:              regionAround(a.mark.x, a.mark.z),
@@ -139,6 +142,7 @@ export function buildPlaceCapture(a) {
  * @param {string[]} a.fields                  — the telemetry FIELDS header
  * @param {number[][]} a.frames                — the telemetry rows (one per physics tick)
  * @param {Array<{t,x,z}>} [a.streamCenterHistory]
+ * @param {object} [a.session]                 — the live-session snapshot at download time (see buildPlaceCapture)
  * @returns {object} capture envelope
  */
 export function buildEventCapture(a) {
@@ -163,6 +167,7 @@ export function buildEventCapture(a) {
             seedString: a.seedString ?? '',
             params:     serializableParams(a.params),
         },
+        session: a.session ?? null,
         event: {
             t0: inputTimeline.length ? inputTimeline[0].t : 0,
             t1: inputTimeline.length ? inputTimeline[inputTimeline.length - 1].t : 0,

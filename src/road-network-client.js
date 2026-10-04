@@ -92,19 +92,23 @@ export class RoadNetworkClient {
      *     dispatch while driving must not stack a request per frame);
      *   - otherwise a new entry is queued.
      */
-    request(id, { x, z, radius, reason }) {
+    request(id, { x, z, radius, reason }, waiter = null) {
         const rec = this._clients.get(id)
         if (!rec) return null
         const epoch = rec.road.routeEpoch()
         reason = reason || 'move'
         const same = (q) => q.id === id && q.road === rec.road && q.epoch === epoch && q.x === x && q.z === z && q.radius === radius
-        if (this._active && same(this._active)) return this._active
-        for (const q of this._queue) if (same(q)) return q
+        // `waiter` (buildNow's resolve) is attached HERE, before anything can complete the entry:
+        // _pump() runs synchronously below and finishes a window the client already holds on the
+        // spot, so a waiter attached after request() returned sat on a dead entry forever (R after
+        // Shift+R never re-seated, 2026-10-03).
+        const found = (this._active && same(this._active)) ? this._active : this._queue.find(same)
+        if (found) { if (waiter) found.waiters.push(waiter); return found }
         if (reason === 'move') {
             const q = this._queue.find((q2) => q2.id === id && q2.epoch === epoch && q2.reason === 'move')
-            if (q) { q.x = x; q.z = z; q.radius = radius; return q }
+            if (q) { q.x = x; q.z = z; q.radius = radius; if (waiter) q.waiters.push(waiter); return q }
         }
-        const entry = { id, road: rec.road, epoch, reason, x, z, radius, waiters: [] }
+        const entry = { id, road: rec.road, epoch, reason, x, z, radius, waiters: waiter ? [waiter] : [] }
         this._queue.push(entry)
         this._pump()
         return entry
@@ -118,9 +122,9 @@ export class RoadNetworkClient {
      * entry, so builds for other clients ahead of it in the queue don't fool it.
      */
     buildNow(id, x, z, radius) {
-        const entry = this.request(id, { x, z, radius, reason: 'move' })
-        if (!entry) return Promise.resolve(false)
-        return new Promise((resolve) => entry.waiters.push(resolve))
+        return new Promise((resolve) => {
+            if (!this.request(id, { x, z, radius, reason: 'move' }, resolve)) resolve(false)
+        })
     }
 
     _pump() {

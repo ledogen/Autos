@@ -39,7 +39,7 @@ import { buildEventCapture } from './capture.js'
 let _recording = false
 const _frames = []
 let _timedStopHandle = null  // setTimeout handle for auto-stop on scenario-driven recordings
-let _captureCtx = null       // () => { worldSeed, seedString, params, streamCenterHistory, complaint }
+let _captureCtx = null       // () => { worldSeed, seedString, params, streamCenterHistory, complaint, session }
 
 /**
  * Register the provider that supplies world/reproduction context at recording-stop time, so the
@@ -98,6 +98,7 @@ function _downloadLog () {
       params:              ctx.params,
       complaint:           ctx.complaint,
       streamCenterHistory: ctx.streamCenterHistory,
+      session:             ctx.session,
       fields:              FIELDS,
       frames:              _frames,
     })
