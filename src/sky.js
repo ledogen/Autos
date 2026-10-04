@@ -180,13 +180,6 @@ function rawIrradiance (look, out) {
   return out.setRGB(key.r + hemi.r, key.g + hemi.g, key.b + hemi.b, THREE.LinearSRGBColorSpace)
 }
 
-// Pre-compensation for the baked ground-fill disc. The background pass tone-maps (ACES × exposure)
-// what the bake stored linearly. Now that scene.fog carries an ALREADY tone-mapped colour (see
-// _applyFogColor), the disc and the fog agree when the disc is baked with the raw authored colour —
-// both end up as ACES(authored × exposure). The old eyeballed 2.2 lift existed only to paper over
-// the untone-mapped fog it had to sit next to; that mismatch is fixed at the root, so it is gone.
-const GROUND_FILL_LIFT = 1.0
-
 /** Direction (origin→point) on the unit sphere from elevation/azimuth degrees, written into `out`. */
 function dirFromAngles (elevationDeg, azimuthDeg, out) {
   const phi = THREE.MathUtils.degToRad(90 - elevationDeg)   // polar from +Y
@@ -258,7 +251,12 @@ export class SkySystem {
     px = Math.max(64, Math.round(px) || 0)
     if (px === this._bakeRes) return
     this._bakeRes = px
-    if (this._cubeRT) { this._cubeRT.dispose(); this._cubeRT = null; this._cubeCam = null }
+    // The CubeCamera is a child of _bakeScene; _bakeSky adds a fresh one with the new target, so the
+    // old one must come out too or every resolution change leaves a dead camera in the bake scene.
+    if (this._cubeRT) {
+      this._cubeRT.dispose(); this._cubeRT = null
+      this._bakeScene.remove(this._cubeCam); this._cubeCam = null
+    }
     if (this._mode === 'baked') this._bakeSky()
   }
 
@@ -283,10 +281,12 @@ export class SkySystem {
       this._groundFill.position.y = -5
       this._bakeScene.add(this._groundFill)
     }
-    // Match the fully-fogged terrain the disc extends: fog colour, lifted for the ACES + exposure
-    // the background pass applies (the scene fog itself is mixed POST-tone-mapping, so the baked
-    // disc needs pre-compensation to land near the same displayed colour).
-    this._groundFill.material.color.setHex(SKY_PARAMS.fogColor).multiplyScalar(GROUND_FILL_LIFT)
+    // Match the fully-fogged terrain the disc extends: the RAW authored fog colour, no lift. The
+    // background pass tone-maps (ACES × exposure) what the bake stored linearly, and scene.fog
+    // carries an ALREADY tone-mapped colour (see _applyFogColor), so both end up as
+    // ACES(authored × exposure). The old eyeballed 2.2 lift (GROUND_FILL_LIFT) existed only to paper
+    // over the untone-mapped fog it had to sit next to; that mismatch was fixed at the root.
+    this._groundFill.material.color.setHex(SKY_PARAMS.fogColor)
     this._cubeCam.update(this.renderer, this._bakeScene)
     this.scene.background = this._cubeRT.texture
   }
