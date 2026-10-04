@@ -106,6 +106,7 @@ const MAX_LEG_SLOPE = 0.30
 const JN_HOLD_MARGIN = 1.0
 const JN_HOLD_MAX_PLANE = 30.0
 const JN_HOLD_MAX_SURFACE = 60.0
+const JN_ANCHOR_KEEP = 15.0   // m of a T's through piece, from P, that no far-end blend may touch
 const JN_FADE_IN = 22.0
 const JN_FADE_OUT = 34.0
 // Junction-pad ring geometry (moved from road-mesh.js so the CARVE path is the single source of the
@@ -135,6 +136,20 @@ const HARD_GRADE_RUNGS = [2, 3, 6]
 // (1 m grid → 1.42 m) so no terrain triangle straddling the ring boundary can interpolate above the
 // pad asphalt (see _junctionPadCarve). Hardcoded: geometry only, no route-cache-signature effect.
 const PAD_RIM_HOLD = 1.6
+// THE SOLVED PAD (_buildPadSurface): TPS sample lattice along each leg past its mouth (step, band
+// length, min spacing — m), the bake grid cell, how far past ring + rim hold the grid reaches before
+// handing back to the leg field, and the mouth ease (m inside a mouth over which the pad blends onto
+// the ribbon's own deck). Geometry only.
+const PAD_TPS_STEP = 1.5
+const PAD_TPS_STEP_FAR = 3.0
+const PAD_TPS_NEAR = 6.0
+const PAD_TPS_BAND = 12.0
+const PAD_TPS_MIN_SEP = 0.9
+const PAD_GRID_H = 1.0
+const PAD_GRID_PAST = 5.0
+const PAD_MOUTH_EASE = 1.5
+const PAD_THROUGH_EASE = 2.0   // m inside a T trunk's pavement edge over which the pad hands off to the trunk deck
+const PAD_THROUGH_FREE = 1.0   // m strip past a trunk's edge with no spline samples: room to bend onto a side road
 // PAD_DIRT_EXTRA: extra dirt depth (m, beyond roadClearanceMargin) under the pad + rim-hold band —
 // keeps the 1 m-grid terrain triangles below the asphalt where the ruled plaza surface bends inside
 // one cell (linear dirt interpolation rides the bend's convex hull and would poke through a bare
@@ -278,6 +293,74 @@ function _segCrossParam(ax, az, bx, bz, cx, cz, dx, dz) {
  * fork lookup with a point from the wrong end of itself.
  * @returns {{d: number, cum: number, y: number}}
  */
+// Position + unit XZ tangent at chord arc `a` along a polyline (clamped to its ends).
+function _polyAtArc(pts, cum, a) {
+    const n = pts.length
+    let lo = 0, hi = n - 1
+    if (a <= 0) hi = 1
+    else if (a >= cum[n - 1]) lo = n - 2
+    else while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= a) lo = m; else hi = m }
+    const A = pts[lo], B = pts[lo + 1]
+    const seg = cum[lo + 1] - cum[lo] || 1e-9
+    const t = Math.max(0, Math.min(1, (a - cum[lo]) / seg))
+    const ex = B.x - A.x, ez = B.z - A.z, l = Math.hypot(ex, ez) || 1
+    return { x: A.x + t * ex, z: A.z + t * ez, tx: ex / l, tz: ez / l }
+}
+
+// Dense Gaussian elimination with partial pivoting (A row-major N×N, overwritten). null if singular.
+function _solveDense(A, b, N) {
+    for (let c = 0; c < N; c++) {
+        let p = c, pv = Math.abs(A[c * N + c])
+        for (let r = c + 1; r < N; r++) { const v = Math.abs(A[r * N + c]); if (v > pv) { pv = v; p = r } }
+        if (pv < 1e-12) return null
+        if (p !== c) {
+            for (let k = 0; k < N; k++) { const t = A[c * N + k]; A[c * N + k] = A[p * N + k]; A[p * N + k] = t }
+            const t = b[c]; b[c] = b[p]; b[p] = t
+        }
+        const inv = 1 / A[c * N + c]
+        for (let r = c + 1; r < N; r++) {
+            const f = A[r * N + c] * inv
+            if (f === 0) continue
+            for (let k = c; k < N; k++) A[r * N + k] -= f * A[c * N + k]
+            b[r] -= f * b[c]
+        }
+    }
+    const x = new Float64Array(N)
+    for (let r = N - 1; r >= 0; r--) {
+        let v = b[r]
+        for (let k = r + 1; k < N; k++) v -= A[r * N + k] * x[k]
+        x[r] = v / A[r * N + r]
+    }
+    return x
+}
+
+// Bicubic (Catmull-Rom) read of a solved pad grid — C1, so wheel normals do not facet at cell lines.
+function _padGridSample(ps, wx, wz) {
+    const fx = (wx - ps.cx) / ps.H + ps.M, fz = (wz - ps.cz) / ps.H + ps.M
+    const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j
+    const W = ps.W, g = ps.grid
+    const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)))
+    const row = (jj) => {
+        const jc = Math.min(W - 1, Math.max(0, jj)), r = jc * W
+        const c = (ii) => {
+            const ic = Math.min(W - 1, Math.max(0, ii)), k = r + ic
+            let v = g[k]
+            if (v !== v) {   // NaN: evaluate the spline at this cell once
+                const x = (ic - ps.M) * ps.H, z = (jc - ps.M) * ps.H, s = ps.sol, n = ps.n
+                v = s[n] + s[n + 1] * x + s[n + 2] * z
+                for (let q = 0; q < n; q++) {
+                    const dx = x - ps.kx[q], dz = z - ps.kz[q], r2 = dx * dx + dz * dz
+                    if (r2 > 1e-12) v += s[q] * 0.5 * r2 * Math.log(r2)
+                }
+                g[k] = v
+            }
+            return v
+        }
+        return cr(c(i - 1), c(i), c(i + 1), c(i + 2), u)
+    }
+    return cr(row(j - 1), row(j), row(j + 1), row(j + 2), v)
+}
+
 function _nearestOnPolyXZ(px, pz, pts, polyCum, lo = -Infinity, hi = Infinity) {
     let d = Infinity, cum = 0, y = 0, tx = 1, tz = 0, fx = px, fz = pz
     for (let i = 1; i < pts.length; i++) {
@@ -5604,6 +5687,26 @@ export class RoadSystem {
             s0: Math.max(0, polyCum[Math.max(0, jLo)] - 2),
             s1: Math.min(polyCum[n - 1], polyCum[Math.min(n - 1, jHi)] + 2),
         }]
+        // A side road that is ALREADY a departure at its far end (a T at both ends) carries that
+        // band's span too. Dropping it — the old behaviour — sent the resolver back onto the
+        // primitive centerline there, up to 27 m from the points the deck was graded on: the wheel
+        // read itself as out on the shoulder and rode the carve ramp toward raw terrain (+2.8 m at
+        // seed 7 (838,-326); 4 runs across the battery). Vertices map 1:1, so re-base by index.
+        if (side.offCurveSpans) {
+            const remap = (a) => {
+                const c = side.polyCum
+                let k = i0
+                while (k < i1 && c[k + 1] < a) k++
+                const t = Math.max(0, Math.min(1, (a - c[k]) / ((c[k + 1] - c[k]) || 1)))
+                const j = k - i0
+                return polyCum[j] + t * ((polyCum[Math.min(n - 1, j + 1)] - polyCum[j]))
+            }
+            const lo = side.polyCum[i0], hi = side.polyCum[i1]
+            for (const csp of side.offCurveSpans) {
+                if (csp.s1 <= lo || csp.s0 >= hi) continue
+                offCurveSpans.push({ ...csp, s0: remap(Math.max(lo, csp.s0)), s1: remap(Math.min(hi, csp.s1)) })
+            }
+        }
         // The profile re-solves with the P end pinned to the TRUNK'S DECK — the two roads leave the
         // same real surface. The far end keeps the ordinary node-height pin, unless the caller
         // names one: a side road that was split as another T's trunk (BUG-61) is promoted on its
@@ -7692,7 +7795,15 @@ export class RoadSystem {
                 // diverged past co-dominance, so blendGrade ≈ single already — no crease is re-exposed.
                 const radial = Math.hypot(wx - jc.node.pos.x, wz - jc.node.pos.z)
                 const fu = Math.min(1, Math.max(0, (radial - JN_FADE_IN) / (JN_FADE_OUT - JN_FADE_IN)))
-                const fade = 1 - fu * fu * (3 - 2 * fu)                   // 1 at the node → 0 past FADE_OUT
+                let fade = 1 - fu * fu * (3 - 2 * fu)                     // 1 at the node → 0 past FADE_OUT
+                // A promoted T's THROUGH road is never re-shaped by its side road (owner ruling
+                // 2026-10-04): on its own pavement the blend is off, easing back in across 2 m of
+                // shoulder. Inside the pad _nodeSurfaceTop reads the through deck directly
+                // (_ownDeckTop), so the frame this point resolved to cannot put a seam on the trunk.
+                if (jc.through) {
+                    const lu = Math.min(1, Math.max(0, (halfWidth + 2 - Math.abs(signedLat)) / 2))
+                    fade *= 1 - lu * lu * (3 - 2 * lu)
+                }
                 gradeY += fade * (gSum / wSum - gradeY)
                 // Ease the single-ribbon CROSS-SLOPE (crown + camber tilt) to flat by blend PURITY (the
                 // dominant leg's weight share) IN the faded junction region: on a clean ribbon/shoulder
@@ -7750,7 +7861,7 @@ export class RoadSystem {
         // WEIGHT is per-leg LATERAL (gap to each leg's asphalt), not this arc distance — a lateral weight is
         // symmetric for both legs at their shared Voronoi boundary and so welds exactly to each ribbon, which
         // an arc-distance weight (different arc-along per leg) can't.
-        return { frac, widen: frac * R, node: near.node }
+        return { frac, widen: frac * R, node: near.node, through: !!near.through }
     }
 
     // QUAL-10: how far the swept ribbons are cut back from a junction node (metres) to clear room for the
@@ -7927,6 +8038,13 @@ export class RoadSystem {
                     a.cutback = Math.max(cut0, this._legPartingReach(e, a.arc < 1e-6, sibs, JN_HOLD_MAX_PLANE))
                 }
             }
+            // A promoted T's THROUGH legs (owner ruling 2026-10-04: the trunk is never re-shaped by the
+            // junction — not by the ruled blend, not by the solved pad).
+            for (const a of c.legs) {
+                const e = this._network.get(a.runKey)
+                const id = e && e.cellA && e.cellB ? (a.arc < 1e-6 ? e.cellA : e.cellB) : null
+                a.through = !!id && _isPromotedId(id) && this._v2PromotedRole(id, a.runKey) === 'through'
+            }
             node.ring = node.deg2 ? null : this._buildJunctionRing(node)
             if (node.ring) {
                 let mr = 0
@@ -7939,7 +8057,7 @@ export class RoadSystem {
                 // node ref rides along so _carveDirtY can enumerate the SIBLING legs and blend their grades
                 // by lateral proximity (the ruled inter-leg surface that kills the Voronoi crease). The node
                 // carries pos + legs + plane; the open-rim fallback still reads node.plane in _junctionPadCarve.
-                arr.push({ arc: a.arc, node, cutback: a.cutback })
+                arr.push({ arc: a.arc, node, cutback: a.cutback, through: a.through })
             }
         }
         this._nodeJunctions = nodes
@@ -8509,6 +8627,199 @@ export class RoadSystem {
      * seed-6 site, so it is deliberately NOT paid for here).
      */
     _nodeSurfaceTop(node, wx, wz) {
+        if (!node.ring || !node.legs || node.legs.length < 3) return this._legSurfaceTop(node, wx, wz)
+        if (node.padSurf === undefined) node.padSurf = this._buildPadSurface(node)
+        const ps = node.padSurf
+        if (!ps) return this._legSurfaceTop(node, wx, wz)
+        const r = Math.hypot(wx - node.pos.x, wz - node.pos.z)
+        if (r >= ps.r1) return this._legSurfaceTop(node, wx, wz)
+        const g = _padGridSample(ps, wx, wz)
+        // Radial hand-off to the leg field well outside the ring + rim hold (dirt only, never asphalt).
+        const qu = Math.max(0, (r - ps.r0) / (ps.r1 - ps.r0)), q = qu * qu * (3 - 2 * qu)
+        // Exactness mask: on a leg's own ribbon past its mouth (or anywhere on a T's through road) the
+        // pad IS that road's deck — the seam with the ribbon mesh is exact, and the trunk untouched.
+        let y = g
+        const ms = Math.max(q, this._padRibbonMask(node, ps, wx, wz))
+        if (ms > 0) { const leg = this._legSurfaceTop(node, wx, wz); if (leg != null) y += ms * (leg - y) }
+        if (ps.anyThrough) {
+            const own = this._throughDeckTop(node, ps, wx, wz)
+            if (own) y += own.m * (own.y - y)
+        }
+        return y
+    }
+
+    /**
+     * A promoted T's through road, read DIRECTLY on its own centreline: {y, m} with y the nearer
+     * through leg's own deck at (wx,wz) — profile + crown + camber, no inter-leg blend — and m its
+     * weight: 1 on the pavement, easing to 0 over the last `ease` metres INSIDE its edge (the solved
+     * surface is sampled on the pavement, so it already agrees there — the ease has nothing to bend).
+     * null off the pavement. null when no through leg is in
+     * range. The two through halves share P to the bit, so the nearer-half pick is continuous.
+     */
+    _throughDistance(node, through, wx, wz) {
+        let d2 = Infinity
+        for (let li = 0; li < node.legs.length; li++) {
+            if (!through[li]) continue
+            const leg = node.legs[li], ne = this._network.get(leg.runKey)
+            const prs = ne && this._projectLegMemo(ne, leg, wx, wz)
+            if (prs) for (const pr of prs) if (pr.d2 < d2) d2 = pr.d2
+        }
+        return Math.sqrt(d2)
+    }
+
+    _throughDeckTop(node, ps, wx, wz, ease = PAD_THROUGH_EASE) {
+        const hw = this._params.roadHalfWidth ?? 5
+        const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
+        let best = null, bestD2 = Infinity, bestLeg = null, bestNe = null
+        for (let li = 0; li < node.legs.length; li++) {
+            if (!ps.through[li]) continue
+            const leg = node.legs[li], ne = this._network.get(leg.runKey)
+            if (!ne) continue
+            const prs = this._projectLegMemo(ne, leg, wx, wz)
+            if (!prs) continue
+            for (const pr of prs) if (pr.d2 < bestD2) { bestD2 = pr.d2; best = pr; bestLeg = leg; bestNe = ne }
+        }
+        if (!best) return null
+        const d = Math.sqrt(bestD2)
+        if (d > hw) return null
+        const lu = Math.min(1, Math.max(0, (hw - d) / ease))
+        const pts = bestNe.points, i = Math.min(best.i, pts.length - 2)
+        const ex = pts[i + 1].x - pts[i].x, ez = pts[i + 1].z - pts[i].z, sl = Math.hypot(ex, ez) || 1e-8
+        const tx = ex / sl, tz = ez / sl
+        const lat = (wx - (pts[i].x + best.t * ex)) * tz - (wz - (pts[i].z + best.t * ez)) * tx
+        // wx/wz omitted ⇒ _carveDirtY skips the inter-leg blend: the through road's own section.
+        return { y: this._carveDirtY(lat, best.arcS, bestLeg.runKey, 1) + clearanceMargin, m: lu * lu * (3 - 2 * lu) }
+    }
+
+    /**
+     * The ribbon-exactness weight at (wx,wz) for a solved pad: 1 on a leg's pavement past its mouth
+     * (the through legs of a promoted T along their whole length — owner ruling 2026-10-04, "through
+     * road untouched"), easing to 0 over PAD_MOUTH_EASE inside the mouth and over 1 m past the
+     * pavement edge. Continuous, so the hand-off between the solved surface and the ribbons carries
+     * no step.
+     */
+    _padRibbonMask(node, ps, wx, wz) {   // non-through legs; a through road is _throughDeckTop's
+        const hw = this._params.roadHalfWidth ?? 5
+        let m = 0
+        for (let li = 0; li < node.legs.length; li++) {
+            const leg = node.legs[li]
+            const ne = this._network.get(leg.runKey)
+            if (!ne) continue
+            const prs = this._projectLegMemo(ne, leg, wx, wz)
+            if (!prs) continue
+            for (const pr of prs) {
+                const lu = Math.min(1, Math.max(0, hw + 1 - Math.sqrt(pr.d2)))
+                if (lu <= 0) continue
+                if (ps.through[li]) continue
+                const au = Math.min(1, Math.max(0, (Math.abs(pr.arcS - leg.arc) - (ps.cut[li] - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
+                if (au <= 0) continue
+                const v = lu * lu * (3 - 2 * lu) * au * au * (3 - 2 * au)
+                if (v > m) m = v
+            }
+        }
+        return m
+    }
+
+    /**
+     * THE SOLVED PAD (owner 2026-10-04: "the smoothest possible surface that connects all the
+     * incoming roads"). The pad interior used to be the ruled blend of each leg's own profile —
+     * profiles that had been bent onto a fitted plane out to the mouth and eased back past it — and
+     * that composition dipped 0.2–1.6 m below the smooth join inside the ring (test/junction-ride.mjs:
+     * median 0.18 m, p99 0.93 m over 1228 leg-to-leg paths), the "fall into the pad, climb out".
+     *
+     * Now: a THIN-PLATE SPLINE — the exact minimiser of bending energy ∫(f_xx² + 2f_xz² + f_zz²)
+     * among all surfaces through the given points — fitted to the decks of the roads OUTSIDE the
+     * pad: three lines (centre and both pavement edges + 1 m) on every leg from its mouth outward,
+     * and on a promoted T's through road along its whole length (it is held, not solved). Nothing
+     * inside the ring is prescribed: the pad is whatever bends least while meeting every road in
+     * height, grade and cross-slope. All legs equal at a plain node (owner ruling, no "main road").
+     *
+     * Baked once per node onto a PAD_GRID_H grid (cached on the node, rebuilt with it per
+     * _networkRev) and read back bicubically, so the field is C1 and costs 16 reads per sample.
+     * Mesh (samplePadY), physics (padTopY) and the carve all read _nodeSurfaceTop ⇒ mesh == collision.
+     * Pure fn of the node record ⇒ window-invariant like the rest of the node blend.
+     */
+    _buildPadSurface(node) {
+        const hw = this._params.roadHalfWidth ?? 5
+        const cx = node.pos.x, cz = node.pos.z
+        const xs = [], zs = [], ys = []
+        const through = [], cut = []
+        const add = (x, z, thr) => {
+            for (let k = 0; k < xs.length; k++) {
+                const dx = xs[k] - x, dz = zs[k] - z
+                if (dx * dx + dz * dz < PAD_TPS_MIN_SEP * PAD_TPS_MIN_SEP) return
+            }
+            // A T's trunk is sampled on its own deck across its pavement; a side road's sample on the
+            // trunk pavement or in the PAD_THROUGH_FREE strip past it is dropped — that strip is the room
+            // the spline bends in between the two (seed 6 (-2041,1974): two decks 1 m apart overshot 0.6 m).
+            // Dropping more than that starved the side mouth and creased the pad where the ribbon blend
+            // took over (capture 1791130261179).
+            let y
+            if (thr) {
+                const own = this._throughDeckTop(node, { through }, x, z, 1e-6)
+                if (!own) return
+                y = own.y
+            } else {
+                if (anyThrough && Math.hypot(x - cx, z - cz) < r1 && this._throughDistance(node, through, x, z) < hw + PAD_THROUGH_FREE) return
+                y = this._legSurfaceTop(node, x, z)
+            }
+            if (y == null || !isFinite(y)) return
+            xs.push(x); zs.push(z); ys.push(y)
+        }
+        const r1 = (node.ringMaxR ?? 15) + PAD_RIM_HOLD + PAD_GRID_PAST
+        for (const leg of node.legs) { through.push(!!leg.through); cut.push(leg.cutback ?? this.junctionCutbackDist()) }
+        const anyThrough = through.some(Boolean)
+        for (let li = 0; li < node.legs.length; li++) {
+            const leg = node.legs[li]
+            const e = this._network.get(leg.runKey)
+            const thr = through[li]
+            if (!e || !e.points || !e.polyCum) continue
+            const L = e.polyCum[e.polyCum.length - 1], atStart = leg.arc < 1e-6
+            const a0 = thr ? 0.5 : cut[li]
+            const a1 = Math.min(L, Math.max(a0 + PAD_TPS_BAND, r1 + 2))
+            // Lines across each road's own deck — the spline must REPRODUCE the surface it hands off to
+            // at the mouths, or the ribbon blend bends it back (capture 1791130261179: a side road held
+            // to a banked trunk carries a 0.3 m-bowed cross-section that three lines cut the corner of).
+            // Trunk: on its pavement. Side road: out to its edge + 1 m.
+            const lats = thr ? [-hw, -hw / 2, 0, hw / 2, hw] : [-(hw + 1), -hw * 0.6, -hw * 0.3, 0, hw * 0.3, hw * 0.6, hw + 1]
+            // Dense only where the hand-off happens — the first PAD_TPS_NEAR m past a side road's mouth;
+            // the trunk (overridden on its pavement by its own deck) and the outer band are coarse. The
+            // dense solve is O(n³): 195 → ~100 samples took the per-pad build from 5.4 ms to ~1 ms.
+            for (let a = a0; a <= a1 + 1e-6; a += (!thr && a - a0 < PAD_TPS_NEAR) ? PAD_TPS_STEP : PAD_TPS_STEP_FAR) {
+                const f = _polyAtArc(e.points, e.polyCum, atStart ? a : L - a)
+                for (const lat of lats) add(f.x + lat * f.tz, f.z - lat * f.tx, thr)
+            }
+        }
+        const n = xs.length
+        if (n < 6) return null
+        // TPS system [K P; Pᵀ 0][w; a] = [y; 0], K_ij = φ(|p_i − p_j|), φ(r) = r² ln r, P = [1 x z]
+        // (coordinates node-relative for conditioning). Dense Gaussian elimination: n ≈ 100–250.
+        const N = n + 3, A = new Float64Array(N * N), b = new Float64Array(N)
+        const phi = (r2) => r2 > 1e-12 ? 0.5 * r2 * Math.log(r2) : 0
+        for (let i = 0; i < n; i++) {
+            const xi = xs[i] - cx, zi = zs[i] - cz
+            for (let j = i + 1; j < n; j++) {
+                const dx = xs[j] - xs[i], dz = zs[j] - zs[i]
+                A[i * N + j] = A[j * N + i] = phi(dx * dx + dz * dz)
+            }
+            A[i * N + n] = A[n * N + i] = 1
+            A[i * N + n + 1] = A[(n + 1) * N + i] = xi
+            A[i * N + n + 2] = A[(n + 2) * N + i] = zi
+            b[i] = ys[i]
+        }
+        const sol = _solveDense(A, b, N)
+        if (!sol) return null
+        // The grid is filled LAZILY (NaN = not yet evaluated, see _padGridSample): a cell costs one
+        // spline evaluation (n log terms), and baking all ~2500 up front was two thirds of the build —
+        // most are read frames later or never. One ring past r1 so the bicubic stencil stays inside.
+        const H = PAD_GRID_H, M = Math.ceil(r1 / H) + 2, W = 2 * M + 1
+        const grid = new Float64Array(W * W).fill(NaN)
+        const kx = new Float64Array(n), kz = new Float64Array(n)
+        for (let k = 0; k < n; k++) { kx[k] = xs[k] - cx; kz[k] = zs[k] - cz }
+        return { cx, cz, H, M, W, grid, sol, kx, kz, n, r0: r1 - PAD_GRID_PAST + 1, r1: r1 - 1, through, cut, anyThrough }
+    }
+
+    _legSurfaceTop(node, wx, wz) {
         const legs = node.legs
         if (!legs || !this._network) return null
         let bestD2 = Infinity, bestPr = null, bestLeg = null, bestNe = null
@@ -9853,6 +10164,7 @@ export class RoadSystem {
     // the through road's slope/inclination through the node instead of collapsing it to a level pad.
     _runEndpointJunctions(runKey) {
         const NONE = { is: false, y: 0, flatCamber: false, slopeAway: 0 }
+        const ANCHOR = { ...NONE, anchor: true }
         const e = this._network?.get(runKey)
         if (!e || !e.cellA || !e.cellB || !e.points || e.points.length < 2) return { jStart: NONE, jEnd: NONE }
         // `is` = needs grade reconciliation (ease toward the shared mean for C0); `flatCamber` = also kill
@@ -9871,7 +10183,10 @@ export class RoadSystem {
             if (_isPromotedId(id)) {
                 const prom = this._promoted?.get(this._proto.graph.key(id))
                 if (!prom) return NONE
-                if (this._v2PromotedRole(id, runKey) !== 'side') return NONE
+                // A THROUGH end is an ANCHOR: the far end's blend must not reach it, or the two trunk
+                // halves leave P on different grades (seed 7 (-1494,1168): a 35 m piece bent from its
+                // own 19 % to 40 % at P by the far node's hold + recovery — a 1.6 g crest straight on).
+                if (this._v2PromotedRole(id, runKey) !== 'side') return ANCHOR
                 return { is: true, flatCamber: true, y: prom.pos.y,
                          slopeAway: thisStrand ? prom.gx * thisStrand.wx + prom.gz * thisStrand.wz : 0,
                          plane: { cx: prom.pos.x, cz: prom.pos.z, y0: prom.pos.y, gx: prom.gx, gz: prom.gz },
@@ -9936,6 +10251,9 @@ export class RoadSystem {
                                .map((st) => ({ key: st.key, e: this._network.get(st.key) }))
                                .filter(({ e }) => e && e.points && e.polyCum)
         if (through.length < 2) return null
+        const g = this._proto.graph, nk = g.key(id)
+        const HW = this._params.roadHalfWidth ?? 5, crownH = this._params.crownHeight ?? 0.05
+        const R = this._params.roadJunctionCarveRadius ?? HW * 2.5
         return (x, z) => {
             let best = null, bestE = null, key
             for (const t of through) {
@@ -9945,7 +10263,16 @@ export class RoadSystem {
             if (!best) return null
             const arc = best.cum - (bestE.arcOrigin ?? 0)
             const lat = (x - best.fx) * best.tz - (z - best.fz) * best.tx
-            return this.runProfile(arc, key).gradeY + lat * Math.sin(this.camberProfile(arc, key))
+            // The trunk's deck AS BUILT: crown + camber eased to flat toward P exactly as _carveDirtY
+            // does it (_junctionCarve's frac = 1 − along/R), not profile + raw banking. Extrapolating
+            // the raw bank 11 m sideways held the side road 0.5–0.8 m off the trunk's real (flattened)
+            // edge at banked Ts (seed 3 (-34,1524)); the old inter-leg blend smeared that into a dip.
+            // Inlined rather than calling _carveDirtY: _junctionCarve builds the node rings, which
+            // read run profiles — this one among them.
+            const along = g.key(bestE.cellA) === nk ? arc : bestE.polyCum[bestE.polyCum.length - 1] - arc
+            const k = R > 0 ? Math.min(1, along / R) : 1
+            return this.runProfile(arc, key).gradeY
+                + k * (crownProfile(lat, HW, crownH) + lat * Math.sin(this.camberProfile(arc, key)))
         }
     }
 
@@ -10242,9 +10569,15 @@ export class RoadSystem {
         // DECK HOLD (owner ruling 2026-09-07): the leg rides the plane out to `hold` — where its
         // pavement has parted from every sibling's (_junctionHoldReach) — and only then eases back
         // to its own solved profile. Capped so both ends of a short run never fight across the middle.
-        const reachCap = Math.max(Rj, (aEnd - aStart) * 0.45)
-        const hS = Math.min(ej.jStart.hold || 0, (aEnd - aStart) * 0.45)
-        const hE = Math.min(ej.jEnd.hold || 0, (aEnd - aStart) * 0.45)
+        // Opposite a promoted T's through end (an ANCHOR) the whole blend — hold, grade reach, recovery
+        // window — must end JN_ANCHOR_KEEP short of it (at most half the run), so the trunk leaves P on
+        // its own solved profile, the same one its other half carries.
+        const span = aEnd - aStart
+        const keepS = ej.jStart.anchor ? Math.min(JN_ANCHOR_KEEP, 0.5 * span) : 0
+        const keepE = ej.jEnd.anchor ? Math.min(JN_ANCHOR_KEEP, 0.5 * span) : 0
+        const reachCap = Math.max(1, Math.min(Math.max(Rj, span * 0.45), span - keepS - keepE))
+        const hS = Math.min(ej.jStart.hold || 0, span * 0.45, span - keepE)
+        const hE = Math.min(ej.jEnd.hold || 0, span * 0.45, span - keepS)
         // QUAL-13: adaptive GRADE reach past the hold. When the plane sits far above/below this
         // run's own profile where the hold lets go, easing the full ΔY over the fixed 30 m
         // manufactures a 60–130 % grade spike at the mouth (the road-character "max grade pinned
@@ -10260,8 +10593,9 @@ export class RoadSystem {
             const d = fromStart ? arcPos[i] - aStart : aEnd - arcPos[i]
             return Math.min(Math.max(Rj, reachCap - hold), Math.max(Rj, Math.abs(target(j, i, d) - gradeY[i]) / maxBG))
         }
-        const RgS = gradeReach(ej.jStart, hS, true)
-        const RgE = gradeReach(ej.jEnd, hE, false)
+        const RgS = Math.max(1, Math.min(gradeReach(ej.jStart, hS, true), span - keepE - hS))
+        const RgE = Math.max(1, Math.min(gradeReach(ej.jEnd, hE, false), span - keepS - hE))
+        const RcS = Math.max(1, Math.min(Rj, span - keepE - hS)), RcE = Math.max(1, Math.min(Rj, span - keepS - hE))
         // weight at `d` metres out: 1 inside the hold, smoothstep down over `reach` past it
         const w = (d, hold, reach) => d <= hold ? 1 : (d < hold + reach ? ss(1 - (d - hold) / reach) : 0)
         // THE ROLL HALF of normal matching (owner, BUG-56: "camber gives the roll, grade gives the
@@ -10301,13 +10635,13 @@ export class RoadSystem {
                 const d = arcPos[i] - aStart
                 const fs = w(d, hS, RgS)
                 if (fs > fG) { fG = fs; ny = target(ej.jStart, i, d) }
-                if (ej.jStart.flatCamber) { const fc = w(d, hS, Rj); if (fc > fC) { fC = fc; nc = planeCam(ej.jStart, i) } }
+                if (ej.jStart.flatCamber) { const fc = w(d, hS, RcS); if (fc > fC) { fC = fc; nc = planeCam(ej.jStart, i) } }
             }
             if (ej.jEnd.is) {
                 const d = aEnd - arcPos[i]
                 const fs = w(d, hE, RgE)
                 if (fs > fG) { fG = fs; ny = target(ej.jEnd, i, d) }
-                if (ej.jEnd.flatCamber) { const fc = w(d, hE, Rj); if (fc > fC) { fC = fc; nc = planeCam(ej.jEnd, i) } }
+                if (ej.jEnd.flatCamber) { const fc = w(d, hE, RcE); if (fc > fC) { fC = fc; nc = planeCam(ej.jEnd, i) } }
             }
             if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
             if (camberRad && fC > 0) camberRad[i] += (nc - camberRad[i]) * fC

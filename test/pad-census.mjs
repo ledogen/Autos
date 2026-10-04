@@ -32,6 +32,22 @@
 
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { WINDOWS, buildWindow } from './lib/road-battery.mjs'
+import { earClip } from '../src/road-carve.js'
+
+// The DRAWN pad must be the ring physics rides. road-mesh.js triangulates node.ring with earClip; a
+// triangle outside the ring is asphalt drawn over the 0.3 m-lower dirt physics sees there — the owner's
+// "fall right through the drawn pad" (capture 1791128824374: earClip assumed CCW, the ring is CW, every
+// concave crotch was paved, 3.6 m out). Paved area outside the ring, m² (centroid test per triangle).
+const pavedOutside = (ring) => {
+  const t = earClip(ring)
+  const inside = (x, z) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const a = ring[i], b = ring[j]; if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) c = !c } return c }
+  let out = 0
+  for (let k = 0; k < t.length; k += 3) {
+    const a = ring[t[k]], b = ring[t[k + 1]], c = ring[t[k + 2]]
+    if (!inside((a.x + b.x + c.x) / 3, (a.z + b.z + c.z) / 3)) out += Math.abs((b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z)) / 2
+  }
+  return out
+}
 
 const argv = process.argv.slice(2)
 const VERBOSE = argv.includes('--verbose')
@@ -63,6 +79,8 @@ const tot = { clusters: 0, deg2: 0, weld: 0, circle: 0, hull: 0, NONE: 0 }
 const reach = []
 let shortPads = 0
 const shortRows = []
+let outsidePads = 0, outsideM2 = 0
+const outsideRows = []
 
 for (const W of WINDOWS) {
   if (ONLY && !W.name.includes(ONLY)) continue
@@ -82,6 +100,7 @@ for (const W of WINDOWS) {
       shortPads++
       if (shortRows.length < 8) shortRows.push(`${W.name} (${node.pos.x.toFixed(0)},${node.pos.z.toFixed(0)}) ring ${(node.ringMaxR ?? 0).toFixed(1)} m, legs part at ${need.toFixed(1)} m (${r})`)
     }
+    if (node.ring) { const o = pavedOutside(node.ring); if (o > 0.01) { outsidePads++; outsideM2 += o; if (outsideRows.length < 8) outsideRows.push(`${W.name} (${node.pos.x.toFixed(0)},${node.pos.z.toFixed(0)}) ${o.toFixed(1)} m² drawn outside the ring`) } }
     // node.ring is what actually shipped — the census must agree with it, not just with the ladder.
     if (r === 'NONE' || !node.ring || node.ring.length < 3)
       bad.push({ nk, legs: node.legs.length, x: node.pos.x, z: node.pos.z })
@@ -111,6 +130,9 @@ if (shortPads) {
   console.log(`            ${shortPads} pad(s) reach SHORT of their own legs' parting point:`)
   for (const row of shortRows) console.log(`              ${row}`)
 }
+console.log(`            drawn pad outside its ring: ${outsidePads} pad(s), ${outsideM2.toFixed(0)} m²`)
+for (const row of outsideRows) console.log(`              ${row}`)
+if (outsidePads) { console.log('FAIL — a pad triangulation paves ground outside its ring: drawn asphalt over dirt physics sits 0.3 m below'); process.exit(1) }
 if (fails) { console.log('FAIL — a ≥3-leg junction has no pad; the legs are cut back and nothing paves the gap (BUG-56 B0)'); process.exit(1) }
 if (shortPads) { console.log('FAIL — a pad does not reach where its own legs part; the gore between them is two overlapping ribbons, not a plaza (BUG-59)'); process.exit(1) }
 console.log('PASS')

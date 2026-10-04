@@ -205,11 +205,17 @@ export function signedCurvature(T0x, T0z, T1x, T1z, ds) {
  * both convex and concave. Returns a flat array of triangle indices into the original
  * polygon array.
  *
- * Bounded at n*3 total ear-find attempts (DoS guard — T-09-06): if exceeded, falls back
- * to a simple fan from the first vertex (degenerate recovery, not correct for non-convex
- * polygons but avoids hanging on adversarial input).
+ * Either winding. The ear test reads convexity against the polygon's OWN orientation (signed
+ * area): it used to assume CCW, and the junction pad ring is built CW (legs sorted by bearing), so
+ * every REFLEX vertex passed as an ear — each concave crotch between two roads was clipped off and
+ * PAVED, up to 3.6 m outside the ring physics rides (owner capture 1791128824374: a wheel dropped
+ * 0.3 m through drawn asphalt onto dirt). The pad's per-triangle up-winding pass hid it.
  *
- * @param {Array<{x:number,z:number}>} polygon — simple polygon vertices (CCW expected)
+ * Bounded at n² ear-find attempts (DoS guard — T-09-06; a full clip needs ≤ n²/2, the old n*3
+ * tripped on any 50-point ring): if exceeded, falls back to a simple fan from the first vertex
+ * (degenerate recovery, not correct for non-convex polygons but avoids hanging).
+ *
+ * @param {Array<{x:number,z:number}>} polygon — simple polygon vertices (CW or CCW)
  * @returns {number[]} Flat triangle index array (indices into the original polygon)
  *
  * Pure function — no imports.
@@ -223,6 +229,10 @@ export function earClip(polygon) {
     // Mutable index list — idx[i] = original polygon vertex index for working slot i.
     const idx = Array.from({ length: n }, (_, i) => i)
     const tris = []
+    // Orientation: +1 for the CCW convention the ear test is written in, −1 for a CW polygon.
+    let area2 = 0
+    for (let i = 0; i < n; i++) { const a = polygon[i], b = polygon[(i + 1) % n]; area2 += (b.x - a.x) * (b.z + a.z) }
+    const orient = area2 < 0 ? 1 : -1
 
     // 2D point-in-triangle test (sign-of-cross-product for each edge).
     const pointInTriangle = (ax, az, bx, bz, cx, cz, px, pz) => {
@@ -243,8 +253,8 @@ export function earClip(polygon) {
         const ax = polygon[pi].x, az = polygon[pi].z
         const bx = polygon[ci].x, bz = polygon[ci].z
         const cx = polygon[ni].x, cz = polygon[ni].z
-        // Must be CCW (positive cross) to be a convex/ear vertex.
-        const cross = (bx - ax) * (cz - bz) - (bz - az) * (cx - bx)
+        // Must turn the polygon's own way (convex) to be an ear vertex.
+        const cross = orient * ((bx - ax) * (cz - bz) - (bz - az) * (cx - bx))
         if (cross <= 0) return false
         // No other polygon vertex may lie strictly inside the ear triangle.
         for (let j = 0; j < m; j++) {
@@ -259,7 +269,7 @@ export function earClip(polygon) {
 
     // DoS guard (T-09-06): bound total ear-find scan iterations.
     let attempts = 0
-    const maxAttempts = n * 3
+    const maxAttempts = n * n
 
     while (idx.length > 3 && attempts < maxAttempts) {
         let clipped = false
