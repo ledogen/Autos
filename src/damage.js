@@ -655,13 +655,21 @@ export class DamageModel {
   adjust (id, delta) { this.set(id, this.get(id) + delta) }
 
   /**
-   * Set every track at once (damage-disable lock, new run). Full condition also puts the air back in the tires: a puncture is STATE rather
-   * than a condition value, so restoring conditions alone would leave a flat tire flat — which
-   * makes the debug panel's "Restore All" quietly untrue.
+   * Set every track at once (damage-disable lock, new run, free-roam respawn). Full condition also
+   * puts the air back in the tires and straightens the wheels: a puncture and a bend are STATE
+   * rather than condition values, so restoring conditions alone would leave a flat tire flat and a
+   * bent wheel pulling — which makes the debug panel's "Restore All" quietly untrue.
    */
   setAll (v) {
     for (const id of TRACK_IDS) this.set(id, v)
-    if (v >= 1) for (let i = 0; i < 4; i++) this.flat[i] = false
+    if (v >= 1) {
+      for (let i = 0; i < 4; i++) this.flat[i] = false
+      // Full condition also straightens the wheels: the alignment TRACKS are only a readout of the
+      // two offset arrays, and those are what alignment.js steers by (BUG-79). Without this a free-
+      // roam respawn reported "Alignment 100 %" and kept pulling (owner, 2026-10-04).
+      this.toeOffsetDeg.fill(0)
+      this.camberOffsetDeg.fill(0)
+    }
   }
 
   /**
