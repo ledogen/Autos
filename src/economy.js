@@ -421,7 +421,6 @@ export class EconomySystem {
         return paid
     }
 
-    money () { return runEconomy.money }
     points () { return runEconomy.halfPoints / 2 }
     missionCount () { return runEconomy.missions }
 

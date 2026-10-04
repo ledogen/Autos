@@ -24,7 +24,7 @@
 // MOM'S HOUSE IS NOT A CAMP (FEAT-60, owner 2026-08-05). It is a POI — a sited building on a
 // lay-by, one per region, placed by the roster in poi.js and wearing a trailer model. All this
 // module does for it is lend it the sleep path, because a bed is a bed and there was no reason to
-// write sleeping twice. So: `momsHouse()` reports where the roster put her (handed in to build(),
+// write sleeping twice. So: `_moms` holds where the roster put her (handed in to build(),
 // never derived here), `atMoms()` gates her doorstep, and nothing about camping's zone permission,
 // road tether, pad digging or vibe grading applies to the place. FEAT-45 originally pinned her to
 // the region centre as a stand-in, which is how the world briefly had two mom's houses several
@@ -52,7 +52,6 @@ export const CAMP_PARAMS = {
     // ── The site (Phase D) ────────────────────────────────────────────────────────────────────
     campPadHalfM:    3,     // m — half-extent of the camp bench: a 6 m pad, RATIFIED
     campPadGapM:     0.6,   // m — gap from the shoulder edge to the pad's near side (poiPadGap's twin)
-    campGradeAreaM:  6,     // m — the square the site is graded over (flatness)
     campShadeR:      10,    // m — tree-count reach for the shade score (owner, 2026-07-30: shade
                             // reads a wider ring than flatness — a pine 8 m off still shades the pad)
     campMaxUnevenM:  0.9,   // m — spread at/above which the flatness SCORE bottoms out at zero.
@@ -750,9 +749,6 @@ export class CampSystem {
         return this._camps
     }
 
-    /** Mom's house — {x,z} at the region centre — or null outside a live story region. */
-    momsHouse () { return this._moms }
-
     /** Is (x,z) close enough to mom's house to knock? */
     atMoms (x, z) {
         const m = this._moms
@@ -820,7 +816,6 @@ export class CampSystem {
         f.add(CAMP_PARAMS, 'campWaterR', 5, 120, 5).name('water reach (m)')
         f.add(CAMP_PARAMS, 'campWaterBestM', 1, 30, 1).name('water full credit (m)')
         f.add(CAMP_PARAMS, 'campRoadEdgeM', 5, 80, 1).name('road tether (m)')
-        f.add(CAMP_PARAMS, 'campGradeAreaM', 3, 20, 1).name('grade area (m)')
         f.add(CAMP_PARAMS, 'campShadeR', 3, 30, 1).name('shade reach (m)')
         f.add(CAMP_PARAMS, 'campPadHalfM', 1, 8, 0.5).name('pad half (m)')
         f.add(CAMP_PARAMS, 'campPadGapM', 0, 3, 0.1).name('pad gap (m)')

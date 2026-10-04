@@ -207,7 +207,6 @@ export class LabSystem {
         this._active = false
 
         this._prev = null            // previous car XZ, for gate-crossing tests
-        this._runs = []              // finished results, newest first
         this.best = new Map()        // track name → best result
 
         // Live run state
@@ -470,8 +469,6 @@ export class LabSystem {
      */
     spawnPose() { return { x: STAGE_X0 - 14, z: STRIP_Z, heading: -Math.PI / 2 } }
 
-    results() { return this._runs }
-
     // ── per-frame ───────────────────────────────────────────────────────────────────────────
     /**
      * Cheap: one segment-crossing test per gate. Called from the fixed step with sim dt.
@@ -622,11 +619,9 @@ export class LabSystem {
     }
 
     _finish(track, value, { unit = 's', detail = '', derived = null, mu = null } = {}) {
-        const rec = { track, value, unit, detail, derived, mu, at: this._runs.length }
-        this._runs.unshift(rec)
-        if (this._runs.length > 12) this._runs.pop()
+        const rec = { track, value, unit, detail, derived, mu }
         // Best = lowest for times AND for braking distance (both are "less is better"). A worse
-        // run never overwrites the best row — it lands in results() history only.
+        // run never overwrites the best row — it shows only in the status line.
         const prev = this.best.get(track)
         rec.newBest = !prev || value < prev.value
         if (rec.newBest) this.best.set(track, rec)

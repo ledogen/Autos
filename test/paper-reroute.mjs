@@ -303,7 +303,7 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
     let mapOpen = null
     const sys = new PaperRouteSystem({
         getRoad: () => road, getPois: () => poi, getRegion: () => region,
-        getCar: () => car, getTerms: () => ({ dayTier: 1 }),
+        getCar: () => car, getTerms: () => ({ payTier: 1 }),
         getTargetR: () => POI_PARAMS.poiHouseTargetR,
         onSettle: () => ({ payout: 0, points: 0 }),
         onBriefing: (done) => done(),

@@ -1027,7 +1027,7 @@ export class PaperRouteSystem {
             stock:    stockForTier(),
             inFlight: 0,
             elapsed:  0,
-            payTier:  terms.payTier ?? terms.dayTier ?? 1,   // dayTier fallback: pre-region callers
+            payTier:  terms.payTier ?? 1,
             // Frozen WITH the day tier, for the same reason (FEAT-53): the rank ramp is part of the
             // deal you accepted. Now that the letter IS the par ratio, a route straddling midnight
             // would otherwise be graded on tomorrow's tighter thresholds.
