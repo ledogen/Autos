@@ -1581,7 +1581,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
-const { carGroup, syncMeshesToState, setBodyColor, applyWheelRunout, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
+const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -2349,8 +2349,6 @@ const _gui = initDebug(RANGER_PARAMS, {
     const v = vehicleState.velocity
     debrisSystem.spawn('rock', { x: p.x, y: p.y, z: p.z }, { x: v.x, y: v.y, z: v.z })
   },
-  // SM-3: re-bake the out-of-round tire carcass so the mesh matches the new contact radius.
-  onWheelRunoutChange: (v) => applyWheelRunout(v),
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),

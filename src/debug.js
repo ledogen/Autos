@@ -224,10 +224,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const tiresFolder = vehicleFolder.addFolder('Tires')
   tiresFolder.add(params, 'tireStiffness', 100000, 300000, 5000).name('Tire Stiffness (N/m)')
   tiresFolder.add(params, 'tireDamping', 200, 4000, 100).name('Tire Damping (N·s/m)')
-  // Out-of-round tire; 0 = perfectly round. The callback re-bakes the tire MESH so the visible
-  // egg matches the contact radius the physics is using (see vehicle-model.js applyWheelRunout).
+  // Out-of-round tire; 0 = perfectly round. No callback: vehicle-model.js refreshWheelRunout
+  // re-bakes the tire MESH on the next frame, so the visible egg matches the contact radius the
+  // physics is using.
   tiresFolder.add(params, 'wheelRunout', 0, 0.05, 0.001).name('Runout p-p (m)')
-    .onChange((v) => callbacks.onWheelRunoutChange?.(v))
 
   // ── Alignment ───────────────────────────────────────────────────────────────────
   // Static toe and camber, in DEGREES, mirrored per side by src/alignment.js.
