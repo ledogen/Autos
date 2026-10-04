@@ -125,10 +125,11 @@ all `src/` modules is `.planning/research/LAYOUT.md`.
 
 | Seam | Rule |
 |------|------|
-| `src/physics-engine.js` | THE adapter — the ONLY module importing the Box3D engine (`vendor/box3d/`). Imports nothing else. |
-| `src/tire.js`, `src/suspension.js` | Pure math, no engine types. `suspension.js` may import `tire.js`; neither touches `physics-engine.js`. |
+| `src/physics-engine.js` | THE adapter — the ONLY module importing the Box3D engine (`vendor/box3d/`). Imports nothing else. Exports the `PhysicsEngine` class, `createPhysicsEngine()` and the `GROUP_*` collision-group constants — plain handles, vectors and bigints, never an engine type. |
+| `src/tire.js`, `src/suspension.js` | Pure math, no engine types, no Three.js. Neither imports the other nor `physics-engine.js`. |
 | `src/physics.js` | The only consumer that combines tire/suspension forces with engine bodies (`tire.js` + `suspension.js` + `physics-engine.js`). |
-| `src/terrain-physics.js` | Heightfield colliders via `physics-engine.js` only (MESH == PHYSICS mirror). |
+| `src/terrain-physics.js` | Heightfield + road-trimesh + prop colliders through an engine instance it is HANDED (constructor argument) — MESH == PHYSICS mirror. Imports nothing from the stack. |
+| World owners (`src/main.js`, `src/stage.js`) | May import `createPhysicsEngine` / `GROUP_*` from the adapter to create a world and build its colliders; `src/debris.js` imports `GROUP_DEBRIS` for its bodies' filter. That is the whole allowed surface: names, never engine types. |
 | Everything else | Consumes opaque handles / vehicle state; never imports engine types or reaches around `physics.js` into the stack. |
 
 ## Conventions
