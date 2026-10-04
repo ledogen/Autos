@@ -15,6 +15,13 @@
  *
  * Both are expressed per-side: the same sheet value produces mirrored geometry left vs right,
  * which is what makes toe-in cancel in a straight line instead of steering the truck.
+ *
+ * BUG-79: impact damage (src/damage.js _bendWheel) bends one wheel at a time and publishes
+ * params._toeOffsetDeg[corner] / _camberOffsetDeg[corner]. Those are added to the sheet value
+ * BEFORE the left/right mirror, so they read in the same alignment-sheet convention as the sheet
+ * (+toe = that wheel toes IN, −camber = its top leans inboard) — which is how the damage screen
+ * prints them ("toe +0.3°", "cam −1.5°"). damage.js draws them symmetric ±, so no physical bias
+ * hangs on the choice; only the readout's meaning does. Absent arrays add 0 — byte-identical.
  */
 
 const DEG = Math.PI / 180
@@ -31,11 +38,12 @@ const isFront = (corner) => corner < 2
  * on the RIGHT wheel it points the nose left = positive. Hence the mirrored sign.
  *
  * @param {number} corner - 0-3 (FL, FR, RL, RR).
- * @param {object} params - uses toeFront, toeRear (degrees, + = toe-in).
+ * @param {object} params - uses toeFront, toeRear (degrees, + = toe-in), + _toeOffsetDeg[corner] (damage).
  * @returns {number} radians, signed for this corner.
  */
 export function toeOffset (corner, params) {
-  const toeDeg = isFront(corner) ? (params.toeFront || 0) : (params.toeRear || 0)
+  const toeDeg = (isFront(corner) ? (params.toeFront || 0) : (params.toeRear || 0))
+               + (params._toeOffsetDeg?.[corner] ?? 0)
   if (toeDeg === 0) return 0
   return (isLeft(corner) ? -toeDeg : toeDeg) * DEG
 }
@@ -48,11 +56,12 @@ export function toeOffset (corner, params) {
  * the right wheel toward −X (negative lean) — that mirroring is the whole sign expression here.
  *
  * @param {number} corner - 0-3 (FL, FR, RL, RR).
- * @param {object} params - uses camberFront, camberRear (degrees, − = top leans inboard).
+ * @param {object} params - uses camberFront, camberRear (degrees, − = top leans inboard), + _camberOffsetDeg[corner].
  * @returns {number} radians, signed for this corner about its forward axis.
  */
 export function camberLean (corner, params) {
-  const camDeg = isFront(corner) ? (params.camberFront || 0) : (params.camberRear || 0)
+  const camDeg = (isFront(corner) ? (params.camberFront || 0) : (params.camberRear || 0))
+               + (params._camberOffsetDeg?.[corner] ?? 0)
   if (camDeg === 0) return 0
   return (isLeft(corner) ? -camDeg : camDeg) * DEG
 }
