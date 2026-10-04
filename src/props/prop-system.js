@@ -214,9 +214,9 @@ export class PropSystem {
       // was the stream-in hitch: 8 tiles/frame × the full population through the vertex stage.
       if (!this._bakeScene) this._buildBakeScene()
       bake.setTileSource((cx, cz) => this._fillBakeScene(cx, cz))
-      for (const ck of this._chunks.keys()) {
+      for (const [ck, chunk] of this._chunks) {
         const comma = ck.indexOf(',')
-        bake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
+        this._markShadowTiles(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10), chunk.mode !== 'bbonly')
       }
     }
   }
@@ -555,18 +555,29 @@ export class PropSystem {
     // (2026-10-02): a ring-edge tile baked before its outer neighbour had scattered was short ~4,000
     // texels (≈250 m² of shadow) until that neighbour was promoted. So a bbonly commit re-queues the
     // drawn neighbours it touches.
-    if (this._shadowBake) {
-      if (chunk.mode !== 'bbonly') this._shadowBake.markWithNeighbors(cx, cz)
-      else {
-        const keys = []
-        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-          if (!dx && !dz) continue
-          const nk = (cx + dx) + ',' + (cz + dz), nb = this._chunks.get(nk)
-          if (nb && nb.mode !== 'bbonly') keys.push(nk)
-        }
-        if (keys.length) this._shadowBake.markAll(keys)
-      }
+    this._markShadowTiles(cx, cz, chunk.mode !== 'bbonly')
+  }
+
+  /**
+   * PERF-07: queue chunk (cx,cz)'s own shadow tile (at the FRONT, when `own`) plus its DRAWN live
+   * neighbours' tiles. Every prop-change mark routes through here instead of the bake system's
+   * markWithNeighbors, which also queued bbonly ring-edge neighbours — tiles nothing looks at up
+   * close (measured 2026-10-04, seed 3219501713: 24 of 59 spawn bakes, ~40 % of a 20 s drive's bake
+   * CPU ms). Skipped neighbours are never lost: a bbonly one is marked on promotion (_syncChunkLod),
+   * and an ABSENT one marks itself when it commits drawn (_commitChunk) — baking it earlier would
+   * stamp a tile that is re-baked on arrival anyway (or, if it arrives bbonly, never wanted).
+   */
+  _markShadowTiles(cx, cz, own) {
+    const bake = this._shadowBake
+    if (!bake || !bake.enabled) return
+    if (own) bake._mark(cx, cz, true)
+    const keys = []
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dz) continue
+      const nk = (cx + dx) + ',' + (cz + dz), nb = this._chunks.get(nk)
+      if (nb && nb.mode !== 'bbonly') keys.push(nk)
     }
+    if (keys.length) bake.markAll(keys)
   }
 
   /** The deferred litter of a promoted chunk: append its records and place only those. */
@@ -585,7 +596,7 @@ export class PropSystem {
       this._physicsHook?.syncChunk(ck, collidables)
     }
     const comma = ck.indexOf(',')
-    if (this._shadowBake && chunk.mode !== 'bbonly') this._shadowBake.markWithNeighbors(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10))
+    if (chunk.mode !== 'bbonly') this._markShadowTiles(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10), true)
   }
 
   /**
@@ -723,7 +734,7 @@ export class PropSystem {
       // Promotion out of the billboard-only ring: the chunk skipped its shadow bake at commit —
       // bake now that its ground shadows are within the visible/fade range. (Demotion needs no
       // mark: the trees haven't moved, the already-baked tile stays valid.)
-      if (promoted && this._shadowBake) this._shadowBake.markWithNeighbors(cx, cz)
+      if (promoted) this._markShadowTiles(cx, cz, true)
       // Promoted without its litter (scattered in the bbonly ring): queue the litter-only job,
       // time-sliced like a scatter. Keyed ck#L in _scatterSet so a full scatter can't collide.
       if (promoted && !chunk.litter && !this._scatterSet.has(ck + '#L')) {
@@ -751,7 +762,7 @@ export class PropSystem {
     // PERF-07: this chunk's props are gone → re-bake still-live neighbours so their tiles drop the
     // departed silhouettes (a neighbour still in-ring re-bakes without them; its own tile is reused
     // by whichever chunk lands on the toroidal slot next). Billboard-only chunks never baked.
-    if (this._shadowBake && !wasBBOnly) this._shadowBake.markWithNeighbors(cx, cz)
+    if (!wasBBOnly) this._markShadowTiles(cx, cz, true)
   }
 
   /** Live (committed) prop chunks — the size of one whole-ring intrusion pass. */
