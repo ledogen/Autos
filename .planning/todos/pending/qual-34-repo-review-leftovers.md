@@ -119,8 +119,8 @@ Tests / tooling / docs
 - ~~`GLOSSARY.md`, `LAYOUT.md`, `index.html` comments.~~ DONE.
   The `CLAUDE.md` import-seam table — DONE 2026-10-04 (owner: update to match the code; commit
   c7243bb).
-- ~~Dashboard should listen on 127.0.0.1 only.~~ DONE (if you reach `npm run dash` from another
-  machine, that now needs an SSH tunnel).
+- Dashboard should listen on 127.0.0.1 only — REVERTED at merge (2026-10-04): the owner reaches
+  `npm run dash` from another machine. Stays open as a conscious choice, not an omission.
 
 Road code (docs only)
 - ~~`road.js`: assembly tail, `_junctionCarve` doc, `_generation` vs `_networkRev` cache docs,
