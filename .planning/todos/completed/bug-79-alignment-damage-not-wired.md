@@ -1,7 +1,7 @@
 ---
 id: BUG-79
 type: bug
-status: pending
+status: completed
 severity: minor
 opened: 2026-10-02
 relates: SM-3 (the damage model), QUAL-34 item A3 (where this was found)
@@ -38,3 +38,19 @@ NOT go through the left/right mirroring the sheet values do — add them after t
 - In game: after an impact that the damage screen shows as a bent wheel, the truck pulls to one
   side and the steering wheel has to hold against it.
 - `test/tire-mu-wiring.mjs`-style gate pinning that the offsets reach `toeOffset` / `camberLean`.
+
+## Resolution (2026-10-04)
+
+Wired in `src/alignment.js`: `toeOffset` / `camberLean` add `params._toeOffsetDeg?.[corner] ?? 0` /
+`params._camberOffsetDeg?.[corner] ?? 0` to the sheet value, in degrees, before the one radian
+conversion. Absent arrays add 0, so headless gates and damage-off are byte-identical.
+
+Sign: added BEFORE the left/right mirror, not after as the Fix section proposed. damage.js draws
+the offsets symmetric ± (no physical meaning in the model itself); the only place the sign means
+anything is the damage screen, which prints them as an alignment sheet does ("toe +0.3°",
+"cam −1.5°"). Pre-mirror makes that readout true: + toe = that wheel toes in, − camber = its top
+leans inboard. Post-mirror would make "+toe" toe-in on the right wheels and toe-out on the left.
+
+Gate: `test/alignment-damage-wiring.mjs` (physics, fast). FL toe bent by alignMaxToeDeg (0.5°),
+15 m/s, no steer, 100 m: −8.16° heading (right-hand pull); undamaged: 0.0000°. Fails on the
+pre-fix code (0.00° both runs).
