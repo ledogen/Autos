@@ -15,7 +15,7 @@ import { makeBlob, makeKinkedTube, makeConeStack } from '../src/props/prop-geome
 import { buildPalette } from '../src/props/prop-palette.js'
 import { scatterChunk, scatterChunkGen, scatterLitterGen } from '../src/props/prop-scatter.js'
 import { PropSystem } from '../src/props/prop-system.js'
-import { sphereVsSphere, sphereVsCapsuleY, sphereVsCapsule, bushDrag } from '../src/props/prop-collider.js'
+import { sphereVsSphere, sphereVsCapsule, bushDrag } from '../src/props/prop-collider.js'
 import { FLORA_PARAMS } from '../data/flora.js'
 import { mulberry32 } from '../src/seed.js'
 
@@ -116,9 +116,9 @@ console.log('5. collision math + PropSystem queries (FEAT-06b)')
 {
   ok(sphereVsSphere(0, 0, 0, 1, 1.5, 0, 0, 1).depth > 0, 'sphere/sphere overlap → contact')
   ok(sphereVsSphere(0, 0, 0, 1, 5, 0, 0, 1) === null, 'sphere/sphere apart → no contact')
-  const cap = sphereVsCapsuleY(0.5, 2, 0, 0.4, 0, 0, 0, 5, 0.3)
+  const cap = sphereVsCapsule(0.5, 2, 0, 0.4, 0, 0, 0, 0, 5, 0, 0.3)   // vertical trunk 0..5 m
   ok(cap && cap.depth > 0 && Math.abs(cap.ny) < 1e-9, 'sphere/capsule side hit → horizontal normal')
-  ok(sphereVsCapsuleY(3, 2, 0, 0.4, 0, 0, 0, 5, 0.3) === null, 'sphere far from capsule → no contact')
+  ok(sphereVsCapsule(3, 2, 0, 0.4, 0, 0, 0, 0, 5, 0, 0.3) === null, 'sphere far from capsule → no contact')
   const drag = bushDrag(0, 0, 0, 10, 0, 0, 0, 0, 0, 1, 1, 45, 200)
   ok(drag && drag.x < 0, 'bush drag opposes velocity')
   ok(Math.hypot(drag.x, drag.y, drag.z) <= 200 + 1e-6, 'bush drag capped at fMax')

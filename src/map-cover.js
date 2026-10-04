@@ -9,7 +9,7 @@
  * ── Why a replay and not the predicates ──────────────────────────────────────────────────────
  * The obvious cheap read is "evaluate the scatter's rejection tests on a grid" — slope >
  * slopeRejectMax, in a pond, in a stream channel. That produces an almost uniformly green sheet,
- * because slopeRejectMax is 0.75: a cliff. The variation you actually see standing in the world
+ * because slopeRejectMax is 0.38 (data/flora.js) — ~21°, steep ground the region rarely shows. The variation you actually see standing in the world
  * comes from CLUSTERING — clustersPerChunk (4) centres per 64 m chunk, each dropping
  * treesPerCluster (4–11) trees inside clusterRadius (18 m). Four 18 m discs cover ~4070 m² of a
  * 4096 m² chunk, so with overlap they leave real gaps. Those gaps are the open ground, and only a
@@ -28,7 +28,7 @@
  *
  * The slope swap is sound by measurement, not by hope: fineAmplitude is 0.5 m at a 20 m
  * wavelength against coarseAmplitude 150 m, so the detail octave contributes ~2.5% slope. Against
- * a 0.75 reject threshold that is far inside the noise floor. The coarse field is also the one the
+ * a 0.38 reject threshold that is far inside the noise floor. The coarse field is also the one the
  * map's contours are already drawn from, so the green agrees with the lines it sits under.
  *
  * ROAD EXCLUSION is dropped on purpose: it is a 9 m corridor, and the map paints a 2.2 px black

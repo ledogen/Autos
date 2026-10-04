@@ -2,9 +2,9 @@
  * src/props/prop-collider.js — Pure analytic collision math for FEAT-06b prop collisions.
  *
  * Plain numbers, no THREE, no state — so it's trivially headless-testable and cheap on the hot
- * physics path. The PropSystem spatial index (prop-system.js) calls these for each nearby prop;
- * main.js later threads the returned contacts into queryContacts (the ~10-line splice deferred
- * until the road/terrain contact work settles).
+ * physics path. PropSystem.queryProps (prop-system.js) calls these for each nearby prop, and
+ * main.js splices the returned contacts into queryContacts (propHits). The engine-side mirror of
+ * the same hard props is terrain-physics.js PropPhysics.
  *
  * Contact convention matches main.js queryContacts: normal points OUT of the solid toward the
  * query sphere; `depth` is penetration depth (> 0).
@@ -115,22 +115,12 @@ export function sphereVsMeshInstance(cx, cy, cz, r, tris, ox, oy, oz, rotY, scal
 }
 
 /**
- * Sphere vs vertical capsule — segment at (capX, capZ) from baseY..topY, radius capR. Used for tree
- * trunks (canopy is non-colliding). Closest point on the segment to the sphere centre, then a
- * sphere-vs-sphere test there.
- * @returns {{nx:number,ny:number,nz:number,depth:number}|null}
- */
-export function sphereVsCapsuleY(cx, cy, cz, r, capX, capZ, baseY, topY, capR) {
-  const py = Math.max(baseY, Math.min(topY, cy))   // closest point on the vertical segment
-  return sphereVsSphere(cx, cy, cz, r, capX, py, capZ, capR)
-}
-
-/**
  * FEAT-15: sphere vs GENERAL capsule — swept sphere of radius capR along the arbitrary world
- * segment A(ax,ay,az)–B(bx,by,bz). Fallen logs lie at any heading/pitch, which the vertical-only
- * capsule above can't represent. Closest point on the segment (clamped projection), then the
- * same sphere-vs-sphere test there — so wheels contact a log from the side, the top, or an end
- * cap with a correct outward normal.
+ * segment A(ax,ay,az)–B(bx,by,bz). Used for fallen logs (any heading/pitch) AND standing trunks
+ * (their baked endpoints include the tree's lean — the old vertical-only capsule missed leaning
+ * trunks and is gone). Closest point on the segment (clamped projection), then the same
+ * sphere-vs-sphere test there — so a wheel contacts from the side, the top, or an end cap with a
+ * correct outward normal.
  * @returns {{nx:number,ny:number,nz:number,depth:number}|null}
  */
 export function sphereVsCapsule(cx, cy, cz, r, ax, ay, az, bx, by, bz, capR) {

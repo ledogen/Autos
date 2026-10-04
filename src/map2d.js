@@ -510,12 +510,6 @@ export class Map2D {
     setPlayNetworkSource(fn) { this._playNetSource = fn }
 
     /**
-     * Ensure the map streams at least `r` metres around the pan cursor. Used by story mode so the
-     * white network always extends past the blue route — without this the map looks like it is
-     * missing roads the mission "invented", when in fact it simply had not built that far.
-     * Only ever grows, and re-streams if the current pass already finished short of the new target.
-     */
-    /**
      * FEAT-43: raise the streaming cap above MAP_RADIUS_MAX. Story mode calls this so the map can
      * draw the network out to its region boundary — otherwise the outer ring of a 2.5 km region is
      * blank map inside a drawn wall, which reads as "the roads stop here" rather than "the map
@@ -544,6 +538,12 @@ export class Map2D {
         if (had > MAP_RADIUS && this._open) this._startStream()
     }
 
+    /**
+     * Ensure the map streams at least `r` metres around the pan cursor. Used by story mode so the
+     * network always extends past the blue route — without this the map looks like it is
+     * missing roads the mission "invented", when in fact it simply had not built that far.
+     * Only ever grows, and re-streams if the current pass already finished short of the new target.
+     */
     setRadiusTarget(r) {
         const want = Math.max(MAP_RADIUS, Math.min(this._radiusCap ?? MAP_RADIUS_MAX, r))
         if (want <= this._radiusTarget) return
@@ -1925,9 +1925,6 @@ export class Map2D {
 
     // A run's polyline minus its bored stretches — i.e. the parts that are actually on the surface.
     // Returns the whole polyline untouched when the run carries no tunnel.
-    // BUG-55 phase 5: minus its CEDED stretches too — those vertices are the winner's polyline
-    // verbatim, and both runs stroking them doubled the ink on every shared road. The loser still
-    // draws when the owner is absent from this window (the surface resolver's absent-winner rule).
     _surfaceSlices(e) {
         const { points, polyCum: cum, tunnelSpans } = e
         // QUAL-30: the ceded-span subtraction is gone with cededSpans itself. It existed because a
