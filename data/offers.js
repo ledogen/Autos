@@ -125,17 +125,18 @@ export const SOURCES = {
 // that lets the market pull the player between careers. Pay = the ordinary par line × pieces ×
 // HAUL_PAY_PER_BUNDLE, then × (pieces aboard at delivery ÷ pieces in the offer) at settle.
 
-/** [min, max] firewood bundles per offer, inclusive. Owner's starting range — "see how it feels". */
-export const HAUL_BUNDLES = [7, 12]
+/** [min, max] firewood bundles per offer, inclusive. Owner, 2026-10-05 (was 7–12 on the first drive). */
+export const HAUL_BUNDLES = [10, 15]
 
 /** kg per bundle. A real shrink-wrapped bundle is ~0.75 ft³, 10–12 kg (src/debris.js bundleA..C). */
 export const HAUL_BUNDLE_KG = 11
 
 /**
- * Pay per bundle as a fraction of an ordinary delivery over the same route. 1/8: an 8-bundle load
- * pays what a delivery would, 12 bundles pay 1.5×. PLACEHOLDER — tune on a drive, not from one run.
+ * Pay per bundle as a fraction of an ordinary delivery over the same route. 1/10: a 10-bundle load
+ * pays what a delivery would, 15 bundles pay 1.5× — the same 1×–1.5× spread the first 7–12 range had
+ * at 1/8 (re-weighted with the range, owner 2026-10-05). PLACEHOLDER — tune on a drive.
  */
-export const HAUL_PAY_PER_BUNDLE = 1 / 8
+export const HAUL_PAY_PER_BUNDLE = 1 / 10
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
 export const EXPIRY_NOISE = 0.3

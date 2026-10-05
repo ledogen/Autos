@@ -1,15 +1,17 @@
 // GATE: the FEAT-88 haul load — firewood bundles drop into the bed, stay there, and stay out of the
 // wear model and the debris cap.
 //
-// The load is what the game spawns: bedDropPoints() places the pieces (body-local, seeded), each is
-// dropped HAUL_DROP_H above the floor on a HAUL_DROP_GAP stagger exactly like main.js's _haulStep,
+// The load is what the game spawns: bedDropPoints() lays the pieces out on the yard's bed-sized drop
+// zone (seeded), each dropped HAUL_DROP_Y above the pad on a HAUL_DROP_GAP stagger exactly like
+// main.js's _haulStep — at FIXED points, so a truck parked off the zone catches less,
 // and "aboard" is inBedWell() — the same test settle pays on. Each bundle is the convex hull of its
 // own shipped GLB (variants A/B/C, as debris.js builds it) at its real 11 kg.
 //
 // Checks:
 //   (a) DETERMINISM — the same key gives the same drop points, spins and variants; another key does not.
-//   (b) LOADING — 7 and 12 bundles dropped on a parked truck all land in the well.
-//   (c) RIDE — the 12-bundle load stays aboard through a launch to 60 km/h and a hard stop.
+//   (b) LOADING — 10 and 15 bundles dropped on a truck parked squarely over the zone all land in
+//       the well; one parked a metre off catches measurably less (parking is the skill).
+//   (c) RIDE — the full load stays aboard through a launch to 60 km/h and a hard stop.
 //   (d) WEAR — with the bundles flagged noDamage the chassis contact readout ignores them; unflagged,
 //       the same load registers (so the gate can see the filter).
 //   (e) CAP — reclaiming past DEBRIS_CAP never takes a pinned body, and pinned bodies do not count.
@@ -31,7 +33,7 @@ import { DebrisSystem, DEBRIS_TYPES, DEBRIS_CAP, bedDropPoints, inBedWell, bboxC
 
 const DT = 1 / 60
 const BED = DEFAULT_VEHICLE_MODEL.bed
-const DROP_H = 2.6, DROP_GAP = 0.3          // main.js HAUL_DROP_H / HAUL_DROP_GAP
+const DROP_Y = 3.3, DROP_GAP = 0.3          // main.js HAUL_DROP_Y (above the pad) / HAUL_DROP_GAP
 
 /** A GLB's vertices centred on their bbox — the hull debris.js builds (same reader as cargo-bed). */
 function glbHull (url) {
@@ -90,17 +92,22 @@ async function truck () {
   return t
 }
 
-/** Drop `n` bundles the way _haulStep does, then let them settle. */
-function load (t, n, key, { noDamage = true } = {}) {
+/**
+ * Drop `n` bundles the way _haulStep does, then let them settle. The zone is laid where a squarely
+ * parked bed would be (the truck's own frame); `off` slides the zone sideways by that many metres —
+ * the same as parking that far off it.
+ */
+function load (t, n, key, { noDamage = true, off = 0 } = {}) {
   const drops = bedDropPoints(n, BED, key)
   const v = new THREE.Vector3(), q = new THREE.Quaternion(), qd = new THREE.Quaternion()
   t.vs.throttle = 0; t.vs.brake = 0; t.vs.handbrake = true   // parked: the latch holds the handbrake
   for (let s = 0, i = 0; s < Math.round(((n - 1) * DROP_GAP + 3) / DT); s++) {
     while (i < n && s * DT >= i * DROP_GAP) {
       const d = drops[i++]
-      v.set(d.x, d.y, d.z).applyQuaternion(t.vs.quaternion).add(t.vs.position)
+      v.set(d.x + off, 0, d.z).applyQuaternion(t.vs.quaternion).add(t.vs.position)
+      v.y = DROP_Y                                 // above the pad (the ground plane is y = 0)
       q.copy(t.vs.quaternion).multiply(qd.set(d.quaternion.x, d.quaternion.y, d.quaternion.z, d.quaternion.w))
-      const body = t.engine.createBody({ type: 'dynamic', position: { x: v.x, y: v.y + DROP_H, z: v.z },
+      const body = t.engine.createBody({ type: 'dynamic', position: { x: v.x, y: v.y, z: v.z },
         quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, linearVelocity: { x: 0, y: -1.2, z: 0 },
         angularVelocity: d.spin, userData: { kind: 'debris', noDamage } })
       // Density by debris.js's own probe, so each variant weighs exactly its massKg on its own hull.
@@ -160,11 +167,18 @@ for (const n of HAUL_BUNDLES) {
   const t = await truck()
   load(t, n, `haul:6:gate:${n}`)
   const a = aboard(t)
-  ok(a === n, `${n} bundles dropped, ${a} in the bed`)
+  ok(a === n, `parked squarely: ${n} bundles dropped, ${a} in the bed`)
+  t.engine.dispose()
+}
+{
+  const n = HAUL_BUNDLES[1], t = await truck()
+  load(t, n, `haul:6:gate:${n}`, { off: 1.0 })
+  const a = aboard(t)
+  ok(a < n * 0.8, `parked a metre off the zone: ${a} of ${n} in the bed`)
   t.engine.dispose()
 }
 
-console.log('(c) the 12-bundle load rides:')
+console.log('(c) the full load rides:')
 {
   const t = await truck()
   const n = HAUL_BUNDLES[1]

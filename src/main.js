@@ -67,7 +67,7 @@ import { MissionSystem } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, inLoadingBay } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { OfferBoard, formatGameDuration, gateText } from './offer-board.js'   // FEAT-67: the mission board
@@ -2634,6 +2634,7 @@ const _customerRings = new Map()
 function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
+  _dropMarks.clear()
   _customerRings.clear()
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
@@ -2657,6 +2658,8 @@ function _rebuildPoiMarkers () {
     // The ring means "park here and something happens", so it belongs only to markers where
     // something does. The services are unbuilt and mom's house has her own doorstep prompt.
     if (!q.jobs) continue
+    // FEAT-88: a haul giver's "park here" is its drop zone, not a ring round the pad.
+    if (q.drop) { _addDropMark(q); continue }
     const ring = new THREE.Mesh(_ringGeo, _poiRingMat)
     ring.scale.set(r, _POI_RING_H, r)
     ring.position.set(q.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, q.z)
@@ -2763,9 +2766,9 @@ function _updateMissionRings () {
   // be the opposite of the fix.
   // FEAT-61: a paper route counts as being on a job for exactly the same reason — every orange
   // curtain you pass mid-round is an invitation to do something the game will refuse.
-  _updateBayCurtain()
   const onMission = ['loading', 'staging', 'running', 'done'].includes(missionSystem?.state)
                     || paperRouteSystem.isActive()
+  _updateDropMarks(onMission)
   const vp = vehicleState.position
   for (const [id, ring] of _poiRings) {
     const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= POI_RING_SHOW_R
@@ -2784,18 +2787,21 @@ function _updateMissionRings () {
 }
 
 // ── FEAT-88: the haul load ─────────────────────────────────────────────────────────────────
-// A haul job goes 'loading' on accept (mission.js). Park inside the yard's loading bay and the load
-// drops into the bed one piece at a time, like the title screen's rocks: each piece is a pinned
+// A haul giver has a DROP ZONE instead of an orange ring (owner, 2026-10-05): a bed-sized rectangle
+// on the ground (poi.js `drop`). Park with your bed over it and the yard's offers open; accept and
+// the job goes 'loading' (mission.js) and the load drops AT ONCE, one piece every HAUL_DROP_GAP,
+// at FIXED points over the rectangle — not over wherever your truck happens to be. Parking is the
+// skill: a bed half off the zone catches half a load, and a miss is lost pay. Each piece is a pinned
 // debris body (outside DEBRIS_CAP, so a thrown rock cannot delete it) that never feeds the wear
-// model. The drop points follow the truck, so a badly parked truck still gets its load overhead —
-// but a load landing on a slope or off the bay edge can still miss the bed, and a miss is lost pay.
-// The pieces are counted at arrival (onSettle above) and removed; cancel or leaving the job removes
-// them too (the 10 Hz poll).
-const HAUL_DROP_H   = 2.6   // m above the bed floor — the title screen's rock height: a thump, not a launch
+// model. The pieces are counted at arrival (onSettle above) and removed; cancel or leaving the job
+// removes them too (the 10 Hz poll).
+const HAUL_DROP_Y   = 3.3   // m above the pad: ~2.6 m over a Ranger's bed floor — the title screen's rock drop
 const HAUL_DROP_GAP = 0.3   // s between pieces, so the impacts never stack
 const HAUL_SETTLE_S = 1.0   // s after the last piece before the job stages — let it land first
-let _haul = null            // { mission, drops, handles, t0 } — the live load, or null
+const DROP_SLACK    = 0.6   // m — how far the bed centre may sit off the zone and still open the offers
+let _haul = null            // { mission, drops, handles, t0, zone } — the live load, or null
 const _haulV = new THREE.Vector3(), _haulQ = new THREE.Quaternion(), _haulQd = new THREE.Quaternion()
+const _UP = new THREE.Vector3(0, 1, 0)
 
 /** The loading POI of the job in hand, if it is loading. */
 function _haulPoi () {
@@ -2804,23 +2810,37 @@ function _haulPoi () {
   return poiSystem.list().find(q => q.id === id) ?? null
 }
 
-/** Fixed step, after stepPhysics: start the drop once parked in the bay, then release on the clock. */
+/** Is the truck's bed over POI `q`'s drop zone (within DROP_SLACK)? */
+function _bedOverDrop (q) {
+  const bed = DEFAULT_VEHICLE_MODEL.bed
+  if (!bed || !q?.drop) return false
+  _haulV.set(0, 0, (bed.frontZ + bed.tailZ) / 2).applyQuaternion(vehicleState.quaternion).add(vehicleState.position)
+  return overDropZone(q, _haulV.x, _haulV.z, DROP_SLACK)
+}
+
+/**
+ * Fixed step, after stepPhysics: release the load on the clock. The drop points are
+ * bedDropPoints' bed-shaped layout laid on the ZONE: its bed-local z (along the truck) runs along
+ * the zone's long axis, so one quaternion — the marker yaw plus a quarter turn — carries both the
+ * points and each piece's attitude into the world.
+ */
 function _haulStep () {
   if (missionSystem?.state !== 'loading') return
   const bed = DEFAULT_VEHICLE_MODEL.bed
   if (!_haul) {
-    const poi = _haulPoi(), p = vehicleState.position
-    if (!bed || !vehicleState.parked || !inLoadingBay(poi, p.x, p.z)) return
+    const zone = dropZoneWorld(_haulPoi())
+    if (!bed || !zone) return
     const mission = missionSystem.mission
-    _haul = { mission, handles: [], t0: simTime,
+    _haul = { mission, handles: [], t0: simTime, zone,
+              q: new THREE.Quaternion().setFromAxisAngle(_UP, zone.yaw + Math.PI / 2),
               drops: bedDropPoints(mission.bundles, bed, `haul:${worldSeed}:${mission.offerId}`) }
   }
-  const n = _haul.drops.length
+  const n = _haul.drops.length, mid = (bed.frontZ + bed.tailZ) / 2, z = _haul.zone
   while (_haul.handles.length < n && simTime >= _haul.t0 + _haul.handles.length * HAUL_DROP_GAP) {
     const d = _haul.drops[_haul.handles.length]
-    _haulV.set(d.x, d.y, d.z).applyQuaternion(vehicleState.quaternion).add(vehicleState.position)
-    _haulQ.copy(vehicleState.quaternion).multiply(_haulQd.set(d.quaternion.x, d.quaternion.y, d.quaternion.z, d.quaternion.w))
-    const h = debrisSystem.spawn(d.kind, { x: _haulV.x, y: _haulV.y + HAUL_DROP_H, z: _haulV.z },
+    _haulV.set(d.x, 0, d.z - mid).applyQuaternion(_haul.q)
+    _haulQ.copy(_haul.q).multiply(_haulQd.set(d.quaternion.x, d.quaternion.y, d.quaternion.z, d.quaternion.w))
+    const h = debrisSystem.spawn(d.kind, { x: z.x + _haulV.x, y: z.y + HAUL_DROP_Y, z: z.z + _haulV.z },
       { x: 0, y: -1.2, z: 0 },
       { spin: d.spin, quaternion: { x: _haulQ.x, y: _haulQ.y, z: _haulQ.z, w: _haulQ.w }, pinned: true, noDamage: true })
     if (!h) return          // the piece's model is still loading — try again next step
@@ -2851,30 +2871,34 @@ function _haulClear () {
   _haul = null
 }
 
-// The bay, drawn while you still have to find it: a low curtain round the rectangle, orange outside
-// and green once the truck is in it — the same two colours that already mean "park here" and "go".
-const _BAY_CURTAIN_H = 1.2, _BAY_CURTAIN_SINK = 0.4
-const _bayGeo = new THREE.CylinderGeometry(Math.SQRT1_2, Math.SQRT1_2, 1, 4, 1, true).rotateY(Math.PI / 4)  // unit square
-let _bayCurtain = null
-function _updateBayCurtain () {
-  const poi = _haul ? null : _haulPoi()
-  if (!poi?.bay) { if (_bayCurtain) _bayCurtain.visible = false; return }
-  if (!_bayCurtain) {
-    _bayCurtain = new THREE.Mesh(_bayGeo, _poiRingMat)
-    _bayCurtain.renderOrder = 5
-    _bayCurtain.frustumCulled = false
-    scene.add(_bayCurtain)
+// The drop zone, painted on the pad: orange, green while your bed is over it — the two colours
+// that already mean "park here" and "go". Flat and bed-sized on purpose: it shows exactly where the
+// wood lands, which a ring round the whole pad never could.
+const _dropGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)
+const _dropMat = (c) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.55,
+  depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+const _dropMatIdle = _dropMat(0xff7a18), _dropMatOver = _dropMat(0x3ddc6b)
+const _dropMarks = new Map()   // poi id → { q, mesh }
+
+function _addDropMark (q) {
+  const z = dropZoneWorld(q)
+  const mesh = new THREE.Mesh(_dropGeo, _dropMatIdle)
+  mesh.position.set(z.x, z.y + 0.03, z.z)
+  mesh.rotation.y = z.yaw
+  mesh.scale.set(2 * z.halfX, 1, 2 * z.halfZ)
+  mesh.renderOrder = 5
+  _poiGroup.add(mesh)
+  _dropMarks.set(q.id, { q, mesh })
+}
+
+/** Near-field like the rings; hidden on any other job, kept lit while its own load is dropping. */
+function _updateDropMarks (onMission) {
+  const vp = vehicleState.position, loadingAt = _haulPoi()?.id
+  for (const [id, { q, mesh }] of _dropMarks) {
+    const near = Math.hypot(mesh.position.x - vp.x, mesh.position.z - vp.z) <= POI_RING_SHOW_R
+    mesh.visible = near && (!onMission || id === loadingAt)
+    mesh.material = _bedOverDrop(q) ? _dropMatOver : _dropMatIdle
   }
-  const b = poi.bay, yaw = poi.modelYaw ?? poi.yaw ?? 0
-  const cs = Math.cos(yaw), sn = Math.sin(yaw)
-  _bayCurtain.position.set(poi.x + b.x * cs + b.z * sn,
-                           poi.y - _BAY_CURTAIN_SINK + _BAY_CURTAIN_H * 0.5,
-                           poi.z - b.x * sn + b.z * cs)
-  _bayCurtain.rotation.y = yaw
-  _bayCurtain.scale.set(2 * b.halfX, _BAY_CURTAIN_H, 2 * b.halfZ)
-  const p = vehicleState.position
-  _bayCurtain.material = inLoadingBay(poi, p.x, p.z) ? _stageRingMat : _poiRingMat
-  _bayCurtain.visible = true
 }
 
 // ── FEAT-47: the story-mode day clock ──────────────────────────────────────────────────────
@@ -3652,8 +3676,11 @@ function _poiInReach () {
   // jobsOnly (FEAT-60): only a mission giver answers the park trigger. Without this the roster's
   // other six types would each win the trigger and then have nothing to say — and mom's house,
   // which outranks her own front door in the precedence below, would offer freight instead of bed.
-  return poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
-                           POI_PARAMS.poiInteractR, true)
+  const q = poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
+                             POI_PARAMS.poiInteractR, true)
+  // FEAT-88: a haul giver answers only with your BED over its drop zone — that is where the load
+  // lands, so it is where you park to be offered one.
+  return q && q.drop && !_bedOverDrop(q) ? null : q
 }
 
 // Rising edge of the parking-brake latch (vehicleState.parked), sampled where the prompt is polled.
@@ -4253,9 +4280,9 @@ function _renderMissionUI () {
       hudText.innerHTML = `<span class="mh-count">${Math.max(1, Math.ceil(m.countdown))}</span>`
       break
     case 'loading':
-      // FEAT-88: the bay is the orange box on the pad; it turns green when you are in it.
+      // FEAT-88: the load is dropping onto the zone you parked over.
       show(panel, false); show(hud, true)
-      hudText.textContent = _haul ? 'loading…' : 'pull into the bay and park'
+      hudText.textContent = 'loading…'
       break
     case 'staging':
       // The POI start. No digits and no hold — the only thing the player needs told is what starts
