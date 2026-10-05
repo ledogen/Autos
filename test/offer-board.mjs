@@ -29,7 +29,7 @@
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel } from '../src/offer-board.js'
-import { SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE } from '../data/offers.js'
+import { SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { basePay } from '../src/economy.js'
 
@@ -368,7 +368,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
             if (!Number.isInteger(sp.bundles) || sp.bundles < HAUL_BUNDLES[0] || sp.bundles > HAUL_BUNDLES[1]) badCount++
             counts.add(sp.bundles)
             if (sp.massKg !== sp.bundles * HAUL_BUNDLE_KG) badMass++
-            const want = (sp.bonus ? BONUS_PAY_MULT : 1) * sp.bundles * HAUL_PAY_PER_BUNDLE
+            const want = (sp.bonus ? BONUS_PAY_MULT : 1) * sp.bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK
             const card = b.card(o, { nowH: t, route: { par: 300, distance: 3000 } })
             if (Math.abs(sp.payMult - want) > 1e-12 || card.pay !== `Base pay $${basePay(300, 1, want).toLocaleString('en-US')}`) badPay++
         }
@@ -378,6 +378,10 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
     check('the whole range rolls', counts.size === HAUL_BUNDLES[1] - HAUL_BUNDLES[0] + 1, [...counts].sort((a, b) => a - b).join(','))
     check('the card weight is bundles × the bundle mass', badMass === 0)
     check('pay scales per bundle, and the card quotes exactly that', badPay === 0)
+    // Owner, 2026-10-05: 10 bundles pays a courier job. The haul's par is HAUL_PAR_SLACK longer and
+    // pay rides par, so on the haul's own (longer) par the 10-bundle multiplier must undo it.
+    check('10 bundles on the haul par pays exactly a courier job on the route par',
+        Math.abs(basePay(300 * HAUL_PAR_SLACK, 1, 10 * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK) - basePay(300, 1, 1)) < 1e-9)
 
     // The bundle count is drawn on its OWN stream: adding the yard must not move any other offer.
     const without = POIS.filter(q => q.type !== 'firewoodYard')

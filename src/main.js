@@ -68,6 +68,7 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
 import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { HAUL_PAR_SLACK } from '../data/offers.js'   // FEAT-88: a haul's par is longer by this
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { OfferBoard, formatGameDuration, gateText } from './offer-board.js'   // FEAT-67: the mission board
@@ -85,7 +86,7 @@ import { formatTime } from './par.js'                    // FEAT-29: par oracle 
 import { SCENARIOS, scenarioById } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
 import { Leaderboard } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
-import { RANK_THRESHOLDS_DEFAULT } from './par.js'      // FEAT-87: the rank bar's fallback bands
+import { RANK_THRESHOLDS_DEFAULT, haulGrade } from './par.js'   // FEAT-87 rank bar fallback bands; FEAT-88 haul letter
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { playGlassBreak } from './glass-audio.js'   // FEAT-87: the rank tile shattering
@@ -3467,6 +3468,9 @@ missionSystem = new MissionSystem({
     if (mission?.bundles) {
       result.loaded = mission.bundles
       result.aboard = _haul?.mission === mission ? _haulAboard() : 0
+      // The letter is the run's OVERALL rank: clock and load blended (par.js haulGrade).
+      result.letter = haulGrade(result.ratio, result.aboard / mission.bundles,
+                                mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT).letter
       mission = { ...mission, payMult: mission.payMult * result.aboard / mission.bundles }
       _haulClear()
     }
@@ -3696,6 +3700,7 @@ function _planOffer (offer) {
       m.bonus = s.bonus
       m.payMult = s.payMult
       m.bundles = s.bundles   // FEAT-88: a haul load's piece count — null for every other family
+      if (s.bundles) m.par *= HAUL_PAR_SLACK   // the load slows the truck; payMult already ÷ the same
     }
     return m
   })

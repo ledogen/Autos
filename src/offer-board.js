@@ -33,7 +33,7 @@
 
 import {
     THINGS, REWARDS, SOURCES, EXPIRY_NOISE, BONUS_CHANCE, BONUS_PAY_MULT, GATE_WEIGHTS,
-    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE,
+    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK,
 } from '../data/offers.js'
 import {
     FIRST_NAMES, FEMALE_CHANCE, LAST_NAMES, NICKNAMES, NICKNAME_CHANCE, POI_ADJECTIVES,
@@ -346,7 +346,8 @@ export class OfferBoard {
         return (offer._spec = {
             family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
             massKg: bundles ? bundles * HAUL_BUNDLE_KG : massKg, bundles,
-            payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE : 1),
+            // ÷ HAUL_PAR_SLACK: the haul's par is that much longer and pay rides par (data/offers.js).
+            payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1),
             destKind: papers ? null : (destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName,
         })

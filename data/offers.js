@@ -138,6 +138,14 @@ export const HAUL_BUNDLE_KG = 11
  */
 export const HAUL_PAY_PER_BUNDLE = 1 / 10
 
+/**
+ * Par on a haul is the route's par × this (owner, 2026-10-05: "the added weight slows the truck
+ * slightly, so par should be ~10% longer"). Pay rides par, so the per-bundle rate is divided by the
+ * same factor in the offer's payMult (src/offer-board.js) — a 10-bundle haul still pays exactly what
+ * a courier job over that route pays; only the clock it is graded against is longer.
+ */
+export const HAUL_PAR_SLACK = 1.1
+
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
 export const EXPIRY_NOISE = 0.3
 
