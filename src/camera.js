@@ -155,8 +155,13 @@ document.addEventListener('mousedown', e => {
   //
   // Identified as the FIRST canvas, which is what requestPointerLock already targets in this file —
   // #map2d and #cluster are canvases too, and a look-drag must not start on either.
+  //
+  // NOT while the menu stage owns the screen (body.stage-on). On a load the menu overlay is gone, so
+  // the click DID land on the canvas: this took the pointer lock, which freezes clientX/Y, and the
+  // stage's own drag-orbit (src/stage.js, client deltas) died for the whole load (owner, 2026-10-05).
   if (e.button === 0 && (cameraMode === 'chase' || cameraMode === 'hood')
-      && e.target === document.querySelector('canvas')) {
+      && e.target === document.querySelector('canvas')
+      && !document.body.classList.contains('stage-on')) {
     isDragging = true
     dragLastX  = e.clientX
     dragLastY  = e.clientY
