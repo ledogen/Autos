@@ -71,7 +71,7 @@ Keep this honest; it is the thing that makes the rule checkable.
   radiator/overheat → power-loss → head-gasket chain DESIGN.md already specifies) and **FEAT-50 fuel**
   (**ratified 2026-08-01** — fuel and gas stations are in; see the note under SM-3).
 
-**SM-2 IS OPEN — the economy spine is in** [2026-08-01]. **FEAT-53** (ticket in `todos/pending/`,
+**SM-2 CLOSED 2026-10-04** (see the SM-2 section). *History:* **the economy spine went in** [2026-08-01]. **FEAT-53** (ticket in `todos/pending/`,
 phases A–C built the same day the milestone opened) implements the ratified performance model on the
 existing point-to-point missions: `src/economy.js` (payout line, dayTier, day-tightened rank
 thresholds, `runEconomy` wallet + mission points — displayed as **"good deeds"**, owner theming),
@@ -186,7 +186,15 @@ economy attached. The last leg of the day is the game (SM-INV-6).
 - **Exit:** a player naturally plans their day around getting somewhere sleepable; dozing on a
   mountain road is terrifying; no HUD countdown anywhere (SM-INV-3).
 
-## SM-2 — The Wager (par, missions, payout)
+## SM-2 — The Wager (par, missions, payout) ✅ **CLOSED 2026-10-04**
+
+> **Closed by the owner 2026-10-04, with the 2026-09-30 payout re-cut signed off** (`f163e6c`, the
+> last SM-INV-4 amendment in DESIGN.md: completion pays a guaranteed Base pay of half the max, the
+> clock earns the rest as a tip on ONE continuous line, break-even is a day of ~1.5 base pays, no
+> time limits). The scope below is the plan as written; the closed tickets are what exists.
+> **Carried forward, not blocking:** FEAT-69 (`dayTierTable` + the SM-3 repair prices, owed a
+> re-price against the ~$7.50 day — SM-3 work now) and the delivery content (FEAT-88 Haul,
+> FEAT-89 Courier shapes, FEAT-91 haul yards, FEAT-67's remainder), which is free to land at any time.
 
 **Requires:** SM-1 (the day is the budget every mission type spends) — **MET 2026-07-30**;
 POI anchors — **MET** by FEAT-46 (shipped), which superseded FEAT-21's core.
