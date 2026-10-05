@@ -70,7 +70,7 @@ less surprising; substring is consistent with the existing vehicle path.
       cannot silently regress into cloning everything).
 - [x] A gate covers it — headless, `GLTFLoader.parse()` on the shipped `.glb`, no DOM needed. The
       repro above runs in pure node today.
-- [ ] `mom's house` and `larry's house` visibly differ in-game once FEAT-60 lands.
+- [x] `mom's house` and `larry's house` visibly differ in-game once FEAT-60 lands.
 
 ## Resolution (2026-10-04)
 
@@ -88,5 +88,4 @@ per-spawn material clones. What was still missing:
 - Gate `test/model-variant.mjs` runs the real `buildPalette` + `instantiate` path on a
   `GLTFLoader.parse` of the shipped `.glb`.
 
-The last acceptance box (mom's and Larry's houses visibly differ in-game) still needs an
-in-game check.
+Owner verified in-game 2026-10-04: mom's house is cyan, Larry's is yellow.
