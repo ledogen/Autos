@@ -22,7 +22,7 @@ import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
-import { DebrisSystem } from './debris.js'
+import { DebrisSystem, bedDropPoints, inBedWell } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
@@ -67,7 +67,7 @@ import { MissionSystem } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, inLoadingBay } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { OfferBoard, formatGameDuration, gateText } from './offer-board.js'   // FEAT-67: the mission board
@@ -2763,7 +2763,8 @@ function _updateMissionRings () {
   // be the opposite of the fix.
   // FEAT-61: a paper route counts as being on a job for exactly the same reason — every orange
   // curtain you pass mid-round is an invitation to do something the game will refuse.
-  const onMission = ['staging', 'running', 'done'].includes(missionSystem?.state)
+  _updateBayCurtain()
+  const onMission = ['loading', 'staging', 'running', 'done'].includes(missionSystem?.state)
                     || paperRouteSystem.isActive()
   const vp = vehicleState.position
   for (const [id, ring] of _poiRings) {
@@ -2780,6 +2781,100 @@ function _updateMissionRings () {
   _stageRing.scale.set(zone.r, _STAGE_RING_H, zone.r)
   _stageRing.position.set(zone.x, zone.y - _STAGE_RING_SINK + _STAGE_RING_H * 0.5, zone.z)
   _stageRing.visible = true
+}
+
+// ── FEAT-88: the haul load ─────────────────────────────────────────────────────────────────
+// A haul job goes 'loading' on accept (mission.js). Park inside the yard's loading bay and the load
+// drops into the bed one piece at a time, like the title screen's rocks: each piece is a pinned
+// debris body (outside DEBRIS_CAP, so a thrown rock cannot delete it) that never feeds the wear
+// model. The drop points follow the truck, so a badly parked truck still gets its load overhead —
+// but a load landing on a slope or off the bay edge can still miss the bed, and a miss is lost pay.
+// The pieces are counted at arrival (onSettle above) and removed; cancel or leaving the job removes
+// them too (the 10 Hz poll).
+const HAUL_DROP_H   = 2.6   // m above the bed floor — the title screen's rock height: a thump, not a launch
+const HAUL_DROP_GAP = 0.3   // s between pieces, so the impacts never stack
+const HAUL_SETTLE_S = 1.0   // s after the last piece before the job stages — let it land first
+let _haul = null            // { mission, drops, handles, t0 } — the live load, or null
+const _haulV = new THREE.Vector3(), _haulQ = new THREE.Quaternion(), _haulQd = new THREE.Quaternion()
+
+/** The loading POI of the job in hand, if it is loading. */
+function _haulPoi () {
+  if (missionSystem?.state !== 'loading') return null
+  const id = missionSystem.mission?.fromPoi
+  return poiSystem.list().find(q => q.id === id) ?? null
+}
+
+/** Fixed step, after stepPhysics: start the drop once parked in the bay, then release on the clock. */
+function _haulStep () {
+  if (missionSystem?.state !== 'loading') return
+  const bed = DEFAULT_VEHICLE_MODEL.bed
+  if (!_haul) {
+    const poi = _haulPoi(), p = vehicleState.position
+    if (!bed || !vehicleState.parked || !inLoadingBay(poi, p.x, p.z)) return
+    const mission = missionSystem.mission
+    _haul = { mission, handles: [], t0: simTime,
+              drops: bedDropPoints(mission.bundles, bed, `haul:${worldSeed}:${mission.offerId}`) }
+  }
+  const n = _haul.drops.length
+  while (_haul.handles.length < n && simTime >= _haul.t0 + _haul.handles.length * HAUL_DROP_GAP) {
+    const d = _haul.drops[_haul.handles.length]
+    _haulV.set(d.x, d.y, d.z).applyQuaternion(vehicleState.quaternion).add(vehicleState.position)
+    _haulQ.copy(vehicleState.quaternion).multiply(_haulQd.set(d.quaternion.x, d.quaternion.y, d.quaternion.z, d.quaternion.w))
+    const h = debrisSystem.spawn(d.kind, { x: _haulV.x, y: _haulV.y + HAUL_DROP_H, z: _haulV.z },
+      { x: 0, y: -1.2, z: 0 },
+      { spin: d.spin, quaternion: { x: _haulQ.x, y: _haulQ.y, z: _haulQ.z, w: _haulQ.w }, pinned: true, noDamage: true })
+    if (!h) return          // the piece's model is still loading — try again next step
+    _haul.handles.push(h)
+  }
+  if (_haul.handles.length === n && simTime >= _haul.t0 + (n - 1) * HAUL_DROP_GAP + HAUL_SETTLE_S) {
+    missionSystem.loadingDone()
+  }
+}
+
+/** Pieces of the live load inside the bed well right now. */
+function _haulAboard () {
+  const bed = DEFAULT_VEHICLE_MODEL.bed
+  if (!_haul || !bed) return 0
+  physicsEngine.getTransform(vehicleChassis, _haulV, _haulQ)
+  _haulQ.invert()
+  const cp = _haulV.clone(), p = new THREE.Vector3(), q = new THREE.Quaternion()
+  let n = 0
+  for (const h of _haul.handles) {
+    physicsEngine.getTransform(h, p, q)
+    if (inBedWell(p.sub(cp).applyQuaternion(_haulQ), bed)) n++
+  }
+  return n
+}
+
+function _haulClear () {
+  if (_haul) debrisSystem.remove(_haul.handles)
+  _haul = null
+}
+
+// The bay, drawn while you still have to find it: a low curtain round the rectangle, orange outside
+// and green once the truck is in it — the same two colours that already mean "park here" and "go".
+const _BAY_CURTAIN_H = 1.2, _BAY_CURTAIN_SINK = 0.4
+const _bayGeo = new THREE.CylinderGeometry(Math.SQRT1_2, Math.SQRT1_2, 1, 4, 1, true).rotateY(Math.PI / 4)  // unit square
+let _bayCurtain = null
+function _updateBayCurtain () {
+  const poi = _haul ? null : _haulPoi()
+  if (!poi?.bay) { if (_bayCurtain) _bayCurtain.visible = false; return }
+  if (!_bayCurtain) {
+    _bayCurtain = new THREE.Mesh(_bayGeo, _poiRingMat)
+    _bayCurtain.renderOrder = 5
+    _bayCurtain.frustumCulled = false
+    scene.add(_bayCurtain)
+  }
+  const b = poi.bay, yaw = poi.modelYaw ?? poi.yaw ?? 0
+  const cs = Math.cos(yaw), sn = Math.sin(yaw)
+  _bayCurtain.position.set(poi.x + b.x * cs + b.z * sn,
+                           poi.y - _BAY_CURTAIN_SINK + _BAY_CURTAIN_H * 0.5,
+                           poi.z - b.x * sn + b.z * cs)
+  _bayCurtain.rotation.y = yaw
+  _bayCurtain.scale.set(2 * b.halfX, _BAY_CURTAIN_H, 2 * b.halfZ)
+  const p = vehicleState.position
+  _bayCurtain.material = inLoadingBay(poi, p.x, p.z) ? _stageRingMat : _poiRingMat
+  _bayCurtain.visible = true
 }
 
 // ── FEAT-47: the story-mode day clock ──────────────────────────────────────────────────────
@@ -3303,6 +3398,15 @@ missionSystem = new MissionSystem({
   // FEAT-67: a settled board job — ANY letter, D included — completes its offer, and the slot then
   // waits out that offer's original expiry before re-rolling.
   onSettle: (result, mission) => {
+    // FEAT-88: a haul pays the ordinary line × the share of the load still in the bed. Counted
+    // here, at arrival, then the load is gone — the economy only ever sees a scaled payMult, so
+    // base + tip still sum to the total and the result card stays honest.
+    if (mission?.bundles) {
+      result.loaded = mission.bundles
+      result.aboard = _haul?.mission === mission ? _haulAboard() : 0
+      mission = { ...mission, payMult: mission.payMult * result.aboard / mission.bundles }
+      _haulClear()
+    }
     const s = economySystem.settle(result, mission)
     if (mission?.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
     return s
@@ -3528,6 +3632,7 @@ function _planOffer (offer) {
       m.offerId = o.id
       m.bonus = s.bonus
       m.payMult = s.payMult
+      m.bundles = s.bundles   // FEAT-88: a haul load's piece count — null for every other family
     }
     return m
   })
@@ -4065,9 +4170,11 @@ function _panelHead (flavorHtml) {
  *
  * `base`/`tip` are whole dollars from economy.js; `spot` is dollars to the cent.
  */
-function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null }) {
+function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null, haul = null }) {
   const row = (label, money) => `<br><span class="mp-dim">${label}</span> <span class="mp-pay">$${money}</span>`
-  return row('Base pay', (base ?? 0).toLocaleString('en-US'))
+  // FEAT-88: the one place a load's count is shown — after the drive, never during (SM-INV-10).
+  return (haul ? `<br><span class="mp-dim">Firewood delivered</span> <span class="mp-pay">${haul.aboard} / ${haul.loaded}</span>` : '')
+    + row('Base pay', (base ?? 0).toLocaleString('en-US'))
     + row('Tip', (tip ?? 0).toLocaleString('en-US'))
     + (points > 0
       ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${points} good deed${points > 1 ? 's' : ''}</span>`
@@ -4145,6 +4252,11 @@ function _renderMissionUI () {
       show(panel, false); show(hud, true)
       hudText.innerHTML = `<span class="mh-count">${Math.max(1, Math.ceil(m.countdown))}</span>`
       break
+    case 'loading':
+      // FEAT-88: the bay is the orange box on the pad; it turns green when you are in it.
+      show(panel, false); show(hud, true)
+      hudText.textContent = _haul ? 'loading…' : 'pull into the bay and park'
+      break
     case 'staging':
       // The POI start. No digits and no hold — the only thing the player needs told is what starts
       // the clock, and the green ring that just replaced the marker's orange one says where.
@@ -4181,7 +4293,8 @@ function _renderMissionUI () {
       body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
-          ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award })
+          ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award,
+                       haul: r.loaded ? { aboard: r.aboard, loaded: r.loaded } : null })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
       // The result card is exactly three actions: retry · continue · back to free roam (that is the
       // DOM order too). The calibration form above them stays — the subjective read is the ground
@@ -6145,6 +6258,7 @@ function loop () {
     // FEAT-36: debris pre-step — render snapshot + cargo-in-bed bullet flag (see debris.js).
     debrisSystem.beforeStep(vehicleChassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
+    _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
     // SM-3: integrate component wear on the SAME fixed step the physics ran, so condition is
     // framerate-independent like everything else (INFRA-03 determinism). Reads the honest signals
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
@@ -6589,7 +6703,9 @@ function loop () {
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step. ('staging' is a
     // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
-                          || missionSystem.state === 'running')) _renderMissionUI()
+                          || missionSystem.state === 'running' || missionSystem.state === 'loading')) _renderMissionUI()
+    // FEAT-88: a load whose job is gone (cancelled, exited, a new run) leaves with it.
+    if (_haul && (!missionSystem?.isOnJob() || missionSystem.mission !== _haul.mission)) _haulClear()
     // FEAT-67: a parked offer panel carries a live expiry, and the offer can expire under it.
     if (missionSystem?.state === 'offer' && missionSystem.offer && offerBoard) {
       if (!offerBoard.isLive(missionSystem.offer.id, daySystem.clockH())) _refreshParkedOffers()

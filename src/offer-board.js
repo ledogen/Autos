@@ -33,7 +33,7 @@
 
 import {
     THINGS, REWARDS, SOURCES, EXPIRY_NOISE, BONUS_CHANCE, BONUS_PAY_MULT, GATE_WEIGHTS,
-    DEST_POI_CHANCE, PEOPLE_PER_POI,
+    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE,
 } from '../data/offers.js'
 import {
     FIRST_NAMES, FEMALE_CHANCE, LAST_NAMES, NICKNAMES, NICKNAME_CHANCE, POI_ADJECTIVES,
@@ -47,7 +47,7 @@ import { basePay } from './economy.js'
  * the tables (so the card, the colours and the lists are ready) but have no code, so they must
  * simply never roll — not be half-built. Add a family here the day its mission ships.
  */
-export const BUILT_FAMILIES = new Set(['delivery', 'papers'])
+export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul'])
 
 // Fixed names for roster types that are NOT sources and have no word list — they can still be a
 // DESTINATION, and "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors
@@ -295,7 +295,10 @@ export class OfferBoard {
      * changes WHAT it is. Null only if the source has no built thing to post (a table gap).
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate}|null, payMult,
-     *   destKind: 'poi'|'roadside'|null, destPick, placeName }
+     *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null }
+     * bundles is the haul load's piece count (FEAT-88), null for every other family. It is drawn on
+     * its OWN `bundles` stream: one more draw on `spec` would shift the destination and place name
+     * of every existing offer on every seed.
      * destKind is null for papers (the paper route picks its own customers). destPick is the uniform
      * number the mission planner uses to choose among the destination POIs it can actually reach;
      * placeName is the roadside name, rolled always, used whenever no POI destination fits.
@@ -335,9 +338,15 @@ export class OfferBoard {
         const papers = thing.family === 'papers'
         const destRoll = r(), destPick = r()
         const placeName = this._placeName(r)
+        let bundles = null
+        if (thing.family === 'haul') {
+            const [bLo, bHi] = HAUL_BUNDLES
+            bundles = bLo + Math.floor(rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:bundles`)() * (bHi - bLo + 1))
+        }
         return (offer._spec = {
-            family: thing.family, thingId: thing.id, phrase: thing.phrase, massKg, person, bonus,
-            payMult: bonus ? BONUS_PAY_MULT : 1,
+            family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
+            massKg: bundles ? bundles * HAUL_BUNDLE_KG : massKg, bundles,
+            payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE : 1),
             destKind: papers ? null : (destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName,
         })
@@ -517,8 +526,13 @@ export class OfferBoard {
         } else {
             if (n?.name) sentence.push({ t: ` at ${n.name}` })
             const dest = route?.endPoiId ? this.placeLabel(route.endPoiId) : (route?.placeName ?? sp.placeName)
-            sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' delivered to ' },
-                          { t: dest, b: true }, { t: '.' })
+            if (sp.bundles) {
+                sentence.push({ t: ' needs ' }, { t: `${sp.bundles} bundles of ${sp.phrase}`, b: true },
+                              { t: ' hauled to ' }, { t: dest, b: true }, { t: '.' })
+            } else {
+                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' delivered to ' },
+                              { t: dest, b: true }, { t: '.' })
+            }
         }
         const par = route?.par
         const pay = par > 0 ? `Base pay $${basePay(par, payTier, sp.payMult).toLocaleString('en-US')}`

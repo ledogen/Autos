@@ -29,7 +29,7 @@
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel } from '../src/offer-board.js'
-import { SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT } from '../data/offers.js'
+import { SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE } from '../data/offers.js'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { basePay } from '../src/economy.js'
 
@@ -55,6 +55,7 @@ const POIS = [
     { id: 'poi:23|24', type: 'missionGiver', modelKey: 'brokenCar' },
     { id: 'poi:25|26', type: 'missionGiver', modelKey: 'trailerHomeA' },
     { id: 'poi:27|28', type: 'missionGiver', modelKey: 'winnebago' },
+    { id: 'poi:29|30', type: 'firewoodYard' },
 ]
 const T0 = 6   // dayStartHour: the clock a run opens on
 const giverNameOf = (k) => PROP_MODELS[k]?.giverName
@@ -230,7 +231,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
         for (let t = T0; t < T0 + 24 * 5; t += 3) for (const id of b.sources()) for (const o of b.offers(id, t)) seen.add(b.spec(o).family)
     }
     check('only built families ever roll', [...seen].every(f => BUILT_FAMILIES.has(f)), [...seen].join(','))
-    check('both built families appear', seen.has('delivery') && seen.has('papers'))
+    check('every built family appears', [...BUILT_FAMILIES].every(f => seen.has(f)), [...seen].join(','))
 }
 
 // ── 11. names ───────────────────────────────────────────────────────────────────────────────────
@@ -351,6 +352,45 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
     const same = (o, ex) => ({ par: 300, distance: 2000, endPoiId: 'poi:5|6' })
     b.planDistinct(live[0], same); b.planDistinct(live[1], same)
     check('a different reward is a different job — the destination may repeat', live[0].route.endPoiId === live[1].route.endPoiId)
+}
+
+// ── 15. haul (FEAT-88) ──────────────────────────────────────────────────────────────────────────
+{
+    let wrongPlace = 0, badCount = 0, badMass = 0, badPay = 0, n = 0
+    const counts = new Set()
+    for (let seed = 1; seed <= 60; seed++) {
+        const b = make(seed)
+        for (let t = T0; t < T0 + 24 * 5; t += 3) for (const id of b.sources()) for (const o of b.offers(id, t)) {
+            const sp = b.spec(o)
+            if (sp.family !== 'haul') { if (sp.bundles != null) badCount++; continue }
+            n++
+            if (o.type !== 'firewoodYard') wrongPlace++
+            if (!Number.isInteger(sp.bundles) || sp.bundles < HAUL_BUNDLES[0] || sp.bundles > HAUL_BUNDLES[1]) badCount++
+            counts.add(sp.bundles)
+            if (sp.massKg !== sp.bundles * HAUL_BUNDLE_KG) badMass++
+            const want = (sp.bonus ? BONUS_PAY_MULT : 1) * sp.bundles * HAUL_PAY_PER_BUNDLE
+            const card = b.card(o, { nowH: t, route: { par: 300, distance: 3000 } })
+            if (Math.abs(sp.payMult - want) > 1e-12 || card.pay !== `Base pay $${basePay(300, 1, want).toLocaleString('en-US')}`) badPay++
+        }
+    }
+    check('haul rolls, and only at the firewood yard', n > 0 && wrongPlace === 0, `${n} hauls, ${wrongPlace} elsewhere`)
+    check(`every haul is ${HAUL_BUNDLES[0]}..${HAUL_BUNDLES[1]} bundles (and only hauls have a count)`, badCount === 0)
+    check('the whole range rolls', counts.size === HAUL_BUNDLES[1] - HAUL_BUNDLES[0] + 1, [...counts].sort((a, b) => a - b).join(','))
+    check('the card weight is bundles × the bundle mass', badMass === 0)
+    check('pay scales per bundle, and the card quotes exactly that', badPay === 0)
+
+    // The bundle count is drawn on its OWN stream: adding the yard must not move any other offer.
+    const without = POIS.filter(q => q.type !== 'firewoodYard')
+    const key = (sp) => JSON.stringify([sp.family, sp.thingId, sp.massKg, sp.bonus, sp.payMult, sp.destKind, sp.destPick, sp.placeName])
+    let moved = 0
+    for (let seed = 1; seed <= 30; seed++) {
+        const a = make(seed), b = new OfferBoard({ seed, pois: without, nowH: T0, giverNameOf })
+        for (const q of without) for (const o of b.offers(q.id, T0)) {
+            const o2 = a.offers(q.id, T0).find(x => x.id === o.id)
+            if (!o2 || key(a.spec(o2)) !== key(b.spec(o))) moved++
+        }
+    }
+    check('adding the yard leaves every other offer unchanged', moved === 0, `${moved} moved`)
 }
 
 // ── 14. import discipline ───────────────────────────────────────────────────────────────────────

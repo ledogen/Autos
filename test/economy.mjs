@@ -289,6 +289,23 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
     !('money' in runState) && !('halfPoints' in runState) && !('points' in runState))
 }
 
+// ── 8b. Haul: pay × the share of the load aboard (FEAT-88) ─────────────────────────────────────
+// main.js's onSettle hands the economy a mission whose payMult is already × aboard / loaded. The
+// economy must carry that factor straight through: the same job with 9 of 12 bundles pays 9/12 of
+// the full load (to the dollar's rounding), and base + tip still sum to the total.
+{
+  const eco = new EconomySystem({ getDay: () => 1 })
+  eco.start()
+  const terms = eco.terms(), res = { par: 360, ratio: 0.9, letter: 'B' }
+  const full = eco.settle(res, { terms, payMult: 12 / 8 })
+  const part = eco.settle(res, { terms, payMult: (12 / 8) * (9 / 12) })
+  const none = eco.settle(res, { terms, payMult: 0 })
+  check('9 of 12 bundles aboard pays 9/12 of the full load', Math.abs(part.payout - full.payout * 9 / 12) <= 1,
+    `${part.payout} vs ${full.payout} × 0.75`)
+  check('base + tip === total on a partial load', part.base + part.tip === part.payout)
+  check('an empty bed pays nothing (floor at zero, SM-INV-4)', none.payout === 0)
+}
+
 // ── 9. The terms lock: settle on the ACCEPTED day, not the finished day ─────────────────────────
 {
   let day = 3

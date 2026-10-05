@@ -187,6 +187,19 @@ export const POI_ROSTER = [
     // The type exists so the roster is whole; fishing and The Confluence stay deferred. Do not
     // build its systems off the back of this line.
     { type: 'tackleShop',   count: 1, model: null, siting: 'any' },
+    // FEAT-88/91: the firewood yard — the region-1 haul giver. Above the givers so a short pad pool
+    // still takes its shortfall from them. REGION 1 ONLY by design (FEAT-91 ruling 2): story mode
+    // has one region today, so there is nothing to window yet — the `regions` field lands with
+    // region 2. It fits the standard 14 x 8 m lay-by pad (owner, 2026-10-04); the sawmill and
+    // quarry will need a bigger pad, also deferred to FEAT-91.
+    //
+    // `bay` is the LOADING BAY, model-local (+X along the road, -Z toward it — the same frame
+    // as the marker): park the truck inside it with the haul accepted and the load drops into the
+    // bed. It lives HERE, not on the model, so the bay exists before the .glb does and physics never
+    // waits on a fetch; the splitting-yard model (ASSET-36) is authored to fit it — its BayFirewood
+    // empty sits on exactly this rectangle, the +X end of the yard, parallel to the road.
+    { type: 'firewoodYard', count: 1, model: null, siting: 'any',
+      bay: { x: 3.0, z: -1.5, halfX: 3.0, halfZ: 1.4 } },
     // Everything left over. Most POIs are mission givers, and a mission giver MAY present as a
     // food vendor (owner, 2026-08-05) — food vendors get no reservation of their own because a
     // vendor that also hands out work costs the region nothing.
@@ -200,7 +213,23 @@ export const POI_ROSTER = [
     { type: 'missionGiver', count: 5, modelPool: 'missionGiver', siting: 'any' },
 ]
 
-/** Region population: 14, derived from the roster so the two can never drift apart. */
+/**
+ * FEAT-88: is the world point (x, z) inside POI `q`'s loading bay? Pure. The bay is model-local
+ * (see the firewoodYard roster slot), so the point is taken into the marker's own frame the same
+ * way queryContact does — undo modelYaw about Y — and tested against the rectangle. False for a
+ * POI with no bay.
+ */
+export function inLoadingBay (q, x, z) {
+    const b = q?.bay
+    if (!b) return false
+    const yaw = q.modelYaw ?? q.yaw ?? 0
+    const cs = Math.cos(yaw), sn = Math.sin(yaw)
+    const wx = x - q.x, wz = z - q.z
+    const dx = cs * wx - sn * wz, dz = sn * wx + cs * wz
+    return Math.abs(dx - b.x) <= b.halfX && Math.abs(dz - b.z) <= b.halfZ
+}
+
+/** Region population: 15, derived from the roster so the two can never drift apart. */
 export const POI_COUNT = POI_ROSTER.reduce((n, s) => n + s.count, 0)
 
 /** Newspaper customers are deferred until the paper-route branch merges — no slot yet (FEAT-60). */
@@ -634,6 +663,7 @@ export class PoiSystem {
                 // two story houses must never match); otherwise a raw hash off the pad id, which
                 // spawnModel takes modulo the palette length. Ignored by a model with no palette.
                 q.modelVariant = slot.variant ?? hash32(`poi-variant:${seed}:${q.id}`)
+                q.bay = slot.bay ?? null   // FEAT-88 loading bay — see the firewoodYard slot
                 const i = free.indexOf(q)
                 if (i >= 0) free.splice(i, 1)
                 out.push(q)

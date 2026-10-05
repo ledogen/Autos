@@ -184,3 +184,30 @@ be freight. Don't tune the mass to make the mission easier; pick cargo whose rea
 - `src/offer-board.js` — `BUILT_FAMILIES`, the fragile card that already exists.
 - `src/mission.js` — driven trace, settle, where the roughness accumulator goes.
 - `test/debris-coupling.mjs`, `test/debris-stack.mjs` — the gates to model the new ones on.
+
+## As built — first slice, firewood (2026-10-04, `feature/haul-firewood`)
+
+The owner ruled the pay rule on 2026-10-04. **It supersedes the roughness grading above:**
+
+- **Pay = (Base pay + time tip) × (pieces aboard at delivery ÷ pieces in the offer).** The ordinary
+  par line, with no separate shock score: a bounce that matters throws a piece out, and that piece's
+  share is lost. A lost piece never ends the mission. The empty-bed floor is zero (SM-INV-4).
+- **The max scales per piece** (`HAUL_PAY_PER_BUNDLE`, 1/8 of a delivery each). Load size is what
+  makes the market pull between careers.
+- **Pieces that miss the bed at the yard are lost pay too.** The loader drops the offered count
+  whatever happens.
+
+What exists:
+
+- **Offers.** The `haul` family is built and rolls only at the `firewoodYard` POI (`data/offers.js`).
+  Each offer rolls 7–12 bundles on its own `bundles` stream, so existing offers don't move.
+- **Accept.** Accepting goes to a new `'loading'` mission state. Park inside the yard's bay (drawn as
+  a low curtain: orange outside, green inside) and the bundles drop over the bed on a 0.3 s stagger
+  (`main.js` `_haulStep`, `debris.js` `bedDropPoints`).
+- **Debris.** Bundles are pinned debris (outside `DEBRIS_CAP`) and `noDamage` (filtered in
+  `maxContactImpulse`). They're removed on settle, on cancel and when the job ends.
+- **Result card.** It shows "Firewood delivered N / M".
+- **Gates.** `test/haul-load.mjs` is new. `offer-board.mjs` §15 and `economy.mjs` §8b are extended.
+
+Still open in this ticket: the crate / drum / barrel cargo for the other givers, and retiring the
+dead `fragile` / `freight` keys into `haul`.

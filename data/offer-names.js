@@ -92,6 +92,8 @@ export const POI_THE_CHANCE       = 0.5   // plain form only
  * Mix plain descriptions ("Burgers") with pseudonyms ("The Meatball") freely; both fill the slot.
  */
 export const BUSINESS_TYPES = {
+    // FEAT-88/91 haul yard. PLACEHOLDERS — owner authors names.
+    firewoodYard: ['Firewood', 'Cordwood', 'Wood Lot', 'Splitting', 'Logs', 'Wood Yard', 'Kindling'],
     burgerJoint:  ['Burgers', 'Meatball', 'Sandwich', 'Subs', 'Pie', 'Pizza', 'Ice Cream', 'Bakery', 
         'Bite', 'Restaurant', 'Deli', 'Brew', 'Sweets', 'Crust', 'Pickles', 'Brews',
         'Diner', 'Grill', 'Smokehouse', 'Fry Shack', 'Dogs', 'Tacos', 'Donuts', 'Chili'
