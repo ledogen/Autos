@@ -121,6 +121,14 @@ export function getModel (key) {
       return
     }
     new GLTFLoader().load(spec.url, (gltf) => {
+      // A doubleSided glTF material casts from BOTH faces, so the sunlit outer wall writes its own
+      // depth into the shadow map and self-shadows: sun-angle-dependent stripes ("corduroy") on
+      // trailer-home-a / winnebago. Cast from back faces only — closed shells, so the silhouette
+      // is unchanged. Set before buildPalette so variant clones inherit it.
+      gltf.scene.traverse((o) => {
+        if (!o.isMesh) return
+        for (const m of [].concat(o.material)) if (m.side === THREE.DoubleSide) m.shadowSide = THREE.BackSide
+      })
       resolve({
         key, spec, template: gltf.scene, collision: spec.collision ?? null, failed: false,
         palette: buildPalette(gltf.scene, spec),
