@@ -965,13 +965,12 @@ def get_material(name):
     b.inputs["Metallic"].default_value = 0.0
     m.diffuse_color = col
     m.roughness = rough
-    m.use_backface_culling = True
-    # Curtain pleats are OPEN zigzag sheets; recalc_face_normals orients open
-    # islands by heuristic and faced the -X side inward (invisible).  Winding on
-    # a sheet like that is not worth pinning down — export the material
-    # doubleSided instead.  Opaque, so there is no sort-order cost.
-    if name == "RVCurtain":
-        m.use_backface_culling = False
+    # Every material exports doubleSided.  The cab glass lets the camera see the
+    # hull wall from INSIDE, i.e. its back faces — with culling on, the wall
+    # vanished and the RV read see-through.  Curtain pleats need it anyway (open
+    # zigzag sheets whose winding recalc_face_normals guesses).  Opaque, so there
+    # is no sort-order cost; trailer-home-a ships all-doubleSided the same way.
+    m.use_backface_culling = False
     if alpha < 1.0:
         b.inputs["Alpha"].default_value = alpha
         try:
