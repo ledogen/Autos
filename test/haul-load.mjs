@@ -3,8 +3,8 @@
 //
 // The load is what the game spawns: bedDropPoints() places the pieces (body-local, seeded), each is
 // dropped HAUL_DROP_H above the floor on a HAUL_DROP_GAP stagger exactly like main.js's _haulStep,
-// and "aboard" is inBedWell() — the same test settle pays on. The bundle is an 8-point box at the
-// asset's size (0.30 x 0.30 x 0.48 m) and its real 11 kg, so the gate needs no GLB.
+// and "aboard" is inBedWell() — the same test settle pays on. Each bundle is the convex hull of its
+// own shipped GLB (variants A/B/C, as debris.js builds it) at its real 11 kg.
 //
 // Checks:
 //   (a) DETERMINISM — the same key gives the same drop points, spins and variants; another key does not.
@@ -16,7 +16,9 @@
 //
 // Run: node test/haul-load.mjs
 
+import fs from 'node:fs'
 import * as THREE from 'three'
+import { PROP_MODELS } from '../data/prop-models.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 import { HAUL_BUNDLES, HAUL_BUNDLE_KG } from '../data/offers.js'
@@ -25,16 +27,39 @@ import { stepPhysics, createVehicleChassis } from '../src/physics.js'
 import { makeVehicleState } from '../src/vehicle-state.js'
 import { computeStaticEquilibrium } from '../src/suspension.js'
 import { RUNNING } from '../src/ignition.js'
-import { DebrisSystem, DEBRIS_TYPES, DEBRIS_CAP, bedDropPoints, inBedWell } from '../src/debris.js'
+import { DebrisSystem, DEBRIS_TYPES, DEBRIS_CAP, bedDropPoints, inBedWell, bboxCorners } from '../src/debris.js'
 
 const DT = 1 / 60
 const BED = DEFAULT_VEHICLE_MODEL.bed
 const DROP_H = 2.6, DROP_GAP = 0.3          // main.js HAUL_DROP_H / HAUL_DROP_GAP
-const SIZE = [0.30, 0.30, 0.48]
-const BOX = []
-for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) BOX.push(sx * SIZE[0] / 2, sy * SIZE[1] / 2, sz * SIZE[2] / 2)
-const DENSITY = HAUL_BUNDLE_KG / (SIZE[0] * SIZE[1] * SIZE[2])
+
+/** A GLB's vertices centred on their bbox — the hull debris.js builds (same reader as cargo-bed). */
+function glbHull (url) {
+  const buf = fs.readFileSync(new URL('../' + url, import.meta.url))
+  const jl = buf.readUInt32LE(12)
+  const js = JSON.parse(buf.subarray(20, 20 + jl).toString('utf8'))
+  const binOff = 20 + jl + 8
+  const pts = []
+  for (const n of js.nodes) {
+    if (n.mesh == null) continue
+    const m = new THREE.Matrix4().compose(
+      new THREE.Vector3(...(n.translation || [0, 0, 0])),
+      new THREE.Quaternion(...(n.rotation || [0, 0, 0, 1])),
+      new THREE.Vector3(...(n.scale || [1, 1, 1])))
+    for (const pr of js.meshes[n.mesh].primitives) {
+      const a = js.accessors[pr.attributes.POSITION], bv = js.bufferViews[a.bufferView]
+      const off = buf.byteOffset + binOff + (bv.byteOffset || 0) + (a.byteOffset || 0)
+      const f = new Float32Array(buf.buffer.slice(off, off + a.count * 12))
+      for (let i = 0; i < a.count; i++) pts.push(new THREE.Vector3(f[3 * i], f[3 * i + 1], f[3 * i + 2]).applyMatrix4(m))
+    }
+  }
+  const c = new THREE.Box3().setFromPoints(pts).getCenter(new THREE.Vector3())
+  return pts.flatMap(v => [v.x - c.x, v.y - c.y, v.z - c.z])
+}
+const HULLS = Object.fromEntries(Object.entries(DEBRIS_TYPES).filter(([k]) => k.startsWith('bundle'))
+  .map(([k, spec]) => [k, glbHull(PROP_MODELS[spec.model].url)]))
 const SPEC = DEBRIS_TYPES.bundleA
+const SIZE = [0.32, 0.33, 0.45]   // the largest extents across the variants — for the drop-point clearance check
 
 let fail = 0
 const ok = (cond, msg) => { console.log(`  ${cond ? '✓' : '✗'} ${msg}`); if (!cond) fail = 1 }
@@ -78,7 +103,9 @@ function load (t, n, key, { noDamage = true } = {}) {
       const body = t.engine.createBody({ type: 'dynamic', position: { x: v.x, y: v.y + DROP_H, z: v.z },
         quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, linearVelocity: { x: 0, y: -1.2, z: 0 },
         angularVelocity: d.spin, userData: { kind: 'debris', noDamage } })
-      t.engine.addHull(body, BOX, { density: DENSITY, friction: SPEC.friction, restitution: SPEC.restitution, group: GROUP_DEBRIS })
+      // Density by debris.js's own probe, so each variant weighs exactly its massKg on its own hull.
+      const rho = DEBRIS_TYPES[d.kind].massKg / DebrisSystem.prototype._hullVolume.call({ _eng: t.engine }, HULLS[d.kind])
+      t.engine.addHull(body, HULLS[d.kind], { density: rho, friction: SPEC.friction, restitution: SPEC.restitution, group: GROUP_DEBRIS })
       t.live.push({ body, cargo: false, prevP: new THREE.Vector3(), prevQ: new THREE.Quaternion() })
     }
     t.step()
@@ -91,6 +118,29 @@ function aboard (t) {
   t.engine.getTransform(t.chassis, cp, cq)
   cq.invert()
   return t.live.filter(r => { t.engine.getTransform(r.body, p, q); return inBedWell(p.sub(cp).applyQuaternion(cq), BED) }).length
+}
+
+console.log('(0) every bundle hull builds, at the mass offers.js says:')
+{
+  const t = await truck()
+  const masses = Object.keys(HULLS).map(k => {
+    const b = t.engine.createBody({ type: 'dynamic', position: { x: 0, y: 50, z: 0 } })
+    t.engine.addHull(b, HULLS[k], { density: DEBRIS_TYPES[k].massKg / DebrisSystem.prototype._hullVolume.call({ _eng: t.engine }, HULLS[k]), group: GROUP_DEBRIS })
+    return t.engine.getMass(b)
+  })
+  ok(masses.every(m => Math.abs(m - HAUL_BUNDLE_KG) < 0.01), `every variant is ${HAUL_BUNDLE_KG} kg on its own hull (${masses.map(m => m.toFixed(2)).join(', ')})`)
+  t.engine.dispose()
+}
+
+// From here on the load uses what the GAME would build: debris.js falls back to a variant's
+// bounding box when the engine refuses its hull, so (b)–(d) test the shipped behaviour even while
+// (0) is red on an asset.
+{
+  const t = await truck()
+  for (const k of Object.keys(HULLS)) {
+    if (!(DebrisSystem.prototype._hullVolume.call({ _eng: t.engine }, HULLS[k]) > 0)) HULLS[k] = bboxCorners(HULLS[k])
+  }
+  t.engine.dispose()
 }
 
 console.log('(a) determinism:')

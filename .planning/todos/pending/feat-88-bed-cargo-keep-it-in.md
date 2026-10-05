@@ -196,6 +196,9 @@ The owner ruled the pay rule on 2026-10-04. **It supersedes the roughness gradin
   makes the market pull between careers.
 - **Pieces that miss the bed at the yard are lost pay too.** The loader drops the offered count
   whatever happens.
+- **Good deeds on a haul follow the share delivered, not the letter** (owner, 2026-10-05). More
+  than 2/3 earns 1, 1/3 to 2/3 earns ½, under 1/3 earns 0 (`economy.js` `haulPointsFor`). A fast
+  run with an empty bed earns no deed.
 
 What exists:
 

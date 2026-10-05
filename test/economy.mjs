@@ -304,6 +304,12 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
     `${part.payout} vs ${full.payout} × 0.75`)
   check('base + tip === total on a partial load', part.base + part.tip === part.payout)
   check('an empty bed pays nothing (floor at zero, SM-INV-4)', none.payout === 0)
+  // Good deeds on a haul follow the share DELIVERED, not the letter (owner, 2026-10-05).
+  const deeds = (aboard, loaded) => eco.settle({ ...res, letter: 'S', aboard, loaded }, { terms }).points
+  check('haul good deeds: > 2/3 delivered → 1, 1/3..2/3 → ½, < 1/3 → 0 — whatever the letter',
+    deeds(12, 12) === 1 && deeds(9, 12) === 1 && deeds(8, 12) === 0.5 && deeds(4, 12) === 0.5
+    && deeds(3, 12) === 0 && deeds(0, 11) === 0,
+    [deeds(12, 12), deeds(9, 12), deeds(8, 12), deeds(4, 12), deeds(3, 12), deeds(0, 11)].join(','))
 }
 
 // ── 9. The terms lock: settle on the ACCEPTED day, not the finished day ─────────────────────────

@@ -263,6 +263,14 @@ export function bonusEarned (letter, gate) {
 }
 
 /** SM-INV-14: 1 point at B or better, ½ at C, 0 at D. Never a function of time taken. */
+/**
+ * Good deeds for a haul, by the share of the load delivered (owner, 2026-10-05): more than two
+ * thirds → 1, a third to two thirds → ½, under a third → 0. Exactly 2/3 is the middle band.
+ */
+export function haulPointsFor(share) {
+    return share > 2 / 3 ? 1 : share >= 1 / 3 ? 0.5 : 0
+}
+
 export function pointsFor(letter) {
     if (letter === 'S' || letter === 'A' || letter === 'B') return 1
     if (letter === 'C') return 0.5
@@ -367,7 +375,9 @@ export class EconomySystem {
         const mult = isFinite(mission?.payMult) ? mission.payMult : 1
         // Base + tip, as the cards state it (owner, 2026-09-29). `payout` stays the total.
         const { base, tip, total: payout } = splitPayout(result.par, result.ratio, t.payTier ?? t.dayTier ?? 1, mult)
-        const points = pointsFor(result.letter)
+        // FEAT-88 (owner, 2026-10-05): a haul's good deeds are what you DELIVERED, not the letter —
+        // a fast run with an empty bed is not a good deed. result.aboard/loaded come from main.js.
+        const points = result.loaded ? haulPointsFor(result.aboard / result.loaded) : pointsFor(result.letter)
         runEconomy.money = _cents(runEconomy.money + payout)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1

@@ -198,7 +198,7 @@ export const POI_ROSTER = [
     // bed. It lives HERE, not on the model, so the bay exists before the .glb does and physics never
     // waits on a fetch; the splitting-yard model (ASSET-36) is authored to fit it — its BayFirewood
     // empty sits on exactly this rectangle, the +X end of the yard, parallel to the road.
-    { type: 'firewoodYard', count: 1, model: null, siting: 'any',
+    { type: 'firewoodYard', count: 1, model: 'splittingYard', siting: 'any',
       bay: { x: 3.0, z: -1.5, halfX: 3.0, halfZ: 1.4 } },
     // Everything left over. Most POIs are mission givers, and a mission giver MAY present as a
     // food vendor (owner, 2026-08-05) — food vendors get no reservation of their own because a
@@ -810,22 +810,38 @@ export class PoiSystem {
     queryContact (cx, cy, cz, r) {
         const cube = (this._d.getParams?.()?.poiCubeSize ?? POI_PARAMS.poiCubeSize) * 0.5
         for (const q of this._list) {
-            const s = q.collision?.size
-            const hx = s ? s[0] * 0.5 : cube, hy = s ? s[1] * 0.5 : cube, hz = s ? s[2] * 0.5 : cube
-            // Broad phase in world space against the box's bounding radius — cheap and rotation-
-            // proof, so the oriented test below only runs for a marker actually within reach.
+            const hit = this._boxesContact(q, cube, cx, cy, cz, r)
+            if (hit) return hit
+        }
+        return null
+    }
+
+    /**
+     * One marker's contact. Its solid shape is `collision.boxes` when the asset lists several
+     * (offset, model-local — a yard of separate things), else one box of `collision.size` centred
+     * on the marker, else the placeholder cube. First box in contact wins, as POIs never overlap.
+     */
+    _boxesContact (q, cube, cx, cy, cz, r) {
+        const c = q.collision
+        const boxes = c?.boxes ?? [{ c: null, s: c?.size ?? [cube * 2, cube * 2, cube * 2] }]
+        for (const b of boxes) {
+            const hx = b.s[0] * 0.5, hy = b.s[1] * 0.5, hz = b.s[2] * 0.5
+            const ox = b.c ? b.c[0] : 0, oy = b.c ? b.c[1] : hy, oz = b.c ? b.c[2] : 0
+            // Broad phase in world space against the box's bounding radius (about the marker
+            // origin, so an offset box is still enclosed) — cheap and rotation-proof, so the
+            // oriented test below only runs for a marker actually within reach.
             const wx = cx - q.x, wz = cz - q.z
-            const reach = Math.hypot(hx, hz) + r
+            const reach = Math.hypot(Math.abs(ox) + hx, Math.abs(oz) + hz) + r
             if (wx * wx + wz * wz > reach * reach) continue
-            const bcy = q.y + hy                      // box centre: the marker stands ON the pad
+            const bcy = q.y + oy                      // box centre: base-seated on the pad
             const dy = cy - bcy
             if (dy > hy + r || dy < -hy - r) continue
             // Into the marker's own frame: undo yaw about Y. (cos, −sin; sin, cos) is the inverse
             // of the rotation applied to the mesh, so dx runs along the model's +X and dz its +Z.
             // modelYaw, NOT the pad yaw — a quarter-turned Winnebago's box must turn with it.
             const cs = Math.cos(q.modelYaw ?? q.yaw ?? 0), sn = Math.sin(q.modelYaw ?? q.yaw ?? 0)
-            const dx =  cs * wx - sn * wz
-            const dz =  sn * wx + cs * wz
+            const dx =  cs * wx - sn * wz - ox
+            const dz =  sn * wx + cs * wz - oz
             if (dx > hx + r || dx < -hx - r || dz > hz + r || dz < -hz - r) continue
             // Closest point on the box to the query centre, in box-local axes.
             const qx = dx < -hx ? -hx : dx > hx ? hx : dx

@@ -42,13 +42,10 @@ export const DEBRIS_TYPES = {
   barrel: { model: 'drumClosed', density: 86, friction: 0.5, restitution: 0.3 },
   rock: { model: 'testRock', density: 2500, friction: 0.7, restitution: 0.15 },
   // FEAT-88 haul cargo: the shrink-wrapped firewood bundle (~0.75 ft³ — a real one is 10–12 kg),
-  // three variants of one load. The model keys are registered in data/prop-models.js when the
-  // .glb files are promoted; until then model-service hands back its pink-cube fallback and the
-  // bundle is a 0.5 m cube that still weighs 11 kg. `massKg`
+  // three variants of one load (ASSET-36 kit, data/prop-models.js firewoodBundleA..C). `massKg`
   // instead of a density: a wrapped bundle's hull is mostly air between splits, and the mass the
   // owner picks is the number that matters, so the constructor derives ρ from the hull's own volume
-  // (see _densityFor). That also keeps the mass honest on the pink-cube fallback before the GLB
-  // lands. Friction is high on purpose: film on a steel bed ribs grips, and a bundle that skates
+  // (see _hullVolume) — exact on every variant's own hull. Friction is high on purpose: film on a steel bed ribs grips, and a bundle that skates
   // out under braking would be the physics lying, not the player.
   bundleA: { model: 'firewoodBundleA', massKg: 11, friction: 0.8, restitution: 0.05 },
   bundleB: { model: 'firewoodBundleB', massKg: 11, friction: 0.8, restitution: 0.05 },
@@ -175,6 +172,17 @@ export function stackLayout (count = 6, radius = STACK_RADIUS, height = STACK_HE
   return out
 }
 
+/** The 8 corners of a flat [x,y,z,…] point list's bounding box — the crash-proof fallback hull. */
+export function bboxCorners (pts) {
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
+  for (let i = 0; i < pts.length; i += 3) {
+    for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], pts[i + a]); hi[a] = Math.max(hi[a], pts[i + a]) }
+  }
+  const out = []
+  for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) out.push(x, y, z)
+  return new Float32Array(out)
+}
+
 // Hard cap (FEAT-36: "a couple at a time", with debug headroom). Oldest body is reclaimed —
 // same discipline as the thrown-roll cap, so an evening of debug throwing cannot leak bodies.
 // PINNED bodies (a live haul load, FEAT-88) are outside the cap: they never count toward it and are
@@ -190,23 +198,32 @@ export class DebrisSystem {
     for (const [kind, spec] of Object.entries(DEBRIS_TYPES)) {
       getModel(spec.model).then(rec => {
         const proto = this._extractHull(rec.template)
-        if (proto) proto.density = spec.massKg ? this._densityFor(proto.hull, spec.massKg) : spec.density
+        if (proto && !(this._hullVolume(proto.hull) > 0)) {
+          // The engine could not build this hull (Box3D caps a hull at 255 half-edges, and a
+          // densely faceted round asset can exceed it). Left alone it has NaN mass and takes the
+          // whole world unstable. Fall back to the hull's bounding box — wrong shape, right size,
+          // never a crash — and say so, because the asset needs fewer facets.
+          console.warn(`[debris] '${spec.model}' hull is too complex for the engine; using its bounding box`)
+          proto.hull = bboxCorners(proto.hull)
+        }
+        if (proto) proto.density = spec.massKg ? spec.massKg / this._hullVolume(proto.hull) : spec.density
         this._proto.set(kind, proto)
       })
     }
   }
 
   /**
-   * The density that puts exactly `massKg` on this hull. The engine integrates ρ over the solid
-   * hull, so a throwaway body at ρ = 1 reports the hull's volume as its mass; one probe per type,
-   * at load, never on the spawn path.
+   * The hull's volume as the ENGINE builds it [m³] — NaN if the engine cannot build it at all. The
+   * engine integrates ρ over the solid hull, so a throwaway body at ρ = 1 reports the volume as
+   * its mass; `massKg / volume` is then the density that lands exactly that mass. One probe per
+   * type, at load, never on the spawn path.
    */
-  _densityFor (hull, massKg) {
+  _hullVolume (hull) {
     const probe = this._eng.createBody({ type: 'dynamic', position: { x: 0, y: -1e4, z: 0 } })
     this._eng.addHull(probe, hull, { density: 1, group: GROUP_DEBRIS })
     const volume = this._eng.getMass(probe)
     this._eng.destroyBody(probe)
-    return massKg / volume
+    return volume
   }
 
   /**
