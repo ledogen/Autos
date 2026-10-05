@@ -822,7 +822,7 @@ export class TerrainSystem {
 
     /**
      * PERF-33: chunk (cx, cz) is built AND carved against the current road inputs — the per-chunk test
-     * isRingSettled() applies to the whole visible ring, used alone by the freeze guard's lookahead.
+     * isRingSettled() applies to the whole visible ring. The freeze guard uses isChunkDrivable() instead.
      */
     isChunkReady(cx, cz) {
         const chunk = this._chunkMap.get(this._chunkKey(cx, cz))
@@ -830,6 +830,21 @@ export class TerrainSystem {
         if (!this._roadSystem) return true
         return chunk.builtRoadGeneration === this._roadSystem.roadGeneration()
             && chunk.builtRoadCovered === this._roadCoversChunk(cx, cz)
+    }
+
+    /**
+     * PERF-33 freeze guard: chunk (cx, cz) has ground the truck can drive on. Looser than isChunkReady:
+     * a chunk queued for a re-carve IN PLACE (carveStale, or a generation bump) keeps its mesh and
+     * heightfield until the new carve swaps in, so it is still ground. Holding for it froze the sim
+     * mid-descent (capture 2026-10-05, seed 381142870): a positional adopt split the run under the
+     * truck at a new T, the run-keyed diff dirtied its whole length — road Y unchanged to the mm — and
+     * the guard paused until the truck's own chunk re-carved. The coverage stamp still counts: a
+     * chunk carved before the network reached it has no road cut at all.
+     */
+    isChunkDrivable(cx, cz) {
+        const chunk = this._chunkMap.get(this._chunkKey(cx, cz))
+        if (!chunk) return false
+        return !this._roadSystem || chunk.builtRoadCovered === this._roadCoversChunk(cx, cz)
     }
 
     /**

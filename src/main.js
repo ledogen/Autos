@@ -335,8 +335,9 @@ function roadStreamCenter () {
 
 // ── PERF-33: shared streaming budget + the freeze guard ─────────────────────────────────────────
 // Owner ruling 2026-09-24: smooth driving beats everything EXCEPT at the edge of generation — if the
-// truck would reach ground that is not ready (terrain built + carved, ribbon tile built, road network
+// truck would reach ground that is not built (terrain chunk, ribbon tile, road network
 // covering it) within HOLD_ENTER_S at its current speed, it is OK to freeze until drivable road exists.
+// Built, not current: a chunk or tile queued for an in-place rebuild is still drivable and never holds.
 // The hold is a silent sim pause (last frame stays up, streaming gets the FILL budget) plus a small
 // yellow warning triangle — the FPS-game "network issue" idiom — telling a slow machine to drop a
 // graphics preset. Driving only: free-cam never holds (nothing to protect, and it outruns everything).
@@ -357,8 +358,8 @@ let _genWarnEl = null
 /** Is the ground at world (x, z) ready to drive on? */
 function _groundReadyAt (x, z) {
   const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE)
-  if (!terrainSystem.isChunkReady(cx, cz)) return false
-  if (roadMeshSystem && !roadMeshSystem.isTileReady(cx, cz)) return false
+  if (!terrainSystem.isChunkDrivable(cx, cz)) return false   // built, not necessarily current — see there
+  if (roadMeshSystem && !roadMeshSystem.isTileBuilt(cx, cz)) return false
   // Story mode freezes the road stream on a pre-built region — coverage there is the region, not a window.
   if (roadSystem && !storySystem.isRoadStreamSuspended() && !roadSystem.networkCoversXZ(x, z)) return false
   return true
@@ -1046,7 +1047,12 @@ async function _reseatTruckAtSpawnInner () {
   // "correctly" against the old window and let go. Build the play band at the destination first;
   // the chunks then stream against the right roads and the guard holds until they are carved
   // (owner, 2026-10-03). Same frame-loop park as the spawn path.
-  if (_spawnOverride && netClient && roadSystem) {
+  // NOT in story mode: the play network there is the frozen whole-region build, already covering
+  // any teleport destination. Building "the band at the destination" meant re-routing a ~2.6 km
+  // radius network around the drop point — story entry's multi-second warm, on every map
+  // teleport, with no feedback (owner, 2026-10-05) — and re-centring the frozen region on it.
+  // storySystem is tested LAST: it is declared further down, and the boot seat has no override.
+  if (_spawnOverride && netClient && roadSystem && !storySystem.isRoadStreamSuspended()) {
     _spawnWarmActive = true
     try { await netClient.buildNow('play', _spawnOverride.x, _spawnOverride.z, roadSystem._proto.radius) }
     finally { _spawnWarmActive = false }

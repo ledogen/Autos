@@ -642,12 +642,10 @@ export class RoadMeshSystem {
     /** PERF-33: true while the ribbon is in its initial-fill burst (the frame loop lifts the budget). */
     isFilling() { return !this._initialFillDone }
 
-    /** PERF-33: tile (tileX, tileZ) is built against the current road (freeze-guard lookahead). An
-     *  empty tile — no road through it — is a built, ready tile. */
-    isTileReady(tileX, tileZ) {
-        const key = `${tileX},${tileZ}`
-        return this._tileMeshMap.has(key) && !this._pendingSet.has(key)
-    }
+    /** PERF-33: tile (tileX, tileZ) has a ribbon the truck can drive on (freeze-guard lookahead). An
+     *  empty tile — no road through it — is a built tile. A tile pending a rebuild IN PLACE
+     *  (invalidateRegions) keeps its old mesh + collider until the new one swaps in, so it counts. */
+    isTileBuilt(tileX, tileZ) { return this._tileMeshMap.has(`${tileX},${tileZ}`) }
 
     /**
      * Sync the road tile set with the provided set of terrain chunk keys.
