@@ -204,9 +204,15 @@ What exists:
 
 - **Offers.** The `haul` family is built and rolls only at the `firewoodYard` POI (`data/offers.js`).
   Each offer rolls 7–12 bundles on its own `bundles` stream, so existing offers don't move.
-- **Accept.** Accepting goes to a new `'loading'` mission state. Park inside the yard's bay (drawn as
-  a low curtain: orange outside, green inside) and the bundles drop over the bed on a 0.3 s stagger
-  (`main.js` `_haulStep`, `debris.js` `bedDropPoints`).
+- **The drop zone** (owner, 2026-10-05; replaces the first cut's truck bay and the orange ring). A
+  haul giver has a bed-sized rectangle painted on its pad (`poi.js` roster `drop`). On the firewood
+  yard it sits in the lane between the bundle row and the pile. Park with the bed over it (0.6 m
+  slack) and the offers open. Accepting goes to a `'loading'` mission state, and the load drops at
+  once, one piece every 0.3 s, at **fixed points over the zone, not over the truck**. Parking is the
+  skill: a bed a metre off catches about 1 of 15 (`main.js` `_haulStep`, `debris.js`
+  `bedDropPoints`).
+- **10–15 bundles per job** at 1/10 of a delivery each (owner, 2026-10-05; the first cut was 7–12
+  at 1/8).
 - **Debris.** Bundles are pinned debris (outside `DEBRIS_CAP`) and `noDamage` (filtered in
   `maxContactImpulse`). They're removed on settle, on cancel and when the job ends.
 - **Result card.** It shows "Firewood delivered N / M".
