@@ -2634,6 +2634,7 @@ const _customerRings = new Map()
 function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
+  for (const { mesh } of _dropMarks.values()) mesh.geometry.dispose()   // per-mark geometry, not shared
   _dropMarks.clear()
   _customerRings.clear()
   const half = POI_PARAMS.poiCubeSize * 0.5
@@ -2871,21 +2872,59 @@ function _haulClear () {
   _haul = null
 }
 
-// The drop zone, painted on the pad: orange, green while your bed is over it — the two colours
-// that already mean "park here" and "go". Flat and bed-sized on purpose: it shows exactly where the
-// wood lands, which a ring round the whole pad never could.
-const _dropGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)
-const _dropMat = (c) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.55,
+// The drop zone, painted on the pad (owner, 2026-10-05): a box OUTLINE a little wider than the bed so
+// it can be eyeballed while pulling up, BED written inside, and an arrow on the approach side
+// pointing in — the direction you back in from. The yard is laid out for reversing in from the +X
+// mouth (ASSET-36: the vendor's own pickup holds the far end), so the arrow sits on +X pointing
+// −X and BED reads upright to a driver looking back over the tailgate. One white canvas texture,
+// tinted by the material: orange, green while your bed is over the zone.
+const DROP_MARK_PAD = 0.3     // m the outline stands off the bed-sized zone on every side
+const DROP_ARROW_LEN = 1.7    // m of pad the arrow takes, beyond the outline
+const _DROP_PX = 200          // canvas px per metre
+function _dropMarkTexture (lx, lz) {          // lx, lz: outline size in metres (along X, along Z)
+  const W = Math.round((lx + DROP_ARROW_LEN) * _DROP_PX), H = Math.round(lz * _DROP_PX)
+  const bw = Math.round(lx * _DROP_PX), line = 0.12 * _DROP_PX
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H
+  const g = cv.getContext('2d')
+  g.strokeStyle = g.fillStyle = '#fff'
+  // Canvas left = model −X (the box), right = +X (the arrow); canvas up = model −Z.
+  g.lineWidth = line
+  g.strokeRect(line / 2, line / 2, bw - line, H - line)
+  g.save()
+  g.translate(bw / 2, H / 2)
+  g.rotate(-Math.PI / 2)                      // letters' top toward −X, the way you are backing
+  g.font = `bold ${Math.round(0.55 * _DROP_PX)}px sans-serif`
+  g.textAlign = 'center'; g.textBaseline = 'middle'
+  g.fillText('BED', 0, 0)
+  g.restore()
+  const ax0 = bw + 0.15 * _DROP_PX, ax1 = W - 0.1 * _DROP_PX, cy = H / 2
+  const head = 0.6 * _DROP_PX, half = 0.45 * _DROP_PX, shaft = 0.12 * _DROP_PX
+  g.beginPath()                               // pointing LEFT, into the box
+  g.moveTo(ax0, cy); g.lineTo(ax0 + head, cy - half); g.lineTo(ax0 + head, cy - shaft)
+  g.lineTo(ax1, cy - shaft); g.lineTo(ax1, cy + shaft); g.lineTo(ax0 + head, cy + shaft)
+  g.lineTo(ax0 + head, cy + half); g.closePath(); g.fill()
+  const tex = new THREE.CanvasTexture(cv)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 4
+  return tex
+}
+const _dropMat = (c, map) => new THREE.MeshBasicMaterial({ color: c, map, transparent: true, opacity: 0.85,
   depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
-const _dropMatIdle = _dropMat(0xff7a18), _dropMatOver = _dropMat(0x3ddc6b)
+let _dropMatIdle = null, _dropMatOver = null
 const _dropMarks = new Map()   // poi id → { q, mesh }
 
 function _addDropMark (q) {
   const z = dropZoneWorld(q)
-  const mesh = new THREE.Mesh(_dropGeo, _dropMatIdle)
+  const lx = 2 * (z.halfX + DROP_MARK_PAD), lz = 2 * (z.halfZ + DROP_MARK_PAD)
+  if (!_dropMatIdle) {   // every drop zone is the same size today: one texture, two tints
+    const tex = _dropMarkTexture(lx, lz)
+    _dropMatIdle = _dropMat(0xff7a18, tex); _dropMatOver = _dropMat(0x3ddc6b, tex)
+  }
+  // Plane in the marker frame: −lx/2 .. lx/2 + arrow along X, centred on the zone.
+  const geo = new THREE.PlaneGeometry(lx + DROP_ARROW_LEN, lz).rotateX(-Math.PI / 2).translate(DROP_ARROW_LEN / 2, 0, 0)
+  const mesh = new THREE.Mesh(geo, _dropMatIdle)
   mesh.position.set(z.x, z.y + 0.03, z.z)
   mesh.rotation.y = z.yaw
-  mesh.scale.set(2 * z.halfX, 1, 2 * z.halfZ)
   mesh.renderOrder = 5
   _poiGroup.add(mesh)
   _dropMarks.set(q.id, { q, mesh })

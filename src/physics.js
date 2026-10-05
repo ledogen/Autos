@@ -127,6 +127,15 @@ const BODY_RESTITUTION_DEFAULT = 0.21   // slight rebound on hard slams; 0 = ful
 const BODY_FRICTION_MU  = 0.1            // the tuned pair friction (BUG-27b)
 const TERRAIN_FRICTION_REF = 0.8         // must match terrain-physics.js TERRAIN_FRICTION
 const CHASSIS_SHAPE_MU  = BODY_FRICTION_MU * BODY_FRICTION_MU / TERRAIN_FRICTION_REF   // ≈ 0.0125
+// FEAT-88: the open BED gets its own material. On the body material above, a firewood bundle
+// (μ 0.8) met the floor at a pair μ of √(0.8 · 0.0125) = 0.10 — measured sliding on a 6° side slope
+// — and the walls bounced loads at the body's restitution. Owner, 2026-10-05: "still very slidey,
+// like 0.15". Same geometric-mean inversion as the chassis value, referenced to the bundle's 0.8
+// (src/debris.js): √(0.8 · 0.028) = 0.15. A rock (0.7) lands at 0.14, a drum (0.5) at 0.12. Dead,
+// not bouncy: wood and steel do not rebound off a bed wall.
+const BED_CARGO_MU      = 0.15           // the pair friction a bundle sees on the bed (owner)
+const CARGO_FRICTION_REF = 0.8           // must match src/debris.js bundle friction
+const BED_SHAPE_MU      = BED_CARGO_MU * BED_CARGO_MU / CARGO_FRICTION_REF        // ≈ 0.028
 
 // ── QUAL-25: chassis collider profile — measured off the ACTUAL vehicle model ──────────────
 // Body-frame breakpoints (origin = CG, forward = −Z) of hilux.glb pushed through the exact
@@ -302,6 +311,7 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
     -slabBottomHalfW, undY, Math.min(z1, slabBottomTailZ), slabBottomHalfW, undY, Math.min(z1, slabBottomTailZ),
   ], { ...mat, restitution: 0 })
   const bounceFrom = bed ? 2 : 1   // shapes before this index are the slab (restitution pinned 0)
+  const bedShapes = [0, 0]         // [from, to) of the bed-well slabs — their own dead material (FEAT-88)
   if (bed) {
     // An open bed's floor sits BELOW the beltline, so a full-length slab to beltY would fill the
     // well and cargo would rest on its top face instead of on the bed floor (measured: 13 cm proud
@@ -332,10 +342,12 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
     const T = BED_T
     // Axis-aligned box as an 8-point hull. Cheaper to read than extrude() here because the bed
     // pieces are boxes in three different orientations, not one z–y profile swept across the width.
+    const bedMat = { ...mat, friction: BED_SHAPE_MU, restitution: 0 }
     const slab = (x0, x1, y0, y1, z0, z1) => engine.addHull(chassis, [
       x0, y0, z0, x1, y0, z0, x0, y1, z0, x1, y1, z0,
       x0, y0, z1, x1, y0, z1, x0, y1, z1, x1, y1, z1,
-    ], mat)
+    ], bedMat)
+    bedShapes[0] = engine.shapeCount(chassis)
     const { floorY, railY, wheelhouseY, innerHalfW: wi, outerHalfW: wo,
             wheelhouseHalfW: ww, frontZ, tailZ, gateZ, archZ0, archZ1 } = bed
     slab(-wo, wo, floorY - T, floorY, frontZ, tailZ)          // floor pan
@@ -345,6 +357,7 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
     slab(wi, wo, floorY, railY, frontZ, tailZ)                // right bedside
     slab(-wi, -ww, floorY, wheelhouseY, archZ0, archZ1)       // left wheelhouse
     slab(ww, wi, floorY, wheelhouseY, archZ0, archZ1)         // right wheelhouse
+    bedShapes[1] = engine.shapeCount(chassis)
   } else {
     engine.addHull(chassis, extrude([
       [P.cabRearZ, 0.14], [P.cabRearZ, P.railY], [P.tailZ, P.railY], [P.tailZ, 0.14],
@@ -369,7 +382,11 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   const rims = []
   // The hulls between the slab and the wheel cores are the ones that carry params.bodyRestitution.
   rims.bounceShapes = []
-  for (let i = bounceFrom; i < engine.shapeCount(chassis); i++) rims.bounceShapes.push(i)
+  // The bed well is NOT one of them: its restitution is pinned 0 with its own friction (FEAT-88),
+  // so the Body Bounce slider never reaches it.
+  for (let i = bounceFrom; i < engine.shapeCount(chassis); i++) {
+    if (i < bedShapes[0] || i >= bedShapes[1]) rims.bounceShapes.push(i)
+  }
   for (const [x, z, front] of [
     [-params.trackFront / 2, axleF, true], [params.trackFront / 2, axleF, true],
     [-params.trackRear / 2, axleR, false], [params.trackRear / 2, axleR, false],

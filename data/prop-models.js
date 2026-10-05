@@ -335,16 +335,17 @@ export const PROP_MODELS = {
 
   // ASSET-36 — the firewood yard (FEAT-88/91, region-1 haul giver), re-scoped by the owner on
   // 2026-10-04 from a processor + conveyor to a roadside firewood VENDOR: a red towable splitter,
-  // a heap of splits, a row of shrink-wrapped bundles. 7 materials, no images. The truck bay is
-  // the +X end, parallel to the road — the roster slot's `bay` (src/poi.js) and the model's
-  // BayFirewood empty are the same rectangle, (3.0, -1.5) +- (3.0, 1.4). Footprint, bay included,
-  // x -6.54..6.0 by z -3.15..3.28: it fits the standard 14 x 8 pad (owner, 2026-10-04).
+  // a heap of splits, a row of shrink-wrapped bundles. 7 materials, no images. The load drops on
+  // the roster slot's `drop` zone (src/poi.js), in the lane between the row and the pile, which
+  // the model keeps clear from the zone to x 4.9; the player backs in from the +X mouth, where the
+  // vendor's own pickup (SpotPickup, reserved) holds the far end. Footprint x -6.54..6.9 by
+  // z -3.15..3.5: it fits the standard 14 x 8 pad (owner, 2026-10-04).
   // Three boxes, not one: one box round all of it would wall off the open yard between them. The
   // three small rounds are left soft on purpose.
   splittingYard: {
     url: 'assets/models/splitting-yard.glb',
     collision: {
-      shape: 'box', size: [12.54, 1.28, 6.43],
+      shape: 'box', size: [13.44, 1.28, 6.65],
       boxes: [
         { c: [-0.36, 0.53, 1.81], s: [2.58, 1.06, 1.16] },   // splitter (yawed 12°, so a little loose)
         { c: [-4.00, 0.58, 1.77], s: [4.07, 1.28, 3.02] },   // the pile of splits (a dome — corners generous)

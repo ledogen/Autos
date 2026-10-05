@@ -11,8 +11,9 @@ conveyor is replaced by a cheap red towable gas-hydraulic splitter; the yard
 is a firewood VENDOR: splitter, a big messy pile of splits, and a pyramid row
 of ~30 shrink-wrapped bundles.  The bundle replaces ASSET-37's loose armload as
 the haul's cargo unit (it is convex by construction — a wrapped prism — which
-is exactly what the hull-from-mesh cargo path wants).  Room is LEFT for a
-pickup (`BayFirewood`) and an awning + chairs (`SpotAwning`) — not modelled.
+is exactly what the hull-from-mesh cargo path wants).  Room is LEFT for the
+vendor's own pickup (`SpotPickup` — the place is staffed) and an awning +
+chairs (`SpotAwning`) — not modelled.
 
 Outputs (one generator, a kit + a POI, per ASSETS.md "a kit is ONE generator"):
   firewood-bundle-{a,b,c}.glb  — cargo kit, bbox-centred, axis along -Z (glTF)
@@ -115,10 +116,15 @@ PILE_SINK = (-0.06, -0.005)  # split centres this far under the core's smooth
                              # less a split's half-thickness, so every split
                              # TOUCHES the core, yet most of it shows
 SPLITTER_AT = (-0.6, -1.7, math.radians(12))   # x, y, yaw
-# Reserved, not modelled.  Bay is the haul mission's contract (FEAT-91 window):
-# glTF (+3.0, 0, -1.5), 6 m along X x 2.8 m, parallel to the road.
-BAY_FIREWOOD = (3.0, 1.5, 3.0, 1.4)     # centre x, y, half-extents
-SPOT_AWNING = (-1.3, 1.35, 1.3, 1.05)   # awning + chairs, behind the row's end
+# LOADING (owner, 2026-10-05): no truck bay.  The player reverses their bed
+# over a painted drop zone BETWEEN row and pile (glTF centre (-4.0, 0, -1.2),
+# 1.84 x 1.40 m) — read by the haul code from its own data, not from this
+# model.  The lane (Blender y -0.26..2.65) must stay clear of everything from
+# the drop zone to x 4.9; the player enters through the mouth between the
+# row's end and the vendor's pickup.
+# Reserved, not modelled:  (centre x, y, half-extents)
+SPOT_PICKUP = (5.9, -0.85, 1.0, 2.65)   # vendor's pickup, nose to the road
+SPOT_AWNING = (3.0, -1.9, 1.3, 1.05)    # awning + chairs, behind the lane
 
 # Splitter (local: X along beam, tongue +X; Z up; ground z = 0)
 WHEEL_R, WHEEL_W, WHEEL_Y, AXLE_X = 0.21, 0.10, 0.47, -0.55
@@ -825,7 +831,7 @@ def _empty(name, x, y, hx, hy):
 
 
 def _empties():
-    _empty("BayFirewood", *BAY_FIREWOOD)
+    _empty("SpotPickup", *SPOT_PICKUP)
     _empty("SpotAwning", *SPOT_AWNING)
 
 
