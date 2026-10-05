@@ -46,10 +46,13 @@ import { roadQuality } from './road-quality.js'
 // begin until the loading screen cleared. Rushing straight into a Quick Job beat the warm and paid
 // the build synchronously on the main thread — that was "building the road network for this area".
 // If free-roam missions ever return they need their own wide band again: blueprint it from here.
-// Leg bounds are measured on STRAIGHT-LINE graph distance (the planner's cheap metric); the
-// routed road is empirically ~1.5× that, so these bracket a ~1.4-3 km drive.
-const LEG_MIN = 1500                // m
-const LEG_MAX = 4000                // m
+// Leg bounds are measured in ROAD metres along the planning graph (BUG-52 — they were chord-sum
+// metres until then). Scaled ×1.3 from the chord-era 1500 / 4000 so leg lengths did not move with
+// the fix: shortest-path distances read 1.19-1.35× (p50) longer in road metres than in chord-sum
+// metres on seeds 6/20/11 at a 1400 m band. Payout scales with leg length, so retuning these is an
+// economy call, not a planner one.
+const LEG_MIN = 1950                // m of road
+const LEG_MAX = 5200                // m of road
 const MAX_EDGES = 9                 // routing cap: each edge is tens of ms on a cache miss
 const ARRIVE_RADIUS = 28            // m — you're there
 const COUNTDOWN = 3.0               // s — the start countdown (a START count, not a par clock)
@@ -73,10 +76,11 @@ export const START_ZONE_R = 25      // m — POI start threshold, measured from 
 // session. (Its regenerate half went with FEAT-67: a POI job's offers are the board's, and there is
 // nothing to re-roll.) Quick Job (fromPoi === null) is untouched — it pays nothing.
 const PAID_JOB_DO_OVERS = false
-// FEAT-67: straight-line graph distance band for a POI DESTINATION. Wider at the bottom than the
-// roadside band (LEG_MIN): a region holds ~14 POIs, so demanding 1.5 km would leave most offers
-// with no POI in range and quietly turn the 50 % POI share into a roadside one.
-const POI_LEG_MIN = 800             // m
+// FEAT-67: road-metre graph distance band for a POI DESTINATION (×1.3 from the chord-era 800, as
+// LEG_MIN above). Wider at the bottom than the roadside band (LEG_MIN): a region holds ~14 POIs, so
+// demanding the full LEG_MIN would leave most offers with no POI in range and quietly turn the
+// 50 % POI share into a roadside one.
+const POI_LEG_MIN = 1050            // m of road
 const EDGE_T_MARGIN = 0.12          // keep endpoints off the junction pads at both ends
 // FEAT-43: when story mode supplies a region, the whole mission must fit INSIDE its wall.
 // The planning network ALWAYS reaches past that wall — story mode warms the play band to
@@ -116,7 +120,12 @@ export function headingToFace(tx, tz) { return Math.atan2(-tx, -tz) }
 export function facingFromHeading(h) { return { x: -Math.sin(h), z: -Math.cos(h) } }
 
 /**
- * The planning graph, keyed by node key: positions, the original ids, and straight-line adjacency.
+ * The planning graph, keyed by node key: positions, the original ids, and road-length adjacency.
+ *
+ * BUG-52: an edge weighs its run's driven arc length (the networkGraph tuple's 4th slot), NOT the
+ * chord between its nodes. The chord under-priced exactly the edges the terrain punished hardest —
+ * a big detour factor is what a ridge crossing looks like (seed 20's spawn edge: 452 m chord vs
+ * 1134 m of road). Chord survives only as the fallback for an edge with no measured run.
  *
  * EDGES are filtered, not just endpoints (FEAT-43 guard 1): an edge with one node outside the
  * region wall is a road that LEAVES the region, and admitting it as a hop would route the player
@@ -136,18 +145,18 @@ export function buildGraphAdj(g, inRegion = () => true) {
         if (!posOf.has(k)) { posOf.set(k, g.pos(id)); idOf.set(k, id); adj.set(k, []) }
         return k
     }
-    for (const [a, b] of g.edges) {
+    for (const [a, b, , len] of g.edges) {
         if (!inRegion(g.pos(a)) || !inRegion(g.pos(b))) continue
         const ka = touch(a), kb = touch(b)
         const pa = posOf.get(ka), pb = posOf.get(kb)
-        const w = Math.hypot(pa.x - pb.x, pa.z - pb.z)
+        const w = len > 0 ? len : Math.hypot(pa.x - pb.x, pa.z - pb.z)
         adj.get(ka).push({ to: kb, w }); adj.get(kb).push({ to: ka, w })
     }
     return { posOf, idOf, adj }
 }
 
 /**
- * Dijkstra from one node over a buildGraphAdj adjacency (straight-line graph metric — cheap, nothing
+ * Dijkstra from one node over a buildGraphAdj adjacency (road-length graph metric — cheap, nothing
  * is routed). Returns dist + parent chain to every reachable node. `maxD` stops expanding past that
  * distance (the leg planner's LEG_MAX band); the paper-route tour leaves it unbounded. Shared by the
  * mission leg planner and PaperRouteSystem so the two searches cannot drift (a linear-scan sorted
