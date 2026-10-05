@@ -12,8 +12,10 @@ is a firewood VENDOR: splitter, a big messy pile of splits, and a pyramid row
 of ~30 shrink-wrapped bundles.  The bundle replaces ASSET-37's loose armload as
 the haul's cargo unit (it is convex by construction — a wrapped prism — which
 is exactly what the hull-from-mesh cargo path wants).  Room is LEFT for the
-vendor's own pickup (`SpotPickup` — the place is staffed) and an awning +
-chairs (`SpotAwning`) — not modelled.
+vendor's own pickup (`SpotPickup` — the place is staffed; not modelled until
+we have a non-hero pickup of our own).  Under `SpotAwning` stand the ASSET-06
+awning and two camp chairs, COMPOSITED from awning.glb + camp-chair.glb
+(generator: lawn-furniture.py) — re-export this yard after changing those.
 
 Outputs (one generator, a kit + a POI, per ASSETS.md "a kit is ONE generator"):
   firewood-bundle-{a,b,c}.glb  — cargo kit, bbox-centred, axis along -Z (glTF)
@@ -59,7 +61,7 @@ OUT_BLEND = f"{MODELS}/src/splitting-yard.blend"
 # + rounds 84 + 30-bundle row 5374.  7 materials, 0 images.  Blender 5.2.0.
 TRI_BUDGETS = {
     "firewood-bundle-a": 250, "firewood-bundle-b": 250, "firewood-bundle-c": 250,
-    "splitting-yard": 4500,   # ticket said 2500 for processor+conveyor; owner's call
+    "splitting-yard": 5000,   # ticket said 2500 for processor+conveyor; +awning +2 chairs; owner's call
 }
 
 MATS = {
@@ -124,7 +126,10 @@ SPLITTER_AT = (-0.6, -1.7, math.radians(12))   # x, y, yaw
 # row's end and the vendor's pickup.
 # Reserved, not modelled:  (centre x, y, half-extents)
 SPOT_PICKUP = (5.9, -0.85, 1.0, 2.65)   # vendor's pickup, nose to the road
-SPOT_AWNING = (3.0, -1.9, 1.3, 1.05)    # awning + chairs, behind the lane
+SPOT_AWNING = (3.05, -1.85, 1.5, 1.25)  # ASSET-06 awning, 3.0 x 2.5 m, behind
+                                        # the lane (clears it by 0.34 m)
+CHAIRS = [(2.55, -1.55, math.radians(12)),   # x, y, yaw — under the awning,
+          (3.55, -1.75, math.radians(-15))]  # facing the lane and the road
 
 # Splitter (local: X along beam, tongue +X; Z up; ground z = 0)
 WHEEL_R, WHEEL_W, WHEEL_Y, AXLE_X = 0.21, 0.10, 0.47, -0.55
@@ -835,6 +840,41 @@ def _empties():
     _empty("SpotAwning", *SPOT_AWNING)
 
 
+def glb_part(path, name):
+    """A shipped kit model as a Part (world-space polys + material names), so
+    the yard composites the SAME mesh the standalone .glb ships.  Its
+    materials stay in bpy.data, and bake() reuses them by name — including
+    their doubleSided flag."""
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=path)
+    new = [o for o in bpy.data.objects if o not in before]
+    p = Part(name)
+    for o in new:
+        if o.type != "MESH":
+            continue
+        me = o.data
+        verts = [tuple(o.matrix_world @ v.co) for v in me.vertices]
+        p.add(verts, [list(f.vertices) for f in me.polygons],
+              [me.materials[f.material_index].name for f in me.polygons])
+    for o in new:
+        data = o.data
+        bpy.data.objects.remove(o)
+        if data is not None and data.users == 0:
+            bpy.data.meshes.remove(data)
+    return p
+
+
+def build_furniture():
+    """Awning on SpotAwning, chairs under it — composited from their .glb."""
+    p = Part("Furniture")
+    ax, ay = SPOT_AWNING[:2]
+    p.extend(glb_part(f"{MODELS}/awning.glb", "awning"), T(ax, ay, 0))
+    chair = glb_part(f"{MODELS}/camp-chair.glb", "camp-chair")
+    for x, y, yaw in CHAIRS:
+        p.extend(chair, T(x, y, 0) @ Matrix.Rotation(yaw, 4, "Z"))
+    return p
+
+
 def yard_parts():
     bundles = [build_bundle(s) for s in BUNDLES]
     row = build_row([build_bundle(s, lod=True) for s in BUNDLES])
@@ -843,7 +883,7 @@ def yard_parts():
     spl.extend(build_splitter(), T(sx, sy, 0) @ Matrix.Rotation(syaw, 4, "Z"))
     pile = Part("Pile")
     pile.extend(build_pile(), T(PILE_CENTRE[0], PILE_CENTRE[1], 0))
-    return bundles, [spl, pile, build_rounds(), row]
+    return bundles, [spl, pile, build_rounds(), row, build_furniture()]
 
 
 def build():

@@ -335,7 +335,8 @@ export const PROP_MODELS = {
 
   // ASSET-36 — the firewood yard (FEAT-88/91, region-1 haul giver), re-scoped by the owner on
   // 2026-10-04 from a processor + conveyor to a roadside firewood VENDOR: a red towable splitter,
-  // a heap of splits, a row of shrink-wrapped bundles. 7 materials, no images. The load drops on
+  // a heap of splits, a row of shrink-wrapped bundles, an awning with two camp chairs. 12 materials,
+  // no images. The load drops on
   // the roster slot's `drop` zone (src/poi.js), in the lane between the row and the pile, which
   // the model keeps clear from the zone to x 4.9; the player backs in from the +X mouth, where the
   // vendor's own pickup (SpotPickup, reserved) holds the far end. Footprint x -6.54..6.9 by
@@ -345,11 +346,17 @@ export const PROP_MODELS = {
   splittingYard: {
     url: 'assets/models/splitting-yard.glb',
     collision: {
-      shape: 'box', size: [13.44, 1.28, 6.65],
+      shape: 'box', size: [13.44, 2.5, 6.65],
       boxes: [
         { c: [-0.36, 0.53, 1.81], s: [2.58, 1.06, 1.16] },   // splitter (yawed 12°, so a little loose)
         { c: [-4.00, 0.58, 1.77], s: [4.07, 1.28, 3.02] },   // the pile of splits (a dome — corners generous)
         { c: [-4.10, 0.44, -2.90], s: [3.64, 0.87, 0.49] },  // the bundle row
+        // The awning (ASSET-06 kit, composited into the yard): its four 0.06 m posts are solid,
+        // the canopy and the two camp chairs are soft.
+        { c: [1.55, 1.1, 3.10], s: [0.06, 2.2, 0.06] },
+        { c: [1.55, 1.1, 0.60], s: [0.06, 2.2, 0.06] },
+        { c: [4.55, 1.1, 3.10], s: [0.06, 2.2, 0.06] },
+        { c: [4.55, 1.1, 0.60], s: [0.06, 2.2, 0.06] },
       ],
     },
   },
