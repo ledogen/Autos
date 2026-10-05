@@ -1,7 +1,8 @@
 ---
 id: BUG-43
 type: bug
-status: pending
+status: closed
+closed: 2026-10-04
 severity: major
 opened: 2026-08-05
 relates: FEAT-59, FEAT-60, ASSET-21
@@ -63,10 +64,29 @@ less surprising; substring is consistent with the existing vehicle path.
 
 ## Acceptance
 
-- [ ] Two instances spawned from one registry key can be given different `TrailerBody` colours, and
+- [x] Two instances spawned from one registry key can be given different `TrailerBody` colours, and
       neither bleeds into the other.
-- [ ] Materials NOT named in `recolor` remain shared between instances (assert identity, so the fix
+- [x] Materials NOT named in `recolor` remain shared between instances (assert identity, so the fix
       cannot silently regress into cloning everything).
-- [ ] A gate covers it — headless, `GLTFLoader.parse()` on the shipped `.glb`, no DOM needed. The
+- [x] A gate covers it — headless, `GLTFLoader.parse()` on the shipped `.glb`, no DOM needed. The
       repro above runs in pure node today.
 - [ ] `mom's house` and `larry's house` visibly differ in-game once FEAT-60 lands.
+
+## Resolution (2026-10-04)
+
+The mechanism had already shipped on 2026-08-21 as FEAT-59's curated palettes (`d660a10`). It
+resolved the open question the way this ticket leaned: opt-in, declared in `data/prop-models.js`,
+**substring** matching like the vehicle paint path, and only the named materials swapped. Each
+palette colour is built once at load and shared by every spawn of that variant, so it costs no
+per-spawn material clones. What was still missing:
+
+- `trailerHomeA` declared no palette. It now carries ASSET-21's cyan / yellow / white
+  (`TrailerBody` + `TrailerAccent`, in lockstep).
+- Nothing passed a `variant`. The POI roster now stamps `q.modelVariant`. A slot can pin it
+  (mom = 0 cyan, Larry = 1 yellow, so the two never match); otherwise it's
+  `hash32('poi-variant:seed:id')`. `_rebuildPoiMarkers` passes it to `spawnModel`.
+- Gate `test/model-variant.mjs` runs the real `buildPalette` + `instantiate` path on a
+  `GLTFLoader.parse` of the shipped `.glb`.
+
+The last acceptance box (mom's and Larry's houses visibly differ in-game) still needs an
+in-game check.

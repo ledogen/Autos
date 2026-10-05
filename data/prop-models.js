@@ -316,6 +316,13 @@ export const PROP_MODELS = {
     // 12.36 x 3.71 x 4.58 overall), so a marker yawed to face the road lays its length ALONG the
     // road — the only orientation it fits a 14 x 8 m pad in. Hence no yawOffset.
     collision: { shape: 'box', size: [12.0, 3.15, 3.5] },
+    // ASSET-21's cyan → yellow → white range, body and stripe in lockstep (BUG-43). Values are the
+    // ones verified rendered in the asset ticket; the stoop, roof, skirt, trim, door, curtains and
+    // metal are fixed and stay shared.
+    palette: {
+      TrailerBody:   [[0.28, 0.72, 0.76], [0.88, 0.76, 0.28], [0.90, 0.90, 0.88]],   // cyan AUTHORED
+      TrailerAccent: [[0.10, 0.34, 0.40], [0.46, 0.34, 0.12], [0.55, 0.56, 0.58]],
+    },
     tags: ['missionGiver'],
     // FEAT-67 giver naming (owner, 2026-09-27): a home — the board calls it "the Hadley place".
     giverName: 'home',
