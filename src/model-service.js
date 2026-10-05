@@ -45,7 +45,7 @@ const _records = new Map()   // key → Promise<record>; the promise IS the dedu
  *
  * @returns {{byName: Map<string, THREE.Material[]>, count: number} | null}
  */
-function _buildPalette (template, spec) {
+export function buildPalette (template, spec) {
   const decl = spec?.palette
   if (!decl) return null
   const keys = Object.keys(decl)
@@ -123,7 +123,7 @@ export function getModel (key) {
     new GLTFLoader().load(spec.url, (gltf) => {
       resolve({
         key, spec, template: gltf.scene, collision: spec.collision ?? null, failed: false,
-        palette: _buildPalette(gltf.scene, spec),
+        palette: buildPalette(gltf.scene, spec),
       })
     }, undefined, (err) => {
       console.warn(`[model-service] '${key}' GLB load failed; pink-cube fallback:`, err)
@@ -132,6 +132,17 @@ export function getModel (key) {
   })
   _records.set(key, promise)
   return promise
+}
+
+/**
+ * Clone a loaded record's template and dress it in palette variant `variant` (BUG-43). Split out of
+ * spawnModel so test/model-variant.mjs runs the exact clone + material-swap path headless, on a
+ * GLTFLoader.parse() of the shipped .glb, without a fetch.
+ */
+export function instantiate (rec, variant = 0) {
+  const inst = rec.template.clone(true)
+  if (rec.palette && variant) _applyVariant(inst, rec.palette, variant)
+  return inst
 }
 
 /**
@@ -153,8 +164,7 @@ export function spawnModel (key, opts = {}) {
   const root = new THREE.Group()
   root.name = `model:${key}`
   getModel(key).then((rec) => {
-    const inst = rec.template.clone(true)
-    if (rec.palette && variant) _applyVariant(inst, rec.palette, variant)
+    const inst = instantiate(rec, variant)
     inst.traverse((o) => {
       if (o.isMesh) { o.castShadow = castShadow; o.receiveShadow = receiveShadow }
     })

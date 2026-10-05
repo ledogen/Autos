@@ -76,7 +76,7 @@ The other six — `TrailerRoof`, `TrailerSkirt`, `TrailerTrim`, `TrailerDoor`, `
       `feature/poi-models` (it already registers `trailerHomeA` in `data/prop-models.js` and sites it
       as mom's house and Larry's house) but is **not on main**. Nothing further is needed from this
       asset — do NOT add a registry entry on main, that branch owns the file.
-- [ ] Per-instance recolour actually works — **blocked by [BUG-43](../pending/bug-model-material-sharing.md)**.
+- [x] Per-instance recolour actually works — [BUG-43](bug-model-material-sharing.md) closed 2026-10-04.
       `spawnModel()` clones the scene graph but shares materials, so recolouring one trailer
       recolours every trailer. FEAT-60 spawns this model for *both* story houses, so they cannot
       differ until that is fixed.

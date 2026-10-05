@@ -2641,7 +2641,7 @@ function _rebuildPoiMarkers () {
     if (q.modelKey) {
       // receiveShadow too: a building is big enough to catch its neighbours' shadows and its own,
       // unlike the small thrown mission items FEAT-59's cast-only default was written for.
-      const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true })
+      const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true, variant: q.modelVariant })
       m.position.set(q.x, q.y, q.z)     // pad records are base-seated, and so are the models
       // modelYaw = the pad's road-facing yaw plus the asset's own yawOffset (a Winnebago parks
       // broadside, a trailer stands square) — see the yawOffset note in data/prop-models.js.

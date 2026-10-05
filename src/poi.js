@@ -166,12 +166,13 @@ export const POI_PARAMS = {
  */
 export const POI_ROSTER = [
     // Exactly one of each per world, and both houses are a short drive from where you wake up.
-    { type: 'momsHouse',    count: 1, model: 'trailerHomeA', siting: 'nearSpawn',
+    // `variant` pins the palette colour (BUG-43): mom's is the authored cyan, Larry's yellow.
+    { type: 'momsHouse',    count: 1, model: 'trailerHomeA', siting: 'nearSpawn', variant: 0,
       tags: ['newsCustomer', 'sleepable'] },
     // Larry hands out the paper route (FEAT-61 Phase E2). He posts offers like any other source,
     // but the brake at his place opens the PaperRouteSystem rather than a point-to-point errand —
     // main.js branches on the type, because he is the only POI whose offer is a different mission.
-    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn' },
+    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn', variant: 1 },
     // "Never too far from a station" — the reason these two slots exist and the reason they are
     // sited by coverage rather than by a spacing rule. Gas and service are solved INDEPENDENTLY:
     // no constraint was ratified between them, and a service shop sharing a corner with a pump
@@ -629,6 +630,10 @@ export class PoiSystem {
                 // long axis lies along the pad's 14 m rather than across its 8 m — see yawOffset
                 // in data/prop-models.js. Both the mesh and the oriented contact box read THIS.
                 q.modelYaw = q.yaw + (spec?.yawOffset ?? 0)
+                // BUG-43: which colour from the model's curated palette. A slot may pin it (the
+                // two story houses must never match); otherwise a raw hash off the pad id, which
+                // spawnModel takes modulo the palette length. Ignored by a model with no palette.
+                q.modelVariant = slot.variant ?? hash32(`poi-variant:${seed}:${q.id}`)
                 const i = free.indexOf(q)
                 if (i >= 0) free.splice(i, 1)
                 out.push(q)
