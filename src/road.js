@@ -1901,7 +1901,7 @@ export class RoadSystem {
      * built, and `edgeParData` returns their REGISTERED centerlines (identical to the ones the
      * ribbon and carve use) rather than re-routing them without their neighbours' context.
      *
-     * @returns {{ edges: Array<[id,id,string]>, adj: Map<string,Set<string>>, key: (id)=>string,
+     * @returns {{ edges: Array<[id,id,string,number]>, adj: Map<string,Set<string>>, key: (id)=>string,
      *             pos: (id)=>THREE.Vector3, idOf: Map<string,any> }}
      */
     networkGraph() {
@@ -1909,17 +1909,19 @@ export class RoadSystem {
         const edges = [], adj = new Map(), idOf = new Map()
         // Runs are 1:1 with abstract edges (the post-cull, post-T-promotion set). Everything that decides
         // per-edge — POI siting rolls once per edge — depends on this staying the EDGE count.
-        const emit = (a, b, runKey) => {
+        const emit = (a, b, runKey, len) => {
             const ka = key(a), kb = key(b)
             idOf.set(ka, a); idOf.set(kb, b)
             if (!adj.has(ka)) adj.set(ka, new Set())
             if (!adj.has(kb)) adj.set(kb, new Set())
             adj.get(ka).add(kb); adj.get(kb).add(ka)
-            edges.push([a, b, runKey])
+            edges.push([a, b, runKey, len])
         }
+        // BUG-52: `len` is the run's DRIVEN arc (polyCum's end — the edgeParData domain), so the
+        // planners weight an edge by the road, not the chord between its nodes.
         for (const [runKey, e] of this._network) {
             if (!e.cellA || !e.cellB) continue
-            emit(e.cellA, e.cellB, runKey)
+            emit(e.cellA, e.cellB, runKey, e.polyCum?.[e.polyCum.length - 1])
         }
         return { edges, adj, key, idOf, pos: (id) => this._nodePos(id) }
     }

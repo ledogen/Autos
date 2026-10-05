@@ -527,10 +527,8 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
         for (const [x, y] of [[e.ka, e.kb], [e.kb, e.ka]]) {
             adj.set(x, (adj.get(x) || []).filter(l => l.to !== y))
         }
-        // …and relink it as the chain. Weights are TRUE ARC here, where buildGraphAdj used the
-        // straight-line chord: a mixed metric, and deliberately so — arc is the only thing that can
-        // place a point partway along an edge, and routing an edge just to measure it would cost
-        // more than the bias is worth. Arc ≥ chord, so a carrying edge is never under-priced.
+        // …and relink it as the chain. Weights are TRUE ARC — the same metric buildGraphAdj uses
+        // for every other edge since BUG-52, so the spliced chain and the rest of the graph agree.
         for (let i = 0; i < chain.length - 1; i++) {
             const u = chain[i], v = chain[i + 1]
             const w = Math.abs(v.s - u.s)

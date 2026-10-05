@@ -1,7 +1,8 @@
 ---
 id: BUG-52
 type: bug
-status: open
+status: closed
+closed: 2026-10-05
 severity: minor
 opened: 2026-08-18
 source: found while diagnosing seed 20's spawn road (BUG-51); scoped out of the router work by owner decision
@@ -65,3 +66,24 @@ gentle-but-long price honestly against each other. Verify with `test/paper-route
 Deliberately **not** bundled into the BUG-51 router work (owner decision 2026-08-18): this bug
 changes which routes planners *pick*, not which roads *exist*. Fixing them together would confound
 the ablation there.
+
+## Resolution (2026-10-05)
+
+Fixed as sketched, first pass only (length, not `parForEdge` time).
+
+- `networkGraph()` (`src/road.js`) carries each run's driven arc — `polyCum`'s end, the
+  `edgeParData` domain — as the 4th slot of the edge tuple. Every networkGraph edge is a
+  registered run, so the length is always there; no routing.
+- `buildGraphAdj` (`src/mission.js`) weights by it; chord survives only as the no-length fallback.
+  paper-route's "mixed metric, deliberately" note is gone — the spliced chain and the graph now
+  speak one metric.
+- **Leg bands re-scaled ×1.3 (owner, 2026-10-05: option 2 — keep today's leg lengths, don't move
+  the economy).** Shortest-path distances measured 1.19-1.35× (p50) longer in road metres than
+  chord-sum metres (seeds 6/20/11, 1400 m band; per-edge detour p90 1.58-1.91, max 2.53). So
+  LEG_MIN 1500→1950, LEG_MAX 4000→5200, POI_LEG_MIN 800→1050, all now in road metres.
+- Roads themselves untouched — only which existing roads the planners string together.
+- Gates: mission-network, world-determinism, story-poi, scenario-route, par-oracle, paper-route,
+  paper-tour, paper-reroute all green with no re-baselining.
+- Not done: the optional `parForEdge` time weighting. Open a ticket if steep-short vs gentle-long
+  ever prices wrong in play.
+
