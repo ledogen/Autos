@@ -184,3 +184,39 @@ be freight. Don't tune the mass to make the mission easier; pick cargo whose rea
 - `src/offer-board.js` — `BUILT_FAMILIES`, the fragile card that already exists.
 - `src/mission.js` — driven trace, settle, where the roughness accumulator goes.
 - `test/debris-coupling.mjs`, `test/debris-stack.mjs` — the gates to model the new ones on.
+
+## As built — first slice, firewood (2026-10-04, `feature/haul-firewood`)
+
+The owner ruled the pay rule on 2026-10-04. **It supersedes the roughness grading above:**
+
+- **Pay = (Base pay + time tip) × (pieces aboard at delivery ÷ pieces in the offer).** The ordinary
+  par line, with no separate shock score: a bounce that matters throws a piece out, and that piece's
+  share is lost. A lost piece never ends the mission. The empty-bed floor is zero (SM-INV-4).
+- **The max scales per piece** (`HAUL_PAY_PER_BUNDLE`, 1/8 of a delivery each). Load size is what
+  makes the market pull between careers.
+- **Pieces that miss the bed at the yard are lost pay too.** The loader drops the offered count
+  whatever happens.
+- **Good deeds on a haul follow the share delivered, not the letter** (owner, 2026-10-05). More
+  than 2/3 earns 1, 1/3 to 2/3 earns ½, under 1/3 earns 0 (`economy.js` `haulPointsFor`). A fast
+  run with an empty bed earns no deed.
+
+What exists:
+
+- **Offers.** The `haul` family is built and rolls only at the `firewoodYard` POI (`data/offers.js`).
+  Each offer rolls 7–12 bundles on its own `bundles` stream, so existing offers don't move.
+- **The drop zone** (owner, 2026-10-05; replaces the first cut's truck bay and the orange ring). A
+  haul giver has a bed-sized rectangle painted on its pad (`poi.js` roster `drop`). On the firewood
+  yard it sits in the lane between the bundle row and the pile. Park with the bed over it (0.6 m
+  slack) and the offers open. Accepting goes to a `'loading'` mission state, and the load drops at
+  once, one piece every 0.3 s, at **fixed points over the zone, not over the truck**. Parking is the
+  skill: a bed a metre off catches about 1 of 15 (`main.js` `_haulStep`, `debris.js`
+  `bedDropPoints`).
+- **10–15 bundles per job** at 1/10 of a delivery each (owner, 2026-10-05; the first cut was 7–12
+  at 1/8).
+- **Debris.** Bundles are pinned debris (outside `DEBRIS_CAP`) and `noDamage` (filtered in
+  `maxContactImpulse`). They're removed on settle, on cancel and when the job ends.
+- **Result card.** It shows "Firewood delivered N / M".
+- **Gates.** `test/haul-load.mjs` is new. `offer-board.mjs` §15 and `economy.mjs` §8b are extended.
+
+Still open in this ticket: the crate / drum / barrel cargo for the other givers, and retiring the
+dead `fragile` / `freight` keys into `haul`.

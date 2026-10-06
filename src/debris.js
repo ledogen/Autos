@@ -20,6 +20,7 @@
 import * as THREE from 'three'
 import { GROUP_DEBRIS } from './physics-engine.js'
 import { getModel } from './model-service.js'
+import { hash32, mulberry32 } from './seed.js'
 
 // Scratch for beforeStep()/update() — no per-body allocation on the per-step path.
 const _cp = new THREE.Vector3(), _cq = new THREE.Quaternion(), _cqi = new THREE.Quaternion()
@@ -40,6 +41,72 @@ export const DEBRIS_TYPES = {
   //   rock — hull ≈ 0.02 m³ → 2500 ρ lands ~50 kg of granite cobble.
   barrel: { model: 'drumClosed', density: 86, friction: 0.5, restitution: 0.3 },
   rock: { model: 'testRock', density: 2500, friction: 0.7, restitution: 0.15 },
+  // FEAT-88 haul cargo: the shrink-wrapped firewood bundle (~0.75 ft³ — a real one is 10–12 kg),
+  // three variants of one load (ASSET-36 kit, data/prop-models.js firewoodBundleA..C). `massKg`
+  // instead of a density: a wrapped bundle's hull is mostly air between splits, and the mass the
+  // owner picks is the number that matters, so the constructor derives ρ from the hull's own volume
+  // (see _hullVolume) — exact on every variant's own hull. Friction is high on purpose: film on a steel bed ribs grips, and a bundle that skates
+  // out under braking would be the physics lying, not the player.
+  bundleA: { model: 'firewoodBundleA', massKg: 11, friction: 0.8, restitution: 0.05 },
+  bundleB: { model: 'firewoodBundleB', massKg: 11, friction: 0.8, restitution: 0.05 },
+  bundleC: { model: 'firewoodBundleC', massKg: 11, friction: 0.8, restitution: 0.05 },
+}
+
+/** The three bundle variants, in a fixed order so a hash picks one deterministically. */
+export const BUNDLE_KINDS = ['bundleA', 'bundleB', 'bundleC']
+
+/**
+ * Is a point, in the truck's BODY-LOCAL frame, inside the open-bed well? One test for every
+ * caller — the cargo bullet flag (generous margins, so a body bouncing on the floor does not
+ * flicker), the haul aboard count, and the gates — so "in the bed" means one thing.
+ *
+ * @param {{x:number,y:number,z:number}} p - body-local point (forward = −Z, origin at the CG).
+ * @param {object} bed - the model's open-bed spec (data/vehicle-models.js).
+ * @param {number} [margin=0] - slack round the walls, floor and tailgate [m].
+ * @param {number} [above=CARGO_ABOVE] - how far above the rail still counts [m] — a heaped load.
+ */
+export function inBedWell (p, bed, margin = 0, above = CARGO_ABOVE) {
+  return Math.abs(p.x) < bed.outerHalfW + margin &&
+    p.z > bed.frontZ - margin && p.z < bed.gateZ + margin &&
+    p.y > bed.floorY - margin && p.y < bed.railY + above
+}
+
+/**
+ * Where a haul load drops from — body-local points above the bed floor, one per piece, plus each
+ * piece's spin, attitude and variant. PURE and DETERMINISTIC (no Math.random, no engine, no THREE):
+ * the same key gives the same load every time (SM-INV-12), which is what lets a gate pin it.
+ *
+ * Pieces fill two lanes inside the wheelhouse walls, front to back, then start the next layer over
+ * the gaps — so a 12-piece load lands as a heap rather than as twelve pieces on one spot. Each gets
+ * a little hash jitter so the heap does not look laid out by a robot.
+ *
+ * @param {number} n - pieces.
+ * @param {object} bed - open-bed spec.
+ * @param {string} key - e.g. `haul:${seed}:${offerId}`.
+ * @returns {Array<{x,y,z, spin:{x,y,z}, quaternion:{x,y,z,w}, kind:string}>}
+ */
+export function bedDropPoints (n, bed, key) {
+  const lanes = [-0.25, 0.25]
+  const rows = 3
+  const z0 = bed.frontZ + 0.35, z1 = bed.tailZ - 0.35
+  const out = []
+  for (let i = 0; i < n; i++) {
+    const r = mulberry32(hash32(`${key}:${i}`))
+    const layer = Math.floor(i / (lanes.length * rows))
+    const k = i % (lanes.length * rows)
+    const row = Math.floor(k / lanes.length)
+    const zRow = z0 + (z1 - z0) * (row + (layer % 2) * 0.5) / rows
+    const yaw = (r() - 0.5) * 0.6                    // ~±17° off square: lengthwise, roughly
+    out.push({
+      x: lanes[k % lanes.length] + (r() - 0.5) * 0.1,
+      y: bed.floorY,
+      z: Math.min(z1, zRow + (r() - 0.5) * 0.1),
+      spin: { x: (r() - 0.5) * 2, y: (r() - 0.5) * 2, z: (r() - 0.5) * 2 },
+      quaternion: { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) },
+      kind: BUNDLE_KINDS[Math.floor(r() * BUNDLE_KINDS.length)],
+    })
+  }
+  return out
 }
 
 /**
@@ -105,21 +172,58 @@ export function stackLayout (count = 6, radius = STACK_RADIUS, height = STACK_HE
   return out
 }
 
+/** The 8 corners of a flat [x,y,z,…] point list's bounding box — the crash-proof fallback hull. */
+export function bboxCorners (pts) {
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
+  for (let i = 0; i < pts.length; i += 3) {
+    for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], pts[i + a]); hi[a] = Math.max(hi[a], pts[i + a]) }
+  }
+  const out = []
+  for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) out.push(x, y, z)
+  return new Float32Array(out)
+}
+
 // Hard cap (FEAT-36: "a couple at a time", with debug headroom). Oldest body is reclaimed —
 // same discipline as the thrown-roll cap, so an evening of debug throwing cannot leak bodies.
-const DEBRIS_CAP = 12
+// PINNED bodies (a live haul load, FEAT-88) are outside the cap: they never count toward it and are
+// never reclaimed by it, so a rock thrown mid-haul cannot delete a bundle. Their owner removes them.
+export const DEBRIS_CAP = 12
 
 export class DebrisSystem {
   constructor (engine, scene) {
     this._eng = engine
     this._scene = scene
     this._live = []              // [{ body, mesh, kind }], oldest first
-    this._proto = new Map()      // kind → { hull: Float32Array, center: THREE.Vector3 } | null while loading
+    this._proto = new Map()      // kind → { hull: Float32Array, center: THREE.Vector3, density } | null while loading
     for (const [kind, spec] of Object.entries(DEBRIS_TYPES)) {
       getModel(spec.model).then(rec => {
-        this._proto.set(kind, this._extractHull(rec.template))
+        const proto = this._extractHull(rec.template)
+        if (proto && !(this._hullVolume(proto.hull) > 0)) {
+          // The engine could not build this hull (Box3D caps a hull at 255 half-edges, and a
+          // densely faceted round asset can exceed it). Left alone it has NaN mass and takes the
+          // whole world unstable. Fall back to the hull's bounding box — wrong shape, right size,
+          // never a crash — and say so, because the asset needs fewer facets.
+          console.warn(`[debris] '${spec.model}' hull is too complex for the engine; using its bounding box`)
+          proto.hull = bboxCorners(proto.hull)
+        }
+        if (proto) proto.density = spec.massKg ? spec.massKg / this._hullVolume(proto.hull) : spec.density
+        this._proto.set(kind, proto)
       })
     }
+  }
+
+  /**
+   * The hull's volume as the ENGINE builds it [m³] — NaN if the engine cannot build it at all. The
+   * engine integrates ρ over the solid hull, so a throwaway body at ρ = 1 reports the volume as
+   * its mass; `massKg / volume` is then the density that lands exactly that mass. One probe per
+   * type, at load, never on the spawn path.
+   */
+  _hullVolume (hull) {
+    const probe = this._eng.createBody({ type: 'dynamic', position: { x: 0, y: -1e4, z: 0 } })
+    this._eng.addHull(probe, hull, { density: 1, group: GROUP_DEBRIS })
+    const volume = this._eng.getMass(probe)
+    this._eng.destroyBody(probe)
+    return volume
   }
 
   /**
@@ -170,6 +274,8 @@ export class DebrisSystem {
    * off-centre first contact; a small random spin sells the launch.
    */
   spawn (kind, position, velocity, opts = {}) {
+    // opts: spin, quaternion (deterministic callers), pinned (outside the cap — see DEBRIS_CAP),
+    // noDamage (the chassis wear model ignores this body's contacts — cargo in the bed, FEAT-88).
     const spec = DEBRIS_TYPES[kind]
     const proto = this._proto.get(kind)
     if (!spec || !proto) return null   // model still loading (first seconds of a cold boot)
@@ -187,10 +293,10 @@ export class DebrisSystem {
       quaternion: opts.quaternion,
       linearVelocity: velocity,
       angularVelocity: spin,
-      userData: { kind: 'debris', debrisType: kind },
+      userData: { kind: 'debris', debrisType: kind, noDamage: !!opts.noDamage },
     })
     this._eng.addHull(body, proto.hull, {
-      density: spec.density,
+      density: proto.density,
       friction: spec.friction,
       restitution: spec.restitution,
       group: GROUP_DEBRIS,
@@ -207,11 +313,11 @@ export class DebrisSystem {
     })
     this._scene.add(spawned)
 
-    this._live.push({ body, mesh: spawned, kind, cargo: false,
+    this._live.push({ body, mesh: spawned, kind, cargo: false, pinned: !!opts.pinned,
       prevP: new THREE.Vector3(position.x, position.y, position.z),
       prevQ: opts.quaternion ? new THREE.Quaternion(opts.quaternion.x, opts.quaternion.y, opts.quaternion.z, opts.quaternion.w)
         : new THREE.Quaternion() })
-    while (this._live.length > DEBRIS_CAP) this._reclaim(this._live.shift())
+    this._enforceCap()
     return body
   }
 
@@ -242,6 +348,24 @@ export class DebrisSystem {
       bodies.push(body)
     }
     return bodies
+  }
+
+  /** Reclaim the oldest UNPINNED bodies until the unpinned count is within DEBRIS_CAP. */
+  _enforceCap () {
+    let free = this._live.reduce((n, r) => n + (r.pinned ? 0 : 1), 0)
+    for (let i = 0; free > DEBRIS_CAP && i < this._live.length;) {
+      if (this._live[i].pinned) { i++; continue }
+      this._reclaim(this._live.splice(i, 1)[0])
+      free--
+    }
+  }
+
+  /** Remove specific bodies (a haul load on settle / cancel). Unknown handles are ignored. */
+  remove (bodies) {
+    for (const b of bodies) {
+      const i = this._live.findIndex(r => r.body === b)
+      if (i >= 0) this._reclaim(this._live.splice(i, 1)[0])
+    }
   }
 
   _reclaim (rec) {
@@ -279,9 +403,7 @@ export class DebrisSystem {
       this._eng.getTransform(rec.body, rec.prevP, rec.prevQ)
       if (!bed) continue
       _p.copy(rec.prevP).sub(_cp).applyQuaternion(_cqi)
-      const inBed = Math.abs(_p.x) < bed.outerHalfW + CARGO_MARGIN &&
-        _p.z > bed.frontZ - CARGO_MARGIN && _p.z < bed.gateZ + CARGO_MARGIN &&
-        _p.y > bed.floorY - CARGO_MARGIN && _p.y < bed.railY + CARGO_ABOVE
+      const inBed = inBedWell(_p, bed, CARGO_MARGIN)
       if (inBed !== rec.cargo) { rec.cargo = inBed; this._eng.setBullet(rec.body, inBed) }
     }
   }

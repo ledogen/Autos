@@ -22,7 +22,7 @@ import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
-import { DebrisSystem } from './debris.js'
+import { DebrisSystem, bedDropPoints, inBedWell } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
@@ -67,7 +67,8 @@ import { MissionSystem } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { HAUL_PAR_SLACK } from '../data/offers.js'   // FEAT-88: a haul's par is longer by this
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { OfferBoard, formatGameDuration, gateText } from './offer-board.js'   // FEAT-67: the mission board
@@ -85,7 +86,7 @@ import { formatTime } from './par.js'                    // FEAT-29: par oracle 
 import { SCENARIOS, scenarioById } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
 import { Leaderboard } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
-import { RANK_THRESHOLDS_DEFAULT } from './par.js'      // FEAT-87: the rank bar's fallback bands
+import { RANK_THRESHOLDS_DEFAULT, haulGrade } from './par.js'   // FEAT-87 rank bar fallback bands; FEAT-88 haul letter
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { playGlassBreak } from './glass-audio.js'   // FEAT-87: the rank tile shattering
@@ -2640,6 +2641,8 @@ const _customerRings = new Map()
 function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
+  for (const { mesh } of _dropMarks.values()) mesh.geometry.dispose()   // per-mark geometry, not shared
+  _dropMarks.clear()
   _customerRings.clear()
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
@@ -2663,6 +2666,8 @@ function _rebuildPoiMarkers () {
     // The ring means "park here and something happens", so it belongs only to markers where
     // something does. The services are unbuilt and mom's house has her own doorstep prompt.
     if (!q.jobs) continue
+    // FEAT-88: a haul giver's "park here" is its drop zone, not a ring round the pad.
+    if (q.drop) { _addDropMark(q); continue }
     const ring = new THREE.Mesh(_ringGeo, _poiRingMat)
     ring.scale.set(r, _POI_RING_H, r)
     ring.position.set(q.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, q.z)
@@ -2769,8 +2774,9 @@ function _updateMissionRings () {
   // be the opposite of the fix.
   // FEAT-61: a paper route counts as being on a job for exactly the same reason — every orange
   // curtain you pass mid-round is an invitation to do something the game will refuse.
-  const onMission = ['staging', 'running', 'done'].includes(missionSystem?.state)
+  const onMission = ['loading', 'staging', 'running', 'done'].includes(missionSystem?.state)
                     || paperRouteSystem.isActive()
+  _updateDropMarks(onMission)
   const vp = vehicleState.position
   for (const [id, ring] of _poiRings) {
     const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= POI_RING_SHOW_R
@@ -2786,6 +2792,159 @@ function _updateMissionRings () {
   _stageRing.scale.set(zone.r, _STAGE_RING_H, zone.r)
   _stageRing.position.set(zone.x, zone.y - _STAGE_RING_SINK + _STAGE_RING_H * 0.5, zone.z)
   _stageRing.visible = true
+}
+
+// ── FEAT-88: the haul load ─────────────────────────────────────────────────────────────────
+// A haul giver has a DROP ZONE instead of an orange ring (owner, 2026-10-05): a bed-sized rectangle
+// on the ground (poi.js `drop`). Park with your bed over it and the yard's offers open; accept and
+// the job goes 'loading' (mission.js) and the load drops AT ONCE, one piece every HAUL_DROP_GAP,
+// at FIXED points over the rectangle — not over wherever your truck happens to be. Parking is the
+// skill: a bed half off the zone catches half a load, and a miss is lost pay. Each piece is a pinned
+// debris body (outside DEBRIS_CAP, so a thrown rock cannot delete it) that never feeds the wear
+// model. The pieces are counted at arrival (onSettle above) and removed; cancel or leaving the job
+// removes them too (the 10 Hz poll).
+const HAUL_DROP_Y   = 3.3   // m above the pad: ~2.6 m over a Ranger's bed floor — the title screen's rock drop
+const HAUL_DROP_GAP = 0.3   // s between pieces, so the impacts never stack
+const HAUL_SETTLE_S = 1.0   // s after the last piece before the job stages — let it land first
+const DROP_SLACK    = 0.6   // m — how far the bed centre may sit off the zone and still open the offers
+let _haul = null            // { mission, drops, handles, t0, zone } — the live load, or null
+const _haulV = new THREE.Vector3(), _haulQ = new THREE.Quaternion(), _haulQd = new THREE.Quaternion()
+const _UP = new THREE.Vector3(0, 1, 0)
+
+/** The loading POI of the job in hand, if it is loading. */
+function _haulPoi () {
+  if (missionSystem?.state !== 'loading') return null
+  const id = missionSystem.mission?.fromPoi
+  return poiSystem.list().find(q => q.id === id) ?? null
+}
+
+/** Is the truck's bed over POI `q`'s drop zone (within DROP_SLACK)? */
+function _bedOverDrop (q) {
+  const bed = DEFAULT_VEHICLE_MODEL.bed
+  if (!bed || !q?.drop) return false
+  _haulV.set(0, 0, (bed.frontZ + bed.tailZ) / 2).applyQuaternion(vehicleState.quaternion).add(vehicleState.position)
+  return overDropZone(q, _haulV.x, _haulV.z, DROP_SLACK)
+}
+
+/**
+ * Fixed step, after stepPhysics: release the load on the clock. The drop points are
+ * bedDropPoints' bed-shaped layout laid on the ZONE: its bed-local z (along the truck) runs along
+ * the zone's long axis, so one quaternion — the marker yaw plus a quarter turn — carries both the
+ * points and each piece's attitude into the world.
+ */
+function _haulStep () {
+  if (missionSystem?.state !== 'loading') return
+  const bed = DEFAULT_VEHICLE_MODEL.bed
+  if (!_haul) {
+    const zone = dropZoneWorld(_haulPoi())
+    if (!bed || !zone) return
+    const mission = missionSystem.mission
+    _haul = { mission, handles: [], t0: simTime, zone,
+              q: new THREE.Quaternion().setFromAxisAngle(_UP, zone.yaw + Math.PI / 2),
+              drops: bedDropPoints(mission.bundles, bed, `haul:${worldSeed}:${mission.offerId}`) }
+  }
+  const n = _haul.drops.length, mid = (bed.frontZ + bed.tailZ) / 2, z = _haul.zone
+  while (_haul.handles.length < n && simTime >= _haul.t0 + _haul.handles.length * HAUL_DROP_GAP) {
+    const d = _haul.drops[_haul.handles.length]
+    _haulV.set(d.x, 0, d.z - mid).applyQuaternion(_haul.q)
+    _haulQ.copy(_haul.q).multiply(_haulQd.set(d.quaternion.x, d.quaternion.y, d.quaternion.z, d.quaternion.w))
+    const h = debrisSystem.spawn(d.kind, { x: z.x + _haulV.x, y: z.y + HAUL_DROP_Y, z: z.z + _haulV.z },
+      { x: 0, y: -1.2, z: 0 },
+      { spin: d.spin, quaternion: { x: _haulQ.x, y: _haulQ.y, z: _haulQ.z, w: _haulQ.w }, pinned: true, noDamage: true })
+    if (!h) return          // the piece's model is still loading — try again next step
+    _haul.handles.push(h)
+  }
+  if (_haul.handles.length === n && simTime >= _haul.t0 + (n - 1) * HAUL_DROP_GAP + HAUL_SETTLE_S) {
+    missionSystem.loadingDone()
+  }
+}
+
+/** Pieces of the live load inside the bed well right now. */
+function _haulAboard () {
+  const bed = DEFAULT_VEHICLE_MODEL.bed
+  if (!_haul || !bed) return 0
+  physicsEngine.getTransform(vehicleChassis, _haulV, _haulQ)
+  _haulQ.invert()
+  const cp = _haulV.clone(), p = new THREE.Vector3(), q = new THREE.Quaternion()
+  let n = 0
+  for (const h of _haul.handles) {
+    physicsEngine.getTransform(h, p, q)
+    if (inBedWell(p.sub(cp).applyQuaternion(_haulQ), bed)) n++
+  }
+  return n
+}
+
+function _haulClear () {
+  if (_haul) debrisSystem.remove(_haul.handles)
+  _haul = null
+}
+
+// The drop zone, painted on the pad (owner, 2026-10-05): a box OUTLINE a little wider than the bed so
+// it can be eyeballed while pulling up, BED written inside, and an arrow on the approach side
+// pointing in — the direction you back in from. The yard is laid out for reversing in from the +X
+// mouth (ASSET-36: the vendor's own pickup holds the far end), so the arrow sits on +X pointing
+// −X and BED reads upright to a driver looking back over the tailgate. One white canvas texture,
+// tinted by the material: orange, green while your bed is over the zone.
+const DROP_MARK_PAD = 0.3     // m the outline stands off the bed-sized zone on every side
+const DROP_ARROW_LEN = 1.7    // m of pad the arrow takes, beyond the outline
+const _DROP_PX = 200          // canvas px per metre
+function _dropMarkTexture (lx, lz) {          // lx, lz: outline size in metres (along X, along Z)
+  const W = Math.round((lx + DROP_ARROW_LEN) * _DROP_PX), H = Math.round(lz * _DROP_PX)
+  const bw = Math.round(lx * _DROP_PX), line = 0.12 * _DROP_PX
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H
+  const g = cv.getContext('2d')
+  g.strokeStyle = g.fillStyle = '#fff'
+  // Canvas left = model −X (the box), right = +X (the arrow); canvas up = model −Z.
+  g.lineWidth = line
+  g.strokeRect(line / 2, line / 2, bw - line, H - line)
+  g.save()
+  g.translate(bw / 2, H / 2)
+  g.rotate(-Math.PI / 2)                      // letters' top toward −X, the way you are backing
+  g.font = `bold ${Math.round(0.55 * _DROP_PX)}px sans-serif`
+  g.textAlign = 'center'; g.textBaseline = 'middle'
+  g.fillText('BED', 0, 0)
+  g.restore()
+  const ax0 = bw + 0.15 * _DROP_PX, ax1 = W - 0.1 * _DROP_PX, cy = H / 2
+  const head = 0.6 * _DROP_PX, half = 0.45 * _DROP_PX, shaft = 0.12 * _DROP_PX
+  g.beginPath()                               // pointing LEFT, into the box
+  g.moveTo(ax0, cy); g.lineTo(ax0 + head, cy - half); g.lineTo(ax0 + head, cy - shaft)
+  g.lineTo(ax1, cy - shaft); g.lineTo(ax1, cy + shaft); g.lineTo(ax0 + head, cy + shaft)
+  g.lineTo(ax0 + head, cy + half); g.closePath(); g.fill()
+  const tex = new THREE.CanvasTexture(cv)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 4
+  return tex
+}
+const _dropMat = (c, map) => new THREE.MeshBasicMaterial({ color: c, map, transparent: true, opacity: 0.85,
+  depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+let _dropMatIdle = null, _dropMatOver = null
+const _dropMarks = new Map()   // poi id → { q, mesh }
+
+function _addDropMark (q) {
+  const z = dropZoneWorld(q)
+  const lx = 2 * (z.halfX + DROP_MARK_PAD), lz = 2 * (z.halfZ + DROP_MARK_PAD)
+  if (!_dropMatIdle) {   // every drop zone is the same size today: one texture, two tints
+    const tex = _dropMarkTexture(lx, lz)
+    _dropMatIdle = _dropMat(0xff7a18, tex); _dropMatOver = _dropMat(0x3ddc6b, tex)
+  }
+  // Plane in the marker frame: −lx/2 .. lx/2 + arrow along X, centred on the zone.
+  const geo = new THREE.PlaneGeometry(lx + DROP_ARROW_LEN, lz).rotateX(-Math.PI / 2).translate(DROP_ARROW_LEN / 2, 0, 0)
+  const mesh = new THREE.Mesh(geo, _dropMatIdle)
+  mesh.position.set(z.x, z.y + 0.03, z.z)
+  mesh.rotation.y = z.yaw
+  mesh.renderOrder = 5
+  _poiGroup.add(mesh)
+  _dropMarks.set(q.id, { q, mesh })
+}
+
+/** Near-field like the rings; hidden on any other job, kept lit while its own load is dropping. */
+function _updateDropMarks (onMission) {
+  const vp = vehicleState.position, loadingAt = _haulPoi()?.id
+  for (const [id, { q, mesh }] of _dropMarks) {
+    const near = Math.hypot(mesh.position.x - vp.x, mesh.position.z - vp.z) <= POI_RING_SHOW_R
+    mesh.visible = near && (!onMission || id === loadingAt)
+    mesh.material = _bedOverDrop(q) ? _dropMatOver : _dropMatIdle
+  }
 }
 
 // ── FEAT-47: the story-mode day clock ──────────────────────────────────────────────────────
@@ -3309,6 +3468,18 @@ missionSystem = new MissionSystem({
   // FEAT-67: a settled board job — ANY letter, D included — completes its offer, and the slot then
   // waits out that offer's original expiry before re-rolling.
   onSettle: (result, mission) => {
+    // FEAT-88: a haul pays the ordinary line × the share of the load still in the bed. Counted
+    // here, at arrival, then the load is gone — the economy only ever sees a scaled payMult, so
+    // base + tip still sum to the total and the result card stays honest.
+    if (mission?.bundles) {
+      result.loaded = mission.bundles
+      result.aboard = _haul?.mission === mission ? _haulAboard() : 0
+      // The letter is the run's OVERALL rank: clock and load blended (par.js haulGrade).
+      result.letter = haulGrade(result.ratio, result.aboard / mission.bundles,
+                                mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT).letter
+      mission = { ...mission, payMult: mission.payMult * result.aboard / mission.bundles }
+      _haulClear()
+    }
     const s = economySystem.settle(result, mission)
     if (mission?.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
     return s
@@ -3534,6 +3705,8 @@ function _planOffer (offer) {
       m.offerId = o.id
       m.bonus = s.bonus
       m.payMult = s.payMult
+      m.bundles = s.bundles   // FEAT-88: a haul load's piece count — null for every other family
+      if (s.bundles) m.par *= HAUL_PAR_SLACK   // the load slows the truck; payMult already ÷ the same
     }
     return m
   })
@@ -3553,8 +3726,11 @@ function _poiInReach () {
   // jobsOnly (FEAT-60): only a mission giver answers the park trigger. Without this the roster's
   // other six types would each win the trigger and then have nothing to say — and mom's house,
   // which outranks her own front door in the precedence below, would offer freight instead of bed.
-  return poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
-                           POI_PARAMS.poiInteractR, true)
+  const q = poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
+                             POI_PARAMS.poiInteractR, true)
+  // FEAT-88: a haul giver answers only with your BED over its drop zone — that is where the load
+  // lands, so it is where you park to be offered one.
+  return q && q.drop && !_bedOverDrop(q) ? null : q
 }
 
 // Rising edge of the parking-brake latch (vehicleState.parked), sampled where the prompt is polled.
@@ -4071,9 +4247,11 @@ function _panelHead (flavorHtml) {
  *
  * `base`/`tip` are whole dollars from economy.js; `spot` is dollars to the cent.
  */
-function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null }) {
+function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null, haul = null }) {
   const row = (label, money) => `<br><span class="mp-dim">${label}</span> <span class="mp-pay">$${money}</span>`
-  return row('Base pay', (base ?? 0).toLocaleString('en-US'))
+  // FEAT-88: the one place a load's count is shown — after the drive, never during (SM-INV-10).
+  return (haul ? `<br><span class="mp-dim">Firewood delivered</span> <span class="mp-pay">${haul.aboard} / ${haul.loaded}</span>` : '')
+    + row('Base pay', (base ?? 0).toLocaleString('en-US'))
     + row('Tip', (tip ?? 0).toLocaleString('en-US'))
     + (points > 0
       ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${points} good deed${points > 1 ? 's' : ''}</span>`
@@ -4151,6 +4329,11 @@ function _renderMissionUI () {
       show(panel, false); show(hud, true)
       hudText.innerHTML = `<span class="mh-count">${Math.max(1, Math.ceil(m.countdown))}</span>`
       break
+    case 'loading':
+      // FEAT-88: the load is dropping onto the zone you parked over.
+      show(panel, false); show(hud, true)
+      hudText.textContent = 'loading…'
+      break
     case 'staging':
       // The POI start. No digits and no hold — the only thing the player needs told is what starts
       // the clock, and the green ring that just replaced the marker's orange one says where.
@@ -4187,7 +4370,8 @@ function _renderMissionUI () {
       body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
-          ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award })
+          ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award,
+                       haul: r.loaded ? { aboard: r.aboard, loaded: r.loaded } : null })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
       // The result card is exactly three actions: retry · continue · back to free roam (that is the
       // DOM order too). The calibration form above them stays — the subjective read is the ground
@@ -6151,6 +6335,7 @@ function loop () {
     // FEAT-36: debris pre-step — render snapshot + cargo-in-bed bullet flag (see debris.js).
     debrisSystem.beforeStep(vehicleChassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
+    _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
     // SM-3: integrate component wear on the SAME fixed step the physics ran, so condition is
     // framerate-independent like everything else (INFRA-03 determinism). Reads the honest signals
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
@@ -6595,7 +6780,9 @@ function loop () {
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step. ('staging' is a
     // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
-                          || missionSystem.state === 'running')) _renderMissionUI()
+                          || missionSystem.state === 'running' || missionSystem.state === 'loading')) _renderMissionUI()
+    // FEAT-88: a load whose job is gone (cancelled, exited, a new run) leaves with it.
+    if (_haul && (!missionSystem?.isOnJob() || missionSystem.mission !== _haul.mission)) _haulClear()
     // FEAT-67: a parked offer panel carries a live expiry, and the offer can expire under it.
     if (missionSystem?.state === 'offer' && missionSystem.offer && offerBoard) {
       if (!offerBoard.isLive(missionSystem.offer.id, daySystem.clockH())) _refreshParkedOffers()

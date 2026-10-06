@@ -18,6 +18,11 @@
 //                       build time; src/debris.js ignores it and hulls the mesh instead.
 //                       Shape convention: { shape: 'box'|'capsule'|'none', size: [x, y, z] m }
 //                       in model-local axes (base-seated, forward = -Z).
+//                       `boxes` (optional): [{ c: [x, y, z], s: [x, y, z] }, ...] — box CENTRES and
+//                       sizes, model-local. When present these are what is solid (poi.js
+//                       queryContact) and `size` is only the overall FOOTPRINT, which the pad-fit
+//                       gate reads. For a POI that is several separate things on an open yard,
+//                       where one box would be an invisible wall across the middle.
 //                       NOTE the field is `size`. The ASSET-NN tickets write `dims`; a `dims` here
 //                       reads as no box at all and the marker silently falls back to the 1.6 m cube.
 //   tags       string[] — which POOLS this asset belongs to. A POI roster slot names a tag rather
@@ -327,6 +332,42 @@ export const PROP_MODELS = {
     // FEAT-67 giver naming (owner, 2026-09-27): a home — the board calls it "the Hadley place".
     giverName: 'home',
   },
+
+  // ASSET-36 — the firewood yard (FEAT-88/91, region-1 haul giver), re-scoped by the owner on
+  // 2026-10-04 from a processor + conveyor to a roadside firewood VENDOR: a red towable splitter,
+  // a heap of splits, a row of shrink-wrapped bundles, an awning with two camp chairs. 12 materials,
+  // no images. The load drops on
+  // the roster slot's `drop` zone (src/poi.js), in the lane between the row and the pile, which
+  // the model keeps clear from the zone to x 4.9; the player backs in from the +X mouth, where the
+  // vendor's own pickup (SpotPickup, reserved) holds the far end. Footprint x -6.54..6.9 by
+  // z -3.15..3.5: it fits the standard 14 x 8 pad (owner, 2026-10-04).
+  // Three boxes, not one: one box round all of it would wall off the open yard between them. The
+  // three small rounds are left soft on purpose.
+  splittingYard: {
+    url: 'assets/models/splitting-yard.glb',
+    collision: {
+      shape: 'box', size: [13.44, 2.5, 6.65],
+      boxes: [
+        { c: [-0.36, 0.53, 1.81], s: [2.58, 1.06, 1.16] },   // splitter (yawed 12°, so a little loose)
+        { c: [-4.00, 0.58, 1.77], s: [4.07, 1.28, 3.02] },   // the pile of splits (a dome — corners generous)
+        { c: [-4.10, 0.44, -2.90], s: [3.64, 0.87, 0.49] },  // the bundle row
+        // The awning (ASSET-06 kit, composited into the yard): its four 0.06 m posts are solid,
+        // the canopy and the two camp chairs are soft.
+        { c: [1.55, 1.1, 3.10], s: [0.06, 2.2, 0.06] },
+        { c: [1.55, 1.1, 0.60], s: [0.06, 2.2, 0.06] },
+        { c: [4.55, 1.1, 3.10], s: [0.06, 2.2, 0.06] },
+        { c: [4.55, 1.1, 0.60], s: [0.06, 2.2, 0.06] },
+      ],
+    },
+  },
+
+  // ASSET-36 kit — the firewood BUNDLE, the haul cargo (src/debris.js bundleA..C). Shrink-wrapped
+  // splits, ~0.29 x 0.30 x 0.43 m, origin at the bbox centre, long axis -Z, ~11 kg. Three
+  // packings so a bed of them is not copy-paste. debris.js hulls the mesh (the film is convex by
+  // construction) and sets the mass, so `collision` here is documentation.
+  firewoodBundleA: { url: 'assets/models/firewood-bundle-a.glb', collision: { shape: 'hull-from-mesh', size: [0.32, 0.31, 0.42] } },
+  firewoodBundleB: { url: 'assets/models/firewood-bundle-b.glb', collision: { shape: 'hull-from-mesh', size: [0.29, 0.33, 0.43] } },
+  firewoodBundleC: { url: 'assets/models/firewood-bundle-c.glb', collision: { shape: 'hull-from-mesh', size: [0.27, 0.30, 0.39] } },
 
   // ASSET-09 — Winnebago RV, 1818 tris. Somebody living out of it, handing out work.
   winnebago: {

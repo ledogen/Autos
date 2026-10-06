@@ -133,6 +133,12 @@ export const POI_ICONS = {
         'M12.8 10.16 A4.2 4.2 0 1 1 15.6 10.16 L15.6 17.6 A4.4 4.4 0 0 1 6.8 17.6'
       + ' L6.8 14.1 L5.6 10.9 L9.6 15.1 L9.6 17.6 A1.6 1.6 0 0 0 12.8 17.6 Z'
       + 'M12.3 6.2 A1.9 1.9 0 1 0 16.1 6.2 A1.9 1.9 0 1 0 12.3 6.2 Z' },
+    // FEAT-88/91 firewood yard: three log ends stacked two-and-one, the way a cord face reads from
+    // the road. Each ring is its own subpath, so the outlines meet without a seam stroked across them.
+    firewoodYard: { label: 'Firewood', color: '#d9925a', path:
+        'M3.1 16.5 A4.4 4.4 0 1 1 11.9 16.5 A4.4 4.4 0 1 1 3.1 16.5 Z'
+      + 'M12.1 16.5 A4.4 4.4 0 1 1 20.9 16.5 A4.4 4.4 0 1 1 12.1 16.5 Z'
+      + 'M7.6 8.6 A4.4 4.4 0 1 1 16.4 8.6 A4.4 4.4 0 1 1 7.6 8.6 Z' },
     // Mission givers are the diamond, unlabelled: there are five of them and naming each would turn
     // the map into a wall of text. FEAT-67 SUPERSEDES the old "finding out what a marker offers is
     // what driving to it is for": the story map is now the mission board, and hovering a diamond
@@ -152,6 +158,7 @@ export const FAMILY_COLOR = {
     papers:     '#ffffff',   // white
     demolition: '#ff5a4e',   // red — smash the props (FEAT-65)
     freight:    '#5ab6ff',   // blue
+    haul:       '#5ab6ff',   // blue — FEAT-88 collapses fragile + freight into haul; freight's colour carries over
 }
 
 /** An empty, taken or locked diamond: nothing on offer there right now. */

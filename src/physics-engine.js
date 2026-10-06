@@ -651,6 +651,11 @@ export class PhysicsEngine {
       // Which side of the pair is US: the anchor is measured from that body, so picking the wrong
       // one would offset every impact by the gap between the two bodies' centers.
       const aIsSelf = this._shapeToHandle.get(this._shapeKey(contact.shapeIdA)) === handle
+      // A body flagged `noDamage` (haul cargo riding in the bed, FEAT-88) is invisible to this
+      // readout: its contacts are real, but it is not something the truck collides WITH — a
+      // bundle sliding into the bedside is not a side impact. The REPORT is gated, never the contact.
+      const other = this._shapeToHandle.get(this._shapeKey(aIsSelf ? contact.shapeIdB : contact.shapeIdA))
+      if (other !== undefined && this._bodies.get(other)?.userData?.noDamage) continue
       // Which of OUR shapes this contact is on — once per contact, not once per manifold point.
       let si = -1
       if (outByShape) {

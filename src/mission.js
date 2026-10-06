@@ -214,7 +214,10 @@ export class MissionSystem {
         this._getTerms = getTerms || null
         this._onSettle = onSettle || null
 
-        // 'idle' | 'generating' | 'offer' | 'countdown' | 'staging' | 'running' | 'done'
+        // 'idle' | 'generating' | 'offer' | 'countdown' | 'loading' | 'staging' | 'running' | 'done'
+        // 'loading' (FEAT-88) comes before 'staging' on a HAUL job only: the load has to be in the
+        // bed before the start zone means anything. main.js owns the loading beat (it can see the
+        // truck and the debris) and calls loadingDone() when the last piece has dropped.
         // 'countdown' and 'staging' are the two mutually exclusive start rituals: a Quick Job counts
         // down at the pin it teleported you to, a POI job stages inside its start zone (see
         // START_ZONE_R). Nothing ever passes through both.
@@ -335,7 +338,14 @@ export class MissionSystem {
         if (this._getTerms) this.mission.terms = this._getTerms()
         // FEAT-67: taking the offer OFF THE BOARD is main.js's job, done just before this call (it
         // owns the board and re-checks the offer is still live — a food offer lives ~2 real minutes).
-        this._launch({ seat: !this.mission.fromPoi, setSpawn: true })
+        this._launch({ seat: !this.mission.fromPoi, setSpawn: true, load: !!this.mission.bundles })
+    }
+
+    /** FEAT-88: the haul load is in the bed — the job stages exactly like any other POI job. */
+    loadingDone() {
+        if (this.state !== 'loading') return
+        this.state = 'staging'
+        this._onChange()
     }
 
     /**
@@ -369,7 +379,7 @@ export class MissionSystem {
      *
      * @param {{seat:boolean, setSpawn:boolean}} o
      */
-    _launch({ seat = true, setSpawn = false } = {}) {
+    _launch({ seat = true, setSpawn = false, load = false } = {}) {
         const s = this.mission.start
         if (seat) this._teleport(s.x, s.z, s.heading)
         // Spawn-checkpoint write, ONLY when we did not just teleport. The teleport's own spawn
@@ -384,7 +394,7 @@ export class MissionSystem {
         // Job counts down where it was just seated. `seat` is not the discriminator — a POI RETRY
         // seats and must still stage, because its start zone is the thing being retried.
         const staged = !!this.mission.startZone
-        this.state = staged ? 'staging' : 'countdown'
+        this.state = staged ? (load ? 'loading' : 'staging') : 'countdown'
         this._polyIdx = 0            // route-remaining projection restarts at the start pin
         this.countdown = staged ? 0 : COUNTDOWN
         this.elapsed = 0
@@ -412,14 +422,14 @@ export class MissionSystem {
      * the slot; nothing settles.
      */
     cancel() {
-        if (!['countdown', 'staging', 'running'].includes(this.state)) return null
+        if (!this.isOnJob()) return null
         const id = this.mission?.offerId ?? null
         this.exit()
         return id
     }
 
     /** True while a job is taken and not yet finished — the states the cancel button applies to. */
-    isOnJob() { return ['countdown', 'staging', 'running'].includes(this.state) }
+    isOnJob() { return ['countdown', 'loading', 'staging', 'running'].includes(this.state) }
 
     isActive() { return this.state !== 'idle' }
 

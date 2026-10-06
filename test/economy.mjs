@@ -25,7 +25,7 @@ import {
   ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankThresholds, payoutFor, pointsFor,
   runEconomy, EconomySystem, formatDeeds, basePay, splitPayout, bonusEarned, RANKS,
 } from '../src/economy.js'
-import { gradeRun, RANK_THRESHOLDS_DEFAULT } from '../src/par.js'
+import { gradeRun, RANK_THRESHOLDS_DEFAULT, haulGrade, timeScore } from '../src/par.js'
 import { runState } from '../src/day.js'
 import { readFileSync } from 'node:fs'
 
@@ -287,6 +287,44 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   check('payout is whole dollars', Number.isInteger(r.payout))
   check('runState stays narrow — no money/points on the day-boundary object',
     !('money' in runState) && !('halfPoints' in runState) && !('points' in runState))
+}
+
+// ── 8b. Haul: pay × the share of the load aboard (FEAT-88) ─────────────────────────────────────
+// main.js's onSettle hands the economy a mission whose payMult is already × aboard / loaded. The
+// economy must carry that factor straight through: the same job with 9 of 12 bundles pays 9/12 of
+// the full load (to the dollar's rounding), and base + tip still sum to the total.
+{
+  const eco = new EconomySystem({ getDay: () => 1 })
+  eco.start()
+  const terms = eco.terms(), res = { par: 360, ratio: 0.9, letter: 'B' }
+  const full = eco.settle(res, { terms, payMult: 12 / 8 })
+  const part = eco.settle(res, { terms, payMult: (12 / 8) * (9 / 12) })
+  const none = eco.settle(res, { terms, payMult: 0 })
+  check('9 of 12 bundles aboard pays 9/12 of the full load', Math.abs(part.payout - full.payout * 9 / 12) <= 1,
+    `${part.payout} vs ${full.payout} × 0.75`)
+  check('base + tip === total on a partial load', part.base + part.tip === part.payout)
+  check('an empty bed pays nothing (floor at zero, SM-INV-4)', none.payout === 0)
+  // Good deeds on a haul follow the share DELIVERED, not the letter (owner, 2026-10-05).
+  const deeds = (aboard, loaded) => eco.settle({ ...res, letter: 'S', aboard, loaded }, { terms }).points
+  check('haul good deeds: > 2/3 delivered → 1, 1/3..2/3 → ½, < 1/3 → 0 — whatever the letter',
+    deeds(12, 12) === 1 && deeds(9, 12) === 1 && deeds(8, 12) === 0.5 && deeds(4, 12) === 0.5
+    && deeds(3, 12) === 0 && deeds(0, 11) === 0,
+    [deeds(12, 12), deeds(9, 12), deeds(8, 12), deeds(4, 12), deeds(3, 12), deeds(0, 11)].join(','))
+}
+
+// ── 8c. The haul letter: clock and load blended (owner, 2026-10-05) ────────────────────────────
+{
+  const T = RANK_THRESHOLDS_DEFAULT
+  const g = (ratio, share) => haulGrade(ratio, share, T).letter
+  check('time score hits the letter lines: S 4, A 3, B 2, C (par) 1',
+    [T.S, T.A, T.B, T.C].map(r => timeScore(r, T)).every((v, i) => Math.abs(v - (4 - i)) < 1e-9))
+  check('owner anchor: S time with 90 % delivered is an S', g(T.S, 0.9) === 'S')
+  check('owner anchor: 40 % delivered, screaming fast, is a D', g(0.5, 0.4) === 'D')
+  check('a full load cannot lift a par drive above B (load caps at S-level)', g(T.C, 1) === 'B')
+  check('the letter never improves as pieces are lost',
+    [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4].map(s => 'DCBAS'.indexOf(g(T.A, s))).every((v, i, a) => i === 0 || v <= a[i - 1]))
+  check('…nor as the clock slows',
+    [0.7, 0.77, 0.81, 0.87, 1.0, 1.1, 1.3].map(r => 'DCBAS'.indexOf(g(r, 0.9))).every((v, i, a) => i === 0 || v <= a[i - 1]))
 }
 
 // ── 9. The terms lock: settle on the ACCEPTED day, not the finished day ─────────────────────────

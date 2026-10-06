@@ -9,6 +9,8 @@
 //   delivery   — light, all about time; par pay                   (green)
 //   fragile    — graded on shock to the load; par pay             (orange)
 //   papers     — Larry's paper route; prices itself (FEAT-61)     (white)
+//   haul       — a load in the BED, as rigid bodies (FEAT-88). Par pay × the share of the load
+//                still aboard at delivery; the max scales per piece (HAUL_* below)
 //   demolition — smash the props (FEAT-65)                        (red)
 //   freight    — heavy; flat pay by mass × distance, NOT BUILT    (blue)
 //
@@ -26,6 +28,11 @@
 //   pools    which sources may post it (keys of SOURCES below)
 
 export const THINGS = [
+    // FEAT-88 haul. massKg is ignored for a haul thing — the card's weight is pieces × HAUL_BUNDLE_KG,
+    // because the load is real bodies and its weight is whatever they weigh. Kept so the spec
+    // stream draws the same numbers for every thing.
+    { id: 'firewood',   phrase: 'firewood',               family: 'haul',     massKg: [0, 0],
+      pools: ['firewoodYard'] },
     { id: 'takeout',    phrase: 'two bags of takeout',    family: 'delivery', massKg: [2, 5],
       pools: ['burgerJoint'] },
     { id: 'groceries',  phrase: 'a week of groceries',    family: 'delivery', massKg: [10, 25],
@@ -106,7 +113,38 @@ export const SOURCES = {
     larrysHouse:  { slots: 1, expiryH: 72,       nameForm: 'fixed', families: ['papers'], minEmptyH: 24 },
     serviceShop:  { slots: 1, expiryH: 48,       nameForm: 'owned', families: ['delivery', 'freight'] },
     missionGiver: { slots: 1, expiryH: [24, 72], nameForm: 'plain', families: ['delivery', 'fragile', 'demolition'] },
+    // FEAT-88/91: the region-1 haul yard. Haul only for now — FEAT-91 also has it give and take
+    // courier jobs, which lands with FEAT-89.
+    firewoodYard: { slots: 2, expiryH: 24,       nameForm: 'owned', families: ['haul'] },
 }
+
+// ── Haul loads (FEAT-88, owner 2026-10-04) ──────────────────────────────────────────────────
+//
+// A haul offer rolls how many pieces it is, and the pay scales with that: a bigger load is a
+// juicier job, and also more weight squatting the truck and more pieces to lose. That is the lever
+// that lets the market pull the player between careers. Pay = the ordinary par line × pieces ×
+// HAUL_PAY_PER_BUNDLE, then × (pieces aboard at delivery ÷ pieces in the offer) at settle.
+
+/** [min, max] firewood bundles per offer, inclusive. Owner, 2026-10-05 (was 7–12 on the first drive). */
+export const HAUL_BUNDLES = [10, 15]
+
+/** kg per bundle. A real shrink-wrapped bundle is ~0.75 ft³, 10–12 kg (src/debris.js bundleA..C). */
+export const HAUL_BUNDLE_KG = 11
+
+/**
+ * Pay per bundle as a fraction of an ordinary delivery over the same route. 1/10: a 10-bundle load
+ * pays what a delivery would, 15 bundles pay 1.5× — the same 1×–1.5× spread the first 7–12 range had
+ * at 1/8 (re-weighted with the range, owner 2026-10-05). PLACEHOLDER — tune on a drive.
+ */
+export const HAUL_PAY_PER_BUNDLE = 1 / 10
+
+/**
+ * Par on a haul is the route's par × this (owner, 2026-10-05: "the added weight slows the truck
+ * slightly, so par should be ~10% longer"). Pay rides par, so the per-bundle rate is divided by the
+ * same factor in the offer's payMult (src/offer-board.js) — a 10-bundle haul still pays exactly what
+ * a courier job over that route pays; only the clock it is graded against is longer.
+ */
+export const HAUL_PAR_SLACK = 1.1
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
 export const EXPIRY_NOISE = 0.3

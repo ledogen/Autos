@@ -456,6 +456,44 @@ export const RANK_THRESHOLDS_DEFAULT = { S: 0.77, A: 0.81, B: 0.87, C: 1.00 }
  * `thresholds` is injected by the caller (economy.js day ramp); nothing here may learn what a
  * run day is, and `day` must never reach computePar.
  */
+/*
+ * FEAT-88 — the HAUL letter (owner, 2026-10-05): "the letter grade should be an overall ranking
+ * on how you performed a mission". A courier job is all clock, so its letter is gradeRun's. A haul
+ * is clock AND load, so its letter blends the two, each first put on one LETTER SCALE (C = 1,
+ * B = 2, A = 3, S = 4; D below 1):
+ *   time  — 4 at the S line, 3 at A, 2 at B, 1 at C (par), linear between; past S it keeps
+ *           climbing at the A→S slope up to HAUL_TIME_CAP ("screaming fast"), past par it keeps
+ *           falling at the B→C slope.
+ *   load  — 4 at HAUL_LOAD_S of the pieces delivered, HAUL_LOAD_SLOPE letters per whole load
+ *           (1.5 letters per 10 %), capped at 4: a full bed is S-level, never better.
+ * The letter is the AVERAGE. Owner's anchors: S time with 90 % delivered = S; 40 % delivered,
+ * screaming fast = (5 − 3.5) / 2 = 0.75 = D. Display only, like every letter (SM-INV-3) — pay is
+ * the ratio × the share aboard, never this.
+ */
+export const HAUL_LOAD_S = 0.9
+export const HAUL_LOAD_SLOPE = 15
+export const HAUL_TIME_CAP = 5
+
+/** A run's time on the letter scale (C = 1 … S = 4), from its par ratio. */
+export function timeScore(ratio, t = RANK_THRESHOLDS_DEFAULT) {
+    const pts = [[t.S, 4], [t.A, 3], [t.B, 2], [t.C, 1]]
+    if (ratio <= t.S) return Math.min(HAUL_TIME_CAP, 4 + (t.S - ratio) / (t.A - t.S))
+    for (let i = 1; i < pts.length; i++) {
+        const [r0, s0] = pts[i - 1], [r1, s1] = pts[i]
+        if (ratio <= r1) return s0 + (s1 - s0) * (ratio - r0) / (r1 - r0)
+    }
+    return 1 - (ratio - t.C) / (t.C - t.B)
+}
+
+/** A haul's letter: the average of its time and load on the letter scale. */
+export function haulGrade(ratio, share, thresholds = RANK_THRESHOLDS_DEFAULT) {
+    const time = timeScore(ratio, thresholds)
+    const load = Math.min(4, 4 + (share - HAUL_LOAD_S) * HAUL_LOAD_SLOPE)
+    const score = (time + load) / 2
+    const letter = score >= 4 ? 'S' : score >= 3 ? 'A' : score >= 2 ? 'B' : score >= 1 ? 'C' : 'D'
+    return { letter, score, time, load }
+}
+
 export function gradeRun(elapsed, par, thresholds = RANK_THRESHOLDS_DEFAULT) {
     const ratio = par > 0 ? elapsed / par : Infinity
     let letter = 'D'

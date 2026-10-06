@@ -168,3 +168,20 @@ a POI type region-specific. This ticket adds it:
       `test/cargo-bed.mjs`), and visibly squats the rear.
 - [ ] Settling pays on mass aboard × roughness, continuous, floored at zero (FEAT-88's curve).
 - [ ] Frame cost of the largest load measured and within the 60 fps budget (PERF-08 harness).
+
+## Progress — region-1 slice (2026-10-04, `feature/haul-firewood`)
+
+The **firewood yard** (roster type `firewoodYard`, ASSET-36 re-scoped to a firewood *vendor*) is in.
+It posts haul only, for now. The loading beat is FEAT-88's (see that ticket's "As built").
+
+**Deferred, noted on the owner's instruction:**
+
+- **Region window.** Story mode has one region, so the yard is just a roster slot. The `regions: [n]`
+  field from "Region gating" lands with region 2.
+- **A bigger yard pad.** The owner ruled the firewood yard fits the standard 14 × 8 m lay-by pad.
+  **The sawmill and quarry will need a larger pad**, lumber-yard / quarry sized, and the FEAT-46 pad
+  solver has to be checked for that footprint before promising one per region.
+- **The loader is "over the truck's own bed", not a release point on the model.** The owner asked
+  for the title-screen rock drop. A sawmill rack or quarry ramp that drops from a fixed point is a
+  later choice.
+- **Courier at the yard** waits for FEAT-89.

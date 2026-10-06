@@ -187,6 +187,21 @@ export const POI_ROSTER = [
     // The type exists so the roster is whole; fishing and The Confluence stay deferred. Do not
     // build its systems off the back of this line.
     { type: 'tackleShop',   count: 1, model: null, siting: 'any' },
+    // FEAT-88/91: the firewood yard — the region-1 haul giver. Above the givers so a short pad pool
+    // still takes its shortfall from them. REGION 1 ONLY by design (FEAT-91 ruling 2): story mode
+    // has one region today, so there is nothing to window yet — the `regions` field lands with
+    // region 2. It fits the standard 14 x 8 m lay-by pad (owner, 2026-10-04); the sawmill and
+    // quarry will need a bigger pad, also deferred to FEAT-91.
+    //
+    // `drop` is the DROP ZONE (owner, 2026-10-05): a bed-sized rectangle on the ground, model-local
+    // (+X along the road, -Z toward it — the marker's own frame), long axis along X. It replaces
+    // the orange ring: park with your bed over it and the yard's offers open; accept and the load
+    // drops one piece at a time at FIXED points over the rectangle, not over wherever your truck
+    // is. Parking is the skill — a bed half off the zone catches half a load. On the firewood yard
+    // it sits in the lane between the bundle row and the pile of splits (ASSET-36). Data, not a
+    // model empty, so physics never waits on a fetch.
+    { type: 'firewoodYard', count: 1, model: 'splittingYard', siting: 'any',
+      drop: { x: -4.0, z: -1.2, halfX: 0.92, halfZ: 0.70 } },
     // Everything left over. Most POIs are mission givers, and a mission giver MAY present as a
     // food vendor (owner, 2026-08-05) — food vendors get no reservation of their own because a
     // vendor that also hands out work costs the region nothing.
@@ -200,7 +215,35 @@ export const POI_ROSTER = [
     { type: 'missionGiver', count: 5, modelPool: 'missionGiver', siting: 'any' },
 ]
 
-/** Region population: 14, derived from the roster so the two can never drift apart. */
+/**
+ * FEAT-88: POI `q`'s drop zone in world space — its centre and the yaw of the marker frame it is
+ * authored in (the zone's long axis is that frame's +X). Null for a POI with no drop zone.
+ * Same mapping as the mesh: model (x, z) → world (x·cos + z·sin, −x·sin + z·cos).
+ */
+export function dropZoneWorld (q) {
+    const b = q?.drop
+    if (!b) return null
+    const yaw = q.modelYaw ?? q.yaw ?? 0
+    const cs = Math.cos(yaw), sn = Math.sin(yaw)
+    return { x: q.x + b.x * cs + b.z * sn, y: q.y, z: q.z - b.x * sn + b.z * cs, yaw, halfX: b.halfX, halfZ: b.halfZ }
+}
+
+/**
+ * FEAT-88: is the world point (x, z) over POI `q`'s drop zone, grown by `slack` metres on every
+ * side? Pure. The point is taken into the marker's own frame the way queryContact does (undo
+ * modelYaw about Y) and tested against the rectangle. False for a POI with no drop zone.
+ */
+export function overDropZone (q, x, z, slack = 0) {
+    const b = q?.drop
+    if (!b) return false
+    const yaw = q.modelYaw ?? q.yaw ?? 0
+    const cs = Math.cos(yaw), sn = Math.sin(yaw)
+    const wx = x - q.x, wz = z - q.z
+    const dx = cs * wx - sn * wz, dz = sn * wx + cs * wz
+    return Math.abs(dx - b.x) <= b.halfX + slack && Math.abs(dz - b.z) <= b.halfZ + slack
+}
+
+/** Region population: 15, derived from the roster so the two can never drift apart. */
 export const POI_COUNT = POI_ROSTER.reduce((n, s) => n + s.count, 0)
 
 /** Newspaper customers are deferred until the paper-route branch merges — no slot yet (FEAT-60). */
@@ -634,6 +677,7 @@ export class PoiSystem {
                 // two story houses must never match); otherwise a raw hash off the pad id, which
                 // spawnModel takes modulo the palette length. Ignored by a model with no palette.
                 q.modelVariant = slot.variant ?? hash32(`poi-variant:${seed}:${q.id}`)
+                q.drop = slot.drop ?? null   // FEAT-88 drop zone — see the firewoodYard slot
                 const i = free.indexOf(q)
                 if (i >= 0) free.splice(i, 1)
                 out.push(q)
@@ -780,22 +824,38 @@ export class PoiSystem {
     queryContact (cx, cy, cz, r) {
         const cube = (this._d.getParams?.()?.poiCubeSize ?? POI_PARAMS.poiCubeSize) * 0.5
         for (const q of this._list) {
-            const s = q.collision?.size
-            const hx = s ? s[0] * 0.5 : cube, hy = s ? s[1] * 0.5 : cube, hz = s ? s[2] * 0.5 : cube
-            // Broad phase in world space against the box's bounding radius — cheap and rotation-
-            // proof, so the oriented test below only runs for a marker actually within reach.
+            const hit = this._boxesContact(q, cube, cx, cy, cz, r)
+            if (hit) return hit
+        }
+        return null
+    }
+
+    /**
+     * One marker's contact. Its solid shape is `collision.boxes` when the asset lists several
+     * (offset, model-local — a yard of separate things), else one box of `collision.size` centred
+     * on the marker, else the placeholder cube. First box in contact wins, as POIs never overlap.
+     */
+    _boxesContact (q, cube, cx, cy, cz, r) {
+        const c = q.collision
+        const boxes = c?.boxes ?? [{ c: null, s: c?.size ?? [cube * 2, cube * 2, cube * 2] }]
+        for (const b of boxes) {
+            const hx = b.s[0] * 0.5, hy = b.s[1] * 0.5, hz = b.s[2] * 0.5
+            const ox = b.c ? b.c[0] : 0, oy = b.c ? b.c[1] : hy, oz = b.c ? b.c[2] : 0
+            // Broad phase in world space against the box's bounding radius (about the marker
+            // origin, so an offset box is still enclosed) — cheap and rotation-proof, so the
+            // oriented test below only runs for a marker actually within reach.
             const wx = cx - q.x, wz = cz - q.z
-            const reach = Math.hypot(hx, hz) + r
+            const reach = Math.hypot(Math.abs(ox) + hx, Math.abs(oz) + hz) + r
             if (wx * wx + wz * wz > reach * reach) continue
-            const bcy = q.y + hy                      // box centre: the marker stands ON the pad
+            const bcy = q.y + oy                      // box centre: base-seated on the pad
             const dy = cy - bcy
             if (dy > hy + r || dy < -hy - r) continue
             // Into the marker's own frame: undo yaw about Y. (cos, −sin; sin, cos) is the inverse
             // of the rotation applied to the mesh, so dx runs along the model's +X and dz its +Z.
             // modelYaw, NOT the pad yaw — a quarter-turned Winnebago's box must turn with it.
             const cs = Math.cos(q.modelYaw ?? q.yaw ?? 0), sn = Math.sin(q.modelYaw ?? q.yaw ?? 0)
-            const dx =  cs * wx - sn * wz
-            const dz =  sn * wx + cs * wz
+            const dx =  cs * wx - sn * wz - ox
+            const dz =  sn * wx + cs * wz - oz
             if (dx > hx + r || dx < -hx - r || dz > hz + r || dz < -hz - r) continue
             // Closest point on the box to the query centre, in box-local axes.
             const qx = dx < -hx ? -hx : dx > hx ? hx : dx
