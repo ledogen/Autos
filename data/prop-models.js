@@ -279,6 +279,19 @@ export const PROP_MODELS = {
     },
   },
 
+  // ASSET-05 — 20 lb exchange propane cylinder. 330 tris, 0.31 m dia x 0.46 m OVERALL (collar
+  // included — owner 2026-10-07; the ticket's "excl. collar" stood it 1.8x its diameter).
+  // Base-seated, valve outlet faces -Z through a collar window. Three materials, no textures:
+  // TankPaint (off-white, deliberately NO palette — owner 2026-10-07), ValveBrass, TankDark (foot
+  // ring + handwheel). ASSET-72's freight 4-pack reuses this mesh, so keep material names stable.
+  // The ticket authored a cylinder (r 0.16, h 0.46, 17 kg full) — recorded as its bounding box
+  // here because the registry convention is box/capsule; mass inert until dynamic props (FEAT-36).
+  propaneTank: {
+    url: 'assets/models/propane-tank.glb',
+    tags: ['lawnFurniture'],
+    collision: { shape: 'box', size: [0.31, 0.46, 0.31] },
+  },
+
   gnome: {
     url: 'assets/models/gnome.glb',
     // 0.206 wide x 0.400 tall x 0.165 deep, measured off the GLB — inside the
