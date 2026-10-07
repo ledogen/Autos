@@ -18,7 +18,7 @@ that gives nothing still costs a pad, but it adds nothing to the job supply (see
 
 | Type | Status | Region | Gives | Receives | Tags | Model | Ticket |
 |---|---|---|---|---|---|---|---|
-| `farm` | planned (owner 2026-10-06) · additional class ×3 (2026-10-07) | any | freight, courier | canning jars, tractor keys, drums | farm | produce stall placeholder (ASSET-15), then the ASSET-65..67 composite, which needs a bigger pad than 14 × 8 m | FEAT-96, FEAT-98 |
+| `farm` | planned (owner 2026-10-06) · additional class ×3 (2026-10-07) | any | freight, courier | canning jars, tractor keys, drums, tools (chainsaw, splitting axe, shovel) | farm | produce stall placeholder (ASSET-15), then the ASSET-65..67 composite, which needs a bigger pad than 14 × 8 m | FEAT-96, FEAT-98 |
 | `workSite` | planned — **the job site**, required class (owner 2026-10-07) | any | courier (memo from the foreman); later the region boss | cones, cinder blocks, concrete bags, job box, workers | jobSite | placeholder, then ASSET-71 | FEAT-103 |
 | `residence` | planned — additional class ×5 (owner 2026-10-07) | any | courier, fragile | any | residence | today's `missionGiver` pool (trailer home, etc.) | FEAT-98 |
 | `office` | planned — additional class ×1 (owner 2026-10-07) | any | courier | keys to the office | office | placeholder, then ASSET-69 | FEAT-98 |

@@ -47,6 +47,7 @@ Every courier thing is a phrase on the card. Nothing renders.
 | R1 | a private note | | |
 | R1 | much-needed reading glasses | generalStore → any | |
 | R1 | keys for the tractor | any → farm | |
+| R1 | a chainsaw · a splitting axe · a shovel | generalStore → firewoodYard / sawmill / quarry / farm | owner 2026-10-07; ~6 / 3 / 2 kg. Cargo for the yard crews, not a player tool (items.md §7 keeps the chainsaw out as a general item) |
 | R1 | two bags of takeout · a week of groceries · their prescription | burgerJoint / generalStore / missionGiver → any (as today) | existing |
 | R1 | a hubcap · a headlight · a taillight · a set of wheel bearings | serviceShop → any | existing |
 | R2 | keys to the school | any → school | |
