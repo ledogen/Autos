@@ -3694,9 +3694,7 @@ function _planOffer (offer) {
     const s = offerBoard.spec(o)
     const poi = poiSystem.list().find(q => q.id === o.poiId)
     if (!s || !poi || s.family === 'papers') return null
-    const dest = s.destKind === 'poi'
-      ? { kind: 'poi', pick: s.destPick, pois: poiSystem.list().filter(q => q.id !== poi.id && !exclude.has(q.id)) }
-      : { kind: 'roadside' }
+    const dest = offerBoard.destWish(o, poiSystem.list(), exclude)
     const m = missionSystem.planOffer(poi, { rng: offerBoard.routeRng(o), dest })
     if (m) {
       // The contract's board-side terms ride on the mission: which offer it is (complete/cancel),

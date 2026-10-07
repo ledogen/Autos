@@ -616,9 +616,10 @@ export class MissionSystem {
      * @param {object} poi — the source POI (PoiSystem record)
      * @param {object} o
      * @param {()=>number} o.rng — the offer's route stream (OfferBoard.routeRng)
-     * @param {{kind:'poi'|'roadside', pick:number, pois:object[]}|null} o.dest — destination wish:
-     *        a POI (chosen by `pick` among the reachable candidates in `pois`) or a roadside point.
-     *        A POI wish that finds no reachable candidate falls back to roadside.
+     * @param {{kind:'poi'|'roadside', pick:number, pois:object[], strict?:boolean}|null} o.dest —
+     *        destination wish: a POI (chosen by `pick` among the reachable candidates in `pois`) or a
+     *        roadside point. A POI wish that finds no reachable candidate falls back to roadside —
+     *        unless `strict` (FEAT-100: a thing bound for a class), when the roll fails instead.
      * @returns {object|null} the mission, with fromPoi / startZone / endPoiId set
      */
     planOffer (poi, { rng, dest = null } = {}) {
@@ -738,6 +739,7 @@ export class MissionSystem {
                     break
                 }
             }
+            if (!destPoi && dest?.strict) return null
             if (!destPoi) {
                 for (const [ex, other] of pair) {
                     const c = legCandidates(ex)

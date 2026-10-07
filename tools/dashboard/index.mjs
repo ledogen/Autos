@@ -456,7 +456,7 @@ function extractRoster(src) {
 
 async function indexPlaces(cargo, warn) {
   // Live types — from code.
-  let roster = []; let SOURCES = {};
+  let roster = []; let SOURCES = {}; let THINGS = [];
   try {
     roster = extractRoster(readFileSync(join(ROOT, 'src', 'poi.js'), 'utf8'));
     if (!Array.isArray(roster)) throw new Error('not an array');
@@ -468,7 +468,7 @@ async function indexPlaces(cargo, warn) {
   } catch (e) { warn('places', 'src/poi.js', null, `POI_ROSTER unreadable: ${e.message}`); roster = []; }
   try {
     // Query string defeats the ESM module cache so /reindex sees edits.
-    ({ SOURCES } = await import(`${pathToFileURL(join(ROOT, 'data', 'offers.js')).href}?${Date.now()}`));
+    ({ SOURCES, THINGS } = await import(`${pathToFileURL(join(ROOT, 'data', 'offers.js')).href}?${Date.now()}`));
   } catch (e) { warn('places', 'data/offers.js', null, `SOURCES unreadable: ${e.message}`); }
   for (const k of Object.keys(SOURCES || {})) {
     if (!roster.some((s) => s.type === k)) warn('places', 'data/offers.js', null, `SOURCES.${k} has no POI_ROSTER type`);
@@ -536,6 +536,23 @@ async function indexPlaces(cargo, warn) {
   for (const c of cargo) {
     for (const e of [...c.from, ...c.to]) {
       if (!known.has(e.name)) warn('both', join('.planning', 'story-mode', 'cargo.md'), c.line, `"${c.name}": place "${e.name}" is not a live type, planned type or roadside spot`);
+    }
+  }
+
+  // THINGS ↔ cargo.md drift (FEAT-100). A thing whose phrase names a cargo row must agree with it:
+  // its `to` equals the row's destinations ('any' = no `to`), and its `pools` sit inside the row's
+  // givers (unless the row's giver is blank or `any`). Things with no row (firewood, papers) pass.
+  const cargoFile = join('.planning', 'story-mode', 'cargo.md');
+  for (const t of THINGS || []) {
+    const row = cargo.find((c) => c.name.split(/\s*·\s*/).includes(t.phrase));
+    if (!row) continue;
+    const want = row.to.map((e) => e.name).filter((n) => n !== 'any').sort().join(' / ');
+    const got = [...(t.to || [])].sort().join(' / ');
+    if (want !== got) warn('both', cargoFile, row.line, `THINGS.${t.id} goes to "${got || 'any'}", cargo.md says "${want || 'any'}"`);
+    const from = row.from.map((e) => e.name);
+    if (from.length && !from.includes('any')) {
+      const extra = t.pools.filter((p) => !from.includes(p));
+      if (extra.length) warn('both', cargoFile, row.line, `THINGS.${t.id} is posted by ${extra.join(', ')}, which cargo.md does not list`);
     }
   }
 
@@ -759,5 +776,6 @@ console.log(`  indexed    ${tickets.length} tickets (${stats.tickets.open} open)
 console.log(`  code       ${stats.codeTotal.lines.toLocaleString()} lines in ${stats.codeTotal.files} files`);
 console.log(`  cargo      ${story.cargo.length} rows · ${story.places.live.length} live / ${story.places.planned.length} planned types · ${story.places.spots.length} spots`);
 if (story.warnings.length) console.log(`  story      ${story.warnings.length} cargo/places warnings`);
+if (args.includes('--once')) for (const w of story.warnings) console.log(`    ${w.file}${w.line ? `:${w.line}` : ''}  ${w.msg}`);
 if (stats.drift.length) console.log(`  drift      ${stats.drift.length} non-canonical frontmatter values`);
 if (!args.includes('--once')) serve(port);

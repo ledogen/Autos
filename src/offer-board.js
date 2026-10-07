@@ -292,13 +292,14 @@ export class OfferBoard {
      * changes WHAT it is. Null only if the source has no built thing to post (a table gap).
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate}|null, payMult,
-     *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null }
+     *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null }
      * bundles is the haul load's piece count (FEAT-88), null for every other family. It is drawn on
      * its OWN `bundles` stream: one more draw on `spec` would shift the destination and place name
      * of every existing offer on every seed.
      * destKind is null for papers (the paper route picks its own customers). destPick is the uniform
      * number the mission planner uses to choose among the destination POIs it can actually reach;
      * placeName is the roadside name, rolled always, used whenever no POI destination fits.
+     * to is the thing's destination classes (FEAT-100): a tagged thing always goes to a POI.
      */
     spec (offer) {
         if (!offer) return null
@@ -345,8 +346,8 @@ export class OfferBoard {
             massKg: bundles ? bundles * HAUL_BUNDLE_KG : massKg, bundles,
             // ÷ HAUL_PAR_SLACK: the haul's par is that much longer and pay rides par (data/offers.js).
             payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1),
-            destKind: papers ? null : (destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
-            destPick, placeName,
+            destKind: papers ? null : (thing.to || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
+            destPick, placeName, to: thing.to ?? null,
         })
     }
 
@@ -398,6 +399,24 @@ export class OfferBoard {
             m.placeName = name
         }
         return (offer.route = m)
+    }
+
+    /**
+     * The planner's destination wish for an offer (MissionSystem.planOffer `dest`). A generic thing
+     * goes to any other POI on its DEST_POI_CHANCE roll, else to a roadside spot. A thing with a
+     * `to` (FEAT-100) goes only to a POI carrying one of those tags, and is STRICT: no candidate in
+     * reach means no route, never a roadside drop — roadside spots are for generic things only.
+     *
+     * @param {object} offer
+     * @param {object[]} pois — the roster (PoiSystem.list())
+     * @param {Set<string>} exclude — POI ids planDistinct says to avoid
+     */
+    destWish (offer, pois, exclude) {
+        const sp = this.spec(offer)
+        if (sp.destKind !== 'poi') return { kind: 'roadside' }
+        const fits = (q) => q.id !== offer.poiId && !exclude.has(q.id)
+            && (!sp.to || sp.to.some(t => q.tags?.includes(t)))
+        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict: !!sp.to }
     }
 
     /** A seeded stream for the mission planner's own rolls on this offer (route determinism). */

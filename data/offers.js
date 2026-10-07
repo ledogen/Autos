@@ -26,6 +26,9 @@
 //   family   one of the families above
 //   massKg   [min, max] — rolled per offer, shown on the card as cargo weight
 //   pools    which sources may post it (keys of SOURCES below)
+//   to       (optional, FEAT-100) the POI tags it may be delivered to — a class (`farm`) or a
+//            fixture tag. Absent = generic: any POI or a roadside spot (cargo.md "From → to").
+//            Tagged things only ever end at a matching POI, never roadside.
 
 // "Any normal giver" — cargo.md's blank From (option C). Not the food vendor, the haul yard or
 // Larry: each has one kind of job and posts it outside the budget (pois.md § Job supply).
@@ -52,6 +55,15 @@ export const THINGS = [
       pools: ANY_GIVER },
     { id: 'memo',       phrase: 'a memo from the foreman', family: 'delivery', massKg: [0.1, 0.1],
       pools: ['workSite'] },
+    { id: 'tractorKeys', phrase: 'keys for the tractor',   family: 'delivery', massKg: [0.1, 0.1],
+      pools: ANY_GIVER, to: ['farm'] },
+    // Cargo for the yard crews, not a player tool (items.md §7). sawmill/quarry are R2/R3 classes.
+    { id: 'chainsaw',   phrase: 'a chainsaw',              family: 'delivery', massKg: [5, 7],
+      pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
+    { id: 'axe',        phrase: 'a splitting axe',         family: 'delivery', massKg: [2.5, 3.5],
+      pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
+    { id: 'shovel',     phrase: 'a shovel',                family: 'delivery', massKg: [1.5, 2.5],
+      pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
 
     // Larry posts papers and nothing else (owner, 2026-09-26).
     { id: 'papers',     phrase: 'the morning papers',      family: 'papers',   massKg: [5, 8],

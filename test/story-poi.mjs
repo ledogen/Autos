@@ -328,10 +328,7 @@ function boardRig (ms, nowH = 6) {
         return board.planDistinct(o, (x, exclude) => {
             const s = board.spec(x)
             const poi = W.poi.list().find(q => q.id === x.poiId)
-            const dest = s.destKind === 'poi'
-                ? { kind: 'poi', pick: s.destPick, pois: W.poi.list().filter(q => q.id !== poi.id && !exclude.has(q.id)) }
-                : { kind: 'roadside' }
-            const m = ms.planOffer(poi, { rng: board.routeRng(x), dest })
+            const m = ms.planOffer(poi, { rng: board.routeRng(x), dest: board.destWish(x, W.poi.list(), exclude) })
             if (m) { m.offerId = x.id; m.bonus = s.bonus; m.payMult = s.payMult }
             return m
         })
@@ -401,13 +398,20 @@ function boardRig (ms, nowH = 6) {
         teleport () {}, setMapOpen () {}, onChange () {},
     })
     const { board, plan } = boardRig(ms)
-    let n = 0
-    const bad = []
+    let n = 0, tagged = 0
+    const bad = [], tagBad = []
     for (let t = 6; t < 6 + 24 * 3; t += 4) {
         for (const id of board.sources()) for (const o of board.offers(id, t)) {
             if (board.spec(o).family === 'papers') continue
             n++
-            if (!plan(o)) bad.push(W.poi.list().find(q => q.id === id)?.type)
+            const r = plan(o), to = board.spec(o).to
+            if (!r) bad.push(W.poi.list().find(q => q.id === id)?.type)
+            // FEAT-100: a tagged thing always ends at a matching class.
+            else if (to) {
+                tagged++
+                const end = W.poi.list().find(q => q.id === r.endPoiId)
+                if (!end || !to.some(x => end.tags.includes(x))) tagBad.push(board.spec(o).thingId)
+            }
         }
     }
     // …and NO TWO LIVE OFFERS AT A POI ARE THE SAME JOB (owner, 2026-09-27): same thing + same
@@ -427,7 +431,9 @@ function boardRig (ms, nowH = 6) {
         `${dups} duplicate sets over ${pairs} offer-samples`)
     check('every delivery offer a source posts plans a route (no route-less cards)', bad.length === 0,
         `${bad.length}/${n} failed: ${[...new Set(bad)].join(', ')}`)
-    console.log(`       ${n} offers planned over 3 days of turnover`)
+    check('an offer for a tagged thing always ends at a matching class (FEAT-100)',
+        tagged > 0 && tagBad.length === 0, `${tagBad.length}/${tagged}: ${tagBad.join(', ')}`)
+    console.log(`       ${n} offers planned over 3 days of turnover (${tagged} tagged)`)
 }
 
 // ── 7b. The POI start zone: no countdown, no hold, the clock starts at the threshold ────────────

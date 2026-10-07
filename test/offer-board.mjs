@@ -29,7 +29,7 @@
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel } from '../src/offer-board.js'
-import { SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { THINGS, SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
@@ -423,6 +423,36 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
         }
     }
     check('adding the yard leaves every other offer unchanged', moved === 0, `${moved} moved`)
+}
+
+// ── 16. to-tags (FEAT-100) ──────────────────────────────────────────────────────────────────────
+// A thing with a `to` asks the planner for a POI of a listed class, strictly; a generic thing keeps
+// the DEST_POI_CHANCE roll and may go roadside. PoiSystem leads every POI's tags with its type.
+{
+    const tagged = POIS.map(q => ({ ...q, tags: [q.type, ...(q.type === 'momsHouse' ? ['residence', 'mom'] : [])] }))
+    let taggedN = 0, taggedBad = 0, genericStrict = 0, roadside = 0
+    for (let seed = 1; seed <= 60; seed++) {
+        const b = make(seed)
+        for (let t = T0; t < T0 + 24 * 4; t += 3) for (const id of b.sources()) for (const o of b.offers(id, t)) {
+            const sp = b.spec(o)
+            if (sp.family === 'papers') continue
+            const w = b.destWish(o, tagged, new Set())
+            if (sp.to) {
+                taggedN++
+                if (w.kind !== 'poi' || !w.strict || !w.pois.length
+                    || !w.pois.every(q => q.id !== o.poiId && sp.to.some(x => q.tags.includes(x)))) taggedBad++
+            } else {
+                if (w.strict) genericStrict++
+                if (w.kind === 'roadside') roadside++
+            }
+        }
+    }
+    check('a tagged thing asks for a matching POI only, strictly (never roadside)', taggedN > 0 && taggedBad === 0,
+        `${taggedBad}/${taggedN}`)
+    check('a generic thing is never strict, and may still go roadside', genericStrict === 0 && roadside > 0)
+    check('THINGS name only real classes in `to` (or the planned sawmill/quarry)',
+        THINGS.every(t => !t.to || t.to.every(x => SOURCES[x] || POIS.some(q => q.type === x)
+            || ['sawmill', 'quarry'].includes(x))))
 }
 
 // ── 14. import discipline ───────────────────────────────────────────────────────────────────────

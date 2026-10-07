@@ -26,8 +26,9 @@ place classes in `src/poi.js` (`generalStore`, `autoShop`, `foodVendor`, `gasSta
 `doctor`, `strandedMotorist`), plus the planned `sawmill` and `quarry` — see pois.md "Places and
 Missions". The
 full list of places, and what each gives and receives, is `pois.md`. **†** marks a roadside spot
-(an `institution` spot in `pois.md`), not a POI. Tags are a first pass and not yet wired: today
-`data/offers.js` has only "from" (`pools`), and the destination is any place.
+(an `institution` spot in `pois.md`), not a POI. In `data/offers.js` "from" is `pools` and "to"
+is `to` (FEAT-100): a thing with a `to` always ends at a POI of a listed class, never at a
+roadside spot. The dashboard warns when an existing thing and its row here disagree.
 
 Mass is real for every bed load (SM-INV-10, *a load, never a stat*). Mass ranges are the
 suggestions written in each asset ticket. "Existing" means the thing is already an entry in
@@ -43,13 +44,13 @@ Every courier thing is a phrase on the card. Nothing renders.
 
 | Region | Thing | From → to | Note |
 |---|---|---|---|
-| R1 | a memo from the foreman | workSite → any | |
+| R1 | a memo from the foreman | workSite → any | existing |
 | R1 | lunch for the partner | foodVendor → any | |
-| R1 | a private note | | |
+| R1 | a private note | | existing (any normal giver) |
 | R1 | much-needed reading glasses | generalStore → any | |
-| R1 | keys for the tractor | any → farm | |
-| R1 | a chainsaw · a splitting axe · a shovel | generalStore → firewoodYard / sawmill / quarry / farm | owner 2026-10-07; ~6 / 3 / 2 kg. Cargo for the yard crews, not a player tool (items.md §7 keeps the chainsaw out as a general item) |
-| R1 | two bags of takeout · a week of groceries · their prescription | foodVendor / generalStore / residence → any (as today) | existing |
+| R1 | keys for the tractor | any → farm | existing |
+| R1 | a chainsaw · a splitting axe · a shovel | generalStore → firewoodYard / sawmill / quarry / farm | existing. Owner 2026-10-07; ~6 / 3 / 2 kg. Cargo for the yard crews, not a player tool (items.md §7 keeps the chainsaw out as a general item) |
+| R1 | two bags of takeout · a week of groceries · their prescription | foodVendor / generalStore / residence / doctor → any (as today) | existing |
 | R1 | a hubcap · a headlight · a taillight · a set of wheel bearings | autoShop → any | existing |
 | R2 | keys to the school | any → school | |
 | R2 | keys to the office | any → office | |
