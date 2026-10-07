@@ -85,6 +85,17 @@ the generator reproduces the texture along with the mesh, so the asset stays a o
 and the layout numbers stay in the same file as the geometry. Hand-painted PNGs that live only in
 `assets/` are the thing to avoid — they cannot be regenerated when a board's proportions change.
 
+**Per-piece tint is vertex colour, not a second material** (owner, 2026-10-06, `pallet.glb`). When
+one object is many like pieces — boards, slats, planks — and one flat colour reads as plastic, give
+each piece a tint in a `COLOR_0` vertex-colour attribute. glTF multiplies it into `baseColorFactor`,
+`GLTFLoader` turns `vertexColors` on by itself, and it stays **one material, one draw call** — where
+three wood materials would cost three per placed copy. Rules: author the material at the *lightest*
+piece and keep every tint ≤ 1 (a multiply only darkens); write it as a linear `FLOAT_COLOR` on the
+corner domain so each piece stays flat; export with `export_vertex_color="ACTIVE"` (the default
+`MATERIAL` mode silently drops it unless a Color Attribute node is wired in). It is for variation
+*between pieces*, never a gradient, wear or shading painted across a surface — that is still a texture
+by another name. Runtime palette recolour still works: it swaps the factor, the tints ride on top.
+
 This is not just taste. It costs no texture memory, needs no bake step, needs no UVs at all, and it
 makes runtime recolour free (see `ASSETS.md`, "Untextured assets").
 

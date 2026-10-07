@@ -1,10 +1,10 @@
 ---
 id: ASSET-27
 type: asset
-status: open
+status: done
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-03
+updated: 2026-10-07
 blocked-by: FEAT-59
 relates: FEAT-46, FEAT-36, ASSET-12
 ---
@@ -28,11 +28,11 @@ wall. `items.md` §4 lists **pallets/freight** as the *"mass does the work"* car
 | Field | Value |
 |---|---|
 | Tri budget | **≤300** — empty pallet only |
-| Texture | one albedo, **512×512** — sawn pine, grey weathering, nail heads, a stencilled mark |
-| Real size | 1.20 m × 0.80 m × 0.145 m (a real stringer pallet; keep it) |
+| Texture | **none** — one flat material `PalletWood` (owner 2026-10-06, see Notes) |
+| Real size | **1.20 m × 1.00 m × 0.145 m** — US GMA 48×40 in stringer pallet, rounded (owner 2026-10-06) |
 | Origin | base-seated and centred: bottom deck at y=0 |
 | Forward | −Z (stringers run along Z, fork entry across X) |
-| Collision | `{ shape: 'box', dims: [0.80, 0.145, 1.20], mass_kg: 25 }` |
+| Collision | `{ shape: 'box', dims: [1.00, 0.145, 1.20], mass_kg: 25 }` |
 
 **Empty, and one piece.** A loaded pallet is a pallet plus ASSET-28 crates plus a strap — composed at
 placement, not modelled as a second asset.
@@ -49,6 +49,17 @@ placement, not modelled as a second asset.
 
 ## Notes
 
+- **2026-10-06 (owner): footprint 1.20 × 1.00, not 1.20 × 0.80.** 1.20 × 0.80 is the EUR *block*
+  pallet; a stringer pallet is the GMA 48×40 in (1.22 × 1.02). Rounded to 1.2 × 1.0 to match the five
+  load tickets that reuse this base (ASSET-46/47/48/55/56) and so the ASSET-28 crate's 2 × 2 layout
+  fits (0.90 m of crate across the 1.00 side; the 1.20 side is exactly 2 × 0.60 — **zero margin**,
+  ASSET-28 must shrink a hair to get its "with margin").
+- **2026-10-06 (owner): untextured**, same ruling as ASSET-28 — the texture row predated ART-STYLE.
+  Nail heads / weathering are wear; a stencil is unreadable at range. Deck gaps, notched stringers, a
+  split top board with a broken end and one forklift-chewed stringer corner carry it as geometry.
+- **Built 2026-10-06:** 268 tris, 1 material, 0 images, 20 kB. Per-board colour variation is a
+  vertex-colour tint (owner 2026-10-06, the new ART-STYLE rule-1 paragraph), still one draw call. 
+
 - Own work → no `CREDITS.md` entry needed.
 - `mass_kg: 25` is the empty pallet and is **inert today**, same rule as ASSET-03 — dynamic props are
   FEAT-36, itself blocked on the FEAT-48 physics-adapter seam. Freight mass that actually shifts CoG
@@ -56,3 +67,13 @@ placement, not modelled as a second asset.
   quantified"*).
 - Deck-gap silhouette is the whole read; do not close the deck to save tris.
 - Pairs with ASSET-12 (lumber yard) and ASSET-28 (crate).
+
+## Resolution (2026-10-07)
+
+Shipped `assets/models/pallet.glb` (268 / 300 tris, 1 material `PalletWood`, 0 images, 20 kB) with
+sources `assets/models/src/pallet.py` + `pallet.blend`, registered as `pallet` in
+`data/prop-models.js`. Generator asserts flush stacking (z span exactly [0, 0.145], every bottom
+board bears on a top board) and casts 400 rays for winding — both clean. Footprint 1.20 × 1.00 and
+the untextured / vertex-colour-tint look are the owner's 2026-10-06 rulings (Notes). Placing it in
+the world is FEAT-96 (freight) / FEAT-71, not this ticket.
+

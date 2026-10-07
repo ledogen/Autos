@@ -122,6 +122,14 @@ export const PROP_MODELS = {
     url: 'assets/models/drum-closed.glb',
     collision: { shape: 'hull-from-mesh', size: [0.58, 0.85, 0.58] },
   },
+
+  // ASSET-27 — timber stringer pallet, empty. 268 tris, 1.00 x 0.145 x 1.20 m (stringers along -Z,
+  // forks enter across X), base-seated; stacks flush at y = 0.145. One material (PalletWood) with
+  // per-board vertex-colour tints, no textures. mass 25 kg, inert until dynamic props (FEAT-36).
+  pallet: {
+    url: 'assets/models/pallet.glb',
+    collision: { shape: 'box', size: [1.00, 0.145, 1.20] },
+  },
   testRock: {
     url: 'assets/models/test-rock.glb',
     collision: { shape: 'hull-from-mesh', size: [0.44, 0.4, 0.36] },
