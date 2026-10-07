@@ -22,7 +22,8 @@ The four delivery types (missions.md §3, amended 2026-10-06):
 **From → to** (owner, 2026-10-06, option C): **blank means generic**, so any normal giver can post
 it, to any destination. Only items that make sense for certain places are tagged. Names are the
 place types in `src/poi.js` (`generalStore`, `serviceShop`, `burgerJoint`, `gasStation`,
-`missionGiver`, `firewoodYard`, plus the planned `farm`, `workSite`, `sawmill` and `quarry`). The
+`missionGiver`, `firewoodYard`, plus the planned `farm`, `workSite` (the job site), `residence`, `office`,
+`school`, `doctor`, `strandedMotorist`, `sawmill` and `quarry` — see pois.md "Places and Missions"). The
 full list of places, and what each gives and receives, is `pois.md`. **†** marks a roadside spot
 (an `institution` spot in `pois.md`), not a POI. Tags are a first pass and not yet wired: today
 `data/offers.js` has only "from" (`pools`), and the destination is any place.
@@ -48,8 +49,8 @@ Every courier thing is a phrase on the card. Nothing renders.
 | R1 | keys for the tractor | any → farm | |
 | R1 | two bags of takeout · a week of groceries · their prescription | burgerJoint / generalStore / missionGiver → any (as today) | existing |
 | R1 | a hubcap · a headlight · a taillight · a set of wheel bearings | serviceShop → any | existing |
-| R2 | keys to the school | any → "the school"† | |
-| R2 | keys to the office | any → "the office"† | |
+| R2 | keys to the school | any → school | |
+| R2 | keys to the office | any → office | |
 | R2 | a muffler · a drive shaft · a body panel · a tailgate | serviceShop → any | existing (10–30 kg in the cab) |
 
 ### People — passengers in the cab
@@ -57,7 +58,7 @@ Every courier thing is a phrase on the card. Nothing renders.
 | Region | Job | From → to | Note |
 |---|---|---|---|
 | R1 | taking someone to the party | | |
-| R1 | taking someone from their broken-down car | brokenDownCar → serviceShop / any | the pickup is the ASSET-18 broken-down car scene |
+| R1 | taking someone from their broken-down car | strandedMotorist → serviceShop / any | the pickup is the ASSET-18 broken-down car scene |
 | R2 | taking someone to help their grandma | | |
 | R2 | workers for the site | any → workSite | more than one passenger; capped by the cab's seats |
 | R3 | taking someone from the party (tipsy) | | flavour only (ruling 5) |
