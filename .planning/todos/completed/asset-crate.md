@@ -1,12 +1,12 @@
 ---
 id: ASSET-28
 type: asset
-status: open
+status: done
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-03
+updated: 2026-10-07
 blocked-by: FEAT-59
-relates: FEAT-46, FEAT-36, ASSET-27
+relates: FEAT-46, FEAT-36, ASSET-27, ASSET-68
 ---
 
 # ASSET-28: Crate
@@ -63,3 +63,24 @@ plain cube — and texture everywhere else.
 - The fragile-cargo *signal* already exists and is not this ticket's: `missions.md` §3b scores
   vertical shock off the same bump-stop / suspension-velocity plumbing the wear model reads
   (`items.md` §3a — *one plumbing, two consumers*).
+
+## Resolution (2026-10-07)
+
+Shipped as a kit from one generator, `assets/models/src/crate.py` + `crate.blend`:
+`small-crate.glb` (plain) and `small-crate-fragile.glb` — this ticket — plus the large pair under
+ASSET-68. Registered as `smallCrate` / `smallCrateFragile` in `data/prop-models.js`.
+
+- **0.58 × 0.45 × 0.45 m, not 0.60** — 2 × 0.60 is exactly the pallet's 1.20, which fails this
+  ticket's own "2 × 2 with margin". On the 1.20 × 1.00 pallet four take 1.16 × 0.90. Collision dims
+  are `[0.58, 0.45, 0.45]`.
+- 240 / 350 tris, one material `CrateWood`, per-board vertex-colour tints (ART-STYLE rule 1).
+  Slats, gaps, proud corner battens and a three-board lid are geometry; a dark inner box is what the
+  gaps show.
+- **Fragile is a variant, not the only crate (owner 2026-10-07):** the plain one has no image and no
+  UVs; the fragile one adds one 512×512 image carrying only the FRAGILE / HANDLE WITH CARE stencil
+  (lettering exception), unlettered faces sample a wood swatch of it — still one draw call.
+- **No strap (owner 2026-10-07)** — the request's strap was built, then removed.
+- The generator asserts flush stacking and pallet fit, and casts 400 rays for winding — clean.
+- The "one crate, many cargoes via UV offset into a shared stencil strip" idea above is not built;
+  the plain/fragile split is the only variation so far.
+

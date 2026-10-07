@@ -130,6 +130,16 @@ export const PROP_MODELS = {
     url: 'assets/models/pallet.glb',
     collision: { shape: 'box', size: [1.00, 0.145, 1.20] },
   },
+
+  // ASSET-28 / ASSET-68 — slatted wooden crates, one generator (assets/models/src/crate.py), four
+  // .glb. Base-seated, stack flush. One material (CrateWood) with per-board vertex-colour tints;
+  // the -fragile variants add one 512x512 image carrying only the FRAGILE / HANDLE WITH CARE
+  // stencil (on the -Z and +Z faces). Small: 240 tris, 4 per pallet (2x2). Large: 300 tris, a
+  // 0.81 m cube, 1 per pallet. mass_kg 18 / 45, inert until dynamic props (FEAT-36).
+  smallCrate: { url: 'assets/models/small-crate.glb', collision: { shape: 'box', size: [0.58, 0.45, 0.45] } },
+  smallCrateFragile: { url: 'assets/models/small-crate-fragile.glb', collision: { shape: 'box', size: [0.58, 0.45, 0.45] } },
+  largeCrate: { url: 'assets/models/large-crate.glb', collision: { shape: 'box', size: [0.81, 0.81, 0.81] } },
+  largeCrateFragile: { url: 'assets/models/large-crate-fragile.glb', collision: { shape: 'box', size: [0.81, 0.81, 0.81] } },
   testRock: {
     url: 'assets/models/test-rock.glb',
     collision: { shape: 'hull-from-mesh', size: [0.44, 0.4, 0.36] },

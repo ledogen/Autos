@@ -19,7 +19,7 @@ only**: no game code changed. The to-tags and the job-cycling proposal are still
 
 1. **Cargo asset tickets ASSET-46..64** (freight and fragile models). The parallel session also
    added ASSET-39..45 (fragile set) and ASSET-65..67 (farmhouse, barn, tractor). The next free
-   numbers are **ASSET-68** and **FEAT-98**.
+   numbers are **ASSET-69** (68 went to the large crate) and **FEAT-98**.
 2. **Owner rulings, 2026-10-06/07**, all recorded in cargo.md:
    - A region gates each tier (R1 early, R2 mid, R3+ late).
    - Steel wheels are car rims, in a stack of 4 or 8 (ASSET-53).
