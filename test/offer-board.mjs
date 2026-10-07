@@ -30,7 +30,6 @@
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel } from '../src/offer-board.js'
 import { SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
-import { PROP_MODELS } from '../data/prop-models.js'
 import { basePay } from '../src/economy.js'
 
 let fails = 0
@@ -45,21 +44,28 @@ const POIS = [
     { id: 'poi:3|4',   type: 'larrysHouse',  modelKey: 'trailerHomeA' },
     { id: 'poi:5|6',   type: 'gasStation' },
     { id: 'poi:7|8',   type: 'gasStation' },
-    { id: 'poi:9|10',  type: 'serviceShop' },
-    { id: 'poi:11|12', type: 'serviceShop' },
-    { id: 'poi:13|14', type: 'burgerJoint' },
+    { id: 'poi:9|10',  type: 'autoShop' },
+    { id: 'poi:11|12', type: 'autoShop' },
+    { id: 'poi:13|14', type: 'foodVendor' },
     { id: 'poi:15|16', type: 'generalStore' },
     { id: 'poi:17|18', type: 'tackleShop' },
-    { id: 'poi:19|20', type: 'missionGiver', modelKey: 'trailerHomeA' },
-    { id: 'poi:21|22', type: 'missionGiver', modelKey: 'winnebago' },
-    { id: 'poi:23|24', type: 'missionGiver', modelKey: 'brokenCar' },
-    { id: 'poi:25|26', type: 'missionGiver', modelKey: 'trailerHomeA' },
-    { id: 'poi:27|28', type: 'missionGiver', modelKey: 'winnebago' },
+    { id: 'poi:19|20', type: 'residence', modelKey: 'trailerHomeA' },
+    { id: 'poi:21|22', type: 'residence', modelKey: 'winnebago' },
+    { id: 'poi:23|24', type: 'strandedMotorist', modelKey: 'brokenCar' },
+    { id: 'poi:25|26', type: 'residence', modelKey: 'trailerHomeA' },
+    { id: 'poi:27|28', type: 'residence', modelKey: 'winnebago' },
     { id: 'poi:29|30', type: 'firewoodYard' },
+    { id: 'poi:31|32', type: 'workSite' },
+    { id: 'poi:33|34', type: 'residence', modelKey: 'trailerHomeA' },
+    { id: 'poi:35|36', type: 'farm' },
+    { id: 'poi:37|38', type: 'farm' },
+    { id: 'poi:39|40', type: 'farm' },
+    { id: 'poi:41|42', type: 'office' },
+    { id: 'poi:43|44', type: 'school' },
+    { id: 'poi:45|46', type: 'doctor' },
 ]
 const T0 = 6   // dayStartHour: the clock a run opens on
-const giverNameOf = (k) => PROP_MODELS[k]?.giverName
-const make = (seed, nowH = T0) => new OfferBoard({ seed, pois: POIS, nowH, giverNameOf })
+const make = (seed, nowH = T0) => new OfferBoard({ seed, pois: POIS, nowH })
 const slotsOf = (b, id) => b._bySource.get(id) || []
 const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFixed(9)}:${s.state}`).join('|')
 
@@ -105,7 +111,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
             if (!(s.offer.lifeH >= lo - 1e-9 && s.offer.lifeH <= hi + 1e-9)) bad++
         }
         // The generic giver's centre is rolled ONCE per POI: all its offers sit within ±30 % of it.
-        for (const q of POIS.filter(p => p.type === 'missionGiver')) {
+        for (const q of POIS.filter(p => p.type === 'residence')) {
             const lifes = []
             for (let k = 0; k < 20; k++) lifes.push(b._lifeH(q.id, q.type, 0, k))
             const c = lifes.reduce((x, y) => x + y) / lifes.length
@@ -188,7 +194,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
 // ── 8. cancel ───────────────────────────────────────────────────────────────────────────────────
 {
     const b = make(41)
-    const food = POIS.find(q => q.type === 'burgerJoint').id
+    const food = POIS.find(q => q.type === 'foodVendor').id
     const o = b.offers(food, T0)[0]
     b.take(o.id, T0)
     const t = T0 + 0.2
@@ -211,7 +217,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
 // ── 9. taken offers are hidden ──────────────────────────────────────────────────────────────────
 {
     const b = make(51)
-    const food = POIS.find(q => q.type === 'burgerJoint').id
+    const food = POIS.find(q => q.type === 'foodVendor').id
     const before = b.offers(food, T0)
     const o = before[0]
     b.take(o.id, T0)
@@ -245,8 +251,8 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
         if (new Set(names).size !== names.length) dupPoi++
         const full = POIS.flatMap(q => b.people(q.id)).filter(p => p.last).map(p => `${p.first} ${p.last}`)
         if (new Set(full).size !== full.length) dupPerson++
-        for (const q of POIS.filter(p => p.type === 'missionGiver')) {
-            const gn = PROP_MODELS[q.modelKey].giverName
+        for (const q of POIS.filter(p => ['home', 'person'].includes(SOURCES[p.type]?.nameForm))) {
+            const gn = SOURCES[q.type].nameForm
             if (gn === 'home' && !/^the \S+ place$/.test(b.poiName(q.id) ?? '')) homeBad++
             if (gn === 'person' && (b.poiName(q.id) !== null || b.people(q.id).length !== 1
                 || b.placeLabel(q.id) !== personLabel(b.people(q.id)[0]))) personBad++
@@ -297,7 +303,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
 
 // ── 13. bonus share ─────────────────────────────────────────────────────────────────────────────
 {
-    const count = { burgerJoint: [0, 0], missionGiver: [0, 0], larrysHouse: [0, 0] }
+    const count = { foodVendor: [0, 0], residence: [0, 0], larrysHouse: [0, 0] }
     for (let seed = 1; seed <= 200; seed++) {
         const b = make(seed)
         for (let t = T0; t < T0 + 24 * 3; t += 2) for (const q of POIS) {
@@ -305,17 +311,17 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
             for (const o of b.offers(q.id, t)) { count[q.type][1]++; if (b.spec(o).bonus) count[q.type][0]++ }
         }
     }
-    const share = count.burgerJoint[0] / count.burgerJoint[1]
+    const share = count.foodVendor[0] / count.foodVendor[1]
     check('bonus share ≈ 25 % where the source has rewards', Math.abs(share - 0.25) < 0.03, share.toFixed(3))
     check('no bonus where the source has no rewards (givers, Larry)',
-        count.missionGiver[0] === 0 && count.larrysHouse[0] === 0)
+        count.residence[0] === 0 && count.larrysHouse[0] === 0)
 }
 
 // ── 13b. no two offers at a POI are the same job ────────────────────────────────────────────────
 // Owner, 2026-09-27: two identical takeout orders to the gas station. A fake planner that ALWAYS
 // wants the same destination (unless told to avoid it) forces the collision planDistinct must break.
 {
-    const food = POIS.find(q => q.type === 'burgerJoint').id   // 3 slots, takeout only
+    const food = POIS.find(q => q.type === 'foodVendor').id   // 3 slots, takeout only
     const sigOf = (b, o) => `${b.spec(o).thingId}|${b.spec(o).bonus?.rewardId ?? ''}|${o.route?.endPoiId ?? 'road:' + o.route?.placeName}`
     let dupPoi = 0, dupRoad = 0, older = 0, n = 0
     for (let seed = 1; seed <= 60; seed++) {
@@ -388,7 +394,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
     const key = (sp) => JSON.stringify([sp.family, sp.thingId, sp.massKg, sp.bonus, sp.payMult, sp.destKind, sp.destPick, sp.placeName])
     let moved = 0
     for (let seed = 1; seed <= 30; seed++) {
-        const a = make(seed), b = new OfferBoard({ seed, pois: without, nowH: T0, giverNameOf })
+        const a = make(seed), b = new OfferBoard({ seed, pois: without, nowH: T0 })
         for (const q of without) for (const o of b.offers(q.id, T0)) {
             const o2 = a.offers(q.id, T0).find(x => x.id === o.id)
             if (!o2 || key(a.spec(o2)) !== key(b.spec(o))) moved++

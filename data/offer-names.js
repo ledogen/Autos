@@ -17,7 +17,7 @@
 //           → Deb's Burgers · Earl's Honest Tires
 //   plain:  ["The"]? [adjective]? [business type / pseudonym]
 //           → The Meatball · Big Mart · Cheese
-//   Business types are per source (BUSINESS_TYPES below), so a burger joint never rolls "Tires".
+//   Business types are per source (BUSINESS_TYPES below), so a food vendor never rolls "Tires".
 //
 // PLACE (mid-road destinations that aren't a POI) — PROPOSED, not yet ruled:
 //           the [lastname] [place noun]  |  [landmark]
@@ -94,7 +94,7 @@ export const POI_THE_CHANCE       = 0.5   // plain form only
 export const BUSINESS_TYPES = {
     // FEAT-88/91 haul yard. PLACEHOLDERS — owner authors names.
     firewoodYard: ['Firewood', 'Cordwood', 'Wood Lot', 'Splitting', 'Logs', 'Wood Yard', 'Kindling'],
-    burgerJoint:  ['Burgers', 'Meatball', 'Sandwich', 'Subs', 'Pie', 'Pizza', 'Ice Cream', 'Bakery', 
+    foodVendor:   ['Burgers', 'Meatball', 'Sandwich', 'Subs', 'Pie', 'Pizza', 'Ice Cream', 'Bakery', 
         'Bite', 'Restaurant', 'Deli', 'Brew', 'Sweets', 'Crust', 'Pickles', 'Brews',
         'Diner', 'Grill', 'Smokehouse', 'Fry Shack', 'Dogs', 'Tacos', 'Donuts', 'Chili'
     ],
@@ -102,7 +102,7 @@ export const BUSINESS_TYPES = {
         'Stop', 'Corner', 'Place',
         'Supply', 'Feed & Seed', 'Trading Post', 'Five & Dime', 'Outfitters'
     ],
-    serviceShop:  ['Tires', 'Auto', 'Garage', 'Service', 'Maintenance', 'Pit-Stop', 'Wheels',
+    autoShop:     ['Tires', 'Auto', 'Garage', 'Service', 'Maintenance', 'Pit-Stop', 'Wheels',
         'Lube', 'Body Shop', 'Muffler', 'Towing', 'Salvage', 'Radiator'
     ],
 }

@@ -100,18 +100,15 @@ export class OfferBoard {
     /**
      * @param {object} o
      * @param {number} o.seed        world seed
-     * @param {Array<{id:string,type:string,modelKey?:string}>} o.pois — PoiSystem.list(), the roster
+     * @param {Array<{id:string,type:string}>} o.pois — PoiSystem.list(), the roster
      * @param {number} o.nowH        the absolute game clock at creation (DaySystem.clockH())
-     * @param {(modelKey:string)=>('home'|'person'|undefined)} [o.giverNameOf] — the giver-naming flag
-     *        of a model (data/prop-models.js `giverName`). Injected so this module reads no registry.
      */
-    constructor ({ seed, pois, nowH, giverNameOf = () => undefined }) {
+    constructor ({ seed, pois, nowH }) {
         this._seed = seed >>> 0
         this._now = nowH
         this._pois = new Map()
         for (const q of pois || []) this._pois.set(q.id, q)
-        this._giverNameOf = giverNameOf
-        this._names = new Map()       // poiId → { name, people, giverName }
+        this._names = new Map()       // poiId → { name, people }
         this._slots = []              // every slot on the board
         this._bySource = new Map()    // poiId → slots[]
         this._rollNames()
@@ -368,7 +365,7 @@ export class OfferBoard {
     /**
      * Plan an offer's route so that NO TWO OFFERS AT A POI ARE THE SAME JOB (owner, 2026-09-27: two
      * identical takeout orders to the gas station). Two offers are the same job when they carry the
-     * same thing AND the same reward AND go to the same place; the burger joint posts only takeout,
+     * same thing AND the same reward AND go to the same place; the food vendor posts only takeout,
      * so for it the destination is what has to differ.
      *
      * The rule is resolved oldest-first: each older sibling is planned first (memoised), and an
@@ -458,27 +455,27 @@ export class OfferBoard {
     _rollPoi (q, r) {
         if (q.type === 'larrysHouse') {
             // Larry is just "Larry" and posts papers only (owner, 2026-09-26).
-            return { name: FIXED_NAMES.larrysHouse, giverName: null,
+            return { name: FIXED_NAMES.larrysHouse,
                      people: [{ sex: 'male', first: 'Larry', nick: null, last: null }] }
         }
         const src = SOURCES[q.type]
-        const giverName = q.type === 'missionGiver' ? (this._giverNameOf(q.modelKey) ?? 'home') : null
+        const form = src?.nameForm
         const people = []
         if (src) {
-            // A giver named by the person alone (an RV, a broken-down car) is ONE person — the card
-            // says "Earl needs…", and a second voice from the same wreck would read oddly.
-            const n = giverName === 'person' ? 1 : Number(pickWeighted(r(), PEOPLE_PER_POI))
+            // A giver named by the person alone (a stranded motorist) is ONE person — the card says
+            // "Earl needs…", and a second voice from the same wreck would read oddly.
+            const n = form === 'person' ? 1 : Number(pickWeighted(r(), PEOPLE_PER_POI))
             for (let i = 0; i < n; i++) {
                 const p = this._rollPerson(r)
                 // A home is a household: everyone there shares the first person's last name.
-                if (giverName === 'home' && i > 0) p.last = people[0].last
+                if (form === 'home' && i > 0) p.last = people[0].last
                 people.push(p)
             }
         }
         let name = null
-        if (giverName === 'home') name = `the ${people[0].last} place`
-        else if (giverName === 'person') name = null
-        else if (src?.nameForm === 'owned' && BUSINESS_TYPES[q.type] && people.length) {
+        if (form === 'home') name = `the ${people[0].last} place`
+        else if (form === 'person') name = null
+        else if (form === 'owned' && BUSINESS_TYPES[q.type] && people.length) {
             const adj = r() < POI_ADJECTIVE_CHANCE ? pick(r, POI_ADJECTIVES) + ' ' : ''
             name = `${people[0].first}'s ${adj}${pick(r, BUSINESS_TYPES[q.type])}`
         } else if (BUSINESS_TYPES[q.type]) {
@@ -488,7 +485,7 @@ export class OfferBoard {
         } else {
             name = FIXED_NAMES[q.type] ?? null
         }
-        return { name, people, giverName }
+        return { name, people }
     }
 
     _rollPerson (r) {

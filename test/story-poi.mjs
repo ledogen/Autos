@@ -46,11 +46,12 @@ const check = (label, ok, detail = '') => {
 
 const SEED = 6
 const C = { x: 4500, z: 600 }
-// A workable slice of a story region, cheap enough for a gate. 1600 rather than 1200 (FEAT-60):
-// a 1200 m window yields only 13 viable pads, one short of the 14-slot roster, so the gate could
-// never see a COMPLETE region. The short-pool degradation is still covered — property 6 truncates
-// the pool by hand, which costs nothing.
-const R = 1600
+// A workable slice of a story region, cheap enough for a gate. Sized so the gate sees a COMPLETE
+// region: 1200 m held 13 pads against FEAT-60's 14-slot roster, so it went to 1600; the 23-slot
+// class roster (FEAT-98) found 16 pads at 1600 and 22 at 2000, and 2200 holds exactly 23 (~66 s).
+// The short-pool degradation is still covered — property 6 truncates the pool by hand, which
+// costs nothing.
+const R = 2200
 
 // FEAT-60 retired poiEdgeChance: every viable edge now enters the candidate pool and the roster
 // selects from it, so there is no density roll left to force. The gate runs the shipped params.
@@ -271,7 +272,7 @@ const W = makeWorld(C.x, C.z, R)
         + `(${noRoute} found no qualifying leg — a dead-end marker, not a stray)`)
 
     // FEAT-67: seeded — the same stream plans the same route, twice.
-    const src = W.poi.list().find(q => q.type === 'burgerJoint') ?? W.poi.list()[0]
+    const src = W.poi.list().find(q => q.type === 'foodVendor') ?? W.poi.list()[0]
     const rngOf = (k) => mulberry32(k)
     const pois = W.poi.list().filter(q => q.id !== src.id)
     let same = true, planned = 0
@@ -318,9 +319,8 @@ const W = makeWorld(C.x, C.z, R)
 }
 
 // A board + plan callback in the shape main.js wires them (the parked panel's inputs).
-const giverNameOf = (k) => PROP_MODELS[k]?.giverName
 function boardRig (ms, nowH = 6) {
-    const board = new OfferBoard({ seed: SEED, pois: W.poi.list(), nowH, giverNameOf })
+    const board = new OfferBoard({ seed: SEED, pois: W.poi.list(), nowH })
     // The same planner main.js wires (_planOffer): board.planDistinct owns the no-duplicates rule.
     const plan = (o) => {
         const sp = board.spec(o)
@@ -355,7 +355,7 @@ function boardRig (ms, nowH = 6) {
         teleport () {}, setMapOpen () {}, onChange () {},
     })
     const { board, plan } = boardRig(ms)
-    const food = W.poi.list().find(q => q.type === 'burgerJoint')
+    const food = W.poi.list().find(q => q.type === 'foodVendor')
     const offers = board.offers(food.id, 6)
     ms.enterFromPoi(food, offers, plan)
     check('parking opens the board offers synchronously', ms.state === 'offer' && !!ms.mission && !!ms.offer)
@@ -608,15 +608,15 @@ function boardRig (ms, nowH = 6) {
     check('keyless POIs carry no box (they fall back to the cube)',
         list.filter(q => !q.modelKey).every(q => q.collision === null))
 
-    // THE MODEL POOL (owner, 2026-08-15). The five mission givers draw from every asset tagged
-    // 'missionGiver' rather than all wearing one model. What is gated is membership, not the
+    // THE MODEL POOL (owner, 2026-08-15). The five residences draw from every asset tagged
+    // 'residence' rather than all wearing one model. What is gated is membership, not the
     // distribution: which giver draws what is allowed to move when the pool is widened, so an
     // "at least two distinct models appear" check would be a tripwire on a sanctioned change.
-    const pool = modelsTagged('missionGiver')
-    check('the missionGiver pool has more than one asset in it (else it is not a pool)',
+    const pool = modelsTagged('residence')
+    check('the residence pool has more than one asset in it (else it is not a pool)',
         pool.length > 1, pool.join(', '))
-    const givers = list.filter(q => q.type === 'missionGiver')
-    check('every mission giver draws its model from that pool',
+    const givers = list.filter(q => q.type === 'residence')
+    check('every residence draws its model from that pool',
         givers.length > 0 && givers.every(q => pool.includes(q.modelKey)),
         givers.map(q => q.modelKey).join(', '))
 
@@ -669,21 +669,24 @@ function boardRig (ms, nowH = 6) {
 
 // ── 6b. the priority order bites when the pool runs short ───────────────────────────────────────
 // Free: no world build, just the roster against a hand-truncated pool. A region smaller than its
-// roster must still get mom's house and its gas stations; what it loses is mission givers, because
-// they sit at the BOTTOM of POI_ROSTER. This is the whole reason the order is a priority order.
+// roster must still get mom's house and its gas stations; what it loses is the additional classes,
+// because they sit at the BOTTOM of POI_ROSTER. This is the whole reason the order is a priority order.
 {
     const pool = W.poi.pool().slice(0, POI_COUNT - 3)
     const P = { ...POI_PARAMS, ...PARAMS }
     const out = W.poi._assignRoster(pool, C, SEED, P)
     const counts = {}
     for (const q of out) counts[q.type] = (counts[q.type] || 0) + 1
-    const reserved = POI_ROSTER.filter(s => s.type !== 'missionGiver')
-    check('a short pool still fills every reserved slot',
-        reserved.every(s => counts[s.type] === s.count),
-        reserved.map(s => `${s.type} ${counts[s.type] || 0}/${s.count}`).join(', '))
-    check('…and the shortfall comes out of mission givers alone',
-        counts.missionGiver === POI_ROSTER.find(s => s.type === 'missionGiver').count - 3,
-        `${counts.missionGiver} mission givers`)
+    // Top-down: each slot takes its full count while pads last, so the 3 missing come off the end.
+    let left = POI_COUNT - 3
+    const want = POI_ROSTER.map(s => { const n = Math.min(s.count, left); left -= n; return n })
+    const required = POI_ROSTER.slice(0, POI_ROSTER.findIndex(s => s.type === 'residence'))
+    check('a short pool still fills every required slot',
+        required.every(s => counts[s.type] === s.count),
+        required.map(s => `${s.type} ${counts[s.type] || 0}/${s.count}`).join(', '))
+    check('…and the shortfall comes off the bottom of the roster alone',
+        POI_ROSTER.every((s, i) => (counts[s.type] || 0) === want[i]),
+        POI_ROSTER.map((s, i) => `${s.type} ${counts[s.type] || 0}/${want[i]}`).join(', '))
 
     W.poi.build(C, R)                              // restore the region under test
     W.road.setPoiPads(W.poi.list())
