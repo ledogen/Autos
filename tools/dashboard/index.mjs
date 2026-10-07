@@ -2,14 +2,15 @@
 /**
  * AUTOS planning dashboard — indexer + static server.
  *
- * Scans .planning/todos/{pending,completed} into tickets.json and measures the
- * repo into stats.json, then serves tools/dashboard/ as a static site.
+ * Scans .planning/todos/{pending,completed} into tickets.json, measures the
+ * repo into stats.json, and joins the story-mode cargo list with the POI types
+ * (docs + live code) into cargo.json, then serves tools/dashboard/ as a static site.
  *
  *   node tools/dashboard/index.mjs            index, then serve on :8010
  *   node tools/dashboard/index.mjs --once     index only, no server
  *   node tools/dashboard/index.mjs --port N   serve on another port
  *
- * This is a dev tool. It reads the repo and writes only its own two JSON files;
+ * This is a dev tool. It reads the repo and writes only its own three JSON files;
  * it never touches a ticket. Vocabulary drift in the tracker is normalised here
  * (see CANON_*) and reported back through stats.drift rather than rewritten.
  */
@@ -19,7 +20,7 @@ import {
   readFileSync, writeFileSync, readdirSync, statSync, existsSync,
 } from 'node:fs';
 import { join, extname, relative, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
@@ -308,6 +309,256 @@ function indexTickets() {
   return { tickets, drift };
 }
 
+/* ── cargo + places ───────────────────────────────────────────────────────
+ * Story-mode burn-down views. `cargo.md` is the master cargo list (markdown
+ * tables, one per delivery type); `pois.md` lists the planned POI types and the
+ * roadside spots. Live POI types are read from the code, never from a doc:
+ * `POI_ROSTER` (src/poi.js) and `SOURCES` (data/offers.js).
+ *
+ * Anything that can't be read — a malformed row, an asset with no ticket, a
+ * route naming a place nobody defines — becomes a warning on the view, never a
+ * silently dropped row. `view` says which strip shows it ('both' = both). */
+
+/**
+ * Every markdown table in `text`, with the `##` / `###` headings it sits under
+ * and each row's 1-based line number. Cells split on `|`; none of the story
+ * docs put a pipe inside a cell.
+ */
+function mdTables(text) {
+  const lines = text.split('\n');
+  const cells = (s) => s.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+  const out = [];
+  let h2 = ''; let h3 = '';
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^##\s/.test(l)) { h2 = l.replace(/^##\s+/, ''); h3 = ''; continue; }
+    if (/^###\s/.test(l)) { h3 = l.replace(/^###\s+/, ''); continue; }
+    if (!l.trim().startsWith('|') || !/^\s*\|[\s:|-]*-[\s:|-]*\|\s*$/.test(lines[i + 1] || '')) continue;
+    const table = { h2, h3, head: cells(l), line: i + 1, rows: [] };
+    for (i += 2; i < lines.length && lines[i].trim().startsWith('|'); i++) {
+      table.rows.push({ cells: cells(lines[i]), line: i + 1 });
+    }
+    i--;
+    out.push(table);
+  }
+  return out;
+}
+
+/**
+ * One end of a route: `farm / burgerJoint`, `any (as today)`, `"the school"†`.
+ * `label` keeps the annotation for display; `name` is what matching uses —
+ * parentheses, quotes and the † (roadside-spot marker) stripped.
+ */
+const routeEnds = (side) => side.split(/\s*\/\s*/).map((s) => s.trim()).filter(Boolean)
+  .map((label) => ({
+    label,
+    name: label.replace(/\([^)]*\)/g, '').replace(/[†"`]/g, '').trim(),
+    roadside: label.includes('†'),
+  }));
+
+/** `ASSET-30 / 29 / 28 / 27` → four ids; `ASSET-28 + text` → one; `none — …` → none. */
+function assetIds(cell) {
+  const ids = [];
+  for (const m of cell.matchAll(/ASSET-(\d+)((?:\s*\/\s*\d+)*)/g)) {
+    ids.push(m[1], ...(m[2].match(/\d+/g) || []));
+  }
+  return [...new Set(ids.map((n) => `ASSET-${n.padStart(2, '0')}`))];
+}
+
+function indexCargo(byId, warn) {
+  const file = join('.planning', 'story-mode', 'cargo.md');
+  const abs = join(ROOT, file);
+  if (!existsSync(abs)) { warn('cargo', file, null, 'file missing'); return []; }
+  const cargo = [];
+
+  for (const t of mdTables(readFileSync(abs, 'utf8'))) {
+    // Only the four delivery-type sections; the key table up top, Rulings and
+    // Adding cargo have no matching `##` and fall out here.
+    const kind = (/^(Courier|Haul|Freight|Fragile)\b/i.exec(t.h2) || [])[1]?.toLowerCase();
+    if (!kind) continue;
+    const col = (re) => t.head.findIndex((h) => re.test(h));
+    const cRegion = col(/^region$/i); const cName = col(/^(thing|job|load)$/i);
+    const cRoute = col(/^from\s*→\s*to$/i); const cAsset = col(/^asset$/i);
+    const cMass = col(/^mass\b/i); const cNote = col(/^note$/i);
+    if (cRegion !== 0 || cName === -1 || cRoute === -1) {
+      warn('cargo', file, t.line, `table header not recognised: | ${t.head.join(' | ')} |`);
+      continue;
+    }
+    const kg = cMass !== -1 && /kg/i.test(t.head[cMass]);
+    const group = /^people\b/i.test(t.h3) ? 'people' : null;
+
+    for (const { cells: c, line } of t.rows) {
+      if (c.length !== t.head.length) warn('cargo', file, line, `${c.length} cells, header has ${t.head.length}`);
+      const region = c[cRegion]; const name = c[cName] || '';
+      if (!/^R\d+$/.test(region) || !name) {
+        warn('cargo', file, line, `unparsed row: | ${c.join(' | ')} |`);
+        continue;
+      }
+      // Blank route = generic (any giver, to anywhere).
+      const route = c[cRoute] || '';
+      const sides = route.split('→');
+      if (route && sides.length !== 2) warn('cargo', file, line, `route without a single →: "${route}"`);
+      const generic = !route || sides.length !== 2;
+
+      const assetText = cAsset === -1 ? '' : c[cAsset] || '';
+      const assets = assetIds(assetText).map((id) => {
+        const tk = byId.get(id);
+        if (!tk) warn('cargo', file, line, `${id} has no ticket`);
+        return { id, status: !tk ? 'missing' : tk.status === 'closed' ? 'shipped' : 'ticketed' };
+      });
+      // `Mass (kg)` carries bare numbers: put the unit after the leading range.
+      const mass = cMass === -1 ? '' : (c[cMass] || '').replace(kg ? /^([\d.]+(?:\s*[–-]\s*[\d.]+)?)(?!\s*kg)/ : /(?!)/, '$1 kg');
+
+      cargo.push({
+        idx: cargo.length,
+        kind, group, region, name, line,
+        generic,
+        route,
+        from: generic ? [] : routeEnds(sides[0]),
+        to: generic ? [] : routeEnds(sides[1]),
+        assets,
+        assetText,
+        assetStatus: assets.length ? [...new Set(assets.map((a) => a.status))] : ['none'],
+        mass,
+        note: cNote === -1 ? '' : c[cNote] || '',
+      });
+    }
+  }
+  return cargo;
+}
+
+/**
+ * `POI_ROSTER` sliced out of src/poi.js and evaluated on its own. Importing the
+ * module would drag in mission.js, paper-route.js and the prop registry, so the
+ * array literal is scanned instead — strings and comments skipped, brackets
+ * matched — and only that literal is run. It is plain data by design.
+ */
+function extractRoster(src) {
+  const at = src.indexOf('export const POI_ROSTER');
+  if (at === -1) throw new Error('no `export const POI_ROSTER`');
+  let out = ''; let depth = 0;
+  for (let i = src.indexOf('[', at); i < src.length; i++) {
+    const two = src.slice(i, i + 2);
+    if (two === '//') { const n = src.indexOf('\n', i); i = n === -1 ? src.length : n - 1; continue; }
+    if (two === '/*') { i = src.indexOf('*/', i + 2) + 1; if (i === 0) break; continue; }
+    const ch = src[i];
+    if (ch === '\'' || ch === '"' || ch === '`') {
+      let j = i + 1;
+      while (j < src.length && src[j] !== ch) j += src[j] === '\\' ? 2 : 1;
+      out += src.slice(i, j + 1); i = j; continue;
+    }
+    out += ch;
+    if (ch === '[') depth++;
+    else if (ch === ']' && --depth === 0) return new Function(`return (${out})`)();
+  }
+  throw new Error('POI_ROSTER array literal never closes');
+}
+
+async function indexPlaces(cargo, warn) {
+  // Live types — from code.
+  let roster = []; let SOURCES = {};
+  try {
+    roster = extractRoster(readFileSync(join(ROOT, 'src', 'poi.js'), 'utf8'));
+    if (!Array.isArray(roster)) throw new Error('not an array');
+    roster = roster.filter((s) => {
+      const ok = s && typeof s.type === 'string' && Number.isFinite(s.count);
+      if (!ok) warn('places', 'src/poi.js', null, `POI_ROSTER entry without type/count: ${JSON.stringify(s)}`);
+      return ok;
+    });
+  } catch (e) { warn('places', 'src/poi.js', null, `POI_ROSTER unreadable: ${e.message}`); roster = []; }
+  try {
+    // Query string defeats the ESM module cache so /reindex sees edits.
+    ({ SOURCES } = await import(`${pathToFileURL(join(ROOT, 'data', 'offers.js')).href}?${Date.now()}`));
+  } catch (e) { warn('places', 'data/offers.js', null, `SOURCES unreadable: ${e.message}`); }
+  for (const k of Object.keys(SOURCES || {})) {
+    if (!roster.some((s) => s.type === k)) warn('places', 'data/offers.js', null, `SOURCES.${k} has no POI_ROSTER type`);
+  }
+
+  // Planned types + roadside spots — from pois.md.
+  const file = join('.planning', 'story-mode', 'pois.md');
+  const abs = join(ROOT, file);
+  const tables = existsSync(abs) ? mdTables(readFileSync(abs, 'utf8')) : [];
+  if (!existsSync(abs)) warn('places', file, null, 'file missing');
+  const table = (re, what) => {
+    const t = tables.find((x) => re.test(x.h2));
+    if (!t) warn('places', file, null, `no "${what}" table`);
+    return t;
+  };
+  const rowsOf = (t, cols) => {
+    if (!t) return [];
+    const at = cols.map((c) => t.head.findIndex((h) => h.toLowerCase().startsWith(c.toLowerCase())));
+    cols.forEach((c, k) => { if (at[k] === -1) warn('places', file, t.line, `column "${c}" missing`); });
+    return t.rows.map(({ cells, line }) => {
+      if (cells.length !== t.head.length) warn('places', file, line, `${cells.length} cells, header has ${t.head.length}`);
+      return { line, ...Object.fromEntries(cols.map((c, k) => [c.toLowerCase(), at[k] === -1 ? '' : cells[at[k]] || ''])) };
+    });
+  };
+
+  const planned = rowsOf(
+    table(/^Planned POI types/i, 'Planned POI types'),
+    ['Type', 'Status', 'Region', 'Gives', 'Receives', 'Tags', 'Model', 'Ticket'],
+  ).filter((r) => {
+    r.type = r.type.replace(/`/g, '').trim();
+    r.statusRaw = r.status;
+    // The doc's own Gives / Receives prose; `sends` / `receives` are computed below.
+    r.docGives = r.gives; r.docReceives = r.receives;
+    delete r.gives; delete r.receives;
+    r.status = (/^\w+/.exec(r.status) || [''])[0].toLowerCase();
+    if (!/^\w+$/.test(r.type)) { warn('places', file, r.line, `unparsed type "${r.type}"`); return false; }
+    if (roster.some((s) => s.type === r.type)) warn('places', file, r.line, `\`${r.type}\` is live in code — delete its planned row`);
+    return true;
+  });
+
+  const spots = rowsOf(
+    table(/^Roadside spots/i, 'Roadside spots'),
+    ['Spot', 'Form', 'Tags', 'Promises', 'Status', 'Note'],
+  ).filter((r) => {
+    r.names = [...r.spot.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    if (!r.names.length) warn('places', file, r.line, `spot with no "quoted" name: ${r.spot}`);
+    return r.names.length > 0;
+  });
+
+  // Cargo routes → per-place sends / receives (exact name match; `any` matches nothing).
+  const flow = (names) => ({
+    sends: cargo.filter((c) => c.from.some((e) => names.includes(e.name))).map((c) => c.idx),
+    receives: cargo.filter((c) => c.to.some((e) => names.includes(e.name))).map((c) => c.idx),
+  });
+  const live = roster.map((s) => ({
+    type: s.type, count: s.count, model: s.model ?? null, modelPool: s.modelPool ?? null,
+    siting: s.siting ?? null, tags: s.tags || [], drop: !!s.drop,
+    gives: SOURCES?.[s.type] || null,
+    ...flow([s.type]),
+  }));
+  for (const p of planned) Object.assign(p, flow([p.type]));
+  for (const p of spots) Object.assign(p, flow(p.names));
+
+  const known = new Set(['any', ...live.map((p) => p.type), ...planned.map((p) => p.type), ...spots.flatMap((p) => p.names)]);
+  for (const c of cargo) {
+    for (const e of [...c.from, ...c.to]) {
+      if (!known.has(e.name)) warn('both', join('.planning', 'story-mode', 'cargo.md'), c.line, `"${c.name}": place "${e.name}" is not a live type, planned type or roadside spot`);
+    }
+  }
+
+  return {
+    live,
+    planned,
+    spots,
+    summary: {
+      livePois: live.reduce((n, p) => n + p.count, 0),
+      liveSlots: live.reduce((n, p) => n + (p.gives ? p.count * (p.gives.slots || 0) : 0), 0),
+      plannedTypes: planned.length,
+    },
+  };
+}
+
+async function indexStory(tickets) {
+  const warnings = [];
+  const warn = (view, file, line, msg) => warnings.push({ view, file, line, msg });
+  const cargo = indexCargo(new Map(tickets.map((t) => [t.id, t])), warn);
+  const places = await indexPlaces(cargo, warn);
+  return { cargo, places, warnings };
+}
+
 /* ── stats ────────────────────────────────────────────────────────────── */
 const CODE_EXT = new Set(['.js', '.mjs', '.html', '.css', '.py']);
 
@@ -424,8 +675,9 @@ function measureRouteCache() {
 }
 
 /* ── build ────────────────────────────────────────────────────────────── */
-function build() {
+async function build() {
   const { tickets, drift } = indexTickets();
+  const story = await indexStory(tickets);
   const code = measureCode();
 
   const stats = {
@@ -461,7 +713,8 @@ function build() {
 
   writeFileSync(join(HERE, 'tickets.json'), JSON.stringify({ tickets }));
   writeFileSync(join(HERE, 'stats.json'), JSON.stringify(stats, null, 1));
-  return { tickets, stats };
+  writeFileSync(join(HERE, 'cargo.json'), JSON.stringify(story));
+  return { tickets, stats, story };
 }
 
 /* ── serve ────────────────────────────────────────────────────────────── */
@@ -473,10 +726,10 @@ const MIME = {
 };
 
 function serve(port) {
-  createServer((req, res) => {
+  createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/reindex') {
-      const { tickets, stats } = build();
+      const { tickets, stats } = await build();
       res.writeHead(200, { 'content-type': MIME['.json'] });
       res.end(JSON.stringify({ ok: true, tickets: tickets.length, generated: stats.generated }));
       return;
@@ -501,8 +754,10 @@ const args = process.argv.slice(2);
 const portArg = args.indexOf('--port');
 const port = portArg !== -1 ? Number(args[portArg + 1]) : 8010;
 
-const { tickets, stats } = build();
+const { tickets, stats, story } = await build();
 console.log(`  indexed    ${tickets.length} tickets (${stats.tickets.open} open)`);
 console.log(`  code       ${stats.codeTotal.lines.toLocaleString()} lines in ${stats.codeTotal.files} files`);
+console.log(`  cargo      ${story.cargo.length} rows · ${story.places.live.length} live / ${story.places.planned.length} planned types · ${story.places.spots.length} spots`);
+if (story.warnings.length) console.log(`  story      ${story.warnings.length} cargo/places warnings`);
 if (stats.drift.length) console.log(`  drift      ${stats.drift.length} non-canonical frontmatter values`);
 if (!args.includes('--once')) serve(port);

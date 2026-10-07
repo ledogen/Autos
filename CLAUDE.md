@@ -225,7 +225,9 @@ the invariant wins; stop and flag it. Open design questions listed there are the
 answer, not yours. Companion notes **downstream of DESIGN.md** (where they disagree, DESIGN.md wins):
 `missions.md` (mission taxonomy + XP/payout scoring + the log-drag main mission), `run-shape.md`
 (run/day length, saving), `opening.md` (the firing, the uncle), `items.md` (items catalog —
-consumables/tools/parts/cargo/catch, the asset burn-down surface), `spirits-and-pacts.md` (the spirit
+consumables/tools/parts/cargo/catch, the asset burn-down surface), `cargo.md` (master cargo list —
+every carried thing by delivery type, tiered early→late), `pois.md` (planned POI types + roadside
+spots with tags; live types are read from `src/poi.js`/`data/offers.js`), `spirits-and-pacts.md` (the spirit
 cast — deferred, and carrying flagged conflicts with later rulings), `IDEAS.md` (scratchpad), and
 the amendment records `design-amendments-2026-07-29.md`, `design-amendments-2026-08-17.md` and
 `design-amendments-2026-08-23-sm3.md` (provenance for each ratification pass — DESIGN.md carries the

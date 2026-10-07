@@ -153,6 +153,36 @@
   .bar { height:4px; background:var(--panel2); border-radius:2px; overflow:hidden;
          margin-top:6px; }
   .bar i { display:block; height:100%; }
+
+  /* cargo + places */
+  .warns { border:1px solid rgba(255,194,92,.4); background:rgba(255,194,92,.05);
+           border-radius:8px; padding:8px 12px; margin-bottom:14px; }
+  .warns h3 { color:var(--perf); font-size:11px; text-transform:uppercase;
+              letter-spacing:.8px; margin:0 0 4px; font-weight:600; }
+  .warns td { border:0 !important; padding:2px 8px 2px 0 !important; vertical-align:top; }
+  h2.grp { display:flex; gap:10px; align-items:center; }
+  h2.grp::after { content:""; flex:1; border-top:1px solid var(--line); }
+  h3.subgrp { font-size:11px; text-transform:uppercase; letter-spacing:.8px;
+              color:var(--dimmer); margin:12px 0 6px; font-weight:400; }
+  ul.list li.crow { flex-wrap:wrap; row-gap:1px; }
+  .creg { font-family:var(--mono); font-size:12.5px; width:26px; flex:none; color:var(--dimmer); }
+  .cname { flex:1 1 220px; }
+  .croute { flex:none; display:flex; gap:4px; flex-wrap:wrap; align-items:baseline; font-size:12px; }
+  .badge { font-family:var(--mono); font-size:11.5px; border:1px solid var(--line);
+           border-radius:4px; padding:0 6px; color:var(--fg); }
+  a.badge:hover { border-color:var(--accent); text-decoration:none; }
+  .badge.road { border-style:dashed; }
+  .muted, .badge.any { color:var(--dimmer); }
+  .cmeta { margin-left:auto; flex:none; display:flex; gap:12px; align-items:baseline;
+           font-size:12px; color:var(--dim); }
+  .cnote { flex-basis:100%; padding-left:38px; color:var(--dimmer); font-size:12.5px; }
+  .pcard { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+           padding:9px 13px; margin-bottom:8px; }
+  .pcard .ph { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+  .pcard .pt { font-family:var(--mono); font-size:13.5px; }
+  .pcard .pm { color:var(--dim); font-size:12.5px; margin-top:2px; }
+  .pcard .pm b, .pcard .pf b { color:var(--dimmer); font-weight:400; }
+  .pcard .pf { font-size:12.5px; margin-top:3px; }
 </style>
 </head>
 <body>
@@ -160,6 +190,8 @@
   <div class="brand">AUTOS <span>· planning</span></div>
   <nav>
     <a href="#/tickets" data-nav="tickets">Tickets</a>
+    <a href="#/cargo" data-nav="cargo">Cargo</a>
+    <a href="#/places" data-nav="places">Places</a>
     <a href="#/stats" data-nav="stats">Overview</a>
   </nav>
   <input id="search" type="search" placeholder="filter by id, title, text…" autocomplete="off">
@@ -169,14 +201,15 @@
 
 <script type="module">
 /* ─────────────────────────── data ─────────────────────────── */
-let TICKETS = [], BY_ID = new Map(), BACKLINKS = new Map(), STATS = null;
+let TICKETS = [], BY_ID = new Map(), BACKLINKS = new Map(), STATS = null, STORY = null;
 
 async function load() {
-  const [t, s] = await Promise.all([
+  const [t, s, c] = await Promise.all([
     fetch('tickets.json?' + Date.now()).then(r => r.json()),
     fetch('stats.json?' + Date.now()).then(r => r.json()),
+    fetch('cargo.json?' + Date.now()).then(r => r.json()),
   ]);
-  TICKETS = t.tickets; STATS = s;
+  TICKETS = t.tickets; STATS = s; STORY = c;
   BY_ID = new Map(TICKETS.map(x => [x.id, x]));
   BACKLINKS = new Map();
   for (const tk of TICKETS) {
@@ -332,29 +365,34 @@ function md(src, escaped = false) {
 
 /* ───────────────────────── filters ─────────────────────────
  * Filter state lives in the hash so a filtered list is a shareable/bookmarkable
- * URL and Back works between list and detail. */
+ * URL and Back works between list and detail. Each filterable view has its own
+ * axes; a chip toggles an axis of whichever view is on screen. */
 const TYPES = ['milestone', 'feature', 'bug', 'perf', 'quality', 'infra', 'asset'];
 const STATUSES = ['open', 'closed', 'cancelled'];
 const STATUS_COLOR = { open: '#6fb3ff', closed: '#7fd97f', cancelled: '#8b94a3' };
-const DEFAULTS = { type: [], status: ['open'], sev: [] };
+const DEFAULTS = {
+  tickets: { type: [], status: ['open'], sev: [] },
+  cargo: { kind: [], region: [], place: [], asset: [] },
+};
+const filterView = () => (location.hash.startsWith('#/cargo') ? 'cargo' : 'tickets');
 
-function readFilters() {
+function readFilters(view = 'tickets') {
   const q = new URLSearchParams((location.hash.split('?')[1] || ''));
-  const get = (k) => (q.has(k) ? q.get(k).split(',').filter(Boolean) : DEFAULTS[k]);
-  return { type: get('type'), status: get('status'), sev: get('sev') };
+  const d = DEFAULTS[view];
+  return Object.fromEntries(Object.keys(d).map(k => [k, q.has(k) ? q.get(k).split(',').filter(Boolean) : d[k]]));
 }
-function writeFilters(f) {
+function writeFilters(f, view = 'tickets') {
   const q = new URLSearchParams();
-  for (const k of ['type', 'status', 'sev']) {
-    if (String(f[k]) !== String(DEFAULTS[k])) q.set(k, f[k].join(','));
+  for (const k of Object.keys(DEFAULTS[view])) {
+    if (String(f[k]) !== String(DEFAULTS[view][k])) q.set(k, f[k].join(','));
   }
   const s = q.toString();
-  location.hash = '#/tickets' + (s ? `?${s}` : '');
+  location.hash = `#/${view}` + (s ? `?${s}` : '');
 }
-function toggle(kind, value) {
-  const f = readFilters();
+function toggle(kind, value, view = filterView()) {
+  const f = readFilters(view);
   f[kind] = f[kind].includes(value) ? f[kind].filter(v => v !== value) : [...f[kind], value];
-  writeFilters(f);
+  writeFilters(f, view);
 }
 
 function matches(t, f, q) {
@@ -463,6 +501,159 @@ function viewTicket(id) {
     </div>`;
 }
 
+/* ─────────────────────── cargo + places ───────────────────────
+ * Story-mode burn-down: cargo.md's rows grouped by delivery type, and every
+ * place a job can start or end with the cargo routed through it. Both come
+ * from cargo.json; its warnings show above whichever view they concern. */
+const KINDS = ['courier', 'haul', 'freight', 'fragile'];
+const KIND_COLOR = { courier: '#6fb3ff', haul: '#ffc25c', freight: '#5fd0c0', fragile: '#ff9ad5' };
+const ASSET_STATES = ['shipped', 'ticketed', 'none', 'missing'];
+const ASSET_COLOR = { shipped: '#7fd97f', ticketed: '#6fb3ff', none: '#8b94a3', missing: '#ff7a7a' };
+const PLACE_STATUS_COLOR = { live: '#7fd97f', planned: '#6fb3ff', proposed: '#ffc25c' };
+const placeHref = (name) => `#/cargo?place=${encodeURIComponent(name)}`;
+const places = (c) => [...c.from, ...c.to].map(e => e.name);
+
+function warnStrip(view) {
+  const w = STORY.warnings.filter(x => x.view === view || x.view === 'both');
+  if (!w.length) return '';
+  const rows = w.map(x => `<tr>
+      <td class="name"><a class="pathref" href="vscode://file${STATS.root}/${x.file}:${x.line || 1}">${x.file.replace('.planning/story-mode/', '')}${x.line ? `:${x.line}` : ''}</a></td>
+      <td>${esc(x.msg)}</td></tr>`).join('');
+  return `<div class="warns"><h3>${w.length} warning${w.length === 1 ? '' : 's'}</h3>
+    <table class="data"><tbody>${rows}</tbody></table></div>`;
+}
+
+function cargoMatches(c, f, q) {
+  if (f.kind.length && !f.kind.includes(c.kind)) return false;
+  if (f.region.length && !f.region.includes(c.region)) return false;
+  // `generic` matches only the blank-route rows; `any` is never a named place.
+  if (f.place.length && !f.place.some(p => (p === 'generic' ? c.generic : places(c).includes(p)))) return false;
+  if (f.asset.length && !f.asset.some(a => c.assetStatus.includes(a))) return false;
+  if (q) {
+    const hay = `${c.name} ${c.route} ${c.note} ${c.assetText}`.toLowerCase();
+    if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
+  }
+  return true;
+}
+
+function badge(e) {
+  if (e.name === 'any') return `<span class="badge any">${esc(e.label)}</span>`;
+  return `<a class="badge${e.roadside ? ' road' : ''}" href="${placeHref(e.name)}" title="only cargo to or from ${esc(e.name)}">${esc(e.label)}</a>`;
+}
+
+function cargoRow(c) {
+  const route = c.generic ? '<span class="muted">generic</span>'
+    : `${c.from.map(badge).join('')}<span class="muted">→</span>${c.to.map(badge).join('')}`;
+  const assets = c.assets.length
+    ? c.assets.map(a => `<span title="${esc(c.assetText)}">${ticketLink(a.id)} <span style="color:${ASSET_COLOR[a.status]}">${
+      a.status === 'shipped' ? '● shipped' : a.status === 'ticketed' ? '○ ticketed' : '✕ no ticket'}</span></span>`).join(' ')
+    : `<span class="muted" title="${esc(c.assetText)}">no model</span>`;
+  return `<li class="crow">
+      <span class="creg">${c.region}</span>
+      <span class="cname">${esc(c.name)}</span>
+      <span class="croute">${route}</span>
+      <span class="cmeta">${c.mass ? `<span>${esc(c.mass)}</span>` : ''}<span>${assets}</span></span>
+      ${c.note ? `<div class="cnote">${inline(esc(c.note))}</div>` : ''}
+    </li>`;
+}
+
+function viewCargo() {
+  const all = STORY.cargo;
+  const f = readFilters('cargo');
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const shown = all.filter(c => cargoMatches(c, f, q));
+  const n = (axis, test) => all.filter(c => test(c) && cargoMatches(c, { ...f, [axis]: [] }, q)).length;
+
+  const regions = [...new Set(all.map(c => c.region))].sort();
+  const placeNames = ['generic', ...[...new Set(all.flatMap(places))].filter(p => p !== 'any').sort()];
+  const assetStates = ASSET_STATES.filter(a => a !== 'missing' || all.some(c => c.assetStatus.includes(a)));
+
+  const groups = KINDS.map(kind => {
+    const rows = shown.filter(c => c.kind === kind);
+    if (!rows.length) return '';
+    // Within a type: sub-groups in doc order (People under Courier), each by region.
+    const sub = [...new Set(rows.map(c => c.group))].map(g => {
+      const list = rows.filter(c => c.group === g)
+        .sort((a, b) => a.region.localeCompare(b.region, undefined, { numeric: true }) || a.idx - b.idx);
+      return `${g ? `<h3 class="subgrp">${g}</h3>` : ''}<ul class="list">${list.map(cargoRow).join('')}</ul>`;
+    }).join('');
+    return `<h2 class="sec grp" style="color:${KIND_COLOR[kind]}">${kind} <span class="muted">${rows.length}</span></h2>${sub}`;
+  }).join('');
+
+  return `
+    ${warnStrip('cargo')}
+    <div class="filters">
+      <div class="frow"><span class="flabel">Type</span>
+        ${KINDS.map(v => chip('kind', v, f.kind.includes(v), n('kind', c => c.kind === v), KIND_COLOR[v])).join('')}</div>
+      <div class="frow"><span class="flabel">Region</span>
+        ${regions.map(v => chip('region', v, f.region.includes(v), n('region', c => c.region === v))).join('')}</div>
+      <div class="frow"><span class="flabel">Place</span>
+        ${placeNames.map(v => chip('place', v, f.place.includes(v),
+          n('place', c => (v === 'generic' ? c.generic : places(c).includes(v))))).join('')}</div>
+      <div class="frow"><span class="flabel">Asset</span>
+        ${assetStates.map(v => chip('asset', v, f.asset.includes(v), n('asset', c => c.assetStatus.includes(v)), ASSET_COLOR[v])).join('')}</div>
+    </div>
+    <div class="count">${shown.length} of ${all.length} cargo rows${q ? ` matching “${esc(q)}”` : ''}
+      · from <a class="pathref" href="vscode://file${STATS.root}/.planning/story-mode/cargo.md">.planning/story-mode/cargo.md</a></div>
+    ${groups || '<ul class="list"><li><span class="tblurb">nothing matches</span></li></ul>'}`;
+}
+
+/** "sends 3: a · b · c" — each item links to the cargo list filtered on this place. */
+function flowLine(label, idxs, place) {
+  const items = idxs.map(i => STORY.cargo[i])
+    .map(c => `<a href="${placeHref(place)}" style="color:${KIND_COLOR[c.kind]}" title="${c.kind} · ${c.region}">${esc(c.name)}</a>`);
+  return `<div class="pf"><b>${label}</b> ${idxs.length}${items.length ? ': ' + items.join(' <span class="muted">·</span> ') : ''}</div>`;
+}
+
+function viewPlaces() {
+  const { live, planned, spots, summary } = STORY.places;
+  const tile = (k, v, sub) => `<div class="tile"><div class="k">${k}</div>
+    <div class="v">${v}</div><div class="s">${sub || ''}</div></div>`;
+  const status = (st) => `<span class="st" style="color:${PLACE_STATUS_COLOR[st] || 'var(--dim)'}">${esc(st)}</span>`;
+  const meta = (pairs) => `<div class="pm">${pairs.filter(([, v]) => v).map(([k, v]) => `<b>${k}</b> ${v}`).join(' · ')}</div>`;
+  const hours = (h) => (Array.isArray(h) ? `${h[0]}–${h[1]} h` : `${h} h`);
+
+  const liveCards = live.map(p => `<div class="pcard">
+      <div class="ph"><span class="pt">${p.type}</span><span class="muted">× ${p.count}</span>${status('live')}</div>
+      ${meta([
+        ['model', p.model ? `<code>${esc(p.model)}</code>` : p.modelPool ? `pool <code>${esc(p.modelPool)}</code>` : '<span class="muted">none</span>'],
+        ['siting', p.siting], ['tags', p.tags.join(', ')], ['drop zone', p.drop ? 'yes' : ''],
+      ])}
+      ${meta([['gives', p.gives
+        ? `${p.gives.families.join(', ')} · ${p.gives.slots} slot${p.gives.slots === 1 ? '' : 's'} each (${p.gives.slots * p.count} total)`
+          + ` · expiry ${hours(p.gives.expiryH)}${p.gives.minEmptyH ? ` · min empty ${p.gives.minEmptyH} h` : ''} · name ${p.gives.nameForm}`
+        : '<span class="muted">gives nothing</span>']])}
+      ${flowLine('sends', p.sends, p.type)}${flowLine('receives', p.receives, p.type)}
+    </div>`).join('');
+
+  const plannedCards = planned.map(p => `<div class="pcard">
+      <div class="ph"><span class="pt">${esc(p.type)}</span>${status(p.status)}
+        <span class="muted">${esc(p.statusRaw.replace(/^\w+\s*/, ''))}</span></div>
+      ${meta([['region', esc(p.region)], ['gives', inline(esc(p.docGives))], ['receives', inline(esc(p.docReceives))],
+        ['tags', esc(p.tags)], ['model', inline(esc(p.model))], ['ticket', inline(esc(p.ticket))]])}
+      ${flowLine('sends', p.sends, p.type)}${flowLine('receives', p.receives, p.type)}
+    </div>`).join('');
+
+  const spotCards = spots.map(p => `<div class="pcard">
+      <div class="ph"><span class="pt">${esc(p.spot)}</span>${status((/^\w+/.exec(p.status) || [''])[0])}</div>
+      ${meta([['form', inline(esc(p.form))], ['tags', esc(p.tags)], ['promises an object', inline(esc(p.promises))],
+        ['status', esc(p.status)], ['note', inline(esc(p.note))]])}
+      ${flowLine('sends', p.sends, p.names[0])}${flowLine('receives', p.receives, p.names[0])}
+    </div>`).join('');
+
+  return `
+    ${warnStrip('places')}
+    <div class="tiles">
+      ${tile('Live POIs', summary.livePois, `${live.length} types · POI_ROSTER`)}
+      ${tile('Live offer slots', summary.liveSlots, 'count × slots, givers only')}
+      ${tile('Planned types', summary.plannedTypes, 'pois.md')}
+    </div>
+    <h2 class="sec">Live types — from <code>src/poi.js</code> + <code>data/offers.js</code></h2>${liveCards}
+    <h2 class="sec">Planned types — from pois.md</h2>${plannedCards}
+    <h2 class="sec">Roadside spots — from pois.md</h2>${spotCards}
+    <p class="note">Sends / receives are cargo.md routes that name the place exactly; <code>any</code> and generic rows count for no place.</p>`;
+}
+
 function viewStats() {
   const s = STATS;
   const tile = (k, v, sub) => `<div class="tile"><div class="k">${k}</div>
@@ -561,9 +752,11 @@ function render() {
   let page = 'tickets';
   if (path.startsWith('#/t/')) { app.innerHTML = viewTicket(decodeURIComponent(path.slice(4))); page = 'tickets'; }
   else if (path === '#/stats') { app.innerHTML = viewStats(); page = 'stats'; }
+  else if (path === '#/cargo') { app.innerHTML = viewCargo(); page = 'cargo'; }
+  else if (path === '#/places') { app.innerHTML = viewPlaces(); page = 'places'; }
   else app.innerHTML = viewTickets();
 
-  search.style.visibility = page === 'stats' ? 'hidden' : 'visible';
+  search.style.visibility = page === 'stats' || page === 'places' ? 'hidden' : 'visible';
   for (const a of document.querySelectorAll('nav a')) a.classList.toggle('on', a.dataset.nav === page);
   if (!path.startsWith('#/t/')) window.scrollTo(0, 0);
 }
