@@ -30,7 +30,7 @@ model, no offers. Today they are half the destinations (`DEST_POI_CHANCE = 0.5` 
 | Spot | Form | Tags | Promises an object? | Status | Note |
 |---|---|---|---|---|---|
 | "Mile # pullout", "the turnaround", "the county line" … | landmark (`LANDMARKS`) | receives, empty | **no**: believably empty (owner 2026-09-26) | live | any job may end here |
-| "the Hadley farm", "the Pruitt place" … | place (`[lastname] [PLACE_NOUNS]`) | receives, home | **yes**: a farm, ranch, dairy or quarry should be visible | live (the grammar is still proposed) | breaks the believably-empty rule for some nouns; see below |
+| "the Pruitt place", "the Hadley hollow" … | place (`[lastname] [PLACE_NOUNS]`) | receives, home | **some nouns**: ranch, orchard, barn | live (the grammar is still proposed) | farm, quarry and dairy removed 2026-10-07 (FEAT-99); see below |
 | "the airport" | institution | receives, institution | **yes** | proposed | the airport x-ray machine |
 
 **The tension, and the case for upgrading.** The believably-empty rule says a roadside name must not

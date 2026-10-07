@@ -12,16 +12,18 @@
 //           portrait pool. The nickname is optional; NICKNAME_CHANCE sets how often one appears.
 //           → Deb Hadley · Earl "Two-Tone" Pruitt
 //
-// POI NAME, two forms (which form a source uses is set per source in data/offers.js):
-//   owned:  [person firstname]'s [adjective]? [business type]
-//           → Deb's Burgers · Earl's Honest Tires
-//   plain:  ["The"]? [adjective]? [business type / pseudonym]
-//           → The Meatball · Big Mart · Cheese
-//   Business types are per source (BUSINESS_TYPES below), so a food vendor never rolls "Tires".
+// POI NAME (Places and Missions, 2026-10-07): each class owns SEVERAL name forms (NAME_FORMS
+// below) and one is picked per POI. A form is a template:
+//   {first} {last}  the POI's first person — "{first}'s {adj}{biz}" → Deb's Burgers
+//   {the}           "The " or nothing (POI_THE_CHANCE)
+//   {adj}           an adjective and a space, or nothing (POI_ADJECTIVE_CHANCE)
+//   {biz}           a business type for this class (BUSINESS_TYPES), so a food vendor never rolls "Tires"
+// A form with no slot is a whole person-less name ("Bits & Bobs General Store"). A source class
+// with NO forms is named by its person alone ("Earl" — the stranded motorist).
 //
 // PLACE (mid-road destinations that aren't a POI) — PROPOSED, not yet ruled:
 //           the [lastname] [place noun]  |  [landmark]
-//           → the Hadley farm · the Pruitt place · Mile 4 pullout
+//           → the Pruitt place · the Hadley homestead · Mile 4 pullout
 
 // ── People ──────────────────────────────────────────────────────────────────────────────────
 
@@ -75,7 +77,7 @@ export const NICKNAME_CHANCE = 0.15
 
 // ── POI names ───────────────────────────────────────────────────────────────────────────────
 
-/** The optional [adjective] slot in both POI-name forms. */
+/** The optional {adj} slot. */
 export const POI_ADJECTIVES = [
     'Big', 'Honest', 'Little', 'Honorable', 'Frugal', 'Extravagant', 'Placated', 'Slippery', 'Tasteful',
     'Awful', 'Pleasant', 'Humble', 'Nice', 'Plain', 'Good Old-Fashioned', 'Epic', 'Neat', 'Pitiful',
@@ -85,10 +87,10 @@ export const POI_ADJECTIVES = [
 
 /** 0..1 — how often the optional slots fill. */
 export const POI_ADJECTIVE_CHANCE = 0.4
-export const POI_THE_CHANCE       = 0.5   // plain form only
+export const POI_THE_CHANCE       = 0.5   // the optional {the} slot
 
 /**
- * [business type / pseudonym] per source — keyed by the POI roster type (src/poi.js POI_ROSTER).
+ * The {biz} slot per class — keyed by the POI roster type (src/poi.js POI_ROSTER).
  * Mix plain descriptions ("Burgers") with pseudonyms ("The Meatball") freely; both fill the slot.
  */
 export const BUSINESS_TYPES = {
@@ -107,12 +109,41 @@ export const BUSINESS_TYPES = {
     ],
 }
 
+/**
+ * Name forms per class (see the header for the slots). Duplicates weight a form, as everywhere in
+ * this file: the business classes list their rolled form three times so a person-less name is the
+ * exception, not one in two. Person-less names are PLACEHOLDERS — the owner authors names.
+ */
+export const NAME_FORMS = {
+    generalStore: ['{the}{adj}{biz}', '{the}{adj}{biz}', '{the}{adj}{biz}',
+        'Bits & Bobs General Store', 'Odds & Ends'],
+    foodVendor:   ["{first}'s {adj}{biz}", "{first}'s {adj}{biz}", "{first}'s {adj}{biz}",
+        'The Greasy Spoon', 'Bun & Done'],
+    autoShop:     ["{first}'s {adj}{biz}", "{first}'s {adj}{biz}", "{first}'s {adj}{biz}",
+        'Rust Belt Auto', 'Lugnut Alley'],
+    firewoodYard: ["{first}'s {adj}{biz}"],
+    workSite:     ['{last} Construction', 'the {last} job site'],
+    residence:    ['the {last} place', '{last} house', "{last}'s"],
+    farm:         ['{last} farm', 'the {last} farm', '{last} ranch', '{last} orchard', '{last} acres',
+        '{last} homestead', '{last} dairy'],
+    office:       ['{last} & Associates', '{last} Insurance', '{last} Realty', 'the {last} law office'],
+    school:       ['{last} School', '{last} Academy'],
+    doctor:       ['Dr. {last}'],
+    // strandedMotorist: no forms — named by the person alone.
+}
+
+/** Classes whose people are one household: everyone shares the first person's last name. */
+export const HOUSEHOLDS = ['residence', 'farm']
+
 // ── Places (proposed grammar — see header) ──────────────────────────────────────────────────
 
-/** The [place noun] in "the Hadley farm". */
+/**
+ * The [place noun] in "the Pruitt place". No 'farm', 'quarry' or 'dairy' (owner, 2026-10-07): a
+ * roadside name must not promise a farm that isn't there, and farms are POIs now.
+ */
 export const PLACE_NOUNS = [
-    'farm', 'place', 'ranch', 'house', 'court', 'corner', 'orchard', 'barn', 'field', 'acres',
-    'homestead', 'estate', 'cabin', 'hollow', 'quarry', 'dairy'
+    'place', 'ranch', 'house', 'court', 'corner', 'orchard', 'barn', 'field', 'acres',
+    'homestead', 'estate', 'cabin', 'hollow'
 ]
 
 /**

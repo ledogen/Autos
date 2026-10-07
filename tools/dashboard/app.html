@@ -621,7 +621,7 @@ function viewPlaces() {
       ])}
       ${meta([['gives', p.gives
         ? `${p.gives.families.join(', ')} · ${p.gives.slots} slot${p.gives.slots === 1 ? '' : 's'} each (${p.gives.slots * p.count} total)`
-          + ` · expiry ${hours(p.gives.expiryH)}${p.gives.minEmptyH ? ` · min empty ${p.gives.minEmptyH} h` : ''} · name ${p.gives.nameForm}`
+          + ` · expiry ${hours(p.gives.expiryH)}${p.gives.minEmptyH ? ` · min empty ${p.gives.minEmptyH} h` : ''}`
         : '<span class="muted">gives nothing</span>']])}
       ${flowLine('sends', p.sends, p.type)}${flowLine('receives', p.receives, p.type)}
     </div>`).join('');

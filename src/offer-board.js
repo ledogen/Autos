@@ -37,7 +37,7 @@ import {
 } from '../data/offers.js'
 import {
     FIRST_NAMES, FEMALE_CHANCE, LAST_NAMES, NICKNAMES, NICKNAME_CHANCE, POI_ADJECTIVES,
-    POI_ADJECTIVE_CHANCE, POI_THE_CHANCE, BUSINESS_TYPES, PLACE_NOUNS, LANDMARKS,
+    POI_ADJECTIVE_CHANCE, POI_THE_CHANCE, BUSINESS_TYPES, NAME_FORMS, HOUSEHOLDS, PLACE_NOUNS, LANDMARKS,
 } from '../data/offer-names.js'
 import { djb2, mulberry32 } from './seed.js'
 import { basePay } from './economy.js'
@@ -49,9 +49,9 @@ import { basePay } from './economy.js'
  */
 export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul'])
 
-// Fixed names for roster types that are NOT sources and have no word list — they can still be a
-// DESTINATION, and "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors
-// names; add these types to BUSINESS_TYPES (data/offer-names.js) to give them rolled ones.
+// Fixed names for roster types that are NOT sources (and Larry) — they can still be a DESTINATION,
+// and "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors names; a type
+// becomes rolled by turning it into a source with NAME_FORMS (data/offer-names.js).
 const FIXED_NAMES = {
     larrysHouse: "Larry's",
     momsHouse:   "Mom's",
@@ -428,11 +428,12 @@ export class OfferBoard {
 
     /**
      * Roll every POI's name and people once, at construction, deduplicated within the region: a
-     * collision re-rolls that POI on the next attempt stream, so two Deb's Burgers or two Hadley
-     * places never share a board. People's full names are kept unique the same way.
+     * collision re-rolls that POI on the next attempt stream, so two Deb's Burgers never share a
+     * board. People's full names are kept unique the same way, and so are HOUSEHOLD surnames —
+     * "Pruitt's" and "Pruitt house" are different strings but read as one family twice.
      */
     _rollNames () {
-        const usedPoi = new Set(), usedPeople = new Set()
+        const usedPoi = new Set(), usedPeople = new Set(), usedHouse = new Set()
         for (const id of [...this._pois.keys()].sort()) {
             const q = this._pois.get(id)
             let out = null
@@ -444,9 +445,11 @@ export class OfferBoard {
                 const clash = (cand.name && !fixed && usedPoi.has(cand.name))
                     || new Set(full).size !== full.length          // two Deb Hadleys in one household
                     || full.some(f => usedPeople.has(f))
+                    || (HOUSEHOLDS.includes(q.type) && usedHouse.has(cand.people[0]?.last))
                 if (!clash || attempt === 31) out = cand
             }
             if (out.name) usedPoi.add(out.name)
+            if (HOUSEHOLDS.includes(q.type)) usedHouse.add(out.people[0]?.last)
             for (const p of out.people) if (p.last) usedPeople.add(`${p.first} ${p.last}`)
             this._names.set(id, out)
         }
@@ -459,33 +462,32 @@ export class OfferBoard {
                      people: [{ sex: 'male', first: 'Larry', nick: null, last: null }] }
         }
         const src = SOURCES[q.type]
-        const form = src?.nameForm
+        const forms = NAME_FORMS[q.type]
         const people = []
         if (src) {
-            // A giver named by the person alone (a stranded motorist) is ONE person — the card says
-            // "Earl needs…", and a second voice from the same wreck would read oddly.
-            const n = form === 'person' ? 1 : Number(pickWeighted(r(), PEOPLE_PER_POI))
+            // A source with no name forms is named by its person alone (a stranded motorist), and is
+            // ONE person — the card says "Earl needs…", and a second voice from the same wreck would
+            // read oddly.
+            const n = forms ? Number(pickWeighted(r(), PEOPLE_PER_POI)) : 1
             for (let i = 0; i < n; i++) {
                 const p = this._rollPerson(r)
-                // A home is a household: everyone there shares the first person's last name.
-                if (form === 'home' && i > 0) p.last = people[0].last
+                if (HOUSEHOLDS.includes(q.type) && i > 0) p.last = people[0].last
                 people.push(p)
             }
         }
-        let name = null
-        if (form === 'home') name = `the ${people[0].last} place`
-        else if (form === 'person') name = null
-        else if (form === 'owned' && BUSINESS_TYPES[q.type] && people.length) {
-            const adj = r() < POI_ADJECTIVE_CHANCE ? pick(r, POI_ADJECTIVES) + ' ' : ''
-            name = `${people[0].first}'s ${adj}${pick(r, BUSINESS_TYPES[q.type])}`
-        } else if (BUSINESS_TYPES[q.type]) {
-            const the = r() < POI_THE_CHANCE ? 'The ' : ''
-            const adj = r() < POI_ADJECTIVE_CHANCE ? pick(r, POI_ADJECTIVES) + ' ' : ''
-            name = `${the}${adj}${pick(r, BUSINESS_TYPES[q.type])}`
-        } else {
-            name = FIXED_NAMES[q.type] ?? null
-        }
+        const name = forms && people.length ? this._fillForm(pick(r, forms), people[0], q.type, r)
+                   : FIXED_NAMES[q.type] ?? null
         return { name, people }
+    }
+
+    /** One name form filled in (data/offer-names.js header). Each slot draws only if present. */
+    _fillForm (form, p, type, r) {
+        return form
+            .replace('{the}', () => (r() < POI_THE_CHANCE ? 'The ' : ''))
+            .replace('{adj}', () => (r() < POI_ADJECTIVE_CHANCE ? pick(r, POI_ADJECTIVES) + ' ' : ''))
+            .replace('{biz}', () => pick(r, BUSINESS_TYPES[type]))
+            .replace('{first}', () => p.first)
+            .replace('{last}', () => p.last)
     }
 
     _rollPerson (r) {

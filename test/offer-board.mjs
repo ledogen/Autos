@@ -31,6 +31,18 @@ import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel } from '../src/offer-board.js'
 import { SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay } from '../src/economy.js'
+import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
+
+// Could POI `q`'s rolled name have come from one of its class's forms? Each form becomes a regex
+// with the slots opened up: {first}/{last} are the POI's first person, the rest their word lists.
+const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const alt = (list) => `(?:${list.map(esc).join('|')})`
+function fromForms (type, name, p) {
+    return (NAME_FORMS[type] || []).some(f => new RegExp('^' + f.split(/(\{\w+\})/).map(t =>
+        t === '{first}' ? esc(p.first) : t === '{last}' ? esc(p.last)
+        : t === '{the}' ? '(?:The )?' : t === '{adj}' ? `(?:${alt(POI_ADJECTIVES)} )?`
+        : t === '{biz}' ? alt(BUSINESS_TYPES[type]) : esc(t)).join('') + '$').test(name))
+}
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -242,7 +254,8 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
 
 // ── 11. names ───────────────────────────────────────────────────────────────────────────────────
 {
-    let dupPoi = 0, dupPerson = 0, homeBad = 0, personBad = 0
+    let dupPoi = 0, dupPerson = 0, formBad = 0, personBad = 0, houseBad = 0, dupHouse = 0
+    const formOff = new Set()
     for (let seed = 1; seed <= 300; seed++) {
         const b = make(seed)
         // Fixed placeholder names (the two gas stations) are exempt — they are not rolled.
@@ -251,17 +264,26 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
         if (new Set(names).size !== names.length) dupPoi++
         const full = POIS.flatMap(q => b.people(q.id)).filter(p => p.last).map(p => `${p.first} ${p.last}`)
         if (new Set(full).size !== full.length) dupPerson++
-        for (const q of POIS.filter(p => ['home', 'person'].includes(SOURCES[p.type]?.nameForm))) {
-            const gn = SOURCES[q.type].nameForm
-            if (gn === 'home' && !/^the \S+ place$/.test(b.poiName(q.id) ?? '')) homeBad++
-            if (gn === 'person' && (b.poiName(q.id) !== null || b.people(q.id).length !== 1
-                || b.placeLabel(q.id) !== personLabel(b.people(q.id)[0]))) personBad++
+        for (const q of POIS.filter(p => SOURCES[p.type] && p.type !== 'larrysHouse')) {
+            const ppl = b.people(q.id)
+            if (NAME_FORMS[q.type]) {
+                if (!fromForms(q.type, b.poiName(q.id) ?? '', ppl[0])) { formBad++; formOff.add(`${q.type}: ${b.poiName(q.id)}`) }
+            } else if (b.poiName(q.id) !== null || ppl.length !== 1
+                || b.placeLabel(q.id) !== personLabel(ppl[0])) personBad++
+            if (HOUSEHOLDS.includes(q.type) && ppl.some(p => p.last !== ppl[0].last)) houseBad++
         }
+        const surnames = POIS.filter(q => HOUSEHOLDS.includes(q.type)).map(q => b.people(q.id)[0].last)
+        if (new Set(surnames).size !== surnames.length) dupHouse++
     }
     check('POI names are unique within a region (300 seeds)', dupPoi === 0, `${dupPoi}`)
     check('people are unique within a region (300 seeds)', dupPerson === 0, `${dupPerson}`)
-    check("a 'home' giver is named \"the <last> place\"", homeBad === 0, `${homeBad}`)
-    check("a 'person' giver is ONE person, no place name — just the person", personBad === 0, `${personBad}`)
+    check('every source is named by one of its class\'s forms (300 seeds)', formBad === 0,
+        `${formBad}: ${[...formOff].slice(0, 5).join(' · ')}`)
+    check('a class with no forms is ONE person, no place name — just the person', personBad === 0, `${personBad}`)
+    check('a household shares one last name', houseBad === 0, `${houseBad}`)
+    check('no two households in a region share a surname (300 seeds)', dupHouse === 0, `${dupHouse}`)
+    check('no roadside place noun promises a farm, quarry or dairy',
+        !PLACE_NOUNS.some(n => ['farm', 'quarry', 'dairy'].includes(n)))
     const b = make(6)
     const larry = POIS.find(q => q.type === 'larrysHouse').id
     const p = { first: 'Earl', nick: 'Two-Tone', last: 'Pruitt' }

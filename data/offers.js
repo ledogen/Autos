@@ -107,9 +107,6 @@ export const REWARDS = [
 //              A [lo, hi] pair means the centre is rolled once per POI in that range.
 //   minEmptyH  (optional, default 0) after a COMPLETION the slot never re-rolls sooner than this.
 //              Larry's 24 h is what stops two paper rounds in one day (owner, 2026-09-27).
-//   nameForm   'owned' | 'plain' | 'fixed' | 'home' | 'person' — which POI-name grammar
-//              (data/offer-names.js). 'fixed' keeps the roster's own label (Larry's); 'home' →
-//              "the Hadley place"; 'person' → just the person ("Earl").
 //   families   which families this source may post
 
 // foodVendor means ANY FOOD VENDOR (owner, 2026-09-26): the player delivers ready-made meals as an
@@ -118,22 +115,22 @@ export const REWARDS = [
 // jobs are the bottom of the barrel: short, low-paying, posted often — filler for the last hours of
 // a day when no good job fits.
 export const SOURCES = {
-    generalStore: { slots: 2, expiryH: 24,       nameForm: 'plain', families: ['delivery', 'fragile'] },
-    foodVendor:   { slots: 3, expiryH: 2,        nameForm: 'owned', families: ['delivery'] },
-    larrysHouse:  { slots: 1, expiryH: 72,       nameForm: 'fixed', families: ['papers'], minEmptyH: 24 },
-    autoShop:     { slots: 1, expiryH: 48,       nameForm: 'owned', families: ['delivery', 'freight'] },
+    generalStore: { slots: 2, expiryH: 24,       families: ['delivery', 'fragile'] },
+    foodVendor:   { slots: 3, expiryH: 2,        families: ['delivery'] },
+    larrysHouse:  { slots: 1, expiryH: 72,       families: ['papers'], minEmptyH: 24 },
+    autoShop:     { slots: 1, expiryH: 48,       families: ['delivery', 'freight'] },
     // FEAT-88/91: the region-1 haul yard. Haul only for now — FEAT-91 also has it give and take
     // courier jobs, which lands with FEAT-89.
-    firewoodYard: { slots: 2, expiryH: 24,       nameForm: 'owned', families: ['haul'] },
+    firewoodYard: { slots: 2, expiryH: 24,       families: ['haul'] },
     // Places and Missions (FEAT-98): the job site and the additional classes post ONE provisional
     // slot each, on the retired generic giver's timing, until FEAT-101's region budget replaces it.
-    workSite:         { slots: 1, expiryH: [24, 72], nameForm: 'plain',  families: ['delivery', 'freight'] },
-    residence:        { slots: 1, expiryH: [24, 72], nameForm: 'home',   families: ['delivery', 'fragile', 'demolition'] },
-    farm:             { slots: 1, expiryH: [24, 72], nameForm: 'home',   families: ['delivery', 'freight', 'fragile'] },
-    office:           { slots: 1, expiryH: [24, 72], nameForm: 'plain',  families: ['delivery'] },
-    school:           { slots: 1, expiryH: [24, 72], nameForm: 'plain',  families: ['delivery'] },
-    doctor:           { slots: 1, expiryH: [24, 72], nameForm: 'plain',  families: ['delivery'] },
-    strandedMotorist: { slots: 1, expiryH: [24, 72], nameForm: 'person', families: ['delivery'] },
+    workSite:         { slots: 1, expiryH: [24, 72], families: ['delivery', 'freight'] },
+    residence:        { slots: 1, expiryH: [24, 72], families: ['delivery', 'fragile', 'demolition'] },
+    farm:             { slots: 1, expiryH: [24, 72], families: ['delivery', 'freight', 'fragile'] },
+    office:           { slots: 1, expiryH: [24, 72], families: ['delivery'] },
+    school:           { slots: 1, expiryH: [24, 72], families: ['delivery'] },
+    doctor:           { slots: 1, expiryH: [24, 72], families: ['delivery'] },
+    strandedMotorist: { slots: 1, expiryH: [24, 72], families: ['delivery'] },
 }
 
 // ── Haul loads (FEAT-88, owner 2026-10-04) ──────────────────────────────────────────────────
