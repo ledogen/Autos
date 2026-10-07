@@ -1,5 +1,5 @@
 ---
-id: ASSET-68
+id: ASSET-73
 type: asset
 status: open
 severity: minor
@@ -7,7 +7,7 @@ opened: 2026-10-07
 relates: FEAT-98 (Places and Missions — replaces the placeholder marker)
 ---
 
-# ASSET-68: Country school
+# ASSET-73: Country school
 
 **POI model** — the `school` class. A one-room schoolhouse: clapboard, bell cupola, flagpole.
 

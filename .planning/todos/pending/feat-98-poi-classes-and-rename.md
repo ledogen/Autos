@@ -22,7 +22,7 @@ Step 1 of **Places and Missions**. Design: `.planning/story-mode/pois.md` § Pla
   the additional classes. Update `data/offers.js` `SOURCES`/`pools`, `offer-board.js`, cargo.md,
   pois.md (delete each planned row that goes live). The dashboard's warning strip is the checklist.
 - Residence draws today's `missionGiver` model pool. office / school / doctor / workSite stand on
-  placeholder markers until ASSET-68..71 ship. strandedMotorist's car visibility is FEAT-102.
+  placeholder markers until ASSET-73 and ASSET-69..71 ship. strandedMotorist's car visibility is FEAT-102.
 - Job behaviour stays as today until FEAT-101; new classes post with a provisional 1 slot.
 
 ## Acceptance

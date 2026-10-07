@@ -22,7 +22,7 @@ that gives nothing still costs a pad, but it adds nothing to the job supply (see
 | `workSite` | planned — **the job site**, required class (owner 2026-10-07) | any | courier (memo from the foreman); later the region boss | cones, cinder blocks, concrete bags, job box, workers | jobSite | placeholder, then ASSET-71 | FEAT-103 |
 | `residence` | planned — additional class ×5 (owner 2026-10-07) | any | courier, fragile | any | residence | today's `missionGiver` pool (trailer home, etc.) | FEAT-98 |
 | `office` | planned — additional class ×1 (owner 2026-10-07) | any | courier | keys to the office | office | placeholder, then ASSET-69 | FEAT-98 |
-| `school` | planned — additional class ×1 (owner 2026-10-07) | any | courier | keys to the school | school | placeholder, then ASSET-68 | FEAT-98 |
+| `school` | planned — additional class ×1 (owner 2026-10-07) | any | courier | keys to the school | school | placeholder, then ASSET-73 | FEAT-98 |
 | `doctor` | planned — additional class ×1 (owner 2026-10-07) | any | courier (prescriptions) | any | doctor | placeholder, then ASSET-70 | FEAT-98 |
 | `strandedMotorist` | planned — additional class ×1 (owner 2026-10-07) | any | courier (a passenger to the shop), 0–1 jobs | — | motorist | ASSET-18 broken-down car (shipped), shown only while the job is open | FEAT-102 |
 | `sawmill` | planned | R2 | haul (lumber), courier | any | haulYard | ASSET-11 | FEAT-91 |
@@ -132,7 +132,7 @@ choose, too many and a good job is always nearby; aim for the count where that g
 | 5. Stranded motorist | FEAT-102 |
 | 6. Job site POI (R1, on the wall) | FEAT-103 |
 | 7. Minimal shop at the required classes | FEAT-104 |
-| Placeholder-replacing models: school, office, doctor's office, job site | ASSET-68..71 |
+| Placeholder-replacing models: school, office, doctor's office, job site | ASSET-73, ASSET-69..71 |
 | Later, behind SM-4: bosses, region modifiers, motorist relocation, counts scaled to region size | — |
 
 ### Candidate classes — liked, not adopted (owner 2026-10-07: "ship something first")
