@@ -194,7 +194,8 @@ economy attached. The last leg of the day is the game (SM-INV-6).
 > time limits). The scope below is the plan as written; the closed tickets are what exists.
 > **Carried forward, not blocking:** FEAT-69 (`dayTierTable` + the SM-3 repair prices, owed a
 > re-price against the ~$7.50 day — SM-3 work now) and the delivery content (FEAT-88 Haul,
-> FEAT-89 Courier shapes, FEAT-91 haul yards, FEAT-67's remainder), which is free to land at any time.
+> FEAT-89 Courier shapes, FEAT-91 haul yards, FEAT-96 Freight, FEAT-97 Fragile, FEAT-67's remainder),
+> which is free to land at any time.
 
 **Requires:** SM-1 (the day is the budget every mission type spends) — **MET 2026-07-30**;
 POI anchors — **MET** by FEAT-46 (shipped), which superseded FEAT-21's core.

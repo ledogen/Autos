@@ -854,6 +854,14 @@ therefore the bonus objective — works on any job.
 > which is what keeps a $0 mission a real choice instead of a trap. Provenance:
 > `design-amendments-2026-08-17.md` §5.
 
+> **Amendment [OWNER 2026-10-06] — freight and restraint ride the margin line again.** Freight is
+> no longer flat by mass × distance: it pays the ordinary **Base + tip**, and mass lengthens its par
+> (so pay grows with mass, because pay rides par). Restraint is no longer flat × condition: it pays
+> **(Base + tip) × cargo health**, the same shape as haul's × share aboard. Both are therefore plain
+> SM-INV-4 lines scaled by an outcome in [0, 1], and the bounded exception above now covers only
+> coverage and $0-cash missions. A fragile load at zero health fails the job. Provenance:
+> `missions.md` §3, amendment 2026-10-06; FEAT-96, FEAT-97.
+
 **Non-timed missions are still governed by the clock, indirectly.** A fragile run has no margin
 scoring, but costs escalate with run age and the day is finite, so dawdling is still expensive. The
 economy supplies the pressure; the mission does not have to.

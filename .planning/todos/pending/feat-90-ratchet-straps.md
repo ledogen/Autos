@@ -21,6 +21,11 @@ requires: FEAT-88 shipped (world-truck bed well, cargo spawn, roughness read)
 
 # FEAT-90: Ratchet straps — lock a haul load to the bed (PARKED — weak as specified)
 
+> **2026-10-06:** strapped cargo now exists as a property of two mission types, not as an item:
+> FEAT-96 freight and FEAT-97 fragile weld their load to the bed, and FEAT-96 builds the weld joint
+> this ticket's option A describes. Weakness 2 below is now literal: fragile IS the strapped slot.
+> Straps as an item for loose haul loads stay parked.
+
 ## Status: parked, 2026-09-30 — the idea is weak, keep it for a better solution later
 
 Owner, on reading the conflicts below: *"I'm not sure if the straps truly belong. Leave it there,

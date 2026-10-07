@@ -218,5 +218,9 @@ What exists:
 - **Result card.** It shows "Firewood delivered N / M".
 - **Gates.** `test/haul-load.mjs` is new. `offer-board.mjs` §15 and `economy.mjs` §8b are extended.
 
-Still open in this ticket: the crate / drum / barrel cargo for the other givers, and retiring the
-dead `fragile` / `freight` keys into `haul`.
+**2026-10-06 (owner): fragile and freight are NOT retired.** They return as strapped bed cargo
+(FEAT-96 freight, FEAT-97 fragile), so the `fragile` / `freight` keys stay and the collapse into
+`haul` described above is cancelled. Haul stays the loose-load type.
+
+Still open in this ticket: crate / drum / barrel as loose haul loads for the other givers. (Retiring
+the `fragile` / `freight` keys into `haul` was dropped on 2026-10-06.)

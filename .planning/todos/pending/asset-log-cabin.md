@@ -47,9 +47,9 @@ but texture on everything else. Windows are texture; the door does not open.
 ## Notes
 
 - Own work → no `CREDITS.md` entry needed.
-- **Exterior only. No interior, no enterable door.** State it in the registry entry so nobody plans a
-  mission around going inside one. If an interior is ever wanted that is a much larger ticket than an
-  asset.
+- **No enterable door.** State it in the registry entry so nobody plans a mission around going
+  inside one. Windows follow ART-STYLE rule 7 (2026-10-06): draw the curtains, or model only what
+  the glass shows. A walk-in interior would be a much larger ticket than an asset.
 - The **canonical provenance anchor** for lawn furniture — ASSET-01..08 were written with this
   object in mind. When placement rules get authored, start here.
 - Sleeping/camping *gameplay* is SM-1 and `.planning/story-mode/DESIGN.md`; this asset does not

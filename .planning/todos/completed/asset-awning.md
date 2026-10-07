@@ -1,12 +1,13 @@
 ---
 id: ASSET-06
 type: asset
-status: open
+status: completed
 severity: minor
 opened: 2026-08-03
 updated: 2026-08-03
 blocked-by: FEAT-59
 relates: FEAT-06, FEAT-46, ASSET-04
+closed: 2026-10-06
 ---
 
 # ASSET-06: Awning
@@ -53,3 +54,17 @@ Sag the canopy in the mesh; do not plan on cloth simulation. No guy lines unless
   first prop in the set whose shadow is a *shape* rather than a blob, so check it against the baked
   shadow path (PERF-21) before scattering any.
 - Free-standing, **not** attached to a camper/trailer — no vehicle to attach it to exists.
+
+## Resolution (2026-10-06) — SHIPPED in the ASSET-06 lawn-furniture kit
+
+`assets/models/awning.glb` shipped with commit 9349935 (`feature/haul-firewood`, merged 305a3cf).
+**240 tris** (budget 450), 3 materials, zero images: the stripes are per-panel material slots, not a
+texture. A sibling `camp-chair.glb` (160 tris, 2 materials) ships from the same generator.
+
+- Sources: one kit generator, `assets/models/src/lawn-furniture.py` + `.blend`, not a per-asset
+  `awning.py`. It builds both the awning and the chair.
+- First placement: composited into `splitting-yard.glb` at `SpotAwning` (ASSET-36), with two chairs.
+  The registry (`data/prop-models.js` `splittingYard`) makes the four 0.06 m posts collision boxes.
+  The canopy and the chairs have no collider.
+- Placement of the awning as a free-standing satellite prop is FEAT-71's job, not this ticket's
+  (asset tickets close when the `.glb` ships — owner, 2026-08-24).

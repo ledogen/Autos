@@ -12,9 +12,12 @@ current and wins.** `design-amendments-2026-07-29.md` is a historical provenance
 
 | Decided | Open |
 |---|---|
-| Five scoring axes; three delivery types (§1, §3a, §3b) | Job discovery + expiry model (§"The job board") |
+| Five scoring axes; four delivery types — courier, haul, freight, fragile (§3, 2026-10-06) | Job discovery + expiry model (§"The job board") |
 | Points not XP; continuous payout; rank as surface | Exact `k` (maintenance cost per par-second) |
-| Payout continuous on par ratio, base × par | Restraint ceiling: hard-fail vs graded (§3b) |
+| Payout continuous on par ratio, base × par | — |
+| The farm is its own POI type, source of produce freight (FEAT-96) | — |
+| Restraint is graded, and zero health fails the job (§3, 2026-10-06) | — |
+| Fragile deeds and letter follow health, as haul's follow the load (FEAT-97) | — |
 | Time trials live in-run | Comparability between players — parked |
 | Main mission = log drag; beat/labor split | Whether the final drag must be unsurvivable |
 | Clearance is run-layer | — |
@@ -397,6 +400,32 @@ truck and what the truck does to the cargo**.
 > §3c's "the load is the reason you drive carefully" both hold unchanged; what changed is that
 > they are one mission, not two. **Retired:** the telemetry-based fragile signal; freight as a
 > separate type. §3b/§3c below are kept as the reasoning behind the large-item class.
+
+> **[AMENDED 2026-10-06, owner] Fragile and freight come back — as STRAPPED bed cargo.** This
+> partly reverses the 2026-09-29 amendment above. Haul stays as it is (a loose load, FEAT-88). Two
+> more types join it, and both start from normal POIs:
+>
+> | Type | Rides | Pay | Ticket |
+> |---|---|---|---|
+> | **Courier** | in the cab | Base + tip | FEAT-89 |
+> | **Haul** | in the bed, loose | (Base + tip) × share still aboard | FEAT-88 |
+> | **Freight** | in the bed, **strapped**, durable | Base + tip; base and par both grow with mass | FEAT-96 |
+> | **Fragile** | in the bed, **strapped**, shock-sensitive | (Base + tip) × cargo health | FEAT-97 |
+>
+> - **Strapped** means welded to the chassis: the load can't move, and its mass still loads the
+>   truck. So §3c's "mass does the work" holds for both, and a piano is heavy *and* fragile.
+> - **Fragile's signal is the force on the strap** divided by the load's mass, which is the
+>   acceleration the item feels. Each hit is priced on its peak, square-law, above a per-item
+>   floor, so it is steep and superlinear with a floor at zero as the 2026-08-17 ruling asked. A
+>   sound plays on each damaging hit, and no number appears on the HUD. **At zero health the job
+>   fails on the spot.**
+> - **Freight is a margin job again.** §3c's flat rate by mass × distance is retired. Mass now
+>   lengthens the par, and pay rides par, so heavier freight pays more and the tip stays reachable.
+> - **"Clean up cargo" replaces "abandon job"** on a strapped job. It removes the load and costs
+>   one hour on the day clock.
+>
+> §3b and §3c below are live again as each type's reasoning, except where this block overrides
+> them: §3b's suspension-telemetry signal and §3c's flat-rate pricing.
 
 #### 3a. Point-to-point — **margin**
 
@@ -813,6 +842,18 @@ carrying it — worth watching whether that fills the hole or makes it more obvi
 ---
 
 ## Change log
+
+**2026-10-06 — owner: fragile and freight return as strapped bed cargo.** This partly reverses the
+2026-09-29 two-class amendment. Haul stays loose. Freight (FEAT-96) and fragile (FEAT-97) are
+strapped (welded) to the bed and posted by normal POIs. Freight pays Base + tip, with par and pay
+growing with mass. Fragile pays (Base + tip) × health, read off the strap force, with a sound per
+hit. At zero health the job fails. "Clean up cargo" (one hour) replaces "abandon job" on strapped
+jobs. The first fragile models are the crate and a pelican case; named items are ASSET-40..45.
+Same day: fragile deeds and letter follow health; freight is posted by the service shop, general
+store and mission givers; produce runs from farms to the general store and mission givers; clean-up
+locks the giver's slot like abandon. The farm is its own POI type (placeholder model: the produce
+stall), and the farmhouse, barn and tractor are ASSET-65..67. Courier is posted by nearly every
+POI, the farm included (FEAT-89).
 
 **2026-09-30 — owner: the bridge site.** A second main-mission shape beside the log drag: "deliver
 x of y to the bridge site" — workers by courier, lumber and stone by haul — reusing the two ratified

@@ -1,0 +1,148 @@
+---
+id: FEAT-97
+type: feature
+status: open
+severity: major
+opened: 2026-10-06
+source: owner, 2026-10-06 — "fragile is an item strapped to the bed of the truck (physics locked to
+  body) might be heavy or might be light but is sensitive to shock. examples - panes of glass, an
+  ornate vase, an upright piano, sculpture, artwork, security xray machine, or as a catch all - large
+  pelican case or crate with flavor text cargo inside. you are tipped on delivery speed * cargo health
+  and your flat reward is also * cargo health." Follow-ups the same day: a sound per damaging hit;
+  at zero health the job fails and "abandon job is replaced with cleanup cargo which costs the
+  player an hour"; the first slice uses the crate and a pelican case.
+relates: FEAT-96 (Freight — builds the strapped-cargo layer this ticket stands on; HARD
+  prerequisite), FEAT-88 (Haul — the share-aboard pay this mirrors), FEAT-90 (ratchet straps, parked),
+  FEAT-38 (surface class — the paved-vs-dirt choice this type makes real), FEAT-67 (offer board),
+  ASSET-28 crate · ASSET-39 pelican case (first slice) · ASSET-40..45 (the named items, later)
+invariants: SM-INV-4 (continuous pay, floor at zero), SM-INV-10 (no cargo number on the HUD),
+  SM-INV-12 (determinism)
+design: missions.md §3 (amendment 2026-10-06) and §3b; design-amendments-2026-08-17 §4 (graded,
+  steep, superlinear, floor at zero); items.md §4 cargo
+requires: FEAT-96 shipped (weld joint, strapped spawn, clean-up action)
+---
+
+# FEAT-97: Fragile — shock-sensitive cargo strapped to the bed
+
+## Request
+
+A delivery whose load is **strapped to the bed and breaks under shock**. It can be light (a vase,
+a framed painting) or heavy (an upright piano, an airport x-ray machine). The load cannot move, so
+it never leaves the bed. Every jolt the truck takes passes straight into it. This is missions.md
+§3b's *restraint*, and the type that makes surface class (FEAT-38) matter: the paved detour versus
+the dirt shortcut, chosen because of the cargo.
+
+**Pay = (Base pay + tip) × cargo health.** Health runs from 1 to 0 and only goes down. The tip is the
+ordinary clock tip, so speed still pays, but every pothole you take at speed comes out of both
+halves. Pay is continuous and floored at zero (SM-INV-4). It is the same shape as haul's
+"× share still aboard".
+
+## The shock signal — the weld force, not suspension telemetry
+
+The cargo is welded to the chassis (FEAT-96). Each fixed step, read the force the weld exerts on the
+cargo (`jointForce`) and divide it by the cargo's mass. That gives the specific force on the item.
+Remove the static 1 g of gravity, and what is left is the **acceleration the item actually feels,
+in g**.
+
+- It is honest physics, not a proxy. A pothole, a crest landing, a kerb strike, a crash and a
+  rollover all reach the item through the strap, so one signal covers every way of breaking it.
+- It does not depend on mass. A heavy piano and a light vase feel the same g over the same bump,
+  and differ only in what they can take. Mass still matters to the truck.
+- Ignore the weld torque for now. `ponytail:` a sharp yaw jolt that rotates the item without
+  translating it does not count. Add the torque term only if a real case shows the gap.
+
+**Price each shock event on its peak, square-law, the way `src/damage.js` prices bump-stop hits.** A
+burst of steps above the item's floor is one event. Each item carries two numbers in its
+`data/offers.js` entry:
+
+- `shockFloorG` — below this the item takes no harm (calm driving is free).
+- `breakG` — one hit this hard destroys it.
+
+`health -= ((peak − floor) / (break − floor))²`, clamped to [0, 1]. That is the 2026-08-17 ruling's
+"steep and superlinear, floor at zero": gentle chatter costs nothing, and one big launch costs most
+of the job.
+
+**Calibrate by scenario, not by guessing g values** (a headless gate, below):
+
+| Scenario | Every item | Glass / vase | Pelican case |
+|---|---|---|---|
+| Paved road at par pace | no loss | no loss | no loss |
+| Dirt road at par pace | — | a clear loss | little or none |
+| A crest launch at speed | — | destroyed | a large loss |
+| A rollover | destroyed | destroyed | destroyed |
+
+## What the player sees and hears
+
+- **A sound per damaging hit** (owner, 2026-10-06). Each item has a sound kind (glass clink, crate
+  thud, piano strings jangling, case knock). The gain scales with that event's health cost, so a
+  near-miss is a tick and a bad one is a crash. Calm driving is silent.
+- **The cargo blinks red on each damaging hit** (owner, 2026-10-06), alongside the sound. The
+  flash is on the load itself, as a red tint over the whole model, so it needs nothing special in
+  any asset. A bigger health cost gives a longer or stronger blink.
+- **No HUD number** (SM-INV-10). The sound and the blink are the only readouts, and both are on
+  the load.
+- **Result card:** a "Cargo condition N%" row, then Base pay and Tip, each already × health.
+
+## Health reaches zero → the job fails on the spot
+
+Owner, 2026-10-06. The job ends with the cargo destroyed and pays $0. The load stays strapped in the
+bed as dead weight. The HUD's "abandon job" button has already become **"clean up cargo"** (FEAT-96).
+Pressing it removes the load and costs **one hour** on the day clock. Until then no new job can be
+accepted, because there is still only one job at a time.
+
+## Things
+
+**First slice (owner, 2026-10-06): the catch-all crate and a pelican case, with the contents in the
+flavour text.** For example: "a crate of lab glassware", "a case of survey instruments", or
+"grandma's vase, crated". `vase` and `windshield` already exist as `fragile` entries in
+`data/offers.js`. They render as the crate until their own models ship.
+
+**The full roster, tiered from early to late game, is `.planning/story-mode/cargo.md`.** It adds
+ASSET-59..64 and the crate's text-only contents (fine china, milk bottles, canning jars).
+
+Each specific item gets its own model later. A suggested mass is given for each.
+
+| Item | Asset | Mass | Fragility |
+|---|---|---|---|
+| Large crate (catch-all) | ASSET-28 | 15–60 kg | per contents |
+| Pelican case (catch-all) | ASSET-39 | 15–40 kg | tough |
+| Panes of glass on an A-frame | ASSET-40 | 60–120 kg | most fragile |
+| Ornate vase | ASSET-41 | 3–8 kg | most fragile |
+| Upright piano | ASSET-42 | 200–270 kg | moderate |
+| Sculpture | ASSET-43 | 40–200 kg | moderate |
+| Framed artwork, crated | ASSET-44 | 10–30 kg | fragile |
+| Security x-ray machine | ASSET-45 | 300–400 kg | moderate |
+
+Mass is real (FEAT-96), so the piano and the x-ray machine are freight-heavy as well as fragile.
+Those are the hardest jobs of the type.
+
+## Rulings (owner, 2026-10-06)
+
+- **Good deeds follow health**, as a haul's follow the share delivered: `haulPointsFor(health)`,
+  so more than 2/3 earns 1, 1/3 to 2/3 earns ½, and less earns 0.
+- **The letter blends the clock and health**, the same way haul's blends the clock and the load.
+- **Givers:** `generalStore` and `missionGiver`, as listed today.
+- **Zero health:** the job fails on the spot and the clean-up button is how it ends. Clean-up
+  locks the giver's slot as abandon does (FEAT-96).
+
+## Acceptance
+
+- [ ] Per step, the shock read is the weld force ÷ mass with gravity removed, priced per event on
+      the peak, square-law, with per-item `shockFloorG` / `breakG` in `data/offers.js`.
+- [ ] A headless gate drives the four calibration scenarios above and asserts each row.
+- [ ] Pay is (Base + tip) × health, continuous, floored at zero; `economy.mjs` covers it.
+- [ ] Zero health fails the job on the spot ($0, "destroyed" on the result card), and clean-up
+      removes the load and costs 1 h.
+- [ ] Each damaging event plays its item's sound with gain ∝ cost, and blinks the load red.
+      Calm driving is silent and the load stays unlit.
+- [ ] `fragile` is in `BUILT_FAMILIES`. No cargo number on the HUD (SM-INV-10).
+- [ ] Good deeds are `haulPointsFor(health)`; the letter blends the clock and health.
+- [ ] Same seed, same offer, same inputs → the same health at delivery (SM-INV-12).
+
+## Related code
+
+- `src/physics-engine.js` — `jointForce` (FEAT-96).
+- `src/damage.js` — the bump-stop event pricing to copy (peak per event, square-law, no-harm floor).
+- `src/engine-audio.js` — one-shot helpers for the hit sounds.
+- `src/economy.js` — `haulPointsFor`; the pay rows.
+- `data/offers.js` — the `fragile` things (`vase`, `windshield`).

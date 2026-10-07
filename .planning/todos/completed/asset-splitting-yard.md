@@ -1,10 +1,11 @@
 ---
 id: ASSET-36
 type: asset
-status: open
+status: completed
 severity: minor
 opened: 2026-09-30
 relates: FEAT-91 (the region-1 haul yard), ASSET-37 (the firewood it drops)
+closed: 2026-10-06
 ---
 
 # ASSET-36: Splitting yard (haul yard, region 1)
@@ -44,3 +45,24 @@ the bed. The belt itself is decoration (no moving parts required); only the rele
 - A Ranger parked in `BayFirewood` has its bed under `ReleaseFirewood`; the belt end clears the cab
   roof when the truck pulls in.
 - Tri count within budget; material names stable.
+
+## Resolution (2026-10-06) — SHIPPED, re-scoped to a firewood VENDOR
+
+The owner re-scoped this on 2026-10-04: a roadside firewood **vendor**, not a processor + conveyor.
+The Request and Spec above are superseded where they disagree with this note.
+
+`assets/models/splitting-yard.glb` shipped across f037556 → 0f0a60f → 9349935 (merged 305a3cf).
+It is in the game as the `firewoodYard` POI (`src/poi.js`), the region-1 haul giver of FEAT-91.
+
+- **Contents:** a red towable gas-hydraulic splitter (one hose to the base-end control valve), a
+  rounded pile of splits, a pyramid row of 30 shrink-wrapped bundles (11/10/9), and the ASSET-06
+  awning with two camp chairs composited at `SpotAwning`.
+- **Footprint:** fits the standard 14 × 8 m lay-by pad. Built footprint is 12.5 × 6.4 m.
+- **Tris: 4972** against the 2500 budget, 12 materials, zero images. The overrun is the owner's
+  call (the awning + chairs alone add about 560).
+- **No truck bay, no conveyor.** `BayFirewood` and `ReleaseFirewood` are gone. Loading is a painted
+  drop zone between the row and the pile, held as data in the `poi.js` roster (`drop`), not as a
+  model empty. See FEAT-88 "As built".
+- **`SpotPickup`** reserves room for the vendor's own pickup and stays EMPTY until our own non-hero
+  pickup exists (ASSET-19). Never hilux.glb.
+- Sources: `assets/models/src/splitting-yard.py` + `.blend` (the `wip/` copy is stale).

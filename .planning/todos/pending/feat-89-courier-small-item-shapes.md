@@ -30,6 +30,10 @@ roguelike run; *errand*, does not flow and speech-to-text mishears it). "A couri
 family key `delivery` in `data/offers.js` / `offer-board.js` is renamed to `courier` as part of this
 ticket, so the card, the map diamond legend and the code agree.
 
+**Courier is near-universal (owner, 2026-10-06):** "pretty much any POI can" post courier jobs.
+Every `SOURCES` row lists it unless the place has a reason not to. Larry's house stays papers-only,
+because he is the paper route. The firewood yard and the new `farm` (FEAT-96) gain it.
+
 ## The three shapes
 
 One family, one scoring axis, **three route shapes**. A shape changes where you go, not what is

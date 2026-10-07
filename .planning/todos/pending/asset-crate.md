@@ -51,6 +51,10 @@ plain cube — and texture everywhere else.
 
 - Own work → no `CREDITS.md` entry needed.
 - `mass_kg: 18` is **inert today** (FEAT-36 / FEAT-48), same rule as ASSET-03.
+- **2026-10-06 (owner):** this crate is the fragile catch-all for FEAT-97's first slice, beside the
+  pelican case (ASSET-39). The named fragile items do get their own models later (ASSET-40..45),
+  which supersedes "never a new mesh" below for those items. The texture row in the Spec predates
+  ART-STYLE's flat-colour rule; follow ART-STYLE.
 - **One crate, many cargoes.** Vase, eggs, errand goods and barn finds all render as this. If a
   cargo ever needs to be visually distinct, vary the **stencil via UV offset into a shared strip** —
   the same trick as ASSET-22's house numbers — never a new mesh. `items.md` is explicit that a dozen

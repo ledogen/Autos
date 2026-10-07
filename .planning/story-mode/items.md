@@ -513,7 +513,7 @@ repair"). These are the items money mostly exists to replace.
 | **Tires** | Slip, load, surface | Wear deliberately accelerated as an economic driver; puncture is a hard fail |
 | **Engine** | Torque-hours, redline time, over-temp | Overheat → power loss → engine wear → blown head gasket is the specified chain |
 | **Air filter** | Intake load over time | **The one the player must watch** — does ~nothing until it does. Gets the can't-miss warning |
-| **Suspension** | Bump-stop over-travel / suspension-velocity spikes | Same signal `missions.md` §3b reads for fragile cargo — one plumbing, two consumers |
+| **Suspension** | Bump-stop over-travel / suspension-velocity spikes | ~~Same signal `missions.md` §3b reads for fragile cargo~~ — fragile now reads the strap force instead (FEAT-97, 2026-10-06) |
 | **Brakes** | ∫(brake torque × time); pad grade per axle sets bias | Front/rear pad grades are also a *character* choice |
 | **Radiator** | Cooling headroom; front-end impacts | Early cooling is *designed* marginal. A strong front hit punctures it |
 
@@ -635,14 +635,19 @@ each entry here is really an instance of a type in `missions.md` §3.
 |---|---|---|---|
 | **Newspapers** | Paper route — **coverage** | Light; a fixed stack that is also the mission's second budget | Running out of daylight with papers left |
 | **Milk / small errand goods** | Point-to-point — **margin** | Light | Crashing; earning nothing. *Perishable: dies overnight if you camp mid-job* — **quest fiction, not the §1b spoilage clock**; whether a cooler may assist here is open (§2) |
-| **Grandma's vase** | Fragile — **restraint** | Light–medium | Vertical shock. **The type that makes surface class (FEAT-38) matter** — the paved detour vs. the dirt shortcut |
-| **Eggs** | Fragile — **restraint** | Light | Same. *"Arrive with the eggs unbroken"* is the bible's own phrasing |
-| **Pallets / freight** | Freight — **mass does the work** | **Heavy** | The truck. Sustained load on a long grade is what marginal early cooling cannot survive |
+| **Grandma's vase** | Fragile — **restraint**, strapped (FEAT-97) | Light–medium | Shock through the strap. **The type that makes surface class (FEAT-38) matter** — the paved detour vs. the dirt shortcut |
+| **Eggs** | Fragile — **restraint**, strapped | Light | Same. *"Arrive with the eggs unbroken"* is the bible's own phrasing |
+| **Glass panes, piano, sculpture, artwork, x-ray machine** | Fragile — **restraint**, strapped | Light to **heavy** | Shock, and for the heavy ones the truck too. A crate or pelican case with flavour-text contents is the catch-all (ASSET-28 / ASSET-39; named items ASSET-40..45) |
+| **Pallets / freight** | Freight — **mass does the work**, strapped (FEAT-96) | **Heavy** | The truck. Sustained load on a long grade is what marginal early cooling cannot survive |
+| **Firewood bundles** | Haul — loose in the bed (FEAT-88) | 10–15 × 11 kg | Bouncing pieces out |
 | **Logs (downed)** | Clearance — main mission | Dragged, not carried | Being pulled sideways above a drop |
 
 > **Cargo is the only category whose "item" is mostly a mass value and a fragility flag.** Adding a
 > new cargo is a *content* act; adding a new scoring axis is a *design* act (`missions.md`). Keep the
 > two apart when burning these down — a dozen cargo assets is cheap, a fifth axis is not.
+
+**The master cargo list — every carried thing, by delivery type, tiered from early to late game —
+is `cargo.md`.** This table stays as the summary of the types.
 
 ## 5. Catch — fish
 
