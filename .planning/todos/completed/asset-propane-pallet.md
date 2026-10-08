@@ -1,10 +1,9 @@
 ---
 id: ASSET-72
 type: asset
-status: open
+status: done
 severity: minor
 opened: 2026-10-07
-blocked-by: ASSET-05 (the cylinder this reuses)
 relates: FEAT-96 (freight — the job this rides in), ASSET-05 (20 lb propane cylinder — reuse it),
   ASSET-27 (pallet)
 ---
@@ -46,3 +45,24 @@ differs, so there is no separate "empty" model.
 
 - The cab version (one cylinder, courier) is text on the card only and needs no model.
 - Own work → no `CREDITS.md` entry needed.
+
+## Closed — 2026-10-07
+
+Shipped `assets/models/propane-pallet.glb` (1692 tris / 1800, 4 materials, 0 images), sources
+`assets/models/src/propane-pallet.{py,blend}`, registry key `propanePallet`.
+
+- **Reuse by construction.** The generator imports `propane-tank.py` and `pallet.py` as modules,
+  so the cylinders are ASSET-05's geometry exactly (acceptance) and the pallet keeps its per-board
+  tints, which a `.glb` round trip would have dropped. Re-export after changing either source.
+- **Small pallet, not the ASSET-27 one** (owner, 2026-10-07: the 4-pack looked lost on the full
+  1.20 x 1.00). `pallet.py` became a two-variant kit; `pallet-small.glb` is 0.80 x 0.80 m, shipped
+  separately (`palletSmall`) as the base for small freight. `pallet.glb` re-exported byte-identical.
+- **Two straps, not one band** (owner, 2026-10-07): one per tank column, over both collars, down
+  the tank ends, round the deck's end boards and back under the top deck through the fork tunnels.
+  Each loop is the convex hull of the real tank profile + collar rim + deck corners, offset 2 mm,
+  so it follows the parts if they change. Measured clearance to tanks and pallet: exactly 2 mm.
+  Reuses `TankDark` — no material of its own.
+- One mesh: the join gives the tank corners the pallet's `COLOR_0`, set to white so glTF's multiply
+  is neutral on them. The exporter's "multiple materials with different Vertex Color" warning is
+  this, and expected.
+- Bounds 0.80 x 0.81 x 0.61 m — fits the Ranger bed. Placement in the bed is FEAT-96.

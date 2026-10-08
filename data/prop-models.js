@@ -295,6 +295,18 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.31, 0.46, 0.31] },
   },
 
+  // ASSET-72 — propane 4-pack on the SMALL pallet, freight cargo (FEAT-96, strapped to the bed).
+  // 1692 tris; 0.80 x 0.61 x 0.81 m — the two straps wrap 5 mm past the deck ends (Z) and over
+  // the collars. Composited by propane-pallet.py from propane-tank.py + pallet.py (re-export it
+  // after changing either): 2 x 2 tanks, outlets -Z, two straps over the collars and back through
+  // the fork tunnels. One mesh, four materials (PalletWood + the tank's three), no textures.
+  // Same model full or empty: mass_kg 90 full / 50 empty (4 x 17 or 4 x 8, + pallet), inert until
+  // dynamic props (FEAT-36).
+  propanePallet: {
+    url: 'assets/models/propane-pallet.glb',
+    collision: { shape: 'box', size: [0.80, 0.61, 0.81] },
+  },
+
   gnome: {
     url: 'assets/models/gnome.glb',
     // 0.206 wide x 0.400 tall x 0.165 deep, measured off the GLB — inside the
