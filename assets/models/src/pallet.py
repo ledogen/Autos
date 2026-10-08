@@ -1,7 +1,14 @@
 """
 ASSET-27 — timber stringer pallet, parametric generator.
 
-Built for: Blender 5.2  |  Target: assets/models/pallet.glb (one piece, empty)
+Built for: Blender 5.2  |  Targets: assets/models/pallet.glb (one piece, empty)
+                               + assets/models/pallet-small.glb (ASSET-72)
+
+A TWO-VARIANT KIT (steel-drum.py packaging).  `pallet` is ASSET-27, unchanged.
+`pallet-small` (owner, 2026-10-07) is a 0.80 x 0.80 m base for small freight —
+the propane 4-pack looked lost on the full pallet.  Same construction, five top
+boards, shorter notches.  use(name) switches the module's layout globals, so
+every builder below reads one variant at a time.
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
 FOOTPRINT 1.20 x 1.00 m (owner, 2026-10-06): the ticket's 1.20 x 0.80 is the
@@ -32,12 +39,11 @@ import math
 # PARAMETERS
 # ---------------------------------------------------------------------------
 
-TRI_BUDGET = 300
+TRI_BUDGET = 300                     # per variant
 OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
 OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/pallet.blend"
-NAME = "pallet"
 
-W, L, H = 1.00, 1.20, 0.145          # across forks (X), along stringers (Y), height
+H = 0.145                            # height — shared, so the two stack alike
 T_DECK = 0.019                       # deck board thickness (3/4 in), top and bottom
 T_STR = 0.038                        # stringer thickness (1.5 in nominal)
 Z_STR0, Z_STR1 = T_DECK, H - T_DECK  # stringer spans between the decks
@@ -48,13 +54,29 @@ TOP_LEAD, TOP_MID = 0.140, 0.089
 # Bottom deck: three boards — both ends and the centre.
 BOT_W = 0.140
 
-# Four-way notches in each stringer's underside: 9 in long, 1.5 in deep,
-# centred between the bottom boards.
-NOTCH_LEN, NOTCH_DEPTH = 0.229, 0.038
-NOTCH_Y = 0.30
+NOTCH_DEPTH = 0.038      # four-way notches in each stringer's underside
+
+# Per-variant layout.  W across forks (X), L along stringers (Y); TOP_N_MID
+# mid boards between the two lead boards; notches 9 in (big) / 5.5 in (small)
+# long, centred between the bottom boards; SPLIT_BOARD = top board index
+# (0 = -Y lead) cracked lengthwise.
+VARIANTS = {
+    "pallet":       dict(OBJ="Pallet", W=1.00, L=1.20, TOP_N_MID=5,
+                         NOTCH_LEN=0.229, NOTCH_Y=0.30, SPLIT_BOARD=2),
+    "pallet-small": dict(OBJ="PalletSmall", W=0.80, L=0.80, TOP_N_MID=3,
+                         NOTCH_LEN=0.140, NOTCH_Y=0.165, SPLIT_BOARD=1),
+}
+
+
+def use(name):
+    """Point the layout globals at one variant; returns its name."""
+    globals().update(VARIANTS[name], NAME=name)
+    return name
+
+
+use("pallet")
 
 # Character.
-SPLIT_BOARD = 2          # top board index (0 = -Y lead) cracked lengthwise
 SPLIT_GAP = 0.008
 SPLIT_BREAK = 0.22       # one half is missing this much at its +X end
 CHEW = (0.050, 0.030)    # forklift chew on the +X stringer's -Y bottom corner (dy, dz)
@@ -120,7 +142,7 @@ class Part:
 
 def top_boards():
     """(y0, y1) of each top deck board, evenly gapped, -Y to +Y."""
-    widths = [TOP_LEAD] + [TOP_MID] * 5 + [TOP_LEAD]
+    widths = [TOP_LEAD] + [TOP_MID] * TOP_N_MID + [TOP_LEAD]
     gap = (L - sum(widths)) / (len(widths) - 1)
     out, y = [], -L / 2
     for w in widths:
@@ -147,7 +169,7 @@ def stringer_profile(chew=False):
 
 
 def build_pallet():
-    p = Part("Pallet")
+    p = Part(OBJ)
     for i, (y0, y1) in enumerate(top_boards()):
         if i == SPLIT_BOARD:
             ym = (y0 + y1) / 2
@@ -281,22 +303,27 @@ def _report(part, ob):
     return t
 
 
-def build(stack_preview=False):
-    """The .blend source view: one pallet (plus a second stacked on it when
-    stack_preview, for eyeballing the stack)."""
-    _fresh_scene()
-    print("=" * 60)
+def _build_one(dx=0.0):
     part = build_pallet()
+    part.v = [(x + dx, y, z) for (x, y, z) in part.v]
     ob = bake(part)
     _report(part, ob)
     check_normals(ob)
     check_stack()
-    if stack_preview:
-        ob2 = ob.copy()
-        ob2.location.z = H
-        bpy.context.collection.objects.link(ob2)
-    print("=" * 60)
     return ob
+
+
+def build():
+    """The .blend source view: every variant side by side along X."""
+    _fresh_scene()
+    print("=" * 60)
+    dx = 0.0
+    for name in VARIANTS:
+        use(name)
+        _build_one(dx)
+        dx += W / 2 + 0.3 + VARIANTS["pallet-small"]["W"] / 2
+    use("pallet")
+    print("=" * 60)
 
 
 def _ui_override():
@@ -308,27 +335,33 @@ def _ui_override():
 
 
 def export():
-    """Needs the GUI Blender (blender-mcp): `blender -b` has no VIEW_3D area."""
-    ob = build()
-    with bpy.context.temp_override(**_ui_override()):
-        bpy.ops.export_scene.gltf(
-            filepath=f"{OUT_DIR}/{NAME}.glb",
-            export_format="GLB",
-            export_draco_mesh_compression_enable=False,
-            export_yup=True,
-            export_apply=True,
-            export_materials="EXPORT",
-            export_vertex_color="ACTIVE",   # MATERIAL mode drops it: no attr node
-            export_texcoords=False,
-            export_normals=True,
-            export_cameras=False,
-            export_lights=False,
-            use_selection=False,
-        )
-    print(f"  wrote {OUT_DIR}/{NAME}.glb")
+    """One .glb per variant, each built ALONE in a fresh scene, then the side-
+    by-side scene saved as the .blend.  Needs the GUI Blender (blender-mcp):
+    `blender -b` has no VIEW_3D area."""
+    for name in VARIANTS:
+        use(name)
+        _fresh_scene()
+        print("=" * 60)
+        _build_one()
+        with bpy.context.temp_override(**_ui_override()):
+            bpy.ops.export_scene.gltf(
+                filepath=f"{OUT_DIR}/{NAME}.glb",
+                export_format="GLB",
+                export_draco_mesh_compression_enable=False,
+                export_yup=True,
+                export_apply=True,
+                export_materials="EXPORT",
+                export_vertex_color="ACTIVE",   # MATERIAL mode drops it: no attr node
+                export_texcoords=False,
+                export_normals=True,
+                export_cameras=False,
+                export_lights=False,
+                use_selection=False,
+            )
+        print(f"  wrote {OUT_DIR}/{NAME}.glb")
+    build()
     bpy.ops.wm.save_as_mainfile(filepath=OUT_BLEND)
     print(f"  wrote {OUT_BLEND}")
-    return ob
 
 
 if __name__ == "__main__":

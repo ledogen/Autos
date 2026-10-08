@@ -126,6 +126,13 @@ export const PROP_MODELS = {
     url: 'assets/models/pallet.glb',
     collision: { shape: 'box', size: [1.00, 0.145, 1.20] },
   },
+  // Small variant (owner, 2026-10-07) — 0.80 x 0.145 x 0.80 m, 244 tris, five top boards, same
+  // construction, same pallet.py kit. The base for small freight (first user: ASSET-72's propane
+  // 4-pack, which looked lost on the full pallet). Same height, so it stacks flush on itself.
+  palletSmall: {
+    url: 'assets/models/pallet-small.glb',
+    collision: { shape: 'box', size: [0.80, 0.145, 0.80] },
+  },
 
   // ASSET-28 / ASSET-68 — slatted wooden crates, one generator (assets/models/src/crate.py), four
   // .glb. Base-seated, stack flush. One material (CrateWood) with per-board vertex-colour tints;
