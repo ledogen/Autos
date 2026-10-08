@@ -43,8 +43,9 @@ because he is the paper route. The firewood yard and the new `farm` (FEAT-96) ga
   there: the school receives class notes, so a fetch from the school is "fetch class notes from a
   residence or farm and bring them back". The pickup is drawn from that thing's givers (`pools`);
   the return is the poster.
-- **OPEN (asked 2026-10-07):** the same day the owner ruled that the office and school post
-  nothing and only receive — but they are exactly the places this rule has posting fetch jobs.
+- **The office and school post nothing at all, fetch included** (owner, 2026-10-07 — answering
+  the conflict with their receive-only ruling). Fetch comes only from receivers that are already
+  sources: e.g. the general store fetching empty propane, a farm fetching tractor keys.
 
 ## The three shapes
 
