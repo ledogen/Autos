@@ -1,16 +1,17 @@
 ---
 id: FEAT-105
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-10-08
+closed: 2026-10-08
 source: owner, 2026-10-08 — the barn (ASSET-66) does not fit the 14 x 8 m pad; "look deeply into pad spawning and see what we can do to widen spawn criteria"
 relates: FEAT-71, FEAT-96, FEAT-60, FEAT-91, ASSET-66, ASSET-65, ASSET-67
 ---
 
 # FEAT-105: Pad supply — scan every edge, several pads per edge, bigger pads for farms
 
-## Built 2026-10-08 — branch `feature/feat-105`
+## Resolution (2026-10-08) — shipped, merged from `feature/feat-105`
 
 **Owner rulings (2026-10-08):** min spacing ~250 m; "we don't need a whole ton more spawn
 possibilities, just unlock what we need + margin"; seed layouts may reshuffle. The farm pad is
