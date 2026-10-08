@@ -484,6 +484,20 @@ export const PROP_MODELS = {
     tags: ['gasStation'],
   },
 
+  // ASSET-66 — the farm BARN, 708 tris, 4 materials, 0 images. Gambrel roof, closed sliding
+  // double doors + hayloft door on the gable, which faces -Z (the road). Walls 9.0 wide (X) x
+  // 12.0 deep (Z), ridge 8.0; the roof overhang makes it 10.0 x 12.7 overall.
+  // BODY ONLY: walls + plinth, up to the ridge. The roof overhang is left out (nothing drives
+  // under a 3.7 m eave), and the box is loose over the upper roof corners, which only a flying
+  // truck reaches.
+  // DOES NOT FIT the 14 x 8 m lay-by pad: 12.7 m deep. FEAT-96's farm yard needs a bigger pad.
+  // No pool tag: nothing places it until FEAT-96 composites the farm (with ASSET-65/67 + the
+  // produce stall). Do not tag it 'residence' to make it appear.
+  barn: {
+    url: 'assets/models/barn.glb',
+    collision: { shape: 'box', size: [9.1, 8.0, 12.1] },
+  },
+
   // ASSET-31 — ROAD FURNITURE: seven Californian roadside signs on a timber 4x4.
   // 52 tris each, three materials (SignPost / SignBack / SignFace), one 512x512 baked face
   // per sign. Built by ONE generator, assets/models/src/road-signs.py — the steel-drum
