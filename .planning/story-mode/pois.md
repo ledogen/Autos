@@ -111,6 +111,14 @@ Full 2500 m story region around the canonical spawn, shipped params, headless:
 |---|---|---|---|---|---|---|---|---|
 | Viable pads | 41 | 43 | 44 | 44 | 45 | 48 | 51 | 54 |
 
+**Re-measured 2026-10-08 (FEAT-105)** — several pads per edge (250 m apart along it), plus the
+farm's own 22 x 11.2 m pad kind. Every seed fills 23/23 with all three farms on farm pads:
+
+| Seed | 11 | 90 | 3 | 31337 | 2024 | 42 | 777 | 6 |
+|---|---|---|---|---|---|---|---|---|
+| Lay-by pads (14 x 8) | 52 | 59 | 57 | 59 | 52 | 63 | 59 | 69 |
+| Farm pads (22 x 11.2) | 16 | 20 | 18 | 25 | 19 | 26 | 27 | 26 |
+
 A trial 23-slot roster filled **23/23** on the three sparsest seeds (11, 90, 3), each POI 200 m from
 its nearest neighbour at minimum and 540–620 m at the median (straight line). So region 1 has room
 for 18–31 more POIs. **Open, for later regions:** the map grows but gets sparser, so the POI count

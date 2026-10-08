@@ -12,7 +12,7 @@
 // its graded ground, never past the pad toward the road · and padSd's default branch is still the exact stadium the carve always used.
 
 import fs from 'node:fs'
-import { PoiSystem, POI_PARAMS, POI_ROSTER, YARD_POOLS, dressYard } from '../src/poi.js'
+import { PoiSystem, POI_PARAMS, POI_ROSTER, YARD_POOLS, padKinds } from '../src/poi.js'
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'
 import { padSd, PAD_RIM_HOLD } from '../src/road-carve.js'
 import { mulberry32 } from '../src/seed.js'
@@ -27,23 +27,30 @@ const P = { ...POI_PARAMS }
 let SEED = 0   // _pickStable reads the seed off the system, so build() sets it
 const poi = new PoiSystem({ getParams: () => ({}), getSeed: () => SEED })
 
-/** 36 pads on a 6 x 6 grid 600 m apart, each at its own yaw, in the record shape _evaluate emits. */
-function pool (seed) {
+/**
+ * 36 pads on a 6 x 6 grid 600 m apart, each at its own yaw, in the record shape _padsOnEdge emits —
+ * 30 lay-bys plus `farmPads` of every bigger kind (padKinds: the barn's 22 x 11.2), each on an edge
+ * of its own so nothing clashes. farmPads 0 is a region with no spot for a farm pad.
+ */
+function pool (seed, farmPads = 6) {
     const rnd = mulberry32(seed * 7919 + 1)
+    const big = padKinds(P).filter(k => k.key !== 'std')
     const out = []
     for (let i = 0; i < 36; i++) {
         const th = rnd() * Math.PI * 2
         const tx = Math.cos(th), tz = Math.sin(th)
         const nx = tz, nz = -tx
+        const kind = i >= 36 - farmPads ? big[i % big.length] : { key: 'std', halfLen: P.poiPadHalfLen, halfWid: P.poiPadHalfWid }
         out.push({
-            id: `poi:${i}`, x: (i % 6) * 600, z: Math.floor(i / 6) * 600, y: 100, tx, tz, nx, nz,
-            yaw: Math.atan2(nx, nz), halfLen: P.poiPadHalfLen, halfWid: P.poiPadHalfWid,
+            id: `poi:e${i}@0`, edge: `e${i}`, s: 100, padKind: kind.key,
+            x: (i % 6) * 600, z: Math.floor(i / 6) * 600, y: 100, tx, tz, nx, nz,
+            yaw: Math.atan2(nx, nz), halfLen: kind.halfLen, halfWid: kind.halfWid,
             cornerR: P.poiPadCornerR, cut: 0,
         })
     }
     return out
 }
-const build = seed => (SEED = seed, poi._assignRoster(pool(seed), { x: 1500, z: 1500 }, seed, P))
+const build = (seed, farmPads) => (SEED = seed, poi._assignRoster(pool(seed, farmPads), { x: 1500, z: 1500 }, seed, P))
 const radius = key => { const c = PROP_MODELS[key].collision; return c.radius ?? Math.hypot(c.size[0], c.size[2]) * 0.5 }
 
 // ── the pools ───────────────────────────────────────────────────────────────────────────────────
@@ -89,7 +96,8 @@ const modelsSeen = new Set()
 function checkYard (seed, q, sats) {
     dressed++; props += sats.length
     hist[Math.min(sats.length, 6)]++
-    if (sats.length < 3 || sats.length > 6) bad.count.push(`${seed}:${q.type}/${q.modelKey}=${sats.length}`)
+    const [cMin, cMax] = PROP_MODELS[q.modelKey]?.yardCount ?? [3, 6]
+    if (sats.length < cMin || sats.length > cMax) bad.count.push(`${seed}:${q.type}/${q.modelKey}=${sats.length}`)
     const cs = Math.cos(q.modelYaw), sn = Math.sin(q.modelYaw)
     const toModel = (x, z) => { const wx = x - q.modelX, wz = z - q.modelZ; return [cs * wx - sn * wz, sn * wx + cs * wz] }
     const boxes = solidsOf(q)
@@ -133,19 +141,13 @@ for (let seed = 1; seed <= SEEDS; seed++) {
         }
         checkYard(seed, q, sats)
     }
-    // The clutter pool has no live consumer while the barn fills the farm pad, so dress a farm on
-    // the placeholder cube with a road-side strip — the shape the bigger farm pad will offer — to keep
-    // every clutter asset gated until it does.
-    const f = build(seed).find(q => q.type === 'farm')
-    const cubeFarm = { ...f, modelKey: null, collision: null, modelYaw: f.yaw, modelX: f.x, modelZ: f.z }
-    checkYard(seed, cubeFarm, dressYard(cubeFarm, seed, [{ x: 0, z: -2.5, halfX: 6.5, halfZ: 1.5 }]))
 }
 console.log(`       ${dressed} yards over ${SEEDS} seeds, ${props} props (${(props / dressed).toFixed(2)} each); ` +
     `count histogram 0..6: ${hist.join(' ')}`)
 const list = a => `${a.length}: ${a.slice(0, 6).join(', ')}`
-check('every residence is dressed (7 a region), and nothing without a yard is — a barn farm stays bare',
-    dressed === SEEDS * 8 && bad.bareGround.length === 0, `${dressed} dressed; bare ${list(bad.bareGround)}`)
-check('3–6 props per yard', bad.count.length === 0, list(bad.count))
+check('every residence and every farm on its farm pad is dressed (10 a region), nothing without a yard is',
+    dressed === SEEDS * 10 && bad.bareGround.length === 0, `${dressed} dressed; bare ${list(bad.bareGround)}`)
+check('3–6 props per house yard, 5–9 per farm yard (the model\'s yardCount)', bad.count.length === 0, list(bad.count))
 check('every prop stands wholly on the carved pad', bad.offPad.length === 0, list(bad.offPad))
 check('no prop overlaps the POI model\'s collision boxes', bad.inModel.length === 0, list(bad.inModel))
 check('no two props overlap', bad.overlap.length === 0, list(bad.overlap))
@@ -153,6 +155,25 @@ check('every prop is on the road side of its model', bad.backYard.length === 0, 
 check('every POI model stands on graded ground (pad + the carve\'s rim band)', bad.modelOffPad.length === 0, list([...new Set(bad.modelOffPad)]))
 check('…and none reaches past the pad toward the road', bad.modelRoadSide.length === 0, list([...new Set(bad.modelRoadSide)]))
 check('the barn is on the board (the farm model)', modelsSeen.has('barn'))
+
+// ── FEAT-105: farms take farm pads; a region without one falls back to the broadside barn ─────────
+{
+    let onBig = true, fallback = true, bare = true, full = true
+    for (let seed = 1; seed <= 40; seed++) {
+        const farms = build(seed).filter(q => q.type === 'farm')
+        onBig &&= farms.length === 3 && farms.every(q => q.padKind === 'barn' && q.modelKey === 'barn')
+        const none = build(seed, 0)
+        const f0 = none.filter(q => q.type === 'farm')
+        full &&= none.length === POI_ROSTER.reduce((n, s) => n + s.count, 0)
+        fallback &&= f0.length === 3 && f0.every(q => q.padKind === 'std' && q.modelKey === 'barnBroadside')
+        bare &&= f0.every(q => q.satellites.length === 0)
+    }
+    check('with farm pads in the pool, every farm stands on one, wearing the gable-to-road barn', onBig)
+    check('with none, every farm falls back to a lay-by and the broadside barn — the roster stays full', fallback && full)
+    check('…and a fallback barn has no yard, so no clutter', bare)
+    const lay = build(3).filter(q => q.type !== 'farm')
+    check('no other class ever takes a farm pad', lay.every(q => q.padKind === 'std'))
+}
 const allKeys = [...new Set(Object.values(YARD_POOLS))].flatMap(modelsTagged)
 check('every pool member actually appears somewhere', allKeys.every(k => keysSeen.has(k)),
     allKeys.filter(k => !keysSeen.has(k)).join(', '))
