@@ -125,7 +125,7 @@ choose, too many and a good job is always nearby; aim for the count where that g
 | 5. Stranded motorist | FEAT-102 |
 | 6. Job site POI (R1, on the wall) | FEAT-103 |
 | 7. Minimal shop at the required classes | FEAT-104 |
-| Placeholder-replacing models: school, office, doctor's office, job site | ASSET-68..71 |
+| Placeholder-replacing models: school, office, doctor's office, job site | ASSET-73, ASSET-69..71 |
 | Later, behind SM-4: bosses, region modifiers, motorist relocation, counts scaled to region size | — |
 
 ### Candidate classes — liked, not adopted (owner 2026-10-07: "ship something first")

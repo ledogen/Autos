@@ -223,7 +223,7 @@ export const POI_ROSTER = [
     // guarantee here without re-reading that sentence.
     { type: 'residence',    count: 5, modelPool: 'residence', siting: 'any' },
     // Farms, office, school and doctor stand on placeholder cubes until their models ship
-    // (farm: ASSET-65..67 composite; school/office/doctor: ASSET-68/69/70).
+    // (farm: ASSET-65..67 composite; school/office/doctor: ASSET-73/69/70).
     { type: 'farm',         count: 3, model: null, siting: 'any' },
     { type: 'office',       count: 1, model: null, siting: 'any' },
     { type: 'school',       count: 1, model: null, siting: 'any' },

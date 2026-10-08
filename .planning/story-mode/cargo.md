@@ -49,6 +49,7 @@ Every courier thing is a phrase on the card. Nothing renders.
 | R1 | a private note | | existing (any normal giver) |
 | R1 | much-needed reading glasses | generalStore → any | |
 | R1 | keys for the tractor | any → farm | existing |
+| R1 | a 20 lb propane cylinder (full, or an empty going back to refill) | full: gasStation / generalStore → any · empty: any → gasStation / generalStore | owner 2026-10-07; full 17 kg, empty ~8 kg. Nearly every place uses them and sends empties back, so both legs are generic. The bed version is the freight 4-pack |
 | R1 | a chainsaw · a splitting axe · a shovel | generalStore → firewoodYard / sawmill / quarry / farm | existing. Owner 2026-10-07; ~6 / 3 / 2 kg. Cargo for the yard crews, not a player tool (items.md §7 keeps the chainsaw out as a general item) |
 | R1 | two bags of takeout · a week of groceries · their prescription | foodVendor / generalStore / residence / doctor → any (as today) | existing |
 | R1 | a hubcap · a headlight · a taillight · a set of wheel bearings | autoShop → any | existing |
@@ -91,6 +92,7 @@ One per region, from the haul yards (FEAT-91).
 | R1 | pallet of potting soil | generalStore → any | ASSET-47 | 300–400 | |
 | R1 | steel car rims, a stack of 4 or 8 | autoShop → any | ASSET-53 | 40–100 | |
 | R1 | eight tyres, strapped | autoShop → any | ASSET-61 | 80–100 | |
+| R1 | propane 4-pack on a pallet (full, or empties back to refill) | full: gasStation / generalStore → any · empty: any → gasStation / generalStore | ASSET-72 (reuses ASSET-05's cylinder) | 50 (empty) – 90 (full) | owner 2026-10-07; the cab version is a courier thing |
 | R1 | drum · barrel · crate · pallet | | ASSET-30 / 29 / 28 / 27 | per FEAT-96 | FEAT-96's first slice, generic |
 | R2 | pallet of soft drinks | any → generalStore / foodVendor / gasStation | ASSET-46 | 350–450 | |
 | R2 | sheets of plywood | sawmill → any | ASSET-54 | 220–350 | longer than the bed, rides on the lowered tailgate |

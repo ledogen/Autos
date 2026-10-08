@@ -36,6 +36,17 @@ That path is load-bearing in three places — it is not a loose convention:
 a separate directory also means it can be gitignored wholesale later if the `.blend` files grow —
 `.glb` is the only artefact the game needs. `*.blend1` (Blender autosave) is already gitignored.
 
+### Work in progress lives in `wip/<name>/` until it is promoted
+
+Model in `wip/<name>/` at the repo root: generator, `.blend` and exported `.glb` side by side, with
+the generator's `OUT_DIR` pointing there. `wip/` is ignored by a line in `.git/info/exclude` — a
+local-only ignore, so other sessions never see the files as uncommitted work. It is not under
+`assets/` because `.gitignore`'s `!assets/**` re-includes anything there. **Promotion** is the
+owner's call: move the `.glb` to `assets/models/`, the `.py` + `.blend` to `assets/models/src/`,
+repoint `OUT_DIR`/`OUT_BLEND`, re-export once to prove the paths (it should come out
+byte-identical), then commit with the `data/prop-models.js` entry. Delete the `wip/` folder at
+promotion. Nothing in `wip/` is backed up, and `git clean -fdx` deletes it.
+
 ### A kit of variants is ONE generator and N `.glb` files
 
 When a ticket asks for "a kit" — three drums, seven road signs — the shape is **one `.py`, one
