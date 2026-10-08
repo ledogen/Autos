@@ -640,9 +640,11 @@ function boardRig (ms, nowH = 6) {
         const d = q.modelYaw - q.yaw
         const along = Math.abs(Math.cos(d)) * sx + Math.abs(Math.sin(d)) * sz
         const across = Math.abs(Math.sin(d)) * sx + Math.abs(Math.cos(d)) * sz
-        check(`${q.modelKey} fits its pad (${along.toFixed(1)} x ${across.toFixed(1)} m in a ` +
+        // FEAT-71: a `seat`ed model is off-centre across the pad, so its far side needs the room.
+        const seat = Math.abs(PROP_MODELS[q.modelKey].seat ?? 0)
+        check(`${q.modelKey} fits its pad (${along.toFixed(1)} x ${across.toFixed(1)} m, seat ${seat} m, in a ` +
               `${2 * POI_PARAMS.poiPadHalfLen} x ${2 * POI_PARAMS.poiPadHalfWid} m bay)`,
-            along <= 2 * POI_PARAMS.poiPadHalfLen && across <= 2 * POI_PARAMS.poiPadHalfWid)
+            along <= 2 * POI_PARAMS.poiPadHalfLen && across * 0.5 + seat <= POI_PARAMS.poiPadHalfWid)
     }
 
     // The marker is SOLID, and for a modelled one that means solid at its own size. Probe just
@@ -654,7 +656,8 @@ function boardRig (ms, nowH = 6) {
     check('a trailerHomeA marker exists to probe', !!t)
     const s3 = t.collision.size
     const cs = Math.cos(t.modelYaw), sn = Math.sin(t.modelYaw)
-    const toWorld = (lx, lz) => ({ x: t.x + cs * lx + sn * lz, z: t.z - sn * lx + cs * lz })
+    // modelX/Z, not the pad centre: the trailer is `seat`ed toward the back of its pad (FEAT-71).
+    const toWorld = (lx, lz) => ({ x: t.modelX + cs * lx + sn * lz, z: t.modelZ - sn * lx + cs * lz })
     const inside = toWorld(0, s3[2] * 0.5 - 0.2), outside = toWorld(0, s3[2] * 0.5 + 2.0)
     check('a modelled marker is solid at its own footprint',
         W.poi.queryContact(inside.x, t.y + 1.0, inside.z, 0.3) !== null)

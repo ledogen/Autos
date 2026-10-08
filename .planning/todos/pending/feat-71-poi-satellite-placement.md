@@ -4,7 +4,7 @@ type: feature
 status: open
 severity: minor
 opened: 2026-08-23
-updated: 2026-09-30
+updated: 2026-10-07
 relates: FEAT-46, FEAT-59, ASSET-01, ASSET-02, ASSET-03, ASSET-04, ASSET-05, ASSET-06, ASSET-07, ASSET-08, ASSET-27, ASSET-28, ASSET-29, ASSET-30, FEAT-36
 ---
 
@@ -25,6 +25,44 @@ close FEAT-36** — placing meshes discharges neither the deterministic world-fi
 (gap 2) nor object↔object settling (gap 3). Do not close FEAT-36 from this ticket.
 
 # FEAT-71: POI-satellite placement — lawn furniture and yard clutter
+
+## Built 2026-10-07 — branch `feature/yard-clutter` (on top of `feature/places-and-missions`)
+
+**Owner rulings taken up front (2026-10-07):**
+
+- **Pools by class.** `residence` → `lawnFurniture` (flamingos, gnome, beach ball, bbq, propane,
+  camp chair); `farm` → `yardClutter` (drums ×3 variants, plastic barrel, pallet, plain crates,
+  propane). The awning and the tent stay out (big; the awning is already composited into the
+  firewood yard). Mom's and Larry's houses are residences and are dressed like the rest.
+- **3–6 props per yard, clustered** — an asset comes in a group of its own kind (`yardGroup`),
+  drums in 2–3s, flamingos in pairs.
+- **The yard is on the pad and on the ROAD side** — "otherwise we never see the yard props".
+  No parking exclusion for now ("we can always add an exclusion zone"; at the trailer you park on
+  the shoulder).
+- **Pad room: rounded-rectangle pad, house at the back.** Deepening the pad was measured first and
+  refused: 10 m deep cost ~35% of viable pads (5 of 8 census seeds fell short of the 23-slot
+  roster), 9 m still left 2 short. The pad stays 14 × 8 m; its carve went from a stadium (4 m round
+  ends) to a rounded rectangle with 1.5 m corners (`poiPadCornerR`), which costs **no** pads because
+  `_footprint` always tested the full rectangle. Each yard model gets a `seat` that slides it toward
+  the back edge.
+- **Farm yard now, on the placeholder cube** — authored on the roster slot; a farm model's own
+  `yard` replaces it when the ASSET-65..67 composite ships.
+
+**What shipped:**
+
+- `src/road-carve.js` `padSd` — the one pad signed-distance function (was two copies in road.js).
+  `cornerR` defaults to `halfWid`, which IS the old stadium (bit-identical, gated), so camp pads and
+  everything else are untouched; only POI pads pass `cornerR`.
+- `data/prop-models.js` — new fields `seat`, `yard` (POI models), `yardYaw`, `yardGroup`
+  (satellites); new entries `drumOpen`, `drumCrushed`, `barrelPlastic`, `campChair`; pool tags.
+  Trailer seated 1.7 m with two yard strips either side of the stoop (door path kept clear);
+  Winnebago seated 2.2 m, door-side flank to the road, one strip.
+- `src/poi.js` — `YARD_POOLS`, `dressYard()` (pure, `hash32` keyed on seed + pad id), `q.modelX/Z`
+  (the model origin; mesh, contact box, drop zone and yard read it — the pad centre still drives
+  the carve, ring and park trigger), `q.satellites`, re-stood on the carved ground after
+  `setPoiPads` (the bench sits `roadClearanceMargin` below `q.y`).
+- `src/main.js` — `_rebuildPoiMarkers` spawns the satellites (static meshes, no bodies).
+- `test/poi-yard.mjs` (fast) — the acceptance below, over 1500 synthetic yards.
 
 The consumer for every "small thing that stands near a POI". It does not exist, and its absence is
 what blocked every lawn-furniture and clutter asset from being placeable the day it shipped.

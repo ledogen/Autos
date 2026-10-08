@@ -27,6 +27,31 @@
 export const DEEP_BANK_TOE_EXTRA = 18  // m
 
 /**
+ * Signed distance (m, negative inside) from a pad's centre-relative point (dx, dz) to its edge.
+ * The shape is a rounded rectangle, halfLen along the pad tangent (tx, tz) by halfWid across it,
+ * with corner radius `cornerR` — which DEFAULTS TO halfWid, and a rounded rectangle whose corner
+ * radius is its half width is exactly the old stadium (a disc when halfLen == halfWid, as camp pads
+ * are). So only a pad that asks for square-ish corners changes shape, and the stadium branch keeps
+ * its original arithmetic bit-for-bit. FEAT-71: POI lay-by pads ask (poiPadCornerR), so a
+ * building can sit against the back edge and leave its yard on the road side; viability
+ * (poi.js _footprint) already tested the full rectangle, so this costs no pads.
+ */
+export function padSd(q, dx, dz) {
+    if (q.cornerR == null) {
+        // Stadium: project onto the spine (± (halfLen − halfWid) along the tangent), subtract the
+        // half width. Degenerate halfLen ≤ halfWid → a disc.
+        const a = Math.max(0, q.halfLen - q.halfWid)
+        let t = dx * q.tx + dz * q.tz
+        t = t < -a ? -a : t > a ? a : t
+        return Math.hypot(dx - q.tx * t, dz - q.tz * t) - q.halfWid
+    }
+    const r = q.cornerR
+    const u = Math.abs(dx * q.tx + dz * q.tz) - (q.halfLen - r)
+    const v = Math.abs(dz * q.tx - dx * q.tz) - (q.halfWid - r)
+    return Math.hypot(Math.max(u, 0), Math.max(v, 0)) + Math.min(Math.max(u, v), 0) - r
+}
+
+/**
  * Parabolic crown profile: raised at centerline, tapers to 0 at the ribbon edge.
  *
  * @param {number} uLat        — signed lateral distance from centerline (m); sign ignored.

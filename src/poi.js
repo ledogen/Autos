@@ -27,6 +27,7 @@ import { REGION_MARGIN } from './mission.js'          // FEAT-61: the wall a cus
 import { houseRungs } from './paper-route.js'         // FEAT-61: the ladder placement has to serve
 import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
 import { hash32, mulberry32 } from './seed.js'        // per-edge / per-POI PRNG keys (byte-stable)
+import { padSd } from './road-carve.js'               // FEAT-71: the pad's own shape, for the yard clip
 
 /** Tunables. Geometry + siting only — none of this may ever enter RANGER_PARAMS. */
 export const POI_PARAMS = {
@@ -45,6 +46,14 @@ export const POI_PARAMS = {
     poiPadHalfLen:    7.0,    // m — half length of the lay-by, along the road
     poiPadHalfWid:    4.0,    // m — half width, across the road
     poiPadGap:        0.6,    // m — gap from the shoulder edge to the pad's near side
+    // FEAT-71: corner radius of the carved pad (src/road-carve.js padSd). It was a stadium — round
+    // ends of radius poiPadHalfWid — which left no room behind a 12 m trailer's corners, so a
+    // building could only stand dead centre with its yard split front and back. Square-ish corners
+    // let a model's `seat` push it against the back edge and give the road side a real yard (owner,
+    // 2026-10-07). Free in pads: _footprint has always tested the full rectangle. Deepening the pad
+    // instead was measured and refused: 10 m deep cost ~35% of viable pads and 5 of 8 census seeds
+    // their full roster; 9 m still left 2 short.
+    poiPadCornerR:    1.5,    // m
     // EARTHWORK CAP — the "flat open ground" test, and the most consequential number here.
     // Measured against the ROAD-CARVED surface, not raw terrain: raw would charge the pad for the
     // road's own cut/fill (median 10 m of it on seed 6 — the road can sit deep in a bench), which
@@ -224,7 +233,10 @@ export const POI_ROSTER = [
     { type: 'residence',    count: 5, modelPool: 'residence', siting: 'any' },
     // Farms, office, school and doctor stand on placeholder cubes until their models ship
     // (farm: ASSET-65..67 composite; school/office/doctor: ASSET-73/69/70).
-    { type: 'farm',         count: 3, model: null, siting: 'any' },
+    // FEAT-71: until a farm has a model, its yard is authored here — the road-side strip of the pad,
+    // clear of the 1.6 m placeholder cube. A farm model's own `yard` replaces it when one ships.
+    { type: 'farm',         count: 3, model: null, siting: 'any',
+      yard: [{ x: 0, z: -2.5, halfX: 6.5, halfZ: 1.5 }] },
     { type: 'office',       count: 1, model: null, siting: 'any' },
     { type: 'school',       count: 1, model: null, siting: 'any' },
     { type: 'doctor',       count: 1, model: null, siting: 'any' },
@@ -243,7 +255,8 @@ export function dropZoneWorld (q) {
     if (!b) return null
     const yaw = q.modelYaw ?? q.yaw ?? 0
     const cs = Math.cos(yaw), sn = Math.sin(yaw)
-    return { x: q.x + b.x * cs + b.z * sn, y: q.y, z: q.z - b.x * sn + b.z * cs, yaw, halfX: b.halfX, halfZ: b.halfZ }
+    const ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
+    return { x: ox + b.x * cs + b.z * sn, y: q.y, z: oz - b.x * sn + b.z * cs, yaw, halfX: b.halfX, halfZ: b.halfZ }
 }
 
 /**
@@ -256,9 +269,116 @@ export function overDropZone (q, x, z, slack = 0) {
     if (!b) return false
     const yaw = q.modelYaw ?? q.yaw ?? 0
     const cs = Math.cos(yaw), sn = Math.sin(yaw)
-    const wx = x - q.x, wz = z - q.z
+    const wx = x - (q.modelX ?? q.x), wz = z - (q.modelZ ?? q.z)
     const dx = cs * wx - sn * wz, dz = sn * wx + cs * wz
     return Math.abs(dx - b.x) <= b.halfX + slack && Math.abs(dz - b.z) <= b.halfZ + slack
+}
+
+/**
+ * FEAT-71: which satellite pool (a data/prop-models.js tag) dresses a POI of each CLASS. Asked by
+ * tag, so mom's and Larry's houses — `residence` among their tags — are dressed like any other.
+ * A class missing here gets no yard at all: nothing spawns without an anchor that reads as owning
+ * it (a flamingo on bare dirt is litter, not habitation).
+ */
+export const YARD_POOLS = { residence: 'lawnFurniture', farm: 'yardClutter' }
+
+const YARD_GAP = 0.05    // m — clearance between two satellites; a cluster stands nearly touching
+const YARD_SOLID_GAP = 0.15   // m — clearance from the POI model's own collision boxes
+
+/**
+ * FEAT-71: place lawn furniture / yard clutter in POI `q`'s yard. Pure, and deterministic in
+ * (seed, q.id) — the same discipline as the model pick — so a re-stream of the region rebuilds the
+ * identical yard. Returns [{ key, x, y, z, yaw, variant, lift }] in world space; [] for a POI whose
+ * class has no pool or that has no yard.
+ *
+ * `yard` is rectangles in the MODEL's frame (prop-models.js `yard`). 3–6 props, in GROUPS: an asset
+ * comes with 1..n of its own kind (its `yardGroup`), the first on a random point of the yard and
+ * each next one nearly touching the last at a random bearing, so drums stand in twos and threes
+ * instead of evenly sprinkled. A candidate is a CIRCLE enclosing the asset's footprint at any yaw,
+ * and it is kept only if it lies wholly inside a yard rectangle AND the carved pad (padSd — so on
+ * graded ground, never off the edge onto raw hillside, and the pad already keeps clear of the road),
+ * clear of every model collision box, and clear of every satellite already placed.
+ *
+ * Static dressing only (owner, 2026-09-22): meshes, no bodies, no contact — the truck drives
+ * through them.
+ */
+export function dressYard (q, seed, yard) {
+    const tag = q.tags?.find(t => YARD_POOLS[t])
+    if (!tag || !yard?.length) return []
+    const pool = modelsTagged(YARD_POOLS[tag])
+    if (!pool.length) return []
+    const rnd = mulberry32(hash32(`poi-yard:${seed}:${q.id}`))
+    const want = 3 + Math.floor(rnd() * 4)
+    const yaw = q.modelYaw ?? q.yaw
+    const cs = Math.cos(yaw), sn = Math.sin(yaw)
+    const ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
+    // Model-frame (x, z) → world, the mapping the mesh uses.
+    const wx = (x, z) => ox + x * cs + z * sn
+    const wz = (x, z) => oz - x * sn + z * cs
+    // The model's solid footprint in its own frame; a keyless marker is the placeholder cube.
+    const c = q.collision
+    const cube = POI_PARAMS.poiCubeSize
+    const solids = (c?.boxes ?? [{ c: null, s: c?.size ?? [cube, cube, cube] }])
+        .map(b => ({ x: b.c ? b.c[0] : 0, z: b.c ? b.c[2] : 0, hx: b.s[0] * 0.5, hz: b.s[2] * 0.5 }))
+    const areas = yard.map(b => b.halfX * b.halfZ)
+    const areaSum = areas.reduce((a, b) => a + b, 0)
+
+    const placed = []   // { x, z, r } in the model frame
+    const fits = (x, z, r) => {
+        if (!yard.some(b => Math.abs(x - b.x) + r <= b.halfX && Math.abs(z - b.z) + r <= b.halfZ)) return false
+        if (padSd(q, wx(x, z) - q.x, wz(x, z) - q.z) + r > 0) return false
+        for (const b of solids) {
+            const ex = Math.max(Math.abs(x - b.x) - b.hx, 0), ez = Math.max(Math.abs(z - b.z) - b.hz, 0)
+            if (Math.hypot(ex, ez) < r + YARD_SOLID_GAP) return false
+        }
+        return placed.every(p => Math.hypot(x - p.x, z - p.z) >= r + p.r + YARD_GAP)
+    }
+    const randomPoint = () => {
+        let k = rnd() * areaSum, i = 0
+        while (i < yard.length - 1 && k > areas[i]) k -= areas[i++]
+        const b = yard[i]
+        return [b.x + (rnd() * 2 - 1) * b.halfX, b.z + (rnd() * 2 - 1) * b.halfZ]
+    }
+
+    const out = []
+    for (let groupTry = 0; out.length < want && groupTry < 24; groupTry++) {
+        const key = pool[Math.floor(rnd() * pool.length)]
+        const spec = PROP_MODELS[key]
+        const col = spec.collision
+        const r = col.radius ?? Math.hypot(col.size[0], col.size[2]) * 0.5
+        // A sphere's origin is its centre (the beach ball), so it stands on its radius.
+        const lift = col.shape === 'sphere' ? col.radius : 0
+        const [gMin, gMax] = spec.yardGroup ?? [1, 1]
+        const group = Math.min(want - out.length, gMin + Math.floor(rnd() * (gMax - gMin + 1)))
+        let last = null
+        for (let k = 0; k < group; k++) {
+            let at = null
+            for (let t = 0; t < 8 && !at; t++) {
+                let x, z
+                if (last) {
+                    const a = rnd() * Math.PI * 2, d = 2 * r + YARD_GAP + rnd() * 0.15
+                    x = last[0] + Math.cos(a) * d; z = last[1] + Math.sin(a) * d
+                } else [x, z] = randomPoint()
+                if (fits(x, z, r)) at = [x, z]
+            }
+            if (!at) break   // the group stops where the yard runs out; the next group tries elsewhere
+            placed.push({ x: at[0], z: at[1], r })
+            last = at
+            out.push({
+                key,
+                x: wx(at[0], at[1]),
+                // Provisional: build() re-stands it on the carved ground once the pads exist.
+                y: q.y + lift,
+                lift,
+                z: wz(at[0], at[1]),
+                // -Z faces the road (q.yaw, the PAD's yaw — not the model's, a broadside Winnebago
+                // must not turn the chairs with it), jittered by the asset's own yardYaw.
+                yaw: q.yaw + (rnd() * 2 - 1) * (spec.yardYaw ?? Math.PI),
+                variant: Math.floor(rnd() * 0x7fffffff),
+            })
+        }
+    }
+    return out
 }
 
 /** Region population (23 in R1), derived from the roster so the two can never drift apart. */
@@ -410,6 +530,13 @@ export class PoiSystem {
         this._pool = pool
         this._built = { x: center.x, z: center.z, r: radius, seed }
         road.setPoiPads(out)
+        // FEAT-71: stand the yard on the CARVED ground, which only exists now the pads are handed
+        // over. It is not q.y: the bench sits roadClearanceMargin under the pad's design top, and
+        // the road-side strip blends with the shoulder by a few cm.
+        const ground = this._d.getTerrain?.()
+        if (ground?.analyticHeight) {
+            for (const q of out) for (const sat of q.satellites) sat.y = ground.analyticHeight(sat.x, sat.z) + sat.lift
+        }
         return out
     }
 
@@ -694,11 +821,21 @@ export class PoiSystem {
                 // long axis lies along the pad's 14 m rather than across its 8 m — see yawOffset
                 // in data/prop-models.js. Both the mesh and the oriented contact box read THIS.
                 q.modelYaw = q.yaw + (spec?.yawOffset ?? 0)
+                // FEAT-71: where the MODEL stands, as opposed to q.x/q.z, the pad centre (which the
+                // carve, the ring and the park trigger keep using). `seat` slides it that many metres
+                // away from the road so its yard is the road side. Mesh, contact box, drop zone and
+                // yard all read THIS origin.
+                const seat = spec?.seat ?? 0
+                q.modelX = q.x + q.nx * seat
+                q.modelZ = q.z + q.nz * seat
                 // BUG-43: which colour from the model's curated palette. A slot may pin it (the
                 // two story houses must never match); otherwise a raw hash off the pad id, which
                 // spawnModel takes modulo the palette length. Ignored by a model with no palette.
                 q.modelVariant = slot.variant ?? hash32(`poi-variant:${seed}:${q.id}`)
                 q.drop = slot.drop ?? null   // FEAT-88 drop zone — see the firewoodYard slot
+                // FEAT-71: the lawn furniture / yard clutter standing in this POI's yard — the
+                // model's authored yard, else the slot's (a farm on its placeholder cube).
+                q.satellites = dressYard(q, seed, spec?.yard ?? slot.yard)
                 const i = free.indexOf(q)
                 if (i >= 0) free.splice(i, 1)
                 out.push(q)
@@ -865,7 +1002,7 @@ export class PoiSystem {
             // Broad phase in world space against the box's bounding radius (about the marker
             // origin, so an offset box is still enclosed) — cheap and rotation-proof, so the
             // oriented test below only runs for a marker actually within reach.
-            const wx = cx - q.x, wz = cz - q.z
+            const wx = cx - (q.modelX ?? q.x), wz = cz - (q.modelZ ?? q.z)
             const reach = Math.hypot(Math.abs(ox) + hx, Math.abs(oz) + hz) + r
             if (wx * wx + wz * wz > reach * reach) continue
             const bcy = q.y + oy                      // box centre: base-seated on the pad
@@ -1039,7 +1176,7 @@ export class PoiSystem {
             // (−sinθ, −cosθ), hence θ = atan2(nx, nz). Its +X then runs along the road, which is
             // also the only orientation a 12 m trailer fits a 14 × 8 m pad in.
             yaw: Math.atan2(nx, nz),
-            halfLen: P.poiPadHalfLen, halfWid: P.poiPadHalfWid,
+            halfLen: P.poiPadHalfLen, halfWid: P.poiPadHalfWid, cornerR: P.poiPadCornerR,
             // The mission start point: ON the road at this arc position, facing along the edge.
             roadX: cp.x, roadZ: cp.z,
         }

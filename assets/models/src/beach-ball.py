@@ -41,7 +41,7 @@ TRI_BUDGET = 320
 OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/beach-ball.glb"
 OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/beach-ball.blend"
 
-RADIUS = 0.20                # 0.40 m diameter, per the ticket
+RADIUS = 0.40                # 0.80 m diameter — x2 the ticket's 0.40 (owner 2026-10-07, FEAT-71)
 SEG = 18                     # meridians — MUST be a multiple of GORES
 STACKS = 8                   # latitude bands; tris = 2 * SEG * (STACKS - 1).
                              # EVEN, so one ring lands exactly on the equator at
