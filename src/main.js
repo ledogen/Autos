@@ -2815,9 +2815,12 @@ function _updateMissionRings () {
                     || paperRouteSystem.isActive()
   _updateDropMarks(onMission)
   const vp = vehicleState.position
+  // FEAT-102: a fetch's PICKUP wears its orange ring for the whole outbound leg — the one "park
+  // here" on screen while you are on a job, marking the area you park in to acquire the item.
+  const pickId = missionSystem?.pickupPoiId() ?? null
   for (const [id, ring] of _poiRings) {
     const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= POI_RING_SHOW_R
-    ring.visible = near && id !== activeId && !onMission && !ring.userData.hidden
+    ring.visible = id === pickId || (near && id !== activeId && !onMission && !ring.userData.hidden)
   }
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
@@ -3592,7 +3595,8 @@ gpsSystem = new GpsSystem(scene, {
     const s = missionSystem?.state
     // 'staging' counts: that is precisely when a POI job wants guidance, because the reason the
     // start zone exists is that you may be pointing the wrong way and have to decide which.
-    return (s === 'countdown' || s === 'staging' || s === 'running') ? missionSystem.mission : null
+    // FEAT-102: guideRoute(), not the mission — a fetch is guided one leg at a time.
+    return (s === 'countdown' || s === 'staging' || s === 'running') ? missionSystem.guideRoute() : null
   },
   getCar: () => vehicleState.position,
   // Read at BAKE time only (once per mission, plus while the bake is still partial): the design

@@ -453,6 +453,23 @@ export class MissionSystem {
     }
 
     /**
+     * FEAT-102: what the GPS guides along. A fetch's route lies exactly on top of itself, so a GPS
+     * tracking the WHOLE thing cannot tell the outbound pass from the return after the U-turn —
+     * it kept matching the outbound and pointing back at the pickup (owner, 2026-10-08). So each
+     * leg is handed over as its OWN route: a new object per leg, which gps.js re-bakes and
+     * re-acquires from zero (its identity seam). Any other job is its own route, as before.
+     */
+    guideRoute() {
+        const m = this.mission
+        if (!m?.legs) return m
+        if (!m._legRoutes) {
+            const k = m.legs[0].segIdx
+            m._legRoutes = [{ segments: m.segments.slice(0, k) }, { segments: m.segments.slice(k) }]
+        }
+        return m._legRoutes[this.leg ?? 0]
+    }
+
+    /**
      * FEAT-102: the item is acquired — main.js calls this when the parking brake latches at the
      * pickup (owner, 2026-10-08: "pull up and park; the item is instantly acquired"). Advances to
      * the return leg. False (and nothing changes) unless a fetch is running on its outbound leg.
@@ -998,7 +1015,7 @@ function fetchRoute (m, giverId) {
     return {
         ...m, par: time, distance, poly, polyCum, segments, edges: segments.length, end: home,
         fetch: true,
-        legs: [{ end: m.end, poiId: m.endPoiId, polyIdx: m.poly.length - 1 }, { end: home, poiId: giverId }],
+        legs: [{ end: m.end, poiId: m.endPoiId, polyIdx: m.poly.length - 1, segIdx: n }, { end: home, poiId: giverId }],
     }
 }
 
