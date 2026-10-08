@@ -32,6 +32,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS, POI_ROSTER, POI_COUNT } from '../src/poi.js'
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'
+import { PAD_RIM_HOLD } from '../src/road-carve.js'
 import { MissionSystem, REGION_MARGIN } from '../src/mission.js'
 import { OfferBoard } from '../src/offer-board.js'
 import { SOURCES } from '../data/offers.js'
@@ -398,7 +399,7 @@ function boardRig (ms, nowH = 6) {
         teleport () {}, setMapOpen () {}, onChange () {},
     })
     const { board, plan } = boardRig(ms)
-    let n = 0, tagged = 0
+    let n = 0, tagged = 0, shortest = Infinity
     const bad = [], tagBad = []
     for (let t = 6; t < 6 + 24 * 3; t += 4) {
         for (const id of board.sources()) for (const o of board.offers(id, t)) {
@@ -409,6 +410,7 @@ function boardRig (ms, nowH = 6) {
             // FEAT-100: a tagged thing always ends at a matching class.
             else if (to) {
                 tagged++
+                shortest = Math.min(shortest, r.distance)
                 const end = W.poi.list().find(q => q.id === r.endPoiId)
                 if (!end || !to.some(x => end.tags.includes(x))) tagBad.push(board.spec(o).thingId)
             }
@@ -433,7 +435,7 @@ function boardRig (ms, nowH = 6) {
         `${bad.length}/${n} failed: ${[...new Set(bad)].join(', ')}`)
     check('an offer for a tagged thing always ends at a matching class (FEAT-100)',
         tagged > 0 && tagBad.length === 0, `${tagBad.length}/${tagged}: ${tagBad.join(', ')}`)
-    console.log(`       ${n} offers planned over 3 days of turnover (${tagged} tagged)`)
+    console.log(`       ${n} offers planned over 3 days of turnover (${tagged} tagged; shortest tagged leg ${shortest.toFixed(0)} m — no floor, report-only)`)
 }
 
 // ── 7b. The POI start zone: no countdown, no hold, the clock starts at the threshold ────────────
@@ -640,11 +642,15 @@ function boardRig (ms, nowH = 6) {
         const d = q.modelYaw - q.yaw
         const along = Math.abs(Math.cos(d)) * sx + Math.abs(Math.sin(d)) * sz
         const across = Math.abs(Math.sin(d)) * sx + Math.abs(Math.cos(d)) * sz
-        // FEAT-71: a `seat`ed model is off-centre across the pad, so its far side needs the room.
-        const seat = Math.abs(PROP_MODELS[q.modelKey].seat ?? 0)
+        // FEAT-71: a `seat`ed model is off-centre across the pad. Its road-side face must stay on the
+        // pad; its far side may hang past the back edge by less than PAD_RIM_HOLD, the band the carve
+        // grades flat beyond every pad (the broadside barn hangs 1.15 m off the back).
+        const seat = PROP_MODELS[q.modelKey].seat ?? 0
+        const hw = POI_PARAMS.poiPadHalfWid
         check(`${q.modelKey} fits its pad (${along.toFixed(1)} x ${across.toFixed(1)} m, seat ${seat} m, in a ` +
-              `${2 * POI_PARAMS.poiPadHalfLen} x ${2 * POI_PARAMS.poiPadHalfWid} m bay)`,
-            along <= 2 * POI_PARAMS.poiPadHalfLen && across * 0.5 + seat <= POI_PARAMS.poiPadHalfWid)
+              `${2 * POI_PARAMS.poiPadHalfLen} x ${2 * hw} m bay + ${PAD_RIM_HOLD} m rim behind)`,
+            along <= 2 * POI_PARAMS.poiPadHalfLen && seat - across * 0.5 >= -hw
+            && seat + across * 0.5 <= hw + PAD_RIM_HOLD)
     }
 
     // The marker is SOLID, and for a modelled one that means solid at its own size. Probe just

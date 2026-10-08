@@ -30,8 +30,7 @@ model, no offers. Today they are half the destinations (`DEST_POI_CHANCE = 0.5` 
 | Spot | Form | Tags | Promises an object? | Status | Note |
 |---|---|---|---|---|---|
 | "Mile # pullout", "the turnaround", "the county line" … | landmark (`LANDMARKS`) | receives, empty | **no**: believably empty (owner 2026-09-26) | live | any job may end here |
-| "the Pruitt place", "the Hadley hollow" … | place (`[lastname] [PLACE_NOUNS]`) | receives, home | **some nouns**: ranch, orchard, barn | live (the grammar is still proposed) | farm, quarry and dairy removed 2026-10-07 (FEAT-99); see below |
-| "the airport" | institution | receives, institution | **yes** | proposed | the airport x-ray machine |
+| "the Pruitt place", "the Hadley hollow" … | place (`[lastname] [PLACE_NOUNS]`) | receives, home | **one noun**: barn | live (the grammar is still proposed) | farm, quarry, dairy removed 2026-10-07 (FEAT-99); ranch, orchard, acres, homestead moved to the farm's name forms the same day |
 
 **The tension, and the case for upgrading.** The believably-empty rule says a roadside name must not
 promise an object that isn't there. Landmarks pass it. Institution names fail it: "the school" with
@@ -42,7 +41,8 @@ forever.
 
 **Resolved 2026-10-07 (Places and Missions):** the school and the office are now POI classes (above),
 and `farm`, `quarry` and `dairy` leave `PLACE_NOUNS` so no roadside name promises a farm that isn't
-there (FEAT-99). The airport stays roadside for now.
+there (FEAT-99). **The airport is dropped** (owner, 2026-10-07: "we ain't modeling that"); the
+x-ray machine is generic cargo.
 
 ## Places and Missions — POI classes and the job budget [OWNER, 2026-10-07]
 
@@ -58,7 +58,7 @@ except the required classes is only a job giver and receiver for now.
 | Group | Classes (count) | Jobs |
 |---|---|---|
 | **Required (9)** | general store · food vendor (`foodVendor`) · auto shop ×2 (`autoShop`) · gas station ×2 · tackle shop · job site (`workSite`) · haul yard (FEAT-91: splitting yard R1, sawmill R2, quarry R3) | food vendor 2–3 always; haul yard 2 always; job site hosts the region boss; the rest 0–2 from the budget |
-| **Additional (12)** | residence ×5 · farm ×3 · office · school · doctor · stranded motorist | 0–2 each from the budget (motorist 0–1) |
+| **Additional (12)** | residence ×5 · farm ×3 (also tagged `residence`) · office · school · doctor · stranded motorist | 0–2 each from the budget; motorist 0–1, only their own ride to an auto shop; **office and school post nothing, they only receive** (owner, 2026-10-07) |
 | **Fixtures (R1)** | mom (`residence`, `mom`: you can sleep there, she receives) · Larry (`residence`, `larry`: always has a job, save his re-roll timer) | Larry 1 always |
 
 Region 1 is therefore **23 POIs**. Two of each gas station and auto shop stay, as today; scaling the
@@ -74,7 +74,12 @@ counts with region size comes later. The gas station and tackle shop posting job
   (not locked, under its cap). The board then shows about 12 + 2–3 + 2 + 1 ≈ 17–18.
 - **The lock rule (reverses 2026-09-27):** a completion **and** a cancel both lock the slot for a
   **fresh full expiry**, counted from that moment. Keeping the original timer let a player finish a
-  job ten minutes before it expired and get a new one straight away.
+  job ten minutes before it expired and get a new one straight away. A locked budget slot stays
+  parked on its place, which takes no new budget job until the lock clears (FEAT-101).
+- **Larry (owner, 2026-10-07):** his offer never expires and shows no timer; after a round he is
+  unavailable for **12 h**, then a fresh offer appears.
+- **The gas station posts** (propane) under the budget; the **tackle shop does not yet**: its first jobs
+  are FETCHING the general-store sundries (owner, 2026-10-07), which waits on FEAT-89.
 - **Determinism (SM-INV-12) holds:** the board stays a pure function of (seed, POI list, clock,
   completion/cancel log). The budget couples places' timing to each other, which is the accepted cost.
 

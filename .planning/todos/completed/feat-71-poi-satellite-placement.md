@@ -1,10 +1,11 @@
 ---
 id: FEAT-71
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-08-23
-updated: 2026-10-07
+updated: 2026-10-08
+closed: 2026-10-08
 relates: FEAT-46, FEAT-59, ASSET-01, ASSET-02, ASSET-03, ASSET-04, ASSET-05, ASSET-06, ASSET-07, ASSET-08, ASSET-27, ASSET-28, ASSET-29, ASSET-30, FEAT-36
 ---
 
@@ -26,7 +27,24 @@ close FEAT-36** — placing meshes discharges neither the deterministic world-fi
 
 # FEAT-71: POI-satellite placement — lawn furniture and yard clutter
 
-## Built 2026-10-07 — branch `feature/yard-clutter` (on top of `feature/places-and-missions`)
+> **Keys renamed 2026-10-07 (FEAT-98):** `burgerJoint` → `foodVendor`, `serviceShop` → `autoShop`.
+> `missionGiver` is retired: its five slots became the additional classes (pois.md § Places and
+> Missions) and its model pool is now `residence`. A farm also carries the `residence` tag.
+
+## Resolution (2026-10-08) — shipped, merged from `feature/yard-clutter`
+
+Residences (mom's and Larry's included) are dressed with 3–6 grouped `lawnFurniture` props on
+the road side of the model, deterministic in the seed, gated by `test/poi-yard.mjs`. **Farms are
+NOT dressed yet:** the farm POI now stands on the ASSET-66 barn, broadside and hanging 1.15 m off
+the back of the pad, and it fills the pad, so there is no yard (owner, 2026-10-08). The
+`yardClutter` pool is built and gated through a synthetic cube farm. It reaches the world
+with **FEAT-105** (pad supply + bigger farm pads), which gives the farm its yard back.
+
+Also in this merge: the gnome and beach ball were rebuilt at 2x and the camp chair at 1.1x, at
+the generator (the splitting yard was re-exported to match), and the gnome faces the road like
+the chair. Main's POI engine colliders (`PoiPhysics`) now sit at the seated model origin.
+
+## Built 2026-10-07
 
 **Owner rulings taken up front (2026-10-07):**
 
@@ -45,8 +63,8 @@ close FEAT-36** — placing meshes discharges neither the deterministic world-fi
   ends) to a rounded rectangle with 1.5 m corners (`poiPadCornerR`), which costs **no** pads because
   `_footprint` always tested the full rectangle. Each yard model gets a `seat` that slides it toward
   the back edge.
-- **Farm yard now, on the placeholder cube** — authored on the roster slot; a farm model's own
-  `yard` replaces it when the ASSET-65..67 composite ships.
+- **Farm yard now, on the placeholder cube** — SUPERSEDED 2026-10-08: the farm took the barn,
+  which fills the pad (see Resolution).
 
 **What shipped:**
 
@@ -73,8 +91,8 @@ what blocked every lawn-furniture and clutter asset from being placeable the day
 
 ## The gap
 
-`src/poi.js` resolves exactly one pool, `missionGiver` — "a place that hands out work" — via
-`modelPool` on a roster slot. A flamingo is not a place that hands out work and neither is a drum,
+`src/poi.js` resolves exactly one pool, `residence` — the homes a residence draws from — via
+`modelPool` on a roster slot. A flamingo is not a home and neither is a drum,
 so there is no path from a built `.glb` to a thing standing in a yard.
 
 | Asset | Model | Registry | Placed |

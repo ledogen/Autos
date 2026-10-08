@@ -282,3 +282,58 @@ export class PropPhysics {
 
   get chunkCount () { return this._chunks.size }
 }
+
+/**
+ * PoiPhysics — mirrors the story POI markers' solid boxes as engine static bodies.
+ *
+ * Same hole PropPhysics closed for trees (owner-reported 2026-10-07: Larry's house "damaged my rims
+ * and was weirdly bouncy"): PoiSystem.queryContact is ANALYTIC-only, consumed by the wheel path, so
+ * the chassis drove straight into the trailer and only the tires pushed back — springy, and deep
+ * enough to bottom them onto the rims. This gives the bumper and body a rigid wall. Wheels keep
+ * the analytic query (their engine overlap filters to GROUP_DEBRIS), so nothing double-counts.
+ *
+ * The boxes are the SAME ones queryContact resolves: `collision.boxes` (model-local offsets) when
+ * the asset lists several, else one `collision.size` box base-seated on the pad, else the
+ * placeholder cube. One static body per marker, at its model origin (modelX/Z), yawed to modelYaw;
+ * each box is a hull.
+ */
+export class PoiPhysics {
+  constructor (engine) {
+    this._eng = engine
+    this._bodies = []
+  }
+
+  /** Rebuild every marker's collider from the live list (a handful per region — cheap). */
+  sync (list, cubeEdge) {
+    this.clear()
+    const mat = { friction: 0.8, restitution: 0 }   // same as props; chassis pair-μ stays BUG-27b slippery
+    for (const q of list) {
+      const c = q.collision
+      const yaw = q.modelYaw ?? q.yaw ?? 0
+      const body = this._eng.createBody({
+        // modelX/Z, not the pad centre: a model may be `seat`ed toward the back of its pad (FEAT-71).
+        type: 'static', position: { x: q.modelX ?? q.x, y: q.y, z: q.modelZ ?? q.z },
+        quaternion: { x: 0, y: Math.sin(yaw * 0.5), z: 0, w: Math.cos(yaw * 0.5) },
+        userData: { kind: 'poi', id: q.id },
+      })
+      const boxes = c?.boxes ?? [{ c: null, s: c?.size ?? [cubeEdge, cubeEdge, cubeEdge] }]
+      for (const b of boxes) {
+        const hx = b.s[0] * 0.5, hy = b.s[1] * 0.5, hz = b.s[2] * 0.5
+        const ox = b.c ? b.c[0] : 0, oy = b.c ? b.c[1] : hy, oz = b.c ? b.c[2] : 0
+        const pts = []
+        for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+          pts.push(ox + sx * hx, oy + sy * hy, oz + sz * hz)
+        }
+        this._eng.addHull(body, pts, mat)
+      }
+      this._bodies.push(body)
+    }
+  }
+
+  clear () {
+    for (const body of this._bodies) this._eng.destroyBody(body)
+    this._bodies.length = 0
+  }
+
+  get bodyCount () { return this._bodies.length }
+}

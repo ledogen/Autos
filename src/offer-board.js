@@ -2,16 +2,17 @@
 //
 // Spec: .planning/todos/pending/feat-67-visible-offer-board.md (every ruling there is binding).
 //
-// WHAT THIS OWNS. Every mission-source POI has a fixed number of SLOTS (data/offers.js SOURCES), and
-// every slot is always full. When an offer expires a new one is rolled into its slot straight away,
-// so the expiry length IS the turnover rate. A slot is empty in exactly two cases:
-//   • after a COMPLETION — until the taken offer's ORIGINAL expiry (and at least the source's
-//     `minEmptyH` after the completion; Larry's 24 h stops two paper rounds in one day);
-//   • after a CANCEL — locked for the offer's FULL expiry length, counted from the cancel. The time
-//     left on the original timer plays no part, so cancelling an expired offer is not free.
-// While an offer is TAKEN (accepted, being driven) its slot shows nothing and its timer keeps
-// running.
-//
+// WHAT THIS OWNS. Two kinds of slot (data/offers.js SOURCES; FEAT-101, pois.md § Job supply):
+//   • ALWAYS-ON — a place's own slots (Larry, the haul yard, the food vendor). When an offer expires
+//     a new one is rolled into its slot straight away, so the expiry length IS the turnover rate.
+//   • THE BUDGET — BUDGET_JOBS slots shared by every `cap` giver. When a budget offer expires its
+//     slot refills at once at a uniformly random ELIGIBLE giver: one with something to post, under
+//     its cap, and not locked.
+// THE LOCK RULE (owner, 2026-10-07): a COMPLETION and a CANCEL both lock the slot for a fresh full
+// expiry from that moment (or the source's `lockH`). A locked budget slot stays parked on its place
+// — which takes no new budget job meanwhile — then refills somewhere random. So finishing a job
+// never brings the next one sooner. While an offer is TAKEN its slot shows nothing.
+
 // PURE. No THREE, no road, no DOM. Imports only the two content tables, the seeded hash/PRNG, and
 // the economy's pure pay functions. main.js owns the board's lifetime (built when a story region
 // goes live, dropped on exit or a seed change) and hands it the clock on every query.
@@ -24,15 +25,17 @@
 //
 // DETERMINISM. Every roll draws from its own seeded stream (djb2 of a string key → mulberry32), so
 // the board is a pure function of (seed, POI list, clock, the completion/cancel log). Nothing reads
-// Math.random. The streams per offer are keyed `offer:<seed>:<poiId>:<slot>:<k>:<stream>`, where k
-// counts the offers that slot has held: `life` (how long it lasts), `spec` (what it is), `route`
+// Math.random. The streams per offer are keyed `offer:<seed>:<poiId>:<slot>:<k>:<stream>`, where
+// slot is an index (always-on) or `b<i>` (budget), and k counts the offers that slot has held: `life` (how long it lasts), `spec` (what it is), `route`
 // (the mission planner's rolls — handed out by routeRng). Per-POI streams (names, people, the
-// generic giver's expiry centre) are keyed `poi:<seed>:<poiId>:<what>`.
+// generic giver's expiry centre) are keyed `poi:<seed>:<poiId>:<what>`. Where a budget slot refills
+// is keyed `budget:<seed>:<slot>:<k>:place`. The budget couples places' timing to one another — the
+// accepted cost (pois.md) — so its events replay in GLOBAL time order (advance()).
 //
 // Offer ids are `${poiId}#${slot}#${k}` — stable, unique for the run, and readable in a log.
 
 import {
-    THINGS, REWARDS, SOURCES, EXPIRY_NOISE, BONUS_CHANCE, BONUS_PAY_MULT, GATE_WEIGHTS,
+    THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, BONUS_PAY_MULT, GATE_WEIGHTS,
     DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK,
 } from '../data/offers.js'
 import {
@@ -109,31 +112,58 @@ export class OfferBoard {
         this._pois = new Map()
         for (const q of pois || []) this._pois.set(q.id, q)
         this._names = new Map()       // poiId → { name, people }
-        this._slots = []              // every slot on the board
-        this._bySource = new Map()    // poiId → slots[]
+        this._always = new Map()      // poiId → its own slots (always-on sources)
+        this._budget = []             // the BUDGET_JOBS shared slots, b0…
+        this._slots = []              // every slot on the board: always-on first, then the budget
         this._rollNames()
 
         // Deterministic source order: the roster list's order is an assignment artefact, so sort by
         // id — the same discipline poi.js follows for placement.
-        for (const id of [...this._pois.keys()].sort()) {
+        const ids = [...this._pois.keys()].sort()
+        this._givers = ids.filter(id => this._postsAnything(this._pois.get(id).type))
+        this._budgetGivers = this._givers.filter(id => SOURCES[this._pois.get(id).type].cap)
+        for (const id of this._givers) {
             const q = this._pois.get(id)
             const src = SOURCES[q.type]
-            if (!src) continue
+            if (src.slots == null) continue
+            const n = Array.isArray(src.slots)
+                ? src.slots[0] + Math.floor(rngFor(`poi:${this._seed}:${id}:slots`)() * (src.slots[1] - src.slots[0] + 1))
+                : src.slots
             const slots = []
-            for (let i = 0; i < src.slots; i++) {
+            for (let i = 0; i < n; i++) {
                 const s = { poiId: id, type: q.type, slot: i, k: -1, offer: null, state: 'live', until: 0 }
                 this._roll(s, nowH)
-                // DESYNC AT WORLD START: each slot's first offer is given a random AGE, uniform over its
-                // own rolled life, so it starts partway through. Starting every timer at L/2 would line
-                // them all up — the thing to avoid. (Gated over 2000 seeds.)
-                const age = rngFor(`offer:${this._seed}:${id}:${i}:0:age`)() * s.offer.lifeH
-                s.offer.bornH = nowH - age
-                s.offer.expiresH = s.offer.bornH + s.offer.lifeH
+                this._desync(s, `offer:${this._seed}:${id}:${i}:0:age`, nowH)
                 slots.push(s)
-                this._slots.push(s)
             }
-            this._bySource.set(id, slots)
+            this._always.set(id, slots)
+            this._slots.push(...slots)
         }
+        for (let i = 0; i < BUDGET_JOBS; i++) {
+            const s = { poiId: null, type: null, slot: `b${i}`, k: -1, offer: null, state: 'idle', until: nowH }
+            this._budget.push(s)
+            this._slots.push(s)
+            this._refill(s, nowH)
+            if (s.state === 'live') this._desync(s, `budget:${this._seed}:b${i}:age`, nowH)
+        }
+    }
+
+    /** Does this type have anything it could post — a source row and at least one built thing? */
+    _postsAnything (type) {
+        const src = SOURCES[type]
+        return !!src && THINGS.some(t => t.pools.includes(type) && src.families.includes(t.family)
+            && BUILT_FAMILIES.has(t.family))
+    }
+
+    /**
+     * DESYNC AT WORLD START: a slot's first offer is given a random AGE, uniform over its own rolled
+     * life, so it starts partway through. Starting every timer at L/2 would line them all up — the
+     * thing to avoid. (Gated over 2000 seeds.) A never-expiring offer has no age to give.
+     */
+    _desync (s, key, nowH) {
+        if (!isFinite(s.offer.lifeH)) return
+        s.offer.bornH = nowH - rngFor(key)() * s.offer.lifeH
+        s.offer.expiresH = s.offer.bornH + s.offer.lifeH
     }
 
     // ── time ───────────────────────────────────────────────────────────────────────────────────
@@ -141,17 +171,56 @@ export class OfferBoard {
     /** Move the board's clock forward to `nowH`, replaying every expiry since. Never moves back. */
     advance (nowH) {
         if (!(nowH > this._now)) return
+        for (const slots of this._always.values()) for (const s of slots) this._advanceSlot(s, nowH)
+        // The budget's slots are COUPLED — where one refills depends on where the others sit — so
+        // their events replay in global time order, earliest first, ties to the lower slot. That is
+        // what keeps "one 30 h jump == 1800 one-minute steps" exact.
+        for (let guard = 0; guard < 100000; guard++) {
+            let next = null, t = Infinity
+            for (const s of this._budget) {
+                const e = s.state === 'live' ? s.offer.expiresH : s.state === 'taken' ? Infinity : s.until
+                if (e < t) { t = e; next = s }
+            }
+            if (!next || t > nowH) break
+            this._refill(next, t)
+        }
         this._now = nowH
-        for (const s of this._slots) this._advanceSlot(s)
     }
 
-    _advanceSlot (s) {
+    _advanceSlot (s, nowH) {
         // Bounded: a food slot turns over ~12×/day, so even a multi-day jump is a few dozen rolls.
         for (let guard = 0; guard < 100000; guard++) {
-            if (s.state === 'live' && s.offer.expiresH <= this._now) this._roll(s, s.offer.expiresH)
-            else if ((s.state === 'empty' || s.state === 'locked') && s.until <= this._now) this._roll(s, s.until)
+            if (s.state === 'live' && s.offer.expiresH <= nowH) this._roll(s, s.offer.expiresH)
+            else if (s.state === 'locked' && s.until <= nowH) this._roll(s, s.until)
             else return
         }
+    }
+
+    /**
+     * Move budget slot `s` to a uniformly random ELIGIBLE giver and roll its next offer there, born
+     * at `t`. Eligible: a budget giver holding fewer than its cap of budget slots (live, taken or
+     * locked — `s` itself aside, it is leaving) and with no LOCKED budget slot parked on it.
+     */
+    _refill (s, t) {
+        const eligible = this._budgetGivers.filter(id => {
+            let held = 0
+            for (const o of this._budget) {
+                if (o === s || o.poiId !== id || o.state === 'idle') continue
+                if (o.state === 'locked') return false
+                held++
+            }
+            return held < SOURCES[this._pois.get(id).type].cap
+        })
+        if (!eligible.length) {
+            // ponytail: retry hourly. Never fires at 12 jobs over ~17 givers × cap 2; a smarter
+            // wake-up (the next lock clearing) only matters if the budget nears total capacity.
+            s.state = 'idle'; s.poiId = null; s.type = null; s.offer = null; s.until = t + 1
+            return
+        }
+        const id = eligible[Math.floor(rngFor(`budget:${this._seed}:${s.slot}:${s.k + 1}:place`)() * eligible.length)]
+        s.poiId = id
+        s.type = this._pois.get(id).type
+        this._roll(s, t)
     }
 
     /** Put the next offer into slot `s`, born at `bornH`. Only its lifetime is drawn now. */
@@ -168,9 +237,13 @@ export class OfferBoard {
         s.until = 0
     }
 
-    /** An offer's rolled lifetime: the source's centre (per-POI for a [lo,hi] range) ± EXPIRY_NOISE. */
+    /**
+     * An offer's rolled lifetime: the source's centre (per-POI for a [lo,hi] range) ± EXPIRY_NOISE.
+     * Infinity for a source whose offers never expire (expiryH null — Larry).
+     */
     _lifeH (poiId, type, slot, k) {
         let centre = SOURCES[type].expiryH
+        if (centre == null) return Infinity
         if (Array.isArray(centre)) {
             const u = rngFor(`poi:${this._seed}:${poiId}:expiry`)()
             centre = centre[0] + (centre[1] - centre[0]) * u
@@ -190,15 +263,19 @@ export class OfferBoard {
 
     // ── queries ────────────────────────────────────────────────────────────────────────────────
 
-    /** Every source POI id, sorted. */
-    sources () { return [...this._bySource.keys()] }
+    /** Every POI that posts work (always-on or budget), sorted — including one empty right now. */
+    sources () { return this._givers.slice() }
 
-    /** The live offers at a POI, in slot order. Taken, empty and locked slots show nothing. */
+    /** Does this POI post work at all? A budget giver with nothing on offer right now still does. */
+    isGiver (poiId) { return this._givers.includes(poiId) }
+
+    /** Every slot currently at this POI: its own slots, then any budget slots parked there. */
+    _at (poiId) { return this._slots.filter(s => s.poiId === poiId) }
+
+    /** The live offers at a POI, in slot order. Taken and locked slots show nothing. */
     offers (poiId, nowH) {
         this.advance(nowH)
-        const slots = this._bySource.get(poiId)
-        if (!slots) return []
-        return slots.filter(s => s.state === 'live' && this.spec(s.offer)).map(s => s.offer)
+        return this._at(poiId).filter(s => s.state === 'live' && this.spec(s.offer)).map(s => s.offer)
     }
 
     /** Is this exact offer still on the board (not expired, not taken)? The accept guard. */
@@ -209,17 +286,17 @@ export class OfferBoard {
     }
 
     /**
-     * The absolute clock at which the NEXT slot at this POI turns over — an offer expiring, or an
-     * empty/locked slot re-rolling. That is the moment a new offer appears there. A taken slot does
-     * not count: what happens to it depends on the player. Null when nothing is scheduled.
+     * The absolute clock at which a new offer next appears HERE: one of this POI's own slots
+     * turning over (an offer expiring, a lock clearing). Budget slots do not count — where a budget
+     * slot refills is a roll, not a schedule. A taken slot does not count either: what happens to it
+     * depends on the player. Null when nothing is scheduled (or the offer never expires).
      */
     nextTurnoverH (poiId, nowH) {
         this.advance(nowH)
         let best = null
-        for (const s of this._bySource.get(poiId) || []) {
-            const t = s.state === 'live' ? s.offer.expiresH
-                    : (s.state === 'empty' || s.state === 'locked') ? s.until : null
-            if (t != null && (best == null || t < best)) best = t
+        for (const s of this._always.get(poiId) || []) {
+            const t = s.state === 'live' ? s.offer.expiresH : s.state === 'locked' ? s.until : null
+            if (t != null && isFinite(t) && (best == null || t < best)) best = t
         }
         return best
     }
@@ -227,7 +304,7 @@ export class OfferBoard {
     /** Slot states at a POI, for the map's grey-when-empty diamond: [{state, family}]. */
     slotStates (poiId, nowH) {
         this.advance(nowH)
-        return (this._bySource.get(poiId) || []).map(s => ({
+        return this._at(poiId).map(s => ({
             state: s.state, family: s.state === 'live' ? this.spec(s.offer)?.family ?? null : null,
         }))
     }
@@ -236,7 +313,7 @@ export class OfferBoard {
 
     /**
      * Accept: the offer leaves the board. Returns the offer, or null if it is no longer live (it
-     * expired while the panel was up — food offers live ~2 real minutes). Its timer keeps running.
+     * expired while the panel was up — food offers live ~2 real minutes).
      */
     take (offerId, nowH) {
         if (!this.isLive(offerId, nowH)) return null
@@ -245,39 +322,31 @@ export class OfferBoard {
         return s.offer
     }
 
-    /**
-     * A taken offer was finished — ANY settled result, D included. The slot waits out the offer's
-     * original expiry (and at least the source's `minEmptyH` from now), then re-rolls; finished
-     * after expiry, it re-rolls at once (unless minEmptyH says otherwise).
-     */
-    complete (offerId, nowH) {
-        this.advance(nowH)
-        const s = this._takenSlot(offerId)
-        if (!s) return false
-        s.state = 'empty'
-        s.until = Math.max(s.offer.expiresH, this._now + (SOURCES[s.type].minEmptyH ?? 0))
-        this._advanceSlot(s)
-        return true
-    }
+    /** A taken offer was finished — ANY settled result, D included. The slot locks (see header). */
+    complete (offerId, nowH) { return this._lock(offerId, nowH) }
 
     /**
      * A taken offer was CANCELLED — the player phoned the customer (the cancel button is the only
-     * caller). The slot locks for the offer's full expiry length from now: the giver is unhappy with
-     * you. Never free, even when the original timer has already run out.
+     * caller). The slot locks exactly as for a completion: never free, even when the original timer
+     * has already run out.
      */
-    abandon (offerId, nowH) {
+    abandon (offerId, nowH) { return this._lock(offerId, nowH) }
+
+    /** THE LOCK RULE: a fresh full expiry from now (or the source's lockH). */
+    _lock (offerId, nowH) {
         this.advance(nowH)
         const s = this._takenSlot(offerId)
         if (!s) return false
         s.state = 'locked'
-        s.until = this._now + s.offer.lifeH
+        s.until = this._now + (SOURCES[s.type].lockH ?? s.offer.lifeH)
         return true
     }
 
     _slotOf (offerId) {
         if (typeof offerId !== 'string') return null
         const [poiId, slot] = offerId.split('#')
-        return this._bySource.get(poiId)?.[Number(slot)] ?? null
+        if (slot?.[0] === 'b') return this._budget[Number(slot.slice(1))] ?? null
+        return this._always.get(poiId)?.[Number(slot)] ?? null
     }
 
     _takenSlot (offerId) {
@@ -292,7 +361,8 @@ export class OfferBoard {
      * changes WHAT it is. Null only if the source has no built thing to post (a table gap).
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate}|null, payMult,
-     *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null }
+     *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null,
+     *   passenger: boolean }
      * bundles is the haul load's piece count (FEAT-88), null for every other family. It is drawn on
      * its OWN `bundles` stream: one more draw on `spec` would shift the destination and place name
      * of every existing offer on every seed.
@@ -347,7 +417,7 @@ export class OfferBoard {
             // ÷ HAUL_PAR_SLACK: the haul's par is that much longer and pay rides par (data/offers.js).
             payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1),
             destKind: papers ? null : (thing.to || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
-            destPick, placeName, to: thing.to ?? null,
+            destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
         })
     }
 
@@ -357,7 +427,7 @@ export class OfferBoard {
      * an older offer still in its slot was necessarily live when this one was born.
      */
     olderSiblings (offer) {
-        return (this._bySource.get(offer.poiId) || [])
+        return this._at(offer.poiId)
             .filter(s => s.slot !== offer.slot && (s.state === 'live' || s.state === 'taken')
                 && (s.offer.bornH < offer.bornH || (s.offer.bornH === offer.bornH && s.slot < offer.slot)))
             .map(s => s.offer)
@@ -483,7 +553,9 @@ export class OfferBoard {
         const src = SOURCES[q.type]
         const forms = NAME_FORMS[q.type]
         const people = []
-        if (src) {
+        // Sources roll their people; so does a non-source with name forms (the office, the school),
+        // whose first person is only there to name it.
+        if (src || forms) {
             // A source with no name forms is named by its person alone (a stranded motorist), and is
             // ONE person — the card says "Earl needs…", and a second voice from the same wreck would
             // read oddly.
@@ -549,7 +621,8 @@ export class OfferBoard {
                 sentence.push({ t: ' needs ' }, { t: `${sp.bundles} bundles of ${sp.phrase}`, b: true },
                               { t: ' hauled to ' }, { t: dest, b: true }, { t: '.' })
             } else {
-                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' delivered to ' },
+                // A passenger is the poster themselves: "Earl needs a ride to Rust Belt Auto."
+                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: sp.passenger ? ' to ' : ' delivered to ' },
                               { t: dest, b: true }, { t: '.' })
             }
         }
@@ -560,7 +633,8 @@ export class OfferBoard {
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
         terms.push(`${sp.massKg} kg`)
         const expiresInH = offer.expiresH - nowH
-        terms.push(`expires in ${formatGameDuration(expiresInH)}`)
+        // A never-expiring offer (Larry's) shows no timer at all (owner, 2026-10-07).
+        if (isFinite(expiresInH)) terms.push(`expires in ${formatGameDuration(expiresInH)}`)
         return {
             family: sp.family,
             // The giver's portrait. PLACEHOLDER art today; `sex` is the field that will pick the

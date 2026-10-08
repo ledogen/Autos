@@ -18,12 +18,12 @@
 //   {the}           "The " or nothing (POI_THE_CHANCE)
 //   {adj}           an adjective and a space, or nothing (POI_ADJECTIVE_CHANCE)
 //   {biz}           a business type for this class (BUSINESS_TYPES), so a food vendor never rolls "Tires"
-// A form with no slot is a whole person-less name ("Bits & Bobs General Store"). A source class
-// with NO forms is named by its person alone ("Earl" — the stranded motorist).
+// A form with no slot is a whole fixed name. A source class with NO forms is named by its person
+// alone ("Earl" — the stranded motorist).
 //
 // PLACE (mid-road destinations that aren't a POI) — PROPOSED, not yet ruled:
 //           the [lastname] [place noun]  |  [landmark]
-//           → the Pruitt place · the Hadley homestead · Mile 4 pullout
+//           → the Pruitt place · the Hadley hollow · Mile 4 pullout
 
 // ── People ──────────────────────────────────────────────────────────────────────────────────
 
@@ -111,16 +111,13 @@ export const BUSINESS_TYPES = {
 
 /**
  * Name forms per class (see the header for the slots). Duplicates weight a form, as everywhere in
- * this file: the business classes list their rolled form three times so a person-less name is the
- * exception, not one in two. Person-less names are PLACEHOLDERS — the owner authors names.
+ * this file. Shop names come from the word lists above (owner, 2026-10-07): "{the}{adj}{biz}" is
+ * the person-less form — "The Honest Diner" — and "{first}'s {adj}{biz}" the owned one.
  */
 export const NAME_FORMS = {
-    generalStore: ['{the}{adj}{biz}', '{the}{adj}{biz}', '{the}{adj}{biz}',
-        'Bits & Bobs General Store', 'Odds & Ends'],
-    foodVendor:   ["{first}'s {adj}{biz}", "{first}'s {adj}{biz}", "{first}'s {adj}{biz}",
-        'The Greasy Spoon', 'Bun & Done'],
-    autoShop:     ["{first}'s {adj}{biz}", "{first}'s {adj}{biz}", "{first}'s {adj}{biz}",
-        'Rust Belt Auto', 'Lugnut Alley'],
+    generalStore: ['{the}{adj}{biz}'],
+    foodVendor:   ["{first}'s {adj}{biz}", '{the}{adj}{biz}'],
+    autoShop:     ["{first}'s {adj}{biz}", '{the}{adj}{biz}'],
     firewoodYard: ["{first}'s {adj}{biz}"],
     workSite:     ['{last} Construction', 'the {last} job site'],
     residence:    ['the {last} place', '{last} house', "{last}'s"],
@@ -139,11 +136,12 @@ export const HOUSEHOLDS = ['residence', 'farm']
 
 /**
  * The [place noun] in "the Pruitt place". No 'farm', 'quarry' or 'dairy' (owner, 2026-10-07): a
- * roadside name must not promise a farm that isn't there, and farms are POIs now.
+ * roadside name must not promise a farm that isn't there, and farms are POIs now. 'ranch',
+ * 'orchard', 'acres' and 'homestead' moved to the farm's NAME_FORMS the same day — a roadside
+ * "Baker homestead" would read as the farm of that name.
  */
 export const PLACE_NOUNS = [
-    'place', 'ranch', 'house', 'court', 'corner', 'orchard', 'barn', 'field', 'acres',
-    'homestead', 'estate', 'cabin', 'hollow'
+    'place', 'house', 'court', 'corner', 'barn', 'field', 'estate', 'cabin', 'hollow'
 ]
 
 /**

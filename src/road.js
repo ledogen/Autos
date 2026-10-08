@@ -31,7 +31,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { coarseHeight } from './terrain-height.js'   // the raw coarse layer — same function the terrain renders (road grade is amplitude-independent)
 import { createNoise2D } from 'simplex-noise'
-import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA, padSd } from './road-carve.js'
+import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA, padSd, PAD_RIM_HOLD } from './road-carve.js'
 import { truncatedHeightField, routeEdgeV2, profileSolve, dequantizeProfile, roundCrests, extendBorePortals, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule · portal placement
 import { PAR_REF } from './par.js'   // FEAT-82: the junction recovery is a vertical curve at par's junction-approach speed
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, reversePrimitives } from './centerline.js'
@@ -135,7 +135,7 @@ const HARD_GRADE_RUNGS = [2, 3, 6]
 // PAD_RIM_HOLD: full-depth carve band OUTSIDE the pad ring (m) — ≥ the terrain-grid cell diagonal
 // (1 m grid → 1.42 m) so no terrain triangle straddling the ring boundary can interpolate above the
 // pad asphalt (see _junctionPadCarve). Hardcoded: geometry only, no route-cache-signature effect.
-const PAD_RIM_HOLD = 1.6
+// Lives in road-carve.js (FEAT-71: poi-yard gates a model's overhang against it).
 // THE SOLVED PAD (_buildPadSurface): TPS sample lattice along each leg past its mouth (step, band
 // length, min spacing — m), the bake grid cell, how far past ring + rim hold the grid reaches before
 // handing back to the leg field, and the mouth ease (m inside a mouth over which the pad blends onto

@@ -231,12 +231,12 @@ export const POI_ROSTER = [
     // an existing seed. That is the licence this design is built on; do not add a stability
     // guarantee here without re-reading that sentence.
     { type: 'residence',    count: 5, modelPool: 'residence', siting: 'any' },
-    // Farms, office, school and doctor stand on placeholder cubes until their models ship
-    // (farm: ASSET-65..67 composite; school/office/doctor: ASSET-73/69/70).
-    // FEAT-71: until a farm has a model, its yard is authored here — the road-side strip of the pad,
-    // clear of the 1.6 m placeholder cube. A farm model's own `yard` replaces it when one ships.
-    { type: 'farm',         count: 3, model: null, siting: 'any',
-      yard: [{ x: 0, z: -2.5, halfX: 6.5, halfZ: 1.5 }] },
+    // Office, school and doctor stand on placeholder cubes until their models ship (ASSET-73/69/70).
+    // A farm is a residence too (owner, 2026-10-07), so anything bound for a residence may end at one.
+    // FEAT-71: the farm stands on the ASSET-66 barn, BROADSIDE (prop-models.js `barn`) — it fills the
+    // 14 x 8 pad, so a farm has no yard and no clutter until the bigger farm pad (FEAT-105) lands
+    // (owner, 2026-10-08). The farm composite (ASSET-65..67) replaces the lone barn later.
+    { type: 'farm',         count: 3, model: 'barn', siting: 'any', tags: ['residence'] },
     { type: 'office',       count: 1, model: null, siting: 'any' },
     { type: 'school',       count: 1, model: null, siting: 'any' },
     { type: 'doctor',       count: 1, model: null, siting: 'any' },
@@ -834,7 +834,7 @@ export class PoiSystem {
                 q.modelVariant = slot.variant ?? hash32(`poi-variant:${seed}:${q.id}`)
                 q.drop = slot.drop ?? null   // FEAT-88 drop zone — see the firewoodYard slot
                 // FEAT-71: the lawn furniture / yard clutter standing in this POI's yard — the
-                // model's authored yard, else the slot's (a farm on its placeholder cube).
+                // model's authored yard, else the slot's (none today; FEAT-105's farm pad will want one).
                 q.satellites = dressYard(q, seed, spec?.yard ?? slot.yard)
                 const i = free.indexOf(q)
                 if (i >= 0) free.splice(i, 1)

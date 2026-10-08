@@ -21,7 +21,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, syncChassisMass } from './physics.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
-import { TerrainPhysics, RoadPhysics, PropPhysics } from './terrain-physics.js'
+import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
 import { DebrisSystem, bedDropPoints, inBedWell } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
@@ -2448,6 +2448,8 @@ const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown
 // below (boot + seed rebuild). The terrain heightfields mirror the CARVED mesh, which sits
 // roadClearanceMargin BELOW the asphalt; without this mirror debris fell through the road.
 const roadPhysics = new RoadPhysics(physicsEngine)
+// POI marker solids for the chassis — rebuilt with the markers (_rebuildPoiMarkers).
+const poiPhysics = new PoiPhysics(physicsEngine)
 // Prop hard colliders (tree trunks, logs, rocks, boulders) as engine statics — the chassis'
 // rigid tree contact ("squishy trees" fix, 2026-08-15). Attached at every PropSystem creation.
 const propPhysics = new PropPhysics(physicsEngine, FLORA_PARAMS)
@@ -2645,6 +2647,7 @@ function _rebuildPoiMarkers () {
   _customerRings.clear()
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
+  poiPhysics.sync(poiSystem.list(), POI_PARAMS.poiCubeSize)   // MESH == PHYSICS: the body hits what you see
   for (const q of poiSystem.list()) {
     if (q.modelKey) {
       // receiveShadow too: a building is big enough to catch its neighbours' shadows and its own,
@@ -3612,8 +3615,9 @@ labSystem = new LabSystem(scene, () => ({
 const _boardView = {
   status (poiId) {
     const now = daySystem.clockH()
+    // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
+    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, nextText: null }
     const slots = offerBoard.slotStates(poiId, now)
-    if (!slots.length) return { source: false, family: null, nextText: null }
     const next = offerBoard.nextTurnoverH(poiId, now)
     return {
       source: true,

@@ -175,6 +175,13 @@ export const PROP_MODELS = {
     yardYaw: 0.15,   // squared to the yard, not strewn
     yardGroup: [1, 2],
   },
+  // Small variant (owner, 2026-10-07) — 0.80 x 0.145 x 0.80 m, 244 tris, five top boards, same
+  // construction, same pallet.py kit. The base for small freight (first user: ASSET-72's propane
+  // 4-pack, which looked lost on the full pallet). Same height, so it stacks flush on itself.
+  palletSmall: {
+    url: 'assets/models/pallet-small.glb',
+    collision: { shape: 'box', size: [0.80, 0.145, 0.80] },
+  },
 
   // ASSET-28 / ASSET-68 — slatted wooden crates, one generator (assets/models/src/crate.py), four
   // .glb. Base-seated, stack flush. One material (CrateWood) with per-board vertex-colour tints;
@@ -352,6 +359,18 @@ export const PROP_MODELS = {
     tags: ['lawnFurniture'],
     yardYaw: 0.5,
     yardGroup: [1, 2],
+  },
+
+  // ASSET-72 — propane 4-pack on the SMALL pallet, freight cargo (FEAT-96, strapped to the bed).
+  // 1692 tris; 0.80 x 0.61 x 0.81 m — the two straps wrap 5 mm past the deck ends (Z) and over
+  // the collars. Composited by propane-pallet.py from propane-tank.py + pallet.py (re-export it
+  // after changing either): 2 x 2 tanks, outlets -Z, two straps over the collars and back through
+  // the fork tunnels. One mesh, four materials (PalletWood + the tank's three), no textures.
+  // Same model full or empty: mass_kg 90 full / 50 empty (4 x 17 or 4 x 8, + pallet), inert until
+  // dynamic props (FEAT-36).
+  propanePallet: {
+    url: 'assets/models/propane-pallet.glb',
+    collision: { shape: 'box', size: [0.80, 0.61, 0.81] },
   },
 
   gnome: {
@@ -551,6 +570,31 @@ export const PROP_MODELS = {
     // flamingo rule above: do not re-tag it residence to make it appear. The slot arrives
     // with FEAT-50 refuelling, which is what gives a gas stop something to do.
     tags: ['gasStation'],
+  },
+
+  // ASSET-66 — the farm BARN, 708 tris, 4 materials, 0 images. Gambrel roof, closed sliding
+  // double doors + hayloft door on the gable, which faces -Z (the road). Walls 9.0 wide (X) x
+  // 12.0 deep (Z), ridge 8.0; the roof overhang makes it 10.0 x 12.7 overall.
+  // BODY ONLY: walls + plinth, up to the ridge. The roof overhang is left out (nothing drives
+  // under a 3.7 m eave), and the box is loose over the upper roof corners, which only a flying
+  // truck reaches.
+  // THE FARM POI's model (src/poi.js farm slot, owner 2026-10-08), until FEAT-96 composites the farm
+  // (with ASSET-65/67 + the produce stall). No pool tag — the slot names it — and do not tag it
+  // 'residence' to make it appear anywhere else.
+  //
+  // PARKED BROADSIDE, and HANGING 1.15 m OFF THE BACK of the 14 x 8 m pad — deliberately. Gable to
+  // the road it is 12.1 m deep against an 8 m pad, which no pad the generator can supply will hold
+  // (FEAT-105). Quarter-turned, its 12.1 m length lies along the pad's 14 m and only 9.1 m crosses
+  // it. Seated 0.6 m back, the front wall sits 0.05 m inside the pad's road edge and the back wall
+  // 1.15 m past its far edge — inside the 1.6 m band the carve holds at full depth beyond every pad
+  // edge (road-carve.js PAD_RIM_HOLD), so the whole plinth stands on flat graded ground. The cost:
+  // the doors (the -Z gable) face up or down the road, not at it. And it fills the pad, so a farm
+  // has NO YARD — no `yard` here, so no clutter — until the bigger farm pad lands.
+  barn: {
+    url: 'assets/models/barn.glb',
+    collision: { shape: 'box', size: [9.1, 8.0, 12.1] },
+    yawOffset: Math.PI * 0.5,
+    seat: 0.6,
   },
 
   // ASSET-31 — ROAD FURNITURE: seven Californian roadside signs on a timber 4x4.

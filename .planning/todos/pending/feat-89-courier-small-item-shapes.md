@@ -34,6 +34,23 @@ ticket, so the card, the map diamond legend and the code agree.
 Every `SOURCES` row lists it unless the place has a reason not to. Larry's house stays papers-only,
 because he is the paper route. The firewood yard and the new `farm` (FEAT-96) gain it.
 
+## Posting rule (owner, 2026-10-07)
+
+> "Go fetch me something … [it] posts and receives the same things that [a courier job] receives."
+> Terminology stays **courier** and **fetch** (owner, same day — not "one-way / two-way").
+
+- A fetch is posted by a place that **receives** that thing as a courier destination, and ends back
+  there: the school receives class notes, so a fetch from the school is "fetch class notes from a
+  residence or farm and bring them back". The pickup is drawn from that thing's givers (`pools`);
+  the return is the poster.
+- **The tackle shop's first jobs are fetch** (owner, 2026-10-07): the general-store sundries —
+  lightbulbs, screws, nails, duct tape, paper towels, toilet paper, rope, string, paper — go from
+  the store to anyone as courier jobs, and the tackle shop fetches them. Until fetch is built the
+  tackle shop posts nothing.
+- **The office and school post nothing at all, fetch included** (owner, 2026-10-07 — answering
+  the conflict with their receive-only ruling). Fetch comes only from receivers that are already
+  sources: e.g. the general store fetching empty propane, a farm fetching tractor keys.
+
 ## The three shapes
 
 One family, one scoring axis, **three route shapes**. A shape changes where you go, not what is

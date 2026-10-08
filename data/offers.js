@@ -26,14 +26,19 @@
 //   family   one of the families above
 //   massKg   [min, max] — rolled per offer, shown on the card as cargo weight
 //   pools    which sources may post it (keys of SOURCES below)
+//   passenger (optional) true when the thing is the poster themselves — the card says "a ride to …"
 //   to       (optional, FEAT-100) the POI tags it may be delivered to — a class (`farm`) or a
 //            fixture tag. Absent = generic: any POI or a roadside spot (cargo.md "From → to").
 //            Tagged things only ever end at a matching POI, never roadside.
 
 // "Any normal giver" — cargo.md's blank From (option C). Not the food vendor, the haul yard or
-// Larry: each has one kind of job and posts it outside the budget (pois.md § Job supply).
-const ANY_GIVER = ['generalStore', 'autoShop', 'workSite',
-    'residence', 'farm', 'office', 'school', 'doctor', 'strandedMotorist']
+// Larry: each has one kind of job and posts it outside the budget (pois.md § Job supply). Not the
+// office or school (they only receive) nor the motorist (they post only their own ride) — owner,
+// 2026-10-07.
+const ANY_GIVER = ['generalStore', 'autoShop', 'workSite', 'residence', 'farm', 'doctor']
+
+// Households: a residence or a farm (a farm is a residence too — it carries the tag).
+const HOME = ['residence', 'farm']
 
 export const THINGS = [
     // FEAT-88 haul. massKg is ignored for a haul thing — the card's weight is pieces × HAUL_BUNDLE_KG,
@@ -44,19 +49,53 @@ export const THINGS = [
     { id: 'takeout',    phrase: 'two bags of takeout',    family: 'delivery', massKg: [2, 5],
       pools: ['foodVendor'] },
     { id: 'groceries',  phrase: 'a week of groceries',    family: 'delivery', massKg: [10, 25],
-      pools: ['generalStore', 'residence'] },
+      pools: ['generalStore'] },
     { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
-      pools: ['residence', 'doctor'] },
+      pools: ['generalStore'] },
     { id: 'vase',       phrase: "grandma's vase",          family: 'fragile',  massKg: [3, 6],
       pools: ['residence'] },
-    // Courier, R1 (cargo.md). The note is generic, so every class has at least one built thing
-    // to post; the memo is the job site's own.
+    // Courier, R1 (cargo.md), one thing per row there.
     { id: 'note',       phrase: 'a private note',          family: 'delivery', massKg: [0.1, 0.1],
       pools: ANY_GIVER },
     { id: 'memo',       phrase: 'a memo from the foreman', family: 'delivery', massKg: [0.1, 0.1],
       pools: ['workSite'] },
+    { id: 'lunch',      phrase: 'lunch for the partner',   family: 'delivery', massKg: [1, 2],
+      pools: HOME },
+    { id: 'glasses',    phrase: 'much-needed reading glasses', family: 'delivery', massKg: [0.1, 0.1],
+      pools: HOME },
     { id: 'tractorKeys', phrase: 'keys for the tractor',   family: 'delivery', massKg: [0.1, 0.1],
       pools: ANY_GIVER, to: ['farm'] },
+    { id: 'classNotes', phrase: 'their class notes',       family: 'delivery', massKg: [0.3, 1],
+      pools: HOME, to: ['school'] },
+    { id: 'deck',       phrase: 'a presentation deck',     family: 'delivery', massKg: [0.5, 1.5],
+      pools: HOME, to: ['office'] },
+    // A 20 lb cylinder: ~7.7 kg of steel, plus 9.1 kg of propane when full. Full ones leave the
+    // store or a gas station; empties go back to either from anywhere (owner, 2026-10-07). The gas
+    // station posts nothing until FEAT-101 makes it a source, but it receives empties already.
+    { id: 'propaneFull',  phrase: 'a full 20 lb propane tank',  family: 'delivery', massKg: [16, 18],
+      pools: ['generalStore', 'gasStation'] },
+    { id: 'propaneEmpty', phrase: 'an empty 20 lb propane tank', family: 'delivery', massKg: [7, 9],
+      pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore', 'gasStation'] },
+    // General-store sundries (owner, 2026-10-07): store → anyone. They are also the tackle shop's
+    // first jobs — as FETCH, once FEAT-89 builds it (go get them from the store and bring them back).
+    { id: 'lightbulbs',   phrase: 'a box of lightbulbs',     family: 'delivery', massKg: [0.4, 0.8],
+      pools: ['generalStore'] },
+    { id: 'screws',       phrase: 'a box of screws',         family: 'delivery', massKg: [0.5, 1.5],
+      pools: ['generalStore'] },
+    { id: 'nails',        phrase: 'a box of nails',          family: 'delivery', massKg: [1, 3],
+      pools: ['generalStore'] },
+    { id: 'ductTape',     phrase: 'a roll of duct tape',     family: 'delivery', massKg: [0.3, 0.5],
+      pools: ['generalStore'] },
+    { id: 'paperTowels',  phrase: 'a pack of paper towels',  family: 'delivery', massKg: [1, 2],
+      pools: ['generalStore'] },
+    { id: 'toiletPaper',  phrase: 'a pack of toilet paper',  family: 'delivery', massKg: [2, 4],
+      pools: ['generalStore'] },
+    { id: 'rope',         phrase: 'a coil of rope',          family: 'delivery', massKg: [2, 5],
+      pools: ['generalStore'] },
+    { id: 'string',       phrase: 'a ball of string',        family: 'delivery', massKg: [0.1, 0.3],
+      pools: ['generalStore'] },
+    { id: 'paper',        phrase: 'a ream of paper',         family: 'delivery', massKg: [2.3, 2.6],
+      pools: ['generalStore'] },
     // Cargo for the yard crews, not a player tool (items.md §7). sawmill/quarry are R2/R3 classes.
     { id: 'chainsaw',   phrase: 'a chainsaw',              family: 'delivery', massKg: [5, 7],
       pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
@@ -64,6 +103,10 @@ export const THINGS = [
       pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
     { id: 'shovel',     phrase: 'a shovel',                family: 'delivery', massKg: [1.5, 2.5],
       pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
+    // A PASSENGER (cargo.md People): the motorist themselves, to an auto shop. `passenger` makes the
+    // card read "needs a ride to …"; the mass is the person, riding in the cab.
+    { id: 'motoristRide', phrase: 'a ride',                family: 'delivery', massKg: [55, 100],
+      pools: ['strandedMotorist'], to: ['autoShop'], passenger: true },
 
     // Larry posts papers and nothing else (owner, 2026-09-26).
     { id: 'papers',     phrase: 'the morning papers',      family: 'papers',   massKg: [5, 8],
@@ -111,39 +154,47 @@ export const REWARDS = [
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────
 //
-// Keyed by POI roster type (src/poi.js POI_ROSTER). A type that is NOT listed here posts nothing
-// (gas station, tackle shop, mom's house — the first two until FEAT-101).
+// Keyed by POI roster type (src/poi.js POI_ROSTER). A type that is NOT listed here posts nothing:
+// the tackle shop (nothing in THINGS yet), mom's house, and the office and school, which only
+// receive (owner, 2026-10-07).
 //
-//   slots      live offers at once. Every slot is always full, except after a completion or a cancel.
+// TWO KINDS OF SOURCE (FEAT-101, pois.md § Job supply):
+//   ALWAYS-ON — a `slots` row. The place keeps its own slots, outside the budget: Larry, the haul
+//              yard, the food vendor. Every slot is always full except while locked.
+//   BUDGET    — a `cap` row. The region shares BUDGET_JOBS live jobs among every budget giver; when
+//              one ends, its replacement lands on a uniformly random eligible giver.
+//
+//   slots      ALWAYS-ON: live offers at once. A [lo, hi] pair is rolled once per POI.
+//   cap        BUDGET: the most budget jobs this place holds at once (live, taken or locked).
 //   expiryH    offer lifetime in game-hours, as the centre value; EXPIRY_NOISE applies on top.
-//              A [lo, hi] pair means the centre is rolled once per POI in that range.
-//   minEmptyH  (optional, default 0) after a COMPLETION the slot never re-rolls sooner than this.
-//              Larry's 24 h is what stops two paper rounds in one day (owner, 2026-09-27).
+//              A [lo, hi] pair means the centre is rolled once per POI in that range. null = the
+//              offer never expires and shows no timer (Larry, owner 2026-10-07).
+//   lockH      (optional) lock length after a completion or cancel, replacing the fresh full expiry.
 //   families   which families this source may post
 
-// foodVendor means ANY FOOD VENDOR (owner, 2026-09-26): the player delivers ready-made meals as an
-// independent contractor (a Grubhub-style gig), not as staff — so this does not break opening.md's
-// "never work there again". Later regions add more food vendors under their own rolled names. Food
-// jobs are the bottom of the barrel: short, low-paying, posted often — filler for the last hours of
-// a day when no good job fits.
 export const SOURCES = {
-    generalStore: { slots: 2, expiryH: 24,       families: ['delivery', 'fragile'] },
-    foodVendor:   { slots: 3, expiryH: 2,        families: ['delivery'] },
-    larrysHouse:  { slots: 1, expiryH: 72,       families: ['papers'], minEmptyH: 24 },
-    autoShop:     { slots: 1, expiryH: 48,       families: ['delivery', 'freight'] },
+    // ── always-on ──
+    // Larry's paper route never expires and has no timer; after a round (or a cancel) he is
+    // unavailable for 12 h, then a fresh offer appears (owner, 2026-10-07).
+    larrysHouse:  { slots: 1,      expiryH: null, lockH: 12, families: ['papers'] },
     // FEAT-88/91: the region-1 haul yard. Haul only for now — FEAT-91 also has it give and take
     // courier jobs, which lands with FEAT-89.
-    firewoodYard: { slots: 2, expiryH: 24,       families: ['haul'] },
-    // Places and Missions (FEAT-98): the job site and the additional classes post ONE provisional
-    // slot each, on the retired generic giver's timing, until FEAT-101's region budget replaces it.
-    workSite:         { slots: 1, expiryH: [24, 72], families: ['delivery', 'freight'] },
-    residence:        { slots: 1, expiryH: [24, 72], families: ['delivery', 'fragile', 'demolition'] },
-    farm:             { slots: 1, expiryH: [24, 72], families: ['delivery', 'freight', 'fragile'] },
-    office:           { slots: 1, expiryH: [24, 72], families: ['delivery'] },
-    school:           { slots: 1, expiryH: [24, 72], families: ['delivery'] },
-    doctor:           { slots: 1, expiryH: [24, 72], families: ['delivery'] },
-    strandedMotorist: { slots: 1, expiryH: [24, 72], families: ['delivery'] },
+    firewoodYard: { slots: 2,      expiryH: 24, families: ['haul'] },
+    foodVendor:   { slots: [2, 3], expiryH: 2,  families: ['delivery'] },
+    // ── the budget (FEAT-101) ──
+    generalStore:     { cap: 2, expiryH: 24,       families: ['delivery', 'fragile'] },
+    autoShop:         { cap: 2, expiryH: 48,       families: ['delivery', 'freight'] },
+    // The gas station posts work too, reversing "some stores are just stores" (2026-09-26).
+    gasStation:       { cap: 2, expiryH: 24,       families: ['delivery'] },
+    workSite:         { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight'] },
+    residence:        { cap: 2, expiryH: [24, 72], families: ['delivery', 'fragile', 'demolition'] },
+    farm:             { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight', 'fragile'] },
+    doctor:           { cap: 2, expiryH: [24, 72], families: ['delivery'] },
+    strandedMotorist: { cap: 1, expiryH: [24, 72], families: ['delivery'] },
 }
+
+/** Live budget jobs shared by every `cap` source in the region (owner, 2026-10-07: "about 12"). */
+export const BUDGET_JOBS = 12
 
 // ── Haul loads (FEAT-88, owner 2026-10-04) ──────────────────────────────────────────────────
 //
@@ -176,14 +227,12 @@ export const HAUL_PAR_SLACK = 1.1
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
 export const EXPIRY_NOISE = 0.3
 
-// AFTER A COMPLETION (owner, 2026-09-27): no separate timer. The offer's original expiry keeps
-// running while it is taken; the slot stays empty until it runs out (and at least `minEmptyH`
-// after the completion), then rolls a new offer.
-//
-// AFTER A CANCEL (owner, 2026-09-27): the slot locks for the offer's FULL expiry length, counted
-// from the moment of cancel — the giver is unhappy with you. The time left on the original timer
-// plays no part, so cancelling an offer that has already expired is not free. Cancelling is a
-// button (the player phones the customer); nothing else cancels a job.
+// THE LOCK RULE (owner, 2026-10-07 — reverses the 2026-09-27 completion rule). A COMPLETION and a
+// CANCEL both lock the slot for a FRESH full expiry, counted from that moment (`lockH` overrides
+// the length). Keeping the original timer let a player finish a job ten minutes before it expired
+// and get a new one straight away. A locked budget slot stays parked on its place — which takes no
+// new budget job until the lock clears — and then refills at a random eligible place. Cancelling
+// is a button (the player phones the customer); nothing else cancels a job.
 
 // ── Roll shares (owner, 2026-09-26) ─────────────────────────────────────────────────────────
 

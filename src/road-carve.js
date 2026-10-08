@@ -27,6 +27,14 @@
 export const DEEP_BANK_TOE_EXTRA = 18  // m
 
 /**
+ * Full-depth carve band OUTSIDE a pad's edge (m) — ≥ the terrain-grid cell diagonal (1 m grid →
+ * 1.42 m) so no terrain triangle straddling the edge interpolates above the pad (see road.js
+ * _junctionPadCarve). Ground within this band of any pad is graded flat, which is what lets a POI
+ * model hang a little past its pad (FEAT-71: the broadside barn). Geometry only.
+ */
+export const PAD_RIM_HOLD = 1.6
+
+/**
  * Signed distance (m, negative inside) from a pad's centre-relative point (dx, dz) to its edge.
  * The shape is a rounded rectangle, halfLen along the pad tangent (tx, tz) by halfWid across it,
  * with corner radius `cornerR` — which DEFAULTS TO halfWid, and a rounded rectangle whose corner
