@@ -41,6 +41,13 @@
 //                       from the road, so it stands at the back of the pad and leaves the road side
 //                       for its yard. Default 0. The pad's corners are rounded only 1.5 m
 //                       (poiPadCornerR), which is what lets a long body get back there.
+//   seatAlong  number — FEAT-105, POI models only: metres the model slides along its OWN +X, for a
+//                       model that stands at one end of its pad (the barn, yard beside it). Default 0.
+//   pad        { halfLen, halfWid } — FEAT-105, POI models only: this model needs a BIGGER pad than
+//                       the 14 x 8 lay-by. Pass 1 sites pads of that size on their own scan, and only
+//                       those can hold it (src/poi.js padKinds). Depth costs far more pads than length.
+//   yardCount  [min, max] — FEAT-105, POI models only: how many satellites its yard takes. Default
+//                       [3, 6]; a bigger yard says so.
 //   yard       [{ x, z, halfX, halfZ }, ...] — FEAT-71, POI models only: the YARD, where satellites
 //                       may stand. Rectangles in the MODEL's own frame (same convention as a roster
 //                       slot's `drop`), on the ROAD side (owner, 2026-10-07: a yard behind the
@@ -578,19 +585,35 @@ export const PROP_MODELS = {
   // BODY ONLY: walls + plinth, up to the ridge. The roof overhang is left out (nothing drives
   // under a 3.7 m eave), and the box is loose over the upper roof corners, which only a flying
   // truck reaches.
-  // THE FARM POI's model (src/poi.js farm slot, owner 2026-10-08), until FEAT-96 composites the farm
-  // (with ASSET-65/67 + the produce stall). No pool tag — the slot names it — and do not tag it
-  // 'residence' to make it appear anywhere else.
+  // THE FARM POI's model (src/poi.js farm slot), until FEAT-96 composites the farm (with ASSET-65/67 +
+  // the produce stall). No pool tag — the slot names it — and do not tag it 'residence' to make it
+  // appear anywhere else. Two entries, one .glb: how it stands depends on the pad it got.
   //
-  // PARKED BROADSIDE, and HANGING 1.15 m OFF THE BACK of the 14 x 8 m pad — deliberately. Gable to
-  // the road it is 12.1 m deep against an 8 m pad, which no pad the generator can supply will hold
-  // (FEAT-105). Quarter-turned, its 12.1 m length lies along the pad's 14 m and only 9.1 m crosses
-  // it. Seated 0.6 m back, the front wall sits 0.05 m inside the pad's road edge and the back wall
-  // 1.15 m past its far edge — inside the 1.6 m band the carve holds at full depth beyond every pad
-  // edge (road-carve.js PAD_RIM_HOLD), so the whole plinth stands on flat graded ground. The cost:
-  // the doors (the -Z gable) face up or down the road, not at it. And it fills the pad, so a farm
-  // has NO YARD — no `yard` here, so no clutter — until the bigger farm pad lands.
+  // `barn` — ON ITS OWN FARM PAD (FEAT-105, owner 2026-10-08): 22 m along the road x 11.2 m deep,
+  // sited by its own scan (src/poi.js padKinds). Gable — the doors — to the road, standing at one
+  // end of the pad with the YARD BESIDE IT; length along the road is the cheap axis (roads follow
+  // contours, so the ground slopes ACROSS them), which is why the pad grows long, not deep.
+  //   seat 0.75: front wall 0.3 m inside the pad's road edge; back wall 1.2 m past its far edge,
+  //   inside the 1.6 m band the carve grades flat beyond every pad (road-carve.js PAD_RIM_HOLD).
+  //   seatAlong -5.5: the barn spans pad u -10.05..-0.95 of ±11, its front corners inside the
+  //   1.5 m pad corner rounding, its back corners 1.26 m into the rim band.
+  //   yard: road-side ground beside the barn, ~11.5 x 6.3 m (the pad centre is at model x +5.5,
+  //   z -0.75), dressed with 5–9 clutter props.
   barn: {
+    url: 'assets/models/barn.glb',
+    collision: { shape: 'box', size: [9.1, 8.0, 12.1] },
+    pad: { halfLen: 11, halfWid: 5.6 },
+    seat: 0.75,
+    seatAlong: -5.5,
+    yard: [{ x: 10.725, z: -3.225, halfX: 5.775, halfZ: 3.125 }],
+    yardCount: [5, 9],
+  },
+  // `barnBroadside` — THE FALLBACK, on a 14 x 8 lay-by when a region has no spot for a farm pad
+  // (owner 2026-10-08). Quarter-turned, its 12.1 m length lies along the pad's 14 m and only 9.1 m
+  // crosses it; seated 0.6 m back, the front wall sits 0.05 m inside the pad's road edge and the
+  // back wall 1.15 m into the rim band. The doors face up or down the road, and it fills the pad,
+  // so it has NO YARD and no clutter.
+  barnBroadside: {
     url: 'assets/models/barn.glb',
     collision: { shape: 'box', size: [9.1, 8.0, 12.1] },
     yawOffset: Math.PI * 0.5,

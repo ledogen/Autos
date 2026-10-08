@@ -31,7 +31,13 @@ import { padSd } from './road-carve.js'               // FEAT-71: the pad's own 
 
 /** Tunables. Geometry + siting only — none of this may ever enter RANGER_PARAMS. */
 export const POI_PARAMS = {
-    poiCandidates:    6,      // arcS candidates tried per carrying edge before giving up
+    poiCandidates:    6,      // arcS candidates tried per carrying edge, PER PAD KIND
+    // FEAT-105: every candidate that passes is kept if it is at least this far along the edge from
+    // the last one kept, so a long edge can offer several pads (it used to stop at the first). The
+    // owner asked for "what we need + margin", not a flood: a full 20 m scan was measured at
+    // 145–188 pads and 6–8 s per build against today's 41–54 and 0.9 s, so the tries stay random
+    // and few. The margin that was actually missing is farm-size pads, which get tries of their own.
+    poiPadSpacing:    250,    // m — owner, 2026-10-08: the closest two POIs may sit on one road
     // FEAT-60 SITING KNOBS. These bound the roster's *preferences*, never its count — see the
     // relax-the-distance-not-the-count rule on POI_ROSTER.
     poiNearSpawnR:    1000,   // m — 'nearSpawn' slots (mom's, Larry's) want to be inside this
@@ -233,10 +239,12 @@ export const POI_ROSTER = [
     { type: 'residence',    count: 5, modelPool: 'residence', siting: 'any' },
     // Office, school and doctor stand on placeholder cubes until their models ship (ASSET-73/69/70).
     // A farm is a residence too (owner, 2026-10-07), so anything bound for a residence may end at one.
-    // FEAT-71: the farm stands on the ASSET-66 barn, BROADSIDE (prop-models.js `barn`) — it fills the
-    // 14 x 8 pad, so a farm has no yard and no clutter until the bigger farm pad (FEAT-105) lands
-    // (owner, 2026-10-08). The farm composite (ASSET-65..67) replaces the lone barn later.
-    { type: 'farm',         count: 3, model: 'barn', siting: 'any', tags: ['residence'] },
+    // FEAT-105: the farm stands on the ASSET-66 barn, doors to the road, on its own 22 x 11.2 m farm
+    // pad with a clutter yard beside it. A region with no spot for that pad falls back to a lay-by
+    // and the broadside barn, no yard (owner, 2026-10-08). The farm composite (ASSET-65..67)
+    // replaces the lone barn later.
+    { type: 'farm',         count: 3, model: 'barn', fallbackModel: 'barnBroadside', siting: 'any',
+      tags: ['residence'] },
     { type: 'office',       count: 1, model: null, siting: 'any' },
     { type: 'school',       count: 1, model: null, siting: 'any' },
     { type: 'doctor',       count: 1, model: null, siting: 'any' },
@@ -308,7 +316,9 @@ export function dressYard (q, seed, yard) {
     const pool = modelsTagged(YARD_POOLS[tag])
     if (!pool.length) return []
     const rnd = mulberry32(hash32(`poi-yard:${seed}:${q.id}`))
-    const want = 3 + Math.floor(rnd() * 4)
+    // 3–6 props, unless the model's yard is bigger and says so (`yardCount` — the farm's is 5–9).
+    const [cMin, cMax] = PROP_MODELS[q.modelKey]?.yardCount ?? [3, 6]
+    const want = cMin + Math.floor(rnd() * (cMax - cMin + 1))
     const yaw = q.modelYaw ?? q.yaw
     const cs = Math.cos(yaw), sn = Math.sin(yaw)
     const ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
@@ -380,6 +390,31 @@ export function dressYard (q, seed, yard) {
     }
     return out
 }
+
+/**
+ * FEAT-105: the pad KINDS pass 1 sites. 'std' is the 14 x 8 lay-by every slot used to share; a roster
+ * slot whose model declares a registry `pad` gets a kind of its own, keyed by that model, and only
+ * pads of its kind can hold it. Derived from the roster, so adding a big-pad model is data-only.
+ */
+export function padKinds (P) {
+    const kinds = [{ key: 'std', halfLen: P.poiPadHalfLen, halfWid: P.poiPadHalfWid }]
+    for (const slot of POI_ROSTER) {
+        const pad = slot.model && PROP_MODELS[slot.model]?.pad
+        if (pad && !kinds.some(k => k.key === slot.model)) kinds.push({ key: slot.model, ...pad })
+    }
+    return kinds
+}
+
+/** The pad kind a roster slot needs: its model's own, else the standard lay-by. */
+const slotPadKind = slot => (slot.model && PROP_MODELS[slot.model]?.pad) ? slot.model : 'std'
+
+/**
+ * FEAT-105: two candidate pads that cannot BOTH be taken — the same edge, closer than poiPadSpacing
+ * along it. Pads of one kind are already that far apart (the scan jumps), so this only ever bites
+ * between kinds: a farm pad and a lay-by sited independently on the same stretch. Pads on different
+ * edges never clash — _otherRoadNear keeps every pad clear of every other road.
+ */
+const padsClash = (a, b, spacing) => a.edge === b.edge && Math.abs(a.s - b.s) < spacing
 
 /** Region population (23 in R1), derived from the roster so the two can never drift apart. */
 export const POI_COUNT = POI_ROSTER.reduce((n, s) => n + s.count, 0)
@@ -491,11 +526,11 @@ export class PoiSystem {
         }
         canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
 
-        // PASS 1 — THE POOL. Every edge that can hold a pad offers one; nothing is rolled away.
-        // The per-edge PRNG still decides WHERE on its edge the pad sits, so a pad's position is
-        // the same pure function of (seed, edge) it has always been. What changed (FEAT-60) is that
-        // the population is no longer the tail of a coin flip: pass 2 selects from this pool, which
-        // is how a region can be guaranteed a gas station.
+        // PASS 1 — THE POOL. Every edge offers every pad it can seat, of every kind (FEAT-105: the
+        // 14 x 8 lay-by, plus each bigger pad a roster model asks for), spaced poiPadSpacing apart
+        // along it; nothing is rolled away. Each pad is a pure function of (seed, edge, kind), and
+        // the population is not the tail of a coin flip (FEAT-60): pass 2 selects from this pool,
+        // which is how a region can be guaranteed a gas station.
         const pool = []
         const seen = new Set()
         const wall = radius - REGION_MARGIN
@@ -504,9 +539,7 @@ export class PoiSystem {
             const ek = `${e.ka}|${e.kb}`
             if (seen.has(ek)) continue      // networkGraph can list an edge twice (both run keys)
             seen.add(ek)
-            const rnd = mulberry32(hash32(`poi:${seed}:${ek}`))
-            const poi = this._placeOnEdge(road, e, rnd, P)
-            if (!poi) continue
+            for (const kind of padKinds(P)) for (const poi of this._padsOnEdge(road, e, P, seed, kind)) {
             // THE REGION CLIP IS A POST-FILTER, NEVER A REJECT TEST. Applied inside candidate
             // selection it would make WHICH arc position wins depend on the region centre — and a
             // POI 400 m inside the wall then moved when the window moved. Window-invariance means
@@ -520,6 +553,7 @@ export class PoiSystem {
             // Still a post-filter on (edge, region), so placement stays window-invariant.
             if (!edgeInWall(e.a) || !edgeInWall(e.b)) continue
             pool.push(poi)
+            }
         }
 
         // PASS 2 — THE ROSTER. Fill the ratified slots from the pool and discard the rest.
@@ -790,12 +824,25 @@ export class PoiSystem {
      * order and not just a listing.
      */
     _assignRoster (pool, center, seed, P) {
-        const free = pool.slice()
+        let free = pool.slice()
         const out = []
+        // The coverage objective's sample of "where the player will be": the lay-bys alone, so adding a
+        // big-pad kind does not re-weight where the gas stations go.
+        const stdPool = pool.filter(q => (q.padKind ?? 'std') === 'std')
+        const pick = (cands, n, salt, slot) =>
+            slot.siting === 'nearSpawn' ? this._pickNearSpawn(cands, center, n, salt, P)
+          : slot.siting === 'coverage'  ? this._pickCoverage(cands, stdPool, n, P)
+          :                               this._pickStable(cands, n, salt)
         for (const slot of POI_ROSTER) {
-            const picks = slot.siting === 'nearSpawn' ? this._pickNearSpawn(free, center, slot.count, slot.type, P)
-                        : slot.siting === 'coverage'  ? this._pickCoverage(free, pool, slot.count, P)
-                        :                               this._pickStable(free, slot.count, slot.type)
+            // FEAT-105: a slot draws only from pads of its own kind. A big-pad slot that comes up short
+            // (a region with no spot for a farm pad) falls back to lay-bys wearing its fallbackModel —
+            // the roster is never short a farm for want of a big pad (owner, 2026-10-08).
+            const kind = slotPadKind(slot)
+            const picks = pick(free.filter(q => (q.padKind ?? 'std') === kind), slot.count, slot.type, slot)
+            if (picks.length < slot.count && kind !== 'std' && slot.fallbackModel) {
+                const lay = free.filter(q => (q.padKind ?? 'std') === 'std' && !picks.some(p => padsClash(p, q, P.poiPadSpacing)))
+                picks.push(...pick(lay, slot.count - picks.length, `${slot.type}:fallback`, slot))
+            }
             // NOTE `pool` is already this method's pad pool — the model pool needs its own name.
             const models = slot.modelPool ? modelsTagged(slot.modelPool) : null
             for (const q of picks) {
@@ -810,7 +857,7 @@ export class PoiSystem {
                     // same reason: the choice must depend on WHICH pad this is, never on how many
                     // pads happened to be streamed when the pool was gathered.
                     ? models[hash32(`poi-model:${seed}:${q.id}`) % models.length]
-                    : (slot.model ?? null)
+                    : (q.padKind ?? 'std') === kind ? (slot.model ?? null) : slot.fallbackModel
                 // Stamp the authored collision box NOW, off the registry, not when the GLB
                 // resolves: physics must not wait on a fetch, or a marker would be driveable-
                 // through for the first seconds of a region and solid afterwards.
@@ -825,9 +872,12 @@ export class PoiSystem {
                 // carve, the ring and the park trigger keep using). `seat` slides it that many metres
                 // away from the road so its yard is the road side. Mesh, contact box, drop zone and
                 // yard all read THIS origin.
-                const seat = spec?.seat ?? 0
-                q.modelX = q.x + q.nx * seat
-                q.modelZ = q.z + q.nz * seat
+                // FEAT-105: `seatAlong` slides it along its OWN +X as well — the barn stands at one end
+                // of its long farm pad with the yard beside it. The model's +X in world is
+                // (cos modelYaw, −sin modelYaw), the same mapping the mesh uses.
+                const seat = spec?.seat ?? 0, along = spec?.seatAlong ?? 0
+                q.modelX = q.x + q.nx * seat + Math.cos(q.modelYaw) * along
+                q.modelZ = q.z + q.nz * seat - Math.sin(q.modelYaw) * along
                 // BUG-43: which colour from the model's curated palette. A slot may pin it (the
                 // two story houses must never match); otherwise a raw hash off the pad id, which
                 // spawnModel takes modulo the palette length. Ignored by a model with no palette.
@@ -836,8 +886,8 @@ export class PoiSystem {
                 // FEAT-71: the lawn furniture / yard clutter standing in this POI's yard — the
                 // model's authored yard, else the slot's (none today; FEAT-105's farm pad will want one).
                 q.satellites = dressYard(q, seed, spec?.yard ?? slot.yard)
-                const i = free.indexOf(q)
-                if (i >= 0) free.splice(i, 1)
+                // Taken: out of the pool, and so is every pad of another kind it would overlap.
+                free = free.filter(o => o !== q && !padsClash(o, q, P.poiPadSpacing))
                 out.push(q)
             }
         }
@@ -1041,13 +1091,19 @@ export class PoiSystem {
 
     // ── placement ───────────────────────────────────────────────────────────────────────────
     /**
-     * Try `poiCandidates` arc positions on one edge and return the first that passes every reject
-     * test, or null. Candidates are drawn from the edge's own PRNG so the result is a pure function
-     * of (seed, edge) — the same edge yields the same POI (or the same nothing) from any window.
+     * FEAT-105: the pads of kind `kind` this edge offers. `poiCandidates` arc positions are drawn
+     * from the edge's own PRNG, each tries both sides, and every one that passes is kept if it lies
+     * poiPadSpacing or more along the edge from the last kept — so a long edge can offer several,
+     * a short one at most one. A pure function of (seed, edge, kind): the same edge yields the same
+     * pads from any window, so placement stays window-invariant (FEAT-60), keyed off the graph edge
+     * and never the streamed runKey.
+     *
+     * `kind` is { key, halfLen, halfWid }: 'std' is the 14 x 8 lay-by; a model that needs more asks
+     * through its registry `pad` and gets its own tries, so a pad's kind is decided when it is sited.
      */
-    _placeOnEdge (road, e, rnd, P) {
+    _padsOnEdge (road, e, P, seed, kind) {
         const ed = road.edgeParData(e.a, e.b)
-        if (!ed || !ed.centerline) return null
+        if (!ed || !ed.centerline) return []
         // QUAL-24: this edge may be a STRETCH of a longer run — a deg-2 chain merge swallowed it — so
         // its arc domain is [off, off+L] inside the registered run, not [0, len]. `s` below stays in
         // that run's GLOBAL arc domain, which is what the pad record, tunnelSpanAt and the mission
@@ -1055,35 +1111,41 @@ export class PoiSystem {
         const off = ed.arcOffset ?? 0
         const L = ed.arcLength ?? ed.centerline.length
         const clear = P.poiEndClearM
-        if (!(L > 2 * clear + 40)) return null      // too short to hold a pad clear of both ends
+        if (!(L > 2 * clear + 40)) return []      // too short to hold a pad clear of both ends
 
         const halfWidth     = P.roadHalfWidth     ?? 5
         const shoulderWidth = P.roadShoulderWidth ?? 2.5
+        // The pad's own geometry, for _evaluate / _footprint (they read it off P).
+        const K = { ...P, poiPadHalfLen: kind.halfLen, poiPadHalfWid: kind.halfWid }
         // Lateral offset from the CENTERLINE to the pad centre: past the shoulder, past the gap,
         // then half the pad. The pad's near edge therefore sits `poiPadGap` beyond the shoulder.
-        const lat = halfWidth + shoulderWidth + P.poiPadGap + P.poiPadHalfWid
+        const lat = halfWidth + shoulderWidth + P.poiPadGap + kind.halfWid
+        const ek = `${e.ka}|${e.kb}`
+        const tag = kind.key === 'std' ? '' : `:${kind.key}`
+        const rnd = mulberry32(hash32(`poi:${seed}:${ek}${tag}`))
 
-        for (let k = 0; k < P.poiCandidates; k++) {
-            const s = off + clear + rnd() * (L - 2 * clear)
-            // BUG-55 phase 5: never seat a pad on a CEDED stretch — that ground is the WINNER's
-            // pavement (the loser's points are the winner's verbatim), so the winner's own edge
-            // can seat a pad on the same physical spot and the two lay-bys would overlap.
-            // QUAL-30: the ceded-ground exclusion is gone with cededSpans. It stopped a lay-by pad
-            // being seated on a stretch the loser had ceded to a winner — ground where the winner's
-            // own edge could seat a pad on the same spot. Under the T promotion the side road has no
-            // ceded stretch: it starts at the departure node, so every metre of it is its own.
+        const stations = []
+        for (let k = 0; k < P.poiCandidates; k++) stations.push(off + clear + rnd() * (L - 2 * clear))
+        stations.sort((a, b) => a - b)
+        const out = []
+        let last = -Infinity
+        for (const s of stations) {
+            if (s - last < P.poiPadSpacing) continue
             // WHICH SIDE is decided by the ground, not by the hash: try both and take the one that
             // needs less earthwork. On a mountain road the two sides are wildly asymmetric — one is
             // a 1:1 cut bank, the other a 3:1 fill slope — so letting the terrain choose is both the
             // cheaper bench and the more believable siting. Emergent, not injected.
             let best = null
             for (const side of [1, -1]) {
-                const cand = this._evaluate(road, ed, s, side, lat, P)
+                const cand = this._evaluate(road, ed, s, side, lat, K)
                 if (cand && (!best || cand.cut < best.cut)) best = cand
             }
-            if (best) return { id: `poi:${e.ka}|${e.kb}`, index: -1, aId: e.a, bId: e.b, s, runKey: ed.key, ...best }
+            if (!best) continue
+            out.push({ id: `poi:${ek}${tag}@${out.length}`, index: -1, aId: e.a, bId: e.b, edge: ek,
+                       padKind: kind.key, s, runKey: ed.key, ...best })
+            last = s
         }
-        return null
+        return out
     }
 
     /**
@@ -1137,19 +1199,7 @@ export class PoiSystem {
         const yR = road.sampleRoadTopY(cp.x - tz * edgeLat, cp.z + tx * edgeLat)
         if (yL != null && yR != null && Math.abs(yL - yR) / (2 * edgeLat) > P.poiMaxCrossSlope) return null
 
-        // 5. ON water — pond no-go (radius + skirt) or a stream channel under the footprint.
-        const water = this._d.getWater?.()
-        if (water) {
-            for (const [px, pz] of this._footprint(cx, cz, tx, tz, nx, nz, P, 3, 2)) {
-                if (water.isRoadNoGo(px, pz)) return null
-                // NB: streamChannelAt ALWAYS returns a record — {inChannel:false,inBank:false,
-                // stream:null} away from any stream — so it must be READ, not truth-tested.
-                // Only inChannel rejects: the BANK is exactly the waterside pullout we want.
-                if (water.streamChannelAt?.(px, pz)?.inChannel) return null
-            }
-        }
-
-        // 6. EARTHWORK CAP — the "flat open ground" test, measured against the ROAD-CARVED surface
+        // 5. EARTHWORK CAP — the "flat open ground" test, measured against the ROAD-CARVED surface
         //    (analyticHeight), not raw terrain. Raw would bill the pad for the ROAD's cut/fill,
         //    which is already-spent earthwork and not the pad's scar; on seed 6 that reads a median
         //    of 10 m and rejects everything. Falling back to raw only keeps a terrain stub honest.
@@ -1165,6 +1215,21 @@ export class PoiSystem {
                 if (d > cut) cut = d
             }
             if (cut > P.poiMaxCutFill) return null
+        }
+
+        // 6. ON water — pond no-go (radius + skirt) or a stream channel under the footprint. LAST, not
+        //    fifth (FEAT-105, measured): the water probes cost ~15x the earthwork lattice and the cap
+        //    rejects most candidates, so testing it first skips them on doomed sites. Every test here
+        //    is a pure reject, so the order changes the cost and never the accepted set.
+        const water = this._d.getWater?.()
+        if (water) {
+            for (const [px, pz] of this._footprint(cx, cz, tx, tz, nx, nz, P, 3, 2)) {
+                if (water.isRoadNoGo(px, pz)) return null
+                // NB: streamChannelAt ALWAYS returns a record — {inChannel:false,inBank:false,
+                // stream:null} away from any stream — so it must be READ, not truth-tested.
+                // Only inChannel rejects: the BANK is exactly the waterside pullout we want.
+                if (water.streamChannelAt?.(px, pz)?.inChannel) return null
+            }
         }
 
         return {

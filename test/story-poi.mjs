@@ -559,7 +559,11 @@ function boardRig (ms, nowH = 6) {
     // COVERAGE IS THE POINT, not spacing. Assert the pair actually chosen is the OPTIMUM of the
     // objective over every admissible pair — a coverage siting that quietly degraded to "first two
     // that are far enough apart" would still look plausible in a screenshot.
-    const worstCover = (a, b) => W.poi.pool().reduce((w, q) => Math.max(w,
+    // FEAT-105: over LAY-BYS only, both as the objective's sample and as candidates — a coverage slot
+    // draws from its own pad kind, and the farm pads are not "where the player will be" any more than
+    // the lay-bys beside them already say.
+    const layBys = W.poi.pool().filter(q => q.padKind === 'std')
+    const worstCover = (a, b) => layBys.reduce((w, q) => Math.max(w,
         Math.min(Math.hypot(q.x - a.x, q.z - a.z), Math.hypot(q.x - b.x, q.z - b.z))), 0)
     // Optimality is judged against what the slot could ACTUALLY reach: each slot picks from a pool
     // its seniors have already drawn from, so the service pair is optimal over the pads gas left
@@ -574,7 +578,7 @@ function boardRig (ms, nowH = 6) {
         const got = worstCover(pair[0], pair[1])
         // Best achievable over the pads still free at this slot, under the same floor.
         let best = Infinity
-        const pool = W.poi.pool().filter(q => !taken.has(q.id))
+        const pool = layBys.filter(q => !taken.has(q.id))
         for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) {
             if (Math.hypot(pool[i].x - pool[j].x, pool[i].z - pool[j].z) < POI_PARAMS.poiStationMinSep) continue
             best = Math.min(best, worstCover(pool[i], pool[j]))
@@ -645,11 +649,14 @@ function boardRig (ms, nowH = 6) {
         // FEAT-71: a `seat`ed model is off-centre across the pad. Its road-side face must stay on the
         // pad; its far side may hang past the back edge by less than PAD_RIM_HOLD, the band the carve
         // grades flat beyond every pad (the broadside barn hangs 1.15 m off the back).
+        // FEAT-105: against ITS pad — a farm pad is 22 x 11.2 — and with `seatAlong`, which slides
+        // the barn to one end of it (along the model's +X; |cos d| projects that onto the road).
         const seat = PROP_MODELS[q.modelKey].seat ?? 0
-        const hw = POI_PARAMS.poiPadHalfWid
+        const slide = Math.abs((PROP_MODELS[q.modelKey].seatAlong ?? 0) * Math.cos(d))
+        const hw = q.halfWid, hl = q.halfLen
         check(`${q.modelKey} fits its pad (${along.toFixed(1)} x ${across.toFixed(1)} m, seat ${seat} m, in a ` +
-              `${2 * POI_PARAMS.poiPadHalfLen} x ${2 * hw} m bay + ${PAD_RIM_HOLD} m rim behind)`,
-            along <= 2 * POI_PARAMS.poiPadHalfLen && seat - across * 0.5 >= -hw
+              `${2 * hl} x ${2 * hw} m bay + ${PAD_RIM_HOLD} m rim behind)`,
+            along * 0.5 + slide <= hl + PAD_RIM_HOLD && seat - across * 0.5 >= -hw
             && seat + across * 0.5 <= hw + PAD_RIM_HOLD)
     }
 
@@ -687,7 +694,9 @@ function boardRig (ms, nowH = 6) {
 // roster must still get mom's house and its gas stations; what it loses is the additional classes,
 // because they sit at the BOTTOM of POI_ROSTER. This is the whole reason the order is a priority order.
 {
-    const pool = W.poi.pool().slice(0, POI_COUNT - 3)
+    // FEAT-105: lay-bys only, plus no farm pads — a short region of the shape that matters (farms
+    // fall back to lay-bys, so the count arithmetic below is still a plain top-down fill).
+    const pool = W.poi.pool().filter(q => q.padKind === 'std').slice(0, POI_COUNT - 3)
     const P = { ...POI_PARAMS, ...PARAMS }
     const out = W.poi._assignRoster(pool, C, SEED, P)
     const counts = {}

@@ -10,6 +10,48 @@ relates: FEAT-71, FEAT-96, FEAT-60, FEAT-91, ASSET-66, ASSET-65, ASSET-67
 
 # FEAT-105: Pad supply — scan every edge, several pads per edge, bigger pads for farms
 
+## Built 2026-10-08 — branch `feature/feat-105`
+
+**Owner rulings (2026-10-08):** min spacing ~250 m; "we don't need a whole ton more spawn
+possibilities, just unlock what we need + margin"; seed layouts may reshuffle. The farm pad is
+**22 m along x 11.2 m deep**, with the barn gable (doors) to the road at one end and the yard
+beside it. A region with no farm-size spot falls back to a lay-by and the broadside barn, with no
+yard. A farm yard takes **5–9** clutter props.
+
+**What shipped (`src/poi.js`):**
+
+- **Several pads per edge, NOT a scan.** A full 20 m scan was built and measured first: 145–188
+  pads and 6–8 s per build, against today's 41–54 and 0.9 s. That is a flood, not "need +
+  margin". So each edge keeps `poiCandidates` (6) random tries per pad kind. Every try that passes
+  is kept, as long as it is `poiPadSpacing` (250 m) along the edge from the last one kept.
+  `_placeOnEdge` → `_padsOnEdge`.
+- **Pad kinds.** A roster model declares a registry `pad: { halfLen, halfWid }` (the barn's is
+  11 x 5.6). `padKinds()` derives the kinds from the roster, pass 1 sites each kind on its own
+  tries, and a slot draws only from pads of its kind. Taking a pad also removes every pad of
+  another kind on the same edge within 250 m (`padsClash`). `fallbackModel` covers the
+  no-farm-pad case.
+- **`seatAlong`** (registry): slides a model along its own +X, so the barn stands at one end of its
+  pad. **`yardCount`** (registry): the farm yard takes 5–9.
+- **`barn` / `barnBroadside`**: one .glb, two registry entries. `barn` is gable-to-road on its
+  farm pad, with a yard beside it. `barnBroadside` is the fallback.
+- **Earthwork before water in `_evaluate`.** The water probes cost about 15× the earthwork lattice,
+  and the cap rejects most sites first. This is pure reordering of reject tests: the same pads
+  are accepted. It took the seed-11 build from 2028 ms to 807 ms with both pad kinds, below the
+  old single-kind ~940 ms.
+
+**Traps hit:**
+
+- Pad ids carry the pad's index as `@n`, **never `#n`**. An offer id is `${poiId}#slot#gen`, and
+  `offer-board.js` splits it on `#`. The first build used `#`, and `story-poi` caught it when
+  `board.take()` returned null.
+- `story-poi`'s coverage-optimality check now judges lay-bys against lay-bys, which matches the
+  roster: a slot draws only from its own pad kind.
+
+**Census (2500 m region at each seed's real spawn):** see pois.md § Pad supply. Lay-bys went from
+41–54 to 52–69, farm pads are 16–27 (3 needed), and every seed fills 23/23 with all three farms
+on farm pads. The median nearest-neighbour distance went from 360–560 m to 296–437 m. The minimum
+is 133–228 m, up from 88–224 m before.
+
 ## The problem
 
 Farm models don't fit a lay-by pad. The barn alone is 9.1 x 12.1 m of wall, while the pad is
