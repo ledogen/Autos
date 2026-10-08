@@ -129,6 +129,8 @@ export const GATES = [
     desc: 'FEAT-88 haul load: seeded bed drop points are deterministic; 7 and 12 firewood bundles dropped on a parked truck all land in the bed well; the 12-bundle load rides a launch to 60 km/h and a hard stop; noDamage cargo never reaches the chassis contact readout (unflagged control does); DEBRIS_CAP reclaim never takes a pinned body' },
   { file: 'cargo-bed.mjs', subsystem: 'physics', cost: 'fast', extraDeps: ['assets/models/test-rock.glb'],
     desc: 'Owner report 2026-09-29: rocks in the open bed glitched out through the cab or tailgate at speed. The chassis is a Box3D BULLET, and a fast bullet\'s sweep stops at the first dynamic body it touches — a rock resting in the bed touches it at t = 0, so above ~21 m/s every step froze the truck while the rocks flew on. debris.js beforeStep flags bodies inside the bed well as bullets (a bullet never sweeps another bullet). Control: without the flag, rocks leave at 60 mph in 0.12 s. With it: six rocks hold for 6 s straight at 60 mph and through slaloms at 60 and 78 mph, sloshing across the bed without leaving it' },
+  { file: 'poi-collider.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'POI marker engine colliders (PoiPhysics) match the wheel-query solid at 4000 probes, and a truck-sized block fired at the trailer stops rigidly with no rebound (Larry\'s house bounce/rim report)' },
   { file: 'debris-stack.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-36: a stack of barrels settles, holds its footprint, sleeps — and two fresh worlds settle to bit-identical transforms (the pile the throw slice could never test)' },
   { file: 'penetration-failsafe.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
