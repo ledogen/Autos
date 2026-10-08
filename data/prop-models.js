@@ -30,10 +30,28 @@
 //                       file and nothing else. 'residence' = the homes a residence POI draws from.
 //                       Owner ruling 2026-08-15: the per-POI choice is deterministic in the seed,
 //                       and adding to a pool is ALLOWED to reshuffle which marker wears what.
+//                       FEAT-71 satellite pools: 'lawnFurniture' (habitation — dresses a
+//                       residence's yard) and 'yardClutter' (industry — dresses a farm's). Which
+//                       pool a POI draws from is its CLASS (src/poi.js YARD_POOLS), never a slot.
 //   yawOffset  number — extra yaw, in radians, applied on top of the pad yaw (which points model
 //                       -Z at the road). The pad is 14 m along the road x 8 m across, so an asset
 //                       whose length runs down its own -Z has only 8 m to live in unless it is
 //                       turned. Default 0.
+//   seat       number — FEAT-71, POI models only: metres the model slides from the pad centre AWAY
+//                       from the road, so it stands at the back of the pad and leaves the road side
+//                       for its yard. Default 0. The pad's corners are rounded only 1.5 m
+//                       (poiPadCornerR), which is what lets a long body get back there.
+//   yard       [{ x, z, halfX, halfZ }, ...] — FEAT-71, POI models only: the YARD, where satellites
+//                       may stand. Rectangles in the MODEL's own frame (same convention as a roster
+//                       slot's `drop`), on the ROAD side (owner, 2026-10-07: a yard behind the
+//                       building is never seen). Generous is fine — the solver also clips every
+//                       prop to the pad stadium and keeps it off the model's collision boxes.
+//   yardYaw    number — FEAT-71, satellites only: yaw jitter, radians either side of "-Z faces the
+//                       road". Default PI (any heading — a drum or a gnome). Small for things with
+//                       a front or a grain: a chair looks at the road, a pallet squares to the house.
+//   yardGroup  [min, max] — FEAT-71, satellites only: how many of this asset stand together. Real
+//                       yards keep drums in twos and threes against each other, not evenly spaced.
+//                       Default [1, 1].
 //   palette   object — CURATED RECOLOUR POOL, { <material name substring>: [[r,g,b], ...] }.
 //                       Owner ruling 2026-08-21: recolouring is not a free-for-all tint. Each
 //                       model that wants variety declares a short, hand-picked list of colours it
@@ -114,9 +132,37 @@ export const PROP_MODELS = {
   // two materials (DrumPaint red-oxide + DrumSteel bungs), no textures.
   // src/debris.js hulls the GLB's own vertices, so `collision` here is documentation, not the
   // collider — but it records what the ticket authored: cylinder r 0.29, h 0.85, 18 kg empty.
+  // ALSO farm yard clutter (FEAT-71) — as a static MESH only. The yard never makes a body of it; the
+  // thrown-prop life above is a separate path and the two are not to be conflated (owner 2026-09-22).
   drumClosed: {
     url: 'assets/models/drum-closed.glb',
     collision: { shape: 'hull-from-mesh', size: [0.58, 0.85, 0.58] },
+    tags: ['yardClutter'],
+    yardGroup: [2, 3],
+  },
+  // ASSET-30's other two variants, static yard clutter only (FEAT-71). Same DrumPaint / DrumSteel
+  // materials. Open: 316 tris, lid off, rolled rim — ticket collision cylinder r 0.29 h 0.85.
+  // Crushed: 348 tris, 0.62 x 0.61 x 0.62 measured, 7° cant reseated on its contact points — the
+  // ticket's box [0.58, 0.6, 0.58] under-covers the staved bulge, so this is the measured one.
+  drumOpen: {
+    url: 'assets/models/drum-open.glb',
+    collision: { shape: 'hull-from-mesh', size: [0.58, 0.85, 0.58] },
+    tags: ['yardClutter'],
+    yardGroup: [1, 3],
+  },
+  drumCrushed: {
+    url: 'assets/models/drum-crushed.glb',
+    collision: { shape: 'box', size: [0.62, 0.61, 0.62] },
+    tags: ['yardClutter'],
+  },
+  // ASSET-29 — 55-gallon HDPE barrel, 348 tris, 0.585 x 0.892 m, base-seated. BarrelBlue (the
+  // recolour hook, unused — blue is the only plastic barrel) + BarrelBung. Ticket collision is a
+  // cylinder r 0.29 h 0.89, 9 kg empty, recorded as its box; inert until dynamic props (FEAT-36).
+  barrelPlastic: {
+    url: 'assets/models/barrel-plastic.glb',
+    collision: { shape: 'box', size: [0.585, 0.892, 0.585] },
+    tags: ['yardClutter'],
+    yardGroup: [1, 3],
   },
 
   // ASSET-27 — timber stringer pallet, empty. 268 tris, 1.00 x 0.145 x 1.20 m (stringers along -Z,
@@ -125,6 +171,9 @@ export const PROP_MODELS = {
   pallet: {
     url: 'assets/models/pallet.glb',
     collision: { shape: 'box', size: [1.00, 0.145, 1.20] },
+    tags: ['yardClutter'],
+    yardYaw: 0.15,   // squared to the yard, not strewn
+    yardGroup: [1, 2],
   },
   // Small variant (owner, 2026-10-07) — 0.80 x 0.145 x 0.80 m, 244 tris, five top boards, same
   // construction, same pallet.py kit. The base for small freight (first user: ASSET-72's propane
@@ -139,9 +188,13 @@ export const PROP_MODELS = {
   // the -fragile variants add one 512x512 image carrying only the FRAGILE / HANDLE WITH CARE
   // stencil (on the -Z and +Z faces). Small: 240 tris, 4 per pallet (2x2). Large: 300 tris, a
   // 0.81 m cube, 1 per pallet. mass_kg 18 / 45, inert until dynamic props (FEAT-36).
-  smallCrate: { url: 'assets/models/small-crate.glb', collision: { shape: 'box', size: [0.58, 0.45, 0.45] } },
+  // The plain two are farm yard clutter (FEAT-71); the FRAGILE stencil reads as freight in transit,
+  // so those stay cargo only.
+  smallCrate: { url: 'assets/models/small-crate.glb', collision: { shape: 'box', size: [0.58, 0.45, 0.45] },
+    tags: ['yardClutter'], yardYaw: 0.3, yardGroup: [1, 3] },
   smallCrateFragile: { url: 'assets/models/small-crate-fragile.glb', collision: { shape: 'box', size: [0.58, 0.45, 0.45] } },
-  largeCrate: { url: 'assets/models/large-crate.glb', collision: { shape: 'box', size: [0.81, 0.81, 0.81] } },
+  largeCrate: { url: 'assets/models/large-crate.glb', collision: { shape: 'box', size: [0.81, 0.81, 0.81] },
+    tags: ['yardClutter'], yardYaw: 0.3, yardGroup: [1, 2] },
   largeCrateFragile: { url: 'assets/models/large-crate-fragile.glb', collision: { shape: 'box', size: [0.81, 0.81, 0.81] } },
   testRock: {
     url: 'assets/models/test-rock.glb',
@@ -152,16 +205,16 @@ export const PROP_MODELS = {
   // scatter these WITH a POI, never on bare ground (ticket rule — without an
   // anchor a flamingo reads as litter, not habitation).
   //
-  // NO POOL TAG YET.  The POI pool in this file is 'residence', and a
-  // flamingo is not a home.  The POI-satellite scatter that
-  // would consume a 'lawnFurniture' tag does not exist; until it does these are
-  // spawnModel()-only.  Do NOT tag them residence to make them show up.
+  // 'lawnFurniture' — the FEAT-71 yard scatter, which only ever places them
+  // inside a residence's yard.  Do NOT tag them residence: a flamingo is not a home.
   flamingoUp: {
     url: 'assets/models/flamingo-a.glb',
     // Head up, the tall alert pose.  0.16 wide x 0.87 tall x 0.49 long, the
     // length running down -Z (beak at z -0.278, tail at +0.216).  Knockable set
     // dressing, not a wall.
     collision: { shape: 'box', size: [0.16, 0.87, 0.50] },
+    tags: ['lawnFurniture'],
+    yardGroup: [1, 2],   // flamingos come in pairs
   },
 
   // ASSET-01 — the grazing pose.  SHORTER but LONGER: the neck swings forward
@@ -171,6 +224,8 @@ export const PROP_MODELS = {
   flamingoDown: {
     url: 'assets/models/flamingo-b.glb',
     collision: { shape: 'box', size: [0.16, 0.59, 0.73] },
+    tags: ['lawnFurniture'],
+    yardGroup: [1, 2],
   },
 
   // ASSET-24 — the player's campfire.  472 tris, 0.708 x 0.378 x 0.675 m, four
@@ -207,8 +262,7 @@ export const PROP_MODELS = {
   // ASSET-02 — ceramic garden gnome, 500 tris, the classic STANDING lawn
   // ornament: boots, belted coat, beard over the chest, tall red hat.  Lawn
   // furniture, same rule as the flamingos: scatter WITH a POI, never on bare
-  // ground.  NO POOL TAG for the same reason — a gnome is not a place that
-  // hands out work, and 'lawnFurniture' has no consumer yet.
+  // ground.  'lawnFurniture' (FEAT-71), never 'residence'.
   //
   // NO TEXTURE.  The ticket budgeted a 256x256 baked face; the owner's 2026-08-19
   // reference call is the low-poly read — brim, beard, and a nose between them,
@@ -232,12 +286,8 @@ export const PROP_MODELS = {
   // bowl.  1.07 m overall, which is the real 22" kettle and over the ticket's 0.95
   // estimate.
   //
-  // THE 'lawnFurniture' TAG IS DECLARED BUT NOTHING CONSUMES IT YET.  src/poi.js
-  // resolves `modelPool` against tags for the residence roster only; the
-  // POI-satellite scatter this tag is for does not exist (same note as the
-  // flamingos above, which predate the tag and are still spawnModel()-only).  The
-  // tag is here so that scatter, when it lands, is a consumer change and not an
-  // edit to every prop entry.  Do NOT add 'residence' to make it show up.
+  // 'lawnFurniture' — consumed by the FEAT-71 yard scatter (src/poi.js dressYard).
+  // Do NOT add 'residence': a grill is not a home.
   bbqGrill: {
     url: 'assets/models/bbq-grill.glb',
     tags: ['lawnFurniture'],
@@ -291,8 +341,24 @@ export const PROP_MODELS = {
   // here because the registry convention is box/capsule; mass inert until dynamic props (FEAT-36).
   propaneTank: {
     url: 'assets/models/propane-tank.glb',
-    tags: ['lawnFurniture'],
+    // Both pools: a spare cylinder by the grill at a house, a row of them at a farm.
+    tags: ['lawnFurniture', 'yardClutter'],
     collision: { shape: 'box', size: [0.31, 0.46, 0.31] },
+    yardGroup: [1, 2],
+  },
+
+  // ASSET-06 kit — the folding camp chair, 160 tris, ChairFrame + ChairFabric, built by
+  // lawn-furniture.py beside the awning. 0.67 x 1.01 x 0.67 m measured (z -0.28..0.40 — the back
+  // leans to +Z, so the sitter faces -Z) — RESCALED x1.1 by the owner 2026-10-07 (CH_SCALE), and
+  // splitting-yard.glb re-exported the same day so its two composited chairs match. No collider
+  // there either.
+  // Lawn furniture (FEAT-71): it faces the road, as someone sat out front watching it would.
+  campChair: {
+    url: 'assets/models/camp-chair.glb',
+    collision: { shape: 'none', size: [0.672, 1.014, 0.672] },
+    tags: ['lawnFurniture'],
+    yardYaw: 0.5,
+    yardGroup: [1, 2],
   },
 
   // ASSET-72 — propane 4-pack on the SMALL pallet, freight cargo (FEAT-96, strapped to the bed).
@@ -309,14 +375,17 @@ export const PROP_MODELS = {
 
   gnome: {
     url: 'assets/models/gnome.glb',
-    // 0.206 wide x 0.400 tall x 0.165 deep, measured off the GLB — inside the
-    // ticket's 0.22 envelope.  THE MODEL IS NOT SYMMETRIC: the pose puts weight
+    // 0.412 wide x 0.800 tall x 0.330 deep, measured off the GLB — RESCALED x2
+    // by the owner 2026-10-07 (gnome.py SCALE; it was the ticket's 0.40 m
+    // figure).  THE MODEL IS NOT SYMMETRIC: the pose puts weight
     // on one leg, bends one arm to the belt and hangs the other at the hip.
-    // X happens to come out even at -0.1031 .. +0.1031; Z is where the pose
-    // shows, running -0.095 .. +0.070 (the nose and boot toes reach forward,
+    // X happens to come out even at -0.206 .. +0.206; Z is where the pose
+    // shows, running -0.190 .. +0.140 (the nose and boot toes reach forward,
     // i.e. -Z).  This box is a size, not a centred extent, so it over-covers on
     // one side — the right way round for knockable set dressing.
-    collision: { shape: 'box', size: [0.206, 0.400, 0.165] },
+    collision: { shape: 'box', size: [0.412, 0.800, 0.330] },
+    tags: ['lawnFurniture'],
+    yardYaw: 0.5,   // faces the road, like the chair (owner 2026-10-07)
     // Blue / green / burgundy. The hat, beard, skin, leather and buckle are FIXED — a gnome is a
     // red hat and a white beard, and recolouring those stops it being a gnome.
     //
@@ -334,25 +403,28 @@ export const PROP_MODELS = {
     },
   },
 
-  // ASSET-03 — segmented beach ball, 252 tris, 0.40 m across.  Six vertical
+  // ASSET-03 — segmented beach ball, 252 tris, 0.80 m across (RESCALED x2 by the
+  // owner 2026-10-07 — beach-ball.py RADIUS 0.40; the ticket's ball was 0.40).  Six vertical
   // gores as five flat material slots, no texture (the ticket offers per-panel
   // slots as its own alternative and ART-STYLE rule 1 prefers it).
   //
   // *** ORIGIN IS THE SPHERE CENTRE, NOT BASE-SEATED. ***  Every other model in
   // this registry sits on y = 0; this one straddles it, because it is meant to
   // be simulated (FEAT-36) and a rigid body spins about its origin.  Anything
-  // placing it statically MUST lift it by 0.20 or it sinks to its equator.
+  // placing it statically MUST lift it by 0.40 or it sinks to its equator.
   //
   // mass_kg / restitution are inert until dynamic prop physics exists — carried
   // now so nothing is re-plumbed later, per FEAT-59's rule.  EVERY vertex sits
-  // exactly on the r=0.20 sphere, so the visual is perfectly inscribed in its
+  // exactly on the r=0.40 sphere, so the visual is perfectly inscribed in its
   // collider and can never interpenetrate whatever it rests on.
   beachBall: {
     url: 'assets/models/beach-ball.glb',
     collision: {
-      shape: 'sphere', radius: 0.20, size: [0.40, 0.40, 0.40],
+      shape: 'sphere', radius: 0.40, size: [0.80, 0.80, 0.80],
       mass_kg: 0.15, restitution: 0.75,
     },
+    // FEAT-71 lifts a sphere-shaped satellite by its radius (dressYard), per the note above.
+    tags: ['lawnFurniture'],
   },
 
   // ── POI markers ───────────────────────────────────────────────────────────────────────────
@@ -375,6 +447,16 @@ export const PROP_MODELS = {
       TrailerAccent: [[0.10, 0.34, 0.40], [0.46, 0.34, 0.12], [0.55, 0.56, 0.58]],
     },
     tags: ['residence'],
+    // FEAT-71. Seated 1.7 m back: the rear wall (z +1.93) then stands 0.37 m off the pad's back
+    // edge and the rear corners clear the 1.5 m pad corner by 0.18 m. The yard is the road side,
+    // in two strips either side of the stoop (x 0.47..1.63, z -2.65..-2.0, measured off the GLB),
+    // so the path from the door to the road stays clear. Front wall at z -1.93 incl. the eaves;
+    // the pad's road-side edge is at model z -5.7.
+    seat: 1.7,
+    yard: [
+      { x: -3.325, z: -3.875, halfX: 3.575, halfZ: 1.825 },
+      { x:  4.375, z: -3.875, halfX: 2.525, halfZ: 1.825 },
+    ],
   },
 
   // ASSET-36 — the firewood yard (FEAT-88/91, region-1 haul giver), re-scoped by the owner on
@@ -424,6 +506,12 @@ export const PROP_MODELS = {
     // 14 m and only 2.4 m crosses it, which is also how a real one parks in a lay-by.
     yawOffset: Math.PI * 0.5,
     tags: ['residence'],
+    // FEAT-71. Turned broadside, the model's +X is its RIGHT flank — the entry-door side on a US RV
+    // — and it faces the road; the pad's back edge is model -X. Seated 2.2 m back, the far side
+    // (mirrors at x -1.46) stands 0.34 m off the back edge and the yard is the strip between the
+    // road-side flank and the pad's road edge (model x 6.2), clear of the mirrors.
+    seat: 2.2,
+    yard: [{ x: 3.9, z: 0, halfX: 2.3, halfZ: 6.9 }],
   },
 
   // ASSET-18 — broken-down car, 2464 tris (BrokenCar + BrokenCarGlass). The stranded motorist's
@@ -490,12 +578,23 @@ export const PROP_MODELS = {
   // BODY ONLY: walls + plinth, up to the ridge. The roof overhang is left out (nothing drives
   // under a 3.7 m eave), and the box is loose over the upper roof corners, which only a flying
   // truck reaches.
-  // DOES NOT FIT the 14 x 8 m lay-by pad: 12.7 m deep. FEAT-96's farm yard needs a bigger pad.
-  // No pool tag: nothing places it until FEAT-96 composites the farm (with ASSET-65/67 + the
-  // produce stall). Do not tag it 'residence' to make it appear.
+  // THE FARM POI's model (src/poi.js farm slot, owner 2026-10-08), until FEAT-96 composites the farm
+  // (with ASSET-65/67 + the produce stall). No pool tag — the slot names it — and do not tag it
+  // 'residence' to make it appear anywhere else.
+  //
+  // PARKED BROADSIDE, and HANGING 1.15 m OFF THE BACK of the 14 x 8 m pad — deliberately. Gable to
+  // the road it is 12.1 m deep against an 8 m pad, which no pad the generator can supply will hold
+  // (FEAT-105). Quarter-turned, its 12.1 m length lies along the pad's 14 m and only 9.1 m crosses
+  // it. Seated 0.6 m back, the front wall sits 0.05 m inside the pad's road edge and the back wall
+  // 1.15 m past its far edge — inside the 1.6 m band the carve holds at full depth beyond every pad
+  // edge (road-carve.js PAD_RIM_HOLD), so the whole plinth stands on flat graded ground. The cost:
+  // the doors (the -Z gable) face up or down the road, not at it. And it fills the pad, so a farm
+  // has NO YARD — no `yard` here, so no clutter — until the bigger farm pad lands.
   barn: {
     url: 'assets/models/barn.glb',
     collision: { shape: 'box', size: [9.1, 8.0, 12.1] },
+    yawOffset: Math.PI * 0.5,
+    seat: 0.6,
   },
 
   // ASSET-31 — ROAD FURNITURE: seven Californian roadside signs on a timber 4x4.

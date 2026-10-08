@@ -2653,7 +2653,9 @@ function _rebuildPoiMarkers () {
       // receiveShadow too: a building is big enough to catch its neighbours' shadows and its own,
       // unlike the small thrown mission items FEAT-59's cast-only default was written for.
       const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true, variant: q.modelVariant })
-      m.position.set(q.x, q.y, q.z)     // pad records are base-seated, and so are the models
+      // pad records are base-seated, and so are the models. modelX/Z, not the pad centre: a model
+      // may be `seat`ed toward the back of the pad to leave its yard on the road side (FEAT-71).
+      m.position.set(q.modelX, q.y, q.modelZ)
       // modelYaw = the pad's road-facing yaw plus the asset's own yawOffset (a Winnebago parks
       // broadside, a trailer stands square) — see the yawOffset note in data/prop-models.js.
       m.rotation.y = q.modelYaw ?? q.yaw
@@ -2663,6 +2665,14 @@ function _rebuildPoiMarkers () {
       cube.position.set(q.x, q.y + half, q.z)
       cube.castShadow = true
       _poiGroup.add(cube)
+    }
+    // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
+    // in poi.js (deterministic in the seed); this only dresses them. Static meshes, no bodies.
+    for (const sat of q.satellites ?? []) {
+      const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
+      m.position.set(sat.x, sat.y, sat.z)
+      m.rotation.y = sat.yaw
+      _poiGroup.add(m)
     }
 
     // The ring means "park here and something happens", so it belongs only to markers where

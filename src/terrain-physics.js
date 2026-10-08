@@ -294,7 +294,8 @@ export class PropPhysics {
  *
  * The boxes are the SAME ones queryContact resolves: `collision.boxes` (model-local offsets) when
  * the asset lists several, else one `collision.size` box base-seated on the pad, else the
- * placeholder cube. One static body per marker, at the pad, yawed to modelYaw; each box is a hull.
+ * placeholder cube. One static body per marker, at its model origin (modelX/Z), yawed to modelYaw;
+ * each box is a hull.
  */
 export class PoiPhysics {
   constructor (engine) {
@@ -310,7 +311,8 @@ export class PoiPhysics {
       const c = q.collision
       const yaw = q.modelYaw ?? q.yaw ?? 0
       const body = this._eng.createBody({
-        type: 'static', position: { x: q.x, y: q.y, z: q.z },
+        // modelX/Z, not the pad centre: a model may be `seat`ed toward the back of its pad (FEAT-71).
+        type: 'static', position: { x: q.modelX ?? q.x, y: q.y, z: q.modelZ ?? q.z },
         quaternion: { x: 0, y: Math.sin(yaw * 0.5), z: 0, w: Math.cos(yaw * 0.5) },
         userData: { kind: 'poi', id: q.id },
       })

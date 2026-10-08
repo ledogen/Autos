@@ -32,6 +32,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS, POI_ROSTER, POI_COUNT } from '../src/poi.js'
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'
+import { PAD_RIM_HOLD } from '../src/road-carve.js'
 import { MissionSystem, REGION_MARGIN } from '../src/mission.js'
 import { OfferBoard } from '../src/offer-board.js'
 import { SOURCES } from '../data/offers.js'
@@ -641,9 +642,15 @@ function boardRig (ms, nowH = 6) {
         const d = q.modelYaw - q.yaw
         const along = Math.abs(Math.cos(d)) * sx + Math.abs(Math.sin(d)) * sz
         const across = Math.abs(Math.sin(d)) * sx + Math.abs(Math.cos(d)) * sz
-        check(`${q.modelKey} fits its pad (${along.toFixed(1)} x ${across.toFixed(1)} m in a ` +
-              `${2 * POI_PARAMS.poiPadHalfLen} x ${2 * POI_PARAMS.poiPadHalfWid} m bay)`,
-            along <= 2 * POI_PARAMS.poiPadHalfLen && across <= 2 * POI_PARAMS.poiPadHalfWid)
+        // FEAT-71: a `seat`ed model is off-centre across the pad. Its road-side face must stay on the
+        // pad; its far side may hang past the back edge by less than PAD_RIM_HOLD, the band the carve
+        // grades flat beyond every pad (the broadside barn hangs 1.15 m off the back).
+        const seat = PROP_MODELS[q.modelKey].seat ?? 0
+        const hw = POI_PARAMS.poiPadHalfWid
+        check(`${q.modelKey} fits its pad (${along.toFixed(1)} x ${across.toFixed(1)} m, seat ${seat} m, in a ` +
+              `${2 * POI_PARAMS.poiPadHalfLen} x ${2 * hw} m bay + ${PAD_RIM_HOLD} m rim behind)`,
+            along <= 2 * POI_PARAMS.poiPadHalfLen && seat - across * 0.5 >= -hw
+            && seat + across * 0.5 <= hw + PAD_RIM_HOLD)
     }
 
     // The marker is SOLID, and for a modelled one that means solid at its own size. Probe just
@@ -655,7 +662,8 @@ function boardRig (ms, nowH = 6) {
     check('a trailerHomeA marker exists to probe', !!t)
     const s3 = t.collision.size
     const cs = Math.cos(t.modelYaw), sn = Math.sin(t.modelYaw)
-    const toWorld = (lx, lz) => ({ x: t.x + cs * lx + sn * lz, z: t.z - sn * lx + cs * lz })
+    // modelX/Z, not the pad centre: the trailer is `seat`ed toward the back of its pad (FEAT-71).
+    const toWorld = (lx, lz) => ({ x: t.modelX + cs * lx + sn * lz, z: t.modelZ - sn * lx + cs * lz })
     const inside = toWorld(0, s3[2] * 0.5 - 0.2), outside = toWorld(0, s3[2] * 0.5 + 2.0)
     check('a modelled marker is solid at its own footprint',
         W.poi.queryContact(inside.x, t.y + 1.0, inside.z, 0.3) !== null)
