@@ -151,7 +151,7 @@ export const POI_ICONS = {
 /**
  * FEAT-67: diamond fill by mission family (owner, 2026-09-26) — a table lookup, not code. ONLY
  * diamonds take a family colour; glyph POIs (food, store, auto shop, Larry) keep their own. A
- * diamond is single-slot, so its colour is simply its current offer's family.
+ * diamond's colour is its first live offer's family (a budget giver holds up to two, FEAT-101).
  */
 export const FAMILY_COLOR = {
     delivery:   '#5ad06a',   // green
