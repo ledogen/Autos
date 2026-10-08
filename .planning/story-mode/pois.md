@@ -78,8 +78,8 @@ counts with region size comes later. The gas station and tackle shop posting job
   parked on its place, which takes no new budget job until the lock clears (FEAT-101).
 - **Larry (owner, 2026-10-07):** his offer never expires and shows no timer; after a round he is
   unavailable for **12 h**, then a fresh offer appears.
-- **The gas station posts** (propane) under the budget; the **tackle shop does not yet** — nothing in
-  the cargo list comes from it.
+- **The gas station posts** (propane) under the budget; the **tackle shop does not yet**: its first jobs
+  are FETCHING the general-store sundries (owner, 2026-10-07), which waits on FEAT-89.
 - **Determinism (SM-INV-12) holds:** the board stays a pure function of (seed, POI list, clock,
   completion/cancel log). The budget couples places' timing to each other, which is the accepted cost.
 

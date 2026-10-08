@@ -43,6 +43,10 @@ because he is the paper route. The firewood yard and the new `farm` (FEAT-96) ga
   there: the school receives class notes, so a fetch from the school is "fetch class notes from a
   residence or farm and bring them back". The pickup is drawn from that thing's givers (`pools`);
   the return is the poster.
+- **The tackle shop's first jobs are fetch** (owner, 2026-10-07): the general-store sundries —
+  lightbulbs, screws, nails, duct tape, paper towels, toilet paper, rope, string, paper — go from
+  the store to anyone as courier jobs, and the tackle shop fetches them. Until fetch is built the
+  tackle shop posts nothing.
 - **The office and school post nothing at all, fetch included** (owner, 2026-10-07 — answering
   the conflict with their receive-only ruling). Fetch comes only from receivers that are already
   sources: e.g. the general store fetching empty propane, a farm fetching tractor keys.
