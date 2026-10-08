@@ -72,7 +72,6 @@ import { HAUL_PAR_SLACK } from '../data/offers.js'   // FEAT-88: a haul's par is
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { OfferBoard, formatGameDuration, gateText } from './offer-board.js'   // FEAT-67: the mission board
-import { PROP_MODELS } from '../data/prop-models.js'   // FEAT-67: giverName (how the board names a giver)
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
@@ -2633,10 +2632,10 @@ const _customerRings = new Map()
 /**
  * Rebuild the markers + interaction rings (cheap: a handful of each per region).
  *
- * FEAT-60: a POI whose roster slot names a model (or a model POOL — the five mission givers draw
- * from every 'missionGiver'-tagged asset) gets the model; everything else keeps the orange cube.
+ * FEAT-60: a POI whose roster slot names a model (or a model POOL — the five residences draw
+ * from every 'residence'-tagged asset) gets the model; everything else keeps the orange cube.
  * The cube is not an unfinished job — it is the honest placeholder for a type nobody has modelled
- * yet, and the services, the burger joint and the stores are all still cube.
+ * yet, and the auto shops, the food vendor and the stores are all still cube.
  */
 function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
@@ -3695,9 +3694,7 @@ function _planOffer (offer) {
     const s = offerBoard.spec(o)
     const poi = poiSystem.list().find(q => q.id === o.poiId)
     if (!s || !poi || s.family === 'papers') return null
-    const dest = s.destKind === 'poi'
-      ? { kind: 'poi', pick: s.destPick, pois: poiSystem.list().filter(q => q.id !== poi.id && !exclude.has(q.id)) }
-      : { kind: 'roadside' }
+    const dest = offerBoard.destWish(o, poiSystem.list(), exclude)
     const m = missionSystem.planOffer(poi, { rng: offerBoard.routeRng(o), dest })
     if (m) {
       // The contract's board-side terms ride on the mission: which offer it is (complete/cancel),
@@ -3723,7 +3720,7 @@ function _poiInReach () {
   // FEAT-61: a route is a job in flight, same as any other — you cannot take work while doing work,
   // and Larry's own marker must not re-offer the route you are three houses into.
   if (paperRouteSystem.isActive()) return null
-  // jobsOnly (FEAT-60): only a mission giver answers the park trigger. Without this the roster's
+  // jobsOnly (FEAT-60): only a job source answers the park trigger. Without this the roster's
   // other six types would each win the trigger and then have nothing to say — and mom's house,
   // which outranks her own front door in the precedence below, would offer freight instead of bed.
   const q = poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
@@ -5697,7 +5694,6 @@ const storySystem = new StorySystem({
     // (it starts on the run's clock). A new run, a new board: nothing survives from the last one.
     offerBoard = new OfferBoard({
       seed: worldSeed, pois: poiSystem.list(), nowH: daySystem.clockH(),
-      giverNameOf: (k) => PROP_MODELS[k]?.giverName,
     })
     // ORDER MATTERS: the roster decides where mom lives, and camping is handed that answer.
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping

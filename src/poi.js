@@ -150,8 +150,8 @@ export const POI_PARAMS = {
  *
  * `jobs` is WHETHER PARKING HERE OPENS AN OFFER, and it is DERIVED, not hand-set (FEAT-67): a
  * type posts offers iff it has a row in data/offers.js SOURCES (the mission board's source table).
- * The gas station, the tackle shop and mom's house have none — "some stores are just stores" — so
- * they wear no interaction ring and answer no park trigger. A marker that wears the ring but answers
+ * The gas station, the tackle shop and mom's house have none — the first two until FEAT-101's job
+ * budget reverses "some stores are just stores" (pois.md, 2026-10-07) — so they wear no interaction ring and answer no park trigger. A marker that wears the ring but answers
  * nothing is the same lie as a prompt drawn wider than its trigger, which this module already
  * refuses to tell; deriving the flag from the one table that decides who posts work is what makes
  * that impossible to get out of step.
@@ -165,33 +165,38 @@ export const POI_PARAMS = {
  * papers is nonsense.
  */
 export const POI_ROSTER = [
+    // ── Fixtures (R1) ──────────────────────────────────────────────────────────────────────────
     // Exactly one of each per world, and both houses are a short drive from where you wake up.
     // `variant` pins the palette colour (BUG-43): mom's is the authored cyan, Larry's yellow.
+    // Both are of the `residence` CLASS (Places and Missions, 2026-10-07) — that tag is what lets a
+    // residence-bound delivery end at mom's — and each carries its own fixture tag besides.
     { type: 'momsHouse',    count: 1, model: 'trailerHomeA', siting: 'nearSpawn', variant: 0,
-      tags: ['newsCustomer', 'sleepable'] },
+      tags: ['residence', 'mom', 'newsCustomer', 'sleepable'] },
     // Larry hands out the paper route (FEAT-61 Phase E2). He posts offers like any other source,
     // but the brake at his place opens the PaperRouteSystem rather than a point-to-point errand —
     // main.js branches on the type, because he is the only POI whose offer is a different mission.
-    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn', variant: 1 },
+    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn', variant: 1,
+      tags: ['residence', 'larry'] },
+
+    // ── Required classes (9) ───────────────────────────────────────────────────────────────────
     // "Never too far from a station" — the reason these two slots exist and the reason they are
-    // sited by coverage rather than by a spacing rule. Gas and service are solved INDEPENDENTLY:
-    // no constraint was ratified between them, and a service shop sharing a corner with a pump
-    // reads fine.
+    // sited by coverage rather than by a spacing rule. Gas and the auto shop are solved
+    // INDEPENDENTLY: no constraint was ratified between them, and an auto shop sharing a corner with
+    // a pump reads fine.
     { type: 'gasStation',   count: 2, model: null, siting: 'coverage' },
-    { type: 'serviceShop',  count: 2, model: null, siting: 'coverage' },
-    // `burgerJoint` means ANY FOOD VENDOR (FEAT-67 ruling, 2026-09-26; opening.md amended): the
-    // player delivers ready-made meals from it as an independent gig contractor, not as staff, so
-    // the opening's "never work there again" still holds. Sited anywhere.
-    { type: 'burgerJoint',  count: 1, model: null, siting: 'any' },
+    { type: 'autoShop',     count: 2, model: null, siting: 'coverage' },
+    // ANY FOOD VENDOR (FEAT-67 ruling, 2026-09-26; opening.md amended): the player delivers
+    // ready-made meals from it as an independent gig contractor, not as staff, so the opening's
+    // "never work there again" still holds. Sited anywhere.
+    { type: 'foodVendor',   count: 1, model: null, siting: 'any' },
     { type: 'generalStore', count: 1, model: null, siting: 'any' },
     // The type exists so the roster is whole; fishing and The Confluence stay deferred. Do not
     // build its systems off the back of this line.
     { type: 'tackleShop',   count: 1, model: null, siting: 'any' },
-    // FEAT-88/91: the firewood yard — the region-1 haul giver. Above the givers so a short pad pool
-    // still takes its shortfall from them. REGION 1 ONLY by design (FEAT-91 ruling 2): story mode
-    // has one region today, so there is nothing to window yet — the `regions` field lands with
-    // region 2. It fits the standard 14 x 8 m lay-by pad (owner, 2026-10-04); the sawmill and
-    // quarry will need a bigger pad, also deferred to FEAT-91.
+    // FEAT-88/91: the firewood yard — the region-1 haul yard. REGION 1 ONLY by design (FEAT-91
+    // ruling 2): story mode has one region today, so there is nothing to window yet — the `regions`
+    // field lands with region 2. It fits the standard 14 x 8 m lay-by pad (owner, 2026-10-04); the
+    // sawmill and quarry will need a bigger pad, also deferred to FEAT-91.
     //
     // `drop` is the DROP ZONE (owner, 2026-10-05): a bed-sized rectangle on the ground, model-local
     // (+X along the road, -Z toward it — the marker's own frame), long axis along X. It replaces
@@ -202,17 +207,31 @@ export const POI_ROSTER = [
     // model empty, so physics never waits on a fetch.
     { type: 'firewoodYard', count: 1, model: 'splittingYard', siting: 'any',
       drop: { x: -4.0, z: -1.2, halfX: 0.92, halfZ: 0.70 } },
-    // Everything left over. Most POIs are mission givers, and a mission giver MAY present as a
-    // food vendor (owner, 2026-08-05) — food vendors get no reservation of their own because a
-    // vendor that also hands out work costs the region nothing.
+    // The job site. Sited 'any' until FEAT-103 puts it on the region wall; placeholder cube until
+    // ASSET-71 ships.
+    { type: 'workSite',     count: 1, model: null, siting: 'any' },
+
+    // ── Additional classes (12) ────────────────────────────────────────────────────────────────
+    // Job givers and receivers only, for now. They sit BELOW every required class on purpose: a
+    // short pad pool takes its shortfall from here, never from a gas station.
     //
     // MODEL POOL, not one model (owner, 2026-08-15). `modelPool` names a data/prop-models.js TAG
-    // and each of the five givers draws from every asset carrying it, keyed to the pad's own
-    // identity so the choice is a pure function of the seed. Widening the pool is therefore a
-    // one-line edit to the registry — and the owner has ruled that widening it MAY reshuffle which
-    // marker wears what on an existing seed. That is the licence this design is built on; do not
-    // add a stability guarantee here without re-reading that sentence.
-    { type: 'missionGiver', count: 5, modelPool: 'missionGiver', siting: 'any' },
+    // and each residence draws from every asset carrying it, keyed to the pad's own identity so the
+    // choice is a pure function of the seed. Widening the pool is therefore a one-line edit to the
+    // registry — and the owner has ruled that widening it MAY reshuffle which marker wears what on
+    // an existing seed. That is the licence this design is built on; do not add a stability
+    // guarantee here without re-reading that sentence.
+    { type: 'residence',    count: 5, modelPool: 'residence', siting: 'any' },
+    // Farms, office, school and doctor stand on placeholder cubes until their models ship
+    // (farm: ASSET-65..67 composite; school/office/doctor: ASSET-73/69/70). A farm is a residence
+    // too (owner, 2026-10-07), so anything bound for a residence may end at one.
+    { type: 'farm',         count: 3, model: null, siting: 'any', tags: ['residence'] },
+    { type: 'office',       count: 1, model: null, siting: 'any' },
+    { type: 'school',       count: 1, model: null, siting: 'any' },
+    { type: 'doctor',       count: 1, model: null, siting: 'any' },
+    // The pad is permanent (worldgen); FEAT-102 shows the broken-down car only while the motorist
+    // has a job open. Until then the car is always there.
+    { type: 'strandedMotorist', count: 1, model: 'brokenCar', siting: 'any' },
 ]
 
 /**
@@ -243,7 +262,7 @@ export function overDropZone (q, x, z, slack = 0) {
     return Math.abs(dx - b.x) <= b.halfX + slack && Math.abs(dz - b.z) <= b.halfZ + slack
 }
 
-/** Region population: 15, derived from the roster so the two can never drift apart. */
+/** Region population (23 in R1), derived from the roster so the two can never drift apart. */
 export const POI_COUNT = POI_ROSTER.reduce((n, s) => n + s.count, 0)
 
 /** Newspaper customers are deferred until the paper-route branch merges — no slot yet (FEAT-60). */
@@ -280,7 +299,7 @@ export class PoiSystem {
      *
      * FEAT-61: newspaper customers are NOT in here — see houses(). That is deliberate and it is the
      * whole enforcement of the owner's "most missions must not go to houses": there are 15 of them
-     * against a 14-slot roster, so anything picking a destination out of this list would end up
+     * against a 23-slot roster, so anything picking a destination out of this list would end up
      * delivering to a stranger's porch most of the time. Keeping them in a separate list means the
      * mission planner cannot reach them by accident, with no weighting hack to tune or forget.
      */
@@ -655,7 +674,10 @@ export class PoiSystem {
             const models = slot.modelPool ? modelsTagged(slot.modelPool) : null
             for (const q of picks) {
                 q.type = slot.type
-                q.tags = slot.tags ? slot.tags.slice() : []   // FEAT-61 — see the TAGS note above
+                // FEAT-61 — see the TAGS note above. The type leads the list, so every POI carries
+                // its own class tag (Places and Missions); a fixture adds its class (mom's is a
+                // `residence`) through `slot.tags`.
+                q.tags = [slot.type, ...(slot.tags ?? [])]
                 q.jobs = !!SOURCES[slot.type]   // FEAT-67 — see the `jobs` note above
                 q.modelKey = models?.length
                     // Keyed to the pad's own id, the same discipline as _pickStable and for the

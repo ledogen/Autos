@@ -68,7 +68,7 @@ export const POI_ICONS = {
     // glyph says so before you ever hover him.
     larrysHouse:  { label: "Larry's", color: '#8fd0ff', path: NEWSPAPER },
     // Burger: domed top bun, flat-bottomed heel, one slot for the patty.
-    burgerJoint:  { label: 'Burger',  color: '#ffc84a', path:
+    foodVendor:   { label: 'Food',    color: '#ffc84a', path:
         'M2 11.5 A10 7.5 0 0 1 22 11.5 L22 16.5 A10 4.5 0 0 1 2 16.5 Z'
       + 'M3 13 L3 15 L21 15 L21 13 Z' },
     // Open-end wrench laid on the 45° diagonal, head up-left. The head is a full round BOSS — one
@@ -97,7 +97,7 @@ export const POI_ICONS = {
     // this, and the head centre rose from y8 to y7 so the notch crosses the circle nearer its
     // widest point — without both, a r5 head leaves ~2 units of prong, which the outline eats.
     // As drawn the prongs are 3.4 units with ~2.2 of colour surviving.
-    serviceShop:  { label: 'Service', color: '#c8d0d8', path:
+    autoShop:     { label: 'Auto',    color: '#c8d0d8', path:
         'M10.73 14.06 A6.54 6.54 0 0 1 2 5.7 L4.39 8.08 A2.61 2.61 0 0 0 8.08 4.39 L5.7 2'
       + ' A6.54 6.54 0 0 1 14.06 10.73 L21.76 18.44 A2.35 2.35 0 0 1 18.44 21.76 Z' },
     // Gas pump: body on a plinth, display window cut out, hose column down the right. The body is
@@ -139,17 +139,18 @@ export const POI_ICONS = {
         'M3.1 16.5 A4.4 4.4 0 1 1 11.9 16.5 A4.4 4.4 0 1 1 3.1 16.5 Z'
       + 'M12.1 16.5 A4.4 4.4 0 1 1 20.9 16.5 A4.4 4.4 0 1 1 12.1 16.5 Z'
       + 'M7.6 8.6 A4.4 4.4 0 1 1 16.4 8.6 A4.4 4.4 0 1 1 7.6 8.6 Z' },
-    // Mission givers are the diamond, unlabelled: there are five of them and naming each would turn
+    // Every class with no glyph of its own (residence, farm, office, school, doctor, the job site,
+    // the motorist) is the diamond, unlabelled: there are a dozen of them and naming each would turn
     // the map into a wall of text. FEAT-67 SUPERSEDES the old "finding out what a marker offers is
     // what driving to it is for": the story map is now the mission board, and hovering a diamond
     // shows its offer. The diamond's fill is its current offer's FAMILY (FAMILY_COLOR below); this
     // orange is only the fallback when no board is live (free roam never draws POIs anyway).
-    missionGiver: { label: null,      color: '#ff7a18', path: null },
+    diamond:      { label: null,      color: '#ff7a18', path: null },
 }
 
 /**
  * FEAT-67: diamond fill by mission family (owner, 2026-09-26) — a table lookup, not code. ONLY
- * diamonds take a family colour; glyph POIs (burger, store, service, Larry) keep their own. A
+ * diamonds take a family colour; glyph POIs (food, store, auto shop, Larry) keep their own. A
  * diamond is single-slot, so its colour is simply its current offer's family.
  */
 export const FAMILY_COLOR = {

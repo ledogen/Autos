@@ -24,6 +24,10 @@ requires: FEAT-96 shipped (weld joint, strapped spawn, clean-up action)
 
 # FEAT-97: Fragile — shock-sensitive cargo strapped to the bed
 
+> **Keys renamed 2026-10-07 (FEAT-98):** `burgerJoint` → `foodVendor`, `serviceShop` → `autoShop`.
+> `missionGiver` is retired: its five slots became the additional classes (pois.md § Places and
+> Missions) and its model pool is now `residence`. A farm also carries the `residence` tag.
+
 ## Request
 
 A delivery whose load is **strapped to the bed and breaks under shock**. It can be light (a vase,
@@ -121,7 +125,7 @@ Those are the hardest jobs of the type.
 - **Good deeds follow health**, as a haul's follow the share delivered: `haulPointsFor(health)`,
   so more than 2/3 earns 1, 1/3 to 2/3 earns ½, and less earns 0.
 - **The letter blends the clock and health**, the same way haul's blends the clock and the load.
-- **Givers:** `generalStore` and `missionGiver`, as listed today.
+- **Givers:** `generalStore` and `residence`, as listed today.
 - **Zero health:** the job fails on the spot and the clean-up button is how it ends. Clean-up
   locks the giver's slot as abandon does (FEAT-96).
 

@@ -37,7 +37,7 @@ import {
 } from '../data/offers.js'
 import {
     FIRST_NAMES, FEMALE_CHANCE, LAST_NAMES, NICKNAMES, NICKNAME_CHANCE, POI_ADJECTIVES,
-    POI_ADJECTIVE_CHANCE, POI_THE_CHANCE, BUSINESS_TYPES, PLACE_NOUNS, LANDMARKS,
+    POI_ADJECTIVE_CHANCE, POI_THE_CHANCE, BUSINESS_TYPES, NAME_FORMS, HOUSEHOLDS, PLACE_NOUNS, LANDMARKS,
 } from '../data/offer-names.js'
 import { djb2, mulberry32 } from './seed.js'
 import { basePay } from './economy.js'
@@ -49,9 +49,9 @@ import { basePay } from './economy.js'
  */
 export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul'])
 
-// Fixed names for roster types that are NOT sources and have no word list — they can still be a
-// DESTINATION, and "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors
-// names; add these types to BUSINESS_TYPES (data/offer-names.js) to give them rolled ones.
+// Fixed names for roster types that are NOT sources (and Larry) — they can still be a DESTINATION,
+// and "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors names; a type
+// becomes rolled by turning it into a source with NAME_FORMS (data/offer-names.js).
 const FIXED_NAMES = {
     larrysHouse: "Larry's",
     momsHouse:   "Mom's",
@@ -100,18 +100,15 @@ export class OfferBoard {
     /**
      * @param {object} o
      * @param {number} o.seed        world seed
-     * @param {Array<{id:string,type:string,modelKey?:string}>} o.pois — PoiSystem.list(), the roster
+     * @param {Array<{id:string,type:string}>} o.pois — PoiSystem.list(), the roster
      * @param {number} o.nowH        the absolute game clock at creation (DaySystem.clockH())
-     * @param {(modelKey:string)=>('home'|'person'|undefined)} [o.giverNameOf] — the giver-naming flag
-     *        of a model (data/prop-models.js `giverName`). Injected so this module reads no registry.
      */
-    constructor ({ seed, pois, nowH, giverNameOf = () => undefined }) {
+    constructor ({ seed, pois, nowH }) {
         this._seed = seed >>> 0
         this._now = nowH
         this._pois = new Map()
         for (const q of pois || []) this._pois.set(q.id, q)
-        this._giverNameOf = giverNameOf
-        this._names = new Map()       // poiId → { name, people, giverName }
+        this._names = new Map()       // poiId → { name, people }
         this._slots = []              // every slot on the board
         this._bySource = new Map()    // poiId → slots[]
         this._rollNames()
@@ -295,13 +292,15 @@ export class OfferBoard {
      * changes WHAT it is. Null only if the source has no built thing to post (a table gap).
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate}|null, payMult,
-     *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null }
+     *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null,
+     *   passenger: boolean }
      * bundles is the haul load's piece count (FEAT-88), null for every other family. It is drawn on
      * its OWN `bundles` stream: one more draw on `spec` would shift the destination and place name
      * of every existing offer on every seed.
      * destKind is null for papers (the paper route picks its own customers). destPick is the uniform
      * number the mission planner uses to choose among the destination POIs it can actually reach;
      * placeName is the roadside name, rolled always, used whenever no POI destination fits.
+     * to is the thing's destination classes (FEAT-100): a tagged thing always goes to a POI.
      */
     spec (offer) {
         if (!offer) return null
@@ -348,8 +347,8 @@ export class OfferBoard {
             massKg: bundles ? bundles * HAUL_BUNDLE_KG : massKg, bundles,
             // ÷ HAUL_PAR_SLACK: the haul's par is that much longer and pay rides par (data/offers.js).
             payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1),
-            destKind: papers ? null : (destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
-            destPick, placeName,
+            destKind: papers ? null : (thing.to || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
+            destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
         })
     }
 
@@ -368,7 +367,7 @@ export class OfferBoard {
     /**
      * Plan an offer's route so that NO TWO OFFERS AT A POI ARE THE SAME JOB (owner, 2026-09-27: two
      * identical takeout orders to the gas station). Two offers are the same job when they carry the
-     * same thing AND the same reward AND go to the same place; the burger joint posts only takeout,
+     * same thing AND the same reward AND go to the same place; the food vendor posts only takeout,
      * so for it the destination is what has to differ.
      *
      * The rule is resolved oldest-first: each older sibling is planned first (memoised), and an
@@ -403,6 +402,24 @@ export class OfferBoard {
         return (offer.route = m)
     }
 
+    /**
+     * The planner's destination wish for an offer (MissionSystem.planOffer `dest`). A generic thing
+     * goes to any other POI on its DEST_POI_CHANCE roll, else to a roadside spot. A thing with a
+     * `to` (FEAT-100) goes only to a POI carrying one of those tags, and is STRICT: no candidate in
+     * reach means no route, never a roadside drop — roadside spots are for generic things only.
+     *
+     * @param {object} offer
+     * @param {object[]} pois — the roster (PoiSystem.list())
+     * @param {Set<string>} exclude — POI ids planDistinct says to avoid
+     */
+    destWish (offer, pois, exclude) {
+        const sp = this.spec(offer)
+        if (sp.destKind !== 'poi') return { kind: 'roadside' }
+        const fits = (q) => q.id !== offer.poiId && !exclude.has(q.id)
+            && (!sp.to || sp.to.some(t => q.tags?.includes(t)))
+        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict: !!sp.to }
+    }
+
     /** A seeded stream for the mission planner's own rolls on this offer (route determinism). */
     routeRng (offer) { return rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:route`) }
 
@@ -431,11 +448,12 @@ export class OfferBoard {
 
     /**
      * Roll every POI's name and people once, at construction, deduplicated within the region: a
-     * collision re-rolls that POI on the next attempt stream, so two Deb's Burgers or two Hadley
-     * places never share a board. People's full names are kept unique the same way.
+     * collision re-rolls that POI on the next attempt stream, so two Deb's Burgers never share a
+     * board. People's full names are kept unique the same way, and so are HOUSEHOLD surnames —
+     * "Pruitt's" and "Pruitt house" are different strings but read as one family twice.
      */
     _rollNames () {
-        const usedPoi = new Set(), usedPeople = new Set()
+        const usedPoi = new Set(), usedPeople = new Set(), usedHouse = new Set()
         for (const id of [...this._pois.keys()].sort()) {
             const q = this._pois.get(id)
             let out = null
@@ -447,9 +465,11 @@ export class OfferBoard {
                 const clash = (cand.name && !fixed && usedPoi.has(cand.name))
                     || new Set(full).size !== full.length          // two Deb Hadleys in one household
                     || full.some(f => usedPeople.has(f))
+                    || (HOUSEHOLDS.includes(q.type) && usedHouse.has(cand.people[0]?.last))
                 if (!clash || attempt === 31) out = cand
             }
             if (out.name) usedPoi.add(out.name)
+            if (HOUSEHOLDS.includes(q.type)) usedHouse.add(out.people[0]?.last)
             for (const p of out.people) if (p.last) usedPeople.add(`${p.first} ${p.last}`)
             this._names.set(id, out)
         }
@@ -458,37 +478,38 @@ export class OfferBoard {
     _rollPoi (q, r) {
         if (q.type === 'larrysHouse') {
             // Larry is just "Larry" and posts papers only (owner, 2026-09-26).
-            return { name: FIXED_NAMES.larrysHouse, giverName: null,
+            return { name: FIXED_NAMES.larrysHouse,
                      people: [{ sex: 'male', first: 'Larry', nick: null, last: null }] }
         }
         const src = SOURCES[q.type]
-        const giverName = q.type === 'missionGiver' ? (this._giverNameOf(q.modelKey) ?? 'home') : null
+        const forms = NAME_FORMS[q.type]
         const people = []
-        if (src) {
-            // A giver named by the person alone (an RV, a broken-down car) is ONE person — the card
-            // says "Earl needs…", and a second voice from the same wreck would read oddly.
-            const n = giverName === 'person' ? 1 : Number(pickWeighted(r(), PEOPLE_PER_POI))
+        // Sources roll their people; so does a non-source with name forms (the office, the school),
+        // whose first person is only there to name it.
+        if (src || forms) {
+            // A source with no name forms is named by its person alone (a stranded motorist), and is
+            // ONE person — the card says "Earl needs…", and a second voice from the same wreck would
+            // read oddly.
+            const n = forms ? Number(pickWeighted(r(), PEOPLE_PER_POI)) : 1
             for (let i = 0; i < n; i++) {
                 const p = this._rollPerson(r)
-                // A home is a household: everyone there shares the first person's last name.
-                if (giverName === 'home' && i > 0) p.last = people[0].last
+                if (HOUSEHOLDS.includes(q.type) && i > 0) p.last = people[0].last
                 people.push(p)
             }
         }
-        let name = null
-        if (giverName === 'home') name = `the ${people[0].last} place`
-        else if (giverName === 'person') name = null
-        else if (src?.nameForm === 'owned' && BUSINESS_TYPES[q.type] && people.length) {
-            const adj = r() < POI_ADJECTIVE_CHANCE ? pick(r, POI_ADJECTIVES) + ' ' : ''
-            name = `${people[0].first}'s ${adj}${pick(r, BUSINESS_TYPES[q.type])}`
-        } else if (BUSINESS_TYPES[q.type]) {
-            const the = r() < POI_THE_CHANCE ? 'The ' : ''
-            const adj = r() < POI_ADJECTIVE_CHANCE ? pick(r, POI_ADJECTIVES) + ' ' : ''
-            name = `${the}${adj}${pick(r, BUSINESS_TYPES[q.type])}`
-        } else {
-            name = FIXED_NAMES[q.type] ?? null
-        }
-        return { name, people, giverName }
+        const name = forms && people.length ? this._fillForm(pick(r, forms), people[0], q.type, r)
+                   : FIXED_NAMES[q.type] ?? null
+        return { name, people }
+    }
+
+    /** One name form filled in (data/offer-names.js header). Each slot draws only if present. */
+    _fillForm (form, p, type, r) {
+        return form
+            .replace('{the}', () => (r() < POI_THE_CHANCE ? 'The ' : ''))
+            .replace('{adj}', () => (r() < POI_ADJECTIVE_CHANCE ? pick(r, POI_ADJECTIVES) + ' ' : ''))
+            .replace('{biz}', () => pick(r, BUSINESS_TYPES[type]))
+            .replace('{first}', () => p.first)
+            .replace('{last}', () => p.last)
     }
 
     _rollPerson (r) {
@@ -531,7 +552,8 @@ export class OfferBoard {
                 sentence.push({ t: ' needs ' }, { t: `${sp.bundles} bundles of ${sp.phrase}`, b: true },
                               { t: ' hauled to ' }, { t: dest, b: true }, { t: '.' })
             } else {
-                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' delivered to ' },
+                // A passenger is the poster themselves: "Earl needs a ride to Rust Belt Auto."
+                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: sp.passenger ? ' to ' : ' delivered to ' },
                               { t: dest, b: true }, { t: '.' })
             }
         }

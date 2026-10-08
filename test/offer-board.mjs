@@ -29,9 +29,20 @@
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel } from '../src/offer-board.js'
-import { SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
-import { PROP_MODELS } from '../data/prop-models.js'
+import { THINGS, SOURCES, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay } from '../src/economy.js'
+import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
+
+// Could POI `q`'s rolled name have come from one of its class's forms? Each form becomes a regex
+// with the slots opened up: {first}/{last} are the POI's first person, the rest their word lists.
+const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const alt = (list) => `(?:${list.map(esc).join('|')})`
+function fromForms (type, name, p) {
+    return (NAME_FORMS[type] || []).some(f => new RegExp('^' + f.split(/(\{\w+\})/).map(t =>
+        t === '{first}' ? esc(p.first) : t === '{last}' ? esc(p.last)
+        : t === '{the}' ? '(?:The )?' : t === '{adj}' ? `(?:${alt(POI_ADJECTIVES)} )?`
+        : t === '{biz}' ? alt(BUSINESS_TYPES[type]) : esc(t)).join('') + '$').test(name))
+}
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -45,21 +56,28 @@ const POIS = [
     { id: 'poi:3|4',   type: 'larrysHouse',  modelKey: 'trailerHomeA' },
     { id: 'poi:5|6',   type: 'gasStation' },
     { id: 'poi:7|8',   type: 'gasStation' },
-    { id: 'poi:9|10',  type: 'serviceShop' },
-    { id: 'poi:11|12', type: 'serviceShop' },
-    { id: 'poi:13|14', type: 'burgerJoint' },
+    { id: 'poi:9|10',  type: 'autoShop' },
+    { id: 'poi:11|12', type: 'autoShop' },
+    { id: 'poi:13|14', type: 'foodVendor' },
     { id: 'poi:15|16', type: 'generalStore' },
     { id: 'poi:17|18', type: 'tackleShop' },
-    { id: 'poi:19|20', type: 'missionGiver', modelKey: 'trailerHomeA' },
-    { id: 'poi:21|22', type: 'missionGiver', modelKey: 'winnebago' },
-    { id: 'poi:23|24', type: 'missionGiver', modelKey: 'brokenCar' },
-    { id: 'poi:25|26', type: 'missionGiver', modelKey: 'trailerHomeA' },
-    { id: 'poi:27|28', type: 'missionGiver', modelKey: 'winnebago' },
+    { id: 'poi:19|20', type: 'residence', modelKey: 'trailerHomeA' },
+    { id: 'poi:21|22', type: 'residence', modelKey: 'winnebago' },
+    { id: 'poi:23|24', type: 'strandedMotorist', modelKey: 'brokenCar' },
+    { id: 'poi:25|26', type: 'residence', modelKey: 'trailerHomeA' },
+    { id: 'poi:27|28', type: 'residence', modelKey: 'winnebago' },
     { id: 'poi:29|30', type: 'firewoodYard' },
+    { id: 'poi:31|32', type: 'workSite' },
+    { id: 'poi:33|34', type: 'residence', modelKey: 'trailerHomeA' },
+    { id: 'poi:35|36', type: 'farm' },
+    { id: 'poi:37|38', type: 'farm' },
+    { id: 'poi:39|40', type: 'farm' },
+    { id: 'poi:41|42', type: 'office' },
+    { id: 'poi:43|44', type: 'school' },
+    { id: 'poi:45|46', type: 'doctor' },
 ]
 const T0 = 6   // dayStartHour: the clock a run opens on
-const giverNameOf = (k) => PROP_MODELS[k]?.giverName
-const make = (seed, nowH = T0) => new OfferBoard({ seed, pois: POIS, nowH, giverNameOf })
+const make = (seed, nowH = T0) => new OfferBoard({ seed, pois: POIS, nowH })
 const slotsOf = (b, id) => b._bySource.get(id) || []
 const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFixed(9)}:${s.state}`).join('|')
 
@@ -105,7 +123,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
             if (!(s.offer.lifeH >= lo - 1e-9 && s.offer.lifeH <= hi + 1e-9)) bad++
         }
         // The generic giver's centre is rolled ONCE per POI: all its offers sit within ±30 % of it.
-        for (const q of POIS.filter(p => p.type === 'missionGiver')) {
+        for (const q of POIS.filter(p => p.type === 'residence')) {
             const lifes = []
             for (let k = 0; k < 20; k++) lifes.push(b._lifeH(q.id, q.type, 0, k))
             const c = lifes.reduce((x, y) => x + y) / lifes.length
@@ -188,7 +206,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
 // ── 8. cancel ───────────────────────────────────────────────────────────────────────────────────
 {
     const b = make(41)
-    const food = POIS.find(q => q.type === 'burgerJoint').id
+    const food = POIS.find(q => q.type === 'foodVendor').id
     const o = b.offers(food, T0)[0]
     b.take(o.id, T0)
     const t = T0 + 0.2
@@ -211,7 +229,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
 // ── 9. taken offers are hidden ──────────────────────────────────────────────────────────────────
 {
     const b = make(51)
-    const food = POIS.find(q => q.type === 'burgerJoint').id
+    const food = POIS.find(q => q.type === 'foodVendor').id
     const before = b.offers(food, T0)
     const o = before[0]
     b.take(o.id, T0)
@@ -236,7 +254,8 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
 
 // ── 11. names ───────────────────────────────────────────────────────────────────────────────────
 {
-    let dupPoi = 0, dupPerson = 0, homeBad = 0, personBad = 0
+    let dupPoi = 0, dupPerson = 0, formBad = 0, personBad = 0, houseBad = 0, dupHouse = 0
+    const formOff = new Set()
     for (let seed = 1; seed <= 300; seed++) {
         const b = make(seed)
         // Fixed placeholder names (the two gas stations) are exempt — they are not rolled.
@@ -245,17 +264,34 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
         if (new Set(names).size !== names.length) dupPoi++
         const full = POIS.flatMap(q => b.people(q.id)).filter(p => p.last).map(p => `${p.first} ${p.last}`)
         if (new Set(full).size !== full.length) dupPerson++
-        for (const q of POIS.filter(p => p.type === 'missionGiver')) {
-            const gn = PROP_MODELS[q.modelKey].giverName
-            if (gn === 'home' && !/^the \S+ place$/.test(b.poiName(q.id) ?? '')) homeBad++
-            if (gn === 'person' && (b.poiName(q.id) !== null || b.people(q.id).length !== 1
-                || b.placeLabel(q.id) !== personLabel(b.people(q.id)[0]))) personBad++
+        for (const q of POIS.filter(p => (SOURCES[p.type] || NAME_FORMS[p.type]) && p.type !== 'larrysHouse')) {
+            const ppl = b.people(q.id)
+            if (NAME_FORMS[q.type]) {
+                if (!fromForms(q.type, b.poiName(q.id) ?? '', ppl[0])) { formBad++; formOff.add(`${q.type}: ${b.poiName(q.id)}`) }
+            } else if (b.poiName(q.id) !== null || ppl.length !== 1
+                || b.placeLabel(q.id) !== personLabel(ppl[0])) personBad++
+            if (HOUSEHOLDS.includes(q.type) && ppl.some(p => p.last !== ppl[0].last)) houseBad++
         }
+        const surnames = POIS.filter(q => HOUSEHOLDS.includes(q.type)).map(q => b.people(q.id)[0].last)
+        if (new Set(surnames).size !== surnames.length) dupHouse++
     }
     check('POI names are unique within a region (300 seeds)', dupPoi === 0, `${dupPoi}`)
     check('people are unique within a region (300 seeds)', dupPerson === 0, `${dupPerson}`)
-    check("a 'home' giver is named \"the <last> place\"", homeBad === 0, `${homeBad}`)
-    check("a 'person' giver is ONE person, no place name — just the person", personBad === 0, `${personBad}`)
+    check('every source — and every receive-only class (office, school) — is named by its class\'s forms (300 seeds)', formBad === 0,
+        `${formBad}: ${[...formOff].slice(0, 5).join(' · ')}`)
+    check('a class with no forms is ONE person, no place name — just the person', personBad === 0, `${personBad}`)
+    check('a household shares one last name', houseBad === 0, `${houseBad}`)
+    check('no two households in a region share a surname (300 seeds)', dupHouse === 0, `${dupHouse}`)
+    check('no roadside place noun promises a farm, quarry or dairy, or reads as a farm\'s name',
+        !PLACE_NOUNS.some(n => ['farm', 'quarry', 'dairy', 'ranch', 'orchard', 'acres', 'homestead'].includes(n)))
+    const mb = make(6)
+    const motorist = POIS.find(q => q.type === 'strandedMotorist').id
+    const ride = mb.offers(motorist, T0)[0]
+    const rc = ride && mb.card(ride, { nowH: T0, route: { par: 300, distance: 2000, endPoiId: POIS.find(q => q.type === 'autoShop').id } })
+    check('the motorist posts only their own ride: "<person> needs a ride to <auto shop>."',
+        !!rc && mb.spec(ride).thingId === 'motoristRide'
+        && rc.sentence.map(r => r.t).join('') === `${personLabel(mb.people(motorist)[0])} needs a ride to ${mb.placeLabel(POIS.find(q => q.type === 'autoShop').id)}.`,
+        rc?.sentence.map(r => r.t).join(''))
     const b = make(6)
     const larry = POIS.find(q => q.type === 'larrysHouse').id
     const p = { first: 'Earl', nick: 'Two-Tone', last: 'Pruitt' }
@@ -297,7 +333,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
 
 // ── 13. bonus share ─────────────────────────────────────────────────────────────────────────────
 {
-    const count = { burgerJoint: [0, 0], missionGiver: [0, 0], larrysHouse: [0, 0] }
+    const count = { foodVendor: [0, 0], residence: [0, 0], larrysHouse: [0, 0] }
     for (let seed = 1; seed <= 200; seed++) {
         const b = make(seed)
         for (let t = T0; t < T0 + 24 * 3; t += 2) for (const q of POIS) {
@@ -305,17 +341,17 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
             for (const o of b.offers(q.id, t)) { count[q.type][1]++; if (b.spec(o).bonus) count[q.type][0]++ }
         }
     }
-    const share = count.burgerJoint[0] / count.burgerJoint[1]
+    const share = count.foodVendor[0] / count.foodVendor[1]
     check('bonus share ≈ 25 % where the source has rewards', Math.abs(share - 0.25) < 0.03, share.toFixed(3))
     check('no bonus where the source has no rewards (givers, Larry)',
-        count.missionGiver[0] === 0 && count.larrysHouse[0] === 0)
+        count.residence[0] === 0 && count.larrysHouse[0] === 0)
 }
 
 // ── 13b. no two offers at a POI are the same job ────────────────────────────────────────────────
 // Owner, 2026-09-27: two identical takeout orders to the gas station. A fake planner that ALWAYS
 // wants the same destination (unless told to avoid it) forces the collision planDistinct must break.
 {
-    const food = POIS.find(q => q.type === 'burgerJoint').id   // 3 slots, takeout only
+    const food = POIS.find(q => q.type === 'foodVendor').id   // 3 slots, takeout only
     const sigOf = (b, o) => `${b.spec(o).thingId}|${b.spec(o).bonus?.rewardId ?? ''}|${o.route?.endPoiId ?? 'road:' + o.route?.placeName}`
     let dupPoi = 0, dupRoad = 0, older = 0, n = 0
     for (let seed = 1; seed <= 60; seed++) {
@@ -388,13 +424,43 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
     const key = (sp) => JSON.stringify([sp.family, sp.thingId, sp.massKg, sp.bonus, sp.payMult, sp.destKind, sp.destPick, sp.placeName])
     let moved = 0
     for (let seed = 1; seed <= 30; seed++) {
-        const a = make(seed), b = new OfferBoard({ seed, pois: without, nowH: T0, giverNameOf })
+        const a = make(seed), b = new OfferBoard({ seed, pois: without, nowH: T0 })
         for (const q of without) for (const o of b.offers(q.id, T0)) {
             const o2 = a.offers(q.id, T0).find(x => x.id === o.id)
             if (!o2 || key(a.spec(o2)) !== key(b.spec(o))) moved++
         }
     }
     check('adding the yard leaves every other offer unchanged', moved === 0, `${moved} moved`)
+}
+
+// ── 16. to-tags (FEAT-100) ──────────────────────────────────────────────────────────────────────
+// A thing with a `to` asks the planner for a POI of a listed class, strictly; a generic thing keeps
+// the DEST_POI_CHANCE roll and may go roadside. PoiSystem leads every POI's tags with its type.
+{
+    const tagged = POIS.map(q => ({ ...q, tags: [q.type, ...(q.type === 'momsHouse' ? ['residence', 'mom'] : [])] }))
+    let taggedN = 0, taggedBad = 0, genericStrict = 0, roadside = 0
+    for (let seed = 1; seed <= 60; seed++) {
+        const b = make(seed)
+        for (let t = T0; t < T0 + 24 * 4; t += 3) for (const id of b.sources()) for (const o of b.offers(id, t)) {
+            const sp = b.spec(o)
+            if (sp.family === 'papers') continue
+            const w = b.destWish(o, tagged, new Set())
+            if (sp.to) {
+                taggedN++
+                if (w.kind !== 'poi' || !w.strict || !w.pois.length
+                    || !w.pois.every(q => q.id !== o.poiId && sp.to.some(x => q.tags.includes(x)))) taggedBad++
+            } else {
+                if (w.strict) genericStrict++
+                if (w.kind === 'roadside') roadside++
+            }
+        }
+    }
+    check('a tagged thing asks for a matching POI only, strictly (never roadside)', taggedN > 0 && taggedBad === 0,
+        `${taggedBad}/${taggedN}`)
+    check('a generic thing is never strict, and may still go roadside', genericStrict === 0 && roadside > 0)
+    check('THINGS name only real classes in `to` (or the planned sawmill/quarry)',
+        THINGS.every(t => !t.to || t.to.every(x => SOURCES[x] || POIS.some(q => q.type === x)
+            || ['sawmill', 'quarry'].includes(x))))
 }
 
 // ── 14. import discipline ───────────────────────────────────────────────────────────────────────

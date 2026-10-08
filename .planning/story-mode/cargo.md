@@ -21,12 +21,14 @@ The four delivery types (missions.md §3, amended 2026-10-06):
 
 **From → to** (owner, 2026-10-06, option C): **blank means generic**, so any normal giver can post
 it, to any destination. Only items that make sense for certain places are tagged. Names are the
-place types in `src/poi.js` (`generalStore`, `serviceShop`, `burgerJoint`, `gasStation`,
-`missionGiver`, `firewoodYard`, plus the planned `farm`, `workSite` (the job site), `residence`, `office`,
-`school`, `doctor`, `strandedMotorist`, `sawmill` and `quarry` — see pois.md "Places and Missions"). The
+place classes in `src/poi.js` (`generalStore`, `autoShop`, `foodVendor`, `gasStation`,
+`tackleShop`, `firewoodYard`, `workSite` (the job site), `residence`, `farm`, `office`, `school`,
+`doctor`, `strandedMotorist`), plus the planned `sawmill` and `quarry` — see pois.md "Places and
+Missions". The
 full list of places, and what each gives and receives, is `pois.md`. **†** marks a roadside spot
-(an `institution` spot in `pois.md`), not a POI. Tags are a first pass and not yet wired: today
-`data/offers.js` has only "from" (`pools`), and the destination is any place.
+(a roadside spot in `pois.md`), not a POI. **One thing per row** (owner, 2026-10-07). In `data/offers.js` "from" is `pools` and "to"
+is `to` (FEAT-100): a thing with a `to` always ends at a POI of a listed class, never at a
+roadside spot. The dashboard warns when an existing thing and its row here disagree.
 
 Mass is real for every bed load (SM-INV-10, *a load, never a stat*). Mass ranges are the
 suggestions written in each asset ticket. "Existing" means the thing is already an entry in
@@ -42,25 +44,38 @@ Every courier thing is a phrase on the card. Nothing renders.
 
 | Region | Thing | From → to | Note |
 |---|---|---|---|
-| R1 | a memo from the foreman | workSite → any | |
-| R1 | lunch for the partner | burgerJoint → any | |
-| R1 | a private note | | |
-| R1 | much-needed reading glasses | generalStore → any | |
-| R1 | keys for the tractor | any → farm | |
-| R1 | a 20 lb propane cylinder (full, or an empty going back to refill) | full: gasStation / generalStore → any · empty: any → gasStation / generalStore | owner 2026-10-07; full 17 kg, empty ~8 kg. Nearly every place uses them and sends empties back, so both legs are generic. The bed version is the freight 4-pack |
-| R1 | a chainsaw · a splitting axe · a shovel | generalStore → firewoodYard / sawmill / quarry / farm | owner 2026-10-07; ~6 / 3 / 2 kg. Cargo for the yard crews, not a player tool (items.md §7 keeps the chainsaw out as a general item) |
-| R1 | two bags of takeout · a week of groceries · their prescription | burgerJoint / generalStore / missionGiver → any (as today) | existing |
-| R1 | a hubcap · a headlight · a taillight · a set of wheel bearings | serviceShop → any | existing |
+| R1 | a memo from the foreman | workSite → any | existing |
+| R1 | lunch for the partner | residence / farm → any | existing |
+| R1 | a private note | | existing (any normal giver; not the office, school or motorist) |
+| R1 | much-needed reading glasses | residence / farm → any | existing |
+| R1 | keys for the tractor | any → farm | existing |
+| R1 | their class notes | residence / farm → school | existing |
+| R1 | a presentation deck | residence / farm → office | existing |
+| R1 | a full 20 lb propane tank | generalStore / gasStation → any | existing; ~17 kg (7.7 kg cylinder + 9.1 kg gas) |
+| R1 | an empty 20 lb propane tank | any → generalStore / gasStation | existing; ~8 kg. The bed version of both is the freight 4-pack (ASSET-72) |
+| R1 | a chainsaw | generalStore → firewoodYard / sawmill / quarry / farm | existing; ~6 kg. Cargo for the yard crews, not a player tool (items.md §7 keeps the chainsaw out as a general item) |
+| R1 | a splitting axe | generalStore → firewoodYard / sawmill / quarry / farm | existing; ~3 kg |
+| R1 | a shovel | generalStore → firewoodYard / sawmill / quarry / farm | existing; ~2 kg |
+| R1 | two bags of takeout | foodVendor → any | existing |
+| R1 | a week of groceries | generalStore → any | existing |
+| R1 | their prescription | generalStore → any | existing |
+| R1 | a hubcap | autoShop → any | existing |
+| R1 | a headlight | autoShop → any | existing |
+| R1 | a taillight | autoShop → any | existing |
+| R1 | a set of wheel bearings | autoShop → any | existing |
 | R2 | keys to the school | any → school | |
 | R2 | keys to the office | any → office | |
-| R2 | a muffler · a drive shaft · a body panel · a tailgate | serviceShop → any | existing (10–30 kg in the cab) |
+| R2 | a muffler | autoShop → any | existing (10–30 kg in the cab) |
+| R2 | a drive shaft | autoShop → any | existing |
+| R2 | a body panel | autoShop → any | existing |
+| R2 | a tailgate | autoShop → any | existing |
 
 ### People — passengers in the cab
 
 | Region | Job | From → to | Note |
 |---|---|---|---|
 | R1 | taking someone to the party | | |
-| R1 | taking someone from their broken-down car | strandedMotorist → serviceShop / any | the pickup is the ASSET-18 broken-down car scene |
+| R1 | taking someone from their broken-down car | strandedMotorist → autoShop | existing (`motoristRide`, the motorist's only job). The pickup is the ASSET-18 broken-down car scene |
 | R2 | taking someone to help their grandma | | |
 | R2 | workers for the site | any → workSite | more than one passenger; capped by the cab's seats |
 | R3 | taking someone from the party (tipsy) | | flavour only (ruling 5) |
@@ -83,22 +98,28 @@ One per region, from the haul yards (FEAT-91).
 
 | Region | Load | From → to | Asset | Mass (kg) | Note |
 |---|---|---|---|---|---|
-| R1 | traffic cones | serviceShop → workSite | ASSET-49 | 40–80 | |
+| R1 | traffic cones | autoShop → workSite | ASSET-49 | 40–80 | |
 | R1 | water carboys | generalStore → any | ASSET-50 | 80–90 | |
 | R1 | mulch | generalStore / farm → any | ASSET-51 (bulk heap, mulch variant) | 150–250 | |
-| R1 | pallet of tomatoes · squash · peppers | farm → generalStore / missionGiver | ASSET-56 (three variants) | 200–350 | |
+| R1 | pallet of tomatoes | farm → generalStore / residence | ASSET-56 (tomato variant) | 200–350 | |
+| R1 | pallet of squash | farm → generalStore / residence | ASSET-56 (squash variant) | 200–350 | |
+| R1 | pallet of peppers | farm → generalStore / residence | ASSET-56 (pepper variant) | 200–350 | |
 | R1 | pallet of potting soil | generalStore → any | ASSET-47 | 300–400 | |
-| R1 | steel car rims, a stack of 4 or 8 | serviceShop → any | ASSET-53 | 40–100 | |
-| R1 | eight tyres, strapped | serviceShop → any | ASSET-61 | 80–100 | |
-| R1 | propane 4-pack on a pallet (full, or empties back to refill) | full: gasStation / generalStore → any · empty: any → gasStation / generalStore | ASSET-72 (reuses ASSET-05's cylinder) | 50 (empty) – 90 (full) | owner 2026-10-07; the cab version is a courier thing |
-| R1 | drum · barrel · crate · pallet | | ASSET-30 / 29 / 28 / 27 | per FEAT-96 | FEAT-96's first slice, generic |
-| R2 | pallet of soft drinks | any → generalStore / burgerJoint / gasStation | ASSET-46 | 350–450 | |
+| R1 | steel car rims, a stack of 4 or 8 | autoShop → any | ASSET-53 | 40–100 | |
+| R1 | eight tyres, strapped | autoShop → any | ASSET-61 | 80–100 | |
+| R1 | propane 4-pack on a pallet, full | generalStore / gasStation → any | ASSET-72 (reuses ASSET-05's cylinder) | 90 | owner 2026-10-07; the cab version is a courier thing |
+| R1 | propane 4-pack on a pallet, empties | any → generalStore / gasStation | ASSET-72 | 50 | back to refill |
+| R1 | drum | | ASSET-30 | per FEAT-96 | FEAT-96's first slice, generic |
+| R1 | barrel | | ASSET-29 | per FEAT-96 | FEAT-96's first slice, generic |
+| R1 | crate | | ASSET-28 | per FEAT-96 | FEAT-96's first slice, generic |
+| R1 | pallet | | ASSET-27 | per FEAT-96 | FEAT-96's first slice, generic |
+| R2 | pallet of soft drinks | any → generalStore / foodVendor / gasStation | ASSET-46 | 350–450 | |
 | R2 | sheets of plywood | sawmill → any | ASSET-54 | 220–350 | longer than the bed, rides on the lowered tailgate |
 | R2 | bed full of topsoil | farm → any | ASSET-51 (bulk heap, topsoil variant) | 500–700, tuned by feel | **a mild overload, on purpose**; suspension and tyre upgrades carry it (items.md §1a) |
 | R2 | pallet of cinder blocks | generalStore → workSite | ASSET-55 | 350–450 | |
 | R2 | pallet of concrete bags | generalStore → workSite | ASSET-47 (concrete variant) | 350–450 | |
 | R2 | railway ties | | ASSET-52 | 300–450 | 2.6 m, rides on the lowered tailgate |
-| R2 | stack of 55-gal drums | serviceShop / gasStation → farm / any | ASSET-48 | 120–450 | reuses the ASSET-30 drum |
+| R2 | stack of 55-gal drums | autoShop / gasStation → farm / any | ASSET-48 | 120–450 | reuses the ASSET-30 drum |
 | R3 | job box (jobsite tool chest) | any → workSite | ASSET-57 | 150–250 | |
 | R3 | a Persian rug or two | | ASSET-58 | 30–60 per roll | light but valuable; 2.7 m, rides on the lowered tailgate |
 
@@ -113,12 +134,12 @@ only** and are never modelled.
 |---|---|---|---|---|---|
 | R1 | crate of milk bottles | farm → generalStore | ASSET-28 + text | 15–40 | |
 | R1 | crate of canning jars | generalStore → farm | ASSET-28 + text | 15–40 | for preserves |
-| R1 | eggs | farm → generalStore / burgerJoint | ASSET-28 + text | light | items.md §4 |
+| R1 | eggs | farm → generalStore / foodVendor | ASSET-28 + text | light | items.md §4 |
 | R1 | four dining chairs | | ASSET-59 | 20–35 | the "ratty old furniture" job (worn recolour) |
 | R1 | grandma's vase | | ASSET-41 | 3–8 | existing `vase` |
 | R1 | full-length mirror | | ASSET-64 | 15–30 | |
 | R2 | crate of fine china | | ASSET-28 + text | 15–40 | |
-| R2 | a windshield | serviceShop → any | crate until modelled | 12–18 | existing |
+| R2 | a windshield | autoShop → any | crate until modelled | 12–18 | existing |
 | R2 | dining table | | ASSET-60 | 40–70 | the "nice" set, paired with ASSET-59 |
 | R2 | ornate vase | | ASSET-41 | 3–8 | the valuable version of grandma's vase |
 | R2 | framed artwork, crated | | ASSET-44 | 10–30 | |
@@ -128,7 +149,7 @@ only** and are never modelled.
 | R2 | pelican case (contents as text) | | ASSET-39 | 15–40 | tough; high-tech contents |
 | R3 | sculpture | | ASSET-43 | 40–200 | |
 | R3 | upright piano | | ASSET-42 | 200–270 | heavy *and* fragile |
-| R3 | airport x-ray machine | any → "the airport"† | ASSET-45 | 300–400 | high-tech, heavy and delicate |
+| R3 | airport x-ray machine | | ASSET-45 | 300–400 | high-tech, heavy and delicate. Generic: the airport place was dropped (owner, 2026-10-07) |
 
 **Damage feedback** (FEAT-97): on each damaging hit the load plays a sound and **blinks red**. No
 HUD number appears.

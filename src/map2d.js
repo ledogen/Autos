@@ -2313,7 +2313,7 @@ export class Map2D {
         if (!list || !list.length) return
         const board = this._getBoard()
         for (const q of list) {
-            const ico = POI_ICONS[q.type] ?? POI_ICONS.missionGiver
+            const ico = POI_ICONS[q.type] ?? POI_ICONS.diamond
             const sx = this._sx(q.x), sy = this._sy(q.z)
             const st = board?.status(q.id) ?? null
             ctx.lineWidth = 1.5
@@ -2336,7 +2336,7 @@ export class Map2D {
                 ctx.fill(); ctx.stroke()
             }
             // The label is what makes the roster findable; an unlabelled marker is the problem
-            // FEAT-60 set out to fix. Mission givers carry none on purpose (see data/map-icons.js).
+            // FEAT-60 set out to fix. Diamonds carry none on purpose (see data/map-icons.js).
             if (ico.label) {
                 // Quadrangle lettering: black humanist sans, haloed in the PAPER colour so it lifts
                 // off the contour hatching without being a black-on-black smudge. (The halo used to

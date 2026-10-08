@@ -18,13 +18,6 @@ that gives nothing still costs a pad, but it adds nothing to the job supply (see
 
 | Type | Status | Region | Gives | Receives | Tags | Model | Ticket |
 |---|---|---|---|---|---|---|---|
-| `farm` | planned (owner 2026-10-06) · additional class ×3 (2026-10-07) | any | freight, courier | canning jars, tractor keys, drums, tools (chainsaw, splitting axe, shovel) | farm | produce stall placeholder (ASSET-15), then the ASSET-65..67 composite, which needs a bigger pad than 14 × 8 m | FEAT-96, FEAT-98 |
-| `workSite` | planned — **the job site**, required class (owner 2026-10-07) | any | courier (memo from the foreman); later the region boss | cones, cinder blocks, concrete bags, job box, workers | jobSite | placeholder, then ASSET-71 | FEAT-103 |
-| `residence` | planned — additional class ×5 (owner 2026-10-07) | any | courier, fragile | any | residence | today's `missionGiver` pool (trailer home, etc.) | FEAT-98 |
-| `office` | planned — additional class ×1 (owner 2026-10-07) | any | courier | keys to the office | office | placeholder, then ASSET-69 | FEAT-98 |
-| `school` | planned — additional class ×1 (owner 2026-10-07) | any | courier | keys to the school | school | placeholder, then ASSET-73 | FEAT-98 |
-| `doctor` | planned — additional class ×1 (owner 2026-10-07) | any | courier (prescriptions) | any | doctor | placeholder, then ASSET-70 | FEAT-98 |
-| `strandedMotorist` | planned — additional class ×1 (owner 2026-10-07) | any | courier (a passenger to the shop), 0–1 jobs | — | motorist | ASSET-18 broken-down car (shipped), shown only while the job is open | FEAT-102 |
 | `sawmill` | planned | R2 | haul (lumber), courier | any | haulYard | ASSET-11 | FEAT-91 |
 | `quarry` | planned | R3 | haul (rocks), courier | any | haulYard | ASSET-35 | FEAT-91 |
 
@@ -37,8 +30,7 @@ model, no offers. Today they are half the destinations (`DEST_POI_CHANCE = 0.5` 
 | Spot | Form | Tags | Promises an object? | Status | Note |
 |---|---|---|---|---|---|
 | "Mile # pullout", "the turnaround", "the county line" … | landmark (`LANDMARKS`) | receives, empty | **no**: believably empty (owner 2026-09-26) | live | any job may end here |
-| "the Hadley farm", "the Pruitt place" … | place (`[lastname] [PLACE_NOUNS]`) | receives, home | **yes**: a farm, ranch, dairy or quarry should be visible | live (the grammar is still proposed) | breaks the believably-empty rule for some nouns; see below |
-| "the airport" | institution | receives, institution | **yes** | proposed | the airport x-ray machine |
+| "the Pruitt place", "the Hadley hollow" … | place (`[lastname] [PLACE_NOUNS]`) | receives, home | **one noun**: barn | live (the grammar is still proposed) | farm, quarry, dairy removed 2026-10-07 (FEAT-99); ranch, orchard, acres, homestead moved to the farm's name forms the same day |
 
 **The tension, and the case for upgrading.** The believably-empty rule says a roadside name must not
 promise an object that isn't there. Landmarks pass it. Institution names fail it: "the school" with
@@ -49,7 +41,8 @@ forever.
 
 **Resolved 2026-10-07 (Places and Missions):** the school and the office are now POI classes (above),
 and `farm`, `quarry` and `dairy` leave `PLACE_NOUNS` so no roadside name promises a farm that isn't
-there (FEAT-99). The airport stays roadside for now.
+there (FEAT-99). **The airport is dropped** (owner, 2026-10-07: "we ain't modeling that"); the
+x-ray machine is generic cargo.
 
 ## Places and Missions — POI classes and the job budget [OWNER, 2026-10-07]
 
@@ -65,7 +58,7 @@ except the required classes is only a job giver and receiver for now.
 | Group | Classes (count) | Jobs |
 |---|---|---|
 | **Required (9)** | general store · food vendor (`foodVendor`) · auto shop ×2 (`autoShop`) · gas station ×2 · tackle shop · job site (`workSite`) · haul yard (FEAT-91: splitting yard R1, sawmill R2, quarry R3) | food vendor 2–3 always; haul yard 2 always; job site hosts the region boss; the rest 0–2 from the budget |
-| **Additional (12)** | residence ×5 · farm ×3 · office · school · doctor · stranded motorist | 0–2 each from the budget (motorist 0–1) |
+| **Additional (12)** | residence ×5 · farm ×3 (also tagged `residence`) · office · school · doctor · stranded motorist | 0–2 each from the budget; motorist 0–1, only their own ride to an auto shop; **office and school post nothing, they only receive** (owner, 2026-10-07) |
 | **Fixtures (R1)** | mom (`residence`, `mom`: you can sleep there, she receives) · Larry (`residence`, `larry`: always has a job, save his re-roll timer) | Larry 1 always |
 
 Region 1 is therefore **23 POIs**. Two of each gas station and auto shop stay, as today; scaling the

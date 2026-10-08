@@ -27,17 +27,13 @@
 //                       reads as no box at all and the marker silently falls back to the 1.6 m cube.
 //   tags       string[] — which POOLS this asset belongs to. A POI roster slot names a tag rather
 //                       than a key (src/poi.js, `modelPool`), so widening a pool is an edit to THIS
-//                       file and nothing else. 'missionGiver' = "a place that hands out work".
+//                       file and nothing else. 'residence' = the homes a residence POI draws from.
 //                       Owner ruling 2026-08-15: the per-POI choice is deterministic in the seed,
 //                       and adding to a pool is ALLOWED to reshuffle which marker wears what.
 //   yawOffset  number — extra yaw, in radians, applied on top of the pad yaw (which points model
 //                       -Z at the road). The pad is 14 m along the road x 8 m across, so an asset
 //                       whose length runs down its own -Z has only 8 m to live in unless it is
 //                       turned. Default 0.
-//   giverName  'home' | 'person' — FEAT-67, missionGiver models only: how the mission board names a
-//                       giver standing on this model. 'home' → "the Hadley place"; 'person' → the
-//                       person alone ("Earl"), for givers that are not a home (an RV, a broken-down
-//                       car, later a hitchhiker). Owner ruling 2026-09-27.
 //   palette   object — CURATED RECOLOUR POOL, { <material name substring>: [[r,g,b], ...] }.
 //                       Owner ruling 2026-08-21: recolouring is not a free-for-all tint. Each
 //                       model that wants variety declares a short, hand-picked list of colours it
@@ -149,10 +145,10 @@ export const PROP_MODELS = {
   // scatter these WITH a POI, never on bare ground (ticket rule — without an
   // anchor a flamingo reads as litter, not habitation).
   //
-  // NO POOL TAG YET.  The only pool in this file is 'missionGiver', and a
-  // flamingo is not a place that hands out work.  The POI-satellite scatter that
+  // NO POOL TAG YET.  The POI pool in this file is 'residence', and a
+  // flamingo is not a home.  The POI-satellite scatter that
   // would consume a 'lawnFurniture' tag does not exist; until it does these are
-  // spawnModel()-only.  Do NOT tag them missionGiver to make them show up.
+  // spawnModel()-only.  Do NOT tag them residence to make them show up.
   flamingoUp: {
     url: 'assets/models/flamingo-a.glb',
     // Head up, the tall alert pose.  0.16 wide x 0.87 tall x 0.49 long, the
@@ -230,11 +226,11 @@ export const PROP_MODELS = {
   // estimate.
   //
   // THE 'lawnFurniture' TAG IS DECLARED BUT NOTHING CONSUMES IT YET.  src/poi.js
-  // resolves `modelPool` against tags for the mission-giver roster only; the
+  // resolves `modelPool` against tags for the residence roster only; the
   // POI-satellite scatter this tag is for does not exist (same note as the
   // flamingos above, which predate the tag and are still spawnModel()-only).  The
   // tag is here so that scatter, when it lands, is a consumer change and not an
-  // edit to every prop entry.  Do NOT add 'missionGiver' to make it show up.
+  // edit to every prop entry.  Do NOT add 'residence' to make it show up.
   bbqGrill: {
     url: 'assets/models/bbq-grill.glb',
     tags: ['lawnFurniture'],
@@ -341,7 +337,7 @@ export const PROP_MODELS = {
   },
 
   // ── POI markers ───────────────────────────────────────────────────────────────────────────
-  // Each carries the 'missionGiver' tag, so the roster's five giver slots draw from all three.
+  // The homes carry the 'residence' tag, so the roster's five residence slots draw from both.
 
   // ASSET-21 — single-wide mobile home, the first modelled POI marker (FEAT-60). Stands on a
   // lay-by pad as mom's house and Larry's house.
@@ -359,9 +355,7 @@ export const PROP_MODELS = {
       TrailerBody:   [[0.28, 0.72, 0.76], [0.88, 0.76, 0.28], [0.90, 0.90, 0.88]],   // cyan AUTHORED
       TrailerAccent: [[0.10, 0.34, 0.40], [0.46, 0.34, 0.12], [0.55, 0.56, 0.58]],
     },
-    tags: ['missionGiver'],
-    // FEAT-67 giver naming (owner, 2026-09-27): a home — the board calls it "the Hadley place".
-    giverName: 'home',
+    tags: ['residence'],
   },
 
   // ASSET-36 — the firewood yard (FEAT-88/91, region-1 haul giver), re-scoped by the owner on
@@ -400,7 +394,7 @@ export const PROP_MODELS = {
   firewoodBundleB: { url: 'assets/models/firewood-bundle-b.glb', collision: { shape: 'hull-from-mesh', size: [0.29, 0.33, 0.43] } },
   firewoodBundleC: { url: 'assets/models/firewood-bundle-c.glb', collision: { shape: 'hull-from-mesh', size: [0.27, 0.30, 0.39] } },
 
-  // ASSET-09 — Winnebago RV, 1818 tris. Somebody living out of it, handing out work.
+  // ASSET-09 — Winnebago RV, 1818 tris. Somebody living out of it: a residence.
   winnebago: {
     url: 'assets/models/winnebago.glb',
     // 8.0 m long x 2.4 m body width x 3.14 m tall; length runs down -Z (the cab faces -Z).
@@ -410,13 +404,11 @@ export const PROP_MODELS = {
     // pointed at the tarmac like a row of cannons. Turned a quarter, the 8 m lies along the pad's
     // 14 m and only 2.4 m crosses it, which is also how a real one parks in a lay-by.
     yawOffset: Math.PI * 0.5,
-    tags: ['missionGiver'],
-    // FEAT-67: not a home — the board names the giver by the person alone ("Earl").
-    giverName: 'person',
+    tags: ['residence'],
   },
 
-  // ASSET-18 — broken-down car, 2464 tris (BrokenCar + BrokenCarGlass). The stranded-motorist
-  // giver: the model already tells you what the job is.
+  // ASSET-18 — broken-down car, 2464 tris (BrokenCar + BrokenCarGlass). The stranded motorist's
+  // model (src/poi.js names it directly): it already tells you what the job is.
   brokenCar: {
     url: 'assets/models/broken-car.glb',
     // CAR BODY ONLY — deliberately excludes the spare, jack and tyre iron lying beside it, so you
@@ -432,8 +424,6 @@ export const PROP_MODELS = {
     // turns +X toward the road on every pad orientation (verified against the pad normal, all
     // quadrants), so the damage faces the driver. -PI/2 would park the wreck's good side out.
     yawOffset: Math.PI * 0.5,
-    tags: ['missionGiver'],
-    giverName: 'person',   // FEAT-67: a stranded motorist, named by the person alone
   },
 
   // ASSET-14 — the lone gas pump, 592 tris, 2.50 x 4.55 x 1.40 m. RESHAPED BY THE OWNER
@@ -467,10 +457,10 @@ export const PROP_MODELS = {
     // surface. CAVEAT: the gauge face's red GASOLINE band is baked into the atlas at the same
     // red, and a palette swap would not move it — keep any pool to reds or re-bake per variant.
     //
-    // 'gasStation' IS A POOL OF ITS OWN, NOT 'missionGiver' (owner ruling 2026-08-22): this POI
-    // does not hand out work, it sells you fuel. NOTHING CONSUMES THIS POOL YET — no roster slot
+    // 'gasStation' IS A POOL OF ITS OWN, NOT 'residence' (owner ruling 2026-08-22): this POI
+    // is not a home, it sells you fuel. NOTHING CONSUMES THIS POOL YET — no roster slot
     // in src/poi.js names it, so the model does not spawn. That is deliberate and matches the
-    // flamingo rule above: do not re-tag it missionGiver to make it appear. The slot arrives
+    // flamingo rule above: do not re-tag it residence to make it appear. The slot arrives
     // with FEAT-50 refuelling, which is what gives a gas stop something to do.
     tags: ['gasStation'],
   },

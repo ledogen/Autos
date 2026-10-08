@@ -16,6 +16,10 @@ amends: design-amendments-2026-08-17.md §1, §2 — and the 2026-09-25 rulings 
 
 # FEAT-67: The story map as a mission board — hover a POI, read its offers
 
+> **Keys renamed 2026-10-07 (FEAT-98):** `burgerJoint` → `foodVendor`, `serviceShop` → `autoShop`.
+> `missionGiver` is retired: its five slots became the additional classes (pois.md § Places and
+> Missions) and its model pool is now `residence`. A farm also carries the `residence` tag.
+
 **Reverses shipped behaviour.** FEAT-53 shipped a *single hidden offer per POI*, and
 `data/map-icons.js` still says "finding out what a marker offers is what driving to it is for". Both
 are superseded: the story-mode world map becomes the place the player shops for work.
@@ -151,7 +155,7 @@ table each, all seed-driven:
 
 ## Rulings 2026-09-26 (plan review)
 
-- **Food vendor, not the burger joint you were fired from.** `burgerJoint` reads as *any food
+- **Food vendor, not the burger joint you were fired from.** `foodVendor` reads as *any food
   vendor*. You deliver ready-made meals as an independent contractor (a Grubhub-style gig), not as
   staff, so opening.md's "never work there again" holds. Later regions add more vendors (donuts,
   hot dogs, pizza) under rolled names. Food jobs are the bottom of the barrel: short, low-paying,

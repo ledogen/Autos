@@ -60,7 +60,7 @@
   }
   .chip .n { color:var(--dimmer); font-size:11px; font-variant-numeric:tabular-nums; }
   .chip:hover { border-color:var(--dimmer); color:var(--fg); }
-  .chip.on { color:#12151a; font-weight:600; border-color:transparent; }
+  .chip.on { color:#12151a; background:var(--fg); font-weight:600; border-color:transparent; }
   .chip.on .n { color:rgba(0,0,0,.5); }
   .chip .dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
 
@@ -621,7 +621,7 @@ function viewPlaces() {
       ])}
       ${meta([['gives', p.gives
         ? `${p.gives.families.join(', ')} · ${p.gives.slots} slot${p.gives.slots === 1 ? '' : 's'} each (${p.gives.slots * p.count} total)`
-          + ` · expiry ${hours(p.gives.expiryH)}${p.gives.minEmptyH ? ` · min empty ${p.gives.minEmptyH} h` : ''} · name ${p.gives.nameForm}`
+          + ` · expiry ${hours(p.gives.expiryH)}${p.gives.minEmptyH ? ` · min empty ${p.gives.minEmptyH} h` : ''}`
         : '<span class="muted">gives nothing</span>']])}
       ${flowLine('sends', p.sends, p.type)}${flowLine('receives', p.receives, p.type)}
     </div>`).join('');

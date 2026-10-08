@@ -1,7 +1,7 @@
 ---
 id: FEAT-98
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-10-07
 source: owner, 2026-10-07 — "Places and Missions" (pois.md § Places and Missions)
@@ -30,3 +30,17 @@ Step 1 of **Places and Missions**. Design: `.planning/story-mode/pois.md` § Pla
 - Region 1 places 23 POIs on seeds 6, 11, 90 (pad census 2026-10-07: 41–54 viable pads).
 - No old key remains in `src/` or `data/`; dashboard warning strip empty.
 - `npm test` affected gates green (story-poi, world-determinism).
+
+## Resolution (2026-10-07)
+
+- `POI_ROSTER` is the 23-slot class roster (2 fixtures, 9 required, 12 additional). Every POI's
+  `tags` leads with its type; mom and Larry also carry `residence` plus `mom` / `larry`.
+- Renamed `burgerJoint` → `foodVendor`, `serviceShop` → `autoShop`; `missionGiver` is gone. The
+  `missionGiver` model pool is now `residence` (trailer home + Winnebago); the broken-down car is
+  `strandedMotorist`'s own model. `giverName` (per model) became `nameForm` (per class).
+- New classes post 1 provisional slot. Two cargo.md courier rows joined `THINGS` so each has a
+  built thing to post: "a private note" (any normal giver) and "a memo from the foreman" (job site).
+- Gas station and tackle shop still post nothing — FEAT-101.
+- Full 2500 m region: 23/23 on seeds 6, 11, 90 (pools 54 / 41 / 43). `story-poi`'s window grew
+  1600 → 2200 m to hold a complete roster (16 pads at 1600, 22 at 2000).
+- Dashboard warning strip empty; 16 affected gates green.
