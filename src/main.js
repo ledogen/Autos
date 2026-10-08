@@ -3605,8 +3605,9 @@ labSystem = new LabSystem(scene, () => ({
 const _boardView = {
   status (poiId) {
     const now = daySystem.clockH()
+    // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
+    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, nextText: null }
     const slots = offerBoard.slotStates(poiId, now)
-    if (!slots.length) return { source: false, family: null, nextText: null }
     const next = offerBoard.nextTurnoverH(poiId, now)
     return {
       source: true,

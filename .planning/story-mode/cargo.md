@@ -53,6 +53,15 @@ Every courier thing is a phrase on the card. Nothing renders.
 | R1 | a presentation deck | residence / farm → office | existing |
 | R1 | a full 20 lb propane tank | generalStore / gasStation → any | existing; ~17 kg (7.7 kg cylinder + 9.1 kg gas) |
 | R1 | an empty 20 lb propane tank | any → generalStore / gasStation | existing; ~8 kg. The bed version of both is the freight 4-pack (ASSET-72) |
+| R1 | a box of lightbulbs | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
+| R1 | a box of screws | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
+| R1 | a box of nails | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
+| R1 | a roll of duct tape | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
+| R1 | a pack of paper towels | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
+| R1 | a pack of toilet paper | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
+| R1 | a coil of rope | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
+| R1 | a ball of string | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
+| R1 | a ream of paper | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
 | R1 | a chainsaw | generalStore → firewoodYard / sawmill / quarry / farm | existing; ~6 kg. Cargo for the yard crews, not a player tool (items.md §7 keeps the chainsaw out as a general item) |
 | R1 | a splitting axe | generalStore → firewoodYard / sawmill / quarry / farm | existing; ~3 kg |
 | R1 | a shovel | generalStore → firewoodYard / sawmill / quarry / farm | existing; ~2 kg |

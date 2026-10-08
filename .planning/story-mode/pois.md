@@ -74,7 +74,12 @@ counts with region size comes later. The gas station and tackle shop posting job
   (not locked, under its cap). The board then shows about 12 + 2–3 + 2 + 1 ≈ 17–18.
 - **The lock rule (reverses 2026-09-27):** a completion **and** a cancel both lock the slot for a
   **fresh full expiry**, counted from that moment. Keeping the original timer let a player finish a
-  job ten minutes before it expired and get a new one straight away.
+  job ten minutes before it expired and get a new one straight away. A locked budget slot stays
+  parked on its place, which takes no new budget job until the lock clears (FEAT-101).
+- **Larry (owner, 2026-10-07):** his offer never expires and shows no timer; after a round he is
+  unavailable for **12 h**, then a fresh offer appears.
+- **The gas station posts** (propane) under the budget; the **tackle shop does not yet**: its first jobs
+  are FETCHING the general-store sundries (owner, 2026-10-07), which waits on FEAT-89.
 - **Determinism (SM-INV-12) holds:** the board stays a pure function of (seed, POI list, clock,
   completion/cancel log). The budget couples places' timing to each other, which is the accepted cost.
 
