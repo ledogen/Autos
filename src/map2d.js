@@ -795,7 +795,7 @@ export class Map2D {
         for (const q of pois) {
             const dx = this._sx(q.x) - this._hoverX, dy = this._sy(q.z) - this._hoverY
             const d = dx * dx + dy * dy
-            if (d < bestD && board.status(q.id)?.source) { bestD = d; best = q }
+            if (d < bestD && !q.hidden && board.status(q.id)?.source) { bestD = d; best = q }
         }
         if (!best) { this._hoverPoi = null; this._hoverView = null; return }
         if (best.id !== this._hoverPoi) { this._hoverPoi = best.id; this._hoverIdx = 0 }
@@ -2121,8 +2121,15 @@ export class Map2D {
             ctx.fillText(label, sx, sy - 15)
             ctx.textAlign = 'left'
         }
-        pin(m.start, '#5ad06a', 'Start')
-        pin(m.end, '#ffcf3c', 'Drop')
+        // FEAT-102: a fetch starts and ends at the giver, so it shows the pickup and the way home
+        // instead of two pins on top of each other.
+        if (m.pickup) {
+            pin(m.pickup, '#5ab6ff', 'Pickup')
+            pin(m.end, '#ffcf3c', 'Return')
+        } else {
+            pin(m.start, '#5ad06a', 'Start')
+            pin(m.end, '#ffcf3c', 'Drop')
+        }
     }
 
     // FEAT-45: dispersed-camping zones, rendered the way a BLM/forest-service map renders them —
@@ -2313,6 +2320,7 @@ export class Map2D {
         if (!list || !list.length) return
         const board = this._getBoard()
         for (const q of list) {
+            if (q.hidden) continue    // FEAT-102: an absent motorist is not on the map either
             const ico = POI_ICONS[q.type] ?? POI_ICONS.diamond
             const sx = this._sx(q.x), sy = this._sy(q.z)
             const st = board?.status(q.id) ?? null

@@ -547,7 +547,8 @@ async function indexPlaces(cargo, warn) {
     const row = cargo.find((c) => c.name.split(/\s*·\s*/).includes(t.phrase));
     if (!row) continue;
     const want = row.to.map((e) => e.name).filter((n) => n !== 'any').sort().join(' / ');
-    const got = [...(t.to || [])].sort().join(' / ');
+    // A fetch-only thing (no courier givers) flows from its pickup TO its fetchers (FEAT-102).
+    const got = [...(t.to || (t.pools.length ? [] : t.fetchBy || []))].sort().join(' / ');
     if (want !== got) warn('both', cargoFile, row.line, `THINGS.${t.id} goes to "${got || 'any'}", cargo.md says "${want || 'any'}"`);
     const from = row.from.map((e) => e.name);
     if (from.length && !from.includes('any')) {

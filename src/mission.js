@@ -226,6 +226,7 @@ export class MissionSystem {
         this.elapsed = 0
         this.countdown = 0
         this.result = null       // { elapsed, par, letter, ratio, margin }
+        this.leg = 0             // FEAT-102: which leg of a fetch is being driven (0 out, 1 back)
         this.error = null
         this._trace = []         // driven trace rows (see update); reset on accept
         this._traceTick = 0
@@ -396,6 +397,7 @@ export class MissionSystem {
         const staged = !!this.mission.startZone
         this.state = staged ? (load ? 'loading' : 'staging') : 'countdown'
         this._polyIdx = 0            // route-remaining projection restarts at the start pin
+        this.leg = 0                 // FEAT-102: a fetch starts on its outbound leg
         this.countdown = staged ? 0 : COUNTDOWN
         this.elapsed = 0
         this._trace = []
@@ -436,7 +438,31 @@ export class MissionSystem {
     /** Markers for the 2D map (null when there's nothing to draw). */
     markers() {
         if (!this.mission) return null
-        return { start: this.mission.start, end: this.mission.end, poly: this.mission.poly }
+        const legs = this.mission.legs
+        return { start: this.mission.start, end: this.mission.end, poly: this.mission.poly,
+                 pickup: legs ? legs[0].end : null }
+    }
+
+    /**
+     * FEAT-102: the POI a running fetch is waiting for you to park at, or null (not a fetch, already
+     * picked up, or not running). main.js's park trigger reads it.
+     */
+    pickupPoiId() {
+        const legs = this.mission?.legs
+        return this.state === 'running' && legs && this.leg === 0 ? legs[0].poiId : null
+    }
+
+    /**
+     * FEAT-102: the item is acquired — main.js calls this when the parking brake latches at the
+     * pickup (owner, 2026-10-08: "pull up and park; the item is instantly acquired"). Advances to
+     * the return leg. False (and nothing changes) unless a fetch is running on its outbound leg.
+     */
+    acquire() {
+        if (!this.pickupPoiId()) return false
+        this.leg = 1
+        this._polyIdx = this.mission.legs[0].polyIdx   // the projection resumes at the pickup
+        this._onChange()
+        return true
     }
 
     /**
@@ -488,7 +514,9 @@ export class MissionSystem {
     /** Metres remaining, as the crow flies. Used for the ARRIVAL check (a radius on a point). */
     distanceToGo() {
         if (!this.mission) return 0
-        const c = this._getCar(), e = this.mission.end
+        // FEAT-102: a fetch measures to the CURRENT leg's end — the pickup, then home.
+        const legs = this.mission.legs
+        const c = this._getCar(), e = legs ? legs[this.leg ?? 0].end : this.mission.end
         return Math.hypot(c.x - e.x, c.z - e.z)
     }
 
@@ -512,8 +540,11 @@ export class MissionSystem {
                 if (d < bd) { bd = d; bi = i }
             }
         }
-        scan(Math.max(0, last - 20), Math.min(poly.length - 1, last + 40))
-        if (bd > 200 * 200) scan(0, poly.length - 1)     // off the window (teleport, big shortcut)
+        // FEAT-102: on a fetch's return leg the route retraces the outbound points, so never match
+        // back onto the outbound half — the number would read the whole job again.
+        const floor = m.legs && this.leg === 1 ? m.legs[0].polyIdx : 0
+        scan(Math.max(floor, last - 20), Math.min(poly.length - 1, last + 40))
+        if (bd > 200 * 200) scan(floor, poly.length - 1)     // off the window (teleport, big shortcut)
         this._polyIdx = bi
         return Math.max(this.distanceToGo(), cum[cum.length - 1] - cum[bi])
     }
@@ -550,6 +581,10 @@ export class MissionSystem {
                 +(c.throttle ?? 0).toFixed(2), +(c.brake ?? 0).toFixed(2), +(c.steer ?? 0).toFixed(3),
             ])
         }
+        // FEAT-102: a fetch's outbound leg ends with a PARK at the pickup (acquire()), never a
+        // drive-by — and the giver's own end sits inside the start zone, so testing it here would
+        // finish the job on its first frame.
+        if (this.mission.legs && this.leg === 0) return
         if (this.distanceToGo() <= ARRIVE_RADIUS) {
             const par = this.mission.par
             // FEAT-53: grade on the thresholds FROZEN at accept (missing terms → day-1 default
@@ -620,6 +655,7 @@ export class MissionSystem {
      *        destination wish: a POI (chosen by `pick` among the reachable candidates in `pois`) or a
      *        roadside point. A POI wish that finds no reachable candidate falls back to roadside —
      *        unless `strict` (FEAT-100: a thing bound for a class), when the roll fails instead.
+     *        `fetch` (FEAT-102): the POI is a PICKUP and the job comes back here — see fetchRoute.
      * @returns {object|null} the mission, with fromPoi / startZone / endPoiId set
      */
     planOffer (poi, { rng, dest = null } = {}) {
@@ -628,6 +664,7 @@ export class MissionSystem {
         let m = null
         for (let i = 0; i < tries && !m; i++) m = this._roll(anchor, { rng, dest })
         if (!m) return null
+        if (dest?.fetch) m = fetchRoute(m, poi.id)
         m.fromPoi = poi.id
         // The start threshold is centred on the MARKER (where you are parked), not on the mission's
         // road-side start pin ~11 m out across the shoulder.
@@ -928,6 +965,40 @@ export class MissionSystem {
             // without re-routing (FEAT-30 calibration). Not read by gameplay.
             segments,
         }
+    }
+}
+
+/**
+ * FEAT-102: turn a planned giver → pickup route into the whole FETCH — out to the pickup and back
+ * the same way (FEAT-89: "the return re-uses the outbound route"). One par over both legs: the
+ * outbound's last segment is a STOP, so the reference driver halts at the pickup (par.js caps the
+ * speed to 0 there, which also absorbs the U-turn), and computePar prices the joined segments once.
+ *
+ * The return is the outbound reversed: segments in reverse order with s0/s1 swapped, and each
+ * one's endDeg moved to the node it now ends at — the start node of the segment before it in the
+ * outbound. The last one ends mid-edge at the giver, so 2 (no junction to announce).
+ *
+ * Fields: endPoiId stays the PICKUP (the card names it; no two offers fetch from the same place);
+ * end becomes the giver's road point; legs[i].end is what each leg arrives at.
+ */
+function fetchRoute (m, giverId) {
+    const out = m.segments.map((g, i, a) => (i === a.length - 1 ? { ...g, stop: true } : g))
+    const n = out.length
+    const back = out.slice().reverse().map((g, j) => ({
+        ...g, s0: g.s1, s1: g.s0, stop: false, endDeg: j < n - 1 ? out[n - 2 - j].endDeg : 2,
+    }))
+    const segments = [...out, ...back]
+    const { time, distance } = computePar(segments)
+    const poly = [...m.poly, ...m.poly.slice(0, -1).reverse()]
+    const polyCum = [0]
+    for (let i = 1; i < poly.length; i++) {
+        polyCum.push(polyCum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].z - poly[i - 1].z))
+    }
+    const home = { x: m.start.x, z: m.start.z }
+    return {
+        ...m, par: time, distance, poly, polyCum, segments, edges: segments.length, end: home,
+        fetch: true,
+        legs: [{ end: m.end, poiId: m.endPoiId, polyIdx: m.poly.length - 1 }, { end: home, poiId: giverId }],
     }
 }
 

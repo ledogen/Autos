@@ -63,6 +63,9 @@ const FIXED_NAMES = {
 }
 
 const rngFor = (key) => mulberry32(djb2(key))
+
+/** Can a `type` post this thing — as its courier giver (`pools`) or as a fetcher (`fetchBy`)? */
+const postsThing = (t, type) => t.pools.includes(type) || !!t.fetchBy?.includes(type)
 const pick = (r, list) => list[Math.floor(r() * list.length)]
 
 /** Weighted pick over an object of { key: weight }, driven by one uniform draw `u`. */
@@ -151,7 +154,7 @@ export class OfferBoard {
     /** Does this type have anything it could post — a source row and at least one built thing? */
     _postsAnything (type) {
         const src = SOURCES[type]
-        return !!src && THINGS.some(t => t.pools.includes(type) && src.families.includes(t.family)
+        return !!src && THINGS.some(t => postsThing(t, type) && src.families.includes(t.family)
             && BUILT_FAMILIES.has(t.family))
     }
 
@@ -362,7 +365,7 @@ export class OfferBoard {
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate}|null, payMult,
      *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null,
-     *   passenger: boolean }
+     *   passenger: boolean, shape: 'courier'|'fetch', from: string[]|null }
      * bundles is the haul load's piece count (FEAT-88), null for every other family. It is drawn on
      * its OWN `bundles` stream: one more draw on `spec` would shift the destination and place name
      * of every existing offer on every seed.
@@ -376,7 +379,7 @@ export class OfferBoard {
         if (offer._spec !== undefined) return offer._spec
         const src = SOURCES[offer.type]
         const r = rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:spec`)
-        const things = THINGS.filter(t => t.pools.includes(offer.type)
+        const things = THINGS.filter(t => postsThing(t, offer.type)
             && src.families.includes(t.family) && BUILT_FAMILIES.has(t.family))
         if (!things.length) return (offer._spec = null)
         const thing = pick(r, things)
@@ -411,12 +414,16 @@ export class OfferBoard {
             const [bLo, bHi] = HAUL_BUNDLES
             bundles = bLo + Math.floor(rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:bundles`)() * (bHi - bLo + 1))
         }
+        // FEAT-102: a FETCH when this source is one of the thing's fetchers — go to a pickup (a POI of
+        // `from`), park there, bring it back. Otherwise the courier shape, as built.
+        const fetch = !!thing.fetchBy?.includes(offer.type)
         return (offer._spec = {
+            shape: fetch ? 'fetch' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
             family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
             massKg: bundles ? bundles * HAUL_BUNDLE_KG : massKg, bundles,
             // ÷ HAUL_PAR_SLACK: the haul's par is that much longer and pay rides par (data/offers.js).
             payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1),
-            destKind: papers ? null : (thing.to || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
+            destKind: papers ? null : (thing.to || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
         })
     }
@@ -473,7 +480,8 @@ export class OfferBoard {
 
     /**
      * The planner's destination wish for an offer (MissionSystem.planOffer `dest`). A generic thing
-     * goes to any other POI on its DEST_POI_CHANCE roll, else to a roadside spot. A thing with a
+     * goes to any other POI on its DEST_POI_CHANCE roll, else to a roadside spot. A fetch wishes for
+     * its pickup (see below). A thing with a
      * `to` (FEAT-100) goes only to a POI carrying one of those tags, and is STRICT: no candidate in
      * reach means no route, never a roadside drop — roadside spots are for generic things only.
      *
@@ -484,9 +492,12 @@ export class OfferBoard {
     destWish (offer, pois, exclude) {
         const sp = this.spec(offer)
         if (sp.destKind !== 'poi') return { kind: 'roadside' }
+        // A FETCH (FEAT-102) wishes for its PICKUP — a POI of `from`, strictly — and says so, so the
+        // planner returns the same way and settles back here.
+        const want = sp.shape === 'fetch' ? sp.from : sp.to
         const fits = (q) => q.id !== offer.poiId && !exclude.has(q.id)
-            && (!sp.to || sp.to.some(t => q.tags?.includes(t)))
-        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict: !!sp.to }
+            && (!want || want.some(t => q.tags?.includes(t)))
+        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict: !!want, fetch: sp.shape === 'fetch' }
     }
 
     /** A seeded stream for the mission planner's own rolls on this offer (route determinism). */
@@ -621,8 +632,11 @@ export class OfferBoard {
                 sentence.push({ t: ' needs ' }, { t: `${sp.bundles} bundles of ${sp.phrase}`, b: true },
                               { t: ' hauled to ' }, { t: dest, b: true }, { t: '.' })
             } else {
-                // A passenger is the poster themselves: "Earl needs a ride to Rust Belt Auto."
-                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: sp.passenger ? ' to ' : ' delivered to ' },
+                // A passenger is the poster themselves: "Earl needs a ride to Rust Belt Auto." A fetch
+                // names its pickup: "Earl needs a full jerry can fetched from Pump & Go."
+                // (a template literal: test/offer-board.mjs's import scan would read the quoted form as an import)
+                const verb = sp.passenger ? ' to ' : sp.shape === 'fetch' ? ` fetched from ` : ' delivered to '
+                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: verb },
                               { t: dest, b: true }, { t: '.' })
             }
         }

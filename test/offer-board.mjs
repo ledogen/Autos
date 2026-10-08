@@ -109,7 +109,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         bad.map(q => `${q.type} ${slotsOf(b, q.id).length}`).join(', '))
     check(`${BUDGET_JOBS} budget jobs are live at world start`, b._budget.filter(s => s.state === 'live').length === BUDGET_JOBS)
     const off = POIS.filter(q => !SOURCES[q.type]?.cap && hosted(b, q.id).length)
-    check('only budget givers host budget jobs (never the tackle shop, office, school or mom)', off.length === 0,
+    check('only budget givers host budget jobs (never the office, school or mom)', off.length === 0,
         off.map(q => q.type).join(', '))
     check('isGiver: every source, and no one else', POIS.every(q =>
         b.isGiver(q.id) === !!SOURCES[q.type]), POIS.filter(q => b.isGiver(q.id) !== !!SOURCES[q.type]).map(q => q.type).join(', '))
@@ -354,14 +354,28 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('no two households in a region share a surname (300 seeds)', dupHouse === 0, `${dupHouse}`)
     check('no roadside place noun promises a farm, quarry or dairy, or reads as a farm\'s name',
         !PLACE_NOUNS.some(n => ['farm', 'quarry', 'dairy', 'ranch', 'orchard', 'acres', 'homestead'].includes(n)))
-    const mb = make(6)
+    // FEAT-102: the motorist posts exactly three jobs — a ride to an auto shop, or a FETCH of a spare
+    // tire (from an auto shop) or a jerry can (from a gas station) — and the card says which.
     const motorist = POIS.find(q => q.type === 'strandedMotorist').id
-    const ride = mb.offers(motorist, T0)[0]
-    const rc = ride && mb.card(ride, { nowH: T0, route: { par: 300, distance: 2000, endPoiId: POIS.find(q => q.type === 'autoShop').id } })
-    check('the motorist posts only their own ride: "<person> needs a ride to <auto shop>."',
-        !!rc && mb.spec(ride).thingId === 'motoristRide'
-        && rc.sentence.map(r => r.t).join('') === `${personLabel(mb.people(motorist)[0])} needs a ride to ${mb.placeLabel(POIS.find(q => q.type === 'autoShop').id)}.`,
-        rc?.sentence.map(r => r.t).join(''))
+    const seenM = new Map()
+    for (let seed = 1; seed <= 80 && seenM.size < 3; seed++) {
+        const mb = make(seed)
+        for (let t = T0; t < T0 + 24 * 6; t += 2) for (const o of mb.offers(motorist, t)) {
+            const sp = mb.spec(o)
+            if (seenM.has(sp.thingId)) continue
+            const dest = POIS.find(q => q.type === (sp.thingId === 'jerryCan' ? 'gasStation' : 'autoShop')).id
+            const line = mb.card(o, { nowH: t, route: { par: 300, distance: 2000, endPoiId: dest } }).sentence.map(r => r.t).join('')
+            seenM.set(sp.thingId, { shape: sp.shape, from: sp.from, line, want: `${personLabel(mb.people(motorist)[0])} needs ${sp.phrase}`
+                + `${sp.thingId === 'motoristRide' ? ' to ' : ' fetched from '}${mb.placeLabel(dest)}.` })
+        }
+    }
+    check('the motorist posts exactly a ride, a spare-tire fetch and a jerry-can fetch',
+        [...seenM.keys()].sort().join() === 'jerryCan,motoristRide,spareTire', [...seenM.keys()].join())
+    check('…shaped and sourced right (ride = courier to an auto shop; tire ← auto shop; can ← gas station)',
+        seenM.get('motoristRide')?.shape === 'courier' && seenM.get('spareTire')?.shape === 'fetch'
+        && seenM.get('spareTire').from.join() === 'autoShop' && seenM.get('jerryCan')?.from.join() === 'gasStation')
+    check('…and each card reads right ("needs a ride to …" / "needs … fetched from …")',
+        [...seenM.values()].every(v => v.line === v.want), [...seenM.values()].map(v => v.line).join(' | '))
     const b = make(6)
     const larry = POIS.find(q => q.type === 'larrysHouse').id
     const p = { first: 'Earl', nick: 'Two-Tone', last: 'Pruitt' }
@@ -508,7 +522,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
 // the DEST_POI_CHANCE roll and may go roadside. PoiSystem leads every POI's tags with its type.
 {
     const tagged = POIS.map(q => ({ ...q, tags: [q.type, ...(q.type === 'momsHouse' ? ['residence', 'mom'] : [])] }))
-    let taggedN = 0, taggedBad = 0, genericStrict = 0, roadside = 0
+    let taggedN = 0, taggedBad = 0, genericStrict = 0, roadside = 0, fetchN = 0, fetchBad = 0
     for (let seed = 1; seed <= 60; seed++) {
         const b = make(seed)
         for (let t = T0; t < T0 + 24 * 4; t += 3) for (const id of b.sources()) for (const o of b.offers(id, t)) {
@@ -519,6 +533,10 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
                 taggedN++
                 if (w.kind !== 'poi' || !w.strict || !w.pois.length
                     || !w.pois.every(q => q.id !== o.poiId && sp.to.some(x => q.tags.includes(x)))) taggedBad++
+            } else if (sp.shape === 'fetch') {
+                fetchN++
+                if (w.kind !== 'poi' || !w.strict || !w.fetch || !w.pois.length
+                    || !w.pois.every(q => q.id !== o.poiId && sp.from.some(x => q.tags.includes(x)))) fetchBad++
             } else {
                 if (w.strict) genericStrict++
                 if (w.kind === 'roadside') roadside++
@@ -528,6 +546,13 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('a tagged thing asks for a matching POI only, strictly (never roadside)', taggedN > 0 && taggedBad === 0,
         `${taggedBad}/${taggedN}`)
     check('a generic thing is never strict, and may still go roadside', genericStrict === 0 && roadside > 0)
+    check('a fetch asks strictly for its PICKUP class, and says it is a fetch (FEAT-102)', fetchN > 0 && fetchBad === 0,
+        `${fetchBad}/${fetchN}`)
+    check('the tackle shop posts only fetches of general-store sundries',
+        THINGS.filter(t => t.pools.includes('tackleShop') || t.fetchBy?.includes('tackleShop'))
+            .every(t => t.fetchBy?.includes('tackleShop') && t.pools.join() === 'generalStore'))
+    check('every fetchBy / fetchFrom names a real class',
+        THINGS.every(t => [...(t.fetchBy ?? []), ...(t.fetchFrom ?? [])].every(x => POIS.some(q => q.type === x))))
     check('THINGS name only real classes in `to` (or the planned sawmill/quarry)',
         THINGS.every(t => !t.to || t.to.every(x => SOURCES[x] || POIS.some(q => q.type === x)
             || ['sawmill', 'quarry'].includes(x))))

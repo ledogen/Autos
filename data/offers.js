@@ -26,6 +26,9 @@
 //   family   one of the families above
 //   massKg   [min, max] — rolled per offer, shown on the card as cargo weight
 //   pools    which sources may post it (keys of SOURCES below)
+//   fetchBy  (optional, FEAT-102) classes that post a FETCH of this thing: "go get it and bring it
+//            back" — drive to a pickup, park there, return to the poster (FEAT-89's fetch shape).
+//   fetchFrom (optional) the pickup classes for a fetch. Defaults to `pools` (where it comes from).
 //   passenger (optional) true when the thing is the poster themselves — the card says "a ride to …"
 //   to       (optional, FEAT-100) the POI tags it may be delivered to — a class (`farm`) or a
 //            fixture tag. Absent = generic: any POI or a roadside spot (cargo.md "From → to").
@@ -77,25 +80,25 @@ export const THINGS = [
     { id: 'propaneEmpty', phrase: 'an empty 20 lb propane tank', family: 'delivery', massKg: [7, 9],
       pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore', 'gasStation'] },
     // General-store sundries (owner, 2026-10-07): store → anyone. They are also the tackle shop's
-    // first jobs — as FETCH, once FEAT-89 builds it (go get them from the store and bring them back).
+    // jobs — as FETCH (FEAT-102): go get them from the store and bring them back.
     { id: 'lightbulbs',   phrase: 'a box of lightbulbs',     family: 'delivery', massKg: [0.4, 0.8],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], fetchBy: ['tackleShop'] },
     { id: 'screws',       phrase: 'a box of screws',         family: 'delivery', massKg: [0.5, 1.5],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], fetchBy: ['tackleShop'] },
     { id: 'nails',        phrase: 'a box of nails',          family: 'delivery', massKg: [1, 3],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], fetchBy: ['tackleShop'] },
     { id: 'ductTape',     phrase: 'a roll of duct tape',     family: 'delivery', massKg: [0.3, 0.5],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], fetchBy: ['tackleShop'] },
     { id: 'paperTowels',  phrase: 'a pack of paper towels',  family: 'delivery', massKg: [1, 2],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], fetchBy: ['tackleShop'] },
     { id: 'toiletPaper',  phrase: 'a pack of toilet paper',  family: 'delivery', massKg: [2, 4],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], fetchBy: ['tackleShop'] },
     { id: 'rope',         phrase: 'a coil of rope',          family: 'delivery', massKg: [2, 5],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], fetchBy: ['tackleShop'] },
     { id: 'string',       phrase: 'a ball of string',        family: 'delivery', massKg: [0.1, 0.3],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], fetchBy: ['tackleShop'] },
     { id: 'paper',        phrase: 'a ream of paper',         family: 'delivery', massKg: [2.3, 2.6],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], fetchBy: ['tackleShop'] },
     // Cargo for the yard crews, not a player tool (items.md §7). sawmill/quarry are R2/R3 classes.
     { id: 'chainsaw',   phrase: 'a chainsaw',              family: 'delivery', massKg: [5, 7],
       pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
@@ -103,6 +106,14 @@ export const THINGS = [
       pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
     { id: 'shovel',     phrase: 'a shovel',                family: 'delivery', massKg: [1.5, 2.5],
       pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
+    // The stranded motorist's other two jobs are FETCH (owner, 2026-10-08): a jerry can from a gas
+    // station, or a spare tire from an auto shop. The jerry can is also a courier item (gas station →
+    // anyone); the spare tire is fetch-only — the auto shop never posts it (it stays a bonus reward).
+    // A 5 gal can: ~14 kg of fuel plus the can.
+    { id: 'jerryCan',   phrase: 'a full jerry can',        family: 'delivery', massKg: [17, 19],
+      pools: ['gasStation'], fetchBy: ['strandedMotorist'] },
+    { id: 'spareTire',  phrase: 'a spare tire',            family: 'delivery', massKg: [10, 15],
+      pools: [], fetchFrom: ['autoShop'], fetchBy: ['strandedMotorist'] },
     // A PASSENGER (cargo.md People): the motorist themselves, to an auto shop. `passenger` makes the
     // card read "needs a ride to …"; the mass is the person, riding in the cab.
     { id: 'motoristRide', phrase: 'a ride',                family: 'delivery', massKg: [55, 100],
@@ -155,8 +166,7 @@ export const REWARDS = [
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────
 //
 // Keyed by POI roster type (src/poi.js POI_ROSTER). A type that is NOT listed here posts nothing:
-// the tackle shop (nothing in THINGS yet), mom's house, and the office and school, which only
-// receive (owner, 2026-10-07).
+// mom's house, and the office and school, which only receive (owner, 2026-10-07).
 //
 // TWO KINDS OF SOURCE (FEAT-101, pois.md § Job supply):
 //   ALWAYS-ON — a `slots` row. The place keeps its own slots, outside the budget: Larry, the haul
@@ -191,6 +201,8 @@ export const SOURCES = {
     farm:             { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight', 'fragile'] },
     doctor:           { cap: 2, expiryH: [24, 72], families: ['delivery'] },
     strandedMotorist: { cap: 1, expiryH: [24, 72], families: ['delivery'] },
+    // FEAT-102: the tackle shop's jobs are fetches of the general-store sundries.
+    tackleShop:       { cap: 2, expiryH: 24,       families: ['delivery'] },
 }
 
 /** Live budget jobs shared by every `cap` source in the region (owner, 2026-10-07: "about 12"). */

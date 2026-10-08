@@ -2627,6 +2627,9 @@ let _stageRing = null
 // poi.id → its orange ring, so the accepted marker's ring can step aside for the green one while
 // every OTHER marker in the region keeps its own.
 const _poiRings = new Map()
+// poi.id → its marker (model group or cube), so ONE marker can be hidden — the stranded motorist's
+// car shows only while it has work (FEAT-102, see _updatePoiPresence).
+const _poiMeshes = new Map()
 // customer.id → [ring, pip]. FEAT-61: a delivery target is only lit when it is ON your route and
 // still owed a paper — see _updateCustomerRings.
 const _customerRings = new Map()
@@ -2642,12 +2645,12 @@ const _customerRings = new Map()
 function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
+  _poiMeshes.clear()
   for (const { mesh } of _dropMarks.values()) mesh.geometry.dispose()   // per-mark geometry, not shared
   _dropMarks.clear()
   _customerRings.clear()
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
-  poiPhysics.sync(poiSystem.list(), POI_PARAMS.poiCubeSize)   // MESH == PHYSICS: the body hits what you see
   for (const q of poiSystem.list()) {
     if (q.modelKey) {
       // receiveShadow too: a building is big enough to catch its neighbours' shadows and its own,
@@ -2658,11 +2661,13 @@ function _rebuildPoiMarkers () {
       // broadside, a trailer stands square) — see the yawOffset note in data/prop-models.js.
       m.rotation.y = q.modelYaw ?? q.yaw
       _poiGroup.add(m)
+      _poiMeshes.set(q.id, m)
     } else {
       const cube = new THREE.Mesh(_poiCubeGeo, _poiCubeMat)
       cube.position.set(q.x, q.y + half, q.z)
       cube.castShadow = true
       _poiGroup.add(cube)
+      _poiMeshes.set(q.id, cube)
     }
 
     // The ring means "park here and something happens", so it belongs only to markers where
@@ -2677,6 +2682,8 @@ function _rebuildPoiMarkers () {
     _poiGroup.add(ring)
     _poiRings.set(q.id, ring)
   }
+  // MESH == PHYSICS: the body hits what you see — and a hidden marker has neither (FEAT-102).
+  _updatePoiPresence(true)
 
   // FEAT-61 — the customers. No body: a house has no model yet and the orange cube would read as
   // "park here to be offered a job", which is the one thing a customer is not. Two rings and
@@ -2752,6 +2759,34 @@ function _updateCustomerRings () {
  * from drops its interaction ring and the start-zone ring stands in its place. Everything here is
  * visibility + a transform — no allocation after the first staged job.
  */
+/**
+ * FEAT-102: a marker that exists only while it has work (roster `showWhileJob` — the stranded
+ * motorist). Hidden unless a slot there is live or taken; hidden means no mesh, no ring, no park
+ * trigger, no map marker and NO COLLIDER, so an idle motorist pad is an empty lay-by. Re-shown only
+ * once the truck is clear of the pad, so a car never spawns into the chassis. Colliders re-sync
+ * only when a flag flips (or on `force`, the marker rebuild). Deterministic: it reads the board.
+ */
+function _updatePoiPresence (force = false) {
+  let changed = force
+  const vp = vehicleState.position
+  const now = daySystem.clockH()
+  for (const q of poiSystem.list()) {
+    if (!q.showWhileJob) continue
+    const busy = !!offerBoard && offerBoard.slotStates(q.id, now).some(s => s.state === 'live' || s.state === 'taken')
+    const hide = !busy || (!!q.hidden && Math.hypot(q.x - vp.x, q.z - vp.z) < POI_REAPPEAR_CLEAR_M)
+    if (hide !== !!q.hidden) { q.hidden = hide; changed = true }
+  }
+  if (!changed) return
+  for (const q of poiSystem.list()) {
+    const m = _poiMeshes.get(q.id)
+    if (m) m.visible = !q.hidden
+    const ring = _poiRings.get(q.id)
+    if (ring) ring.userData.hidden = !!q.hidden
+  }
+  poiPhysics.sync(poiSystem.list().filter(q => !q.hidden), POI_PARAMS.poiCubeSize)
+}
+const POI_REAPPEAR_CLEAR_M = 15   // m — truck-to-marker distance a hidden marker waits for before it returns
+
 function _updateMissionRings () {
   // FEAT-61: the paper route stages out of Larry's place through the same threshold, so it hands
   // the same ring the same job. Only one of the two can ever be staging — you cannot take a job
@@ -2782,7 +2817,7 @@ function _updateMissionRings () {
   const vp = vehicleState.position
   for (const [id, ring] of _poiRings) {
     const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= POI_RING_SHOW_R
-    ring.visible = near && id !== activeId && !onMission
+    ring.visible = near && id !== activeId && !onMission && !ring.userData.hidden
   }
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
@@ -3633,7 +3668,8 @@ const _boardView = {
     })
     const poly = route?.poly ?? null
     return { count: n, idx: i, card, poly,
-             start: route?.start ?? poly?.[0] ?? null, end: route?.end ?? poly?.[poly.length - 1] ?? null,
+             // FEAT-102: a fetch's preview points at its PICKUP — its own end is back where you stand.
+             start: route?.start ?? poly?.[0] ?? null, end: route?.legs?.[0].end ?? route?.end ?? poly?.[poly.length - 1] ?? null,
              nextText }
   },
 }
@@ -3739,6 +3775,43 @@ function _poiInReach () {
 // from a latch the player did not pull. The latch is sticky (a tap sets it and it stays), so polling
 // at the prompt's ~10 Hz cadence cannot miss a real pull.
 let _prevParkedForPoi = true
+
+// FEAT-102: the fetch prompts. "park to acquire mission item" in reach of the pickup; after the
+// latch, "get back to …!" for FETCH_HOME_MSG_S. Returns true when it owns the prompt this poll.
+let _fetchHomeMsg = null, _fetchHomeUntil = 0
+const FETCH_HOME_MSG_S = 4
+function _updateFetchPrompt (poiEl, pulled) {
+  const now = performance.now()
+  const pickId = missionSystem?.pickupPoiId()
+  if (pickId) {
+    const pq = poiSystem.list().find(q => q.id === pickId)
+    const near = pq && Math.hypot(pq.x - vehicleState.position.x, pq.z - vehicleState.position.z) <= POI_PARAMS.poiInteractR
+    if (near && pulled && missionSystem.acquire()) {
+      _fetchHomeMsg = `get back to ${_fetchHomeLabel(missionSystem.mission)}!`
+      _fetchHomeUntil = now + FETCH_HOME_MSG_S * 1000
+    } else if (near) {
+      if (poiEl) { poiEl.style.display = 'block'; poiEl.innerHTML = parkPrompt('park to acquire mission item') }
+      return true
+    }
+  }
+  if (_fetchHomeMsg && now < _fetchHomeUntil && missionSystem?.state === 'running') {
+    if (poiEl) { poiEl.style.display = 'block'; poiEl.textContent = _fetchHomeMsg }
+    return true
+  }
+  _fetchHomeMsg = null
+  if (!pickId) return false
+  // On the outbound leg away from the pickup: nothing to say, and nothing else may answer the brake.
+  if (poiEl) poiEl.style.display = 'none'
+  return true
+}
+
+/** Who a fetch goes home to, as the prompt and the HUD say it. */
+function _fetchHomeLabel (m) {
+  const giver = poiSystem.list().find(q => q.id === m?.fromPoi)
+  if (giver?.type === 'strandedMotorist') return 'the stranded motorist'
+  return (giver && offerBoard?.placeLabel(giver.id)) || 'the giver'
+}
+
 
 // ── FEAT-45 Phase D: making camp, and sleeping ──────────────────────────────────────────────
 //
@@ -3866,6 +3939,11 @@ function _updateParkTriggers () {
   const parked = !!vehicleState.parked
   const pulled = parked && !_prevParkedForPoi
   _prevParkedForPoi = parked
+
+  // FEAT-102: a FETCH's pickup outranks everything below — while one is out, parking at the pickup
+  // is the only thing the brake means there. The item is acquired the instant the brake latches
+  // (owner, 2026-10-08), then the prompt sends you home for a few seconds.
+  if (_updateFetchPrompt(poiEl, pulled)) { if (campEl) campEl.style.display = 'none'; return }
 
   if (poi && pulled) {
     // FEAT-61: Larry is the one giver whose offer is a different mission. Branching on the type
@@ -4345,7 +4423,9 @@ function _renderMissionUI () {
       show(panel, false); show(hud, true)
       // Elapsed + distance to go ALONG THE ROUTE (crow-flies grew while driving a winding route
       // correctly, which read as "wrong way"). No par, no target — SM-INV-3.
+      // FEAT-102: a fetch also says which leg — out to the pickup, or home.
       hudText.textContent = `${formatTime(m.elapsed)}   ${km(m.routeRemaining())} to go`
+        + (m.mission?.legs ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`) : '')
       break
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
@@ -6800,6 +6880,8 @@ function loop () {
     }
     // …and which delivery targets are lit. Visibility flags only, no allocation.
     _updateCustomerRings()
+    // FEAT-102: the motorist's car comes and goes with its work — before the rings read the flag.
+    _updatePoiPresence()
     // FEAT-46: the orange interaction ring ↔ green start-zone ring swap rides the same poll.
     _updateMissionRings()
 
