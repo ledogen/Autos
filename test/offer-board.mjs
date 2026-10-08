@@ -264,7 +264,7 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
         if (new Set(names).size !== names.length) dupPoi++
         const full = POIS.flatMap(q => b.people(q.id)).filter(p => p.last).map(p => `${p.first} ${p.last}`)
         if (new Set(full).size !== full.length) dupPerson++
-        for (const q of POIS.filter(p => SOURCES[p.type] && p.type !== 'larrysHouse')) {
+        for (const q of POIS.filter(p => (SOURCES[p.type] || NAME_FORMS[p.type]) && p.type !== 'larrysHouse')) {
             const ppl = b.people(q.id)
             if (NAME_FORMS[q.type]) {
                 if (!fromForms(q.type, b.poiName(q.id) ?? '', ppl[0])) { formBad++; formOff.add(`${q.type}: ${b.poiName(q.id)}`) }
@@ -277,13 +277,21 @@ const snapshot = (b) => b._slots.map(s => `${s.offer.id}@${s.offer.expiresH.toFi
     }
     check('POI names are unique within a region (300 seeds)', dupPoi === 0, `${dupPoi}`)
     check('people are unique within a region (300 seeds)', dupPerson === 0, `${dupPerson}`)
-    check('every source is named by one of its class\'s forms (300 seeds)', formBad === 0,
+    check('every source — and every receive-only class (office, school) — is named by its class\'s forms (300 seeds)', formBad === 0,
         `${formBad}: ${[...formOff].slice(0, 5).join(' · ')}`)
     check('a class with no forms is ONE person, no place name — just the person', personBad === 0, `${personBad}`)
     check('a household shares one last name', houseBad === 0, `${houseBad}`)
     check('no two households in a region share a surname (300 seeds)', dupHouse === 0, `${dupHouse}`)
-    check('no roadside place noun promises a farm, quarry or dairy',
-        !PLACE_NOUNS.some(n => ['farm', 'quarry', 'dairy'].includes(n)))
+    check('no roadside place noun promises a farm, quarry or dairy, or reads as a farm\'s name',
+        !PLACE_NOUNS.some(n => ['farm', 'quarry', 'dairy', 'ranch', 'orchard', 'acres', 'homestead'].includes(n)))
+    const mb = make(6)
+    const motorist = POIS.find(q => q.type === 'strandedMotorist').id
+    const ride = mb.offers(motorist, T0)[0]
+    const rc = ride && mb.card(ride, { nowH: T0, route: { par: 300, distance: 2000, endPoiId: POIS.find(q => q.type === 'autoShop').id } })
+    check('the motorist posts only their own ride: "<person> needs a ride to <auto shop>."',
+        !!rc && mb.spec(ride).thingId === 'motoristRide'
+        && rc.sentence.map(r => r.t).join('') === `${personLabel(mb.people(motorist)[0])} needs a ride to ${mb.placeLabel(POIS.find(q => q.type === 'autoShop').id)}.`,
+        rc?.sentence.map(r => r.t).join(''))
     const b = make(6)
     const larry = POIS.find(q => q.type === 'larrysHouse').id
     const p = { first: 'Earl', nick: 'Two-Tone', last: 'Pruitt' }

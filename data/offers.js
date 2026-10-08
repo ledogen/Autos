@@ -26,14 +26,19 @@
 //   family   one of the families above
 //   massKg   [min, max] — rolled per offer, shown on the card as cargo weight
 //   pools    which sources may post it (keys of SOURCES below)
+//   passenger (optional) true when the thing is the poster themselves — the card says "a ride to …"
 //   to       (optional, FEAT-100) the POI tags it may be delivered to — a class (`farm`) or a
 //            fixture tag. Absent = generic: any POI or a roadside spot (cargo.md "From → to").
 //            Tagged things only ever end at a matching POI, never roadside.
 
 // "Any normal giver" — cargo.md's blank From (option C). Not the food vendor, the haul yard or
-// Larry: each has one kind of job and posts it outside the budget (pois.md § Job supply).
-const ANY_GIVER = ['generalStore', 'autoShop', 'workSite',
-    'residence', 'farm', 'office', 'school', 'doctor', 'strandedMotorist']
+// Larry: each has one kind of job and posts it outside the budget (pois.md § Job supply). Not the
+// office or school (they only receive) nor the motorist (they post only their own ride) — owner,
+// 2026-10-07.
+const ANY_GIVER = ['generalStore', 'autoShop', 'workSite', 'residence', 'farm', 'doctor']
+
+// Households: a residence or a farm (a farm is a residence too — it carries the tag).
+const HOME = ['residence', 'farm']
 
 export const THINGS = [
     // FEAT-88 haul. massKg is ignored for a haul thing — the card's weight is pieces × HAUL_BUNDLE_KG,
@@ -44,19 +49,32 @@ export const THINGS = [
     { id: 'takeout',    phrase: 'two bags of takeout',    family: 'delivery', massKg: [2, 5],
       pools: ['foodVendor'] },
     { id: 'groceries',  phrase: 'a week of groceries',    family: 'delivery', massKg: [10, 25],
-      pools: ['generalStore', 'residence'] },
+      pools: ['generalStore'] },
     { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
-      pools: ['residence', 'doctor'] },
+      pools: ['generalStore'] },
     { id: 'vase',       phrase: "grandma's vase",          family: 'fragile',  massKg: [3, 6],
       pools: ['residence'] },
-    // Courier, R1 (cargo.md). The note is generic, so every class has at least one built thing
-    // to post; the memo is the job site's own.
+    // Courier, R1 (cargo.md), one thing per row there.
     { id: 'note',       phrase: 'a private note',          family: 'delivery', massKg: [0.1, 0.1],
       pools: ANY_GIVER },
     { id: 'memo',       phrase: 'a memo from the foreman', family: 'delivery', massKg: [0.1, 0.1],
       pools: ['workSite'] },
+    { id: 'lunch',      phrase: 'lunch for the partner',   family: 'delivery', massKg: [1, 2],
+      pools: HOME },
+    { id: 'glasses',    phrase: 'much-needed reading glasses', family: 'delivery', massKg: [0.1, 0.1],
+      pools: HOME },
     { id: 'tractorKeys', phrase: 'keys for the tractor',   family: 'delivery', massKg: [0.1, 0.1],
       pools: ANY_GIVER, to: ['farm'] },
+    { id: 'classNotes', phrase: 'their class notes',       family: 'delivery', massKg: [0.3, 1],
+      pools: HOME, to: ['school'] },
+    { id: 'deck',       phrase: 'a presentation deck',     family: 'delivery', massKg: [0.5, 1.5],
+      pools: HOME, to: ['office'] },
+    // A 20 lb cylinder: ~7.7 kg of steel, plus 9.1 kg of propane when full. Full ones leave the
+    // store; empties come back to it from anywhere.
+    { id: 'propaneFull',  phrase: 'a full 20 lb propane tank',  family: 'delivery', massKg: [16, 18],
+      pools: ['generalStore'] },
+    { id: 'propaneEmpty', phrase: 'an empty 20 lb propane tank', family: 'delivery', massKg: [7, 9],
+      pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore'] },
     // Cargo for the yard crews, not a player tool (items.md §7). sawmill/quarry are R2/R3 classes.
     { id: 'chainsaw',   phrase: 'a chainsaw',              family: 'delivery', massKg: [5, 7],
       pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
@@ -64,6 +82,10 @@ export const THINGS = [
       pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
     { id: 'shovel',     phrase: 'a shovel',                family: 'delivery', massKg: [1.5, 2.5],
       pools: ['generalStore'], to: ['firewoodYard', 'sawmill', 'quarry', 'farm'] },
+    // A PASSENGER (cargo.md People): the motorist themselves, to an auto shop. `passenger` makes the
+    // card read "needs a ride to …"; the mass is the person, riding in the cab.
+    { id: 'motoristRide', phrase: 'a ride',                family: 'delivery', massKg: [55, 100],
+      pools: ['strandedMotorist'], to: ['autoShop'], passenger: true },
 
     // Larry posts papers and nothing else (owner, 2026-09-26).
     { id: 'papers',     phrase: 'the morning papers',      family: 'papers',   massKg: [5, 8],
@@ -111,8 +133,9 @@ export const REWARDS = [
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────
 //
-// Keyed by POI roster type (src/poi.js POI_ROSTER). A type that is NOT listed here posts nothing
-// (gas station, tackle shop, mom's house — the first two until FEAT-101).
+// Keyed by POI roster type (src/poi.js POI_ROSTER). A type that is NOT listed here posts nothing:
+// gas station and tackle shop (until FEAT-101), mom's house, and the office and school, which only
+// receive (owner, 2026-10-07).
 //
 //   slots      live offers at once. Every slot is always full, except after a completion or a cancel.
 //   expiryH    offer lifetime in game-hours, as the centre value; EXPIRY_NOISE applies on top.
@@ -134,13 +157,11 @@ export const SOURCES = {
     // FEAT-88/91: the region-1 haul yard. Haul only for now — FEAT-91 also has it give and take
     // courier jobs, which lands with FEAT-89.
     firewoodYard: { slots: 2, expiryH: 24,       families: ['haul'] },
-    // Places and Missions (FEAT-98): the job site and the additional classes post ONE provisional
+    // Places and Missions (FEAT-98): the job site and the posting additional classes post ONE provisional
     // slot each, on the retired generic giver's timing, until FEAT-101's region budget replaces it.
     workSite:         { slots: 1, expiryH: [24, 72], families: ['delivery', 'freight'] },
     residence:        { slots: 1, expiryH: [24, 72], families: ['delivery', 'fragile', 'demolition'] },
     farm:             { slots: 1, expiryH: [24, 72], families: ['delivery', 'freight', 'fragile'] },
-    office:           { slots: 1, expiryH: [24, 72], families: ['delivery'] },
-    school:           { slots: 1, expiryH: [24, 72], families: ['delivery'] },
     doctor:           { slots: 1, expiryH: [24, 72], families: ['delivery'] },
     strandedMotorist: { slots: 1, expiryH: [24, 72], families: ['delivery'] },
 }

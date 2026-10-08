@@ -717,8 +717,13 @@ export class MissionSystem {
             const edgeKey = (x, y) => (x < y ? `${x}|${y}` : `${y}|${x}`)
             const srcEdge = edgeKey(ka, kb)
             if (dest?.kind === 'poi' && dest.pois?.length) {
+                // FEAT-100: a STRICT wish (a thing bound for a class) takes no leg floor. The floor
+                // keeps a free choice of destination from settling on a short hop; a strict wish has
+                // no choice — the one school is wherever it is — and par prices a short leg fairly.
+                // Down to zero hops: the school's road may leave the very node the giver's does.
+                const lo = dest.strict ? 0 : POI_LEG_MIN
                 for (const [ex, other] of pair) {
-                    const c = legCandidates(ex, POI_LEG_MIN)
+                    const c = legCandidates(ex, lo)
                     const opts = []
                     for (const q of dest.pois) {
                         const qa = g.key(q.aId), qb = g.key(q.bId)
@@ -726,7 +731,7 @@ export class MissionSystem {
                         const da = c.dist.get(qa) ?? Infinity, db = c.dist.get(qb) ?? Infinity
                         const entry = da <= db ? qa : qb
                         const d = Math.min(da, db)
-                        if (!(d >= POI_LEG_MIN && d <= LEG_MAX)) continue
+                        if (!(d >= lo && d <= LEG_MAX)) continue
                         if (_pathLength(c.prev, entry, ex) > MAX_EDGES) continue
                         // Same doubling-back rule as the roadside leg: never leave along the anchor edge.
                         if (_firstHop(c.prev, entry, ex) === other) continue
@@ -775,7 +780,9 @@ export class MissionSystem {
         // Node path start → end.
         const nodePath = []
         for (let k = endK; k != null; k = prev.get(k)) { nodePath.unshift(k); if (k === startK) break }
-        if (nodePath.length < 2) return null
+        // Zero hops is a route only between two POIs (FEAT-100): out along the giver's edge to the
+        // node, straight in along the destination's. Both partial stretches are appended below.
+        if (nodePath.length < 2 && !(anchor && destPoi)) return null
 
         // Route the path's edges and build par segments. DESIGN.md: the first and last edge are
         // PARTIAL — the endpoints sit mid-edge, so they contribute an arc RANGE, not a whole edge.

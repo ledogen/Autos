@@ -398,7 +398,7 @@ function boardRig (ms, nowH = 6) {
         teleport () {}, setMapOpen () {}, onChange () {},
     })
     const { board, plan } = boardRig(ms)
-    let n = 0, tagged = 0
+    let n = 0, tagged = 0, shortest = Infinity
     const bad = [], tagBad = []
     for (let t = 6; t < 6 + 24 * 3; t += 4) {
         for (const id of board.sources()) for (const o of board.offers(id, t)) {
@@ -409,6 +409,7 @@ function boardRig (ms, nowH = 6) {
             // FEAT-100: a tagged thing always ends at a matching class.
             else if (to) {
                 tagged++
+                shortest = Math.min(shortest, r.distance)
                 const end = W.poi.list().find(q => q.id === r.endPoiId)
                 if (!end || !to.some(x => end.tags.includes(x))) tagBad.push(board.spec(o).thingId)
             }
@@ -433,7 +434,7 @@ function boardRig (ms, nowH = 6) {
         `${bad.length}/${n} failed: ${[...new Set(bad)].join(', ')}`)
     check('an offer for a tagged thing always ends at a matching class (FEAT-100)',
         tagged > 0 && tagBad.length === 0, `${tagBad.length}/${tagged}: ${tagBad.join(', ')}`)
-    console.log(`       ${n} offers planned over 3 days of turnover (${tagged} tagged)`)
+    console.log(`       ${n} offers planned over 3 days of turnover (${tagged} tagged; shortest tagged leg ${shortest.toFixed(0)} m — no floor, report-only)`)
 }
 
 // ── 7b. The POI start zone: no countdown, no hold, the clock starts at the threshold ────────────

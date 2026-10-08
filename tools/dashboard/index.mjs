@@ -345,7 +345,7 @@ function mdTables(text) {
 }
 
 /**
- * One end of a route: `farm / burgerJoint`, `any (as today)`, `"the school"†`.
+ * One end of a route: `farm / foodVendor`, `any (as today)`, `"the school"†`.
  * `label` keeps the annotation for display; `name` is what matching uses —
  * parentheses, quotes and the † (roadside-spot marker) stripped.
  */

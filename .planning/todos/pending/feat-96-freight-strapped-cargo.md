@@ -21,6 +21,10 @@ design: missions.md §3 (amendment 2026-10-06) and §3c; items.md §4 cargo; DES
 
 # FEAT-96: Freight — durable cargo strapped to the bed
 
+> **Keys renamed 2026-10-07 (FEAT-98):** `burgerJoint` → `foodVendor`, `serviceShop` → `autoShop`.
+> `missionGiver` is retired: its five slots became the additional classes (pois.md § Places and
+> Missions) and its model pool is now `residence`. A farm also carries the `residence` tag.
+
 ## Ruling (owner, 2026-10-06): fragile and freight come back as their own types
 
 This reverses part of the 2026-09-29 two-class ruling. That ruling folded fragile and freight into
@@ -89,8 +93,8 @@ everything FEAT-97 fragile reuses.
   reference route, empty and loaded. **Do not divide the slack back out of the pay** as haul does.
   Pay rides par, so a heavier load pays more by the same factor. That one knob delivers the owner's
   "mass scales both". Add a separate mass-pay term only if the pull is too weak.
-- **Offer board.** Add `freight` to `BUILT_FAMILIES`. **Givers (owner, 2026-10-06):** `serviceShop`,
-  `generalStore` and `missionGiver` all list `freight`. **Produce is a freight flow: farms ship it,
+- **Offer board.** Add `freight` to `BUILT_FAMILIES`. **Givers (owner, 2026-10-06):** `autoShop`,
+  `generalStore` and `residence` all list `freight`. **Produce is a freight flow: farms ship it,
   and the general store and mission givers receive it.** The card says "Base pay" only, as on every
   job.
 - **Points and letter.** It is a margin job, so `pointsFor(letter)` applies unchanged.
@@ -106,7 +110,7 @@ everything FEAT-97 fragile reuses.
 
 ## Rulings (owner, 2026-10-06)
 
-- **Givers:** `serviceShop`, `generalStore` and `missionGiver` post freight. Produce runs from the
+- **Givers:** `autoShop`, `generalStore` and `residence` post freight. Produce runs from the
   `farm` POI to a general store or a mission giver (see "The farm" below).
 - **Clean-up locks the giver's slot** for the offer's full expiry, as abandon does. It is still a
   cancel, and the hour is its extra cost.
@@ -125,7 +129,7 @@ produce freight. Its destinations are the general store and mission givers.
 - **Offers:** a `farm` row in `SOURCES` (`data/offers.js`) posting `freight` and courier (today's
   `delivery` key), since nearly every POI posts courier (owner, 2026-10-06). Produce things
   (crated vegetables, sacks of feed, a pallet of hay bales; real masses) are rolled only at the farm,
-  and their destination is restricted to a `generalStore` or a `missionGiver`.
+  and their destination is restricted to a `generalStore` or a `residence`.
 - **The real farm** replaces the placeholder once ASSET-65 farmhouse, ASSET-66 barn and ASSET-67
   tractor ship. They are composited into one farm-yard model, with the produce stall at the road
   edge, as the splitting yard composites the awning. A farmhouse and a barn will not fit the
@@ -144,7 +148,7 @@ produce freight. Its destinations are the general store and mission givers.
       drive time is recorded beside the constant.
 - [ ] "Clean up cargo" replaces "abandon job" on a strapped job. It removes the load, advances the
       clock exactly 1 h and cancels the job, locking the giver's slot as abandon does.
-- [ ] `serviceShop`, `generalStore` and `missionGiver` post freight. A `farm` POI exists (placeholder
+- [ ] `autoShop`, `generalStore` and `residence` post freight. A `farm` POI exists (placeholder
       model: the produce stall) and posts produce freight bound only for a general store or a
       mission giver.
 - [ ] After settle, clean-up or run end, the body count and joint count are back to baseline.

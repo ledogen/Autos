@@ -292,7 +292,8 @@ export class OfferBoard {
      * changes WHAT it is. Null only if the source has no built thing to post (a table gap).
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate}|null, payMult,
-     *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null }
+     *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null,
+     *   passenger: boolean }
      * bundles is the haul load's piece count (FEAT-88), null for every other family. It is drawn on
      * its OWN `bundles` stream: one more draw on `spec` would shift the destination and place name
      * of every existing offer on every seed.
@@ -347,7 +348,7 @@ export class OfferBoard {
             // ÷ HAUL_PAR_SLACK: the haul's par is that much longer and pay rides par (data/offers.js).
             payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1),
             destKind: papers ? null : (thing.to || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
-            destPick, placeName, to: thing.to ?? null,
+            destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
         })
     }
 
@@ -483,7 +484,9 @@ export class OfferBoard {
         const src = SOURCES[q.type]
         const forms = NAME_FORMS[q.type]
         const people = []
-        if (src) {
+        // Sources roll their people; so does a non-source with name forms (the office, the school),
+        // whose first person is only there to name it.
+        if (src || forms) {
             // A source with no name forms is named by its person alone (a stranded motorist), and is
             // ONE person — the card says "Earl needs…", and a second voice from the same wreck would
             // read oddly.
@@ -549,7 +552,8 @@ export class OfferBoard {
                 sentence.push({ t: ' needs ' }, { t: `${sp.bundles} bundles of ${sp.phrase}`, b: true },
                               { t: ' hauled to ' }, { t: dest, b: true }, { t: '.' })
             } else {
-                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' delivered to ' },
+                // A passenger is the poster themselves: "Earl needs a ride to Rust Belt Auto."
+                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: sp.passenger ? ' to ' : ' delivered to ' },
                               { t: dest, b: true }, { t: '.' })
             }
         }

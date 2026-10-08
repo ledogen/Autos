@@ -26,6 +26,10 @@ close FEAT-36** — placing meshes discharges neither the deterministic world-fi
 
 # FEAT-71: POI-satellite placement — lawn furniture and yard clutter
 
+> **Keys renamed 2026-10-07 (FEAT-98):** `burgerJoint` → `foodVendor`, `serviceShop` → `autoShop`.
+> `missionGiver` is retired: its five slots became the additional classes (pois.md § Places and
+> Missions) and its model pool is now `residence`. A farm also carries the `residence` tag.
+
 The consumer for every "small thing that stands near a POI". It does not exist, and its absence is
 what blocked every lawn-furniture and clutter asset from being placeable the day it shipped.
 
@@ -35,8 +39,8 @@ what blocked every lawn-furniture and clutter asset from being placeable the day
 
 ## The gap
 
-`src/poi.js` resolves exactly one pool, `missionGiver` — "a place that hands out work" — via
-`modelPool` on a roster slot. A flamingo is not a place that hands out work and neither is a drum,
+`src/poi.js` resolves exactly one pool, `residence` — the homes a residence draws from — via
+`modelPool` on a roster slot. A flamingo is not a home and neither is a drum,
 so there is no path from a built `.glb` to a thing standing in a yard.
 
 | Asset | Model | Registry | Placed |
