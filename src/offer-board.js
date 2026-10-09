@@ -59,7 +59,6 @@ const FIXED_NAMES = {
     larrysHouse: "Larry's",
     momsHouse:   "Mom's",
     gasStation:  'the gas station',
-    tackleShop:  'the tackle shop',
 }
 
 const rngFor = (key) => mulberry32(djb2(key))

@@ -327,7 +327,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     for (let seed = 1; seed <= 300; seed++) {
         const b = make(seed)
         // Fixed placeholder names (the two gas stations) are exempt — they are not rolled.
-        const FIXED = new Set(["Larry's", "Mom's", 'the gas station', 'the tackle shop'])
+        const FIXED = new Set(["Larry's", "Mom's", 'the gas station'])
         const names = POIS.map(q => b.poiName(q.id)).filter(n => n && !FIXED.has(n))
         if (new Set(names).size !== names.length) dupPoi++
         const full = POIS.flatMap(q => b.people(q.id)).filter(p => p.last).map(p => `${p.first} ${p.last}`)
