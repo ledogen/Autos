@@ -175,7 +175,7 @@ check('the barn is on the board (the farm model)', modelsSeen.has('barn'))
     check('no class but the farm and the general store ever takes a farm pad', lay.every(q => q.padKind === 'std'))
 }
 
-// ── ASSET-74: the general store shares the farm pad; its PARK box is the lot ────────────────────
+// ── ASSET-74: the general store shares the farm pad; you park in its PARK box ───────────────────
 {
     let onBig = true, fallback = true, onPad = true, roadEdge = true, trigger = true
     for (let seed = 1; seed <= 40; seed++) {
@@ -204,8 +204,8 @@ check('the barn is on the board (the farm model)', modelsSeen.has('barn'))
     check('with farm pads free, the general store stands on one, wearing its own model and park box', onBig)
     check('with none, it falls back to a lay-by and the placeholder cube, with no park box', fallback)
     check('its park box lies wholly on the pad', onPad)
-    check('…and the box\'s road-side edge is the pad\'s road edge (the stalls open onto the road)', roadEdge)
-    check('parking in the box answers the trigger; 1 m past the stalls\' road end does not', trigger)
+    check('…and the box\'s road-side edge is the pad\'s road edge (you pull straight in off the road)', roadEdge)
+    check('parking in the box answers the trigger; 1 m past its road-side edge does not', trigger)
 }
 const allKeys = [...new Set(Object.values(YARD_POOLS))].flatMap(modelsTagged)
 check('every pool member actually appears somewhere', allKeys.every(k => keysSeen.has(k)),

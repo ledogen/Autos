@@ -626,23 +626,22 @@ export const PROP_MODELS = {
     seat: 0.6,
   },
 
-  // ASSET-74 — the GENERAL STORE, 1130 tris, 7 materials, one 512x512 atlas (the hand-lettered
+  // ASSET-74 — the GENERAL STORE, 1062 tris, 5 materials, one 512x512 atlas (the hand-lettered
   // "Country Store" board, the ICE placard and the ice chest's two flat colours). Stucco walls under a
-  // red board-and-batten gable, door and sign to -Z (the road), an ice chest on the +X apron, and a
-  // PAVED LOT of five nose-in stalls (2.7 m wide, curb to road edge 5.0 m, yellow lines painted INTO
-  // the asphalt, never laid over it). The sign is generic on purpose: any named store stands on it.
+  // red board-and-batten gable, door and sign to -Z (the road), an ice chest on the +X concrete stoop.
+  // The sign is generic on purpose: any named store stands on it.
   // Built by assets/models/src/general-store.py, which prints `seat` and `park` — copy them across.
   //
-  // ON THE FARM PAD (owner, 2026-10-08), shared with the barn. seat 3.85 puts the lot's front edge
-  // ON the pad's road edge: you pull straight off the road into a stall and reverse back out onto
-  // it, so the road is the drive aisle. The back wall then stands 1.0 m (the rake 1.3 m) past the
-  // pad's far edge, inside the 1.6 m band the carve grades flat (PAD_RIM_HOLD) — the barn's precedent.
-  // The lot is VISUAL ONLY: 3 cm proud of the physics pad, so tyres sink 3 cm into it. The 0.15 m
-  // apron is not a collider either, like the barn's plinth.
+  // ON THE FARM PAD (owner, 2026-10-08), shared with the barn. You park on the BARE GRADED PAD in
+  // front — no asphalt, no lines, no curb (owner, 2026-10-09: a paved lot did not fit the place).
+  // seat 3.85 puts the park box's front edge ON the pad's road edge: you pull straight off the road
+  // and reverse back out onto it. The back wall then stands 1.0 m (the rake 1.3 m) past the pad's far
+  // edge, inside the 1.6 m band the carve grades flat (PAD_RIM_HOLD) — the barn's precedent. The
+  // 0.15 m stoop is not a collider, like the barn's plinth.
   //
   // Two boxes: the walls to the ridge (rake and eaves left out), and the ice chest with its placard.
-  // The chest needs its own: a pickup nosed into stall 4 or 5 overhangs the curb to within ~0.2 m of
-  // it, and one box round both would wall off the apron.
+  // The chest needs its own: a pickup nosed up to the stoop overhangs it to within ~0.2 m of the
+  // chest, and one box round both would wall off the stoop.
   generalStore: {
     url: 'assets/models/general-store.glb',
     collision: {
@@ -654,7 +653,7 @@ export const PROP_MODELS = {
     },
     pad: 'farm',
     seat: 3.85,
-    park: { x: 0, z: -6.95, halfX: 6.75, halfZ: 2.5 },        // the box round the five stalls
+    park: { x: 0, z: -6.95, halfX: 6.75, halfZ: 2.5 },        // 13.5 x 5 m: five pickups, stoop to road edge
   },
 
   // ASSET-31 — ROAD FURNITURE: seven Californian roadside signs on a timber 4x4.

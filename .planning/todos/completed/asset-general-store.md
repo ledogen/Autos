@@ -38,28 +38,27 @@ machine**.
 
 ## Resolution (2026-10-08) — SHIPPED, and wired into the roster
 
-`assets/models/general-store.glb`, **1130 tris** (budget 1500), 7 materials, one 512×512 atlas, 129 kB.
+`assets/models/general-store.glb`, **1062 tris** (budget 1500), 5 materials, one 512×512 atlas, 124 kB.
 Sources: `assets/models/src/general-store.py` + `.blend`. A re-export is byte-identical: the bake turns
 off Blender's render-stamp metadata, which otherwise writes the date into the PNG.
 
 **Materials:**
 
-- `StoreWall`, `StoreRed`, `StoreRoof`, `StoreConcrete`, `StoreCurb`, `StoreAsphalt` are flat colours.
+- `StoreWall`, `StoreRed`, `StoreRoof`, `StoreConcrete` are flat colours.
 - `StoreSign` is the atlas. It carries the sign board, the ICE placard and the ice chest's two flat
   colours, so the chest needs no material of its own.
 - `StoreRed` is the palette candidate: siding and frames recolour together. The red "Store" lettering
   is baked, so it stays red.
 
-**The lot (owner, 2026-10-08).** The store moved onto FEAT-105's farm pad (22 × 11.2 m) to get
+**Parking (owner, 2026-10-08/09).** The store moved onto FEAT-105's farm pad (22 × 11.2 m) to get
 parking out front:
 
-- Five nose-in stalls, 2.7 m wide, 5.0 m from the curb to the pad's road edge. You pull straight off
-  the road into a stall and reverse back out onto it, so the road is the drive aisle.
-- The apron's 0.15 m curb is the wheel stop. A pickup's nose overhangs it by about 0.5 m.
-- Yellow stall lines are polygons cut into the asphalt top, not decals laid over it, so nothing can
-  z-fight.
-- The lot is visual only. It stands 3 cm proud of the physics pad, so tyres sink 3 cm into it.
-  Thinner would z-fight the terrain at the fog limit.
+- You park on the bare graded pad in front of the stoop, inside a 13.5 × 5 m box: room for five
+  pickups, from the stoop to the pad's road edge. You pull straight in off the road and reverse back
+  out onto it.
+- A paved lot was built first: asphalt, five painted stalls and a yellow curb. The owner had it taken
+  out (2026-10-09): "the parking lot doesn't fit. It should just be the flattened pad where you
+  park." The box it defined was kept as is.
 
 **Wiring (one commit with the model):**
 
@@ -69,10 +68,10 @@ parking out front:
   free it takes a lay-by and shows the placeholder cube (owner ruling).
 - **The park box.** The registry's `park` rectangle replaces the 10 m orange ring. You park with the
   truck inside it (0.3 m slack) to be offered work, and it is drawn as an orange box curtain round
-  the five stalls. The green 25 m start threshold stays a circle (owner ruling).
+  it. The green 25 m start threshold stays a circle (owner ruling).
 - `dropZoneWorld` and `overDropZone` take the box as an optional argument, so the drop zone and the
   park box share one implementation.
-- Registry `generalStore`: `seat: 3.85` puts the lot's front on the pad's road edge. The back wall
+- Registry `generalStore`: `seat: 3.85` puts the park box's front on the pad's road edge. The back wall
   stands 1.0 m past the pad's far edge, inside the carve's 1.6 m flat rim band (the barn's
   precedent). There are two collision boxes, the walls and the ice chest.
 - `test/poi-yard.mjs` gains five checks:
@@ -80,14 +79,14 @@ parking out front:
   - With no farm pad it falls back to the cube.
   - The box lies wholly on the pad.
   - The box's road edge is the pad's road edge.
-  - The trigger is in at the box centre and out 1 m past the stalls.
+  - The trigger is in at the box centre and out 1 m past its road-side edge.
 
 **Audit:**
 
 - No z-fighting.
-- 0 of 3146 rays hit an inverted face.
+- 0 of 3120 rays hit an inverted face.
 - 0 of 2 lettered faces are mirrored.
-- 746 non-manifold edges, by design: single-sheet walls, trim with no backs, no floor (the barn's
+- 692 non-manifold edges, by design: single-sheet walls, trim with no backs, no floor (the barn's
   convention).
 
 **Deliberate choices:**

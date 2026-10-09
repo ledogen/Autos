@@ -8,21 +8,21 @@ A rural country store: off-white stucco walls, a red board-and-batten gable that
 over the top of every wall, a dark peaked roof, red-framed windows with drawn blinds and a
 dark glass shop door.  A shaped, hand-lettered "Country Store" board hangs on the road
 gable — generic on purpose, so any named store can stand on it.  A white ice chest with an
-ICE placard stands on the concrete apron, whose edge is painted safety yellow.
+ICE placard stands on the concrete stoop.  It stands on the FARM pad (22 x 11.2 m), and the
+road side of that pad is left bare: you park on the graded dirt, inside the registry's `park` box.
 Reference: the owner's photo (Red Lick Country Store).
 
-    GeneralStore   one mesh, 6 materials, ONE 512x512 atlas (sign + ICE placard + ice
+    GeneralStore   one mesh, 5 materials, ONE 512x512 atlas (sign + ICE placard + ice
                    chest colours), so the chest costs no material of its own
 
-Final (2026-10-08, Blender 5.2.0 LTS): 1068 tris (budget 1500), 6 materials, 1 image
-(512x512 PNG atlas), .glb 125 kB.  Overall 8.67 x 7.50 x 5.14 m (x, y, z); walls 7.0 x 5.5,
+Final (2026-10-09, Blender 5.2.0 LTS): 1062 tris (budget 1500), 5 materials, 1 image
+(512x512 PNG atlas), .glb 124 kB.  Overall 8.67 x 7.50 x 5.14 m (x, y, z); walls 7.0 x 5.5,
 ridge 5.0 (5.14 over the slab).  Audit: no z-fight, 0/3120 inverted ray hits, 0/2 mirrored
-lettered faces.  704 non-manifold edges BY DESIGN (single-sheet walls, backless trim, no
+lettered faces.  692 non-manifold edges BY DESIGN (single-sheet walls, backless trim, no
 floor — the barn's convention).
 
 AXES.  Blender +Y = glTF -Z = forward = the road gable (door, sign, apron).  Width (7 m)
-runs along X = along the road, so the marker's own yaw fits it to the 14 x 8 m pad with no
-yawOffset.  Base-seated (z = 0), centred on the WALL footprint; the apron and the roof
+runs along X = along the road, so the marker's own yaw fits it to the pad with no yawOffset.  Base-seated (z = 0), centred on the WALL footprint; the apron and the roof
 overhang reach past it.  From the road, the viewer's LEFT is Blender +X — that is where the
 ice chest stands, as in the photo.
 
@@ -65,25 +65,17 @@ ROOF_T = 0.12
 EAVE_OUT = 0.40
 RAKE = 0.30
 
-# --- apron + painted curb ---
+# --- concrete stoop (apron) ---
 AP_H = 0.15
 AP_X = (-3.8, 4.7)          # wider on the +X side: the ice chest stands there
 AP_D = 1.7
-CURB_W = 0.14
 
-# --- paved lot out front (the farm pad: 22 m along the road x 11.2 m deep, FEAT-105) ---
-# Nose-in stalls, curb to the pad's road edge; you pull straight off the road and back out onto
-# it, so the road is the drive aisle.  The apron's 0.15 m curb is the wheel stop: a pickup's
-# nose overhangs it by ~0.5 m, the reason STALL_D can be 5.0 and not a full 5.5.
-LOT_STALLS = 5
-STALL_W = 2.7               # pickup-width stalls
-STALL_D = 5.0               # curb to the pad's road edge
-LOT_MARGIN = 0.6            # asphalt past the outer lines, along the road
-LOT_T = 0.03                # proud of the pad: VISUAL ONLY (physics rides the carved pad), so tyres
-                            # sink 3 cm into it. Thinner z-fights the terrain at the fog limit:
-                            # depth error ~ d^2 / (near * 2^24) = 15 mm at 160 m with near 0.1
-LINE_W = 0.10
-LINE_LEN = 4.6              # painted from the curb, stopping short of the road edge
+# --- the PARK BOX out front (the farm pad: 22 m along the road x 11.2 m deep, FEAT-105) ---
+# NOT modelled: you park on the bare graded pad (owner, 2026-10-09 — a paved, painted lot did not
+# fit the place).  These only size the registry's `park` box, which park_zone() prints: room for
+# five pickups nosed in from the road, from the stoop to the pad's road edge.
+PARK_W = 13.5               # along the road
+PARK_D = 5.0                # stoop to the pad's road edge
 
 # --- front openings ---
 FRAME_W, FRAME_T = 0.12, 0.04
@@ -126,8 +118,6 @@ MATS = {
     "StoreRed":      ((0.340, 0.055, 0.025, 1.0), 0.80),   # siding, frames, soffit
     "StoreRoof":     ((0.030, 0.031, 0.036, 1.0), 0.55),   # roof, door glass, handles
     "StoreConcrete": ((0.260, 0.250, 0.230, 1.0), 0.95),
-    "StoreCurb":     ((0.780, 0.520, 0.020, 1.0), 0.70),   # safety yellow: curb + stall lines
-    "StoreAsphalt":  ((0.055, 0.055, 0.058, 1.0), 0.95),
     "StoreSign":     (None, 0.80),                         # the atlas
 }
 
@@ -398,47 +388,20 @@ def roof(p):
                Vector((ax - bx, 0, az - bz)))
 
 
-def lot(p):
-    """Asphalt slab with painted stall lines.  The lines are polygons IN the slab top (split
-    cells), never decals laid over it, so nothing can z-fight."""
-    hw = LOT_STALLS * STALL_W / 2
-    x0, x1 = -hw - LOT_MARGIN, hw + LOT_MARGIN
-    y0, y1, t = YF + AP_D, YF + AP_D + STALL_D, LOT_T
-    lines = [-hw + k * STALL_W for k in range(LOT_STALLS + 1)]
-    xs = sorted({x0, x1, *[l - LINE_W / 2 for l in lines], *[l + LINE_W / 2 for l in lines]})
-    ys = [y0, y0 + LINE_LEN, y1]
-    for xa, xb in zip(xs, xs[1:]):
-        for ya, yb in zip(ys, ys[1:]):
-            cx, cy = (xa + xb) / 2, (ya + yb) / 2
-            paint = cy < y0 + LINE_LEN and any(abs(cx - l) < LINE_W / 2 for l in lines)
-            p.face([(xa, ya, t), (xb, ya, t), (xb, yb, t), (xa, yb, t)],
-                   "StoreCurb" if paint else "StoreAsphalt", Z_)
-    p.face([(x0, y1, 0), (x1, y1, 0), (x1, y1, t), (x0, y1, t)], "StoreAsphalt", Y_)
-    for x, s in ((x0, -1), (x1, 1)):
-        p.face([(x, y0, 0), (x, y1, 0), (x, y1, t), (x, y0, t)], "StoreAsphalt", X_ * s)
-    for xl, xr in ((x0, AP_X[0]), (AP_X[1], x1)):      # back edge, where it clears the apron
-        p.face([(xl, y0, 0), (xr, y0, 0), (xr, y0, t), (xl, y0, t)], "StoreAsphalt", -Y_)
-
-
 def park_zone():
-    """The box around every stall, in the glTF/three.js model frame (x along the road, -z toward
-    it): what the registry's park zone must say.  Blender +Y = glTF -Z."""
-    y0, y1 = YF + AP_D, YF + AP_D + STALL_D
+    """The park box, in the glTF/three.js model frame (x along the road, -z toward it): what the
+    registry's `park` must say.  Blender +Y = glTF -Z."""
+    y0, y1 = YF + AP_D, YF + AP_D + PARK_D
     return {"x": 0.0, "z": round(-(y0 + y1) / 2, 3),
-            "halfX": round(LOT_STALLS * STALL_W / 2, 3), "halfZ": round(STALL_D / 2, 3)}
+            "halfX": round(PARK_W / 2, 3), "halfZ": round(PARK_D / 2, 3)}
 
 
 def apron(p):
-    (xa, xb), ya, yb, c, h = AP_X, YF, YF + AP_D, CURB_W, AP_H
-    # top: concrete field + a yellow U along the three open edges
-    p.face([(xa + c, ya, h), (xb - c, ya, h), (xb - c, yb - c, h), (xa + c, yb - c, h)],
-           "StoreConcrete", Z_)
-    p.face([(xa, yb - c, h), (xb, yb - c, h), (xb, yb, h), (xa, yb, h)], "StoreCurb", Z_)
-    p.face([(xa, ya, h), (xa + c, ya, h), (xa + c, yb - c, h), (xa, yb - c, h)], "StoreCurb", Z_)
-    p.face([(xb - c, ya, h), (xb, ya, h), (xb, yb - c, h), (xb - c, yb - c, h)], "StoreCurb", Z_)
-    p.face([(xa, yb, 0), (xb, yb, 0), (xb, yb, h), (xa, yb, h)], "StoreCurb", Y_)
-    p.face([(xa, ya, 0), (xa, yb, 0), (xa, yb, h), (xa, ya, h)], "StoreCurb", -X_)
-    p.face([(xb, ya, 0), (xb, yb, 0), (xb, yb, h), (xb, ya, h)], "StoreCurb", X_)
+    (xa, xb), ya, yb, h = AP_X, YF, YF + AP_D, AP_H
+    p.face([(xa, ya, h), (xb, ya, h), (xb, yb, h), (xa, yb, h)], "StoreConcrete", Z_)
+    p.face([(xa, yb, 0), (xb, yb, 0), (xb, yb, h), (xa, yb, h)], "StoreConcrete", Y_)
+    p.face([(xa, ya, 0), (xa, yb, 0), (xa, yb, h), (xa, ya, h)], "StoreConcrete", -X_)
+    p.face([(xb, ya, 0), (xb, yb, 0), (xb, yb, h), (xb, ya, h)], "StoreConcrete", X_)
     # the strips of apron back face that stand clear of the wall, each end
     for xl, xr in ((xa, -W / 2), (W / 2, xb)):
         p.face([(xl, ya, 0), (xr, ya, 0), (xr, ya, h), (xl, ya, h)], "StoreConcrete", -Y_)
@@ -520,7 +483,6 @@ def build_part():
     side_windows(p)
     roof(p)
     apron(p)
-    lot(p)
     sign(p)
     ice_chest(p)
     return p
@@ -782,7 +744,7 @@ def build():
           f"  images {len(bpy.data.images)}")
     print(f"  bbox  x {lo[0]:.2f}..{hi[0]:.2f}  y {lo[1]:.2f}..{hi[1]:.2f}  z {lo[2]:.2f}..{hi[2]:.2f}")
     print(f"  park zone (glTF model frame): {park_zone()}")
-    print(f"  seat on an 11.2 m pad (lot front = pad road edge): {hi[1] - 5.6:.2f}")
+    print(f"  seat on an 11.2 m pad (park box front = pad road edge): {YF + AP_D + PARK_D - 5.6:.2f}")
     print(f"  facing: {bad} inverted first-hits of {hits}")
     print(f"  uv handedness: {mir} mirrored of {tex} lettered faces")
     print("=" * 60)
