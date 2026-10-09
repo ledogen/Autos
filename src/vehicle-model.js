@@ -355,8 +355,9 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
 
   // ── Wheels (steelie) ───────────────────────────────────────────────────────
   // Two shared geometries, built ONCE and referenced by all four wheels:
-  //   tireGeom — near-black 245/75R16 carcass: open tube + outboard sidewall annulus (so the rim
-  //              can sit DOWN inside it) + inboard end caps that stop you seeing through the wheel
+  //   tireGeom — near-black P235/75R15 carcass: one lathed profile (outboard sidewall annulus, so
+  //              the rim can sit DOWN inside it, rounded shoulders, tread) + inboard end caps that
+  //              stop you seeing through the wheel
   //   rimGeom  — merged steel "steelie": barrel + dished disc with 5 lightening HOLES + hub boss
   //              + 5 lug nuts. The holes are the point: they are arc-interrupted detail, so
   //              wheel spin is legible (a smooth cylinder reads as stationary at any speed).
@@ -365,20 +366,38 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // axis, the correct lateral roll axis, and the build-frame +Y face becomes the OUTBOARD (+X)
   // face. Left-side wheels get the whole tire+rim assembly flipped back out via rotation.y = PI on
   // an inner group (see below) — never on the wheel group itself, whose quaternion syncMeshesToState owns.
-  const TIRE_W  = 0.25                 // tire section width
+  const TIRE_W  = params.wheelWidth    // tire section width — one source, shared with the physics core
   const HALF_W  = TIRE_W / 2
   const RIM_R   = params.rimRadius      // 15 in rim ≈ 0.381 m diameter — one source, shared with damage.js
   const DISC_T  = 0.012                // disc face thickness
   const DISC_Y  = HALF_W - 0.042       // inboard side of the disc — the dish: face sits ~30 mm in
   const wRad    = params.wheelRadius
+  // Shoulder radius: a square-edged tread band reads as a much bigger tire than it is. Visual only —
+  // the contact radius and the physics core stay the full section. 4 facets per quarter-arc keeps
+  // it in the faceted art style.
+  const SHOULDER_R = 0.045
+  const SHOULDER_SEGS = 4
+
+  // Lathe profile (x = radius, y = axial), ordered inboard → outboard so faces point outward:
+  // inboard shoulder, tread, outboard shoulder, then down the outboard sidewall to the bead.
+  const profile = []
+  const shoulder = (cy, a0) => {
+    for (let k = 0; k <= SHOULDER_SEGS; k++) {
+      const a = a0 + (k / SHOULDER_SEGS) * (Math.PI / 2)
+      profile.push(new THREE.Vector2(wRad - SHOULDER_R + SHOULDER_R * Math.cos(a), cy + SHOULDER_R * Math.sin(a)))
+    }
+  }
+  shoulder(-HALF_W + SHOULDER_R, -Math.PI / 2)   // inboard: from the cap edge up to the tread
+  shoulder(HALF_W - SHOULDER_R, 0)               // outboard: from the tread over to the sidewall
+  profile.push(new THREE.Vector2(RIM_R, HALF_W))
+  const capR = wRad - SHOULDER_R
 
   const tireParts = [
-    new THREE.CylinderGeometry(wRad, wRad, TIRE_W, 24, 1, true),                     // tread band
-    new THREE.RingGeometry(RIM_R, wRad, 24, 1).rotateX(-Math.PI / 2).translate(0, HALF_W, 0),
+    new THREE.LatheGeometry(profile, 24),
     // Inboard end, closed both ways: the +Y-facing disc is what the lightening holes look through
     // (dark, not sky), the -Y-facing one keeps the wheel solid when seen from under the truck.
-    new THREE.CircleGeometry(wRad, 24).rotateX(-Math.PI / 2).translate(0, -HALF_W, 0),
-    new THREE.CircleGeometry(wRad, 24).rotateX(Math.PI / 2).translate(0, -HALF_W - 0.001, 0),
+    new THREE.CircleGeometry(capR, 24).rotateX(-Math.PI / 2).translate(0, -HALF_W, 0),
+    new THREE.CircleGeometry(capR, 24).rotateX(Math.PI / 2).translate(0, -HALF_W - 0.001, 0),
   ]
   const tireGeom = mergeGeometries(tireParts.map((g) => (g.index ? g.toNonIndexed() : g)))
   tireGeom.rotateZ(-Math.PI / 2)
