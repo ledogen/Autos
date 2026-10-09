@@ -859,6 +859,7 @@ function applyWorldSeed (v) {
   _spawnOverride = null
   offerBoard?.clearRoutes()   // FEAT-67: memoised offer routes pin centerlines from the outgoing network
   _dropLarryTour()
+  map2d.reset()   // a new seed is a new world — the map closes and rebuilds from nothing on next open
   return debouncedRebuildFull()
 }
 
@@ -5836,6 +5837,7 @@ function _hideSeedModal () {
 // caption strip) and the world (stage off). The stage is what the player looks at for the first two,
 // which is why loop() renders it INSTEAD of the world scene rather than behind it.
 function _showMainMenu () {
+  map2d.reset()   // the menu always leaves the map closed and cleared, whatever comes next
   _hidePauseMenu()
   _hideSeedModal()
   const cap = document.getElementById('load-caption')
@@ -5900,6 +5902,7 @@ async function _startFreeRoam (seedStr) {
 async function _startStoryFromModal () {
   const seed = _resolveSeedInput()
   _hideSeedModal()
+  map2d.reset()   // story always starts on a fresh map, even on the seed already loaded
   // The caption goes up BEFORE the await, not after: the player clicked, and the whole point of
   // wiring these buttons early is that the click is acknowledged even while init is still running.
   _enterStageLoad('building the world\u2026')

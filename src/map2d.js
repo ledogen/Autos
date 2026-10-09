@@ -762,6 +762,17 @@ export class Map2D {
     }
 
     /**
+     * Close and forget the network: the next show() rebuilds from nothing (_buildRoad clears the
+     * stream state) and re-centres on the car. Called on every world change except story → free
+     * roam on the same seed — a stale instance carried across a seed swap drew two worlds' roads.
+     */
+    reset() {
+        this.hide()
+        this._road = null
+        this._centeredOnce = false
+    }
+
+    /**
      * FEAT-67: Q / E — previous / next offer. Over a source POI they step its hover card (and the
      * route drawn with it); anywhere else they go to main.js, which steps the parked offer panel
      * that the map is open behind. Q and E are bound nowhere else in the game.
