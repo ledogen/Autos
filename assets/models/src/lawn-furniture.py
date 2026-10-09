@@ -65,6 +65,10 @@ CH_SAG = 0.07                   # sling dips this much mid-seat
 CH_ARM = 0.62                   # armrest height
 CH_TOP, CH_RECLINE = 0.92, 0.10 # backrest top height, how far back it leans
 TUBE = 0.022                    # frame tube size
+# RESCALED 2026-10-07 (owner, FEAT-71): the chair ships x1.1, applied to the finished part, so the
+# CH_* dimensions above stay the original chair's. splitting-yard.py composites camp-chair.glb, so
+# the yard was re-exported with it (4972 tris, budget 5000) — re-export it after any chair change.
+CH_SCALE = 1.1
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +220,7 @@ def build_chair():
         z = CH_SEAT + (CH_TOP - 0.02 - CH_SEAT) * t
         rows.append([(-hw + 0.01, y, z), (0.0, y - 0.03, z), (hw - 0.01, y, z)])
     sheet(p, rows, lambda r, c: F)
+    p.v = [(x * CH_SCALE, y * CH_SCALE, z * CH_SCALE) for x, y, z in p.v]
     return p
 
 

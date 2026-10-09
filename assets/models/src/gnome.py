@@ -45,6 +45,8 @@ coincidence; Z is where the pose shows, -0.0952 .. +0.0700)
 and that is the pose, not an error.  Audit clean: 0 object-vs-object clips,
 0 coplanar pairs, 0 non-manifold edges, 0/6000 inverted first-hit rays.
 Rebuild:  exec(open(__file__).read()); build(); export()
+RESCALED x2 2026-10-07 (owner, FEAT-71) via SCALE: ships 0.412 W x 0.800 H x 0.330 D m,
+same 500 tris / 6 materials. Every dimension above and in the tables is the ORIGINAL figure.
 
 AXIS TRAP.  The glTF exporter's "+Y up" maps blender (x,y,z) -> gltf (x, z, -y),
 so blender +Y becomes gltf -Z.  ASSETS.md wants forward = -Z, therefore
@@ -103,6 +105,9 @@ OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/gnome.glb"
 OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/gnome.blend"
 OBJ_NAME = "Gnome"
 
+# RESCALED 2026-10-07 (owner, FEAT-71): x2 overall, applied to the finished mesh, so every
+# station table below stays in the ORIGINAL 0.40 m figure's metres. Shipped size: 0.41 x 0.80 x 0.33.
+SCALE = 2.0
 SEG = 8                    # rings on body / hat / beard
 SEG_LIMB = 6               # rings on legs / boots - they are ~35 mm across
 SEG_ARM = 7                # ...and one more on the arms, for the hands
@@ -504,6 +509,7 @@ def build():
               seg=SEG_LIMB, mirror=m, yaw=lyaw)
     blob(bm, *NOSE)
     box(bm, *BUCKLE)
+    bmesh.ops.scale(bm, vec=(SCALE, SCALE, SCALE), verts=bm.verts)   # about the base-seated origin
 
     bm.normal_update()
     for f in bm.faces:
