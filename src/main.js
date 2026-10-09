@@ -2600,6 +2600,11 @@ const _ringMat = (color, opacity = 0.28) => new THREE.MeshBasicMaterial({
   depthWrite: false, toneMapped: false, alphaMap: _ringAlpha,
 })
 const _poiRingMat = _ringMat(0xff7a18)     // orange — park here to be offered a job
+// ASSET-74: the same curtain round a PARK box instead of a circle — the ring with four sides. A unit
+// square (side 1, open top and bottom): 4 radial segments started at 45°, at radius √½. Shares the
+// ring's material and alpha ramp, so it reads as the same signal in a different shape.
+const _parkBoxGeo = new THREE.CylinderGeometry(Math.SQRT1_2, Math.SQRT1_2, 1, 4, 1, true, Math.PI / 4)
+const PARK_SLACK = 0.3         // m the park box grows by for the trigger — a truck half a wheel over the line still counts
 // The STAGING ring (owner, 2026-08-02): taking the job swaps the marker's orange circle for the
 // green start threshold. One ring at a time, and its colour is the state — orange means "this is
 // where you stop", green means "this is where the clock starts". Same geometry, same style, wider
@@ -2681,9 +2686,16 @@ function _rebuildPoiMarkers () {
     if (!q.jobs) continue
     // FEAT-88: a haul giver's "park here" is its drop zone, not a ring round the pad.
     if (q.drop) { _addDropMark(q); continue }
-    const ring = new THREE.Mesh(_ringGeo, _poiRingMat)
-    ring.scale.set(r, _POI_RING_H, r)
-    ring.position.set(q.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, q.z)
+    const box = q.park ? dropZoneWorld(q, q.park) : null
+    const ring = new THREE.Mesh(box ? _parkBoxGeo : _ringGeo, _poiRingMat)
+    if (box) {   // ASSET-74: the general store's lot — a box curtain round every stall
+      ring.scale.set(2 * box.halfX, _POI_RING_H, 2 * box.halfZ)
+      ring.position.set(box.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, box.z)
+      ring.rotation.y = box.yaw
+    } else {
+      ring.scale.set(r, _POI_RING_H, r)
+      ring.position.set(q.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, q.z)
+    }
     ring.renderOrder = 5
     _poiGroup.add(ring)
     _poiRings.set(q.id, ring)
@@ -3742,7 +3754,11 @@ function _poiInReach () {
                              POI_PARAMS.poiInteractR, true)
   // FEAT-88: a haul giver answers only with your BED over its drop zone — that is where the load
   // lands, so it is where you park to be offered one.
-  return q && q.drop && !_bedOverDrop(q) ? null : q
+  if (q && q.drop && !_bedOverDrop(q)) return null
+  // ASSET-74: a POI with a PARK box (the general store's lot) answers only with the truck inside it.
+  // nearest()'s poiInteractR still finds it: the box's far corner is 8.8 m from the pad centre.
+  const vp = vehicleState.position
+  return q && q.park && !overDropZone(q, vp.x, vp.z, PARK_SLACK, q.park) ? null : q
 }
 
 // Rising edge of the parking-brake latch (vehicleState.parked), sampled where the prompt is polled.
