@@ -12,7 +12,7 @@
 // its graded ground, never past the pad toward the road · and padSd's default branch is still the exact stadium the carve always used.
 
 import fs from 'node:fs'
-import { PoiSystem, POI_PARAMS, POI_ROSTER, YARD_POOLS, padKinds } from '../src/poi.js'
+import { PoiSystem, POI_PARAMS, POI_ROSTER, YARD_POOLS, padKinds, overDropZone, dropZoneWorld } from '../src/poi.js'
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'
 import { padSd, PAD_RIM_HOLD } from '../src/road-carve.js'
 import { mulberry32 } from '../src/seed.js'
@@ -29,7 +29,7 @@ const poi = new PoiSystem({ getParams: () => ({}), getSeed: () => SEED })
 
 /**
  * 36 pads on a 6 x 6 grid 600 m apart, each at its own yaw, in the record shape _padsOnEdge emits —
- * 30 lay-bys plus `farmPads` of every bigger kind (padKinds: the barn's 22 x 11.2), each on an edge
+ * 30 lay-bys plus `farmPads` of every bigger kind (padKinds: the 22 x 11.2 farm pad), each on an edge
  * of its own so nothing clashes. farmPads 0 is a region with no spot for a farm pad.
  */
 function pool (seed, farmPads = 6) {
@@ -161,7 +161,7 @@ check('the barn is on the board (the farm model)', modelsSeen.has('barn'))
     let onBig = true, fallback = true, bare = true, full = true
     for (let seed = 1; seed <= 40; seed++) {
         const farms = build(seed).filter(q => q.type === 'farm')
-        onBig &&= farms.length === 3 && farms.every(q => q.padKind === 'barn' && q.modelKey === 'barn')
+        onBig &&= farms.length === 3 && farms.every(q => q.padKind === 'farm' && q.modelKey === 'barn')
         const none = build(seed, 0)
         const f0 = none.filter(q => q.type === 'farm')
         full &&= none.length === POI_ROSTER.reduce((n, s) => n + s.count, 0)
@@ -171,8 +171,41 @@ check('the barn is on the board (the farm model)', modelsSeen.has('barn'))
     check('with farm pads in the pool, every farm stands on one, wearing the gable-to-road barn', onBig)
     check('with none, every farm falls back to a lay-by and the broadside barn — the roster stays full', fallback && full)
     check('…and a fallback barn has no yard, so no clutter', bare)
-    const lay = build(3).filter(q => q.type !== 'farm')
-    check('no other class ever takes a farm pad', lay.every(q => q.padKind === 'std'))
+    const lay = build(3).filter(q => q.type !== 'farm' && q.type !== 'generalStore')
+    check('no class but the farm and the general store ever takes a farm pad', lay.every(q => q.padKind === 'std'))
+}
+
+// ── ASSET-74: the general store shares the farm pad; you park in its PARK box ───────────────────
+{
+    let onBig = true, fallback = true, onPad = true, roadEdge = true, trigger = true
+    for (let seed = 1; seed <= 40; seed++) {
+        const [st] = build(seed).filter(q => q.type === 'generalStore')
+        onBig &&= !!st && st.padKind === 'farm' && st.modelKey === 'generalStore' && !!st.park
+        const [f0] = build(seed, 0).filter(q => q.type === 'generalStore')
+        fallback &&= !!f0 && f0.padKind === 'std' && f0.modelKey === null && f0.park === null
+        if (!st?.park) continue
+        // Every corner of the box on the pad, and its road-side edge ON the pad's road edge.
+        const z = dropZoneWorld(st, st.park)
+        const ax = Math.cos(z.yaw), az = -Math.sin(z.yaw)     // the box's +X in the world
+        const bx = Math.sin(z.yaw), bz = Math.cos(z.yaw)      // its +Z (away from the road)
+        let nearest = Infinity
+        for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+            const wx = z.x + sx * z.halfX * ax + sz * z.halfZ * bx - st.x
+            const wz = z.z + sx * z.halfX * az + sz * z.halfZ * bz - st.z
+            if (padSd(st, wx, wz) > 1e-6) onPad = false
+            nearest = Math.min(nearest, wx * st.nx + wz * st.nz)   // most road-ward reach
+        }
+        if (Math.abs(nearest + st.halfWid) > 1e-6) roadEdge = false
+        // The trigger: in at the centre, out 1 m beyond the road-side edge (slack 0.3).
+        const out = z.halfZ + 1.0
+        trigger &&= overDropZone(st, z.x, z.z, 0.3, st.park)
+                 && !overDropZone(st, z.x - bx * out, z.z - bz * out, 0.3, st.park)
+    }
+    check('with farm pads free, the general store stands on one, wearing its own model and park box', onBig)
+    check('with none, it falls back to a lay-by and the placeholder cube, with no park box', fallback)
+    check('its park box lies wholly on the pad', onPad)
+    check('…and the box\'s road-side edge is the pad\'s road edge (you pull straight in off the road)', roadEdge)
+    check('parking in the box answers the trigger; 1 m past its road-side edge does not', trigger)
 }
 const allKeys = [...new Set(Object.values(YARD_POOLS))].flatMap(modelsTagged)
 check('every pool member actually appears somewhere', allKeys.every(k => keysSeen.has(k)),

@@ -204,7 +204,11 @@ export const POI_ROSTER = [
     // ready-made meals from it as an independent gig contractor, not as staff, so the opening's
     // "never work there again" still holds. Sited anywhere.
     { type: 'foodVendor',   count: 1, model: null, siting: 'any' },
-    { type: 'generalStore', count: 1, model: null, siting: 'any' },
+    // ASSET-74: the country store, on the FARM pad (owner, 2026-10-08) — its paved lot of five
+    // nose-in stalls fills the road side, and you park in a stall to be offered work (the model's
+    // `park` box, not the round ring). No farm pad free: a lay-by and the placeholder cube, so the
+    // roster is never short a store (fallbackModel null = the cube, same ruling).
+    { type: 'generalStore', count: 1, model: 'generalStore', fallbackModel: null, siting: 'any' },
     // The type exists so the roster is whole; fishing and The Confluence stay deferred. Do not
     // build its systems off the back of this line.
     { type: 'tackleShop',   count: 1, model: null, siting: 'any' },
@@ -257,9 +261,10 @@ export const POI_ROSTER = [
  * FEAT-88: POI `q`'s drop zone in world space — its centre and the yaw of the marker frame it is
  * authored in (the zone's long axis is that frame's +X). Null for a POI with no drop zone.
  * Same mapping as the mesh: model (x, z) → world (x·cos + z·sin, −x·sin + z·cos).
+ * `box` defaults to the drop zone; ASSET-74 passes the model's park box (`q.park`) — same frame.
  */
-export function dropZoneWorld (q) {
-    const b = q?.drop
+export function dropZoneWorld (q, box = q?.drop) {
+    const b = box
     if (!b) return null
     const yaw = q.modelYaw ?? q.yaw ?? 0
     const cs = Math.cos(yaw), sn = Math.sin(yaw)
@@ -271,9 +276,10 @@ export function dropZoneWorld (q) {
  * FEAT-88: is the world point (x, z) over POI `q`'s drop zone, grown by `slack` metres on every
  * side? Pure. The point is taken into the marker's own frame the way queryContact does (undo
  * modelYaw about Y) and tested against the rectangle. False for a POI with no drop zone.
+ * `box` defaults to the drop zone; ASSET-74 passes the model's park box (`q.park`) — same frame.
  */
-export function overDropZone (q, x, z, slack = 0) {
-    const b = q?.drop
+export function overDropZone (q, x, z, slack = 0, box = q?.drop) {
+    const b = box
     if (!b) return false
     const yaw = q.modelYaw ?? q.yaw ?? 0
     const cs = Math.cos(yaw), sn = Math.sin(yaw)
@@ -392,21 +398,32 @@ export function dressYard (q, seed, yard) {
 }
 
 /**
+ * FEAT-105: the BIG pad kinds, by name. A registry model asks for one with `pad: '<name>'`, and every
+ * model naming the same kind draws from ONE pool of those pads — the barn and the general store
+ * (ASSET-74) share the farm pad. Named, not sized per model, so two models can never drift onto
+ * separate kinds by a typo in their dims. The name is part of each pad's hash and id (`:farm@n`), so
+ * renaming a kind reshuffles where its pads land.
+ */
+export const PAD_KINDS = {
+    farm: { halfLen: 11, halfWid: 5.6 },   // 22 m along the road x 11.2 m deep
+}
+
+/**
  * FEAT-105: the pad KINDS pass 1 sites. 'std' is the 14 x 8 lay-by every slot used to share; a roster
- * slot whose model declares a registry `pad` gets a kind of its own, keyed by that model, and only
- * pads of its kind can hold it. Derived from the roster, so adding a big-pad model is data-only.
+ * slot whose model names a registry `pad` draws only from pads of that kind. Derived from the roster,
+ * so a big-pad kind is sited only while some slot needs it.
  */
 export function padKinds (P) {
     const kinds = [{ key: 'std', halfLen: P.poiPadHalfLen, halfWid: P.poiPadHalfWid }]
     for (const slot of POI_ROSTER) {
-        const pad = slot.model && PROP_MODELS[slot.model]?.pad
-        if (pad && !kinds.some(k => k.key === slot.model)) kinds.push({ key: slot.model, ...pad })
+        const key = slotPadKind(slot)
+        if (!kinds.some(k => k.key === key)) kinds.push({ key, ...PAD_KINDS[key] })
     }
     return kinds
 }
 
-/** The pad kind a roster slot needs: its model's own, else the standard lay-by. */
-const slotPadKind = slot => (slot.model && PROP_MODELS[slot.model]?.pad) ? slot.model : 'std'
+/** The pad kind a roster slot needs: its model's named kind, else the standard lay-by. */
+const slotPadKind = slot => (slot.model && PROP_MODELS[slot.model]?.pad) || 'std'
 
 /**
  * FEAT-105: two candidate pads that cannot BOTH be taken — the same edge, closer than poiPadSpacing
@@ -839,7 +856,8 @@ export class PoiSystem {
             // the roster is never short a farm for want of a big pad (owner, 2026-10-08).
             const kind = slotPadKind(slot)
             const picks = pick(free.filter(q => (q.padKind ?? 'std') === kind), slot.count, slot.type, slot)
-            if (picks.length < slot.count && kind !== 'std' && slot.fallbackModel) {
+            // `'fallbackModel' in slot`, not its truthiness: null is a real fallback — the cube.
+            if (picks.length < slot.count && kind !== 'std' && 'fallbackModel' in slot) {
                 const lay = free.filter(q => (q.padKind ?? 'std') === 'std' && !picks.some(p => padsClash(p, q, P.poiPadSpacing)))
                 picks.push(...pick(lay, slot.count - picks.length, `${slot.type}:fallback`, slot))
             }
@@ -884,6 +902,9 @@ export class PoiSystem {
                 q.modelVariant = slot.variant ?? hash32(`poi-variant:${seed}:${q.id}`)
                 q.drop = slot.drop ?? null   // FEAT-88 drop zone — see the firewoodYard slot
                 q.showWhileJob = !!slot.showWhileJob   // FEAT-102 — main.js sets q.hidden from the board
+                // ASSET-74: the model's PARK box — park inside it to be offered work. Off the model,
+                // not the slot: it is the painted stalls, so a fallback cube has none.
+                q.park = spec?.park ?? null
                 // FEAT-71: the lawn furniture / yard clutter standing in this POI's yard — the
                 // model's authored yard, else the slot's (none today; FEAT-105's farm pad will want one).
                 q.satellites = dressYard(q, seed, spec?.yard ?? slot.yard)
