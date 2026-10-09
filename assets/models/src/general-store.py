@@ -76,6 +76,8 @@ AP_D = 1.7
 # five pickups nosed in from the road, from the stoop to the pad's road edge.
 PARK_W = 13.5               # along the road
 PARK_D = 5.0                # stoop to the pad's road edge
+PARK_GAP = 0.05             # the box's back wall stands this far off the stoop's face: flush, the
+                            # translucent curtain z-fights the concrete (owner, 2026-10-09)
 
 # --- front openings ---
 FRAME_W, FRAME_T = 0.12, 0.04
@@ -391,9 +393,9 @@ def roof(p):
 def park_zone():
     """The park box, in the glTF/three.js model frame (x along the road, -z toward it): what the
     registry's `park` must say.  Blender +Y = glTF -Z."""
-    y0, y1 = YF + AP_D, YF + AP_D + PARK_D
-    return {"x": 0.0, "z": round(-(y0 + y1) / 2, 3),
-            "halfX": round(PARK_W / 2, 3), "halfZ": round(PARK_D / 2, 3)}
+    y0, y1 = YF + AP_D + PARK_GAP, YF + AP_D + PARK_D
+    return {"x": 0.0, "z": round(-(y0 + y1) / 2, 4),
+            "halfX": round(PARK_W / 2, 4), "halfZ": round((y1 - y0) / 2, 4)}
 
 
 def apron(p):

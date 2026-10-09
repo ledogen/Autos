@@ -653,7 +653,9 @@ export const PROP_MODELS = {
     },
     pad: 'farm',
     seat: 3.85,
-    park: { x: 0, z: -6.95, halfX: 6.75, halfZ: 2.5 },        // 13.5 x 5 m: five pickups, stoop to road edge
+    // 13.5 x 4.95 m: five pickups, road edge to 5 cm short of the stoop — flush with it, the
+    // translucent curtain z-fights the concrete.
+    park: { x: 0, z: -6.975, halfX: 6.75, halfZ: 2.475 },
   },
 
   // ASSET-31 — ROAD FURNITURE: seven Californian roadside signs on a timber 4x4.
