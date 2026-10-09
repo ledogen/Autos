@@ -43,9 +43,15 @@
 //                       (poiPadCornerR), which is what lets a long body get back there.
 //   seatAlong  number — FEAT-105, POI models only: metres the model slides along its OWN +X, for a
 //                       model that stands at one end of its pad (the barn, yard beside it). Default 0.
-//   pad        { halfLen, halfWid } — FEAT-105, POI models only: this model needs a BIGGER pad than
-//                       the 14 x 8 lay-by. Pass 1 sites pads of that size on their own scan, and only
-//                       those can hold it (src/poi.js padKinds). Depth costs far more pads than length.
+//   pad        string — FEAT-105, POI models only: this model needs a BIGGER pad than the 14 x 8
+//                       lay-by, NAMED from src/poi.js PAD_KINDS ('farm' = 22 x 11.2 m). Every model
+//                       naming the same kind shares one pool of those pads, sited on their own tries;
+//                       only they can hold it. Depth costs far more pads than length.
+//   park       { x, z, halfX, halfZ } — ASSET-74, POI models only: the PARK box. Park with the truck
+//                       inside it to be offered work — it replaces the round orange ring, and is drawn
+//                       as an orange box curtain. Model frame, same convention as a slot's `drop`.
+//                       Whatever else asks "is the truck parked at this POI" (FEAT-104's shop browse)
+//                       reads the same box.
 //   yardCount  [min, max] — FEAT-105, POI models only: how many satellites its yard takes. Default
 //                       [3, 6]; a bigger yard says so.
 //   yard       [{ x, z, halfX, halfZ }, ...] — FEAT-71, POI models only: the YARD, where satellites
@@ -590,7 +596,7 @@ export const PROP_MODELS = {
   // appear anywhere else. Two entries, one .glb: how it stands depends on the pad it got.
   //
   // `barn` — ON ITS OWN FARM PAD (FEAT-105, owner 2026-10-08): 22 m along the road x 11.2 m deep,
-  // sited by its own scan (src/poi.js padKinds). Gable — the doors — to the road, standing at one
+  // the 'farm' pad kind (src/poi.js PAD_KINDS), shared with the general store. Gable — the doors — to the road, standing at one
   // end of the pad with the YARD BESIDE IT; length along the road is the cheap axis (roads follow
   // contours, so the ground slopes ACROSS them), which is why the pad grows long, not deep.
   //   seat 0.75: front wall 0.3 m inside the pad's road edge; back wall 1.2 m past its far edge,
@@ -602,7 +608,7 @@ export const PROP_MODELS = {
   barn: {
     url: 'assets/models/barn.glb',
     collision: { shape: 'box', size: [9.1, 8.0, 12.1] },
-    pad: { halfLen: 11, halfWid: 5.6 },
+    pad: 'farm',
     seat: 0.75,
     seatAlong: -5.5,
     yard: [{ x: 10.725, z: -3.225, halfX: 5.775, halfZ: 3.125 }],
@@ -618,6 +624,37 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [9.1, 8.0, 12.1] },
     yawOffset: Math.PI * 0.5,
     seat: 0.6,
+  },
+
+  // ASSET-74 — the GENERAL STORE, 1130 tris, 7 materials, one 512x512 atlas (the hand-lettered
+  // "Country Store" board, the ICE placard and the ice chest's two flat colours). Stucco walls under a
+  // red board-and-batten gable, door and sign to -Z (the road), an ice chest on the +X apron, and a
+  // PAVED LOT of five nose-in stalls (2.7 m wide, curb to road edge 5.0 m, yellow lines painted INTO
+  // the asphalt, never laid over it). The sign is generic on purpose: any named store stands on it.
+  // Built by assets/models/src/general-store.py, which prints `seat` and `park` — copy them across.
+  //
+  // ON THE FARM PAD (owner, 2026-10-08), shared with the barn. seat 3.85 puts the lot's front edge
+  // ON the pad's road edge: you pull straight off the road into a stall and reverse back out onto
+  // it, so the road is the drive aisle. The back wall then stands 1.0 m (the rake 1.3 m) past the
+  // pad's far edge, inside the 1.6 m band the carve grades flat (PAD_RIM_HOLD) — the barn's precedent.
+  // The lot is VISUAL ONLY: 3 cm proud of the physics pad, so tyres sink 3 cm into it. The 0.15 m
+  // apron is not a collider either, like the barn's plinth.
+  //
+  // Two boxes: the walls to the ridge (rake and eaves left out), and the ice chest with its placard.
+  // The chest needs its own: a pickup nosed into stall 4 or 5 overhangs the curb to within ~0.2 m of
+  // it, and one box round both would wall off the apron.
+  generalStore: {
+    url: 'assets/models/general-store.glb',
+    collision: {
+      shape: 'box', size: [7.1, 5.0, 5.6],
+      boxes: [
+        { c: [0, 2.5, 0], s: [7.1, 5.0, 5.6] },              // walls to the ridge
+        { c: [3.55, 1.225, -3.305], s: [1.9, 2.15, 0.87] },  // ice chest + placard, on the apron
+      ],
+    },
+    pad: 'farm',
+    seat: 3.85,
+    park: { x: 0, z: -6.95, halfX: 6.75, halfZ: 2.5 },        // the box round the five stalls
   },
 
   // ASSET-31 — ROAD FURNITURE: seven Californian roadside signs on a timber 4x4.

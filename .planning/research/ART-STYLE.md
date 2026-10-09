@@ -79,6 +79,12 @@ which was most of each `.glb`; setting it to `0.0` took the set of seven from 1.
 it in the bake scene, next to `view_transform = 'Standard'`. (`gas-pump.glb` predates this and
 still carries the penalty.)
 
+**Turn the render stamps off too.** Blender writes render metadata — the date, the render time — into
+the baked PNG's text chunks, so every re-run of a generator produces a different `.glb` even when not
+one pixel moved, and "re-export once to prove it is byte-identical" (ASSETS.md, promotion) can never
+pass. `general-store.py` (ASSET-74) found it: the only bytes that differed between two exports were
+`Date` and `RenderTime`. Clear every `scene.render.use_stamp_*` flag in the bake scene.
+
 **Generate the artwork, don't paint it.** `produce-stall.py` bakes its own sign: flat emitters laid
 out in board metres, rendered through an orthographic camera, packed into the `.blend`. Re-running
 the generator reproduces the texture along with the mesh, so the asset stays a one-command rebuild
