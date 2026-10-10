@@ -9,8 +9,8 @@ export const RANGER_PARAMS = {
 
   // ── Geometry ──────────────────────────────────────────────────────────────
   wheelbase:    2.85,   // m — center of front axle to center of rear axle
-  trackFront:   1.46,   // m — center-to-center wheel spacing at front axle
-  trackRear:    1.46,   // m — center-to-center wheel spacing at rear axle
+  trackFront:   1.43,   // m — center-to-center wheel spacing at front axle (1.46 → 1.43 2026-10-09: tire sidewalls clipped the fenders at full bump)
+  trackRear:    1.43,   // m — center-to-center wheel spacing at rear axle (same fender-clip inset)
   cgHeight:     0.55,   // m — center of gravity above ground (estimate, laden)
   wheelRadius:  0.368,  // m — stock 2002 Ranger P235/75R15 (367 mm rolling radius)
   wheelWidth:   0.235,  // m — P235 section width. Sets the WIDTH of the wheel hard core
@@ -44,7 +44,7 @@ export const RANGER_PARAMS = {
                         // only; nothing reads it.  The model's real length is set in
                         // assets/models/src/ranger.py and mirrored by targetLength in
                         // data/vehicle-models.js, which IS read.  Keep all three in step.
-  bodyWidth:    1.66,   // m — track(1.46) + wheel width(0.25) - 0.05 margin so wheels visible from side
+  bodyWidth:    1.66,   // m — original track(1.46) + wheel width(0.25) - 0.05 margin so wheels visible from side
   bodyHeight:   1.60,   // m — approximate exterior height (2002 Ford Ranger)
 
   // ── Mass & Inertia ────────────────────────────────────────────────────────

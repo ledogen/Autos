@@ -155,7 +155,7 @@ export function updateVehicle (vehicleState, params, dt) {
 
   // ── 4. Ackermann per-wheel steer angles (M1-06) ────────────────────────────
   // RESEARCH §Pattern 5 formula (cited: raw.org/book/kinematics/ackerman-steering/).
-  // L = wheelbase (2.85m), T = trackFront (1.46m), phi = reference steer angle.
+  // L = wheelbase (2.85m), T = trackFront (1.43m), phi = reference steer angle.
   // Sign convention: positive phi = steer left →
   //   left wheel is inner (sharper angle), right wheel is outer.
   const phi = vehicleState.steerAngle
