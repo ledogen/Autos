@@ -102,6 +102,14 @@ corner domain so each piece stays flat; export with `export_vertex_color="ACTIVE
 *between pieces*, never a gradient, wear or shading painted across a surface — that is still a texture
 by another name. Runtime palette recolour still works: it swaps the factor, the tints ride on top.
 
+> **Trap (Blender 5.2, found 2026-10-09): the glTF exporter writes `COLOR_0` only for a mesh's
+> FIRST material slot.** Every later primitive of a multi-material mesh exports with all-white
+> vertex colours, in every `export_vertex_color` mode — so a tinted second material (the crate's
+> produce, a case's cans, a board's end grain) silently loses its tints and renders flat. `pallet.py`
+> never hit it because the pallet is one material. A tinted model with several materials must be
+> split into **one object per material under an empty root** before export (`split_by_material()`
+> in the `wip/freight/freight.py` generator is the reference); the draw-call count is unchanged.
+
 This is not just taste. It costs no texture memory, needs no bake step, needs no UVs at all, and it
 makes runtime recolour free (see `ASSETS.md`, "Untextured assets").
 
