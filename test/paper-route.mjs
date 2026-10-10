@@ -214,7 +214,7 @@ check('base + tip === the rounded fare, and base is what the offer card quoted',
     return [0.7, 0.85, 1.0, 1.1, 1.3, 4.0].every(r => {
         const round = scoreRoute(Array(9).fill(1), 9, PAR * r, PAR, TIER)
         const s = splitPayout(PAR, r, TIER)
-        return round.base + round.tip === Math.round(round.payout) && round.base === s.base && round.tip === s.tip
+        return Math.round((round.base + round.tip) * 100) === Math.round(round.payout * 100) && round.base === s.base && round.tip === s.tip
             && round.base === basePay(PAR, TIER)
     })
 })())

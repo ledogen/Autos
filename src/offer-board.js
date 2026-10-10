@@ -43,7 +43,7 @@ import {
     POI_ADJECTIVE_CHANCE, POI_THE_CHANCE, BUSINESS_TYPES, NAME_FORMS, HOUSEHOLDS, PLACE_NOUNS, LANDMARKS,
 } from '../data/offer-names.js'
 import { djb2, mulberry32 } from './seed.js'
-import { basePay } from './economy.js'
+import { basePay, formatMoney } from './economy.js'
 
 /**
  * The mission families that have gameplay behind them today. fragile / demolition / freight are in
@@ -627,7 +627,7 @@ export class OfferBoard {
             }
         }
         const par = route?.par
-        const pay = par > 0 ? `Base pay $${basePay(par, payTier, sp.payMult).toLocaleString('en-US')}`
+        const pay = par > 0 ? `Base pay $${formatMoney(basePay(par, payTier, sp.payMult))}`
                   : null
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)

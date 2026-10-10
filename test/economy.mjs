@@ -35,6 +35,9 @@ const check = (label, ok, detail = '') => {
   if (!ok) fails++
 }
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps
+const cents = (v) => Math.round(v * 100) / 100
+// base + tip === total in WHOLE CENTS — float dollars cannot promise exact equality (7.33 − 5.17)
+const sumsTo = (base, tip, total) => Math.round((base + tip) * 100) === Math.round(total * 100)
 
 // Pin the provisional defaults this gate asserts against (a debug-slider default drifting should
 // fail loudly HERE, not silently re-tune the gate).
@@ -115,18 +118,18 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
     2 * payoutFor(REF, 2, t1) > 7.5 && payoutFor(REF, 0.77, t1) > 7.5 && payoutFor(REF, 2, t1) < 7.5)
 
   // Base + tip, as the two cards state it (owner, 2026-09-29): the offer quotes base, the result
-  // answers base + tip, and they sum to the dollar.
-  check('basePay IS baseFrac × the max, rounded like settle', basePay(par, tier) === Math.round(base))
+  // answers base + tip, and they sum to the cent.
+  check('basePay IS baseFrac × the max, rounded to the cent like settle', basePay(par, tier) === cents(base))
   check('splitPayout: base + tip === total at every ratio, tip ≥ 0, base === basePay', (() => {
     return [0.5, 0.77, 0.85, 1.0, 1.1, 1.23, 5].every(r => {
       const sp = splitPayout(par, r, tier)
-      return sp.base + sp.tip === sp.total && sp.tip >= 0 && sp.base === basePay(par, tier)
-          && sp.total === Math.round(payoutFor(par, r, tier))
+      return sumsTo(sp.base, sp.tip, sp.total) && sp.tip >= 0 && sp.base === basePay(par, tier)
+          && sp.total === cents(payoutFor(par, r, tier))
     })
   })())
   check('splitPayout on a bonus multiplier: base and total both carry payMult', (() => {
     const sp = splitPayout(par, 0.8, tier, 2)
-    return sp.base === basePay(par, tier, 2) && sp.total === Math.round(2 * payoutFor(par, 0.8, tier))
+    return sp.base === basePay(par, tier, 2) && sp.total === cents(2 * payoutFor(par, 0.8, tier))
   })())
   check('splitPayout on degenerate par: everything 0', (() => {
     const sp = splitPayout(0, 1, tier); return sp.base === 0 && sp.tip === 0 && sp.total === 0
@@ -284,7 +287,8 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   const r = eco.settle({ par: 180, ratio: 0.83, letter: 'B' }, { terms: eco.terms() })
   check('settle accrues money + points + mission count',
     runEconomy.money === r.payout && eco.points() === 1 && eco.missionCount() === 1)
-  check('payout is whole dollars', Number.isInteger(r.payout))
+  check('payout is to the cent', r.payout === cents(r.payout))
+  check('payout keeps its cents (par 181 at par pays $7.54, not $8)', splitPayout(181, 1, dayTier(1) * regionTier(1)).total === 7.54)
   check('runState stays narrow — no money/points on the day-boundary object',
     !('money' in runState) && !('halfPoints' in runState) && !('points' in runState))
 }
@@ -292,7 +296,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
 // ── 8b. Haul: pay × the share of the load aboard (FEAT-88) ─────────────────────────────────────
 // main.js's onSettle hands the economy a mission whose payMult is already × aboard / loaded. The
 // economy must carry that factor straight through: the same job with 9 of 12 bundles pays 9/12 of
-// the full load (to the dollar's rounding), and base + tip still sum to the total.
+// the full load (to the cent's rounding), and base + tip still sum to the total.
 {
   const eco = new EconomySystem({ getDay: () => 1 })
   eco.start()
@@ -300,9 +304,9 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   const full = eco.settle(res, { terms, payMult: 12 / 8 })
   const part = eco.settle(res, { terms, payMult: (12 / 8) * (9 / 12) })
   const none = eco.settle(res, { terms, payMult: 0 })
-  check('9 of 12 bundles aboard pays 9/12 of the full load', Math.abs(part.payout - full.payout * 9 / 12) <= 1,
+  check('9 of 12 bundles aboard pays 9/12 of the full load', Math.abs(part.payout - full.payout * 9 / 12) <= 0.01,
     `${part.payout} vs ${full.payout} × 0.75`)
-  check('base + tip === total on a partial load', part.base + part.tip === part.payout)
+  check('base + tip === total on a partial load', sumsTo(part.base, part.tip, part.payout))
   check('an empty bed pays nothing (floor at zero, SM-INV-4)', none.payout === 0)
   // Good deeds on a haul follow the share DELIVERED, not the letter (owner, 2026-10-05).
   const deeds = (aboard, loaded) => eco.settle({ ...res, letter: 'S', aboard, loaded }, { terms }).points
@@ -338,7 +342,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   // below stays readable. (At ratio 1.0 it would be half a unit — see the re-anchored payout line.)
   const settled = eco.settle({ par: 180, ratio: ECONOMY_PARAMS.fullTipRatio, letter: 'S' }, { terms })
   check('terms lock: day-3 tier paid despite finishing on day 4',
-    settled.payout === Math.round(ECONOMY_PARAMS.k * 180 * dayTier(3)) && dayTier(3) !== dayTier(4))
+    settled.payout === cents(ECONOMY_PARAMS.k * 180 * dayTier(3)) && dayTier(3) !== dayTier(4))
   check('terms carry day-3 thresholds (frozen)',
     terms.day === 3 && terms.thresholds.S === rankThresholds(3).S && Object.isFrozen(terms.thresholds))
   check('terms compose payTier = dayTier × regionTier',
@@ -355,10 +359,10 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   region = 5                                // player drives on into region 5 before settling
   const settled = eco.settle({ par: 180, ratio: ECONOMY_PARAMS.fullTipRatio, letter: 'S' }, { terms })
   check('region tier reaches the payout (region 2 pays 1.6× region 1)',
-    settled.payout === Math.round(ECONOMY_PARAMS.k * 180 * dayTier(1) * regionTier(2)),
+    settled.payout === cents(ECONOMY_PARAMS.k * 180 * dayTier(1) * regionTier(2)),
     `got ${settled.payout}`)
   check('region locks at ACCEPT, not at settle — same rule as the day tier',
-    settled.payout !== Math.round(ECONOMY_PARAMS.k * 180 * dayTier(1) * regionTier(5)))
+    settled.payout !== cents(ECONOMY_PARAMS.k * 180 * dayTier(1) * regionTier(5)))
 }
 
 // ── 9c. FEAT-67: the board's base-pay quote, bonus gates, and the bonus cash multiplier ─────────
@@ -376,13 +380,13 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
     basePay(par, terms.payTier) === slow.payout && slow.tip === 0 && slow.base === slow.payout,
     `${basePay(par, terms.payTier)} vs ${slow.payout}`)
   check('an at-par drive settles base + half the tip pool (75% of the max)',
-    atPar.base === basePay(par, terms.payTier) && atPar.base + atPar.tip === atPar.payout
-      && atPar.payout === Math.round(0.75 * ECONOMY_PARAMS.k * par * terms.payTier))
+    atPar.base === basePay(par, terms.payTier) && sumsTo(atPar.base, atPar.tip, atPar.payout)
+      && atPar.payout === cents(0.75 * ECONOMY_PARAMS.k * par * terms.payTier))
   const k0 = ECONOMY_PARAMS.k
   const b1 = ECONOMY_PARAMS.baseFrac * k0 * par * terms.payTier
   ECONOMY_PARAMS.k = k0 * 2
   check('doubling k doubles basePay (recomputed from the tables, never cached)',
-    basePay(par, terms.payTier) === Math.round(2 * b1))
+    basePay(par, terms.payTier) === cents(2 * b1))
   ECONOMY_PARAMS.k = k0
 
   // bonusEarned truth table: X earns at X or better, S is S only, D never earns.
@@ -402,7 +406,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
                             { terms, bonus: { rewardId: 'x', name: 'X', gate: 'B' }, payMult: 0.5 })
   check('a bonus record alone never changes the money', plain.payout === withRec.payout)
   check('the cash cut is payMult on the whole line (continuous in ratio)',
-    halved.payout === Math.round(payoutFor(par, 0.8, terms.payTier) * 0.5))
+    halved.payout === cents(payoutFor(par, 0.8, terms.payTier) * 0.5))
   check('an earned bonus is recorded as an award', withRec.award?.rewardId === 'x' && runEconomy.awards.length >= 1)
   const missed = eco.settle({ par, ratio: 1.1, letter: 'D' }, { terms, bonus: { rewardId: 'y', name: 'Y', gate: 'C' } })
   check('a D earns no award, whatever the gate', missed.award === null)

@@ -227,26 +227,27 @@ export function payoutFor(par, ratio, tier) {
  * a bonus offer, else 1). It is what settle() pays for a drive slow enough that the tip has run
  * out, and every faster drive pays this plus a tip.
  *
- * Rounded exactly the way settle() rounds, so the offer card and the result card can never
- * disagree by a dollar. Recomputed on every call from ECONOMY_PARAMS — never cached — because the
+ * Rounded to the cent exactly the way settle() rounds, so the offer card and the result card can
+ * never disagree by a cent. Recomputed on every call from ECONOMY_PARAMS — never cached — because the
  * balancing pass retunes those tables and a quote frozen at roll time would lie.
  */
 export function basePay (par, payTier, payMult = 1) {
     if (!isFinite(par) || par <= 0 || !isFinite(payTier)) return 0
-    return Math.round(ECONOMY_PARAMS.baseFrac * ECONOMY_PARAMS.k * par * payTier * payMult)
+    return _cents(ECONOMY_PARAMS.baseFrac * ECONOMY_PARAMS.k * par * payTier * payMult)
 }
 
 /**
  * The payout as the two cards state it [owner, 2026-09-29]: `base` is the guaranteed amount the
  * offer card quoted (basePay), `tip` is everything the line paid above it, `total` is what the
- * wallet receives. Rounded to whole dollars the way settle() rounds, and the split is exact —
- * base + tip === total — so the result card's rows always sum to what was paid. tip ≥ 0 by
- * construction: the line never pays below its floor, and rounding is monotone.
+ * wallet receives. Rounded to the cent the way settle() rounds, and the split is exact to the
+ * cent — base + tip === total in whole cents — so the result card's rows always sum to what was
+ * paid. The subtraction runs in integer cents: in float dollars 7.33 − 5.17 is not 2.16. tip ≥ 0
+ * by construction: the line never pays below its floor, and rounding is monotone.
  */
 export function splitPayout (par, ratio, payTier, payMult = 1) {
-    const total = Math.round(payoutFor(par, ratio, payTier) * payMult)
-    const base  = Math.min(total, basePay(par, payTier, payMult))   // min: a non-finite ratio pays 0 for both
-    return { base, tip: total - base, total }
+    const totalC = Math.round(payoutFor(par, ratio, payTier) * payMult * 100)
+    const baseC  = Math.min(totalC, Math.round(basePay(par, payTier, payMult) * 100))   // min: a non-finite ratio pays 0 for both
+    return { base: baseC / 100, tip: (totalC - baseC) / 100, total: totalC / 100 }
 }
 
 /** Rank letters, best first. Index order IS the "or better" order bonusEarned reads. */

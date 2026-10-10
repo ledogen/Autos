@@ -216,7 +216,7 @@ export function tipPerPaper (par, customers, payTier = 1, P = PAPER_PARAMS) {
  *                               with the rest of the terms (renamed from `dayTier` 2026-08-17 when
  *                               the region multiplier landed; it is no longer the day alone)
  * @returns {{coverage,meanAccuracy,effDeliveries,score,letter,perPaper,timeMoney,base,tip,spot,payout,total,complete}}
- *          `base` + `tip` === Math.round(payout): the guaranteed base pay and the time tip, as the
+ *          `base` + `tip` === payout to the cent: the guaranteed base pay and the time tip, as the
  *          result card states them (owner, 2026-09-29). `spot` is the accuracy money, banked per throw.
  */
 export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P = PAPER_PARAMS,
@@ -275,7 +275,7 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
     // No bell any more (2026-09-29), so the line's floor is what a slow round settles: the base
     // pay, guaranteed, priced against parEff like the fare — serve half the round and the guarantee
     // is half as big. `base`/`tip` are the two rows the result card states, split exactly as
-    // economy.js settles a POI job (the same splitPayout, so the cards agree to the dollar).
+    // economy.js settles a POI job (the same splitPayout, so the cards agree to the cent).
     const timeMoney = parEff > 0 ? payoutFor(parEff, elapsed / parEff, payTier) : 0
     const { base, tip } = parEff > 0 ? splitPayout(parEff, elapsed / parEff, payTier) : { base: 0, tip: 0 }
 
@@ -1377,7 +1377,7 @@ export class PaperRouteSystem {
         const accuracies = [...this.run.hits.values()]
         const r = scoreRoute(accuracies, n, this.run.elapsed, this.route.par, this.run.payTier,
                              PAPER_PARAMS, this.run.thresholds)
-        const settled = this._onSettle(Math.round(r.payout), r.letter) || {}
+        const settled = this._onSettle(r.payout, r.letter) || {}
         const advanced = advancesTier(r, n)
         if (advanced && runPaper.tier < PAPER_PARAMS.tiers.length - 1) runPaper.tier++
         runPaper.routesRun++
@@ -1388,8 +1388,8 @@ export class PaperRouteSystem {
             delivered: accuracies.length,
             elapsed:   this.run.elapsed,
             par:       this.route.par,
-            payout:    settled.payout ?? Math.round(r.payout),
-            base:      r.base,          // whole dollars, base + tip === payout (splitPayout)
+            payout:    settled.payout ?? Math.round(r.payout * 100) / 100,
+            base:      r.base,          // to the cent, base + tip === payout (splitPayout)
             tip:       r.tip,
             points:    settled.points ?? 0,
             advanced,

@@ -35,7 +35,7 @@
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel } from '../src/offer-board.js'
 import { THINGS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
-import { basePay } from '../src/economy.js'
+import { basePay, formatMoney } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
 // Could POI `q`'s rolled name have come from one of its class's forms? Each form becomes a regex
@@ -386,10 +386,10 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     }
     const cp = b.card(plain.o, { nowH: plain.t, payTier: 1.52, route })
     check('base pay == economy.basePay at ratio 1 for a plain offer',
-        cp.pay === `Base pay $${basePay(360, 1.52).toLocaleString('en-US')}`, cp.pay)
+        cp.pay === `Base pay $${formatMoney(basePay(360, 1.52))}`, cp.pay)
     const cb = b.card(bonused.o, { nowH: bonused.t, payTier: 1.52, route })
     check(`a bonus offer quotes ${BONUS_PAY_MULT}× base pay`,
-        cb.pay === `Base pay $${basePay(360, 1.52, BONUS_PAY_MULT).toLocaleString('en-US')}`, cb.pay)
+        cb.pay === `Base pay $${formatMoney(basePay(360, 1.52, BONUS_PAY_MULT))}`, cb.pay)
     check('the bonus line names the item and its gate', cb.bonus?.includes(b.spec(bonused.o).bonus.name)
         && cb.bonus.includes(gateText(b.spec(bonused.o).bonus.gate)))
     check('gate text: "S only" / "X or better"', gateText('S') === 'S only' && gateText('B') === 'B or better')
@@ -476,7 +476,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
             if (sp.massKg !== sp.bundles * HAUL_BUNDLE_KG) badMass++
             const want = (sp.bonus ? BONUS_PAY_MULT : 1) * sp.bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK
             const card = b.card(o, { nowH: t, route: { par: 300, distance: 3000 } })
-            if (Math.abs(sp.payMult - want) > 1e-12 || card.pay !== `Base pay $${basePay(300, 1, want).toLocaleString('en-US')}`) badPay++
+            if (Math.abs(sp.payMult - want) > 1e-12 || card.pay !== `Base pay $${formatMoney(basePay(300, 1, want))}`) badPay++
         }
     }
     check('haul rolls, and only at the firewood yard', n > 0 && wrongPlace === 0, `${n} hauls, ${wrongPlace} elsewhere`)

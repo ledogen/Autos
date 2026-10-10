@@ -4283,20 +4283,20 @@ function _panelHead (flavorHtml) {
  * card are a pair). The offer card quotes ONE number, "Base pay" — the guaranteed amount. The
  * result card answers it row for row, in the same words and the same order:
  *
- *     Base pay   $B     — the same figure the offer quoted (splitPayout, so it matches to the dollar)
+ *     Base pay   $B     — the same figure the offer quoted (splitPayout, so it matches to the cent)
  *     Tip        $T     — what the clock paid above it; $0 for a drive slow enough to run it out
  *     [Accuracy bonus $S]  — paper route only: the per-throw money, banked as it landed
  *     +N good deeds     — on the tip line, as before
  *     Bonus …           — the offer's item, earned or what it needed
  *
- * `base`/`tip` are whole dollars from economy.js; `spot` is dollars to the cent.
+ * `base`/`tip`/`spot` are dollars to the cent, all printed through formatMoney.
  */
 function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null, haul = null }) {
   const row = (label, money) => `<br><span class="mp-dim">${label}</span> <span class="mp-pay">$${money}</span>`
   // FEAT-88: the one place a load's count is shown — after the drive, never during (SM-INV-10).
   return (haul ? `<br><span class="mp-dim">Firewood delivered</span> <span class="mp-pay">${haul.aboard} / ${haul.loaded}</span>` : '')
-    + row('Base pay', (base ?? 0).toLocaleString('en-US'))
-    + row('Tip', (tip ?? 0).toLocaleString('en-US'))
+    + row('Base pay', formatMoney(base))
+    + row('Tip', formatMoney(tip))
     + (points > 0
       ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${points} good deed${points > 1 ? 's' : ''}</span>`
       : '')
@@ -4492,7 +4492,7 @@ function _renderPaperUI () {
         + `${stock} papers in the truck `
         + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
         // FEAT-67: Larry's card states base pay only — the fare at par, before the tips.
-        + `<span class="mp-pay">Base pay $${basePay(r.par, economySystem.terms().payTier).toLocaleString('en-US')}</span>`
+        + `<span class="mp-pay">Base pay $${formatMoney(basePay(r.par, economySystem.terms().payTier))}</span>`
         + (p.offer ? ` &nbsp;<span class="mp-dim">expires in ${formatGameDuration(p.offer.expiresH - daySystem.clockH())}</span>` : '')
       break
     }
