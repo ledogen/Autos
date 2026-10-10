@@ -9,9 +9,11 @@
 //
 // Checks:
 //   (a) DETERMINISM — the same key gives the same drop points, spins and variants; another key does not.
-//   (b) LOADING — 10 and 15 bundles dropped on a truck parked squarely over the zone all land in
-//       the well; one parked a metre off catches measurably less (parking is the skill).
-//   (c) RIDE — the full load stays aboard through a launch to 60 km/h and a hard stop.
+//   (b) LOADING — 10 and 15 bundles dropped on a truck parked squarely over the zone: at least 80%
+//       land in the well (the loader is sloppy — a lost piece or two is part of the job, owner
+//       2026-10-09); one parked a metre off catches under 80% (parking is the skill).
+//   (No RIDE check: spilling on the drive is the player's fault and the point of a loose heap —
+//   owner 2026-10-09 dropped the old "launch to 60 and a hard stop loses nothing" assertion.)
 //   (d) WEAR — with the bundles flagged noDamage the chassis contact readout ignores them; unflagged,
 //       the same load registers (so the gate can see the filter).
 //   (e) CAP — reclaiming past DEBRIS_CAP never takes a pinned body, and pinned bodies do not count.
@@ -167,7 +169,7 @@ for (const n of HAUL_BUNDLES) {
   const t = await truck()
   load(t, n, `haul:6:gate:${n}`)
   const a = aboard(t)
-  ok(a === n, `parked squarely: ${n} bundles dropped, ${a} in the bed`)
+  ok(a >= n * 0.8, `parked squarely: ${n} bundles dropped, ${a} in the bed (≥ 80%)`)
   t.engine.dispose()
 }
 {
@@ -175,23 +177,6 @@ for (const n of HAUL_BUNDLES) {
   load(t, n, `haul:6:gate:${n}`, { off: 1.0 })
   const a = aboard(t)
   ok(a < n * 0.8, `parked a metre off the zone: ${a} of ${n} in the bed`)
-  t.engine.dispose()
-}
-
-console.log('(c) the full load rides:')
-{
-  const t = await truck()
-  const n = HAUL_BUNDLES[1]
-  load(t, n, 'haul:6:gate:ride')
-  let top = 0
-  t.vs.handbrake = false; t.vs.brake = 0; t.vs.throttle = 0.6
-  for (let s = 0; s < 8 / DT && top < 16.7; s++) { t.step(); top = Math.max(top, t.vs.velocity.length()) }
-  const atSpeed = aboard(t)
-  t.vs.throttle = 0; t.vs.brake = 1
-  for (let s = 0; s < 4 / DT; s++) t.step()
-  const stopped = aboard(t)
-  ok(top >= 16.7, `reached ${(top * 3.6).toFixed(0)} km/h`)
-  ok(atSpeed === n && stopped === n, `${n} aboard at speed (${atSpeed}) and after a hard stop (${stopped})`)
   t.engine.dispose()
 }
 
