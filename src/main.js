@@ -643,26 +643,19 @@ async function resolveSpawn (wseed, params) {
       // QUAL-14 perf: the spawn point can sit across an anchor band from baseTile, so this
       // re-center streams a SHIFTED band — warm the shifted band on the pool too (measured:
       // this ensureTile alone was 8.8 s of synchronous routing on a cold load).
-      // PERF-19.3: BOUND what blocks `ready` without changing what is ROUTED overall. The recenter's
-      // only decision-gating consumer is the queryNearest(100) refinement below — and the ~100 m field
-      // around the spawn point is ALREADY cached by the tight tier (nearest.point is within tightR of
-      // base, which the tight warm covered at tightR+128). So stream/warm the recenter at a MINIMAL
-      // radius covering that query instead of the full play band: the near field is pure cache hits
-      // (≈0 pre-ready routing) and the chosen spawn is byte-identical (headless 15-seed × 3-radius
-      // spawn-identity check — test/spawn-identity.mjs). The full play band around the spawn streams on
-      // the FIRST post-ready update() (near roads complete; distant roads pop in slightly
-      // later — acceptable). The tight tier above is left intact: its queryNearest(tightR) + the BUG-25
-      // cull one-ring make it irreducibly decision-gating, so it is NOT trimmed.
-      const _recenterR = Math.min(_savedRadius, 100 + 128)   // 100 m query + registration/cull margin
-      roadSystem.setRadius(_recenterR)
+      // AT THE FULL PLAY RADIUS — the network the first frame streams. PERF-19.3 trimmed this to a
+      // 228 m window: the chosen spawn POINT is byte-identical either way (test/spawn-identity.mjs),
+      // but the road's vertical profile is a function of the build window, and the truck is seated on
+      // this network's road top. Seed 1536014377: road top 61.32 m in the 228 m window, 58.15 m in the
+      // 320 m play band that adopted ~0.6 s after ready — a 3.2 m drop on that seed's cold load. Restoring
+      // the full band measured +0.08 s to ready (10 seeds, within noise) and 0 drops.
       // PERF-30: same off-thread treatment (and the same frame-loop park) as the tier loop above.
       if (netClient) {
         _spawnWarmActive = true
-        try { await netClient.buildNow('play', (spawnTX + 0.5) * CHUNK_SIZE, (spawnTZ + 0.5) * CHUNK_SIZE, _recenterR) }
+        try { await netClient.buildNow('play', (spawnTX + 0.5) * CHUNK_SIZE, (spawnTZ + 0.5) * CHUNK_SIZE, _savedRadius) }
         finally { _spawnWarmActive = false }
       }
       roadSystem.ensureTile(spawnTX, spawnTZ)
-      roadSystem.setRadius(_savedRadius)   // restore play radius; next update() streams the full band
       nearest = roadSystem.queryNearest(nearest.point.x, nearest.point.z, 100) || nearest
       // analyticHeight for placement so the truck rests on the rendered terrain surface.
       // (router used raw coarseHeight for grade; spawn PLACEMENT uses analyticHeight — visual match)
@@ -1118,7 +1111,8 @@ async function _reseatTruckAtSpawnInner () {
 // Story entry seats the truck on the spawn-band network (resolveSpawn), then routes the whole region
 // behind the loading screen. The road stays where it was in plan, but its vertical profile is a
 // function of the build window, so the region build can move the surface under the truck by metres
-// (seed 1536014377: road top 61.32 → 58.16 at the spawn, a 3.2 m drop when the screen lifted).
+// (seed 1536014377 dropped 3.2 m here while resolveSpawn still seated on a 228 m window; the
+// 2.6 km region can still disagree with the 320 m band it seats on now).
 // Re-fit the truck to the region's ground in place — same XZ and heading, so the region centre and
 // the seed's determinism are untouched. Every other seat state from the spawn seat still stands.
 function _reseatOnRegionGround () {

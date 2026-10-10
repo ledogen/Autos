@@ -33,13 +33,14 @@ export function spawnProbeBase (seed, params) {
  * @param {object} [opts]
  * @param {{x,z,r}|null} [opts.pre]  stream this first — what a warm session looks like when story
  *                                   mode is re-entered on an already-loaded seed
- * @param {number} [opts.recenterRadius]  radius the recenter's ensureTile streams over (PERF-19.3)
+ * @param {number} [opts.recenterRadius]  radius the recenter's ensureTile streams over; null = the
+ *                                        play radius, which is what the game does (PERF-19.3 measurement)
  * @param {number} [opts.playRadius]      the restored play radius
  * @param {Function} [opts.coarseHeight]  height sampler, when the caller has a headless one
  * @returns {{onRoad:boolean, tier?:number, x?:number, z?:number, heading?:number, recenterMoved?:number}}
  */
 export function spawnDecision (seed, params, opts = {}) {
-    const { pre = null, recenterRadius = 228, playRadius = 320, coarseHeight = null } = opts
+    const { pre = null, recenterRadius = null, playRadius = 320, coarseHeight = null } = opts
     const road = coarseHeight ? new RoadSystem(seed, params, coarseHeight) : new RoadSystem(seed, params)
     if (pre) { road.setRadius(pre.r); road.update(new THREE.Vector3(pre.x, 0, pre.z)) }
 
