@@ -837,6 +837,12 @@ than cosmetic meaning. Item rewards die with the run like everything else (SM-IN
 > across ranks (a spare tire at B; tire + rear suspension at A; both + front suspension at S) rather
 > than carrying one flag. Provenance: `design-amendments-2026-08-17.md` §2.
 
+> **Amendment [OWNER 2026-10-08] — one item, any rank but D, no tiers.** The earning rank may be
+> **any rank except D** — C, B, A or S, variable per mission (C+ / B+ / A+ / S-only, as FEAT-67
+> already ships). A mission carries **one bonus item at most**, and its earning rank is declared up
+> front on the mission card. **Tiering across ranks is retired** (the spare tire at B, tire + rear
+> suspension at A, … ladder above is struck).
+
 **Not every mission type is scored on margin.** Coverage (the paper route), restraint (fragile cargo)
 and clearance (main missions) are separate axes; **rank is computed per-axis** so the letter — and
 therefore the bonus objective — works on any job.
@@ -847,20 +853,25 @@ therefore the bonus objective — works on any job.
 > (point-to-point). A mission scored on a different axis carries **its own payout shape**, stated by
 > its type: freight **flat by mass × distance**; coverage **flat × accuracy** (already shipped —
 > FEAT-61's paper route does not call `payoutFor`, so this formalises existing code); restraint
-> **flat, scaled by cargo condition on arrival**. A mission may even pay **$0 cash and settle entirely
+> **flat, scaled by cargo condition on arrival**. ~~A mission may even pay **$0 cash and settle entirely
 > in rank-gated items** — SM-INV-4's "bare completion pays ~nothing" floor was written about poor
-> *performance*, not about a mission designed to pay no cash. **What does not bend:** rank is still
-> per-axis, the day tier still multiplies, and mission points still ride on rank rather than payout —
-> which is what keeps a $0 mission a real choice instead of a trap. Provenance:
-> `design-amendments-2026-08-17.md` §5.
+> *performance*, not about a mission designed to pay no cash.~~ *(struck 2026-10-08, see below)*
+> **What does not bend:** rank is still per-axis, the day tier still multiplies, and mission points
+> still ride on rank rather than payout. Provenance: `design-amendments-2026-08-17.md` §5.
 
 > **Amendment [OWNER 2026-10-06] — freight and restraint ride the margin line again.** Freight is
 > no longer flat by mass × distance: it pays the ordinary **Base + tip**, and mass lengthens its par
 > (so pay grows with mass, because pay rides par). Restraint is no longer flat × condition: it pays
 > **(Base + tip) × cargo health**, the same shape as haul's × share aboard. Both are therefore plain
 > SM-INV-4 lines scaled by an outcome in [0, 1], and the bounded exception above now covers only
-> coverage and $0-cash missions. A fragile load at zero health fails the job. Provenance:
+> coverage. A fragile load at zero health fails the job. Provenance:
 > `missions.md` §3, amendment 2026-10-06; FEAT-96, FEAT-97.
+
+> **Amendment [OWNER 2026-10-08] — $0-cash missions are retired.** Every job pays some cash, even for
+> bare completion (SM-INV-4's base pay). A bonus item rides **on top of** cash, never instead of it;
+> the parts-only "archetype 3" of `design-amendments-2026-08-17.md` §1 is killed. A job that FAILS
+> (a fragile load destroyed) still pays $0 — that is a failure, not a completion. The boss still
+> pays in region access only (`missions.md` "Economy compliance"): a main mission, not a job.
 
 **Non-timed missions are still governed by the clock, indirectly.** A fragile run has no margin
 scoring, but costs escalate with run age and the day is finite, so dawdling is still expensive. The

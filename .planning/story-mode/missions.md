@@ -769,7 +769,8 @@ Not settled. Recorded because the shape of the question matters more than any an
 > **⚠ SUPERSEDED 2026-08-17 — read this box before the section below.** The owner reversed leaning 2
 > outright: **the board is visible, and optimizing against it is now a design goal.** Before
 > accepting, an offer states its **pay range `$MIN–$MAX`**, its **named bonus item** and the **rank
-> that earns it** (B/A/S, variable), and **when it re-rolls**. Leaning 1 survives and is
+> that earns it** (any rank but D — C/B/A/S, variable; one item per mission, no tiers — owner
+> 2026-10-08), and **when it re-rolls**. Leaning 1 survives and is
 > *strengthened* — re-roll is now visible precisely so it can be planned against, letting the player
 > plot an optimal chain a mission or two ahead and then have to make the time. The "partial
 > information via POI identity" mitigation below is **superseded**: it solved a problem that no

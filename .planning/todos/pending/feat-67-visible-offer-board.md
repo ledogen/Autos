@@ -111,7 +111,8 @@ offer appears there. It is the only always-on addition.
   earns a bonus** — D exists to tell you that you were slow.
 - **Rewards are themed to the source.** Burger Barn → food for a fast finish; Grandma → a themed
   gizmo or consumable; the (rare) auto parts store → a spare tire or similar vehicle part.
-- Tiering across ranks (tire at B, + rear suspension at A…) from the 2026-08-17 amendment stays legal.
+- **One bonus item per offer, no tiering** (owner, 2026-10-08 — retires the 2026-08-17 tier ladder).
+  Every offer pays cash too; a bonus rides on top, never instead ($0-cash offers retired, same ruling).
 - **Scope here: named and displayed, the grant is stubbed.** Settlement records which bonus was earned;
   real inventory effects wait for the items system. Items die with the run (SM-INV-8).
 

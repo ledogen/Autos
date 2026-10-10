@@ -8,6 +8,10 @@ SM-2's remaining mission types. Wording is a proposal; the decisions are not.*
 > 2026-08-17". This file is the provenance record and the fuller argument. If it ever disagrees with
 > DESIGN.md, **DESIGN.md wins.**
 
+> **PARTLY SUPERSEDED 2026-10-08 (owner):** the earning rank is any rank but D (C included); one
+> bonus item per mission, **no tiering**; **archetype 3 (pays nothing, settles in parts) is killed** —
+> every job pays some cash. DESIGN.md carries the current rulings.
+
 **Read this first if you're an agent working in the codebase. Three of these reverse `[RATIFIED]`
 rules, and one of them reverses shipped code.**
 
