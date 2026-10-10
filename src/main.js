@@ -1115,6 +1115,22 @@ async function _reseatTruckAtSpawnInner () {
   if (_gameMode !== 'story') { damageModel.setAll(1); damageModel.publish(RANGER_PARAMS) }
 }
 
+// Story entry seats the truck on the spawn-band network (resolveSpawn), then routes the whole region
+// behind the loading screen. The road stays where it was in plan, but its vertical profile is a
+// function of the build window, so the region build can move the surface under the truck by metres
+// (seed 1536014377: road top 61.32 → 58.16 at the spawn, a 3.2 m drop when the screen lifted).
+// Re-fit the truck to the region's ground in place — same XZ and heading, so the region centre and
+// the seed's determinism are untouched. Every other seat state from the spawn seat still stands.
+function _reseatOnRegionGround () {
+  const p = vehicleState.position
+  const seat = _seatOnGroundPlane(p.x, p.z, _currentHeading(), computeStaticEquilibrium(RANGER_PARAMS), 0)
+  vehicleState.position.set(seat.x, seat.y, seat.z)
+  vehicleState.quaternion.copy(seat.quat)
+  vehicleState.velocity.set(0, 0, 0)
+  vehicleState.angularVelocity.set(0, 0, 0)
+  snapCamera()
+}
+
 // ── Gameplay mode gate (feature/teleport) ─────────────────────────────────────────────────
 // Teleport controls (map double-click, free-cam button, Shift+R) are ENABLED per mode here.
 //
@@ -5671,6 +5687,7 @@ const storySystem = new StorySystem({
       if (_regionNetBuild && _regionNetBuild.key === key && _regionNetBuild.done) {
         _regionNetBuild = null
         terrainSystem?.recarveInPlace()   // same live-ring re-bake as the sync path below
+        _reseatOnRegionGround()
         return true
       }
       if (!_regionNetBuild || _regionNetBuild.key !== key) {
@@ -5693,6 +5710,7 @@ const storySystem = new StorySystem({
     // carved" seams near the spawn. IN PLACE: the seed did not change, so the raw heights, meshes and
     // colliders all stay; disposing them left the truck on no ground for the whole refill.
     terrainSystem?.recarveInPlace()
+    _reseatOnRegionGround()
     return true
   },
   /**
