@@ -104,6 +104,7 @@ export const BUSINESS_TYPES = {
         'Stop', 'Corner', 'Place',
         'Supply', 'Feed & Seed', 'Trading Post', 'Five & Dime', 'Outfitters'
     ],
+    tackleShop:   ['Tackle', 'Bait', 'Live Bait', 'Jig', 'Rod', 'Troutfitter', 'Angler', 'Hook', 'Sinker'],
     autoShop:     ['Tires', 'Auto', 'Garage', 'Service', 'Maintenance', 'Pit-Stop', 'Wheels',
         'Lube', 'Body Shop', 'Muffler', 'Towing', 'Salvage', 'Radiator'
     ],
@@ -118,6 +119,7 @@ export const NAME_FORMS = {
     generalStore: ['{the}{adj}{biz}'],
     foodVendor:   ["{first}'s {adj}{biz}", '{the}{adj}{biz}'],
     autoShop:     ["{first}'s {adj}{biz}", '{the}{adj}{biz}'],
+    tackleShop:   ["{first}'s {adj}{biz}", '{the}{adj}{biz}'],
     firewoodYard: ["{first}'s {adj}{biz}"],
     workSite:     ['{last} Construction', 'the {last} job site'],
     residence:    ['the {last} place', '{last} house', "{last}'s"],

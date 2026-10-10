@@ -252,9 +252,9 @@ export const POI_ROSTER = [
     { type: 'office',       count: 1, model: null, siting: 'any' },
     { type: 'school',       count: 1, model: null, siting: 'any' },
     { type: 'doctor',       count: 1, model: null, siting: 'any' },
-    // The pad is permanent (worldgen); FEAT-102 shows the broken-down car only while the motorist
-    // has a job open. Until then the car is always there.
-    { type: 'strandedMotorist', count: 1, model: 'brokenCar', siting: 'any' },
+    // The pad is permanent (worldgen); the broken-down car shows ONLY while the motorist has a job
+    // open (FEAT-102, `showWhileJob` — main.js _updatePoiPresence). Idle, it is an empty lay-by.
+    { type: 'strandedMotorist', count: 1, model: 'brokenCar', siting: 'any', showWhileJob: true },
 ]
 
 /**
@@ -901,6 +901,7 @@ export class PoiSystem {
                 // spawnModel takes modulo the palette length. Ignored by a model with no palette.
                 q.modelVariant = slot.variant ?? hash32(`poi-variant:${seed}:${q.id}`)
                 q.drop = slot.drop ?? null   // FEAT-88 drop zone — see the firewoodYard slot
+                q.showWhileJob = !!slot.showWhileJob   // FEAT-102 — main.js sets q.hidden from the board
                 // ASSET-74: the model's PARK box — park inside it to be offered work. Off the model,
                 // not the slot: it is the painted stalls, so a fallback cube has none.
                 q.park = spec?.park ?? null
@@ -1031,6 +1032,7 @@ export class PoiSystem {
     nearest (x, z, maxR = POI_PARAMS.poiInteractR, jobsOnly = false) {
         let best = null, bestD = maxR
         for (const q of this._list) {
+            if (q.hidden) continue                    // FEAT-102: an absent motorist answers nothing
             if (jobsOnly && !q.jobs) continue
             const d = Math.hypot(q.x - x, q.z - z)
             if (d < bestD) { bestD = d; best = q }
@@ -1053,6 +1055,7 @@ export class PoiSystem {
     queryContact (cx, cy, cz, r) {
         const cube = (this._d.getParams?.()?.poiCubeSize ?? POI_PARAMS.poiCubeSize) * 0.5
         for (const q of this._list) {
+            if (q.hidden) continue                    // FEAT-102: a hidden marker has no collider
             const hit = this._boxesContact(q, cube, cx, cy, cz, r)
             if (hit) return hit
         }

@@ -60,18 +60,20 @@ Every courier thing is a phrase on the card. Nothing renders.
 | R1 | a presentation deck | residence / farm → office | existing |
 | R1 | a full 20 lb propane tank | generalStore / gasStation → any | existing; ~17 kg (7.7 kg cylinder + 9.1 kg gas) |
 | R1 | an empty 20 lb propane tank | any → generalStore / gasStation | existing; ~8 kg. The bed version of both is the freight 4-pack (ASSET-72) |
-| R1 | a box of lightbulbs | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
-| R1 | a box of screws | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
-| R1 | a box of nails | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
-| R1 | a roll of duct tape | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
-| R1 | a pack of paper towels | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
-| R1 | a pack of toilet paper | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
-| R1 | a coil of rope | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
-| R1 | a ball of string | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
-| R1 | a ream of paper | generalStore → any | existing; fetchable (FEAT-89) — the tackle shop's first jobs |
-| R1 | a box of paper clips | generalStore → any | |
-| R1 | cooking scissors | generalStore → any | |
-| R1 | a turkey baster | generalStore → any | |
+| R1 | a box of lightbulbs | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
+| R1 | a box of screws | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
+| R1 | a box of nails | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
+| R1 | a roll of duct tape | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
+| R1 | a pack of paper towels | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
+| R1 | a pack of toilet paper | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
+| R1 | a coil of rope | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
+| R1 | a ball of string | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
+| R1 | a ream of paper | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
+| R1 | a box of paper clips | generalStore → any | existing |
+| R1 | cooking scissors | generalStore → any | existing |
+| R1 | a turkey baster | generalStore → any | existing |
+| R1 | a full jerry can | gasStation → any | existing; ~18 kg (5 gal ≈ 14 kg of fuel + the can). The stranded motorist also FETCHES it (FEAT-102) |
+| R1 | a spare tire | autoShop → strandedMotorist | existing; FETCH only (FEAT-102) — the auto shop never posts it as a courier job, and it stays a bonus reward |
 | R1 | a chainsaw | generalStore → firewoodYard / sawmill / quarry / farm | existing; ~6 kg. Cargo for the yard crews, not a player tool (items.md §7 keeps the chainsaw out as a general item) |
 | R1 | a splitting axe | generalStore → firewoodYard / sawmill / quarry / farm | existing; ~3 kg |
 | R1 | a shovel | generalStore → firewoodYard / sawmill / quarry / farm | existing; ~2 kg |
@@ -94,7 +96,7 @@ Every courier thing is a phrase on the card. Nothing renders.
 | Region | Job | From → to | Note |
 |---|---|---|---|
 | R1 | taking someone to the party | | |
-| R1 | taking someone from their broken-down car | strandedMotorist → autoShop | existing (`motoristRide`, the motorist's only job). The pickup is the ASSET-18 broken-down car scene |
+| R1 | taking someone from their broken-down car | strandedMotorist → autoShop | existing (`motoristRide`; the motorist's other jobs are fetching a jerry can or a spare tire, FEAT-102). The pickup is the ASSET-18 broken-down car scene, shown only while the motorist has work |
 | R2 | taking someone to help their grandma | | |
 | R2 | workers for the site | any → workSite | more than one passenger; capped by the cab's seats |
 | R3 | taking someone from the party (tipsy) | | flavour only (ruling 5) |

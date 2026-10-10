@@ -37,6 +37,8 @@ import { MissionSystem, REGION_MARGIN } from '../src/mission.js'
 import { OfferBoard } from '../src/offer-board.js'
 import { SOURCES } from '../data/offers.js'
 import { mulberry32 } from '../src/seed.js'
+import { computePar } from '../src/par.js'
+import { bakeRoute, advanceProgress } from '../src/gps.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 let fails = 0
@@ -493,6 +495,103 @@ function boardRig (ms, nowH = 6) {
         check('a Quick Job still counts down (roll found no route — cannot exercise)', false, `state=${ms.state}`)
     }
     ms.exit()
+}
+
+// ── 7c. FETCH (FEAT-102): out to a pickup, PARK there, back to the giver — one par, one settle ──
+{
+    const car = { x: 0, z: 0, speed: 0 }
+    let settles = 0
+    const ms = new MissionSystem({
+        getRoad: () => W.road, getCar: () => car, getSeed: () => SEED,
+        teleport (x, z) { car.x = x; car.z = z }, setMapOpen () {}, onChange () {},
+        onSettle: () => { settles++; return null },
+    })
+    const { board, plan } = boardRig(ms)
+    // The first fetch offer on the board (the motorist or the tackle shop), over three days.
+    let found = null
+    for (let t = 6; t < 6 + 72 && !found; t += 2) {
+        for (const id of board.sources()) for (const o of board.offers(id, t)) {
+            if (!found && board.spec(o).shape === 'fetch' && plan(o)) found = { o, t, poi: W.poi.list().find(q => q.id === id) }
+        }
+    }
+    check('a fetch offer is posted and plans a route', !!found)
+    if (found) {
+        const { o, poi } = found, m = plan(o), sp = board.spec(o)
+        const pick = W.poi.list().find(q => q.id === m.legs?.[0].poiId)
+        check('its pickup is a POI of the thing\'s pickup class', !!pick && sp.from.some(x => pick.tags.includes(x)),
+            `${sp.thingId} from ${pick?.type}`)
+        const segs = m.segments, n = segs.length / 2
+        const mirrored = Number.isInteger(n) && segs.slice(n).every((g, j) => {
+            const f = segs[n - 1 - j]
+            return g.centerline === f.centerline && g.s0 === f.s1 && g.s1 === f.s0
+        })
+        check('the return leg is the outbound leg reversed (FEAT-89)', mirrored)
+        check('…and the poly comes back the same way it went', m.poly.length === 2 * m.legs[0].polyIdx + 1
+            && m.poly.every((p, i) => p === m.poly[m.poly.length - 1 - i] || i === m.legs[0].polyIdx))
+        check('one par over both legs, stopping at the pickup', segs[n - 1].stop === true
+            && Math.abs(m.par - computePar(segs).time) < 1e-9, `${m.par} vs ${computePar(segs).time}`)
+        const giverEnd = m.legs[1].end
+        check('the job ends where it started — at the giver', Math.hypot(giverEnd.x - m.start.x, giverEnd.z - m.start.z) < 1e-9
+            && m.fromPoi === poi.id)
+
+        // Drive it.
+        car.x = poi.x; car.z = poi.z
+        ms.enterFromPoi(poi, [o], plan)
+        ms.accept()
+        car.x = poi.x + ms.startZone().r + 1; car.z = poi.z
+        ms.update(0.5)
+        check('crossing out of the giver\'s zone starts the run on the outbound leg', ms.state === 'running' && ms.leg === 0)
+        car.x = giverEnd.x; car.z = giverEnd.z
+        ms.update(0.5)
+        check('the giver\'s own end does not finish a fetch on leg one', ms.state === 'running' && settles === 0)
+        const pe = m.legs[0].end
+        car.x = pe.x; car.z = pe.z
+        ms.update(0.5)
+        const guideOut = ms.guideRoute()
+        check('on the way out the GPS is handed the outbound leg alone (it ends at the pickup)',
+            guideOut !== ms.mission && guideOut.segments.length === n && guideOut.segments.every((g, j) => g === segs[j]))
+        check('driving through the pickup does not pick it up — you must park', ms.state === 'running' && ms.leg === 0
+            && ms.pickupPoiId() === pick.id)
+        check('parking there acquires the item (acquire → the return leg)', ms.acquire() === true && ms.leg === 1)
+        check('…once', ms.acquire() === false && ms.pickupPoiId() === null)
+        check('the GPS is handed the RETURN leg alone, as a new route (no outbound pass to snap onto)',
+            ms.guideRoute() !== guideOut && ms.guideRoute().segments.length === n
+            && ms.guideRoute().segments.every((g, j) => g === segs[n + j]))
+        check('the map marks the pickup', ms.markers().pickup === pe)
+        // Drive the RETURN leg past the GPS, from the U-turn home, and ask how far along it thinks
+        // the truck is at the giver. Owner-reported 2026-10-08: tracked as ONE out-and-back route
+        // it kept pointing back at the pickup. The leg route must read ~100 % at the giver.
+        const along = (route, startIdx) => {
+            let idx = startIdx, prog = null
+            for (let i = m.legs[0].polyIdx; i < m.poly.length; i++) {
+                prog = advanceProgress(route, m.poly[i].x, m.poly[i].z, idx); idx = prog.idx
+            }
+            return prog.s / route.cum[route.n - 1]
+        }
+        const whole = bakeRoute(segs), legB = bakeRoute(ms.guideRoute().segments)
+        const turn = (() => { let b = 0, d = Infinity; for (let i = 0; i < whole.n; i++) {
+            const e = Math.hypot(whole.px[i] - pe.x, whole.pz[i] - pe.z); if (e < d) { d = e; b = i } } return b })()
+        const fWhole = along(whole, turn), fLeg = along(legB, 0)
+        console.log(`       GPS at the giver after the return leg: whole route ${(100 * fWhole).toFixed(0)} %, leg route ${(100 * fLeg).toFixed(0)} %`)
+        check('the GPS, guided by the return leg, reaches the giver (≥ 98 % along it)', fLeg >= 0.98, `${(100 * fLeg).toFixed(1)} %`)
+        car.x = giverEnd.x; car.z = giverEnd.z
+        ms.update(0.5)
+        check('back at the giver the job settles — exactly once', ms.state === 'done' && settles === 1)
+        ms.update(0.5)
+        check('…and never again', settles === 1)
+        ms.exit()
+    }
+
+    // The motorist's absence (FEAT-102): a hidden marker answers nothing and is not solid.
+    const mot = W.poi.list().find(q => q.showWhileJob)
+    check('the stranded motorist is the one marker that shows only while it has work',
+        !!mot && mot.type === 'strandedMotorist' && W.poi.list().filter(q => q.showWhileJob).length === 1)
+    const solid = () => W.poi.queryContact(mot.x, mot.y + 0.8, mot.z, 0.5) !== null
+    const answers = () => W.poi.nearest(mot.x, mot.z, POI_PARAMS.poiInteractR, true) === mot
+    check('…shown: it is solid and answers the park trigger', solid() && answers())
+    mot.hidden = true
+    check('…hidden: no contact and no park trigger', !solid() && !answers())
+    mot.hidden = false
 }
 
 // ── 8. do-over lockout: paid jobs have no regenerate/retry; Quick Job keeps both ─────────────────

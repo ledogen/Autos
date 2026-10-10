@@ -34,6 +34,15 @@ ticket, so the card, the map diamond legend and the code agree.
 Every `SOURCES` row lists it unless the place has a reason not to. Larry's house stays papers-only,
 because he is the paper route. The firewood yard and the new `farm` (FEAT-96) gain it.
 
+## Fetch shipped in FEAT-102 (2026-10-08)
+
+The fetch shape is built: `THINGS[].fetchBy` / `fetchFrom`, `OfferBoard.destWish` → `fetch`,
+`mission.js` `fetchRoute` (the outbound reversed, one par with a stop at the pickup), `acquire()`.
+**The pickup is a PARK** (owner, 2026-10-08): pull up, park, the item is acquired instantly —
+"park to acquire mission item", then "get back to …!". The return is a drive-up arrival. Posting
+it: the stranded motorist (spare tire, jerry can) and the tackle shop (the store sundries). Still
+open here: multi-drop, and the `delivery` → `courier` family rename.
+
 ## Posting rule (owner, 2026-10-07)
 
 > "Go fetch me something … [it] posts and receives the same things that [a courier job] receives."
