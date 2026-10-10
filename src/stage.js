@@ -70,7 +70,7 @@ const ROCK_FLAT   = 0.70    // fraction of ROCK_RY at which the top is sheared f
                             // hull of the clamped points is still the surface being drawn.
 const ROCK_PROUD  = 0.26    // m — height of that cap above the plane; the rest is buried
 const ROCKS_AT    = 2.2     // s of sim time after release — "once the suspension settles (~2 s)"
-const ROCK_N      = 10    // ~50 kg each: half a tonne in the bed, so the rear squats hard (owner, 2026-09-29)
+const ROCK_N      = 20    // ~50 kg each: a tonne in the bed, so the rear squats hard (owner, 2026-09-29; doubled 2026-10-09)
 const ROCK_GAP    = 0.20    // s between rocks: staggered so the 50 kg impulses cannot stack
 const ROCK_DROP_H = 2.6     // m above the bed floor → ~7 m/s at contact: a firm thump, not a launch
 const PARALLAX    = 5 * Math.PI / 180   // rad — cursor-follow orbit limit, both axes
@@ -495,7 +495,8 @@ export class MenuStage {
       .applyQuaternion(this._vs.quaternion).add(this._vs.position)
     const ok = this._debris.spawn('rock',
       { x: this._bedWorld.x, y: this._bedWorld.y + ROCK_DROP_H, z: this._bedWorld.z },
-      { x: 0, y: -1.2, z: 0 })
+      { x: 0, y: -1.2, z: 0 },
+      { pinned: true })   // outside DEBRIS_CAP (12) so all ROCK_N stay; reset's clear() still removes them
     if (ok) this._rocksDone++
   }
 
