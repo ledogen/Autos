@@ -900,7 +900,7 @@ export const PROP_MODELS = {
   softDrinkPallet: { url: 'assets/models/soft-drink-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.65, 1.20] } },   // ASSET-46, 1706 tris, one brand, kraft trays, slip sheet on top; recolour hook SodaCan
   concretePallet: { url: 'assets/models/concrete-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.47, 1.20] } },   // ASSET-47, 2384 tris, 18 bags six a layer; recolour hook ConcreteBag
   pottingSoilPallet: { url: 'assets/models/potting-soil-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.53, 1.20] } },   // ASSET-47, 1952 tris, yellow bags with a green end third; recolour hook SoilBag
-  drumStack: { url: 'assets/models/drum-stack.glb', collision: { shape: 'hull-from-mesh', size: [1.20, 0.99, 1.20] } },   // ASSET-48, 1444 tris, four of ASSET-30's closed drums banded 2 x 2 on a pallet; recolour hook DrumPaint
+  drumStack: { url: 'assets/models/drum-stack.glb', collision: { shape: 'hull-from-mesh', size: [1.06, 0.85, 1.66] } },   // ASSET-48, 1352 tris, four of ASSET-30's closed drums ZIGZAGGED down the bed, no pallet (owner 2026-10-11: 2 x 2 was 1.18 m across the 1.09 m arch gap) — ±0.24 m alternating at a 0.36 m pitch, one strap each; recolour hook DrumPaint
   // Longer than the bed, so they ride ANGLED (owner 2026-10-10): front edge at the headboard, underside on the
   // tailgate's top edge, the rest hanging past the gate. The mesh's forward-most point is the headboard contact and
   // its lowest point (the strap anchors) is the floor, so main.js's bbox placement lands the overhang by itself.
