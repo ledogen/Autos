@@ -859,6 +859,61 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.528, 1.273, 0.497] },
     palette: { PillarBox: PILLAR_PAINT },
   },
+
+  // ---- 2026-10-10 promotion: the overnight review batch (36 models, 12 generators in src/). Measured off the
+  // GLBs; cargo boxes are the LOAD without its straps (every strap runs out to the bed tie-downs at x = ±0.70,
+  // so a strapped model's own bbox is 1.4 m wide). Untagged unless a live pool is its role: lawn furniture
+  // goes to FEAT-71's pool; camp gear waits for FEAT-66, yard dressing for FEAT-91/74, bed cargo is listed
+  // by data/freight.js (FEAT-96/97) and loose haul by FEAT-88 — never re-tag to make one appear.
+
+  // ASSET-07 — potted plant, 324 tris. Thirteen geometry leaves on stems out of an 8-sided pot (no alpha cards,
+  // ART-STYLE rule 7). The box is the POT; the leaves clip.
+  pottedPlant: { url: 'assets/models/potted-plant.glb', collision: { shape: 'box', size: [0.32, 0.69, 0.32] }, tags: ['lawnFurniture'] },
+  // ASSET-08 — brick fire ring, 644 tris, footing 3 cm below grade. One log pokes 13 cm past the ring; the box is
+  // the ring, the log is clippable.
+  firePit: { url: 'assets/models/fire-pit.glb', collision: { shape: 'box', size: [1.05, 0.33, 1.05] }, tags: ['lawnFurniture'] },
+  // ASSET-12 — lumber yard kit, sawmill dressing (FEAT-91; pools FEAT-74). One generator, src/lumber.py, shared
+  // with ASSET-38. Boards are modelled, ends in LumberEnd. Offcut pile was settled by a rigid-body sim and baked.
+  lumberStack: { url: 'assets/models/lumber-stack.glb', collision: { shape: 'box', size: [1.30, 0.68, 4.05] } },   // 792 tris, 60 boards in two stickered units, no straps (a loose yard stack); no recolour hook
+  timberRack: { url: 'assets/models/timber-rack.glb', collision: { shape: 'box', size: [5.19, 2.50, 1.50] } },   // 552 tris, orange three-post cantilever rack, timbers across the arms; no recolour hook
+  offcutPile: { url: 'assets/models/offcut-pile.glb', collision: { shape: 'box', size: [2.50, 0.42, 2.99] } },   // 480 tris, 40 settled pieces; no recolour hook
+  // ASSET-25 / ASSET-26 — camp gear: renders at the campsite under FEAT-66's slots, not placed from here.
+  cookingKit: { url: 'assets/models/cooking-kit.glb', collision: { shape: 'box', size: [1.24, 1.08, 0.82] } },   // 388 tris, two iron A-frames, crossbar, chain, Dutch oven; no recolour hook
+  shadeTarp: { url: 'assets/models/shade-tarp.glb', collision: { shape: 'none', size: [3.73, 2.01, 3.53] } },   // 224 tris, 3 x 2.4 m fabric with a loose skirt on leaning poles and guy lines — drive-through; no recolour hook
+  // ASSET-38 — lumber bundle (freight) and the three loose boards it was split into for haul (FEAT-88: single
+  // boards as physics bodies). THE BOARDS' ORIGIN IS THE BBOX CENTRE, not base-seated — rigid bodies.
+  lumberBundle: { url: 'assets/models/lumber-bundle.glb', collision: { shape: 'hull-from-mesh', size: [0.56, 0.38, 1.85] } },   // 678 tris, 54 boards under three bands. NOTE 1.85 m long with its ragged ends; the bed is 1.835 m inside; no recolour hook
+  board2x4: { url: 'assets/models/board-2x4.glb', collision: { shape: 'hull-from-mesh', size: [0.09, 0.04, 1.80] } },   // 12 tris, 1.8 m; no recolour hook
+  board2x6: { url: 'assets/models/board-2x6.glb', collision: { shape: 'hull-from-mesh', size: [0.14, 0.04, 1.80] } },   // 12 tris; no recolour hook
+  board2x8: { url: 'assets/models/board-2x8.glb', collision: { shape: 'hull-from-mesh', size: [0.18, 0.04, 1.80] } },   // 12 tris; no recolour hook
+  // Bed cargo, ASSET-39..64 — freight (FEAT-96) and fragile (FEAT-97). Loads ride long-axis down -Z so the straps
+  // cross the bed. The ticket budgets (200–400) were overruled by the owner 2026-10-09: ≈1000-tri floor, model the
+  // actual pieces, straps double-sided over the load's hull. debris.js hulls the mesh, straps included.
+  pelicanCase: { url: 'assets/models/pelican-case.glb', collision: { shape: 'hull-from-mesh', size: [1.09, 0.61, 0.51] } },   // ASSET-39, 380 tris, black ribbed rolling case, no straps; recolour hook CaseShell
+  glassPanes: { url: 'assets/models/glass-panes.glb', collision: { shape: 'hull-from-mesh', size: [1.40, 1.14, 1.20] } },   // ASSET-40, 284 tris, ten panes leaning on an A-frame; the frame itself is 1.4 m wide; no recolour hook
+  ornateVase: { url: 'assets/models/ornate-vase.glb', collision: { shape: 'hull-from-mesh', size: [0.50, 0.77, 0.50] } },   // ASSET-41, 400 tris; recolour hook VaseGlaze
+  uprightPiano: { url: 'assets/models/upright-piano.glb', collision: { shape: 'hull-from-mesh', size: [0.62, 1.28, 1.54] } },   // ASSET-42, 482 tris, fallboard open, keyboard to the side; no recolour hook
+  sculptureA: { url: 'assets/models/sculpture-a.glb', collision: { shape: 'hull-from-mesh', size: [0.80, 1.08, 0.80] } },   // ASSET-43, 166 tris, bronze abstract on a plinth; no recolour hook
+  sculptureB: { url: 'assets/models/sculpture-b.glb', collision: { shape: 'hull-from-mesh', size: [0.80, 1.54, 0.80] } },   // ASSET-43, 678 tris, marble figure, face carved into the head's own rings; no recolour hook
+  framedArtwork: { url: 'assets/models/framed-artwork.glb', collision: { shape: 'hull-from-mesh', size: [0.90, 0.15, 1.20] } },   // ASSET-44, 262 tris, crated, lying face up; no recolour hook
+  xrayMachine: { url: 'assets/models/xray-machine.glb', collision: { shape: 'hull-from-mesh', size: [0.89, 1.74, 2.36] } },   // ASSET-45, 440 tris, lengthwise; no recolour hook
+  softDrinkPallet: { url: 'assets/models/soft-drink-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.65, 1.20] } },   // ASSET-46, 1706 tris, one brand, kraft trays, slip sheet on top; recolour hook SodaCan
+  concretePallet: { url: 'assets/models/concrete-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.47, 1.20] } },   // ASSET-47, 2384 tris, 18 bags six a layer; recolour hook ConcreteBag
+  pottingSoilPallet: { url: 'assets/models/potting-soil-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.53, 1.20] } },   // ASSET-47, 1952 tris, yellow bags with a green end third; recolour hook SoilBag
+  drumStack: { url: 'assets/models/drum-stack.glb', collision: { shape: 'hull-from-mesh', size: [1.20, 0.99, 1.20] } },   // ASSET-48, 1444 tris, four of ASSET-30's closed drums banded 2 x 2 on a pallet; recolour hook DrumPaint
+  railwayTies: { url: 'assets/models/railway-ties.glb', collision: { shape: 'hull-from-mesh', size: [0.75, 0.36, 2.69] } },   // ASSET-52, 72 tris, five ties 3 + 2; no recolour hook
+  plywoodSheets: { url: 'assets/models/plywood-sheets.glb', collision: { shape: 'hull-from-mesh', size: [1.24, 0.23, 2.47] } },   // ASSET-54, 116 tris, twelve jittered sheets; no recolour hook
+  cinderBlockPallet: { url: 'assets/models/cinder-block-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.71, 1.20] } },   // ASSET-55, 778 tris, 45 blocks in three courses; no recolour hook
+  producePalletTomatoes: { url: 'assets/models/produce-pallet-tomatoes.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.72, 1.20] } },   // ASSET-56, 2880 tris, eight slatted crates on one fill, whole fruit clipped at the fill; recolour hook Produce
+  producePalletSquash: { url: 'assets/models/produce-pallet-squash.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.79, 1.20] } },   // ASSET-56, 2916 tris; recolour hook Produce
+  producePalletPeppers: { url: 'assets/models/produce-pallet-peppers.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.72, 1.20] } },   // ASSET-56, 2954 tris; recolour hook Produce
+  jobBox: { url: 'assets/models/job-box.glb', collision: { shape: 'hull-from-mesh', size: [1.29, 0.66, 0.69] } },   // ASSET-57, 378 tris, green jobsite chest, no straps; recolour hook JobBoxPaint
+  diningChairs: { url: 'assets/models/dining-chairs.glb', collision: { shape: 'hull-from-mesh', size: [0.53, 0.90, 0.97] } },   // ASSET-59, 448 tris, two inverted pairs; recolour hook FurnWood
+  diningTable: { url: 'assets/models/dining-table.glb', collision: { shape: 'hull-from-mesh', size: [1.60, 0.75, 0.90] } },   // ASSET-60, 534 tris, top down. NOTE its 1.6 m runs along X — wider than the 1.4 m bed; needs a 90° yaw at placement or a restrap; recolour hook FurnWood
+  tireStack: { url: 'assets/models/tire-stack.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.99, 1.33] } },   // ASSET-61, 2136 tris, two stacks of four on a pallet; no recolour hook
+  gardenFountain: { url: 'assets/models/garden-fountain.glb', collision: { shape: 'hull-from-mesh', size: [1.04, 0.89, 1.04] } },   // ASSET-62, 570 tris, column in a nested basin; no recolour hook
+  wardrobe: { url: 'assets/models/wardrobe.glb', collision: { shape: 'hull-from-mesh', size: [0.71, 2.00, 1.28] } },   // ASSET-63, 344 tris, STANDING 2 m — the high-CG load; recolour hook FurnWood
+  fullLengthMirror: { url: 'assets/models/full-length-mirror.glb', collision: { shape: 'hull-from-mesh', size: [0.64, 1.70, 0.61] } },   // ASSET-64, 72 tris, leaning 7° on its kickstand; no recolour hook
 }
 
 /** Every registry key carrying `tag`, in registry order — the pool a roster slot draws from. */
