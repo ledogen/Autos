@@ -12,12 +12,12 @@
  */
 export const FREIGHT = {
   // ── Freight (cargo.md § Freight) ──
-  pallet:            { label: 'Pallet (empty)',              model: 'pallet',            massKg: 25 },
-  smallCrate:        { label: 'Crate, small',                model: 'smallCrate',        massKg: 18 },
-  largeCrate:        { label: 'Crate, large',                model: 'largeCrate',        massKg: 45 },
+  // The singles ride palletised and strapped (owner 2026-10-10) — the small pallet adds ~15 kg, the full one 25.
+  smallCrate:        { label: 'Crate, small, on a pallet',   model: 'smallCratePallet',  massKg: 33 },
+  largeCrate:        { label: 'Crate, large, on a pallet',   model: 'largeCratePallet',  massKg: 70 },
   propanePallet:     { label: 'Propane 4-pack, full',        model: 'propanePallet',     massKg: 90 },
-  drum:              { label: 'Drum, full (oil)',            model: 'drumClosed',        massKg: 200 },   // 55 gal × 0.88 kg/L + 18 kg drum
-  barrelPlastic:     { label: 'Barrel, full (water)',        model: 'barrelPlastic',     massKg: 218 },   // 55 gal of water + ~10 kg HDPE
+  drum:              { label: 'Drum, full (oil), on a pallet', model: 'drumPallet',      massKg: 215 },   // 55 gal × 0.88 kg/L + 18 kg drum + pallet
+  barrelPlastic:     { label: 'Barrel, full (water), on a pallet', model: 'barrelPallet', massKg: 233 },   // 55 gal of water + ~10 kg HDPE + pallet
   tireStack:         { label: 'Tyres, eight',                model: 'tireStack',         massKg: 90 },
   producePalletTomatoes: { label: 'Pallet of tomatoes',      model: 'producePalletTomatoes', massKg: 275 },
   producePalletSquash:   { label: 'Pallet of squash',        model: 'producePalletSquash',   massKg: 275 },

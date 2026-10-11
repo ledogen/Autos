@@ -197,7 +197,9 @@ def build_chairs(b):
 def build_vase(b):
     """Twelve-facet glazed vase with a fuller profile: foot ring, belly, shoulder, neck, flared lip,
     gold bands at foot, shoulder and lip; strapped to a small base (owner 2026-10-09 bar)."""
-    b.box((-0.25, -0.25, 0), (0.25, 0.25, 0.05), "CrateWood", skip=("-z",))
+    # closed plinth: open underneath, fix_normals saw the vase's hollow above its top face and the
+    # open floor below and flipped it see-through (owner 2026-10-10)
+    b.box((-0.25, -0.25, 0), (0.25, 0.25, 0.05), "CrateWood")
     prof = [(0.09, 0.05), (0.115, 0.06), (0.12, 0.085), (0.105, 0.10), (0.15, 0.20), (0.175, 0.32), (0.172, 0.40),
             (0.15, 0.48), (0.115, 0.54), (0.105, 0.56), (0.09, 0.60), (0.075, 0.66), (0.078, 0.70), (0.11, 0.74), (0.118, 0.76), (0.10, 0.77)]
     mats = ["VaseGold", "VaseGold", "VaseGlaze", "VaseGlaze", "VaseGlaze", "VaseGlaze", "VaseGlaze", "VaseGold", "VaseGlaze",
@@ -237,6 +239,7 @@ def build_mirror(b):
     # one strap over the top, down to the bed-wall tie-downs
     top = lean @ Vector((0, 0, H))
     hull_strap(b, [(-W / 2 - 0.02, top.z + 0.004), (W / 2 + 0.02, top.z + 0.004), (-W / 2 - 0.02, 0.1), (W / 2 + 0.02, 0.1)], top.y, BED_ANCHORS)
+    b.rotate_z(180)     # glass to the tailgate, kickstand to the cab (owner 2026-10-10: it reads better from behind)
 
 
 # ---------------------------------------------------------------- fountain

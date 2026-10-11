@@ -2476,7 +2476,9 @@ async function _loadFreight (key, massKg, mission = null) {
   if (_freight) { debrisSystem.remove([_freight.body]); _freight = null }   // after the await: a second pick mid-load still leaves one load
   if (!bed || !row) return
   const e = debrisSystem.halfExtents(kind)
-  const pose = strapPose(bed, e, (PROP_MODELS[row.model].collision?.size?.[0] ?? 2 * e.x) / 2)
+  // A `floorSeated` model (the angled plywood) already stands on the wheelhouses in its own geometry: width 0
+  // keeps strapPose from lifting it onto them a second time.
+  const pose = strapPose(bed, e, PROP_MODELS[row.model].floorSeated ? 0 : (PROP_MODELS[row.model].collision?.size?.[0] ?? 2 * e.x) / 2)
   // vehicleState is the authoritative pose (physics.js Step 1.5); push it so the weld's frames are
   // taken against where the truck IS, not the last step's pose (matters straight after a reseat).
   physicsEngine.setTransform(vehicleChassis, vehicleState.position, vehicleState.quaternion)

@@ -890,7 +890,7 @@ export const PROP_MODELS = {
   // cross the bed. The ticket budgets (200–400) were overruled by the owner 2026-10-09: ≈1000-tri floor, model the
   // actual pieces, straps double-sided over the load's hull. debris.js hulls the mesh, straps included.
   pelicanCase: { url: 'assets/models/pelican-case.glb', collision: { shape: 'hull-from-mesh', size: [1.09, 0.61, 0.51] } },   // ASSET-39, 380 tris, black ribbed rolling case, no straps; recolour hook CaseShell
-  glassPanes: { url: 'assets/models/glass-panes.glb', collision: { shape: 'hull-from-mesh', size: [1.40, 1.14, 1.20] } },   // ASSET-40, 284 tris, ten panes leaning on an A-frame; the frame itself is 1.4 m wide; no recolour hook
+  glassPanes: { url: 'assets/models/glass-panes.glb', collision: { shape: 'hull-from-mesh', size: [1.02, 1.14, 1.40] } },   // ASSET-40, 284 tris, ten panes leaning on an A-frame, the 1.4 m ridge DOWN the bed and 1.02 m across so it sits between the wheelhouses (owner 2026-10-10); no recolour hook
   ornateVase: { url: 'assets/models/ornate-vase.glb', collision: { shape: 'hull-from-mesh', size: [0.50, 0.77, 0.50] } },   // ASSET-41, 400 tris; recolour hook VaseGlaze
   uprightPiano: { url: 'assets/models/upright-piano.glb', collision: { shape: 'hull-from-mesh', size: [0.62, 1.28, 1.54] } },   // ASSET-42, 482 tris, fallboard open, keyboard to the side; no recolour hook
   sculptureA: { url: 'assets/models/sculpture-a.glb', collision: { shape: 'hull-from-mesh', size: [0.80, 1.08, 0.80] } },   // ASSET-43, 166 tris, bronze abstract on a plinth; no recolour hook
@@ -901,19 +901,29 @@ export const PROP_MODELS = {
   concretePallet: { url: 'assets/models/concrete-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.47, 1.20] } },   // ASSET-47, 2384 tris, 18 bags six a layer; recolour hook ConcreteBag
   pottingSoilPallet: { url: 'assets/models/potting-soil-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.53, 1.20] } },   // ASSET-47, 1952 tris, yellow bags with a green end third; recolour hook SoilBag
   drumStack: { url: 'assets/models/drum-stack.glb', collision: { shape: 'hull-from-mesh', size: [1.20, 0.99, 1.20] } },   // ASSET-48, 1444 tris, four of ASSET-30's closed drums banded 2 x 2 on a pallet; recolour hook DrumPaint
-  railwayTies: { url: 'assets/models/railway-ties.glb', collision: { shape: 'hull-from-mesh', size: [0.75, 0.36, 2.69] } },   // ASSET-52, 72 tris, five ties 3 + 2; no recolour hook
-  plywoodSheets: { url: 'assets/models/plywood-sheets.glb', collision: { shape: 'hull-from-mesh', size: [1.24, 0.23, 2.47] } },   // ASSET-54, 116 tris, twelve jittered sheets; no recolour hook
+  // Longer than the bed, so they ride ANGLED (owner 2026-10-10): front edge at the headboard, underside on the
+  // tailgate's top edge, the rest hanging past the gate. The mesh's forward-most point is the headboard contact and
+  // its lowest point (the strap anchors) is the floor, so main.js's bbox placement lands the overhang by itself.
+  railwayTies: { url: 'assets/models/railway-ties.glb', collision: { shape: 'hull-from-mesh', size: [0.75, 0.94, 2.70] } },   // ASSET-52, 72 tris, five ties 3 + 2 tilted 13.3° from the floor at the headboard onto the gate; no recolour hook
+  plywoodSheets: { url: 'assets/models/plywood-sheets.glb', collision: { shape: 'hull-from-mesh', size: [1.24, 0.60, 2.46] }, floorSeated: true },   // ASSET-54, 156 tris, twelve sheets tilted 8.7° on the wheelhouse front corners and the gate — the model already stands on the arches, so `floorSeated` keeps the loader from lifting it onto them again; no recolour hook
   cinderBlockPallet: { url: 'assets/models/cinder-block-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.71, 1.20] } },   // ASSET-55, 778 tris, 45 blocks in three courses; no recolour hook
   producePalletTomatoes: { url: 'assets/models/produce-pallet-tomatoes.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.72, 1.20] } },   // ASSET-56, 2880 tris, eight slatted crates on one fill, whole fruit clipped at the fill; recolour hook Produce
   producePalletSquash: { url: 'assets/models/produce-pallet-squash.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.79, 1.20] } },   // ASSET-56, 2916 tris; recolour hook Produce
   producePalletPeppers: { url: 'assets/models/produce-pallet-peppers.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.72, 1.20] } },   // ASSET-56, 2954 tris; recolour hook Produce
-  jobBox: { url: 'assets/models/job-box.glb', collision: { shape: 'hull-from-mesh', size: [1.29, 0.66, 0.69] } },   // ASSET-57, 378 tris, green jobsite chest, no straps; recolour hook JobBoxPaint
+  jobBox: { url: 'assets/models/job-box.glb', collision: { shape: 'hull-from-mesh', size: [0.69, 0.66, 1.29] } },   // ASSET-57, 390 tris, green jobsite chest, its 1.2 m DOWN the bed so it sits between the wheelhouses, two straps over the lid (owner 2026-10-10); recolour hook JobBoxPaint
   diningChairs: { url: 'assets/models/dining-chairs.glb', collision: { shape: 'hull-from-mesh', size: [0.53, 0.90, 0.97] } },   // ASSET-59, 448 tris, two inverted pairs; recolour hook FurnWood
   diningTable: { url: 'assets/models/dining-table.glb', collision: { shape: 'hull-from-mesh', size: [0.90, 0.75, 1.60] } },   // ASSET-60, 534 tris, top down, its 1.6 m DOWN the bed (it is wider than the bed the other way), straps across between the legs; recolour hook FurnWood
   tireStack: { url: 'assets/models/tire-stack.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.99, 1.33] } },   // ASSET-61, 2136 tris, two stacks of four on a pallet; no recolour hook
   gardenFountain: { url: 'assets/models/garden-fountain.glb', collision: { shape: 'hull-from-mesh', size: [1.04, 0.89, 1.04] } },   // ASSET-62, 570 tris, column in a nested basin; no recolour hook
   wardrobe: { url: 'assets/models/wardrobe.glb', collision: { shape: 'hull-from-mesh', size: [0.71, 2.00, 1.28] } },   // ASSET-63, 344 tris, STANDING 2 m — the high-CG load; recolour hook FurnWood
-  fullLengthMirror: { url: 'assets/models/full-length-mirror.glb', collision: { shape: 'hull-from-mesh', size: [0.64, 1.70, 0.61] } },   // ASSET-64, 72 tris, leaning 7° on its kickstand; no recolour hook
+  fullLengthMirror: { url: 'assets/models/full-length-mirror.glb', collision: { shape: 'hull-from-mesh', size: [0.64, 1.70, 0.61] } },   // ASSET-64, 72 tris, leaning 7° on its kickstand, glass to the tailgate (owner 2026-10-10); no recolour hook
+  // Palletised singles (FEAT-96, owner 2026-10-10): the freight list's drum, barrel and crates as ONE item on a
+  // pallet under two straps, so each is a real bed load. The bare drumClosed / barrelPlastic / smallCrate /
+  // largeCrate above are untouched for mixes and yard dressing. assets/models/src/freight-pallet.py.
+  drumPallet: { url: 'assets/models/drum-pallet.glb', collision: { shape: 'hull-from-mesh', size: [0.80, 1.00, 0.80] } },   // 592 tris, closed drum on the small pallet; recolour hook DrumPaint
+  barrelPallet: { url: 'assets/models/barrel-pallet.glb', collision: { shape: 'hull-from-mesh', size: [0.80, 1.04, 0.80] } },   // 612 tris, blue HDPE barrel on the small pallet; recolour hook BarrelBlue
+  smallCratePallet: { url: 'assets/models/small-crate-pallet.glb', collision: { shape: 'hull-from-mesh', size: [0.80, 0.60, 0.80] } },   // 496 tris, one small crate on the small pallet; no recolour hook
+  largeCratePallet: { url: 'assets/models/large-crate-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.96, 1.20] } },   // 580 tris, the 0.81 m crate on the full pallet; no recolour hook
 }
 
 /** Every registry key carrying `tag`, in registry order — the pool a roster slot draws from. */

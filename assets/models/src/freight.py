@@ -209,41 +209,68 @@ def strap_x(b, lo, hi, xs, t=0.025, s=0.004):
     b.box((xs - t / 2, y0 - s, z0 - s), (xs + t / 2, y1 + s, z1 + s), "Strap", skip=("+x", "-x"))
 
 
+# ---------------------------------------------------------------- the bed, for loads longer than it
+# The Ranger bed (data/vehicle-models.js `bed`, body-local → above-floor): 1.835 m from the front
+# wall to the tailgate's inner face, the tailgate top 0.413 m up, the wheelhouses 0.207 m tall from
+# 0.4925 m behind the front wall. A load longer than the bed rides ANGLED (owner 2026-10-10): its
+# front edge against the headboard, its underside on the tailgate's top edge, the rest hanging out.
+# The model's forward-most point is that headboard contact and its lowest is z = 0, the floor: the
+# loader (main.js _loadFreight) parks the hull's bbox front on the front wall and its bottom on the
+# deck, so the overhang lands over the gate by itself.
+BED_LEN, GATE_H, WH_Z, WH_Y = 1.835, 0.413, 0.207, 0.4925
+
+
+def tilted(b, blocks, rests, thick, straps, mat, mats):
+    """Stack `blocks` — local boxes (lo, hi, tint, skip) authored flat with the headboard end at
+    y = 0 and the length running to -Y, z from 0 — tilted about X so its underside passes through
+    the two `rests` ((metres behind the headboard, height) points) with its top-front edge at
+    y = 0. Hull straps at `straps` (metres behind the headboard) run out to the bed-wall tie-downs
+    over the stack's section there."""
+    (y1, z1), (y2, z2) = rests
+    th = math.atan2(z2 - z1, y2 - y1)                  # the underside's slope, rising toward the tail
+    d = thick * math.sin(th)                           # the top-front edge leads the bottom one by this
+    zf = z1 - (y1 - d) * math.tan(th)                  # underside height at its front corner (y = -d)
+    X = Matrix.Translation((0, -d, zf)) @ Matrix.Rotation(-th, 4, 'X')
+    for lo, hi, tint, skip in blocks:
+        b.box(lo, hi, mat, tint, xform=X, skip=skip, mats=mats)
+    x0, x1 = min(lo[0] for lo, *_ in blocks), max(hi[0] for _, hi, *_ in blocks)
+    for ys in straps:
+        zl = zf + (ys - d) * math.tan(th)              # the underside, ys behind the headboard
+        hull_strap(b, rect_pts(x0, x1, zl, zl + thick / math.cos(th)), -ys, BED_ANCHORS)
+
+
 # ---------------------------------------------------------------- plywood
 def build_plywood(b):
+    """Twelve 4 x 8 sheets: 2.44 m in a 1.835 m bed, 1.22 m across a 1.09 m arch gap — so the stack
+    lies on the front corners of the wheelhouses and the tailgate top (8.7°), front edge to the
+    headboard, 0.5 m hanging past the gate (owner 2026-10-10). Straps at the arches and the gate."""
     rnd = random.Random(2)
     n, t = 12, 0.019
     W, L = 1.22, 2.44
-    rects = []
+    blocks = []
     for i in range(n):
-        dx, dy = rnd.uniform(-0.012, 0.012), rnd.uniform(-0.015, 0.015)
-        z = i * t
-        skip = ["-z"] if i else []
-        if i < n - 1:
-            skip.append("+z")
-        tint = b.tint()
-        b.box((dx - W / 2, dy - L / 2, z), (dx + W / 2, dy + L / 2, z + t), "PlyEdge", tint, skip=skip,
-              mats={"+z": "PlyFace", "-z": "PlyFace"})
-        rects += rect_pts(dx - W / 2, dx + W / 2, z, z + t)
-    for ys in (-0.8, 0.8):
-        hull_strap(b, rects, ys, [(-W / 2 - 0.06, 0), (W / 2 + 0.06, 0)])
+        dx, yf = rnd.uniform(-0.012, 0.012), rnd.uniform(-0.03, 0.0)
+        # whole boxes: with the ends staggered, a sheet's skipped top showed the one below's back
+        blocks.append(((dx - W / 2, yf - L, i * t), (dx + W / 2, yf, (i + 1) * t), b.tint(), ()))
+    tilted(b, blocks, [(WH_Y, WH_Z), (BED_LEN, GATE_H)], n * t, (0.75, 1.70), "PlyEdge", {"+z": "PlyFace", "-z": "PlyFace"})
 
 
 # ---------------------------------------------------------------- railway ties
 def build_ties(b):
+    """Five 2.6 m ties, 3 + 2: 0.76 m across sits on the floor between the arches, so the stack
+    tilts from the floor at the headboard up onto the tailgate top (13.3°) and hangs 0.7 m past the
+    gate (owner 2026-10-10). Straps at the floor contact and the gate."""
     rnd = random.Random(4)
     L, W, H = 2.6, 0.23, 0.18
     rows = [((-0.26, 0, 0.26), 0), ((-0.13, 0.13), H)]
-    rects = []
+    blocks = []
     for xs, z in rows:
         for x in xs:
-            dy, dx = rnd.uniform(-0.05, 0.05), rnd.uniform(-0.006, 0.006)
-            tint = b.tint()
-            b.box((x + dx - W / 2, dy - L / 2, z), (x + dx + W / 2, dy + L / 2, z + H), "TieWood", tint,
-                  mats={"+y": "TieEnd", "-y": "TieEnd"})
-            rects += rect_pts(x + dx - W / 2, x + dx + W / 2, z, z + H)
-    for ys in (-0.9, 0.9):
-        hull_strap(b, rects, ys, BED_ANCHORS)
+            yf, dx = rnd.uniform(-0.1, 0.0), rnd.uniform(-0.006, 0.006)
+            blocks.append(((x + dx - W / 2, yf - L, z), (x + dx + W / 2, yf, z + H), b.tint(), ()))
+    # the front rest is the stack's own bottom-front corner on the floor, which sits d = 2H·sinθ
+    # behind the headboard; θ = atan(0.413 / (1.835 - d)) converges to 13.26°, d = 0.083
+    tilted(b, blocks, [(0.083, 0.0), (BED_LEN, GATE_H)], 2 * H, (0.45, 1.70), "TieWood", {"+y": "TieEnd", "-y": "TieEnd"})
 
 
 # ---------------------------------------------------------------- tyres

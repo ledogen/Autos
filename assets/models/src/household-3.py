@@ -206,8 +206,10 @@ def strap_y(b, lo, hi, ys, t=0.03, s=0.004):
 # ---------------------------------------------------------------- glass panes
 def build_glass(b):
     """Timber A-frame; five panes a side LEAN AGAINST THE OUTSIDE of the legs, their bottom edges
-    on felt pad strips outside the foot rails; hull straps (owner 2026-10-09)."""
-    L, W, H = 1.4, 0.8, 1.1
+    on felt pad strips outside the foot rails; hull straps (owner 2026-10-09). Rides lengthwise
+    (owner 2026-10-10): 1.4 m along the bed, and the frame narrowed 0.8 → 0.68 so the whole thing,
+    pads included, is 1.02 m across and sits on the floor between the 1.09 m wheelhouses."""
+    L, W, H = 1.4, 0.68, 1.1
     legs_y = W / 2
     for x in (-0.6, 0.0, 0.6):                                        # three A's with a cross tie
         for s_ in (-1, 1):
@@ -216,8 +218,8 @@ def build_glass(b):
     b.bar((-L / 2, 0, H), (L / 2, 0, H), 0.06, "CrateWood")           # ridge
     for s_ in (-1, 1):
         b.bar((-L / 2, s_ * (legs_y - 0.02), 0.03), (L / 2, s_ * (legs_y - 0.02), 0.03), 0.06, "CrateWood")    # foot rails
-        y0, y1 = (legs_y + 0.02, legs_y + 0.20) if s_ > 0 else (-legs_y - 0.20, -legs_y - 0.02)
-        b.box((-L / 2 + 0.05, y0, 0), (L / 2 - 0.05, y1, 0.03), "Plinth", skip=("-z",))                       # felt pad strip, OUTSIDE
+        y0, y1 = (legs_y + 0.02, legs_y + 0.17) if s_ > 0 else (-legs_y - 0.17, -legs_y - 0.02)
+        b.box((-L / 2 + 0.05, y0, 0), (L / 2 - 0.05, y1, 0.03), "Plinth", skip=("-z",))                       # felt pad strip, OUTSIDE (0.17 m wide, to the 1.02 m overall)
     lean = math.atan2(legs_y - 0.03, H)                               # the legs' angle from vertical
     sec = []
     for s_ in (-1, 1):
@@ -225,7 +227,7 @@ def build_glass(b):
             gap = 0.035 + i * 0.03                                     # stand-off from the leg face, growing per pane
             pw, ph = 1.2 - i * 0.04, 1.0 - i * 0.03
             # bottom edge sits on the pad, outside the foot; the pane lies parallel to the leg
-            yb = s_ * (legs_y + 0.02 + 0.03 * i + 0.03)
+            yb = s_ * (legs_y + 0.02 + 0.025 * i + 0.03)         # 25 mm per pane keeps the fifth on the pad
             xf = Matrix.Translation((0, yb, 0.03)) @ Matrix.Rotation(s_ * lean, 4, 'X')
             b.box((-pw / 2, -0.004, 0), (pw / 2, 0.004, ph), "GlassPane", xform=xf,
                   skip=("-z",), mats={"+z": "GlassEdge", "+x": "GlassEdge", "-x": "GlassEdge"})
@@ -233,7 +235,8 @@ def build_glass(b):
             sec += [(top.y + 0.004 * s_, top.z + 0.004), (bot.y + 0.004 * s_, bot.z)]
     sec += [(-0.03, H + 0.034), (0.03, H + 0.034)]
     for xs in (-0.45, 0.45):
-        hull_strap(b, sec, xs, [(-W / 2 - 0.26, 0.0), (W / 2 + 0.26, 0.0)], axis="x")
+        hull_strap(b, sec, xs, [(-BED_HALF_W, 0.0), (BED_HALF_W, 0.0)], axis="x")
+    b.rotate_z(90)      # the ridge runs along the bed, so those straps cross it to the tie-downs
 
 
 # ---------------------------------------------------------------- x-ray
