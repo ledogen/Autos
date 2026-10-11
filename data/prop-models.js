@@ -882,7 +882,7 @@ export const PROP_MODELS = {
   shadeTarp: { url: 'assets/models/shade-tarp.glb', collision: { shape: 'none', size: [3.73, 2.01, 3.53] } },   // 224 tris, 3 x 2.4 m fabric with a loose skirt on leaning poles and guy lines — drive-through; no recolour hook
   // ASSET-38 — lumber bundle (freight) and the three loose boards it was split into for haul (FEAT-88: single
   // boards as physics bodies). THE BOARDS' ORIGIN IS THE BBOX CENTRE, not base-seated — rigid bodies.
-  lumberBundle: { url: 'assets/models/lumber-bundle.glb', collision: { shape: 'hull-from-mesh', size: [0.56, 0.38, 1.85] } },   // 678 tris, 54 boards under three bands. NOTE 1.85 m long with its ragged ends; the bed is 1.835 m inside; no recolour hook
+  lumberBundle: { url: 'assets/models/lumber-bundle.glb', collision: { shape: 'hull-from-mesh', size: [0.56, 0.38, 1.78] } },   // 678 tris, 54 boards (1.73 m) under three bands, 1.78 m overall with the ragged ends — fits the 1.835 m bed with the tailgate shut; no recolour hook
   board2x4: { url: 'assets/models/board-2x4.glb', collision: { shape: 'hull-from-mesh', size: [0.09, 0.04, 1.80] } },   // 12 tris, 1.8 m; no recolour hook
   board2x6: { url: 'assets/models/board-2x6.glb', collision: { shape: 'hull-from-mesh', size: [0.14, 0.04, 1.80] } },   // 12 tris; no recolour hook
   board2x8: { url: 'assets/models/board-2x8.glb', collision: { shape: 'hull-from-mesh', size: [0.18, 0.04, 1.80] } },   // 12 tris; no recolour hook
@@ -909,7 +909,7 @@ export const PROP_MODELS = {
   producePalletPeppers: { url: 'assets/models/produce-pallet-peppers.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.72, 1.20] } },   // ASSET-56, 2954 tris; recolour hook Produce
   jobBox: { url: 'assets/models/job-box.glb', collision: { shape: 'hull-from-mesh', size: [1.29, 0.66, 0.69] } },   // ASSET-57, 378 tris, green jobsite chest, no straps; recolour hook JobBoxPaint
   diningChairs: { url: 'assets/models/dining-chairs.glb', collision: { shape: 'hull-from-mesh', size: [0.53, 0.90, 0.97] } },   // ASSET-59, 448 tris, two inverted pairs; recolour hook FurnWood
-  diningTable: { url: 'assets/models/dining-table.glb', collision: { shape: 'hull-from-mesh', size: [1.60, 0.75, 0.90] } },   // ASSET-60, 534 tris, top down. NOTE its 1.6 m runs along X — wider than the 1.4 m bed; needs a 90° yaw at placement or a restrap; recolour hook FurnWood
+  diningTable: { url: 'assets/models/dining-table.glb', collision: { shape: 'hull-from-mesh', size: [0.90, 0.75, 1.60] } },   // ASSET-60, 534 tris, top down, its 1.6 m DOWN the bed (it is wider than the bed the other way), straps across between the legs; recolour hook FurnWood
   tireStack: { url: 'assets/models/tire-stack.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.99, 1.33] } },   // ASSET-61, 2136 tris, two stacks of four on a pallet; no recolour hook
   gardenFountain: { url: 'assets/models/garden-fountain.glb', collision: { shape: 'hull-from-mesh', size: [1.04, 0.89, 1.04] } },   // ASSET-62, 570 tris, column in a nested basin; no recolour hook
   wardrobe: { url: 'assets/models/wardrobe.glb', collision: { shape: 'hull-from-mesh', size: [0.71, 2.00, 1.28] } },   // ASSET-63, 344 tris, STANDING 2 m — the high-CG load; recolour hook FurnWood

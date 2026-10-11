@@ -184,8 +184,10 @@ def bundle(b, cx, z0, nx, nz, bw, bh, length, straps, seed, gap=0.004, anchors_z
 
 
 def build_bundle(b):
-    # 6 x 9 two-by-fours, 1.80 m: 0.56 x 0.38 m section
-    bundle(b, 0, 0, 6, 9, 0.089, 0.038, 1.80, (-0.55, 0.0, 0.55), seed=3)
+    # 6 x 9 two-by-fours, 0.56 x 0.38 m section. Boards are 1.73 m, not the ticket's 1.80: the ragged
+    # ends add up to 5 cm, and the whole bundle has to drop into the 1.835 m bed with the tailgate
+    # shut and a little to spare (owner 2026-10-10: shorter boards, keep the stagger) — 1.78 m max.
+    bundle(b, 0, 0, 6, 9, 0.089, 0.038, 1.73, (-0.55, 0.0, 0.55), seed=3)
 
 
 def build_board_2x8(b):

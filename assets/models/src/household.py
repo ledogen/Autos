@@ -292,21 +292,24 @@ def build_artwork(b):
 
 # ---------------------------------------------------------------- dining table (inverted)
 def build_table(b):
+    """Top down, legs up, its 1.6 m length DOWN the bed (+Y) — it is wider than the 1.4 m bed the
+    other way (owner 2026-10-10) — so the two straps cross the bed over the top slab and the long
+    aprons, between the legs, out to the bed-wall tie-downs."""
     L, W, T = 1.6, 0.9, 0.04
-    b.box((-L / 2, -W / 2, 0), (L / 2, W / 2, T), "FurnWood", skip=("-z",))                                     # top, face down
+    b.box((-W / 2, -L / 2, 0), (W / 2, L / 2, T), "FurnWood", skip=("-z",))                                     # top, face down
     ap = 0.08
-    b.box((-L / 2 + 0.1, -W / 2 + 0.1, T), (L / 2 - 0.1, -W / 2 + 0.13, T + ap), "FurnWood", skip=("-z",))
-    b.box((-L / 2 + 0.1, W / 2 - 0.13, T), (L / 2 - 0.1, W / 2 - 0.1, T + ap), "FurnWood", skip=("-z",))
-    b.box((-L / 2 + 0.1, -W / 2 + 0.13, T), (-L / 2 + 0.13, W / 2 - 0.13, T + ap), "FurnWood", skip=("-z",))
-    b.box((L / 2 - 0.13, -W / 2 + 0.13, T), (L / 2 - 0.1, W / 2 - 0.13, T + ap), "FurnWood", skip=("-z",))
+    b.box((-W / 2 + 0.1, -L / 2 + 0.1, T), (-W / 2 + 0.13, L / 2 - 0.1, T + ap), "FurnWood", skip=("-z",))    # long aprons, along the bed
+    b.box((W / 2 - 0.13, -L / 2 + 0.1, T), (W / 2 - 0.1, L / 2 - 0.1, T + ap), "FurnWood", skip=("-z",))
+    b.box((-W / 2 + 0.13, -L / 2 + 0.1, T), (W / 2 - 0.13, -L / 2 + 0.13, T + ap), "FurnWood", skip=("-z",))  # end aprons
+    b.box((-W / 2 + 0.13, L / 2 - 0.13, T), (W / 2 - 0.13, L / 2 - 0.1, T + ap), "FurnWood", skip=("-z",))
     leg = [(0.036, T), (0.036, T + 0.10), (0.048, T + 0.16), (0.030, T + 0.24), (0.034, T + 0.42), (0.046, T + 0.55), (0.024, T + 0.64), (0.024, T + 0.71)]   # turned, 8 facets (owner 2026-10-09 bar)
     for sx in (-1, 1):
         for sy in (-1, 1):
-            b.lathe(leg, 8, "FurnWood", sx * (L / 2 - 0.15), sy * (W / 2 - 0.15), cap_bottom=False)
-    for xs in (-0.42, 0.42):                             # straps across the top and apron, between the legs (owner: over the top, not the legs)
+            b.lathe(leg, 8, "FurnWood", sx * (W / 2 - 0.15), sy * (L / 2 - 0.15), cap_bottom=False)
+    for ys in (-0.42, 0.42):                             # straps across the top and apron, between the legs (owner: over the top, not the legs)
         pts = [(-W / 2 - 0.004, 0), (W / 2 + 0.004, 0), (-W / 2 - 0.004, T + 0.004), (W / 2 + 0.004, T + 0.004),
                (-W / 2 + 0.1 - 0.004, T + ap + 0.004), (W / 2 - 0.1 + 0.004, T + ap + 0.004)]
-        hull_strap(b, pts, xs, [(-W / 2 - 0.08, 0), (W / 2 + 0.08, 0)], axis="x")
+        hull_strap(b, pts, ys, BED_ANCHORS)
 
 
 VARIANTS = [("wardrobe", build_wardrobe), ("upright-piano", build_piano),
