@@ -32,6 +32,7 @@ import { resolveBuild } from './version.js'
 import { THROW_PARAMS } from './throw.js'                      // FEAT-61 Phase F: throw feel
 import { PAPER_PARAMS, RR_PARAMS } from './paper-route.js'     // FEAT-61 Phase F: payout + re-plan
 import { DAMAGE_PARAMS, TRACKS, TRACK_IDS } from './damage.js' // SM-3: component condition model
+import { FREIGHT } from '../data/freight.js'                     // FEAT-96 scaffolding: Load Cargo
 
 // Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
 // can read them. Assigned inside initDebug(); null until then.
@@ -190,6 +191,17 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // into is the same one test/debris-stack.mjs asserts headlessly.
   debrisFolder.add({ stack: () => callbacks.spawnDebrisStack?.() }, 'stack').name('Spawn Barrel Stack')
   debrisFolder.add({ rock: () => callbacks.dropRockInBed?.() }, 'rock').name('Drop Rock in Bed')
+  // FEAT-96 scaffolding: strap a freight load into the bed, replacing the one there. Picking a load
+  // loads it at its own mass; the slider then re-straps the SAME load at any mass, so "a ton in the
+  // bed" is any load + 1000. '— empty —' clears the bed.
+  const cargo = { load: '', massKg: 100 }
+  const cargoOpts = { '— empty —': '', ...Object.fromEntries(Object.entries(FREIGHT).map(([k, r]) => [r.label, k])) }
+  debrisFolder.add(cargo, 'load', cargoOpts).name('Load Cargo').onChange(k => {
+    if (k) { cargo.massKg = FREIGHT[k].massKg; massCtl.updateDisplay() }
+    callbacks.loadFreight?.(k, cargo.massKg)
+  })
+  const massCtl = debrisFolder.add(cargo, 'massKg', 5, 1500, 5).name('Cargo Mass (kg)')
+    .onFinishChange(v => { if (cargo.load) callbacks.loadFreight?.(cargo.load, v) })
   debrisFolder.add({ clear: () => window.__debris?.clear() }, 'clear').name('Clear Debris')
   // Collider wireframes (physics-debug.js) — same toggle the backtick key drives. The checkbox
   // won't visually follow a key toggle (one-way onChange), which is fine for a debug control.

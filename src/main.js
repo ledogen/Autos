@@ -69,6 +69,8 @@ import { StorySystem } from './story.js'                 // FEAT-43: sandboxed S
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
 import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK } from '../data/offers.js'   // FEAT-88: a haul's par is longer by this
+import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
+import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { OfferBoard, formatGameDuration, gateText } from './offer-board.js'   // FEAT-67: the mission board
@@ -1101,6 +1103,7 @@ async function _reseatTruckAtSpawnInner () {
   // Every seat (R, teleport, reseed) lands the camera on the new pose outright — the chase spring
   // would otherwise sweep across the jump and smear the frame on the way.
   snapCamera()
+  _restrapFreight()
   // Damage persists only across a STORY run (owner, 2026-10-02). Every free-roam seat — cold load,
   // R, a teleport, a reseed — hands you a fresh truck; the condition the last drive left behind is
   // part of that drive, not of the world. publish() so the very next physics step reads stock
@@ -1123,6 +1126,7 @@ function _reseatOnRegionGround () {
   vehicleState.velocity.set(0, 0, 0)
   vehicleState.angularVelocity.set(0, 0, 0)
   snapCamera()
+  _restrapFreight()
 }
 
 // ── Gameplay mode gate (feature/teleport) ─────────────────────────────────────────────────
@@ -2366,6 +2370,7 @@ const _gui = initDebug(RANGER_PARAMS, {
     const v = vehicleState.velocity
     debrisSystem.spawn('rock', { x: p.x, y: p.y, z: p.z }, { x: v.x, y: v.y, z: v.z })
   },
+  loadFreight:         (key, massKg) => _loadFreight(key, massKg),   // FEAT-96 scaffolding: '' empties the bed
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
@@ -2455,6 +2460,48 @@ const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_
   { bed: DEFAULT_VEHICLE_MODEL.bed ?? null })
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
 const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
+
+// ── FEAT-96 scaffolding: a freight load strapped in the bed (debug "Load Cargo") ──────────────
+// One load at a time; loading another replaces it. The load is placed AT REST on the bed floor,
+// centred, against the front wall, and welded to the chassis at once — so its mass and inertia ride
+// the truck through the joint, exactly as a loose body's would through contact. A load wider than
+// the gap between the wheelhouses sits on their tops, as it would in a real Ranger. Pinned (outside
+// DEBRIS_CAP) and noDamage, as FEAT-88's bundles are. The weld dies with its body (Box3D), so
+// removing the body is the whole teardown — "Clear Debris" included.
+let _freight = null   // { body, key, massKg } — the strapped load, or null
+const _fP = new THREE.Vector3(), _fV = new THREE.Vector3()
+async function _loadFreight (key, massKg) {
+  const bed = DEFAULT_VEHICLE_MODEL.bed, row = FREIGHT[key]
+  const kind = `freight:${key}`
+  if (bed && row) await debrisSystem.load(kind, { model: row.model, massKg: row.massKg, friction: 0.6, restitution: 0.1, box: true })
+  if (_freight) { debrisSystem.remove([_freight.body]); _freight = null }   // after the await: a second pick mid-load still leaves one load
+  if (!bed || !row) return
+  const e = debrisSystem.halfExtents(kind)
+  // Wider than the gap between the wheelhouses → it rests on their tops. Judged on the REGISTRY
+  // width (the load without its straps): every strapped model's straps run out to the tie-downs at
+  // x = ±0.70, so the mesh reads 1.40 m wide and would park every load 207 mm above the deck.
+  const loadHalfW = (PROP_MODELS[row.model].collision?.size?.[0] ?? 2 * e.x) / 2
+  const floor = loadHalfW > bed.wheelhouseHalfW ? bed.wheelhouseY : bed.floorY
+  // vehicleState is the authoritative pose (physics.js Step 1.5); push it so the weld's frames are
+  // taken against where the truck IS, not the last step's pose (matters straight after a reseat).
+  physicsEngine.setTransform(vehicleChassis, vehicleState.position, vehicleState.quaternion)
+  // Flush on the rib crests (floorY): the weld holds it there, and joined bodies never collide, so
+  // a settling gap would just float the load for the whole drive.
+  _fP.set(0, floor + e.y, bed.frontZ + e.z + 0.02).applyQuaternion(vehicleState.quaternion).add(vehicleState.position)
+  _fV.copy(_fP).sub(vehicleState.position)
+  _fV.crossVectors(vehicleState.angularVelocity, _fV).add(vehicleState.velocity)   // v + ω × r: the bed's own velocity there
+  const v = { x: _fV.x, y: _fV.y, z: _fV.z }
+  const q = vehicleState.quaternion, w = vehicleState.angularVelocity
+  const body = debrisSystem.spawn(kind, { x: _fP.x, y: _fP.y, z: _fP.z }, v,
+    { spin: { x: w.x, y: w.y, z: w.z }, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true, massKg })
+  physicsEngine.createWeldJoint(vehicleChassis, body, _fP)
+  _freight = { body, key, massKg }
+}
+// A seat (R, teleport, reseed, region re-fit) moves the truck in one jump; a weld to the load left
+// behind would yank them together across it. Re-strap the same load on the new pose instead.
+function _restrapFreight () {
+  if (_freight) void _loadFreight(_freight.key, _freight.massKg)
+}
 // Road ribbon/pad/bore trimesh colliders — attached to roadMeshSystem at its creation sites
 // below (boot + seed rebuild). The terrain heightfields mirror the CARVED mesh, which sits
 // roadClearanceMargin BELOW the asphalt; without this mirror debris fell through the road.

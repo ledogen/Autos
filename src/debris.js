@@ -194,22 +194,53 @@ export class DebrisSystem {
     this._eng = engine
     this._scene = scene
     this._live = []              // [{ body, mesh, kind }], oldest first
-    this._proto = new Map()      // kind → { hull: Float32Array, center: THREE.Vector3, density } | null while loading
-    for (const [kind, spec] of Object.entries(DEBRIS_TYPES)) {
-      getModel(spec.model).then(rec => {
-        const proto = this._extractHull(rec.template)
-        if (proto && !(this._hullVolume(proto.hull) > 0)) {
-          // The engine could not build this hull (Box3D caps a hull at 255 half-edges, and a
-          // densely faceted round asset can exceed it). Left alone it has NaN mass and takes the
-          // whole world unstable. Fall back to the hull's bounding box — wrong shape, right size,
-          // never a crash — and say so, because the asset needs fewer facets.
-          console.warn(`[debris] '${spec.model}' hull is too complex for the engine; using its bounding box`)
-          proto.hull = bboxCorners(proto.hull)
-        }
-        if (proto) proto.density = spec.massKg ? spec.massKg / this._hullVolume(proto.hull) : spec.density
-        this._proto.set(kind, proto)
-      })
+    this._proto = new Map()      // kind → { hull: Float32Array, center: THREE.Vector3, volume, density } | null while loading
+    this._types = {}             // kind → spec: DEBRIS_TYPES plus anything load() was handed
+    this._loads = new Map()      // kind → load() promise (memo)
+    for (const kind of Object.keys(DEBRIS_TYPES)) this.load(kind)
+  }
+
+  /**
+   * Build a type's collider prototype, once. DEBRIS_TYPES load eagerly at construction; other
+   * callers (the freight list, data/freight.js) hand their own `spec` and load on first use, so a
+   * cargo list does not cost the cold boot a GLB fetch per row. `spec.box` = collide as the model's
+   * bounding box (welded freight: the shape never touches the bed, and a 2600-tri tyre stack is
+   * past the engine's hull limit anyway).
+   * @returns {Promise<void>} resolves once spawn(kind) can succeed.
+   */
+  load (kind, spec = DEBRIS_TYPES[kind]) {
+    if (this._loads.has(kind)) return this._loads.get(kind)
+    this._types[kind] = spec
+    const p = getModel(spec.model).then(rec => {
+      const proto = this._extractHull(rec.template)
+      if (proto && !spec.box && !(this._hullVolume(proto.hull) > 0)) {
+        // The engine could not build this hull (Box3D caps a hull at 255 half-edges, and a
+        // densely faceted round asset can exceed it). Left alone it has NaN mass and takes the
+        // whole world unstable. Fall back to the hull's bounding box — wrong shape, right size,
+        // never a crash — and say so, because the asset needs fewer facets.
+        console.warn(`[debris] '${spec.model}' hull is too complex for the engine; using its bounding box`)
+        proto.hull = bboxCorners(proto.hull)
+      }
+      if (proto && spec.box) proto.hull = bboxCorners(proto.hull)
+      if (proto) {
+        proto.volume = this._hullVolume(proto.hull)
+        proto.density = spec.massKg ? spec.massKg / proto.volume : spec.density
+      }
+      this._proto.set(kind, proto)
+    })
+    this._loads.set(kind, p)
+    return p
+  }
+
+  /** Half extents of a loaded type's collider [m] (the hull is bbox-centred), or null while loading. */
+  halfExtents (kind) {
+    const h = this._proto.get(kind)?.hull
+    if (!h) return null
+    const e = { x: 0, y: 0, z: 0 }
+    for (let i = 0; i < h.length; i += 3) {
+      e.x = Math.max(e.x, Math.abs(h[i])); e.y = Math.max(e.y, Math.abs(h[i + 1])); e.z = Math.max(e.z, Math.abs(h[i + 2]))
     }
+    return e
   }
 
   /**
@@ -275,8 +306,9 @@ export class DebrisSystem {
    */
   spawn (kind, position, velocity, opts = {}) {
     // opts: spin, quaternion (deterministic callers), pinned (outside the cap — see DEBRIS_CAP),
-    // noDamage (the chassis wear model ignores this body's contacts — cargo in the bed, FEAT-88).
-    const spec = DEBRIS_TYPES[kind]
+    // noDamage (the chassis wear model ignores this body's contacts — cargo in the bed, FEAT-88),
+    // massKg (overrides the type's own mass — the freight debug slider).
+    const spec = this._types[kind]
     const proto = this._proto.get(kind)
     if (!spec || !proto) return null   // model still loading (first seconds of a cold boot)
 
@@ -296,7 +328,7 @@ export class DebrisSystem {
       userData: { kind: 'debris', debrisType: kind, noDamage: !!opts.noDamage },
     })
     this._eng.addHull(body, proto.hull, {
-      density: proto.density,
+      density: opts.massKg ? opts.massKg / proto.volume : proto.density,
       friction: spec.friction,
       restitution: spec.restitution,
       group: GROUP_DEBRIS,
@@ -305,8 +337,7 @@ export class DebrisSystem {
     // Visual: the shared template cloned, child-offset so the mesh's bbox centre (= the hull's
     // origin = the body origin) coincides with the body transform.
     const spawned = new THREE.Group()
-    const modelSpec = DEBRIS_TYPES[kind]
-    getModel(modelSpec.model).then(rec => {
+    getModel(spec.model).then(rec => {
       const m = rec.template.clone(true)
       m.position.set(-proto.center.x, -proto.center.y, -proto.center.z)
       spawned.add(m)

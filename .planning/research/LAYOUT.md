@@ -12,7 +12,7 @@ or delete a file, update the relevant line here in the same commit — it's one 
 |---|---|
 | `index.html` | The single entry point (Vite root). |
 | `src/` | The product — shippable game engine, ES6 modules. No diagnostics, no dead code (see CLAUDE.md "src/ is the product"). |
-| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), authored scenarios (`scenarios.js`, FEAT-62 — seed + world-coordinate poses, re-checked against the road by `test/scenario-route.mjs`). (The bundled route caches were deleted 2026-08-19 with the bake subsystem.) |
+| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), freight loads (`freight.js`, FEAT-96 — model key + mass per strapped load; read by the debug "Load Cargo" menu), authored scenarios (`scenarios.js`, FEAT-62 — seed + world-coordinate poses, re-checked against the road by `test/scenario-route.mjs`). (The bundled route caches were deleted 2026-08-19 with the bake subsystem.) |
 | `assets/models/` | Hand-authored `.glb` assets + `CREDITS.md`. Convention: `.planning/research/ASSETS.md`; style: `ART-STYLE.md`. |
 | `vendor/box3d/` | Vendored Box3D WASM bindings. Imported ONLY by `src/physics-engine.js` (FEAT-48 seam). |
 | `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts. Pure node — never touches Vite. |

@@ -712,6 +712,29 @@ export class PhysicsEngine {
     return _b3.b3CreateDistanceJoint(this._world, jd)   // opaque to callers; only destroyJoint consumes it
   }
 
+  /**
+   * Rigid weld holding two bodies at their CURRENT relative pose (FEAT-96 strapped cargo). Hertz 0
+   * on both axes = rigid. Joined bodies stop colliding with each other, so a load welded in the bed
+   * never fights the bed floor. Destroying either body destroys the joint with it.
+   */
+  createWeldJoint (handleA, handleB, worldAnchor) {
+    const frame = (id) => {
+      const lp = [0, 0, 0], q = [0, 0, 0, 1]
+      _b3.b3Body_GetLocalPoint(lp, id, [worldAnchor.x, worldAnchor.y, worldAnchor.z])
+      _b3.b3Body_GetRotation(q, id)
+      // Frame rotation = the body's inverse, so both frames line up with the world axes now.
+      return { position: lp, quaternion: [-(q[0] ?? q.x), -(q[1] ?? q.y), -(q[2] ?? q.z), (q[3] ?? q.w)] }
+    }
+    const jd = _b3.b3DefaultWeldJointDef()
+    jd.base.bodyIdA = this._bodies.get(handleA).id
+    jd.base.bodyIdB = this._bodies.get(handleB).id
+    jd.base.localFrameA = frame(jd.base.bodyIdA)
+    jd.base.localFrameB = frame(jd.base.bodyIdB)
+    jd.linearHertz = 0
+    jd.angularHertz = 0
+    return _b3.b3CreateWeldJoint(this._world, jd)
+  }
+
   destroyJoint (joint) { _b3.b3DestroyJoint(joint, true) }
 
   /** Monotonic revision — bumps on body create/destroy (debug-viz change detection). */
