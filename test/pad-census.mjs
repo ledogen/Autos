@@ -34,7 +34,8 @@ import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { WINDOWS, buildWindow } from './lib/road-battery.mjs'
 import { earClip } from '../src/road-carve.js'
 
-// The DRAWN pad must be the ring physics rides. road-mesh.js triangulates node.ring with earClip; a
+// The DRAWN pad must be the ring physics rides. This checks earClip, which is now only road-mesh.js's
+// FALLBACK fill (BUG-82: the primary fill is padFillDelaunay, whose coverage road-pad-fill.mjs asserts); a
 // triangle outside the ring is asphalt drawn over the 0.3 m-lower dirt physics sees there — the owner's
 // "fall right through the drawn pad" (capture 1791128824374: earClip assumed CCW, the ring is CW, every
 // concave crotch was paved, 3.6 m out). Paved area outside the ring, m² (centroid test per triangle).

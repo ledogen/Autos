@@ -28,7 +28,7 @@ import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: shared procedural detail
 import { makeMasonryTextures } from './stone-texture.js' // FEAT-40: portal-ring masonry
-import { crownProfile, potholeNoise, earClip } from './road-carve.js'
+import { crownProfile, potholeNoise, earClip, padFillDelaunay } from './road-carve.js'
 // roadQuality lives in road-quality.js (Plan 09-06) to break the terrain.js → road-mesh.js →
 // terrain.js circular import that SURF-06 would otherwise create.
 import { roadQuality } from './road-quality.js'
@@ -44,10 +44,11 @@ const CROSS_SEGS = 8
 const MAX_ROAD_BUILDS_PER_FRAME = 1
 
 // ── Junction pad constants (QUAL-10/11) ──────────────────────────────────────
-// PAD_FILL_MAX_EDGE: red-green subdivision target (m) for the non-planar pad fill — interior
-// verts every ~3 m so the lifted surface follows the sloped pad plane + crown (QUAL-13 field).
+// PAD_FILL_SPACING: BUG-82 pad fill point spacing (m) — outline steps + hex-lattice interior, Delaunay-
+// connected. PAD_FILL_MAX_EDGE: red-green subdivision target (m) for the earClip FALLBACK fill.
 // (The pad BOUNDARY ring — weld/fillet/legacy ladder, STRAIGHT_GAP, LEGACY_PAD_FLARE — moved to
 // road.js so the collision carve and this mesh share ONE ring; see RoadSystem._buildJunctionRing.)
+const PAD_FILL_SPACING = 1.5
 const PAD_FILL_MAX_EDGE = 3.0
 // MARK_JUNCTION_FEATHER: metres over which lane markings fade back in past a junction cutback —
 // real intersections lose the centerline gradually instead of hard-stopping (QUAL-11/QUAL-10).
@@ -1306,8 +1307,8 @@ export class RoadMeshSystem {
      * failure the node falls back to the QUAL-10 circle pad (_junctionRingLegacy) — failure is
      * graceful, never a spike, never a hole.
      *
-     * Fill is NON-PLANAR: earClip triangulates the ring in XZ, interior detail comes from
-     * red-green midpoint subdivision (_buildPadGeometry), and every vertex rides
+     * Fill is NON-PLANAR: padFillDelaunay triangulates the ring in XZ (BUG-82 — even outline + hex
+     * lattice, earClip + red-green only as the fallback; _buildPadGeometry), and every vertex rides
      * this._road.sampleRoadTopY — the QUAL-13 sloped-pad/blended height field IS the pad surface
      * (mesh == collision by construction; the boundary/fill here is GEOMETRY only).
      *
@@ -1365,12 +1366,14 @@ export class RoadMeshSystem {
         if (!ring || ring.length < 3) return null
 
         // Mouth chords (weld / hull rungs place them exactly here) get no skirt — the ribbon end covers them.
+        // Returns WHICH leg's chord a point sits on (−1: none): a through road's straight back side runs
+        // from one mouth's corner to another's, and is not a mouth.
         const m = this._road._junctionMouths ? this._road._junctionMouths(node) : null
-        const onMouth = (p) => m && m.legs.some(l => {
+        const mouthOf = (p) => !m ? -1 : m.legs.findIndex(l => {
             const ux = p.x - l.cx, uz = p.z - l.cz
             return Math.abs(ux * l.dx + uz * l.dz) < 0.05 && Math.abs(ux * l.dz - uz * l.dx) <= m.halfWidth + 0.05
         })
-        return this._buildPadGeometry(ring, samplePadY, params, onMouth)
+        return this._buildPadGeometry(ring, samplePadY, params, mouthOf)
     }
 
     /**
@@ -1506,21 +1509,55 @@ export class RoadMeshSystem {
     }
 
     /**
-     * Triangulate + lift a pad boundary ring (QUAL-11 non-planar fill). Topology is solved in
-     * XZ: earClip the (verified-simple) ring, force up-facing winding, then red-green midpoint
-     * subdivision — any edge longer than PAD_FILL_MAX_EDGE splits, and the split decision is
-     * PER-EDGE so neighbouring triangles always agree (crack-free) — giving the interior detail
-     * the lifted surface needs to follow the sloped pad plane + crown smoothly. Every vertex Y
-     * comes from sampleY (the asphalt-top surface → mesh == collision by construction). Vertex
-     * colours = ribbon asphalt base; aMark all-zero → no stripes on the pad (BUG-28 contract).
+     * Triangulate + lift a pad boundary ring (QUAL-11 non-planar fill). Topology is solved in XZ by
+     * padFillDelaunay (BUG-82: an even outline + hex lattice at PAD_FILL_SPACING, Delaunay-connected —
+     * no slivers, so computeVertexNormals follows the field). Mouth chords split into CROSS_SEGS
+     * steps, which lands the pad's mouth vertices exactly on the ribbon end's cross-section verts.
+     * If the Delaunay guard trips, the earClip + red-green fill below (_padFillEarClip) takes over.
+     * Every vertex Y comes from sampleY (the asphalt-top surface → mesh == collision by
+     * construction). Vertex colours = ribbon asphalt base; aMark all-zero → no stripes on the pad
+     * (BUG-28 contract).
      *
      * @param {Array<{x:number,z:number}>} ring — simple XZ boundary (open)
      * @param {(x:number,z:number)=>number} sampleY
      * @param {object} params — RANGER_PARAMS (skirt depth/colour)
-     * @param {(p:{x:number,z:number})=>boolean} onMouth — boundary points on a leg mouth chord (no skirt there)
+     * @param {(p:{x:number,z:number})=>number} mouthOf — leg index whose mouth chord p sits on, −1 if none
      * @returns {THREE.BufferGeometry|null}
      */
-    _buildPadGeometry(ring, sampleY, params, onMouth) {
+    _buildPadGeometry(ring, sampleY, params, mouthOf) {
+        const n = ring.length
+        // Both ends on the SAME leg's chord → a mouth edge (no skirt; split to the ribbon's cross-section).
+        const onMouth = (p, q) => { const k = mouthOf(p); return k >= 0 && k === mouthOf(q) }
+        const fill = padFillDelaunay(ring, PAD_FILL_SPACING, (i, L) =>
+            onMouth(ring[i], ring[(i + 1) % n]) ? CROSS_SEGS : Math.ceil(L / PAD_FILL_SPACING))
+            ?? this._padFillEarClip(ring)
+        if (!fill) return null
+        const { verts, tris } = fill
+        const V = verts.length
+        const positions = new Float32Array(V * 3)
+        const colors    = new Float32Array(V * 3)
+        for (let v = 0; v < V; v++) {
+            positions[v * 3    ] = verts[v].x
+            positions[v * 3 + 1] = sampleY(verts[v].x, verts[v].z)
+            positions[v * 3 + 2] = verts[v].z
+            colors[v * 3] = 0.15; colors[v * 3 + 1] = 0.15; colors[v * 3 + 2] = 0.17
+        }
+        // BUG-28: pads share the road shader (reads aMark). All-zero aMark (feather 0) → no stripes.
+        return this._withJunctionSkirt(positions, colors, new Float32Array(V * 4), tris, params,
+            (a, b) => onMouth(verts[a], verts[b]))
+    }
+
+    /**
+     * Fallback pad fill (the pre-BUG-82 path, used when padFillDelaunay's outline guard trips):
+     * earClip the (verified-simple) ring, force up-facing winding, then red-green midpoint
+     * subdivision — any edge longer than PAD_FILL_MAX_EDGE splits, and the split decision is
+     * PER-EDGE so neighbouring triangles always agree (crack-free). Makes slivers (BUG-82), but never
+     * a hole.
+     *
+     * @param {Array<{x:number,z:number}>} ring — simple XZ boundary (open)
+     * @returns {{verts:Array<{x:number,z:number}>, tris:number[]}|null}
+     */
+    _padFillEarClip(ring) {
         const tri0 = earClip(ring)
         if (!tri0 || tri0.length < 3) return null
         let tris = Array.from(tri0)
@@ -1593,17 +1630,6 @@ export class RoadMeshSystem {
             if (!split) break
         }
 
-        const V = verts.length
-        const positions = new Float32Array(V * 3)
-        const colors    = new Float32Array(V * 3)
-        for (let v = 0; v < V; v++) {
-            positions[v * 3    ] = verts[v].x
-            positions[v * 3 + 1] = sampleY(verts[v].x, verts[v].z)
-            positions[v * 3 + 2] = verts[v].z
-            colors[v * 3] = 0.15; colors[v * 3 + 1] = 0.15; colors[v * 3 + 2] = 0.17
-        }
-        // BUG-28: pads share the road shader (reads aMark). All-zero aMark (feather 0) → no stripes.
-        return this._withJunctionSkirt(positions, colors, new Float32Array(V * 4), tris, params,
-            (a, b) => onMouth(verts[a]) && onMouth(verts[b]))
+        return { verts, tris }
     }
 }
