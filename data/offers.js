@@ -26,6 +26,8 @@
 //   phrase   how the card says it: "Deb needs {phrase} delivered to …"
 //   family   one of the families above
 //   massKg   [min, max] — rolled per offer, shown on the card as cargo weight
+//            A modelled bed load is ONE number, as built ([m, m]) — the model is fixed, so is its
+//            mass (owner, 2026-10-11); the derivation of each is in cargo.md.
 //   pools    which sources may post it (keys of SOURCES below)
 //   fetchBy  (optional, FEAT-102) classes that post a FETCH of this thing: "go get it and bring it
 //            back" — drive to a pickup, park there, return to the poster (FEAT-89's fetch shape).
@@ -58,7 +60,7 @@ export const THINGS = [
       pools: ['generalStore'] },
     { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
       pools: ['generalStore'] },
-    { id: 'vase',       phrase: "grandma's vase",          family: 'fragile',  massKg: [3, 6],
+    { id: 'vase',       phrase: "grandma's vase",          family: 'fragile',  massKg: [9, 9],
       pools: ['residence'] },
     // Courier, R1 (cargo.md), one thing per row there.
     { id: 'note',       phrase: 'a private note',          family: 'delivery', massKg: [0.1, 0.1],
@@ -156,7 +158,7 @@ export const THINGS = [
       pools: ['autoShop'] },
     { id: 'bodyPanel',     phrase: 'a body panel',           family: 'delivery', massKg: [10, 25],
       pools: ['autoShop'] },
-    { id: 'windshield',    phrase: 'a windshield',           family: 'fragile',  massKg: [12, 18],
+    { id: 'windshield',    phrase: 'a windshield',           family: 'fragile',  massKg: [14, 14],
       pools: ['autoShop'] },
     { id: 'hubcap',        phrase: 'a hubcap',               family: 'delivery', massKg: [1, 2],
       pools: ['autoShop'] },
@@ -171,30 +173,31 @@ export const THINGS = [
     // a source (owner, 2026-10-10: cargo.md decides who posts; a BLANK "from" posts nowhere until the
     // owner rules a shipper — drum, barrel, crate, pallet, railway ties). All R1 for now: there is
     // one region. "any" is ANY_GIVER, minus a class that is the thing's only destination.
-    { id: 'tomatoes',     phrase: 'a pallet of tomatoes',     family: 'freight', massKg: [200, 350],
+    { id: 'tomatoes',     phrase: 'a pallet of tomatoes',     family: 'freight', massKg: [365, 365],
       pools: ['farm'], to: ['generalStore', 'residence'], load: 'producePalletTomatoes' },
-    { id: 'squash',       phrase: 'a pallet of squash',       family: 'freight', massKg: [200, 350],
+    { id: 'squash',       phrase: 'a pallet of squash',       family: 'freight', massKg: [315, 315],
       pools: ['farm'], to: ['generalStore', 'residence'], load: 'producePalletSquash' },
-    { id: 'peppers',      phrase: 'a pallet of peppers',      family: 'freight', massKg: [200, 350],
+    { id: 'peppers',      phrase: 'a pallet of peppers',      family: 'freight', massKg: [235, 235],
       pools: ['farm'], to: ['generalStore', 'residence'], load: 'producePalletPeppers' },
-    { id: 'pottingSoil',  phrase: 'a pallet of potting soil', family: 'freight', massKg: [300, 400],
+    { id: 'pottingSoil',  phrase: 'a pallet of potting soil', family: 'freight', massKg: [344, 344],
       pools: ['generalStore'], load: 'pottingSoilPallet' },
-    { id: 'tyres',        phrase: 'eight tyres',              family: 'freight', massKg: [80, 100],
+    { id: 'tyres',        phrase: 'eight tyres',              family: 'freight', massKg: [105, 105],
       pools: ['autoShop'], load: 'tireStack' },
-    { id: 'propanePackFull',  phrase: 'a pallet of full propane tanks',  family: 'freight', massKg: [90, 90],
+    { id: 'propanePackFull',  phrase: 'a pallet of full propane tanks',  family: 'freight', massKg: [80, 80],
       pools: ['generalStore', 'gasStation'], load: 'propanePallet' },
-    { id: 'propanePackEmpty', phrase: 'a pallet of empty propane tanks', family: 'freight', massKg: [50, 50],
+    { id: 'propanePackEmpty', phrase: 'a pallet of empty propane tanks', family: 'freight', massKg: [43, 43],
       pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore', 'gasStation'], load: 'propanePallet' },
-    { id: 'softDrinks',   phrase: 'a pallet of soft drinks',  family: 'freight', massKg: [350, 450],
+    { id: 'softDrinks',   phrase: 'a pallet of soft drinks',  family: 'freight', massKg: [240, 240],
       pools: ['generalStore'], to: ['foodVendor', 'gasStation'], load: 'softDrinkPallet' },   // owner, 2026-10-11
-    // The two deliberate overloads (owner, 2026-10-10: let them roll) — past the Ranger's ~500–570 kg.
+    // The deliberate overloads (owner, 2026-10-10: let them roll) — past the Ranger's ~500–570 kg payload.
+    // The four full drums below are one too (804 kg).
     { id: 'cinderBlocks', phrase: 'a pallet of cinder blocks', family: 'freight', massKg: [785, 785],
       pools: ['generalStore'], to: ['workSite'], load: 'cinderBlockPallet' },
     { id: 'concrete',     phrase: 'a pallet of concrete bags', family: 'freight', massKg: [670, 670],   // as built
       pools: ['generalStore'], to: ['workSite'], load: 'concretePallet' },
-    { id: 'drumStack',    phrase: 'four 55-gallon drums',     family: 'freight', massKg: [120, 450],
+    { id: 'drumStack',    phrase: 'four 55-gallon drums',     family: 'freight', massKg: [804, 804],
       pools: ['autoShop', 'gasStation'], load: 'drumStack' },
-    { id: 'jobBox',       phrase: 'a job box',                family: 'freight', massKg: [150, 250],
+    { id: 'jobBox',       phrase: 'a job box',                family: 'freight', massKg: [175, 175],
       pools: ['residence'], to: ['workSite'], load: 'jobBox' },   // owner, 2026-10-11: from home to the site
 ]
 

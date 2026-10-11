@@ -33,7 +33,7 @@ differs, so there is no separate "empty" model.
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the pallet must sit inside it |
 | Origin | base-seated, centred on the pallet |
 | Forward | −Z (valve outlets face −Z, as in ASSET-05) |
-| Collision | box · `mass_kg: 50` (empties) – `90` (full): 4 × 8 or 4 × 17 kg, plus the ~20 kg pallet |
+| Collision | box · `mass_kg: 50` (empties) – `90` (full): 4 × 8 or 4 × 17 kg, plus the ~20 kg pallet — **as built full 80 · empties 43 kg**: it rides the SMALL pallet, 12 kg (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

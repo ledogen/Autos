@@ -41,7 +41,7 @@ ASSET-27 pallet. A full pallet is about a tonne, which is over the Ranger's payl
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: 350–450` |
+| Collision | box · `mass_kg: 350–450` — **as built 240 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

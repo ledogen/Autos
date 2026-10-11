@@ -36,7 +36,7 @@ Four wooden dining chairs, two stacked seat-to-seat on two, strapped. **One chai
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box (the group) · `mass_kg: 20–35` |
+| Collision | box (the group) · `mass_kg: 20–35` — **as built 24 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

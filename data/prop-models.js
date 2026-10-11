@@ -180,7 +180,7 @@ export const PROP_MODELS = {
 
   // ASSET-27 — timber stringer pallet, empty. 268 tris, 1.00 x 0.145 x 1.20 m (stringers along -Z,
   // forks enter across X), base-seated; stacks flush at y = 0.145. One material (PalletWood) with
-  // per-board vertex-colour tints, no textures. mass 25 kg, inert until dynamic props (FEAT-36).
+  // per-board vertex-colour tints, no textures. 20 kg (the pallet convention in cargo.md; the small one is 12).
   pallet: {
     url: 'assets/models/pallet.glb',
     collision: { shape: 'box', size: [1.00, 0.145, 1.20] },
@@ -379,7 +379,8 @@ export const PROP_MODELS = {
   // the collars. Composited by propane-pallet.py from propane-tank.py + pallet.py (re-export it
   // after changing either): 2 x 2 tanks, outlets -Z, two straps over the collars and back through
   // the fork tunnels. One mesh, four materials (PalletWood + the tank's three), no textures.
-  // Same model full or empty: mass_kg 90 full / 50 empty (4 x 17 or 4 x 8, + pallet), inert until
+  // Same model full or empty: 80 kg full / 43 empty (4 x 16.8 or 4 x 7.7, + the 12 kg small pallet;
+  // cargo.md, as built), inert until
   // dynamic props (FEAT-36).
   propanePallet: {
     url: 'assets/models/propane-pallet.glb',

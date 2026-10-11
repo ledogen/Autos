@@ -36,7 +36,7 @@ Several large sheet-glass panes leaning against both sides of a timber A-frame r
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | hull or box · `mass_kg: 60–120` |
+| Collision | hull or box · `mass_kg: 60–120` — **as built 240 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

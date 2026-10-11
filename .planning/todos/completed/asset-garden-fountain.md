@@ -36,7 +36,7 @@ A tiered cast-stone garden fountain, two or three bowls on a pedestal, disassemb
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | hull or box · `mass_kg: 150–300` |
+| Collision | hull or box · `mass_kg: 150–300` — **as built 200 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

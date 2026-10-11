@@ -38,7 +38,7 @@ A steel jobsite box: a long, low, lockable chest on skids, lid with gas struts, 
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: 150–250` |
+| Collision | box · `mass_kg: 150–250` — **as built 175 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

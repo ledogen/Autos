@@ -39,7 +39,7 @@ not fragile (owner, 2026-10-06).
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box (per stack) · `mass_kg: 80–100` |
+| Collision | box (per stack) · `mass_kg: 80–100` — **as built 105 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

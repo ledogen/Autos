@@ -38,7 +38,7 @@ Open slatted produce crates stacked on the ASSET-27 pallet, the top course showi
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: 200–350` |
+| Collision | box · `mass_kg: 200–350` — **as built tomatoes 365 · squash 315 · peppers 235 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

@@ -109,9 +109,9 @@ One per region, from the haul yards (FEAT-91).
 
 | Region | Load | From → to | Asset | Mass |
 |---|---|---|---|---|
-| R1 | firewood bundles | firewoodYard (splitting yard) → any | ASSET-37 (shipped) | 10–15 × 11 kg |
-| R2 | lumber boards | sawmill → any | ASSET-38 | per board |
-| R3 | rocks | quarry → any | none — the procedural `rock` debris type (~50 kg granite cobble) | per rock |
+| R1 | firewood bundles | firewoodYard (splitting yard) → any | ASSET-37 (shipped) | 11 kg a bundle × 10–15 bundles. **A range on purpose:** each offer rolls the bundle COUNT, which is what makes one haul bigger and better-paid than another |
+| R2 | lumber boards | sawmill → any | ASSET-38 | per board, 1.8 m SPF at 450 kg/m³: 2x4 2.7 · 2x6 4.3 · 2x8 5.6 kg. The banded bundle (54 boards) is 170 kg — loose boards vs the bundle is still the owner's call |
+| R3 | rocks | quarry → any | none — the procedural `rock` debris type | ~50 kg a rock (granite cobble) |
 
 ---
 
@@ -119,33 +119,35 @@ One per region, from the haul yards (FEAT-91).
 
 **Posted** rows are live jobs: each Load is the job's exact phrase in `data/offers.js` (THINGS,
 `family: 'freight'`), so the dashboard flags any drift between the two. Mass is what a job rolls,
-uniformly in the range; a single number is fixed because the model is (as built). The debug menu's
-"Load Cargo" (`data/freight.js`) uses one value in the range. **In game everything rolls in R1 for
+and every modelled load is ONE number, as built: counted off the model at real unit weights
+(owner, 2026-10-11). Pallets are 20 kg (1.0 × 1.2) and 12 kg (the small 0.8 × 0.8). A range is left
+only where there is no model to count yet. The debug menu's "Load Cargo" (`data/freight.js`) uses
+the same numbers. **In game everything rolls in R1 for
 now** (owner, 2026-10-10) — there is one region; the Region column is the design tier.
 
 | Region | Load | From → to | Asset | Mass (kg) | Note |
 |---|---|---|---|---|---|
-| R1 | a pallet of tomatoes | farm → generalStore / residence | ASSET-56 (tomato variant) | 200–350 | posted |
-| R1 | a pallet of squash | farm → generalStore / residence | ASSET-56 (squash variant) | 200–350 | posted |
-| R1 | a pallet of peppers | farm → generalStore / residence | ASSET-56 (pepper variant) | 200–350 | posted |
-| R1 | a pallet of potting soil | generalStore → any | ASSET-47 | 300–400 | posted; 344 as built (18 bags × 18 kg + 20 kg pallet) |
-| R1 | eight tyres | autoShop → any | ASSET-61 | 80–100 | posted |
-| R1 | a pallet of full propane tanks | generalStore / gasStation → any | ASSET-72 (reuses ASSET-05's cylinder) | 90 | posted; 4 × 17 kg + pallet. The single tank is a courier thing |
-| R1 | a pallet of empty propane tanks | any → generalStore / gasStation | ASSET-72 | 50 | posted, back to refill; any giver but the general store |
-| R1 | mulch | generalStore / farm → any | ASSET-51 (bulk heap, mulch variant) | 150–250 | not posted — no model yet |
-| R1 | steel car rims, a stack of 4 or 8 | autoShop → any | ASSET-53 | 40–100 | not posted — no model yet |
-| R1 | drum, on a pallet | | ASSET-30 on the small pallet | 215 | not posted — no shipper (blank from). Full of oil: 55 gal × 0.88 kg/L + 18 kg drum + pallet |
-| R1 | barrel, on a pallet | | ASSET-29 on the small pallet | 233 | not posted — no shipper. Full of water: 55 gal + 10 kg HDPE + pallet |
-| R1 | crate, on a pallet | | ASSET-28 on the small pallet | 33 small · 70 large | not posted — no shipper. The singles ride palletised (owner, 2026-10-10); the bare pallet is no longer a load |
-| R2 | four 55-gallon drums | autoShop / gasStation → any | ASSET-48 | 120–450 | posted; reuses the ASSET-30 drum, partly filled (a full one is ~190 kg) |
-| R2 | a pallet of soft drinks | generalStore → foodVendor / gasStation | ASSET-46 | 350–450 | posted (route: owner, 2026-10-11) |
-| R2 | a pallet of cinder blocks | generalStore → workSite | ASSET-55 | 785 | posted; **an overload, and it rolls** (owner, 2026-10-10). As built: 45 blocks (8" CMU, ~17 kg each) on a 20 kg pallet |
-| R2 | a pallet of concrete bags | generalStore → workSite | ASSET-47 (concrete variant) | 670 | posted; **an overload, and it rolls** (owner, 2026-10-10). As built: 18 × 80 lb bags (36 kg each) on a 20 kg pallet |
-| R2 | sheets of plywood | sawmill → any | ASSET-54 | 220–350 | not posted — the sawmill does not exist yet. Rides angled over the tailgate |
-| R2 | bed full of topsoil | farm → any | ASSET-51 (bulk heap, topsoil variant) | 500–700, tuned by feel | not posted — no model yet. An overload; tuned by feel once modelled |
-| R2 | railway ties | | ASSET-52 | 300–450 | not posted — no shipper (owner, 2026-10-10: held until it has one). Rides angled over the tailgate |
-| R3 | a job box | residence → workSite | ASSET-57 | 150–250 | posted (route: owner, 2026-10-11 — from home to the site) |
-| R3 | a Persian rug or two | | ASSET-58 | 30–60 per roll | not posted — no model, no shipper. 2.7 m, rides angled over the tailgate |
+| R1 | a pallet of tomatoes | farm → generalStore / residence | ASSET-56 (tomato variant) | 365 | posted. 8 crates × 62 L at 0.65 kg/L = 40 kg of fruit + 3 kg crate, + pallet |
+| R1 | a pallet of squash | farm → generalStore / residence | ASSET-56 (squash variant) | 315 | posted. 8 crates × 62 L at 0.55 kg/L = 34 kg + 3 kg crate, + pallet |
+| R1 | a pallet of peppers | farm → generalStore / residence | ASSET-56 (pepper variant) | 235 | posted. 8 crates × 62 L at 0.38 kg/L = 24 kg + 3 kg crate, + pallet |
+| R1 | a pallet of potting soil | generalStore → any | ASSET-47 | 344 | posted. 18 bags × 18 kg + pallet |
+| R1 | eight tyres | autoShop → any | ASSET-61 | 105 | posted. 8 × 10.5 kg (650 mm × 210 mm on a 15" rim ≈ 215/70R15) + pallet |
+| R1 | a pallet of full propane tanks | generalStore / gasStation → any | ASSET-72 (reuses ASSET-05's cylinder) | 80 | posted. 4 × 16.8 kg (20 lb cylinder full) + small pallet. The single tank is a courier thing |
+| R1 | a pallet of empty propane tanks | any → generalStore / gasStation | ASSET-72 | 43 | posted, back to refill; any giver but the general store. 4 × 7.7 kg + small pallet |
+| R1 | mulch | generalStore / farm → any | ASSET-51 (bulk heap, mulch variant) | 150–250 | not posted. **A range because there is no model yet** — fixed when the heap is built |
+| R1 | steel car rims, a stack of 4 or 8 | autoShop → any | ASSET-53 | 40–100 | not posted. **A range because there is no model yet** (4 or 8 rims × ~10 kg) |
+| R1 | drum, on a pallet | | ASSET-30 on the small pallet | 213 | not posted — no shipper. Full of oil: 208 L × 0.88 + 18 kg drum, + small pallet |
+| R1 | barrel, on a pallet | | ASSET-29 on the small pallet | 230 | not posted — no shipper. Full of water: 208 kg + 10 kg HDPE, + small pallet |
+| R1 | crate, on a pallet | | ASSET-28 on a pallet | 30 small · 65 large | not posted — no shipper. Crate 18 / 45 kg, + small / full pallet. The bare pallet is no longer a load |
+| R2 | four 55-gallon drums | autoShop / gasStation → any | ASSET-48 | 804 | posted. **An overload:** 4 full drums of oil × 201 kg, no pallet (owner, 2026-10-11) |
+| R2 | a pallet of soft drinks | generalStore → foodVendor / gasStation | ASSET-46 | 240 | posted. 24 trays × 24 cans × 0.37 kg + trays, + pallet |
+| R2 | a pallet of cinder blocks | generalStore → workSite | ASSET-55 | 785 | posted. **An overload, and it rolls** (owner, 2026-10-10). 45 blocks (8" CMU) × 17 kg + pallet |
+| R2 | a pallet of concrete bags | generalStore → workSite | ASSET-47 (concrete variant) | 670 | posted. **An overload, and it rolls** (owner, 2026-10-10). 18 × 80 lb bags (36 kg) + pallet |
+| R2 | sheets of plywood | sawmill → any | ASSET-54 | 330 | not posted — the sawmill does not exist yet. 12 sheets of 3/4" 4×8 × 27.5 kg. Rides angled over the tailgate |
+| R2 | bed full of topsoil | farm → any | ASSET-51 (bulk heap, topsoil variant) | 500–700 | not posted. **A range because there is no model yet**; an overload, set by feel once the heap is built |
+| R2 | railway ties | | ASSET-52 | 455 | not posted — no shipper (owner, 2026-10-10). 5 hardwood ties, 7×9 in × 2.6 m, × 91 kg. Rides angled over the tailgate |
+| R3 | a job box | residence → workSite | ASSET-57 | 175 | posted (route: owner, 2026-10-11). 95 kg steel chest + ~80 kg of tools — the tools are unseen, so that half is an assumption |
+| R3 | a Persian rug or two | | ASSET-58 | 30–60 per roll | not posted. **A range because there is no model yet** |
 
 **How freight pays** (owner, 2026-10-11; numbers in `data/offers.js`): par × (1 + 0.0007 × kg) for
 the time the load costs; pay × (1 + 0.0003 × kg) on top, so pay outgrows time; every rank threshold
@@ -160,24 +162,24 @@ only** and are never modelled.
 
 | Region | Load | From → to | Asset | Mass (kg) | Note |
 |---|---|---|---|---|---|
-| R1 | crate of milk bottles | farm → generalStore | ASSET-28 + text | 15–40 | |
-| R1 | crate of canning jars | generalStore → farm | ASSET-28 + text | 15–40 | for preserves |
-| R1 | eggs | farm → generalStore / foodVendor | ASSET-28 + text | light | items.md §4 |
-| R1 | four dining chairs | | ASSET-59 | 20–35 | the "ratty old furniture" job (worn recolour) |
-| R1 | grandma's vase | | ASSET-41 | 3–8 | existing `vase` |
-| R1 | full-length mirror | | ASSET-64 | 15–30 | |
-| R2 | crate of fine china | | ASSET-28 + text | 15–40 | |
-| R2 | a windshield | autoShop → any | crate until modelled | 12–18 | existing |
-| R2 | dining table | | ASSET-60 | 40–70 | the "nice" set, paired with ASSET-59 |
-| R2 | ornate vase | | ASSET-41 | 3–8 | the valuable version of grandma's vase |
-| R2 | framed artwork, crated | | ASSET-44 | 10–30 | |
-| R2 | panes of glass | | ASSET-40 | 60–120 | the most fragile |
-| R2 | garden fountain | generalStore → any | ASSET-62 | 150–300 | heavy stone |
-| R2 | wardrobe | | ASSET-63 | 100–180 | **the high-CG job**: the top is about 2.5 m off the road |
-| R2 | pelican case (contents as text) | | ASSET-39 | 15–40 | tough; high-tech contents |
-| R3 | sculpture | | ASSET-43 | 40–200 | |
-| R3 | upright piano | | ASSET-42 | 200–270 | heavy *and* fragile |
-| R3 | airport x-ray machine | | ASSET-45 | 300–400 | high-tech, heavy and delicate. Generic: the airport place was dropped (owner, 2026-10-07) |
+| R1 | crate of milk bottles | farm → generalStore | ASSET-28 + text | 40 | 24 quart glass bottles, full, × 1.4 kg + crate. Contents are text, so the count is an assumption |
+| R1 | crate of canning jars | generalStore → farm | ASSET-28 + text | 20 | for preserves. 36 empty quart jars × 0.4 kg + crate |
+| R1 | eggs | farm → generalStore / foodVendor | ASSET-28 + text | 31 | items.md §4. 30 dozen × 60 g + flats + crate |
+| R1 | four dining chairs | | ASSET-59 | 24 | the "ratty old furniture" job (worn recolour). 4 × 6 kg |
+| R1 | grandma's vase | | ASSET-41 | 9 | existing `vase`. Glazed ceramic, 0.78 m, + its base |
+| R1 | full-length mirror | | ASSET-64 | 16 | framed, 0.6 × 1.7 m, blanket-wrapped |
+| R2 | crate of fine china | | ASSET-28 + text | 30 | ~24 kg of china + crate |
+| R2 | a windshield | autoShop → any | crate until modelled | 14 | existing. The glass alone |
+| R2 | dining table | | ASSET-60 | 45 | the "nice" set, paired with ASSET-59. Solid wood, 1.6 × 0.9 m |
+| R2 | ornate vase | | ASSET-41 | 9 | the valuable version of grandma's vase — same model |
+| R2 | framed artwork, crated | | ASSET-44 | 16 | painting ~6 kg + travel crate ~10 |
+| R2 | panes of glass | | ASSET-40 | 240 | the most fragile. 10 panes, 8 mm, 10.5 m² in all × 20 kg/m², + A-frame ~30 |
+| R2 | garden fountain | generalStore → any | ASSET-62 | 200 | heavy cast stone, three tiers |
+| R2 | wardrobe | | ASSET-63 | 120 | **the high-CG job**: solid wood, 2 m tall, the top ~2.5 m off the road |
+| R2 | pelican case (contents as text) | | ASSET-39 | 35 | tough; ~20 kg case + ~15 kg of equipment (the contents are an assumption) |
+| R3 | sculpture | | ASSET-43 | 120 bronze · 220 marble | two models: hollow-cast bronze abstract + stone plinth; solid marble figure + plinth |
+| R3 | upright piano | | ASSET-42 | 230 | heavy *and* fragile. A 1.28 m studio upright |
+| R3 | airport x-ray machine | | ASSET-45 | 450 | high-tech, heavy and delicate. A compact 1.6 m baggage scanner (full-size ones run to a tonne). Generic: the airport place was dropped (owner, 2026-10-07) |
 
 **Damage feedback** (FEAT-97): on each damaging hit the load plays a sound and **blinks red**. No
 HUD number appears.
@@ -190,7 +192,7 @@ HUD number appears.
 2. **Steel wheels are car rims**, in a stack of 4 or 8 (ASSET-53).
 3. **Tyres are freight**, not fragile (ASSET-61).
 4. **Overloads are on purpose.** Topsoil (500–700 kg, tuned by feel once modelled), concrete
-   (670 kg as built) and cinder blocks (785 kg as built) sit over the Ranger's ~500–570 kg payload.
+   (670 kg), cinder blocks (785 kg) and four full drums (804 kg), all as built, sit over the Ranger's ~500–570 kg payload.
    Suspension and tyre upgrades are what carry them (items.md §1a's load budget). They roll before
    those upgrades exist (owner, 2026-10-10).
 5. **Ride smoothness is not a thing.** The tipsy passenger is flavour text only. No courier job is

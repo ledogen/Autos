@@ -36,7 +36,7 @@ A tall, heavy wooden wardrobe standing upright, doors closed, strapped to the fr
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: 100–180` |
+| Collision | box · `mass_kg: 100–180` — **as built 120 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

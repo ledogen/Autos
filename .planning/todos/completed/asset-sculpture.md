@@ -36,7 +36,7 @@ An abstract or figurative sculpture on a plinth or pallet, strapped. Two or thre
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | hull-from-mesh · `mass_kg: 40–200` |
+| Collision | hull-from-mesh · `mass_kg: 40–200` — **as built bronze 120 · marble 220 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

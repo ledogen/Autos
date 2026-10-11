@@ -40,7 +40,7 @@ wedging between the front wall and the tailgate.
 | Real size | ~0.60 × 0.35 m section × **1.80 m** |
 | Origin | bbox centre |
 | Forward | −Z along the boards |
-| Collision | hull-from-mesh (a box, effectively); `mass_kg: ~250` |
+| Collision | hull-from-mesh (a box, effectively); `mass_kg: ~250` — **as built 170 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

@@ -36,7 +36,7 @@ An upright piano, lid closed, standing lengthways in the bed with straps over th
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: 200–270` |
+| Collision | box · `mass_kg: 200–270` — **as built 230 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

@@ -81,7 +81,8 @@ everything FEAT-97 fragile reuses.
 - **Things.** A `freight` thing list in `data/offers.js`, each entry with a real mass. For the
   first slice, use models that exist or are already ticketed: drums (ASSET-30, shipped), the
   plastic barrel (ASSET-29, shipped), the pallet (ASSET-27) and the crate (ASSET-28). Suggested
-  range is **80–450 kg**. The 2002 Ranger's payload is roughly 500–570 kg, so the top of the range
+  range is **80–450 kg**. *(Superseded 2026-10-11: every modelled load is one as-built mass —
+  cargo.md § Freight.)* The 2002 Ranger's payload is roughly 500–570 kg, so the top of the range
   should make the truck feel loaded without overloading it. **Deliberate exceptions:** a bed of topsoil
   (ASSET-51, 500–700 kg, tuned by feel once modelled; owner, 2026-10-06), and as built the concrete
   pallet (670 kg) and cinder blocks (785 kg), which roll anyway (owner, 2026-10-10). Suspension and

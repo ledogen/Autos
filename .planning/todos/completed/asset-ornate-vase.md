@@ -36,7 +36,7 @@ A tall ornate vase in saturated glaze, strapped upright to a small pallet or bas
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | hull-from-mesh · `mass_kg: 3–8` |
+| Collision | hull-from-mesh · `mass_kg: 3–8` — **as built 9 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

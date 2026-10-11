@@ -38,7 +38,7 @@ A stack of 4 × 8 ft plywood sheets lying flat, pale wood faces with darker laye
 | Fits the bed | longer than the 1.8 m bed floor: it rides on the **lowered tailgate**, ≤ 1.4 m wide (the 1.22 m width fits between the wheel tubs only if it rides above them) |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: 220–350` |
+| Collision | box · `mass_kg: 220–350` — **as built 330 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

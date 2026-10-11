@@ -36,7 +36,7 @@ A tall mirror in a wooden frame standing on edge, wrapped in a moving blanket wi
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: 15–30` |
+| Collision | box · `mass_kg: 15–30` — **as built 16 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

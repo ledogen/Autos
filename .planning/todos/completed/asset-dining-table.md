@@ -36,7 +36,7 @@ A nice wooden dining table, upside down with its legs up as movers carry one, st
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: 40–70` |
+| Collision | box · `mass_kg: 40–70` — **as built 45 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

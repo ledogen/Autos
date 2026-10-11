@@ -36,7 +36,7 @@ A large hard-shell equipment case: ribbed black or safety-orange shell, latches,
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: 15–40 (per contents)` |
+| Collision | box · `mass_kg: 15–40 (per contents)` — **as built 35 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 

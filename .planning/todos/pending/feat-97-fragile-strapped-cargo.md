@@ -117,6 +117,9 @@ Each specific item gets its own model later. A suggested mass is given for each.
 | Framed artwork, crated | ASSET-44 | 10–30 kg | fragile |
 | Security x-ray machine | ASSET-45 | 300–400 kg | moderate |
 
+> **Masses superseded (2026-10-11):** every modelled item now has ONE as-built mass, counted off
+> the model — cargo.md § Fragile. The ranges above were pre-model suggestions.
+
 Mass is real (FEAT-96), so the piano and the x-ray machine are freight-heavy as well as fragile.
 Those are the hardest jobs of the type.
 

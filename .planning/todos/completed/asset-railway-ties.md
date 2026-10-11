@@ -38,7 +38,7 @@ Four or five creosoted railway ties (sleepers) stacked flat, dark brown-black, f
 | Fits the bed | longer than the 1.8 m bed floor: it rides on the **lowered tailgate**, ≤ 1.4 m wide |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: 300–450` |
+| Collision | box · `mass_kg: 300–450` — **as built 455 kg** (cargo.md, 2026-10-11) |
 
 ## Acceptance
 
