@@ -23,6 +23,9 @@ import { makeVehicleState } from '../src/vehicle-state.js'
 import { computeStaticEquilibrium } from '../src/suspension.js'
 import { RUNNING } from '../src/ignition.js'
 import { strapPose } from '../src/debris.js'
+import { splitPayout } from '../src/economy.js'
+import { gradeRun, RANK_THRESHOLDS_DEFAULT } from '../src/par.js'
+import { FREIGHT_TIME_SLACK, FREIGHT_TIP_MULT } from '../data/offers.js'
 
 const DT = 1 / 60
 const BED = DEFAULT_VEHICLE_MODEL.bed
@@ -42,6 +45,18 @@ const badges = ['delivery', 'freight', 'fragile', 'haul'].map(f => jobBadge({ fa
   .concat(jobBadge({ family: 'delivery', shape: 'fetch' }))
 ok(new Set(badges).size === badges.length && jobBadge({ family: 'papers' }) === null,
   `card badges are distinct (${badges.join(' ')}); Larry has none`)
+
+// ── 1b. freight's pay curve (owner, 2026-10-11): grades looser, tips less, base untouched ─────────
+console.log('pay:')
+const lineSame = [0.5, 0.77, 1, 1.2, 2].every(r => JSON.stringify(splitPayout(180, r, 1)) === JSON.stringify(splitPayout(180, r, 1, 1, 1)))
+ok(lineSame, 'tipMult 1 is the ordinary line, to the cent')
+const fS = splitPayout(230, 0.5 / FREIGHT_TIME_SLACK, 1, 1, FREIGHT_TIP_MULT), cS = splitPayout(230, 0.5, 1)
+ok(fS.base === cS.base && Math.abs(fS.total - fS.base * (1 + FREIGHT_TIP_MULT)) < 0.011,
+  `freight S pays base × ${1 + FREIGHT_TIP_MULT} ($${fS.total}), courier/haul base × 2 ($${cS.total}) on the same par`)
+const looseT = Object.fromEntries(Object.entries(RANK_THRESHOLDS_DEFAULT).map(([k, v]) => [k, v * FREIGHT_TIME_SLACK]))
+ok(gradeRun(230, 230, looseT).letter === 'B' && gradeRun(230 * 0.88, 230, looseT).letter === 'S'
+  && gradeRun(230 * 1.1, 230, looseT).letter === 'C',
+  'freight letters: par pace is B, 0.88 × par is S, 1.1 × par is still C')
 
 // ── 2. strapPose ─────────────────────────────────────────────────────────────────────────────
 console.log('strapPose:')

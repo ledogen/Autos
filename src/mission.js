@@ -337,6 +337,15 @@ export class MissionSystem {
         // The converse — accepting at 1 a.m. to buy tomorrow's HIGHER tier — is a RATIFIED feature
         // (DESIGN.md: "Nobody authored it; do not 'fix' it").
         if (this._getTerms) this.mission.terms = this._getTerms()
+        // FEAT-96: a job with a time slack (freight) grades on looser letters — every frozen threshold
+        // × the slack, so the result letter and the rank bar both follow. The tip reads the same slack
+        // in economy.js settle().
+        const slack = this.mission.timeSlack
+        if (slack && this.mission.terms?.thresholds) {
+            const t = this.mission.terms.thresholds
+            this.mission.terms = { ...this.mission.terms,
+                thresholds: Object.freeze(Object.fromEntries(Object.keys(t).map(k => [k, t[k] * slack]))) }
+        }
         // FEAT-67: taking the offer OFF THE BOARD is main.js's job, done just before this call (it
         // owns the board and re-checks the offer is still live — a food offer lives ~2 real minutes).
         this._launch({ seat: !this.mission.fromPoi, setSpawn: true, load: !!this.mission.bundles })

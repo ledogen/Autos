@@ -186,7 +186,7 @@ export const THINGS = [
     { id: 'propanePackEmpty', phrase: 'a pallet of empty propane tanks', family: 'freight', massKg: [50, 50],
       pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore', 'gasStation'], load: 'propanePallet' },
     { id: 'softDrinks',   phrase: 'a pallet of soft drinks',  family: 'freight', massKg: [350, 450],
-      pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore', 'foodVendor', 'gasStation'], load: 'softDrinkPallet' },
+      pools: ['generalStore'], to: ['foodVendor', 'gasStation'], load: 'softDrinkPallet' },   // owner, 2026-10-11
     // The two deliberate overloads (owner, 2026-10-10: let them roll) — past the Ranger's ~500–570 kg.
     { id: 'cinderBlocks', phrase: 'a pallet of cinder blocks', family: 'freight', massKg: [785, 785],
       pools: ['generalStore'], to: ['workSite'], load: 'cinderBlockPallet' },
@@ -195,7 +195,7 @@ export const THINGS = [
     { id: 'drumStack',    phrase: 'four 55-gallon drums',     family: 'freight', massKg: [120, 450],
       pools: ['autoShop', 'gasStation'], load: 'drumStack' },
     { id: 'jobBox',       phrase: 'a job box',                family: 'freight', massKg: [150, 250],
-      pools: ANY_GIVER.filter(k => k !== 'workSite'), to: ['workSite'], load: 'jobBox' },
+      pools: ['residence'], to: ['workSite'], load: 'jobBox' },   // owner, 2026-10-11: from home to the site
 ]
 
 // ── Rewards — the named bonus items ─────────────────────────────────────────────────────────
@@ -301,6 +301,21 @@ export const HAUL_PAR_SLACK = 1.1
  * 400 kg pallet gets 1.28. PLACEHOLDER — check against a headless empty-vs-loaded drive.
  */
 export const FREIGHT_PAR_SLACK_PER_KG = 0.0007
+
+/**
+ * Freight is the EASY delivery (owner, 2026-10-11): strapped, it cannot be lost, so it grades
+ * looser and tips less than haul, which can. Both are frozen onto the mission as contract terms.
+ *
+ * FREIGHT_TIME_SLACK — every rank threshold × this at accept, and the tip curve reads the ratio ÷
+ * this: S comes easier (≤ 0.886 × par instead of 0.77) and D comes later (past 1.15 × par instead of
+ * 1.0). Par pace grades B, not C.
+ *
+ * FREIGHT_TIP_MULT — a flat multiplier on the tip only. Base pay is untouched, so a heavy load keeps
+ * its base-pay lead through par × FREIGHT_PAR_SLACK_PER_KG. At 0.5 a freight S pays 1.5 × base,
+ * against 2 × base on haul and courier.
+ */
+export const FREIGHT_TIME_SLACK = 1.15
+export const FREIGHT_TIP_MULT = 0.5
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
 export const EXPIRY_NOISE = 0.3

@@ -244,10 +244,12 @@ export function basePay (par, payTier, payMult = 1) {
  * paid. The subtraction runs in integer cents: in float dollars 7.33 − 5.17 is not 2.16. tip ≥ 0
  * by construction: the line never pays below its floor, and rounding is monotone.
  */
-export function splitPayout (par, ratio, payTier, payMult = 1) {
-    const totalC = Math.round(payoutFor(par, ratio, payTier) * payMult * 100)
-    const baseC  = Math.min(totalC, Math.round(basePay(par, payTier, payMult) * 100))   // min: a non-finite ratio pays 0 for both
-    return { base: baseC / 100, tip: (totalC - baseC) / 100, total: totalC / 100 }
+export function splitPayout (par, ratio, payTier, payMult = 1, tipMult = 1) {
+    const lineC = Math.round(payoutFor(par, ratio, payTier) * payMult * 100)
+    const baseC = Math.min(lineC, Math.round(basePay(par, payTier, payMult) * 100))   // min: a non-finite ratio pays 0 for both
+    // FEAT-96: `tipMult` scales the tip ALONE (freight tips less — data/offers.js FREIGHT_TIP_MULT).
+    const tipC  = Math.round((lineC - baseC) * tipMult)
+    return { base: baseC / 100, tip: tipC / 100, total: (baseC + tipC) / 100 }
 }
 
 /** Rank letters, best first. Index order IS the "or better" order bonusEarned reads. */
@@ -375,7 +377,11 @@ export class EconomySystem {
         // accept with the rest of the terms; a job with no board offer behind it pays the full line.
         const mult = isFinite(mission?.payMult) ? mission.payMult : 1
         // Base + tip, as the cards state it (owner, 2026-09-29). `payout` stays the total.
-        const { base, tip, total: payout } = splitPayout(result.par, result.ratio, t.payTier ?? t.dayTier ?? 1, mult)
+        // FEAT-96: freight's contract terms — the tip reads the ratio ÷ its time slack (the same slack
+        // its letters were loosened by at accept) and is then scaled by its tip multiplier.
+        const slack = isFinite(mission?.timeSlack) ? mission.timeSlack : 1
+        const tipMult = isFinite(mission?.tipMult) ? mission.tipMult : 1
+        const { base, tip, total: payout } = splitPayout(result.par, result.ratio / slack, t.payTier ?? t.dayTier ?? 1, mult, tipMult)
         // FEAT-88 (owner, 2026-10-05): a haul's good deeds are what you DELIVERED, not the letter —
         // a fast run with an empty bed is not a good deed. result.aboard/loaded come from main.js.
         const points = result.loaded ? haulPointsFor(result.aboard / result.loaded) : pointsFor(result.letter)
