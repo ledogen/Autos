@@ -36,7 +36,7 @@
 
 import {
     THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, BONUS_PAY_MULT, GATE_WEIGHTS,
-    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK,
+    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG,
 } from '../data/offers.js'
 import {
     FIRST_NAMES, FEMALE_CHANCE, LAST_NAMES, NICKNAMES, NICKNAME_CHANCE, POI_ADJECTIVES,
@@ -433,7 +433,8 @@ export class OfferBoard {
             family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
             massKg: bundles ? bundles * HAUL_BUNDLE_KG : massKg, bundles,
             // ÷ HAUL_PAR_SLACK: the haul's par is that much longer and pay rides par (data/offers.js).
-            payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1),
+            payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1)
+                * (thing.load ? 1 + FREIGHT_PAY_PER_KG * massKg : 1),   // FEAT-96: freight's weight bonus on pay
             destKind: papers ? null : (thing.to || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise

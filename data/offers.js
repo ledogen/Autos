@@ -315,6 +315,15 @@ export const FREIGHT_PAR_SLACK_PER_KG = 0.0007
  * against 2 × base on haul and courier.
  */
 export const FREIGHT_TIME_SLACK = 1.15
+
+/**
+ * Freight's weight bonus on PAY alone (owner, 2026-10-11): payMult × (1 + this × kg), on top of the
+ * par stretch. Par grows 7 % per 100 kg and is the extra TIME the load costs; this adds 3 % per
+ * 100 kg of money that time does not eat, so pay outgrows time and narrows the per-minute gap to
+ * haul. Haul still wins at the top (a fast run with live bodies in the bed), freight is the reliable
+ * earner. In the card's Base pay too.
+ */
+export const FREIGHT_PAY_PER_KG = 0.0003
 export const FREIGHT_TIP_MULT = 0.5
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
