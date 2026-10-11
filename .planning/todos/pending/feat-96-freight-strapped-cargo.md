@@ -82,9 +82,10 @@ everything FEAT-97 fragile reuses.
   first slice, use models that exist or are already ticketed: drums (ASSET-30, shipped), the
   plastic barrel (ASSET-29, shipped), the pallet (ASSET-27) and the crate (ASSET-28). Suggested
   range is **80–450 kg**. The 2002 Ranger's payload is roughly 500–570 kg, so the top of the range
-  should make the truck feel loaded without overloading it. **One deliberate exception:** a bed of topsoil
-  (ASSET-51, 500–700 kg) is a mild overload, tuned by feel (owner, 2026-10-06). Suspension and tyre
-  upgrades are what carry it, as in items.md §1a's load budget.
+  should make the truck feel loaded without overloading it. **Deliberate exceptions:** a bed of topsoil
+  (ASSET-51, 500–700 kg, tuned by feel once modelled; owner, 2026-10-06), and as built the concrete
+  pallet (670 kg) and cinder blocks (785 kg), which roll anyway (owner, 2026-10-10). Suspension and
+  tyre upgrades are what carry them, as in items.md §1a's load budget.
 - **The full freight list, with its region tiers, is `.planning/story-mode/cargo.md`.** Region gates
   which tier of cargo rolls (owner, 2026-10-06).
 - **Par grows with mass.** Use `par × FREIGHT_PAR_SLACK(m)`, linear in mass. Start from haul's
@@ -145,7 +146,7 @@ produce freight. Its destinations are the general store and mission givers.
   railway ties — "I don't want them to appear in the game until I figure out what we're doing with
   them").
 - **Everything is R1** for now — there is one region.
-- **The overloads roll** (concrete 600–680 kg, cinder blocks 785 kg as built).
+- **The overloads roll** (concrete 670 kg, cinder blocks 785 kg, both fixed as built).
 - **A job-type badge on every card:** a placeholder letter in a box (C courier · Fe fetch ·
   Fr freight · Fg fragile · H haul) until the map / card iconography pass.
 

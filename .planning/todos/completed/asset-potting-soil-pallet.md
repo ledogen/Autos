@@ -33,6 +33,10 @@ colour and no texture. Use around five layers, roughly 20 bags.
 **Second variant: concrete bags.** Use the same bag mesh in a grey recolour, as a shorter stack of
 about 12 bags at 36 kg each, because concrete is denser.
 
+> **As built (2026-10-10/11):** potting soil 18 bags × 18 kg + 20 kg pallet = **344 kg** (jobs roll
+> 300–400). Concrete 18 × 80 lb bags (36 kg) + 20 kg pallet = **670 kg**, fixed — a deliberate
+> overload that rolls (owner, 2026-10-10; cargo.md).
+
 ## Spec
 
 | Field | Value |
@@ -43,7 +47,7 @@ about 12 bags at 36 kg each, because concrete is denser.
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: potting soil 300–400, concrete 350–450` |
+| Collision | box · `mass_kg: potting soil 300–400, concrete 350–450` — **as built 344 / 670** (see above) |
 
 ## Acceptance
 

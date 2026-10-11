@@ -117,30 +117,39 @@ One per region, from the haul yards (FEAT-91).
 
 ## Freight — strapped, durable, mass does the work
 
+**Posted** rows are live jobs: each Load is the job's exact phrase in `data/offers.js` (THINGS,
+`family: 'freight'`), so the dashboard flags any drift between the two. Mass is what a job rolls,
+uniformly in the range; a single number is fixed because the model is (as built). The debug menu's
+"Load Cargo" (`data/freight.js`) uses one value in the range. **In game everything rolls in R1 for
+now** (owner, 2026-10-10) — there is one region; the Region column is the design tier.
+
 | Region | Load | From → to | Asset | Mass (kg) | Note |
 |---|---|---|---|---|---|
-| R1 | mulch | generalStore / farm → any | ASSET-51 (bulk heap, mulch variant) | 150–250 | |
-| R1 | pallet of tomatoes | farm → generalStore / residence | ASSET-56 (tomato variant) | 200–350 | |
-| R1 | pallet of squash | farm → generalStore / residence | ASSET-56 (squash variant) | 200–350 | |
-| R1 | pallet of peppers | farm → generalStore / residence | ASSET-56 (pepper variant) | 200–350 | |
-| R1 | pallet of potting soil | generalStore → any | ASSET-47 | 300–400 | |
-| R1 | steel car rims, a stack of 4 or 8 | autoShop → any | ASSET-53 | 40–100 | |
-| R1 | eight tyres, strapped | autoShop → any | ASSET-61 | 80–100 | |
-| R1 | propane 4-pack on a pallet, full | generalStore / gasStation → any | ASSET-72 (reuses ASSET-05's cylinder) | 90 | owner 2026-10-07; the cab version is a courier thing |
-| R1 | propane 4-pack on a pallet, empties | any → generalStore / gasStation | ASSET-72 | 50 | back to refill |
-| R1 | drum | | ASSET-30 | per FEAT-96 | FEAT-96's first slice, generic |
-| R1 | barrel | | ASSET-29 | per FEAT-96 | FEAT-96's first slice, generic |
-| R1 | crate | | ASSET-28 | per FEAT-96 | FEAT-96's first slice, generic |
-| R1 | pallet | | ASSET-27 | per FEAT-96 | FEAT-96's first slice, generic |
-| R2 | pallet of soft drinks | any → generalStore / foodVendor / gasStation | ASSET-46 | 350–450 | |
-| R2 | sheets of plywood | sawmill → any | ASSET-54 | 220–350 | longer than the bed, rides on the lowered tailgate |
-| R2 | bed full of topsoil | farm → any | ASSET-51 (bulk heap, topsoil variant) | 500–700, tuned by feel | **a mild overload, on purpose**; suspension and tyre upgrades carry it (items.md §1a) |
-| R2 | pallet of cinder blocks | generalStore → workSite | ASSET-55 | 785 as built | **an overload**: the model is 45 blocks (8" CMU, ~17 kg / 38 lb each) on a 20 kg pallet. The ticket specced ~24 blocks (~430 kg); fewer blocks in `freight.py` brings it back under the payload |
-| R2 | pallet of concrete bags | generalStore → workSite | ASSET-47 (concrete variant) | 350–450 | |
-| R2 | railway ties | | ASSET-52 | 300–450 | 2.6 m, rides on the lowered tailgate |
-| R2 | stack of 55-gal drums | autoShop / gasStation → farm / any | ASSET-48 | 120–450 | reuses the ASSET-30 drum |
-| R3 | job box (jobsite tool chest) | any → workSite | ASSET-57 | 150–250 | |
-| R3 | a Persian rug or two | | ASSET-58 | 30–60 per roll | light but valuable; 2.7 m, rides on the lowered tailgate |
+| R1 | a pallet of tomatoes | farm → generalStore / residence | ASSET-56 (tomato variant) | 200–350 | posted |
+| R1 | a pallet of squash | farm → generalStore / residence | ASSET-56 (squash variant) | 200–350 | posted |
+| R1 | a pallet of peppers | farm → generalStore / residence | ASSET-56 (pepper variant) | 200–350 | posted |
+| R1 | a pallet of potting soil | generalStore → any | ASSET-47 | 300–400 | posted; 344 as built (18 bags × 18 kg + 20 kg pallet) |
+| R1 | eight tyres | autoShop → any | ASSET-61 | 80–100 | posted |
+| R1 | a pallet of full propane tanks | generalStore / gasStation → any | ASSET-72 (reuses ASSET-05's cylinder) | 90 | posted; 4 × 17 kg + pallet. The single tank is a courier thing |
+| R1 | a pallet of empty propane tanks | any → generalStore / gasStation | ASSET-72 | 50 | posted, back to refill; any giver but the general store |
+| R1 | mulch | generalStore / farm → any | ASSET-51 (bulk heap, mulch variant) | 150–250 | not posted — no model yet |
+| R1 | steel car rims, a stack of 4 or 8 | autoShop → any | ASSET-53 | 40–100 | not posted — no model yet |
+| R1 | drum, on a pallet | | ASSET-30 on the small pallet | 215 | not posted — no shipper (blank from). Full of oil: 55 gal × 0.88 kg/L + 18 kg drum + pallet |
+| R1 | barrel, on a pallet | | ASSET-29 on the small pallet | 233 | not posted — no shipper. Full of water: 55 gal + 10 kg HDPE + pallet |
+| R1 | crate, on a pallet | | ASSET-28 on the small pallet | 33 small · 70 large | not posted — no shipper. The singles ride palletised (owner, 2026-10-10); the bare pallet is no longer a load |
+| R2 | four 55-gallon drums | autoShop / gasStation → any | ASSET-48 | 120–450 | posted; reuses the ASSET-30 drum, partly filled (a full one is ~190 kg) |
+| R2 | a pallet of soft drinks | generalStore → foodVendor / gasStation | ASSET-46 | 350–450 | posted (route: owner, 2026-10-11) |
+| R2 | a pallet of cinder blocks | generalStore → workSite | ASSET-55 | 785 | posted; **an overload, and it rolls** (owner, 2026-10-10). As built: 45 blocks (8" CMU, ~17 kg each) on a 20 kg pallet |
+| R2 | a pallet of concrete bags | generalStore → workSite | ASSET-47 (concrete variant) | 670 | posted; **an overload, and it rolls** (owner, 2026-10-10). As built: 18 × 80 lb bags (36 kg each) on a 20 kg pallet |
+| R2 | sheets of plywood | sawmill → any | ASSET-54 | 220–350 | not posted — the sawmill does not exist yet. Rides angled over the tailgate |
+| R2 | bed full of topsoil | farm → any | ASSET-51 (bulk heap, topsoil variant) | 500–700, tuned by feel | not posted — no model yet. An overload; tuned by feel once modelled |
+| R2 | railway ties | | ASSET-52 | 300–450 | not posted — no shipper (owner, 2026-10-10: held until it has one). Rides angled over the tailgate |
+| R3 | a job box | residence → workSite | ASSET-57 | 150–250 | posted (route: owner, 2026-10-11 — from home to the site) |
+| R3 | a Persian rug or two | | ASSET-58 | 30–60 per roll | not posted — no model, no shipper. 2.7 m, rides angled over the tailgate |
+
+**How freight pays** (owner, 2026-10-11; numbers in `data/offers.js`): par × (1 + 0.0007 × kg) for
+the time the load costs; pay × (1 + 0.0003 × kg) on top, so pay outgrows time; every rank threshold
+× 1.15 (par pace is a B); the tip × 0.5. Haul wins the fast run; freight is the reliable earner.
 
 ---
 
@@ -180,11 +189,20 @@ HUD number appears.
 1. **A region gates each tier.** R1 is early, R2 is mid, and R3 and beyond is late.
 2. **Steel wheels are car rims**, in a stack of 4 or 8 (ASSET-53).
 3. **Tyres are freight**, not fragile (ASSET-61).
-4. **A bed of topsoil is a mild overload, tuned by feel.** It is the one freight load that is
-   meant to sit over the payload. Suspension and tyre upgrades are what carry it (items.md §1a's
-   load budget).
+4. **Overloads are on purpose.** Topsoil (500–700 kg, tuned by feel once modelled), concrete
+   (670 kg as built) and cinder blocks (785 kg as built) sit over the Ranger's ~500–570 kg payload.
+   Suspension and tyre upgrades are what carry them (items.md §1a's load budget). They roll before
+   those upgrades exist (owner, 2026-10-10).
 5. **Ride smoothness is not a thing.** The tipsy passenger is flavour text only. No courier job is
    scored on how it is driven, only on time vs par, and passengers never render.
+
+## Rulings (owner, 2026-10-10 / 11)
+
+1. **This file decides who posts.** A place posts a load when its row names it in From; "any" is any
+   normal giver.
+2. **A blank From posts nowhere** until the owner names a shipper.
+3. **Everything rolls in R1** while there is one region.
+4. **Freight vs haul** — see "How freight pays" above.
 
 ## Adding cargo
 

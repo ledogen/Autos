@@ -28,6 +28,9 @@ chase camera.
 
 About 24 grey concrete cinder blocks (CMU) stacked in a tight cube on the ASSET-27 pallet, hollow cores visible on the top course.
 
+> **As built (2026-10-10):** 45 blocks in three courses, not ~24, so the load is 45 × ~17 kg + 20 kg
+> pallet = **785 kg**, fixed — a deliberate overload that rolls (owner, 2026-10-10; cargo.md).
+
 ## Spec
 
 | Field | Value |
@@ -38,7 +41,7 @@ About 24 grey concrete cinder blocks (CMU) stacked in a tight cube on the ASSET-
 | Fits the bed | Ranger bed floor ≈ 1.8 m × 1.4 m; the footprint must sit inside it |
 | Origin | base-seated, centred on the footprint |
 | Forward | −Z |
-| Collision | box · `mass_kg: 350–450` |
+| Collision | box · `mass_kg: 350–450` — **as built 785** (see below) |
 
 ## Acceptance
 

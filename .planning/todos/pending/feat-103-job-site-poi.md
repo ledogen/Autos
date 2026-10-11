@@ -16,7 +16,7 @@ Step 6 of **Places and Missions**.
 
 - New siting rule: the job site sits on a road near the region wall (SM-INV-13 — the gate is a
   place). Placeholder marker until ASSET-71.
-- Until SM-4 opens it is an ordinary job place: receives work-site cargo (cones, cinder blocks,
+- Until SM-4 opens it is an ordinary job place: receives work-site cargo (cinder blocks,
   concrete, job box, workers) and posts the foreman's memo.
 - **Behind SM-4, not this ticket:** it hosts the region boss — R1 log drag, R2 the bridge meter
   (courier workers + haul lumber/stone; map hover on the site reveals supply pickups, which sit

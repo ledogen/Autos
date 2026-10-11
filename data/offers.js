@@ -190,7 +190,7 @@ export const THINGS = [
     // The two deliberate overloads (owner, 2026-10-10: let them roll) — past the Ranger's ~500–570 kg.
     { id: 'cinderBlocks', phrase: 'a pallet of cinder blocks', family: 'freight', massKg: [785, 785],
       pools: ['generalStore'], to: ['workSite'], load: 'cinderBlockPallet' },
-    { id: 'concrete',     phrase: 'a pallet of concrete bags', family: 'freight', massKg: [600, 680],
+    { id: 'concrete',     phrase: 'a pallet of concrete bags', family: 'freight', massKg: [670, 670],   // as built
       pools: ['generalStore'], to: ['workSite'], load: 'concretePallet' },
     { id: 'drumStack',    phrase: 'four 55-gallon drums',     family: 'freight', massKg: [120, 450],
       pools: ['autoShop', 'gasStation'], load: 'drumStack' },
