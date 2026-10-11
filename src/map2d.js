@@ -2459,7 +2459,19 @@ export class Map2D {
         // Header: the family in small caps, the offer counter on the right.
         ctx.font = fS
         ctx.fillStyle = '#6a6458'
-        ctx.fillText(c ? c.family.toUpperCase() : 'NO WORK', inL, ty)
+        let hx = inL
+        if (c?.badge) {
+            // The job-type badge (OfferBoard jobBadge): a PLACEHOLDER letter in a box, owner 2026-10-10,
+            // until the card iconography pass.
+            const bw = ctx.measureText(c.badge).width + 8 * k, bh = B.FSS * k + 4 * k
+            ctx.strokeStyle = '#3a352c'; ctx.lineWidth = 1.2 * k
+            ctx.strokeRect(hx, ty - 2 * k, bw, bh)
+            ctx.fillStyle = '#3a352c'
+            ctx.fillText(c.badge, hx + 4 * k, ty)
+            ctx.fillStyle = '#6a6458'
+            hx += bw + 6 * k
+        }
+        ctx.fillText(c ? c.family.toUpperCase() : 'NO WORK', hx, ty)
         if (v.count > 1) {
             // "offer 2 / 3", then the Q and E keys drawn as KEYCAPS — as bare text the counter and
             // the prompt ran together into one string of letters and numbers. The keys sit TUCKED INTO

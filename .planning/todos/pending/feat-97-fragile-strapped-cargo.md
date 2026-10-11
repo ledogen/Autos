@@ -129,6 +129,15 @@ Those are the hardest jobs of the type.
 - **Zero health:** the job fails on the spot and the clean-up button is how it ends. Clean-up
   locks the giver's slot as abandon does (FEAT-96).
 
+## Rulings (owner, 2026-10-10)
+
+- **Ship the whole roster**, not the crate + pelican-case first slice. All 13 named models are in
+  `data/freight.js` (ASSET-39..45, 59..64).
+- **`cargo.md` decides who posts, and a blank "from" posts nowhere** (the FEAT-96 ruling). Most
+  fragile rows are blank today, so the owner still has to name their shippers before they roll.
+- **Everything is R1** for now.
+- `jointForce` is built here, its first user (moved from FEAT-96).
+
 ## Acceptance
 
 - [ ] Per step, the shock read is the weld force ÷ mass with gravity removed, priced per event on

@@ -12,7 +12,8 @@
 //   haul       — a load in the BED, as rigid bodies (FEAT-88). Par pay × the share of the load
 //                still aboard at delivery; the max scales per piece (HAUL_* below)
 //   demolition — smash the props (FEAT-65)                        (red)
-//   freight    — heavy; flat pay by mass × distance, NOT BUILT    (blue)
+//   freight    — a heavy load STRAPPED (welded) in the bed (FEAT-96). Par pay; par, and so pay,
+//                grow with mass (FREIGHT_PAR_SLACK_PER_KG below)   (blue)
 //
 // ── RANK GATES ──────────────────────────────────────────────────────────────────────────────
 // A reward's `gates` lists which offer gates it may appear under: 'C' means "C or better", … 'S'
@@ -30,6 +31,8 @@
 //            back" — drive to a pickup, park there, return to the poster (FEAT-89's fetch shape).
 //   fetchFrom (optional) the pickup classes for a fetch. Defaults to `pools` (where it comes from).
 //   passenger (optional) true when the thing is the poster themselves — the card says "a ride to …"
+//   load     (freight, FEAT-96) the bed load's key in data/freight.js — the model the job straps in.
+//            massKg is then the load's real mass, rolled per offer.
 //   to       (optional, FEAT-100) the POI tags it may be delivered to — a class (`farm`) or a
 //            fixture tag. Absent = generic: any POI or a roadside spot (cargo.md "From → to").
 //            Tagged things only ever end at a matching POI, never roadside.
@@ -163,6 +166,36 @@ export const THINGS = [
       pools: ['autoShop'] },
     { id: 'taillight',     phrase: 'a taillight',            family: 'delivery', massKg: [0.5, 1.5],
       pools: ['autoShop'] },
+
+    // ── Freight (FEAT-96): strapped bed loads. One row per cargo.md Freight row that has a model and
+    // a source (owner, 2026-10-10: cargo.md decides who posts; a BLANK "from" posts nowhere until the
+    // owner rules a shipper — drum, barrel, crate, pallet, railway ties). All R1 for now: there is
+    // one region. "any" is ANY_GIVER, minus a class that is the thing's only destination.
+    { id: 'tomatoes',     phrase: 'a pallet of tomatoes',     family: 'freight', massKg: [200, 350],
+      pools: ['farm'], to: ['generalStore', 'residence'], load: 'producePalletTomatoes' },
+    { id: 'squash',       phrase: 'a pallet of squash',       family: 'freight', massKg: [200, 350],
+      pools: ['farm'], to: ['generalStore', 'residence'], load: 'producePalletSquash' },
+    { id: 'peppers',      phrase: 'a pallet of peppers',      family: 'freight', massKg: [200, 350],
+      pools: ['farm'], to: ['generalStore', 'residence'], load: 'producePalletPeppers' },
+    { id: 'pottingSoil',  phrase: 'a pallet of potting soil', family: 'freight', massKg: [300, 400],
+      pools: ['generalStore'], load: 'pottingSoilPallet' },
+    { id: 'tyres',        phrase: 'eight tyres',              family: 'freight', massKg: [80, 100],
+      pools: ['autoShop'], load: 'tireStack' },
+    { id: 'propanePackFull',  phrase: 'a pallet of full propane tanks',  family: 'freight', massKg: [90, 90],
+      pools: ['generalStore', 'gasStation'], load: 'propanePallet' },
+    { id: 'propanePackEmpty', phrase: 'a pallet of empty propane tanks', family: 'freight', massKg: [50, 50],
+      pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore', 'gasStation'], load: 'propanePallet' },
+    { id: 'softDrinks',   phrase: 'a pallet of soft drinks',  family: 'freight', massKg: [350, 450],
+      pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore', 'foodVendor', 'gasStation'], load: 'softDrinkPallet' },
+    // The two deliberate overloads (owner, 2026-10-10: let them roll) — past the Ranger's ~500–570 kg.
+    { id: 'cinderBlocks', phrase: 'a pallet of cinder blocks', family: 'freight', massKg: [785, 785],
+      pools: ['generalStore'], to: ['workSite'], load: 'cinderBlockPallet' },
+    { id: 'concrete',     phrase: 'a pallet of concrete bags', family: 'freight', massKg: [600, 680],
+      pools: ['generalStore'], to: ['workSite'], load: 'concretePallet' },
+    { id: 'drumStack',    phrase: 'four 55-gallon drums',     family: 'freight', massKg: [120, 450],
+      pools: ['autoShop', 'gasStation'], load: 'drumStack' },
+    { id: 'jobBox',       phrase: 'a job box',                family: 'freight', massKg: [150, 250],
+      pools: ANY_GIVER.filter(k => k !== 'workSite'), to: ['workSite'], load: 'jobBox' },
 ]
 
 // ── Rewards — the named bonus items ─────────────────────────────────────────────────────────
@@ -216,14 +249,14 @@ export const SOURCES = {
     firewoodYard: { slots: 2,      expiryH: 24, families: ['haul'] },
     foodVendor:   { slots: [2, 3], expiryH: 2,  families: ['delivery'] },
     // ── the budget (FEAT-101) ──
-    generalStore:     { cap: 2, expiryH: 24,       families: ['delivery', 'fragile'] },
+    generalStore:     { cap: 2, expiryH: 24,       families: ['delivery', 'fragile', 'freight'] },
     autoShop:         { cap: 2, expiryH: 48,       families: ['delivery', 'freight'] },
     // The gas station posts work too, reversing "some stores are just stores" (2026-09-26).
-    gasStation:       { cap: 2, expiryH: 24,       families: ['delivery'] },
+    gasStation:       { cap: 2, expiryH: 24,       families: ['delivery', 'freight'] },
     workSite:         { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight'] },
-    residence:        { cap: 2, expiryH: [24, 72], families: ['delivery', 'fragile', 'demolition'] },
+    residence:        { cap: 2, expiryH: [24, 72], families: ['delivery', 'fragile', 'demolition', 'freight'] },
     farm:             { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight', 'fragile'] },
-    doctor:           { cap: 2, expiryH: [24, 72], families: ['delivery'] },
+    doctor:           { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight'] },
     strandedMotorist: { cap: 1, expiryH: [24, 72], families: ['delivery'] },
     // FEAT-102: the tackle shop's jobs are fetches of the general-store sundries.
     tackleShop:       { cap: 2, expiryH: 24,       families: ['delivery'] },
@@ -259,6 +292,15 @@ export const HAUL_PAY_PER_BUNDLE = 1 / 10
  * a courier job over that route pays; only the clock it is graded against is longer.
  */
 export const HAUL_PAR_SLACK = 1.1
+
+// ── Freight (FEAT-96) ───────────────────────────────────────────────────────────────────────
+/**
+ * A freight job's par is the route's par × (1 + this × kg). Pay rides par and is NOT divided back
+ * out (unlike haul), so a heavier load pays more by the same factor — the ticket's one knob for
+ * "mass scales both". Haul's precedent: HAUL_PAR_SLACK 1.1 at ~140 kg ≈ +0.07 per 100 kg, so a
+ * 400 kg pallet gets 1.28. PLACEHOLDER — check against a headless empty-vs-loaded drive.
+ */
+export const FREIGHT_PAR_SLACK_PER_KG = 0.0007
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
 export const EXPIRY_NOISE = 0.3

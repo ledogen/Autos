@@ -752,7 +752,7 @@ export class PhysicsEngine {
   /** Counters for the debug HUD / perf harness. */
   counters () {
     const c = _b3.b3World_GetCounters(this._world)
-    return { bodies: c.bodyCount, shapes: c.shapeCount, contacts: c.contactCount, awakeContacts: c.awakeContactCount }
+    return { bodies: c.bodyCount, shapes: c.shapeCount, joints: c.jointCount, contacts: c.contactCount, awakeContacts: c.awakeContactCount }
   }
 
   dispose () {

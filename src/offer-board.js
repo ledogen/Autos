@@ -50,7 +50,7 @@ import { basePay, formatMoney } from './economy.js'
  * the tables (so the card, the colours and the lists are ready) but have no code, so they must
  * simply never roll — not be half-built. Add a family here the day its mission ships.
  */
-export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul'])
+export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul', 'freight'])
 
 // Fixed names for roster types that are NOT sources (and Larry) — they can still be a DESTINATION,
 // and "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors names; a type
@@ -74,6 +74,18 @@ function pickWeighted (u, weights) {
     let x = u * total
     for (const k of keys) { x -= weights[k]; if (x < 0) return k }
     return keys[keys.length - 1]
+}
+
+/**
+ * The job-type badge on a card (owner, 2026-10-10): a PLACEHOLDER letter in a box until the map /
+ * card iconography pass. Three types start with F, so those take two letters. Larry's route has none.
+ */
+export function jobBadge (sp) {
+    if (sp.family === 'papers') return null
+    if (sp.family === 'haul') return 'H'
+    if (sp.family === 'freight') return 'Fr'
+    if (sp.family === 'fragile') return 'Fg'
+    return sp.shape === 'fetch' ? 'Fe' : 'C'
 }
 
 /** "S only" / "A or better" — how a card states a rank gate. */
@@ -364,7 +376,7 @@ export class OfferBoard {
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate}|null, payMult,
      *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null,
-     *   passenger: boolean, shape: 'courier'|'fetch', from: string[]|null }
+     *   passenger: boolean, shape: 'courier'|'fetch', from: string[]|null, load: string|null }
      * bundles is the haul load's piece count (FEAT-88), null for every other family. It is drawn on
      * its OWN `bundles` stream: one more draw on `spec` would shift the destination and place name
      * of every existing offer on every seed.
@@ -424,6 +436,7 @@ export class OfferBoard {
             payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1),
             destKind: papers ? null : (thing.to || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
+            load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
         })
     }
 
@@ -650,6 +663,7 @@ export class OfferBoard {
         if (isFinite(expiresInH)) terms.push(`expires in ${formatGameDuration(expiresInH)}`)
         return {
             family: sp.family,
+            badge: jobBadge(sp),
             // The giver's portrait. PLACEHOLDER art today; `sex` is the field that will pick the
             // portrait pool (ruled 2026-09-26: sex is rolled first so name and picture agree).
             portrait: sp.person ? { sex: sp.person.sex, name: sp.person.first } : null,

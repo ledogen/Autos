@@ -136,24 +136,45 @@ produce freight. Its destinations are the general store and mission givers.
   standard 14 × 8 m pad, so the real farm needs a bigger pad, the same deferral the sawmill and
   quarry have (FEAT-91).
 
+## Rulings (owner, 2026-10-10)
+
+- **`cargo.md` decides who posts.** A place posts freight when a Freight row names it as the
+  source; "any" is `ANY_GIVER` (minus a class that is the thing's only destination). This
+  supersedes the giver list above.
+- **A blank "from" posts nowhere** until the owner rules a shipper (drum, barrel, crate, pallet,
+  railway ties — "I don't want them to appear in the game until I figure out what we're doing with
+  them").
+- **Everything is R1** for now — there is one region.
+- **The overloads roll** (concrete 600–680 kg, cinder blocks 785 kg as built).
+- **A job-type badge on every card:** a placeholder letter in a box (C courier · Fe fetch ·
+  Fr freight · Fg fragile · H haul) until the map / card iconography pass.
+
+## Progress (2026-10-10)
+
+Built: `createWeldJoint` and a joint count in `counters()`; `strapPose` (pure, `src/debris.js`);
+the strap loader in `main.js` (also the debug menu's "Load Cargo"); 12 freight things in
+`data/offers.js` with a `load` key into `data/freight.js`; `FREIGHT_PAR_SLACK_PER_KG` 0.0007 on par,
+pay riding it; the load strapped at accept and removed when the job ends; "clean up cargo";
+`test/freight-strap.mjs`. Booted in the browser with no errors and the debug loader spawning a load;
+a full accept → deliver run in story mode has NOT been driven yet.
+
 ## Acceptance
 
-- [ ] `physics-engine.js` gains `createWeldJoint` and `jointForce`. No engine type leaks past the
-      seam (grep check).
-- [ ] Accepting a freight offer puts the load in the bed, already welded. A headless gate drives a
-      rough scripted section and asserts that the body's bed-local pose drifts less than a few mm.
-- [ ] Mass is real: the same gate asserts that the rear-axle static load with the cargo welded
-      matches the same body resting loose in the bed, within tolerance.
-- [ ] Par and pay scale with mass through `FREIGHT_PAR_SLACK`, and the gate's empty-versus-loaded
-      drive time is recorded beside the constant.
-- [ ] "Clean up cargo" replaces "abandon job" on a strapped job. It removes the load, advances the
-      clock exactly 1 h and cancels the job, locking the giver's slot as abandon does.
-- [ ] `autoShop`, `generalStore` and `residence` post freight. A `farm` POI exists (placeholder
-      model: the produce stall) and posts produce freight bound only for a general store or a
-      mission giver.
-- [ ] After settle, clean-up or run end, the body count and joint count are back to baseline.
-- [ ] Same seed and same offer give the same spawn pose (SM-INV-12).
-- [ ] No number describing the cargo on the HUD (SM-INV-10).
+- [~] `physics-engine.js` gains `createWeldJoint` — done. `jointForce` moves to FEAT-97, its first
+      user (no dead code). No engine type leaks past the seam.
+- [x] Accepting a freight offer puts the load in the bed, already welded. `freight-strap.mjs`: 400 kg
+      drifts 2.5 mm over a rough road at 15 m/s (< 5).
+- [x] Mass is real: welded 400 kg squats the rear struts within 0.2 mm of the same body loose.
+- [~] Par and pay scale with mass through `FREIGHT_PAR_SLACK_PER_KG` — done. The empty-versus-loaded
+      drive time is NOT recorded yet; the constant is still haul's extrapolation.
+- [x] "Clean up cargo" replaces "abandon job" on a strapped job: +1 h on the day clock, then the
+      ordinary cancel (slot lock included).
+- [x] Givers — superseded by the 2026-10-10 ruling (`cargo.md` decides). The farm POI exists (FEAT-105).
+- [x] After settle, clean-up or run end the load is removed with its weld; the gate pins the body and
+      joint counts back to baseline.
+- [x] Same seed and same offer give the same spawn pose: the offer spec is seeded and `strapPose` is pure.
+- [x] No number describing the cargo on the HUD (SM-INV-10). The card's terms show the weight, as on
+      every job.
 
 ## Related code
 

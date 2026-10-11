@@ -110,6 +110,26 @@ export function bedDropPoints (n, bed, key) {
 }
 
 /**
+ * Where a STRAPPED load sits (FEAT-96) — the body-local centre of its collider. PURE and
+ * DETERMINISTIC (SM-INV-12): the same load in the same bed always lands in the same place.
+ *
+ * Centred, 2 cm off the front wall, flush on the rib crests (floorY) — the weld holds it there and
+ * joined bodies never collide, so a settling gap would float it for the whole drive. A load wider
+ * than the gap between the wheelhouses rests on their tops instead, as in a real Ranger. That width
+ * is the STRAP-FREE one (the registry's collision size): every strapped model's straps run out to
+ * the tie-downs at x = ±0.70, so its mesh reads 1.40 m wide.
+ *
+ * @param {object} bed - open-bed spec.
+ * @param {{x,y,z}} half - the collider's half extents [m] (DebrisSystem.halfExtents).
+ * @param {number} [loadHalfW=half.x] - the load's own half width, straps excluded [m].
+ * @returns {{x:number, y:number, z:number}}
+ */
+export function strapPose (bed, half, loadHalfW = half.x) {
+  const floor = loadHalfW > bed.wheelhouseHalfW ? bed.wheelhouseY : bed.floorY
+  return { x: 0, y: floor + half.y, z: bed.frontZ + half.z + 0.02 }
+}
+
+/**
  * drum-closed's chime radius [m] — the widest ring, which is what a stacked drum actually rests
  * on. Same 0.290 the density note above derives the hull volume from; kept as a named export so
  * the headless gate lays out its cylinders on the SAME number rather than a copy that can drift.
