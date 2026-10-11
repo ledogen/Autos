@@ -119,8 +119,6 @@ One per region, from the haul yards (FEAT-91).
 
 | Region | Load | From → to | Asset | Mass (kg) | Note |
 |---|---|---|---|---|---|
-| R1 | traffic cones | autoShop → workSite | ASSET-49 | 40–80 | |
-| R1 | water carboys | generalStore → any | ASSET-50 | 80–90 | |
 | R1 | mulch | generalStore / farm → any | ASSET-51 (bulk heap, mulch variant) | 150–250 | |
 | R1 | pallet of tomatoes | farm → generalStore / residence | ASSET-56 (tomato variant) | 200–350 | |
 | R1 | pallet of squash | farm → generalStore / residence | ASSET-56 (squash variant) | 200–350 | |
@@ -137,7 +135,7 @@ One per region, from the haul yards (FEAT-91).
 | R2 | pallet of soft drinks | any → generalStore / foodVendor / gasStation | ASSET-46 | 350–450 | |
 | R2 | sheets of plywood | sawmill → any | ASSET-54 | 220–350 | longer than the bed, rides on the lowered tailgate |
 | R2 | bed full of topsoil | farm → any | ASSET-51 (bulk heap, topsoil variant) | 500–700, tuned by feel | **a mild overload, on purpose**; suspension and tyre upgrades carry it (items.md §1a) |
-| R2 | pallet of cinder blocks | generalStore → workSite | ASSET-55 | 350–450 | |
+| R2 | pallet of cinder blocks | generalStore → workSite | ASSET-55 | 785 as built | **an overload**: the model is 45 blocks (8" CMU, ~17 kg / 38 lb each) on a 20 kg pallet. The ticket specced ~24 blocks (~430 kg); fewer blocks in `freight.py` brings it back under the payload |
 | R2 | pallet of concrete bags | generalStore → workSite | ASSET-47 (concrete variant) | 350–450 | |
 | R2 | railway ties | | ASSET-52 | 300–450 | 2.6 m, rides on the lowered tailgate |
 | R2 | stack of 55-gal drums | autoShop / gasStation → farm / any | ASSET-48 | 120–450 | reuses the ASSET-30 drum |
