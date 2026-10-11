@@ -268,31 +268,6 @@ export class RoadMeshSystem {
         // Linear-space: (0.15, 0.15, 0.17) — dark cool grey.
         const RC = 0.15, GC = 0.15, BC = 0.17
 
-        // Plan 09-24 — Dirt shoulder colour for skirt verts (SURF-05 / D-01 / D-08).
-        // Derived from params.roadDirtColor hex int via bit-shifts → 0–1 linear space.
-        // Matches the linear-space convention used by RC/GC/BC above.
-        const dirtHex = params.roadDirtColor ?? 0x6b5a3e
-        const dirtR = ((dirtHex >> 16) & 0xff) / 255
-        const dirtG = ((dirtHex >>  8) & 0xff) / 255
-        const dirtB =  (dirtHex        & 0xff) / 255
-        // BUG-74: the skirt follows the terrain's cut fade — where the road sits IN the hill the
-        // 0.15 m face under the asphalt edge is the same broken rock as the ballast bench beside it
-        // (terrainCutoutColor), not a tan dirt line against it. Same centred depth fade as
-        // terrain.js _writeChunkVertexColors: delta = dirt grade − raw hill, cutness = smooth(−F, F, −delta).
-        const cutHex = params.terrainCutoutColor ?? 0x757066
-        const cutR = ((cutHex >> 16) & 0xff) / 255
-        const cutG = ((cutHex >>  8) & 0xff) / 255
-        const cutB =  (cutHex        & 0xff) / 255
-        const cutFade  = params.roadCutRockFade ?? 2.0
-        const clearanceMargin = params.roadClearanceMargin ?? 0.25
-        const skirtCutness = (edgeX, edgeY, edgeZ) => {
-            const raw = this._terrainRef ? this._terrainRef(edgeX, edgeZ) : NaN
-            if (!Number.isFinite(raw)) return 0                        // headless stub → plain dirt skirt
-            const delta = (edgeY - clearanceMargin) - raw              // + fill, − cut
-            const t = Math.max(0, Math.min(1, (-delta + cutFade) / (2 * cutFade)))
-            return t * t * (3 - 2 * t)
-        }
-
         // 09-32 SEAM FIX: map section index → run-arc by the polyline's CUMULATIVE XZ arc-length,
         // not uniform u. `points[]` come from spline.getPointAt(u), which is parameterised by 3D
         // arc-length — that diverges from the run-arc (XZ) metric wherever the road climbs or the
@@ -443,11 +418,7 @@ export class RoadMeshSystem {
             positions[leftSkirtBase    ] = leftEdgeVx
             positions[leftSkirtBase + 1] = leftEdgeVy - skirtDepth
             positions[leftSkirtBase + 2] = leftEdgeVz
-            // BUG-74: dirt → cutout rock by the cut fade at this edge (see skirtCutness above).
-            const cutL = skirtCutness(leftEdgeVx, leftEdgeVy, leftEdgeVz)
-            colors[leftSkirtBase    ] = dirtR + (cutR - dirtR) * cutL
-            colors[leftSkirtBase + 1] = dirtG + (cutG - dirtG) * cutL
-            colors[leftSkirtBase + 2] = dirtB + (cutB - dirtB) * cutL
+            this._skirtColor(leftEdgeVx, leftEdgeVy, leftEdgeVz, params, colors, leftSkirtBase)
             // BUG-28: markEnable=0 — the dirt skirt is the vertical shoulder wall; no stripes.
             marks[(i * vertsPerSection + (CROSS_SEGS + 1)) * 4 + 3] = 0
 
@@ -455,10 +426,7 @@ export class RoadMeshSystem {
             positions[rightSkirtBase    ] = rightEdgeVx
             positions[rightSkirtBase + 1] = rightEdgeVy - skirtDepth
             positions[rightSkirtBase + 2] = rightEdgeVz
-            const cutRt = skirtCutness(rightEdgeVx, rightEdgeVy, rightEdgeVz)
-            colors[rightSkirtBase    ] = dirtR + (cutR - dirtR) * cutRt
-            colors[rightSkirtBase + 1] = dirtG + (cutG - dirtG) * cutRt
-            colors[rightSkirtBase + 2] = dirtB + (cutB - dirtB) * cutRt
+            this._skirtColor(rightEdgeVx, rightEdgeVy, rightEdgeVz, params, colors, rightSkirtBase)
             marks[(i * vertsPerSection + (CROSS_SEGS + 2)) * 4 + 3] = 0
         }
 
@@ -523,6 +491,89 @@ export class RoadMeshSystem {
         // so visual normals and physics normals both reflect the crowned/cambered surface.
         geo.computeVertexNormals()
 
+        return geo
+    }
+
+    /**
+     * Skirt-bottom vertex colour, written to out[o..o+2]. Dirt shoulder (SURF-05 / Plan 09-24,
+     * params.roadDirtColor, linear like the asphalt RC/GC/BC). BUG-74: the skirt follows the
+     * terrain's cut fade — where the road sits IN the hill the face under the asphalt edge is the
+     * same broken rock as the ballast bench beside it (terrainCutoutColor), not a tan dirt line
+     * against it. Same centred depth fade as terrain.js _writeChunkVertexColors: delta = dirt grade
+     * − raw hill, cutness = smooth(−F, F, −delta). Shared by the ribbon and the junction skirts.
+     */
+    _skirtColor(edgeX, edgeY, edgeZ, params, out, o) {
+        const dirtHex = params.roadDirtColor ?? 0x6b5a3e
+        const cutHex  = params.terrainCutoutColor ?? 0x757066
+        const cutFade = params.roadCutRockFade ?? 2.0
+        const raw = this._terrainRef ? this._terrainRef(edgeX, edgeZ) : NaN
+        let k = 0                                                       // headless stub → plain dirt skirt
+        if (Number.isFinite(raw)) {
+            const delta = (edgeY - (params.roadClearanceMargin ?? 0.25)) - raw   // + fill, − cut
+            const t = Math.max(0, Math.min(1, (-delta + cutFade) / (2 * cutFade)))
+            k = t * t * (3 - 2 * t)
+        }
+        for (let c = 0; c < 3; c++) {
+            const sh = 16 - 8 * c
+            const d = ((dirtHex >> sh) & 0xff) / 255, r = ((cutHex >> sh) & 0xff) / 255
+            out[o + c] = d + (r - d) * k
+        }
+    }
+
+    /**
+     * Junction skirt: the ribbon's folded-over edge (sweepRibbon's skirt quads) carried round a pad
+     * or deg-2 connector, so the junction reads as the same solid asphalt slab as the road. Walks the
+     * up-facing mesh's BOUNDARY edges (used by exactly one triangle) — the skirt top is the pad's own
+     * edge vertices, so it welds by construction, refinement midpoints included — and drops each one
+     * roadSkirtDepth into a dirt/rock wall, wound outward exactly like the ribbon skirt. `skip(a, b)`
+     * drops the mouth edges: they sit under the ribbon end they weld to, and the junction material's
+     * polygon offset would pull a wall there up through the asphalt. Walls are steep, so the pad's
+     * colliderSurfaceOnly filter keeps them out of physics like the ribbon skirt.
+     */
+    _withJunctionSkirt(positions, colors, marks, tris, params, skip) {
+        const depth = params.roadSkirtDepth ?? 0.4
+        const V = positions.length / 3
+        const count = new Map()
+        for (let t = 0; t < tris.length; t += 3) {
+            for (let e = 0; e < 3; e++) {
+                const a = tris[t + e], b = tris[t + (e + 1) % 3]
+                const k = a < b ? a * V + b : b * V + a
+                count.set(k, (count.get(k) || 0) + 1)
+            }
+        }
+        const edges = []
+        for (let t = 0; t < tris.length; t += 3) {
+            for (let e = 0; e < 3; e++) {
+                const a = tris[t + e], b = tris[t + (e + 1) % 3]
+                if (count.get(a < b ? a * V + b : b * V + a) === 1 && !skip(a, b)) edges.push(a, b)
+            }
+        }
+        const bottom = new Map()            // top vertex → its dropped twin
+        for (const v of edges) if (!bottom.has(v)) bottom.set(v, V + bottom.size)
+        const nV = V + bottom.size
+        const pos = new Float32Array(nV * 3); pos.set(positions)
+        const col = new Float32Array(nV * 3); col.set(colors)
+        const mrk = new Float32Array(nV * 4); mrk.set(marks)
+        for (const [v, w] of bottom) {
+            pos[w * 3] = positions[v * 3]; pos[w * 3 + 1] = positions[v * 3 + 1] - depth; pos[w * 3 + 2] = positions[v * 3 + 2]
+            this._skirtColor(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2], params, col, w * 3)
+            mrk[w * 4] = marks[v * 4]                        // markEnable (w) stays 0 — no stripes on the wall
+        }
+        const out = new Uint32Array(tris.length + edges.length * 3)
+        out.set(tris)
+        let ii = tris.length
+        for (let k = 0; k < edges.length; k += 2) {
+            // Directed a→b as wound in the up-facing pad tri → (a, a', b) + (b, a', b') faces outward.
+            const a = edges[k], b = edges[k + 1], a2 = bottom.get(a), b2 = bottom.get(b)
+            out[ii++] = a; out[ii++] = a2; out[ii++] = b
+            out[ii++] = b; out[ii++] = a2; out[ii++] = b2
+        }
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+        geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
+        geo.setAttribute('aMark',    new THREE.BufferAttribute(mrk, 4))
+        geo.setIndex(new THREE.BufferAttribute(out, 1))
+        geo.computeVertexNormals()
         return geo
     }
 
@@ -1313,7 +1364,13 @@ export class RoadMeshSystem {
         const ring = node.ring
         if (!ring || ring.length < 3) return null
 
-        return this._buildPadGeometry(ring, samplePadY)
+        // Mouth chords (weld / hull rungs place them exactly here) get no skirt — the ribbon end covers them.
+        const m = this._road._junctionMouths ? this._road._junctionMouths(node) : null
+        const onMouth = (p) => m && m.legs.some(l => {
+            const ux = p.x - l.cx, uz = p.z - l.cz
+            return Math.abs(ux * l.dx + uz * l.dz) < 0.05 && Math.abs(ux * l.dz - uz * l.dx) <= m.halfWidth + 0.05
+        })
+        return this._buildPadGeometry(ring, samplePadY, params, onMouth)
     }
 
     /**
@@ -1443,13 +1500,9 @@ export class RoadMeshSystem {
         }
         if (area2 > 0) for (let k = 0; k < tris.length; k += 3) { const tmp = tris[k + 1]; tris[k + 1] = tris[k + 2]; tris[k + 2] = tmp }
 
-        const geo = new THREE.BufferGeometry()
-        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-        geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
-        geo.setAttribute('aMark',    new THREE.BufferAttribute(marks,     4))
-        geo.setIndex(new THREE.BufferAttribute(new Uint32Array(tris), 1))
-        geo.computeVertexNormals()
-        return geo
+        // Skirt both sides; the two end rungs are the mouths (an edge inside one row is a rung).
+        return this._withJunctionSkirt(positions, colors, marks, tris, params,
+            (a, b) => Math.floor(a / COLS) === Math.floor(b / COLS))
     }
 
     /**
@@ -1463,9 +1516,11 @@ export class RoadMeshSystem {
      *
      * @param {Array<{x:number,z:number}>} ring — simple XZ boundary (open)
      * @param {(x:number,z:number)=>number} sampleY
+     * @param {object} params — RANGER_PARAMS (skirt depth/colour)
+     * @param {(p:{x:number,z:number})=>boolean} onMouth — boundary points on a leg mouth chord (no skirt there)
      * @returns {THREE.BufferGeometry|null}
      */
-    _buildPadGeometry(ring, sampleY) {
+    _buildPadGeometry(ring, sampleY, params, onMouth) {
         const tri0 = earClip(ring)
         if (!tri0 || tri0.length < 3) return null
         let tris = Array.from(tri0)
@@ -1547,14 +1602,8 @@ export class RoadMeshSystem {
             positions[v * 3 + 2] = verts[v].z
             colors[v * 3] = 0.15; colors[v * 3 + 1] = 0.15; colors[v * 3 + 2] = 0.17
         }
-        const geo = new THREE.BufferGeometry()
-        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-        geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
         // BUG-28: pads share the road shader (reads aMark). All-zero aMark (feather 0) → no stripes.
-        geo.setAttribute('aMark',    new THREE.BufferAttribute(new Float32Array(V * 4), 4))
-        geo.setIndex(new THREE.BufferAttribute(new Uint32Array(tris), 1))
-        geo.computeVertexNormals()
-
-        return geo
+        return this._withJunctionSkirt(positions, colors, new Float32Array(V * 4), tris, params,
+            (a, b) => onMouth(verts[a]) && onMouth(verts[b]))
     }
 }
