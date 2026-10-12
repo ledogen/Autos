@@ -7,6 +7,11 @@ DESIGN.md mechanics-reference section once the save model is settled.*
 
 ## The target [RATIFIED 2026-08-02 — supersedes the 2026-07-29 and 2026-08-01 figures]
 
+> **Superseded in part 2026-10-12:** **three regions on concentric rings, ~12–14 days per run.** The
+> clock, the day cost and the per-day arithmetic below stand; the region count, "growing with depth",
+> the 20-day total and the per-region point/day budgets are owed a re-cut. DESIGN.md "Run shape and
+> saving" carries the current figures; provenance `design-amendments-2026-10-12.md`.
+
 - **6 regions**, starting at the current 2500 m radius and **growing with depth on a sparser grid**
   (below) — a region is a progression *chapter*; the play space is cumulative and later missions may
   span regions.

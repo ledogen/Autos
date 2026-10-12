@@ -217,6 +217,24 @@ radius you enter — the placeholder cube and the ring both go when that lands.
 was a START count, not a par clock. Removing it moves away from rendered timers, not toward them.
 Implementation: `src/mission.js` (`'staging'`, `START_ZONE_R`), `HANDOFF-poi-mission-start.md`.
 
+**Ratification pass 2026-10-12** (project owner): **progression re-framed — finishable if you drive
+safe, and the ramp lives on the driving side.** (1) **Finishable if safe:** consistent par with no
+crashes must fund gas, repairs and the upgrades later regions demand; a risky early mission may hand
+large run-layer power ("send it"). (2) **Three regions, three bosses, ~12–14 days** — supersedes the
+six-region / 20-day shape; the authored point and day budgets are **owed a re-cut** (open question 2).
+(3) **Concentric-ring layout:** terrain intensity rises toward the origin; R1 a ~30° sector on the
+outer gentle ring, R2 an equal-area parallel-sided band one ring in, R3 the centre; today's steepness
+IS region 2; road character varies by ring with region 2 keeping the ratified defaults (not a QUAL-29
+retune). R3's jobs often send you back out to R2. Radii open (question 10). (4) **The bridge site is
+the first boss; the log drag is demoted** to a free-roam toy / scenario. (5) **Story-mode difficulty
+settings:** lives, free tows, assists, and inflation split into damage / gas / upgrade-and-item knobs.
+A lost life = reset to road, cargo lost, vehicle condition floored at 25%; respawn stays dev /
+free-roam only (SM-INV-1, SM-INV-8 amended with a lives clause). (6) **Armor scales the fatal speed
+by the hit panel's condition**, ~60 mph bare to ~100 mph full, dropping with each hit — replaces the
+2026-08-23 "death = total armor loss" coincidence (question 8 resolved). (7) Fences: Ranger-only
+alpha; multiplayer kept open; traffic post-alpha and physics-simulated if ever. Provenance and the
+owner's words: [design-amendments-2026-10-12.md](design-amendments-2026-10-12.md).
+
 **Companion design notes** (downstream of this bible; where they disagree with it, *it* wins):
 [missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag and bridge-site main missions),
 [run-shape.md](run-shape.md) (run length, day length, saving), [opening.md](opening.md) (the firing,
@@ -224,7 +242,8 @@ the uncle), [items.md](items.md) (the items catalog — consumables, tools, part
 asset burn-down surface), [spirits-and-pacts.md](spirits-and-pacts.md) (the spirit cast —
 *deferred; carries four flagged conflicts with rules ratified since, see its header*),
 [IDEAS.md](IDEAS.md) (the scratchpad), and
-[design-amendments-2026-07-29.md](design-amendments-2026-07-29.md) (provenance for the pass above).
+[design-amendments-2026-07-29.md](design-amendments-2026-07-29.md) and
+[design-amendments-2026-10-12.md](design-amendments-2026-10-12.md) (provenance for the passes above).
 
 ---
 
@@ -252,7 +271,10 @@ Story mode does not replace what exists — it **forks** it. A **main menu** sel
   out in single runs. **Debug tooling is locked out**; sliders are fixed. World-parameter
   manipulation for story purposes (you wake up one morning and all the trees are gone) is
   driven by hard tooling / baked parameter states, not realtime slider access. Regional
-  difficulty likewise comes from baked per-region parameters.
+  difficulty likewise comes from baked per-region parameters. **Difficulty settings [RATIFIED
+  2026-10-12]:** lives (SM-INV-1 lives clause), free tows, assists, and inflation as **three** knobs —
+  damage scaling, gas scaling, upgrade/other item costs. The default is none of them: "the way the
+  game was meant to be played." A forgiving preset turns them on for the average gamer.
 - **One-off scenarios** — self-contained set pieces (Dodge the Rocks, Escape the Police,
   etc.), each reusing the same engine with a bespoke frame.
 
@@ -364,7 +386,12 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
 
 - **SM-INV-1 — Death is crash or breakdown only.** No other fail states. Dozing is not a
   fail state; it hands a mountain road to a driver with their eyes shut and lets the
-  physics decide. [RATIFIED]
+  physics decide. [RATIFIED; lives clause 2026-10-12]
+  > **Lives clause [RATIFIED 2026-10-12].** A story-mode *difficulty setting* may grant lives. With a
+  > life in hand, a fatal crash or unrecoverable breakdown costs the life instead of the run: the
+  > truck is reset to the road, the cargo is lost, and vehicle condition is **floored at 25%** (a
+  > healthier truck keeps what it has). Out of lives, death is exactly as above. The default mode
+  > has no lives. **Respawn is a development / free-roam tool only** and never exists in story mode.
 - **SM-INV-2 — Par never scales with the car.** Fixed reference friction, road geometry
   only. If a better build raises par, every upgrade quietly hands back its own reward and
   the flywheel stalls. A better car raises *payout*, not lowers *risk* — the player drives
@@ -595,7 +622,9 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   the car — **and, as of 2026-07-29, not the world and not XP.** What persists is **player
   literacy** (reading the truck, reading the weirdness) and **the garage** (unlocked starting
   vehicles and story keys). A returning player isn't stronger, they're *fluent*.
-  [RATIFIED premise; scope narrowed 2026-07-29]
+  [RATIFIED premise; scope narrowed 2026-07-29] *(A lost **life** under the SM-INV-1 lives clause is
+  not a death: the run, money, parts and clearance all persist; only position, cargo and condition
+  above 25% are touched. 2026-10-12.)*
   > Struck 2026-07-29: *"World state (permanent unlocks, generator parameter states) persists."*
   > Permanent unlocks persist as **garage entries, not as terrain.**
 
@@ -1040,8 +1069,12 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   economically run-ending choice, a genuine last resort — so the player is forced to weigh limping vs.
   paying. Can't afford it → automatic run-end.
 - **Fatal-crash threshold:** **Δv measured off the vehicle** — an impact's severity is the truck's own
-  velocity change across the collision, and 60 mph equivalent is fatal. This is the **crash** death —
-  SM-INV-1 is unchanged, no new fail state.
+  velocity change across the collision, and ~~60 mph equivalent is fatal~~ **the fatal speed scales
+  with the hit panel's armor condition at impact [RATIFIED 2026-10-12]: ~60 mph with no armor, ~100
+  mph at full, continuous in condition, and each landed hit lowers the panel so the next ceiling
+  drops with it.** (Shipped `fatalMph: 80` is the single-number predecessor; the 2026-08-23 "death =
+  total armor loss" coincidence is superseded.) This is the **crash** death — SM-INV-1 is unchanged,
+  no new fail state.
   > The Δv-over-Δt route was written here as the *fallback*; it is now the primary, because the
   > contact-impulse route it was a fallback to is what failed. A solver's accumulated normal impulse
   > is not net momentum transfer — it includes the impulses spent pushing penetration back out — and
@@ -1208,10 +1241,15 @@ repetition. Full model and the cast: `spirits-and-pacts.md`.
 
 Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
 
-- **6 regions**, region 1 at 2500 m (~12 min to cross) and **growing with depth on a sparser grid** ·
+- ~~**6 regions**, region 1 at 2500 m (~12 min to cross) and **growing with depth on a sparser grid**~~
+  **THREE regions, three bosses, laid out on concentric rings [RATIFIED 2026-10-12]** — terrain
+  intensity rises toward the origin; region 1 a ~30° sector on the outer gentle ring, region 2 an
+  equal-area parallel-sided band one ring in, region 3 the centre disc; today's steepness IS region 2.
+  Radii not yet ratified (open question 10; sketch in `IDEAS.md`) ·
   **6 hours** to beat · **24-minute sky cycle** = **16 waking h + 8 h sleep** ·
-  **~18 real minutes per day** · **20 days per run** [region count 2026-08-01; the clock, the day cost,
-  days-per-run and region growth all 2026-08-02]. The full trail chain must be completable
+  **~18 real minutes per day** · ~~**20 days per run**~~ **~12–14 days per run** [2026-10-12; was 20 —
+  region count 2026-08-01; the clock, the day cost, days-per-run and region growth all 2026-08-02].
+  The per-region point and day budgets below are **owed a re-cut** for three regions. The full trail chain must be completable
   in **one run** (SM-INV-7), since clearance is run-layer and resets on death — so region count is
   bounded by what one surviving run can reopen. That is a hard content constraint.
 
@@ -1480,8 +1518,13 @@ escalate rather than assuming the pane is licensed for it.
    unit is **mission points**, not XP (SM-INV-14): 1 for a B or better, ½ for a C, 0 for a D. There
    is no curve — per-region counts are **authored** (**6·6·6·4·3·2 = 27** over six regions, against a
    day budget of 4·4·4·3·3·2; *was 5·4·4·3·3·2 until 2026-08-02*). Regions
-   are **discrete macro tiles**, as FEAT-28 already assumed. Residual: whether the log drag counts
-   toward its own region's total or sits on top of it.
+   are **discrete macro tiles**, as FEAT-28 already assumed. ~~Residual: whether the log drag counts
+   toward its own region's total or sits on top of it.~~ **Reopened 2026-10-12:** the run is now
+   **three regions / ~12–14 days**, so the per-region point counts and day budget are **owed a
+   re-cut** by the owner; the log-drag residual is moot (it is no longer a main mission).
+10. **Ring radii** (2026-10-12). Centre-disc radius, ring depth and region 1's angle for the concentric
+   layout; region 2's width follows from equal area. Owner's live sketch sat at 1.5 km / 1.8 km / 50°.
+   Not a ticket until ruled.
 3. ~~Whether region unlocks persist across runs.~~ **RESOLVED 2026-07-29 — they do not.** Trail
    clearance and region access are **run-layer**: logs stay cleared for the current run, death puts
    them back. Persistent map access would be *floor* and fails SM-INV-9's litmus test outright —
@@ -1518,8 +1561,9 @@ escalate rather than assuming the pane is licensed for it.
    ~15 ms, so an integral barely saw it). The gasket metric is still a proposal, and still
    unimplemented. **Two new SM-3 questions join this item**: whether the **air filter** is dropped,
    deferred or restored (it has a whole paragraph above but is not in the ratified 26-track list),
-   and whether **death and total armor loss should be the same impact again** — they were both 60 mph
-   by design until armor was re-anchored to saturate at 80.
+   and ~~whether **death and total armor loss should be the same impact again**~~ **RESOLVED
+   2026-10-12: no — the fatal speed scales with the hit panel's armor condition, ~60 → ~100 mph**
+   (see "Death & the tow decision").
    Provenance: `design-amendments-2026-08-23-sm3.md` §4, §5, §6.
 9. **Forced progression: what pushes the player out of the easy early zones?** (owner, 2026-07-19,
    UNDECIDED — two live options, not mutually exclusive.) **Status 2026-07-29: (A) is the operative

@@ -19,7 +19,8 @@ current and wins.** `design-amendments-2026-07-29.md` is a historical provenance
 | Restraint is graded, and zero health fails the job (§3, 2026-10-06) | — |
 | Fragile deeds and letter follow health, as haul's follow the load (FEAT-97) | — |
 | Time trials live in-run | Comparability between players — parked |
-| Main mission = log drag; beat/labor split | Whether the final drag must be unsurvivable |
+| Main missions = **the bridge site** (R1 boss, 2026-10-12); beat/labor split | — |
+| **Log drag demoted** to a free-roam toy / one-off scenario (2026-10-12) | Spawning the log reliably on random roads |
 | Clearance is run-layer | — |
 
 ---
@@ -570,6 +571,12 @@ between `data/prop-models.js` and mission generation, and it does not exist toda
 
 ## Main missions: region unlock (the boss)
 
+> **2026-10-12 — the log drag is no longer a main mission.** Owner: it becomes a free-roam toy or a
+> one-off scenario, because spawning the log reliably on random roads (it rolls, wedges, and makes
+> the mission impossible) is the blocker, and even hitched it can be lost on a steep descent. **The
+> bridge site (below) is the region-1 boss.** The sections on the drag stay as the design record for
+> the toy. Three regions, three bosses (DESIGN.md ratification pass 2026-10-12).
+
 ### Placement in the bible
 
 Region unlock is FEAT-28's trail-closed barrier, framed as **the Roamer's old trails** and **gated by
@@ -843,6 +850,10 @@ carrying it — worth watching whether that fills the hole or makes it more obvi
 ---
 
 ## Change log
+
+**2026-10-12 — owner: bridge site is the first boss; log drag demoted to a toy/scenario.** Three
+regions, three bosses. Freight confirmed as the safe player's lane (fast freight rewards less than
+fast courier against the same geometric par). Provenance: `design-amendments-2026-10-12.md`.
 
 **2026-10-06 — owner: fragile and freight return as strapped bed cargo.** This partly reverses the
 2026-09-29 two-class amendment. Haul stays loose. Freight (FEAT-96) and fragile (FEAT-97) are

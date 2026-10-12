@@ -233,7 +233,8 @@ ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.15 
 - **Rank is display only, result-card only, never live** (SM-INV-3 as amended).
 - **Progress = mission points**, not XP: 1 at B+, ½ at C, 0 at D; authored per-region counts
   `6·6·6·4·3·2` = **27 points** over **six regions**, against a day budget of `4·4·4·3·3·2` = 20 days
-  (SM-INV-14 as rewritten; `run-shape.md`). **The ramp is mission *length*, not count** — ~5–7 h par in
+  (SM-INV-14 as rewritten; `run-shape.md`). **Superseded 2026-10-12: three regions, ~12–14 days —
+  counts owed a re-cut (DESIGN.md open question 2).** **The ramp is mission *length*, not count** — ~5–7 h par in
   region 1, ~12 h (a whole day) in region 6.
 
 - Mission board at POIs: hand-authored types × procedural dressing. **The taxonomy lives in
@@ -563,7 +564,7 @@ owner's name for it.
 | Ratchet straps as an item for loose haul loads | FEAT-110 | parked (owner, 2026-09-30) |
 
 **Behind SM-4, deliberately unticketed** (tickets are minted at milestone entry): the region
-bosses (R1 log drag, R2 bridge meter), region modifiers, motorist relocation, and POI/job counts
+bosses (~~R1 log drag, R2 bridge meter~~ **R1 bridge site; the log drag is a toy/scenario, 2026-10-12**), region modifiers, motorist relocation, and POI/job counts
 scaled to region size. The candidate classes (ranger station, campground, …) are liked, not
 adopted — do not build them unprompted.
 
@@ -593,9 +594,9 @@ adopted — do not build them unprompted.
 - **The garage** — meta-progression is unlocked *starting vehicles*, lateral never upward.
 - **Suspend-and-resume saving**: one slot, written on quit, **deleted on load**, deleted on death.
   Cheap precisely because worldgen is meta-free — the world is never serialized. (FEAT-42.)
-- Run shape target: **6 regions** (chapters — the play space is cumulative, later missions may span
-  regions, and **regions grow with depth on a sparser grid**), **20 days**, **6 h** to beat,
-  **27 points**. The full trail chain must fit in **one run** (SM-INV-7) — that bounds region count.
+- Run shape target: ~~**6 regions** (chapters — the play space is cumulative, later missions may span
+  regions, and **regions grow with depth on a sparser grid**), **20 days**~~ **three regions on
+  concentric rings, ~12–14 days [2026-10-12]**, **6 h** to beat, ~~**27 points**~~ points owed a re-cut. The full trail chain must fit in **one run** (SM-INV-7) — that bounds region count.
   See [run-shape.md](run-shape.md).
 
 ### Tickets (minted so far — the rest are minted at entry)
@@ -629,7 +630,8 @@ before it can close.
   Roamer visits.
 - **Authored in-world beats** (SM-INV-11 relaxed 2026-07-20): staged in real world-space, not a
   bolted-on cutscene layer. The **main missions** gating region unlocks are the primary carriers.
-  **The log drag** is the candidate main mission (`missions.md`) — and note the **beat/labor split**:
+  ~~**The log drag** is the candidate main mission (`missions.md`)~~ **The log drag was demoted to a
+  free-roam toy / scenario on 2026-10-12; the bridge site is the R1 boss** — and note the **beat/labor split**:
   the staged scene is once per profile (a story key on `metaState`), the chaining and clearing is
   run-layer and re-driven every run. **The bridge site** (owner, 2026-09-30) is the second shape:
   "deliver x of y" — workers by courier, lumber and stone by haul — the career lines pointed at the
