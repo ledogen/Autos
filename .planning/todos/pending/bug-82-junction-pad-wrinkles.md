@@ -148,6 +148,56 @@ Where the acceptance numbers moved, and why:
   the 1° target. The worst values sit on the field's own creases. The curvature map shows those scattered
   across the pad interior, not only at the mouths (out of scope below).
 
+## Follow-up 2026-10-11 — ribbon-pad weld (owner: "slight tears at the outer edges of the road ribbon where it meets junction pads")
+
+Owner signed the fill off in the browser ("It looks really good") and approved this plan: fix the pad
+field's camber mismatch, then weld, then gate it.
+
+Measured cause, 209 mouths on seeds 3, 6 and 7:
+- The ribbon ran 2.5 m past `cutback` under every pad. The pad won by polygon offset, with no join.
+  In 7 % of that overlap the ribbon's outer edge stuck out of the pad, by up to 72 cm. There, the
+  ribbon's open end showed, and its outward-only skirt let you see into the hollow under the road.
+- At the mouth the pad field missed the ribbon mesh by p50 6 cm, p95 18 cm, max 42 cm at the outer
+  edges, while centres agreed to 1 cm. The pad handed off to `_legSurfaceTop`, which carries the
+  inter-leg ruled blend. That blend keeps the siblings' pull onto a leg's own pavement edge (RULE_SOFT).
+  The ribbon draws the leg's own deck.
+
+Fix:
+- **Field (road.js):**
+  - `_legDeckTop` is the leg's own deck (profile + crown + camber, no blend), the ribbon's surface.
+  - `_padRibbonMask` snaps to it, through legs included past their mouth. A trunk's 2 m edge ease
+    had left it 21 cm off.
+  - The TPS samples on a side road's pavement use it. The shoulder lines stay blended, the real dirt.
+  - Edge mismatch at the mouths fell to p50 0.06, p95 2.8, max 11.6 cm. The max is one tight curve,
+    where the ribbon's runProfile frame and the field's nearest-point foot sit about 1.4 m apart in arc.
+- **One mouth source:**
+  - `leg.mouth`, set with `leg.cutback` in `_detectNodeJunctions`.
+  - `leg.weld` is set only where the ring carries that leg's mouth chord as an edge (`_ringHasMouth`).
+    The legacy circle pad doesn't, so those ribbons keep the overlap.
+  - `_junctionMouths`, the ribbon trim and the marking feather read it.
+- **Weld (road-mesh.js):**
+  - `_ribbonSection` is the ribbon cross-section formula, factored out of `sweepRibbon`. Its output was
+    bit-identical over 401 slices before the weld landed.
+  - Welded ribbons trim to the mouth and end on an exact section there.
+  - The pad's mouth vertices copy that section, so the two meshes share the edge. The skirts meet at the
+    corners, and nothing overlaps.
+- **Gate:** `road-pad-fill` builds the real ribbon tiles (`_buildRoadTile`) and asserts every welded mouth
+  vertex is a ribbon vertex to the bit. Result: 209 of 209 legs welded, 1881 shared verts, 0 misses. With
+  the pad snap disabled it reports 1717 misses, so the check bites.
+- Pad build 0.48 ms per pad (budget 0.60). Normal error off-crease max 2.48° → 3.07° (report-only); the
+  first row of pad triangles now absorbs the residual above.
+
+Owner on the weld (2026-10-12): "It's really good." They asked for the round pads to go too.
+
+**Circle pad removed (2026-10-12).**
+- The QUAL-10 circle rung (`_junctionRingLegacy`, `LEGACY_PAD_FLARE`) is deleted. The ladder is now
+  weld → hull.
+- It fired 0 times in 201 battery junctions, but it shows in the owner's world. Its flared mouths carry no
+  mouth chord, so it was the one pad the weld could not join, and it read as a glitchy round patch.
+- A hull ring carries the mouth chord for 596 of 608 legs, so those junctions weld now.
+- The hull floor also covers 2-leg nodes whose connector arc is degenerate, which the circle used to catch.
+- Affected gates: 42/44 green; the two reds are the known road-tunnel and road-clearance, with identical numbers.
+
 ## Acceptance
 
 On the capture's node AND across the seed battery (`test/lib/road-battery.mjs` windows):
@@ -160,8 +210,9 @@ On the capture's node AND across the seed battery (`test/lib/road-battery.mjs` w
 - [x] The pad's top area equals the ring's area (asserted per pad, 1e-3 relative); 0 fallbacks.
 - [x] Registered gate `test/road-pad-fill.mjs` asserting aspect, chord, coverage, up-facing and skirt.
       Timing and normal error are report-only. `_skirt-check.mjs` was folded in and deleted.
-- [ ] Owner looks at the capture spot in the browser and the wrinkles are gone.
-- [ ] Before merging: delete `test/_wrinkle.mjs` and `test/_padperf.mjs` (kept for the browser check).
+- [x] Owner looks at the capture spot in the browser and the wrinkles are gone (2026-10-11).
+- [x] Owner checks the ribbon-pad weld in the browser: no tears at the ribbon's outer edges (2026-10-12).
+- [ ] Before merging: delete `test/_wrinkle.mjs`, `test/_padperf.mjs` and `test/_mouthY.mjs`.
 
 ## Out of scope / known residue
 

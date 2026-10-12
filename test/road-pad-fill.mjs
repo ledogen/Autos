@@ -19,6 +19,10 @@
 //             the triangle is seen. The field's own creases (where the solved pad eases onto the leg
 //             fields, e.g. a 21 cm ridge at seed 3 (-1327, -1002)) are out of scope: no mesh follows a kink.
 //   skirt     every wall faces outward, every pad and deg-2 connector has one, none sits on a mouth
+//   weld      (ribbon-pad weld) every pad vertex on a WELDED leg's mouth chord (road.js leg.weld) is
+//             also a vertex of the real ribbon tiles, to the bit — same x, y, z — so the ribbon ends on
+//             the pad's mouth edge and the two meshes share it. Ribbon tiles are built with
+//             _buildRoadTile, exactly as the game builds them.
 //
 // Reported, not asserted: Delaunay fallbacks (earClip path), shading-normal error off-crease, ms/pad
 // (wall-clock asserts are flaky — CLAUDE.md).
@@ -28,6 +32,7 @@ import { WINDOWS, buildWindow } from './lib/road-battery.mjs'
 import { RoadMeshSystem } from '../src/road-mesh.js'
 import { padFillDelaunay } from '../src/road-carve.js'
 import { parseWorldSeed } from '../src/seed.js'
+import { CHUNK_SIZE } from '../src/terrain.js'
 
 const VERBOSE = process.argv.includes('--verbose')
 const ASPECT_P95 = 6, ASPECT_MAX = 40, CHORD_MAX = 0.06, CREASE = 0.1
@@ -44,10 +49,28 @@ let pads = 0, deg2 = 0, fallbacks = 0, ms = 0
 const aspects = [], normDev = [], fails = []
 let worstChord = 0, worstChordAt = ''
 let mouthWalls = 0, flipped = 0, noSkirt = 0
+let weldVerts = 0, weldMiss = 0, weldLegs = 0, legsTotal = 0
 
 for (const W of WINDOWS.filter((w) => /^seed[367] origin$/.test(w.name))) {
   const road = buildWindow(W, P)
-  const mesh = new RoadMeshSystem({ add() {} }, road, null, P, parseWorldSeed(W.seed))
+  const ribbons = []
+  const mesh = new RoadMeshSystem({ add(o) { if (o.material === mesh._material) ribbons.push(o.geometry) } }, road, null, P, parseWorldSeed(W.seed))
+  // Bore + portal materials build canvas textures (browser-only); geometry is all this gate reads.
+  mesh._getTunnelMaterial = mesh._getPortalMaterial = () => null
+  // Real ribbon tiles round every pad, indexed by exact vertex position (Float32, as drawn).
+  const tiles = new Set()
+  for (const node of road._detectNodeJunctions().values()) {
+    if (node.deg2 || !node.ring) continue
+    const R = (node.ringMaxR ?? 15) + 15
+    for (let tx = Math.floor((node.pos.x - R) / CHUNK_SIZE); tx <= Math.floor((node.pos.x + R) / CHUNK_SIZE); tx++)
+      for (let tz = Math.floor((node.pos.z - R) / CHUNK_SIZE); tz <= Math.floor((node.pos.z + R) / CHUNK_SIZE); tz++) tiles.add(`${tx},${tz}`)
+  }
+  for (const key of tiles) { const [tx, tz] = key.split(',').map(Number); mesh._buildRoadTile(tx, tz, key) }
+  const ribbonY = new Map()
+  for (const g of ribbons) {
+    const p = g.attributes.position.array
+    for (let v = 0; v < p.length; v += 3) { const k = `${p[v]},${p[v + 2]}`; const a = ribbonY.get(k); if (a) a.push(p[v + 1]); else ribbonY.set(k, [p[v + 1]]) }
+  }
   for (const node of road._detectNodeJunctions().values()) {
     const t0 = performance.now()
     const geo = mesh.buildJunctionFootprint(node, P)
@@ -92,6 +115,18 @@ for (const W of WINDOWS.filter((w) => /^seed[367] origin$/.test(w.name))) {
     const mouthEdge = (i) => { const k = mouthOf(ring[i]); return k >= 0 && k === mouthOf(ring[(i + 1) % n]) }
     if (!padFillDelaunay(ring, 1.5, (i, L) => mouthEdge(i) ? 8 : Math.ceil(L / 1.5))) {
       fallbacks++; if (VERBOSE) console.log(`  fallback ${at}`)
+    }
+
+    // Weld: every top vert on a welded leg's mouth chord is a ribbon vertex, bit for bit.
+    const welded = m.legs.map((l) => { const g = node.legs.find((a) => a.runKey === l.runKey && (a.arc < 1e-6 ? 1 : -1) === l.s); return !!(g && g.weld) })
+    legsTotal += m.legs.length; weldLegs += welded.filter(Boolean).length
+    const topV = new Set(); for (const t of top) for (let e = 0; e < 3; e++) topV.add(idx[t + e])
+    for (const v of topV) {
+      const k = mouthOf({ x: pos[v * 3], z: pos[v * 3 + 2] })
+      if (k < 0 || !welded[k]) continue
+      weldVerts++
+      const ys = ribbonY.get(`${pos[v * 3]},${pos[v * 3 + 2]}`)
+      if (!ys || !ys.includes(pos[v * 3 + 1])) { weldMiss++; if (VERBOSE) console.log(`  weld miss ${at} (${pos[v * 3].toFixed(2)},${pos[v * 3 + 2].toFixed(2)}) ${ys ? 'y off by ' + Math.min(...ys.map((y) => Math.abs(y - pos[v * 3 + 1]))).toFixed(4) : 'no ribbon vertex'}`) }
     }
 
     // Coverage: top XZ area == ring area, every top tri up-facing (signed XZ area < 0).
@@ -149,6 +184,8 @@ console.log(`  aspect p50/p95/max   ${q(aspects, 0.5).toFixed(1)} / ${q(aspects,
 console.log(`  chord off-crease     ${(worstChord * 100).toFixed(1)} cm   (limit ${CHORD_MAX * 100} cm)  ${worstChordAt}`)
 console.log(`  normal err off-crease p50/p95/max ${q(normDev, 0.5).toFixed(2)}° / ${q(normDev, 0.95).toFixed(2)}° / ${normDev[normDev.length - 1].toFixed(2)}° (report only)`)
 console.log(`  skirt: ${flipped} flipped wall(s) · ${noSkirt} without a skirt · ${mouthWalls} on a mouth`)
+console.log(`  weld: ${weldLegs} of ${legsTotal} legs welded · ${weldVerts} shared mouth verts · ${weldMiss} not on the ribbon`)
+if (weldMiss) fails.push(`${weldMiss} welded mouth vert(s) are not ribbon vertices — a seam the eye can see through`)
 if (q(aspects, 0.95) > ASPECT_P95) fails.push(`aspect p95 ${q(aspects, 0.95).toFixed(1)} > ${ASPECT_P95}`)
 if (worstChord > CHORD_MAX) fails.push(`chord ${(worstChord * 100).toFixed(1)} cm > ${CHORD_MAX * 100} cm — ${worstChordAt}`)
 if (flipped) fails.push(`${flipped} skirt wall(s) face inward`)
