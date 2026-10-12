@@ -554,11 +554,11 @@ owner's name for it.
 | Type | Ticket | State |
 |---|---|---|
 | The offer board on the story map | FEAT-67 | open — built families live, remainder rides on each type |
-| Haul — loose cargo in the bed | FEAT-88 | open |
+| Haul — loose cargo in the bed | FEAT-88 | open — firewood slice shipped; the per-load data the other yards need is left |
 | Courier — small items in the cab (point-to-point, multi-drop, fetch) | FEAT-89 | open — fetch's first slice shipped in FEAT-102 |
-| Haul yards — splitting yard R1, sawmill R2, quarry R3 | FEAT-91 | open — needs FEAT-88 |
-| Freight — strapped durable cargo | FEAT-96 | open — in progress |
-| Fragile — strapped shock-sensitive cargo | FEAT-97 | open — needs FEAT-96 |
+| Haul yards — splitting yard R1, sawmill R2, quarry R3 | FEAT-91 | open — needs FEAT-88's per-load data. Ruled 2026-10-12: sawmill haul is loose boards, sawmill + quarry get a big pad |
+| Freight — strapped durable cargo | FEAT-96 | open — built, on the board, first run played 2026-10-12. Left: record empty-vs-loaded drive time, then close |
+| Fragile — strapped shock-sensitive cargo | FEAT-97 | open — **next build**; FEAT-96's weld is in. Most of the roster needs a shipper ruled before it rolls |
 | Demolition missions | FEAT-65 | open |
 | Paper route — throw and impact audio | FEAT-64 | open |
 | Ratchet straps as an item for loose haul loads | FEAT-110 | parked (owner, 2026-09-30) |
