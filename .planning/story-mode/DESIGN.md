@@ -1072,8 +1072,8 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   velocity change across the collision, and ~~60 mph equivalent is fatal~~ **the fatal speed scales
   with the hit panel's armor condition at impact [RATIFIED 2026-10-12]: ~60 mph with no armor, ~100
   mph at full, continuous in condition, and each landed hit lowers the panel so the next ceiling
-  drops with it.** (Shipped `fatalMph: 80` is the single-number predecessor; the 2026-08-23 "death =
-  total armor loss" coincidence is superseded.) This is the **crash** death — SM-INV-1 is unchanged,
+  drops with it.** (Shipped as `fatalMphBare` 60 / `fatalMphFull` 100 in `src/damage.js`, 2026-10-12; the
+  2026-08-23 "death = total armor loss" coincidence is superseded.) This is the **crash** death — SM-INV-1 is unchanged,
   no new fail state.
   > The Δv-over-Δt route was written here as the *fallback*; it is now the primary, because the
   > contact-impulse route it was a fallback to is what failed. A solver's accumulated normal impulse
@@ -1245,11 +1245,15 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
   **THREE regions, three bosses, laid out on concentric rings [RATIFIED 2026-10-12]** — terrain
   intensity rises toward the origin; region 1 a ~30° sector on the outer gentle ring, region 2 an
   equal-area parallel-sided band one ring in, region 3 the centre disc; today's steepness IS region 2.
-  Radii not yet ratified (open question 10; sketch in `IDEAS.md`) ·
+  **Radii [RATIFIED 2026-10-12]: centre disc 1.5 km · rings 1.8 km deep · region 1 a 50° sector
+  (3.3–5.1 km out, ≈6.6 km²) · region 2 a parallel-sided band of equal area (≈3.2 km wide, 1.5–3.3 km
+  out, so its inner edge wraps the whole centre disc).** ·
   **6 hours** to beat · **24-minute sky cycle** = **16 waking h + 8 h sleep** ·
   **~18 real minutes per day** · ~~**20 days per run**~~ **~12–14 days per run** [2026-10-12; was 20 —
   region count 2026-08-01; the clock, the day cost, days-per-run and region growth all 2026-08-02].
-  The per-region point and day budgets below are **owed a re-cut** for three regions. The full trail chain must be completable
+  **Budgets re-cut 2026-10-12 by the owner's rule "scale everything by the number of days":** the
+  first three regions of the old ladder stand as-is — day budget **4·4·4 = 12 days**, points
+  **6·6·6 = 18**, the same 1.5 points/day the old ladder gave its first three regions. The full trail chain must be completable
   in **one run** (SM-INV-7), since clearance is run-layer and resets on death — so region count is
   bounded by what one surviving run can reopen. That is a hard content constraint.
 
@@ -1519,12 +1523,11 @@ escalate rather than assuming the pane is licensed for it.
    is no curve — per-region counts are **authored** (**6·6·6·4·3·2 = 27** over six regions, against a
    day budget of 4·4·4·3·3·2; *was 5·4·4·3·3·2 until 2026-08-02*). Regions
    are **discrete macro tiles**, as FEAT-28 already assumed. ~~Residual: whether the log drag counts
-   toward its own region's total or sits on top of it.~~ **Reopened 2026-10-12:** the run is now
-   **three regions / ~12–14 days**, so the per-region point counts and day budget are **owed a
-   re-cut** by the owner; the log-drag residual is moot (it is no longer a main mission).
-10. **Ring radii** (2026-10-12). Centre-disc radius, ring depth and region 1's angle for the concentric
-   layout; region 2's width follows from equal area. Owner's live sketch sat at 1.5 km / 1.8 km / 50°.
-   Not a ticket until ruled.
+   toward its own region's total or sits on top of it.~~ **Re-cut 2026-10-12** for three regions by
+   scaling with days: **4·4·4 = 12 days, 6·6·6 = 18 points** (see "Run shape and saving"). The
+   log-drag residual is moot (it is no longer a main mission). Closed.
+10. ~~**Ring radii**~~ **RATIFIED 2026-10-12: 1.5 km centre, 1.8 km rings, region 1 at 50°, region 2
+   parallel-sided** — see "Run shape and saving". Closed.
 3. ~~Whether region unlocks persist across runs.~~ **RESOLVED 2026-07-29 — they do not.** Trail
    clearance and region access are **run-layer**: logs stay cleared for the current run, death puts
    them back. Persistent map access would be *floor* and fails SM-INV-9's litmus test outright —

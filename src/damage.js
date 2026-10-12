@@ -351,13 +351,17 @@ export const DAMAGE_PARAMS = {
   alignBumpScale:  0.5,      // a bump bends less than a crash of the same severity does
 
 
-  // Death: a hit at or above this equivalent speed is the fatal-crash fail state (SM-INV-1).
+  // Death: a hit at or above the fatal equivalent speed is the fatal-crash fail state (SM-INV-1).
   //
-  // 80 mph, RESTORING the coincidence with the armor curve (owner, 2026-08-23). Total armor loss
-  // and death are the same impact again: the hit that writes off a bumper outright is the hit that
-  // kills you. That was deliberate in the original calibration and briefly lost when armor was
-  // re-anchored from 60 to 80 without the fail state moving with it.
-  fatalMph:        80,
+  // The threshold SCALES WITH THE HIT PANEL'S ARMOR CONDITION (owner, 2026-10-12): ~60 mph into a
+  // bare panel, ~100 mph into full armor, linear in the condition read BEFORE the hit lands (a hit
+  // cannot protect itself, same rule as pass-through). Each landed hit lowers the panel, so the next
+  // ceiling drops with it. Supersedes the 2026-08-23 single number (80, pinned to the armor curve's
+  // saturation so death and total armor loss were one impact) — armor now buys survivability, which
+  // is what the owner wants it to be worth. A hit with no armor region (ground/roof) uses the bare
+  // figure.
+  fatalMphBare:    60,
+  fatalMphFull:    100,
   fatalEnabled:    true,
 
   // ── Wheels ─────────────────────────────────────────────────────────────────────────────────
@@ -871,7 +875,8 @@ export class DamageModel {
 
     // Armor condition BEFORE this hit decides what gets through — a hit cannot protect itself.
     const armorId = ARMOR_REGIONS[region]
-    const passed  = armorId ? armorPassThrough(this.get(armorId)) : 1
+    const armorBefore = armorId ? this.get(armorId) : 0
+    const passed  = armorId ? armorPassThrough(armorBefore) : 1
 
     if (armorId) this.wear(armorId, impactDamage(v, P.impactArmor), 1)
 
@@ -896,9 +901,10 @@ export class DamageModel {
 
     this._bendAlignment(region, v, passed)
 
-    // Fatal-crash fail state (SM-INV-1). Armor does NOT save you from this — the deceleration is
-    // what kills, and a bumper only decides what breaks on the truck.
-    const fatal = P.fatalEnabled && v >= P.fatalMph * MPH
+    // Fatal-crash fail state (SM-INV-1). The panel's armor condition BEFORE the hit sets the ceiling:
+    // bare → fatalMphBare, full → fatalMphFull, linear between (owner 2026-10-12).
+    const fatalMph = P.fatalMphBare + (P.fatalMphFull - P.fatalMphBare) * armorBefore
+    const fatal = P.fatalEnabled && v >= fatalMph * MPH
     if (fatal && !this.fatalImpact) this.fatalImpact = { region, v, mph: v / MPH }
 
     return { v, passed, fatal }

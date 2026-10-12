@@ -58,13 +58,8 @@ console.log('\n§2 armor takes its own curve — floored, saturating at 80 mph, 
   const a = 1 - hit('front', 10 + 17.5, 1).d.get('armorFront')
   const b = 1 - hit('front', 10 + 35.0, 1).d.get('armorFront')
   ok(near(b / a, 4, 0.05), `doubling speed-over-floor quadruples the damage (x${(b / a).toFixed(2)}) — energy, not impulse`)
-  // The fatal threshold is 60 mph and armor now saturates at 80, so the two no longer coincide.
-  // That is a deliberate consequence of the owner's re-anchor, pinned so it cannot drift silently.
-  // Death and total armor loss are the SAME impact by design (owner restored this 2026-08-23 after
-  // the armor re-anchor briefly split them): the hit that writes off a bumper outright is the hit
-  // that kills you.
-  ok(D.fatalMph === D.impactArmor.fullMph,
-    `death and total armor loss are the same impact — both ${D.fatalMph} mph`)
+  // Death no longer coincides with total armor loss (owner 2026-10-12): the fatal speed scales with
+  // the hit panel's condition instead, see §7.
 }
 
 console.log('\n§3 armor absorption follows the ratified two anchors')
@@ -116,10 +111,22 @@ for (const mph of [20, 29]) {
   ok(JSON.stringify(a.camberOffsetDeg) !== JSON.stringify(c.camberOffsetDeg), 'different seed → different bend (it IS random)')
 }
 
-console.log('\n§7 the fatal-crash threshold is the 60 mph the armor curve tops out at')
-ok(hit('front', 59, 1).r.fatal === false, '59 mph is survivable')
-ok(hit('front', D.fatalMph, 1).r.fatal === true, '`${D.fatalMph} mph is fatal`')
-ok(hit('front', D.fatalMph, 1).r.fatal === true, '...and full armor does NOT save you — the deceleration kills, the bumper only decides what breaks')
+console.log('\n§7 the fatal-crash threshold scales with the hit panel\'s armor condition (owner 2026-10-12)')
+ok(hit('front', D.fatalMphBare - 1, 0).r.fatal === false, `${D.fatalMphBare - 1} mph into a bare panel is survivable`)
+ok(hit('front', D.fatalMphBare, 0).r.fatal === true, `${D.fatalMphBare} mph into a bare panel is fatal`)
+ok(hit('front', D.fatalMphFull - 1, 1).r.fatal === false, `${D.fatalMphFull - 1} mph into full armor is survivable`)
+ok(hit('front', D.fatalMphFull, 1).r.fatal === true, `${D.fatalMphFull} mph into full armor is fatal`)
+{
+  const mid = (D.fatalMphBare + D.fatalMphFull) / 2
+  ok(hit('front', mid - 1, 0.5).r.fatal === false && hit('front', mid, 0.5).r.fatal === true,
+    `half armor dies at ${mid} mph — linear in condition`)
+  // The condition that counts is the one BEFORE the hit: a hit cannot lower its own ceiling.
+  const { d, r } = hit('front', D.fatalMphFull - 1, 1)
+  ok(r.fatal === false && d.get('armorFront') < 1, 'the hit that crushes full armor is judged against the full-armor ceiling')
+  // A roof/ground hit has no armor region and is judged bare.
+  const g = new DamageModel({ params: {} }); g.set('armorFront', 1)
+  ok(g.applyImpact('roof', impulseAt(D.fatalMphBare), MASS).fatal === true, 'a region with no armor piece is judged at the bare figure')
+}
 
 console.log('\n§8 impulse, not speed: a glancing hit prices as the small hit it is')
 {

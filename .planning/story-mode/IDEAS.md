@@ -392,7 +392,10 @@ road defaults (this is "vary by radius", NOT the QUAL-29 retune — the region-2
 ratified defaults, since today's steepness ≈ region 2). **Region 1 becomes a ring sector of ~30°
 arc**, roughly the size of today's 2500 m-radius region, region 1 on the outside, region 3 inside.
 
-Open:
+**Ratified 2026-10-12:** centre 1.5 km · rings 1.8 km · region 1 at 50° · region 2 parallel-sided,
+equal area (≈3.2 km wide). → DESIGN.md "Run shape and saving". The notes below are the working-out.
+
+Open (historical):
 - Ring radii in metres — "30° and the size of today's region 1" admits two readings (same AREA as
   today's disc ≈ 19.6 km² → outer ring 5–10 km out, ~3.9 km along the arc; or ~2500 m ACROSS →
   ring 3.5–6 km out, ≈ 6 km², a third of today). The owner's "map a little too big" worry favours
