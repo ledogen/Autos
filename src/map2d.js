@@ -81,7 +81,6 @@ const ZOOM_FLOOR_ABS   = 0.005   // px/m — backstop for a degenerate (unsized)
 const PROGRESSIVE_GAP  = 16    // ms — yield between stream chunks so the page stays responsive
 const STREAM_DEBOUNCE = 120    // ms — re-stream only after a pan settles (a stream is expensive)
 const RESTREAM_MOVE   = 300    // m — floor; see _anchorDrifted (threshold scales with streamed radius)
-const TELEPORT_SNAP_RADIUS = 500  // m — double-click snaps to the nearest road within this range
 
 // ── Topographic paper (the map's whole visual identity) ───────────────────────────────────────
 // The map is drawn as a USGS/Forest-Service quadrangle: pale green vegetated ground, burgundy
@@ -372,7 +371,7 @@ export class Map2D {
      * @param {() => object}      o.getParams— live RANGER_PARAMS ref (so the map mirrors the graph knobs)
      * @param {() => {x:number,z:number,fx:number,fz:number}} o.getCar — car world XZ + world-forward XZ
      * @param {(pose:{x:number,z:number,roadTopY:?number,heading:?number}) => void} [o.onTeleport]
-     *        — called on double-click with the nearest-road snap (roadTopY/heading null when no road near)
+     *        — called on double-click with the nearest-road snap (roadTopY/heading null only when the map has no network)
      * @param {() => boolean} [o.canTeleport] — gate: teleport prompt + double-click only when true (free-roam)
      * @param {() => ?{start:{x,z}, end:{x,z}, poly:{x,z}[]}} [o.getMission]
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
@@ -1121,26 +1120,36 @@ export class Map2D {
         this._deferBgRedraw()   // scale-blit until the wheel goes quiet, then one sharp redraw
     }
 
-    // Double-click → teleport the truck here (free-roam only). Snaps to the nearest road within
-    // TELEPORT_SNAP_RADIUS using the map's OWN read-only network (window-invariant, so world coords
-    // resolve identically to play), passing the road-top Y + tangent heading to main.js. When no
-    // road is near, passes the raw clicked XZ (main drops on terrain, keeps the current heading).
+    // Double-click → teleport the truck here (free-roam only). ALWAYS snaps to the nearest point on
+    // any road in the map's OWN read-only network (window-invariant, so world coords resolve
+    // identically to play), passing the road-top Y + segment heading to main.js. No radius cap: the
+    // old 500 m queryNearest snap missed whenever a zoomed-out click landed >500 m from a road and
+    // dropped the truck on raw terrain (owner, 2026-10-12). Off-road placement is the free-cam's job.
+    // Raw XZ only when the map has no network at all.
     _onDblClick(e) {
         if (!this._canTeleport() || !this._onTeleport || !this._road) return
         const rect = this._canvas.getBoundingClientRect()
         const s = this._sheet()
         const wx = (e.clientX - rect.left - s.cx) / this._zoom + this._panX
         const wz = (e.clientY - rect.top  - s.cy) / this._zoom + this._panZ
-        const near = typeof this._road.queryNearest === 'function'
-            ? this._road.queryNearest(wx, wz, TELEPORT_SNAP_RADIUS) : null
-        if (near && near.point) {
-            const roadTopY = typeof this._road.sampleRoadTopY === 'function'
-                ? this._road.sampleRoadTopY(near.point.x, near.point.z) : null
-            const heading = near.tangent ? Math.atan2(near.tangent.x, near.tangent.z) : null
-            this._onTeleport({ x: near.point.x, z: near.point.z, roadTopY, heading })
-        } else {
-            this._onTeleport({ x: wx, z: wz, roadTopY: null, heading: null })
+        // Brute-force projection onto every run polyline: one pass over the network per click.
+        let bestD2 = Infinity, bx = wx, bz = wz, heading = null
+        for (const entry of this._road._network?.values() ?? []) {
+            const pts = entry.points
+            if (!pts) continue
+            for (let i = 1; i < pts.length; i++) {
+                const ax = pts[i - 1].x, az = pts[i - 1].z
+                const dx = pts[i].x - ax, dz = pts[i].z - az
+                const L2 = dx * dx + dz * dz
+                const t = L2 > 0 ? Math.min(1, Math.max(0, ((wx - ax) * dx + (wz - az) * dz) / L2)) : 0
+                const px = ax + t * dx, pz = az + t * dz
+                const d2 = (px - wx) ** 2 + (pz - wz) ** 2
+                if (d2 < bestD2) { bestD2 = d2; bx = px; bz = pz; heading = L2 > 0 ? Math.atan2(dx, dz) : heading }
+            }
         }
+        const roadTopY = heading != null && typeof this._road.sampleRoadTopY === 'function'
+            ? this._road.sampleRoadTopY(bx, bz) : null
+        this._onTeleport({ x: bx, z: bz, roadTopY, heading })
     }
 
     // ── Render ────────────────────────────────────────────────────────────────────────────────
