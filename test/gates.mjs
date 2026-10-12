@@ -100,6 +100,8 @@ export const GATES = [
     desc: 'BUG-56 C: NEVER DRAPE. No shipped run exceeds the gMaxRoad+gradeTol ceiling and nothing is condemned — measured on the registered geometry, so a run nobody solved cannot hide. The terrain-follow fallback is where the 108% grades came from; it is now re-route then condemn. Also prints the grade histogram + ladder rungs (report only — the ceiling is legal by fiat).' },
   { file: 'pad-census.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-56 B0: every >=3-leg junction gets a pad. The ring ladder could end in null — 27 of 176 real junctions (15%) shipped a naked gap where the intersection should be, the owner\'s seed 6 (-3862,884) among them. Also reports which rung each pad landed on; the hull floor is a symptom counter.' },
+  { file: 'road-pad-fill.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-82: junction pad fill is well-shaped (aspect), follows the smooth field (chord), covers its ring exactly, and is skirted outward with no wall on a mouth' },
   { file: 'node-pin.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-56 B2: every run ENDS at the node it shares. A shove or a mid-span merge that walks an endpoint past the 3.75 m cluster radius costs that node both the leg and its junction pad — the owner\'s "road that just ends in a field" (seed 6 -870,2468 was 17.3 m off).' },
   { file: 'promoted-node-id.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],

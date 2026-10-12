@@ -3,9 +3,10 @@
 // BUG-56 B0 — EVERY REAL JUNCTION GETS A JUNCTION SURFACE.
 //
 // A node where three or more runs meet is an intersection, and an intersection needs a pad. The
-// pad boundary comes from _buildJunctionRing, a ladder: exact weld -> legacy circle pad -> (B0)
+// pad boundary comes from _buildJunctionRing, a ladder: exact weld -> (B0)
 // convex-hull floor. (A half-fillet weld rung sat in the middle until 2026-08-27; it fired 0 times
-// in 176 junctions and was deleted — shrinking a corner fillet cannot un-overlap two mouth chords.)
+// in 176 junctions and was deleted — shrinking a corner fillet cannot un-overlap two mouth chords.
+// The QUAL-10 circle pad followed on 2026-10-12: 0 of 201, and its flared mouths could not weld.)
 // Before the floor existed the ladder
 // could end in `null`, and `ring = null` makes EVERY consumer skip the node — the pad carve,
 // padReachNodes, and the mesh's pad branch — while the legs stay cut back. What shipped was a
@@ -34,7 +35,8 @@ import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { WINDOWS, buildWindow } from './lib/road-battery.mjs'
 import { earClip } from '../src/road-carve.js'
 
-// The DRAWN pad must be the ring physics rides. road-mesh.js triangulates node.ring with earClip; a
+// The DRAWN pad must be the ring physics rides. This checks earClip, which is now only road-mesh.js's
+// FALLBACK fill (BUG-82: the primary fill is padFillDelaunay, whose coverage road-pad-fill.mjs asserts); a
 // triangle outside the ring is asphalt drawn over the 0.3 m-lower dirt physics sees there — the owner's
 // "fall right through the drawn pad" (capture 1791128824374: earClip assumed CCW, the ring is CW, every
 // concave crotch was paved, 3.6 m out). Paved area outside the ring, m² (centroid test per triangle).
@@ -59,15 +61,13 @@ const rungOf = (road, node) => {
   let ring = road._junctionRingWeld(node)
   if (ring && road._ringSelfIntersects(ring)) ring = null
   if (ring && ring.length >= 3) return 'weld'
-  ring = road._junctionRingLegacy(node)
-  if (ring && ring.length >= 3) return 'circle'
   ring = road._junctionRingHull(node)
   if (ring && ring.length >= 3) return 'hull'
   return 'NONE'
 }
 
 let fails = 0
-const tot = { clusters: 0, deg2: 0, weld: 0, circle: 0, hull: 0, NONE: 0 }
+const tot = { clusters: 0, deg2: 0, weld: 0, hull: 0, NONE: 0 }
 // BUG-59 — PAD SIZE, not just pad existence. Before 2026-09-07 two thirds of the network's
 // junctions shared one ring reach, 13.46 m: the mouth corner at cutback + halfWidth/2 = 12.5 m
 // out, hypot(12.5, 5). That is a floor being hit, not a distribution — the exact weld
@@ -86,7 +86,7 @@ for (const W of WINDOWS) {
   if (ONLY && !W.name.includes(ONLY)) continue
   const road = buildWindow(W, P)
   const nodes = road._detectNodeJunctions()
-  const by = { weld: 0, circle: 0, hull: 0, NONE: 0 }
+  const by = { weld: 0, hull: 0, NONE: 0 }
   let clusters = 0, deg2 = 0
   const bad = []
   for (const [nk, node] of nodes) {
@@ -108,7 +108,7 @@ for (const W of WINDOWS) {
   tot.clusters += clusters; tot.deg2 += deg2
   for (const k of Object.keys(by)) tot[k] += by[k]
   const head = `${W.name.padEnd(20)} clusters ${String(clusters).padStart(3)} · deg2 ${String(deg2).padStart(3)} · ` +
-               `weld ${String(by.weld).padStart(3)} · circle ${String(by.circle).padStart(2)} · ` +
+               `weld ${String(by.weld).padStart(3)} · ` +
                `hull ${String(by.hull).padStart(2)}`
   if (!bad.length) { console.log(`  ok   ${head}`); continue }
   fails++
@@ -120,7 +120,7 @@ for (const W of WINDOWS) {
 const real = tot.clusters - tot.deg2
 console.log(`\npad-census: ${tot.clusters} clusters · ${tot.deg2} degree-2 (connector arc, by design) · ` +
             `${real} real junctions`)
-console.log(`            rungs — weld ${tot.weld} · circle ${tot.circle} · ` +
+console.log(`            rungs — weld ${tot.weld} · ` +
             `hull ${tot.hull} (${real ? (100 * tot.hull / real).toFixed(0) : 0}% on the floor) · NONE ${tot.NONE}`)
 reach.sort((a, b) => a - b)
 const q = (f) => reach.length ? reach[Math.min(reach.length - 1, Math.floor(f * reach.length))].toFixed(1) : '-'

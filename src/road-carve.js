@@ -332,3 +332,105 @@ export function earClip(polygon) {
 
     return tris
 }
+
+/**
+ * BUG-82: well-shaped pad fill — the junction pad's triangulation. earClip spans every triangle
+ * from one side of the ring to another, and halving those slivers leaves slivers, so the averaged
+ * vertex normals tilted up to 11° and streaked the asphalt. Instead:
+ *   1. Even outline: ring edge i is split into `pieces(i, length)` equal steps, every original ring
+ *      point kept (the mouth corners are where the pad welds exactly to the ribbon end).
+ *   2. Interior: a hex lattice at spacing s, kept only inside the ring and ≥ 0.5·s clear of it.
+ *   3. Delaunay (Bowyer–Watson: insert each point, delete the triangles whose circumcircle holds it,
+ *      re-fan the hole from the point) — the triangulation with the largest smallest angle, so no
+ *      slivers. Triangles whose centroid is outside the ring are dropped.
+ *   4. Guard: every outline step must survive as a triangle edge (a Delaunay mesh can cut across a
+ *      concave corner). If one doesn't, returns null and the caller falls back to earClip.
+ * ponytail: naive Bowyer–Watson scans every live triangle per insertion — O(n²), ~0.1 ms at the
+ * ~300 points of a pad; walk-to-containing-triangle point location if pads ever get much bigger.
+ *
+ * @param {Array<{x:number,z:number}>} ring — simple XZ boundary (open), either winding
+ * @param {number} s — target spacing (m)
+ * @param {(i:number, length:number)=>number} pieces — outline steps for ring edge i → i+1
+ * @returns {{verts:Array<{x:number,z:number}>, tris:number[]}|null} tris UP-facing (signed XZ area < 0)
+ *
+ * Pure function — no imports. Deterministic (D-16).
+ */
+export function padFillDelaunay(ring, s, pieces) {
+    const n = ring.length
+    const xs = [], zs = []
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+    for (let i = 0; i < n; i++) {
+        const a = ring[i], b = ring[(i + 1) % n]
+        const k = Math.max(1, pieces(i, Math.hypot(b.x - a.x, b.z - a.z)))
+        for (let j = 0; j < k; j++) { xs.push(a.x + (b.x - a.x) * j / k); zs.push(a.z + (b.z - a.z) * j / k) }
+        x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); z0 = Math.min(z0, a.z); z1 = Math.max(z1, a.z)
+    }
+    const nOut = xs.length
+    // −1 outside the ring, else the squared distance to it.
+    const ringDist2 = (x, z) => {
+        let inside = false, d2 = Infinity
+        for (let i = 0, j = n - 1; i < n; j = i++) {
+            const a = ring[i], b = ring[j]
+            if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) inside = !inside
+            const ex = b.x - a.x, ez = b.z - a.z
+            const t = Math.max(0, Math.min(1, ((x - a.x) * ex + (z - a.z) * ez) / (ex * ex + ez * ez || 1)))
+            const dx = a.x + ex * t - x, dz = a.z + ez * t - z
+            d2 = Math.min(d2, dx * dx + dz * dz)
+        }
+        return inside ? d2 : -1
+    }
+    const h = s * Math.sqrt(3) / 2, clear2 = 0.25 * s * s
+    for (let row = 0, z = z0 + h / 2; z < z1; row++, z += h) {
+        for (let x = x0 + (row & 1 ? s : s / 2); x < x1; x += s) {
+            if (ringDist2(x, z) >= clear2) { xs.push(x); zs.push(z) }
+        }
+    }
+
+    // Bowyer–Watson. Triangles stored CCW (signed area > 0) with their circumcircle.
+    const N = xs.length, M = N + 3
+    const R = 100 * Math.max(x1 - x0, z1 - z0, 1), mx = (x0 + x1) / 2, mz = (z0 + z1) / 2
+    xs.push(mx, mx - 1.8 * R, mx + 1.8 * R); zs.push(mz + 2 * R, mz - R, mz - R)  // super-triangle
+    const T = new Int32Array(3 * (2 * M + 4)), C = new Float64Array(3 * (2 * M + 4))
+    let nT = 0
+    const addTri = (a, b, c) => {
+        const ax = xs[a], az = zs[a], bx = xs[b] - ax, bz = zs[b] - az, qx = xs[c] - ax, qz = zs[c] - az
+        const d = 2 * (bx * qz - bz * qx), B = bx * bx + bz * bz, Q = qx * qx + qz * qz
+        const ux = d ? (qz * B - bz * Q) / d : 0, uz = d ? (bx * Q - qx * B) / d : 0
+        T[3 * nT] = a; T[3 * nT + 1] = d < 0 ? c : b; T[3 * nT + 2] = d < 0 ? b : c
+        C[3 * nT] = ax + ux; C[3 * nT + 1] = az + uz; C[3 * nT + 2] = d ? ux * ux + uz * uz : Infinity
+        nT++
+    }
+    addTri(N, N + 1, N + 2)
+    const hole = new Map()
+    for (let p = 0; p < N; p++) {
+        const px = xs[p], pz = zs[p]
+        hole.clear()
+        for (let t = 0; t < nT;) {
+            const dx = px - C[3 * t], dz = pz - C[3 * t + 1]
+            if (dx * dx + dz * dz >= C[3 * t + 2]) { t++; continue }
+            for (let e = 0; e < 3; e++) {
+                const a = T[3 * t + e], b = T[3 * t + (e + 1) % 3], key = a < b ? a * M + b : b * M + a
+                if (hole.has(key)) hole.delete(key); else hole.set(key, a)
+            }
+            nT--
+            for (let k = 0; k < 3; k++) { T[3 * t + k] = T[3 * nT + k]; C[3 * t + k] = C[3 * nT + k] }
+        }
+        for (const key of hole.keys()) addTri(Math.floor(key / M), key % M, p)
+    }
+
+    const tris = [], edges = new Set()
+    for (let t = 0; t < nT; t++) {
+        const a = T[3 * t], b = T[3 * t + 1], c = T[3 * t + 2]
+        if (a >= N || b >= N || c >= N) continue
+        if (ringDist2((xs[a] + xs[b] + xs[c]) / 3, (zs[a] + zs[b] + zs[c]) / 3) < 0) continue
+        tris.push(a, c, b)                                                   // CCW → up-facing
+        edges.add(a < b ? a * M + b : b * M + a).add(b < c ? b * M + c : c * M + b).add(a < c ? a * M + c : c * M + a)
+    }
+    for (let i = 0; i < nOut; i++) {
+        const a = i, b = (i + 1) % nOut
+        if (!edges.has(a < b ? a * M + b : b * M + a)) return null
+    }
+    const verts = new Array(N)
+    for (let v = 0; v < N; v++) verts[v] = { x: xs[v], z: zs[v] }
+    return { verts, tris }
+}

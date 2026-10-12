@@ -61,7 +61,7 @@ zero-dep) · `stream-budget.js` (PERF-33 the one shared per-frame streaming budg
 
 **Road network** — `road.js` (RoadSystem: streaming, resolve, surface queries) · `road-graph.js`
 (blue-noise anchors + Urquhart topology) · `road-carve.js` (pure carve helpers: crown, potholes,
-curvature, ear-clip) · `corridor-router.js` (v2 corridor router, FEAT-68) · `road-mesh.js` (ribbon build) ·
+curvature, ear-clip, the BUG-82 Delaunay pad fill) · `corridor-router.js` (v2 corridor router, FEAT-68) · `road-mesh.js` (ribbon build) ·
 `road-worker.js` (route Worker POOL, QUAL-08/FEAT-68 — since QUAL-27 its only consumer is the
 network Worker's nested pool) · `road-route-worker.js` (route Worker module entry) ·
 `road-network-worker.js` (PERF-30 network Worker module entry — the whole build off-thread) ·

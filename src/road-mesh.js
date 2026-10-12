@@ -28,7 +28,7 @@ import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: shared procedural detail
 import { makeMasonryTextures } from './stone-texture.js' // FEAT-40: portal-ring masonry
-import { crownProfile, potholeNoise, earClip } from './road-carve.js'
+import { crownProfile, potholeNoise, earClip, padFillDelaunay } from './road-carve.js'
 // roadQuality lives in road-quality.js (Plan 09-06) to break the terrain.js → road-mesh.js →
 // terrain.js circular import that SURF-06 would otherwise create.
 import { roadQuality } from './road-quality.js'
@@ -44,10 +44,11 @@ const CROSS_SEGS = 8
 const MAX_ROAD_BUILDS_PER_FRAME = 1
 
 // ── Junction pad constants (QUAL-10/11) ──────────────────────────────────────
-// PAD_FILL_MAX_EDGE: red-green subdivision target (m) for the non-planar pad fill — interior
-// verts every ~3 m so the lifted surface follows the sloped pad plane + crown (QUAL-13 field).
-// (The pad BOUNDARY ring — weld/fillet/legacy ladder, STRAIGHT_GAP, LEGACY_PAD_FLARE — moved to
+// PAD_FILL_SPACING: BUG-82 pad fill point spacing (m) — outline steps + hex-lattice interior, Delaunay-
+// connected. PAD_FILL_MAX_EDGE: red-green subdivision target (m) for the earClip FALLBACK fill.
+// (The pad BOUNDARY ring — weld → hull ladder, STRAIGHT_GAP — moved to
 // road.js so the collision carve and this mesh share ONE ring; see RoadSystem._buildJunctionRing.)
+const PAD_FILL_SPACING = 1.5
 const PAD_FILL_MAX_EDGE = 3.0
 // MARK_JUNCTION_FEATHER: metres over which lane markings fade back in past a junction cutback —
 // real intersections lose the centerline gradually instead of hard-stopping (QUAL-11/QUAL-10).
@@ -224,10 +225,8 @@ export class RoadMeshSystem {
      * Every section is framed by the RUN, not by the slice: its run-global arc `arcS` picks the
      * centreline height, tangent and camber out of road.runProfile / camberProfile, so two slices
      * that share a seam resolve the same arc and produce the same cross-section — the edges weld by
-     * construction (BUG-12). The first and last sections sit at exactly arcS0 and arcS1.
-     *
-     * Vertex Y (the formula the carve folds into its gradeY table — SURF-03, height agreement):
-     *   vy = runProfile(arcS).gradeY + crownProfile(uLat) + uLat * sin(camber) + potholeNoise
+     * construction (BUG-12). The first and last sections sit at exactly arcS0 and arcS1. Each section's
+     * top verts come from _ribbonSection (the vertex-Y formula lives there).
      *
      * Lane markings are NOT painted here. Each top vertex carries aMark = (uLat, arcS, q, feather)
      * and the fragment shader draws the stripes from it (BUG-28); the feather fades them out into
@@ -248,9 +247,7 @@ export class RoadMeshSystem {
         // the run-frame signed camber into this slice's sweep frame (slice may run E→W → arcS1<arcS0).
         const camberSign = arcS1 >= arcS0 ? 1 : -1
         const N_LONG = points.length     // number of longitudinal sections (~2 m resolution)
-        const halfWidth      = params.roadHalfWidth    ?? 5
         const roadWidth      = params.roadWidth        ?? 10
-        const crownHeightVal = params.crownHeight      ?? 0.05
         const skirtDepth     = params.roadSkirtDepth   ?? 0.4
 
         // Plan 09-10: vertsPerSection includes the top-surface lateral strip PLUS 2 skirt
@@ -267,31 +264,6 @@ export class RoadMeshSystem {
         // Dark grey asphalt base color (SURF-02 — vertex-color, no texture — D-01).
         // Linear-space: (0.15, 0.15, 0.17) — dark cool grey.
         const RC = 0.15, GC = 0.15, BC = 0.17
-
-        // Plan 09-24 — Dirt shoulder colour for skirt verts (SURF-05 / D-01 / D-08).
-        // Derived from params.roadDirtColor hex int via bit-shifts → 0–1 linear space.
-        // Matches the linear-space convention used by RC/GC/BC above.
-        const dirtHex = params.roadDirtColor ?? 0x6b5a3e
-        const dirtR = ((dirtHex >> 16) & 0xff) / 255
-        const dirtG = ((dirtHex >>  8) & 0xff) / 255
-        const dirtB =  (dirtHex        & 0xff) / 255
-        // BUG-74: the skirt follows the terrain's cut fade — where the road sits IN the hill the
-        // 0.15 m face under the asphalt edge is the same broken rock as the ballast bench beside it
-        // (terrainCutoutColor), not a tan dirt line against it. Same centred depth fade as
-        // terrain.js _writeChunkVertexColors: delta = dirt grade − raw hill, cutness = smooth(−F, F, −delta).
-        const cutHex = params.terrainCutoutColor ?? 0x757066
-        const cutR = ((cutHex >> 16) & 0xff) / 255
-        const cutG = ((cutHex >>  8) & 0xff) / 255
-        const cutB =  (cutHex        & 0xff) / 255
-        const cutFade  = params.roadCutRockFade ?? 2.0
-        const clearanceMargin = params.roadClearanceMargin ?? 0.25
-        const skirtCutness = (edgeX, edgeY, edgeZ) => {
-            const raw = this._terrainRef ? this._terrainRef(edgeX, edgeZ) : NaN
-            if (!Number.isFinite(raw)) return 0                        // headless stub → plain dirt skirt
-            const delta = (edgeY - clearanceMargin) - raw              // + fill, − cut
-            const t = Math.max(0, Math.min(1, (-delta + cutFade) / (2 * cutFade)))
-            return t * t * (3 - 2 * t)
-        }
 
         // 09-32 SEAM FIX: map section index → run-arc by the polyline's CUMULATIVE XZ arc-length,
         // not uniform u. `points[]` come from spline.getPointAt(u), which is parameterised by 3D
@@ -324,93 +296,27 @@ export class RoadMeshSystem {
                 // this ribbon's own dash phase (road.js markPhase), so feathering here would punch a
                 // 20 m marking hole into a continuous road. Real (≥3-leg, padded) junctions still feather.
                 if (j.node && j.node.deg2) continue
-                const d = (Math.abs(aS - j.arc) - (j.cutback ?? jCutback)) / MARK_JUNCTION_FEATHER
+                const d = (Math.abs(aS - j.arc) - (j.mouth ?? j.cutback ?? jCutback)) / MARK_JUNCTION_FEATHER
                 if (d < f) f = d
             }
             return f < 0 ? 0 : (f > 1 ? 1 : f)
         }
 
-        // The lateral stations and their crown lift are the same for every section.
-        const uLats  = new Float64Array(CROSS_SEGS + 1)
-        const crowns = new Float64Array(CROSS_SEGS + 1)
-        for (let j = 0; j <= CROSS_SEGS; j++) {
-            uLats[j]  = (j / CROSS_SEGS - 0.5) * roadWidth      // -halfWidth (left edge) … +halfWidth (right edge)
-            crowns[j] = crownProfile(uLats[j], halfWidth, crownHeightVal)   // parabolic, peak at the centreline
-        }
-
+        const sec = this._sectionScratch || (this._sectionScratch = new Float64Array((CROSS_SEGS + 1) * 3))
         for (let i = 0; i < N_LONG; i++) {
-            const posX  = points[i].x
-            const posZ  = points[i].z
-
-            // ── Road quality at this arc position (D-02/D-03) ──────────────────
             // arcS: RUN-global arc-length (BUG-10), keyed by cumulative XZ (09-32) so gradeY/camber/
             // quality track the vertex's true XZ position, not the spline's 3D-arc parameter.
             // The last section is pinned to arcS1 itself: the interpolation lands within an ulp of it,
             // and the neighbouring slice starts at exactly that arc — the seam must be the same number.
             const arcS = i > 0 && i === N_LONG - 1 ? arcS1 : arcS0 + (arcS1 - arcS0) * (cumXZ[i] / totXZ)
-
-            // P3 (BUG-12): Section frame from the continuous run tangent (09-28).
-            // runProfile(arcS, runKey).tx/tz is C0 across ALL slice seams — both sides of a
-            // seam resolve to the same arcS and return the SAME tx/tz → boundary cross-sections
-            // are identical → ±halfWidth edge vertices coincide → edges weld by construction.
-            // Replaces spline.getTangentAt(u) which was per-slice and tore at sharp corners.
-            const _rp = this._road.runProfile(arcS, runKey)
-            // The run tangent points along the canonical run direction. A slice may run E→W
-            // (arcS1 < arcS0 → camberSign = -1); flip the tangent into THIS slice's sweep
-            // direction so winding is not inverted and camber orientation stays correct.
-            const rpTx = camberSign * _rp.tx
-            const rpTz = camberSign * _rp.tz
-            const tLen = Math.sqrt(rpTx * rpTx + rpTz * rpTz)
-
-            // Perpendicular right vector in XZ: right = (tan.z, 0, -tan.x).normalize()
-            // Guard: degenerate tangent (T-09-04) — fallback to unit X right
-            const rightX = tLen > 1e-8 ? rpTz / tLen : 1
-            const rightZ = tLen > 1e-8 ? -rpTx / tLen : 0
-
-            // P3 (09-28): use rp.gradeY as the centerline Y so ribbon, physics, and carve
-            // all read from the same single arc-indexed profile (height-agreement invariant).
-            const gradeY = _rp.gradeY
-            // BUG-28: q (road quality) is carried per-vertex in the aMark attribute; the
-            // marking tier (brightness / edge presence / dash) is decided per-FRAGMENT in
-            // the shader, not here. q is still needed for pothole severity (potholeNoise).
-            const q = roadQuality(arcS, runKey, this._worldSeed)
-
-            // D2 (plan 09-21): camber from the shared slew-limited camberProfile — replaces
-            // the per-vertex instantaneous _splineCurvatureSigned camber (bug #4 fix).
-            // One profile per canonical run, cached + generation-invalidated (D1).
-            // BUG-10: keyed on run-global arcS + camberSign so banking is continuous across tile
-            // seams and correctly oriented on E→W (reversed) slices.
-            // Camber tilt is uLat * sin(camberAngle) — small-angle approximation, valid to ≤6°.
-            const sinCamber = Math.sin(camberSign * this._road.camberProfile(arcS, runKey))
+            const q = this._ribbonSection(points[i].x, points[i].z, arcS, runKey, camberSign, params, sec)
             const feather = markFeather(arcS)   // QUAL-11: 1 on open road, →0 at a pad mouth
 
-            // Track edge vy values to build skirt verts after the top-surface loop.
-            let leftEdgeVx = 0, leftEdgeVy = 0, leftEdgeVz = 0
-            let rightEdgeVx = 0, rightEdgeVy = 0, rightEdgeVz = 0
-
             for (let j = 0; j <= CROSS_SEGS; j++) {
-                const uLat = uLats[j]
-                const crownY = crowns[j]
-                const tiltY = uLat * sinCamber
-
-                const vx = posX + rightX * uLat
-                const vz = posZ + rightZ * uLat
-
-                // ── SURF-06: pothole/crack perturbation (D-03) ─────────────────
-                // Applied only on-ribbon (|uLat| < halfWidth) — zero outside ribbon.
-                // Uses world position (vx, vz) as lattice key — identical to the
-                // carve table builder and _sampleCarveWorld (height-agreement gate).
-                const absLatP = Math.abs(uLat)
-                const pY = absLatP < halfWidth
-                    ? potholeNoise(vx, vz, q, params)
-                    : 0
-
-                const vy = gradeY + crownY + tiltY + pY
-
                 const idx = (i * vertsPerSection + j) * 3
-                positions[idx    ] = vx
-                positions[idx + 1] = vy
-                positions[idx + 2] = vz
+                positions[idx    ] = sec[j * 3]
+                positions[idx + 1] = sec[j * 3 + 1]
+                positions[idx + 2] = sec[j * 3 + 2]
 
                 // ── Vertex color: asphalt base only (BUG-28) ───────────────────
                 // Markings are no longer painted here — they are evaluated per-fragment
@@ -423,15 +329,14 @@ export class RoadMeshSystem {
                 // ── Marking coord (BUG-28): vec4(uLat, arcS, q, markEnable) ───
                 // Top-surface verts are markable; the shader masks the stripe spatially.
                 const midx = (i * vertsPerSection + j) * 4
-                marks[midx    ] = uLat
+                marks[midx    ] = (j / CROSS_SEGS - 0.5) * roadWidth
                 marks[midx + 1] = arcS
                 marks[midx + 2] = q
                 marks[midx + 3] = feather
-
-                // Capture edge vert positions for skirt generation below.
-                if (j === 0)          { leftEdgeVx  = vx; leftEdgeVy  = vy; leftEdgeVz  = vz }
-                if (j === CROSS_SEGS) { rightEdgeVx = vx; rightEdgeVy = vy; rightEdgeVz = vz }
             }
+            const L = 0, R = CROSS_SEGS * 3
+            const leftEdgeVx  = sec[L], leftEdgeVy  = sec[L + 1], leftEdgeVz  = sec[L + 2]
+            const rightEdgeVx = sec[R], rightEdgeVy = sec[R + 1], rightEdgeVz = sec[R + 2]
 
             // ── Plan 09-10: Skirt verts — two extra verts per section ─────────────
             // Left-edge bottom (local index CROSS_SEGS+1): same XZ as j=0 edge, Y dropped by skirtDepth.
@@ -443,11 +348,7 @@ export class RoadMeshSystem {
             positions[leftSkirtBase    ] = leftEdgeVx
             positions[leftSkirtBase + 1] = leftEdgeVy - skirtDepth
             positions[leftSkirtBase + 2] = leftEdgeVz
-            // BUG-74: dirt → cutout rock by the cut fade at this edge (see skirtCutness above).
-            const cutL = skirtCutness(leftEdgeVx, leftEdgeVy, leftEdgeVz)
-            colors[leftSkirtBase    ] = dirtR + (cutR - dirtR) * cutL
-            colors[leftSkirtBase + 1] = dirtG + (cutG - dirtG) * cutL
-            colors[leftSkirtBase + 2] = dirtB + (cutB - dirtB) * cutL
+            this._skirtColor(leftEdgeVx, leftEdgeVy, leftEdgeVz, params, colors, leftSkirtBase)
             // BUG-28: markEnable=0 — the dirt skirt is the vertical shoulder wall; no stripes.
             marks[(i * vertsPerSection + (CROSS_SEGS + 1)) * 4 + 3] = 0
 
@@ -455,10 +356,7 @@ export class RoadMeshSystem {
             positions[rightSkirtBase    ] = rightEdgeVx
             positions[rightSkirtBase + 1] = rightEdgeVy - skirtDepth
             positions[rightSkirtBase + 2] = rightEdgeVz
-            const cutRt = skirtCutness(rightEdgeVx, rightEdgeVy, rightEdgeVz)
-            colors[rightSkirtBase    ] = dirtR + (cutR - dirtR) * cutRt
-            colors[rightSkirtBase + 1] = dirtG + (cutG - dirtG) * cutRt
-            colors[rightSkirtBase + 2] = dirtB + (cutB - dirtB) * cutRt
+            this._skirtColor(rightEdgeVx, rightEdgeVy, rightEdgeVz, params, colors, rightSkirtBase)
             marks[(i * vertsPerSection + (CROSS_SEGS + 2)) * 4 + 3] = 0
         }
 
@@ -523,6 +421,129 @@ export class RoadMeshSystem {
         // so visual normals and physics normals both reflect the crowned/cambered surface.
         geo.computeVertexNormals()
 
+        return geo
+    }
+
+    /**
+     * The ribbon's top cross-section at run arc `arcS`, centred on (posX, posZ): CROSS_SEGS+1 verts,
+     * left → right in the sweep frame, written as x,y,z into `out`. Returns the road quality q there.
+     * ONE formula: sweepRibbon draws every section with it, and a junction pad copies its mouth section
+     * onto its mouth verts (the ribbon-pad weld), so the shared edge is the same numbers on both sides.
+     *
+     * P3 (BUG-12): the frame is the continuous run tangent runProfile(arcS).tx/tz — both sides of a slice
+     * seam resolve the same arcS and get the SAME frame, so the edge vertices coincide. camberSign = −1
+     * on a slice swept against the run (arcS1 < arcS0) flips the tangent into the sweep direction, so
+     * winding is not inverted and camber keeps its orientation. Camber from the shared slew-limited
+     * camberProfile (D2, plan 09-21), tilt = uLat · sin(camber), small-angle valid to ≤ 6°.
+     *
+     * Vertex Y (the formula the carve folds into its gradeY table — SURF-03, height agreement):
+     *   vy = runProfile(arcS).gradeY + crownProfile(uLat) + uLat * sin(camber) + potholeNoise
+     * SURF-06 potholes only on the pavement (|uLat| < halfWidth), keyed by world (vx, vz) like the carve.
+     */
+    _ribbonSection(posX, posZ, arcS, runKey, camberSign, params, out) {
+        const halfWidth = params.roadHalfWidth ?? 5
+        const roadWidth = params.roadWidth     ?? 10
+        const crownH    = params.crownHeight   ?? 0.05
+        const rp = this._road.runProfile(arcS, runKey)
+        const tx = camberSign * rp.tx, tz = camberSign * rp.tz, tLen = Math.sqrt(tx * tx + tz * tz)
+        // Perpendicular right vector in XZ; degenerate tangent (T-09-04) falls back to unit X.
+        const rightX = tLen > 1e-8 ? tz / tLen : 1
+        const rightZ = tLen > 1e-8 ? -tx / tLen : 0
+        // BUG-28: q rides per-vertex in aMark (the shader decides the marking tier); here it only
+        // scales potholes.
+        const q = roadQuality(arcS, runKey, this._worldSeed)
+        const sinCamber = Math.sin(camberSign * this._road.camberProfile(arcS, runKey))
+        for (let j = 0; j <= CROSS_SEGS; j++) {
+            const uLat = (j / CROSS_SEGS - 0.5) * roadWidth      // -halfWidth (left edge) … +halfWidth (right edge)
+            const vx = posX + rightX * uLat, vz = posZ + rightZ * uLat
+            const pY = Math.abs(uLat) < halfWidth ? potholeNoise(vx, vz, q, params) : 0
+            out[j * 3] = vx
+            out[j * 3 + 1] = rp.gradeY + crownProfile(uLat, halfWidth, crownH) + uLat * sinCamber + pY
+            out[j * 3 + 2] = vz
+        }
+        return q
+    }
+
+    /**
+     * Skirt-bottom vertex colour, written to out[o..o+2]. Dirt shoulder (SURF-05 / Plan 09-24,
+     * params.roadDirtColor, linear like the asphalt RC/GC/BC). BUG-74: the skirt follows the
+     * terrain's cut fade — where the road sits IN the hill the face under the asphalt edge is the
+     * same broken rock as the ballast bench beside it (terrainCutoutColor), not a tan dirt line
+     * against it. Same centred depth fade as terrain.js _writeChunkVertexColors: delta = dirt grade
+     * − raw hill, cutness = smooth(−F, F, −delta). Shared by the ribbon and the junction skirts.
+     */
+    _skirtColor(edgeX, edgeY, edgeZ, params, out, o) {
+        const dirtHex = params.roadDirtColor ?? 0x6b5a3e
+        const cutHex  = params.terrainCutoutColor ?? 0x757066
+        const cutFade = params.roadCutRockFade ?? 2.0
+        const raw = this._terrainRef ? this._terrainRef(edgeX, edgeZ) : NaN
+        let k = 0                                                       // headless stub → plain dirt skirt
+        if (Number.isFinite(raw)) {
+            const delta = (edgeY - (params.roadClearanceMargin ?? 0.25)) - raw   // + fill, − cut
+            const t = Math.max(0, Math.min(1, (-delta + cutFade) / (2 * cutFade)))
+            k = t * t * (3 - 2 * t)
+        }
+        for (let c = 0; c < 3; c++) {
+            const sh = 16 - 8 * c
+            const d = ((dirtHex >> sh) & 0xff) / 255, r = ((cutHex >> sh) & 0xff) / 255
+            out[o + c] = d + (r - d) * k
+        }
+    }
+
+    /**
+     * Junction skirt: the ribbon's folded-over edge (sweepRibbon's skirt quads) carried round a pad
+     * or deg-2 connector, so the junction reads as the same solid asphalt slab as the road. Walks the
+     * up-facing mesh's BOUNDARY edges (used by exactly one triangle) — the skirt top is the pad's own
+     * edge vertices, so it welds by construction, refinement midpoints included — and drops each one
+     * roadSkirtDepth into a dirt/rock wall, wound outward exactly like the ribbon skirt. `skip(a, b)`
+     * drops the mouth edges: they sit under the ribbon end they weld to, and the junction material's
+     * polygon offset would pull a wall there up through the asphalt. Walls are steep, so the pad's
+     * colliderSurfaceOnly filter keeps them out of physics like the ribbon skirt.
+     */
+    _withJunctionSkirt(positions, colors, marks, tris, params, skip) {
+        const depth = params.roadSkirtDepth ?? 0.4
+        const V = positions.length / 3
+        const count = new Map()
+        for (let t = 0; t < tris.length; t += 3) {
+            for (let e = 0; e < 3; e++) {
+                const a = tris[t + e], b = tris[t + (e + 1) % 3]
+                const k = a < b ? a * V + b : b * V + a
+                count.set(k, (count.get(k) || 0) + 1)
+            }
+        }
+        const edges = []
+        for (let t = 0; t < tris.length; t += 3) {
+            for (let e = 0; e < 3; e++) {
+                const a = tris[t + e], b = tris[t + (e + 1) % 3]
+                if (count.get(a < b ? a * V + b : b * V + a) === 1 && !skip(a, b)) edges.push(a, b)
+            }
+        }
+        const bottom = new Map()            // top vertex → its dropped twin
+        for (const v of edges) if (!bottom.has(v)) bottom.set(v, V + bottom.size)
+        const nV = V + bottom.size
+        const pos = new Float32Array(nV * 3); pos.set(positions)
+        const col = new Float32Array(nV * 3); col.set(colors)
+        const mrk = new Float32Array(nV * 4); mrk.set(marks)
+        for (const [v, w] of bottom) {
+            pos[w * 3] = positions[v * 3]; pos[w * 3 + 1] = positions[v * 3 + 1] - depth; pos[w * 3 + 2] = positions[v * 3 + 2]
+            this._skirtColor(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2], params, col, w * 3)
+            mrk[w * 4] = marks[v * 4]                        // markEnable (w) stays 0 — no stripes on the wall
+        }
+        const out = new Uint32Array(tris.length + edges.length * 3)
+        out.set(tris)
+        let ii = tris.length
+        for (let k = 0; k < edges.length; k += 2) {
+            // Directed a→b as wound in the up-facing pad tri → (a, a', b) + (b, a', b') faces outward.
+            const a = edges[k], b = edges[k + 1], a2 = bottom.get(a), b2 = bottom.get(b)
+            out[ii++] = a; out[ii++] = a2; out[ii++] = b
+            out[ii++] = b; out[ii++] = a2; out[ii++] = b2
+        }
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+        geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
+        geo.setAttribute('aMark',    new THREE.BufferAttribute(mrk, 4))
+        geo.setIndex(new THREE.BufferAttribute(out, 1))
+        geo.computeVertexNormals()
         return geo
     }
 
@@ -872,6 +893,11 @@ export class RoadMeshSystem {
             // the node (contiguous — no mid-run split). Drop samples whose run-global arc is within
             // `cutback` of a junction endpoint arc for this run; buildJunctionFootprint fills the cleared
             // disc at the same cutback. Skip the slice entirely if nothing survives (short run node↔node).
+            // RIBBON-PAD WELD (BUG-82 follow-up): where the pad's ring carries this leg's mouth chord
+            // (j.mouth, road.js leg.weld) the ribbon is trimmed to the MOUTH instead and gets one extra
+            // section exactly on it — the same _ribbonSection the pad copies onto its mouth verts. The two
+            // meshes then share that edge: no 2.5 m overlap, no polygon-offset contest, no open ribbon end
+            // to look into, and the skirts meet at the mouth corners.
             const _ptTrim = performance.now()
             let usePoints = points, useArcS0 = arcS0, useArcS1 = arcS1
             const jArcs = this._road._junctionCarveArcs ? this._road._junctionCarveArcs.get(runKey) : null
@@ -881,21 +907,31 @@ export class RoadMeshSystem {
                 const cum = new Float32Array(Np)
                 for (let _i = 1; _i < Np; _i++) cum[_i] = cum[_i - 1] + Math.hypot(points[_i].x - points[_i - 1].x, points[_i].z - points[_i - 1].z)
                 const tot = cum[Np - 1] || 1
+                const arcAt = (_i) => arcS0 + (arcS1 - arcS0) * (cum[_i] / tot)
+                // BUG-59: a leg whose pavement overlaps a sibling's past the default cutback is
+                // trimmed to ITS parting point (j.cutback) — the pad owns that ground.
+                const trimOf = (aS) => { for (const j of jArcs) if (Math.abs(aS - j.arc) < (j.mouth ?? j.cutback ?? cutback)) return j; return null }
                 let k0 = -1, k1 = -1
-                for (let _i = 0; _i < Np; _i++) {
-                    const aS = arcS0 + (arcS1 - arcS0) * (cum[_i] / tot)
-                    let trimmed = false
-                    // BUG-59: a leg whose pavement overlaps a sibling's past the default cutback is
-                    // trimmed to ITS parting point (j.cutback) — the pad owns that ground.
-                    for (const j of jArcs) { if (Math.abs(aS - j.arc) < (j.cutback ?? cutback)) { trimmed = true; break } }
-                    if (!trimmed) { if (k0 < 0) k0 = _i; k1 = _i }
-                }
-                if (k0 < 0 || k1 - k0 < 1) { _bTrim += performance.now() - _ptTrim; continue }   // fully trimmed → the pad(s) cover this stub
-                if (k0 > 0 || k1 < Np - 1) {
-                    useArcS0  = arcS0 + (arcS1 - arcS0) * (cum[k0] / tot)
-                    useArcS1  = arcS0 + (arcS1 - arcS0) * (cum[k1] / tot)
+                for (let _i = 0; _i < Np; _i++) if (!trimOf(arcAt(_i))) { if (k0 < 0) k0 = _i; k1 = _i }
+                if (k0 >= 0 && (k0 > 0 || k1 < Np - 1)) {
+                    useArcS0  = arcAt(k0)
+                    useArcS1  = arcAt(k1)
                     usePoints = points.slice(k0, k1 + 1)
+                    // The weld section, on each end a welded junction trimmed. A kept sample closer than
+                    // 0.3 m to the mouth is replaced by it rather than left as a sliver quad.
+                    const mouthArc = (j, toward) => j && j.mouth !== undefined ? j.arc + Math.sign(toward - j.arc) * j.mouth : null
+                    const ma = k0 > 0 ? mouthArc(trimOf(arcAt(k0 - 1)), useArcS0) : null
+                    if (ma !== null) {
+                        if (Math.abs(useArcS0 - ma) < 0.3 && usePoints.length > 1) usePoints.shift()
+                        usePoints.unshift(this._road.runPointAt(runKey, ma)); useArcS0 = ma
+                    }
+                    const mb = k1 < Np - 1 ? mouthArc(trimOf(arcAt(k1 + 1)), useArcS1) : null
+                    if (mb !== null) {
+                        if (Math.abs(useArcS1 - mb) < 0.3 && usePoints.length > 1) usePoints.pop()
+                        usePoints.push(this._road.runPointAt(runKey, mb)); useArcS1 = mb
+                    }
                 }
+                if (k0 < 0 || usePoints.length < 2) { _bTrim += performance.now() - _ptTrim; continue }   // fully trimmed → the pad(s) cover this stub
             }
 
             _bTrim += performance.now() - _ptTrim
@@ -1251,12 +1287,11 @@ export class RoadMeshSystem {
      *
      * Simplicity ladder (the first QUAL-10 exact-weld attempt self-intersected 19/24 boundaries —
      * so guarantee constructively, then VERIFY): the assembled ring gets an explicit XZ
-     * self-intersection check; on failure the fillets shrink ×0.5 and retry once; on second
-     * failure the node falls back to the QUAL-10 circle pad (_junctionRingLegacy) — failure is
-     * graceful, never a spike, never a hole.
+     * self-intersection check; on failure the node falls back to the convex-hull floor
+     * (_junctionRingHull) — failure is graceful, never a spike, never a hole.
      *
-     * Fill is NON-PLANAR: earClip triangulates the ring in XZ, interior detail comes from
-     * red-green midpoint subdivision (_buildPadGeometry), and every vertex rides
+     * Fill is NON-PLANAR: padFillDelaunay triangulates the ring in XZ (BUG-82 — even outline + hex
+     * lattice, earClip + red-green only as the fallback; _buildPadGeometry), and every vertex rides
      * this._road.sampleRoadTopY — the QUAL-13 sloped-pad/blended height field IS the pad surface
      * (mesh == collision by construction; the boundary/fill here is GEOMETRY only).
      *
@@ -1313,7 +1348,35 @@ export class RoadMeshSystem {
         const ring = node.ring
         if (!ring || ring.length < 3) return null
 
-        return this._buildPadGeometry(ring, samplePadY)
+        // Mouth chords (weld / hull rungs place them exactly here) get no skirt — the ribbon end covers them.
+        // Returns WHICH leg's chord a point sits on (−1: none): a through road's straight back side runs
+        // from one mouth's corner to another's, and is not a mouth.
+        const m = this._road._junctionMouths ? this._road._junctionMouths(node) : null
+        const mouthOf = (p) => !m ? -1 : m.legs.findIndex(l => {
+            const ux = p.x - l.cx, uz = p.z - l.cz
+            return Math.abs(ux * l.dx + uz * l.dz) < 0.05 && Math.abs(ux * l.dz - uz * l.dx) <= m.halfWidth + 0.05
+        })
+        // RIBBON-PAD WELD: every pad vertex on a mouth chord takes the ribbon's own mouth-section vertex
+        // (_ribbonSection at the leg's mouth arc — the section the trimmed ribbon ends on), XZ and Y. The
+        // CROSS_SEGS-step mouth split already lands the pad verts on those stations; this makes them the
+        // same numbers, so the seam is shared vertices. The section is the leg's own deck — the pad field's
+        // mouth mask (road.js _padRibbonMask) snaps to the same deck, so the first row of pad triangles
+        // bends by only the residual (potholes, a few cm on a tight curve).
+        const sections = m ? m.legs.map(l => {
+            const out = new Float64Array((CROSS_SEGS + 1) * 3)
+            this._ribbonSection(l.cx, l.cz, l.mouthArc, l.runKey, 1, params, out)
+            return out
+        }) : null
+        const snap = (v) => {
+            const k = mouthOf(v)
+            if (k < 0) return null
+            const sec = sections[k]
+            for (let j = 0; j <= CROSS_SEGS; j++) {
+                if (Math.abs(sec[j * 3] - v.x) < 0.05 && Math.abs(sec[j * 3 + 2] - v.z) < 0.05) return { x: sec[j * 3], y: sec[j * 3 + 1], z: sec[j * 3 + 2] }
+            }
+            return null
+        }
+        return this._buildPadGeometry(ring, samplePadY, params, mouthOf, snap)
     }
 
     /**
@@ -1443,29 +1506,64 @@ export class RoadMeshSystem {
         }
         if (area2 > 0) for (let k = 0; k < tris.length; k += 3) { const tmp = tris[k + 1]; tris[k + 1] = tris[k + 2]; tris[k + 2] = tmp }
 
-        const geo = new THREE.BufferGeometry()
-        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-        geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
-        geo.setAttribute('aMark',    new THREE.BufferAttribute(marks,     4))
-        geo.setIndex(new THREE.BufferAttribute(new Uint32Array(tris), 1))
-        geo.computeVertexNormals()
-        return geo
+        // Skirt both sides; the two end rungs are the mouths (an edge inside one row is a rung).
+        return this._withJunctionSkirt(positions, colors, marks, tris, params,
+            (a, b) => Math.floor(a / COLS) === Math.floor(b / COLS))
     }
 
     /**
-     * Triangulate + lift a pad boundary ring (QUAL-11 non-planar fill). Topology is solved in
-     * XZ: earClip the (verified-simple) ring, force up-facing winding, then red-green midpoint
-     * subdivision — any edge longer than PAD_FILL_MAX_EDGE splits, and the split decision is
-     * PER-EDGE so neighbouring triangles always agree (crack-free) — giving the interior detail
-     * the lifted surface needs to follow the sloped pad plane + crown smoothly. Every vertex Y
-     * comes from sampleY (the asphalt-top surface → mesh == collision by construction). Vertex
-     * colours = ribbon asphalt base; aMark all-zero → no stripes on the pad (BUG-28 contract).
+     * Triangulate + lift a pad boundary ring (QUAL-11 non-planar fill). Topology is solved in XZ by
+     * padFillDelaunay (BUG-82: an even outline + hex lattice at PAD_FILL_SPACING, Delaunay-connected —
+     * no slivers, so computeVertexNormals follows the field). Mouth chords split into CROSS_SEGS
+     * steps, which lands the pad's mouth vertices exactly on the ribbon end's cross-section verts.
+     * If the Delaunay guard trips, the earClip + red-green fill below (_padFillEarClip) takes over.
+     * Every vertex Y comes from sampleY (the asphalt-top surface → mesh == collision by
+     * construction). Vertex colours = ribbon asphalt base; aMark all-zero → no stripes on the pad
+     * (BUG-28 contract).
      *
      * @param {Array<{x:number,z:number}>} ring — simple XZ boundary (open)
      * @param {(x:number,z:number)=>number} sampleY
+     * @param {object} params — RANGER_PARAMS (skirt depth/colour)
+     * @param {(p:{x:number,z:number})=>number} mouthOf — leg index whose mouth chord p sits on, −1 if none
+     * @param {(p:{x:number,z:number})=>({x:number,y:number,z:number}|null)} snap — the ribbon's own vertex
+     *        for a mouth vert (the ribbon-pad weld), else null
      * @returns {THREE.BufferGeometry|null}
      */
-    _buildPadGeometry(ring, sampleY) {
+    _buildPadGeometry(ring, sampleY, params, mouthOf, snap) {
+        const n = ring.length
+        // Both ends on the SAME leg's chord → a mouth edge (no skirt; split to the ribbon's cross-section).
+        const onMouth = (p, q) => { const k = mouthOf(p); return k >= 0 && k === mouthOf(q) }
+        const fill = padFillDelaunay(ring, PAD_FILL_SPACING, (i, L) =>
+            onMouth(ring[i], ring[(i + 1) % n]) ? CROSS_SEGS : Math.ceil(L / PAD_FILL_SPACING))
+            ?? this._padFillEarClip(ring)
+        if (!fill) return null
+        const { verts, tris } = fill
+        const V = verts.length
+        const positions = new Float32Array(V * 3)
+        const colors    = new Float32Array(V * 3)
+        for (let v = 0; v < V; v++) {
+            const w = snap(verts[v])
+            positions[v * 3    ] = w ? w.x : verts[v].x
+            positions[v * 3 + 1] = w ? w.y : sampleY(verts[v].x, verts[v].z)
+            positions[v * 3 + 2] = w ? w.z : verts[v].z
+            colors[v * 3] = 0.15; colors[v * 3 + 1] = 0.15; colors[v * 3 + 2] = 0.17
+        }
+        // BUG-28: pads share the road shader (reads aMark). All-zero aMark (feather 0) → no stripes.
+        return this._withJunctionSkirt(positions, colors, new Float32Array(V * 4), tris, params,
+            (a, b) => onMouth(verts[a], verts[b]))
+    }
+
+    /**
+     * Fallback pad fill (the pre-BUG-82 path, used when padFillDelaunay's outline guard trips):
+     * earClip the (verified-simple) ring, force up-facing winding, then red-green midpoint
+     * subdivision — any edge longer than PAD_FILL_MAX_EDGE splits, and the split decision is
+     * PER-EDGE so neighbouring triangles always agree (crack-free). Makes slivers (BUG-82), but never
+     * a hole.
+     *
+     * @param {Array<{x:number,z:number}>} ring — simple XZ boundary (open)
+     * @returns {{verts:Array<{x:number,z:number}>, tris:number[]}|null}
+     */
+    _padFillEarClip(ring) {
         const tri0 = earClip(ring)
         if (!tri0 || tri0.length < 3) return null
         let tris = Array.from(tri0)
@@ -1538,23 +1636,6 @@ export class RoadMeshSystem {
             if (!split) break
         }
 
-        const V = verts.length
-        const positions = new Float32Array(V * 3)
-        const colors    = new Float32Array(V * 3)
-        for (let v = 0; v < V; v++) {
-            positions[v * 3    ] = verts[v].x
-            positions[v * 3 + 1] = sampleY(verts[v].x, verts[v].z)
-            positions[v * 3 + 2] = verts[v].z
-            colors[v * 3] = 0.15; colors[v * 3 + 1] = 0.15; colors[v * 3 + 2] = 0.17
-        }
-        const geo = new THREE.BufferGeometry()
-        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-        geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
-        // BUG-28: pads share the road shader (reads aMark). All-zero aMark (feather 0) → no stripes.
-        geo.setAttribute('aMark',    new THREE.BufferAttribute(new Float32Array(V * 4), 4))
-        geo.setIndex(new THREE.BufferAttribute(new Uint32Array(tris), 1))
-        geo.computeVertexNormals()
-
-        return geo
+        return { verts, tris }
     }
 }

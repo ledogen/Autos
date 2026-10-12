@@ -112,9 +112,8 @@ const JN_FADE_OUT = 34.0
 // Junction-pad ring geometry (moved from road-mesh.js so the CARVE path is the single source of the
 // welded pad boundary — the mesh now reads road.js's cached node.ring). Not road* params (no route-sig
 // effect). STRAIGHT_GAP: angular gap (rad, ~155°) past which a consecutive-leg corner is a through
-// road's back side. LEGACY_PAD_FLARE: mouth flare (× halfWidth) for the circle-pad fallback ring.
+// road's back side.
 const STRAIGHT_GAP = 2.7
-const LEGACY_PAD_FLARE = 1.6
 
 // BUG-56 workstream C: the RE-ROUTE ladder — how much harder each rung prices grade than the
 // ordinary route. wGrade sets the grade the search WANTS (g* = 1/sqrt(wGrade)); ×2 moves it from
@@ -8038,6 +8037,11 @@ export class RoadSystem {
                         sibs.push({ pts: sb.points, cum: sb.polyCum, lo: bAtStart ? 0 : Math.max(0, L - reach), hi: bAtStart ? Math.min(L, reach) : L })
                     }
                     a.cutback = Math.max(cut0, this._legPartingReach(e, a.arc < 1e-6, sibs, JN_HOLD_MAX_PLANE))
+                    // The leg's MOUTH (arc from the node): the chord the ring corners sit on AND, since the
+                    // ribbon-pad weld, where the ribbon ENDS — no overlap. ONE source: _junctionMouths, the
+                    // ribbon trim and the marking feather all read leg.mouth. A short node↔node run pulls its
+                    // mouth in to 45 % of its length.
+                    a.mouth = Math.min(a.cutback + halfWidth * 0.5, e.polyCum[e.polyCum.length - 1] * 0.45)
                 }
             }
             // A promoted T's THROUGH legs (owner ruling 2026-10-04: the trunk is never re-shaped by the
@@ -8052,6 +8056,10 @@ export class RoadSystem {
                 let mr = 0
                 for (const rp of node.ring) { const r = Math.hypot(rp.x - c.x, rp.z - c.z); if (r > mr) mr = r }
                 node.ringMaxR = mr
+                // The ribbon-pad WELD: a leg's ribbon ends exactly on its mouth chord only where the ring
+                // really carries that chord as one of its edges (the weld rung always; the hull floor for 98 %
+                // of legs). Anywhere else the ribbon keeps its cutback overlap under the pad.
+                for (const a of c.legs) a.weld = a.mouth !== undefined && this._ringHasMouth(node.ring, a, halfWidth)
             }
             nodes.set(`${Math.round(c.x)},${Math.round(c.z)}`, node)
             for (const a of c.legs) {
@@ -8059,7 +8067,8 @@ export class RoadSystem {
                 // node ref rides along so _carveDirtY can enumerate the SIBLING legs and blend their grades
                 // by lateral proximity (the ruled inter-leg surface that kills the Voronoi crease). The node
                 // carries pos + legs + plane; the open-rim fallback still reads node.plane in _junctionPadCarve.
-                arr.push({ arc: a.arc, node, cutback: a.cutback, through: a.through })
+                // `mouth` only where a pad is drawn: the ribbon ends welded to the pad's mouth chord there.
+                arr.push({ arc: a.arc, node, cutback: a.cutback, through: a.through, mouth: a.weld ? a.mouth : undefined })
             }
         }
         this._nodeJunctions = nodes
@@ -8070,10 +8079,24 @@ export class RoadSystem {
     }
 
     // ── Junction pad boundary + carve (single source of truth, shared by mesh + collision) ──────
+    /** Does the ring carry `leg`'s mouth chord (its two corners, consecutive, to 5 cm) as an edge? */
+    _ringHasMouth(ring, leg, halfWidth) {
+        const arc = leg.arc + (leg.arc < 1e-6 ? 1 : -1) * leg.mouth
+        const c = this.runPointAt(leg.runKey, arc), p = this.runProfile(arc, leg.runKey)
+        if (!c || !p) return false
+        const t = Math.hypot(p.tx, p.tz) || 1, nx = p.tz / t * halfWidth, nz = -p.tx / t * halfWidth
+        const at = (q, x, z) => Math.abs(q.x - x) < 0.05 && Math.abs(q.z - z) < 0.05
+        for (let i = 0; i < ring.length; i++) {
+            const a = ring[i], b = ring[(i + 1) % ring.length]
+            if ((at(a, c.x + nx, c.z + nz) && at(b, c.x - nx, c.z - nz)) || (at(b, c.x + nx, c.z + nz) && at(a, c.x - nx, c.z - nz))) return true
+        }
+        return false
+    }
+
     /**
-     * Assemble the welded pad-boundary RING for a node via the fallback ladder (exact weld →
-     * shrunk fillets → legacy circle pad), verifying each rung with _ringSelfIntersects. Moved here
-     * from RoadMeshSystem.buildJunctionFootprint so the CARVE path owns the ring; the mesh reads the
+     * Assemble the welded pad-boundary RING for a node via the fallback ladder (exact weld → convex
+     * hull floor), verifying the weld with _ringSelfIntersects. Moved here from
+     * RoadMeshSystem.buildJunctionFootprint so the CARVE path owns the ring; the mesh reads the
      * cached node.ring. Returns an open XZ boundary polygon or null.
      */
     _buildJunctionRing(node) {
@@ -8081,22 +8104,25 @@ export class RoadSystem {
         // The half-fillet weld rung is GONE (owner, 2026-08-27). Censused across the battery it
         // fired 0 times in 176 real junctions: every weld that self-intersects at full fillet also
         // self-intersects at half, because the cause is two mouth CHORDS overlapping and shrinking
-        // the corner fillets does not move a mouth. Ladder is weld -> circle -> hull.
+        // the corner fillets does not move a mouth. Ladder is weld -> hull.
+        // The QUAL-10 CIRCLE pad that sat between them is gone too (owner, 2026-10-12): it fired 0 times
+        // in 201 battery junctions, and where it did fire its flared mouths carried no mouth chord, so
+        // its ribbons could not weld (the hull carries the chord for 98 % of legs) and read as a glitchy
+        // round patch beside welded junctions.
         let ring = this._junctionRingWeld(node)
         if (ring && this._ringSelfIntersects(ring)) ring = null
-        if (!ring) ring = this._junctionRingLegacy(node)
         // BUG-56 B0 — THE FLOOR. Before this rung the ladder could end in nothing, and did at 27 of
         // 176 real (>=3-leg) junctions across the battery — 15 %, measured 2026-08-27. Every one of
         // them failed the same way: the exact weld SELF-INTERSECTS at both fillet scales because two
         // of the legs leave the node on the same bearing (20 of the 27 are separated by under half a
         // degree — the slowly-diverging Y this whole ticket is about), so their mouth chords overlap
-        // and the boundary crosses itself. The legacy circle pad then folds those two legs into one
-        // direction (it merges anything inside ~20 deg), which leaves TWO distinct mouths, and a
-        // 2-mouth circle pad emits only two distinct corner points, so it returns null as well.
+        // and the boundary crosses itself. (The circle pad then failed on them as well: it folded two
+        // same-bearing legs into one direction and emitted too few corners.)
         // ring = null makes EVERY consumer skip the node — pad carve, padReachNodes, the mesh's pad
         // branch — while the legs stay cut back, so what shipped was a naked gap where the
-        // intersection should be. A crude pad beats that, always.
-        if ((!ring || ring.length < 3) && node.legs.length >= 3) ring = this._junctionRingHull(node)
+        // intersection should be. A crude pad beats that, always. Two-leg nodes too: one whose
+        // connector arc is degenerate falls back to this ladder (the circle used to catch it).
+        if (!ring || ring.length < 3) ring = this._junctionRingHull(node)
         return (ring && ring.length >= 3) ? ring : null
     }
 
@@ -8163,8 +8189,9 @@ export class RoadSystem {
             const s = leg.arc < 1e-6 ? 1 : -1                       // +arc direction away from node?
             // BUG-59: the mouth sits at THIS leg's cutback — the default, or further out where the
             // leg's pavement is still overlapping a sibling's (leg.cutback, _detectNodeJunctions).
-            const Tl = (leg.cutback ?? cutback) + halfWidth * 0.5
-            const mouthArc = leg.arc + s * Math.min(Tl, len * 0.45)  // short node↔node run: pull the mouth in
+            // leg.mouth (set with leg.cutback in _detectNodeJunctions) on a padded node; the same rule inline
+            // for any other caller.
+            const mouthArc = leg.arc + s * (leg.mouth ?? Math.min((leg.cutback ?? cutback) + halfWidth * 0.5, len * 0.45))
             const c = road.runPointAt(leg.runKey, mouthArc)
             if (!c) return null
             const prof = road.runProfile(mouthArc, leg.runKey)
@@ -8406,82 +8433,6 @@ export class RoadSystem {
         return false
     }
 
-    /** QUAL-10 circle-pad boundary — the fallback ladder's last rung. (Formerly _junctionRingLegacy.) */
-    _junctionRingLegacy(node) {
-        const params = this._params
-        const halfWidth = params.roadHalfWidth ?? 5
-        const nx = node.pos.x
-        const nz = node.pos.z
-
-        const legs = []
-        for (const leg of node.legs) {
-            let m = null
-            for (const e of legs) { if (e.dir.x * leg.dir.x + e.dir.z * leg.dir.z > 0.94) { m = e; break } }
-            if (m) { m.dir.x += leg.dir.x; m.dir.z += leg.dir.z; const L = Math.hypot(m.dir.x, m.dir.z) || 1; m.dir.x /= L; m.dir.z /= L }
-            else legs.push({ dir: { x: leg.dir.x, z: leg.dir.z } })
-        }
-        legs.sort((a, b) => Math.atan2(a.dir.x, a.dir.z) - Math.atan2(b.dir.x, b.dir.z))
-        const n = legs.length
-        if (n < 2) return null
-        let sx = 0, sz = 0
-        for (const l of legs) { sx += l.dir.x; sz += l.dir.z }
-        if (Math.hypot(sx, sz) / n > 0.55) return null
-
-        const cutback = this.junctionCutbackDist()
-        // BUG-59: the fallback disc reaches at least as far as the furthest leg's parting point.
-        const T = Math.max(cutback, ...node.legs.map((l) => l.cutback ?? cutback)) + halfWidth * 0.5
-        let minHalf = Math.PI / 2
-        for (let i = 0; i < n; i++) {
-            const a = legs[i].dir, b = legs[(i + 1) % n].dir
-            const dot = Math.max(-1, Math.min(1, a.x * b.x + a.z * b.z))
-            minHalf = Math.min(minHalf, Math.acos(dot) * 0.5)
-        }
-        const flareCap = Math.max(halfWidth, T * Math.sin(minHalf) * 0.9)
-        const flareHW = Math.min(halfWidth * LEGACY_PAD_FLARE, flareCap)
-        const legEdge = (leg, side) => {
-            const d = leg.dir
-            return { x: nx + d.x * T + (-d.z) * side * flareHW, z: nz + d.z * T + (d.x) * side * flareHW }
-        }
-        const faceSide = (leg, other) =>
-            ((-leg.dir.z) * other.dir.x + (leg.dir.x) * other.dir.z) >= 0 ? 1 : -1
-
-        const ARC_SAMPLES = 5
-        const poly = []
-        for (let i = 0; i < n; i++) {
-            const legA = legs[i]
-            const legB = legs[(i + 1) % n]
-            const legP = legs[(i - 1 + n) % n]
-            poly.push(legEdge(legA, faceSide(legA, legP)))
-            const eA = legEdge(legA, faceSide(legA, legB))
-            poly.push(eA)
-            const eB = legEdge(legB, faceSide(legB, legA))
-            let gap = Math.atan2(legB.dir.x, legB.dir.z) - Math.atan2(legA.dir.x, legA.dir.z)
-            while (gap < 0) gap += 2 * Math.PI
-            while (gap > 2 * Math.PI) gap -= 2 * Math.PI
-            const wide = Math.min(gap, 2 * Math.PI - gap) > STRAIGHT_GAP
-            if (!wide) {
-                const rA = Math.hypot(eA.x - nx, eA.z - nz), rB = Math.hypot(eB.x - nx, eB.z - nz)
-                const r = (rA + rB) * 0.5
-                const bA = Math.atan2(eA.x - nx, eA.z - nz)
-                let dB = Math.atan2(eB.x - nx, eB.z - nz) - bA
-                while (dB >  Math.PI) dB -= 2 * Math.PI
-                while (dB < -Math.PI) dB += 2 * Math.PI
-                for (let s = 1; s < ARC_SAMPLES; s++) {
-                    const bear = bA + dB * (s / ARC_SAMPLES)
-                    poly.push({ x: nx + Math.sin(bear) * r, z: nz + Math.cos(bear) * r })
-                }
-            }
-        }
-        if (poly.length < 3) return null
-        const ring0 = []
-        for (const p of poly) {
-            const q = ring0[ring0.length - 1]
-            if (!q || Math.hypot(p.x - q.x, p.z - q.z) > 0.05) ring0.push(p)
-        }
-        while (ring0.length >= 2 && Math.hypot(ring0[0].x - ring0[ring0.length - 1].x, ring0[0].z - ring0[ring0.length - 1].z) <= 0.05) ring0.pop()
-        return ring0.length >= 3 ? ring0 : null
-    }
-
     /**
      * Signed XZ distance from an open boundary ring to (x,z): NEGATIVE inside, POSITIVE outside (= min
      * distance to any boundary edge, incl. the implicit closing edge). Even-odd point-in-polygon for the
@@ -8641,8 +8592,9 @@ export class RoadSystem {
         // Exactness mask: on a leg's own ribbon past its mouth (or anywhere on a T's through road) the
         // pad IS that road's deck — the seam with the ribbon mesh is exact, and the trunk untouched.
         let y = g
-        const ms = Math.max(q, this._padRibbonMask(node, ps, wx, wz))
-        if (ms > 0) { const leg = this._legSurfaceTop(node, wx, wz); if (leg != null) y += ms * (leg - y) }
+        const rib = this._padRibbonMask(node, ps, wx, wz)
+        if (rib.m > 0) y += rib.m * (rib.y - y)
+        if (q > 0) { const leg = this._legSurfaceTop(node, wx, wz); if (leg != null) y += q * (leg - y) }
         if (ps.anyThrough) {
             const own = this._throughDeckTop(node, ps, wx, wz)
             if (own) y += own.m * (own.y - y)
@@ -8685,24 +8637,38 @@ export class RoadSystem {
         const d = Math.sqrt(bestD2)
         if (d > hw) return null
         const lu = Math.min(1, Math.max(0, (hw - d) / ease))
-        const pts = bestNe.points, i = Math.min(best.i, pts.length - 2)
-        const ex = pts[i + 1].x - pts[i].x, ez = pts[i + 1].z - pts[i].z, sl = Math.hypot(ex, ez) || 1e-8
-        const tx = ex / sl, tz = ez / sl
-        const lat = (wx - (pts[i].x + best.t * ex)) * tz - (wz - (pts[i].z + best.t * ez)) * tx
-        // wx/wz omitted ⇒ _carveDirtY skips the inter-leg blend: the through road's own section.
-        return { y: this._carveDirtY(lat, best.arcS, bestLeg.runKey, 1) + clearanceMargin, m: lu * lu * (3 - 2 * lu) }
+        return { y: this._legDeckTop(bestNe, bestLeg, best, wx, wz), m: lu * lu * (3 - 2 * lu) }
     }
 
     /**
-     * The ribbon-exactness weight at (wx,wz) for a solved pad: 1 on a leg's pavement past its mouth
+     * A leg's OWN deck at (wx,wz), from its projection foot `pr`: profile + crown + camber, with NO
+     * inter-leg blend (wx/wz are not passed on to _carveDirtY). That is the cross-section the ribbon
+     * MESH draws (sweepRibbon, potholes aside), so the pad hands off to it at the mouths. The blended
+     * _legSurfaceTop keeps the siblings' pull right onto a leg's pavement edge (RULE_SOFT) and missed
+     * the ribbon's edge by up to 42 cm at the mouth corners (BUG-82 follow-up, the ribbon-pad tears).
+     */
+    _legDeckTop(ne, leg, pr, wx, wz) {
+        const pts = ne.points, i = Math.min(pr.i, pts.length - 2)
+        const ex = pts[i + 1].x - pts[i].x, ez = pts[i + 1].z - pts[i].z, sl = Math.hypot(ex, ez) || 1e-8
+        const tx = ex / sl, tz = ez / sl
+        const lat = (wx - (pts[i].x + pr.t * ex)) * tz - (wz - (pts[i].z + pr.t * ez)) * tx
+        return this._carveDirtY(lat, pr.arcS, leg.runKey, 1) + (this._params.roadClearanceMargin ?? 0.25)
+    }
+
+    /**
+     * The ribbon-exactness weight `m` at (wx,wz) for a solved pad, and `y` the deck it pulls toward (the
+     * winning leg's OWN deck, _legDeckTop — the ribbon mesh's surface): 1 on a leg's pavement past its mouth
      * (the through legs of a promoted T along their whole length — owner ruling 2026-10-04, "through
      * road untouched"), easing to 0 over PAD_MOUTH_EASE inside the mouth and over 1 m past the
      * pavement edge. Continuous, so the hand-off between the solved surface and the ribbons carries
      * no step.
      */
-    _padRibbonMask(node, ps, wx, wz) {   // non-through legs; a through road is _throughDeckTop's
+    // Through legs too: past its mouth a trunk meets its own ribbon like any leg, and _throughDeckTop's
+    // 2 m edge ease left the fitted surface 21 cm off the ribbon's edge there. Inside the cut (where a
+    // side road bends onto the trunk) this mask is 0 and _throughDeckTop rules, as before.
+    _padRibbonMask(node, ps, wx, wz) {
         const hw = this._params.roadHalfWidth ?? 5
-        let m = 0
+        let m = 0, y = 0
         for (let li = 0; li < node.legs.length; li++) {
             const leg = node.legs[li]
             const ne = this._network.get(leg.runKey)
@@ -8712,14 +8678,13 @@ export class RoadSystem {
             for (const pr of prs) {
                 const lu = Math.min(1, Math.max(0, hw + 1 - Math.sqrt(pr.d2)))
                 if (lu <= 0) continue
-                if (ps.through[li]) continue
                 const au = Math.min(1, Math.max(0, (Math.abs(pr.arcS - leg.arc) - (ps.cut[li] - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
                 if (au <= 0) continue
                 const v = lu * lu * (3 - 2 * lu) * au * au * (3 - 2 * au)
-                if (v > m) m = v
+                if (v > m) { m = v; y = this._legDeckTop(ne, leg, pr, wx, wz) }
             }
         }
-        return m
+        return { m, y }
     }
 
     /**
@@ -8743,10 +8708,11 @@ export class RoadSystem {
      */
     _buildPadSurface(node) {
         const hw = this._params.roadHalfWidth ?? 5
+        const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
         const cx = node.pos.x, cz = node.pos.z
         const xs = [], zs = [], ys = []
         const through = [], cut = []
-        const add = (x, z, thr) => {
+        const add = (x, z, thr, own) => {
             for (let k = 0; k < xs.length; k++) {
                 const dx = xs[k] - x, dz = zs[k] - z
                 if (dx * dx + dz * dz < PAD_TPS_MIN_SEP * PAD_TPS_MIN_SEP) return
@@ -8763,7 +8729,7 @@ export class RoadSystem {
                 y = own.y
             } else {
                 if (anyThrough && Math.hypot(x - cx, z - cz) < r1 && this._throughDistance(node, through, x, z) < hw + PAD_THROUGH_FREE) return
-                y = this._legSurfaceTop(node, x, z)
+                y = own ?? this._legSurfaceTop(node, x, z)
             }
             if (y == null || !isFinite(y)) return
             xs.push(x); zs.push(z); ys.push(y)
@@ -8789,7 +8755,10 @@ export class RoadSystem {
             // dense solve is O(n³): 195 → ~100 samples took the per-pad build from 5.4 ms to ~1 ms.
             for (let a = a0; a <= a1 + 1e-6; a += (!thr && a - a0 < PAD_TPS_NEAR) ? PAD_TPS_STEP : PAD_TPS_STEP_FAR) {
                 const f = _polyAtArc(e.points, e.polyCum, atStart ? a : L - a)
-                for (const lat of lats) add(f.x + lat * f.tz, f.z - lat * f.tx, thr)
+                // On a side road's PAVEMENT the sample is its own deck (what the ribbon mesh draws and the
+                // mouth mask snaps to); the shoulder lines keep the blended carve, the dirt really there.
+                for (const lat of lats) add(f.x + lat * f.tz, f.z - lat * f.tx, thr,
+                    !thr && Math.abs(lat) <= hw ? this._carveDirtY(lat, atStart ? a : L - a, leg.runKey, 1) + clearanceMargin : undefined)
             }
         }
         const n = xs.length
