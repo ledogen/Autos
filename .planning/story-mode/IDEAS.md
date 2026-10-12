@@ -356,3 +356,47 @@ own water, the stream doesn't matter".
 ~~and the fact that *view* is not a scored factor yet~~ — **stale, resolved 2026-08-01**: the view
 segment landed, `VIBE_W` is now flat .40 / view .15 / shade .20 / water .25 and the bar grew its
 fourth segment. **Binoculars are no longer blocked** (items.md §2b).
+
+## Concentric-ring worldgen: intensity rises toward the centre — 2026-10-12
+
+Owner, in the 2026-10-12 progression pass. Terrain intensity is laid out in **large concentric
+rings around the world origin**, rising inward: the outer ring is the gentle country, the innermost
+ring is the craziest — steepest terrain, off-camber roads, potholes (FEAT-106), rock slides
+(feat-rockslide-ambush), the lot. The regions sit on those rings by angle, not by distance alone:
+
+- **Region 1** at the **six o'clock** position on the outer, low-intensity ring.
+- **Region 2** one ring in, **similar AREA** to region 1 — and therefore a **bigger angular arc**,
+  since the ring is closer in (owner clarification, same day). Today's terrain steepness IS region 2.
+- **Region 3** is the **centre** — the craziest terrain, the last boss.
+
+The economic twist: **region 3's jobs often send you back out** — to region 2 a lot, to region 1
+sometimes — so the good economy at the centre is hard to *stay* in. Not always, and not absurdly far,
+but a region-3 player should expect to be thrown back into region 2 much more than shuffled around
+region 3, unless lucky. The deepest region is where you earn best and where you are least allowed to
+settle.
+
+Fits:
+- **SM-INV-12** — a radial intensity falloff is a pure function of seed + coordinates (cold, nothing
+  saved). The hook already exists: `src/terrain-height.js` is coarse × fine × a `noiseRegional`
+  modulator; a radial term on that modulator is the whole terrain half of this.
+- **Three regions / three bosses, ~12–14 days** (same pass; supersedes DESIGN.md's six-region
+  "growing with depth on a sparser grid" shape — that sentence goes in the amendment pass).
+- **SM-INV-13** — region gates stay diegetic (trail-closed barriers); the rings decide *where* the
+  barrier between ring N and N−1 sits, which is a natural arc-shaped wall rather than a disc edge.
+- The "send you back out" pattern is just the job destination distribution per region — a weight on
+  `data/offers.js`-style destination picking, no new system.
+
+Owner follow-up, same day: **the road half varies by ring too** — road character (steepness
+budget, cTurn/wGrade) gets a radial term, and the owner is willing to **re-ratify region 1 and 3**
+road defaults (this is "vary by radius", NOT the QUAL-29 retune — the region-2 ring keeps today's
+ratified defaults, since today's steepness ≈ region 2). **Region 1 becomes a ring sector of ~30°
+arc**, roughly the size of today's 2500 m-radius region, region 1 on the outside, region 3 inside.
+
+Open:
+- Ring radii in metres — "30° and the size of today's region 1" admits two readings (same AREA as
+  today's disc ≈ 19.6 km² → outer ring 5–10 km out, ~3.9 km along the arc; or ~2500 m ACROSS →
+  ring 3.5–6 km out, ≈ 6 km², a third of today). The owner's "map a little too big" worry favours
+  the smaller one.
+- Worked example on the smaller reading, rings 2500 m deep: R1 = 30° sector 3.5–6.0 km out
+  (6.3 km²); R2 = equal area one ring in, 1.0–3.5 km out → ~64° sector; R3 = the centre disc,
+  radius 1.0 km (3.1 km², half the others — the boss arena is small on purpose or the depth changes).
