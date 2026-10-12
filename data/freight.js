@@ -30,7 +30,7 @@ export const FREIGHT = {
   railwayTies:       { label: 'Railway ties, five',          model: 'railwayTies',       massKg: 455 },
   drumStack:         { label: "Drums, four 55-gal",          model: 'drumStack',         massKg: 804 },
   jobBox:            { label: 'Job box',                     model: 'jobBox',            massKg: 175 },
-  lumberBundle:      { label: 'Lumber bundle (haul)',        model: 'lumberBundle',      massKg: 170 },
+  lumberBundle:      { label: 'Lumber bundle, banded',        model: 'lumberBundle',      massKg: 170 },
   // ── Fragile (cargo.md § Fragile) — strapped the same way; health is FEAT-97 ──
   diningChairs:      { label: 'Dining chairs, four (fragile)',  model: 'diningChairs',     massKg: 24 },
   ornateVase:        { label: 'Ornate vase (fragile)',          model: 'ornateVase',       massKg: 9 },

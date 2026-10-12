@@ -44,6 +44,7 @@
 // office or school (they only receive) nor the motorist (they post only their own ride) — owner,
 // 2026-10-07.
 const ANY_GIVER = ['generalStore', 'autoShop', 'workSite', 'residence', 'farm', 'doctor']
+const YARD_TRADE = ['generalStore', 'gasStation', 'farm']   // FEAT-96: the palletised singles' circuit
 
 // Households: a residence or a farm (a farm is a residence too — it carries the tag).
 const HOME = ['residence', 'farm']
@@ -171,8 +172,8 @@ export const THINGS = [
 
     // ── Freight (FEAT-96): strapped bed loads. One row per cargo.md Freight row that has a model and
     // a source (owner, 2026-10-10: cargo.md decides who posts; a BLANK "from" posts nowhere until the
-    // owner rules a shipper — drum, barrel, crate, pallet, railway ties). All R1 for now: there is
-    // one region. "any" is ANY_GIVER, minus a class that is the thing's only destination.
+    // owner rules a shipper). All R1 for now: there is one region. "any" is ANY_GIVER, minus a class
+    // that is the thing's only destination.
     { id: 'tomatoes',     phrase: 'a pallet of tomatoes',     family: 'freight', massKg: [365, 365],
       pools: ['farm'], to: ['generalStore', 'residence'], load: 'producePalletTomatoes' },
     { id: 'squash',       phrase: 'a pallet of squash',       family: 'freight', massKg: [315, 315],
@@ -190,15 +191,26 @@ export const THINGS = [
     { id: 'softDrinks',   phrase: 'a pallet of soft drinks',  family: 'freight', massKg: [240, 240],
       pools: ['generalStore'], to: ['foodVendor', 'gasStation'], load: 'softDrinkPallet' },   // owner, 2026-10-11
     // The deliberate overloads (owner, 2026-10-10: let them roll) — past the Ranger's ~500–570 kg payload.
-    // The four full drums below are one too (804 kg).
+    // The four full drums (804 kg) are a later-region load and have no row until regions carry their
+    // own freight (owner, 2026-10-12); the debug menu still straps them.
     { id: 'cinderBlocks', phrase: 'a pallet of cinder blocks', family: 'freight', massKg: [785, 785],
       pools: ['generalStore'], to: ['workSite'], load: 'cinderBlockPallet' },
     { id: 'concrete',     phrase: 'a pallet of concrete bags', family: 'freight', massKg: [670, 670],   // as built
       pools: ['generalStore'], to: ['workSite'], load: 'concretePallet' },
-    { id: 'drumStack',    phrase: 'four 55-gallon drums',     family: 'freight', massKg: [804, 804],
-      pools: ['autoShop', 'gasStation'], load: 'drumStack' },
     { id: 'jobBox',       phrase: 'a job box',                family: 'freight', massKg: [175, 175],
       pools: ['residence'], to: ['workSite'], load: 'jobBox' },   // owner, 2026-10-11: from home to the site
+    // The palletised singles and the ties: to and from the store, the gas station and the farms
+    // (owner, 2026-10-12).
+    { id: 'railwayTies',  phrase: 'five railway ties',        family: 'freight', massKg: [455, 455],
+      pools: YARD_TRADE, to: YARD_TRADE, load: 'railwayTies' },
+    { id: 'oilDrum',      phrase: 'a drum of oil',            family: 'freight', massKg: [213, 213],
+      pools: YARD_TRADE, to: YARD_TRADE, load: 'drum' },
+    { id: 'waterBarrel',  phrase: 'a barrel of water',        family: 'freight', massKg: [230, 230],
+      pools: YARD_TRADE, to: YARD_TRADE, load: 'barrelPlastic' },
+    { id: 'smallCrate',   phrase: 'a small crate',            family: 'freight', massKg: [30, 30],
+      pools: YARD_TRADE, to: YARD_TRADE, load: 'smallCrate' },
+    { id: 'largeCrate',   phrase: 'a large crate',            family: 'freight', massKg: [65, 65],
+      pools: YARD_TRADE, to: YARD_TRADE, load: 'largeCrate' },
 ]
 
 // ── Rewards — the named bonus items ─────────────────────────────────────────────────────────

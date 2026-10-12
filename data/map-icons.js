@@ -143,9 +143,11 @@ export const POI_ICONS = {
     // the motorist) is the diamond, unlabelled: there are a dozen of them and naming each would turn
     // the map into a wall of text. FEAT-67 SUPERSEDES the old "finding out what a marker offers is
     // what driving to it is for": the story map is now the mission board, and hovering a diamond
-    // shows its offer. The diamond's fill is its current offer's FAMILY (FAMILY_COLOR below); this
-    // orange is only the fallback when no board is live (free roam never draws POIs anyway).
-    diamond:      { label: null,      color: '#ff7a18', path: null },
+    // shows its offer. The diamond's fill is its current offer's FAMILY (FAMILY_COLOR below), grey
+    // when a giver has nothing on offer. This colour is for a diamond that NEVER gives work (office,
+    // school — destinations only): the map paper, so it reads hollow. It was orange, which read as
+    // a live job with no card behind it (owner, 2026-10-12).
+    diamond:      { label: null,      color: '#cfe2bd', path: null },
 }
 
 /**

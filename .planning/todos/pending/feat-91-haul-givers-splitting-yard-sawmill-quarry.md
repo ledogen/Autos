@@ -179,8 +179,10 @@ It posts haul only, for now. The loading beat is FEAT-88's (see that ticket's "A
 - **Region window.** Story mode has one region, so the yard is just a roster slot. The `regions: [n]`
   field from "Region gating" lands with region 2.
 - **A bigger yard pad.** The owner ruled the firewood yard fits the standard 14 × 8 m lay-by pad.
-  **The sawmill and quarry will need a larger pad**, lumber-yard / quarry sized, and the FEAT-46 pad
-  solver has to be checked for that footprint before promising one per region.
+  **The sawmill and quarry get a big pad** (owner, 2026-10-12), lumber-yard / quarry sized, and the
+  FEAT-46 pad solver has to be checked for that footprint before promising one per region.
+- **Lumber (owner, 2026-10-12): the sawmill's HAUL is loose boards**; the banded bundle (ASSET-38,
+  170 kg) is a FREIGHT load. The table above still says "banded bundle" for the haul — superseded.
 - **The loader is "over the truck's own bed", not a release point on the model.** The owner asked
   for the title-screen rock drop. A sawmill rack or quarry ramp that drops from a fixed point is a
   later choice.

@@ -110,7 +110,7 @@ One per region, from the haul yards (FEAT-91).
 | Region | Load | From → to | Asset | Mass |
 |---|---|---|---|---|
 | R1 | firewood bundles | firewoodYard (splitting yard) → any | ASSET-37 (shipped) | 11 kg a bundle × 10–15 bundles. **A range on purpose:** each offer rolls the bundle COUNT, which is what makes one haul bigger and better-paid than another |
-| R2 | lumber boards | sawmill → any | ASSET-38 | per board, 1.8 m SPF at 450 kg/m³: 2x4 2.7 · 2x6 4.3 · 2x8 5.6 kg. The banded bundle (54 boards) is 170 kg — loose boards vs the bundle is still the owner's call |
+| R2 | lumber boards | sawmill → any | ASSET-38 | per board, 1.8 m SPF at 450 kg/m³: 2x4 2.7 · 2x6 4.3 · 2x8 5.6 kg. Haul is the LOOSE boards; the banded bundle is freight (owner, 2026-10-12) |
 | R3 | rocks | quarry → any | none — the procedural `rock` debris type | ~50 kg a rock (granite cobble) |
 
 ---
@@ -136,16 +136,17 @@ now** (owner, 2026-10-10) — there is one region; the Region column is the desi
 | R1 | a pallet of empty propane tanks | any → generalStore / gasStation | ASSET-72 | 43 | posted, back to refill; any giver but the general store. 4 × 7.7 kg + small pallet |
 | R1 | mulch | generalStore / farm → any | ASSET-51 (bulk heap, mulch variant) | 150–250 | not posted. **A range because there is no model yet** — fixed when the heap is built |
 | R1 | steel car rims, a stack of 4 or 8 | autoShop → any | ASSET-53 | 40–100 | not posted. **A range because there is no model yet** (4 or 8 rims × ~10 kg) |
-| R1 | drum, on a pallet | | ASSET-30 on the small pallet | 213 | not posted — no shipper. Full of oil: 208 L × 0.88 + 18 kg drum, + small pallet |
-| R1 | barrel, on a pallet | | ASSET-29 on the small pallet | 230 | not posted — no shipper. Full of water: 208 kg + 10 kg HDPE, + small pallet |
-| R1 | crate, on a pallet | | ASSET-28 on a pallet | 30 small · 65 large | not posted — no shipper. Crate 18 / 45 kg, + small / full pallet. The bare pallet is no longer a load |
-| R2 | four 55-gallon drums | autoShop / gasStation → any | ASSET-48 | 804 | posted. **An overload:** 4 full drums of oil × 201 kg, no pallet (owner, 2026-10-11) |
+| R1 | a drum of oil | generalStore / gasStation / farm → generalStore / gasStation / farm | ASSET-30 on the small pallet | 213 | posted (owner, 2026-10-12). Full of oil: 208 L × 0.88 + 18 kg drum, + small pallet |
+| R1 | a barrel of water | generalStore / gasStation / farm → generalStore / gasStation / farm | ASSET-29 on the small pallet | 230 | posted (owner, 2026-10-12). Full of water: 208 kg + 10 kg HDPE, + small pallet |
+| R1 | a small crate | generalStore / gasStation / farm → generalStore / gasStation / farm | ASSET-28 on the small pallet | 30 | posted (owner, 2026-10-12). Crate 18 kg + small pallet. The bare pallet is no longer a load |
+| R1 | a large crate | generalStore / gasStation / farm → generalStore / gasStation / farm | ASSET-28 on the full pallet | 65 | posted (owner, 2026-10-12). Crate 45 kg + full pallet |
+| R3 | four 55-gallon drums | autoShop / gasStation → any | ASSET-48 | 804 | not posted — **a later-region load** (owner, 2026-10-12: full, explicitly for later missions). An overload: 4 full drums of oil × 201 kg, no pallet |
 | R2 | a pallet of soft drinks | generalStore → foodVendor / gasStation | ASSET-46 | 240 | posted. 24 trays × 24 cans × 0.37 kg + trays, + pallet |
 | R2 | a pallet of cinder blocks | generalStore → workSite | ASSET-55 | 785 | posted. **An overload, and it rolls** (owner, 2026-10-10). 45 blocks (8" CMU) × 17 kg + pallet |
 | R2 | a pallet of concrete bags | generalStore → workSite | ASSET-47 (concrete variant) | 670 | posted. **An overload, and it rolls** (owner, 2026-10-10). 18 × 80 lb bags (36 kg) + pallet |
 | R2 | sheets of plywood | sawmill → any | ASSET-54 | 330 | not posted — the sawmill does not exist yet. 12 sheets of 3/4" 4×8 × 27.5 kg. Rides angled over the tailgate |
 | R2 | bed full of topsoil | farm → any | ASSET-51 (bulk heap, topsoil variant) | 500–700 | not posted. **A range because there is no model yet**; an overload, set by feel once the heap is built |
-| R2 | railway ties | | ASSET-52 | 455 | not posted — no shipper (owner, 2026-10-10). 5 hardwood ties, 7×9 in × 2.6 m, × 91 kg. Rides angled over the tailgate |
+| R2 | five railway ties | generalStore / gasStation / farm → generalStore / gasStation / farm | ASSET-52 | 455 | posted (owner, 2026-10-12). 5 hardwood ties, 7×9 in × 2.6 m, × 91 kg. Rides angled over the tailgate |
 | R3 | a job box | residence → workSite | ASSET-57 | 175 | posted (route: owner, 2026-10-11). 95 kg steel chest + ~80 kg of tools — the tools are unseen, so that half is an assumption |
 | R3 | a Persian rug or two | | ASSET-58 | 30–60 per roll | not posted. **A range because there is no model yet** |
 
@@ -205,6 +206,18 @@ HUD number appears.
 2. **A blank From posts nowhere** until the owner names a shipper.
 3. **Everything rolls in R1** while there is one region.
 4. **Freight vs haul** — see "How freight pays" above.
+
+## Rulings (owner, 2026-10-12)
+
+1. **Shippers for the palletised singles and the ties:** the drum, the barrel, both crates and the
+   railway ties go to and from the general store, the gas station and the farms.
+2. **The four drums stay full (804 kg) and are a later-region load.** In general, item weight ramps
+   in the later regions. They post nowhere until regions carry their own freight.
+3. **Lumber:** the haul is loose boards; the banded bundle (ASSET-38's 170 kg) is freight.
+4. **The sawmill and the quarry get a big pad** — bigger than the splitting yard's 14 × 8.
+5. **Each source picks a family first, then a thing in it**, so every family it posts gets an even
+   share there. Freight went from ~13 % of offers (2.3 a board, none on 7 % of boards) to ~31 %
+   (5.4 a board, never none); courier holds ~52 %.
 
 ## Adding cargo
 

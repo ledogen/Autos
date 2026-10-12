@@ -151,6 +151,18 @@ produce freight. Its destinations are the general store and mission givers.
 - **A job-type badge on every card:** a placeholder letter in a box (C courier · Fe fetch ·
   Fr freight · Fg fragile · H haul) until the map / card iconography pass.
 
+## Rulings (owner, 2026-10-12)
+
+- **Shippers named:** the drum, the barrel, both crates and the railway ties go to and from the
+  general store, the gas station and the farms. The bare pallet is no longer a load.
+- **The four drums stay full (804 kg) and are a later-region load** — weight ramps with the region.
+  They have no THINGS row for now; the debug menu still straps them.
+- **More freight on the board.** Each source now picks a FAMILY first, then a thing in it (own
+  `family` stream, so the other spec draws keep their order). Over 400 seeds × 12 board times:
+  freight ~13 % → ~31 % of offers, 2.3 → 5.4 a board, boards with none 7 % → 0 %; courier ~52 %.
+- **First full run, driven by the owner:** an empty propane pack, hauled fast, S rank, "pay was
+  mediocre compared to courier. perfect."
+
 ## Progress (2026-10-10)
 
 Built: `createWeldJoint` and a joint count in `counters()`; `strapPose` (pure, `src/debris.js`);

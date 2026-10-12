@@ -393,7 +393,12 @@ export class OfferBoard {
         const things = THINGS.filter(t => postsThing(t, offer.type)
             && src.families.includes(t.family) && BUILT_FAMILIES.has(t.family))
         if (!things.length) return (offer._spec = null)
-        const thing = pick(r, things)
+        // FAMILY FIRST, then the thing (owner, 2026-10-12: too little freight): every family a source
+        // posts gets an even share there, however many phrases each has. Its own stream, so the
+        // `spec` draws below — destination, place name, bonus — keep their order.
+        const families = [...new Set(things.map(t => t.family))]
+        const family = pick(rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:family`), families)
+        const thing = pick(r, things.filter(t => t.family === family))
         const [lo, hi] = thing.massKg
         const m = lo + (hi - lo) * r()
         const massKg = m >= 10 ? Math.round(m) : Math.round(m * 10) / 10
