@@ -1,7 +1,7 @@
 ---
 id: BUG-82
 type: bug
-status: pending
+status: completed
 severity: medium
 opened: 2026-10-10
 source: Owner report + capture `.planning/bug-captures/bug-82-seed244091065-pad-wrinkles.json` (seed 244091065, mark 538.1, −1137.3). Diagnosed headless the same session; plan approved in principle, perf budget set by the owner.
@@ -212,7 +212,7 @@ On the capture's node AND across the seed battery (`test/lib/road-battery.mjs` w
       Timing and normal error are report-only. `_skirt-check.mjs` was folded in and deleted.
 - [x] Owner looks at the capture spot in the browser and the wrinkles are gone (2026-10-11).
 - [x] Owner checks the ribbon-pad weld in the browser: no tears at the ribbon's outer edges (2026-10-12).
-- [ ] Before merging: delete `test/_wrinkle.mjs`, `test/_padperf.mjs` and `test/_mouthY.mjs`.
+- [x] Scratch scripts deleted; merged to main 2026-10-12.
 
 ## Out of scope / known residue
 
@@ -222,3 +222,9 @@ On the capture's node AND across the seed battery (`test/lib/road-battery.mjs` w
   there, report them and open a separate ticket. Do not widen this one.
 - Ear-clipped zero-area slivers along collinear ring runs exist today. The new path removes them as a
   side effect, but don't chase them in the fallback path.
+
+## Resolution (2026-10-12)
+
+Closed, owner-approved in the browser. eaa67d3 is the Delaunay pad fill (no slivers, no wrinkles).
+3b4a2ab is the ribbon-pad weld (shared mouth vertices, pad field on each leg's own deck) plus the circle
+pad rung deleted. Gate: `test/road-pad-fill.mjs`.
