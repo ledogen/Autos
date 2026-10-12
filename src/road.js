@@ -9865,9 +9865,16 @@ export class RoadSystem {
         // terminus), rotating the bank around the run end. Continuous with the interior footprint
         // across the end-ray, ordinary toe by footHW. Shared by physics (_sampleCarveWorld) and
         // the mesh (_buildCarveTable): mesh == collision holds.
+        // BUG-83: the radius is recomputed LIVE from the terminus (nr.point) rather than read from
+        // nr.endRadial, because analyticNormal reuses one resolver hit for its four ±0.5 m
+        // finite-difference samples — a frozen radius flattened the bank's normal from ~47° to
+        // ~6°, and the wheels climbed the cut like a ladder (wall-climb capture 2026-10-12).
+        // Identical to nr.endRadial at the resolved point itself (mesh and rd_gh unchanged).
         let latEff = signedLat
-        if (nr.endRadial !== undefined && nr.endRadial > Math.abs(signedLat))
-            latEff = (signedLat < 0 ? -1 : 1) * nr.endRadial
+        if (nr.endRadial !== undefined) {
+            const r = Math.hypot(wx - nr.point.x, wz - nr.point.z)
+            if (r > Math.abs(signedLat)) latEff = (signedLat < 0 ? -1 : 1) * r
+        }
         const cs = this._carveCrossSection(latEff, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawAmp, wx, wz)
         const rv = nr.rival
         if (!rv) return cs

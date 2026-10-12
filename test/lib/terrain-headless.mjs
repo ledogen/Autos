@@ -34,23 +34,26 @@ export function makeTerrainHeadless(seed, params, road) {
 
     // analyticHeight — raw, then the road carve blend EXACTLY as terrain.js (incl. FEAT-40:
     // queryY threads into _sampleCarveWorld, which gives bored runs only their below-apex probes).
-    // _nrHint accepted for signature parity with the real terrain (unused — no memo here).
-    const analyticHeight = (wx, wz, _nrHint, queryY) => {
+    // nrHint is threaded through EXACTLY as terrain.js does (BUG-83: the game's wheels ride the
+    // hinted path, and a hint-only bug flattened a 47° bank — the harness must exercise it).
+    const analyticHeight = (wx, wz, nrHint, queryY) => {
         const raw = rawHeightWorld(wx, wz)
         if (road) {
-            const c = road._sampleCarveWorld(wx, wz, raw, undefined, queryY)
+            const c = road._sampleCarveWorld(wx, wz, raw, nrHint, queryY)
             if (c && c.blendW > 1e-6) return raw + c.blendW * (c.gradeY - raw)
         }
         return raw
     }
 
-    // analyticNormal — central difference over analyticHeight, EPS=0.5 (terrain.js:609-620).
-    const analyticNormal = (wx, wz, _nrHint, queryY) => {
+    // analyticNormal — central difference over analyticHeight, EPS=0.5, ONE resolver hit reused for
+    // all four samples exactly as terrain.js analyticNormal does (BUG-83).
+    const analyticNormal = (wx, wz, nrHint, queryY) => {
         const EPS = 0.5
-        const hL = analyticHeight(wx - EPS, wz, undefined, queryY)
-        const hR = analyticHeight(wx + EPS, wz, undefined, queryY)
-        const hD = analyticHeight(wx, wz - EPS, undefined, queryY)
-        const hU = analyticHeight(wx, wz + EPS, undefined, queryY)
+        const hint = (nrHint !== undefined) ? nrHint : (road ? road.carveHint(wx, wz) : null)
+        const hL = analyticHeight(wx - EPS, wz, hint, queryY)
+        const hR = analyticHeight(wx + EPS, wz, hint, queryY)
+        const hD = analyticHeight(wx, wz - EPS, hint, queryY)
+        const hU = analyticHeight(wx, wz + EPS, hint, queryY)
         const nx = -(hR - hL) / (2 * EPS)
         const ny = 1
         const nz = -(hU - hD) / (2 * EPS)

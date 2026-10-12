@@ -20,6 +20,7 @@
 // (handbrake is not in the telemetry; assumed false — true only if the driver held Space.)
 
 import { RoadSystem } from '../../src/road.js'
+import { WaterSystem } from '../../src/water.js'
 import { stepPhysics } from '../../src/physics.js'
 import { makeTerrainHeadless } from './terrain-headless.mjs'
 import { makeEngineCtx } from './engine-ctx.mjs'
@@ -66,7 +67,17 @@ export async function replayEvent(capture, { THREE }) {
     // drivable surface (memory: project_invariance_harness), and this matched rd_gh to < 1 cm in-spike.
     const sch = ev.streamCenterHistory || []
     const center = sch.length ? sch[sch.length - 1] : { x: col(frames[0], 'px'), z: col(frames[0], 'pz') }
+    // BUG-76/83: the game routes AROUND ponds — without the same water no-go the router builds a
+    // different network and the terrain self-check fails by tens of metres (mirrors replay.mjs).
+    const { rawHeightWorld } = makeTerrainHeadless(seed, params, null)
+    const water = new WaterSystem(seed, params, rawHeightWorld)
+    const pondDiscs = (minX, minZ, maxX, maxZ) => {
+        const discs = []
+        for (const p of water.pondsNear(minX, minZ, maxX, maxZ)) discs.push(p.floorX, p.floorZ, p.radius + p.skirt)
+        return discs
+    }
     const road = new RoadSystem(seed, params)
+    road.setWaterNoGo((x, z) => water.isRoadNoGo(x, z), pondDiscs)
     road.update(new THREE.Vector3(center.x, 0, center.z))
     const terrain = makeTerrainHeadless(seed, params, road)
 
