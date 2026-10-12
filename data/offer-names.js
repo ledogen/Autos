@@ -40,7 +40,8 @@ export const FIRST_NAMES = {
         'Jake', 'Jacob', 'George', 'Ryan', 'Bryce', 'Cory', 'Andrew', 'Brian', 'Forest', 'Henry',
         'Kevin', 'Gilbert', 'Stephen', 'Joel', 'Ken', 'Kam', 'Pete', 'Steve', 'Stan', 'Rolph',
         'Alabaster', 'Atlas', 'Elias',
-        'Idris', 'Otis', 'Clyde', 'Merle', 'Lyle', 'Cletus', 'Rusty', 'Hank', 'Floyd', 'Dwayne', 'Virgil'
+        'Idris', 'Otis', 'Clyde', 'Merle', 'Lyle', 'Cletus', 'Rusty', 'Hank', 'Floyd', 'Dwayne', 'Virgil',
+        'Old-Man', 'Pappy', 'Bartholomew',
     ],
     female: [
         'Deb', 'Lorraine', 'Marlene', 'Nicole', 'Nikki', 'Chelsea', 'Sandra', 'May', 'Mae', 'Millie', 
@@ -49,7 +50,7 @@ export const FIRST_NAMES = {
         'Fatima', 'Felicia', 'Gaby', 'Gertrude', 'Haifa', 'Horum', 'Belle', 'Betty', 'Iris', 'Janet', 'Jenny', 'Jessica', 'Jen', 'Molly', 'Jill', 'Kamilah', 'Karen', 'Liz', 
         'Lizzy', 'Lia', 'Leah', 'Nancy', 'Natalie', 'Nat', 'Olma', 'Penelope', 'Pia', 'Korrin', 'Corina',
         'Stacy', 'Stephanie', 'Kennedy', 'Sally', 'Rebecca',
-        'Wanda', 'Opal', 'Loretta', 'Maybelle', 'Tammy', 'Rhonda', 'Dottie', 'Pearl', 'Irma', 'Ruby', 'Velma'
+        'Wanda', 'Opal', 'Loretta', 'Maybelle', 'Tammy', 'Rhonda', 'Dottie', 'Pearl', 'Irma', 'Ruby', 'Velma', 'Pepper',
     ]
 }
 
@@ -69,7 +70,8 @@ export const NICKNAMES = [
     'Two-Tone', 'Bud', 'Doc', 'Princess', 'Double-Dutch', 'Pappy', 'The Evil', 'The Good', 'Skeevy', 
     'Primus', 'Terrible', 'The Strong', 'The Wicked', 'Lean', 'Mean', 'Slippy', 'Baguette', 'Frog', 
     'Gangly', 'Yellow', 'Squeevy', 'The Juice', 'Squawk', 'Lil', 'The Wise', 'Hold-Up',
-    'Tater', 'Gravel', 'Two-Stroke', 'Biscuit', 'Knuckles', 'Sweet Tea', 'Lugnut', 'Catfish', 'Mud Flap', 'Buckshot'
+    'Tater', 'Gravel', 'Two-Stroke', 'Biscuit', 'Knuckles', 'Sweet Tea', 'Lugnut', 'Catfish', 'Mud Flap', 'Buckshot',
+    'Sugar', 'The Senile', 'Cowboy', 'Cantankerous'
 ]
 
 /** 0..1 — share of generated people who get a nickname. */
