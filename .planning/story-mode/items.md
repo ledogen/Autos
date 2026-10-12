@@ -718,7 +718,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 | **Driver / energy** | coffee, fish, **meals (§1d)** | camp energy gear | coffee, energy drink, snacks |
 | **Truck / damage** | spare tire, air filter, **zip ties, duct tape, coolant, tire patches** | parts (§3), quick-jack, breaker bar, **hi-lift, bike pump (always), compressor** | Host charm |
 | **Navigation / info** | — | map, beacon, GPS, shortcut GPS, **light bar**, *CB radio (blocked)* | — |
-| **Cargo / mission** | *straps (FEAT-90, parked)* | cooler, chain, **rubber bed mat, bedliner** | — |
+| **Cargo / mission** | *straps (FEAT-110, parked)* | cooler, chain, **rubber bed mat, bedliner** | — |
 | **Camp / night** | — | camp vibe gear, backpack | — |
 | **Fuel / time** | jerry can | — | — |
 
@@ -735,7 +735,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 | **Bike pump** | Always in the truck — not bought, not a slot | Re-inflates a patched tire: a **2 h timeskip** | Owner, 2026-09-30. The baseline that makes a patch usable at all. The cost is daylight |
 | **Compressor** | Carried tool | Re-inflates a patched tire: a **30 min timeskip** | Owner, 2026-09-30 — **brought back** in a different job: not airing down for grip (our tire model has no pressure–grip term), but **turning a 2 h patch stop into a 30 min one**. Worthless without patches; patches are slow without it. No inflation state needed — re-inflation is just a timeskip, and the `flat[]` flag clears at the end of it |
 | **Rubber bed mat** | Carried (loose in the bed) | Raises friction between haul cargo and the bed floor. The load stops **sliding** but can still **bounce**, so you still read the road | The cheap, early version. Physically one number — the cargo-to-floor friction coefficient in the bed well. **It is the lesser option** (owner, 2026-09-30): it either grips less than the bedliner, or wears out, or both — **undecided** |
-| **Bedliner** | Fitted part (service shop) | The same friction increase as the mat, done properly: **works well, never wears out** | **The real, desirable upgrade** (owner, 2026-09-30). "Permanent" means for the run — like every part it dies with the run (SM-INV-8). Still only stops sliding, never bouncing, so the FEAT-90 objection doesn't return |
+| **Bedliner** | Fitted part (service shop) | The same friction increase as the mat, done properly: **works well, never wears out** | **The real, desirable upgrade** (owner, 2026-09-30). "Permanent" means for the run — like every part it dies with the run (SM-INV-8). Still only stops sliding, never bouncing, so the FEAT-110 objection doesn't return |
 
 ### Kept, but blocked or needs a mechanism
 

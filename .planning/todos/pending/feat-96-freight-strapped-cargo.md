@@ -9,7 +9,7 @@ source: owner, 2026-10-06 — "freight is non-shock-sensitive cargo that is stra
   … they start from normal POIs." Follow-ups the same day: mass scales both the pay and the par;
   "abandon job is replaced with cleanup cargo which costs the player an hour".
 relates: FEAT-97 (Fragile — builds on this ticket's strapped-cargo layer), FEAT-88 (Haul — the loose
-  bed cargo; its debris lifecycle is reused here), FEAT-89 (Courier), FEAT-90 (ratchet straps — parked;
+  bed cargo; its debris lifecycle is reused here), FEAT-89 (Courier), FEAT-110 (ratchet straps — parked;
   its weld-joint design is the mechanism here), FEAT-67 (offer board), FEAT-53 (payout), ASSET-27
   pallet · ASSET-28 crate · ASSET-29 barrel · ASSET-30 drums (the first freight models) ·
   ASSET-46..48 (soft-drink pallet, potting-soil pallet, drum stack — the named freight loads)
@@ -59,7 +59,7 @@ everything FEAT-97 fragile reuses.
 1. **Weld joint through the adapter.** Add `createWeldJoint(handleA, handleB, worldAnchor)` to
    `src/physics-engine.js` beside `createDistanceJoint`. It is rigid: the linear and angular hertz
    are 0. It also gets `jointForce(joint, out)`, which reads `b3Joint_GetConstraintForce` (FEAT-97
-   needs it). Both are in the vendored bindings (`vendor/box3d/dist/box3d.d.ts`). This is FEAT-90's
+   needs it). Both are in the vendored bindings (`vendor/box3d/dist/box3d.d.ts`). This is FEAT-110's
    option A: the cargo stays its own body, so its mass and inertia couple to the chassis exactly as
    a loose body does, and nothing in `physics.js` that caches chassis mass changes. Joined bodies do
    not collide with each other in Box3D by default, so the cargo cannot fight the bed floor.
@@ -108,7 +108,7 @@ everything FEAT-97 fragile reuses.
 - The mass menu at the giver (items.md §1a: pick a heavier item for more pay, gated by suspension
   and tyre upgrades). It still needs its own ratification and is the natural follow-up.
 - Specific freight models beyond the four above.
-- Straps as an item (FEAT-90, parked). Here the strap is part of the job, not something you own.
+- Straps as an item (FEAT-110, parked). Here the strap is part of the job, not something you own.
 
 ## Rulings (owner, 2026-10-06)
 

@@ -1,5 +1,5 @@
 ---
-id: FEAT-70
+id: FEAT-109
 type: feature
 status: open
 opened: 2026-08-22
@@ -12,7 +12,10 @@ manual-transmission mechanic, and with an automatic + torque converter there is 
 stall against. Open this when the manual gearbox exists."
 ---
 
-# FEAT-70: Engine stall — the truck dies on its own
+# FEAT-109: Engine stall — the truck dies on its own
+
+> **Renumbered 2026-10-12:** was FEAT-70, a duplicate id. Older docs citing FEAT-70 for this ticket mean FEAT-109.
+
 
 ## Context
 

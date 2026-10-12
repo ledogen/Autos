@@ -1,5 +1,5 @@
 ---
-id: FEAT-90
+id: FEAT-110
 type: feature
 status: open
 severity: minor
@@ -19,7 +19,9 @@ design: items.md §1 "Cargo straps" row + the four rules; IDEAS.md "Item: cargo 
 requires: FEAT-88 shipped (world-truck bed well, cargo spawn, roughness read)
 ---
 
-# FEAT-90: Ratchet straps — lock a haul load to the bed (PARKED — weak as specified)
+# FEAT-110: Ratchet straps — lock a haul load to the bed (PARKED — weak as specified)
+
+> **Renumbered 2026-10-12:** was FEAT-90, a duplicate id. Older docs citing FEAT-90 for this ticket mean FEAT-110.
 
 > **2026-10-06:** strapped cargo now exists as a property of two mission types, not as an item:
 > FEAT-96 freight and FEAT-97 fragile weld their load to the bed, and FEAT-96 builds the weld joint

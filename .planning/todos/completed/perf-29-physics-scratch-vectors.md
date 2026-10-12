@@ -6,7 +6,7 @@ opened: 2026-07-28
 closed: 2026-07-28
 severity: trivial
 source: external prompt audit (Babylon-style perf tenets compared against src/)
-relates: [PERF-28 (cancelled alongside — same audit), PERF-26/27 (where our hitches actually come from)]
+relates: [PERF-35 (cancelled alongside — same audit), PERF-26/27 (where our hitches actually come from)]
 resolution: "CANCELLED un-implemented, same day it was opened. Removes an allocation load V8's
 scavenger already handles for ~free, in exchange for real silent-corruption risk in the physics
 integrator. Do not re-open on 'zero allocations in the render loop' grounds — that tenet targets a

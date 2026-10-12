@@ -131,6 +131,9 @@ choose, too many and a good job is always nearby; aim for the count where that g
 
 ### Roadmap
 
+> **Tracked under SM-3 since 2026-10-12** — MILESTONES.md § SM-3 "Places and Missions" holds the
+> live ticket table with states. This table is the original plan.
+
 | Step | Ticket |
 |---|---|
 | 0. Measure the pad supply | done (above) |

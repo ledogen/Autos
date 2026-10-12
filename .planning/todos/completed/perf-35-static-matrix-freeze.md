@@ -1,5 +1,5 @@
 ---
-id: PERF-28
+id: PERF-35
 type: perf
 status: cancelled
 opened: 2026-07-28
@@ -14,7 +14,9 @@ re-open — see 'Why this is not a win' below. Owner has ruled out ever reaching
 where the lever would pay."
 ---
 
-# PERF-28 (CANCELLED): Freeze world matrices on static streamed meshes
+# PERF-35 (CANCELLED): Freeze world matrices on static streamed meshes
+
+> **Renumbered 2026-10-12:** was PERF-28, a duplicate id. Older docs citing PERF-28 for this ticket mean PERF-35.
 
 Proposed setting `matrixAutoUpdate = false` + a one-time `updateMatrixWorld()` on write-once
 streamed meshes (terrain chunks, road runs, water, prop instancers), as the Three.js analogue of

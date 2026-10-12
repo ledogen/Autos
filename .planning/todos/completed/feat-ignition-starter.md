@@ -133,7 +133,7 @@ questions above:
   free roam / lab / scenario spawn RUNNING so a debug reset is never gated behind a keypress.
   Sleeping at camp also leaves the truck off, so you start the morning by starting it.
 - **Stalling: OUT of v1.** The engine only stops when the player turns the key. Stall is deferred
-  until the manual transmission exists — tracked as **FEAT-70**.
+  until the manual transmission exists — tracked as **FEAT-70** (renumbered FEAT-109).
 - **Kill at speed: allowed at any speed.** You really can turn the key off at 50 mph.
 - **Engine braking with the key off (owner's correction):** a dead engine in an automatic left in
   gear does NOT freewheel — above the converter's coupling speed the turbine drags the impeller and

@@ -1,7 +1,8 @@
 ---
 id: FEAT-54
 type: feature
-status: open
+status: closed
+closed: 2026-10-12
 opened: 2026-08-02
 severity: minor
 source: run-shape.md "Code deltas owed to the 2026-08-02 ruling" (capture-before-tuning mandate)
@@ -39,16 +40,18 @@ figure and must move to the ratified 20-day shape. This ticket is the capture th
 
 ## Still owed (the open remainder — this ticket's live scope)
 
-- [ ] **`story.js` `REGION_RADIUS_M` per-region ladder** — flat 2500 becomes region 1 of a
+- [→] **Moved to FEAT-28 (2026-10-12).** **`story.js` `REGION_RADIUS_M` per-region ladder** — flat 2500 becomes region 1 of a
       ladder growing with depth on a sparser grid. The actual radii are OPEN (run-shape.md:
       derive from the par bands; **run `test/region-radius-curve.mjs` before committing radii**).
       Not in `routeCacheSig` ⇒ no re-bake. Interacts with FEAT-28's per-unlock budget.
-- [ ] **Repairs need a time cost alongside the money cost**, applied as a clock skip (the
+- [→] **Moved to FEAT-69 (2026-10-12).** **Repairs need a time cost alongside the money cost**, applied as a clock skip (the
       shops/service/camp pause ruling) — plumbing arrives with SM-3's repair economy; capture
       only, do not build early.
-- [ ] **The map must be reachable from the shop / service / camp screens** (UI reachability,
+- [→] **Moved to FEAT-104 (2026-10-12).** **The map must be reachable from the shop / service / camp screens** (UI reachability,
       probably lands with FEAT-41 menus).
-- [ ] `sky.js` `dayLengthSec` 120 disagrees with day.js's 1440 — **day.js is the authority**
+- [x] **Resolved in code (checked 2026-10-12):** `day.js` is the sole driver of the story sky
+      (`SKY_CYCLE.playing` stays false in story mode, `day.js:430`), so sky's 120 s is free-roam only.
+      Was: `sky.js` `dayLengthSec` 120 disagrees with day.js's 1440 — **day.js is the authority**
       (pre-existing; sky's value is a free-roam demo cadence). Decide whether story mode should
       drive sky's cycle off DAY_PARAMS instead of the local constant.
 
@@ -57,3 +60,9 @@ figure and must move to the ratified 20-day shape. This ticket is the capture th
 - Applied section: `npm test` green on day-clock + economy (done in the applying commit).
 - Remainder: each box closes with its owning system (FEAT-28/41, SM-3) or its own decision;
   close this ticket when the list is empty or every remaining line has moved to a real owner.
+
+## Resolution (2026-10-12)
+
+Closed per its own acceptance rule: every remaining line moved to a real owner — the radius
+ladder to FEAT-28, the repair time cost to FEAT-69, map reachability to FEAT-104 — and the sky
+cadence question turned out already settled in `day.js`.

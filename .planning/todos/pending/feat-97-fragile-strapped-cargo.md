@@ -12,7 +12,7 @@ source: owner, 2026-10-06 — "fragile is an item strapped to the bed of the tru
   at zero health the job fails and "abandon job is replaced with cleanup cargo which costs the
   player an hour"; the first slice uses the crate and a pelican case.
 relates: FEAT-96 (Freight — builds the strapped-cargo layer this ticket stands on; HARD
-  prerequisite), FEAT-88 (Haul — the share-aboard pay this mirrors), FEAT-90 (ratchet straps, parked),
+  prerequisite), FEAT-88 (Haul — the share-aboard pay this mirrors), FEAT-110 (ratchet straps, parked),
   FEAT-38 (surface class — the paved-vs-dirt choice this type makes real), FEAT-67 (offer board),
   ASSET-28 crate · ASSET-39 pelican case (first slice) · ASSET-40..45 (the named items, later)
 invariants: SM-INV-4 (continuous pay, floor at zero), SM-INV-10 (no cargo number on the HUD),

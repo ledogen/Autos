@@ -220,3 +220,10 @@ decide whether distant regions can be evicted and re-warmed on approach.
       on and forced off, and no tile or edge generates differently because it ran.
 - [ ] Route-cache residency across ~6 unlocked regions measured, with an eviction policy if the
       footprint warrants one.
+
+## Moved in from FEAT-54 (2026-10-12)
+
+- [ ] **`story.js` `REGION_RADIUS_M` per-region ladder** — flat 2500 becomes region 1 of a
+      ladder growing with depth on a sparser grid. The actual radii are OPEN (run-shape.md:
+      derive from the par bands; **run `test/region-radius-curve.mjs` before committing radii**).
+      Not in `routeCacheSig` ⇒ no re-bake. Interacts with this ticket's per-unlock budget.

@@ -201,7 +201,7 @@
 
 <script type="module">
 /* ─────────────────────────── data ─────────────────────────── */
-let TICKETS = [], BY_ID = new Map(), BACKLINKS = new Map(), STATS = null, STORY = null;
+let TICKETS = [], LANES = [], BY_ID = new Map(), BACKLINKS = new Map(), STATS = null, STORY = null;
 
 async function load() {
   const [t, s, c] = await Promise.all([
@@ -209,7 +209,7 @@ async function load() {
     fetch('stats.json?' + Date.now()).then(r => r.json()),
     fetch('cargo.json?' + Date.now()).then(r => r.json()),
   ]);
-  TICKETS = t.tickets; STATS = s; STORY = c;
+  TICKETS = t.tickets; LANES = t.laneOrder || []; STATS = s; STORY = c;
   BY_ID = new Map(TICKETS.map(x => [x.id, x]));
   BACKLINKS = new Map();
   for (const tk of TICKETS) {
@@ -371,7 +371,7 @@ const TYPES = ['milestone', 'feature', 'bug', 'perf', 'quality', 'infra', 'asset
 const STATUSES = ['open', 'closed', 'cancelled'];
 const STATUS_COLOR = { open: '#6fb3ff', closed: '#7fd97f', cancelled: '#8b94a3' };
 const DEFAULTS = {
-  tickets: { type: [], status: ['open'], sev: [] },
+  tickets: { type: [], status: ['open'], sev: [], lane: [] },
   cargo: { kind: [], region: [], place: [], asset: [] },
 };
 const filterView = () => (location.hash.startsWith('#/cargo') ? 'cargo' : 'tickets');
@@ -399,6 +399,7 @@ function matches(t, f, q) {
   if (f.type.length && !f.type.includes(t.type)) return false;
   if (f.status.length && !f.status.includes(t.status)) return false;
   if (f.sev.length && !f.sev.includes(t.severity)) return false;   // t.severity null ⇒ excluded
+  if (f.lane.length && !f.lane.includes(t.lane)) return false;     // lanes come from MILESTONES.md tables
   if (q) {
     const hay = `${t.id} ${t.title} ${t.blurb} ${t.body}`.toLowerCase();
     if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
@@ -429,6 +430,7 @@ function viewTickets() {
   const nType = (v) => TICKETS.filter(t => t.type === v && matches(t, { ...f, type: [] }, q)).length;
   const nStat = (v) => TICKETS.filter(t => t.status === v && matches(t, { ...f, status: [] }, q)).length;
   const nSev = (v) => TICKETS.filter(t => t.severity === v && matches(t, { ...f, sev: [] }, q)).length;
+  const nLane = (v) => TICKETS.filter(t => t.lane === v && matches(t, { ...f, lane: [] }, q)).length;
 
   const rows = shown.map(t => `
     <li>
@@ -451,6 +453,9 @@ function viewTickets() {
         ${STATUSES.map(v => chip('status', v, f.status.includes(v), nStat(v), STATUS_COLOR[v])).join('')}</div>
       <div class="frow"><span class="flabel">Severity</span>
         ${STATS.severityOrder.map(v => chip('sev', v, f.sev.includes(v), nSev(v), css(v))).join('')}</div>
+      <div class="frow"><span class="flabel">Lane</span>
+        ${LANES.map(v => chip('lane', v, f.lane.includes(v), nLane(v),
+          v === 'unplaced' ? css('bug') : v.startsWith('SM-') ? css('milestone') : '')).join('')}</div>
     </div>
     <div class="count">${shown.length} of ${TICKETS.length} tickets${q ? ` matching “${esc(q)}”` : ''}</div>
     <ul class="list">${rows || '<li><span class="tblurb">nothing matches</span></li>'}</ul>`;
@@ -478,6 +483,7 @@ function viewTicket(id) {
     <div class="fm">
       ${fmRow('type', t.type + (t.typeRaw !== t.type ? ` <i style="color:var(--perf)">(${t.typeRaw})</i>` : ''))}
       ${fmRow('status', t.status + (t.statusRaw !== t.status ? ` <i style="color:var(--perf)">(${t.statusRaw})</i>` : ''))}
+      ${fmRow('lane', t.lane && esc(t.lane))}
       ${t.severity ? fmRow('severity', `<span style="color:${css(t.severity)}">${t.severity}</span>`) : ''}
       ${fmRow('opened', t.opened)} ${fmRow('updated', t.updated)}
       ${fmRow(t.phase === 'shipped' ? 'shipped' : 'closed', t.closed)}

@@ -1,5 +1,5 @@
 ---
-id: BUG-73
+id: BUG-84
 type: bug
 status: fixed
 severity: minor
@@ -10,7 +10,9 @@ source: owner report (2026-09-25) — Ultra + full-speed free-cam: tree shadows 
 relates: PERF-07 (baked prop-shadow atlas), PERF-21, PERF-33 (found on feature/stutter)
 ---
 
-# BUG-73: new chunks showed a departed chunk's baked shadows
+# BUG-84: new chunks showed a departed chunk's baked shadows
+
+> **Renumbered 2026-10-12:** was BUG-73, a duplicate id. Older docs citing BUG-73 for this ticket mean BUG-84.
 
 ## Cause
 

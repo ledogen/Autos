@@ -141,7 +141,7 @@ be freight. Don't tune the mass to make the mission easier; pick cargo whose rea
   noted because the well spec already has `gateZ` as its own slab.
 - **Cargo straps** (items.md §2, IDEA): the natural item hook. Straps would stiffen the coupling —
   a soft constraint between body and bed rather than free contact. Out of scope; note the seam.
-  → **Ticketed as FEAT-90** (ratchet straps, 2026-09-30): owner's shape is a rigid weld, not a soft
+  → **Ticketed as FEAT-110** (ratchet straps, 2026-09-30): owner's shape is a rigid weld, not a soft
   coupling, and it wants multi-body hauls.
 
 ## Not in scope

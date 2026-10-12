@@ -28,6 +28,11 @@ we haven't earned.
 
 Keep this honest; it is the thing that makes the rule checkable.
 
+**Update 2026-10-12: SM-1 shipped, SM-2 closed, SM-3 IS OPEN.** SM-3 now carries two halves —
+The Machine (wear, breakdown, the jalopy) and Places and Missions (POI classes, the job budget, the
+mission types). Each half has its own ticket table at the end of the SM-3 section. The dated
+history below is retained as written.
+
 **Shipped:**
 - **SM-1 — THE DAY IS IN** (FEAT-47 + FEAT-45, both closed 2026-07-30; the owner ratified the
   concrete mechanics in-session — the closed tickets carry the full spec):
@@ -138,13 +143,12 @@ story-mode go-ahead. Listed so that picking one up never feels like a detour.
 | Ticket | Story-mode role |
 |---|---|
 | **FEAT-28** region-gated connectivity | THE progression primitive. Connectivity gate == region unlock == trail-closed barrier (SM-INV-13). SM-4 wires **mission points**/story beats to its unlock trigger. **Its recurring-load problem is RESOLVED** [2026-08-01]: unlocks are run-layer (Open Q3) so validation recurs ~6× per run, and the fix is to **hide it, not budget it** — warm the next region on the worker the moment the player **accepts the region-unlock main mission**. See the ticket's "The unlock load is HIDDEN, not budgeted". |
-| **FEAT-09** contact pipeline / debris | Physics substrate for hazards and (later) camp-prop interaction. |
-| **FEAT-26/27** rockslides (ambush/static) | Risk content — the procedural dressing that makes "drive at the limit" a bet. FEAT-26's flag-gated-nondeterminism pattern is the template for SM-INV-12. Its "what does a hit do" question resolves in SM-3's wear model. |
+| **FEAT-26 / FEAT-27** rockslides (ambush/static) | Risk content — the procedural dressing that makes "drive at the limit" a bet. FEAT-26's flag-gated-nondeterminism pattern is the template for SM-INV-12. Its "what does a hit do" question resolves in SM-3's wear model. |
 | **FEAT-23** drivetrain architecture P2–P5 | Parts-as-cars substrate (SM-INV-10). The parts-selector phase becomes the jalopy generator's roll-space in SM-3. |
 | **FEAT-04a** visual vehicle swap | Jalopy variety reads visually — and, post-2026-07-29, the garage's roster is *starting vehicles*, so this carries more weight than it used to. |
-| **FEAT-21** POI scatter | **Variety pass only** — FEAT-46 shipped the anchors and FEAT-52 owns off-network siting. What is left is POI *types*, names and differing mission flavours. |
 | **FEAT-52** off-network generator | ONE generator for spurs, cuts, camping areas, logging sites and POI candidates (DESIGN.md "The off-network layer"). Absorbs FEAT-38 mode B and FEAT-32's siting. Substrate for the deferred Highway/Shortcut pair. **Two passes as of 2026-08-02** — inherent difficulty (free), then discrete **carved** hazards that the Shortcut's esteem clears; hazard *placement* stays worldgen, *removal* is run-layer. Also owes #05 the **intentional-non-shortcut-skip detector** (>~200 m of road distance saved off-network, penalty scaled by magnitude). |
-| **FEAT-48** physics engine adapter | Backend migration behind a swappable seam. Long lead time, blocks FEAT-36/35 and the log-drag chain. Phase 0 is a go/no-go determinism test — do that early regardless of story progress. |
+| **FEAT-109** engine stall | Waits on FEAT-23's manual transmission (owner, 2026-08-22: no stall behind a torque converter). A stall is a breakdown predicament, never a death (SM-INV-1). |
+| **FEAT-38 / FEAT-32** dirt roads; logged and clearcut forest | Their siting is absorbed by FEAT-52 (above). Dirt roads add a second surface class and the dispersed-camping spurs. |
 | **FEAT-41** game menus + UI | The shell every player-facing feature docks into, including the mode split SM-1 needs. |
 
 *(This table was formerly "SM-0 — Enablers". Same content, named for what it is. `SM-0` remains a
@@ -194,8 +198,8 @@ economy attached. The last leg of the day is the game (SM-INV-6).
 > time limits). The scope below is the plan as written; the closed tickets are what exists.
 > **Carried forward, not blocking:** FEAT-69 (`dayTierTable` + the SM-3 repair prices, owed a
 > re-price against the ~$7.50 day — SM-3 work now) and the delivery content (FEAT-88 Haul,
-> FEAT-89 Courier shapes, FEAT-91 haul yards, FEAT-96 Freight, FEAT-97 Fragile, FEAT-67's remainder),
-> which is free to land at any time.
+> FEAT-89 Courier shapes, FEAT-91 haul yards, FEAT-96 Freight, FEAT-97 Fragile, FEAT-67's remainder).
+> **All of it is tracked under SM-3 since 2026-10-12** — see SM-3 "Places and Missions".
 
 **Requires:** SM-1 (the day is the budget every mission type spends) — **MET 2026-07-30**;
 POI anchors — **MET** by FEAT-46 (shipped), which superseded FEAT-21's core.
@@ -250,12 +254,18 @@ ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.15 
 - Camping mid-mission is **job-dependent** (2026-07-19): short/perishable jobs die overnight, longer
   hauls permit next-day delivery. The mission's fiction says which.
 
-## SM-3 — The Machine (wear, breakdown, the jalopy)
+## SM-3 — The Machine + Places and Missions
 
 **Requires:** SM-2 (money must exist before a repair economy means anything) — **MET 2026-08-18**
 (FEAT-53 closed; the payout line, wallet and dayTier all exist).
 
-**Goal:** the second death condition exists, and every run starts in a different bad truck.
+**Goal:** the second death condition exists, every run starts in a different bad truck, and the
+region is full of places that post and receive real jobs.
+
+**Two halves [owner, 2026-10-12].** *The Machine* (wear, breakdown, the jalopy) is everything from
+here down to "Places and Missions". *Places and Missions* (POI classes, the job budget, the
+delivery types) was its own push from 2026-10-07 and is folded in here so the open story work sits
+under one milestone. The halves do not block each other.
 
 > **The component model below is RATIFIED** [owner, 2026-08-19] and **RECONCILED WITH THE BUILD**
 > [owner, 2026-08-23: *"current implementation is source of truth"*]. Where this table once
@@ -502,6 +512,61 @@ underlying geometry has to be introduced first.
 > Build order: FEAT-50's tank + burn is **free-lane** (an honest needle for the shipped FEAT-49
 > gauge). The *station economy* is SM-2/SM-3 work.
 
+### The Machine — open tickets (2026-10-12)
+
+Built: the condition spine and wear tracks, impacts + armor + wheels, alignment (BUG-79), and the
+player damage screen (FEAT-90). Open:
+
+| Ticket | What |
+|---|---|
+| FEAT-69 | `dayTierTable` + repair prices, re-priced against the ~$7.50 day |
+| FEAT-93 / FEAT-94 | hazard punctures; driving on a flat |
+| FEAT-70 | the wheel's disc contact, solved rather than sampled |
+| FEAT-106 | road damage — potholes and cracks |
+| FEAT-50 / FEAT-51 | fuel; coolant temp (the radiator track) |
+| FEAT-34 | instrument cluster — the player-facing diagnostic screen |
+| FEAT-57 | ABS + traction control as parts |
+| FEAT-83 | world-placed debris that `causesDamage` — a damage source |
+
+### Places and Missions — POI classes, the job budget, delivery [OWNER, 2026-10-07]
+
+**The design lives in [pois.md](pois.md) § "Places and Missions"** (roster, job supply, the lock
+rule, names, the job site, pad supply). This is the tracking table. "Places and Missions" is the
+owner's name for it.
+
+| Step | Ticket | State |
+|---|---|---|
+| 0. Measure the pad supply | FEAT-105 | ✅ closed |
+| 1. Classes, tags and the key rename | FEAT-98 | ✅ closed |
+| 2. Class name forms | FEAT-99 | ✅ closed |
+| 3. To-tags: destinations filtered by class | FEAT-100 | ✅ closed |
+| 4. Job supply: always-on sources, the budget, the lock rule | FEAT-101 | ✅ closed |
+| 5. Stranded motorist (+ the first slice of fetch) | FEAT-102 | ✅ closed |
+| 6. Job site POI (R1, on the wall) | FEAT-103 | open |
+| 7. Minimal shop at the required classes | FEAT-104 | open |
+| Camp gear slots — what the shop sells renders at camp (items.md visible-kit rule) | FEAT-66 | open |
+| POI model pools — register the built models | FEAT-74 | open |
+| Placeholder-replacing models: office, doctor's office, job site, school | ASSET-69, ASSET-70, ASSET-71, ASSET-73 | open |
+
+**Mission types** (the delivery content carried forward from SM-2, plus demolition):
+
+| Type | Ticket | State |
+|---|---|---|
+| The offer board on the story map | FEAT-67 | open — built families live, remainder rides on each type |
+| Haul — loose cargo in the bed | FEAT-88 | open |
+| Courier — small items in the cab (point-to-point, multi-drop, fetch) | FEAT-89 | open — fetch's first slice shipped in FEAT-102 |
+| Haul yards — splitting yard R1, sawmill R2, quarry R3 | FEAT-91 | open — needs FEAT-88 |
+| Freight — strapped durable cargo | FEAT-96 | open — in progress |
+| Fragile — strapped shock-sensitive cargo | FEAT-97 | open — needs FEAT-96 |
+| Demolition missions | FEAT-65 | open |
+| Paper route — throw and impact audio | FEAT-64 | open |
+| Ratchet straps as an item for loose haul loads | FEAT-110 | parked (owner, 2026-09-30) |
+
+**Behind SM-4, deliberately unticketed** (tickets are minted at milestone entry): the region
+bosses (R1 log drag, R2 bridge meter), region modifiers, motorist relocation, and POI/job counts
+scaled to region size. The candidate classes (ranger station, campground, …) are liked, not
+adopted — do not build them unprompted.
+
 ## SM-4 — The Run (death, persistence, regions)
 
 **Requires:** SM-3 (breakdown must exist for a run to end), FEAT-28 (the unlock primitive).
@@ -532,6 +597,17 @@ underlying geometry has to be introduced first.
   regions, and **regions grow with depth on a sparser grid**), **20 days**, **6 h** to beat,
   **27 points**. The full trail chain must fit in **one run** (SM-INV-7) — that bounds region count.
   See [run-shape.md](run-shape.md).
+
+### Tickets (minted so far — the rest are minted at entry)
+
+| Ticket | What |
+|---|---|
+| FEAT-42 | the two save stores — durable `metaState` + the single-slot `runSave` |
+| FEAT-43 | story region, remaining slices — confinement becomes the unlocked set, the diegetic boundary, closing the sandbox flags |
+
+FEAT-28 (the unlock primitive, now also carrying the per-region radius ladder) is in the free lane.
+FEAT-103's boss half (the R1 log drag, the R2 bridge meter) waits here; the ticket itself builds the
+job site as an ordinary place under SM-3.
 
 ## SM-5 — The World Turns (story delivery, horror)
 
@@ -572,18 +648,45 @@ before it can close.
   beat and the Roamer's motives are **owner-only, escalate**. The dead-horse ending is the current
   spine terminus (IDEAS.md).
 
+### Tickets (minted so far — the rest are minted at entry)
+
+| Ticket | What |
+|---|---|
+| FEAT-37 | fishing minigame — a reason to stop at water |
+
+---
+
+## Engine & world — not on the story path
+
+Features that make the game better but that no milestone needs. Bugs, perf, quality and infra
+tickets land in this lane automatically and need no row; only features are listed.
+
+| Ticket | What |
+|---|---|
+| FEAT-35 | multi-vehicle + AI traffic |
+| FEAT-39 | driver assists / difficulty modifiers |
+| FEAT-44 | visible culvert pipe where a road crosses a stream |
+| FEAT-56 | distant terrain — the world ends at 160 m |
+| FEAT-58 | player music |
+| FEAT-62 | scenarios — curated one-offs from the main menu (a separate content track) |
+| FEAT-72 | road-furniture placement from the routed centerline |
+| FEAT-75 | cockpit camera |
+| FEAT-86 | lichen on boulders and stones |
+| FEAT-107 | rain |
+| FEAT-108 | hydroplaning — puddles at the road's low points |
+
 ---
 
 ## Dependency map
 
 ```
-free lane (any time) ── FEAT-28 · FEAT-09 · FEAT-26/27 · FEAT-23 · FEAT-04a · FEAT-21 · FEAT-52
-                        FEAT-48 (physics adapter) · FEAT-41 (menus)
+free lane (any time) ── FEAT-28 · FEAT-26/27 · FEAT-23 · FEAT-04a · FEAT-52 · FEAT-41 (menus)
 
 SM-1 The Day ──▶ SM-2 The Wager ──▶ SM-3 The Machine ──▶ SM-4 The Run ──▶ SM-5 The World Turns
    │                  ▲                    ▲                   ▲
-   └ SHIPPED          └ OPEN — spine in    └ FEAT-51 coolant   └ needs FEAT-28
-     2026-07-30         (FEAT-53) ← HERE     is this, early
+   └ SHIPPED          └ CLOSED             └ OPEN ← HERE       └ needs FEAT-28
+     2026-07-30           2026-10-04           Machine + Places
+                                               and Missions
 ```
 
 **Already banked, out of the critical path:** FEAT-29 par oracle (sanctioned early), the beta mission
@@ -604,6 +707,11 @@ harness (a test rig for it), FEAT-43 story sandbox, FEAT-46 POI pads.
 - **One-off scenarios** (Dodge the Rocks, Escape the Police, …) are a separate content track, not
   story milestones — they hang off the same game-mode shell and reuse whatever systems exist when
   each is authored. Ticket them individually as ideas firm up.
+- **Lanes: every open feature is listed in exactly one ticket table** — the free lane, or a
+  milestone's table (SM-3 has one per half). The dashboard reads a ticket's lane from these tables
+  only (first cell naming a ticket), and its **unplaced** chip lists open features no table names.
+  Bugs/perf/quality/infra default to `engine & world` and assets to `asset`, so they need no row. When you
+  mint a feature, give it a row here or leave it unplaced on purpose.
 - **When something lands, update "Where we are."** That section is what makes the rule checkable; a
   stale build state turns the rule back into memory.
 - **Cab/vehicle tickets keep arriving ahead of their milestone**, and that is fine — FEAT-49

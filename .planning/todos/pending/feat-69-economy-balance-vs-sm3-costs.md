@@ -49,3 +49,8 @@ now have real numbers behind them. The third does not.
 - The per-region point schedule recounted under the re-anchored letters, and `run-shape.md`'s
   provisional warning removed or replaced with the new number.
 - At least one recorded multi-day run backing the ramp.
+
+## Moved in from FEAT-54 (2026-10-12)
+
+- [ ] **Repairs need a time cost alongside the money cost**, applied as a clock skip (the
+      shops/service/camp pause ruling, run-shape.md). Price the time with the money.

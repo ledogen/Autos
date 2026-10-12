@@ -249,7 +249,9 @@ the norm.
   It also **synthesises the story milestones as pseudo-tickets** (`SM-1`…`SM-5`, type `milestone`)
   by parsing the `## SM-N — …` sections of `.planning/story-mode/MILESTONES.md`, so a milestone
   cross-links with the tickets that cite it and its `Requires:` gate is shown up front. They have no
-  severity, and their status is derived (shipped / active / planned), not declared. **MILESTONES.md
+  severity, and their status is derived (shipped / active / planned), not declared.
+  A ticket's **lane** (free lane / SM-N / SM-3's halves / engine & world) is likewise read from the ticket tables
+  in MILESTONES.md; open features no table lists show under the **unplaced** chip. **MILESTONES.md
   stays the only place they are edited** — nothing is ever written back.
   Classes: `feature` (FEAT-NN) · `bug` (BUG-NN) · `perf` (PERF-NN) · `quality` (QUAL-NN) ·
   `infra` (INFRA-NN) · **`asset` (ASSET-NN, files `asset-*.md`)** — one hand-modelled `.glb` per

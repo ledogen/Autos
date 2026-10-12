@@ -10,7 +10,7 @@ source: owner, 2026-09-30 — "mission giver quarry, it provides haul missions: 
   get their own unique POI and will represent the haul mission career path."
   Follow-ups the same day, answering the ticket's questions (see "Rulings" — the current shape).
 relates: FEAT-88 (Haul — the bed-cargo mission these givers post; HARD prerequisite), FEAT-89
-  (Courier — the other family every yard also posts and receives), FEAT-90 (ratchet straps, parked),
+  (Courier — the other family every yard also posts and receives), FEAT-110 (ratchet straps, parked),
   FEAT-67 (offer board — sources/families/slots), FEAT-46 (POI lay-by pads), FEAT-74 (POI pools),
   FEAT-36 (debris), FEAT-43 (region confinement), ASSET-36 splitting yard · ASSET-11 sawmill ·
   ASSET-35 quarry · ASSET-37 firewood armload · ASSET-38 lumber bundle · ASSET-12 lumber-yard kit
@@ -142,7 +142,7 @@ a POI type region-specific. This ticket adds it:
 
 - **Misses at the bay** — recommendation above (paid on what you carry; misses stay on the ground).
 - **One job at a time?** FEAT-67 allows one active mission. A courier job and a haul job at once, or
-  two hauls, is FEAT-90's multi-load question — out of scope here.
+  two hauls, is FEAT-110's multi-load question — out of scope here.
 - **Fill dirt** (ruling 3) — wanted as a load at all? If yes, it needs its own ticket (bulk material).
 
 ## Not in scope
@@ -151,7 +151,7 @@ a POI type region-specific. This ticket adds it:
 - Unloading at the destination — the load despawns on settle, per FEAT-88.
 - Reputation or repeat-job escalation (ruling 1: parked).
 - Any HUD readout of load mass or condition (SM-INV-10). The squat and the engine note are the readout.
-- Ratchet straps (FEAT-90, parked).
+- Ratchet straps (FEAT-110, parked).
 
 ## Acceptance
 

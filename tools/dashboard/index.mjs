@@ -57,8 +57,9 @@ const CANON_SEVERITY = {
 const SEVERITY_ORDER = ['critical', 'high', 'major', 'medium', 'minor', 'trivial'];
 
 /* `SM` is last and requires digits immediately after the dash, so the design
- * docs' `SM-INV-14` invariant tags can never be read as milestone refs. */
-const TICKET_RE = /\b(FEAT|BUG|PERF|QUAL|INFRA|ASSET|SM)-(\d+)\b/g;
+ * docs' `SM-INV-14` invariant tags can never be read as milestone refs. The
+ * optional letter is for split tickets (FEAT-04a). */
+const TICKET_RE = /\b(FEAT|BUG|PERF|QUAL|INFRA|ASSET|SM)-(\d+[a-z]?)\b/g;
 
 /* ── frontmatter ──────────────────────────────────────────────────────────
  * Deliberately lenient, not a YAML parser. Values wrap across lines
@@ -233,6 +234,51 @@ function indexMilestones() {
   });
 }
 
+/* ── lanes ────────────────────────────────────────────────────────────────
+ * Which lane a ticket is in — a milestone, the free lane — is declared ONLY by
+ * the ticket tables in MILESTONES.md, so the doc stays the one place it is set.
+ * A row places the ids in its first cell that names any (later cells say
+ * things like "needs FEAT-88", which is a dependency, not membership). A
+ * milestone with tables in several `###` subsections (SM-3: The Machine,
+ * Places and Missions) gets one lane per subsection; a `### Tickets` table is
+ * just the milestone. First table wins if a ticket is listed twice.
+ *
+ * Anything no table lists falls back by type: bug/perf/quality/infra are
+ * `engine & world`, assets are `asset` (they close when the .glb ships), and an open
+ * feature is `unplaced` — the list of tickets nobody has given a lane yet. */
+function indexLanes() {
+  const abs = join(ROOT, '.planning', 'story-mode', 'MILESTONES.md');
+  const lanes = new Map();
+  if (!existsSync(abs)) return lanes;
+  let section = null;
+  let sub = null;
+  for (const l of readFileSync(abs, 'utf8').split('\n')) {
+    let m;
+    if ((m = /^##\s+(.+)$/.exec(l))) {
+      const sm = /^SM-(\d+)\b/.exec(m[1]);
+      section = sm ? `SM-${sm[1]}` : /^the free lane/i.test(m[1]) ? 'free lane'
+        : /^engine & world/i.test(m[1]) ? 'engine & world' : null;
+      sub = null;
+    } else if ((m = /^###\s+(.+)$/.exec(l))) {
+      sub = /^tickets\b/i.test(m[1]) ? null : m[1].split(/\s+—\s+/)[0].trim();
+    } else if (section && l.startsWith('|')) {
+      const cell = l.split('|').map((c) => c.match(TICKET_RE)?.filter((r) => !r.startsWith('SM-')))
+        .find((ids) => ids?.length);
+      for (const id of cell || []) {
+        if (!lanes.has(id)) lanes.set(id, sub && section.startsWith('SM-') ? `${section} · ${sub}` : section);
+      }
+    }
+  }
+  return lanes;
+}
+
+function laneOf(t, lanes) {
+  if (lanes.has(t.id)) return lanes.get(t.id);
+  if (t.type === 'milestone' || t.status !== 'open') return null;
+  if (['bug', 'perf', 'quality', 'infra'].includes(t.type)) return 'engine & world';
+  return t.type === 'asset' ? 'asset' : 'unplaced';
+}
+
 /* ── tickets ──────────────────────────────────────────────────────────── */
 function indexTickets() {
   const tickets = [];
@@ -300,13 +346,17 @@ function indexTickets() {
   }
 
   tickets.push(...indexMilestones());
+  const lanes = indexLanes();
+  for (const t of tickets) t.lane = laneOf(t, lanes);
 
   // Newest-first within a class, except milestones: SM-1..SM-5 is a build order,
   // so reading it backwards is nonsense.
   tickets.sort((a, b) => (a.prefix === b.prefix
     ? (a.prefix === 'SM' ? a.num - b.num : b.num - a.num)
     : a.prefix.localeCompare(b.prefix)));
-  return { tickets, drift };
+  // Chip order: the doc's own lane order, then the type fallbacks.
+  const laneOrder = [...new Set([...lanes.values(), 'engine & world', 'asset', 'unplaced'])];
+  return { tickets, drift, laneOrder };
 }
 
 /* ── cargo + places ───────────────────────────────────────────────────────
@@ -694,7 +744,7 @@ function measureRouteCache() {
 
 /* ── build ────────────────────────────────────────────────────────────── */
 async function build() {
-  const { tickets, drift } = indexTickets();
+  const { tickets, drift, laneOrder } = indexTickets();
   const story = await indexStory(tickets);
   const code = measureCode();
 
@@ -729,7 +779,7 @@ async function build() {
     severityOrder: SEVERITY_ORDER,
   };
 
-  writeFileSync(join(HERE, 'tickets.json'), JSON.stringify({ tickets }));
+  writeFileSync(join(HERE, 'tickets.json'), JSON.stringify({ tickets, laneOrder }));
   writeFileSync(join(HERE, 'stats.json'), JSON.stringify(stats, null, 1));
   writeFileSync(join(HERE, 'cargo.json'), JSON.stringify(story));
   return { tickets, stats, story };

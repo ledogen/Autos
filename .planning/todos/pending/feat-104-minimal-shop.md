@@ -22,3 +22,5 @@ Step 7 of **Places and Missions**. No shop code exists today.
 ## Acceptance
 
 - Each required class shows a non-empty, class-appropriate list; buying debits the wallet.
+- The map is reachable from the shop screen (moved in from FEAT-54, 2026-10-12). The service and
+  camp screens follow the same rule when they get a screen (FEAT-41 menus).
