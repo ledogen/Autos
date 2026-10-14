@@ -22,7 +22,7 @@ import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
-import { DebrisSystem, bedDropPoints, inBedWell, strapPose } from './debris.js'
+import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
@@ -1349,6 +1349,10 @@ document.getElementById('mm-lab')?.addEventListener('click', async () => {
 // body below has finished building the world. No store passed = session-only memory; the one-line
 // save-file hook is described in src/leaderboard.js's header.
 const scenarioLeaderboard = new Leaderboard()
+// The lab's barrel cube (see _buildBarrelCube) — up here because the scenario list names its size.
+const BARREL_CUBE_RUNUP = 150 * 0.3048        // m — truck CG to the cube's near face
+const BARREL_CUBE_X = -150, BARREL_CUBE_Z = 40
+let _barrelCube = null                         // { bodies, side, count } while a cube stands
 function _renderScenarioList () {
   const list = document.getElementById('mm-scenario-list')
   if (!list) return
@@ -1361,6 +1365,11 @@ function _renderScenarioList () {
     b.addEventListener('click', () => { void _startScenario(def) })
     list.appendChild(b)
   }
+  // Not a timed run, so not in SCENARIOS (no seed, no gates, no board): the lab's barrel cube.
+  const cube = document.createElement('button')
+  cube.innerHTML = `barrel cube<span class="mm-sub">${BARREL_CUBE_SIDE}\u00b3 = ${BARREL_CUBE_SIDE ** 3} drums, 150 ft run-up, testing lab</span>`
+  cube.addEventListener('click', () => { void _startBarrelCube() })
+  list.appendChild(cube)
 }
 document.getElementById('mm-scenarios')?.addEventListener('click', () => {
   _renderScenarioList()
@@ -2197,6 +2206,7 @@ if (_HITCH) {
 }
 if (_PROF) {
   window.__q = (name) => applyQuality(name)
+  window.__barrelCube = (side, count) => { if (!_labActive) enterLab(); _buildBarrelCube(side, count); return debrisSystem.count }   // test/bench-barrels.mjs
   // renderer.info snapshot — draw calls / triangles / programs / GPU memory handles.
   window.__ri = () => ({
     calls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
@@ -2354,7 +2364,7 @@ const _gui = initDebug(RANGER_PARAMS, {
     const x = vehicleState.position.x + fwd.x * 8
     const z = vehicleState.position.z + fwd.z * 8
     const y = terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
-    debrisSystem.spawnStack('barrel', { x, y, z }, 6)
+    debrisSystem.spawnStack('barrel', { x, y, z })
   },
   // Drop one ~50 kg rock into the truck's bed, to drive around with a load. A random spot inside
   // the wheelhouse walls, 0.8 m above the floor, in the truck's CURRENT pose and carrying its
@@ -5465,6 +5475,7 @@ function enterLab () {
 
 function exitLab () {
   _labActive = false
+  _clearBarrelCube()
   window.__setGameMode('freeroam')
 
   _destroyLabColliders()                          // FEAT-48: lab slab + ramp out…
@@ -5488,6 +5499,42 @@ function exitLab () {
   void _reseatTruckAtSpawn()
   _hidePauseMenu()
   _renderLabUI()
+}
+
+// ── Barrel cube: the lab's crash toy ─────────────────────────────────────────────────────
+// A cube of upright drums on the lab slab with the truck 150 ft back from its face, pointed at it —
+// floor it and watch the cube come apart. It doubles as the debris stress test: BARREL_CUBE_SIDE
+// (src/debris.js) is the measured 60 fps ceiling, cube-rooted — see its comment.
+// Behind the lab spawn (−X) on open slab: the truck drives toward −X, so the wreckage flies away
+// from the strip, the ramp and the pads. Each drum is a PINNED debris body (outside DEBRIS_CAP);
+// this block owns them, and leaving the lab removes them. (Its constants sit up by the main menu:
+// the menu is live while the module body is still building the world, and lists the cube's size.)
+function _buildBarrelCube (side = BARREL_CUBE_SIDE, count = side ** 3) {
+  _clearBarrelCube()
+  const layout = cubeLayout(count, side)
+  const bodies = debrisSystem.spawnStack('barrel', { x: BARREL_CUBE_X, y: 0, z: BARREL_CUBE_Z }, layout, true)
+  _barrelCube = { bodies, side, count }
+  const nearFace = BARREL_CUBE_X + Math.max(...layout.map(p => p.x)) + STACK_RADIUS
+  teleportToGround(nearFace + BARREL_CUBE_RUNUP, BARREL_CUBE_Z, Math.PI / 2, 0.5)   // heading π/2 faces −X
+  labSystem.status = `barrel cube: ${bodies.length} drums dead ahead \u2014 floor it \u00b7 R stacks a fresh one`
+}
+
+function _clearBarrelCube () {
+  if (_barrelCube) debrisSystem.remove(_barrelCube.bodies)
+  _barrelCube = null
+}
+
+/** Main-menu entry (the scenario list): into the lab, cube up, truck seated at the run-up. */
+async function _startBarrelCube () {
+  _hideMainMenu()
+  _enterStageLoad('stacking barrels\u2026')
+  await _worldReady
+  _exitStageLoad()
+  _exitScenario()
+  if (missionSystem?.isActive()) missionSystem.exit()
+  if (storySystem.isActive()) storySystem.exit()
+  if (!_labActive) enterLab()
+  _buildBarrelCube()
 }
 
 // Lab readout: live status, the best of each track, and the DERIVED number each track exists to
@@ -6491,6 +6538,7 @@ function loop () {
       // route cache warm this resolves within a frame or two.
       // FEAT-62: inside a scenario R is RESTART — the same seat plus a fresh count and clean gates.
       if (scenarioSystem.isActive()) void _restartScenario()
+      else if (_barrelCube) _buildBarrelCube(_barrelCube.side, _barrelCube.count)   // a fresh cube AND a fresh run-up
       else void _reseatTruckAtSpawn()
     }
 
