@@ -193,15 +193,18 @@ export function stackLayout (count = 6, radius = STACK_RADIUS, height = STACK_HE
 }
 
 /**
- * The testing lab's barrel cube (main.js _buildBarrelCube): BARREL_CUBE_SIDE³ drums. The size is
- * MEASURED, not picked — test/bench-barrels.mjs, M4 Air, 60 Hz, 2026-10-14, every drum awake after
- * a full-throttle hit, pass = no 1-second window under 59 fps:
- *   1728 (12³)  5/5 pass, zero dropped frames · 2000  6/6 · 2197 (13³)  2/5 (worst second 41 fps)
- *   2400  1/5 · 2744 (14³)  0/3 (~35 fps). Per frame at 13³ the crash costs physics ~6 + render ~5 ms.
- * Ceiling ≈ 2000. The owner's rule — that less ~20, cube-rooted, rounded down — gives ∛1980 = 12.6
- * → 12³ = 1728. Re-run the bench before raising it.
+ * The testing lab's barrel cube (main.js _buildBarrelCube): BARREL_CUBE_SIDE × BARREL_CUBE_SIDE
+ * drums per layer, BARREL_CUBE_LAYERS high — 7 × 7 × 5 = 245 (owner, 2026-10-14).
+ *
+ * Sized for the HIT, not for the 60 fps ceiling. test/bench-barrels.mjs (M4 Air, 60 Hz, every drum
+ * awake after a full-throttle hit, pass = no 1-second window under 59 fps) put that ceiling near
+ * 2000 drums: 1728 (12³) 5/5 pass · 2000 6/6 · 2197 (13³) 2/5 · 2744 (14³) ~35 fps, the crash
+ * costing physics ~6 + render ~5 ms a frame at 13³. But a 12³ only held 60 fps at the 39 mph a
+ * 150 ft run-up gives — come in faster and the truck wakes more of the pile at once, and it dropped
+ * to ~30 fps. 245 drums leaves that ceiling ~8× of headroom for any speed the truck can reach.
  */
-export const BARREL_CUBE_SIDE = 12
+export const BARREL_CUBE_SIDE = 7
+export const BARREL_CUBE_LAYERS = 5
 
 /**
  * A barrel CUBE — `side` × `side` drums per layer on a square grid, layer on layer, upright, filled

@@ -1,6 +1,6 @@
 // GATE: the testing lab's barrel cube stands on its own — full-height towers settle, sleep and hold.
 //
-// The cube (src/debris.js cubeLayout, BARREL_CUBE_SIDE tall) is side² freestanding towers of
+// The cube (src/debris.js cubeLayout, BARREL_CUBE_LAYERS tall) is side² freestanding towers of
 // upright drums with clear air between them, so ONE tower's behaviour is the whole cube's: a 3 × 3
 // footprint at full height settles the same columns the game does at a fraction of the cost. Real
 // drum-closed hull (read from the GLB like cargo-bed.mjs reads the rock), real DEBRIS_TYPES material.
@@ -16,7 +16,7 @@
 import fs from 'node:fs'
 import * as THREE from 'three'
 import { createPhysicsEngine, GROUP_DEBRIS } from '../src/physics-engine.js'
-import { cubeLayout, DEBRIS_TYPES, BARREL_CUBE_SIDE, STACK_HEIGHT } from '../src/debris.js'
+import { cubeLayout, DEBRIS_TYPES, BARREL_CUBE_LAYERS, STACK_HEIGHT } from '../src/debris.js'
 
 let fail = 0
 const ok = (cond, msg) => { console.log(`  ${cond ? '✓' : '✗'} ${msg}`); if (!cond) fail = 1 }
@@ -46,11 +46,11 @@ function drumHull () {
   return { hull: pts.flatMap(v => [v.x - c.x, v.y - c.y, v.z - c.z]), size: box.getSize(new THREE.Vector3()) }
 }
 
-const FOOT = 3, TALL = BARREL_CUBE_SIDE, N = FOOT * FOOT * TALL
+const FOOT = 3, TALL = BARREL_CUBE_LAYERS, N = FOOT * FOOT * TALL
 const { hull, size } = drumHull()
 const L = cubeLayout(N, FOOT)
 
-console.log(`layout — ${FOOT}×${FOOT} footprint, ${TALL} high (BARREL_CUBE_SIDE):`)
+console.log(`layout — ${FOOT}×${FOOT} footprint, ${TALL} high (BARREL_CUBE_LAYERS):`)
 {
   ok(JSON.stringify(L) === JSON.stringify(cubeLayout(N, FOOT)), 'same arguments ⇒ identical layout')
   ok(L.length === N && L[N - 1].y > L[N - FOOT * FOOT].y - 1e-12, `emits ${N} drums in ${TALL} layers`)
