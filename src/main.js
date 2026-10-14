@@ -22,7 +22,7 @@ import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
-import { DebrisSystem, bedDropPoints, inBedWell, strapPose } from './debris.js'
+import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE, BARREL_CUBE_LAYERS } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
@@ -1108,7 +1108,9 @@ async function _reseatTruckAtSpawnInner () {
   // R, a teleport, a reseed — hands you a fresh truck; the condition the last drive left behind is
   // part of that drive, not of the world. publish() so the very next physics step reads stock
   // multipliers rather than last step's.
-  if (_gameMode !== 'story') { damageModel.setAll(1); damageModel.publish(RANGER_PARAMS) }
+  // The alert goes too: it holds until the damage screen is opened, so a repaired truck kept the lit
+  // icon and read as still broken (owner, 2026-10-14).
+  if (_gameMode !== 'story') { damageModel.setAll(1); damageModel.publish(RANGER_PARAMS); damageScreen.clearAlert() }
 }
 
 // Story entry seats the truck on the spawn-band network (resolveSpawn), then routes the whole region
@@ -1349,6 +1351,11 @@ document.getElementById('mm-lab')?.addEventListener('click', async () => {
 // body below has finished building the world. No store passed = session-only memory; the one-line
 // save-file hook is described in src/leaderboard.js's header.
 const scenarioLeaderboard = new Leaderboard()
+// The lab's barrel cube (see _buildBarrelCube) — up here because the scenario list names its size.
+const BARREL_CUBE_RUNUP = 400 * 0.3048        // m — truck CG to the cube's near face
+const BARREL_CUBE_X = -150, BARREL_CUBE_Z = 40
+let _barrelCube = null                         // { bodies, side, count } while a cube stands
+let _kick = null                               // the cube's kick ramp: { body, mesh, tris }
 function _renderScenarioList () {
   const list = document.getElementById('mm-scenario-list')
   if (!list) return
@@ -1361,6 +1368,11 @@ function _renderScenarioList () {
     b.addEventListener('click', () => { void _startScenario(def) })
     list.appendChild(b)
   }
+  // Not a timed run, so not in SCENARIOS (no seed, no gates, no board): the lab's barrel cube.
+  const cube = document.createElement('button')
+  cube.innerHTML = `barrel cube<span class="mm-sub">${BARREL_CUBE_SIDE}\u00d7${BARREL_CUBE_SIDE}\u00d7${BARREL_CUBE_LAYERS} = ${BARREL_CUBE_SIDE ** 2 * BARREL_CUBE_LAYERS} drums, 400 ft run-up, testing lab</span>`
+  cube.addEventListener('click', () => { void _startBarrelCube() })
+  list.appendChild(cube)
 }
 document.getElementById('mm-scenarios')?.addEventListener('click', () => {
   _renderScenarioList()
@@ -1785,6 +1797,28 @@ const RAMP_TRIS = [
 // teleport-fill.mjs was therefore placed at a non-numeric height (BUG-34's lesson, un-learned).
 window.terrain = (x, z) => terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
 
+/** Sphere-vs-triangle contacts for a list of [[x,y,z]×3] triangles — the lab ramp and the kick ramp. */
+function _triContacts (tris, cx, cy, cz, r, hits) {
+  for (const [[ax, ay, az], [bx, by, bz], [ex, ey, ez]] of tris) {
+    const cp = closestPointOnTriangle(cx, cy, cz, ax, ay, az, bx, by, bz, ex, ey, ez)
+    const dx = cx - cp.x, dy = cy - cp.y, dz = cz - cp.z
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+    const depth = r - dist
+    if (depth <= 0) continue
+    // WR-05: skip degenerate contacts where sphere center lies exactly on the triangle surface.
+    // inv = 0 would produce a zero-length normal; applying it gives Fn*zero = no force despite
+    // positive depth, allowing the object to penetrate silently. Use triangle face normal as
+    // fallback only when we can safely recover it — for now, skip and rely on adjacent contacts.
+    if (dist < 1e-8) continue
+    const inv = 1 / dist
+    hits.push({
+      normal: new THREE.Vector3(dx * inv, dy * inv, dz * inv),
+      depth,
+      contactPoint: cp
+    })
+  }
+}
+
 /**
  * Closest point on a filled triangle ABC to query point P.
  * Algorithm: Ericson "Real-Time Collision Detection" §5.1.5 — barycentric-coordinate clamping.
@@ -1940,26 +1974,8 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
 
   // Ramp triangle contacts — lab only (wheel path; the chassis gets the engine ramp prism).
   // _labActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
-  if (_labActive && RANGER_PARAMS.rampEnabled !== false) {
-    for (const [[ax, ay, az], [bx, by, bz], [ex, ey, ez]] of RAMP_TRIS) {
-      const cp = closestPointOnTriangle(cx, cy, cz, ax, ay, az, bx, by, bz, ex, ey, ez)
-      const dx = cx - cp.x, dy = cy - cp.y, dz = cz - cp.z
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
-      const depth = r - dist
-      if (depth <= 0) continue
-      // WR-05: skip degenerate contacts where sphere center lies exactly on the triangle surface.
-      // inv = 0 would produce a zero-length normal; applying it gives Fn*zero = no force despite
-      // positive depth, allowing the object to penetrate silently. Use triangle face normal as
-      // fallback only when we can safely recover it — for now, skip and rely on adjacent contacts.
-      if (dist < 1e-8) continue
-      const inv = 1 / dist
-      hits.push({
-        normal: new THREE.Vector3(dx * inv, dy * inv, dz * inv),
-        depth,
-        contactPoint: cp
-      })
-    }
-  }
+  if (_labActive && RANGER_PARAMS.rampEnabled !== false) _triContacts(RAMP_TRIS, cx, cy, cz, r, hits)
+  if (_kick) _triContacts(_kick.tris, cx, cy, cz, r, hits)   // the barrel cube's kick ramp
 
   // FEAT-06b: prop hard contacts (tree trunks = capsule, rocks/boulders = sphere). Local query
   // against the per-chunk collidable grid — bushes are NOT here (soft-drag is applied separately
@@ -2197,6 +2213,7 @@ if (_HITCH) {
 }
 if (_PROF) {
   window.__q = (name) => applyQuality(name)
+  window.__barrelCube = (side, count) => { if (!_labActive) enterLab(); _buildBarrelCube(side, count); return debrisSystem.count }   // test/bench-barrels.mjs
   // renderer.info snapshot — draw calls / triangles / programs / GPU memory handles.
   window.__ri = () => ({
     calls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
@@ -2354,7 +2371,7 @@ const _gui = initDebug(RANGER_PARAMS, {
     const x = vehicleState.position.x + fwd.x * 8
     const z = vehicleState.position.z + fwd.z * 8
     const y = terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
-    debrisSystem.spawnStack('barrel', { x, y, z }, 6)
+    debrisSystem.spawnStack('barrel', { x, y, z })
   },
   // Drop one ~50 kg rock into the truck's bed, to drive around with a load. A random spot inside
   // the wheelhouse walls, 0.8 m above the floor, in the truck's CURRENT pose and carrying its
@@ -5465,6 +5482,7 @@ function enterLab () {
 
 function exitLab () {
   _labActive = false
+  _clearBarrelCube()
   window.__setGameMode('freeroam')
 
   _destroyLabColliders()                          // FEAT-48: lab slab + ramp out…
@@ -5488,6 +5506,79 @@ function exitLab () {
   void _reseatTruckAtSpawn()
   _hidePauseMenu()
   _renderLabUI()
+}
+
+// ── Barrel cube: the lab's crash toy ─────────────────────────────────────────────────────
+// A block of upright drums on the lab slab with the truck 400 ft back from its face, pointed at it —
+// floor it and watch the cube come apart. Its size (src/debris.js BARREL_CUBE_SIDE / _LAYERS) is
+// set well under the measured 60 fps ceiling — see the comment there.
+// Behind the lab spawn (−X) on open slab: the truck drives toward −X, so the wreckage flies away
+// from the strip, the ramp and the pads. Each drum is a PINNED debris body (outside DEBRIS_CAP);
+// this block owns them, and leaving the lab removes them. (Its constants sit up by the main menu:
+// the menu is live while the module body is still building the world, and lists the cube's size.)
+function _buildBarrelCube (side = BARREL_CUBE_SIDE, count = side * side * BARREL_CUBE_LAYERS) {
+  _clearBarrelCube()
+  const layout = cubeLayout(count, side)
+  const bodies = debrisSystem.spawnStack('barrel', { x: BARREL_CUBE_X, y: 0, z: BARREL_CUBE_Z }, layout, true)
+  _barrelCube = { bodies, side, count }
+  const nearFace = BARREL_CUBE_X + Math.max(...layout.map(p => p.x)) + STACK_RADIUS
+  _buildKick(nearFace + KICK_GAP, BARREL_CUBE_Z)
+  teleportToGround(nearFace + BARREL_CUBE_RUNUP, BARREL_CUBE_Z, Math.PI / 2, 0.5)   // heading π/2 faces −X
+  labSystem.status = `barrel cube: ${bodies.length} drums dead ahead \u2014 floor it \u00b7 R stacks a fresh one`
+}
+
+function _clearBarrelCube () {
+  if (_barrelCube) debrisSystem.remove(_barrelCube.bodies)
+  _barrelCube = null
+  if (_kick) {
+    physicsEngine.destroyBody(_kick.body)
+    scene.remove(_kick.mesh)
+    _kick.mesh.geometry.dispose(); _kick.mesh.material.dispose()
+    _kick = null
+  }
+}
+
+// The kick ramp (owner, 2026-10-14): a small 7° wedge across the run-up, its lip 11.3 m short of the
+// cube, so the truck arrives airborne and nose-high. ONE corner list is the wheels' analytic
+// triangles, the engine hull (chassis and drums) and the mesh — MESH == PHYSICS by construction.
+// The incline runs on under the slab (KICK_UNDERRUN), as the lab ramp's does, so a tire meets a
+// face rather than the toe's edge.
+const KICK_ANGLE    = 7 * Math.PI / 180
+const KICK_LEN      = 6                 // m of incline above the slab → lip 0.74 m
+const KICK_UNDERRUN = 0.5               // m of incline buried below it
+const KICK_HALF_W   = 3                 // m — 6 m wide, the lab ramp's width
+const KICK_GAP      = 11.3              // m (~37 ft) — lip to the cube's near face
+
+/** Build the kick ramp with its lip at xLip, centred on z, rising toward −X (the run-up's direction). */
+function _buildKick (xLip, z) {
+  const tan = Math.tan(KICK_ANGLE), h = KICK_LEN * tan, y0 = -KICK_UNDERRUN * tan
+  const x0 = xLip + KICK_LEN + KICK_UNDERRUN, zL = z - KICK_HALF_W, zR = z + KICK_HALF_W
+  const TL = [x0, y0, zL], TR = [x0, y0, zR], LL = [xLip, h, zL], LR = [xLip, h, zR]
+  const BL = [xLip, y0, zL], BR = [xLip, y0, zR]
+  // Wound outward: incline (up, toward the toe), lip wall (−X), sides (∓Z). The base is under the slab.
+  const tris = [[TL, LR, TR], [TL, LL, LR], [LL, BR, LR], [LL, BL, BR], [TL, BL, LL], [TR, LR, BR]]
+  const body = physicsEngine.createBody({ type: 'static', position: { x: 0, y: 0, z: 0 }, userData: { kind: 'lab-ramp' } })
+  physicsEngine.addHull(body, [TL, TR, LL, LR, BL, BR].flat(), { friction: 0.8 })
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(tris.flat(2), 3))
+  geo.computeVertexNormals()      // non-indexed ⇒ one normal per face: faceted, per the art style
+  const mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({ color: 0x8a5030 }))   // the lab ramp's
+  mesh.receiveShadow = true
+  scene.add(mesh)
+  _kick = { body, mesh, tris }
+}
+
+/** Main-menu entry (the scenario list): into the lab, cube up, truck seated at the run-up. */
+async function _startBarrelCube () {
+  _hideMainMenu()
+  _enterStageLoad('stacking barrels\u2026')
+  await _worldReady
+  _exitStageLoad()
+  _exitScenario()
+  if (missionSystem?.isActive()) missionSystem.exit()
+  if (storySystem.isActive()) storySystem.exit()
+  if (!_labActive) enterLab()
+  _buildBarrelCube()
 }
 
 // Lab readout: live status, the best of each track, and the DERIVED number each track exists to
@@ -6491,6 +6582,7 @@ function loop () {
       // route cache warm this resolves within a frame or two.
       // FEAT-62: inside a scenario R is RESTART — the same seat plus a fresh count and clean gates.
       if (scenarioSystem.isActive()) void _restartScenario()
+      else if (_barrelCube) _buildBarrelCube(_barrelCube.side, _barrelCube.count)   // a fresh cube AND a fresh run-up
       else void _reseatTruckAtSpawn()
     }
 

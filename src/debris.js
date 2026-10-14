@@ -192,6 +192,55 @@ export function stackLayout (count = 6, radius = STACK_RADIUS, height = STACK_HE
   return out
 }
 
+/**
+ * The testing lab's barrel cube (main.js _buildBarrelCube): BARREL_CUBE_SIDE × BARREL_CUBE_SIDE
+ * drums per layer, BARREL_CUBE_LAYERS high — 7 × 7 × 5 = 245 (owner, 2026-10-14).
+ *
+ * Sized for the HIT, not for the 60 fps ceiling. test/bench-barrels.mjs (M4 Air, 60 Hz, every drum
+ * awake after a full-throttle hit, pass = no 1-second window under 59 fps) put that ceiling near
+ * 2000 drums: 1728 (12³) 5/5 pass · 2000 6/6 · 2197 (13³) 2/5 · 2744 (14³) ~35 fps, the crash
+ * costing physics ~6 + render ~5 ms a frame at 13³. But a 12³ only held 60 fps at the 39 mph a
+ * 150 ft run-up gives — come in faster and the truck wakes more of the pile at once, and it dropped
+ * to ~30 fps. 245 drums leaves that ceiling ~8× of headroom for any speed the truck can reach.
+ */
+export const BARREL_CUBE_SIDE = 7
+export const BARREL_CUBE_LAYERS = 5
+
+/**
+ * A barrel CUBE — `side` × `side` drums per layer on a square grid, layer on layer, upright, filled
+ * bottom-first (a count short of side³ leaves the top layer partial). Ground-relative centres, the
+ * grid centred on the origin in XZ. PURE and DETERMINISTIC like stackLayout.
+ *
+ * Every column stands alone: a `pitchGap` of clear air between neighbours, so no drum leans on the
+ * next and a settled cube is `side²` freestanding towers, each its own sleep island. Touching
+ * columns would make the whole cube one island (one barrel nudged wakes them all) and hand the
+ * solver side-contacts between drums that are only resting face-on-face anyway. Upright drums on
+ * flat ends hold a tall tower on their own — test/barrel-cube.mjs settles a full-height one.
+ *
+ * The layer `gap` is 2 mm, not stackLayout's 1 cm. Every drum free-falls together at spawn, so the
+ * top of an N-layer tower falls N gaps before it lands: at 1 cm a 13-high tower closed 13 cm and
+ * landed at 1.1 m/s, past the engine's 1 m/s restitution threshold, so it BOUNCED (top layer
+ * settled 1.7 cm off its spawn, 0.13° tilt). At 2 mm it peaks at 0.18 m/s and settles 1.0 cm, 0.08°
+ * (measured at 13 high).
+ *
+ * @param {number} count - drums.
+ * @param {number} side - drums per row.
+ * @param {number} [pitchGap=0.02] - clear air between neighbouring columns [m].
+ * @param {number} [gap=0.002] - initial clearance between layers [m].
+ * @returns {Array<{x:number,y:number,z:number}>}
+ */
+export function cubeLayout (count, side, pitchGap = 0.02, gap = 0.002, radius = STACK_RADIUS, height = STACK_HEIGHT) {
+  const out = []
+  const pitch = 2 * radius + pitchGap
+  const c = (side - 1) / 2
+  for (let i = 0; i < count; i++) {
+    const layer = Math.floor(i / (side * side))
+    const k = i % (side * side)
+    out.push({ x: (k % side - c) * pitch, y: height / 2 + layer * (height + gap), z: (Math.floor(k / side) - c) * pitch })
+  }
+  return out
+}
+
 /** The 8 corners of a flat [x,y,z,…] point list's bounding box — the crash-proof fallback hull. */
 export function bboxCorners (pts) {
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
@@ -380,21 +429,23 @@ export class DebrisSystem {
    * was the one acceptance line the throw slice could not exercise.
    *
    * `origin.y` is GROUND level, not a centre: the layout lifts each barrel by its own radius.
-   * Respects DEBRIS_CAP through spawn(), so a stack bigger than the cap eats its own base — the
-   * caller clamps rather than relying on that.
+   * Unpinned, it respects DEBRIS_CAP through spawn(), so a stack bigger than the cap eats its own
+   * base — the caller clamps rather than relying on that. Pinned (the lab's barrel cube) it is
+   * outside the cap entirely, and the caller removes it.
    *
    * @param {string} kind - DEBRIS_TYPES key.
    * @param {{x:number,y:number,z:number}} origin - ground point under the pyramid's apex.
-   * @param {number} count - barrels in the stack.
+   * @param {Array<{x,y,z}>} [layout] - ground-relative centres (stackLayout / cubeLayout).
+   * @param {boolean} [pinned=false] - outside DEBRIS_CAP; the caller removes them (the barrel cube).
    * @returns {Array<*>} the spawned body handles (empty if the model is still loading).
    */
-  spawnStack (kind, origin, count = 6) {
+  spawnStack (kind, origin, layout = stackLayout(6), pinned = false) {
     const zero = { x: 0, y: 0, z: 0 }
     const bodies = []
-    for (const off of stackLayout(count)) {
+    for (const off of layout) {
       const body = this.spawn(kind,
         { x: origin.x + off.x, y: origin.y + off.y, z: origin.z + off.z },
-        zero, { spin: zero, quaternion: STACK_QUAT })
+        zero, { spin: zero, quaternion: STACK_QUAT, pinned })
       if (!body) break        // model not loaded yet — don't leave half a pyramid
       bodies.push(body)
     }

@@ -353,6 +353,13 @@ export class DamageScreen {
     this._setHover(null)
   }
 
+  /** The truck was made whole under the alert (a free-roam reseat): there is nothing left to see. */
+  clearAlert () {
+    this.alerting = false
+    this.dock.classList.remove('alert')
+    this._renderCard()
+  }
+
   /** A damage event: flash the icon and hold the alert until the screen is opened. */
   alert () {
     if (this.isOpen) return       // already looking at it
