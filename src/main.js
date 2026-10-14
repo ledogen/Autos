@@ -5538,7 +5538,7 @@ function _clearBarrelCube () {
   }
 }
 
-// The kick ramp (owner, 2026-10-14): a small 7° wedge across the run-up, its lip 70 ft short of the
+// The kick ramp (owner, 2026-10-14): a small 7° wedge across the run-up, its lip 11.3 m short of the
 // cube, so the truck arrives airborne and nose-high. ONE corner list is the wheels' analytic
 // triangles, the engine hull (chassis and drums) and the mesh — MESH == PHYSICS by construction.
 // The incline runs on under the slab (KICK_UNDERRUN), as the lab ramp's does, so a tire meets a
@@ -5547,7 +5547,7 @@ const KICK_ANGLE    = 7 * Math.PI / 180
 const KICK_LEN      = 6                 // m of incline above the slab → lip 0.74 m
 const KICK_UNDERRUN = 0.5               // m of incline buried below it
 const KICK_HALF_W   = 3                 // m — 6 m wide, the lab ramp's width
-const KICK_GAP      = 70 * 0.3048       // m — lip to the cube's near face
+const KICK_GAP      = 11.3              // m (~37 ft) — lip to the cube's near face
 
 /** Build the kick ramp with its lip at xLip, centred on z, rising toward −X (the run-up's direction). */
 function _buildKick (xLip, z) {
