@@ -36,6 +36,10 @@ requires: FEAT-96 shipped (weld joint, strapped spawn, clean-up action)
 > `furniture` tag to the dining chairs, dining table, mirror, wardrobe and piano for FEAT-116's
 > furniture pad. Where this block disagrees with the text below, this block wins.
 
+> **Ruled 2026-10-15 (owner) — the tip curve and the shippers.** The tip share is linear in
+> condition: **100 % condition = the whole tip, 50 % = no tip**, `tipShare = clamp((h − 0.5) / 0.5, 0, 1)`.
+> Shippers are in cargo.md § "Rulings (owner, 2026-10-15)". Both blockers are cleared.
+
 ## Request
 
 A delivery whose load is **strapped to the bed and breaks under shock**. It can be light (a vase,

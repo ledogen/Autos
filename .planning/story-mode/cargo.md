@@ -163,23 +163,23 @@ only** and are never modelled.
 
 | Region | Load | From → to | Asset | Mass (kg) | Note |
 |---|---|---|---|---|---|
-| R1 | crate of milk bottles | farm → generalStore | ASSET-28 + text | 40 | 24 quart glass bottles, full, × 1.4 kg + crate. Contents are text, so the count is an assumption |
-| R1 | crate of canning jars | generalStore → farm | ASSET-28 + text | 20 | for preserves. 36 empty quart jars × 0.4 kg + crate |
-| R1 | eggs | farm → generalStore / foodVendor | ASSET-28 + text | 31 | items.md §4. 30 dozen × 60 g + flats + crate |
-| R1 | four dining chairs | | ASSET-59 | 24 | the "ratty old furniture" job (worn recolour). 4 × 6 kg |
+| R1 | crate of milk bottles | generalStore → residence | ASSET-28 + text | 40 | 24 quart glass bottles, full, × 1.4 kg + crate. Contents are text, so the count is an assumption |
+| R1 | crate of canning jars | generalStore → residence | ASSET-28 + text | 20 | for preserves. 36 empty quart jars × 0.4 kg + crate |
+| R1 | eggs | farm → residence | ASSET-28 + text | 31 | items.md §4. 30 dozen × 60 g + flats + crate |
+| R1 | four dining chairs | generalStore / residence → residence | ASSET-59 | 24 | the "ratty old furniture" job (worn recolour). 4 × 6 kg |
 | R1 | grandma's vase | | ASSET-41 | 9 | existing `vase`. Glazed ceramic, 0.78 m, + its base |
-| R1 | full-length mirror | | ASSET-64 | 16 | framed, 0.6 × 1.7 m, blanket-wrapped |
-| R2 | crate of fine china | | ASSET-28 + text | 30 | ~24 kg of china + crate |
+| R1 | full-length mirror | generalStore / residence → residence | ASSET-64 | 16 | framed, 0.6 × 1.7 m, blanket-wrapped |
+| R2 | crate of fine china | generalStore / residence → residence | ASSET-28 + text | 30 | ~24 kg of china + crate |
 | R2 | a windshield | autoShop → any | crate until modelled | 14 | existing. The glass alone |
-| R2 | dining table | | ASSET-60 | 45 | the "nice" set, paired with ASSET-59. Solid wood, 1.6 × 0.9 m |
-| R2 | ornate vase | | ASSET-41 | 9 | the valuable version of grandma's vase — same model |
-| R2 | framed artwork, crated | | ASSET-44 | 16 | painting ~6 kg + travel crate ~10 |
-| R2 | panes of glass | | ASSET-40 | 240 | the most fragile. 10 panes, 8 mm, 10.5 m² in all × 20 kg/m², + A-frame ~30 |
+| R2 | dining table | generalStore / residence → residence | ASSET-60 | 45 | the "nice" set, paired with ASSET-59. Solid wood, 1.6 × 0.9 m |
+| R2 | ornate vase | generalStore / residence → residence | ASSET-41 | 9 | the valuable version of grandma's vase — same model |
+| R2 | framed artwork, crated | generalStore / residence → residence | ASSET-44 | 16 | painting ~6 kg + travel crate ~10 |
+| R2 | panes of glass | generalStore → any | ASSET-40 | 240 | the most fragile. 10 panes, 8 mm, 10.5 m² in all × 20 kg/m², + A-frame ~30 |
 | R2 | garden fountain | generalStore → any | ASSET-62 | 200 | heavy cast stone, three tiers |
-| R2 | wardrobe | | ASSET-63 | 120 | **the high-CG job**: solid wood, 2 m tall, the top ~2.5 m off the road |
+| R2 | wardrobe | generalStore / residence → residence | ASSET-63 | 120 | **the high-CG job**: solid wood, 2 m tall, the top ~2.5 m off the road |
 | R2 | pelican case (contents as text) | | ASSET-39 | 35 | tough; ~20 kg case + ~15 kg of equipment (the contents are an assumption) |
-| R3 | sculpture | | ASSET-43 | 120 bronze · 220 marble | two models: hollow-cast bronze abstract + stone plinth; solid marble figure + plinth |
-| R3 | upright piano | | ASSET-42 | 230 | heavy *and* fragile. A 1.28 m studio upright |
+| R3 | sculpture | generalStore / residence → residence | ASSET-43 | 120 bronze · 220 marble | two models: hollow-cast bronze abstract + stone plinth; solid marble figure + plinth |
+| R3 | upright piano | generalStore / residence → residence | ASSET-42 | 230 | heavy *and* fragile. A 1.28 m studio upright |
 | R3 | airport x-ray machine | | ASSET-45 | 450 | high-tech, heavy and delicate. A compact 1.6 m baggage scanner (full-size ones run to a tonne). Generic: the airport place was dropped (owner, 2026-10-07) |
 
 **Damage feedback** (FEAT-97): on each damaging hit the load plays a sound and **blinks red**. No
@@ -231,6 +231,17 @@ Provenance: `design-amendments-2026-10-14.md`.
    wardrobe and the upright piano (FEAT-116's furniture pad).
 4. **Haul counts are the player's pick** (FEAT-114). The overloads above stay posted; whether each is
    a warning or an overload on the stock truck is FEAT-112's open number.
+
+## Rulings (owner, 2026-10-15) — fragile shippers
+
+- Milk bottles: general store → residence. Canning jars and eggs → residence (their "from" is
+  unchanged: jars from the general store, eggs from a farm).
+- Dining chairs, dining table, mirror, ornate vase, framed artwork, wardrobe, piano, sculpture and
+  fine china: general store → residence, AND residence → residence.
+- Panes of glass and the garden fountain: general store → any.
+- Not named, so still unrouted: grandma's vase keeps its residence → any row; the windshield keeps
+  autoShop → any; the pelican case and the x-ray machine post nowhere yet.
+- Everything is R1 for now (the 2026-10-10 ruling stands).
 
 ## Adding cargo
 
