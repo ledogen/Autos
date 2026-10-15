@@ -1,5 +1,5 @@
 ---
-id: BUG-86
+id: BUG-87
 type: bug
 status: closed
 closed: 2026-10-15
@@ -9,10 +9,12 @@ source: owner, 2026-10-15 — seed 1813164377, day 2: "The tackle shop is postin
   I park here, I still see the park to see the offer card. The actual offer never shows up, whether I
   park or un-park. On the map, there's also no route drawn when I hover it."
   Capture: autos-capture-1792059697317.json (truck parked at the tackle shop, 1773, 86).
+renumbered: minted as BUG-86 in commits 668591c and b0451d8 ("fix(86)", "docs(86,118)"), which collided
+  with the acute-elbow road ticket minted the same day in another session; renumbered at merge.
 relates: FEAT-102 (fetch), FEAT-101 (job supply), FEAT-67 (offer board), BUG-85 (region splits)
 ---
 
-# BUG-86: the board posts offers that cannot be planned
+# BUG-87: the board posts offers that cannot be planned
 
 ## What was broken
 
