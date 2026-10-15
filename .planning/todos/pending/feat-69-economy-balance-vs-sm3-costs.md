@@ -54,3 +54,19 @@ now have real numbers behind them. The third does not.
 
 - [ ] **Repairs need a time cost alongside the money cost**, applied as a clock skip (the
       shops/service/camp pause ruling, run-shape.md). Price the time with the money.
+
+## Amended 2026-10-14 (owner) — what this now balances
+
+design-amendments-2026-10-14.md §12–15 change the problem:
+
+- **Pay no longer rides `dayTier`** (FEAT-117). `dayTierTable` now scales **costs only**: the day's
+  cost anchor, repairs, gas and parts. The 2026-10-12 difficulty knobs scale that growth.
+- **Pay grows with the region step × a capped regional reputation** (FEAT-117). Solve the cap, the
+  points to reach it, the day-1 cost share `c₀` and the daily cost growth `g` so each region pays for
+  itself for about its planned length, then gets tight.
+- **Run shape for alpha: three regions, provisionally 7 / 6 / 5 days** (supersedes ~12–14 days).
+  Recount the point budget against it.
+- **Re-solve `regionMult` for three regions** (it is solved for six). The step must cover the cost
+  growth since the run began and still be a raise over the old region at full reputation.
+- Parts are priced by the furthest region unlocked (§11), so their prices follow the region step,
+  scaled by the upgrade/item-cost knob.

@@ -235,6 +235,25 @@ by the hit panel's condition**, ~60 mph bare to ~100 mph full, dropping with eac
 alpha; multiplayer kept open; traffic post-alpha and physics-simulated if ever. Provenance and the
 owner's words: [design-amendments-2026-10-12.md](design-amendments-2026-10-12.md).
 
+**Ratification pass 2026-10-14** (project owner): **cargo, deadlines and pay — a planning pass, built
+as tickets FEAT-112..118.** (1) **One mission at a time, reaffirmed**; multi-contract bed packing is
+rejected (a sparse network, no menu min-maxing). (2) **Load verdicts — fits, warning, overload** —
+from the current truck configuration, by size or weight; overload is a hard cutoff, a warning is
+accepted at your own risk. Offers stay seed-determined for every vehicle; the configuration only
+changes the verdicts. (3) **Bed upgrades are parts** (roof rack, flatbed, stake bed, extended bed,
+light bar), each a function on the truck configuration; not a different vehicle (SM-INV-15 holds).
+(4) **Every job has a delivery deadline from its cargo** (lax 1–3 d, chill 6 h–1 d, stringent
+1–4 h); missing it cancels and locks. (5) **The mission clock runs on world time**, so camping
+spends time against the tip rather than forfeiting it — this replaces "short, perishable ones die
+overnight" with the deadline. (6) **The camp pause** (2026-08-02) is restated and ticketed. (7)
+**Haul: the player picks the quantity**; yards run rate bonuses. (8) **Straps are not an item**
+(FEAT-110 closed). (9) **Cargo protection is proportional**, never additive. (10) **Parts are priced
+by the furthest region unlocked.** (11) **Pay grows with work, not the day:** `dayTier` leaves pay
+and scales costs only; pay rides the region step × a capped **regional reputation** shown on the
+result card. Retires "accept at 1 a.m., buy tomorrow's rate". (12) **Alpha run shape: three regions,
+provisionally 7 / 6 / 5 days.** Open: what earns haul's and freight's tip and bonus item. Provenance:
+[design-amendments-2026-10-14.md](design-amendments-2026-10-14.md).
+
 **Companion design notes** (downstream of this bible; where they disagree with it, *it* wins):
 [missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag and bridge-site main missions),
 [run-shape.md](run-shape.md) (run length, day length, saving), [opening.md](opening.md) (the firing,
@@ -243,7 +262,8 @@ asset burn-down surface), [spirits-and-pacts.md](spirits-and-pacts.md) (the spir
 *deferred; carries four flagged conflicts with rules ratified since, see its header*),
 [IDEAS.md](IDEAS.md) (the scratchpad), and
 [design-amendments-2026-07-29.md](design-amendments-2026-07-29.md) and
-[design-amendments-2026-10-12.md](design-amendments-2026-10-12.md) (provenance for the passes above).
+[design-amendments-2026-10-12.md](design-amendments-2026-10-12.md) and
+[design-amendments-2026-10-14.md](design-amendments-2026-10-14.md) (provenance for the passes above).
 
 ---
 
@@ -783,7 +803,11 @@ remaining alertness. Camping mid-mission doesn't automatically kill the job — 
 the job. Short, perishable ones die overnight (the milk spoils, the guy gets away; the fiction
 supplies the penalty, no payout math needed); longer hauls permit the delivery to be made the
 next day, so camping is a legitimate rest stop on a multi-day run. The mission's own fiction
-says which it is. Sleep somewhere bad → bad night:
+says which it is.
+> **[AMENDED 2026-10-14]** The fiction is now a number: every job carries a **delivery deadline**
+> from its cargo (lax 1–3 d, chill 6 h–1 d, stringent 1–4 h), shown on the card, and a job still in
+> hand when it passes is cancelled. The mission clock runs on world time, so a night with a load
+> spends time against the tip; on an average job it leaves base pay. FEAT-113. Sleep somewhere bad → bad night:
 no fire, no fish, wake half-tired, tomorrow's budget already in debt — a run ending in
 slow motion, legible the whole way down.
 
@@ -805,7 +829,7 @@ another's job.
 |---|---|---|---|
 | **par** | route geometry, nothing else | fixed | what a road is *worth* |
 | **rank thresholds** | run day | tighten | how hard the good letters get |
-| **day tier** | run day, **locked at mission start** | rise | how much a mission pays |
+| **day tier** | run day, **locked at mission start** | rise | ~~how much a mission pays~~ **what things cost** [2026-10-14: pay rides region × reputation instead, FEAT-117] |
 | **region tier** | region index, **locked at mission start** | rise | the reward for pushing into harder country |
 
 *(Re-anchored 2026-08-16 — SM-INV-3 and SM-INV-4 amendments.)*
@@ -1249,7 +1273,9 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
   (3.3–5.1 km out, ≈6.6 km²) · region 2 a parallel-sided band of equal area (≈3.2 km wide, 1.5–3.3 km
   out, so its inner edge wraps the whole centre disc).** ·
   **6 hours** to beat · **24-minute sky cycle** = **16 waking h + 8 h sleep** ·
-  **~18 real minutes per day** · ~~**20 days per run**~~ **~12–14 days per run** [2026-10-12; was 20 —
+  **~18 real minutes per day** · ~~**20 days per run**~~ ~~**~12–14 days per run** [2026-10-12]~~ **~18 days: three regions of
+  about a week, provisionally 7 / 6 / 5** [2026-10-14; the budgets below are owed a re-cut to it,
+  FEAT-69] [was 20 —
   region count 2026-08-01; the clock, the day cost, days-per-run and region growth all 2026-08-02].
   **Budgets re-cut 2026-10-12 by the owner's rule "scale everything by the number of days":** the
   first three regions of the old ladder stand as-is — day budget **4·4·4 = 12 days**, points

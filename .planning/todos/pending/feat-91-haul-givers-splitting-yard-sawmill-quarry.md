@@ -187,3 +187,10 @@ It posts haul only, for now. The loading beat is FEAT-88's (see that ticket's "A
   for the title-screen rock drop. A sawmill rack or quarry ramp that drops from a fixed point is a
   later choice.
 - **Courier at the yard** waits for FEAT-89.
+
+## Amended 2026-10-14 (owner) — the player picks the quantity
+
+The rolled piece count is reversed: **the player picks how many pieces to load**, inside the truck's
+soft and hard limits (FEAT-112), and **yards run limited-time rate bonuses** for the rare, juicy
+haul. Built in **FEAT-114**. Straps are not an item for haul (FEAT-110 closed): the loose load's
+chaos is the point. See design-amendments-2026-10-14.md §8–9.

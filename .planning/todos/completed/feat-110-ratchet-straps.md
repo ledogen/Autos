@@ -1,7 +1,12 @@
 ---
 id: FEAT-110
 type: feature
-status: open
+status: cancelled
+closed: 2026-10-14
+resolution: "CANCELLED — closed by the owner 2026-10-14. Straps do not work as an item: rocks and firewood
+  bundles cannot be strapped, haul's loose-load chaos is the point, and an item held at one giver and
+  missing at the next feels arbitrary. Straps stay as fiction on the strapped families (freight,
+  fragile). Straps as a paid gate on fragile work is recorded in IDEAS.md, unratified."
 severity: minor
 opened: 2026-09-30
 source: owner, 2026-09-30 — "ratchet straps … secure loose cargo from a haul mission so that it

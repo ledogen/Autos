@@ -224,3 +224,10 @@ What exists:
 
 Still open in this ticket: crate / drum / barrel as loose haul loads for the other givers. (Retiring
 the `fragile` / `freight` keys into `haul` was dropped on 2026-10-06.)
+
+## Amended 2026-10-14 (owner) — the player picks the quantity
+
+The rolled piece count is reversed: **the player picks how many pieces to load**, inside the truck's
+soft and hard limits (FEAT-112), and **yards run limited-time rate bonuses** for the rare, juicy
+haul. Built in **FEAT-114**. Straps are not an item for haul (FEAT-110 closed): the loose load's
+chaos is the point. See design-amendments-2026-10-14.md §8–9.

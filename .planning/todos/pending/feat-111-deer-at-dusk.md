@@ -54,7 +54,7 @@ most likely to be tired.
 - **More deer in R3 than in R1.** Density rises inward with the rings, like the other driving-side
   difficulty. This overrides the forest-edge weighting above as the *regional* term; forest edge can
   still decide where within a region.
-- Reported over the **CB radio** (FEAT-112).
+- Reported over the **CB radio** (FEAT-119).
 
 ## Acceptance
 

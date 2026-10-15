@@ -28,6 +28,14 @@ requires: FEAT-96 shipped (weld joint, strapped spawn, clean-up action)
 > `missionGiver` is retired: its five slots became the additional classes (pois.md § Places and
 > Missions) and its model pool is now `residence`. A farm also carries the `residence` tag.
 
+> **Amended 2026-10-14 (owner) — read before building.** Fragile's **tip and bonus item are both
+> earned by cargo condition**, not by the clock (design-amendments-2026-10-14.md §4). Base pay stays
+> × health. The tip becomes a share of the tip pool set by health (whole near perfect condition,
+> nothing below a floor — the curve is the owner's to set), and the letter that gates the bonus item
+> reads health, not the clock. The clock still runs for the delivery deadline (FEAT-113). Add a
+> `furniture` tag to the dining chairs, dining table, mirror, wardrobe and piano for FEAT-116's
+> furniture pad. Where this block disagrees with the text below, this block wins.
+
 ## Request
 
 A delivery whose load is **strapped to the bed and breaks under shock**. It can be light (a vase,
@@ -146,13 +154,16 @@ Those are the hardest jobs of the type.
 - [ ] Per step, the shock read is the weld force ÷ mass with gravity removed, priced per event on
       the peak, square-law, with per-item `shockFloorG` / `breakG` in `data/offers.js`.
 - [ ] A headless gate drives the four calibration scenarios above and asserts each row.
-- [ ] Pay is (Base + tip) × health, continuous, floored at zero; `economy.mjs` covers it.
+- [ ] Pay is Base × health + a tip set by health (2026-10-14), continuous, floored at zero;
+      `economy.mjs` covers it.
 - [ ] Zero health fails the job on the spot ($0, "destroyed" on the result card), and clean-up
       removes the load and costs 1 h.
 - [ ] Each damaging event plays its item's sound with gain ∝ cost, and blinks the load red.
       Calm driving is silent and the load stays unlit.
 - [ ] `fragile` is in `BUILT_FAMILIES`. No cargo number on the HUD (SM-INV-10).
-- [ ] Good deeds are `haulPointsFor(health)`; the letter blends the clock and health.
+- [ ] Good deeds are `haulPointsFor(health)`; the letter reads health (2026-10-14), and gates the
+      bonus item.
+- [ ] The `furniture` tag is on the five furniture items.
 - [ ] Same seed, same offer, same inputs → the same health at delivery (SM-INV-12).
 
 ## Related code

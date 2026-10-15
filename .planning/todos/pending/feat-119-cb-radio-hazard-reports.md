@@ -1,5 +1,5 @@
 ---
-id: FEAT-112
+id: FEAT-119
 type: feature
 status: open
 severity: minor
@@ -17,7 +17,7 @@ invariants: SM-INV-12 (reports, misses and phantoms all come from the run's seed
   creates one)
 ---
 
-# FEAT-112: CB radio — hazard reports
+# FEAT-119: CB radio — hazard reports
 
 ## Request
 
