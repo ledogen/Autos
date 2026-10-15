@@ -57,9 +57,10 @@ const HOUSEWARES = ['generalStore', 'residence']
 // FEAT-97 fragility tiers, in felt g (src/fragile.js). Measured on the freight-strap rig
 // (test/fragile-cargo.mjs pins them): hard paved driving peaks ~0.6 g, ±4 cm washboard at 15 m/s
 // ~1.3 g, a 1 m drop at speed ~4.7 g, a rollover 6–13 g. Free fall reads 1 g, so no floor sits
-// below 1 — airtime is free, the landing is what costs.
-const GLASSWARE = { shockFloorG: 1.0, breakG: 3.5, sound: 'glass' }   // washboard hurts; a crest landing destroys
-const DELICATE  = { shockFloorG: 1.1, breakG: 4.5, sound: 'thud' }
+// below 1 — airtime is free, the landing is what costs. A floor AT 1 g took damage constantly
+// (owner, 2026-10-15): glassware and delicate were pulled toward sturdy.
+const GLASSWARE = { shockFloorG: 1.15, breakG: 4.0, sound: 'glass' }  // rough road nibbles; a crest landing destroys
+const DELICATE  = { shockFloorG: 1.2, breakG: 4.75, sound: 'thud' }
 const STURDY    = { shockFloorG: 1.3, breakG: 5.5, sound: 'thud' }    // a crest landing costs most of it; a roll ends it
 
 export const THINGS = [
@@ -239,7 +240,7 @@ export const THINGS = [
     { id: 'mirror',      phrase: 'a full-length mirror',    family: 'fragile', massKg: [16, 16],
       pools: HOUSEWARES, to: ['residence'], load: 'fullLengthMirror', ...GLASSWARE, furniture: true },
     { id: 'windshield',  phrase: 'a windshield',            family: 'fragile', massKg: [14, 14],
-      pools: ['autoShop'], load: 'largeCrate', ...GLASSWARE },   // crated until it has a model
+      pools: ['autoShop'], load: 'largeCrate', ...DELICATE, sound: 'glass' },   // laminated, so tougher than plate (owner, 2026-10-15); crated until it has a model
     { id: 'glassPanes',  phrase: 'ten panes of glass',      family: 'fragile', massKg: [240, 240],
       pools: ['generalStore'], load: 'glassPanes', ...GLASSWARE },
     { id: 'diningChairs', phrase: 'four dining chairs',     family: 'fragile', massKg: [24, 24],

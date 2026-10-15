@@ -36,6 +36,13 @@ requires: FEAT-96 shipped (weld joint, strapped spawn, clean-up action)
 > `furniture` tag to the dining chairs, dining table, mirror, wardrobe and piano for FEAT-116's
 > furniture pad. Where this block disagrees with the text below, this block wins.
 
+> **Ruled 2026-10-15 (owner) — tiers pulled toward sturdy.** "A floor of 1.0 is silly because it
+> takes damage constantly." GLASSWARE 1.0 / 3.5 → **1.15 / 4.0**, DELICATE 1.1 / 4.5 → **1.2 / 4.75**,
+> STURDY unchanged 1.3 / 5.5. The windshield moves to DELICATE (laminated; it "felt way too
+> delicate"), keeping its glass sound. The calibration table's "dirt at par pace: glass a clear
+> loss" row is relaxed: ±4 cm washboard now NIBBLES glassware (~1 % per 5 s, was 9 %); a 1 m crest
+> landing still destroys it.
+
 > **Ruled 2026-10-15 (owner), later the same day — the base is guaranteed.** Condition drives the
 > tip ONLY; base pay is not × health. *"An item at 25 % condition wouldn't even be worth carrying."*
 > Supersedes "Base pay stays × health" (10-14) and "(Base + tip) × health" below. 75 % pays base +
@@ -166,7 +173,7 @@ Built in `feature/sm3-fragile`:
   1 g, so every floor sits at ≥ 1 g: airtime is free, the landing is what costs.
 - `src/fragile.js`: pure tracker, damage.js's peak-and-decay event shape, square-law cost.
 - 17 fragile things in `data/offers.js` on three tiers (felt g, floor / break):
-  GLASSWARE 1.0 / 3.5, DELICATE 1.1 / 4.5, STURDY 1.3 / 5.5. Routes per the 10-15 ruling; the
+  GLASSWARE 1.0 / 3.5, DELICATE 1.1 / 4.5, STURDY 1.3 / 5.5 (retuned the same day — see the top block). Routes per the 10-15 ruling; the
   autoShop now posts fragile (the windshield, crated). The pelican case and x-ray machine have no row.
 - Pay `splitFragilePayout` (base guaranteed, condition drives the tip), letter `fragileGrade`, deeds `haulPointsFor(health)`. A fragile load
   takes freight's per-kg par and pay terms but not its time slack or tip multiplier.

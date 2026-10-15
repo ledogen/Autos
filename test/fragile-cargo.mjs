@@ -8,7 +8,7 @@
 //   2. the pay: the base guaranteed, + the whole tip pool × the tip share — all of it at 100 %, none
 //      at 50 % (owner, 2026-10-15); the letter reads condition alone; a burst prices once;
 //   3. the calibration table (the ticket's, on the freight-strap rig): paved driving costs nothing,
-//      washboard costs glassware clearly and sturdy pieces little, a 1 m crest landing destroys
+//      washboard nibbles glassware and costs sturdy pieces little, a 1 m crest landing destroys
 //      glassware and costs sturdy pieces most of it, a rollover destroys everything;
 //   4. the felt g at rest is ~0 (gravity is removed, not counted), and the same run twice gives the
 //      same health (SM-INV-12).
@@ -139,7 +139,12 @@ for (const [tk, thing] of Object.entries(TIERS)) {
 const all = Object.values(res)
 ok(all.every(r => r.rest.last < 0.01 && r.rest.health === 1), `settled at rest the load feels ~0 g (${res.glassware.rest.last.toFixed(4)}) — gravity is removed, and the spawn settle costs nothing`)
 ok(all.every(r => r.paved.health === 1), 'paved driving at pace costs nothing, any tier')
-ok(res.glassware.washboard.health < 0.95, `5 s of washboard costs glassware clearly (${pct(res.glassware.washboard.health)} left)`)
+// Washboard NIBBLES glassware rather than eating it — a floor at 1 g took damage constantly (owner,
+// 2026-10-15) — and the tiers stay in order: glassware loses the most, sturdy the least.
+const wb = (t) => res[t].washboard.health
+ok(wb('glassware') < 1 && wb('glassware') > 0.95, `5 s of washboard nibbles glassware (${(100 * (1 - wb('glassware'))).toFixed(1)} % lost)`)
+ok(wb('glassware') <= wb('delicate') && wb('delicate') <= wb('sturdy') && res.delicate.crest.health <= res.sturdy.crest.health,
+  'the tiers stay in order: glassware ≤ delicate ≤ sturdy on washboard and on the crest')
 ok(res.sturdy.washboard.health > 0.95, `washboard costs a sturdy piece little (${pct(res.sturdy.washboard.health)})`)
 ok(res.glassware.crest.health === 0, 'a 1 m crest landing destroys glassware')
 ok(res.sturdy.crest.health > 0 && res.sturdy.crest.health < 0.6, `a 1 m crest landing costs a sturdy piece most of it (${pct(res.sturdy.crest.health)})`)
