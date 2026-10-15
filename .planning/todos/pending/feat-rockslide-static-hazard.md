@@ -49,6 +49,9 @@ Ideally FEAT-26 and FEAT-27 share **one rock spawner / obstacle-field module** w
 A FEAT-26 event that finishes and leaves rocks on the road is essentially a FEAT-27 field — the
 two should converge on the same resting-debris representation and cleanup path.
 
+> **Owner ruling 2026-10-15 — cleanup.** Resting rocks stay where they land and despawn once their
+> chunk is unloaded and an hour or two of game time has passed. Same rule as dead deer (FEAT-111).
+
 ## Open questions (scope in plan mode when picked up)
 
 - **Placement / determinism.** Static ⇒ this SHOULD be seeded and window-invariant like the rest of

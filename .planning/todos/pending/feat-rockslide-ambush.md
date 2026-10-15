@@ -107,6 +107,9 @@ vehicle feel" rigid bodies FEAT-09 defines — plus:
 FEAT-09 is the substrate; FEAT-26 should NOT reimplement a rigid-body system. If FEAT-26 is picked
 up first, that's a signal to build FEAT-09 Phase 3 as its foundation rather than a bespoke one-off.
 
+> **Owner ruling 2026-10-15 — cleanup.** Resting rocks stay where they land and despawn once their
+> chunk is unloaded and an hour or two of game time has passed. Same rule as dead deer (FEAT-111).
+
 ## Open questions (scope in plan mode when picked up)
 
 - **Trigger model.** Fully random along any qualifying slope, or seeded/deterministic like the rest

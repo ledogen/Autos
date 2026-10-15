@@ -717,7 +717,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 |---|---|---|---|
 | **Driver / energy** | coffee, fish, **meals (§1d)** | camp energy gear | coffee, energy drink, snacks |
 | **Truck / damage** | spare tire, air filter, **zip ties, duct tape, coolant, tire patches** | parts (§3), quick-jack, breaker bar, **hi-lift, bike pump (always), compressor** | Host charm |
-| **Navigation / info** | — | map, beacon, GPS, shortcut GPS, **light bar**, *CB radio (blocked)* | — |
+| **Navigation / info** | — | map, beacon, GPS, shortcut GPS, **light bar**, *CB radio (FEAT-112)* | — |
 | **Cargo / mission** | *straps (FEAT-110, parked)* | cooler, chain, **rubber bed mat, bedliner** | — |
 | **Camp / night** | — | camp vibe gear, backpack | — |
 | **Fuel / time** | jerry can | — | — |
@@ -741,10 +741,10 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 
 | Item | Blocker |
 |---|---|
-| **CB radio** | Hears hazard reports on the Highway's roads (rockslide, washout ahead) — hazard intel only, never mission intel (the Highway's rejected-boon line). **Blocked until the hazard system exists** |
+| **CB radio** | Hears hazard reports on the Highway's roads (rockslide, washout ahead) — hazard intel only, never mission intel (the Highway's rejected-boon line). **Owner likes it (2026-10-15) → FEAT-112.** Needs a hazard system shipped first (rockslides FEAT-26/27, deer FEAT-111) |
 | **Dynamite** | Clears one hazard on one cut — locally, once, what the Shortcut's deep esteem does in bulk. **Blocked on the hazard + Shortcut systems** |
 | **Cargo net** | Keeps light items in, lets heavy ones break through. Physics is the problem: a candidate is a **drag field over the bed opening** that removes momentum from a body crossing it, with a break-through above some momentum — so light items are caught and heavy ones aren't, without a mass rule. Tough; kept as an idea |
-| **Radio tapes** | Slow energy drain at night while one plays; the tape is the consumable, the deck the part. Owner's concern: it needs enough story (what's on the tapes) to feel good rather than a stat |
+| **Radio tapes** | **No stat (owner, 2026-10-15).** The energy effect is stripped: a passive buff you leave running would tax players who prefer their own music. If tapes survive, they are story content only — something you play for what is on it |
 | **Chainsaw** | **Not as a general item** — clearing roads is a mission type (the log drag). Possible as a **region-2 choice**: logs you can tow *or* chainsaw |
 
 ### Rejected (owner, 2026-09-30) — recorded so they aren't re-proposed

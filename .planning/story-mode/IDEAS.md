@@ -403,3 +403,30 @@ Open (historical):
 - Worked example on the smaller reading, rings 2500 m deep: R1 = 30° sector 3.5–6.0 km out
   (6.3 km²); R2 = equal area one ring in, 1.0–3.5 km out → ~64° sector; R3 = the centre disc,
   radius 1.0 km (3.1 km², half the others — the boss arena is small on purpose or the depth changes).
+
+## Radio (owner, 2026-10-14) — unscoped
+
+Seeded by the rain forecast (FEAT-107): *"I'd love to put it on the morning radio show. It'd be great
+to have it on twice a day so you have to intentionally check in at the right time."* The owner's
+worry: multiple channels, each its own show, sounds like a lot of work, *"unless we just do text to
+speech"*, and the radio needs more reasons to exist.
+
+Reasons already in the docs, not yet tied together:
+- **Weather forecast** (FEAT-107): twice a day, at fixed times.
+- **CB radio** (items.md): hazard reports on the road ahead. It was blocked "until the hazard system
+  exists"; rockslides (FEAT-26), deer (FEAT-111) and rain now give it things to report.
+- **Radio tapes** (items.md): a slow drain on energy at night while one plays. The owner already
+  flagged that it needs story behind it, not just a stat.
+- **Music** (FEAT-58, hosted in the dash by the FEAT-34 cluster).
+
+Cheapest shape: **one station with scheduled segments**, not several channels. A forecast at e.g.
+07:00 and 18:00 already forces "check in at the right time". Several channels only earn their cost if
+tuning between them is itself the mechanic. The browser's built-in text-to-speech (`speechSynthesis`,
+the Web Speech API) costs no audio assets; its voices vary by OS, so captions are the true copy and
+the voice is garnish.
+
+**2026-10-15 — the forecast is retired as a reason.** Owner: par absorbs the rain and the player
+sees the weather before accepting, so a forecast changes no decision. "Unnecessary fluff." The radio
+is parked with no load-bearing reason left: CB hazard reports and music remain as candidates.
+**2026-10-15 (b)** — the CB hazard report is the radio's surviving reason, ticketed as FEAT-112.
+Tapes lost their energy effect (story-only if they survive).
