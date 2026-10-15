@@ -48,6 +48,44 @@ while a long job can keep some. Pauses (shops, FEAT-118's camp) hold the world c
   for free?
 - The card's "fits a night's sleep" mark: shown when the deadline reaches past the next morning?
 
+## Handoff (2026-10-15) — read before starting
+
+**Where things stand.** SM-3's build order (MILESTONES.md "Next up") is down to this ticket.
+FEAT-97 fragile and FEAT-118 camp pause are done and on main. BUG-87 (the board advertised
+offers it couldn't plan) is fixed; the owner ruled a giver with no reachable job may stay empty all
+run.
+
+**Unmerged work.** Worktree `CarGame-sm3-abandon`, branch `feature/sm3-abandon`, is committed but
+NOT merged (b68ba88: abandon needs a park and ends on an "Abandoned" $0 card; the blue P badge; plus
+the FEAT-97 close). Merge only when the owner says "merge": `npm run test:all` first (known reds:
+road-tunnel, road-clearance), then `bash ~/.claude/skills/worktree/scripts/wt.sh merge sm3-abandon`,
+`clean`, and `title.sh --clear`. Main may hold another session's uncommitted edits (seen: LAYOUT.md,
+CLAUDE.md, tools/dashboard for FEAT-120); if the merge touches one, stash just that file, merge, and
+pop it back.
+
+**What this ticket touches that just changed.**
+- `missionSystem.cancel(cargo)` (src/mission.js) no longer idles: it ends on the result card with
+  `result = { abandoned: true, payout: 0, cargo, … }`, and "continue" exits. The paper route's
+  `cancel()` does the same. The deadline-passed cancel this ticket adds will reuse that path, so as
+  built it would read **"Abandoned"**. Ask the owner whether an expired job should say "Expired"
+  (or similar) instead; it is one field on the result and one branch in main.js `_abandonedCard`.
+- The abandon button needs the truck parked (main.js `_jobCancelLabel`, the click handler). A
+  deadline expiry is not a button press, so it must not wait for a park.
+- The camp pause (FEAT-118) holds `daySystem.update` while a camp face is up (main.js frame loop,
+  `if (!_campUi || _campUi.mode === 'confirm')`). A world-time `elapsed` inherits that hold for free
+  if it reads `daySystem`'s clock rather than summing frames.
+- Fragile's tip reads condition, not the clock, and fragile and haul show no rank bar
+  (`_rankTimerSource`). Freight and courier tips still read `elapsed`, so world time hits them.
+- Clean-up costs 1 h (`CLEANUP_H`, main.js) through `daySystem.advanceMinutes`. Under world time it
+  will now count against the clock.
+
+**The two Open questions above are still the owner's.** Don't pick defaults for them silently.
+
+**Working rules for this owner** (from memory): engineer, not programmer — gloss code and platform
+terms inline in one clause; commit only when asked, `git commit -- <paths>`; no retuning from one
+run; when docs or decisions conflict, ask; never kill caffeinate. Ticket IDs: check every open
+worktree before minting (BUG-86 collided this session).
+
 ## Acceptance
 
 - [ ] Every posted thing has a window (own or family default); the gate fails on a missing one.

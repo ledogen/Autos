@@ -1,7 +1,8 @@
 ---
 id: FEAT-97
 type: feature
-status: open
+status: closed
+closed: 2026-10-15
 severity: major
 opened: 2026-10-06
 source: owner, 2026-10-06 — "fragile is an item strapped to the bed of the truck (physics locked to
@@ -230,3 +231,13 @@ Built (main.js `_abandonCargo` / `_abandonedCard`, mission.js and paper-route.js
 - `src/engine-audio.js` — one-shot helpers for the hit sounds.
 - `src/economy.js` — `haulPointsFor`; the pay rows.
 - `data/offers.js` — the `fragile` things (`vase`, `windshield`).
+
+## Resolution (2026-10-15)
+
+Every acceptance item is met. Shipped in fec2924 (the build), 7ea744d (no rank bar), 7b1fc23 (base
+guaranteed), 783685f (tier retune), b68ba88 (abandon card, park to abandon). The owner drove
+grandma's vase and a piano in story mode: "it feels great" / "it felt perfect".
+
+Defaults that stand until the owner says otherwise: letter bands reuse haul's load score; eggs ship
+from a farm; grandma's vase is residence → any; the pelican case and x-ray machine have no shipper.
+Cargo protection (FEAT-116) is the follow-on.
