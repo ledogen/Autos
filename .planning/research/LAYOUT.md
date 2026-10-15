@@ -16,7 +16,8 @@ or delete a file, update the relevant line here in the same commit — it's one 
 | `assets/models/` | Hand-authored `.glb` assets + `CREDITS.md`. Convention: `.planning/research/ASSETS.md`; style: `ART-STYLE.md`. |
 | `vendor/box3d/` | Vendored Box3D WASM bindings. Imported ONLY by `src/physics-engine.js` (FEAT-48 seam). |
 | `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts. Pure node — never touches Vite. |
-| `tools/dashboard/` | `npm run dash` ticket-tracker viewer (:8010). Read-only over `.planning/todos/`. |
+| `tools/dashboard/` | `npm run dash` ticket-tracker viewer (:8010). Read-only over `.planning/todos/`, except the Sounds tab's upload, which writes takes into `wip/audio/<slug>/`. |
+| `wip/audio/<slug>/`, `assets/audio/<slug>/` | Sound takes, one folder per FEAT-120 sound (slug = its `###` heading). `wip/` is git-invisible (recordings in progress, dashboard uploads); promote to `assets/audio/` when the game plays it. |
 | `.planning/` | Planning record. **Live:** `todos/` (tracker), `story-mode/DESIGN.md` + `MILESTONES.md` (roadmap), `research/` (standing references). **Historical:** `phases/`, `milestones/`, handoffs, `STATE.md`. |
 | `.github/workflows/` | `deploy.yml` — Pages build. Runtime-fetched assets are copied to `dist/` by the inline plugin in `vite.config.js`. |
 
