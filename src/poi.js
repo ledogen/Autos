@@ -512,8 +512,11 @@ export class PoiSystem {
      *
      * Cost: one pass over the region's graph edges, a handful of terrain/water samples per
      * candidate. Runs ONCE at story-mode entry (behind the loading screen), never in the frame loop.
+     *
+     * @param {Set<string>|null} [nodes] BUG-85: the main piece's node keys (world-validate.js
+     *        `mainNodes`). An edge with a node outside it is on a STRANDED piece and hosts no POI.
      */
-    build (center, radius) {
+    build (center, radius, nodes = null) {
         const road = this._d.getRoad()
         if (!road || !center) return this._list
         const seed = this._d.getSeed()
@@ -569,6 +572,9 @@ export class PoiSystem {
             // The newspaper customers already obey this exact rule (buildHouses); POIs now match.
             // Still a post-filter on (edge, region), so placement stays window-invariant.
             if (!edgeInWall(e.a) || !edgeInWall(e.b)) continue
+            // BUG-85: …and it must be on the MAIN piece. A stranded piece is inside the wall but no
+            // road joins it to the spawn, so a POI there is a customer nobody can drive to.
+            if (nodes && (!nodes.has(e.ka) || !nodes.has(e.kb))) continue
             pool.push(poi)
             }
         }
@@ -604,7 +610,7 @@ export class PoiSystem {
      * COUNT IS HARD, THE RADIUS RELAXES (FEAT-60's rule): a region always gets poiHouseCount
      * customers; the ring grows in poiHouseStep increments until the network can supply them.
      */
-    buildHouses (center, radius) {
+    buildHouses (center, radius, nodes = null) {
         const road = this._d.getRoad()
         if (!road || !center) return this._houses
         const P = { ...POI_PARAMS, ...this._d.getParams() }
@@ -643,6 +649,7 @@ export class PoiSystem {
             if (seen.has(ek)) continue
             seen.add(ek)
             if (!nodeInside(e.a) || !nodeInside(e.b)) continue
+            if (nodes && (!nodes.has(e.ka) || !nodes.has(e.kb))) continue   // BUG-85: main piece only
             this._placeHousesOnEdge(road, e, P, cands)
         }
 

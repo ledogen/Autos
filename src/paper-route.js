@@ -447,7 +447,7 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
 
     const rMax = region ? region.r - margin : Infinity
     const inRegion = (p) => !region || Math.hypot(p.x - region.x, p.z - region.z) <= rMax
-    const { posOf, idOf, adj } = buildGraphAdj(g, inRegion)
+    const { posOf, idOf, adj } = buildGraphAdj(g, inRegion, region?.nodes)
 
     // A STOP IS A POINT ON A ROAD — not a junction, and not a whole street either.
     //

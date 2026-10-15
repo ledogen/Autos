@@ -27,7 +27,7 @@
 //
 // TWO BARS, and they differ on purpose — this is the one thing to get right when editing here:
 //
-//   `playable`  components === 1 && no condemned edge.  THE PLAYER BAR. "Is this world broken?"
+//   `playable`  a piece exists && no condemned edge.   THE PLAYER BAR. "Is this world broken?"
 //   `ok`        playable && no node-pin violation.      THE DEV BAR. Adds our OWN geometry
 //               regressions, which are a bug in the code and not a property of the seed. Blocking
 //               a player on one would be blaming them for our defect, so the game does not.
@@ -37,9 +37,15 @@
 //
 // WHAT IS ASSERTED (and what is only reported):
 //
-//   components === 1   GATING, and the headline. A split is an unshippable world: the player can
-//                      be given a mission on the far side of a gap no road crosses.
-//                      COUNTED OVER THE CORE ONLY — see COMPONENT_REACH_MARGIN_M below.
+//   components         REPORT ONLY since BUG-85 (owner ruling 2026-10-15, DESIGN.md "Run shape and
+//                      saving"): a wall that cuts the road graph NEVER refuses a seed — and does not
+//                      fail the dev bar either (owner, 2026-10-15: the strict cut split play-area
+//                      seed 11 on a 5.2 km corner piece of a square the game never builds; whole-
+//                      network connectivity is graph-topology's gate, not this one's). The pieces are
+//                      reported, the main one's nodes are handed to the planners (`mainNodes`), and
+//                      every other piece is STRANDED — drivable, but no POI, customer or mission
+//                      endpoint lands on it. COUNTED OVER THE CORE ONLY — see
+//                      COMPONENT_REACH_MARGIN_M below, and THE STRICT CUT under it.
 //   condemned === 0    GATING. A condemned edge is one where the profile ladder failed at every
 //                      rung INCLUDING the grade-hard re-route (see road.js workstream C), so it
 //                      ships draped over raw terrain with no grade bound — the 108 % class.
@@ -80,6 +86,19 @@ export const STORY_GRID   = 3       // 3x3 tiles => 12 km x 12 km, 144 km2
 // ever seen was 2010 m out, so 500 m of inset is the middle of the working range, not its edge.
 export const COMPONENT_REACH_MARGIN_M = 500   // m — a component must reach this far inside the wall to count
 
+// ── THE STRICT CUT (BUG-85, owner ruling 2026-10-15) ─────────────────────────────────────────
+//
+// Pieces are counted with roads CUT AT THE WALL: a run joins its two nodes only if it lies WHOLLY
+// inside, so a road that leaves and comes back does not connect its ends. (The rule this replaced
+// joined any run with a point inside — the player cannot drive the outside half, and the planners
+// never route it: mission.js guard 2 rejects a route whose polyline crosses the wall.)
+//
+// And the wall pieces are cut at is the PLANNERS' wall, not the drawn one: `area.pieceInset` in
+// from it (story mode passes REGION_MARGIN). Measured 2026-10-15 at each seed's spawn, cutting at the
+// drawn 2500 m wall disagreed with the planners' graph both ways — seed 30 showed 2 pieces where the
+// planners saw 3 (a 0.5 km piece hanging off the 100 m band), BUG-80's seed 2 where they saw 1. The
+// piece the planners are handed has to be the piece the planners would find.
+
 /** The play-area grid's half-extent in metres — the radius a caller must stream to cover it. */
 export const playAreaHalfExtent = () => STORY_TILE_M * STORY_GRID / 2
 
@@ -89,8 +108,51 @@ export const playAreaStreamRadius = () => playAreaHalfExtent() * Math.SQRT2
 /** The GATE's area: the owner-specified 3x3 grid of 4000 m tiles. */
 export const gridArea = () => ({ kind: 'grid', tile: STORY_TILE_M, grid: STORY_GRID })
 
-/** The GAME's area: whatever disc story mode actually built. */
-export const discArea = (radius) => ({ kind: 'disc', radius })
+/** The GAME's area: whatever disc story mode actually built. `pieceInset` — see THE STRICT CUT. */
+export const discArea = (radius, pieceInset = 0) => ({ kind: 'disc', radius, pieceInset })
+
+/**
+ * The connected PIECES of a region's road graph, roads cut at the wall (see THE STRICT CUT).
+ * Shape-agnostic on purpose — the area is two predicates — so FEAT-28's ladder plugs in its own.
+ *
+ * @param {object[]} runs       network entries ({cellA, cellB, points, polyCum})
+ * @param {(p)=>boolean} inPiece  a run joins its nodes only if EVERY point passes this
+ * @param {(p)=>boolean} inCore   a piece counts only if some point of it passes this
+ * @param {{x:number,z:number}} anchor  the spawn — its piece is `main`
+ * @returns {{pieces:{nodes:Set<string>,km:number,nearest:number}[], main:object|null, rimIslands:number}}
+ *          pieces reaching the core, largest first; `main` is the anchor's, or the largest if the
+ *          anchor's never reaches the core. `nearest` is the piece's closest point to the anchor.
+ */
+export function regionPieces(runs, inPiece, inCore, anchor) {
+    const parent = new Map()
+    const find = (a) => { while (parent.get(a) !== a) { parent.set(a, parent.get(parent.get(a))); a = parent.get(a) } return a }
+    const add = (a) => { if (!parent.has(a)) parent.set(a, a) }
+    const whole = runs.filter((e) => e.points.every(inPiece))
+    for (const e of whole) {
+        const a = e.cellA.join(','), b = e.cellB.join(',')
+        add(a); add(b)
+        const ra = find(a), rb = find(b)
+        if (ra !== rb) parent.set(ra, rb)
+    }
+    const by = new Map()
+    let anchorRoot = null, anchorD = Infinity
+    for (const e of whole) {
+        const r = find(e.cellA.join(','))
+        const q = by.get(r) ?? { nodes: new Set(), km: 0, nearest: Infinity, core: false }
+        q.nodes.add(e.cellA.join(',')); q.nodes.add(e.cellB.join(','))
+        q.km += e.polyCum[e.polyCum.length - 1] / 1000
+        for (const p of e.points) {
+            const d = Math.hypot(p.x - anchor.x, p.z - anchor.z)
+            if (d < q.nearest) q.nearest = d
+            if (d < anchorD) { anchorD = d; anchorRoot = r }
+        }
+        q.core ||= e.points.some(inCore)
+        by.set(r, q)
+    }
+    const pieces = [...by.values()].filter((q) => q.core).sort((a, b) => b.km - a.km)
+    const anchored = by.get(anchorRoot)
+    return { pieces, main: anchored?.core ? anchored : (pieces[0] ?? null), rimIslands: by.size - pieces.length }
+}
 
 /**
  * Validate a streamed RoadSystem over `area` centred on `centre`.
@@ -101,9 +163,11 @@ export const discArea = (radius) => ({ kind: 'disc', radius })
  * @param {object} area   gridArea() for the gate, discArea(r) for the game
  * @param {object} [params] RANGER_PARAMS, for the node-pin radius
  * @returns {{playable:boolean, ok:boolean, components:number, rimIslands:number,
+ *             mainNodes:Set<string>, stranded:{km:number,nearest:number}[],
  *             condemned:string[], unpinned:object[], runs:number, km:number, grade:object,
- *             tiles:object[]}}  `components` counts only components reaching the inset core;
- *             `rimIslands` is how many boundary-only fragments that discarded.
+ *             tiles:object[]}}  `components` counts only pieces reaching the inset core;
+ *             `rimIslands` is how many boundary-only fragments that discarded. `mainNodes` is the
+ *             main piece's node keys (`"x,z,k"`, road.networkGraph's key) — the planners' filter.
  */
 export function validateArea(road, centre, area, params = {}) {
     const isDisc = area?.kind === 'disc'
@@ -130,28 +194,16 @@ export function validateArea(road, centre, area, params = {}) {
         runs.push([k, e])
     }
 
-    // ── 1. CONNECTIVITY, the headline ────────────────────────────────────────────────────────
-    // Components over the graph NODES the in-area runs join. A run that leaves the square and comes
-    // back still connects its two nodes, so the area's connectivity is the graph's, not a clip.
-    const parent = new Map()
-    const find = (a) => { while (parent.get(a) !== a) { parent.set(a, parent.get(parent.get(a))); a = parent.get(a) } return a }
-    const add = (a) => { if (!parent.has(a)) parent.set(a, a) }
-    for (const [, e] of runs) { add(e.cellA.join(',')); add(e.cellB.join(',')) }
-    for (const [, e] of runs) {
-        const ra = find(e.cellA.join(',')), rb = find(e.cellB.join(','))
-        if (ra !== rb) parent.set(ra, rb)
-    }
-    // Count only the components that REACH THE CORE. A component whose every run hugs the boundary
-    // is a clip artefact, not a severed piece of world — the player cannot be stranded in it,
-    // because it is at the wall. `rimIslands` keeps the discard visible rather than silent.
-    const roots = new Set()
-    for (const a of parent.keys()) roots.add(find(a))
-    const coreRoots = new Set()
-    for (const [, e] of runs) {
-        if (e.points.some(inCore)) coreRoots.add(find(e.cellA.join(',')))
-    }
-    const components = coreRoots.size
-    const rimIslands = roots.size - components
+    // ── 1. CONNECTIVITY: the pieces, and which one is the region's network ───────────────────
+    const inset = area.pieceInset ?? 0
+    const pr2 = isDisc ? Math.max(0, area.radius - inset) ** 2 : 0
+    const pHalf = Math.max(0, half - inset)
+    const inPiece = isDisc
+        ? (p) => (p.x - centre.x) ** 2 + (p.z - centre.z) ** 2 <= pr2
+        : (p) => Math.abs(p.x - centre.x) <= pHalf && Math.abs(p.z - centre.z) <= pHalf
+    const pc = regionPieces(runs.map(([, e]) => e), inPiece, inCore, centre)
+    const components = pc.pieces.length
+    const rimIslands = pc.rimIslands
 
     // ── 2. CONDEMNED EDGES (workstream C) ────────────────────────────────────────────────────
     const condemned = runs.filter(([, e]) => e.condemned).map(([k]) => k)
@@ -224,11 +276,13 @@ export function validateArea(road, centre, area, params = {}) {
     // THE PLAYER BAR vs THE DEV BAR — see the header. `playable` is what story mode's disclaimer
     // reads: the world is severed, or an edge exists that nothing could give a profile to. `ok`
     // adds node-pin, which is OUR bug rather than the seed's and must never block a player.
-    const playable = components === 1 && condemned.length === 0
+    const playable = components >= 1 && condemned.length === 0
     return {
         playable,
         ok: playable && unpinned.length === 0,
         components, rimIslands, condemned, unpinned,
+        mainNodes: pc.main?.nodes ?? new Set(),
+        stranded: pc.pieces.filter((q) => q !== pc.main).map(({ km, nearest }) => ({ km, nearest })),
         runs: runs.length, km: g.km,
         grade: { over20: g.over20 / Math.max(1, g.n), over24: g.over24 / Math.max(1, g.n),
                  over30: g.over30 / Math.max(1, g.n), worst: g.worst,
@@ -249,8 +303,6 @@ export function validatePlayArea(road, centre, params = {}) {
  */
 export function unplayableReason(report) {
     if (!report) return 'the region could not be built'
-    if (report.components > 1)
-        return `the road network breaks into ${report.components} separate pieces — parts of the region cannot be driven to`
     if (report.components === 0) return 'no roads could be built in this region'
     if (report.condemned.length)
         return `${report.condemned.length} road${report.condemned.length === 1 ? '' : 's'} could not be given a drivable profile on this terrain`
