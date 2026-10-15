@@ -16,7 +16,8 @@
 //
 // The checks live in src/world-validate.js, NOT here, because the game runs the identical routine
 // on the player's own seed once at new-game (workstream C's reroll) and the two must not drift.
-// GATING: one component · zero condemned edges · zero node-pin violations.
+// GATING: zero condemned edges · zero node-pin violations. Pieces are REPORTED (BUG-85, 2026-10-15:
+// a wall split never refuses a seed, so it does not fail this bar either).
 // REPORTED: the grade histogram, the ladder rungs, and per-tile road length — a region with no
 // road in it is a region with no missions, which is worth seeing even though it is not a failure.
 
@@ -48,9 +49,10 @@ for (const seed of SEEDS) {
   const secs = ((Date.now() - t0) / 1000).toFixed(0)
 
   const pc = (v) => `${(100 * v).toFixed(2)} %`
-  const head = `seed ${seed.padEnd(4)} ${String(r.runs).padStart(4)} runs · ${r.km.toFixed(0).padStart(4)} km · ` +
+  let head = `seed ${seed.padEnd(4)} ${String(r.runs).padStart(4)} runs · ${r.km.toFixed(0).padStart(4)} km · ` +
                `components ${r.components} · condemned ${r.condemned.length} · unpinned ${r.unpinned.length} · ${secs}s` +
                (r.rimIslands ? `  (+${r.rimIslands} rim island${r.rimIslands === 1 ? '' : 's'} not counted)` : '')
+  if (r.stranded.length) head += `  · stranded ${r.stranded.map((q) => `${q.km.toFixed(1)} km @ ${q.nearest.toFixed(0)} m`).join(', ')} (report only, BUG-85)`
   if (r.ok) console.log(`  ok   ${head}`)
   else { fails++; console.log(`  FAIL ${head}`) }
 
@@ -71,4 +73,4 @@ if (fails) {
   console.log(`\nFAIL — ${fails}/${SEEDS.length} seeds cannot start a story run (BUG-56 D)`)
   process.exit(1)
 }
-console.log(`\nPASS — every fixed seed generates a connected, fully-solved ${(STORY_GRID * STORY_TILE_M / 1000).toFixed(0)} km play area`)
+console.log(`\nPASS — every fixed seed generates a fully-solved ${(STORY_GRID * STORY_TILE_M / 1000).toFixed(0)} km play area`)

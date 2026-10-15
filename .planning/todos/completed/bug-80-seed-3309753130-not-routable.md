@@ -1,9 +1,10 @@
 ---
 id: BUG-80
 type: bug
-status: pending
+status: fixed
 severity: minor
 opened: 2026-10-03
+closed: 2026-10-15
 relates: src/world-validate.js (the player bar), feat-region-gated-connectivity
 ---
 
@@ -39,3 +40,7 @@ story-layer design call for the owner.
 
 Same fix as BUG-85 (see its HANDOFF): a wall-cut piece becomes a *stranded piece* with no POIs or
 destinations instead of refusing the seed. Close together.
+
+**Closed with BUG-85 (2026-10-15).** Under the planners' cut (wall less `REGION_MARGIN`) this seed
+has no stranded piece at all: the clipped spur lies in the 100 m band no planner uses. It enters,
+and it is in `test/region-pieces.mjs`.

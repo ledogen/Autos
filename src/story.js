@@ -99,6 +99,7 @@ export class StorySystem {
     this._phase = 'idle'
     this._seed = null
     this._report = null
+    this._nodes = null        // BUG-85: the main piece's node keys — null ⇒ no piece filter
     this._center = null       // {x,z} — region center; captured post-reseat
     this._frozen = false      // true ⇒ the frame loop makes NO road stream/route calls
     this._armed = false       // the wall only clamps once the player has been inside the region
@@ -138,7 +139,7 @@ export class StorySystem {
   notifyTeleport () { this._armed = false }
 
   /** Region center + radius — for the 2D map boundary overlay and future POIs / FEAT-28 barriers. */
-  region () { return this._center ? { x: this._center.x, z: this._center.z, r: this._R } : null }
+  region () { return this._center ? { x: this._center.x, z: this._center.z, r: this._R, nodes: this._nodes } : null }
 
   /**
    * Enter story mode with the given seed. A seed other than the loaded one triggers a full
@@ -156,6 +157,7 @@ export class StorySystem {
     this._active = true
     this._frozen = false
     this._center = null
+    this._nodes = null
     this._elapsed = 0
     this._pumpAcc = 0
     this._armed = false
@@ -209,8 +211,11 @@ export class StorySystem {
    * play area the reroll would have required, which is the whole point — the architecture stays as
    * small as story mode currently is while the design is still being decided.
    *
-   * The check is HARD FAILURES ONLY (owner): the region's road graph is severed, or an edge exists
-   * that nothing could give a profile to even after workstream C's grade-hard re-route. A steep but
+   * The check is HARD FAILURES ONLY (owner): the region has no road at all, or an edge exists that
+   * nothing could give a profile to even after workstream C's grade-hard re-route. A SEVERED graph
+   * is NOT one any more (BUG-85, owner ruling 2026-10-15): the wall can cut the network into pieces,
+   * the spawn's piece is the region's network, and the report's `mainNodes` reaches the planners
+   * through region().nodes — the other pieces are stranded, never refused. A steep but
    * solved seed is a playable seed. Node-pin violations do NOT count — those are a bug in our
    * geometry rather than a property of the seed, and blaming the player for our defect would be
    * wrong (see src/world-validate.js, `playable` vs `ok`).
@@ -227,6 +232,10 @@ export class StorySystem {
       console.warn('[story] seed validation threw — entering anyway', e)
       this._goLive(); return
     }
+    this._nodes = report?.mainNodes ?? null
+    if (report?.stranded?.length)
+      console.info('[story] stranded pieces (no POIs / missions):',
+                   report.stranded.map(q => `${q.km.toFixed(1)} km at ${q.nearest.toFixed(0)} m`).join(', '))
     if (!report || report.playable) { this._goLive(); return }
     this._phase = 'rejected'
     this._report = report
@@ -294,6 +303,7 @@ export class StorySystem {
     this._frozen = false
     this._center = null
     this._report = null
+    this._nodes = null
     this._d.setLoading(false)
     this._d.setQuickJobVisible(false)
     this._d.onRegionExit?.()  // FEAT-46: drop the POIs + their pads BEFORE the carve re-bakes below

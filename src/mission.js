@@ -136,9 +136,15 @@ export function facingFromHeading(h) { return { x: -Math.sin(h), z: -Math.cos(h)
  * builder rather than two that drift.
  *
  * @param {{edges:Array,key:Function,pos:Function}} g — road.networkGraph()
+ * BUG-85: `nodes`, when given, is the region's MAIN piece (world-validate.js `mainNodes`, carried
+ * on story.js region().nodes). An edge with a node outside it is on a STRANDED piece — inside the
+ * wall but joined to the spawn by no road — so it is dropped, and no endpoint, route or roadside
+ * drop can land there.
+ *
  * @param {(p:{x:number,z:number})=>boolean} inRegion — the region post-filter (`() => true` if none)
+ * @param {Set<string>|null} [nodes] — the main piece's node keys (null ⇒ no piece filter)
  */
-export function buildGraphAdj(g, inRegion = () => true) {
+export function buildGraphAdj(g, inRegion = () => true, nodes = null) {
     const posOf = new Map(), idOf = new Map(), adj = new Map()
     const touch = (id) => {
         const k = g.key(id)
@@ -147,6 +153,7 @@ export function buildGraphAdj(g, inRegion = () => true) {
     }
     for (const [a, b, , len] of g.edges) {
         if (!inRegion(g.pos(a)) || !inRegion(g.pos(b))) continue
+        if (nodes && (!nodes.has(g.key(a)) || !nodes.has(g.key(b)))) continue
         const ka = touch(a), kb = touch(b)
         const pa = posOf.get(ka), pb = posOf.get(kb)
         const w = len > 0 ? len : Math.hypot(pa.x - pb.x, pa.z - pb.z)
@@ -738,7 +745,7 @@ export class MissionSystem {
         const rMax = region ? region.r - REGION_MARGIN : Infinity
         const inRegion = (p) => !region || Math.hypot(p.x - region.x, p.z - region.z) <= rMax
 
-        const { posOf, idOf, adj } = buildGraphAdj(g, inRegion)
+        const { posOf, idOf, adj } = buildGraphAdj(g, inRegion, region?.nodes)
 
         // Start node: ANY node in the planned network, not just the one nearest the car. _launch()
         // teleports the player to the start pin regardless (see accept/retry), so pinning the start

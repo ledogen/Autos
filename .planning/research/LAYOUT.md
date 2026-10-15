@@ -68,7 +68,8 @@ network Worker's nested pool) · `road-route-worker.js` (route Worker module ent
 `road-network-client.js` (PERF-30 main-thread client: dispatch + atomic adopt) ·
 `road-quality.js` (per-stretch quality) · `centerline.js` (curvature-bounded centerline model) ·
 `world-validate.js` (BUG-56 "is this world playable": one routine behind story entry's seed check and
-the `play-area` gate).
+the `play-area` gate; since BUG-85 also the region's connected PIECES — `regionPieces` — whose main
+piece's nodes filter the planners and POI siting).
 (The bundled route cache / `route-store.js` was deleted 2026-08-19 — owner call; the in-session
 cache in main.js is what remains.)
 

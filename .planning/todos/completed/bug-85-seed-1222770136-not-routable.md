@@ -1,13 +1,48 @@
 ---
 id: BUG-85
 type: bug
-status: pending
+status: fixed
 severity: minor
 opened: 2026-10-12
+closed: 2026-10-15
 relates: src/world-validate.js (the player bar), BUG-80 (same class, seed 3309753130 — closes with this), feat-region-gated-connectivity (FEAT-28)
 ---
 
 # BUG-85 — seed 1222770136 is not routable (network splits in 2)
+
+## Resolution (2026-10-15) — phase 1, today's disc
+
+**A split no longer refuses a seed. Stranded pieces get no POIs, customers, mission endpoints or
+roadside drops.** The ladder half (phase 2: seat the spawn on the largest R1 piece, re-admit pieces
+at unlock) waits for FEAT-28.
+
+- **The pieces are cut at the PLANNERS' wall, not the drawn one.** Measured at each seed's spawn
+  before writing the filter: a cut at the drawn 2500 m wall disagreed with the planners' graph
+  (`buildGraphAdj`, wall less `REGION_MARGIN` = 2400 m) both ways. Seed 30 showed 2 pieces where
+  the planners saw 3: a 0.5 km piece hanging off the 100 m band. BUG-80's seed showed 2 where they
+  saw 1. So `validateArea` cuts at `area.pieceInset` in from the wall (story passes
+  `REGION_MARGIN`), and a run joins its two nodes only if it lies **wholly** inside. That is the
+  strict cut, and it is also what mission guard 2 already enforces on routes.
+- `src/world-validate.js`: new `regionPieces(runs, inPiece, inCore, anchor)` — shape-agnostic, two
+  predicates, so the ladder plugs in its own. Main piece = the spawn's. The report gains
+  `mainNodes` (node keys) and `stranded` ({km, nearest}). `playable` = a piece exists and nothing
+  is condemned. `ok` (the dev bar) no longer wants one piece either (owner, 2026-10-15): the strict cut split `play-area` seed 11 on a 5.2 km corner piece ≥ 6.9 km out, which main's lenient rule had joined through a road leaving the square. Pieces are printed, not failed; whole-network connectivity stays `graph-topology`'s job. The "N separate pieces" refusal
+  sentence is gone.
+- `src/story.js`: keeps `report.mainNodes` and exposes it as `region().nodes`; logs stranded
+  pieces with `console.info`.
+- Consumers: `buildGraphAdj(g, inRegion, nodes)` drops any edge with a node off the main piece. That
+  covers mission endpoints and routes, roadside drops and the paper tour. `PoiSystem.build` and
+  `buildHouses` take the same set. Camps are areas, not graph destinations, and are untouched.
+- **Gate `test/region-pieces.mjs`** (heavy, story): seeds 1222770136, 30, 31, 3309753130 + clean
+  6, 7, each at its own spawn. Asserts playable; the planners' graph is one piece holding the
+  spawn's road; every POI and customer is on the spawn's piece; main piece is the largest; a seed
+  with no stranded piece gets byte-identical POIs and customers to no filter. **Negative control:**
+  with the filter off it fails on all three split seeds — seed 30 puts a farm and 2 customers on
+  stranded pieces, 1222770136 and 31 one customer each.
+- Results, all seeds: 1222770136 stranded 0.9 km at 1687 m · 30 stranded 1.1 km at 1143 m + 0.5 km
+  at 1839 m · 31 stranded 1.7 km at 1817 m · 3309753130 no stranded piece under the planners' cut
+  (its spur sits in the margin band) · 6 and 7 clean.
+- `npm test`: 14/14 affected gates green.
 
 ## HANDOFF (2026-10-15) — start here
 

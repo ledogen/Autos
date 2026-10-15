@@ -63,7 +63,7 @@ import { parseWorldSeed, seedFor } from './seed.js'
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
-import { MissionSystem } from './mission.js'  // story mode (beta)
+import { MissionSystem, REGION_MARGIN } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
@@ -5882,7 +5882,9 @@ const storySystem = new StorySystem({
   // (the disclaimer); main.js owns the road system, so it answers. The check itself is
   // src/world-validate.js, the SAME routine test/play-area.mjs gates on, so the game and the gate
   // cannot drift apart on what "broken" means.
-  validateRegion: (centre, radius) => validateArea(roadSystem, centre, discArea(radius), RANGER_PARAMS),
+  // BUG-85: pieces are cut at the PLANNERS' wall (radius less REGION_MARGIN) — see world-validate.js
+  // THE STRICT CUT — so report.mainNodes is exactly the piece the planners can route on.
+  validateRegion: (centre, radius) => validateArea(roadSystem, centre, discArea(radius, REGION_MARGIN), RANGER_PARAMS),
   onSeedRejected: (seed, report) => _showSeedModal(report, seed),
   hidePauseMenu: () => _hidePauseMenu(),
   setQuickJobVisible: (visible) => { const el = document.getElementById('quickjob-btn'); if (el) el.style.display = visible ? 'block' : 'none' },
@@ -5966,11 +5968,13 @@ const storySystem = new StorySystem({
     paperRouteSystem.abort()
     _renderDialogue()
     _renderPaperUI()
-    poiSystem.build(center, radius)
+    // BUG-85: only the main piece hosts POIs and customers — stranded pieces get none.
+    const mainNodes = storySystem.region()?.nodes ?? null
+    poiSystem.build(center, radius, mainNodes)
     // FEAT-61: AFTER build() — mom is a newspaper customer, and she is a roster POI, so the roster
     // has to exist before customers() can be asked who receives a paper. Houses carve nothing and
     // touch no pads, so unlike build() this needs no re-bake behind it.
-    poiSystem.buildHouses(center, radius)
+    poiSystem.buildHouses(center, radius, mainNodes)
     // FEAT-67: the mission board — AFTER build() (it reads the roster) and AFTER daySystem.start()
     // (it starts on the run's clock). A new run, a new board: nothing survives from the last one.
     offerBoard = new OfferBoard({
