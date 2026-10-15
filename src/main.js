@@ -4898,6 +4898,10 @@ let _rtKickT = -1   // performance.now()/1000 of the last heartbeat (-1: none si
 function _rankTimerSource () {
   const m = missionSystem
   if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
+    // No bar where the clock is not what the letter reads (owner, 2026-10-15): a fragile job is
+    // lettered on condition, a haul on the clock AND the load — a bar falling S → A on the clock
+    // promises a grade the job does not give. Courier and freight keep it (time pays their tip).
+    if (m.mission.fragile || m.mission.bundles) return null
     return { key: m.mission, elapsed: m.elapsed, par: m.mission.par,
              thresholds: m.mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT,
              gate: m.mission.bonus?.gate ?? null }
