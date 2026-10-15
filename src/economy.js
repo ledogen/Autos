@@ -253,10 +253,12 @@ export function splitPayout (par, ratio, payTier, payMult = 1, tipMult = 1) {
 }
 
 /**
- * FEAT-97: fragile pay is earned by CONDITION, not the clock (owner, 2026-10-14 / 10-15). Base pay ×
- * health, plus the job's whole tip pool × the tip share: all of it at 100 % condition, none at
- * FRAGILE_TIP_ZERO or below, linear between. The pool is what the line tips at its best (ratio 0).
- * Integer cents, so base + tip === total exactly, as splitPayout guarantees.
+ * FEAT-97: fragile pay is earned by CONDITION, not the clock (owner, 2026-10-14 / 10-15). Base pay is
+ * GUARANTEED, as on every job (the 2026-09-29 ruling) — "an item at 25 % would not be worth carrying"
+ * if condition cut it too. Condition drives the tip alone: the job's whole tip pool × the tip share,
+ * all of it at 100 %, none at FRAGILE_TIP_ZERO or below, linear between. The pool is what the line
+ * tips at its best (ratio 0). Destroyed (0) pays nothing — the job has failed. Integer cents, so
+ * base + tip === total exactly, as splitPayout guarantees.
  */
 export const FRAGILE_TIP_ZERO = 0.5
 export function fragileTipShare (health) {
@@ -266,7 +268,7 @@ export function splitFragilePayout (par, health, payTier, payMult = 1) {
     const h = isFinite(health) ? Math.min(1, Math.max(0, health)) : 0
     const fullC = Math.round(payoutFor(par, 0, payTier) * payMult * 100)
     const poolBaseC = Math.min(fullC, Math.round(basePay(par, payTier, payMult) * 100))
-    const baseC = Math.round(poolBaseC * h)
+    const baseC = h > 0 ? poolBaseC : 0
     const tipC  = Math.round((fullC - poolBaseC) * fragileTipShare(h))
     return { base: baseC / 100, tip: tipC / 100, total: (baseC + tipC) / 100 }
 }

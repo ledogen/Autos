@@ -17,7 +17,7 @@ The four delivery types (missions.md §3, amended 2026-10-06):
 | **Courier** | in the cab | time vs par | FEAT-89 | **No** — text on the card only |
 | **Haul** | in the bed, **loose** | time vs par × share still aboard | FEAT-88 | yes |
 | **Freight** | in the bed, **strapped**, durable | time vs par; par and pay grow with mass | FEAT-96 | yes |
-| **Fragile** | in the bed, **strapped** | (Base + tip) × cargo health | FEAT-97 | yes, except crate contents |
+| **Fragile** | in the bed, **strapped** | Base (guaranteed) + a tip set by cargo condition | FEAT-97 | yes, except crate contents |
 
 **From → to** (owner, 2026-10-06, option C): **blank means generic**, so any normal giver can post
 it, to any destination. Only items that make sense for certain places are tagged. Names are the

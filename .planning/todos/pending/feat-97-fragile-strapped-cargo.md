@@ -36,6 +36,11 @@ requires: FEAT-96 shipped (weld joint, strapped spawn, clean-up action)
 > `furniture` tag to the dining chairs, dining table, mirror, wardrobe and piano for FEAT-116's
 > furniture pad. Where this block disagrees with the text below, this block wins.
 
+> **Ruled 2026-10-15 (owner), later the same day — the base is guaranteed.** Condition drives the
+> tip ONLY; base pay is not × health. *"An item at 25 % condition wouldn't even be worth carrying."*
+> Supersedes "Base pay stays × health" (10-14) and "(Base + tip) × health" below. 75 % pays base +
+> half the tip; ≤ 50 % pays the base; destroyed fails the job ($0).
+
 > **Ruled 2026-10-15 (owner) — the tip curve and the shippers.** The tip share is linear in
 > condition: **100 % condition = the whole tip, 50 % = no tip**, `tipShare = clamp((h − 0.5) / 0.5, 0, 1)`.
 > Shippers are in cargo.md § "Rulings (owner, 2026-10-15)". Both blockers are cleared.
@@ -163,7 +168,7 @@ Built in `feature/sm3-fragile`:
 - 17 fragile things in `data/offers.js` on three tiers (felt g, floor / break):
   GLASSWARE 1.0 / 3.5, DELICATE 1.1 / 4.5, STURDY 1.3 / 5.5. Routes per the 10-15 ruling; the
   autoShop now posts fragile (the windshield, crated). The pelican case and x-ray machine have no row.
-- Pay `splitFragilePayout`, letter `fragileGrade`, deeds `haulPointsFor(health)`. A fragile load
+- Pay `splitFragilePayout` (base guaranteed, condition drives the tip), letter `fragileGrade`, deeds `haulPointsFor(health)`. A fragile load
   takes freight's per-kg par and pay terms but not its time slack or tip multiplier.
 - Hit sounds `playCargoHit` (glass clink → full break at ≥ ⅓ cost, thud, piano jangle) and a red
   emissive blink on the load's own cloned materials.
@@ -180,7 +185,7 @@ Built in `feature/sm3-fragile`:
 - [x] Per step, the shock read is the weld force ÷ mass with gravity removed, priced per event on
       the peak, square-law, with per-item `shockFloorG` / `breakG` in `data/offers.js`.
 - [x] A headless gate drives the four calibration scenarios above and asserts each row.
-- [x] Pay is Base × health + a tip set by health (2026-10-14), continuous, floored at zero;
+- [x] Pay is the guaranteed Base + a tip set by health (2026-10-15), continuous, floored at zero;
       `economy.mjs` covers it.
 - [~] Zero health fails the job on the spot ($0; the cancel button reads "cargo destroyed", no result card), and clean-up
       removes the load and costs 1 h.

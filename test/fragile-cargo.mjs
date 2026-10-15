@@ -5,8 +5,8 @@
 // square-law on its peak. What must hold:
 //   1. the data joins up — every fragile thing names a load, a tolerance with floor < break, a sound,
 //      and a shipper that posts fragile; the furniture tag is on the five pieces (FEAT-116);
-//   2. the pay: base × health + the whole tip pool × the tip share — all of it at 100 %, none at
-//      50 % (owner, 2026-10-15); the letter reads condition alone; a burst prices once;
+//   2. the pay: the base guaranteed, + the whole tip pool × the tip share — all of it at 100 %, none
+//      at 50 % (owner, 2026-10-15); the letter reads condition alone; a burst prices once;
 //   3. the calibration table (the ticket's, on the freight-strap rig): paved driving costs nothing,
 //      washboard costs glassware clearly and sturdy pieces little, a 1 m crest landing destroys
 //      glassware and costs sturdy pieces most of it, a rollover destroys everything;
@@ -52,8 +52,8 @@ console.log('pay:')
 const full = splitPayout(180, 0, 1), base = full.base, pool = full.tip
 const at = (h) => splitFragilePayout(180, h, 1)
 ok(JSON.stringify(at(1)) === JSON.stringify(full), `100 % pays base + the whole tip pool ($${full.total})`)
-ok(at(0.75).base === base * 0.75 && Math.abs(at(0.75).tip - pool / 2) < 0.006, `75 % pays ¾ base + half the tip ($${at(0.75).total})`)
-ok(at(0.5).tip === 0 && at(0.5).base === base / 2 && at(0.3).tip === 0, '50 % and below tip nothing; base is still × condition')
+ok(at(0.75).base === base && Math.abs(at(0.75).tip - pool / 2) < 0.006, `75 % pays the base + half the tip ($${at(0.75).total})`)
+ok(at(0.5).tip === 0 && at(0.25).tip === 0 && at(0.25).base === base && at(0.01).base === base, '50 % and below tip nothing; the base is guaranteed down to 1 %')
 ok(at(0).total === 0, 'destroyed pays $0')
 ok([0, 0.33, 0.61, 0.9, 1].every(h => { const p = at(h); return Math.round(p.base * 100) + Math.round(p.tip * 100) === Math.round(p.total * 100) }),
   'base + tip === total, to the cent')
