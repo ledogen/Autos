@@ -1271,7 +1271,16 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
   equal-area parallel-sided band one ring in, region 3 the centre disc; today's steepness IS region 2.
   **Radii [RATIFIED 2026-10-12]: centre disc 1.5 km · rings 1.8 km deep · region 1 a 50° sector
   (3.3–5.1 km out, ≈6.6 km²) · region 2 a parallel-sided band of equal area (≈3.2 km wide, 1.5–3.3 km
-  out, so its inner edge wraps the whole centre disc).** ·
+  out, so its inner edge wraps the whole centre disc).** The three regions are **the ladder**: ring
+  sections that do not envelop one another; only the terrain and road-character field is radial.
+  **Orientation and connectivity [RATIFIED 2026-10-15, BUG-85]:** the ladder is **fixed north–south**,
+  R1 at six o'clock, for every seed. A wall can cut the road graph into pieces; that never refuses a
+  seed, and there is no reroll and no heading search. Pieces are counted with roads **cut at the
+  wall**, and a piece counts once it reaches **500 m inside** it. The **largest piece is the region's
+  network**. A **stranded piece** gets **no POIs, roadside destinations or mission endpoints**.
+  *Optional:* it rejoins once the region it connects through unlocks. [DEFAULT 2026-10-15: the
+  spawn is seated on the largest piece of R1. The ladder is drawn from the world origin, so the
+  spawn no longer draws the region.] ·
   **6 hours** to beat · **24-minute sky cycle** = **16 waking h + 8 h sleep** ·
   **~18 real minutes per day** · ~~**20 days per run**~~ ~~**~12–14 days per run** [2026-10-12]~~ **~18 days: three regions of
   about a week, provisionally 7 / 6 / 5** [2026-10-14; the budgets below are owed a re-cut to it,
