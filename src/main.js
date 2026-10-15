@@ -481,9 +481,12 @@ function looseSurfaceFactor (x, z) {
 }
 
 // Ground height under an effect emitter (dust / smoke / dirt spray): the lab's own surface in the
-// lab, analytic terrain otherwise — the same split queryContacts makes.
+// lab, analytic terrain otherwise — the same split queryContacts makes. The truck's own Y is the
+// FEAT-40 queryY, exactly as queryContacts passes the wheel's: without it a bore span answers with
+// the hill OVERHEAD, so every wheel read as "in contact" and emitted dust/smoke/spray up on the
+// hilltop — none of it ever showed inside a tunnel.
 const _fxGroundY = (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0)
-                                        : (terrainSystem ? terrainSystem.analyticHeight(x, z) : 0)
+                                        : (terrainSystem ? terrainSystem.analyticHeight(x, z, undefined, vehicleState.position.y) : 0)
 
 // Boot marker: which three.js revision the bundle resolved
 console.log('THREE.REVISION', THREE.REVISION)
