@@ -11,6 +11,10 @@ DESIGN.md mechanics-reference section once the save model is settled.*
 > clock, the day cost and the per-day arithmetic below stand; the region count, "growing with depth",
 > the 20-day total and the per-region point/day budgets are owed a re-cut. DESIGN.md "Run shape and
 > saving" carries the current figures; provenance `design-amendments-2026-10-12.md`.
+>
+> **Superseded again 2026-10-14:** alpha targets **three regions of about a week, provisionally
+> 7 / 6 / 5 days (~18 days)**. The point and day budgets are re-cut to it in FEAT-69. Pay no longer
+> rides the day (`dayTier` scales costs only); provenance `design-amendments-2026-10-14.md`.
 
 - **6 regions**, starting at the current 2500 m radius and **growing with depth on a sparser grid**
   (below) — a region is a progression *chapter*; the play space is cumulative and later missions may

@@ -24,3 +24,10 @@ Step 7 of **Places and Missions**. No shop code exists today.
 - Each required class shows a non-empty, class-appropriate list; buying debits the wallet.
 - The map is reachable from the shop screen (moved in from FEAT-54, 2026-10-12). The service and
   camp screens follow the same rule when they get a screen (FEAT-41 menus).
+
+## Amended 2026-10-14 (owner)
+
+- **Prices follow the furthest region unlocked**, not the shop's own region (design-amendments-
+  2026-10-14.md §11). One function, so a region-1 shop visited from region 2 charges region-2 prices.
+- Stock levels stay out of this minimal shop; they arrive with the bed upgrades (FEAT-115).
+- The camp gets the same clock pause in FEAT-118.

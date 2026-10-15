@@ -248,6 +248,17 @@ split); MILESTONES SM-5.
 
 ## Item: cargo straps — 2026-07-29
 
+> **2026-10-14:** straps are **not an item for haul** (FEAT-110 closed): rocks and firewood can't be
+> strapped, and haul's chaos is the point. One unratified idea survives, recorded below.
+>
+> **Straps as a paid gate on fragile work (owner, 2026-10-12 — "not fully ratified, just an
+> idea", for if the game is short of items).** High cost, always in the shop, and a desirable
+> mission reward. You can't take a fragile job without them. A rollover on a fragile job may break
+> them, or they have limited uses, so the player keeps an eye on them and restocks. It gates
+> fragility behind money. Against it: fragile sits early on the ladder (grandma's vase), and a gate
+> is a cost paid before the choice rather than a harder choice (items.md rule 4). Cargo protection
+> (items.md §3e) is the ratified way items touch fragile.
+
 A consumable that makes your **next fragile cargo** more resilient. Buy or find them, strap the load,
 take a job you'd otherwise have to turn down.
 

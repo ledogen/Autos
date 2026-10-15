@@ -428,6 +428,37 @@ truck and what the truck does to the cargo**.
 > §3b and §3c below are live again as each type's reasoning, except where this block overrides
 > them: §3b's suspension-telemetry signal and §3c's flat-rate pricing.
 
+> **[AMENDED 2026-10-14, owner] Scoring, load verdicts, deadlines.** Provenance:
+> `design-amendments-2026-10-14.md`. A planning pass; each piece is a ticket.
+>
+> **What each type rewards:**
+>
+> | Type | The tip and the bonus item reward | Ticket |
+> |---|---|---|
+> | **Courier** | time against par | shipped (FEAT-89) |
+> | **Fragile** | **cargo condition**, for both the tip and the bonus item; base pay stays × health | FEAT-97 |
+> | **Haul** | pieces still aboard (pay × share aboard, shipped); the tip and the item are **OPEN** | FEAT-114 |
+> | **Freight** | a generous clock (thresholds × 1.15) and heavy loads that pay well; it tips at half. The speed lane is courier. The item is **OPEN** | FEAT-96 |
+>
+> Recommendation on record for the open rows, **not ruled**: *the load sets the pool, the driving
+> earns it.* Haul's item is earned by the share aboard (8 of 8 counts like 15 of 15) and the load size
+> picks the pool; freight's item is earned by arriving without a heavy hit to the truck, and the mass
+> picks the pool.
+>
+> - **One mission at a time, reaffirmed.** Carrying several contracts and packing the bed is
+>   rejected: it wants a dense network and turns the game into menu work. A bigger bed lets you take
+>   the biggest jobs, never more of them.
+> - **Load verdicts — fits, warning, overload** (FEAT-112), from the current truck configuration, by
+>   size or weight. Overload cannot be accepted; a warning can, at your own risk. Bed upgrades change
+>   the verdicts through their own functions (FEAT-115). The board is the same for every vehicle.
+> - **Every job has a delivery deadline from its cargo** (FEAT-113): lax 1–3 days (freight), chill
+>   6 h–1 day (most), stringent 1–4 h (takeout). A job in hand past its deadline is cancelled and
+>   the giver locks. This is separate from board expiry.
+> - **The mission clock runs on world time** (FEAT-113): sleep and time skips count. Camping with a
+>   load spends time against the tip; on an average job it leaves base pay.
+> - **Haul: the player picks the quantity** inside the truck's limits, and yards run limited-time
+>   rate bonuses (FEAT-114). The rolled count is retired.
+
 #### 3a. Point-to-point — **margin**
 
 Light, fast, all about time. Higher risk and higher reward than the other two. This is the canonical

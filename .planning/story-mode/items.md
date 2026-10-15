@@ -51,7 +51,7 @@ Used up. Per-job or per-day decisions, not permanent upgrades.
 | Item | What it does | Source | Cost | Status |
 |---|---|---|---|---|
 | **Coffee** | Alert now, sleepy earlier tomorrow. **A loan against tomorrow, repaid at interest.** The canonical consumable and the shape every other one is measured against. | Bought (towns, stations) | Tomorrow's hours | **RATIFIED** — DESIGN.md "The day and the clock" |
-| **Cargo straps** | Makes the **next fragile cargo** more resilient by changing the coupling between chassis and load — the cargo sees less shock than the truck does. Enables freight-grade fragile work you'd otherwise turn down. | Bought or found | Cash; a slot; trivial mass | **IDEA** — `IDEAS.md` 2026-07-29. *Open: single-use per job, degrades over several, or a reusable tool?* |
+| ~~**Cargo straps**~~ **[STRUCK 2026-10-14 — not an item; FEAT-110 closed, see §3e]** | Makes the **next fragile cargo** more resilient by changing the coupling between chassis and load — the cargo sees less shock than the truck does. Enables freight-grade fragile work you'd otherwise turn down. | Bought or found | Cash; a slot; trivial mass | **IDEA** — `IDEAS.md` 2026-07-29. *Open: single-use per job, degrades over several, or a reusable tool?* |
 | **Fish (eaten)** | Alertness that **does not have to be repaid** — the only honest restoration in the game. *"Coffee is debt. Fish is income."* | Caught; best at a favored water | A long relationship with the water | **PROPOSED** — `spirits-and-pacts.md` #04. ⚠ Depends on The Confluence, which is deferred |
 | **Spare tire** | Recovers from a puncture without a tow. **Fitting it is a 30 min timeskip** (owner, 2026-09-30). Puncture is a hard fail state in the wear model. | Bought/found; starts in some jalopies | Real mass, all the time | **IMPLIED** — named in DESIGN.md "The car" as a stowed consumable; behavior unspecified |
 | **Air filter (spare)** | Replacement for the track the player must actively *watch* — it does ~nothing until it does. | Bought/found | Cash; a slot | **IMPLIED** — same |
@@ -116,7 +116,9 @@ plumbed (`missions.md` §3c: *"no new wear plumbing"*). It also gives the visibl
 
 Open, and the owner's to settle:
 
-- **Is the budget a hard refusal or a soft one?** Refusing to load is clean; letting you load it and
+- **[RESOLVED 2026-10-14 — FEAT-112]** Soft *and* hard: past a soft limit the card warns and you may
+  take it; past a hard limit (size or weight) you may not. Each part moves the limits through its own
+  function on the truck configuration. *Original question:* **Is the budget a hard refusal or a soft one?** Refusing to load is clean; letting you load it and
   watching the truck squat onto the bump stops is more honest and more AUTOS. The middle option —
   it loads, but the giver tells you it's a bad idea — is probably the answer.
 - **Does this survive the run?** Suspension and tires are run-layer purchases, so the *budget* dies
@@ -626,6 +628,40 @@ rankable, so the invariant's "no number on a part, ever" now governs **presentat
 the shop may express price and a brand's reputation, but a part still never prints a handling stat, and
 the character families stay lateral to each other. Flagged for a matching edit in DESIGN.md.
 
+### 3e. Bed upgrades and cargo protection [owner, 2026-10-14]
+
+Provenance: `design-amendments-2026-10-14.md` §2–3, §9–11.
+
+**Bed upgrades are parts** (FEAT-115), in the same class as suspension and tires: bought mid-run,
+lost on death, and never a different vehicle (SM-INV-15). Each one is a function on the truck
+configuration that FEAT-112's load verdicts read.
+
+| Part | What it changes |
+|---|---|
+| **Extended (long) bed** | longer bed — long loads fit (a DIY bed swap or a bolt-on extension) |
+| **Flatbed** | wider deck with no sides — more room for strapped freight; loose haul is a warning and spills |
+| **Stake bed** | between the two — a bigger deck with stakes that keep most of a loose load in |
+| **Roof rack** | a second space for long, light loads; stacks with any bed |
+| **Light bar** | no load effect (§7) |
+
+**Pricing and finding them.** A part costs what the **furthest region you have unlocked** charges,
+wherever you buy it, so a trip back to region 1 is never a cheap shopping run. Shops stock a subset,
+upgrades also come as infrequent mission rewards, and lower-tier parts stay in the later pools at the
+later price.
+
+**Cargo protection** (FEAT-116) for fragile loads. **Every effect is proportional to the item's own
+thresholds** (`shockFloorG`, `breakG`, FEAT-97) — never a flat amount.
+
+| Item | Uses | Works on | Effect |
+|---|---|---|---|
+| **Bubble wrap** | 1 | any fragile item | high threshold increase |
+| **Furniture pad** | 3 | `furniture`-tagged items | low threshold increase and low damage reduction |
+| **Heavy-duty pad** | 3 | any fragile item | medium damage reduction |
+
+**Straps are not an item.** Rocks and firewood can't be strapped, haul's loose-load chaos is the
+point, and an item held at one giver and missing at the next is arbitrary. Straps stay as fiction on
+the strapped families. FEAT-110 is closed; the paid-gate-on-fragile idea is in IDEAS.md, unratified.
+
 ## 4. Cargo
 
 Not owned — carried, for someone, under a scoring axis. Cargo is the mission type made physical, so
@@ -718,7 +754,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 | **Driver / energy** | coffee, fish, **meals (§1d)** | camp energy gear | coffee, energy drink, snacks |
 | **Truck / damage** | spare tire, air filter, **zip ties, duct tape, coolant, tire patches** | parts (§3), quick-jack, breaker bar, **hi-lift, bike pump (always), compressor** | Host charm |
 | **Navigation / info** | — | map, beacon, GPS, shortcut GPS, **light bar**, *CB radio (blocked)* | — |
-| **Cargo / mission** | *straps (FEAT-110, parked)* | cooler, chain, **rubber bed mat, bedliner** | — |
+| **Cargo / mission** | ~~*straps (FEAT-110)*~~ **bubble wrap, furniture pad, heavy-duty pad (§3e)** | cooler, chain, **rubber bed mat, bedliner** | — |
 | **Camp / night** | — | camp vibe gear, backpack | — |
 | **Fuel / time** | jerry can | — | — |
 

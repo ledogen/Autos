@@ -28,6 +28,9 @@ we haven't earned.
 
 Keep this honest; it is the thing that makes the rule checkable.
 
+**Update 2026-10-14: the next build is listed in SM-3 § "Next up".** The 2026-10-14 planning pass
+(design-amendments-2026-10-14.md) minted FEAT-112..118 and put them in build order there.
+
 **Update 2026-10-12: SM-1 shipped, SM-2 closed, SM-3 IS OPEN.** SM-3 now carries two halves —
 The Machine (wear, breakdown, the jalopy) and Places and Missions (POI classes, the job budget, the
 mission types). Each half has its own ticket table at the end of the SM-3 section. The dated
@@ -234,7 +237,8 @@ ratio  = elapsed / par               payout = parBase × dayTier × clamp((1.15 
 - **Progress = mission points**, not XP: 1 at B+, ½ at C, 0 at D; authored per-region counts
   `6·6·6·4·3·2` = **27 points** over **six regions**, against a day budget of `4·4·4·3·3·2` = 20 days
   (SM-INV-14 as rewritten; `run-shape.md`). **Superseded 2026-10-12: three regions, ~12–14 days —
-  counts owed a re-cut (DESIGN.md open question 2).** **The ramp is mission *length*, not count** — ~5–7 h par in
+  counts owed a re-cut (DESIGN.md open question 2).** **Superseded again 2026-10-14: three regions of
+  about a week, provisionally 7 / 6 / 5 days; the re-cut is FEAT-69.** **The ramp is mission *length*, not count** — ~5–7 h par in
   region 1, ~12 h (a whole day) in region 6.
 
 - Mission board at POIs: hand-authored types × procedural dressing. **The taxonomy lives in
@@ -561,7 +565,29 @@ owner's name for it.
 | Fragile — strapped shock-sensitive cargo | FEAT-97 | open — **next build**; FEAT-96's weld is in. Most of the roster needs a shipper ruled before it rolls |
 | Demolition missions | FEAT-65 | open |
 | Paper route — throw and impact audio | FEAT-64 | open |
-| Ratchet straps as an item for loose haul loads | FEAT-110 | parked (owner, 2026-09-30) |
+| ~~Ratchet straps as an item for loose haul loads~~ | FEAT-110 | ✅ closed — cancelled 2026-10-14: straps are not an item |
+| Load verdicts — fits / warning / overload for the truck as configured | FEAT-112 | open — planned 2026-10-14 |
+| Delivery deadlines for every job; the mission clock on world time | FEAT-113 | open — planned 2026-10-14 |
+| Haul — the player picks the quantity; yard rate bonuses | FEAT-114 | open — needs FEAT-112 and the haul tip/item ruling |
+| Bed upgrades as parts — roof rack, flatbed, stake bed, extended bed, light bar | FEAT-115 | open — needs FEAT-104, FEAT-112 |
+| Cargo protection — bubble wrap, furniture pad, heavy-duty pad | FEAT-116 | open — needs FEAT-97, FEAT-104 |
+| Pay grows with regional reputation, not the day | FEAT-117 | open — numbers from FEAT-69 |
+| The camp is a planning pause | FEAT-118 | open — ratified 2026-08-02, never built |
+
+### Next up — build order [2026-10-14]
+
+Take the first item that is not blocked. Each one is a ticket with its own acceptance list.
+
+| # | Ticket | Why here | Blocked on |
+|---|---|---|---|
+| 1 | **FEAT-97** fragile | already the next build; read its 2026-10-14 block first (tip and item from condition) | the owner's tip-by-health curve; shippers for most rows |
+| 2 | **FEAT-118** camp pause | small, ratified since 2026-08-02, and FEAT-113 leans on it | — |
+| 3 | **FEAT-113** deadlines + world-time clock | every job needs a window before the deadline can mean anything | — |
+| 4 | **FEAT-112** load verdicts | pure data and a card; unlocks FEAT-114 and FEAT-115 | the stock truck's soft and hard limits |
+| 5 | **FEAT-114** haul quantity + rate bonus | first user of the verdict limits | the haul tip/item ruling |
+| 6 | **FEAT-104** minimal shop | the venue for every part and consumable | — |
+| 7 | **FEAT-115** bed upgrades, **FEAT-116** cargo protection | parts and consumables to sell | FEAT-104, FEAT-112 / FEAT-97 |
+| 8 | **FEAT-69** + **FEAT-117** economy re-cut and reputation | balance once the costs and the 7 / 6 / 5 shape are real | multi-day run data |
 
 **Behind SM-4, deliberately unticketed** (tickets are minted at milestone entry): the region
 bosses (~~R1 log drag, R2 bridge meter~~ **R1 bridge site; the log drag is a toy/scenario, 2026-10-12**), region modifiers, motorist relocation, and POI/job counts

@@ -109,7 +109,7 @@ One per region, from the haul yards (FEAT-91).
 
 | Region | Load | From → to | Asset | Mass |
 |---|---|---|---|---|
-| R1 | firewood bundles | firewoodYard (splitting yard) → any | ASSET-37 (shipped) | 11 kg a bundle × 10–15 bundles. **A range on purpose:** each offer rolls the bundle COUNT, which is what makes one haul bigger and better-paid than another |
+| R1 | firewood bundles | firewoodYard (splitting yard) → any | ASSET-37 (shipped) | 11 kg a bundle. ~~× 10–15 bundles, a range on purpose: each offer rolls the bundle COUNT~~ **The player picks the count** inside the truck's limits, and the yard's limited-time rate bonus is what makes one haul better-paid than another (owner, 2026-10-14; FEAT-114) |
 | R2 | lumber boards | sawmill → any | ASSET-38 | per board, 1.8 m SPF at 450 kg/m³: 2x4 2.7 · 2x6 4.3 · 2x8 5.6 kg. Haul is the LOOSE boards; the banded bundle is freight (owner, 2026-10-12) |
 | R3 | rocks | quarry → any | none — the procedural `rock` debris type | ~50 kg a rock (granite cobble) |
 
@@ -218,6 +218,19 @@ HUD number appears.
 5. **Each source picks a family first, then a thing in it**, so every family it posts gets an even
    share there. Freight went from ~13 % of offers (2.3 a board, none on 7 % of boards) to ~31 %
    (5.4 a board, never none); courier holds ~52 %.
+
+## Rulings (owner, 2026-10-14)
+
+Provenance: `design-amendments-2026-10-14.md`.
+
+1. **Every bed load carries its size and a form** (`boxed`, `loose`, `long`) for the load verdicts
+   (FEAT-112). Masses stay as built.
+2. **Every thing carries a delivery window** (FEAT-113): lax 1–3 days (freight), chill 6 h–1 day
+   (most), stringent 1–4 h (takeout, perishables).
+3. **The `furniture` tag** goes on four dining chairs, the dining table, the full-length mirror, the
+   wardrobe and the upright piano (FEAT-116's furniture pad).
+4. **Haul counts are the player's pick** (FEAT-114). The overloads above stay posted; whether each is
+   a warning or an overload on the stock truck is FEAT-112's open number.
 
 ## Adding cargo
 
