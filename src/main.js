@@ -3780,17 +3780,20 @@ const _boardView = {
     const now = daySystem.clockH()
     // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
     if (!offerBoard.isGiver(poiId)) return { source: false, family: null, nextText: null }
-    const slots = offerBoard.slotStates(poiId, now)
+    // Per frame per diamond, so this must not PLAN: it drops only offers already known to have no
+    // route (planDistinct memoises null on the offer). The hover card and the prompt do the full
+    // _takeableOffers check, so a dead offer greys its diamond the first time it is looked at.
+    const live = offerBoard.offers(poiId, now).filter(o => o.route !== null)
     const next = offerBoard.nextTurnoverH(poiId, now)
     return {
       source: true,
-      family: slots.find(x => x.state === 'live')?.family ?? null,
+      family: live.length ? offerBoard.spec(live[0])?.family ?? null : null,
       nextText: next != null ? formatGameDuration(next - now) : null,
     }
   },
   view (poiId, idx) {
     const now = daySystem.clockH()
-    const offers = offerBoard.offers(poiId, now)
+    const offers = _takeableOffers(poiId, now)
     const next = offerBoard.nextTurnoverH(poiId, now)
     const nextText = next != null ? formatGameDuration(next - now) : null
     const n = offers.length
@@ -3854,6 +3857,19 @@ function _pumpLarryTour (budgetMs) {
 function _dropLarryTour () {
   try { _larryTour?.it?.return() } catch (e) { /* already closed */ }
   _larryTour = null
+}
+
+/**
+ * The offers at a POI the player can actually TAKE: live on the board AND plannable. The board rolls
+ * offers without knowing the network, so it can post one with no route — seed 1813164377's tackle
+ * shop fetches from the one general store, 8 km and 13 hops away, past the planner's 5.2 km / 9-hop
+ * leg. Every reader (the park prompt, the brake, the map card and diamond, the parked panel's
+ * refresh) goes through here, so none of them advertises an offer that opens nothing. Larry's offer
+ * passes as-is: his tour plans asynchronously and is the paper route's to judge.
+ */
+function _takeableOffers (poiId, now) {
+  if (!offerBoard) return []
+  return offerBoard.offers(poiId, now).filter(o => offerBoard.spec(o)?.family === 'papers' || _planOffer(o))
 }
 
 /**
@@ -4111,7 +4127,7 @@ function _updateParkTriggers () {
     // siblings — each leaves 'idle' and each other's reach test then returns null.
     // FEAT-67: what is on offer is the BOARD's — live offers only. With nothing live the brake opens
     // nothing and the prompt says when the next offer turns up (the prompt shows it; see below).
-    const offers = offerBoard ? offerBoard.offers(poi.id, daySystem.clockH()) : []
+    const offers = _takeableOffers(poi.id, daySystem.clockH())
     if (!offers.length) return
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
     else missionSystem.enterFromPoi(poi, offers, _planOffer)
@@ -4145,7 +4161,7 @@ function _updateParkTriggers () {
     if (poi) {
       // FEAT-67: an empty board says when it fills, rather than inviting a park that opens nothing.
       const now = daySystem.clockH()
-      const live = offerBoard ? offerBoard.offers(poi.id, now).length : 0
+      const live = _takeableOffers(poi.id, now).length
       const next = offerBoard?.nextTurnoverH(poi.id, now)
       // FEAT-90: every "park to …" line carries the orange P badge; the status line does not.
       poiEl.innerHTML = !live
@@ -5097,7 +5113,7 @@ document.getElementById('mp-next')?.addEventListener('click', () => missionSyste
 function _refreshParkedOffers () {
   if (missionSystem.state !== 'offer' || !missionSystem.mission?.fromPoi) return
   const poi = poiSystem.list().find(q => q.id === missionSystem.mission.fromPoi)
-  const offers = offerBoard && poi ? offerBoard.offers(poi.id, daySystem.clockH()) : []
+  const offers = poi ? _takeableOffers(poi.id, daySystem.clockH()) : []
   if (!offers.length) { missionSystem.exit(); return }
   const prevId = missionSystem.offer?.id
   missionSystem.enterFromPoi(poi, offers, _planOffer)
