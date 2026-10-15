@@ -10,8 +10,10 @@
 //      par must be a single number over the whole route — not a sum of legs, and demonstrably not
 //      linear in the stop count for the reason that matters: the route grows OUTWARD.
 //   3. THE ROUTE GROWS, IT DOES NOT MOVE (SM-INV-12). The tier chooses who is on the route, never
-//      what exists — so a lower tier's customers must be a PREFIX of a higher tier's. Tier 1 is
-//      the couple of streets behind Larry's place, and tier 4 is those streets plus more.
+//      what exists — so a lower tier's customers must be a SUBSET of a higher tier's. Tier 1 is
+//      the streets within a kilometre of road from Larry's door, tier 4 is everyone within five.
+//   3c. THE BANDS ARE ROAD DISTANCE FROM LARRY (owner, 2026-10-15), and the top route stays inside
+//      the owner's ~14 km driving budget.
 //   4. THE ROADS ARE REAL. Every segment names an edge the network registered, and the routed
 //      polyline stays inside the region wall — the same two guards the mission planner carries.
 //   5. (retired 2026-09-29 — the route has no deadline; see paper-route.mjs for the fare floor)
@@ -25,7 +27,7 @@ import { PoiSystem, POI_PARAMS } from '../src/poi.js'
 import { PAR_SLACK } from '../src/par.js'
 import { TRACE_HZ } from '../src/mission.js'
 import { planTour, PaperRouteSystem, PAPER_PARAMS, runPaper, resetPaperRun,
-         stockForTier, customersForTier, radiusForTier, tierRungs } from '../src/paper-route.js'
+         stockForTier, customersForTier, roadDistFromLarry } from '../src/paper-route.js'
 import { computePar } from '../src/par.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
@@ -61,14 +63,15 @@ function makeWorld () {
 const W = makeWorld()
 const larry = W.poi.list().find(q => q.type === 'larrysHouse')
 const customers = W.poi.customers()
+const tierCust = (tier) => W.poi.customers(tier)
 
 check('the region has a Larry to take the route from', !!larry)
 check('…and he sits on a known graph edge', !!larry?.aId && !!larry?.bId)
 // A route has to be POSSIBLE — that is the assertion. How many customers a given seed's region can
 // hold is a supply question and it is measured below, not asserted: the gate's window is smaller
 // than a live region, and the ratified 15 is a target the placement pass relaxes toward.
-check('the region can supply at least the first rung', customers.length >= PAPER_PARAMS.tiers[0],
-    `${customers.length} customers vs ${PAPER_PARAMS.tiers[0]} on the first route`)
+check('the region can supply at least the first rung', tierCust(0).length >= PAPER_PARAMS.tiers[0],
+    `${tierCust(0).length} customers within ${PAPER_PARAMS.tierRoadM[0]} m of road vs ${PAPER_PARAMS.tiers[0]} on the first route`)
 console.log(`       region supply: ${customers.length} customers`
     + ` (ratified target ${PAPER_PARAMS.tiers.at(-1)} at the top rung)`)
 if (!larry) { console.log('\nNO LARRY — the rest of the gate cannot run'); process.exit(1) }
@@ -81,10 +84,10 @@ const tours = []
 for (let tier = 0; tier < PAPER_PARAMS.tiers.length; tier++) {
     const want = customersForTier(tier)
     const t0 = Date.now()
-    const t = planTour(W.road, larry, customers, want, region, 100, radiusForTier(tier), tierRungs(tier))
+    const t = planTour(W.road, larry, tierCust(tier), want, region, 100)
     const ms = Date.now() - t0
     tours.push(t)
-    check(`tier ${tier + 1} (${want} customers, ${radiusForTier(tier)} m ring) plans a route`, !!t)
+    check(`tier ${tier + 1} (${want} customers, ${PAPER_PARAMS.tierRoadM[tier]} m of road) plans a route`, !!t)
     if (!t) continue
     check(`…priced with a real par`, t.par > 0 && isFinite(t.par), `par ${t.par}`)
     check(`…over a real distance`, t.distance > 0 && isFinite(t.distance), `${t.distance} m`)
@@ -100,19 +103,17 @@ for (let tier = 0; tier < PAPER_PARAMS.tiers.length; tier++) {
     const ok = tours.every(t => t)
     check('every rung planned (the ladder never dead-ends a run)', ok)
     if (ok) {
-        // The supply ceiling: what the largest route could actually reach. A tier below it must be
-        // exactly its own size; a tier above it takes the lot. Anything else means the route is
-        // dropping customers it could have served.
-        const supply = Math.max(...tours.map(t => t.customers.length))
+        // WHO is on a rung's route was stamped at placement (poi.js buildHouses), so the route must
+        // carry exactly the customers stamped at or below it — never more than the rung asks for,
+        // and fewer only when the band itself is short (the bands are hard). Anything else means
+        // the planner dropped someone it could have served.
         for (let i = 0; i < tours.length; i++) {
-            const want = customersForTier(i)
-            check(`tier ${i + 1} carries min(asked, supply) customers`,
-                tours[i].customers.length === Math.min(want, supply),
-                `asked ${want}, supply ${supply}, got ${tours[i].customers.length}`)
-        }
-        if (supply < PAPER_PARAMS.tiers.at(-1)) {
-            console.log(`       NOTE: this window supplies ${supply} routable customers, short of the`
-                + ` ratified ${PAPER_PARAMS.tiers.at(-1)} — the top rungs saturate here.`)
+            const want = customersForTier(i), have = tierCust(i).length
+            check(`tier ${i + 1} carries every customer stamped for it, and no more than it asks`,
+                tours[i].customers.length === have && have <= want,
+                `asked ${want}, stamped ${have}, routed ${tours[i].customers.length}`)
+            if (have < want) console.log(`       NOTE: tier ${i + 1}'s ${PAPER_PARAMS.tierRoadM[i]} m road band`
+                + ` supplies ${have} of ${want} customers on this world`)
         }
 
         // A longer route is a longer par. Weak form on purpose: the tour is nearest-neighbour, so
@@ -133,9 +134,9 @@ for (let tier = 0; tier < PAPER_PARAMS.tiers.length; tier++) {
 
 // ── 3. the route grows, it does not move (SM-INV-12) ────────────────────────────────────────────
 //
-// A SUBSET, not a prefix. Which customers a tier visits is grown outward from Larry, so a lower
-// tier's people are all on a higher tier's route — but the ORDER is then 2-opted for length, and a
-// shorter route is free to visit them in a different sequence. The invariant is about who is on the
+// A SUBSET, not a prefix. Which customers a tier visits is stamped at placement, band by band
+// outward from Larry, so a lower tier's people are all on a higher tier's route — but the ORDER is
+// then solved exactly for length, and a shorter route is free to visit them in a different sequence. The invariant is about who is on the
 // route, not what order they come in.
 for (let i = 1; i < tours.length; i++) {
     if (!tours[i] || !tours[i - 1]) continue
@@ -144,6 +145,38 @@ for (let i = 1; i < tours.length; i++) {
     const missing = lower.filter(id => !higher.has(id))
     check(`tier ${i}'s customers are all on tier ${i + 1}'s route — the tier picks who, never what exists`,
         missing.length === 0, `${missing.length} dropped: ${missing.join(', ')}`)
+}
+
+// ── 3c. THE BANDS ARE ROAD DISTANCE FROM LARRY, AND THE TOP ROUTE FITS THE BUDGET ───────────────
+//
+// Owner, 2026-10-15: the rungs used to be straight-line rings round the REGION CENTRE, and on seed
+// 1097699782 Larry sat on the first ring's edge — rung one drew a 7.10 km four-house route where a
+// 2.20 km one existed on a street the ring excluded. The bands are now metres of ROAD from Larry's
+// door, measured on the planner's own split graph, so a band's edge is a drive and not a circle.
+{
+    const dist = roadDistFromLarry(W.road, larry, customers, region, 100)
+    const dOf = (c) => dist?.get(c.id) ?? Infinity
+    for (let i = 0; i < PAPER_PARAMS.tiers.length; i++) {
+        const band = PAPER_PARAMS.tierRoadM[i], outer = PAPER_PARAMS.tierRoadM.at(-1)
+        const on = tierCust(i), onIds = new Set(on.map(c => c.id))
+        const past = on.filter(c => !(dOf(c) <= band))
+        // A short band BORROWS the nearest houses past its edge (owner, 2026-10-15) — legal only
+        // once the band itself is exhausted: nobody inside it may be left off this rung's route.
+        const leftIn = customers.filter(c => dOf(c) <= band && !onIds.has(c.id))
+        check(`tier ${i + 1}'s customers sit within ${band} m of road from Larry, or were borrowed`
+            + ' because the band ran dry', past.length === 0 || leftIn.length === 0,
+            `${past.length} past the band while ${leftIn.length} inside it are left off`)
+        check(`…and never past the ${outer} m outer band`, on.every(c => dOf(c) <= outer),
+            on.filter(c => !(dOf(c) <= outer)).map(c => c.id).join(', '))
+        if (past.length) console.log(`       tier ${i + 1}: ${past.length} borrowed past ${band} m`
+            + ` (furthest ${(Math.max(...past.map(dOf)) / 1000).toFixed(2)} km)`)
+    }
+    // ~14 km is the owner's budget for the whole round (about ten minutes of straight driving).
+    // The bands bound how far each house is from Larry, not the tour through them, so this is the
+    // check that the bands are sized right.
+    const top = tours.at(-1)
+    if (top) check('the top route stays inside the ~14 km driving budget (15.5 km hard)',
+        top.distance <= 15500, `${(top.distance / 1000).toFixed(2)} km`)
 }
 
 // ── 3b. PAR PRICES THE STOPS (FEAT-61, owner-reported 2026-08-14) ───────────────────────────────

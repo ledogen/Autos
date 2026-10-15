@@ -24,7 +24,7 @@
 
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
 import { REGION_MARGIN } from './mission.js'          // FEAT-61: the wall a customer must sit inside
-import { houseRungs } from './paper-route.js'         // FEAT-61: the ladder placement has to serve
+import { houseRungs, roadDistFromLarry } from './paper-route.js'   // FEAT-61: the ladder placement serves, in road metres
 import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
 import { hash32, mulberry32 } from './seed.js'        // per-edge / per-POI PRNG keys (byte-stable)
 import { padSd } from './road-carve.js'               // FEAT-71: the pad's own shape, for the yard clip
@@ -93,17 +93,17 @@ export const POI_PARAMS = {
     // only 8 inside 1 km, two of which the roster spends on mom and Larry. Fifteen house pads in
     // a 1 km ring is geometrically impossible; fifteen roadside targets is easy, because an edge
     // is ~640 m long and can carry several.
-    // THE COUNT AND THE RADIUS BOTH COME FROM THE LADDER (owner, 2026-08-11) — PAPER_PARAMS.tiers
-    // and .tierR, read through houseRungs(). There is no poiHouseCount and no poiHouseR any more,
-    // because a single count in a single ring cannot serve a ladder whose rungs reach 1.0 / 1.5 /
-    // 2.0 km: measured, one flat 15-house pick spread over 2 km leaves only 3-5 of them inside the
-    // first rung's kilometre, so rung one has nobody to deliver to. buildHouses() fills the pool
-    // ring by ring instead, innermost first.
+    // THE COUNT AND THE DISTANCE BOTH COME FROM THE LADDER — PAPER_PARAMS.tiers and .tierRoadM,
+    // read through houseRungs(). There is no poiHouseCount and no poiHouseR: a single count in a
+    // single radius cannot serve a ladder, so buildHouses() fills the pool band by band, innermost
+    // first, in ROAD metres from Larry's door (owner, 2026-10-15 — this replaced straight-line
+    // rings round the region centre, which left Larry on the first ring's edge).
     //
-    // The rings are HARD — they do not grow to chase a count. FEAT-60's "count is hard, distance
-    // relaxes" rule is inverted here on purpose: a paper round is the streets around your mother's
-    // house, and a sparse seed gets a shorter roster rather than a longer drive. The region wall
-    // still clamps everything, because past it there is no route.
+    // COUNT IS HARD, DISTANCE RELAXES — but only as far as it must: a band too sparse to fill its
+    // quota borrows the nearest-by-road sites just past its edge, never past the outer band (owner,
+    // 2026-10-15; the 2026-08-11 rings were hard, and on a sparse seed left rung one a one-stop
+    // route). The outer band and the region wall clamp everything, because past them there is no
+    // route — or none inside the ~14 km driving budget.
     poiHouseSpacing:  15,     // m of arc between CANDIDATE sites on one edge. This is how often the
                               // walk LOOKS, not how far apart houses end up — poiHouseMinSep below
                               // owns that, and conflating the two is what starved this pool.
@@ -492,8 +492,15 @@ export class PoiSystem {
         return out
     }
 
-    /** Everyone who receives a newspaper: the houses, plus any roster POI tagged as a customer. */
-    customers () { return this.tagged('newsCustomer') }
+    /**
+     * Everyone who receives a newspaper: the houses, plus any roster POI tagged as a customer.
+     * With `maxTier`, only those on that paper-route rung's route — stamped at or below it by
+     * buildHouses. A customer past the outer band carries no stamp and is on no route.
+     */
+    customers (maxTier = null) {
+        const all = this.tagged('newsCustomer')
+        return maxTier == null ? all : all.filter(c => (c.paperTier ?? Infinity) <= maxTier)
+    }
 
     /**
      * Every VIABLE pad the last build considered, before the roster picked from it. Read-only.
@@ -599,16 +606,15 @@ export class PoiSystem {
 
     // ── newspaper customers (FEAT-61) ───────────────────────────────────────────────────────
     /**
-     * Place the region's newspaper customers: roadside delivery targets in a small ring around
-     * spawn. Call AFTER build() — mom is a customer, and she is a roster POI.
+     * Place the region's newspaper customers: roadside delivery targets in road-distance bands
+     * around Larry's house, each stamped with the paper-route rung it serves (`paperTier`). Call
+     * AFTER build() — Larry is where the bands are measured from, and mom (a roster POI) is a
+     * customer too.
      *
      * Deliberately NOT the pad path. A customer is a thing you throw at from the road: no bench is
      * carved, no earthwork is billed, and nothing here reaches setPoiPads(). The whole FEAT-46
      * determinism guarantee — that a seed's road surface is identical with and without story mode —
      * is untouched by this feature because it never writes to the carve at all.
-     *
-     * COUNT IS HARD, THE RADIUS RELAXES (FEAT-60's rule): a region always gets poiHouseCount
-     * customers; the ring grows in poiHouseStep increments until the network can supply them.
      */
     buildHouses (center, radius, nodes = null) {
         const road = this._d.getRoad()
@@ -640,7 +646,7 @@ export class PoiSystem {
         }
 
         // Every viable site on every edge, in canonical order. Window-invariant for the same reason
-        // pads are: a site's position is a pure function of (seed, edge, step index), and the ring
+        // pads are: a site's position is a pure function of (seed, edge, step index), and the band
         // below is a POST-FILTER, never a reject test.
         const cands = []
         const seen = new Set()
@@ -653,26 +659,52 @@ export class PoiSystem {
             this._placeHousesOnEdge(road, e, P, cands)
         }
 
-        // FILL THE LADDER, INNERMOST RING FIRST (owner, 2026-08-11).
+        // FILL THE LADDER, INNERMOST BAND FIRST — in ROAD metres from Larry's door (owner,
+        // 2026-10-15; replaced the 2026-08-11 straight-line rings round the region centre, which put
+        // Larry on the first ring's edge on seed 1097699782 and drew a 7.1 km four-house route).
         //
-        // The rungs are cumulative (radius, count) quotas — 4 inside 1 km, 9 inside 1.5 km, 15
-        // inside 2 km — and each pass TOPS UP the previous one rather than re-picking. That order
-        // is what makes the ladder servable: a single flat pick of 15 spread over 2 km leaves only
-        // 3-5 of them inside the first rung's kilometre (measured, seeds 6/11/42/7), so rung one
-        // would have too few people to deliver to on most seeds.
+        // The bands are cumulative (distance, count) quotas — 4 within 1 km of road, 9 within 2 km,
+        // 12 within 3 km, 15 within 5 km — and each pass TOPS UP the previous one rather than
+        // re-picking. A band the network cannot fill BORROWS the nearest sites past its edge (below).
+        // Each house is STAMPED with the rung it was added for (`paperTier`), and a rung's route is
+        // everyone stamped at or below it: who is on a route is decided HERE, once,
+        // and the planner only orders them. SM-INV-12's nesting is therefore true by construction —
+        // the route grows, it never moves. Every house is placed, always; the tier only decides
+        // who is on today's route. Only when even the outer band runs dry does a rung stay short.
         //
-        // It also buys SM-INV-12's nesting for free. Because each pass keeps everything the last
-        // one chose, a lower rung's customers are a subset of a higher rung's by construction —
-        // the route grows, it never moves. Nothing about this depends on the player's tier: every
-        // house is placed, always, and the tier only decides who is on today's route.
+        // Distance is measured on the planner's own split graph (roadDistFromLarry), so "1 km from
+        // Larry" here is the same drive the route will price. No Larry, no route, no houses.
+        const larry = this._list.find(q => q.type === 'larrysHouse')
+        // Roster POIs that also take a paper (mom). They are stamped like a house and count toward
+        // the band they fall in; a stamp from a previous build is cleared first.
+        const roster = this._list.filter(q => q.tags?.includes('newsCustomer'))
+        for (const q of roster) delete q.paperTier
+        const dist = larry ? roadDistFromLarry(road, larry, [...cands, ...roster],
+            { x: center.x, z: center.z, r: radius, nodes }, REGION_MARGIN) : null
+        if (!dist) { this._houses = []; return this._houses }
         let picked = []
         for (const rung of houseRungs()) {
-            const r = Math.min(rung.r, wall)
-            const ring = cands.filter(q => Math.hypot(q.x - center.x, q.z - center.z) <= r)
-            picked = this._pickSpread(ring, rung.n, P.poiHouseMinSep, picked)
-            if (picked.length < rung.n) {
-                console.warn(`[poi] the ${r | 0} m rung holds only ${ring.length} viable house sites`
-                    + ` (${cands.length} region-wide) — placed ${picked.length}/${rung.n} customers`)
+            const inBand = (q) => (dist.get(q.id) ?? Infinity) <= rung.d
+            for (const q of roster) if (q.paperTier == null && inBand(q)) q.paperTier = rung.tier
+            const own = roster.filter(q => q.paperTier != null).length
+            const had = new Set(picked.map(q => q.id))
+            let band = cands.filter(inBand)
+            // A SHORT BAND BORROWS (owner, 2026-10-15): the count holds and the distance relaxes as
+            // little as it can — the nearest-by-road sites just past the band's edge, never past the
+            // outer band. Measured on seed 6 (@4500,600) the 1 km band held ONE viable site; hard,
+            // rung one was a one-stop route; borrowing makes it four houses out to 1.93 km.
+            const short = rung.n - own - picked.length - band.filter(q => !had.has(q.id)).length
+            if (short > 0) {
+                const outer = houseRungs().at(-1).d
+                const past = cands.filter(q => !had.has(q.id) && !inBand(q) && (dist.get(q.id) ?? Infinity) <= outer)
+                    .sort((a, b) => dist.get(a.id) - dist.get(b.id))
+                band = band.concat(past.slice(0, short))
+            }
+            picked = this._pickSpread(band, Math.max(0, rung.n - own), P.poiHouseMinSep, picked)
+            for (const q of picked) if (!had.has(q.id)) q.paperTier = rung.tier
+            if (picked.length + own < rung.n) {
+                console.warn(`[poi] the ${rung.d | 0} m road band holds only ${band.length} viable house`
+                    + ` sites (${cands.length} region-wide) — placed ${picked.length + own}/${rung.n} customers`)
             }
         }
 

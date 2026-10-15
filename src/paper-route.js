@@ -70,12 +70,20 @@ export const PAPER_PARAMS = {
     // The ladder Larry walks you up, one rung per PERFECT route (owner, 2026-08-05). Run-layer, so
     // it is re-earned every run like everything else.
     tiers:       [4, 9, 12, 15],
-    // …and how far out each rung reaches, in metres from the region centre (owner, 2026-08-11).
+    // …and how far out each rung reaches, in metres of ROAD from Larry's house (owner, 2026-10-15).
     // The route grows in BOTH axes: more customers AND a wider neighbourhood, so rung four is a
     // different shape of drive and not just a longer list. Placement reads this table — poi.js's
-    // buildHouses fills the pool ring by ring so every rung is actually SERVABLE — which is why it
-    // lives here, with the ladder, and not as a second copy in POI_PARAMS.
-    tierR:       [1000, 1500, 2000, 2000],
+    // buildHouses fills the bands innermost first and STAMPS each house with the rung it was placed
+    // for (`paperTier`), so who is on a tier's route is decided at placement and nothing is selected
+    // at plan time. That is why it lives here, with the ladder, and not in POI_PARAMS.
+    //
+    // ROAD DISTANCE FROM LARRY, NOT RINGS ROUND THE REGION CENTRE. The 2026-08-11 rings (1.0 / 1.5 /
+    // 2.0 km straight-line from the centre) did not survive seed 1097699782: Larry sat 936 m out, on
+    // the first ring's edge, so rung one could only offer houses behind him or across the middle and
+    // drew a 7.10 km four-house route where a 2.20 km one existed on a street the ring excluded. The
+    // route starts at Larry, so the only distance that prices it is the drive from his door.
+    // 5 km is the outer band because the top route must not need much more than ~14 km of driving.
+    tierRoadM:   [1000, 2000, 3000, 5000],
     // Spares as a fraction of the customer count, per tier: generous on the first route, thin on the
     // last (owner). A beginner's four-house route tolerates four fluffed throws; the fifteen-house
     // route tolerates four and a half, which is the difficulty curve stated as inventory.
@@ -136,46 +144,13 @@ export function customersForTier (tier = runPaper.tier) {
     return t[Math.min(Math.max(0, tier | 0), t.length - 1)]
 }
 
-/** How far from the region centre this tier's route reaches. */
-export function radiusForTier (tier = runPaper.tier) {
-    const r = PAPER_PARAMS.tierR
-    return r[Math.min(Math.max(0, tier | 0), r.length - 1)]
-}
-
 /**
- * The ladder as SELECTION sees it: every rung up to and including `tier`, ascending, as
- * cumulative `{n, r}` quotas — [{4,1000},{9,1500},{12,2000}] at the third rung.
- *
- * This is what makes the ladder NEST (SM-INV-12: the tier picks who is on the route, never what
- * exists). The rungs widen the ring as well as lengthening the list, and a single greedy chain run
- * over the WIDER pool is not a superset of the same chain run over the narrower one — the extra
- * houses divert it. Measured on seed 6 (@4500,600): rung 3 dropped rung 2's ninth customer and came
- * out SHORTER than rung 2 (10.39 km against 11.00 km), so par went backwards up the ladder. Growing
- * rung by rung — take rung k's quota from rung k's ring, then carry on from that chain's tail into
- * the wider one — makes the nesting true by construction rather than by luck.
- *
- * Not `houseRungs`: that one collapses rungs sharing a radius because PLACEMENT only needs a quota
- * per ring, while selection needs one entry per rung.
- */
-export function tierRungs (tier = runPaper.tier, P = PAPER_PARAMS) {
-    const t = Math.min(Math.max(0, tier | 0), P.tiers.length - 1)
-    const out = []
-    for (let i = 0; i <= t; i++) out.push({ n: P.tiers[i], r: P.tierR[Math.min(i, P.tierR.length - 1)] })
-    return out
-}
-
-/**
- * The rungs as placement sees them: cumulative (radius, count) quotas, ascending by radius, one
- * entry per DISTINCT radius carrying that ring's largest count. [4@1km, 9@1.5km, 12@2km, 15@2km]
- * collapses to [4@1km, 9@1.5km, 15@2km] — the two rungs that share a ring share one quota.
+ * The rungs as placement sees them: one cumulative `{ tier, d, n }` quota per rung, innermost first
+ * — n customers within d metres of road from Larry. buildHouses tops each band up from the last and
+ * stamps the houses it adds with `tier`, so a rung's route is everyone stamped at or below it.
  */
 export function houseRungs (P = PAPER_PARAMS) {
-    const by = new Map()
-    for (let i = 0; i < P.tiers.length; i++) {
-        const r = P.tierR[Math.min(i, P.tierR.length - 1)]
-        by.set(r, Math.max(by.get(r) ?? 0, P.tiers[i]))
-    }
-    return [...by].sort((a, b) => a[0] - b[0]).map(([r, n]) => ({ r, n }))
+    return P.tiers.map((n, i) => ({ tier: i, n, d: P.tierRoadM[Math.min(i, P.tierRoadM.length - 1)] }))
 }
 
 /**
@@ -376,72 +351,14 @@ function _pathBack (prev, startK, goalK) {
 }
 
 /**
- * Plan one route: pick this tier's customers, order them, route the whole thing, price it ONCE.
+ * The road graph with Larry and `points` SPLICED IN as nodes at their (edge, arc) positions, inside
+ * the region wall. The one road metric the paper route has: the planner routes on it, and placement
+ * (poi.js buildHouses, through roadDistFromLarry) measures each house's band on it, so "1 km from
+ * Larry" means the same drive in both places. Null when the network cannot hold Larry.
  *
- * Returns `{ customers, segments, poly, par, distance }` or null when the network cannot supply a
- * route (no Larry, no reachable customer, an edge the planner does not hold).
- *
- * COST: this is the expensive call — every edge the tour traverses is routed, and a fifteen-stop
- * route crosses many more edges than a point-to-point errand does. It runs once, behind Larry's
- * briefing cards, and never in the frame loop.
- *
- * @param {object} road      the planning RoadSystem (networkGraph + edgeParData)
- * @param {object} larry     the POI the route starts at — needs {aId, bId, s, x, z}
- * @param {Array}  allCust   every newspaper customer in the region (poiSystem.customers())
- * @param {number} want      how many of them this tier visits
- * @param {{x:number,z:number,r:number}|null} region  the story region wall, or null
- * @param {number} margin    keep the tour this far inside the wall
- * @param {number} ringR     this tier's reach from the region centre (radiusForTier). The rungs
- *                           widen the neighbourhood as well as lengthening the list, and the ring
- *                           is applied HERE rather than at the call site so it is one rule that
- *                           the tour, the gate and any future re-plan all share.
- * @param {Array<{n:number,r:number}>|null} rungs  the LADDER this route sits on (tierRungs), so the
- *                           selection grows rung by rung and a lower tier's people are all on a
- *                           higher tier's route. Null — a re-plan, or any caller that is not a
- *                           ladder rung — means one stage of (want, ringR), which is what the
- *                           planner did before the schedule existed.
+ * `points` need {id, aId, bId, s}; a point whose edge crosses the wall is simply left out.
  */
-export function planTour (road, larry, allCust, want, region = null, margin = 100, ringR = Infinity,
-                          rungs = null) {
-    const it = planTourJob(road, larry, allCust, want, region, margin, ringR, rungs)
-    let r = it.next()
-    while (!r.done) r = it.next()
-    return r.value
-}
-
-/**
- * The planner itself, as a RESUMABLE job (FEAT-63).
- *
- * There is exactly one ordering algorithm in this file and this is it; `planTour` above is a thin
- * drain over the same generator. That is the whole reason the sliced re-plan is a small feature
- * rather than a risky one — a second planner would be free to drift from this one, and the gate
- * that compares them would be pinning two implementations instead of one.
- *
- * The yields are placed where the TIME is, and nowhere else. Measured on seed 6 the graph surgery
- * and the polyline build are sub-millisecond, so slicing them would buy nothing but state to get
- * wrong; the Dijkstras are ~0.1-0.2 ms each; and the Held-Karp mask loop is the whole 14 ms at
- * fifteen stops. So: one yield per Dijkstra, and one every HK_CHUNK masks. A single `next()` is
- * therefore always well under half a millisecond, which is what lets the pump honour a small
- * budget honestly rather than overshooting it by one enormous chunk.
- *
- * Same arguments, same return value as planTour.
- */
-export function* planTourJob (road, larry, allCust, want, region = null, margin = 100,
-                              ringR = Infinity, rungs = null) {
-    if (!road || !larry || !allCust?.length || !(want > 0)) return null
-    // The selection SCHEDULE: one stage per ladder rung, ascending, capped at what was asked for.
-    // Without a ladder (a re-plan) it collapses to the single stage the planner always had.
-    const stages = (rungs?.length ? rungs : [{ n: want, r: ringR }])
-        .map(g => ({ n: Math.min(want, g.n | 0), r: g.r ?? ringR }))
-        .filter(g => g.n > 0)
-    if (stages.length) stages[stages.length - 1].n = want
-    const outerR = Math.max(...stages.map(g => g.r))
-    // Filtered at the WIDEST ring only — narrower rungs gate which candidate the chain may take
-    // next, not which customers exist, so the split graph below is the same one the top rung sees.
-    if (region && isFinite(outerR)) {
-        allCust = allCust.filter(c => Math.hypot(c.x - region.x, c.z - region.z) <= outerR)
-        if (!allCust.length) return null
-    }
+export function splitRoadGraph (road, larry, points, region = null, margin = 100) {
     const g = road.networkGraph?.()
     if (!g?.edges?.length) return null
 
@@ -485,7 +402,7 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
         return true
     }
     if (!addPoint(larry, null)) return null
-    for (const c of allCust) addPoint(c, c)
+    for (const c of points) addPoint(c, c)
 
     // THE SPLIT. Node degrees are read BEFORE the surgery — a spliced point is not a junction, and
     // an arrow raised at one would be the overlay inventing an intersection out of a house.
@@ -539,6 +456,74 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
 
     const larryK = ptKeyOf.get(larry.id)
     if (!larryK) return null
+    return { adj, posOf, idOf, degOf, ptKeyOf, ptInfo, edgeArc, onEdge, edgeData, larryK }
+}
+
+/**
+ * Metres of ROAD from Larry's door to each of `points`, by id — one Dijkstra over the split graph.
+ * A point with no road back to Larry is absent from the map. Null when there is no graph at all.
+ */
+export function roadDistFromLarry (road, larry, points, region = null, margin = 100) {
+    if (!road || !larry) return null
+    const G = splitRoadGraph(road, larry, points, region, margin)
+    if (!G) return null
+    const { dist } = graphDijkstra(G.adj, G.larryK)
+    const out = new Map()
+    for (const [id, k] of G.ptKeyOf) {
+        const d = dist.get(k)
+        if (id !== larry.id && isFinite(d)) out.set(id, d)
+    }
+    return out
+}
+
+/**
+ * Plan one route: order this tier's customers, route the whole thing, price it ONCE.
+ *
+ * Returns `{ customers, segments, poly, par, distance }` or null when the network cannot supply a
+ * route (no Larry, no reachable customer, an edge the planner does not hold).
+ *
+ * COST: this is the expensive call — every edge the tour traverses is routed, and a fifteen-stop
+ * route crosses many more edges than a point-to-point errand does. It runs once, behind Larry's
+ * briefing cards, and never in the frame loop.
+ *
+ * @param {object} road      the planning RoadSystem (networkGraph + edgeParData)
+ * @param {object} larry     the POI the route starts at — needs {aId, bId, s, x, z}
+ * @param {Array}  allCust   the customers this route visits — poiSystem.customers(tier). WHO is on a
+ *                           tier's route was decided when the houses were placed (buildHouses
+ *                           stamps `paperTier`); the planner only orders and prices them.
+ * @param {number} want      cap on how many of them to take (nearest-by-road chain from Larry)
+ * @param {{x:number,z:number,r:number}|null} region  the story region wall, or null
+ * @param {number} margin    keep the tour this far inside the wall
+ */
+export function planTour (road, larry, allCust, want, region = null, margin = 100) {
+    const it = planTourJob(road, larry, allCust, want, region, margin)
+    let r = it.next()
+    while (!r.done) r = it.next()
+    return r.value
+}
+
+/**
+ * The planner itself, as a RESUMABLE job (FEAT-63).
+ *
+ * There is exactly one ordering algorithm in this file and this is it; `planTour` above is a thin
+ * drain over the same generator. That is the whole reason the sliced re-plan is a small feature
+ * rather than a risky one — a second planner would be free to drift from this one, and the gate
+ * that compares them would be pinning two implementations instead of one.
+ *
+ * The yields are placed where the TIME is, and nowhere else. Measured on seed 6 the graph surgery
+ * and the polyline build are sub-millisecond, so slicing them would buy nothing but state to get
+ * wrong; the Dijkstras are ~0.1-0.2 ms each; and the Held-Karp mask loop is the whole 14 ms at
+ * fifteen stops. So: one yield per Dijkstra, and one every HK_CHUNK masks. A single `next()` is
+ * therefore always well under half a millisecond, which is what lets the pump honour a small
+ * budget honestly rather than overshooting it by one enormous chunk.
+ *
+ * Same arguments, same return value as planTour.
+ */
+export function* planTourJob (road, larry, allCust, want, region = null, margin = 100) {
+    if (!road || !larry || !allCust?.length || !(want > 0)) return null
+    const G = splitRoadGraph(road, larry, allCust, region, margin)
+    if (!G) return null
+    const { adj, posOf, idOf, degOf, ptKeyOf, ptInfo, edgeArc, onEdge, edgeData, larryK } = G
     yield        // the surgery is done and it was sub-ms; everything expensive is below
 
     const searches = new Map()
@@ -551,45 +536,25 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
         return searches.get(k)
     }
 
-    // WHICH customers this tier visits: grow the route outward from Larry, each next customer the
-    // nearest by road to the last one taken.
-    //
-    // CHAINING, not "the k nearest to Larry" — that alternative was measured and is worse on both
-    // counts. Nearest-to-Larry picks a STAR: four houses in four directions, which forces a return
-    // through the middle between every pair (seed 6 tier 1: 5.94 km against the chain's 3.78 km for
-    // the same four-customer route). Chaining follows the road outward and picks a run of houses,
-    // which is shorter to drive AND is what a paper route actually looks like.
-    //
-    // ONE CHAIN, GROWN RUNG BY RUNG. The chain nests only while the pool is fixed, and the ladder
-    // widens the ring at every rung — so the chain is grown in STAGES, rung k's quota taken from
-    // rung k's ring before the next rung's wider one opens. A tier's people are then all on the
-    // next tier's route by construction (SM-INV-12). Run as one pass over the widest ring it is
-    // not: on seed 6 the third rung diverted onto three nearer houses, dropped the second rung's
-    // ninth customer, and came out shorter than the rung below it.
-    const stops = allCust.filter(c => ptKeyOf.has(c.id))
-    if (!stops.length) return null
-    const remaining = stops.slice()
-    const distC = new Map(stops.map(c => [c.id,
-        region ? Math.hypot(c.x - region.x, c.z - region.z) : 0]))
+    // The SEED ORDER: a nearest-by-road chain from Larry. Who is on the route is not chosen here —
+    // the caller hands over the tier's customers (poi.js stamps the tier at placement) — so this
+    // only matters as Held-Karp's fallback above HELD_KARP_MAX, and as the `want` cap.
+    const remaining = allCust.filter(c => ptKeyOf.has(c.id))
+    if (!remaining.length) return null
     const order = []
     let curK = larryK
-    for (const stage of stages) {
-        while (order.length < stage.n && remaining.length) {
-            const { dist } = searchFrom(curK)
-            if (fresh) yield
-            let bi = -1, bd = Infinity
-            for (let i = 0; i < remaining.length; i++) {
-                if (distC.get(remaining[i].id) > stage.r) continue   // outside this rung's ring
-                const d = dist.get(ptKeyOf.get(remaining[i].id)) ?? Infinity
-                if (d < bd) { bd = d; bi = i }
-            }
-            // Nothing left this rung can reach — carry on into the next, wider one rather than
-            // giving up: a thin ring must not cost the rungs above it their customers.
-            if (bi < 0 || !isFinite(bd)) break
-            const c = remaining.splice(bi, 1)[0]
-            order.push(c)
-            curK = ptKeyOf.get(c.id)
+    while (order.length < want && remaining.length) {
+        const { dist } = searchFrom(curK)
+        if (fresh) yield
+        let bi = -1, bd = Infinity
+        for (let i = 0; i < remaining.length; i++) {
+            const d = dist.get(ptKeyOf.get(remaining[i].id)) ?? Infinity
+            if (d < bd) { bd = d; bi = i }
         }
+        if (bi < 0 || !isFinite(bd)) break
+        const c = remaining.splice(bi, 1)[0]
+        order.push(c)
+        curK = ptKeyOf.get(c.id)
     }
     if (!order.length) return null
 
@@ -970,8 +935,8 @@ export class PaperRouteSystem {
             const pois = this._getPois()
             const larry = this.giver
             const want = customersForTier()
-            this.route = planTour(this._getRoad(), larry, pois?.customers() ?? [], want,
-                                  this._getRegion(), 100, radiusForTier(), tierRungs())
+            this.route = planTour(this._getRoad(), larry, pois?.customers(runPaper.tier) ?? [], want,
+                                  this._getRegion(), 100)
             if (!this.route) this.error = 'no route could be routed from here'
         } catch (e) {
             console.warn('[paper] tour planning failed', e)
@@ -1264,12 +1229,9 @@ export class PaperRouteSystem {
 
         this._cancelReplan()
         this._rr = {
-            // want = left.length: the SET is fixed, only the order is in question. No ring filter
-            // either — these customers were already inside the tier's ring when the route was
-            // planned, and re-applying it around the region centre could drop one the player is
-            // standing next to.
+            // want = left.length: the SET is fixed, only the order is in question.
             it: planTourJob(this._getRoad(), origin, left, left.length,
-                            this._getRegion(), 100, Infinity),
+                            this._getRegion(), 100),
             // cx/cz is where the TRUCK was, which is what the staleness guard measures against;
             // origin is the road point it planned from, and the two are not the same place.
             cx: car?.x ?? origin.x, cz: car?.z ?? origin.z, reason, quiet, retry,

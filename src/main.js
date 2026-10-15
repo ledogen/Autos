@@ -81,7 +81,7 @@ import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planTourJob, customersForTier, radiusForTier, tierRungs } from './paper-route.js'
+         planTourJob, customersForTier } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { SCENARIOS, scenarioById } from '../data/scenarios.js'   // FEAT-62: authored scenarios
@@ -3786,8 +3786,8 @@ function _larryRoute (offer) {
   if (!larry || !roadSystem) return null
   _larryTour = {
     offerId: offer.id, tier, done: false, route: null,
-    it: planTourJob(roadSystem, larry, poiSystem.customers(), customersForTier(),
-                    storySystem.region(), 100, radiusForTier(), tierRungs()),
+    it: planTourJob(roadSystem, larry, poiSystem.customers(tier), customersForTier(),
+                    storySystem.region(), 100),
   }
   return null
 }
