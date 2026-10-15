@@ -384,8 +384,10 @@ function boardRig (ms, nowH = 6) {
     ms.accept()
     check('accept stamps the frozen terms onto the mission (SM-INV-4 lock)', ms.mission.terms?.day === 1)
     check('a taken offer leaves the board', !!taken && !board.offers(food.id, 6).some(o => o.id === taken.id))
-    const cancelled = ms.cancel()
-    check('cancel() drops the job and hands back its board offer id', cancelled === taken.id && ms.state === 'idle')
+    const cancelled = ms.cancel({ kind: 'load' })
+    check('cancel() ends the job on an abandoned $0 card and hands back its board offer id',
+        cancelled === taken.id && ms.state === 'done' && ms.result.abandoned && ms.result.payout === 0
+        && ms.result.cargo?.kind === 'load' && !ms.isOnJob())
     check('…and the board locks that slot for the full life', board.abandon(cancelled, 6.1)
         && board._slotOf(cancelled).state === 'locked')
     ms.exit()

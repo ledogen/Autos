@@ -438,11 +438,17 @@ export class MissionSystem {
      * only caller: leaving the route or the region never cancels (owner, 2026-09-27). Returns the
      * board offer id that was cancelled (null for a Quick Job, which has none) so main.js can lock
      * the slot; nothing settles.
+     *
+     * The job still ends on its result card (owner, 2026-10-15): "abandoned", $0, and `cargo` —
+     * main.js's read of what became of the load ({ kind, … }, or null when there was none).
+     * "continue" then puts it down like any finished job.
      */
-    cancel() {
+    cancel(cargo = null) {
         if (!this.isOnJob()) return null
         const id = this.mission?.offerId ?? null
-        this.exit()
+        this.result = { abandoned: true, elapsed: this.elapsed, payout: 0, base: 0, tip: 0, points: 0, cargo }
+        this.state = 'done'
+        this._onChange()
         return id
     }
 

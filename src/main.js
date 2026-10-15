@@ -30,7 +30,7 @@ import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D 
 import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
-import { parkPrompt } from './park-badge.js'                // FEAT-90: the orange P-in-a-circle "park first" badge
+import { parkPrompt } from './park-badge.js'                // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, snapCamera } from './camera.js'
@@ -4163,7 +4163,7 @@ function _updateParkTriggers () {
       const now = daySystem.clockH()
       const live = _takeableOffers(poi.id, now).length
       const next = offerBoard?.nextTurnoverH(poi.id, now)
-      // FEAT-90: every "park to …" line carries the orange P badge; the status line does not.
+      // FEAT-90: every "park to …" line carries the blue P badge; the status line does not.
       poiEl.innerHTML = !live
         ? (next != null ? `no work here right now — new offer in ${formatGameDuration(next - now)}`
                         : 'no work here right now')
@@ -4526,6 +4526,27 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
       : '')
 }
 
+/**
+ * The abandoned job's card (owner, 2026-10-15): the word, the time, what became of the cargo, and $0.
+ * `cargo` is _abandonCargo's read; `extra` is any mission-specific line (the paper route's count).
+ */
+function _abandonedCard (r, extra = '') {
+  const dim = (t) => `<br><span class="mp-dim">${t}</span>`
+  const c = r.cargo
+  const cargo = !c ? ''
+    : c.kind === 'haul' ? (c.aboard > 0
+      ? dim(`Firewood remaining</span> <span class="mp-pay">${c.aboard} / ${c.loaded}`)
+      : '<br><span class="mp-bad">Firewood all lost</span>')
+    : c.kind === 'fragile' ? (c.health > 0
+      ? dim(`Cargo condition</span> <span class="mp-pay">${Math.round(c.health * 100)}%`)
+      : '<br><span class="mp-bad">Cargo destroyed</span>')
+    : dim('Cargo remaining</span> <span class="mp-pay">1 / 1')
+  return `<span class="mp-big mp-bad">Abandoned</span>`
+    + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
+    + extra + cargo
+    + `<br><span class="mp-dim">Pay</span> <span class="mp-pay mp-bad">$${formatMoney(0)}</span>`
+}
+
 // Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
 // SM-INV-3 — par NEVER appears while driving; the result card is the only place it is shown.
 function _renderMissionUI () {
@@ -4614,6 +4635,16 @@ function _renderMissionUI () {
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = m.result
+      if (r.abandoned) {
+        body.innerHTML = _abandonedCard(r)
+        btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', !m.mission?.fromPoi)
+        btn('mp-regen', false); btn('mp-quit', true)
+        btn('mp-prev', false); btn('mp-next', false)
+        unmountExportRow('mission-panel')   // nothing finished, nothing to calibrate against
+        const nb = document.getElementById('mp-accept')
+        if (nb) nb.textContent = 'continue'
+        break
+      }
       // FEAT-53: the letter wears its ratified rank colour (D·C·B·A·S = red·orange·yellow·white·
       // blue), the final letter (SM-INV-3: display only; the FEAT-87 strip shows it live). A paid
       // job adds its payout + good deeds; Quick Job says plainly that it pays nothing.
@@ -4735,6 +4766,12 @@ function _renderPaperUI () {
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = p.result
+      if (r.abandoned) {
+        body.innerHTML = _abandonedCard(r, `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
+          + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-dim">papers left</span> <span class="mp-pay">${r.stock}</span>`)
+        unmountExportRow('paper-panel')
+        break
+      }
       body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         // The "+N% early" badge went with the expediency bonus it reported [2026-08-17]. Pace is
@@ -6285,13 +6322,15 @@ for (const id of ['pm-restart', 'sp-restart', 'sp-menu']) {
 // live by _syncJobCancel. Two clicks: the first ARMS it for JOB_CANCEL_ARM_S ("confirm?"),
 // the second cancels — the slot lock makes a stray click expensive. It never takes focus
 // (mousedown is prevented, tabindex -1), because a focused button eats Space, which is the brake.
+// Only a PARKED truck can abandon (owner, 2026-10-15): moving, the button reads "park to abandon"
+// and does nothing. Either way the job ends on its result card — "abandoned", $0, and the cargo.
 const JOB_CANCEL_ARM_S = 3
 let _jobCancelArm = 0   // setTimeout handle while armed, 0 when not
 function _disarmJobCancel () {
   if (_jobCancelArm) clearTimeout(_jobCancelArm)
   _jobCancelArm = 0
   const b = document.getElementById('job-cancel')
-  if (b) { b.classList.remove('armed'); b.textContent = _jobCancelLabel() }
+  if (b) { b.classList.remove('armed'); b.innerHTML = _jobCancelLabel() }
 }
 // FEAT-96: on a strapped job the button reads "clean up cargo" — the load has to come off before the
 // job can go, and that costs CLEANUP_H on the day clock. Same two-click confirm, same slot lock.
@@ -6300,6 +6339,7 @@ function _strappedJob () {
   return !paperRouteSystem.isCarrying() && !!missionSystem?.isOnJob() && !!missionSystem.mission?.load
 }
 function _jobCancelLabel () {
+  if (!vehicleState.parked) return parkPrompt('park to abandon')
   if (!_strappedJob()) return 'abandon job'
   return missionSystem.mission.failed ? 'cargo destroyed · clean up' : 'clean up cargo'   // FEAT-97
 }
@@ -6309,12 +6349,23 @@ function _syncJobCancel (hud, on) {
   if (on && b.parentElement !== hud) { _disarmJobCancel(); hud.appendChild(b) }
   if (b.parentElement !== hud) return   // the other HUD owns it; leave it alone
   b.style.display = on ? '' : 'none'
-  if (!on && _jobCancelArm) _disarmJobCancel()
-  if (on && !_jobCancelArm) b.textContent = _jobCancelLabel()
+  if ((!on || !vehicleState.parked) && _jobCancelArm) _disarmJobCancel()
+  if (on && !_jobCancelArm) { const t = _jobCancelLabel(); if (b.innerHTML !== t) b.innerHTML = t }
+  b.classList.toggle('unparked', !vehicleState.parked)
+}
+/** What became of the load, for the abandoned card — null when the job carries none (yet). */
+function _abandonCargo () {
+  const m = missionSystem?.mission
+  if (_haul && _haul.mission === m) return { kind: 'haul', aboard: _haulAboard(), loaded: m.bundles }
+  if (_freight && _freight.mission === m) {
+    return m.fragile ? { kind: 'fragile', health: _freight.health?.health ?? 0 } : { kind: 'load' }
+  }
+  return null
 }
 document.getElementById('job-cancel')?.addEventListener('mousedown', (e) => e.preventDefault())
 document.getElementById('job-cancel')?.addEventListener('click', (e) => {
   const b = e.currentTarget
+  if (!vehicleState.parked) return
   if (!_jobCancelArm) {
     _jobCancelArm = setTimeout(_disarmJobCancel, JOB_CANCEL_ARM_S * 1000)
     b.classList.add('armed'); b.textContent = 'confirm?'
@@ -6322,7 +6373,7 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
   }
   _disarmJobCancel()
   if (_strappedJob()) daySystem.advanceMinutes(CLEANUP_H * 60)   // before the cancel: the slot locks from the clean-up's end
-  const id = paperRouteSystem.isCarrying() ? paperRouteSystem.cancel() : missionSystem?.cancel()
+  const id = paperRouteSystem.isCarrying() ? paperRouteSystem.cancel() : missionSystem?.cancel(_abandonCargo())
   if (id) offerBoard?.abandon(id, daySystem.clockH())
 })
 // FEAT-41: back out to the main menu. The mode is left FIRST — dropping to a menu while story mode

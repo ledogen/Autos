@@ -185,7 +185,25 @@ Built in `feature/sm3-fragile`:
   15 m/s 1.06 g (240 kg panes) to 1.36 g (9 kg vase) · 1 m crest 4.6–4.8 g · rollover 11–31 g.
   Mass is real, so heavy glass rides the washboard better than a vase.
 - Browser: debug-loading the vase and dropping the truck 3 m blinks it red and fades; no errors.
-  A full story-mode fragile job has NOT been driven yet.
+  The owner has since driven grandma's vase and piano jobs in story mode ("feels great").
+
+## Ruling (owner, 2026-10-15) — abandoning, for every mission
+
+> "Should be required to park to abandon any mission. I like the two clicks to confirm. One's
+> confirmed. It should pop up the post mission card and say abandoned, show you that it's zero
+> dollars. If there is cargo that was destroyed, it should also say cargo destroyed somewhere,
+> otherwise show the condition of the cargo. For all missions, it should also show you that you lost
+> all the cargo or how many pieces are remaining."
+
+Built (main.js `_abandonCargo` / `_abandonedCard`, mission.js and paper-route.js `cancel()`):
+- Moving, the button reads "[P] park to abandon" and does nothing. Parked, it keeps the two-click
+  confirm (and the strapped "clean up cargo", +1 h).
+- The job ends on its result card: **Abandoned** · the time · the cargo line · Pay $0. "continue"
+  puts it down. No calibration export on an abandoned run.
+- Cargo line: fragile, "Cargo destroyed" or "Cargo condition N%"; haul, "Firewood remaining
+  N / M" or "Firewood all lost"; freight, "Cargo remaining 1 / 1"; the paper route, "N of M
+  delivered · papers left K". A courier job carries nothing physical, so it has no line.
+- This replaces the 2026-10-15 deviation (no result card on destroyed cargo).
 
 ## Acceptance
 
@@ -194,8 +212,9 @@ Built in `feature/sm3-fragile`:
 - [x] A headless gate drives the four calibration scenarios above and asserts each row.
 - [x] Pay is the guaranteed Base + a tip set by health (2026-10-15), continuous, floored at zero;
       `economy.mjs` covers it.
-- [~] Zero health fails the job on the spot ($0; the cancel button reads "cargo destroyed", no result card), and clean-up
-      removes the load and costs 1 h.
+- [x] Zero health fails the job on the spot ($0; the button reads "cargo destroyed · clean up"),
+      and clean-up removes the load, costs 1 h, and ends on the abandoned card: "Cargo destroyed",
+      $0 (2026-10-15).
 - [x] Each damaging event plays its item's sound with gain ∝ cost, and blinks the load red.
       Calm driving is silent and the load stays unlit.
 - [x] `fragile` is in `BUILT_FAMILIES`. No cargo number on the HUD (SM-INV-10).

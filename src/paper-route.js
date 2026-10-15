@@ -998,12 +998,20 @@ export class PaperRouteSystem {
     /**
      * FEAT-67: CANCEL the round — the player phones Larry. The cancel button is the only caller:
      * leaving the route or the region never cancels (owner, 2026-09-27). Returns the board offer id
-     * so main.js can lock Larry's slot; nothing settles, and the papers come off the lawns.
+     * so main.js can lock Larry's slot; nothing settles. Like a POI job it ends on its result card
+     * (owner, 2026-10-15): "abandoned", $0, and the papers left in the truck; the papers come off
+     * the lawns when the card is dismissed.
      */
     cancel () {
         if (!this.isCarrying()) return null
         const id = this.offer?.id ?? null
-        this._reset()
+        this.result = { abandoned: true, elapsed: this.elapsed(), delivered: this.delivered(),
+                        customers: this.route.customers.length, stock: this.stock() }
+        this._cancelReplan()
+        this.state = 'done'
+        this.run = null
+        this._lastExport = null
+        this._onChange()
         return id
     }
 

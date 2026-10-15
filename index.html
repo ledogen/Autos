@@ -485,6 +485,9 @@
     }
     #job-cancel:hover { background: rgba(160, 44, 34, 0.75); color: #fff; }
     #job-cancel.armed { background: #c0392b; border-color: #ff8a7a; color: #fff; }
+    /* moving: "park to abandon" — the button is inert until the brake is latched */
+    #job-cancel.unparked, #job-cancel.unparked:hover { background: rgba(0, 0, 0, 0.35); border-color: #3a4450; color: #c8d2dc; cursor: default; }
+    #job-cancel .park-badge { margin-right: 0.35em; }
     #mission-hud .mh-count { font-size: 44px; color: #ffcf3c; }
 
     /* FEAT-63: the GPS re-plan indicator. Bottom-right and quiet — it reports that help is on the
@@ -507,14 +510,15 @@
       pointer-events: none;
     }
 
-    /* FEAT-90: the "park first" badge — an orange P in a circle (the POI ring orange) — and the
-       keycap drawn beside key hints. One look everywhere a prompt asks you to park; the markup
-       comes from src/park-badge.js. */
+    /* FEAT-90: the "park first" badge — the urban parking sign: a white P on a blue rounded
+       square with a white rim (owner, 2026-10-15; was an orange P in a circle) — and the keycap
+       drawn beside key hints. One look everywhere a prompt asks you to park; the markup comes from
+       src/park-badge.js. */
     .park-badge {
-      display: inline-flex; align-items: center; justify-content: center;
+      display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
       width: 1.35em; height: 1.35em; margin-right: 0.45em; vertical-align: -0.25em;
-      border-radius: 50%; background: #ff7a18; color: #1a0f05;
-      font: bold 0.85em/1 monospace; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+      border-radius: 0.22em; background: #0b3d91; color: #fff; border: 0.09em solid #fff;
+      font: bold 0.9em/1 sans-serif; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
     }
     .keycap {
       display: inline-block; min-width: 1.1em; padding: 0 0.35em; margin: 0 0.1em;
@@ -853,6 +857,8 @@
 
     /* FEAT-53: payout / good-deeds line on the mission result card (and FEAT-61's route card). */
     #mission-panel .mp-pay, #paper-panel .mp-pay { font-size: 18px; color: #8ce99a; }
+    /* an abandoned job's headline, its $0 and a lost or destroyed load (owner, 2026-10-15) */
+    #mission-panel .mp-bad, #paper-panel .mp-bad { color: #ff6b5b; }
     #pp-accept { border-color: #5ad06a; color: #b6f0be; }
 
     /* FEAT-31 testing lab readout — top-right, out of the way of the left-hand debug HUD. */
