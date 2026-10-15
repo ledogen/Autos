@@ -1,5 +1,6 @@
 /**
- * src/glass-audio.js — FEAT-87: the rank tile breaking, as a car side window going.
+ * src/glass-audio.js — FEAT-87: the rank tile breaking, as a car side window going. FEAT-97 adds
+ * the fragile load's hit sounds (playCargoHit, at the bottom), which reuse the same voices.
  *
  * Owner, 2026-10-03: "short and poppy, like a car side window". A side window is TEMPERED glass:
  * it does not crack and tinkle for seconds like a plate-glass pane, it goes all at once with a
@@ -89,4 +90,55 @@ export function playGlassBreak (level = 1) {
     p.connect(pg); pg.connect(out)
     p.start(t0); p.stop(t0 + 0.06)
   }
+}
+
+/**
+ * FEAT-97: a fragile load taking a hit. `sound` is the load's kind (data/offers.js: 'glass' |
+ * 'thud' | 'piano'); `cost` is the health the hit took (0..1), and the gain follows it — a near
+ * miss is a tick, a bad one a crash (√cost, so the small hits stay audible). A glass hit that costs
+ * a third or more is the full break.
+ */
+export function playCargoHit (sound, cost) {
+  const ctx = getAudioContext()
+  if (!ctx || ctx.state !== 'running' || !(cost > 0)) return
+  const level = Math.min(1, Math.max(0.08, 1.5 * Math.sqrt(cost)))
+  if (sound === 'glass' && cost >= 1 / 3) { playGlassBreak(level); return }
+  const t = ctx.currentTime
+  const out = ctx.createGain()
+  out.gain.value = LEVEL * level
+  out.connect(ctx.destination)
+  if (sound === 'glass') {
+    // CLINK — two or three short high pings and a tick of bright noise: glass knocking on glass.
+    _noiseHit(ctx, out, t, 0.015, 'highpass', 3000, 0.7, 0.4)
+    for (let i = 0; i < 3; i++) _ping(ctx, out, t + i * 0.02 * Math.random(), 2500 + Math.random() * 3000, 0.25, 0.08)
+    return
+  }
+  // THUD — a low sine dropping 140 → 50 Hz and a burst of lowpassed noise: something heavy knocked.
+  const osc = ctx.createOscillator()
+  osc.frequency.setValueAtTime(140, t)
+  osc.frequency.exponentialRampToValueAtTime(50, t + 0.1)
+  const g = ctx.createGain()
+  g.gain.setValueAtTime(0.0001, t)
+  g.gain.exponentialRampToValueAtTime(0.7, t + 0.004)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16)
+  osc.connect(g); g.connect(out)
+  osc.start(t); osc.stop(t + 0.18)
+  _noiseHit(ctx, out, t, 0.06, 'lowpass', 400, 0.7, 0.6)
+  // PIANO — the strings jangling on top: a handful of detuned partials ringing out for a second.
+  if (sound === 'piano') {
+    for (let i = 0; i < 6; i++) _ping(ctx, out, t + 0.005 * i, 110 * 2 ** (Math.floor(Math.random() * 36) / 12), 0.12, 0.6 + Math.random() * 0.6, 'triangle')
+  }
+}
+
+/** One decaying oscillator note: `freq` Hz, peak `g`, ringing out over `dur` s. */
+function _ping (ctx, out, t0, freq, g, dur, type = 'sine') {
+  const p = ctx.createOscillator()
+  p.type = type
+  p.frequency.value = freq
+  const pg = ctx.createGain()
+  pg.gain.setValueAtTime(0.0001, t0)
+  pg.gain.exponentialRampToValueAtTime(g, t0 + 0.002)
+  pg.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
+  p.connect(pg); pg.connect(out)
+  p.start(t0); p.stop(t0 + dur + 0.02)
 }

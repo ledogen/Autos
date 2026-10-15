@@ -611,6 +611,9 @@ export class MissionSystem {
         // drive-by — and the giver's own end sits inside the start zone, so testing it here would
         // finish the job on its first frame.
         if (this.mission.legs && this.leg === 0) return
+        // FEAT-97: a fragile load destroyed on the way has failed the job — there is nothing left to
+        // deliver; main.js's "clean up cargo" is the way out of it.
+        if (this.mission.failed) return
         if (this.distanceToGo() <= ARRIVE_RADIUS) {
             const par = this.mission.par
             // FEAT-53: grade on the thresholds FROZEN at accept (missing terms → day-1 default

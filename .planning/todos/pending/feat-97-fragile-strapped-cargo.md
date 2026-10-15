@@ -153,22 +153,44 @@ Those are the hardest jobs of the type.
 - **Everything is R1** for now.
 - `jointForce` is built here, its first user (moved from FEAT-96).
 
+## Progress (2026-10-15)
+
+Built in `feature/sm3-fragile`:
+- `physics-engine.js` `jointForce` (Box3D `b3Joint_GetConstraintForce`). It reads as the strap's
+  force ON the load: +m·g up at rest, so felt g = |F/m + g| / 9.81 is 0 at rest. Free fall reads
+  1 g, so every floor sits at ≥ 1 g: airtime is free, the landing is what costs.
+- `src/fragile.js`: pure tracker, damage.js's peak-and-decay event shape, square-law cost.
+- 17 fragile things in `data/offers.js` on three tiers (felt g, floor / break):
+  GLASSWARE 1.0 / 3.5, DELICATE 1.1 / 4.5, STURDY 1.3 / 5.5. Routes per the 10-15 ruling; the
+  autoShop now posts fragile (the windshield, crated). The pelican case and x-ray machine have no row.
+- Pay `splitFragilePayout`, letter `fragileGrade`, deeds `haulPointsFor(health)`. A fragile load
+  takes freight's per-kg par and pay terms but not its time slack or tip multiplier.
+- Hit sounds `playCargoHit` (glass clink → full break at ≥ ⅓ cost, thud, piano jangle) and a red
+  emissive blink on the load's own cloned materials.
+- At zero the job is failed: it can't be delivered, and the button reads "cargo destroyed · clean
+  up" (+1 h). **Deviation:** no result card on failure. The button is the readout.
+- `test/fragile-cargo.mjs`. Measured on the rig: paved slalom 0.55–0.62 g · ±4 cm washboard at
+  15 m/s 1.06 g (240 kg panes) to 1.36 g (9 kg vase) · 1 m crest 4.6–4.8 g · rollover 11–31 g.
+  Mass is real, so heavy glass rides the washboard better than a vase.
+- Browser: debug-loading the vase and dropping the truck 3 m blinks it red and fades; no errors.
+  A full story-mode fragile job has NOT been driven yet.
+
 ## Acceptance
 
-- [ ] Per step, the shock read is the weld force ÷ mass with gravity removed, priced per event on
+- [x] Per step, the shock read is the weld force ÷ mass with gravity removed, priced per event on
       the peak, square-law, with per-item `shockFloorG` / `breakG` in `data/offers.js`.
-- [ ] A headless gate drives the four calibration scenarios above and asserts each row.
-- [ ] Pay is Base × health + a tip set by health (2026-10-14), continuous, floored at zero;
+- [x] A headless gate drives the four calibration scenarios above and asserts each row.
+- [x] Pay is Base × health + a tip set by health (2026-10-14), continuous, floored at zero;
       `economy.mjs` covers it.
-- [ ] Zero health fails the job on the spot ($0, "destroyed" on the result card), and clean-up
+- [~] Zero health fails the job on the spot ($0; the cancel button reads "cargo destroyed", no result card), and clean-up
       removes the load and costs 1 h.
-- [ ] Each damaging event plays its item's sound with gain ∝ cost, and blinks the load red.
+- [x] Each damaging event plays its item's sound with gain ∝ cost, and blinks the load red.
       Calm driving is silent and the load stays unlit.
-- [ ] `fragile` is in `BUILT_FAMILIES`. No cargo number on the HUD (SM-INV-10).
-- [ ] Good deeds are `haulPointsFor(health)`; the letter reads health (2026-10-14), and gates the
+- [x] `fragile` is in `BUILT_FAMILIES`. No cargo number on the HUD (SM-INV-10).
+- [x] Good deeds are `haulPointsFor(health)`; the letter reads health (2026-10-14), and gates the
       bonus item.
-- [ ] The `furniture` tag is on the five furniture items.
-- [ ] Same seed, same offer, same inputs → the same health at delivery (SM-INV-12).
+- [x] The `furniture` tag is on the five furniture items.
+- [x] Same seed, same offer, same inputs → the same health at delivery (SM-INV-12).
 
 ## Related code
 
