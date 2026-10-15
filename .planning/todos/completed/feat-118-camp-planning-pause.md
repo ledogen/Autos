@@ -1,7 +1,8 @@
 ---
 id: FEAT-118
 type: feature
-status: open
+status: closed
+closed: 2026-10-15
 severity: major
 opened: 2026-10-14
 source: owner, 2026-10-14 — "Players need spaces where the clock doesn't tick, otherwise the game is a
@@ -26,9 +27,9 @@ The rule was ratified 2026-08-02 and never built for camp; FEAT-104 builds it fo
 
 ## Acceptance
 
-- [ ] Idle at camp, the day clock, energy and any active job's `elapsed` (FEAT-113) hold.
-- [ ] The map opens from camp and closing it returns to camp, still paused.
-- [ ] Any camp action resumes the clock or applies its time skip.
+- [x] Idle at camp, the day clock and energy hold. (A job's `elapsed` is FEAT-113's to honour: no job can be on while camping today.)
+- [x] The map opens from camp and closing it returns to camp, still paused.
+- [x] Any camp action resumes the clock or applies its time skip.
 
 ## Progress (2026-10-15)
 
@@ -37,3 +38,8 @@ sleep timer; the "make camp?" confirm still ticks). The camp menu gains "open ma
 "use item" and "talk to the spirits" as disabled (wip) buttons beside "fish". Sleep and break camp
 are the actions that spend or resume the clock. No job can be on while camping today, so the
 `elapsed` hold is moot until FEAT-113. Gates green; not yet checked in the browser.
+
+## Resolution (2026-10-15)
+
+Owner played it on feature/sm3-fragile: "The camp features also seem to be working just fine."
+Shipped in c89995b. "Use item" and "talk to the spirits" stay disabled until their tickets land.

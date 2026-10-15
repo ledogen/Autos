@@ -572,7 +572,7 @@ owner's name for it.
 | Bed upgrades as parts — roof rack, flatbed, stake bed, extended bed, light bar | FEAT-115 | open — needs FEAT-104, FEAT-112 |
 | Cargo protection — bubble wrap, furniture pad, heavy-duty pad | FEAT-116 | open — needs FEAT-97, FEAT-104 |
 | Pay grows with regional reputation, not the day | FEAT-117 | open — numbers from FEAT-69 |
-| The camp is a planning pause | FEAT-118 | open — ratified 2026-08-02, never built |
+| The camp is a planning pause | FEAT-118 | **done** 2026-10-15 (c89995b) |
 
 ### Next up — build order [2026-10-14]
 
@@ -581,7 +581,7 @@ Take the first item that is not blocked. Each one is a ticket with its own accep
 | # | Ticket | Why here | Blocked on |
 |---|---|---|---|
 | 1 | **FEAT-97** fragile | already the next build; read its 2026-10-14 and 2026-10-15 blocks first | — |
-| 2 | **FEAT-118** camp pause | small, ratified since 2026-08-02, and FEAT-113 leans on it | — |
+| 2 | ~~**FEAT-118** camp pause~~ | done 2026-10-15 | — |
 | 3 | **FEAT-113** deadlines + world-time clock | every job needs a window before the deadline can mean anything | — |
 | 4 | **FEAT-112** load verdicts | pure data and a card; unlocks FEAT-114 and FEAT-115 | the stock truck's soft and hard limits |
 | 5 | **FEAT-114** haul quantity + rate bonus | first user of the verdict limits | the haul tip/item ruling |

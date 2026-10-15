@@ -1,7 +1,8 @@
 ---
 id: BUG-86
 type: bug
-status: open
+status: closed
+closed: 2026-10-15
 severity: major
 opened: 2026-10-15
 source: owner, 2026-10-15 — seed 1813164377, day 2: "The tackle shop is posting a fetch mission. When
@@ -36,7 +37,16 @@ map diamond drops offers already known to be unplannable, without planning on th
 Browser check on the seed: main says "park to see the offer", this branch says "no work here right
 now".
 
-## Still open — the owner's call
+## Resolution (2026-10-15)
+
+> **Ruled (owner):** "its ok for the tackle shop to not post anything in a run. i may yet add more
+> jobs though"
+
+A giver whose every offer is out of reach stays honestly dead for the run. None of options 1–3 is
+built; they are kept below as the record. If the tackle shop gains a second job family later, the
+board posts whichever of its offers can be planned, with no further change.
+
+## Options considered (not built)
 
 On this seed the tackle shop is now honestly dead: every offer it posts is a fetch it can't reach,
 so it says "no work here right now" all run long. Options:
@@ -55,4 +65,4 @@ from the board in the same way.
 ## Acceptance
 
 - [x] No prompt, card or diamond advertises an offer that opens nothing.
-- [ ] The owner picks 1 / 2 / 3 (or another rule), so a fetch-only giver is never dead for a run.
+- [x] The owner rules on a dead giver: allowed (2026-10-15). No fallback, placement or leg change.
