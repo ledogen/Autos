@@ -4345,6 +4345,9 @@ function _renderCampUI () {
   show('cp-break',  st.mode === 'camp' || st.mode === 'moms')
   show('cp-sleep',  st.mode === 'camp' || st.mode === 'moms')
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
+  show('cp-item',   st.mode === 'camp')
+  show('cp-map',    st.mode === 'camp' || st.mode === 'moms')
+  show('cp-spirits', st.mode === 'camp')
   show('cp-sleep-go',   isSleep)
   show('cp-sleep-back', isSleep)
   show('cp-sleep-panel', isSleep)
@@ -4414,6 +4417,8 @@ document.getElementById('cp-sleep-back')?.addEventListener('click', () => {
   _renderCampUI()
 })
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
+// FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
+document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
 document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
 
 /**
@@ -6705,7 +6710,9 @@ function loop () {
   storySystem.update(frameTime, vehicleState)
 
   // FEAT-47: advance the story day clock on the same wall-clock delta. No-op outside story mode.
-  daySystem.update(frameTime)
+  // FEAT-118: a pitched camp (or mom's) is a planning pause — idle there, the clock and energy hold
+  // until an action (sleep, break camp) spends or resumes it. The confirm face is not camp yet.
+  if (!_campUi || _campUi.mode === 'confirm') daySystem.update(frameTime)
   // …and hand its two outputs on. Both are PER FRAME, not on the 10 Hz HUD block: a 200 ms doze is
   // over in a dozen frames, so a 100 ms cadence would quantise the eyelids into a stutter and let
   // the attenuation lag the blink. Two style writes on cached elements — cheap enough to afford.

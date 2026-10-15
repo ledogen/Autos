@@ -21,8 +21,19 @@ clock or skips it by the action's cost, as run-shape.md already rules. Nothing d
 
 The rule was ratified 2026-08-02 and never built for camp; FEAT-104 builds it for the shop.
 
+> **Ruled 2026-10-15 (owner):** the map is not always open, but it can be opened. The camp
+> menu lists the camp's options: sleep, fish, use item, open map, talk to the spirits.
+
 ## Acceptance
 
 - [ ] Idle at camp, the day clock, energy and any active job's `elapsed` (FEAT-113) hold.
 - [ ] The map opens from camp and closing it returns to camp, still paused.
 - [ ] Any camp action resumes the clock or applies its time skip.
+
+## Progress (2026-10-15)
+
+Built: the frame loop skips `daySystem.update` while a camp face is up (pitched camp, mom's, the
+sleep timer; the "make camp?" confirm still ticks). The camp menu gains "open map" (live), plus
+"use item" and "talk to the spirits" as disabled (wip) buttons beside "fish". Sleep and break camp
+are the actions that spend or resume the clock. No job can be on while camping today, so the
+`elapsed` hold is moot until FEAT-113. Gates green; not yet checked in the browser.
