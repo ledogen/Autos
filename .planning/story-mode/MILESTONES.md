@@ -561,8 +561,8 @@ owner's name for it.
 | Haul — loose cargo in the bed | FEAT-88 | open — firewood slice shipped; the per-load data the other yards need is left |
 | Courier — small items in the cab (point-to-point, multi-drop, fetch) | FEAT-89 | open — fetch's first slice shipped in FEAT-102 |
 | Haul yards — splitting yard R1, sawmill R2, quarry R3 | FEAT-91 | open — needs FEAT-88's per-load data. Ruled 2026-10-12: sawmill haul is loose boards, sawmill + quarry get a big pad |
-| Freight — strapped durable cargo | FEAT-96 | open — built, on the board, first run played 2026-10-12. Left: record empty-vs-loaded drive time, then close |
-| Fragile — strapped shock-sensitive cargo | FEAT-97 | open — **next build**; FEAT-96's weld is in. Most of the roster needs a shipper ruled before it rolls |
+| Freight — strapped durable cargo | FEAT-96 | ✅ closed 2026-10-15 — the par-per-kg constant kept as a guess (owner) |
+| Fragile — strapped shock-sensitive cargo | FEAT-97 | open — **next build**; the tip curve and the shippers were ruled 2026-10-15 |
 | Demolition missions | FEAT-65 | open |
 | Paper route — throw and impact audio | FEAT-64 | open |
 | ~~Ratchet straps as an item for loose haul loads~~ | FEAT-110 | ✅ closed — cancelled 2026-10-14: straps are not an item |
@@ -572,7 +572,7 @@ owner's name for it.
 | Bed upgrades as parts — roof rack, flatbed, stake bed, extended bed, light bar | FEAT-115 | open — needs FEAT-104, FEAT-112 |
 | Cargo protection — bubble wrap, furniture pad, heavy-duty pad | FEAT-116 | open — needs FEAT-97, FEAT-104 |
 | Pay grows with regional reputation, not the day | FEAT-117 | open — numbers from FEAT-69 |
-| The camp is a planning pause | FEAT-118 | open — ratified 2026-08-02, never built |
+| The camp is a planning pause | FEAT-118 | **done** 2026-10-15 (c89995b) |
 
 ### Next up — build order [2026-10-14]
 
@@ -580,8 +580,8 @@ Take the first item that is not blocked. Each one is a ticket with its own accep
 
 | # | Ticket | Why here | Blocked on |
 |---|---|---|---|
-| 1 | **FEAT-97** fragile | already the next build; read its 2026-10-14 block first (tip and item from condition) | the owner's tip-by-health curve; shippers for most rows |
-| 2 | **FEAT-118** camp pause | small, ratified since 2026-08-02, and FEAT-113 leans on it | — |
+| 1 | **FEAT-97** fragile | already the next build; read its 2026-10-14 and 2026-10-15 blocks first | — |
+| 2 | ~~**FEAT-118** camp pause~~ | done 2026-10-15 | — |
 | 3 | **FEAT-113** deadlines + world-time clock | every job needs a window before the deadline can mean anything | — |
 | 4 | **FEAT-112** load verdicts | pure data and a card; unlocks FEAT-114 and FEAT-115 | the stock truck's soft and hard limits |
 | 5 | **FEAT-114** haul quantity + rate bonus | first user of the verdict limits | the haul tip/item ruling |

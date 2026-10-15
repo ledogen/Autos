@@ -35,6 +35,9 @@
 //   passenger (optional) true when the thing is the poster themselves — the card says "a ride to …"
 //   load     (freight, FEAT-96) the bed load's key in data/freight.js — the model the job straps in.
 //            massKg is then the load's real mass, rolled per offer.
+//   shockFloorG, breakG, sound  (fragile, FEAT-97) the felt g below which the load takes no harm,
+//            the g one hit needs to destroy it, and its hit sound — spread from a tier below.
+//   furniture (optional, FEAT-116) true for the pieces the furniture pad protects.
 //   to       (optional, FEAT-100) the POI tags it may be delivered to — a class (`farm`) or a
 //            fixture tag. Absent = generic: any POI or a roadside spot (cargo.md "From → to").
 //            Tagged things only ever end at a matching POI, never roadside.
@@ -48,6 +51,17 @@ const YARD_TRADE = ['generalStore', 'gasStation', 'farm']   // FEAT-96: the pall
 
 // Households: a residence or a farm (a farm is a residence too — it carries the tag).
 const HOME = ['residence', 'farm']
+// FEAT-97: the household goods — sold by the general store, or moved house to house (owner, 2026-10-15).
+const HOUSEWARES = ['generalStore', 'residence']
+
+// FEAT-97 fragility tiers, in felt g (src/fragile.js). Measured on the freight-strap rig
+// (test/fragile-cargo.mjs pins them): hard paved driving peaks ~0.6 g, ±4 cm washboard at 15 m/s
+// ~1.3 g, a 1 m drop at speed ~4.7 g, a rollover 6–13 g. Free fall reads 1 g, so no floor sits
+// below 1 — airtime is free, the landing is what costs. A floor AT 1 g took damage constantly
+// (owner, 2026-10-15): glassware and delicate were pulled toward sturdy.
+const GLASSWARE = { shockFloorG: 1.15, breakG: 4.0, sound: 'glass' }  // rough road nibbles; a crest landing destroys
+const DELICATE  = { shockFloorG: 1.2, breakG: 4.75, sound: 'thud' }
+const STURDY    = { shockFloorG: 1.3, breakG: 5.5, sound: 'thud' }    // a crest landing costs most of it; a roll ends it
 
 export const THINGS = [
     // FEAT-88 haul. massKg is ignored for a haul thing — the card's weight is pieces × HAUL_BUNDLE_KG,
@@ -61,8 +75,6 @@ export const THINGS = [
       pools: ['generalStore'] },
     { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
       pools: ['generalStore'] },
-    { id: 'vase',       phrase: "grandma's vase",          family: 'fragile',  massKg: [9, 9],
-      pools: ['residence'] },
     // Courier, R1 (cargo.md), one thing per row there.
     { id: 'note',       phrase: 'a private note',          family: 'delivery', massKg: [0.1, 0.1],
       pools: ANY_GIVER },
@@ -150,7 +162,7 @@ export const THINGS = [
     { id: 'papers',     phrase: 'the morning papers',      family: 'papers',   massKg: [5, 8],
       pools: ['larrysHouse'] },
 
-    // Auto shop parts (owner, 2026-09-26). The windshield is fragile, so it waits for that family.
+    // Auto shop parts (owner, 2026-09-26). The windshield is in the fragile block below.
     { id: 'muffler',       phrase: 'a muffler',              family: 'delivery', massKg: [8, 15],
       pools: ['autoShop'] },
     { id: 'wheelBearings', phrase: 'a set of wheel bearings', family: 'delivery', massKg: [2, 4],
@@ -158,8 +170,6 @@ export const THINGS = [
     { id: 'driveShaft',    phrase: 'a drive shaft',          family: 'delivery', massKg: [12, 20],
       pools: ['autoShop'] },
     { id: 'bodyPanel',     phrase: 'a body panel',           family: 'delivery', massKg: [10, 25],
-      pools: ['autoShop'] },
-    { id: 'windshield',    phrase: 'a windshield',           family: 'fragile',  massKg: [14, 14],
       pools: ['autoShop'] },
     { id: 'hubcap',        phrase: 'a hubcap',               family: 'delivery', massKg: [1, 2],
       pools: ['autoShop'] },
@@ -211,6 +221,44 @@ export const THINGS = [
       pools: YARD_TRADE, to: YARD_TRADE, load: 'smallCrate' },
     { id: 'largeCrate',   phrase: 'a large crate',            family: 'freight', massKg: [65, 65],
       pools: YARD_TRADE, to: YARD_TRADE, load: 'largeCrate' },
+
+    // ── Fragile (FEAT-97): strapped like freight, and health-scored on the shocks the load feels.
+    // Routes are the owner's 2026-10-15 ruling (cargo.md). The crated rows ride the large crate
+    // with their contents as text. Pelican case and x-ray machine have no shipper yet, so no row.
+    { id: 'milkBottles', phrase: 'a crate of milk bottles', family: 'fragile', massKg: [40, 40],
+      pools: ['generalStore'], to: ['residence'], load: 'largeCrate', ...GLASSWARE },
+    { id: 'canningJars', phrase: 'a crate of canning jars', family: 'fragile', massKg: [20, 20],
+      pools: ['generalStore'], to: ['residence'], load: 'largeCrate', ...GLASSWARE },
+    { id: 'eggs',        phrase: 'a crate of eggs',         family: 'fragile', massKg: [31, 31],
+      pools: ['farm'], to: ['residence'], load: 'largeCrate', ...GLASSWARE, sound: 'thud' },
+    { id: 'fineChina',   phrase: 'a crate of fine china',   family: 'fragile', massKg: [30, 30],
+      pools: HOUSEWARES, to: ['residence'], load: 'largeCrate', ...GLASSWARE },
+    { id: 'vase',        phrase: "grandma's vase",          family: 'fragile', massKg: [9, 9],
+      pools: ['residence'], load: 'ornateVase', ...GLASSWARE },
+    { id: 'ornateVase',  phrase: 'an ornate vase',          family: 'fragile', massKg: [9, 9],
+      pools: HOUSEWARES, to: ['residence'], load: 'ornateVase', ...GLASSWARE },
+    { id: 'mirror',      phrase: 'a full-length mirror',    family: 'fragile', massKg: [16, 16],
+      pools: HOUSEWARES, to: ['residence'], load: 'fullLengthMirror', ...GLASSWARE, furniture: true },
+    { id: 'windshield',  phrase: 'a windshield',            family: 'fragile', massKg: [14, 14],
+      pools: ['autoShop'], load: 'largeCrate', ...DELICATE, sound: 'glass' },   // laminated, so tougher than plate (owner, 2026-10-15); crated until it has a model
+    { id: 'glassPanes',  phrase: 'ten panes of glass',      family: 'fragile', massKg: [240, 240],
+      pools: ['generalStore'], load: 'glassPanes', ...GLASSWARE },
+    { id: 'diningChairs', phrase: 'four dining chairs',     family: 'fragile', massKg: [24, 24],
+      pools: HOUSEWARES, to: ['residence'], load: 'diningChairs', ...DELICATE, furniture: true },
+    { id: 'framedArtwork', phrase: 'a framed painting, crated', family: 'fragile', massKg: [16, 16],
+      pools: HOUSEWARES, to: ['residence'], load: 'framedArtwork', ...DELICATE },
+    { id: 'diningTable', phrase: 'a dining table',          family: 'fragile', massKg: [45, 45],
+      pools: HOUSEWARES, to: ['residence'], load: 'diningTable', ...STURDY, furniture: true },
+    { id: 'wardrobe',    phrase: 'a wardrobe',              family: 'fragile', massKg: [120, 120],
+      pools: HOUSEWARES, to: ['residence'], load: 'wardrobe', ...STURDY, furniture: true },
+    { id: 'gardenFountain', phrase: 'a garden fountain',    family: 'fragile', massKg: [200, 200],
+      pools: ['generalStore'], load: 'gardenFountain', ...STURDY },
+    { id: 'sculptureBronze', phrase: 'a bronze sculpture',  family: 'fragile', massKg: [120, 120],
+      pools: HOUSEWARES, to: ['residence'], load: 'sculptureA', ...STURDY },
+    { id: 'sculptureMarble', phrase: 'a marble sculpture',  family: 'fragile', massKg: [220, 220],
+      pools: HOUSEWARES, to: ['residence'], load: 'sculptureB', ...STURDY },
+    { id: 'uprightPiano', phrase: 'an upright piano',       family: 'fragile', massKg: [230, 230],
+      pools: HOUSEWARES, to: ['residence'], load: 'uprightPiano', ...STURDY, sound: 'piano', furniture: true },
 ]
 
 // ── Rewards — the named bonus items ─────────────────────────────────────────────────────────
@@ -265,7 +313,7 @@ export const SOURCES = {
     foodVendor:   { slots: [2, 3], expiryH: 2,  families: ['delivery'] },
     // ── the budget (FEAT-101) ──
     generalStore:     { cap: 2, expiryH: 24,       families: ['delivery', 'fragile', 'freight'] },
-    autoShop:         { cap: 2, expiryH: 48,       families: ['delivery', 'freight'] },
+    autoShop:         { cap: 2, expiryH: 48,       families: ['delivery', 'freight', 'fragile'] },   // the windshield
     // The gas station posts work too, reversing "some stores are just stores" (2026-09-26).
     gasStation:       { cap: 2, expiryH: 24,       families: ['delivery', 'freight'] },
     workSite:         { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight'] },

@@ -737,6 +737,16 @@ export class PhysicsEngine {
 
   destroyJoint (joint) { _b3.b3DestroyJoint(joint, true) }
 
+  /**
+   * The force a joint applied over the last step [N], world frame (FEAT-97: the strap's pull on a
+   * fragile load — ÷ its mass is the acceleration the load feels). Reuses _v as the out buffer.
+   */
+  jointForce (joint, out) {
+    _b3.b3Joint_GetConstraintForce(this._v, joint)
+    out.x = this._v[0]; out.y = this._v[1]; out.z = this._v[2]
+    return out
+  }
+
   /** Monotonic revision — bumps on body create/destroy (debug-viz change detection). */
   get revision () { return this._rev }
 

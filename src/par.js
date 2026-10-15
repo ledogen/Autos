@@ -486,12 +486,23 @@ export function timeScore(ratio, t = RANK_THRESHOLDS_DEFAULT) {
 }
 
 /** A haul's letter: the average of its time and load on the letter scale. */
+const _letterOf = (score) => score >= 4 ? 'S' : score >= 3 ? 'A' : score >= 2 ? 'B' : score >= 1 ? 'C' : 'D'
+/** A delivered share (or a condition) on the letter scale: 4 at HAUL_LOAD_S, capped at 4. */
+const _loadScore = (share) => Math.min(4, 4 + (share - HAUL_LOAD_S) * HAUL_LOAD_SLOPE)
+
 export function haulGrade(ratio, share, thresholds = RANK_THRESHOLDS_DEFAULT) {
     const time = timeScore(ratio, thresholds)
-    const load = Math.min(4, 4 + (share - HAUL_LOAD_S) * HAUL_LOAD_SLOPE)
+    const load = _loadScore(share)
     const score = (time + load) / 2
-    const letter = score >= 4 ? 'S' : score >= 3 ? 'A' : score >= 2 ? 'B' : score >= 1 ? 'C' : 'D'
-    return { letter, score, time, load }
+    return { letter: _letterOf(score), score, time, load }
+}
+
+/**
+ * FEAT-97: a fragile job's letter reads the cargo's CONDITION alone (owner, 2026-10-14) — haul's
+ * load score with no clock half: S ≥ 90 %, A ≥ 83.3 %, B ≥ 76.7 %, C ≥ 70 %, D below.
+ */
+export function fragileGrade(health) {
+    return _letterOf(_loadScore(health))
 }
 
 export function gradeRun(elapsed, par, thresholds = RANK_THRESHOLDS_DEFAULT) {

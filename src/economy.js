@@ -252,6 +252,27 @@ export function splitPayout (par, ratio, payTier, payMult = 1, tipMult = 1) {
     return { base: baseC / 100, tip: tipC / 100, total: (baseC + tipC) / 100 }
 }
 
+/**
+ * FEAT-97: fragile pay is earned by CONDITION, not the clock (owner, 2026-10-14 / 10-15). Base pay is
+ * GUARANTEED, as on every job (the 2026-09-29 ruling) — "an item at 25 % would not be worth carrying"
+ * if condition cut it too. Condition drives the tip alone: the job's whole tip pool × the tip share,
+ * all of it at 100 %, none at FRAGILE_TIP_ZERO or below, linear between. The pool is what the line
+ * tips at its best (ratio 0). Destroyed (0) pays nothing — the job has failed. Integer cents, so
+ * base + tip === total exactly, as splitPayout guarantees.
+ */
+export const FRAGILE_TIP_ZERO = 0.5
+export function fragileTipShare (health) {
+    return Math.min(1, Math.max(0, (health - FRAGILE_TIP_ZERO) / (1 - FRAGILE_TIP_ZERO)))
+}
+export function splitFragilePayout (par, health, payTier, payMult = 1) {
+    const h = isFinite(health) ? Math.min(1, Math.max(0, health)) : 0
+    const fullC = Math.round(payoutFor(par, 0, payTier) * payMult * 100)
+    const poolBaseC = Math.min(fullC, Math.round(basePay(par, payTier, payMult) * 100))
+    const baseC = h > 0 ? poolBaseC : 0
+    const tipC  = Math.round((fullC - poolBaseC) * fragileTipShare(h))
+    return { base: baseC / 100, tip: tipC / 100, total: (baseC + tipC) / 100 }
+}
+
 /** Rank letters, best first. Index order IS the "or better" order bonusEarned reads. */
 export const RANKS = ['S', 'A', 'B', 'C', 'D']
 
@@ -381,10 +402,17 @@ export class EconomySystem {
         // its letters were loosened by at accept) and is then scaled by its tip multiplier.
         const slack = isFinite(mission?.timeSlack) ? mission.timeSlack : 1
         const tipMult = isFinite(mission?.tipMult) ? mission.tipMult : 1
-        const { base, tip, total: payout } = splitPayout(result.par, result.ratio / slack, t.payTier ?? t.dayTier ?? 1, mult, tipMult)
+        // FEAT-97: a fragile job (result.health set by main.js) is paid on condition instead.
+        const tier = t.payTier ?? t.dayTier ?? 1
+        const fragile = result.health != null
+        const { base, tip, total: payout } = fragile
+            ? splitFragilePayout(result.par, result.health, tier, mult)
+            : splitPayout(result.par, result.ratio / slack, tier, mult, tipMult)
         // FEAT-88 (owner, 2026-10-05): a haul's good deeds are what you DELIVERED, not the letter —
         // a fast run with an empty bed is not a good deed. result.aboard/loaded come from main.js.
-        const points = result.loaded ? haulPointsFor(result.aboard / result.loaded) : pointsFor(result.letter)
+        // FEAT-97: a fragile job's follow what ARRIVED, the same bands on its condition.
+        const points = fragile ? haulPointsFor(result.health)
+            : result.loaded ? haulPointsFor(result.aboard / result.loaded) : pointsFor(result.letter)
         runEconomy.money = _cents(runEconomy.money + payout)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1

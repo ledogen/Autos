@@ -46,11 +46,11 @@ import { djb2, mulberry32 } from './seed.js'
 import { basePay, formatMoney } from './economy.js'
 
 /**
- * The mission families that have gameplay behind them today. fragile / demolition / freight are in
- * the tables (so the card, the colours and the lists are ready) but have no code, so they must
- * simply never roll — not be half-built. Add a family here the day its mission ships.
+ * The mission families that have gameplay behind them today. demolition is in the tables (so the
+ * card, the colours and the lists are ready) but has no code, so it must simply never roll — not
+ * be half-built. Add a family here the day its mission ships.
  */
-export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul', 'freight'])
+export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul', 'freight', 'fragile'])
 
 // Fixed names for roster types that are NOT sources (and Larry) — they can still be a DESTINATION,
 // and "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors names; a type
@@ -443,6 +443,9 @@ export class OfferBoard {
             destKind: papers ? null : (thing.to || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
+            // FEAT-97: a fragile load's tolerance and hit sound (src/fragile.js) — null otherwise.
+            fragile: thing.family === 'fragile'
+                ? { shockFloorG: thing.shockFloorG, breakG: thing.breakG, sound: thing.sound } : null,
         })
     }
 
