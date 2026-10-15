@@ -10171,12 +10171,21 @@ export class RoadSystem {
             // the rim (user captures 1784910746309/1784910841316, cost-pruned valley confluences).
             // Gentle kinks (≤120°) keep their banking — the fillet arc sweeps it, bit-identical to
             // the old behaviour. Pure fn of the registered endpoint tangents (window-invariant).
+            // vNode2: the design speed THROUGH this node, squared, for the FEAT-82 recovery curve.
+            // A ≥3-way node is a corner priced at PAR_REF.junctionRadius. A degree-2 pass-through is
+            // priced the way par.js prices it (owner capture 1791793263302, 2026-10-12): the
+            // effective radius grows as the kink closes and a kink inside junctionDeadband is no
+            // corner at all — nobody brakes for a graph node they cannot see, so the sag past its
+            // hold must fit the speed the run allows, not an 18 m corner's.
+            let vNode2 = PAR_REF.mu * PAR_REF.g * PAR_REF.junctionRadius
             if (d === 2) {
                 const strands = this._graphNodeStrands(id)
                 if (strands && strands.length === 2) {
                     const dot = strands[0].wx * strands[1].wx + strands[0].wz * strands[1].wz
                     const kink = Math.PI - Math.acos(Math.max(-1, Math.min(1, dot)))
                     if (kink > 120 * Math.PI / 180) flatCamber = true
+                    const rEff = kink > PAR_REF.junctionDeadband ? PAR_REF.junctionRadius / Math.min(1, kink / (Math.PI / 2)) : Infinity
+                    vNode2 = Math.min(PAR_REF.vMax * PAR_REF.vMax, PAR_REF.mu * PAR_REF.g * rEff)
                 }
             }
             let y = this._graphJunctionGradeY(id)
@@ -10195,7 +10204,7 @@ export class RoadSystem {
             // The plane is handed on so the hold can evaluate it AT each sample's XZ: two legs held on
             // one plane then agree wherever their ribbons overlap, which a per-leg grade LINE (arc
             // distance × slope along the leg's own departure) only approximates on a curving leg.
-            return { is, flatCamber, y, slopeAway, plane: plane || null, hold: is ? this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_PLANE) : 0 }
+            return { is, flatCamber, y, slopeAway, plane: plane || null, vNode2, hold: is ? this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_PLANE) : 0 }
         }
         return { jStart: nodeInfo(e.cellA, this._strandAtEnd(e.points, true), true), jEnd: nodeInfo(e.cellB, this._strandAtEnd(e.points, false), false) }
     }
@@ -10371,11 +10380,22 @@ export class RoadSystem {
 
     // FEAT-19: the dominant grade VECTOR at a junction node (world XZ, dGradeY per horizontal metre). The
     // node's THROUGH axis = the most anti-collinear pair of incident strands (a T-junction's crossbar
-    // arms, or a degree-2 pass-through's two arms); the steeper of that pair (tie-break lower runKey)
-    // defines the surface every strand is reconciled to. Projecting this vector onto each strand's tangent
+    // arms, or a degree-2 pass-through's two arms); the MEAN of that pair's away-gradient vectors is the
+    // surface every strand is reconciled to. Projecting this vector onto each strand's tangent
     // (slopeAway) gives a grade LINE that keeps the through slope and lets the joining roads match it,
     // instead of easing everything to a flat scalar (the level-pad bug). Pure fn of the incident strands
     // → window-invariant over the domain where the node's edges are all streamed (same as the mean-Y).
+    //
+    // MEAN, not the steeper arm (owner capture 1791793263302, 2026-10-12). Two separately graded edges
+    // meeting at a degree-2 node can disagree in grade — one arrived at −10 %, the other left at +15 %,
+    // a legal sag between two solved decks that agree in height. "Steeper wins" told the gentler leg to
+    // leave the node DESCENDING at 13 % against its own +10 % climb, so the deck hold drove it 2.4 m
+    // under its solved line 8 m out and the recovery had to climb back at the grade cap: a 20 m
+    // vertical-radius V that put 3.5 g through the front struts at 26 m/s. The mean is the C1 join —
+    // each leg takes half the disagreement — and it is exactly what the ≥3-way pad plane's
+    // least-squares fit returns for a collinear pair, so the two paths now agree. For a promoted T's
+    // crossbar the two arms are halves of one polyline (mAway equal and opposite along opposite
+    // tangents), so the mean IS the trunk's own slope: bit-identical to before there.
     _junctionGradeVector(strands) {
         if (!strands || strands.length < 2) return { gx: 0, gz: 0 }
         let bi = 0, bj = 1, minDot = Infinity
@@ -10386,8 +10406,7 @@ export class RoadSystem {
             }
         }
         const a = strands[bi], b = strands[bj]
-        const dom = (Math.abs(a.mAway) > Math.abs(b.mAway) || (Math.abs(a.mAway) === Math.abs(b.mAway) && a.key <= b.key)) ? a : b
-        return { gx: dom.mAway * dom.wx, gz: dom.mAway * dom.wz }
+        return { gx: 0.5 * (a.mAway * a.wx + b.mAway * b.wx), gz: 0.5 * (a.mAway * a.wz + b.mAway * b.wz) }
     }
 
     // FEAT-13 v2 graph-mode junction Y: the AVERAGE endpoint grade-Y of every registered run incident to
@@ -10629,21 +10648,23 @@ export class RoadSystem {
         if (gradeY && havePts) {
             const crestHold = this._params?.roadV2?.crestHold ?? 0
             if (crestHold > 0) {
-                if (ej.jStart.is) this._recoverFromHold(arcPos, gradeY, pts, true, hS, RgS, reachCap, crestHold)
-                if (ej.jEnd.is) this._recoverFromHold(arcPos, gradeY, pts, false, hE, RgE, reachCap, crestHold)
+                if (ej.jStart.is) this._recoverFromHold(arcPos, gradeY, pts, true, hS, RgS, reachCap, crestHold, ej.jStart.vNode2)
+                if (ej.jEnd.is) this._recoverFromHold(arcPos, gradeY, pts, false, hE, RgE, reachCap, crestHold, ej.jEnd.vNode2)
             }
         }
     }
 
     // FEAT-82: bend the handoff past a deck hold into a vertical curve that satisfies the crest/sag
     // rule at the junction-approach design speed. See _applyJunctionBlend.
-    _recoverFromHold(arcPos, gradeY, pts, fromStart, hold, reach0, reachCap, crestHold) {
+    _recoverFromHold(arcPos, gradeY, pts, fromStart, hold, reach0, reachCap, crestHold, vNode2) {
         const N = arcPos.length
         if (N < 4) return
         const g = PAR_REF.g
         const sagLoad = this._params?.roadV2?.sagLoad ?? 0
         const gmu = PAR_REF.mu * g
-        const vNode2 = gmu * PAR_REF.junctionRadius          // par's corner speed THROUGH the node, squared
+        // vNode2: par's corner speed THROUGH the node, squared — see _runEndpointJunctions, where a
+        // degree-2 pass-through gets its kink-aware (possibly uncapped) value.
+        if (!(vNode2 > 0)) vNode2 = gmu * PAR_REF.junctionRadius
         const dOf = (i) => fromStart ? arcPos[i] - arcPos[0] : arcPos[N - 1] - arcPos[i]
         // Design speed at sample i: brake-limited outward from the node, under the run's own
         // curvature envelope (3-point, as par prices it) and the flat terminal speed.
