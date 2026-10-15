@@ -44,7 +44,7 @@ console.log('§1 a bump-stop hit is priced on its PEAK, not on how long it laste
     'a brief 21 kN landing costs far more than a long 4 kN lean — the shape that was wrong before')
 }
 
-console.log('\n§2 the floor is absolute, and the curve is square')
+console.log('\n§2 the floor is absolute, and the curve saturates')
 {
   const under = fresh(); bump(under, D.springForceFloorFront - 1)
   ok(under.get('springFront') === 1, `below the ${D.springForceFloorFront / 1000} kN FRONT floor a stop costs nothing at all`)
@@ -64,15 +64,24 @@ console.log('\n§2 the floor is absolute, and the curve is square')
   const a = fresh(); bump(a, f + 10000)
   const b = fresh(); bump(b, f + 20000)
   const ratio = (1 - b.get('springFront')) / (1 - a.get('springFront'))
-  ok(Math.abs(ratio - 4) < 0.05, `doubling force-over-floor quadruples the damage (x${ratio.toFixed(2)}) — peak stress, square-law`)
+  // SUB-LINEAR since 2026-10-12 (owner, capture 1791793263302): the square law priced a 3.5 g road
+  // sag — 31.5 kN on one front stop — at 0.2%, and "a bump of that severity should cause 3%". A
+  // saturating curve is also the physical shape: the coil never sees more than full-bump stress.
+  const want = Math.pow(2, D.springBumpExp)
+  ok(ratio > 1 && ratio < 2 && Math.abs(ratio - want) < 0.02,
+    `doubling force-over-floor multiplies the damage by ${want.toFixed(2)} (x${ratio.toFixed(2)}) — more, but less than double: it saturates`)
 
-  // The destroy force is per axle too (2026-09-14): the front's jounce bumper is a long progressive
-  // elastomer that takes most of a landing, the rear's is a short snubber that hands it to the pack.
-  const kill = fresh(); bump(kill, D.springBumpFullNFront)
-  ok(kill.get('springFront') <= 0.001, `one hit at ${D.springBumpFullNFront / 1000} kN destroys a FRONT spring outright`)
-  const killR = fresh(); bump(killR, D.springBumpFullNRear, 2)
-  ok(killR.get('springRear') <= 0.001, `one hit at ${D.springBumpFullNRear / 1000} kN destroys a REAR spring outright`)
-  ok(D.springBumpFullNFront > D.springBumpFullNRear, 'the front survives a harder single hit than the rear')
+  // The reference hit is per axle too: the front's jounce bumper is a long progressive elastomer
+  // that takes most of a landing, the rear's is a short snubber that hands it to the pack.
+  const ref = fresh(); bump(ref, D.springBumpRefNFront)
+  ok(Math.abs((1 - ref.get('springFront')) - D.springBumpRefDmg) < 1e-9,
+    `one hit at ${D.springBumpRefNFront / 1000} kN costs a FRONT corner exactly ${D.springBumpRefDmg * 100}% — the capture's slam`)
+  const refR = fresh(); bump(refR, D.springBumpRefNRear, 2)
+  ok(Math.abs((1 - refR.get('springRear')) - D.springBumpRefDmg) < 1e-9,
+    `one hit at ${D.springBumpRefNRear / 1000} kN costs a REAR corner the same ${D.springBumpRefDmg * 100}%`)
+  ok(D.springBumpRefNFront > D.springBumpRefNRear, 'the front takes a harder hit for the same cost than the rear')
+  const huge = fresh(); bump(huge, 5e6)
+  ok(huge.get('springFront') >= 0 && huge.get('springFront') < 0.5, 'an absurd 5 MN hit takes more than half the spring, and the track never goes below 0')
 }
 
 console.log('\n§3 the hit lands on the axle that took it')
@@ -128,11 +137,20 @@ console.log('\n§5 the drop anchors, re-measured after the progressive tire carc
   // wrote the front springs off. Floor 5 -> 12 kN and destroy force 300 -> 450 kN put a 2 m landing
   // at about 2.1% per corner (~4% per axle, ~24 landings), and take ordinary bumps under 12 kN to
   // nothing at all. The PEAK FORCES are unchanged measurements — only what they cost moved.
-  for (const [h, peakN, lo, hi] of [[0.5, 2400, 0, 0.01], [1.0, 23000, 0.02, 0.5], [2.0, 75600, 1.2, 4]]) {
+  //
+  // RE-ANCHORED AGAIN 2026-10-12 on a SATURATING curve (owner, capture 1791793263302: a 31.5 kN
+  // front stop hit from a 3.5 g road sag "should cause 3%", it cost 0.2%). Owner's anchors: that
+  // hit 3% per corner, a 2 m drop ~7% per landing, a 10 m drop ~30% per landing. The 10 m force
+  // (294 kN per corner) is a headless level drop; the others are the lab's. Bands hold the capture
+  // and the 10 m end exactly; the 2 m drop lands at ~6% per corner (~12% per landing, ~8 landings)
+  // because the three anchors do not sit on one power law.
+  // EASED 2026-10-15 after the owner drove it ("a little too much damage, threshold about right"):
+  // reference cost 3% -> 2.2%, floors untouched, so every band below scales by 0.73.
+  for (const [h, peakN, lo, hi] of [[0.5, 2400, 0, 0.01], [1.0, 23000, 1, 2.5], ['capture', 31500, 2.1, 2.3], [2.0, 75600, 3.5, 6], [10.0, 294000, 9, 14]]) {
     const d = fresh()
     bump(d, peakN)
     const lost = (1 - d.get('springFront')) * 100
-    console.log(`  a ${h} m drop (${(peakN / 1000).toFixed(1)} kN on the stops) costs the front springs ${lost.toFixed(1)}%`)
+    console.log(`  ${typeof h === 'number' ? `a ${h} m drop` : `the ${h} hit`} (${(peakN / 1000).toFixed(1)} kN on the stops) costs the front springs ${lost.toFixed(1)}%`)
     ok(lost >= lo && lost <= hi, `...within the intended ${lo}-${hi}% band`)
   }
   // The no-harm floor still holds at the bottom: a gentle landing must be free.

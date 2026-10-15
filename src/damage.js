@@ -218,55 +218,60 @@ export const DAMAGE_PARAMS = {
   // times the floor — but the spike lasts about 15 ms, so a time integral barely saw it, and
   // hammering the stops was nearly free. What actually takes the set out of a spring is peak
   // STRESS, once: a spring that sees 20 kN for an instant is damaged, one that sees 4 kN all day
-  // is not. So each bump-stop contact is now one event, priced on its peak, square-law.
+  // is not. So each bump-stop contact is now one event, priced on its peak.
   //
-  //   damage = ((F_peak − floor) / (fullN − floor))^2, per corner, onto that axle's track
-  //   (both floor and fullN are per-axle — see springForceFloorFront / springBumpFullNFront below)
+  //   damage = refDmg · ((F_peak − floor) / (refN − floor))^exp, per corner, onto that axle's track
+  //   (floor and refN are per-axle — see springForceFloorFront / springBumpRefNFront below)
   //
-  // Measured on the lab ramp: a 30 mph landing costs the front axle ~3% (about 32 landings), a
-  // 40 mph landing ~6% (about 16). durSpring no longer applies to this track — the curve IS the
-  // calibration — but the parts durability multiplier and the wear-speed slider still do.
+  // SATURATING CURVE, exp 0.6 (owner, 2026-10-12, capture 1791793263302). It was square-law, and
+  // the square-law was the wrong shape for the SECOND time: a 3.5 g road sag that put 31.5 kN
+  // through the front-left stop at 26 m/s cost the front springs 0.2% — the owner's call was "a bump
+  // of that severity should cause 3%" — while the 2026-09-14 ruling that a 2 m landing must NOT
+  // write the front off in seven stayed binding. No curve that keeps steepening can hold both: the
+  // square law buys a cheap 2 m drop by making everything below it free. A sub-linear law is the
+  // physical shape anyway — the coil never sees more than full-bump stress, the stop takes the rest,
+  // so what a harder slam adds is the shock through the mount, not more set in the spring.
+  //
+  // The anchors (owner): this capture's hit 3% per corner; a 2 m drop about 7% per landing; a 10 m
+  // drop about 30% per landing. Forces measured headless on flat ground, per front corner (the lab's
+  // nose-first 2 m drop reads 75.6 kN, the level drop 80.8; both are quoted):
+  //
+  //     capture      31.5 kN   3.0%  per corner  (the ruling)
+  //      1 m drop    23.0 kN   2.1%
+  //      2 m drop    75.6 kN   6.1%  (level 80.8 kN: 6.4%) → ~12% per landing, ~8 landings
+  //      3 m drop   136.9 kN   9.1%
+  //     10 m drop   294.1 kN  14.9%  → ~30% per landing
+  //
+  // Two drops still write the front off in ~8 landings rather than the owner's ~14: the three
+  // anchors are not on one power law, and the capture (the explicit ruling) and the 10 m drop
+  // (the "blow out a spring" end) are the ones held exactly.
+  //
+  // durSpring no longer applies to this track — the curve IS the calibration — but the parts
+  // durability multiplier and the wear-speed slider still do.
+  //
   // No-harm floor, PER AXLE. The front takes noticeably more bump-stop force than the rear on any
   // landing — the truck lands nose-first and the front carries more static load — so a single floor
-  // meant the front wore faster on every ordinary bump. Raising the front's floor is the honest
-  // knob for that: it is a statement about which hits are harmless, not a fudge on the rate.
-  //
-  // REDUCED FOR THE FRONT AXLE, 2026-09-14 (owner: "reduce front spring damage from both collisions
-  // and over travel"). The front was the axle that kept dying: measured, an in-game 2 m landing cost
-  // springFront 14.6% with both front corners on the stops, so seven of them wrote the front springs
-  // off. Both ends of the front's curve moved, because the floor alone has almost no leverage under
-  // a square law with a 300 kN denominator — raising it 5 -> 12 kN only took a 2 m landing from
-  // 5.8% to 4.9% per corner.
-  springForceFloorFront: 12000, // N (owner 2026-08-23 "up a little" 3 -> 5 kN; 2026-09-14 5 -> 12 kN)
-  springForceFloorRear:  3000,  // N — unchanged
-  // RESCALED 2026-08-22 for the progressive tire carcass. A stiff tire transmits far more into the
-  // stops than the old linear one did: a 2 m drop measured 75.6 kN of bump-stop force where a 4 m
-  // drop used to measure 15. At the old 85 kN a 2 m drop destroyed the springs outright.
-  //
-  // PER AXLE since 2026-09-14, and this one is a statement about the BUMP STOPS, not about the
-  // springs being tougher at one end. On this truck the front jounce bumper is a long progressive
-  // elastomer that soaks up most of a landing before the coil ever sees peak stress; the rear pack
-  // bottoms onto a short rubber snubber on the axle that hands the load straight to the leaves. So
-  // the force that kills a front spring outright genuinely IS higher than the rear's.
-  springBumpFullNFront: 450000, // N — one bump-stop hit this hard destroys a FRONT spring outright
-  // Rear raised 300 -> 335 kN on 2026-09-21 (owner: "rear springs should suffer 20% less damage").
-  // Only the DENOMINATOR moves, so the reduction is a clean, uniform 20% at every hit size — the
-  // no-harm floor is untouched, because the ask was "less damage", not "more hits are harmless".
-  // Arithmetic: damage goes as 1/(fullN − floor)², so 20% less needs the span divided by √0.8 —
-  // 297 kN / 0.8944 = 332 kN, i.e. fullN 335 kN. Measured back: ×0.8003, so 19.97% less.
-  // The front is still the tougher end (450 > 335), which is the bump-stop story above intact.
-  springBumpFullNRear:  335000, // N — …and this hard a REAR one
-  springBumpExp:    2,       // square law: peak stress, the same reason armor is square-law
-  //
-  // What the front change is worth, at the drop anchors measured with test/collision-drop-lab.mjs
-  // (per corner; the in-game axle cost is roughly double, both front corners landing together):
-  //
-  //     1 m drop   23.0 kN     0.37% -> 0.06%     (-83%)
-  //     2 m drop   75.6 kN     5.79% -> 2.11%     (-64%)
-  //     3 m drop   87.5 kN     7.82% -> 2.97%     (-62%)
-  //
-  // So a 2 m landing goes from writing the front springs off in about 7 to about 24. Ordinary
-  // bumps are now free outright: everything under 12 kN never opens an event at all.
+  // meant the front wore faster on every ordinary bump. The front's floor is the honest knob for
+  // that: a statement about which hits are harmless, not a fudge on the rate (owner 2026-08-23
+  // 3 -> 5 kN; 2026-09-14 5 -> 12 kN, "everything under 12 kN is free").
+  // Rear 3 -> 6 kN with the curve change: a sub-linear law is STEEP just above its floor (0.6 kN
+  // over a 3 kN floor was 0.4%), so a light rear touch — common, the rear rides lower — would have
+  // been the dominant rear wear. Still under the front's, which is the nose-first story above.
+  springForceFloorFront: 12000, // N
+  springForceFloorRear:  6000,  // N
+  // The reference hit: the bump-stop peak that costs ONE corner springBumpRefDmg. Per axle, and a
+  // statement about the BUMP STOPS, not about the springs being tougher at one end: the front
+  // jounce bumper is a long progressive elastomer that soaks up a landing before the coil sees peak
+  // stress; the rear pack bottoms onto a short snubber that hands the load straight to the leaves.
+  // So the same 3% genuinely costs the rear less force. Rear set so its 2 m-drop corner (46 kN
+  // level) stays ~0.8× the front's 2 m-drop corner, the ratio the 2026-09-21 "rear 20% less"
+  // ruling left it at: 5.4% vs 6.4%.
+  springBumpRefNFront: 31500,  // N — the capture's front-left slam
+  springBumpRefNRear:  21000,  // N
+  // 2026-10-15 (owner, after driving the re-anchor): "springs are taking a little too much damage
+  // but the damage threshold is about right" — floors stay, the reference cost drops 3% -> 2.2%.
+  springBumpRefDmg:    0.022,  // one corner's loss at refN — "a bump of that severity should cause 3%", eased
+  springBumpExp:       0.6,    // sub-linear: saturates, see above
 
   // Dampers: suspension displacement RATE above a no-harm floor.
   // Two changes on 2026-08-20 (owner: "basically no damper wear, make it more sensitive to wheel
@@ -400,7 +405,11 @@ export const DAMAGE_PARAMS = {
   // 2026-10-09 (owner: hard hits wear the suspension but leave the wheels untouched — a little more
   // sensitive): road yield 20 -> 16 so mid-height landings that only just bottom the tire count,
   // road write-off 100 -> 90 (2 m drop ~1.4% -> ~3.6%), debris yield 2.0 -> 1.75, write-off 40 -> 35.
-  rimYieldMult:   1.75,   // x static wheel load (≈5.8 kN): DEBRIS core contacts — below this it springs back
+  // 2026-10-15 (owner: "wheels are too difficult to damage and don't take enough damage" — both
+  // the threshold and the severity): road write-off 90 -> 60, debris write-off 35 -> 25; the
+  // yields went 16 -> 12 / 1.75 -> 1.4 and were then split back to 14 / 1.6 (owner, same day).
+  // 2 m drop ~3.6% -> ~9% per corner.
+  rimYieldMult:   1.6,   // x static wheel load (≈5.3 kN): DEBRIS core contacts — below this it springs back
   // ROAD contacts are a different measurement (see suspension.js): the load past full carcass
   // compression, not what a rigid pinch exchanges.
   //
@@ -413,9 +422,9 @@ export const DAMAGE_PARAMS = {
   // The tire genuinely does not bottom below 2 m, so "lesser drops damage springs only" falls out
   // of the geometry rather than being thresholded in. Yield sits under the 2 m figure and the
   // overload scale puts a 2 m landing at about a tenth of a wheel.
-  rimYieldRoadMult: 16,   // x static wheel load (≈53 kN): ROAD/terrain contacts
-  rimFullRoadMult:  90,   // x static wheel load (≈300 kN) of OVERLOAD writes the wheel off
-  rimFullMult:    35,     // x static wheel load (≈117 kN) of OVERLOAD writes the wheel off
+  rimYieldRoadMult: 14,   // x static wheel load (≈46 kN): ROAD/terrain contacts
+  rimFullRoadMult:  60,   // x static wheel load (≈200 kN) of OVERLOAD writes the wheel off
+  rimFullMult:    25,     // x static wheel load (≈83 kN) of OVERLOAD writes the wheel off
   rimStrikeExp:   1.5,    // between linear and square — plastic work rises faster than the overload
 
   // Fraction of its own peak a loaded event must FALL TO before it is banked. Waiting for the load
@@ -986,11 +995,11 @@ export class DamageModel {
     const floorN = front ? P.springForceFloorFront : P.springForceFloorRear
     if (peakN <= floorN) return
 
-    // Spring: square law between the no-harm floor and the one-hit-kills force. BOTH ends of the
-    // curve are per-axle — see springBumpFullNFront for why the front's destroy force is higher.
-    const fullN = front ? P.springBumpFullNFront : P.springBumpFullNRear
-    const t = (peakN - floorN) / (fullN - floorN)
-    const dmg = Math.pow(Math.max(0, t), P.springBumpExp)
+    // Spring: saturating power law from the no-harm floor through the reference hit. BOTH ends of
+    // the curve are per-axle — see springBumpRefNFront for why the front's reference force is higher.
+    const refN = front ? P.springBumpRefNFront : P.springBumpRefNRear
+    const t = (peakN - floorN) / (refN - floorN)
+    const dmg = Math.min(1, P.springBumpRefDmg * Math.pow(Math.max(0, t), P.springBumpExp))
     const id = front ? 'springFront' : 'springRear'
     // durability 1 = the insult IS the damage fraction, the same idiom applyImpact uses. There is
     // no durSpring any more: for an event-priced track the CURVE is the calibration. The parts

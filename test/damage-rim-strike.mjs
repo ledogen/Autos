@@ -80,7 +80,9 @@ console.log('\n§2 measured: the two sources are priced on their OWN scales')
   const twoM = fresh(); road(twoM, 86200)      // 2 m drop, measured
   const lost2 = (1 - twoM.get('wheelFL')) * 100
   console.log(`  a 2 m drop puts 86.2 kN past full compression → ${lost2.toFixed(1)}% of the wheel`)
-  ok(lost2 > 1 && lost2 < 10, '...which marks the rim without writing it off')
+  // 2026-10-15 (owner: wheels too hard to damage, not enough when they are): road yield 16 -> 14
+  // and write-off 90 -> 60 take this from ~3.6% to ~9% per corner.
+  ok(lost2 > 5 && lost2 < 20, '...which marks the rim without writing it off')
 }
 
 console.log('\n§3 nothing but a core contact can bend a rim')
