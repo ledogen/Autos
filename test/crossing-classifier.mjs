@@ -4,16 +4,17 @@
 // classifier that emits {runA,segA,arcA,yA, runB,segB,arcB,yB, angle, selfCrossing, kind}
 // records and classifies each crossing NEAR_PARALLEL | AT_GRADE. This is the spine the at-grade pad
 // (FEAT-07) and the graph junction blend (FEAT-13) consume — it still runs on every re-stream in the
-// shipped graph topology (feeds the cull + the junction reconciliation). Overpasses were descoped:
-// every crossing merges at grade, so GRADE_SEP never appears (only the angle picks the pad style).
+// shipped graph topology (feeds the junction reconciliation). Overpasses were descoped: every
+// crossing merges at grade, so GRADE_SEP never appears (only the angle picks the pad style).
 //
-// QUAL-12 (rows removed): exercised in graph mode with the crossing CULL OFF so the routed crossings
-// survive to be classified (the cull would otherwise prune them to a handful). Asserts:
+// The crossing culls are gone (FEAT-68), and since BUG-57 the planner leaves NO unsanctioned
+// mid-span crossing, so on the shipped network (a) compares two empty sets — the count is printed
+// so a vacuous pass is visible, and the check bites again the day a crossing exists. Asserts:
 //   (a) CORRECTNESS  — the tile-bucket broad phase finds EXACTLY the same crossing set + classification
 //                      as a brute-force all-pairs scan (so the perf optimization changes nothing).
 //   (b) IDENTITY     — re-detecting the same network is a no-op (same Map instance returned).
 //   (c) IDENTITY WHEN EMPTY — the memo must ALSO hold when zero crossings is the correct answer
-//                      (the shipped cull-ON case). A memo that treats "empty" as "not computed"
+//                      (the shipped case). A memo that treats "empty" as "not computed"
 //                      recomputes forever; (b) cannot see it because its fixture has crossings.
 // (Window-invariance of the crossing set is covered by graph-topology.mjs.)
 //
@@ -85,8 +86,7 @@ function bruteForce(road) {
 const keyOf = (r) => `${r.runA}#${r.segA}|${r.runB}#${r.segB}`
 const listToMap = (list) => new Map(list.map(r => [keyOf(r), r]))
 
-// ── Build the real seed-6 graph network around a crossing-rich center (the sparse blue-noise graph
-// needs a wide radius + cull OFF for routed crossings to survive; this center carries ~8). ──
+// ── Build the real seed-6 graph network around the center that carried ~8 crossings before BUG-57. ──
 const roadA = new RoadSystem(SEED, P); roadA.setRadius(1600); roadA.update(new THREE.Vector3(-900, 0, 150))
 const listA = roadA.crossingList()
 const mapA  = listToMap(listA)
@@ -106,7 +106,7 @@ const mapA  = listToMap(listA)
     // The classifier's full reduction to the invariant's gate instrument lands with the ruling-3
     // machinery deletion.
     log(missing === 0 && extra === 0 && kindMis === 0, 'BROADPHASE-EQ-BRUTEFORCE',
-        `crossings: classifier=${mapA.size} bruteforce=${bf.size} | missing=${missing} extra=${extra} kindMismatch=${kindMis}${sample ? ` | e.g. ${sample}` : ''}`)
+        `crossings: classifier=${mapA.size} bruteforce=${bf.size}${bf.size === 0 ? ' (VACUOUS — no crossing to compare)' : ''} | missing=${missing} extra=${extra} kindMismatch=${kindMis}${sample ? ` | e.g. ${sample}` : ''}`)
 }
 
 // (b) IDENTITY — re-detecting the same network is a no-op (same Map instance). ───────────────────
@@ -119,9 +119,8 @@ const mapA  = listToMap(listA)
 }
 
 // (c) IDENTITY WHEN EMPTY — the memo must hold when ZERO crossings is the CORRECT answer. ────────
-// This is the SHIPPED case, and check (b) structurally cannot reach it: (b) runs with the cull OFF
-// precisely so crossings exist, but the shipped graph topology culls mid-span crossings, so
-// _junctions is legitimately EMPTY in the running game.
+// This is the SHIPPED case: the planner leaves no mid-span crossing (BUG-57), so _junctions is
+// legitimately EMPTY in the running game.
 //
 // The regression this guards (found via FEAT-43): the memo was keyed on
 // `_junctionsFrom === _network && _junctions.size > 0`. That size clause cannot distinguish "empty"

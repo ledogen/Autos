@@ -7,12 +7,14 @@
 // The properties, in priority order:
 //
 //   1. PARTIAL ROUTES PAY. The paper route is the income floor (missions.md, 2026-08-05): the day
-//      job is destroyed in the opening, so this is the only reliably-available earner and a run
-//      must never dead-end at zero. One delivery out of nine is a D that still pays for the one.
+//      job is destroyed in the opening, so a run must never dead-end at zero. One delivery out of
+//      nine is a D that still banks its paper — the floor is the TIPS, banked per throw.
 //   2. THE ACCURACY LAW. q(0) = 1, q(R) = 0.30, linear between, and past the rim is not a delivery.
-//   3. THE BONUS NEEDS A FINISHED ROUTE. You cannot finish early without finishing.
-//   4. SM-INV-4 IS NOT TOUCHED. payoutFor()/gradeRun() are the margin line and this mission does
-//      not call them; it settles through settleFlat, which shares the wallet and pointsFor().
+//   3. THE FARE IS THE MARGIN LINE (reshaped 2026-08-17). payout === payoutFor(parEff, ratio,
+//      payTier) at every ratio — the same function a POI job uses, so there is no second
+//      time-payout curve to drift, and par still pays.
+//   4. TIPS SCALE WITH ACCURACY. A perfect round out-earns the equivalent POI job; the premium
+//      tapers like a gratuity on a growing fare and never inverts. (gates.mjs carries the full list.)
 //   5. NOTHING DEGENERATE REACHES THE WALLET. Zero deliveries, zero customers, a broken par: money,
 //      never NaN, never negative.
 import { accuracyScore, ACC_FLOOR } from '../src/throw.js'

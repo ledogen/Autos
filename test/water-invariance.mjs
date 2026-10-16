@@ -15,7 +15,7 @@
 //   5. POINT-QUERY   — pondAt / isRoadNoGo agree whether the instance was warmed small-first or
 //                      large-first (cache-order independence).
 //
-// Registered in run-all.mjs (water wired 2026-07-01). Run alone: node test/water-invariance.mjs
+// Registered in test/gates.mjs (water wired 2026-07-01). Run alone: node test/water-invariance.mjs
 
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'

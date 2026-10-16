@@ -18,8 +18,9 @@
 //
 //   3. WHAT THE REGION CONTAINS IS A PURE FUNCTION OF (SEED, CENTRE). The registered network graph,
 //      the POI candidate pool, the roster and the newspaper customers must be identical from any
-//      prior streaming history. This is the link BUG-25's window-bounded crossing cull threatens —
-//      it can flip whole edges on a re-stream, and a flipped edge is a pad that exists or doesn't.
+//      prior streaming history. A window-dependent planner decision (BUG-25's window-bounded
+//      crossing cull was one, deleted with FEAT-68) can flip whole edges on a re-stream, and a
+//      flipped edge is a pad that exists or doesn't.
 //
 // Heavy: builds real streamed, routed networks several times over.
 import * as THREE from 'three'

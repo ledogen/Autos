@@ -6,16 +6,10 @@
 // point arcS, per-world-point gradeY, and per-tile slice arcS boundaries are byte-identical (within
 // float eps) regardless of where the network was streamed.
 //
-// EXPECTED STATE ON CURRENT CODE: RED. The geometry assertions (b, d) PASS — the routed polyline and
-// its Y are already a pure function of world coords. The PARAMETERIZATION assertions (a, c, e) FAIL —
-// run identity (`${mz}:${runIndex}`), arc origin (`run[0]`), and COVER-split boundaries all depend on
-// the transient canonical band `[mx0,mx1] = f(center_mx)` (road.js:1356-1370). That window-relative
-// parameterization is the root cause of the tear: when streaming shifts the band mid-session, cached
-// run profiles (keyed by runKey, origined at the old `run[0]`) desync from freshly-sliced arcS →
-// gradeY indexes the wrong arc → the ~20 m on-road teleport (BUG-14) and the freecam surface mismatch.
-//
-// Phase 2 (world-anchored arc origin + run identity + COVER suppression) makes a/c/e GREEN. This file
-// does NOT change — it is the gate Phase 2 is written against.
+// GREEN since Phase 2 (world-anchored arc origin + run identity + COVER suppression): a FAIL here
+// is a regression — some part of the network has become a function of where it was streamed from,
+// which is the root of the freecam↔drive-in tear (BUG-14: cached run profiles desync from freshly
+// sliced arcS → gradeY indexes the wrong arc → the ~20 m on-road teleport).
 //
 // Run: node test/invariance.mjs   (exit 0 = invariant holds; exit 1 = window-variant, i.e. the bug)
 
@@ -75,6 +69,6 @@ log(eqArr(A.sliceBoundaries, B.sliceBoundaries), 'SLICE-BOUNDARY-INVARIANT',
 console.log('\n' + '='.repeat(64))
 console.log(`INVARIANCE GATES: ${pass} pass, ${fail} FAIL (${pass + fail} total) — exit ${fail ? 1 : 0}`)
 console.log(fail
-    ? '  → RED as expected on current code: geometry is window-invariant, parameterization is NOT.'
+    ? '  → window-variant (REGRESSION): the network depends on the stream centre.'
     : '  → GREEN: the network is a pure function of (seed, world-coords, params).')
 process.exit(fail ? 1 : 0)
