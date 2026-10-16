@@ -717,10 +717,13 @@ function boardRig (ms, nowH = 6) {
     const list = W.poi.list()
     const counts = {}
     for (const q of list) counts[q.type] = (counts[q.type] || 0) + 1
-    const short = POI_ROSTER.filter(s => (counts[s.type] || 0) !== s.count)
+    // A class may span several slots (FEAT-74: barn farms + the produce-stall farm), so compare per type.
+    const want = {}
+    for (const s of POI_ROSTER) want[s.type] = (want[s.type] || 0) + s.count
+    const short = Object.keys(want).filter(t => (counts[t] || 0) !== want[t])
     check('every roster slot is filled exactly to its count',
         short.length === 0,
-        short.map(s => `${s.type} ${counts[s.type] || 0}/${s.count}`).join(', '))
+        short.map(t => `${t} ${counts[t] || 0}/${want[t]}`).join(', '))
     check('nothing is placed that the roster did not ask for',
         list.length === POI_COUNT, `${list.length} vs ${POI_COUNT}`)
     console.log('       ' + POI_ROSTER.map(s => `${s.type} ×${counts[s.type] || 0}`).join('  '))
@@ -885,9 +888,12 @@ function boardRig (ms, nowH = 6) {
     check('a short pool still fills every required slot',
         required.every(s => counts[s.type] === s.count),
         required.map(s => `${s.type} ${counts[s.type] || 0}/${s.count}`).join(', '))
+    // Summed per type: a class may span several slots (FEAT-74's two farm slots).
+    const wantT = {}
+    POI_ROSTER.forEach((s, i) => { wantT[s.type] = (wantT[s.type] || 0) + want[i] })
     check('…and the shortfall comes off the bottom of the roster alone',
-        POI_ROSTER.every((s, i) => (counts[s.type] || 0) === want[i]),
-        POI_ROSTER.map((s, i) => `${s.type} ${counts[s.type] || 0}/${want[i]}`).join(', '))
+        Object.keys(wantT).every(t => (counts[t] || 0) === wantT[t]),
+        Object.keys(wantT).map(t => `${t} ${counts[t] || 0}/${wantT[t]}`).join(', '))
 
     W.poi.build(C, R)                              // restore the region under test
     W.road.setPoiPads(W.poi.list())
