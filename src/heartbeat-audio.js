@@ -34,10 +34,9 @@ export const HEARTBEAT_DUB_LEVEL = 0.7    // dub peak relative to lub
 const DUB_DELAY = HEARTBEAT_DUB_DELAY, DUB_LEVEL = HEARTBEAT_DUB_LEVEL
 const PEAK = 0.6         // lub body peak gain at level 1
 
-let _noise = null        // a short white-noise buffer for the click, built once per context
+let _noise = null        // a short white-noise buffer for the click, built once (there is one AudioContext)
 function _noiseBuf (ctx) {
-  if (_noise && _noise.sampleRate === ctx.sampleRate) return _noise
-  return (_noise = whiteNoiseBuffer(ctx, CLICK_S))
+  return (_noise ??= whiteNoiseBuffer(ctx, CLICK_S))
 }
 
 function _kick (ctx, t0, peak) {

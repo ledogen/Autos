@@ -2228,7 +2228,7 @@ export class Map2D {
 
     // Draw one 24-box glyph from data/map-icons.js centred on (sx, sy), filled in whatever
     // fillStyle is already set and outlined near-black. The single place any glyph is rendered, so
-    // the POI markers and the tunnel arch cannot drift apart in weight or outline. Caller sets
+    // the POI markers and the paper-route glyph cannot drift apart in weight or outline. Caller sets
     // fillStyle/strokeStyle; `key` is the Path2D cache key (glyphs are static, only positions move,
     // so this is a handful of objects for the life of the map).
     _drawGlyph(ctx, key, d, sx, sy) {

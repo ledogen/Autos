@@ -564,11 +564,7 @@ export function playTireBlowout () {
   if (!ctx || !master || !enabled) return
   const now = ctx.currentTime
   const src = ctx.createBufferSource()
-  const len = Math.floor(ctx.sampleRate * 0.35)
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate)
-  const d = buf.getChannelData(0)
-  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
-  src.buffer = buf
+  src.buffer = whiteNoiseBuffer(ctx, 0.35)
   // Band-passed: the crack is mid, not treble, and the body of it is the air leaving.
   const bp = ctx.createBiquadFilter()
   bp.type = 'bandpass'; bp.frequency.value = 320; bp.Q.value = 0.8
@@ -578,7 +574,6 @@ export function playTireBlowout () {
   g.gain.exponentialRampToValueAtTime(0.0001, now + 0.30)
   src.connect(bp); bp.connect(g); g.connect(master)
   src.start(now); src.stop(now + 0.35)
-  src.onended = () => { try { src.disconnect(); bp.disconnect(); g.disconnect() } catch {} }
 }
 
 export function setTireAudioEnabled (on) {
