@@ -17,7 +17,7 @@
  */
 
 import * as THREE from 'three'
-import { mulberry32 } from './seed.js'
+import { mulberry32, clamp01 } from './seed.js'
 
 // Sierra-granite palette (0xRRGGBB → linear-ish sRGB bytes; the material's map is sRGB-decoded).
 const BASE = [0x8a, 0x83, 0x78]   // warm gray granite
@@ -26,7 +26,6 @@ const COOL = [0x7d, 0x7f, 0x7e]   // per-stone cool drift
 const WET  = [0x4a, 0x42, 0x38]   // wet dark brown — crevice / submerged shadow
 
 const smooth = (t) => t * t * (3 - 2 * t)               // smoothstep 0..1
-const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v
 
 /**
  * Build the shared cobble textures.

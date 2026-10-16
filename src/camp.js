@@ -33,7 +33,7 @@
 // Isolation discipline (the story.js / poi.js / day.js rule): no THREE, no worldgen imports.
 // Everything arrives through the `deps` adapter main.js hands us.
 
-import { hash32, mulberry32 } from './seed.js'
+import { hash32, mulberry32, clamp01 } from './seed.js'
 
 /**
  * Tunables. Zone siting + the road tether only — none of this may ever enter RANGER_PARAMS
@@ -169,8 +169,6 @@ const CAMP_ROAD_CLEAR_TOL_M = 0.25
 // cell beyond C in each direction. Every point query therefore only has to scan the 3×3 cell
 // neighbourhood around the query's own cell. Keep this true if the radii are ever retuned.
 const NEIGHBOR_CELLS = 1
-
-const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
 /**
  * How epic the outlook from (x,z) is, 0..1 — the raw view score, before VIBE_W.view scales it.

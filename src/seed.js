@@ -94,3 +94,24 @@ export function hash32(str) {
   }
   return h >>> 0
 }
+
+// ── hash2 — 2D integer lattice → [0, 1) ──────────────────────────────────────
+// The value-noise lattice hash of the prop scatter's cover fields (props/prop-scatter.js) and the
+// FEAT-84 detail maps (terrain-texture.js). Same stability rule as hash32: both outputs ride on it.
+export function hash2(ix, iy, seed) {
+  let h = seed | 0
+  h = Math.imul(h ^ (ix | 0), 0x9e3779b9)
+  h = Math.imul(h ^ (iy | 0), 0x85ebca6b)
+  h ^= h >>> 15
+  h = Math.imul(h, 0xc2b2ae35)
+  h ^= h >>> 13
+  return (h >>> 0) / 4294967296
+}
+
+export const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v
+
+// smoothstep(e0, e1, x): 0 below e0, 1 above e1, cubic Hermite between.
+export const smooth01 = (e0, e1, x) => {
+  if (x <= e0) return 0; if (x >= e1) return 1
+  const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t)
+}

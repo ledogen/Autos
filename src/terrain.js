@@ -35,14 +35,11 @@ import { height, makeTerrainNoise, CHUNK_SIZE, GRID_SAMPLES, HEIGHT_PARAM_KEYS }
 import { makeSurfaceTextures, _hexLin } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
 import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
+import { smooth01 as _smooth01 } from './seed.js'
 
 // FEAT-05/FEAT-85: the vegetation share of a ground sample — flat enough (below grassSlopeMax,
 // feathered from half of it) AND below the treeline (feathered lo→hi). One definition, two
 // readers: _writeChunkVertexColors paints green by it, groundAt()/groundClassify() hand it to the scatter.
-const _smooth01 = (e0, e1, x) => {
-    if (x <= e0) return 0; if (x >= e1) return 1
-    const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t)
-}
 export function vegBlendOf(slope, worldH, grassSlopeMax, treeLo, treeHi) {
     return (1 - _smooth01(grassSlopeMax * 0.5, grassSlopeMax, slope)) * (1 - _smooth01(treeLo, treeHi, worldH))
 }

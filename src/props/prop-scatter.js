@@ -27,7 +27,7 @@
  *   y = world Y of the instance ORIGIN (trees: ground; blobs: sunk by buryFrac).
  */
 
-import { mulberry32, seedFor, djb2 } from '../seed.js'
+import { mulberry32, seedFor, djb2, hash2 as _hash2, smooth01 as _smooth01 } from '../seed.js'
 import { FLORA_PARAMS } from '../../data/flora.js'
 import { biomeAt, BIOME } from '../biome.js'
 
@@ -546,13 +546,6 @@ export function* scatterLitterGen(cx, cz, worldSeed, samplers, params = FLORA_PA
 }
 
 // Cheap 2D value noise in [0,1] (world-space, seed-keyed) — the cover's patchiness fields.
-function _hash2(ix, iz, seed) {
-  let h = seed | 0
-  h = Math.imul(h ^ (ix | 0), 0x9e3779b9)
-  h = Math.imul(h ^ (iz | 0), 0x85ebca6b)
-  h ^= h >>> 15; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 13
-  return (h >>> 0) / 4294967296
-}
 const _sm = (t) => t * t * (3 - 2 * t)
 function noise2(x, z, seed) {
   const x0 = Math.floor(x), z0 = Math.floor(z)
@@ -565,7 +558,6 @@ function noise1(t, seed) {
   const i = Math.floor(t), f = _sm(t - i)
   return _hash2(i, 0, seed) + (_hash2(i + 1, 0, seed) - _hash2(i, 0, seed)) * f
 }
-const _smooth01 = (e0, e1, x) => x <= e0 ? 0 : x >= e1 ? 1 : _sm((x - e0) / (e1 - e0))
 
 /**
  * FEAT-85: the cover pass. Two sources (data/flora.js scatter.cover explains the intent):
