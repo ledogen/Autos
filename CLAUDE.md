@@ -165,6 +165,9 @@ desaturated nature against saturated man-made objects. `trailer-home-a.glb` is t
 
 ### Diagnostic tools (all live in test/, triggered externally)
 
+- **The main.js smoke (INFRA-07):** `node test/cdp-smoke.mjs [--headed]`, or `npm run test:all -- --browser`
+  — boots the real app in Chrome (its own Vite, this checkout), drives every mode transition, and fails on
+  any console error. The only gate that covers `main.js`; held back unless `--browser` / `CDP_SMOKE=1`.
 - **Road resolution / fold debugging:** `node test/replay.mjs <place-capture.json>` — reports
   gradeY / hit / runKey / arcS / minR at the marked location and checks surface window-invariance.
   (Captures are produced in-game; press the capture key. `RoadSystem.debugSampleAt()` is the read-only

@@ -14,6 +14,8 @@
 //   manual     true = never AFFECTED-selected, however much of its closure changed. For proofs that
 //              cost minutes and answer a settings-level question rather than a per-commit one.
 //              `npm run test:all` and `--only` still run them; `npm test` reports them as held back.
+//   browser    true = drives the real app in Chrome (INFRA-07 cdp-smoke). Selected like any gate but
+//              only RUN with `--browser` or CDP_SMOKE=1; otherwise listed as skipped.
 //   extraDeps  repo-relative paths a gate depends on but does NOT `import` (text mirrors, JSON
 //              assets) — the import-closure can't see these, so list them or the gate won't be
 //              selected when that file changes. Treated as exact-file triggers (their own imports
@@ -216,4 +218,6 @@ export const GATES = [
     desc: 'FEAT-18: stream channels cut bed+banks (C0, bounded, descending); every road×stream crossing holds road grade (ribbon-deck) with the channel notch continuous both sides' },
   { file: 'stream-bed-drape.mjs', subsystem: 'water', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-25: cobble bed ribbon drapes the carved channel — dry shoulders above the waterline, center under water, deterministic' },
+  { file: 'cdp-smoke.mjs', subsystem: 'app', cost: 'heavy', browser: true, extraDeps: ['src', 'data', 'index.html', 'vite.config.js'],
+    desc: 'INFRA-07 the main.js gate: the real app in Chrome — boot, drive, R, teleport, map, freecam (R-11), lab, story entry, mom\'s camp hold + R closes it (R-12), backtick (R-13), take and start a job — zero console errors' },
 ]

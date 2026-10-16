@@ -12,6 +12,8 @@
 //   --all          every gate (also: `npm run test:all`) — run before commits / in CI
 //   --only=<substr>[,<substr>]   explicit subset by gate-name substring
 //   --serial       one-at-a-time (pool=1), e.g. to time a single gate without pool contention
+//   --browser      also run the `browser: true` gates (cdp-smoke — launches Chrome); CDP_SMOKE=1 does
+//                  the same. Without it they are held back in EVERY mode, so `npm test` never opens Chrome.
 // If not in a git repo / git is unavailable, affected mode falls back to running ALL gates (safe).
 //
 // PERF-08: selected gates run CONCURRENTLY on a small pool (isolated pure-node processes — no
@@ -89,6 +91,7 @@ function gitChanged () {
 const argv = process.argv.slice(2)
 const SERIAL = argv.includes('--serial')
 const ALL = argv.includes('--all')
+const BROWSER = argv.includes('--browser') || process.env.CDP_SMOKE === '1'
 const LIST = argv.includes('--list')   // print the selection and exit (don't run) — preview what a change hits
 const only = argv.find(a => a.startsWith('--only='))?.slice(7).split(',')
 // --changed=<a,b,...> overrides the git diff (preview selection for a hypothetical edit set).
@@ -129,7 +132,7 @@ if (ALL) {
             console.log(header)
             const srcChanged = [...changed].filter(f => f.startsWith('src/') || f.startsWith('data/'))
             console.log(`no gates cover these changes${srcChanged.length ? `: ${srcChanged.slice(0, 8).join(', ')}` : ''}`)
-            console.log(`(edits to glue/entry code like src/main.js are gate-free by design) · run \`npm run test:all\` for full coverage`)
+            console.log(`run \`npm run test:all\` for full coverage (add --browser for the main.js smoke)`)
             console.log(`${'═'.repeat(64)}`)
             process.exit(0)
         }
@@ -139,8 +142,16 @@ if (ALL) {
 // --list: show the selection and exit without running (preview what a change hits).
 if (LIST) {
     console.log(header)
-    for (const g of gates) console.log(`  ${g.cost === 'heavy' ? '⛰' : '·'} ${g.file.replace('.mjs', '').padEnd(32)} [${g.subsystem}]`)
+    for (const g of gates) console.log(`  ${g.cost === 'heavy' ? '⛰' : '·'} ${g.file.replace('.mjs', '').padEnd(32)} [${g.subsystem}]${g.browser ? ' browser' : ''}`)
     process.exit(0)
+}
+
+// INFRA-07: browser gates run only on request — selected, then held back with a one-line notice.
+const heldBrowser = BROWSER ? [] : gates.filter(g => g.browser)
+if (heldBrowser.length) {
+    gates = gates.filter(g => !g.browser)
+    header += ` · skipped: ${heldBrowser.map(g => g.file.replace('.mjs', '')).join(', ')} (needs --browser)`
+    if (!gates.length) { console.log(header); process.exit(0) }
 }
 
 // ── Run ──────────────────────────────────────────────────────────────────────

@@ -1,7 +1,8 @@
 ---
 id: INFRA-07
 type: infra
-status: pending
+status: completed
+closed: 2026-10-15
 opened: 2026-10-15
 severity: major
 source: review-2 whole-repo code review (owner ruling 2026-10-15: "write a ticket on how to fix this")
@@ -88,20 +89,79 @@ No framework, no page-object layer, no screenshots in the gate (keep `screenshot
 
 ## Acceptance
 
-- [ ] `test/cdp-smoke.mjs` exists; `node test/run-all.mjs --list` shows it as `browser` and `npm test`
+- [x] `test/cdp-smoke.mjs` exists; `node test/run-all.mjs --list` shows it as `browser` and `npm test`
       (no flag) skips it with a one-line notice; `npm run test:all -- --browser` runs it.
-- [ ] Reverting `facb92d`'s fix (locally, do not commit) makes the gate RED at step 2 with the
+- [x] Reverting `facb92d`'s fix (locally, do not commit) makes the gate RED at step 2 with the
       `_hintAt` ReferenceError in the report; restoring it makes the gate GREEN. This is the gate's
       self-check — record the two outputs in the close-out note.
-- [ ] Runs ≤ 90 s wall on the M4 Air with `npm run dev` already serving :8000, and also when nothing is
+- [x] Runs ≤ 90 s wall on the M4 Air with `npm run dev` already serving :8000, and also when nothing is
       serving (it starts `vite preview` or `vite --port` itself and shuts it down).
-- [ ] `test/lib/cdp.mjs` `CHROME` path and ANGLE backend are env-overridable (`CHROME_BIN`,
+- [x] `test/lib/cdp.mjs` `CHROME` path and ANGLE backend are env-overridable (`CHROME_BIN`,
       `CDP_ANGLE`), macOS defaults unchanged; the gate runs on the INFRA-01 Windows runner with
       `--use-angle=d3d11` (that box can be done later; the env seam is done now).
-- [ ] Any new `window.__*` handle is listed in the close-out and in LAYOUT.md's main.js row.
-- [ ] CLAUDE.md "Diagnostic tools" gets one line; LAYOUT.md's test/ row gets one line.
+- [x] Any new `window.__*` handle is listed in the close-out and in LAYOUT.md's main.js row.
+- [x] CLAUDE.md "Diagnostic tools" gets one line; LAYOUT.md's test/ row gets one line.
 
 ## Non-goals
 
 Pixel/screenshot comparison; frame-time assertions (PERF-08 owns timing); audio; multi-seed sweeps
 (seed 6 only — determinism gates own seeds). Mobile/Safari. Anything that needs a human eye.
+
+## Resolution (2026-10-15, branch `feature/infra-07`)
+
+`test/cdp-smoke.mjs` (≈250 lines) runs all 11 steps in one Chrome session, 68–80 s wall on the M4 Air.
+Five consecutive runs were green after the one flake was fixed (below).
+
+**Self-check (facb92d's fix reverse-applied, then restored):**
+
+```
+steps: boot 5.4s
+FAIL: 1 console error(s); first in step "boot":
+  ReferenceError: _hintAt is not defined
+    at queryContacts (src/main.js:2010:67)
+    at stepPhysics (src/physics.js:620:24)
+    at loop (src/main.js:6665:5)
+---
+steps: boot 8.6s · drive 8.2s · reset 0.1s · teleport 5.0s · map 0.9s · freecam 4.1s · lab 7.1s · story 20.0s · camp 9.1s · backtick 0.3s · offer 11.8s
+PASS: 11 steps, zero console errors
+```
+
+It goes red in step 1, not step 2: the throw fires on the first physics step, before any driving.
+
+**Deviations from the design, and why:**
+- **Always starts its own Vite** on a free port, rooted at the gate's own checkout, and never reuses
+  :8000. On this machine :8000 is usually serving a *different* worktree, so reusing it would test
+  the wrong code. The CDP port is also picked free (9222 may be the owner's own debugging Chrome).
+  The "already serving" and "nothing serving" cases therefore behave identically.
+- **extraDeps are `src`, `data`, `index.html`, `vite.config.js`**, not just `src/main.js`. The smoke
+  boots everything main.js imports, so any app edit selects it. That costs nothing, because it is
+  held back unless `--browser` is passed.
+- **No `?prof=1`.** `__story`, `__tp`, `__road` and `__world` only exist under it, but the smoke
+  should run the shipped path. Story "live" is read from the DOM instead: run HUD up, load stage
+  down, `__map2d()._getPois()` non-empty. Teleports use the always-on `__teleport`.
+- **Step 9 (camp) uses mom's doorstep.** It is the one camp face reachable without a zone hunt.
+  The FEAT-118 hold (clock frozen with the panel up) and R-12 (R closes it, then the clock resumes)
+  are both asserted there.
+- **Step 10 (backtick):** story does not hold the debug lockout (debug.js says so), so the
+  assertion is R-13's "one gate". The panel and the wireframes flip together and flip back.
+- **Step 11 (offer):** picks a plain `delivery` giver (no drop zone, no park box) with a live offer.
+  It parks on the pad and accepts via `#mp-accept`, then asserts the mission HUD and the abandon
+  button. It then cranks the engine (story seats it OFF, FEAT-33), releases the brake, and drives
+  from the road point beside the pad. The pad itself pinned the truck at full throttle. The gate
+  asserts the HUD leaves "leave the green circle". **Expiry text is not asserted:** this branch's
+  HUD has none (FEAT-113's deadlines are uncommitted WIP on main). Add the check when that lands.
+- The speed-HUD check in step 2 became "moved ≥ 40 m + finite strut state". The speed read-out is
+  the gauge-cluster canvas; there is no text to parse.
+
+**The one flake, fixed:** an offer still in `generating` shows `#mp-accept` with no `display` of its
+own inside a hidden `#mp-actions` row, so a click landed before the offer existed. Visibility
+checks use `checkVisibility()` (true only when the element is actually rendered).
+
+**New `window.__*` handle:** `__cam` (the render camera), for step 6's tail-bearing check. Listed in
+LAYOUT.md's main.js entry.
+
+**Infra:** `run-all.mjs --browser` / `CDP_SMOKE=1`. Without either, `browser: true` gates are held
+back in every mode, with "skipped: cdp-smoke (needs --browser)" in the header. `--list` tags them
+`browser`. `test/lib/cdp.mjs` takes `CHROME_BIN` / `CDP_ANGLE` (defaults unchanged), and its
+`evalJS` now reports the exception's description rather than a bare "Uncaught". The Windows runner
+leg (`CDP_ANGLE=d3d11`) is still for INFRA-01 to do.
