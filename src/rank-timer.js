@@ -115,8 +115,7 @@ function letterAt (ratio, T) {
  *   `slow`      the C/D line went past on THIS step (fires once)
  */
 export function rankTimerFrame (layout, elapsed, prevElapsed, P = RANK_TIMER_PARAMS) {
-    const calm = { shown: false, barShown: false, letter: 'D', next: null, intensity: 0, heavy: false, lost: false, slow: false }
-    if (!layout) return calm
+    if (!layout) return { shown: false, barShown: false, letter: 'D', next: null, intensity: 0, heavy: false, lost: false, slow: false }
     const e = Math.max(0, elapsed), T = layout.thresholds
     const shown = e >= layout.bands[0].t1 - P.appearS
     const letter = letterAt(e / layout.par, T)
@@ -134,7 +133,8 @@ export function rankTimerFrame (layout, elapsed, prevElapsed, P = RANK_TIMER_PAR
     }
     if (!next) {
         const barShown = shown && e < layout.slowT + (P.closeAfterDS ?? Infinity)
-        return { ...calm, shown, barShown, lost: crossed(layout.gateT), slow: crossed(layout.slowT) }
+        return { shown, barShown, letter: 'D', next: null, intensity: 0, heavy: false,
+                 lost: crossed(layout.gateT), slow: crossed(layout.slowT) }
     }
     const intensity = Math.min(1, Math.max(0, 1 - (next.t - e) / P.escalateS))
     const heavy = next.t === layout.gateT || next.t === layout.slowT
