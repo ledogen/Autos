@@ -479,6 +479,9 @@ function _trunkGradeAt(T, i) {
     return { gx: m * tx / tl, gz: m * tz / tl }
 }
 
+// A graph node id [a, b, c] → its string key (the `g.key` of every band graph).
+const _idKey = (id) => `${id[0]},${id[1]},${id[2]}`
+
 // FEAT-76: the polyline VERTEX index nearest an arc position. A T is split at a real vertex, never
 // between two, so the promoted node names a point that exists in the geometry — the id, the pad
 // plane, the junction cluster and both trunk halves then agree exactly instead of to within a lerp.
@@ -487,15 +490,6 @@ function _nearestVertexAtCum(polyCum, cum) {
     let lo = 0, hi = n - 1
     while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (polyCum[m] <= cum) lo = m; else hi = m }
     return (cum - polyCum[lo] <= polyCum[hi] - cum) ? lo : hi
-}
-
-/** BUG-53/55 merge machinery: polyCum → clArc, the paired-table interpolation. */
-function _clArcOfCum(S, cum) {
-    const pc = S.polyCum, ca = S.clArc, n = pc.length
-    let lo = 0, hi = n - 1
-    while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (pc[mid] <= cum) lo = mid; else hi = mid }
-    const span = pc[lo + 1] - pc[lo] || 1
-    return ca[lo] + (ca[lo + 1] - ca[lo]) * (cum - pc[lo]) / span
 }
 
 /**
@@ -507,7 +501,7 @@ function _clArcOfCum(S, cum) {
  */
 function _winnerBoreAtFork(S, nodeAtStart, cutCum) {
     if (!S.spans) return false
-    const cutCl = _clArcOfCum(S, cutCum)
+    const cutCl = _interpArcTable(S.polyCum, S.clArc, cutCum)
     const a = nodeAtStart ? cutCl - 30 : cutCl
     const b = nodeAtStart ? cutCl : cutCl + 30
     return S.spans.some((sp2) => sp2.s1 > a && sp2.s0 < b)
@@ -1838,12 +1832,11 @@ export class RoadSystem {
      *             pos: (id)=>THREE.Vector3, idOf: Map<string,any> }}
      */
     networkGraph() {
-        const key = (id) => `${id[0]},${id[1]},${id[2]}`
         const edges = [], adj = new Map(), idOf = new Map()
         // Runs are 1:1 with abstract edges (the post-cull, post-T-promotion set). Everything that decides
         // per-edge — POI siting rolls once per edge — depends on this staying the EDGE count.
         const emit = (a, b, runKey, len) => {
-            const ka = key(a), kb = key(b)
+            const ka = _idKey(a), kb = _idKey(b)
             idOf.set(ka, a); idOf.set(kb, b)
             if (!adj.has(ka)) adj.set(ka, new Set())
             if (!adj.has(kb)) adj.set(kb, new Set())
@@ -1856,7 +1849,7 @@ export class RoadSystem {
             if (!e.cellA || !e.cellB) continue
             emit(e.cellA, e.cellB, runKey, e.polyCum?.[e.polyCum.length - 1])
         }
-        return { edges, adj, key, idOf, pos: (id) => this._nodePos(id) }
+        return { edges, adj, key: _idKey, idOf, pos: (id) => this._nodePos(id) }
     }
 
     /**
@@ -1869,9 +1862,8 @@ export class RoadSystem {
      * never the frame loop (FEAT-29 acceptance).
      */
     edgeParData(c1, c2) {
-        const kf = (id) => `${id[0]},${id[1]},${id[2]}`
-        const key = `g:${kf(c1)}:${kf(c2)}`
-        const alt = `g:${kf(c2)}:${kf(c1)}`
+        const key = `g:${_idKey(c1)}:${_idKey(c2)}`
+        const alt = `g:${_idKey(c2)}:${_idKey(c1)}`
         // Return the REGISTERED key, not the one the caller happened to build. An edge is stored
         // under whichever endpoint order _assembleGraphEdges saw first, so `g:A:B` and `g:B:A` name
         // the same road — but road-quality HASHES the runKey, so handing back the reversed spelling
@@ -2118,7 +2110,7 @@ export class RoadSystem {
     }
 
     /**
-     * Consume Worker-routed connections: drop each {key, prims, v2Dirs, pinFallback} into
+     * Consume Worker-routed connections: drop each {key, prims, v2Dirs} into
      * _proto.cls (the memoization the synchronous router would otherwise fill). Stale replies
      * (epoch != current — a re-route happened since dispatch) are discarded wholesale. Pure cache
      * population: the network/slices/queries are untouched until the next natural _streamNetwork,
@@ -2137,9 +2129,6 @@ export class RoadSystem {
             if (have && (have._v2Dirs || !r.v2Dirs)) continue
             const cl = centerlineFromDescriptors(r.prims)
             if (r.v2Dirs) cl._v2Dirs = true
-            if (r.pinFallback) {
-                this._v2DirFallbacks = (this._v2DirFallbacks || 0) + 1
-            }
             this._proto.cls.set(r.key, cl)
         }
     }
@@ -2212,11 +2201,9 @@ export class RoadSystem {
                 id: r.id, x: r.pos.x, y: r.pos.y, z: r.pos.z, gx: r.gx, gz: r.gz,
             }]),
             promotedAway: [...this._promotedAway],
-            condemnedKeys: this._v2CondemnedKeys ? [...this._v2CondemnedKeys] : [],
             tallies: {
-                merges: this._v2Merges || 0, shoves: this._v2Shoves || 0,
-                reroutes: this._v2Reroutes || 0, infeasible: this._v2Infeasible || 0,
-                condemned: this._v2Condemned || 0, dirFallbacks: this._v2DirFallbacks || 0,
+                shoves: this._v2Shoves || 0, reroutes: this._v2Reroutes || 0,
+                infeasible: this._v2Infeasible || 0, condemned: this._v2Condemned || 0,
             },
         }
     }
@@ -2288,20 +2275,17 @@ export class RoadSystem {
             id: r.id, pos: new THREE.Vector3(r.x, r.y, r.z), gx: r.gx, gz: r.gz,
         }]))
         this._promotedAway = new Set(data.promotedAway || [])
-        this._v2CondemnedKeys = data.condemnedKeys ? [...data.condemnedKeys] : []
         if (data.tallies) {
-            this._v2Merges = data.tallies.merges; this._v2Shoves = data.tallies.shoves
-            this._v2Reroutes = data.tallies.reroutes; this._v2Infeasible = data.tallies.infeasible
-            this._v2Condemned = data.tallies.condemned; this._v2DirFallbacks = data.tallies.dirFallbacks
+            this._v2Shoves = data.tallies.shoves; this._v2Reroutes = data.tallies.reroutes
+            this._v2Infeasible = data.tallies.infeasible; this._v2Condemned = data.tallies.condemned
         }
         // Adopt the builder's band graph (pure data: same sites, same Urquhart — byte-identical to
         // what _buildUrquhart would derive here) so _graphDegreeOf never sees a null graph, which
         // silently reads as degree 2 everywhere (no pads, no leaf tapers).
         if (data.graph) {
-            const key = (id) => `${id[0]},${id[1]},${id[2]}`
             const adj = new Map()
             for (const [a, b] of data.graph.edges) {
-                const ka = key(a), kb = key(b)
+                const ka = _idKey(a), kb = _idKey(b)
                 if (!adj.has(ka)) adj.set(ka, new Set())
                 if (!adj.has(kb)) adj.set(kb, new Set())
                 adj.get(ka).add(kb); adj.get(kb).add(ka)
@@ -2311,18 +2295,17 @@ export class RoadSystem {
             for (const [ka, kb] of data.graph.dropped || []) {
                 adj.get(ka)?.delete(kb); adj.get(kb)?.delete(ka)
             }
-            this._proto.graph = { sig: data.graph.sig, edges: data.graph.edges, adj, key }
+            this._proto.graph = { sig: data.graph.sig, edges: data.graph.edges, adj, key: _idKey }
         }
         // Node incidence (site-key → [runKey,…]) — _graphNodeStrands/_graphJunctionGradeY read it
         // for the pad plane, and only _assembleGraphEdges fills it. Registration pushed each run to
         // both endpoints in edge order == network insertion order, which the export preserved — so
         // this walk reproduces the arrays byte-for-byte (strand ORDER feeds a float least-squares).
         this._proto.nodeInc.clear()
-        const incKey = (id) => `${id[0]},${id[1]},${id[2]}`
         for (const [runKey, e] of this._network) {
             for (const id of [e.cellA, e.cellB]) {
                 if (!id) continue
-                const k = incKey(id)
+                const k = _idKey(id)
                 let a = this._proto.nodeInc.get(k)
                 if (!a) { a = []; this._proto.nodeInc.set(k, a) }
                 a.push(runKey)
@@ -2522,7 +2505,7 @@ export class RoadSystem {
     // outlived its network (a stale capture), and reads terrain rather than throwing.
     _siteAt(id) {
         if (_isPromotedId(id)) {
-            const rec = this._promoted?.get(`${id[0]},${id[1]},${id[2]}`)
+            const rec = this._promoted?.get(_idKey(id))
             if (rec) return rec.pos
             const px = id[0] / 1000, pz = id[1] / 1000
             return new THREE.Vector3(px, this._coarseH(px, pz), pz)
@@ -2579,7 +2562,6 @@ export class RoadSystem {
             const hit = this._urqMemo.get(sig)
             if (hit) return hit
         }
-        const key = (id) => `${id[0]},${id[1]},${id[2]}`
         const ids = [], pts = []
         for (let cz = scz0; cz <= scz1; cz++)
             for (let cx = scx0; cx <= scx1; cx++)
@@ -2589,14 +2571,14 @@ export class RoadSystem {
         if (pts.length >= 3) {
             const tris = delaunay(pts)
             for (const [i, j] of urquhartEdges(pts, tris)) {
-                const a = ids[i], b = ids[j], ka = key(a), kb = key(b)
+                const a = ids[i], b = ids[j], ka = _idKey(a), kb = _idKey(b)
                 if (!adj.has(ka)) adj.set(ka, new Set())
                 if (!adj.has(kb)) adj.set(kb, new Set())
                 adj.get(ka).add(kb); adj.get(kb).add(ka)
                 edges.push([a, b])
             }
         }
-        const g = { sig, edges, adj, key }
+        const g = { sig, edges, adj, key: _idKey }
         if (persist) this._proto.graph = g
         else {
             // Bounded: warm / stream / spawn / map windows alternate between a handful of sigs, the
@@ -2841,9 +2823,6 @@ export class RoadSystem {
         const res = routeEdgeV2(spec, this._v2Trunc(), (x, z) => this._coarseH(x, z))
         const cl = res.cl
         cl._v2DirsSpec = dirs   // BUG-56 C: the re-route rung needs the pins this edge was routed with
-        if (res.pinRequested && res.feasible && !res.usedPin) {
-            this._v2DirFallbacks = (this._v2DirFallbacks || 0) + 1
-        }
         if (dirs) cl._v2Dirs = true   // tag = "a dirs-aware caller routed this" (even if pins fell back)
         this._proto.cls.set(key, cl)
         this._pendingRoutes.delete(key)
@@ -4871,16 +4850,6 @@ export class RoadSystem {
         return cs
     }
 
-    _v2CamAtArc(cam, sArc) {
-        const a = cam.arcPos, c = cam.camberRad, n = a.length
-        if (sArc <= a[0]) return c[0]
-        if (sArc >= a[n - 1]) return c[n - 1]
-        let lo = 0, hi = n - 1
-        while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (a[m] <= sArc) lo = m; else hi = m }
-        const span = a[hi] - a[lo] || 1
-        return c[lo] + (c[hi] - c[lo]) * (sArc - a[lo]) / span
-    }
-
     // FEAT-68: _gradeEdgeInPlace (v1 design-grade smoothing: wide-smooth + tanh deviation clamp)
     // and _tunnelPassOpts (FEAT-40's taut-string tunnel DETECTION pass) are DELETED. Both were
     // already unreachable: _v2GradePts solves the exact profile instead, and a bore is no longer
@@ -5401,13 +5370,9 @@ export class RoadSystem {
     // re-expressed in the piece's own domain. `staged` carries commits not yet applied within this
     // pair, so the second end of a mid-span sees the first end's split.
     _v2TrunkPieceAt(pieces, wk0, wArc, staged) {
-        const T0 = this._network.get(wk0)
-        let q = null
-        if (T0) q = _polyAtCum(T0.points, T0.polyCum, wArc)
-        else {
-            for (const st of staged) { const h = _polyAtCum(st.T.points, st.T.polyCum, wArc); if (h) { q = h; break } }
-        }
-        if (!q) return null
+        const T0 = this._network.get(wk0) ?? staged[0]?.T
+        if (!T0) return null
+        const q = _polyAtCum(T0.points, T0.polyCum, wArc)
         let best = null
         for (const k of (pieces.get(wk0) || [wk0])) {
             const e = this._network.get(k)
@@ -5754,7 +5719,7 @@ export class RoadSystem {
             const sep = Math.max(0, q.d - 2 * HWs)
             if (sep > SEAM_WINDOW) continue
             const latQ = (pts[i].x - q.fx) * q.tz - (pts[i].z - q.fz) * q.tx
-            const gap = Math.abs(yb[i] - (q.y + latQ * Math.sin(this._v2CamAtArc(cam, q.cum))))
+            const gap = Math.abs(yb[i] - (q.y + latQ * Math.sin(_interpolateCamber(cam.arcPos, cam.camberRad, q.cum))))
             const allow = TOLW + FILLV * sep
             if (gap - allow > seamOver) {
                 seamOver = gap - allow
@@ -5942,6 +5907,10 @@ export class RoadSystem {
     }
 
     _assembleGraphEdges(mx0, mx1, mz0, mz1) {
+        // Instrument tallies (world-validate, census scripts) count THIS build, not the instance's
+        // lifetime — the network worker's RoadSystem persists across builds.
+        this._v2Shoves = this._v2Reroutes = this._v2Infeasible = this._v2Condemned = 0
+        this._v2Rung = [0, 0, 0, 0]
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         // in-band test is by WORLD extent now (site ids live on a different grid than the macro band).
         const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
@@ -6108,7 +6077,6 @@ export class RoadSystem {
                     // the bad stretch is counted and surfaced rather than silently normal.
                     condemned = true
                     this._v2Condemned = (this._v2Condemned || 0) + 1
-                    ;(this._v2CondemnedKeys ||= []).push(key)
                 }
             }
         }
@@ -6350,53 +6318,44 @@ export class RoadSystem {
             // window-invariant. Matches _buildRunProfile / _buildCamberProfile arcPos[0] = -arcOrigin.
             const arcOrigin = entry.arcOrigin ?? 0
 
-            // QUAL-30: the ceded-hole slicer is gone with cededSpans. A wye's loser carried the
-            // winner's vertices verbatim over the ceded interval, so slicing it shipped a duplicate
-            // ribbon that z-fought the winner's — hence a list of kept ranges rather than one
-            // window. The T promotion removes the loser's geometry there outright, so every
-            // registered run is a single unbroken window again.
-            const i0 = 0, i1 = points.length - 1
-
             // Walk the polyline, cutting at every x/z integer-multiple-of-S boundary crossing.
             // `current` accumulates the active sub-polyline; on a cut we push the boundary point to
             // BOTH the closing sub-polyline and the new one (shared C0 point).
-            {
-                let current = [points[i0].clone()]
-                // BUG-10 camber continuity: track cumulative XZ run arc-length so each slice records
-                // the run-arc at its endpoints. XZ metric matches _buildCamberProfile's arcPos.
-                // Without this, arcSOffset defaulted to 0 and camber sawtoothed back to the run start
-                // at every tile seam.
-                let runArcAtA = (entry.polyCum ? entry.polyCum[i0] : 0) - arcOrigin   // run-arc at points[i-1]
-                let sliceStartArc = runArcAtA    // run-arc at current[0] (owner-origined)
-                const flush = (sliceEndArc) => {
-                    if (current.length >= 2) this._assignSlice(current, runKey, sliceStartArc, sliceEndArc)
-                    // start the next sub-polyline at the same boundary point we just closed on
-                }
-                for (let i = i0 + 1; i <= i1; i++) {
-                    const a = points[i - 1], b = points[i]
-                    const segLen = Math.hypot(b.x - a.x, b.z - a.z)  // XZ segment length (matches camber arcPos)
-                    // Collect all boundary crossings along segment a→b, ordered by parametric t∈(0,1).
-                    const crossings = []
-                    this._collectCrossings(a.x, b.x, S, (t) => crossings.push(t))
-                    this._collectCrossings(a.z, b.z, S, (t) => crossings.push(t))
-                    crossings.sort((p2, q) => p2 - q)
-                    let prevT = 0
-                    for (const t of crossings) {
-                        if (t <= 1e-9 || t >= 1 - 1e-9) continue        // skip endpoints (no zero-length cut)
-                        if (t <= prevT + 1e-9) continue                  // coincident crossings (corner) → one cut
-                        const cp = _lerpVec3(a, b, t)
-                        current.push(cp.clone())                          // close current sub-polyline ON the boundary
-                        const cpArc = runArcAtA + segLen * t
-                        flush(cpArc)
-                        current = [cp.clone()]                            // next sub-polyline STARTS on the same point (C0)
-                        sliceStartArc = cpArc
-                        prevT = t
-                    }
-                    current.push(b.clone())
-                    runArcAtA += segLen
-                }
-                flush(runArcAtA)  // trailing slice of this range
+            let current = [points[0].clone()]
+            // BUG-10 camber continuity: track cumulative XZ run arc-length so each slice records
+            // the run-arc at its endpoints. XZ metric matches _buildCamberProfile's arcPos.
+            // Without this, arcSOffset defaulted to 0 and camber sawtoothed back to the run start
+            // at every tile seam.
+            let runArcAtA = (entry.polyCum ? entry.polyCum[0] : 0) - arcOrigin   // run-arc at points[i-1]
+            let sliceStartArc = runArcAtA    // run-arc at current[0] (owner-origined)
+            const flush = (sliceEndArc) => {
+                if (current.length >= 2) this._assignSlice(current, runKey, sliceStartArc, sliceEndArc)
+                // start the next sub-polyline at the same boundary point we just closed on
             }
+            for (let i = 1; i < points.length; i++) {
+                const a = points[i - 1], b = points[i]
+                const segLen = Math.hypot(b.x - a.x, b.z - a.z)  // XZ segment length (matches camber arcPos)
+                // Collect all boundary crossings along segment a→b, ordered by parametric t∈(0,1).
+                const crossings = []
+                this._collectCrossings(a.x, b.x, S, (t) => crossings.push(t))
+                this._collectCrossings(a.z, b.z, S, (t) => crossings.push(t))
+                crossings.sort((p2, q) => p2 - q)
+                let prevT = 0
+                for (const t of crossings) {
+                    if (t <= 1e-9 || t >= 1 - 1e-9) continue        // skip endpoints (no zero-length cut)
+                    if (t <= prevT + 1e-9) continue                  // coincident crossings (corner) → one cut
+                    const cp = _lerpVec3(a, b, t)
+                    current.push(cp)                                  // close current sub-polyline ON the boundary
+                    const cpArc = runArcAtA + segLen * t
+                    flush(cpArc)
+                    current = [cp.clone()]                            // next sub-polyline STARTS on the same point (C0)
+                    sliceStartArc = cpArc
+                    prevT = t
+                }
+                current.push(b.clone())
+                runArcAtA += segLen
+            }
+            flush(runArcAtA)  // trailing slice of this run
         }
 
         this._slicedFrom = this._network
@@ -6650,11 +6609,10 @@ export class RoadSystem {
      *
      * runKeys are hashed to small non-negative ints — the value is opaque; what matters for
      * diagnosis is whether `rk` (resolved run) and `arcS` stay CONTINUOUS across a tile seam.
-     * (`lrk` is retained at 0 for log-column stability — it logged the now-removed hysteresis hint.)
      *
      * @param {number} wx — world X
      * @param {number} wz — world Z
-     * @returns {{ hit:number, rk:number, arcS:number, gradeY:number, pointY:number, lat:number, lrk:number }}
+     * @returns {{ hit:number, rk:number, arcS:number, gradeY:number, pointY:number, lat:number }}
      */
     debugSampleAt(wx, wz) {
         const p             = this._params
@@ -6671,7 +6629,7 @@ export class RoadSystem {
         // capture describes the surface that was actually driven; queryNearest only as the off-road
         // fallback, for a mark beside the road.
         const nr = this._resolveRoadSurface(wx, wz) ?? this.queryNearest(wx, wz, maxExt)
-        if (!nr) return { hit: 0, rk: 0, arcS: 0, gradeY: 0, pointY: 0, lat: 0, lrk: 0, minR: 9999 }
+        if (!nr) return { hit: 0, rk: 0, arcS: 0, gradeY: 0, pointY: 0, lat: 0, minR: 9999 }
         const dx = wx - nr.point.x, dz = wz - nr.point.z
         const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
         const arcS = nr.arcS ?? 0
@@ -6700,7 +6658,6 @@ export class RoadSystem {
             camber,
             pointY: nr.point.y,
             lat:    signedLat,
-            lrk:    0,
             minR,
         }
     }

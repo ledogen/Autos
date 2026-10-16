@@ -88,9 +88,9 @@ function compareExports(name, A, B, { skipTallies = false } = {}) {
         }
     }
     if (!jsonEq((A.delFrozen ?? []).slice().sort(), (B.delFrozen ?? []).slice().sort())) bad.push('delFrozen set')
-    if (!jsonEq((A.condemnedKeys ?? []).slice().sort(), (B.condemnedKeys ?? []).slice().sort())) bad.push('condemnedKeys')
-    // Tallies are per-INSTANCE diagnostics that accumulate across restreams (sync play behaves the
-    // same), so they only compare when both sides built exactly one window.
+    // (Condemned marks compare per run above; the exported condemnedKeys duplicate was deleted.)
+    // Tallies are per-BUILD diagnostics: a side that streamed several windows reports only its
+    // last build, so they only compare when both sides built exactly one window.
     if (!skipTallies && !jsonEq(A.tallies, B.tallies)) bad.push(`tallies ${JSON.stringify(A.tallies)} vs ${JSON.stringify(B.tallies)}`)
     if (!jsonEq(A.graph?.edges ?? null, B.graph?.edges ?? null)) bad.push('graph edges')
     if (!jsonEq(A.graph?.dropped ?? null, B.graph?.dropped ?? null)) bad.push('graph dropped pairs')
