@@ -89,7 +89,8 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 
 **Story mode & gameplay** — `story.js` (FEAT-43 gamemode sandbox) · `day.js` (day clock, FEAT-47) ·
 `economy.js` (payout/wallet/points spine, FEAT-53) · `offer-board.js` (FEAT-67 mission board —
-slots, expiry timers, seeded offers, names, card view-model; pure) · `mission.js` (mission generator
+slots, expiry timers, seeded offers, names, card view-model; pure) · `load-verdict.js` (FEAT-112 fits / warning / overload
+for the truck as configured + the overloaded-tire cap; pure, no imports) · `mission.js` (mission generator
 + run state machine) · `par.js` (FEAT-29 par oracle) · `poi.js` (lay-by POIs, FEAT-46) · `camp.js` (dispersed
 camping, FEAT-45) · `dialogue.js` (character channel) · `paper-route.js` + `throw.js` (FEAT-61) ·
 `gps.js` (FEAT-39 nav overlay) · `cluster.js` (FEAT-49 gauge cluster — instrument panel, not

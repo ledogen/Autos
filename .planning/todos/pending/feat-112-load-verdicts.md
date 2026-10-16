@@ -53,8 +53,9 @@ weight can trigger a verdict. The seed decides the board for every vehicle and c
 | **Warning** | mass past the soft limit (*"Warning: this load exceeds the recommended weight limit"*), any overhang past the tailgate, a loose load on an open deck | yes; the physics and the tire risk are the penalty |
 | **Overload** | mass past the hard cap (*"too heavy"*), too long or too wide for the space | **no** |
 
-On the stock truck: concrete (670 kg), cinder blocks (785 kg) and four drums (804 kg) are warnings,
-and every other current load fits.
+On the stock truck: concrete (670 kg), cinder blocks (785 kg) and four drums (804 kg) are warnings
+on weight; the railway ties (2.70 m, riding tilted onto the gate) overhang it 0.86 m and are a
+warning on length (owner, 2026-10-16: the overhang rule wins). Every other current load fits.
 
 ## Outline
 
@@ -193,18 +194,30 @@ as you would loaded, `pk()`. Under ~48 kN rear confirms the table.
 
 ## Acceptance
 
-- [ ] `loadVerdict` is pure and headless; a gate covers fits / warning / overload for size and for
+- [x] `loadVerdict` is pure and headless; a gate covers fits / warning / overload for size and for
       weight, and a composed upgrade changing the verdict.
-- [ ] Length fixtures: a 12 ft board is an overload in the stock bed; an 8 ft board is a warning in
+- [x] Length fixtures: a 12 ft board is an overload in the stock bed; an 8 ft board is a warning in
       the bed and an overload in a car fixture.
-- [ ] Weight: concrete (670 kg), cinder blocks (785 kg) and four drums (804 kg) are warnings on the
+- [x] Weight: concrete (670 kg), cinder blocks (785 kg) and four drums (804 kg) are warnings on the
       stock truck, with the soft-limit message; a fixture at 830 kg is an overload; every other
-      current load fits.
-- [ ] Every posted bed load has dimensions and a form; the gate fails on a missing one.
+      current load fits (the railway ties excepted — they overhang, see the ladder).
+- [x] Every posted bed load has dimensions and a form; the gate fails on a missing one.
 - [ ] The card shows the verdict and reason; overload disables accept with the reason.
-- [ ] Same seed → the same board whatever the configuration (SM-INV-12).
-- [ ] A fresh tire under 600 kg still cannot pop; over 600 kg it can, on the ramp above.
+- [x] Same seed → the same board whatever the configuration (SM-INV-12).
+- [x] A fresh tire under 600 kg still cannot pop; over 600 kg it can, on the ramp above.
       Pinned beside test/damage-filter-puncture.mjs; physics fingerprint unchanged with an empty bed.
+
+## Implementation (2026-10-16, branch feature/feat-112)
+
+- `src/load-verdict.js` — `truckConfig` (stock + upgrade fold), `loadVerdict`, `tireCondCap`. Pure.
+- `data/vehicle-models.js` `ranger.load` — the stock rating; bed size derives from `bed`.
+- `data/freight.js` — a `form` per row; sizes are the models' `PROP_MODELS` collision sizes.
+- `src/damage.js` — `tireCondCap` field, read by `_landBumpStop`; set each step by main.js from the
+  strapped load's mass. Physics fingerprint identical with an empty bed.
+- `offerBoard.card()` words a verdict the caller hands it; main.js computes it (`_offerVerdict`), so
+  the board never sees the truck. Map hover card gains a row; the parked panel a line, and accept is
+  disabled on an overload.
+- Gate `test/load-verdict.mjs`; a capped-condition case in `test/damage-filter-puncture.mjs`.
 
 ## Open — the owner's
 

@@ -28,6 +28,7 @@ import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
 import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
+import { truckConfig, loadVerdict, tireCondCap } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
 import { parkPrompt } from './park-badge.js'                // FEAT-90: the blue P "park first" badge
@@ -3786,6 +3787,7 @@ const _boardView = {
       nowH: now, payTier: economySystem.terms().payTier,
       route: route ? { par: route.par, distance: route.distance, endPoiId: route.endPoiId ?? null, placeName: route.placeName } : null,
       customers: papers ? route?.customers?.length ?? null : null,
+      verdict: _offerVerdict(o),
     })
     const poly = route?.poly ?? null
     return { count: n, idx: i, card, poly,
@@ -3793,6 +3795,21 @@ const _boardView = {
              start: route?.start ?? poly?.[0] ?? null, end: route?.legs?.[0].end ?? route?.end ?? poly?.[poly.length - 1] ?? null,
              nextText }
   },
+}
+
+// FEAT-112: the truck as configured NOW. Stock until FEAT-115's bed parts exist — then this folds
+// the installed upgrades (truckConfig's second argument) and has to be re-read when they change.
+const TRUCK = truckConfig(DEFAULT_VEHICLE_MODEL)
+const _HAUL_PIECE = PROP_MODELS.firewoodBundleA.collision.size   // one bundle; the pile is FEAT-114's
+/**
+ * FEAT-112: this offer's load verdict on the truck as configured, or null for cab cargo (courier,
+ * papers — always fits). Handed to offerBoard.card(); never to the roll (SM-INV-12).
+ */
+function _offerVerdict (offer) {
+  const sp = offerBoard.spec(offer)
+  if (sp?.bundles) return loadVerdict(TRUCK, { massKg: sp.massKg, size: _HAUL_PIECE, form: 'loose' })
+  const row = sp?.load ? FREIGHT[sp.load] : null
+  return row ? loadVerdict(TRUCK, { massKg: sp.massKg, size: PROP_MODELS[row.model].collision.size, form: row.form }) : null
 }
 
 /**
@@ -4576,7 +4593,8 @@ function _renderMissionUI () {
       // FEAT-67: a board offer reads as its card — the sentence, then base pay and the terms, then
       // the bonus. The same view-model the map's hover card draws, so the two can never disagree.
       const card = m.offer && offerBoard
-        ? offerBoard.card(m.offer, { nowH: daySystem.clockH(), payTier: economySystem.terms().payTier, route: j })
+        ? offerBoard.card(m.offer, { nowH: daySystem.clockH(), payTier: economySystem.terms().payTier, route: j,
+                                     verdict: _offerVerdict(m.offer) })
         : null
       const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       body.innerHTML = (card
@@ -4587,6 +4605,7 @@ function _renderMissionUI () {
           + (card.pay ? `<span class="mp-pay">${esc(card.pay)}</span> &nbsp;` : '')
           + `<span class="mp-dim">${card.terms.map(esc).join(' &middot; ')}</span><br>`
           + (card.bonus ? `${esc(card.bonus)}<br>` : '')
+          + (card.verdict ? `<span class="mp-verdict mp-${card.verdict.level}">${esc(card.verdict.text)}</span><br>` : '')
         : `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
           + `${j.edges} leg${j.edges === 1 ? '' : 's'}</span><br>`)
         // FEAT-46: a POI job does NOT move you — you are already parked at the marker, and claiming
@@ -4702,10 +4721,10 @@ function _renderMissionUI () {
       if (m.error) console.info('[mission]', m.error)
       break
   }
-  if (m.state === 'offer') {
-    const nb = document.getElementById('mp-accept')
-    if (nb) nb.textContent = 'accept mission'
-  }
+  const nb = document.getElementById('mp-accept')
+  if (m.state === 'offer' && nb) nb.textContent = 'accept mission'
+  // FEAT-112: an overload cannot be taken — the card line above says why.
+  if (nb) nb.disabled = m.state === 'offer' && !!m.offer && _offerVerdict(m.offer)?.verdict === 'overload'
   _syncJobCancel(hud, storySystem.isActive() && m.isOnJob())
 }
 
@@ -5171,6 +5190,7 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   // ~2 real minutes, so it can expire with the panel up. If it has gone, the panel re-presents what
   // is live now instead of accepting a job the board no longer has.
   const o = missionSystem.offer
+  if (o && offerBoard && _offerVerdict(o)?.verdict === 'overload') return   // FEAT-112: the button is disabled too
   if (o && offerBoard && !offerBoard.take(o.id, daySystem.clockH(), missionSystem.mission?.par)) { _refreshParkedOffers(); return }
   missionSystem.accept()
   // FEAT-96: a freight job's load is handed over at accept, already strapped — no drop, no loading beat.
@@ -6807,6 +6827,7 @@ function loop () {
     // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
+    damageModel.tireCondCap = tireCondCap(TRUCK, _freight?.massKg ?? 0)   // FEAT-112: an overloaded bed pops tires
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.

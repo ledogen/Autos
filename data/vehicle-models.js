@@ -83,6 +83,21 @@ export const VEHICLE_MODELS = {
       archZ0:          1.0975,  // AX_R 1.5675 ∓ ARCH_R 0.470 — the rear arch the wheelhouse covers
       archZ1:          2.0375,
     },
+    // FEAT-112: the STOCK load rating (src/load-verdict.js truckConfig folds upgrades over it). The
+    // bed's length and width come from `bed` above; this holds only what the mesh cannot say.
+    // Each part carries its own soft limit / hard cap and the truck's are the MINIMUM over the three,
+    // the way a real GVWR is set (owner 2026-10-16), so one heavy-duty part alone moves nothing.
+    //   softKg 570 — the manufacturer's payload: 2002 Ranger regular-cab 4x2, ~1,260 lb. Past it: warning.
+    //   hardKg 820 — owner, just above the cinder blocks (785 kg). Past it: the job cannot be taken.
+    //   popKg  600 — owner: past it a fresh tire starts to read worn to the puncture curve (damage.js).
+    //   overhangMaxM 1.22 — 4 ft past the tailgate, the US red-flag line: past it is too long.
+    load: {
+      containment:  'sides',
+      overhangMaxM: 1.22,
+      springs: { softKg: 570, hardKg: 820 },
+      dampers: { softKg: 570, hardKg: 820 },
+      tires:   { softKg: 570, hardKg: 820, popKg: 600 },
+    },
     ownWheels: false,
     paint: 'RangerPaint',
     tail: 'RangerTail',
