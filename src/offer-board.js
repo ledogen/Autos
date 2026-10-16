@@ -635,7 +635,7 @@ export class OfferBoard {
      * @param {object|null} [ctx.route] the planned mission ({par, distance, endPoiId, placeName}) or null
      * @param {number} [ctx.customers]  paper route: stops on the planned tour
      * @returns {{family, portrait: {sex,name}|null, flavor: string|null, sentence: Array<{t:string,b?:boolean}>,
-     *            pay: string|null, terms: string[], bonus: string|null, expiresInH: number}|null}
+     *            pay: string|null, terms: string[], bonus: string|null}|null}
      */
     card (offer, { nowH, payTier = 1, route = null, customers = null } = {}) {
         const sp = this.spec(offer)
@@ -685,7 +685,6 @@ export class OfferBoard {
             terms,
             // Larry's card shows base pay only (owner ruling) — papers never roll a bonus anyway.
             bonus: sp.bonus ? `Bonus: ${sp.bonus.name} — ${gateText(sp.bonus.gate)}` : null,
-            expiresInH,
         }
     }
 }

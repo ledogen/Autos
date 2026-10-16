@@ -556,14 +556,6 @@ export class GpsSystem {
     this._ring.visible = true
   }
 
-  dispose () {
-    this.group.removeFromParent()
-    this._chevGeo.dispose(); this._chevMat.dispose()
-    this._arrowGeo.dispose(); this._arrowMat.dispose()
-    this._ringGeo.dispose(); this._ringMat.dispose()
-    this._chev.dispose()
-    this._route = null; this._src = null
-  }
 }
 
 /**

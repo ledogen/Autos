@@ -322,7 +322,6 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
   gps.update(1 / 60)
   check('setEnabled(false) hides everything and stops updating',
     !gps._chev.visible && !gps._arrow.visible && !gps._ring.visible)
-  gps.dispose()
 }
 
 

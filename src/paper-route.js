@@ -130,12 +130,10 @@ export const PAPER_PARAMS = {
  */
 export const runPaper = {
     tier: 0,
-    routesRun: 0,       // settled routes this run; the result card's "your Nth route"
 }
 
 export function resetPaperRun () {
     runPaper.tier = 0
-    runPaper.routesRun = 0
 }
 
 /** How many customers this tier's route visits. */
@@ -899,7 +897,6 @@ export class PaperRouteSystem {
 
     /** Papers still in the truck. Zero does not end the route; the last one LANDING does. */
     stock () { return this.run ? this.run.stock : 0 }
-    hasStock () { return this.stock() > 0 }
     delivered () { return this.run ? this.run.hits.size : 0 }
     /** Seconds on the route's clock so far. Elapsed, not remaining: there is no bell to count to. */
     elapsed () { return this.run ? this.run.elapsed : 0 }
@@ -1342,7 +1339,6 @@ export class PaperRouteSystem {
         const settled = this._onSettle(r.payout, r.letter) || {}
         const advanced = advancesTier(r, n)
         if (advanced && runPaper.tier < PAPER_PARAMS.tiers.length - 1) runPaper.tier++
-        runPaper.routesRun++
         this.result = {
             ...r,
             spot:      Math.round(r.spot * 100) / 100,
@@ -1364,7 +1360,6 @@ export class PaperRouteSystem {
         this._lastExport = {
             segments: this.route.segments,
             edges:    this.route.edges,
-            distance: this.route.distance,
             trace:    this.run.trace,
             start:    { x: this.giver?.x ?? 0, z: this.giver?.z ?? 0 },
             customers: this.route.customers.map(c => ({ x: +(c.x ?? 0).toFixed(1), z: +(c.z ?? 0).toFixed(1) })),
