@@ -41,15 +41,15 @@
 
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
-import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps, tireContactForce, TIRE_DAMP_ENGAGE, WHEEL_SOFT_BAND } from './suspension.js'
-import { stepDrivetrain } from './drivetrain.js'
+import { computeNormalForce, effectiveWheelRadius, getWheelPosition, mountLocal, stepSuspensionSubsteps, tireContactForce, TIRE_DAMP_ENGAGE, WHEEL_SOFT_BAND } from './suspension.js'
+import { REV_THRESHOLD, stepDrivetrain } from './drivetrain.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
 
-// Speed threshold for input routing (rule-based, no dead-zone oscillation).
-// FEAT-23 removed FWD_THRESHOLD (the W-brake / drive-cut deadband); the drivetrain now supplies
-// forward torque continuously through the torque converter, so there is no roll-back drive cutoff.
-const REV_THRESHOLD =  2 / 3.6   //  0.556 m/s: S switches from braking to reverse above this
+// Speed threshold for input routing (rule-based, no dead-zone oscillation) is drivetrain.js's
+// REV_THRESHOLD. FEAT-23 removed FWD_THRESHOLD (the W-brake / drive-cut deadband); the drivetrain
+// now supplies forward torque continuously through the torque converter, so there is no roll-back
+// drive cutoff.
 
 // Engine solver substeps per physics step (Step 3e explains why 8). Coupled to rim-strike damage:
 // readRimStrikes divides an engine contact impulse by dt, so changing this rescales what the
@@ -382,8 +382,6 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   // body at the MOUNT height, ~a strut-length above the real hub): created here at the mount,
   // re-seated every step by updateWheelRims() below to the strut-derived hub position, wheel
   // order FL/FR/RL/RR to match strutComp indexing.
-  const axleF = -(params.wheelbase * params.weightRear)
-  const axleR = params.wheelbase * params.weightFront
   const rims = []
   // The hulls between the slab and the wheel cores are the ones that carry params.bodyRestitution.
   rims.bounceShapes = []
@@ -392,12 +390,8 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   for (let i = bounceFrom; i < engine.shapeCount(chassis); i++) {
     if (i < bedShapes[0] || i >= bedShapes[1]) rims.bounceShapes.push(i)
   }
-  for (const [x, z, front] of [
-    [-params.trackFront / 2, axleF, true], [params.trackFront / 2, axleF, true],
-    [-params.trackRear / 2, axleR, false], [params.trackRear / 2, axleR, false],
-  ]) {
-    const mountY = -(params.cgHeight - params.wheelRadius) +
-      (front ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
+  for (let c = 0; c < 4; c++) {
+    const { x, y: mountY, z } = mountLocal(c, params), front = c < 2
     engine.addHull(chassis, wheelCorePoints(x, mountY, z, params), RIM_MATERIAL)
     rims.push({ shapeIndex: engine.shapeCount(chassis) - 1, x, z, mountY, front, lastY: mountY })
   }
@@ -707,20 +701,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     const isAirborne = (params._tireFz[i] || 0) <= 0
 
     // Phase 4: compute rMount (rotated body mount point offset) for suspension body force torque.
-    // Must match the local offset used in stepSuspensionSubsteps for consistency.
-    const isFrontW = i < 2
-    const isLeftW  = i === 0 || i === 2
-    const mLocalX = isLeftW
-      ? -(isFrontW ? params.trackFront : params.trackRear) / 2
-      :  (isFrontW ? params.trackFront : params.trackRear) / 2
-    const mLocalZ = isFrontW
-      ? -(params.wheelbase * params.weightRear)
-      :  (params.wheelbase * params.weightFront)
-    // Include suspensionBodyOffset so the suspension-force torque arm matches the mount used in
-    // stepSuspensionSubsteps and getWheelPosition (BUG-05: all three mount-Y sites must agree).
-    const mLocalY = -(params.cgHeight - params.wheelRadius) +
-      (isFrontW ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
-    const rMount = params._rotateVector({ x: mLocalX, y: mLocalY, z: mLocalZ })
+    // The same mount stepSuspensionSubsteps and getWheelPosition use (BUG-05: mountLocal).
+    const rMount = params._rotateVector(mountLocal(i, params))
 
     // Phase 4.1: apply suspension spring force to body along strut axis (body_up direction).
     // Replaces the Phase 4 world-Y force vector — on a pitched body, the strut axis is NOT world-Y.

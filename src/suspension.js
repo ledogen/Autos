@@ -27,6 +27,27 @@ export function computeNormalForce (corner, vehicleState, params) {
 }
 
 /**
+ * A corner's strut MOUNT point in body space (forward = −Z): the hub's rest offset from the CG,
+ * (cgHeight − wheelRadius) below it, plus the ride-height body offset (D-08). BUG-05: every site
+ * that needs the mount — getWheelPosition, stepSuspensionSubsteps, physics.js's Step 3 torque arm
+ * and its rim cores — reads it here, so they cannot disagree. Returns a fresh object.
+ */
+export function mountLocal (corner, params) {
+  const isFront = corner < 2
+  const isLeft  = corner === 0 || corner === 2
+  return {
+    x: isLeft
+      ? -(isFront ? params.trackFront : params.trackRear) / 2
+      :  (isFront ? params.trackFront : params.trackRear) / 2,
+    y: -(params.cgHeight - params.wheelRadius) +
+      (isFront ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0)),
+    z: isFront
+      ? -(params.wheelbase * params.weightRear)
+      :  (params.wheelbase * params.weightFront),
+  }
+}
+
+/**
  * World-space position of one wheel's hub CENTRE (not the contact patch — physics.js hands the
  * hub and the wheel radius to queryContacts, which finds the patch on slopes and walls alike).
  *
@@ -41,29 +62,18 @@ export function computeNormalForce (corner, vehicleState, params) {
  */
 export function getWheelPosition (corner, vehicleState, params) {
   const isFront = corner === 0 || corner === 1
-  const isLeft  = corner === 0 || corner === 2
 
-  const localX = isLeft
-    ? -(isFront ? params.trackFront : params.trackRear) / 2
-    :  (isFront ? params.trackFront : params.trackRear) / 2
-
-  const localZ = isFront
-    ? -(params.wheelbase * params.weightRear)
-    :  (params.wheelbase * params.weightFront)
-
-  // Wheel hub center: (cgHeight - wheelRadius) below CG in body Y (mount point in body space).
-  // MUST include suspensionBodyOffset to match stepSuspensionSubsteps (_mountLocal). Without it the
-  // Pacejka contact query places the hub at the wrong height when ride height is tuned, so
-  // queryContacts finds no ground contact while the suspension is loaded — wheels report Fn=0/SA=0
-  // and the truck slides frictionlessly even though the strut is bearing weight (BUG-05 real cause).
-  const localY = -(params.cgHeight - params.wheelRadius) +
-    (isFront ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
+  // Mount point in body space. MUST include suspensionBodyOffset like every other mount site
+  // (mountLocal). Without it the Pacejka contact query places the hub at the wrong height when ride
+  // height is tuned, so queryContacts finds no ground contact while the suspension is loaded —
+  // wheels report Fn=0/SA=0 and the truck slides frictionlessly even though the strut is bearing
+  // weight (BUG-05 real cause).
+  const local = mountLocal(corner, params)
 
   // Rotate local offset into world space using the injected helper.
-  const local = { x: localX, y: localY, z: localZ }
   const rotated = typeof params._rotateVector === 'function'
     ? params._rotateVector(local)
-    : { x: localX, y: localY, z: localZ }
+    : local
 
   // Phase 4.1 (D-02): derive hub world position from strutComp along body_down axis.
   // strutLen = L_S - strutComp[i]; hubWorld = mountWorld + strutLen * body_down.
@@ -393,17 +403,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   // substeps; only the strut length under it moves. Local mount: the hub's rest offset from the
   // CG, (cgHeight − wheelRadius) below it, plus the ride-height body offset (D-08).
   for (let i = 0; i < 4; i++) {
-    const isFront = i < 2
-    const isLeft  = i === 0 || i === 2
-    const localX = isLeft
-      ? -(isFront ? params.trackFront : params.trackRear) / 2
-      :  (isFront ? params.trackFront : params.trackRear) / 2
-    const localZ = isFront
-      ? -(params.wheelbase * params.weightRear)
-      :  (params.wheelbase * params.weightFront)
-    const localY = -(params.cgHeight - params.wheelRadius) +
-      (isFront ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
-    const local = { x: localX, y: localY, z: localZ }
+    const local = mountLocal(i, params)
     const rMount = typeof params._rotateVector === 'function'
       ? params._rotateVector(local)
       : local

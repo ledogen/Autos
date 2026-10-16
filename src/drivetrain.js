@@ -26,8 +26,9 @@
 
 const RPM_PER_RAD = 60 / (2 * Math.PI)   // rad/s → rev/min
 
-// Input-routing thresholds (mirror physics.js): reverse engages only when clearly stopped/rolling back.
-const REV_THRESHOLD = 2 / 3.6            // +0.556 m/s — S drives reverse below this, brakes above it
+// Input-routing threshold, shared with physics.js's brake routing: reverse engages only when clearly
+// stopped/rolling back.
+export const REV_THRESHOLD = 2 / 3.6     // +0.556 m/s — S drives reverse below this, brakes above it
 
 /**
  * Interpolate the engine torque curve (piecewise-linear lookup) at a given RPM.
