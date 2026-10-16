@@ -835,11 +835,18 @@ export class PropSystem {
       for (const p of chunk.places || []) {
         if (sweepIgnoresKey(p.key)) continue   // litter + cover stand inside the exclusion by design
         if (roadClear(p.x, p.z, exclusion)) continue
-        doomed.push([cx, cz])
+        doomed.push([cx, cz, (start + i) % n])
         break                    // one intruded prop condemns the chunk; no need to price the rest
       }
     }
-    this._roadScanCursor = (start + take) % n
+    // Releasing a chunk deletes its key, so every key after it slides down one index. Pull the
+    // cursor back by the doomed keys that sat BEFORE it, or the next call starts one chunk late per
+    // drop and those chunks are never examined — the owed pass is exactly one ring of visits, so a
+    // skipped chunk kept its props on the road for good (measured: free-roam reseed 6 → 3015284719,
+    // 152 props left inside the exclusion; every drop skipped its neighbour).
+    let next = (start + take) % n
+    next -= doomed.filter(d => d[2] < next).length
+    this._roadScanCursor = next
     for (const [cx, cz] of doomed) this.releaseChunk(cx, cz)
     return doomed.length
   }

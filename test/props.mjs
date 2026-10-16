@@ -252,6 +252,40 @@ console.log('8. BUG-71 road-intrusion sweep is a fixed point of the scatter (no 
   sys.dispose()
 }
 
+console.log('8b. an owed pass (one visit per live chunk, 2 per call) clears EVERY intruded chunk')
+{
+  // The cursor bug: releasing a doomed chunk slid the keys after it down one index while the cursor
+  // advanced the full step, so each drop skipped its neighbour and one ring of visits left those
+  // chunks' props on the road for good (free-roam reseed 6 → 3015284719: 152 props left in the road).
+  // The road runs along a chunk ROW so the doomed chunks are neighbours in key order (the case that
+  // skips). A road appears through every chunk column at once AFTER the scatter, the sweep runs on the main
+  // thread's budget, and the re-scatter must see the new road — so the samplers read a mutable flag.
+  const scene = new THREE.Scene()
+  let roadOn = false
+  const roadClear = (x, z, keepOut) => !roadOn || Math.abs(z - 32) >= keepOut
+  const samplers = {
+    heightAt: () => 20, normalAt: () => ({ x: 0, y: 0.995, z: 0 }),
+    roadBlocked: (x, z) => !roadClear(x, z, 9), roadClear, roadDist: (x, z) => roadOn ? Math.abs(z - 32) : Infinity,
+    groundAt: () => ({ green: 0, rock: 0 }), padBlocked: () => false,
+  }
+  const sys = new PropSystem({ scene, worldSeed: 5, samplers })
+  sys.update(0, 0, 2)
+  sys.drainScatter()
+  roadOn = true
+  const intruded = () => { let k = 0; for (const c of sys._chunks.values()) for (const p of c.places)
+    if (!/^(smallRock|medRock|grass|rye|sage)#/.test(p.key) && !roadClear(p.x, p.z, 9)) k++; return k }
+  const pre = intruded()
+  // Like the frame loop: each call is followed by update(), which re-queues a released chunk at the
+  // END of the key order — so the ring never shrinks and the visits cannot wrap round to a skip.
+  for (let owed = sys.liveChunkCount(); owed > 0; owed -= 2) {
+    sys.invalidateRoadIntrusions(roadClear, 9, 2)
+    sys.update(0, 0, 2); sys.drainScatter()
+  }
+  ok(pre > 0, `fixture puts props in the road once it appears (${pre})`)
+  ok(intruded() === 0, `one owed pass leaves no prop in the road (${intruded()} left)`)
+  sys.dispose()
+}
+
 console.log('9. litter deferral: scatter without litter + litter alone == the inline scatter')
 {
   // The bbonly ring scatters { litter: false } and runs scatterLitterGen on promotion; the two
