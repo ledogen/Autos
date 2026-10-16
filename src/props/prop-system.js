@@ -52,6 +52,13 @@ const CAPACITY = {
 // FEAT-85: "cat#v" → is this a cover key (grass/brush)? Cover skips the shadow bake, the realtime
 // caster flag and the road-intrusion sweep (it stands beside the road ON PURPOSE).
 const isCoverKey = (key) => COVER_CATS.has(key.slice(0, key.indexOf('#')))
+// Keys the PERF-07 shadow bake draws: not cover (mush at 0.25 m/texel) and not the FADE_CATS ground
+// litter — pebbles/medium rocks shrink to nothing by 77–133 m, but a baked speck outlived them to
+// the 380 m shadow fade (R-16, owner 2026-10-15).
+const bakesShadow = (key) => {
+  const cat = key.slice(0, key.indexOf('#'))
+  return !COVER_CATS.has(cat) && !FADE_CATS.has(cat)
+}
 // Keys the BUG-71 road-intrusion sweep must IGNORE: ground litter the scatter deliberately stands
 // inside the road exclusion (smallRock on the shoulder + road, medRock on the shoulder — FADE_CATS)
 // and the FEAT-85 cover, which stands beside the road by design. A category missing from this
@@ -255,7 +262,7 @@ export class PropSystem {
     this._bakeScene = new THREE.Scene()
     this._bakeMeshes = new Map()
     for (const [key, rec] of this._meshes) {
-      if (isCoverKey(key)) continue        // FEAT-85: grass casts no baked shadow (mush at 0.25 m/texel)
+      if (!bakesShadow(key)) continue      // FEAT-85 cover + R-16 ground litter cast no baked shadow
       const src = rec.mesh.geometry
       const geo = new THREE.BufferGeometry()
       geo.setAttribute('position', src.getAttribute('position'))   // shared — no duplicate VRAM
@@ -285,7 +292,7 @@ export class PropSystem {
       const chunk = this._chunks.get((cx + dx) + ',' + (cz + dz))
       if (!chunk) continue
       const places = chunk.places
-      for (let pi = 0; pi < chunk.bakeEnd; pi++) {   // S-49: the cover tail is never baked
+      for (let pi = 0; pi < chunk.bakeEnd; pi++) {   // S-49: the litter tail is never baked
         const pr = places[pi]
         const dst = this._bakeMeshes.get(pr.key)
         if (!dst) continue
@@ -443,8 +450,9 @@ export class PropSystem {
   /**
    * Placement records → retained place records + collidable descriptors (shared by both commits).
    * @returns {number} bakeEnd — one past the last record the shadow bake draws (`bakeEnd` in, when
-   *   none is added). Cover is always the contiguous TAIL of a chunk's places (the base passes carry
-   *   none; litterPasses runs the zone rocks before coverPass), so _fillBakeScene stops there (S-49).
+   *   none is added). The litter (zone rocks, then cover) is always the TAIL of a chunk's places and
+   *   none of it bakes, so _fillBakeScene stops there (S-49) — the per-record check still skips
+   *   anything unbaked inside the range.
    */
   _buildPlaces(placements, places, collidables, bakeEnd = 0) {
     // sunShear is absent headless (no sky); the sun does not move inside one commit.
@@ -481,7 +489,7 @@ export class PropSystem {
         key, mat: Float32Array.from(_m.elements), k,
         x: pl.x, y: pl.y, z: pl.z, scale: pl.scale, tint: pl.tint,
       })
-      if (!isCoverKey(key)) bakeEnd = places.length
+      if (bakesShadow(key)) bakeEnd = places.length
 
       // FEAT-06b: record the collidable (capsule for trees, sphere for rocks, bush for soft-drag)
       const col = this._collision.get(key)

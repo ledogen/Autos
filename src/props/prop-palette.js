@@ -26,7 +26,8 @@ import {
 export const COVER_CATS = new Set(['grass', 'rye', 'sage', 'grassLo', 'ryeLo', 'sageLo'])
 export const COVER_FAR_CAT = { grass: 'grassLo', rye: 'ryeLo', sage: 'sageLo' }
 // Ground litter drawn through the GROUND material: the cover's distance shrink (so a pebble costs
-// no fragments past the fade), no wind, single-sided. Still baked into the shadow atlas.
+// no fragments past the fade), no wind, single-sided. NOT baked into the shadow atlas (R-16, owner
+// 2026-10-15): the rock is gone by 77–133 m but its baked speck lasted to the 380 m shadow fade.
 export const FADE_CATS = new Set(['smallRock', 'medRock'])
 
 const rr = (rng, [lo, hi]) => lo + (hi - lo) * rng()
