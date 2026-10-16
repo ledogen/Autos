@@ -145,32 +145,37 @@ const CARGO_FRICTION_REF = 0.8           // must match src/debris.js bundle fric
 const BED_SHAPE_MU      = BED_CARGO_MU * BED_CARGO_MU / CARGO_FRICTION_REF        // ≈ 0.028
 
 // ── QUAL-25: chassis collider profile — measured off the ACTUAL vehicle model ──────────────
-// Body-frame breakpoints (origin = CG, forward = −Z) of hilux.glb pushed through the exact
-// seating transform vehicle-model.js applies (targetLength 4.6 × bodyScale 1.065, shiftRear
-// 0.318, shiftDown 0.21, planted at cgHeight; mirrors excluded from widths). Re-measure via
-// Blender if the model or its VEHICLE_MODELS spec changes — and when a SECOND vehicle model
-// lands, this profile should move into data/vehicle-models.js as per-model hull data (the
-// QUAL-25 option-2 path) instead of growing switches here.
+// Body-frame breakpoints (origin = CG, forward = −Z) of ranger.glb, the default truck, pushed
+// through the exact seating transform vehicle-model.js applies (targetLength 4.705 × bodyScale
+// 1.0 = scale 1.000, shiftRear 0.299, shiftDown −0.045, planted at cgHeight — so body y = model
+// y − 0.651; mirrors and the roof antenna excluded). Measured 2026-10-15 (review-2 R-05) by
+// loading the GLB headlessly through that transform; the numbers agree with the generator's own
+// constants in assets/models/src/ranger.py (Y_COWL, Y_CAB_REAR, Z_ROOF + Z_ROOF_CROWN, Z_RAIL,
+// Z_HIP, W_FLANK, W_BELT; the hood heights are CLIP_ST's). Until then this profile was hilux.glb's: 8 cm past the drawn front
+// bumper, 12 cm past the rear, and a roof 7 cm too high. Re-measure if the model or its
+// VEHICLE_MODELS spec changes — and when a SECOND vehicle model lands, this profile should move
+// into data/vehicle-models.js as per-model hull data (the QUAL-25 option-2 path) instead of
+// growing switches here.
 //
-// The deck hull is a SOLID at rail height by default — hilux.glb's bed top is closed (reads as a
-// tonneau cover), owner ruling 2026-08-15. A model with a real open bed carries a `bed` spec in
-// data/vehicle-models.js and gets a hollow well instead (see createVehicleChassis) so cargo can
-// ride in it; ranger.glb, the default truck, does (owner, 2026-09-29).
+// The deck hull is a SOLID at rail height when the model has no open bed (a closed bed top reads
+// as a tonneau cover, owner ruling 2026-08-15). A model with a real open bed carries a `bed` spec
+// in data/vehicle-models.js and gets a hollow well instead (see createVehicleChassis) so cargo can
+// ride in it; ranger.glb does (owner, 2026-09-29).
 const CHASSIS_PROFILE = {
-  noseZ: -2.13,        // front bumper face
-  tailZ: 2.77,         // rear bumper face
-  cowlZ: -0.72,        // windshield base
-  roofFrontZ: -0.30,   // windshield top / roof leading edge
-  roofRearZ: 0.60,     // roof trailing edge (rear window top)
-  cabRearZ: 0.73,      // cab back panel → bed rail
-  hoodNoseY: 0.30,     // hood height at the grille
-  hoodCowlY: 0.54,     // hood height at the cowl
-  roofY: 1.04,         // roof plane (the old single hull had 0.40 — rollovers rested on air)
-  railY: 0.29,         // bed rail / tonneau deck top
-  beltY: 0.18,         // beltline — top of the full-length lower slab (fenders/doors/bumpers)
-  slabHalfW: 0.95,     // fenders/bumpers
-  cabHalfW: 0.78,      // cab + roof (mirrors excluded)
-  deckHalfW: 0.93,     // bed sides
+  noseZ: -2.053,       // front bumper face (the chrome blade)
+  tailZ: 2.651,        // rear bumper face
+  cowlZ: -0.689,       // windshield base
+  roofFrontZ: -0.17,   // roof leading edge (windshield top)
+  roofRearZ: 0.45,     // roof trailing edge (rear window top)
+  cabRearZ: 0.525,     // cab back panel → bed rail
+  hoodNoseY: 0.36,     // hood height at the grille
+  hoodCowlY: 0.52,     // hood height at the cowl
+  roofY: 0.97,         // roof crown (the old single hull had 0.40 — rollovers rested on air)
+  railY: 0.49,         // bed rail top
+  beltY: 0.21,         // top of the full-length lower slab: the hip, where the flank is widest
+  slabHalfW: 0.85,     // fenders/bumpers/tail lamps — the widest body point
+  cabHalfW: 0.78,      // cab at the beltline (mirrors excluded)
+  deckHalfW: 0.845,    // bed sides
 }
 
 /**
