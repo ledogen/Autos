@@ -752,6 +752,7 @@ export const ROAD_ROUTER_VERSION = 'v2'
 const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
+const ACUTE_ELBOW_COS      = Math.cos(75 * Math.PI / 180)   // BUG-86: a deg-2 elbow sharper than 75° gets no through pin
 
 // BUG-57 rung (owner re-scope 2026-08-25, session 2): "keep the connection, trim the mess." The
 // merge ladder gains TANGLE-ONLY relaxations, gated on this test: a pair whose two pure routes
@@ -3135,6 +3136,17 @@ export class RoadSystem {
         ks.sort()
         const p1 = this._nodePos(ks[0].split(',').map(Number))
         const p2 = this._nodePos(ks[1].split(',').map(Number))
+        // BUG-86: an ACUTE elbow (both neighbours within 90° of each other, seen from the node) is a
+        // turnaround, not a point on a corridor. The chord pin there sits ~90° off BOTH legs' own
+        // bearings, so each leg is forced to leave square to where it is going — a teardrop at the
+        // node, and the two legs run back side by side (seed 1813164377 node 0,-3,2: 67° elbow,
+        // 600 m hug, 3 crossings). No pin: each leg departs toward its own neighbour.
+        // 75°, not 90°: the battery holds 3–8 deg-2 elbows per window at 65–89°; un-pinning all of
+        // them (90°) moved Ts into two new junction-mouth rows (junction-stitch seed 11, clearance
+        // seed 6 mark-B). Under 75° only ~10 nodes change and every gate matches main.
+        const pn = this._nodePos(nk.split(',').map(Number))
+        const ax = p1.x - pn.x, az = p1.z - pn.z, bx = p2.x - pn.x, bz = p2.z - pn.z
+        if (ax * bx + az * bz > ACUTE_ELBOW_COS * Math.hypot(ax, az) * Math.hypot(bx, bz)) return null
         const dx = p2.x - p1.x, dz = p2.z - p1.z, l = Math.hypot(dx, dz)
         return l > 1e-9 ? { x: dx / l, z: dz / l, toward: ks[1] } : null
     }
