@@ -1,7 +1,7 @@
 ---
 id: FEAT-96
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-10-06
 source: owner, 2026-10-06 — "freight is non-shock-sensitive cargo that is strapped to the bed. also
@@ -174,13 +174,14 @@ a full accept → deliver run in story mode has NOT been driven yet.
 
 ## Acceptance
 
-- [~] `physics-engine.js` gains `createWeldJoint` — done. `jointForce` moves to FEAT-97, its first
+- [x] `physics-engine.js` gains `createWeldJoint` — done. `jointForce` moves to FEAT-97, its first
       user (no dead code). No engine type leaks past the seam.
 - [x] Accepting a freight offer puts the load in the bed, already welded. `freight-strap.mjs`: 400 kg
       drifts 2.5 mm over a rough road at 15 m/s (< 5).
 - [x] Mass is real: welded 400 kg squats the rear struts within 0.2 mm of the same body loose.
-- [~] Par and pay scale with mass through `FREIGHT_PAR_SLACK_PER_KG` — done. The empty-versus-loaded
-      drive time is NOT recorded yet; the constant is still haul's extrapolation.
+- [x] Par and pay scale with mass through `FREIGHT_PAR_SLACK_PER_KG` — done. No empty-versus-loaded
+      drive was recorded: the owner ruled 2026-10-15 that a guess is fine, and kept 0.0007 (the
+      2026-10-12 run's pay was called "perfect").
 - [x] "Clean up cargo" replaces "abandon job" on a strapped job: +1 h on the day clock, then the
       ordinary cancel (slot lock included).
 - [x] Givers — superseded by the 2026-10-10 ruling (`cargo.md` decides). The farm POI exists (FEAT-105).
@@ -199,3 +200,10 @@ a full accept → deliver run in story mode has NOT been driven yet.
 - `src/main.js` — the job-cancel button (`_syncJobCancel`, the `#job-cancel` click handler).
 - `src/day.js` — time skips (`_advanceHours`).
 - `src/mission.js` — settle and cancel.
+
+## Resolution (2026-10-15)
+
+Closed. Built, on the board, and driven by the owner (2026-10-12). The one open item was the
+empty-versus-loaded drive time for `FREIGHT_PAR_SLACK_PER_KG`. The owner chose a guess over a
+recorded scenario, and the constant stays at 0.0007 (a 400 kg load gets par × 1.28). Retune it in
+FEAT-69 if multi-day runs say otherwise. `jointForce` ships with FEAT-97.

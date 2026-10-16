@@ -920,6 +920,12 @@ therefore the bonus objective — works on any job.
 > coverage. A fragile load at zero health fails the job. Provenance:
 > `missions.md` §3, amendment 2026-10-06; FEAT-96, FEAT-97.
 
+> **Amendment [OWNER 2026-10-15] — fragile's base pay is guaranteed.** Superseding the line above for
+> restraint: a fragile job pays the **guaranteed Base + a tip set by cargo condition** (the whole tip
+> at 100 %, none at 50 % or below, linear between). The clock does not tip it. Condition does not cut
+> the base — *"an item at 25 % condition wouldn't even be worth carrying."* Zero condition still fails
+> the job. Provenance: FEAT-97.
+
 > **Amendment [OWNER 2026-10-08] — $0-cash missions are retired.** Every job pays some cash, even for
 > bare completion (SM-INV-4's base pay). A bonus item rides **on top of** cash, never instead of it;
 > the parts-only "archetype 3" of `design-amendments-2026-08-17.md` §1 is killed. A job that FAILS

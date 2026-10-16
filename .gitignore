@@ -73,4 +73,5 @@ perf-runs/
 tools/dashboard/tickets.json
 tools/dashboard/stats.json
 tools/dashboard/cargo.json
+tools/dashboard/sounds.json
 test/.scratch/

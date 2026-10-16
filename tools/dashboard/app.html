@@ -183,6 +183,20 @@
   .pcard .pm { color:var(--dim); font-size:12.5px; margin-top:2px; }
   .pcard .pm b, .pcard .pf b { color:var(--dimmer); font-weight:400; }
   .pcard .pf { font-size:12.5px; margin-top:3px; }
+  /* sounds */
+  .scard.drag { border-color:var(--accent); background:var(--panel2); }
+  .scard .sbtns { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+  .scard audio { height:28px; }
+  .scard .take { display:flex; gap:6px; align-items:center; font-family:var(--mono);
+                 font-size:11.5px; color:var(--dim); }
+  .scard details { margin-top:4px; }
+  .scard summary { cursor:pointer; color:var(--dimmer); font-size:12px; }
+  .scard .body { font-size:13.5px; }
+  .scard .body p:first-child { margin-top:6px; }
+  .scard .drop { color:var(--dimmer); font-size:11.5px; margin-left:auto; }
+  .guide { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+           padding:2px 14px; margin-bottom:14px; }
+  .guide summary { cursor:pointer; padding:8px 0; color:var(--dim); }
 </style>
 </head>
 <body>
@@ -192,6 +206,7 @@
     <a href="#/tickets" data-nav="tickets">Tickets</a>
     <a href="#/cargo" data-nav="cargo">Cargo</a>
     <a href="#/places" data-nav="places">Places</a>
+    <a href="#/sounds" data-nav="sounds">Sounds</a>
     <a href="#/stats" data-nav="stats">Overview</a>
   </nav>
   <input id="search" type="search" placeholder="filter by id, title, text…" autocomplete="off">
@@ -201,15 +216,16 @@
 
 <script type="module">
 /* ─────────────────────────── data ─────────────────────────── */
-let TICKETS = [], LANES = [], BY_ID = new Map(), BACKLINKS = new Map(), STATS = null, STORY = null;
+let TICKETS = [], LANES = [], BY_ID = new Map(), BACKLINKS = new Map(), STATS = null, STORY = null, SOUNDS = null;
 
 async function load() {
-  const [t, s, c] = await Promise.all([
+  const [t, s, c, so] = await Promise.all([
     fetch('tickets.json?' + Date.now()).then(r => r.json()),
     fetch('stats.json?' + Date.now()).then(r => r.json()),
     fetch('cargo.json?' + Date.now()).then(r => r.json()),
+    fetch('sounds.json?' + Date.now()).then(r => r.json()),
   ]);
-  TICKETS = t.tickets; LANES = t.laneOrder || []; STATS = s; STORY = c;
+  TICKETS = t.tickets; LANES = t.laneOrder || []; STATS = s; STORY = c; SOUNDS = so;
   BY_ID = new Map(TICKETS.map(x => [x.id, x]));
   BACKLINKS = new Map();
   for (const tk of TICKETS) {
@@ -373,8 +389,10 @@ const STATUS_COLOR = { open: '#6fb3ff', closed: '#7fd97f', cancelled: '#8b94a3' 
 const DEFAULTS = {
   tickets: { type: [], status: ['open'], sev: [], lane: [] },
   cargo: { kind: [], region: [], place: [], asset: [] },
+  sounds: { status: [], group: [] },
 };
-const filterView = () => (location.hash.startsWith('#/cargo') ? 'cargo' : 'tickets');
+const filterView = () => (location.hash.startsWith('#/cargo') ? 'cargo'
+  : location.hash.startsWith('#/sounds') ? 'sounds' : 'tickets');
 
 function readFilters(view = 'tickets') {
   const q = new URLSearchParams((location.hash.split('?')[1] || ''));
@@ -520,7 +538,9 @@ const placeHref = (name) => `#/cargo?place=${encodeURIComponent(name)}`;
 const places = (c) => [...c.from, ...c.to].map(e => e.name);
 
 function warnStrip(view) {
-  const w = STORY.warnings.filter(x => x.view === view || x.view === 'both');
+  return warnTable(STORY.warnings.filter(x => x.view === view || x.view === 'both'));
+}
+function warnTable(w) {
   if (!w.length) return '';
   const rows = w.map(x => `<tr>
       <td class="name"><a class="pathref" href="vscode://file${STATS.root}/${x.file}:${x.line || 1}">${x.file.replace('.planning/story-mode/', '')}${x.line ? `:${x.line}` : ''}</a></td>
@@ -749,6 +769,117 @@ function viewStats() {
     <p class="note" style="margin-top:24px">Indexed ${new Date(s.generated).toLocaleString()}.</p>`;
 }
 
+/* ─────────────────────────── sounds ───────────────────────────
+ * FEAT-120's body, read live by index.mjs into sounds.json: one card per sound,
+ * grouped by source. ▶ imports the GAME's own src/*-audio.js module and calls
+ * the hook the ticket names, so what plays is the shipped code, never a copy.
+ * Takes (wip/audio, assets/audio) play in <audio>; dropping a file on a card
+ * uploads it into wip/audio/<slug>/. */
+const SOUND_SOURCES = ['Synthesize', 'Record', 'Library', 'Engine bake'];
+const SOUND_STATUSES = ['todo', 'wip', 'shipped', 'cut'];
+const SOUND_COLOR = { todo: '#8b94a3', wip: '#ffc25c', shipped: '#7fd97f', cut: '#4d545f' };
+
+/** Preview drivers for sustained voices that need parameters swept to be heard. */
+function ramp(ms, step, end) {
+  const t0 = performance.now();
+  const id = setInterval(() => {
+    const u = Math.min(1, (performance.now() - t0) / ms);
+    step(u);
+    if (u >= 1) { clearInterval(id); end(); }
+  }, 30);
+}
+const DRIVERS = {
+  async 'engine-sweep'() {
+    const m = await import('/src/engine-audio.js');
+    m.ensureEngineAudio();
+    ramp(4000, u => m.updateEngineAudio(800 + 4200 * u, 1), () => m.updateEngineAudio(5000, 0, false));
+  },
+  async 'wind-sweep'() {
+    const m = await import('/src/wind-audio.js');
+    m.ensureWindAudio();
+    const at = v => m.updateWindAudio({ velocity: { x: v, y: 0, z: 0 } });
+    ramp(5000, u => at(45 * Math.sin(Math.PI * u)), () => at(0));
+  },
+  async crank() {
+    const m = await import('/src/engine-audio.js');
+    m.startCrankAudio();
+    setTimeout(() => { m.stopCrankAudio(); m.playCatchAudio(); }, 1400);
+  },
+};
+/** `module.js export` → one-shot (after the module's ensure*Audio, if any); a bare name → a driver. */
+async function playHook(spec) {
+  const [mod, fn] = spec.split(/\s+/);
+  if (!fn) return DRIVERS[mod]();
+  const m = await import('/src/' + mod);
+  for (const [k, f] of Object.entries(m)) if (/^ensure\w*Audio$/.test(k)) f();
+  m[fn]();
+}
+
+function soundMatches(x, f, q) {
+  if (f.status.length && !f.status.includes(x.status)) return false;
+  if (f.group.length && !f.group.includes(x.group)) return false;
+  if (q) {
+    const hay = `${x.title} ${x.source} ${x.group} ${x.notes}`.toLowerCase();
+    if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
+  }
+  return true;
+}
+
+function soundCard(x) {
+  const playable = x.play || x.takes.length;
+  const play = x.play ? `<button class="act" data-play="${esc(x.play)}" title="${esc(x.play)}">▶ play</button>` : '';
+  const takes = x.takes.map(p => `<span class="take"><audio controls preload="none" src="/${p}"></audio>${esc(p.split('/').pop())}</span>`).join('');
+  return `<div class="pcard scard" data-slug="${x.slug}">
+      <div class="ph">
+        <span class="pt">${esc(x.title)}</span>
+        <span class="st" style="color:${SOUND_COLOR[x.status]}">${x.status}</span>
+        ${x.group ? `<span class="muted">${esc(x.group)}</span>` : ''}
+        <span class="drop">drop takes → wip/audio/${x.slug}/</span>
+      </div>
+      ${playable ? `<div class="sbtns">${play}${takes}</div>` : ''}
+      ${x.notes ? `<details${playable ? '' : ' open'}><summary>how</summary><div class="body">${md(x.notes)}</div></details>` : ''}
+    </div>`;
+}
+
+function viewSounds() {
+  const all = SOUNDS.sounds;
+  const f = readFilters('sounds');
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const shown = all.filter(x => soundMatches(x, f, q));
+  const n = (axis, test) => all.filter(x => test(x) && soundMatches(x, { ...f, [axis]: [] }, q)).length;
+  const groups = [...new Set(all.map(x => x.group).filter(Boolean))];
+
+  const sections = SOUND_SOURCES.map(src => {
+    const mine = all.filter(x => x.source === src && x.status !== 'cut');
+    const rows = shown.filter(x => x.source === src);
+    if (!rows.length) return '';
+    const done = mine.filter(x => x.status === 'shipped').length;
+    return `<h2 class="sec grp">${src} <span class="muted">${done} / ${mine.length} shipped</span></h2>${rows.map(soundCard).join('')}`;
+  }).join('');
+
+  return `
+    ${warnTable(SOUNDS.warnings)}
+    ${SOUNDS.guide ? `<details class="guide"><summary>How to source</summary><div class="body">${md(SOUNDS.guide)}</div></details>` : ''}
+    <div class="filters">
+      <div class="frow"><span class="flabel">Status</span>
+        ${SOUND_STATUSES.map(v => chip('status', v, f.status.includes(v), n('status', x => x.status === v), SOUND_COLOR[v])).join('')}</div>
+      <div class="frow"><span class="flabel">Group</span>
+        ${groups.map(v => chip('group', v, f.group.includes(v), n('group', x => x.group === v))).join('')}</div>
+    </div>
+    <div class="count">${shown.length} of ${all.length} sounds${q ? ` matching “${esc(q)}”` : ''}
+      · from <a class="pathref" href="vscode://file${STATS.root}/${SOUNDS.file}">${SOUNDS.file}</a></div>
+    ${sections || '<ul class="list"><li><span class="tblurb">nothing matches</span></li></ul>'}`;
+}
+
+async function uploadTakes(slug, files) {
+  for (const file of files) {
+    const r = await fetch(`/upload?slug=${encodeURIComponent(slug)}&name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file });
+    const j = await r.json();
+    if (!j.ok) alert(j.msg);
+  }
+  await load(); render();
+}
+
 /* ─────────────────────────── router ─────────────────────────── */
 function render() {
   const path = location.hash.split('?')[0] || '#/tickets';
@@ -760,6 +891,7 @@ function render() {
   else if (path === '#/stats') { app.innerHTML = viewStats(); page = 'stats'; }
   else if (path === '#/cargo') { app.innerHTML = viewCargo(); page = 'cargo'; }
   else if (path === '#/places') { app.innerHTML = viewPlaces(); page = 'places'; }
+  else if (path === '#/sounds') { app.innerHTML = viewSounds(); page = 'sounds'; }
   else app.innerHTML = viewTickets();
 
   search.style.visibility = page === 'stats' || page === 'places' ? 'hidden' : 'visible';
@@ -770,7 +902,20 @@ function render() {
 document.getElementById('app').addEventListener('click', (e) => {
   const c = e.target.closest('.chip');
   if (c) toggle(c.dataset.kind, c.dataset.val);
+  const p = e.target.closest('[data-play]');
+  if (p) playHook(p.dataset.play).catch(err => alert(`play failed: ${err.message}`));
 });
+// Drag-and-drop a recording onto a sound card → wip/audio/<slug>/.
+for (const [ev, fn] of Object.entries({
+  dragover: (e, card) => { e.preventDefault(); card.classList.add('drag'); },
+  dragleave: (e, card) => card.classList.remove('drag'),
+  drop: (e, card) => { e.preventDefault(); card.classList.remove('drag'); uploadTakes(card.dataset.slug, [...e.dataTransfer.files]); },
+})) {
+  document.getElementById('app').addEventListener(ev, (e) => {
+    const card = e.target.closest('.scard');
+    if (card) fn(e, card);
+  });
+}
 document.getElementById('search').addEventListener('input', () => {
   if (location.hash.startsWith('#/t/')) location.hash = '#/tickets';
   else render();

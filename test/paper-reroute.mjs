@@ -23,7 +23,7 @@ import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
-import { planTour, planTourJob, radiusForTier, customersForTier,
+import { planTour, planTourJob, customersForTier,
          PaperRouteSystem, resetPaperRun } from '../src/paper-route.js'
 import { START_ZONE_R } from '../src/mission.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
@@ -52,13 +52,12 @@ poi.build(C, R)
 poi.buildHouses(C, R)
 
 const larry = poi.list().find(q => q.type === 'larrysHouse')
-const customers = poi.customers()
+const customers = poi.customers(3)   // the top rung's route — who is on it is stamped at placement
 if (!larry || !customers.length) { console.log('NO ROUTE SOURCE — cannot run'); process.exit(1) }
 
 const TOP = PAPER_TOP()
-function PAPER_TOP () { return { want: customersForTier(3), ringR: radiusForTier(3) } }
-const plan = (origin, cust, want, ringR = TOP.ringR) =>
-    planTour(road, origin, cust, want, region, 100, ringR)
+function PAPER_TOP () { return { want: customersForTier(3) } }
+const plan = (origin, cust, want) => planTour(road, origin, cust, want, region, 100)
 
 /** Drain a job `step` next()s at a time, the way the pump does. */
 function drain (job, step = Infinity) {
@@ -78,7 +77,7 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
     + ` · par ${base.par.toFixed(0)} s`)
 
 {
-    const { route } = drain(planTourJob(road, larry, customers, TOP.want, region, 100, TOP.ringR))
+    const { route } = drain(planTourJob(road, larry, customers, TOP.want, region, 100))
     check('a fully-drained job matches planTour exactly', sig(route) === sig(base),
         `\n        drained ${sig(route)}\n        planTour ${sig(base)}`)
 }
@@ -86,7 +85,7 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
 // ── 2. slicing is invisible ─────────────────────────────────────────────────────────────────────
 {
     const { route, calls } = drain(
-        planTourJob(road, larry, customers, TOP.want, region, 100, TOP.ringR), 1)
+        planTourJob(road, larry, customers, TOP.want, region, 100), 1)
     check('…and so does one driven a single next() at a time', sig(route) === sig(base),
         `\n        sliced ${sig(route)}\n        whole  ${sig(base)}`)
     // Not an assertion about a number, a statement that the job IS sliceable: a generator that
@@ -98,7 +97,7 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
 
 // ── 3. an abandoned job hands its tables back ───────────────────────────────────────────────────
 {
-    const doomed = planTourJob(road, larry, customers, TOP.want, region, 100, TOP.ringR)
+    const doomed = planTourJob(road, larry, customers, TOP.want, region, 100)
     for (let i = 0; i < 40; i++) doomed.next()          // into the DP, then walk away
     doomed.return()
     const after = plan(larry, customers, TOP.want)
@@ -115,9 +114,8 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
     const delivered = base.customers.slice(0, 3)
     const left = base.customers.slice(3)
     const origin = delivered[delivered.length - 1]
-    // No ring filter, exactly as the live re-plan does it: these customers were already inside the
-    // tier's ring when the route was planned.
-    const re = plan(origin, left, left.length, Infinity)
+    // The SET is fixed, exactly as the live re-plan does it — only the order is in question.
+    const re = plan(origin, left, left.length)
     check('a re-plan from mid-route produces a route', !!re)
     if (re) {
         const got = new Set(re.customers.map(c => c.id))
@@ -221,14 +219,14 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
     const sweepWorld = (rd, rg, origin, cust, tag) => {
         const out = []
         for (const tier of [2, 3]) {   // tiers 3 and 4 both cap at 15 stops — the same tour
-            const tour = planTour(rd, origin, cust, customersForTier(tier), rg, 100, radiusForTier(tier))
+            const tour = planTour(rd, origin, cust.filter(c => (c.paperTier ?? Infinity) <= tier), customersForTier(tier), rg, 100)
             if (!tour || tour.customers.length < 4) continue
             const cum = tour.polyCum, poly = tour.poly, L = cum[cum.length - 1]
             for (let j = 1; j < tour.customers.length; j++) {
                 const jump = tour.customers[j]
                 const left = tour.customers.filter(c => c.id !== jump.id && c.id !== tour.customers[0].id)
                 if (!left.length) continue
-                const re = planTour(rd, jump, left, left.length, rg, 100, Infinity)
+                const re = planTour(rd, jump, left, left.length, rg, 100)
                 if (!re) continue
                 const bi = idxOf(poly, jump)
                 // The earliest undelivered customer BEHIND the jump point — how far back the stale
@@ -259,8 +257,8 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
     })
     poi2.build(C2, R2); poi2.buildHouses(C2, R2)
     const larry2 = poi2.list().find(q => q.type === 'larrysHouse')
-    if (larry2 && poi2.customers().length) {
-        scen.push(...sweepWorld(road2, { x: C2.x, z: C2.z, r: R2 }, larry2, poi2.customers(), `seed${S2}`))
+    if (larry2 && poi2.customers(3).length) {
+        scen.push(...sweepWorld(road2, { x: C2.x, z: C2.z, r: R2 }, larry2, poi2.customers(3), `seed${S2}`))
     }
 
     const gains = scen.map(s => s.gain).sort((a, b) => a - b)
@@ -353,7 +351,7 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
 {
     const last = base.customers[base.customers.length - 1]
     const from = base.customers[0]
-    const one = plan(from, [last], 1, Infinity)
+    const one = plan(from, [last], 1)
     check('a one-stop re-plan (the last porch) still routes', !!one?.segments?.length)
 }
 

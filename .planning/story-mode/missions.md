@@ -436,7 +436,7 @@ truck and what the truck does to the cargo**.
 > | Type | The tip and the bonus item reward | Ticket |
 > |---|---|---|
 > | **Courier** | time against par | shipped (FEAT-89) |
-> | **Fragile** | **cargo condition**, for both the tip and the bonus item; base pay stays × health | FEAT-97 |
+> | **Fragile** | **cargo condition**, for both the tip and the bonus item; the base is guaranteed (owner, 2026-10-15) | FEAT-97 |
 > | **Haul** | pieces still aboard (pay × share aboard, shipped); the tip and the item are **OPEN** | FEAT-114 |
 > | **Freight** | a generous clock (thresholds × 1.15) and heavy loads that pay well; it tips at half. The speed lane is courier. The item is **OPEN** | FEAT-96 |
 >

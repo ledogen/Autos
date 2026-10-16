@@ -376,7 +376,8 @@ export class DebrisSystem {
   spawn (kind, position, velocity, opts = {}) {
     // opts: spin, quaternion (deterministic callers), pinned (outside the cap — see DEBRIS_CAP),
     // noDamage (the chassis wear model ignores this body's contacts — cargo in the bed, FEAT-88),
-    // massKg (overrides the type's own mass — the freight debug slider).
+    // massKg (overrides the type's own mass — the freight debug slider), ownMaterials (FEAT-97: the
+    // load can blink() without tinting other copies).
     const spec = this._types[kind]
     const proto = this._proto.get(kind)
     if (!spec || !proto) return null   // model still loading (first seconds of a cold boot)
@@ -408,12 +409,15 @@ export class DebrisSystem {
     const spawned = new THREE.Group()
     getModel(spec.model).then(rec => {
       const m = rec.template.clone(true)
+      // FEAT-97: a load that blinks gets its OWN materials — the clone shares the template's, and
+      // tinting those would tint every copy. Disposed in _reclaim.
+      if (opts.ownMaterials) m.traverse(o => { if (o.isMesh) o.material = o.material.clone() })
       m.position.set(-proto.center.x, -proto.center.y, -proto.center.z)
       spawned.add(m)
     })
     this._scene.add(spawned)
 
-    this._live.push({ body, mesh: spawned, kind, cargo: false, pinned: !!opts.pinned,
+    this._live.push({ body, mesh: spawned, kind, cargo: false, pinned: !!opts.pinned, ownMaterials: !!opts.ownMaterials,
       prevP: new THREE.Vector3(position.x, position.y, position.z),
       prevQ: opts.quaternion ? new THREE.Quaternion(opts.quaternion.x, opts.quaternion.y, opts.quaternion.z, opts.quaternion.w)
         : new THREE.Quaternion() })
@@ -473,6 +477,12 @@ export class DebrisSystem {
   _reclaim (rec) {
     this._eng.destroyBody(rec.body)
     this._scene.remove(rec.mesh)
+    if (rec.ownMaterials) rec.mesh.traverse(o => { if (o.isMesh) o.material.dispose() })
+  }
+
+  /** FEAT-97: tint a load spawned with `ownMaterials` red — k 0..1, 0 is unlit. */
+  blink (body, k) {
+    this._live.find(r => r.body === body)?.mesh.traverse(o => { if (o.material?.emissive) o.material.emissive.setRGB(k, 0, 0) })
   }
 
   /**

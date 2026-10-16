@@ -68,7 +68,7 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
 import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
-import { HAUL_PAR_SLACK, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIME_SLACK, FREIGHT_TIP_MULT } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
+import { HAUL_PAR_SLACK, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIME_SLACK, FREIGHT_TIP_MULT, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
@@ -81,16 +81,17 @@ import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planTourJob, customersForTier, radiusForTier, tierRungs } from './paper-route.js'
+         planTourJob, customersForTier } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
 import { SCENARIOS, scenarioById } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
 import { Leaderboard } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
-import { RANK_THRESHOLDS_DEFAULT, haulGrade } from './par.js'   // FEAT-87 rank bar fallback bands; FEAT-88 haul letter
+import { RANK_THRESHOLDS_DEFAULT, haulGrade, fragileGrade } from './par.js'   // FEAT-87 rank bar fallback bands; FEAT-88 haul letter; FEAT-97 fragile letter
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
-import { playGlassBreak } from './glass-audio.js'   // FEAT-87: the rank tile shattering
+import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
+import { makeFragile, feltG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -2487,9 +2488,14 @@ const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown
 // the truck through the joint, exactly as a loose body's would through contact. Pinned (outside
 // DEBRIS_CAP) and noDamage, as FEAT-88's bundles are. The weld dies with its body (Box3D), so
 // removing the body is the whole teardown — "Clear Debris" included.
-let _freight = null   // { body, key, massKg, mission } — the strapped load (mission null = debug), or null
+let _freight = null   // { body, joint, key, massKg, mission, health, sound, blink } — the strapped load (mission null = debug), or null
 const _fP = new THREE.Vector3(), _fV = new THREE.Vector3()
-async function _loadFreight (key, massKg, mission = null) {
+// FEAT-97: a debug pick is health-tracked when only fragile things use that load (the large crate is
+// freight too, so a debug crate stays freight).
+const _DEBUG_FRAGILE = Object.fromEntries(THINGS
+  .filter(t => t.family === 'fragile' && !THINGS.some(f => f.family === 'freight' && f.load === t.load))
+  .map(t => [t.load, t]))
+async function _loadFreight (key, massKg, mission = null, health = null) {
   const bed = DEFAULT_VEHICLE_MODEL.bed, row = FREIGHT[key]
   const kind = `freight:${key}`
   if (bed && row) await debrisSystem.load(kind, { model: row.model, massKg: row.massKg, friction: 0.6, restitution: 0.1, box: true })
@@ -2507,15 +2513,42 @@ async function _loadFreight (key, massKg, mission = null) {
   _fV.crossVectors(vehicleState.angularVelocity, _fV).add(vehicleState.velocity)   // v + ω × r: the bed's own velocity there
   const v = { x: _fV.x, y: _fV.y, z: _fV.z }
   const q = vehicleState.quaternion, w = vehicleState.angularVelocity
+  // FEAT-97: a fragile load carries its condition. A re-strap hands the same tracker back — a reseat
+  // never repairs the cargo.
+  const fragile = mission ? mission.fragile : _DEBUG_FRAGILE[key]
   const body = debrisSystem.spawn(kind, { x: _fP.x, y: _fP.y, z: _fP.z }, v,
-    { spin: { x: w.x, y: w.y, z: w.z }, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true, massKg })
-  physicsEngine.createWeldJoint(vehicleChassis, body, _fP)
-  _freight = { body, key, massKg, mission }
+    { spin: { x: w.x, y: w.y, z: w.z }, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true, massKg,
+      ownMaterials: !!fragile })
+  const joint = physicsEngine.createWeldJoint(vehicleChassis, body, _fP)
+  _freight = { body, joint, key, massKg, mission, blink: 0, sound: fragile?.sound ?? null,
+               health: fragile ? (health ?? makeFragile(fragile)) : null }
 }
 // A seat (R, teleport, reseed, region re-fit) moves the truck in one jump; a weld to the load left
 // behind would yank them together across it. Re-strap the same load on the new pose instead.
 function _restrapFreight () {
-  if (_freight) void _loadFreight(_freight.key, _freight.massKg, _freight.mission)
+  if (_freight) void _loadFreight(_freight.key, _freight.massKg, _freight.mission, _freight.health)
+}
+
+// ── FEAT-97: the fragile load's shocks ───────────────────────────────────────────────────────
+// Per fixed step: the strap's force on the load ÷ its mass, plus gravity, is the g it feels
+// (src/fragile.js). A banked hit plays the load's sound and blinks it red, both scaled by what the
+// hit cost. No number reaches the HUD (SM-INV-10). At zero the job has FAILED: it pays nothing and
+// can no longer be delivered, and "clean up cargo" (+1 h) is the only way out of it.
+const FRAGILE_BLINK_S = 0.3   // s for a full-strength blink to fade out
+const _jf = { x: 0, y: 0, z: 0 }
+function _fragileStep () {
+  const f = _freight
+  if (!f?.health || f.health.health <= 0) return
+  const ev = f.health.step(feltG(physicsEngine.jointForce(f.joint, _jf), f.massKg))
+  if (!ev) return
+  playCargoHit(f.sound, ev.cost)
+  f.blink = Math.max(f.blink, Math.min(1, 0.4 + 2 * ev.cost))
+  if (f.health.health <= 0 && f.mission) { f.mission.failed = true; _disarmJobCancel() }
+}
+function _fragileBlink (dt) {
+  if (!(_freight?.blink > 0)) return
+  _freight.blink = Math.max(0, _freight.blink - dt / FRAGILE_BLINK_S)
+  debrisSystem.blink(_freight.body, _freight.blink)
 }
 // Road ribbon/pad/bore trimesh colliders — attached to roadMeshSystem at its creation sites
 // below (boot + seed rebuild). The terrain heightfields mirror the CARVED mesh, which sits
@@ -3615,6 +3648,12 @@ missionSystem = new MissionSystem({
       mission = { ...mission, payMult: mission.payMult * result.aboard / mission.bundles }
       _haulClear()
     }
+    // FEAT-97: a fragile job is paid and lettered on the condition it arrived in (economy.js
+    // splitFragilePayout, par.js fragileGrade). Read here, before the load comes off.
+    if (mission?.fragile) {
+      result.health = _freight?.mission === mission && _freight.health ? _freight.health.health : 0
+      result.letter = fragileGrade(result.health)
+    }
     const s = economySystem.settle(result, mission)
     if (mission?.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
     return s
@@ -3741,17 +3780,20 @@ const _boardView = {
     const now = daySystem.clockH()
     // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
     if (!offerBoard.isGiver(poiId)) return { source: false, family: null, nextText: null }
-    const slots = offerBoard.slotStates(poiId, now)
+    // Per frame per diamond, so this must not PLAN: it drops only offers already known to have no
+    // route (planDistinct memoises null on the offer). The hover card and the prompt do the full
+    // _takeableOffers check, so a dead offer greys its diamond the first time it is looked at.
+    const live = offerBoard.offers(poiId, now).filter(o => o.route !== null)
     const next = offerBoard.nextTurnoverH(poiId, now)
     return {
       source: true,
-      family: slots.find(x => x.state === 'live')?.family ?? null,
+      family: live.length ? offerBoard.spec(live[0])?.family ?? null : null,
       nextText: next != null ? formatGameDuration(next - now) : null,
     }
   },
   view (poiId, idx) {
     const now = daySystem.clockH()
-    const offers = offerBoard.offers(poiId, now)
+    const offers = _takeableOffers(poiId, now)
     const next = offerBoard.nextTurnoverH(poiId, now)
     const nextText = next != null ? formatGameDuration(next - now) : null
     const n = offers.length
@@ -3786,8 +3828,8 @@ function _larryRoute (offer) {
   if (!larry || !roadSystem) return null
   _larryTour = {
     offerId: offer.id, tier, done: false, route: null,
-    it: planTourJob(roadSystem, larry, poiSystem.customers(), customersForTier(),
-                    storySystem.region(), 100, radiusForTier(), tierRungs()),
+    it: planTourJob(roadSystem, larry, poiSystem.customers(tier), customersForTier(),
+                    storySystem.region(), 100),
   }
   return null
 }
@@ -3815,6 +3857,19 @@ function _pumpLarryTour (budgetMs) {
 function _dropLarryTour () {
   try { _larryTour?.it?.return() } catch (e) { /* already closed */ }
   _larryTour = null
+}
+
+/**
+ * The offers at a POI the player can actually TAKE: live on the board AND plannable. The board rolls
+ * offers without knowing the network, so it can post one with no route — seed 1813164377's tackle
+ * shop fetches from the one general store, 8 km and 13 hops away, past the planner's 5.2 km / 9-hop
+ * leg. Every reader (the park prompt, the brake, the map card and diamond, the parked panel's
+ * refresh) goes through here, so none of them advertises an offer that opens nothing. Larry's offer
+ * passes as-is: his tour plans asynchronously and is the paper route's to judge.
+ */
+function _takeableOffers (poiId, now) {
+  if (!offerBoard) return []
+  return offerBoard.offers(poiId, now).filter(o => offerBoard.spec(o)?.family === 'papers' || _planOffer(o))
 }
 
 /**
@@ -3847,11 +3902,15 @@ function _planOffer (offer) {
       // par, NOT divided back out — a heavier load pays more (data/offers.js FREIGHT_PAR_SLACK_PER_KG).
       m.load = s.load
       m.cargoKg = s.load ? s.massKg : null
+      m.fragile = s.fragile   // FEAT-97: tolerance + sound, or null
       if (s.load) {
         m.par *= 1 + FREIGHT_PAR_SLACK_PER_KG * s.massKg
-        // Freight grades looser and tips less than haul (owner, 2026-10-11) — data/offers.js.
-        m.timeSlack = FREIGHT_TIME_SLACK
-        m.tipMult = FREIGHT_TIP_MULT
+        // Freight grades looser and tips less than haul (owner, 2026-10-11) — data/offers.js. Not
+        // fragile: its tip and letter read the cargo's condition, never the clock.
+        if (!s.fragile) {
+          m.timeSlack = FREIGHT_TIME_SLACK
+          m.tipMult = FREIGHT_TIP_MULT
+        }
       }
     }
     return m
@@ -4068,7 +4127,7 @@ function _updateParkTriggers () {
     // siblings — each leaves 'idle' and each other's reach test then returns null.
     // FEAT-67: what is on offer is the BOARD's — live offers only. With nothing live the brake opens
     // nothing and the prompt says when the next offer turns up (the prompt shows it; see below).
-    const offers = offerBoard ? offerBoard.offers(poi.id, daySystem.clockH()) : []
+    const offers = _takeableOffers(poi.id, daySystem.clockH())
     if (!offers.length) return
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
     else missionSystem.enterFromPoi(poi, offers, _planOffer)
@@ -4102,7 +4161,7 @@ function _updateParkTriggers () {
     if (poi) {
       // FEAT-67: an empty board says when it fills, rather than inviting a park that opens nothing.
       const now = daySystem.clockH()
-      const live = offerBoard ? offerBoard.offers(poi.id, now).length : 0
+      const live = _takeableOffers(poi.id, now).length
       const next = offerBoard?.nextTurnoverH(poi.id, now)
       // FEAT-90: every "park to …" line carries the orange P badge; the status line does not.
       poiEl.innerHTML = !live
@@ -4345,6 +4404,9 @@ function _renderCampUI () {
   show('cp-break',  st.mode === 'camp' || st.mode === 'moms')
   show('cp-sleep',  st.mode === 'camp' || st.mode === 'moms')
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
+  show('cp-item',   st.mode === 'camp')
+  show('cp-map',    st.mode === 'camp' || st.mode === 'moms')
+  show('cp-spirits', st.mode === 'camp')
   show('cp-sleep-go',   isSleep)
   show('cp-sleep-back', isSleep)
   show('cp-sleep-panel', isSleep)
@@ -4414,6 +4476,8 @@ document.getElementById('cp-sleep-back')?.addEventListener('click', () => {
   _renderCampUI()
 })
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
+// FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
+document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
 document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
 
 /**
@@ -4443,10 +4507,12 @@ function _panelHead (flavorHtml) {
  *
  * `base`/`tip`/`spot` are dollars to the cent, all printed through formatMoney.
  */
-function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null, haul = null }) {
+function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null, haul = null, condition = null }) {
   const row = (label, money) => `<br><span class="mp-dim">${label}</span> <span class="mp-pay">$${money}</span>`
   // FEAT-88: the one place a load's count is shown — after the drive, never during (SM-INV-10).
   return (haul ? `<br><span class="mp-dim">Firewood delivered</span> <span class="mp-pay">${haul.aboard} / ${haul.loaded}</span>` : '')
+    // FEAT-97: likewise the fragile load's condition — on the card after the drive, never on the HUD.
+    + (condition != null ? `<br><span class="mp-dim">Cargo condition</span> <span class="mp-pay">${Math.round(condition * 100)}%</span>` : '')
     + row('Base pay', formatMoney(base))
     + row('Tip', formatMoney(tip))
     + (points > 0
@@ -4570,7 +4636,7 @@ function _renderMissionUI () {
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
           ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award,
-                       haul: r.loaded ? { aboard: r.aboard, loaded: r.loaded } : null })
+                       haul: r.loaded ? { aboard: r.aboard, loaded: r.loaded } : null, condition: r.health ?? null })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
       // The result card is exactly three actions: retry · continue · back to free roam (that is the
       // DOM order too). The calibration form above them stays — the subjective read is the ground
@@ -4848,6 +4914,10 @@ let _rtKickT = -1   // performance.now()/1000 of the last heartbeat (-1: none si
 function _rankTimerSource () {
   const m = missionSystem
   if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
+    // No bar where the clock is not what the letter reads (owner, 2026-10-15): a fragile job is
+    // lettered on condition, a haul on the clock AND the load — a bar falling S → A on the clock
+    // promises a grade the job does not give. Courier and freight keep it (time pays their tip).
+    if (m.mission.fragile || m.mission.bundles) return null
     return { key: m.mission, elapsed: m.elapsed, par: m.mission.par,
              thresholds: m.mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT,
              gate: m.mission.bonus?.gate ?? null }
@@ -5043,7 +5113,7 @@ document.getElementById('mp-next')?.addEventListener('click', () => missionSyste
 function _refreshParkedOffers () {
   if (missionSystem.state !== 'offer' || !missionSystem.mission?.fromPoi) return
   const poi = poiSystem.list().find(q => q.id === missionSystem.mission.fromPoi)
-  const offers = offerBoard && poi ? offerBoard.offers(poi.id, daySystem.clockH()) : []
+  const offers = poi ? _takeableOffers(poi.id, daySystem.clockH()) : []
   if (!offers.length) { missionSystem.exit(); return }
   const prevId = missionSystem.offer?.id
   missionSystem.enterFromPoi(poi, offers, _planOffer)
@@ -6229,7 +6299,10 @@ const CLEANUP_H = 1
 function _strappedJob () {
   return !paperRouteSystem.isCarrying() && !!missionSystem?.isOnJob() && !!missionSystem.mission?.load
 }
-function _jobCancelLabel () { return _strappedJob() ? 'clean up cargo' : 'abandon job' }
+function _jobCancelLabel () {
+  if (!_strappedJob()) return 'abandon job'
+  return missionSystem.mission.failed ? 'cargo destroyed · clean up' : 'clean up cargo'   // FEAT-97
+}
 function _syncJobCancel (hud, on) {
   const b = document.getElementById('job-cancel')
   if (!b) return
@@ -6558,6 +6631,7 @@ function loop () {
   }
   damageHUD.update(frameTime)   // SM-3 diagnostic readout — returns on the first line while hidden
   damageScreen.update(frameTime)   // FEAT-90: alert detection + icon tint at 10 Hz
+  _fragileBlink(frameTime)   // FEAT-97: the load's red hit blink fading out
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
   // (a 150 ms frame is followed by one paying ~9 physics steps) land in no bucket at all, and the
@@ -6629,6 +6703,7 @@ function loop () {
     debrisSystem.beforeStep(vehicleChassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
+    _fragileStep()   // FEAT-97: the fragile load's shocks, on the step that produced them
     // SM-3: integrate component wear on the SAME fixed step the physics ran, so condition is
     // framerate-independent like everything else (INFRA-03 determinism). Reads the honest signals
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
@@ -6709,7 +6784,9 @@ function loop () {
   storySystem.update(frameTime, vehicleState)
 
   // FEAT-47: advance the story day clock on the same wall-clock delta. No-op outside story mode.
-  daySystem.update(frameTime)
+  // FEAT-118: a pitched camp (or mom's) is a planning pause — idle there, the clock and energy hold
+  // until an action (sleep, break camp) spends or resumes it. The confirm face is not camp yet.
+  if (!_campUi || _campUi.mode === 'confirm') daySystem.update(frameTime)
   // …and hand its two outputs on. Both are PER FRAME, not on the 10 Hz HUD block: a 200 ms doze is
   // over in a dozen frames, so a 100 ms cadence would quantise the eyelids into a stutter and let
   // the attenuation lag the blink. Two style writes on cached elements — cheap enough to afford.

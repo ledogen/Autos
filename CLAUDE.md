@@ -250,6 +250,9 @@ the norm.
   by parsing the `## SM-N — …` sections of `.planning/story-mode/MILESTONES.md`, so a milestone
   cross-links with the tickets that cite it and its `Requires:` gate is shown up front. They have no
   severity, and their status is derived (shipped / active / planned), not declared.
+  Its **Sounds** tab reads FEAT-120's body the same way: every sound effect grouped by source
+  (synthesize / record / library / engine bake). ▶ plays the game's own `src/*-audio.js` code. Takes
+  in `wip/audio/<slug>/` play inline, and dropping a file onto a card uploads it there.
   A ticket's **lane** (free lane / SM-N / SM-3's halves / engine & world) is likewise read from the ticket tables
   in MILESTONES.md; open features no table lists show under the **unplaced** chip. **MILESTONES.md
   stays the only place they are edited** — nothing is ever written back.

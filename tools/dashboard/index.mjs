@@ -17,9 +17,9 @@
 import { createServer } from 'node:http';
 import { gzipSync } from 'node:zlib';
 import {
-  readFileSync, writeFileSync, readdirSync, statSync, existsSync,
+  readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync,
 } from 'node:fs';
-import { join, extname, relative, dirname } from 'node:path';
+import { join, extname, relative, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -627,6 +627,86 @@ async function indexStory(tickets) {
   return { cargo, places, warnings };
 }
 
+/* ── sounds ───────────────────────────────────────────────────────────────
+ * FEAT-120 IS the sound tracker's data: each `##` in its body is a source
+ * (SOUND_SOURCES), each `###` under one is a sound, and the first line under
+ * that heading is `status: … · group: … · play: …`. `## How to source` is the
+ * guide shown above the list; any other `##` (Acceptance) is ticket prose.
+ * Takes are whatever audio files sit in wip/audio/<slug>/ (git-invisible, where
+ * uploads land) and assets/audio/<slug>/ (shipped). Found by id, so closing the
+ * ticket (moving it to completed/) doesn't break the tab. */
+const SOUND_TICKET = 'FEAT-120';
+const SOUND_SOURCES = ['Synthesize', 'Record', 'Library', 'Engine bake'];
+const SOUND_STATUSES = ['todo', 'wip', 'shipped', 'cut'];
+const AUDIO_MIME = {
+  '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac', '.m4a': 'audio/mp4',
+};
+const TAKE_DIRS = ['wip/audio', 'assets/audio'];
+const slugOf = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+function soundTakes(slug) {
+  const takes = [];
+  for (const base of TAKE_DIRS) {
+    const dir = join(ROOT, base, slug);
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir).sort()) {
+      if (AUDIO_MIME[extname(name).toLowerCase()]) takes.push(`${base}/${slug}/${name}`);
+    }
+  }
+  return takes;
+}
+
+function indexSounds(tickets) {
+  const warnings = [];
+  const t = tickets.find((x) => x.id === SOUND_TICKET);
+  if (!t) return { file: null, guide: '', sounds: [], warnings: [{ line: null, msg: `${SOUND_TICKET} not found` }] };
+  const warn = (line, msg) => warnings.push({ file: t.file, line, msg });
+
+  const lines = readFileSync(t.abs, 'utf8').split('\n');
+  const sounds = [];
+  const guide = [];
+  let h2 = null; let cur = null;
+  const close = () => {
+    if (!cur) return;
+    cur.notes = cur.notes.join('\n').trim();
+    sounds.push(cur);
+    cur = null;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^##\s/.test(l)) { close(); h2 = l.replace(/^##\s+/, '').trim(); continue; }
+    if (/^###\s/.test(l)) {
+      close();
+      const title = l.replace(/^###\s+/, '').trim();
+      if (!SOUND_SOURCES.includes(h2)) {
+        warn(i + 1, `"${title}" sits under "## ${h2}", which is not a source (${SOUND_SOURCES.join(' / ')})`);
+        continue;
+      }
+      const keyLine = lines[i + 1] || '';
+      const kv = Object.fromEntries(keyLine.split('·')
+        .map((p) => /^\s*(\w+):\s*(.*?)\s*$/.exec(p)).filter(Boolean).map((m) => [m[1], m[2]]));
+      if (!kv.status) warn(i + 2, `"${title}" has no \`status: …\` line under its heading`);
+      else if (!SOUND_STATUSES.includes(kv.status)) warn(i + 2, `"${title}": unknown status "${kv.status}"`);
+      const slug = slugOf(title);
+      cur = {
+        title, slug, source: h2, line: i + 1,
+        status: SOUND_STATUSES.includes(kv.status) ? kv.status : 'todo',
+        group: kv.group || '',
+        play: kv.play && kv.play !== '—' ? kv.play : null,
+        takes: soundTakes(slug),
+        notes: [],
+      };
+      if (kv.status) i++;   // the key line is metadata, not notes
+      continue;
+    }
+    if (cur) cur.notes.push(l);
+    else if (h2 === 'How to source') guide.push(l);
+  }
+  close();
+  return { file: t.file, guide: guide.join('\n').trim(), sounds, warnings };
+}
+
 /* ── stats ────────────────────────────────────────────────────────────── */
 const CODE_EXT = new Set(['.js', '.mjs', '.html', '.css', '.py']);
 
@@ -782,7 +862,10 @@ async function build() {
   writeFileSync(join(HERE, 'tickets.json'), JSON.stringify({ tickets, laneOrder }));
   writeFileSync(join(HERE, 'stats.json'), JSON.stringify(stats, null, 1));
   writeFileSync(join(HERE, 'cargo.json'), JSON.stringify(story));
-  return { tickets, stats, story };
+  const sounds = indexSounds(tickets);
+  soundSlugs = new Set(sounds.sounds.map((x) => x.slug));
+  writeFileSync(join(HERE, 'sounds.json'), JSON.stringify(sounds));
+  return { tickets, stats, story, sounds };
 }
 
 /* ── serve ────────────────────────────────────────────────────────────── */
@@ -793,6 +876,42 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
 };
 
+/* The Sounds tab imports the game's own audio modules (so ▶ plays the shipped
+ * code, not a copy) and plays takes; uploads drop a take into wip/audio/<slug>/.
+ * Upload is loopback-only and never overwrites. */
+const SRC_RE = /^\/src\/[\w-]+\.js$/;
+const UPLOAD_MAX = 200 * 1048576;
+let soundSlugs = new Set();
+
+function serveFile(res, file, type) {
+  res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' });
+  res.end(readFileSync(file));
+}
+
+async function upload(req, res, url) {
+  const fail = (code, msg) => { res.writeHead(code, { 'content-type': MIME['.json'] }); res.end(JSON.stringify({ ok: false, msg })); };
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) return fail(403, 'uploads only from this machine');
+  const slug = url.searchParams.get('slug') || '';
+  const name = basename(url.searchParams.get('name') || '');
+  if (!soundSlugs.has(slug)) return fail(400, `unknown sound "${slug}"`);
+  if (!/^[\w. ()-]+$/.test(name) || !AUDIO_MIME[extname(name).toLowerCase()]) {
+    return fail(400, `not an audio file name: "${name}" (${Object.keys(AUDIO_MIME).join(' ')})`);
+  }
+  const chunks = []; let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > UPLOAD_MAX) return fail(413, 'file over 200 MB');
+    chunks.push(c);
+  }
+  const dir = join(ROOT, 'wip', 'audio', slug);
+  mkdirSync(dir, { recursive: true });
+  try { writeFileSync(join(dir, name), Buffer.concat(chunks), { flag: 'wx' }); }
+  catch (e) { return fail(409, e.code === 'EEXIST' ? `${name} already exists in wip/audio/${slug}/` : e.message); }
+  await build();
+  res.writeHead(200, { 'content-type': MIME['.json'] });
+  res.end(JSON.stringify({ ok: true, path: `wip/audio/${slug}/${name}` }));
+}
+
 function serve(port) {
   createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -801,6 +920,15 @@ function serve(port) {
       res.writeHead(200, { 'content-type': MIME['.json'] });
       res.end(JSON.stringify({ ok: true, tickets: tickets.length, generated: stats.generated }));
       return;
+    }
+    if (url.pathname === '/upload' && req.method === 'POST') { await upload(req, res, url); return; }
+    const p = decodeURIComponent(url.pathname);
+    if (SRC_RE.test(p) && existsSync(join(ROOT, p))) { serveFile(res, join(ROOT, p), MIME['.mjs']); return; }
+    for (const base of TAKE_DIRS) {
+      if (!p.startsWith(`/${base}/`)) continue;
+      const file = join(ROOT, p);
+      const type = AUDIO_MIME[extname(file).toLowerCase()];
+      if (file.startsWith(join(ROOT, base) + '/') && type && existsSync(file)) { serveFile(res, file, type); return; }
     }
     const name = url.pathname === '/' ? '/app.html' : url.pathname;
     const file = join(HERE, name.replace(/^\/+/, ''));
@@ -822,11 +950,13 @@ const args = process.argv.slice(2);
 const portArg = args.indexOf('--port');
 const port = portArg !== -1 ? Number(args[portArg + 1]) : 8010;
 
-const { tickets, stats, story } = await build();
+const { tickets, stats, story, sounds } = await build();
 console.log(`  indexed    ${tickets.length} tickets (${stats.tickets.open} open)`);
 console.log(`  code       ${stats.codeTotal.lines.toLocaleString()} lines in ${stats.codeTotal.files} files`);
 console.log(`  cargo      ${story.cargo.length} rows · ${story.places.live.length} live / ${story.places.planned.length} planned types · ${story.places.spots.length} spots`);
 if (story.warnings.length) console.log(`  story      ${story.warnings.length} cargo/places warnings`);
 if (args.includes('--once')) for (const w of story.warnings) console.log(`    ${w.file}${w.line ? `:${w.line}` : ''}  ${w.msg}`);
+console.log(`  sounds     ${sounds.sounds.length} rows · ${sounds.sounds.filter((x) => x.status === 'shipped').length} shipped${sounds.warnings.length ? ` · ${sounds.warnings.length} warnings` : ''}`);
+if (args.includes('--once')) for (const w of sounds.warnings) console.log(`    ${w.file}${w.line ? `:${w.line}` : ''}  ${w.msg}`);
 if (stats.drift.length) console.log(`  drift      ${stats.drift.length} non-canonical frontmatter values`);
 if (!args.includes('--once')) serve(port);

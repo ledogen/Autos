@@ -16,7 +16,8 @@ or delete a file, update the relevant line here in the same commit — it's one 
 | `assets/models/` | Hand-authored `.glb` assets + `CREDITS.md`. Convention: `.planning/research/ASSETS.md`; style: `ART-STYLE.md`. |
 | `vendor/box3d/` | Vendored Box3D WASM bindings. Imported ONLY by `src/physics-engine.js` (FEAT-48 seam). |
 | `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts. Pure node — never touches Vite. |
-| `tools/dashboard/` | `npm run dash` ticket-tracker viewer (:8010). Read-only over `.planning/todos/`. |
+| `tools/dashboard/` | `npm run dash` ticket-tracker viewer (:8010). Read-only over `.planning/todos/`, except the Sounds tab's upload, which writes takes into `wip/audio/<slug>/`. |
+| `wip/audio/<slug>/`, `assets/audio/<slug>/` | Sound takes, one folder per FEAT-120 sound (slug = its `###` heading). `wip/` is git-invisible (recordings in progress, dashboard uploads); promote to `assets/audio/` when the game plays it. |
 | `.planning/` | Planning record. **Live:** `todos/` (tracker), `story-mode/DESIGN.md` + `MILESTONES.md` (roadmap), `research/` (standing references). **Historical:** `phases/`, `milestones/`, handoffs, `STATE.md`. |
 | `.github/workflows/` | `deploy.yml` — Pages build. Runtime-fetched assets are copied to `dist/` by the inline plugin in `vite.config.js`. |
 
@@ -48,7 +49,8 @@ FEAT-33 — pure, no DOM) · `vehicle.js` (Ackermann, input) · `vehicle-state.j
 vehicleState shape — one factory, so the world truck and the FEAT-41 menu-stage truck cannot drift) ·
 `debris.js` (FEAT-36 dynamic props) · `physics-debug.js` (collider wireframes) · `damage.js` (SM-3
 component condition model — reads vehicleState signals, writes `params._*Scale` multipliers; the
-physics stack never imports it).
+physics stack never imports it) · `fragile.js` (FEAT-97 fragile cargo condition — pure; main.js feeds
+it the strap's felt g each step).
 
 **World generation** — `seed.js` (djb2 / mulberry32 / FNV-1a hash32 / seedFor, pure) · `terrain.js` (chunk ring, carve table, analytic
 height) · `terrain-height.js` (THE height function + seeded noise — imported by main thread, worker,
@@ -83,7 +85,7 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 `model-service.js` (FEAT-59 .glb import service) · `campfire.js` (FEAT-66 lit campfire: ASSET-24 + flames/embers/point light) · `smoke.js` · `dust.js` · `dirt-spray.js` ·
 `map2d.js` (M-key dev map).
 
-**Audio** — `engine-audio.js` · `tire-audio.js` (tonal stick-slip) · `wind-audio.js` · `heartbeat-audio.js` (FEAT-87 rank-bar lub-dub) · `glass-audio.js` (FEAT-87 rank tile shatter).
+**Audio** — `engine-audio.js` · `tire-audio.js` (tonal stick-slip) · `wind-audio.js` · `heartbeat-audio.js` (FEAT-87 rank-bar lub-dub) · `glass-audio.js` (FEAT-87 rank tile shatter; FEAT-97 fragile cargo hits).
 
 **Story mode & gameplay** — `story.js` (FEAT-43 gamemode sandbox) · `day.js` (day clock, FEAT-47) ·
 `economy.js` (payout/wallet/points spine, FEAT-53) · `offer-board.js` (FEAT-67 mission board —
