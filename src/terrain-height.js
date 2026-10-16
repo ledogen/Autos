@@ -12,8 +12,8 @@
  * Blob built from a source string and could not import. The Worker is a real ES module now, so
  * Worker == main thread == headless by construction — the same no-mirror fence the road workers use.
  *
- * Pure: no THREE, no DOM, no module state. Heights are RAW (pre-terrainAmplitude); the amplitude is
- * applied by the caller, on the main thread.
+ * Pure: no THREE, no DOM, no module state. Heights are RAW (carve-free); the road and stream carves
+ * are applied by the caller, on the main thread.
  */
 
 import { createNoise2D } from 'simplex-noise'

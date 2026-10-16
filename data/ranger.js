@@ -334,10 +334,6 @@ export const RANGER_PARAMS = {
   DROOP_STOP_STIFFNESS:        20000,  // N/m — not a slider; fixed constant (D-08)
 
   // ── Phase 6/7 Terrain (TERR-06 / TERR-01–04) ─────────────────────────────
-  // terrainAmplitude: Y multiplier on the raw noise heights. Stays 1.0 — the coarse layer already
-  // outputs metres, and no slider writes it since BUG-31 (debug.js), so Path A no longer rescales.
-  terrainAmplitude: 1.0,   // Y multiplier on raw heights — permanently 1.0 (no writer since BUG-31)
-
   // Phase 7: Three-layer seeded height function parameters (TERR-01/02/03).
   // Calibration starting values from RESEARCH.md §Calibration — interactive tuning via debug sliders.
   // See terrain.js coarseHeight / fineHeight / regionalModulator for the formulas.

@@ -21,16 +21,15 @@ export const makeNoise = makeTerrainNoise
 /**
  * Build a headless analytic terrain sampler matching src/terrain.js's main-thread path.
  * @param {number}     seed   — uint32 worldSeed (capture.world.seed)
- * @param {object}     params — RANGER_PARAMS subset (terrain scalars + terrainAmplitude)
+ * @param {object}     params — RANGER_PARAMS subset (terrain scalars)
  * @param {RoadSystem} road   — a streamed RoadSystem; analyticHeight uses its real _sampleCarveWorld
  * @returns {{ analyticHeight, analyticNormal, rawHeightWorld }}
  */
 export function makeTerrainHeadless(seed, params, road) {
     const { noiseCoarse, noiseFine, noiseRegional } = makeTerrainNoise(seed)
-    const amp = params.terrainAmplitude ?? 1.0
 
     // rawHeightWorld — carve-free terrain height (terrain.js:579).
-    const rawHeightWorld = (wx, wz) => height(wx, wz, noiseCoarse, noiseFine, noiseRegional, params) * amp
+    const rawHeightWorld = (wx, wz) => height(wx, wz, noiseCoarse, noiseFine, noiseRegional, params)
 
     // analyticHeight — raw, then the road carve blend EXACTLY as terrain.js (incl. FEAT-40:
     // queryY threads into _sampleCarveWorld, which gives bored runs only their below-apex probes).

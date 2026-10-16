@@ -106,7 +106,7 @@ function fingerprint (W) {
   const chunkList = [...chunks].sort()
   let nTiles = 0, nGeos = 0
   time('carve', () => {
-    const N = CHUNK_SIZE + 1, amp = P.terrainAmplitude ?? 1, noise = makeNoise(seed)
+    const N = CHUNK_SIZE + 1, noise = makeNoise(seed)
     const fakeT = { _roadSystem: road, _params: P,
       _noiseCoarse: noise.noiseCoarse, _noiseFine: noise.noiseFine, _noiseRegional: noise.noiseRegional }
     const f = []
@@ -114,7 +114,7 @@ function fingerprint (W) {
       const [tx, tz] = ck.split(',').map(Number)
       const raw = new Float32Array(N * N)
       for (let zi = 0; zi < N; zi++) for (let xi = 0; xi < N; xi++)
-        raw[zi * N + xi] = terr.rawHeightWorld(tx * CHUNK_SIZE + xi, tz * CHUNK_SIZE + zi) / amp
+        raw[zi * N + xi] = terr.rawHeightWorld(tx * CHUNK_SIZE + xi, tz * CHUNK_SIZE + zi)
       const table = TerrainSystem.prototype._buildCarveTable.call(fakeT, tx, tz, raw)
       f.push(table ? table.length : -1); if (table) f.push(...table)
     }

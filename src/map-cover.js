@@ -23,7 +23,7 @@
  *   prop-scatter                      map-cover
  *   ────────────────────────────────  ──────────────────────────────────────────────────
  *   terrain.analyticNormal (slope)    slope from the coarse height field's gradient
- *   terrain.analyticHeight            road._coarseH × terrainAmplitude
+ *   terrain.analyticHeight            road._coarseH
  *   roadBlocked (9 m of centreline)   dropped — see ROAD EXCLUSION below
  *
  * The slope swap is sound by measurement, not by hope: fineAmplitude is 0.5 m at a 20 m

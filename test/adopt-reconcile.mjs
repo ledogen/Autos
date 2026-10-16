@@ -36,7 +36,7 @@ const SEED = parseWorldSeed(BUG76_SEED_STRING)   // 177618 — the owner's captu
 const MARK = BUG76_MARK
 const R = 320                                    // Normal quality's road radius ((ring 2 + 0.5)·128)
 const RING = 3                                   // built chunks: ±3 around the car's chunk (7×7)
-const N = GRID_SAMPLES, S = CHUNK_SIZE, P = RANGER_PARAMS, amp = P.terrainAmplitude ?? 1
+const N = GRID_SAMPLES, S = CHUNK_SIZE, P = RANGER_PARAMS
 const cell = S / (N - 1)
 const ROUTES = [
     ['capture route', BUG76_ROUTE],
@@ -59,7 +59,7 @@ const rawCache = new Map()
 const rawOf = (cx, cz) => {
     const k = cx + ',' + cz; let r = rawCache.get(k); if (r) return r
     r = new Float32Array(N * N)
-    for (let zi = 0; zi < N; zi++) for (let xi = 0; xi < N; xi++) r[zi * N + xi] = rawHeightWorld(cx * S + xi * cell, cz * S + zi * cell) / amp
+    for (let zi = 0; zi < N; zi++) for (let xi = 0; xi < N; xi++) r[zi * N + xi] = rawHeightWorld(cx * S + xi * cell, cz * S + zi * cell)
     rawCache.set(k, r); return r
 }
 // The real _buildCarveTable via a fake `this` (carve-mesh-smoothness.mjs pattern), flattened to the
@@ -69,7 +69,7 @@ const carve = (road, cx, cz) => {
     const t = TerrainSystem.prototype._buildCarveTable.call({ _roadSystem: road, _params: P,
         _noiseCoarse: noise.noiseCoarse, _noiseFine: noise.noiseFine, _noiseRegional: noise.noiseRegional }, cx, cz, raw)
     const out = new Float64Array(N * N)
-    for (let i = 0; i < N * N; i++) { const h = raw[i] * amp; out[i] = t ? h + t[i * 2] * (t[i * 2 + 1] * amp - h) : h }
+    for (let i = 0; i < N * N; i++) { const h = raw[i]; out[i] = t ? h + t[i * 2] * (t[i * 2 + 1] - h) : h }
     return out
 }
 const covers = (road, cx, cz) => { const x0 = cx * S, z0 = cz * S

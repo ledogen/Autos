@@ -1289,7 +1289,7 @@ export class Map2D {
     // (1) The topographic sheet: pale-green vegetated ground + brown contour lines.
     //
     // Contours come straight off the height field the rest of the sim already agrees on
-    // (`road._coarseH`, ×terrainAmplitude so the labels are the metres the truck actually climbs).
+    // (`road._coarseH`, so the labels are the metres the truck actually climbs).
     // Sample a regular grid over the view, then MARCHING SQUARES it once per crossed level: each
     // grid cell knows which levels pass through it from its own min/max, so the whole field is
     // walked ONE time regardless of how many contours are on screen — the naive "sweep the grid per
@@ -1308,13 +1308,12 @@ export class Map2D {
     _drawTopo(ctx, px0, py0, px1, py1) {
         const road = this._road
         if (!road) return
-        const amp = this._getParams().terrainAmplitude ?? 1
         const Wpx = px1 - px0, Hpx = py1 - py0
 
         // Ground first — the green/white cover wash with hillshade multiplied through it. Painted
         // as one scaled bitmap, so everything below (water, glyphs, contours, roads) draws over a
         // finished sheet in the order a printer would lay them down.
-        this._paintGround(ctx, px0, py0, Wpx, Hpx, amp)
+        this._paintGround(ctx, px0, py0, Wpx, Hpx)
 
         // ── Sample grid. One cell margin past each edge so contours reach the rect's border
         //    instead of stopping a cell short of it.
@@ -1335,7 +1334,7 @@ export class Map2D {
         const h = new Float32Array(nx * nz)
         for (let j = 0; j < nz; j++) {
             const wz = z0 + j * step
-            for (let i = 0; i < nx; i++) h[j * nx + i] = road._coarseH(x0 + i * step, wz) * amp
+            for (let i = 0; i < nx; i++) h[j * nx + i] = road._coarseH(x0 + i * step, wz)
         }
 
         // Grid line positions in SCREEN space, precomputed — the marching-squares inner loop then
@@ -1423,7 +1422,7 @@ export class Map2D {
     // Leaves `this._coverGrid` behind for _drawWater (its bbox) and _drawGlyphs (the cover bins it
     // just resolved, rather than resolving them twice). Redraw-local: written and consumed inside
     // one cached-background rebuild.
-    _paintGround(ctx, px0, py0, Wpx, Hpx, amp) {
+    _paintGround(ctx, px0, py0, Wpx, Hpx) {
         const road = this._road
         const zoom = this._zoom
         const s = this._sheet()
@@ -1443,7 +1442,7 @@ export class Map2D {
         const hg = new Float32Array(gw * gh)
         for (let j = 0; j < gh; j++) {
             const wz = wz0 + j * COVER_CELL
-            for (let i = 0; i < gw; i++) hg[j * gw + i] = road._coarseH(wx0 + i * COVER_CELL, wz) * amp
+            for (let i = 0; i < gw; i++) hg[j * gw + i] = road._coarseH(wx0 + i * COVER_CELL, wz)
         }
 
         // Cover, if the sheet is close enough in for it to mean anything — see COVER_CHUNK_BUDGET.
@@ -1559,7 +1558,6 @@ export class Map2D {
     _coverRaster(wx0, wz0, gw, gh) {
         const road = this._road
         const CH = FLORA_PARAMS.chunkSize
-        const amp = this._getParams().terrainAmplitude ?? 1
 
         const cx0 = Math.floor(wx0 / CH), cz0 = Math.floor(wz0 / CH)
         const cx1 = Math.floor((wx0 + gw * COVER_CELL) / CH), cz1 = Math.floor((wz0 + gh * COVER_CELL) / CH)
@@ -1590,13 +1588,13 @@ export class Map2D {
             // cover cell, matching the lattice the answer is binned into.
             slopeAt: (x, z) => {
                 const e = 8
-                const dx = (road._coarseH(x + e, z) - road._coarseH(x - e, z)) * amp / (2 * e)
-                const dz = (road._coarseH(x, z + e) - road._coarseH(x, z - e)) * amp / (2 * e)
+                const dx = (road._coarseH(x + e, z) - road._coarseH(x - e, z)) / (2 * e)
+                const dz = (road._coarseH(x, z + e) - road._coarseH(x, z - e)) / (2 * e)
                 return slopeFromGradient(dx, dz)
             },
             // Feeds the biome relief ring. Coarse field, matching slopeAt — the ring spans 70 m, so
             // the detail octave the map cannot see contributes nothing at that scale anyway.
-            heightAt: (x, z) => road._coarseH(x, z) * amp,
+            heightAt: (x, z) => road._coarseH(x, z),
             rejectAt: (x, z) => {
                 for (const p of ponds) {
                     const dx = x - p.floorX, dz = z - p.floorZ
@@ -1756,7 +1754,7 @@ export class Map2D {
         // come from one field and cannot disagree. The coarse fallback keeps this drawable if the
         // system is ever handed a different shape.
         const hAt = water._height ? (x, z) => water._height(x, z)
-                                  : (x, z) => this._road._coarseH(x, z) * (this._getParams().terrainAmplitude ?? 1)
+                                  : (x, z) => this._road._coarseH(x, z)
 
         // Texel grid over the pond's bounding square, ~1 screen px per texel (the square spans the
         // DIAMETER, 2·rpx px), so the shore resolves at the limit of what can be seen. Capped so a
@@ -1841,8 +1839,7 @@ export class Map2D {
         // Height sampler for the drainage read. Sampled at the glyph's own world position rather
         // than off the cover lattice: isWetGround's ring is 48 m, finer than that lattice would
         // resolve, and a marsh symbol has to sit on the hollow it marks.
-        const amp = this._getParams().terrainAmplitude ?? 1
-        const wetSamplers = { heightAt: (x, z) => this._road._coarseH(x, z) * amp }
+        const wetSamplers = { heightAt: (x, z) => this._road._coarseH(x, z) }
 
         ctx.lineWidth = 1
         for (let j = j0; j <= j1; j++) {

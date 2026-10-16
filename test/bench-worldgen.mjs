@@ -62,7 +62,6 @@ console.log('\n── B. terrain chunk main-thread stages (per 65×65 chunk, avg
   const road = roadBySeed.get(seed)
   const terr = makeTerrainHeadless(seed, RANGER_PARAMS, road)
   const noise = makeNoise(seed)
-  const amp = RANGER_PARAMS.terrainAmplitude ?? 1
   // Fake `this` recipes (same pattern as carve-mesh-smoothness.mjs): exactly the fields each
   // prototype method reads. Drift here shows up as a crash, not a wrong number.
   const fakeCarve = { _roadSystem: road, _params: RANGER_PARAMS, _noiseCoarse: noise.noiseCoarse, _noiseFine: noise.noiseFine, _noiseRegional: noise.noiseRegional }
@@ -88,7 +87,7 @@ console.log('\n── B. terrain chunk main-thread stages (per 65×65 chunk, avg
     let t0 = performance.now()
     const rawPre = new Float32Array(N * N)
     for (let zi = 0; zi < N; zi++) for (let xi = 0; xi < N; xi++) {
-      rawPre[zi * N + xi] = terr.rawHeightWorld(cx * CS + xi, cz * CS + zi) / amp
+      rawPre[zi * N + xi] = terr.rawHeightWorld(cx * CS + xi, cz * CS + zi)
     }
     sum.height += performance.now() - t0
 
@@ -101,8 +100,8 @@ console.log('\n── B. terrain chunk main-thread stages (per 65×65 chunk, avg
     t0 = performance.now()
     const posArr = geom.attributes.position.array
     for (let i = 0; i < N * N; i++) {
-      const raw = rawPre[i] * amp
-      posArr[i * 3 + 1] = table ? raw + table[i * 2] * (table[i * 2 + 1] * amp - raw) : raw
+      const raw = rawPre[i]
+      posArr[i * 3 + 1] = table ? raw + table[i * 2] * (table[i * 2 + 1] - raw) : raw
     }
     TerrainSystem.prototype._computeGridNormals.call(fakeColor, geom)
     sum.normals += performance.now() - t0
@@ -110,7 +109,7 @@ console.log('\n── B. terrain chunk main-thread stages (per 65×65 chunk, avg
     t0 = performance.now()
     const heights = new Float32Array(N * N)
     for (let i = 0; i < N * N; i++) heights[i] = posArr[i * 3 + 1]
-    TerrainSystem.prototype._writeChunkVertexColors.call(fakeColor, geom, table, heights, amp, fakeColor._localMeanGrid(cx, cz))
+    TerrainSystem.prototype._writeChunkVertexColors.call(fakeColor, geom, table, heights, fakeColor._localMeanGrid(cx, cz))
     sum.colors += performance.now() - t0
 
     sum.n++

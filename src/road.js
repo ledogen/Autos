@@ -21,7 +21,6 @@
  *
  * FORBIDDEN patterns:
  *   Do NOT call terrain.getChunkHeight / chunk-sampled functions (chunk-load-order dependent).
- *   Do NOT read amplitude-scaled terrain height for grade math (terrainAmplitude is a visual slider).
  *   Do NOT route from inside the physics fixed-timestep loop (route lazily, query O(1)).
  *   Do NOT allocate per call in queryNearest / the carve path (GC pressure at ~900 samples/step).
  *   Do NOT let a query's answer depend on what happens to be streamed (D-16 window-invariance).
@@ -9410,7 +9409,7 @@ export class RoadSystem {
      *
      * QUAL-24's deg-2 chain merge (_mergeDeg2Chains) is deleted (FEAT-68), so this is the MAIN path
      * for every kinked deg-2 node, not only a streaming-frontier fallback.
-     * @param {number} [rawAmp] raw terrain height here. Omitted ⇒ the coarse field × terrainAmplitude,
+     * @param {number} [rawAmp] raw terrain height here. Omitted ⇒ the coarse field,
      *   sampled only once a connector is actually in reach (most callers are nowhere near one).
      */
     _connectorCarve(wx, wz, rawAmp) {
@@ -9453,7 +9452,7 @@ export class RoadSystem {
         if (bestLat > latCeiling) return null
         const cd = this._connectorDesignAt(bestArc, wx, wz, _CD_OUT)
         if (cd == null) return null
-        if (rawAmp === undefined) rawAmp = this._coarseH(wx, wz) * (p.terrainAmplitude ?? 1)
+        if (rawAmp === undefined) rawAmp = this._coarseH(wx, wz)
         const designY = cd.grade - clearanceMargin
         const fillSlope = p.roadFillSlope ?? 3.0, cutSlope = p.roadCutSlope ?? 1.0
         const fillToe = halfWidth + shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope

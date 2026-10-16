@@ -395,15 +395,13 @@ export function initDebug (params, callbacks = {}, options = {}) {
   wearFolder.close()
 
   // Phase 6 (TERR-06): Terrain folder — amplitude tuning + ramp visibility toggle.
-  // terrainAmplitude is read by TerrainSystem._flushPendingQueue during geometry build;
-  // live mutation of params.terrainAmplitude takes effect on the next chunk built.
   // rampEnabled toggle calls the setRampVisible callback (passed via initDebug second arg)
   // to keep rampMesh.visible in sync; also guards RAMP_TRIS loops in queryContacts.
   //
   // Phase 7 (TERR-06 / SEED-04): World Seed text field + Coarse/Fine/Regional sub-folders.
   //
   // BUG-31 FULL FIX — "Terrain Amplitude" is now a WORLD-SCALE MACRO over the coarse + fine LAYER
-  // amplitudes, not the visual-only params.terrainAmplitude Y-rescale it used to drive.
+  // amplitudes, not the visual-only Y-rescale it used to drive (that param is deleted).
   //   Why this is byte-equivalent to the old Y-scale AND honest to the router:
   //   terrain height = coarseHeight + fineHeight·regionalModulator (terrain.js:192-231). coarseHeight
   //   and fineHeight are EXACTLY LINEAR in coarseAmplitude / fineAmplitude (the ridge+pow shaping acts
@@ -413,8 +411,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   and the routing worker ALREADY ships (init). Result: taller mountains RE-ROUTE (switchbacks,
   //   grade caps respected) with ZERO router or worker changes. The router
   //   only prices the coarse layer, so scaling fineAmplitude alters visual detail but never routes.
-  //   params.terrainAmplitude stays permanently 1.0 (the internal visual/physics multiply), unless set
-  //   programmatically elsewhere.
   //
   //   STALE-BASE contract: the macro is INCREMENTAL. It stores the last-applied k (_worldScale.lastK)
   //   and on each change multiplies the CURRENT coarse/fine amplitudes by k/lastK. So if the user nudges
