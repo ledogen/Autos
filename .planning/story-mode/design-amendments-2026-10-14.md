@@ -265,4 +265,18 @@ a lesser pool. The ruling scores the **count delivered**:
 - Hauling in a car is safe, low-yield work by design. A car career's driving skill is courier.
 - *Option B, not ruled:* the item on throughput across the yard's rate-bonus window.
 
-Freight's item is still OPEN.
+- **Good deeds follow the count target too** (owner, 2026-10-16), replacing the share bands.
+
+**Freight's bonus-item POOL, ruled 2026-10-16 (owner).** Freight is **the trucker role**: it rewards
+the slow-but-sturdy build.
+
+- **Pool:** bubble wrap, furniture pad, heavy-duty pad (the fragile protection items, included on
+  purpose to encourage cross-specialisation); rubber bed mat and bedliner; **standard-duty** springs,
+  tires and dampers (fitted parts installed at a service station, not the spare tire); heavy-duty
+  anti-roll bars; extended bed, flatbed, stake bed, roof rack; heavy-duty radiator.
+- **Super-rare tier:** heavy-duty springs, dampers and tires.
+- Tiers for the rest are not yet set. **What earns** the item is still open (recommendation on
+  record: arriving without a heavy hit to the truck, the mass picks the pool).
+- Today `REWARDS` pools by **source POI**, not by mission family; a family pool is a new axis. The
+  owner wants **a separate conversation on mission rewards in general**: the major categories, and
+  how much they overlap and cross-pick. Build no freight pool before it.

@@ -25,7 +25,8 @@ design: design-amendments-2026-10-14.md §8, §16
 - **A yard runs a limited-time rate bonus:** a higher per-piece rate for a window, rolled from the
   seed per yard and shown on the card with its own timer. This is where the rare, juicy haul now
   comes from.
-- Good deeds keep following the share aboard (`haulPointsFor`).
+- ~~Good deeds keep following the share aboard (`haulPointsFor`).~~ **Good deeds follow the
+  count target** (owner, 2026-10-16), replacing the share bands in `haulPointsFor`.
 
 ## Ruling — the tip and the bonus item (owner, 2026-10-16)
 
@@ -44,4 +45,5 @@ Haul scores the **count delivered**, not the share (design-amendments-2026-10-14
 - [ ] The picker offers 1 up to the hard limit, warns past the soft limit, and the card's pay follows.
 - [ ] `HAUL_BUNDLES` is gone; same seed → same yard bonuses and windows (SM-INV-12).
 - [ ] The rate bonus shows its own timer and pays on settle.
+- [ ] Good deeds follow the count target, not the share (`haulPointsFor` re-cut).
 - [ ] No speed tip on haul; the bonus item is granted on a delivered-count target shown on the card.

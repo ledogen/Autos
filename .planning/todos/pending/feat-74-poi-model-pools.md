@@ -81,7 +81,7 @@ model on the board.
 
 **Simplify.** No satellite slot, no farm composite. The produce stall stands alone as a farm (class
 `farm`, so it also receives as a `residence`) on an ordinary lay-by pad; the player imagines the
-farmhouse just off the road. The barn farms are untouched. Default count, owner to confirm: **one of
+farmhouse just off the road. The barn farms are untouched. Count (owner-confirmed 2026-10-16): **one of
 the three farm slots** wears the stall (a `{ type: 'farm', count: 1, model: 'produceStall' }` slot
 beside the barn slot at count 2), so R1 keeps 3 farms. This supersedes the review-2 R-19 line below.
 

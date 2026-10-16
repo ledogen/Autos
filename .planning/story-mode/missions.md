@@ -447,12 +447,24 @@ truck and what the truck does to the cargo**.
 > truck's risky one, so haul scores the **count that arrives**. A car (≤ 8 pieces, can't lose any)
 > can only chase targets of 8 or under and gets them reliably — lesser items. A truck chasing a 12
 > target loads 14–15 for margin, toward its soft limit, and has to keep them aboard. Speed leaves haul
-> entirely (the decoupling from courier); the job's deadline (FEAT-113) is its only clock. Hauling in
+> entirely (the decoupling from courier); the job's deadline (FEAT-113) is its only clock. **Good deeds
+> follow the count target too** (owner, 2026-10-16), not the share — a car's safe load earns no free deed. Hauling in
 > a car is safe, low-yield work by design: a car career's driving skill is courier. *Option B, not
 > ruled:* the item on throughput across the yard's rate-bonus window ("move 30 before it closes").
 >
-> Freight's row is still **OPEN**. Recommendation on record, not ruled: the item is earned by arriving
-> without a heavy hit to the truck, and the mass picks the pool.
+> **Freight's bonus-item POOL, ruled 2026-10-16 (owner).** Freight is **the trucker role**: it rewards
+> the slow-but-sturdy build.
+>
+> - **Pool:** bubble wrap, furniture pad, heavy-duty pad (the fragile protection items, included on
+>   purpose to encourage cross-specialisation); rubber bed mat and bedliner; **standard-duty** springs,
+>   tires and dampers (fitted parts installed at a service station, not the spare tire); heavy-duty
+>   anti-roll bars; extended bed, flatbed, stake bed, roof rack; heavy-duty radiator.
+> - **Super-rare tier:** heavy-duty springs, dampers and tires.
+> - Tiers for the rest are not yet set. **What earns** the item is still open (recommendation on
+>   record: arriving without a heavy hit to the truck, the mass picks the pool).
+> - Today `REWARDS` pools by **source POI**, not by mission family; a family pool is a new axis. The
+>   owner wants **a separate conversation on mission rewards in general**: the major categories, and
+>   how much they overlap and cross-pick. Build no freight pool before it.
 >
 > - **One mission at a time, reaffirmed.** Carrying several contracts and packing the bed is
 >   rejected: it wants a dense network and turns the game into menu work. A bigger bed lets you take
