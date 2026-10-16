@@ -18,21 +18,19 @@
 //     prims:null + failed:true = the search threw; the client stops warming and builds, so the
 //     same throw surfaces there as a failed build instead of a silent stall.
 
-import { seedFor, mulberry32 } from './seed.js'
-import { createNoise2D } from 'simplex-noise'
+import { coarseHeight, makeCoarseNoise } from './terrain-height.js'
 import { truncatedHeightField, routeEdgeV2, V2_TRUNC_K } from './corridor-router.js'
 
 /**
- * Rebuild the two route height fields from the init subset — EXACTLY the derivation RoadSystem
- * uses (noiseCoarse = createNoise2D(mulberry32(seedFor(worldSeed, 'coarse'))); hTrunc = the
- * V2_TRUNC_K-octave corridor field; hCoarse = the full-octave coarse field, float-identical to
- * terrain-height.js's coarseHeight loop). Exported so the parity gate can pin this derivation from node.
+ * Rebuild the two route height fields from the init subset with the functions RoadSystem itself
+ * calls (makeCoarseNoise; hTrunc = the V2_TRUNC_K-octave corridor field; hCoarse = coarseHeight,
+ * the same import road.js's _coarseH reads). Exported so the parity gate can pin this from node.
  */
 export function buildRouteFields(worldSeed, params) {
-    const noiseCoarse = createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
+    const noiseCoarse = makeCoarseNoise(worldSeed)
     return {
         hTrunc: truncatedHeightField(noiseCoarse, params, V2_TRUNC_K),
-        hCoarse: truncatedHeightField(noiseCoarse, params, params.coarseOctaves),
+        hCoarse: (x, z) => coarseHeight(x, z, noiseCoarse, params),
     }
 }
 

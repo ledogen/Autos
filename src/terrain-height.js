@@ -5,6 +5,7 @@
  *   - src/terrain.js          (main thread: analyticHeight, the carve table, chunk colours)
  *   - src/terrain-worker.js   (the chunk heightmap Worker)
  *   - src/road.js             (coarseHeight only — road grade math is amplitude-independent)
+ *   - src/road-route-worker.js (coarseHeight + makeCoarseNoise — the route Worker's two fields)
  *   - test/lib/terrain-headless.mjs (the headless gates' terrain)
  *
  * It used to exist as four hand-synced copies (a "SYNC RULE"), because the terrain Worker was a
@@ -18,6 +19,9 @@
 import { createNoise2D } from 'simplex-noise'
 import { seedFor, mulberry32 } from './seed.js'
 
+/** The coarse layer's seeded noise — the ONE derivation road.js and the route Worker share. */
+export const makeCoarseNoise = (worldSeed) => createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
+
 /**
  * The three seeded noise layers of a world. Same seed → the same three closures, everywhere.
  * @param {number} worldSeed unsigned 32-bit seed (parseWorldSeed)
@@ -25,7 +29,7 @@ import { seedFor, mulberry32 } from './seed.js'
  */
 export function makeTerrainNoise(worldSeed) {
     return {
-        noiseCoarse:   createNoise2D(mulberry32(seedFor(worldSeed, 'coarse'))),
+        noiseCoarse:   makeCoarseNoise(worldSeed),
         noiseFine:     createNoise2D(mulberry32(seedFor(worldSeed, 'fine'))),
         noiseRegional: createNoise2D(mulberry32(seedFor(worldSeed, 'regional'))),
     }

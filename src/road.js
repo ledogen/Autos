@@ -29,8 +29,7 @@
 
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
-import { coarseHeight } from './terrain-height.js'   // the raw coarse layer — same function the terrain renders (road grade is amplitude-independent)
-import { createNoise2D } from 'simplex-noise'
+import { coarseHeight, makeCoarseNoise } from './terrain-height.js'   // the raw coarse layer — same function the terrain renders (road grade is amplitude-independent)
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA, padSd, PAD_RIM_HOLD } from './road-carve.js'
 import { truncatedHeightField, routeEdgeV2, profileSolve, dequantizeProfile, roundCrests, extendBorePortals, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule · portal placement
 import { PAR_REF } from './par.js'   // FEAT-82: the junction recovery is a vertical curve at par's junction-approach speed
@@ -1023,16 +1022,15 @@ export class RoadSystem {
 
     // ── Noise init ─────────────────────────────────────────────────────────────
     /**
-     * Build the coarse noise closure using the same seed derivation as TerrainSystem.
-     * Byte-identical derivation: createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
-     * ensures _coarseH() returns the same raw heights as terrain.js main-thread closure.
+     * Build the coarse noise closure with terrain-height.js's makeCoarseNoise — the derivation
+     * TerrainSystem uses, so _coarseH() returns the same raw heights as the terrain.
      * @param {number} worldSeed
      * @param {object} params
      */
     _reinitNoise(worldSeed, params) {
         this._worldSeed  = worldSeed
         this._params     = params
-        this._noiseCoarse = createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
+        this._noiseCoarse = makeCoarseNoise(worldSeed)
         this._v2TruncF   = null   // FEAT-68: octave-truncated corridor field re-derives from the new noise
     }
 
