@@ -716,10 +716,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     }
 
     // Phase 4: airborne check (D-14). If tire-spring force is zero or negative, this wheel is
-    // airborne. Pacejka contacts loop is skipped for airborne wheels. The omega integrator
-    // (below, outside the contacts loop) still runs for airborne wheels so drive torque can
-    // rev the wheel while airborne — lastFn=0 causes Newton to converge trivially with no road
-    // reaction (this was already the behavior via the `if (lastFn <= 0) break` Newton guard).
+    // airborne: no contacts, no Pacejka — stepAirborneWheel revs it on drive/brake alone.
     const isAirborne = (params._tireFz[i] || 0) <= 0
 
     // Phase 4: compute rMount (rotated body mount point offset) for suspension body force torque.
@@ -734,32 +731,11 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     totalForce.add(suspBodyForce)
     totalTorque.add(new THREE.Vector3().crossVectors(rMount, suspBodyForce))
 
-    // Airborne skip (D-14): skip Pacejka contacts loop for this wheel.
-    // Omega integrator below still runs (lastFn=0 causes Newton to converge with no road reaction).
+    // Airborne skip (D-14): no contacts, no Pacejka, no Newton — the wheel's ω and slip state are
+    // stepped on their own and the loop moves on.
     if (isAirborne) {
-      // Update omega debug for airborne wheels (CR-03: all wheels log omega every step)
-      if (vehicleState.wheelDebug) vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega?.[i] || 0
-      // Fall through to omega integrator below — do NOT `continue` past it
-      // (but we still need to run the integrator, so restructure to skip only the contacts loop)
-      // Use lastFn=0 to signal airborne to the omega Newton loop.
-      const wheelInertia_a = params.wheelInertia || 1.22
-      const driveTorque_a  = getDriveTorque(i, vehicleState, params)
-      const brakeTorque_a  = getBrakeTorque(i, vehicleState, params)
-      if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque_a
-      if (vehicleState.slipVel)  vehicleState.slipVel[i]  = 0   // airborne: no contact, no abrasion
-      if (vehicleState.tireFlat) vehicleState.tireFlat[i] = 0
-      const omega0_a       = vehicleState.wheelOmega?.[i] ?? 0
-      const spinSign_a     = omega0_a >= 0 ? 1 : -1
-      const brakeSigned_a  = brakeTorque_a * spinSign_a
-      // Airborne: no road reaction, direct Euler step (Newton trivially converges with Flong=0)
-      const omegaNew_a = omega0_a + (dt / wheelInertia_a) * (driveTorque_a - brakeSigned_a)
-      if (brakeTorque_a > 0 && Math.sign(omegaNew_a) !== spinSign_a) {
-        vehicleState.wheelOmega[i] = 0
-      } else {
-        vehicleState.wheelOmega[i] = omegaNew_a
-      }
-      if (vehicleState.wheelDebug) vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
-      continue  // skip the full Pacejka contacts loop + Newton omega below
+      stepAirborneWheel(i, vehicleState, params, dt)
+      continue
     }
 
     // Hub world position (sphere center for contact queries)
@@ -801,16 +777,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     if (!vehicleState.slipLong) vehicleState.slipLong = [0, 0, 0, 0]
     if (!vehicleState.slipLat)  vehicleState.slipLat  = [0, 0, 0, 0]
 
-    // BUG-20: numeric floor only (keeps the relaxation denominator well-conditioned near rest).
-    // Was 3.0 m/s — that large floor forced the stored slip displacement to bleed toward zero
-    // below ~3 m/s, so the carcass spring could not hold at rest (no static friction: a braked
-    // car ran away downhill) and the tire felt slippery under ~11 km/h. The blow-up at rest that
-    // the old floor guarded against is now bounded by the friction-circle break-away clamp on
-    // |(sLong,sLat)| below (sBreak) — the physically correct limiter.
-    const SLIP_EPSILON = 0.05
-
-    // Per-step bookkeeping for the ω integrator (Newton-iterated implicit Euler below).
-    // Zero / null when airborne so road reaction = 0.
+    // Per-step bookkeeping for the ω integrator (Newton-iterated implicit Euler below), set by the
+    // grounded block — a wheel without a support never reaches the integrator.
     let lastFn          = 0
     let lastSLongPrev   = 0   // sLong_old at this step's start (for Newton re-eval of s)
     let lastSLatNew     = 0   // sLat already committed (lateral doesn't iterate with ω)
@@ -981,12 +949,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         vehicleState.wheelDebug[i].vLong = omegaCur - longVelCur
         vehicleState.wheelDebug[i].vLat  = latVelCur
       }
-    } else if (Fn > 0) {
+    } else {
       // Loaded during the substeps but no support under the post-substep hub: the wheel lifted off
-      // inside this step (a crest, a take-off). Treat the patch as airborne for the wear signals —
-      // the ω solve below already runs with lastFn = 0, i.e. the airborne branch's physics.
-      if (vehicleState.slipVel)  vehicleState.slipVel[i]  = 0
-      if (vehicleState.tireFlat) vehicleState.tireFlat[i] = 0
+      // inside this step (a crest, a take-off). It is airborne for the rest of the step — ω on
+      // drive/brake alone, slip relaxing, wear signals zero (review-2 R-03: this used to fall into
+      // the Newton solve with no load, which froze ω and stored a phantom dt·ω·r slip).
+      stepAirborneWheel(i, vehicleState, params, dt)
+      continue
     }
 
     // Omega integrator — Newton-iterated implicit Euler. Runs once per wheel per step,
@@ -999,7 +968,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     // where sLong_new(ω) = (sLong_old + dt·(ω·r − v_long)) / (1 + dt·|v_contact|/L)
     //
     // Newton converges in 1-3 iterations at 60Hz; the loop caps at 4 with a tight residual
-    // tolerance. Airborne: lastFn = 0 ⇒ tireForce returns zero ⇒ ω evolves under drive/brake.
+    // tolerance. Only a grounded wheel (lastFn > 0) gets here; airborne ones took stepAirborneWheel.
     {
       const wheelInertia = params.wheelInertia || 1.22
       const driveTorque  = getDriveTorque(i, vehicleState, params)
@@ -1022,7 +991,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         if (sLongIter >  sLongMax) sLongIter =  sLongMax
         if (sLongIter < -sLongMax) sLongIter = -sLongMax
         sLongFinal = sLongIter
-        if (lastFn <= 0) break  // airborne: no road reaction; Newton trivially converged
         const { Flong, dFmagDs } = computeTireForces(sLongIter, lastSLatNew, lastFn, params, params._tireMuScale?.[i] ?? 1)
         const g  = omegaNew - omega0 - dt / wheelInertia * (driveTorque - Flong * params.wheelRadius - brakeSigned)
         // g'(ω) = 1 + dt·r/I · dF/dω,  with dF/dω = dFmagDs · dsdo
@@ -1043,7 +1011,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // one-step torque nudge. Bounded, cycle-free, and the next frame retries Newton from a
       // consistent state. Converged solves (normal driving, 1–3 iterations) are untouched.
       // Written as !(≤) so a NaN residual (gp exactly 0 → ±Infinity → NaN) also takes the fallback.
-      if (!(Math.abs(lastDelta) <= NEWTON_TOL) && lastFn > 0) {
+      if (!(Math.abs(lastDelta) <= NEWTON_TOL)) {
         omegaNew = lastLongVelCur / params.wheelRadius +
           dt / wheelInertia * (driveTorque - brakeSigned)
         sLongFinal = Math.max(-sLongMax, Math.min(sLongMax,
@@ -1151,6 +1119,45 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   engine.getVelocity(chassis, vehicleState.velocity, vehicleState.angularVelocity)
   vehicleState.quaternion.normalize()
 }
+
+/**
+ * ω and slip for a wheel with no road reaction this step: off the ground at the start of the step
+ * (_tireFz ≤ 0, D-14), or loaded during the substeps but with no support under the post-substep hub
+ * (it lifted off inside the step — review-2 R-03). Drive and brake act on the bare wheel inertia —
+ * an explicit Euler step, since there is no contact stiffness to go unstable on. The stored carcass
+ * deflection relaxes with no slip input: the grounded relaxation update with the contact velocity
+ * taken out, rolling at the wheel's own speed — so a take-off does not land on its old deflection.
+ */
+function stepAirborneWheel (i, vehicleState, params, dt) {
+  const wheelInertia = params.wheelInertia || 1.22
+  const driveTorque  = getDriveTorque(i, vehicleState, params)
+  const brakeTorque  = getBrakeTorque(i, vehicleState, params)
+  if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque
+  if (vehicleState.slipVel)  vehicleState.slipVel[i]  = 0   // airborne: no contact, no abrasion
+  if (vehicleState.tireFlat) vehicleState.tireFlat[i] = 0
+  const omega0      = vehicleState.wheelOmega?.[i] ?? 0
+  const spinSign    = omega0 >= 0 ? 1 : -1
+  const brakeSigned = brakeTorque * spinSign
+  const omegaNew    = omega0 + (dt / wheelInertia) * (driveTorque - brakeSigned)
+  // Braking cannot reverse spin direction: the brake stops the wheel, it does not push through zero.
+  vehicleState.wheelOmega[i] = (brakeTorque > 0 && Math.sign(omegaNew) !== spinSign) ? 0 : omegaNew
+  if (vehicleState.slipLong && vehicleState.slipLat) {
+    const vCon = Math.max(Math.abs(omega0 * params.wheelRadius), SLIP_EPSILON)
+    const relaxDen = 1 + dt * vCon / (params.tireRelaxationLength || 0.3)
+    vehicleState.slipLong[i] /= relaxDen
+    vehicleState.slipLat[i]  /= relaxDen
+  }
+  // CR-03: every wheel logs its ω every step, airborne ones included.
+  if (vehicleState.wheelDebug) vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
+}
+
+// BUG-20: numeric floor only (keeps the relaxation denominator well-conditioned near rest).
+// Was 3.0 m/s — that large floor forced the stored slip displacement to bleed toward zero
+// below ~3 m/s, so the carcass spring could not hold at rest (no static friction: a braked
+// car ran away downhill) and the tire felt slippery under ~11 km/h. The blow-up at rest that
+// the old floor guarded against is now bounded by the friction-circle break-away clamp on
+// |(sLong,sLat)| (sBreak) — the physically correct limiter.
+const SLIP_EPSILON = 0.05
 
 // Scratch for the dynamic-support ground velocity (avoids a per-contact alloc).
 const _groundVelScratch = { x: 0, y: 0, z: 0 }
