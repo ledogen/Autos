@@ -9772,9 +9772,13 @@ export class RoadSystem {
      * it here (without touching _generation — topology is unchanged) forces the next profile query
      * to lazily rebuild camber against the new params. Without this the Camber Strength / Camber Rate
      * sliders recompute carve tables + clear ribbon tiles but re-read the OLD cached camber → no-op.
+     * The R4 frozen-delete set is a product of the BUILD, not a cache: its stamp rides across the
+     * bump, or _graphDegreeOf reads raw degrees (phantom pads / leaf caps) until the next rebuild.
      */
     invalidateProfileCaches() {
+        const keepFrozen = this._v2DelFrozen?.rev === this._networkRev
         this._networkRev++
+        if (keepFrozen) this._v2DelFrozen.rev = this._networkRev
     }
 
     // ── P4: Run-adjacency index (plan 09-29) ─────────────────────────────────────
