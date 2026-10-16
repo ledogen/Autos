@@ -185,7 +185,7 @@ export class PropSystem {
     // 4–6 ms per chunk commit at Ultra (~17 commit frames per row crossing). Each
     // collidable stores RAW baked dims + instance scale; the collision-scale params are applied LIVE
     // at query time (so the debug sliders tune without a re-stream).
-    this._collidables = new Map()  // "cx,cz" -> [{ kind, x, y, z, radius, height, scale }]
+    this._collidables = new Map()  // "cx,cz" -> chunk.cols [{ kind, x, y, z, radius, height, scale }] — not bbonly (R-15)
     this._grid = new Map()         // cellKey(gx, gz) -> [collidable, ...]
     this._gridCell = 8             // m
     this._physicsHook = null       // FEAT-48: PropPhysics (engine static colliders) — syncChunk/disposeChunk/clear
@@ -542,14 +542,14 @@ export class PropSystem {
     const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
     // litter: false ⇒ scattered without the cover + zone-rock passes (bbonly ring); a promotion
     // queues scatterLitterGen for it and _commitLitter appends the result.
-    const chunk = { places, owned: [], mode: this._chunkMode(cx, cz), litter: withLitter, cx, cz, bakeEnd }
+    // `cols` is RETAINED like `places`: a billboard-only chunk registers no collision (R-15 — nothing
+    // drives out there; at Ultra that ring is 208 of 289 chunks), and registers it on promotion or
+    // when the vehicle's 3×3 reaches it (update()).
+    const chunk = { places, cols: collidables, owned: [], mode: this._chunkMode(cx, cz), litter: withLitter, cx, cz, bakeEnd }
     this._chunks.set(ck, chunk)
     this._placeChunk(chunk, chunk.mode)
     const _c2 = performance.now(); perfAdd('props.commit.place', _c2 - _c1)
-    if (collidables.length) {
-      this._indexCollidables(ck, collidables)
-      this._physicsHook?.syncChunk(ck, collidables)   // FEAT-48: rigid engine colliders for the chassis/debris
-    }
+    if (chunk.mode !== 'bbonly') this._registerCollidables(ck, chunk)
     perfAdd('props.commit.collide', performance.now() - _c2)
 
     // PERF-07: this chunk's props changed → (re)bake its shadow tile and its neighbours' (silhouettes
@@ -590,14 +590,16 @@ export class PropSystem {
     if (!chunk || chunk.litter) return          // released meanwhile, or already carried
     perfEvent('props.litter')
     const from = chunk.places.length
-    const collidables = this._collidables.get(ck) || []
+    const collidables = chunk.cols
     const nCol = collidables.length
     chunk.bakeEnd = this._buildPlaces(placements, chunk.places, collidables, chunk.bakeEnd)
     chunk.litter = true
     this._placeChunk(chunk, chunk.mode, from)
     if (collidables.length !== nCol) {          // zone rocks' large class is collidable
-      this._indexCollidables(ck, collidables, nCol)   // grew in place from nCol (or a fresh list)
-      this._physicsHook?.syncChunk(ck, collidables)
+      if (this._collidables.has(ck)) {
+        this._indexCollidables(ck, collidables, nCol)   // grew in place from nCol
+        this._physicsHook?.syncChunk(ck, collidables)
+      } else if (chunk.mode !== 'bbonly') this._registerCollidables(ck, chunk)
     }
     if (chunk.mode !== 'bbonly') this._markShadowTiles(chunk.cx, chunk.cz, true)
   }
@@ -730,8 +732,11 @@ export class PropSystem {
       if (want === chunk.mode) continue
       const promoted = chunk.mode === 'bbonly' && want !== 'bbonly'
       perfEvent('props.lodSwap')   // PERF-26: 3D ⇄ billboard re-place of a whole chunk's instances
+      const demoted = want === 'bbonly' && chunk.mode !== 'bbonly'
       this._unplaceChunk(chunk)
       this._placeChunk(chunk, want)
+      if (promoted) this._registerCollidables(ck, chunk)     // R-15: collision only where it can be reached
+      else if (demoted) this._unregisterCollidables(ck)      // (update() re-adds it if the truck is there)
       // Promotion out of the billboard-only ring: the chunk skipped its shadow bake at commit —
       // bake now that its ground shadows are within the visible/fade range. (Demotion needs no
       // mark: the trees haven't moved, the already-baked tile stays valid.)
@@ -759,12 +764,7 @@ export class PropSystem {
     this._unplaceChunk(chunk)
     const wasBBOnly = chunk.mode === 'bbonly'
     this._chunks.delete(ck)
-    const cols = this._collidables.get(ck)
-    if (cols) {
-      this._collidables.delete(ck)
-      if (!this._gridDirty) this._gridRemove(cols)
-      this._physicsHook?.disposeChunk(ck)
-    }
+    this._unregisterCollidables(ck)
     // PERF-07: this chunk's props are gone → re-bake still-live neighbours so their tiles drop the
     // departed silhouettes (a neighbour still in-ring re-bakes without them; its own tile is reused
     // by whichever chunk lands on the toroidal slot next). Billboard-only chunks never baked.
@@ -956,6 +956,16 @@ export class PropSystem {
     if (!this._scatterFillDone && !this._activeScatter && this._scatterQueue.length === 0) this._scatterFillDone = true
 
     this._syncChunkLod(budget)                      // PERF-21: pool swaps after streaming settles
+    // R-15: the vehicle's 3×3 ALWAYS collides, whatever LOD label the budgeted swap above has reached —
+    // a lagging promotion (6 swaps/frame, 1 when the stream budget is spent) or a freecam parked far
+    // from the truck must never leave it in a billboard-only chunk without colliders.
+    if (hardX != null) {
+      const hcx = Math.floor(hardX / cs), hcz = Math.floor(hardZ / cs)
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const ck = (hcx + dx) + ',' + (hcz + dz), chunk = this._chunks.get(ck)
+        if (chunk) this._registerCollidables(ck, chunk)
+      }
+    }
     this._flush()
     this._coverUniforms.uTime.value = performance.now() * 0.001   // FEAT-85: wind clock
   }
@@ -1056,6 +1066,22 @@ export class PropSystem {
     } else base = list[0].seq                        // list[0].seq = this chunk's rank × SEQ_STRIDE
     for (let i = from; i < list.length; i++) list[i].seq = base + i
     if (!this._gridDirty) this._gridAdd(list, from)
+  }
+
+  /** Index a chunk's retained collidables and build their engine colliders (no-op: none, or already in). */
+  _registerCollidables(ck, chunk) {
+    if (!chunk.cols.length || this._collidables.has(ck)) return
+    this._indexCollidables(ck, chunk.cols)
+    this._physicsHook?.syncChunk(ck, chunk.cols)   // FEAT-48: rigid engine colliders for the chassis/debris
+  }
+
+  /** Drop a chunk's collidables from the index, the grid and the engine (release / bbonly demotion). */
+  _unregisterCollidables(ck) {
+    const cols = this._collidables.get(ck)
+    if (!cols) return
+    this._collidables.delete(ck)
+    if (!this._gridDirty) this._gridRemove(cols)
+    this._physicsHook?.disposeChunk(ck)
   }
 
   /** Grid cell span of one collidable → this._span [gx0, gx1, gz0, gz1]. */
