@@ -188,17 +188,32 @@ const STEPS = [
     check(await clock() !== h1, 'clock did not resume after R closed the camp')
   }],
   ['inventory', async () => {
-    // FEAT-122: Tab toggles the inventory screen anywhere, Esc closes it; empty at run start.
+    // FEAT-122: parked only (like V) — Tab driving pulses the park sign and opens nothing; parked,
+    // Tab toggles the screen and Esc closes it. The grid draws every slot, and the run starts with
+    // the Pack holding the bedroll.
     const open = () => js('document.getElementById("inv-screen").classList.contains("open")')
-    check(await js('!!document.getElementById("inv-icon")'), 'no inventory icon in the HUD column')
+    check(await js('!!document.querySelector("#park-zone #inv-icon") && !!document.querySelector("#park-zone #dmg-icon")'),
+      'inventory + damage icons are not both inside the park zone')
+    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+    await tap('Tab'); await sleep(300)
+    check(!await open(), 'Tab opened the inventory while not parked')
+    check(await js('document.getElementById("park-zone").classList.contains("locked")'), 'park zone not locked while unparked')
+    await tap(' ')
+    check(await until(() => js('window.__vs.parked'), 1000), 'Space did not park')
     await tap('Tab')
-    check(await until(open, 1000), 'Tab opened no inventory screen')
-    check(await js('!!document.querySelector("#inv-screen .is-empty")'), 'inventory not empty at run start')
+    check(await until(open, 1000), 'Tab opened no inventory screen while parked')
+    const slots = await js('document.querySelectorAll("#inv-screen .is-grid .inv-slot").length')
+    check(slots === 8, `grid shows ${slots} slots, want 8`)
+    check(await js('document.querySelector("#inv-screen .inv-slot[data-slot=\'0\'] .sl-name")?.textContent') === 'Pack',
+      'slot 1 does not hold the starting Pack')
     await tap('Tab')
     check(await until(async () => !await open(), 1000), 'second Tab left the inventory open')
     await tap('Tab'); await until(open, 1000)
     await tap('Escape')
     check(await until(async () => !await open(), 1000), 'Esc left the inventory open')
+    // Parking at the spawn can open mom's camp face, which holds the truck — R closes it (R-12).
+    const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
+    if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
   }],
   ['backtick', async () => {
     // R-13: one gate for the panel and the wireframes — they flip together, and flip back.

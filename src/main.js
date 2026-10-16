@@ -3131,7 +3131,11 @@ const inventorySystem = new InventorySystem({
   onChange: () => inventoryScreen.render(),
   effects: { coffee: () => daySystem.drinkCoffee() },
 })
-const inventoryScreen = new InventoryScreen(inventorySystem, () => menuStage.isActive())
+// Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
+const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
+  isSuppressed: () => menuStage.isActive(),
+  isBlocked: () => damageScreen.blocked,
+})
 
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
 // file owns the DOM (the mission-panel pattern).
@@ -3822,9 +3826,11 @@ const _HAUL_PIECE = PROP_MODELS.firewoodBundleA.collision.size   // one bundle; 
  */
 function _offerVerdict (offer) {
   const sp = offerBoard.spec(offer)
-  if (sp?.bundles) return loadVerdict(TRUCK, { massKg: sp.massKg, size: _HAUL_PIECE, form: 'loose' })
+  // FEAT-122: stowed kit counts toward the same payload as the cargo (owner, 2026-10-16).
+  const massKg = (sp?.massKg ?? 0) + inventorySystem.stowedKg()
+  if (sp?.bundles) return loadVerdict(TRUCK, { massKg, size: _HAUL_PIECE, form: 'loose' })
   const row = sp?.load ? FREIGHT[sp.load] : null
-  return row ? loadVerdict(TRUCK, { massKg: sp.massKg, size: PROP_MODELS[row.model].collision.size, form: row.form }) : null
+  return row ? loadVerdict(TRUCK, { massKg, size: PROP_MODELS[row.model].collision.size, form: row.form }) : null
 }
 
 /**
@@ -4500,7 +4506,7 @@ document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
 document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
 // FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
-document.getElementById('cp-item')?.addEventListener('click', (e) => { inventoryScreen.open(); e.currentTarget.blur() })
+document.getElementById('cp-item')?.addEventListener('click', (e) => { inventoryScreen.request(); e.currentTarget.blur() })
 document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
 
 /**
@@ -6755,6 +6761,7 @@ function loop () {
   }
   damageHUD.update(frameTime)   // SM-3 diagnostic readout — returns on the first line while hidden
   damageScreen.update(frameTime)   // FEAT-90: alert detection + icon tint at 10 Hz
+  inventoryScreen.update()         // FEAT-122: the park zone's lock; closes when the truck drives off
   _fragileBlink(frameTime)   // FEAT-97: the load's red hit blink fading out
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
@@ -6849,7 +6856,7 @@ function loop () {
     // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
-    damageModel.tireCondCap = tireCondCap(TRUCK, _freight?.massKg ?? 0)   // FEAT-112: an overloaded bed pops tires
+    damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.

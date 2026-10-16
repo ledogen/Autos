@@ -48,13 +48,26 @@ first, which is why FEAT-121 never lists it under `needs:`.
 2. **Quick slots: 4 (keys 1–4), consumable and cooldown items both.** A quick slot is a **shortcut**:
    a key bound to an item you already own. It is not extra storage, and the item still takes its
    inventory slot.
-3. **Inventory screen: hotkey `Tab` (`I` is the ignition), plus an icon in the right-edge HUD icon column** (with the damage
-   and camp icons) for opening it on the go. **The clock runs while it is open on the road. At camp it pauses**, like the other
-   planning screens.
+3. **Inventory screen: hotkey `Tab` (`I` is the ignition), plus an icon in the right-edge HUD
+   icon column.** **It works only while parked** (round 2, below), like the damage screen. The clock
+   runs while it is open on the road; at camp it pauses, like the other planning screens.
 4. **Stowed mass is physics only.** No exaggeration, no extra cost. Light kit is in effect priced in
    cash and a slot; heavy kit (spare tire, freight) is felt, and it all counts toward the payload
    verdict.
 
+## Ruled — owner, 2026-10-16, round 2 (after playing v1)
+
+5. **The screen draws every slot** — a grid of the truck's slots, empty ones included.
+6. **Backpacks** (items.md §2c). A pack takes **one truck slot** and holds its own slots; gear packed
+   inside it **frees its truck slot** (still truck mass). Several packs may be owned, never fewer
+   than one; one is **equipped**. The starter Pack has 2 slots with the bedroll in one. Hover a
+   pack to see its slots; click it to open it and pack or unpack.
+7. **The park zone.** The parking-gated icons — damage (V) and inventory (Tab) — sit together in a
+   shaded box in the HUD column, owned by the P sign. Not parked (or the brake belongs to a POI
+   here): the zone is locked and a press pulses the P sign. Camp stays outside the zone. Quick keys
+   1–4 still work while driving (items.md §1c).
+8. **Every item has a rendered thumbnail** — modelled and rendered in Blender
+   (`assets/models/src/items.py` → `assets/items/<id>.png`), one fixed rig for the whole set.
 
 ## Acceptance
 

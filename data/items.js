@@ -22,6 +22,15 @@ export const ITEMS = {
     // A 2 gal RotoPax: ~5.7 kg of gas + ~1.5 kg of can (data/offers.js REWARDS).
     emergencyGas: { name: 'Emergency gas', kind: 'consumable', massKg: 7.2,
                     desc: 'A small can of gas, for when the gauge lies.' },
+
+    // ── Backpacks (items.md §2c) — `packSlots` camp items ride inside; `reachM` is how far past the
+    //    road edge camp may be (campRoadEdgeM — not wired yet: the starter's is today's tether).
+    pack:         { name: 'Pack',          kind: 'pack',       massKg: 1.5, packSlots: 2, reachM: 40,
+                    desc: 'An old canvas pack. Whatever is in it comes to camp.' },
+
+    // ── Camp gear (items.md §2b) — `sleep` marks a sleeping item: the equipped pack always holds one.
+    bedroll:      { name: 'Bedroll',       kind: 'camp',       massKg: 2.5, sleep: true,
+                    desc: 'A rolled bed for the ground. Better than the dirt, not by much.' },
 }
 
 /** Kinds that stack into one slot per item kind. */
