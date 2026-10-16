@@ -240,13 +240,14 @@ function rebuildWaterSystem () {
   })
 }
 const _bushDragF = { x: 0, y: 0, z: 0 }   // FEAT-06b: reused bush soft-drag accumulator (no per-substep alloc)
-// PERF-34: every sampler is timed into a perf bucket (sampler.<name>) so the hitch report can say
-// WHICH ground query a scatter spends its frame in. perfAdd is two Map writes; ~2k calls per chunk.
+// PERF-34: under ?hitch / ?prof every sampler is timed into a perf bucket (sampler.<name>) so the
+// hitch report can say WHICH ground query a scatter spends its frame in (~2k calls per chunk). With
+// profiling off the samplers are passed through bare — no clock reads, no bucket writes.
 // FOUR arguments, not three: waterNear takes a bbox (x0, z0, x1, z1). The three-argument form of
 // this wrapper (2026-09-29) dropped z1, so the live game told every chunk "no water here" and the
 // scatter stopped keeping trees and rocks out of ponds and channels — invisible to the gates,
 // which build their own samplers.
-const _timed = (name, fn) => {
+const _timed = !_HITCH ? (name, fn) => fn : (name, fn) => {
   const label = 'sampler.' + name
   return (a, b, c, d) => { const t = performance.now(); const r = fn(a, b, c, d); perfAdd(label, performance.now() - t); return r }
 }
