@@ -2006,7 +2006,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // surface. Reuses the CENTRE's run (memoized, so no extra tile scan) — a tunnel wall is a
   // property of the run the wheel is in, not of the envelope's outlying samples.
   if (!_labActive && roadSystem) {
-    const wallHit = roadSystem.queryTunnelWallContact(cx, cy, cz, r, _hintAt(cx, cz))
+    const wallHit = roadSystem.queryTunnelWallContact(cx, cy, cz, r, _qcHintAt(cx, cz))
     if (wallHit) hits.push(wallHit)
   }
 

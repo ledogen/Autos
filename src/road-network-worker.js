@@ -82,7 +82,7 @@ export function pondDiscPad(params) {
 /**
  * Rebuild the two setWaterNoGo closures from the disc list — the exact semantics of the live
  * pair main.js wires (WaterSystem.isRoadNoGo = point within radius+skirt of any pond;
- * pondDiscsFn = discs intersecting the bbox). Disc ORDER differs from pondsInBBox's cell-scan
+ * _pondDiscs = discs intersecting the bbox). Disc ORDER differs from pondsInBBox's cell-scan
  * order, which is fine: the corridor search hard-blocks cells against the SET, and the no-go is
  * an any-test — both order-independent. Membership is the parity surface, and the caller pads
  * its collection extent so no queryable disc is missing.
