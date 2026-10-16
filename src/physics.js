@@ -521,8 +521,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // and a damper fed strut velocity instead of the contact's closing rate. Owner called it,
   // correctly: fix the measurement, not the physics.)
   //
-  // depthRate: finite difference of the per-body depth across steps — the honest d(depth)/dt
-  // the tire damper wants. Continuous depth ⇒ well-behaved difference; on first touch
+  // depthRate: finite difference of the per-(body, wheel) depth across steps — the honest
+  // d(depth)/dt the tire damper wants. Keyed per wheel as well as per body: two wheels on one body
+  // (a dragged log) must each difference against their OWN last depth, or the shallower wheel's
+  // damper reads the deeper one's baseline and pushes the wrong way. Continuous depth ⇒ well-behaved difference; on first touch
   // prev = 0 and depth ≈ closing·dt, so the rate lands at the true closing speed. Every query
   // within one step shares the previous step's baseline (suspension substeps cannot compound).
   const prevDepth = engineCtx._dynContactDepth ?? EMPTY_DEPTH_MAP
@@ -562,9 +564,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // Safety invariant, not a filter that should ever fire with exact manifolds: a body under
       // the wheel cannot push it DOWN (a rock overhead is the chassis' engine contact).
       if (h.normal.y < -0.1) continue
-      h.depthRate = (h.depth - (prevDepth.get(h.body) ?? 0)) / dt
-      const seen = stepDepth.get(h.body)
-      if (seen === undefined || h.depth > seen) stepDepth.set(h.body, h.depth)
+      const key = h.body * 4 + corner
+      h.depthRate = (h.depth - (prevDepth.get(key) ?? 0)) / dt
+      const seen = stepDepth.get(key)
+      if (seen === undefined || h.depth > seen) stepDepth.set(key, h.depth)
       list.push(h)
     }
     return list
@@ -1024,7 +1027,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // heavily loaded wheel rolls — ω anchors to the contact's longitudinal velocity plus the
       // one-step torque nudge. Bounded, cycle-free, and the next frame retries Newton from a
       // consistent state. Converged solves (normal driving, 1–3 iterations) are untouched.
-      if (Math.abs(lastDelta) > NEWTON_TOL && lastFn > 0) {
+      // Written as !(≤) so a NaN residual (gp exactly 0 → ±Infinity → NaN) also takes the fallback.
+      if (!(Math.abs(lastDelta) <= NEWTON_TOL) && lastFn > 0) {
         omegaNew = lastLongVelCur / params.wheelRadius +
           dt / wheelInertia * (driveTorque - brakeSigned)
         sLongFinal = Math.max(-sLongMax, Math.min(sLongMax,
