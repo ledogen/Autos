@@ -174,6 +174,8 @@ export class WaterSystem {
         this._pondCache = new Map()   // floorKey -> pond | null
         this._streamCache = new Map() // saddleKey -> stream | null
         this._refineCache = new Map() // "qx,qz" -> refined basin floor {x,z,y} (memoizes the descent)
+        this._pondCellMemo = new Map()   // S-35: "cx,cz" -> ponds reaching that WATER_CELL (_pondsAt)
+        this._streamCellMemo = new Map() // S-35: "cx,cz" -> streams reaching that WATER_CELL (_streamsAt)
     }
 
     // ── Terrain reads ─────────────────────────────────────────────────────────
@@ -377,11 +379,17 @@ export class WaterSystem {
     }
 
     pondsInBBox(minX, minZ, maxX, maxZ) {
+        return this._collectPonds(minX, minZ, maxX, maxZ, minX, minZ, maxX, maxZ)
+    }
+
+    // The cell walk runs over the cells around the WALK bbox; the reach filter tests the KEEP bbox.
+    // pondsInBBox passes the same box twice; _pondsAt walks from a point and keeps a whole cell.
+    _collectPonds(wMinX, wMinZ, wMaxX, wMaxZ, minX, minZ, maxX, maxZ) {
         const reach = this.k.pondMaxRadius + this.k.pondSkirtWidth
         const marginCells = Math.ceil(reach / WATER_CELL) + 1
         const seen = new Set()
         const out = []
-        for (const [cx, cz] of this._cellsForBBox(minX, minZ, maxX, maxZ, marginCells)) {
+        for (const [cx, cz] of this._cellsForBBox(wMinX, wMinZ, wMaxX, wMaxZ, marginCells)) {
             for (const m of this._cellData(cx, cz).minima) {
                 const pond = this._pondForBasin(m)
                 if (!pond || seen.has(pond.key)) continue
@@ -704,10 +712,15 @@ export class WaterSystem {
     // that reach (otherwise a stream sourced far outside the window but flowing
     // through it would be missed → window variance).
     streamsInBBox(minX, minZ, maxX, maxZ) {
+        return this._collectStreams(minX, minZ, maxX, maxZ, minX, minZ, maxX, maxZ)
+    }
+
+    // Walk bbox vs keep bbox — as _collectPonds.
+    _collectStreams(wMinX, wMinZ, wMaxX, wMaxZ, minX, minZ, maxX, maxZ) {
         const marginCells = Math.ceil(this.k.streamMaxLength / WATER_CELL) + 1
         const seen = new Set()
         const out = []
-        for (const [cx, cz] of this._cellsForBBox(minX, minZ, maxX, maxZ, marginCells)) {
+        for (const [cx, cz] of this._cellsForBBox(wMinX, wMinZ, wMaxX, wMaxZ, marginCells)) {
             for (const sd of this._cellData(cx, cz).saddles) {
                 const stream = this._streamForSaddle(sd)
                 if (!stream || seen.has(stream.key)) continue
@@ -737,9 +750,50 @@ export class WaterSystem {
         return this._cellCache.size + this._pondCache.size + this._streamCache.size
     }
 
+    // ── S-35: point queries — pondsInBBox(x,z,x,z) / streamsInBBox(x,z,x,z), memoised per cell ──
+    // Every point of a WATER_CELL walks the SAME cells in the same order, so the walk is done once
+    // per cell (kept to the features reaching the cell's closed extent) and a point query only
+    // re-applies the per-point reach test. Same list, same order (pondSkirtAt's first match is
+    // unchanged); a pure fn of the cell over the deterministic caches → window-invariant.
+    _pondsAt(x, z) {
+        const cx = cellOf(x), cz = cellOf(z), key = cellKey(cx, cz)
+        let near = this._pondCellMemo.get(key)
+        if (!near) {
+            const x0 = cx * WATER_CELL, z0 = cz * WATER_CELL
+            near = this._collectPonds(x, z, x, z, x0, z0, x0 + WATER_CELL, z0 + WATER_CELL)
+            this._pondCellMemo.set(key, near)
+        }
+        const out = []
+        for (const pond of near) {
+            const rr = pond.radius + pond.skirt
+            if (pond.floorX + rr < x || pond.floorX - rr > x) continue
+            if (pond.floorZ + rr < z || pond.floorZ - rr > z) continue
+            out.push(pond)
+        }
+        return out
+    }
+    _streamsAt(x, z) {
+        const cx = cellOf(x), cz = cellOf(z), key = cellKey(cx, cz)
+        let near = this._streamCellMemo.get(key)
+        if (!near) {
+            const x0 = cx * WATER_CELL, z0 = cz * WATER_CELL
+            near = this._collectStreams(x, z, x, z, x0, z0, x0 + WATER_CELL, z0 + WATER_CELL)
+            this._streamCellMemo.set(key, near)
+        }
+        const out = []
+        for (const stream of near) {
+            const pad = (stream.maxWidth ?? stream.width) + stream.bankWidth
+            for (const p of stream.points) {
+                if (p.x >= x - pad && p.x <= x + pad &&
+                    p.z >= z - pad && p.z <= z + pad) { out.push(stream); break }
+            }
+        }
+        return out
+    }
+
     // Pond containing (x,z) within its water radius, or null. For submerged/render.
     pondAt(x, z) {
-        for (const pond of this.pondsInBBox(x, z, x, z)) {
+        for (const pond of this._pondsAt(x, z)) {
             if (Math.hypot(x - pond.floorX, z - pond.floorZ) <= pond.radius) return pond
         }
         return null
@@ -748,7 +802,7 @@ export class WaterSystem {
     // Road no-go: inside a pond's radius + skirt. The router treats this as a hard
     // exclusion (ponds are routed AROUND — FEAT-17). Streams are NOT no-go (bridged).
     isRoadNoGo(x, z) {
-        for (const pond of this.pondsInBBox(x, z, x, z)) {
+        for (const pond of this._pondsAt(x, z)) {
             const rr = pond.radius + pond.skirt
             if (Math.hypot(x - pond.floorX, z - pond.floorZ) <= rr) return true
         }
@@ -785,7 +839,7 @@ export class WaterSystem {
     // shoreline) and excludes `inWater`. Same injected-sampler shape as the prop
     // system's roadBlocked sampler, so main.js can hand it straight to the scatterer.
     pondSkirtAt(x, z) {
-        for (const pond of this.pondsInBBox(x, z, x, z)) {
+        for (const pond of this._pondsAt(x, z)) {
             const d = Math.hypot(x - pond.floorX, z - pond.floorZ)
             if (d <= pond.radius) return { inWater: true, inSkirt: false, pond }
             if (d <= pond.radius + pond.skirt) return { inWater: false, inSkirt: true, pond }
@@ -800,7 +854,7 @@ export class WaterSystem {
     //   inBank    = w < dist ≤ w + bankWidth (the ramp shoulder up to grade)
     // Pure fn of (seed, x, z, params) via the cached stream records → window-invariant, no caching.
     streamChannelAt(x, z) {
-        for (const st of this.streamsInBBox(x, z, x, z)) {
+        for (const st of this._streamsAt(x, z)) {
             const pad = (st.maxWidth ?? st.width) + st.bankWidth
             const bb = _streamBB(st)
             if (x < bb.x0 - pad || x > bb.x1 + pad || z < bb.z0 - pad || z > bb.z1 + pad) continue
@@ -926,7 +980,7 @@ export class WaterSystem {
     // the contract and continuity. `raw` (world-space terrain at x,z) is passed by the terrain
     // paths that already have it; falls back to this WaterSystem's own heightFn when omitted.
     streamCarveSample(x, z, streams, raw) {
-        const list = streams || this.streamsInBBox(x, z, x, z)
+        const list = streams || this._streamsAt(x, z)
         let rawH
         let best = null   // { h, blendW, bedY } — minimum composed height across streams + segments
         for (const st of list) {
