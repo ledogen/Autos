@@ -15,7 +15,7 @@
  * light rig). Square capture region of side S = max(width, height) so the quad never stretches.
  * Re-bake on sky look changes (rebake()) — a handful of tiny renders, imperceptible.
  *
- * RENDER: one InstancedMesh per billboardable variant (IMPOSTOR_CATS × variants ≈ 11 extra draw
+ * RENDER: one InstancedMesh per billboardable variant (IMPOSTOR_CATS × variants = 8 extra draw
  * calls, capacity-shared with the 3D pools' slot bookkeeping in prop-system). Cylindrical
  * billboard in the vertex shader (rotates about world +Y around the trunk-base anchor — trees
  * must not tip back when the camera looks down). alphaTest cutout, no blending, depth-tested and
@@ -38,7 +38,7 @@ import * as THREE from 'three'
  */
 export const IMPOSTOR_CATS = ['aspen', 'pine']
 
-const TILE_PX = 256            // px per variant tile (atlas ~16 MB RGBA16F at 11 variants; 128 showed
+const TILE_PX = 256            // px per variant tile (3×3 atlas, 768² RGBA16F = 4.7 MB + mips + a 2.4 MB depth buffer; 128 showed
                                // visible stair-step cutout edges on mid-distance trees at 1200p)
 const LIT_GAIN = 1.7           // sun-term scale in the view-relit ratio (1 = physical; 1.7 user-tuned) —
                                // live-tunable via the Props GUI 'billboard sun contrast' slider

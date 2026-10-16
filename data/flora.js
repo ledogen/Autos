@@ -3,8 +3,8 @@
  *
  * Exported const config in the spirit of data/ranger.js. Drives the three procedural geometry
  * primitives (prop-geometry.js), the baked palette (prop-palette.js), and the deterministic
- * scatter (prop-scatter.js). All tunables live here so a future debug-menu pass (FEAT-06
- * housekeeping) can expose them without hunting through the generators.
+ * scatter (prop-scatter.js). All tunables live here; src/props/prop-debug.js exposes them in
+ * the debug menu.
  *
  * Ranges written as [min, max] are sampled per-VARIANT at palette-bake time (a small fixed set of
  * meshes), NOT per-instance — per-instance variety comes from instance transform + tint. This is
@@ -255,7 +255,7 @@ export const FLORA_PARAMS = {
   // bushes = soft drag (no hard contact); medium/small rocks and roadside cover = none.
   collision: {
     trunkRadiusScale: 1.15,   // capsule radius = trunkRadius × instScale × this (bark + slop)
-    rockRadiusScale:  0.92,   // sphere radius  = blob boundingSphere × instScale × this (lumpy, inset)
+    rockRadiusScale:  0.92,   // sphere radius  = blob 90th-pct flank reach (prop-palette rBulk) × instScale × this
     bush: { k: 1350, fMax: 12000 }, // soft drag: F = clamp(k · |v| · effRadius, 0, fMax) N, opposing v
   },
 
@@ -301,7 +301,7 @@ export const FLORA_PARAMS = {
 
   // ── PERF-21 billboard impostor LOD ─────────────────────────────────────────────────────────
   // Chunks farther than ring3d (Chebyshev, in 64 m chunks) from the camera's chunk render their
-  // trees/boulders as single camera-facing quads (prop-impostor.js atlas) instead of 3D instances
+  // trees (aspen/pine; boulders stay 3D) as single camera-facing quads (prop-impostor.js atlas) instead of 3D instances
   // (~150–200 tris each). Written by applyQuality per tier (closer takeover on lower tiers) and
   // overridable live by the '3D prop ring' slider. Baked ground shadows are unaffected.
   lod: {

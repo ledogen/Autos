@@ -16,7 +16,7 @@
 //   collision  object — authored collision metadata, carried verbatim on the loaded record.
 //                       Read by src/poi.js (oriented marker box) and stamped onto POI records at
 //                       build time; src/debris.js ignores it and hulls the mesh instead.
-//                       Shape convention: { shape: 'box'|'capsule'|'none', size: [x, y, z] m }
+//                       Shape convention: { shape: 'box'|'hull-from-mesh'|'sphere'|'none', size: [x, y, z] m }
 //                       in model-local axes (base-seated, forward = -Z).
 //                       `boxes` (optional): [{ c: [x, y, z], s: [x, y, z] }, ...] — box CENTRES and
 //                       sizes, model-local. When present these are what is solid (poi.js
@@ -245,7 +245,7 @@ export const PROP_MODELS = {
   // flat materials, no textures.  CAMP GEAR, not lawn furniture: it renders at
   // the player's own campsite under items.md's visible-kit rule, and per that
   // doc the bedroll-and-campfire is the DEFAULT camp with no modifier — so this
-  // is on screen every night of a 20-day run.
+  // is on screen every night of a 12-day run.
   //
   // OVER THE TICKET'S 300-TRI BUDGET, deliberately.  The 11-stone fire ring is
   // 220 of the 472; everything the ticket actually specified is 252.  ASSET-08
@@ -272,18 +272,6 @@ export const PROP_MODELS = {
     collision: { shape: 'none', size: [0.708, 0.378, 0.675] },
   },
 
-  // ASSET-02 — ceramic garden gnome, 500 tris, the classic STANDING lawn
-  // ornament: boots, belted coat, beard over the chest, tall red hat.  Lawn
-  // furniture, same rule as the flamingos: scatter WITH a POI, never on bare
-  // ground.  'lawnFurniture' (FEAT-71), never 'residence'.
-  //
-  // NO TEXTURE.  The ticket budgeted a 256x256 baked face; the owner's 2026-08-19
-  // reference call is the low-poly read — brim, beard, and a nose between them,
-  // no eyes — so there is nothing left for a texture to carry.
-  //
-  // SIX MATERIALS, one over the ART-STYLE soft limit.  GnomeLeather carries the
-  // belt, trousers and boots as one dark-leather role; GnomeBuckle is the brass
-  // buckle and is the only thing that could not be merged into it.
   // ASSET-04 — the kettle barbecue.  566 tris, 0.629 x 1.066 x 0.629 m, four flat
   // materials, no textures.  LAWN FURNITURE: scatter it WITH a POI, never on bare
   // ground — the ticket's rule is that without an anchor it reads as litter, not
@@ -387,6 +375,18 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.80, 0.61, 0.81] },
   },
 
+  // ASSET-02 — ceramic garden gnome, 500 tris, the classic STANDING lawn
+  // ornament: boots, belted coat, beard over the chest, tall red hat.  Lawn
+  // furniture, same rule as the flamingos: scatter WITH a POI, never on bare
+  // ground.  'lawnFurniture' (FEAT-71), never 'residence'.
+  //
+  // NO TEXTURE.  The ticket budgeted a 256x256 baked face; the owner's 2026-08-19
+  // reference call is the low-poly read — brim, beard, and a nose between them,
+  // no eyes — so there is nothing left for a texture to carry.
+  //
+  // SIX MATERIALS, one over the ART-STYLE soft limit.  GnomeLeather carries the
+  // belt, trousers and boots as one dark-leather role; GnomeBuckle is the brass
+  // buckle and is the only thing that could not be merged into it.
   gnome: {
     url: 'assets/models/gnome.glb',
     // 0.412 wide x 0.800 tall x 0.330 deep, measured off the GLB — RESCALED x2

@@ -2,8 +2,8 @@
  * src/props/prop-system.js — Instanced prop renderer + chunk lifecycle for FEAT-06.
  *
  * Owns the baked palette (prop-palette.js) and renders scattered props (prop-scatter.js) via one
- * GLOBAL InstancedMesh per (category × variant) — so total draw calls = Σ variants (~20),
- * INDEPENDENT of how many chunks are active. Each mesh keeps a free-list of instance slots; a
+ * GLOBAL InstancedMesh per (category × variant) — so total draw calls = Σ variants (54 3D pools,
+ * plus 8 impostor quads once billboards are wired), INDEPENDENT of how many chunks are active. Each mesh keeps a free-list of instance slots; a
  * chunk allocates slots when streamed in and returns them when streamed out.
  *
  * Decoupled from road/terrain: the caller injects `samplers` (heightAt / normalAt / roadBlocked),
@@ -29,12 +29,13 @@ import { FLORA_PARAMS } from '../../data/flora.js'
 import { perfEvent, perfAdd } from '../perf.js'   // PERF-26: streaming-event tags + timed buckets (zero-dep module; no-op unless ?hitch)
 import { streamScore } from '../stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
-// Per-category global instance capacity (split evenly across that category's variants). Sized for
-// the ring-4 (Ultra, 81-chunk) worst case; pure typed-array memory (64 B/instance), cheap.
 // PERF-21: categories that keep rendering FULL 3D even in the billboard-only outer ring (rare,
 // landmark-scale, and shaped wrong for a vertical quad — boulders are wide horizontal masses).
 const BBONLY_3D_CATS = new Set(['boulder'])
 
+// Per-category global instance capacity (split evenly across that category's variants). Every slot
+// is allocated up front on the CPU AND the GPU: instanceMatrix + instanceColor = 76 B/slot ×
+// ~224.5k slots ≈ 17 MB each side.
 const CAPACITY = {
   // Trees sized for the PERF-21 billboard-only outer ring: Ultra streams trees out to the built-
   // terrain edge (ring+warm = 8 → 17² = 289 chunks × ~30 trees ≈ 8.7k, biome-split aspen/pine).
@@ -972,7 +973,7 @@ export class PropSystem {
   /** PERF-33: true while the scatter is in its fill burst (the frame loop lifts the shared budget). */
   isFilling() { return !this._scatterFillDone }
 
-  /** Drain all queued/in-flight scatter synchronously (gates + teleports). */
+  /** Drain all queued/in-flight scatter synchronously. Test-only (gates); teleports use onStreamJump. */
   drainScatter() {
     if (this._activeScatter) {
       const job = this._activeScatter

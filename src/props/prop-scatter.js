@@ -19,9 +19,11 @@
  *                                          //   stands where the ground reads green (sparser on dirt,
  *                                          //   never rock); read on a 4 m grid per chunk (litterPasses)
  *   padBlocked(x,z,keepOut) -> boolean     // FEAT-85 (optional): on a junction / lay-by pad
+ *   roadDist, waterAt, streamAt, waterNear, groundClassify   // water / stream / ground-class
+ *                                          //   samplers (main.js makePropSamplers supplies all)
  * }
  *
- * Placement record: { cat, variant, x, y, z, scale, rotY, tint:[r,g,b] }
+ * Placement record: { cat, variant, x, y, z, gy, scale, rotY, tint:[r,g,b], tilt?, tiltAz? }
  *   y = world Y of the instance ORIGIN (trees: ground; blobs: sunk by buryFrac).
  */
 
@@ -411,10 +413,6 @@ function* litterPasses(out, cx, cz, worldSeed, samplers, P, h) {
     Z && P.medRock ? S.roadExclusion + blobBoundR(P.rock) : 0,
     C ? S.roadHalfWidth + C.wallBeatBack[1] : 0)
   const roadNear = !h.roadClear(ox + size / 2, oz + size / 2, size * 0.7072 + reach)
-  // Road occupancy grid (8 m cells) from the walk slices: a candidate in an unmarked cell is
-  // clear of every road by construction; only candidates in a marked cell pay the exact
-  // queryNearest (which also knows the lay-by pads). Without roadWalk (older fixtures) every
-  // candidate pays, as before.
   // Centreline samples (1.8 m apart) bucketed into 12 m cells over the chunk + a margin. A
   // candidate's distance to the nearest sample is the centreline distance ± 0.9 m, so only a
   // candidate inside that band around its keep-out pays the exact queryNearest. Litter only —

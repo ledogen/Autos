@@ -127,8 +127,6 @@ function splitRearGroup (mesh, rearZ) {
  * @param {object} params  RANGER_PARAMS (read live for slider-driven geometry)
  * @param {object} [spec]  visual spec from data/vehicle-models.js (model file, alignment, lights).
  *                         Defaults to the project default vehicle; pass another to swap models.
- */
-/**
  * @param {object} [opts]
  * @param {boolean} [opts.keyBindings] - bind 'L' to cycle the headlights. True for the player's
  *   truck; FEAT-41's menu stage builds a SECOND model in its own scene and passes false, or one
@@ -568,9 +566,9 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   const _spinQ = new THREE.Quaternion(), _steerQ = new THREE.Quaternion(), _camberQ = new THREE.Quaternion()
   const _AXIS_X = new THREE.Vector3(1, 0, 0), _AXIS_Y = new THREE.Vector3(0, 1, 0), _AXIS_NEG_Z = new THREE.Vector3(0, 0, -1)
 
-  // Imported-model state. While modelActive, the OBJ owns the look: the procedural
+  // Imported-model state. While modelActive, the GLB owns the look: the procedural
   // body/wheels/lights are hidden and their per-frame updates are skipped (carGroup
-  // transform still drives the model). paintMaterials are the OBJ's recolorable coats.
+  // transform still drives the model). paintMaterials are the GLB's recolorable coats.
   let modelActive = false
   const paintMaterials = []
   const modelTailMats = []          // GLB rear-lamp materials, driven as tail/brake lights

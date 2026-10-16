@@ -11,8 +11,8 @@
  *   stand-ins makeGrassLo / makeRyeLo / makeSageLo.
  *
  * Plus helpers: fillColor() (bake a uniform vertex colour), fleckColor() (per-face bark flecks),
- * mergeGeometries() (dependency-free concat — avoids the browser 'three/addons' vs node
- * 'three/examples' path split), translateGeo(), and assembleTree() (trunk + canopy → one geometry
+ * mergeGeometries() (dependency-free concat that tolerates mismatched attribute sets — uv dropped,
+ * missing colour filled white — where three's own version rejects them), translateGeo(), and assembleTree() (trunk + canopy → one geometry
  * for single-draw instancing).
  *
  * AESTHETIC: low-poly + FLAT shading is the whole look (see FEAT-06 concept art). Geometry is
@@ -220,9 +220,9 @@ export function fleckColor(geo, baseHex, fleckHex, chance, rng) {
 }
 
 /**
- * Dependency-free merge of NON-INDEXED geometries sharing position/normal/color. Avoids the
- * BufferGeometryUtils import-path split between browser ('three/addons') and node
- * ('three/examples'). All inputs must be non-indexed with the same attributes.
+ * Dependency-free merge of NON-INDEXED geometries into position/normal/color. Kept over three's
+ * BufferGeometryUtils.mergeGeometries because it tolerates mismatched attribute sets (uv dropped,
+ * missing colour filled white), which three's rejects. All inputs must be non-indexed.
  */
 export function mergeGeometries(geos) {
   let total = 0

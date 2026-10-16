@@ -3,7 +3,7 @@
  *
  * Per FEAT-06: a few baked geometries per category, instanced thousands of times. Per-instance
  * variety comes from transform + tint (prop-system.js), NOT from unique geometry. This module
- * just produces the variant geometries + the one shared material.
+ * just produces the variant geometries + their three materials (main, cover, ground).
  *
  * Each tree variant is a single merged geometry (trunk bark + canopy colour baked as vertex
  * colours); rocks/bushes are single blobs. The shared MeshLambertMaterial uses vertexColors +
@@ -22,7 +22,7 @@ import {
 
 // FEAT-85: categories rendered through the COVER material (wind sway + distance fade, DoubleSide,
 // no collision, no shadow casting, no shadow bake, no billboard). prop-system keys off this set.
-// The *Lo cats are the far-ring stand-ins (COVER_FAR_KEY below); never placed by the scatter.
+// The *Lo cats are the far-ring stand-ins (COVER_FAR_CAT below); never placed by the scatter.
 export const COVER_CATS = new Set(['grass', 'rye', 'sage', 'grassLo', 'ryeLo', 'sageLo'])
 export const COVER_FAR_CAT = { grass: 'grassLo', rye: 'ryeLo', sage: 'sageLo' }
 // Ground litter drawn through the GROUND material: the cover's distance shrink (so a pebble costs
@@ -168,7 +168,8 @@ function bakeBlobs(P, rng, kind) {
  * @param {number} worldSeed
  * @param {object} [params=FLORA_PARAMS]
  * @returns {{ variants: Record<string, Array<{geo:THREE.BufferGeometry, collision:?object}>>,
- *            material: THREE.Material, params: object }}
+ *            material: THREE.Material, coverMaterial: THREE.Material, groundMaterial: THREE.Material,
+ *            coverUniforms: object, params: object }}
  */
 export function buildPalette(worldSeed, params = FLORA_PARAMS) {
   const rng = mulberry32(seedFor(worldSeed, params.worldSeedTag + ':palette'))

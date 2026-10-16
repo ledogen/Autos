@@ -28,7 +28,8 @@
  *     silhouette, flattened and stretched along the sun azimuth onto the ground. Union alpha (no
  *     blend, no depth) so overlaps stay solid. Props outside the 64 m frustum whose sheared shadow
  *     enters it still rasterize (meshes are frustumCulled=false), so shadows cross chunk seams
- *     continuously — that's why a committed chunk marks its 8 neighbours dirty too.
+ *     continuously — that's why a committed chunk also marks its DRAWN live neighbours dirty
+ *     (prop-system _markShadowTiles; billboard-only neighbours mark themselves on promotion).
  *   • The terrain shader multiplies ground albedo by (1 − atlas.r · strength), softened by a small
  *     in-tile blur. No per-frame prop shadow cost; only the moving truck keeps a realtime shadow.
  *   • PERF-21: each tile bake renders a per-tile SCRATCH scene (built by prop-system's tile source,
