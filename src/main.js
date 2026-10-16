@@ -6405,7 +6405,8 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
   }
   if (!_jobCancelArm) {
     _jobCancelArm = setTimeout(_disarmJobCancel, JOB_CANCEL_ARM_S * 1000)
-    b.classList.add('armed'); b.textContent = 'confirm?'
+    b.classList.add('armed')
+    b.innerHTML = _strappedJob() ? `confirm? <small>· takes ${CLEANUP_H} hour</small>` : 'confirm?'   // FEAT-96: say the clean-up cost
     return
   }
   _disarmJobCancel()
