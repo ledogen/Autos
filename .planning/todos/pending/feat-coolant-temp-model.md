@@ -31,3 +31,21 @@ rotates the needle; this ticket owns the thermal state.
   sustained load; backs off when load drops.
 - Deterministic given the same driving inputs.
 - No damage/consequence mechanics — needle only.
+
+## Re-scoped and built (owner, 2026-10-16) — branch `feature/overheat`
+
+The "no consequence" scope above is superseded: the owner ruled the full radiator → overheat chain
+in, with **no coolant mechanic** (radiator condition is the cooling capacity directly).
+
+- Heat follows fuel: `stepDrivetrain` publishes `st.fuelPowerW` (pre-damage, 7 kW idle floor,
+  117 kW at stock peak). **This is the seam FEAT-50 (fuel) should drain the tank from** — one signal.
+- `DamageModel._stepTemp` integrates `engineTempC` through a 100 °C thermostat. Capacity linear in
+  radiator condition through two anchors at 109 °C: 0% holds idle, 50% holds full load.
+- Over 110 °C: torque derate 3%/°C (temporary) + engine wear 0.1%/s per °C. No gasket meter — the
+  engine track at 0% is the blown gasket. Clamp 130 °C. Engine off soaks to ambient (cold mornings).
+- Gauge C/mid/H = 90/100/110 °C. Debug: Damage (SM-3) → Engine Temp. Gate: `damage-engine-temp`.
+- Docs re-ruled in DESIGN.md (radiator), MILESTONES.md (radiator spec), items.md (coolant jug
+  struck → stop-leak, +15% radiator).
+
+**Close when** the owner has driven it (a poked-down radiator on a long WOT climb) and is happy
+with the pace.

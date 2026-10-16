@@ -74,10 +74,6 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   const stallTR    = params.converterStallTorqueRatio || 2.0
   const stallRPMwot = params.converterStallRPM || 2400
   const curve      = params.engineTorqueCurve || [[800, 160], [3750, 250], [5800, 150]]
-  // SM-3: engine wear/overheat/impact damage scales output torque at every rpm. Published by
-  // src/damage.js as params._engineDamageScale; absent → 1. Multiplied with the tuning slider so the
-  // two stay independent (engineTorqueScale is a param, _engineDamageScale is run state).
-  const scale      = (params.engineTorqueScale ?? 1.0) * (params._engineDamageScale ?? 1.0)
 
   const throttle = vehicleState.throttle || 0
   const brake    = vehicleState.brake || 0
@@ -148,6 +144,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
     if (st.engineRPM < 1) st.engineRPM = 0
     st.activeGear = reverse ? 0 : st.gear
     st.coupledRPM = turbineRPM / couplingSR
+    st.fuelPowerW = 0   // no combustion while off or cranking: no fuel burned, no heat made
     return
   }
 
@@ -172,8 +169,20 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   const TR = 1 + (stallTR - 1) * Math.max(0, 1 - SR / couplingSR)
 
   // ── Engine torque (curve × throttle × scale), with a rev-limiter cut above redline ──────────────
-  let Teng = pedalEff * engineTorqueAt(engineRPM, curve) * scale
-  if (engineRPM > redline) Teng *= Math.max(0, 1 - (engineRPM - redline) / 200)
+  // SM-3: engine wear/overheat/impact damage scales output torque at every rpm. Published by
+  // src/damage.js as params._engineDamageScale; absent → 1. Kept apart from the engineTorqueScale
+  // tuning slider (a param) because it is run state.
+  const tune = params.engineTorqueScale ?? 1.0
+  const cut  = engineRPM > redline ? Math.max(0, 1 - (engineRPM - redline) / 200) : 1
+  const Tair = pedalEff * engineTorqueAt(engineRPM, curve) * tune * cut
+  let Teng = pedalEff * engineTorqueAt(engineRPM, curve) * (tune * (params._engineDamageScale ?? 1.0))
+  if (engineRPM > redline) Teng *= cut
+
+  // FEAT-51: the power the FUEL is paying for [W] — the one signal both the fuel tank and engine heat
+  // read. It is the torque the air charge supports, BEFORE damage: a worn or overheating engine burns
+  // the same fuel for less work, so damage must not cool it (the fix for an overheat is lifting off).
+  // engineIdlePowerW is the idle burn, which no throttle position can go below while running.
+  st.fuelPowerW = Math.max(params.engineIdlePowerW ?? 7000, Tair * engineRPM / RPM_PER_RAD)
 
   // ── Converter output → gearbox → final drive → axle → rear wheels ───────────────────────────────
   const axleTorque = dir * TR * Teng * totalRatio

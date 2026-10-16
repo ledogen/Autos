@@ -1058,7 +1058,7 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   over time (SM-INV-5). rpm-hours + load are the signals.
 - **Air filter condition** — **OPEN, NOT IN THE RATIFIED TRACK LIST** [2026-08-23]. SM-3 ratifies
   twenty-six tracks in eight classes and none of them is a filter; engine damage there is front
-  impact, coolant above 105 °C, and a slow f(rpm, torque, load). Needs a ruling — dropped (and this
+  impact, engine temperature above 110 °C (FEAT-51), and a slow f(rpm, torque, load). Needs a ruling — dropped (and this
   paragraph struck, along with the diagnostic screen's stated headline job), deferred (a known gap
   with a ticket), or restored (wants a class and a damage source).
   > Provenance: `design-amendments-2026-08-23-sm3.md` §6. As written it is its own track and the one
@@ -1104,9 +1104,16 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   runs near its thermal limit under sustained load. This is an intended early-run pressure — a lever to
   balance the game around, not a bug.
 - **Overheat → temp power loss + engine wear**; repeated/long overheat → **blown head gasket**.
-  *Proposed gasket metric (mine, needs owner OK):* an **overheat integral** — accumulate time-above-
-  threshold weighted by how far over the limit (severity), a hidden meter; crossing it blows the gasket.
-  Emergent from the honest temp signal, same shape as the other severity-integrated tracks.
+  **RULED (owner, 2026-10-16, FEAT-51): no separate gasket meter.** Overheat wears the engine track
+  (severity × time over 110 °C), and the engine at 0% — which already never catches — IS the blown
+  gasket. One mechanism.
+- **No coolant mechanic [owner, 2026-10-16].** Radiator condition is the cooling capacity, directly:
+  heat follows fuel burned, the radiator carries it off through a 100 °C thermostat. Anchors: a good
+  radiator holds 100 °C at any load; **110 °C** is where damage and power loss start; a **0%** radiator
+  holds idle just under the mark (109 °C) and overheats under any real load; a **50%** radiator holds
+  the stock engine just under the mark at full load. Gauge: C = 90 °C, mid = 100 °C, H = 110 °C. The
+  numbers and their gate: `src/damage.js` (`_stepTemp`), `test/damage-engine-temp.mjs`.
+  > **REVERSES** MILESTONES.md's 30 → 90 °C / boil-off at 104 °C / damage at 105 °C sketch.
 - **Front-end collisions damage radiator condition** → worse cooling; a **strong front hit punctures it**
   → drastically reduced cooling and a fast overheat spiral. Reads collision magnitude from the contact
   pipeline (FEAT-09).

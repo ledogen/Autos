@@ -77,6 +77,16 @@ export const RANGER_PARAMS = {
   engineIdleRPM:      750,   // rpm — governed idle floor; engine never drops below this
   engineRedlineRPM:  5500,   // rpm — rev limiter cuts torque above this (over 200 rpm band)
   engineIdleThrottle:  0.0,  // [-] idle-throttle floor for creep torque; 0 = no creep (keeps BUG-20 slope-hold at zero input). Raise (~0.04) for authentic automatic idle-creep.
+  // FEAT-51 engine heat. Heat follows fuel (drivetrain fuelPowerW); the radiator carries it away.
+  // radiatorRatedW = the fuel power a HALF-condition radiator holds right at tempHoldC (109 °C), set
+  // to this engine's peak (117 kW @ 5200): above 50% the stock truck survives full load, below it it
+  // does not. radiatorDeadFrac = what a 0% radiator still carries, as a fraction of rated — set to
+  // the idle burn (7 kW / 117 kW) so a wrecked radiator holds idle at 109 °C and nothing more.
+  // Capacity is linear in condition through those two anchors, so a new radiator carries ~2x rated.
+  engineIdlePowerW:   7000,    // W — fuel power at idle (the floor while running)
+  engineThermalMass: 111000,   // J/°C — block + coolant; 100→110 °C in ~10 s at full load, 0% radiator
+  radiatorRatedW:    117000,   // W — see above
+  radiatorDeadFrac:    0.06,   // [-] — see above
   engineRpmLag:        0.0,  // s — first-order lag on engine RPM (0 = instant; ~0.1 adds rev-flare feel)
 
   // ── Ignition + starter (FEAT-33) ────────────────────────────────────────────────────────────────

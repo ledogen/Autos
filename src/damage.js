@@ -194,6 +194,22 @@ export const DAMAGE_PARAMS = {
   durEngine:      2.0e4,     // normalised load-seconds
   engineRPMExp:   2.0,       // rpm term exponent — revving hurts superlinearly
 
+  // ── Engine temperature (FEAT-51, owner 2026-10-16) ─────────────────────────────────────────────
+  // No coolant level and no boil-off: radiator CONDITION is the cooling capacity, directly. Heat in is
+  // the drivetrain's fuelPowerW; the hardware numbers (rated capacity, thermal mass) are vehicle params
+  // in data/ranger.js. The gauge reads tempThermostatC at mid, ±10 °C at the C and H marks.
+  tempAmbientC:     25,
+  tempThermostatC: 100,    // opens over ±2 °C around this, so a healthy truck sits at ~98-101 °C
+  tempHoldC:       109,    // where both owner anchors settle (0% radiator at idle, 50% at full load)
+  tempHotC:        110,    // overheat: engine damage and power loss start here
+  tempMaxC:        130,    // the engine is seizing by here; the integration clamps
+  tempOffTau:     1800,    // s — engine off, no pump or fan: soaks back toward ambient (cold by morning)
+  overheatDerate: 0.03,    // torque lost per °C over tempHotC (knock retard), recovers as it cools
+  overheatDerateFloor: 0.5,
+  // 0.1% of engine per second per °C over: a minute at 115 °C costs 30%. The engine track at 0% IS
+  // the blown head gasket (owner 2026-10-16) — it already never catches, so there is no second meter.
+  durOverheat:    1000,    // °C·s to destroy an engine
+
   // ── Air filter (DESIGN.md's track, ratified into SM-3 on 2026-08-23) ────────────────────────
   // It clogs on the AIR THE ENGINE BREATHES, which is the same rpm x load quantity the engine wear
   // already integrates — airflow is what carries the dust in. That makes it emergent from a signal
@@ -671,6 +687,9 @@ export class DamageModel {
      *  lawful bed; the game sets it from the load each step (src/load-verdict.js tireCondCap). */
     this.tireCondCap = 1
 
+    /** Engine temperature [°C], FEAT-51. Run state like condition; starts cold. */
+    this.engineTempC = DAMAGE_PARAMS.tempAmbientC
+
     // Peak rim-core contact FORCE per corner while a strike is in progress; 0 otherwise.
     this._strikePeak = [0, 0, 0, 0]
     // Whether that peak came off the analytic ground (road residual) rather than a debris body.
@@ -814,6 +833,42 @@ export class DamageModel {
   engineScale () {
     const P = DAMAGE_PARAMS
     return kneeResponse(this.get('engine'), P.engineKnee, P.engineAtKnee, P.engineAtZero)
+  }
+
+  /** Temporary torque multiplier from running hot — 1 at or below tempHotC. Not condition. */
+  overheatScale () {
+    const P = DAMAGE_PARAMS
+    const over = this.engineTempC - P.tempHotC
+    return over > 0 ? Math.max(P.overheatDerateFloor, 1 - P.overheatDerate * over) : 1
+  }
+
+  /** Gauge needle, 0 = C (thermostat − 10 °C) … 0.5 = thermostat … 1 = H (tempHotC). Unclamped. */
+  tempGaugeFrac () {
+    const P = DAMAGE_PARAMS
+    return 0.5 + 0.5 * (this.engineTempC - P.tempThermostatC) / (P.tempHotC - P.tempThermostatC)
+  }
+
+  /**
+   * Integrate engine temperature one step (FEAT-51). Heat in = fuel power; heat out = the radiator,
+   * through a thermostat. The radiator's capacity is linear in its condition through two owner
+   * anchors, both settling at tempHoldC: a 0% radiator carries the idle burn (radiatorDeadFrac of
+   * rated), a 50% one carries full rated power. Runs even with damage disabled — temperature is
+   * state, not wear.
+   */
+  _stepTemp (vehicleState, params, dt) {
+    const P = DAMAGE_PARAMS
+    const heatW = vehicleState.drivetrain?.fuelPowerW ?? 0
+    let T = this.engineTempC
+    if (heatW > 0) {
+      const rated = params.radiatorRatedW ?? 117000, dead = params.radiatorDeadFrac ?? 0.06
+      const capW  = rated * (dead + (1 - dead) * 2 * this.get('radiator'))
+      const open  = Math.max(0, Math.min(1, (T - P.tempThermostatC + 2) / 4))
+      const coolW = open * capW * (T - P.tempAmbientC) / (P.tempHoldC - P.tempAmbientC)
+      T += (heatW - coolW) * dt / (params.engineThermalMass ?? 111000)
+    } else {
+      T -= (T - P.tempAmbientC) * dt / P.tempOffTau
+    }
+    this.engineTempC = Math.min(P.tempMaxC, T)
   }
 
   /**
@@ -1081,7 +1136,7 @@ export class DamageModel {
     params._springScaleRear  = this.springScale(true)
     params._damperScaleFront = this.damperScale(false)
     params._damperScaleRear  = this.damperScale(true)
-    params._engineDamageScale = this.engineScale()
+    params._engineDamageScale = this.engineScale() * this.overheatScale()
     // Alignment is geometry, not a multiplier — published as the raw per-wheel offsets the
     // suspension applies on top of the static toe/camber. alignment.js consumes these (BUG-79).
     params._toeOffsetDeg    = this.toeOffsetDeg
@@ -1142,6 +1197,7 @@ export class DamageModel {
    */
   step (vehicleState, params, dt) {
     const P = DAMAGE_PARAMS
+    this._stepTemp(vehicleState, params, dt)
 
     // Damage disabled: hold everything at the nominal used-truck condition. Deliberately NOT a
     // freeze — a debug session should always start from the same known state (owner, 2026-08-19).
@@ -1281,6 +1337,9 @@ export class DamageModel {
         this.wear('airFilter', insult * P.filterDustMult * dt, P.durFilter)
       }
     }
+
+    // Overheat: the honest temp signal wears the engine, severity-weighted (degrees over × time).
+    if (this.engineTempC > P.tempHotC) this.wear('engine', (this.engineTempC - P.tempHotC) * dt, P.durOverheat)
 
     // FEAT-33 seam (owner ruling 2026-09-04): the engine track IS the crank-time input. ignition.js
     // interpolates catch time ignitionCatchTime → ignitionCatchTimeWorn (0.25 s → 2 s) on this,

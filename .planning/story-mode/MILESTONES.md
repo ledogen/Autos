@@ -322,9 +322,9 @@ brakes — the player should not be asked to manage eight independent corners.
 | **Suspension springs** | front pair · rear pair | bump-stop PEAK force, per event (never integrated over time) + side impacts | spring rate falls, non-linearly (most of it in the last 30%) — bottoming out at **50% of stock, never zero** |
 | **Suspension dampers** | front pair · rear pair | high suspension displacement rate + side impacts | damping rate falls, non-linearly (most of it in the last 30%) |
 | **Brakes** | front pair · rear pair | ∫(brake torque × **wheel speed** × time) — the friction ENERGY the pads dissipate; **never** impact | max brake torque falls, non-linearly (most of it in the last 30%) |
-| **Engine** | one | front impact + coolant above 105 °C + slow f(rpm, torque, load), **multiplied by up to 20× on a blocked air filter** | available torque falls at all rpm (curve below) |
+| **Engine** | one | front impact + engine temp above 110 °C + slow f(rpm, torque, load), **multiplied by up to 20× on a blocked air filter** | available torque falls at all rpm (curve below) |
 | **Air filter** | one | the air the engine breathes — the same rpm × load the engine track integrates, since airflow is what carries the dust in | **nothing at all above 20%**, then engine wear multiplies hard. ~30 min of hard driving to replace. Cheap consumable; the asymmetry IS the mechanic |
-| **Radiator** | one | **impact only** | available cooling rate falls → coolant temperature climbs |
+| **Radiator** | one | **impact only** | available cooling rate falls → engine temperature climbs |
 | **Headlights** | left · right | front impact, much worse when the front bumper is compromised | flicker below 50%, permanently dark at 0% |
 | **Alignment** | ×4 per wheel | impact (front bumper protects front, rear bumper rear, each side protects its own) + **really hard bump-stop hits**, on a floor far above the spring track's so ordinary landings never touch it | random toe + camber offsets applied to the affected wheels, bounded |
 
@@ -442,13 +442,16 @@ brakes.** Effect: max available brake torque falls, non-linearly, most of it in 
 
 **Radiator.** **Impact only** — no wear track at all. Very sensitive once the front bumper is
 compromised. The radiator supplies a **cooling rate** to the engine; if that rate cannot carry the
-heat the engine is making at its current rpm and load, coolant temperature rises.
+heat the engine is making at its current rpm and load, engine temperature rises.
 
-- **30 °C** cold start → **90 °C** fully warmed with a healthy radiator.
-- **104 °C** — coolant begins to boil off. Once it has all boiled away, temperature rises freely.
-- **~105 °C** — engine damage begins.
-- Available cooling falls with radiator condition. **Below ~50%, a stock radiator can no longer
-  hold a stock engine at all rpm and load** — it still copes at idle or light load.
+**RE-RULED 2026-10-16 (owner, FEAT-51 — supersedes the 30/90/104/105 °C sketch and its boil-off):**
+no coolant level at all; radiator condition is the cooling capacity directly.
+
+- **100 °C** operating (thermostat, gauge mid). Gauge C = 90 °C, H = 110 °C.
+- **110 °C** — engine damage (0.1%/s per °C over) and temporary power loss (3%/°C) begin.
+- **50%** radiator holds the stock engine at full load just under the mark (109 °C); below it, it
+  cannot. **0%** holds idle at 109 °C and overheats under any real load.
+- Heat follows fuel (`fuelPowerW`, shared with FEAT-50); engine off soaks back to ambient overnight.
 
 This is **FEAT-51 (coolant temp)** arriving as part of this milestone rather than before it: build
 the honest temp signal and the FEAT-49 gauge needle together with the condition consequences.

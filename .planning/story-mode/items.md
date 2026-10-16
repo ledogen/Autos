@@ -880,7 +880,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 | Acts on | Consumable | Equipable | Active |
 |---|---|---|---|
 | **Driver / energy** | coffee, fish, **meals (§1d)** | camp energy gear | coffee, energy drink, snacks |
-| **Truck / damage** | spare tire, air filter, **zip ties, duct tape, coolant, tire patches** | parts (§3), quick-jack, breaker bar, **hi-lift, bike pump (always), compressor** | Host charm |
+| **Truck / damage** | spare tire, air filter, **zip ties, duct tape, stop-leak, tire patches** | parts (§3), quick-jack, breaker bar, **hi-lift, bike pump (always), compressor** | Host charm |
 | **Navigation / info** | — | map, beacon, GPS, shortcut GPS, **light bar**, *CB radio (FEAT-119)* | — |
 | **Cargo / mission** | ~~*straps (FEAT-110)*~~ **bubble wrap, furniture pad, heavy-duty pad (§3e)** | cooler, chain, **rubber bed mat, bedliner** | — |
 | **Camp / night** | — | camp vibe gear, **backpacks (§2c)** | — |
@@ -892,7 +892,8 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 |---|---|---|---|
 | **Zip ties** | Consumable | Field repair: restores **~10%** condition on a light component — **headlights, body panels** (the `armor*` and `headlight*` tracks in `src/damage.js`) | Gets you home, not fixed. Cheap, light, several per pack |
 | **Duct tape** | Consumable | Field repair: **~25%** on **body panels** | The bigger patch, narrower target. Open: do field repairs hold, or fall off after some hours? |
-| **Coolant jug** | Consumable | Top up mid-climb — buys cooling headroom against the overheat → power loss → engine wear → head-gasket chain (§3a, `missions.md` §3c) | Aimed at the one wear chain already specified. Pairs with heavy hauls on long grades |
+| ~~**Coolant jug**~~ | — | **STRUCK (owner, 2026-10-16).** FEAT-51 shipped with no coolant mechanic — radiator condition *is* the cooling capacity — so there is nothing to top up | Replaced by stop-leak, below |
+| **Stop-leak** | Consumable | Field repair: restores **15%** radiator condition (owner, 2026-10-16). Under FEAT-51 that is directly cooling capacity — a 35% radiator patched to 50% holds full load again | Aimed at the overheat → power loss → engine wear chain (`missions.md` §3c). Pairs with heavy hauls on long grades |
 | **Hi-lift jack** | Carried tool (real mass) | **Right a rolled truck** where it lies — Halo's flip, in a truck. Replaces the tow for a rollover that didn't break anything | ⚠ SM-INV-1 (death is crash or breakdown only): a rollover the jack can fix must not count as the crash. Needs a ruling on where "rolled" ends and "crashed" begins — likely the damage state at rest, not the rollover itself. May also be the §2 quick-jack's other job — one tool, not two, if so |
 | **Light bar** | Fitted part | See further at night | Simple and safe. Pairs with the Night Owl's nocturnal bargain: makes his hours more usable, not safe. Real mass and drag up high, if we want a cost |
 | **Tire patches** | Consumable | **Fixes the puncture and nothing else** — the tire keeps whatever condition it had when it popped. Restores **no durability**; a worn tire is still worn | Owner, 2026-09-30 (brought back from the rejected list; no small-vs-large puncture split). A patch alone leaves the tire flat — it still has to be re-inflated (pump or compressor, below). The spare trade: the spare is real mass all the time and a fresh tire; the patch is light and puts you back on the same rubber. §1's spare-tire row calls a puncture a hard fail; with patches it is recoverable at the roadside. Kept worth carrying on good tires by FEAT-93 (hazard punctures at any condition) |
