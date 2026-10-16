@@ -683,32 +683,34 @@ export class RoadMeshSystem {
      * @param {Set<string>} activeKeys — set of "X,Z" keys currently in the terrain ring
      */
     syncToChunkRing(activeKeys) {
-        // Enqueue any active tile that does not have a road mesh yet (build-radius unchanged)
-        for (const key of activeKeys) {
-            const [cx, cz] = key.split(',').map(Number)
-            this.ensureRoadTile(cx, cz)
-        }
-
-        // D5: compute the keep set = active ring expanded by roadTileKeepMargin tiles.
-        // Parse min/max tile X/Z from activeKeys, then expand by the margin.
+        // Enqueue any active tile that does not have a road mesh yet (build-radius unchanged), and
+        // D5: take the ring's min/max tile X/Z in the same pass — the keep set below is that ring
+        // expanded by roadTileKeepMargin tiles.
         const margin = (this._params.roadTileKeepMargin ?? 1) | 0   // integer tiles
         let minCX = Infinity, maxCX = -Infinity, minCZ = Infinity, maxCZ = -Infinity
         for (const key of activeKeys) {
             const [cx, cz] = key.split(',').map(Number)
+            this.ensureRoadTile(cx, cz)
             if (cx < minCX) minCX = cx
             if (cx > maxCX) maxCX = cx
             if (cz < minCZ) minCZ = cz
             if (cz > maxCZ) maxCZ = cz
         }
-        // Build keepSet only if activeKeys is non-empty (avoid Infinity/-Infinity on empty ring)
-        const keepSet = new Set()
-        if (activeKeys.size > 0) {
-            for (let cx = minCX - margin; cx <= maxCX + margin; cx++) {
-                for (let cz = minCZ - margin; cz <= maxCZ + margin; cz++) {
-                    keepSet.add(`${cx},${cz}`)
+        // The keep set only changes when the ring moves a chunk (or the margin changes): rebuilt on
+        // a bounds change, not every frame. Empty ring → empty set (no Infinity loop bounds).
+        const keepSig = activeKeys.size > 0 ? `${minCX},${maxCX},${minCZ},${maxCZ},${margin}` : ''
+        if (keepSig !== this._keepSig) {
+            this._keepSig = keepSig
+            this._keepSet = new Set()
+            if (activeKeys.size > 0) {
+                for (let cx = minCX - margin; cx <= maxCX + margin; cx++) {
+                    for (let cz = minCZ - margin; cz <= maxCZ + margin; cz++) {
+                        this._keepSet.add(`${cx},${cz}`)
+                    }
                 }
             }
         }
+        const keepSet = this._keepSet
 
         // Dispose road tiles whose terrain chunk has been evicted AND are outside the keep set
         for (const key of this._tileMeshMap.keys()) {
