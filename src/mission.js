@@ -1155,6 +1155,10 @@ export function buildRunExport ({ note = '', segs, result, edges = 0, start = nu
             // future refit silently mixes scales — which is exactly the trap the runs recorded
             // before the re-anchor fell into.
             par_ref: { ...PAR_REF, slack: PAR_SLACK },
+            // The job's own par stretch (main.js _planOffer: haul × HAUL_PAR_SLACK, freight ×
+            // (1 + FREIGHT_PAR_SLACK_PER_KG · kg); 1 for everything else). `par_s` carries it,
+            // `par_ms` and `par_avg_kmh` are the bare oracle — divide by this to put them on one scale.
+            par_job_mult: result?.par_s > 0 ? +(result.par_s / par.time).toFixed(4) : null,
             route: {
                 distance_m: +total.toFixed(1),
                 edges,
