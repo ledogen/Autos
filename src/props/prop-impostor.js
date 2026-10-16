@@ -63,6 +63,7 @@ export class PropImpostors {
     this._rows = 0
     this._litGain = LIT_GAIN
     this._flatten = FLATTEN
+    this._meansStale = false     // S-46: tile means skipped at flatten 0, computed on first need
   }
 
   /** Live sun-contrast scale (uniforms only — no rebake needed). 1 = physical. */
@@ -74,6 +75,7 @@ export class PropImpostors {
   /** Live gradient-flatten strength at sun-on views (uniforms only). See FLATTEN. */
   setFlatten (v) {
     this._flatten = Math.max(0, Math.min(1, v))
+    if (this._flatten > 0 && this._meansStale && this._rt) this._computeTileMeans()   // S-46: lazy (see rebake)
     for (const e of this._entries.values()) {
       if (e.material) e.material.uniforms.uFlat.value = this._flatten
     }
@@ -252,14 +254,18 @@ export class PropImpostors {
     r.setClearColor(prevClear, prevClearA)
     r.setRenderTarget(prevTarget)
     mat.dispose()
-    this._computeTileMeans()
+    // S-46: the means feed only uFlat's mix(), an exact no-op at flatten 0 (the default) — skip the
+    // whole-atlas sync readback (4.7 MB GPU→CPU stall on every sky push) until a flatten wants them.
+    if (this._flatten > 0) this._computeTileMeans()
+    else this._meansStale = true
   }
 
   /**
    * Per-tile mean foliage colour (unpremultiplied, over a ≥ 0.5 texels) → uTileMean, the flatten
-   * target. One whole-atlas readback per bake (boot / sky-look change), not per frame.
+   * target. One whole-atlas readback per bake (boot / sky-look change) while flatten > 0, not per frame.
    */
   _computeTileMeans () {
+    this._meansStale = false
     const rt = this._rt
     const w = rt.width, h = rt.height
     const buf = new Uint16Array(w * h * 4)
