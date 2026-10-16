@@ -12,7 +12,7 @@ or delete a file, update the relevant line here in the same commit — it's one 
 |---|---|
 | `index.html` | The single entry point (Vite root). |
 | `src/` | The product — shippable game engine, ES6 modules. No diagnostics, no dead code (see CLAUDE.md "src/ is the product"). |
-| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), freight loads (`freight.js`, FEAT-96 — model key + mass per strapped load; read by the debug "Load Cargo" menu), authored scenarios (`scenarios.js`, FEAT-62 — seed + world-coordinate poses, re-checked against the road by `test/scenario-route.mjs`). (The bundled route caches were deleted 2026-08-19 with the bake subsystem.) |
+| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), freight loads (`freight.js`, FEAT-96 — model key + mass per strapped load; read by the debug "Load Cargo" menu), the item catalog (`items.js`, FEAT-122 — name, kind, mass, described-not-scored line, effect hook per ownable item; REWARDS grants by its ids), authored scenarios (`scenarios.js`, FEAT-62 — seed + world-coordinate poses, re-checked against the road by `test/scenario-route.mjs`). (The bundled route caches were deleted 2026-08-19 with the bake subsystem.) |
 | `assets/models/` | Hand-authored `.glb` assets + `CREDITS.md`. Convention: `.planning/research/ASSETS.md`; style: `ART-STYLE.md`. |
 | `vendor/box3d/` | Vendored Box3D WASM bindings. Imported ONLY by `src/physics-engine.js` (FEAT-48 seam). |
 | `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts, refactor fingerprints (`fingerprint-world.mjs` / `fingerprint-physics.mjs`: `--out` + `--compare` hash tables, review-2 S-80). Two working visual tools, run by hand: `impostor-ab.mjs` (CDP A/B of billboard impostors vs their 3D originals — PNG pairs + changed-pixel metrics) and `map-icon-sheet.mjs` (standalone SVG contact sheet of every `data/map-icons.js` glyph at map size). Pure node — never touches Vite — except `cdp-smoke.mjs` (INFRA-07), the one `browser: true` gate: it starts its own Vite on a free port and drives the real app in Chrome; `run-all.mjs` runs it only with `--browser` / `CDP_SMOKE=1`. |
@@ -88,7 +88,9 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 **Audio** — `engine-audio.js` · `tire-audio.js` (tonal stick-slip) · `wind-audio.js` · `heartbeat-audio.js` (FEAT-87 rank-bar lub-dub) · `glass-audio.js` (FEAT-87 rank tile shatter; FEAT-97 fragile cargo hits).
 
 **Story mode & gameplay** — `story.js` (FEAT-43 gamemode sandbox) · `day.js` (day clock, FEAT-47) ·
-`economy.js` (payout/wallet/points spine, FEAT-53) · `offer-board.js` (FEAT-67 mission board —
+`economy.js` (payout/wallet/points spine, FEAT-53) · `inventory.js` (FEAT-122 per-run inventory —
+slots, stacking, swap-prompt pending, quick-slot binding, stowed mass; pure) · `inventory-screen.js`
+(FEAT-122 Tab screen + right-column icon + quick keys 1–4) · `offer-board.js` (FEAT-67 mission board —
 slots, expiry timers, seeded offers, names, card view-model; pure) · `mission.js` (mission generator
 + run state machine) · `par.js` (FEAT-29 par oracle) · `poi.js` (lay-by POIs, FEAT-46) · `camp.js` (dispersed
 camping, FEAT-45) · `dialogue.js` (character channel) · `paper-route.js` + `throw.js` (FEAT-61) ·

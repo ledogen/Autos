@@ -187,6 +187,19 @@ const STEPS = [
     const h1 = await clock(); await sleep(3000)
     check(await clock() !== h1, 'clock did not resume after R closed the camp')
   }],
+  ['inventory', async () => {
+    // FEAT-122: Tab toggles the inventory screen anywhere, Esc closes it; empty at run start.
+    const open = () => js('document.getElementById("inv-screen").classList.contains("open")')
+    check(await js('!!document.getElementById("inv-icon")'), 'no inventory icon in the HUD column')
+    await tap('Tab')
+    check(await until(open, 1000), 'Tab opened no inventory screen')
+    check(await js('!!document.querySelector("#inv-screen .is-empty")'), 'inventory not empty at run start')
+    await tap('Tab')
+    check(await until(async () => !await open(), 1000), 'second Tab left the inventory open')
+    await tap('Tab'); await until(open, 1000)
+    await tap('Escape')
+    check(await until(async () => !await open(), 1000), 'Esc left the inventory open')
+  }],
   ['backtick', async () => {
     // R-13: one gate for the panel and the wireframes — they flip together, and flip back.
     const st = () => js('[document.querySelector(".lil-gui.root").style.display === "none", window.__physWireframes.enabled]')

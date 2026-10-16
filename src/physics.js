@@ -419,9 +419,11 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
  * Push params.mass and the three tuned inertias onto the chassis body. The engine keeps its own
  * copy, so a live edit of those params (the Mass slider, a vehicle preset) reaches the dynamics
  * only through this call — without it the truck kept the mass it was created with.
+ * FEAT-122: `params.stowedKg` (the inventory's kit, absent = 0) adds its mass at the CG. Inertia and
+ * the centre stay put — light kit barely moves them, and every force here acts about the origin as CG.
  */
 export function syncChassisMass (engine, chassis, params) {
-  engine.setMassData(chassis, params.mass,
+  engine.setMassData(chassis, params.mass + (params.stowedKg || 0),
     { x: params.inertiaPitch, y: params.inertiaYaw, z: params.inertiaRoll })
 }
 

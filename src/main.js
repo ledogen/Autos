@@ -74,6 +74,8 @@ import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: th
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
+import { InventorySystem } from './inventory.js'          // FEAT-122: what the player owns this run
+import { InventoryScreen } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
@@ -3119,6 +3121,17 @@ const economySystem = new EconomySystem({
   getRegion: () => 1,
 })
 
+// ── FEAT-122: the inventory ────────────────────────────────────────────────────────────────
+// One grant path (rewards now; the shop and finds later). Stowed kit is real load: every change
+// pushes its mass onto the chassis. start() empties it when the region goes live (story deps).
+const inventorySystem = new InventorySystem({
+  slotCap: () => RANGER_PARAMS.inventorySlots,
+  onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
+  onChange: () => inventoryScreen.render(),
+  effects: { coffee: () => daySystem.drinkCoffee() },
+})
+const inventoryScreen = new InventoryScreen(inventorySystem, () => menuStage.isActive())
+
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
 // file owns the DOM (the mission-panel pattern).
 const dialogueSystem = new DialogueSystem()
@@ -3635,6 +3648,8 @@ missionSystem = new MissionSystem({
       result.letter = fragileGrade(result.health)
     }
     const s = economySystem.settle(result, mission)
+    // FEAT-122: the earned bonus goes in the truck — or waits on the swap prompt if it's full.
+    if (s.award) s.award.stowed = inventorySystem.grant(s.award.rewardId)
     if (mission?.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
     return s
   },
@@ -4467,6 +4482,8 @@ document.getElementById('cp-sleep-back')?.addEventListener('click', () => {
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
 document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
+// FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
+document.getElementById('cp-item')?.addEventListener('click', (e) => { inventoryScreen.open(); e.currentTarget.blur() })
 document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
 
 /**
@@ -4511,6 +4528,7 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
     + (bonus
       ? (award
         ? `<br><span class="mp-pay">Bonus: ${bonus.name} &check;</span>`
+          + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; Tab to make room</span>` : '')
         : `<br><span class="mp-dim">Bonus: ${bonus.name} missed (needed ${gateText(bonus.gate)})</span>`)
       : '')
 }
@@ -4671,7 +4689,7 @@ function _renderMissionUI () {
       // (mission.js, `rangersim-run-export/2`) writes them as par_s/margin_s and the whole runs/
       // calibration corpus is keyed on that. Display change only; do not prune the fields.
       // Then the money rows the offer card set up — Base pay answered, the tip beside it, the
-      // offer's bonus earned or missed (FEAT-67; the grant itself is stubbed). See _payRows.
+      // offer's bonus earned or missed (FEAT-67; the item lands in the FEAT-122 inventory). See _payRows.
       body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
@@ -5400,6 +5418,8 @@ moonSystem.addGui(_skyFolder)   // moon lives under Sky / Lighting — same look
 daySystem.addGui(_gui)
 // FEAT-53: economy folder — wallet/deeds/tier read-outs + the PROVISIONAL k and cap tunables.
 economySystem.addGui(_gui)
+// FEAT-122: grant any catalog item without running a mission.
+inventorySystem.addGui(_gui)
 // FEAT-45: camping folder — the live grade at the truck plus the site tunables. The one action is a
 // shortcut INTO the dialogue (skipping the 30-min chore and the carve), so the sleep flow can be
 // exercised without hunting for a legal site first.
@@ -6088,6 +6108,7 @@ const storySystem = new StorySystem({
     daySystem.start()   // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
+    inventorySystem.start()          // FEAT-122: items die with the run (SM-INV-8/9)
     // …and a fresh truck. Entry flips the mode to 'story' BEFORE it reseats, so the seat's
     // free-roam damage wipe (_reseatTruckAtSpawnInner) is skipped and a truck broken in free roam
     // drove straight into the new run. Per-run state (SM-INV-8): the run starts here, so does the truck.
@@ -6514,6 +6535,7 @@ document.addEventListener('keydown', e => {
   if (seedModal && seedModal.style.display === 'flex') { _cancelSeedModal(); return }
   // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
   if (damageScreen.isOpen) { damageScreen.close(); return }
+  if (inventoryScreen.isOpen) { inventoryScreen.close(); return }   // FEAT-122: same rule
   // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
   // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
   // settings page and is otherwise inert until the world is handed back.

@@ -1,0 +1,28 @@
+// ── FEAT-122: the item catalog — everything the player can OWN this run ──────────────────────
+//
+//   id       stable key — never rename once used. REWARDS (data/offers.js) grants by this id.
+//            Its own namespace: THINGS' `spareTire` is a courier's cargo, this one is yours.
+//   name     how the inventory says it
+//   kind     'consumable' | 'food' | 'tool' | 'camp' | 'part'   (items.md §1 / §2 / §2b / §3)
+//            Consumables and food STACK — one kind fills one slot. Tools, camp gear and unfitted
+//            parts take a slot EACH (owner, 2026-10-16). Fitted parts take none (not built yet).
+//   massKg   real load on the chassis while stowed (items.md rule 2 — a load, never a stat)
+//   desc     described, never scored (SM-INV-10): no numbers, ever — the gate checks for digits
+//   use      the effect hook main.js supplies, if the effect is built. Usable items auto-bind to
+//            a free quick slot (keys 1–4, items.md §1c).
+
+export const ITEMS = {
+    coffee:       { name: 'Coffee',        kind: 'consumable', massKg: 0.5, use: 'coffee',
+                    desc: 'Wakes you up now. You will feel it in the morning.' },
+    chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3,
+                    desc: 'Still warm, for now.' },
+    // P235/75R15 on a steel rim.
+    spareTire:    { name: 'Spare tire',    kind: 'part',       massKg: 20,
+                    desc: 'A full-size spare on a steel wheel. Heavy to carry around.' },
+    // A 2 gal RotoPax: ~5.7 kg of gas + ~1.5 kg of can (data/offers.js REWARDS).
+    emergencyGas: { name: 'Emergency gas', kind: 'consumable', massKg: 7.2,
+                    desc: 'A small can of gas, for when the gauge lies.' },
+}
+
+/** Kinds that stack into one slot per item kind. */
+export const STACKING_KINDS = new Set(['consumable', 'food'])
