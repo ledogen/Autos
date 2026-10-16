@@ -225,8 +225,10 @@ Provenance: `design-amendments-2026-10-14.md`.
 
 1. **Every bed load carries its size and a form** (`boxed`, `loose`, `long`) for the load verdicts
    (FEAT-112). Masses stay as built.
-2. **Every thing carries a delivery window** (FEAT-113): lax 1–3 days (freight), chill 6 h–1 day
-   (most), stringent 1–4 h (takeout, perishables).
+2. **Every thing carries a delivery deadline** (FEAT-113): ~~lax 1–3 days (freight), chill 6 h–1 day
+   (most), stringent 1–4 h (takeout, perishables)~~ — **re-cut 2026-10-15** as par × (1 + slack):
+   takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %
+   (`DEADLINE_SLACK` / a thing's own `deadlineSlack` in `data/offers.js`).
 3. **The `furniture` tag** goes on four dining chairs, the dining table, the full-length mirror, the
    wardrobe and the upright piano (FEAT-116's furniture pad).
 4. **Haul counts are the player's pick** (FEAT-114). The overloads above stay posted; whether each is

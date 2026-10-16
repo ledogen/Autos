@@ -485,6 +485,9 @@
     }
     #job-cancel:hover { background: rgba(160, 44, 34, 0.75); color: #fff; }
     #job-cancel.armed { background: #c0392b; border-color: #ff8a7a; color: #fff; }
+    /* moving: "park to abandon" — the button is inert until the brake is latched */
+    #job-cancel.unparked, #job-cancel.unparked:hover { background: rgba(0, 0, 0, 0.35); border-color: #3a4450; color: #c8d2dc; cursor: default; }
+    #job-cancel .park-badge { margin-right: 0.35em; }
     #mission-hud .mh-count { font-size: 44px; color: #ffcf3c; }
 
     /* FEAT-63: the GPS re-plan indicator. Bottom-right and quiet — it reports that help is on the
@@ -507,14 +510,15 @@
       pointer-events: none;
     }
 
-    /* FEAT-90: the "park first" badge — an orange P in a circle (the POI ring orange) — and the
-       keycap drawn beside key hints. One look everywhere a prompt asks you to park; the markup
-       comes from src/park-badge.js. */
+    /* FEAT-90: the "park first" badge — the urban parking sign: a white P on a blue rounded
+       square with a white rim (owner, 2026-10-15; was an orange P in a circle) — and the keycap
+       drawn beside key hints. One look everywhere a prompt asks you to park; the markup comes from
+       src/park-badge.js. */
     .park-badge {
-      display: inline-flex; align-items: center; justify-content: center;
+      display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
       width: 1.35em; height: 1.35em; margin-right: 0.45em; vertical-align: -0.25em;
-      border-radius: 50%; background: #ff7a18; color: #1a0f05;
-      font: bold 0.85em/1 monospace; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+      border-radius: 0.22em; background: #0b3d91; color: #fff; border: 0.09em solid #fff;
+      font: bold 0.9em/1 sans-serif; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
     }
     .keycap {
       display: inline-block; min-width: 1.1em; padding: 0 0.35em; margin: 0 0.1em;
@@ -545,7 +549,7 @@
     /* FEAT-53: the run wallet — top-right, story mode only. Money and good deeds are RUN state,
        not mission state: visible whenever the region is live, including mid-drive (owner,
        2026-08-01). It never references par or the current job, so SM-INV-3 stays whole — the
-       mission-hud running surface is untouched and shows only elapsed + distance. */
+       mission-hud running surface is untouched and shows only distance to go. */
     #run-hud {
       display: none;
       position: fixed;
@@ -565,6 +569,9 @@
     #run-hud .rh-money { font-size: 17px; color: #8ce99a; }
     #run-hud .rh-deeds { color: #ffcf3c; }
     #run-hud .rh-clock { color: #9fb3c8; letter-spacing: 1px; }
+    /* Over the map too (it sits at z 90): the clock is where a job card's "due Day 3, 2 am" is read,
+       and offers are mostly weighed from the map (owner, 2026-10-15). */
+    body.map-open #run-hud { z-index: 91; }
 
     /* FEAT-55: the Energy meter (RoR2 ticker), top-right under the wallet. Story-only; shown and
        scrolled per frame by _updateEnergyMeter. Segment colours come from day.js STAGE_COLOR via
@@ -649,19 +656,33 @@
        (the ticket's "flashy near the edge" — relaxed near boundaries ONLY). The card does NOT
        shake (owner, 2026-10-02). #rank-timer is a bare wrapper (no box of its own) that centres
        the card and the readout under it; the pop and jolt animations use `scale` / `translate`. */
-    #rank-timer {
-      display: none;
+    /* The column under the mission readout: the rank timer, then the job's due time (FEAT-113).
+       Each child shows and hides on its own; the stack keeps the due line tucked under the rank. */
+    #job-stack {
       position: fixed;
       top: 60px;    /* clears the one-line mission readout (16 px type + padding + border) */
       left: 0; right: 0;
       width: fit-content;
       margin: 0 auto;
-      font-family: monospace;
-      font-size: 12px;
-      color: #e6ecf2;
+      display: flex; flex-direction: column; align-items: center;
       z-index: 88;
       pointer-events: none;
     }
+    #rank-timer {
+      display: none;
+      font-family: monospace;
+      font-size: 12px;
+      color: #e6ecf2;
+    }
+    #job-due {
+      display: none;
+      margin-top: 6px;
+      font-family: monospace;
+      font-size: 14px;
+      color: #e6ecf2;
+      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
+    }
+    #job-due .rt-label { margin-right: 10px; }
     #rank-timer .rt-card {
       background: linear-gradient(180deg, rgba(14, 18, 24, 0.82), rgba(0, 0, 0, 0.7));
       border: 1px solid #3a4450;
@@ -685,7 +706,7 @@
       display: flex; align-items: center; justify-content: center; gap: 10px;
       margin: 8px 0 0;
     }
-    #rank-timer .rt-label {
+    #rank-timer .rt-label, #job-due .rt-label {
       font-size: 14px; font-weight: bold; letter-spacing: 2px; color: #c2cdd8;
       text-transform: uppercase;
       text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
@@ -853,6 +874,8 @@
 
     /* FEAT-53: payout / good-deeds line on the mission result card (and FEAT-61's route card). */
     #mission-panel .mp-pay, #paper-panel .mp-pay { font-size: 18px; color: #8ce99a; }
+    /* an abandoned job's headline, its $0 and a lost or destroyed load (owner, 2026-10-15) */
+    #mission-panel .mp-bad, #paper-panel .mp-bad { color: #ff6b5b; }
     #pp-accept { border-color: #5ad06a; color: #b6f0be; }
 
     /* FEAT-31 testing lab readout — top-right, out of the way of the left-hand debug HUD. */
@@ -1344,6 +1367,7 @@
        .rt-seg children, built by _updateRankTimer in main.js from the job's frozen thresholds),
        the offer's gold bonus-gate marker, the fixed pointer, and the beat overlay. The title names
        the band under the pointer in its rank colour — the letters are the only text on it. -->
+  <div id="job-stack">
   <div id="rank-timer">
     <div class="rt-card" id="rt-card">
       <div class="rt-view">
@@ -1353,6 +1377,10 @@
       </div>
     </div>
     <div class="rt-title"><span class="rt-label">Rank:</span><span class="rt-letter-box" id="rt-letter-box"><span id="rt-letter">S</span></span></div>
+  </div>
+  <!-- FEAT-113: the job's deadline under the rank tile; the text node after the label is written by
+       _updateJobDue in main.js. -->
+  <div id="job-due"><span class="rt-label">Due:</span><span></span></div>
   </div>
 
   <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI.

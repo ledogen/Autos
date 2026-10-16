@@ -12,6 +12,9 @@
 // expiry from that moment (or the source's `lockH`). A locked budget slot stays parked on its place
 // — which takes no new budget job meanwhile — then refills somewhere random. So finishing a job
 // never brings the next one sooner. While an offer is TAKEN its slot shows nothing.
+// THE DEADLINE (FEAT-113): take() stamps `dueH` (accept + par × (1 + slack)). A taken slot
+// still in hand at dueH locks AT dueH under the same rule — a lazy timer like the others, so the
+// lock never depends on when the player gets round to signing the expired job off.
 
 // PURE. No THREE, no road, no DOM. Imports only the two content tables, the seeded hash/PRNG, and
 // the economy's pure pay functions. main.js owns the board's lifetime (built when a story region
@@ -36,7 +39,7 @@
 
 import {
     THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, BONUS_PAY_MULT, GATE_WEIGHTS,
-    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG,
+    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, DEADLINE_SLACK,
 } from '../data/offers.js'
 import {
     FIRST_NAMES, FEMALE_CHANCE, LAST_NAMES, NICKNAMES, NICKNAME_CHANCE, POI_ADJECTIVES,
@@ -44,6 +47,7 @@ import {
 } from '../data/offer-names.js'
 import { djb2, mulberry32 } from './seed.js'
 import { basePay, formatMoney } from './economy.js'
+import { DAY_PARAMS } from './day.js'
 
 /**
  * The mission families that have gameplay behind them today. demolition is in the tables (so the
@@ -102,6 +106,19 @@ export function formatGameDuration (h) {
     if (mins < 24 * 60) return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`
     const hrs = Math.round(h)
     return `${Math.floor(hrs / 24)}d ${hrs % 24}h`
+}
+
+/**
+ * FEAT-113: an absolute game clock (DaySystem.clockH) as the deadline line reads it — "Day 3, 2 am".
+ * A fixed time, never a countdown (SM-INV-3).
+ */
+export function formatDue (h) {
+    const t = Math.round(h * 60)   // whole minutes FIRST, so 47.9999 h reads Day 3, 12 am
+    const day = Math.floor(t / 1440) + 1
+    const mins = t % 1440
+    const hr = Math.floor(mins / 60), m = mins % 60
+    const h12 = hr % 12 || 12
+    return `Day ${day}, ${h12}${m ? ':' + String(m).padStart(2, '0') : ''} ${hr < 12 ? 'am' : 'pm'}`
 }
 
 /**
@@ -192,11 +209,12 @@ export class OfferBoard {
         for (let guard = 0; guard < 100000; guard++) {
             let next = null, t = Infinity
             for (const s of this._budget) {
-                const e = s.state === 'live' ? s.offer.expiresH : s.state === 'taken' ? Infinity : s.until
+                const e = s.state === 'live' ? s.offer.expiresH : s.state === 'taken' ? s.offer.dueH ?? Infinity : s.until
                 if (e < t) { t = e; next = s }
             }
             if (!next || t > nowH) break
-            this._refill(next, t)
+            if (next.state === 'taken') this._lockAt(next, t)
+            else this._refill(next, t)
         }
         this._now = nowH
     }
@@ -206,6 +224,7 @@ export class OfferBoard {
         for (let guard = 0; guard < 100000; guard++) {
             if (s.state === 'live' && s.offer.expiresH <= nowH) this._roll(s, s.offer.expiresH)
             else if (s.state === 'locked' && s.until <= nowH) this._roll(s, s.until)
+            else if (s.state === 'taken' && s.offer.dueH <= nowH) this._lockAt(s, s.offer.dueH)
             else return
         }
     }
@@ -329,11 +348,21 @@ export class OfferBoard {
      * Accept: the offer leaves the board. Returns the offer, or null if it is no longer live (it
      * expired while the panel was up — food offers live ~2 real minutes).
      */
-    take (offerId, nowH) {
+    take (offerId, nowH, parS) {
         if (!this.isLive(offerId, nowH)) return null
         const s = this._slotOf(offerId)
         s.state = 'taken'
+        // FEAT-113: the delivery deadline. No par (a caller with no planned route) → no deadline.
+        s.offer.dueH = parS > 0 ? nowH + this.deadlineH(s.offer, parS) : Infinity
         return s.offer
+    }
+
+    /**
+     * FEAT-113: how long the job may be in hand, in game hours — par (real seconds, one game minute
+     * each) × (1 + the thing's slack). One function behind take(), the card and Larry's panel.
+     */
+    deadlineH (offer, parS) {
+        return parS / (DAY_PARAMS.dayLengthSec / 24) * (1 + this.spec(offer).deadlineSlack)
     }
 
     /** A taken offer was finished — ANY settled result, D included. The slot locks (see header). */
@@ -351,9 +380,13 @@ export class OfferBoard {
         this.advance(nowH)
         const s = this._takenSlot(offerId)
         if (!s) return false
-        s.state = 'locked'
-        s.until = this._now + (SOURCES[s.type].lockH ?? s.offer.lifeH)
+        this._lockAt(s, this._now)
         return true
+    }
+
+    _lockAt (s, t) {
+        s.state = 'locked'
+        s.until = t + (SOURCES[s.type].lockH ?? s.offer.lifeH)
     }
 
     _slotOf (offerId) {
@@ -376,7 +409,9 @@ export class OfferBoard {
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate}|null, payMult,
      *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null,
-     *   passenger: boolean, shape: 'courier'|'fetch', from: string[]|null, load: string|null }
+     *   passenger: boolean, shape: 'courier'|'fetch', from: string[]|null, load: string|null,
+     *   deadlineSlack: number }
+     * deadlineSlack (FEAT-113): the deadline is par × (1 + it) from accept — see deadlineH().
      * bundles is the haul load's piece count (FEAT-88), null for every other family. It is drawn on
      * its OWN `bundles` stream: one more draw on `spec` would shift the destination and place name
      * of every existing offer on every seed.
@@ -434,6 +469,7 @@ export class OfferBoard {
         // `from`), park there, bring it back. Otherwise the courier shape, as built.
         const fetch = !!thing.fetchBy?.includes(offer.type)
         return (offer._spec = {
+            deadlineSlack: thing.deadlineSlack ?? DEADLINE_SLACK[thing.family],   // FEAT-113
             shape: fetch ? 'fetch' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
             family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
             massKg: bundles ? bundles * HAUL_BUNDLE_KG : massKg, bundles,
@@ -670,6 +706,7 @@ export class OfferBoard {
         const expiresInH = offer.expiresH - nowH
         // A never-expiring offer (Larry's) shows no timer at all (owner, 2026-10-07).
         if (isFinite(expiresInH)) terms.push(`expires in ${formatGameDuration(expiresInH)}`)
+        if (par > 0) terms.push(`deliver within ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept
         return {
             family: sp.family,
             badge: jobBadge(sp),

@@ -562,12 +562,12 @@ owner's name for it.
 | Courier — small items in the cab (point-to-point, multi-drop, fetch) | FEAT-89 | open — fetch's first slice shipped in FEAT-102 |
 | Haul yards — splitting yard R1, sawmill R2, quarry R3 | FEAT-91 | open — needs FEAT-88's per-load data. Ruled 2026-10-12: sawmill haul is loose boards, sawmill + quarry get a big pad |
 | Freight — strapped durable cargo | FEAT-96 | ✅ closed 2026-10-15 — the par-per-kg constant kept as a guess (owner) |
-| Fragile — strapped shock-sensitive cargo | FEAT-97 | open — **next build**; the tip curve and the shippers were ruled 2026-10-15 |
+| Fragile — strapped shock-sensitive cargo | FEAT-97 | **done** 2026-10-15 |
 | Demolition missions | FEAT-65 | open |
 | Paper route — throw and impact audio | FEAT-64 | open |
 | ~~Ratchet straps as an item for loose haul loads~~ | FEAT-110 | ✅ closed — cancelled 2026-10-14: straps are not an item |
 | Load verdicts — fits / warning / overload for the truck as configured | FEAT-112 | open — planned 2026-10-14 |
-| Delivery deadlines for every job; the mission clock on world time | FEAT-113 | open — planned 2026-10-14 |
+| Delivery deadlines for every job; the mission clock on world time | FEAT-113 | **done** 2026-10-16 |
 | Haul — the player picks the quantity; yard rate bonuses | FEAT-114 | open — needs FEAT-112 and the haul tip/item ruling |
 | Bed upgrades as parts — roof rack, flatbed, stake bed, extended bed, light bar | FEAT-115 | open — needs FEAT-104, FEAT-112 |
 | Cargo protection — bubble wrap, furniture pad, heavy-duty pad | FEAT-116 | open — needs FEAT-97, FEAT-104 |
@@ -580,9 +580,9 @@ Take the first item that is not blocked. Each one is a ticket with its own accep
 
 | # | Ticket | Why here | Blocked on |
 |---|---|---|---|
-| 1 | **FEAT-97** fragile | already the next build; read its 2026-10-14 and 2026-10-15 blocks first | — |
+| 1 | ~~**FEAT-97** fragile~~ | done 2026-10-15 | — |
 | 2 | ~~**FEAT-118** camp pause~~ | done 2026-10-15 | — |
-| 3 | **FEAT-113** deadlines + world-time clock | every job needs a window before the deadline can mean anything | — |
+| 3 | ~~**FEAT-113** deadlines + world-time clock~~ | done 2026-10-16 | — |
 | 4 | **FEAT-112** load verdicts | pure data and a card; unlocks FEAT-114 and FEAT-115 | the stock truck's soft and hard limits |
 | 5 | **FEAT-114** haul quantity + rate bonus | first user of the verdict limits | the haul tip/item ruling |
 | 6 | **FEAT-104** minimal shop | the venue for every part and consumable | — |

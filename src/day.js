@@ -1,7 +1,8 @@
 // ── FEAT-47: the story-mode day clock ──────────────────────────────────────────────────────
 //
 // A story run is played in DAYS. This module owns the one authoritative in-game clock: a 24-hour
-// hour-of-day float that wheels round in `dayLengthSec` of real time (RATIFIED: 24 minutes), and the
+// hour-of-day float that wheels round in `dayLengthSec` of simulated time (RATIFIED: 24 minutes —
+// main.js steps it inside the fixed physics step, FEAT-113, so it is real time unless the sim lags), and the
 // day counter it rolls over into. It drives the sky, and later phases hang energy/blinks/doze and
 // the sleep boundary off the same clock.
 //
@@ -146,7 +147,8 @@ export class DaySystem {
     }
 
     /**
-     * Advance the clock by `dtSec` of real time. No-op outside story mode.
+     * Advance the clock by `dtSec` of simulated time (main.js: PHYSICS_DT per fixed step). No-op
+     * outside story mode.
      *
      * MIDNIGHT IS A DAY BOUNDARY: the wrap past 24 is exactly the run boundary SM-INV-12 permits
      * runState to advance on, so incrementing `day` here is the invariant, not a violation of it.
