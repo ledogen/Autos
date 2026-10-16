@@ -444,7 +444,7 @@ export class RoadMeshSystem {
         const halfWidth = params.roadHalfWidth ?? 5
         const roadWidth = params.roadWidth     ?? 10
         const crownH    = params.crownHeight   ?? 0.05
-        const rp = this._road.runProfile(arcS, runKey)
+        const rp = this._road.runProfile(arcS, runKey, this._rpScratch ??= { gradeY: 0, tx: 1, tz: 0 })
         const tx = camberSign * rp.tx, tz = camberSign * rp.tz, tLen = Math.sqrt(tx * tx + tz * tz)
         // Perpendicular right vector in XZ; degenerate tangent (T-09-04) falls back to unit X.
         const rightX = tLen > 1e-8 ? tz / tLen : 1
