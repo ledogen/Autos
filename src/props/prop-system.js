@@ -120,13 +120,8 @@ export class PropSystem {
         // free list (use high indices first so low slots fill contiguously)
         const free = []
         for (let i = perVariant - 1; i >= 0; i--) free.push(i)
-        // PERF-07: per-instance shadow ground-fit factor for the bake shear (default 1 = flat
-        // ground; written per slot in _commitChunk). Lives on the variant geometry like any
-        // instanced attribute; the main Phong material simply ignores it. geoMaxY caches the
-        // unscaled prop height for the canopy-centre h0.
-        const kAttr = new THREE.InstancedBufferAttribute(new Float32Array(perVariant).fill(1), 1)
-        kAttr.setUsage(THREE.DynamicDrawUsage)
-        entry.geo.setAttribute('aShadowK', kAttr)
+        // geoMaxY caches the unscaled prop height for the PERF-07 bake's canopy-centre h0. The
+        // per-instance ground-fit factor (aShadowK) lives only on the bake scratch meshes.
         if (!entry.geo.boundingBox) entry.geo.computeBoundingBox()
         const key = cat + '#' + v
         // occ/top: occupancy bitmap + high-water mark for PERF-10 count compaction.
@@ -666,7 +661,6 @@ export class PropSystem {
       rec.mesh.instanceMatrix.array.set(pr.mat, slot * 16)
       _col.setRGB(pr.tint[0], pr.tint[1], pr.tint[2])
       rec.mesh.setColorAt(slot, _col)
-      rec.mesh.geometry.attributes.aShadowK.setX(slot, pr.k)
       this._dirty.add(key)
       if (slot < rec.dirtyLo) rec.dirtyLo = slot
       if (slot > rec.dirtyHi) rec.dirtyHi = slot
@@ -995,12 +989,10 @@ export class PropSystem {
         const lo = rec.dirtyLo, n = rec.dirtyHi - rec.dirtyLo + 1
         rec.mesh.instanceMatrix.addUpdateRange(lo * 16, n * 16)
         if (rec.mesh.instanceColor) rec.mesh.instanceColor.addUpdateRange(lo * 3, n * 3)
-        rec.mesh.geometry.attributes.aShadowK.addUpdateRange(lo, n)
         rec.dirtyLo = Infinity; rec.dirtyHi = -1
       }
       rec.mesh.instanceMatrix.needsUpdate = true
       if (rec.mesh.instanceColor) rec.mesh.instanceColor.needsUpdate = true
-      rec.mesh.geometry.attributes.aShadowK.needsUpdate = true   // PERF-07 ground-fit factors
       rec.mesh.count = rec.top   // PERF-10: draw the occupied prefix only (read at draw time, no flag needed)
     }
     this._dirty.clear()

@@ -155,7 +155,7 @@ export class ShadowBakeSystem {
         uniform vec2 uShearXZ;
         // Per-instance ground fit (shadowShearScale, written by prop-system at commit): scales the
         // flat-plane shear so this prop's shadow lands on the real sloped terrain like the realtime
-        // map's would. Prop pool geometries always carry the attribute (default 1 = flat ground).
+        // map's would. Only prop-system's bake scratch meshes carry it (filled from each place's k).
         attribute float aShadowK;
         void main() {
           #ifdef USE_INSTANCING
