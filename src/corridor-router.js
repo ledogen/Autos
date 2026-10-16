@@ -184,8 +184,12 @@ export function clearReq(pa, hit, ground, prm) {
     const nx = ux / d * prm.HW, nz = uz / d * prm.HW
     const hA = pa.y - ground(pa.x + nx, pa.z + nz)
     const hB = hit.y - ground(hit.fx - nx, hit.fz - nz)
-    const dy = Math.abs(pa.y - hit.y)
-    const upperFill = pa.y >= hit.y ? hA : hB, lowerCut = pa.y >= hit.y ? hB : hA
+    return reqOf(prm, hA, hB, Math.abs(pa.y - hit.y), pa.y >= hit.y)
+}
+// The rule's tail on sampled heights (hA/hB = each road's deck above the ground at its facing edge),
+// shared by clearReq and corridorSearch's memoised occReq.
+function reqOf(prm, hA, hB, dy, upperIsA) {
+    const upperFill = upperIsA ? hA : hB, lowerCut = upperIsA ? hB : hA
     let req = prm.floor
     if (upperFill > 0) req = Math.max(req, Math.min(2 * prm.edge + prm.fill * dy, prm.cap + prm.edge))
     if (lowerCut < 0) req = Math.max(req, Math.min(2 * prm.edge + prm.cut * dy, prm.cap + prm.edge))
@@ -323,14 +327,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
         occGa[i] = hCoarse(px + ux * occ.prm.HW, pz + uz * occ.prm.HW)
         return best.d
     }
-    const occReq = (i, y1) => {
-        const prm = occ.prm, hA = y1 - occGa[i], hB = occHb[i], dy = Math.abs(y1 - occY[i])
-        const upperFill = y1 >= occY[i] ? hA : hB, lowerCut = y1 >= occY[i] ? hB : hA
-        let req = prm.floor
-        if (upperFill > 0) req = Math.max(req, Math.min(2 * prm.edge + prm.fill * dy, prm.cap + prm.edge))
-        if (lowerCut < 0) req = Math.max(req, Math.min(2 * prm.edge + prm.cut * dy, prm.cap + prm.edge))
-        return req
-    }
+    const occReq = (i, y1) => reqOf(occ.prm, y1 - occGa[i], occHb[i], Math.abs(y1 - occY[i]), y1 >= occY[i])
     const C_wClear = C.wClear ?? 12
     // Hard no-go cells (pond+skirt discs): 0 unknown, 1 open, 2 blocked — resolved lazily.
     const discs = opts.blockedDiscs
