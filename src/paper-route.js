@@ -62,6 +62,7 @@ import { computePar, gradeRun, RANK_THRESHOLDS_DEFAULT } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
 // why it must have one home: a second copy is a second thing to keep in step with the gate.
 import { accuracyScore } from './throw.js'
+import { polyCumOf, traceRow } from './mission.js'
 
 export const PAPER_PARAMS = {
     // (`tolerance`, the bell, was cut 2026-09-29 — the route has no time limit. The fare's floor is
@@ -280,7 +281,7 @@ export function advancesTier (result, customers) {
 // concatenated and priced by a single computePar() call: par is the oracle's statement about a
 // stretch of road, and summing fifteen little pars would be summing fifteen standing starts.
 
-const idKey = (id) => `${id[0]},${id[1]},${id[2]}`
+export const idKey = (id) => `${id[0]},${id[1]},${id[2]}`
 
 // Stop count up to which the route's ORDER is solved exactly (Held-Karp, 2^n × n states). The
 // ladder tops out at 15, so in practice every route is exact; the cap exists so a future tier
@@ -703,11 +704,7 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
     const { time, distance } = computePar(segments)
     if (!(time > 0)) return null
 
-    const polyCum = [0]
-    for (let i = 1; i < poly.length; i++) {
-        polyCum.push(polyCum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].z - poly[i - 1].z))
-    }
-    return { customers: order, segments, poly, polyCum, par: time, distance, edges: segments.length }
+    return { customers: order, segments, poly, polyCum: polyCumOf(poly), par: time, distance, edges: segments.length }
 }
 
 // ── the mission ─────────────────────────────────────────────────────────────────────────────────
@@ -1049,11 +1046,7 @@ export class PaperRouteSystem {
         // a 4-minute round is ~2400 rows, small next to the topology array.
         if ((this.run.traceTick++ % TRACE_DIV) === 0) {
             const c = this._getCar()
-            if (c) this.run.trace.push([
-                +this.run.elapsed.toFixed(2), +c.x.toFixed(2), +(c.y ?? 0).toFixed(2), +c.z.toFixed(2),
-                +(c.speed ?? 0).toFixed(2), +(c.heading ?? 0).toFixed(3),
-                +(c.throttle ?? 0).toFixed(2), +(c.brake ?? 0).toFixed(2), +(c.steer ?? 0).toFixed(3),
-            ])
+            if (c) this.run.trace.push(traceRow(c, this.run.elapsed))
         }
         this._replanTick(dt)
         // No bell (owner, 2026-09-29): the clock only accumulates. The last porch or the empty truck

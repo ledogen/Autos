@@ -24,7 +24,7 @@
 
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
 import { REGION_MARGIN } from './mission.js'          // FEAT-61: the wall a customer must sit inside
-import { houseRungs, roadDistFromLarry } from './paper-route.js'   // FEAT-61: the ladder placement serves, in road metres
+import { houseRungs, roadDistFromLarry, idKey } from './paper-route.js'   // FEAT-61: the ladder placement serves, in road metres
 import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
 import { hash32, mulberry32 } from './seed.js'        // per-edge / per-POI PRNG keys (byte-stable)
 import { padSd } from './road-carve.js'               // FEAT-71: the pad's own shape, for the yard clip
@@ -441,7 +441,15 @@ export const POI_COUNT = POI_ROSTER.reduce((n, s) => n + s.count, 0)
 // Footprint sampling for the earthwork test: a 3 × 5 lattice over the pad, plus the centre.
 const CUTFILL_NU = 5, CUTFILL_NV = 3
 
-const idKey = (id) => `${id[0]},${id[1]},${id[2]}`
+// The graph's edges as {ka, kb, a, b} (ka < kb), sorted by canonical key — a stable order for ids.
+function _canonEdges (g) {
+    const canon = []
+    for (const [a, b] of g.edges) {
+        const ka = idKey(a), kb = idKey(b)
+        canon.push(ka < kb ? { ka, kb, a, b } : { ka: kb, kb: ka, a: b, b: a })
+    }
+    return canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
+}
 
 /**
  * The POI layer. Owns placement, the pad records the road carve consumes, and the
@@ -546,12 +554,7 @@ export class PoiSystem {
         // Deterministic edge ORDER: the network Map's insertion order is a streaming artifact, so
         // sort by the canonical edge key. Placement is per-edge independent, but sorting keeps the
         // ids stable, which the map icons and the mission anchor both key off.
-        const canon = []
-        for (const [a, b] of g.edges) {
-            const ka = idKey(a), kb = idKey(b)
-            canon.push(ka < kb ? { ka, kb, a, b } : { ka: kb, kb: ka, a: b, b: a })
-        }
-        canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
+        const canon = _canonEdges(g)
 
         // PASS 1 — THE POOL. Every edge offers every pad it can seat, of every kind (FEAT-105: the
         // 14 x 8 lay-by, plus each bigger pad a roster model asks for), spaced poiPadSpacing apart
@@ -624,12 +627,7 @@ export class PoiSystem {
         // Same canonical edge order as build(), for the same reason: the Map's order is a streaming
         // artifact, and ids have to be stable across windows.
         const g = road.networkGraph()
-        const canon = []
-        for (const [a, b] of g.edges) {
-            const ka = idKey(a), kb = idKey(b)
-            canon.push(ka < kb ? { ka, kb, a, b } : { ka: kb, kb: ka, a: b, b: a })
-        }
-        canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
+        const canon = _canonEdges(g)
 
         // THE WALL (FEAT-61 Phase E2). A customer's edge must lie WHOLLY inside the region, because
         // the route is routed on the same region-filtered graph the missions are: an edge with one
