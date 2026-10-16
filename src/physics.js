@@ -80,11 +80,12 @@ export function getDriveTorque (wheelIndex, vehicleState, params) {
  * @param {number} wheelIndex - 0-3 per GLOSSARY.md §Wheel Index.
  * @param {object} vehicleState - Full vehicleState; uses .throttle, .brake, .handbrake.
  * @param {object} params - RANGER_PARAMS; uses .maxBrakeTorqueFront/.maxBrakeTorqueRear, .maxHandbrakeTorque.
+ * @param {number} longVel - THIS wheel's hub speed along its own forward axis [m/s] (relative to a
+ *   dynamic support when grounded on one). Decides S = brake (above REV_THRESHOLD) vs reverse.
  * @returns {number} Brake torque [N·m]. Positive = resists current wheel spin direction.
  */
-function getBrakeTorque (wheelIndex, vehicleState, params) {
+function getBrakeTorque (wheelIndex, vehicleState, params, longVel) {
   const isRear  = wheelIndex === 2 || wheelIndex === 3
-  const longVel = params._longitudinalVelocity || 0
 
   // FEAT-23: the old "W below FWD_THRESHOLD → brake" branch is gone. The torque-converter drivetrain
   // now delivers forward torque whenever the throttle is down (even while rolling backward), so it
@@ -731,13 +732,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     totalForce.add(suspBodyForce)
     totalTorque.add(new THREE.Vector3().crossVectors(rMount, suspBodyForce))
 
-    // Airborne skip (D-14): no contacts, no Pacejka, no Newton — the wheel's ω and slip state are
-    // stepped on their own and the loop moves on.
-    if (isAirborne) {
-      stepAirborneWheel(i, vehicleState, params, dt)
-      continue
-    }
-
     // Hub world position (sphere center for contact queries)
     const hub  = hubPost[i] ?? getWheelPosition(i, vehicleState, params)
     const rHub = new THREE.Vector3(
@@ -767,8 +761,17 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     const lean = camberLean(i, params)
     if (lean !== 0) wheelRight.applyAxisAngle(wheelFwd, lean)
 
-    params._lateralVelocity      = hubVel.dot(wheelRight)
-    params._longitudinalVelocity = hubVel.dot(wheelFwd)
+    // Hub velocity in the wheel frame. Grounded on a dynamic body, these become RELATIVE to it
+    // (below); airborne, longVel is what decides the S-key brake-vs-reverse split (R-08).
+    let latVel  = hubVel.dot(wheelRight)
+    let longVel = hubVel.dot(wheelFwd)
+
+    // Airborne skip (D-14): no contacts, no Pacejka, no Newton — the wheel's ω and slip state are
+    // stepped on their own and the loop moves on.
+    if (isAirborne) {
+      stepAirborneWheel(i, vehicleState, params, dt, longVel)
+      continue
+    }
 
     // Slip-velocity tire model with relaxation length (see tire.js header).
     // Per-tire state: vehicleState.slipLong[i], slipLat[i] — the "filtered" slip
@@ -816,7 +819,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         ground.contactPoint.y - vehicleState.position.y,
         ground.contactPoint.z - vehicleState.position.z
       )
-      params._compression = ground.depth
 
       // FEAT-48: RELATIVE contact velocity. Against static ground (analytic terrain,
       // props — no .body) the support is at rest and this reduces exactly to the old
@@ -829,12 +831,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         // Fully relative — the support's own velocity enters the slip UNCLAMPED (owner,
         // 2026-08-15: the last containment-era limiter deleted). Honest forces from honest
         // kinematics; the enveloping factor and exact manifolds bound the magnitudes.
-        params._lateralVelocity      = (hubVel.x - groundVel.x) * wheelRight.x +
-                                       (hubVel.y - groundVel.y) * wheelRight.y +
-                                       (hubVel.z - groundVel.z) * wheelRight.z
-        params._longitudinalVelocity = (hubVel.x - groundVel.x) * wheelFwd.x +
-                                       (hubVel.y - groundVel.y) * wheelFwd.y +
-                                       (hubVel.z - groundVel.z) * wheelFwd.z
+        latVel  = (hubVel.x - groundVel.x) * wheelRight.x +
+                  (hubVel.y - groundVel.y) * wheelRight.y +
+                  (hubVel.z - groundVel.z) * wheelRight.z
+        longVel = (hubVel.x - groundVel.x) * wheelFwd.x +
+                  (hubVel.y - groundVel.y) * wheelFwd.y +
+                  (hubVel.z - groundVel.z) * wheelFwd.z
       }
 
       // Phase 4.1 NOTE (D-06): do NOT add Fn*normal to totalForce here.
@@ -856,8 +858,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // re-evaluated and re-committed inside the ω Newton loop using the converged ω_new
       // — this is operator splitting: body force lags ω by one step, acceptable trade for
       // a clean Newton on ω alone.
-      const longVelCur = params._longitudinalVelocity || 0
-      const latVelCur  = params._lateralVelocity      || 0
+      const longVelCur = longVel || 0
+      const latVelCur  = latVel  || 0
       const omegaCur   = (vehicleState.wheelOmega?.[i] ?? 0) * params.wheelRadius
       const vCon       = Math.max(Math.abs(omegaCur), Math.abs(longVelCur), SLIP_EPSILON)
       const L          = params.tireRelaxationLength || 0.3
@@ -945,7 +947,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         vehicleState.wheelDebug[i].fn    = Fn
         vehicleState.wheelDebug[i].fy    = Flat
         vehicleState.wheelDebug[i].sa    = Math.hypot(sLongCur, sLatNew)
-        vehicleState.wheelDebug[i].c     = params._compression
+        vehicleState.wheelDebug[i].c     = ground.depth
         vehicleState.wheelDebug[i].vLong = omegaCur - longVelCur
         vehicleState.wheelDebug[i].vLat  = latVelCur
       }
@@ -954,7 +956,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // inside this step (a crest, a take-off). It is airborne for the rest of the step — ω on
       // drive/brake alone, slip relaxing, wear signals zero (review-2 R-03: this used to fall into
       // the Newton solve with no load, which froze ω and stored a phantom dt·ω·r slip).
-      stepAirborneWheel(i, vehicleState, params, dt)
+      stepAirborneWheel(i, vehicleState, params, dt, longVel)
       continue
     }
 
@@ -972,7 +974,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     {
       const wheelInertia = params.wheelInertia || 1.22
       const driveTorque  = getDriveTorque(i, vehicleState, params)
-      const brakeTorque  = getBrakeTorque(i, vehicleState, params)
+      const brakeTorque  = getBrakeTorque(i, vehicleState, params, lastLongVelCur)
       if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque
       const dsdo         = dt * params.wheelRadius / lastRelaxDen  // ∂sLong_new/∂ω_new
       const omega0       = vehicleState.wheelOmega?.[i] ?? 0
@@ -1128,10 +1130,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
  * deflection relaxes with no slip input: the grounded relaxation update with the contact velocity
  * taken out, rolling at the wheel's own speed — so a take-off does not land on its old deflection.
  */
-function stepAirborneWheel (i, vehicleState, params, dt) {
+function stepAirborneWheel (i, vehicleState, params, dt, longVel) {
   const wheelInertia = params.wheelInertia || 1.22
   const driveTorque  = getDriveTorque(i, vehicleState, params)
-  const brakeTorque  = getBrakeTorque(i, vehicleState, params)
+  const brakeTorque  = getBrakeTorque(i, vehicleState, params, longVel)
   if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque
   if (vehicleState.slipVel)  vehicleState.slipVel[i]  = 0   // airborne: no contact, no abrasion
   if (vehicleState.tireFlat) vehicleState.tireFlat[i] = 0
