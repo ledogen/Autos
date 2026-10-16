@@ -4378,7 +4378,8 @@ export class RoadSystem {
             if (RAMPL === 100) { this._v2MergeSkipped('shove', `${ck}: still crosses after deflection`); return fin(null) }
             continue
         }
-        return fin({ pairs: cleared, pts: pts2, idxSpans })
+        // R-10: the line pts2 was deflected from — own.cl is the BUG-56 C re-route when the edge drapes
+        return fin({ pairs: cleared, pts: pts2, idxSpans, cl: own.cl })
         }
         return fin(null)
     }
@@ -6031,7 +6032,7 @@ export class RoadSystem {
                     // BUG-57 rung: a nick-crossed run with no merge-family role registers SHOVED —
                     // deflected clear of its crossing partners (_v2ShoveFor; plan-layer pure).
                     const shove = this._v2ShoveFor(g, drop, wide, c1, c2)
-                    if (shove) this._v2RegisterShoved(key, cl, c1, c2, shove, g, drop)
+                    if (shove) this._v2RegisterShoved(key, shove.cl ?? cl, c1, c2, shove, g, drop)
                     else this._registerRun(key, cl, c1, c2)
                 }
             }
