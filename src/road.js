@@ -6456,7 +6456,7 @@ export class RoadSystem {
         // ── Broad phase: bucket every run segment into the CHUNK_SIZE tiles its AABB touches. ──
         // Each seg record carries what the narrow phase + classifier need: world endpoints, endpoint Ys,
         // and run-local XZ arc (via polyCum).
-        const buckets = new Map()   // "tx,tz" → seg[]
+        const buckets = new Map()   // packed (tx, tz) → seg[] (numeric key: exact for |tx|,|tz| < 2^20)
         for (const [runKey, entry] of this._network) {
             const pts = entry.points
             if (!pts || pts.length < 2) continue
@@ -6472,7 +6472,7 @@ export class RoadSystem {
                 const tzLo = Math.floor(Math.min(z0, z1) / CHUNK_SIZE), tzHi = Math.floor(Math.max(z0, z1) / CHUNK_SIZE)
                 for (let tx = txLo; tx <= txHi; tx++) {
                     for (let tz = tzLo; tz <= tzHi; tz++) {
-                        const k = `${tx},${tz}`
+                        const k = (tx + 1048576) * 2097152 + (tz + 1048576)
                         let arr = buckets.get(k); if (!arr) { arr = []; buckets.set(k, arr) }
                         arr.push(seg)
                     }
@@ -6489,14 +6489,17 @@ export class RoadSystem {
                     const B = arr[j]
                     // Skip adjacent segments of the SAME run (they share an endpoint, not a real crossing).
                     if (A.runKey === B.runKey && Math.abs(A.segIdx - B.segIdx) <= 1) continue
-                    // Canonical (S before T) so the same pair found via two buckets is tested once.
+                    // Canonical (S before T) so the same pair found via two buckets is recorded once.
+                    // The cheap crossing test runs FIRST and only a hit pays for the pair key: ~22k
+                    // pairs per build and almost none cross (it is a pure fn of the canonical pair,
+                    // so the first sighting records and later ones dedupe exactly as before).
                     const aFirst = A.runKey < B.runKey || (A.runKey === B.runKey && A.segIdx < B.segIdx)
                     const S = aFirst ? A : B, T = aFirst ? B : A
+                    const ix = _segCrossParam(S.x0, S.z0, S.x1, S.z1, T.x0, T.z0, T.x1, T.z1)
+                    if (!ix) continue
                     const pk = `${S.runKey}#${S.segIdx}|${T.runKey}#${T.segIdx}`
                     if (seenPairs.has(pk)) continue
                     seenPairs.add(pk)
-                    const ix = _segCrossParam(S.x0, S.z0, S.x1, S.z1, T.x0, T.z0, T.x1, T.z1)
-                    if (!ix) continue
                     // Two legs of ONE node crossing inside that node's hold reach are the junction's
                     // own throat, not a mid-span crossing. The deck hold (_applyJunctionBlend) owns
                     // that ground; the AT_GRADE flatten this would register runs AFTER the hold,
