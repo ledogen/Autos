@@ -670,10 +670,14 @@ export class OfferBoard {
      * @param {number} [ctx.payTier]    economySystem.terms().payTier NOW (terms only freeze at accept)
      * @param {object|null} [ctx.route] the planned mission ({par, distance, endPoiId, placeName}) or null
      * @param {number} [ctx.customers]  paper route: stops on the planned tour
+     * @param {object|null} [ctx.verdict] FEAT-112: loadVerdict() for this offer's load on the truck as
+     *        configured NOW, or null (cab cargo). Computed by the caller — the board never sees the truck
+     *        (SM-INV-12), it only words the verdict.
      * @returns {{family, portrait: {sex,name}|null, flavor: string|null, sentence: Array<{t:string,b?:boolean}>,
-     *            pay: string|null, terms: string[], bonus: string|null}|null}
+     *            pay: string|null, terms: string[], bonus: string|null,
+     *            verdict: {level: 'warning'|'overload', text: string}|null}|null}
      */
-    card (offer, { nowH, payTier = 1, route = null, customers = null } = {}) {
+    card (offer, { nowH, payTier = 1, route = null, customers = null, verdict = null } = {}) {
         const sp = this.spec(offer)
         if (!sp) return null
         const n = this._names.get(offer.poiId)
@@ -722,6 +726,11 @@ export class OfferBoard {
             terms,
             // Larry's card shows base pay only (owner ruling) — papers never roll a bonus anyway.
             bonus: sp.bonus ? `Bonus: ${sp.bonus.name} — ${gateText(sp.bonus.gate)}` : null,
+            // FEAT-112: a load that fits says nothing. Otherwise the worst reason, in words:
+            // "Warning: this load exceeds the recommended weight limit", "Overload: too heavy".
+            verdict: verdict && verdict.verdict !== 'fits'
+                ? { level: verdict.verdict, text: `${verdict.verdict === 'overload' ? 'Overload' : 'Warning'}: ${verdict.reasons[0].text}` }
+                : null,
         }
     }
 }

@@ -667,6 +667,9 @@ export class DamageModel {
     this.flat = [false, false, false, false]
     /** Corners punctured since the last drainPops(), for the one-shot bang. */
     this.popped = []
+    /** FEAT-112: the highest tire condition the puncture curve may read — 1 (no cap) on an empty or
+     *  lawful bed; the game sets it from the load each step (src/load-verdict.js tireCondCap). */
+    this.tireCondCap = 1
 
     // Peak rim-core contact FORCE per corner while a strike is in progress; 0 otherwise.
     this._strikePeak = [0, 0, 0, 0]
@@ -1048,9 +1051,11 @@ export class DamageModel {
     // durability multiplier (SM-INV-10) and the wear-speed slider still apply inside wear().
     this.wear(id, dmg, 1)
 
-    // PUNCTURE: the same event, read against the tire rather than the spring.
+    // PUNCTURE: the same event, read against the tire rather than the spring. FEAT-112: an overloaded
+    // bed caps the condition the curve reads (tireCondCap, set by the game from the load's mass) — a
+    // worn tire stays as worn as it is, the load only matters when it is worse than the wear.
     const tireId = TIRE_IDS[corner]
-    if (!this.flat[corner] && peakN >= this.punctureThreshold(this.get(tireId))) {
+    if (!this.flat[corner] && peakN >= this.punctureThreshold(Math.min(this.get(tireId), this.tireCondCap))) {
       this.flat[corner] = true
       this.popped.push(corner)         // drained by the game layer for the bang
     }

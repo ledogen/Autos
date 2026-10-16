@@ -2454,7 +2454,7 @@ export class Map2D {
         const TX = PAD + B.BAR * k + PORT + 12 * k        // text column, right of the portrait
         const fN = `${B.FS * k}px ${MAP_LABEL_FONT}`, fB = `700 ${B.FS * k}px ${MAP_LABEL_FONT}`
         const fS = `600 ${B.FSS * k}px ${MAP_LABEL_FONT}`
-        const H = baseH * k
+        const H = baseH * k + (c?.verdict ? B.LH * k : 0)   // FEAT-112: a load verdict adds one row
         const bonusH = c?.bonus ? B.BONUS * k : 0
         const M = 12 * k                                  // margin from the sheet's edge
 
@@ -2550,6 +2550,9 @@ export class Map2D {
         else if (c.family === 'papers') this._drawRuns(ctx, [{ t: 'planning the route…' }], inL, ty, fN, fB, '#777')
         ty += LH
         this._drawRuns(ctx, [{ t: c.terms.join('  ·  ') }], inL, ty, fN, fB, '#444')
+        // FEAT-112: the load verdict — amber for a warning, red for an overload (which cannot be taken).
+        if (c.verdict) this._drawRuns(ctx, [{ t: c.verdict.text, b: true }], inL, ty + LH, fN, fB,
+                                      c.verdict.level === 'overload' ? '#b3261e' : '#a06800')
 
         // ── the bonus form, tacked onto the bottom ──
         if (c.bonus) {
