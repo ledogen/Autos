@@ -25,7 +25,7 @@ import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
-import { validatePlayArea, playAreaStreamRadius, STORY_TILE_M, STORY_GRID } from '../src/world-validate.js'
+import { validateArea, gridArea, playAreaStreamRadius, STORY_TILE_M, STORY_GRID } from '../src/world-validate.js'
 
 const argv = process.argv.slice(2)
 const VERBOSE = argv.includes('--verbose')
@@ -45,7 +45,7 @@ for (const seed of SEEDS) {
   const road = new RoadSystem(parseWorldSeed(seed), P)
   road.setRadius(playAreaStreamRadius())
   road.update(new THREE.Vector3(CENTRE.x, 0, CENTRE.z))
-  const r = validatePlayArea(road, CENTRE, P)
+  const r = validateArea(road, CENTRE, gridArea(), P)
   const secs = ((Date.now() - t0) / 1000).toFixed(0)
 
   const pc = (v) => `${(100 * v).toFixed(2)} %`

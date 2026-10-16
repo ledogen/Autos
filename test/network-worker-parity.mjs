@@ -223,8 +223,7 @@ for (const [wi, c] of CENTERS.entries()) {
     rs.setRouteDispatcher((jobs, epoch) => {
         rs.ingestRoutedConnections(jobs.map((job) => {
             const res = routeEdgeV2(job, fields.hTrunc, fields.hCoarse)
-            return { key: job.key, prims: res.cl.primitives, v2Dirs: !!job.dirs,
-                     pinFallback: !!(res.pinRequested && res.feasible && !res.usedPin) }
+            return { key: job.key, prims: res.cl.primitives, v2Dirs: !!job.dirs }
         }), epoch)
     })
     rs.setRadius(R)

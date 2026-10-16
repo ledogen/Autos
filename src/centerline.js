@@ -28,11 +28,6 @@ import * as THREE from 'three'
 
 const EPS_K = 1e-9   // |κ| below this ⇒ treat as straight (closed-form line, avoids 1/κ blowup)
 
-// Type tag from the curvature — purely descriptive (sampling branches on κ, not on type).
-function primType(kappa) {
-    return Math.abs(kappa) < EPS_K ? 'line' : 'arc'
-}
-
 // Pose along a constant-κ primitive (line or arc) at local arc length ls ∈ [0, L].
 function constKappaPose(x0, z0, theta0, k, ls) {
     if (Math.abs(k) < EPS_K) {
@@ -48,11 +43,11 @@ function constKappaPose(x0, z0, theta0, k, ls) {
 
 /**
  * makePrimitive — one centerline segment of CONSTANT curvature.
- * @returns {object} { type, x0, z0, theta0, length, kappa, x1, z1, theta1 }
+ * @returns {object} { x0, z0, theta0, length, kappa, x1, z1, theta1 }
  */
 export function makePrimitive(x0, z0, theta0, length, kappa) {
     const e = constKappaPose(x0, z0, theta0, kappa, length)
-    return { type: primType(kappa), x0, z0, theta0, length, kappa, x1: e.x, z1: e.z, theta1: e.theta }
+    return { x0, z0, theta0, length, kappa, x1: e.x, z1: e.z, theta1: e.theta }
 }
 
 // Pose {x,z,theta,kappa} at local arc length ls within primitive p (ls clamped to [0,L]).
@@ -106,7 +101,6 @@ export class CenterlineCurve {
         const t = (u - f[lo]) / span
         return y[lo] + t * (y[hiIdx] - y[lo])
     }
-    getPoint(u, target = new THREE.Vector3()) { return this.getPointAt(u, target) }
     getPointAt(u, target = new THREE.Vector3()) {
         const s = this._s0 + u * (this._s1 - this._s0)
         const p = this._cl.pointAt(s)
@@ -118,7 +112,6 @@ export class CenterlineCurve {
         const sgn = this._s1 >= this._s0 ? 1 : -1
         return target.set(sgn * t.x, 0, sgn * t.z).normalize()
     }
-    getTangent(u, target) { return this.getTangentAt(u, target) }
     getSpacedPoints(n = 5) {
         const out = []
         for (let i = 0; i <= n; i++) out.push(this.getPointAt(i / n))

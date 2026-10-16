@@ -875,8 +875,6 @@ export class RoadMeshSystem {
             for (let _i = 0; _i < N; _i++) points.push(spline.getPointAt(_i / (N - 1)))
             _bSample += performance.now() - _ptSamp
 
-            if (points.length < 2) continue
-
             // Extract runKey for deterministic road quality per-run (D-03).
             // seg.runKey is set by road.js _sliceNetwork when it stores slice records.
             // Fall back to empty string if not present (backwards-compatible).

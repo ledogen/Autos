@@ -12,7 +12,7 @@
 //     → rebuild the seeded coarse noise + both height closures. NEVER the whole RANGER_PARAMS
 //       (functions/typed arrays throw DataCloneError — project_terrain_worker_constraints).
 //   {type:'route', client, jobs, epoch}
-//     → {routed:true, client, epoch, results:[{key, prims, v2Dirs, pinFallback}]}
+//     → {routed:true, client, epoch, results:[{key, prims, v2Dirs}]}
 //     jobs are RoadSystem._v2EdgeSpec objects: {key, ax, az, yA, bx, bz, yB, margin,
 //     blockedDiscs, dirs}. prims:null = raced ahead of 'init' (client re-warms the key later).
 //     prims:null + failed:true = the search threw; the client stops warming and builds, so the
@@ -56,7 +56,6 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
                 key: job.key,
                 prims: res.cl.primitives,
                 v2Dirs: !!job.dirs,
-                pinFallback: !!(res.pinRequested && res.feasible && !res.usedPin),
             })
         }
         self.postMessage({ routed: true, client: d.client, epoch: d.epoch, results })

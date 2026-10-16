@@ -24,8 +24,8 @@
  * rejected per instance).
  */
 export class RoadRouteWorker {
-    constructor(size) {
-        const n = size ?? RoadRouteWorker.defaultPoolSize()
+    constructor() {
+        const n = RoadRouteWorker.defaultPoolSize()
         this._clients = new Map()   // clientId -> RoadSystem
         this._queue    = []         // [{ client, job, epoch }]
         this._inflight = new Array(n).fill(0)
@@ -95,11 +95,5 @@ export class RoadRouteWorker {
             this._inflight[wi]++
             this._workers[wi].postMessage({ type: 'route', client, jobs: [job], epoch })
         }
-    }
-
-    dispose() {
-        for (const w of this._workers) w.terminate()
-        this._workers.length = 0
-        this._clients.clear()
     }
 }

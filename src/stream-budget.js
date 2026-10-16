@@ -26,15 +26,12 @@ export class StreamBudget {
   constructor() {
     this._end = 0
     this._otherMs = FRAME_MS / 2   // smoothed non-streaming CPU per frame
-    this.ms = MIN_MS               // this frame's budget (read by the HUD/harness only)
-    this.fill = false
   }
 
   /** Open this frame's budget. Call right before the first streaming system runs. */
   begin(fill) {
-    this.fill = fill
-    this.ms = fill ? FILL_MS : Math.max(MIN_MS, Math.min(MAX_MS, FRAME_MS - MARGIN_MS - this._otherMs))
-    this._end = performance.now() + this.ms
+    const ms = fill ? FILL_MS : Math.max(MIN_MS, Math.min(MAX_MS, FRAME_MS - MARGIN_MS - this._otherMs))
+    this._end = performance.now() + ms
   }
 
   /** Absolute performance.now() deadline for a system whose own ceiling is `capMs`. */
