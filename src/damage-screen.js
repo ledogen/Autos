@@ -1,7 +1,7 @@
 /**
  * FEAT-90 — the player's damage screen: a top-down pictogram of the truck, every damageable part
- * shaded by its condition (green = sound, red = broken), plus the left-edge icon that tells you
- * when it is worth a look.
+ * shaded by its condition band (see BANDS), a list of the five worst parts beside it, plus the
+ * left-edge icon that tells you when it is worth a look.
  *
  * This is the PLAYER surface. The diagnostic text readout (damage-hud.js) is the development
  * instrument, and it now lives behind the debug panel's Damage folder.
@@ -19,16 +19,20 @@
  *   - What counts as a damage event: a landed impact (main.js calls alert()), a puncture, or any
  *     part losing more than DROP_ALERT in one 10 Hz sample. Slow wear (tread, filter, brakes) never
  *     loses that much in a tenth of a second, so driving alone never flashes it.
- *   - Hover a part to see its name and health. The ? toggle augments the same hover card with
- *     what that damage DOES, rather than opening a separate page.
+ *   - Hover a part to see its name, health, and what that damage DOES. The explanation is always on
+ *     (owner, 2026-10-15): the screen exists to share information, so it is not hidden behind a toggle.
  *   - Springs and dampers are drawn differently: a zigzag coil and a piston.
+ *   - Quiet when fine, loud when broken (owner, 2026-10-15): a sound part is drawn in a muted tone,
+ *     and only a part below the top band takes a saturated colour, so damage stands out on its own.
+ *     Colour is STEPPED into bands, not a gradient. The exact number lives in the list and the card.
+ *   - A symptom line ("vulnerable to punctures under 50%") appears only once a part has actually
+ *     crossed the threshold that causes it, so a healthy truck shows no warnings at all.
  *
  * Imports nothing from the physics stack. It reads the DamageModel (conditions, flat flags, the
  * alignment/runout readouts) and vehicleState.parked, and writes only to the DOM.
  */
 
 import { TRACKS, DAMAGE_PARAMS } from './damage.js'
-import { conditionColor } from './damage-hud.js'
 import { PARK_BADGE, keycap } from './park-badge.js'
 
 const REFRESH_S = 0.1      // 10 Hz — condition moves on the scale of minutes
@@ -39,7 +43,7 @@ const HINT_S = 2.5         // how long the "park first" hint stays up after V wh
 const STOPPED_MS = 0.5, MOVING_MS = 1.0
 const CORNERS = ['FL', 'FR', 'RL', 'RR']   // wheel index 0..3 (GLOSSARY.md §Wheel Index)
 
-/** One line per class: what the damage does to the truck. Shown in the hover card while ? is on. */
+/** One line per class: what the damage does to the truck. Shown in the hover card. */
 const CONSEQUENCE = {
   armor:      'Soaks up hits for the parts behind it. A battered panel lets more of the next hit through.',
   tire:       'Grip holds until the tread is nearly gone, then falls away fast. A worn tire punctures more easily.',
@@ -50,8 +54,73 @@ const CONSEQUENCE = {
   engine:     'Less power. Most of the loss arrives in the last fifth of its life.',
   filter:     'A clogged filter wears the engine out faster. Cheap to replace.',
   radiator:   'Takes front-end hits. Nothing more yet: the engine does not overheat.',
-  headlights: 'Takes front-end hits. Nothing more yet: a broken lamp still lights the road.',
+  headlights: 'A worn lamp dims, down to 40% when broken. Below half health it flickers over bumps.',
   alignment:  'Knocked-out toe and camber make the truck pull to one side.',
+}
+
+/**
+ * Condition bands, best first: a part takes the colour of the first band whose floor it is at or
+ * above. 30% sits on the spring/damper/brake knee and 50% on the puncture and lamp thresholds, so
+ * a band change means the truck has started doing something new. The top band is deliberately
+ * muted: a sound part should not compete with a damaged one for the eye.
+ */
+const BANDS = [
+  { min: 0.9, color: '#5f7a6b' },   // sound — desaturated grey-green
+  { min: 0.5, color: '#d9c04a' },   // worn
+  { min: 0.3, color: '#e8893a' },   // damaged
+  { min: 0,   color: '#e5574a' },   // failing
+]
+const bandColor = (c) => BANDS.find(b => c >= b.min).color
+/** Condition as the eye should read it: a flat tire is failing however much tread it has left. */
+const shownCond = (m, id) => (TRACKS[id].cls === 'tire' && m.flat[TRACKS[id].wheel] ? 0 : m.get(id))
+const LIST_ROWS = 5
+
+/**
+ * What a part is doing to the truck RIGHT NOW: one line per active symptom, none while it is above
+ * every threshold. Thresholds are read live from DAMAGE_PARAMS, so the debug sliders keep the text
+ * honest.
+ */
+function symptoms (m, id) {
+  const t = TRACKS[id], c = m.get(id), P = DAMAGE_PARAMS
+  const pct = (x) => Math.round(x * 100) + '%'
+  const out = []
+  switch (t.cls) {
+    case 'tire': {
+      if (m.flat[t.wheel]) out.push('Flat')
+      else if (c < P.punctureKneeC) out.push(`Punctures easily under ${pct(P.punctureKneeC)}`)
+      else if (c < P.punctureCond) out.push(`Vulnerable to punctures under ${pct(P.punctureCond)}`)
+      const mu = m.tireMuScale(t.wheel)
+      if (mu < 0.95) out.push(`Grip down to ${pct(mu)} of new`)
+      break
+    }
+    case 'wheel': {
+      const mm = m.wheelRunout(t.wheel) * 1000
+      if (mm >= 0.5) out.push(`${mm.toFixed(1)} mm out of round`)
+      break
+    }
+    case 'alignment': {
+      const cam = m.camberOffsetDeg[t.wheel], toe = m.toeOffsetDeg[t.wheel]
+      if (Math.abs(cam) >= 0.05 || Math.abs(toe) >= 0.05) {
+        const sg = (v) => (v >= 0 ? '+' : '') + v.toFixed(1)
+        out.push(`Camber ${sg(cam)}° · toe ${sg(toe)}°`)
+      }
+      break
+    }
+    case 'spring': if (c < P.springKnee) out.push(`Sagging, bottoms out sooner under ${pct(P.springKnee)}`); break
+    case 'damper': if (c < P.damperKnee) out.push(`Keeps bouncing after bumps under ${pct(P.damperKnee)}`); break
+    case 'brake':  if (c < P.brakeKnee)  out.push(`Stopping distance growing under ${pct(P.brakeKnee)}`); break
+    case 'engine': if (c < P.engineKnee) out.push(`Losing power fast under ${pct(P.engineKnee)}`); break
+    case 'filter': if (c < P.filterKnee) out.push(`Wearing out the engine under ${pct(P.filterKnee)}`); break
+    case 'headlights':
+      if (c < P.headlightFlickerCond) out.push(`Flickers over bumps under ${pct(P.headlightFlickerCond)}`)
+      break
+    case 'armor':
+      // Fatal speed scales with this panel's condition (fatalMphBare..fatalMphFull). Only worth
+      // saying once the panel has left the sound band.
+      if (P.fatalEnabled && c < BANDS[0].min) out.push(`A crash over ${Math.round(P.fatalMphBare + (P.fatalMphFull - P.fatalMphBare) * c)} mph here is fatal`)
+      break
+  }
+  return out
 }
 
 // ── Pictogram geometry ──────────────────────────────────────────────────────────────────────────
@@ -60,15 +129,17 @@ const CONSEQUENCE = {
 //   body 1.77 m wide × 4.76 m long → 100 × 267 (aspect 2.7, same as the truck)
 //   front overhang 0.80 m, wheelbase 2.83 m, rear overhang 1.14 m → axles at y 65 and 223
 //   tire 0.74 m × 0.235 m → 41 × 14
-// The only liberty is the wheels: they sit just OUTBOARD of the body line instead of under it, so the
-// tire, rim, brake, spring and damper each have room to be pointed at.
+// The liberty is the wheels: they sit OUTBOARD of the body line instead of under it, drawn wider than
+// scale (20, not 14), with the brake caliper in the gap between tire and body. The gap keeps wheel and
+// body visibly separate parts (owner, 2026-10-15), and every corner part has room to be pointed at.
 const CX = 120                            // body centreline; mx() mirrors about it
 const BODY_L = 70, BODY_R = 170           // body side lines
 const FRONT_Y = 20, REAR_Y = 287          // bumper lines
 const AXLE_Y = [65, 223]                  // front, rear
-const TIRE_W = 14, TIRE_H = 41
-const TIRE_X = 52                         // left tire's outer edge; 4 units clear of the body line
-const VIEWBOX = '18 8 204 290'            // trimmed to the drawing, alignment text included
+const TIRE_W = 20, TIRE_H = 41
+const TIRE_X = 34                         // left tire's outer edge; its inner edge is 16 clear of the body line
+const BRAKE_X = 59, BRAKE_W = 5           // left caliper, centred in the tire-to-body gap
+const VIEWBOX = '14 8 212 290'            // trimmed to the drawing, alignment text included
 const NEUTRAL = '#56616c'                 // non-damageable linework (cab, bed, hood)
 
 /** Mirror an x coordinate to the right side. */
@@ -118,10 +189,12 @@ function buildPictogram () {
   s.push(P('headlightR', `<rect x="143" y="31" width="17" height="7" rx="2.5"/>`))
   s.push(P('radiator', `<rect x="102" y="30" width="36" height="9" rx="1.5"/>`))
   s.push(`<path class="ds-detail" d="M108,31.5 V37.5 M114,31.5 V37.5 M120,31.5 V37.5 M126,31.5 V37.5 M132,31.5 V37.5"/>`)
-  s.push(P('engine', `<rect x="106" y="47" width="28" height="42" rx="3"/>`))
-  s.push(`<g class="ds-detail-dot"><circle cx="120" cy="57" r="3"/><circle cx="120" cy="68" r="3"/><circle cx="120" cy="79" r="3"/></g>`)
-  // Air filter on the centreline between engine and windshield, clear of the alignment text.
-  s.push(P('airFilter', `<circle cx="120" cy="98" r="5"/>`))
+  // Air filter ahead of the engine: a cone filter in plan, narrow closed end forward, its neck
+  // running back into the intake. Pleat lines in the dark detail colour, like the grille.
+  s.push(P('airFilter', `<path d="M114,43 L126,43 L131,55 L124,55 L124,59 L116,59 L116,55 L109,55 Z"/>`))
+  s.push(`<path class="ds-detail" d="M117,44.5 L115,53.5 M120,44.5 V53.5 M123,44.5 L125,53.5"/>`)
+  s.push(P('engine', `<rect x="106" y="62" width="28" height="40" rx="3"/>`))
+  s.push(`<g class="ds-detail-dot"><circle cx="120" cy="72" r="3"/><circle cx="120" cy="82" r="3"/><circle cx="120" cy="92" r="3"/></g>`)
 
   // Corners: tire (outline), wheel (rim), and the alignment readout as text under the wheel.
   for (let c = 0; c < 4; c++) {
@@ -129,7 +202,7 @@ function buildPictogram () {
     const y = AXLE_Y[c < 2 ? 0 : 1]
     const tx = right ? mx(TIRE_X) - TIRE_W : TIRE_X
     s.push(P(`tire${CORNERS[c]}`, `<rect x="${tx}" y="${y - TIRE_H / 2}" width="${TIRE_W}" height="${TIRE_H}" rx="4.5"/>`, 'stroke'))
-    s.push(P(`wheel${CORNERS[c]}`, `<rect x="${tx + 4}" y="${y - 10}" width="6" height="20" rx="2"/>`))
+    s.push(P(`wheel${CORNERS[c]}`, `<rect x="${tx + (TIRE_W - 8) / 2}" y="${y - 10}" width="8" height="20" rx="2"/>`))
     // Anchored on the tire's INNER edge and growing outboard, so it never crosses the body line.
     const ty = y + TIRE_H / 2 + 9
     const ax = right ? tx : tx + TIRE_W
@@ -138,17 +211,17 @@ function buildPictogram () {
       [right ? ax : ax - 36, ty - 7, 36, 16]))
   }
 
-  // Axles: brake caliper, coil spring, damper, inboard of each wheel. Left and right share one
-  // track per axle.
+  // Axles: brake caliper in the gap outboard of the body; coil spring and damper inboard of it.
+  // Left and right share one track per axle.
   for (let a = 0; a < 2; a++) {
     const y = AXLE_Y[a]
     const sfx = a === 0 ? 'Front' : 'Rear'
     for (const right of [false, true]) {
       const X = (x) => (right ? mx(x) : x)
-      s.push(P(`brake${sfx}`, `<rect x="${right ? mx(80) : 75}" y="${y - 8}" width="5" height="16" rx="2"/>`))
-      s.push(P(`spring${sfx}`, `<path d="${springPath(X(87), y)}"/>`, 'stroke', [X(87) - 6, y - 13, 12, 26]))
+      s.push(P(`brake${sfx}`, `<rect x="${right ? mx(BRAKE_X + BRAKE_W) : BRAKE_X}" y="${y - 8}" width="${BRAKE_W}" height="16" rx="2"/>`))
+      s.push(P(`spring${sfx}`, `<path d="${springPath(X(82), y)}"/>`, 'stroke', [X(82) - 6, y - 13, 12, 26]))
       // Damper: a cylinder body with a rod and an end cap, so it never reads as a spring.
-      const bx = right ? mx(100) : 94
+      const bx = right ? mx(96) : 90
       s.push(P(`damper${sfx}`,
         `<path d="M${bx},${y - 12} h6 v14 h-6 Z M${bx + 3},${y + 2} V${y + 10} M${bx},${y + 11} h6"/>`,
         'stroke', [bx - 2, y - 13, 10, 26]))
@@ -158,12 +231,21 @@ function buildPictogram () {
   return `<svg class="ds-svg" viewBox="${VIEWBOX}" xmlns="http://www.w3.org/2000/svg">${s[0]}${hits.join('')}${s.slice(1).join('')}</svg>`
 }
 
-/** The alignment readout under a wheel: "aligned", or the bent camber and toe on two lines. */
+/** The alignment readout under a wheel: nothing while aligned, else the bent camber and toe on two lines. */
 function alignText (m, wheel, x) {
   const cam = m.camberOffsetDeg[wheel], toe = m.toeOffsetDeg[wheel]
-  if (Math.abs(cam) < 0.05 && Math.abs(toe) < 0.05) return 'aligned'
+  if (Math.abs(cam) < 0.05 && Math.abs(toe) < 0.05) return ''
   const sg = (v) => (v >= 0 ? '+' : '\u2212') + Math.abs(v).toFixed(1) + '\u00b0'
   return `cam ${sg(cam)}<tspan x="${x}" dy="7.5">toe ${sg(toe)}</tspan>`
+}
+
+/** The stepped legend: one segment per band, worst on the left, ticks at the band floors. */
+function buildLegend () {
+  const bands = BANDS.slice().reverse()
+  const top = (i) => (i + 1 < bands.length ? bands[i + 1].min : 1)
+  const seg = bands.map((b, i) => `<span style="flex:${top(i) - b.min};background:${b.color}"></span>`).join('')
+  const ticks = bands.slice(1).map(b => `<span style="left:${b.min * 100}%">${Math.round(b.min * 100)}</span>`).join('')
+  return `<span>0%</span><div class="ds-scale"><div class="ds-bar">${seg}</div><div class="ds-ticks">${ticks}</div></div><span>100%</span>`
 }
 
 /** The left-edge icon: the same truck, reduced to body, wheels and powertrain. */
@@ -210,7 +292,6 @@ const CSS = `
 #dmg-screen .ds-btn { width: 24px; height: 24px; border-radius: 50%; border: 1px solid #56616c;
   background: transparent; color: #c8d2dc; font: bold 13px monospace; cursor: pointer; padding: 0; }
 #dmg-screen .ds-btn:hover { border-color: #c8d2dc; }
-#dmg-screen .ds-btn.on { background: #c8d2dc; color: #0e1114; border-color: #c8d2dc; }
 #dmg-screen .ds-svg { height: min(60vh, 460px); width: auto; display: block; margin: 4px 0; }
 #dmg-screen .ds-part { cursor: help; transition: filter 0.15s; }
 #dmg-screen .ds-part[data-paint="stroke"] { fill: none; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
@@ -223,11 +304,23 @@ const CSS = `
 #dmg-screen .ds-hit { fill: transparent; cursor: help; }
 #dmg-screen .ds-detail { stroke: #0e1114; stroke-width: 1.4; pointer-events: none; }
 #dmg-screen .ds-detail-dot { fill: #0e1114; pointer-events: none; }
-#dmg-screen .ds-foot { width: 100%; display: flex; align-items: center; gap: 8px; margin-top: 6px;
-  font-size: 11px; color: #9fb3c8; }
-#dmg-screen .ds-ramp { flex: 1; height: 5px; border-radius: 3px;
-  background: linear-gradient(90deg, hsl(0,70%,45%), hsl(60,70%,45%), hsl(120,70%,45%)); }
-#dmg-screen .ds-note { margin-top: 6px; font-size: 11px; color: #6f7c88; }
+#dmg-screen .ds-body { display: flex; align-items: stretch; gap: 18px; }
+#dmg-screen .ds-side { width: 210px; display: flex; flex-direction: column; padding-top: 10px; }
+#dmg-screen .ds-sub { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #6f7c88;
+  margin-bottom: 6px; }
+#dmg-screen .ds-row { padding: 5px 7px; border-radius: 4px; border-left: 3px solid; cursor: help;
+  margin-bottom: 3px; background: rgba(255,255,255,0.03); }
+#dmg-screen .ds-row:hover, #dmg-screen .ds-row.hot { background: rgba(255,255,255,0.10); }
+#dmg-screen .ds-row > * { pointer-events: none; }
+#dmg-screen .dr-top { display: flex; justify-content: space-between; font-size: 12px; color: #c8d2dc; }
+#dmg-screen .dr-pct { font-weight: bold; }
+#dmg-screen .dr-sym { font-size: 11px; line-height: 1.35; color: #f0a08f; margin-top: 2px; }
+#dmg-screen .ds-legend { margin-top: auto; display: flex; align-items: flex-start; gap: 6px;
+  font-size: 10px; line-height: 6px; color: #9fb3c8; }
+#dmg-screen .ds-scale { flex: 1; }
+#dmg-screen .ds-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 1px; }
+#dmg-screen .ds-ticks { position: relative; height: 12px; margin-top: 5px; color: #6f7c88; }
+#dmg-screen .ds-ticks span { position: absolute; transform: translateX(-50%); }
 #dmg-tip { display: none; position: fixed; z-index: 96; pointer-events: none; max-width: 260px;
   background: rgba(10,12,14,0.95); border: 1px solid #3a4450; border-radius: 4px; padding: 6px 9px;
   font: 12px/1.45 monospace; color: #e6ecf2; }
@@ -250,7 +343,6 @@ export class DamageScreen {
     this.isSuppressed = isSuppressed
     this.isOpen = false
     this.alerting = false
-    this.help = false
     this._acc = REFRESH_S
     this._hintT = 0
     this._hover = null
@@ -282,21 +374,16 @@ export class DamageScreen {
     this.screen.innerHTML =
       `<div class="ds-card">`
       + `<div class="ds-head"><span class="ds-title">Vehicle condition</span>`
-      + `<button class="ds-btn" data-act="help" title="what does the damage do?">?</button>`
       + `<button class="ds-btn" data-act="close" title="close (V / Esc)">&times;</button></div>`
-      + buildPictogram()
-      + `<div class="ds-foot"><span>broken</span><span class="ds-ramp"></span><span>sound</span></div>`
-      + `<div class="ds-note">hover a part · ? adds what the damage does</div>`
+      + `<div class="ds-body">${buildPictogram()}`
+      + `<div class="ds-side"><div class="ds-sub">Worst parts</div><div class="ds-list"></div>`
+      + `<div class="ds-legend">${buildLegend()}</div></div></div>`
       + `</div>`
     document.body.appendChild(this.screen)
-    this.parts = [...this.screen.querySelectorAll('[data-track]')]
-    this.helpBtn = this.screen.querySelector('[data-act="help"]')
+    this.parts = [...this.screen.querySelectorAll('[data-track]')]   // pictogram only: the list is still empty
+    this.listEl = this.screen.querySelector('.ds-list')
+    this._listKey = ''
     for (const b of this.screen.querySelectorAll('.ds-btn')) b.addEventListener('mousedown', (e) => e.preventDefault())
-    this.helpBtn.addEventListener('click', () => {
-      this.help = !this.help
-      this.helpBtn.classList.toggle('on', this.help)
-      if (this._hover) this._renderTip(this._hover)
-    })
     this.screen.querySelector('[data-act="close"]').addEventListener('click', () => this.close())
     this.screen.addEventListener('click', (e) => { if (e.target === this.screen) this.close() })
 
@@ -305,7 +392,8 @@ export class DamageScreen {
     this.tip.id = 'dmg-tip'
     document.body.appendChild(this.tip)
     this.screen.addEventListener('mousemove', (e) => {
-      const id = e.target?.dataset?.track || null
+      // closest(): a list row and an SVG part both carry data-track, so hovering either lights both.
+      const id = e.target?.closest?.('[data-track]')?.dataset.track || null
       if (id !== this._hover) this._setHover(id)
       if (id) {
         const w = this.tip.offsetWidth, h = this.tip.offsetHeight
@@ -417,7 +505,7 @@ export class DamageScreen {
         const k = +a[1]
         c = m.flat[k] ? 0 : min(`tire${CORNERS[k]}`, `wheel${CORNERS[k]}`)
       }
-      const col = conditionColor(c)
+      const col = bandColor(c)
       if (a === 'armor') el.style.stroke = col
       else el.style.fill = col
     }
@@ -429,13 +517,31 @@ export class DamageScreen {
       const paint = el.dataset.paint
       if (paint === 'none') continue
       const id = el.dataset.track
-      const col = conditionColor(m.get(id))
+      const col = bandColor(shownCond(m, id))
       if (paint === 'stroke') el.style.stroke = col
       else el.style.fill = col
       const t = TRACKS[id]
       if (t.cls === 'tire') el.classList.toggle('flat', !!m.flat[t.wheel])
       else if (t.cls === 'alignment') el.innerHTML = alignText(m, t.wheel, el.getAttribute('x'))
     }
+    this._renderList()
+  }
+
+  /** The five worst parts, a flat tire counting as zero. Rebuilt only when what it shows changes. */
+  _renderList () {
+    const m = this.model
+    const rows = Object.keys(TRACKS).sort((a, b) => shownCond(m, a) - shownCond(m, b)).slice(0, LIST_ROWS)
+      .map(id => ({ id, c: m.get(id), sym: symptoms(m, id) }))
+    const key = rows.map(r => `${r.id}:${Math.round(r.c * 100)}:${r.sym.join('|')}`).join(',')
+    if (key === this._listKey) return
+    this._listKey = key
+    this.listEl.innerHTML = rows.map(({ id, c, sym }) => {
+      const col = bandColor(shownCond(m, id))
+      return `<div class="ds-row${id === this._hover ? ' hot' : ''}" data-track="${id}" style="border-left-color:${col}">`
+        + `<div class="dr-top"><span>${TRACKS[id].label}</span><span class="dr-pct" style="color:${col}">${Math.round(c * 100)}%</span></div>`
+        + sym.map(l => `<div class="dr-sym">${l}</div>`).join('')
+        + `</div>`
+    }).join('')
   }
 
   /**
@@ -466,10 +572,11 @@ export class DamageScreen {
   }
 
   _setHover (id) {
-    if (this._hover) for (const el of this.parts) if (el.dataset.track === this._hover) el.classList.remove('hot')
+    const all = () => [...this.parts, ...this.listEl.children]
+    if (this._hover) for (const el of all()) if (el.dataset.track === this._hover) el.classList.remove('hot')
     this._hover = id
     if (!id) { this.tip.style.display = 'none'; return }
-    for (const el of this.parts) if (el.dataset.track === id) el.classList.add('hot')
+    for (const el of all()) if (el.dataset.track === id) el.classList.add('hot')
     this._renderTip(id)
     this.tip.style.display = 'block'
   }
@@ -478,22 +585,10 @@ export class DamageScreen {
     const m = this.model
     const t = TRACKS[id]
     const c = m.get(id)
-    let extra = ''
-    if (t.cls === 'tire' && m.flat[t.wheel]) extra = 'FLAT'
-    else if (t.cls === 'wheel') {
-      const mm = m.wheelRunout(t.wheel) * 1000
-      if (mm >= 0.5) extra = `${mm.toFixed(1)} mm out of round`
-    } else if (t.cls === 'alignment') {
-      const cam = m.camberOffsetDeg[t.wheel], toe = m.toeOffsetDeg[t.wheel]
-      if (Math.abs(cam) >= 0.05 || Math.abs(toe) >= 0.05) {
-        const sg = (v) => (v >= 0 ? '+' : '') + v.toFixed(1)
-        extra = `camber ${sg(cam)}° · toe ${sg(toe)}°`
-      }
-    }
     this.tip.innerHTML =
       `<div class="dt-name">${t.label}</div>`
-      + `<div class="dt-pct" style="color:${conditionColor(c)}">${Math.round(c * 100)}%</div>`
-      + (extra ? `<div class="dt-extra">${extra}</div>` : '')
-      + (this.help ? `<div class="dt-why">${CONSEQUENCE[t.cls] || ''}</div>` : '')
+      + `<div class="dt-pct" style="color:${bandColor(shownCond(m, id))}">${Math.round(c * 100)}%</div>`
+      + symptoms(m, id).map(l => `<div class="dt-extra">${l}</div>`).join('')
+      + `<div class="dt-why">${CONSEQUENCE[t.cls] || ''}</div>`
   }
 }

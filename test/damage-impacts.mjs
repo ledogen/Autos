@@ -140,5 +140,22 @@ console.log('\n§8 impulse, not speed: a glancing hit prices as the small hit it
   ok(took < 0.25, 'and it is nowhere near the 100% a square 60 mph hit costs')
 }
 
+console.log('§ a damaged headlight flickers, and only below its threshold')
+{
+  const d = new DamageModel({ params: {} }), par = {}
+  const C = D.headlightFlickerCond
+  d.set('headlightL', C); d.set('headlightR', C * 0.5); d.publish(par)
+  ok(par._headlightFlicker[0] === 0, `a lamp at ${C * 100}% still burns steady`)
+  ok(Math.abs(par._headlightFlicker[1] - 0.5) < 1e-9, '...halfway to zero it flickers at half strength, and per side')
+  d.set('headlightR', 0); d.publish(par)
+  ok(par._headlightBrightness[1] === 0, 'a lamp at 0% is dead — fully off')
+  d.set('headlightR', 1e-6); d.publish(par)
+  ok(par._headlightFlicker[1] > 0.99 && Math.abs(par._headlightBrightness[1] - D.headlightDimFloor) < 1e-5,
+    `...but a hair above zero it flickers at its worst and still burns at ${D.headlightDimFloor * 100}%`)
+  d.set('headlightL', 1); d.set('headlightR', 0.5); d.publish(par)
+  ok(par._headlightBrightness[0] === 1 && Math.abs(par._headlightBrightness[1] - (1 + D.headlightDimFloor) / 2) < 1e-9,
+    `a worn lamp dims linearly toward ${D.headlightDimFloor * 100}% (full lamp 100%, half-worn ${((1 + D.headlightDimFloor) / 2 * 100).toFixed(0)}%)`)
+}
+
 console.log(fail ? '\nFAIL — the impact model has drifted from the ratified calibration' : '\nPASS — impact model matches the ratified calibration')
 process.exit(fail)

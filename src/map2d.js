@@ -664,6 +664,7 @@ export class Map2D {
     // and every rebuild.
     setWaterNoGo(noGoFn, discsFn) {
         this._waterNoGoFns = [noGoFn, discsFn]
+        this._bgDirty = true   // the blue plate is read off this water — see show()
         if (this._road) this._road.setWaterNoGo(noGoFn, discsFn)
     }
 
@@ -675,7 +676,9 @@ export class Map2D {
         if (this._open) return
         this._open = true
         this._canvas.style.display = 'block'
-        this._resize()
+        // Resize only when the window actually changed: assigning canvas.width wipes the cached
+        // background even at the same size, and _resize marks it dirty for exactly that case.
+        if (this._sizeStale()) this._resize()
 
         // Rebuild the map's RoadSystem only when the seed or a road param actually changed (so the
         // tool always reflects the graph knobs being validated) — otherwise REUSE
@@ -703,7 +706,14 @@ export class Map2D {
         this._canvas.addEventListener('dblclick', this._onDbl)
         this._canvas.addEventListener('mouseleave', this._onLeave)
         window.addEventListener('keydown', this._onKey)   // FEAT-67: Q / E cycle offers
-        this._bgDirty = true
+        // NOT marking the background dirty here. A reopen with nothing changed blits the bitmap
+        // left from the last open: repainting it was the whole open hitch (measured 2026-10-15,
+        // dpr 2: ~100 ms free roam, ~300 ms story — _paintGround's cover raster, not the network).
+        // Everything the bitmap depends on dirties it at the source: pan/zoom (frameBounds, the
+        // gesture debounce), the network (_pump), the world (_buildRoad), water (setWaterNoGo)
+        // and the window size (_resize). The view check below catches a close mid-gesture, where
+        // hide() cancelled the settle timer before it could ask for the sharp redraw.
+        if (this._bgPanX !== this._panX || this._bgPanZ !== this._panZ || this._bgZoom !== this._zoom) this._bgDirty = true
     }
 
     /**
@@ -863,6 +873,7 @@ export class Map2D {
         this._streamFull = false
         this._streamStep = 0
         this._regionFrozen = null   // BUG-68: a new seed / road params is a new world to freeze
+        this._bgDirty = true        // the cached sheet shows the old world — see show()
         // FEAT-17: re-apply the water no-go so the fresh instance routes around ponds like play does.
         if (this._waterNoGoFns) this._road.setWaterNoGo(this._waterNoGoFns[0], this._waterNoGoFns[1])
         // PERF-30: register with the network-Worker client (whole builds off-thread — see _pump).
@@ -1030,6 +1041,12 @@ export class Map2D {
     _sx(wx) { return (wx - this._panX) * this._zoom + this._sheetRect.cx }
     _sy(wz) { return (wz - this._panZ) * this._zoom + this._sheetRect.cy }
 
+    _sizeStale() {
+        const dpr = window.devicePixelRatio || 1
+        return this._canvas.width !== Math.round(window.innerWidth * dpr)
+            || this._canvas.height !== Math.round(window.innerHeight * dpr)
+    }
+
     _resize() {
         const dpr = window.devicePixelRatio || 1
         const w = window.innerWidth, h = window.innerHeight
@@ -1170,9 +1187,7 @@ export class Map2D {
         this._syncRegionWindow()
         // …and if play has registered more of its region since we copied it, re-take the copy.
         if (this._playOutgrewMap()) this._startStream()
-        const dpr = window.devicePixelRatio || 1
-        if (this._canvas.width !== Math.round(window.innerWidth * dpr)
-            || this._canvas.height !== Math.round(window.innerHeight * dpr)) this._resize()
+        if (this._sizeStale()) this._resize()
         if (this._bgDirty) { this._drawBackground(); this._bgDirty = false }
 
         const ctx = this._ctx

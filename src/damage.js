@@ -372,6 +372,16 @@ export const DAMAGE_PARAMS = {
   fatalMphFull:    100,
   fatalEnabled:    true,
 
+  // ── Headlights ─────────────────────────────────────────────────────────────────────────────
+  // Above this a lamp burns steady. Below it the lamp is a loose connection: it cuts out when the
+  // body is jolted, more often the further it has degraded (vehicle-model.js turns the published
+  // amount and the body's jolt into dropouts). At exactly zero it is dead: see headlightDimFloor.
+  headlightFlickerCond: 0.50,
+  // A worn lamp also dims: brightness falls linearly from 1 at full condition toward this floor as
+  // condition approaches zero, flickering at its worst. At 0% the lamp is DEAD — fully off, lens and
+  // beam (owner, 2026-10-15, reversing the same day's "a broken lamp still burns at the floor").
+  headlightDimFloor:    0.40,
+
   // ── Wheels ─────────────────────────────────────────────────────────────────────────────────
   // A bent wheel is out-of-round, and out-of-round is a REAL thing in the sim (params.wheelRunout,
   // src/suspension.js) rather than a handling penalty invented for damage. Ratified: 0.04 m
@@ -1079,6 +1089,28 @@ export class DamageModel {
     // that slider stays usable on its own as a test tool with damage off.
     const ro = params._wheelRunout || (params._wheelRunout = [0, 0, 0, 0])
     for (let i = 0; i < 4; i++) ro[i] = this.wheelRunout(i, params)
+    // Headlight flicker, left then right: 0 = steady, 1 = worst. Visual only; physics never reads it.
+    const hf = params._headlightFlicker || (params._headlightFlicker = [0, 0])
+    hf[0] = this.headlightFlicker('headlightL')
+    hf[1] = this.headlightFlicker('headlightR')
+    const hb = params._headlightBrightness || (params._headlightBrightness = [1, 1])
+    hb[0] = this.headlightBrightness('headlightL')
+    hb[1] = this.headlightBrightness('headlightR')
+  }
+
+  /** One lamp's brightness multiplier: linear from 1 at full condition toward headlightDimFloor; 0 at 0% (dead). */
+  headlightBrightness (id) {
+    const lo = DAMAGE_PARAMS.headlightDimFloor, c = this.get(id)
+    return c <= 0 ? 0 : lo + (1 - lo) * Math.min(1, c)
+  }
+
+  /**
+   * How badly one lamp flickers: 0 at or above headlightFlickerCond, rising linearly to 1 at zero
+   * condition. Linear, so a lamp just under the threshold drops out only rarely.
+   */
+  headlightFlicker (id) {
+    const cond = DAMAGE_PARAMS.headlightFlickerCond, c = this.get(id)
+    return c >= cond ? 0 : c <= 0 ? 1 : 1 - c / cond
   }
 
   /**

@@ -20,6 +20,8 @@
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
+import { WaterSystem } from '../src/water.js'
+import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 const argv = process.argv.slice(2)
 const pos = argv.filter((a) => !a.startsWith('--'))
@@ -53,6 +55,17 @@ const segX = (ax, az, bx, bz, cx, cz, dx, dz) => {
 }
 
 const road = new RoadSystem(SEED, RANGER_PARAMS)
+// BUG-86: route round ponds exactly as the game does (replay.mjs wiring) — without them this built a
+// different network and reported the owner's pond-triggered capture CLEAN.
+{
+  const { rawHeightWorld } = makeTerrainHeadless(SEED, RANGER_PARAMS, null)
+  const water = new WaterSystem(SEED, RANGER_PARAMS, rawHeightWorld)
+  road.setWaterNoGo((x, z) => water.isRoadNoGo(x, z), (x0, z0, x1, z1) => {
+    const discs = []
+    for (const p of water.pondsNear(x0, z0, x1, z1)) discs.push(p.floorX, p.floorZ, p.radius + p.skirt)
+    return discs
+  })
+}
 road.setRadius(RADIUS)
 road.update(new THREE.Vector3(MX, 0, MZ))
 
