@@ -1,11 +1,11 @@
-// test/stream-carve.mjs — FEAT-18 acceptance gate: stream channels carve terrain; roads bridge them.
+// test/stream-carve.mjs — FEAT-18 acceptance gate: stream channels carve terrain; roads cross them on causeways.
 //
 // Exercises the REAL TerrainSystem.prototype.analyticHeight (fake-`this`, same pattern as
 // carve-mesh-smoothness.mjs) with the water carve injected the way main.js wires it, over the REAL
 // pond-aware RoadSystem — so the composition under test is byte-identical to the running game:
 //     hStream = raw + sw·(bedY − raw)                       stream cuts RAW terrain
 //     hMesh   = hStream + bw·(1−sw)·(gradeY − hStream)      road wins, EXCEPT in a channel
-//     hPhys   = max(hMesh, raw + bw·(gradeY − raw))         bridge deck floors the physics surface
+//     hPhys   = max(hMesh, raw + bw·(gradeY − raw))         the causeway fill floors the physics surface
 //
 // Checks (seed 6):
 //   1. CHANNEL-CUT   — far from roads, the bed sits ≥ streamDepth below raw terrain (deeper is
@@ -13,7 +13,7 @@
 //                      descends downstream; outside width+bank the terrain is untouched.
 //   2. BANK-C0       — the cross-section is continuous (no step > the sample-spacing slope bound):
 //                      no invisible cliff at the channel lip (the BUG-15 class of defect).
-//   3. BRIDGE-DECK   — at every real road×stream crossing, the physics surface holds ROAD GRADE
+//   3. CAUSEWAY-DECK — at every real road×stream crossing, the physics surface holds ROAD GRADE
 //                      (the wheels ride the ribbon-deck), never the bed.
 //   4. CHANNEL-UNDER — walking the stream out both sides of the same crossing, the channel resumes
 //                      (terrain cut below raw) once clear of the road footprint — the notch is
@@ -131,12 +131,21 @@ const roadBW = (x, z) => road._sampleCarveWorld(x, z, rawHeightWorld(x, z))?.ble
     log(c0Worst < c0Bound, 'BANK-C0', `worst adjacent-sample step ${c0Worst.toFixed(3)} m < ${c0Bound.toFixed(2)} m bound (no lip cliff)`)
 }
 
-// ── 3 + 4. BRIDGE-DECK + CHANNEL-UNDER at real road×stream crossings ────────────────────────────
+// ── 3 + 4. CAUSEWAY-DECK + CHANNEL-UNDER at real road×stream crossings ──────────────────────────
+// A crossing = the first stream centreline point of each run that sits under a road CORE (blend
+// ≥ 0.99) — read off the same carve physics uses, no separate intersection model (R-22 deleted the
+// streamRoadCrossings bridge-site finder this block used to call).
 {
-    const polylines = []
-    for (const [, e] of road._network) polylines.push(e.points)
-    const crossings = water.streamRoadCrossings(polylines,
-        { x0: CENTER.x - R, z0: CENTER.z - R, x1: CENTER.x + R, z1: CENTER.z + R })
+    const crossings = []
+    for (const st of streams) {
+        let under = false
+        for (let i = 0; i < st.points.length; i++) {
+            const p = st.points[i]
+            const core = roadBW(p.x, p.z) >= 0.99
+            if (core && !under) crossings.push({ x: p.x, z: p.z, bedY: p.y - st.depth, stream: st, near: i })
+            under = core
+        }
+    }
     let deckBad = 0, underBad = 0, checked = 0
     for (const c of crossings) {
         const raw = rawHeightWorld(c.x, c.z)
@@ -147,15 +156,9 @@ const roadBW = (x, z) => road._sampleCarveWorld(x, z, rawHeightWorld(x, z))?.ble
         // Physics holds ROAD GRADE at the core (blend pulls to gradeY in fill AND cut) — the wheel
         // never drops into the channel notch the mesh shows.
         if (Math.abs(h - rc.gradeY) > 0.1 * Math.abs(rc.gradeY - c.bedY) + 0.15) deckBad++
-        // Channel resumes on both sides: walk the stream from its point nearest the crossing
-        // outwards until off the road footprint, then expect a cut below raw. (c.segIndex is the
-        // ROAD segment index — locate the stream-side index by nearest point.)
-        const pts = c.stream.points
-        let near = 0, nd = Infinity
-        for (let i = 0; i < pts.length; i++) {
-            const d = (pts[i].x - c.x) ** 2 + (pts[i].z - c.z) ** 2
-            if (d < nd) { nd = d; near = i }
-        }
+        // Channel resumes on both sides: walk the stream from the crossing point outwards until
+        // off the road footprint, then expect a cut below raw.
+        const pts = c.stream.points, near = c.near
         let sides = 0
         for (const dir of [-1, 1]) {
             let resolved = false
@@ -172,7 +175,7 @@ const roadBW = (x, z) => road._sampleCarveWorld(x, z, rawHeightWorld(x, z))?.ble
         }
         if (sides < 2) underBad++
     }
-    log(checked > 0 && deckBad === 0, 'BRIDGE-DECK',
+    log(checked > 0 && deckBad === 0, 'CAUSEWAY-DECK',
         `${checked} road-core crossings: physics surface holds road grade at every one (${deckBad} dropped toward the bed)`)
     log(checked > 0 && underBad === 0, 'CHANNEL-UNDER',
         `channel cut resumes on BOTH sides of all ${checked} crossings (${underBad} dammed)`)

@@ -141,20 +141,6 @@ function _streamBB(st) {
     return bb
 }
 
-// Segment A(a0→a1) × segment B(b0→b1) intersection. Returns { x, z, tA, tB } (t =
-// param along each segment) or null. Used by streamRoadCrossings for bridge sites.
-function segIntersect(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
-    const rX = a1x - a0x, rZ = a1z - a0z
-    const sX = b1x - b0x, sZ = b1z - b0z
-    const denom = rX * sZ - rZ * sX
-    if (Math.abs(denom) < 1e-12) return null            // parallel / degenerate
-    const qpX = b0x - a0x, qpZ = b0z - a0z
-    const tA = (qpX * sZ - qpZ * sX) / denom
-    const tB = (qpX * rZ - qpZ * rX) / denom
-    if (tA < 0 || tA > 1 || tB < 0 || tB > 1) return null
-    return { x: a0x + rX * tA, z: a0z + rZ * tA, tA, tB }
-}
-
 /**
  * WaterSystem — deterministic ponds + streams over an injected raw-height sampler.
  *
@@ -926,45 +912,10 @@ export class WaterSystem {
     }
 
     // ── Coordinated public API (2026-07-01 handoff naming) ────────────────────
-    // Thin aliases so consumers (router route-around, scatter, streams-side bridge
-    // detection) speak the documented contract. bbox = (minX, minZ, maxX, maxZ).
+    // Thin aliases so consumers (router route-around, scatter, terrain stream carve)
+    // speak the documented contract. bbox = (minX, minZ, maxX, maxZ).
     pondsNear(minX, minZ, maxX, maxZ)   { return this.pondsInBBox(minX, minZ, maxX, maxZ) }
     streamsNear(minX, minZ, maxX, maxZ) { return this.streamsInBBox(minX, minZ, maxX, maxZ) }
-
-    // ── FEAT-18: road×stream crossings → bridge sites (pure) ──────────────────
-    // The bridge-detection generation code, decoupled from road.js: the streams
-    // worker passes the routed road centerlines in; we return every road-segment ×
-    // stream-segment intersection as a bridge site (deck at road grade, channel bed
-    // continuous underneath). Window-invariant given window-invariant inputs.
-    //
-    // @param roadPolylines — [[{x,z}|{x,z,y}, ...], ...] routed road centerlines.
-    // @param bbox          — optional {x0,z0,x1,z1} limiting which streams to test.
-    // @returns [{ x, z, deckY, bedY, stream, roadIndex, segIndex }]
-    streamRoadCrossings(roadPolylines, bbox) {
-        const b = bbox || { x0: -Infinity, z0: -Infinity, x1: Infinity, z1: Infinity }
-        const streams = this.streamsInBBox(b.x0, b.z0, b.x1, b.z1)
-        const out = []
-        for (let ri = 0; ri < roadPolylines.length; ri++) {
-            const road = roadPolylines[ri]
-            for (let si = 1; si < road.length; si++) {
-                const r0 = road[si - 1], r1 = road[si]
-                for (const st of streams) {
-                    const pts = st.points
-                    for (let k = 1; k < pts.length; k++) {
-                        const hit = segIntersect(r0.x, r0.z, r1.x, r1.z, pts[k - 1].x, pts[k - 1].z, pts[k].x, pts[k].z)
-                        if (!hit) continue
-                        // Deck Y from the road segment (grade) if provided, else stream bank top.
-                        const deckY = (r0.y !== undefined && r1.y !== undefined)
-                            ? r0.y + (r1.y - r0.y) * hit.tA
-                            : (pts[k - 1].y + (pts[k].y - pts[k - 1].y) * hit.tB)
-                        const bedY = (pts[k - 1].y + (pts[k].y - pts[k - 1].y) * hit.tB) - st.depth
-                        out.push({ x: hit.x, z: hit.z, deckY, bedY, stream: st, roadIndex: ri, segIndex: si })
-                    }
-                }
-            }
-        }
-        return out
-    }
 
     // ── FEAT-18 stream channel carve (pure; applied MAIN-THREAD only) ──────────
     // Cross-section carve for the stream channel, in the SAME shape the road carve
