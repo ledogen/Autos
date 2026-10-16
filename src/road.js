@@ -2217,7 +2217,6 @@ export class RoadSystem {
                 clArc: Float64Array.from(e.clArc),
                 prims: e.centerline ? e.centerline.primitives : null,
                 v2Dirs: !!(e.centerline && e.centerline._v2Dirs),
-                dirsSpec: e.centerline?._v2DirsSpec ?? null,
                 tunnelSpans: e.tunnelSpans ?? null,
                 offCurveSpans: e.offCurveSpans ?? null,
                 rerouted: !!e.rerouted, condemned: !!e.condemned,
@@ -2311,7 +2310,6 @@ export class RoadSystem {
             if (r.prims && r.prims.length) {
                 cl = centerlineFromDescriptors(r.prims)
                 if (r.v2Dirs) cl._v2Dirs = true
-                if (r.dirsSpec) cl._v2DirsSpec = r.dirsSpec
             }
             const entry = {
                 points, arcOrigin: r.arcOrigin, centerline: cl,
