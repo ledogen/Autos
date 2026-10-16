@@ -637,9 +637,11 @@ export class PhysicsEngine {
    *
    * @param {*} handle - body handle.
    * @param {Float64Array|Array} [outByShape] - if given, filled with the peak per-point
-   *   `normalImpulse` (last substep, see above) on EACH of the body's shapes (indexed as they were
-   *   added). Lets a caller tell a wheel-core hit from a body hull hit without the engine knowing
-   *   what either means. Allocation-free: reused by the caller.
+   *   `totalNormalImpulse` (this step's, see above) on EACH of the body's shapes (indexed as they
+   *   were added); divided by dt it is the step-mean contact FORCE, which is what a yield criterion
+   *   needs. Lets a caller tell a wheel-core hit from a body hull hit without the engine knowing
+   *   what either means. Allocation-free: reused by the caller. (Until review-2 R-02 this read the
+   *   last substep's normalImpulse — ~1/16 of the step at rest, and 0 on the step a hit lands.)
    * @returns {{impulse: number, point: {x,y,z}|null, normal: {x,y,z}|null}}
    *   impulse = the hardest point's `totalNormalImpulse` this step (what point/normal describe);
    *   point/normal body-local.
@@ -679,8 +681,8 @@ export class PhysicsEngine {
           // Per-SHAPE peak, when the caller wants attribution. The chassis is a QUAL-25 compound —
           // four body hulls plus four wheel hard cores — and which shape took a hit is the whole
           // difference between "the bumper hit a tree" and "the rim hit a rock".
-          // Reads the last substep's normalImpulse (see the docstring for what each field holds).
-          if (si >= 0 && pt.normalImpulse > outByShape[si]) outByShape[si] = pt.normalImpulse
+          // The whole step's impulse (see the docstring for what each field holds).
+          if (si >= 0 && pt.totalNormalImpulse > outByShape[si]) outByShape[si] = pt.totalNormalImpulse
           if (pt.totalNormalImpulse <= max) continue
           max = pt.totalNormalImpulse
           const a = aIsSelf ? pt.anchorA : pt.anchorB
