@@ -23,6 +23,11 @@
  *     never imports the board: main.js hands enterFromPoi the POI's live offers plus a `plan`
  *     callback that turns one into a priced mission (planOffer below), and owns take/complete/
  *     cancel on the board around accept, settle and cancel().
+ *   - FEAT-113 — `elapsed` is WORLD time since the start line (getClockH), so a sleep or a time skip
+ *     spends the tip and a pause (the camp) holds it. A board job also carries a deadline (`dueH`,
+ *     stamped by the board at take): past it the job is `expired` — it can no longer arrive, and
+ *     main.js's "mission expired" button (parked only) signs it off through expire(). No pop-up
+ *     while driving, and no countdown (SM-INV-3).
  *   - SM-INV-4 (FEAT-53) — a POI job settles through the economy on arrival: terms (day tier +
  *     rank thresholds) are FROZEN at accept, payout/points fold into the result card. The
  *     economy arrives through the deps adapter (getTerms/onSettle); this module never imports
@@ -34,6 +39,13 @@
 
 import { computePar, gradeRun, PAR_REF, PAR_SLACK } from './par.js'
 import { roadQuality } from './road-quality.js'
+import { DAY_PARAMS } from './day.js'
+
+// FEAT-113: real seconds per game hour — the unit par and `elapsed` are counted in (par 180 s = 3 h).
+// Read at use: dayLengthSec is a live debug slider.
+export const secPerGameH = () => DAY_PARAMS.dayLengthSec / 24
+
+const ON_JOB_STATES = new Set(['countdown', 'loading', 'staging', 'running'])
 
 // THE PLANNING NETWORK IS THE PLAY NETWORK (owner, 2026-09-07). Missions used to plan on a second,
 // PRIVATE RoadSystem streamed to its own 1400 m radius. That was necessary while Quick Job was a
@@ -208,8 +220,10 @@ export class MissionSystem {
      *        default thresholds and nothing pays.
      * @param {(result:object, mission:object)=>{payout:number,base:number,tip:number,points:number}} [o.onSettle] —
      *        FEAT-53: settle a finished POI job (EconomySystem.settle). Optional, POI jobs only.
+     * @param {()=>number} [o.getClockH] — FEAT-113: the absolute world clock (DaySystem.clockH). Optional
+     *        — without it (headless gates) `elapsed` sums the update() steps and nothing expires.
      */
-    constructor({ getRoad, getCar, getSeed, getRegion, teleport, setSpawn, setMapOpen, onChange, getTerms, onSettle }) {
+    constructor({ getRoad, getCar, getSeed, getRegion, teleport, setSpawn, setMapOpen, onChange, getTerms, onSettle, getClockH }) {
         this._getRoad = getRoad
         this._getCar = getCar
         this._getRegion = getRegion || (() => null)
@@ -220,6 +234,8 @@ export class MissionSystem {
         this._onChange = onChange || (() => {})
         this._getTerms = getTerms || null
         this._onSettle = onSettle || null
+        this._getClockH = getClockH || null
+        this._t0H = 0            // FEAT-113: the world clock at the start line
 
         // 'idle' | 'generating' | 'offer' | 'countdown' | 'loading' | 'staging' | 'running' | 'done'
         // 'loading' (FEAT-88) comes before 'staging' on a HAUL job only: the load has to be in the
@@ -344,6 +360,8 @@ export class MissionSystem {
         // The converse — accepting at 1 a.m. to buy tomorrow's HIGHER tier — is a RATIFIED feature
         // (DESIGN.md: "Nobody authored it; do not 'fix' it").
         if (this._getTerms) this.mission.terms = this._getTerms()
+        this.mission.dueH = this.offer?.dueH ?? null   // FEAT-113: stamped by the board's take()
+        this.mission.expired = false
         // FEAT-96: a job with a time slack (freight) grades on looser letters — every frozen threshold
         // × the slack, so the result letter and the rank bar both follow. The tip reads the same slack
         // in economy.js settle().
@@ -453,7 +471,7 @@ export class MissionSystem {
     }
 
     /** True while a job is taken and not yet finished — the states the cancel button applies to. */
-    isOnJob() { return ['countdown', 'loading', 'staging', 'running'].includes(this.state) }
+    isOnJob() { return ON_JOB_STATES.has(this.state) }
 
     isActive() { return this.state !== 'idle' }
 
@@ -517,7 +535,7 @@ export class MissionSystem {
         return buildRunExport({
             note,
             segs: this.mission.segments,
-            result: this.result
+            result: this.result && !this.result.expired
                 ? { elapsed_s: +this.result.elapsed.toFixed(2), par_s: +this.result.par.toFixed(2),
                     ratio: +this.result.ratio.toFixed(3), letter: this.result.letter,
                     margin_s: +this.result.margin.toFixed(2) }
@@ -591,22 +609,30 @@ export class MissionSystem {
     // ── per-frame ───────────────────────────────────────────────────────────────────────────
     /** Cheap: a countdown tick and one distance check. Safe to call every frame. */
     update(dt) {
+        // FEAT-113: past the deadline the job is dead in hand — nothing starts, nothing arrives. It
+        // waits for the player to park and sign it off (expire()), never pops a card mid-drive.
+        const m = this.mission
+        if (m?.dueH != null && !m.expired && this.isOnJob() && this._getClockH?.() >= m.dueH) {
+            m.expired = true
+            this._onChange()
+        }
+        if (m?.expired) return
         // No _onChange() on the countdown/elapsed ticks — those are redrawn by main.js's throttled
         // ~10 Hz HUD block. Firing it per physics step would be 60 DOM writes a second.
         if (this.state === 'countdown') {
             this.countdown -= dt
-            if (this.countdown <= 0) { this.state = 'running'; this.elapsed = 0 }
+            if (this.countdown <= 0) this._startRun()
             return
         }
         // Staging: one distance check. Crossing OUT of the start zone is the start — there is no
         // countdown, no hold, and no way back in (the zone is a threshold, not a trigger volume, so
         // re-entering it does not stop the clock you already started).
         if (this.state === 'staging') {
-            if (this.startZoneExitDist() <= 0) { this.state = 'running'; this.elapsed = 0; this._onChange() }
+            if (this.startZoneExitDist() <= 0) { this._startRun(); this._onChange() }
             return
         }
         if (this.state !== 'running') return
-        this.elapsed += dt
+        this.elapsed = this._getClockH ? (this._getClockH() - this._t0H) * secPerGameH() : this.elapsed + dt
 
         // Driven trace — where you actually were and what you were doing, at TRACE_HZ. This is the
         // richest single signal for fitting anything later: it says WHERE time went, not just how
@@ -651,6 +677,25 @@ export class MissionSystem {
             this.state = 'done'
             this._onChange()
         }
+    }
+
+    _startRun() {
+        this.state = 'running'
+        this.elapsed = 0
+        this._t0H = this._getClockH?.() ?? 0
+    }
+
+    /**
+     * FEAT-113: sign off a job whose deadline passed — main.js's "mission expired" button, pressed
+     * parked. The result card says so; nothing settles. Returns the board offer id (the board has
+     * already locked the slot at the deadline, so main.js has nothing to lock).
+     */
+    expire() {
+        if (!this.mission?.expired || !this.isOnJob()) return null
+        this.result = { expired: true, dueH: this.mission.dueH }
+        this.state = 'done'
+        this._onChange()
+        return this.mission.offerId ?? null
     }
 
     /**

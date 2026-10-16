@@ -12,7 +12,7 @@
 //      structural instead of merely intended.
 //
 //   2. WINDOW-INVARIANCE. Placement is keyed off the ABSTRACT GRAPH EDGE (site-id pairs), never the
-//      streamed runKey, because post-BUG-25 the crossing cull can flip whole edges on a re-stream.
+//      streamed runKey, which can change between streams of the same ground.
 //      A POI seen from one stream centre must be in exactly the same place from another.
 //
 //   3. THE PAD IS REAL. Carving is on off the shoulder (mesh == collision is covered by the shared
@@ -594,6 +594,82 @@ function boardRig (ms, nowH = 6) {
     mot.hidden = true
     check('…hidden: no contact and no park trigger', !solid() && !answers())
     mot.hidden = false
+}
+
+// ── 7d. FEAT-113: the mission clock is WORLD time; a board job dies at its deadline ──────────────
+// `elapsed` is the world clock since the start line, so a time skip mid-job (a sleep, a chore)
+// spends its hours against par — 60 s per game hour. The deadline is par × (1 + slack) from accept. Past the offer's deadline the job is dead in hand: arriving does
+// not settle, and expire() — the parked "mission expired" button — closes it unpaid.
+{
+    const car = { x: 0, z: 0, speed: 0 }
+    let clockH = 6, settled = null
+    const ms = new MissionSystem({
+        getRoad: () => W.road, getCar: () => car, getSeed: () => SEED,
+        getTerms: () => ({ day: 1, dayTier: 1, payTier: 1, thresholds: undefined }),
+        teleport () {}, setMapOpen () {}, onChange () {},
+        onSettle: (r) => { settled = { ...r }; return null },
+        getClockH: () => clockH,
+    })
+    const { board, plan } = boardRig(ms)
+    let found = null
+    for (const q of W.poi.list()) {
+        if (found || !q.jobs || q.type === 'larrysHouse') continue
+        const o = board.offers(q.id, clockH).find(x => board.spec(x).shape === 'courier' && plan(x))
+        if (o) found = { o, poi: q }
+    }
+    check('a courier board offer plans a route', !!found)
+    if (found) {
+        const drive = (o, poi) => {
+            car.x = poi.x; car.z = poi.z
+            board.take(o.id, clockH, plan(o).par)
+            ms.enterFromPoi(poi, [o], plan)
+            ms.accept()
+            car.x = poi.x + ms.startZone().r + 1
+            ms.update(1 / 60)
+        }
+        const { o, poi } = found
+        drive(o, poi)
+        check('accept carries the board\'s deadline onto the job', ms.mission.dueH === o.dueH
+            && Math.abs(o.dueH - clockH - ms.mission.par / 60 * (1 + board.spec(o).deadlineSlack)) < 1e-9)
+        const t0 = clockH
+        clockH += 1 / 60                   // a minute of driving…
+        ms.update(1 / 60)
+        clockH += (o.dueH - clockH) / 2    // …then a time skip that still fits inside the deadline
+        ms.update(1 / 60)
+        const want = (clockH - t0) * 60   // 60 real s per game hour (1440 s day)
+        check('elapsed is world time since the start line — the skip counts',
+            Math.abs(ms.elapsed - want) < 1e-6, `${ms.elapsed.toFixed(2)} vs ${want.toFixed(2)}`)
+        car.x = ms.mission.end.x; car.z = ms.mission.end.z
+        ms.update(1 / 60)
+        check('arriving settles on the world-time ratio', ms.state === 'done' && !!settled
+            && Math.abs(settled.ratio - want / ms.mission.par) < 1e-9, `ratio=${settled?.ratio}`)
+        ms.exit()
+
+        // The deadline: same offer shape, clock pushed past dueH mid-job.
+        settled = null
+        let o2 = null, poi2 = null
+        for (const q of W.poi.list()) {
+            if (o2 || !q.jobs || q.type === 'larrysHouse') continue
+            o2 = board.offers(q.id, clockH).find(x => board.spec(x).shape === 'courier' && plan(x)) ?? null
+            if (o2) poi2 = q
+        }
+        if (o2) {
+            drive(o2, poi2)
+            clockH = o2.dueH + 0.01
+            ms.update(1 / 60)
+            check('past the deadline the job is expired, still in hand', ms.mission.expired === true && ms.isOnJob())
+            car.x = ms.mission.end.x; car.z = ms.mission.end.z
+            ms.update(1 / 60)
+            check('…arriving late does not settle', ms.state === 'running' && settled === null)
+            const id = ms.expire()
+            check('expire() closes it unpaid with the expired card', id === o2.id && ms.state === 'done'
+                && ms.result.expired === true && ms.result.dueH === o2.dueH && settled === null)
+            check('…and the board had already locked the slot at the deadline', board.abandon(o2.id, clockH) === false)
+            ms.exit()
+        } else {
+            check('a second courier offer on the board (none live — cannot exercise expiry)', false)
+        }
+    }
 }
 
 // ── 8. do-over lockout: paid jobs have no regenerate/retry; Quick Job keeps both ─────────────────

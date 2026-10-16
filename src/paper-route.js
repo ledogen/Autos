@@ -57,7 +57,7 @@
 // max — and what it pays above that is the tip. Both come from payoutFor — nothing here.
 
 import { ECONOMY_PARAMS, payoutFor, splitPayout } from './economy.js'
-import { buildGraphAdj, graphDijkstra, START_ZONE_R, buildRunExport, TRACE_DIV } from './mission.js'
+import { buildGraphAdj, graphDijkstra, START_ZONE_R, buildRunExport, TRACE_DIV, secPerGameH } from './mission.js'
 import { computePar, gradeRun, RANK_THRESHOLDS_DEFAULT } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
 // why it must have one home: a second copy is a second thing to keep in step with the gate.
@@ -747,9 +747,13 @@ export class PaperRouteSystem {
      *   setMapOpen(open)  — show/hide the 2D map, framed on the route (the offer's preview)
      *   onChange()   — repaint
      *   onEnd()      — the route is over: clear the papers off the lawns
+     *   getClockH()  — FEAT-113: the world clock (DaySystem.clockH). The route's `elapsed` is world
+     *                  time since the start line, and Larry's deadline (offer.dueH) is read on it.
+     *                  Optional: without it (headless gates) elapsed sums the steps, nothing expires.
      */
     constructor ({ getRoad, getPois, getRegion, getCar, getSeed, getTerms, getTargetR,
-                   onSettle, onSpot, onBriefing, setMapOpen, onChange, onEnd }) {
+                   onSettle, onSpot, onBriefing, setMapOpen, onChange, onEnd, getClockH }) {
+        this._getClockH = getClockH ?? null
         this._onSpot = onSpot ?? (() => 0)
         this._setMapOpen = setMapOpen ?? (() => {})
         this._getRoad = getRoad
@@ -842,7 +846,7 @@ export class PaperRouteSystem {
      */
     exportRun (note = '') {
         const e = this._lastExport, r = this.result
-        if (!e || !r) return null
+        if (!e || !r || r.expired) return null   // FEAT-113: an expired round has no run to describe
         const ratio = r.par > 0 ? r.elapsed / r.par : 0
         return buildRunExport({
             note,
@@ -968,6 +972,9 @@ export class PaperRouteSystem {
             stock:    stockForTier(),
             inFlight: 0,
             elapsed:  0,
+            t0H:      0,              // FEAT-113: the world clock at the start line
+            dueH:     this.offer?.dueH ?? null,   // FEAT-113: stamped by the board's take()
+            expired:  false,
             payTier:  terms.payTier ?? 1,
             // Frozen WITH the day tier, for the same reason (FEAT-53): the rank ramp is part of the
             // deal you accepted. Now that the letter IS the par ratio, a route straddling midnight
@@ -1015,6 +1022,22 @@ export class PaperRouteSystem {
         return id
     }
 
+    /**
+     * FEAT-113: sign off a round whose deadline passed — the "mission expired" button, pressed
+     * parked. Nothing settles (spot money already banked stays banked); the result card says so.
+     * The board locked Larry's slot at the deadline itself.
+     */
+    expire () {
+        if (!this.run?.expired || !this.isCarrying()) return null
+        this._cancelReplan()
+        this._rrHideAt = 0
+        this.result = { expired: true, dueH: this.run.dueH }
+        this.state = 'done'
+        this.run = null
+        this._onChange()
+        return this.offer?.id ?? null
+    }
+
     /** Leaving the region / the run: drop everything WITHOUT settling. */
     abort () {
         if (this.state === 'idle') return
@@ -1047,14 +1070,25 @@ export class PaperRouteSystem {
     /** Clocked off the fixed step. Two comparisons and a counter — nothing else happens per frame. */
     update (dt) {
         this._clock += dt
+        // FEAT-113: past Larry's deadline the round is dead in hand until signed off (expire()).
+        const run = this.run
+        if (run && run.dueH != null && !run.expired && this._getClockH?.() >= run.dueH) {
+            run.expired = true
+            this._cancelReplan()
+            this._onChange()
+        }
+        if (run?.expired) return
         if (this.state === 'staging') {
             // One distance check. Crossing the threshold is what starts the route — the same rule,
             // and the same green ring, a POI job uses.
-            if (this.startZoneExitDist() > 0) { this.state = 'running'; this.run.elapsed = 0; this._onChange() }
+            if (this.startZoneExitDist() > 0) {
+                this.state = 'running'; run.elapsed = 0; run.t0H = this._getClockH?.() ?? 0
+                this._onChange()
+            }
             return
         }
         if (this.state !== 'running') return
-        this.run.elapsed += dt
+        run.elapsed = this._getClockH ? (this._getClockH() - run.t0H) * secPerGameH() : run.elapsed + dt
         // Driven trace at TRACE_HZ, downsampled off the 60 Hz step — the same sampler a POI job
         // runs, so the two mission types produce directly comparable calibration exports. Cheap:
         // a 4-minute round is ~2400 rows, small next to the topology array.
@@ -1264,7 +1298,7 @@ export class PaperRouteSystem {
      * and a route that ended on the throw before the last one landed would be counting wrong.
      */
     takePaper () {
-        if (this.state !== 'running' || this.run.stock <= 0) return false
+        if (this.state !== 'running' || this.run.expired || this.run.stock <= 0) return false   // FEAT-113
         this.run.stock--
         this.run.inFlight++
         return true
@@ -1289,6 +1323,7 @@ export class PaperRouteSystem {
     recordLanding (x, z) {
         if (this.state !== 'running') return null
         this.run.inFlight = Math.max(0, this.run.inFlight - 1)
+        if (this.run.expired) return null   // FEAT-113: a paper in the air at the deadline scores nothing
         const R = this._getTargetR()
         let best = null, bd = Infinity
         for (const c of this.route.customers) {

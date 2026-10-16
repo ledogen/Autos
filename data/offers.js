@@ -41,6 +41,8 @@
 //   to       (optional, FEAT-100) the POI tags it may be delivered to — a class (`farm`) or a
 //            fixture tag. Absent = generic: any POI or a roadside spot (cargo.md "From → to").
 //            Tagged things only ever end at a matching POI, never roadside.
+//   deadlineSlack (optional, FEAT-113) the deadline as par × (1 + slack), counted from accept.
+//            Absent = the family default in DEADLINE_SLACK below.
 
 // "Any normal giver" — cargo.md's blank From (option C). Not the food vendor, the haul yard or
 // Larry: each has one kind of job and posts it outside the budget (pois.md § Job supply). Not the
@@ -70,7 +72,7 @@ export const THINGS = [
     { id: 'firewood',   phrase: 'firewood',               family: 'haul',     massKg: [0, 0],
       pools: ['firewoodYard'] },
     { id: 'takeout',    phrase: 'two bags of takeout',    family: 'delivery', massKg: [2, 5],
-      pools: ['foodVendor'] },
+      pools: ['foodVendor'], deadlineSlack: 0.5 },
     { id: 'groceries',  phrase: 'a week of groceries',    family: 'delivery', massKg: [10, 25],
       pools: ['generalStore'] },
     { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
@@ -388,6 +390,22 @@ export const FREIGHT_TIME_SLACK = 1.15
  */
 export const FREIGHT_PAY_PER_KG = 0.0003
 export const FREIGHT_TIP_MULT = 0.5
+
+// FEAT-113 DELIVERY DEADLINES (owner, 2026-10-15 — replaces the 10-14 fixed bands). A job must be
+// delivered within par × (1 + slack) of game time, counted from accept: the deadline scales with
+// the job, so a long run is never short-changed and a short one never sits in hand for days. A
+// thing's own `deadlineSlack` overrides its family's. Owner-set: takeout +50 % (still generous for a
+// new player), other courier +100 %, freight +300 % (2026-10-15, second pass); haul and fragile
+// +200 % (third pass). papers is this side's pick, not a ruling yet. demolition has no things (and
+// no code) yet — give it a slack the day it ships.
+// A different clock from board expiry (EXPIRY_NOISE, SOURCES.expiryH): when an offer LEAVES the board.
+export const DEADLINE_SLACK = {
+    delivery:   1.0,
+    fragile:    2.0,
+    freight:    3.0,
+    haul:       2.0,
+    papers:     1.0,   // Larry's round is courier work
+}
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
 export const EXPIRY_NOISE = 0.3

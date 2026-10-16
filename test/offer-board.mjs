@@ -24,17 +24,22 @@
 //      expires, shows no timer, and is unavailable 12 h after a round.
 //   8. CANCEL locks exactly as a completion does — including a cancel after expiry.
 //   9. TAKEN offers are hidden and do not count toward the turnover timer.
-//  10. ONLY BUILT FAMILIES roll (delivery, papers) — fragile/demolition/freight never appear.
+//  10. ONLY BUILT FAMILIES roll (BUILT_FAMILIES) and every built one appears — demolition never does.
 //  11. NAMES — deduplicated within a region; a 'home' giver is "the <last> place", a 'person'
 //      giver is one person and no place name.
 //  12. THE CARD — base pay equals economy.basePay at the offer's multiplier (0.5× on a bonus
-//      offer), the gate reads "X or better" / "S only", a freight card quotes no base pay.
+//      offer), the gate reads "X or better" / "S only", and the terms state distance, weight, board
+//      expiry and the delivery window.
 //  13. BONUS SHARE ≈ 25 % where the source has rewards; never where it has none.
+//  16. DEADLINES (FEAT-113) — every thing resolves a deadline slack (its own or the family's);
+//      take() stamps dueH = take + par × (1 + slack) (60 real s of par = one game hour); no par → no
+//      deadline; a taken slot still in hand at dueH locks AT dueH (always-on and budget alike), and a
+//      late complete/cancel is then a no-op.
 //  14. IMPORT DISCIPLINE — the board imports only its tables, seed.js and economy.js, and never
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel } from '../src/offer-board.js'
-import { THINGS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { THINGS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay, formatMoney } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
@@ -407,8 +412,9 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('the bonus line names the item and its gate', cb.bonus?.includes(b.spec(bonused.o).bonus.name)
         && cb.bonus.includes(gateText(b.spec(bonused.o).bonus.gate)))
     check('gate text: "S only" / "X or better"', gateText('S') === 'S only' && gateText('B') === 'B or better')
-    check('the card states distance, weight and expiry', cp.terms.length === 3 && cp.terms[0] === '2.4 km'
-        && cp.terms[2] === `expires in ${formatGameDuration(plain.o.expiresH - plain.t)}`, cp.terms.join(' | '))
+    check('the card states distance, weight, expiry and the delivery window', cp.terms.length === 4 && cp.terms[0] === '2.4 km'
+        && cp.terms[2] === `expires in ${formatGameDuration(plain.o.expiresH - plain.t)}`
+        && cp.terms[3] === `deliver within ${formatGameDuration(b.deadlineH(plain.o, route.par))}`, cp.terms.join(' | '))
     check('a roadside drop names its rolled place', cp.sentence.some(r => r.t === b.spec(plain.o).placeName))
     const dest = POIS.find(q => q.type === 'gasStation').id
     const cd = b.card(plain.o, { nowH: plain.t, route: { ...route, endPoiId: dest } })
@@ -558,12 +564,55 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
             || ['sawmill', 'quarry'].includes(x))))
 }
 
+// ── 16. deadlines (FEAT-113) ────────────────────────────────────────────────────────────────────
+{
+    const missing = THINGS.filter(t => !((t.deadlineSlack ?? DEADLINE_SLACK[t.family]) >= 0))
+    check('every thing resolves a deadline slack (own or family default)', !missing.length,
+        missing.map(t => t.id).join(', '))
+    const slack = (id) => THINGS.find(t => t.id === id).deadlineSlack ?? DEADLINE_SLACK[THINGS.find(t => t.id === id).family]
+    check('owner slacks: takeout +50 %, courier +100 %, haul and fragile +200 %, freight +300 %',
+        slack('takeout') === 0.5 && slack('groceries') === 1 && slack('firewood') === 2 && slack('eggs') === 2
+        && slack('tomatoes') === 3)
+
+    // take() stamps the deadline from par; past it the always-on slot locks AT the deadline.
+    const PAR = 180   // s — 3 game hours
+    const b = make(61)
+    const food = ofType('foodVendor')[0]
+    const o = b.offers(food, T0)[0]
+    b.take(o.id, T0 + 0.1, PAR)
+    check('take stamps dueH = take + par × (1 + slack)', Math.abs(o.dueH - (T0 + 0.1 + 3 * (1 + b.spec(o).deadlineSlack))) < 1e-9,
+        `${o.dueH}`)
+    const s = slotsOf(b, food)[o.slot]
+    b.advance(o.dueH - 1e-6)
+    check('...still taken just before the deadline', s.state === 'taken')
+    b.advance(o.dueH + 1e-6)
+    check('a taken slot still in hand at its deadline locks AT the deadline',
+        s.state === 'locked' && Math.abs(s.until - (o.dueH + o.lifeH)) < 1e-9, `state=${s.state} until=${s.until}`)
+    check('...and a late completion is a no-op on the board', b.complete(o.id, o.dueH + 1e-6) === false)
+
+    // No par handed over → no deadline (the old behaviour: taken never expires).
+    const n = make(63), nf = n.offers(food, T0)[0]
+    n.take(nf.id, T0)
+    check('a take with no par carries no deadline', nf.dueH === Infinity)
+
+    // The budget's coupled replay takes the same deadline.
+    const bb = make(62)
+    const bs = bb._budget.find(x => x.state === 'live')
+    const bo = bs.offer
+    bb.take(bo.id, T0, PAR)
+    bb.advance(bo.dueH + 1e-6)
+    check('a taken BUDGET slot locks at its deadline too',
+        bs.state === 'locked' && Math.abs(bs.until - (bo.dueH + (SOURCES[bs.type].lockH ?? bo.lifeH))) < 1e-9,
+        `state=${bs.state}`)
+    check('...and a cancel after the deadline is refused (already locked)', bb.abandon(bo.id, bo.dueH + 1) === false)
+}
+
 // ── 14. import discipline ───────────────────────────────────────────────────────────────────────
 {
     const src = readFileSync(new URL('../src/offer-board.js', import.meta.url), 'utf8')
     const imports = [...src.matchAll(/from\s+'([^']+)'/g)].map(m => m[1]).sort()
-    const allowed = ['../data/offer-names.js', '../data/offers.js', './economy.js', './seed.js']
-    check('offer-board.js imports only its tables, seed.js and economy.js',
+    const allowed = ['../data/offer-names.js', '../data/offers.js', './day.js', './economy.js', './seed.js']
+    check('offer-board.js imports only its tables, seed.js, economy.js and day.js (the clock unit)',
         JSON.stringify(imports) === JSON.stringify(allowed), imports.join(', '))
     check('offer-board.js never reads Math.random', !/Math\.random/.test(src.replace(/\/\/.*$/gm, '')))
 }

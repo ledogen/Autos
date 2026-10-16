@@ -567,7 +567,7 @@ owner's name for it.
 | Paper route — throw and impact audio | FEAT-64 | open |
 | ~~Ratchet straps as an item for loose haul loads~~ | FEAT-110 | ✅ closed — cancelled 2026-10-14: straps are not an item |
 | Load verdicts — fits / warning / overload for the truck as configured | FEAT-112 | open — planned 2026-10-14 |
-| Delivery deadlines for every job; the mission clock on world time | FEAT-113 | open — planned 2026-10-14 |
+| Delivery deadlines for every job; the mission clock on world time | FEAT-113 | **done** 2026-10-16 |
 | Haul — the player picks the quantity; yard rate bonuses | FEAT-114 | open — needs FEAT-112 and the haul tip/item ruling |
 | Bed upgrades as parts — roof rack, flatbed, stake bed, extended bed, light bar | FEAT-115 | open — needs FEAT-104, FEAT-112 |
 | Cargo protection — bubble wrap, furniture pad, heavy-duty pad | FEAT-116 | open — needs FEAT-97, FEAT-104 |
@@ -582,7 +582,7 @@ Take the first item that is not blocked. Each one is a ticket with its own accep
 |---|---|---|---|
 | 1 | ~~**FEAT-97** fragile~~ | done 2026-10-15 | — |
 | 2 | ~~**FEAT-118** camp pause~~ | done 2026-10-15 | — |
-| 3 | **FEAT-113** deadlines + world-time clock | **next build** — every job needs a window before the deadline can mean anything; read the ticket's handoff first | — |
+| 3 | ~~**FEAT-113** deadlines + world-time clock~~ | done 2026-10-16 | — |
 | 4 | **FEAT-112** load verdicts | pure data and a card; unlocks FEAT-114 and FEAT-115 | the stock truck's soft and hard limits |
 | 5 | **FEAT-114** haul quantity + rate bonus | first user of the verdict limits | the haul tip/item ruling |
 | 6 | **FEAT-104** minimal shop | the venue for every part and consumable | — |

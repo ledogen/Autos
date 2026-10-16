@@ -77,7 +77,8 @@ counts with region size comes later. The gas station and tackle shop posting job
   job ten minutes before it expired and get a new one straight away. A locked budget slot stays
   parked on its place, which takes no new budget job until the lock clears (FEAT-101).
 - **Larry (owner, 2026-10-07):** his offer never expires and shows no timer; after a round he is
-  unavailable for **12 h**, then a fresh offer appears.
+  unavailable for **12 h**, then a fresh offer appears. *(FEAT-113, 2026-10-15: the offer never
+  leaves the board, but a TAKEN round has a delivery deadline like every job.)*
 - **The gas station posts** (propane) under the budget; the **tackle shop posts fetches** of the
   general-store sundries (owner, 2026-10-07; built FEAT-102).
 - **The stranded motorist (FEAT-102, owner 2026-10-08):** one job at a time — a ride to an auto

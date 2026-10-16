@@ -220,7 +220,10 @@ backstop, and FEAT-53's k-curve has to hold both jobs at once.
 > offers than the player can finish before one recycles; food-vendor gigs are the bottom rung.
 
 **NO TIME LIMIT; THE FARE HAS A FLOOR** [OWNER RULING 2026-09-29 — supersedes the deadline
-section below and "The bell IS par" further down]. The route has no deadline: it ends on the last
+section below and "The bell IS par" further down].
+> **[AMENDED 2026-10-15, FEAT-113]** The round now has a **delivery deadline** like every job —
+> par × 2 from accept (papers +100 %, not yet ruled). Everything below about par, the fare and its
+> floor stands inside it; past it the round expires unpaid (spot money already banked stays). The route has no deadline: it ends on the last
 porch, the empty truck, or a cancel from the pause menu (FEAT-67). **Par stays exactly where it
 is** — the letter is still the par ratio and the drive is still paid up the shared margin line, so
 driving faster still pays more. What changed is the bottom — and it changed **game-wide, in the
@@ -451,9 +454,10 @@ truck and what the truck does to the cargo**.
 > - **Load verdicts — fits, warning, overload** (FEAT-112), from the current truck configuration, by
 >   size or weight. Overload cannot be accepted; a warning can, at your own risk. Bed upgrades change
 >   the verdicts through their own functions (FEAT-115). The board is the same for every vehicle.
-> - **Every job has a delivery deadline from its cargo** (FEAT-113): lax 1–3 days (freight), chill
->   6 h–1 day (most), stringent 1–4 h (takeout). A job in hand past its deadline is cancelled and
->   the giver locks. This is separate from board expiry.
+> - **Every job has a delivery deadline** (FEAT-113): ~~lax 1–3 days (freight), chill 6 h–1 day
+>   (most), stringent 1–4 h (takeout)~~ — **re-cut 2026-10-15:** par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %,
+>   papers +100 %. A job in hand past its deadline **expires unpaid** (signed off parked, "mission
+>   expired") and the giver locks at the deadline. This is separate from board expiry.
 > - **The mission clock runs on world time** (FEAT-113): sleep and time skips count. Camping with a
 >   load spends time against the tip; on an average job it leaves base pay.
 > - **Haul: the player picks the quantity** inside the truck's limits, and yards run limited-time
