@@ -219,11 +219,12 @@ const XS_SOFT2 = 0.5 * 0.5
 // CONTINUOUS overDist (not the offEnd boolean) keeps the design surface C0/C1: at its own mouth a leg
 // has overDist 0 ⇒ weight 1 ⇒ the weld to that ribbon is exact and unchanged.
 const XS_OFF_FADE = 4.0
+const _xsOffFade = (d) => { const u = Math.min(1, Math.max(0, d / XS_OFF_FADE)); return 1 - u * u * (3 - 2 * u) }
 // Reusable sinks for the connector design-surface path (carve hot path — no per-query allocation).
 const _CD_A = { grade: 0, gap: 0, xs: 0, off: 0 }
 const _CD_B = { grade: 0, gap: 0, xs: 0, off: 0 }
 const _CD_OUT = { grade: 0, lateral: 0 }
-const _CD_RP = { gradeY: 0, tx: 1, tz: 0 }
+const _CD_RP = { gradeY: 0, tx: 1, tz: 0 }   // runProfile `out` wherever only .gradeY is read AT ONCE (never held)
 // FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
 // authority ramps 0 → 1 (see _poiPadCarve). This is not a look tunable — it is the mechanism that
 // makes the ratified "POIs never influence routing determinism" rule structural: a pad has exactly
@@ -334,30 +335,31 @@ function _solveDense(A, b, N) {
 }
 
 // Bicubic (Catmull-Rom) read of a solved pad grid — C1, so wheel normals do not facet at cell lines.
+// Module-scope helpers (no per-call closures: this is on the carve/physics path).
+const _catmullRom = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)))
+function _padGridCell(ps, jc, ii) {
+    const W = ps.W, g = ps.grid
+    const ic = Math.min(W - 1, Math.max(0, ii)), k = jc * W + ic
+    let v = g[k]
+    if (v !== v) {   // NaN: evaluate the spline at this cell once
+        const x = (ic - ps.M) * ps.H, z = (jc - ps.M) * ps.H, s = ps.sol, n = ps.n
+        v = s[n] + s[n + 1] * x + s[n + 2] * z
+        for (let q = 0; q < n; q++) {
+            const dx = x - ps.kx[q], dz = z - ps.kz[q], r2 = dx * dx + dz * dz
+            if (r2 > 1e-12) v += s[q] * 0.5 * r2 * Math.log(r2)
+        }
+        g[k] = v
+    }
+    return v
+}
+function _padGridRow(ps, jj, i, u) {
+    const jc = Math.min(ps.W - 1, Math.max(0, jj))
+    return _catmullRom(_padGridCell(ps, jc, i - 1), _padGridCell(ps, jc, i), _padGridCell(ps, jc, i + 1), _padGridCell(ps, jc, i + 2), u)
+}
 function _padGridSample(ps, wx, wz) {
     const fx = (wx - ps.cx) / ps.H + ps.M, fz = (wz - ps.cz) / ps.H + ps.M
     const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j
-    const W = ps.W, g = ps.grid
-    const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)))
-    const row = (jj) => {
-        const jc = Math.min(W - 1, Math.max(0, jj)), r = jc * W
-        const c = (ii) => {
-            const ic = Math.min(W - 1, Math.max(0, ii)), k = r + ic
-            let v = g[k]
-            if (v !== v) {   // NaN: evaluate the spline at this cell once
-                const x = (ic - ps.M) * ps.H, z = (jc - ps.M) * ps.H, s = ps.sol, n = ps.n
-                v = s[n] + s[n + 1] * x + s[n + 2] * z
-                for (let q = 0; q < n; q++) {
-                    const dx = x - ps.kx[q], dz = z - ps.kz[q], r2 = dx * dx + dz * dz
-                    if (r2 > 1e-12) v += s[q] * 0.5 * r2 * Math.log(r2)
-                }
-                g[k] = v
-            }
-            return v
-        }
-        return cr(c(i - 1), c(i), c(i + 1), c(i + 2), u)
-    }
-    return cr(row(j - 1), row(j), row(j + 1), row(j + 2), v)
+    return _catmullRom(_padGridRow(ps, j - 1, i, u), _padGridRow(ps, j, i, u), _padGridRow(ps, j + 1, i, u), _padGridRow(ps, j + 2, i, u), v)
 }
 
 function _nearestOnPolyXZ(px, pz, pts, polyCum, lo = -Infinity, hi = Infinity) {
@@ -7171,9 +7173,6 @@ export class RoadSystem {
         const endHW  = Math.min(halfWidth + carveExtraWidth, minRadius) + maxEmbankmentToe
         const footHW = endHW + DEEP_BANK_TOE_EXTRA
 
-        const qtx = Math.floor(wx / CHUNK_SIZE)
-        const qtz = Math.floor(wz / CHUNK_SIZE)
-        const seen = new Set()
         // Select the NEAREST footprint-interior run by true lateral distance (queryNearest's interior
         // policy), but via the continuous polyline projection so arcS/signedLat don't lurch at curves.
         // (Height-based "topmost" selection was tried and rejected — it teleported the surface onto
@@ -7228,6 +7227,8 @@ export class RoadSystem {
                 if (pr) consider(c.runKey, pr)
             }
         } else {
+            const qtx = Math.floor(wx / CHUNK_SIZE), qtz = Math.floor(wz / CHUNK_SIZE)
+            const seen = new Set()
             for (let dx = -1; dx <= 1; dx++) {
                 for (let dz = -1; dz <= 1; dz++) {
                     const segs = this._tiles.get(`${qtx + dx},${qtz + dz}`)
@@ -7329,7 +7330,7 @@ export class RoadSystem {
         // camberSign = 1: the projection uses the run's own canonical polyline direction (arcS increases
         // along it), so run-frame camber maps to the world frame directly (no E→W slice reversal here).
         return {
-            point:      new THREE.Vector3(fx, this.runProfile(arcS, bestRunKey).gradeY, fz),
+            point:      new THREE.Vector3(fx, this.runProfile(arcS, bestRunKey, _CD_RP).gradeY, fz),
             tangent:    new THREE.Vector3(tx, 0, tz),
             runKey:     bestRunKey,
             arcS:       arcS,
@@ -7412,7 +7413,7 @@ export class RoadSystem {
             const adx = wx - nr.point.x, adz = wz - nr.point.z
             const aArc = (nr.arcS ?? 0) + adx * nr.tangent.x + adz * nr.tangent.z
             if (!this.tunnelSpanAt(nr.runKey ?? '', aArc)) break
-            const topY = this.runProfile(aArc, nr.runKey).gradeY + (p.tunnelBoreRadius ?? 8)
+            const topY = this.runProfile(aArc, nr.runKey, _CD_RP).gradeY + (p.tunnelBoreRadius ?? 8)
             if (queryY < topY) break                     // in the bore: this run owns the probe
             // FEAT-40: skin probe over a bore — mouth-funnel notch (no decal/pothole overlay:
             // this is the cutting face over the tube, not a drivable deck).
@@ -7571,7 +7572,7 @@ export class RoadSystem {
         const runKey = nr.runKey ?? ''
         if (!this.tunnelSpanAt(runKey, aArc)) return null     // not inside a bore span
         const R = this._params.tunnelBoreRadius ?? 8
-        const gradeY = this.runProfile(aArc, runKey).gradeY   // floor Y at this arc
+        const gradeY = this.runProfile(aArc, runKey, _CD_RP).gradeY   // floor Y at this arc
         const h = wy - gradeY                                  // height above the springline
         // FULL cylinder, not just the upper arch: camber tilts the physics FLOOR (_carveDirtY's
         // tiltY = signedLat*sin(camberAngle)) but NOT the rendered arch (buildTunnelTube's h=R·sin(θ)
@@ -7619,7 +7620,7 @@ export class RoadSystem {
         // crown/camber extrapolated across the widened junction carve core (below) would dome/tilt.
         const jc = this._junctionCarve(runKey, arcSEff)
         if (jc.frac > 0) { const k = 1 - jc.frac; crownY *= k; tiltY *= k }
-        let gradeY = this.runProfile(arcSEff, runKey).gradeY
+        let gradeY = this.runProfile(arcSEff, runKey, _CD_RP).gradeY
         // Inter-leg CREASE fix — the "ruled surface" grade blend. Each ≥2-leg node's runs leave the shared
         // node INDEPENDENTLY, so _resolveRoadSurface hard-switching to the nearest leg leaves a STEP at the
         // Voronoi boundary between two legs (their grades diverge — up to ~4.5 m at r=24 on the seed-6 sloped
@@ -7673,7 +7674,7 @@ export class RoadSystem {
                     const pr = prs[bi]
                     const gap = Math.sqrt(pr.d2) - halfWidth
                     if (gap >= RULE_LEG_REACH) continue                  // out of range: not a co-leg here
-                    const legGrade = bi === ownIdx ? gradeY : this.runProfile(pr.arcS, leg.runKey).gradeY
+                    const legGrade = bi === ownIdx ? gradeY : this.runProfile(pr.arcS, leg.runKey, _CD_RP).gradeY
                     // Plausibility guard: every leg leaves the node welded at nodeY with a bounded road
                     // grade, so at arc distance `along` its grade must lie within nodeY ± MAX_LEG_SLOPE·
                     // along. A projected grade outside that is a WRONG-BRANCH artifact (an unrelated road
@@ -9382,9 +9383,8 @@ export class RoadSystem {
         // sharp fillet, where the corner is cut past both mouths) the tapers collapse together and the
         // ratio is undefined, so fall back to the untapered weights — there both grades are the same
         // clamped node height anyway, which is exactly the plaza value that throat should carry.
-        const fade = (d) => { const u = Math.min(1, Math.max(0, d / XS_OFF_FADE)); return 1 - u * u * (3 - 2 * u) }
         let wA = 1 / (a.gap * a.gap + XS_SOFT2), wB = 1 / (b.gap * b.gap + XS_SOFT2)
-        const tA = wA * fade(a.off), tB = wB * fade(b.off)
+        const tA = wA * _xsOffFade(a.off), tB = wB * _xsOffFade(b.off)
         if (tA + tB > 1e-9) { wA = tA; wB = tB }
         const wS = wA + wB
         out.grade = (a.grade * wA + b.grade * wB) / wS
@@ -9779,7 +9779,7 @@ export class RoadSystem {
         let csR = null
         const inBore = this.tunnelSpanAt(rv.runKey, rv.arcS)
         if (!inBore || (queryY !== undefined &&
-                        queryY < this.runProfile(rv.arcS, rv.runKey).gradeY + (this._params.tunnelBoreRadius ?? 8))) {
+                        queryY < this.runProfile(rv.arcS, rv.runKey, _CD_RP).gradeY + (this._params.tunnelBoreRadius ?? 8))) {
             csR = this._carveCrossSection(rv.signedLat, rv.arcS, rv.runKey, 1, rawAmp, wx, wz)
         }
         const wB = cs ? cs.blendW : 0, wR = csR ? csR.blendW : 0
