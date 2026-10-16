@@ -591,19 +591,20 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // the whole squashed-carcass load past full compression. So they are published separately
         // and carry their own yield thresholds (rimYieldMult vs rimYieldRoadMult in damage.js).
         //
-        // The reference is THIS tire's carcass, not a healthy one — `rate` belongs in it. A flat
-        // tire carries almost nothing, so almost the whole load past the band goes straight into
-        // the rim, which is the point of a flat: there is no air left to absorb it. Subtracting a
-        // HEALTHY carcass's reference from a flat tire's force made the residual deeply negative
-        // and reported no rim load at all, so a flat rim was SAFER than an inflated one — exactly
-        // backwards (owner, 2026-08-23).
+        // The reference is THIS tire's, not a healthy one — `rate` belongs in its AIR term. A flat
+        // tire's air carries almost nothing, so the load past the band that the carcass cannot
+        // take goes straight into the rim, which is the point of a flat. Subtracting a HEALTHY
+        // tire's reference from a flat tire's force made the residual deeply negative and
+        // reported no rim load at all, so a flat rim was SAFER than an inflated one — exactly
+        // backwards (owner, 2026-08-23). The carcass term is NOT scaled by `rate` (review-2 R-07):
+        // the sidewall structure carries the same load flat or inflated, as in tireContactTerms.
         if (vehicleState.rimForceRoad && c.depth > WHEEL_SOFT_BAND) {
           const bandNorm = Math.min(0.98, WHEEL_SOFT_BAND / sidewall)
-          // The reference is what this tire's AIR carries at full compression — for a flat that is
-          // almost nothing, so almost the whole load past the band is rim load.
-          // Air and carcass each at their own rate — the same split tireContactForce makes.
-          const atBand = rate * WHEEL_SOFT_BAND *
-            (params.tireStiffness + carcassStiffness(params) * (1 / (1 - bandNorm * bandNorm) - 1))
+          // The reference is what this tire carries at full compression: its AIR at this tire's rate
+          // (almost nothing for a flat) plus its carcass at full rate — the same split
+          // tireContactForce makes.
+          const atBand = WHEEL_SOFT_BAND *
+            (params.tireStiffness * rate + carcassStiffness(params) * (1 / (1 - bandNorm * bandNorm) - 1))
           const residual = tireFnAtContact - atBand
           if (residual > vehicleState.rimForceRoad[i]) vehicleState.rimForceRoad[i] = residual
         }
