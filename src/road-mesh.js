@@ -1096,7 +1096,7 @@ export class RoadMeshSystem {
         const pos = new Float32Array(rings * vpr * 3)
         const col = new Float32Array(rings * vpr * 3)
         const uv  = new Float32Array(rings * vpr * 2)
-        const prof = { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+        const prof = { gradeY: 0, tx: 1, tz: 0 }
         let vi = 0, ui = 0
         for (let r = 0; r < rings; r++) {
             const ir = Math.min(inner - 1, Math.max(0, r - (extA ? 1 : 0)))
@@ -1114,8 +1114,7 @@ export class RoadMeshSystem {
             const t = Math.max(0, Math.min(1, dPortal / 25))
             const shade = 1 - 0.75 * (t * t * (3 - 2 * t))
             // Dirt-apron Y (relative to gradeY) — the _carveDirtY fold at lateral L, minus the drop.
-            // Camber from camberProfile, the SAME source the ribbon and the carve read — runProfile's
-            // camberRad is the physics profile's own and can differ by the stream window.
+            // Camber from camberProfile, the SAME source the ribbon and the carve read.
             const sinCam = Math.sin(road.camberProfile(s, runKey))
             const dirtH = (L) => crownProfile(L, halfWidth, crownH) + L * sinCam - clearance - APRON_DROP
             for (let k = 0; k < vpr; k++) {
@@ -1177,7 +1176,7 @@ export class RoadMeshSystem {
         const SEG = 20
         const c = road.runPointAt(runKey, pArc)
         if (!c) return null
-        const prof = { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+        const prof = { gradeY: 0, tx: 1, tz: 0 }
         road.runProfile(pArc, runKey, prof)
         const rx = prof.tz, rz = -prof.tx
         const ox = prof.tx * outSign, oz = prof.tz * outSign

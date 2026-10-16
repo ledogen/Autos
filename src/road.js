@@ -223,7 +223,7 @@ const XS_OFF_FADE = 4.0
 const _CD_A = { grade: 0, gap: 0, xs: 0, off: 0 }
 const _CD_B = { grade: 0, gap: 0, xs: 0, off: 0 }
 const _CD_OUT = { grade: 0, lateral: 0 }
-const _CD_RP = { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+const _CD_RP = { gradeY: 0, tx: 1, tz: 0 }
 // FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
 // authority ramps 0 → 1 (see _poiPadCarve). This is not a look tunable — it is the mechanism that
 // makes the ratified "POIs never influence routing determinism" rule structural: a pad has exactly
@@ -591,8 +591,7 @@ function _lerpVec3(a, b, t) {
  *     curvature on sweepers/long curves, less on hairpins (the requested feel).
  *
  * Defaults maxAngle 20° + kneeRadius 60 m fit ~4/10/15 effective strength at hairpin/50 m/long.
- * SHARED by _computeCamberArrays (ribbon/carve) and _buildRunProfile (physics) so the two stay
- * byte-identical (restream-invariance / mesh==physics).
+ * Used by _computeCamberArrays — the one camber routine the ribbon, carve and physics all read.
  *
  * @param {number} kappa   — signed curvature (1/m)
  * @param {number} maxRad  — asymptotic max bank (radians)
@@ -634,32 +633,31 @@ function _interpolateCamber(arcPos, camberRad, s) {
 
 // ── P0 run-profile sampler (plan 09-25) ───────────────────────────────────────
 /**
- * ONE binary search on arcPos, then interpolate all four profile arrays.
+ * ONE binary search on arcPos, then interpolate the profile arrays (gradeY, tx, tz).
  * Module-scope (allocation-free, no `this`), O(log N) per call.
  * Returns the out-object reference (caller provides or we allocate once).
  *
  * @param {number[]} arcPos    — monotone arc-length positions (metres)
  * @param {number[]} gradeY    — Y-height per sample
  * @param {number[]|null} gradeM — FEAT-81: dY/d(arc) per sample (from _profileTangents); null = linear
- * @param {number[]} camberRad — banking angle (radians) per sample
  * @param {number[]} tx        — unit XZ tangent X per sample
  * @param {number[]} tz        — unit XZ tangent Z per sample
  * @param {number}   s         — query arc-length (metres)
- * @param {object}   out       — { gradeY, camberRad, tx, tz } object to write into
+ * @param {object}   out       — { gradeY, tx, tz } object to write into
  * @returns {object} out — mutated with interpolated values
  */
-function _interpolateRunProfile(arcPos, gradeY, gradeM, camberRad, tx, tz, s, out) {
+function _interpolateRunProfile(arcPos, gradeY, gradeM, tx, tz, s, out) {
     const N = arcPos.length
     if (N === 0) {
-        out.gradeY = 0; out.camberRad = 0; out.tx = 1; out.tz = 0
+        out.gradeY = 0; out.tx = 1; out.tz = 0
         return out
     }
     if (s <= arcPos[0]) {
-        out.gradeY = gradeY[0]; out.camberRad = camberRad[0]; out.tx = tx[0]; out.tz = tz[0]
+        out.gradeY = gradeY[0]; out.tx = tx[0]; out.tz = tz[0]
         return out
     }
     if (s >= arcPos[N - 1]) {
-        out.gradeY = gradeY[N-1]; out.camberRad = camberRad[N-1]; out.tx = tx[N-1]; out.tz = tz[N-1]
+        out.gradeY = gradeY[N-1]; out.tx = tx[N-1]; out.tz = tz[N-1]
         return out
     }
     // Binary search for interval [lo, hi] containing s.
@@ -670,7 +668,7 @@ function _interpolateRunProfile(arcPos, gradeY, gradeM, camberRad, tx, tz, s, ou
     }
     const span = arcPos[hi] - arcPos[lo]
     if (span < 1e-9) {
-        out.gradeY = gradeY[lo]; out.camberRad = camberRad[lo]; out.tx = tx[lo]; out.tz = tz[lo]
+        out.gradeY = gradeY[lo]; out.tx = tx[lo]; out.tz = tz[lo]
         return out
     }
     const t = (s - arcPos[lo]) / span
@@ -688,7 +686,6 @@ function _interpolateRunProfile(arcPos, gradeY, gradeM, camberRad, tx, tz, s, ou
     } else {
         out.gradeY = gradeY[lo] + t * (gradeY[hi] - gradeY[lo])
     }
-    out.camberRad = camberRad[lo] + t * (camberRad[hi] - camberRad[lo])
     out.tx        = tx[lo]        + t * (tx[hi]        - tx[lo])
     out.tz        = tz[lo]        + t * (tz[hi]        - tz[lo])
     return out
@@ -10621,14 +10618,14 @@ export class RoadSystem {
             if (ej.jStart.is) {
                 const d = arcPos[i] - aStart
                 const fs = w(d, hS, RgS)
-                if (fs > fG) { fG = fs; ny = target(ej.jStart, i, d) }
-                if (ej.jStart.flatCamber) { const fc = w(d, hS, RcS); if (fc > fC) { fC = fc; nc = planeCam(ej.jStart, i) } }
+                if (gradeY && fs > fG) { fG = fs; ny = target(ej.jStart, i, d) }
+                if (camberRad && ej.jStart.flatCamber) { const fc = w(d, hS, RcS); if (fc > fC) { fC = fc; nc = planeCam(ej.jStart, i) } }
             }
             if (ej.jEnd.is) {
                 const d = aEnd - arcPos[i]
                 const fs = w(d, hE, RgE)
-                if (fs > fG) { fG = fs; ny = target(ej.jEnd, i, d) }
-                if (ej.jEnd.flatCamber) { const fc = w(d, hE, RcE); if (fc > fC) { fC = fc; nc = planeCam(ej.jEnd, i) } }
+                if (gradeY && fs > fG) { fG = fs; ny = target(ej.jEnd, i, d) }
+                if (camberRad && ej.jEnd.flatCamber) { const fc = w(d, hE, RcE); if (fc > fC) { fC = fc; nc = planeCam(ej.jEnd, i) } }
             }
             if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
             if (camberRad && fC > 0) camberRad[i] += (nc - camberRad[i]) * fC
@@ -10776,11 +10773,12 @@ export class RoadSystem {
      * DETERMINISM (D-16): pure function of network entry — no Math.random, no Date, no session state.
      *
      * @param {string} runKey — canonical run key (e.g. "0:0")
-     * @returns {{ arcPos: number[], gradeY: number[], camberRad: number[], tx: number[], tz: number[] } | null}
+     * @returns {{ arcPos: number[], gradeY: number[], gradeM: number[], tx: number[], tz: number[] } | null}
      *   arcPos   — monotone XZ arc-length positions (metres), N entries
      *   gradeY   — routed centerline Y per sample (metres), continuous along the full run
-     *   camberRad — slew-limited banking angle (radians), same computation as _buildCamberProfile
+     *   gradeM   — FEAT-81 dY/d(arc) per sample (Hermite tangents)
      *   tx/tz    — unit XZ tangent (forward direction) per sample; last sample replicates previous
+     *   Banking is NOT here — it is camberProfile()'s (_buildCamberProfile).
      */
     _buildRunProfile(runKey) {
         const netEntry = this._network?.get(runKey)
@@ -10790,25 +10788,13 @@ export class RoadSystem {
         const N = pts.length
 
         const p = this._params || {}
-        const maxCamberRad    = (p.camberMaxAngleDeg ?? 20) * (Math.PI / 180)   // asymptotic max bank
-        const kHalf           = 1 / (p.camberKneeRadiusM ?? 60)                 // half-bank curvature
-        const slewRateRadPerM = (p.roadCamberRate ?? 1.5) * (Math.PI / 180)
-
         const arcPos    = new Array(N)
         const gradeY    = new Array(N)
-        const rawCamber = new Array(N)
         const tx        = new Array(N)
         const tz        = new Array(N)
 
         arcPos[0]    = -(netEntry.arcOrigin ?? 0)   // D-16 Phase 2: owner-origined (matches slicer arcS0/arcS1)
         gradeY[0]    = pts[0].y
-        // P4 (BUG-10): seed from predecessor's end camber instead of hard 0.
-        // Curvature is undefined at sample 0 (no predecessor segment); the boundary
-        // seed carries the correct banking across the shared run boundary node.
-        // _runStartCamber reads from the predecessor's ALREADY-CACHED profile (fast path)
-        // or from a raw forward-march without recursion (slow path). Returns 0 for
-        // genuine free run starts (no predecessor). Cycle-safe.
-        rawCamber[0] = this._runStartCamber(runKey)
 
         // Forward tangent for sample 0: direction toward sample 1.
         {
@@ -10830,40 +10816,8 @@ export class RoadSystem {
             const segLen = ds || 1e-8
             tx[i] = ax / segLen
             tz[i] = az / segLen
-
-            // Curvature at i: finite-difference using prev-seg tangent (T0) and next-seg tangent (T1).
-            const t0x = ax, t0z = az   // unnormalized; signedCurvature normalises internally
-            let t1x, t1z, effectiveDs
-            if (i < N - 1) {
-                t1x = pts[i + 1].x - pts[i].x
-                t1z = pts[i + 1].z - pts[i].z
-                const ds1 = Math.sqrt(t1x * t1x + t1z * t1z) || 1e-8
-                effectiveDs = (ds + ds1) * 0.5
-            } else {
-                t1x = t0x; t1z = t0z   // boundary: replicate
-                effectiveDs = ds || 1e-8
-            }
-
-            const kappa = signedCurvature(t0x, t0z, t1x, t1z, effectiveDs)
-            rawCamber[i] = camberFromCurvature(kappa, maxCamberRad, kHalf)
         }
-
-        // Last sample: replicate tangent from second-to-last segment.
-        // (already computed above — tx[N-1]/tz[N-1] = forward tangent of last segment, correct)
-
-        // Forward-march slew-rate limit for camber.
-        const camberRad = new Array(N)
-        camberRad[0] = rawCamber[0]
-        for (let i = 1; i < N; i++) {
-            const ds       = arcPos[i] - arcPos[i - 1]
-            const maxDelta = slewRateRadPerM * ds
-            const prev     = camberRad[i - 1]
-            const target   = rawCamber[i]
-            const delta    = target - prev
-            if      (delta >  maxDelta) camberRad[i] = prev + maxDelta
-            else if (delta < -maxDelta) camberRad[i] = prev - maxDelta
-            else                        camberRad[i] = target
-        }
+        // (tx[N-1]/tz[N-1] = forward tangent of the last segment.)
 
         // FEAT-10: seal the ribbon across run joins. The ribbon cross-section frame is runProfile.tx/tz;
         // at a run's endpoints the LOCAL last-segment direction kinks vs the neighbour run, so the two
@@ -10893,16 +10847,16 @@ export class RoadSystem {
             }
         }
 
-        // FEAT-10: flatten grade → nodeY and camber → 0 near merged junction endpoints so crossing
-        // runs agree at the node (no invisible collision step, no banking jolt). Same blend as
-        // _buildCamberProfile → the ribbon (camberProfile) and the run profile stay in sync at junctions.
-        this._applyJunctionBlend(runKey, arcPos, gradeY, camberRad, pts)
+        // FEAT-10: flatten grade → nodeY near merged junction endpoints so crossing runs agree at the
+        // node (no invisible collision step). Banking is camberProfile's (_buildCamberProfile runs the
+        // camber half of the same blends), so this profile carries no camber.
+        this._applyJunctionBlend(runKey, arcPos, gradeY, null, pts)
         // FEAT-07 Step 2: same flatten at AT_GRADE mid-span crossings (both strands → one shared node Y).
-        this._applyMidspanJunctionBlend(runKey, arcPos, gradeY, camberRad)
+        this._applyMidspanJunctionBlend(runKey, arcPos, gradeY, null)
 
         // FEAT-81: tangents for the C¹ profile, on the FINAL gradeY (post-blend).
         const gradeM = _profileTangents(arcPos, gradeY)
-        return { arcPos, gradeY, gradeM, camberRad, tx, tz }
+        return { arcPos, gradeY, gradeM, tx, tz }
     }
 
     /**
@@ -10942,33 +10896,32 @@ export class RoadSystem {
 
     /**
      * P0 — Continuous per-run profile sampler (plan 09-25).
-     * Returns gradeY/camberRad/tx/tz sampled at run-global arc-position `arcS` for `runKey`.
+     * Returns gradeY/tx/tz sampled at run-global arc-position `arcS` for `runKey`.
      *
      * ONE source, ONE arc domain. Both sides of any tile/chunk seam resolve to the same arcS,
      * so anything read by arcS is C0 by construction — seam-continuity is guaranteed.
      *
      * Cache: lazy-init `this._runProfileCache` Map, entries keyed by runKey carrying
-     *   { rev, arcPos, gradeY, gradeM, camberRad, tx, tz }.
+     *   { rev, arcPos, gradeY, gradeM, tx, tz }.
      * Invalidation: rebuilt when `this._networkRev` differs from the stored rev (same discipline
      *   as camberProfile / _camberProfileCache).
      * Query: ONE binary search on arcPos via _interpolateRunProfile, O(log N) per call.
-     * Allocation: the returned object { gradeY, camberRad, tx, tz } is the ONLY allocation
+     * Allocation: the returned object { gradeY, tx, tz } is the ONLY allocation
      *   per query. Signature optionally accepts a caller-provided `out` object to avoid it.
      *
      * @param {number} arcS   — run-global arc-length position (metres)
      * @param {string} runKey — canonical run key matching the network entry (e.g. "0:0")
-     * @param {object} [out]  — optional reusable { gradeY, camberRad, tx, tz } to write into
-     * @returns {{ gradeY: number, camberRad: number, tx: number, tz: number }}
+     * @param {object} [out]  — optional reusable { gradeY, tx, tz } to write into
+     * @returns {{ gradeY: number, tx: number, tz: number }}
      *   gradeY    — routed centerline Y (metres)
-     *   camberRad — slew-limited banking angle (radians)
-     *   tx / tz   — unit XZ forward tangent components
-     *   Falls back to zeroed sample { gradeY:0, camberRad:0, tx:1, tz:0 } for unknown/empty run.
+     *   tx / tz   — unit XZ forward tangent components (banking is camberProfile()'s)
+     *   Falls back to zeroed sample { gradeY:0, tx:1, tz:0 } for unknown/empty run.
      */
     runProfile(arcS, runKey, out) {
-        const result = out ?? { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+        const result = out ?? { gradeY: 0, tx: 1, tz: 0 }
 
         if (!runKey) {
-            result.gradeY = 0; result.camberRad = 0; result.tx = 1; result.tz = 0
+            result.gradeY = 0; result.tx = 1; result.tz = 0
             return result
         }
 
@@ -10978,9 +10931,9 @@ export class RoadSystem {
         const currentRev = this._networkRev
         const cached = this._runProfileCache.get(runKey)
         if (cached && cached.rev === currentRev) {
-            // Fast path: ONE binary search, interpolate all four arrays.
+            // Fast path: ONE binary search, interpolate the arrays.
             return _interpolateRunProfile(
-                cached.arcPos, cached.gradeY, cached.gradeM, cached.camberRad, cached.tx, cached.tz,
+                cached.arcPos, cached.gradeY, cached.gradeM, cached.tx, cached.tz,
                 arcS, result
             )
         }
@@ -10993,13 +10946,13 @@ export class RoadSystem {
             // from this._network by a re-stream. Fail loud so the caller can diagnose (D-16).
             // Do NOT silently snap gradeY to 0 (that would pull the truck underground).
             if (runKey) console.warn(`[road] runProfile: runKey "${runKey}" not in _network (desync) arcS=${arcS.toFixed(1)}`)
-            result.gradeY = 0; result.camberRad = 0; result.tx = 1; result.tz = 0
+            result.gradeY = 0; result.tx = 1; result.tz = 0
             return result
         }
 
         this._runProfileCache.set(runKey, { rev: currentRev, ...profile })
         return _interpolateRunProfile(
-            profile.arcPos, profile.gradeY, profile.gradeM, profile.camberRad, profile.tx, profile.tz,
+            profile.arcPos, profile.gradeY, profile.gradeM, profile.tx, profile.tz,
             arcS, result
         )
     }
