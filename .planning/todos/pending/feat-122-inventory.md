@@ -75,5 +75,18 @@ first, which is why FEAT-121 never lists it under `needs:`.
 - Inventory holds only the starting kit at run start: the Pack with the bedroll packed (items.md §2c).
 - Stowed mass shows up in the truck's total mass.
 
+## Status — rounds 1+2 merged to main 2026-10-16 (f0c5034)
+
+Kept open for the deferred list below. Don't start any of these without the owner.
+
+- Fitting parts (waits for the FEAT-104 shop).
+- Cooldown items.
+- Quick-slot rebinding, and a HUD strip for keys 1–4.
+- Pack reach → `campRoadEdgeM`.
+- Bed restfulness → `DaySystem.recoveryRate`.
+- Effects for the chili dog, spare tire and emergency gas.
+- Stowed mass in free roam.
+- A second pending grant overwrites the first.
+
 **Not here — SM-4:** the inventory surviving save/load inside a run rides on the run save (FEAT-42).
 This ticket keeps it in memory.
