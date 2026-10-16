@@ -144,14 +144,14 @@ function fingerprint (W) {
 
   time('water', () => {
     const ponds = water.pondsInBBox(x0, z0, x1, z1), streams = water.streamsInBBox(x0, z0, x1, z1)
-    const groundAt = (x, z) => terr.analyticHeight(x, z)
-    const blendAt = (x, z) => road._sampleCarveWorld(x, z, rawHeightWorld(x, z))?.blendW ?? 0
+    const surfaceAt = (x, z) => ({ h: terr.analyticHeight(x, z),
+      blendW: road._sampleCarveWorld(x, z, rawHeightWorld(x, z))?.blendW ?? 0 })
     const bbox = { minX: x0, minZ: z0, maxX: x1, maxZ: z1 }
     const f = []
     for (const st of streams) {
-      const spans = streamSpans(st, bbox, groundAt, blendAt)
-      for (const m of [buildStreamMesh(st, undefined, bbox, groundAt, blendAt, spans),
-                       buildStreamBedMesh(st, undefined, bbox, groundAt, blendAt, spans)]) {
+      const sp = streamSpans(st, bbox, surfaceAt)
+      for (const m of [buildStreamMesh(st, undefined, bbox, surfaceAt, sp),
+                       buildStreamBedMesh(st, undefined, bbox, surfaceAt, sp)]) {
         f.push(m ? 1 : 0); if (m) f.push(...geoFloats(m.geometry))
       }
     }

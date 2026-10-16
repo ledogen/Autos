@@ -180,13 +180,9 @@ function rebuildWaterSystem () {
   // COMPOSED driving surface (road decks/pads pulled through the channel) — inject the same
   // physics surface the wheels ride. A network can land AFTER a ribbon was built (PERF-30 adopts
   // are asynchronous), so the frame loop hands sync() the road revision and a change rebuilds them.
+  // { h, blendW }: the composed surface and its road-carve blend, from ONE road resolve (S-36).
   waterRenderer = new WaterRenderer(waterSystem, {
-    groundAt: (x, z) => terrainSystem.analyticHeight(x, z),
-    // Road-carve blend at a point (0 = no road). Reads module-scope roadSystem at call time
-    // (same convention as makePropSamplers) so it survives seed rebuilds without re-injection.
-    roadBlendAt: (x, z) => roadSystem
-      ? (roadSystem._sampleCarveWorld(x, z, terrainSystem.rawHeightWorld(x, z))?.blendW ?? 0)
-      : 0,
+    surfaceAt: (x, z) => { const s = { h: 0, blendW: 0 }; s.h = terrainSystem.analyticHeight(x, z, undefined, undefined, s); return s },
   })
   scene.add(waterRenderer.group)
   // FEAT-17: roads route AROUND ponds — inject the water no-go into the (current) RoadSystem as pure

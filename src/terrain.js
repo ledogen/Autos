@@ -955,7 +955,9 @@ export class TerrainSystem {
     // queryY (optional): the querying probe's own world Y. Only physics contact queries pass it —
     // inside a FEAT-40 bore span it disambiguates the two stacked surfaces (bore floor vs the raw
     // hill overhead). Callers without a Y (props, camera, map) always get the terrain skin.
-    analyticHeight(wx, wz, nrHint, queryY) {
+    // out (optional): receives out.blendW, the road-carve blend this height was composed with (0 =
+    // no road) — the water ribbons' BUG-33 road test reads it from the SAME _sampleCarveWorld call.
+    analyticHeight(wx, wz, nrHint, queryY, out) {
         // Precondition: reinitWorker (called synchronously in the constructor) must have built
         // the noise closures. Throw rather than silently returning 0 — a 0 here would seat the
         // truck at sea level inside the terrain and violate the "never returns 0" contract (WR-07).
@@ -980,8 +982,10 @@ export class TerrainSystem {
         // FEAT-40: queryY threads into the road resolve — inside a bore span the road only owns
         // below-apex probes; above-apex or Y-less queries fall through to a neighbouring surface
         // run or raw terrain (the hill overhead) inside _sampleCarveWorld.
+        if (out) out.blendW = 0
         if (this._roadSystem) {
             const c = this._roadSystem._sampleCarveWorld(wx, wz, raw, nrHint, queryY)
+            if (out && c) out.blendW = c.blendW
             if (c && c.blendW > 1e-6) return hs + c.blendW * (c.gradeY - hs)
         }
         return hs

@@ -62,23 +62,28 @@ export function buildPondMesh(pond, material, segments = 48) {
 // grouped into contiguous in-window spans (one strip each, one point of overhang per end so
 // the cut edge sits past the window, under fog); indices never bridge span gaps.
 //
-// BUG-33: two optional samplers suppress ribbon spans that would paint the road blue:
-//  - roadBlendAt(x, z): the road-carve blend. Where a road core covers a probe (blend > 0.5)
-//    and the water level is not clearly BELOW the deck surface, the span is suppressed —
-//    the deck fills the channel, so real water could not stand there at all. Water clearly
-//    below the deck keeps rendering (the opaque deck occludes it via the depth buffer).
-//  - groundAt(x, z): the COMPOSED driving surface. Backstop for surfaces the road blend
-//    doesn't cover (junction pads): in an honest channel the water sits exactly waterDepth
-//    above the carved bed, so waterY > ground + waterDepth + slack means SOMETHING was
-//    pulled up through the channel.
-export function computeStreamSpans(stream, surfaceLift, bbox, groundAt, roadBlendAt) {
+// BUG-33: an optional sampler surfaceAt(x, z) → { h, blendW } suppresses ribbon spans that would
+// paint the road blue. h is the COMPOSED driving surface, blendW the road-carve blend it was
+// composed with — one road resolve for both (S-36):
+//  - road rule: where a road core covers a probe (blendW > 0.5) and the water level is not
+//    clearly BELOW the deck surface, the span is suppressed — the deck fills the channel, so real
+//    water could not stand there at all. Water clearly below the deck keeps rendering (the
+//    opaque deck occludes it via the depth buffer).
+//  - pad backstop, for surfaces the road blend doesn't cover (junction pads): in an honest channel
+//    the water sits exactly waterDepth above the carved bed, so waterY > h + waterDepth + slack
+//    means SOMETHING was pulled up through the channel.
+//
+// Returns { spans, ground } or null. `ground` holds the three probe heights h per centreline point
+// (−w, 0, +w; NaN where a point was not probed) so the bed reuses them instead of re-sampling.
+export function computeStreamSpans(stream, surfaceLift, bbox, surfaceAt) {
     const pts = stream.points
     if (pts.length < 2) return null
 
     const spans = []
-    if (!bbox && !groundAt && !roadBlendAt) {
+    const ground = new Float64Array(pts.length * 3).fill(NaN)
+    if (!bbox && !surfaceAt) {
         spans.push([0, pts.length - 1])
-        return spans
+        return { spans, ground }
     }
     const pad = (stream.maxWidth ?? stream.width)
     const STAND_SLACK = 0.25   // m — composition tolerance above the honest waterDepth stand
@@ -86,7 +91,7 @@ export function computeStreamSpans(stream, surfaceLift, bbox, groundAt, roadBlen
     const classify = (p, i) => {
         if (bbox && (p.x < bbox.minX - pad || p.x > bbox.maxX + pad ||
                      p.z < bbox.minZ - pad || p.z > bbox.maxZ + pad)) return OUT_WINDOW
-        if (groundAt || roadBlendAt) {
+        if (surfaceAt) {
             const waterY = p.y + surfaceLift
             const ceiling = stream.waterDepth + STAND_SLACK
             // Probe the centerline and BOTH ribbon edges — a road grazing one side of
@@ -101,17 +106,18 @@ export function computeStreamSpans(stream, surfaceLift, bbox, groundAt, roadBlen
             const half = p.w ?? stream.width
             for (let e = -1; e <= 1; e++) {
                 const px = p.x + nx * half * e, pz = p.z + nz * half * e
-                const g = groundAt ? groundAt(px, pz) : 0   // one composed-surface sample per probe
+                const sf = surfaceAt(px, pz)   // one composed-surface sample per probe
+                const g = sf.h
+                ground[i * 3 + e + 1] = g
                 // Road rule: a road core under the probe, with water NOT clearly below
                 // the deck → the deck fills the channel; water cannot stand there.
-                if (roadBlendAt && roadBlendAt(px, pz) > 0.5 &&
-                    (!groundAt || waterY > g - 0.1)) return OVER_ROAD
+                if (sf.blendW > 0.5 && waterY > g - 0.1) return OVER_ROAD
                 // Pad backstop: water standing impossibly above the composed ground.
                 // Skipped at the exact edges when the bend swings the perpendicular
                 // into the rising bank (ground > bed is honest there): only fire when
                 // the probe ground is BELOW the water minus the honest stand — i.e.,
                 // something flat was pulled up under standing water.
-                if (groundAt && waterY > g + ceiling &&
+                if (waterY > g + ceiling &&
                     (e === 0 || waterY > g + ceiling + 0.5)) return OVER_ROAD
             }
         }
@@ -133,12 +139,12 @@ export function computeStreamSpans(stream, surfaceLift, bbox, groundAt, roadBlen
             start = -1
         }
     }
-    return spans.length === 0 ? null : spans
+    return spans.length === 0 ? null : { spans, ground }
 }
 
 /** The span set a stream's water ribbon AND its cobble bed are built on (WATER-surface lift). */
-export function streamSpans(stream, bbox, groundAt, roadBlendAt) {
-    return computeStreamSpans(stream, stream.waterDepth - stream.depth, bbox, groundAt, roadBlendAt)
+export function streamSpans(stream, bbox, surfaceAt) {
+    return computeStreamSpans(stream, stream.waterDepth - stream.depth, bbox, surfaceAt)
 }
 
 // ── Stream ribbon following the descending centerline ──────────────────────────────────────
@@ -146,13 +152,14 @@ export function streamSpans(stream, bbox, groundAt, roadBlendAt) {
 // the local tangent (XZ), at y = centerlineY − depth + waterDepth (the water surface, which
 // sits above the carved bed and descends with the channel). Span clipping + road/pad
 // suppression are delegated to computeStreamSpans (BUG-32 / BUG-33 above).
-// `spans` (optional): the result of streamSpans() when the caller already has it — the water and
+// `sp` (optional): the result of streamSpans() when the caller already has it — the water and
 // the bed share one span set, and computing it is the expensive part.
-export function buildStreamMesh(stream, material, bbox, groundAt, roadBlendAt, spans = streamSpans(stream, bbox, groundAt, roadBlendAt)) {
+export function buildStreamMesh(stream, material, bbox, surfaceAt, sp = streamSpans(stream, bbox, surfaceAt)) {
     const pts = stream.points
     if (pts.length < 2) return null
     const surfaceLift = stream.waterDepth - stream.depth   // relative to centerline terrain y
-    if (!spans) return null
+    if (!sp) return null
+    const { spans } = sp
 
     let nPts = 0
     for (const [a, b] of spans) nPts += b - a + 1
@@ -201,18 +208,20 @@ export function buildStreamMesh(stream, material, bbox, groundAt, roadBlendAt, s
 //   - 5 columns per row at cross-offsets {0, ±w, ±(w + margin)} — matching the carve's
 //     piecewise-linear cross-section (flat bed to ±w, bank ramp beyond) so the drape never
 //     chords across a kink.
-//   - y = groundAt(x,z) + 0.06 : 6 cm above the COMPOSED terrain (analyticHeight includes the
+//   - y = surfaceAt(x,z).h + 0.06 : 6 cm above the COMPOSED terrain (analyticHeight includes the
 //     stream carve), so the margins climb the bank toe and read as dry cobble shoulders above
-//     the waterline — the visible part of the riverbed. Falls back to the flat bed plane when
-//     no groundAt sampler is injected (headless fixtures).
+//     the waterline — the visible part of the riverbed. The 0/±w columns are the span pass's own
+//     probes (sp.ground, same points); only the ±(w + margin) columns and the window-overhang rows
+//     sample again. Falls back to the flat bed plane when no sampler is injected (headless fixtures).
 //   - margin = bankWidth/2 : the lower half of each bank ramp gets cobbled.
 //   - UVs : u = 0..1 across the strip, v = arcS / 12 → one cobble repeat per ~12 m of stream.
 // It reuses computeStreamSpans with the WATER-surface lift (waterDepth − depth) so the bed is
 // suppressed on the IDENTICAL spans as the water — never visible over a road deck or lifted pad.
-export function buildStreamBedMesh(stream, material, bbox, groundAt, roadBlendAt, spans = streamSpans(stream, bbox, groundAt, roadBlendAt)) {
+export function buildStreamBedMesh(stream, material, bbox, surfaceAt, sp = streamSpans(stream, bbox, surfaceAt)) {
     const pts = stream.points
     if (pts.length < 2) return null
-    if (!spans) return null
+    if (!sp) return null
+    const { spans, ground } = sp
 
     const margin = (stream.bankWidth ?? 5) * 0.5
     const COLS = 5
@@ -240,7 +249,9 @@ export function buildStreamBedMesh(stream, material, bbox, groundAt, roadBlendAt
             for (let c = 0; c < COLS; c++) {
                 const off = [half, w, 0, -w, -half][c]      // kink-aligned cross offsets, left → right
                 const px = p.x + nx * off, pz = p.z + nz * off
-                const y = groundAt ? groundAt(px, pz) + 0.06 : bedFallbackY
+                // Columns 1/2/3 (off = +w/0/−w) are the span probes e = +1/0/−1 → ground[i·3 + 2/1/0].
+                const g = (c >= 1 && c <= 3) ? ground[i * 3 + 3 - c] : NaN
+                const y = surfaceAt ? (Number.isNaN(g) ? surfaceAt(px, pz).h : g) + 0.06 : bedFallbackY
                 const o = (row * COLS + c) * 3
                 positions[o + 0] = px; positions[o + 1] = y; positions[o + 2] = pz
                 const u = (row * COLS + c) * 2
@@ -289,8 +300,7 @@ export class WaterRenderer {
         this._meshes = new Map()   // feature key -> mesh (dedup / reuse); bed ribbons keyed "<key>|bed"
         this._winKey = ''          // BUG-32: chunk-quantized clip window of the current stream meshes
         this._contentGen = -1      // PERF-19.1: water content-generation stamp at the last sync
-        this._groundAt = opts.groundAt ?? null         // BUG-33: composed driving-surface sampler
-        this._roadBlendAt = opts.roadBlendAt ?? null   // BUG-33: road-carve blend sampler
+        this._surfaceAt = opts.surfaceAt ?? null   // BUG-33: (x, z) → { h: composed surface, blendW: road-carve blend }
     }
 
     // Ensure meshes exist for every pond/stream overlapping the bbox; drop meshes whose
@@ -302,7 +312,7 @@ export class WaterRenderer {
     // discs — built whole, reused across windows.
     /**
      * @param {number} [surfaceRev] a revision of the ROAD surface the ribbons are suppressed
-     *   against (BUG-33). Which spans draw is decided by roadBlendAt/groundAt, so a network that
+     *   against (BUG-33). Which spans draw is decided by surfaceAt, so a network that
      *   lands after the ribbon was built (the async adopt) must rebuild it — otherwise the old
      *   ribbon paints water over the new causeway, or stays cut where a road has gone.
      */
@@ -342,13 +352,13 @@ export class WaterRenderer {
             wanted.add(bedKey)
             const needWater = !this._meshes.has(st.key), needBed = !this._meshes.has(bedKey)
             if (!needWater && !needBed) continue
-            const spans = streamSpans(st, bbox, this._groundAt, this._roadBlendAt)   // once, for both
+            const sp = streamSpans(st, bbox, this._surfaceAt)   // once, for both
             if (needWater) {
-                const m = buildStreamMesh(st, this.material, bbox, this._groundAt, this._roadBlendAt, spans)
+                const m = buildStreamMesh(st, this.material, bbox, this._surfaceAt, sp)
                 if (m) { this._meshes.set(st.key, m); this.group.add(m) }
             }
             if (needBed) {
-                const bm = buildStreamBedMesh(st, this.bedMaterial, bbox, this._groundAt, this._roadBlendAt, spans)
+                const bm = buildStreamBedMesh(st, this.bedMaterial, bbox, this._surfaceAt, sp)
                 if (bm) { this._meshes.set(bedKey, bm); this.group.add(bm) }
             }
         }

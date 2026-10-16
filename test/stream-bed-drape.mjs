@@ -49,8 +49,8 @@ const T = {
     _roadSystem: road,
     _waterCarve: { sampleAt: (x, z, s, raw) => water.streamCarveSample(x, z, s, raw) },
 }
-const groundAt = (x, z) => TerrainSystem.prototype.analyticHeight.call(T, x, z)
-const roadBlendAt = (x, z) => road._sampleCarveWorld(x, z, rawHeightWorld(x, z))?.blendW ?? 0
+// main.js's surfaceAt: the real analyticHeight, its road-carve blend read back through `out`.
+const surfaceAt = (x, z) => { const s = { h: 0, blendW: 0 }; s.h = TerrainSystem.prototype.analyticHeight.call(T, x, z, undefined, undefined, s); return s }
 
 const bbox = { minX: CENTER.x - 512, minZ: CENTER.z - 512, maxX: CENTER.x + 512, maxZ: CENTER.z + 512 }
 const streams = water.streamsInBBox(bbox.minX, bbox.minZ, bbox.maxX, bbox.maxZ)
@@ -59,7 +59,7 @@ const streams = water.streamsInBBox(bbox.minX, bbox.minZ, bbox.maxX, bbox.maxZ)
 const COLS = 5
 let built = 0, rows = 0, dryRows = 0, wetRows = 0
 for (const st of streams) {
-    const mesh = buildStreamBedMesh(st, null, bbox, groundAt, roadBlendAt)
+    const mesh = buildStreamBedMesh(st, null, bbox, surfaceAt)
     if (!mesh) continue
     built++
     const pos = mesh.geometry.attributes.position.array
@@ -67,7 +67,7 @@ for (const st of streams) {
     // Recover the row → centerline-point mapping through the SAME span machinery the builder
     // uses, so each row can be scored against its honest water level p.y + surfaceLift (the y
     // the water ribbon puts there).
-    const spans = computeStreamSpans(st, surfaceLift, bbox, groundAt, roadBlendAt)
+    const { spans } = computeStreamSpans(st, surfaceLift, bbox, surfaceAt)
     const rowPts = []
     for (const [i0, i1] of spans) for (let i = i0; i <= i1; i++) rowPts.push(st.points[i])
     const nRows = pos.length / (COLS * 3)
@@ -93,9 +93,9 @@ log(wetPct >= 85, 'WET-BED', `${wetPct.toFixed(1)}% of rows keep the ribbon cent
 
 // ── Determinism ─────────────────────────────────────────────────────────────────────────────────
 {
-    const st = streams.find(s => buildStreamBedMesh(s, null, bbox, groundAt, roadBlendAt))
-    const a = buildStreamBedMesh(st, null, bbox, groundAt, roadBlendAt).geometry.attributes.position.array
-    const b = buildStreamBedMesh(st, null, bbox, groundAt, roadBlendAt).geometry.attributes.position.array
+    const st = streams.find(s => buildStreamBedMesh(s, null, bbox, surfaceAt))
+    const a = buildStreamBedMesh(st, null, bbox, surfaceAt).geometry.attributes.position.array
+    const b = buildStreamBedMesh(st, null, bbox, surfaceAt).geometry.attributes.position.array
     let same = a.length === b.length
     for (let i = 0; same && i < a.length; i++) if (a[i] !== b[i]) same = false
     log(same, 'DETERMINISM', 'same stream + window → byte-identical bed geometry')
