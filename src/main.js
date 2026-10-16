@@ -6648,6 +6648,10 @@ function loop () {
     const ignEv = vehicleState.ignition?.event
     if (ignEv === 'catch' || ignEv === 'shutoff') _ignEdge = ignEv
     if (resetRequested) {
+      // R-12: R while camped breaks camp first — the same close the dialogue's "break camp" button
+      // runs (un-digs the pad, hides the fire, drops the camera focus, releases the FEAT-118 clock
+      // hold). A fade in flight checks that its dialogue is still up, so this is safe mid-fade too.
+      if (_campUi) _closeCampUi()
       // R re-seats the truck to a driveable state ONLY — it does NOT touch any tunable
       // params or slider values. All tuning (vehicle AND terrain) stays exactly as set;
       // a full page reload is the only way to revert params to file defaults.
