@@ -359,8 +359,8 @@ export class WaterSystem {
         }
 
         const waterLevel = rimHeight - pondFreeboard
-        // Effective radius: the smaller of the cap and the contour reach implied by
-        // the rim distance. Cap at pondMaxRadius (ponds, not lakes).
+        // Radius: a constant, pondMaxRadius capped by the rim-cast reach (50 m at the defaults);
+        // the rim distance itself is not used. Ponds, not lakes.
         const radius = Math.min(pondMaxRadius, pondSearchRadius)
         const pond = {
             kind: 'pond',
@@ -811,7 +811,8 @@ export class WaterSystem {
     }
 
     // Road no-go: inside a pond's radius + skirt. The router treats this as a hard
-    // exclusion (ponds are routed AROUND — FEAT-17). Streams are NOT no-go (bridged).
+    // exclusion (ponds are routed AROUND — FEAT-17). Streams are NOT no-go: a road crosses one
+    // on a CAUSEWAY (the road fill closes the channel; see terrain.js setWaterCarve).
     isRoadNoGo(x, z) {
         for (const pond of this._pondsAt(x, z)) {
             const rr = pond.radius + pond.skirt

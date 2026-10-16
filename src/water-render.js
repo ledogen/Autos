@@ -11,7 +11,7 @@
  *     buffer, so a flat disc of radius = pond.radius shows water only where terrain is
  *     below it. No shader clip needed for v1.
  *   - Stream: a thin ribbon strip following the centerline at bed+waterDepth (DESCENDING,
- *     not a flat plane), width = 2·streamWidth.
+ *     not a flat plane), width = 2·p.w (the FEAT-24 per-point half-width).
  *
  * A single shared, lightly-tinted transparent material is enough for the first cut; a
  * scrolling normal/flow map + sky (src/sky.js) tie-in is a later polish pass.
@@ -152,7 +152,7 @@ export function streamSpans(stream, bbox, surfaceAt) {
 }
 
 // ── Stream ribbon following the descending centerline ──────────────────────────────────────
-// Builds a triangle strip: at each centerline point, offset ± streamWidth perpendicular to
+// Builds a triangle strip: at each centerline point, offset ± p.w (the per-point half-width) perpendicular to
 // the local tangent (XZ), at y = centerlineY − depth + waterDepth (the water surface, which
 // sits above the carved bed and descends with the channel). Span clipping + road/pad
 // suppression are delegated to computeStreamSpans (BUG-32 / BUG-33 above).

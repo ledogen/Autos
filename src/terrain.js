@@ -2,13 +2,15 @@
  * src/terrain.js — TerrainSystem for AUTOS
  *
  * Responsibilities:
- *  - Chunk ring management (5×5, RING_RADIUS=2, 64 m tiles)
+ *  - Chunk ring management (64 m tiles; visible ring 1–4 + warm margin, set by the quality presets
+ *    through setRingRadius — RING_RADIUS=2 is only the constructor default)
  *  - Heightmap generation on a small pool of module Workers (src/terrain-worker.js)
  *  - Frame-spread geometry build (PERF-02: ms-budgeted, nearest-first; MAX_BUILDS_PER_FRAME hard cap)
  *  - analyticHeight/analyticNormal: main-thread direct analytic sampling (no chunk lookup)
  *    — used by queryContacts for physics contacts (no chunk-seam gap)
  *  - reinitWorker(worldSeed, params): sends init message to Worker, rebuilds noise closures
  *  - rebuildAllChunksFromWorker(): Path B — disposes all chunks and re-requests from Worker
+ *  - rebuildAllChunks(): Path A — recolours the built chunks in place (Terrain Look sliders)
  *
  * Physics contract: analyticHeight never returns 0 for unloaded chunks.
  * Rendering contract: chunk meshes use shared MeshPhongMaterial — do NOT dispose per-chunk.
@@ -18,7 +20,7 @@
  *
  * Threat mitigations:
  *   T-06-01: BUILD_MS_BUDGET (+ MAX_BUILDS_PER_FRAME cap) bounds main-thread geometry build cost per frame
- *   T-06-03: geometry.dispose() called in _updateChunkRing before chunkMap.delete
+ *   T-06-03: an evicted chunk's geometry is released to the pool (_releaseChunkGeometry) before chunkMap.delete
  *   T-07-03-SYNC: retired — the Worker imports src/terrain-height.js, the same module this file
  *                 reads, so there is no copy to keep in sync.
  */
@@ -64,9 +66,8 @@ export class TerrainSystem {
      * Create and start the TerrainSystem.
      *
      * @param {THREE.Scene} scene     - The Three.js scene to add chunk meshes to.
-     * @param {object}      params    - Vehicle params object (reads terrainAmplitude, coarseAmplitude,
-     *                                  coarseFreq, coarseOctaves, ridgeSharpness, fineAmplitude,
-     *                                  fineFreq, regionalStrength, regionalScale, terrainAmplitude).
+     * @param {object}      params    - Vehicle params object (reads terrainAmplitude and the height()
+     *                                  fields — HEIGHT_PARAM_KEYS in terrain-height.js).
      * @param {number}      worldSeed - Unsigned 32-bit seed integer (from parseWorldSeed).
      *                                  Drives all three noise layers deterministically.
      */
@@ -85,7 +86,7 @@ export class TerrainSystem {
         this._initialFillDone = false     // PERF-13: false → burst budgets until the first full ring lands
         this._chunkMap      = new Map()   // key → { mesh, heights, carveData? }
         this._pendingWorker = new Set()   // keys requested but not yet received
-        this._pendingQueue  = []          // FIFO of received {key,cx,cz,heights} awaiting geometry build
+        this._pendingQueue  = []          // received {key,cx,cz,heights} awaiting geometry build (drained near-then-ahead, PERF-33)
         this._activeBuild   = null        // PERF-26: the chunk whose carve table is mid-build, carried across frames
         this._activeRecarve = null        // PERF-33: the LIVE chunk whose re-carve is mid-build, carried across frames
         this._epoch         = 0           // PERF-33: bumped on a full regen — replies to older requests (old seed) are dropped
@@ -1051,7 +1052,7 @@ export class TerrainSystem {
     }
 
     /**
-     * Update the 5×5 chunk ring around the car's current chunk.
+     * Update the chunk ring (visible ring + warm margin) around the car's current chunk.
      * Disposes out-of-ring chunks (geometry only — material is shared).
      * Requests new in-ring chunks from the worker if not already loaded/pending.
      *
@@ -1316,13 +1317,13 @@ export class TerrainSystem {
      * Returns null if no road system is attached or no road is within range of this chunk.
      *
      * The table is a pure function of (cx, cz, roadSystem, params) — never mutates chunk.heights.
-     * It is rebuilt fresh per generate request (buffer is consumed by postMessage Transferable)
-     * and again in _flushPendingQueue for the _chunkMap reference copy (Pitfall 5 prevention).
+     * Built on the main thread only (the carve never enters the Worker): once per new chunk in
+     * _flushPendingQueue and again by the re-carve pass.
      *
      * SURF-05: carveData stored on the chunk is NEVER written into chunk.heights (post-read blend).
      * @private
      */
-    // PERF-03 #1: `rawHeights` (optional) is the Worker's already-computed raw 65×65 noise grid for this
+    // PERF-03 #1: `rawHeights` is the Worker's already-computed raw 65×65 noise grid for this
     // chunk (row-major, pre-amplitude). When provided, the per-vertex loop reuses rawHeights[zi*N+xi]
     // instead of re-evaluating the multi-octave `height()` noise — byte-identical (same fn, same inputs),
     // just not recomputed. Available now that the table is built in _flushPendingQueue (has the heights)

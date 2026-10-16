@@ -9,7 +9,9 @@
  *
  * WORKER-SAFE: No import statements, no DOM references, no THREE.* here — pure math.
  *
- * Domain tags used in Phase 7: "coarse", "fine", "regional", "spawn"
+ * Domain tags (grep `seedFor(` for the live list): terrain "coarse"/"fine"/"regional", "spawn",
+ * "flora", "streamKeep", "roadquality"/"roadsite"/"roadsitePri", the scatter's cover* and
+ * *Rocks passes.
  */
 
 // ── djb2 string→32-bit hash ───────────────────────────────────────────────────
@@ -80,7 +82,8 @@ export function mulberry32(seed) {
 
 // ── hash32 — FNV-1a string→32-bit hash ───────────────────────────────────────
 // Keys the per-edge / per-cell PRNGs of poi.js (POI + customer layout), camp.js (FEAT-45 camping
-// zones) and campfire.js (log yaw). Any stable hash would do, but it must STAY stable — do not
+// zones), campfire.js (log yaw) and debris.js; poi.js's model picks + variants (the seeding
+// model-service.js and data/prop-models.js document) ride it too. Any stable hash would do, but it must STAY stable — do not
 // "improve" it: every existing seed's POI and camp layout rides on it being byte-identical.
 // (Distinct from djb2 above, which seeds worldgen; the two are not interchangeable.)
 export function hash32(str) {
