@@ -81,7 +81,7 @@ export const GATES = [
     extraDeps: ['test/lib/bug76-route.mjs'],
     desc: 'BUG-76: window-dependent road (T promotions that exist or not depending on the stream window) must stay OUT of driving range — warm drives on seeds "w" + 6 at R 320 sample the surface every step; the closest flip to the window centre must exceed 100 m (measured 114–140 m on the owner route)' },
   { file: 'route-merge.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
-    desc: 'FEAT-10: no collinear duplicates + connectivity (graph emits each edge once)' },
+    desc: 'FEAT-10: no degenerate stub (a < 40 m run whose ends nearly meet) on lone-pine/6/7; collinear-duplicate pairs reported only' },
   { file: 'crossing-classifier.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-07/08/11/13: bounded crossing classifier == brute force (feeds FEAT-19 carve widening) + once-per-build identity' },
   { file: 'road-graph.mjs', subsystem: 'road', cost: 'fast', extraDeps: [],
