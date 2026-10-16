@@ -68,8 +68,11 @@ export function roadQuality(arcS, runKey, worldSeed) {
     // Quality for the current stretch
     const q0 = mulberry32(seedFor(worldSeed, 'roadquality', rk, stretchIdx))()
 
-    // Arc-length fraction within the current stretch [0, 1)
-    const fracInStretch = (arcS % ROAD_QUALITY_STRETCH) / ROAD_QUALITY_STRETCH
+    // Arc-length fraction within the current stretch [0, 1). R-09: arcS % S is negative for arcS < 0
+    // (physics' tangent-extrapolated arcs just behind a run start), which skipped the blend — wrap it.
+    // (Not arcS/S − stretchIdx: that rounds differently and moved positive arcs by an ulp too.)
+    const mod = arcS % ROAD_QUALITY_STRETCH
+    const fracInStretch = (mod < 0 ? mod + ROAD_QUALITY_STRETCH : mod) / ROAD_QUALITY_STRETCH
 
     // Blend at the END boundary (last ROAD_QUALITY_BLEND metres of this stretch)
     const blendStart = 1.0 - ROAD_QUALITY_BLEND / ROAD_QUALITY_STRETCH
