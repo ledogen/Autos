@@ -20,6 +20,10 @@
 import * as THREE from 'three'
 import { makeCobbleTextures } from './stone-texture.js'   // FEAT-25: procedural riverbed cobble
 
+// The cobble maps are world-independent (fixed seed) — baked once per page and shared by every
+// WaterRenderer a reseed builds, so they are never disposed (S-39: was a re-bake per reseed).
+let _cobbleTex = null
+
 // Simple shared water material (transparency + tint). depthWrite off so overlapping water
 // surfaces don't z-fight; terrain (opaque, drawn first) still occludes submerged areas.
 export function makeWaterMaterial(opts = {}) {
@@ -289,12 +293,12 @@ export class WaterRenderer {
         this.group.name = 'water'
         this.material = makeWaterMaterial(opts.material || {})
         // FEAT-25: one shared cobble bed material for ALL stream bed ribbons (opaque, textured).
-        // Textures are procedural (no assets) and generated once here. roughness high / metalness 0
+        // Textures are procedural (no assets), baked once per page (_cobbleTex). roughness high / metalness 0
         // so wet river rock reads matte under the directional sun. depthWrite defaults on (opaque)
         // so the bed occludes the terrain floor and the transparent water draws over it.
-        this._bedTex = makeCobbleTextures()
+        _cobbleTex ??= makeCobbleTextures()
         this.bedMaterial = new THREE.MeshStandardMaterial({
-            map: this._bedTex.map, normalMap: this._bedTex.normalMap,
+            map: _cobbleTex.map, normalMap: _cobbleTex.normalMap,
             roughness: 0.95, metalness: 0.0,
         })
         this._meshes = new Map()   // feature key -> mesh (dedup / reuse); bed ribbons keyed "<key>|bed"
@@ -372,8 +376,7 @@ export class WaterRenderer {
     dispose() {
         for (const mesh of this._meshes.values()) { this.group.remove(mesh); mesh.geometry.dispose() }
         this._meshes.clear(); this.material.dispose()
-        // FEAT-25: release the shared bed material + its procedural textures.
+        // FEAT-25: release the bed material (its cobble textures are module-shared — see _cobbleTex).
         this.bedMaterial.dispose()
-        this._bedTex.map.dispose(); this._bedTex.normalMap.dispose()
     }
 }
