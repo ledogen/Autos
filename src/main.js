@@ -30,7 +30,7 @@ import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D 
 import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
-import { parkPrompt } from './park-badge.js'                // FEAT-90: the orange P-in-a-circle "park first" badge
+import { parkPrompt } from './park-badge.js'                // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, snapCamera } from './camera.js'
@@ -74,7 +74,7 @@ import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: th
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
-import { OfferBoard, formatGameDuration, gateText } from './offer-board.js'   // FEAT-67: the mission board
+import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
@@ -3639,6 +3639,9 @@ missionSystem = new MissionSystem({
     return s
   },
   onChange: () => _renderMissionUI(),
+  // FEAT-113: the mission clock is world time — a sleep or a time skip spends the tip, the camp
+  // pause holds it — and a board job's deadline is read on the same clock.
+  getClockH: () => daySystem.clockH(),
 })
 
 // ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────
@@ -3678,6 +3681,7 @@ const paperRouteSystem = new PaperRouteSystem({
   // whether to take it without seeing the SHAPE. Same seam a POI job already uses, and it fires at
   // 'offer' rather than on arrival because that is the first moment there is a route to preview.
   setMapOpen: (open) => _setMapOpen(open, paperRouteSystem?.markers()),
+  getClockH: () => daySystem.clockH(),   // FEAT-113: world-time elapsed + Larry's deadline
   onChange:  () => _renderPaperUI(),
 })
 // FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
@@ -4059,8 +4063,11 @@ let _campSeek = false
 
 function _campPromptState () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
-  if (missionSystem && missionSystem.state !== 'idle') return null
-  if (paperRouteSystem.isActive()) return null       // FEAT-61: not while a route is out
+  // FEAT-113 (owner, 2026-10-15): a job IN HAND may camp — the night spends world time against its
+  // tip and deadline. Only the panels (an offer up, a result card) still refuse. The truck stays
+  // parked where it is; nothing about camping moves it or its bed.
+  if (missionSystem && missionSystem.state !== 'idle' && !missionSystem.isOnJob()) return null
+  if (paperRouteSystem.isActive() && !paperRouteSystem.isCarrying()) return null
   if (_campUi || _campBusy) return null
   if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return null
   if (!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)) return null
@@ -4073,8 +4080,8 @@ function _campPromptState () {
 /** Can the truck knock on mom's door from here? (Same gates, minus the zone and the grading.) */
 function _atMomsHouse () {
   if (!storySystem.isActive() || storySystem.isEntering()) return false
-  if (missionSystem && missionSystem.state !== 'idle') return false
-  if (paperRouteSystem.isActive()) return false      // FEAT-61: not while a route is out
+  if (missionSystem && missionSystem.state !== 'idle' && !missionSystem.isOnJob()) return false   // FEAT-113: as _campPromptState
+  if (paperRouteSystem.isActive() && !paperRouteSystem.isCarrying()) return false
   if (_campUi || _campBusy) return false
   return campSystem.atMoms(vehicleState.position.x, vehicleState.position.z)
 }
@@ -4149,7 +4156,7 @@ function _updateParkTriggers () {
       const now = daySystem.clockH()
       const live = _takeableOffers(poi.id, now).length
       const next = offerBoard?.nextTurnoverH(poi.id, now)
-      // FEAT-90: every "park to …" line carries the orange P badge; the status line does not.
+      // FEAT-90: every "park to …" line carries the blue P badge; the status line does not.
       poiEl.innerHTML = !live
         ? (next != null ? `no work here right now — new offer in ${formatGameDuration(next - now)}`
                         : 'no work here right now')
@@ -4508,6 +4515,31 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
       : '')
 }
 
+/** FEAT-113: the result card of a job signed off past its deadline (POI job and paper route alike). */
+function _expiredCard (dueH) {
+  return `<span class="mp-big">Expired</span><br><span class="mp-dim">was due ${formatDue(dueH)} &mdash; no pay</span>`
+}
+/**
+ * The abandoned job's card (owner, 2026-10-15): the word, the time, what became of the cargo, and $0.
+ * `cargo` is _abandonCargo's read; `extra` is any mission-specific line (the paper route's count).
+ */
+function _abandonedCard (r, extra = '') {
+  const dim = (t) => `<br><span class="mp-dim">${t}</span>`
+  const c = r.cargo
+  const cargo = !c ? ''
+    : c.kind === 'haul' ? (c.aboard > 0
+      ? dim(`Firewood remaining</span> <span class="mp-pay">${c.aboard} / ${c.loaded}`)
+      : '<br><span class="mp-bad">Firewood all lost</span>')
+    : c.kind === 'fragile' ? (c.health > 0
+      ? dim(`Cargo condition</span> <span class="mp-pay">${Math.round(c.health * 100)}%`)
+      : '<br><span class="mp-bad">Cargo destroyed</span>')
+    : dim('Cargo remaining</span> <span class="mp-pay">1 / 1')
+  return `<span class="mp-big mp-bad">Abandoned</span>`
+    + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
+    + extra + cargo
+    + `<br><span class="mp-dim">Pay</span> <span class="mp-pay mp-bad">$${formatMoney(0)}</span>`
+}
+
 // Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
 // SM-INV-3 — par NEVER appears while driving; the result card is the only place it is shown.
 function _renderMissionUI () {
@@ -4523,7 +4555,13 @@ function _renderMissionUI () {
 
   const btn = (id, on) => { const b = document.getElementById(id); if (b) b.style.display = on ? '' : 'none' }
 
-  switch (m.state) {
+  // FEAT-113: a job past its deadline reads the same in every on-job state — park and sign it off.
+  const expired = m.isOnJob() && !!m.mission?.expired
+  switch (expired ? 'expired' : m.state) {
+    case 'expired':
+      show(panel, false); show(hud, true)
+      hudText.textContent = 'job expired · park and sign it off'
+      break
     case 'generating':
       show(panel, true); show(hud, false)
       // The planner streams a real, culled network the first time (and after a seed change or a
@@ -4587,15 +4625,35 @@ function _renderMissionUI () {
       break
     case 'running':
       show(panel, false); show(hud, true)
-      // Elapsed + distance to go ALONG THE ROUTE (crow-flies grew while driving a winding route
-      // correctly, which read as "wrong way"). No par, no target — SM-INV-3.
+      // Distance to go ALONG THE ROUTE (crow-flies grew while driving a winding route correctly,
+      // which read as "wrong way"). No par, no target — SM-INV-3. No elapsed either (owner,
+      // 2026-10-15): the rank bar under it already reads time against par.
       // FEAT-102: a fetch also says which leg — out to the pickup, or home.
-      hudText.textContent = `${formatTime(m.elapsed)}   ${km(m.routeRemaining())} to go`
+      hudText.textContent = `${km(m.routeRemaining())} to go`
         + (m.mission?.legs ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`) : '')
       break
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = m.result
+      if (r.expired) {   // FEAT-113: signed off past the deadline — no letter, no pay
+        body.innerHTML = _expiredCard(r.dueH)
+        btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', false)
+        btn('mp-regen', false); btn('mp-quit', false); btn('mp-prev', false); btn('mp-next', false)
+        unmountExportRow('mission-panel')
+        const nb = document.getElementById('mp-accept')
+        if (nb) nb.textContent = 'continue'
+        break
+      }
+      if (r.abandoned) {
+        body.innerHTML = _abandonedCard(r)
+        btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', !m.mission?.fromPoi)
+        btn('mp-regen', false); btn('mp-quit', true)
+        btn('mp-prev', false); btn('mp-next', false)
+        unmountExportRow('mission-panel')   // nothing finished, nothing to calibrate against
+        const nb = document.getElementById('mp-accept')
+        if (nb) nb.textContent = 'continue'
+        break
+      }
       // FEAT-53: the letter wears its ratified rank colour (D·C·B·A·S = red·orange·yellow·white·
       // blue), the final letter (SM-INV-3: display only; the FEAT-87 strip shows it live). A paid
       // job adds its payout + good deeds; Quick Job says plainly that it pays nothing.
@@ -4671,7 +4729,13 @@ function _renderPaperUI () {
   const show = (el, on, disp = 'block') => { if (el) el.style.display = on ? disp : 'none' }
   const km = (mm) => (mm / 1000).toFixed(2) + ' km'
 
-  switch (p.state) {
+  // FEAT-113: past Larry's deadline the round reads the same in staging and running.
+  const expired = p.isCarrying() && !!p.run?.expired
+  switch (expired ? 'expired' : p.state) {
+    case 'expired':
+      show(panel, false); show(hud, true); show(acts, false, 'flex')
+      hudText.textContent = 'route expired · park and sign it off'
+      break
     case 'planning':
       // NOTHING (owner, 2026-08-15). This card was cover for a pause the player never experiences:
       // on the first route Larry's dialogue sits on top of it, and on every route after that the
@@ -4684,8 +4748,8 @@ function _renderPaperUI () {
       const r = p.route
       const stock = stockForTier()
       // THE HEADLINE NUMBERS, one line, one size (owner, 2026-08-14): who, how far. "How long" left
-      // with the bell (owner, 2026-09-29): there is no deadline, and par is not shown on any offer
-      // card (SM-INV-3).
+      // with the bell (owner, 2026-09-29), and par is not shown on any offer card (SM-INV-3). The
+      // round's DEADLINE (FEAT-113) is a window from accept, stated beside the board expiry.
       // FEAT-67: Larry's portrait and his line head the panel, like every giver's. His line was
       // already written (the spare-papers aside), so it moves up into the dialogue slot.
       body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;')
@@ -4696,7 +4760,9 @@ function _renderPaperUI () {
         + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
         // FEAT-67: Larry's card states base pay only — the fare at par, before the tips.
         + `<span class="mp-pay">Base pay $${formatMoney(basePay(r.par, economySystem.terms().payTier))}</span>`
-        + (p.offer ? ` &nbsp;<span class="mp-dim">expires in ${formatGameDuration(p.offer.expiresH - daySystem.clockH())}</span>` : '')
+        + (p.offer ? ` &nbsp;<span class="mp-dim">expires in ${formatGameDuration(p.offer.expiresH - daySystem.clockH())}`
+          + (offerBoard?.spec(p.offer) ? ` &middot; deliver within ${formatGameDuration(offerBoard.deadlineH(p.offer, r.par))}` : '')
+          + `</span>` : '')
       break
     }
     case 'staging':
@@ -4707,16 +4773,22 @@ function _renderPaperUI () {
       break
     case 'running': {
       show(panel, false); show(hud, true)
-      // Elapsed, counting up — there is no bell to count down to (owner, 2026-09-29). Delivered/total
-      // and the inventory are the other two facts you act on.
-      hudText.textContent = `${formatTime(p.elapsed())}   `
-        + `${p.delivered()} / ${p.route.customers.length} delivered   `
+      // Delivered/total and the inventory — the two facts you act on. No elapsed (owner, 2026-10-15):
+      // the rank bar under it reads time against par.
+      hudText.textContent = `${p.delivered()} / ${p.route.customers.length} delivered   `
         + `${p.stock()} paper${p.stock() === 1 ? '' : 's'}`
       break
     }
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = p.result
+      if (r.expired) { body.innerHTML = _expiredCard(r.dueH); break }   // FEAT-113: no letter, no pay
+      if (r.abandoned) {
+        body.innerHTML = _abandonedCard(r, `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
+          + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-dim">papers left</span> <span class="mp-pay">${r.stock}</span>`)
+        unmountExportRow('paper-panel')
+        break
+      }
       body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         // The "+N% early" badge went with the expediency bonus it reported [2026-08-17]. Pace is
@@ -4744,7 +4816,7 @@ function _renderPaperUI () {
       if (p.error) console.info('[paper]', p.error)
       break
   }
-  if (p.state !== 'done') unmountExportRow('paper-panel')
+  if (p.state !== 'done' || p.result?.expired) unmountExportRow('paper-panel')
   _syncJobCancel(hud, storySystem.isActive() && p.isCarrying())
   // Two buttons, two meanings: on the offer they are take/decline, on the result card the left one
   // is the only forward action and the right one has nothing to say.
@@ -4758,7 +4830,7 @@ document.getElementById('pp-accept')?.addEventListener('click', () => {
   if (paperRouteSystem.state === 'done') { paperRouteSystem.dismiss(); return }
   // FEAT-67: Larry's offer comes off the board at accept, if it is still there.
   const o = paperRouteSystem.offer
-  if (paperRouteSystem.state === 'offer' && o && offerBoard && !offerBoard.take(o.id, daySystem.clockH())) {
+  if (paperRouteSystem.state === 'offer' && o && offerBoard && !offerBoard.take(o.id, daySystem.clockH(), paperRouteSystem.route?.par)) {
     paperRouteSystem.decline()
     return
   }
@@ -4780,11 +4852,10 @@ function _renderRunHud () {
   const el = document.getElementById('run-hud')
   if (!el) return
   const s = economySystem.snapshot()
-  // The 24 h clock reads the one authoritative hour-of-day (day.js). Truncated to whole minutes,
-  // which is also what keeps the snapshot key from re-writing the DOM on every 10 Hz poll.
-  const h = daySystem.hour()
-  const mins = Math.min(1439, Math.floor(h * 60))
-  const clock = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`
+  // The clock reads the one authoritative world clock (day.js) in the SAME notation as a job's due
+  // time — "Day 3, 2:15 am" — so this is where the player looks to read a deadline (owner,
+  // 2026-10-15). Whole minutes, which also keeps the snapshot key from re-writing the DOM at 10 Hz.
+  const clock = formatDue(Math.floor(daySystem.clockH() * 60) / 60)
   const key = `${s.money}|${s.halfPoints}|${clock}`
   if (key === _runHudKey && el.style.display === 'block') return
   _runHudKey = key
@@ -4896,6 +4967,7 @@ let _rtKickT = -1   // performance.now()/1000 of the last heartbeat (-1: none si
 function _rankTimerSource () {
   const m = missionSystem
   if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
+    if (m.mission.expired) return null   // FEAT-113: a job that pays nothing has no rank to chase
     // No bar where the clock is not what the letter reads (owner, 2026-10-15): a fragile job is
     // lettered on condition, a haul on the clock AND the load — a bar falling S → A on the clock
     // promises a grade the job does not give. Courier and freight keep it (time pays their tip).
@@ -4905,11 +4977,31 @@ function _rankTimerSource () {
              gate: m.mission.bonus?.gate ?? null }
   }
   const p = paperRouteSystem
-  if (p && p.isCarrying() && p.run && p.route) {
+  if (p && p.isCarrying() && p.run && p.route && !p.run.expired) {
     return { key: p.run, elapsed: p.run.elapsed, par: p.route.par,
              thresholds: p.run.thresholds ?? RANK_THRESHOLDS_DEFAULT, gate: null }
   }
   return null
+}
+// FEAT-113: the job's deadline, "DUE: Day 3, 2 am", under the rank tile (owner, 2026-10-15: the due
+// time and the rank timer are related, so they read together). A fixed time, never a countdown
+// (SM-INV-3). Its own element in #job-stack, so it shows from accept, and on fragile and haul jobs,
+// which have no rank bar.
+let _jobDueText = null
+function _updateJobDue () {
+  let h = null
+  if (storySystem.isActive() && !storySystem.isEntering()) {
+    const m = missionSystem, p = paperRouteSystem
+    if (m?.isOnJob() && !m.mission?.expired) h = m.mission?.dueH
+    else if (p?.isCarrying() && !p.run?.expired) h = p.run?.dueH
+  }
+  const text = Number.isFinite(h) ? formatDue(h) : ''
+  if (text === _jobDueText) return
+  _jobDueText = text
+  const el = document.getElementById('job-due')
+  if (!el) return
+  el.lastChild.textContent = text
+  el.style.display = text ? 'block' : 'none'
 }
 function _updateRankTimer () {
   if (!_rtEls) {
@@ -5079,7 +5171,7 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   // ~2 real minutes, so it can expire with the panel up. If it has gone, the panel re-presents what
   // is live now instead of accepting a job the board no longer has.
   const o = missionSystem.offer
-  if (o && offerBoard && !offerBoard.take(o.id, daySystem.clockH())) { _refreshParkedOffers(); return }
+  if (o && offerBoard && !offerBoard.take(o.id, daySystem.clockH(), missionSystem.mission?.par)) { _refreshParkedOffers(); return }
   missionSystem.accept()
   // FEAT-96: a freight job's load is handed over at accept, already strapped — no drop, no loading beat.
   const j = missionSystem.mission
@@ -6251,23 +6343,35 @@ for (const id of ['pm-restart', 'sp-restart', 'sp-menu']) {
 // live by _syncJobCancel. Two clicks: the first ARMS it for JOB_CANCEL_ARM_S ("confirm?"),
 // the second cancels — the slot lock makes a stray click expensive. It never takes focus
 // (mousedown is prevented, tabindex -1), because a focused button eats Space, which is the brake.
+// Only a PARKED truck can abandon (owner, 2026-10-15): moving, the button reads "park to abandon"
+// and does nothing. Either way the job ends on its result card — "abandoned", $0, and the cargo.
 const JOB_CANCEL_ARM_S = 3
 let _jobCancelArm = 0   // setTimeout handle while armed, 0 when not
 function _disarmJobCancel () {
   if (_jobCancelArm) clearTimeout(_jobCancelArm)
   _jobCancelArm = 0
   const b = document.getElementById('job-cancel')
-  if (b) { b.classList.remove('armed'); b.textContent = _jobCancelLabel() }
+  if (b) { b.classList.remove('armed'); b.innerHTML = _jobCancelLabel() }
 }
 // FEAT-96: on a strapped job the button reads "clean up cargo" — the load has to come off before the
 // job can go, and that costs CLEANUP_H on the day clock. Same two-click confirm, same slot lock.
 const CLEANUP_H = 1
+// FEAT-113: a job past its deadline is dead in hand. The button turns into "mission expired" — ONE
+// click, an acknowledgement rather than a choice, and only while parked: the expired card must never
+// pop up mid-drive (owner, 2026-10-15). A strapped load still has to come off (CLEANUP_H).
+function _expiredJob () {
+  return paperRouteSystem.isCarrying() ? !!paperRouteSystem.run?.expired
+    : !!missionSystem?.isOnJob() && !!missionSystem.mission?.expired
+}
 function _strappedJob () {
   return !paperRouteSystem.isCarrying() && !!missionSystem?.isOnJob() && !!missionSystem.mission?.load
 }
 function _jobCancelLabel () {
-  if (!_strappedJob()) return 'abandon job'
-  return missionSystem.mission.failed ? 'cargo destroyed · clean up' : 'clean up cargo'   // FEAT-97
+  if (_expiredJob()) return vehicleState.parked ? 'mission expired' : parkPrompt('mission expired')   // FEAT-113
+  if (!vehicleState.parked) return parkPrompt('park to abandon')
+  // An intact strapped load still costs the clean-up hour, but it reads "abandon job" (owner,
+  // 2026-10-15: "clean up" only once the cargo is actually wrecked).
+  return _strappedJob() && missionSystem.mission.failed ? 'cargo destroyed · clean up' : 'abandon job'   // FEAT-97
 }
 function _syncJobCancel (hud, on) {
   const b = document.getElementById('job-cancel')
@@ -6275,12 +6379,30 @@ function _syncJobCancel (hud, on) {
   if (on && b.parentElement !== hud) { _disarmJobCancel(); hud.appendChild(b) }
   if (b.parentElement !== hud) return   // the other HUD owns it; leave it alone
   b.style.display = on ? '' : 'none'
-  if (!on && _jobCancelArm) _disarmJobCancel()
-  if (on && !_jobCancelArm) b.textContent = _jobCancelLabel()
+  if ((!on || !vehicleState.parked) && _jobCancelArm) _disarmJobCancel()
+  if (on && !_jobCancelArm) { const t = _jobCancelLabel(); if (b.innerHTML !== t) b.innerHTML = t }
+  b.classList.toggle('unparked', !vehicleState.parked)
+}
+/** What became of the load, for the abandoned card — null when the job carries none (yet). */
+function _abandonCargo () {
+  const m = missionSystem?.mission
+  if (_haul && _haul.mission === m) return { kind: 'haul', aboard: _haulAboard(), loaded: m.bundles }
+  if (_freight && _freight.mission === m) {
+    return m.fragile ? { kind: 'fragile', health: _freight.health?.health ?? 0 } : { kind: 'load' }
+  }
+  return null
 }
 document.getElementById('job-cancel')?.addEventListener('mousedown', (e) => e.preventDefault())
 document.getElementById('job-cancel')?.addEventListener('click', (e) => {
   const b = e.currentTarget
+  if (!vehicleState.parked) return
+  if (_expiredJob()) {   // FEAT-113: one click — an acknowledgement, not a choice
+    _disarmJobCancel()
+    if (_strappedJob()) daySystem.advanceMinutes(CLEANUP_H * 60)
+    // No abandon(): the board already locked the slot at the deadline itself.
+    if (paperRouteSystem.isCarrying()) paperRouteSystem.expire(); else missionSystem.expire()
+    return
+  }
   if (!_jobCancelArm) {
     _jobCancelArm = setTimeout(_disarmJobCancel, JOB_CANCEL_ARM_S * 1000)
     b.classList.add('armed'); b.textContent = 'confirm?'
@@ -6288,7 +6410,7 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
   }
   _disarmJobCancel()
   if (_strappedJob()) daySystem.advanceMinutes(CLEANUP_H * 60)   // before the cancel: the slot locks from the clean-up's end
-  const id = paperRouteSystem.isCarrying() ? paperRouteSystem.cancel() : missionSystem?.cancel()
+  const id = paperRouteSystem.isCarrying() ? paperRouteSystem.cancel() : missionSystem?.cancel(_abandonCargo())
   if (id) offerBoard?.abandon(id, daySystem.clockH())
 })
 // FEAT-41: back out to the main menu. The mode is left FIRST — dropping to a menu while story mode
@@ -6640,6 +6762,13 @@ function loop () {
 
     // Story mode (beta): countdown tick + arrival check. Two distance checks — no routing, no
     // par math (that ran once at mission-offer time). Clocked off the fixed step, not wall time.
+    // FEAT-113: the day clock steps HERE, inside the fixed step, so the mission clocks below read
+    // a world clock that has moved exactly this step — arrival grades on this step's time, and the
+    // driven trace never stamps two rows with one time. Fixed-step also means a PERF-32 overload
+    // (dropped catch-up steps, slow motion) never bills world time for road the truck did not drive.
+    // FEAT-118: a pitched camp (or mom's) is a planning pause — idle there, the clock and energy
+    // hold until an action (sleep, break camp) spends or resumes it. The confirm face is not camp yet.
+    if (!_campUi || _campUi.mode === 'confirm') daySystem.update(PHYSICS_DT)
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
@@ -6748,11 +6877,8 @@ function loop () {
   // clamped). No-op unless story mode is active.
   storySystem.update(frameTime, vehicleState)
 
-  // FEAT-47: advance the story day clock on the same wall-clock delta. No-op outside story mode.
-  // FEAT-118: a pitched camp (or mom's) is a planning pause — idle there, the clock and energy hold
-  // until an action (sleep, break camp) spends or resumes it. The confirm face is not camp yet.
-  if (!_campUi || _campUi.mode === 'confirm') daySystem.update(frameTime)
-  // …and hand its two outputs on. Both are PER FRAME, not on the 10 Hz HUD block: a 200 ms doze is
+  // FEAT-47: the story day clock stepped inside the fixed step above (FEAT-113) — here we only
+  // hand its two outputs on. Both are PER FRAME, not on the 10 Hz HUD block: a 200 ms doze is
   // over in a dozen frames, so a 100 ms cadence would quantise the eyelids into a stutter and let
   // the attenuation lag the blink. Two style writes on cached elements — cheap enough to afford.
   setControlAttenuation(daySystem.attenuation())   // identically 1 outside a doze
@@ -6762,6 +6888,7 @@ function loop () {
   // FEAT-87: the rank timer scrolls on the mission clock, per frame for the same reason (and its
   // near-boundary pulse runs at a rate a 10 Hz poll would stutter).
   _updateRankTimer()
+  _updateJobDue()
 
   // FEAT-22: water submersion flag — CG vs the local water surface (pond plane). Once per render
   // frame (not per physics substep): v1 only SETS the flag; nothing in stepPhysics consumes it yet.

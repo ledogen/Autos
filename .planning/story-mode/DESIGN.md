@@ -242,8 +242,9 @@ from the current truck configuration, by size or weight; overload is a hard cuto
 accepted at your own risk. Offers stay seed-determined for every vehicle; the configuration only
 changes the verdicts. (3) **Bed upgrades are parts** (roof rack, flatbed, stake bed, extended bed,
 light bar), each a function on the truck configuration; not a different vehicle (SM-INV-15 holds).
-(4) **Every job has a delivery deadline from its cargo** (lax 1–3 d, chill 6 h–1 d, stringent
-1–4 h); missing it cancels and locks. (5) **The mission clock runs on world time**, so camping
+(4) **Every job has a delivery deadline from its cargo** (~~lax 1–3 d, chill 6 h–1 d, stringent
+1–4 h~~ — *re-cut 2026-10-15 as par × (1 + slack), see SM-INV-3/4*); missing it expires the job
+unpaid and locks the giver. (5) **The mission clock runs on world time**, so camping
 spends time against the tip rather than forfeiting it — this replaces "short, perishable ones die
 overnight" with the deadline. (6) **The camp pause** (2026-08-02) is restated and ticketed. (7)
 **Haul: the player picks the quantity**; yards run rate bonuses. (8) **Straps are not an item**
@@ -461,6 +462,13 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   that timers must never become the main driver of all missions — they're one authored
   flavor among the mission types, and the default mission has no clock.
 
+  > **Amendment [RATIFIED 2026-10-15, FEAT-113] — every job has a deadline; still no countdown.**
+  > *"the default mission has no clock"* is retired. Every job now carries a **delivery deadline**:
+  > par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %. The card states the window ("deliver within 6h 00m") and
+  > the HUD states the due time ("due Day 3, 2 am") — a fixed time, **never a countdown**, so the core
+  > of this invariant stands: par is never rendered, and the deadline is generous enough (at least
+  > par +50 %) that it is a backstop, not the thing you drive against. Provenance: the FEAT-113 ticket.
+
   > **Amendment [RATIFIED 2026-08-01] — rank is par's player-facing surface.** The player never sees
   > par and never needs to: they see **a letter and a number** — how they did, and what they earned.
   > Ranks are **D · C · B · A · S** (`gradeRun()` in `src/par.js` already computes them), coloured
@@ -621,7 +629,14 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > (two B/C jobs, ~$18 on day 1). The day is now $7.50 — those bills need re-pricing against it.
   >
   > *No time limits.* A mission can be **failed on time and still pay its base**; the paper route's
-  > bell is gone (par untouched). **The two cards are a pair:** the offer card quotes one number,
+  > bell is gone (par untouched).
+  > **[AMENDED 2026-10-15, FEAT-113]** *Slow still pays its base* — the margin line is unchanged, and
+  > a job finished at any ratio up to its deadline pays base pay at the least. What is new is the
+  > **deadline** (SM-INV-3 amendment): par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %. A job still in hand
+  > past it is **expired** — it can no longer be delivered and **pays nothing**. Nothing pops up
+  > while driving: the job button turns into "mission expired", pressable only when parked, and the
+  > card follows (a strapped load still costs the 1 h clean-up). The giver's slot locks at the
+  > deadline under the lock rule. **The two cards are a pair:** the offer card quotes one number,
   > *Base pay*, the guaranteed amount; the result card answers it in the same words — *Base pay*,
   > then *Tip* — and the tip is never mentioned on the offer.
 - **SM-INV-5 — Wear accrues on time + intensity, never distance.** Hours and engine torque
@@ -807,10 +822,14 @@ the job. Short, perishable ones die overnight (the milk spoils, the guy gets awa
 supplies the penalty, no payout math needed); longer hauls permit the delivery to be made the
 next day, so camping is a legitimate rest stop on a multi-day run. The mission's own fiction
 says which it is.
-> **[AMENDED 2026-10-14]** The fiction is now a number: every job carries a **delivery deadline**
-> from its cargo (lax 1–3 d, chill 6 h–1 d, stringent 1–4 h), shown on the card, and a job still in
-> hand when it passes is cancelled. The mission clock runs on world time, so a night with a load
-> spends time against the tip; on an average job it leaves base pay. FEAT-113. Sleep somewhere bad → bad night:
+> **[AMENDED 2026-10-14; re-cut 2026-10-15]** The fiction is now a number: every job carries a
+> **delivery deadline**, par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %, shown on the card and as a due time on
+> the HUD. A job still in hand when it passes expires unpaid (SM-INV-4 amendment). The mission
+> clock runs on world time, so a night with a load spends time against the tip. **Camping with a
+> job in hand is allowed** (owner, 2026-10-15); whether the night fits is the deadline's call — at
+> par pace an 8 h night fits when par × slack ≥ 8 h, i.e. most freight (par ≥ 2.7 h), a long
+> haul or fragile run (par ≥ 4 h), a very long courier run (par ≥ 8 h), and takeout practically
+> never. FEAT-113. Sleep somewhere bad → bad night:
 no fire, no fish, wake half-tired, tomorrow's budget already in debt — a run ending in
 slow motion, legible the whole way down.
 
