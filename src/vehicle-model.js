@@ -53,8 +53,6 @@ const COLOR_TIRE    = 0x111111
 const COLOR_RIM     = 0x8d9297   // steelie wheel disc (plain steel grey, no chrome)
 
 // Emissive light colors
-const HEAD_ON   = 0xfff4d6   // low-beam lens / warm white
-const HEAD_HI   = 0xffffff   // high-beam lens (brighter, cooler white)
 const TAIL_DIM  = 0x7a0000   // running-light red — bright enough to read against daylight (was 0x330000)
 const TAIL_OFF  = 0x110000
 const TAIL_BRK  = 0xff1111
@@ -66,8 +64,15 @@ const REV_OFF   = 0x222222
 // the ACES-tone-mapped scene (sun ≈ 0.7–4.8). Editable live via addLightGui(). aimY/aimZ are the
 // target offsets in carGroup-local space (forward = -Z), which set the beam's pitch and length.
 const HEAD_TUNE = {
-  lowIntensity: 700, lowDistance: 120, lowAngle: 0.70, lowPenumbra: 0.45, lowAimY: -3.2,  lowAimZ: -28,
-  highIntensity: 1130, highDistance: 200, highAngle: 0.50, highPenumbra: 0.30, highAimY: -1.3, highAimZ: -65,
+  // Stock 2002 Ranger lamps are 9007 dual-filament halogens, ≈3300 K — the blackbody sRGB for that
+  // temperature. Both filaments burn at the same temperature, so low and high share it.
+  color: 0xffbe7d,
+  // Both beams aim LEVEL (target at lamp height, lamp y = 0.10): the beam SHAPE, including the low
+  // beam's aim below the horizon, lives in the cookie (drawCookie), which is authored in degrees
+  // off this level axis. aimY then works as the aiming screw — tilting it tilts the whole pattern.
+  // lowAngle/highAngle are the outer envelope that holds the pattern, not the beam width.
+  lowIntensity: 4000, lowDistance: 120, lowAngle: 0.80, lowPenumbra: 0.25, lowAimY: 0.10, lowAimZ: -28,
+  highIntensity: 1900, highDistance: 200, highAngle: 1.00, highPenumbra: 0.30, highAimY: 0.10, highAimZ: -65,
   lensLow: 1.4, lensHigh: 2.2,   // emissiveIntensity of the headlight LENS (the visible glow), low vs high
   // SM-3 damage flicker, cued by the jolt the front of the body feels (see stepLampFlicker). Jolt
   // is in g at the front axle, as the deviation of its suspension load from rest: below flickerDeadG a
@@ -81,10 +86,13 @@ const HEAD_TUNE = {
   // flickerLow is how far a cut-out falls, as a fraction of the lamp's lit output (owner, 2026-10-15).
   flickerRate: 30, flickerMinS: 0.02, flickerSpanS: 0.06, flickerDebounceS: 0.10, flickerFadeS: 0.08,
   flickerLow: 0.30,
-  // Low beam is a HALF cone: a projected cookie masks the upper part of the cone so the beam cuts off
-  // at the "beltline" (real low-beam behaviour). lowCutoff is the cone fraction (0 top..1 bottom) of
-  // the cutoff line; 0.5 = lower half lit. High beam keeps the full cone (uniform white cookie).
-  lowCutoff: 0.37,
+  // Beam patterns, in degrees off the level aim axis (see drawCookie). Low beam = ECE asymmetric:
+  // flat cutoff at lowCutoffDeg on the oncoming side, a 15° kick-up on the kerb side, hot spot just
+  // under the elbow. lowSoftDeg is how far the cutoff is smeared (a crisp ECE lamp is ~0.2°; a
+  // weathered 2002 reflector with a hazed lens is sloppier). highCoreDeg is the radius of the high
+  // beam's main disk (the old full-cone look). spill is the scatter outside the main pattern as a
+  // fraction of peak, spread as a Gaussian of width haloDeg — the "sloppy" halo of a real reflector.
+  lowCutoffDeg: -0.57, lowSoftDeg: 0.6, highCoreDeg: 28, spill: 0.05, haloDeg: 22,
   // SpotLight shadows are expensive (see addLightGui); keep the map small + frustum tight when used.
   shadowMapSize: 512, shadowFar: 50,
   decay: 1.8, shadows: false,
@@ -219,7 +227,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
 
   // Headlights — flank the grille on the front face.
   for (const sx of [-1, 1]) {
-    const mat = lightMat(HEAD_ON)
+    const mat = lightMat(HEAD_TUNE.color)
     mat.userData.lamp = sx < 0 ? 0 : 1     // left, right — indexes the damage flicker
     headlightMats.push(mat)
     part(_box(0.30, 0.16, 0.05), mat, sx * 0.60, 0.04, -2.22)
@@ -238,35 +246,62 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   }
 
   // ── Headlight beam cookies (SpotLight.map) ─────────────────────────────────
-  // A projected greyscale texture multiplies the spot's output, so painting the upper part of the
-  // cookie black makes the low beam a HALF cone with a flat top — the "beltline cutoff" of a real
-  // low beam. The cookie's vertical axis is the beam's up axis (canvas row 0 = up), so masking the
-  // top rows removes the upward part of the cone. High beam uses a uniform-white cookie (= no change,
-  // full cone). BOTH headlights always carry a cookie so numSpotLightMaps never changes → swapping
-  // low↔high never recompiles the shader. Skipped headless (no document); spots just stay unmapped.
+  // A projected greyscale texture multiplies the spot's output, so the cookie IS the beam's intensity
+  // distribution (candela relative to `intensity`, which is the peak). three projects it through the
+  // spot's shadow camera — a square perspective frustum of half-angle `angle` — so a texel at uv
+  // (−1..1) points along (u·tan(angle), v·tan(angle), 1); canvas row 0 is up, column 0 is left.
+  // Each texel is converted to azimuth/elevation (deg, + = right / up) off the level aim axis and the
+  // pattern is evaluated there. The cone attenuation (angle + penumbra) still clips the inscribed
+  // circle, so the pattern must fit inside the envelope angle. Texels are stored sRGB-encoded so the
+  // ~3% spill keeps 8-bit precision after the GPU decodes to linear. BOTH headlights always carry a
+  // cookie so numSpotLightMaps never changes → low↔high never recompiles. Skipped headless.
+  const gauss = (x, sx, y, sy) => Math.exp(-0.5 * ((x / sx) ** 2 + (y / sy) ** 2))
+  const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t) }
+  // ECE R112-style asymmetric low beam for right-hand traffic (kerb side = right).
+  function lowBeam (az, el) {
+    const T = HEAD_TUNE
+    const cut = T.lowCutoffDeg + Math.min(Math.max(0, az) * 0.268, 1.8)   // tan 15° kick-up, flat shoulder
+    const lit = smooth(cut + T.lowSoftDeg, cut - T.lowSoftDeg, el)        // 1 under the cutoff
+    const hot  = gauss(az - 2, 5, el + 1.3, 1.6)                          // hot spot under the elbow (75R/50R)
+    const mid  = 0.40 * gauss(az, 14, el + 1.8, 2.2)                      // road spread
+    const wide = 0.12 * gauss(az, 35, el + 4, 8)                          // foreground + verges
+    const fringe = 2 * T.spill * Math.exp(-Math.max(0, el - cut) / 1.2) * gauss(az, 20, 0, 1)  // fuzz above cutoff
+    return lit * (hot + mid + wide) + (1 - lit) * fringe + T.spill * gauss(az, T.haloDeg, el + 2, 0.6 * T.haloDeg)
+  }
+  // High beam: the old full-cone disk, plus the same scatter halo outside it.
+  function highBeam (az, el) {
+    const T = HEAD_TUNE
+    const r = Math.hypot(az, el + 1.2)
+    return smooth(T.highCoreDeg, 0.5 * T.highCoreDeg, r) + 3 * T.spill * gauss(r, T.haloDeg * 1.5, 0, 1)
+  }
   function drawCookie (ctx, S, kind) {
+    const beam = kind === 'low' ? lowBeam : highBeam
+    const tanA = Math.tan(kind === 'low' ? HEAD_TUNE.lowAngle : HEAD_TUNE.highAngle)
+    const vals = new Float32Array(S * S)
+    let peak = 0
+    for (let y = 0; y < S; y++) {
+      const ty = (1 - 2 * (y + 0.5) / S) * tanA
+      for (let x = 0; x < S; x++) {
+        const tx = (2 * (x + 0.5) / S - 1) * tanA
+        const az = Math.atan(tx) * 57.2958
+        const el = Math.atan2(ty, Math.hypot(1, tx)) * 57.2958
+        const v = beam(az, el)
+        vals[y * S + x] = v
+        if (v > peak) peak = v
+      }
+    }
     const img = ctx.createImageData(S, S)
     const d = img.data
-    for (let y = 0; y < S; y++) {
-      let v = 1
-      if (kind === 'low') {
-        const feather = S * 0.07
-        const cut = HEAD_TUNE.lowCutoff * S          // texture row of the cutoff line
-        const t = (y - (cut - feather)) / (2 * feather)
-        const m = Math.min(1, Math.max(0, t))
-        v = m * m * (3 - 2 * m)                       // 0 above the cutoff (top), 1 below — half cone
-      }
-      const c = Math.round(v * 255)
-      for (let x = 0; x < S; x++) {
-        const i = (y * S + x) * 4
-        d[i] = d[i + 1] = d[i + 2] = c; d[i + 3] = 255
-      }
+    for (let i = 0; i < S * S; i++) {
+      const v = vals[i] / peak
+      const c = Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055))
+      d[4 * i] = d[4 * i + 1] = d[4 * i + 2] = c; d[4 * i + 3] = 255
     }
     ctx.putImageData(img, 0, 0)
   }
   function makeCookie (kind) {
     if (typeof document === 'undefined') return { tex: null, redraw: () => {} }
-    const S = 128
+    const S = 256   // ≈0.45°/texel over the low beam's 2·tan(0.8) field — enough for the cutoff edge
     const cv = document.createElement('canvas'); cv.width = cv.height = S
     const ctx = cv.getContext('2d')
     drawCookie(ctx, S, kind)
@@ -285,7 +320,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // shader recompile). Shadows default off for the iGPU budget — addLightGui() can enable them.
   const headlightSpots = []
   for (const sx of [-1, 1]) {
-    const s = new THREE.SpotLight(HEAD_ON, 0, HEAD_TUNE.lowDistance, HEAD_TUNE.lowAngle, HEAD_TUNE.lowPenumbra, HEAD_TUNE.decay)
+    const s = new THREE.SpotLight(HEAD_TUNE.color, 0, HEAD_TUNE.lowDistance, HEAD_TUNE.lowAngle, HEAD_TUNE.lowPenumbra, HEAD_TUNE.decay)
     s.position.set(sx * 0.60, 0.10, -2.22)               // at the headlight lens, front face
     s.target.position.set(sx * 0.60, HEAD_TUNE.lowAimY, HEAD_TUNE.lowAimZ)
     s.map = lowCookie.tex                                 // default low beam → half-cone cookie
@@ -386,7 +421,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   const applyHeadlights = () => {
     const on = headlightMode !== 0
     const high = headlightMode === 2
-    const lensHex = high ? HEAD_HI : HEAD_ON
+    const lensHex = HEAD_TUNE.color
     const lensIntensity = on ? (high ? HEAD_TUNE.lensHigh : HEAD_TUNE.lensLow) : 0
     // Primitive-truck headlight lens panels.
     for (const m of headlightMats) {
@@ -800,13 +835,19 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     h.add(HEAD_TUNE, 'lensHigh', 0, 4, 0.1).name('lens high').onChange(reapply)
     h.add(HEAD_TUNE, 'lowIntensity', 0, 2000, 10).onChange(reapply)
     h.add(HEAD_TUNE, 'highIntensity', 0, 3000, 10).onChange(reapply)
-    h.add(HEAD_TUNE, 'lowCutoff', 0.1, 0.9, 0.01).name('low beltline cutoff').onChange(() => lowCookie.redraw())
+    h.addColor(HEAD_TUNE, 'color').name('colour (halogen ≈3300 K)').onChange(reapply)
+    const redraw = () => { lowCookie.redraw(); highCookie.redraw() }
+    h.add(HEAD_TUNE, 'lowCutoffDeg', -3, 1, 0.01).name('low cutoff (deg)').onChange(redraw)
+    h.add(HEAD_TUNE, 'lowSoftDeg', 0.1, 3, 0.05).name('low cutoff softness (deg)').onChange(redraw)
+    h.add(HEAD_TUNE, 'highCoreDeg', 5, 40, 0.5).name('high core radius (deg)').onChange(redraw)
+    h.add(HEAD_TUNE, 'spill', 0, 0.2, 0.005).name('spill (frac of peak)').onChange(redraw)
+    h.add(HEAD_TUNE, 'haloDeg', 5, 50, 1).name('spill halo width (deg)').onChange(redraw)
     // distance = hard range cap. NOTE: 0 (three's "infinite") collapses the spot-map projection frustum
     // and breaks the cookie mask, so keep it > 0. Sliders centred on 120.
     h.add(HEAD_TUNE, 'lowDistance', 20, 220, 1).name('low distance').onChange(reapply)
     h.add(HEAD_TUNE, 'highDistance', 20, 220, 1).name('high distance').onChange(reapply)
-    h.add(HEAD_TUNE, 'lowAngle', 0.1, 1.4, 0.01).onChange(reapply)
-    h.add(HEAD_TUNE, 'highAngle', 0.1, 1.4, 0.01).onChange(reapply)
+    h.add(HEAD_TUNE, 'lowAngle', 0.1, 1.4, 0.01).name('low envelope (rad)').onChange(() => { reapply(); lowCookie.redraw() })
+    h.add(HEAD_TUNE, 'highAngle', 0.1, 1.4, 0.01).name('high envelope (rad)').onChange(() => { reapply(); highCookie.redraw() })
     h.add(HEAD_TUNE, 'lowAimY', -8, 2, 0.1).onChange(reapply)
     h.add(HEAD_TUNE, 'highAimY', -8, 2, 0.1).onChange(reapply)
     h.add(HEAD_TUNE, 'decay', 0, 3, 0.1).onChange(() => {
