@@ -127,6 +127,7 @@ export class PhysicsEngine {
     this._world = _b3.b3CreateWorld(wd)
 
     this._bodies = new Map()               // handle → { id (b3BodyId), shapes: b3ShapeId[], userData }
+    this._dynamic = new Map()              // the isDynamic subset of _bodies, same records and order
     this._shapeToHandle = new Map()        // shapeId.index1<<21|generation-ish key → body handle
     this._nextHandle = 1
     this._heightfields = new Map()         // handle → b3HeightFieldData (owned, freed on destroy)
@@ -177,10 +178,12 @@ export class PhysicsEngine {
     const handle = this._nextHandle++
     // isStatic / isDynamic are fixed at creation (the adapter has no set-type call), so the
     // per-query filters read them here instead of asking the engine across the WASM boundary.
-    this._bodies.set(handle, { id, shapes: [], specs: [], userData,
+    const rec = { id, shapes: [], specs: [], userData,
       isStatic: type === 'static', isDynamic: type !== 'static' && type !== 'kinematic',
       groups: [], reach: [], hulls: [], sizeR: [],
-      xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null })
+      xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null }
+    this._bodies.set(handle, rec)
+    if (rec.isDynamic) this._dynamic.set(handle, rec)
     this._rev++
     return handle
   }
@@ -203,6 +206,7 @@ export class PhysicsEngine {
     const mds = this._meshDatas.get(handle)
     if (mds) { for (const m of mds) _b3.b3DestroyMesh(m); this._meshDatas.delete(handle) }
     this._bodies.delete(handle)
+    this._dynamic.delete(handle)
   }
 
   getUserData (handle) { return this._bodies.get(handle)?.userData ?? null }
@@ -541,8 +545,9 @@ export class PhysicsEngine {
   contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false } = {}) {
     const hits = []
     const mask = _group32(collidesWith)
-    for (const [handle, rec] of this._bodies) {
-      if (dynamicOnly && !rec.isDynamic) continue
+    // dynamicOnly (every wheel query, 20×/step) walks only the dynamic bodies — not the terrain,
+    // road, prop and POI statics, which outnumber them ~100:1. Same insertion order, same hits.
+    for (const [handle, rec] of dynamicOnly ? this._dynamic : this._bodies) {
       // Heightfields and meshes have no sphere pair test wired (the analytic terrain query owns
       // those surfaces), so skip them before paying for a transform.
       if (this._heightfields.has(handle) || this._meshDatas.has(handle)) continue
@@ -766,6 +771,7 @@ export class PhysicsEngine {
     this._meshDatas.clear()
     for (const rec of this._bodies.values()) for (const h of rec.hulls) this._freeHull(h)
     this._bodies.clear()
+    this._dynamic.clear()
     this._shapeToHandle.clear()
   }
 }
