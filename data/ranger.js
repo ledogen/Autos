@@ -59,6 +59,9 @@ export const RANGER_PARAMS = {
   inertiaRoll:  (1 / 12) * 1360 * (1.85 ** 2 + 1.60 ** 2),  // kg·m² — roll,   678
   inertiaPitch: (1 / 12) * 1360 * (4.61 ** 2 + 1.60 ** 2),  // kg·m² — pitch, 2699
   inertiaYaw:   (1 / 12) * 1360 * (4.61 ** 2 + 1.85 ** 2),  // kg·m² — yaw,   2796
+  // FEAT-122: inventory slots on the stock truck (owner, 2026-10-16). Bed parts (FEAT-115) raise it.
+  // (The stowed kit's mass rides as `stowedKg`, set at runtime by main.js — see syncChassisMass.)
+  inventorySlots: 8,
 
   // ── Drivetrain (FEAT-23 Phase 1: engine → torque converter → automatic gearbox → final drive) ──
   // Replaces the old flat maxDriveTorque/maxReverseTorque stub. The chain lives in src/drivetrain.js,

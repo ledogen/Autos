@@ -415,7 +415,7 @@ export class EconomySystem {
 
     /**
      * FEAT-67: the offer's bonus if the letter earned it — `{ rewardId, name, gate, letter }` for the
-     * result card — or null. The grant is STUBBED: nothing is kept. Money is untouched either way:
+     * result card — or null. main.js grants the item (FEAT-122 inventory). Money is untouched either way:
      * the item and the cash are separate, and the cash side of a bonus offer is already priced by
      * `payMult`.
      */

@@ -270,7 +270,8 @@ export const THINGS = [
 //   gates    which offer gates it may appear under (see RANK GATES above)
 //   pools    which sources may offer it
 //
-// Grants are STUBBED in FEAT-67: settlement records the award, nothing takes effect yet.
+// An earned reward is granted into the inventory by its id (FEAT-122) — every id here must be in
+// data/items.js ITEMS (the inventory gate checks). Its effect applies only if built.
 
 export const REWARDS = [
     { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'],

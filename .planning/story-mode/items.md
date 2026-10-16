@@ -955,9 +955,14 @@ camber), but it is a reversal of a written ruling — **owner's call**.
    fish, wake half-tired"). The whole catch category, The Confluence, and *coffee-is-debt-fish-is-
    income* rest on a minigame nobody has framed. **This is the single biggest gap in the catalog** —
    and it's upstream of any fish asset work.
-3. **The item *structure* is deferred** (`IDEAS.md`). §1c proposes quick slots (keys 1–4) for
-   instant-use items, not ratified. Otherwise no slot model, no weight budget, no
-   inventory UI is specified. Every "a slot" cost above is an assumption, not a rule.
+3. **[RESOLVED 2026-10-16 — FEAT-122]** The item structure is ruled. Mass counts toward the
+   FEAT-112 payload, plus **8 slots** on the stock truck; bed parts add more (figures set per part).
+   Tools, camp gear and unfitted parts take a slot each; consumables stack one kind per slot;
+   fitted parts and mission cargo take none. §1c's quick slots stand at **4, consumable and
+   cooldown**, as shortcuts to owned items, not extra storage. The screen opens on `I` or an icon
+   in the right-edge HUD column; the clock runs on the road and pauses at camp. Stowed mass is
+   physics only (this also answers §2's carry-cost question and §2b's 23 kg test case). Full
+   ruling in FEAT-122.
 4. **Consumables-as-real-mass is stated but never quantified.** It's the rule that makes tools
    interesting (§2) and it currently has no numbers behind it.
 5. **Spare tire, air filter, quick-jack, breaker bar are named but undesigned.** They appear in one

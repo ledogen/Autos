@@ -578,6 +578,28 @@
       position: absolute; left: -7px; bottom: -6px; margin: 0;
       font-size: 10px; background: #1b2026;
     }
+    /* FEAT-122: the PARK ZONE — the icons that only work while parked (damage V, inventory Tab),
+       boxed together under the P sign that owns them (owner, 2026-10-16). Camp stays outside: the
+       brake is how you make camp. Locked (not parked, or the brake belongs to a POI here): the sign
+       is up and the icons stay backgrounded. Parked: the sign fades. inventory-screen.js update()
+       owns the .locked flag; a press while locked pulses the sign (.hint). Each row keeps the
+       icon's width so an alert card overflows to the left instead of widening the box. */
+    #park-zone {
+      position: relative; display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+      padding: 7px; border-radius: 11px;
+      background: rgba(11, 61, 145, 0.16); border: 1px solid rgba(120, 160, 230, 0.35);
+    }
+    #park-zone .hud-row { width: 46px; justify-content: flex-start; }
+    #park-zone .hud-row > * { flex-shrink: 0; }
+    #park-zone .pz-badge {
+      position: absolute; top: -9px; left: -9px; margin: 0; font-size: 15px;
+      transition: opacity 0.4s;
+    }
+    #park-zone:not(.locked) .pz-badge { opacity: 0.25; }
+    #park-zone .pz-badge.hint { animation: pz-hint 0.5s ease-in-out 3; }
+    @keyframes pz-hint {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 1px rgba(0,0,0,0.45); }
+      50%      { transform: scale(1.35); box-shadow: 0 0 12px 3px rgba(120,170,255,0.8); } }
 
     /* FEAT-53: the run wallet — top-right, story mode only. Money and good deeds are RUN state,
        not mission state: visible whenever the region is live, including mid-drive (owner,
@@ -1382,6 +1404,8 @@
 
     <!-- The icon column. damage-screen.js prepends its own row (the truck, V) above these. -->
     <div id="hud-icons">
+      <!-- FEAT-122: the park zone — damage-screen.js and inventory-screen.js append their rows. -->
+      <div id="park-zone" class="locked"><span class="park-badge pz-badge" aria-label="park">P</span></div>
       <!-- FEAT-45 Phase D: making camp. The tent shows only where the old camp prompt did (a camp
            zone, under 20 kph, story mode, no job or route out, no POI in reach). Z or a click
            toggles "looking for a campsite"; while looking, the vibe bar + verdict card opens beside
@@ -1517,7 +1541,7 @@
       <button id="cp-break">break camp</button>
       <button id="cp-sleep">sleep</button>
       <button id="cp-fish" disabled title="not implemented yet">fish (wip)</button>
-      <button id="cp-item" disabled title="not implemented yet">use item (wip)</button>
+      <button id="cp-item">inventory</button>
       <button id="cp-map">open map</button>
       <button id="cp-spirits" disabled title="not implemented yet">talk to the spirits (wip)</button>
       <button id="cp-sleep-go">sleep</button>
@@ -1562,6 +1586,8 @@
       <div><span class="k">M</span>map (dbl-click TP)</div>
       <div><span class="k">V</span>vehicle condition (parked)</div>
       <div><span class="k">Z</span>look for a campsite</div>
+      <div><span class="k">Tab</span>inventory</div>
+      <div><span class="k">1–4</span>quick items</div>
       <div><span class="k">Esc</span>pause menu</div>
       <div><span class="k">&#96;</span>debug panel</div>
     </div>

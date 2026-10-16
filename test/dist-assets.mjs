@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { VEHICLE_MODELS } from '../data/vehicle-models.js'
+import { ITEMS } from '../data/items.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..')
@@ -54,6 +55,14 @@ const glbs = existsSync(join(ROOT, 'assets/models'))
   ? readdirSync(join(ROOT, 'assets/models')).filter((f) => f.endsWith('.glb'))
   : []
 if (!glbs.includes('ranger.glb')) fail('assets/models/ranger.glb (default vehicle) missing from the model directory')
+
+// FEAT-122: every catalog item's thumbnail exists and the plugin enumerates assets/items/.
+if (!/readdirSync\(resolve\(root, 'assets\/items'\)\)/.test(cfg)) {
+  fail("vite.config.js no longer enumerates assets/items/ — inventory thumbnails will 404 on Pages")
+}
+for (const id of Object.keys(ITEMS)) {
+  if (!existsSync(join(ROOT, `assets/items/${id}.png`))) fail(`ITEMS.${id} has no thumbnail assets/items/${id}.png (render it: assets/models/src/items.py)`)
+}
 
 if (failed) {
   console.error(`\n[dist-assets] ${failed} failure(s)`)

@@ -34,15 +34,40 @@ first, which is why FEAT-121 never lists it under `needs:`.
   pack must always hold a sleeping item: packing can swap the bedroll for an upgrade, never empty
   that slot. The inventory screen is where you pack and choose the equipped pack.
 
-## Open — the owner's (items.md Gaps #3)
+## Ruled — owner, 2026-10-16 (items.md Gaps #3)
 
-1. **Slots or mass?** Is the limit a slot count, a mass/volume budget, or nothing but the mass itself?
-   *Camp gear is answered: the backpack's slots (§2c). Everything else is still open.*
-2. **Quick slots (§1c).** Keys 1–4 for instant-use items while driving: how many, and is it
-   consumable-only or also cooldown items?
-3. **Where is the inventory screen?** The campsite is the inventory screen for camp gear (visible-kit
-   rule); the rest needs a menu (FEAT-41). Pause the clock while open, like the shop?
-4. **Is stowed mass legible?** 23 kg on a 1360 kg truck is ~1.7% and won't be felt (items.md §2b).
+1. **Mass + slots.** Both limits apply. Stowed mass counts toward the truck's payload, the same
+   570 / 820 kg verdict cargo uses (FEAT-112). On top of that, a **slot count**:
+   - **Tools and camp gear take one slot each.**
+   - **Consumables of one kind stack into one slot** (3 cargo pads = 1 slot).
+   - **Fitted parts take no slot** (they are truck configuration). **An unfitted part takes a slot**
+     (a mission can reward a part you haven't fitted yet). **Mission cargo takes no slot** (it is
+     payload and bed space).
+   - **The stock truck has 8 slots.** Bed parts add more (FEAT-115 rack, toolbox, …), the same way
+     §3f's parts move the weight limits. Each bed part's figure is set when that part is defined.
+2. **Quick slots: 4 (keys 1–4), consumable and cooldown items both.** A quick slot is a **shortcut**:
+   a key bound to an item you already own. It is not extra storage, and the item still takes its
+   inventory slot.
+3. **Inventory screen: hotkey `Tab` (`I` is the ignition), plus an icon in the right-edge HUD
+   icon column.** **It works only while parked** (round 2, below), like the damage screen. The clock
+   runs while it is open on the road; at camp it pauses, like the other planning screens.
+4. **Stowed mass is physics only.** No exaggeration, no extra cost. Light kit is in effect priced in
+   cash and a slot; heavy kit (spare tire, freight) is felt, and it all counts toward the payload
+   verdict.
+
+## Ruled — owner, 2026-10-16, round 2 (after playing v1)
+
+5. **The screen draws every slot** — a grid of the truck's slots, empty ones included.
+6. **Backpacks** (items.md §2c). A pack takes **one truck slot** and holds its own slots; gear packed
+   inside it **frees its truck slot** (still truck mass). Several packs may be owned, never fewer
+   than one; one is **equipped**. The starter Pack has 2 slots with the bedroll in one. Hover a
+   pack to see its slots; click it to open it and pack or unpack.
+7. **The park zone.** The parking-gated icons — damage (V) and inventory (Tab) — sit together in a
+   shaded box in the HUD column, owned by the P sign. Not parked (or the brake belongs to a POI
+   here): the zone is locked and a press pulses the P sign. Camp stays outside the zone. Quick keys
+   1–4 still work while driving (items.md §1c).
+8. **Every item has a rendered thumbnail** — modelled and rendered in Blender
+   (`assets/models/src/items.py` → `assets/items/<id>.png`), one fixed rig for the whole set.
 
 ## Acceptance
 

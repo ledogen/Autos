@@ -361,8 +361,9 @@ export class DamageScreen {
     this.dock.id = 'dmg-dock'
     this.dock.className = 'hud-row'
     this.dock.innerHTML = `<div id="dmg-icon" class="hud-icon" title="vehicle condition (V)">${buildIcon()}${keycap('V')}</div><div id="dmg-alert"></div>`
-    const column = document.getElementById('hud-icons') || document.body
-    column.prepend(this.dock)
+    // FEAT-122: inside the park zone (index.html), the top of the right-hand icon column.
+    const column = document.getElementById('park-zone') || document.getElementById('hud-icons') || document.body
+    column.append(this.dock)
     this.iconEl = this.dock.querySelector('#dmg-icon')
     this.alertEl = this.dock.querySelector('#dmg-alert')
     this.iconAgg = [...this.iconEl.querySelectorAll('[data-agg]')]
