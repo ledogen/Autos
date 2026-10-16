@@ -651,6 +651,8 @@ export class DamageModel {
 
     // Peak rim-core contact FORCE per corner while a strike is in progress; 0 otherwise.
     this._strikePeak = [0, 0, 0, 0]
+    // Whether that peak came off the analytic ground (road residual) rather than a debris body.
+    this._strikeRoad = [false, false, false, false]
 
   }
 
@@ -1123,8 +1125,6 @@ export class DamageModel {
       const road = vehicleState.rimForceRoad
       const yieldN = P.rimYieldMult * staticW
       const yieldRoad = P.rimYieldRoadMult * staticW
-      if (!this._strikePeak) this._strikePeak = [0, 0, 0, 0]
-      if (!this._strikeRoad) this._strikeRoad = [false, false, false, false]
       for (let i = 0; i < 4; i++) {
         // Two sources. Compare them as MULTIPLES OF THEIR OWN YIELD — the only way to ask "which is
         // further past the point where it starts bending" when the two are different measurements —
@@ -1153,7 +1153,6 @@ export class DamageModel {
     // bump-stop contact is harmless, hard contact is not — but the floor is now the entry
     // condition for an event rather than a subtraction inside an integral.
     if (bumpF) {
-      if (!this._bumpPeak) this._bumpPeak = [0, 0, 0, 0]
       for (let i = 0; i < 4; i++) {
         const f = Math.abs(bumpF[i] || 0)
         const peak = this._bumpPeak[i]

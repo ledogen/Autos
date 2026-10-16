@@ -51,6 +51,11 @@ import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
 // forward torque continuously through the torque converter, so there is no roll-back drive cutoff.
 const REV_THRESHOLD =  2 / 3.6   //  0.556 m/s: S switches from braking to reverse above this
 
+// Engine solver substeps per physics step (Step 3e explains why 8). Coupled to rim-strike damage:
+// readRimStrikes divides an engine contact impulse by dt, so changing this rescales what the
+// damage.js rimYieldMult/rimFullMult thresholds see (review-2 R-02).
+const ENGINE_SUBSTEPS = 8
+
 /**
  * Read the per-wheel drive torque computed once per step by stepDrivetrain (FEAT-23).
  * The engine → torque-converter → automatic-gearbox → final-drive chain (drivetrain.js) runs once
@@ -1138,7 +1143,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // flat bare-frame slam into rocking rebound when under-substepped. 8 halves that phantom
   // bounce (measured: e_eff 0.30 → 0.21 on a worst-case flat slam) and costs microseconds at
   // this body count. See test/body-contact-energy.mjs for the measured envelope.
-  engine.step(dt, params.engineSubsteps ?? 8)
+  engine.step(dt, ENGINE_SUBSTEPS)
 
   // ── Step 3e: Pull the engine result back into the authoritative JS mirror ──
   engine.getTransform(chassis, vehicleState.position, vehicleState.quaternion)

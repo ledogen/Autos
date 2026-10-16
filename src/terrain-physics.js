@@ -121,8 +121,6 @@ export class TerrainPhysics {
     for (const body of this._chunks.values()) this._eng.destroyBody(body)
     this._chunks.clear()
   }
-
-  get chunkCount () { return this._chunks.size }
 }
 
 // Asphalt grips better than the carved dirt shoulder (terrain μ 0.8) — debris resting on the
@@ -199,8 +197,6 @@ export class RoadPhysics {
     for (const body of this._tiles.values()) this._eng.destroyBody(body)
     this._tiles.clear()
   }
-
-  get tileCount () { return this._tiles.size }
 }
 
 /**
@@ -279,8 +275,6 @@ export class PropPhysics {
     this._chunks.clear()
     this._sources.clear()
   }
-
-  get chunkCount () { return this._chunks.size }
 }
 
 /**
