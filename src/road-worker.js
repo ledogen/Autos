@@ -39,6 +39,15 @@ export class RoadRouteWorker {
                 const client = this._clients.get(e.data.client)
                 client?.ingestRoutedConnections(e.data.results, e.data.epoch)
             }
+            // S-16: an error outside the worker's own try (a failed module load) frees the slot
+            // instead of sticking it until the 60 s pre-warm deadline, and is handled HERE so it
+            // never bubbles up to the network client as a stray error that retires its build.
+            w.onerror = (e) => {
+                e.preventDefault()
+                console.error('[route-pool] worker error', e?.message ?? e)
+                this._inflight[i] = 0
+                this._pump()
+            }
             this._workers.push(w)
         }
     }

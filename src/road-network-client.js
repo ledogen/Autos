@@ -55,7 +55,7 @@ export class RoadNetworkClient {
         // the build chain) would otherwise leave _active set forever.
         this._worker.onerror = (e) => {
             console.error('[network-client] worker error', e?.message ?? e)
-            this._onReply({ type: 'network', error: 'worker error' })
+            this._onReply({ type: 'network', client: this._active?.id, error: 'worker error' })
         }
     }
 
@@ -182,6 +182,9 @@ export class RoadNetworkClient {
     _onReply(msg) {
         if (!msg || msg.type !== 'network') return
         const entry = this._active
+        // S-16: a reply that is not the in-flight client's is a late one for a build an error event
+        // already retired — adopting it as the next entry's would cross play and map.
+        if (!entry || msg.client !== entry.id) return
         this._active = null
         const rec = entry ? this._clients.get(entry.id) : null
         const fresh = !!rec && !msg.error && rec.road === entry.road
