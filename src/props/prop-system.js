@@ -214,10 +214,7 @@ export class PropSystem {
       // was the stream-in hitch: 8 tiles/frame × the full population through the vertex stage.
       if (!this._bakeScene) this._buildBakeScene()
       bake.setTileSource((cx, cz) => this._fillBakeScene(cx, cz))
-      for (const [ck, chunk] of this._chunks) {
-        const comma = ck.indexOf(',')
-        this._markShadowTiles(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10), chunk.mode !== 'bbonly')
-      }
+      for (const chunk of this._chunks.values()) this._markShadowTiles(chunk.cx, chunk.cz, chunk.mode !== 'bbonly')
     }
   }
 
@@ -240,10 +237,7 @@ export class PropSystem {
     const keys = []
     for (const [ck, chunk] of this._chunks) {
       if (chunk.mode === 'bbonly') continue
-      const comma = ck.indexOf(',')
-      const kx = parseInt(ck.slice(0, comma), 10)
-      const kz = parseInt(ck.slice(comma + 1), 10)
-      keys.push([ck, Math.max(Math.abs(kx - cx), Math.abs(kz - cz))])
+      keys.push([ck, Math.max(Math.abs(chunk.cx - cx), Math.abs(chunk.cz - cz))])
     }
     keys.sort((a, b) => a[1] - b[1])
     return this._shadowBake.markAll(keys.map(e => e[0]))
@@ -537,7 +531,7 @@ export class PropSystem {
     const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
     // litter: false ⇒ scattered without the cover + zone-rock passes (bbonly ring); a promotion
     // queues scatterLitterGen for it and _commitLitter appends the result.
-    const chunk = { places, owned: [], mode: this._chunkMode(cx, cz), litter: withLitter }
+    const chunk = { places, owned: [], mode: this._chunkMode(cx, cz), litter: withLitter, cx, cz }
     this._chunks.set(ck, chunk)
     this._placeChunk(chunk, chunk.mode)
     const _c2 = performance.now(); perfAdd('props.commit.place', _c2 - _c1)
@@ -594,8 +588,7 @@ export class PropSystem {
       this._collidables.set(ck, collidables); this._gridDirty = true
       this._physicsHook?.syncChunk(ck, collidables)
     }
-    const comma = ck.indexOf(',')
-    if (chunk.mode !== 'bbonly') this._markShadowTiles(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10), true)
+    if (chunk.mode !== 'bbonly') this._markShadowTiles(chunk.cx, chunk.cz, true)
   }
 
   /**
@@ -722,8 +715,7 @@ export class PropSystem {
     // (6 in one frame measured ~16 ms at cpu×4). The first is always allowed so LOD never stalls.
     let budget = LOD_SWAPS_MAX
     for (const [ck, chunk] of this._chunks) {
-      const comma = ck.indexOf(',')
-      const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
+      const { cx, cz } = chunk
       const want = this._chunkMode(cx, cz)
       if (want === chunk.mode) continue
       const promoted = chunk.mode === 'bbonly' && want !== 'bbonly'
@@ -827,8 +819,7 @@ export class PropSystem {
       const ck = keys[(start + i) % n]
       const chunk = this._chunks.get(ck)
       if (!chunk) continue
-      const comma = ck.indexOf(',')
-      const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
+      const { cx, cz } = chunk
       // Whole-chunk reject: no road anywhere near it ⇒ no placement in it can be intruded.
       if (roadClear(cx * CH + CH / 2, cz * CH + CH / 2, reach)) continue
       for (const p of chunk.places || []) {
@@ -858,12 +849,12 @@ export class PropSystem {
     // The billboard-only outer ring streams ONLY when impostors are active — headless (gates) and
     // pre-wire boots keep the classic full-prop ring exactly as before.
     const outer = (this._impMeshes && bbRingChunks != null) ? Math.max(ringChunks, bbRingChunks) : ringChunks
-    const want = new Set()
+    // QUAL-34: the wanted ring is a Chebyshev square — test integers, not a per-frame Set of key strings.
+    const inRing = (cx, cz) => Math.abs(cx - ccx) <= outer && Math.abs(cz - ccz) <= outer
     for (let dz = -outer; dz <= outer; dz++)
       for (let dx = -outer; dx <= outer; dx++) {
         const cx = ccx + dx, cz = ccz + dz
         const ck = cx + ',' + cz
-        want.add(ck)
         if (!this._chunks.has(ck) && !this._scatterSet.has(ck)) {
           this._scatterQueue.push({ ck, cx, cz, score: 0 })
           this._scatterSet.add(ck)
@@ -881,12 +872,12 @@ export class PropSystem {
     // Drop queued/active work that scrolled out of the ring.
     for (let i = this._scatterQueue.length - 1; i >= 0; i--) {
       const q = this._scatterQueue[i]
-      if (!want.has(q.ck)) {
+      if (!inRing(q.cx, q.cz)) {
         this._scatterSet.delete(q.litter ? q.ck + '#L' : q.ck)
         this._scatterQueue.splice(i, 1)
       }
     }
-    if (this._activeScatter && !want.has(this._activeScatter.ck)) {
+    if (this._activeScatter && !inRing(this._activeScatter.cx, this._activeScatter.cz)) {
       const a = this._activeScatter
       this._scatterSet.delete(a.litter ? a.ck + '#L' : a.ck)
       this._activeScatter = null
@@ -905,9 +896,8 @@ export class PropSystem {
         this._activeScatter = null
       }
     }
-    for (const ck of [...this._chunks.keys()]) {
-      if (!want.has(ck)) { const [x, z] = ck.split(',').map(Number); this.releaseChunk(x, z) }
-    }
+    // Map iteration survives deleting the visited entry (releaseChunk deletes only that one, adds none).
+    for (const chunk of this._chunks.values()) if (!inRing(chunk.cx, chunk.cz)) this.releaseChunk(chunk.cx, chunk.cz)
 
     // Hard radius: the truck's 3×3 must be collision-complete THIS frame (rare synchronous
     // scatter — only when driving outruns the drip feed).
@@ -915,7 +905,7 @@ export class PropSystem {
       const hcx = Math.floor(hardX / cs), hcz = Math.floor(hardZ / cs)
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
         const cx = hcx + dx, cz = hcz + dz
-        if (want.has(cx + ',' + cz)) this.ensureChunk(cx, cz)
+        if (inRing(cx, cz)) this.ensureChunk(cx, cz)
       }
     }
 
