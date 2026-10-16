@@ -93,6 +93,7 @@ export class TerrainSystem {
         this._motion        = null        // PERF-33: StreamMotion of the stream centre (near-then-ahead ordering)
         this._geomPool      = []          // PERF-05: recycled chunk BufferGeometry (65×65 XZ plane; only Y/normal/color change per chunk) — avoids per-chunk PlaneGeometry alloc + GC
         this._physicsHook   = null        // FEAT-48: TerrainPhysics (engine heightfield colliders) — syncChunk/disposeChunk/clear
+        this._ringScan      = { cx: 0, cz: 0, r: -1, epoch: -1, done: false }   // S-38: last request scan (skip while unchanged + complete)
 
         // Main-thread analytic noise closures (seeded same way as Worker — deterministic agreement)
         this._noiseCoarse   = null
@@ -1053,22 +1054,12 @@ export class TerrainSystem {
         const ringRadius  = this._ringRadius
         const buildRadius = ringRadius + this._warmMargin   // Phase 3: generate one warm ring beyond visible
 
-        // Build the target set of keys to REQUEST/build (visible ring + warm margin).
-        const needed = new Set()
-        for (let dx = -buildRadius; dx <= buildRadius; dx++) {
-            for (let dz = -buildRadius; dz <= buildRadius; dz++) {
-                needed.add(this._chunkKey(ccx + dx, ccz + dz))
-            }
-        }
-
         // T-06-03 + PERF-02 hysteresis: dispose a chunk only once it falls OUTSIDE ring+keepMargin
         // (Chebyshev distance), not the instant it leaves the build ring. Without the margin, idling
         // on a chunk boundary dispose↔rebuilds the edge row every frame (a stutter that feels random).
         const keepRadius = buildRadius + RING_KEEP_MARGIN
         for (const [key, chunk] of this._chunkMap) {
-            const ci = key.indexOf(',')
-            const kx = +key.slice(0, ci), kz = +key.slice(ci + 1)
-            if (Math.max(Math.abs(kx - ccx), Math.abs(kz - ccz)) > keepRadius) {
+            if (Math.max(Math.abs(chunk.cx - ccx), Math.abs(chunk.cz - ccz)) > keepRadius) {
                 this._scene.remove(chunk.mesh)
                 this._releaseChunkGeometry(chunk.mesh.geometry)  // PERF-05: recycle (was T-06-03 dispose)
                 this._chunkMap.delete(key)
@@ -1106,8 +1097,7 @@ export class TerrainSystem {
             // i.e. oldest chunk first — often the one about to be evicted behind the truck).
             const stale = []
             for (const [key, chunk] of this._chunkMap) {
-                const ci = key.indexOf(',')
-                const cx = +key.slice(0, ci), cz = +key.slice(ci + 1)
+                const { cx, cz } = chunk
                 const covered = this._roadCoversChunk(cx, cz)
                 if (chunk.builtRoadGeneration === currentRoadGen && chunk.builtRoadCovered === covered && !chunk.carveStale) continue
                 stale.push({ key, chunk, cx, cz, covered, score: streamScore(cx - ccx, cz - ccz, this._motion) })
@@ -1160,7 +1150,7 @@ export class TerrainSystem {
                 perfEvent('terrain.recarve')   // PERF-26: full-grid Y rewrite + re-upload of a LIVE chunk
                 chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
                 this._computeGridNormals(chunk.mesh.geometry, cx, cz)  // PERF-03: grid-FD normals (BUG-75: border rows need the chunk coords)
-                this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, amp, cx, cz)
+                this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, amp, chunk.localMean)
                 // Stamp the inputs this carve was BUILT against (generation + coverage at its start), so a
                 // change that landed while it was in flight is still seen as stale by the next pass.
                 chunk.carveData = newCarveData ?? null
@@ -1182,14 +1172,21 @@ export class TerrainSystem {
         // arrive nearest-first → the area under/ahead of the truck fills before the periphery (no
         // visible hole where it matters). Remaining chunks ride the next tick — _pendingWorker dedups,
         // so no extra bookkeeping. MAX_REQUESTS_PER_FRAME bounds the postMessage flood at large rings.
+        // S-38: once a scan finds nothing missing, every key of this ring is built or pending, and
+        // only a move, a radius change or a full regen (epoch) can open a hole — skip the scan
+        // (a (2·buildRadius+1)² key build + lookups per frame) until one of them changes.
+        const scan = this._ringScan
+        if (scan.done && scan.cx === ccx && scan.cz === ccz && scan.r === buildRadius && scan.epoch === this._epoch) return
         const missing = []
-        for (const key of needed) {
-            if (!this._chunkMap.has(key) && !this._pendingWorker.has(key)) {
-                const ci = key.indexOf(',')
-                const cx = +key.slice(0, ci), cz = +key.slice(ci + 1)
-                missing.push({ key, cx, cz, score: streamScore(cx - ccx, cz - ccz, this._motion) })
+        for (let dx = -buildRadius; dx <= buildRadius; dx++) {
+            for (let dz = -buildRadius; dz <= buildRadius; dz++) {
+                const cx = ccx + dx, cz = ccz + dz, key = this._chunkKey(cx, cz)
+                if (!this._chunkMap.has(key) && !this._pendingWorker.has(key)) {
+                    missing.push({ key, cx, cz, score: streamScore(dx, dz, this._motion) })
+                }
             }
         }
+        scan.cx = ccx; scan.cz = ccz; scan.r = buildRadius; scan.epoch = this._epoch; scan.done = missing.length === 0
         missing.sort((a, b) => a.score - b.score)   // PERF-33: near-then-ahead (was nearest-first)
         // PERF-19.2: scale the per-frame dispatch budget with the pool size so N workers stay fed
         // (an 8/frame cap would leave a 3-worker pool starved — dispatch, not generation, would
@@ -1213,33 +1210,18 @@ export class TerrainSystem {
     }
 
     /**
-     * Re-apply the current terrainAmplitude to all already-built chunk geometries.
-     * Called when the debug amplitude slider changes so visuals update immediately
-     * instead of waiting for chunks to cycle out of the ring.
-     * Path A: instant Y-rescale, no Worker round-trip.
+     * Path A: RECOLOUR every built chunk in place — the Terrain Look palette / biome sliders
+     * (debug.js _recolor). Only colours move: the shader palette (_syncSurfacePalette) and each
+     * chunk's vertex colours + surface weights. Y, normals and colliders are untouched (nothing a
+     * recolour slider reads changes them). The meadow radius (terrainRelRadius) is one of those
+     * sliders, so the cached local-mean grid is recomputed here.
      */
     rebuildAllChunks() {
+        this._syncSurfacePalette()
         const amp = this._params.terrainAmplitude ?? 1.0
-        const N = GRID_SAMPLES
-        for (const [key, chunk] of this._chunkMap) {
-            const [cx, cz] = key.split(',').map(Number)
-            const pos = chunk.mesh.geometry.attributes.position
-            // Re-apply the road carve blend (raw + blendW*(gradeY-raw)) — same formula as
-            // _flushPendingQueue / the re-carve path. Without it the mesh snaps back to RAW
-            // height and buries the road trough (the ribbon stays at graded Y).
-            // FEAT-18 known debug-slider limitation: chunk.streamData bedY is WORLD-space, baked at
-            // build amp — after an amplitude change the channel bed is stale until the chunk cycles
-            // (water detection itself is amp-baked the same way; ponds drift too). Dev-slider only.
-            const carveData = chunk.carveData
-            for (let i = 0; i < N * N; i++) {
-                pos.setY(i, this._composeCarvedY(chunk.heights[i] * amp, carveData, chunk.streamData, i, amp))
-            }
-            pos.needsUpdate = true
-            chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
-            this._computeGridNormals(chunk.mesh.geometry, cx, cz)  // PERF-03: grid-FD normals (BUG-75: border rows need the chunk coords)
-            // Re-write vertex colors after Y + normals are updated (D-09/D-10/D-11).
-            this._writeChunkVertexColors(chunk.mesh.geometry, carveData, chunk.heights, amp, cx, cz)
-            this._physicsHook?.syncChunk(key, cx, cz, pos, N, CHUNK_SIZE)  // FEAT-48: amp-rescaled Y ⇒ rebuild collider
+        for (const chunk of this._chunkMap.values()) {
+            chunk.localMean = this._localMeanGrid(chunk.cx, chunk.cz)
+            this._writeChunkVertexColors(chunk.mesh.geometry, chunk.carveData, chunk.heights, amp, chunk.localMean)
         }
     }
 
@@ -1674,11 +1656,10 @@ export class TerrainSystem {
      * @param {Float32Array|null}    carveData — [blendW, gradeY_preamp, ...] per vertex (or null)
      * @param {Float32Array}         heights   — raw pre-amplitude heights per vertex
      * @param {number}               amp       — terrainAmplitude
-     * @param {number}               cx        — chunk X index (for the meadow local-mean grid)
-     * @param {number}               cz        — chunk Z index
+     * @param {Float32Array}         localMean — the chunk's _localMeanGrid (cached on the chunk record)
      * @private
      */
-    _writeChunkVertexColors(geom, carveData, heights, amp, cx, cz) {
+    _writeChunkVertexColors(geom, carveData, heights, amp, localMean) {
         const N = GRID_SAMPLES
 
         // Cliff thresholds from params (D-11). Fall back to defaults if not in params.
@@ -1700,7 +1681,6 @@ export class TerrainSystem {
         if (!colAttr || colAttr.itemSize !== 3 || colAttr.count !== nVerts) { colAttr = new THREE.BufferAttribute(new Float32Array(nVerts * 3), 3); geom.setAttribute('color', colAttr) }
         if (!surfAttr || surfAttr.itemSize !== 4 || surfAttr.count !== nVerts) { surfAttr = new THREE.BufferAttribute(new Float32Array(nVerts * 4), 4); geom.setAttribute('aSurf', surfAttr) }
         const colorArr = colAttr.array
-        this._syncSurfacePalette()   // FEAT-84: recolours re-run this, so the pickers reach the textures
         // FEAT-84: (grass, dirt, rock) surface weights, sum 1 — the shader's texture blend reads
         // these; they are the same feathered biome decision the colour below is made from.
         const surfArr = surfAttr.array
@@ -1724,7 +1704,6 @@ export class TerrainSystem {
         const relHi = p.terrainMeadowRelHi ?? -2
         const knollLo = p.terrainKnollRelLo ?? 1.5, knollHi = p.terrainKnollRelHi ?? 6
         const knollRock = p.terrainKnollRock ?? 0.55
-        const localMean = this._localMeanGrid(cx, cz)  // per-vertex low-pass landform (seam-free)
 
         for (let i = 0; i < nVerts; i++) {
             const idx3 = i * 3
@@ -1828,7 +1807,7 @@ export class TerrainSystem {
     /**
      * FEAT-84: push the palette-derived shader colours (local-colouring targets, grass splotch
      * colours) from the params. Called at construction and on every recolour (the colour pickers
-     * route through _writeChunkVertexColors), so the pickers move the textures' colours too.
+     * route through rebuildAllChunks), so the pickers move the textures' colours too.
      */
     _syncSurfacePalette() {
         const p = this._params, U = this._terrainUniforms
@@ -2066,7 +2045,8 @@ export class TerrainSystem {
             // localMean. Engineered cut/fill zones override via carveData blendW (D-10/D-07, free).
             // Asphalt lives on the road-mesh.js ribbon (not on terrain chunks).
             _pt = performance.now()
-            this._writeChunkVertexColors(geom, carveData, heights, amp, cx, cz)
+            const localMean = this._localMeanGrid(cx, cz)   // carve-free: cached on the record for re-carves
+            this._writeChunkVertexColors(geom, carveData, heights, amp, localMean)
             perfAdd('flush.writeVertexColors', performance.now() - _pt)
 
             const mesh = new THREE.Mesh(geom, this._material)
@@ -2100,7 +2080,9 @@ export class TerrainSystem {
             // (D1, plan 09-19: the road generation at which this chunk's carve was built;
             // _updateChunkRing re-carves chunks whose stored version ≠ roadGeneration()).
             this._chunkMap.set(key, {
+                cx, cz,   // S-38: the ring passes read these instead of re-parsing the key
                 mesh, heights, carveData: carveData ?? null,
+                localMean,   // S-38: a pure fn of (cx, cz, seed, terrainRelRadius) — recomputed only by a recolour
                 streamData: streamData ?? null,   // FEAT-18: stream table (recarve/amp paths reuse it)
                 builtRoadGeneration: this._roadSystem?.roadGeneration() ?? -1,
                 // Was the road network actually REACHING this chunk when its carve was built? A

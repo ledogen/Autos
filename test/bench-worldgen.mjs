@@ -110,7 +110,7 @@ console.log('\n── B. terrain chunk main-thread stages (per 65×65 chunk, avg
     t0 = performance.now()
     const heights = new Float32Array(N * N)
     for (let i = 0; i < N * N; i++) heights[i] = posArr[i * 3 + 1]
-    TerrainSystem.prototype._writeChunkVertexColors.call(fakeColor, geom, table, heights, amp, cx, cz)
+    TerrainSystem.prototype._writeChunkVertexColors.call(fakeColor, geom, table, heights, amp, fakeColor._localMeanGrid(cx, cz))
     sum.colors += performance.now() - t0
 
     sum.n++

@@ -123,6 +123,9 @@ const cellOf = (w) => Math.floor(w / WATER_CELL)
 const cellKey = (cx, cz) => `${cx},${cz}`
 const q = (v) => Math.round(v * 1e3) / 1e3   // 1 mm quantize for stable dedup keys
 
+// streamCarveSample's nothing-near answer — shared and frozen (callers read it, never keep or mutate it).
+const NO_CARVE = Object.freeze({ blendW: 0, bedY: 0 })
+
 // Lazy cached centreline bbox of a stream record (window-invariant: a pure fn of the cached record).
 // streamChannelAt and streamCarveSample reject a whole stream on it before the segment walk.
 function _streamBB(st) {
@@ -990,7 +993,9 @@ export class WaterSystem {
     streamCarveSample(x, z, streams, raw) {
         const list = streams || this._streamsAt(x, z)
         let rawH
-        let best = null   // { h, blendW, bedY } — minimum composed height across streams + segments
+        // Minimum composed height across streams + segments, as scalars (S-38: this runs inside every
+        // analyticHeight — no per-segment allocation on the hot path).
+        let found = false, bestH = 0, bestW = 0, bestBed = 0
         for (const st of list) {
             const pad = (st.maxWidth ?? st.width) + st.bankWidth
             const bb = _streamBB(st)
@@ -1015,10 +1020,10 @@ export class WaterSystem {
                 const sw = dist <= wAt ? 1 : 1 - (dist - wAt) / st.bankWidth
                 if (rawH === undefined) rawH = (raw !== undefined) ? raw : this._h(x, z)
                 const h = rawH + sw * (bedY - rawH)
-                if (best === null || h < best.h) best = { h, blendW: sw, bedY }
+                if (!found || h < bestH) { found = true; bestH = h; bestW = sw; bestBed = bedY }
             }
         }
-        if (best === null) return { blendW: 0, bedY: 0 }
-        return { blendW: best.blendW, bedY: best.bedY }
+        if (!found) return NO_CARVE
+        return { blendW: bestW, bedY: bestBed }
     }
 }
