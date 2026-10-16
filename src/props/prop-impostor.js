@@ -160,10 +160,7 @@ export class PropImpostors {
       e.material = this._makeBillboardMaterial(e.uTile, e.y0n)
     }
     this.rebake()
-    if (typeof window !== 'undefined') {
-      window.__impAtlasDump = () => this.dumpAtlas()      // CDP debug handles
-      window.__impAtlasStats = () => this.atlasStats()
-    }
+    if (typeof window !== 'undefined') window.__impAtlasStats = () => this.atlasStats()   // CDP debug handle
     return this._entries
   }
 
@@ -403,29 +400,6 @@ export class PropImpostors {
 
   /** Bind the atlas into a billboard material (call after build(); kept out of merge()'s clone). */
   bindAtlas (material) { material.uniforms.uAtlas.value = this._rt.texture }
-
-  /**
-   * Dev handle: dump the atlas to a PNG data-URL (half-float → 8-bit, no tone map). Wired onto
-   * window in build() — same precedent as main.js's __ri/__propShadows CDP handles.
-   */
-  dumpAtlas () {
-    const rt = this._rt
-    if (!rt) return null
-    const w = rt.width, h = rt.height
-    const buf = new Uint16Array(w * h * 4)
-    this._renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf)
-    const canvas = document.createElement('canvas')
-    canvas.width = w; canvas.height = h
-    const ctx = canvas.getContext('2d')
-    const img = ctx.createImageData(w, h)
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const si = ((h - 1 - y) * w + x) * 4        // flip: GL row 0 is the bottom
-      const di = (y * w + x) * 4
-      for (let c = 0; c < 4; c++) img.data[di + c] = Math.min(255, Math.round(halfToFloat(buf[si + c]) * 255))
-    }
-    ctx.putImageData(img, 0, 0)
-    return canvas.toDataURL('image/png')
-  }
 
   dispose () {
     if (this._rt) this._rt.dispose()

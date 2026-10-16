@@ -245,19 +245,6 @@ export class ShadowBakeSystem {
     return changed
   }
 
-  /**
-   * Queue a chunk (and its 8 neighbours, since shadows cross seams) for baking. The chunk's OWN tile
-   * is prioritised (front of the queue) so its trees' shadows land first; neighbours (only relevant
-   * for cross-seam silhouettes) trail behind — cuts the visible "shadow lags the tree" pop-in.
-   */
-  markWithNeighbors(cx, cz) {
-    if (!this._rt) return                                     // baked shadows off (tilePx 0)
-    this._mark(cx, cz, true)                                // own tile first
-    for (let dz = -1; dz <= 1; dz++)
-      for (let dx = -1; dx <= 1; dx++)
-        if (dx || dz) this._mark(cx + dx, cz + dz, false)     // neighbours after
-  }
-
   /** Queue chunk (cx, cz)'s own tile at the FRONT of the queue — the one that was just committed
    *  or promoted is the one the player is about to look at. Neighbours go through markAll. */
   markFront(cx, cz) { this._mark(cx, cz, true) }

@@ -389,7 +389,6 @@ export class PropSystem {
 
   /** 3D-prop ring radius in chunks (quality tier / GUI). Chunks beyond it billboard. */
   setLodRing(n) { this._lodRing = Math.max(0, Math.round(n)) }
-  get lodRing() { return this._lodRing }
 
   // ── chunk lifecycle ─────────────────────────────────────────────────────────────────
   // Synchronous ensure — the hard-radius / gate path. If this chunk's scatter is mid-flight or
@@ -561,7 +560,7 @@ export class PropSystem {
   /**
    * PERF-07: queue chunk (cx,cz)'s own shadow tile (at the FRONT, when `own`) plus its DRAWN live
    * neighbours' tiles. Every prop-change mark routes through here instead of the bake system's
-   * markWithNeighbors, which also queued bbonly ring-edge neighbours — tiles nothing looks at up
+   * old mark-all-8-neighbours path, which also queued bbonly ring-edge neighbours — tiles nothing looks at up
    * close (measured 2026-10-04, seed 3219501713: 24 of 59 spawn bakes, ~40 % of a 20 s drive's bake
    * CPU ms). Skipped neighbours are never lost: a bbonly one is marked on promotion (_syncChunkLod),
    * and an ABSENT one marks itself when it commits drawn (_commitChunk) — baking it earlier would
@@ -844,11 +843,6 @@ export class PropSystem {
     return doomed.length
   }
 
-  /**
-   * Diff the active chunk set against the desired (centre ± ring) and ensure/release. Call once
-   * per frame (cheap when nothing changed) or whenever the stream centre moves a chunk.
-   * @param {number} worldX @param {number} worldZ @param {number} ringChunks
-   */
   /**
    * Stream the prop ring around (worldX, worldZ). PERF-14: scatter is QUEUED and time-sliced —
    * missing chunks enqueue nearest-first and their generators are stepped under a per-frame ms

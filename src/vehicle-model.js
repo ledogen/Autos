@@ -43,7 +43,6 @@ import { carcassRadialOffset, wheelRunoutOf } from './suspension.js'
 
 // The imported GLB (described by a spec from data/vehicle-models.js) replaces the primitive truck.
 // The primitives stay as an automatic fallback if the load fails (offline, 404, parse error).
-const DEFAULT_BODY_COLOR = 0x2f6da4
 
 // ── Palette ────────────────────────────────────────────────────────────────
 const COLOR_BODY    = 0x2f6da4   // body panels (medium blue)
@@ -577,7 +576,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   const modelTailMats = []          // GLB rear-lamp materials, driven as tail/brake lights
   const modelReverseMats = []       // split-out rear white-lens materials, driven on reverse
   // (modelHeadMats declared earlier — front split of the white-lens material, driven as headlights)
-  let pendingBodyColor = DEFAULT_BODY_COLOR
+  let pendingBodyColor = COLOR_BODY
 
   // ── Mesh sync ──────────────────────────────────────────────────────────────
   // Called every render frame to update mesh transforms from vehicleState.
