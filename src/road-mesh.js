@@ -26,7 +26,7 @@
 
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
-import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: shared procedural detail
+import { addWorldVaryings, tdBumpGLSL } from './terrain-detail.js'  // FEAT-05: shared procedural detail
 import { makeMasonryTextures } from './stone-texture.js' // FEAT-40: portal-ring masonry
 import { crownProfile, potholeNoise, earClip, padFillDelaunay } from './road-carve.js'
 // roadQuality lives in road-quality.js (Plan 09-06) to break the terrain.js → road-mesh.js →
@@ -169,13 +169,7 @@ export class RoadMeshSystem {
                 if (uDetailScale > 0.0) {
                     float td_shoulder = smoothstep(0.04, 0.10, vColor.r - vColor.b);
                     if (td_shoulder > 0.001) {
-                        vec2 td_p = vWorldPos.xz * (uNoiseScale * 2.0);
-                        float td_e = 0.4;
-                        float td_h0 = tdFbm(td_p);
-                        float td_hx = tdFbm(td_p + vec2(td_e, 0.0));
-                        float td_hz = tdFbm(td_p + vec2(0.0, td_e));
-                        vec3 td_wb = vec3(-(td_hx - td_h0), 0.0, -(td_hz - td_h0)) * (uShoulderBump * uDetailScale * td_shoulder);
-                        normal = normalize(normal + mat3(viewMatrix) * td_wb);
+                        ${tdBumpGLSL('vWorldPos.xz * (uNoiseScale * 2.0)', '0.4', 'uShoulderBump * uDetailScale * td_shoulder')}
                     }
                 }`
             )

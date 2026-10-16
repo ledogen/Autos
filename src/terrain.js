@@ -28,9 +28,9 @@ import * as THREE from 'three'
 // pothole/curvature are not needed on the terrain mesh carve path.
 // QUAL-07: crownProfile no longer imported — the crown/camber fold moved into the one shared
 // RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
-import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
+import { addWorldVaryings, tdBumpGLSL } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
 import { height, makeTerrainNoise, CHUNK_SIZE, GRID_SAMPLES, HEIGHT_PARAM_KEYS } from './terrain-height.js'   // THE height function — the Worker imports the same module
-import { makeSurfaceTextures } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
+import { makeSurfaceTextures, _hexLin } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
 import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
@@ -471,13 +471,7 @@ export class TerrainSystem {
                     float td_rock = max(smoothstep(uCliffLo, uCliffHi, td_slp),
                                         smoothstep(uTreeLo, uTreeHi, vWorldPos.y));
                     if (td_rock > 0.001) {
-                        vec2 td_p = vWorldPos.xz * uNoiseScale;
-                        float td_e = 0.6;
-                        float td_h0 = tdFbm(td_p);
-                        float td_hx = tdFbm(td_p + vec2(td_e, 0.0));
-                        float td_hz = tdFbm(td_p + vec2(0.0, td_e));
-                        vec3 td_wb = vec3(-(td_hx - td_h0), 0.0, -(td_hz - td_h0)) * (uBump * uDetailScale * td_rock);
-                        normal = normalize(normal + mat3(viewMatrix) * td_wb);
+                        ${tdBumpGLSL('vWorldPos.xz * uNoiseScale', '0.6', 'uBump * uDetailScale * td_rock')}
                     }
                     // FEAT-84: the blended surface normal map, planar in world XZ (same encoding as
                     // td_wb: x→−∂h/∂x, y→−∂h/∂z), rotated into view space like the fbm bump above.
@@ -1711,13 +1705,12 @@ export class TerrainSystem {
         // Replaces the old desert warm-brown set. Natural biome is dirt→grass→rock, selected
         // by slope + altitude (treeline); engineered cut/fill zones still override via carve.
         const p = this._params
-        const _hx = (c) => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255]
-        const [DT_R, DT_G, DT_B] = _hx(p.terrainDirtColor   ?? 0x7c6346) // dirt — the "general" mid
-        const [GR_R, GR_G, GR_B] = _hx(p.terrainGrassColor  ?? 0x4c5e38) // FERTILE/forest green (flat bench)
-        const [MD_R, MD_G, MD_B] = _hx(p.terrainMeadowColor ?? 0x5c7a30) // MEADOW green (local basins)
+        const [DT_R, DT_G, DT_B] = _hexLin(p.terrainDirtColor   ?? 0x7c6346) // dirt — the "general" mid
+        const [GR_R, GR_G, GR_B] = _hexLin(p.terrainGrassColor  ?? 0x4c5e38) // FERTILE/forest green (flat bench)
+        const [MD_R, MD_G, MD_B] = _hexLin(p.terrainMeadowColor ?? 0x5c7a30) // MEADOW green (local basins)
         // (granite — terrainRockColor — is painted by the SHADER by the share rock wins; see uColRock)
-        const [CO_R, CO_G, CO_B] = _hx(p.terrainCutoutColor ?? 0x757066) // engineered cut face (D-10)
-        const [DF_R, DF_G, DF_B] = _hx(p.terrainFillColor   ?? 0x6b5740) // dirt fill foundation (D-07)
+        const [CO_R, CO_G, CO_B] = _hexLin(p.terrainCutoutColor ?? 0x757066) // engineered cut face (D-10)
+        const [DF_R, DF_G, DF_B] = _hexLin(p.terrainFillColor   ?? 0x6b5740) // dirt fill foundation (D-07)
         // Biome thresholds (slope = 1 - normal.y; altitude = raw terrain world Y).
         const grassSlopeMax = p.terrainGrassSlopeMax ?? 0.16
         const treeLo = p.terrainTreelineLo ?? 60
@@ -1728,10 +1721,6 @@ export class TerrainSystem {
         const knollLo = p.terrainKnollRelLo ?? 1.5, knollHi = p.terrainKnollRelHi ?? 6
         const knollRock = p.terrainKnollRock ?? 0.55
         const localMean = this._localMeanGrid(cx, cz)  // per-vertex low-pass landform (seam-free)
-        const smooth = (e0, e1, x) => {
-            if (x <= e0) return 0; if (x >= e1) return 1
-            const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t)
-        }
 
         for (let i = 0; i < nVerts; i++) {
             const idx3 = i * 3
@@ -1763,7 +1752,7 @@ export class TerrainSystem {
                     const gradeY = carveData[i * 2 + 1] * amp
                     const delta  = gradeY - heights[i] * amp   // positive = fill, negative = cut
                     carveZoneBlend = blendW
-                    cutness = smooth(-cutRockFade, cutRockFade, -delta)
+                    cutness = _smooth01(-cutRockFade, cutRockFade, -delta)
                 }
             }
 
@@ -1779,7 +1768,7 @@ export class TerrainSystem {
             // Within vegetated ground, relative elevation splits MEADOW (local basin, water collects)
             // from FERTILE/forest (flat bench). rel below relLo → full meadow; at/above relHi → fertile.
             const rel = worldH - localMean[i]
-            const meadowness = 1 - smooth(relLo, relHi, rel)
+            const meadowness = 1 - _smooth01(relLo, relHi, rel)
             const VG_R = GR_R + (MD_R - GR_R) * meadowness
             const VG_G = GR_G + (MD_G - GR_G) * meadowness
             const VG_B = GR_B + (MD_B - GR_B) * meadowness
@@ -1788,8 +1777,8 @@ export class TerrainSystem {
             // "rocks poking thru grass around local maxima"). rel > 0 is the same relative
             // elevation the meadow rule reads negative; the knoll share is capped so the vertex
             // stays a rock/grass MIX and the height contest + local colouring do the poking.
-            const knoll = smooth(knollLo, knollHi, rel) * knollRock
-            const rockBlend = Math.max(cliffBlend, smooth(treeLo, treeHi, worldH), knoll)
+            const knoll = _smooth01(knollLo, knollHi, rel) * knollRock
+            const rockBlend = Math.max(cliffBlend, _smooth01(treeLo, treeHi, worldH), knoll)
 
             // Step 1: dirt → vegetation (fertile/meadow). Rock is NOT blended into the vertex
             // colour (owner 2026-09-25) — the shader paints it by the share rock wins (sRock, or
@@ -1840,15 +1829,14 @@ export class TerrainSystem {
     _syncSurfacePalette() {
         const p = this._params, U = this._terrainUniforms
         if (!U || !U.uColGrass) return
-        const hx = (c) => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255]
-        const grass = hx(p.terrainGrassColor ?? 0x426917)
+        const grass = _hexLin(p.terrainGrassColor ?? 0x426917)
         U.uColGrass.value.setRGB(...grass)
-        U.uColDirt.value.setRGB(...hx(p.terrainDirtColor ?? 0x7c6346))
-        U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x59544f))
+        U.uColDirt.value.setRGB(..._hexLin(p.terrainDirtColor ?? 0x7c6346))
+        U.uColRock.value.setRGB(..._hexLin(p.terrainRockColor ?? 0x59544f))
         U.uSurfAlbW.value.set(p.terrainTexAlbedoGrass ?? 0, p.terrainTexAlbedoDirt ?? 0, p.terrainTexAlbedoRock ?? 0.55)
         U.uUnderRockGreen.value  = p.terrainUnderRockGreen  ?? 0.8
         U.uBiomeDither.value.set(p.terrainBiomeDither ?? 0.5, p.terrainBiomeDitherFreq ?? 0.3)
-        U.uRockGapGreen.value.setRGB(...hx(p.terrainRockGapGreen ?? 0x2d372a))
+        U.uRockGapGreen.value.setRGB(..._hexLin(p.terrainRockGapGreen ?? 0x2d372a))
         U.uRockSparsity.value    = p.terrainRockSparsity    ?? 2.0
         U.uDirtRockFloor.value   = p.terrainDirtRockFloor   ?? 0.03
         U.uDirtPebbleGrey.value  = p.terrainDirtPebbleGrey  ?? 0.35
@@ -1900,8 +1888,7 @@ export class TerrainSystem {
         const p = this._params
         const treeLo = p.terrainTreelineLo ?? 60, treeHi = p.terrainTreelineHi ?? 105
         const green = vegBlendOf(slope, h, p.terrainGrassSlopeMax ?? 0.16, treeLo, treeHi)
-        const sm = (e0, e1, x) => { if (x <= e0) return 0; if (x >= e1) return 1; const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t) }
-        const rock = Math.max(sm(p.roadCliffSlopeLo ?? 0.3, p.roadCliffSlopeHi ?? 0.6, slope), sm(treeLo, treeHi, h))
+        const rock = Math.max(_smooth01(p.roadCliffSlopeLo ?? 0.3, p.roadCliffSlopeHi ?? 0.6, slope), _smooth01(treeLo, treeHi, h))
         return { green, rock }
     }
     /**

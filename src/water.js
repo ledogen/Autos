@@ -123,6 +123,21 @@ const cellOf = (w) => Math.floor(w / WATER_CELL)
 const cellKey = (cx, cz) => `${cx},${cz}`
 const q = (v) => Math.round(v * 1e3) / 1e3   // 1 mm quantize for stable dedup keys
 
+// Lazy cached centreline bbox of a stream record (window-invariant: a pure fn of the cached record).
+// streamChannelAt and streamCarveSample reject a whole stream on it before the segment walk.
+function _streamBB(st) {
+    let bb = st._bb
+    if (!bb) {
+        bb = { x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity }
+        for (const p of st.points) {
+            if (p.x < bb.x0) bb.x0 = p.x; if (p.x > bb.x1) bb.x1 = p.x
+            if (p.z < bb.z0) bb.z0 = p.z; if (p.z > bb.z1) bb.z1 = p.z
+        }
+        st._bb = bb
+    }
+    return bb
+}
+
 // Segment A(a0→a1) × segment B(b0→b1) intersection. Returns { x, z, tA, tB } (t =
 // param along each segment) or null. Used by streamRoadCrossings for bridge sites.
 function segIntersect(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
@@ -787,16 +802,7 @@ export class WaterSystem {
     streamChannelAt(x, z) {
         for (const st of this.streamsInBBox(x, z, x, z)) {
             const pad = (st.maxWidth ?? st.width) + st.bankWidth
-            // Lazy cached centerline bbox (shared with streamCarveSample; pure fn of the record).
-            let bb = st._bb
-            if (!bb) {
-                bb = { x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity }
-                for (const p of st.points) {
-                    if (p.x < bb.x0) bb.x0 = p.x; if (p.x > bb.x1) bb.x1 = p.x
-                    if (p.z < bb.z0) bb.z0 = p.z; if (p.z > bb.z1) bb.z1 = p.z
-                }
-                st._bb = bb
-            }
+            const bb = _streamBB(st)
             if (x < bb.x0 - pad || x > bb.x1 + pad || z < bb.z0 - pad || z > bb.z1 + pad) continue
             const pts = st.points
             let d2min = Infinity, wAt = st.width
@@ -925,16 +931,7 @@ export class WaterSystem {
         let best = null   // { h, blendW, bedY } — minimum composed height across streams + segments
         for (const st of list) {
             const pad = (st.maxWidth ?? st.width) + st.bankWidth
-            // Lazy cached centerline bbox (window-invariant: pure fn of the cached record).
-            let bb = st._bb
-            if (!bb) {
-                bb = { x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity }
-                for (const p of st.points) {
-                    if (p.x < bb.x0) bb.x0 = p.x; if (p.x > bb.x1) bb.x1 = p.x
-                    if (p.z < bb.z0) bb.z0 = p.z; if (p.z > bb.z1) bb.z1 = p.z
-                }
-                st._bb = bb
-            }
+            const bb = _streamBB(st)
             if (x < bb.x0 - pad || x > bb.x1 + pad || z < bb.z0 - pad || z > bb.z1 + pad) continue
             // FEAT-24: the half-width is interpolated per-point (w) along each segment.
             const pts = st.points

@@ -31,6 +31,20 @@ float tdFbm(vec2 p){
 `
 
 /**
+ * The 3-tap finite-difference fbm bump both consumers add to `normal` (terrain rock, road shoulder),
+ * at sample point `p`, tap spacing `e` and strength `gain` (GLSL expressions). Emitted as inline
+ * GLSL text — not a GLSL function — so the compiled shaders are unchanged. Its continuation lines
+ * carry the 24-space indent of both call sites.
+ */
+export const tdBumpGLSL = (p, e, gain) => `vec2 td_p = ${p};
+                        float td_e = ${e};
+                        float td_h0 = tdFbm(td_p);
+                        float td_hx = tdFbm(td_p + vec2(td_e, 0.0));
+                        float td_hz = tdFbm(td_p + vec2(0.0, td_e));
+                        vec3 td_wb = vec3(-(td_hx - td_h0), 0.0, -(td_hz - td_h0)) * (${gain});
+                        normal = normalize(normal + mat3(viewMatrix) * td_wb);`
+
+/**
  * Add `vWorldPos` (world-space position) and `vWorldNrm` (world-space normal) varyings to a
  * material's shaders, and make NOISE_GLSL + the varyings available in the fragment shader.
  * Call once inside the material's `onBeforeCompile(shader)`.

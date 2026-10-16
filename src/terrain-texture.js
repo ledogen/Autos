@@ -142,7 +142,7 @@ const _toward = (target, base) => [
   Math.min(ALBEDO_PACK - 0.01, target[1] / Math.max(base[1], 0.02)),
   Math.min(ALBEDO_PACK - 0.01, target[2] / Math.max(base[2], 0.02)),
 ]
-const _hexLin = (hex) => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
+export const _hexLin = (hex) => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 
 
 // ── GRASS: tufts of short tapered strokes ─────────────────────────────────────────────────────
