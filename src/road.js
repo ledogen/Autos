@@ -2186,6 +2186,7 @@ export class RoadSystem {
             if (have && (have._v2Dirs || !r.v2Dirs)) continue
             const cl = centerlineFromDescriptors(r.prims)
             if (r.v2Dirs) cl._v2Dirs = true
+            if (r.dirsSpec) cl._v2DirsSpec = r.dirsSpec   // R-01: as the sync path sets it — the re-route reads it
             this._proto.cls.set(r.key, cl)
         }
     }

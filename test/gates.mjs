@@ -73,7 +73,7 @@ export const GATES = [
     desc: 'FEAT-68: route Worker == sync path — the worker imports the same routeEdgeV2 (no mirror), so this pins the one drift surface left: the height-field rebuild from the init subset, plus byte-identical descriptors on real pinned edges' },
   { file: 'network-worker-parity.mjs', subsystem: 'road', cost: 'heavy',
     extraDeps: ['src/road-network-worker.js'],
-    desc: 'PERF-30: network Worker == sync build — the worker imports the same RoadSystem, so this pins the protocol seams: the params-snapshot filter, the pond-disc reconstruction, and adoptNetwork answering surface/degree/slice queries byte-identically to the instance that built the network (incl. the warm-instance reuse path)' },
+    desc: 'PERF-30: network Worker == sync build — the worker imports the same RoadSystem, so this pins the protocol seams: the params-snapshot filter, the pond-disc reconstruction, and adoptNetwork answering surface/degree/slice queries byte-identically to the instance that built the network (incl. the warm-instance reuse path), and that a pre-warmed edge re-routes with its pins (R-01, seed 7)' },
   { file: 'adopt-reconcile.mjs', subsystem: 'road', cost: 'heavy',
     extraDeps: ['src/terrain.js', 'src/road-network-worker.js', 'test/lib/bug76-route.mjs'],
     desc: 'BUG-76: a positional adopt that re-shapes road inside already-carved chunks names every one — streams the owner\'s seed-"w" route + two passes, adopts every network change into a play instance, re-carves only what lastAdoptDirty() touches (plus the coverage stamp), and fails if any built chunk is left carving a road that moved (the tyres-sink / chassis-on-stale-collider bug)' },

@@ -207,6 +207,13 @@ for (const [wi, c] of CENTERS.entries()) {
         `generation ${gen0}→${rs._generation} (ribbon + carve rebuild signal fires at the swap, not before)`)
 }
 
+// The nested route pool's reply, as road-route-worker.js builds it — fed straight back into the
+// instance (the no-mirror fence: the same routeEdgeV2, on the worker's own field derivation).
+const routeDispatcher = (rs, fields) => (jobs, epoch) => rs.ingestRoutedConnections(jobs.map((job) => {
+    const res = routeEdgeV2(job, fields.hTrunc, fields.hCoarse)
+    return { key: job.key, prims: res.cl.primitives, v2Dirs: !!job.dirs, dirsSpec: job.dirs ?? null }
+}), epoch)
+
 // ── 5: PERF-31 W2 — the in-worker pre-warm is invisible in the output ────────────────────────
 // A build on an instance that first pre-warmed its whole route demand (warmPlanDemand: the
 // registered band + the plan layer's settle/census/pass-2 keys) through a dispatcher must be
@@ -218,14 +225,8 @@ for (const [wi, c] of CENTERS.entries()) {
     const c = CENTERS[0]
     const req = { seed: SEED, params: snap, center: { x: c.x, z: c.z }, radius: R, pondDiscs: discSnapshot(c) }
     const rs = makeNetworkInstance(req)
-    const fields = buildRouteFields(SEED, RANGER_PARAMS)
     rs.warmPlanDemand = true
-    rs.setRouteDispatcher((jobs, epoch) => {
-        rs.ingestRoutedConnections(jobs.map((job) => {
-            const res = routeEdgeV2(job, fields.hTrunc, fields.hCoarse)
-            return { key: job.key, prims: res.cl.primitives, v2Dirs: !!job.dirs }
-        }), epoch)
-    })
+    rs.setRouteDispatcher(routeDispatcher(rs, buildRouteFields(SEED, RANGER_PARAMS)))
     rs.setRadius(R)
     rs.beginPrewarmedBuild()   // the worker's carry: rev+bounds at warm start, build reuses the warm's plan memos
     const cv = new THREE.Vector3(c.x, 0, c.z)
@@ -246,6 +247,40 @@ for (const [wi, c] of CENTERS.entries()) {
     const prewarmed1 = buildNetworkSnapshot(req1, rs)
     compareExports('pre-warm carry, moved center == sync build', exportsByWindow[1].ref.exportNetwork(),
                    structuredClone(prewarmed1.data), { skipTallies: true })
+}
+
+// ── 6: R-01 — the BUG-56 C re-route rung on a worker-warmed edge routes with the edge's pins ────
+// The re-route reads cl._v2DirsSpec, which the route reply must carry: without it a pre-warmed
+// edge re-routed with no heading pins, no R5 sibling cost and no FEAT-77 clearance. Seed 6's
+// windows above re-route no edge, so they are blind to it; seed 7 @(0,0) re-routes (measured
+// 2026-10-15). The window must actually re-route, or this check proves nothing.
+{
+    const S7 = 7, c = { x: 0, z: 0 }
+    const w7 = new WaterSystem(S7, RANGER_PARAMS, makeTerrainHeadless(S7, RANGER_PARAMS, null).rawHeightWorld)
+    const discs7 = (minX, minZ, maxX, maxZ) => {
+        const o = []
+        for (const p of w7.pondsNear(minX, minZ, maxX, maxZ)) o.push(p.floorX, p.floorZ, p.radius + p.skirt)
+        return o
+    }
+    const ref = new RoadSystem(S7, RANGER_PARAMS)
+    ref.setWaterNoGo((x, z) => w7.isRoadNoGo(x, z), discs7)
+    ref.setRadius(R)
+    ref.update(new THREE.Vector3(c.x, 0, c.z))
+    const req = { seed: S7, params: snap, center: c, radius: R,
+                  pondDiscs: Float64Array.from(discs7(c.x - R - DISC_PAD, c.z - R - DISC_PAD, c.x + R + DISC_PAD, c.z + R + DISC_PAD)) }
+    const rs = makeNetworkInstance(req)
+    rs.warmPlanDemand = true
+    rs.setRouteDispatcher(routeDispatcher(rs, buildRouteFields(S7, RANGER_PARAMS)))
+    rs.setRadius(R)
+    rs.beginPrewarmedBuild()
+    const cv = new THREE.Vector3(c.x, 0, c.z)
+    let pumps = 0
+    while (!rs.warmBandComplete(cv) && ++pumps < 200) {}
+    const built = buildNetworkSnapshot(req, rs)
+    const reroutes = ref._v2Reroutes || 0
+    log(reroutes > 0, 'seed 7 window re-routes (the check below is not vacuous)', `${reroutes} BUG-56 C re-route(s) in the sync build`)
+    compareExports('seed 7 pre-warm == sync build (re-routed edges keep their pins)', ref.exportNetwork(),
+                   structuredClone(built.data), { skipTallies: true })
 }
 
 console.log(`\n${fail === 0 ? 'ALL NETWORK-WORKER-PARITY CHECKS PASSED' : `${fail} CHECK(S) FAILED`} (${pass} passed)`)
