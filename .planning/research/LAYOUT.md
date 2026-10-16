@@ -53,8 +53,8 @@ physics stack never imports it) · `fragile.js` (FEAT-97 fragile cargo condition
 it the strap's felt g each step).
 
 **World generation** — `seed.js` (djb2 / mulberry32 / FNV-1a hash32 / seedFor, pure) · `terrain.js` (chunk ring, carve table, analytic
-height) · `terrain-height.js` (THE height function + seeded noise — imported by main thread, worker,
-road.js and the headless gates) · `terrain-worker.js` (chunk heightmap Worker, module entry) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
+height) · `terrain-height.js` (THE height function + seeded noise + chunk grid constants and the Worker's
+height-param list — imported by main thread, worker, road.js, data/flora.js and the headless gates) · `terrain-worker.js` (chunk heightmap Worker, module entry) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
 rock classification) · `map-cover.js` (map-resolution forest cover) · `water.js` (ponds/streams
 generation) · `water-render.js` · `stone-texture.js` (procedural riverbed texture) ·
 `terrain-texture.js` (FEAT-84: procedural grass/dirt/rock surface maps, DataTexture, headless-safe).
