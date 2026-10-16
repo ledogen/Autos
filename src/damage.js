@@ -105,6 +105,9 @@ export const TRACKS = {
 export const ARMOR_REGIONS = { front: 'armorFront', left: 'armorLeft', right: 'armorRight', rear: 'armorRear' }
 
 export const TRACK_IDS = Object.keys(TRACKS)
+// Per-corner track ids, indexed 0=FL 1=FR 2=RL 3=RR (GLOSSARY.md §Wheel Index).
+const TIRE_IDS  = ['tireFL', 'tireFR', 'tireRL', 'tireRR']
+const WHEEL_IDS = ['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR']
 
 // ── Tunables ──────────────────────────────────────────────────────────────────────────────────────
 // Every number here is a [DEFAULT] pending a driven calibration pass — the shapes are ratified, the
@@ -609,6 +612,9 @@ const clampAbs = (x, m) => (x >  m ? m : x < -m ? -m : x)
 
 // ── The model ─────────────────────────────────────────────────────────────────────────────────────
 
+/** Brake friction POWER on one wheel [W]: torque × wheel speed (see the brake-wear note in step). */
+function brakePower (brakeT, omega, i) { return Math.abs(brakeT[i] || 0) * Math.abs(omega?.[i] || 0) }
+
 export class DamageModel {
   /**
    * @param {object} [opts]
@@ -723,7 +729,7 @@ export class DamageModel {
 
   /** Per-tire friction multiplier. `dirt` selects the harsher loose-surface falloff. */
   tireMuScale (wheelIndex, dirt = false) {
-    const id = ['tireFL', 'tireFR', 'tireRL', 'tireRR'][wheelIndex]
+    const id = TIRE_IDS[wheelIndex]
     const atZero = dirt ? DAMAGE_PARAMS.tireMuAtZeroDirt : DAMAGE_PARAMS.tireMuAtZero
     const c = this.get(id)
     const shaped = 1 - Math.pow(1 - Math.max(0, Math.min(1, c)), DAMAGE_PARAMS.tireMuExp)
@@ -750,7 +756,7 @@ export class DamageModel {
 
   /** Fit a fresh tire: full condition and the air back in it. */
   replaceTire (wheelIndex) {
-    this.set(['tireFL', 'tireFR', 'tireRL', 'tireRR'][wheelIndex], 1)
+    this.set(TIRE_IDS[wheelIndex], 1)
     this.flat[wheelIndex] = false
   }
 
@@ -837,14 +843,19 @@ export class DamageModel {
     // (a 34 mph crash priced at 0.4 mph). So the burst reaches BACK for the velocity from before
     // the contact began.
     if (vel) {
-      if (!this._velRing) this._velRing = []
-      this._velRing.push({ x: vel.x, y: vel.y, z: vel.z })
-      if (this._velRing.length > P.impactPreSteps) this._velRing.shift()
+      const ring = this._velRing ?? (this._velRing = [])
+      // Full ring: recycle the entry that falls off the back instead of allocating one per step.
+      const e = ring.length >= P.impactPreSteps ? ring.shift() : {}
+      e.x = vel.x; e.y = vel.y; e.z = vel.z
+      ring.push(e)
     }
     const live = region != null && impactSpeed(impulseNs, mass) >= P.impactMinMph * MPH
 
     if (live) {
-      if (!this._burst) this._burst = { region, impulse: impulseNs, t: 0, gap: 0, v0: this._velRing ? this._velRing[0] : null }
+      if (!this._burst) {
+        const r0 = this._velRing?.[0]   // COPIED: ring entries are recycled as the ring advances
+        this._burst = { region, impulse: impulseNs, t: 0, gap: 0, v0: r0 ? { x: r0.x, y: r0.y, z: r0.z } : null }
+      }
       else {
         this._burst.t += dt
         this._burst.gap = 0
@@ -992,7 +1003,7 @@ export class DamageModel {
     const overload = forceN - yieldN
     if (overload <= 0) return                       // elastic: the rim springs back, nothing kept
     const dmg = Math.pow(Math.min(1, overload / fullN), P.rimStrikeExp)
-    this.wear(['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR'][corner], dmg, 1)
+    this.wear(WHEEL_IDS[corner], dmg, 1)
   }
 
   /** Static wheel load [N] — one corner's share of the vehicle's weight. The yield scale. */
@@ -1024,7 +1035,7 @@ export class DamageModel {
     this.wear(id, dmg, 1)
 
     // PUNCTURE: the same event, read against the tire rather than the spring.
-    const tireId = ['tireFL', 'tireFR', 'tireRL', 'tireRR'][corner]
+    const tireId = TIRE_IDS[corner]
     if (!this.flat[corner] && peakN >= this.punctureThreshold(this.get(tireId))) {
       this.flat[corner] = true
       this.popped.push(corner)         // drained by the game layer for the bang
@@ -1074,7 +1085,7 @@ export class DamageModel {
    * standalone test tool when damage is off.
    */
   wheelRunout (wheelIndex, params = this.params) {
-    const c = this.get(['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR'][wheelIndex])
+    const c = this.get(WHEEL_IDS[wheelIndex])
     return ((params && params.wheelRunout) || 0) + (1 - c) * DAMAGE_PARAMS.wheelRunoutAtZero
   }
 
@@ -1108,12 +1119,11 @@ export class DamageModel {
 
     // ── Tires: slip velocity × time (dominant) + cornering force × time (minor) ────────────────
     if (slipVel) {
-      const ids = ['tireFL', 'tireFR', 'tireRL', 'tireRR']
       for (let i = 0; i < 4; i++) {
         const v = Math.max(0, (slipVel[i] || 0) - P.tireSlipFloor)
         const f = Math.abs(tireFlat?.[i] || 0)
         if (v <= 0 && f <= 0) continue
-        this.wear(ids[i], (v + P.tireWCorner * f) * dt, P.durTire)
+        this.wear(TIRE_IDS[i], (v + P.tireWCorner * f) * dt, P.durTire)
       }
     }
 
@@ -1126,9 +1136,8 @@ export class DamageModel {
     // gentle crawl-speed drag costs far less than the same torque at 60 mph.
     if (brakeT) {
       const omega = vehicleState.wheelOmega
-      const p = (i) => Math.abs(brakeT[i] || 0) * Math.abs(omega?.[i] || 0)   // N·m/s = W
-      this.wear('brakeFront', (p(0) + p(1)) * dt, P.durBrake)
-      this.wear('brakeRear',  (p(2) + p(3)) * dt, P.durBrake)
+      this.wear('brakeFront', (brakePower(brakeT, omega, 0) + brakePower(brakeT, omega, 1)) * dt, P.durBrake)
+      this.wear('brakeRear',  (brakePower(brakeT, omega, 2) + brakePower(brakeT, omega, 3)) * dt, P.durBrake)
     }
 
     // ── Wheels: RIM STRIKE events, per corner, on peak tire deflection ────────────────────────

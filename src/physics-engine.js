@@ -76,6 +76,9 @@ function _specReach (spec) {
 
 let _b3 = null            // the loaded engine module — module-private, never exported
 
+// maxContactImpulse's no-contact answer: shared and frozen, so a step with nothing touching allocates nothing.
+const NO_CONTACT = Object.freeze({ impulse: 0, point: null, normal: null })
+
 /**
  * Rotate a plain {x,y,z} by a quaternion given as [x,y,z,w]. Local to this module so the adapter
  * stays dependency-free (it imports nothing but the engine); the standard v' = q·v·q* expanded.
@@ -637,9 +640,8 @@ export class PhysicsEngine {
     if (outByShape) outByShape.fill(0)
     if (!this._contactsBuf) this._contactsBuf = _b3.createContactsBuffer()
     const buf = _b3.getBodyContactData(this._contactsBuf, rec.id)
-    const none = { impulse: 0, point: null, normal: null }
     const n = _b3.getNumContacts(buf)
-    if (n === 0) return none
+    if (n === 0) return NO_CONTACT
     // Reused across steps: this runs every physics step, and createContact/createManifold each
     // allocate a wasm-backed struct.
     const contact  = this._contactScratch  || (this._contactScratch  = _b3.createContact())
@@ -659,7 +661,7 @@ export class PhysicsEngine {
       let si = -1
       if (outByShape) {
         const selfKey = this._shapeKey(aIsSelf ? contact.shapeIdA : contact.shapeIdB)
-        si = rec.shapes.findIndex(sh => this._shapeKey(sh) === selfKey)
+        for (let k = 0; k < rec.shapes.length; k++) if (this._shapeKey(rec.shapes[k]) === selfKey) { si = k; break }
       }
       for (let m = 0; m < contact.manifoldCount; m++) {
         _b3.getManifoldAt(manifold, contact, m)
@@ -682,7 +684,7 @@ export class PhysicsEngine {
         }
       }
     }
-    if (max === 0 || !anchor) return none
+    if (max === 0 || !anchor) return NO_CONTACT
     // World → body frame. b3Body_GetLocalPoint would add the body TRANSLATION, which the anchor
     // does not carry (it is already an offset), so rotate by the inverse rotation instead.
     const q = [0, 0, 0, 1]
