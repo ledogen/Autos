@@ -5,7 +5,7 @@
 // no-go wired as main.js does — and hashes (sha256 over JSON numbers, which round-trip doubles
 // exactly, or over Float64 bytes) one value per component:
 //   network   exportNetwork(): run keys, cells, point/polyCum/clArc arrays, prims, graph, promoted
-//   profiles  _buildRunProfile(key) for every run: arcPos/gradeY/gradeM/camberRad/tx/tz
+//   profiles  _buildRunProfile(key) for every run: arcPos/gradeY/gradeM/tx/tz
 //   junctions _detectNodeJunctions(): node pos, legs, ring/pad data
 //   poi       PoiSystem build + buildHouses (story-poi's builder): roster, pool, customers —
 //             STORY windows only: a 320 m play window holds no viable pad, so its hash is vacuous
@@ -53,6 +53,10 @@ const hashFloats = (arr) => digest(Buffer.from(Float64Array.from(arr).buffer))
 const replacer = (k, v) => (v instanceof Map ? [...v] : v instanceof Set ? [...v]
   : ArrayBuffer.isView(v) ? Array.from(v) : v)
 const hashJSON = (x) => digest(JSON.stringify(x, replacer))
+// Keys review-2 deleted from the network / profiles / debugSampleAt shapes (no geometry in any of them),
+// dropped so a hash taken on a pre-review tree compares meaningfully against this one.
+const DELETED_KEYS = new Set(['camberRad', 'condemnedKeys', 'merges', 'dirFallbacks', 'lrk', 'type', 'dirsSpec'])
+const hashShape = (x) => digest(JSON.stringify(x, (k, v) => DELETED_KEYS.has(k) ? undefined : replacer(k, v)))
 const geoFloats = (g) => {
   const out = []
   for (const name of Object.keys(g.attributes).sort()) out.push(...g.attributes[name].array)
@@ -75,11 +79,11 @@ function fingerprint (W) {
     })
     road.setRadius(r)
     road.update(new THREE.Vector3(cx, 0, cz))
-    return hashJSON(road.exportNetwork())
+    return hashShape(road.exportNetwork())
   })
   const terr = makeTerrainHeadless(seed, P, road)
 
-  time('profiles', () => hashJSON([...road._network.keys()].sort().map((k) => [k, road._buildRunProfile(k)])))
+  time('profiles', () => hashShape([...road._network.keys()].sort().map((k) => [k, road._buildRunProfile(k)])))
   time('junctions', () => hashJSON([...road._detectNodeJunctions()]))
   if (r >= 1000) time('poi', () => {
     const poi = new PoiSystem({ getRoad: () => road, getWater: () => water, getTerrain: () => terr,
@@ -96,7 +100,7 @@ function fingerprint (W) {
     }
     const deck = []
     for (let x = x0; x <= x1; x += W.step * 2) for (let z = z0; z <= z1; z += W.step * 2) deck.push(road.debugSampleAt(x, z))
-    return hashFloats(f).slice(0, 8) + hashJSON(deck).slice(0, 8)
+    return hashFloats(f).slice(0, 8) + hashShape(deck).slice(0, 8)
   })
 
   // Chunks the network touches inside the window (carve-mesh-smoothness.mjs's rule), sorted.
