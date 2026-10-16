@@ -44,7 +44,8 @@ items.md; cut it here (`status: cut`) when items.md strikes it.
 
 **Not items, so not here:** fuel at the pump and repairs at the auto shop are storefront *services*
 (FEAT-104); brands and durability tiers (items.md §3d) are a modifier on every part, not a row of
-their own; cargo is `cargo.md`; story keys are knowledge.
+their own; cargo is `cargo.md`; story keys are knowledge; the campfire spawns to mark camp (only the
+cooking kit modifies it).
 
 ## Food & drink
 
@@ -211,21 +212,34 @@ Hazard reports on the Highway's roads (FEAT-119).
 
 ## Camp gear
 
-### Bedroll and campfire
+### Bedroll
 status: todo · design: kit · build: model · needs: camp render · where: kit
-The default camp, no modifier. Campfire model done (ASSET-24); nothing renders it yet (FEAT-66).
+The baseline sleeping item, no bonus. Fills one of the starter Pack's 2 slots.
+
+### Air mattress
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Sleeping item: +5% recovery rate. Swaps for the bedroll in its slot and in the render.
+
+### Sleeping pad
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Sleeping item: +10% recovery rate. Swaps for the bedroll.
+
+### Deluxe sleeping pad
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Sleeping item: +15% recovery rate, the best bed. Swaps for the bedroll.
 
 ### Blanket
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Energy axis, the small end of the night multiplier.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Add-on, own slot, not required to sleep: +5% recovery rate, adding to the bed and the sleeping bag.
 
 ### Sleeping bag
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-~1.1× the energy a night buys. Replaces the bedroll in the render.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Add-on, own slot, not required to sleep: +10% recovery rate, adding to the bed and the blanket.
+Renders with the bed, not in place of it.
 
 ### Tent
 status: todo · design: idea · build: effect · needs: camp render · where: generalStore
-The larger multiplier. Model done (ASSET-23); placement is FEAT-66.
+A multiplier on the night (open: flat like the bag and blanket?). Model done (ASSET-23); placement is FEAT-66.
 
 ### Cot
 status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
@@ -239,11 +253,6 @@ Vibe axis — shade deficit. Model is ASSET-26.
 status: todo · design: idea · build: effect, model · where: generalStore, tackleShop
 Vibe axis — view deficit (`1 − viewScore`). The cheapest camp row: its whole dependency chain ships.
 
-### Backpack
-status: todo · design: idea · build: effect · where: generalStore
-Reach: raises `campRoadEdgeM` (40 m) so camp can be further from the road. Cost is daylight at both
-ends.
-
 ### Camp shovel
 status: todo · design: idea · build: effect · where: generalStore
 Raises `campGateUnevenM` (1.2 m → ~1.6 m, ≈11–15°). Folded into the 30 min make-camp chore.
@@ -255,6 +264,29 @@ Raises it to ~2.2 m (≈20°). Open: replaces the camp shovel or stacks?
 ### Cooking kit
 status: todo · design: idea · build: effect · needs: camp render, hunger · where: generalStore
 ≈23 kg always carried; flat bonus to food effects. Model is ASSET-25 (A-frame + Dutch oven).
+
+## Backpacks
+
+### Pack
+status: todo · design: ratified · build: effect · needs: camp render · where: kit
+The starter pack: 2 slots, the bedroll in one, one open. Reach 40 m (today's tether). The equipped pack must always hold a sleeping item.
+
+### Daypack
+status: todo · design: idea · build: effect · needs: camp render · where: generalStore
+Few slots, far reach (cap 120 m). Holds the camp gear you bring, one item per slot, shovels included; sets `campRoadEdgeM` for the
+night (items.md §2c). The walk is inside the 30 min make-camp chore.
+
+### Duffel
+status: todo · design: idea · build: effect · needs: camp render · where: generalStore
+Many slots, barely past the shoulder. More kit on near ground.
+
+### Rucksack
+status: todo · design: ratified · build: effect · needs: camp render · where: generalStore
+Between the Duffel and the Frame pack: fewer slots than the Duffel, less reach than the Frame pack.
+
+### Frame pack
+status: todo · design: idea · build: effect · needs: camp render · where: generalStore
+Many slots and far reach — the "good at both" pack, priced to match.
 
 ## Vehicle upgrades
 

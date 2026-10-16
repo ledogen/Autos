@@ -116,6 +116,19 @@ console.log('\n§3 punctures — fresh rubber is safe, worn rubber is not')
 
   // Deterministic, not a probability roll: the same drive pops the same tire every replay.
   ok(pop(0.30, 60000).flat[0] === pop(0.30, 60000).flat[0], 'the same hit on the same tire always gives the same answer')
+
+  // FEAT-112: an overloaded bed caps the condition the curve reads (src/load-verdict.js tireCondCap).
+  const capped = (cond, cap, forceN) => {
+    const d = fresh(); d.set('tireFL', cond); d.tireCondCap = cap
+    for (let i = 0; i < 4; i++) d.step({ bumpForce: [forceN, 0, 0, 0] }, P, 0.004)
+    d.step({ bumpForce: [0, 0, 0, 0] }, P, 0.004)
+    return d
+  }
+  const at37 = d0.punctureThreshold(0.37)
+  ok(capped(1.0, 0.37, at37 + 1000).flat[0] && !capped(1.0, 0.37, at37 - 1000).flat[0],
+    `capped at 37 % (concrete), a FRESH tire pops at ${(at37 / 1000).toFixed(0)} kN, not below it`)
+  ok(capped(0.10, 0.37, 31000).flat[0] === pop(0.10, 31000).flat[0], '...and a tire more worn than the cap is read at its own wear')
+  ok(!capped(1.0, 1, 500000).flat[0], 'the uncapped default leaves a fresh tire unpoppable')
 }
 
 console.log('\n§3b grip is flat-then-cliff, not linear')

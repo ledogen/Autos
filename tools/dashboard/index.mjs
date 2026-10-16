@@ -724,7 +724,7 @@ function indexSounds(tickets) {
  * `status · design · build · needs · where` — the last three comma lists. */
 const ITEM_TICKET = 'FEAT-121';
 const ITEM_CATEGORIES = ['Food & drink', 'Consumables', 'Tools', 'Navigation', 'Camp gear',
-  'Vehicle upgrades', 'Spirit gifts', 'Oddments'];
+  'Backpacks', 'Vehicle upgrades', 'Spirit gifts', 'Oddments'];
 const ITEM_STATUSES = ['todo', 'wip', 'shipped', 'cut'];
 const ITEM_BUILDS = ['effect', 'param', 'gate', 'model'];
 const list = (s) => (s || '').split(',').map((x) => x.trim()).filter(Boolean);

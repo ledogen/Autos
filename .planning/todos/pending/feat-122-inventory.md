@@ -27,6 +27,12 @@ first, which is why FEAT-121 never lists it under `needs:`.
   The inventory records the fit; the physics reads `data/ranger.js` values through it.
 - **No numbers on items in the UI** (SM-INV-10). Described, never scored.
 - **One grant path** for shop purchases, rewards (FEAT-67's stub) and finds.
+- **Camp gear is owned OR packed** (items.md §2c, owner 2026-10-16). Owned camp gear is truck mass;
+  the equipped backpack holds the subset that comes to camp — one item per slot; the bedroll takes
+  one, the fire none. Several packs can be owned (spares ride in the truck); one is equipped at a
+  time, used automatically at camp, and its reach sets `campRoadEdgeM` for the night. The equipped
+  pack must always hold a sleeping item: packing can swap the bedroll for an upgrade, never empty
+  that slot. The inventory screen is where you pack and choose the equipped pack.
 
 ## Ruled — owner, 2026-10-16 (items.md Gaps #3)
 
@@ -42,7 +48,7 @@ first, which is why FEAT-121 never lists it under `needs:`.
 2. **Quick slots: 4 (keys 1–4), consumable and cooldown items both.** A quick slot is a **shortcut**:
    a key bound to an item you already own. It is not extra storage, and the item still takes its
    inventory slot.
-3. **Inventory screen: hotkey `I`, plus an icon in the right-edge HUD icon column** (with the damage
+3. **Inventory screen: hotkey `Tab` (`I` is the ignition), plus an icon in the right-edge HUD icon column** (with the damage
    and camp icons) for opening it on the go. **The clock runs while it is open on the road. At camp it pauses**, like the other
    planning screens.
 4. **Stowed mass is physics only.** No exaggeration, no extra cost. Light kit is in effect priced in
@@ -53,7 +59,7 @@ first, which is why FEAT-121 never lists it under `needs:`.
 ## Acceptance
 
 - A REWARDS grant puts the item in the inventory and its effect, if built, applies.
-- Inventory is empty at run start.
+- Inventory holds only the starting kit at run start: the Pack with the bedroll packed (items.md §2c).
 - Stowed mass shows up in the truck's total mass.
 
 **Not here — SM-4:** the inventory surviving save/load inside a run rides on the run save (FEAT-42).

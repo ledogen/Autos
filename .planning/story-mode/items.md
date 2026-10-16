@@ -183,7 +183,7 @@ one item's spread**, which is the cheapest way to honour the headroom ruling. Th
 where §3d's brand logic would naturally land if the shop ever wants it: same object, better
 insulation, priced as durability is priced.
 
-**SM-INV-10 is satisfied the same way the sleeping bag satisfies it:** the multiplier is legal as
+**SM-INV-10 is satisfied the same way the camp gear satisfies it:** the multiplier is legal as
 *internals* — the game is full of them — provided the figure never surfaces in the UI. The player is
 told *the fish is still good* or *the fish has turned*, never a percentage or a countdown bar.
 
@@ -413,14 +413,17 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 
 | Item | What it does | Source | Cost | Status |
 |---|---|---|---|---|
-| **Bedroll (+ campfire)** | **The default camp — no modifier.** Everybody has one; you sleep on the ground beside a fire. It is the baseline the rest of this table is measured against, and the thing that renders when you carry nothing else. | Starting kit | Its own trivial mass | **IDEA** — 2026-07-30 |
-| **Sleeping bag** | Multiplies the energy a night buys, by a fixed factor (~1.1×). **Replaces the bedroll** in the rendered camp. | Bought/found | Cash; a slot; small mass | **IDEA** — 2026-07-30 |
-| **Tent** | The same multiplier, larger. **Replaces the sleeping bag** in the rendered camp — the campsite visibly becomes a camp rather than a man on the dirt. | Bought/found | Cash; a slot; real mass | **IDEA** — 2026-07-30 |
-| **Blanket** | **Energy axis.** The small end of the same multiplier — the cheap first upgrade over the bare bedroll, and the thing you still have when you've sold the tent. | Bought/found | Cash; a slot; trivial mass | **IDEA** — 2026-08-01 |
+| **Bedroll** | **The baseline sleeping item — no bonus.** Everybody has one. It is what the rest of this table is measured against. | Starting kit | Its own trivial mass; the sleeping item's slot in the pack (§2c) | **RULED** — owner, 2026-10-16. Replaced by an air mattress or a pad, never removed for nothing |
+| **Air mattress** | **Sleeping item.** **+5% recovery rate.** **Replaces the bedroll** in its slot and in the rendered camp. | Bought/found | Cash; the sleeping item's slot; small mass | **RULED** — owner, 2026-10-16 |
+| **Sleeping pad** | **Sleeping item.** **+10% recovery rate.** Replaces the bedroll. | Bought/found | Cash; the sleeping item's slot; small mass | **RULED** — owner, 2026-10-16 |
+| **Deluxe sleeping pad** | **Sleeping item — the best bed.** **+15% recovery rate.** Replaces the bedroll. | Bought/found | Cash; the sleeping item's slot | **RULED** — owner, 2026-10-16 |
+| **Sleeping bag** | **Add-on, not a sleeping item.** Not required to sleep; takes **its own slot**. **+10% recovery rate**, combining with the bed and the blanket. Renders with the bed, not in place of it. | Bought/found | Cash; its own slot; small mass | **RULED** — owner, 2026-10-16 (was a ~1.1× multiplier that replaced the bedroll) |
+| **Tent** | A multiplier on the energy a night buys, larger than the sleeping bag's old ~1.1×. *Open since 2026-10-16: the bed and add-ons are now % bonuses on the recovery rate — is the tent one too, and what does it replace in the render?* Was: **replaces the sleeping bag** in the rendered camp — the campsite visibly becomes a camp rather than a man on the dirt. | Bought/found | Cash; a slot; real mass | **IDEA** — 2026-07-30 |
+| **Blanket** | **Add-on, not a sleeping item.** Not required to sleep; takes **its own slot**. **+5% recovery rate**, combining with the bed and the sleeping bag. The cheap first upgrade over the bare bedroll. | Bought/found | Cash; its own slot; trivial mass | **RULED** — owner, 2026-10-16 (was the small end of the multiplier) |
 | **Cot** | **Vibe axis — flatness.** Makes unflat ground sleepable: fills part of the flatness deficit of the site you chose. Inert on ground that is already flat. | Bought/found | Cash; a slot; real mass (it's a folding frame) | **IDEA** — 2026-08-01 |
 | **Canopy / tarp** | **Vibe axis — shade.** Makes an exposed site bearable: fills part of the shade deficit. Inert under trees. | Bought/found | Cash; a slot; small mass | **IDEA** — 2026-08-01 |
 | **Binoculars** | **Vibe axis — view.** Something to look at from a site with nothing much to look at. Inert on a spot that already has the valley in front of it. **Unblocked:** view is now a real segment — `VIBE_W = { flat .40, view .15, shade .20, water .25 }` in `src/camp.js`, re-ratified 2026-08-01, and the raw score is `skylineView()`'s angular field-of-vision scan. So the deficit this fills is `1 − viewScore`, and it is **the cheapest entry in this table to build** — the only camp-gear row whose whole dependency chain already ships. | Bought/found | Cash; a slot; negligible mass | **IDEA** — 2026-08-01; **owner re-affirmed 2026-08-18** |
-| **Backpack** | **Reach — a third axis, not a deficit patch.** Lets you make camp **further from the road**: it raises the tether (`campRoadEdgeM`, 40 m past the shoulder in `src/camp.js`) that currently pins camping to the road corridor. It fills no segment of the vibe score — it **lengthens the candidate ladder the site hunt walks**, so better ground comes into reach. | Bought/found | Cash; a slot; mass — and **the day clock at both ends**: getting out there and getting back | **IDEA** — owner, 2026-08-18 |
+| **Backpack** | **Moved to §2c — backpacks are now their own item class** (owner, 2026-10-16). The reach idea below survives as one of a pack's two traits. | — | — | see §2c |
 | **Camp shovel** / **Long-handled shovel** | **Permission — a fourth axis, the Backpack's twin.** Lets you **dig a level pad on sloped ground**: raises the campable gate (`campGateUnevenM`, the max height spread across the 6 m pad, 1.2 m today ≈ 8–11° of slope depending on how the pad sits on the fall line). Two tiers: the folding camp shovel moderate, the long-handled shovel to roughly **20°**. Fills no vibe segment — a dug bench on a hillside still scores zero flatness, and **the Cot is what pays that deficit**, so the two stack rather than overlap. **Measured, raw terrain, seeds 1/6/42, random pad orientation:** today's 1.2 m gate passes **~5–7%** of the map; **1.6 m (≈11–15°) → ~10%**; **2.2 m (≈15–20°) → ~20%**; 3.0 m (≈20–27°) → ~35%. So each tier roughly doubles the campable ground — 2.2 m is the "max 20°" figure. | Bought — the general store already stocks shovels (`data/offers.js` cargo `shovel`, ~2 kg); long-handled tier rarer/pricier | Cash; a slot; ~1 kg / ~2.5 kg | **IDEA** — owner, 2026-10-15. **No extra clock time** (owner, 2026-10-15): the dig is folded into the existing 30-min make-camp chore (`src/day.js`), whatever the slope. *Open: does the long shovel replace the camp shovel or stack?* |
 | **Cooking kit** | ~50 lb (≈23 kg) of always-carried mass. Renders as an **A-frame over the campfire with a Dutch oven hanging from it**. Gives a **flat bonus to the effect of food items** — there is deliberately no cooking *system*, no recipes, no ingredients. | Bought/found | ≈23 kg on every mile, for a benefit collected only at camp | **IDEA** — 2026-07-30. ⚠ Depends on food items, which do not exist (§1: fish is PROPOSED, and upstream of a fishing minigame nobody has framed) |
 
@@ -434,9 +437,14 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 
 > **Two axes: some gear scales the energy, some gear scales the vibe.** [RULED 2026-08-01, owner —
 > supersedes this section's original "it multiplies the energy, *never* the vibe."] The site's vibe
-> score decides what a night at that spot is worth (`r(vibe) = lerp(1.5, 3.0, vibe)` in `src/day.js`).
+> score decides what a night at that spot is worth (`r(vibe) = lerp(4/3, 8/3, vibe)` h/h in `src/day.js`).
 >
-> - **Energy axis** — bedroll, blanket, sleeping bag, tent, cooking kit. These scale what you *take
+> - **Energy axis** — the sleeping items (bedroll, air mattress, sleeping pad, deluxe sleeping pad),
+>   blanket, sleeping bag, tent, cooking kit.
+>
+> **The campfire is not an item** (owner, 2026-10-16). It spawns to mark camp, every camp has one,
+> and it never takes a slot. No gear modifies it — **the cooking kit is the only exception**, and
+> that is the cooking kit's effect, not the fire's. These scale what you *take
 >   away* from the night, whatever the night was. They stack with any site.
 > - **Vibe axis** — cot, canopy, binoculars. Each names **one segment** of the vibe score and fills
 >   part of that segment's **deficit** on the site you already chose.
@@ -460,6 +468,9 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 > sees *the cot is working tonight* vs *the cot is dead weight*, which is the feedback loop that
 > makes carrying it a real decision. SM-INV-3-shaped — a diegetic read, not a meter.
 
+> *Reach is now a per-pack trait (§2c, owner 2026-10-16), capped at 120 m, and its cost is slots,
+> not daylight — the walk is inside the make-camp chore. The rest of the reasoning below still holds.*
+>
 > **The backpack is a THIRD axis — reach — and it is the only camp item that raises the ceiling**
 > [owner, 2026-08-18; needs ratifying against SM-INV-6]. Cot, canopy and binoculars are all
 > *deficit patchers*: `min(itemCap, headroom)` on a site you already chose, deliberately inert on a
@@ -493,7 +504,8 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 
 **Two open flags, recorded rather than resolved:**
 
-1. **SM-INV-10 tension.** "1.1×" is a number on an item. The multiplier is legal as *internals* — the
+1. **SM-INV-10 tension.** Every restfulness bonus is a number on an item (the sleeping bag's old
+   "1.1×" was the first). The multiplier is legal as *internals* — the
    game is already full of them — but the figure must never surface in the UI, and no described-not-
    scored phrasing has been written yet. A sleeping bag is *warmer than the ground*; a tent is *the
    difference between weather happening to you and weather happening outside*. Settle the language
@@ -503,6 +515,97 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
    invisible, its cost is invisible, and it is a free upgrade rather than a decision. The kit is
    therefore the **first real test case** for whether stowed mass is legible at all — decide that
    question here, or accept that camp gear is priced in cash and slots only.
+
+## 2c. Backpacks [owner, 2026-10-16]
+
+**A backpack decides which camp gear comes to camp, and how far from the road camp can be.** It is
+its own item class, not a row of §2b: it does nothing at the site itself — it is the carrier for the
+things that do.
+
+**How it works.**
+
+- **Owned is not packed.** Every camp item you own rides in the truck as real mass (rule 2). The
+  backpack holds the ones you **choose to bring**. Unpacked gear stays in the truck — still owned,
+  still weighing on the truck — it just doesn't come out tonight.
+- **Packed gear is there automatically.** Make camp, and everything in the pack is set up at the
+  site. There is no unpacking step, and FEAT-66's visible-kit rule now reads *what you packed is what
+  renders*.
+- **Each pack has two traits: slots and reach.**
+  - **Slots** — how many camp items it holds. One item, one slot.
+  - **Reach** — how far past the road edge you may make camp. It sets the tether `campRoadEdgeM`
+    (40 m today, `src/camp.js`) for the night. This is §2b's old backpack idea, now carried by every
+    pack.
+- **The two trade off.** Some packs reach far but hold little. Some hold a lot but keep you near the
+  road. A few are good at both, and those cost real money. So the nightly choice is **more kit on
+  near ground, or less kit on better ground** — a harder choice, not a safer one (rule 4).
+
+**Roster.** The Pack and the Rucksack's place are the owner's (2026-10-16); the other figures are
+still placeholders.
+
+| Pack | Slots | Reach | Cost | Status |
+|---|---|---|---|---|
+| **Pack** | **2** — the bedroll fills one, so a new player has **one open slot** to take something else along | 40 m (today's tether) | Starting kit | **RULED** — owner, 2026-10-16. Every run starts with it |
+| **Daypack** | Few | Far (up to the 120 m cap) | Cheap; light | **IDEA** — owner, 2026-10-16 |
+| **Duffel** | Many | Barely past the shoulder | Cheap; bulky | **IDEA** — owner, 2026-10-16 |
+| **Rucksack** | Fewer than the Duffel | Less than the Frame pack | Mid-priced | **RULED** — owner, 2026-10-16. Sits between the Duffel and the Frame pack |
+| **Frame pack** | Many | Far (up to the 120 m cap) | Expensive | **IDEA** — owner, 2026-10-16. The "good at both" pack |
+
+**Rulings this implies, stated so they can be checked:**
+
+- **The bedroll takes a slot; the campfire is not an item** (owner, 2026-10-16). The bedroll is the
+  default sleeping item and starts the run packed in the Pack. The fire just spawns to mark camp.
+- **The equipped pack must always hold a sleeping item** (owner, 2026-10-16). Spare packs in the
+  truck carry no such rule. The bedroll can be swapped for an
+  upgrade — **sleeping pad, air mattress, deluxe sleeping pad** (§2b) — but never removed for
+  nothing. So one slot of the equipped pack is always the bed; with the starter Pack equipped, that
+  leaves exactly one free slot.
+- **Restfulness bonuses are a percentage on the recovery rate** — how fast energy recovers per hour
+  slept (owner, 2026-10-16). The bed: **bedroll 0 · air mattress +5% · sleeping pad +10% · deluxe
+  sleeping pad +15%.** The add-ons: **blanket +5% · sleeping bag +10%.** The same percentage on any
+  site, applied to `r(vibe) = lerp(sleepRateWorstH 4/3, sleepRateBestH 8/3, vibe)` h/h
+  (`src/day.js`). The bedroll adds nothing, so the "average site, 8 h = full tank" contract is the
+  baseline. SM-INV-6 holds because the place still sets the rate the bonus scales — a deluxe pad on
+  bad ground still sleeps worse than a deluxe pad on good ground.
+- **The sleeping bag and blanket are add-ons, not sleeping items** (owner, 2026-10-16). Neither is
+  required to sleep; each takes its own slot, separate from the bed's, and both can be carried at once.
+  So a starter Pack carries the bedroll plus *either* a blanket *or* something else.
+- **Bonuses add, they don't compound:** `r × (1 + bed + blanket + bag)`. Full kit is +30% (compounding
+  would give +32.8% — close enough that the simpler rule wins). What that buys, full-from-empty on
+  the 16 h tank:
+
+  | Kit | Worst site | Average site | Best site |
+  |---|---|---|---|
+  | Bedroll only | 12.0 h | 8.0 h | 6.0 h |
+  | Bedroll + blanket (starter's best) | 11.4 h | 7.6 h | 5.7 h |
+  | Deluxe pad + bag + blanket (+30%) | 9.2 h | 6.2 h | 4.6 h |
+
+  So the best kit saves about 2 h on an average night — and bad ground with the best kit (9.2 h) is
+  still worse than average ground with a bedroll (8.0 h).
+- **One equipped pack.** You can own several packs; the spares ride in the truck like any other gear.
+  One is **equipped** — selected in the inventory screen — and that one is used automatically when
+  you make camp (owner, 2026-10-16).
+- **Packing happens in the inventory screen (FEAT-122), any time.** Making camp just reads the pack.
+- **Described, never scored (SM-INV-10).** The pack's slots are visible as **room in the pack**, not
+  as a number. Its reach shows only as where the camp zone lets you sleep. Neither figure appears in
+  the UI.
+
+**Ruled (owner, 2026-10-16).**
+
+1. **Every camp item takes exactly one slot**, whatever its size. The cooking kit (≈23 kg) and the
+   binoculars cost the same room. Mass is the truck's problem, not the pack's.
+2. **The shovels need a slot.** They are camp gear like any other, so "dig on the slope" competes
+   with "carry the tent" for room in the pack.
+3. **The walk is inside the 30-min make-camp chore** (`src/day.js`), like the shovel's dig. Reach
+   costs no extra daylight. Its whole price is the slots a far-reaching pack gives up. This replaces
+   §2b's "the day clock at both ends". (Measured: a loaded walk at ~4 km/h covers 120 m in about
+   2 minutes, so the clock was never a real price at this range.)
+4. **Reach tops out at 120 m** past the road edge — 3× today's 40 m. The site hunt grades one
+   candidate every `CAMP_RAY_STEP_M` (~2 m) along the tether, so the longest pack grades ~60
+   candidates against today's 21. The debug slider ("road tether (m)") goes to 120 m to match.
+
+**Cheap to build.** `campRoadEdgeM` is already a `CAMP_PARAMS` key with a debug slider and is kept
+out of `routeCacheSig`, so a per-night reach re-bakes nothing (SM-INV-12 holds). The slot count is a
+length check on the packed list. The real work is the packing UI (FEAT-122) and the render (FEAT-66).
 
 ## 3. Parts
 
@@ -780,7 +883,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 | **Truck / damage** | spare tire, air filter, **zip ties, duct tape, coolant, tire patches** | parts (§3), quick-jack, breaker bar, **hi-lift, bike pump (always), compressor** | Host charm |
 | **Navigation / info** | — | map, beacon, GPS, shortcut GPS, **light bar**, *CB radio (FEAT-119)* | — |
 | **Cargo / mission** | ~~*straps (FEAT-110)*~~ **bubble wrap, furniture pad, heavy-duty pad (§3e)** | cooler, chain, **rubber bed mat, bedliner** | — |
-| **Camp / night** | — | camp vibe gear, backpack | — |
+| **Camp / night** | — | camp vibe gear, **backpacks (§2c)** | — |
 | **Fuel / time** | jerry can | — | — |
 
 ### Accepted (owner, 2026-09-30) — all PROPOSED until figures are set

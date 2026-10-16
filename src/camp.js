@@ -802,7 +802,7 @@ export class CampSystem {
         f.add(CAMP_PARAMS, 'campShadeFullN', 1, 12, 1).name('trees for full shade')
         f.add(CAMP_PARAMS, 'campWaterR', 5, 120, 5).name('water reach (m)')
         f.add(CAMP_PARAMS, 'campWaterBestM', 1, 30, 1).name('water full credit (m)')
-        f.add(CAMP_PARAMS, 'campRoadEdgeM', 5, 80, 1).name('road tether (m)')
+        f.add(CAMP_PARAMS, 'campRoadEdgeM', 5, 120, 1).name('road tether (m)')
         f.add(CAMP_PARAMS, 'campShadeR', 3, 30, 1).name('shade reach (m)')
         f.add(CAMP_PARAMS, 'campPadHalfM', 1, 8, 0.5).name('pad half (m)')
         f.add(CAMP_PARAMS, 'campPadGapM', 0, 3, 0.1).name('pad gap (m)')
