@@ -6926,7 +6926,7 @@ export class RoadSystem {
             cache = this._cellCands = { rev: this._networkRev, gate, map: new Map() }
         }
         const cellX = Math.floor(wx / RESOLVE_CELL), cellZ = Math.floor(wz / RESOLVE_CELL)
-        const key = `${cellX},${cellZ}`
+        const key = (cellX + 33554432) * 67108864 + (cellZ + 33554432)   // packed (cellX, cellZ): ≤ 2^52, exact
         let cell = cache.map.get(key)
         if (cell !== undefined) return cell
         const cx = (cellX + 0.5) * RESOLVE_CELL, cz = (cellZ + 0.5) * RESOLVE_CELL
@@ -7364,7 +7364,10 @@ export class RoadSystem {
         // cached-run position error small during normal driving (≤0.05 m → grade error sub-cm), which
         // bounds rest-height drift well under the penetration tolerance. Wheels (≥1.6 m = 32 cells) and
         // distinct runs never share a cell.
-        const key = `${Math.round(wx * 20)},${Math.round(wz * 20)}`
+        // Numeric key (a string key cost ~0.07 µs more per lookup, ~800 lookups/step): packed
+        // (qx, qz) with each offset by 2^25 and qx scaled by 2^26, so the key stays ≤ 2^52 and every
+        // cell is distinct for |coord| < 1,677 km. (2^26 × 2^27 overflows 2^53 and merges cells.)
+        const key = (Math.round(wx * 20) + 33554432) * 67108864 + (Math.round(wz * 20) + 33554432)
         let nr = m.get(key)
         if (nr === undefined) {
             // Continuous-projection road resolver, NOT queryNearest — see _resolveRoadSurface.
