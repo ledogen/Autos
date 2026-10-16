@@ -3136,14 +3136,15 @@ export class RoadSystem {
         ks.sort()
         const p1 = this._nodePos(ks[0].split(',').map(Number))
         const p2 = this._nodePos(ks[1].split(',').map(Number))
-        // BUG-86: an ACUTE elbow (both neighbours within 90° of each other, seen from the node) is a
-        // turnaround, not a point on a corridor. The chord pin there sits ~90° off BOTH legs' own
+        // BUG-86: an ACUTE elbow (both neighbours within 75° of each other, seen from the node) is a
+        // turnaround, not a point on a corridor. The through pin there sits ~90° off BOTH legs' own
         // bearings, so each leg is forced to leave square to where it is going — a teardrop at the
         // node, and the two legs run back side by side (seed 1813164377 node 0,-3,2: 67° elbow,
-        // 600 m hug, 3 crossings). No pin: each leg departs toward its own neighbour.
-        // 75°, not 90°: the battery holds 3–8 deg-2 elbows per window at 65–89°; un-pinning all of
+        // 600 m hug, 3 crossings). No through pin: the caller pins each leg to its OWN chord, as at
+        // a junction (an unpinned leg wanders — seed 6 node 6,-2,0 looped 300 m before its chord).
+        // 75°, not 90°: the battery holds 3–8 deg-2 elbows per window at 65–89°; re-pinning all of
         // them (90°) moved Ts into two new junction-mouth rows (junction-stitch seed 11, clearance
-        // seed 6 mark-B). Under 75° only ~10 nodes change and every gate matches main.
+        // seed 6 mark-B).
         const pn = this._nodePos(nk.split(',').map(Number))
         const ax = p1.x - pn.x, az = p1.z - pn.z, bx = p2.x - pn.x, bz = p2.z - pn.z
         if (ax * bx + az * bz > ACUTE_ELBOW_COS * Math.hypot(ax, az) * Math.hypot(bx, bz)) return null
@@ -3157,7 +3158,8 @@ export class RoadSystem {
     // behind one neighbor along the chord got pins that REVERSE travel through the node, a
     // sanctioned cusp. Identity signing keeps travel consistent through every joint.)
     //
-    // BUG-53: JUNCTION ends (settled degree >= 3) get a CHORD pin — each leg must depart its node
+    // BUG-53: JUNCTION ends (settled degree >= 3), and BUG-86 acute deg-2 elbows (no through pin),
+    // get a CHORD pin — each leg must depart its node
     // toward its own far node (60° cone + the terminal-region rule, same machinery as deg-2).
     // Unpinned junction legs all pick the same best exit out of the node, which is the measured
     // generator of the node-sharing overlap/crossing class: two runs collinear out of one node,
@@ -3214,9 +3216,9 @@ export class RoadSystem {
         }
         const neg = (d) => ({ x: -d.x, z: -d.z })
         const startDir = s ? (s.toward === kB ? { x: s.x, z: s.z } : neg(s))
-            : (degOf(kA) >= 3 ? chordDir() : undefined)
+            : (degOf(kA) >= 2 ? chordDir() : undefined)
         const goalDir = t ? (t.toward === kA ? neg(t) : { x: t.x, z: t.z })
-            : (degOf(kB) >= 3 ? chordDir() : undefined)
+            : (degOf(kB) >= 2 ? chordDir() : undefined)
         if (!startDir && !goalDir) return undefined
         const dirs = { startDir, goalDir }
         // R5: sibling bearings at each end — the chords from the node toward its OTHER settled

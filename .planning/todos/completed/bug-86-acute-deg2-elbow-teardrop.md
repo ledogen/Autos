@@ -1,7 +1,8 @@
 ---
 id: BUG-86
 type: bug
-status: open
+status: resolved
+resolved: 2026-10-15
 severity: major
 opened: 2026-10-15
 source: owner capture 2026-10-15 — "pretty yucky pretty ugly piece of road generation. lots of self
@@ -54,7 +55,9 @@ water the way replay.mjs does.
 
 ## A — built 2026-10-15 (feature/bug-86-acute-elbow)
 
-`_v2NodeThrough` returns no pin when the elbow is sharper than 75° (`ACUTE_ELBOW_COS`). Capture:
+`_v2NodeThrough` returns no through pin when the elbow is sharper than 75° (`ACUTE_ELBOW_COS`);
+`_v2EdgeDirsBase` then gives each leg a CHORD pin toward its own neighbour, the BUG-53 junction rule
+(degOf ≥ 3 → ≥ 2). Capture:
 the 1450 m leg becomes 764 m and Ts onto the shared corridor at 221520,-1471652,-1 near the mark;
 0 crossings (was 3); the start hairpin at 0,-3,1 is gone too (the leg now departs east). One
 ordinary router switchback remains ~70 m before the T (139° at 11.9 m radius, above the 8 m fold
@@ -70,4 +73,19 @@ both gates match main exactly. `npm test` (affected): 43/45, reds = road-tunnel 
 
 - [x] Capture no longer shows the teardrop at 0,-3,2; crossings between the two legs gone or
       resolved (capture-classify, pond-aware)
-- [ ] `npm run test:all` no new reds vs main (known reds: road-tunnel, road-clearance)
+- [x] `npm run test:all` no new reds vs main (known reds: road-tunnel, road-clearance) — 90/92,
+      same rows as main
+
+## Resolution (2026-10-15)
+
+First cut returned NO pin at all. test:all then failed paper-tour: the top tour went 14.59 → 16.41 km
+(15.5 hard). Cause: seed 6 run g:6,-2,0:6,-1,2 went 552 → 854 m, because an unpinned leg leaves
+wherever the router likes (the BUG-53 finding). Switched to the chord pin: paper-tour 14.77 km,
+capture still clean (0 crossings), test:all 90/92 = main.
+
+That run is still 848 m with the chord pin. It is the router's own switchback down a 109 m drop on
+a 495 m chord: unpinned it routes the same. Main's 552 m line exceeds 20 % grade in 83 of its 20 m
+windows vs 65 for the switchback. Main only avoided the switchback because the old through pin
+forbade the NE start. Cost model working, not a defect.
+
+Option B (node-merge role swap) stays unbuilt; reopen if acute-elbow hugs recur.
