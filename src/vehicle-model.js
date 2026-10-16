@@ -69,6 +69,18 @@ const HEAD_TUNE = {
   lowIntensity: 700, lowDistance: 120, lowAngle: 0.70, lowPenumbra: 0.45, lowAimY: -3.2,  lowAimZ: -28,
   highIntensity: 1130, highDistance: 200, highAngle: 0.50, highPenumbra: 0.30, highAimY: -1.3, highAimZ: -65,
   lensLow: 1.4, lensHigh: 2.2,   // emissiveIntensity of the headlight LENS (the visible glow), low vs high
+  // SM-3 damage flicker, cued by the jolt the front of the body feels (see stepLampFlicker). Jolt
+  // is in g at the front axle, as the deviation of its suspension load from rest: below flickerDeadG a
+  // damaged lamp burns steady, at flickerFullG it is fully agitated, and a spike is held with a
+  // flickerHoldS decay so the lamp keeps stuttering while the body rings. flickerRate is dropouts
+  // per second for a fully agitated lamp at full flicker; each lasts flickerMinS + rand · flickerSpanS.
+  // flickerDebounceS is the least time a lamp holds either state before it may switch again: without
+  // it a run of one-frame dropouts reads as a strobe, not a loose connection (owner, 2026-10-15).
+  flickerDeadG: 0.10, flickerFullG: 0.55, flickerHoldS: 0.25,
+  // flickerFadeS is the ramp time between on and a cut-out, so it dims rather than snaps, and
+  // flickerLow is how far a cut-out falls, as a fraction of the lamp's lit output (owner, 2026-10-15).
+  flickerRate: 30, flickerMinS: 0.02, flickerSpanS: 0.06, flickerDebounceS: 0.10, flickerFadeS: 0.08,
+  flickerLow: 0.30,
   // Low beam is a HALF cone: a projected cookie masks the upper part of the cone so the beam cuts off
   // at the "beltline" (real low-beam behaviour). lowCutoff is the cone fraction (0 top..1 bottom) of
   // the cutoff line; 0.5 = lower half lit. High beam keeps the full cone (uniform white cookie).
@@ -92,34 +104,37 @@ const LIGHT_ENV = { dayScale: 0.1 }
 
 const _box = (w, h, d) => new THREE.BoxGeometry(w, h, d)
 
-// Split a mesh's triangles into "front" + "rear" geometry groups by triangle-centroid Z
-// (model-local), each with its own cloned material. The shared white-lens material spans BOTH the
-// front lenses (headlights) and the rear lens (reverse) across the truck; splitting lets each be lit
-// independently. Returns { frontMat, rearMat } (frontMat = headlight lens, rearMat = reverse lens),
-// or null if no rear triangles were found.
+// Split a mesh's triangles into front-left, front-right and rear geometry groups by triangle
+// centroid (model-local: Z for front/rear, X sign for the side, forward = −Z so left = −X), each
+// with its own cloned material. The shared white-lens material spans BOTH headlight lenses and the
+// rear lens (reverse) across the truck; splitting lets each be lit independently, and per side so a
+// damaged lamp can flicker on its own. Returns { frontMats: [left, right], rearMat }, or null if no
+// rear triangles were found.
 function splitRearGroup (mesh, rearZ) {
   const geom = mesh.geometry
   const pos = geom.attributes.position
   const index = geom.index
   const idxAt = (k) => (index ? index.getX(k) : k)
   const triCount = (index ? index.count : pos.count) / 3
-  const front = [], rear = []
+  const frontL = [], frontR = [], rear = []
   for (let t = 0; t < triCount; t++) {
     const a = idxAt(t * 3), b = idxAt(t * 3 + 1), c = idxAt(t * 3 + 2)
     const zc = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3
-    ;(zc > rearZ ? rear : front).push(a, b, c)
+    const xc = pos.getX(a) + pos.getX(b) + pos.getX(c)
+    ;(zc > rearZ ? rear : xc < 0 ? frontL : frontR).push(a, b, c)
   }
   if (rear.length === 0) return null
-  geom.setIndex(front.concat(rear))
+  geom.setIndex(frontL.concat(frontR, rear))
   geom.clearGroups()
-  geom.addGroup(0, front.length, 0)
-  geom.addGroup(front.length, rear.length, 1)
-  const frontMat = mesh.material.clone()    // headlight lens — own clone so only these front faces light
-  const rearMat = mesh.material.clone()
-  frontMat.emissive = new THREE.Color(0x000000)
-  rearMat.emissive = new THREE.Color(0x000000)
-  mesh.material = [frontMat, rearMat]        // group 0 → front (headlight), group 1 → rear (reverse)
-  return { frontMat, rearMat }
+  geom.addGroup(0, frontL.length, 0)
+  geom.addGroup(frontL.length, frontR.length, 1)
+  geom.addGroup(frontL.length + frontR.length, rear.length, 2)
+  // Own clones so only these faces light. userData.lamp says which headlight a lens belongs to.
+  const lens = (lamp) => { const m = mesh.material.clone(); m.emissive = new THREE.Color(0x000000); m.userData.lamp = lamp; return m }
+  const frontMats = [lens(0), lens(1)]
+  const rearMat = lens(-1)
+  mesh.material = [...frontMats, rearMat]    // groups 0/1 → left/right headlight, 2 → rear (reverse)
+  return { frontMats, rearMat }
 }
 
 /**
@@ -205,6 +220,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // Headlights — flank the grille on the front face.
   for (const sx of [-1, 1]) {
     const mat = lightMat(HEAD_ON)
+    mat.userData.lamp = sx < 0 ? 0 : 1     // left, right — indexes the damage flicker
     headlightMats.push(mat)
     part(_box(0.30, 0.16, 0.05), mat, sx * 0.60, 0.04, -2.22)
   }
@@ -315,6 +331,58 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // the beam SHAPE (distance/angle/aim) to the mode; the cast INTENSITY is set per-frame in
   // syncMeshesToState so it can scale with the day/night factor (and pick up GUI edits live).
   let headlightMode = 1
+
+  // SM-3 damage flicker. damage.js publishes params._headlightFlicker = [left, right], 0 = steady,
+  // 1 = worst. A damaged lamp is a loose connection: it burns steady at rest and on smooth road, and
+  // cuts out when the body is JOLTED (owner, 2026-10-15). The lamps are at the front, so the jolt is
+  // the FRONT axle's vertical load in g (its two strut forces, which physics already applies along
+  // body-up, over its static share m·g·weightFront) minus the at-rest value cos(tilt) = up.y.
+  // Measured headless: 0.000 at rest on the flat, ≤ 0.011 parked on a ±10° slope (the along-slope
+  // load enters at hub height, so there is next to no fore-aft transfer to correct for), 0 in a
+  // steady 15 m/s cruise, and +1.0 / −0.6 g as the front wheels cross a 6 cm bump. A bump under the
+  // rear wheels barely registers, as it should for lamps on the nose.
+  // Visual only, so Math.random is fine: it never reaches physics or a replay.
+  const lampOut = [1, 1]          // each lamp's switched state: 1 on, 0 cut out (to flickerLow)
+  const lampLevel = [1, 1]        // rendered output, slewing toward lampOut over flickerFadeS
+  const lampDrop = [0, 0]         // seconds left in each lamp's current dropout
+  const lampLock = [0, 0]         // seconds left before each lamp may switch state (debounce)
+  let lampT = -1                  // performance.now() of the last flicker step
+  let joltHeld = 0                // g above the dead band, peak-held with a flickerHoldS decay
+  const stepLampFlicker = (state) => {
+    const now = performance.now()
+    const dt = lampT < 0 ? 0 : Math.min(0.1, (now - lampT) / 1000)
+    lampT = now
+    const f = params._headlightFlicker
+    if (!f || (f[0] === 0 && f[1] === 0)) { lampOut[0] = lampOut[1] = lampLevel[0] = lampLevel[1] = 1; joltHeld = 0; return }
+    const F = params._suspForceAccum
+    const q = state.quaternion
+    const upY = 1 - 2 * (q.x * q.x + q.z * q.z)
+    const g = (F[0] + F[1]) / (params.mass * params.weightFront * 9.81)
+    const raw = Math.max(0, Math.abs(g - upY) - HEAD_TUNE.flickerDeadG)
+    joltHeld = Math.max(raw, joltHeld * Math.exp(-dt / HEAD_TUNE.flickerHoldS))
+    const shake = Math.min(1, joltHeld / (HEAD_TUNE.flickerFullG - HEAD_TUNE.flickerDeadG))
+    const low = HEAD_TUNE.flickerLow
+    const step = HEAD_TUNE.flickerFadeS > 0 ? (1 - low) * dt / HEAD_TUNE.flickerFadeS : 1   // one swing per fade
+    for (let i = 0; i < 2; i++) {
+      switchLamp(i, f[i] * shake, dt)
+      const target = lampOut[i] ? 1 : low
+      lampLevel[i] += Math.max(-step, Math.min(step, target - lampLevel[i]))
+    }
+  }
+  /** Advance one lamp's on/off state. `agitation` = damage amount × shake, 0..1. */
+  const switchLamp = (i, agitation, dt) => {
+    lampLock[i] -= dt
+    lampDrop[i] -= dt
+    if (lampOut[i] === 0) {
+      // Off: come back on once the dropout has run out AND the debounce allows it.
+      if (lampDrop[i] <= 0 && lampLock[i] <= 0) { lampOut[i] = 1; lampLock[i] = HEAD_TUNE.flickerDebounceS }
+    } else if (lampLock[i] <= 0 && Math.random() < agitation * HEAD_TUNE.flickerRate * dt) {
+      lampOut[i] = 0
+      lampDrop[i] = HEAD_TUNE.flickerMinS + Math.random() * HEAD_TUNE.flickerSpanS
+      lampLock[i] = HEAD_TUNE.flickerDebounceS
+    }
+  }
+
   const applyHeadlights = () => {
     const on = headlightMode !== 0
     const high = headlightMode === 2
@@ -659,7 +727,14 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     // Runs for both the primitive and GLB paths (the spots are carGroup children, model-independent).
     const castScale = LIGHT_ENV.dayScale + (1 - LIGHT_ENV.dayScale) * nightFactor
     const headCast = headlightMode === 0 ? 0 : (headlightMode === 2 ? HEAD_TUNE.highIntensity : HEAD_TUNE.lowIntensity)
-    for (const s of headlightSpots) s.intensity = headCast * castScale
+    stepLampFlicker(state)
+    // Per-lamp output = flicker level × the wear dimming damage.js publishes (absent = a stock lamp).
+    const dim = params._headlightBrightness
+    const lampGain = (i) => lampLevel[i] * (dim?.[i] ?? 1)
+    for (let i = 0; i < 2; i++) headlightSpots[i].intensity = headCast * castScale * lampGain(i)
+    // The lens glow follows its lamp's flicker (applyHeadlights sets colour; intensity is per frame).
+    const lensBase = headlightMode === 0 ? 0 : (headlightMode === 2 ? HEAD_TUNE.lensHigh : HEAD_TUNE.lensLow)
+    for (const m of modelActive ? modelHeadMats : headlightMats) m.emissiveIntensity = lensBase * lampGain(m.userData.lamp)
     const tailCast = braking ? REAR_TUNE.tailBrakeIntensity : (lightsRunning ? REAR_TUNE.tailRunIntensity : 0)
     for (const s of tailSpots) s.intensity = tailCast * castScale
     for (const s of reverseSpots) s.intensity = (reversing ? REAR_TUNE.reverseIntensity : 0) * castScale
@@ -812,7 +887,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     // (the lens mats didn't exist when applyHeadlights() first ran at construction).
     for (const m of lensMeshes) {
       const split = splitRearGroup(m, spec.reverse.rearZ)
-      if (split) { modelReverseMats.push(split.rearMat); modelHeadMats.push(split.frontMat) }
+      if (split) { modelReverseMats.push(split.rearMat); modelHeadMats.push(...split.frontMats) }
     }
     applyHeadlights()
 

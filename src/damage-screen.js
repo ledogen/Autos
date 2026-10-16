@@ -54,7 +54,7 @@ const CONSEQUENCE = {
   engine:     'Less power. Most of the loss arrives in the last fifth of its life.',
   filter:     'A clogged filter wears the engine out faster. Cheap to replace.',
   radiator:   'Reduced cooling, so a higher risk of overheating.',
-  headlights: 'A damaged lamp flickers below half health and goes dark when broken.',
+  headlights: 'A worn lamp dims, down to 40% when broken. Below half health it flickers over bumps.',
   alignment:  'Knocked-out toe and camber make the truck pull to one side.',
 }
 
@@ -112,8 +112,7 @@ function symptoms (m, id) {
     case 'engine': if (c < P.engineKnee) out.push(`Losing power fast under ${pct(P.engineKnee)}`); break
     case 'filter': if (c < P.filterKnee) out.push(`Wearing out the engine under ${pct(P.filterKnee)}`); break
     case 'headlights':
-      if (c <= 0) out.push('Dark')
-      else if (c < 0.5) out.push('Flickers under 50%')
+      if (c < P.headlightFlickerCond) out.push(`Flickers over bumps under ${pct(P.headlightFlickerCond)}`)
       break
     case 'armor':
       // Fatal speed scales with this panel's condition (fatalMphBare..fatalMphFull). Only worth
