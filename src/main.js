@@ -464,7 +464,7 @@ let _labSavedSpawn = null    // player's spawn override, saved across a lab visi
  * The `!roadSystem` fallthrough below stays 1 on purpose — that is genuinely raw terrain with no
  * network streamed yet, not a third class.
  */
-function looseSurfaceFactor (x, z) {
+function _looseSurfaceFactorAt (x, z) {
   if (_labActive) return RANGER_PARAMS.dustPavedFactor ?? 0.1   // lab: own surface, paved FX for now
   if (!roadSystem) return 1
   const nr = roadSystem.carveHint(x, z)
@@ -483,8 +483,27 @@ function looseSurfaceFactor (x, z) {
 // FEAT-40 queryY, exactly as queryContacts passes the wheel's: without it a bore span answers with
 // the hill OVERHEAD, so every wheel read as "in contact" and emitted dust/smoke/spray up on the
 // hilltop — none of it ever showed inside a tunnel.
-const _fxGroundY = (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0)
-                                        : (terrainSystem ? terrainSystem.analyticHeight(x, z, undefined, vehicleState.position.y) : 0)
+const _fxGroundYAt = (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0)
+                                          : (terrainSystem ? terrainSystem.analyticHeight(x, z, undefined, vehicleState.position.y) : 0)
+
+// S-64: dust, smoke and dirt spray each sample the SAME 4 wheel points every frame (and tire audio
+// asks looseSurfaceFactor too) — 12 carve-aware height queries where 4 do. A 4-slot cache keyed on
+// the exact (x, z), reset once per frame before the FX run: a hit returns the identical value, a
+// differing point simply misses, so the output cannot change.
+function _frameCache4 (fn) {
+  const kx = [0, 0, 0, 0], kz = [0, 0, 0, 0], kv = [0, 0, 0, 0]
+  let n = 0
+  const cached = (x, z) => {
+    for (let i = 0; i < n; i++) if (kx[i] === x && kz[i] === z) return kv[i]
+    const v = fn(x, z)
+    if (n < 4) { kx[n] = x; kz[n] = z; kv[n++] = v }
+    return v
+  }
+  cached.reset = () => { n = 0 }
+  return cached
+}
+const looseSurfaceFactor = _frameCache4(_looseSurfaceFactorAt)
+const _fxGroundY = _frameCache4(_fxGroundYAt)
 
 
 // ── Suspension substep transient scratch arrays (Phase 4 — D-02, PATTERNS §underscore convention) ──
@@ -1877,8 +1896,17 @@ const FOOT_DIRS  = 8
 const FOOT_COS   = Array.from({ length: FOOT_DIRS }, (_, o) => Math.cos(o * Math.PI * 2 / FOOT_DIRS))
 const FOOT_SIN   = Array.from({ length: FOOT_DIRS }, (_, o) => Math.sin(o * Math.PI * 2 / FOOT_DIRS))
 
+// S-64: queryContacts' per-sample road-hint and ground-height samplers, hoisted to module scope so
+// the 4-wheels-per-step physics path does not allocate two closures per call. The call's cy reaches
+// them through _qcY (set at the top of queryContacts; nothing in between re-enters it).
+let _qcY = 0
+const _qcHintAt = (x, z) => (!_labActive && roadSystem) ? roadSystem.carveHint(x, z) : undefined
+// FEAT-40: cy disambiguates the two stacked surfaces in a bore span (floor vs hill overhead).
+const _qcGroundH = (x, z) => _labActive ? labSystem.groundHeight(x, z)
+                                        : (terrainSystem ? terrainSystem.analyticHeight(x, z, _qcHintAt(x, z), _qcY) : 0)
 function queryContacts (cx, cy, cz, r, footprint = false) {
   const hits = []
+  _qcY = cy
 
   // Ground surface — the lab's own surface in the testing lab; analytic terrain height otherwise.
   // Grid-world uses flat ground so physics contacts are correct on the clean flat plane (D-18).
@@ -1901,10 +1929,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // The perf that motivated the shared hint (PERF-24) is preserved by carveHint's own memo, which is
   // keyed per 0.05 m cell: the stencil's 33 samples are distinct cells, but every substep and every
   // repeat query at the same spot still shares them, which is what the death-spiral case needs.
-  const _hintAt = (!_labActive && roadSystem) ? (x, z) => roadSystem.carveHint(x, z) : () => undefined
-  // FEAT-40: cy disambiguates the two stacked surfaces in a bore span (floor vs hill overhead).
-  const groundH = (x, z) => _labActive ? labSystem.groundHeight(x, z)
-                                       : (terrainSystem ? terrainSystem.analyticHeight(x, z, _hintAt(x, z), cy) : 0)
+  // (_qcHintAt / _qcGroundH above.)
 
   // TIRE-ENVELOPE (footprint sampling). A wheel is a disc of radius r; it rests on the HIGHEST
   // terrain its circular profile can touch, NOT the single point under the hub. The legacy probe
@@ -1918,7 +1943,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // stencil for why a single shared hint broke the envelope at road edges. Wheel callers pass
   // footprint=true; body probes do not.
   const doFootprint = footprint && r > 0 && RANGER_PARAMS.wheelFootprint !== false
-  let bestH   = groundH(cx, cz)
+  let bestH   = _qcGroundH(cx, cz)
   let bestTop = bestH + r        // d=0 term — identical to the legacy single probe
   let bestX = cx, bestZ = cz
   if (doFootprint) {
@@ -1938,7 +1963,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
       const lift = Math.sqrt(Math.max(0, r * r - d * d))
       for (let o = 0; o < FOOT_DIRS; o++) {
         const sx = cx + d * FOOT_COS[o], sz = cz + d * FOOT_SIN[o]
-        const h   = groundH(sx, sz)
+        const h   = _qcGroundH(sx, sz)
         const top = h + lift
         if (top > bestTop) { bestTop = top; bestH = h; bestX = sx; bestZ = sz }
       }
@@ -1947,7 +1972,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   const gd = bestTop - cy
   if (gd > 0) {
     const n = _labActive ? labSystem.groundNormal(bestX, bestZ)
-                         : (terrainSystem ? terrainSystem.analyticNormal(bestX, bestZ, _hintAt(bestX, bestZ), cy) : { x: 0, y: 1, z: 0 })
+                         : (terrainSystem ? terrainSystem.analyticNormal(bestX, bestZ, _qcHintAt(bestX, bestZ), cy) : { x: 0, y: 1, z: 0 })
     hits.push({
       normal:       new THREE.Vector3(n.x, n.y, n.z),
       depth:        gd,
@@ -2020,6 +2045,11 @@ scene.add(rampMesh)
 let _fpsEma = 60       // initial estimate: 60 fps
 let _fpsLastTime = 0   // will be set to currentTime on first frame
 let _lastHudWrite = 0  // PERF-16: wall-clock (ms) of the last HUD DOM/canvas write — throttled to ~10 Hz
+// S-64: the debug HUD's read-out spans, looked up once (WR-04: a missing id is skipped, never thrown
+// on inside the frame loop), and written only when the string changes.
+const _hudEl = Object.fromEntries(['spinVal', 'flFzVal', 'frFzVal', 'rlFzVal', 'rrFzVal', 'slipVal', 'thrVal', 'brkVal', 'fpsVal', 'posVal']
+  .map(id => [id, document.getElementById(id)]))
+const _hudText = (el, s) => { if (el && el.textContent !== s) el.textContent = s }
 
 // ── Debug panel ──────────────────────────────────────────────────────────────
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
@@ -2849,12 +2879,13 @@ function _updateCustomerRings () {
     for (const pair of _customerRings.values()) { pair[0].visible = false; pair[1].visible = false }
     return
   }
-  const live = new Set(paperRouteSystem.routeCustomers().map(c => c.id))
+  // S-64: the route's own array, tested only for rings inside the show radius — no Set per poll.
+  const live = paperRouteSystem.routeCustomers()
   const vp = vehicleState.position
   for (const [id, pair] of _customerRings) {
     const p = pair[0].position
     let on = Math.hypot(p.x - vp.x, p.z - vp.z) <= TARGET_RING_SHOW_R
-    if (on) on = live.has(id) && !paperRouteSystem.isDelivered(id)
+    if (on) on = live.some(c => c.id === id) && !paperRouteSystem.isDelivered(id)
     pair[0].visible = on
     pair[1].visible = on
   }
@@ -6790,6 +6821,7 @@ function loop () {
   // Wheel dust trails — advance + emit using the interpolated render pose (vehicleState is
   // still the render copy here; restored below). Ground sampler = _fxGroundY (mirrors queryContacts).
   // Cheap no-op when no wheel is working.
+  _fxGroundY.reset(); looseSurfaceFactor.reset()   // S-64: fresh per-frame wheel-point caches
   dustSystem.update(frameTime, vehicleState, RANGER_PARAMS, _fxGroundY, looseSurfaceFactor)
 
   // Tire smoke — same render-pose timing and ground sampler as dust above, and BUG-38 gives it the
@@ -7026,12 +7058,15 @@ function loop () {
   }
   perfAdd('frame.water.warm', performance.now() - _pt)   // TEMP (D-arc)
   // TEMP (D-arc): auto-dump the perf profile at ~load (frame 180 ≈ 3s) and steady-state (frame 600).
-  _perfFrame++
   // PERF-27: the reset is a console-triage convenience, and under ?prof=1 it actively destroys
   // data — an external harness owns the buckets then, and on a throttled load frame 180 can land
   // mid-measurement (it wiped the reseed spans at 4×). Dump, but only reset when nobody is watching.
-  if (_perfFrame === 180) { perfDump('load ~3s'); if (!_PROF) perfReset() }
-  else if (_perfFrame === 600) { perfDump('steady ~10s') }
+  // S-64: only under ?hitch/?prof — with both off there is nothing in the buckets to dump or reset.
+  if (_HITCH) {
+    _perfFrame++
+    if (_perfFrame === 180) { perfDump('load ~3s'); if (!_PROF) perfReset() }
+    else if (_perfFrame === 600) { perfDump('steady ~10s') }
+  }
   const _ptPost = performance.now()   // PERF-26 INSTRUMENT: streaming-block end → render start
   _streamSpentMs = _ptPost - _streamT0
   // PERF-33: decide next frame's hold from the ground this frame's streaming left ready.
@@ -7148,7 +7183,8 @@ function loop () {
     // region is live (owner, 2026-08-01). Run state, not mission state: it never references par
     // or the current job, so the SM-INV-3 running surface above stays clean.
     _renderRunHud()
-    economySystem.syncGui()
+    const guiOpen = _gui.domElement.style.display !== 'none'   // S-64: debug read-outs only while the panel shows
+    if (guiOpen) economySystem.syncGui()
 
     // FEAT-46/45: the POI + camping prompts, and the ONE parking-brake trigger behind both.
     // Still the ~10 Hz cadence: the `parked` latch is sticky, so the edge cannot fall between polls.
@@ -7157,7 +7193,7 @@ function loop () {
     // grade the prompt just computed. Gated to the SAME sub-20 kph window as the prompt on purpose:
     // grading costs a handful of terrain/water/scatter samples, and paying for it at speed to feed a
     // debug read-out is exactly the frame-loop diagnostic src/ is supposed to be free of.
-    if (storySystem.isActive()
+    if (guiOpen && storySystem.isActive()
         && Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 <= CAMP_PROMPT_KPH) {
       campSystem.syncGui(vehicleState.position.x, vehicleState.position.z)
     }
@@ -7165,10 +7201,10 @@ function loop () {
     // FEAT-49: speed/gear/RPM moved off the text HUD onto the gauge cluster; only the wheelspin
     // diagnostic (no cluster equivalent) stays here.
     if (dtrain) {
-      const spEl = document.getElementById('spinVal')
+      const spEl = _hudEl.spinVal
       if (spEl) {
         const spin = dtrain.wheelspin || 0
-        spEl.textContent = spin.toFixed(1)
+        _hudText(spEl, spin.toFixed(1))
         spEl.style.color = spin > (RANGER_PARAMS.wheelspinThreshold ?? 7.5) ? '#ff2222' : '#00ff88'
       }
     }
@@ -7176,39 +7212,35 @@ function loop () {
     // M4-09 / D-12: per-wheel Fz HUD — tire spring force per corner.
     // Uses ?. / ?? 0 nullish-default per PATTERNS §Logger field append-at-end + nullish-coalesce.
     // toFixed(0) = whole newtons (Fz is in thousands; decimals add noise).
-    document.getElementById('flFzVal').textContent = (vehicleState.wheelDebug[0]?.fz ?? 0).toFixed(0)
-    document.getElementById('frFzVal').textContent = (vehicleState.wheelDebug[1]?.fz ?? 0).toFixed(0)
-    document.getElementById('rlFzVal').textContent = (vehicleState.wheelDebug[2]?.fz ?? 0).toFixed(0)
-    document.getElementById('rrFzVal').textContent = (vehicleState.wheelDebug[3]?.fz ?? 0).toFixed(0)
+    _hudText(_hudEl.flFzVal, (vehicleState.wheelDebug[0]?.fz ?? 0).toFixed(0))
+    _hudText(_hudEl.frFzVal, (vehicleState.wheelDebug[1]?.fz ?? 0).toFixed(0))
+    _hudText(_hudEl.rlFzVal, (vehicleState.wheelDebug[2]?.fz ?? 0).toFixed(0))
+    _hudText(_hudEl.rrFzVal, (vehicleState.wheelDebug[3]?.fz ?? 0).toFixed(0))
 
     // M3-07: front slip velocity HUD — sa field stores slip-velocity magnitude in m/s (not slip angle).
     // See physics.js: "sa field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad)".
     // Thresholds: ~0.5 m/s = light slip (green), ~1.5 m/s = heavy slip (red).
     const slipMps = (vehicleState.wheelDebug?.[0]?.sa || 0)
-    const slipEl = document.getElementById('slipVal')
+    const slipEl = _hudEl.slipVal
     if (slipEl) {
-      slipEl.textContent = slipMps.toFixed(2) + ' m/s'
+      _hudText(slipEl, slipMps.toFixed(2) + ' m/s')
       slipEl.style.color = slipMps < 0.5 ? '#00ff88' : slipMps < 1.5 ? '#ffaa00' : '#ff2222'
     }
 
     // M3-08: throttle and brake percentage HUD
-    const thrEl = document.getElementById('thrVal')
-    if (thrEl) thrEl.textContent = (vehicleState.throttle * 100).toFixed(0)
-    const brkEl = document.getElementById('brkVal')
-    if (brkEl) brkEl.textContent = (vehicleState.brake * 100).toFixed(0)
+    _hudText(_hudEl.thrVal, (vehicleState.throttle * 100).toFixed(0))
+    _hudText(_hudEl.brkVal, (vehicleState.brake * 100).toFixed(0))
 
     // FPS HUD
-    const fpsEl = document.getElementById('fpsVal')
-    if (fpsEl) fpsEl.textContent = Math.round(_fpsEma)
+    _hudText(_hudEl.fpsVal, String(Math.round(_fpsEma)))
 
     // Road-Feel QoL: seed / x / z OSD — correlates screenshots and in-game sightings with the
     // headless report's coords (test/road-character.mjs prints worst-offender x/z in world space).
-    const posEl = document.getElementById('posVal')
-    if (posEl) {
+    if (_hudEl.posVal) {
       // Freecam shows the CAMERA's position (you fly to a defect, the OSD must name that spot,
       // not wherever the truck was left) — same source the capture mark uses.
       const posSrc = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
-      posEl.textContent = `seed ${_seedString} / ${posSrc.x.toFixed(0)} / ${posSrc.z.toFixed(0)}`
+      _hudText(_hudEl.posVal, `seed ${_seedString} / ${posSrc.x.toFixed(0)} / ${posSrc.z.toFixed(0)}`)
     }
 
     // M3-09 / D-13: Pacejka curve + 4-corner travel bars + slip vectors — canvas repaints, throttled
