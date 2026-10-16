@@ -11,7 +11,6 @@ source: owner, 2026-10-12 — "I like the idea of a limited-time rate bonus for 
 relates: FEAT-88 (haul — the rolled count this replaces), FEAT-91 (haul yards), FEAT-112 (the limits),
   data/offers.js (`HAUL_BUNDLES`, `HAUL_PAY_PER_BUNDLE`)
 requires: FEAT-112 (load verdicts)
-blocked_on: the owner's ruling on haul's tip and bonus item (design-amendments-2026-10-14.md §16)
 design: design-amendments-2026-10-14.md §8, §16
 ---
 
@@ -28,15 +27,21 @@ design: design-amendments-2026-10-14.md §8, §16
   comes from.
 - Good deeds keep following the share aboard (`haulPointsFor`).
 
-## Blocked on a ruling
+## Ruling — the tip and the bonus item (owner, 2026-10-16)
 
-What earns haul's tip and bonus item when the load size is the player's choice. The recommendation
-on record (not ruled): the tip is speed × share aboard; the bonus item is earned by the **share**
-aboard, and the load size picks **which pool** it comes from.
+Haul scores the **count delivered**, not the share (design-amendments-2026-10-14.md §16, missions.md).
+
+- **Pay = pieces delivered × the yard's per-piece rate.** No speed tip: haul is decoupled from
+  courier, and the FEAT-113 deadline is its only clock.
+- **Bonus item = a delivered-count target stated on the offer** ("bring 12 for the item"); the
+  target sets the rarity. A car (≤ 8, can't lose a piece) can only chase low targets; a truck
+  chasing a high one loads extra for margin and has to keep it aboard.
+- **Per-yard rates are hand-set**, one per yard tier: firewood (R1) tier 1, lumber (R2) tier 2, rock
+  (R3) tier 3 (owner, 2026-10-16). Not per kg.
 
 ## Acceptance
 
 - [ ] The picker offers 1 up to the hard limit, warns past the soft limit, and the card's pay follows.
 - [ ] `HAUL_BUNDLES` is gone; same seed → same yard bonuses and windows (SM-INV-12).
 - [ ] The rate bonus shows its own timer and pays on settle.
-- [ ] The tip and bonus item follow the owner's ruling.
+- [ ] No speed tip on haul; the bonus item is granted on a delivered-count target shown on the card.

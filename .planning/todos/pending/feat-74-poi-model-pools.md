@@ -77,6 +77,14 @@ What a food vendor's jobs actually *are* — delivery out, supply fetch back —
 work and belongs in `.planning/story-mode/missions.md`, not here. This ticket only has to put the
 model on the board.
 
+## Ruling (owner, 2026-10-16) — the produce stall is its own farm POI
+
+**Simplify.** No satellite slot, no farm composite. The produce stall stands alone as a farm (class
+`farm`, so it also receives as a `residence`) on an ordinary lay-by pad; the player imagines the
+farmhouse just off the road. The barn farms are untouched. Default count, owner to confirm: **one of
+the three farm slots** wears the stall (a `{ type: 'farm', count: 1, model: 'produceStall' }` slot
+beside the barn slot at count 2), so R1 keeps 3 farms. This supersedes the review-2 R-19 line below.
+
 ## Acceptance
 
 - **REQUIRED (owner 2026-10-15, review-2 R-19): the produce stall spawns at FARMS.** Since FEAT-105
@@ -89,6 +97,6 @@ model on the board.
   that stands the stall on the farm pad with its restated deck-mass collision. Review-2 left
   `produce-stall.glb` shipped and unregistered for this.
 - `produce-stall.glb` has a registry entry with correct collision metadata for the trailer form.
-- The produce stall carries the `farm` tag and spawns in-world on the farm roster slots.
+- The produce stall spawns in-world as its own farm POI on a lay-by (ruling above).
 - A gate fails if a registry entry carries a tag that no roster slot names, so the next stranded
   asset is caught by the harness and not by a ticket audit six weeks later.

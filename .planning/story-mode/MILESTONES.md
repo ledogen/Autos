@@ -547,11 +547,11 @@ owner's name for it.
 | 3. To-tags: destinations filtered by class | FEAT-100 | ✅ closed |
 | 4. Job supply: always-on sources, the budget, the lock rule | FEAT-101 | ✅ closed |
 | 5. Stranded motorist (+ the first slice of fetch) | FEAT-102 | ✅ closed |
-| 6. Job site POI (R1, on the wall) | FEAT-103 | open |
+| 6. Job site POI (R1, on the wall) | FEAT-103 | **design open** (owner, 2026-10-16) — it is the R1 boss, gated by good deeds; do not build |
 | 7. Minimal shop at the required classes | FEAT-104 | open |
-| Inventory — what the player owns this run; the one grant path for shop, rewards and finds | FEAT-122 | open — the owner's four questions first (slots vs mass, quick slots, the screen, felt mass) |
+| Inventory — what the player owns this run; the one grant path for shop, rewards and finds | FEAT-122 | built on `feature/feat-122`, all four questions answered (2026-10-16); merge pending |
 | Camp gear slots — what the shop sells renders at camp (items.md visible-kit rule) | FEAT-66 | open |
-| POI model pools — register the built models | FEAT-74 | open |
+| POI model pools — register the built models | FEAT-74 | open — produce stall is its own farm POI (2026-10-16) |
 | Placeholder-replacing models: office, doctor's office, job site, school | ASSET-69, ASSET-70, ASSET-71, ASSET-73 | open |
 
 **Mission types** (the delivery content carried forward from SM-2, plus demolition):
@@ -559,17 +559,17 @@ owner's name for it.
 | Type | Ticket | State |
 |---|---|---|
 | The offer board on the story map | FEAT-67 | open — built families live, remainder rides on each type |
-| Haul — loose cargo in the bed | FEAT-88 | open — firewood slice shipped; the per-load data the other yards need is left |
+| Haul — loose cargo in the bed | FEAT-88 | ✅ closed 2026-10-16 — haul is firewood, lumber, rock; the per-load data moved to FEAT-91 |
 | Courier — small items in the cab (point-to-point, multi-drop, fetch) | FEAT-89 | open — fetch's first slice shipped in FEAT-102 |
-| Haul yards — splitting yard R1, sawmill R2, quarry R3 | FEAT-91 | open — needs FEAT-88's per-load data. Ruled 2026-10-12: sawmill haul is loose boards, sawmill + quarry get a big pad |
+| Haul yards — splitting yard R1, sawmill R2, quarry R3 | FEAT-91 | open — carries the per-load data (from FEAT-88); rates hand-set per yard tier (2026-10-16). Ruled 2026-10-12: sawmill haul is loose boards, sawmill + quarry get a big pad |
 | Freight — strapped durable cargo | FEAT-96 | ✅ closed 2026-10-15 — the par-per-kg constant kept as a guess (owner) |
 | Fragile — strapped shock-sensitive cargo | FEAT-97 | **done** 2026-10-15 |
 | Demolition missions | FEAT-65 | open |
 | Paper route — throw and impact audio | FEAT-64 | open |
 | ~~Ratchet straps as an item for loose haul loads~~ | FEAT-110 | ✅ closed — cancelled 2026-10-14: straps are not an item |
-| Load verdicts — fits / warning / overload for the truck as configured | FEAT-112 | open — planned 2026-10-14 |
+| Load verdicts — fits / warning / overload for the truck as configured | FEAT-112 | **done** 2026-10-16 |
 | Delivery deadlines for every job; the mission clock on world time | FEAT-113 | **done** 2026-10-16 |
-| Haul — the player picks the quantity; yard rate bonuses | FEAT-114 | open — needs FEAT-112 and the haul tip/item ruling |
+| Haul — the player picks the quantity; yard rate bonuses | FEAT-114 | open — unblocked 2026-10-16: scored on the count delivered, no speed tip |
 | Bed upgrades as parts — roof rack, flatbed, stake bed, extended bed, light bar | FEAT-115 | open — needs FEAT-104, FEAT-112 |
 | Cargo protection — bubble wrap, furniture pad, heavy-duty pad | FEAT-116 | open — needs FEAT-97, FEAT-104 |
 | Pay grows with regional reputation, not the day | FEAT-117 | open — numbers from FEAT-69 |
@@ -584,9 +584,9 @@ Take the first item that is not blocked. Each one is a ticket with its own accep
 | 1 | ~~**FEAT-97** fragile~~ | done 2026-10-15 | — |
 | 2 | ~~**FEAT-118** camp pause~~ | done 2026-10-15 | — |
 | 3 | ~~**FEAT-113** deadlines + world-time clock~~ | done 2026-10-16 | — |
-| 4 | **FEAT-112** load verdicts | pure data and a card; unlocks FEAT-114 and FEAT-115 | the stock truck's soft and hard limits |
-| 5 | **FEAT-114** haul quantity + rate bonus | first user of the verdict limits | the haul tip/item ruling |
-| 6 | **FEAT-122** inventory | where purchases and FEAT-67's stubbed reward grants land; parallel to 4–5 (owner, 2026-10-16) | the owner's four open questions |
+| 4 | ~~**FEAT-112** load verdicts~~ | done 2026-10-16 | — |
+| 5 | **FEAT-114** haul quantity + rate bonus | first user of the verdict limits | — (ruled 2026-10-16) |
+| 6 | **FEAT-122** inventory | where purchases and FEAT-67's stubbed reward grants land; parallel to 4–5 (owner, 2026-10-16) | — built on `feature/feat-122`, merge pending |
 | 6b | **FEAT-104** minimal shop | the venue for every part and consumable | FEAT-122 |
 | 7 | **FEAT-115** bed upgrades, **FEAT-116** cargo protection | parts and consumables to sell | FEAT-104, FEAT-112 / FEAT-97 |
 | 8 | **FEAT-69** + **FEAT-117** economy re-cut and reputation | balance once the costs and the 7 / 6 / 5 shape are real | multi-day run data |
@@ -635,8 +635,8 @@ adopted — do not build them unprompted.
 | FEAT-43 | story region, remaining slices — confinement becomes the unlocked set, the diegetic boundary, closing the sandbox flags |
 
 FEAT-28 (the unlock primitive, now also carrying the per-region radius ladder) is in the free lane.
-FEAT-103's boss half (the R1 log drag, the R2 bridge meter) waits here; the ticket itself builds the
-job site as an ordinary place under SM-3.
+FEAT-103 is the R1 boss (owner, 2026-10-16): gated by good deeds, design open, so it lands here rather
+than as an ordinary SM-3 place.
 
 ## SM-5 — The World Turns (story delivery, horror)
 

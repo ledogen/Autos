@@ -1,7 +1,7 @@
 ---
 id: FEAT-88
 type: feature
-status: open
+status: done
 severity: major
 opened: 2026-09-29
 source: owner, 2026-09-29 — "a mission type where a physical prop is dropped in the bed of the
@@ -231,3 +231,11 @@ The rolled piece count is reversed: **the player picks how many pieces to load**
 soft and hard limits (FEAT-112), and **yards run limited-time rate bonuses** for the rare, juicy
 haul. Built in **FEAT-114**. Straps are not an item for haul (FEAT-110 closed): the loose load's
 chaos is the point. See design-amendments-2026-10-14.md §8–9.
+
+## Resolution — closed 2026-10-16 (owner)
+
+**Superseded, not built further.** The remaining scope ("crate / drum / barrel as loose haul loads for
+the other givers") is gone: since 2026-10-12 the only haul givers are the three yards, and crates and
+drums ride as strapped freight (FEAT-96) / fragile (FEAT-97). **Haul is firewood, lumber and rock**
+for now (owner: "we can add more later"). The per-load data the sawmill and quarry need moves to
+**FEAT-91**; the player-picked quantity and the count-delivered scoring are **FEAT-114**.

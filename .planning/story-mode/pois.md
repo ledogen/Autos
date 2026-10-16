@@ -90,10 +90,16 @@ counts with region size comes later. The gas station and tackle shop posting job
 ### The job site and the bosses
 
 The job site sits **on the region wall** (SM-INV-13: the gate is a place). Region unlock is a boss
-battle, different per region: **R1 is the log drag**, **R2 is finishing the bridge**, a progress meter
-filled by courier jobs (workers) and haul jobs (lumber, stone) delivered to the site. Hovering the
-bridge site on the map reveals where supplies can be picked up. Until SM-4 opens, the job site is an
-ordinary job place; the bosses and region **modifiers** (undefined yet) are SM-4 work.
+battle. **R1's boss is the bridge site** (2026-10-12; the log drag is demoted to a toy/scenario): a
+progress meter filled by courier jobs (workers) and haul jobs (lumber, stone) delivered to the site,
+with a foreman to match. Hovering the site on the map reveals where supplies can be picked up.
+
+**Re-scoped 2026-10-16 (owner), DESIGN OPEN — see FEAT-103.** Region 1 only for now. The site is
+**not an ordinary job place**: it is unavailable until the player has the required good deeds, then
+always available, outside the budget. Open: what failing it costs (run death vs. starting over), and
+whether R1's boss is the bridge at all (its suppliers, lumber and rock, are R2/R3 yards) or e.g. an
+expedition searching for the road out of town. Later regions may get a job site or a different form.
+Region **modifiers** are undefined; all of it is SM-4 work.
 
 ### Names
 

@@ -440,13 +440,19 @@ truck and what the truck does to the cargo**.
 > |---|---|---|
 > | **Courier** | time against par | shipped (FEAT-89) |
 > | **Fragile** | **cargo condition**, for both the tip and the bonus item; the base is guaranteed (owner, 2026-10-15) | FEAT-97 |
-> | **Haul** | pieces still aboard (pay × share aboard, shipped); the tip and the item are **OPEN** | FEAT-114 |
+> | **Haul** | **pieces delivered, as a count** (owner, 2026-10-16): pay = pieces delivered × the yard's rate, **no speed tip**; the bonus item is a delivered-count target stated on the offer, and the target sets the item's rarity | FEAT-114 |
 > | **Freight** | a generous clock (thresholds × 1.15) and heavy loads that pay well; it tips at half. The speed lane is courier. The item is **OPEN** | FEAT-96 |
 >
-> Recommendation on record for the open rows, **not ruled**: *the load sets the pool, the driving
-> earns it.* Haul's item is earned by the share aboard (8 of 8 counts like 15 of 15) and the load size
-> picks the pool; freight's item is earned by arriving without a heavy hit to the truck, and the mass
-> picks the pool.
+> **Haul, ruled 2026-10-16.** A share (8 of 8 = 15 of 15) paid a car's risk-free load the same as a
+> truck's risky one, so haul scores the **count that arrives**. A car (≤ 8 pieces, can't lose any)
+> can only chase targets of 8 or under and gets them reliably — lesser items. A truck chasing a 12
+> target loads 14–15 for margin, toward its soft limit, and has to keep them aboard. Speed leaves haul
+> entirely (the decoupling from courier); the job's deadline (FEAT-113) is its only clock. Hauling in
+> a car is safe, low-yield work by design: a car career's driving skill is courier. *Option B, not
+> ruled:* the item on throughput across the yard's rate-bonus window ("move 30 before it closes").
+>
+> Freight's row is still **OPEN**. Recommendation on record, not ruled: the item is earned by arriving
+> without a heavy hit to the truck, and the mass picks the pool.
 >
 > - **One mission at a time, reaffirmed.** Carrying several contracts and packing the bed is
 >   rejected: it wants a dense network and turns the game into menu work. A bigger bed lets you take
