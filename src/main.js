@@ -5374,11 +5374,8 @@ perfMark('init: spawn reseated')  // D-arc
 // ── Collider wireframe overlay (physics-debug.js) ─────────────────────────────
 // Replaced the 14 orange probe spheres (2026-08-15): those visualised the retired
 // getBodyContactPoints probes; the wireframes draw the ACTUAL engine colliders.
+// Backtick toggles them from debug.js's own backtick listener, under the panel's lockout (R-13).
 document.addEventListener('keydown', e => {
-  // FEAT-43: collider debug is part of the debug tooling locked out in story mode.
-  if (e.key === '`' && !storySystem.isActive()) {
-    physicsWireframes.setEnabled(!physicsWireframes.enabled)
-  }
   // FEAT-16: M toggles the 2D top-down map overlay (sim keeps running underneath).
   if (e.key === 'm' || e.key === 'M') {
     // FEAT-43's region window used to be set here, on the keypress. BUG-68 moved it INTO the map

@@ -954,8 +954,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
     slipCanvas.style.display = 'none'
   }
 
-  // Backtick toggle listener — toggles gui panel, plotCanvas, travelCanvas, AND slipCanvas in lockstep.
-  // Only ONE backtick listener in this file. Inert while story mode holds the debug lockout (FEAT-43).
+  // Backtick toggle listener — toggles gui panel, plotCanvas, travelCanvas, AND slipCanvas in lockstep,
+  // and flips the collider wireframes (R-13: one gate for both — they used to follow story mode while
+  // the panel followed the lockout). Only ONE backtick listener in this file. Inert while the debug
+  // lockout is held (FEAT-43; scenarios hold it, story mode currently does not).
   document.addEventListener('keydown', e => {
     if (e.key === '`' && !_debugLockout) {
       const hidden = gui.domElement.style.display === 'none'
@@ -963,6 +965,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
       plotCanvas.style.display = hidden ? '' : 'none'
       travelCanvas.style.display = hidden ? '' : 'none'
       slipCanvas.style.display = hidden ? '' : 'none'
+      const wf = window.__physWireframes
+      if (wf) wf.setEnabled(!wf.enabled)
     }
   })
 
