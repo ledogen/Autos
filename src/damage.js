@@ -656,6 +656,21 @@ export class DamageModel {
 
   }
 
+  /**
+   * Drop every in-flight event: the collision burst and the velocity history it reaches back
+   * into, and the held bump-stop / rim-strike peaks. Called on EVERY reseat (R, teleport, reseed,
+   * story seat): the truck jumped, so nothing measured before the jump is part of a hit. Without
+   * it a burst live at the reseat banked Δv = |0 − v_before| on the next step — a phantom
+   * full-speed impact that in story mode could set fatalImpact.
+   */
+  resetTransients () {
+    this._burst = null
+    this._velRing = null
+    this._bumpPeak.fill(0)
+    this._strikePeak.fill(0)
+    this._strikeRoad.fill(false)
+  }
+
   /** Condition of one track, [0, 1]. */
   get (id) { return this.condition[id] ?? 1 }
 

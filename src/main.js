@@ -1108,6 +1108,7 @@ async function _reseatTruckAtSpawnInner () {
   // would otherwise sweep across the jump and smear the frame on the way.
   snapCamera()
   _restrapFreight()
+  damageModel.resetTransients()   // S-30: no burst or held peak survives the jump, story or not
   // Damage persists only across a STORY run (owner, 2026-10-02). Every free-roam seat — cold load,
   // R, a teleport, a reseed — hands you a fresh truck; the condition the last drive left behind is
   // part of that drive, not of the world. publish() so the very next physics step reads stock
@@ -1133,6 +1134,7 @@ function _reseatOnRegionGround () {
   vehicleState.angularVelocity.set(0, 0, 0)
   snapCamera()
   _restrapFreight()
+  damageModel.resetTransients()
 }
 
 // ── Gameplay mode gate (feature/teleport) ─────────────────────────────────────────────────
