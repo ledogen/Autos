@@ -542,23 +542,51 @@
       white-space: pre;
     }
 
+    /* The top-right column: wallet, energy, lab readout, then the context-action icons. One fixed
+       box, normal flow inside it, so a hidden member closes its gap. Right-aligned: each icon sits
+       on the right edge and its card opens to its left (.hud-row is row-reverse). */
+    #hud-dock {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 88;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
+    #hud-icons { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; margin-top: 4px; }
+    .hud-row { display: flex; flex-direction: row-reverse; align-items: center; gap: 10px; }
+    /* The icon chip. Three states: backgrounded (default — can't act on it right now), .ready (one
+       press away) and .on (open, or asking to be looked at). The trigger key is drawn on the chip's
+       lower-left corner so the binding is learnable before it is ever needed. */
+    .hud-icon {
+      position: relative; pointer-events: auto; cursor: pointer; box-sizing: border-box;
+      width: 46px; height: 46px; padding: 4px 5px;
+      background: rgba(0, 0, 0, 0.55); border: 1px solid #3a4450; border-radius: 8px;
+      opacity: 0.35; transition: opacity 0.4s, border-color 0.4s;
+    }
+    .hud-icon.ready { opacity: 0.75; }
+    .hud-icon.on, .hud-icon:hover { opacity: 1; }
+    .hud-icon svg { width: 100%; height: 100%; display: block; }
+    .hud-icon .keycap {
+      position: absolute; left: -7px; bottom: -6px; margin: 0;
+      font-size: 10px; background: #1b2026;
+    }
+
     /* FEAT-53: the run wallet — top-right, story mode only. Money and good deeds are RUN state,
        not mission state: visible whenever the region is live, including mid-drive (owner,
        2026-08-01). It never references par or the current job, so SM-INV-3 stays whole — the
        mission-hud running surface is untouched and shows only elapsed + distance. */
     #run-hud {
       display: none;
-      position: fixed;
-      top: 14px;
-      right: 14px;
       background: rgba(0, 0, 0, 0.6);
       border: 1px solid #3a4450;
       padding: 8px 14px;
       font-family: monospace;
       font-size: 14px;
       color: #e6ecf2;
-      z-index: 88;
-      pointer-events: none;
       text-align: right;
       line-height: 1.5;
     }
@@ -571,17 +599,12 @@
        JS so the palette has one owner. */
     #energy-meter {
       display: none;
-      position: fixed;
-      top: 104px;   /* clears the 3-line wallet (money / deeds / clock) */
-      right: 14px;
       background: rgba(0, 0, 0, 0.6);
       border: 1px solid #3a4450;
       padding: 6px 10px 8px;
       font-family: monospace;
       font-size: 12px;
       color: #e6ecf2;
-      z-index: 88;
-      pointer-events: none;
     }
     #energy-meter .em-title { margin-bottom: 4px; text-align: left; }
     #energy-meter .em-view {
@@ -855,20 +878,15 @@
     #mission-panel .mp-pay, #paper-panel .mp-pay { font-size: 18px; color: #8ce99a; }
     #pp-accept { border-color: #5ad06a; color: #b6f0be; }
 
-    /* FEAT-31 testing lab readout — top-right, out of the way of the left-hand debug HUD. */
+    /* FEAT-31 testing lab readout — top of the right-hand column, out of the way of the left-hand debug HUD. */
     #lab-panel {
       display: none;
-      position: fixed;
-      top: 14px;
-      right: 14px;
       background: rgba(0, 0, 0, 0.72);
       border: 1px solid #3a4450;
       padding: 12px 16px;
       font-family: monospace;
       font-size: 13px;
       color: #cfd6dd;
-      z-index: 88;
-      pointer-events: none;
       min-width: 380px;
     }
     #lab-panel .lb-title {
@@ -1002,50 +1020,28 @@
 
     /* ── FEAT-45 Phase D: the camping surfaces ─────────────────────────────────────────────
        SM-INV-3: every one of these is a NEAR-STOPPED surface. Nothing here is ever on the
-       driving HUD — the prompt needs a camp zone under a slow truck, the panel needs a park.
+       driving HUD — the tent needs a camp zone under a slow truck, the panel needs a park.
 
-       Camp prompt (its own element, NOT #poi-prompt): yellow to match the map's camping casing,
-       and it carries the vibe bar as a child, which the POI prompt has no notion of. */
+       The tent icon is a National Park Service road-sign pictogram: white tent stencil on NPS
+       brown. It lives in the top-right icon column (#hud-dock); its card carries the vibe bar. */
+    #camp-row { display: none; }
+    #camp-icon { background: #6b4423; border-color: #8a6440; }
+    #camp-icon.on { border-color: #ffdc3c; }
+    /* The "looking for a campsite" card, beside the tent. Yellow to match the map's camping casing. */
     #camp-prompt {
       display: none;
-      position: fixed;
-      bottom: 96px;
-      left: 50%;
-      transform: translateX(-50%);
       background: rgba(0, 0, 0, 0.62);
       border: 1px solid #ffdc3c;
-      /* Vertical padding is deliberately half the horizontal look (owner, 2026-07-31): both prompt
-         states sat too tall over the road. Widths and type sizes are untouched. */
-      padding: 4px 18px;
+      padding: 4px 14px;
       font-family: monospace;
       font-size: 15px;
       color: #ffe89a;
-      z-index: 88;
-      pointer-events: none;
       /* NO white-space:pre here (unlike #poi-prompt): the children are block elements, and pre
          renders the markup's own newlines between them as literal blank lines — which is exactly
          the mystery height the owner screenshotted on 2026-07-31. */
       text-align: center;
       line-height: 1.3;
     }
-    /* The seek toggle — the only clickable thing in the prompt (the prompt itself stays
-       pointer-events:none so it never eats a drag on the world). Collapsed, it is the whole UI. */
-    #camp-seek-toggle {
-      pointer-events: auto;
-      display: block;
-      margin: 0 auto 3px;
-      background: none;
-      border: none;
-      color: #ffe89a;
-      font-family: monospace;
-      font-size: 13px;
-      letter-spacing: 0.04em;
-      cursor: pointer;
-      opacity: 0.85;
-    }
-    #camp-seek-toggle:hover { opacity: 1; text-decoration: underline; }
-    #camp-prompt.collapsed { border-color: rgba(255, 220, 60, 0.45); background: rgba(0, 0, 0, 0.45); }
-    #camp-prompt.collapsed #camp-seek-toggle { margin-bottom: 0; }
     /* The vibe bar: ONE bar, four stacked segments. Their max widths ARE the score weights
        (40 / 15 / 20 / 25 %) — JS only ever writes the four widths. Shared by the prompt and the
        confirm face; two roots, one renderer (_renderVibeBar). */
@@ -1317,26 +1313,79 @@
   <div id="mission-hud"><span class="hud-text"></span></div>
   <button id="job-cancel" tabindex="-1" style="display:none">abandon job</button>
 
-  <!-- FEAT-53: the run wallet (money + good deeds), story mode only. Painted from the ~10 Hz HUD
-       block off economySystem.snapshot(); deliberately its own element so the mission-hud running
-       surface stays byte-identical (SM-INV-3). -->
-  <div id="run-hud"><span class="rh-money">$0</span><br><span class="rh-deeds">0 good deeds</span><br><span class="rh-clock">07:00</span></div>
+  <!-- The top-right column (owner, 2026-10-16): wallet, energy, then one ICON per context action,
+       stacked down the right edge. Every icon is a .hud-icon chip with the key that triggers it
+       drawn on its corner, in one of three states — backgrounded (can't act now), ready (one press
+       away), present (wants you / is open). A card that belongs to an icon opens to its LEFT.
+       Normal flow inside one fixed column, so a hidden wallet (free roam) or lab panel just closes
+       the gap instead of every element carrying a hand-tuned top offset. -->
+  <div id="hud-dock">
+    <!-- FEAT-53: the run wallet (money + good deeds), story mode only. Painted from the ~10 Hz HUD
+         block off economySystem.snapshot(); deliberately its own element so the mission-hud running
+         surface stays byte-identical (SM-INV-3). -->
+    <div id="run-hud"><span class="rh-money">$0</span><br><span class="rh-deeds">0 good deeds</span><br><span class="rh-clock">07:00</span></div>
 
-  <!-- FEAT-55: the Energy meter — a RoR2-style ticker. The stage strip scrolls RIGHT-to-left
-       under a fixed centre pointer as energy drains; segment widths are hours at the meter's
-       px/h scale (rested and exhausted are long, sleepy/tired are 2 h slivers, so only the wide
-       segments carry inline labels — the title names the CURRENT stage in its colour). Widths,
-       colours and the scroll transform are all written by _updateEnergyMeter in main.js. -->
-  <div id="energy-meter">
-    <div class="em-title">Energy&ensp;·&ensp;<span id="em-stage">rested</span></div>
-    <div class="em-view">
-      <div class="em-strip" id="em-strip">
-        <div class="em-seg" id="em-seg-rested"><span>Rested</span></div>
-        <div class="em-seg" id="em-seg-sleepy"><span>Sleepy</span></div>
-        <div class="em-seg" id="em-seg-tired"><span>Tired</span></div>
-        <div class="em-seg" id="em-seg-exhausted"><span>Exhausted</span></div>
+    <!-- FEAT-55: the Energy meter — a RoR2-style ticker. The stage strip scrolls RIGHT-to-left
+         under a fixed centre pointer as energy drains; segment widths are hours at the meter's
+         px/h scale (rested and exhausted are long, sleepy/tired are 2 h slivers, so only the wide
+         segments carry inline labels — the title names the CURRENT stage in its colour). Widths,
+         colours and the scroll transform are all written by _updateEnergyMeter in main.js. -->
+    <div id="energy-meter">
+      <div class="em-title">Energy&ensp;·&ensp;<span id="em-stage">rested</span></div>
+      <div class="em-view">
+        <div class="em-strip" id="em-strip">
+          <div class="em-seg" id="em-seg-rested"><span>Rested</span></div>
+          <div class="em-seg" id="em-seg-sleepy"><span>Sleepy</span></div>
+          <div class="em-seg" id="em-seg-tired"><span>Tired</span></div>
+          <div class="em-seg" id="em-seg-exhausted"><span>Exhausted</span></div>
+        </div>
+        <div class="em-pointer"></div>
       </div>
-      <div class="em-pointer"></div>
+    </div>
+
+    <!-- FEAT-31 testing lab: live status + best-of-each-track table. The right-hand column is the
+         point of the whole mode — the derived number (implied accel/decel, realized skidpad mu)
+         that calibrates PAR_REF against a human driver. Wired in main.js (_renderLabUI). -->
+    <div id="lab-panel">
+      <div class="lb-title">testing lab</div>
+      <div id="lab-status">—</div>
+      <div id="lab-live"></div>
+      <table><tbody id="lab-rows"></tbody></table>
+      <div class="lb-dim lb-foot">drag: park in the staging box &middot; skidpad/braking start themselves &middot; Esc &rarr; exit testing lab</div>
+    </div>
+
+    <!-- The icon column. damage-screen.js prepends its own row (the truck, V) above these. -->
+    <div id="hud-icons">
+      <!-- FEAT-45 Phase D: making camp. The tent shows only where the old camp prompt did (a camp
+           zone, under 20 kph, story mode, no job or route out, no POI in reach). Z or a click
+           toggles "looking for a campsite"; while looking, the vibe bar + verdict card opens beside
+           it, the siting ray runs, and the brake latch can make camp. -->
+      <div class="hud-row" id="camp-row">
+        <div class="hud-icon" id="camp-icon" title="look for a campsite (Z)">
+          <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14,4 L26,16 M26,4 L14,16" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+            <path d="M20,10 L35,33 H5 Z" fill="#fff"/>
+            <path d="M20,19 L26,33 H14 Z" fill="#6b4423"/>
+            <path d="M3,34.5 H37" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+          </svg>
+          <span class="keycap">Z</span>
+        </div>
+        <div id="camp-prompt">
+          <div class="vibe-bar" id="camp-vibe">
+            <div class="vseg vseg-flat"></div>
+            <div class="vseg vseg-view"></div>
+            <div class="vseg vseg-shade"></div>
+            <div class="vseg vseg-water"></div>
+          </div>
+          <div class="vibe-legend" id="camp-vibe-legend">
+            <span><i class="lg-flat"></i>flat</span>
+            <span><i class="lg-view"></i>view</span>
+            <span><i class="lg-shade"></i>shade</span>
+            <span><i class="lg-water"></i>water</span>
+          </div>
+          <div id="camp-prompt-text"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1358,29 +1407,6 @@
   <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI.
        Latching the parking brake (Space) there is what opens the offer — see _updateParkTriggers. -->
   <div id="poi-prompt"></div>
-
-  <!-- FEAT-45 Phase D: the camping prompt. The vibe bar sits ABOVE the copy — you read the score,
-       then what to do about it. Shown only in a camp zone below 20 kph (see _updateParkTriggers). -->
-  <div id="camp-prompt">
-    <!-- The seek toggle IS the collapsed state (owner, 2026-07-31): driving through a zone shows
-         only this chip — the bar, legend, copy AND the siting-ray grading all sit behind it, so a
-         drive-through pays nothing and sees almost nothing. Clicking it arms "looking for a
-         campsite" mode, which is also what arms the brake-latch camp trigger. -->
-    <button id="camp-seek-toggle">look for a campsite</button>
-    <div class="vibe-bar" id="camp-vibe">
-      <div class="vseg vseg-flat"></div>
-      <div class="vseg vseg-view"></div>
-      <div class="vseg vseg-shade"></div>
-      <div class="vseg vseg-water"></div>
-    </div>
-    <div class="vibe-legend" id="camp-vibe-legend">
-      <span><i class="lg-flat"></i>flat</span>
-      <span><i class="lg-view"></i>view</span>
-      <span><i class="lg-shade"></i>shade</span>
-      <span><i class="lg-water"></i>water</span>
-    </div>
-    <div id="camp-prompt-text"><span class="park-badge" aria-label="park">P</span>park to make camp</div>
-  </div>
 
   <!-- FEAT-61 aim reticle + landing readout. The reticle sits at 25 % from the top, not centre
        (AIM_RETICLE_Y in main.js — a throw is an arc), and the aim direction is unprojected through
@@ -1471,16 +1497,6 @@
   <!-- The fade the 30-minute chore and the night happen behind. -->
   <div id="camp-fade"></div>
 
-  <!-- FEAT-31 testing lab: live status + best-of-each-track table. The right-hand column is the
-       point of the whole mode — the derived number (implied accel/decel, realized skidpad mu)
-       that calibrates PAR_REF against a human driver. Wired in main.js (_renderLabUI). -->
-  <div id="lab-panel">
-    <div class="lb-title">testing lab</div>
-    <div id="lab-status">—</div>
-    <div id="lab-live"></div>
-    <table><tbody id="lab-rows"></tbody></table>
-    <div class="lb-dim lb-foot">drag: park in the staging box &middot; skidpad/braking start themselves &middot; Esc &rarr; exit testing lab</div>
-  </div>
   <div id="lab-hud"></div>
 
   <!-- Free-cam teleport affordance — shown only in free-cam, in free roam or story (main.js loop
@@ -1513,7 +1529,8 @@
       <div><span class="k">Shift+C</span>free-cam</div>
       <div><span class="k">T</span>teleport (free-cam)</div>
       <div><span class="k">M</span>map (dbl-click TP)</div>
-      <div><span class="k">V</span>damage readout</div>
+      <div><span class="k">V</span>vehicle condition (parked)</div>
+      <div><span class="k">Z</span>look for a campsite</div>
       <div><span class="k">Esc</span>pause menu</div>
       <div><span class="k">&#96;</span>debug panel</div>
     </div>

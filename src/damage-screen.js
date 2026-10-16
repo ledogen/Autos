@@ -1,7 +1,7 @@
 /**
  * FEAT-90 — the player's damage screen: a top-down pictogram of the truck, every damageable part
  * shaded by its condition band (see BANDS), a list of the five worst parts beside it, plus the
- * left-edge icon that tells you when it is worth a look.
+ * icon in the top-right column that tells you when it is worth a look.
  *
  * This is the PLAYER surface. The diagnostic text readout (damage-hud.js) is the development
  * instrument, and it now lives behind the debug panel's Damage folder.
@@ -11,11 +11,15 @@
  *     brake is latched. Driving, the same input shows the park hint instead. Releasing the brake
  *     closes the screen, because the truck is driving away. Esc closes it too (main.js gives it
  *     the key ahead of the pause menu).
- *   - The icon sits TRANSLUCENT on the left edge as an optional menu tab. A damage event flashes it
- *     and holds it OPAQUE with an alert card beside it until the screen is opened. Opening
- *     the screen clears the alert and the icon goes translucent again. The card says as little as
+ *   - The icon is a .hud-icon chip in the top-right column under the wallet (owner, 2026-10-16),
+ *     with V drawn on its corner so the key is learnable before the alert ever fires. Backgrounded
+ *     while driving, READY once parked. A damage event flashes it and holds it present with an
+ *     alert card to its left until the screen is opened. The card says as little as
  *     the moment allows (owner, 2026-10-01): driving, it is the P badge alone; stopped, it adds the
  *     keys; parked, just "V to open".
+ *   - BLOCKED where parking already means something else (owner, 2026-10-16): in a POI's reach the
+ *     brake opens the offer, so V does nothing and the icon stays backgrounded. main.js sets
+ *     `blocked` from the same poll that owns the park trigger.
  *   - What counts as a damage event: a landed impact (main.js calls alert()), a puncture, or any
  *     part losing more than DROP_ALERT in one 10 Hz sample. Slow wear (tread, filter, brakes) never
  *     loses that much in a tenth of a second, so driving alone never flashes it.
@@ -248,7 +252,7 @@ function buildLegend () {
   return `<span>0%</span><div class="ds-scale"><div class="ds-bar">${seg}</div><div class="ds-ticks">${ticks}</div></div><span>100%</span>`
 }
 
-/** The left-edge icon: the same truck, reduced to body, wheels and powertrain. */
+/** The column icon: the same truck, reduced to body, wheels and powertrain. */
 function buildIcon () {
   return `<svg viewBox="0 0 40 64" xmlns="http://www.w3.org/2000/svg">`
     + `<rect data-agg="armor" x="10" y="5" width="20" height="54" rx="5" fill="none" stroke-width="2.5"/>`
@@ -262,14 +266,10 @@ function buildIcon () {
 }
 
 const CSS = `
-#dmg-dock { position: fixed; left: 20px; top: 50%; transform: translateY(-50%); z-index: 87;
-  display: flex; align-items: center; gap: 10px; pointer-events: none; }
-#dmg-icon { pointer-events: auto; cursor: pointer; width: 46px; height: 62px; padding: 4px 5px;
-  background: rgba(0,0,0,0.55); border: 1px solid #3a4450; border-radius: 8px; opacity: 0.35;
-  transition: opacity 0.4s, border-color 0.4s; }
-#dmg-icon:hover { opacity: 0.8; }
-#dmg-icon svg { width: 100%; height: 100%; display: block; }
-#dmg-dock.alert #dmg-icon { opacity: 1; border-color: #e0705c; }
+/* The chip itself is the shared .hud-icon (index.html); only the truck's taller shape and the alert
+   look are specific to it. */
+#dmg-icon { height: 62px; }
+#dmg-icon.on { border-color: #e0705c; }
 #dmg-icon.pulse { animation: dmg-pulse 0.55s ease-in-out 3; }
 @keyframes dmg-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(224,112,92,0); transform: scale(1); }
@@ -355,11 +355,14 @@ export class DamageScreen {
     style.textContent = CSS
     document.head.appendChild(style)
 
-    // Left-edge dock: the icon + the alert card beside it.
+    // A row at the TOP of the right-hand icon column: the icon + the alert card to its left.
+    this.blocked = false
     this.dock = document.createElement('div')
     this.dock.id = 'dmg-dock'
-    this.dock.innerHTML = `<div id="dmg-icon" title="vehicle condition (V)">${buildIcon()}</div><div id="dmg-alert"></div>`
-    document.body.appendChild(this.dock)
+    this.dock.className = 'hud-row'
+    this.dock.innerHTML = `<div id="dmg-icon" class="hud-icon" title="vehicle condition (V)">${buildIcon()}${keycap('V')}</div><div id="dmg-alert"></div>`
+    const column = document.getElementById('hud-icons') || document.body
+    column.prepend(this.dock)
     this.iconEl = this.dock.querySelector('#dmg-icon')
     this.alertEl = this.dock.querySelector('#dmg-alert')
     this.iconAgg = [...this.iconEl.querySelectorAll('[data-agg]')]
@@ -418,7 +421,7 @@ export class DamageScreen {
 
   /** V or an icon click: open while parked, close if open, otherwise show the park hint. */
   request () {
-    if (this.isSuppressed()) return
+    if (this.isSuppressed() || this.blocked) return
     if (this.isOpen) { this.close(); return }
     if (!this.vehicleState.parked) { this._hintT = HINT_S; this._renderCard(); return }
     this.open()
@@ -428,7 +431,7 @@ export class DamageScreen {
     this.isOpen = true
     this.alerting = false        // viewed — the icon goes back to being an optional tab
     this._hintT = 0
-    this.dock.classList.remove('alert')
+    this.iconEl.classList.remove('on')
     this.screen.classList.add('open')
     this._paintScreen()
     this._renderCard()
@@ -444,7 +447,7 @@ export class DamageScreen {
   /** The truck was made whole under the alert (a free-roam reseat): there is nothing left to see. */
   clearAlert () {
     this.alerting = false
-    this.dock.classList.remove('alert')
+    this.iconEl.classList.remove('on')
     this._renderCard()
   }
 
@@ -452,7 +455,7 @@ export class DamageScreen {
   alert () {
     if (this.isOpen) return       // already looking at it
     this.alerting = true
-    this.dock.classList.add('alert')
+    this.iconEl.classList.add('on')
     // Restart the pulse even if one is mid-flight: drop the class, force a reflow, re-add.
     this.iconEl.classList.remove('pulse')
     void this.iconEl.offsetWidth
@@ -464,7 +467,9 @@ export class DamageScreen {
   update (dt) {
     const hidden = this.isSuppressed()
     this.dock.style.display = hidden ? 'none' : 'flex'
-    if (hidden) { this.close(); return }
+    if (hidden || this.blocked) this.close()
+    if (hidden) return
+    this.iconEl.classList.toggle('ready', !this.blocked && !!this.vehicleState.parked)
     if (this._hintT > 0) { this._hintT -= dt; if (this._hintT <= 0) this._renderCard() }
     this._acc += dt
     if (this._acc < REFRESH_S) return

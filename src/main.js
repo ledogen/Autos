@@ -4049,11 +4049,12 @@ let _campBusy = false   // a fade is in flight: no second trigger, no double-dug
  * on bad ground does NOT return null — those are the prompt's two failure copies, and telling the
  * player why they cannot camp here is the entire job of a prompt.
  */
-// "Looking for a campsite" — the expand state of the camp prompt (owner, 2026-07-31: the full
-// bar-and-copy prompt was intrusive when just driving through a zone). Collapsed, the prompt is a
-// single chip AND the siting ray never runs AND the brake latch will not open the camp dialogue —
-// expanding is how the player says "I'm shopping for ground now". Session-sticky on purpose: it
-// stays expanded from zone to zone until they collapse it.
+// "Looking for a campsite" — toggled by the tent icon or Z (owner, 2026-07-31: the full
+// bar-and-copy prompt was intrusive when just driving through a zone; 2026-10-16: the bottom chip
+// became the tent in the top-right icon column). Not looking, the tent is the whole UI AND the
+// siting ray never runs AND the brake latch will not open the camp dialogue — looking is how the
+// player says "I'm shopping for ground now". Session-sticky on purpose: it stays on from zone to
+// zone until they turn it off.
 let _campSeek = false
 
 function _campPromptState () {
@@ -4086,8 +4087,12 @@ function _atMomsHouse () {
  */
 function _updateParkTriggers () {
   const poiEl  = document.getElementById('poi-prompt')
-  const campEl = document.getElementById('camp-prompt')
+  const campRow = document.getElementById('camp-row')
   const poi = _poiInReach()
+  // A mission zone (a giver in reach, or its offer open) owns the brake: no other parking action —
+  // the damage screen included — may answer it there (owner, 2026-10-16).
+  damageScreen.blocked = !!poi || ['generating', 'offer'].includes(missionSystem?.state)
+    || ['planning', 'offer'].includes(paperRouteSystem.state)
   const parked = !!vehicleState.parked
   const pulled = parked && !_prevParkedForPoi
   _prevParkedForPoi = parked
@@ -4095,7 +4100,11 @@ function _updateParkTriggers () {
   // FEAT-102: a FETCH's pickup outranks everything below — while one is out, parking at the pickup
   // is the only thing the brake means there. The item is acquired the instant the brake latches
   // (owner, 2026-10-08), then the prompt sends you home for a few seconds.
-  if (_updateFetchPrompt(poiEl, pulled)) { if (campEl) campEl.style.display = 'none'; return }
+  if (_updateFetchPrompt(poiEl, pulled)) {
+    damageScreen.blocked ||= poiEl?.style.display === 'block'   // at the pickup: the brake is the fetch's
+    if (campRow) campRow.style.display = 'none'
+    return
+  }
 
   if (poi && pulled) {
     // FEAT-61: Larry is the one giver whose offer is a different mission. Branching on the type
@@ -4108,13 +4117,13 @@ function _updateParkTriggers () {
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
     else missionSystem.enterFromPoi(poi, offers, _planOffer)
     if (poiEl) poiEl.style.display = 'none'
-    if (campEl) campEl.style.display = 'none'
+    if (campRow) campRow.style.display = 'none'
     return
   }
 
   const camp = _campPromptState()
   const seeking = camp && !camp.collapsed
-  // Mom's door outranks the collapsed chip (a doorstep is a specific affordance, like a POI) but
+  // Mom's door outranks an idle tent (a doorstep is a specific affordance, like a POI) but
   // yields to an ACTIVE campsite hunt — mid-seek the bar is what the player is reading.
   const moms = !seeking && _atMomsHouse()
 
@@ -4128,9 +4137,10 @@ function _updateParkTriggers () {
     }
   }
 
-  // Display. The POI prompt wins outright when both apply — see the precedence above.
+  // Display. The POI prompt wins outright when both apply — see the precedence above. Mom's door is
+  // a doorstep, so it borrows the POI prompt's slot at the bottom rather than the tent's card.
   if (poiEl) {
-    poiEl.style.display = poi ? 'block' : 'none'
+    poiEl.style.display = poi || moms ? 'block' : 'none'
     // Name what the brake will actually do. Larry hands out a route, not an errand, and a prompt
     // that says "mission" at the one marker that gives you the paper route is the same small lie as
     // a ring drawn wider than its trigger.
@@ -4145,50 +4155,33 @@ function _updateParkTriggers () {
                         : 'no work here right now')
         : poi.type === 'larrysHouse' ? parkPrompt('park to take the paper route')
         : live > 1 ? parkPrompt(`park to see ${live} offers`) : parkPrompt('park to see the offer')
+    } else if (moms) {
+      poiEl.innerHTML = parkPrompt("park to sleep at mom's house")
     }
   }
-  if (!campEl) return
-  const showCamp = !poi && (camp || moms) && !_campUi
-  campEl.style.display = showCamp ? 'block' : 'none'
-  // The world-space ring: only while the camp prompt is offering a spot that could actually be
-  // taken. Not while collapsed, not at mom's (no pad). Once the dialogue is up the DIALOGUE owns
-  // the ring — the confirm face leaves it standing on the site it is asking about — so this 10 Hz
-  // poll must not stamp it off underneath (showCamp is false whenever _campUi is set).
+  if (!campRow) return
+  // The tent: wherever a camp could be looked for. Its card only while looking.
+  const showCamp = !poi && !!camp && !_campUi
+  campRow.style.display = showCamp ? 'flex' : 'none'
+  // The world-space ring: only while the card is offering a spot that could actually be taken.
+  // Once the dialogue is up the DIALOGUE owns the ring — the confirm face leaves it standing on the
+  // site it is asking about — so this 10 Hz poll must not stamp it off underneath (showCamp is
+  // false whenever _campUi is set).
   if (!_campUi) _updateCampMarker(showCamp && seeking && camp.withinTether && camp.flat ? camp : null)
   if (!showCamp) return
-  const vibeEl = document.getElementById('camp-vibe')
-  const legEl  = document.getElementById('camp-vibe-legend')
-  const textEl = document.getElementById('camp-prompt-text')
-  const tglEl  = document.getElementById('camp-seek-toggle')
-  const collapsed = !!camp?.collapsed
-  campEl.classList.toggle('collapsed', collapsed && !moms)
-  if (tglEl) {
-    tglEl.style.display = moms ? 'none' : 'block'
-    tglEl.textContent = collapsed ? 'look for a campsite' : '▾ stop looking'
-  }
-  if (moms || collapsed) {
-    if (vibeEl) vibeEl.style.display = 'none'
-    if (legEl)  legEl.style.display = 'none'
-    if (textEl) {
-      textEl.style.display = moms ? 'block' : 'none'
-      if (moms) textEl.innerHTML = parkPrompt("park to sleep at mom's house")
-    }
-    return
-  }
-  if (vibeEl) vibeEl.style.display = 'flex'
-  if (legEl)  legEl.style.display = 'flex'
+  document.getElementById('camp-icon')?.classList.toggle('on', seeking)
+  document.getElementById('camp-prompt').style.display = seeking ? 'block' : 'none'
+  if (!seeking) return
   _renderVibeBar(camp)
-  if (textEl) {
-    textEl.style.display = 'block'
-    // "not flat" now means the WHOLE siting ray failed the flatness gate — every candidate from the
-    // road edge out to the tether — not merely that the verge beside the truck did.
-    // cands 0 ⇒ every rung was rejected before grading — in practice because it crowded a road
-    // (camp.js CAMP_ROAD_CLEAR_TOL_M: beside a junction or a spur there is no room for a bench).
-    textEl.innerHTML = !camp.withinTether ? 'too far from the road'
-                     : camp.cands === 0   ? 'no room off the road'
-                     : !camp.flat         ? 'not flat'
-                     :                      parkPrompt('park to make camp')
-  }
+  // "not flat" now means the WHOLE siting ray failed the flatness gate — every candidate from the
+  // road edge out to the tether — not merely that the verge beside the truck did.
+  // cands 0 ⇒ every rung was rejected before grading — in practice because it crowded a road
+  // (camp.js CAMP_ROAD_CLEAR_TOL_M: beside a junction or a spur there is no room for a bench).
+  document.getElementById('camp-prompt-text').innerHTML =
+      !camp.withinTether ? 'too far from the road'
+    : camp.cands === 0   ? 'no room off the road'
+    : !camp.flat         ? 'not flat'
+    :                      parkPrompt('park to make camp')
 }
 
 /** The stacked vibe bar: four segments whose max widths ARE the 40/15/20/25 VIBE_W weights. */
@@ -4433,10 +4426,23 @@ function _renderCampUI () {
   if (isSleep) _syncSleepRow()
 }
 
-document.getElementById('camp-seek-toggle')?.addEventListener('click', (e) => {
+/** The tent icon / Z: toggle "looking for a campsite". Only while the tent shows — Z anywhere else
+ *  must not silently arm a sticky hunt the player cannot see. */
+function _toggleCampSeek () {
+  if (document.getElementById('camp-row')?.style.display !== 'flex') return
   _campSeek = !_campSeek
-  e.currentTarget.blur()      // Space is the parking brake — a focused button would steal the tap
   _updateParkTriggers()       // repaint now rather than on the next 10 Hz poll
+}
+const _campIcon = document.getElementById('camp-icon')
+// mousedown preventDefault keeps focus off the icon: Space is the parking brake, and a focused
+// element would swallow the tap.
+_campIcon?.addEventListener('mousedown', (e) => e.preventDefault())
+_campIcon?.addEventListener('click', _toggleCampSeek)
+document.addEventListener('keydown', (e) => {
+  if ((e.key !== 'z' && e.key !== 'Z') || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
+  const t = e.target
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  _toggleCampSeek()
 })
 document.getElementById('cp-make')?.addEventListener('click', _makeCamp)
 document.getElementById('cp-cancel')?.addEventListener('click', _closeCampUi)
