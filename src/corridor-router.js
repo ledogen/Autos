@@ -487,7 +487,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
             const ds = D.ds
             const g1 = hAt(nx, nz)
             // deck may not rise above ground+fillMax (the fill ceiling); no useful floor below the band
-            const bTop = Math.min(NY - 1, Math.floor((g1 + C.fillMax - yLo) / yBin))
+            const bTop = Math.min(NY - 1, Math.floor((g1 + C_fillMax - yLo) / yBin))
             const kMax = D.kMax
             const ni0 = nCell * NY
             // PERF: the TURN charge depends only on this direction and the parent's — nothing in the
