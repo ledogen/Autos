@@ -318,9 +318,6 @@ export const runEconomy = {
                      // additions cannot drift into 20.700000000000003 — see addSpot()
     halfPoints: 0,   // mission points × 2
     missions: 0,     // settled (paid) missions this run
-    // FEAT-67: bonus items EARNED this run, in order — `{ rewardId, name, gate, letter }`. The grant
-    // is STUBBED: nothing reads this yet but the result card. Items die with the run (SM-INV-8).
-    awards: [],
 }
 
 /** Round to whole cents. Money is added a paper at a time now, so drift is a real hazard. */
@@ -358,7 +355,6 @@ export class EconomySystem {
         runEconomy.money = 0
         runEconomy.halfPoints = 0
         runEconomy.missions = 0
-        runEconomy.awards = []
     }
 
     /**
@@ -418,15 +414,14 @@ export class EconomySystem {
     }
 
     /**
-     * FEAT-67: record the offer's bonus if the letter earned it. Returns the award, or null. The
-     * grant is STUBBED — this only records. Money is untouched either way: the item and the cash are
-     * separate, and the cash side of a bonus offer is already priced by `payMult`.
+     * FEAT-67: the offer's bonus if the letter earned it — `{ rewardId, name, gate, letter }` for the
+     * result card — or null. The grant is STUBBED: nothing is kept. Money is untouched either way:
+     * the item and the cash are separate, and the cash side of a bonus offer is already priced by
+     * `payMult`.
      */
     _award (bonus, letter) {
         if (!bonus || !bonusEarned(letter, bonus.gate)) return null
-        const a = { rewardId: bonus.rewardId, name: bonus.name, gate: bonus.gate, letter }
-        runEconomy.awards.push(a)
-        return a
+        return { rewardId: bonus.rewardId, name: bonus.name, gate: bonus.gate, letter }
     }
 
     /**

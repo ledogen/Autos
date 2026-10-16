@@ -407,12 +407,10 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   check('a bonus record alone never changes the money', plain.payout === withRec.payout)
   check('the cash cut is payMult on the whole line (continuous in ratio)',
     halved.payout === cents(payoutFor(par, 0.8, terms.payTier) * 0.5))
-  check('an earned bonus is recorded as an award', withRec.award?.rewardId === 'x' && runEconomy.awards.length >= 1)
+  check('an earned bonus is recorded as an award', withRec.award?.rewardId === 'x')
   const missed = eco.settle({ par, ratio: 1.1, letter: 'D' }, { terms, bonus: { rewardId: 'y', name: 'Y', gate: 'C' } })
   check('a D earns no award, whatever the gate', missed.award === null)
   check('…but a D still settles its base pay (failed on time, not unpaid)', missed.payout >= basePay(par, terms.payTier))
-  eco.start()
-  check('start() clears the run\'s awards', runEconomy.awards.length === 0)
 }
 
 // ── 10. Purity ──────────────────────────────────────────────────────────────────────────────────
