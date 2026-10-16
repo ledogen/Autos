@@ -116,6 +116,15 @@ export function crownProfile(uLat, halfWidth, crownHeight) {
  *
  * Pure function — no imports, no side effects. Deterministic (D-16). Worker-safe.
  */
+// potholeNoise's lattice hash: unsigned 32-bit from 2D lattice coords, mapped to [-1, 1]
+function _h(ix, iz) {
+    let v = (Math.imul(ix + 3251, 2654435761) ^ Math.imul(iz + 1019, 2246822519)) >>> 0
+    v = (Math.imul(v ^ (v >>> 16), 2246822519)) >>> 0
+    v = (Math.imul(v ^ (v >>> 13), 3266489917)) >>> 0
+    v = (v ^ (v >>> 16)) >>> 0
+    return (v / 0xFFFFFFFF) * 2 - 1  // [-1, 1]
+}
+
 export function potholeNoise(wx, wz, rq, params) {
     if (!params.potholeEnabled) return 0
 
@@ -140,15 +149,6 @@ export function potholeNoise(wx, wz, rq, params) {
     // Smoothstep for lattice interpolation
     const sx1 = fx1 * fx1 * (3 - 2 * fx1)
     const sz1 = fz1 * fz1 * (3 - 2 * fz1)
-
-    // Hash unsigned 32-bit integer from 2D lattice coords, mapped to [-1, 1]
-    const _h = (ix, iz) => {
-        let v = (Math.imul(ix + 3251, 2654435761) ^ Math.imul(iz + 1019, 2246822519)) >>> 0
-        v = (Math.imul(v ^ (v >>> 16), 2246822519)) >>> 0
-        v = (Math.imul(v ^ (v >>> 13), 3266489917)) >>> 0
-        v = (v ^ (v >>> 16)) >>> 0
-        return (v / 0xFFFFFFFF) * 2 - 1  // [-1, 1]
-    }
 
     const v1_00 = _h(gx1,     gz1)
     const v1_10 = _h(gx1 + 1, gz1)

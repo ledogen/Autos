@@ -18,7 +18,7 @@
  * Plan: 09-06 (extracted from 09-05)
  */
 
-import { seedFor, mulberry32 } from './seed.js'
+import { seedFor, mulberry32, djb2 } from './seed.js'
 
 // ── Road quality constants (D-02/D-03) ───────────────────────────────────────
 // ROAD_QUALITY_STRETCH: arc-length span per quality tier (metres). D-02.
@@ -27,21 +27,18 @@ export const ROAD_QUALITY_STRETCH = 500
 // ROAD_QUALITY_BLEND: blend zone at stretch boundaries (metres). D-02.
 export const ROAD_QUALITY_BLEND = 10
 
-/**
- * Hash a runKey string into a stable 32-bit integer for use as a seedFor coordinate.
- * Reuses the djb2-style approach: fold each character using Math.imul.
- * Pure function — no side effects. Deterministic (D-16).
- *
- * @param {string} runKey — per-run identifier from road._network (e.g. "mz3")
- * @returns {number} unsigned 32-bit integer
- */
-export function hashRunKey(runKey) {
-    let h = 5381
-    const s = String(runKey)
-    for (let i = 0; i < s.length; i++) {
-        h = (Math.imul(h, 33) ^ s.charCodeAt(i)) >>> 0
+// runKey → djb2(runKey), the stretch seed's coordinate. A pure function of the string, memoised
+// because roadQuality runs per ribbon section, carve vertex and wheel sample.
+// ponytail: cleared wholesale at 4096 keys — a session's distinct runs, not a working set.
+const _runKeyHash = new Map()
+function runKeyHash(runKey) {
+    let h = _runKeyHash.get(runKey)
+    if (h === undefined) {
+        if (_runKeyHash.size >= 4096) _runKeyHash.clear()
+        h = djb2(String(runKey))
+        _runKeyHash.set(runKey, h)
     }
-    return h >>> 0
+    return h
 }
 
 /**
@@ -49,7 +46,7 @@ export function hashRunKey(runKey) {
  *
  * Algorithm (D-02):
  *   stretchIdx = floor(arcS / ROAD_QUALITY_STRETCH)
- *   Each stretch: quality = mulberry32(seedFor(worldSeed, 'roadquality', hashRunKey(runKey), stretchIdx))()
+ *   Each stretch: quality = mulberry32(seedFor(worldSeed, 'roadquality', djb2(runKey), stretchIdx))()
  *   The LAST ROAD_QUALITY_BLEND metres of a stretch smoothstep-blend into the next stretch's value,
  *   so the value is continuous across the boundary. (It used to blend on both sides of the
  *   boundary, which snapped back to the old value right after crossing it.)
@@ -65,7 +62,7 @@ export function hashRunKey(runKey) {
  * @returns {number} road quality in [0, 1); higher = better condition
  */
 export function roadQuality(arcS, runKey, worldSeed) {
-    const rk = hashRunKey(runKey)
+    const rk = runKeyHash(runKey)
     const stretchIdx = Math.floor(arcS / ROAD_QUALITY_STRETCH)
 
     // Quality for the current stretch
