@@ -410,9 +410,12 @@ export class ShadowBakeSystem {
     this._rt.viewport.set(0, 0, size, size)   // full-atlas clear (rt state, raw pixels — see update)
     this._rt.scissor.set(0, 0, size, size)
     this._rt.scissorTest = false
+    const prevClearA = r.getClearAlpha()       // save/restore like update() — the canvas clear is not ours
+    r.getClearColor(this._prevClear)
     r.setRenderTarget(this._rt)
     r.setClearColor(0x000000, 0)
     r.clear(true, false, false)
+    r.setClearColor(this._prevClear, prevClearA)
     r.setRenderTarget(prevTarget)
   }
 
