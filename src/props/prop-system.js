@@ -68,6 +68,9 @@ const _p = new THREE.Vector3()
 const _s = new THREE.Vector3()
 const _col = new THREE.Color()
 const _HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0)
+// S-45: numeric grid-cell key, exact for |gx|,|gz| < 2^20 cells (±8,388 km at 8 m) — no per-query strings.
+const cellKey = (gx, gz) => (gx + 1048576) * 2097152 + (gz + 1048576)
+const SEQ_STRIDE = 65536   // S-45: collidable seq = chunk rank × stride + list index (a chunk holds ≪ 65,536)
 const LOD_SWAPS_MAX = 6      // PERF-21: per-frame chunk re-pool ceiling
 const LITTER_DEFER = 1.5     // PERF-34: streamScore units a litter-only job yields to base scatters by
 const PREEMPT_MARGIN = 1.0   // PERF-33: streamScore units (≈ chunks) a queued chunk must beat the active one by
@@ -175,15 +178,18 @@ export class PropSystem {
     this.setShadowCasting(castRealtime)   // initial mode from params.shadows
 
     // ── FEAT-06b collision index ──────────────────────────────────────────────────────
-    // Per-chunk collidable lists are the source of truth; a uniform grid (rebuilt lazily when chunk
-    // membership changes) gives O(1)-ish nearest-prop lookup for the truck contact query. Each
+    // Per-chunk collidable lists are the source of truth; a uniform grid gives O(1)-ish nearest-prop
+    // lookup for the truck contact query. Kept INCREMENTALLY (review-2 S-45): a commit inserts its
+    // chunk's items in rebuild order, a release filters them out — a full rebuild of every live collidable cost
+    // 4–6 ms per chunk commit at Ultra (~17 commit frames per row crossing). Each
     // collidable stores RAW baked dims + instance scale; the collision-scale params are applied LIVE
     // at query time (so the debug sliders tune without a re-stream).
     this._collidables = new Map()  // "cx,cz" -> [{ kind, x, y, z, radius, height, scale }]
-    this._grid = new Map()         // "gx,gz" -> [collidable, ...]
+    this._grid = new Map()         // cellKey(gx, gz) -> [collidable, ...]
     this._gridCell = 8             // m
     this._physicsHook = null       // FEAT-48: PropPhysics (engine static colliders) — syncChunk/disposeChunk/clear
     this._gridDirty = true
+    this._colRank = 0              // S-45: chunk registration counter → collidable `seq` (grid cell order)
   }
 
   /**
@@ -531,7 +537,7 @@ export class PropSystem {
     this._placeChunk(chunk, chunk.mode)
     const _c2 = performance.now(); perfAdd('props.commit.place', _c2 - _c1)
     if (collidables.length) {
-      this._collidables.set(ck, collidables); this._gridDirty = true
+      this._indexCollidables(ck, collidables)
       this._physicsHook?.syncChunk(ck, collidables)   // FEAT-48: rigid engine colliders for the chassis/debris
     }
     perfAdd('props.commit.collide', performance.now() - _c2)
@@ -580,7 +586,7 @@ export class PropSystem {
     chunk.litter = true
     this._placeChunk(chunk, chunk.mode, from)
     if (collidables.length !== nCol) {          // zone rocks' large class is collidable
-      this._collidables.set(ck, collidables); this._gridDirty = true
+      this._indexCollidables(ck, collidables, nCol)   // grew in place from nCol (or a fresh list)
       this._physicsHook?.syncChunk(ck, collidables)
     }
     if (chunk.mode !== 'bbonly') this._markShadowTiles(chunk.cx, chunk.cz, true)
@@ -743,7 +749,12 @@ export class PropSystem {
     this._unplaceChunk(chunk)
     const wasBBOnly = chunk.mode === 'bbonly'
     this._chunks.delete(ck)
-    if (this._collidables.delete(ck)) { this._gridDirty = true; this._physicsHook?.disposeChunk(ck) }
+    const cols = this._collidables.get(ck)
+    if (cols) {
+      this._collidables.delete(ck)
+      if (!this._gridDirty) this._gridRemove(cols)
+      this._physicsHook?.disposeChunk(ck)
+    }
     // PERF-07: this chunk's props are gone → re-bake still-live neighbours so their tiles drop the
     // departed silhouettes (a neighbour still in-ring re-bakes without them; its own tile is reused
     // by whichever chunk lands on the toroidal slot next). Billboard-only chunks never baked.
@@ -1018,24 +1029,70 @@ export class PropSystem {
   }
 
   // ── FEAT-06b collision queries ──────────────────────────────────────────────────────────
+  /**
+   * S-45: register a chunk's collidables (from index `from` — a litter commit grows the chunk's list
+   * in place) and keep the grid current without a rebuild. A full rebuild fills each cell in
+   * _collidables order (chunk insertion order, then list order), so every item carries that rank as
+   * `seq` and _gridAdd inserts by it: a new chunk lands last (a push), a grown chunk's items slot in
+   * after its own older ones. The cell arrays are then exactly what a rebuild would produce.
+   */
+  _indexCollidables(ck, list, from = 0) {
+    let base
+    if (from === 0) {
+      const old = this._collidables.get(ck)          // never expected: re-commit of a live chunk
+      if (old) { this._collidables.delete(ck); if (!this._gridDirty) this._gridRemove(old) }
+      this._collidables.set(ck, list)                // a new key is LAST in Map order, so it ranks last
+      base = ++this._colRank * SEQ_STRIDE
+    } else base = list[0].seq                        // list[0].seq = this chunk's rank × SEQ_STRIDE
+    for (let i = from; i < list.length; i++) list[i].seq = base + i
+    if (!this._gridDirty) this._gridAdd(list, from)
+  }
+
+  /** Grid cell span of one collidable → this._span [gx0, gx1, gz0, gz1]. */
+  _cellSpan(c) {
+    const cs = this._gridCell
+    // generous footprint (covers live scale-factor changes); logs use their half-length
+    // bound (boundR) — the tube radius alone would miss grid cells the trunk crosses.
+    const R = (c.boundR ?? c.radius) * c.scale * 2
+    const sp = this._span || (this._span = [0, 0, 0, 0])
+    sp[0] = Math.floor((c.x - R) / cs); sp[1] = Math.floor((c.x + R) / cs)
+    sp[2] = Math.floor((c.z - R) / cs); sp[3] = Math.floor((c.z + R) / cs)
+    return sp
+  }
+
+  _gridAdd(list, from = 0) {
+    for (let li = from; li < list.length; li++) {
+      const c = list[li]
+      const [gx0, gx1, gz0, gz1] = this._cellSpan(c)
+      for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
+        const k = cellKey(gx, gz)
+        let arr = this._grid.get(k); if (!arr) { arr = []; this._grid.set(k, arr) }
+        let i = arr.length
+        while (i > 0 && arr[i - 1].seq > c.seq) i--   // in rank order; a rebuild or new chunk always pushes
+        if (i === arr.length) arr.push(c); else arr.splice(i, 0, c)
+      }
+    }
+  }
+
+  /** Filter a released chunk's items out of the cells they touch; the survivors keep rebuild order. */
+  _gridRemove(list) {
+    const gone = new Set(list), cells = new Set()
+    for (const c of list) {
+      const [gx0, gx1, gz0, gz1] = this._cellSpan(c)
+      for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) cells.add(cellKey(gx, gz))
+    }
+    for (const k of cells) {
+      const arr = this._grid.get(k)
+      if (!arr) continue
+      const kept = arr.filter((c) => !gone.has(c))
+      if (kept.length) this._grid.set(k, kept); else this._grid.delete(k)
+    }
+  }
+
   _ensureGrid() {
     if (!this._gridDirty) return
     this._grid.clear()
-    const cs = this._gridCell
-    for (const list of this._collidables.values()) {
-      for (const c of list) {
-        // generous footprint (covers live scale-factor changes); logs use their half-length
-        // bound (boundR) — the tube radius alone would miss grid cells the trunk crosses.
-        const R = (c.boundR ?? c.radius) * c.scale * 2
-        const gx0 = Math.floor((c.x - R) / cs), gx1 = Math.floor((c.x + R) / cs)
-        const gz0 = Math.floor((c.z - R) / cs), gz1 = Math.floor((c.z + R) / cs)
-        for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
-          const k = gx + ',' + gz
-          let arr = this._grid.get(k); if (!arr) { arr = []; this._grid.set(k, arr) }
-          arr.push(c)
-        }
-      }
-    }
+    for (const list of this._collidables.values()) this._gridAdd(list)
     this._gridDirty = false
   }
 
@@ -1046,7 +1103,7 @@ export class PropSystem {
     const seen = this._scratchSeen || (this._scratchSeen = new Set())
     seen.clear()
     for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
-      const arr = this._grid.get(gx + ',' + gz)
+      const arr = this._grid.get(cellKey(gx, gz))
       if (!arr) continue
       for (const c of arr) { if (seen.has(c)) continue; seen.add(c); fn(c) }
     }
