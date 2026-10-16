@@ -741,6 +741,7 @@ export class Map2D {
         if (!this._open) return
         this._open = false
         this._dragging = false
+        this._canvas.style.cursor = 'grab'   // closed mid-drag: _onMouseUp never runs to reset it
         this._streaming = false
         clearTimeout(this._pumpTimer)
         clearTimeout(this._streamTimer)
