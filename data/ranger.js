@@ -320,7 +320,8 @@ export const RANGER_PARAMS = {
   suspensionBodyOffsetRear:    0.035,  // m — (D-08)
 
   // bumpStopStiffness: penalty spring engaging at strutComp >= suspensionTravel.
-  // At 10× front spring: k_eff ≈ 363 000 N/m. Stability: sdt^2 * k_eff / m_u = 0.35 < 4. OK.
+  // ~10× the front spring, progressive up to 8× that (bumpStopProgressiveM). Integrated implicitly
+  // in suspension.js, so no explicit-step stability bound applies.
   bumpStopStiffness:         330000,   // N/m — ~10× front spring; exposed as slider (D-08, D-14)
   // The stop packs: its rate is × (1 + (overshoot / bumpStopProgressiveM)²), capped at 8×. 0.05 m
   // ⇒ the rate has doubled 5 cm past the travel and is 5× at 10 cm (see suspension.js).

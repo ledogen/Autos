@@ -339,9 +339,9 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   // Two constraints with explicit Euler:
   //   tire spring: sdt < 2/omega_n_tire (oscillator stability)
   //   suspension damping: c_S·sdt/m_u < 2 (damper explicit-Euler stability)
-  // N=4 gives sdt=4.17ms at 60Hz: c_S·sdt/m_u ≈ 1.04 for current dampers — safe.
-  // NOTE (Phase 4.1): bumpStopStiffness up to 10× main spring gives k_eff ≈ 363 000 N/m.
-  // Verified: sdt^2 * k_eff / m_u = 0.35 << 4. No additional check required.
+  // N=4 gives sdt=4.17ms at 60Hz: c_S·sdt/m_u = 0.81 front / 0.93 rear (3500 / 4000 N·s/m on an
+  // 18 kg wheel) — safe. The bump stop needs no check: it is integrated implicitly (see below),
+  // so its progressive rate (up to 8 × 330 kN/m) cannot destabilise the step.
   if (!params._suspStabChecked) {
     const N_check      = 4
     const sdt_check    = dt / N_check

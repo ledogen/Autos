@@ -541,8 +541,11 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // few mm different. Those five re-asks each cost ~33 ground samples and came back with the same
   // surfaces, so they now re-read Step 1's contacts with each depth shifted for the hub move along
   // the contact normal and for the radius change: a plane, honest at this scale (a wheel that lifts
-  // off reads depth ≤ 0 and drops the contact). Terrain and static props only — debris bodies MOVE
-  // within a step, so the engine sphere test below still runs on every call (owner, 2026-10-02).
+  // off reads depth ≤ 0 and drops the contact). Terrain and static props only — the engine sphere
+  // test below still runs on every call (owner, 2026-10-02). Not because debris moves within the
+  // step (the engine steps once, after all of these, and _bodyXf serves one pose per step) but
+  // because a debris contact is a hull or sphere, not a plane, so a depth shift cannot stand in
+  // for re-asking it.
   // Measured before: ~75 % of the 1.9 ms physics step was these queries.
   //
   // A wheel that is AIRBORNE at the start of the step has an empty answer, and the query reports

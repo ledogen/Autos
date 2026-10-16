@@ -521,7 +521,8 @@ export class DebrisSystem {
   }
 
   /**
-   * Frame-loop sync: engine transform → mesh. ≤ DEBRIS_CAP bodies — flat cost, no culling.
+   * Frame-loop sync: engine transform → mesh. Every live body, no culling: ≤ DEBRIS_CAP loose
+   * debris plus the pinned bodies the cap does not count (the barrel-cube lab, haul and freight loads).
    * @param {number} [alpha=1] - render interpolation between the beforeStep() snapshot (0) and the
    *   current pose (1). Pass the truck's own render alpha so cargo and truck are drawn at the same
    *   instant; a caller that draws its truck un-interpolated (the menu stage) leaves it at 1.
