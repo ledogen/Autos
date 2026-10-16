@@ -6533,6 +6533,7 @@ document.addEventListener('keydown', e => {
 // ── Game loop ─────────────────────────────────────────────────────────────────
 // Fixed-timestep accumulator (RESEARCH §Pattern 2, gafferongames.com/post/fix_your_timestep/)
 // PHYSICS_DT = 1/60s; MAX_FRAME_TIME = 0.25s (T-01-04: spiral-of-death mitigation)
+let _ignEdge = null   // S-61: the ignition catch/shutoff edge, latched per step, played once per frame
 function loop () {
   requestAnimationFrame(loop)
   perfFrameBegin()   // PERF-26: closes out the previous frame's attribution, arms this one (no-op unless ?hitch)
@@ -6604,6 +6605,10 @@ function loop () {
     setLaunchHold(!!missionSystem?.isHeld() || scenarioSystem.isHeld() || !!_campUi || _campBusy)
 
     const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
+    // S-61: stepIgnition clears ignition.event at the top of EVERY step, so on a 2+ step frame a
+    // catch on step 1 is gone by the time the frame reads it. Latch the edge here, per step.
+    const ignEv = vehicleState.ignition?.event
+    if (ignEv === 'catch' || ignEv === 'shutoff') _ignEdge = ignEv
     if (resetRequested) {
       // R re-seats the truck to a driveable state ONLY — it does NOT touch any tunable
       // params or slider values. All tuning (vehicle AND terrain) stays exactly as set;
@@ -7048,15 +7053,16 @@ function loop () {
   // start/stopCrankAudio are idempotent, so calling the level every frame is free.
   //
   // The CATCH and SHUTOFF are edges. The state machine leaves a one-shot on ignition.event for
-  // exactly the step it happened on; consuming it here (once per frame, not per physics step) is
-  // fine because these are edges the player caused, never per-step continuous values.
+  // exactly the step it happened on, and the NEXT step clears it — so the step loop latches it into
+  // _ignEdge (S-61) and it is played here, once per frame, however many steps the frame ran.
   const ign = vehicleState.ignition
   if (ign) {
     if (_starterEngaged(ign)) startCrankAudio(); else stopCrankAudio()
-    if (ign.event === 'catch') playCatchAudio()
-    else if (ign.event === 'shutoff') playShutoffAudio()
+    if (_ignEdge === 'catch') playCatchAudio()
+    else if (_ignEdge === 'shutoff') playShutoffAudio()
     ign.event = null
   }
+  _ignEdge = null
   // FEAT-33: the dead-engine throttle hint (raised in vehicle.js). Same one-shot discipline as the
   // events above — consume and clear, so holding W re-raises it every frame and the toast simply
   // stays up until the driver stops asking.
