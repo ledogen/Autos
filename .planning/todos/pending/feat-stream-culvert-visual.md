@@ -33,8 +33,9 @@ carve change, no bore, no terrain roof — the pipe is decoration on an untouche
 > convention for a culverted crossing, and needs no map work to be correct.
 >
 > Two things follow. **A washout deserves a map symbol** when the #05 hazard class lands: a crossing
-> the player cannot see coming is a nasty surprise, and the crossing set is already resolved
-> (`RoadSystem.streamRoadCrossings`, which the map calls for `_drawCrossings`). **And do not give
+> the player cannot see coming is a nasty surprise. The crossings are now found as "the first stream
+> point of each run under a road core" (see test/stream-carve.mjs; review-2 R-22 deleted the old
+> `streamRoadCrossings` finder — `_drawCrossings` draws road×road crossings only). **And do not give
 > the map a bridge symbol here** — the causeway ruling in [[project_stream_crossing_causeway]]
 > governs the sheet as much as the mesh.
 

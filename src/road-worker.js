@@ -24,8 +24,8 @@
  * rejected per instance).
  */
 export class RoadRouteWorker {
-    constructor(size) {
-        const n = size ?? RoadRouteWorker.defaultPoolSize()
+    constructor() {
+        const n = RoadRouteWorker.defaultPoolSize()
         this._clients = new Map()   // clientId -> RoadSystem
         this._queue    = []         // [{ client, job, epoch }]
         this._inflight = new Array(n).fill(0)
@@ -38,6 +38,15 @@ export class RoadRouteWorker {
                 this._pump()
                 const client = this._clients.get(e.data.client)
                 client?.ingestRoutedConnections(e.data.results, e.data.epoch)
+            }
+            // S-16: an error outside the worker's own try (a failed module load) frees the slot
+            // instead of sticking it until the 60 s pre-warm deadline, and is handled HERE so it
+            // never bubbles up to the network client as a stray error that retires its build.
+            w.onerror = (e) => {
+                e.preventDefault()
+                console.error('[route-pool] worker error', e?.message ?? e)
+                this._inflight[i] = 0
+                this._pump()
             }
             this._workers.push(w)
         }
@@ -95,11 +104,5 @@ export class RoadRouteWorker {
             this._inflight[wi]++
             this._workers[wi].postMessage({ type: 'route', client, jobs: [job], epoch })
         }
-    }
-
-    dispose() {
-        for (const w of this._workers) w.terminate()
-        this._workers.length = 0
-        this._clients.clear()
     }
 }

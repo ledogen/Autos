@@ -5,18 +5,35 @@
  *   - src/terrain.js          (main thread: analyticHeight, the carve table, chunk colours)
  *   - src/terrain-worker.js   (the chunk heightmap Worker)
  *   - src/road.js             (coarseHeight only — road grade math is amplitude-independent)
+ *   - src/road-route-worker.js (coarseHeight + makeCoarseNoise — the route Worker's two fields)
  *   - test/lib/terrain-headless.mjs (the headless gates' terrain)
  *
  * It used to exist as four hand-synced copies (a "SYNC RULE"), because the terrain Worker was a
  * Blob built from a source string and could not import. The Worker is a real ES module now, so
  * Worker == main thread == headless by construction — the same no-mirror fence the road workers use.
  *
- * Pure: no THREE, no DOM, no module state. Heights are RAW (pre-terrainAmplitude); the amplitude is
- * applied by the caller, on the main thread.
+ * Pure: no THREE, no DOM, no module state. Heights are RAW (carve-free); the road and stream carves
+ * are applied by the caller, on the main thread.
  */
 
 import { createNoise2D } from 'simplex-noise'
 import { seedFor, mulberry32 } from './seed.js'
+
+// Chunk grid — the ONE definition. terrain.js re-exports it, the Worker, road.js tiles and
+// FLORA_PARAMS.chunkSize import it, so terrain chunks, road tiles and prop chunks stay aligned.
+export const CHUNK_SIZE   = 64   // world units (metres) per chunk side
+export const GRID_SAMPLES = 65   // vertices per side (64 cells), avoids seams
+
+/**
+ * Every params field height() reads — the list terrain.js posts to the Worker (structured-cloneable
+ * scalars only). Add a field to height() and it MUST land here, or the Worker mesh silently diverges
+ * from physics' analyticHeight (mesh != physics).
+ */
+export const HEIGHT_PARAM_KEYS = ['coarseAmplitude', 'coarseFreq', 'coarseOctaves', 'ridgeSharpness',
+    'fineAmplitude', 'fineFreq', 'regionalStrength', 'regionalScale']
+
+/** The coarse layer's seeded noise — the ONE derivation road.js and the route Worker share. */
+export const makeCoarseNoise = (worldSeed) => createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
 
 /**
  * The three seeded noise layers of a world. Same seed → the same three closures, everywhere.
@@ -25,7 +42,7 @@ import { seedFor, mulberry32 } from './seed.js'
  */
 export function makeTerrainNoise(worldSeed) {
     return {
-        noiseCoarse:   createNoise2D(mulberry32(seedFor(worldSeed, 'coarse'))),
+        noiseCoarse:   makeCoarseNoise(worldSeed),
         noiseFine:     createNoise2D(mulberry32(seedFor(worldSeed, 'fine'))),
         noiseRegional: createNoise2D(mulberry32(seedFor(worldSeed, 'regional'))),
     }

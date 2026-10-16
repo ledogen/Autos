@@ -97,10 +97,55 @@ So "attach to a Chrome running elsewhere" is nearly free; there is no harness re
   Chrome. ~a few lines each. `connect()` itself needs no change.
 - No `src/` changes. No gate changes (gates never launch Chrome).
 
+## Update 2026-10-15 — numbers, and the mechanism changed
+
+Ruled during the review-2 pass (owner: "it's starting to get old running heavy tests on this Mac Air").
+
+**What already landed since this was filed.** The first acceptance box is DONE by a different route:
+`npm test` now runs only the AFFECTED gates (import-closure vs `git diff`, `test/run-all.mjs`), so the
+inner loop is seconds without `--only`. The suite is 92 gates (49 `fast`, 43 `heavy`), run in a pool
+of `min(8, cores − 2)` single-threaded node processes; `test:all` is ~7 min wall on the Air.
+
+**Hardware, honestly.** The Air is an M4 (4 P + 6 E cores). Each gate is one single-threaded node
+process, so throughput is pool × single-thread speed:
+
+| host | pool | ≈ M4-P-core-equivalents | `test:all` wall (est.) |
+|---|---|---|---|
+| M4 Air (plugged in) | 8 | ~5.5 | ~7 min (measured) |
+| Ryzen 5 3600 (6c/12t, Zen 2) | 8 | ~2.5–3 | **~15 min** |
+| GitHub Actions `ubuntu-latest` (4 vCPU) | 2 | ~0.9 | **~30–45 min** + checkout/`npm ci` |
+
+Nothing available is *faster* than the Air; the 3070 Ti is irrelevant to pure-node gates. The point of
+offloading is that the Air stays cool and usable, not speed. Actions cloud is the slowest option and
+stays reserved for the Pages deploy.
+
+**Mechanism — supersedes §A's mosh/tmux thin client.** A **self-hosted GitHub Actions runner on the
+Windows box** (free on every plan; ~15 min one-time setup; WSL2 or native node both fine for the
+gates). Push a branch → the Ryzen runs `test:all` → the result is a check on the commit, with a log.
+Batching, queuing and history come for free instead of being built. The thin-client stack (§A) is no
+longer needed for testing — Claude Code keeps running on the Air; only the suite moves.
+
+**Browser smoke gate goes there too.** The review-2 pass found that NO gate imports `src/main.js`
+(frame loop, mode transitions, HUD): the one regression an executor introduced was caught only by a
+CDP smoke (`test/lib/cdp.mjs`), not by any of the 92 gates. A `cdp-smoke` gate (boot `?nomenu`, drive
+10 s, lab in/out, story entry, camp make/break, freecam, map; zero console errors, HUD sane) costs
+~60–90 s wall and needs a real Chrome, so it is a natural fit for the Windows runner (real Chrome, real
+GPU — §C-2's `--use-angle=d3d11`). Register it `cost: heavy` behind a `--browser` opt-in so the Air's
+`npm test` never launches Chrome. No pixel diffs — behaviour only.
+
+**Split:** Air = `npm test` (affected gates, inner loop). Ryzen runner = `test:all` + `cdp-smoke` on
+every push to a feature branch, required before merging to main. Actions cloud = deploy only.
+
 ## Acceptance
 
-- [ ] **(no infra, adopt now)** Inner-loop testing uses `npm test -- --only=<affected gates>`; the full
-      34-gate `npm test` is run only pre-commit — feedback delay per change is seconds, not 10-15 min.
+- [x] **(no infra, adopt now)** Inner-loop testing runs only the affected gates — DONE 2026-09 via
+      `run-all.mjs`'s import-closure selection (supersedes `--only`); the full suite is `test:all`,
+      pre-commit / on the desktop.
+- [ ] Self-hosted GitHub Actions runner registered on the Windows box; a `test-all.yml` workflow runs
+      `npm run test:all` on push to `feature/**` and reports as a commit check. Paste its
+      `wall Xs (pool P) · gate-cpu Ys` line next to the Air's for the record.
+- [ ] `test/cdp-smoke.mjs` registered in `gates.mjs` (`cost: heavy`, `--browser` opt-in), green on the
+      runner; the Air's `npm test` never launches Chrome.
 - [ ] Tailscale reaches the PC over Starlink; `mosh <pc>` → `tmux` → `claude` gives an interactive
       Claude Code session whose Bash/node/Chrome all execute on the PC (verify: `uname -a` / `nproc`
       report the desktop, not the Air).

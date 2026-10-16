@@ -53,7 +53,7 @@ const CONSEQUENCE = {
   brake:      'Worn brakes need more distance to stop.',
   engine:     'Less power. Most of the loss arrives in the last fifth of its life.',
   filter:     'A clogged filter wears the engine out faster. Cheap to replace.',
-  radiator:   'Reduced cooling, so a higher risk of overheating.',
+  radiator:   'Takes front-end hits. Nothing more yet: the engine does not overheat.',
   headlights: 'A worn lamp dims, down to 40% when broken. Below half health it flickers over bumps.',
   alignment:  'Knocked-out toe and camber make the truck pull to one side.',
 }

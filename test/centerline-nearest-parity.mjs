@@ -15,7 +15,6 @@
 //
 // Run: node test/centerline-nearest-parity.mjs   (exit 0 = all green)
 
-import * as THREE from 'three'
 import { buildNetwork } from './lib/road-headless.mjs'
 
 let pass = 0, fail = 0

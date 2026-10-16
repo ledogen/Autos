@@ -4,7 +4,7 @@
 holds the *rules* (import seams, prohibitions, workflow); this holds the *map*. When you add, move,
 or delete a file, update the relevant line here in the same commit — it's one line, keep it honest.
 
-*Last full audit: 2026-10-04 (81 files in `src/`, 8 in `src/props/`).*
+*Last full audit: 2026-10-15, review-2 (82 files in `src/`, 8 in `src/props/`).*
 
 ## Top level
 
@@ -15,7 +15,7 @@ or delete a file, update the relevant line here in the same commit — it's one 
 | `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), freight loads (`freight.js`, FEAT-96 — model key + mass per strapped load; read by the debug "Load Cargo" menu), authored scenarios (`scenarios.js`, FEAT-62 — seed + world-coordinate poses, re-checked against the road by `test/scenario-route.mjs`). (The bundled route caches were deleted 2026-08-19 with the bake subsystem.) |
 | `assets/models/` | Hand-authored `.glb` assets + `CREDITS.md`. Convention: `.planning/research/ASSETS.md`; style: `ART-STYLE.md`. |
 | `vendor/box3d/` | Vendored Box3D WASM bindings. Imported ONLY by `src/physics-engine.js` (FEAT-48 seam). |
-| `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts. Pure node — never touches Vite. |
+| `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts, refactor fingerprints (`fingerprint-world.mjs` / `fingerprint-physics.mjs`: `--out` + `--compare` hash tables, review-2 S-80). Two working visual tools, run by hand: `impostor-ab.mjs` (CDP A/B of billboard impostors vs their 3D originals — PNG pairs + changed-pixel metrics) and `map-icon-sheet.mjs` (standalone SVG contact sheet of every `data/map-icons.js` glyph at map size). Pure node — never touches Vite. |
 | `tools/dashboard/` | `npm run dash` ticket-tracker viewer (:8010). Read-only over `.planning/todos/`, except the Sounds tab's upload, which writes takes into `wip/audio/<slug>/`. |
 | `wip/audio/<slug>/`, `assets/audio/<slug>/` | Sound takes, one folder per FEAT-120 sound (slug = its `###` heading). `wip/` is git-invisible (recordings in progress, dashboard uploads); promote to `assets/audio/` when the game plays it. |
 | `.planning/` | Planning record. **Live:** `todos/` (tracker), `story-mode/DESIGN.md` + `MILESTONES.md` (roadmap), `research/` (standing references). **Historical:** `phases/`, `milestones/`, handoffs, `STATE.md`. |
@@ -52,9 +52,9 @@ component condition model — reads vehicleState signals, writes `params._*Scale
 physics stack never imports it) · `fragile.js` (FEAT-97 fragile cargo condition — pure; main.js feeds
 it the strap's felt g each step).
 
-**World generation** — `seed.js` (djb2 / mulberry32 / FNV-1a hash32 / seedFor, pure) · `terrain.js` (chunk ring, carve table, analytic
-height) · `terrain-height.js` (THE height function + seeded noise — imported by main thread, worker,
-road.js and the headless gates) · `terrain-worker.js` (chunk heightmap Worker, module entry) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
+**World generation** — `seed.js` (djb2 / mulberry32 / FNV-1a hash32 / seedFor + the shared hash2 / clamp01 / smooth01, pure) · `terrain.js` (chunk ring, carve table, analytic
+height) · `terrain-height.js` (THE height function + seeded noise + chunk grid constants and the Worker's
+height-param list — imported by main thread, worker, road.js, data/flora.js and the headless gates) · `terrain-worker.js` (chunk heightmap Worker, module entry) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
 rock classification) · `map-cover.js` (map-resolution forest cover) · `water.js` (ponds/streams
 generation) · `water-render.js` · `stone-texture.js` (procedural riverbed texture) ·
 `terrain-texture.js` (FEAT-84: procedural grass/dirt/rock surface maps, DataTexture, headless-safe).
@@ -82,7 +82,7 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 
 **Rendering & atmosphere** — `sky.js` (time-of-day, ACES) · `moon.js` · `shadow-fade.js` ·
 `camera.js` (chase/cockpit/fly) · `vehicle-model.js` (procedural truck + cast lights) ·
-`model-service.js` (FEAT-59 .glb import service) · `campfire.js` (FEAT-66 lit campfire: ASSET-24 + flames/embers/point light) · `smoke.js` · `dust.js` · `dirt-spray.js` ·
+`model-service.js` (FEAT-59 .glb import service) · `campfire.js` (FEAT-66 lit campfire: ASSET-24 + flames/embers/point light) · `smoke.js` · `dust.js` (also owns the shared billboard sheet `makeBillboardMesh` + `rotateByQuat`, used by smoke/dirt-spray) · `dirt-spray.js` ·
 `map2d.js` (M-key dev map).
 
 **Audio** — `engine-audio.js` · `tire-audio.js` (tonal stick-slip) · `wind-audio.js` · `heartbeat-audio.js` (FEAT-87 rank-bar lub-dub) · `glass-audio.js` (FEAT-87 rank tile shatter; FEAT-97 fragile cargo hits).

@@ -25,10 +25,9 @@ const TAIL_S = 0.3         // s — the crumble and tinkles land inside this win
 const GRAINS = 34          // crumble grains
 const PINGS = 9            // tinkle pings
 
-let _noise = null          // 0.5 s of white noise, built once per context, sliced by every layer
+let _noise = null          // 0.5 s of white noise, built once (there is one AudioContext), sliced by every layer
 function _noiseBuf (ctx) {
-  if (_noise && _noise.sampleRate === ctx.sampleRate) return _noise
-  return (_noise = whiteNoiseBuffer(ctx, 0.5))
+  return (_noise ??= whiteNoiseBuffer(ctx, 0.5))
 }
 
 /** One slice of filtered noise: `type` filter at `freq`/`q`, peak `g`, decaying over `dur`. */

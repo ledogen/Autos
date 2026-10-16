@@ -150,10 +150,3 @@ export async function keyEvent (client, key, down) {
     windowsVirtualKeyCode: key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0,
   })
 }
-
-// Hold a key for `ms` (fire-and-forget friendly: returns after the up event).
-export async function holdKey (client, key, ms) {
-  await keyEvent(client, key, true)
-  await sleep(ms)
-  await keyEvent(client, key, false)
-}

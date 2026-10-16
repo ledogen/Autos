@@ -26,21 +26,11 @@
  */
 
 import * as THREE from 'three'
-import { mulberry32 } from './seed.js'
+import { mulberry32, hash2 as _hash2, clamp01 } from './seed.js'
 
 const smooth = (t) => t * t * (3 - 2 * t)
-const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v
 
 // ── seeded 2D value noise on the torus (integer lattice wraps at `period`) ────────────────────
-function _hash2(ix, iy, seed) {
-  let h = seed | 0
-  h = Math.imul(h ^ (ix | 0), 0x9e3779b9)
-  h = Math.imul(h ^ (iy | 0), 0x85ebca6b)
-  h ^= h >>> 15
-  h = Math.imul(h, 0xc2b2ae35)
-  h ^= h >>> 13
-  return (h >>> 0) / 4294967296
-}
 function _vnoiseWrap(x, y, period, seed) {
   const x0 = Math.floor(x), y0 = Math.floor(y)
   const fx = smooth(x - x0), fy = smooth(y - y0)
@@ -142,7 +132,7 @@ const _toward = (target, base) => [
   Math.min(ALBEDO_PACK - 0.01, target[1] / Math.max(base[1], 0.02)),
   Math.min(ALBEDO_PACK - 0.01, target[2] / Math.max(base[2], 0.02)),
 ]
-const _hexLin = (hex) => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
+export const _hexLin = (hex) => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 
 
 // ── GRASS: tufts of short tapered strokes ─────────────────────────────────────────────────────

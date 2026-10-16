@@ -35,7 +35,7 @@
  * on the shoulder feeds both generators. Every param moves via setTargetAtTime so nothing clicks.
  *
  * NOTE: wheelDebug[i].sa is friction-circle-CLAMPED at ≈0.06 (BUG-20 break-away clamp) and is NOT a
- * slip magnitude — vLong/vLat are the real contact-patch slip speeds. Same gotcha as smoke.js:291.
+ * slip magnitude — vLong/vLat are the real contact-patch slip speeds. Same gotcha as smoke.js update().
  *
  * Shares the AudioContext with engine-audio.js (getAudioContext) but keeps its own master gain
  * straight into ctx.destination, so tire volume is independent of engine volume.
@@ -125,8 +125,8 @@ const ROLL_EXP     = 1.4       // level = (v/ROLL_V_REF)^this — rolling noise 
 // deliberate choices carry the weight:
 //   · brown noise for BOTH layers, no white anywhere. White noise is flat to 20 kHz and reads as
 //     hiss/static however you filter it; brown falls at 6 dB/octave, so what survives is mass.
-//   · SLAM is AM'd by a sawtooth at a few impacts per wheel revolution — at a crawl you hear the
-//     individual hits, at speed they fuse into a growl. A steady gain cannot do that.
+//   · SLAM is AM'd by a band-limited pulse at a few impacts per wheel revolution — at a crawl you
+//     hear the individual hits, at speed they fuse into a growl. A steady gain cannot do that.
 const ROAD_LP_BASE = 90        // Hz — body cutoff at the floor (was 140: still too papery)
 const ROAD_LP_RISE = 250       // Hz — added at ROLL_V_REF
 const ROAD_SLAM_F    = 135     // Hz — carcass ring the impacts excite
@@ -364,7 +364,7 @@ export function ensureTireAudio () {
   roadLp.connect(roadHumGain)
   loopNoise(ctx, roadBrown).connect(roadLp)
 
-  // Impact bus: a resonant band around the carcass ring, hard-AM'd by the block-passage sawtooth.
+  // Impact bus: a resonant band around the carcass ring, hard-AM'd by the block-passage pulse.
   // Same LFO-summed-into-the-gain-param trick the screech judder uses — see the note on _muteAll.
   roadSlamGain = ctx.createGain()
   roadSlamGain.gain.value = 0
@@ -388,9 +388,11 @@ export function ensureTireAudio () {
   started = true
 }
 
-// Rotate a body-local vector by a quaternion without allocating (verbatim pattern from smoke.js).
+// Rotate a body-local vector by a quaternion without allocating — a copy of dust.js rotateByQuat,
+// kept here on purpose: this module must stay three-free, because the dashboard's Sounds tab
+// imports it raw (no bundler) and dust.js's bare 'three' import cannot resolve there.
 const _qv = { x: 0, y: 0, z: 0 }
-function _rotate (x, y, z, q) {
+function rotateByQuat (x, y, z, q) {
   const ix = q.w * x + q.y * z - q.z * y
   const iy = q.w * y + q.z * x - q.x * z
   const iz = q.w * z + q.x * y - q.y * x
@@ -443,7 +445,7 @@ export function updateTireAudio (vehicleState, params, pavedFactorAt) {
     const isFront = i < 2
     const lx = (i === 0 || i === 2) ? -(isFront ? tF : tR) : (isFront ? tF : tR)
     const lz = isFront ? -(L * params.weightRear) : (L * params.weightFront)
-    const r = _rotate(lx, hubY, lz, vehicleState.quaternion)
+    const r = rotateByQuat(lx, hubY, lz, vehicleState.quaternion)
     const loose = pavedFactorAt ? pavedFactorAt(px + r.x, pz + r.z) : 1   // 1 = dirt, ~0 = asphalt
     const paved = 1 - loose
 
@@ -564,11 +566,7 @@ export function playTireBlowout () {
   if (!ctx || !master || !enabled) return
   const now = ctx.currentTime
   const src = ctx.createBufferSource()
-  const len = Math.floor(ctx.sampleRate * 0.35)
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate)
-  const d = buf.getChannelData(0)
-  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
-  src.buffer = buf
+  src.buffer = whiteNoiseBuffer(ctx, 0.35)
   // Band-passed: the crack is mid, not treble, and the body of it is the air leaving.
   const bp = ctx.createBiquadFilter()
   bp.type = 'bandpass'; bp.frequency.value = 320; bp.Q.value = 0.8
@@ -578,7 +576,6 @@ export function playTireBlowout () {
   g.gain.exponentialRampToValueAtTime(0.0001, now + 0.30)
   src.connect(bp); bp.connect(g); g.connect(master)
   src.start(now); src.stop(now + 0.35)
-  src.onended = () => { try { src.disconnect(); bp.disconnect(); g.disconnect() } catch {} }
 }
 
 export function setTireAudioEnabled (on) {

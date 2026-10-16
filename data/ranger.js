@@ -320,7 +320,8 @@ export const RANGER_PARAMS = {
   suspensionBodyOffsetRear:    0.035,  // m — (D-08)
 
   // bumpStopStiffness: penalty spring engaging at strutComp >= suspensionTravel.
-  // At 10× front spring: k_eff ≈ 363 000 N/m. Stability: sdt^2 * k_eff / m_u = 0.35 < 4. OK.
+  // ~10× the front spring, progressive up to 8× that (bumpStopProgressiveM). Integrated implicitly
+  // in suspension.js, so no explicit-step stability bound applies.
   bumpStopStiffness:         330000,   // N/m — ~10× front spring; exposed as slider (D-08, D-14)
   // The stop packs: its rate is × (1 + (overshoot / bumpStopProgressiveM)²), capped at 8×. 0.05 m
   // ⇒ the rate has doubled 5 cm past the travel and is 5× at 10 cm (see suspension.js).
@@ -333,12 +334,6 @@ export const RANGER_PARAMS = {
   DROOP_STOP_STIFFNESS:        20000,  // N/m — not a slider; fixed constant (D-08)
 
   // ── Phase 6/7 Terrain (TERR-06 / TERR-01–04) ─────────────────────────────
-  // terrainAmplitude: live Y-rescale multiplier (Path A — instant, no Worker round-trip).
-  // Applied to raw noise heights during chunk geometry build. Default 1.0 because the
-  // coarse layer already outputs values in metres — no additional scale needed at default params.
-  // Changing this slider live rescales existing geometry without Worker regeneration (D-09 Path A).
-  terrainAmplitude: 1.0,   // Y-rescale multiplier — Path A instant rescale; coarse layer outputs metres directly
-
   // Phase 7: Three-layer seeded height function parameters (TERR-01/02/03).
   // Calibration starting values from RESEARCH.md §Calibration — interactive tuning via debug sliders.
   // See terrain.js coarseHeight / fineHeight / regionalModulator for the formulas.
@@ -594,22 +589,8 @@ export const RANGER_PARAMS = {
     mergeFlareM: 60,   // m — widest the pair may swing apart inside a merge
     mergeGapM: 200,    // m — longest flare the merge may bridge, measured along the run
     // MID-SPAN merges (legs that part at the node and only run together far out). ON since
-    // BUG-55 phase 3. The collision-cliff class that kept this off (1.75 m seed 7 / 2.37 m
-    // seed 6 — a tail re-solved from a dictated winner deck steepened into a junction pad that
-    // took no part in the solve) is held off by the mergePadArrivalMax check on every variant's
-    // FINAL solved profile — MEASURED load-bearing: opening the cap to 0.24 reproduces both
-    // cliffs to the centimetre (237/175 cm), closing it to 0.12 clears them. A variant that
-    // cannot meet the cap is declined with reason 'pad', never forced. The bundle solve
-    // additionally negotiates fork decks where the winner heads a bundle, which is what widens
-    // the merged fraction; the guard is what makes the flag safe.
+    // BUG-55 phase 3.
     mergeMidSpan: true,
-    // BUG-55 'pad' guard: a bundle rung is DECLINED (counted, never forced) when any loser
-    // strand's solved arrival grade at its far node exceeds this. The junction pad plane is
-    // clamped to roadJunctionPadMaxGrade (0.07) while roads may run gMaxRoad (0.24); the
-    // measured 1.75-2.37 m mid-span collision cliffs are (arrival - plane) x the ~14 m ring
-    // reach, so bounding the arrival is what keeps a merge from parking a step at a junction.
-    // 0.12 = the plane clamp plus what the junction blend absorbs over its reach.
-    mergePadArrivalMax: 0.12,
     // BUG-57: the SHOVE rung's post-deflection separation floor. A nick-crossed pair (a leg
     // that pokes across a partner and comes back) keeps BOTH connections: the longer member
     // registers deflected laterally until the pair stays this far apart over the contact —

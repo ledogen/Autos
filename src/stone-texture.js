@@ -17,7 +17,7 @@
  */
 
 import * as THREE from 'three'
-import { mulberry32 } from './seed.js'
+import { mulberry32, clamp01 } from './seed.js'
 
 // Sierra-granite palette (0xRRGGBB → linear-ish sRGB bytes; the material's map is sRGB-decoded).
 const BASE = [0x8a, 0x83, 0x78]   // warm gray granite
@@ -26,7 +26,6 @@ const COOL = [0x7d, 0x7f, 0x7e]   // per-stone cool drift
 const WET  = [0x4a, 0x42, 0x38]   // wet dark brown — crevice / submerged shadow
 
 const smooth = (t) => t * t * (3 - 2 * t)               // smoothstep 0..1
-const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v
 
 /**
  * Build the shared cobble textures.
@@ -101,7 +100,19 @@ export function makeCobbleTextures(seed = 1234, size = 256) {
   cCtx.putImageData(cImg, 0, 0)
 
   // ── 3. Normal map: central difference over the WRAPPED heightfield ────────────────────────
-  const STRENGTH = 3.0                       // slope gain — tuned so cobbles catch the sun
+  const map = new THREE.CanvasTexture(cCanvas)
+  map.colorSpace = THREE.SRGBColorSpace
+  map.wrapS = map.wrapT = THREE.RepeatWrapping
+  return { map, normalMap: _normalMapTexture(H, size, 3.0) }   // slope gain tuned so cobbles catch the sun
+}
+
+/**
+ * Normal map by central difference over the WRAPPED heightfield H (size², row-major), slope gain
+ * `strength`: normal = normalize(dX, dY, 1) encoded to [0,1] bytes (x→R, y→G, z→B). Shared by the
+ * cobble and masonry textures. (Not terrain-texture's _normalBytes: that writes a Uint8Array, which
+ * truncates, where ImageData rounds — the bytes differ.)
+ */
+function _normalMapTexture(H, size, strength) {
   const nCanvas = document.createElement('canvas')
   nCanvas.width = nCanvas.height = size
   const nCtx = nCanvas.getContext('2d')
@@ -110,9 +121,8 @@ export function makeCobbleTextures(seed = 1234, size = 256) {
   const at = (x, z) => H[(((z % size) + size) % size) * size + (((x % size) + size) % size)]
   for (let z = 0; z < size; z++) {
     for (let x = 0; x < size; x++) {
-      const dX = (at(x - 1, z) - at(x + 1, z)) * STRENGTH
-      const dY = (at(x, z - 1) - at(x, z + 1)) * STRENGTH
-      // normal = normalize(dX, dY, 1); encode to [0,1] bytes (x→R, y→G, z→B).
+      const dX = (at(x - 1, z) - at(x + 1, z)) * strength
+      const dY = (at(x, z - 1) - at(x, z + 1)) * strength
       const inv = 1 / Math.sqrt(dX * dX + dY * dY + 1)
       const j = (z * size + x) * 4
       nData[j + 0] = (dX * inv * 0.5 + 0.5) * 255
@@ -122,13 +132,9 @@ export function makeCobbleTextures(seed = 1234, size = 256) {
     }
   }
   nCtx.putImageData(nImg, 0, 0)
-
-  const map = new THREE.CanvasTexture(cCanvas)
-  map.colorSpace = THREE.SRGBColorSpace
-  map.wrapS = map.wrapT = THREE.RepeatWrapping
   const normalMap = new THREE.CanvasTexture(nCanvas)
   normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping
-  return { map, normalMap }
+  return normalMap
 }
 
 /**
@@ -202,32 +208,8 @@ export function makeMasonryTextures(seed = 7130, size = 256) {
   }
   cCtx.putImageData(cImg, 0, 0)
 
-  // Normal map — same central-difference encoder as the cobble field.
-  const STRENGTH = 2.2
-  const nCanvas = document.createElement('canvas')
-  nCanvas.width = nCanvas.height = size
-  const nCtx = nCanvas.getContext('2d')
-  const nImg = nCtx.createImageData(size, size)
-  const nData = nImg.data
-  const at = (x, z) => H[(((z % size) + size) % size) * size + (((x % size) + size) % size)]
-  for (let z = 0; z < size; z++) {
-    for (let x = 0; x < size; x++) {
-      const dX = (at(x - 1, z) - at(x + 1, z)) * STRENGTH
-      const dY = (at(x, z - 1) - at(x, z + 1)) * STRENGTH
-      const inv = 1 / Math.sqrt(dX * dX + dY * dY + 1)
-      const j = (z * size + x) * 4
-      nData[j + 0] = (dX * inv * 0.5 + 0.5) * 255
-      nData[j + 1] = (dY * inv * 0.5 + 0.5) * 255
-      nData[j + 2] = (inv * 0.5 + 0.5) * 255
-      nData[j + 3] = 255
-    }
-  }
-  nCtx.putImageData(nImg, 0, 0)
-
   const map = new THREE.CanvasTexture(cCanvas)
   map.colorSpace = THREE.SRGBColorSpace
   map.wrapS = map.wrapT = THREE.RepeatWrapping
-  const normalMap = new THREE.CanvasTexture(nCanvas)
-  normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping
-  return { map, normalMap }
+  return { map, normalMap: _normalMapTexture(H, size, 2.2) }   // same encoder as the cobble field
 }

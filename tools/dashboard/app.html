@@ -722,7 +722,6 @@ function viewStats() {
       ${tile('Tickets', `${s.tickets.open}/${s.tickets.total}`, `open · ${s.tickets.closed} closed · ${s.tickets.cancelled} cancelled`)}
       ${s.dist ? tile('Build', fmtBytes(s.dist.raw), `dist/ raw · built ${age(s.dist.built)}`) : ''}
       ${s.dist ? tile('On the wire', fmtBytes(s.dist.gz), `gzipped · ${distPct}% of raw`) : ''}
-      ${s.routeCache ? tile('Route cache', fmtBytes(s.routeCache.bytes), 'data/route-cache-default.json.gz') : ''}
       ${cold ? tile('Cold → ready', `${cold.msToReady} ms`, `${cold.msToRingComplete} ms to full chunk ring · ${age(cold.date)}`) : ''}
       ${fr ? tile('Frame time', `${fr.p50} ms`, `p50 · p95 ${fr.p95} · ${fr.fpsMean} fps mean · ${age(fr.date)}`) : ''}
     </div>

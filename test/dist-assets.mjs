@@ -1,6 +1,6 @@
 // test/dist-assets.mjs — deploy-manifest gate.
 //
-// Every runtime asset fetched BY URL (GLBs, the route bundles) is invisible to the bundler, so
+// Every runtime asset fetched BY URL (the GLBs) is invisible to the bundler, so
 // vite.config.js's copyRuntimeAssets plugin is the only thing that puts it in dist/. That list
 // silently drifted once already: models added after FEAT-60 were never added to it, so they 404'd
 // in the DEPLOYED build only and rendered as model-service.js's pink-cube fallback. Dev never
@@ -30,7 +30,7 @@ if (!globs) {
        'and ship pink cubes to Pages. Keep the readdirSync glob.')
 }
 
-// Explicit entries the plugin lists by hand (route bundles, CREDITS.md). Without the glob those are
+// Explicit entries the plugin lists by hand (today just CREDITS.md). Without the glob those are
 // ALL the copy plugin ships, so coverage falls back to the literal list and names each casualty.
 const listed = new Set([...cfg.matchAll(/^\s*'([^']+)',$/gm)].map((m) => m[1]))
 const covered = (url) => listed.has(url) || (globs && /^assets\/models\/[^/]+\.glb$/.test(url))
@@ -53,7 +53,7 @@ for (const [url, keys] of urls) {
 const glbs = existsSync(join(ROOT, 'assets/models'))
   ? readdirSync(join(ROOT, 'assets/models')).filter((f) => f.endsWith('.glb'))
   : []
-if (!glbs.includes('hilux.glb')) fail('assets/models/hilux.glb (default vehicle) missing from the model directory')
+if (!glbs.includes('ranger.glb')) fail('assets/models/ranger.glb (default vehicle) missing from the model directory')
 
 if (failed) {
   console.error(`\n[dist-assets] ${failed} failure(s)`)

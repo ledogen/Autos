@@ -14,7 +14,7 @@
  *   canvas visibility. Exports updatePacejkaCurve(vehicleState, params).
  * Phase 4.1 (D-13, D-14): Adds 5 new Suspension sliders (Front Travel, Rear Travel,
  *   Front Body Offset, Rear Body Offset, Bump Stop Stiffness). Adds 4-corner travel-bar
- *   canvas (160×140 px). Extends backtick toggle to sync travel bar. Exports
+ *   canvas (110×220 px). Extends backtick toggle to sync travel bar. Exports
  *   updateTravelBars(vehicleState, params).
  * QUAL-09: Folds every vehicle-physics control into one top-level 'Vehicle' folder, sub-grouped
  *   into Mass & CG / Drivetrain & Brakes / Tires (Pacejka folded in) / Suspension. Panel root is
@@ -67,9 +67,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   gui.domElement.style.display = 'none'  // hidden by default; backtick reveals it
 
   // QUAL-04: build marker — confirms which build the browser actually loaded (deploy lag + cache).
-  // Read-only text controller at the top of the panel. The value is the SERVED main.js
+  // Read-only text controller at the top of the panel. The value is the SERVED bundle's
   // Last-Modified/ETag, fetched once via resolveBuild() (src/version.js) — it reflects the bundle
-  // that is actually RUNNING (no manual bump, no build step). Starts as '…' and fills in when the
+  // that is actually RUNNING (no manual bump). Starts as '…' and fills in when the
   // probe resolves. The input is disabled (not editable), so to make the ID easy to SEND we attach
   // click-to-copy on the row: click copies the resolved id to the clipboard and flashes "(copied!)"
   // in the label. Falls back to selecting the text if the Clipboard API is unavailable.
@@ -395,15 +395,13 @@ export function initDebug (params, callbacks = {}, options = {}) {
   wearFolder.close()
 
   // Phase 6 (TERR-06): Terrain folder — amplitude tuning + ramp visibility toggle.
-  // terrainAmplitude is read by TerrainSystem._flushPendingQueue during geometry build;
-  // live mutation of params.terrainAmplitude takes effect on the next chunk built.
   // rampEnabled toggle calls the setRampVisible callback (passed via initDebug second arg)
   // to keep rampMesh.visible in sync; also guards RAMP_TRIS loops in queryContacts.
   //
   // Phase 7 (TERR-06 / SEED-04): World Seed text field + Coarse/Fine/Regional sub-folders.
   //
   // BUG-31 FULL FIX — "Terrain Amplitude" is now a WORLD-SCALE MACRO over the coarse + fine LAYER
-  // amplitudes, not the visual-only params.terrainAmplitude Y-rescale it used to drive.
+  // amplitudes, not the visual-only Y-rescale it used to drive (that param is deleted).
   //   Why this is byte-equivalent to the old Y-scale AND honest to the router:
   //   terrain height = coarseHeight + fineHeight·regionalModulator (terrain.js:192-231). coarseHeight
   //   and fineHeight are EXACTLY LINEAR in coarseAmplitude / fineAmplitude (the ridge+pow shaping acts
@@ -413,8 +411,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   and the routing worker ALREADY ships (init). Result: taller mountains RE-ROUTE (switchbacks,
   //   grade caps respected) with ZERO router or worker changes. The router
   //   only prices the coarse layer, so scaling fineAmplitude alters visual detail but never routes.
-  //   params.terrainAmplitude stays permanently 1.0 (the internal visual/physics multiply), unless set
-  //   programmatically elsewhere.
   //
   //   STALE-BASE contract: the macro is INCREMENTAL. It stores the last-applied k (_worldScale.lastK)
   //   and on each change multiplies the CURRENT coarse/fine amplitudes by k/lastK. So if the user nudges
@@ -423,7 +419,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   displays are refreshed after each macro step (updateDisplay).
   //
   //   Fires callbacks.rebuildTerrainFull → debouncedRebuildFull (main.js: reinitWorker + new RoadSystem
-  //   + _importSessionOrBundledRoutes + rebuildAllChunksFromWorker + truck re-seat) — the same
+  //   + _importSessionRoutes + rebuildAllChunksFromWorker + truck re-seat) — the same
   //   full-rebuild path the coarse/fine/regional shape sliders use.
   const terrainFolder = gui.addFolder('Terrain')
   let _coarseAmpCtrl = null, _fineAmpCtrl = null   // assigned when the sub-folder sliders are built below
@@ -524,7 +520,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // land in the uSurfScale vec3 (repeats/m) through the same callback (name → component).
   // QUAL-32: sun shine on the ground — 0 = matte (default), 1 = three's old default sheen.
   const _shine = { v: 0 }
-  lookFolder.add(_shine, 'v', 0, 1, 0.05).name('Sun shine (terrain)').onChange(v => { const t = window.__terrainSystem && window.__terrainSystem(); if (t && t._material) { t._material.specular.setScalar(v * 0.067); t._material.shininess = 4 + v * 26 } })
+  lookFolder.add(_shine, 'v', 0, 1, 0.05).name('Sun shine (terrain)').onChange(v => { const t = window.__terrain && window.__terrain(); if (t && t._material) { t._material.specular.setScalar(v * 0.067); t._material.shininess = 4 + v * 26 } })
   lookFolder.add(params, 'terrainTexEnabled').name('Surface textures (A/B)').onChange(v => _setU('uSurfOn', v ? 1 : 0))
   lookFolder.add(params, 'terrainTexNormal', 0, 2.0, 0.05).name('Surface relief').onChange(v => _setU('uSurfNormal', v))
   lookFolder.add(params, 'terrainTexAlbedoGrass', 0, 1.0, 0.05).name('Albedo: grass').onChange(v => _setU('uSurfAlbW.x', v))
@@ -654,11 +650,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   v2Folder.add(params.roadV2, 'mergeProxM', 0, 40, 1).name('Merge Distance (m)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'sibConeDeg', 0, 60, 1).name('Sibling Cone (deg)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'wSibDepart', 0, 20, 0.5).name('Sibling Depart Cost').onChange(fireRoadParam)
-  //   Pad Arrival Cap (BUG-55): a merged strand may not arrive at its far junction steeper than
-  //   this — the pad there is a near-flat plaza (clamped ~7%), and a steep arrival parks a step
-  //   at its rim (the measured 1.75-2.37 m cliff class). A merge that cannot meet it is declined
-  //   with reason 'pad', never forced.
-  v2Folder.add(params.roadV2, 'mergePadArrivalMax', 0.07, 0.24, 0.01).name('Pad Arrival Cap').onChange(fireRoadParam)
   //   Delete Detour Cap (BUG-55 phase 5): an unmergeable tear-grade pair loses its LONGER member
   //   iff its endpoints reconnect within this many hops (0 = never delete). Higher clears more
   //   doubled roads at the cost of longer real drives where a leg is removed.
@@ -959,8 +950,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
     slipCanvas.style.display = 'none'
   }
 
-  // Backtick toggle listener — toggles gui panel, plotCanvas, travelCanvas, AND slipCanvas in lockstep.
-  // Only ONE backtick listener in this file. Inert while story mode holds the debug lockout (FEAT-43).
+  // Backtick toggle listener — toggles gui panel, plotCanvas, travelCanvas, AND slipCanvas in lockstep,
+  // and flips the collider wireframes (R-13: one gate for both — they used to follow story mode while
+  // the panel followed the lockout). Only ONE backtick listener in this file. Inert while the debug
+  // lockout is held (FEAT-43; scenarios hold it, story mode currently does not).
   document.addEventListener('keydown', e => {
     if (e.key === '`' && !_debugLockout) {
       const hidden = gui.domElement.style.display === 'none'
@@ -968,6 +961,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
       plotCanvas.style.display = hidden ? '' : 'none'
       travelCanvas.style.display = hidden ? '' : 'none'
       slipCanvas.style.display = hidden ? '' : 'none'
+      const wf = window.__physWireframes
+      if (wf) wf.setEnabled(!wf.enabled)
     }
   })
 
@@ -1052,22 +1047,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
 }
 
 /**
- * Update the Pacejka lateral force curve plot and FL/FR operating-point dots.
- * Called once per render frame from src/main.js (OUTSIDE the fixed-timestep accumulator —
- * constraint #10). Early-returns when the canvas is hidden for performance (T-03-09).
- *
- * Curve: normalized (no Fz multiplication) — y = sin(C * atan(B*sa - E*(B*sa - atan(B*sa))))
- * over slip angle range [-0.3, +0.3] rad at 200 samples.
- *
- * Operating-point dots: FL (index 0) and FR (index 1). Colored by |fNorm|:
- *   < 0.5  → green  (#00ff88)
- *   < 0.8  → orange (#ffaa00)
- *   >= 0.8 → red    (#ff2222)
- *
- * @param {object} vehicleState — read vehicleState.wheelDebug[0].sa, wheelDebug[1].sa
- * @param {object} params       — read pacejkaB, pacejkaC (clamped), pacejkaD, pacejkaE
- */
-/**
  * Draw 4-corner suspension travel bars.
  * Called once per render frame from src/main.js (outside the fixed-timestep accumulator).
  * Early-returns when the canvas is hidden for performance (T-04.1-07).
@@ -1083,7 +1062,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
  * @param {object} params       — read suspensionTravelFront, suspensionTravelRear
  */
 export function updateTravelBars (vehicleState, params) {
-  // Early return when hidden (T-04.1-07: 160×140 redraw < 0.1 ms but still worth skipping)
+  // Early return when hidden (T-04.1-07: 110×220 redraw < 0.1 ms but still worth skipping)
   if (!travelCanvas || !travelCtx || travelCanvas.style.display === 'none') return
 
   const W = travelCanvas.width
@@ -1255,6 +1234,22 @@ export function updateSlipVectors (vehicleState) {
   }
 }
 
+/**
+ * Update the Pacejka force curve plot and FL/FR operating-point dots.
+ * Called once per render frame from src/main.js (OUTSIDE the fixed-timestep accumulator —
+ * constraint #10). Early-returns when the canvas is hidden for performance (T-03-09).
+ *
+ * Curve: normalized (no Fz multiplication) — y = sin(C * atan(Bx - E*(Bx - atan(Bx)))), Bx = B·s/v_ref,
+ * over slip-VELOCITY magnitude s ∈ [0, 1.5·v_ref] m/s at 200 samples.
+ *
+ * Operating-point dots: FL (index 0) and FR (index 1). Colored by |fNorm|:
+ *   < 0.5  → green  (#00ff88)
+ *   < 0.8  → orange (#ffaa00)
+ *   >= 0.8 → red    (#ff2222)
+ *
+ * @param {object} vehicleState — read vehicleState.wheelDebug[0].sa, wheelDebug[1].sa (slip velocity, m/s)
+ * @param {object} params       — read pacejkaB, pacejkaC (clamped), pacejkaE, tireSlipVelRef
+ */
 export function updatePacejkaCurve (vehicleState, params) {
   // T-03-09: early return when hidden — no canvas work per hidden frame
   // null-guard: protects against calls before initDebug has run

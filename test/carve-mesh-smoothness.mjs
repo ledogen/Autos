@@ -20,7 +20,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { makeTerrainHeadless, makeNoise } from './lib/terrain-headless.mjs'
 
 const SEEDS = [6, 7]
-const N = 65, CS = 64, amp = RANGER_PARAMS.terrainAmplitude ?? 1
+const N = 65, CS = 64
 // Thresholds (catastrophe-scale): a real carve bank can be steep, but adjacent 1 m cells never jump by
 // more than a few metres of SECOND difference, and the carve never lifts/sinks a vertex tens of metres
 // off where raw+road-grade could plausibly put it. The broken attempt spiked by 10s–100s of metres.
@@ -65,7 +65,7 @@ for (const seed of SEEDS) {
         const rawPre = new Float32Array(N * N)
         for (let zi = 0; zi < N; zi++) for (let xi = 0; xi < N; xi++) {
             const wx = cx * CS + xi, wz = cz * CS + zi
-            rawPre[zi * N + xi] = terr.rawHeightWorld(wx, wz) / amp
+            rawPre[zi * N + xi] = terr.rawHeightWorld(wx, wz)
         }
         const table = TerrainSystem.prototype._buildCarveTable.call(fakeT, cx, cz, rawPre)
         if (!table) continue
@@ -73,8 +73,8 @@ for (const seed of SEEDS) {
 
         const surf = new Float64Array(N * N)
         for (let i = 0; i < N * N; i++) {
-            const raw = rawPre[i] * amp
-            const blendW = table[i * 2], gradeY = table[i * 2 + 1] * amp
+            const raw = rawPre[i]
+            const blendW = table[i * 2], gradeY = table[i * 2 + 1]
             surf[i] = raw + blendW * (gradeY - raw)
             if (Math.abs(surf[i] - raw) > worstAbs) worstAbs = Math.abs(surf[i] - raw)
         }

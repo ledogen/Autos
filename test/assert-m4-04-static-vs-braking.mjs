@@ -3,7 +3,7 @@
 // Scenario: scenarios/m4-04-static-vs-braking.json — IC at 60 km/h forward, driver applies brake.
 // Expects: front Fz rises and rear Fz falls when brake > 0.5; total ≈ m·g; no NaN.
 
-import { run, assertNoNaN, totalFz } from './lib-log.mjs'
+import { run, assertNoNaN } from './lib-log.mjs'
 
 const STATIC_TOTAL_FZ = 1360 * 9.81
 

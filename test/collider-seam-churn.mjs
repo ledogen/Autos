@@ -13,7 +13,7 @@
 // This matters well beyond the menu: FEAT-71/72/74 scatter static POI and road-furniture hulls
 // through a world where debris spawns and despawns constantly.
 //
-// Two independent invariants:
+// Five independent invariants:
 //   1. BOOKKEEPING — the shape-keyed maps return to their baseline after each create/destroy
 //      cycle. destroyBody used to prune only _shapeToHandle, leaving _shapeHulls and _shapeSizeR
 //      to grow without bound; keys are index1+generation and Box3D RECYCLES shape slots, so a

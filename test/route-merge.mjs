@@ -1,10 +1,10 @@
 // test/route-merge.mjs — FEAT-10 merge graph gate.
 //
-// Asserts the merged road network (a) excludes collinear duplicates and degenerate stubs, and
-// (b) stays connected (no anchor orphaned by a drop). Pure-headless: builds a real RoadSystem with the
-// shipped RANGER_PARAMS (merge ON) and a control with merge OFF to show the merge actually removes
-// duplicates. Window-invariance of the merge is covered by invariance.mjs/restream-invariance.mjs; this
-// gate is the no-duplicate + reachability contract.
+// Asserts the road network registers no degenerate stub (a run shorter than LMIN whose endpoints
+// nearly coincide — the collapsed ~27 m connections whose ribbon tore). Pure-headless: one real
+// RoadSystem per seed with the shipped RANGER_PARAMS. Collinear-duplicate pairs are REPORTED, not
+// asserted. (The merge-off control is gone: its roadNodeMergeRadius param was deleted in QUAL-12,
+// so it built the same network twice.) Window-invariance is covered by invariance.mjs.
 
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
@@ -43,8 +43,8 @@ function collinearOverlap(a, b, band) {
   return covered * SAMPLE   // metres of A that lie on top of B
 }
 
-function analyze(seedStr, mergeR) {
-  const road = new RoadSystem(parseWorldSeed(seedStr), { ...RANGER_PARAMS, roadNodeMergeRadius: mergeR })
+function analyze(seedStr) {
+  const road = new RoadSystem(parseWorldSeed(seedStr), RANGER_PARAMS)
   road.update(new THREE.Vector3(0, 0, 0))
   const runs = []
   for (const [k, e] of road._network) {
@@ -54,12 +54,11 @@ function analyze(seedStr, mergeR) {
     runs.push({ k, pts: densify(e.points), len })
   }
   // Collinear-duplicate pairs: a meaningful overlap span between two distinct runs.
-  let dupPairs = 0, worstOverlap = 0
+  let dupPairs = 0
   const band = RANGER_PARAMS.roadMergeBand ?? 24
   for (let i = 0; i < runs.length; i++) {
     for (let j = i + 1; j < runs.length; j++) {
       const ov = collinearOverlap(runs[i].pts, runs[j].pts, band)
-      if (ov > worstOverlap) worstOverlap = ov
       if (ov >= LMIN) dupPairs++
     }
   }
@@ -69,30 +68,16 @@ function analyze(seedStr, mergeR) {
     const a = r.pts, n = a.length
     if (r.len < LMIN && Math.hypot(a[0] - a[n - 2], a[1] - a[n - 1]) < band) degenerate++
   }
-  return { runs: runs.length, dupPairs, worstOverlap, degenerate }
+  return { runs: runs.length, dupPairs, degenerate }
 }
 
-// What the node-identity merge GUARANTEES (and this gate asserts):
-//   (1) zero degenerate stubs — the collapsed ~27 m connections whose ribbon tore are dropped;
-//   (2) connectivity preserved — the merge does not delete runs into disconnection;
-//   (3) the merge does not WORSEN collinear duplication vs the merge-off control.
-// (Robust dedup of partial-corridor parallels — runs that share a corridor mid-span but have distinct
-//  endpoints — is NOT claimed here; that is a harder, separate extension. This gate guards the
-//  degenerate-stub/tear fix + connectivity, the parts the merge actually delivers.)
 let fail = 0
 for (const seed of SEEDS) {
-  const on  = analyze(seed, RANGER_PARAMS.roadNodeMergeRadius)
-  const off = analyze(seed, 0)
-  const noStubs   = on.degenerate === 0
-  const connected = on.runs >= off.runs * 0.8
-  const pass = noStubs && connected
+  const r = analyze(seed)
+  const pass = r.degenerate === 0
   if (!pass) fail++
-  console.log(
-    `${pass ? 'PASS' : 'FAIL'}  seed=${seed.padEnd(10)} ` +
-    `merge: runs=${on.runs} degenStubs=${on.degenerate} dupPairs=${on.dupPairs}  ` +
-    `| control(off): runs=${off.runs} dupPairs=${off.dupPairs}`
-  )
+  console.log(`${pass ? 'PASS' : 'FAIL'}  seed=${seed.padEnd(10)} runs=${r.runs} degenStubs=${r.degenerate} dupPairs=${r.dupPairs} (report)`)
 }
 
-if (fail) { console.error(`\nFAIL: ${fail}/${SEEDS.length} seeds: degenerate stub left, connectivity lost, or merge worsened duplication.`); process.exit(1) }
-console.log('\nPASS: merge drops degenerate stubs, preserves connectivity, does not worsen duplication.')
+if (fail) { console.error(`\nFAIL: ${fail}/${SEEDS.length} seeds left a degenerate stub.`); process.exit(1) }
+console.log('\nPASS: no degenerate stubs.')

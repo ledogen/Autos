@@ -46,7 +46,7 @@ export function snapshotRoadParams(v) {
         const out = {}
         for (const k of Object.keys(v)) {
             // `_`-prefixed keys are per-frame PHYSICS SCRATCH that main.js hangs on RANGER_PARAMS
-            // (_tireFz, _suspForceAccum, _lateralVelocity, …: plain number arrays, so the type filter
+            // (_tireFz, _suspForceAccum, _driveTorque, …: plain number arrays, so the type filter
             // keeps them). No road code reads them, and they change every physics step, which made
             // the worker's psig reuse key differ on EVERY build: the warm RoadSystem, and every
             // route it had cached, was thrown away each time (measured 2026-09-22: the 2800 m story
@@ -82,7 +82,7 @@ export function pondDiscPad(params) {
 /**
  * Rebuild the two setWaterNoGo closures from the disc list — the exact semantics of the live
  * pair main.js wires (WaterSystem.isRoadNoGo = point within radius+skirt of any pond;
- * pondDiscsFn = discs intersecting the bbox). Disc ORDER differs from pondsInBBox's cell-scan
+ * _pondDiscs = discs intersecting the bbox). Disc ORDER differs from pondsInBBox's cell-scan
  * order, which is fine: the corridor search hard-blocks cells against the SET, and the no-go is
  * an any-test — both order-independent. Membership is the parity surface, and the caller pads
  * its collection extent so no queryable disc is missing.
@@ -106,11 +106,6 @@ export function buildNoGoFns(discs) {
     return { noGo, discsInBBox }
 }
 
-/**
- * One full network build → export, as a pure function of the request — THE build path, shared by
- * the worker message loop and the parity gate (which calls it from node, no Worker involved).
- * `rs` is an optional warm RoadSystem to reuse (same seed + params identity).
- */
 /** Construct the worker's private RoadSystem for a request (split out of buildNetworkSnapshot
  *  so the PERF-31 pre-warm can hold the instance before calling update()). */
 export function makeNetworkInstance(req) {
@@ -122,6 +117,11 @@ export function makeNetworkInstance(req) {
     return rs
 }
 
+/**
+ * One full network build → export, as a pure function of the request — THE build path, shared by
+ * the worker message loop and the parity gate (which calls it from node, no Worker involved).
+ * `rs` is an optional warm RoadSystem to reuse (same seed + params identity).
+ */
 export function buildNetworkSnapshot(req, rs = null) {
     if (!rs) rs = makeNetworkInstance(req)
     rs.setRadius(req.radius)

@@ -28,7 +28,8 @@
  *     silhouette, flattened and stretched along the sun azimuth onto the ground. Union alpha (no
  *     blend, no depth) so overlaps stay solid. Props outside the 64 m frustum whose sheared shadow
  *     enters it still rasterize (meshes are frustumCulled=false), so shadows cross chunk seams
- *     continuously — that's why a committed chunk marks its 8 neighbours dirty too.
+ *     continuously — that's why a committed chunk also marks its DRAWN live neighbours dirty
+ *     (prop-system _markShadowTiles; billboard-only neighbours mark themselves on promotion).
  *   • The terrain shader multiplies ground albedo by (1 − atlas.r · strength), softened by a small
  *     in-tile blur. No per-frame prop shadow cost; only the moving truck keeps a realtime shadow.
  *   • PERF-21: each tile bake renders a per-tile SCRATCH scene (built by prop-system's tile source,
@@ -155,7 +156,7 @@ export class ShadowBakeSystem {
         uniform vec2 uShearXZ;
         // Per-instance ground fit (shadowShearScale, written by prop-system at commit): scales the
         // flat-plane shear so this prop's shadow lands on the real sloped terrain like the realtime
-        // map's would. Prop pool geometries always carry the attribute (default 1 = flat ground).
+        // map's would. Only prop-system's bake scratch meshes carry it (filled from each place's k).
         attribute float aShadowK;
         void main() {
           #ifdef USE_INSTANCING
@@ -243,19 +244,6 @@ export class ShadowBakeSystem {
     this._mat.uniforms.uShearXZ.value.copy(this._shear)
     this._haveSun = true
     return changed
-  }
-
-  /**
-   * Queue a chunk (and its 8 neighbours, since shadows cross seams) for baking. The chunk's OWN tile
-   * is prioritised (front of the queue) so its trees' shadows land first; neighbours (only relevant
-   * for cross-seam silhouettes) trail behind — cuts the visible "shadow lags the tree" pop-in.
-   */
-  markWithNeighbors(cx, cz) {
-    if (!this._rt) return                                     // baked shadows off (tilePx 0)
-    this._mark(cx, cz, true)                                // own tile first
-    for (let dz = -1; dz <= 1; dz++)
-      for (let dx = -1; dx <= 1; dx++)
-        if (dx || dz) this._mark(cx + dx, cz + dz, false)     // neighbours after
   }
 
   /** Queue chunk (cx, cz)'s own tile at the FRONT of the queue — the one that was just committed
@@ -423,9 +411,12 @@ export class ShadowBakeSystem {
     this._rt.viewport.set(0, 0, size, size)   // full-atlas clear (rt state, raw pixels — see update)
     this._rt.scissor.set(0, 0, size, size)
     this._rt.scissorTest = false
+    const prevClearA = r.getClearAlpha()       // save/restore like update() — the canvas clear is not ours
+    r.getClearColor(this._prevClear)
     r.setRenderTarget(this._rt)
     r.setClearColor(0x000000, 0)
     r.clear(true, false, false)
+    r.setClearColor(this._prevClear, prevClearA)
     r.setRenderTarget(prevTarget)
   }
 

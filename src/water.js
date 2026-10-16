@@ -123,18 +123,22 @@ const cellOf = (w) => Math.floor(w / WATER_CELL)
 const cellKey = (cx, cz) => `${cx},${cz}`
 const q = (v) => Math.round(v * 1e3) / 1e3   // 1 mm quantize for stable dedup keys
 
-// Segment A(a0→a1) × segment B(b0→b1) intersection. Returns { x, z, tA, tB } (t =
-// param along each segment) or null. Used by streamRoadCrossings for bridge sites.
-function segIntersect(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
-    const rX = a1x - a0x, rZ = a1z - a0z
-    const sX = b1x - b0x, sZ = b1z - b0z
-    const denom = rX * sZ - rZ * sX
-    if (Math.abs(denom) < 1e-12) return null            // parallel / degenerate
-    const qpX = b0x - a0x, qpZ = b0z - a0z
-    const tA = (qpX * sZ - qpZ * sX) / denom
-    const tB = (qpX * rZ - qpZ * rX) / denom
-    if (tA < 0 || tA > 1 || tB < 0 || tB > 1) return null
-    return { x: a0x + rX * tA, z: a0z + rZ * tA, tA, tB }
+// streamCarveSample's nothing-near answer — shared and frozen (callers read it, never keep or mutate it).
+const NO_CARVE = Object.freeze({ blendW: 0, bedY: 0 })
+
+// Lazy cached centreline bbox of a stream record (window-invariant: a pure fn of the cached record).
+// streamChannelAt and streamCarveSample reject a whole stream on it before the segment walk.
+function _streamBB(st) {
+    let bb = st._bb
+    if (!bb) {
+        bb = { x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity }
+        for (const p of st.points) {
+            if (p.x < bb.x0) bb.x0 = p.x; if (p.x > bb.x1) bb.x1 = p.x
+            if (p.z < bb.z0) bb.z0 = p.z; if (p.z > bb.z1) bb.z1 = p.z
+        }
+        st._bb = bb
+    }
+    return bb
 }
 
 /**
@@ -159,6 +163,8 @@ export class WaterSystem {
         this._pondCache = new Map()   // floorKey -> pond | null
         this._streamCache = new Map() // saddleKey -> stream | null
         this._refineCache = new Map() // "qx,qz" -> refined basin floor {x,z,y} (memoizes the descent)
+        this._pondCellMemo = new Map()   // S-35: "cx,cz" -> ponds reaching that WATER_CELL (_pondsAt)
+        this._streamCellMemo = new Map() // S-35: "cx,cz" -> streams reaching that WATER_CELL (_streamsAt)
     }
 
     // ── Terrain reads ─────────────────────────────────────────────────────────
@@ -190,13 +196,21 @@ export class WaterSystem {
 
         // One extra ring is sampled for the 3×3 stencil but only points whose OWN
         // index is inside this cell are emitted (ownership = exact-once partition).
+        // S-37: each lattice height is sampled ONCE into an (L+2)² grid (the stencil's 5 reads
+        // were 5 h() calls per point). (i±1)·G == i·G ± G exactly (integers), so the same h(x, z).
+        const L = LATTICE_PER_CELL, W = L + 2
+        const grid = new Float64Array(W * W)
+        for (let gj = 0; gj < W; gj++)
+            for (let gi = 0; gi < W; gi++)
+                grid[gj * W + gi] = this._h((i0 + gi - 1) * G, (j0 + gj - 1) * G)
         for (let dj = 0; dj < LATTICE_PER_CELL; dj++) {
             for (let di = 0; di < LATTICE_PER_CELL; di++) {
                 const i = i0 + di, j = j0 + dj
                 const x = i * G, z = j * G
-                const c  = this._h(x, z)
-                const hL = this._h(x - G, z), hR = this._h(x + G, z)
-                const hD = this._h(x, z - G), hU = this._h(x, z + G)
+                const g  = (dj + 1) * W + di + 1
+                const c  = grid[g]
+                const hL = grid[g - 1], hR = grid[g + 1]
+                const hD = grid[g - W], hU = grid[g + W]
 
                 // Local minimum on the 4-neighborhood (strict). Diagonal check adds
                 // little at coarse scale and costs 4 samples; 4-neighbor is enough.
@@ -331,8 +345,8 @@ export class WaterSystem {
         }
 
         const waterLevel = rimHeight - pondFreeboard
-        // Effective radius: the smaller of the cap and the contour reach implied by
-        // the rim distance. Cap at pondMaxRadius (ponds, not lakes).
+        // Radius: a constant, pondMaxRadius capped by the rim-cast reach (50 m at the defaults);
+        // the rim distance itself is not used. Ponds, not lakes.
         const radius = Math.min(pondMaxRadius, pondSearchRadius)
         const pond = {
             kind: 'pond',
@@ -362,11 +376,17 @@ export class WaterSystem {
     }
 
     pondsInBBox(minX, minZ, maxX, maxZ) {
+        return this._collectPonds(minX, minZ, maxX, maxZ, minX, minZ, maxX, maxZ)
+    }
+
+    // The cell walk runs over the cells around the WALK bbox; the reach filter tests the KEEP bbox.
+    // pondsInBBox passes the same box twice; _pondsAt walks from a point and keeps a whole cell.
+    _collectPonds(wMinX, wMinZ, wMaxX, wMaxZ, minX, minZ, maxX, maxZ) {
         const reach = this.k.pondMaxRadius + this.k.pondSkirtWidth
         const marginCells = Math.ceil(reach / WATER_CELL) + 1
         const seen = new Set()
         const out = []
-        for (const [cx, cz] of this._cellsForBBox(minX, minZ, maxX, maxZ, marginCells)) {
+        for (const [cx, cz] of this._cellsForBBox(wMinX, wMinZ, wMaxX, wMaxZ, marginCells)) {
             for (const m of this._cellData(cx, cz).minima) {
                 const pond = this._pondForBasin(m)
                 if (!pond || seen.has(pond.key)) continue
@@ -689,10 +709,15 @@ export class WaterSystem {
     // that reach (otherwise a stream sourced far outside the window but flowing
     // through it would be missed → window variance).
     streamsInBBox(minX, minZ, maxX, maxZ) {
+        return this._collectStreams(minX, minZ, maxX, maxZ, minX, minZ, maxX, maxZ)
+    }
+
+    // Walk bbox vs keep bbox — as _collectPonds.
+    _collectStreams(wMinX, wMinZ, wMaxX, wMaxZ, minX, minZ, maxX, maxZ) {
         const marginCells = Math.ceil(this.k.streamMaxLength / WATER_CELL) + 1
         const seen = new Set()
         const out = []
-        for (const [cx, cz] of this._cellsForBBox(minX, minZ, maxX, maxZ, marginCells)) {
+        for (const [cx, cz] of this._cellsForBBox(wMinX, wMinZ, wMaxX, wMaxZ, marginCells)) {
             for (const sd of this._cellData(cx, cz).saddles) {
                 const stream = this._streamForSaddle(sd)
                 if (!stream || seen.has(stream.key)) continue
@@ -722,18 +747,60 @@ export class WaterSystem {
         return this._cellCache.size + this._pondCache.size + this._streamCache.size
     }
 
+    // ── S-35: point queries — pondsInBBox(x,z,x,z) / streamsInBBox(x,z,x,z), memoised per cell ──
+    // Every point of a WATER_CELL walks the SAME cells in the same order, so the walk is done once
+    // per cell (kept to the features reaching the cell's closed extent) and a point query only
+    // re-applies the per-point reach test. Same list, same order (pondSkirtAt's first match is
+    // unchanged); a pure fn of the cell over the deterministic caches → window-invariant.
+    _pondsAt(x, z) {
+        const cx = cellOf(x), cz = cellOf(z), key = cellKey(cx, cz)
+        let near = this._pondCellMemo.get(key)
+        if (!near) {
+            const x0 = cx * WATER_CELL, z0 = cz * WATER_CELL
+            near = this._collectPonds(x, z, x, z, x0, z0, x0 + WATER_CELL, z0 + WATER_CELL)
+            this._pondCellMemo.set(key, near)
+        }
+        const out = []
+        for (const pond of near) {
+            const rr = pond.radius + pond.skirt
+            if (pond.floorX + rr < x || pond.floorX - rr > x) continue
+            if (pond.floorZ + rr < z || pond.floorZ - rr > z) continue
+            out.push(pond)
+        }
+        return out
+    }
+    _streamsAt(x, z) {
+        const cx = cellOf(x), cz = cellOf(z), key = cellKey(cx, cz)
+        let near = this._streamCellMemo.get(key)
+        if (!near) {
+            const x0 = cx * WATER_CELL, z0 = cz * WATER_CELL
+            near = this._collectStreams(x, z, x, z, x0, z0, x0 + WATER_CELL, z0 + WATER_CELL)
+            this._streamCellMemo.set(key, near)
+        }
+        const out = []
+        for (const stream of near) {
+            const pad = (stream.maxWidth ?? stream.width) + stream.bankWidth
+            for (const p of stream.points) {
+                if (p.x >= x - pad && p.x <= x + pad &&
+                    p.z >= z - pad && p.z <= z + pad) { out.push(stream); break }
+            }
+        }
+        return out
+    }
+
     // Pond containing (x,z) within its water radius, or null. For submerged/render.
     pondAt(x, z) {
-        for (const pond of this.pondsInBBox(x, z, x, z)) {
+        for (const pond of this._pondsAt(x, z)) {
             if (Math.hypot(x - pond.floorX, z - pond.floorZ) <= pond.radius) return pond
         }
         return null
     }
 
     // Road no-go: inside a pond's radius + skirt. The router treats this as a hard
-    // exclusion (ponds are routed AROUND — FEAT-17). Streams are NOT no-go (bridged).
+    // exclusion (ponds are routed AROUND — FEAT-17). Streams are NOT no-go: a road crosses one
+    // on a CAUSEWAY (the road fill closes the channel; see terrain.js setWaterCarve).
     isRoadNoGo(x, z) {
-        for (const pond of this.pondsInBBox(x, z, x, z)) {
+        for (const pond of this._pondsAt(x, z)) {
             const rr = pond.radius + pond.skirt
             if (Math.hypot(x - pond.floorX, z - pond.floorZ) <= rr) return true
         }
@@ -770,7 +837,7 @@ export class WaterSystem {
     // shoreline) and excludes `inWater`. Same injected-sampler shape as the prop
     // system's roadBlocked sampler, so main.js can hand it straight to the scatterer.
     pondSkirtAt(x, z) {
-        for (const pond of this.pondsInBBox(x, z, x, z)) {
+        for (const pond of this._pondsAt(x, z)) {
             const d = Math.hypot(x - pond.floorX, z - pond.floorZ)
             if (d <= pond.radius) return { inWater: true, inSkirt: false, pond }
             if (d <= pond.radius + pond.skirt) return { inWater: false, inSkirt: true, pond }
@@ -785,18 +852,9 @@ export class WaterSystem {
     //   inBank    = w < dist ≤ w + bankWidth (the ramp shoulder up to grade)
     // Pure fn of (seed, x, z, params) via the cached stream records → window-invariant, no caching.
     streamChannelAt(x, z) {
-        for (const st of this.streamsInBBox(x, z, x, z)) {
+        for (const st of this._streamsAt(x, z)) {
             const pad = (st.maxWidth ?? st.width) + st.bankWidth
-            // Lazy cached centerline bbox (shared with streamCarveSample; pure fn of the record).
-            let bb = st._bb
-            if (!bb) {
-                bb = { x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity }
-                for (const p of st.points) {
-                    if (p.x < bb.x0) bb.x0 = p.x; if (p.x > bb.x1) bb.x1 = p.x
-                    if (p.z < bb.z0) bb.z0 = p.z; if (p.z > bb.z1) bb.z1 = p.z
-                }
-                st._bb = bb
-            }
+            const bb = _streamBB(st)
             if (x < bb.x0 - pad || x > bb.x1 + pad || z < bb.z0 - pad || z > bb.z1 + pad) continue
             const pts = st.points
             let d2min = Infinity, wAt = st.width
@@ -854,45 +912,10 @@ export class WaterSystem {
     }
 
     // ── Coordinated public API (2026-07-01 handoff naming) ────────────────────
-    // Thin aliases so consumers (router route-around, scatter, streams-side bridge
-    // detection) speak the documented contract. bbox = (minX, minZ, maxX, maxZ).
+    // Thin aliases so consumers (router route-around, scatter, terrain stream carve)
+    // speak the documented contract. bbox = (minX, minZ, maxX, maxZ).
     pondsNear(minX, minZ, maxX, maxZ)   { return this.pondsInBBox(minX, minZ, maxX, maxZ) }
     streamsNear(minX, minZ, maxX, maxZ) { return this.streamsInBBox(minX, minZ, maxX, maxZ) }
-
-    // ── FEAT-18: road×stream crossings → bridge sites (pure) ──────────────────
-    // The bridge-detection generation code, decoupled from road.js: the streams
-    // worker passes the routed road centerlines in; we return every road-segment ×
-    // stream-segment intersection as a bridge site (deck at road grade, channel bed
-    // continuous underneath). Window-invariant given window-invariant inputs.
-    //
-    // @param roadPolylines — [[{x,z}|{x,z,y}, ...], ...] routed road centerlines.
-    // @param bbox          — optional {x0,z0,x1,z1} limiting which streams to test.
-    // @returns [{ x, z, deckY, bedY, stream, roadIndex, segIndex }]
-    streamRoadCrossings(roadPolylines, bbox) {
-        const b = bbox || { x0: -Infinity, z0: -Infinity, x1: Infinity, z1: Infinity }
-        const streams = this.streamsInBBox(b.x0, b.z0, b.x1, b.z1)
-        const out = []
-        for (let ri = 0; ri < roadPolylines.length; ri++) {
-            const road = roadPolylines[ri]
-            for (let si = 1; si < road.length; si++) {
-                const r0 = road[si - 1], r1 = road[si]
-                for (const st of streams) {
-                    const pts = st.points
-                    for (let k = 1; k < pts.length; k++) {
-                        const hit = segIntersect(r0.x, r0.z, r1.x, r1.z, pts[k - 1].x, pts[k - 1].z, pts[k].x, pts[k].z)
-                        if (!hit) continue
-                        // Deck Y from the road segment (grade) if provided, else stream bank top.
-                        const deckY = (r0.y !== undefined && r1.y !== undefined)
-                            ? r0.y + (r1.y - r0.y) * hit.tA
-                            : (pts[k - 1].y + (pts[k].y - pts[k - 1].y) * hit.tB)
-                        const bedY = (pts[k - 1].y + (pts[k].y - pts[k - 1].y) * hit.tB) - st.depth
-                        out.push({ x: hit.x, z: hit.z, deckY, bedY, stream: st, roadIndex: ri, segIndex: si })
-                    }
-                }
-            }
-        }
-        return out
-    }
 
     // ── FEAT-18 stream channel carve (pure; applied MAIN-THREAD only) ──────────
     // Cross-section carve for the stream channel, in the SAME shape the road carve
@@ -920,21 +943,14 @@ export class WaterSystem {
     // the contract and continuity. `raw` (world-space terrain at x,z) is passed by the terrain
     // paths that already have it; falls back to this WaterSystem's own heightFn when omitted.
     streamCarveSample(x, z, streams, raw) {
-        const list = streams || this.streamsInBBox(x, z, x, z)
+        const list = streams || this._streamsAt(x, z)
         let rawH
-        let best = null   // { h, blendW, bedY } — minimum composed height across streams + segments
+        // Minimum composed height across streams + segments, as scalars (S-38: this runs inside every
+        // analyticHeight — no per-segment allocation on the hot path).
+        let found = false, bestH = 0, bestW = 0, bestBed = 0
         for (const st of list) {
             const pad = (st.maxWidth ?? st.width) + st.bankWidth
-            // Lazy cached centerline bbox (window-invariant: pure fn of the cached record).
-            let bb = st._bb
-            if (!bb) {
-                bb = { x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity }
-                for (const p of st.points) {
-                    if (p.x < bb.x0) bb.x0 = p.x; if (p.x > bb.x1) bb.x1 = p.x
-                    if (p.z < bb.z0) bb.z0 = p.z; if (p.z > bb.z1) bb.z1 = p.z
-                }
-                st._bb = bb
-            }
+            const bb = _streamBB(st)
             if (x < bb.x0 - pad || x > bb.x1 + pad || z < bb.z0 - pad || z > bb.z1 + pad) continue
             // FEAT-24: the half-width is interpolated per-point (w) along each segment.
             const pts = st.points
@@ -956,10 +972,10 @@ export class WaterSystem {
                 const sw = dist <= wAt ? 1 : 1 - (dist - wAt) / st.bankWidth
                 if (rawH === undefined) rawH = (raw !== undefined) ? raw : this._h(x, z)
                 const h = rawH + sw * (bedY - rawH)
-                if (best === null || h < best.h) best = { h, blendW: sw, bedY }
+                if (!found || h < bestH) { found = true; bestH = h; bestW = sw; bestBed = bedY }
             }
         }
-        if (best === null) return { blendW: 0, bedY: 0 }
-        return { blendW: best.blendW, bedY: best.bedY }
+        if (!found) return NO_CARVE
+        return { blendW: bestW, bedY: bestBed }
     }
 }

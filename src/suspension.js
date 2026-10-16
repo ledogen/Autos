@@ -27,6 +27,27 @@ export function computeNormalForce (corner, vehicleState, params) {
 }
 
 /**
+ * A corner's strut MOUNT point in body space (forward = −Z): the hub's rest offset from the CG,
+ * (cgHeight − wheelRadius) below it, plus the ride-height body offset (D-08). BUG-05: every site
+ * that needs the mount — getWheelPosition, stepSuspensionSubsteps, physics.js's Step 3 torque arm
+ * and its rim cores — reads it here, so they cannot disagree. Returns a fresh object.
+ */
+export function mountLocal (corner, params) {
+  const isFront = corner < 2
+  const isLeft  = corner === 0 || corner === 2
+  return {
+    x: isLeft
+      ? -(isFront ? params.trackFront : params.trackRear) / 2
+      :  (isFront ? params.trackFront : params.trackRear) / 2,
+    y: -(params.cgHeight - params.wheelRadius) +
+      (isFront ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0)),
+    z: isFront
+      ? -(params.wheelbase * params.weightRear)
+      :  (params.wheelbase * params.weightFront),
+  }
+}
+
+/**
  * World-space position of one wheel's hub CENTRE (not the contact patch — physics.js hands the
  * hub and the wheel radius to queryContacts, which finds the patch on slopes and walls alike).
  *
@@ -41,29 +62,18 @@ export function computeNormalForce (corner, vehicleState, params) {
  */
 export function getWheelPosition (corner, vehicleState, params) {
   const isFront = corner === 0 || corner === 1
-  const isLeft  = corner === 0 || corner === 2
 
-  const localX = isLeft
-    ? -(isFront ? params.trackFront : params.trackRear) / 2
-    :  (isFront ? params.trackFront : params.trackRear) / 2
-
-  const localZ = isFront
-    ? -(params.wheelbase * params.weightRear)
-    :  (params.wheelbase * params.weightFront)
-
-  // Wheel hub center: (cgHeight - wheelRadius) below CG in body Y (mount point in body space).
-  // MUST include suspensionBodyOffset to match stepSuspensionSubsteps (_mountLocal). Without it the
-  // Pacejka contact query places the hub at the wrong height when ride height is tuned, so
-  // queryContacts finds no ground contact while the suspension is loaded — wheels report Fn=0/SA=0
-  // and the truck slides frictionlessly even though the strut is bearing weight (BUG-05 real cause).
-  const localY = -(params.cgHeight - params.wheelRadius) +
-    (isFront ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
+  // Mount point in body space. MUST include suspensionBodyOffset like every other mount site
+  // (mountLocal). Without it the Pacejka contact query places the hub at the wrong height when ride
+  // height is tuned, so queryContacts finds no ground contact while the suspension is loaded —
+  // wheels report Fn=0/SA=0 and the truck slides frictionlessly even though the strut is bearing
+  // weight (BUG-05 real cause).
+  const local = mountLocal(corner, params)
 
   // Rotate local offset into world space using the injected helper.
-  const local = { x: localX, y: localY, z: localZ }
   const rotated = typeof params._rotateVector === 'function'
     ? params._rotateVector(local)
-    : { x: localX, y: localY, z: localZ }
+    : local
 
   // Phase 4.1 (D-02): derive hub world position from strutComp along body_down axis.
   // strutLen = L_S - strutComp[i]; hubWorld = mountWorld + strutLen * body_down.
@@ -329,9 +339,9 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   // Two constraints with explicit Euler:
   //   tire spring: sdt < 2/omega_n_tire (oscillator stability)
   //   suspension damping: c_S·sdt/m_u < 2 (damper explicit-Euler stability)
-  // N=4 gives sdt=4.17ms at 60Hz: c_S·sdt/m_u ≈ 1.04 for current dampers — safe.
-  // NOTE (Phase 4.1): bumpStopStiffness up to 10× main spring gives k_eff ≈ 363 000 N/m.
-  // Verified: sdt^2 * k_eff / m_u = 0.35 << 4. No additional check required.
+  // N=4 gives sdt=4.17ms at 60Hz: c_S·sdt/m_u = 0.81 front / 0.93 rear (3500 / 4000 N·s/m on an
+  // 18 kg wheel) — safe. The bump stop needs no check: it is integrated implicitly (see below),
+  // so its progressive rate (up to 8 × 330 kN/m) cannot destabilise the step.
   if (!params._suspStabChecked) {
     const N_check      = 4
     const sdt_check    = dt / N_check
@@ -393,17 +403,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   // substeps; only the strut length under it moves. Local mount: the hub's rest offset from the
   // CG, (cgHeight − wheelRadius) below it, plus the ride-height body offset (D-08).
   for (let i = 0; i < 4; i++) {
-    const isFront = i < 2
-    const isLeft  = i === 0 || i === 2
-    const localX = isLeft
-      ? -(isFront ? params.trackFront : params.trackRear) / 2
-      :  (isFront ? params.trackFront : params.trackRear) / 2
-    const localZ = isFront
-      ? -(params.wheelbase * params.weightRear)
-      :  (params.wheelbase * params.weightFront)
-    const localY = -(params.cgHeight - params.wheelRadius) +
-      (isFront ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
-    const local = { x: localX, y: localY, z: localZ }
+    const local = mountLocal(i, params)
     const rMount = typeof params._rotateVector === 'function'
       ? params._rotateVector(local)
       : local
@@ -591,19 +591,20 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // the whole squashed-carcass load past full compression. So they are published separately
         // and carry their own yield thresholds (rimYieldMult vs rimYieldRoadMult in damage.js).
         //
-        // The reference is THIS tire's carcass, not a healthy one — `rate` belongs in it. A flat
-        // tire carries almost nothing, so almost the whole load past the band goes straight into
-        // the rim, which is the point of a flat: there is no air left to absorb it. Subtracting a
-        // HEALTHY carcass's reference from a flat tire's force made the residual deeply negative
-        // and reported no rim load at all, so a flat rim was SAFER than an inflated one — exactly
-        // backwards (owner, 2026-08-23).
+        // The reference is THIS tire's, not a healthy one — `rate` belongs in its AIR term. A flat
+        // tire's air carries almost nothing, so the load past the band that the carcass cannot
+        // take goes straight into the rim, which is the point of a flat. Subtracting a HEALTHY
+        // tire's reference from a flat tire's force made the residual deeply negative and
+        // reported no rim load at all, so a flat rim was SAFER than an inflated one — exactly
+        // backwards (owner, 2026-08-23). The carcass term is NOT scaled by `rate` (review-2 R-07):
+        // the sidewall structure carries the same load flat or inflated, as in tireContactTerms.
         if (vehicleState.rimForceRoad && c.depth > WHEEL_SOFT_BAND) {
           const bandNorm = Math.min(0.98, WHEEL_SOFT_BAND / sidewall)
-          // The reference is what this tire's AIR carries at full compression — for a flat that is
-          // almost nothing, so almost the whole load past the band is rim load.
-          // Air and carcass each at their own rate — the same split tireContactForce makes.
-          const atBand = rate * WHEEL_SOFT_BAND *
-            (params.tireStiffness + carcassStiffness(params) * (1 / (1 - bandNorm * bandNorm) - 1))
+          // The reference is what this tire carries at full compression: its AIR at this tire's rate
+          // (almost nothing for a flat) plus its carcass at full rate — the same split
+          // tireContactForce makes.
+          const atBand = WHEEL_SOFT_BAND *
+            (params.tireStiffness * rate + carcassStiffness(params) * (1 / (1 - bandNorm * bandNorm) - 1))
           const residual = tireFnAtContact - atBand
           if (residual > vehicleState.rimForceRoad[i]) vehicleState.rimForceRoad[i] = residual
         }

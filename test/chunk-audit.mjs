@@ -16,8 +16,8 @@ for (let i = 0; i < 30; i++) { const r = await c.evalJS(`typeof window.__view===
 await c.evalJS(`window.__view(${X}, ${CAMY}, ${Z}, 0, -1.0)`)
 await sleep(7000)
 const r = await c.evalJS(`(() => {
-  const ts = window.__terrainSystem && window.__terrainSystem(); if (!ts) return 'no ts'
-  const p = ts._params; const out = { treeLo: p.terrainTreelineLo, treeHi: p.terrainTreelineHi, amp: p.terrainAmplitude, chunks: [] }
+  const ts = window.__terrain && window.__terrain(); if (!ts) return 'no ts'
+  const p = ts._params; const out = { treeLo: p.terrainTreelineLo, treeHi: p.terrainTreelineHi, chunks: [] }
   for (const [key, ch] of ts._chunkMap) {
     const g = ch.mesh && ch.mesh.geometry; if (!g) { out.chunks.push({ key, nogeo: true }); continue }
     const pos = g.attributes.position, col = g.attributes.color, sf = g.attributes.aSurf
@@ -29,7 +29,7 @@ const r = await c.evalJS(`(() => {
   return JSON.stringify(out)
 })()`)
 const d = JSON.parse(r.val)
-console.log('treeline', d.treeLo, d.treeHi, 'amp', d.amp, 'chunks', d.chunks.length)
+console.log('treeline', d.treeLo, d.treeHi, 'chunks', d.chunks.length)
 const bad = d.chunks.filter(k => k.meanY > 150 && k.grass > 0.4)
 console.log('HIGH-BUT-GREEN chunks:', bad.length); for (const k of bad) console.log(' ', JSON.stringify(k))
 console.log('sample of normal chunks:'); for (const k of d.chunks.slice(0, 6)) console.log(' ', JSON.stringify(k))

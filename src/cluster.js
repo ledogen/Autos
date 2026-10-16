@@ -109,6 +109,7 @@ export class GaugeCluster {
     this._keyPos = 'on'
     this._keyTarget = KEY_ANGLE.on
     this._keyAngle = KEY_ANGLE.on
+    this._drawn = {}   // the inputs of the last repaint (update()'s early-out)
 
     this._bg = document.createElement('canvas')
     this._bg.width = W * this._dpr
@@ -126,8 +127,6 @@ export class GaugeCluster {
 
   /** 0 = C, 1 = H. Placeholder until the coolant model (FEAT-51) calls this with a real temp. */
   setCoolantTemp (frac) { this._tempFrac = Math.max(0, Math.min(1, frac)) }
-
-  odometerMiles () { return this._odoMiles }
 
   /**
    * FEAT-33: which of the three switch renderings to draw — 'off' | 'on' | 'start', straight from
@@ -167,6 +166,17 @@ export class GaugeCluster {
     const ks = 1 - Math.exp(-dt / 1.2)
     this._fuelShown += (this._fuelFrac - this._fuelShown) * ks
     this._tempShown += (this._tempFrac - this._tempShown) * ks
+    this._keyAngle += (this._keyTarget - this._keyAngle) * (1 - Math.exp(-dt / 0.045))
+
+    // Nothing drawn has moved → the canvas already shows this frame; skip the repaint. EXACT
+    // equality on every drawn input (not a tolerance), so a skipped frame is pixel-identical to the
+    // one it replaces. Hits when everything has settled: engine off and parked, or a paused game.
+    const d = this._drawn
+    if (d.speed === this._speedMph && d.rpm === this._rpm && d.temp === this._tempShown
+        && d.fuel === this._fuelShown && d.odo === this._odoMiles
+        && d.key === this._keyAngle && d.keyPos === this._keyPos) return
+    d.speed = this._speedMph; d.rpm = this._rpm; d.temp = this._tempShown
+    d.fuel = this._fuelShown; d.odo = this._odoMiles; d.key = this._keyAngle; d.keyPos = this._keyPos
 
     const ctx = this._ctx
     ctx.clearRect(0, 0, W, H)
@@ -176,7 +186,6 @@ export class GaugeCluster {
     this._drawNeedle(ctx, FUEL, this._fuelShown, 22, 2)
     this._drawNeedle(ctx, TACH, this._rpm / (TACH.max * 1000), 48, 3)
     this._drawNeedle(ctx, SPEEDO, this._speedMph / SPEEDO.max, 56, 3)
-    this._keyAngle += (this._keyTarget - this._keyAngle) * (1 - Math.exp(-dt / 0.045))
     this._drawKey(ctx)
   }
 

@@ -334,7 +334,8 @@ function _exitFreecam () {
   cameraMode = 'chase'
   document.exitPointerLock()
   // No position snap needed: chase follow-mode lerp (CHASE_STIFFNESS=5, ~200ms) smoothly
-  // absorbs the position discontinuity from freecam → chase (CAM-03 no-snap).
+  // absorbs the position discontinuity from freecam → chase (CAM-03 no-snap). The heading needs
+  // no glide: the freecam branch keeps camYaw on the body, so chase resumes already behind it.
 }
 
 /**
@@ -370,6 +371,12 @@ export function updateCamera (camera, vehicleState, dt) {
     // 'YXZ' Euler order: yaw applied first in world space, then pitch in local space.
     // This is the FPS-camera convention that prevents roll at zenith (RESEARCH §Pitfall 8).
     camera.rotation.set(freecamPitch, freecamYaw, 0, 'YXZ')
+    // Track the body heading while freecam owns the view (as hood does below): WASD still drives
+    // the truck, so leaving freecam must land behind it rather than orbit round at the FEAT-95
+    // rate cap — and a snapCamera() consumed above still leaves the heading on the truck.
+    _fwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+    camYaw = Math.atan2(-_fwd.x, -_fwd.z)
+    reverseView = swinging = false
     return  // Do not fall through to chase/hood branches
   }
 

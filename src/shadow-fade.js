@@ -7,8 +7,9 @@
  *
  * ── QUAL-18: smooth fade at the shadow-map edge instead of a hard cutoff ─────────────────────────
  *
- * The single directional sun renders a ±220 m ortho shadow box that follows the view centre
- * (main.js). Everything past the box edge is simply unshadowed, so driving shows a hard
+ * The near directional light (`sun`) renders a tight ±20 m ortho shadow box that follows the view
+ * centre (main.js; the terrain cascade `sunFar` is a second light with its own box).
+ * Everything past the box edge is simply unshadowed, so driving shows a hard
  * moving line where the world's shadows end. This patches THREE.ShaderChunk so the shadow
  * INTENSITY fades to zero over the outer band of the shadow map — the cutoff becomes a
  * gradual dissolve buried under distance.
@@ -25,7 +26,8 @@
  *
  * @param {object} [opts]
  * @param {number} [opts.fadeStart=0.72] — 0..1 fraction of the half-extent where the fade
- *   begins (0.72 ≈ the outer 28 % of the box, ~60 m of the ±220 m frustum).
+ *   begins (0.72 ≈ the outer 28 % of the box). main.js passes 0.82: full shadows to ~16 m of
+ *   the ±20 m near frustum, gone by 20 m.
  */
 import * as THREE from 'three'
 

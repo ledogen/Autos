@@ -153,7 +153,7 @@ for (const seed of SEEDS) {
   console.log(`  the NOTHING bucket: ${nothing.length} pairs, ${nothingM.toFixed(0)} m of unsanctioned shared ground (${(100*nothingM/netL).toFixed(1)}% of network)`)
   for (const p of nothing.slice(0, 5))
     console.log(`     ${p.longest.toFixed(0)} m longest (${p.total.toFixed(0)} m over ${p.nSpans}) · ${p.shareN ? 'share a node' : 'DISJOINT'}${p.anchored ? ' · node-anchored' : ''} · ${p.kA} x ${p.kB}`)
-  console.log(`  plan-layer tallies: merges ${road._v2Merges||0} · shoves ${road._v2Shoves||0} · reroutes ${road._v2Reroutes||0} · condemned ${road._v2Condemned||0}`)
+  console.log(`  plan-layer tallies: shoves ${road._v2Shoves||0} · reroutes ${road._v2Reroutes||0} · condemned ${road._v2Condemned||0}`)
   const skip = road._v2MergeSkip || {}
   const skipRows = Object.entries(skip).sort((a, b) => b[1] - a[1])
   console.log(`  merge/shove declines: ${skipRows.length ? skipRows.map(([r, n]) => `${r} ${n}`).join(' · ') : '(none)'}`)

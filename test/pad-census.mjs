@@ -18,9 +18,9 @@
 //
 // All 27 failed identically. The exact weld self-intersects at BOTH fillet scales because two legs
 // leave the node on the same bearing — 20 of the 27 within half a degree — so their mouth chords
-// overlap and the boundary crosses itself. The legacy circle pad folds legs closer than ~20 deg
-// into one direction, which leaves two distinct mouths, and a two-mouth circle pad emits only two
-// distinct corner points. Both rungs out, nothing underneath.
+// overlap and the boundary crosses itself. The legacy circle pad (since deleted) folded legs closer
+// than ~20 deg into one direction, which left two distinct mouths, and a two-mouth circle pad emitted
+// only two distinct corner points. Both rungs out, nothing underneath.
 //
 // THE RULE:
 //

@@ -7,7 +7,7 @@
 
 import * as THREE from 'three'
 import { stepPhysics } from '../src/physics.js'
-import { getWheelPosition, computeStaticEquilibrium } from '../src/suspension.js'
+import { computeStaticEquilibrium } from '../src/suspension.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { makeEngineCtx } from './lib/engine-ctx.mjs'
 

@@ -43,8 +43,3 @@ export const SCENARIOS = [
     finish: { x: -251.24, z:  926.53, heading:  1.1146 },
   },
 ]
-
-/** @returns {object|null} the scenario with this id */
-export function scenarioById (id) {
-  return SCENARIOS.find(s => s.id === id) ?? null
-}

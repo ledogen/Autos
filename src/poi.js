@@ -24,7 +24,7 @@
 
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
 import { REGION_MARGIN } from './mission.js'          // FEAT-61: the wall a customer must sit inside
-import { houseRungs, roadDistFromLarry } from './paper-route.js'   // FEAT-61: the ladder placement serves, in road metres
+import { houseRungs, roadDistFromLarry, idKey } from './paper-route.js'   // FEAT-61: the ladder placement serves, in road metres
 import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
 import { hash32, mulberry32 } from './seed.js'        // per-edge / per-POI PRNG keys (byte-stable)
 import { padSd } from './road-carve.js'               // FEAT-71: the pad's own shape, for the yard clip
@@ -165,8 +165,8 @@ export const POI_PARAMS = {
  *
  * `jobs` is WHETHER PARKING HERE OPENS AN OFFER, and it is DERIVED, not hand-set (FEAT-67): a
  * type posts offers iff it has a row in data/offers.js SOURCES (the mission board's source table).
- * The gas station, the tackle shop and mom's house have none — the first two until FEAT-101's job
- * budget reverses "some stores are just stores" (pois.md, 2026-10-07) — so they wear no interaction ring and answer no park trigger. A marker that wears the ring but answers
+ * Mom's house, the office and the school have none — they only receive (owner, 2026-10-07) — so
+ * they wear no interaction ring and answer no park trigger. A marker that wears the ring but answers
  * nothing is the same lie as a prompt drawn wider than its trigger, which this module already
  * refuses to tell; deriving the flag from the one table that decides who posts work is what makes
  * that impossible to get out of step.
@@ -436,12 +436,18 @@ const padsClash = (a, b, spacing) => a.edge === b.edge && Math.abs(a.s - b.s) < 
 /** Region population (23 in R1), derived from the roster so the two can never drift apart. */
 export const POI_COUNT = POI_ROSTER.reduce((n, s) => n + s.count, 0)
 
-/** Newspaper customers are deferred until the paper-route branch merges — no slot yet (FEAT-60). */
-
 // Footprint sampling for the earthwork test: a 3 × 5 lattice over the pad, plus the centre.
 const CUTFILL_NU = 5, CUTFILL_NV = 3
 
-const idKey = (id) => `${id[0]},${id[1]},${id[2]}`
+// The graph's edges as {ka, kb, a, b} (ka < kb), sorted by canonical key — a stable order for ids.
+function _canonEdges (g) {
+    const canon = []
+    for (const [a, b] of g.edges) {
+        const ka = idKey(a), kb = idKey(b)
+        canon.push(ka < kb ? { ka, kb, a, b } : { ka: kb, kb: ka, a: b, b: a })
+    }
+    return canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
+}
 
 /**
  * The POI layer. Owns placement, the pad records the road carve consumes, and the
@@ -546,12 +552,7 @@ export class PoiSystem {
         // Deterministic edge ORDER: the network Map's insertion order is a streaming artifact, so
         // sort by the canonical edge key. Placement is per-edge independent, but sorting keeps the
         // ids stable, which the map icons and the mission anchor both key off.
-        const canon = []
-        for (const [a, b] of g.edges) {
-            const ka = idKey(a), kb = idKey(b)
-            canon.push(ka < kb ? { ka, kb, a, b } : { ka: kb, kb: ka, a: b, b: a })
-        }
-        canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
+        const canon = _canonEdges(g)
 
         // PASS 1 — THE POOL. Every edge offers every pad it can seat, of every kind (FEAT-105: the
         // 14 x 8 lay-by, plus each bigger pad a roster model asks for), spaced poiPadSpacing apart
@@ -624,12 +625,7 @@ export class PoiSystem {
         // Same canonical edge order as build(), for the same reason: the Map's order is a streaming
         // artifact, and ids have to be stable across windows.
         const g = road.networkGraph()
-        const canon = []
-        for (const [a, b] of g.edges) {
-            const ka = idKey(a), kb = idKey(b)
-            canon.push(ka < kb ? { ka, kb, a, b } : { ka: kb, kb: ka, a: b, b: a })
-        }
-        canon.sort((u, v) => (u.ka === v.ka ? (u.kb < v.kb ? -1 : 1) : (u.ka < v.ka ? -1 : 1)))
+        const canon = _canonEdges(g)
 
         // THE WALL (FEAT-61 Phase E2). A customer's edge must lie WHOLLY inside the region, because
         // the route is routed on the same region-filtered graph the missions are: an edge with one
@@ -751,11 +747,6 @@ export class PoiSystem {
     }
 
     /**
-     * The customer reject tests. Much lighter than _evaluate's: with no bench to carve there is no
-     * earthwork to cap and no cross-slope to keep water off a pullout. What remains is "is there
-     * real road here, and is the target on believable ground".
-     */
-    /**
      * THE OTHER-ROAD KEEP-OUT (owner, 2026-09-07). A site is evaluated against ITS edge: `lat`
      * metres off that centreline, past its shoulder. Nothing checked the OTHER roads. Two legs of
      * a junction leave it a road width and a half apart, and a house target 13 m off one of them
@@ -773,6 +764,11 @@ export class PoiSystem {
         return Math.hypot(hit.point.x - cx, hit.point.z - cz) < lat
     }
 
+    /**
+     * The customer reject tests. Much lighter than _evaluate's: with no bench to carve there is no
+     * earthwork to cap and no cross-slope to keep water off a pullout. What remains is "is there
+     * real road here, and is the target on believable ground".
+     */
     _evaluateHouse (road, ed, s, side, P) {
         const cl = ed.centerline
         const cp = cl.pointAt(s)

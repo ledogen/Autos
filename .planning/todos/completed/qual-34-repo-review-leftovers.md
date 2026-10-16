@@ -1,7 +1,9 @@
 ---
 id: QUAL-34
 type: quality
-status: pending
+status: completed
+closed: 2026-10-15
+resolution: "Every open B item settled on branch `feature/repo-review-2` (2026-10-15): particle billboards extracted (review-2 S-55), perf.js struck, prop-system chunk keys (S-48), gate-by-gate descriptions (S-79), dashboard host stays on all interfaces by owner ruling. The fingerprints were promoted to test/ (S-80)."
 severity: minor
 opened: 2026-10-02
 relates: the whole-repo review on branch `feature/repo-review` (commits review-1 … review-9)
@@ -97,8 +99,9 @@ Particles / audio / debug
   (`whiteNoiseBuffer` / `loopNoise` in `engine-audio.js`).
 - ~~`sky.setBakeRes` leak; `GROUND_FILL_LIFT`; console dumps gated on `?prof` / `?hitch`; dead
   `wyeCreaseMaxDeg` slider.~~ DONE (the leak was the old CubeCamera left in the bake scene).
-- `perf.js` header — OPEN: re-read against the code, found no drift to fix; reviewer's note
-  unrecoverable. Strike if nobody remembers what it was.
+- ~~`perf.js` header~~ DONE (review-2 S-63/S-68): the drift was perf.js:46 "one boolean test" —
+  perfAdd always did the bucket write. perfAdd now returns at once with profiling off, and the
+  main.js "TEMP … removed with src/perf.js" labels are gone (PERF-04 closed; perf.js is permanent).
 - Several FX params with no slider — RULED 2026-10-04 (owner): no debug sliders. These become
   USER-FACING controls later, under pause menu → settings → audio (volumes etc.); out of scope now.
 - ~~`FLORA_PARAMS` keys nobody reads.~~ DONE.
@@ -145,3 +148,13 @@ Reuse these; they caught real mistakes during the review.
 
 These scripts were session-local. If the review continues, promote the fingerprint to
 `test/` as a rainy-day script first.
+
+## Resolution (2026-10-15)
+
+Closed on branch `feature/repo-review-2`. The open B items, settled:
+- Particle billboard setup — extracted into one sheet builder for dust, smoke and dirt-spray (S-55).
+- `update()` chunk-key strings / `_syncChunkLod` — chunk records carry `cx, cz` (S-48).
+- Stale gate descriptions — read gate by gate; 7 descs and 12 script headers fixed (S-79).
+- Dashboard host — stays on all interfaces by owner ruling (remote access).
+- perf.js — already struck above.
+The fingerprint scripts are `test/fingerprint-world.mjs` / `test/fingerprint-physics.mjs` (S-80).

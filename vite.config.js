@@ -70,7 +70,7 @@ export default defineConfig({
   base: './',                       // GitHub Pages subpath-safe (relative asset URLs)
   resolve: {
     alias: {
-      // sky.js / debug.js / vehicle-model.js import three/addons/* (the browser importmap path);
+      // sky / debug / physics-debug / vehicle-model / model-service import three/addons/* (the old importmap path);
       // npm three ships those under examples/jsm — map one to the other so both dev and build resolve.
       'three/addons/': 'three/examples/jsm/',
     },

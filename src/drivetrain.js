@@ -20,15 +20,15 @@
  * Pure math — no Three.js import (matches module conventions). Called once per physics step from
  * stepPhysics BEFORE the per-wheel loop; writes params._driveTorque[4] which getDriveTorque reads.
  *
- * State lives on vehicleState.drivetrain = { engineRPM, gear, shiftTimer, activeGear, SR, TR }
- * (persists across steps for shift hysteresis + HUD). gear: 0 = reverse, 1..N = forward gear index;
- * SR / TR = the converter's speed and torque ratios this step.
+ * State lives on vehicleState.drivetrain = { engineRPM, gear, shiftTimer, activeGear }
+ * (persists across steps for shift hysteresis + HUD). gear: 0 = reverse, 1..N = forward gear index.
  */
 
 const RPM_PER_RAD = 60 / (2 * Math.PI)   // rad/s → rev/min
 
-// Input-routing thresholds (mirror physics.js): reverse engages only when clearly stopped/rolling back.
-const REV_THRESHOLD = 2 / 3.6            // +0.556 m/s — S drives reverse below this, brakes above it
+// Input-routing threshold, shared with physics.js's brake routing: reverse engages only when clearly
+// stopped/rolling back.
+export const REV_THRESHOLD = 2 / 3.6     // +0.556 m/s — S drives reverse below this, brakes above it
 
 /**
  * Interpolate the engine torque curve (piecewise-linear lookup) at a given RPM.
@@ -146,8 +146,6 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
     const tauOff = ignState === 'cranking' ? (params.ignitionCrankRpmLag ?? 0.12) : (params.engineOffRpmLag ?? 0.7)
     st.engineRPM += (target - st.engineRPM) * (1 - Math.exp(-dt / tauOff))
     if (st.engineRPM < 1) st.engineRPM = 0
-    st.SR = 0
-    st.TR = 1
     st.activeGear = reverse ? 0 : st.gear
     st.coupledRPM = turbineRPM / couplingSR
     return
@@ -236,7 +234,5 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // Expose the gear the model is actually delivering (0 = reverse) for HUD/log without losing the
   // persisted forward gear (st.gear stays the forward index so we resume in-gear after reversing).
   st.activeGear = reverse ? 0 : st.gear
-  st.SR = SR
-  st.TR = TR
   st.coupledRPM = coupled   // the road-speed-in-gear proxy the shift schedule keys off (logged for tuning)
 }

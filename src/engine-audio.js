@@ -207,9 +207,7 @@ function ensureCrankGraph () {
   out.connect(crankGain)
   crankGain.connect(ctx.destination)
 
-  const noise = ctx.createBufferSource()
-  noise.buffer = whiteNoiseBuffer(ctx, 2)   // a couple of seconds to loop — the raw material for the grind
-  noise.loop = true
+  const noise = loopNoise(ctx, whiteNoiseBuffer(ctx, 2))   // a couple of seconds to loop — the raw material for the grind
 
   // Modulated branch helper: noise → filter → gain, with an LFO swinging that gain.
   const branch = (type, freq, Q, base, lfoHz, depth) => {
@@ -227,7 +225,6 @@ function ensureCrankGraph () {
   }
   branch('bandpass', 1500, 1.0, 0.22, TOOTH_HZ, 0.18)   // teeth on the flywheel
   branch('lowpass', 240, 0.9, 0.55, CHUG_HZ, 0.45)      // dragging it over compression
-  noise.start()
 
   const motor = ctx.createOscillator()
   motor.type = 'sawtooth'

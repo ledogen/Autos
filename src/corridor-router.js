@@ -184,8 +184,12 @@ export function clearReq(pa, hit, ground, prm) {
     const nx = ux / d * prm.HW, nz = uz / d * prm.HW
     const hA = pa.y - ground(pa.x + nx, pa.z + nz)
     const hB = hit.y - ground(hit.fx - nx, hit.fz - nz)
-    const dy = Math.abs(pa.y - hit.y)
-    const upperFill = pa.y >= hit.y ? hA : hB, lowerCut = pa.y >= hit.y ? hB : hA
+    return reqOf(prm, hA, hB, Math.abs(pa.y - hit.y), pa.y >= hit.y)
+}
+// The rule's tail on sampled heights (hA/hB = each road's deck above the ground at its facing edge),
+// shared by clearReq and corridorSearch's memoised occReq.
+function reqOf(prm, hA, hB, dy, upperIsA) {
+    const upperFill = upperIsA ? hA : hB, lowerCut = upperIsA ? hB : hA
     let req = prm.floor
     if (upperFill > 0) req = Math.max(req, Math.min(2 * prm.edge + prm.fill * dy, prm.cap + prm.edge))
     if (lowerCut < 0) req = Math.max(req, Math.min(2 * prm.edge + prm.cut * dy, prm.cap + prm.edge))
@@ -245,7 +249,7 @@ export function nearestOnFlat(px, pz, a) {
  * @param {object} [opts] { margin=max(800,chord), costs=V2_COSTS, hCoarse (the profile's field,
  *                          default hTrunc), blockedDiscs (ponds, flat [x,z,r,...]), occupied,
  *                          structureCap, startDir, goalDir, sibStart, sibGoal }
- * @returns {{path:{x:number,z:number,y:number}[], cost:number, expanded:number}|null}
+ * @returns {{path:{x:number,z:number,y:number}[], cost:number}|null}
  */
 export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     const _unit = (d) => { if (!d) return null; const l = Math.hypot(d.x, d.z); return l > 1e-9 ? { x: d.x / l, z: d.z / l } : null }
@@ -323,14 +327,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
         occGa[i] = hCoarse(px + ux * occ.prm.HW, pz + uz * occ.prm.HW)
         return best.d
     }
-    const occReq = (i, y1) => {
-        const prm = occ.prm, hA = y1 - occGa[i], hB = occHb[i], dy = Math.abs(y1 - occY[i])
-        const upperFill = y1 >= occY[i] ? hA : hB, lowerCut = y1 >= occY[i] ? hB : hA
-        let req = prm.floor
-        if (upperFill > 0) req = Math.max(req, Math.min(2 * prm.edge + prm.fill * dy, prm.cap + prm.edge))
-        if (lowerCut < 0) req = Math.max(req, Math.min(2 * prm.edge + prm.cut * dy, prm.cap + prm.edge))
-        return req
-    }
+    const occReq = (i, y1) => reqOf(occ.prm, y1 - occGa[i], occHb[i], Math.abs(y1 - occY[i]), y1 >= occY[i])
     const C_wClear = C.wClear ?? 12
     // Hard no-go cells (pond+skirt discs): 0 unknown, 1 open, 2 blocked — resolved lazily.
     const discs = opts.blockedDiscs
@@ -436,7 +433,6 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
         const ds = cell * dl
         return { dx, dz, dl, ds, kMax: Math.round(C.gMaxRoad * ds / yBin), slack: yBin / (2 * ds) + 1e-9 }
     })
-    let expanded = 0
     let found = -1
 
     while (open.size) {
@@ -454,7 +450,6 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
             const pl = Math.hypot(pdx, pdz) || 1
             pdx /= pl; pdz /= pl
         }
-        expanded++
         // R5: distance of the popped cell from each pinned node, once per pop (the per-direction
         // sibling test below reuses it — a landing-cell distance would differ by at most one cell,
         // noise against a 120 m reach).
@@ -492,7 +487,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
             const ds = D.ds
             const g1 = hAt(nx, nz)
             // deck may not rise above ground+fillMax (the fill ceiling); no useful floor below the band
-            const bTop = Math.min(NY - 1, Math.floor((g1 + C.fillMax - yLo) / yBin))
+            const bTop = Math.min(NY - 1, Math.floor((g1 + C_fillMax - yLo) / yBin))
             const kMax = D.kMax
             const ni0 = nCell * NY
             // PERF: the TURN charge depends only on this direction and the parent's — nothing in the
@@ -573,7 +568,7 @@ export function corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, opts = {}) {
     path[path.length - 1] = { x: bx, z: bz, y: yB }
     if (!sDir) while (path.length > 2 && Math.hypot(path[1].x - ax, path[1].z - az) < cell * 1.6) path.splice(1, 1)
     if (!gDir) while (path.length > 2 && Math.hypot(path[path.length - 2].x - bx, path[path.length - 2].z - bz) < cell * 1.6) path.splice(path.length - 2, 1)
-    return { path, cost: gCost[found], expanded }
+    return { path, cost: gCost[found] }
 }
 
 
@@ -1217,7 +1212,7 @@ export function profileFeasible(cl, yA, yB, hCoarse, opts = {}) {
  *   {startDir?, goalDir?} unit {x,z}, the deg-2 canonical approach headings (or undefined)
  * @param {(x,z)=>number} hTrunc corridor field (truncatedHeightField at V2_TRUNC_K)
  * @param {(x,z)=>number} hCoarse full coarse field (feasibility prices the profile's ground)
- * @returns {{cl:Centerline, feasible:boolean, usedPin:boolean, pinRequested:boolean}}
+ * @returns {{cl:Centerline}}
  */
 export function routeEdgeV2(spec, hTrunc, hCoarse) {
     // `costs` rides the spec so a Worker (a SEPARATE module instance with its own V2_COSTS) prices
@@ -1273,20 +1268,15 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
         }
         return true
     }
-    let cl = null, first = null, usedPin = false, wet = null
+    let cl = null, first = null, wet = null
     for (const [p, extra] of rungs) {
         const c = attempt(p, extra)
         if (!c || !(c.length > 1e-6)) continue
         if (!clearsDiscs(c)) { wet ??= c; continue }
         if (!first) first = c
-        if (profileFeasible(c, yA, yB, hCoarse, { costs })) { cl = c; usedPin = !!p; break }
+        if (profileFeasible(c, yA, yB, hCoarse, { costs })) { cl = c; break }
     }
-    return {
-        cl: cl ?? first ?? wet ?? new Centerline([]),
-        feasible: !!cl,
-        usedPin: !!(cl && usedPin),
-        pinRequested: !!pin,
-    }
+    return { cl: cl ?? first ?? wet ?? new Centerline([]) }
 }
 
 // ── Stage 3: curve generation ──────────────────────────────────────────────────────────────────

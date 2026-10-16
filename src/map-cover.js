@@ -23,7 +23,7 @@
  *   prop-scatter                      map-cover
  *   ────────────────────────────────  ──────────────────────────────────────────────────
  *   terrain.analyticNormal (slope)    slope from the coarse height field's gradient
- *   terrain.analyticHeight            road._coarseH × terrainAmplitude
+ *   terrain.analyticHeight            road._coarseH
  *   roadBlocked (9 m of centreline)   dropped — see ROAD EXCLUSION below
  *
  * The slope swap is sound by measurement, not by hope: fineAmplitude is 0.5 m at a 20 m
@@ -80,7 +80,7 @@ export const DENSE_MIN = 1.4
  *
  * The scatter reads `1 - normal.y`. For a heightfield with gradient g, normal.y = 1/√(1+|g|²), so
  * this is the exact same quantity — NOT an eyeballed remap. That matters because the thresholds
- * (slopeMeadowMax 0.16, slopeSteepMin 0.34, slopeRejectMax 0.75) transfer unchanged.
+ * (slopeMeadowMax 0.16, slopeSteepMin 0.34, slopeRejectMax 0.38) transfer unchanged.
  */
 export function slopeFromGradient (dx, dz) {
   return 1 - 1 / Math.sqrt(1 + dx * dx + dz * dz)

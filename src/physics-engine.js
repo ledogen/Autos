@@ -76,6 +76,9 @@ function _specReach (spec) {
 
 let _b3 = null            // the loaded engine module — module-private, never exported
 
+// maxContactImpulse's no-contact answer: shared and frozen, so a step with nothing touching allocates nothing.
+const NO_CONTACT = Object.freeze({ impulse: 0, point: null, normal: null })
+
 /**
  * Rotate a plain {x,y,z} by a quaternion given as [x,y,z,w]. Local to this module so the adapter
  * stays dependency-free (it imports nothing but the engine); the standard v' = q·v·q* expanded.
@@ -127,6 +130,7 @@ export class PhysicsEngine {
     this._world = _b3.b3CreateWorld(wd)
 
     this._bodies = new Map()               // handle → { id (b3BodyId), shapes: b3ShapeId[], userData }
+    this._dynamic = new Map()              // the isDynamic subset of _bodies, same records and order
     this._shapeToHandle = new Map()        // shapeId.index1<<21|generation-ish key → body handle
     this._nextHandle = 1
     this._heightfields = new Map()         // handle → b3HeightFieldData (owned, freed on destroy)
@@ -139,7 +143,6 @@ export class PhysicsEngine {
 
     // Scratch out-params — the bindings write into caller-provided arrays; reuse
     // to keep the per-frame allocation at zero on the hot read paths.
-    this._p = [0, 0, 0]; this._q = [0, 0, 0, 0]
     this._v = [0, 0, 0]; this._w = [0, 0, 0]
     this._rev = 0                          // bumped on body create/destroy — debug viz change detection
     this._xfStamp = 1                      // bumped per step — invalidates the per-body transform cache
@@ -177,10 +180,12 @@ export class PhysicsEngine {
     const handle = this._nextHandle++
     // isStatic / isDynamic are fixed at creation (the adapter has no set-type call), so the
     // per-query filters read them here instead of asking the engine across the WASM boundary.
-    this._bodies.set(handle, { id, shapes: [], specs: [], userData,
+    const rec = { id, shapes: [], specs: [], userData,
       isStatic: type === 'static', isDynamic: type !== 'static' && type !== 'kinematic',
       groups: [], reach: [], hulls: [], sizeR: [],
-      xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null })
+      xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null }
+    this._bodies.set(handle, rec)
+    if (rec.isDynamic) this._dynamic.set(handle, rec)
     this._rev++
     return handle
   }
@@ -203,6 +208,7 @@ export class PhysicsEngine {
     const mds = this._meshDatas.get(handle)
     if (mds) { for (const m of mds) _b3.b3DestroyMesh(m); this._meshDatas.delete(handle) }
     this._bodies.delete(handle)
+    this._dynamic.delete(handle)
   }
 
   getUserData (handle) { return this._bodies.get(handle)?.userData ?? null }
@@ -231,17 +237,18 @@ export class PhysicsEngine {
 
   /** Shape identity for _shapeToHandle. The multiplier MUST exceed any reachable `generation`:
    *  Box3D recycles shape slots and bumps the generation each time, and updateWheelRims rebuilds
-   *  four wheel-core hulls per step (~55/s per wheel while the suspension works), so a slot passed
+   *  a wheel-core hull whenever its strut has moved ≥ 4 mm (RIM_REBUILD_M; ~55/s per wheel while
+   *  the suspension works), so a slot passed
    *  the old 0x10000 multiplier in ~20 minutes of driving and slot n aliased slot n+1 (BUG-61).
    *  2**32 keeps the product exact for index1 up to ~2M slots, well inside Number.MAX_SAFE_INTEGER. */
   _shapeKey (shapeId) { return shapeId.index1 * 4294967296 + shapeId.generation }
 
   /** spec: a plain descriptor of the shape as CREATED (body-local geometry) — the debug
    *  wireframe source of truth (physics-debug.js). Never read by the engine. */
-  _register (handle, shapeId, spec = null, material = {}, hull = null) {
+  _register (handle, shapeId, spec, material = {}, hull = null) {
     const rec = this._bodies.get(handle)
     rec.shapes.push(shapeId)
-    if (spec) rec.specs.push(spec)
+    rec.specs.push(spec)
     rec.groups.push(_group32(material.group))
     rec.reach.push(_specReach(spec))
     rec.hulls.push(hull)                   // BUG-62: this body owns it; freed with the slot
@@ -267,7 +274,8 @@ export class PhysicsEngine {
   }
 
   /** Cached body transform. The bindings' GetTransform is a WASM call; contactSphere reads every
-   *  body's pose and runs ~16x per step, so fetching per call cost more than the query itself.
+   *  body's pose and runs ~20x per step, so fetching per call cost more than the query itself.
+   *  getTransform reads through the same cache (debris.js snapshots every body each step).
    *  Poses only change when the world steps (_xfStamp) or setTransform runs — statics not even
    *  then, so they are fetched once and held. */
   _bodyXf (rec) {
@@ -322,8 +330,9 @@ export class PhysicsEngine {
     rec.hulls[shapeIndex] = hull
     rec.sizeR[shapeIndex] = _specSizeR(rec.specs[shapeIndex])
     this._shapeToHandle.set(this._shapeKey(shapeId), handle)
-    // BUG-62: the shape this hull built is gone, so its copy goes too. This runs EVERY step per
-    // wheel — retaining them leaked ~1.5 KB a rebuild for as long as the player kept driving.
+    // BUG-62: the shape this hull built is gone, so its copy goes too. This runs on every wheel-core
+    // rebuild (up to every step per wheel while the suspension works) — retaining them leaked
+    // ~1.5 KB a rebuild for as long as the player kept driving.
     this._freeHull(oldHull)
     this._rev++
     return shapeId
@@ -400,9 +409,10 @@ export class PhysicsEngine {
   /** Read body transform into out objects (THREE.Vector3/Quaternion compatible). */
   getTransform (handle, outPos, outQuat) {
     const rec = this._bodies.get(handle)
-    _b3.b3Body_GetTransform(this._p, this._q, rec.id)
-    outPos.x = this._p[0]; outPos.y = this._p[1]; outPos.z = this._p[2]
-    outQuat.x = this._q[0]; outQuat.y = this._q[1]; outQuat.z = this._q[2]; outQuat.w = this._q[3]
+    this._bodyXf(rec)        // shares contactSphere's per-step cache: one WASM fetch per body per step
+    const p = rec.xfP, q = rec.xfQ
+    outPos.x = p[0]; outPos.y = p[1]; outPos.z = p[2]
+    outQuat.x = q[0]; outQuat.y = q[1]; outQuat.z = q[2]; outQuat.w = q[3]
   }
 
   setTransform (handle, position, quaternion) {
@@ -445,12 +455,6 @@ export class PhysicsEngine {
     _b3.b3Body_ApplyTorque(rec.id, [torque.x, torque.y, torque.z], true)
   }
 
-  applyImpulse (handle, impulse, worldPoint = null) {
-    const rec = this._bodies.get(handle)
-    if (worldPoint) _b3.b3Body_ApplyLinearImpulse(rec.id, [impulse.x, impulse.y, impulse.z], [worldPoint.x, worldPoint.y, worldPoint.z], true)
-    else _b3.b3Body_ApplyLinearImpulseToCenter(rec.id, [impulse.x, impulse.y, impulse.z], true)
-  }
-
   /**
    * Override mass + diagonal rotational inertia (about the local center given).
    * This is how the chassis keeps the TUNED params.inertiaRoll/Yaw/Pitch instead
@@ -486,7 +490,6 @@ export class PhysicsEngine {
   /** Toggle continuous (swept) collision against other dynamic bodies. A bullet never sweeps
    *  against another bullet — the lever debris.js flagCargo() pulls for cargo riding the truck. */
   setBullet (handle, flag) { _b3.b3Body_SetBullet(this._bodies.get(handle).id, flag) }
-  wake (handle) { _b3.b3Body_SetAwake(this._bodies.get(handle).id, true) }
   sleep (handle) { _b3.b3Body_SetAwake(this._bodies.get(handle).id, false) }
 
   // ── Queries ───────────────────────────────────────────────────────────────
@@ -523,8 +526,9 @@ export class PhysicsEngine {
    * CANDIDATES ARE ENUMERATED HERE, NOT BY b3World_OverlapShape (BUG-60, 2026-09-07).
    * The engine's world query intermittently stops reporting a perfectly healthy shape while
    * shapes are being created and destroyed near it — and updateWheelRims does exactly that,
-   * rebuilding four wheel-core hulls every step (a hull has no setter), ~1000 shape
-   * create/destroys per second. On the FEAT-41 menu stage that dropped the static rock out of
+   * rebuilding a wheel-core hull whenever its strut moves ≥ 4 mm (a hull has no setter): up to
+   * four create/destroy pairs a step while the suspension works. (At the time of BUG-60 it rebuilt
+   * all four every step, ~500 pairs a second.) On the FEAT-41 menu stage that dropped the static rock out of
    * this query for whole runs at a time and the wheel settled INSIDE it, at ground height, with
    * the rock still drawn around it. Measured at every failing sample: the rock's body transform,
    * shape id, hull data, a per-body b3Body_OverlapShape and the raw b3CollideHullAndSphere were
@@ -548,8 +552,9 @@ export class PhysicsEngine {
   contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false } = {}) {
     const hits = []
     const mask = _group32(collidesWith)
-    for (const [handle, rec] of this._bodies) {
-      if (dynamicOnly && !rec.isDynamic) continue
+    // dynamicOnly (every wheel query, 20×/step) walks only the dynamic bodies — not the terrain,
+    // road, prop and POI statics, which outnumber them ~100:1. Same insertion order, same hits.
+    for (const [handle, rec] of dynamicOnly ? this._dynamic : this._bodies) {
       // Heightfields and meshes have no sphere pair test wired (the analytic terrain query owns
       // those surfaces), so skip them before paying for a transform.
       if (this._heightfields.has(handle) || this._meshDatas.has(handle)) continue
@@ -624,28 +629,35 @@ export class PhysicsEngine {
    * and its SIGN depends on which shape the engine picked as A, so callers must use magnitudes
    * only — see classifyImpactRegion in physics.js.
    *
+   * Box3D's two impulse fields, MEASURED (0.6 m cube dropped 2.2 m onto a static box, 8 substeps):
+   * `normalImpulse` is the LAST SUBSTEP's impulse — it read 0.00 on the landing step and 1.10 N·s at
+   * rest, and halving the substeps doubled it. `totalNormalImpulse` is the whole STEP's impulse,
+   * summed over the substeps (and their relax passes): 573 N·s on the landing step, a constant
+   * 17.66 N·s at rest. It does NOT accumulate across steps while a contact persists.
+   *
    * @param {*} handle - body handle.
-   * @param {Float64Array|Array} [outByShape] - if given, filled with THIS STEP's peak normal impulse
-   *   on EACH of the body's shapes (indexed as they were added); divide by dt for contact force.
-   *   Lets a caller tell a wheel-core hit from a body hull hit without the engine knowing what
-   *   either means. Allocation-free: reused by the caller.
-   * @returns {{impulse: number, stepImpulse: number, point: {x,y,z}|null, normal: {x,y,z}|null}}
-   *   impulse = the hardest point's accumulated normal impulse (what point/normal describe);
-   *   stepImpulse = the hardest single-step impulse on any point; point/normal body-local.
+   * @param {Float64Array|Array} [outByShape] - if given, filled with the peak per-point
+   *   `totalNormalImpulse` (this step's, see above) on EACH of the body's shapes (indexed as they
+   *   were added); divided by dt it is the step-mean contact FORCE, which is what a yield criterion
+   *   needs. Lets a caller tell a wheel-core hit from a body hull hit without the engine knowing
+   *   what either means. Allocation-free: reused by the caller. (Until review-2 R-02 this read the
+   *   last substep's normalImpulse — ~1/16 of the step at rest, and 0 on the step a hit lands.)
+   * @returns {{impulse: number, point: {x,y,z}|null, normal: {x,y,z}|null}}
+   *   impulse = the hardest point's `totalNormalImpulse` this step (what point/normal describe);
+   *   point/normal body-local.
    */
   maxContactImpulse (handle, outByShape = null) {
     const rec = this._bodies.get(handle)
     if (outByShape) outByShape.fill(0)
     if (!this._contactsBuf) this._contactsBuf = _b3.createContactsBuffer()
     const buf = _b3.getBodyContactData(this._contactsBuf, rec.id)
-    const none = { impulse: 0, stepImpulse: 0, point: null, normal: null }
     const n = _b3.getNumContacts(buf)
-    if (n === 0) return none
+    if (n === 0) return NO_CONTACT
     // Reused across steps: this runs every physics step, and createContact/createManifold each
     // allocate a wasm-backed struct.
     const contact  = this._contactScratch  || (this._contactScratch  = _b3.createContact())
     const manifold = this._manifoldScratch || (this._manifoldScratch = _b3.createManifold())
-    let max = 0, anchor = null, worldN = null, maxStep = 0
+    let max = 0, anchor = null, worldN = null
     for (let i = 0; i < n; i++) {
       _b3.getContactAt(contact, buf, i)
       // Which side of the pair is US: the anchor is measured from that body, so picking the wrong
@@ -660,7 +672,7 @@ export class PhysicsEngine {
       let si = -1
       if (outByShape) {
         const selfKey = this._shapeKey(aIsSelf ? contact.shapeIdA : contact.shapeIdB)
-        si = rec.shapes.findIndex(sh => this._shapeKey(sh) === selfKey)
+        for (let k = 0; k < rec.shapes.length; k++) if (this._shapeKey(rec.shapes[k]) === selfKey) { si = k; break }
       }
       for (let m = 0; m < contact.manifoldCount; m++) {
         _b3.getManifoldAt(manifold, contact, m)
@@ -669,12 +681,8 @@ export class PhysicsEngine {
           // Per-SHAPE peak, when the caller wants attribution. The chassis is a QUAL-25 compound —
           // four body hulls plus four wheel hard cores — and which shape took a hit is the whole
           // difference between "the bumper hit a tree" and "the rim hit a rock".
-          if (pt.normalImpulse > maxStep) maxStep = pt.normalImpulse
-          // THIS STEP's impulse, not the lifetime total: divided by dt it is the contact FORCE,
-          // which is what a yield criterion needs. totalNormalImpulse keeps accumulating while a
-          // contact persists, so it measures how long something was leaned on, not how hard it
-          // was hit — a slow crawl onto a rock out-reads a fast strike.
-          if (si >= 0 && pt.normalImpulse > outByShape[si]) outByShape[si] = pt.normalImpulse
+          // The whole step's impulse (see the docstring for what each field holds).
+          if (si >= 0 && pt.totalNormalImpulse > outByShape[si]) outByShape[si] = pt.totalNormalImpulse
           if (pt.totalNormalImpulse <= max) continue
           max = pt.totalNormalImpulse
           const a = aIsSelf ? pt.anchorA : pt.anchorB
@@ -684,13 +692,13 @@ export class PhysicsEngine {
         }
       }
     }
-    if (max === 0 || !anchor) return none
+    if (max === 0 || !anchor) return NO_CONTACT
     // World → body frame. b3Body_GetLocalPoint would add the body TRANSLATION, which the anchor
     // does not carry (it is already an offset), so rotate by the inverse rotation instead.
     const q = [0, 0, 0, 1]
     _b3.b3Body_GetRotation(q, rec.id)
     const inv = [-(q[0] ?? q.x), -(q[1] ?? q.y), -(q[2] ?? q.z), (q[3] ?? q.w)]
-    return { impulse: max, stepImpulse: maxStep, point: _rotateByQuat(anchor, inv), normal: _rotateByQuat(worldN, inv) }
+    return { impulse: max, point: _rotateByQuat(anchor, inv), normal: _rotateByQuat(worldN, inv) }
   }
 
   // ── Joints (log-drag etc.) ────────────────────────────────────────────────
@@ -774,6 +782,7 @@ export class PhysicsEngine {
     this._meshDatas.clear()
     for (const rec of this._bodies.values()) for (const h of rec.hulls) this._freeHull(h)
     this._bodies.clear()
+    this._dynamic.clear()
     this._shapeToHandle.clear()
   }
 }

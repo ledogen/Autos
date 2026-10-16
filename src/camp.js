@@ -33,7 +33,7 @@
 // Isolation discipline (the story.js / poi.js / day.js rule): no THREE, no worldgen imports.
 // Everything arrives through the `deps` adapter main.js hands us.
 
-import { hash32, mulberry32 } from './seed.js'
+import { hash32, mulberry32, clamp01 } from './seed.js'
 
 /**
  * Tunables. Zone siting + the road tether only — none of this may ever enter RANGER_PARAMS
@@ -127,7 +127,7 @@ const GRADE_N = 5
 // looked at happened to be the road's own cut slope. So the site is now chosen by casting a ray
 // straight out from the road edge on the driver's side and grading a ladder of candidates along it.
 //
-//   CAMP_RAY_STEP_M  spacing of the candidates (≈11 of them over the 20 m tether)
+//   CAMP_RAY_STEP_M  spacing of the candidates (≈21 of them over the 40 m tether)
 //   CAMP_RESAMPLE_M  how far the truck must move before the ladder is re-graded
 //
 // THE MEMO IS A DISTANCE, NOT A GRID. Quantizing the query position (snapping it to a lattice) would
@@ -169,8 +169,6 @@ const CAMP_ROAD_CLEAR_TOL_M = 0.25
 // cell beyond C in each direction. Every point query therefore only has to scan the 3×3 cell
 // neighbourhood around the query's own cell. Keep this true if the radii are ever retuned.
 const NEIGHBOR_CELLS = 1
-
-const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
 /**
  * How epic the outlook from (x,z) is, 0..1 — the raw view score, before VIBE_W.view scales it.
@@ -662,17 +660,6 @@ export class CampSystem {
     }
 
     /**
-     * Distance from (x,z) to the nearest water within campWaterR, or Infinity.
-     *
-     * Ponds are exact (centre + radius). Streams are SAMPLED on rings, because streamChannelAt
-     * answers "is this point in a channel?", not "how far is the channel?" — so the finest ring that
-     * reports a channel is the distance, to within the ring spacing. Good enough for a 0.2-weight
-     * score, and it keeps the cost at a few dozen walks.
-     *
-     * NB: streamChannelAt ALWAYS returns a record ({inChannel:false,inBank:false,stream:null} away
-     * from any stream) — it must be READ, never truth-tested.
-     */
-    /**
      * Ring/spoke stream scan around one point, pushing every probe position that lands in a stream
      * channel or bank into `pts`. No early exit: 40 probes flat, and hits in EVERY direction are
      * kept — a candidate 30 m along the ray wants the hit on its own side, not just the first one
@@ -804,7 +791,7 @@ export class CampSystem {
             f.add(read, 'zone').name('in zone').disable(),
             f.add(read, 'lateral').name('road lateral').disable(),
             f.add(read, 'spread').name('spread (m)').disable(),
-            f.add(read, 'trees').name('trees ≤6 m').disable(),
+            f.add(read, 'trees').name('trees ≤10 m').disable(),
             f.add(read, 'water').name('water (m)').disable(),
             f.add(read, 'vibe').name('vibe').disable(),
         ]

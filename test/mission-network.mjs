@@ -1,12 +1,13 @@
 // GATE (FEAT-30): a story-mode mission may only route over roads that ACTUALLY EXIST.
 //
 // The bug this pins, in full, because it is easy to reintroduce and invisible in code review:
-// `_streamNetwork` runs `_assembleGraphEdges` (registers every Urquhart edge) and THEN
-// `_cullNetwork` (drops crossings, clearance violations, excess degree). The roads in the world are
-// therefore **Urquhart MINUS the cull**. The mission planner originally read `_buildUrquhart`
-// directly — the raw, pre-cull set — and happily routed through edges the world deletes, drawing
-// confident routes across empty hillsides. Roughly 15% of nearby raw edges do not survive the cull,
-// so this was not a rare corner case.
+// `_streamNetwork` runs `_assembleGraphEdges`, which registers the Urquhart edges MINUS the spec-time
+// degree drops (`_degreeDrops`), and the mid-span T promotions then split some of those edges in
+// two. The roads in the world are therefore never the raw Urquhart set. The mission planner
+// originally read `_buildUrquhart` directly and happily routed through edges the world never
+// builds, drawing confident routes across empty hillsides. (When this gate was written a crossing
+// cull also deleted edges — ~15% of nearby raw edges; the cull is gone since FEAT-68, the degree
+// drops and the promotions are not.)
 //
 // Two further properties are pinned here because both produced real, separate defects:
 //   - the mission's centerline must BE the registered centerline object, not a re-route. Routing an

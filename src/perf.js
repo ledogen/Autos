@@ -1,6 +1,6 @@
 // src/perf.js — the bucketed profiler behind ?prof (load/stream totals) and ?hitch (per-frame
-// attribution). Call sites stay in the product: perfAdd/perfEvent are a Map lookup and an add, and
-// the frame loop only reads them when a profiling flag is on.
+// attribution). Call sites stay in the product: with no profiling flag perfAdd/perfEvent are one
+// boolean test; with one on, a Map lookup and an add, read by the frame loop.
 //
 // Usage:
 //   import { perfAdd, perfMark, perfDump } from './perf.js'
@@ -19,11 +19,14 @@ let _t0 = (typeof performance !== 'undefined' ? performance.now() : 0)
 let _userTiming = false
 export function perfEnableUserTiming() { _userTiming = true }
 
+// Every reader of the buckets (perfDump, perfSnapshot via __perfData, the hitch report) runs only
+// under ?hitch or ?prof, and ?prof turns the hitch log on too — so with both off this returns at once.
 export function perfAdd(label, ms) {
+    if (!_hitchOn) return
     let b = _buckets.get(label)
     if (!b) { b = { ms: 0, n: 0 }; _buckets.set(label, b) }
     b.ms += ms; b.n++
-    if (_hitchOn) _cur.set(label, (_cur.get(label) ?? 0) + ms)   // PERF-26: per-frame delta
+    _cur.set(label, (_cur.get(label) ?? 0) + ms)   // PERF-26: per-frame delta
     if (_userTiming && ms > 0.005) {
         try { performance.measure(label, { start: performance.now() - ms, duration: ms }) } catch {}
     }
@@ -43,7 +46,7 @@ export function perfAdd(label, ms) {
 // ms >> cpu ⇒ the cost is off-thread: first draw of freshly-committed geometry, a shader variant
 // compiling, or the machine simply being loaded. Cumulative buckets can never tell those apart.
 //
-// Cost when disabled: one boolean test in perfAdd/perfEvent. Enabled: two Map writes per frame.
+// Cost when disabled: one boolean test in perfAdd/perfEvent. Enabled: two Map writes per perfAdd.
 let _hitchOn = false, _hitchMs = 24
 const _cur    = new Map()   // label -> ms accrued in the CURRENT frame
 const _curEv  = new Map()   // tag   -> event count in the CURRENT frame

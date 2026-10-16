@@ -292,11 +292,6 @@ export function validateArea(road, centre, area, params = {}) {
     }
 }
 
-/** Back-compat shim for the gate: the 3x3 grid area. */
-export function validatePlayArea(road, centre, params = {}) {
-    return validateArea(road, centre, gridArea(), params)
-}
-
 /**
  * The one-line reason a seed is not playable, for the entry disclaimer. Null when it is.
  * Deliberately plain: the player typed a seed, not a bug report.

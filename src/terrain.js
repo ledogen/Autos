@@ -2,13 +2,15 @@
  * src/terrain.js — TerrainSystem for AUTOS
  *
  * Responsibilities:
- *  - Chunk ring management (5×5, RING_RADIUS=2, 64 m tiles)
+ *  - Chunk ring management (64 m tiles; visible ring 1–4 + warm margin, set by the quality presets
+ *    through setRingRadius — RING_RADIUS=2 is only the constructor default)
  *  - Heightmap generation on a small pool of module Workers (src/terrain-worker.js)
  *  - Frame-spread geometry build (PERF-02: ms-budgeted, nearest-first; MAX_BUILDS_PER_FRAME hard cap)
  *  - analyticHeight/analyticNormal: main-thread direct analytic sampling (no chunk lookup)
  *    — used by queryContacts for physics contacts (no chunk-seam gap)
  *  - reinitWorker(worldSeed, params): sends init message to Worker, rebuilds noise closures
  *  - rebuildAllChunksFromWorker(): Path B — disposes all chunks and re-requests from Worker
+ *  - rebuildAllChunks(): Path A — recolours the built chunks in place (Terrain Look sliders)
  *
  * Physics contract: analyticHeight never returns 0 for unloaded chunks.
  * Rendering contract: chunk meshes use shared MeshPhongMaterial — do NOT dispose per-chunk.
@@ -18,7 +20,7 @@
  *
  * Threat mitigations:
  *   T-06-01: BUILD_MS_BUDGET (+ MAX_BUILDS_PER_FRAME cap) bounds main-thread geometry build cost per frame
- *   T-06-03: geometry.dispose() called in _updateChunkRing before chunkMap.delete
+ *   T-06-03: an evicted chunk's geometry is released to the pool (_releaseChunkGeometry) before chunkMap.delete
  *   T-07-03-SYNC: retired — the Worker imports src/terrain-height.js, the same module this file
  *                 reads, so there is no copy to keep in sync.
  */
@@ -28,27 +30,23 @@ import * as THREE from 'three'
 // pothole/curvature are not needed on the terrain mesh carve path.
 // QUAL-07: crownProfile no longer imported — the crown/camber fold moved into the one shared
 // RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
-import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
-import { height, makeTerrainNoise } from './terrain-height.js'   // THE height function — the Worker imports the same module
-import { makeSurfaceTextures } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
+import { addWorldVaryings, tdBumpGLSL } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
+import { height, makeTerrainNoise, CHUNK_SIZE, GRID_SAMPLES, HEIGHT_PARAM_KEYS } from './terrain-height.js'   // THE height function — the Worker imports the same module
+import { makeSurfaceTextures, _hexLin } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
 import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
+import { smooth01 as _smooth01 } from './seed.js'
 
 // FEAT-05/FEAT-85: the vegetation share of a ground sample — flat enough (below grassSlopeMax,
 // feathered from half of it) AND below the treeline (feathered lo→hi). One definition, two
 // readers: _writeChunkVertexColors paints green by it, groundAt()/groundClassify() hand it to the scatter.
-const _smooth01 = (e0, e1, x) => {
-    if (x <= e0) return 0; if (x >= e1) return 1
-    const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t)
-}
 export function vegBlendOf(slope, worldH, grassSlopeMax, treeLo, treeHi) {
     return (1 - _smooth01(grassSlopeMax * 0.5, grassSlopeMax, slope)) * (1 - _smooth01(treeLo, treeHi, worldH))
 }
 
 // ── Module constants ───────────────────────────────────────────────────────
 
-export const CHUNK_SIZE    = 64   // world units (metres) per chunk side
-export const GRID_SAMPLES  = 65   // vertices per side (64 cells), avoids seams
+export { CHUNK_SIZE, GRID_SAMPLES }   // defined in terrain-height.js (the Worker reads the same pair)
 const        RING_RADIUS          = 2   // chunks in each direction → 5×5 = 25 total (DEFAULT; runtime-tunable via setRingRadius)
 const        RING_KEEP_MARGIN     = 1   // PERF-02: keep (don't dispose) chunks within ring+this — hysteresis kills boundary dispose↔rebuild thrash
 const        GEOM_POOL_MAX        = 32  // PERF-05: recycled chunk-geometry pool cap. Steady driving keeps it near-empty (build≈evict); it fills only transiently on a full-ring regen, where the cap bounds retained memory. Recycling kills the per-chunk PlaneGeometry alloc + the non-deterministic GC pause (~16% of dropped-frame time on slow GPUs).
@@ -65,9 +63,7 @@ export class TerrainSystem {
      * Create and start the TerrainSystem.
      *
      * @param {THREE.Scene} scene     - The Three.js scene to add chunk meshes to.
-     * @param {object}      params    - Vehicle params object (reads terrainAmplitude, coarseAmplitude,
-     *                                  coarseFreq, coarseOctaves, ridgeSharpness, fineAmplitude,
-     *                                  fineFreq, regionalStrength, regionalScale, terrainAmplitude).
+     * @param {object}      params    - Vehicle params object (reads the height() fields — HEIGHT_PARAM_KEYS in terrain-height.js).
      * @param {number}      worldSeed - Unsigned 32-bit seed integer (from parseWorldSeed).
      *                                  Drives all three noise layers deterministically.
      */
@@ -86,7 +82,7 @@ export class TerrainSystem {
         this._initialFillDone = false     // PERF-13: false → burst budgets until the first full ring lands
         this._chunkMap      = new Map()   // key → { mesh, heights, carveData? }
         this._pendingWorker = new Set()   // keys requested but not yet received
-        this._pendingQueue  = []          // FIFO of received {key,cx,cz,heights} awaiting geometry build
+        this._pendingQueue  = []          // received {key,cx,cz,heights} awaiting geometry build (drained near-then-ahead, PERF-33)
         this._activeBuild   = null        // PERF-26: the chunk whose carve table is mid-build, carried across frames
         this._activeRecarve = null        // PERF-33: the LIVE chunk whose re-carve is mid-build, carried across frames
         this._epoch         = 0           // PERF-33: bumped on a full regen — replies to older requests (old seed) are dropped
@@ -94,6 +90,7 @@ export class TerrainSystem {
         this._motion        = null        // PERF-33: StreamMotion of the stream centre (near-then-ahead ordering)
         this._geomPool      = []          // PERF-05: recycled chunk BufferGeometry (65×65 XZ plane; only Y/normal/color change per chunk) — avoids per-chunk PlaneGeometry alloc + GC
         this._physicsHook   = null        // FEAT-48: TerrainPhysics (engine heightfield colliders) — syncChunk/disposeChunk/clear
+        this._ringScan      = { cx: 0, cz: 0, r: -1, epoch: -1, done: false }   // S-38: last request scan (skip while unchanged + complete)
 
         // Main-thread analytic noise closures (seeded same way as Worker — deterministic agreement)
         this._noiseCoarse   = null
@@ -472,13 +469,7 @@ export class TerrainSystem {
                     float td_rock = max(smoothstep(uCliffLo, uCliffHi, td_slp),
                                         smoothstep(uTreeLo, uTreeHi, vWorldPos.y));
                     if (td_rock > 0.001) {
-                        vec2 td_p = vWorldPos.xz * uNoiseScale;
-                        float td_e = 0.6;
-                        float td_h0 = tdFbm(td_p);
-                        float td_hx = tdFbm(td_p + vec2(td_e, 0.0));
-                        float td_hz = tdFbm(td_p + vec2(0.0, td_e));
-                        vec3 td_wb = vec3(-(td_hx - td_h0), 0.0, -(td_hz - td_h0)) * (uBump * uDetailScale * td_rock);
-                        normal = normalize(normal + mat3(viewMatrix) * td_wb);
+                        ${tdBumpGLSL('vWorldPos.xz * uNoiseScale', '0.6', 'uBump * uDetailScale * td_rock')}
                     }
                     // FEAT-84: the blended surface normal map, planar in world XZ (same encoding as
                     // td_wb: x→−∂h/∂x, y→−∂h/∂z), rotated into view space like the fbm bump above.
@@ -608,7 +599,10 @@ export class TerrainSystem {
     _syncTunnelUniforms(carPos) {
         const rs = this._roadSystem
         if (!rs || !rs._network) return
-        if (this._tunnelUniformRev !== rs._networkRev) {
+        // S-40: keyed on the INSTANCE too — a reseed swaps in a new RoadSystem whose rev restarts
+        // at 0, and a rev that happened to match would keep the old world's portals open.
+        if (this._tunnelUniformRoad !== rs || this._tunnelUniformRev !== rs._networkRev) {
+            this._tunnelUniformRoad = rs
             this._tunnelUniformRev = rs._networkRev
             this._tunnelPortalList = []
             const R = (this._params.tunnelBoreRadius ?? 8) + 0.45
@@ -703,18 +697,7 @@ export class TerrainSystem {
         // function and typed-array suspension buffers). Cloning the whole object throws a
         // DataCloneError, which silently aborts the regenerate before rebuildAllChunksFromWorker
         // runs — freezing the visible mesh while physics (reads params locally, no clone)
-        // keeps updating. terrainAmplitude is intentionally omitted: it is applied on the
-        // main thread in _flushPendingQueue, not inside the Worker height() function.
-        const workerParams = {
-            coarseAmplitude:  params.coarseAmplitude,
-            coarseFreq:       params.coarseFreq,
-            coarseOctaves:    params.coarseOctaves,
-            ridgeSharpness:   params.ridgeSharpness,
-            fineAmplitude:    params.fineAmplitude,
-            fineFreq:         params.fineFreq,
-            regionalStrength: params.regionalStrength,
-            regionalScale:    params.regionalScale
-        }
+        const workerParams = Object.fromEntries(HEIGHT_PARAM_KEYS.map((k) => [k, params[k]]))
         // PERF-19.2: reinit ALL pool workers so a seed/param change re-seeds every worker's noise.
         for (const w of this._workers) w.postMessage({ type: 'init', worldSeed, params: workerParams })
     }
@@ -811,9 +794,15 @@ export class TerrainSystem {
         // A chunk mid-carve captured the OLD inputs (pad list, spline samples) when its generator was
         // made — restart it. Queued chunks have not started, so they will read the new inputs anyway.
         const job = this._activeBuild
-        if (job && touches(job.cx, job.cz)) job.gen = this._carveTableGen(job.cx, job.cz, job.heights)
+        if (job && touches(job.cx, job.cz)) {
+            job.gen = this._carveTableGen(job.cx, job.cz, job.heights)
+            job.covered = this._roadCoversChunk(job.cx, job.cz)   // S-40: coverage at the carve's (re)start
+        }
         const rj = this._activeRecarve   // PERF-33: same for a re-carve in flight
-        if (rj && touches(rj.cx, rj.cz)) rj.gen = this._carveTableGen(rj.cx, rj.cz, this._chunkMap.get(rj.key).heights)
+        if (rj && touches(rj.cx, rj.cz)) {
+            rj.gen = this._carveTableGen(rj.cx, rj.cz, this._chunkMap.get(rj.key).heights)
+            rj.covered = this._roadCoversChunk(rj.cx, rj.cz)
+        }
         // Behind a loading screen nobody sees a hitch, so spend the burst budget on these (the same
         // reasoning as PERF-13's initial fill). Cleared by the re-carve pass once nothing is stale.
         if (marked && burst) this._recarveBurst = true
@@ -854,7 +843,7 @@ export class TerrainSystem {
      */
     isRingSettled() {
         if (this._lastCcx === undefined || this._activeBuild || this._activeRecarve) return false
-        const r = this._ringRadius ?? RING_RADIUS
+        const r = this._ringRadius
         for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
             if (!this.isChunkReady(this._lastCcx + dx, this._lastCcz + dz)) return false
         }
@@ -939,7 +928,7 @@ export class TerrainSystem {
 
     /**
      * Sample terrain height at world-space (wx, wz) with NO carve hook applied.
-     * Returns exactly the `raw` value from analyticHeight — height()*terrainAmplitude — but
+     * Returns exactly the `raw` value from analyticHeight — height() — but
      * skips the _sampleCarveWorld blend entirely. The carve-free height every consumer that must
      * not double-count the carve reads: the water system, the headless harness, and the pond /
      * stream gates. (It was introduced as the CR-04 fix for the D-06 design-grade smoother, which
@@ -949,21 +938,21 @@ export class TerrainSystem {
      *
      * @param {number} wx - World X coordinate.
      * @param {number} wz - World Z coordinate.
-     * @returns {number} Raw (carve-free) terrain height in metres (terrainAmplitude applied).
+     * @returns {number} Raw (carve-free) terrain height in metres.
      */
     rawHeightWorld(wx, wz) {
         if (!this._noiseCoarse) throw new Error('rawHeightWorld called before reinitWorker — call-order bug')
-        return height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params) * (this._params.terrainAmplitude ?? 1.0)
+        return height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
     }
 
     /**
      * Sample the CARVED terrain height at world-space (wx, wz) analytically: the Worker's
-     * three-layer formula × terrainAmplitude, then the road/pad carve blend. Never returns 0 for
+     * three-layer formula, then the road/pad carve blend. Never returns 0 for
      * unloaded chunks — it does not read chunk data (fixes the chunk-seam gap, RESEARCH §Pitfall 6).
      *
      * @param {number} wx - World X coordinate.
      * @param {number} wz - World Z coordinate.
-     * @returns {number} Height in metres (with terrainAmplitude applied).
+     * @returns {number} Height in metres.
      */
     // nrHint (optional): a precomputed roadSystem.carveHint(wx,wz) result, threaded through so a tight
     // cluster of samples (analyticNormal's ±0.5 m offsets, queryContacts' height+normal for one wheel)
@@ -971,12 +960,14 @@ export class TerrainSystem {
     // queryY (optional): the querying probe's own world Y. Only physics contact queries pass it —
     // inside a FEAT-40 bore span it disambiguates the two stacked surfaces (bore floor vs the raw
     // hill overhead). Callers without a Y (props, camera, map) always get the terrain skin.
-    analyticHeight(wx, wz, nrHint, queryY) {
+    // out (optional): receives out.blendW, the road-carve blend this height was composed with (0 =
+    // no road) — the water ribbons' BUG-33 road test reads it from the SAME _sampleCarveWorld call.
+    analyticHeight(wx, wz, nrHint, queryY, out) {
         // Precondition: reinitWorker (called synchronously in the constructor) must have built
         // the noise closures. Throw rather than silently returning 0 — a 0 here would seat the
         // truck at sea level inside the terrain and violate the "never returns 0" contract (WR-07).
         if (!this._noiseCoarse) throw new Error('analyticHeight called before reinitWorker — call-order bug')
-        const raw = height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params) * (this._params.terrainAmplitude ?? 1.0)
+        const raw = height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
 
         // FEAT-18: stream channel carve of the RAW terrain (see setWaterCarve for the composition).
         let hs = raw
@@ -996,8 +987,10 @@ export class TerrainSystem {
         // FEAT-40: queryY threads into the road resolve — inside a bore span the road only owns
         // below-apex probes; above-apex or Y-less queries fall through to a neighbouring surface
         // run or raw terrain (the hill overhead) inside _sampleCarveWorld.
+        if (out) out.blendW = 0
         if (this._roadSystem) {
             const c = this._roadSystem._sampleCarveWorld(wx, wz, raw, nrHint, queryY)
+            if (out && c) out.blendW = c.blendW
             if (c && c.blendW > 1e-6) return hs + c.blendW * (c.gradeY - hs)
         }
         return hs
@@ -1053,7 +1046,7 @@ export class TerrainSystem {
     }
 
     /**
-     * Update the 5×5 chunk ring around the car's current chunk.
+     * Update the chunk ring (visible ring + warm margin) around the car's current chunk.
      * Disposes out-of-ring chunks (geometry only — material is shared).
      * Requests new in-ring chunks from the worker if not already loaded/pending.
      *
@@ -1062,25 +1055,15 @@ export class TerrainSystem {
      * @private
      */
     _updateChunkRing(ccx, ccz) {
-        const ringRadius  = this._ringRadius ?? RING_RADIUS
-        const buildRadius = ringRadius + (this._warmMargin ?? 0)   // Phase 3: generate one warm ring beyond visible
-
-        // Build the target set of keys to REQUEST/build (visible ring + warm margin).
-        const needed = new Set()
-        for (let dx = -buildRadius; dx <= buildRadius; dx++) {
-            for (let dz = -buildRadius; dz <= buildRadius; dz++) {
-                needed.add(this._chunkKey(ccx + dx, ccz + dz))
-            }
-        }
+        const ringRadius  = this._ringRadius
+        const buildRadius = ringRadius + this._warmMargin   // Phase 3: generate one warm ring beyond visible
 
         // T-06-03 + PERF-02 hysteresis: dispose a chunk only once it falls OUTSIDE ring+keepMargin
         // (Chebyshev distance), not the instant it leaves the build ring. Without the margin, idling
         // on a chunk boundary dispose↔rebuilds the edge row every frame (a stutter that feels random).
         const keepRadius = buildRadius + RING_KEEP_MARGIN
         for (const [key, chunk] of this._chunkMap) {
-            const ci = key.indexOf(',')
-            const kx = +key.slice(0, ci), kz = +key.slice(ci + 1)
-            if (Math.max(Math.abs(kx - ccx), Math.abs(kz - ccz)) > keepRadius) {
+            if (Math.max(Math.abs(chunk.cx - ccx), Math.abs(chunk.cz - ccz)) > keepRadius) {
                 this._scene.remove(chunk.mesh)
                 this._releaseChunkGeometry(chunk.mesh.geometry)  // PERF-05: recycle (was T-06-03 dispose)
                 this._chunkMap.delete(key)
@@ -1118,8 +1101,7 @@ export class TerrainSystem {
             // i.e. oldest chunk first — often the one about to be evicted behind the truck).
             const stale = []
             for (const [key, chunk] of this._chunkMap) {
-                const ci = key.indexOf(',')
-                const cx = +key.slice(0, ci), cz = +key.slice(ci + 1)
+                const { cx, cz } = chunk
                 const covered = this._roadCoversChunk(cx, cz)
                 if (chunk.builtRoadGeneration === currentRoadGen && chunk.builtRoadCovered === covered && !chunk.carveStale) continue
                 stale.push({ key, chunk, cx, cz, covered, score: streamScore(cx - ccx, cz - ccz, this._motion) })
@@ -1162,17 +1144,16 @@ export class TerrainSystem {
                 // Re-apply heights + carve blend to the mesh Y positions (same formula as _flushPendingQueue).
                 // FEAT-18: chunk.streamData is reused as-is — streams are a pure fn of (seed, water
                 // params), independent of the road generation this pass reconciles.
-                const amp = this._params.terrainAmplitude ?? 1.0
                 const N   = GRID_SAMPLES
                 const pos = chunk.mesh.geometry.attributes.position
                 for (let i = 0; i < N * N; i++) {
-                    pos.setY(i, this._composeCarvedY(chunk.heights[i] * amp, newCarveData, chunk.streamData, i, amp))
+                    pos.setY(i, this._composeCarvedY(chunk.heights[i], newCarveData, chunk.streamData, i))
                 }
                 pos.needsUpdate = true
                 perfEvent('terrain.recarve')   // PERF-26: full-grid Y rewrite + re-upload of a LIVE chunk
                 chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
                 this._computeGridNormals(chunk.mesh.geometry, cx, cz)  // PERF-03: grid-FD normals (BUG-75: border rows need the chunk coords)
-                this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, amp, cx, cz)
+                this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, chunk.localMean)
                 // Stamp the inputs this carve was BUILT against (generation + coverage at its start), so a
                 // change that landed while it was in flight is still seen as stale by the next pass.
                 chunk.carveData = newCarveData ?? null
@@ -1194,14 +1175,21 @@ export class TerrainSystem {
         // arrive nearest-first → the area under/ahead of the truck fills before the periphery (no
         // visible hole where it matters). Remaining chunks ride the next tick — _pendingWorker dedups,
         // so no extra bookkeeping. MAX_REQUESTS_PER_FRAME bounds the postMessage flood at large rings.
+        // S-38: once a scan finds nothing missing, every key of this ring is built or pending, and
+        // only a move, a radius change or a full regen (epoch) can open a hole — skip the scan
+        // (a (2·buildRadius+1)² key build + lookups per frame) until one of them changes.
+        const scan = this._ringScan
+        if (scan.done && scan.cx === ccx && scan.cz === ccz && scan.r === buildRadius && scan.epoch === this._epoch) return
         const missing = []
-        for (const key of needed) {
-            if (!this._chunkMap.has(key) && !this._pendingWorker.has(key)) {
-                const ci = key.indexOf(',')
-                const cx = +key.slice(0, ci), cz = +key.slice(ci + 1)
-                missing.push({ key, cx, cz, score: streamScore(cx - ccx, cz - ccz, this._motion) })
+        for (let dx = -buildRadius; dx <= buildRadius; dx++) {
+            for (let dz = -buildRadius; dz <= buildRadius; dz++) {
+                const cx = ccx + dx, cz = ccz + dz, key = this._chunkKey(cx, cz)
+                if (!this._chunkMap.has(key) && !this._pendingWorker.has(key)) {
+                    missing.push({ key, cx, cz, score: streamScore(dx, dz, this._motion) })
+                }
             }
         }
+        scan.cx = ccx; scan.cz = ccz; scan.r = buildRadius; scan.epoch = this._epoch; scan.done = missing.length === 0
         missing.sort((a, b) => a.score - b.score)   // PERF-33: near-then-ahead (was nearest-first)
         // PERF-19.2: scale the per-frame dispatch budget with the pool size so N workers stay fed
         // (an 8/frame cap would leave a 3-worker pool starved — dispatch, not generation, would
@@ -1225,41 +1213,24 @@ export class TerrainSystem {
     }
 
     /**
-     * Re-apply the current terrainAmplitude to all already-built chunk geometries.
-     * Called when the debug amplitude slider changes so visuals update immediately
-     * instead of waiting for chunks to cycle out of the ring.
-     * Path A: instant Y-rescale, no Worker round-trip.
+     * Path A: RECOLOUR every built chunk in place — the Terrain Look palette / biome sliders
+     * (debug.js _recolor). Only colours move: the shader palette (_syncSurfacePalette) and each
+     * chunk's vertex colours + surface weights. Y, normals and colliders are untouched (nothing a
+     * recolour slider reads changes them). The meadow radius (terrainRelRadius) is one of those
+     * sliders, so the cached local-mean grid is recomputed here.
      */
     rebuildAllChunks() {
-        const amp = this._params.terrainAmplitude ?? 1.0
-        const N = GRID_SAMPLES
-        for (const [key, chunk] of this._chunkMap) {
-            const [cx, cz] = key.split(',').map(Number)
-            const pos = chunk.mesh.geometry.attributes.position
-            // Re-apply the road carve blend (raw + blendW*(gradeY-raw)) — same formula as
-            // _flushPendingQueue / the re-carve path. Without it the mesh snaps back to RAW
-            // height and buries the road trough (the ribbon stays at graded Y).
-            // FEAT-18 known debug-slider limitation: chunk.streamData bedY is WORLD-space, baked at
-            // build amp — after an amplitude change the channel bed is stale until the chunk cycles
-            // (water detection itself is amp-baked the same way; ponds drift too). Dev-slider only.
-            const carveData = chunk.carveData
-            for (let i = 0; i < N * N; i++) {
-                pos.setY(i, this._composeCarvedY(chunk.heights[i] * amp, carveData, chunk.streamData, i, amp))
-            }
-            pos.needsUpdate = true
-            chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
-            this._computeGridNormals(chunk.mesh.geometry, cx, cz)  // PERF-03: grid-FD normals (BUG-75: border rows need the chunk coords)
-            // Re-write vertex colors after Y + normals are updated (D-09/D-10/D-11).
-            this._writeChunkVertexColors(chunk.mesh.geometry, carveData, chunk.heights, amp, cx, cz)
-            this._physicsHook?.syncChunk(key, cx, cz, pos, N, CHUNK_SIZE)  // FEAT-48: amp-rescaled Y ⇒ rebuild collider
+        this._syncSurfacePalette()
+        for (const chunk of this._chunkMap.values()) {
+            chunk.localMean = this._localMeanGrid(chunk.cx, chunk.cz)
+            this._writeChunkVertexColors(chunk.mesh.geometry, chunk.carveData, chunk.heights, chunk.localMean)
         }
     }
 
     /**
      * FEAT-18: per-chunk stream-channel table — the stream analogue of _buildCarveTable.
      * Layout Float32Array [sw_0, bedY_0, sw_1, bedY_1, ...] (row-major, index = zi*N + xi).
-     * bedY is WORLD-space (WaterSystem heights already include terrainAmplitude), unlike
-     * carveData's pre-amp gradeY — so it is NOT amp-rescaled at blend time. null when no water
+     * bedY is world-space, like carveData's gradeY. null when no water
      * is wired or no stream channel touches the chunk (the common case — cheap bbox reject).
      * Pure fn of (cx, cz, waterSystem) → window-invariant. @private
      */
@@ -1273,14 +1244,13 @@ export class TerrainSystem {
         const PAD = Math.max(16, this._waterCarve.maxReach ? this._waterCarve.maxReach() : 0)
         const streams = this._waterCarve.streamsNear(ox - PAD, oz - PAD, ox + S + PAD, oz + S + PAD)
         if (!streams || streams.length === 0) return null
-        const amp = this._params.terrainAmplitude ?? 1.0
         const table = new Float32Array(N * N * 2)
         let touched = false
         for (let zi = 0; zi < N; zi++) {
             for (let xi = 0; xi < N; xi++) {
                 const idx = zi * N + xi
                 // raw world-space height — the multi-channel min-composition tie-breaker.
-                const s = this._waterCarve.sampleAt(ox + xi * cell, oz + zi * cell, streams, rawHeights[idx] * amp)
+                const s = this._waterCarve.sampleAt(ox + xi * cell, oz + zi * cell, streams, rawHeights[idx])
                 if (s.blendW > 1e-6) {
                     table[idx * 2] = s.blendW; table[idx * 2 + 1] = s.bedY
                     touched = true
@@ -1293,7 +1263,7 @@ export class TerrainSystem {
     /**
      * FEAT-18: THE mesh vertex-height composition (see setWaterCarve for the derivation) — shared
      * by the three mesh Y-write loops (_flushPendingQueue, recarve, rebuildAllChunks) so they can
-     * never drift. raw + streamData bedY world-space; carveData gradeY pre-amp (×amp here). @private
+     * never drift. raw, streamData bedY and carveData gradeY are all world-space. @private
      *
      * CAUSEWAY (2026-07-16): the road carve is composed over the stream-carved terrain WITHOUT
      * suppression — where a road core covers a channel it fills the cut back to gradeY, forming a
@@ -1302,7 +1272,7 @@ export class TerrainSystem {
      * un-suppressed blend), so the road ribbon deck seats on the terrain instead of floating over a
      * raw channel-wall notch. Replaced the old (1−sw) notch-and-bridge composition.
      */
-    _composeCarvedY(raw, carveData, streamData, i, amp) {
+    _composeCarvedY(raw, carveData, streamData, i) {
         let h = raw
         if (streamData) {
             const sw = streamData[i * 2]
@@ -1310,24 +1280,18 @@ export class TerrainSystem {
         }
         if (carveData) {
             const bw = carveData[i * 2]
-            if (bw > 1e-6) h = h + bw * (carveData[i * 2 + 1] * amp - h)
+            if (bw > 1e-6) h = h + bw * (carveData[i * 2 + 1] - h)
         }
         return h
     }
 
     /**
-     * Does the road network reach this chunk? Tested at the chunk's four corners plus its centre —
-     * the coverage boundary is a circle and a chunk is 64 m square, so a corner can be inside while
-     * the centre is not. Cheap (five squared-distance tests) and it runs once per live chunk per
-     * ring-sync tick, alongside the generation check it complements.
+     * Does the road network reach this chunk? RoadSystem.networkCoversTile (corners + centre, five
+     * squared-distance tests) — runs once per live chunk per ring-sync tick, alongside the generation
+     * check it complements. No road wired: nothing to wait for.
      */
     _roadCoversChunk(cx, cz) {
-        const rs = this._roadSystem
-        if (!rs || typeof rs.networkCoversXZ !== 'function') return true   // no road wired: nothing to wait for
-        const S = CHUNK_SIZE, x0 = cx * S, z0 = cz * S
-        return rs.networkCoversXZ(x0, z0) || rs.networkCoversXZ(x0 + S, z0)
-            || rs.networkCoversXZ(x0, z0 + S) || rs.networkCoversXZ(x0 + S, z0 + S)
-            || rs.networkCoversXZ(x0 + S / 2, z0 + S / 2)
+        return !this._roadSystem || this._roadSystem.networkCoversTile(cx, cz)
     }
 
     /**
@@ -1337,18 +1301,18 @@ export class TerrainSystem {
      * Returns null if no road system is attached or no road is within range of this chunk.
      *
      * The table is a pure function of (cx, cz, roadSystem, params) — never mutates chunk.heights.
-     * It is rebuilt fresh per generate request (buffer is consumed by postMessage Transferable)
-     * and again in _flushPendingQueue for the _chunkMap reference copy (Pitfall 5 prevention).
+     * Built on the main thread only (the carve never enters the Worker): once per new chunk in
+     * _flushPendingQueue and again by the re-carve pass.
      *
      * SURF-05: carveData stored on the chunk is NEVER written into chunk.heights (post-read blend).
      * @private
      */
-    // PERF-03 #1: `rawHeights` (optional) is the Worker's already-computed raw 65×65 noise grid for this
-    // chunk (row-major, pre-amplitude). When provided, the per-vertex loop reuses rawHeights[zi*N+xi]
+    // PERF-03 #1: `rawHeights` is the Worker's already-computed raw 65×65 noise grid for this
+    // chunk (row-major). When provided, the per-vertex loop reuses rawHeights[zi*N+xi]
     // instead of re-evaluating the multi-octave `height()` noise — byte-identical (same fn, same inputs),
     // just not recomputed. Available now that the table is built in _flushPendingQueue (has the heights)
-    // and the re-carve path (chunk.heights). Callers without it (none currently) fall back to height().
-    _buildCarveTable(cx, cz, rawHeights = null) {
+    // and the re-carve path (chunk.heights). Every caller passes it.
+    _buildCarveTable(cx, cz, rawHeights) {
         // Reached through the prototype, not `this`: the headless gates and bench-worldgen call this
         // method as TerrainSystem.prototype._buildCarveTable.call(fakeThis, …) with a plain object
         // carrying only the fields the carve reads, so `this._carveTableGen` would be undefined.
@@ -1374,13 +1338,12 @@ export class TerrainSystem {
      * keeps the exact signature the re-carve pass, the headless gates (which reach it through the
      * prototype) and bench-worldgen rely on.
      */
-    *_carveTableGen(cx, cz, rawHeights = null) {
+    *_carveTableGen(cx, cz, rawHeights) {
         if (!this._roadSystem) return null
 
         const N    = GRID_SAMPLES
         const S    = CHUNK_SIZE
         const cell = S / (N - 1)
-        const amp  = this._params.terrainAmplitude ?? 1.0
         const p    = this._params
 
         const halfWidth       = p.roadHalfWidth      ?? 5
@@ -1480,7 +1443,7 @@ export class TerrainSystem {
         let _tMin = Infinity, _tMax = -Infinity
         for (let c = 0; c < 5; c++) {
             const sx = (c & 1), sz = (c >> 1) & 1, mid = c === 4 ? 0.5 : 0
-            const th = height(originX + (mid || sx) * S, originZ + (mid || sz) * S, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params) * amp
+            const th = height(originX + (mid || sx) * S, originZ + (mid || sz) * S, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
             if (th < _tMin) _tMin = th; if (th > _tMax) _tMax = th
         }
         const _maxDelta = Math.max(Math.abs(_rYmax - _tMin), Math.abs(_rYmax - _tMax), Math.abs(_rYmin - _tMin), Math.abs(_rYmin - _tMax))
@@ -1505,10 +1468,8 @@ export class TerrainSystem {
                 const nearPad = _nearPad(wx, wz)
                 if (extBestD2 > _maxToe2 && !nearPad) { table[idx] = 0; table[idx + 1] = 0; continue }
 
-                // Raw terrain height at this vertex (world-space, with amplitude).
-                const rawPre = rawHeights ? rawHeights[zi * N + xi]
-                    : height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
-                const rawH   = rawPre * amp
+                // Raw terrain height at this vertex (world-space).
+                const rawH   = rawHeights[zi * N + xi]
 
                 // ── QUAL-07: resolve EXACTLY like physics → mesh == collision BY CONSTRUCTION ──
                 // The mesh resolves the road via the SAME _resolveRoadSurface physics uses (nearest
@@ -1542,7 +1503,7 @@ export class TerrainSystem {
                 }
                 if (notch) {
                     table[idx]     = notch.blendW
-                    table[idx + 1] = amp > 0 ? notch.gradeY / amp : notch.gradeY
+                    table[idx + 1] = notch.gradeY
                     if (notch.blendW > 1e-6) anyNonZero = true
                     continue
                 }
@@ -1588,7 +1549,7 @@ export class TerrainSystem {
                 if (!csP) { table[idx] = 0; table[idx + 1] = 0; continue }
 
                 table[idx]     = csP.blendW
-                table[idx + 1] = amp > 0 ? csP.gradeY / amp : csP.gradeY
+                table[idx + 1] = csP.gradeY
                 if (csP.blendW > 1e-6) anyNonZero = true
             }
             // PERF-26 slice boundary. Rows are independent, so this is a pure scheduling point.
@@ -1607,7 +1568,7 @@ export class TerrainSystem {
      * so road cuts never read as meadows) on a coarse grid that extends a HALO of `terrainRelRadius`
      * beyond the chunk, then box-blurred (separable) so in-chunk nodes always average a FULL window of
      * real neighbour terrain — no chunk-edge discontinuity. Cheap: ~(baseNodes+2·halo)² height evals
-     * per chunk (≈360 at defaults), not one per vertex. Returns world-space metres (amp applied).
+     * per chunk (≈360 at defaults), not one per vertex. Returns world-space metres.
      *
      * @param {number} cx - chunk X index
      * @param {number} cz - chunk Z index
@@ -1685,14 +1646,12 @@ export class TerrainSystem {
      * Cutout color is distinct from natural cliff/rock color (D-10).
      *
      * @param {THREE.BufferGeometry} geom      — geometry with position + normal attributes
-     * @param {Float32Array|null}    carveData — [blendW, gradeY_preamp, ...] per vertex (or null)
-     * @param {Float32Array}         heights   — raw pre-amplitude heights per vertex
-     * @param {number}               amp       — terrainAmplitude
-     * @param {number}               cx        — chunk X index (for the meadow local-mean grid)
-     * @param {number}               cz        — chunk Z index
+     * @param {Float32Array|null}    carveData — [blendW, gradeY, ...] per vertex (or null)
+     * @param {Float32Array}         heights   — raw (carve-free) heights per vertex
+     * @param {Float32Array}         localMean — the chunk's _localMeanGrid (cached on the chunk record)
      * @private
      */
-    _writeChunkVertexColors(geom, carveData, heights, amp, cx, cz) {
+    _writeChunkVertexColors(geom, carveData, heights, localMean) {
         const N = GRID_SAMPLES
 
         // Cliff thresholds from params (D-11). Fall back to defaults if not in params.
@@ -1714,7 +1673,6 @@ export class TerrainSystem {
         if (!colAttr || colAttr.itemSize !== 3 || colAttr.count !== nVerts) { colAttr = new THREE.BufferAttribute(new Float32Array(nVerts * 3), 3); geom.setAttribute('color', colAttr) }
         if (!surfAttr || surfAttr.itemSize !== 4 || surfAttr.count !== nVerts) { surfAttr = new THREE.BufferAttribute(new Float32Array(nVerts * 4), 4); geom.setAttribute('aSurf', surfAttr) }
         const colorArr = colAttr.array
-        this._syncSurfacePalette()   // FEAT-84: recolours re-run this, so the pickers reach the textures
         // FEAT-84: (grass, dirt, rock) surface weights, sum 1 — the shader's texture blend reads
         // these; they are the same feathered biome decision the colour below is made from.
         const surfArr = surfAttr.array
@@ -1723,13 +1681,12 @@ export class TerrainSystem {
         // Replaces the old desert warm-brown set. Natural biome is dirt→grass→rock, selected
         // by slope + altitude (treeline); engineered cut/fill zones still override via carve.
         const p = this._params
-        const _hx = (c) => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255]
-        const [DT_R, DT_G, DT_B] = _hx(p.terrainDirtColor   ?? 0x7c6346) // dirt — the "general" mid
-        const [GR_R, GR_G, GR_B] = _hx(p.terrainGrassColor  ?? 0x4c5e38) // FERTILE/forest green (flat bench)
-        const [MD_R, MD_G, MD_B] = _hx(p.terrainMeadowColor ?? 0x5c7a30) // MEADOW green (local basins)
+        const [DT_R, DT_G, DT_B] = _hexLin(p.terrainDirtColor   ?? 0x7c6346) // dirt — the "general" mid
+        const [GR_R, GR_G, GR_B] = _hexLin(p.terrainGrassColor  ?? 0x4c5e38) // FERTILE/forest green (flat bench)
+        const [MD_R, MD_G, MD_B] = _hexLin(p.terrainMeadowColor ?? 0x5c7a30) // MEADOW green (local basins)
         // (granite — terrainRockColor — is painted by the SHADER by the share rock wins; see uColRock)
-        const [CO_R, CO_G, CO_B] = _hx(p.terrainCutoutColor ?? 0x757066) // engineered cut face (D-10)
-        const [DF_R, DF_G, DF_B] = _hx(p.terrainFillColor   ?? 0x6b5740) // dirt fill foundation (D-07)
+        const [CO_R, CO_G, CO_B] = _hexLin(p.terrainCutoutColor ?? 0x757066) // engineered cut face (D-10)
+        const [DF_R, DF_G, DF_B] = _hexLin(p.terrainFillColor   ?? 0x6b5740) // dirt fill foundation (D-07)
         // Biome thresholds (slope = 1 - normal.y; altitude = raw terrain world Y).
         const grassSlopeMax = p.terrainGrassSlopeMax ?? 0.16
         const treeLo = p.terrainTreelineLo ?? 60
@@ -1739,11 +1696,6 @@ export class TerrainSystem {
         const relHi = p.terrainMeadowRelHi ?? -2
         const knollLo = p.terrainKnollRelLo ?? 1.5, knollHi = p.terrainKnollRelHi ?? 6
         const knollRock = p.terrainKnollRock ?? 0.55
-        const localMean = this._localMeanGrid(cx, cz)  // per-vertex low-pass landform (seam-free)
-        const smooth = (e0, e1, x) => {
-            if (x <= e0) return 0; if (x >= e1) return 1
-            const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t)
-        }
 
         for (let i = 0; i < nVerts; i++) {
             const idx3 = i * 3
@@ -1772,10 +1724,10 @@ export class TerrainSystem {
             if (carveData) {
                 const blendW = carveData[i * 2]
                 if (blendW > 1e-6) {
-                    const gradeY = carveData[i * 2 + 1] * amp
-                    const delta  = gradeY - heights[i] * amp   // positive = fill, negative = cut
+                    const gradeY = carveData[i * 2 + 1]
+                    const delta  = gradeY - heights[i]   // positive = fill, negative = cut
                     carveZoneBlend = blendW
-                    cutness = smooth(-cutRockFade, cutRockFade, -delta)
+                    cutness = _smooth01(-cutRockFade, cutRockFade, -delta)
                 }
             }
 
@@ -1784,14 +1736,14 @@ export class TerrainSystem {
             // above treeline), then the engineered road cut/fill zone overrides on top.
 
             // Altitude (raw terrain, pre-carve — embankments don't change biome by their cut Y).
-            const worldH = heights[i] * amp
+            const worldH = heights[i]
             // Vegetated where it's both flat enough AND below treeline (vegBlendOf — the ONE
             // definition; groundAt()/groundClassify() serve the same rule to the prop scatter, FEAT-85).
             const vegBlend = vegBlendOf(slope, worldH, grassSlopeMax, treeLo, treeHi)
             // Within vegetated ground, relative elevation splits MEADOW (local basin, water collects)
             // from FERTILE/forest (flat bench). rel below relLo → full meadow; at/above relHi → fertile.
             const rel = worldH - localMean[i]
-            const meadowness = 1 - smooth(relLo, relHi, rel)
+            const meadowness = 1 - _smooth01(relLo, relHi, rel)
             const VG_R = GR_R + (MD_R - GR_R) * meadowness
             const VG_G = GR_G + (MD_G - GR_G) * meadowness
             const VG_B = GR_B + (MD_B - GR_B) * meadowness
@@ -1800,8 +1752,8 @@ export class TerrainSystem {
             // "rocks poking thru grass around local maxima"). rel > 0 is the same relative
             // elevation the meadow rule reads negative; the knoll share is capped so the vertex
             // stays a rock/grass MIX and the height contest + local colouring do the poking.
-            const knoll = smooth(knollLo, knollHi, rel) * knollRock
-            const rockBlend = Math.max(cliffBlend, smooth(treeLo, treeHi, worldH), knoll)
+            const knoll = _smooth01(knollLo, knollHi, rel) * knollRock
+            const rockBlend = Math.max(cliffBlend, _smooth01(treeLo, treeHi, worldH), knoll)
 
             // Step 1: dirt → vegetation (fertile/meadow). Rock is NOT blended into the vertex
             // colour (owner 2026-09-25) — the shader paints it by the share rock wins (sRock, or
@@ -1847,20 +1799,19 @@ export class TerrainSystem {
     /**
      * FEAT-84: push the palette-derived shader colours (local-colouring targets, grass splotch
      * colours) from the params. Called at construction and on every recolour (the colour pickers
-     * route through _writeChunkVertexColors), so the pickers move the textures' colours too.
+     * route through rebuildAllChunks), so the pickers move the textures' colours too.
      */
     _syncSurfacePalette() {
         const p = this._params, U = this._terrainUniforms
         if (!U || !U.uColGrass) return
-        const hx = (c) => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255]
-        const grass = hx(p.terrainGrassColor ?? 0x426917)
+        const grass = _hexLin(p.terrainGrassColor ?? 0x426917)
         U.uColGrass.value.setRGB(...grass)
-        U.uColDirt.value.setRGB(...hx(p.terrainDirtColor ?? 0x7c6346))
-        U.uColRock.value.setRGB(...hx(p.terrainRockColor ?? 0x59544f))
+        U.uColDirt.value.setRGB(..._hexLin(p.terrainDirtColor ?? 0x7c6346))
+        U.uColRock.value.setRGB(..._hexLin(p.terrainRockColor ?? 0x59544f))
         U.uSurfAlbW.value.set(p.terrainTexAlbedoGrass ?? 0, p.terrainTexAlbedoDirt ?? 0, p.terrainTexAlbedoRock ?? 0.55)
         U.uUnderRockGreen.value  = p.terrainUnderRockGreen  ?? 0.8
         U.uBiomeDither.value.set(p.terrainBiomeDither ?? 0.5, p.terrainBiomeDitherFreq ?? 0.3)
-        U.uRockGapGreen.value.setRGB(...hx(p.terrainRockGapGreen ?? 0x2d372a))
+        U.uRockGapGreen.value.setRGB(..._hexLin(p.terrainRockGapGreen ?? 0x2d372a))
         U.uRockSparsity.value    = p.terrainRockSparsity    ?? 2.0
         U.uDirtRockFloor.value   = p.terrainDirtRockFloor   ?? 0.03
         U.uDirtPebbleGrey.value  = p.terrainDirtPebbleGrey  ?? 0.35
@@ -1912,8 +1863,7 @@ export class TerrainSystem {
         const p = this._params
         const treeLo = p.terrainTreelineLo ?? 60, treeHi = p.terrainTreelineHi ?? 105
         const green = vegBlendOf(slope, h, p.terrainGrassSlopeMax ?? 0.16, treeLo, treeHi)
-        const sm = (e0, e1, x) => { if (x <= e0) return 0; if (x >= e1) return 1; const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t) }
-        const rock = Math.max(sm(p.roadCliffSlopeLo ?? 0.3, p.roadCliffSlopeHi ?? 0.6, slope), sm(treeLo, treeHi, h))
+        const rock = Math.max(_smooth01(p.roadCliffSlopeLo ?? 0.3, p.roadCliffSlopeHi ?? 0.6, slope), _smooth01(treeLo, treeHi, h))
         return { green, rock }
     }
     /**
@@ -1982,7 +1932,7 @@ export class TerrainSystem {
         const deadline = this._deadline(burst ? 16 : BUILD_MS_BUDGET)   // PERF-02: time-slice the build (vs a fixed count)
         // PERF-33: drop replies that scrolled out of the keep ring while in flight — building them
         // only for the ring pass to evict them next frame was a full carve of pure waste.
-        const keepR = (this._ringRadius ?? RING_RADIUS) + (this._warmMargin ?? 0) + RING_KEEP_MARGIN
+        const keepR = this._ringRadius + this._warmMargin + RING_KEEP_MARGIN
         const job0 = this._activeBuild
         if (job0 && Math.max(Math.abs(job0.cx - ccx), Math.abs(job0.cz - ccz)) > keepR) {
             this._pendingWorker.delete(job0.key)   // a half-built carve for a spot we left (jump / fast turn)
@@ -2017,6 +1967,9 @@ export class TerrainSystem {
                     ...next,
                     gen: this._carveTableGen(next.cx, next.cz, next.heights),   // PERF-03 #1: reuse the Worker's raw heights
                     roadGen: this._roadSystem?.roadGeneration() ?? -1,
+                    // S-40: road coverage when the carve STARTED (stamped at commit as builtRoadCovered,
+                    // like the re-carve path) — a flip mid-build then still reads as stale next pass.
+                    covered: this._roadCoversChunk(next.cx, next.cz),
                     carveData: undefined,
                 }
             }
@@ -2028,6 +1981,7 @@ export class TerrainSystem {
             if (job.roadGen !== roadGenNow) {
                 job.gen = this._carveTableGen(job.cx, job.cz, job.heights)
                 job.roadGen = roadGenNow
+                job.covered = this._roadCoversChunk(job.cx, job.cz)
             }
             {
                 const _pt = performance.now()
@@ -2052,8 +2006,6 @@ export class TerrainSystem {
             const geom = this._acquireChunkGeometry()
 
             // Overwrite Y values from heights Float32Array (row-major: heights[zi*N+xi])
-            // Apply terrainAmplitude so the visual geometry matches the physics contact surface
-            // (analyticHeight) at all amplitude settings.
             // Phase 9 carve hook (SURF-05): blend road design grade using chunk.carveData — the
             // same blend analyticHeight applies.
             // carveData was built above in resumable slices (PERF-26); the main thread owns it because
@@ -2063,12 +2015,11 @@ export class TerrainSystem {
             const streamData = this._buildStreamTable(cx, cz, heights)
             perfAdd('flush.buildStreamTable', performance.now() - _pt)
             const pos = geom.attributes.position
-            const amp = this._params.terrainAmplitude ?? 1.0
             for (let i = 0; i < N * N; i++) {
-                // heights[i] is pre-amplitude (raw from Worker). Apply amp for world-space, then the
+                // heights[i] is raw from the Worker (world-space metres); apply the
                 // shared stream+road composition (_composeCarvedY — the same formula analyticHeight
                 // applies from the live samplers).
-                pos.setY(i, this._composeCarvedY(heights[i] * amp, carveData, streamData, i, amp))
+                pos.setY(i, this._composeCarvedY(heights[i], carveData, streamData, i))
             }
             pos.needsUpdate = true
             // PERF-05 pooling fix: a recycled geometry carries the PREVIOUS chunk's cached
@@ -2087,7 +2038,8 @@ export class TerrainSystem {
             // localMean. Engineered cut/fill zones override via carveData blendW (D-10/D-07, free).
             // Asphalt lives on the road-mesh.js ribbon (not on terrain chunks).
             _pt = performance.now()
-            this._writeChunkVertexColors(geom, carveData, heights, amp, cx, cz)
+            const localMean = this._localMeanGrid(cx, cz)   // carve-free: cached on the record for re-carves
+            this._writeChunkVertexColors(geom, carveData, heights, localMean)
             perfAdd('flush.writeVertexColors', performance.now() - _pt)
 
             const mesh = new THREE.Mesh(geom, this._material)
@@ -2121,14 +2073,16 @@ export class TerrainSystem {
             // (D1, plan 09-19: the road generation at which this chunk's carve was built;
             // _updateChunkRing re-carves chunks whose stored version ≠ roadGeneration()).
             this._chunkMap.set(key, {
+                cx, cz,   // S-38: the ring passes read these instead of re-parsing the key
                 mesh, heights, carveData: carveData ?? null,
-                streamData: streamData ?? null,   // FEAT-18: stream table (recarve/amp paths reuse it)
+                localMean,   // S-38: a pure fn of (cx, cz, seed, terrainRelRadius) — recomputed only by a recolour
+                streamData: streamData ?? null,   // FEAT-18: stream table (the recarve path reuses it)
                 builtRoadGeneration: this._roadSystem?.roadGeneration() ?? -1,
                 // Was the road network actually REACHING this chunk when its carve was built? A
                 // chunk carved outside coverage is flat because the network had not arrived, not
                 // because there is no road — and a positional adopt never bumps roadGeneration, so
                 // the generation check alone can never reconcile it. See _roadCoversChunk.
-                builtRoadCovered: this._roadCoversChunk(cx, cz),
+                builtRoadCovered: job.covered,
             })
 
             // Release the pending reservation only after _chunkMap is updated.

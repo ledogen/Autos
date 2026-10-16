@@ -55,8 +55,8 @@
 //
 //   SPAN (GATING) — everywhere else. Forks, taper bands, merge seams, junction legs past the pad.
 //   PAD  (report) — inside the junction pad footprint, where the ribbons are cut back and a REAL
-//                   junction surface exists. That surface's quality is the pad-arrival guard's
-//                   business (mergePadArrivalMax).
+//                   junction surface exists. That surface's quality is the pad's own business
+//                   (roadJunctionPadMaxGrade / roadJunctionBlendMaxGrade).
 //
 // Baseline the day rule 2 landed (2026-08-27, head 63b0e21): 100 span, 8 pad-deck / 498 pad-edge,
 // over NINE windows (102 / 8 / 501 after B2's endpoint pin — see node-pin.mjs) — mark B was added with the rule, so it is the ninth. Rule 1 alone found 17

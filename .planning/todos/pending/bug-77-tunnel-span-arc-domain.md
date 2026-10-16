@@ -31,6 +31,8 @@ samples inside the mislocated span. That is the gate's only red on the merged br
   `_clArcOfCum`).
 - `road-tunnel.mjs` green (bore interior ≤ 21%) with the portal post-pass in place.
 - `bore-junction-clearance`, `road-smoothness`, `junction-stitch` no worse.
+- (review-2 road reviewer, 2026-10-15) The fix must also switch `_v2SliceRun` (road.js) to clip
+  `tunnelSpans` on the driven arc (`p0`, polyCum) instead of `c0` (clArc), together with the conversion.
 
 ## Known red on main
 

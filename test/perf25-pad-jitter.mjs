@@ -19,7 +19,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
-const P = { ...RANGER_PARAMS, roadNetworkMode: 'graph' }
+const P = RANGER_PARAMS
 const PAD = { x: -99.9, z: 172.4 }
 const FRAMES = 2000
 const JITTER = 0.003   // m — measured suspension noise scale

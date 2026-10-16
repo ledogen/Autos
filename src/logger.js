@@ -11,18 +11,21 @@
  *   openInitialCondition(vehicleState)   — opens a file picker and applies JSON state to vehicleState.
  *                                          Optional IC fields: recordDuration (seconds — triggers auto-recording),
  *                                          inputs (reserved for future input-script support; currently warns)
+ *   downloadJSON(obj, name, indent?)     — saves an object as a JSON file (the shared Blob-download path)
  *
  * Log format (D-06 / D-07):
  *   Columnar JSON — { fields: string[], frames: number[][] }
  *   One "fields" header array with short names; "frames" is an array of scalar arrays (one row per tick).
- *   Fields (45 entries): t, px, py, pz, vx, vy, vz, qx, qy, qz, qw, wx, wy, wz,
+ *   Fields (56 entries): t, px, py, pz, vx, vy, vz, qx, qy, qz, qw, wx, wy, wz,
  *     steer, thr, brk, fl_fn, fl_fy, fl_sa, fl_c, fr_fn, fr_fy, fr_sa, fr_c,
  *     rl_fn, rl_fy, rl_sa, rl_c, rr_fn, rr_fy, rr_sa, rr_c,
  *     fl_omega, fr_omega, rl_omega, rr_omega  (Phase 3 — wheel angular velocity rad/s)
  *     fl_fz, fr_fz, rl_fz, rr_fz             (Phase 4 — tire spring force N per corner, D-12)
  *     fl_sc, fr_sc, rl_sc, rr_sc             (Phase 4.1 — strut compression m per corner, D-12)
- *     rd_minr                                (BUG-12 — local centerline turn radius m)
+ *     rd_minr                                (BUG-12, closed — always 9999, kept for field order)
  *     rd_gh, fl_gh, fr_gh, rl_gh, rr_gh      (2026-06-25 — ground height under CG + each wheel, harness fidelity)
+ *     gear, eng_rpm, coupled_rpm, wheelspin  (FEAT-23 — drivetrain)
+ *     ign                                    (FEAT-33 — 0 off / 1 cranking / 2 running)
  *
  * Threat model: T-02-01 — JSON.parse wrapped in try/catch; unknown IC keys ignored, no eval.
  *
@@ -34,6 +37,7 @@
  */
 
 import { buildEventCapture } from './capture.js'
+import { computeStaticEquilibrium } from './suspension.js'
 
 // ── Module-private state ──────────────────────────────────────────────────────
 let _recording = false
@@ -48,7 +52,7 @@ let _captureCtx = null       // () => { worldSeed, seedString, params, streamCen
  */
 export function setCaptureContext (fn) { _captureCtx = fn }
 
-// D-07: 41 fields — exact order is part of the public log contract; do not reorder.
+// D-07: 56 fields — exact order is part of the public log contract; do not reorder (append at END).
 // Phase 3 appends fl_omega/fr_omega/rl_omega/rr_omega at positions 33-36 (constraint #8).
 const FIELDS = [
   't',
@@ -67,8 +71,8 @@ const FIELDS = [
   'fl_fz', 'fr_fz', 'rl_fz', 'rr_fz',
   // Phase 4.1 additions — per-wheel strut compression (D-12), 2026-06-01
   'fl_sc', 'fr_sc', 'rl_sc', 'rr_sc',
-  // BUG-12 diagnostic (open): local XZ turn radius of the truck's run centerline (m). 9999 = ~straight.
-  // If a ribbon FOLD is visible where rd_minr is still ≥ ~15 m → fold is junction/mesh, not the spline.
+  // BUG-12 diagnostic (closed): was the truck run's local centerline turn radius. No longer sampled —
+  // always 9999 — the column stays so the field order of older logs and their readers holds.
   'rd_minr',
   // Harness-fidelity columns (2026-06-25): the SURFACE the browser actually sampled, so test/replay.mjs
   // can diff it against the headless terrain model frame-by-frame instead of guessing. rd_gh = ground
@@ -107,7 +111,20 @@ function _downloadLog () {
     payload = { fields: FIELDS, frames: _frames }   // legacy raw-log fallback
     name = 'autos-log-' + Date.now() + '.json'
   }
-  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
+  downloadJSON(payload, name)
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Save a JS object as a JSON file through a throwaway <a download> link. The one Blob-download
+ * path: the recorder above, the place capture and the run export in main.js all call it.
+ * @param {object} obj
+ * @param {string} name - file name
+ * @param {number} [indent] - JSON.stringify indent (omitted → compact)
+ */
+export function downloadJSON (obj, name, indent) {
+  const blob = new Blob([JSON.stringify(obj, null, indent)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   try {
     const a = document.createElement('a')
@@ -120,8 +137,6 @@ function _downloadLog () {
     URL.revokeObjectURL(url)
   }
 }
-
-// ── Public API ────────────────────────────────────────────────────────────────
 
 /**
  * Toggle frame recording on/off.
@@ -179,9 +194,8 @@ export function isRecording () { return _recording }
  * @param {number} simTime - Accumulated simulation time in seconds.
  * @param {object} vehicleState - Full vehicle state object (position, velocity, quaternion, etc.).
  * @param {Array}  wheelDebug  - Array of 4 objects [{fn, fy, sa, c}, ...] (FL, FR, RL, RR).
- * @param {object} [roadDebug] - { minR, gh, wheelGh }. minR: BUG-12 turn-radius diagnostic (omitted →
- *   9999). gh: ground height under the CG (omitted → null). wheelGh: [fl,fr,rl,rr] ground height under
- *   each wheel hub (omitted → nulls). gh/wheelGh are the harness-fidelity surface samples.
+ * @param {object} [roadDebug] - { gh, wheelGh }. gh: ground height under the CG (omitted → null).
+ *   wheelGh: [fl,fr,rl,rr] ground height under each wheel hub (omitted → nulls). gh/wheelGh are the harness-fidelity surface samples.
  */
 export function captureFrame (simTime, vehicleState, wheelDebug, roadDebug) {
   if (!_recording) return
@@ -215,8 +229,8 @@ export function captureFrame (simTime, vehicleState, wheelDebug, roadDebug) {
     fl.fz ?? 0, fr.fz ?? 0, rl.fz ?? 0, rr.fz ?? 0,
     // Phase 4.1 additions — per-wheel strut compression (D-12), 2026-06-01
     fl.strutComp ?? 0, fr.strutComp ?? 0, rl.strutComp ?? 0, rr.strutComp ?? 0,
-    // BUG-12 diagnostic (open): local centerline turn radius near truck
-    rd.minR ?? 9999,
+    // BUG-12 (closed): column kept for field order; nothing samples it now
+    9999,
     // Harness-fidelity surface samples (2026-06-25): CG + per-wheel ground height. null when no terrain
     // (e.g. the testing lab) — the replay self-check treats a missing/null rd_gh as "older capture, skip".
     rd.gh ?? null,
@@ -268,19 +282,10 @@ export function openInitialCondition (vehicleState, params) {
         vehicleState.wheelOmega   = [0, 0, 0, 0]
         vehicleState.slipLong     = [0, 0, 0, 0]
         vehicleState.slipLat      = [0, 0, 0, 0]
-        // Recompute strutComp from static equilibrium using D-11 formula (sprung mass only).
-        // strutComp[i] = m_sprung_corner * g / k_S_i  where m_sprung = mass * weight_i / 2
-        // This is the hub-ODE equilibrium condition; wheel inertia is not included (D-11).
+        // Recompute strutComp from static equilibrium (D-11: sprung mass only — the hub-ODE
+        // equilibrium condition, the same one the spawn seats with).
         if (params) {
-          const g = 9.81
-          const strutComp = [0, 0, 0, 0]
-          for (let i = 0; i < 4; i++) {
-            const isFront = i < 2
-            const k_S     = isFront ? params.suspensionStiffnessFront : params.suspensionStiffnessRear
-            const sprung  = params.mass * (isFront ? params.weightFront : params.weightRear) / 2
-            strutComp[i]  = sprung * g / k_S  // D-11
-          }
-          vehicleState.strutComp = strutComp
+          vehicleState.strutComp = computeStaticEquilibrium(params).strutComp
         } else {
           vehicleState.strutComp = [0, 0, 0, 0]
         }

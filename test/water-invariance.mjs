@@ -15,7 +15,7 @@
 //   5. POINT-QUERY   — pondAt / isRoadNoGo agree whether the instance was warmed small-first or
 //                      large-first (cache-order independence).
 //
-// Registered in run-all.mjs (water wired 2026-07-01). Run alone: node test/water-invariance.mjs
+// Registered in test/gates.mjs (water wired 2026-07-01). Run alone: node test/water-invariance.mjs
 
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
@@ -180,24 +180,6 @@ log(ponds0.length > 0 && streams0.length > 0, 'NON-VACUOUS',
     const dry   = ws.submergedAt(pond.floorX + 1e5, 0, pond.floorZ)             // far from any pond
     const ok = below.submerged && below.depth > 0 && !above.submerged && !dry.submerged
     log(ok, 'SUBMERGED-HOOK', `under-plane submerged=${below.submerged}(d=${below.depth.toFixed(2)}) above=${above.submerged} dry=${dry.submerged}`)
-}
-
-// ── 8. BRIDGE crossings deterministic + window-invariant ─────────────────────────────────
-{
-    // Synthetic road grid (E–W + N–S lines every 400 m across R) — a stand-in for routed
-    // centerlines. Crossings must be identical across instances and query windows.
-    const roads = []
-    for (let z = R.z0; z <= R.z1; z += 400) { const l = []; for (let x = R.x0; x <= R.x1; x += 40) l.push({ x, z }); roads.push(l) }
-    for (let x = R.x0; x <= R.x1; x += 400) { const l = []; for (let z = R.z0; z <= R.z1; z += 40) l.push({ x, z }); roads.push(l) }
-    const crossSig = (c) => `${c.x.toFixed(3)},${c.z.toFixed(3)}|${c.stream.key}|bed${c.bedY.toFixed(3)}`
-    const wA = mk(), wB = mk()
-    const cA = sortJoin(wA.streamRoadCrossings(roads, R).map(crossSig))
-    const cB = sortJoin(wB.streamRoadCrossings(roads, R).map(crossSig))
-    // window-invariance: same crossings whether streams fetched via R or via BIG.
-    const cBig = sortJoin(wB.streamRoadCrossings(roads, BIG).filter(c => c.x >= R.x0 && c.x <= R.x1 && c.z >= R.z0 && c.z <= R.z1).map(crossSig))
-    const n = wA.streamRoadCrossings(roads, R).length
-    const ok = cA === cB && cA === cBig && n > 0
-    log(ok, 'BRIDGE-CROSSINGS', `${n} crossings — determinism:${cA === cB} window-invariance:${cA === cBig}`)
 }
 
 // ── 9. STREAM CHANNEL CARVE cross-section (FEAT-18 carve descriptor) ──────────────────────

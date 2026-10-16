@@ -1,4 +1,4 @@
 # Model Credits
 
-- **Toyota Hilux 97** (`hilux.glb`) — by **Muhammad Reyhan**, licensed **CC-BY**.
-  Source: Poly Pizza (https://poly.pizza/m/8-0nFArehjd).
+No third-party models ship at present — every `.glb` here is own work. Add a line per licensed
+model (name, file, author, license, source URL) when one lands.

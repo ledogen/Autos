@@ -56,7 +56,7 @@ export function makeVehicleState (params, ignitionKey = undefined) {
     rimForce:        [0, 0, 0, 0],                   // N   — engine contact FORCE on each WHEEL HARD CORE (QUAL-25). Non-zero only when the rim itself is hit — rim damage
     brakeTorque:     [0, 0, 0, 0],                   // N·m — applied brake torque (brake wear)
     wheelPhase:      [0, 0, 0, 0],                   // per-wheel spin phase [rad], fixed-step; feeds the out-of-round radius (params.wheelRunout)
-    drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
+    drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
     ignition:        makeIgnitionState(ignitionKey),    // FEAT-33 key state (OFF/CRANKING/RUNNING); stepped by updateVehicle, read by stepDrivetrain + the cluster. Free roam spawns RUNNING.
     engineHealth:    1,                                 // FEAT-33 seam for the SM-3 wear model: 1 = fresh engine (quarter-second catch), 0 = beater (ignitionCatchTimeWorn). Written every step by the damage model's engine track (damage.js).
     handbrake:       false,                            // Space key handbrake state; written by updateVehicle, read by getBrakeTorque

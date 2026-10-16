@@ -59,8 +59,9 @@ console.log(`§1 yield — below it the rim springs back (static ${(STATIC / 100
 
 console.log('\n§2 measured: the two sources are priced on their OWN scales')
 {
-  // Running over a rock does not reach the rim (peak core force 3-5 kN, measured 11-55 mph).
-  for (const [mph, kN] of [[11, 3.2], [34, 3.9], [55, 5.1]]) {
+  // Running over a rock does not reach the rim (peak core force 3.2-5.1 kN measured 11-55 mph in the
+  // pre-R-02 last-substep reading; x16 = the whole-step reading the core force uses now).
+  for (const [mph, kN] of [[11, 51.2], [34, 62.4], [55, 81.6]]) {
     const d = fresh(); strike(d, kN * 1000)
     const lost = (1 - d.get('wheelFL')) * 100
     console.log(`  ${mph} mph over a rock peaks the core at ${kN} kN → ${lost.toFixed(2)}% of the wheel`)

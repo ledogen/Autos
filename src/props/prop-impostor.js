@@ -15,7 +15,7 @@
  * light rig). Square capture region of side S = max(width, height) so the quad never stretches.
  * Re-bake on sky look changes (rebake()) — a handful of tiny renders, imperceptible.
  *
- * RENDER: one InstancedMesh per billboardable variant (IMPOSTOR_CATS × variants ≈ 11 extra draw
+ * RENDER: one InstancedMesh per billboardable variant (IMPOSTOR_CATS × variants = 8 extra draw
  * calls, capacity-shared with the 3D pools' slot bookkeeping in prop-system). Cylindrical
  * billboard in the vertex shader (rotates about world +Y around the trunk-base anchor — trees
  * must not tip back when the camera looks down). alphaTest cutout, no blending, depth-tested and
@@ -38,7 +38,7 @@ import * as THREE from 'three'
  */
 export const IMPOSTOR_CATS = ['aspen', 'pine']
 
-const TILE_PX = 256            // px per variant tile (atlas ~16 MB RGBA16F at 11 variants; 128 showed
+const TILE_PX = 256            // px per variant tile (3×3 atlas, 768² RGBA16F = 4.7 MB + mips + a 2.4 MB depth buffer; 128 showed
                                // visible stair-step cutout edges on mid-distance trees at 1200p)
 const LIT_GAIN = 1.7           // sun-term scale in the view-relit ratio (1 = physical; 1.7 user-tuned) —
                                // live-tunable via the Props GUI 'billboard sun contrast' slider
@@ -63,6 +63,7 @@ export class PropImpostors {
     this._rows = 0
     this._litGain = LIT_GAIN
     this._flatten = FLATTEN
+    this._meansStale = false     // S-46: tile means skipped at flatten 0, computed on first need
   }
 
   /** Live sun-contrast scale (uniforms only — no rebake needed). 1 = physical. */
@@ -74,6 +75,7 @@ export class PropImpostors {
   /** Live gradient-flatten strength at sun-on views (uniforms only). See FLATTEN. */
   setFlatten (v) {
     this._flatten = Math.max(0, Math.min(1, v))
+    if (this._flatten > 0 && this._meansStale && this._rt) this._computeTileMeans()   // S-46: lazy (see rebake)
     for (const e of this._entries.values()) {
       if (e.material) e.material.uniforms.uFlat.value = this._flatten
     }
@@ -160,10 +162,7 @@ export class PropImpostors {
       e.material = this._makeBillboardMaterial(e.uTile, e.y0n)
     }
     this.rebake()
-    if (typeof window !== 'undefined') {
-      window.__impAtlasDump = () => this.dumpAtlas()      // CDP debug handles
-      window.__impAtlasStats = () => this.atlasStats()
-    }
+    if (typeof window !== 'undefined') window.__impAtlasStats = () => this.atlasStats()   // CDP debug handle
     return this._entries
   }
 
@@ -255,14 +254,18 @@ export class PropImpostors {
     r.setClearColor(prevClear, prevClearA)
     r.setRenderTarget(prevTarget)
     mat.dispose()
-    this._computeTileMeans()
+    // S-46: the means feed only uFlat's mix(), an exact no-op at flatten 0 (the default) — skip the
+    // whole-atlas sync readback (4.7 MB GPU→CPU stall on every sky push) until a flatten wants them.
+    if (this._flatten > 0) this._computeTileMeans()
+    else this._meansStale = true
   }
 
   /**
    * Per-tile mean foliage colour (unpremultiplied, over a ≥ 0.5 texels) → uTileMean, the flatten
-   * target. One whole-atlas readback per bake (boot / sky-look change), not per frame.
+   * target. One whole-atlas readback per bake (boot / sky-look change) while flatten > 0, not per frame.
    */
   _computeTileMeans () {
+    this._meansStale = false
     const rt = this._rt
     const w = rt.width, h = rt.height
     const buf = new Uint16Array(w * h * 4)
@@ -403,29 +406,6 @@ export class PropImpostors {
 
   /** Bind the atlas into a billboard material (call after build(); kept out of merge()'s clone). */
   bindAtlas (material) { material.uniforms.uAtlas.value = this._rt.texture }
-
-  /**
-   * Dev handle: dump the atlas to a PNG data-URL (half-float → 8-bit, no tone map). Wired onto
-   * window in build() — same precedent as main.js's __ri/__propShadows CDP handles.
-   */
-  dumpAtlas () {
-    const rt = this._rt
-    if (!rt) return null
-    const w = rt.width, h = rt.height
-    const buf = new Uint16Array(w * h * 4)
-    this._renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf)
-    const canvas = document.createElement('canvas')
-    canvas.width = w; canvas.height = h
-    const ctx = canvas.getContext('2d')
-    const img = ctx.createImageData(w, h)
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const si = ((h - 1 - y) * w + x) * 4        // flip: GL row 0 is the bottom
-      const di = (y * w + x) * 4
-      for (let c = 0; c < 4; c++) img.data[di + c] = Math.min(255, Math.round(halfToFloat(buf[si + c]) * 255))
-    }
-    ctx.putImageData(img, 0, 0)
-    return canvas.toDataURL('image/png')
-  }
 
   dispose () {
     if (this._rt) this._rt.dispose()

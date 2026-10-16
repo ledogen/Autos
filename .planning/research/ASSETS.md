@@ -18,7 +18,7 @@ Verified against `src/vehicle-model.js`, `data/vehicle-models.js`, and `vite.con
 
 That path is load-bearing in three places — it is not a loose convention:
 
-1. `data/vehicle-models.js` references it as a **relative URL** (`url: 'assets/models/hilux.glb'`),
+1. `data/vehicle-models.js` references it as a **relative URL** (`url: 'assets/models/ranger.glb'`),
    fetched at runtime by `GLTFLoader`.
 2. `vite.config.js`'s inline copy plugin ships `assets/models/*.glb` into `dist/` at the *same*
    path for the GitHub Pages build. It is **not** an ES import — do not convert it to `?url`

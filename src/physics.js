@@ -41,15 +41,21 @@
 
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
-import { computeNormalForce, effectiveWheelRadius, getWheelPosition, stepSuspensionSubsteps, tireContactForce, TIRE_DAMP_ENGAGE, WHEEL_SOFT_BAND } from './suspension.js'
-import { stepDrivetrain } from './drivetrain.js'
+import { computeNormalForce, effectiveWheelRadius, getWheelPosition, mountLocal, stepSuspensionSubsteps, tireContactForce, TIRE_DAMP_ENGAGE, WHEEL_SOFT_BAND } from './suspension.js'
+import { REV_THRESHOLD, stepDrivetrain } from './drivetrain.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
 
-// Speed threshold for input routing (rule-based, no dead-zone oscillation).
-// FEAT-23 removed FWD_THRESHOLD (the W-brake / drive-cut deadband); the drivetrain now supplies
-// forward torque continuously through the torque converter, so there is no roll-back drive cutoff.
-const REV_THRESHOLD =  2 / 3.6   //  0.556 m/s: S switches from braking to reverse above this
+// Speed threshold for input routing (rule-based, no dead-zone oscillation) is drivetrain.js's
+// REV_THRESHOLD. FEAT-23 removed FWD_THRESHOLD (the W-brake / drive-cut deadband); the drivetrain
+// now supplies forward torque continuously through the torque converter, so there is no roll-back
+// drive cutoff.
+
+// Engine solver substeps per physics step (Step 3e explains why 8). Rim-strike damage reads the
+// engine's whole-step contact impulse (review-2 R-02), which measured the same at 4 and 8 substeps
+// for a resting contact — so changing this no longer rescales the damage.js rim thresholds, but
+// re-check them with a sustained core contact if it ever moves.
+const ENGINE_SUBSTEPS = 8
 
 /**
  * Read the per-wheel drive torque computed once per step by stepDrivetrain (FEAT-23).
@@ -75,11 +81,12 @@ export function getDriveTorque (wheelIndex, vehicleState, params) {
  * @param {number} wheelIndex - 0-3 per GLOSSARY.md §Wheel Index.
  * @param {object} vehicleState - Full vehicleState; uses .throttle, .brake, .handbrake.
  * @param {object} params - RANGER_PARAMS; uses .maxBrakeTorqueFront/.maxBrakeTorqueRear, .maxHandbrakeTorque.
+ * @param {number} longVel - THIS wheel's hub speed along its own forward axis [m/s] (relative to a
+ *   dynamic support when grounded on one). Decides S = brake (above REV_THRESHOLD) vs reverse.
  * @returns {number} Brake torque [N·m]. Positive = resists current wheel spin direction.
  */
-function getBrakeTorque (wheelIndex, vehicleState, params) {
+function getBrakeTorque (wheelIndex, vehicleState, params, longVel) {
   const isRear  = wheelIndex === 2 || wheelIndex === 3
-  const longVel = params._longitudinalVelocity || 0
 
   // FEAT-23: the old "W below FWD_THRESHOLD → brake" branch is gone. The torque-converter drivetrain
   // now delivers forward torque whenever the throttle is down (even while rolling backward), so it
@@ -138,32 +145,37 @@ const CARGO_FRICTION_REF = 0.8           // must match src/debris.js bundle fric
 const BED_SHAPE_MU      = BED_CARGO_MU * BED_CARGO_MU / CARGO_FRICTION_REF        // ≈ 0.028
 
 // ── QUAL-25: chassis collider profile — measured off the ACTUAL vehicle model ──────────────
-// Body-frame breakpoints (origin = CG, forward = −Z) of hilux.glb pushed through the exact
-// seating transform vehicle-model.js applies (targetLength 4.6 × bodyScale 1.065, shiftRear
-// 0.318, shiftDown 0.21, planted at cgHeight; mirrors excluded from widths). Re-measure via
-// Blender if the model or its VEHICLE_MODELS spec changes — and when a SECOND vehicle model
-// lands, this profile should move into data/vehicle-models.js as per-model hull data (the
-// QUAL-25 option-2 path) instead of growing switches here.
+// Body-frame breakpoints (origin = CG, forward = −Z) of ranger.glb, the default truck, pushed
+// through the exact seating transform vehicle-model.js applies (targetLength 4.705 × bodyScale
+// 1.0 = scale 1.000, shiftRear 0.299, shiftDown −0.045, planted at cgHeight — so body y = model
+// y − 0.651; mirrors and the roof antenna excluded). Measured 2026-10-15 (review-2 R-05) by
+// loading the GLB headlessly through that transform; the numbers agree with the generator's own
+// constants in assets/models/src/ranger.py (Y_COWL, Y_CAB_REAR, Z_ROOF + Z_ROOF_CROWN, Z_RAIL,
+// Z_HIP, W_FLANK, W_BELT; the hood heights are CLIP_ST's). Until then this profile was hilux.glb's: 8 cm past the drawn front
+// bumper, 12 cm past the rear, and a roof 7 cm too high. Re-measure if the model or its
+// VEHICLE_MODELS spec changes — and when a SECOND vehicle model lands, this profile should move
+// into data/vehicle-models.js as per-model hull data (the QUAL-25 option-2 path) instead of
+// growing switches here.
 //
-// The deck hull is a SOLID at rail height by default — hilux.glb's bed top is closed (reads as a
-// tonneau cover), owner ruling 2026-08-15. A model with a real open bed carries a `bed` spec in
-// data/vehicle-models.js and gets a hollow well instead (see createVehicleChassis) so cargo can
-// ride in it; ranger.glb, the default truck, does (owner, 2026-09-29).
+// The deck hull is a SOLID at rail height when the model has no open bed (a closed bed top reads
+// as a tonneau cover, owner ruling 2026-08-15). A model with a real open bed carries a `bed` spec
+// in data/vehicle-models.js and gets a hollow well instead (see createVehicleChassis) so cargo can
+// ride in it; ranger.glb does (owner, 2026-09-29).
 const CHASSIS_PROFILE = {
-  noseZ: -2.13,        // front bumper face
-  tailZ: 2.77,         // rear bumper face
-  cowlZ: -0.72,        // windshield base
-  roofFrontZ: -0.30,   // windshield top / roof leading edge
-  roofRearZ: 0.60,     // roof trailing edge (rear window top)
-  cabRearZ: 0.73,      // cab back panel → bed rail
-  hoodNoseY: 0.30,     // hood height at the grille
-  hoodCowlY: 0.54,     // hood height at the cowl
-  roofY: 1.04,         // roof plane (the old single hull had 0.40 — rollovers rested on air)
-  railY: 0.29,         // bed rail / tonneau deck top
-  beltY: 0.18,         // beltline — top of the full-length lower slab (fenders/doors/bumpers)
-  slabHalfW: 0.95,     // fenders/bumpers
-  cabHalfW: 0.78,      // cab + roof (mirrors excluded)
-  deckHalfW: 0.93,     // bed sides
+  noseZ: -2.053,       // front bumper face (the chrome blade)
+  tailZ: 2.651,        // rear bumper face
+  cowlZ: -0.689,       // windshield base
+  roofFrontZ: -0.17,   // roof leading edge (windshield top)
+  roofRearZ: 0.45,     // roof trailing edge (rear window top)
+  cabRearZ: 0.525,     // cab back panel → bed rail
+  hoodNoseY: 0.36,     // hood height at the grille
+  hoodCowlY: 0.52,     // hood height at the cowl
+  roofY: 0.97,         // roof crown (the old single hull had 0.40 — rollovers rested on air)
+  railY: 0.49,         // bed rail top
+  beltY: 0.21,         // top of the full-length lower slab: the hip, where the flank is widest
+  slabHalfW: 0.85,     // fenders/bumpers/tail lamps — the widest body point
+  cabHalfW: 0.78,      // cab at the beltline (mirrors excluded)
+  deckHalfW: 0.845,    // bed sides
 }
 
 /**
@@ -377,8 +389,6 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   // body at the MOUNT height, ~a strut-length above the real hub): created here at the mount,
   // re-seated every step by updateWheelRims() below to the strut-derived hub position, wheel
   // order FL/FR/RL/RR to match strutComp indexing.
-  const axleF = -(params.wheelbase * params.weightRear)
-  const axleR = params.wheelbase * params.weightFront
   const rims = []
   // The hulls between the slab and the wheel cores are the ones that carry params.bodyRestitution.
   rims.bounceShapes = []
@@ -387,12 +397,8 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   for (let i = bounceFrom; i < engine.shapeCount(chassis); i++) {
     if (i < bedShapes[0] || i >= bedShapes[1]) rims.bounceShapes.push(i)
   }
-  for (const [x, z, front] of [
-    [-params.trackFront / 2, axleF, true], [params.trackFront / 2, axleF, true],
-    [-params.trackRear / 2, axleR, false], [params.trackRear / 2, axleR, false],
-  ]) {
-    const mountY = -(params.cgHeight - params.wheelRadius) +
-      (front ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
+  for (let c = 0; c < 4; c++) {
+    const { x, y: mountY, z } = mountLocal(c, params), front = c < 2
     engine.addHull(chassis, wheelCorePoints(x, mountY, z, params), RIM_MATERIAL)
     rims.push({ shapeIndex: engine.shapeCount(chassis) - 1, x, z, mountY, front, lastY: mountY })
   }
@@ -504,7 +510,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   if (!engineCtx) throw new Error('stepPhysics: engineCtx {engine, chassis} is required (FEAT-48)')
   const { engine, chassis } = engineCtx
   // ── Step 0: Rotation helper ────────────────────────────────────────────────
-  params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
+  // Built once per (params, vehicleState) pair, not per step. It reads .quaternion at CALL time, so
+  // it stays right between steps too (main.js asks getWheelPosition outside the step).
+  if (params._rotateVectorOf !== vehicleState) {
+    params._rotateVectorOf = vehicleState
+    params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
+  }
 
   // ── Step 0.5: Wheel contact source = analytic terrain ∪ engine DYNAMIC bodies ──
   // The analytic queryContacts stays the terrain/prop/wall source for wheels (it is
@@ -522,8 +533,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // and a damper fed strut velocity instead of the contact's closing rate. Owner called it,
   // correctly: fix the measurement, not the physics.)
   //
-  // depthRate: finite difference of the per-body depth across steps — the honest d(depth)/dt
-  // the tire damper wants. Continuous depth ⇒ well-behaved difference; on first touch
+  // depthRate: finite difference of the per-(body, wheel) depth across steps — the honest
+  // d(depth)/dt the tire damper wants. Keyed per wheel as well as per body: two wheels on one body
+  // (a dragged log) must each difference against their OWN last depth, or the shallower wheel's
+  // damper reads the deeper one's baseline and pushes the wrong way. Continuous depth ⇒ well-behaved difference; on first touch
   // prev = 0 and depth ≈ closing·dt, so the rate lands at the true closing speed. Every query
   // within one step shares the previous step's baseline (suspension substeps cannot compound).
   const prevDepth = engineCtx._dynContactDepth ?? EMPTY_DEPTH_MAP
@@ -535,8 +548,11 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // few mm different. Those five re-asks each cost ~33 ground samples and came back with the same
   // surfaces, so they now re-read Step 1's contacts with each depth shifted for the hub move along
   // the contact normal and for the radius change: a plane, honest at this scale (a wheel that lifts
-  // off reads depth ≤ 0 and drops the contact). Terrain and static props only — debris bodies MOVE
-  // within a step, so the engine sphere test below still runs on every call (owner, 2026-10-02).
+  // off reads depth ≤ 0 and drops the contact). Terrain and static props only — the engine sphere
+  // test below still runs on every call (owner, 2026-10-02). Not because debris moves within the
+  // step (the engine steps once, after all of these, and _bodyXf serves one pose per step) but
+  // because a debris contact is a hull or sphere, not a plane, so a depth shift cannot stand in
+  // for re-asking it.
   // Measured before: ~75 % of the 1.9 ms physics step was these queries.
   //
   // A wheel that is AIRBORNE at the start of the step has an empty answer, and the query reports
@@ -563,9 +579,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // Safety invariant, not a filter that should ever fire with exact manifolds: a body under
       // the wheel cannot push it DOWN (a rock overhead is the chassis' engine contact).
       if (h.normal.y < -0.1) continue
-      h.depthRate = (h.depth - (prevDepth.get(h.body) ?? 0)) / dt
-      const seen = stepDepth.get(h.body)
-      if (seen === undefined || h.depth > seen) stepDepth.set(h.body, h.depth)
+      const key = h.body * 4 + corner
+      h.depthRate = (h.depth - (prevDepth.get(key) ?? 0)) / dt
+      const seen = stepDepth.get(key)
+      if (seen === undefined || h.depth > seen) stepDepth.set(key, h.depth)
       list.push(h)
     }
     return list
@@ -623,10 +640,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   engine.setTransform(chassis, vehicleState.position, vehicleState.quaternion)
   engine.setVelocity(chassis, vehicleState.velocity, vehicleState.angularVelocity)
 
-  // ── Step 2: Body-space axes ────────────────────────────────────────────────
-  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
-  const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(vehicleState.quaternion)
-  const up      = new THREE.Vector3(0, 1, 0).applyQuaternion(vehicleState.quaternion)
+  // ── Step 2: Body-space axes (module scratch — valid for this step only) ────
+  const forward = _forward.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+  const right   = _right.set(1, 0, 0).applyQuaternion(vehicleState.quaternion)
+  const up      = _up.set(0, 1, 0).applyQuaternion(vehicleState.quaternion)
 
   // ── Step 2.1: Drivetrain (FEAT-23) ─────────────────────────────────────────
   // Engine → torque converter → automatic gearbox → final drive, stepped ONCE per physics step from
@@ -667,12 +684,15 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   const totalForce  = new THREE.Vector3()
   const totalTorque = new THREE.Vector3()
   let totalGroundFn = 0  // accumulated normal force across all wheel contacts; gates rolling resistance
+  // Post-substep hub per wheel: Step 2.6 and Step 3 both need it and nothing between them moves
+  // the body or the struts, so whichever asks first computes it.
+  const hubPost = _hubPost.fill(null)
   if (params._hubNormalXZ) {
     for (let i = 0; i < 4; i++) {
       const xz = params._hubNormalXZ[i]
       if (!xz || (xz.x === 0 && xz.y === 0 && xz.z === 0)) continue
       // Hub world position for torque arm (approximation per D-06a); torque = rHub × F_xz.
-      const hub_i  = getWheelPosition(i, vehicleState, params)
+      const hub_i  = hubPost[i] = getWheelPosition(i, vehicleState, params)
       const rHubX  = hub_i.x - vehicleState.position.x
       const rHubY  = hub_i.y - vehicleState.position.y
       const rHubZ  = hub_i.z - vehicleState.position.z
@@ -686,36 +706,29 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   }
 
   // ── Step 3: Per-wheel force accumulation ──────────────────────────────────
+  // BUG-20: friction-circle break-away limit on the stored slip (in Pacejka-ARGUMENT space × vRef,
+  // so it auto-scales with tireSlipVelRef). Shared by the force block and the ω integrator.
+  const sBreak = (params.tireBreakawaySlip || 0.18) * (params.tireSlipVelRef || 1.0)
   for (let i = 0; i < 4; i++) {
     // Phase 4: write per-wheel fz from substep result FIRST (D-12), then airborne check (D-14).
     // Zero wheelDebug for this wheel before contacts — ensures no stale values when wheel is off-ground.
-    // The fz field is written from _tireFz (computed by stepSuspensionSubsteps above).
+    // The fz field is written from _tireFz (computed by stepSuspensionSubsteps above). Reset IN
+    // PLACE, every field including the grounded-only vLong/vLat, in one fixed key order.
     if (vehicleState.wheelDebug) {
-      vehicleState.wheelDebug[i] = { fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: params._tireFz[i] || 0, strutComp: vehicleState.strutComp?.[i] ?? 0 }
+      const d = vehicleState.wheelDebug[i] ?? (vehicleState.wheelDebug[i] = {})
+      d.fn = 0; d.fy = 0; d.sa = 0; d.c = 0; d.omega = 0
+      d.fz = params._tireFz[i] || 0
+      d.strutComp = vehicleState.strutComp?.[i] ?? 0
+      d.vLong = 0; d.vLat = 0
     }
 
     // Phase 4: airborne check (D-14). If tire-spring force is zero or negative, this wheel is
-    // airborne. Pacejka contacts loop is skipped for airborne wheels. The omega integrator
-    // (below, outside the contacts loop) still runs for airborne wheels so drive torque can
-    // rev the wheel while airborne — lastFn=0 causes Newton to converge trivially with no road
-    // reaction (this was already the behavior via the `if (lastFn <= 0) break` Newton guard).
+    // airborne: no contacts, no Pacejka — stepAirborneWheel revs it on drive/brake alone.
     const isAirborne = (params._tireFz[i] || 0) <= 0
 
     // Phase 4: compute rMount (rotated body mount point offset) for suspension body force torque.
-    // Must match the local offset used in stepSuspensionSubsteps for consistency.
-    const isFrontW = i < 2
-    const isLeftW  = i === 0 || i === 2
-    const mLocalX = isLeftW
-      ? -(isFrontW ? params.trackFront : params.trackRear) / 2
-      :  (isFrontW ? params.trackFront : params.trackRear) / 2
-    const mLocalZ = isFrontW
-      ? -(params.wheelbase * params.weightRear)
-      :  (params.wheelbase * params.weightFront)
-    // Include suspensionBodyOffset so the suspension-force torque arm matches the mount used in
-    // stepSuspensionSubsteps and getWheelPosition (BUG-05: all three mount-Y sites must agree).
-    const mLocalY = -(params.cgHeight - params.wheelRadius) +
-      (isFrontW ? (params.suspensionBodyOffsetFront || 0) : (params.suspensionBodyOffsetRear || 0))
-    const rMount = params._rotateVector({ x: mLocalX, y: mLocalY, z: mLocalZ })
+    // The same mount stepSuspensionSubsteps and getWheelPosition use (BUG-05: mountLocal).
+    const rMount = params._rotateVector(mountLocal(i, params))
 
     // Phase 4.1: apply suspension spring force to body along strut axis (body_up direction).
     // Replaces the Phase 4 world-Y force vector — on a pitched body, the strut axis is NOT world-Y.
@@ -725,36 +738,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     totalForce.add(suspBodyForce)
     totalTorque.add(new THREE.Vector3().crossVectors(rMount, suspBodyForce))
 
-    // Airborne skip (D-14): skip Pacejka contacts loop for this wheel.
-    // Omega integrator below still runs (lastFn=0 causes Newton to converge with no road reaction).
-    if (isAirborne) {
-      // Update omega debug for airborne wheels (CR-03: all wheels log omega every step)
-      if (vehicleState.wheelDebug) vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega?.[i] || 0
-      // Fall through to omega integrator below — do NOT `continue` past it
-      // (but we still need to run the integrator, so restructure to skip only the contacts loop)
-      // Use lastFn=0 to signal airborne to the omega Newton loop.
-      const wheelInertia_a = params.wheelInertia || 1.22
-      const driveTorque_a  = getDriveTorque(i, vehicleState, params)
-      const brakeTorque_a  = getBrakeTorque(i, vehicleState, params)
-      if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque_a
-      if (vehicleState.slipVel)  vehicleState.slipVel[i]  = 0   // airborne: no contact, no abrasion
-      if (vehicleState.tireFlat) vehicleState.tireFlat[i] = 0
-      const omega0_a       = vehicleState.wheelOmega?.[i] ?? 0
-      const spinSign_a     = omega0_a >= 0 ? 1 : -1
-      const brakeSigned_a  = brakeTorque_a * spinSign_a
-      // Airborne: no road reaction, direct Euler step (Newton trivially converges with Flong=0)
-      const omegaNew_a = omega0_a + (dt / wheelInertia_a) * (driveTorque_a - brakeSigned_a)
-      if (brakeTorque_a > 0 && Math.sign(omegaNew_a) !== spinSign_a) {
-        vehicleState.wheelOmega[i] = 0
-      } else {
-        vehicleState.wheelOmega[i] = omegaNew_a
-      }
-      if (vehicleState.wheelDebug) vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
-      continue  // skip the full Pacejka contacts loop + Newton omega below
-    }
-
     // Hub world position (sphere center for contact queries)
-    const hub  = getWheelPosition(i, vehicleState, params)
+    const hub  = hubPost[i] ?? getWheelPosition(i, vehicleState, params)
     const rHub = new THREE.Vector3(
       hub.x - vehicleState.position.x,
       hub.y - vehicleState.position.y,
@@ -772,9 +757,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       : (i < 2 ? vehicleState.steerAngle : 0)
     // Static toe rides on top of the steer angle (rear wheels get it too, from toeRear).
     const steer = steerInput + toeOffset(i, params)
-    const steerQ     = new THREE.Quaternion().setFromAxisAngle(up, steer)
-    const wheelFwd   = forward.clone().applyQuaternion(steerQ)
-    const wheelRight = right.clone().applyQuaternion(steerQ)
+    const steerQ     = _steerQ.setFromAxisAngle(up, steer)
+    const wheelFwd   = _wheelFwd.copy(forward).applyQuaternion(steerQ)
+    const wheelRight = _wheelRight.copy(right).applyQuaternion(steerQ)
     // Static camber tilts the whole wheel about its own forward axis, so the lateral (axle)
     // axis tilts with it. Grip then has a small vertical component — the jacking force real
     // cambered wheels generate. Body roll is already in `right`/`up` (body axes), so the lean
@@ -782,8 +767,17 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     const lean = camberLean(i, params)
     if (lean !== 0) wheelRight.applyAxisAngle(wheelFwd, lean)
 
-    params._lateralVelocity      = hubVel.dot(wheelRight)
-    params._longitudinalVelocity = hubVel.dot(wheelFwd)
+    // Hub velocity in the wheel frame. Grounded on a dynamic body, these become RELATIVE to it
+    // (below); airborne, longVel is what decides the S-key brake-vs-reverse split (R-08).
+    let latVel  = hubVel.dot(wheelRight)
+    let longVel = hubVel.dot(wheelFwd)
+
+    // Airborne skip (D-14): no contacts, no Pacejka, no Newton — the wheel's ω and slip state are
+    // stepped on their own and the loop moves on.
+    if (isAirborne) {
+      stepAirborneWheel(i, vehicleState, params, dt, longVel)
+      continue
+    }
 
     // Slip-velocity tire model with relaxation length (see tire.js header).
     // Per-tire state: vehicleState.slipLong[i], slipLat[i] — the "filtered" slip
@@ -792,16 +786,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     if (!vehicleState.slipLong) vehicleState.slipLong = [0, 0, 0, 0]
     if (!vehicleState.slipLat)  vehicleState.slipLat  = [0, 0, 0, 0]
 
-    // BUG-20: numeric floor only (keeps the relaxation denominator well-conditioned near rest).
-    // Was 3.0 m/s — that large floor forced the stored slip displacement to bleed toward zero
-    // below ~3 m/s, so the carcass spring could not hold at rest (no static friction: a braked
-    // car ran away downhill) and the tire felt slippery under ~11 km/h. The blow-up at rest that
-    // the old floor guarded against is now bounded by the friction-circle break-away clamp on
-    // |(sLong,sLat)| below (sBreak) — the physically correct limiter.
-    const SLIP_EPSILON = 0.05
-
-    // Per-step bookkeeping for the ω integrator (Newton-iterated implicit Euler below).
-    // Zero / null when airborne so road reaction = 0.
+    // Per-step bookkeeping for the ω integrator (Newton-iterated implicit Euler below), set by the
+    // grounded block — a wheel without a support never reaches the integrator.
     let lastFn          = 0
     let lastSLongPrev   = 0   // sLong_old at this step's start (for Newton re-eval of s)
     let lastSLatNew     = 0   // sLat already committed (lateral doesn't iterate with ω)
@@ -839,7 +825,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         ground.contactPoint.y - vehicleState.position.y,
         ground.contactPoint.z - vehicleState.position.z
       )
-      params._compression = ground.depth
 
       // FEAT-48: RELATIVE contact velocity. Against static ground (analytic terrain,
       // props — no .body) the support is at rest and this reduces exactly to the old
@@ -852,12 +837,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         // Fully relative — the support's own velocity enters the slip UNCLAMPED (owner,
         // 2026-08-15: the last containment-era limiter deleted). Honest forces from honest
         // kinematics; the enveloping factor and exact manifolds bound the magnitudes.
-        params._lateralVelocity      = (hubVel.x - groundVel.x) * wheelRight.x +
-                                       (hubVel.y - groundVel.y) * wheelRight.y +
-                                       (hubVel.z - groundVel.z) * wheelRight.z
-        params._longitudinalVelocity = (hubVel.x - groundVel.x) * wheelFwd.x +
-                                       (hubVel.y - groundVel.y) * wheelFwd.y +
-                                       (hubVel.z - groundVel.z) * wheelFwd.z
+        latVel  = (hubVel.x - groundVel.x) * wheelRight.x +
+                  (hubVel.y - groundVel.y) * wheelRight.y +
+                  (hubVel.z - groundVel.z) * wheelRight.z
+        longVel = (hubVel.x - groundVel.x) * wheelFwd.x +
+                  (hubVel.y - groundVel.y) * wheelFwd.y +
+                  (hubVel.z - groundVel.z) * wheelFwd.z
       }
 
       // Phase 4.1 NOTE (D-06): do NOT add Fn*normal to totalForce here.
@@ -879,8 +864,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // re-evaluated and re-committed inside the ω Newton loop using the converged ω_new
       // — this is operator splitting: body force lags ω by one step, acceptable trade for
       // a clean Newton on ω alone.
-      const longVelCur = params._longitudinalVelocity || 0
-      const latVelCur  = params._lateralVelocity      || 0
+      const longVelCur = longVel || 0
+      const latVelCur  = latVel  || 0
       const omegaCur   = (vehicleState.wheelOmega?.[i] ?? 0) * params.wheelRadius
       const vCon       = Math.max(Math.abs(omegaCur), Math.abs(longVelCur), SLIP_EPSILON)
       const L          = params.tireRelaxationLength || 0.3
@@ -899,8 +884,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // actual displacement limit auto-scales with vRef. That keeps the break-away AT the peak as the
       // L/vRef "sloshiness" pair is retuned — otherwise a smaller vRef would push the clamp past the
       // peak into the unstable post-peak region and the static hold would creep on steep slopes.
-      const vRef   = params.tireSlipVelRef || 1.0
-      const sBreak = (params.tireBreakawaySlip || 0.18) * vRef
       const sMag   = Math.hypot(sLongCur, sLatNew)
       if (sMag > sBreak) { const k = sBreak / sMag; sLongCur *= k; sLatNew *= k }
       vehicleState.slipLat[i] = sLatNew
@@ -970,16 +953,17 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         vehicleState.wheelDebug[i].fn    = Fn
         vehicleState.wheelDebug[i].fy    = Flat
         vehicleState.wheelDebug[i].sa    = Math.hypot(sLongCur, sLatNew)
-        vehicleState.wheelDebug[i].c     = params._compression
+        vehicleState.wheelDebug[i].c     = ground.depth
         vehicleState.wheelDebug[i].vLong = omegaCur - longVelCur
         vehicleState.wheelDebug[i].vLat  = latVelCur
       }
-    } else if (Fn > 0) {
+    } else {
       // Loaded during the substeps but no support under the post-substep hub: the wheel lifted off
-      // inside this step (a crest, a take-off). Treat the patch as airborne for the wear signals —
-      // the ω solve below already runs with lastFn = 0, i.e. the airborne branch's physics.
-      if (vehicleState.slipVel)  vehicleState.slipVel[i]  = 0
-      if (vehicleState.tireFlat) vehicleState.tireFlat[i] = 0
+      // inside this step (a crest, a take-off). It is airborne for the rest of the step — ω on
+      // drive/brake alone, slip relaxing, wear signals zero (review-2 R-03: this used to fall into
+      // the Newton solve with no load, which froze ω and stored a phantom dt·ω·r slip).
+      stepAirborneWheel(i, vehicleState, params, dt, longVel)
+      continue
     }
 
     // Omega integrator — Newton-iterated implicit Euler. Runs once per wheel per step,
@@ -992,21 +976,19 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     // where sLong_new(ω) = (sLong_old + dt·(ω·r − v_long)) / (1 + dt·|v_contact|/L)
     //
     // Newton converges in 1-3 iterations at 60Hz; the loop caps at 4 with a tight residual
-    // tolerance. Airborne: lastFn = 0 ⇒ tireForce returns zero ⇒ ω evolves under drive/brake.
+    // tolerance. Only a grounded wheel (lastFn > 0) gets here; airborne ones took stepAirborneWheel.
     {
       const wheelInertia = params.wheelInertia || 1.22
       const driveTorque  = getDriveTorque(i, vehicleState, params)
-      const brakeTorque  = getBrakeTorque(i, vehicleState, params)
+      const brakeTorque  = getBrakeTorque(i, vehicleState, params, lastLongVelCur)
       if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque
       const dsdo         = dt * params.wheelRadius / lastRelaxDen  // ∂sLong_new/∂ω_new
       const omega0       = vehicleState.wheelOmega?.[i] ?? 0
       const spinSign     = omega0 >= 0 ? 1 : -1
       const brakeSigned  = brakeTorque * spinSign
 
-      // BUG-20: friction-circle limit, same as the force block (in Pacejka-argument space × vRef, so
-      // it auto-scales with vRef). Lateral leg is fixed here (lastSLatNew), so the longitudinal leg
-      // gets the remaining room on the circle.
-      const sBreak    = (params.tireBreakawaySlip || 0.18) * (params.tireSlipVelRef || 1.0)
+      // BUG-20: friction-circle limit, the same sBreak as the force block. Lateral leg is fixed here
+      // (lastSLatNew), so the longitudinal leg gets the remaining room on the circle.
       const sLongMax  = Math.sqrt(Math.max(0, sBreak * sBreak - lastSLatNew * lastSLatNew))
       let omegaNew = omega0
       let sLongFinal = lastSLongPrev
@@ -1017,7 +999,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         if (sLongIter >  sLongMax) sLongIter =  sLongMax
         if (sLongIter < -sLongMax) sLongIter = -sLongMax
         sLongFinal = sLongIter
-        if (lastFn <= 0) break  // airborne: no road reaction; Newton trivially converged
         const { Flong, dFmagDs } = computeTireForces(sLongIter, lastSLatNew, lastFn, params, params._tireMuScale?.[i] ?? 1)
         const g  = omegaNew - omega0 - dt / wheelInertia * (driveTorque - Flong * params.wheelRadius - brakeSigned)
         // g'(ω) = 1 + dt·r/I · dF/dω,  with dF/dω = dFmagDs · dsdo
@@ -1037,7 +1018,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // heavily loaded wheel rolls — ω anchors to the contact's longitudinal velocity plus the
       // one-step torque nudge. Bounded, cycle-free, and the next frame retries Newton from a
       // consistent state. Converged solves (normal driving, 1–3 iterations) are untouched.
-      if (Math.abs(lastDelta) > NEWTON_TOL && lastFn > 0) {
+      // Written as !(≤) so a NaN residual (gp exactly 0 → ±Infinity → NaN) also takes the fallback.
+      if (!(Math.abs(lastDelta) <= NEWTON_TOL)) {
         omegaNew = lastLongVelCur / params.wheelRadius +
           dt / wheelInertia * (driveTorque - brakeSigned)
         sLongFinal = Math.max(-sLongMax, Math.min(sLongMax,
@@ -1138,7 +1120,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // flat bare-frame slam into rocking rebound when under-substepped. 8 halves that phantom
   // bounce (measured: e_eff 0.30 → 0.21 on a worst-case flat slam) and costs microseconds at
   // this body count. See test/body-contact-energy.mjs for the measured envelope.
-  engine.step(dt, params.engineSubsteps ?? 8)
+  engine.step(dt, ENGINE_SUBSTEPS)
 
   // ── Step 3e: Pull the engine result back into the authoritative JS mirror ──
   engine.getTransform(chassis, vehicleState.position, vehicleState.quaternion)
@@ -1146,8 +1128,52 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   vehicleState.quaternion.normalize()
 }
 
+/**
+ * ω and slip for a wheel with no road reaction this step: off the ground at the start of the step
+ * (_tireFz ≤ 0, D-14), or loaded during the substeps but with no support under the post-substep hub
+ * (it lifted off inside the step — review-2 R-03). Drive and brake act on the bare wheel inertia —
+ * an explicit Euler step, since there is no contact stiffness to go unstable on. The stored carcass
+ * deflection relaxes with no slip input: the grounded relaxation update with the contact velocity
+ * taken out, rolling at the wheel's own speed — so a take-off does not land on its old deflection.
+ */
+function stepAirborneWheel (i, vehicleState, params, dt, longVel) {
+  const wheelInertia = params.wheelInertia || 1.22
+  const driveTorque  = getDriveTorque(i, vehicleState, params)
+  const brakeTorque  = getBrakeTorque(i, vehicleState, params, longVel)
+  if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque
+  if (vehicleState.slipVel)  vehicleState.slipVel[i]  = 0   // airborne: no contact, no abrasion
+  if (vehicleState.tireFlat) vehicleState.tireFlat[i] = 0
+  const omega0      = vehicleState.wheelOmega?.[i] ?? 0
+  const spinSign    = omega0 >= 0 ? 1 : -1
+  const brakeSigned = brakeTorque * spinSign
+  const omegaNew    = omega0 + (dt / wheelInertia) * (driveTorque - brakeSigned)
+  // Braking cannot reverse spin direction: the brake stops the wheel, it does not push through zero.
+  vehicleState.wheelOmega[i] = (brakeTorque > 0 && Math.sign(omegaNew) !== spinSign) ? 0 : omegaNew
+  if (vehicleState.slipLong && vehicleState.slipLat) {
+    const vCon = Math.max(Math.abs(omega0 * params.wheelRadius), SLIP_EPSILON)
+    const relaxDen = 1 + dt * vCon / (params.tireRelaxationLength || 0.3)
+    vehicleState.slipLong[i] /= relaxDen
+    vehicleState.slipLat[i]  /= relaxDen
+  }
+  // CR-03: every wheel logs its ω every step, airborne ones included.
+  if (vehicleState.wheelDebug) vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
+}
+
+// BUG-20: numeric floor only (keeps the relaxation denominator well-conditioned near rest).
+// Was 3.0 m/s — that large floor forced the stored slip displacement to bleed toward zero
+// below ~3 m/s, so the carcass spring could not hold at rest (no static friction: a braked
+// car ran away downhill) and the tire felt slippery under ~11 km/h. The blow-up at rest that
+// the old floor guarded against is now bounded by the friction-circle break-away clamp on
+// |(sLong,sLat)| (sBreak) — the physically correct limiter.
+const SLIP_EPSILON = 0.05
+
 // Scratch for the dynamic-support ground velocity (avoids a per-contact alloc).
 const _groundVelScratch = { x: 0, y: 0, z: 0 }
+// Per-step scratch (stepPhysics only; nothing holds them past the step): body axes, the per-wheel
+// steered frame, and the post-substep hubs.
+const _forward = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3()
+const _steerQ = new THREE.Quaternion(), _wheelFwd = new THREE.Vector3(), _wheelRight = new THREE.Vector3()
+const _hubPost = [null, null, null, null]
 
 const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, commit the rolling fixed point instead
 const EMPTY_DEPTH_MAP = new Map()           // shared immutable-by-convention first-step default

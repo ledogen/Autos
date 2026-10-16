@@ -6,7 +6,6 @@
 // hand-authored fixture or a browser. (Uses the harness synthetic terrain via buildNetwork so it is
 // seed-stable; the real-coarse path is exercised by live captures fed to replay.mjs directly.)
 
-import * as THREE from 'three'
 import { buildPlaceCapture, validateCapture } from '../src/capture.js'
 import { buildNetwork } from './lib/road-headless.mjs'
 

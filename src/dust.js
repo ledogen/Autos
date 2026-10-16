@@ -26,10 +26,11 @@
  *    params alone (no suspension.js / terrain.js import) so the main.js hook is a
  *    single call. Ground height comes from an injected sampler closure.
  *
- * Emission is driven by per-wheel contact-patch slip velocity (vehicleState.wheelDebug[i].sa,
- * m/s — wheelspin, lockup, drift) plus a speed term, so dust grows with how hard the
- * tyre is working against the dirt. Rear (driven) wheels kick harder. No dust when a
- * wheel is airborne or the truck is crawling.
+ * Emission intensity is mostly a ground-speed term: the slip term reads wheelDebug[i].sa, which the
+ * friction circle clamps at ≈0.06, so it barely moves (see the note in update()). Rear (driven)
+ * wheels kick harder. Real wheelspin shows up elsewhere: the raw contact-patch slip speed (vLong)
+ * kicks each puff out backward, and slipVel lets a burnout at rest raise dust below SPEED_FLOOR.
+ * No dust when a wheel is airborne or the truck is crawling without slip.
  *
  * TWO KINDS, ONE POOL, ONE DRAW CALL: a per-particle `kind` flag selects the integrator and fade.
  * Puffs (kind 0) are the soft drifting haze described above. Grit (kind 1) is a slice of the same
@@ -101,11 +102,14 @@ const KIND_PUFF = 0
 const KIND_GRIT = 1
 
 /**
- * Build the soft round puff texture once on a small canvas (procedural — no asset file).
- * White radial gradient, fully transparent at the rim, so the per-instance tint colours it
- * to the dirt and per-instance opacity fades it out.
+ * The soft round puff texture, built once on a small canvas (procedural — no asset file) and shared
+ * by all three billboard systems (dust, smoke.js, dirt-spray.js). White radial gradient, fully
+ * transparent at the rim, so the per-instance tint colours it and per-instance opacity fades it out.
+ * Never mutated after build. Lazy: headless gates import this module without a `document`.
  */
-function makePuffTexture () {
+let _puffTex = null
+function puffTexture () {
+  if (_puffTex) return _puffTex
   const S = 64
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = S
@@ -118,9 +122,65 @@ function makePuffTexture () {
   g.addColorStop(1.0, 'rgba(255,255,255,0.0)')
   ctx.fillStyle = g
   ctx.fillRect(0, 0, S, S)
-  const tex = new THREE.CanvasTexture(canvas)
-  tex.colorSpace = THREE.SRGBColorSpace
-  return tex
+  _puffTex = new THREE.CanvasTexture(canvas)
+  _puffTex.colorSpace = THREE.SRGBColorSpace
+  return _puffTex
+}
+
+/**
+ * Build one billboard sheet (PERF-21 — see header) and add it to the scene: ONE InstancedMesh of
+ * camera-facing quads on the shared puff texture, shared by dust, smoke.js and dirt-spray.js (QUAL-34).
+ * Only the GLSL differs between them, so each caller passes its own shader strings verbatim; the
+ * material options and draw order are common. Constructed in the same order the three systems used
+ * inline (geometry → attributes → material → Mesh → scene.add), so every Mesh id — which breaks
+ * renderOrder ties between the three sheets — is unchanged.
+ *
+ * @param {THREE.Scene} scene
+ * @param {number} pool        instance capacity (the caller's POOL_SIZE)
+ * @param {boolean} withShape  add the `aShape` attribute (0 = soft puff, 1 = crisp disc)
+ * @param {string} vertexShader
+ * @param {string} fragmentShader
+ * @returns {{mesh: THREE.Mesh, aPos, aParam, aColor, aShape?}} the instanced attributes:
+ *          aPos world position · aParam (scale m, rotation rad, opacity) · aColor tint
+ */
+export function makeBillboardMesh (scene, pool, withShape, vertexShader, fragmentShader) {
+  // Base quad in [-0.5, 0.5]²; instanced attributes carry per-puff pose/tint/alpha.
+  const base = new THREE.PlaneGeometry(1, 1)
+  const geo = new THREE.InstancedBufferGeometry()
+  geo.index = base.index
+  geo.setAttribute('position', base.getAttribute('position'))
+  geo.setAttribute('uv', base.getAttribute('uv'))
+  const mk = (itemSize) => {
+    const a = new THREE.InstancedBufferAttribute(new Float32Array(pool * itemSize), itemSize)
+    a.setUsage(THREE.DynamicDrawUsage)
+    return a
+  }
+  const attrs = { aPos: mk(3), aParam: mk(3), aColor: mk(3) }
+  if (withShape) attrs.aShape = mk(1)
+  for (const k in attrs) geo.setAttribute(k, attrs[k])
+  geo.instanceCount = 0
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+      uMap: { value: puffTexture() },
+      // Day/night irradiance multiplier (SkySystem.particleLight, pushed via setLight each frame).
+      // These puffs are UNLIT — no normals, no light loop — so without this they keep their full
+      // daytime albedo after dark and read as glowing blobs. 1,1,1 = the shipped daylight look.
+      uLight: { value: new THREE.Color(1, 1, 1) },
+      uLightA: { value: 1 },
+    }]),
+    vertexShader,
+    fragmentShader,
+    transparent: true,
+    depthWrite: false,   // transparent puffs must not write depth (no haloing)
+    depthTest: true,     // but terrain/road still occlude them
+    fog: true,           // fade into scene.fog like everything else
+  })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.frustumCulled = false   // positions ride with the truck; cull math not worth it
+  mesh.renderOrder = 2         // after terrain (0) and water/road decals (1)
+  scene.add(mesh)
+  return { mesh, ...attrs }
 }
 
 export class DustSystem {
@@ -130,40 +190,8 @@ export class DustSystem {
    */
   constructor (scene, params) {
     this._params = params
-    this._tex = makePuffTexture()
-
-    // ── Single instanced billboard mesh (PERF-21 — see header) ────────────────
-    // Base quad in [-0.5, 0.5]²; instanced attributes carry per-puff pose/tint/alpha.
-    const base = new THREE.PlaneGeometry(1, 1)
-    const geo = new THREE.InstancedBufferGeometry()
-    geo.index = base.index
-    geo.setAttribute('position', base.getAttribute('position'))
-    geo.setAttribute('uv', base.getAttribute('uv'))
-    const mk = (itemSize) => {
-      const a = new THREE.InstancedBufferAttribute(new Float32Array(POOL_SIZE * itemSize), itemSize)
-      a.setUsage(THREE.DynamicDrawUsage)
-      return a
-    }
-    this._aPos   = mk(3)   // world position
-    this._aParam = mk(3)   // x: scale (m), y: rotation (rad), z: opacity
-    this._aColor = mk(3)   // tint
-    this._aShape = mk(1)   // 0 = soft puff, 1 = crisp disc (grit)
-    geo.setAttribute('aPos', this._aPos)
-    geo.setAttribute('aParam', this._aParam)
-    geo.setAttribute('aColor', this._aColor)
-    geo.setAttribute('aShape', this._aShape)
-    geo.instanceCount = 0
-
-    const mat = new THREE.ShaderMaterial({
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-        uMap: { value: this._tex },
-        // Day/night irradiance multiplier (SkySystem.particleLight, pushed via setLight each frame).
-        // These puffs are UNLIT — no normals, no light loop — so without this they keep their full
-        // daytime albedo after dark and read as glowing blobs. 1,1,1 = the shipped daylight look.
-        uLight: { value: new THREE.Color(1, 1, 1) },
-        uLightA: { value: 1 },
-      }]),
-      vertexShader: /* glsl */`
+    // Single instanced billboard mesh (PERF-21 — see header).
+    const { mesh, aPos, aParam, aColor, aShape } = makeBillboardMesh(scene, POOL_SIZE, true, /* glsl */`
         attribute vec3 aPos;
         attribute vec3 aParam;   // scale, rotation, opacity
         attribute vec3 aColor;
@@ -184,8 +212,7 @@ export class DustSystem {
           mvPosition.xy += corner;                                      // view-space billboard
           gl_Position = projectionMatrix * mvPosition;
           #include <fog_vertex>
-        }`,
-      fragmentShader: /* glsl */`
+        }`, /* glsl */`
         uniform sampler2D uMap;
         uniform vec3 uLight;
         uniform float uLightA;
@@ -211,16 +238,10 @@ export class DustSystem {
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>
-        }`,
-      transparent: true,
-      depthWrite: false,   // transparent puffs must not write depth (no haloing)
-      depthTest: true,     // but terrain/road still occlude them
-      fog: true,           // fade into scene.fog like everything else
-    })
-    this._mesh = new THREE.Mesh(geo, mat)
-    this._mesh.frustumCulled = false   // positions ride with the truck; cull math not worth it
-    this._mesh.renderOrder = 2         // after terrain (0) and water/road decals (1)
-    scene.add(this._mesh)
+        }`)
+    this._mesh = mesh
+    this._aPos = aPos; this._aParam = aParam; this._aColor = aColor; this._aShape = aShape
+    this._attrs = [aPos, aParam, aColor, aShape]   // upload set, built once (no per-frame array)
 
     // Parallel particle state (pure JS — no per-puff THREE objects).
     this._p = []
@@ -245,10 +266,10 @@ export class DustSystem {
     this._tmpColor = new THREE.Color()
   }
 
-  /** Grab the next pool slot (oldest is overwritten when the pool is saturated). */
   /** Show/hide the dust sheet (FEAT-31 testing-lab teardown — visibility only). */
   setVisible (visible) { this._mesh.visible = visible }
 
+  /** Grab the next pool slot (oldest is overwritten when the pool is saturated). */
   _alloc () {
     for (let n = 0; n < POOL_SIZE; n++) {
       const idx = (this._cursor + n) % POOL_SIZE
@@ -368,14 +389,27 @@ export class DustSystem {
       n++
     }
     this._mesh.geometry.instanceCount = n
-    if (n > 0) {
-      for (const a of [this._aPos, this._aParam, this._aColor]) {
-        a.addUpdateRange(0, n * 3)
+    // Hidden (testing lab) → no upload: three clears updateRanges only when it uploads, and it never
+    // uploads an invisible mesh, so the ranges would pile up until the lab exits. The first visible
+    // frame re-packs every live particle from scratch anyway.
+    if (n > 0 && this._mesh.visible) {
+      for (const a of this._attrs) {
+        a.addUpdateRange(0, n * a.itemSize)
         a.needsUpdate = true
       }
-      this._aShape.addUpdateRange(0, n)
-      this._aShape.needsUpdate = true
     }
+  }
+
+  /**
+   * Push the day/night irradiance multiplier (SkySystem.particleLight) into the shader. Called once
+   * per render frame from main.js — these billboards are unlit, so this is their only light source.
+   * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
+   * @param {number} alpha — opacity multiplier for the same reason (see the shader note).
+   */
+  setLight (c, alpha) {
+    const u = this._mesh.material.uniforms
+    u.uLight.value.copy(c)
+    u.uLightA.value = alpha
   }
 
   /**
@@ -389,18 +423,6 @@ export class DustSystem {
    * @param {((x:number,z:number)=>number)} [onRoadFactorAt]  optional 0..1 dust multiplier by
    *        position — < 1 on the paved ribbon so on-road dust is reduced (defaults to 1 = full).
    */
-  /**
-   * Push the day/night irradiance multiplier (SkySystem.particleLight) into the shader. Called once
-   * per render frame from main.js — these billboards are unlit, so this is their only light source.
-   * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
-   * @param {number} alpha — opacity multiplier for the same reason (see the shader note).
-   */
-  setLight (c, alpha) {
-    const u = this._mesh.material.uniforms
-    u.uLight.value.copy(c)
-    u.uLightA.value = alpha
-  }
-
   update (dt, vehicleState, params, groundYAt, onRoadFactorAt) {
     if (dt <= 0) return
     if (dt > 0.1) dt = 0.1  // clamp after a tab-stall so puffs don't teleport
@@ -467,7 +489,7 @@ export class DustSystem {
       const lz = isFront ? -(L * wR) : (L * wF)
 
       // Rotate (lx, hubY, lz) by body quaternion into world.
-      const r = _rotate(lx, hubY, lz, vehicleState.quaternion)
+      const r = rotateByQuat(lx, hubY, lz, vehicleState.quaternion)
       const wx = px + r.x, wy = py + r.y, wz = pz + r.z
 
       const groundY = groundYAt ? groundYAt(wx, wz) : 0
@@ -520,9 +542,12 @@ export class DustSystem {
 
 const WHITE = new THREE.Color(0xffffff)
 
-// Rotate a body-local vector by a quaternion without allocating a THREE.Vector3 each call.
+// Rotate a body-local vector by a quaternion without allocating a THREE.Vector3 each call. Shared by
+// dust, smoke and dirt-spray (tire-audio keeps a copy — see there). Returns ONE scratch object, overwritten by the next call —
+// read it before rotating again. NOT Vector3.applyQuaternion: that uses the t = 2·q×v form, which
+// rounds differently.
 const _qv = { x: 0, y: 0, z: 0 }
-function _rotate (x, y, z, q) {
+export function rotateByQuat (x, y, z, q) {
   const ix = q.w * x + q.y * z - q.z * y
   const iy = q.w * y + q.z * x - q.x * z
   const iz = q.w * z + q.x * y - q.y * x

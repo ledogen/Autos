@@ -26,7 +26,7 @@
 
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
-import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: shared procedural detail
+import { addWorldVaryings, tdBumpGLSL } from './terrain-detail.js'  // FEAT-05: shared procedural detail
 import { makeMasonryTextures } from './stone-texture.js' // FEAT-40: portal-ring masonry
 import { crownProfile, potholeNoise, earClip, padFillDelaunay } from './road-carve.js'
 // roadQuality lives in road-quality.js (Plan 09-06) to break the terrain.js → road-mesh.js →
@@ -77,7 +77,7 @@ const MARK_EDGE_DASH_ON       = 8   // m: painted length per Mid-tier edge cycle
 export class RoadMeshSystem {
     /**
      * @param {THREE.Scene}     scene      — Three.js scene to add/remove road meshes
-     * @param {object}          roadSystem — RoadSystem instance (provides _tiles, ensureTile, runProfile)
+     * @param {object}          roadSystem — RoadSystem instance (provides _tiles, runProfile)
      * @param {Function}        terrainRef — (wx,wz)=>number  RAW (carve-free) terrain height sampler
      *                                        (CR-04; BUG-74 reads it for the skirt's cut fade)
      * @param {object}          params     — RANGER_PARAMS (roadWidth, roadHalfWidth, crownHeight, camberMaxAngleDeg, ...)
@@ -169,13 +169,7 @@ export class RoadMeshSystem {
                 if (uDetailScale > 0.0) {
                     float td_shoulder = smoothstep(0.04, 0.10, vColor.r - vColor.b);
                     if (td_shoulder > 0.001) {
-                        vec2 td_p = vWorldPos.xz * (uNoiseScale * 2.0);
-                        float td_e = 0.4;
-                        float td_h0 = tdFbm(td_p);
-                        float td_hx = tdFbm(td_p + vec2(td_e, 0.0));
-                        float td_hz = tdFbm(td_p + vec2(0.0, td_e));
-                        vec3 td_wb = vec3(-(td_hx - td_h0), 0.0, -(td_hz - td_h0)) * (uShoulderBump * uDetailScale * td_shoulder);
-                        normal = normalize(normal + mat3(viewMatrix) * td_wb);
+                        ${tdBumpGLSL('vWorldPos.xz * (uNoiseScale * 2.0)', '0.4', 'uShoulderBump * uDetailScale * td_shoulder')}
                     }
                 }`
             )
@@ -444,7 +438,7 @@ export class RoadMeshSystem {
         const halfWidth = params.roadHalfWidth ?? 5
         const roadWidth = params.roadWidth     ?? 10
         const crownH    = params.crownHeight   ?? 0.05
-        const rp = this._road.runProfile(arcS, runKey)
+        const rp = this._road.runProfile(arcS, runKey, this._rpScratch ??= { gradeY: 0, tx: 1, tz: 0 })
         const tx = camberSign * rp.tx, tz = camberSign * rp.tz, tLen = Math.sqrt(tx * tx + tz * tz)
         // Perpendicular right vector in XZ; degenerate tangent (T-09-04) falls back to unit X.
         const rightX = tLen > 1e-8 ? tz / tLen : 1
@@ -547,25 +541,9 @@ export class RoadMeshSystem {
         return geo
     }
 
-    /**
-     * Enqueue a road tile for building if it has not been built yet.
-     * Building is frame-spread (MAX_ROAD_BUILDS_PER_FRAME = 1) to avoid frame spikes.
-     *
-     * @param {number} tileX — tile column (integer, same scale as terrain chunk cx)
-     * @param {number} tileZ — tile row
-     */
-    /**
-     * Does the streamed road network reach this tile? Corners + centre, because coverage is a
-     * circle and a tile is CHUNK_SIZE square. Mirrors TerrainSystem._roadCoversChunk — the ribbon
-     * and the carve have to agree about when a tile's emptiness is real.
-     */
+    /** Does the streamed road network reach this tile? RoadSystem.networkCoversTile — the same test the carve reads. */
     _roadCoversTile(tileX, tileZ) {
-        const rs = this._road
-        if (!rs || typeof rs.networkCoversXZ !== 'function') return true
-        const S = CHUNK_SIZE, x0 = tileX * S, z0 = tileZ * S
-        return rs.networkCoversXZ(x0, z0) || rs.networkCoversXZ(x0 + S, z0)
-            || rs.networkCoversXZ(x0, z0 + S) || rs.networkCoversXZ(x0 + S, z0 + S)
-            || rs.networkCoversXZ(x0 + S / 2, z0 + S / 2)
+        return !this._road || this._road.networkCoversTile(tileX, tileZ)
     }
 
     /**
@@ -683,32 +661,34 @@ export class RoadMeshSystem {
      * @param {Set<string>} activeKeys — set of "X,Z" keys currently in the terrain ring
      */
     syncToChunkRing(activeKeys) {
-        // Enqueue any active tile that does not have a road mesh yet (build-radius unchanged)
-        for (const key of activeKeys) {
-            const [cx, cz] = key.split(',').map(Number)
-            this.ensureRoadTile(cx, cz)
-        }
-
-        // D5: compute the keep set = active ring expanded by roadTileKeepMargin tiles.
-        // Parse min/max tile X/Z from activeKeys, then expand by the margin.
+        // Enqueue any active tile that does not have a road mesh yet (build-radius unchanged), and
+        // D5: take the ring's min/max tile X/Z in the same pass — the keep set below is that ring
+        // expanded by roadTileKeepMargin tiles.
         const margin = (this._params.roadTileKeepMargin ?? 1) | 0   // integer tiles
         let minCX = Infinity, maxCX = -Infinity, minCZ = Infinity, maxCZ = -Infinity
         for (const key of activeKeys) {
             const [cx, cz] = key.split(',').map(Number)
+            this.ensureRoadTile(cx, cz)
             if (cx < minCX) minCX = cx
             if (cx > maxCX) maxCX = cx
             if (cz < minCZ) minCZ = cz
             if (cz > maxCZ) maxCZ = cz
         }
-        // Build keepSet only if activeKeys is non-empty (avoid Infinity/-Infinity on empty ring)
-        const keepSet = new Set()
-        if (activeKeys.size > 0) {
-            for (let cx = minCX - margin; cx <= maxCX + margin; cx++) {
-                for (let cz = minCZ - margin; cz <= maxCZ + margin; cz++) {
-                    keepSet.add(`${cx},${cz}`)
+        // The keep set only changes when the ring moves a chunk (or the margin changes): rebuilt on
+        // a bounds change, not every frame. Empty ring → empty set (no Infinity loop bounds).
+        const keepSig = activeKeys.size > 0 ? `${minCX},${maxCX},${minCZ},${maxCZ},${margin}` : ''
+        if (keepSig !== this._keepSig) {
+            this._keepSig = keepSig
+            this._keepSet = new Set()
+            if (activeKeys.size > 0) {
+                for (let cx = minCX - margin; cx <= maxCX + margin; cx++) {
+                    for (let cz = minCZ - margin; cz <= maxCZ + margin; cz++) {
+                        this._keepSet.add(`${cx},${cz}`)
+                    }
                 }
             }
         }
+        const keepSet = this._keepSet
 
         // Dispose road tiles whose terrain chunk has been evicted AND are outside the keep set
         for (const key of this._tileMeshMap.keys()) {
@@ -821,7 +801,6 @@ export class RoadMeshSystem {
      * design grade for each slice, sweeps a ribbon, and adds the mesh to the scene.
      *
      * Pure function of (tileX, tileZ, road._tiles) — deterministic (D-16).
-     * No allocations outside the geometry itself (scratch vectors reused above).
      *
      * @param {number} tileX
      * @param {number} tileZ
@@ -874,8 +853,6 @@ export class RoadMeshSystem {
             const points = []
             for (let _i = 0; _i < N; _i++) points.push(spline.getPointAt(_i / (N - 1)))
             _bSample += performance.now() - _ptSamp
-
-            if (points.length < 2) continue
 
             // Extract runKey for deterministic road quality per-run (D-03).
             // seg.runKey is set by road.js _sliceNetwork when it stores slice records.
@@ -1096,7 +1073,7 @@ export class RoadMeshSystem {
         const pos = new Float32Array(rings * vpr * 3)
         const col = new Float32Array(rings * vpr * 3)
         const uv  = new Float32Array(rings * vpr * 2)
-        const prof = { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+        const prof = { gradeY: 0, tx: 1, tz: 0 }
         let vi = 0, ui = 0
         for (let r = 0; r < rings; r++) {
             const ir = Math.min(inner - 1, Math.max(0, r - (extA ? 1 : 0)))
@@ -1114,8 +1091,7 @@ export class RoadMeshSystem {
             const t = Math.max(0, Math.min(1, dPortal / 25))
             const shade = 1 - 0.75 * (t * t * (3 - 2 * t))
             // Dirt-apron Y (relative to gradeY) — the _carveDirtY fold at lateral L, minus the drop.
-            // Camber from camberProfile, the SAME source the ribbon and the carve read — runProfile's
-            // camberRad is the physics profile's own and can differ by the stream window.
+            // Camber from camberProfile, the SAME source the ribbon and the carve read.
             const sinCam = Math.sin(road.camberProfile(s, runKey))
             const dirtH = (L) => crownProfile(L, halfWidth, crownH) + L * sinCam - clearance - APRON_DROP
             for (let k = 0; k < vpr; k++) {
@@ -1177,7 +1153,7 @@ export class RoadMeshSystem {
         const SEG = 20
         const c = road.runPointAt(runKey, pArc)
         if (!c) return null
-        const prof = { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+        const prof = { gradeY: 0, tx: 1, tz: 0 }
         road.runProfile(pArc, runKey, prof)
         const rx = prof.tz, rz = -prof.tx
         const ox = prof.tx * outSign, oz = prof.tz * outSign

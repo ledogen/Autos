@@ -131,6 +131,7 @@ const _scratchA = new THREE.Color()
 const _scratchB = new THREE.Color()
 const _scratchFog = new THREE.Color()
 const _scratchLight = new THREE.Color()
+const _lookBefore = {}   // S-39: the look before a cycle step's blend (setTimeOfDay onlyIfChanged)
 
 /**
  * ACES filmic tone map, ported EXACTLY from three's tonemapping_pars_fragment (r184). Operates on a
@@ -269,6 +270,8 @@ export class SkySystem {
       })
       this._cubeCam = new THREE.CubeCamera(0.1, 3000, this._cubeRT)
       this._bakeScene.add(this._cubeCam)
+    }
+    if (!this._groundFill) {   // S-40: once — setBakeRes re-creates the RT, not the disc
       // Below-horizon ground fill (user call 2026-07-17): the Preetham shader renders the lower
       // hemisphere as dark void, so from any height the world reads as a floating tile against
       // sky. A huge fog-coloured disc in the BAKE scene paints the below-horizon background as
@@ -402,9 +405,11 @@ export class SkySystem {
 
   /**
    * Blend the two cycle keyframes bracketing `hour` (0..24, wraps) into the live look and apply.
-   * This is the day/night cycle's single entry point.
+   * This is the day/night cycle's single entry point. `onlyIfChanged` (the debug play cycle):
+   * skip apply() — a 6-face cubemap bake + the impostor rebake — when the blend left every look
+   * field exactly as it was (a span between two identical looks, e.g. the repeated night keyframes).
    */
-  setTimeOfDay (hour) {
+  setTimeOfDay (hour, onlyIfChanged = false) {
     SKY_CYCLE.hour = ((hour % 24) + 24) % 24
     const kf = SKY_CYCLE.keyframes
     let i = 0
@@ -413,8 +418,9 @@ export class SkySystem {
     const b = SKY_PRESETS[kf[i + 1].preset]
     const span = kf[i + 1].hour - kf[i].hour
     const t = span > 0 ? (SKY_CYCLE.hour - kf[i].hour) / span : 0
+    if (onlyIfChanged) for (const k of LOOK_FIELDS) _lookBefore[k] = SKY_PARAMS[k]
     this._blendLooks(a, b, t)
-    this.apply()
+    if (!onlyIfChanged || LOOK_FIELDS.some((k) => SKY_PARAMS[k] !== _lookBefore[k])) this.apply()
     this._refreshGui()
   }
 
@@ -439,7 +445,7 @@ export class SkySystem {
     const dtSec = Math.min(0.1, (now - this._lastTime) / 1000)   // clamp tab-switch hitches
     this._lastTime = now
     if (SKY_CYCLE.playing && SKY_CYCLE.dayLengthSec > 0) {
-      this.setTimeOfDay(SKY_CYCLE.hour + dtSec * (24 / SKY_CYCLE.dayLengthSec))
+      this.setTimeOfDay(SKY_CYCLE.hour + dtSec * (24 / SKY_CYCLE.dayLengthSec), true)
     }
   }
 

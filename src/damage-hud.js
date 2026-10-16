@@ -16,8 +16,8 @@
  *
  *   SIGNALS — the raw per-corner quantities the wear tracks integrate, each against the floor it
  *     has to clear before it does any harm. This exists for one specific open question (the damper
- *     and wheel tracks ride on strutCompVel, a 4-substep explicit-Euler value that may be too noisy
- *     to honestly decide when a part takes damage): if normal road driving sits above a floor, that
+ *     tracks ride on strutCompVel, a 4-substep value with an explicit strut damper, that may be too
+ *     noisy to honestly decide when a part takes damage): if normal road driving sits above a floor, that
  *     floor is wrong or the signal is noise, and you can see which from the seat.
  *
  *   IMPACTS — the last few landed collisions. A crash is over in a tenth of a second, so without a
@@ -66,7 +66,7 @@ const CSS = `
 #dmg-hud .dh-title { font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; color: #c8d2c4;
   margin-bottom: 2px; }
 #dmg-hud .dh-off { color: #d08a4a; }
-/* Two columns: the condition pane is 26 tracks and would otherwise push the panes that matter
+/* Two columns: the condition pane is 27 tracks and would otherwise push the panes that matter
    (signals, impacts) off the bottom of the screen. */
 #dmg-hud .dh-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; align-items: start; }
 #dmg-hud .dh-row { display: grid; grid-template-columns: 72px 1fr 28px 62px; gap: 4px; align-items: center;

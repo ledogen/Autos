@@ -19,13 +19,15 @@
  *                                          //   stands where the ground reads green (sparser on dirt,
  *                                          //   never rock); read on a 4 m grid per chunk (litterPasses)
  *   padBlocked(x,z,keepOut) -> boolean     // FEAT-85 (optional): on a junction / lay-by pad
+ *   roadDist, waterAt, streamAt, waterNear, groundClassify   // water / stream / ground-class
+ *                                          //   samplers (main.js makePropSamplers supplies all)
  * }
  *
- * Placement record: { cat, variant, x, y, z, scale, rotY, tint:[r,g,b] }
+ * Placement record: { cat, variant, x, y, z, gy, scale, rotY, tint:[r,g,b], tilt?, tiltAz? }
  *   y = world Y of the instance ORIGIN (trees: ground; blobs: sunk by buryFrac).
  */
 
-import { mulberry32, seedFor, djb2 } from '../seed.js'
+import { mulberry32, seedFor, djb2, hash2 as _hash2, smooth01 as _smooth01 } from '../seed.js'
 import { FLORA_PARAMS } from '../../data/flora.js'
 import { biomeAt, BIOME } from '../biome.js'
 
@@ -220,14 +222,17 @@ function chunkHelpers (cx, cz, samplers, P, out, rng) {
       scale, rotY: rngArg() * Math.PI * 2,
       tint: tintFor(rngArg, cfg.color, cfg.colorJitter),
     }
-    // Owner 2026-09-28: rocks TUMBLE — a random lean (tilt about a random horizontal axis, then
-    // the yaw; the blob is centred at its origin so it stays bedded) instead of every rock sitting
-    // upright on a hillside like it was set down. Boulders keep yaw only: their mesh collider
-    // (sphereVsMeshInstance) is yaw-only, and it must match what is drawn. Drawn AFTER the
-    // record's own rng draws so every earlier placement decision is unchanged.
+    // Owner 2026-09-28: the decorative litter rocks (medRock, smallRock) TUMBLE — a random lean
+    // (tilt about a random horizontal axis, then the yaw; the blob is centred at its origin so it
+    // stays bedded) instead of sitting upright on a hillside like they were set down. Owner
+    // 2026-10-15 (review-2 R-04): the large collidable `rock` is yaw-only, like boulders — its
+    // collision sphere (rBulk, prop-palette.js) is calibrated on the UPRIGHT blob, and tumbled it
+    // stood proud of the visible flank (the BUG-22b "hits air before the rock" symptom, MESH ≠
+    // PHYSICS). Its two tilt draws are still TAKEN so the rng stream, and every later placement,
+    // is unchanged. Drawn AFTER the record's own rng draws so every earlier decision is unchanged.
     if ((cat === 'rock' || cat === 'medRock' || cat === 'smallRock') && S.rockTiltMax > 0) {
-      pl.tilt = rngArg() * S.rockTiltMax
-      pl.tiltAz = rngArg() * Math.PI * 2
+      const tilt = rngArg() * S.rockTiltMax, tiltAz = rngArg() * Math.PI * 2
+      if (cat !== 'rock') { pl.tilt = tilt; pl.tiltAz = tiltAz }
     }
     out.push(pl)
   }
@@ -411,10 +416,6 @@ function* litterPasses(out, cx, cz, worldSeed, samplers, P, h) {
     Z && P.medRock ? S.roadExclusion + blobBoundR(P.rock) : 0,
     C ? S.roadHalfWidth + C.wallBeatBack[1] : 0)
   const roadNear = !h.roadClear(ox + size / 2, oz + size / 2, size * 0.7072 + reach)
-  // Road occupancy grid (8 m cells) from the walk slices: a candidate in an unmarked cell is
-  // clear of every road by construction; only candidates in a marked cell pay the exact
-  // queryNearest (which also knows the lay-by pads). Without roadWalk (older fixtures) every
-  // candidate pays, as before.
   // Centreline samples (1.8 m apart) bucketed into 12 m cells over the chunk + a margin. A
   // candidate's distance to the nearest sample is the centreline distance ± 0.9 m, so only a
   // candidate inside that band around its keep-out pays the exact queryNearest. Litter only —
@@ -545,13 +546,6 @@ export function* scatterLitterGen(cx, cz, worldSeed, samplers, params = FLORA_PA
 }
 
 // Cheap 2D value noise in [0,1] (world-space, seed-keyed) — the cover's patchiness fields.
-function _hash2(ix, iz, seed) {
-  let h = seed | 0
-  h = Math.imul(h ^ (ix | 0), 0x9e3779b9)
-  h = Math.imul(h ^ (iz | 0), 0x85ebca6b)
-  h ^= h >>> 15; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 13
-  return (h >>> 0) / 4294967296
-}
 const _sm = (t) => t * t * (3 - 2 * t)
 function noise2(x, z, seed) {
   const x0 = Math.floor(x), z0 = Math.floor(z)
@@ -564,7 +558,6 @@ function noise1(t, seed) {
   const i = Math.floor(t), f = _sm(t - i)
   return _hash2(i, 0, seed) + (_hash2(i + 1, 0, seed) - _hash2(i, 0, seed)) * f
 }
-const _smooth01 = (e0, e1, x) => x <= e0 ? 0 : x >= e1 ? 1 : _sm((x - e0) / (e1 - e0))
 
 /**
  * FEAT-85: the cover pass. Two sources (data/flora.js scatter.cover explains the intent):

@@ -18,7 +18,6 @@
 // USAGE: node test/region-radius-curve.mjs --seed=811 --sample=14
 // Not a gate.
 
-import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'

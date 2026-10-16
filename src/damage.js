@@ -1,7 +1,7 @@
 /**
  * src/damage.js — SM-3 component condition model.
  *
- * ONE framework, 26 per-component condition tracks in eight classes. Every track carries a
+ * ONE framework, 27 per-component condition tracks in eleven classes. Every track carries a
  * condition in [0, 1] (1 = new, 0 = destroyed), integrates an HONEST physics signal the sim already
  * produces, and expresses its effect as a multiplier the physics stack reads. Per-run state only
  * (SM-INV-8) — nothing here persists across runs. Time + intensity, never distance (SM-INV-5).
@@ -93,8 +93,8 @@ export const TRACKS = {
 
   // Alignment — PER WHEEL, because toe and camber are per-wheel geometry and the ratified effect is
   // "random toe and camber applied to the affected wheels". Front bumper covers the front pair, rear
-  // bumper the rear pair, each side its own two. Effect wiring is slice 3 (needs the toe/camber
-  // geometry from feature/out-of-round).
+  // bumper the rear pair, each side its own two. alignment.js turns the offsets into steer and
+  // lean (BUG-79).
   alignFL: { label: 'Alignment FL', cls: 'alignment', regions: ['front', 'left'],  wheel: 0 },
   alignFR: { label: 'Alignment FR', cls: 'alignment', regions: ['front', 'right'], wheel: 1 },
   alignRL: { label: 'Alignment RL', cls: 'alignment', regions: ['rear',  'left'],  wheel: 2 },
@@ -105,6 +105,9 @@ export const TRACKS = {
 export const ARMOR_REGIONS = { front: 'armorFront', left: 'armorLeft', right: 'armorRight', rear: 'armorRear' }
 
 export const TRACK_IDS = Object.keys(TRACKS)
+// Per-corner track ids, indexed 0=FL 1=FR 2=RL 3=RR (GLOSSARY.md §Wheel Index).
+const TIRE_IDS  = ['tireFL', 'tireFR', 'tireRL', 'tireRR']
+const WHEEL_IDS = ['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR']
 
 // ── Tunables ──────────────────────────────────────────────────────────────────────────────────────
 // Every number here is a [DEFAULT] pending a driven calibration pass — the shapes are ratified, the
@@ -419,7 +422,14 @@ export const DAMAGE_PARAMS = {
   // the threshold and the severity): road write-off 90 -> 60, debris write-off 35 -> 25; the
   // yields went 16 -> 12 / 1.75 -> 1.4 and were then split back to 14 / 1.6 (owner, same day).
   // 2 m drop ~3.6% -> ~9% per corner.
-  rimYieldMult:   1.6,   // x static wheel load (≈5.3 kN): DEBRIS core contacts — below this it springs back
+  // 2026-10-15 review-2 R-02: the DEBRIS force now reads the engine's whole-step impulse
+  // (totalNormalImpulse) instead of the last substep's. For a SUSTAINED contact that reads 16x
+  // higher at 8 substeps (measured 15.4-16.6x on a wheel core parked on a beam; 16.05x on a resting
+  // cube), so both debris multipliers went x16 (1.6 -> 25.6, 25 -> 400) and every sustained contact
+  // prices exactly as before. What is NEW is the one-step hit: the old reading was 0.00 on the step
+  // a hit lands, so a sharp strike that lasted one step was never seen. It now is — deliberately.
+  // The 0.3-5.1 kN rock figures above are in the OLD reading (x16 = 5-82 kN in this one).
+  rimYieldMult:   25.6,  // x static wheel load (≈85 kN): DEBRIS core contacts — below this it springs back
   // ROAD contacts are a different measurement (see suspension.js): the load past full carcass
   // compression, not what a rigid pinch exchanges.
   //
@@ -434,7 +444,7 @@ export const DAMAGE_PARAMS = {
   // overload scale puts a 2 m landing at about a tenth of a wheel.
   rimYieldRoadMult: 14,   // x static wheel load (≈46 kN): ROAD/terrain contacts
   rimFullRoadMult:  60,   // x static wheel load (≈200 kN) of OVERLOAD writes the wheel off
-  rimFullMult:    25,     // x static wheel load (≈83 kN) of OVERLOAD writes the wheel off
+  rimFullMult:    400,    // x static wheel load (≈1.3 MN) of OVERLOAD writes the wheel off (DEBRIS; see R-02 note)
   rimStrikeExp:   1.5,    // between linear and square — plastic work rises faster than the overload
 
   // Fraction of its own peak a loaded event must FALL TO before it is banked. Waiting for the load
@@ -491,10 +501,6 @@ export const DAMAGE_PARAMS = {
   // ── Contact → impact gating (feedContact) ──────────────────────────────────────────────────
   // A contact is not an impact. The engine reports a manifold every step a body is touching
   // anything, so a truck parked against a fence would be "hit" 60 times a second. Two guards:
-  //
-  // (The timing comments here were written against a 240 Hz step. The physics step is 1/60 s, and
-  // the numbers below are stated for that; whether the VALUES want a retune for it is an open
-  // owner question — see impactGapS and impactPreSteps.)
   //
   // impactMinMph — the floor a contact must clear to be an impact at all. Resting on the ground is
   //   worth about 0.09 mph equivalent (one step of the truck's own weight), so 2 mph clears the
@@ -619,6 +625,9 @@ const clampAbs = (x, m) => (x >  m ? m : x < -m ? -m : x)
 
 // ── The model ─────────────────────────────────────────────────────────────────────────────────────
 
+/** Brake friction POWER on one wheel [W]: torque × wheel speed (see the brake-wear note in step). */
+function brakePower (brakeT, omega, i) { return Math.abs(brakeT[i] || 0) * Math.abs(omega?.[i] || 0) }
+
 export class DamageModel {
   /**
    * @param {object} [opts]
@@ -661,7 +670,24 @@ export class DamageModel {
 
     // Peak rim-core contact FORCE per corner while a strike is in progress; 0 otherwise.
     this._strikePeak = [0, 0, 0, 0]
+    // Whether that peak came off the analytic ground (road residual) rather than a debris body.
+    this._strikeRoad = [false, false, false, false]
 
+  }
+
+  /**
+   * Drop every in-flight event: the collision burst and the velocity history it reaches back
+   * into, and the held bump-stop / rim-strike peaks. Called on EVERY reseat (R, teleport, reseed,
+   * story seat): the truck jumped, so nothing measured before the jump is part of a hit. Without
+   * it a burst live at the reseat banked Δv = |0 − v_before| on the next step — a phantom
+   * full-speed impact that in story mode could set fatalImpact.
+   */
+  resetTransients () {
+    this._burst = null
+    this._velRing = null
+    this._bumpPeak.fill(0)
+    this._strikePeak.fill(0)
+    this._strikeRoad.fill(false)
   }
 
   /** Condition of one track, [0, 1]. */
@@ -716,7 +742,7 @@ export class DamageModel {
 
   /** Per-tire friction multiplier. `dirt` selects the harsher loose-surface falloff. */
   tireMuScale (wheelIndex, dirt = false) {
-    const id = ['tireFL', 'tireFR', 'tireRL', 'tireRR'][wheelIndex]
+    const id = TIRE_IDS[wheelIndex]
     const atZero = dirt ? DAMAGE_PARAMS.tireMuAtZeroDirt : DAMAGE_PARAMS.tireMuAtZero
     const c = this.get(id)
     const shaped = 1 - Math.pow(1 - Math.max(0, Math.min(1, c)), DAMAGE_PARAMS.tireMuExp)
@@ -743,7 +769,7 @@ export class DamageModel {
 
   /** Fit a fresh tire: full condition and the air back in it. */
   replaceTire (wheelIndex) {
-    this.set(['tireFL', 'tireFR', 'tireRL', 'tireRR'][wheelIndex], 1)
+    this.set(TIRE_IDS[wheelIndex], 1)
     this.flat[wheelIndex] = false
   }
 
@@ -815,29 +841,35 @@ export class DamageModel {
    */
   feedContact (region, impulseNs, mass, dt, vel) {
     const P = DAMAGE_PARAMS
-    // `impulseNs` is the engine's accumulated normal impulse on the hardest manifold point. It is
-    // the only impulse field the contact buffer actually populates — the per-step `normalImpulse`
-    // reads zero there, and switching to it silently killed every collision (owner: a 70 mph tree
-    // strike did nothing at all). So: accumulated total, peak-held.
+    // `impulseNs` is the engine's totalNormalImpulse on the hardest manifold point: the whole
+    // step's impulse, summed over its substeps. The other field, normalImpulse, is only the LAST
+    // substep's share and reads zero on the step a hit lands — switching to it silently killed
+    // every collision (owner: a 70 mph tree strike did nothing at all). So: the step total,
+    // peak-held across the burst.
     //
-    // Because it ACCUMULATES for as long as the bodies stay touching, the burst window is what
-    // keeps a crash honest: a truck that comes to rest against the tree it hit would otherwise go
-    // on adding to its own impact forever, which is what priced a 70 mph strike at 143 mph. A real
-    // crash peaks in tens of milliseconds, so the window is short and the settle never joins it.
+    // It does not accumulate from step to step (measured — see maxContactImpulse), but a truck
+    // that comes to rest against the tree it hit goes on reporting a contact every step. The burst
+    // window is what keeps the settle out of the crash: a real crash peaks in tens of
+    // milliseconds, so the window is short.
     // Rolling history of recent velocity. A burst cannot use the velocity of the step it STARTS on:
     // the engine's accumulated impulse only crosses the trigger a step or two into the hit, by which
     // time most of the deceleration has already happened, and Δv measured from there is ~nothing
     // (a 34 mph crash priced at 0.4 mph). So the burst reaches BACK for the velocity from before
     // the contact began.
     if (vel) {
-      if (!this._velRing) this._velRing = []
-      this._velRing.push({ x: vel.x, y: vel.y, z: vel.z })
-      if (this._velRing.length > P.impactPreSteps) this._velRing.shift()
+      const ring = this._velRing ?? (this._velRing = [])
+      // Full ring: recycle the entry that falls off the back instead of allocating one per step.
+      const e = ring.length >= P.impactPreSteps ? ring.shift() : {}
+      e.x = vel.x; e.y = vel.y; e.z = vel.z
+      ring.push(e)
     }
     const live = region != null && impactSpeed(impulseNs, mass) >= P.impactMinMph * MPH
 
     if (live) {
-      if (!this._burst) this._burst = { region, impulse: impulseNs, t: 0, gap: 0, v0: this._velRing ? this._velRing[0] : null }
+      if (!this._burst) {
+        const r0 = this._velRing?.[0]   // COPIED: ring entries are recycled as the ring advances
+        this._burst = { region, impulse: impulseNs, t: 0, gap: 0, v0: r0 ? { x: r0.x, y: r0.y, z: r0.z } : null }
+      }
       else {
         this._burst.t += dt
         this._burst.gap = 0
@@ -972,8 +1004,8 @@ export class DamageModel {
 
   /**
    * Land one completed RIM STRIKE on one corner: the tire bottomed out hard enough that the rim
-   * flange took load. `excessM` is how far the deflection went past the sidewall fraction where
-   * the rubber runs out — the only thing that decides how bad it was.
+   * flange took load. `forceN` is the strike's PEAK rim force; `road` picks which source's yield
+   * and overload scale price it (the road residual or a debris pinch on the wheel core).
    */
   _landRimStrike (corner, forceN, staticLoad, road) {
     const P = DAMAGE_PARAMS
@@ -985,7 +1017,7 @@ export class DamageModel {
     const overload = forceN - yieldN
     if (overload <= 0) return                       // elastic: the rim springs back, nothing kept
     const dmg = Math.pow(Math.min(1, overload / fullN), P.rimStrikeExp)
-    this.wear(['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR'][corner], dmg, 1)
+    this.wear(WHEEL_IDS[corner], dmg, 1)
   }
 
   /** Static wheel load [N] — one corner's share of the vehicle's weight. The yield scale. */
@@ -1017,7 +1049,7 @@ export class DamageModel {
     this.wear(id, dmg, 1)
 
     // PUNCTURE: the same event, read against the tire rather than the spring.
-    const tireId = ['tireFL', 'tireFR', 'tireRL', 'tireRR'][corner]
+    const tireId = TIRE_IDS[corner]
     if (!this.flat[corner] && peakN >= this.punctureThreshold(this.get(tireId))) {
       this.flat[corner] = true
       this.popped.push(corner)         // drained by the game layer for the bang
@@ -1046,15 +1078,15 @@ export class DamageModel {
     params._damperScaleRear  = this.damperScale(true)
     params._engineDamageScale = this.engineScale()
     // Alignment is geometry, not a multiplier — published as the raw per-wheel offsets the
-    // suspension applies on top of the static toe/camber. Slice 3 consumes these.
+    // suspension applies on top of the static toe/camber. alignment.js consumes these (BUG-79).
     params._toeOffsetDeg    = this.toeOffsetDeg
     params._camberOffsetDeg = this.camberOffsetDeg
-    // Per-wheel out-of-round, in metres peak-to-peak. Added to the params.wheelRunout slider so
-    // that slider stays usable on its own as a test tool with damage off.
     // Flat tires: the carcass rate collapses and grip drops. Published as a RATE multiplier so the
     // suspension needs no notion of "flat" at all — it just reads a softer tire.
     const fr = params._tireRateScale || (params._tireRateScale = [1, 1, 1, 1])
     for (let i = 0; i < 4; i++) fr[i] = this.flat[i] ? DAMAGE_PARAMS.tireFlatRate : 1
+    // Per-wheel out-of-round, in metres peak-to-peak. Added to the params.wheelRunout slider so
+    // that slider stays usable on its own as a test tool with damage off.
     const ro = params._wheelRunout || (params._wheelRunout = [0, 0, 0, 0])
     for (let i = 0; i < 4; i++) ro[i] = this.wheelRunout(i, params)
     // Headlight flicker, left then right: 0 = steady, 1 = worst. Visual only; physics never reads it.
@@ -1089,7 +1121,7 @@ export class DamageModel {
    * standalone test tool when damage is off.
    */
   wheelRunout (wheelIndex, params = this.params) {
-    const c = this.get(['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR'][wheelIndex])
+    const c = this.get(WHEEL_IDS[wheelIndex])
     return ((params && params.wheelRunout) || 0) + (1 - c) * DAMAGE_PARAMS.wheelRunoutAtZero
   }
 
@@ -1123,12 +1155,11 @@ export class DamageModel {
 
     // ── Tires: slip velocity × time (dominant) + cornering force × time (minor) ────────────────
     if (slipVel) {
-      const ids = ['tireFL', 'tireFR', 'tireRL', 'tireRR']
       for (let i = 0; i < 4; i++) {
         const v = Math.max(0, (slipVel[i] || 0) - P.tireSlipFloor)
         const f = Math.abs(tireFlat?.[i] || 0)
         if (v <= 0 && f <= 0) continue
-        this.wear(ids[i], (v + P.tireWCorner * f) * dt, P.durTire)
+        this.wear(TIRE_IDS[i], (v + P.tireWCorner * f) * dt, P.durTire)
       }
     }
 
@@ -1141,9 +1172,8 @@ export class DamageModel {
     // gentle crawl-speed drag costs far less than the same torque at 60 mph.
     if (brakeT) {
       const omega = vehicleState.wheelOmega
-      const p = (i) => Math.abs(brakeT[i] || 0) * Math.abs(omega?.[i] || 0)   // N·m/s = W
-      this.wear('brakeFront', (p(0) + p(1)) * dt, P.durBrake)
-      this.wear('brakeRear',  (p(2) + p(3)) * dt, P.durBrake)
+      this.wear('brakeFront', (brakePower(brakeT, omega, 0) + brakePower(brakeT, omega, 1)) * dt, P.durBrake)
+      this.wear('brakeRear',  (brakePower(brakeT, omega, 2) + brakePower(brakeT, omega, 3)) * dt, P.durBrake)
     }
 
     // ── Wheels: RIM STRIKE events, per corner, on peak tire deflection ────────────────────────
@@ -1155,8 +1185,6 @@ export class DamageModel {
       const road = vehicleState.rimForceRoad
       const yieldN = P.rimYieldMult * staticW
       const yieldRoad = P.rimYieldRoadMult * staticW
-      if (!this._strikePeak) this._strikePeak = [0, 0, 0, 0]
-      if (!this._strikeRoad) this._strikeRoad = [false, false, false, false]
       for (let i = 0; i < 4; i++) {
         // Two sources. Compare them as MULTIPLES OF THEIR OWN YIELD — the only way to ask "which is
         // further past the point where it starts bending" when the two are different measurements —
@@ -1165,14 +1193,20 @@ export class DamageModel {
         const nRoad   = road ? (road[i] || 0) / yieldRoad : 0
         const isRoad  = nRoad > nDebris
         const f = isRoad ? (road[i] || 0) : (rimF[i] || 0)
-        const trip = isRoad ? yieldRoad : yieldN
         if (f > this._strikePeak[i]) this._strikeRoad[i] = isRoad
         const peak = this._strikePeak[i]
         if (f > peak) { this._strikePeak[i] = f; continue }
-        if (peak > trip && (f <= trip || f < peak * P.eventDecayFrac)) {
-          this._landRimStrike(i, peak, staticW, this._strikeRoad[i])
+        // Release is judged in the PEAK's own measurement. When a road strike lets go, the road
+        // residual drops to 0 and the "winner" flips to the debris reading; judged on the debris
+        // yield, which sits ABOVE the road one since R-02 (85 vs 46 kN), a 46-85 kN road strike
+        // was dropped without ever being banked.
+        const peakRoad = this._strikeRoad[i]
+        const fPeak    = peakRoad ? (road[i] || 0) : (rimF[i] || 0)
+        const tripPeak = peakRoad ? yieldRoad : yieldN
+        if (peak > tripPeak && (fPeak <= tripPeak || fPeak < peak * P.eventDecayFrac)) {
+          this._landRimStrike(i, peak, staticW, peakRoad)
           this._strikePeak[i] = 0
-        } else if (f <= trip) {
+        } else if (fPeak <= tripPeak) {
           this._strikePeak[i] = 0
         }
       }
@@ -1185,7 +1219,6 @@ export class DamageModel {
     // bump-stop contact is harmless, hard contact is not — but the floor is now the entry
     // condition for an event rather than a subtraction inside an integral.
     if (bumpF) {
-      if (!this._bumpPeak) this._bumpPeak = [0, 0, 0, 0]
       for (let i = 0; i < 4; i++) {
         const f = Math.abs(bumpF[i] || 0)
         const peak = this._bumpPeak[i]
@@ -1206,8 +1239,9 @@ export class DamageModel {
     // ── Dampers: suspension displacement rate above the no-harm floor, per axle pair ───────────
     // OPEN RISK (owner, 2026-08-19): this may not have the fidelity to decide honestly when a
     // damper should take damage. strutCompVel is the real strut velocity the suspension ODE
-    // integrates, so it is the honest signal — but it is a 4-substep explicit-Euler quantity and
-    // may be too noisy. If the washboard test says so, that is a finding to report, not to paper
+    // integrates, so it is the honest signal — but it comes out of 4 substeps with the strut spring
+    // and damper integrated explicitly (only the tire damper and bump stop are implicit), and may
+    // be too noisy. If the washboard test says so, that is a finding to report, not to paper
     // over with a proxy.
     if (strutVel) {
       const vF = Math.max(0, Math.abs(strutVel[0] || 0) - P.damperVelFloor)
@@ -1244,7 +1278,8 @@ export class DamageModel {
     }
 
     // FEAT-33 seam (owner ruling 2026-09-04): the engine track IS the crank-time input. ignition.js
-    // interpolates catch time 0.25 s → 1 s on this, and at exactly 0 the engine never catches.
+    // interpolates catch time ignitionCatchTime → ignitionCatchTimeWorn (0.25 s → 2 s) on this,
+    // and at exactly 0 the engine never catches.
     vehicleState.engineHealth = this.get('engine')
 
     this.publish(params)

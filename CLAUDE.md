@@ -172,6 +172,8 @@ desaturated nature against saturated man-made objects. `trailer-home-a.glb` is t
 - **Physics behaviors** (load transfer, wheel independence, wheel lift, damping, ramp slide):
   `test/assert-m4-*.mjs` — rainy-day manual scripts; each needs a recorded scenario log. Not in
   `npm test`.
+- **Refactor identity proof:** `node test/fingerprint-world.mjs --out=a.json [--compare=b.json]` — hashes the network, profiles, junctions, POIs, surface, carve, road tiles, water and props for six windows; run on main and the branch, require PASS.
+- **Physics identity proof:** `node test/fingerprint-physics.mjs --out=a.json [--compare=b.json]` — running full-state hash over 900 steps on bumpy ground, round and out-of-round tires.
 - **Regression gates (registered in `test/gates.mjs`):** `npm test` runs **only the AFFECTED gates** — those
   whose transitive import closure (computed live by `run-all.mjs`, + each gate's `extraDeps`) intersects
   your `git diff`. So a physics edit runs the physics gates, a prop-slider tweak the prop gates, a

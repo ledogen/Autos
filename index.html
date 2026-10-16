@@ -906,7 +906,7 @@
     #lab-panel .lb-hi  { color: #8ce99a; white-space: nowrap; }
     #lab-panel .lb-foot { margin-top: 8px; font-size: 11px; }
 
-    /* Freecam "teleport here" button — shown only while in free-cam (free-roam mode). */
+    /* Freecam "teleport here" button — shown only while in free-cam (free roam or story). */
     #teleport-btn {
       display: none;
       position: fixed;
@@ -956,27 +956,11 @@
     #controls-body { padding: 2px 10px 8px 10px; }
     #controls-body .k { color: #ffffff; display: inline-block; min-width: 62px; }
     #controls.collapsed #controls-body { display: none; }
-    /* "spawn point set" toast — fades out; shown whenever the spawn point changes. */
-    #spawn-toast {
-      position: fixed;
-      top: 8%;
-      left: 50%;
-      transform: translateX(-50%);
-      color: #ffffff;
-      font-family: monospace;
-      font-size: 18px;
-      letter-spacing: 1px;
-      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-      z-index: 96;
-      pointer-events: none;
-      user-select: none;
-      opacity: 0;
-      transition: opacity 1s ease;
-    }
-    /* FEAT-33: "hold I to start the truck" — shown when the driver asks for throttle with the
-       ignition off (story mode seats you in a dead truck). Same toast family as #spawn-toast;
-       the key itself is accented so it reads as a control rather than as part of the sentence. */
-    #ignition-hint {
+    /* "spawn point set" toast — fades out; shown whenever the spawn point changes.
+       FEAT-33: "hold I to start the truck" — shown when the driver asks for throttle with the
+       ignition off (story mode seats you in a dead truck). Same toast family; the key itself is
+       accented so it reads as a control rather than as part of the sentence. */
+    #spawn-toast, #ignition-hint {
       position: fixed;
       top: 8%;
       left: 50%;
@@ -1062,8 +1046,8 @@
     #camp-seek-toggle:hover { opacity: 1; text-decoration: underline; }
     #camp-prompt.collapsed { border-color: rgba(255, 220, 60, 0.45); background: rgba(0, 0, 0, 0.45); }
     #camp-prompt.collapsed #camp-seek-toggle { margin-bottom: 0; }
-    /* The vibe bar: ONE bar, three stacked segments. Their max widths ARE the score weights
-       (50 / 30 / 20 %) — JS only ever writes the three widths. Shared by the prompt and the
+    /* The vibe bar: ONE bar, four stacked segments. Their max widths ARE the score weights
+       (40 / 15 / 20 / 25 %) — JS only ever writes the four widths. Shared by the prompt and the
        confirm face; two roots, one renderer (_renderVibeBar). */
     .vibe-bar {
       width: 260px;
@@ -1189,7 +1173,7 @@
        this panel keeps only the diagnostics the cluster can't show. -->
   <div id="hud">
     SPIN: <span id="spinVal">0.0</span><br>
-    SLIP: <span id="slipVal">0.0&deg;</span><br>
+    SLIP: <span id="slipVal">0.00 m/s</span><br>
     THR: <span id="thrVal">0</span>% &nbsp; BRK: <span id="brkVal">0</span>%<br>
     FPS: <span id="fpsVal">60</span><br>
     FL Fz: <span id="flFzVal">0</span> N &nbsp; FR Fz: <span id="frFzVal">0</span> N<br>
@@ -1197,7 +1181,8 @@
     POS: <span id="posVal">seed 0 / 0 / 0</span>
   </div>
 
-  <!-- Pause menu overlay (D-17) — shown on Esc from chase/hood mode; hidden in free-cam.
+  <!-- Pause menu overlay (D-17) — shown on Esc from chase/hood mode, and from free-cam once the
+       pointer lock is released.
        Button ids are wired in main.js: pm-resume, pm-restart (FEAT-62 scenarios only), pm-story,
        pm-lab, pm-menu.
        (D-18 "grid world" / "return to world" were removed 2026-07-20 — the testing lab
@@ -1214,8 +1199,8 @@
     <button id="pm-menu">main menu</button>
   </div>
 
-  <!-- FEAT-43: Story Mode seed prompt. Minimal for now (full menu styling is FEAT-41); pre-filled
-       with the pre-baked default seed 6 so it boots instantly for testing. Wired in main.js. -->
+  <!-- FEAT-43: Story Mode seed prompt. Minimal for now (full menu styling is FEAT-41); the input
+       starts blank. Wired in main.js. -->
   <div id="story-seed-modal">
     <div class="ss-title" id="ss-title">story mode</div>
     <!-- The refusal block. Populated by main.js from src/world-validate.js's report; the modal gets
@@ -1269,7 +1254,7 @@
         driver-assist page are still open on FEAT-41 — the debug panel (backtick) owns them for now.</div>
       <button id="mm-settings-back">back</button>
     </div>
-    <div class="mm-foot">esc pauses &middot; backtick opens the debug panel (free roam only)</div>
+    <div class="mm-foot">esc pauses &middot; backtick opens the debug panel (not in scenarios)</div>
   </div>
 
   <!-- FEAT-41: load caption. Text is set from src/story.js via the setLoading dep, and from the
@@ -1397,9 +1382,9 @@
     <div id="camp-prompt-text"><span class="park-badge" aria-label="park">P</span>park to make camp</div>
   </div>
 
-  <!-- FEAT-61 aim reticle + landing readout. The reticle is screen-centre because that is exactly
-       where the chase camera looks, so "put the dot on the porch" is a true statement about where
-       the paper will go. -->
+  <!-- FEAT-61 aim reticle + landing readout. The reticle sits at 25 % from the top, not centre
+       (AIM_RETICLE_Y in main.js — a throw is an arc), and the aim direction is unprojected through
+       that same point, so "put the dot on the porch" is a true statement about where the paper will go. -->
   <div id="aim-reticle"></div>
   <div id="throw-readout"></div>
 
@@ -1498,7 +1483,7 @@
   </div>
   <div id="lab-hud"></div>
 
-  <!-- Free-cam teleport affordance — shown only in free-cam / free-roam mode (main.js loop
+  <!-- Free-cam teleport affordance — shown only in free-cam, in free roam or story (main.js loop
        toggles display). Click (cursor must be free; press Esc to release pointer-lock) or press
        T while flying to drop the truck at the camera position. -->
   <button id="teleport-btn">Teleport here (T)</button>

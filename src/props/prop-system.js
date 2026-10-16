@@ -2,8 +2,8 @@
  * src/props/prop-system.js — Instanced prop renderer + chunk lifecycle for FEAT-06.
  *
  * Owns the baked palette (prop-palette.js) and renders scattered props (prop-scatter.js) via one
- * GLOBAL InstancedMesh per (category × variant) — so total draw calls = Σ variants (~20),
- * INDEPENDENT of how many chunks are active. Each mesh keeps a free-list of instance slots; a
+ * GLOBAL InstancedMesh per (category × variant) — so total draw calls = Σ variants (54 3D pools,
+ * plus 8 impostor quads once billboards are wired), INDEPENDENT of how many chunks are active. Each mesh keeps a free-list of instance slots; a
  * chunk allocates slots when streamed in and returns them when streamed out.
  *
  * Decoupled from road/terrain: the caller injects `samplers` (heightAt / normalAt / roadBlocked),
@@ -29,12 +29,13 @@ import { FLORA_PARAMS } from '../../data/flora.js'
 import { perfEvent, perfAdd } from '../perf.js'   // PERF-26: streaming-event tags + timed buckets (zero-dep module; no-op unless ?hitch)
 import { streamScore } from '../stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 
-// Per-category global instance capacity (split evenly across that category's variants). Sized for
-// the ring-4 (Ultra, 81-chunk) worst case; pure typed-array memory (64 B/instance), cheap.
 // PERF-21: categories that keep rendering FULL 3D even in the billboard-only outer ring (rare,
 // landmark-scale, and shaped wrong for a vertical quad — boulders are wide horizontal masses).
 const BBONLY_3D_CATS = new Set(['boulder'])
 
+// Per-category global instance capacity (split evenly across that category's variants). Every slot
+// is allocated up front on the CPU AND the GPU: instanceMatrix + instanceColor = 76 B/slot ×
+// ~224.5k slots ≈ 17 MB each side.
 const CAPACITY = {
   // Trees sized for the PERF-21 billboard-only outer ring: Ultra streams trees out to the built-
   // terrain edge (ring+warm = 8 → 17² = 289 chunks × ~30 trees ≈ 8.7k, biome-split aspen/pine).
@@ -51,6 +52,13 @@ const CAPACITY = {
 // FEAT-85: "cat#v" → is this a cover key (grass/brush)? Cover skips the shadow bake, the realtime
 // caster flag and the road-intrusion sweep (it stands beside the road ON PURPOSE).
 const isCoverKey = (key) => COVER_CATS.has(key.slice(0, key.indexOf('#')))
+// Keys the PERF-07 shadow bake draws: not cover (mush at 0.25 m/texel) and not the FADE_CATS ground
+// litter — pebbles/medium rocks shrink to nothing by 77–133 m, but a baked speck outlived them to
+// the 380 m shadow fade (R-16, owner 2026-10-15).
+const bakesShadow = (key) => {
+  const cat = key.slice(0, key.indexOf('#'))
+  return !COVER_CATS.has(cat) && !FADE_CATS.has(cat)
+}
 // Keys the BUG-71 road-intrusion sweep must IGNORE: ground litter the scatter deliberately stands
 // inside the road exclusion (smallRock on the shoulder + road, medRock on the shoulder — FADE_CATS)
 // and the FEAT-85 cover, which stands beside the road by design. A category missing from this
@@ -68,6 +76,9 @@ const _p = new THREE.Vector3()
 const _s = new THREE.Vector3()
 const _col = new THREE.Color()
 const _HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0)
+// S-45: numeric grid-cell key, exact for |gx|,|gz| < 2^20 cells (±8,388 km at 8 m) — no per-query strings.
+const cellKey = (gx, gz) => (gx + 1048576) * 2097152 + (gz + 1048576)
+const SEQ_STRIDE = 65536   // S-45: collidable seq = chunk rank × stride + list index (a chunk holds ≪ 65,536)
 const LOD_SWAPS_MAX = 6      // PERF-21: per-frame chunk re-pool ceiling
 const LITTER_DEFER = 1.5     // PERF-34: streamScore units a litter-only job yields to base scatters by
 const PREEMPT_MARGIN = 1.0   // PERF-33: streamScore units (≈ chunks) a queued chunk must beat the active one by
@@ -120,13 +131,8 @@ export class PropSystem {
         // free list (use high indices first so low slots fill contiguously)
         const free = []
         for (let i = perVariant - 1; i >= 0; i--) free.push(i)
-        // PERF-07: per-instance shadow ground-fit factor for the bake shear (default 1 = flat
-        // ground; written per slot in _commitChunk). Lives on the variant geometry like any
-        // instanced attribute; the main Phong material simply ignores it. geoMaxY caches the
-        // unscaled prop height for the canopy-centre h0.
-        const kAttr = new THREE.InstancedBufferAttribute(new Float32Array(perVariant).fill(1), 1)
-        kAttr.setUsage(THREE.DynamicDrawUsage)
-        entry.geo.setAttribute('aShadowK', kAttr)
+        // geoMaxY caches the unscaled prop height for the PERF-07 bake's canopy-centre h0. The
+        // per-instance ground-fit factor (aShadowK) lives only on the bake scratch meshes.
         if (!entry.geo.boundingBox) entry.geo.computeBoundingBox()
         const key = cat + '#' + v
         // occ/top: occupancy bitmap + high-water mark for PERF-10 count compaction.
@@ -180,15 +186,18 @@ export class PropSystem {
     this.setShadowCasting(castRealtime)   // initial mode from params.shadows
 
     // ── FEAT-06b collision index ──────────────────────────────────────────────────────
-    // Per-chunk collidable lists are the source of truth; a uniform grid (rebuilt lazily when chunk
-    // membership changes) gives O(1)-ish nearest-prop lookup for the truck contact query. Each
+    // Per-chunk collidable lists are the source of truth; a uniform grid gives O(1)-ish nearest-prop
+    // lookup for the truck contact query. Kept INCREMENTALLY (review-2 S-45): a commit inserts its
+    // chunk's items in rebuild order, a release filters them out — a full rebuild of every live collidable cost
+    // 4–6 ms per chunk commit at Ultra (~17 commit frames per row crossing). Each
     // collidable stores RAW baked dims + instance scale; the collision-scale params are applied LIVE
     // at query time (so the debug sliders tune without a re-stream).
-    this._collidables = new Map()  // "cx,cz" -> [{ kind, x, y, z, radius, height, scale }]
-    this._grid = new Map()         // "gx,gz" -> [collidable, ...]
+    this._collidables = new Map()  // "cx,cz" -> chunk.cols [{ kind, x, y, z, radius, height, scale }] — not bbonly (R-15)
+    this._grid = new Map()         // cellKey(gx, gz) -> [collidable, ...]
     this._gridCell = 8             // m
     this._physicsHook = null       // FEAT-48: PropPhysics (engine static colliders) — syncChunk/disposeChunk/clear
     this._gridDirty = true
+    this._colRank = 0              // S-45: chunk registration counter → collidable `seq` (grid cell order)
   }
 
   /**
@@ -214,10 +223,7 @@ export class PropSystem {
       // was the stream-in hitch: 8 tiles/frame × the full population through the vertex stage.
       if (!this._bakeScene) this._buildBakeScene()
       bake.setTileSource((cx, cz) => this._fillBakeScene(cx, cz))
-      for (const [ck, chunk] of this._chunks) {
-        const comma = ck.indexOf(',')
-        this._markShadowTiles(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10), chunk.mode !== 'bbonly')
-      }
+      for (const chunk of this._chunks.values()) this._markShadowTiles(chunk.cx, chunk.cz, chunk.mode !== 'bbonly')
     }
   }
 
@@ -240,10 +246,7 @@ export class PropSystem {
     const keys = []
     for (const [ck, chunk] of this._chunks) {
       if (chunk.mode === 'bbonly') continue
-      const comma = ck.indexOf(',')
-      const kx = parseInt(ck.slice(0, comma), 10)
-      const kz = parseInt(ck.slice(comma + 1), 10)
-      keys.push([ck, Math.max(Math.abs(kx - cx), Math.abs(kz - cz))])
+      keys.push([ck, Math.max(Math.abs(chunk.cx - cx), Math.abs(chunk.cz - cz))])
     }
     keys.sort((a, b) => a[1] - b[1])
     return this._shadowBake.markAll(keys.map(e => e[0]))
@@ -259,7 +262,7 @@ export class PropSystem {
     this._bakeScene = new THREE.Scene()
     this._bakeMeshes = new Map()
     for (const [key, rec] of this._meshes) {
-      if (isCoverKey(key)) continue        // FEAT-85: grass casts no baked shadow (mush at 0.25 m/texel)
+      if (!bakesShadow(key)) continue      // FEAT-85 cover + R-16 ground litter cast no baked shadow
       const src = rec.mesh.geometry
       const geo = new THREE.BufferGeometry()
       geo.setAttribute('position', src.getAttribute('position'))   // shared — no duplicate VRAM
@@ -288,7 +291,9 @@ export class PropSystem {
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const chunk = this._chunks.get((cx + dx) + ',' + (cz + dz))
       if (!chunk) continue
-      for (const pr of chunk.places) {
+      const places = chunk.places
+      for (let pi = 0; pi < chunk.bakeEnd; pi++) {   // S-49: the litter tail is never baked
+        const pr = places[pi]
         const dst = this._bakeMeshes.get(pr.key)
         if (!dst) continue
         dst.mesh.instanceMatrix.array.set(pr.mat, dst.n * 16)
@@ -389,7 +394,6 @@ export class PropSystem {
 
   /** 3D-prop ring radius in chunks (quality tier / GUI). Chunks beyond it billboard. */
   setLodRing(n) { this._lodRing = Math.max(0, Math.round(n)) }
-  get lodRing() { return this._lodRing }
 
   // ── chunk lifecycle ─────────────────────────────────────────────────────────────────
   // Synchronous ensure — the hard-radius / gate path. If this chunk's scatter is mid-flight or
@@ -443,8 +447,14 @@ export class PropSystem {
     if (i >= 0) this._scatterQueue.splice(i, 1)
   }
 
-  /** Placement records → retained place records + collidable descriptors (shared by both commits). */
-  _buildPlaces(placements, places, collidables) {
+  /**
+   * Placement records → retained place records + collidable descriptors (shared by both commits).
+   * @returns {number} bakeEnd — one past the last record the shadow bake draws (`bakeEnd` in, when
+   *   none is added). The litter (zone rocks, then cover) is always the TAIL of a chunk's places and
+   *   none of it bakes, so _fillBakeScene stops there (S-49) — the per-record check still skips
+   *   anything unbaked inside the range.
+   */
+  _buildPlaces(placements, places, collidables, bakeEnd = 0) {
     // sunShear is absent headless (no sky); the sun does not move inside one commit.
     const shear = this._samplers.sunShear ? this._samplers.sunShear() : null
     const sheared = shear !== null && shear.lengthSq() > 1e-6
@@ -479,6 +489,7 @@ export class PropSystem {
         key, mat: Float32Array.from(_m.elements), k,
         x: pl.x, y: pl.y, z: pl.z, scale: pl.scale, tint: pl.tint,
       })
+      if (bakesShadow(key)) bakeEnd = places.length
 
       // FEAT-06b: record the collidable (capsule for trees, sphere for rocks, bush for soft-drag)
       const col = this._collision.get(key)
@@ -525,6 +536,7 @@ export class PropSystem {
         rotY: pl.rotY, tris: col.tris,   // rotY/tris used by 'mesh' (boulder) contacts; undefined otherwise
       })
     }
+    return bakeEnd
   }
 
   _commitChunk(ck, placements, withLitter = true) {
@@ -532,20 +544,20 @@ export class PropSystem {
     const _c0 = performance.now()
     const places = []
     const collidables = []
-    this._buildPlaces(placements, places, collidables)
+    const bakeEnd = this._buildPlaces(placements, places, collidables)
     const _c1 = performance.now(); perfAdd('props.commit.build', _c1 - _c0)
     const comma = ck.indexOf(',')
     const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
     // litter: false ⇒ scattered without the cover + zone-rock passes (bbonly ring); a promotion
     // queues scatterLitterGen for it and _commitLitter appends the result.
-    const chunk = { places, owned: [], mode: this._chunkMode(cx, cz), litter: withLitter }
+    // `cols` is RETAINED like `places`: a billboard-only chunk registers no collision (R-15 — nothing
+    // drives out there; at Ultra that ring is 208 of 289 chunks), and registers it on promotion or
+    // when the vehicle's 3×3 reaches it (update()).
+    const chunk = { places, cols: collidables, owned: [], mode: this._chunkMode(cx, cz), litter: withLitter, cx, cz, bakeEnd }
     this._chunks.set(ck, chunk)
     this._placeChunk(chunk, chunk.mode)
     const _c2 = performance.now(); perfAdd('props.commit.place', _c2 - _c1)
-    if (collidables.length) {
-      this._collidables.set(ck, collidables); this._gridDirty = true
-      this._physicsHook?.syncChunk(ck, collidables)   // FEAT-48: rigid engine colliders for the chassis/debris
-    }
+    if (chunk.mode !== 'bbonly') this._registerCollidables(ck, chunk)
     perfAdd('props.commit.collide', performance.now() - _c2)
 
     // PERF-07: this chunk's props changed → (re)bake its shadow tile and its neighbours' (silhouettes
@@ -561,7 +573,7 @@ export class PropSystem {
   /**
    * PERF-07: queue chunk (cx,cz)'s own shadow tile (at the FRONT, when `own`) plus its DRAWN live
    * neighbours' tiles. Every prop-change mark routes through here instead of the bake system's
-   * markWithNeighbors, which also queued bbonly ring-edge neighbours — tiles nothing looks at up
+   * old mark-all-8-neighbours path, which also queued bbonly ring-edge neighbours — tiles nothing looks at up
    * close (measured 2026-10-04, seed 3219501713: 24 of 59 spawn bakes, ~40 % of a 20 s drive's bake
    * CPU ms). Skipped neighbours are never lost: a bbonly one is marked on promotion (_syncChunkLod),
    * and an ABSENT one marks itself when it commits drawn (_commitChunk) — baking it earlier would
@@ -586,17 +598,18 @@ export class PropSystem {
     if (!chunk || chunk.litter) return          // released meanwhile, or already carried
     perfEvent('props.litter')
     const from = chunk.places.length
-    const collidables = this._collidables.get(ck) || []
+    const collidables = chunk.cols
     const nCol = collidables.length
-    this._buildPlaces(placements, chunk.places, collidables)
+    chunk.bakeEnd = this._buildPlaces(placements, chunk.places, collidables, chunk.bakeEnd)
     chunk.litter = true
     this._placeChunk(chunk, chunk.mode, from)
     if (collidables.length !== nCol) {          // zone rocks' large class is collidable
-      this._collidables.set(ck, collidables); this._gridDirty = true
-      this._physicsHook?.syncChunk(ck, collidables)
+      if (this._collidables.has(ck)) {
+        this._indexCollidables(ck, collidables, nCol)   // grew in place from nCol
+        this._physicsHook?.syncChunk(ck, collidables)
+      } else if (chunk.mode !== 'bbonly') this._registerCollidables(ck, chunk)
     }
-    const comma = ck.indexOf(',')
-    if (chunk.mode !== 'bbonly') this._markShadowTiles(parseInt(ck.slice(0, comma), 10), parseInt(ck.slice(comma + 1), 10), true)
+    if (chunk.mode !== 'bbonly') this._markShadowTiles(chunk.cx, chunk.cz, true)
   }
 
   /**
@@ -674,7 +687,6 @@ export class PropSystem {
       rec.mesh.instanceMatrix.array.set(pr.mat, slot * 16)
       _col.setRGB(pr.tint[0], pr.tint[1], pr.tint[2])
       rec.mesh.setColorAt(slot, _col)
-      rec.mesh.geometry.attributes.aShadowK.setX(slot, pr.k)
       this._dirty.add(key)
       if (slot < rec.dirtyLo) rec.dirtyLo = slot
       if (slot > rec.dirtyHi) rec.dirtyHi = slot
@@ -723,14 +735,16 @@ export class PropSystem {
     // (6 in one frame measured ~16 ms at cpu×4). The first is always allowed so LOD never stalls.
     let budget = LOD_SWAPS_MAX
     for (const [ck, chunk] of this._chunks) {
-      const comma = ck.indexOf(',')
-      const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
+      const { cx, cz } = chunk
       const want = this._chunkMode(cx, cz)
       if (want === chunk.mode) continue
       const promoted = chunk.mode === 'bbonly' && want !== 'bbonly'
       perfEvent('props.lodSwap')   // PERF-26: 3D ⇄ billboard re-place of a whole chunk's instances
+      const demoted = want === 'bbonly' && chunk.mode !== 'bbonly'
       this._unplaceChunk(chunk)
       this._placeChunk(chunk, want)
+      if (promoted) this._registerCollidables(ck, chunk)     // R-15: collision only where it can be reached
+      else if (demoted) this._unregisterCollidables(ck)      // (update() re-adds it if the truck is there)
       // Promotion out of the billboard-only ring: the chunk skipped its shadow bake at commit —
       // bake now that its ground shadows are within the visible/fade range. (Demotion needs no
       // mark: the trees haven't moved, the already-baked tile stays valid.)
@@ -758,7 +772,7 @@ export class PropSystem {
     this._unplaceChunk(chunk)
     const wasBBOnly = chunk.mode === 'bbonly'
     this._chunks.delete(ck)
-    if (this._collidables.delete(ck)) { this._gridDirty = true; this._physicsHook?.disposeChunk(ck) }
+    this._unregisterCollidables(ck)
     // PERF-07: this chunk's props are gone → re-bake still-live neighbours so their tiles drop the
     // departed silhouettes (a neighbour still in-ring re-bakes without them; its own tile is reused
     // by whichever chunk lands on the toroidal slot next). Billboard-only chunks never baked.
@@ -828,8 +842,7 @@ export class PropSystem {
       const ck = keys[(start + i) % n]
       const chunk = this._chunks.get(ck)
       if (!chunk) continue
-      const comma = ck.indexOf(',')
-      const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
+      const { cx, cz } = chunk
       // Whole-chunk reject: no road anywhere near it ⇒ no placement in it can be intruded.
       if (roadClear(cx * CH + CH / 2, cz * CH + CH / 2, reach)) continue
       for (const p of chunk.places || []) {
@@ -852,11 +865,6 @@ export class PropSystem {
   }
 
   /**
-   * Diff the active chunk set against the desired (centre ± ring) and ensure/release. Call once
-   * per frame (cheap when nothing changed) or whenever the stream centre moves a chunk.
-   * @param {number} worldX @param {number} worldZ @param {number} ringChunks
-   */
-  /**
    * Stream the prop ring around (worldX, worldZ). PERF-14: scatter is QUEUED and time-sliced —
    * missing chunks enqueue nearest-first and their generators are stepped under a per-frame ms
    * budget, so entering a chunk row never blocks the frame. Pass the VEHICLE position via
@@ -871,12 +879,12 @@ export class PropSystem {
     // The billboard-only outer ring streams ONLY when impostors are active — headless (gates) and
     // pre-wire boots keep the classic full-prop ring exactly as before.
     const outer = (this._impMeshes && bbRingChunks != null) ? Math.max(ringChunks, bbRingChunks) : ringChunks
-    const want = new Set()
+    // QUAL-34: the wanted ring is a Chebyshev square — test integers, not a per-frame Set of key strings.
+    const inRing = (cx, cz) => Math.abs(cx - ccx) <= outer && Math.abs(cz - ccz) <= outer
     for (let dz = -outer; dz <= outer; dz++)
       for (let dx = -outer; dx <= outer; dx++) {
         const cx = ccx + dx, cz = ccz + dz
         const ck = cx + ',' + cz
-        want.add(ck)
         if (!this._chunks.has(ck) && !this._scatterSet.has(ck)) {
           this._scatterQueue.push({ ck, cx, cz, score: 0 })
           this._scatterSet.add(ck)
@@ -894,12 +902,12 @@ export class PropSystem {
     // Drop queued/active work that scrolled out of the ring.
     for (let i = this._scatterQueue.length - 1; i >= 0; i--) {
       const q = this._scatterQueue[i]
-      if (!want.has(q.ck)) {
+      if (!inRing(q.cx, q.cz)) {
         this._scatterSet.delete(q.litter ? q.ck + '#L' : q.ck)
         this._scatterQueue.splice(i, 1)
       }
     }
-    if (this._activeScatter && !want.has(this._activeScatter.ck)) {
+    if (this._activeScatter && !inRing(this._activeScatter.cx, this._activeScatter.cz)) {
       const a = this._activeScatter
       this._scatterSet.delete(a.litter ? a.ck + '#L' : a.ck)
       this._activeScatter = null
@@ -918,9 +926,8 @@ export class PropSystem {
         this._activeScatter = null
       }
     }
-    for (const ck of [...this._chunks.keys()]) {
-      if (!want.has(ck)) { const [x, z] = ck.split(',').map(Number); this.releaseChunk(x, z) }
-    }
+    // Map iteration survives deleting the visited entry (releaseChunk deletes only that one, adds none).
+    for (const chunk of this._chunks.values()) if (!inRing(chunk.cx, chunk.cz)) this.releaseChunk(chunk.cx, chunk.cz)
 
     // Hard radius: the truck's 3×3 must be collision-complete THIS frame (rare synchronous
     // scatter — only when driving outruns the drip feed).
@@ -928,7 +935,7 @@ export class PropSystem {
       const hcx = Math.floor(hardX / cs), hcz = Math.floor(hardZ / cs)
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
         const cx = hcx + dx, cz = hcz + dz
-        if (want.has(cx + ',' + cz)) this.ensureChunk(cx, cz)
+        if (inRing(cx, cz)) this.ensureChunk(cx, cz)
       }
     }
 
@@ -964,6 +971,16 @@ export class PropSystem {
     if (!this._scatterFillDone && !this._activeScatter && this._scatterQueue.length === 0) this._scatterFillDone = true
 
     this._syncChunkLod(budget)                      // PERF-21: pool swaps after streaming settles
+    // R-15: the vehicle's 3×3 ALWAYS collides, whatever LOD label the budgeted swap above has reached —
+    // a lagging promotion (6 swaps/frame, 1 when the stream budget is spent) or a freecam parked far
+    // from the truck must never leave it in a billboard-only chunk without colliders.
+    if (hardX != null) {
+      const hcx = Math.floor(hardX / cs), hcz = Math.floor(hardZ / cs)
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const ck = (hcx + dx) + ',' + (hcz + dz), chunk = this._chunks.get(ck)
+        if (chunk) this._registerCollidables(ck, chunk)
+      }
+    }
     this._flush()
     this._coverUniforms.uTime.value = performance.now() * 0.001   // FEAT-85: wind clock
   }
@@ -981,7 +998,7 @@ export class PropSystem {
   /** PERF-33: true while the scatter is in its fill burst (the frame loop lifts the shared budget). */
   isFilling() { return !this._scatterFillDone }
 
-  /** Drain all queued/in-flight scatter synchronously (gates + teleports). */
+  /** Drain all queued/in-flight scatter synchronously. Test-only (gates); teleports use onStreamJump. */
   drainScatter() {
     if (this._activeScatter) {
       const job = this._activeScatter
@@ -1018,12 +1035,10 @@ export class PropSystem {
         const lo = rec.dirtyLo, n = rec.dirtyHi - rec.dirtyLo + 1
         rec.mesh.instanceMatrix.addUpdateRange(lo * 16, n * 16)
         if (rec.mesh.instanceColor) rec.mesh.instanceColor.addUpdateRange(lo * 3, n * 3)
-        rec.mesh.geometry.attributes.aShadowK.addUpdateRange(lo, n)
         rec.dirtyLo = Infinity; rec.dirtyHi = -1
       }
       rec.mesh.instanceMatrix.needsUpdate = true
       if (rec.mesh.instanceColor) rec.mesh.instanceColor.needsUpdate = true
-      rec.mesh.geometry.attributes.aShadowK.needsUpdate = true   // PERF-07 ground-fit factors
       rec.mesh.count = rec.top   // PERF-10: draw the occupied prefix only (read at draw time, no flag needed)
     }
     this._dirty.clear()
@@ -1049,38 +1064,103 @@ export class PropSystem {
   }
 
   // ── FEAT-06b collision queries ──────────────────────────────────────────────────────────
+  /**
+   * S-45: register a chunk's collidables (from index `from` — a litter commit grows the chunk's list
+   * in place) and keep the grid current without a rebuild. A full rebuild fills each cell in
+   * _collidables order (chunk insertion order, then list order), so every item carries that rank as
+   * `seq` and _gridAdd inserts by it: a new chunk lands last (a push), a grown chunk's items slot in
+   * after its own older ones. The cell arrays are then exactly what a rebuild would produce.
+   */
+  _indexCollidables(ck, list, from = 0) {
+    let base
+    if (from === 0) {
+      const old = this._collidables.get(ck)          // never expected: re-commit of a live chunk
+      if (old) { this._collidables.delete(ck); if (!this._gridDirty) this._gridRemove(old) }
+      this._collidables.set(ck, list)                // a new key is LAST in Map order, so it ranks last
+      base = ++this._colRank * SEQ_STRIDE
+    } else base = list[0].seq                        // list[0].seq = this chunk's rank × SEQ_STRIDE
+    for (let i = from; i < list.length; i++) list[i].seq = base + i
+    if (!this._gridDirty) this._gridAdd(list, from)
+  }
+
+  /** Index a chunk's retained collidables and build their engine colliders (no-op: none, or already in). */
+  _registerCollidables(ck, chunk) {
+    if (!chunk.cols.length || this._collidables.has(ck)) return
+    this._indexCollidables(ck, chunk.cols)
+    this._physicsHook?.syncChunk(ck, chunk.cols)   // FEAT-48: rigid engine colliders for the chassis/debris
+  }
+
+  /** Drop a chunk's collidables from the index, the grid and the engine (release / bbonly demotion). */
+  _unregisterCollidables(ck) {
+    const cols = this._collidables.get(ck)
+    if (!cols) return
+    this._collidables.delete(ck)
+    if (!this._gridDirty) this._gridRemove(cols)
+    this._physicsHook?.disposeChunk(ck)
+  }
+
+  /** Grid cell span of one collidable → this._span [gx0, gx1, gz0, gz1]. */
+  _cellSpan(c) {
+    const cs = this._gridCell
+    // generous footprint (covers live scale-factor changes); logs use their half-length
+    // bound (boundR) — the tube radius alone would miss grid cells the trunk crosses.
+    const R = (c.boundR ?? c.radius) * c.scale * 2
+    const sp = this._span || (this._span = [0, 0, 0, 0])
+    sp[0] = Math.floor((c.x - R) / cs); sp[1] = Math.floor((c.x + R) / cs)
+    sp[2] = Math.floor((c.z - R) / cs); sp[3] = Math.floor((c.z + R) / cs)
+    return sp
+  }
+
+  _gridAdd(list, from = 0) {
+    for (let li = from; li < list.length; li++) {
+      const c = list[li]
+      const [gx0, gx1, gz0, gz1] = this._cellSpan(c)
+      for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
+        const k = cellKey(gx, gz)
+        let arr = this._grid.get(k); if (!arr) { arr = []; this._grid.set(k, arr) }
+        let i = arr.length
+        while (i > 0 && arr[i - 1].seq > c.seq) i--   // in rank order; a rebuild or new chunk always pushes
+        if (i === arr.length) arr.push(c); else arr.splice(i, 0, c)
+      }
+    }
+  }
+
+  /** Filter a released chunk's items out of the cells they touch; the survivors keep rebuild order. */
+  _gridRemove(list) {
+    const gone = new Set(list), cells = new Set()
+    for (const c of list) {
+      const [gx0, gx1, gz0, gz1] = this._cellSpan(c)
+      for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) cells.add(cellKey(gx, gz))
+    }
+    for (const k of cells) {
+      const arr = this._grid.get(k)
+      if (!arr) continue
+      const kept = arr.filter((c) => !gone.has(c))
+      if (kept.length) this._grid.set(k, kept); else this._grid.delete(k)
+    }
+  }
+
   _ensureGrid() {
     if (!this._gridDirty) return
     this._grid.clear()
-    const cs = this._gridCell
-    for (const list of this._collidables.values()) {
-      for (const c of list) {
-        // generous footprint (covers live scale-factor changes); logs use their half-length
-        // bound (boundR) — the tube radius alone would miss grid cells the trunk crosses.
-        const R = (c.boundR ?? c.radius) * c.scale * 2
-        const gx0 = Math.floor((c.x - R) / cs), gx1 = Math.floor((c.x + R) / cs)
-        const gz0 = Math.floor((c.z - R) / cs), gz1 = Math.floor((c.z + R) / cs)
-        for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
-          const k = gx + ',' + gz
-          let arr = this._grid.get(k); if (!arr) { arr = []; this._grid.set(k, arr) }
-          arr.push(c)
-        }
-      }
-    }
+    for (const list of this._collidables.values()) this._gridAdd(list)
     this._gridDirty = false
   }
 
-  _cellsAround(x, z, r, fn) {
+  /** Unique collidables in the cells overlapping (x ± r, z ± r), in cell order. A reused scratch array. */
+  _cellsAround(x, z, r) {
     const cs = this._gridCell
     const gx0 = Math.floor((x - r) / cs), gx1 = Math.floor((x + r) / cs)
     const gz0 = Math.floor((z - r) / cs), gz1 = Math.floor((z + r) / cs)
     const seen = this._scratchSeen || (this._scratchSeen = new Set())
-    seen.clear()
+    const near = this._scratchNear || (this._scratchNear = [])
+    seen.clear(); near.length = 0
     for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
-      const arr = this._grid.get(gx + ',' + gz)
+      const arr = this._grid.get(cellKey(gx, gz))
       if (!arr) continue
-      for (const c of arr) { if (seen.has(c)) continue; seen.add(c); fn(c) }
+      for (const c of arr) { if (seen.has(c)) continue; seen.add(c); near.push(c) }
     }
+    return near
   }
 
   /**
@@ -1089,12 +1169,12 @@ export class PropSystem {
    * queryContacts emits (normal out of solid, depth > 0, contactPoint on the solid surface), so the
    * splice is just `hits.push(...propSystem.queryProps(cx,cy,cz,r))`. The surface point is the query
    * centre walked back along -normal by (r - depth) (the sphere penetrates the solid by `depth`).
+   * Pass `out` (main.js: the wheel's hits array) to append in place — no per-query array (S-49).
    */
-  queryProps(cx, cy, cz, r) {
+  queryProps(cx, cy, cz, r, out = []) {
     this._ensureGrid()
     const C = this._params.collision
-    const out = []
-    this._cellsAround(cx, cz, r, (c) => {
+    for (const c of this._cellsAround(cx, cz, r)) {
       let hit = null
       if (c.kind === 'capsule') {
         // General capsule between the baked (tilt-inclusive) world endpoints — the vertical
@@ -1124,7 +1204,7 @@ export class PropSystem {
           contactPoint: new THREE.Vector3(cx - hit.nx * t, cy - hit.ny * t, cz - hit.nz * t),
         })
       }
-    })
+    }
     return out
   }
 
@@ -1136,12 +1216,12 @@ export class PropSystem {
     this._ensureGrid()
     out.x = 0; out.y = 0; out.z = 0   // reset so callers can pass a reused scratch object
     const B = this._params.collision.bush
-    this._cellsAround(cx, cz, 0, (c) => {
-      if (c.kind !== 'bush') return
+    for (const c of this._cellsAround(cx, cz, 0)) {
+      if (c.kind !== 'bush') continue
       const br = c.radius * c.scale
       const f = bushDrag(cx, cy, cz, vx, vy, vz, c.x, c.y, c.z, br, br, B.k, B.fMax)
       if (f) { out.x += f.x; out.y += f.y; out.z += f.z }
-    })
+    }
     return out
   }
 

@@ -52,9 +52,9 @@ import { basePay, formatMoney } from './economy.js'
  */
 export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul', 'freight', 'fragile'])
 
-// Fixed names for roster types that are NOT sources (and Larry) — they can still be a DESTINATION,
-// and "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors names; a type
-// becomes rolled by turning it into a source with NAME_FORMS (data/offer-names.js).
+// Fixed names for roster types with no NAME_FORMS row (data/offer-names.js) — Larry, mom, and the
+// gas station, which posts work but is still just "the gas station". A destination needs a name:
+// "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors names.
 const FIXED_NAMES = {
     larrysHouse: "Larry's",
     momsHouse:   "Mom's",
@@ -635,7 +635,7 @@ export class OfferBoard {
      * @param {object|null} [ctx.route] the planned mission ({par, distance, endPoiId, placeName}) or null
      * @param {number} [ctx.customers]  paper route: stops on the planned tour
      * @returns {{family, portrait: {sex,name}|null, flavor: string|null, sentence: Array<{t:string,b?:boolean}>,
-     *            pay: string|null, terms: string[], bonus: string|null, expiresInH: number}|null}
+     *            pay: string|null, terms: string[], bonus: string|null}|null}
      */
     card (offer, { nowH, payTier = 1, route = null, customers = null } = {}) {
         const sp = this.spec(offer)
@@ -685,7 +685,6 @@ export class OfferBoard {
             terms,
             // Larry's card shows base pay only (owner ruling) — papers never roll a bonus anyway.
             bonus: sp.bonus ? `Bonus: ${sp.bonus.name} — ${gateText(sp.bonus.gate)}` : null,
-            expiresInH,
         }
     }
 }

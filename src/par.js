@@ -447,15 +447,6 @@ export function formatTime(sec) {
  */
 export const RANK_THRESHOLDS_DEFAULT = { S: 0.77, A: 0.81, B: 0.87, C: 1.00 }
 
-/**
- * Grade a finished run against par. Margin is par-relative so it reads the same on a 2-minute
- * hop and a 20-minute haul; the letter is a bucketing of that ratio.
- *
- * The letter is DISPLAY bucketing of the continuous ratio (SM-INV-3 as amended: rank is
- * display only — the result card, and live on the FEAT-87 rank timer) — payout is computed from the ratio, never from the letter.
- * `thresholds` is injected by the caller (economy.js day ramp); nothing here may learn what a
- * run day is, and `day` must never reach computePar.
- */
 /*
  * FEAT-88 — the HAUL letter (owner, 2026-10-05): "the letter grade should be an overall ranking
  * on how you performed a mission". A courier job is all clock, so its letter is gradeRun's. A haul
@@ -505,6 +496,15 @@ export function fragileGrade(health) {
     return _letterOf(_loadScore(health))
 }
 
+/**
+ * Grade a finished run against par. Margin is par-relative so it reads the same on a 2-minute
+ * hop and a 20-minute haul; the letter is a bucketing of that ratio.
+ *
+ * The letter is DISPLAY bucketing of the continuous ratio (SM-INV-3 as amended: rank is
+ * display only — the result card, and live on the FEAT-87 rank timer) — payout is computed from the ratio, never from the letter.
+ * `thresholds` is injected by the caller (economy.js day ramp); nothing here may learn what a
+ * run day is, and `day` must never reach computePar.
+ */
 export function gradeRun(elapsed, par, thresholds = RANK_THRESHOLDS_DEFAULT) {
     const ratio = par > 0 ? elapsed / par : Infinity
     let letter = 'D'

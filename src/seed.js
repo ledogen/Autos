@@ -9,7 +9,9 @@
  *
  * WORKER-SAFE: No import statements, no DOM references, no THREE.* here — pure math.
  *
- * Domain tags used in Phase 7: "coarse", "fine", "regional", "spawn"
+ * Domain tags (grep `seedFor(` for the live list): terrain "coarse"/"fine"/"regional", "spawn",
+ * "flora", "streamKeep", "roadquality"/"roadsite"/"roadsitePri", the scatter's cover* and
+ * *Rocks passes.
  */
 
 // ── djb2 string→32-bit hash ───────────────────────────────────────────────────
@@ -80,7 +82,8 @@ export function mulberry32(seed) {
 
 // ── hash32 — FNV-1a string→32-bit hash ───────────────────────────────────────
 // Keys the per-edge / per-cell PRNGs of poi.js (POI + customer layout), camp.js (FEAT-45 camping
-// zones) and campfire.js (log yaw). Any stable hash would do, but it must STAY stable — do not
+// zones), campfire.js (log yaw) and debris.js; poi.js's model picks + variants (the seeding
+// model-service.js and data/prop-models.js document) ride it too. Any stable hash would do, but it must STAY stable — do not
 // "improve" it: every existing seed's POI and camp layout rides on it being byte-identical.
 // (Distinct from djb2 above, which seeds worldgen; the two are not interchangeable.)
 export function hash32(str) {
@@ -90,4 +93,25 @@ export function hash32(str) {
     h = Math.imul(h, 0x01000193) >>> 0
   }
   return h >>> 0
+}
+
+// ── hash2 — 2D integer lattice → [0, 1) ──────────────────────────────────────
+// The value-noise lattice hash of the prop scatter's cover fields (props/prop-scatter.js) and the
+// FEAT-84 detail maps (terrain-texture.js). Same stability rule as hash32: both outputs ride on it.
+export function hash2(ix, iy, seed) {
+  let h = seed | 0
+  h = Math.imul(h ^ (ix | 0), 0x9e3779b9)
+  h = Math.imul(h ^ (iy | 0), 0x85ebca6b)
+  h ^= h >>> 15
+  h = Math.imul(h, 0xc2b2ae35)
+  h ^= h >>> 13
+  return (h >>> 0) / 4294967296
+}
+
+export const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v
+
+// smoothstep(e0, e1, x): 0 below e0, 1 above e1, cubic Hermite between.
+export const smooth01 = (e0, e1, x) => {
+  if (x <= e0) return 0; if (x >= e1) return 1
+  const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t)
 }

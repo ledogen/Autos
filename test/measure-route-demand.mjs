@@ -89,8 +89,7 @@ for (const C of CENTERS) {
     const results = jobs.map((job) => {
       predictedAll.add(job.key)
       const res = routeEdgeV2(job, fields.hTrunc, fields.hCoarse)
-      return { key: job.key, prims: res.cl.primitives, v2Dirs: !!job.dirs,
-               pinFallback: !!(res.pinRequested && res.feasible && !res.usedPin) }
+      return { key: job.key, prims: res.cl.primitives, v2Dirs: !!job.dirs, dirsSpec: job.dirs ?? null }
     })
     w.ingestRoutedConnections(results, epoch)
   })

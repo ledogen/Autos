@@ -1,8 +1,8 @@
 // test/road-fill-support.mjs — carve FOOTPRINT gate (BUG-15).
 //
 // GUARDS "THE CAR FALLS THROUGH THE SHOULDER RAISED TO MEET THE ROAD". The terrain MESH and the
-// PHYSICS surface are driven by ONE shared cross-section today (terrain.js:1596 and road.js:6853 both
-// call _carveCrossSectionBlended), so they agree by construction — carve-mesh-smoothness.mjs measures
+// PHYSICS surface are driven by ONE shared cross-section today (TerrainSystem._buildCarveTable and
+// RoadSystem._sampleCarveWorld both call _carveCrossSectionBlended), so they agree by construction — carve-mesh-smoothness.mjs measures
 // that agreement directly (worst mesh↔phys 0.3–0.5 m, inside the sanctioned pad-rim/clearance deltas).
 // What this gate owns is the thing that agreement cannot show: that the shared footprint COVERS the
 // core. The original bug was physics capping at halfWidth + shoulderWidth (7.5 m) while the mesh
@@ -19,7 +19,7 @@
 // so they cross at lat ≈ 7.55 and the carve is a CUT past that). blendW was 1.000 throughout in every
 // such case and the mesh agreed to the centimetre: no raised band, no fall-through, a false alarm.
 //
-// blendW is the honest quantity. _carveCrossSection (road.js:8801-8813) sets blendW = 1.0 for
+// blendW is the honest quantity. RoadSystem._carveCrossSection sets blendW = 1.0 for
 // radDist < carveHalfWidth unconditionally and only ramps down over the shoulder to the toe, so a
 // flat blendW == 1 core out to carveHalfWidth IS the footprint contract — sign-agnostic, and equally
 // true on a cut, a fill, or a bench. The pre-fix code fails it at 7.5 m; a future footprint clip fails

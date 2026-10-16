@@ -21,7 +21,6 @@
  *
  * FORBIDDEN patterns:
  *   Do NOT call terrain.getChunkHeight / chunk-sampled functions (chunk-load-order dependent).
- *   Do NOT read amplitude-scaled terrain height for grade math (terrainAmplitude is a visual slider).
  *   Do NOT route from inside the physics fixed-timestep loop (route lazily, query O(1)).
  *   Do NOT allocate per call in queryNearest / the carve path (GC pressure at ~900 samples/step).
  *   Do NOT let a query's answer depend on what happens to be streamed (D-16 window-invariance).
@@ -29,8 +28,7 @@
 
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
-import { coarseHeight } from './terrain-height.js'   // the raw coarse layer — same function the terrain renders (road grade is amplitude-independent)
-import { createNoise2D } from 'simplex-noise'
+import { coarseHeight, makeCoarseNoise, CHUNK_SIZE } from './terrain-height.js'   // the raw coarse layer — same function the terrain renders (road grade is amplitude-independent)
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA, padSd, PAD_RIM_HOLD } from './road-carve.js'
 import { truncatedHeightField, routeEdgeV2, profileSolve, dequantizeProfile, roundCrests, extendBorePortals, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule · portal placement
 import { PAR_REF } from './par.js'   // FEAT-82: the junction recovery is a vertical curve at par's junction-approach speed
@@ -219,11 +217,12 @@ const XS_SOFT2 = 0.5 * 0.5
 // CONTINUOUS overDist (not the offEnd boolean) keeps the design surface C0/C1: at its own mouth a leg
 // has overDist 0 ⇒ weight 1 ⇒ the weld to that ribbon is exact and unchanged.
 const XS_OFF_FADE = 4.0
+const _xsOffFade = (d) => { const u = Math.min(1, Math.max(0, d / XS_OFF_FADE)); return 1 - u * u * (3 - 2 * u) }
 // Reusable sinks for the connector design-surface path (carve hot path — no per-query allocation).
 const _CD_A = { grade: 0, gap: 0, xs: 0, off: 0 }
 const _CD_B = { grade: 0, gap: 0, xs: 0, off: 0 }
 const _CD_OUT = { grade: 0, lateral: 0 }
-const _CD_RP = { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+const _CD_RP = { gradeY: 0, tx: 1, tz: 0 }   // runProfile `out` wherever only .gradeY is read AT ONCE (never held)
 // FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
 // authority ramps 0 → 1 (see _poiPadCarve). This is not a look tunable — it is the mechanism that
 // makes the ratified "POIs never influence routing determinism" rule structural: a pad has exactly
@@ -235,7 +234,7 @@ const POI_ROAD_FEATHER = 2.0
 // quality hook as markings. Importing from road-quality.js (not road-mesh.js) avoids
 // the road-mesh.js → terrain.js → road.js chain issues.
 import { roadQuality } from './road-quality.js'
-import { perfAdd } from './perf.js'  // TEMP perf triage (D-arc)
+import { perfAdd } from './perf.js'  // ?hitch sub-buckets (D-arc perf triage)
 
 // ── Module-scope scratch vectors (queryNearest allocation guard) ───────────────
 // queryNearest is called at near-60fps cadence (resolveSpawn + Phase 9 consumption).
@@ -285,13 +284,6 @@ function _segCrossParam(ax, az, bx, bz, cx, cz, dx, dz) {
     return null
 }
 
-/**
- * BUG-53 merge machinery: nearest point on a sampled polyline in XZ, with its cumulative arc.
- * Used to place a merge's fork ABREAST on both runs and to measure the conflict separation.
- * `lo`/`hi` bound the search to an arc window — without one, a run that loops back can answer a
- * fork lookup with a point from the wrong end of itself.
- * @returns {{d: number, cum: number, y: number}}
- */
 // Position + unit XZ tangent at chord arc `a` along a polyline (clamped to its ends).
 function _polyAtArc(pts, cum, a) {
     const n = pts.length
@@ -334,32 +326,40 @@ function _solveDense(A, b, N) {
 }
 
 // Bicubic (Catmull-Rom) read of a solved pad grid — C1, so wheel normals do not facet at cell lines.
+// Module-scope helpers (no per-call closures: this is on the carve/physics path).
+const _catmullRom = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)))
+function _padGridCell(ps, jc, ii) {
+    const W = ps.W, g = ps.grid
+    const ic = Math.min(W - 1, Math.max(0, ii)), k = jc * W + ic
+    let v = g[k]
+    if (v !== v) {   // NaN: evaluate the spline at this cell once
+        const x = (ic - ps.M) * ps.H, z = (jc - ps.M) * ps.H, s = ps.sol, n = ps.n
+        v = s[n] + s[n + 1] * x + s[n + 2] * z
+        for (let q = 0; q < n; q++) {
+            const dx = x - ps.kx[q], dz = z - ps.kz[q], r2 = dx * dx + dz * dz
+            if (r2 > 1e-12) v += s[q] * 0.5 * r2 * Math.log(r2)
+        }
+        g[k] = v
+    }
+    return v
+}
+function _padGridRow(ps, jj, i, u) {
+    const jc = Math.min(ps.W - 1, Math.max(0, jj))
+    return _catmullRom(_padGridCell(ps, jc, i - 1), _padGridCell(ps, jc, i), _padGridCell(ps, jc, i + 1), _padGridCell(ps, jc, i + 2), u)
+}
 function _padGridSample(ps, wx, wz) {
     const fx = (wx - ps.cx) / ps.H + ps.M, fz = (wz - ps.cz) / ps.H + ps.M
     const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j
-    const W = ps.W, g = ps.grid
-    const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)))
-    const row = (jj) => {
-        const jc = Math.min(W - 1, Math.max(0, jj)), r = jc * W
-        const c = (ii) => {
-            const ic = Math.min(W - 1, Math.max(0, ii)), k = r + ic
-            let v = g[k]
-            if (v !== v) {   // NaN: evaluate the spline at this cell once
-                const x = (ic - ps.M) * ps.H, z = (jc - ps.M) * ps.H, s = ps.sol, n = ps.n
-                v = s[n] + s[n + 1] * x + s[n + 2] * z
-                for (let q = 0; q < n; q++) {
-                    const dx = x - ps.kx[q], dz = z - ps.kz[q], r2 = dx * dx + dz * dz
-                    if (r2 > 1e-12) v += s[q] * 0.5 * r2 * Math.log(r2)
-                }
-                g[k] = v
-            }
-            return v
-        }
-        return cr(c(i - 1), c(i), c(i + 1), c(i + 2), u)
-    }
-    return cr(row(j - 1), row(j), row(j + 1), row(j + 2), v)
+    return _catmullRom(_padGridRow(ps, j - 1, i, u), _padGridRow(ps, j, i, u), _padGridRow(ps, j + 1, i, u), _padGridRow(ps, j + 2, i, u), v)
 }
 
+/**
+ * BUG-53 merge machinery: nearest point on a sampled polyline in XZ, with its cumulative arc.
+ * Used to place a merge's fork ABREAST on both runs and to measure the conflict separation.
+ * `lo`/`hi` bound the search to an arc window — without one, a run that loops back can answer a
+ * fork lookup with a point from the wrong end of itself.
+ * @returns {{d: number, cum: number, y: number}}
+ */
 function _nearestOnPolyXZ(px, pz, pts, polyCum, lo = -Infinity, hi = Infinity) {
     let d = Infinity, cum = 0, y = 0, tx = 1, tz = 0, fx = px, fz = pz
     for (let i = 1; i < pts.length; i++) {
@@ -479,6 +479,27 @@ function _trunkGradeAt(T, i) {
     return { gx: m * tx / tl, gz: m * tz / tl }
 }
 
+// BUG-76: is run entry `b` geometrically identical to `a` (points incl. Y, arc origin, clArc,
+// tunnel / off-curve spans, condemned mark)? The adopt's dirty-region diff and profile re-stamp.
+function _sameRun(a, b) {
+    if (a.arcOrigin !== b.arcOrigin || a.points.length !== b.points.length) return false
+    for (let i = 0; i < a.points.length; i++) {
+        const p = a.points[i], q = b.points[i]
+        if (p.x !== q.x || p.y !== q.y || p.z !== q.z) return false
+    }
+    if (JSON.stringify(a.tunnelSpans || null) !== JSON.stringify(b.tunnelSpans || null)
+        || JSON.stringify(a.offCurveSpans || null) !== JSON.stringify(b.offCurveSpans || null)
+        || !!a.condemned !== !!b.condemned) return false
+    const ca = a.clArc, cb = b.clArc
+    if (ca === cb) return true
+    if (!ca || !cb || ca.length !== cb.length) return false
+    for (let i = 0; i < ca.length; i++) if (ca[i] !== cb[i]) return false
+    return true
+}
+
+// A graph node id [a, b, c] → its string key (the `g.key` of every band graph).
+const _idKey = (id) => `${id[0]},${id[1]},${id[2]}`
+
 // FEAT-76: the polyline VERTEX index nearest an arc position. A T is split at a real vertex, never
 // between two, so the promoted node names a point that exists in the geometry — the id, the pad
 // plane, the junction cluster and both trunk halves then agree exactly instead of to within a lerp.
@@ -489,13 +510,43 @@ function _nearestVertexAtCum(polyCum, cum) {
     return (cum - polyCum[lo] <= polyCum[hi] - cum) ? lo : hi
 }
 
-/** BUG-53/55 merge machinery: polyCum → clArc, the paired-table interpolation. */
-function _clArcOfCum(S, cum) {
-    const pc = S.polyCum, ca = S.clArc, n = pc.length
-    let lo = 0, hi = n - 1
-    while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (pc[mid] <= cum) lo = mid; else hi = mid }
-    const span = pc[lo + 1] - pc[lo] || 1
-    return ca[lo] + (ca[lo + 1] - ca[lo]) * (cum - pc[lo]) / span
+// XZ bounding box of a point list.
+function _xzBox(pts) {
+    let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
+    for (const p of pts) {
+        if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
+        if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
+    }
+    return { minx, maxx, minz, maxz }
+}
+
+// Plan-layer partner discovery: distance from the chord A2→B2 to the nearest of `pts` (every
+// `stride`-th) inside the chord's CHORD-inflated box — Infinity when none is. ONE walk for the
+// conflict planner, the census and the pre-warm, so the warm discovers exactly their partners.
+function _chordToRoute(A2, B2, pts, CHORD, stride = 1) {
+    const cnx = Math.min(A2.x, B2.x) - CHORD, cxx = Math.max(A2.x, B2.x) + CHORD
+    const cnz = Math.min(A2.z, B2.z) - CHORD, cxz = Math.max(A2.z, B2.z) + CHORD
+    let d = Infinity
+    for (let ip = 0; ip < pts.length; ip += stride) {
+        const p = pts[ip]
+        if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
+        const dd = _segSegDistXZ(p, p, A2, B2)
+        if (dd < d) { d = dd; if (d <= 0) break }
+    }
+    return d
+}
+
+// The coarse both-sides gate before a full conflict walk: does any stride-8 sample of P come
+// within sqrt(lim2) of any stride-8 sample of Q?
+function _coarseNear(Ppts, Qpts, lim2) {
+    for (let ip = 0; ip < Ppts.length; ip += 8) {
+        const px = Ppts[ip].x, pz = Ppts[ip].z
+        for (let iq = 0; iq < Qpts.length; iq += 8) {
+            const dx = px - Qpts[iq].x, dz = pz - Qpts[iq].z
+            if (dx * dx + dz * dz <= lim2) return true
+        }
+    }
+    return false
 }
 
 /**
@@ -507,7 +558,7 @@ function _clArcOfCum(S, cum) {
  */
 function _winnerBoreAtFork(S, nodeAtStart, cutCum) {
     if (!S.spans) return false
-    const cutCl = _clArcOfCum(S, cutCum)
+    const cutCl = _interpArcTable(S.polyCum, S.clArc, cutCum)
     const a = nodeAtStart ? cutCl - 30 : cutCl
     const b = nodeAtStart ? cutCl : cutCl + 30
     return S.spans.some((sp2) => sp2.s1 > a && sp2.s0 < b)
@@ -591,8 +642,7 @@ function _lerpVec3(a, b, t) {
  *     curvature on sweepers/long curves, less on hairpins (the requested feel).
  *
  * Defaults maxAngle 20° + kneeRadius 60 m fit ~4/10/15 effective strength at hairpin/50 m/long.
- * SHARED by _computeCamberArrays (ribbon/carve) and _buildRunProfile (physics) so the two stay
- * byte-identical (restream-invariance / mesh==physics).
+ * Used by _computeCamberArrays — the one camber routine the ribbon, carve and physics all read.
  *
  * @param {number} kappa   — signed curvature (1/m)
  * @param {number} maxRad  — asymptotic max bank (radians)
@@ -634,32 +684,31 @@ function _interpolateCamber(arcPos, camberRad, s) {
 
 // ── P0 run-profile sampler (plan 09-25) ───────────────────────────────────────
 /**
- * ONE binary search on arcPos, then interpolate all four profile arrays.
+ * ONE binary search on arcPos, then interpolate the profile arrays (gradeY, tx, tz).
  * Module-scope (allocation-free, no `this`), O(log N) per call.
  * Returns the out-object reference (caller provides or we allocate once).
  *
  * @param {number[]} arcPos    — monotone arc-length positions (metres)
  * @param {number[]} gradeY    — Y-height per sample
  * @param {number[]|null} gradeM — FEAT-81: dY/d(arc) per sample (from _profileTangents); null = linear
- * @param {number[]} camberRad — banking angle (radians) per sample
  * @param {number[]} tx        — unit XZ tangent X per sample
  * @param {number[]} tz        — unit XZ tangent Z per sample
  * @param {number}   s         — query arc-length (metres)
- * @param {object}   out       — { gradeY, camberRad, tx, tz } object to write into
+ * @param {object}   out       — { gradeY, tx, tz } object to write into
  * @returns {object} out — mutated with interpolated values
  */
-function _interpolateRunProfile(arcPos, gradeY, gradeM, camberRad, tx, tz, s, out) {
+function _interpolateRunProfile(arcPos, gradeY, gradeM, tx, tz, s, out) {
     const N = arcPos.length
     if (N === 0) {
-        out.gradeY = 0; out.camberRad = 0; out.tx = 1; out.tz = 0
+        out.gradeY = 0; out.tx = 1; out.tz = 0
         return out
     }
     if (s <= arcPos[0]) {
-        out.gradeY = gradeY[0]; out.camberRad = camberRad[0]; out.tx = tx[0]; out.tz = tz[0]
+        out.gradeY = gradeY[0]; out.tx = tx[0]; out.tz = tz[0]
         return out
     }
     if (s >= arcPos[N - 1]) {
-        out.gradeY = gradeY[N-1]; out.camberRad = camberRad[N-1]; out.tx = tx[N-1]; out.tz = tz[N-1]
+        out.gradeY = gradeY[N-1]; out.tx = tx[N-1]; out.tz = tz[N-1]
         return out
     }
     // Binary search for interval [lo, hi] containing s.
@@ -670,7 +719,7 @@ function _interpolateRunProfile(arcPos, gradeY, gradeM, camberRad, tx, tz, s, ou
     }
     const span = arcPos[hi] - arcPos[lo]
     if (span < 1e-9) {
-        out.gradeY = gradeY[lo]; out.camberRad = camberRad[lo]; out.tx = tx[lo]; out.tz = tz[lo]
+        out.gradeY = gradeY[lo]; out.tx = tx[lo]; out.tz = tz[lo]
         return out
     }
     const t = (s - arcPos[lo]) / span
@@ -688,7 +737,6 @@ function _interpolateRunProfile(arcPos, gradeY, gradeM, camberRad, tx, tz, s, ou
     } else {
         out.gradeY = gradeY[lo] + t * (gradeY[hi] - gradeY[lo])
     }
-    out.camberRad = camberRad[lo] + t * (camberRad[hi] - camberRad[lo])
     out.tx        = tx[lo]        + t * (tx[hi]        - tx[lo])
     out.tz        = tz[lo]        + t * (tz[hi]        - tz[lo])
     return out
@@ -724,12 +772,9 @@ function _interpArcTable(key, val, k) {
 }
 
 // ── Module constants ───────────────────────────────────────────────────────────
-/**
- * Tile side length in metres. MUST match terrain.js CHUNK_SIZE.
- * Both modules use 64 m tiles — roads and terrain chunks are aligned.
- * Coupling: if terrain.js CHUNK_SIZE changes, this must change too.
- */
-export const CHUNK_SIZE = 64
+// Tile side length in metres: the terrain chunk size (terrain-height.js), so road tiles and
+// terrain chunks are aligned by construction.
+export { CHUNK_SIZE }
 
 /**
  * Which router built the roads this build drives on. Stamped into every calibration run export
@@ -843,22 +888,17 @@ const BORE_NOTCH_SLOPE = 1.2  // V:H — mouth-funnel floor rise per metre into 
 const LEAF_END_TAPER = 30     // m
 
 // ── D-16: anchor-band half-width, SCALED to the active road radius ─────────────
-// _streamNetwork builds each macro-row run over a band keyed by (mz, mx0, mx1). The Z (mz) extent
-// already scales with the road radius R (= the draw-distance preset's terrain ring); the X (mx) band
-// must too, or it under-covers the carved disc at the larger presets → runs that curve into the
-// VISIBLE region but are anchored just outside the band drop out → a chunk gets carved with no road
-// there → whole sections "disappear" on fly-over and never self-heal (Mechanism B).
-//
-// A run is keyed by its WEST anchor "mz:mx" but its geometry spans EAST to anchor(mx+1) (~1 cell) and
-// each anchor valley-snaps up to ~0.45 cell, so a west-anchored run reaches ~2.5 cells
-// east of its column. To register every run whose geometry can enter the disc (radius R), the band
-// half-width = ceil(R / spacing) + ROAD_BAND_MARGIN cells, where the margin absorbs that east-reach +
-// snap + arc bulge. Per draw-distance preset: Near (R=192) → HW 2 / ±512 m (= the PERF-05 cost, the
-// small disc can't be reached by a run anchored further out), Normal/Far (R=320/512) → HW 3 / ±768 m,
-// Ultra (R=640) → HW 4 / ±1024 m. Run identity stays band-independent ("mz:mx"), so widening only
-// changes WHICH runs land in the network, never their geometry/arcS (D-16 invariant). [margin=1
-// validated: replay window-invariance on the disappearing-road capture passes with gradeΔ=hitΔ=0.]
-const ROAD_BAND_MARGIN = 1  // extra macro-cols beyond ceil(R/spacing) each side (run east-reach + snap + bulge)
+// _streamNetwork registers every graph edge with a node inside the macro band [mx0..mx1]×[mz0..mz1].
+// The band must scale with the road radius R (= the draw-distance preset's terrain ring), or edges
+// whose nodes sit just outside it but whose geometry curves into the VISIBLE disc drop out → a chunk
+// gets carved with no road there → sections "disappear" on fly-over and never self-heal (Mechanism B).
+// Half-width = ceil(R / spacing) + ROAD_BAND_MARGIN cells; the margin absorbs an edge's reach past its
+// nodes plus arc bulge. Per draw-distance preset: Near (R=192) → HW 2 / ±512 m, Normal/Far
+// (R=320/512) → HW 3 / ±768 m, Ultra (R=640) → HW 4 / ±1024 m. Run identity is band-independent
+// (the edge key), so widening only changes WHICH runs land in the network, never their geometry/arcS
+// (D-16 invariant). [margin=1 validated: replay window-invariance on the disappearing-road capture
+// passes with gradeΔ=hitΔ=0.]
+const ROAD_BAND_MARGIN = 1  // extra macro-cols beyond ceil(R/spacing) each side (edge reach past its nodes + bulge)
 
 
 // ── Off-thread route pre-warm tuning (PERF-03 Workstream A) ───────────────────
@@ -979,16 +1019,15 @@ export class RoadSystem {
 
     // ── Noise init ─────────────────────────────────────────────────────────────
     /**
-     * Build the coarse noise closure using the same seed derivation as TerrainSystem.
-     * Byte-identical derivation: createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
-     * ensures _coarseH() returns the same raw heights as terrain.js main-thread closure.
+     * Build the coarse noise closure with terrain-height.js's makeCoarseNoise — the derivation
+     * TerrainSystem uses, so _coarseH() returns the same raw heights as the terrain.
      * @param {number} worldSeed
      * @param {object} params
      */
     _reinitNoise(worldSeed, params) {
         this._worldSeed  = worldSeed
         this._params     = params
-        this._noiseCoarse = createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
+        this._noiseCoarse = makeCoarseNoise(worldSeed)
         this._v2TruncF   = null   // FEAT-68: octave-truncated corridor field re-derives from the new noise
     }
 
@@ -1024,75 +1063,16 @@ export class RoadSystem {
     // ── Public API ──────────────────────────────────────────────────────────────
 
     /**
-     * Warm + slice the valley-trunk network around tile `(tileX, tileZ)` and return that tile's
-     * single representative per-tile spline object — the exit-gate contract the seam harness reads
-     * (`tile.spline.getPoint(1.0)`/`getPoint(0.0)`/`getTangentAt(...)`).
-     *
-     * Streams `_streamNetwork` centered on the tile's world center then `_sliceNetwork()` so the
-     * sliced per-tile splines around the tile exist. Returns `{ spline, waypoints }` where `spline`
-     * is the tile's representative segment (the longest segment, by control-point count) and
-     * `waypoints` its control points, or `{ spline: null, waypoints: [] }` when the tile carries no
-     * road (no throw). Idempotent: repeated calls with the same coords return the SAME cached tile
-     * object (memoized per "tileX,tileZ" so the seam harness's two grid passes see identical splines).
-     *
-     * Because the network is streamed over a radius spanning the whole 3×3 grid, the trunk runs
-     * continuously across adjacent tiles, so at least one E-W adjacent pair carries a spline on both
-     * sides (exit-gate totalSeams >= 1).
-     *
-     * ⚠ IMPORTANT (WR-02): `.spline` is the *E-W-SPANNING SEAM REPRESENTATIVE ONLY* — the single
-     * slice that touches BOTH the west and east tile boundary (`spanScore === 2`). It is NOT "the
-     * road on this tile". A tile crossed by road that enters and exits the same edge, or runs
-     * mostly N-S, has no spanning slice and returns `{ spline: null }` even though it visibly
-     * carries road. Consumers needing the ACTUAL per-tile geometry (e.g. Phase 9 ribbon meshing)
-     * MUST iterate `this._tiles.get("<tileX>,<tileZ>")` for ALL slices, not read this representative.
-     * This method exists for the seam exit-gate's single-representative endpoint comparison; do not
-     * repurpose its `.spline` as a per-tile road accessor.
+     * Warm + slice the network around tile `(tileX, tileZ)`: streams `_streamNetwork` centered on the
+     * tile's world center, then `_sliceNetwork()`, so the per-tile slices in `this._tiles` exist.
+     * `_streamNetwork` is lazy-gated (move-threshold / dirty), so close-together calls reuse one stream.
      *
      * @param {number} tileX — tile column (world tile = [tileX·64,(tileX+1)·64))
      * @param {number} tileZ — tile row
-     * @returns {{ spline: THREE.CatmullRomCurve3|null, waypoints: THREE.Vector3[] }}
      */
     ensureTile(tileX, tileZ) {
-        const key = `${tileX},${tileZ}`
-
-        // Warm + slice the network around this tile's world center. _streamNetwork is lazy-gated
-        // (move-threshold / dirty), so close-together ensureTile calls across the 3×3 grid reuse the
-        // same stream; on a real re-stream the memo is cleared (this._tileObjects nulled there).
-        const cx = (tileX + 0.5) * CHUNK_SIZE
-        const cz = (tileZ + 0.5) * CHUNK_SIZE
-        this._streamNetwork(_scratchPt.set(cx, 0, cz))
+        this._streamNetwork(_scratchPt.set((tileX + 0.5) * CHUNK_SIZE, 0, (tileZ + 0.5) * CHUNK_SIZE))
         this._sliceNetwork()
-
-        // Idempotency: same coords after the same slice → same cached tile object.
-        const memo = this._tileObjects.get(key)
-        if (memo) return memo
-
-        // Pick the representative spline for this tile. The seam harness reads ONE .spline per tile
-        // and compares end(A)=getPoint(1.0) of the west tile against start(B)=getPoint(0.0) of the
-        // east tile. For that comparison to be C0/C1 for EVERY adjacent splined pair, a tile's single
-        // representative must both END on its east boundary AND START on its west boundary — i.e. be
-        // a FULL E-W-spanning slice (spanScore === 2, west→east-oriented in _assignSlice). Tiles whose
-        // road only weaves through (no E-W-spanning slice) expose spline:null so the harness SKIPS
-        // them (sparse-seam path) rather than comparing mismatched endpoints. Among spanning slices,
-        // tie-break by heaviest parent run → run key → length (deterministic). queryNearest is
-        // unaffected — it searches ALL slices in this._tiles directly, not this representative.
-        const segs = this._tiles.get(key)
-        let best = null
-        const better = (s, m) => {
-            if (s.spanScore !== 2) return false          // only full E-W-spanning slices are eligible
-            if (!m) return true
-            if (s.runWeight !== m.runWeight) return s.runWeight > m.runWeight
-            if (s.runKey !== m.runKey) return s.runKey > m.runKey
-            return s.points.length > m.points.length
-        }
-        if (segs && segs.length) {
-            for (const s of segs) if (better(s, best)) best = s
-        }
-        const tile = best
-            ? { spline: best.spline, waypoints: best.waypoints }
-            : { spline: null, waypoints: [] }
-        this._tileObjects.set(key, tile)
-        return tile
     }
 
     /**
@@ -1108,7 +1088,7 @@ export class RoadSystem {
      * module-scope `_scratchPt` for the per-sample probe (no per-sample allocation); only the two
      * returned vectors are allocated. Safe to call before any tile is warmed (returns null, no throw).
      *
-     * 09-17 (SURF-04 gap closure): after probeSpline finds the nearest DISCRETE sample bestU (=i/n,
+     * 09-17 (SURF-04 gap closure): after probeSlice finds the nearest DISCRETE sample bestU (=i/n,
      * ~2 m spacing), a LOCAL PROJECTION REFINE maps (wx,wz) to a continuous parameter refinedU by
      * projecting onto the two XZ polyline segments bracketing bestU (prev→bestU and bestU→next).
      * This makes nr.point.y C0-continuous as the query moves — eliminating the ~2 m staircase that
@@ -1118,7 +1098,9 @@ export class RoadSystem {
      * @param {number} wx — world x
      * @param {number} wz — world z
      * @param {number} [radiusM=200] — max XZ distance to accept a hit
-     * @returns {{ point: THREE.Vector3, tangent: THREE.Vector3, runKey: string, arcS: number, spline: THREE.Curve } | null}
+     * @returns {{ point: THREE.Vector3, tangent: THREE.Vector3, runKey: string, arcS: number, camberSign: number } | null}
+     *   arcS is run-global; camberSign maps run-frame camber into the slice's W→E sweep frame.
+     *   The raw-polyline fallback returns runKey '' and arcS 0.
      */
     queryNearest(wx, wz, radiusM = 200) {
         if (!this._tiles) return null
@@ -1157,15 +1139,31 @@ export class RoadSystem {
         const qTileX = Math.floor(wx / CHUNK_SIZE)
         const qTileZ = Math.floor(wz / CHUNK_SIZE)
 
-        // Probe one spline: sample at N arc-length intervals, track nearest U within radius.
+        // Probe one slice: sample its spline at N arc-length intervals, track nearest U within radius.
         // D4: at each new global nearest, check footprint membership via getTangentAt → signedLat.
-        const probeSpline = (spline, runKey, arcS0In, arcS1In) => {
+        // The first probe of a slice records the XZ box of exactly these samples (`sl.bb`); later
+        // probes skip the slice when that box is no closer than intBestD2. Exact, not a bound:
+        // extBestD2 ≤ intBestD2 always (ext is the min over a superset), so no sample of a skipped
+        // slice could pass either strict `d2 <` test, and the scan order of the rest is unchanged.
+        const probeSlice = (sl) => {
+            const bb = sl.bb
+            if (bb) {
+                const ox = wx < bb[0] ? bb[0] - wx : wx > bb[1] ? wx - bb[1] : 0
+                const oz = wz < bb[2] ? bb[2] - wz : wz > bb[3] ? wz - bb[3] : 0
+                if (ox * ox + oz * oz >= intBestD2) return
+            }
+            const spline = sl.spline, runKey = sl.runKey ?? '', arcS0In = sl.arcS0 ?? 0, arcS1In = sl.arcS1 ?? 0
+            let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
             const len = spline.getLength ? spline.getLength() : 0
             // ~1 sample / 2 m, clamped to [16, 256] — enough resolution for a 200 m radius query.
             const n = Math.max(16, Math.min(256, Math.ceil((len || 64) / 2)))
             for (let i = 0; i <= n; i++) {
                 const u = i / n
                 spline.getPointAt(u, _scratchPt)
+                if (!bb) {
+                    if (_scratchPt.x < x0) x0 = _scratchPt.x; if (_scratchPt.x > x1) x1 = _scratchPt.x
+                    if (_scratchPt.z < z0) z0 = _scratchPt.z; if (_scratchPt.z > z1) z1 = _scratchPt.z
+                }
                 const dx = _scratchPt.x - wx, dz = _scratchPt.z - wz
                 const d2 = dx * dx + dz * dz
                 if (d2 < extBestD2) {
@@ -1191,6 +1189,7 @@ export class RoadSystem {
                     }
                 }
             }
+            if (!bb) sl.bb = [x0, x1, z0, z1]
         }
 
         // Size the search block from the radius (CR-01). A hard-coded 3×3 block spans only ±1 tile
@@ -1203,7 +1202,7 @@ export class RoadSystem {
                 const key = `${qTileX + dx},${qTileZ + dz}`
                 const segs = this._tiles.get(key)
                 if (segs && segs.length) {
-                    for (const s of segs) probeSpline(s.spline, s.runKey ?? '', s.arcS0 ?? 0, s.arcS1 ?? 0)
+                    for (const s of segs) probeSlice(s)
                 }
             }
         }
@@ -1223,7 +1222,7 @@ export class RoadSystem {
 
         if (bestSpline) {
             // ── 09-17 PROJECTION REFINE ─────────────────────────────────────────────
-            // probeSpline found the nearest DISCRETE sample bestU (step = du = 1/bestN, ~2 m).
+            // probeSlice found the nearest DISCRETE sample bestU (step = du = 1/bestN, ~2 m).
             // Project (wx,wz) onto the two XZ segments bracketing bestU to find a continuous
             // refinedU. This eliminates the ~2 m Y staircase that causes the physics bounce.
             // All work is done in scalars or by reusing _scratchPt — no new Vector3 per call.
@@ -1281,17 +1280,33 @@ export class RoadSystem {
 
         // Fallback: no sliced spline came within radius — probe the raw network polylines
         // (covers tiles whose slices were too short to spline, or queries before slicing settled).
+        // This is the normal answer to a keep-out query that misses, so each run's XZ point box is
+        // recorded on its first full scan (stamped with the rev + the points array it measured) and a
+        // run whose box is no closer than fbD2 is skipped — none of its points could pass `d2 < fbD2`.
         let fbD2 = r2
         let fbPoints = null
         let fbIdx = -1
         if (this._network) {
-            for (const { points } of this._network.values()) {
+            const rev = this._networkRev
+            for (const e of this._network.values()) {
+                const points = e.points
+                const bb = e._qnBB
+                const fresh = bb && bb.rev === rev && bb.pts === points && bb.n === points.length
+                if (fresh) {
+                    const ox = wx < bb.x0 ? bb.x0 - wx : wx > bb.x1 ? wx - bb.x1 : 0
+                    const oz = wz < bb.z0 ? bb.z0 - wz : wz > bb.z1 ? wz - bb.z1 : 0
+                    if (ox * ox + oz * oz >= fbD2) continue
+                }
+                let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
                 for (let i = 0; i < points.length; i++) {
                     const p = points[i]
+                    if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x
+                    if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z
                     const dx = p.x - wx, dz = p.z - wz
                     const d2 = dx * dx + dz * dz
                     if (d2 < fbD2) { fbD2 = d2; fbPoints = points; fbIdx = i }
                 }
+                if (!fresh) e._qnBB = { rev, pts: points, n: points.length, x0, x1, z0, z1 }
             }
         }
         if (!fbPoints) return null
@@ -1356,8 +1371,8 @@ export class RoadSystem {
     }
 
     /**
-     * QUAL-16: connector-arc centreline points near a chunk, in the SAME flat stride-5 layout
-     * ([x, y=grade, z, 0, 0]) as collectChunkSplinePoints. The terrain carve (_buildCarveTable) appends
+     * QUAL-16: connector-arc centreline points near a chunk, as a flat stride-3 array
+     * ([x, y=grade, z, …]; terrain.js reads STRIDE = 3). The terrain carve (_buildCarveTable) appends
      * these to its run-sample probe so its per-vertex distance SKIP doesn't drop a connector's OUTER
      * flank (a bend-outside toe vertex is far from every RUN sample, so without this the mesh leaves the
      * connector's fill/cut bench uncarved → a wall at the asphalt edge, while physics — which has no skip
@@ -1413,7 +1428,6 @@ export class RoadSystem {
         this.disposeDebugLines()
         if (this._network) this._network.clear()
         if (this._tiles) this._tiles.clear()
-        if (this._tileObjects) this._tileObjects.clear()
         this._slicedFrom = null
         this._lastBandSig = null   // force the next _streamNetwork to rebuild (route/params changed)
         // D1: bump the single invalidation counter — signals ribbon tiles + carve chunks to rebuild.
@@ -1433,7 +1447,7 @@ export class RoadSystem {
      */
     update(center) {
         const before = this._networkCenter
-        // TEMP perf buckets (D-arc): split stream(routing) vs slice(spline build).
+        // ?hitch sub-buckets (D-arc): split stream(routing) vs slice(spline build).
         let _pt = performance.now()
         // PERF-30: the per-frame path may DEFER a real rebuild to the network Worker
         // (stale-until-replaced); every other caller (ensureTile, spawn resolve) builds
@@ -1463,14 +1477,6 @@ export class RoadSystem {
         }
     }
 
-    /**
-     * Rebuild the shipped centerline viz (D-05: centerline splines only) from the streamed/sliced
-     * network. Clears any prior debug lines, then adds one THREE.Line per per-tile slice in
-     * `this._tiles` at the routed spline Y + 0.5 m (the terrain is carved to meet the spline, so that
-     * sits just above the ribbon). Lines honor the current `this._debugVisible` flag.
-     * Per-toggle visibility uses `setDebugVisible` (`.visible`), not a rebuild — no GC churn beyond
-     * this one-shot rebuild on a new streamed window / re-route.
-     */
     /** Remove the centreline viz from the scene and free its GPU buffers (each line owns a material). */
     disposeDebugLines() {
         for (const line of this._debugLines) {
@@ -1481,6 +1487,14 @@ export class RoadSystem {
         this._debugLines = []
     }
 
+    /**
+     * Rebuild the shipped centerline viz (D-05: centerline splines only) from the streamed/sliced
+     * network. Clears any prior debug lines, then adds one THREE.Line per per-tile slice in
+     * `this._tiles` at the routed spline Y + 0.5 m (the terrain is carved to meet the spline, so that
+     * sits just above the ribbon). Lines honor the current `this._debugVisible` flag.
+     * Per-toggle visibility uses `setDebugVisible` (`.visible`), not a rebuild — no GC churn beyond
+     * this one-shot rebuild on a new streamed window / re-route.
+     */
     buildDebugLines() {
         this.disposeDebugLines()   // one-shot rebuild for a new streamed window / re-route
         if (!this._scene || !this._tiles) return
@@ -1557,7 +1571,7 @@ export class RoadSystem {
     // API; the shipped centerline viz (buildDebugLines/setDebugVisible) and the per-frame
     // update(center) entry point now drive the one-and-only road visualization. The
     // network DATA is always built by _streamNetwork. (`this._proto` is kept as the
-    // streamer's internal state bag — cost params, anchors, segs, stream radius.)
+    // streamer's internal state bag — stream radius, sites, band graph, node incidence, route cache.)
     // ═══════════════════════════════════════════════════════════════════════════
 
     _protoInit() {
@@ -1592,20 +1606,17 @@ export class RoadSystem {
         this._lastBandSig = null   // signature of the last built network window (for the rebuild skip)
 
         // Canonical valley-trunk network store — built ONLY by _streamNetwork.
-        // key "<mz>:<runIndex>" → { points: THREE.Vector3[] } (continuous centerline, raw routed y).
+        // key "g:<idA>:<idB>" (graph edge) → run entry { points, polyCum, clArc, centerline, cellA, cellB, … }.
         this._network = new Map()
         this._networkCenter = null   // center the current network was streamed around
 
         // Per-tile sliced spline store — built ONLY by _sliceNetwork from this._network.
-        // key "<tileX>,<tileZ>" → { spline, points, waypoints }[] (a tile MAY hold several segments).
+        // key "<tileX>,<tileZ>" → { spline, points, runKey, arcS0, arcS1 }[] (a tile MAY hold several segments).
         // Each segment is a slice of ONE continuous network polyline cut at 64 m (CHUNK_SIZE)
         // boundaries, so adjacent tiles share the exact boundary point (C0) and tangent (C1) by
         // construction — NO shared-seam-waypoint machinery (D-06 REVISED).
         this._tiles = new Map()
         this._slicedFrom = null      // identity of the network the current slice was built from
-        // Memoized representative tile objects returned by ensureTile (idempotency for the seam
-        // harness's two passes). key "<tileX>,<tileZ>" → { spline, waypoints }. Rebuilt on re-slice.
-        this._tileObjects = new Map()
 
         // Crossing classifier cache (P9 plan 04 — SURF-07; reworked into the FEAT-07/08/11/13 classifier).
         // key nodeKey "<round(x)>,<round(z)>" → { records: [...] } (crossings grouped by rounded point)
@@ -1676,6 +1687,19 @@ export class RoadSystem {
         if (!c || !(r > 0)) return false
         const dx = x - c.x, dz = z - c.z
         return dx * dx + dz * dz <= r * r
+    }
+
+    /**
+     * Does the streamed network reach this CHUNK_SIZE tile? Corners + centre, because coverage is a
+     * circle and a tile is square, so a corner can be inside while the centre is not. The terrain
+     * carve (TerrainSystem._roadCoversChunk) and the ribbon (RoadMeshSystem._roadCoversTile) both read
+     * THIS, so they agree about when a tile's emptiness is real.
+     */
+    networkCoversTile(tileX, tileZ) {
+        const S = CHUNK_SIZE, x0 = tileX * S, z0 = tileZ * S
+        return this.networkCoversXZ(x0, z0) || this.networkCoversXZ(x0 + S, z0)
+            || this.networkCoversXZ(x0, z0 + S) || this.networkCoversXZ(x0 + S, z0 + S)
+            || this.networkCoversXZ(x0 + S / 2, z0 + S / 2)
     }
 
     _invalidateProto() {
@@ -1757,8 +1781,8 @@ export class RoadSystem {
     /**
      * Macro-column band half-width (cells each side of the center column), SCALED to the active road
      * radius so the registered network always covers the carved disc at every draw-distance preset.
-     * See the ROAD_BAND_MARGIN block: ceil(R / spacing) covers the disc, +margin absorbs a west-anchored
-     * run's east-reach + anchor snap so no visible run is dropped (Mechanism B fix). Used by BOTH
+     * See the ROAD_BAND_MARGIN block: ceil(R / spacing) covers the disc, +margin absorbs an edge's
+     * reach past its nodes so no visible run is dropped (Mechanism B fix). Used by BOTH
      * warmBandComplete (pre-warm) and _streamNetwork (register) so they stay consistent.
      */
     _bandHalfWidth() {
@@ -1905,12 +1929,11 @@ export class RoadSystem {
      *             pos: (id)=>THREE.Vector3, idOf: Map<string,any> }}
      */
     networkGraph() {
-        const key = (id) => `${id[0]},${id[1]},${id[2]}`
         const edges = [], adj = new Map(), idOf = new Map()
         // Runs are 1:1 with abstract edges (the post-cull, post-T-promotion set). Everything that decides
         // per-edge — POI siting rolls once per edge — depends on this staying the EDGE count.
         const emit = (a, b, runKey, len) => {
-            const ka = key(a), kb = key(b)
+            const ka = _idKey(a), kb = _idKey(b)
             idOf.set(ka, a); idOf.set(kb, b)
             if (!adj.has(ka)) adj.set(ka, new Set())
             if (!adj.has(kb)) adj.set(kb, new Set())
@@ -1923,7 +1946,7 @@ export class RoadSystem {
             if (!e.cellA || !e.cellB) continue
             emit(e.cellA, e.cellB, runKey, e.polyCum?.[e.polyCum.length - 1])
         }
-        return { edges, adj, key, idOf, pos: (id) => this._nodePos(id) }
+        return { edges, adj, key: _idKey, idOf, pos: (id) => this._nodePos(id) }
     }
 
     /**
@@ -1936,15 +1959,14 @@ export class RoadSystem {
      * never the frame loop (FEAT-29 acceptance).
      */
     edgeParData(c1, c2) {
-        const kf = (id) => `${id[0]},${id[1]},${id[2]}`
-        const key = `g:${kf(c1)}:${kf(c2)}`
-        const alt = `g:${kf(c2)}:${kf(c1)}`
+        const key = `g:${_idKey(c1)}:${_idKey(c2)}`
+        const alt = `g:${_idKey(c2)}:${_idKey(c1)}`
         // Return the REGISTERED key, not the one the caller happened to build. An edge is stored
         // under whichever endpoint order _assembleGraphEdges saw first, so `g:A:B` and `g:B:A` name
         // the same road — but road-quality HASHES the runKey, so handing back the reversed spelling
         // yields a different surface-quality series for the same stretch of tarmac.
-        // BUG-53: a MERGED run's primitive centerline is a stale record wherever its points left it
-        // (the ceded strand follows the winner; the taper band blends off it) — hand consumers a
+        // BUG-53: a run's primitive centerline is a stale record wherever its points left it (its
+        // offCurveSpans — a promoted T's departure band, a shove's deflection) — hand consumers a
         // points-backed sampler instead, so GPS/mission lines follow the road that actually exists.
         // The shim covers the consumed surface: .pointAt(s) and .length
         // (mission.js/gps.js/poi.js/paper-route.js).
@@ -2017,9 +2039,7 @@ export class RoadSystem {
         // Only the edges that will actually REGISTER — same in-band filter _assembleGraphEdges
         // applies. The raw band+margin Urquhart set is ~5x larger (260 vs 50 edges at a 1400 m
         // radius), and warming all of it routes roads no mission can ever use.
-        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
-        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
-        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+        const inBand = this._nodeInBand(mx0, mx1, mz0, mz1)
         // QUAL-21 Stage 2: skip degree-capped edges (settled spec-time — never registered/routed).
         const { drop } = this._degreeDrops(mx0, mx1, mz0, mz1)
         const edges = g.edges.filter(([c1, c2]) => !drop.has(g.key(c1) + '|' + g.key(c2)) && (inBand(c1) || inBand(c2)))
@@ -2067,25 +2087,9 @@ export class RoadSystem {
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
         const { drop, wide } = this._degreeDrops(mx0, mx1, mz0, mz1)
-        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
-        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
-        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
-        // Wave 1 — the settle set (selection mirrors _v2SettleDeletions).
-        const coreNodes = new Set()
-        for (const [c1, c2] of g.edges) {
-            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
-            if (!inBand(c1) && !inBand(c2)) continue
-            coreNodes.add(g.key(c1)); coreNodes.add(g.key(c2))
-        }
-        const settleEdges = []
-        for (const [c1, c2] of g.edges) {
-            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
-            if (!coreNodes.has(g.key(c1)) && !coreNodes.has(g.key(c2))) continue
-            const A = this._nodePos(c1), B = this._nodePos(c2)
-            { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
-            settleEdges.push([c1, c2])
-        }
+        // Wave 1 — the settle set (the same selection _v2SettleDeletions settles).
+        const settleEdges = this._v2SettleEdges(g, drop, mx0, mx1, mz0, mz1)
         const s1 = this._warmScan(g, drop, settleEdges)
         if (s1.jobs.length || s1.deferred) return s1
         // Wave 2 — census discovery partners against the (now cached) settle routes.
@@ -2105,11 +2109,7 @@ export class RoadSystem {
             const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
             const own = []
             for (let i = 0; i <= n; i += 8) own.push(cl.pointAt(cl.length * i / n))
-            let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
-            for (const p of own) {
-                if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
-                if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
-            }
+            const { minx, maxx, minz, maxz } = _xzBox(own)
             for (const [q1, q2] of wide.edges) {
                 const qA = wide.key(q1), qB = wide.key(q2)
                 const qck = qA < qB ? qA + '|' + qB : qB + '|' + qA
@@ -2119,15 +2119,7 @@ export class RoadSystem {
                 { const ex = A2.x - B2.x, ez = A2.z - B2.z; if (ex * ex + ez * ez <= _mband2) continue }
                 if (Math.max(A2.x, B2.x) < minx - CHORD || Math.min(A2.x, B2.x) > maxx + CHORD
                     || Math.max(A2.z, B2.z) < minz - CHORD || Math.min(A2.z, B2.z) > maxz + CHORD) continue
-                const cnx = Math.min(A2.x, B2.x) - CHORD, cxx = Math.max(A2.x, B2.x) + CHORD
-                const cnz = Math.min(A2.z, B2.z) - CHORD, cxz = Math.max(A2.z, B2.z) + CHORD
-                let dDisc = Infinity
-                for (const p of own) {
-                    if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
-                    const dd = _segSegDistXZ(p, p, A2, B2)
-                    if (dd < dDisc) { dDisc = dd; if (dDisc <= 0) break }
-                }
-                if (dDisc > CHORD + 16) continue
+                if (_chordToRoute(A2, B2, own, CHORD) > CHORD + 16) continue
                 seen.add(qck)
                 const spQ = spell.get(qck)
                 if (spQ) partnersG.push(spQ)
@@ -2185,7 +2177,7 @@ export class RoadSystem {
     }
 
     /**
-     * Consume Worker-routed connections: drop each {key, prims, v2Dirs, pinFallback} into
+     * Consume Worker-routed connections: drop each {key, prims, v2Dirs} into
      * _proto.cls (the memoization the synchronous router would otherwise fill). Stale replies
      * (epoch != current — a re-route happened since dispatch) are discarded wholesale. Pure cache
      * population: the network/slices/queries are untouched until the next natural _streamNetwork,
@@ -2204,9 +2196,7 @@ export class RoadSystem {
             if (have && (have._v2Dirs || !r.v2Dirs)) continue
             const cl = centerlineFromDescriptors(r.prims)
             if (r.v2Dirs) cl._v2Dirs = true
-            if (r.pinFallback) {
-                this._v2DirFallbacks = (this._v2DirFallbacks || 0) + 1
-            }
+            if (r.dirsSpec) cl._v2DirsSpec = r.dirsSpec   // R-01: as the sync path sets it — the re-route reads it
             this._proto.cls.set(r.key, cl)
         }
     }
@@ -2238,7 +2228,6 @@ export class RoadSystem {
                 clArc: Float64Array.from(e.clArc),
                 prims: e.centerline ? e.centerline.primitives : null,
                 v2Dirs: !!(e.centerline && e.centerline._v2Dirs),
-                dirsSpec: e.centerline?._v2DirsSpec ?? null,
                 tunnelSpans: e.tunnelSpans ?? null,
                 offCurveSpans: e.offCurveSpans ?? null,
                 rerouted: !!e.rerouted, condemned: !!e.condemned,
@@ -2279,11 +2268,9 @@ export class RoadSystem {
                 id: r.id, x: r.pos.x, y: r.pos.y, z: r.pos.z, gx: r.gx, gz: r.gz,
             }]),
             promotedAway: [...this._promotedAway],
-            condemnedKeys: this._v2CondemnedKeys ? [...this._v2CondemnedKeys] : [],
             tallies: {
-                merges: this._v2Merges || 0, shoves: this._v2Shoves || 0,
-                reroutes: this._v2Reroutes || 0, infeasible: this._v2Infeasible || 0,
-                condemned: this._v2Condemned || 0, dirFallbacks: this._v2DirFallbacks || 0,
+                shoves: this._v2Shoves || 0, reroutes: this._v2Reroutes || 0,
+                infeasible: this._v2Infeasible || 0, condemned: this._v2Condemned || 0,
             },
         }
     }
@@ -2312,6 +2299,7 @@ export class RoadSystem {
         const diffOld = !(opts && opts.regen) && this._network.size > 0
             ? { runs: new Map(this._network), pads: this.padReachNodes() }
             : null
+        const keepProfiles = diffOld ? this._profileKeepSnapshot() : null
         this._networkCenter = data.center ? new THREE.Vector3(data.center.x, 0, data.center.z) : null
         this._proto.lastCenter = this._networkCenter ? this._networkCenter.clone() : null
         this._proto.dirty = false
@@ -2323,7 +2311,6 @@ export class RoadSystem {
         this._network.clear()
         this._slicedFrom = null
         if (this._tiles) this._tiles.clear()
-        if (this._tileObjects) this._tileObjects.clear()
         if (this._junctions) this._junctions.clear()
         this._junctionsRev = -1
         for (const r of data.runs) {
@@ -2334,7 +2321,6 @@ export class RoadSystem {
             if (r.prims && r.prims.length) {
                 cl = centerlineFromDescriptors(r.prims)
                 if (r.v2Dirs) cl._v2Dirs = true
-                if (r.dirsSpec) cl._v2DirsSpec = r.dirsSpec
             }
             const entry = {
                 points, arcOrigin: r.arcOrigin, centerline: cl,
@@ -2356,20 +2342,17 @@ export class RoadSystem {
             id: r.id, pos: new THREE.Vector3(r.x, r.y, r.z), gx: r.gx, gz: r.gz,
         }]))
         this._promotedAway = new Set(data.promotedAway || [])
-        this._v2CondemnedKeys = data.condemnedKeys ? [...data.condemnedKeys] : []
         if (data.tallies) {
-            this._v2Merges = data.tallies.merges; this._v2Shoves = data.tallies.shoves
-            this._v2Reroutes = data.tallies.reroutes; this._v2Infeasible = data.tallies.infeasible
-            this._v2Condemned = data.tallies.condemned; this._v2DirFallbacks = data.tallies.dirFallbacks
+            this._v2Shoves = data.tallies.shoves; this._v2Reroutes = data.tallies.reroutes
+            this._v2Infeasible = data.tallies.infeasible; this._v2Condemned = data.tallies.condemned
         }
         // Adopt the builder's band graph (pure data: same sites, same Urquhart — byte-identical to
         // what _buildUrquhart would derive here) so _graphDegreeOf never sees a null graph, which
         // silently reads as degree 2 everywhere (no pads, no leaf tapers).
         if (data.graph) {
-            const key = (id) => `${id[0]},${id[1]},${id[2]}`
             const adj = new Map()
             for (const [a, b] of data.graph.edges) {
-                const ka = key(a), kb = key(b)
+                const ka = _idKey(a), kb = _idKey(b)
                 if (!adj.has(ka)) adj.set(ka, new Set())
                 if (!adj.has(kb)) adj.set(kb, new Set())
                 adj.get(ka).add(kb); adj.get(kb).add(ka)
@@ -2379,18 +2362,17 @@ export class RoadSystem {
             for (const [ka, kb] of data.graph.dropped || []) {
                 adj.get(ka)?.delete(kb); adj.get(kb)?.delete(ka)
             }
-            this._proto.graph = { sig: data.graph.sig, edges: data.graph.edges, adj, key }
+            this._proto.graph = { sig: data.graph.sig, edges: data.graph.edges, adj, key: _idKey }
         }
         // Node incidence (site-key → [runKey,…]) — _graphNodeStrands/_graphJunctionGradeY read it
         // for the pad plane, and only _assembleGraphEdges fills it. Registration pushed each run to
         // both endpoints in edge order == network insertion order, which the export preserved — so
         // this walk reproduces the arrays byte-for-byte (strand ORDER feeds a float least-squares).
         this._proto.nodeInc.clear()
-        const incKey = (id) => `${id[0]},${id[1]},${id[2]}`
         for (const [runKey, e] of this._network) {
             for (const id of [e.cellA, e.cellB]) {
                 if (!id) continue
-                const k = incKey(id)
+                const k = _idKey(id)
                 let a = this._proto.nodeInc.get(k)
                 if (!a) { a = []; this._proto.nodeInc.set(k, a) }
                 a.push(runKey)
@@ -2399,6 +2381,7 @@ export class RoadSystem {
         // Same eager ordering as _streamNetwork: the crossing classifier is populated before any
         // run profile is built (the AT_GRADE mid-span flatten reads it), then slices.
         this._detectJunctions()
+        if (keepProfiles) this._restampRunProfiles(keepProfiles, diffOld.runs)
         this._sliceNetwork()
         this._lastAdoptDirty = diffOld ? this._adoptDirtyRegions(diffOld) : null
         return this._network
@@ -2420,6 +2403,58 @@ export class RoadSystem {
     }
 
     /**
+     * S-07 (review-2): the pre-swap state a positional adopt needs to keep the run profiles that
+     * cannot have changed. A run profile reads only its own entry, its two endpoint nodes' degree
+     * and incident runs (pad plane, deck hold, grade line — the 1-ring), its own mid-span crossings
+     * and the params. null when no profile of this rev is cached.
+     */
+    _profileKeepSnapshot() {
+        const cache = this._runProfileCache
+        if (!cache || this._runProfileCacheRev !== this._networkRev || !this._proto.graph) return null
+        const deg = new Map()
+        for (const k of cache.keys()) {
+            const e = this._network.get(k)
+            if (!e || !e.cellA || !e.cellB) continue
+            for (const id of [e.cellA, e.cellB]) { const nk = _idKey(id); if (!deg.has(nk)) deg.set(nk, this._graphDegreeOf(id)) }
+        }
+        return { deg, inc: new Map(this._proto.nodeInc), xs: this._crossingsByRun }
+    }
+
+    /**
+     * S-07: after the swap, carry a cached profile to the new rev when NOTHING it reads changed — the
+     * run itself and every run at both endpoint nodes are _sameRun, each endpoint keeps its degree
+     * and its incident list (ORDER too: it feeds the pad plane's least squares), neither endpoint
+     * is a promoted T (its side reads the trunk's camber chain, beyond the 1-ring), and the run has
+     * no mid-span crossing before or after. Everything else is dropped and rebuilds lazily.
+     */
+    _restampRunProfiles(keep, oldRuns) {
+        const cache = this._runProfileCache, rev = this._networkRev
+        const inc = this._proto.nodeInc
+        const same = new Map()
+        const unchanged = (k) => {
+            let v = same.get(k)
+            if (v === undefined) { const o = oldRuns.get(k), e = this._network.get(k); v = !!(o && e && _sameRun(o, e)); same.set(k, v) }
+            return v
+        }
+        const nodeKept = (id) => {
+            if (_isPromotedId(id)) return false
+            const nk = _idKey(id), a = keep.inc.get(nk), b = inc.get(nk)
+            if (!a || !b || a.length !== b.length) return false
+            for (let i = 0; i < a.length; i++) if (a[i] !== b[i] || !unchanged(a[i])) return false
+            return keep.deg.get(nk) === this._graphDegreeOf(id)
+        }
+        for (const [k, ent] of cache) {
+            const e = this._network.get(k)
+            const ok = e && e.cellA && e.cellB && unchanged(k)
+                && !keep.xs?.get(k)?.length && !this._crossingsByRun?.get(k)?.length
+                && nodeKept(e.cellA) && nodeKept(e.cellB)
+            if (ok) ent.rev = rev
+            else cache.delete(k)
+        }
+        this._runProfileCacheRev = rev
+    }
+
+    /**
      * BUG-76: the ground a positional adopt re-shaped, as `{x, z, reach}` discs — the shape
      * TerrainSystem.recarveInPlace() and RoadMeshSystem.invalidateRegions() take. Null when nothing
      * changed (the common case: the window slid and every in-range run is byte-identical).
@@ -2436,25 +2471,8 @@ export class RoadSystem {
      * network change, and fails if any built chunk is left carving a road that is no longer there.
      */
     _adoptDirtyRegions(old) {
-        const sameArr = (a, b) => {
-            if (a === b) return true
-            if (!a || !b || a.length !== b.length) return false
-            for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
-            return true
-        }
-        const sameRun = (a, b) => {
-            if (a.arcOrigin !== b.arcOrigin || a.points.length !== b.points.length) return false
-            for (let i = 0; i < a.points.length; i++) {
-                const p = a.points[i], q = b.points[i]
-                if (p.x !== q.x || p.y !== q.y || p.z !== q.z) return false
-            }
-            return JSON.stringify(a.tunnelSpans || null) === JSON.stringify(b.tunnelSpans || null)
-                && JSON.stringify(a.offCurveSpans || null) === JSON.stringify(b.offCurveSpans || null)
-                && !!a.condemned === !!b.condemned
-                && sameArr(a.clArc, b.clArc)
-        }
         const changed = new Set()
-        for (const [k, e] of this._network) { const o = old.runs.get(k); if (!o || !sameRun(o, e)) changed.add(k) }
+        for (const [k, e] of this._network) { const o = old.runs.get(k); if (!o || !_sameRun(o, e)) changed.add(k) }
         for (const k of old.runs.keys()) if (!this._network.has(k)) changed.add(k)
 
         const regions = []
@@ -2590,7 +2608,7 @@ export class RoadSystem {
     // outlived its network (a stale capture), and reads terrain rather than throwing.
     _siteAt(id) {
         if (_isPromotedId(id)) {
-            const rec = this._promoted?.get(`${id[0]},${id[1]},${id[2]}`)
+            const rec = this._promoted?.get(_idKey(id))
             if (rec) return rec.pos
             const px = id[0] / 1000, pz = id[1] / 1000
             return new THREE.Vector3(px, this._coarseH(px, pz), pz)
@@ -2647,7 +2665,6 @@ export class RoadSystem {
             const hit = this._urqMemo.get(sig)
             if (hit) return hit
         }
-        const key = (id) => `${id[0]},${id[1]},${id[2]}`
         const ids = [], pts = []
         for (let cz = scz0; cz <= scz1; cz++)
             for (let cx = scx0; cx <= scx1; cx++)
@@ -2657,14 +2674,14 @@ export class RoadSystem {
         if (pts.length >= 3) {
             const tris = delaunay(pts)
             for (const [i, j] of urquhartEdges(pts, tris)) {
-                const a = ids[i], b = ids[j], ka = key(a), kb = key(b)
+                const a = ids[i], b = ids[j], ka = _idKey(a), kb = _idKey(b)
                 if (!adj.has(ka)) adj.set(ka, new Set())
                 if (!adj.has(kb)) adj.set(kb, new Set())
                 adj.get(ka).add(kb); adj.get(kb).add(ka)
                 edges.push([a, b])
             }
         }
-        const g = { sig, edges, adj, key }
+        const g = { sig, edges, adj, key: _idKey }
         if (persist) this._proto.graph = g
         else {
             // Bounded: warm / stream / spawn / map windows alternate between a handful of sigs, the
@@ -2909,9 +2926,6 @@ export class RoadSystem {
         const res = routeEdgeV2(spec, this._v2Trunc(), (x, z) => this._coarseH(x, z))
         const cl = res.cl
         cl._v2DirsSpec = dirs   // BUG-56 C: the re-route rung needs the pins this edge was routed with
-        if (res.pinRequested && res.feasible && !res.usedPin) {
-            this._v2DirFallbacks = (this._v2DirFallbacks || 0) + 1
-        }
         if (dirs) cl._v2Dirs = true   // tag = "a dirs-aware caller routed this" (even if pins fell back)
         this._proto.cls.set(key, cl)
         this._pendingRoutes.delete(key)
@@ -3190,6 +3204,21 @@ export class RoadSystem {
         return { ...(base || {}), occupied: occ }
     }
 
+    // Signing is by NEIGHBOR IDENTITY, not by the edge's own chord: through runs k1→k2, so an
+    // edge leaving toward k2 pins +through, toward k1 pins −through; an arrival continues toward
+    // the OTHER neighbor. (Chord-dot signing was measured wrong at acute elbows — a node sitting
+    // behind one neighbor along the chord got pins that REVERSE travel through the node, a
+    // sanctioned cusp. Identity signing keeps travel consistent through every joint.)
+    //
+    // BUG-53: JUNCTION ends (settled degree >= 3) get a CHORD pin — each leg must depart its node
+    // toward its own far node (60° cone + the terminal-region rule, same machinery as deg-2).
+    // Unpinned junction legs all pick the same best exit out of the node, which is the measured
+    // generator of the node-sharing overlap/crossing class: two runs collinear out of one node,
+    // sharing earthworks for 100-500 m (the owner's "huge tear", seed 6 node -7,2,0: 244 m at
+    // 0.1 m separation). The chord is a pure fn of the two endpoint positions, so the pin is
+    // window-invariant wherever the degree class is (same settled-adjacency argument as the deg-2
+    // through pins), and the feasibility ladder still demotes any pin the terrain refuses.
+    // Leaf ends (degree 1) stay unpinned — there is nothing to separate.
     _v2EdgeDirsBase(g, drop, kA, kB) {
         const s = this._v2NodeThrough(g, drop, kA), t = this._v2NodeThrough(g, drop, kB)
         const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen : null
@@ -3417,8 +3446,7 @@ export class RoadSystem {
             const pk = nk < o ? nk + '|' + o : o + '|' + nk
             if (pk !== ck) partners.set(pk, [nk.split(',').map(Number), o.split(',').map(Number)])
         }
-        let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
-        for (const p of S.pts) { if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x; if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z }
+        const { minx, maxx, minz, maxz } = _xzBox(S.pts)
         for (const [q1, q2] of g.edges) {
             const a = g.key(q1), b = g.key(q2)
             if (a === kA || a === kB || b === kA || b === kB || dropped(a, b)) continue
@@ -3916,24 +3944,9 @@ export class RoadSystem {
         const CHORD = C.censusChordM ?? 300
         const MINREG = 30, MINSPAN = 60
         if (!own || own.L < 2 * MINREG) return fail(null)
-        let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
-        for (const p of own.pts) {
-            if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
-            if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
-        }
+        const { minx, maxx, minz, maxz } = _xzBox(own.pts)
         const spell = this._v2EdgeSpellings(g)
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
-        const chordToRoute = (A2, B2, pts) => {
-            const cnx = Math.min(A2.x, B2.x) - CHORD, cxx = Math.max(A2.x, B2.x) + CHORD
-            const cnz = Math.min(A2.z, B2.z) - CHORD, cxz = Math.max(A2.z, B2.z) + CHORD
-            let d = Infinity
-            for (const p of pts) {
-                if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
-                const dd = _segSegDistXZ(p, p, A2, B2)
-                if (dd < d) { d = dd; if (d <= 0) break }
-            }
-            return d
-        }
         let bestSpec = null, bestRegion = -1, bestKey = ''
         for (const [q1, q2] of wide.edges) {
             const qA = wide.key(q1), qB = wide.key(q2)
@@ -3944,30 +3957,21 @@ export class RoadSystem {
             { const ex = A2.x - B2.x, ez = A2.z - B2.z; if (ex * ex + ez * ez <= _mband2) continue }
             if (Math.max(A2.x, B2.x) < minx - CHORD || Math.min(A2.x, B2.x) > maxx + CHORD
                 || Math.max(A2.z, B2.z) < minz - CHORD || Math.min(A2.z, B2.z) > maxz + CHORD) continue
-            if (chordToRoute(A2, B2, own.pts) > CHORD) continue
+            if (_chordToRoute(A2, B2, own.pts, CHORD) > CHORD) continue
             const spQ = spell.get(qck)
             const SQ = this._v2RunSample(spQ ? g : wide, drop, ...(spQ ?? [q1, q2]))
             if (!SQ || SQ.L < 2 * MINREG) continue
             // the coarse both-sides gate before a full walk (as the planner and census use)
             const lim = this._v2ClearMax() + 8 * PROTO_SAMPLE_DS   // FEAT-77: the widest the rule can reach
-            const lim2 = lim * lim
-            let near = false
-            for (let ip = 0; ip < own.pts.length && !near; ip += 8) {
-                const px = own.pts[ip].x, pz = own.pts[ip].z
-                for (let iq = 0; iq < SQ.pts.length; iq += 8) {
-                    const dx = px - SQ.pts[iq].x, dz = pz - SQ.pts[iq].z
-                    if (dx * dx + dz * dz <= lim2) { near = true; break }
-                }
-            }
-            if (!near) continue
+            if (!_coarseNear(own.pts, SQ.pts, lim * lim)) continue
             const ivs = _conflictIntervalsXZ(own, true, SQ, this._v2NearVs(g, c1, c2, own.L, (spQ ?? [q1, q2]).map((c) => (spQ ? g : wide).key(c))), GAPM, FLARE, null)
             if (!ivs.length) continue
             // roles: the partner is always discoverable from OUR route (that is how it was
             // found); we are an eligible winner only if OUR chord sits near ITS route
-            const ownDisc = chordToRoute(
+            const ownDisc = _chordToRoute(
                 { x: own.pts[0].x, z: own.pts[0].z },
                 { x: own.pts[own.pts.length - 1].x, z: own.pts[own.pts.length - 1].z },
-                SQ.pts) <= CHORD
+                SQ.pts, CHORD) <= CHORD
             const weWin = ownDisc && (own.L > SQ.L || (own.L === SQ.L && ck < qck))
             if (weWin) continue   // we are untouched; the loser plans this pair from its side
             // the winner must be PLAIN (see header): in-graph and holding no node-merge role.
@@ -4011,11 +4015,7 @@ export class RoadSystem {
         const spOwn = spell.get(ck)
         const own = this._v2RunSample(spOwn ? g : wide, drop, ...(spOwn ?? [c1, c2]))
         if (!own || own.L < 60) return fin([])
-        let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
-        for (const p of own.pts) {
-            if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
-            if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
-        }
+        const { minx, maxx, minz, maxz } = _xzBox(own.pts)
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         const out = []
         for (const [q1, q2] of wide.edges) {
@@ -4027,33 +4027,16 @@ export class RoadSystem {
             { const ex = A2.x - B2.x, ez = A2.z - B2.z; if (ex * ex + ez * ez <= _mband2) continue }
             if (Math.max(A2.x, B2.x) < minx - CHORD || Math.min(A2.x, B2.x) > maxx + CHORD
                 || Math.max(A2.z, B2.z) < minz - CHORD || Math.min(A2.z, B2.z) > maxz + CHORD) continue
-            const cnx = Math.min(A2.x, B2.x) - CHORD, cxx = Math.max(A2.x, B2.x) + CHORD
-            const cnz = Math.min(A2.z, B2.z) - CHORD, cxz = Math.max(A2.z, B2.z) + CHORD
             // Stride-8 walk (32 m steps) against a 300 m threshold with the stride's error bound
             // as slack: a real conflict needs routes within mergeProxM (18 m), so nothing real
             // can slip a 300+16 m discovery net. Deterministic, ~8× cheaper than full-stride —
             // this scan runs per registering edge and was the delete rung's measured cost.
-            let dDisc = Infinity
-            for (let ip = 0; ip < own.pts.length; ip += 8) {
-                const p = own.pts[ip]
-                if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
-                const dd = _segSegDistXZ(p, p, A2, B2)
-                if (dd < dDisc) { dDisc = dd; if (dDisc <= 0) break }
-            }
-            if (dDisc > CHORD + 16) continue
+            if (_chordToRoute(A2, B2, own.pts, CHORD, 8) > CHORD + 16) continue
             const spQ = spell.get(qck)
             const SQ = this._v2RunSample(spQ ? g : wide, drop, ...(spQ ?? [q1, q2]))
             if (!SQ || SQ.L < 60) continue
-            const lim = this._v2ClearMax() + 8 * PROTO_SAMPLE_DS, lim2 = lim * lim   // FEAT-77
-            let near = false
-            for (let ip = 0; ip < own.pts.length && !near; ip += 8) {
-                const px = own.pts[ip].x, pz = own.pts[ip].z
-                for (let iq = 0; iq < SQ.pts.length; iq += 8) {
-                    const dx = px - SQ.pts[iq].x, dz = pz - SQ.pts[iq].z
-                    if (dx * dx + dz * dz <= lim2) { near = true; break }
-                }
-            }
-            if (!near) continue
+            const lim = this._v2ClearMax() + 8 * PROTO_SAMPLE_DS   // FEAT-77
+            if (!_coarseNear(own.pts, SQ.pts, lim * lim)) continue
             const ivs0 = _conflictIntervalsXZ(own, true, SQ, this._v2NearVs(g, c1, c2, own.L, (spQ ?? [q1, q2]).map((c) => (spQ ? g : wide).key(c))), GAPM, FLARE, null)
             if (!ivs0.length) continue
             // BUG-57: PROPER CROSSINGS between the two pure routes — the crossing invariant's
@@ -4433,7 +4416,8 @@ export class RoadSystem {
             if (RAMPL === 100) { this._v2MergeSkipped('shove', `${ck}: still crosses after deflection`); return fin(null) }
             continue
         }
-        return fin({ pairs: cleared, pts: pts2, idxSpans })
+        // R-10: the line pts2 was deflected from — own.cl is the BUG-56 C re-route when the edge drapes
+        return fin({ pairs: cleared, pts: pts2, idxSpans, cl: own.cl })
         }
         return fin(null)
     }
@@ -4590,8 +4574,6 @@ export class RoadSystem {
         if (sA && sB) {
             const st = sA.loserNodeAtStart ? sA : (sB.loserNodeAtStart ? sB : null)
             const en = !sB.loserNodeAtStart ? sB : (!sA.loserNodeAtStart ? sA : null)
-            // the two ends' TAPER BANDS must clear each other too, not just the ceded strands —
-            // the middle re-solve needs real own geometry between them
             // QUAL-30: the two ends' FORKS must clear each other (was: their taper bands) — the
             // loser needs real own road between them either way.
             if (st && en && st !== en &&
@@ -4839,13 +4821,7 @@ export class RoadSystem {
             { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
             const S = sampleOf(g, [c1, c2], false)   // registration spelling = g.edges tuple order
             if (!S || S.L < 60) continue
-            let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
-            for (const p of S.pts) {
-                if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
-                if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
-            }
-            reg.push({ kA, kB, ck: kA < kB ? kA + '|' + kB : kB + '|' + kA, S,
-                       minx, maxx, minz, maxz })
+            reg.push({ kA, kB, ck: kA < kB ? kA + '|' + kB : kB + '|' + kA, S, ..._xzBox(S.pts) })
         }
         out.regEdges = reg.length
         // 2. every wide-graph chord that could be a partner
@@ -4864,15 +4840,9 @@ export class RoadSystem {
             for (const c of chords) {
                 if (c.kA === P.kA || c.kA === P.kB || c.kB === P.kA || c.kB === P.kB) continue // planner's business
                 if (c.ck === P.ck) continue
-                const cnx = Math.min(c.A.x, c.B.x) - CHORD, cxx = Math.max(c.A.x, c.B.x) + CHORD
-                const cnz = Math.min(c.A.z, c.B.z) - CHORD, cxz = Math.max(c.A.z, c.B.z) + CHORD
-                if (cxx < P.minx || cnx > P.maxx || cxz < P.minz || cnz > P.maxz) continue
-                let d = Infinity
-                for (const p of P.S.pts) {
-                    if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
-                    const dd = _segSegDistXZ(p, p, c.A, c.B)
-                    if (dd < d) { d = dd; if (d <= 0) break }
-                }
+                if (Math.max(c.A.x, c.B.x) + CHORD < P.minx || Math.min(c.A.x, c.B.x) - CHORD > P.maxx
+                    || Math.max(c.A.z, c.B.z) + CHORD < P.minz || Math.min(c.A.z, c.B.z) - CHORD > P.maxz) continue
+                const d = _chordToRoute(c.A, c.B, P.S.pts, CHORD)
                 if (d > CHORD) continue
                 const pk = P.ck < c.ck ? P.ck + '#' + c.ck : c.ck + '#' + P.ck
                 const prev = cand.get(pk)
@@ -4891,16 +4861,7 @@ export class RoadSystem {
             // the same coarse both-sides gate the mid-span planner uses, before paying for a
             // full point-to-polyline walk
             const lim = this._v2ClearMax() + 8 * PROTO_SAMPLE_DS   // FEAT-77: the widest the rule can reach
-            const lim2 = lim * lim
-            let near = false
-            for (let ip = 0; ip < SP.pts.length && !near; ip += 8) {
-                const px = SP.pts[ip].x, pz = SP.pts[ip].z
-                for (let iq = 0; iq < SQ.pts.length; iq += 8) {
-                    const dx = px - SQ.pts[iq].x, dz = pz - SQ.pts[iq].z
-                    if (dx * dx + dz * dz <= lim2) { near = true; break }
-                }
-            }
-            if (!near) continue
+            if (!_coarseNear(SP.pts, SQ.pts, lim * lim)) continue
             out.walked++
             const ivs = _conflictIntervalsXZ(SP, true, SQ, isNear, GAPM, FLARE, null)
             if (!ivs.length) continue
@@ -4950,16 +4911,6 @@ export class RoadSystem {
                 : (this._v2Deleted?.has(delCk(d.a)) || this._v2Deleted?.has(delCk(d.b))) ? 'deleted' : false
         }
         return cs
-    }
-
-    _v2CamAtArc(cam, sArc) {
-        const a = cam.arcPos, c = cam.camberRad, n = a.length
-        if (sArc <= a[0]) return c[0]
-        if (sArc >= a[n - 1]) return c[n - 1]
-        let lo = 0, hi = n - 1
-        while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (a[m] <= sArc) lo = m; else hi = m }
-        const span = a[hi] - a[lo] || 1
-        return c[lo] + (c[hi] - c[lo]) * (sArc - a[lo]) / span
     }
 
     // FEAT-68: _gradeEdgeInPlace (v1 design-grade smoothing: wide-smooth + tanh deviation clamp)
@@ -5149,13 +5100,37 @@ export class RoadSystem {
         }
     }
 
-    // FEAT-13 v2 graph mode: build the Urquhart network into this._network over the band
-    // [mx0,mx1]×[mz0,mz1]. _buildUrquhart computes the edge set over band+margin so every undirected edge
-    // is emitted identically from any stream center (window-invariant). Each edge with ≥1 in-band endpoint
-    // is routed via _edgeCenterline, sampled, graded STANDALONE (the junction reconciliation in
-    // _applyJunctionBlend ties shared nodes together), and registered with cellA/cellB = site ids. An
-    // incidence map (site-key → runKeys) is built for the junction-grade reconciliation. runKey =
-    // "g:<idA>:<idB>" (canonical, from _buildUrquhart's id order).
+    // Node-in-band test by WORLD extent of the macro band [mx0..mx1]×[mz0..mz1] (site ids live on
+    // a different grid than the macro band).
+    _nodeInBand(mx0, mx1, mz0, mz1) {
+        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
+        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
+        return (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+    }
+
+    // The settle set: every undropped edge incident to a node of an in-band edge, minus merge-band
+    // stubs (≤ roadMergeBand chord). ONE selection for the build (_v2SettleDeletions) and the
+    // pre-warm (_warmPlanJobs), so the warm can never miss a route the settle pass demands.
+    _v2SettleEdges(g, drop, mx0, mx1, mz0, mz1) {
+        const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
+        const inBand = this._nodeInBand(mx0, mx1, mz0, mz1)
+        const coreNodes = new Set()
+        for (const [c1, c2] of g.edges) {
+            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
+            if (!inBand(c1) && !inBand(c2)) continue
+            coreNodes.add(g.key(c1)); coreNodes.add(g.key(c2))
+        }
+        const out = []
+        for (const [c1, c2] of g.edges) {
+            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
+            if (!coreNodes.has(g.key(c1)) && !coreNodes.has(g.key(c2))) continue
+            const A = this._nodePos(c1), B = this._nodePos(c2)
+            { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
+            out.push([c1, c2])
+        }
+        return out
+    }
+
     // ── R4: the SETTLE pass ──────────────────────────────────────────────────────────────────
     // Evaluate the delete rung for every non-dropped, non-degenerate edge of the band graph (not
     // just the in-band registration set: a node's built degree needs a verdict for EVERY incident
@@ -5166,7 +5141,6 @@ export class RoadSystem {
     // Returns whether any node flipped. Pure fn of (graph, drop, terrain) → window-invariant to
     // the same degree the delete rung itself is.
     _v2SettleDeletions(g, drop, wide, mx0, mx1, mz0, mz1) {
-        const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         // PERF (2026-09-01): settle ONLY the verdicts this window can consume — the in-band edges
         // registration will delete-check anyway, plus every edge incident to one of their endpoint
         // nodes (a margin edge's deletion changes that node's BUILT degree, hence the in-band
@@ -5174,22 +5148,7 @@ export class RoadSystem {
         // ~104 and owned 7.7 s of a 9.3 s build. Verdicts are pure fns of pass-1 routes, so any
         // window that consumes a node's pins evaluates the identical incident set — the same
         // 1-ring invariance argument the pins themselves ride on.
-        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
-        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
-        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
-        const coreNodes = new Set()
-        for (const [c1, c2] of g.edges) {
-            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
-            if (!inBand(c1) && !inBand(c2)) continue
-            coreNodes.add(g.key(c1)); coreNodes.add(g.key(c2))
-        }
-        for (const [c1, c2] of g.edges) {
-            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
-            if (!coreNodes.has(g.key(c1)) && !coreNodes.has(g.key(c2))) continue
-            const A = this._nodePos(c1), B = this._nodePos(c2)
-            { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
-            this._v2DeleteFor(g, drop, wide, c1, c2)
-        }
+        for (const [c1, c2] of this._v2SettleEdges(g, drop, mx0, mx1, mz0, mz1)) this._v2DeleteFor(g, drop, wide, c1, c2)
         const del = new Set()
         for (const rec of (this._v2Deleted?.values() ?? [])) {
             const [, kA, kB] = rec.key.split(':')
@@ -5482,13 +5441,9 @@ export class RoadSystem {
     // re-expressed in the piece's own domain. `staged` carries commits not yet applied within this
     // pair, so the second end of a mid-span sees the first end's split.
     _v2TrunkPieceAt(pieces, wk0, wArc, staged) {
-        const T0 = this._network.get(wk0)
-        let q = null
-        if (T0) q = _polyAtCum(T0.points, T0.polyCum, wArc)
-        else {
-            for (const st of staged) { const h = _polyAtCum(st.T.points, st.T.polyCum, wArc); if (h) { q = h; break } }
-        }
-        if (!q) return null
+        const T0 = this._network.get(wk0) ?? staged[0]?.T
+        if (!T0) return null
+        const q = _polyAtCum(T0.points, T0.polyCum, wArc)
         let best = null
         for (const k of (pieces.get(wk0) || [wk0])) {
             const e = this._network.get(k)
@@ -5767,8 +5722,7 @@ export class RoadSystem {
         }
         // Both tests start OUTSIDE the junction pad. Inside it there is no ribbon to judge: the pad
         // plane is the surface, and the pad's own rules govern it (roadJunctionPadMaxGrade for the
-        // plane, roadJunctionBlendMaxGrade for the arrival ramp) — the ticket's "mergePadArrivalMax
-        // is the pad-side equivalent already in place for ordinary junctions". Measured without this
+        // plane, roadJunctionBlendMaxGrade for the arrival ramp). Measured without this
         // exclusion, 7 of seed 6's 10 forks were condemned for deck gaps 4-10 m from the node, which
         // is paved plaza, not a wall between two ribbons.
         // R3 (owner, 2026-08-31): A PAD REACHES 10 m AT MOST — "the ruled bar, not the built reach".
@@ -5835,7 +5789,7 @@ export class RoadSystem {
             const sep = Math.max(0, q.d - 2 * HWs)
             if (sep > SEAM_WINDOW) continue
             const latQ = (pts[i].x - q.fx) * q.tz - (pts[i].z - q.fz) * q.tx
-            const gap = Math.abs(yb[i] - (q.y + latQ * Math.sin(this._v2CamAtArc(cam, q.cum))))
+            const gap = Math.abs(yb[i] - (q.y + latQ * Math.sin(_interpolateCamber(cam.arcPos, cam.camberRad, q.cum))))
             const allow = TOLW + FILLV * sep
             if (gap - allow > seamOver) {
                 seamOver = gap - allow
@@ -6022,12 +5976,21 @@ export class RoadSystem {
         return out
     }
 
+    // FEAT-13 v2 graph mode: build the Urquhart network into this._network over the band
+    // [mx0,mx1]×[mz0,mz1]. _buildUrquhart computes the edge set over band+margin so every undirected edge
+    // is emitted identically from any stream center (window-invariant). Each edge with ≥1 in-band endpoint
+    // is routed via _edgeCenterline, sampled, graded STANDALONE (the junction reconciliation in
+    // _applyJunctionBlend ties shared nodes together), and registered with cellA/cellB = site ids. An
+    // incidence map (site-key → runKeys) is built for the junction-grade reconciliation. runKey =
+    // "g:<idA>:<idB>" (canonical, from _buildUrquhart's id order).
     _assembleGraphEdges(mx0, mx1, mz0, mz1) {
+        // Instrument tallies (world-validate, census scripts) count THIS build, not the instance's
+        // lifetime — the network worker's RoadSystem persists across builds.
+        this._v2Shoves = this._v2Reroutes = this._v2Infeasible = this._v2Condemned = 0
+        this._v2Rung = [0, 0, 0, 0]
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         // in-band test is by WORLD extent now (site ids live on a different grid than the macro band).
-        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
-        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
-        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+        const inBand = this._nodeInBand(mx0, mx1, mz0, mz1)
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1)
         // QUAL-21 Stage 2: the degree pass is pure topology, so its drops apply HERE — before any
         // routing — instead of after every edge has already paid for its route search, which is
@@ -6106,7 +6069,7 @@ export class RoadSystem {
                     // BUG-57 rung: a nick-crossed run with no merge-family role registers SHOVED —
                     // deflected clear of its crossing partners (_v2ShoveFor; plan-layer pure).
                     const shove = this._v2ShoveFor(g, drop, wide, c1, c2)
-                    if (shove) this._v2RegisterShoved(key, cl, c1, c2, shove, g, drop)
+                    if (shove) this._v2RegisterShoved(key, shove.cl ?? cl, c1, c2, shove, g, drop)
                     else this._registerRun(key, cl, c1, c2)
                 }
             }
@@ -6189,7 +6152,6 @@ export class RoadSystem {
                     // the bad stretch is counted and surfaced rather than silently normal.
                     condemned = true
                     this._v2Condemned = (this._v2Condemned || 0) + 1
-                    ;(this._v2CondemnedKeys ||= []).push(key)
                 }
             }
         }
@@ -6312,8 +6274,6 @@ export class RoadSystem {
         if (this._prewarmCarry) this._prewarmCarry = false
         else {
             this._networkRev++   // real rebuild → invalidate per-run profile/adjacency caches (lazy)
-            // Refresh live D-09 weights from this._params (debug sliders mutate it in place) so this
-            // re-stream uses the current slider values — deterministic re-route (D-03).
             // Bound the proto caches BEFORE building (CR-02). anchors/cls are pure functions of
             // coords, so a cache miss recomputes the identical value — evicting them is always benign.
             // Doing it pre-build (rather than post-build) makes the result independent of WHEN the
@@ -6334,7 +6294,6 @@ export class RoadSystem {
         // A real re-stream invalidates the previous slice; _sliceNetwork re-slices on next call.
         this._slicedFrom = null
         if (this._tiles) this._tiles.clear()
-        if (this._tileObjects) this._tileObjects.clear()
         // Junction cache is a pure function of this._network — clear and rebuild on re-stream.
         if (this._junctions) this._junctions.clear()
         this._junctionsRev = -1
@@ -6388,8 +6347,8 @@ export class RoadSystem {
         return this._network
     }
 
-    // (Road Overhaul Phase C: _runOwnerAnchor / _canonSegArc deleted. Run identity is now the
-    // connection's own world key "mz:mx" — band-independent by construction — so the owner-ratio
+    // (Road Overhaul Phase C: _runOwnerAnchor / _canonSegArc deleted. Run identity is the
+    // connection's own world key ("g:<idA>:<idB>" today) — band-independent by construction — so the owner-ratio
     // search that picked a world-fixed origin inside a band-truncated whole-row run is unnecessary.)
 
     // ── Per-tile slicing (D-06 REVISED — C0/C1 seam continuity is FREE) ──────────
@@ -6414,7 +6373,7 @@ export class RoadSystem {
      * Deterministic: pure function of `this._network` (itself a pure function of seed+coords+params).
      * Idempotent: re-slicing the same network identity is a no-op (memoized via `this._slicedFrom`).
      *
-     * @returns {Map<string, {spline: THREE.CatmullRomCurve3, points: THREE.Vector3[], waypoints: THREE.Vector3[]}[]>} this._tiles
+     * @returns {Map<string, {spline: THREE.CatmullRomCurve3, points: THREE.Vector3[], runKey: string, arcS0: number, arcS1: number}[]>} this._tiles
      */
     _sliceNetwork() {
         // Identity guard: re-slicing the identical network is a no-op. _streamNetwork/invalidateCache
@@ -6422,7 +6381,6 @@ export class RoadSystem {
         if (this._slicedFrom === this._network && this._tiles.size > 0) return this._tiles
 
         this._tiles.clear()
-        this._tileObjects.clear()
 
         const S = CHUNK_SIZE
         for (const [runKey, entry] of this._network) {
@@ -6433,60 +6391,44 @@ export class RoadSystem {
             // window-invariant. Matches _buildRunProfile / _buildCamberProfile arcPos[0] = -arcOrigin.
             const arcOrigin = entry.arcOrigin ?? 0
 
-            // Parent-run weight = total control-point count. A tile picks its representative as the
-            // slice from the heaviest parent run that touches it; because ONE parent run yields one
-            // slice per tile it crosses, all tiles along that run pick the SAME parent → their shared
-            // boundary slices match exactly (C0) with aligned tangents (C1). This is what makes the
-            // seam harness's single-.spline-per-tile comparison green by construction.
-            const runWeight = points.length
-
-            // QUAL-30: the ceded-hole slicer is gone with cededSpans. A wye's loser carried the
-            // winner's vertices verbatim over the ceded interval, so slicing it shipped a duplicate
-            // ribbon that z-fought the winner's — hence a list of kept ranges rather than one
-            // window. The T promotion removes the loser's geometry there outright, so every
-            // registered run is a single unbroken window again.
-            const i0 = 0, i1 = points.length - 1
-
             // Walk the polyline, cutting at every x/z integer-multiple-of-S boundary crossing.
             // `current` accumulates the active sub-polyline; on a cut we push the boundary point to
             // BOTH the closing sub-polyline and the new one (shared C0 point).
-            {
-                let current = [points[i0].clone()]
-                // BUG-10 camber continuity: track cumulative XZ run arc-length so each slice records
-                // the run-arc at its endpoints. XZ metric matches _buildCamberProfile's arcPos.
-                // Without this, arcSOffset defaulted to 0 and camber sawtoothed back to the run start
-                // at every tile seam.
-                let runArcAtA = (entry.polyCum ? entry.polyCum[i0] : 0) - arcOrigin   // run-arc at points[i-1]
-                let sliceStartArc = runArcAtA    // run-arc at current[0] (owner-origined)
-                const flush = (sliceEndArc) => {
-                    if (current.length >= 2) this._assignSlice(current, runKey, runWeight, sliceStartArc, sliceEndArc)
-                    // start the next sub-polyline at the same boundary point we just closed on
-                }
-                for (let i = i0 + 1; i <= i1; i++) {
-                    const a = points[i - 1], b = points[i]
-                    const segLen = Math.hypot(b.x - a.x, b.z - a.z)  // XZ segment length (matches camber arcPos)
-                    // Collect all boundary crossings along segment a→b, ordered by parametric t∈(0,1).
-                    const crossings = []
-                    this._collectCrossings(a.x, b.x, S, (t) => crossings.push(t))
-                    this._collectCrossings(a.z, b.z, S, (t) => crossings.push(t))
-                    crossings.sort((p2, q) => p2 - q)
-                    let prevT = 0
-                    for (const t of crossings) {
-                        if (t <= 1e-9 || t >= 1 - 1e-9) continue        // skip endpoints (no zero-length cut)
-                        if (t <= prevT + 1e-9) continue                  // coincident crossings (corner) → one cut
-                        const cp = _lerpVec3(a, b, t)
-                        current.push(cp.clone())                          // close current sub-polyline ON the boundary
-                        const cpArc = runArcAtA + segLen * t
-                        flush(cpArc)
-                        current = [cp.clone()]                            // next sub-polyline STARTS on the same point (C0)
-                        sliceStartArc = cpArc
-                        prevT = t
-                    }
-                    current.push(b.clone())
-                    runArcAtA += segLen
-                }
-                flush(runArcAtA)  // trailing slice of this range
+            let current = [points[0].clone()]
+            // BUG-10 camber continuity: track cumulative XZ run arc-length so each slice records
+            // the run-arc at its endpoints. XZ metric matches _buildCamberProfile's arcPos.
+            // Without this, arcSOffset defaulted to 0 and camber sawtoothed back to the run start
+            // at every tile seam.
+            let runArcAtA = (entry.polyCum ? entry.polyCum[0] : 0) - arcOrigin   // run-arc at points[i-1]
+            let sliceStartArc = runArcAtA    // run-arc at current[0] (owner-origined)
+            const flush = (sliceEndArc) => {
+                if (current.length >= 2) this._assignSlice(current, runKey, sliceStartArc, sliceEndArc)
+                // start the next sub-polyline at the same boundary point we just closed on
             }
+            for (let i = 1; i < points.length; i++) {
+                const a = points[i - 1], b = points[i]
+                const segLen = Math.hypot(b.x - a.x, b.z - a.z)  // XZ segment length (matches camber arcPos)
+                // Collect all boundary crossings along segment a→b, ordered by parametric t∈(0,1).
+                const crossings = []
+                this._collectCrossings(a.x, b.x, S, (t) => crossings.push(t))
+                this._collectCrossings(a.z, b.z, S, (t) => crossings.push(t))
+                crossings.sort((p2, q) => p2 - q)
+                let prevT = 0
+                for (const t of crossings) {
+                    if (t <= 1e-9 || t >= 1 - 1e-9) continue        // skip endpoints (no zero-length cut)
+                    if (t <= prevT + 1e-9) continue                  // coincident crossings (corner) → one cut
+                    const cp = _lerpVec3(a, b, t)
+                    current.push(cp)                                  // close current sub-polyline ON the boundary
+                    const cpArc = runArcAtA + segLen * t
+                    flush(cpArc)
+                    current = [cp.clone()]                            // next sub-polyline STARTS on the same point (C0)
+                    sliceStartArc = cpArc
+                    prevT = t
+                }
+                current.push(b.clone())
+                runArcAtA += segLen
+            }
+            flush(runArcAtA)  // trailing slice of this run
         }
 
         this._slicedFrom = this._network
@@ -6554,7 +6496,7 @@ export class RoadSystem {
         // ── Broad phase: bucket every run segment into the CHUNK_SIZE tiles its AABB touches. ──
         // Each seg record carries what the narrow phase + classifier need: world endpoints, endpoint Ys,
         // and run-local XZ arc (via polyCum).
-        const buckets = new Map()   // "tx,tz" → seg[]
+        const buckets = new Map()   // packed (tx, tz) → seg[] (numeric key: exact for |tx|,|tz| < 2^20)
         for (const [runKey, entry] of this._network) {
             const pts = entry.points
             if (!pts || pts.length < 2) continue
@@ -6570,7 +6512,7 @@ export class RoadSystem {
                 const tzLo = Math.floor(Math.min(z0, z1) / CHUNK_SIZE), tzHi = Math.floor(Math.max(z0, z1) / CHUNK_SIZE)
                 for (let tx = txLo; tx <= txHi; tx++) {
                     for (let tz = tzLo; tz <= tzHi; tz++) {
-                        const k = `${tx},${tz}`
+                        const k = (tx + 1048576) * 2097152 + (tz + 1048576)
                         let arr = buckets.get(k); if (!arr) { arr = []; buckets.set(k, arr) }
                         arr.push(seg)
                     }
@@ -6587,14 +6529,17 @@ export class RoadSystem {
                     const B = arr[j]
                     // Skip adjacent segments of the SAME run (they share an endpoint, not a real crossing).
                     if (A.runKey === B.runKey && Math.abs(A.segIdx - B.segIdx) <= 1) continue
-                    // Canonical (S before T) so the same pair found via two buckets is tested once.
+                    // Canonical (S before T) so the same pair found via two buckets is recorded once.
+                    // The cheap crossing test runs FIRST and only a hit pays for the pair key: ~22k
+                    // pairs per build and almost none cross (it is a pure fn of the canonical pair,
+                    // so the first sighting records and later ones dedupe exactly as before).
                     const aFirst = A.runKey < B.runKey || (A.runKey === B.runKey && A.segIdx < B.segIdx)
                     const S = aFirst ? A : B, T = aFirst ? B : A
+                    const ix = _segCrossParam(S.x0, S.z0, S.x1, S.z1, T.x0, T.z0, T.x1, T.z1)
+                    if (!ix) continue
                     const pk = `${S.runKey}#${S.segIdx}|${T.runKey}#${T.segIdx}`
                     if (seenPairs.has(pk)) continue
                     seenPairs.add(pk)
-                    const ix = _segCrossParam(S.x0, S.z0, S.x1, S.z1, T.x0, T.z0, T.x1, T.z1)
-                    if (!ix) continue
                     // Two legs of ONE node crossing inside that node's hold reach are the junction's
                     // own throat, not a mid-span crossing. The deck hold (_applyJunctionBlend) owns
                     // that ground; the AT_GRADE flatten this would register runs AFTER the hold,
@@ -6740,11 +6685,10 @@ export class RoadSystem {
      *
      * runKeys are hashed to small non-negative ints — the value is opaque; what matters for
      * diagnosis is whether `rk` (resolved run) and `arcS` stay CONTINUOUS across a tile seam.
-     * (`lrk` is retained at 0 for log-column stability — it logged the now-removed hysteresis hint.)
      *
      * @param {number} wx — world X
      * @param {number} wz — world Z
-     * @returns {{ hit:number, rk:number, arcS:number, gradeY:number, pointY:number, lat:number, lrk:number }}
+     * @returns {{ hit:number, rk:number, arcS:number, gradeY:number, pointY:number, lat:number }}
      */
     debugSampleAt(wx, wz) {
         const p             = this._params
@@ -6761,7 +6705,7 @@ export class RoadSystem {
         // capture describes the surface that was actually driven; queryNearest only as the off-road
         // fallback, for a mark beside the road.
         const nr = this._resolveRoadSurface(wx, wz) ?? this.queryNearest(wx, wz, maxExt)
-        if (!nr) return { hit: 0, rk: 0, arcS: 0, gradeY: 0, pointY: 0, lat: 0, lrk: 0, minR: 9999 }
+        if (!nr) return { hit: 0, rk: 0, arcS: 0, gradeY: 0, pointY: 0, lat: 0, minR: 9999 }
         const dx = wx - nr.point.x, dz = wz - nr.point.z
         const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
         const arcS = nr.arcS ?? 0
@@ -6790,7 +6734,6 @@ export class RoadSystem {
             camber,
             pointY: nr.point.y,
             lat:    signedLat,
-            lrk:    0,
             minR,
         }
     }
@@ -6840,23 +6783,6 @@ export class RoadSystem {
         }
     }
 
-    // ── Phase 9: Analytic carve world sampler (SURF-04) ──────────────────────────────
-    /**
-     * Sample the road carve at a world-space position (wx, wz) for use in analyticHeight.
-     * Returns { blendW, gradeY } or null if no road is near.
-     *
-     * The blend formula is byte-identical to the _buildCarveTable inner loop (SURF-05 height-agreement requirement).
-     *
-     * NOTE: does NOT receive or call terrain — the caller (analyticHeight) already has the
-     * raw height and passes rawAmp separately to avoid infinite recursion.
-     *
-     * @param {number} wx     — world X
-     * @param {number} wz     — world Z
-     * @param {number} rawAmp — raw terrain height at (wx,wz), amplitude already applied (metres)
-     * @returns {{ blendW: number, gradeY: number } | null}
-     *
-     * Pure function of (wx, wz, roadSystem, params, rawAmp) — deterministic (D-16).
-     */
     /**
      * Continuous nearest-point projection of (wx,wz) onto a run's centerline POLYLINE.
      *
@@ -7023,7 +6949,7 @@ export class RoadSystem {
             cache = this._cellCands = { rev: this._networkRev, gate, map: new Map() }
         }
         const cellX = Math.floor(wx / RESOLVE_CELL), cellZ = Math.floor(wz / RESOLVE_CELL)
-        const key = `${cellX},${cellZ}`
+        const key = (cellX + 33554432) * 67108864 + (cellZ + 33554432)   // packed (cellX, cellZ): ≤ 2^52, exact
         let cell = cache.map.get(key)
         if (cell !== undefined) return cell
         const cx = (cellX + 0.5) * RESOLVE_CELL, cz = (cellZ + 0.5) * RESOLVE_CELL
@@ -7268,9 +7194,6 @@ export class RoadSystem {
         const endHW  = Math.min(halfWidth + carveExtraWidth, minRadius) + maxEmbankmentToe
         const footHW = endHW + DEEP_BANK_TOE_EXTRA
 
-        const qtx = Math.floor(wx / CHUNK_SIZE)
-        const qtz = Math.floor(wz / CHUNK_SIZE)
-        const seen = new Set()
         // Select the NEAREST footprint-interior run by true lateral distance (queryNearest's interior
         // policy), but via the continuous polyline projection so arcS/signedLat don't lurch at curves.
         // (Height-based "topmost" selection was tried and rejected — it teleported the surface onto
@@ -7325,6 +7248,8 @@ export class RoadSystem {
                 if (pr) consider(c.runKey, pr)
             }
         } else {
+            const qtx = Math.floor(wx / CHUNK_SIZE), qtz = Math.floor(wz / CHUNK_SIZE)
+            const seen = new Set()
             for (let dx = -1; dx <= 1; dx++) {
                 for (let dz = -1; dz <= 1; dz++) {
                     const segs = this._tiles.get(`${qtx + dx},${qtz + dz}`)
@@ -7376,8 +7301,8 @@ export class RoadSystem {
         const ce = this._network.get(bestRunKey)
         let bestCeded = false
         if (ce && ce.offCurveSpans) {
-            // BUG-53 merge: ceded strand OR taper band — either way the points left the primitive
-            // centerline, so refining onto it would pull the frame off the carve.
+            // BUG-53: inside an offCurveSpan (T departure band, shove deflection) the points left the
+            // primitive centerline, so refining onto it would pull the frame off the carve.
             const aB = bestPr.arcS + (ce.arcOrigin ?? 0)
             bestCeded = ce.offCurveSpans.some((csp) => aB >= csp.s0 - 0.5 && aB <= csp.s1 + 0.5)
         }
@@ -7426,7 +7351,7 @@ export class RoadSystem {
         // camberSign = 1: the projection uses the run's own canonical polyline direction (arcS increases
         // along it), so run-frame camber maps to the world frame directly (no E→W slice reversal here).
         return {
-            point:      new THREE.Vector3(fx, this.runProfile(arcS, bestRunKey).gradeY, fz),
+            point:      new THREE.Vector3(fx, this.runProfile(arcS, bestRunKey, _CD_RP).gradeY, fz),
             tangent:    new THREE.Vector3(tx, 0, tz),
             runKey:     bestRunKey,
             arcS:       arcS,
@@ -7461,7 +7386,10 @@ export class RoadSystem {
         // cached-run position error small during normal driving (≤0.05 m → grade error sub-cm), which
         // bounds rest-height drift well under the penetration tolerance. Wheels (≥1.6 m = 32 cells) and
         // distinct runs never share a cell.
-        const key = `${Math.round(wx * 20)},${Math.round(wz * 20)}`
+        // Numeric key (a string key cost ~0.07 µs more per lookup, ~800 lookups/step): packed
+        // (qx, qz) with each offset by 2^25 and qx scaled by 2^26, so the key stays ≤ 2^52 and every
+        // cell is distinct for |coord| < 1,677 km. (2^26 × 2^27 overflows 2^53 and merges cells.)
+        const key = (Math.round(wx * 20) + 33554432) * 67108864 + (Math.round(wz * 20) + 33554432)
         let nr = m.get(key)
         if (nr === undefined) {
             // Continuous-projection road resolver, NOT queryNearest — see _resolveRoadSurface.
@@ -7475,13 +7403,26 @@ export class RoadSystem {
         return nr
     }
 
+    // ── Phase 9: Analytic carve world sampler (SURF-04) ──────────────────────────────
     /**
-     * @param {number} wx @param {number} wz
-     * @param {number} rawAmp
+     * Sample the road carve at a world-space position (wx, wz) for use in analyticHeight.
+     * Returns { blendW, gradeY } or null if no road is near.
+     *
+     * The blend formula is byte-identical to the _buildCarveTable inner loop (SURF-05 height-agreement requirement).
+     *
+     * NOTE: does NOT receive or call terrain — the caller (analyticHeight) already has the
+     * raw height and passes rawAmp separately to avoid infinite recursion.
+     *
+     * @param {number} wx     — world X
+     * @param {number} wz     — world Z
+     * @param {number} rawAmp — raw terrain height at (wx,wz), amplitude already applied (metres)
      * @param {object|null|undefined} [nrHint] — precomputed carveHint(wx,wz) result. When provided
      *   (incl. null), it is used in place of a fresh queryNearest and the point is PROJECTED onto that
      *   run (arcSEff/signedLat) — so the 4 offsets of one normal share one tile scan, accurately
      *   (projection error over ±0.5 m on radius≥8 m is sub-mm; no position quantization → no stepping).
+     * @returns {{ blendW: number, gradeY: number } | null}
+     *
+     * Pure function of (wx, wz, roadSystem, params, rawAmp) — deterministic (D-16).
      */
     _sampleCarveWorld(wx, wz, rawAmp, nrHint, queryY) {
         const p             = this._params
@@ -7506,7 +7447,7 @@ export class RoadSystem {
             const adx = wx - nr.point.x, adz = wz - nr.point.z
             const aArc = (nr.arcS ?? 0) + adx * nr.tangent.x + adz * nr.tangent.z
             if (!this.tunnelSpanAt(nr.runKey ?? '', aArc)) break
-            const topY = this.runProfile(aArc, nr.runKey).gradeY + (p.tunnelBoreRadius ?? 8)
+            const topY = this.runProfile(aArc, nr.runKey, _CD_RP).gradeY + (p.tunnelBoreRadius ?? 8)
             if (queryY < topY) break                     // in the bore: this run owns the probe
             // FEAT-40: skin probe over a bore — mouth-funnel notch (no decal/pothole overlay:
             // this is the cutting face over the tube, not a drivable deck).
@@ -7665,7 +7606,7 @@ export class RoadSystem {
         const runKey = nr.runKey ?? ''
         if (!this.tunnelSpanAt(runKey, aArc)) return null     // not inside a bore span
         const R = this._params.tunnelBoreRadius ?? 8
-        const gradeY = this.runProfile(aArc, runKey).gradeY   // floor Y at this arc
+        const gradeY = this.runProfile(aArc, runKey, _CD_RP).gradeY   // floor Y at this arc
         const h = wy - gradeY                                  // height above the springline
         // FULL cylinder, not just the upper arch: camber tilts the physics FLOOR (_carveDirtY's
         // tiltY = signedLat*sin(camberAngle)) but NOT the rendered arch (buildTunnelTube's h=R·sin(θ)
@@ -7713,7 +7654,7 @@ export class RoadSystem {
         // crown/camber extrapolated across the widened junction carve core (below) would dome/tilt.
         const jc = this._junctionCarve(runKey, arcSEff)
         if (jc.frac > 0) { const k = 1 - jc.frac; crownY *= k; tiltY *= k }
-        let gradeY = this.runProfile(arcSEff, runKey).gradeY
+        let gradeY = this.runProfile(arcSEff, runKey, _CD_RP).gradeY
         // Inter-leg CREASE fix — the "ruled surface" grade blend. Each ≥2-leg node's runs leave the shared
         // node INDEPENDENTLY, so _resolveRoadSurface hard-switching to the nearest leg leaves a STEP at the
         // Voronoi boundary between two legs (their grades diverge — up to ~4.5 m at r=24 on the seed-6 sloped
@@ -7767,7 +7708,7 @@ export class RoadSystem {
                     const pr = prs[bi]
                     const gap = Math.sqrt(pr.d2) - halfWidth
                     if (gap >= RULE_LEG_REACH) continue                  // out of range: not a co-leg here
-                    const legGrade = bi === ownIdx ? gradeY : this.runProfile(pr.arcS, leg.runKey).gradeY
+                    const legGrade = bi === ownIdx ? gradeY : this.runProfile(pr.arcS, leg.runKey, _CD_RP).gradeY
                     // Plausibility guard: every leg leaves the node welded at nodeY with a bounded road
                     // grade, so at arc distance `along` its grade must lie within nodeY ± MAX_LEG_SLOPE·
                     // along. A projected grade outside that is a WRONG-BRANCH artifact (an unrelated road
@@ -8172,12 +8113,6 @@ export class RoadSystem {
     }
 
     /**
-     * QUAL-11 exact-weld pad boundary — each leg's mouth is its own run cross-section chord welded to
-     * the trimmed ribbon end; corners between consecutive mouths round the throat; a wide back gap gets
-     * a node-centred bulb (open sector) or a straight chord (through road). Pure fn of node + streamed
-     * network (window-invariant, D-16). (Formerly RoadMeshSystem._junctionRingWeld.)
-     */
-    /**
      * The node's LEG MOUTHS: each leg's real cross-section centre and outward unit direction at the
      * cut-back, bearing-sorted. ONE definition shared by every rung of the ring ladder, so a
      * fallback pad is anchored to exactly the pavement the exact weld would have welded to. Returns
@@ -8219,6 +8154,12 @@ export class RoadSystem {
         return { legs, T, halfWidth }
     }
 
+    /**
+     * QUAL-11 exact-weld pad boundary — each leg's mouth is its own run cross-section chord welded to
+     * the trimmed ribbon end; corners between consecutive mouths round the throat; a wide back gap gets
+     * a node-centred bulb (open sector) or a straight chord (through road). Pure fn of node + streamed
+     * network (window-invariant, D-16). (Formerly RoadMeshSystem._junctionRingWeld.)
+     */
     _junctionRingWeld(node) {
         const params = this._params
         const nx = node.pos.x, nz = node.pos.z
@@ -8949,12 +8890,6 @@ export class RoadSystem {
     }
 
     /**
-     * FEAT-46: is (wx,wz) on (or within `keepOut` of) a POI lay-by pad? The prop scatter treats a
-     * pad exactly like the road — a tree growing out of the pullout blocks the only thing a pullout
-     * is for, and the bench is graded ground, not forest floor. Same stadium test the carve uses.
-     * Always false in free roam (no pads set), so the scatter is unchanged there.
-     */
-    /**
      * FEAT-85: is (wx,wz) within `keepOut` of a junction's graded pad? The roadside cover must not
      * stand on the apron (graded ground, not verge). Disc test against each node's ring reach —
      * the same radius the ring hull was built to; deg-2 fillets use their own reach. Read-only.
@@ -9017,6 +8952,12 @@ export class RoadSystem {
         return out
     }
 
+    /**
+     * FEAT-46: is (wx,wz) on (or within `keepOut` of) a POI lay-by pad? The prop scatter treats a
+     * pad exactly like the road — a tree growing out of the pullout blocks the only thing a pullout
+     * is for, and the bench is graded ground, not forest floor. Same stadium test the carve uses.
+     * Always false in free roam (no pads set), so the scatter is unchanged there.
+     */
     poiPadBlocked(wx, wz, keepOut = 0) {
         const pads = this._padsAll
         if (!pads) return false
@@ -9379,9 +9320,8 @@ export class RoadSystem {
         const pr = this._projectOntoRun(ce, wx, wz)
         if (!pr) return null
         let arcS = pr.arcS
-        // BUG-53: over a ceded strand or a taper band the run's own centerline is a stale record
-        // (the points follow the winner, or blend off it) — keep the polyline arc rather than
-        // refine onto the wrong curve.
+        // BUG-53: inside an offCurveSpan (T departure band, shove deflection) the run's own
+        // centerline is a stale record — keep the polyline arc rather than refine onto the wrong curve.
         let inCeded = false
         if (ce.offCurveSpans) {
             const aC = pr.arcS + (ce.arcOrigin ?? 0)
@@ -9476,9 +9416,8 @@ export class RoadSystem {
         // sharp fillet, where the corner is cut past both mouths) the tapers collapse together and the
         // ratio is undefined, so fall back to the untapered weights — there both grades are the same
         // clamped node height anyway, which is exactly the plaza value that throat should carry.
-        const fade = (d) => { const u = Math.min(1, Math.max(0, d / XS_OFF_FADE)); return 1 - u * u * (3 - 2 * u) }
         let wA = 1 / (a.gap * a.gap + XS_SOFT2), wB = 1 / (b.gap * b.gap + XS_SOFT2)
-        const tA = wA * fade(a.off), tB = wB * fade(b.off)
+        const tA = wA * _xsOffFade(a.off), tB = wB * _xsOffFade(b.off)
         if (tA + tB > 1e-9) { wA = tA; wB = tB }
         const wS = wA + wB
         out.grade = (a.grade * wA + b.grade * wB) / wS
@@ -9486,27 +9425,6 @@ export class RoadSystem {
         return out
     }
 
-    /**
-     * QUAL-16: the deg-2 kink CONNECTOR's own carve cross-section at (wx,wz) — used ONLY as a fallback
-     * where the run scan leaves the connector footprint uncarved (the void on a sharp bend, off both
-     * straight corridors and beyond their toes → the mesh connector floats over raw terrain / terrain
-     * pokes through the asphalt). A full ROAD cross-section — run-following centreline grade plus crown
-     * and the leg-to-leg camber handover (_connectorDesignAt) — with the standard
-     * fill/cut toe ramp to raw, so it is C0 with the surrounding terrain (both → raw where the toes meet)
-     * and with the ribbons (whole cross-section → that leg's near each mouth). Returns { blendW, gradeY }
-     * (DIRT, clearance already folded out) or null (no connector near, off its footprint, or beyond the
-     * toe). Window-invariant.
-     *
-     * QUAL-24 — THIS IS A FRONTIER FALLBACK, NOT THE PRIMARY PATH. A deg-2 site is a continuing path,
-     * and _mergeDeg2Chains now splices its runs into ONE run so the join is ordinary road with one
-     * profile; connectors are not built there. What remains is the streaming FRONTIER, where a site's
-     * degree is not known-complete (its incident edges are not all registered) so `through()` declines
-     * to merge and a deg-2 node still forms. Those sit at the band edge, hundreds of metres past the
-     * ~160 m draw distance — reachable, never seen. Kept deliberately (owner call 2026-08-03): the
-     * alternative is routing past the band to settle a post-cull degree, which trades cold-load time
-     * (PERF-03/27) and a dependency on BUG-25's open watch for code that costs one Map-size check.
-     * Full reasoning in .planning/todos/completed/qual-24-deg2-chain-merge.md.
-     */
     /**
      * Compose the deg-2 connector's bench over a run/pad top: the connector DOMINATES its own core
      * and feathers to `runTop` at its toe. ONE composition for the pad surface (_nodeSurfaceTop) and
@@ -9521,7 +9439,19 @@ export class RoadSystem {
     }
 
     /**
-     * @param {number} [rawAmp] raw terrain height here. Omitted ⇒ the coarse field × terrainAmplitude,
+     * QUAL-16: the deg-2 kink CONNECTOR's own carve cross-section at (wx,wz) — used ONLY as a fallback
+     * where the run scan leaves the connector footprint uncarved (the void on a sharp bend, off both
+     * straight corridors and beyond their toes → the mesh connector floats over raw terrain / terrain
+     * pokes through the asphalt). A full ROAD cross-section — run-following centreline grade plus crown
+     * and the leg-to-leg camber handover (_connectorDesignAt) — with the standard
+     * fill/cut toe ramp to raw, so it is C0 with the surrounding terrain (both → raw where the toes meet)
+     * and with the ribbons (whole cross-section → that leg's near each mouth). Returns { blendW, gradeY }
+     * (DIRT, clearance already folded out) or null (no connector near, off its footprint, or beyond the
+     * toe). Window-invariant.
+     *
+     * QUAL-24's deg-2 chain merge (_mergeDeg2Chains) is deleted (FEAT-68), so this is the MAIN path
+     * for every kinked deg-2 node, not only a streaming-frontier fallback.
+     * @param {number} [rawAmp] raw terrain height here. Omitted ⇒ the coarse field,
      *   sampled only once a connector is actually in reach (most callers are nowhere near one).
      */
     _connectorCarve(wx, wz, rawAmp) {
@@ -9564,7 +9494,7 @@ export class RoadSystem {
         if (bestLat > latCeiling) return null
         const cd = this._connectorDesignAt(bestArc, wx, wz, _CD_OUT)
         if (cd == null) return null
-        if (rawAmp === undefined) rawAmp = this._coarseH(wx, wz) * (p.terrainAmplitude ?? 1)
+        if (rawAmp === undefined) rawAmp = this._coarseH(wx, wz)
         const designY = cd.grade - clearanceMargin
         const fillSlope = p.roadFillSlope ?? 3.0, cutSlope = p.roadCutSlope ?? 1.0
         const fillToe = halfWidth + shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope
@@ -9873,7 +9803,7 @@ export class RoadSystem {
         let csR = null
         const inBore = this.tunnelSpanAt(rv.runKey, rv.arcS)
         if (!inBore || (queryY !== undefined &&
-                        queryY < this.runProfile(rv.arcS, rv.runKey).gradeY + (this._params.tunnelBoreRadius ?? 8))) {
+                        queryY < this.runProfile(rv.arcS, rv.runKey, _CD_RP).gradeY + (this._params.tunnelBoreRadius ?? 8))) {
             csR = this._carveCrossSection(rv.signedLat, rv.arcS, rv.runKey, 1, rawAmp, wx, wz)
         }
         const wB = cs ? cs.blendW : 0, wR = csR ? csR.blendW : 0
@@ -9905,9 +9835,13 @@ export class RoadSystem {
      * it here (without touching _generation — topology is unchanged) forces the next profile query
      * to lazily rebuild camber against the new params. Without this the Camber Strength / Camber Rate
      * sliders recompute carve tables + clear ribbon tiles but re-read the OLD cached camber → no-op.
+     * The R4 frozen-delete set is a product of the BUILD, not a cache: its stamp rides across the
+     * bump, or _graphDegreeOf reads raw degrees (phantom pads / leaf caps) until the next rebuild.
      */
     invalidateProfileCaches() {
+        const keepFrozen = this._v2DelFrozen?.rev === this._networkRev
         this._networkRev++
+        if (keepFrozen) this._v2DelFrozen.rev = this._networkRev
     }
 
     // ── P4: Run-adjacency index (plan 09-29) ─────────────────────────────────────
@@ -9992,14 +9926,15 @@ export class RoadSystem {
      * chain. Memoized per network revision.
      *
      * Why this exists (Road Overhaul): with per-connection runs every macro-anchor is a run boundary,
-     * so camber is stitched across a chain of predecessors (mz:mx ← mz:mx-1 ← …). The previous
+     * so camber is stitched across a chain of predecessors (_predecessorRunKey). The previous
      * _runStartCamber read the predecessor's end from the camber-profile CACHE when present and
      * otherwise recomputed it UNSEEDED — so the seed (hence the whole downstream profile) depended on
      * cache-fill order, i.e. on streaming history. That is exactly the restream-variance the gate
      * catches. This recursion is a pure function of the band's run set: it walks the predecessor chain
      * to the band frontier (predecessor absent → seed 0) and forward-marches each run's raw camber,
-     * so the value is identical regardless of which run was queried first. Acyclic (the predecessor
-     * always has a strictly smaller mx); depth-capped as a belt-and-braces guard.
+     * so the value is identical regardless of which run was queried first. In graph mode run CYCLES
+     * exist: only the depth-16 cap and the tentative memo below bound them, so on a cycle the result
+     * depends on query order — numerically benign, since the slew march converges.
      *
      * @param {string} runKey
      * @param {number} [depth=0]
@@ -10034,32 +9969,6 @@ export class RoadSystem {
     }
 
     // ── D2: One slew-limited camber profile per canonical run (plan 09-21) ───────
-    /**
-     * Build and cache a rate-limited camber profile for the canonical run `runKey`.
-     * Called once per run; subsequent calls return the cached sampled array.
-     *
-     * Algorithm:
-     *   1. Walk the network run's control points, computing arc positions and
-     *      tangents (finite-difference between adjacent points).
-     *   2. At each sample i, compute raw camber = camberFromCurvature(κ_i) — the saturating
-     *      superelevation model (see that helper); κ_i = signedCurvature(T_{i-1}, T_i, ds_i).
-     *   3. Forward-march a slew-rate limit: the stored camber at i+1 cannot change
-     *      by more than roadCamberRate·Δs from the stored camber at i.
-     *   4. Return { arcPos: Float64Array, camberRad: Float64Array } arrays.
-     *
-     * Cache: Map keyed by runKey, invalidated when this._networkRev changes.
-     * O(N) build once per run, O(log N) binary-search per camberProfile query.
-     * No allocation per query (allocation-disciplined inner loop).
-     *
-     * P4 (09-29): camberRad[0] is now seeded from the adjacent predecessor run's end
-     * camber (via _runStartCamber) instead of being forced to 0. Runs with no predecessor
-     * (genuine free starts) still fall through to 0. Cycle-safe: _runStartCamber never
-     * calls _buildCamberProfile recursively (it reads from the already-cached profile or
-     * from a raw forward-march without seeding the predecessor further).
-     *
-     * @param {string} runKey — canonical run key (e.g. "0:0")
-     * @returns {{ arcPos: number[], camberRad: number[] } | null}
-     */
     /**
      * BUG-19: the SINGLE canonical camber computation for a run's centerline points. Arc-length-WINDOWED
      * curvature (camberArcWindow m — spacing-invariant, the BUG-12 camber fix) → camberFromCurvature
@@ -10474,6 +10383,9 @@ export class RoadSystem {
         if (!this._padPlaneCache) this._padPlaneCache = new Map()
         const hit = this._padPlaneCache.get(key)
         if (hit && hit.rev === this._networkRev) return hit.plane
+        // Stale-rev entries are never served — drop them all on the first miss of a new rev, so the
+        // map holds one network's nodes, not every node a session ever visited.
+        if (this._padPlaneCacheRev !== this._networkRev) { this._padPlaneCache.clear(); this._padPlaneCacheRev = this._networkRev }
         const plane = this._computePadPlane(id)
         this._padPlaneCache.set(key, { rev: this._networkRev, plane })
         return plane
@@ -10635,14 +10547,14 @@ export class RoadSystem {
             if (ej.jStart.is) {
                 const d = arcPos[i] - aStart
                 const fs = w(d, hS, RgS)
-                if (fs > fG) { fG = fs; ny = target(ej.jStart, i, d) }
-                if (ej.jStart.flatCamber) { const fc = w(d, hS, RcS); if (fc > fC) { fC = fc; nc = planeCam(ej.jStart, i) } }
+                if (gradeY && fs > fG) { fG = fs; ny = target(ej.jStart, i, d) }
+                if (camberRad && ej.jStart.flatCamber) { const fc = w(d, hS, RcS); if (fc > fC) { fC = fc; nc = planeCam(ej.jStart, i) } }
             }
             if (ej.jEnd.is) {
                 const d = aEnd - arcPos[i]
                 const fs = w(d, hE, RgE)
-                if (fs > fG) { fG = fs; ny = target(ej.jEnd, i, d) }
-                if (ej.jEnd.flatCamber) { const fc = w(d, hE, RcE); if (fc > fC) { fC = fc; nc = planeCam(ej.jEnd, i) } }
+                if (gradeY && fs > fG) { fG = fs; ny = target(ej.jEnd, i, d) }
+                if (camberRad && ej.jEnd.flatCamber) { const fc = w(d, hE, RcE); if (fc > fC) { fC = fc; nc = planeCam(ej.jEnd, i) } }
             }
             if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
             if (camberRad && fC > 0) camberRad[i] += (nc - camberRad[i]) * fC
@@ -10768,14 +10680,39 @@ export class RoadSystem {
         }
     }
 
+    /**
+     * Build and cache a rate-limited camber profile for the canonical run `runKey`.
+     * Called once per run; subsequent calls return the cached sampled array.
+     *
+     * Algorithm:
+     *   1. Walk the network run's control points, computing arc positions and
+     *      tangents (finite-difference between adjacent points).
+     *   2. At each sample i, compute raw camber = camberFromCurvature(κ_i) — the saturating
+     *      superelevation model (see that helper); κ_i = signedCurvature(T_{i-1}, T_i, ds_i).
+     *   3. Forward-march a slew-rate limit: the stored camber at i+1 cannot change
+     *      by more than roadCamberRate·Δs from the stored camber at i.
+     *   4. Return { arcPos: Float64Array, camberRad: Float64Array } arrays.
+     *
+     * Cache: Map keyed by runKey, invalidated when this._networkRev changes.
+     * O(N) build once per run, O(log N) binary-search per camberProfile query.
+     * No allocation per query (allocation-disciplined inner loop).
+     *
+     * P4 (09-29): camberRad[0] is now seeded from the adjacent predecessor run's end
+     * camber (via _runStartCamber) instead of being forced to 0. Runs with no predecessor
+     * (genuine free starts) still fall through to 0. Cycle-safe: _runStartCamber never
+     * calls _buildCamberProfile recursively (it reads from the already-cached profile or
+     * from a raw forward-march without seeding the predecessor further).
+     *
+     * @param {string} runKey — canonical run key (a graph edge, "g:<idA>:<idB>")
+     * @returns {{ arcPos: number[], camberRad: number[] } | null}
+     */
     _buildCamberProfile(runKey) {
         const netEntry = this._network?.get(runKey)
         if (!netEntry || !netEntry.points || netEntry.points.length < 2) return null
         // BUG-19: build via the shared canonical routine, seeded from the predecessor's end (P4/BUG-10).
         // _runEndCamber uses the SAME routine, so the seed equals the predecessor profile's real end.
         const prof = this._computeCamberArrays(netEntry.points, netEntry.arcOrigin, this._runStartCamber(runKey))
-        // BUG-56 B4 first, junction blend second: a ≥3-way node is a flat plaza and outranks a fork's
-        // bank, so the node's camber-kill must be the last word where the two reaches overlap.
+        // A ≥3-way node is a flat plaza: the junction blend's camber-kill is the last word on banking.
         this._applyJunctionBlend(runKey, prof.arcPos, null, prof.camberRad, netEntry.points)   // FEAT-10: camber→0 at shared-anchor junctions
         this._applyMidspanJunctionBlend(runKey, prof.arcPos, null, prof.camberRad)   // FEAT-07 Step 2: camber→0 at AT_GRADE crossings
         return prof
@@ -10789,12 +10726,13 @@ export class RoadSystem {
      * no getPointAt/getTangentAt, no _tiles read. Same XZ arc-walk as _buildCamberProfile.
      * DETERMINISM (D-16): pure function of network entry — no Math.random, no Date, no session state.
      *
-     * @param {string} runKey — canonical run key (e.g. "0:0")
-     * @returns {{ arcPos: number[], gradeY: number[], camberRad: number[], tx: number[], tz: number[] } | null}
+     * @param {string} runKey — canonical run key (a graph edge, "g:<idA>:<idB>")
+     * @returns {{ arcPos: number[], gradeY: number[], gradeM: number[], tx: number[], tz: number[] } | null}
      *   arcPos   — monotone XZ arc-length positions (metres), N entries
      *   gradeY   — routed centerline Y per sample (metres), continuous along the full run
-     *   camberRad — slew-limited banking angle (radians), same computation as _buildCamberProfile
+     *   gradeM   — FEAT-81 dY/d(arc) per sample (Hermite tangents)
      *   tx/tz    — unit XZ tangent (forward direction) per sample; last sample replicates previous
+     *   Banking is NOT here — it is camberProfile()'s (_buildCamberProfile).
      */
     _buildRunProfile(runKey) {
         const netEntry = this._network?.get(runKey)
@@ -10804,25 +10742,13 @@ export class RoadSystem {
         const N = pts.length
 
         const p = this._params || {}
-        const maxCamberRad    = (p.camberMaxAngleDeg ?? 20) * (Math.PI / 180)   // asymptotic max bank
-        const kHalf           = 1 / (p.camberKneeRadiusM ?? 60)                 // half-bank curvature
-        const slewRateRadPerM = (p.roadCamberRate ?? 1.5) * (Math.PI / 180)
-
         const arcPos    = new Array(N)
         const gradeY    = new Array(N)
-        const rawCamber = new Array(N)
         const tx        = new Array(N)
         const tz        = new Array(N)
 
         arcPos[0]    = -(netEntry.arcOrigin ?? 0)   // D-16 Phase 2: owner-origined (matches slicer arcS0/arcS1)
         gradeY[0]    = pts[0].y
-        // P4 (BUG-10): seed from predecessor's end camber instead of hard 0.
-        // Curvature is undefined at sample 0 (no predecessor segment); the boundary
-        // seed carries the correct banking across the shared run boundary node.
-        // _runStartCamber reads from the predecessor's ALREADY-CACHED profile (fast path)
-        // or from a raw forward-march without recursion (slow path). Returns 0 for
-        // genuine free run starts (no predecessor). Cycle-safe.
-        rawCamber[0] = this._runStartCamber(runKey)
 
         // Forward tangent for sample 0: direction toward sample 1.
         {
@@ -10844,40 +10770,8 @@ export class RoadSystem {
             const segLen = ds || 1e-8
             tx[i] = ax / segLen
             tz[i] = az / segLen
-
-            // Curvature at i: finite-difference using prev-seg tangent (T0) and next-seg tangent (T1).
-            const t0x = ax, t0z = az   // unnormalized; signedCurvature normalises internally
-            let t1x, t1z, effectiveDs
-            if (i < N - 1) {
-                t1x = pts[i + 1].x - pts[i].x
-                t1z = pts[i + 1].z - pts[i].z
-                const ds1 = Math.sqrt(t1x * t1x + t1z * t1z) || 1e-8
-                effectiveDs = (ds + ds1) * 0.5
-            } else {
-                t1x = t0x; t1z = t0z   // boundary: replicate
-                effectiveDs = ds || 1e-8
-            }
-
-            const kappa = signedCurvature(t0x, t0z, t1x, t1z, effectiveDs)
-            rawCamber[i] = camberFromCurvature(kappa, maxCamberRad, kHalf)
         }
-
-        // Last sample: replicate tangent from second-to-last segment.
-        // (already computed above — tx[N-1]/tz[N-1] = forward tangent of last segment, correct)
-
-        // Forward-march slew-rate limit for camber.
-        const camberRad = new Array(N)
-        camberRad[0] = rawCamber[0]
-        for (let i = 1; i < N; i++) {
-            const ds       = arcPos[i] - arcPos[i - 1]
-            const maxDelta = slewRateRadPerM * ds
-            const prev     = camberRad[i - 1]
-            const target   = rawCamber[i]
-            const delta    = target - prev
-            if      (delta >  maxDelta) camberRad[i] = prev + maxDelta
-            else if (delta < -maxDelta) camberRad[i] = prev - maxDelta
-            else                        camberRad[i] = target
-        }
+        // (tx[N-1]/tz[N-1] = forward tangent of the last segment.)
 
         // FEAT-10: seal the ribbon across run joins. The ribbon cross-section frame is runProfile.tx/tz;
         // at a run's endpoints the LOCAL last-segment direction kinks vs the neighbour run, so the two
@@ -10907,16 +10801,16 @@ export class RoadSystem {
             }
         }
 
-        // FEAT-10: flatten grade → nodeY and camber → 0 near merged junction endpoints so crossing
-        // runs agree at the node (no invisible collision step, no banking jolt). Same blend as
-        // _buildCamberProfile → the ribbon (camberProfile) and the run profile stay in sync at junctions.
-        this._applyJunctionBlend(runKey, arcPos, gradeY, camberRad, pts)
+        // FEAT-10: flatten grade → nodeY near merged junction endpoints so crossing runs agree at the
+        // node (no invisible collision step). Banking is camberProfile's (_buildCamberProfile runs the
+        // camber half of the same blends), so this profile carries no camber.
+        this._applyJunctionBlend(runKey, arcPos, gradeY, null, pts)
         // FEAT-07 Step 2: same flatten at AT_GRADE mid-span crossings (both strands → one shared node Y).
-        this._applyMidspanJunctionBlend(runKey, arcPos, gradeY, camberRad)
+        this._applyMidspanJunctionBlend(runKey, arcPos, gradeY, null)
 
         // FEAT-81: tangents for the C¹ profile, on the FINAL gradeY (post-blend).
         const gradeM = _profileTangents(arcPos, gradeY)
-        return { arcPos, gradeY, gradeM, camberRad, tx, tz }
+        return { arcPos, gradeY, gradeM, tx, tz }
     }
 
     /**
@@ -10946,7 +10840,8 @@ export class RoadSystem {
             return _interpolateCamber(cached.arcPos, cached.camberRad, arcS)
         }
 
-        // (Re)build the profile for this run.
+        // (Re)build the profile for this run — first dropping every stale-rev entry (never served).
+        if (this._camberProfileCacheRev !== currentRev) { this._camberProfileCache.clear(); this._camberProfileCacheRev = currentRev }
         const profile = this._buildCamberProfile(runKey)
         if (!profile) return 0
 
@@ -10956,33 +10851,32 @@ export class RoadSystem {
 
     /**
      * P0 — Continuous per-run profile sampler (plan 09-25).
-     * Returns gradeY/camberRad/tx/tz sampled at run-global arc-position `arcS` for `runKey`.
+     * Returns gradeY/tx/tz sampled at run-global arc-position `arcS` for `runKey`.
      *
      * ONE source, ONE arc domain. Both sides of any tile/chunk seam resolve to the same arcS,
      * so anything read by arcS is C0 by construction — seam-continuity is guaranteed.
      *
      * Cache: lazy-init `this._runProfileCache` Map, entries keyed by runKey carrying
-     *   { rev, arcPos, gradeY, gradeM, camberRad, tx, tz }.
+     *   { rev, arcPos, gradeY, gradeM, tx, tz }.
      * Invalidation: rebuilt when `this._networkRev` differs from the stored rev (same discipline
      *   as camberProfile / _camberProfileCache).
      * Query: ONE binary search on arcPos via _interpolateRunProfile, O(log N) per call.
-     * Allocation: the returned object { gradeY, camberRad, tx, tz } is the ONLY allocation
+     * Allocation: the returned object { gradeY, tx, tz } is the ONLY allocation
      *   per query. Signature optionally accepts a caller-provided `out` object to avoid it.
      *
      * @param {number} arcS   — run-global arc-length position (metres)
-     * @param {string} runKey — canonical run key matching the network entry (e.g. "0:0")
-     * @param {object} [out]  — optional reusable { gradeY, camberRad, tx, tz } to write into
-     * @returns {{ gradeY: number, camberRad: number, tx: number, tz: number }}
+     * @param {string} runKey — canonical run key matching the network entry ("g:<idA>:<idB>")
+     * @param {object} [out]  — optional reusable { gradeY, tx, tz } to write into
+     * @returns {{ gradeY: number, tx: number, tz: number }}
      *   gradeY    — routed centerline Y (metres)
-     *   camberRad — slew-limited banking angle (radians)
-     *   tx / tz   — unit XZ forward tangent components
-     *   Falls back to zeroed sample { gradeY:0, camberRad:0, tx:1, tz:0 } for unknown/empty run.
+     *   tx / tz   — unit XZ forward tangent components (banking is camberProfile()'s)
+     *   Falls back to zeroed sample { gradeY:0, tx:1, tz:0 } for unknown/empty run.
      */
     runProfile(arcS, runKey, out) {
-        const result = out ?? { gradeY: 0, camberRad: 0, tx: 1, tz: 0 }
+        const result = out ?? { gradeY: 0, tx: 1, tz: 0 }
 
         if (!runKey) {
-            result.gradeY = 0; result.camberRad = 0; result.tx = 1; result.tz = 0
+            result.gradeY = 0; result.tx = 1; result.tz = 0
             return result
         }
 
@@ -10992,14 +10886,15 @@ export class RoadSystem {
         const currentRev = this._networkRev
         const cached = this._runProfileCache.get(runKey)
         if (cached && cached.rev === currentRev) {
-            // Fast path: ONE binary search, interpolate all four arrays.
+            // Fast path: ONE binary search, interpolate the arrays.
             return _interpolateRunProfile(
-                cached.arcPos, cached.gradeY, cached.gradeM, cached.camberRad, cached.tx, cached.tz,
+                cached.arcPos, cached.gradeY, cached.gradeM, cached.tx, cached.tz,
                 arcS, result
             )
         }
 
-        // (Re)build profile for this run.
+        // (Re)build profile for this run — first dropping every stale-rev entry (never served).
+        if (this._runProfileCacheRev !== currentRev) { this._runProfileCache.clear(); this._runProfileCacheRev = currentRev }
         const profile = this._buildRunProfile(runKey)
         if (!profile) {
             // BUG-14 secondary: runKey not found in this._network — _tiles/_network desync.
@@ -11007,13 +10902,13 @@ export class RoadSystem {
             // from this._network by a re-stream. Fail loud so the caller can diagnose (D-16).
             // Do NOT silently snap gradeY to 0 (that would pull the truck underground).
             if (runKey) console.warn(`[road] runProfile: runKey "${runKey}" not in _network (desync) arcS=${arcS.toFixed(1)}`)
-            result.gradeY = 0; result.camberRad = 0; result.tx = 1; result.tz = 0
+            result.gradeY = 0; result.tx = 1; result.tz = 0
             return result
         }
 
         this._runProfileCache.set(runKey, { rev: currentRev, ...profile })
         return _interpolateRunProfile(
-            profile.arcPos, profile.gradeY, profile.gradeM, profile.camberRad, profile.tx, profile.tz,
+            profile.arcPos, profile.gradeY, profile.gradeM, profile.tx, profile.tz,
             arcS, result
         )
     }
@@ -11045,10 +10940,9 @@ export class RoadSystem {
      * its midpoint, build its centripetal Catmull-Rom spline, and store it in `this._tiles`.
      * Skips sub-polylines that collapse to < 2 distinct points.
      * @param {THREE.Vector3[]} pts — a sub-polyline (one tile's slice of a network polyline)
-     * @param {string} runKey — parent network-run key (so adjacent tiles can pick the same run)
-     * @param {number} runWeight — parent run's total point count (representative tie-break)
+     * @param {string} runKey — parent network-run key
      */
-    _assignSlice(pts, runKey, runWeight, arcSHead = 0, arcSTail = 0) {
+    _assignSlice(pts, runKey, arcSHead = 0, arcSTail = 0) {
         // Centripetal divide-by-zero guard: drop consecutive coincident control points.
         const clean = []
         for (const p of pts) {
@@ -11066,9 +10960,8 @@ export class RoadSystem {
         const tileZ = Math.floor(mid.z / CHUNK_SIZE)
         const key = `${tileX},${tileZ}`
 
-        // Orient the slice WEST→EAST (increasing x) so the seam harness's getPoint(0.0)=west-edge /
-        // getPoint(1.0)=east-edge convention holds: a tile's east-edge point matches the east
-        // neighbour's west-edge point (both are the same sliced boundary crossing → C0/C1).
+        // Orient the slice WEST→EAST (increasing x): getPoint(0.0)=west end, getPoint(1.0)=east end.
+        // queryNearest's tangent / camberSign convention (WR-04) is expressed in this sweep frame.
         const head = clean[0], tail = clean[clean.length - 1]
         const reversed = (tail.x < head.x)
         if (reversed) clean.reverse()
@@ -11082,14 +10975,6 @@ export class RoadSystem {
         const arcS0 = reversed ? arcSTail : arcSHead
         const arcS1 = reversed ? arcSHead : arcSTail
 
-        // Record which tile boundaries this slice touches, so ensureTile can prefer an E-W-spanning
-        // representative (one whose endpoints sit on the shared E/W boundaries the harness reads).
-        const xw = tileX * CHUNK_SIZE, xe = (tileX + 1) * CHUNK_SIZE
-        const a0 = clean[0], a1 = clean[clean.length - 1]
-        const touchesWest = Math.abs(a0.x - xw) < 1e-3
-        const touchesEast = Math.abs(a1.x - xe) < 1e-3
-        const spanScore = (touchesWest ? 1 : 0) + (touchesEast ? 1 : 0)
-
         // Phase B (BUG-12 fold fix): sample the run's EXACT primitive centerline instead of re-fitting
         // these control points with overshooting centripetal Catmull-Rom. Map this slice's owner-
         // origined run-arc [arcS0, arcS1] to centerline arc by fraction of polyArc (both endpoints of a
@@ -11097,10 +10982,9 @@ export class RoadSystem {
         // from `clean` (already graded) so gradeY/camber agreement is unchanged; only XZ stops folding.
         // Fallback to Catmull-Rom for edge fragments with no centerline (tiny truncated bits).
         const entry = this._network.get(runKey)
-        // BUG-53: over a ceded strand the run's primitive centerline is a stale record (the points
-        // follow the winner's course), and over a TAPER BAND the points are a blend that was never
-        // on any centerline. Both must sweep from the points (Catmull-Rom fallback) or the ribbon
-        // follows the old line off the carve — a fringe-served ceded slice, and every taper.
+        // BUG-53: inside an offCurveSpan (a promoted T's departure band, a shove's deflection) the
+        // points are not on the run's primitive centerline, so the slice must sweep from the points
+        // (Catmull-Rom fallback) or the ribbon follows the old line off the carve.
         let cededHere = false
         if (entry && entry.offCurveSpans) {
             const ao = entry.arcOrigin ?? 0
@@ -11123,7 +11007,7 @@ export class RoadSystem {
         }
         let arr = this._tiles.get(key)
         if (!arr) { arr = []; this._tiles.set(key, arr) }
-        arr.push({ spline, points: clean, waypoints: clean, runKey, runWeight, spanScore, arcS0, arcS1 })
+        arr.push({ spline, points: clean, runKey, arcS0, arcS1, bb: null })   // bb: queryNearest's lazy XZ sample box
     }
 
 }

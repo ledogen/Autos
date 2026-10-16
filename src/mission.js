@@ -14,7 +14,8 @@
  *   - SM-INV-2 — par comes from src/par.js, which reads road geometry only. Nothing here may feed
  *     it a vehicle quantity.
  *   - SM-INV-3 — no par countdown on the HUD while driving. The player sees elapsed time and
- *     distance-to-go; par is revealed only in the result card, after arrival.
+ *     distance-to-go; par itself is never shown — its surface is the letter (result card, and live
+ *     on the FEAT-87 rank timer).
  *   - REGENERATE/RETRY are testing affordances and are labelled as such. Real story mode has no
  *     do-overs: regenerate exists only for Quick Job (a POI job's offers come from the mission
  *     board, FEAT-67), and retry is gated off for paid jobs by PAID_JOB_DO_OVERS. Quick Job keeps
@@ -100,6 +101,12 @@ const REGION_ROLL_TRIES = 8         // re-rolls before admitting the region has 
 // lie about itself. One rate, one constant, both callers.
 export const TRACE_HZ = 10          // driven-trace sample rate
 export const TRACE_DIV = Math.round(60 / TRACE_HZ)
+/** One driven-trace row — buildRunExport's trace `columns`, in order. */
+export const traceRow = (c, t) => [
+    +t.toFixed(2), +c.x.toFixed(2), +(c.y ?? 0).toFixed(2), +c.z.toFixed(2),
+    +(c.speed ?? 0).toFixed(2), +(c.heading ?? 0).toFixed(3),
+    +(c.throttle ?? 0).toFixed(2), +(c.brake ?? 0).toFixed(2), +(c.steer ?? 0).toFixed(3),
+]
 const TOPO_DS = 2.0                 // m — topology export spacing (matches par's own sampling)
 
 /**
@@ -608,11 +615,7 @@ export class MissionSystem {
         // the topology array.
         if ((this._traceTick++ % TRACE_DIV) === 0) {
             const c = this._getCar()
-            this._trace.push([
-                +this.elapsed.toFixed(2), +c.x.toFixed(2), +(c.y ?? 0).toFixed(2), +c.z.toFixed(2),
-                +c.speed.toFixed(2), +(c.heading ?? 0).toFixed(3),
-                +(c.throttle ?? 0).toFixed(2), +(c.brake ?? 0).toFixed(2), +(c.steer ?? 0).toFixed(3),
-            ])
+            this._trace.push(traceRow(c, this.elapsed))
         }
         // FEAT-102: a fetch's outbound leg ends with a PARK at the pickup (acquire()), never a
         // drive-by — and the giver's own end sits inside the start zone, so testing it here would
@@ -709,7 +712,7 @@ export class MissionSystem {
     }
 
     /**
-     * Roll one mission. Plan on the node graph with straight-line edge lengths (cheap — anchors
+     * Roll one mission. Plan on the node graph with road-metre edge lengths (BUG-52; cheap — anchors
      * only, no routing), then route ONLY the chosen path and price it with the par oracle.
      *
      * Par is the time on THIS route, the geometrically shortest one. That is honest for a beta
@@ -760,7 +763,7 @@ export class MissionSystem {
         // thing that bounds a job is the WALL rather than a window that slid about with the truck;
         // the shortest-path route body stays intentional (a quick job takes the natural line).
 
-        // Dijkstra over straight-line graph edges from one start → reachable nodes in the leg band,
+        // Dijkstra over the graph's road-metre edges (BUG-52) from one start → reachable nodes in the leg band,
         // capped at MAX_EDGES hops. No routing here (graph metric only), so it's cheap to run per
         // start candidate. Returns the parent chain plus the qualifying endpoints.
         const legCandidates = (startK, lo = LEG_MIN) => {
@@ -971,10 +974,7 @@ export class MissionSystem {
         if (!(time > 0)) return null
 
         // Cumulative XZ arc along the map polyline, for the HUD's route-remaining readout.
-        const polyCum = [0]
-        for (let i = 1; i < poly.length; i++) {
-            polyCum.push(polyCum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].z - poly[i - 1].z))
-        }
+        const polyCum = polyCumOf(poly)
 
         // FEAT-43 guard 2: the routed road between two in-region nodes can still bow past the wall,
         // so re-check what the player will actually drive. Cheap — poly is already built, and it is
@@ -1004,6 +1004,15 @@ export class MissionSystem {
     }
 }
 
+/** Cumulative XZ arc length at each vertex of a {x,z} polyline — the HUD's route-remaining table. */
+export function polyCumOf (poly) {
+    const cum = [0]
+    for (let i = 1; i < poly.length; i++) {
+        cum.push(cum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].z - poly[i - 1].z))
+    }
+    return cum
+}
+
 /**
  * FEAT-102: turn a planned giver → pickup route into the whole FETCH — out to the pickup and back
  * the same way (FEAT-89: "the return re-uses the outbound route"). One par over both legs: the
@@ -1026,10 +1035,7 @@ function fetchRoute (m, giverId) {
     const segments = [...out, ...back]
     const { time, distance } = computePar(segments)
     const poly = [...m.poly, ...m.poly.slice(0, -1).reverse()]
-    const polyCum = [0]
-    for (let i = 1; i < poly.length; i++) {
-        polyCum.push(polyCum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].z - poly[i - 1].z))
-    }
+    const polyCum = polyCumOf(poly)
     const home = { x: m.start.x, z: m.start.z }
     return {
         ...m, par: time, distance, poly, polyCum, segments, edges: segments.length, end: home,
@@ -1150,6 +1156,10 @@ export function buildRunExport ({ note = '', segs, result, edges = 0, start = nu
             // future refit silently mixes scales — which is exactly the trap the runs recorded
             // before the re-anchor fell into.
             par_ref: { ...PAR_REF, slack: PAR_SLACK },
+            // The job's own par stretch (main.js _planOffer: haul × HAUL_PAR_SLACK, freight ×
+            // (1 + FREIGHT_PAR_SLACK_PER_KG · kg); 1 for everything else). `par_s` carries it,
+            // `par_ms` and `par_avg_kmh` are the bare oracle — divide by this to put them on one scale.
+            par_job_mult: result?.par_s > 0 ? +(result.par_s / par.time).toFixed(4) : null,
             route: {
                 distance_m: +total.toFixed(1),
                 edges,

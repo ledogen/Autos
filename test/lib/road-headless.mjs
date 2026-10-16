@@ -38,7 +38,7 @@ export function COARSE_HEIGHT(x, z) {
 export const TEST_PARAMS = {
     // Coarse terrain layer (router ignores these when an override is supplied, but ctor still reads
     // them to build the simplex closure; harmless).
-    coarseAmplitude: 150, coarseFreq: 0.0005, coarseOctaves: 4, ridgeSharpness: 1.6, terrainAmplitude: 1.0,
+    coarseAmplitude: 150, coarseFreq: 0.0005, coarseOctaves: 4, ridgeSharpness: 1.6,
 
     // QUAL-28: the v1 arc-lattice weight family (maxRoadGrade, roadWDist/WAlt/WGrade/WOver/WTurn,
     // roadArcHardRadius/GentleRadius/HeurWeight) is GONE — FEAT-68 deleted the router that priced

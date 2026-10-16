@@ -25,7 +25,6 @@ These are the calibration pieces. When unsure, open them and match.
 | Asset | Tris | Materials | Textures | What it teaches |
 |---|---|---|---|---|
 | `trailer-home-a.glb` | 1192 | 8 | **0** | The house style. Siding, curtains, battens, trim — all geometry |
-| `hilux.glb` (3rd-party, CC-BY) | 1908 | 10 | **0** | A whole vehicle in flat colour. Roughness 1.0, metalness 0, everywhere |
 | `broken-car.glb` | 2086 | 8 | **0** | A vehicle POI with a *situation*. Carries glass + a minimal interior — see "Glass and interiors" |
 | `ranger.glb` | 2910 | 9 | **0** | The HERO vehicle. Clear glass, a real cockpit, an open bed, and no wheels (the game owns those). Everything the player stares at for twenty hours |
 | `news-roll.glb` | 358 | 2 | **1** | The first legitimate texture: printed newsprint. Text is information geometry can't carry |
@@ -138,7 +137,7 @@ Real budgets from the shipped asset tickets:
 | Small scatter / repeated dressing | **250–500** | mailbox, crate, pallet, gnome, beach ball |
 | Hand props, camp gear, cargo | **350–700** | newspaper roll (358), cooking kit, propane tank |
 | Mid structures, furniture clusters | **700–1800** | awning, produce stall, fire pit |
-| POI buildings, vehicles | **1200–4000** | trailer home (1192), hilux (1908), sawmill, gas station |
+| POI buildings, vehicles | **1200–4000** | trailer home (1192), broken car (2086), sawmill, gas station |
 | **The hero vehicle** (one asset) | **4000** | `ranger.glb` (2910) — budgeted by hours looked at, not by repeats |
 
 Budget by **how often it repeats**, not by how important it feels. One ticket puts it well: *"it will
