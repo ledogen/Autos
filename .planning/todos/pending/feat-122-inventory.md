@@ -27,10 +27,17 @@ first, which is why FEAT-121 never lists it under `needs:`.
   The inventory records the fit; the physics reads `data/ranger.js` values through it.
 - **No numbers on items in the UI** (SM-INV-10). Described, never scored.
 - **One grant path** for shop purchases, rewards (FEAT-67's stub) and finds.
+- **Camp gear is owned OR packed** (items.md §2c, owner 2026-10-16). Owned camp gear is truck mass;
+  the equipped backpack holds the subset that comes to camp — one item per slot; the bedroll takes
+  one, the fire none. Several packs can be owned (spares ride in the truck); one is equipped at a
+  time, used automatically at camp, and its reach sets `campRoadEdgeM` for the night. The equipped
+  pack must always hold a sleeping item: packing can swap the bedroll for an upgrade, never empty
+  that slot. The inventory screen is where you pack and choose the equipped pack.
 
 ## Open — the owner's (items.md Gaps #3)
 
 1. **Slots or mass?** Is the limit a slot count, a mass/volume budget, or nothing but the mass itself?
+   *Camp gear is answered: the backpack's slots (§2c). Everything else is still open.*
 2. **Quick slots (§1c).** Keys 1–4 for instant-use items while driving: how many, and is it
    consumable-only or also cooldown items?
 3. **Where is the inventory screen?** The campsite is the inventory screen for camp gear (visible-kit
@@ -40,7 +47,7 @@ first, which is why FEAT-121 never lists it under `needs:`.
 ## Acceptance
 
 - A REWARDS grant puts the item in the inventory and its effect, if built, applies.
-- Inventory is empty at run start.
+- Inventory holds only the starting kit at run start: the Pack with the bedroll packed (items.md §2c).
 - Stowed mass shows up in the truck's total mass.
 
 **Not here — SM-4:** the inventory surviving save/load inside a run rides on the run save (FEAT-42).

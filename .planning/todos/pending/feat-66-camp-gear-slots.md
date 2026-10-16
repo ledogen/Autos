@@ -78,6 +78,11 @@ per-pixel cost while driving.
 - Remaining scope: shelter (tent / bedroll), over-fire (ASSET-25), shade (ASSET-26), and the
   inventory → slot mapping (visible-kit rule).
 
+**Update 2026-10-16 — the slot mapping reads the BACKPACK, not the inventory** (items.md §2c,
+owner). Owned camp gear rides in the truck; only what is **packed** comes out at camp, set up
+automatically. So the renderer resolves slot → packed item → model id. Every run starts with the
+Pack (2 slots) holding the bedroll; the fire is always there and takes no slot.
+
 ## Notes
 
 - **No tier language in the registry** (SM-INV-10 via items.md): the sleeping-bag/tent difference
