@@ -494,10 +494,6 @@ export class Map2D {
         this._onLeave = () => { this._hoverX = undefined; this._hoverPoi = null }
     }
 
-    // QUAL-08: attach the dedicated road-network routing Worker so the map's read-only RoadSystem routes
-    // OFF the main thread (client 'map'), decoupled from the play/terrain pipeline. Optional — without it
-    // the map falls back to synchronous routing (its prior behaviour). Wired in _buildRoad on (re)build.
-
     /** PERF-30: the network-Worker client — the whole map build runs off-thread (client 'map'). */
     setNetworkClient(c) { this._netClient = c }
 
@@ -1549,14 +1545,16 @@ export class Map2D {
     }
 
     /**
-     * Resolve the tree-cover raster over a lattice rect, as a 0..1 vegetation weight per cell.
+     * Resolve the tree-cover raster over a lattice rect, as one cover bin per cell (COVER_LOW /
+     * _MED / _HIGH), plus whether the scatter replay ran (`replayed`).
      *
      * Per-chunk results are memoized FOREVER (keyed by chunk, cleared only when the seed changes),
      * which is the whole reason this is affordable: cover is a property of the world, not of the
      * view, so a chunk resolved once at one zoom is still valid at every other zoom and after any
      * pan. Only newly-revealed chunks ever cost anything.
      *
-     * Returns null when the visible chunk count blows the budget — see COVER_CHUNK_BUDGET.
+     * Always returns bins. COVER_CHUNK_BUDGET only gates the scatter replay: past it the sheet
+     * still gets its biome fill, just no MED/HIGH split (and so no foliage glyphs).
      */
     _coverRaster(wx0, wz0, gw, gh) {
         const road = this._road
@@ -1644,9 +1642,8 @@ export class Map2D {
                     for (let li = 0; li < CELLS_PER_CHUNK; li++) {
                         const gi = Math.round((cx * CH + li * COVER_CELL - wx0) / COVER_CELL)
                         if (gi < 0 || gi >= gw) continue
-                        // No counts (replay skipped) → leave the count at 0 and mark the cell
-                        // DENSITY-UNKNOWN via `known`, so the binning below cannot mistake a
-                        // missing read for genuinely open ground.
+                        // No counts (replay skipped) → the count stays 0. That cannot print as open
+                        // ground: the biome alone decides white, and HIGH needs `replay` (binning below).
                         if (cc.counts) out[gj * gw + gi] = cc.counts[lj * CELLS_PER_CHUNK + li]
                         open[gj * gw + gi] = cc.bio[lj * CELLS_PER_CHUNK + li]
                     }

@@ -287,16 +287,6 @@ export class DirtSpraySystem {
   }
 
   /**
-   * Advance + emit. Call once per render frame, right after TireSmokeSystem.update.
-   *
-   * @param {number} dt          render frame time [s]
-   * @param {object} vehicleState
-   * @param {object} params      RANGER_PARAMS
-   * @param {(x:number,z:number)=>number} groundYAt        ground surface height sampler
-   * @param {((x:number,z:number)=>number)} [looseFactorAt] 0..1 loose-surface factor (main.js's
-   *        looseSurfaceFactor: ~0.1 on asphalt, 1 off-road). Defaults to 1 (all loose).
-   */
-  /**
    * Push the day/night irradiance multiplier (SkySystem.particleLight) into the shader. Called once
    * per render frame from main.js — these billboards are unlit, so this is their only light source.
    * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
@@ -308,6 +298,16 @@ export class DirtSpraySystem {
     u.uLightA.value = alpha
   }
 
+  /**
+   * Advance + emit. Call once per render frame, right after TireSmokeSystem.update.
+   *
+   * @param {number} dt          render frame time [s]
+   * @param {object} vehicleState
+   * @param {object} params      RANGER_PARAMS
+   * @param {(x:number,z:number)=>number} groundYAt        ground surface height sampler
+   * @param {((x:number,z:number)=>number)} [looseFactorAt] 0..1 loose-surface factor (main.js's
+   *        looseSurfaceFactor: ~0.1 on asphalt, 1 off-road). Defaults to 1 (all loose).
+   */
   update (dt, vehicleState, params, groundYAt, looseFactorAt) {
     if (dt <= 0) return
     if (dt > 0.1) dt = 0.1

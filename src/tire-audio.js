@@ -35,7 +35,7 @@
  * on the shoulder feeds both generators. Every param moves via setTargetAtTime so nothing clicks.
  *
  * NOTE: wheelDebug[i].sa is friction-circle-CLAMPED at ≈0.06 (BUG-20 break-away clamp) and is NOT a
- * slip magnitude — vLong/vLat are the real contact-patch slip speeds. Same gotcha as smoke.js:291.
+ * slip magnitude — vLong/vLat are the real contact-patch slip speeds. Same gotcha as smoke.js update().
  *
  * Shares the AudioContext with engine-audio.js (getAudioContext) but keeps its own master gain
  * straight into ctx.destination, so tire volume is independent of engine volume.
@@ -126,8 +126,8 @@ const ROLL_EXP     = 1.4       // level = (v/ROLL_V_REF)^this — rolling noise 
 // deliberate choices carry the weight:
 //   · brown noise for BOTH layers, no white anywhere. White noise is flat to 20 kHz and reads as
 //     hiss/static however you filter it; brown falls at 6 dB/octave, so what survives is mass.
-//   · SLAM is AM'd by a sawtooth at a few impacts per wheel revolution — at a crawl you hear the
-//     individual hits, at speed they fuse into a growl. A steady gain cannot do that.
+//   · SLAM is AM'd by a band-limited pulse at a few impacts per wheel revolution — at a crawl you
+//     hear the individual hits, at speed they fuse into a growl. A steady gain cannot do that.
 const ROAD_LP_BASE = 90        // Hz — body cutoff at the floor (was 140: still too papery)
 const ROAD_LP_RISE = 250       // Hz — added at ROLL_V_REF
 const ROAD_SLAM_F    = 135     // Hz — carcass ring the impacts excite
@@ -365,7 +365,7 @@ export function ensureTireAudio () {
   roadLp.connect(roadHumGain)
   loopNoise(ctx, roadBrown).connect(roadLp)
 
-  // Impact bus: a resonant band around the carcass ring, hard-AM'd by the block-passage sawtooth.
+  // Impact bus: a resonant band around the carcass ring, hard-AM'd by the block-passage pulse.
   // Same LFO-summed-into-the-gain-param trick the screech judder uses — see the note on _muteAll.
   roadSlamGain = ctx.createGain()
   roadSlamGain.gain.value = 0

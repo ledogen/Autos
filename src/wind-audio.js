@@ -47,9 +47,6 @@ let master = null
 let bodyLp = null, bodyGain = null
 let hissBp = null, hissGain = null
 
-// Each tap (engine-audio.js loopNoise) starts at its own random offset into the looped buffer: two
-// taps of one buffer that start together play the SAME samples, so their layers would correlate.
-
 /** Build + start the wind graph (idempotent). Must be reached from a user gesture. */
 export function ensureWindAudio () {
   if (started) return

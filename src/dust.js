@@ -26,10 +26,11 @@
  *    params alone (no suspension.js / terrain.js import) so the main.js hook is a
  *    single call. Ground height comes from an injected sampler closure.
  *
- * Emission is driven by per-wheel contact-patch slip velocity (vehicleState.wheelDebug[i].sa,
- * m/s — wheelspin, lockup, drift) plus a speed term, so dust grows with how hard the
- * tyre is working against the dirt. Rear (driven) wheels kick harder. No dust when a
- * wheel is airborne or the truck is crawling.
+ * Emission intensity is mostly a ground-speed term: the slip term reads wheelDebug[i].sa, which the
+ * friction circle clamps at ≈0.06, so it barely moves (see the note in update()). Rear (driven)
+ * wheels kick harder. Real wheelspin shows up elsewhere: the raw contact-patch slip speed (vLong)
+ * kicks each puff out backward, and slipVel lets a burnout at rest raise dust below SPEED_FLOOR.
+ * No dust when a wheel is airborne or the truck is crawling without slip.
  *
  * TWO KINDS, ONE POOL, ONE DRAW CALL: a per-particle `kind` flag selects the integrator and fade.
  * Puffs (kind 0) are the soft drifting haze described above. Grit (kind 1) is a slice of the same
@@ -265,10 +266,10 @@ export class DustSystem {
     this._tmpColor = new THREE.Color()
   }
 
-  /** Grab the next pool slot (oldest is overwritten when the pool is saturated). */
   /** Show/hide the dust sheet (FEAT-31 testing-lab teardown — visibility only). */
   setVisible (visible) { this._mesh.visible = visible }
 
+  /** Grab the next pool slot (oldest is overwritten when the pool is saturated). */
   _alloc () {
     for (let n = 0; n < POOL_SIZE; n++) {
       const idx = (this._cursor + n) % POOL_SIZE
@@ -400,17 +401,6 @@ export class DustSystem {
   }
 
   /**
-   * Advance + emit. Call once per render frame, after syncMeshesToState so vehicleState
-   * holds the interpolated render pose (puffs spawn at the rendered wheel position).
-   *
-   * @param {number} dt          render frame time [s]
-   * @param {object} vehicleState
-   * @param {object} params      RANGER_PARAMS
-   * @param {(x:number,z:number)=>number} groundYAt  ground surface height sampler
-   * @param {((x:number,z:number)=>number)} [onRoadFactorAt]  optional 0..1 dust multiplier by
-   *        position — < 1 on the paved ribbon so on-road dust is reduced (defaults to 1 = full).
-   */
-  /**
    * Push the day/night irradiance multiplier (SkySystem.particleLight) into the shader. Called once
    * per render frame from main.js — these billboards are unlit, so this is their only light source.
    * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
@@ -422,6 +412,17 @@ export class DustSystem {
     u.uLightA.value = alpha
   }
 
+  /**
+   * Advance + emit. Call once per render frame, after syncMeshesToState so vehicleState
+   * holds the interpolated render pose (puffs spawn at the rendered wheel position).
+   *
+   * @param {number} dt          render frame time [s]
+   * @param {object} vehicleState
+   * @param {object} params      RANGER_PARAMS
+   * @param {(x:number,z:number)=>number} groundYAt  ground surface height sampler
+   * @param {((x:number,z:number)=>number)} [onRoadFactorAt]  optional 0..1 dust multiplier by
+   *        position — < 1 on the paved ribbon so on-road dust is reduced (defaults to 1 = full).
+   */
   update (dt, vehicleState, params, groundYAt, onRoadFactorAt) {
     if (dt <= 0) return
     if (dt > 0.1) dt = 0.1  // clamp after a tab-stall so puffs don't teleport

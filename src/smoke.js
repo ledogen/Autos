@@ -194,6 +194,18 @@ export class TireSmokeSystem {
   }
 
   /**
+   * Push the day/night irradiance multiplier (SkySystem.particleLight) into the shader. Called once
+   * per render frame from main.js — these billboards are unlit, so this is their only light source.
+   * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
+   * @param {number} alpha — opacity multiplier for the same reason (see the shader note).
+   */
+  setLight (c, alpha) {
+    const u = this._mesh.material.uniforms
+    u.uLight.value.copy(c)
+    u.uLightA.value = alpha
+  }
+
+  /**
    * Advance + emit. Call once per render frame, after syncMeshesToState (same convention as
    * DustSystem.update — see dust.js).
    *
@@ -206,18 +218,6 @@ export class TireSmokeSystem {
    *        ~dustPavedFactor on the ribbon, 1 off it, feathered across the shoulder). BUG-38 reads
    *        it INVERTED: pavement smokes, dirt barely does. Omitted (lab, headless) → all pavement.
    */
-  /**
-   * Push the day/night irradiance multiplier (SkySystem.particleLight) into the shader. Called once
-   * per render frame from main.js — these billboards are unlit, so this is their only light source.
-   * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
-   * @param {number} alpha — opacity multiplier for the same reason (see the shader note).
-   */
-  setLight (c, alpha) {
-    const u = this._mesh.material.uniforms
-    u.uLight.value.copy(c)
-    u.uLightA.value = alpha
-  }
-
   update (dt, vehicleState, params, groundYAt, looseFactorAt) {
     if (dt <= 0) return
     if (dt > 0.1) dt = 0.1
