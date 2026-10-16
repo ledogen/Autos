@@ -854,7 +854,7 @@ export class TerrainSystem {
      */
     isRingSettled() {
         if (this._lastCcx === undefined || this._activeBuild || this._activeRecarve) return false
-        const r = this._ringRadius ?? RING_RADIUS
+        const r = this._ringRadius
         for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
             if (!this.isChunkReady(this._lastCcx + dx, this._lastCcz + dz)) return false
         }
@@ -1062,8 +1062,8 @@ export class TerrainSystem {
      * @private
      */
     _updateChunkRing(ccx, ccz) {
-        const ringRadius  = this._ringRadius ?? RING_RADIUS
-        const buildRadius = ringRadius + (this._warmMargin ?? 0)   // Phase 3: generate one warm ring beyond visible
+        const ringRadius  = this._ringRadius
+        const buildRadius = ringRadius + this._warmMargin   // Phase 3: generate one warm ring beyond visible
 
         // Build the target set of keys to REQUEST/build (visible ring + warm margin).
         const needed = new Set()
@@ -1347,8 +1347,8 @@ export class TerrainSystem {
     // chunk (row-major, pre-amplitude). When provided, the per-vertex loop reuses rawHeights[zi*N+xi]
     // instead of re-evaluating the multi-octave `height()` noise — byte-identical (same fn, same inputs),
     // just not recomputed. Available now that the table is built in _flushPendingQueue (has the heights)
-    // and the re-carve path (chunk.heights). Callers without it (none currently) fall back to height().
-    _buildCarveTable(cx, cz, rawHeights = null) {
+    // and the re-carve path (chunk.heights). Every caller passes it.
+    _buildCarveTable(cx, cz, rawHeights) {
         // Reached through the prototype, not `this`: the headless gates and bench-worldgen call this
         // method as TerrainSystem.prototype._buildCarveTable.call(fakeThis, …) with a plain object
         // carrying only the fields the carve reads, so `this._carveTableGen` would be undefined.
@@ -1374,7 +1374,7 @@ export class TerrainSystem {
      * keeps the exact signature the re-carve pass, the headless gates (which reach it through the
      * prototype) and bench-worldgen rely on.
      */
-    *_carveTableGen(cx, cz, rawHeights = null) {
+    *_carveTableGen(cx, cz, rawHeights) {
         if (!this._roadSystem) return null
 
         const N    = GRID_SAMPLES
@@ -1506,9 +1506,7 @@ export class TerrainSystem {
                 if (extBestD2 > _maxToe2 && !nearPad) { table[idx] = 0; table[idx + 1] = 0; continue }
 
                 // Raw terrain height at this vertex (world-space, with amplitude).
-                const rawPre = rawHeights ? rawHeights[zi * N + xi]
-                    : height(wx, wz, this._noiseCoarse, this._noiseFine, this._noiseRegional, this._params)
-                const rawH   = rawPre * amp
+                const rawH   = rawHeights[zi * N + xi] * amp
 
                 // ── QUAL-07: resolve EXACTLY like physics → mesh == collision BY CONSTRUCTION ──
                 // The mesh resolves the road via the SAME _resolveRoadSurface physics uses (nearest
@@ -1982,7 +1980,7 @@ export class TerrainSystem {
         const deadline = this._deadline(burst ? 16 : BUILD_MS_BUDGET)   // PERF-02: time-slice the build (vs a fixed count)
         // PERF-33: drop replies that scrolled out of the keep ring while in flight — building them
         // only for the ring pass to evict them next frame was a full carve of pure waste.
-        const keepR = (this._ringRadius ?? RING_RADIUS) + (this._warmMargin ?? 0) + RING_KEEP_MARGIN
+        const keepR = this._ringRadius + this._warmMargin + RING_KEEP_MARGIN
         const job0 = this._activeBuild
         if (job0 && Math.max(Math.abs(job0.cx - ccx), Math.abs(job0.cz - ccz)) > keepR) {
             this._pendingWorker.delete(job0.key)   // a half-built carve for a spot we left (jump / fast turn)

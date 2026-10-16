@@ -127,8 +127,6 @@ export class GaugeCluster {
   /** 0 = C, 1 = H. Placeholder until the coolant model (FEAT-51) calls this with a real temp. */
   setCoolantTemp (frac) { this._tempFrac = Math.max(0, Math.min(1, frac)) }
 
-  odometerMiles () { return this._odoMiles }
-
   /**
    * FEAT-33: which of the three switch renderings to draw — 'off' | 'on' | 'start', straight from
    * src/ignition.js keyPosition(). No second argument: 'start' happens exactly when the key is held
