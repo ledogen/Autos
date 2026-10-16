@@ -3358,10 +3358,10 @@ function _scoreLanding (hit) {
     if (scored.credited) {
       // DISTANCE THEN DOLLARS (owner, 2026-08-14). Accuracy is what the throw pays for now, so the
       // read-out quotes the money it just earned rather than a percentage the player has to convert
-      // in their head. `scored.pay` is banked money — the expediency bonus is not in it, because
-      // that depends on when you finish and the route can still take it back.
+      // in their head. `scored.pay` is banked money — the fare is not in it, because that depends
+      // on when you finish and the route can still take it back.
       _showThrowReadout(`<span style="color:#7ed957">${scored.dist.toFixed(2)} m`
-        + ` &nbsp;·&nbsp; +$${scored.pay.toFixed(2)}</span>`)
+        + ` &nbsp;·&nbsp; +$${formatMoney(scored.pay)}</span>`)
     } else if (scored.already) {
       // Not a failure — a paper spent. Saying so is the difference between "that did nothing" and
       // "you already did this one", and only one of those tells you to drive on.

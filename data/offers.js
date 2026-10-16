@@ -106,8 +106,7 @@ export const THINGS = [
     { id: 'deck',       phrase: 'a presentation deck',     family: 'delivery', massKg: [0.5, 1.5],
       pools: HOME, to: ['office'] },
     // A 20 lb cylinder: ~7.7 kg of steel, plus 9.1 kg of propane when full. Full ones leave the
-    // store or a gas station; empties go back to either from anywhere (owner, 2026-10-07). The gas
-    // station posts nothing until FEAT-101 makes it a source, but it receives empties already.
+    // store or a gas station; empties go back to either from anywhere (owner, 2026-10-07).
     { id: 'propaneFull',  phrase: 'a full 20 lb propane tank',  family: 'delivery', massKg: [16, 18],
       pools: ['generalStore', 'gasStation'] },
     { id: 'propaneEmpty', phrase: 'an empty 20 lb propane tank', family: 'delivery', massKg: [7, 9],

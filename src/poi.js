@@ -165,8 +165,8 @@ export const POI_PARAMS = {
  *
  * `jobs` is WHETHER PARKING HERE OPENS AN OFFER, and it is DERIVED, not hand-set (FEAT-67): a
  * type posts offers iff it has a row in data/offers.js SOURCES (the mission board's source table).
- * The gas station, the tackle shop and mom's house have none — the first two until FEAT-101's job
- * budget reverses "some stores are just stores" (pois.md, 2026-10-07) — so they wear no interaction ring and answer no park trigger. A marker that wears the ring but answers
+ * Mom's house, the office and the school have none — they only receive (owner, 2026-10-07) — so
+ * they wear no interaction ring and answer no park trigger. A marker that wears the ring but answers
  * nothing is the same lie as a prompt drawn wider than its trigger, which this module already
  * refuses to tell; deriving the flag from the one table that decides who posts work is what makes
  * that impossible to get out of step.
@@ -435,8 +435,6 @@ const padsClash = (a, b, spacing) => a.edge === b.edge && Math.abs(a.s - b.s) < 
 
 /** Region population (23 in R1), derived from the roster so the two can never drift apart. */
 export const POI_COUNT = POI_ROSTER.reduce((n, s) => n + s.count, 0)
-
-/** Newspaper customers are deferred until the paper-route branch merges — no slot yet (FEAT-60). */
 
 // Footprint sampling for the earthwork test: a 3 × 5 lattice over the pad, plus the centre.
 const CUTFILL_NU = 5, CUTFILL_NV = 3
@@ -749,11 +747,6 @@ export class PoiSystem {
     }
 
     /**
-     * The customer reject tests. Much lighter than _evaluate's: with no bench to carve there is no
-     * earthwork to cap and no cross-slope to keep water off a pullout. What remains is "is there
-     * real road here, and is the target on believable ground".
-     */
-    /**
      * THE OTHER-ROAD KEEP-OUT (owner, 2026-09-07). A site is evaluated against ITS edge: `lat`
      * metres off that centreline, past its shoulder. Nothing checked the OTHER roads. Two legs of
      * a junction leave it a road width and a half apart, and a house target 13 m off one of them
@@ -771,6 +764,11 @@ export class PoiSystem {
         return Math.hypot(hit.point.x - cx, hit.point.z - cz) < lat
     }
 
+    /**
+     * The customer reject tests. Much lighter than _evaluate's: with no bench to carve there is no
+     * earthwork to cap and no cross-slope to keep water off a pullout. What remains is "is there
+     * real road here, and is the target on believable ground".
+     */
     _evaluateHouse (road, ed, s, side, P) {
         const cl = ed.centerline
         const cp = cl.pointAt(s)

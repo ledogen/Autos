@@ -7,8 +7,8 @@
  * at real unit weights — the derivation of every number is cargo.md's Mass / Note columns.
  * The full lists with region tiers and mass ranges are .planning/story-mode/cargo.md.
  *
- * Today only the debug menu reads this ("Load Cargo", src/debug.js); the freight and fragile
- * missions will roll their things from the same rows.
+ * Read by the debug menu ("Load Cargo", src/debug.js), the freight and fragile offers' `load`
+ * keys (data/offers.js) and main.js's bed loader.
  */
 export const FREIGHT = {
   // ── Freight (cargo.md § Freight) ──

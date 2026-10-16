@@ -14,7 +14,8 @@
  *   - SM-INV-2 — par comes from src/par.js, which reads road geometry only. Nothing here may feed
  *     it a vehicle quantity.
  *   - SM-INV-3 — no par countdown on the HUD while driving. The player sees elapsed time and
- *     distance-to-go; par is revealed only in the result card, after arrival.
+ *     distance-to-go; par itself is never shown — its surface is the letter (result card, and live
+ *     on the FEAT-87 rank timer).
  *   - REGENERATE/RETRY are testing affordances and are labelled as such. Real story mode has no
  *     do-overs: regenerate exists only for Quick Job (a POI job's offers come from the mission
  *     board, FEAT-67), and retry is gated off for paid jobs by PAID_JOB_DO_OVERS. Quick Job keeps
@@ -711,7 +712,7 @@ export class MissionSystem {
     }
 
     /**
-     * Roll one mission. Plan on the node graph with straight-line edge lengths (cheap — anchors
+     * Roll one mission. Plan on the node graph with road-metre edge lengths (BUG-52; cheap — anchors
      * only, no routing), then route ONLY the chosen path and price it with the par oracle.
      *
      * Par is the time on THIS route, the geometrically shortest one. That is honest for a beta
@@ -762,7 +763,7 @@ export class MissionSystem {
         // thing that bounds a job is the WALL rather than a window that slid about with the truck;
         // the shortest-path route body stays intentional (a quick job takes the natural line).
 
-        // Dijkstra over straight-line graph edges from one start → reachable nodes in the leg band,
+        // Dijkstra over the graph's road-metre edges (BUG-52) from one start → reachable nodes in the leg band,
         // capped at MAX_EDGES hops. No routing here (graph metric only), so it's cheap to run per
         // start candidate. Returns the parent chain plus the qualifying endpoints.
         const legCandidates = (startK, lo = LEG_MIN) => {

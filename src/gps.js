@@ -57,8 +57,7 @@ const REVISIT_ARC_M = 150   // m
 // well inside the ~50 m at which this network's hairpins fold back on themselves.
 const FWD_V        = 15
 const BACK_V       = 8
-// Exported (FEAT-61): the delivery target rings wear this too, so "navigation is telling you about
-// this" is one colour across the overlay and the world rather than two that drift apart.
+// The overlay's one colour — chevrons, junction arrow and destination ring share the material.
 export const GPS_COLOR = 0x66e0ff
 
 // ── pure route math (THREE-free — gated by test/gps-route.mjs) ──────────────────────────────
@@ -78,7 +77,7 @@ export const GPS_COLOR = 0x66e0ff
  *
  * @param {Array<{centerline: {pointAt(s): {x,z}, length: number}, gradeAt: (s)=>number,
  *                s0: number, s1: number}>} segments  ordered in TRAVEL order; s1 < s0 means the
- *   edge is driven backwards (mission.js:424). Endpoints of the first/last edge are mid-edge.
+ *   edge is driven backwards (mission.js planner). Endpoints of the first/last edge are mid-edge.
  * @param {(seg: object, s: number) => (number|null)} [elevAt]  design elevation at arc `s` on
  *   `seg`, or null when that run is not streamed yet (then `seg.gradeAt` fills in and `partial` is
  *   set, so the caller can re-bake once the network grows). Omitted ⇒ gradeAt, which is what the

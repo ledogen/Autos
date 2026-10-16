@@ -125,7 +125,8 @@ export const ECONOMY_PARAMS = {
     rankDayLate:{ S: 0.75, A: 0.79, B: 0.85, C: 1.00 },   // C pinned — see the note above
     rankTightenDays: 20,
 
-    // ⚠ THE END-OF-RUN PAYOUT CEILING [measured 2026-08-17]. The owner's stated targets are ~$5-15
+    // THE END-OF-RUN PAYOUT CEILING [measured 2026-08-17 at the then k 0.024 — RESOLVED by regionMult
+    // below; the figures are that day's, and region-1 par now measures ~3 h]. The owner's stated targets are ~$5-15
     // per mission at the start and ~$500-1500 at the end — a ~100× spread. The economy cannot
     // deliver that, and k cannot fix it, because k scales BOTH ends equally. The whole spread comes
     // from two multipliers: the day tier (1.00 → 4.58 by day 20) and mission length (region 1 par
@@ -149,7 +150,7 @@ export const ECONOMY_PARAMS = {
     // Geometric, ×~1.64 per region, 1 → 12 across the ratified six. Solved from the owner's stated
     // end targets: a day-20 region-6 mission (par ~720 s, tier 4.58, a B drive) pays ~$1000 at
     // regionMult 12, against ~$9 for a day-1 region-1 job — the ~100× spread k alone could not
-    // reach (see the ceiling note below, now resolved by this dial).
+    // reach (see the ceiling note above, now resolved by this dial).
     //
     // ⚠ NOT YET FED A REAL INDEX. Multi-region progression is FEAT-28 / milestone SM-4 and does not
     // exist — story.js builds exactly ONE bounded region. `EconomySystem` takes the index through
@@ -286,7 +287,6 @@ export function bonusEarned (letter, gate) {
     return i <= g
 }
 
-/** SM-INV-14: 1 point at B or better, ½ at C, 0 at D. Never a function of time taken. */
 /**
  * Good deeds for a haul, by the share of the load delivered (owner, 2026-10-05): more than two
  * thirds → 1, a third to two thirds → ½, under a third → 0. Exactly 2/3 is the middle band.
@@ -295,6 +295,7 @@ export function haulPointsFor(share) {
     return share > 2 / 3 ? 1 : share >= 1 / 3 ? 0.5 : 0
 }
 
+/** SM-INV-14: 1 point at B or better, ½ at C, 0 at D. Never a function of time taken. */
 export function pointsFor(letter) {
     if (letter === 'S' || letter === 'A' || letter === 'B') return 1
     if (letter === 'C') return 0.5

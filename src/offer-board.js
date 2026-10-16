@@ -52,9 +52,9 @@ import { basePay, formatMoney } from './economy.js'
  */
 export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul', 'freight', 'fragile'])
 
-// Fixed names for roster types that are NOT sources (and Larry) — they can still be a DESTINATION,
-// and "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors names; a type
-// becomes rolled by turning it into a source with NAME_FORMS (data/offer-names.js).
+// Fixed names for roster types with no NAME_FORMS row (data/offer-names.js) — Larry, mom, and the
+// gas station, which posts work but is still just "the gas station". A destination needs a name:
+// "delivered to <nothing>" is not a sentence. PLACEHOLDERS: the owner authors names.
 const FIXED_NAMES = {
     larrysHouse: "Larry's",
     momsHouse:   "Mom's",

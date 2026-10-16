@@ -225,7 +225,7 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
     // time, because it shrinks the clock you are held to by exactly as much. Nine of nine at par and
     // three of nine in a third of par both come out at ratio 1.0.
     //
-    // Complete routes are untouched (coverage 1 ⇒ parEff = par), so B still contains par.
+    // Complete routes are untouched (coverage 1 ⇒ parEff = par), so the C/D line still sits at par.
     const parEff = par * coverage
     const letter = gradeRun(elapsed, parEff, thresholds).letter
 
@@ -256,7 +256,7 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
     // TWO INCOME STREAMS, PAID AT DIFFERENT TIMES [owner, 2026-08-15].
     //
     //   accuracy -> `spot`, banked THE MOMENT each paper lands (EconomySystem.addSpot)
-    //   time     -> `payout`, settled at the bell
+    //   time     -> `payout`, settled when the round ends
     //
     // The split is unchanged and the mapping got cleaner: `spot` IS the customers' tips, `payout`
     // IS the fare. What the player is told matches what the money is.
@@ -268,7 +268,7 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
 
 /**
  * Did this route earn the next rung? Only a PERFECT one does: every customer got a paper inside
- * their circle before the bell. Accuracy does not enter it — Larry is judging whether you can
+ * their circle. Accuracy does not enter it — Larry is judging whether you can
  * finish the route, not how pretty it was.
  */
 export function advancesTier (result, customers) {
@@ -294,19 +294,6 @@ const HELD_KARP_MAX = 15
 // itself is noise. Must be a power of two: the loop tests it with a bitmask.
 const HK_CHUNK = 1024
 
-/**
- * The Held-Karp scratch tables, leased rather than allocated (FEAT-63).
- *
- * At fifteen stops these are Float64Array(32768 × 15) ≈ 3.9 MB and Int16Array ≈ 1 MB. Allocating
- * five megabytes in the middle of a drive is a hitch in its own right and hands the collector a
- * large short-lived object immediately afterwards, which is the second hitch.
- *
- * There is normally exactly one lease and every job reuses it. The busy flag exists for the one
- * case that would otherwise corrupt a route silently: a synchronous `planTour` (a new route being
- * accepted) running while a sliced re-plan sits suspended mid-DP. That cannot happen today — a
- * re-plan is cancelled when the route ends — but "cannot happen today" is how this class of bug
- * ships, so the second caller gets its own tables instead of scribbling on the first one's.
- */
 // FEAT-63 re-plan tuning. All run-layer, none of it touches worldgen or par. An object rather
 // than consts so the debug panel can put a dial on them (FEAT-61 Phase F) — offM and staleM in
 // particular were reasoned about, never felt.
@@ -325,6 +312,19 @@ export const RR_PARAMS = {
 const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
 const _hkPool = []
+/**
+ * The Held-Karp scratch tables, leased rather than allocated (FEAT-63).
+ *
+ * At fifteen stops these are Float64Array(32768 × 15) ≈ 3.9 MB and Int16Array ≈ 1 MB. Allocating
+ * five megabytes in the middle of a drive is a hitch in its own right and hands the collector a
+ * large short-lived object immediately afterwards, which is the second hitch.
+ *
+ * There is normally exactly one lease and every job reuses it. The busy flag exists for the one
+ * case that would otherwise corrupt a route silently: a synchronous `planTour` (a new route being
+ * accepted) running while a sliced re-plan sits suspended mid-DP. That cannot happen today — a
+ * re-plan is cancelled when the route ends — but "cannot happen today" is how this class of bug
+ * ships, so the second caller gets its own tables instead of scribbling on the first one's.
+ */
 function _leaseHkTables (SZ, n) {
     const need = SZ * n
     let best = null
@@ -695,7 +695,6 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
     }
     if (!segments.length) return null
 
-    // ONE par over the whole route (SM-INV-2).
     // ONE par over the whole route (SM-INV-2) — and the reference driver COMES TO REST at every
     // porch, because the segments carry `stop`. Without that the oracle priced a fifteen-stop round
     // as an uninterrupted 73 km/h blast and the expediency bonus was unreachable by construction
@@ -814,15 +813,6 @@ export class PaperRouteSystem {
     }
 
     /**
-     * THE LINE THE PLAYER SHOULD DRIVE — the re-planned guide if there is one, otherwise the tour
-     * as priced. This is what the GPS points along and what the 2D map draws.
-     *
-     * Deliberately NOT `this.route`, and the split is the whole safety property of FEAT-63:
-     * `route` is the CONTRACT (who is on the round, what par is) and nothing in the re-plan path
-     * may touch it, while `guide` is only a shape to follow. Scoring and the result card read
-     * `route`; the renderers all read this.
-     */
-    /**
      * FEAT-30 calibration export for a finished paper round — the same `rangersim-run-export/2`
      * shape a point-to-point job produces, through the same shared builder (`buildRunExport`), so
      * both mission types land in one corpus and `test/calibrate-par.mjs` needs no special case.
@@ -872,6 +862,15 @@ export class PaperRouteSystem {
         })
     }
 
+    /**
+     * THE LINE THE PLAYER SHOULD DRIVE — the re-planned guide if there is one, otherwise the tour
+     * as priced. This is what the GPS points along and what the 2D map draws.
+     *
+     * Deliberately NOT `this.route`, and the split is the whole safety property of FEAT-63:
+     * `route` is the CONTRACT (who is on the round, what par is) and nothing in the re-plan path
+     * may touch it, while `guide` is only a shape to follow. Scoring and the result card read
+     * `route`; the renderers all read this.
+     */
     line () { return this.guide ?? this.route }
 
     /** The customers on THIS route — not the region's. Read-only. */
@@ -882,9 +881,9 @@ export class PaperRouteSystem {
     /**
      * What a paper landed at accuracy `q` just earned, in dollars (FEAT-61, owner 2026-08-14).
      *
-     * The EXPEDIENCY BONUS IS NOT IN HERE, and that is the honest choice rather than an omission:
-     * the bonus depends on when you finish, so quoting a share of it mid-route would be a promise
-     * the route can still take back. This is the money already banked for that throw — which is
+     * The FARE IS NOT IN HERE, and that is the honest choice rather than an omission: the fare
+     * depends on when you finish, so quoting a share of it mid-route would be a promise the route
+     * can still take back. This is the money already banked for that throw — which is
      * exactly the thing accuracy buys, and the reason it is worth showing the instant it lands.
      */
     paperValue (q) {
@@ -1163,7 +1162,7 @@ export class PaperRouteSystem {
 
     /**
      * Distance from the truck to the line, from the baked polyline's vertices. Quantised by the
-     * polyline's own ~25 m spacing, which is why RR_OFF_M is comfortably larger than that — this
+     * polyline's own ~25 m spacing, which is why RR_PARAMS.offM is comfortably larger than that — this
      * decides "wrong turn or not", and it does not need to be exact to do that.
      */
     _latToLine () {
