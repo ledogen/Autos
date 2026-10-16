@@ -15,10 +15,8 @@
  * Routing does not live here either (BUG-26: route jobs must never starve terrain generation).
  */
 
-import { height, makeTerrainNoise } from './terrain-height.js'
+import { height, makeTerrainNoise, CHUNK_SIZE, GRID_SAMPLES } from './terrain-height.js'
 
-const GRID_SAMPLES = 65
-const CHUNK_SIZE   = 64
 const CELL_SIZE    = CHUNK_SIZE / (GRID_SAMPLES - 1)
 
 let noise = null    // { noiseCoarse, noiseFine, noiseRegional } — set by 'init'

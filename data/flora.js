@@ -13,9 +13,11 @@
  * Units: metres. Colours: 0xRRGGBB.
  */
 
+import { CHUNK_SIZE } from '../src/terrain-height.js'
+
 export const FLORA_PARAMS = {
   worldSeedTag: 'flora',   // seedFor(worldSeed, 'flora', cx, cz) domain tag
-  chunkSize:    64,        // MUST match terrain CHUNK_SIZE (src/terrain.js)
+  chunkSize:    CHUNK_SIZE,   // the terrain chunk size (src/terrain-height.js)
 
   // ── Scatter / biome ───────────────────────────────────────────────────────────
   scatter: {

@@ -19,6 +19,19 @@
 import { createNoise2D } from 'simplex-noise'
 import { seedFor, mulberry32 } from './seed.js'
 
+// Chunk grid — the ONE definition. terrain.js re-exports it, the Worker, road.js tiles and
+// FLORA_PARAMS.chunkSize import it, so terrain chunks, road tiles and prop chunks stay aligned.
+export const CHUNK_SIZE   = 64   // world units (metres) per chunk side
+export const GRID_SAMPLES = 65   // vertices per side (64 cells), avoids seams
+
+/**
+ * Every params field height() reads — the list terrain.js posts to the Worker (structured-cloneable
+ * scalars only). Add a field to height() and it MUST land here, or the Worker mesh silently diverges
+ * from physics' analyticHeight (mesh != physics).
+ */
+export const HEIGHT_PARAM_KEYS = ['coarseAmplitude', 'coarseFreq', 'coarseOctaves', 'ridgeSharpness',
+    'fineAmplitude', 'fineFreq', 'regionalStrength', 'regionalScale']
+
 /** The coarse layer's seeded noise — the ONE derivation road.js and the route Worker share. */
 export const makeCoarseNoise = (worldSeed) => createNoise2D(mulberry32(seedFor(worldSeed, 'coarse')))
 

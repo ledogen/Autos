@@ -29,7 +29,7 @@
 
 import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
-import { coarseHeight, makeCoarseNoise } from './terrain-height.js'   // the raw coarse layer — same function the terrain renders (road grade is amplitude-independent)
+import { coarseHeight, makeCoarseNoise, CHUNK_SIZE } from './terrain-height.js'   // the raw coarse layer — same function the terrain renders (road grade is amplitude-independent)
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA, padSd, PAD_RIM_HOLD } from './road-carve.js'
 import { truncatedHeightField, routeEdgeV2, profileSolve, dequantizeProfile, roundCrests, extendBorePortals, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule · portal placement
 import { PAR_REF } from './par.js'   // FEAT-82: the junction recovery is a vertical curve at par's junction-approach speed
@@ -773,12 +773,9 @@ function _interpArcTable(key, val, k) {
 }
 
 // ── Module constants ───────────────────────────────────────────────────────────
-/**
- * Tile side length in metres. MUST match terrain.js CHUNK_SIZE.
- * Both modules use 64 m tiles — roads and terrain chunks are aligned.
- * Coupling: if terrain.js CHUNK_SIZE changes, this must change too.
- */
-export const CHUNK_SIZE = 64
+// Tile side length in metres: the terrain chunk size (terrain-height.js), so road tiles and
+// terrain chunks are aligned by construction.
+export { CHUNK_SIZE }
 
 /**
  * Which router built the roads this build drives on. Stamped into every calibration run export

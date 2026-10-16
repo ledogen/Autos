@@ -29,7 +29,7 @@ import * as THREE from 'three'
 // QUAL-07: crownProfile no longer imported — the crown/camber fold moved into the one shared
 // RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
-import { height, makeTerrainNoise } from './terrain-height.js'   // THE height function — the Worker imports the same module
+import { height, makeTerrainNoise, CHUNK_SIZE, GRID_SAMPLES, HEIGHT_PARAM_KEYS } from './terrain-height.js'   // THE height function — the Worker imports the same module
 import { makeSurfaceTextures } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
 import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
@@ -47,8 +47,7 @@ export function vegBlendOf(slope, worldH, grassSlopeMax, treeLo, treeHi) {
 
 // ── Module constants ───────────────────────────────────────────────────────
 
-export const CHUNK_SIZE    = 64   // world units (metres) per chunk side
-export const GRID_SAMPLES  = 65   // vertices per side (64 cells), avoids seams
+export { CHUNK_SIZE, GRID_SAMPLES }   // defined in terrain-height.js (the Worker reads the same pair)
 const        RING_RADIUS          = 2   // chunks in each direction → 5×5 = 25 total (DEFAULT; runtime-tunable via setRingRadius)
 const        RING_KEEP_MARGIN     = 1   // PERF-02: keep (don't dispose) chunks within ring+this — hysteresis kills boundary dispose↔rebuild thrash
 const        GEOM_POOL_MAX        = 32  // PERF-05: recycled chunk-geometry pool cap. Steady driving keeps it near-empty (build≈evict); it fills only transiently on a full-ring regen, where the cap bounds retained memory. Recycling kills the per-chunk PlaneGeometry alloc + the non-deterministic GC pause (~16% of dropped-frame time on slow GPUs).
@@ -705,16 +704,7 @@ export class TerrainSystem {
         // runs — freezing the visible mesh while physics (reads params locally, no clone)
         // keeps updating. terrainAmplitude is intentionally omitted: it is applied on the
         // main thread in _flushPendingQueue, not inside the Worker height() function.
-        const workerParams = {
-            coarseAmplitude:  params.coarseAmplitude,
-            coarseFreq:       params.coarseFreq,
-            coarseOctaves:    params.coarseOctaves,
-            ridgeSharpness:   params.ridgeSharpness,
-            fineAmplitude:    params.fineAmplitude,
-            fineFreq:         params.fineFreq,
-            regionalStrength: params.regionalStrength,
-            regionalScale:    params.regionalScale
-        }
+        const workerParams = Object.fromEntries(HEIGHT_PARAM_KEYS.map((k) => [k, params[k]]))
         // PERF-19.2: reinit ALL pool workers so a seed/param change re-seeds every worker's noise.
         for (const w of this._workers) w.postMessage({ type: 'init', worldSeed, params: workerParams })
     }
