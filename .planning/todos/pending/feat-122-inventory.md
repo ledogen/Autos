@@ -19,7 +19,7 @@ first, which is why FEAT-121 never lists it under `needs:`.
 ## What it has to hold (all ruled)
 
 - **Owned items, per run.** Items die with the run; nothing persists (SM-INV-8/9, items.md rule 3).
-  It rides in the single-slot run save (FEAT-42), never in `metaState`.
+  It will ride in the single-slot run save (FEAT-42, SM-4), never in `metaState`.
 - **Real mass.** Every stowed item adds its mass to the truck (items.md rule 2). Bed items are
   bodies in the bed; everything else is a point mass on the chassis.
 - **Uses.** Consumables carry a count (cargo protection pads: 3, bubble wrap: 1).
@@ -40,5 +40,8 @@ first, which is why FEAT-121 never lists it under `needs:`.
 ## Acceptance
 
 - A REWARDS grant puts the item in the inventory and its effect, if built, applies.
-- Inventory survives save/load inside a run and is empty at run start.
+- Inventory is empty at run start.
 - Stowed mass shows up in the truck's total mass.
+
+**Not here — SM-4:** the inventory surviving save/load inside a run rides on the run save (FEAT-42).
+This ticket keeps it in memory.

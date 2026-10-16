@@ -549,6 +549,7 @@ owner's name for it.
 | 5. Stranded motorist (+ the first slice of fetch) | FEAT-102 | ✅ closed |
 | 6. Job site POI (R1, on the wall) | FEAT-103 | open |
 | 7. Minimal shop at the required classes | FEAT-104 | open |
+| Inventory — what the player owns this run; the one grant path for shop, rewards and finds | FEAT-122 | open — the owner's four questions first (slots vs mass, quick slots, the screen, felt mass) |
 | Camp gear slots — what the shop sells renders at camp (items.md visible-kit rule) | FEAT-66 | open |
 | POI model pools — register the built models | FEAT-74 | open |
 | Placeholder-replacing models: office, doctor's office, job site, school | ASSET-69, ASSET-70, ASSET-71, ASSET-73 | open |
@@ -585,7 +586,8 @@ Take the first item that is not blocked. Each one is a ticket with its own accep
 | 3 | ~~**FEAT-113** deadlines + world-time clock~~ | done 2026-10-16 | — |
 | 4 | **FEAT-112** load verdicts | pure data and a card; unlocks FEAT-114 and FEAT-115 | the stock truck's soft and hard limits |
 | 5 | **FEAT-114** haul quantity + rate bonus | first user of the verdict limits | the haul tip/item ruling |
-| 6 | **FEAT-104** minimal shop | the venue for every part and consumable | — |
+| 6 | **FEAT-122** inventory | where purchases and FEAT-67's stubbed reward grants land; parallel to 4–5 (owner, 2026-10-16) | the owner's four open questions |
+| 6b | **FEAT-104** minimal shop | the venue for every part and consumable | FEAT-122 |
 | 7 | **FEAT-115** bed upgrades, **FEAT-116** cargo protection | parts and consumables to sell | FEAT-104, FEAT-112 / FEAT-97 |
 | 8 | **FEAT-69** + **FEAT-117** economy re-cut and reputation | balance once the costs and the 7 / 6 / 5 shape are real | multi-day run data |
 
