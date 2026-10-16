@@ -367,7 +367,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const tempFolder = dmgFolder.addFolder('Engine Temp (FEAT-51)')
   const _temp = { get c () { return _damage()?.engineTempC ?? 0 }, set c (_) {} }
   tempFolder.add(_temp, 'c', 20, 130).name('Engine °C').listen().disable()
-  tempFolder.add(params, 'engineThermalMass', 20000, 400000, 1000).name('Thermal mass (J/°C)')
+  tempFolder.add(params, 'engineWarmMass', 40000, 300000, 1000).name('Warm-up mass (J/°C, game clock)')
+  tempFolder.add(params, 'engineThermalMass', 100000, 1500000, 10000).name('Hot mass (J/°C, real time)')
   tempFolder.add(params, 'radiatorRatedW', 40000, 250000, 1000).name('Radiator rated (W @ 50%)')
   tempFolder.add(params, 'radiatorDeadFrac', 0, 0.3, 0.005).name('Dead radiator (x rated)')
   tempFolder.add(params, 'engineIdlePowerW', 0, 20000, 250).name('Idle fuel power (W)')

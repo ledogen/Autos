@@ -452,6 +452,8 @@ no coolant level at all; radiator condition is the cooling capacity directly.
 - **50%** radiator holds the stock engine at full load just under the mark (109 °C); below it, it
   cannot. **0%** holds idle at 109 °C and overheats under any real load.
 - Heat follows fuel (`fuelPowerW`, shared with FEAT-50); engine off soaks back to ambient overnight.
+- Warm-up/cool-off on game time (~12 s real from cold), overheat on real time (~45 s, 0% at full
+  load, 100 → 110 °C). Hood steam over 110 °C.
 
 This is **FEAT-51 (coolant temp)** arriving as part of this milestone rather than before it: build
 the honest temp signal and the FEAT-49 gauge needle together with the condition consequences.

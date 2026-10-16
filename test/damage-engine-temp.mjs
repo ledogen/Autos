@@ -37,8 +37,8 @@ console.log('§1 the drivetrain publishes the fuel power heat is made from')
   ok(vs.drivetrain.fuelPowerW === 0, 'engine off burns nothing')
 }
 
-/** Hold a constant fuel power on a given radiator; returns the model after `secs`. */
-function soak (radiator, heatW, secs, T0 = 100, dt = 0.02) {
+/** Hold a constant fuel power on a given radiator; returns the model after `secs` of real time. */
+function soak (radiator, heatW, secs, T0 = 100, dt = 1 / 60) {
   const d = new DamageModel({ params: {} })
   d.set('radiator', radiator); d.engineTempC = T0
   const p = P(), vs = { drivetrain: { fuelPowerW: heatW, engineRPM: 750 }, throttle: 0 }
@@ -49,52 +49,69 @@ const IDLE = RANGER_PARAMS.engineIdlePowerW, FULL = RANGER_PARAMS.radiatorRatedW
 
 console.log('§2 steady state — the owner anchors')
 {
-  // Overheat wear is off for the pure-temperature checks so the engine doesn't degrade under them.
-  const keep = D.durOverheat; D.durOverheat = Infinity
-  // 2 h: a dead radiator at idle approaches its 109 °C with a ~22 min time constant.
-  const T = (r, w) => soak(r, w, 7200, 100, 0.05).engineTempC
-  const rows = [['100% full', T(1, FULL), 98, 102], ['100% idle', T(1, IDLE), 97, 100.5],
-    ['50% full', T(0.5, FULL), 108.5, 109.5], ['0% idle', T(0, IDLE), 108.5, 109.5],
-    ['60% full', T(0.6, FULL), 98, 104]]
+  // Read the equilibrium straight off the heat balance: the temperature where coolingW == heat. The
+  // hot mass is a real-time leniency knob, so a dead radiator at idle takes hours to settle — a soak
+  // would be testing patience, not the anchors.
+  const p = P()
+  const eq = (r, w) => {
+    const d = new DamageModel({ params: {} }); d.set('radiator', r)
+    let lo = D.tempAmbientC, hi = 2000
+    for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (d.coolingW(m, p) < w) lo = m; else hi = m }
+    return lo
+  }
+  const rows = [['100% full', eq(1, FULL), 98, 102], ['100% idle', eq(1, IDLE), 97, 100.5],
+    ['50% full', eq(0.5, FULL), 108.5, 109.5], ['0% idle', eq(0, IDLE), 108.5, 109.5],
+    ['60% full', eq(0.6, FULL), 98, 104]]
   for (const [n, t, lo, hi] of rows) ok(t >= lo && t <= hi, `${n}: settles at ${t.toFixed(1)} °C (${lo}-${hi})`)
-  ok(T(0.45, FULL) > D.tempHotC, `45% full load overheats (${T(0.45, FULL).toFixed(1)} °C)`)
-  ok(T(0, 0.2 * FULL) >= D.tempMaxC - 1e-9, '0% radiator at a 20% cruise load runs away to the clamp')
-  D.durOverheat = keep
+  ok(eq(0.45, FULL) > D.tempHotC, `45% full load overheats (equilibrium ${eq(0.45, FULL).toFixed(1)} °C)`)
+  ok(eq(0, 0.2 * FULL) > D.tempMaxC, '0% radiator at a 20% cruise load has no equilibrium short of the clamp')
 }
 
-console.log('§3 pace and consequences')
+console.log('§3 two clocks: warm-up on game time, overheat on real time (owner 2026-10-16)')
 {
+  const p = P(), dt = 1 / 60
+  const until = (d, vs, cond) => { let t = 0; while (!cond(d) && t < 3600) { d.step(vs, p, dt); t += dt } return t }
+  const w = new DamageModel({ params: {} })
+  const tw = until(w, { drivetrain: { fuelPowerW: IDLE, engineRPM: 750 } }, (d) => d.engineTempC >= D.tempThermostatC - 2)
+  ok(tw >= 10 && tw <= 15, `healthy truck idling from cold: ${D.tempAmbientC} → ${D.tempThermostatC - 2} °C in ${tw.toFixed(1)} s (10-15 s = that many game minutes)`)
+
   const d = new DamageModel({ params: {} }); d.set('radiator', 0); d.engineTempC = 100
-  const p = P(), vs = { drivetrain: { fuelPowerW: FULL, engineRPM: 750 }, throttle: 0 }
-  let t = 0; while (d.engineTempC < D.tempHotC) { d.step(vs, p, 0.02); t += 0.02 }
-  ok(t > 7 && t < 13, `0% radiator, full load: 100 → 110 °C in ${t.toFixed(1)} s (~10 s, realistic)`)
-  ok(d.get('engine') > 0.99999 && p._engineDamageScale > 0.999, `nothing to speak of at the mark itself (${d.engineTempC.toFixed(2)} °C, power x${p._engineDamageScale.toFixed(4)})`)
-  for (let i = 0; i < 250; i++) d.step(vs, p, 0.02)
-  ok(d.get('engine') < 1 && p._engineDamageScale < 1, `over the mark: engine wearing (${(d.get('engine') * 100).toFixed(1)}%) and power derated (${p._engineDamageScale.toFixed(2)})`)
+  const vs = { drivetrain: { fuelPowerW: FULL, engineRPM: 750 }, throttle: 0 }
+  const t = until(d, vs, (m) => m.engineTempC >= D.tempHotC)
+  ok(t >= 30 && t <= 60, `0% radiator, full load: 100 → 110 °C in ${t.toFixed(1)} s of REAL time (30-60 s)`)
+  ok(d.get('engine') > 0.99999 && p._engineDamageScale > 0.999 && p._hoodSteam > 0, `at the mark: no damage to speak of yet, but the hood is already steaming (${p._hoodSteam.toFixed(2)})`)
+  for (let i = 0; i < 600; i++) d.step(vs, p, dt)
+  ok(d.get('engine') < 1 && p._engineDamageScale < 1, `10 s over the mark: engine wearing (${(d.get('engine') * 100).toFixed(1)}%) and power derated (${p._engineDamageScale.toFixed(2)}) at ${d.engineTempC.toFixed(1)} °C`)
   d.set('radiator', 1); vs.drivetrain.fuelPowerW = IDLE
-  while (d.engineTempC > D.tempHotC) d.step(vs, p, 0.02)
+  const tc = until(d, vs, (m) => m.engineTempC <= D.tempHotC)
+  console.log(`  fitted a new radiator and idled: back under the mark in ${tc.toFixed(1)} s`)
   const worn = d.get('engine')
-  for (let i = 0; i < 3000; i++) d.step(vs, p, 0.02)
-  ok(d.engineTempC < 101 && Math.abs(p._engineDamageScale - d.engineScale()) < 1e-12, 'cooled back down: the power loss is temporary, only the wear stays')
-  ok(d.get('engine') === worn, '...and below the mark the wear stops')
+  until(d, vs, (m) => m.engineTempC < 101)
+  ok(Math.abs(p._engineDamageScale - d.engineScale()) < 1e-12 && p._hoodSteam === 0, 'cooled back down: power loss and steam are temporary...')
+  ok(d.get('engine') === worn, '...only the wear stays, and below the mark it stops')
+
+  // Shutting it off is the escape for a shot radiator: off-cooling runs on game time.
+  const s = new DamageModel({ params: {} }); s.set('radiator', 0); s.engineTempC = 115
+  const ts = until(s, { drivetrain: { fuelPowerW: 0 } }, (m) => m.engineTempC <= D.tempThermostatC)
+  ok(ts > 3 && ts < 20, `shot radiator, engine OFF: 115 → 100 °C in ${ts.toFixed(1)} s (pull over and shut it off)`)
+
   // Exact rate: a minute at 115 °C costs 30% of an engine.
   const e = new DamageModel({ params: {} }); e.engineTempC = 115; e.set('radiator', 0)
-  const hold = { drivetrain: { fuelPowerW: 0, engineRPM: 750 } }
   const tau = D.tempOffTau; D.tempOffTau = Infinity
-  for (let i = 0; i < 3000; i++) e.step(hold, {}, 0.02)
+  for (let i = 0; i < 3600; i++) e.step({ drivetrain: { fuelPowerW: 0 } }, {}, dt)
   D.tempOffTau = tau
   ok(Math.abs((1 - e.get('engine')) - 0.30) < 0.005, `a minute at 115 °C costs ${((1 - e.get('engine')) * 100).toFixed(1)}% of the engine (30%)`)
 }
 
 console.log('§4 engine off, gauge, damage-disabled')
 {
-  const d = soak(1, 0, 8 * 3600, 100, 1)
-  ok(d.engineTempC < D.tempAmbientC + 1, `8 h off: back to ${d.engineTempC.toFixed(1)} °C — the morning is a cold start`)
+  const d = soak(1, 0, 8 * 60, 100)
+  ok(d.engineTempC < D.tempAmbientC + 1, `8 game-hours off (8 real minutes): back to ${d.engineTempC.toFixed(1)} °C`)
   const g = new DamageModel({ params: {} })
   for (const [c, f] of [[90, 0], [100, 0.5], [110, 1]]) { g.engineTempC = c; ok(g.tempGaugeFrac() === f, `${c} °C reads ${f} on the gauge`) }
   ok(new DamageModel({ params: {} }).engineTempC === D.tempAmbientC, 'a new model starts cold')
   D.enabled = false
-  const off = soak(0.75, FULL, 600, 25)
+  const off = soak(0.75, FULL, 120, 25)
   D.enabled = true
   ok(off.engineTempC > 95, `damage disabled still warms the engine (${off.engineTempC.toFixed(1)} °C) — temperature is state, not wear`)
 }

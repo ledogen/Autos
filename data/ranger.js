@@ -84,7 +84,11 @@ export const RANGER_PARAMS = {
   // the idle burn (7 kW / 117 kW) so a wrecked radiator holds idle at 109 °C and nothing more.
   // Capacity is linear in condition through those two anchors, so a new radiator carries ~2x rated.
   engineIdlePowerW:   7000,    // W — fuel power at idle (the floor while running)
-  engineThermalMass: 111000,   // J/°C — block + coolant; 100→110 °C in ~10 s at full load, 0% radiator
+  // Two masses, two clocks (owner 2026-10-16, see DamageModel._stepTemp). Warm mass runs on the 60x game
+  // clock: cold → 100 °C in ~12 s real at idle (12 game-minutes). Thermal mass runs on real time and is
+  // a leniency knob (~4.5x a real block): 0% radiator at full load, 100 → 110 °C in ~45 s.
+  engineWarmMass:     70000,   // J/°C — thermostat closed: block + its own coolant, radiator cut out
+  engineThermalMass: 500000,   // J/°C — thermostat open, real time
   radiatorRatedW:    117000,   // W — see above
   radiatorDeadFrac:    0.06,   // [-] — see above
   engineRpmLag:        0.0,  // s — first-order lag on engine RPM (0 = instant; ~0.1 adds rev-flare feel)
