@@ -372,11 +372,12 @@ export const DAMAGE_PARAMS = {
   // ── Headlights ─────────────────────────────────────────────────────────────────────────────
   // Above this a lamp burns steady. Below it the lamp is a loose connection: it cuts out when the
   // body is jolted, more often the further it has degraded (vehicle-model.js turns the published
-  // amount and the body's jolt into dropouts). It never goes out for good: see headlightDimAtZero.
+  // amount and the body's jolt into dropouts). At exactly zero it is dead: see headlightDimFloor.
   headlightFlickerCond: 0.50,
-  // A worn lamp also dims: brightness falls linearly from 1 at full condition to this at zero. A
-  // fully broken lamp still burns at this level (owner, 2026-10-15), flickering at its worst.
-  headlightDimAtZero:   0.40,
+  // A worn lamp also dims: brightness falls linearly from 1 at full condition toward this floor as
+  // condition approaches zero, flickering at its worst. At 0% the lamp is DEAD — fully off, lens and
+  // beam (owner, 2026-10-15, reversing the same day's "a broken lamp still burns at the floor").
+  headlightDimFloor:    0.40,
 
   // ── Wheels ─────────────────────────────────────────────────────────────────────────────────
   // A bent wheel is out-of-round, and out-of-round is a REAL thing in the sim (params.wheelRunout,
@@ -1065,10 +1066,10 @@ export class DamageModel {
     hb[1] = this.headlightBrightness('headlightR')
   }
 
-  /** One lamp's brightness multiplier: linear from 1 at full condition to headlightDimAtZero at zero. */
+  /** One lamp's brightness multiplier: linear from 1 at full condition toward headlightDimFloor; 0 at 0% (dead). */
   headlightBrightness (id) {
-    const lo = DAMAGE_PARAMS.headlightDimAtZero
-    return lo + (1 - lo) * Math.max(0, Math.min(1, this.get(id)))
+    const lo = DAMAGE_PARAMS.headlightDimFloor, c = this.get(id)
+    return c <= 0 ? 0 : lo + (1 - lo) * Math.min(1, c)
   }
 
   /**
