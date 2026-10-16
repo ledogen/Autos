@@ -283,7 +283,9 @@ export class PropSystem {
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const chunk = this._chunks.get((cx + dx) + ',' + (cz + dz))
       if (!chunk) continue
-      for (const pr of chunk.places) {
+      const places = chunk.places
+      for (let pi = 0; pi < chunk.bakeEnd; pi++) {   // S-49: the cover tail is never baked
+        const pr = places[pi]
         const dst = this._bakeMeshes.get(pr.key)
         if (!dst) continue
         dst.mesh.instanceMatrix.array.set(pr.mat, dst.n * 16)
@@ -437,8 +439,13 @@ export class PropSystem {
     if (i >= 0) this._scatterQueue.splice(i, 1)
   }
 
-  /** Placement records → retained place records + collidable descriptors (shared by both commits). */
-  _buildPlaces(placements, places, collidables) {
+  /**
+   * Placement records → retained place records + collidable descriptors (shared by both commits).
+   * @returns {number} bakeEnd — one past the last record the shadow bake draws (`bakeEnd` in, when
+   *   none is added). Cover is always the contiguous TAIL of a chunk's places (the base passes carry
+   *   none; litterPasses runs the zone rocks before coverPass), so _fillBakeScene stops there (S-49).
+   */
+  _buildPlaces(placements, places, collidables, bakeEnd = 0) {
     // sunShear is absent headless (no sky); the sun does not move inside one commit.
     const shear = this._samplers.sunShear ? this._samplers.sunShear() : null
     const sheared = shear !== null && shear.lengthSq() > 1e-6
@@ -473,6 +480,7 @@ export class PropSystem {
         key, mat: Float32Array.from(_m.elements), k,
         x: pl.x, y: pl.y, z: pl.z, scale: pl.scale, tint: pl.tint,
       })
+      if (!isCoverKey(key)) bakeEnd = places.length
 
       // FEAT-06b: record the collidable (capsule for trees, sphere for rocks, bush for soft-drag)
       const col = this._collision.get(key)
@@ -519,6 +527,7 @@ export class PropSystem {
         rotY: pl.rotY, tris: col.tris,   // rotY/tris used by 'mesh' (boulder) contacts; undefined otherwise
       })
     }
+    return bakeEnd
   }
 
   _commitChunk(ck, placements, withLitter = true) {
@@ -526,13 +535,13 @@ export class PropSystem {
     const _c0 = performance.now()
     const places = []
     const collidables = []
-    this._buildPlaces(placements, places, collidables)
+    const bakeEnd = this._buildPlaces(placements, places, collidables)
     const _c1 = performance.now(); perfAdd('props.commit.build', _c1 - _c0)
     const comma = ck.indexOf(',')
     const cx = parseInt(ck.slice(0, comma), 10), cz = parseInt(ck.slice(comma + 1), 10)
     // litter: false ⇒ scattered without the cover + zone-rock passes (bbonly ring); a promotion
     // queues scatterLitterGen for it and _commitLitter appends the result.
-    const chunk = { places, owned: [], mode: this._chunkMode(cx, cz), litter: withLitter, cx, cz }
+    const chunk = { places, owned: [], mode: this._chunkMode(cx, cz), litter: withLitter, cx, cz, bakeEnd }
     this._chunks.set(ck, chunk)
     this._placeChunk(chunk, chunk.mode)
     const _c2 = performance.now(); perfAdd('props.commit.place', _c2 - _c1)
@@ -582,7 +591,7 @@ export class PropSystem {
     const from = chunk.places.length
     const collidables = this._collidables.get(ck) || []
     const nCol = collidables.length
-    this._buildPlaces(placements, chunk.places, collidables)
+    chunk.bakeEnd = this._buildPlaces(placements, chunk.places, collidables, chunk.bakeEnd)
     chunk.litter = true
     this._placeChunk(chunk, chunk.mode, from)
     if (collidables.length !== nCol) {          // zone rocks' large class is collidable
@@ -1096,17 +1105,20 @@ export class PropSystem {
     this._gridDirty = false
   }
 
-  _cellsAround(x, z, r, fn) {
+  /** Unique collidables in the cells overlapping (x ± r, z ± r), in cell order. A reused scratch array. */
+  _cellsAround(x, z, r) {
     const cs = this._gridCell
     const gx0 = Math.floor((x - r) / cs), gx1 = Math.floor((x + r) / cs)
     const gz0 = Math.floor((z - r) / cs), gz1 = Math.floor((z + r) / cs)
     const seen = this._scratchSeen || (this._scratchSeen = new Set())
-    seen.clear()
+    const near = this._scratchNear || (this._scratchNear = [])
+    seen.clear(); near.length = 0
     for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) {
       const arr = this._grid.get(cellKey(gx, gz))
       if (!arr) continue
-      for (const c of arr) { if (seen.has(c)) continue; seen.add(c); fn(c) }
+      for (const c of arr) { if (seen.has(c)) continue; seen.add(c); near.push(c) }
     }
+    return near
   }
 
   /**
@@ -1115,12 +1127,12 @@ export class PropSystem {
    * queryContacts emits (normal out of solid, depth > 0, contactPoint on the solid surface), so the
    * splice is just `hits.push(...propSystem.queryProps(cx,cy,cz,r))`. The surface point is the query
    * centre walked back along -normal by (r - depth) (the sphere penetrates the solid by `depth`).
+   * Pass `out` (main.js: the wheel's hits array) to append in place — no per-query array (S-49).
    */
-  queryProps(cx, cy, cz, r) {
+  queryProps(cx, cy, cz, r, out = []) {
     this._ensureGrid()
     const C = this._params.collision
-    const out = []
-    this._cellsAround(cx, cz, r, (c) => {
+    for (const c of this._cellsAround(cx, cz, r)) {
       let hit = null
       if (c.kind === 'capsule') {
         // General capsule between the baked (tilt-inclusive) world endpoints — the vertical
@@ -1150,7 +1162,7 @@ export class PropSystem {
           contactPoint: new THREE.Vector3(cx - hit.nx * t, cy - hit.ny * t, cz - hit.nz * t),
         })
       }
-    })
+    }
     return out
   }
 
@@ -1162,12 +1174,12 @@ export class PropSystem {
     this._ensureGrid()
     out.x = 0; out.y = 0; out.z = 0   // reset so callers can pass a reused scratch object
     const B = this._params.collision.bush
-    this._cellsAround(cx, cz, 0, (c) => {
-      if (c.kind !== 'bush') return
+    for (const c of this._cellsAround(cx, cz, 0)) {
+      if (c.kind !== 'bush') continue
       const br = c.radius * c.scale
       const f = bushDrag(cx, cy, cz, vx, vy, vz, c.x, c.y, c.z, br, br, B.k, B.fMax)
       if (f) { out.x += f.x; out.y += f.y; out.z += f.z }
-    })
+    }
     return out
   }
 

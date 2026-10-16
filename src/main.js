@@ -1984,8 +1984,7 @@ function queryContacts (cx, cy, cz, r, footprint = false) {
   // once per substep in the loop). Skipped in the lab (no props there). Same {normal,depth,
   // contactPoint} shape, so the wheel + body solvers consume them unchanged.
   if (!_labActive && propSystem) {
-    const propHits = propSystem.queryProps(cx, cy, cz, r)
-    for (let i = 0; i < propHits.length; i++) hits.push(propHits[i])
+    propSystem.queryProps(cx, cy, cz, r, hits)   // appends in place (S-49)
   }
 
   // FEAT-46: the POI marker cube is SOLID — a marker you drive through reads as scenery, and this
