@@ -207,13 +207,21 @@ export class WaterSystem {
 
         // One extra ring is sampled for the 3×3 stencil but only points whose OWN
         // index is inside this cell are emitted (ownership = exact-once partition).
+        // S-37: each lattice height is sampled ONCE into an (L+2)² grid (the stencil's 5 reads
+        // were 5 h() calls per point). (i±1)·G == i·G ± G exactly (integers), so the same h(x, z).
+        const L = LATTICE_PER_CELL, W = L + 2
+        const grid = new Float64Array(W * W)
+        for (let gj = 0; gj < W; gj++)
+            for (let gi = 0; gi < W; gi++)
+                grid[gj * W + gi] = this._h((i0 + gi - 1) * G, (j0 + gj - 1) * G)
         for (let dj = 0; dj < LATTICE_PER_CELL; dj++) {
             for (let di = 0; di < LATTICE_PER_CELL; di++) {
                 const i = i0 + di, j = j0 + dj
                 const x = i * G, z = j * G
-                const c  = this._h(x, z)
-                const hL = this._h(x - G, z), hR = this._h(x + G, z)
-                const hD = this._h(x, z - G), hU = this._h(x, z + G)
+                const g  = (dj + 1) * W + di + 1
+                const c  = grid[g]
+                const hL = grid[g - 1], hR = grid[g + 1]
+                const hD = grid[g - W], hU = grid[g + W]
 
                 // Local minimum on the 4-neighborhood (strict). Diagonal check adds
                 // little at coarse scale and costs 4 samples; 4-neighbor is enough.
