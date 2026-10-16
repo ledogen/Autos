@@ -1688,6 +1688,19 @@ export class RoadSystem {
         return dx * dx + dz * dz <= r * r
     }
 
+    /**
+     * Does the streamed network reach this CHUNK_SIZE tile? Corners + centre, because coverage is a
+     * circle and a tile is square, so a corner can be inside while the centre is not. The terrain
+     * carve (TerrainSystem._roadCoversChunk) and the ribbon (RoadMeshSystem._roadCoversTile) both read
+     * THIS, so they agree about when a tile's emptiness is real.
+     */
+    networkCoversTile(tileX, tileZ) {
+        const S = CHUNK_SIZE, x0 = tileX * S, z0 = tileZ * S
+        return this.networkCoversXZ(x0, z0) || this.networkCoversXZ(x0 + S, z0)
+            || this.networkCoversXZ(x0, z0 + S) || this.networkCoversXZ(x0 + S, z0 + S)
+            || this.networkCoversXZ(x0 + S / 2, z0 + S / 2)
+    }
+
     _invalidateProto() {
         this._proto.sites.clear()           // FEAT-13 v2: sites + Urquhart graph derive from seed + params
         this._proto.aliveSites.clear()

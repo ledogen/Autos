@@ -72,9 +72,6 @@ const carve = (road, cx, cz) => {
     for (let i = 0; i < N * N; i++) { const h = raw[i]; out[i] = t ? h + t[i * 2] * (t[i * 2 + 1] - h) : h }
     return out
 }
-const covers = (road, cx, cz) => { const x0 = cx * S, z0 = cz * S
-    return road.networkCoversXZ(x0, z0) || road.networkCoversXZ(x0 + S, z0) || road.networkCoversXZ(x0, z0 + S)
-        || road.networkCoversXZ(x0 + S, z0 + S) || road.networkCoversXZ(x0 + S / 2, z0 + S / 2) }
 const touched = (dirty, cx, cz) => {   // recarveInPlace()'s own overlap test
     if (!dirty) return false
     const x0 = cx * S, z0 = cz * S
@@ -108,7 +105,7 @@ for (const [name, route] of ROUTES) {
             // The game's two re-carve triggers for chunks already built.
             for (const [k, c] of built) {
                 const [cx, cz] = k.split(',').map(Number)
-                const cov = covers(live, cx, cz)
+                const cov = live.networkCoversTile(cx, cz)
                 if (touched(dirty, cx, cz) || cov !== c.covered) {
                     const surf = carve(live, cx, cz); recarves++
                     if (maxDiff(surf, c.surf) === 0) overInval++
@@ -127,7 +124,7 @@ for (const [name, route] of ROUTES) {
         for (const k of [...built.keys()]) { const [cx, cz] = k.split(',').map(Number); if (Math.abs(cx - ccx) > RING + 1 || Math.abs(cz - ccz) > RING + 1) built.delete(k) }
         for (let cx = ccx - RING; cx <= ccx + RING; cx++) for (let cz = ccz - RING; cz <= ccz + RING; cz++) {
             const k = cx + ',' + cz
-            if (!built.has(k)) built.set(k, { surf: carve(live, cx, cz), covered: covers(live, cx, cz) })
+            if (!built.has(k)) built.set(k, { surf: carve(live, cx, cz), covered: live.networkCoversTile(cx, cz) })
         }
     }
 }

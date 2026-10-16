@@ -1286,18 +1286,12 @@ export class TerrainSystem {
     }
 
     /**
-     * Does the road network reach this chunk? Tested at the chunk's four corners plus its centre —
-     * the coverage boundary is a circle and a chunk is 64 m square, so a corner can be inside while
-     * the centre is not. Cheap (five squared-distance tests) and it runs once per live chunk per
-     * ring-sync tick, alongside the generation check it complements.
+     * Does the road network reach this chunk? RoadSystem.networkCoversTile (corners + centre, five
+     * squared-distance tests) — runs once per live chunk per ring-sync tick, alongside the generation
+     * check it complements. No road wired: nothing to wait for.
      */
     _roadCoversChunk(cx, cz) {
-        const rs = this._roadSystem
-        if (!rs || typeof rs.networkCoversXZ !== 'function') return true   // no road wired: nothing to wait for
-        const S = CHUNK_SIZE, x0 = cx * S, z0 = cz * S
-        return rs.networkCoversXZ(x0, z0) || rs.networkCoversXZ(x0 + S, z0)
-            || rs.networkCoversXZ(x0, z0 + S) || rs.networkCoversXZ(x0 + S, z0 + S)
-            || rs.networkCoversXZ(x0 + S / 2, z0 + S / 2)
+        return !this._roadSystem || this._roadSystem.networkCoversTile(cx, cz)
     }
 
     /**

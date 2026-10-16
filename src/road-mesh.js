@@ -541,18 +541,9 @@ export class RoadMeshSystem {
         return geo
     }
 
-    /**
-     * Does the streamed road network reach this tile? Corners + centre, because coverage is a
-     * circle and a tile is CHUNK_SIZE square. Mirrors TerrainSystem._roadCoversChunk — the ribbon
-     * and the carve have to agree about when a tile's emptiness is real.
-     */
+    /** Does the streamed road network reach this tile? RoadSystem.networkCoversTile — the same test the carve reads. */
     _roadCoversTile(tileX, tileZ) {
-        const rs = this._road
-        if (!rs || typeof rs.networkCoversXZ !== 'function') return true
-        const S = CHUNK_SIZE, x0 = tileX * S, z0 = tileZ * S
-        return rs.networkCoversXZ(x0, z0) || rs.networkCoversXZ(x0 + S, z0)
-            || rs.networkCoversXZ(x0, z0 + S) || rs.networkCoversXZ(x0 + S, z0 + S)
-            || rs.networkCoversXZ(x0 + S / 2, z0 + S / 2)
+        return !this._road || this._road.networkCoversTile(tileX, tileZ)
     }
 
     /**
