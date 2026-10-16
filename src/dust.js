@@ -368,7 +368,10 @@ export class DustSystem {
       n++
     }
     this._mesh.geometry.instanceCount = n
-    if (n > 0) {
+    // Hidden (testing lab) → no upload: three clears updateRanges only when it uploads, and it never
+    // uploads an invisible mesh, so the ranges would pile up until the lab exits. The first visible
+    // frame re-packs every live particle from scratch anyway.
+    if (n > 0 && this._mesh.visible) {
       for (const a of [this._aPos, this._aParam, this._aColor]) {
         a.addUpdateRange(0, n * 3)
         a.needsUpdate = true
