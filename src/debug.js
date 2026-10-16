@@ -654,11 +654,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   v2Folder.add(params.roadV2, 'mergeProxM', 0, 40, 1).name('Merge Distance (m)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'sibConeDeg', 0, 60, 1).name('Sibling Cone (deg)').onChange(fireRoadParam)
   v2Folder.add(params.roadV2, 'wSibDepart', 0, 20, 0.5).name('Sibling Depart Cost').onChange(fireRoadParam)
-  //   Pad Arrival Cap (BUG-55): a merged strand may not arrive at its far junction steeper than
-  //   this — the pad there is a near-flat plaza (clamped ~7%), and a steep arrival parks a step
-  //   at its rim (the measured 1.75-2.37 m cliff class). A merge that cannot meet it is declined
-  //   with reason 'pad', never forced.
-  v2Folder.add(params.roadV2, 'mergePadArrivalMax', 0.07, 0.24, 0.01).name('Pad Arrival Cap').onChange(fireRoadParam)
   //   Delete Detour Cap (BUG-55 phase 5): an unmergeable tear-grade pair loses its LONGER member
   //   iff its endpoints reconnect within this many hops (0 = never delete). Higher clears more
   //   doubled roads at the cost of longer real drives where a leg is removed.

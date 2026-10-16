@@ -593,22 +593,8 @@ export const RANGER_PARAMS = {
     mergeFlareM: 60,   // m — widest the pair may swing apart inside a merge
     mergeGapM: 200,    // m — longest flare the merge may bridge, measured along the run
     // MID-SPAN merges (legs that part at the node and only run together far out). ON since
-    // BUG-55 phase 3. The collision-cliff class that kept this off (1.75 m seed 7 / 2.37 m
-    // seed 6 — a tail re-solved from a dictated winner deck steepened into a junction pad that
-    // took no part in the solve) is held off by the mergePadArrivalMax check on every variant's
-    // FINAL solved profile — MEASURED load-bearing: opening the cap to 0.24 reproduces both
-    // cliffs to the centimetre (237/175 cm), closing it to 0.12 clears them. A variant that
-    // cannot meet the cap is declined with reason 'pad', never forced. The bundle solve
-    // additionally negotiates fork decks where the winner heads a bundle, which is what widens
-    // the merged fraction; the guard is what makes the flag safe.
+    // BUG-55 phase 3.
     mergeMidSpan: true,
-    // BUG-55 'pad' guard: a bundle rung is DECLINED (counted, never forced) when any loser
-    // strand's solved arrival grade at its far node exceeds this. The junction pad plane is
-    // clamped to roadJunctionPadMaxGrade (0.07) while roads may run gMaxRoad (0.24); the
-    // measured 1.75-2.37 m mid-span collision cliffs are (arrival - plane) x the ~14 m ring
-    // reach, so bounding the arrival is what keeps a merge from parking a step at a junction.
-    // 0.12 = the plane clamp plus what the junction blend absorbs over its reach.
-    mergePadArrivalMax: 0.12,
     // BUG-57: the SHOVE rung's post-deflection separation floor. A nick-crossed pair (a leg
     // that pokes across a partner and comes back) keeps BOTH connections: the longer member
     // registers deflected laterally until the pair stays this far apart over the contact —

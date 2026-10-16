@@ -84,7 +84,7 @@ import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planTourJob, customersForTier } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
-import { SCENARIOS, scenarioById } from '../data/scenarios.js'   // FEAT-62: authored scenarios
+import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
 import { Leaderboard } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
 import { RANK_THRESHOLDS_DEFAULT, haulGrade, fragileGrade } from './par.js'   // FEAT-87 rank bar fallback bands; FEAT-88 haul letter; FEAT-97 fragile letter
@@ -485,9 +485,6 @@ function looseSurfaceFactor (x, z) {
 const _fxGroundY = (x, z) => _labActive ? (labSystem ? labSystem.groundHeight(x, z) : 0)
                                         : (terrainSystem ? terrainSystem.analyticHeight(x, z, undefined, vehicleState.position.y) : 0)
 
-// Boot marker: which three.js revision the bundle resolved
-console.log('THREE.REVISION', THREE.REVISION)
-
 
 // ── Suspension substep transient scratch arrays (Phase 4 — D-02, PATTERNS §underscore convention) ──
 // These are per-step outputs from stepSuspensionSubsteps; live on params (not vehicleState)
@@ -556,8 +553,6 @@ function _importSessionRoutes () {
   if (mem) roadSystem.importRouteCache(mem)
 }
 
-// One-time cleanup of the short-lived IndexedDB persistence experiment (32cde75, reverted same day).
-try { indexedDB.deleteDatabase('autos-routes') } catch { /* private mode etc. */ }
 
 let _spawnWarmActive = false   // frame loop skips the road stream while a spawn-band warm is pumping
 // The seed spawn is a pure function of (seed, params) — test/world-determinism.mjs proves it is
@@ -1087,7 +1082,7 @@ async function _reseatTruckAtSpawnInner () {
   vehicleState.rimForceRoad   = [0, 0, 0, 0]
   vehicleState.brakeTorque    = [0, 0, 0, 0]
   vehicleState.wheelPhase     = [0, 0, 0, 0]
-  vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 }
+  vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1 }
   // FEAT-33 (owner, 2026-08-22): story mode re-seats you with a DEAD truck — starting the day by
   // starting the truck is the ritual SM-INV-6 wants. Free roam / lab / scenario hand you a running
   // one so a debug reset is never gated behind a keypress.
@@ -6082,7 +6077,6 @@ const storySystem = new StorySystem({
     daySystem.stop()    // FEAT-47: clock off, sky handed back to free roam's noon look
     daySystem.setBlinksEnabled(false)   // …and the eyelids can never fire in free roam
     setControlAttenuation(1)            // belt-and-braces: leave the driver's inputs whole
-    economySystem.stop()                // FEAT-53: wallet dormant (start() re-zeroes on next run)
     offerBoard?.clearRoutes()           // FEAT-67: routes hold live centerlines — never keep them across a region
     offerBoard = null                   // …and the board belongs to the run that just ended
     _dropLarryTour()
@@ -6723,9 +6717,8 @@ function loop () {
       if (landed) { damageHUD.noteImpact(landed); damageScreen.alert() }
     }
     simTime += PHYSICS_DT
-    // BUG-12 diagnostic (open): while recording, log the truck run's local centerline turn radius
-    // to localize ribbon folds. Gated on isRecording() so normal play pays nothing (queryNearest
-    // scans a 3×3 tile block). The post-hoc road-resolution path lives in test/replay.mjs.
+    // While recording, log the ground the browser sampled (gated on isRecording() so normal play
+    // pays nothing). The post-hoc road-resolution path lives in test/replay.mjs.
     let roadDebug = null
     if (isRecording() && !_labActive) {
       const px = vehicleState.position.x, pz = vehicleState.position.z
@@ -6736,8 +6729,7 @@ function loop () {
       const wheelGh = terrainSystem
         ? [0, 1, 2, 3].map(i => { const hub = getWheelPosition(i, vehicleState, RANGER_PARAMS); return terrainSystem.analyticHeight(hub.x, hub.z) })
         : [null, null, null, null]
-      const minR = roadSystem ? roadSystem.debugSampleAt(px, pz).minR : 9999
-      roadDebug = { minR, gh, wheelGh }
+      roadDebug = { gh, wheelGh }
     }
     captureFrame(simTime, vehicleState, vehicleState.wheelDebug, roadDebug)
     accumulator -= PHYSICS_DT

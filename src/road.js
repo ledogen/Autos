@@ -5681,8 +5681,7 @@ export class RoadSystem {
         }
         // Both tests start OUTSIDE the junction pad. Inside it there is no ribbon to judge: the pad
         // plane is the surface, and the pad's own rules govern it (roadJunctionPadMaxGrade for the
-        // plane, roadJunctionBlendMaxGrade for the arrival ramp) — the ticket's "mergePadArrivalMax
-        // is the pad-side equivalent already in place for ordinary junctions". Measured without this
+        // plane, roadJunctionBlendMaxGrade for the arrival ramp). Measured without this
         // exclusion, 7 of seed 6's 10 forks were condemned for deck gaps 4-10 m from the node, which
         // is paved plaza, not a wall between two ribbons.
         // R3 (owner, 2026-08-31): A PAD REACHES 10 m AT MOST — "the ruled bar, not the built reach".

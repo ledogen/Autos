@@ -360,9 +360,6 @@ export class EconomySystem {
         runEconomy.awards = []
     }
 
-    /** Leave story mode. The wallet keeps its value until the next start() — nothing reads it in free roam. */
-    stop () {}
-
     /**
      * The terms of a job at the moment it is ACCEPTED — day tier AND rank thresholds, frozen.
      * mission.js stamps this onto the mission so settlement reads the contract you took, not the
