@@ -503,7 +503,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   if (!engineCtx) throw new Error('stepPhysics: engineCtx {engine, chassis} is required (FEAT-48)')
   const { engine, chassis } = engineCtx
   // ── Step 0: Rotation helper ────────────────────────────────────────────────
-  params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
+  // Built once per (params, vehicleState) pair, not per step. It reads .quaternion at CALL time, so
+  // it stays right between steps too (main.js asks getWheelPosition outside the step).
+  if (params._rotateVectorOf !== vehicleState) {
+    params._rotateVectorOf = vehicleState
+    params._rotateVector = (v) => new THREE.Vector3(v.x, v.y, v.z).applyQuaternion(vehicleState.quaternion)
+  }
 
   // ── Step 0.5: Wheel contact source = analytic terrain ∪ engine DYNAMIC bodies ──
   // The analytic queryContacts stays the terrain/prop/wall source for wheels (it is
@@ -625,10 +630,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   engine.setTransform(chassis, vehicleState.position, vehicleState.quaternion)
   engine.setVelocity(chassis, vehicleState.velocity, vehicleState.angularVelocity)
 
-  // ── Step 2: Body-space axes ────────────────────────────────────────────────
-  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
-  const right   = new THREE.Vector3(1, 0, 0).applyQuaternion(vehicleState.quaternion)
-  const up      = new THREE.Vector3(0, 1, 0).applyQuaternion(vehicleState.quaternion)
+  // ── Step 2: Body-space axes (module scratch — valid for this step only) ────
+  const forward = _forward.set(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+  const right   = _right.set(1, 0, 0).applyQuaternion(vehicleState.quaternion)
+  const up      = _up.set(0, 1, 0).applyQuaternion(vehicleState.quaternion)
 
   // ── Step 2.1: Drivetrain (FEAT-23) ─────────────────────────────────────────
   // Engine → torque converter → automatic gearbox → final drive, stepped ONCE per physics step from
@@ -669,12 +674,15 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   const totalForce  = new THREE.Vector3()
   const totalTorque = new THREE.Vector3()
   let totalGroundFn = 0  // accumulated normal force across all wheel contacts; gates rolling resistance
+  // Post-substep hub per wheel: Step 2.6 and Step 3 both need it and nothing between them moves
+  // the body or the struts, so whichever asks first computes it.
+  const hubPost = _hubPost.fill(null)
   if (params._hubNormalXZ) {
     for (let i = 0; i < 4; i++) {
       const xz = params._hubNormalXZ[i]
       if (!xz || (xz.x === 0 && xz.y === 0 && xz.z === 0)) continue
       // Hub world position for torque arm (approximation per D-06a); torque = rHub × F_xz.
-      const hub_i  = getWheelPosition(i, vehicleState, params)
+      const hub_i  = hubPost[i] = getWheelPosition(i, vehicleState, params)
       const rHubX  = hub_i.x - vehicleState.position.x
       const rHubY  = hub_i.y - vehicleState.position.y
       const rHubZ  = hub_i.z - vehicleState.position.z
@@ -688,12 +696,20 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   }
 
   // ── Step 3: Per-wheel force accumulation ──────────────────────────────────
+  // BUG-20: friction-circle break-away limit on the stored slip (in Pacejka-ARGUMENT space × vRef,
+  // so it auto-scales with tireSlipVelRef). Shared by the force block and the ω integrator.
+  const sBreak = (params.tireBreakawaySlip || 0.18) * (params.tireSlipVelRef || 1.0)
   for (let i = 0; i < 4; i++) {
     // Phase 4: write per-wheel fz from substep result FIRST (D-12), then airborne check (D-14).
     // Zero wheelDebug for this wheel before contacts — ensures no stale values when wheel is off-ground.
-    // The fz field is written from _tireFz (computed by stepSuspensionSubsteps above).
+    // The fz field is written from _tireFz (computed by stepSuspensionSubsteps above). Reset IN
+    // PLACE, every field including the grounded-only vLong/vLat, in one fixed key order.
     if (vehicleState.wheelDebug) {
-      vehicleState.wheelDebug[i] = { fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: params._tireFz[i] || 0, strutComp: vehicleState.strutComp?.[i] ?? 0 }
+      const d = vehicleState.wheelDebug[i] ?? (vehicleState.wheelDebug[i] = {})
+      d.fn = 0; d.fy = 0; d.sa = 0; d.c = 0; d.omega = 0
+      d.fz = params._tireFz[i] || 0
+      d.strutComp = vehicleState.strutComp?.[i] ?? 0
+      d.vLong = 0; d.vLat = 0
     }
 
     // Phase 4: airborne check (D-14). If tire-spring force is zero or negative, this wheel is
@@ -744,7 +760,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     }
 
     // Hub world position (sphere center for contact queries)
-    const hub  = getWheelPosition(i, vehicleState, params)
+    const hub  = hubPost[i] ?? getWheelPosition(i, vehicleState, params)
     const rHub = new THREE.Vector3(
       hub.x - vehicleState.position.x,
       hub.y - vehicleState.position.y,
@@ -762,9 +778,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       : (i < 2 ? vehicleState.steerAngle : 0)
     // Static toe rides on top of the steer angle (rear wheels get it too, from toeRear).
     const steer = steerInput + toeOffset(i, params)
-    const steerQ     = new THREE.Quaternion().setFromAxisAngle(up, steer)
-    const wheelFwd   = forward.clone().applyQuaternion(steerQ)
-    const wheelRight = right.clone().applyQuaternion(steerQ)
+    const steerQ     = _steerQ.setFromAxisAngle(up, steer)
+    const wheelFwd   = _wheelFwd.copy(forward).applyQuaternion(steerQ)
+    const wheelRight = _wheelRight.copy(right).applyQuaternion(steerQ)
     // Static camber tilts the whole wheel about its own forward axis, so the lateral (axle)
     // axis tilts with it. Grip then has a small vertical component — the jacking force real
     // cambered wheels generate. Body roll is already in `right`/`up` (body axes), so the lean
@@ -889,8 +905,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // actual displacement limit auto-scales with vRef. That keeps the break-away AT the peak as the
       // L/vRef "sloshiness" pair is retuned — otherwise a smaller vRef would push the clamp past the
       // peak into the unstable post-peak region and the static hold would creep on steep slopes.
-      const vRef   = params.tireSlipVelRef || 1.0
-      const sBreak = (params.tireBreakawaySlip || 0.18) * vRef
       const sMag   = Math.hypot(sLongCur, sLatNew)
       if (sMag > sBreak) { const k = sBreak / sMag; sLongCur *= k; sLatNew *= k }
       vehicleState.slipLat[i] = sLatNew
@@ -993,10 +1007,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       const spinSign     = omega0 >= 0 ? 1 : -1
       const brakeSigned  = brakeTorque * spinSign
 
-      // BUG-20: friction-circle limit, same as the force block (in Pacejka-argument space × vRef, so
-      // it auto-scales with vRef). Lateral leg is fixed here (lastSLatNew), so the longitudinal leg
-      // gets the remaining room on the circle.
-      const sBreak    = (params.tireBreakawaySlip || 0.18) * (params.tireSlipVelRef || 1.0)
+      // BUG-20: friction-circle limit, the same sBreak as the force block. Lateral leg is fixed here
+      // (lastSLatNew), so the longitudinal leg gets the remaining room on the circle.
       const sLongMax  = Math.sqrt(Math.max(0, sBreak * sBreak - lastSLatNew * lastSLatNew))
       let omegaNew = omega0
       let sLongFinal = lastSLongPrev
@@ -1139,6 +1151,11 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
 
 // Scratch for the dynamic-support ground velocity (avoids a per-contact alloc).
 const _groundVelScratch = { x: 0, y: 0, z: 0 }
+// Per-step scratch (stepPhysics only; nothing holds them past the step): body axes, the per-wheel
+// steered frame, and the post-substep hubs.
+const _forward = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3()
+const _steerQ = new THREE.Quaternion(), _wheelFwd = new THREE.Vector3(), _wheelRight = new THREE.Vector3()
+const _hubPost = [null, null, null, null]
 
 const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, commit the rolling fixed point instead
 const EMPTY_DEPTH_MAP = new Map()           // shared immutable-by-convention first-step default

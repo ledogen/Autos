@@ -158,11 +158,13 @@ export function updateVehicle (vehicleState, params, dt) {
   // L = wheelbase (2.85m), T = trackFront (1.43m), phi = reference steer angle.
   // Sign convention: positive phi = steer left →
   //   left wheel is inner (sharper angle), right wheel is outer.
+  // Written IN PLACE (read by physics.js stepPhysics for lateral force decomposition) — this runs
+  // every step, so a fresh array each time was pure garbage.
   const phi = vehicleState.steerAngle
-  let wheelSteerAngles
+  const wheelSteerAngles = vehicleState.wheelSteerAngles ?? (vehicleState.wheelSteerAngles = [0, 0, 0, 0])
 
   if (Math.abs(phi) < 1e-6) {
-    wheelSteerAngles = [0, 0, 0, 0]
+    wheelSteerAngles[0] = wheelSteerAngles[1] = wheelSteerAngles[2] = wheelSteerAngles[3] = 0
   } else {
     const sinPhi = Math.sin(phi)
     const cosPhi = Math.cos(phi)
@@ -174,11 +176,10 @@ export function updateVehicle (vehicleState, params, dt) {
     const phiRight = Math.atan(twoL * sinPhi / (twoL * cosPhi + params.trackFront * sinPhi))
 
     // Wheel index: 0=FL (left), 1=FR (right); rear wheels 2,3 always 0.
-    wheelSteerAngles = [phiLeft, phiRight, 0, 0]
+    wheelSteerAngles[0] = phiLeft
+    wheelSteerAngles[1] = phiRight
+    wheelSteerAngles[2] = wheelSteerAngles[3] = 0
   }
-
-  // Store on vehicleState: read by physics.js stepPhysics for lateral force decomposition.
-  vehicleState.wheelSteerAngles = wheelSteerAngles
 
   // ── 6. Reset check (M1-12) ─────────────────────────────────────────────────
   if (keys.r) {
