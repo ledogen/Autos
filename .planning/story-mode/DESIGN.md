@@ -417,7 +417,10 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   the flywheel stalls. A better car raises *payout*, not lowers *risk* — the player drives
   at their own limit regardless of what's underneath, which is where crashes live. Godlike
   runs stay lethal. **There is exactly ONE par**, derived from route geometry. It scales with nothing
-  — not the car, not run age. [DEFAULT — load-bearing]
+  — not the car, not run age. *Job-contract time slack is not par scaling [owner, 2026-10-15]:* a
+  loaded job's contract stretches the par it is held to — haul × 1.1 (`HAUL_PAR_SLACK`), freight
+  × (1 + 0.0007·kg) (`FREIGHT_PAR_SLACK_PER_KG`), both data/offers.js — because the load the job
+  hands you slows the truck; the geometric par underneath is untouched. [DEFAULT — load-bearing]
 
   > **Run-duration scaling clause RETIRED [RATIFIED 2026-07-29].** *Struck: "Par MAY scale with run
   > duration — it tightens the longer a run survives, a global difficulty ramp keyed off run age."*
