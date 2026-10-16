@@ -79,6 +79,15 @@ model on the board.
 
 ## Acceptance
 
+- **REQUIRED (owner 2026-10-15, review-2 R-19): the produce stall spawns at FARMS.** Since FEAT-105
+  (2026-10-08) the farm slot names ONE model (`model: 'barn'`, `fallbackModel: 'barnBroadside'`) on
+  its farm pad, so the 2026-10-07 plan above (farm `modelPool: 'farm'`, stall as the farm's model)
+  would now evict the barn. The only data-only farm hook is the `yardClutter` yard pool, and that is
+  NOT a fit: it is drive-through static dressing drawn at random (a 4.35 m trailer you drive through,
+  present on some farms and not others), and re-tagging into an existing pool to make an asset appear
+  is barred (CLAUDE.md). So this needs a real farm satellite slot (or the ASSET-65..67 farm composite)
+  that stands the stall on the farm pad with its restated deck-mass collision. Review-2 left
+  `produce-stall.glb` shipped and unregistered for this.
 - `produce-stall.glb` has a registry entry with correct collision metadata for the trailer form.
 - The produce stall carries the `farm` tag and spawns in-world on the farm roster slots.
 - A gate fails if a registry entry carries a tag that no roster slot names, so the next stranded

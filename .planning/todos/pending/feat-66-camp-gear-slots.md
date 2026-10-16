@@ -4,8 +4,8 @@ type: feature
 status: open
 severity: minor
 opened: 2026-08-17
-updated: 2026-10-01
-relates: ASSET-23, ASSET-24, ASSET-25, ASSET-26, FEAT-59, FEAT-45, SM-1
+updated: 2026-10-15
+relates: ASSET-06, ASSET-23, ASSET-24, ASSET-25, ASSET-26, FEAT-59, FEAT-45, SM-1
 ---
 
 # FEAT-66: Camp gear slot renderer
@@ -42,6 +42,12 @@ origin ⇒ swapping the model is the whole upgrade** — the renderer resolves s
   inside the 6 m pad.
 - Empty slots render nothing — no placeholder, no phantom gear.
 - Adding ASSET-25/26 later is a registry entry plus a slot mapping, not renderer work.
+- **REQUIRED (owner 2026-10-15, review-2 R-19): `tent.glb` (ASSET-23)** is visible at camp when the
+  player possesses the item (inventory not built yet). Until then it stays shipped and unregistered —
+  do not delete it.
+- **REQUIRED (owner 2026-10-15, review-2 R-19): `awning.glb` (ASSET-06)** is visible at camp when the
+  player possesses the item (inventory not built yet). It moves from lawn furniture to camp gear; it
+  is not in any `lawnFurniture` / `yardClutter` pool and must not be tagged into one to make it appear.
 
 **Update 2026-08-22 — ASSET-24 closed, so TWO slots now have models waiting.** `campfire.glb` is
 registered in `data/prop-models.js` as `campfire` (472 tris, 0.708 x 0.378 x 0.675 m, base-seated,
