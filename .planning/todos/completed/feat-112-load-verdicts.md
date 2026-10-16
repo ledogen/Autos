@@ -1,7 +1,8 @@
 ---
 id: FEAT-112
 type: feature
-status: open
+status: completed
+closed: 2026-10-16
 severity: major
 opened: 2026-10-14
 source: owner, 2026-10-12 / 2026-10-14 — "overloads need a mission card soft warning and hard warning
@@ -202,7 +203,7 @@ as you would loaded, `pk()`. Under ~48 kN rear confirms the table.
       stock truck, with the soft-limit message; a fixture at 830 kg is an overload; every other
       current load fits (the railway ties excepted — they overhang, see the ladder).
 - [x] Every posted bed load has dimensions and a form; the gate fails on a missing one.
-- [ ] The card shows the verdict and reason; overload disables accept with the reason.
+- [x] The card shows the verdict and reason; overload disables accept with the reason.
 - [x] Same seed → the same board whatever the configuration (SM-INV-12).
 - [x] A fresh tire under 600 kg still cannot pop; over 600 kg it can, on the ramp above.
       Pinned beside test/damage-filter-puncture.mjs; physics fingerprint unchanged with an empty bed.
@@ -222,3 +223,9 @@ as you would loaded, `pk()`. Under ~48 kN rear confirms the table.
 ## Open — the owner's
 
 None. Concrete (670 kg) never popping a tire in practice is fine as calibrated (owner, 2026-10-16).
+
+## Resolution (2026-10-16)
+
+Shipped in 7a7c041, merged f15a59c. All acceptance gate-proven (`test/load-verdict.mjs`, the capped
+case in `test/damage-filter-puncture.mjs`, physics fingerprint identical); the warning line on a live
+card confirmed in-game by the owner.
