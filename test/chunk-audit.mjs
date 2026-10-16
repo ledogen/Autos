@@ -16,7 +16,7 @@ for (let i = 0; i < 30; i++) { const r = await c.evalJS(`typeof window.__view===
 await c.evalJS(`window.__view(${X}, ${CAMY}, ${Z}, 0, -1.0)`)
 await sleep(7000)
 const r = await c.evalJS(`(() => {
-  const ts = window.__terrainSystem && window.__terrainSystem(); if (!ts) return 'no ts'
+  const ts = window.__terrain && window.__terrain(); if (!ts) return 'no ts'
   const p = ts._params; const out = { treeLo: p.terrainTreelineLo, treeHi: p.terrainTreelineHi, amp: p.terrainAmplitude, chunks: [] }
   for (const [key, ch] of ts._chunkMap) {
     const g = ch.mesh && ch.mesh.geometry; if (!g) { out.chunks.push({ key, nogeo: true }); continue }

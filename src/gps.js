@@ -384,7 +384,7 @@ export class GpsSystem {
     this.enabled = true
   }
 
-  /** FEAT-41 seam: the story-mode assists page flips this (also exposed as window.__setGpsEnabled). */
+  /** FEAT-41 seam: the story-mode assists page flips this. */
   setEnabled (v) {
     this.enabled = !!v
     if (!this.enabled) this._hideAll()

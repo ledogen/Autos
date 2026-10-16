@@ -1251,10 +1251,6 @@ const vehicleState = makeVehicleState(RANGER_PARAMS)
 const damageModel = new DamageModel({ params: RANGER_PARAMS })
 damageModel.publish(RANGER_PARAMS)
 window.__damage = damageModel   // debug panel + the damage GUI read this
-// Read-only console/harness handle on the live vehicle state. The damage rates are calibrated by
-// driving the FEAT-31 lab rig and watching the per-corner signals, and a harness cannot hold a
-// target speed on the rumble lane without being able to read the speed back.
-window.__vehicleState = () => vehicleState
 // The diagnostic readout, toggled from the debug panel's Damage folder. Hidden by default and free
 // while hidden; it is how a drive's wear is evaluated, since wear rates and a tenth-of-a-second
 // impact are otherwise invisible from behind the wheel.
@@ -1595,8 +1591,9 @@ function applyShadowResolution (mapSize, extent) {
 const skySystem = new SkySystem({ scene, renderer, sun, sunFar, farSplit: SHADOW_FAR_SPLIT, ambient })
 window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
 // NB `window.terrain` is the ground-height FUNCTION (returns metres), not the streaming system. This is the system
-// itself — needed to reach _terrainUniforms (e.g. A/B-ing uShadowStrength from a CDP probe).
-window.__terrainSystem = () => terrainSystem
+// itself — needed to reach _terrainUniforms (e.g. A/B-ing uShadowStrength from a CDP probe, or zeroing
+// the FEAT-84 surface-texture uniforms to price them). A getter: a reseed swaps the instance.
+window.__terrain = () => terrainSystem
 
 // The moon rides SkySystem's KEY-LIGHT direction, so the disc you see is the thing casting the
 // night's shadows. Placed each frame from the loop (see moonSystem.update).
@@ -1743,10 +1740,6 @@ const map2d = new Map2D({
 // Dev handles for the FEAT-68 checkpoint tooling (CDP probes: map renders, drive-through tests).
 // Same always-on precedent as window.__view.
 window.__map2d = () => map2d
-// FEAT-68: the live v2 price list, so a harness (or the console) can read/poke a router price
-// and see the world re-route. This is the SAME object the router prices with — if a slider ever
-// stops taking effect, compare what the panel mutated against what this returns.
-window.__v2costs = () => RANGER_PARAMS.roadV2
 window.__teleport = (x, z, heading, drop = 0.5) => teleportToGround(x, z, heading, drop)
 window.__car = () => ({ x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
                         v: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) })
@@ -2233,23 +2226,9 @@ if (_PROF) {
     programs: renderer.info.programs?.length ?? 0,
   })
   window.__perfData = () => perfSnapshot()
-  // FEAT-84: the terrain system, so an external probe can zero the surface-texture uniforms and
-  // price them (same read-only precedent as __props / __road).
-  window.__terrain = () => terrainSystem
   // FEAT-43: story-mode handle, so the external profiler can measure INSIDE the mode (enter it,
   // wait out the region warm, then drive) instead of only ever profiling free roam.
   window.__story = () => storySystem
-  // FEAT-46: the placed POIs, so an external harness can enter the mode and verify the pads/markers
-  // without a screenshot. Same read-only precedent as __story / __road.
-  window.__poi = () => poiSystem
-  // The live mission/run state, so a harness can reach a result card without driving the route.
-  window.__mission = () => missionSystem
-  // FEAT-53: the run wallet, so a harness can assert a payout/points accrual without a screenshot.
-  window.__economy = () => economySystem
-  // FEAT-45: the camp zones + grading, so a harness can find a campable spot and exercise the dig.
-  window.__camp = () => campSystem
-  // The network-Worker client, so a harness can exercise the build queue (stale and failed replies).
-  window.__net = () => netClient
   // Route-dispatch probe: wraps _routeDispatch on first call to count per-key dispatches —
   // diagnoses warm-loop re-dispatch churn (a key dispatched >2× means a warm scan is spinning).
   let _rdWrap = null
@@ -2299,9 +2278,6 @@ if (_PROF) {
     hasProps:   (cx, cz) => !!propSystem && propSystem.hasChunk(cx, cz),
     hasGround:  (cx, cz) => !!terrainSystem && terrainSystem._chunkMap.has(cx + ',' + cz),
   })
-  // FEAT-39: the GPS system, so the CDP harness can inspect the baked route + live arrow/chevrons
-  // (the overlay only draws near the car, so it can't otherwise be probed without driving a run).
-  window.__gps = () => gpsSystem
   // FEAT-39 harness: drop the CAR at a spot (unlike __view, which only moves the freecam). Lets the
   // CDP probe frame the real chase-cam approach to a junction without hand-driving there.
   // `drop` is exposed because the SM-3 spring track is calibrated by DROPPING the truck onto its
@@ -2349,10 +2325,6 @@ if (_PROF) {
     const r = fn(value)
     return r instanceof Promise ? r.then(() => true) : true
   }
-  // QUAL-21 A/B: flip a road param and re-route through the SAME debounced path the debug
-  // sliders take (params mutated in place → debouncedRoadRebuild) — lets the CDP screenshot
-  // harness A/B the road toggles without the GUI.
-  window.__roadParam = (k, v) => { RANGER_PARAMS[k] = v; debouncedRoadRebuild(); return RANGER_PARAMS[k] }
 }
 
 // Phase 6 (TERR-06): pass setRampVisible callback so the Ramp Visible toggle in debug.js
@@ -2572,7 +2544,6 @@ window.__propPhysics = propPhysics             // dev handle — prop-debug radi
 const physicsWireframes = new PhysicsWireframes(physicsEngine, scene)
 window.__physWireframes = physicsWireframes    // dev handle — debug.js checkbox targets it
 window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
-window.__vehicleChassis = vehicleChassis       // dev handle
 window.__setBodyBounce = (e) => setBodyRestitution(physicsEngine, vehicleChassis, e)   // debug.js Body Bounce slider
 window.__syncChassisMass = () => syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS)   // debug.js Mass slider + vehicle preset
 window.__vs = vehicleState                    // dev handle — read live vehicle state from the console / CDP probes
@@ -3708,8 +3679,6 @@ const paperRouteSystem = new PaperRouteSystem({
   setMapOpen: (open) => _setMapOpen(open, paperRouteSystem?.markers()),
   onChange:  () => _renderPaperUI(),
 })
-window.__paperRoute = () => paperRouteSystem
-window.__board = () => offerBoard   // FEAT-67: read-only dev handle (CDP map checks), same precedent as __story
 // FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
 const _recalcEl = document.getElementById('gps-recalc')
 let _recalcOn = false
@@ -3747,8 +3716,6 @@ gpsSystem = new GpsSystem(scene, {
   // 27 m — see gps.js bakeRoute's ELEVATION SOURCE note.
   getRoad: () => roadSystem,
 })
-// FEAT-41 seam: the story-mode assists page will flip this (mirrors window.__setGameMode).
-window.__setGpsEnabled = (v) => gpsSystem?.setEnabled(v)
 
 // ── FEAT-31: the testing lab ─────────────────────────────────────────────────
 // An isolated flat world with painted, auto-timed tracks. Grid world only ever hid the TERRAIN
@@ -5262,7 +5229,6 @@ propSystem.setPhysicsHook(propPhysics)   // FEAT-48: trees/rocks/boulders are ri
 // system, and the static sun direction into the projection shear. In realtime-cast mode the terrain
 // strength is 0 (props keep casting into the sun's shadow map instead).
 const shadowBake = new ShadowBakeSystem(renderer, FLORA_PARAMS.shadows?.tilePx ?? TILE_PX)
-window.__shadowBake = shadowBake   // dev handle (mirrors window.sky) — inspect/force sun re-bake rolls
 shadowBake.setSun(skySystem.sunDirection)
 // Baked strength is 0 whenever the bake can't stand in: realtime-cast mode, or tilePx 0 (Low tier
 // turns baked prop shadows off outright — no atlas exists to sample).
@@ -5288,8 +5254,6 @@ const applyPropShadowMode = () => {
 _syncBakedShadows = applyPropShadowMode   // lets applyQuality push a tier's shadowTilePx (see there)
 propSystem.setShadowBake(shadowBake)
 applyPropShadowMode()   // apply the params' fade bounds at boot (uniform defaults are placeholders)
-// PERF-07 dev handle: A/B baked vs realtime prop shadows from the console / CDP harness.
-window.__propShadows = (realtime) => { FLORA_PARAMS.shadows.castRealtime = !!realtime; applyPropShadowMode() }
 
 // PERF-21: billboard impostors for distant props (browser-only — needs the renderer for the atlas
 // bake). Re-run after any PropSystem recreation (GUI rebuild / seed change) — the fresh instance

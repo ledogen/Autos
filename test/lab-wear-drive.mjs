@@ -70,7 +70,7 @@ const cond  = async () => JSON.parse(await ev('JSON.stringify(window.__damage.co
 const peaks = async () => JSON.parse(await ev('JSON.stringify(window.__pk)'))
 const reset = () => ev(`window.__damage.setAll(1); window.__damage.publish(window.__damage.params)
   window.__pk = { strut: 0, bump: 0, comp: 0, n: 0, sum: 0 }; true`)
-const speedMph = () => ev(`(() => { const v = window.__vehicleState().velocity
+const speedMph = () => ev(`(() => { const v = window.__vs.velocity
   return Math.hypot(v.x, v.z) / 0.44704 })()`)
 
 const W = ['w', 'KeyW', 87]; let wDown = false
@@ -101,7 +101,7 @@ async function hold (label, targetMph, secs) {
 /** Teleport onto a lane and refuse to measure if it did not land — see the ?prof=1 note above. */
 async function placeOn (x, z) {
   await ev(`window.__tp(${x}, ${z}, -Math.PI / 2); true`); await sleep(3500)
-  const p = JSON.parse(await ev('JSON.stringify(window.__vehicleState().position)'))
+  const p = JSON.parse(await ev('JSON.stringify(window.__vs.position)'))
   if (Math.abs(p.z - z) > 3) throw new Error(`teleport failed — truck at z=${p.z.toFixed(1)}, wanted ${z}`)
 }
 

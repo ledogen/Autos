@@ -16,7 +16,7 @@
 // The collision target is the lab ramp's BACK WALL: approach the ramp from behind (−Z) and it is a
 // solid vertical face, not a ramp. Repeatable, flat-on, and no props needed.
 //
-// Requires the dev server, and ?prof=1 for window.__tp / window.__vehicleState.
+// Requires the dev server, and ?prof=1 for window.__tp.
 //   node test/collision-drop-lab.mjs [port] [cdpPort]
 
 import { spawn } from 'child_process'

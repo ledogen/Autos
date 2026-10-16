@@ -48,7 +48,7 @@ const HEADED   = has('headed')
 const PORT = Number(flag('port', 8000)), CDP_PORT = Number(flag('cdp', 9222))
 // GPU-side reproduction (2026-09-29): --window=W,H --dpr=N put the render at the owner's retina pixel
 // count (an Air is ~2× DPR, 4× the pixels of the default 1400×900 window), and --eval=JS runs once
-// after the settle, before the window — e.g. "window.__terrainSystem()._terrainUniforms.uSurfOn.value=0"
+// after the settle, before the window — e.g. "window.__terrain()._terrainUniforms.uSurfOn.value=0"
 // for a textures-off A/B.
 const WINDOW = flag('window', '1400,900'), DPR = Number(flag('dpr', 1)), EVAL = flag('eval', '')
 // --truck: the stream sweep carries the TRUCK (teleported along the sweep at --speed) instead of the

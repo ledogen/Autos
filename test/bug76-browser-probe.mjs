@@ -27,7 +27,7 @@ if (MODE === 'path') {
 await ev(`window.__teleport(${X}, ${Z}, 0, 0.5)`)
 await sleep(8000)
 const out = await ev(`(() => {
-  const ts = window.__terrainSystem(), rs = window.__roadSys(), pe = window.__physicsEngine, vs = window.__vs
+  const ts = window.__terrain(), rs = window.__roadSys(), pe = window.__physicsEngine, vs = window.__vs
   let worstT = -Infinity, worstP = -Infinity, raised = 0
   for (let dx = -8; dx <= 8; dx += 0.5) for (let dz = -8; dz <= 8; dz += 0.5) {
     const x = ${X} + dx, z = ${Z} + dz, a = ts.analyticHeight(x, z, rs.carveHint(x, z))
