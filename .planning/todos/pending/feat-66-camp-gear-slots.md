@@ -82,6 +82,9 @@ per-pixel cost while driving.
 owner). Owned camp gear rides in the truck; only what is **packed** comes out at camp, set up
 automatically. So the renderer resolves slot → packed item → model id. Every run starts with the
 Pack (2 slots) holding the bedroll; the fire is always there and takes no slot.
+The `shelter` row above predates this: the **bed** (bedroll / air mattress / sleeping pad / deluxe
+pad) is one slot, and the blanket and sleeping bag render *with* the bed, not in place of it. The
+campfire is not an item — it spawns to mark camp.
 
 ## Notes
 

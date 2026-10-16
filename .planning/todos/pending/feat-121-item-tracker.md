@@ -44,7 +44,8 @@ items.md; cut it here (`status: cut`) when items.md strikes it.
 
 **Not items, so not here:** fuel at the pump and repairs at the auto shop are storefront *services*
 (FEAT-104); brands and durability tiers (items.md §3d) are a modifier on every part, not a row of
-their own; cargo is `cargo.md`; story keys are knowledge.
+their own; cargo is `cargo.md`; story keys are knowledge; the campfire spawns to mark camp (only the
+cooking kit modifies it).
 
 ## Food & drink
 
@@ -211,31 +212,29 @@ Hazard reports on the Highway's roads (FEAT-119).
 
 ## Camp gear
 
-### Bedroll and campfire
+### Bedroll
 status: todo · design: kit · build: model · needs: camp render · where: kit
-The default camp, no modifier. The bedroll fills one of the starter Pack's 2 slots; the fire takes
-none. Campfire model done (ASSET-24); nothing renders it yet (FEAT-66).
+The baseline sleeping item, no bonus. Fills one of the starter Pack's 2 slots.
 
 ### Air mattress
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Sleeping item, rank 2 of 4: a flat increase to restfulness (energy recovery rate), any site. Swaps
-for the bedroll in its slot and in the render.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Sleeping item: +5% recovery rate. Swaps for the bedroll in its slot and in the render.
 
 ### Sleeping pad
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Sleeping item, rank 3 of 4: a larger flat increase to restfulness. Swaps for the bedroll.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Sleeping item: +10% recovery rate. Swaps for the bedroll.
 
 ### Deluxe sleeping pad
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Sleeping item, rank 4 of 4: the largest flat increase to restfulness. Swaps for the bedroll.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Sleeping item: +15% recovery rate, the best bed. Swaps for the bedroll.
 
 ### Blanket
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Add-on, own slot, not required to sleep: a flat increase to restfulness, stacking with the bed.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Add-on, own slot, not required to sleep: +5% recovery rate, adding to the bed and the sleeping bag.
 
 ### Sleeping bag
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Add-on, own slot, not required to sleep: a flat increase to restfulness, stacking with the bed.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Add-on, own slot, not required to sleep: +10% recovery rate, adding to the bed and the blanket.
 Renders with the bed, not in place of it.
 
 ### Tent

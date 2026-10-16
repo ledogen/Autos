@@ -413,13 +413,13 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 
 | Item | What it does | Source | Cost | Status |
 |---|---|---|---|---|
-| **Bedroll (+ campfire)** | **The default camp — no modifier.** Everybody has one; you sleep on the ground beside a fire. It is the baseline the rest of this table is measured against, and the thing that renders when you carry nothing else. | Starting kit | Its own trivial mass; a Pack slot (§2c) | **IDEA** — 2026-07-30. **The baseline sleeping item** (owner, 2026-10-16): it can be swapped for an upgrade below, never removed for nothing |
-| **Air mattress** | **Sleeping item, rank 2 of 4.** A **flat increase to restfulness** — energy recovers faster per hour slept, on any site. **Replaces the bedroll** in its slot and in the rendered camp. | Bought/found | Cash; the sleeping item's slot; small mass | **IDEA** — owner, 2026-10-16. Figure open |
-| **Sleeping pad** | **Sleeping item, rank 3 of 4.** A larger flat increase to restfulness. Replaces the bedroll. | Bought/found | Cash; the sleeping item's slot; small mass | **IDEA** — owner, 2026-10-16. Figure open |
-| **Deluxe sleeping pad** | **Sleeping item, rank 4 of 4 — the best bed.** The largest flat increase to restfulness. Replaces the bedroll. | Bought/found | Cash; the sleeping item's slot | **IDEA** — owner, 2026-10-16. Figure open |
-| **Sleeping bag** | **Add-on, not a sleeping item** (owner, 2026-10-16): not required to sleep, takes **its own slot**, and is a **flat increase to restfulness** that stacks on top of the bed. Renders with the bed, not in place of it. | Bought/found | Cash; its own slot; small mass | **IDEA** — 2026-07-30; re-cut owner 2026-10-16 (was a ~1.1× multiplier that replaced the bedroll). Figure open |
-| **Tent** | A multiplier on the energy a night buys, larger than the sleeping bag's old ~1.1×. *Open since 2026-10-16: the sleeping bag and blanket went flat — does the tent too, and what does it now replace in the render?* Was: **replaces the sleeping bag** in the rendered camp — the campsite visibly becomes a camp rather than a man on the dirt. | Bought/found | Cash; a slot; real mass | **IDEA** — 2026-07-30 |
-| **Blanket** | **Add-on, not a sleeping item** (owner, 2026-10-16): not required to sleep, takes **its own slot**, and is a **flat increase to restfulness** that stacks on top of the bed. The cheap first upgrade over the bare bedroll. | Bought/found | Cash; its own slot; trivial mass | **IDEA** — 2026-08-01; re-cut owner 2026-10-16 (was the small end of the multiplier). Figure open |
+| **Bedroll** | **The baseline sleeping item — no bonus.** Everybody has one. It is what the rest of this table is measured against. | Starting kit | Its own trivial mass; the sleeping item's slot in the pack (§2c) | **RULED** — owner, 2026-10-16. Replaced by an air mattress or a pad, never removed for nothing |
+| **Air mattress** | **Sleeping item.** **+5% recovery rate.** **Replaces the bedroll** in its slot and in the rendered camp. | Bought/found | Cash; the sleeping item's slot; small mass | **RULED** — owner, 2026-10-16 |
+| **Sleeping pad** | **Sleeping item.** **+10% recovery rate.** Replaces the bedroll. | Bought/found | Cash; the sleeping item's slot; small mass | **RULED** — owner, 2026-10-16 |
+| **Deluxe sleeping pad** | **Sleeping item — the best bed.** **+15% recovery rate.** Replaces the bedroll. | Bought/found | Cash; the sleeping item's slot | **RULED** — owner, 2026-10-16 |
+| **Sleeping bag** | **Add-on, not a sleeping item.** Not required to sleep; takes **its own slot**. **+10% recovery rate**, combining with the bed and the blanket. Renders with the bed, not in place of it. | Bought/found | Cash; its own slot; small mass | **RULED** — owner, 2026-10-16 (was a ~1.1× multiplier that replaced the bedroll) |
+| **Tent** | A multiplier on the energy a night buys, larger than the sleeping bag's old ~1.1×. *Open since 2026-10-16: the bed and add-ons are now % bonuses on the recovery rate — is the tent one too, and what does it replace in the render?* Was: **replaces the sleeping bag** in the rendered camp — the campsite visibly becomes a camp rather than a man on the dirt. | Bought/found | Cash; a slot; real mass | **IDEA** — 2026-07-30 |
+| **Blanket** | **Add-on, not a sleeping item.** Not required to sleep; takes **its own slot**. **+5% recovery rate**, combining with the bed and the sleeping bag. The cheap first upgrade over the bare bedroll. | Bought/found | Cash; its own slot; trivial mass | **RULED** — owner, 2026-10-16 (was the small end of the multiplier) |
 | **Cot** | **Vibe axis — flatness.** Makes unflat ground sleepable: fills part of the flatness deficit of the site you chose. Inert on ground that is already flat. | Bought/found | Cash; a slot; real mass (it's a folding frame) | **IDEA** — 2026-08-01 |
 | **Canopy / tarp** | **Vibe axis — shade.** Makes an exposed site bearable: fills part of the shade deficit. Inert under trees. | Bought/found | Cash; a slot; small mass | **IDEA** — 2026-08-01 |
 | **Binoculars** | **Vibe axis — view.** Something to look at from a site with nothing much to look at. Inert on a spot that already has the valley in front of it. **Unblocked:** view is now a real segment — `VIBE_W = { flat .40, view .15, shade .20, water .25 }` in `src/camp.js`, re-ratified 2026-08-01, and the raw score is `skylineView()`'s angular field-of-vision scan. So the deficit this fills is `1 − viewScore`, and it is **the cheapest entry in this table to build** — the only camp-gear row whose whole dependency chain already ships. | Bought/found | Cash; a slot; negligible mass | **IDEA** — 2026-08-01; **owner re-affirmed 2026-08-18** |
@@ -440,7 +440,11 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 > score decides what a night at that spot is worth (`r(vibe) = lerp(4/3, 8/3, vibe)` h/h in `src/day.js`).
 >
 > - **Energy axis** — the sleeping items (bedroll, air mattress, sleeping pad, deluxe sleeping pad),
->   blanket, sleeping bag, tent, cooking kit. These scale what you *take
+>   blanket, sleeping bag, tent, cooking kit.
+>
+> **The campfire is not an item** (owner, 2026-10-16). It spawns to mark camp, every camp has one,
+> and it never takes a slot. No gear modifies it — **the cooking kit is the only exception**, and
+> that is the cooking kit's effect, not the fire's. These scale what you *take
 >   away* from the night, whatever the night was. They stack with any site.
 > - **Vibe axis** — cot, canopy, binoculars. Each names **one segment** of the vibe score and fills
 >   part of that segment's **deficit** on the site you already chose.
@@ -548,26 +552,35 @@ still placeholders.
 
 **Rulings this implies, stated so they can be checked:**
 
-- **The bedroll takes a slot; the campfire does not** (owner, 2026-10-16). The bedroll is the default
-  sleeping item and starts the run packed in the Pack. The fire is not an item, so every camp has one.
+- **The bedroll takes a slot; the campfire is not an item** (owner, 2026-10-16). The bedroll is the
+  default sleeping item and starts the run packed in the Pack. The fire just spawns to mark camp.
 - **The equipped pack must always hold a sleeping item** (owner, 2026-10-16). Spare packs in the
   truck carry no such rule. The bedroll can be swapped for an
   upgrade — **sleeping pad, air mattress, deluxe sleeping pad** (§2b) — but never removed for
   nothing. So one slot of the equipped pack is always the bed; with the starter Pack equipped, that
   leaves exactly one free slot.
-- **Sleeping items are a flat increase to restfulness** — how fast energy recovers per hour slept
-  (owner, 2026-10-16). Ranked worst to best: **bedroll < air mattress < sleeping pad < deluxe
-  sleeping pad.** "Flat" means site-blind: the same increase on a good site and a bad one, added to
-  the recovery rate `r(vibe) = lerp(sleepRateWorstH 4/3, sleepRateBestH 8/3, vibe)` h/h
-  (`src/day.js`). The bedroll adds nothing, which keeps the "average site, 8 h = full tank" contract
-  as the baseline. Scale for setting the figures: at an average site (r = 2.0 h/h), each +0.1 h/h
-  shortens a full-from-empty night by about 23 minutes. SM-INV-6 holds because the place still sets
-  the rate the bed adds to — a deluxe pad on bad ground still sleeps worse than a deluxe pad on good
-  ground.
+- **Restfulness bonuses are a percentage on the recovery rate** — how fast energy recovers per hour
+  slept (owner, 2026-10-16). The bed: **bedroll 0 · air mattress +5% · sleeping pad +10% · deluxe
+  sleeping pad +15%.** The add-ons: **blanket +5% · sleeping bag +10%.** The same percentage on any
+  site, applied to `r(vibe) = lerp(sleepRateWorstH 4/3, sleepRateBestH 8/3, vibe)` h/h
+  (`src/day.js`). The bedroll adds nothing, so the "average site, 8 h = full tank" contract is the
+  baseline. SM-INV-6 holds because the place still sets the rate the bonus scales — a deluxe pad on
+  bad ground still sleeps worse than a deluxe pad on good ground.
 - **The sleeping bag and blanket are add-ons, not sleeping items** (owner, 2026-10-16). Neither is
-  required to sleep; each takes its own slot and adds its own flat increase to restfulness, stacking
-  with the bed. So a starter Pack carries the bedroll plus *either* a blanket *or* something else.
-  *Open: the figures, and whether the tent goes flat too (§2b).*
+  required to sleep; each takes its own slot, separate from the bed's, and both can be carried at once.
+  So a starter Pack carries the bedroll plus *either* a blanket *or* something else.
+- **Bonuses add, they don't compound:** `r × (1 + bed + blanket + bag)`. Full kit is +30% (compounding
+  would give +32.8% — close enough that the simpler rule wins). What that buys, full-from-empty on
+  the 16 h tank:
+
+  | Kit | Worst site | Average site | Best site |
+  |---|---|---|---|
+  | Bedroll only | 12.0 h | 8.0 h | 6.0 h |
+  | Bedroll + blanket (starter's best) | 11.4 h | 7.6 h | 5.7 h |
+  | Deluxe pad + bag + blanket (+30%) | 9.2 h | 6.2 h | 4.6 h |
+
+  So the best kit saves about 2 h on an average night — and bad ground with the best kit (9.2 h) is
+  still worse than average ground with a bedroll (8.0 h).
 - **One equipped pack.** You can own several packs; the spares ride in the truck like any other gear.
   One is **equipped** — selected in the inventory screen — and that one is used automatically when
   you make camp (owner, 2026-10-16).
