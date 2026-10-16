@@ -768,6 +768,7 @@ export class Map2D {
     reset() {
         this.hide()
         this._road = null
+        this._campRunsMemo = null   // holds the old network's points — let them go with it
         this._centeredOnce = false
     }
 
@@ -1044,6 +1045,10 @@ export class Map2D {
         this._bg.height = Math.round(h * BG_OVERSCAN * dpr)
         this._canvas.style.width = w + 'px'
         this._canvas.style.height = h + 'px'
+        // The CSS size, kept so render-time code never reads clientWidth/Height (a layout read —
+        // forced synchronous if any HUD DOM was written earlier in the frame). Equal by
+        // construction: #map2d has no border or padding (index.html).
+        this._cssW = w; this._cssH = h
         this._sheetRect = this._computeSheet(w, h)
         this._dpr = dpr
         // Fit MAP_RADIUS*2 to the short edge of the SHEET (not the window) on the very first
@@ -1174,7 +1179,7 @@ export class Map2D {
         if (this._bgDirty) { this._drawBackground(); this._bgDirty = false }
 
         const ctx = this._ctx
-        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        const W = this._cssW, H = this._cssH
         ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0)
         ctx.clearRect(0, 0, W, H)
         // Blit the cached bg through the delta between its transform and the current one — during a
@@ -1229,7 +1234,7 @@ export class Map2D {
     // margin, not over the map) — hence no dark chip behind it any more.
     _drawCursorCoords(ctx) {
         if (this._hoverX === undefined) return
-        const H = this._canvas.clientHeight
+        const H = this._cssH
         const s = this._sheet()
         const wx = (this._hoverX - s.cx) / this._zoom + this._panX
         const wz = (this._hoverY - s.cy) / this._zoom + this._panZ
@@ -1262,7 +1267,7 @@ export class Map2D {
 
     _drawBackground() {
         const ctx = this._bg.getContext('2d')
-        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        const W = this._cssW, H = this._cssH
         const ox = this._bgOffX, oy = this._bgOffY
         // Translate by the overscan margin so every layer below can keep drawing in ordinary
         // SCREEN coordinates via _sx/_sy — the margin then falls outside [0,W]x[0,H] naturally,
@@ -1508,11 +1513,10 @@ export class Map2D {
                 const u = (ii + 0.5) / COVER_SS - 0.5
                 const shade = lerpG(shadeG, u, v)
 
-                // Cover → one of two fills, thresholded, never blended. `cover` is null past the
-                // budget, which prints plain green: at that zoom the pattern is sub-pixel anyway.
+                // Cover → one of two fills, thresholded, never blended.
                 // The cut sits at COVER_LOW..COVER_MED's midpoint, so it is the LOW/MED boundary
                 // that gets drawn — HIGH and MED share a fill and are told apart by glyphs.
-                const open = cover ? lerpG(cover, u, v) < (COVER_LOW + COVER_MED) / 2 : false
+                const open = lerpG(cover, u, v) < (COVER_LOW + COVER_MED) / 2
                 const r = open ? oR : gR, g = open ? oG : gG, b = open ? oB : gB
 
                 const o = (jj * iw + ii) * 4
@@ -1822,7 +1826,7 @@ export class Map2D {
     // sheet crawl under the cursor, which is the single fastest way to destroy the illusion of paper.
     _drawGlyphs(ctx) {
         const g = this._coverGrid
-        if (!g || !g.cover) return
+        if (!g) return
         if (!this._glyphsVisible()) return
         // ONE POP-IN FOR BOTH PLATES (owner, 2026-08-15). The marsh tufts need no cover data and the
         // conifers need the scatter replay, so on any sheet where the replay was skipped the tufts
@@ -1951,11 +1955,10 @@ export class Map2D {
         // wye's loser carried the winner's vertices verbatim, so both runs stroked the same road and
         // doubled the ink. Under the T promotion the side road does not exist over the shared
         // ground at all — there is one run there and one stroke.
-        const spans = [...(tunnelSpans || [])]
-        if (!spans.length || !cum) return [points]
+        if (!tunnelSpans?.length || !cum) return [points]
         const out = []
         let s = 0
-        for (const sp of [...spans].sort((p, q) => p.s0 - q.s0)) {
+        for (const sp of [...tunnelSpans].sort((p, q) => p.s0 - q.s0)) {
             const seg = this._arcSlice(points, cum, s, sp.s0)
             if (seg) out.push(seg)
             s = Math.max(s, sp.s1)
@@ -2073,7 +2076,7 @@ export class Map2D {
         const reg = this._getRegion()
         if (!reg) return
         const cx = this._sx(reg.x), cy = this._sy(reg.z), r = reg.r * this._zoom
-        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        const W = this._cssW, H = this._cssH
         // Dim the exterior: full-canvas rect MINUS the region disc (evenodd), so only outside fills.
         ctx.beginPath()
         ctx.rect(0, 0, W, H)
@@ -2162,50 +2165,58 @@ export class Map2D {
     // background: zones are built at story-mode entry, by which time the bg may already be baked.
     // Because the roads are already in that baked bitmap, the casing is laid down WIDE and the road
     // stroke is then re-drawn narrow on top of it — same visual result as an under-stroke, without
-    // needing the bg rebuilt. Cheap at furniture cadence: the region carries ~50 edges and the
-    // membership test is one point-in-disc per polyline vertex.
+    // needing the bg rebuilt. The in-zone runs are memoized on (road instance, _networkRev, network
+    // size, zones array): the region carries ~163 edges (the BUG-68 measurement) and the membership
+    // test is one point-in-disc per vertex per zone, too much to redo every frame. Every _network
+    // rebuild/adopt bumps _networkRev, and camp.js replaces its zone list (never mutates it) on
+    // rebuild, so the key changes whenever the answer can.
     _drawCampZones(ctx) {
         const zones = this._getCampZones()
         if (!zones || !zones.length) return
         const road = this._road
         if (!road || !road._network) return
-
-        const inZone = (p) => {
-            for (const q of zones) {
-                const dx = q.x - p.x, dz = q.z - p.z
-                if (dx * dx + dz * dz <= q.r * q.r) return true
+        const memo = this._campRunsMemo
+        let runs = (memo && memo.road === road && memo.rev === road._networkRev
+                    && memo.size === road._network.size && memo.zones === zones) ? memo.runs : null
+        if (!runs) {
+            const inZone = (p) => {
+                for (const q of zones) {
+                    const dx = q.x - p.x, dz = q.z - p.z
+                    if (dx * dx + dz * dz <= q.r * q.r) return true
+                }
+                return false
             }
-            return false
-        }
 
-        // Collect the in-zone sub-polylines once, then stroke them twice (casing, then road colour).
-        //
-        // Sourced from _surfaceSlices, NOT the raw run polyline: this pass re-lays the black road
-        // on top of its casing, and over a bored stretch that re-stroke was painting the tunnel
-        // back in as solid road — which then showed through the lighter bore drawn after it and
-        // made a tunnel inside a camping area read as an ordinary road. Skipping the bores is also
-        // the correct claim on its own terms: you cannot camp inside a tunnel, so the casing that
-        // advertises where camping is legal has no business running through one.
-        const runs = []
-        for (const e of road._network.values()) {
-            if (!e.points || e.points.length < 2) continue
-            for (const points of this._surfaceSlices(e)) {
-                if (!points || points.length < 2) continue
-                let cur = null
-                let prevIn = inZone(points[0])
-                for (let i = 1; i < points.length; i++) {
-                    const nowIn = inZone(points[i])
-                    // A segment belongs to a zone when BOTH endpoints do — the conservative read,
-                    // so the casing never claims road that leaves the zone.
-                    if (prevIn && nowIn) {
-                        if (!cur) { cur = [points[i - 1]]; runs.push(cur) }
-                        cur.push(points[i])
-                    } else {
-                        cur = null
+            // Collect the in-zone sub-polylines once, then stroke them twice (casing, then road colour).
+            //
+            // Sourced from _surfaceSlices, NOT the raw run polyline: this pass re-lays the black road
+            // on top of its casing, and over a bored stretch that re-stroke was painting the tunnel
+            // back in as solid road — which then showed through the lighter bore drawn after it and
+            // made a tunnel inside a camping area read as an ordinary road. Skipping the bores is also
+            // the correct claim on its own terms: you cannot camp inside a tunnel, so the casing that
+            // advertises where camping is legal has no business running through one.
+            runs = []
+            for (const e of road._network.values()) {
+                if (!e.points || e.points.length < 2) continue
+                for (const points of this._surfaceSlices(e)) {
+                    if (!points || points.length < 2) continue
+                    let cur = null
+                    let prevIn = inZone(points[0])
+                    for (let i = 1; i < points.length; i++) {
+                        const nowIn = inZone(points[i])
+                        // A segment belongs to a zone when BOTH endpoints do — the conservative read,
+                        // so the casing never claims road that leaves the zone.
+                        if (prevIn && nowIn) {
+                            if (!cur) { cur = [points[i - 1]]; runs.push(cur) }
+                            cur.push(points[i])
+                        } else {
+                            cur = null
+                        }
+                        prevIn = nowIn
                     }
-                    prevIn = nowIn
                 }
             }
+            this._campRunsMemo = { road, rev: road._networkRev, size: road._network.size, zones, runs }
         }
         if (!runs.length) return
 
@@ -2651,7 +2662,7 @@ export class Map2D {
      * printed map that happens to be centred where you are.
      */
     _drawCollar(ctx) {
-        const W = this._canvas.clientWidth, H = this._canvas.clientHeight
+        const W = this._cssW, H = this._cssH
         const s = this._sheet()
 
         // (a) Mask the margin. Painting over the map layer is what keeps the sheet inside its
