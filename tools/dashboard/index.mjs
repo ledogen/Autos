@@ -4,13 +4,14 @@
  *
  * Scans .planning/todos/{pending,completed} into tickets.json, measures the
  * repo into stats.json, and joins the story-mode cargo list with the POI types
- * (docs + live code) into cargo.json, then serves tools/dashboard/ as a static site.
+ * (docs + live code) into cargo.json, reads FEAT-120 / FEAT-121's bodies into
+ * sounds.json / items.json, then serves tools/dashboard/ as a static site.
  *
  *   node tools/dashboard/index.mjs            index, then serve on :8010
  *   node tools/dashboard/index.mjs --once     index only, no server
  *   node tools/dashboard/index.mjs --port N   serve on another port
  *
- * This is a dev tool. It reads the repo and writes only its own three JSON files;
+ * This is a dev tool. It reads the repo and writes only its own JSON files;
  * it never touches a ticket. Vocabulary drift in the tracker is normalised here
  * (see CANON_*) and reported back through stats.drift rather than rewritten.
  */
@@ -627,14 +628,63 @@ async function indexStory(tickets) {
   return { cargo, places, warnings };
 }
 
+/* ── ticket-body trackers ─────────────────────────────────────────────────
+ * FEAT-120 (sounds) and FEAT-121 (items) ARE their trackers' data: each `##`
+ * in the body is a section, each `###` under one is a row, and the first line
+ * under that heading is `status: … · key: … · key: …`. `guideHeading`'s prose is
+ * shown above the list; any other `##` (Acceptance) is ticket prose. Found by
+ * id, so closing the ticket (moving it to completed/) doesn't break the tab. */
+function indexBodyRows(tickets, id, { sections, statuses, guideHeading }) {
+  const warnings = [];
+  const t = tickets.find((x) => x.id === id);
+  if (!t) return { file: null, guide: '', rows: [], warnings: [{ line: null, msg: `${id} not found` }] };
+  const warn = (line, msg) => warnings.push({ file: t.file, line, msg });
+
+  const lines = readFileSync(t.abs, 'utf8').split('\n');
+  const rows = [];
+  const guide = [];
+  let h2 = null; let cur = null;
+  const close = () => {
+    if (!cur) return;
+    cur.notes = cur.notes.join('\n').trim();
+    rows.push(cur);
+    cur = null;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^##\s/.test(l)) { close(); h2 = l.replace(/^##\s+/, '').trim(); continue; }
+    if (/^###\s/.test(l)) {
+      close();
+      const title = l.replace(/^###\s+/, '').trim();
+      if (!sections.includes(h2)) {
+        warn(i + 1, `"${title}" sits under "## ${h2}", which is not one of ${sections.join(' / ')}`);
+        continue;
+      }
+      const keyLine = lines[i + 1] || '';
+      const kv = Object.fromEntries(keyLine.split('·')
+        .map((p) => /^\s*(\w+):\s*(.*?)\s*$/.exec(p)).filter(Boolean).map((m) => [m[1], m[2]]));
+      if (!kv.status) warn(i + 2, `"${title}" has no \`status: …\` line under its heading`);
+      else if (!statuses.includes(kv.status)) warn(i + 2, `"${title}": unknown status "${kv.status}"`);
+      cur = {
+        title, slug: slugOf(title), section: h2, line: i + 1, kv,
+        status: statuses.includes(kv.status) ? kv.status : statuses[0],
+        notes: [],
+      };
+      if (kv.status) i++;   // the key line is metadata, not notes
+      continue;
+    }
+    if (cur) cur.notes.push(l);
+    else if (h2 === guideHeading) guide.push(l);
+  }
+  close();
+  return { file: t.file, guide: guide.join('\n').trim(), rows, warnings };
+}
+
 /* ── sounds ───────────────────────────────────────────────────────────────
- * FEAT-120 IS the sound tracker's data: each `##` in its body is a source
- * (SOUND_SOURCES), each `###` under one is a sound, and the first line under
- * that heading is `status: … · group: … · play: …`. `## How to source` is the
- * guide shown above the list; any other `##` (Acceptance) is ticket prose.
- * Takes are whatever audio files sit in wip/audio/<slug>/ (git-invisible, where
- * uploads land) and assets/audio/<slug>/ (shipped). Found by id, so closing the
- * ticket (moving it to completed/) doesn't break the tab. */
+ * FEAT-120: each `##` is a source (SOUND_SOURCES), each row's key line is
+ * `status · group · play`. Takes are whatever audio files sit in
+ * wip/audio/<slug>/ (git-invisible, where uploads land) and
+ * assets/audio/<slug>/ (shipped). */
 const SOUND_TICKET = 'FEAT-120';
 const SOUND_SOURCES = ['Synthesize', 'Record', 'Library', 'Engine bake'];
 const SOUND_STATUSES = ['todo', 'wip', 'shipped', 'cut'];
@@ -658,53 +708,38 @@ function soundTakes(slug) {
 }
 
 function indexSounds(tickets) {
-  const warnings = [];
-  const t = tickets.find((x) => x.id === SOUND_TICKET);
-  if (!t) return { file: null, guide: '', sounds: [], warnings: [{ line: null, msg: `${SOUND_TICKET} not found` }] };
-  const warn = (line, msg) => warnings.push({ file: t.file, line, msg });
+  const { rows, ...rest } = indexBodyRows(tickets, SOUND_TICKET,
+    { sections: SOUND_SOURCES, statuses: SOUND_STATUSES, guideHeading: 'How to source' });
+  const sounds = rows.map(({ kv, section, ...r }) => ({
+    ...r, source: section,
+    group: kv.group || '',
+    play: kv.play && kv.play !== '—' ? kv.play : null,
+    takes: soundTakes(r.slug),
+  }));
+  return { ...rest, sounds };
+}
 
-  const lines = readFileSync(t.abs, 'utf8').split('\n');
-  const sounds = [];
-  const guide = [];
-  let h2 = null; let cur = null;
-  const close = () => {
-    if (!cur) return;
-    cur.notes = cur.notes.join('\n').trim();
-    sounds.push(cur);
-    cur = null;
-  };
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
-    if (/^##\s/.test(l)) { close(); h2 = l.replace(/^##\s+/, '').trim(); continue; }
-    if (/^###\s/.test(l)) {
-      close();
-      const title = l.replace(/^###\s+/, '').trim();
-      if (!SOUND_SOURCES.includes(h2)) {
-        warn(i + 1, `"${title}" sits under "## ${h2}", which is not a source (${SOUND_SOURCES.join(' / ')})`);
-        continue;
-      }
-      const keyLine = lines[i + 1] || '';
-      const kv = Object.fromEntries(keyLine.split('·')
-        .map((p) => /^\s*(\w+):\s*(.*?)\s*$/.exec(p)).filter(Boolean).map((m) => [m[1], m[2]]));
-      if (!kv.status) warn(i + 2, `"${title}" has no \`status: …\` line under its heading`);
-      else if (!SOUND_STATUSES.includes(kv.status)) warn(i + 2, `"${title}": unknown status "${kv.status}"`);
-      const slug = slugOf(title);
-      cur = {
-        title, slug, source: h2, line: i + 1,
-        status: SOUND_STATUSES.includes(kv.status) ? kv.status : 'todo',
-        group: kv.group || '',
-        play: kv.play && kv.play !== '—' ? kv.play : null,
-        takes: soundTakes(slug),
-        notes: [],
-      };
-      if (kv.status) i++;   // the key line is metadata, not notes
-      continue;
+/* ── items ────────────────────────────────────────────────────────────────
+ * FEAT-121: each `##` is a category, each row's key line is
+ * `status · design · build · needs · where` — the last three comma lists. */
+const ITEM_TICKET = 'FEAT-121';
+const ITEM_CATEGORIES = ['Food & drink', 'Consumables', 'Tools', 'Navigation', 'Camp gear',
+  'Vehicle upgrades', 'Spirit gifts', 'Oddments'];
+const ITEM_STATUSES = ['todo', 'wip', 'shipped', 'cut'];
+const ITEM_BUILDS = ['effect', 'param', 'gate', 'model'];
+const list = (s) => (s || '').split(',').map((x) => x.trim()).filter(Boolean);
+
+function indexItems(tickets) {
+  const { rows, warnings, ...rest } = indexBodyRows(tickets, ITEM_TICKET,
+    { sections: ITEM_CATEGORIES, statuses: ITEM_STATUSES, guideHeading: 'How to read' });
+  const items = rows.map(({ kv, section, ...r }) => {
+    const build = list(kv.build);
+    for (const b of build) {
+      if (!ITEM_BUILDS.includes(b)) warnings.push({ file: rest.file, line: r.line + 1, msg: `"${r.title}": unknown build "${b}"` });
     }
-    if (cur) cur.notes.push(l);
-    else if (h2 === 'How to source') guide.push(l);
-  }
-  close();
-  return { file: t.file, guide: guide.join('\n').trim(), sounds, warnings };
+    return { ...r, category: section, design: kv.design || '', build, needs: list(kv.needs), where: list(kv.where) };
+  });
+  return { ...rest, warnings, items };
 }
 
 /* ── stats ────────────────────────────────────────────────────────────── */
@@ -859,7 +894,9 @@ async function build() {
   const sounds = indexSounds(tickets);
   soundSlugs = new Set(sounds.sounds.map((x) => x.slug));
   writeFileSync(join(HERE, 'sounds.json'), JSON.stringify(sounds));
-  return { tickets, stats, story, sounds };
+  const items = indexItems(tickets);
+  writeFileSync(join(HERE, 'items.json'), JSON.stringify(items));
+  return { tickets, stats, story, sounds, items };
 }
 
 /* ── serve ────────────────────────────────────────────────────────────── */
@@ -944,12 +981,13 @@ const args = process.argv.slice(2);
 const portArg = args.indexOf('--port');
 const port = portArg !== -1 ? Number(args[portArg + 1]) : 8010;
 
-const { tickets, stats, story, sounds } = await build();
+const { tickets, stats, story, sounds, items } = await build();
 console.log(`  indexed    ${tickets.length} tickets (${stats.tickets.open} open)`);
 console.log(`  code       ${stats.codeTotal.lines.toLocaleString()} lines in ${stats.codeTotal.files} files`);
 console.log(`  cargo      ${story.cargo.length} rows · ${story.places.live.length} live / ${story.places.planned.length} planned types · ${story.places.spots.length} spots`);
 if (story.warnings.length) console.log(`  story      ${story.warnings.length} cargo/places warnings`);
 if (args.includes('--once')) for (const w of story.warnings) console.log(`    ${w.file}${w.line ? `:${w.line}` : ''}  ${w.msg}`);
+console.log(`  items      ${items.items.length} rows · ${items.items.filter((x) => x.build.includes('effect')).length} need an effect${items.warnings.length ? ` · ${items.warnings.length} warnings` : ''}`);
 console.log(`  sounds     ${sounds.sounds.length} rows · ${sounds.sounds.filter((x) => x.status === 'shipped').length} shipped${sounds.warnings.length ? ` · ${sounds.warnings.length} warnings` : ''}`);
 if (args.includes('--once')) for (const w of sounds.warnings) console.log(`    ${w.file}${w.line ? `:${w.line}` : ''}  ${w.msg}`);
 if (stats.drift.length) console.log(`  drift      ${stats.drift.length} non-canonical frontmatter values`);

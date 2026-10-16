@@ -206,6 +206,7 @@
     <a href="#/tickets" data-nav="tickets">Tickets</a>
     <a href="#/cargo" data-nav="cargo">Cargo</a>
     <a href="#/places" data-nav="places">Places</a>
+    <a href="#/items" data-nav="items">Items</a>
     <a href="#/sounds" data-nav="sounds">Sounds</a>
     <a href="#/stats" data-nav="stats">Overview</a>
   </nav>
@@ -216,16 +217,17 @@
 
 <script type="module">
 /* ─────────────────────────── data ─────────────────────────── */
-let TICKETS = [], LANES = [], BY_ID = new Map(), BACKLINKS = new Map(), STATS = null, STORY = null, SOUNDS = null;
+let TICKETS = [], LANES = [], BY_ID = new Map(), BACKLINKS = new Map(), STATS = null, STORY = null, SOUNDS = null, ITEMS = null;
 
 async function load() {
-  const [t, s, c, so] = await Promise.all([
+  const [t, s, c, so, it] = await Promise.all([
     fetch('tickets.json?' + Date.now()).then(r => r.json()),
     fetch('stats.json?' + Date.now()).then(r => r.json()),
     fetch('cargo.json?' + Date.now()).then(r => r.json()),
     fetch('sounds.json?' + Date.now()).then(r => r.json()),
+    fetch('items.json?' + Date.now()).then(r => r.json()),
   ]);
-  TICKETS = t.tickets; LANES = t.laneOrder || []; STATS = s; STORY = c; SOUNDS = so;
+  TICKETS = t.tickets; LANES = t.laneOrder || []; STATS = s; STORY = c; SOUNDS = so; ITEMS = it;
   BY_ID = new Map(TICKETS.map(x => [x.id, x]));
   BACKLINKS = new Map();
   for (const tk of TICKETS) {
@@ -390,9 +392,11 @@ const DEFAULTS = {
   tickets: { type: [], status: ['open'], sev: [], lane: [] },
   cargo: { kind: [], region: [], place: [], asset: [] },
   sounds: { status: [], group: [] },
+  items: { build: [], needs: [], where: [], design: [], status: [] },
 };
 const filterView = () => (location.hash.startsWith('#/cargo') ? 'cargo'
-  : location.hash.startsWith('#/sounds') ? 'sounds' : 'tickets');
+  : location.hash.startsWith('#/sounds') ? 'sounds'
+  : location.hash.startsWith('#/items') ? 'items' : 'tickets');
 
 function readFilters(view = 'tickets') {
   const q = new URLSearchParams((location.hash.split('?')[1] || ''));
@@ -879,6 +883,76 @@ async function uploadTakes(slug, files) {
   await load(); render();
 }
 
+/* ─────────────────────────── items ───────────────────────────
+ * FEAT-121's body, read live by index.mjs into items.json: one card per item,
+ * grouped by category. The Build / Needs / Where chip counts are the at-a-glance
+ * burn-down; filtering Where by a storefront is that shop's stock list. */
+const ITEM_STATUSES = ['todo', 'wip', 'shipped', 'cut'];
+const ITEM_BUILDS = ['effect', 'param', 'gate', 'model'];
+const BUILD_COLOR = { effect: '#ff8a5c', param: '#6fb3ff', gate: '#7fd97f', model: '#c79bff' };
+const ITEM_AXES = ['build', 'needs', 'where', 'design', 'status'];
+const itemHas = (x, axis, v) => [].concat(x[axis]).includes(v);
+
+function itemMatches(x, f, q) {
+  // Within an axis chips OR; across axes they AND.
+  for (const axis of ITEM_AXES) {
+    if (f[axis].length && !f[axis].some(v => itemHas(x, axis, v))) return false;
+  }
+  if (q) {
+    const hay = `${x.title} ${x.category} ${x.notes} ${x.where.join(' ')} ${x.needs.join(' ')}`.toLowerCase();
+    if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
+  }
+  return true;
+}
+
+function itemCard(x) {
+  const build = x.build.map(b => `<span class="badge" style="color:${BUILD_COLOR[b] || 'inherit'}">${b}</span>`).join(' ');
+  return `<div class="pcard scard">
+      <div class="ph">
+        <span class="pt">${esc(x.title)}</span>
+        <span class="st" style="color:${SOUND_COLOR[x.status]}">${x.status}</span>
+        <span class="muted">${esc(x.design)}</span>
+        ${build}
+      </div>
+      <div class="pm">${x.where.length ? `<b>where</b> ${esc(x.where.join(', '))}` : ''}${x.needs.length ? ` · <b>needs</b> ${esc(x.needs.join(', '))}` : ''}</div>
+      ${x.notes ? `<details><summary>what</summary><div class="body">${md(x.notes)}</div></details>` : ''}
+    </div>`;
+}
+
+function viewItems() {
+  const all = ITEMS.items;
+  const f = readFilters('items');
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const shown = all.filter(x => itemMatches(x, f, q));
+  const n = (axis, v) => all.filter(x => itemHas(x, axis, v) && itemMatches(x, { ...f, [axis]: [] }, q)).length;
+  const vals = (key) => [...new Set(all.flatMap(x => [].concat(x[key])).filter(Boolean))];
+  const row = (label, axis, values, colors = {}) => `<div class="frow"><span class="flabel">${label}</span>
+        ${values.map(v => chip(axis, v, f[axis].includes(v), n(axis, v), colors[v])).join('')}</div>`;
+
+  const cats = [...new Set(all.map(x => x.category))];
+  const sections = cats.map(cat => {
+    const mine = all.filter(x => x.category === cat && x.status !== 'cut');
+    const rows = shown.filter(x => x.category === cat);
+    if (!rows.length) return '';
+    const done = mine.filter(x => x.status === 'shipped').length;
+    return `<h2 class="sec grp">${cat} <span class="muted">${done} / ${mine.length} shipped</span></h2>${rows.map(itemCard).join('')}`;
+  }).join('');
+
+  return `
+    ${warnTable(ITEMS.warnings)}
+    ${ITEMS.guide ? `<details class="guide"><summary>How to read</summary><div class="body">${md(ITEMS.guide)}</div></details>` : ''}
+    <div class="filters">
+      ${row('Build', 'build', ITEM_BUILDS, BUILD_COLOR)}
+      ${row('Needs', 'needs', vals('needs'))}
+      ${row('Where', 'where', vals('where'))}
+      ${row('Design', 'design', vals('design'))}
+      ${row('Status', 'status', ITEM_STATUSES, SOUND_COLOR)}
+    </div>
+    <div class="count">${shown.length} of ${all.length} items${q ? ` matching “${esc(q)}”` : ''}
+      · from <a class="pathref" href="vscode://file${STATS.root}/${ITEMS.file}">${ITEMS.file}</a></div>
+    ${sections || '<ul class="list"><li><span class="tblurb">nothing matches</span></li></ul>'}`;
+}
+
 /* ─────────────────────────── router ─────────────────────────── */
 function render() {
   const path = location.hash.split('?')[0] || '#/tickets';
@@ -891,6 +965,7 @@ function render() {
   else if (path === '#/cargo') { app.innerHTML = viewCargo(); page = 'cargo'; }
   else if (path === '#/places') { app.innerHTML = viewPlaces(); page = 'places'; }
   else if (path === '#/sounds') { app.innerHTML = viewSounds(); page = 'sounds'; }
+  else if (path === '#/items') { app.innerHTML = viewItems(); page = 'items'; }
   else app.innerHTML = viewTickets();
 
   search.style.visibility = page === 'stats' || page === 'places' ? 'hidden' : 'visible';

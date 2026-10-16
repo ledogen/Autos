@@ -31,3 +31,9 @@ Step 7 of **Places and Missions**. No shop code exists today.
   2026-10-14.md §11). One function, so a region-1 shop visited from region 2 charges region-2 prices.
 - Stock levels stay out of this minimal shop; they arrive with the bed upgrades (FEAT-115).
 - The camp gets the same clock pause in FEAT-118.
+
+## Amended 2026-10-16
+
+- **Stock lists come from FEAT-121's `where:` field**: each storefront sells the rows tagged with its
+  POI type id (`generalStore`, `gasStation`, `autoShop`, `foodVendor`, `tackleShop`). Dashboard →
+  Items → filter by the storefront to see its stock. Purchases land in the inventory (FEAT-122).

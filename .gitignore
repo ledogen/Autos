@@ -74,4 +74,5 @@ tools/dashboard/tickets.json
 tools/dashboard/stats.json
 tools/dashboard/cargo.json
 tools/dashboard/sounds.json
+tools/dashboard/items.json
 test/.scratch/

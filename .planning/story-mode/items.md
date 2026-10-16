@@ -14,6 +14,10 @@ that the item structure itself is deferred — don't build an item framework off
 What this catalog is good for right now is **seeing the whole surface at once** and spotting which
 entries are load-bearing for a mechanic that *is* ratified.
 
+**The build burn-down is FEAT-121** (`npm run dash` → **Items**): one row per item with what it needs
+built (effect / param / gate / model), which systems it waits on, and which storefront sells it. This
+file stays the design source; add an item here first, then its row there.
+
 ---
 
 ## The four rules every item inherits
