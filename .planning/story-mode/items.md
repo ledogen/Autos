@@ -571,7 +571,7 @@ here is *better*, everything here is a **trade you can feel through the wheel**.
 | Part | The trade | Reads (honest signal) |
 |---|---|---|
 | **LT load-rated tires** | Stiffer sidewall, heavier, less peak grip and a duller turn-in — but they take load and abuse a sport tire won't, and they resist puncture far longer on the wear→fragility curve | tire condition track; per-wheel μ |
-| **Heavy-duty off-road suspension** | **No dual-rate damping** — cruder, floatier, less composed on pavement — but it eats bump-stop hits that would degrade a sport damper | suspension condition; bump-stop over-travel |
+| **Heavy-duty off-road suspension** *(split into heavy-duty springs + dampers, §3f)* | **No dual-rate damping** — cruder, floatier, less composed on pavement — but it eats bump-stop hits that would degrade a sport damper | suspension condition; bump-stop over-travel |
 | *(space for more)* | Skid plates, a heavier-gauge radiator, steel wheels over alloys — same shape: mass and refinement out, survivability in | |
 
 **Why this axis earns its place.** Three things fall out of it for free:
@@ -666,6 +666,26 @@ thresholds** (`shockFloorG`, `breakG`, FEAT-97) — never a flat amount.
 **Straps are not an item.** Rocks and firewood can't be strapped, haul's loose-load chaos is the
 point, and an item held at one giver and missing at the next is arbitrary. Straps stay as fiction on
 the strapped families. FEAT-110 is closed; the paid-gate-on-fragile idea is in IDEAS.md, unratified.
+
+### 3f. Load-rating parts — what moves the weight limit [owner, 2026-10-16]
+
+Provenance: FEAT-112 rulings. **Weight overload starts at the manufacturer's payload rating**, and
+three parts raise the limits. Stock Ranger: **soft limit 570 kg** (the manufacturer's capacity,
+the card warns past it), **hard cap 820 kg** (the card refuses past it), **tires poppable from
+600 kg**. **The weakest part sets the limits** (owner, 2026-10-16): the truck's soft limit and hard
+cap are the minimum over the three, so the package moves them, not one part alone. The soft-limit
+card message: *"Warning: this load exceeds the recommended weight limit."*
+All three are §3d **Heavy-duty**-character parts: they carry load and drive worse on the road.
+
+| Part | Raises | What the player feels | Past its rating |
+|---|---|---|---|
+| **Heavy-duty springs** | soft limit and hard cap | higher real spring rates: less squat under load, a harsher, bouncier ride empty | emergent: the truck squats onto the bump stops; spring wear reads those hits (§3a) |
+| **Heavy-duty dampers** | soft limit and hard cap | more damping: a loaded truck settles instead of wallowing; a busy ride empty | emergent: wallow and bump-stop hits |
+| **LT / load-range-E tires** | tire pop onset | stiffer sidewall, heavier, less peak grip, duller turn-in (§3c's trade) | **pops on a hard hit**: past 600 kg stock, the load caps the condition the worn-tire puncture curve reads (FEAT-112 §6) |
+
+§3c's "heavy-duty off-road suspension" row is now these two separate parts.
+Like every part they are bought mid-run and lost on death (SM-INV-8), and never print a number on
+the part (SM-INV-10); the card states the verdict in words.
 
 ## 4. Cargo
 
