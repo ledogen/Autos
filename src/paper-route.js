@@ -970,6 +970,7 @@ export class PaperRouteSystem {
             hits:     new Map(),      // customer id → q, one entry per delivered customer
             trace:    [],             // driven-trace rows at TRACE_HZ (FEAT-30 calibration export)
             traceTick: 0,
+            spotPaid: 0,              // Σ the cents onSpot banked — the result card's accuracy money (FEAT-53)
         }
         this._startZone = { x: this.giver.x, z: this.giver.z, y: this.giver.y ?? 0, r: START_ZONE_R }
         this.state = 'staging'
@@ -1292,6 +1293,7 @@ export class PaperRouteSystem {
         // lands, not at the settlement, so the figure the read-out quotes is already in the wallet —
         // and the end-of-route payout is left a pure function of the clock.
         const pay = credited ? this._onSpot(this.paperValue(q)) : 0
+        this.run.spotPaid = Math.round((this.run.spotPaid + pay) * 100) / 100
         if (this.run.hits.size >= this.route.customers.length
             || (this.run.stock <= 0 && this.run.inFlight <= 0)) {
             const out = { customer: best, dist: bd, q, credited, already, pay }
@@ -1334,7 +1336,7 @@ export class PaperRouteSystem {
         if (advanced && runPaper.tier < PAPER_PARAMS.tiers.length - 1) runPaper.tier++
         this.result = {
             ...r,
-            spot:      Math.round(r.spot * 100) / 100,
+            spot:      this.run.spotPaid,   // what was banked, to the cent — not re-priced from Σq
             customers: n,
             delivered: accuracies.length,
             elapsed:   this.run.elapsed,
