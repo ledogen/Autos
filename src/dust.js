@@ -543,7 +543,7 @@ export class DustSystem {
 const WHITE = new THREE.Color(0xffffff)
 
 // Rotate a body-local vector by a quaternion without allocating a THREE.Vector3 each call. Shared by
-// dust, smoke, dirt-spray and tire-audio. Returns ONE scratch object, overwritten by the next call —
+// dust, smoke and dirt-spray (tire-audio keeps a copy — see there). Returns ONE scratch object, overwritten by the next call —
 // read it before rotating again. NOT Vector3.applyQuaternion: that uses the t = 2·q×v form, which
 // rounds differently.
 const _qv = { x: 0, y: 0, z: 0 }
