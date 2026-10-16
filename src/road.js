@@ -1088,15 +1088,31 @@ export class RoadSystem {
         const qTileX = Math.floor(wx / CHUNK_SIZE)
         const qTileZ = Math.floor(wz / CHUNK_SIZE)
 
-        // Probe one spline: sample at N arc-length intervals, track nearest U within radius.
+        // Probe one slice: sample its spline at N arc-length intervals, track nearest U within radius.
         // D4: at each new global nearest, check footprint membership via getTangentAt → signedLat.
-        const probeSpline = (spline, runKey, arcS0In, arcS1In) => {
+        // The first probe of a slice records the XZ box of exactly these samples (`sl.bb`); later
+        // probes skip the slice when that box is no closer than intBestD2. Exact, not a bound:
+        // extBestD2 ≤ intBestD2 always (ext is the min over a superset), so no sample of a skipped
+        // slice could pass either strict `d2 <` test, and the scan order of the rest is unchanged.
+        const probeSlice = (sl) => {
+            const bb = sl.bb
+            if (bb) {
+                const ox = wx < bb[0] ? bb[0] - wx : wx > bb[1] ? wx - bb[1] : 0
+                const oz = wz < bb[2] ? bb[2] - wz : wz > bb[3] ? wz - bb[3] : 0
+                if (ox * ox + oz * oz >= intBestD2) return
+            }
+            const spline = sl.spline, runKey = sl.runKey ?? '', arcS0In = sl.arcS0 ?? 0, arcS1In = sl.arcS1 ?? 0
+            let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
             const len = spline.getLength ? spline.getLength() : 0
             // ~1 sample / 2 m, clamped to [16, 256] — enough resolution for a 200 m radius query.
             const n = Math.max(16, Math.min(256, Math.ceil((len || 64) / 2)))
             for (let i = 0; i <= n; i++) {
                 const u = i / n
                 spline.getPointAt(u, _scratchPt)
+                if (!bb) {
+                    if (_scratchPt.x < x0) x0 = _scratchPt.x; if (_scratchPt.x > x1) x1 = _scratchPt.x
+                    if (_scratchPt.z < z0) z0 = _scratchPt.z; if (_scratchPt.z > z1) z1 = _scratchPt.z
+                }
                 const dx = _scratchPt.x - wx, dz = _scratchPt.z - wz
                 const d2 = dx * dx + dz * dz
                 if (d2 < extBestD2) {
@@ -1122,6 +1138,7 @@ export class RoadSystem {
                     }
                 }
             }
+            if (!bb) sl.bb = [x0, x1, z0, z1]
         }
 
         // Size the search block from the radius (CR-01). A hard-coded 3×3 block spans only ±1 tile
@@ -1134,7 +1151,7 @@ export class RoadSystem {
                 const key = `${qTileX + dx},${qTileZ + dz}`
                 const segs = this._tiles.get(key)
                 if (segs && segs.length) {
-                    for (const s of segs) probeSpline(s.spline, s.runKey ?? '', s.arcS0 ?? 0, s.arcS1 ?? 0)
+                    for (const s of segs) probeSlice(s)
                 }
             }
         }
@@ -1212,17 +1229,33 @@ export class RoadSystem {
 
         // Fallback: no sliced spline came within radius — probe the raw network polylines
         // (covers tiles whose slices were too short to spline, or queries before slicing settled).
+        // This is the normal answer to a keep-out query that misses, so each run's XZ point box is
+        // recorded on its first full scan (stamped with the rev + the points array it measured) and a
+        // run whose box is no closer than fbD2 is skipped — none of its points could pass `d2 < fbD2`.
         let fbD2 = r2
         let fbPoints = null
         let fbIdx = -1
         if (this._network) {
-            for (const { points } of this._network.values()) {
+            const rev = this._networkRev
+            for (const e of this._network.values()) {
+                const points = e.points
+                const bb = e._qnBB
+                const fresh = bb && bb.rev === rev && bb.pts === points && bb.n === points.length
+                if (fresh) {
+                    const ox = wx < bb.x0 ? bb.x0 - wx : wx > bb.x1 ? wx - bb.x1 : 0
+                    const oz = wz < bb.z0 ? bb.z0 - wz : wz > bb.z1 ? wz - bb.z1 : 0
+                    if (ox * ox + oz * oz >= fbD2) continue
+                }
+                let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
                 for (let i = 0; i < points.length; i++) {
                     const p = points[i]
+                    if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x
+                    if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z
                     const dx = p.x - wx, dz = p.z - wz
                     const d2 = dx * dx + dz * dz
                     if (d2 < fbD2) { fbD2 = d2; fbPoints = points; fbIdx = i }
                 }
+                if (!fresh) e._qnBB = { rev, pts: points, n: points.length, x0, x1, z0, z1 }
             }
         }
         if (!fbPoints) return null
@@ -10940,7 +10973,7 @@ export class RoadSystem {
         }
         let arr = this._tiles.get(key)
         if (!arr) { arr = []; this._tiles.set(key, arr) }
-        arr.push({ spline, points: clean, runKey, arcS0, arcS1 })
+        arr.push({ spline, points: clean, runKey, arcS0, arcS1, bb: null })   // bb: queryNearest's lazy XZ sample box
     }
 
 }
