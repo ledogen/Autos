@@ -494,6 +494,45 @@ function _nearestVertexAtCum(polyCum, cum) {
     return (cum - polyCum[lo] <= polyCum[hi] - cum) ? lo : hi
 }
 
+// XZ bounding box of a point list.
+function _xzBox(pts) {
+    let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
+    for (const p of pts) {
+        if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
+        if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
+    }
+    return { minx, maxx, minz, maxz }
+}
+
+// Plan-layer partner discovery: distance from the chord A2→B2 to the nearest of `pts` (every
+// `stride`-th) inside the chord's CHORD-inflated box — Infinity when none is. ONE walk for the
+// conflict planner, the census and the pre-warm, so the warm discovers exactly their partners.
+function _chordToRoute(A2, B2, pts, CHORD, stride = 1) {
+    const cnx = Math.min(A2.x, B2.x) - CHORD, cxx = Math.max(A2.x, B2.x) + CHORD
+    const cnz = Math.min(A2.z, B2.z) - CHORD, cxz = Math.max(A2.z, B2.z) + CHORD
+    let d = Infinity
+    for (let ip = 0; ip < pts.length; ip += stride) {
+        const p = pts[ip]
+        if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
+        const dd = _segSegDistXZ(p, p, A2, B2)
+        if (dd < d) { d = dd; if (d <= 0) break }
+    }
+    return d
+}
+
+// The coarse both-sides gate before a full conflict walk: does any stride-8 sample of P come
+// within sqrt(lim2) of any stride-8 sample of Q?
+function _coarseNear(Ppts, Qpts, lim2) {
+    for (let ip = 0; ip < Ppts.length; ip += 8) {
+        const px = Ppts[ip].x, pz = Ppts[ip].z
+        for (let iq = 0; iq < Qpts.length; iq += 8) {
+            const dx = px - Qpts[iq].x, dz = pz - Qpts[iq].z
+            if (dx * dx + dz * dz <= lim2) return true
+        }
+    }
+    return false
+}
+
 /**
  * BUG-53/55: a WINNER bore near the fork blocks the merge (the taper band would fight the
  * portal); bores deeper inside the adopted stretch are fine — the tunnel is simply shared, the
@@ -1977,9 +2016,7 @@ export class RoadSystem {
         // Only the edges that will actually REGISTER — same in-band filter _assembleGraphEdges
         // applies. The raw band+margin Urquhart set is ~5x larger (260 vs 50 edges at a 1400 m
         // radius), and warming all of it routes roads no mission can ever use.
-        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
-        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
-        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+        const inBand = this._nodeInBand(mx0, mx1, mz0, mz1)
         // QUAL-21 Stage 2: skip degree-capped edges (settled spec-time — never registered/routed).
         const { drop } = this._degreeDrops(mx0, mx1, mz0, mz1)
         const edges = g.edges.filter(([c1, c2]) => !drop.has(g.key(c1) + '|' + g.key(c2)) && (inBand(c1) || inBand(c2)))
@@ -2027,25 +2064,9 @@ export class RoadSystem {
         const mz1 = Math.ceil((center.z + R) / PROTO_ANCHOR_SPACING)
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1, false)
         const { drop, wide } = this._degreeDrops(mx0, mx1, mz0, mz1)
-        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
-        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
-        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
-        // Wave 1 — the settle set (selection mirrors _v2SettleDeletions).
-        const coreNodes = new Set()
-        for (const [c1, c2] of g.edges) {
-            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
-            if (!inBand(c1) && !inBand(c2)) continue
-            coreNodes.add(g.key(c1)); coreNodes.add(g.key(c2))
-        }
-        const settleEdges = []
-        for (const [c1, c2] of g.edges) {
-            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
-            if (!coreNodes.has(g.key(c1)) && !coreNodes.has(g.key(c2))) continue
-            const A = this._nodePos(c1), B = this._nodePos(c2)
-            { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
-            settleEdges.push([c1, c2])
-        }
+        // Wave 1 — the settle set (the same selection _v2SettleDeletions settles).
+        const settleEdges = this._v2SettleEdges(g, drop, mx0, mx1, mz0, mz1)
         const s1 = this._warmScan(g, drop, settleEdges)
         if (s1.jobs.length || s1.deferred) return s1
         // Wave 2 — census discovery partners against the (now cached) settle routes.
@@ -2065,11 +2086,7 @@ export class RoadSystem {
             const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
             const own = []
             for (let i = 0; i <= n; i += 8) own.push(cl.pointAt(cl.length * i / n))
-            let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
-            for (const p of own) {
-                if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
-                if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
-            }
+            const { minx, maxx, minz, maxz } = _xzBox(own)
             for (const [q1, q2] of wide.edges) {
                 const qA = wide.key(q1), qB = wide.key(q2)
                 const qck = qA < qB ? qA + '|' + qB : qB + '|' + qA
@@ -2079,15 +2096,7 @@ export class RoadSystem {
                 { const ex = A2.x - B2.x, ez = A2.z - B2.z; if (ex * ex + ez * ez <= _mband2) continue }
                 if (Math.max(A2.x, B2.x) < minx - CHORD || Math.min(A2.x, B2.x) > maxx + CHORD
                     || Math.max(A2.z, B2.z) < minz - CHORD || Math.min(A2.z, B2.z) > maxz + CHORD) continue
-                const cnx = Math.min(A2.x, B2.x) - CHORD, cxx = Math.max(A2.x, B2.x) + CHORD
-                const cnz = Math.min(A2.z, B2.z) - CHORD, cxz = Math.max(A2.z, B2.z) + CHORD
-                let dDisc = Infinity
-                for (const p of own) {
-                    if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
-                    const dd = _segSegDistXZ(p, p, A2, B2)
-                    if (dd < dDisc) { dDisc = dd; if (dDisc <= 0) break }
-                }
-                if (dDisc > CHORD + 16) continue
+                if (_chordToRoute(A2, B2, own, CHORD) > CHORD + 16) continue
                 seen.add(qck)
                 const spQ = spell.get(qck)
                 if (spQ) partnersG.push(spQ)
@@ -3350,8 +3359,7 @@ export class RoadSystem {
             const pk = nk < o ? nk + '|' + o : o + '|' + nk
             if (pk !== ck) partners.set(pk, [nk.split(',').map(Number), o.split(',').map(Number)])
         }
-        let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
-        for (const p of S.pts) { if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x; if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z }
+        const { minx, maxx, minz, maxz } = _xzBox(S.pts)
         for (const [q1, q2] of g.edges) {
             const a = g.key(q1), b = g.key(q2)
             if (a === kA || a === kB || b === kA || b === kB || dropped(a, b)) continue
@@ -3849,24 +3857,9 @@ export class RoadSystem {
         const CHORD = C.censusChordM ?? 300
         const MINREG = 30, MINSPAN = 60
         if (!own || own.L < 2 * MINREG) return fail(null)
-        let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
-        for (const p of own.pts) {
-            if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
-            if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
-        }
+        const { minx, maxx, minz, maxz } = _xzBox(own.pts)
         const spell = this._v2EdgeSpellings(g)
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
-        const chordToRoute = (A2, B2, pts) => {
-            const cnx = Math.min(A2.x, B2.x) - CHORD, cxx = Math.max(A2.x, B2.x) + CHORD
-            const cnz = Math.min(A2.z, B2.z) - CHORD, cxz = Math.max(A2.z, B2.z) + CHORD
-            let d = Infinity
-            for (const p of pts) {
-                if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
-                const dd = _segSegDistXZ(p, p, A2, B2)
-                if (dd < d) { d = dd; if (d <= 0) break }
-            }
-            return d
-        }
         let bestSpec = null, bestRegion = -1, bestKey = ''
         for (const [q1, q2] of wide.edges) {
             const qA = wide.key(q1), qB = wide.key(q2)
@@ -3877,30 +3870,21 @@ export class RoadSystem {
             { const ex = A2.x - B2.x, ez = A2.z - B2.z; if (ex * ex + ez * ez <= _mband2) continue }
             if (Math.max(A2.x, B2.x) < minx - CHORD || Math.min(A2.x, B2.x) > maxx + CHORD
                 || Math.max(A2.z, B2.z) < minz - CHORD || Math.min(A2.z, B2.z) > maxz + CHORD) continue
-            if (chordToRoute(A2, B2, own.pts) > CHORD) continue
+            if (_chordToRoute(A2, B2, own.pts, CHORD) > CHORD) continue
             const spQ = spell.get(qck)
             const SQ = this._v2RunSample(spQ ? g : wide, drop, ...(spQ ?? [q1, q2]))
             if (!SQ || SQ.L < 2 * MINREG) continue
             // the coarse both-sides gate before a full walk (as the planner and census use)
             const lim = this._v2ClearMax() + 8 * PROTO_SAMPLE_DS   // FEAT-77: the widest the rule can reach
-            const lim2 = lim * lim
-            let near = false
-            for (let ip = 0; ip < own.pts.length && !near; ip += 8) {
-                const px = own.pts[ip].x, pz = own.pts[ip].z
-                for (let iq = 0; iq < SQ.pts.length; iq += 8) {
-                    const dx = px - SQ.pts[iq].x, dz = pz - SQ.pts[iq].z
-                    if (dx * dx + dz * dz <= lim2) { near = true; break }
-                }
-            }
-            if (!near) continue
+            if (!_coarseNear(own.pts, SQ.pts, lim * lim)) continue
             const ivs = _conflictIntervalsXZ(own, true, SQ, this._v2NearVs(g, c1, c2, own.L, (spQ ?? [q1, q2]).map((c) => (spQ ? g : wide).key(c))), GAPM, FLARE, null)
             if (!ivs.length) continue
             // roles: the partner is always discoverable from OUR route (that is how it was
             // found); we are an eligible winner only if OUR chord sits near ITS route
-            const ownDisc = chordToRoute(
+            const ownDisc = _chordToRoute(
                 { x: own.pts[0].x, z: own.pts[0].z },
                 { x: own.pts[own.pts.length - 1].x, z: own.pts[own.pts.length - 1].z },
-                SQ.pts) <= CHORD
+                SQ.pts, CHORD) <= CHORD
             const weWin = ownDisc && (own.L > SQ.L || (own.L === SQ.L && ck < qck))
             if (weWin) continue   // we are untouched; the loser plans this pair from its side
             // the winner must be PLAIN (see header): in-graph and holding no node-merge role.
@@ -3944,11 +3928,7 @@ export class RoadSystem {
         const spOwn = spell.get(ck)
         const own = this._v2RunSample(spOwn ? g : wide, drop, ...(spOwn ?? [c1, c2]))
         if (!own || own.L < 60) return fin([])
-        let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
-        for (const p of own.pts) {
-            if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
-            if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
-        }
+        const { minx, maxx, minz, maxz } = _xzBox(own.pts)
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         const out = []
         for (const [q1, q2] of wide.edges) {
@@ -3960,33 +3940,16 @@ export class RoadSystem {
             { const ex = A2.x - B2.x, ez = A2.z - B2.z; if (ex * ex + ez * ez <= _mband2) continue }
             if (Math.max(A2.x, B2.x) < minx - CHORD || Math.min(A2.x, B2.x) > maxx + CHORD
                 || Math.max(A2.z, B2.z) < minz - CHORD || Math.min(A2.z, B2.z) > maxz + CHORD) continue
-            const cnx = Math.min(A2.x, B2.x) - CHORD, cxx = Math.max(A2.x, B2.x) + CHORD
-            const cnz = Math.min(A2.z, B2.z) - CHORD, cxz = Math.max(A2.z, B2.z) + CHORD
             // Stride-8 walk (32 m steps) against a 300 m threshold with the stride's error bound
             // as slack: a real conflict needs routes within mergeProxM (18 m), so nothing real
             // can slip a 300+16 m discovery net. Deterministic, ~8× cheaper than full-stride —
             // this scan runs per registering edge and was the delete rung's measured cost.
-            let dDisc = Infinity
-            for (let ip = 0; ip < own.pts.length; ip += 8) {
-                const p = own.pts[ip]
-                if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
-                const dd = _segSegDistXZ(p, p, A2, B2)
-                if (dd < dDisc) { dDisc = dd; if (dDisc <= 0) break }
-            }
-            if (dDisc > CHORD + 16) continue
+            if (_chordToRoute(A2, B2, own.pts, CHORD, 8) > CHORD + 16) continue
             const spQ = spell.get(qck)
             const SQ = this._v2RunSample(spQ ? g : wide, drop, ...(spQ ?? [q1, q2]))
             if (!SQ || SQ.L < 60) continue
-            const lim = this._v2ClearMax() + 8 * PROTO_SAMPLE_DS, lim2 = lim * lim   // FEAT-77
-            let near = false
-            for (let ip = 0; ip < own.pts.length && !near; ip += 8) {
-                const px = own.pts[ip].x, pz = own.pts[ip].z
-                for (let iq = 0; iq < SQ.pts.length; iq += 8) {
-                    const dx = px - SQ.pts[iq].x, dz = pz - SQ.pts[iq].z
-                    if (dx * dx + dz * dz <= lim2) { near = true; break }
-                }
-            }
-            if (!near) continue
+            const lim = this._v2ClearMax() + 8 * PROTO_SAMPLE_DS   // FEAT-77
+            if (!_coarseNear(own.pts, SQ.pts, lim * lim)) continue
             const ivs0 = _conflictIntervalsXZ(own, true, SQ, this._v2NearVs(g, c1, c2, own.L, (spQ ?? [q1, q2]).map((c) => (spQ ? g : wide).key(c))), GAPM, FLARE, null)
             if (!ivs0.length) continue
             // BUG-57: PROPER CROSSINGS between the two pure routes — the crossing invariant's
@@ -4772,13 +4735,7 @@ export class RoadSystem {
             { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
             const S = sampleOf(g, [c1, c2], false)   // registration spelling = g.edges tuple order
             if (!S || S.L < 60) continue
-            let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity
-            for (const p of S.pts) {
-                if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x
-                if (p.z < minz) minz = p.z; if (p.z > maxz) maxz = p.z
-            }
-            reg.push({ kA, kB, ck: kA < kB ? kA + '|' + kB : kB + '|' + kA, S,
-                       minx, maxx, minz, maxz })
+            reg.push({ kA, kB, ck: kA < kB ? kA + '|' + kB : kB + '|' + kA, S, ..._xzBox(S.pts) })
         }
         out.regEdges = reg.length
         // 2. every wide-graph chord that could be a partner
@@ -4797,15 +4754,9 @@ export class RoadSystem {
             for (const c of chords) {
                 if (c.kA === P.kA || c.kA === P.kB || c.kB === P.kA || c.kB === P.kB) continue // planner's business
                 if (c.ck === P.ck) continue
-                const cnx = Math.min(c.A.x, c.B.x) - CHORD, cxx = Math.max(c.A.x, c.B.x) + CHORD
-                const cnz = Math.min(c.A.z, c.B.z) - CHORD, cxz = Math.max(c.A.z, c.B.z) + CHORD
-                if (cxx < P.minx || cnx > P.maxx || cxz < P.minz || cnz > P.maxz) continue
-                let d = Infinity
-                for (const p of P.S.pts) {
-                    if (p.x < cnx || p.x > cxx || p.z < cnz || p.z > cxz) continue
-                    const dd = _segSegDistXZ(p, p, c.A, c.B)
-                    if (dd < d) { d = dd; if (d <= 0) break }
-                }
+                if (Math.max(c.A.x, c.B.x) + CHORD < P.minx || Math.min(c.A.x, c.B.x) - CHORD > P.maxx
+                    || Math.max(c.A.z, c.B.z) + CHORD < P.minz || Math.min(c.A.z, c.B.z) - CHORD > P.maxz) continue
+                const d = _chordToRoute(c.A, c.B, P.S.pts, CHORD)
                 if (d > CHORD) continue
                 const pk = P.ck < c.ck ? P.ck + '#' + c.ck : c.ck + '#' + P.ck
                 const prev = cand.get(pk)
@@ -4824,16 +4775,7 @@ export class RoadSystem {
             // the same coarse both-sides gate the mid-span planner uses, before paying for a
             // full point-to-polyline walk
             const lim = this._v2ClearMax() + 8 * PROTO_SAMPLE_DS   // FEAT-77: the widest the rule can reach
-            const lim2 = lim * lim
-            let near = false
-            for (let ip = 0; ip < SP.pts.length && !near; ip += 8) {
-                const px = SP.pts[ip].x, pz = SP.pts[ip].z
-                for (let iq = 0; iq < SQ.pts.length; iq += 8) {
-                    const dx = px - SQ.pts[iq].x, dz = pz - SQ.pts[iq].z
-                    if (dx * dx + dz * dz <= lim2) { near = true; break }
-                }
-            }
-            if (!near) continue
+            if (!_coarseNear(SP.pts, SQ.pts, lim * lim)) continue
             out.walked++
             const ivs = _conflictIntervalsXZ(SP, true, SQ, isNear, GAPM, FLARE, null)
             if (!ivs.length) continue
@@ -5088,8 +5030,38 @@ export class RoadSystem {
     //          only these force plan pass 2, and only their edges take the '#b' route namespace.
     // Returns whether any node flipped. Pure fn of (graph, drop, terrain) → window-invariant to
     // the same degree the delete rung itself is.
-    _v2SettleDeletions(g, drop, wide, mx0, mx1, mz0, mz1) {
+    // Node-in-band test by WORLD extent of the macro band [mx0..mx1]×[mz0..mz1] (site ids live on
+    // a different grid than the macro band).
+    _nodeInBand(mx0, mx1, mz0, mz1) {
+        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
+        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
+        return (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+    }
+
+    // The settle set: every undropped edge incident to a node of an in-band edge, minus merge-band
+    // stubs (≤ roadMergeBand chord). ONE selection for the build (_v2SettleDeletions) and the
+    // pre-warm (_warmPlanJobs), so the warm can never miss a route the settle pass demands.
+    _v2SettleEdges(g, drop, mx0, mx1, mz0, mz1) {
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
+        const inBand = this._nodeInBand(mx0, mx1, mz0, mz1)
+        const coreNodes = new Set()
+        for (const [c1, c2] of g.edges) {
+            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
+            if (!inBand(c1) && !inBand(c2)) continue
+            coreNodes.add(g.key(c1)); coreNodes.add(g.key(c2))
+        }
+        const out = []
+        for (const [c1, c2] of g.edges) {
+            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
+            if (!coreNodes.has(g.key(c1)) && !coreNodes.has(g.key(c2))) continue
+            const A = this._nodePos(c1), B = this._nodePos(c2)
+            { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
+            out.push([c1, c2])
+        }
+        return out
+    }
+
+    _v2SettleDeletions(g, drop, wide, mx0, mx1, mz0, mz1) {
         // PERF (2026-09-01): settle ONLY the verdicts this window can consume — the in-band edges
         // registration will delete-check anyway, plus every edge incident to one of their endpoint
         // nodes (a margin edge's deletion changes that node's BUILT degree, hence the in-band
@@ -5097,22 +5069,7 @@ export class RoadSystem {
         // ~104 and owned 7.7 s of a 9.3 s build. Verdicts are pure fns of pass-1 routes, so any
         // window that consumes a node's pins evaluates the identical incident set — the same
         // 1-ring invariance argument the pins themselves ride on.
-        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
-        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
-        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
-        const coreNodes = new Set()
-        for (const [c1, c2] of g.edges) {
-            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
-            if (!inBand(c1) && !inBand(c2)) continue
-            coreNodes.add(g.key(c1)); coreNodes.add(g.key(c2))
-        }
-        for (const [c1, c2] of g.edges) {
-            if (drop.has(g.key(c1) + '|' + g.key(c2))) continue
-            if (!coreNodes.has(g.key(c1)) && !coreNodes.has(g.key(c2))) continue
-            const A = this._nodePos(c1), B = this._nodePos(c2)
-            { const ex = A.x - B.x, ez = A.z - B.z; if (ex * ex + ez * ez <= _mband2) continue }
-            this._v2DeleteFor(g, drop, wide, c1, c2)
-        }
+        for (const [c1, c2] of this._v2SettleEdges(g, drop, mx0, mx1, mz0, mz1)) this._v2DeleteFor(g, drop, wide, c1, c2)
         const del = new Set()
         for (const rec of (this._v2Deleted?.values() ?? [])) {
             const [, kA, kB] = rec.key.split(':')
@@ -5948,9 +5905,7 @@ export class RoadSystem {
         this._v2Rung = [0, 0, 0, 0]
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         // in-band test is by WORLD extent now (site ids live on a different grid than the macro band).
-        const wx0 = mx0 * PROTO_ANCHOR_SPACING, wx1 = (mx1 + 1) * PROTO_ANCHOR_SPACING
-        const wz0 = mz0 * PROTO_ANCHOR_SPACING, wz1 = (mz1 + 1) * PROTO_ANCHOR_SPACING
-        const inBand = (c) => { const p = this._nodePos(c); return p.x >= wx0 && p.x < wx1 && p.z >= wz0 && p.z < wz1 }
+        const inBand = this._nodeInBand(mx0, mx1, mz0, mz1)
         const g = this._buildUrquhart(mx0, mx1, mz0, mz1)
         // QUAL-21 Stage 2: the degree pass is pure topology, so its drops apply HERE — before any
         // routing — instead of after every edge has already paid for its route search, which is
