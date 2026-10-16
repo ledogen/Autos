@@ -481,6 +481,24 @@ function _trunkGradeAt(T, i) {
     return { gx: m * tx / tl, gz: m * tz / tl }
 }
 
+// BUG-76: is run entry `b` geometrically identical to `a` (points incl. Y, arc origin, clArc,
+// tunnel / off-curve spans, condemned mark)? The adopt's dirty-region diff and profile re-stamp.
+function _sameRun(a, b) {
+    if (a.arcOrigin !== b.arcOrigin || a.points.length !== b.points.length) return false
+    for (let i = 0; i < a.points.length; i++) {
+        const p = a.points[i], q = b.points[i]
+        if (p.x !== q.x || p.y !== q.y || p.z !== q.z) return false
+    }
+    if (JSON.stringify(a.tunnelSpans || null) !== JSON.stringify(b.tunnelSpans || null)
+        || JSON.stringify(a.offCurveSpans || null) !== JSON.stringify(b.offCurveSpans || null)
+        || !!a.condemned !== !!b.condemned) return false
+    const ca = a.clArc, cb = b.clArc
+    if (ca === cb) return true
+    if (!ca || !cb || ca.length !== cb.length) return false
+    for (let i = 0; i < ca.length; i++) if (ca[i] !== cb[i]) return false
+    return true
+}
+
 // A graph node id [a, b, c] → its string key (the `g.key` of every band graph).
 const _idKey = (id) => `${id[0]},${id[1]},${id[2]}`
 
@@ -2273,6 +2291,7 @@ export class RoadSystem {
         const diffOld = !(opts && opts.regen) && this._network.size > 0
             ? { runs: new Map(this._network), pads: this.padReachNodes() }
             : null
+        const keepProfiles = diffOld ? this._profileKeepSnapshot() : null
         this._networkCenter = data.center ? new THREE.Vector3(data.center.x, 0, data.center.z) : null
         this._proto.lastCenter = this._networkCenter ? this._networkCenter.clone() : null
         this._proto.dirty = false
@@ -2355,6 +2374,7 @@ export class RoadSystem {
         // Same eager ordering as _streamNetwork: the crossing classifier is populated before any
         // run profile is built (the AT_GRADE mid-span flatten reads it), then slices.
         this._detectJunctions()
+        if (keepProfiles) this._restampRunProfiles(keepProfiles, diffOld.runs)
         this._sliceNetwork()
         this._lastAdoptDirty = diffOld ? this._adoptDirtyRegions(diffOld) : null
         return this._network
@@ -2376,6 +2396,58 @@ export class RoadSystem {
     }
 
     /**
+     * S-07 (review-2): the pre-swap state a positional adopt needs to keep the run profiles that
+     * cannot have changed. A run profile reads only its own entry, its two endpoint nodes' degree
+     * and incident runs (pad plane, deck hold, grade line — the 1-ring), its own mid-span crossings
+     * and the params. null when no profile of this rev is cached.
+     */
+    _profileKeepSnapshot() {
+        const cache = this._runProfileCache
+        if (!cache || this._runProfileCacheRev !== this._networkRev || !this._proto.graph) return null
+        const deg = new Map()
+        for (const k of cache.keys()) {
+            const e = this._network.get(k)
+            if (!e || !e.cellA || !e.cellB) continue
+            for (const id of [e.cellA, e.cellB]) { const nk = _idKey(id); if (!deg.has(nk)) deg.set(nk, this._graphDegreeOf(id)) }
+        }
+        return { deg, inc: new Map(this._proto.nodeInc), xs: this._crossingsByRun }
+    }
+
+    /**
+     * S-07: after the swap, carry a cached profile to the new rev when NOTHING it reads changed — the
+     * run itself and every run at both endpoint nodes are _sameRun, each endpoint keeps its degree
+     * and its incident list (ORDER too: it feeds the pad plane's least squares), neither endpoint
+     * is a promoted T (its side reads the trunk's camber chain, beyond the 1-ring), and the run has
+     * no mid-span crossing before or after. Everything else is dropped and rebuilds lazily.
+     */
+    _restampRunProfiles(keep, oldRuns) {
+        const cache = this._runProfileCache, rev = this._networkRev
+        const inc = this._proto.nodeInc
+        const same = new Map()
+        const unchanged = (k) => {
+            let v = same.get(k)
+            if (v === undefined) { const o = oldRuns.get(k), e = this._network.get(k); v = !!(o && e && _sameRun(o, e)); same.set(k, v) }
+            return v
+        }
+        const nodeKept = (id) => {
+            if (_isPromotedId(id)) return false
+            const nk = _idKey(id), a = keep.inc.get(nk), b = inc.get(nk)
+            if (!a || !b || a.length !== b.length) return false
+            for (let i = 0; i < a.length; i++) if (a[i] !== b[i] || !unchanged(a[i])) return false
+            return keep.deg.get(nk) === this._graphDegreeOf(id)
+        }
+        for (const [k, ent] of cache) {
+            const e = this._network.get(k)
+            const ok = e && e.cellA && e.cellB && unchanged(k)
+                && !keep.xs?.get(k)?.length && !this._crossingsByRun?.get(k)?.length
+                && nodeKept(e.cellA) && nodeKept(e.cellB)
+            if (ok) ent.rev = rev
+            else cache.delete(k)
+        }
+        this._runProfileCacheRev = rev
+    }
+
+    /**
      * BUG-76: the ground a positional adopt re-shaped, as `{x, z, reach}` discs — the shape
      * TerrainSystem.recarveInPlace() and RoadMeshSystem.invalidateRegions() take. Null when nothing
      * changed (the common case: the window slid and every in-range run is byte-identical).
@@ -2392,25 +2464,8 @@ export class RoadSystem {
      * network change, and fails if any built chunk is left carving a road that is no longer there.
      */
     _adoptDirtyRegions(old) {
-        const sameArr = (a, b) => {
-            if (a === b) return true
-            if (!a || !b || a.length !== b.length) return false
-            for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
-            return true
-        }
-        const sameRun = (a, b) => {
-            if (a.arcOrigin !== b.arcOrigin || a.points.length !== b.points.length) return false
-            for (let i = 0; i < a.points.length; i++) {
-                const p = a.points[i], q = b.points[i]
-                if (p.x !== q.x || p.y !== q.y || p.z !== q.z) return false
-            }
-            return JSON.stringify(a.tunnelSpans || null) === JSON.stringify(b.tunnelSpans || null)
-                && JSON.stringify(a.offCurveSpans || null) === JSON.stringify(b.offCurveSpans || null)
-                && !!a.condemned === !!b.condemned
-                && sameArr(a.clArc, b.clArc)
-        }
         const changed = new Set()
-        for (const [k, e] of this._network) { const o = old.runs.get(k); if (!o || !sameRun(o, e)) changed.add(k) }
+        for (const [k, e] of this._network) { const o = old.runs.get(k); if (!o || !_sameRun(o, e)) changed.add(k) }
         for (const k of old.runs.keys()) if (!this._network.has(k)) changed.add(k)
 
         const regions = []
