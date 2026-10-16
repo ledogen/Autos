@@ -10384,6 +10384,9 @@ export class RoadSystem {
         if (!this._padPlaneCache) this._padPlaneCache = new Map()
         const hit = this._padPlaneCache.get(key)
         if (hit && hit.rev === this._networkRev) return hit.plane
+        // Stale-rev entries are never served — drop them all on the first miss of a new rev, so the
+        // map holds one network's nodes, not every node a session ever visited.
+        if (this._padPlaneCacheRev !== this._networkRev) { this._padPlaneCache.clear(); this._padPlaneCacheRev = this._networkRev }
         const plane = this._computePadPlane(id)
         this._padPlaneCache.set(key, { rev: this._networkRev, plane })
         return plane
@@ -10813,7 +10816,8 @@ export class RoadSystem {
             return _interpolateCamber(cached.arcPos, cached.camberRad, arcS)
         }
 
-        // (Re)build the profile for this run.
+        // (Re)build the profile for this run — first dropping every stale-rev entry (never served).
+        if (this._camberProfileCacheRev !== currentRev) { this._camberProfileCache.clear(); this._camberProfileCacheRev = currentRev }
         const profile = this._buildCamberProfile(runKey)
         if (!profile) return 0
 
@@ -10865,7 +10869,8 @@ export class RoadSystem {
             )
         }
 
-        // (Re)build profile for this run.
+        // (Re)build profile for this run — first dropping every stale-rev entry (never served).
+        if (this._runProfileCacheRev !== currentRev) { this._runProfileCache.clear(); this._runProfileCacheRev = currentRev }
         const profile = this._buildRunProfile(runKey)
         if (!profile) {
             // BUG-14 secondary: runKey not found in this._network — _tiles/_network desync.
