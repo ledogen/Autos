@@ -1020,75 +1020,16 @@ export class RoadSystem {
     // ── Public API ──────────────────────────────────────────────────────────────
 
     /**
-     * Warm + slice the valley-trunk network around tile `(tileX, tileZ)` and return that tile's
-     * single representative per-tile spline object — the exit-gate contract the seam harness reads
-     * (`tile.spline.getPoint(1.0)`/`getPoint(0.0)`/`getTangentAt(...)`).
-     *
-     * Streams `_streamNetwork` centered on the tile's world center then `_sliceNetwork()` so the
-     * sliced per-tile splines around the tile exist. Returns `{ spline, waypoints }` where `spline`
-     * is the tile's representative segment (the longest segment, by control-point count) and
-     * `waypoints` its control points, or `{ spline: null, waypoints: [] }` when the tile carries no
-     * road (no throw). Idempotent: repeated calls with the same coords return the SAME cached tile
-     * object (memoized per "tileX,tileZ" so the seam harness's two grid passes see identical splines).
-     *
-     * Because the network is streamed over a radius spanning the whole 3×3 grid, the trunk runs
-     * continuously across adjacent tiles, so at least one E-W adjacent pair carries a spline on both
-     * sides (exit-gate totalSeams >= 1).
-     *
-     * ⚠ IMPORTANT (WR-02): `.spline` is the *E-W-SPANNING SEAM REPRESENTATIVE ONLY* — the single
-     * slice that touches BOTH the west and east tile boundary (`spanScore === 2`). It is NOT "the
-     * road on this tile". A tile crossed by road that enters and exits the same edge, or runs
-     * mostly N-S, has no spanning slice and returns `{ spline: null }` even though it visibly
-     * carries road. Consumers needing the ACTUAL per-tile geometry (e.g. Phase 9 ribbon meshing)
-     * MUST iterate `this._tiles.get("<tileX>,<tileZ>")` for ALL slices, not read this representative.
-     * This method exists for the seam exit-gate's single-representative endpoint comparison; do not
-     * repurpose its `.spline` as a per-tile road accessor.
+     * Warm + slice the network around tile `(tileX, tileZ)`: streams `_streamNetwork` centered on the
+     * tile's world center, then `_sliceNetwork()`, so the per-tile slices in `this._tiles` exist.
+     * `_streamNetwork` is lazy-gated (move-threshold / dirty), so close-together calls reuse one stream.
      *
      * @param {number} tileX — tile column (world tile = [tileX·64,(tileX+1)·64))
      * @param {number} tileZ — tile row
-     * @returns {{ spline: THREE.CatmullRomCurve3|null, waypoints: THREE.Vector3[] }}
      */
     ensureTile(tileX, tileZ) {
-        const key = `${tileX},${tileZ}`
-
-        // Warm + slice the network around this tile's world center. _streamNetwork is lazy-gated
-        // (move-threshold / dirty), so close-together ensureTile calls across the 3×3 grid reuse the
-        // same stream; on a real re-stream the memo is cleared (this._tileObjects nulled there).
-        const cx = (tileX + 0.5) * CHUNK_SIZE
-        const cz = (tileZ + 0.5) * CHUNK_SIZE
-        this._streamNetwork(_scratchPt.set(cx, 0, cz))
+        this._streamNetwork(_scratchPt.set((tileX + 0.5) * CHUNK_SIZE, 0, (tileZ + 0.5) * CHUNK_SIZE))
         this._sliceNetwork()
-
-        // Idempotency: same coords after the same slice → same cached tile object.
-        const memo = this._tileObjects.get(key)
-        if (memo) return memo
-
-        // Pick the representative spline for this tile. The seam harness reads ONE .spline per tile
-        // and compares end(A)=getPoint(1.0) of the west tile against start(B)=getPoint(0.0) of the
-        // east tile. For that comparison to be C0/C1 for EVERY adjacent splined pair, a tile's single
-        // representative must both END on its east boundary AND START on its west boundary — i.e. be
-        // a FULL E-W-spanning slice (spanScore === 2, west→east-oriented in _assignSlice). Tiles whose
-        // road only weaves through (no E-W-spanning slice) expose spline:null so the harness SKIPS
-        // them (sparse-seam path) rather than comparing mismatched endpoints. Among spanning slices,
-        // tie-break by heaviest parent run → run key → length (deterministic). queryNearest is
-        // unaffected — it searches ALL slices in this._tiles directly, not this representative.
-        const segs = this._tiles.get(key)
-        let best = null
-        const better = (s, m) => {
-            if (s.spanScore !== 2) return false          // only full E-W-spanning slices are eligible
-            if (!m) return true
-            if (s.runWeight !== m.runWeight) return s.runWeight > m.runWeight
-            if (s.runKey !== m.runKey) return s.runKey > m.runKey
-            return s.points.length > m.points.length
-        }
-        if (segs && segs.length) {
-            for (const s of segs) if (better(s, best)) best = s
-        }
-        const tile = best
-            ? { spline: best.spline, waypoints: best.waypoints }
-            : { spline: null, waypoints: [] }
-        this._tileObjects.set(key, tile)
-        return tile
     }
 
     /**
@@ -1409,7 +1350,6 @@ export class RoadSystem {
         this.disposeDebugLines()
         if (this._network) this._network.clear()
         if (this._tiles) this._tiles.clear()
-        if (this._tileObjects) this._tileObjects.clear()
         this._slicedFrom = null
         this._lastBandSig = null   // force the next _streamNetwork to rebuild (route/params changed)
         // D1: bump the single invalidation counter — signals ribbon tiles + carve chunks to rebuild.
@@ -1593,15 +1533,12 @@ export class RoadSystem {
         this._networkCenter = null   // center the current network was streamed around
 
         // Per-tile sliced spline store — built ONLY by _sliceNetwork from this._network.
-        // key "<tileX>,<tileZ>" → { spline, points, waypoints }[] (a tile MAY hold several segments).
+        // key "<tileX>,<tileZ>" → { spline, points, runKey, arcS0, arcS1 }[] (a tile MAY hold several segments).
         // Each segment is a slice of ONE continuous network polyline cut at 64 m (CHUNK_SIZE)
         // boundaries, so adjacent tiles share the exact boundary point (C0) and tangent (C1) by
         // construction — NO shared-seam-waypoint machinery (D-06 REVISED).
         this._tiles = new Map()
         this._slicedFrom = null      // identity of the network the current slice was built from
-        // Memoized representative tile objects returned by ensureTile (idempotency for the seam
-        // harness's two passes). key "<tileX>,<tileZ>" → { spline, waypoints }. Rebuilt on re-slice.
-        this._tileObjects = new Map()
 
         // Crossing classifier cache (P9 plan 04 — SURF-07; reworked into the FEAT-07/08/11/13 classifier).
         // key nodeKey "<round(x)>,<round(z)>" → { records: [...] } (crossings grouped by rounded point)
@@ -2319,7 +2256,6 @@ export class RoadSystem {
         this._network.clear()
         this._slicedFrom = null
         if (this._tiles) this._tiles.clear()
-        if (this._tileObjects) this._tileObjects.clear()
         if (this._junctions) this._junctions.clear()
         this._junctionsRev = -1
         for (const r of data.runs) {
@@ -6317,7 +6253,6 @@ export class RoadSystem {
         // A real re-stream invalidates the previous slice; _sliceNetwork re-slices on next call.
         this._slicedFrom = null
         if (this._tiles) this._tiles.clear()
-        if (this._tileObjects) this._tileObjects.clear()
         // Junction cache is a pure function of this._network — clear and rebuild on re-stream.
         if (this._junctions) this._junctions.clear()
         this._junctionsRev = -1
@@ -6397,7 +6332,7 @@ export class RoadSystem {
      * Deterministic: pure function of `this._network` (itself a pure function of seed+coords+params).
      * Idempotent: re-slicing the same network identity is a no-op (memoized via `this._slicedFrom`).
      *
-     * @returns {Map<string, {spline: THREE.CatmullRomCurve3, points: THREE.Vector3[], waypoints: THREE.Vector3[]}[]>} this._tiles
+     * @returns {Map<string, {spline: THREE.CatmullRomCurve3, points: THREE.Vector3[], runKey: string, arcS0: number, arcS1: number}[]>} this._tiles
      */
     _sliceNetwork() {
         // Identity guard: re-slicing the identical network is a no-op. _streamNetwork/invalidateCache
@@ -6405,7 +6340,6 @@ export class RoadSystem {
         if (this._slicedFrom === this._network && this._tiles.size > 0) return this._tiles
 
         this._tiles.clear()
-        this._tileObjects.clear()
 
         const S = CHUNK_SIZE
         for (const [runKey, entry] of this._network) {
@@ -6415,13 +6349,6 @@ export class RoadSystem {
             // not run[0] — so arcS0/arcS1 (and the runProfile/camberProfile they index) are
             // window-invariant. Matches _buildRunProfile / _buildCamberProfile arcPos[0] = -arcOrigin.
             const arcOrigin = entry.arcOrigin ?? 0
-
-            // Parent-run weight = total control-point count. A tile picks its representative as the
-            // slice from the heaviest parent run that touches it; because ONE parent run yields one
-            // slice per tile it crosses, all tiles along that run pick the SAME parent → their shared
-            // boundary slices match exactly (C0) with aligned tangents (C1). This is what makes the
-            // seam harness's single-.spline-per-tile comparison green by construction.
-            const runWeight = points.length
 
             // QUAL-30: the ceded-hole slicer is gone with cededSpans. A wye's loser carried the
             // winner's vertices verbatim over the ceded interval, so slicing it shipped a duplicate
@@ -6442,7 +6369,7 @@ export class RoadSystem {
                 let runArcAtA = (entry.polyCum ? entry.polyCum[i0] : 0) - arcOrigin   // run-arc at points[i-1]
                 let sliceStartArc = runArcAtA    // run-arc at current[0] (owner-origined)
                 const flush = (sliceEndArc) => {
-                    if (current.length >= 2) this._assignSlice(current, runKey, runWeight, sliceStartArc, sliceEndArc)
+                    if (current.length >= 2) this._assignSlice(current, runKey, sliceStartArc, sliceEndArc)
                     // start the next sub-polyline at the same boundary point we just closed on
                 }
                 for (let i = i0 + 1; i <= i1; i++) {
@@ -10984,10 +10911,9 @@ export class RoadSystem {
      * its midpoint, build its centripetal Catmull-Rom spline, and store it in `this._tiles`.
      * Skips sub-polylines that collapse to < 2 distinct points.
      * @param {THREE.Vector3[]} pts — a sub-polyline (one tile's slice of a network polyline)
-     * @param {string} runKey — parent network-run key (so adjacent tiles can pick the same run)
-     * @param {number} runWeight — parent run's total point count (representative tie-break)
+     * @param {string} runKey — parent network-run key
      */
-    _assignSlice(pts, runKey, runWeight, arcSHead = 0, arcSTail = 0) {
+    _assignSlice(pts, runKey, arcSHead = 0, arcSTail = 0) {
         // Centripetal divide-by-zero guard: drop consecutive coincident control points.
         const clean = []
         for (const p of pts) {
@@ -11005,9 +10931,8 @@ export class RoadSystem {
         const tileZ = Math.floor(mid.z / CHUNK_SIZE)
         const key = `${tileX},${tileZ}`
 
-        // Orient the slice WEST→EAST (increasing x) so the seam harness's getPoint(0.0)=west-edge /
-        // getPoint(1.0)=east-edge convention holds: a tile's east-edge point matches the east
-        // neighbour's west-edge point (both are the same sliced boundary crossing → C0/C1).
+        // Orient the slice WEST→EAST (increasing x): getPoint(0.0)=west end, getPoint(1.0)=east end.
+        // queryNearest's tangent / camberSign convention (WR-04) is expressed in this sweep frame.
         const head = clean[0], tail = clean[clean.length - 1]
         const reversed = (tail.x < head.x)
         if (reversed) clean.reverse()
@@ -11020,14 +10945,6 @@ export class RoadSystem {
         // the run-frame signed camber in this slice's sweep frame.
         const arcS0 = reversed ? arcSTail : arcSHead
         const arcS1 = reversed ? arcSHead : arcSTail
-
-        // Record which tile boundaries this slice touches, so ensureTile can prefer an E-W-spanning
-        // representative (one whose endpoints sit on the shared E/W boundaries the harness reads).
-        const xw = tileX * CHUNK_SIZE, xe = (tileX + 1) * CHUNK_SIZE
-        const a0 = clean[0], a1 = clean[clean.length - 1]
-        const touchesWest = Math.abs(a0.x - xw) < 1e-3
-        const touchesEast = Math.abs(a1.x - xe) < 1e-3
-        const spanScore = (touchesWest ? 1 : 0) + (touchesEast ? 1 : 0)
 
         // Phase B (BUG-12 fold fix): sample the run's EXACT primitive centerline instead of re-fitting
         // these control points with overshooting centripetal Catmull-Rom. Map this slice's owner-
@@ -11062,7 +10979,7 @@ export class RoadSystem {
         }
         let arr = this._tiles.get(key)
         if (!arr) { arr = []; this._tiles.set(key, arr) }
-        arr.push({ spline, points: clean, waypoints: clean, runKey, runWeight, spanScore, arcS0, arcS1 })
+        arr.push({ spline, points: clean, runKey, arcS0, arcS1 })
     }
 
 }
