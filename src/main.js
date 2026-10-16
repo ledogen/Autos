@@ -798,7 +798,7 @@ async function _rebuildFullNow () {
         RANGER_PARAMS,
         worldSeed  // D-03: roadQuality determinism
       )
-      roadMeshSystem.setPhysicsHook(roadPhysics)   // FEAT-48: re-attach after the seed-rebuild swap
+      if (!_labActive) roadMeshSystem.setPhysicsHook(roadPhysics)   // FEAT-48: re-attach after the seed-rebuild swap (exitLab does it in the lab, S-65)
       terrainSystem.setRoadSystem(roadSystem)
     }
     _step('roadInit')
@@ -816,12 +816,14 @@ async function _rebuildFullNow () {
     if (propSystem) {
       propSystem.dispose()
       propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
-      propSystem.setPhysicsHook(propPhysics)   // FEAT-48: re-attach after the seed-rebuild swap
+      if (!_labActive) propSystem.setPhysicsHook(propPhysics)   // FEAT-48: re-attach after the seed-rebuild swap (exitLab does it in the lab, S-65)
       // PERF-07: wipe the old seed's baked shadow tiles and re-arm baking for the fresh props.
       if (shadowBake) { shadowBake.clear(); propSystem.setShadowBake(shadowBake) }
       if (_syncImpostors) _syncImpostors()   // PERF-21: re-activate billboards on the fresh instance
     }
     _step('props')
+    // S-65: the fresh instances above are built visible — in the lab's clean room they stay hidden.
+    if (_labActive) _setWorldgenVisible(false)
     // QUAL-14 perf: same session-cache import + async reseat as the initial load — the new seed's spawn
     // bands route on the worker pool inside resolveSpawn (frames keep rendering) before each
     // synchronous stream. AFTER rebuildWaterSystem above: the warm must carry the new seed's
@@ -5129,9 +5131,9 @@ for (const b of document.querySelectorAll('.mp-felt')) {
     const kind = data.mission_type === 'paper_route' ? 'paper-' : ''
     downloadJSON(data, `rangersim-run-${kind}${data.driver ? data.driver.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' : ''}`
       + `${data.felt}-${data.result.letter ?? 'x'}-${Math.round(data.result.elapsed_s)}s.json`, 2)
-    const label = b.textContent
+    b.dataset.label ??= b.textContent   // S-65: a second click inside 1.5 s must not capture 'saved ✓'
     b.textContent = 'saved ✓'
-    setTimeout(() => { b.textContent = label }, 1500)
+    setTimeout(() => { b.textContent = b.dataset.label }, 1500)
   })
 }
 document.getElementById('mp-quit')?.addEventListener('click', () => {
@@ -5286,7 +5288,8 @@ addPropGui(_gui, {
   rebuild: () => {
     propSystem.dispose()
     propSystem = new PropSystem({ scene, worldSeed, samplers: makePropSamplers() })
-    propSystem.setPhysicsHook(propPhysics)   // FEAT-48: re-attach after the GUI full rebuild
+    if (!_labActive) propSystem.setPhysicsHook(propPhysics)   // FEAT-48: re-attach after the GUI full rebuild (exitLab does it in the lab, S-65)
+    else propSystem.setVisible(false)                           // …and in the lab's clean room it stays hidden
     shadowBake.clear()
     propSystem.setShadowBake(shadowBake)
     applyPropShadowMode()
@@ -6541,6 +6544,9 @@ function loop () {
   perfFrameBegin()   // PERF-26: closes out the previous frame's attribution, arms this one (no-op unless ?hitch)
   if (!_firstFrameMarked) {
     _firstFrameMarked = true
+    // S-65: currentTime was stamped at module evaluation, seconds before the top-level awaits let
+    // this loop start — the first frame would owe a clamped 0.25 s (15 catch-up steps under ?nomenu).
+    currentTime = performance.now() / 1000
     perfMark('first animate frame')  // TEMP (D-arc)
     // FEAT-41: one rAF loop, not two. The stage has been animating on its own since just after the
     // renderer was made; from here it is a passenger and this loop drives it.
