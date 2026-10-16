@@ -602,7 +602,10 @@ export class TerrainSystem {
     _syncTunnelUniforms(carPos) {
         const rs = this._roadSystem
         if (!rs || !rs._network) return
-        if (this._tunnelUniformRev !== rs._networkRev) {
+        // S-40: keyed on the INSTANCE too — a reseed swaps in a new RoadSystem whose rev restarts
+        // at 0, and a rev that happened to match would keep the old world's portals open.
+        if (this._tunnelUniformRoad !== rs || this._tunnelUniformRev !== rs._networkRev) {
+            this._tunnelUniformRoad = rs
             this._tunnelUniformRev = rs._networkRev
             this._tunnelPortalList = []
             const R = (this._params.tunnelBoreRadius ?? 8) + 0.45
@@ -796,9 +799,15 @@ export class TerrainSystem {
         // A chunk mid-carve captured the OLD inputs (pad list, spline samples) when its generator was
         // made — restart it. Queued chunks have not started, so they will read the new inputs anyway.
         const job = this._activeBuild
-        if (job && touches(job.cx, job.cz)) job.gen = this._carveTableGen(job.cx, job.cz, job.heights)
+        if (job && touches(job.cx, job.cz)) {
+            job.gen = this._carveTableGen(job.cx, job.cz, job.heights)
+            job.covered = this._roadCoversChunk(job.cx, job.cz)   // S-40: coverage at the carve's (re)start
+        }
         const rj = this._activeRecarve   // PERF-33: same for a re-carve in flight
-        if (rj && touches(rj.cx, rj.cz)) rj.gen = this._carveTableGen(rj.cx, rj.cz, this._chunkMap.get(rj.key).heights)
+        if (rj && touches(rj.cx, rj.cz)) {
+            rj.gen = this._carveTableGen(rj.cx, rj.cz, this._chunkMap.get(rj.key).heights)
+            rj.covered = this._roadCoversChunk(rj.cx, rj.cz)
+        }
         // Behind a loading screen nobody sees a hitch, so spend the burst budget on these (the same
         // reasoning as PERF-13's initial fill). Cleared by the re-carve pass once nothing is stale.
         if (marked && burst) this._recarveBurst = true
@@ -1975,6 +1984,9 @@ export class TerrainSystem {
                     ...next,
                     gen: this._carveTableGen(next.cx, next.cz, next.heights),   // PERF-03 #1: reuse the Worker's raw heights
                     roadGen: this._roadSystem?.roadGeneration() ?? -1,
+                    // S-40: road coverage when the carve STARTED (stamped at commit as builtRoadCovered,
+                    // like the re-carve path) — a flip mid-build then still reads as stale next pass.
+                    covered: this._roadCoversChunk(next.cx, next.cz),
                     carveData: undefined,
                 }
             }
@@ -1986,6 +1998,7 @@ export class TerrainSystem {
             if (job.roadGen !== roadGenNow) {
                 job.gen = this._carveTableGen(job.cx, job.cz, job.heights)
                 job.roadGen = roadGenNow
+                job.covered = this._roadCoversChunk(job.cx, job.cz)
             }
             {
                 const _pt = performance.now()
@@ -2089,7 +2102,7 @@ export class TerrainSystem {
                 // chunk carved outside coverage is flat because the network had not arrived, not
                 // because there is no road — and a positional adopt never bumps roadGeneration, so
                 // the generation check alone can never reconcile it. See _roadCoversChunk.
-                builtRoadCovered: this._roadCoversChunk(cx, cz),
+                builtRoadCovered: job.covered,
             })
 
             // Release the pending reservation only after _chunkMap is updated.

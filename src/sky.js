@@ -270,6 +270,8 @@ export class SkySystem {
       })
       this._cubeCam = new THREE.CubeCamera(0.1, 3000, this._cubeRT)
       this._bakeScene.add(this._cubeCam)
+    }
+    if (!this._groundFill) {   // S-40: once — setBakeRes re-creates the RT, not the disc
       // Below-horizon ground fill (user call 2026-07-17): the Preetham shader renders the lower
       // hemisphere as dark void, so from any height the world reads as a floating tile against
       // sky. A huge fog-coloured disc in the BAKE scene paints the below-horizon background as
