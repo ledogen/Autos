@@ -38,7 +38,7 @@ export const FLORA_PARAMS = {
     roadExclusion:    9,        // m — reject TREES + collidable rocks within this of the road
     groundSink:       0.3,      // m — sink trees + bushes so the base digs in (kills slope-float)
     treeTiltMax:      0.18,     // rad (~10°) — per-tree random lean from vertical (pivots at base)
-    rockTiltMax:      1.0,      // rad (~57°) — rocks tumble (random lean about a random axis; boulders stay yaw-only, owner 2026-09-28)
+    rockTiltMax:      1.0,      // rad (~57°) — litter rocks tumble (random lean about a random axis, owner 2026-09-28); the collidable rock + boulders stay yaw-only (R-04, 2026-10-15)
     // Small-rock road bands: dense on the shoulder, SPARSE on the road surface itself.
     roadHalfWidth:    5,        // ~ RANGER_PARAMS.roadHalfWidth (road surface half-width)
     smallRockOnRoadKeep:0.07,   // fraction of small rocks kept ON the road surface (sparse)

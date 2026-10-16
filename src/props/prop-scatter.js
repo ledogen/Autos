@@ -222,14 +222,17 @@ function chunkHelpers (cx, cz, samplers, P, out, rng) {
       scale, rotY: rngArg() * Math.PI * 2,
       tint: tintFor(rngArg, cfg.color, cfg.colorJitter),
     }
-    // Owner 2026-09-28: rocks TUMBLE — a random lean (tilt about a random horizontal axis, then
-    // the yaw; the blob is centred at its origin so it stays bedded) instead of every rock sitting
-    // upright on a hillside like it was set down. Boulders keep yaw only: their mesh collider
-    // (sphereVsMeshInstance) is yaw-only, and it must match what is drawn. Drawn AFTER the
-    // record's own rng draws so every earlier placement decision is unchanged.
+    // Owner 2026-09-28: the decorative litter rocks (medRock, smallRock) TUMBLE — a random lean
+    // (tilt about a random horizontal axis, then the yaw; the blob is centred at its origin so it
+    // stays bedded) instead of sitting upright on a hillside like they were set down. Owner
+    // 2026-10-15 (review-2 R-04): the large collidable `rock` is yaw-only, like boulders — its
+    // collision sphere (rBulk, prop-palette.js) is calibrated on the UPRIGHT blob, and tumbled it
+    // stood proud of the visible flank (the BUG-22b "hits air before the rock" symptom, MESH ≠
+    // PHYSICS). Its two tilt draws are still TAKEN so the rng stream, and every later placement,
+    // is unchanged. Drawn AFTER the record's own rng draws so every earlier decision is unchanged.
     if ((cat === 'rock' || cat === 'medRock' || cat === 'smallRock') && S.rockTiltMax > 0) {
-      pl.tilt = rngArg() * S.rockTiltMax
-      pl.tiltAz = rngArg() * Math.PI * 2
+      const tilt = rngArg() * S.rockTiltMax, tiltAz = rngArg() * Math.PI * 2
+      if (cat !== 'rock') { pl.tilt = tilt; pl.tiltAz = tiltAz }
     }
     out.push(pl)
   }
