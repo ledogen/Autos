@@ -208,5 +208,4 @@ as you would loaded, `pk()`. Under ~48 kN rear confirms the table.
 
 ## Open — the owner's
 
-- **Concrete (670 kg):** at the calibrated ramp it never pops a tire in practice. Fine, or should the
-  ramp fall faster near the 600 kg onset?
+None. Concrete (670 kg) never popping a tire in practice is fine as calibrated (owner, 2026-10-16).
