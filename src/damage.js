@@ -412,7 +412,14 @@ export const DAMAGE_PARAMS = {
   // the threshold and the severity): road write-off 90 -> 60, debris write-off 35 -> 25; the
   // yields went 16 -> 12 / 1.75 -> 1.4 and were then split back to 14 / 1.6 (owner, same day).
   // 2 m drop ~3.6% -> ~9% per corner.
-  rimYieldMult:   1.6,   // x static wheel load (≈5.3 kN): DEBRIS core contacts — below this it springs back
+  // 2026-10-15 review-2 R-02: the DEBRIS force now reads the engine's whole-step impulse
+  // (totalNormalImpulse) instead of the last substep's. For a SUSTAINED contact that reads 16x
+  // higher at 8 substeps (measured 15.4-16.6x on a wheel core parked on a beam; 16.05x on a resting
+  // cube), so both debris multipliers went x16 (1.6 -> 25.6, 25 -> 400) and every sustained contact
+  // prices exactly as before. What is NEW is the one-step hit: the old reading was 0.00 on the step
+  // a hit lands, so a sharp strike that lasted one step was never seen. It now is — deliberately.
+  // The 0.3-5.1 kN rock figures above are in the OLD reading (x16 = 5-82 kN in this one).
+  rimYieldMult:   25.6,  // x static wheel load (≈85 kN): DEBRIS core contacts — below this it springs back
   // ROAD contacts are a different measurement (see suspension.js): the load past full carcass
   // compression, not what a rigid pinch exchanges.
   //
@@ -427,7 +434,7 @@ export const DAMAGE_PARAMS = {
   // overload scale puts a 2 m landing at about a tenth of a wheel.
   rimYieldRoadMult: 14,   // x static wheel load (≈46 kN): ROAD/terrain contacts
   rimFullRoadMult:  60,   // x static wheel load (≈200 kN) of OVERLOAD writes the wheel off
-  rimFullMult:    25,     // x static wheel load (≈83 kN) of OVERLOAD writes the wheel off
+  rimFullMult:    400,    // x static wheel load (≈1.3 MN) of OVERLOAD writes the wheel off (DEBRIS; see R-02 note)
   rimStrikeExp:   1.5,    // between linear and square — plastic work rises faster than the overload
 
   // Fraction of its own peak a loaded event must FALL TO before it is banked. Waiting for the load
@@ -1154,14 +1161,20 @@ export class DamageModel {
         const nRoad   = road ? (road[i] || 0) / yieldRoad : 0
         const isRoad  = nRoad > nDebris
         const f = isRoad ? (road[i] || 0) : (rimF[i] || 0)
-        const trip = isRoad ? yieldRoad : yieldN
         if (f > this._strikePeak[i]) this._strikeRoad[i] = isRoad
         const peak = this._strikePeak[i]
         if (f > peak) { this._strikePeak[i] = f; continue }
-        if (peak > trip && (f <= trip || f < peak * P.eventDecayFrac)) {
-          this._landRimStrike(i, peak, staticW, this._strikeRoad[i])
+        // Release is judged in the PEAK's own measurement. When a road strike lets go, the road
+        // residual drops to 0 and the "winner" flips to the debris reading; judged on the debris
+        // yield, which sits ABOVE the road one since R-02 (85 vs 46 kN), a 46-85 kN road strike
+        // was dropped without ever being banked.
+        const peakRoad = this._strikeRoad[i]
+        const fPeak    = peakRoad ? (road[i] || 0) : (rimF[i] || 0)
+        const tripPeak = peakRoad ? yieldRoad : yieldN
+        if (peak > tripPeak && (fPeak <= tripPeak || fPeak < peak * P.eventDecayFrac)) {
+          this._landRimStrike(i, peak, staticW, peakRoad)
           this._strikePeak[i] = 0
-        } else if (f <= trip) {
+        } else if (fPeak <= tripPeak) {
           this._strikePeak[i] = 0
         }
       }

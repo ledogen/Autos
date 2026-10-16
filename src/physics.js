@@ -51,9 +51,10 @@ import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
 // now supplies forward torque continuously through the torque converter, so there is no roll-back
 // drive cutoff.
 
-// Engine solver substeps per physics step (Step 3e explains why 8). Coupled to rim-strike damage:
-// readRimStrikes divides an engine contact impulse by dt, so changing this rescales what the
-// damage.js rimYieldMult/rimFullMult thresholds see (review-2 R-02).
+// Engine solver substeps per physics step (Step 3e explains why 8). Rim-strike damage reads the
+// engine's whole-step contact impulse (review-2 R-02), which measured the same at 4 and 8 substeps
+// for a resting contact — so changing this no longer rescales the damage.js rim thresholds, but
+// re-check them with a sustained core contact if it ever moves.
 const ENGINE_SUBSTEPS = 8
 
 /**
