@@ -86,14 +86,12 @@ for (const Wd of WINDOWS) {
     if (!A.points) continue
     for (const [kb, B] of road._network) {
       if (kb === ka || !B.points) continue
-      const inCed = () => false   // QUAL-30: no ceded ground exists to exempt
       const PAD = 10   // R3: a pad owns 10 m around a node — two legs SHOULD meet there
       const nodes = []
       for (const [cell, pt] of [[A.cellA, A.points[0]], [A.cellB, A.points.at(-1)]]) if (cell) nodes.push(pt)
       for (const [cell, pt] of [[B.cellA, B.points[0]], [B.cellB, B.points.at(-1)]]) if (cell) nodes.push(pt)
       let bad = 0
       for (let s = 0; s <= A.polyCum.at(-1); s += 4) {
-        if (inCed(s)) continue
         const p = at(A, s), n = near(p.x, p.z, B.points, B.polyCum)
         totM += 4
         if (nodes.some((q) => Math.hypot(p.x - q.x, p.z - q.z) < PAD)) continue

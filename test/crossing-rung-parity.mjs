@@ -60,7 +60,7 @@ const seg = (ax, az, bx, bz, cx, cz, dx, dz) => {
 const out = {}
 for (const W of WINDOWS) {
   const t0 = Date.now()
-  const road = new RoadSystem(W.seed, { ...RANGER_PARAMS, roadNetworkMode: 'graph' })
+  const road = new RoadSystem(W.seed, RANGER_PARAMS)
   road.setRadius(W.r)
   road.update(new THREE.Vector3(W.cx, 0, W.cz))
 

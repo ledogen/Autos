@@ -24,8 +24,7 @@ import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 
 const SEED = 6
-// Graph is the sole topology. Cull OFF so routed crossings survive for the classifier to be tested on.
-const P = { ...RANGER_PARAMS, roadGraphCullCrossings: false }
+const P = RANGER_PARAMS
 const ANGLE_MIN  = P.roadCrossAngleMin ?? 12
 
 let pass = 0, fail = 0

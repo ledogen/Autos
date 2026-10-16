@@ -10,7 +10,7 @@
 // This drives LabSystem with synthetic, exactly-known car paths and checks the numbers it reports.
 // Pure node — LabSystem builds THREE geometry but never needs a renderer.
 import * as THREE from 'three'
-import { LabSystem, PADS, RUMBLES, STRIP_Z, DRAG_LEN, RUMBLE_LEN, RUMBLE_W, rumbleSurface } from '../src/lab.js'
+import { LabSystem, PADS, RUMBLES, STRIP_Z, DRAG_LEN, RUMBLE_W, rumbleSurface } from '../src/lab.js'
 
 const DT = 1 / 60
 const G = 9.81

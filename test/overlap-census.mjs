@@ -8,15 +8,10 @@
 // preference), do the endpoints reconnect, and within how many hops?
 //
 // Rainy-day script, not a gate — run it when working BUG-53.
-// USAGE: node test/overlap-census.mjs [--costprune]   (--costprune = QUAL-22 cost-weighted vote A/B)
+// USAGE: node test/overlap-census.mjs
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-
-if (process.argv.includes('--costprune')) {
-  RANGER_PARAMS.roadV2.costPrune = true
-  console.log('== QUAL-22 cost-weighted Urquhart vote: ON ==')
-}
 
 // BUG-55: read the live param — this census must measure the same proximity the merge planner
 // plans with, or a re-tuned mergeProxM silently splits the two vocabularies.

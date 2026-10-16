@@ -55,7 +55,6 @@ function freshState (P, { y = null, vfwd = 0 } = {}) {
 
 // Engine context (post-cutover only). A flat 257×257 @ 4 m heightfield covers ±512 m.
 async function makeEngineCtx (vs, P) {
-  if (typeof PHYS.createVehicleChassis !== 'function') return null
   const { createPhysicsEngine } = await import('../src/physics-engine.js')
   const engine = await createPhysicsEngine()
   const N = 257, CELL = 4
@@ -83,7 +82,7 @@ async function runScenario (name, steps, drive, opts = {}) {
       vs.drivetrain.activeGear,
     ])
   }
-  ctx?.engine.dispose()
+  ctx.engine.dispose()
   return { name, cols: ['t', 'y', 'vfwd', 'yawRate', 'pitch', 'roll', 'totalFz', 'gear'], trace }
 }
 
@@ -121,7 +120,7 @@ async function main () {
 
   const out = {
     recorded: process.env.TRACE_TAG || 'untagged',
-    engine: typeof PHYS.createVehicleChassis === 'function' ? 'box3d' : 'legacy',
+    engine: 'box3d',
     summaries: scenarios.map(summarize),
     scenarios,
   }

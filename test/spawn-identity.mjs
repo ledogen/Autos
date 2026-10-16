@@ -11,7 +11,6 @@
 // says nothing about whether prior streaming changes the spawn. That question (and the answer: it
 // does not) is test/world-determinism.mjs, which is a registered gate. This stays as the PERF-19.3
 // measurement it was written to be.
-import * as THREE from 'three'
 import { RoadSystem, CHUNK_SIZE } from '../src/road.js'
 import { seedFor } from '../src/seed.js'
 import { COARSE_HEIGHT, TEST_PARAMS } from './lib/road-headless.mjs'

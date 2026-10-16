@@ -817,11 +817,6 @@ function measurePerf() {
   };
 }
 
-function measureRouteCache() {
-  const f = join(ROOT, 'data', 'route-cache-default.json.gz');
-  return existsSync(f) ? { path: relative(ROOT, f), bytes: statSync(f).size } : null;
-}
-
 /* ── build ────────────────────────────────────────────────────────────── */
 async function build() {
   const { tickets, drift, laneOrder } = indexTickets();
@@ -839,7 +834,6 @@ async function build() {
     planning: measurePlanning(),
     dist: measureDist(),
     perf: measurePerf(),
-    routeCache: measureRouteCache(),
     tickets: {
       total: tickets.length,
       open: tickets.filter((t) => t.status === 'open').length,

@@ -1,4 +1,4 @@
-// test/graph-topology.mjs — FEAT-13 v2 graph-mode acceptance gate (roadNetworkMode:'graph').
+// test/graph-topology.mjs — FEAT-13 v2 graph acceptance gate (graph is the sole topology).
 //
 // The Urquhart graph over a blue-noise anchor set replaces the parallel E-W rows. Node identity is a
 // blue-noise SITE id [cmx,cmz,k]; positions come from RoadSystem._nodePos. This gate locks the v2
@@ -18,7 +18,7 @@ import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 
-const P = { ...RANGER_PARAMS, roadNetworkMode: 'graph' }
+const P = RANGER_PARAMS
 let pass = 0, fail = 0
 const log = (ok, name, msg) => { console.log(`[${ok ? 'PASS' : 'FAIL'}] ${ok ? '✓' : '✗'} ${name}\n        ${msg}`); ok ? pass++ : fail++ }
 

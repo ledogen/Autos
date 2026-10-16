@@ -11,7 +11,6 @@
     "dash": "node tools/dashboard/index.mjs",
     "test": "node test/run-all.mjs",
     "test:all": "node test/run-all.mjs --all",
-    "test:affected": "node test/run-all.mjs --affected",
     "runs:add": "node test/runs-add.mjs",
     "runs:report": "node test/runs-report.mjs"
   },
