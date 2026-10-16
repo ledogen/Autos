@@ -41,6 +41,7 @@ window.__view = placeFreecam
 // harness toggles prop shadow casting and reads renderer.info through these.
 window.__props = () => propSystem
 window.__renderer = () => renderer
+window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase heading after a freecam exit (R-11)
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
 import { buildPlaceCapture } from './capture.js'

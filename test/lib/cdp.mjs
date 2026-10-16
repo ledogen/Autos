@@ -5,7 +5,7 @@
 // cmd() channel, Runtime.evaluate helper, event subscription (needed for Tracing.dataCollected),
 // Chrome trace capture, and scripted keyboard input.
 //
-// WebGL renders headless via --use-angle=metal on macOS. Callers own the HTTP server prereq
+// WebGL renders headless via --use-angle=metal on macOS (CDP_ANGLE overrides; CHROME_BIN the binary). Callers own the HTTP server prereq
 // (`npx serve .` on :8000 — file:// breaks ES modules). Not a gate — never run by `npm test`.
 
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs'
@@ -13,7 +13,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+// INFRA-07: both are env-overridable so the INFRA-01 Windows runner can point at its own Chrome and
+// use `CDP_ANGLE=d3d11`. Defaults are the macOS ones every existing script assumed.
+export const CHROME = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const ANGLE = process.env.CDP_ANGLE || 'metal'
 export const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 // Launch Chrome at `url` with a throwaway profile dir. `headed: true` opens a real window —
@@ -32,7 +35,7 @@ export function launchChrome (url, { port = 9222, headed = false, audio = false,
     ...(headed ? [] : ['--headless=new']),
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDir}`,
-    '--use-angle=metal',
+    `--use-angle=${ANGLE}`,
     `--window-size=${windowSize}`,
     ...extraArgs,
     url,
@@ -89,7 +92,7 @@ export async function connect ({ port = 9222, cmdTimeoutMs = 60000 } = {}) {
   const evalJS = async expr => {
     const m = await cmd('Runtime.evaluate', { expression: expr, returnByValue: true })
     const R = m.result || {}
-    if (R.exceptionDetails) return { err: R.exceptionDetails.text || JSON.stringify(R.exceptionDetails) }
+    if (R.exceptionDetails) return { err: R.exceptionDetails.exception?.description || R.exceptionDetails.text || JSON.stringify(R.exceptionDetails) }
     return { val: R.result?.value }
   }
   const on = (method, cb) => {
