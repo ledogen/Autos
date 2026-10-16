@@ -956,27 +956,11 @@
     #controls-body { padding: 2px 10px 8px 10px; }
     #controls-body .k { color: #ffffff; display: inline-block; min-width: 62px; }
     #controls.collapsed #controls-body { display: none; }
-    /* "spawn point set" toast — fades out; shown whenever the spawn point changes. */
-    #spawn-toast {
-      position: fixed;
-      top: 8%;
-      left: 50%;
-      transform: translateX(-50%);
-      color: #ffffff;
-      font-family: monospace;
-      font-size: 18px;
-      letter-spacing: 1px;
-      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-      z-index: 96;
-      pointer-events: none;
-      user-select: none;
-      opacity: 0;
-      transition: opacity 1s ease;
-    }
-    /* FEAT-33: "hold I to start the truck" — shown when the driver asks for throttle with the
-       ignition off (story mode seats you in a dead truck). Same toast family as #spawn-toast;
-       the key itself is accented so it reads as a control rather than as part of the sentence. */
-    #ignition-hint {
+    /* "spawn point set" toast — fades out; shown whenever the spawn point changes.
+       FEAT-33: "hold I to start the truck" — shown when the driver asks for throttle with the
+       ignition off (story mode seats you in a dead truck). Same toast family; the key itself is
+       accented so it reads as a control rather than as part of the sentence. */
+    #spawn-toast, #ignition-hint {
       position: fixed;
       top: 8%;
       left: 50%;

@@ -11,6 +11,7 @@
  *   openInitialCondition(vehicleState)   — opens a file picker and applies JSON state to vehicleState.
  *                                          Optional IC fields: recordDuration (seconds — triggers auto-recording),
  *                                          inputs (reserved for future input-script support; currently warns)
+ *   downloadJSON(obj, name, indent?)     — saves an object as a JSON file (the shared Blob-download path)
  *
  * Log format (D-06 / D-07):
  *   Columnar JSON — { fields: string[], frames: number[][] }
@@ -34,6 +35,7 @@
  */
 
 import { buildEventCapture } from './capture.js'
+import { computeStaticEquilibrium } from './suspension.js'
 
 // ── Module-private state ──────────────────────────────────────────────────────
 let _recording = false
@@ -107,7 +109,20 @@ function _downloadLog () {
     payload = { fields: FIELDS, frames: _frames }   // legacy raw-log fallback
     name = 'autos-log-' + Date.now() + '.json'
   }
-  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
+  downloadJSON(payload, name)
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Save a JS object as a JSON file through a throwaway <a download> link. The one Blob-download
+ * path: the recorder above, the place capture and the run export in main.js all call it.
+ * @param {object} obj
+ * @param {string} name - file name
+ * @param {number} [indent] - JSON.stringify indent (omitted → compact)
+ */
+export function downloadJSON (obj, name, indent) {
+  const blob = new Blob([JSON.stringify(obj, null, indent)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   try {
     const a = document.createElement('a')
@@ -120,8 +135,6 @@ function _downloadLog () {
     URL.revokeObjectURL(url)
   }
 }
-
-// ── Public API ────────────────────────────────────────────────────────────────
 
 /**
  * Toggle frame recording on/off.
@@ -267,19 +280,10 @@ export function openInitialCondition (vehicleState, params) {
         vehicleState.wheelOmega   = [0, 0, 0, 0]
         vehicleState.slipLong     = [0, 0, 0, 0]
         vehicleState.slipLat      = [0, 0, 0, 0]
-        // Recompute strutComp from static equilibrium using D-11 formula (sprung mass only).
-        // strutComp[i] = m_sprung_corner * g / k_S_i  where m_sprung = mass * weight_i / 2
-        // This is the hub-ODE equilibrium condition; wheel inertia is not included (D-11).
+        // Recompute strutComp from static equilibrium (D-11: sprung mass only — the hub-ODE
+        // equilibrium condition, the same one the spawn seats with).
         if (params) {
-          const g = 9.81
-          const strutComp = [0, 0, 0, 0]
-          for (let i = 0; i < 4; i++) {
-            const isFront = i < 2
-            const k_S     = isFront ? params.suspensionStiffnessFront : params.suspensionStiffnessRear
-            const sprung  = params.mass * (isFront ? params.weightFront : params.weightRear) / 2
-            strutComp[i]  = sprung * g / k_S  // D-11
-          }
-          vehicleState.strutComp = strutComp
+          vehicleState.strutComp = computeStaticEquilibrium(params).strutComp
         } else {
           vehicleState.strutComp = [0, 0, 0, 0]
         }

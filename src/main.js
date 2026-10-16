@@ -42,7 +42,7 @@ window.__view = placeFreecam
 window.__props = () => propSystem
 window.__renderer = () => renderer
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
-import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext } from './logger.js'
+import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
 import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playShutoffAudio } from './engine-audio.js'
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes, playTireBlowout } from './tire-audio.js'
@@ -83,11 +83,10 @@ import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './th
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planTourJob, customersForTier } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
-import { formatTime } from './par.js'                    // FEAT-29: par oracle time formatting
+import { formatTime, RANK_THRESHOLDS_DEFAULT, haulGrade, fragileGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-88 haul letter; FEAT-97 fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
 import { Leaderboard } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
-import { RANK_THRESHOLDS_DEFAULT, haulGrade, fragileGrade } from './par.js'   // FEAT-87 rank bar fallback bands; FEAT-88 haul letter; FEAT-97 fragile letter
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
@@ -171,6 +170,14 @@ let waterRenderer = null
 // loaded terrain. Reads the live ring so quality-preset changes (applyQuality → setRingRadius)
 // take effect on the next sync.
 const waterSyncRadius = () => ((terrainSystem?._ringRadius ?? 2) + 1) * 64
+// Pond exclusion discs [x, z, r, …] for the road router — the play/map RoadSystems and the network
+// Worker client all read this one builder. Reads module-scope waterSystem at CALL time.
+function _pondDiscs (minX, minZ, maxX, maxZ) {
+  if (!waterSystem) return []
+  const discs = []
+  for (const p of waterSystem.pondsNear(minX, minZ, maxX, maxZ)) discs.push(p.floorX, p.floorZ, p.radius + p.skirt)
+  return discs
+}
 function rebuildWaterSystem () {
   if (waterRenderer) { scene.remove(waterRenderer.group); waterRenderer.dispose() }
   // rawHeightWorld (carve-free), NOT analyticHeight — detection was gated against raw height;
@@ -193,17 +200,10 @@ function rebuildWaterSystem () {
   // Closures read module-scope waterSystem at CALL time (same convention as makePropSamplers), so
   // they survive water rebuilds without re-injection.
   const waterNoGoFn = (x, z) => waterSystem.isRoadNoGo(x, z)
-  const pondDiscsFn = (minX, minZ, maxX, maxZ) => {
-    const discs = []
-    for (const p of waterSystem.pondsNear(minX, minZ, maxX, maxZ)) {
-      discs.push(p.floorX, p.floorZ, p.radius + p.skirt)
-    }
-    return discs
-  }
-  if (roadSystem) roadSystem.setWaterNoGo(waterNoGoFn, pondDiscsFn)
+  if (roadSystem) roadSystem.setWaterNoGo(waterNoGoFn, _pondDiscs)
   // The map's own read-only RoadSystem must route with the identical exclusion (it validates the
   // network the player drives).
-  map2d.setWaterNoGo(waterNoGoFn, pondDiscsFn)
+  map2d.setWaterNoGo(waterNoGoFn, _pondDiscs)
   // The mission planner needs no injection of its own: it plans on the play instance, which was
   // handed the same exclusion two lines up. The board's memoised offer routes still hold
   // centerlines from the pre-change network, so they must go (FEAT-67).
@@ -1065,36 +1065,17 @@ async function _reseatTruckAtSpawnInner () {
     vehicleState.position.set(seat.x, seat.y, seat.z)
     vehicleState.quaternion.copy(seat.quat)
   }
-  vehicleState.velocity.set(0, 0, 0)
-  vehicleState.angularVelocity.set(0, 0, 0)
-  vehicleState.steerAngle    = 0
-  vehicleState.throttle      = 0
-  vehicleState.brake         = 0
-  vehicleState.smoothThrottle = 0
-  vehicleState.smoothBrake    = 0
-  vehicleState.wheelSteerAngles = [0, 0, 0, 0]
-  vehicleState.wheelDebug     = [ {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0}, {fn:0,fy:0,sa:0,c:0,omega:0,fz:0} ]
-  vehicleState.wheelOmega     = [0, 0, 0, 0]
-  vehicleState.slipVel        = [0, 0, 0, 0]     // SM-3 damage signals
-  vehicleState.tireFlat       = [0, 0, 0, 0]
-  vehicleState.bumpForce      = [0, 0, 0, 0]
-  vehicleState.rimForce       = [0, 0, 0, 0]
-  vehicleState.rimForceRoad   = [0, 0, 0, 0]
-  vehicleState.brakeTorque    = [0, 0, 0, 0]
-  vehicleState.wheelPhase     = [0, 0, 0, 0]
-  vehicleState.drivetrain     = { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1 }
+  // Every other field back to a fresh truck, from the one canonical shape (vehicle-state.js) — parked,
+  // strutComp at static equilibrium. The pose objects keep their identity (other modules hold
+  // them), and engineHealth stays the damage model's to write.
   // FEAT-33 (owner, 2026-08-22): story mode re-seats you with a DEAD truck — starting the day by
   // starting the truck is the ritual SM-INV-6 wants. Free roam / lab / scenario hand you a running
   // one so a debug reset is never gated behind a keypress.
-  vehicleState.ignition       = makeIgnitionState(_gameMode === 'story' ? IGN_OFF : IGN_RUNNING)
-  vehicleState.slipLong       = [0, 0, 0, 0]
-  vehicleState.slipLat        = [0, 0, 0, 0]
-  vehicleState.handbrake      = false
-  vehicleState.parked         = true   // hold the truck at the fresh spawn/teleport until the driver takes over
-  vehicleState.strutComp      = [...eq.strutComp]
-  vehicleState.strutCompVel   = [0, 0, 0, 0]
-  vehicleState.submerged      = false   // FEAT-22
-  vehicleState.submergedDepth = 0
+  const { position, quaternion, velocity, angularVelocity, engineHealth, ...fresh } =
+    makeVehicleState(RANGER_PARAMS, _gameMode === 'story' ? IGN_OFF : IGN_RUNNING)
+  Object.assign(vehicleState, fresh)
+  vehicleState.velocity.set(0, 0, 0)
+  vehicleState.angularVelocity.set(0, 0, 0)
   // Every seat (R, teleport, reseed) lands the camera on the new pose outright — the chase spring
   // would otherwise sweep across the jump and smear the frame on the way.
   snapCamera()
@@ -5140,16 +5121,11 @@ for (const b of document.querySelectorAll('.mp-felt')) {
     // and nothing in `runs/` records that. Stamped here beside seed/driver/felt because this is
     // where the run's CONTEXT is attached; buildRunExport knows the drive, not the world.
     data.road_router = ROAD_ROUTER_VERSION
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
     // `paper` in the name so the two mission types are tellable apart in runs/ at a glance — their
     // pars are not comparable (a paper round's is dominated by per-porch stops).
     const kind = data.mission_type === 'paper_route' ? 'paper-' : ''
-    a.download = `rangersim-run-${kind}${data.driver ? data.driver.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' : ''}`
-      + `${data.felt}-${data.result.letter ?? 'x'}-${Math.round(data.result.elapsed_s)}s.json`
-    a.click()
-    URL.revokeObjectURL(a.href)
+    downloadJSON(data, `rangersim-run-${kind}${data.driver ? data.driver.replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-' : ''}`
+      + `${data.felt}-${data.result.letter ?? 'x'}-${Math.round(data.result.elapsed_s)}s.json`, 2)
     const label = b.textContent
     b.textContent = 'saved ✓'
     setTimeout(() => { b.textContent = label }, 1500)
@@ -5179,12 +5155,7 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
   netClient = new RoadNetworkClient({
     getSeed: () => worldSeed,
     getParams: () => RANGER_PARAMS,
-    getPondDiscs: (minX, minZ, maxX, maxZ) => {
-      if (!waterSystem) return []
-      const discs = []
-      for (const p of waterSystem.pondsNear(minX, minZ, maxX, maxZ)) discs.push(p.floorX, p.floorZ, p.radius + p.skirt)
-      return discs
-    },
+    getPondDiscs: _pondDiscs,
     // PERF-34: prime the water caches for the request window in slices before the discs are read.
     warmRegion: (minX, minZ, maxX, maxZ, ms) => waterSystem ? waterSystem.warmRegion(minX, minZ, maxX, maxZ, ms) : true,
   })
@@ -6513,17 +6484,6 @@ function _captureSession () {
   }
 }
 
-// Download a JS object as a timestamped JSON file (capture export).
-function _downloadJSON (obj, name) {
-  const blob = new Blob([JSON.stringify(obj)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  try {
-    const a = document.createElement('a')
-    a.href = url; a.download = name
-    document.body.appendChild(a); a.click(); document.body.removeChild(a)
-  } finally { URL.revokeObjectURL(url) }
-}
-
 // ── Background-tab mute ───────────────────────────────────────────────────────
 // Two distinct "we're not looking at it" events, and we need BOTH: alt-tabbing to another app
 // fires window blur but NOT visibilitychange (the tab is still visible), while switching browser
@@ -6564,7 +6524,7 @@ document.addEventListener('keydown', e => {
       mark: { x: px, z: pz }, streamCenterHistory: _streamCenterRing.slice(), terrainSample,
       session: _captureSession(),
     })
-    _downloadJSON(capture, 'autos-capture-' + Date.now() + '.json')
+    downloadJSON(capture, 'autos-capture-' + Date.now() + '.json')
     console.log(`[capture] place @(${px.toFixed(1)},${pz.toFixed(1)}) run ${capture.place.observed.runKey} gradeY ${capture.place.observed.gradeY?.toFixed(2)} minR ${capture.place.observed.minRadius?.toFixed(1)}`)
   }
 })
@@ -6832,7 +6792,7 @@ function loop () {
   // ground.position.x/z snapping removed — ground mesh removed; terrain chunks replace it.
   // Phase 7 D-21: while free-cam is active, stream chunks around the camera, not the truck.
   // Reverts to truck position on exit so the ring stays anchored to the car in normal mode.
-  const streamCenter = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+  const streamCenter = roadStreamCenter()
   _trackStreamCenter(simTime, streamCenter.x, streamCenter.z)   // capture ring (Phase 4/5)
   // PERF-33: travel direction for near-then-ahead ordering; a jump drops every queue's backlog.
   if (_streamMotion.update(streamCenter.x, streamCenter.z, frameTime, STREAM_JUMP_M) && !_labActive) {
