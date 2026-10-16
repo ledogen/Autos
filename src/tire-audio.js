@@ -42,6 +42,7 @@
  */
 
 import { getAudioContext, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
+import { rotateByQuat } from './dust.js'
 
 // ── Gating constants (user spec) ──────────────────────────────────────────────────────────
 const SLIP_FLOOR = 4.0     // m/s — combined slip below this is silent
@@ -388,19 +389,6 @@ export function ensureTireAudio () {
   started = true
 }
 
-// Rotate a body-local vector by a quaternion without allocating (verbatim pattern from smoke.js).
-const _qv = { x: 0, y: 0, z: 0 }
-function _rotate (x, y, z, q) {
-  const ix = q.w * x + q.y * z - q.z * y
-  const iy = q.w * y + q.z * x - q.x * z
-  const iz = q.w * z + q.x * y - q.y * x
-  const iw = -q.x * x - q.y * y - q.z * z
-  _qv.x = ix * q.w + iw * -q.x + iy * -q.z - iz * -q.y
-  _qv.y = iy * q.w + iw * -q.y + iz * -q.x - ix * -q.z
-  _qv.z = iz * q.w + iw * -q.z + ix * -q.y - iy * -q.x
-  return _qv
-}
-
 /** 0 below floor, 1 above max, smoothstep between — the user-specified slip gate. */
 function _slipRamp (slip) {
   const u = (slip - SLIP_FLOOR) / (SLIP_MAX - SLIP_FLOOR)
@@ -443,7 +431,7 @@ export function updateTireAudio (vehicleState, params, pavedFactorAt) {
     const isFront = i < 2
     const lx = (i === 0 || i === 2) ? -(isFront ? tF : tR) : (isFront ? tF : tR)
     const lz = isFront ? -(L * params.weightRear) : (L * params.weightFront)
-    const r = _rotate(lx, hubY, lz, vehicleState.quaternion)
+    const r = rotateByQuat(lx, hubY, lz, vehicleState.quaternion)
     const loose = pavedFactorAt ? pavedFactorAt(px + r.x, pz + r.z) : 1   // 1 = dirt, ~0 = asphalt
     const paved = 1 - loose
 
