@@ -78,17 +78,17 @@ export function crownProfile(uLat, halfWidth, crownHeight) {
 // ── SURF-06: Pothole / crack micro-noise (D-03) ───────────────────────────────
 // Main-thread only — the carve table gradeY_preamp is built on the main thread
 // (the Worker stores RAW heights; it never applies carve). This function is called at
-// the THREE sites where on-ribbon gradeY is produced on the main thread:
-//   (a) road.js _sampleCarveWorld     (physics — analyticHeight)
-//   (b) terrain.js _carveTableGen     (the terrain mesh carve — via the shared road resolver)
-//   (c) road-mesh.js sweepRibbon      (visual ribbon)
-// These three sites all have (wx, wz) world coordinates for the vertex, which is the
+// the TWO sites where on-ribbon gradeY is produced on the main thread:
+//   (a) road.js _sampleCarveWorld     (physics analyticHeight AND the terrain mesh carve, which
+//                                      reaches it only through this shared resolver)
+//   (b) road-mesh.js _ribbonSection   (visual ribbon)
+// Both sites have (wx, wz) world coordinates for the vertex, which is the
 // canonical key — using world position ensures identical output at each site without
 // requiring arcS propagation through the carve table builder.
 //
 // Deviation note: plan specified potholeNoise(arcS, uLat, ...) but _buildCarveTable
 // iterates a grid and does not track arcS. Using (wx, wz) as the hash key achieves
-// the same determinism guarantee and is the only input available at all three sites.
+// the same determinism guarantee and is the only input available at both sites.
 
 /**
  * Deterministic pothole / crack micro-noise for road surfaces.
@@ -114,7 +114,7 @@ export function crownProfile(uLat, halfWidth, crownHeight) {
  * @param {object} params       — RANGER_PARAMS (potholeEnabled, potholeAmplitude, potholeFrequency)
  * @returns {number} Signed Y perturbation (metres). Always 0 when potholeEnabled is falsy.
  *
- * Pure function — no imports, no side effects. Deterministic (D-16). Worker-safe.
+ * Pure function — no imports, no side effects. Deterministic (D-16).
  */
 // potholeNoise's lattice hash: unsigned 32-bit from 2D lattice coords, mapped to [-1, 1]
 function _h(ix, iz) {
@@ -227,7 +227,6 @@ export function signedCurvature(T0x, T0z, T1x, T1z, ds) {
 
 
 // ── Junction polygon utilities (P9 plan 04) ──────────────────────────────────
-// No imports — Worker-safe discipline maintained for future use.
 // NOTE: junction footprint is main-thread only.
 // Used by road-mesh.js buildJunctionFootprint.
 // QUAL-27: isConvexPolygon + triangulateConvexFan deleted — earClip handles convex rings too and

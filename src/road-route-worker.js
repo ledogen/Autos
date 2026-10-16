@@ -14,7 +14,7 @@
 //   {type:'route', client, jobs, epoch}
 //     → {routed:true, client, epoch, results:[{key, prims, v2Dirs}]}
 //     jobs are RoadSystem._v2EdgeSpec objects: {key, ax, az, yA, bx, bz, yB, margin,
-//     blockedDiscs, dirs}. prims:null = raced ahead of 'init' (client re-warms the key later).
+//     blockedDiscs, dirs, costs}. prims:null = raced ahead of 'init' (client re-warms the key later).
 //     prims:null + failed:true = the search threw; the client stops warming and builds, so the
 //     same throw surfaces there as a failed build instead of a silent stall.
 

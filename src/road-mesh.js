@@ -77,7 +77,7 @@ const MARK_EDGE_DASH_ON       = 8   // m: painted length per Mid-tier edge cycle
 export class RoadMeshSystem {
     /**
      * @param {THREE.Scene}     scene      — Three.js scene to add/remove road meshes
-     * @param {object}          roadSystem — RoadSystem instance (provides _tiles, ensureTile, runProfile)
+     * @param {object}          roadSystem — RoadSystem instance (provides _tiles, runProfile)
      * @param {Function}        terrainRef — (wx,wz)=>number  RAW (carve-free) terrain height sampler
      *                                        (CR-04; BUG-74 reads it for the skirt's cut fade)
      * @param {object}          params     — RANGER_PARAMS (roadWidth, roadHalfWidth, crownHeight, camberMaxAngleDeg, ...)
@@ -548,13 +548,6 @@ export class RoadMeshSystem {
     }
 
     /**
-     * Enqueue a road tile for building if it has not been built yet.
-     * Building is frame-spread (MAX_ROAD_BUILDS_PER_FRAME = 1) to avoid frame spikes.
-     *
-     * @param {number} tileX — tile column (integer, same scale as terrain chunk cx)
-     * @param {number} tileZ — tile row
-     */
-    /**
      * Does the streamed road network reach this tile? Corners + centre, because coverage is a
      * circle and a tile is CHUNK_SIZE square. Mirrors TerrainSystem._roadCoversChunk — the ribbon
      * and the carve have to agree about when a tile's emptiness is real.
@@ -823,7 +816,6 @@ export class RoadMeshSystem {
      * design grade for each slice, sweeps a ribbon, and adds the mesh to the scene.
      *
      * Pure function of (tileX, tileZ, road._tiles) — deterministic (D-16).
-     * No allocations outside the geometry itself (scratch vectors reused above).
      *
      * @param {number} tileX
      * @param {number} tileZ

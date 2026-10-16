@@ -106,11 +106,6 @@ export function buildNoGoFns(discs) {
     return { noGo, discsInBBox }
 }
 
-/**
- * One full network build → export, as a pure function of the request — THE build path, shared by
- * the worker message loop and the parity gate (which calls it from node, no Worker involved).
- * `rs` is an optional warm RoadSystem to reuse (same seed + params identity).
- */
 /** Construct the worker's private RoadSystem for a request (split out of buildNetworkSnapshot
  *  so the PERF-31 pre-warm can hold the instance before calling update()). */
 export function makeNetworkInstance(req) {
@@ -122,6 +117,11 @@ export function makeNetworkInstance(req) {
     return rs
 }
 
+/**
+ * One full network build → export, as a pure function of the request — THE build path, shared by
+ * the worker message loop and the parity gate (which calls it from node, no Worker involved).
+ * `rs` is an optional warm RoadSystem to reuse (same seed + params identity).
+ */
 export function buildNetworkSnapshot(req, rs = null) {
     if (!rs) rs = makeNetworkInstance(req)
     rs.setRadius(req.radius)

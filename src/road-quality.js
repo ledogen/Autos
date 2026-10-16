@@ -54,7 +54,7 @@ function runKeyHash(runKey) {
  * Returns a value in [0, 1). Deterministic from (worldSeed, runKey, arcS) — D-16.
  *
  * D-03: This function IS the labeled `roadQuality` hook. Call it from any surface consumer
- * (markings in road-mesh.js, pothole severity in road.js / terrain.js via Plan 09-06).
+ * (markings in road-mesh.js, pothole severity in road.js).
  *
  * @param {number} arcS      — arc-length along the run (metres)
  * @param {string} runKey    — per-run identifier
