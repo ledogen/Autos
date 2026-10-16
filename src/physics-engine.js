@@ -140,7 +140,6 @@ export class PhysicsEngine {
 
     // Scratch out-params — the bindings write into caller-provided arrays; reuse
     // to keep the per-frame allocation at zero on the hot read paths.
-    this._p = [0, 0, 0]; this._q = [0, 0, 0, 0]
     this._v = [0, 0, 0]; this._w = [0, 0, 0]
     this._rev = 0                          // bumped on body create/destroy — debug viz change detection
     this._xfStamp = 1                      // bumped per step — invalidates the per-body transform cache
@@ -272,6 +271,7 @@ export class PhysicsEngine {
 
   /** Cached body transform. The bindings' GetTransform is a WASM call; contactSphere reads every
    *  body's pose and runs ~16x per step, so fetching per call cost more than the query itself.
+   *  getTransform reads through the same cache (debris.js snapshots every body each step).
    *  Poses only change when the world steps (_xfStamp) or setTransform runs — statics not even
    *  then, so they are fetched once and held. */
   _bodyXf (rec) {
@@ -404,9 +404,10 @@ export class PhysicsEngine {
   /** Read body transform into out objects (THREE.Vector3/Quaternion compatible). */
   getTransform (handle, outPos, outQuat) {
     const rec = this._bodies.get(handle)
-    _b3.b3Body_GetTransform(this._p, this._q, rec.id)
-    outPos.x = this._p[0]; outPos.y = this._p[1]; outPos.z = this._p[2]
-    outQuat.x = this._q[0]; outQuat.y = this._q[1]; outQuat.z = this._q[2]; outQuat.w = this._q[3]
+    this._bodyXf(rec)        // shares contactSphere's per-step cache: one WASM fetch per body per step
+    const p = rec.xfP, q = rec.xfQ
+    outPos.x = p[0]; outPos.y = p[1]; outPos.z = p[2]
+    outQuat.x = q[0]; outQuat.y = q[1]; outQuat.z = q[2]; outQuat.w = q[3]
   }
 
   setTransform (handle, position, quaternion) {
