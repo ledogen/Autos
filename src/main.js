@@ -1044,7 +1044,9 @@ async function _reseatTruckAtSpawnInner () {
   // radius network around the drop point — story entry's multi-second warm, on every map
   // teleport, with no feedback (owner, 2026-10-05) — and re-centring the frozen region on it.
   // storySystem is tested LAST: it is declared further down, and the boot seat has no override.
-  if (_spawnOverride && netClient && roadSystem && !storySystem.isRoadStreamSuspended()) {
+  // NOT in the lab either (S-62): the lab never streams roads, so the build is pure waste — and the
+  // truck free-falls over the lab slab while it runs.
+  if (_spawnOverride && !_labActive && netClient && roadSystem && !storySystem.isRoadStreamSuspended()) {
     _spawnWarmActive = true
     try { await netClient.buildNow('play', _spawnOverride.x, _spawnOverride.z, roadSystem._proto.radius) }
     finally { _spawnWarmActive = false }
