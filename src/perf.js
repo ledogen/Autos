@@ -46,7 +46,7 @@ export function perfAdd(label, ms) {
 // ms >> cpu ⇒ the cost is off-thread: first draw of freshly-committed geometry, a shader variant
 // compiling, or the machine simply being loaded. Cumulative buckets can never tell those apart.
 //
-// Cost when disabled: one boolean test in perfAdd/perfEvent. Enabled: two Map writes per frame.
+// Cost when disabled: one boolean test in perfAdd/perfEvent. Enabled: two Map writes per perfAdd.
 let _hitchOn = false, _hitchMs = 24
 const _cur    = new Map()   // label -> ms accrued in the CURRENT frame
 const _curEv  = new Map()   // tag   -> event count in the CURRENT frame

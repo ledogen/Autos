@@ -1,15 +1,14 @@
 // src/version.js — build marker shown in the debug panel (QUAL-04).
 //
 // Goal: confirm at a glance WHICH build the browser actually loaded. GitHub Pages takes ~30–60 s
-// to redeploy after a push and the browser may serve a cached `main.js`, so "is this the new code?"
+// to redeploy after a push and the browser may serve a cached bundle, so "is this the new code?"
 // is otherwise a guess. A hand-stamped constant solves nothing — it silently goes stale the moment
 // you forget to bump it (which is exactly what happened to the previous value here).
 //
-// Approach (no build system, no asset files, ~zero runtime cost): at panel init we fetch the SERVED
-// `main.js` and read its `Last-Modified` / `ETag` response header. The browser answers from the same
-// HTTP cache entry the ES module was loaded from, so the header identifies the build that is actually
-// RUNNING — if the page is executing a stale cached bundle, the marker reads the stale date, which is
-// precisely the signal we want. One request at panel-open; nothing in the frame loop.
+// Approach (no asset files, ~zero runtime cost): at panel init we fetch a SERVED module and read its
+// `Last-Modified` / `ETag` response header — if the page is executing a stale cached bundle, the
+// marker reads the stale date, which is precisely the signal we want. One request at panel-open;
+// nothing in the frame loop.
 //
 // Probe THIS module's own served URL (`import.meta.url`). In dev that's src/version.js; after a Vite
 // build it's this module's hashed bundle chunk — either way the browser answers from the same HTTP
@@ -28,7 +27,7 @@ function fmt (date) {
 
 /**
  * Resolve a short build identifier for the actually-loaded bundle.
- * Reads main.js's Last-Modified (preferred — human-readable) or ETag (fallback) response header.
+ * Reads this module's own Last-Modified (preferred — human-readable) or ETag (fallback) response header.
  * Never throws; returns an 'unknown …' string on any failure so the panel always renders something.
  * @returns {Promise<string>}
  */

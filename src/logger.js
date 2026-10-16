@@ -16,7 +16,7 @@
  * Log format (D-06 / D-07):
  *   Columnar JSON — { fields: string[], frames: number[][] }
  *   One "fields" header array with short names; "frames" is an array of scalar arrays (one row per tick).
- *   Fields (45 entries): t, px, py, pz, vx, vy, vz, qx, qy, qz, qw, wx, wy, wz,
+ *   Fields (56 entries): t, px, py, pz, vx, vy, vz, qx, qy, qz, qw, wx, wy, wz,
  *     steer, thr, brk, fl_fn, fl_fy, fl_sa, fl_c, fr_fn, fr_fy, fr_sa, fr_c,
  *     rl_fn, rl_fy, rl_sa, rl_c, rr_fn, rr_fy, rr_sa, rr_c,
  *     fl_omega, fr_omega, rl_omega, rr_omega  (Phase 3 — wheel angular velocity rad/s)
@@ -24,6 +24,8 @@
  *     fl_sc, fr_sc, rl_sc, rr_sc             (Phase 4.1 — strut compression m per corner, D-12)
  *     rd_minr                                (BUG-12, closed — always 9999, kept for field order)
  *     rd_gh, fl_gh, fr_gh, rl_gh, rr_gh      (2026-06-25 — ground height under CG + each wheel, harness fidelity)
+ *     gear, eng_rpm, coupled_rpm, wheelspin  (FEAT-23 — drivetrain)
+ *     ign                                    (FEAT-33 — 0 off / 1 cranking / 2 running)
  *
  * Threat model: T-02-01 — JSON.parse wrapped in try/catch; unknown IC keys ignored, no eval.
  *
@@ -50,7 +52,7 @@ let _captureCtx = null       // () => { worldSeed, seedString, params, streamCen
  */
 export function setCaptureContext (fn) { _captureCtx = fn }
 
-// D-07: 41 fields — exact order is part of the public log contract; do not reorder.
+// D-07: 56 fields — exact order is part of the public log contract; do not reorder (append at END).
 // Phase 3 appends fl_omega/fr_omega/rl_omega/rr_omega at positions 33-36 (constraint #8).
 const FIELDS = [
   't',

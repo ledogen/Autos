@@ -14,7 +14,7 @@
  *   canvas visibility. Exports updatePacejkaCurve(vehicleState, params).
  * Phase 4.1 (D-13, D-14): Adds 5 new Suspension sliders (Front Travel, Rear Travel,
  *   Front Body Offset, Rear Body Offset, Bump Stop Stiffness). Adds 4-corner travel-bar
- *   canvas (160×140 px). Extends backtick toggle to sync travel bar. Exports
+ *   canvas (110×220 px). Extends backtick toggle to sync travel bar. Exports
  *   updateTravelBars(vehicleState, params).
  * QUAL-09: Folds every vehicle-physics control into one top-level 'Vehicle' folder, sub-grouped
  *   into Mass & CG / Drivetrain & Brakes / Tires (Pacejka folded in) / Suspension. Panel root is
@@ -67,9 +67,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   gui.domElement.style.display = 'none'  // hidden by default; backtick reveals it
 
   // QUAL-04: build marker — confirms which build the browser actually loaded (deploy lag + cache).
-  // Read-only text controller at the top of the panel. The value is the SERVED main.js
+  // Read-only text controller at the top of the panel. The value is the SERVED bundle's
   // Last-Modified/ETag, fetched once via resolveBuild() (src/version.js) — it reflects the bundle
-  // that is actually RUNNING (no manual bump, no build step). Starts as '…' and fills in when the
+  // that is actually RUNNING (no manual bump). Starts as '…' and fills in when the
   // probe resolves. The input is disabled (not editable), so to make the ID easy to SEND we attach
   // click-to-copy on the row: click copies the resolved id to the clipboard and flashes "(copied!)"
   // in the label. Falls back to selecting the text if the Clipboard API is unavailable.
@@ -423,7 +423,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   //   displays are refreshed after each macro step (updateDisplay).
   //
   //   Fires callbacks.rebuildTerrainFull → debouncedRebuildFull (main.js: reinitWorker + new RoadSystem
-  //   + _importSessionOrBundledRoutes + rebuildAllChunksFromWorker + truck re-seat) — the same
+  //   + _importSessionRoutes + rebuildAllChunksFromWorker + truck re-seat) — the same
   //   full-rebuild path the coarse/fine/regional shape sliders use.
   const terrainFolder = gui.addFolder('Terrain')
   let _coarseAmpCtrl = null, _fineAmpCtrl = null   // assigned when the sub-folder sliders are built below
@@ -1047,22 +1047,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
 }
 
 /**
- * Update the Pacejka lateral force curve plot and FL/FR operating-point dots.
- * Called once per render frame from src/main.js (OUTSIDE the fixed-timestep accumulator —
- * constraint #10). Early-returns when the canvas is hidden for performance (T-03-09).
- *
- * Curve: normalized (no Fz multiplication) — y = sin(C * atan(B*sa - E*(B*sa - atan(B*sa))))
- * over slip angle range [-0.3, +0.3] rad at 200 samples.
- *
- * Operating-point dots: FL (index 0) and FR (index 1). Colored by |fNorm|:
- *   < 0.5  → green  (#00ff88)
- *   < 0.8  → orange (#ffaa00)
- *   >= 0.8 → red    (#ff2222)
- *
- * @param {object} vehicleState — read vehicleState.wheelDebug[0].sa, wheelDebug[1].sa
- * @param {object} params       — read pacejkaB, pacejkaC (clamped), pacejkaD, pacejkaE
- */
-/**
  * Draw 4-corner suspension travel bars.
  * Called once per render frame from src/main.js (outside the fixed-timestep accumulator).
  * Early-returns when the canvas is hidden for performance (T-04.1-07).
@@ -1078,7 +1062,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
  * @param {object} params       — read suspensionTravelFront, suspensionTravelRear
  */
 export function updateTravelBars (vehicleState, params) {
-  // Early return when hidden (T-04.1-07: 160×140 redraw < 0.1 ms but still worth skipping)
+  // Early return when hidden (T-04.1-07: 110×220 redraw < 0.1 ms but still worth skipping)
   if (!travelCanvas || !travelCtx || travelCanvas.style.display === 'none') return
 
   const W = travelCanvas.width
@@ -1250,6 +1234,22 @@ export function updateSlipVectors (vehicleState) {
   }
 }
 
+/**
+ * Update the Pacejka force curve plot and FL/FR operating-point dots.
+ * Called once per render frame from src/main.js (OUTSIDE the fixed-timestep accumulator —
+ * constraint #10). Early-returns when the canvas is hidden for performance (T-03-09).
+ *
+ * Curve: normalized (no Fz multiplication) — y = sin(C * atan(Bx - E*(Bx - atan(Bx)))), Bx = B·s/v_ref,
+ * over slip-VELOCITY magnitude s ∈ [0, 1.5·v_ref] m/s at 200 samples.
+ *
+ * Operating-point dots: FL (index 0) and FR (index 1). Colored by |fNorm|:
+ *   < 0.5  → green  (#00ff88)
+ *   < 0.8  → orange (#ffaa00)
+ *   >= 0.8 → red    (#ff2222)
+ *
+ * @param {object} vehicleState — read vehicleState.wheelDebug[0].sa, wheelDebug[1].sa (slip velocity, m/s)
+ * @param {object} params       — read pacejkaB, pacejkaC (clamped), pacejkaE, tireSlipVelRef
+ */
 export function updatePacejkaCurve (vehicleState, params) {
   // T-03-09: early return when hidden — no canvas work per hidden frame
   // null-guard: protects against calls before initDebug has run

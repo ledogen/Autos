@@ -97,8 +97,9 @@ Particles / audio / debug
   (`whiteNoiseBuffer` / `loopNoise` in `engine-audio.js`).
 - ~~`sky.setBakeRes` leak; `GROUND_FILL_LIFT`; console dumps gated on `?prof` / `?hitch`; dead
   `wyeCreaseMaxDeg` slider.~~ DONE (the leak was the old CubeCamera left in the bake scene).
-- `perf.js` header — OPEN: re-read against the code, found no drift to fix; reviewer's note
-  unrecoverable. Strike if nobody remembers what it was.
+- ~~`perf.js` header~~ DONE (review-2 S-63/S-68): the drift was perf.js:46 "one boolean test" —
+  perfAdd always did the bucket write. perfAdd now returns at once with profiling off, and the
+  main.js "TEMP … removed with src/perf.js" labels are gone (PERF-04 closed; perf.js is permanent).
 - Several FX params with no slider — RULED 2026-10-04 (owner): no debug sliders. These become
   USER-FACING controls later, under pause menu → settings → audio (volumes etc.); out of scope now.
 - ~~`FLORA_PARAMS` keys nobody reads.~~ DONE.
