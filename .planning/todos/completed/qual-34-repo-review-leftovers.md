@@ -1,7 +1,9 @@
 ---
 id: QUAL-34
 type: quality
-status: pending
+status: completed
+closed: 2026-10-15
+resolution: "Every open B item settled on branch `feature/repo-review-2` (2026-10-15): particle billboards extracted (review-2 S-55), perf.js struck, prop-system chunk keys (S-48), gate-by-gate descriptions (S-79), dashboard host stays on all interfaces by owner ruling. The fingerprints were promoted to test/ (S-80)."
 severity: minor
 opened: 2026-10-02
 relates: the whole-repo review on branch `feature/repo-review` (commits review-1 … review-9)
@@ -146,3 +148,13 @@ Reuse these; they caught real mistakes during the review.
 
 These scripts were session-local. If the review continues, promote the fingerprint to
 `test/` as a rainy-day script first.
+
+## Resolution (2026-10-15)
+
+Closed on branch `feature/repo-review-2`. The open B items, settled:
+- Particle billboard setup — extracted into one sheet builder for dust, smoke and dirt-spray (S-55).
+- `update()` chunk-key strings / `_syncChunkLod` — chunk records carry `cx, cz` (S-48).
+- Stale gate descriptions — read gate by gate; 7 descs and 12 script headers fixed (S-79).
+- Dashboard host — stays on all interfaces by owner ruling (remote access).
+- perf.js — already struck above.
+The fingerprint scripts are `test/fingerprint-world.mjs` / `test/fingerprint-physics.mjs` (S-80).

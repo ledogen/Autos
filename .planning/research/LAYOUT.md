@@ -4,7 +4,7 @@
 holds the *rules* (import seams, prohibitions, workflow); this holds the *map*. When you add, move,
 or delete a file, update the relevant line here in the same commit — it's one line, keep it honest.
 
-*Last full audit: 2026-10-04 (81 files in `src/`, 8 in `src/props/`).*
+*Last full audit: 2026-10-15, review-2 (82 files in `src/`, 8 in `src/props/`).*
 
 ## Top level
 
@@ -52,7 +52,7 @@ component condition model — reads vehicleState signals, writes `params._*Scale
 physics stack never imports it) · `fragile.js` (FEAT-97 fragile cargo condition — pure; main.js feeds
 it the strap's felt g each step).
 
-**World generation** — `seed.js` (djb2 / mulberry32 / FNV-1a hash32 / seedFor, pure) · `terrain.js` (chunk ring, carve table, analytic
+**World generation** — `seed.js` (djb2 / mulberry32 / FNV-1a hash32 / seedFor + the shared hash2 / clamp01 / smooth01, pure) · `terrain.js` (chunk ring, carve table, analytic
 height) · `terrain-height.js` (THE height function + seeded noise + chunk grid constants and the Worker's
 height-param list — imported by main thread, worker, road.js, data/flora.js and the headless gates) · `terrain-worker.js` (chunk heightmap Worker, module entry) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
 rock classification) · `map-cover.js` (map-resolution forest cover) · `water.js` (ponds/streams
