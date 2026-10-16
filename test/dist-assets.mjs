@@ -53,7 +53,7 @@ for (const [url, keys] of urls) {
 const glbs = existsSync(join(ROOT, 'assets/models'))
   ? readdirSync(join(ROOT, 'assets/models')).filter((f) => f.endsWith('.glb'))
   : []
-if (!glbs.includes('hilux.glb')) fail('assets/models/hilux.glb (default vehicle) missing from the model directory')
+if (!glbs.includes('ranger.glb')) fail('assets/models/ranger.glb (default vehicle) missing from the model directory')
 
 if (failed) {
   console.error(`\n[dist-assets] ${failed} failure(s)`)

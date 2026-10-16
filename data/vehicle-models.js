@@ -28,19 +28,6 @@
 //   credit       string  — attribution (license requirement); also recorded in assets/models/CREDITS.md
 
 export const VEHICLE_MODELS = {
-  hilux: {
-    url: 'assets/models/hilux.glb',
-    targetLength: 4.6,
-    bodyScale: 1.065,
-    yaw: 0,
-    shiftRear: 0.318,
-    shiftDown: 0.21,
-    paint: 'M_0042_Sienna',
-    tail: 'Lisanne_Bandana',
-    reverse: { material: 'FrontColor', rearZ: -50 },
-    credit: 'Toyota Hilux 97 by Muhammad Reyhan [CC-BY]',
-  },
-
   // ASSET-34 — the hero truck, and the only model authored specifically for this game.
   // Modelled to the PHYSICS PRESET rather than to the real truck: `assets/models/src/ranger.py`
   // places the wheel arches on data/ranger.js's axles (car-local z -1.2825 / +1.5675) and sizes
