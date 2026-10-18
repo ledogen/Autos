@@ -1,7 +1,7 @@
 ---
 id: FEAT-74
 type: feature
-status: open
+status: done
 severity: minor
 opened: 2026-08-24
 relates: ASSET-15, ASSET-14, ASSET-09, ASSET-18, ASSET-21, FEAT-46, FEAT-50, FEAT-59
@@ -100,3 +100,21 @@ beside the barn slot at count 2), so R1 keeps 3 farms. This supersedes the revie
 - The produce stall spawns in-world as its own farm POI on a lay-by (ruling above).
 - A gate fails if a registry entry carries a tag that no roster slot names, so the next stranded
   asset is caught by the harness and not by a ticket audit six weeks later.
+
+## Resolution — built 2026-10-16 (`feature/feat-74`)
+
+- `data/prop-models.js` `produceStall`: collision `[3.0, 1.0, 2.26]`, the deck mass only (frame,
+  deck and crates up to 1.0 m; deck x ±1.50, frame z ±1.13, measured off the GLB). The drawbar, sign
+  and roof are soft. `seat: 2.0`. No pool tag: the slot names it.
+- `src/poi.js`: the farm is two slots, barn ×2 + produce stall ×1, still 3 farms. The stall slot
+  takes a lay-by, carries `residence`, and has no yard.
+- **The tag gate** is in `test/dist-assets.mjs`. A registry tag that no roster `modelPool` or
+  `YARD_POOLS` names fails. `gasStation` is on an explicit `ORPHANS` list until FEAT-50, and the
+  list fails once its consumer lands.
+- `story-poi` and `poi-yard` now count per type, since a class can span slots. The yard count is 9
+  per region.
+- **Known red, not this ticket:** story-poi §7a on seed 6. It's BUG-88, a latent duplicate-fetch
+  bug in the board that the roster change exposed.
+- Not caught by the tag gate: a `.glb` with no registry entry at all, which is how the stall was
+  stranded. `awning.glb` (composited into the yard) and `tent.glb` (FEAT-66) are legitimately
+  unregistered today.

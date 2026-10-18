@@ -80,7 +80,11 @@ counts with region size comes later. The gas station and tackle shop posting job
   unavailable for **12 h**, then a fresh offer appears. *(FEAT-113, 2026-10-15: the offer never
   leaves the board, but a TAKEN round has a delivery deadline like every job.)*
 - **The gas station posts** (propane) under the budget; the **tackle shop posts fetches** of the
-  general-store sundries (owner, 2026-10-07; built FEAT-102).
+  general-store sundries (owner, 2026-10-07; built FEAT-102), and **its own goods** out to a
+  residence, farm or roadside spot (owner, 2026-10-16, BUG-88).
+- **No two live offers at a POI look alike (owner, 2026-10-16, BUG-88):** a newcomer may not
+  repeat an older sibling's destination, nor its thing where the source posts more than one. A
+  newcomer that would — or is left with no route — cycles to a new job.
 - **The stranded motorist (FEAT-102, owner 2026-10-08):** one job at a time — a ride to an auto
   shop, or a fetch of a spare tire (from an auto shop) or a jerry can (from a gas station). The
   car, ring, collider and map marker exist only while that job is open.

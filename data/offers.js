@@ -40,7 +40,8 @@
 //   furniture (optional, FEAT-116) true for the pieces the furniture pad protects.
 //   to       (optional, FEAT-100) the POI tags it may be delivered to — a class (`farm`) or a
 //            fixture tag. Absent = generic: any POI or a roadside spot (cargo.md "From → to").
-//            Tagged things only ever end at a matching POI, never roadside.
+//            Tagged things only ever end at a matching POI, never roadside — unless the list
+//            names 'roadside' too (BUG-88): then a matching POI or a roadside spot.
 //   deadlineSlack (optional, FEAT-113) the deadline as par × (1 + slack), counted from accept.
 //            Absent = the family default in DEADLINE_SLACK below.
 
@@ -133,6 +134,22 @@ export const THINGS = [
       pools: ['generalStore'], fetchBy: ['tackleShop'] },
     { id: 'paper',        phrase: 'a ream of paper',         family: 'delivery', massKg: [2.3, 2.6],
       pools: ['generalStore'], fetchBy: ['tackleShop'] },
+    // The tackle shop's own goods (owner, 2026-10-16, BUG-88): shop → a roadside spot, a farm or a
+    // residence (a farm carries the residence tag).
+    { id: 'dryFlies',     phrase: 'a box of size-12 dry flies', family: 'delivery', massKg: [0.1, 0.1],
+      pools: ['tackleShop'], to: ['residence', 'roadside'] },
+    { id: 'spinners',     phrase: 'spinners and spoons',     family: 'delivery', massKg: [0.3, 0.6],
+      pools: ['tackleShop'], to: ['residence', 'roadside'] },
+    { id: 'sinkers',      phrase: 'a bag of lead sinkers',   family: 'delivery', massKg: [0.3, 0.6],
+      pools: ['tackleShop'], to: ['residence', 'roadside'] },
+    { id: 'monoLine',     phrase: 'a spool of 12 lb mono',   family: 'delivery', massKg: [0.1, 0.2],
+      pools: ['tackleShop'], to: ['residence', 'roadside'] },
+    { id: 'nightcrawlers', phrase: 'a dozen nightcrawlers',  family: 'delivery', massKg: [0.2, 0.3],
+      pools: ['tackleShop'], to: ['residence', 'roadside'] },
+    { id: 'landingNet',   phrase: 'a landing net',           family: 'delivery', massKg: [0.8, 1.2],
+      pools: ['tackleShop'], to: ['residence', 'roadside'] },
+    { id: 'tackleBox',    phrase: 'a tackle box',            family: 'delivery', massKg: [2, 4],
+      pools: ['tackleShop'], to: ['residence', 'roadside'] },
     { id: 'paperClips',   phrase: 'a box of paper clips',    family: 'delivery', massKg: [0.1, 0.2],
       pools: ['generalStore'] },
     { id: 'kitchenShears', phrase: 'cooking scissors',       family: 'delivery', massKg: [0.1, 0.3],
@@ -323,7 +340,7 @@ export const SOURCES = {
     farm:             { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight', 'fragile'] },
     doctor:           { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight'] },
     strandedMotorist: { cap: 1, expiryH: [24, 72], families: ['delivery'] },
-    // FEAT-102: the tackle shop's jobs are fetches of the general-store sundries.
+    // FEAT-102: fetches of the general-store sundries, plus its own goods out (BUG-88).
     tackleShop:       { cap: 2, expiryH: 24,       families: ['delivery'] },
 }
 

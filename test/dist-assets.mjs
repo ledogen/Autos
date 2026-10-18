@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { VEHICLE_MODELS } from '../data/vehicle-models.js'
 import { ITEMS } from '../data/items.js'
+import { POI_ROSTER, YARD_POOLS } from '../src/poi.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..')
@@ -47,6 +48,20 @@ for (const [reg, table] of [['PROP_MODELS', PROP_MODELS], ['VEHICLE_MODELS', VEH
 for (const [url, keys] of urls) {
   if (!existsSync(join(ROOT, url))) fail(`${keys.join(', ')} → '${url}' does not exist on disk`)
   else if (!covered(url)) fail(`${keys.join(', ')} → '${url}' is not copied into dist/ by vite.config.js (it will 404 on Pages)`)
+}
+
+// FEAT-74: every registry TAG has a consumer — a roster slot's modelPool or a yard pool. A tag nothing
+// names is a shipped model the game can never place (the produce stall sat that way for two months).
+// ORPHANS are deliberate and say why; delete the line when the consumer lands.
+const ORPHANS = { gasStation: 'FEAT-50 refuelling — the gas pump sells fuel, it hands out no work (2026-08-22)' }
+const named = new Set([...POI_ROSTER.map((s) => s.modelPool), ...Object.values(YARD_POOLS)].filter(Boolean))
+for (const [key, spec] of Object.entries(PROP_MODELS)) {
+  for (const tag of spec?.tags ?? []) {
+    if (!named.has(tag) && !ORPHANS[tag]) fail(`PROP_MODELS.${key} carries tag '${tag}', which no roster modelPool or YARD_POOLS names — it can never spawn`)
+  }
+}
+for (const tag of Object.keys(ORPHANS)) {
+  if (named.has(tag)) fail(`ORPHANS.${tag} now has a consumer — delete its line`)
 }
 
 // Sanity: the directory the glob reads is non-empty and holds the default vehicle. Guards a
