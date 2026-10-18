@@ -22,6 +22,7 @@ import { stepDrivetrain, engineTorqueAt } from '../src/drivetrain.js'
 import { catchTime, makeIgnitionState, RUNNING } from '../src/ignition.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { ENGINES } from '../data/engines.js'
+import { TRANSMISSIONS } from '../data/transmissions.js'
 
 const DT = 1 / 60
 let failures = 0
@@ -48,12 +49,12 @@ check(best.r >= 1500 && best.r <= 3000 && best.p >= 0.6, `…at ${best.r} rpm, p
 
 // Steady top gear on the params' own road load: aero ½ρ·CdA·v² + rolling Cr·m·g, the same terms
 // physics.js applies. Top gear coupled rpm from road speed; pedal = the torque that load needs.
-const cruiseMpg = mph => {
+const cruiseMpg = (mph, Q = P, m = map) => {
   const v = mph * 0.44704
-  const F = 0.5 * 1.225 * P.aeroDragArea * v * v + P.rollingResistanceCoeff * P.mass * 9.81
-  const rpm = v / P.wheelRadius * P.gearRatios.at(-1) * P.finalDrive * 30 / Math.PI
-  const pedal = F * v / (rpm * Math.PI / 30) / engineTorqueAt(rpm, P.engineTorqueCurve)
-  return mph / fuelRateGph(map, rpm, pedal)
+  const F = 0.5 * 1.225 * Q.aeroDragArea * v * v + Q.rollingResistanceCoeff * Q.mass * 9.81
+  const rpm = v / Q.wheelRadius * Q.gearRatios.at(-1) * Q.finalDrive * 30 / Math.PI
+  const pedal = F * v / (rpm * Math.PI / 30) / engineTorqueAt(rpm, Q.engineTorqueCurve)
+  return mph / fuelRateGph(m, rpm, pedal)
 }
 const m55 = cruiseMpg(55), m60 = cruiseMpg(60), m70 = cruiseMpg(70)
 check(m55 >= 22 && m55 <= 30, `steady 55 mph ${m55.toFixed(1)} mpg within 22–30 (EPA lab hwy ≈ 26, sticker 20)`)
@@ -83,6 +84,24 @@ check(ENGINES.vulcan30.etaIndicated === 0.375 && buildFuelMap(P).gph[8][12] === 
 const a = fuelMapFor(P)
 check(fuelMapFor({ ...P }) === a, 'the per-params cache reuses the table while nothing changed')
 check(fuelMapFor({ ...P, fmepA: 120 }) !== a, '…and rebuilds it the moment an input moves')
+// The swap the debug menu does: Object.assign the 2.3 Duratec I4 over the V6's flat params.
+// EPA 2002 Ranger 2WD: 2.3 L ≈ 3 mpg better than the 3.0 L in every column — the gap is the anchor.
+const I4 = Object.assign({ ...P }, ENGINES.duratec23)
+const i4map = fuelMapFor(I4)
+check(i4map !== a && fuelRateGph(i4map, I4.engineIdleRPM, 0) < idle, `the Duratec I4 swaps in its own table and idles leaner (${fuelRateGph(i4map, I4.engineIdleRPM, 0).toFixed(2)} vs ${idle.toFixed(2)} gal/h)`)
+let i4kW = 0; for (let r = 1000; r <= I4.engineRedlineRPM; r += 50) i4kW = Math.max(i4kW, engineTorqueAt(r, I4.engineTorqueCurve) * r * Math.PI / 30 / 1000)
+check(i4kW >= 104 && i4kW <= 110, `…makes its rated 107 kW (143 hp) peak (${i4kW.toFixed(1)} kW)`)
+const gap = cruiseMpg(60, I4, i4map) - m60
+check(gap >= 2 && gap <= 4.5, `…and cruises ${gap.toFixed(1)} mpg better than the V6 at 60 (EPA gap ≈ 3)`)
+// …and its 5R55E: a floored ramp through the gears upshifts at the I4's own shift point, not the V6's.
+const I45 = Object.assign({ ...I4 }, TRANSMISSIONS['5r55e'])
+const ramp = { throttle: 1, brake: 0, wheelOmega: [0, 0, 0, 0], ignition: makeIgnitionState(RUNNING) }
+const shifts = []
+for (let mph = 0, g = 1; mph < 90; mph += 0.02) {
+  const v = mph * 0.44704; ramp.wheelOmega.fill(v / I45.wheelRadius); stepDrivetrain(ramp, I45, DT, v)
+  if (ramp.drivetrain.gear !== g) { shifts.push(ramp.drivetrain.coupledRPM); g = ramp.drivetrain.gear }
+}
+check(shifts.length === 3 && shifts.every(r => Math.abs(r - I45.shiftUpRPM) < 50), `I4 + 5R55E floored: 1→2→3→4 by 90 mph, each at ~${I45.shiftUpRPM} rpm (${shifts.map(Math.round).join(', ')})`)
 
 console.log('\n4. driving style, through the real drivetrain')
 // 55 mph held on the wheels; one run with a light foot, one floored. Same road speed, same minute.
