@@ -140,7 +140,13 @@ public node v6_60 {
         starter_torque: 70 * units.lb_ft,
         starter_speed: 500 * units.rpm,
         redline: 5500 * units.rpm,
-        throttle_gamma: 2.0
+        throttle_gamma: 2.0,
+        // Start-up values of the noise knobs: noise = V, jitter = B (confirmed on screen 2026-10-18).
+        // RECORDING MODES - change these two lines together with the two impulse_response lines:
+        //   dry grid (25 takes):     noise 0,   jitter 0,   impulse_response dry_ir
+        //   stock reference (3):     noise 1.0, jitter 0.3, impulse_response ir_lib.mild_exhaust_0_reverb
+        noise: 0.0,
+        jitter: 0.0
     )
 
     wires wires()

@@ -56,25 +56,43 @@ Brief: `.planning/handoffs/HANDOFF-2026-10-17-engine-sim-bake.md`. Recorded on t
   level from idle to WOT, so at idle it sounds as loud as the engine.
 - This was the "crunch" that cost an afternoon. Fixes that did **not** help: a quieter dry IR, a higher
   simulation frequency (N), and gentle treble-cut IRs. B and V at 0 fixed it at once.
-- The reference takes use B = V = 0 as well, so each dry/stock pair differs only in the IR.
-- If the truck needs breath noise, the game can add it after its muffler.
+- **The knobs can be set from the script.** The `engine(...)` block takes `noise` (= V) and `jitter`
+  (= B) as start-up values. Defaults are 1.0 and 0.5, and the mapping was confirmed on screen. It also
+  takes `hf_gain` (C, default 0.01) and `simulation_frequency` (N, default 10000). So
+  `vulcan30.mr` now sets the noise per recording mode, and nothing needs zeroing by hand.
+
+## Recording modes (two lines each in vulcan30.mr)
+| Takes | IR (both exhausts) | noise (V) | jitter (B) |
+|---|---|---|---|
+| 25 dry grid | `dry_ir` | 0 | 0 |
+| 3 stock reference | `ir_lib.mild_exhaust_0_reverb` | 1.0 | 0.3 |
+
+- **Owner's target sound:** the stock IR with V 1.0 and B 0.3 (B lowered from its default 0.5). That
+  is how the owner wants the finished truck to sound. So the game's exhaust model should end up near
+  that muffler, plus about that much breath noise, added after the muffler.
+- **Deviation from the brief:** the brief said the reference takes use the same knobs as the dry
+  grid. They use the owner's noise instead, because they are the owner's A/B target. So a dry/stock
+  pair differs in IR **and** noise. To compare only the muffler, filter the noise out or ignore it.
 
 ## Locked knob values (set once at 5500 full, dry IR, never changed)
 - Volume:
 - Convolution: fully wet =
-- HF gain:
-- LF noise (V): 0
-- HF noise (B): 0
-- Simulation frequency:
+- HF gain: (script default 0.01)
+- LF noise (V): 0 (script) · reference takes 1.0
+- HF noise (B): 0 (script) · reference takes 0.3
+- Simulation frequency: (script default 10000)
 - Part-load throttle value:
 - Peak level at 5500 full: dBFS
 - Reference takes volume change (only if a stock take clipped): dB
 
 ## Capture
-- Audacity version:
+- **44.1 kHz, owner's decision** (the brief said 48 kHz). engine-sim's IRs are all 44.1 kHz, so
+  44.1 kHz keeps Windows from resampling engine-sim's output on its way to the loopback.
+  `manifest.json` records the real rate, and `playbackRate = rpm / rpmMeasured` is unaffected.
+- Audacity version: 4.0.1 (winget)
 - Host: Windows WASAPI, device: (loopback)
-- Project rate: Hz, channels:
-- Windows output device format: Hz
+- Project rate: 44100 Hz, channels:
+- Windows output device format: 44100 Hz
 
 ## Engine model (vulcan30.mr)
 - Working copy runs from `Downloads\engine-sim\engine-sim-build_0_1_11a\assets\engines\autos\`.
@@ -113,6 +131,5 @@ Brief: `.planning/handoffs/HANDOFF-2026-10-17-engine-sim-bake.md`. Recorded on t
 - Settled rpm (stock):
 
 ## Anything odd
-- engine-sim renders at 44.1 kHz, the same rate as its IRs (to confirm in Audacity). The brief asks
-  for 48 kHz. Recording at 48 kHz means Windows resamples engine-sim's output on the way to the
-  loopback. The cutter accepts either rate and writes the real one into `manifest.json`.
+- engine-sim's audio rate is assumed to be 44.1 kHz, matching its IRs. That is not confirmed from
+  its source. The cutter accepts any rate and writes the real one into `manifest.json`.
