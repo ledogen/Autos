@@ -178,7 +178,9 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // it still burns near full throttle. Cutting heat here made a wheelspinning WOT climb — rpm pinned
   // at redline+200 — read as idle and never overheat (owner, 2026-10-17).
   const Tair = pedalEff * engineTorqueAt(engineRPM, curve) * tune
-  let Teng = pedalEff * engineTorqueAt(engineRPM, curve) * (tune * (params._engineDamageScale ?? 1.0))
+  // FEAT-50: the low-fuel sputter — a stumble takes torque for a fraction of a second (src/fuel.js
+  // stepSputter publishes it; absent fuel state → 1, which every headless gate relies on).
+  let Teng = pedalEff * engineTorqueAt(engineRPM, curve) * (tune * (params._engineDamageScale ?? 1.0)) * (vehicleState.fuel?.torqueScale ?? 1)
   if (engineRPM > redline) Teng *= Math.max(0, 1 - (engineRPM - redline) / 200)
 
   // FEAT-51: the power the FUEL is paying for [W] — the ENGINE HEAT signal (damage.js _stepTemp). The

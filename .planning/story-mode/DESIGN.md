@@ -1220,15 +1220,17 @@ cluster *before* the subtle tracks start mattering. Keep that contrast; it is do
     of fuel. It costs **(flat + per-km) × dayTier** and burns clock hours.
   - If you can't afford it, the run ends ("you broke down").
   - An anytime tow and a tow to the service station come later, as more rows in the same card.
-- **The low-fuel sputter** is specified, not built (FEAT-120): about 2 real minutes of warning,
-  roughly one stumble per 10 s and growing more frequent, each a matching torque loss.
+- **The low-fuel sputter** (built 2026-10-17): about 2 real minutes of warning at the average burn,
+  roughly one stumble per 10 s and growing more frequent, each a real torque loss with the drone
+  dropping out and a pop.
 
 **Open:** tank capacity as a jalopy/part difference (a bigger tank is described-not-scored territory,
 SM-INV-10); whether a **jerry can** is a stowed tool with real mass (`items.md` §2 rules say it would
-be — the *Emergency gas* reward's grant is still stubbed); and whether fuel price varies by station or
-only by run age. Also owed: a **pedal-aware shift schedule**. FEAT-23's automatic box upshifts at a
-fixed 5400 rpm whatever the pedal, so today a gentle driver saves only along the pedal axis and can
-never short-shift into a cheap low-rpm cell. The fuel table is ready for that schedule to read.
+be — the *Emergency gas* can now pours 2 gal from the inventory, but carries no fuel-mass model of
+its own beyond the item's 7.2 kg); and whether fuel price varies by station or only by run age. Also
+owed: **drive modes** (FEAT-124, owner 2026-10-17). Sport is today's rev-out box. Normal shifts
+early or late on a time-weighted average of the throttle, so a feathering keyboard player and a
+controller player (FEAT-125) both reach the fuel map's cheap low-rpm cells.
 
 ### The car: jalopy + parts [RATIFIED premise, DEFAULT details]
 

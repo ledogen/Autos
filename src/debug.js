@@ -180,8 +180,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // pedal table on the next step (fuelMapFor compares its inputs). The tank itself is vehicleState
   // run state, so the readout and the two buttons go through callbacks.
   const fuelFolder = driveFolder.addFolder('Fuel (FEAT-50)')
-  const fuelRead = { get gal () { return callbacks.fuelGal?.() ?? 0 } }
-  fuelFolder.add(fuelRead, 'gal').name('Tank (gal)').listen().disable()
+  // The tank level is LIVE and SETTABLE: it follows the burn, and dragging it sets the gallons (clamped
+  // to the tank, and to free roam's floor outside story mode). 0 in story mode kills the engine.
+  const fuelRead = { get gal () { return callbacks.fuelGal?.() ?? 0 }, set gal (g) { callbacks.setFuelGal?.(g) } }
+  fuelFolder.add(fuelRead, 'gal', 0, 40, 0.1).name('Tank (gal)').listen()
   fuelFolder.add({ refill: () => callbacks.setFuelGal?.(Infinity) }, 'refill').name('Refill')
   fuelFolder.add({ drain: () => callbacks.setFuelGal?.(0) }, 'drain').name('Drain to empty')
   fuelFolder.add(params, 'fuelTankGal', 2, 40, 0.5).name('Tank Capacity (gal)')
@@ -190,6 +192,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   fuelFolder.add(params, 'fuelFillGalPerS', 0.2, 5, 0.05).name('Pump Rate (gal/s)')
   fuelFolder.add(params, 'fuelStartFrac', 0, 1, 0.01).name('Story Start Fill')
   fuelFolder.add(params, 'fuelFreeRoamFloorFrac', 0, 0.5, 0.01).name('Free-Roam Floor')
+  fuelFolder.add(params, 'fuelLowLightGal', 0, 8, 0.25).name('Low-Fuel Lamp (gal)')
   const mapFolder = fuelFolder.addFolder('Engine Fuel Map')
   mapFolder.add(params, 'etaIndicated', 0.25, 0.45, 0.005).name('Indicated Efficiency η')
   mapFolder.add(params, 'displacementL', 1, 7, 0.01).name('Displacement (L)')

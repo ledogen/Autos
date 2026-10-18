@@ -11,10 +11,13 @@
 //   4. Driving style shows up: a light foot at 55 mph burns far less than flooring it at 55 mph,
 //      through the real drivetrain (the box kicks down, rpm climbs, the cells get hot).
 //   5. The tank: an empty tank kills the engine and it cannot catch; free roam's floor never runs dry.
+//   6. The low-fuel sputter: it starts with ~2 real minutes of fuel left, stumbles irregularly at ~10 s
+//      on average, tighter and deeper toward empty, takes real torque, and is deterministic.
 //
 // Run: node test/fuel-map.mjs [--print]     (--print dumps the whole table for review)
 
 import { buildFuelMap, fuelRateGph, fuelGramsPerS, fuelMapFor, stepFuel, makeFuelState } from '../src/fuel.js'
+import { InventorySystem } from '../src/inventory.js'
 import { stepDrivetrain, engineTorqueAt } from '../src/drivetrain.js'
 import { catchTime, makeIgnitionState, RUNNING } from '../src/ignition.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
@@ -108,6 +111,86 @@ check(roam.fuel.gal === 0.825 && roam.ignition.state === RUNNING, "free roam's f
 const off = { ignition: { ...makeIgnitionState(), state: 'off' }, drivetrain: { engineRPM: 0, pedal: 1 }, fuel: makeFuelState(P) }
 stepFuel(off, P, 1)
 check(off.fuel.gal === P.fuelTankGal, 'a stopped engine burns nothing')
+
+console.log('\n6. the low-fuel sputter')
+// Hold a steady 3000 rpm at 70 % pedal from 3 gal down to empty, logging every stumble.
+const sputterRun = () => {
+  const vs = { ignition: makeIgnitionState(RUNNING), drivetrain: { engineRPM: 3000, pedal: 0.7 }, fuel: makeFuelState(P, 0) }
+  vs.fuel.gal = 3
+  const log = []; let minScale = 1, t = 0, burnS = null
+  for (; vs.fuel.gal > 0 && t < 3600; t += DT) {
+    const n = vs.fuel.sputters
+    stepFuel(vs, P, DT)
+    if (vs.fuel.sputters > n) log.push({ t, left: vs.fuel.gal / vs.fuel.avgGalPerS, depth: vs.fuel.sputterDepth })
+    minScale = Math.min(minScale, vs.fuel.torqueScale)
+  }
+  return { log, minScale, tEmpty: t }
+}
+const sp = sputterRun()
+const gaps = sp.log.slice(1).map((e, i) => e.t - sp.log[i].t)
+const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length
+const half = Math.floor(gaps.length / 2)
+const early = gaps.slice(0, half).reduce((a, b) => a + b, 0) / half, late = gaps.slice(half).reduce((a, b) => a + b, 0) / (gaps.length - half)
+check(sp.log.length > 4 && sp.log[0].left <= P.sputterWarnS && sp.log[0].left > P.sputterWarnS - 30,
+  `the first stumble comes with ${sp.log[0]?.left.toFixed(0)} s of fuel left (warning at ${P.sputterWarnS} s)`)
+check(sp.log.every(e => e.left <= P.sputterWarnS), 'none before the warning window')
+check(mean >= 7 && mean <= 13, `${sp.log.length} stumbles, ${mean.toFixed(1)} s apart on average (~10)`)
+check(late < early, `they tighten toward empty (${early.toFixed(1)} s early → ${late.toFixed(1)} s late)`)
+check(sp.log.at(-1).depth > sp.log[0].depth && sp.minScale < 0.2, `and deepen (${sp.log[0].depth.toFixed(2)} → ${sp.log.at(-1).depth.toFixed(2)}); torque falls to ${(sp.minScale * 100).toFixed(0)} % in the worst`)
+{
+  // A fill-up mid-sputter, then running low again: the second episode's first stumble must wait the
+  // same ~20 s into the window as the first did — no banked progress from the last one.
+  const vs = { ignition: makeIgnitionState(RUNNING), drivetrain: { engineRPM: 3000, pedal: 0.7 }, fuel: makeFuelState(P, 0) }
+  const firstLeft = () => {
+    const n = vs.fuel.sputters
+    for (let t = 0; t < 3600 && vs.fuel.sputters === n; t += DT) stepFuel(vs, P, DT)
+    return vs.fuel.gal / vs.fuel.avgGalPerS
+  }
+  vs.fuel.gal = 3
+  const a = firstLeft()
+  // Run on until the NEXT stumble is nearly due (90 % banked), then fill — the worst case for carry-over.
+  for (let t = 0; t < 600 && vs.fuel.sputterPhase < 0.9 * vs.fuel.sputterNext; t += DT) stepFuel(vs, P, DT)
+  vs.fuel.gal = 3                                                 // fill up
+  const b = firstLeft()
+  // Not equal — each episode's first gap is jittered — but never at the window's edge: banked progress
+  // would fire it the moment the warning opens (≈120 s).
+  check(b < P.sputterWarnS - 8, `after a fill-up the next episode's first stumble waits again (${a.toFixed(0)} s, then ${b.toFixed(0)} s of fuel left; warning at ${P.sputterWarnS})`)
+}
+const sp2 = sputterRun()
+check(JSON.stringify(sp2.log) === JSON.stringify(sp.log), 'deterministic: the same drive stumbles at the same moments')
+{
+  const vs = { ignition: makeIgnitionState(RUNNING), drivetrain: { engineRPM: 3000, pedal: 0.7 }, fuel: { ...makeFuelState(P), gal: 1, floorGal: 0.825 } }
+  for (let t = 0; t < 300; t += DT) stepFuel(vs, P, DT)
+  check(vs.fuel.sputters === 0, "free roam's floor never sputters")
+}
+{
+  const axle = (scale) => {   // fresh state each time: one step, same inputs, only the stumble differs
+    const vs = { throttle: 0.7, brake: 0, wheelOmega: [0, 0, 20, 20], ignition: makeIgnitionState(RUNNING), fuel: { ...makeFuelState(P), torqueScale: scale } }   // ~2000 rpm in 1st, off the limiter
+    const p = { ...P }
+    stepDrivetrain(vs, p, DT, 7.4)
+    return p._driveTorque[2] + p._driveTorque[3]
+  }
+  check(axle(1) > 0 && Math.abs(axle(0.3) / axle(1) - 0.3) < 1e-9, 'a stumble takes its share of drive torque at the wheels')
+}
+
+console.log('\n7. the Emergency gas can')
+{
+  let poured = 0
+  const vs = { fuel: { ...makeFuelState(P), gal: 0, dry: true } }
+  const pour = () => {   // the same rule main.js _pourGasCan applies
+    const space = P.fuelTankGal - vs.fuel.gal
+    if (space < 0.05) return false
+    vs.fuel.gal += Math.min(P.emergencyGasGal, space); vs.fuel.dry = false; poured++
+  }
+  const inv = new InventorySystem({ effects: { gas: pour } })
+  inv.start(); inv.grant('emergencyGas', 2)
+  const count = () => inv.list().find(e => e.id === 'emergencyGas')?.n ?? 0
+  check(inv.use('emergencyGas') && vs.fuel.gal === P.emergencyGasGal && !vs.fuel.dry && count() === 1,
+    `a can pours ${P.emergencyGasGal} gal into a dry tank and is spent`)
+  check(catchTime(vs, P) < Infinity, '…and the key can catch again')
+  vs.fuel.gal = P.fuelTankGal
+  check(!inv.use('emergencyGas') && count() === 1, 'a full tank refuses the can — it is kept, not wasted')
+}
 
 console.log(`\n${'═'.repeat(64)}`)
 if (failures) { console.log(`FUEL-MAP GATE: ${failures} FAILURE(S)`); process.exit(1) }

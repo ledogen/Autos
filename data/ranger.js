@@ -104,6 +104,19 @@ export const RANGER_PARAMS = {
   fuelStartFrac:        0.62,  // [-] story start: the truck was handed over "with some gas in it"
   fuelFillGalPerS:      1.65,  // gal/s — a full 16.5 gal tank in 10 s of held F (owner 2026-10-16)
   fuelFreeRoamFloorFrac: 0.05, // [-] free roam's no-consequence floor: the tank stops here and never runs dry
+  emergencyGasGal:      2,
+  fuelLowLightGal:      3,     // gal — the dash's low-fuel lamp (src/cluster.js) lights at or below this; 3 gal (~18 %) so it always leads the sputter, which at WOT starts with ~2.7 gal left
+  // Low-fuel sputter (src/fuel.js stepSputter, owner 2026-10-16): ~2 real minutes of warning, a
+  // stumble every 20 s at first tightening to every 6 s at empty (~10 s average), each deeper and
+  // longer than the last. Times are REAL seconds.
+  sputterWarnS:          120,   // s of fuel left (at the average burn) when it starts
+  sputterAvgS:           20,    // s — time constant of that average burn
+  sputterIntervalStartS: 20,    // s — mean gap between stumbles at the first warning
+  sputterIntervalEndS:   6,     // s — …and at empty
+  sputterDurStartS:      0.25,  // s — a stumble's length at the first warning
+  sputterDurEndS:        0.6,   // s — …and at empty
+  sputterDepthStart:     0.5,   // [-] torque it takes at its worst, first warning
+  sputterDepthEnd:       0.95,  // [-] …and at empty     // gal — what the Emergency gas can (data/items.js) pours in: a 2 gal RotoPax
 
   // ── Ignition + starter (FEAT-33) ────────────────────────────────────────────────────────────────
   // The key has three positions (OFF / ON / START); see src/ignition.js. Catch time is what the

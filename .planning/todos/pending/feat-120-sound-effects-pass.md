@@ -185,9 +185,10 @@ status: shipped · group: story · play: pump-audio.js playRegister
 FEAT-50. Handbrake down: a mechanical ka-chunk (low thunk + two noise bursts) then a bright till ding.
 
 ### Low-fuel sputter
-status: todo · group: truck
-FEAT-50 follow-up — **the mechanic and the sound are built together** (owner, 2026-10-16: spec it, do not
-build it yet). Starts when the tank holds about **2 real minutes** of fuel at the running-average burn
+status: shipped · group: truck · play: engine-audio.js playSputterPop
+FEAT-50 follow-up, built 2026-10-17 — the mechanic (`src/fuel.js` stepSputter, a real torque dip read
+by drivetrain.js) and the sound together: the drone drops out for the stumble's length (firing=false)
+and `playSputterPop(depth)` marks each one. The spec it was built to: Starts when the tank holds about **2 real minutes** of fuel at the running-average burn
 (src/fuel.js has the rate). Sputters average one every **10 s**, more often as the tank empties, and each
 is a matching momentary **torque loss** in the drivetrain — the engine actually stumbles, the sound only
 reports it. Sound: the engine drone cutting for a few firing events (gain dips on the oscillator stack in
