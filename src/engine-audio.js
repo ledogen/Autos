@@ -290,3 +290,12 @@ export function playCatchAudio () {
 export function playShutoffAudio () {
   _blip(70, 30, 0.28, 0.22, 700)
 }
+
+/**
+ * FEAT-50: the low-fuel sputter — one stumble. A short low pop, louder the deeper it goes (`depth`
+ * 0..1, the torque it took); the drone dropping out underneath is main.js passing firing=false to
+ * updateEngineAudio for the stumble's length.
+ */
+export function playSputterPop (depth = 0.7) {
+  _blip(55, 28, 0.14, 0.18 + 0.2 * depth, 500)
+}

@@ -47,7 +47,7 @@ window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase he
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
-import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playShutoffAudio } from './engine-audio.js'
+import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playShutoffAudio, playSputterPop } from './engine-audio.js'
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes, playTireBlowout } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
@@ -3154,6 +3154,18 @@ const economySystem = new EconomySystem({
   getRegion: () => 1,
 })
 
+// FEAT-50: the Emergency gas can — 2 gal straight into the tank, any time there is room for it. A
+// full tank refuses (returns false), so the can is kept rather than wasted. A dry engine is not
+// restarted for you: the gas only makes the key work again (ignition.js catchTime).
+let _sputtersHeard = 0   // fuel.sputters already voiced (a fresh tank resets the count, hence !== above)
+function _pourGasCan () {
+  const f = vehicleState.fuel, space = RANGER_PARAMS.fuelTankGal - f.gal
+  if (space < 0.05) return false
+  f.gal += Math.min(RANGER_PARAMS.emergencyGasGal, space)
+  f.dry = false
+  playNozzle(); setPumpFlow(true); setTimeout(() => setPumpFlow(false), 1200)
+}
+
 // ── FEAT-122: the inventory ────────────────────────────────────────────────────────────────
 // One grant path (rewards now; the shop and finds later). Stowed kit is real load: every change
 // pushes its mass onto the chassis. start() empties it when the region goes live (story deps).
@@ -3161,7 +3173,7 @@ const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
   onChange: () => inventoryScreen.render(),
-  effects: { coffee: () => daySystem.drinkCoffee() },
+  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan },
 })
 // Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
 const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
@@ -7470,7 +7482,11 @@ function loop () {
   if (dtrain) {
     setEngineAudioEnabled(RANGER_PARAMS.engineAudioEnabled !== false)
     setEngineAudioVolume(RANGER_PARAMS.engineAudioVolume ?? 0.5)
-    updateEngineAudio(dtrain.engineRPM, vehicleState.throttle, (vehicleState.ignition?.state ?? 'running') === 'running')
+    // FEAT-50: a low-fuel stumble drops the drone out for its length, with one pop per stumble.
+    const fuel = vehicleState.fuel
+    if (fuel.sputters !== _sputtersHeard) { if (fuel.sputters > _sputtersHeard) playSputterPop(fuel.sputterDepth); _sputtersHeard = fuel.sputters }
+    updateEngineAudio(dtrain.engineRPM, vehicleState.throttle,
+      (vehicleState.ignition?.state ?? 'running') === 'running' && !(fuel.sputterT > 0))
   }
 
   // FEAT-33 ignition audio, in two halves.
@@ -7688,6 +7704,7 @@ function loop () {
   // every frame from the mode rather than at each transition, so no entry/exit path can miss it.
   vehicleState.fuel.floorGal = _gameMode === 'story' ? 0 : RANGER_PARAMS.fuelTankGal * RANGER_PARAMS.fuelFreeRoamFloorFrac
   gaugeCluster.setFuelLevel(vehicleState.fuel.gal / RANGER_PARAMS.fuelTankGal)
+  gaugeCluster.setLowFuel(vehicleState.fuel.gal <= RANGER_PARAMS.fuelLowLightGal)
   _renderPumpDisplay(frameTime)
   gaugeCluster.update(frameTime, vehicleState.velocity.length(), vehicleState.drivetrain?.engineRPM ?? 0)
 

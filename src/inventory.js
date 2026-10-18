@@ -166,11 +166,15 @@ export class InventorySystem {
         return true
     }
 
-    /** Use one unit: run its effect and spend it. False if not owned or its effect isn't built. */
+    /**
+     * Use one unit: run its effect and spend it. False if not owned or its effect isn't built — or if
+     * the effect itself returns false, which means "nothing to do right now, keep it" (FEAT-50: a gas
+     * can poured into a full tank would only be wasted).
+     */
     use (id) {
         const i = runInventory.entries.findIndex(e => e.id === id)
         if (i < 0 || !this.usable(id)) return false
-        this._effects[ITEMS[id].use]()
+        if (this._effects[ITEMS[id].use]() === false) return false
         const e = runInventory.entries[i]
         if (--e.n <= 0) runInventory.entries.splice(i, 1)
         this._changed()

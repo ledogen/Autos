@@ -50,6 +50,7 @@ const KEY_TICK_R = 16.5   // detent ticks run inward from here to r=14.5 — OUT
 const KEY_FASCIA_R = 12   // the silver escutcheon the key turns in
 // Escutcheon metal. The rest of the cluster is dark plastic; the ignition surround is the one part
 // of a real dash that is bare metal, and that contrast is what makes the switch findable.
+const LAMP_ORANGE = '#ff9a1f'   // FEAT-50 low-fuel lamp, lit
 const STEEL_HI = '#e4e4de'
 const STEEL    = '#b4b4ac'
 const STEEL_LO = '#6f6f68'
@@ -98,6 +99,7 @@ export class GaugeCluster {
     // Both are driven every frame — fuel from the tank (FEAT-50), temp from the engine (FEAT-51). These
     // are the values before the first frame: fuel at fuelStartFrac's 0.62, a cold engine at C.
     this._fuelFrac = 0.62
+    this._lowFuel = false
     this._tempFrac = 0
     this._fuelShown = 0      // sweep up from rest on load, like a key-on
     this._tempShown = 0
@@ -124,6 +126,9 @@ export class GaugeCluster {
 
   /** 0 = E, 1 = F. Fed every frame from the tank (FEAT-50). */
   setFuelLevel (frac) { this._fuelFrac = Math.max(0, Math.min(1, frac)) }
+
+  /** FEAT-50: the low-fuel lamp's sender — true below the warning level. Lit only with the key on. */
+  setLowFuel (on) { this._lowFuel = !!on }
 
   /** 0 = C, 1 = H (FEAT-51: C = 90 °C, mid = 100 °C, H = 110 °C on the stock thermostat). */
   setCoolantTemp (frac) { this._tempFrac = Math.max(0, Math.min(1, frac)) }
@@ -174,15 +179,17 @@ export class GaugeCluster {
     const d = this._drawn
     if (d.speed === this._speedMph && d.rpm === this._rpm && d.temp === this._tempShown
         && d.fuel === this._fuelShown && d.odo === this._odoMiles
-        && d.key === this._keyAngle && d.keyPos === this._keyPos) return
+        && d.key === this._keyAngle && d.keyPos === this._keyPos && d.low === this._lowLit()) return
     d.speed = this._speedMph; d.rpm = this._rpm; d.temp = this._tempShown
     d.fuel = this._fuelShown; d.odo = this._odoMiles; d.key = this._keyAngle; d.keyPos = this._keyPos
+    d.low = this._lowLit()
 
     const ctx = this._ctx
     ctx.clearRect(0, 0, W, H)
     ctx.drawImage(this._bg, 0, 0, W, H)
     this._drawOdometer(ctx)
     this._drawNeedle(ctx, TEMP, this._tempShown, 22, 2)
+    this._drawLowFuelLamp(ctx)
     this._drawNeedle(ctx, FUEL, this._fuelShown, 22, 2)
     this._drawNeedle(ctx, TACH, this._rpm / (TACH.max * 1000), 48, 3)
     this._drawNeedle(ctx, SPEEDO, this._speedMph / SPEEDO.max, 56, 3)
@@ -508,6 +515,26 @@ export class GaugeCluster {
   }
 
   // ── live parts ─────────────────────────────────────────────────────────────────────────────
+
+  // FEAT-50: the LOW FUEL lamp — a plain orange lens on the fuel dial's low side, under the E and
+  // clear of the needle's sweep (which runs across the top of the dial). Like a real dash lamp it is
+  // dark with the key off, a barely-there lens when unlit, and a glowing orange disc when lit.
+  _lowLit () { return this._lowFuel && this._keyPos !== 'off' }
+  _drawLowFuelLamp (ctx) {
+    const x = FUEL.cx - 15, y = FUEL.cy + 9, r = 3.2
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    if (this._lowLit()) {
+      ctx.shadowColor = 'rgba(255,150,30,0.9)'
+      ctx.shadowBlur = 7
+      ctx.fillStyle = LAMP_ORANGE
+    } else {
+      ctx.fillStyle = '#3a2410'   // the unlit lens: just enough to see there is a lamp there
+    }
+    ctx.fill()
+    ctx.restore()
+  }
 
   _drawNeedle (ctx, g, frac, len, width) {
     const a = gaugeAngle(g, frac)
