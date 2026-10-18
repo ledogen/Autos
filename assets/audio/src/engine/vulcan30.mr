@@ -145,8 +145,8 @@ public node v6_60 {
         // RECORDING MODES - change these two lines together with the two impulse_response lines:
         //   dry grid (25 takes):     noise 0,   jitter 0,   impulse_response dry_ir
         //   stock reference (3):     noise 1.0, jitter 0.3, impulse_response ir_lib.mild_exhaust_0_reverb
-        noise: 0.0,
-        jitter: 0.0
+        noise: 1.0,
+        jitter: 0.3
     )
 
     wires wires()
@@ -238,12 +238,12 @@ public node v6_60 {
         es_params,
         audio_volume: 1.0,
         // Grid takes: dry_ir. The 3 reference takes: ir_lib.mild_exhaust_0_reverb (stock).
-        impulse_response: dry_ir
+        impulse_response: ir_lib.mild_exhaust_0_reverb
     )
     exhaust_system exhaust1(
         es_params,
         audio_volume: 1.0,
-        impulse_response: dry_ir // keep in step with exhaust0
+        impulse_response: ir_lib.mild_exhaust_0_reverb // keep in step with exhaust0
     )
 
     cylinder_bank_parameters bank_params(

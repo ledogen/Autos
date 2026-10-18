@@ -6,14 +6,16 @@ Usage (from assets/audio/src/engine/):
 
 takes.csv columns: file,load,throttle,rpm_target,rpm_displayed
     file           raw take relative to this folder, e.g. raw/vulcan30_2340_part.flac
-    load           off | part | full | idle
+    load           off | part | full | idle | crank | start
     throttle       0..1
-    rpm_target     grid rpm (for the idle takes: the rpm it settled at)
-    rpm_displayed  rpm shown by engine-sim during the take
+    rpm_target     grid rpm (idle: the rpm it settled at; crank: the starter speed)
+    rpm_displayed  rpm measured during the take (by engine-sim-render, or read off the sim)
 
 Outputs (paths relative to this folder):
     dry takes        -> ../../engine/<name>.flac, listed in ../../engine/manifest.json
     *_stock takes    -> ../engine-muffler-reference/<name>.flac (not in the manifest)
+    load "start"     -> ../engine-start-reference/<name>.flac, copied through uncut (not loops,
+                        not in the manifest): key-on, crank, catch, flare and settle
 
 All takes must share one sample rate; the manifest records it.
 A loop is a whole number of 4-stroke cycles. One cycle = 2 revs, so T = 120 / rpm seconds.
@@ -172,8 +174,14 @@ def main(csv_path):
             rate = sr
         elif sr != rate:
             raise ValueError("%s is %d Hz, earlier takes are %d Hz" % (row["file"], sr, rate))
-        loop, info = cut_loop(audio, float(row["rpm_displayed"]), sr)
         name = os.path.basename(row["file"])
+        if row["load"] == "start":
+            start_dir = os.path.normpath(os.path.join(root, "..", "engine-start-reference"))
+            os.makedirs(start_dir, exist_ok=True)
+            sf.write(os.path.join(start_dir, name), audio, sr, format="FLAC", subtype="PCM_24")
+            print("%-32s copied uncut (%.2f s)" % ("start " + name, len(audio) / sr))
+            continue
+        loop, info = cut_loop(audio, float(row["rpm_displayed"]), sr)
         is_ref = name[:-len(".flac")].endswith("_stock")
         out_dir = ref_dir if is_ref else grid_dir
         sf.write(os.path.join(out_dir, name), loop, sr, format="FLAC", subtype="PCM_24")
