@@ -1,7 +1,7 @@
 ---
 id: FEAT-51
 type: feature
-status: open
+status: done
 opened: 2026-07-30
 severity: minor
 relates_to: FEAT-49 (gauge cluster), FEAT-23 (drivetrain)
@@ -50,5 +50,10 @@ in, with **no coolant mechanic** (radiator condition is the cooling capacity dir
 - Docs re-ruled in DESIGN.md (radiator), MILESTONES.md (radiator spec), items.md (coolant jug
   struck → stop-leak, +15% radiator).
 
-**Close when** the owner has driven it (a poked-down radiator on a long WOT climb) and is happy
-with the pace.
+## Resolution (2026-10-17)
+
+Driven by the owner and signed off ("it feels pretty good"). Tuning after the first drive: warm-up
+~24 s real idling (12 s felt too quick); hot mass 500k → 335k J/°C (0% radiator, full load,
+100 → 110 °C in ~30 s); and a real bug fixed — the fuel signal took the rev limiter's torque cut,
+so a limiter-pinned WOT climb read as idle heat (7 kW instead of ~96 kW) and never overheated.
+Gate: `test/damage-engine-temp.mjs`. Merged from `feature/overheat`.
