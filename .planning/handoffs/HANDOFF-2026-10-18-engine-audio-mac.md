@@ -32,7 +32,33 @@
   - The stock IR is mostly a steep low-pass. It peaks at 80–160 Hz, is −22 dB at 640–1280 Hz and
     −50 dB at the top. That makes it a ready first muffler: `ir/mild_exhaust_reverb.flac` in a
     ConvolverNode.
-  - `cutter.py` is written (`assets/audio/src/engine/`).
+  - `cutter.py` is written (`assets/audio/src/engine/`). Its self-check passes, and so does an
+    end-to-end run on synthetic FLAC.
+- **Windows reply, 2026-10-18 — the recording method changed.** 0 of 28 takes recorded. The owner
+  approved a **headless renderer** in place of loopback recording. The reason: engine-sim's
+  synthesizer (`src/synthesizer.cpp`) has an always-on "leveler". That's a fast compressor:
+  gain = 30000 / peak, with the peak decaying 0.1 %/sample (~23 ms), clamped 1e-5 … 1.9×, then a
+  hard clip to int16. It evens out idle vs WOT and pumps between firing pulses, so relative levels
+  can't be locked through the app. The pumping was the "crunch".
+  - The renderer pins the leveler to a fixed gain. `bake.py` (coming to `assets/audio/src/engine/`)
+    renders, level-locks and cuts in one command. It applies ONE scale factor across the dry grid, so
+    the loudest take peaks at −3 dBFS. The references get the same factor, unless that would push them
+    past −1 dBFS; then they get their own, with the dB offset logged in `raw/render_log.json`.
+  - Part throttle = 0.30. Convolution = 1.0 (fully wet). The Z/X knob values are moot now.
+  - The sim's audio rate is hard-coded at 44100 (`simulator.cpp`).
+  - **The dry signal is very bright and bass-light.** The stock IR is mostly a +40 dB low-frequency
+    lift (its DC sum is +138). Dry loops sound thin and quiet at idle on their own, so the game's
+    muffler must supply that lift. The stock IR as the first convolver does it.
+  - Blocker at the time of writing: building engine-sim from source. Master's C++ doesn't match the
+    v0.1.11a scripts, so it's being rebuilt at the v0.1.11a tag. No ETA. Once it renders, the grid
+    is minutes of work.
+  - The engine-sim fork lives OUTSIDE the repo, in a local clone on branch `autos-renderer`. **Open
+    risk:** if that clone is lost, the takes can't be re-rendered. Ask for the fork's diff to be
+    committed as a `.patch` under `assets/audio/src/engine/`.
+  - **Open question for the owner:** the owner picked the target sound (stock IR, LF 1.0, HF 0.3)
+    by ear THROUGH the leveler. The headless references have the leveler pinned, so they may sound
+    different from what was approved. Have the owner re-listen to the rendered references before
+    tuning the muffler to them.
 - `git pull` in the worktree to see new takes.
 
 ## Owner rulings this round
