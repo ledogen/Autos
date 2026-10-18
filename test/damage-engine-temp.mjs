@@ -31,6 +31,8 @@ console.log('§1 the drivetrain publishes the fuel power heat is made from')
   const peak = fuelAt(5200, 1)
   console.log(`  WOT @ 5200 rpm: ${(peak / 1000).toFixed(1)} kW (radiator rated ${RANGER_PARAMS.radiatorRatedW / 1000} kW)`)
   ok(Math.abs(peak - RANGER_PARAMS.radiatorRatedW) / RANGER_PARAMS.radiatorRatedW < 0.02, 'stock peak power == the rated load, so "50% holds full load" is the stock engine at its worst')
+  const lim = fuelAt(5700, 1)
+  ok(lim > 0.8 * peak, `pinned on the rev limiter (5700 rpm, WOT): still burning ${(lim / 1000).toFixed(0)} kW — a limiter cuts in bursts, it does not idle the engine`)
   ok(fuelAt(5200, 1, { _engineDamageScale: 0.5 }) === peak, 'a damaged or overheating engine burns the same fuel — damage never cools it')
   const vs = { throttle: 1, wheelOmega: [0, 0, 0, 0], ignition: { state: 'off' } }
   stepDrivetrain(vs, P(), 0.004, 0)

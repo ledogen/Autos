@@ -173,10 +173,12 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // src/damage.js as params._engineDamageScale; absent → 1. Kept apart from the engineTorqueScale
   // tuning slider (a param) because it is run state.
   const tune = params.engineTorqueScale ?? 1.0
-  const cut  = engineRPM > redline ? Math.max(0, 1 - (engineRPM - redline) / 200) : 1
-  const Tair = pedalEff * engineTorqueAt(engineRPM, curve) * tune * cut
+  // Fuel ignores the limiter cut: a real limiter cuts fuel in brief bursts, so an engine bouncing off
+  // it still burns near full throttle. Cutting heat here made a wheelspinning WOT climb — rpm pinned
+  // at redline+200 — read as idle and never overheat (owner, 2026-10-17).
+  const Tair = pedalEff * engineTorqueAt(engineRPM, curve) * tune
   let Teng = pedalEff * engineTorqueAt(engineRPM, curve) * (tune * (params._engineDamageScale ?? 1.0))
-  if (engineRPM > redline) Teng *= cut
+  if (engineRPM > redline) Teng *= Math.max(0, 1 - (engineRPM - redline) / 200)
 
   // FEAT-51: the power the FUEL is paying for [W] — the one signal both the fuel tank and engine heat
   // read. It is the torque the air charge supports, BEFORE damage: a worn or overheating engine burns
