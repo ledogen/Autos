@@ -11,9 +11,11 @@ label cycle(2 * 360 * units.deg)
 
 // Dry = unit impulse dirac.wav, beside this file (44.1 kHz like the library IRs). IR paths resolve
 // relative to the .mr that declares them; a missing IR crashes engine-sim (divide by zero, empty log).
-// Volume 0.2 ~ matches the stock IR's loudness: 0.01 * sqrt(energy of mild_exhaust.wav = 464).
-impulse_response dry_ir(filename: "dirac.wav", volume: 0.2)
-// THE SWITCH is the `impulse_response:` line in exhaust_system exhaust0 below.
+// Volume 0.01 = the library's own scale; bring level up with Z. Dry takes need engine-sim's noise knobs
+// (B = HF noise, V = LF noise) at ZERO: that noise is mixed in before the IR, so a unit impulse passes it
+// straight through as a constant fuzz that the stock IR's steep low-pass normally hides.
+impulse_response dry_ir(filename: "dirac.wav", volume: 0.01)
+// THE SWITCH is the two `impulse_response:` lines in exhaust_system exhaust0 and exhaust1 below.
 
 private node wires {
     output wire1: ignition_wire();
@@ -218,10 +220,12 @@ public node v6_60 {
 
     exhaust_system_parameters es_params(
         outlet_flow_rate: k_carb(1000.0),
-        primary_tube_length: 8.0 * units.inch, // short cast log manifolds
+        // Example's lengths and one exhaust per bank. DEVIATION from the brief (one short Y-pipe):
+        // that layout sounded heavily muffled in the sim. See NOTES.md.
+        primary_tube_length: 20.0 * units.inch,
         primary_flow_rate: k_carb(500.0),
         velocity_decay: 1.0,
-        length: 30.0 * units.inch // Y-pipe only; cat, muffler, tail are the game's
+        length: 100.0 * units.inch
     )
 
     exhaust_system exhaust0(
@@ -230,6 +234,11 @@ public node v6_60 {
         // Grid takes: dry_ir. The 3 reference takes: ir_lib.mild_exhaust_0_reverb (stock).
         impulse_response: dry_ir
     )
+    exhaust_system exhaust1(
+        es_params,
+        audio_volume: 1.0,
+        impulse_response: dry_ir // keep in step with exhaust0
+    )
 
     cylinder_bank_parameters bank_params(
         bore: bore,
@@ -237,7 +246,6 @@ public node v6_60 {
     )
 
     label spacing(5.0 * units.inch)
-    label crossover(12.0 * units.inch) // left manifold's extra run to the Y-pipe
 
     cylinder_bank b0(bank_params, angle: 30.0 * units.deg)
     cylinder_bank b1(bank_params, angle: -30.0 * units.deg)
@@ -283,30 +291,30 @@ public node v6_60 {
             connecting_rod: connecting_rod(cr_params),
             rod_journal: rj1,
             intake: intake,
-            exhaust_system: exhaust0, // single pipe after the Y
+            exhaust_system: exhaust1, // left bank: its own exhaust
             ignition_wire: wires.wire2,
             sound_attenuation: 0.95,
-            primary_length: spacing * 2 + crossover
+            primary_length: spacing * 2
         )
         .add_cylinder(
             piston: piston(piston_params, blowby: k_28inH2O(0.2)),
             connecting_rod: connecting_rod(cr_params),
             rod_journal: rj3,
             intake: intake,
-            exhaust_system: exhaust0, // single pipe after the Y
+            exhaust_system: exhaust1, // left bank: its own exhaust
             ignition_wire: wires.wire4,
             sound_attenuation: 0.9,
-            primary_length: spacing * 1 + crossover
+            primary_length: spacing * 1
         )
         .add_cylinder(
             piston: piston(piston_params, blowby: k_28inH2O(0.2)),
             connecting_rod: connecting_rod(cr_params),
             rod_journal: rj5,
             intake: intake,
-            exhaust_system: exhaust0, // single pipe after the Y
+            exhaust_system: exhaust1, // left bank: its own exhaust
             ignition_wire: wires.wire6,
             sound_attenuation: 1.0,
-            primary_length: spacing * 0 + crossover
+            primary_length: spacing * 0
         )
         .set_cylinder_head(
             v6_60_head(
