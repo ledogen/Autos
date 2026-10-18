@@ -144,6 +144,84 @@ function splitRearGroup (mesh, rearZ) {
   return { frontMats, rearMat }
 }
 
+// ── Whip antenna ─────────────────────────────────────────────────────────────
+// The mast's first bending mode as a damped oscillator on its tip displacement d (2D, perpendicular
+// to the mast): d'' = -w^2 d - 2 zeta w d' - 1.545 f_perp, where f is the mount's specific force
+// (acceleration minus gravity) in the mast frame. 1.545 is the uniform cantilever's own ratio:
+// static tip deflection wL^4/8EI over w1^2 = 12.36 EI/(m'L^4) gives d_static = 1.545 f / w^2, so
+// hz and zeta are the only knobs. f comes from the mount's WORLD position differenced twice, so body
+// roll/pitch about the CG drives it too, not just CG acceleration. At 1.8 Hz a 1 g corner leans the
+// tip ~0.12 m (8°). The bend follows the uniform-load deflection curve (6ξ² − 4ξ³ + ξ⁴)/3.
+// Visual only — never reaches physics or a replay.
+const ANTENNA_TUNE = {
+  hz: 1.8, zeta: 0.06,
+  segments: 6, tipRadius: 0.45,   // ring count along the mast; tip radius as a fraction of the base's
+  maxAccel: 60,                   // m/s², clamps a teleport's (reset, story entry) one-frame spike
+}
+
+function createAntenna (a, material) {
+  const base = new THREE.Vector3(...a.base)
+  const axis = new THREE.Vector3(...a.tip).sub(base)
+  const L = axis.length()
+  // Built along +Y with its origin at the base; the mesh quaternion stands it on the real mast line.
+  const rest = [], shape = []
+  const ring = (k) => {
+    const xi = k / ANTENNA_TUNE.segments
+    const r = a.radius * (1 - (1 - ANTENNA_TUNE.tipRadius) * xi)
+    return [[r, 0], [0, r], [-r, 0], [0, -r]].map(([x, z]) => [x, xi * L, z, xi])
+  }
+  const push = (...vs) => { for (const v of vs) { rest.push(v[0], v[1], v[2]); shape.push((6 * v[3] ** 2 - 4 * v[3] ** 3 + v[3] ** 4) / 3) } }
+  for (let k = 0; k < ANTENNA_TUNE.segments; k++) {
+    const lo = ring(k), hi = ring(k + 1)
+    for (let s = 0; s < 4; s++) {
+      const s1 = (s + 1) % 4
+      push(lo[s], lo[s1], hi[s1], lo[s], hi[s1], hi[s])
+    }
+  }
+  const top = ring(ANTENNA_TUNE.segments)
+  push(top[0], top[1], top[2], top[0], top[2], top[3])
+  // Non-indexed, so computeVertexNormals gives flat facets like the rest of the model.
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(rest, 3))
+  geom.computeVertexNormals()
+  const mesh = new THREE.Mesh(geom, material)
+  mesh.position.copy(base)
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis.normalize())
+  mesh.castShadow = true
+  mesh.frustumCulled = false     // the rest-pose bounding sphere does not hold once it bends
+
+  const d = new THREE.Vector2(), dv = new THREE.Vector2()
+  const pPrev = new THREE.Vector3(), vPrev = new THREE.Vector3()
+  const p = new THREE.Vector3(), v = new THREE.Vector3(), f = new THREE.Vector3(), qInv = new THREE.Quaternion()
+  let tPrev = -1, primed = false
+  const step = (state) => {
+    const now = performance.now()
+    const dt = tPrev < 0 ? 0 : Math.min(0.05, (now - tPrev) / 1000)
+    tPrev = now
+    p.copy(base).applyQuaternion(state.quaternion).add(state.position)
+    if (dt <= 0) { pPrev.copy(p); return }
+    v.subVectors(p, pPrev).divideScalar(dt)
+    pPrev.copy(p)
+    if (!primed) { vPrev.copy(v); primed = true; return }   // the first velocity has nothing to difference against
+    f.subVectors(v, vPrev).divideScalar(dt).clampLength(0, ANTENNA_TUNE.maxAccel)
+    vPrev.copy(v)
+    f.y += 9.81
+    f.applyQuaternion(qInv.copy(state.quaternion).multiply(mesh.quaternion).invert())   // into the mast frame
+    const w = 2 * Math.PI * ANTENNA_TUNE.hz
+    // Semi-implicit Euler: stable while w·dt < 2 (0.57 at the 50 ms dt cap).
+    dv.x += (-w * w * d.x - 2 * ANTENNA_TUNE.zeta * w * dv.x - 1.545 * f.x) * dt
+    dv.y += (-w * w * d.y - 2 * ANTENNA_TUNE.zeta * w * dv.y - 1.545 * f.z) * dt
+    d.addScaledVector(dv, dt)
+    const pos = geom.attributes.position
+    for (let i = 0; i < shape.length; i++) {
+      pos.setXYZ(i, rest[3 * i] + shape[i] * d.x, rest[3 * i + 1], rest[3 * i + 2] + shape[i] * d.y)
+    }
+    pos.needsUpdate = true
+    geom.computeVertexNormals()
+  }
+  return { mesh, step }
+}
+
 /**
  * Build the vehicle model and attach it to `scene`.
  * @param {THREE.Scene} scene
@@ -678,6 +756,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   const modelReverseMats = []       // split-out rear white-lens materials, driven on reverse
   // (modelHeadMats declared earlier — front split of the white-lens material, driven as headlights)
   let pendingBodyColor = COLOR_BODY
+  let antenna = null              // createAntenna's { mesh, step }, once the GLB has loaded
 
   // ── Mesh sync ──────────────────────────────────────────────────────────────
   // Called every render frame to update mesh transforms from vehicleState.
@@ -760,6 +839,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     const castScale = LIGHT_ENV.dayScale + (1 - LIGHT_ENV.dayScale) * nightFactor
     const headCast = headlightMode === 0 ? 0 : (headlightMode === 2 ? HEAD_TUNE.highIntensity : HEAD_TUNE.lowIntensity)
     stepLampFlicker(state)
+    antenna?.step(state)
     // Per-lamp output = flicker level × the wear dimming damage.js publishes (absent = a stock lamp).
     const dim = params._headlightBrightness
     const lampGain = (i) => lampLevel[i] * (dim?.[i] ?? 1)
@@ -907,6 +987,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     )
 
     const lensMeshes = []
+    let antennaMat = null
     root.traverse((o) => {
       if (!o.isMesh) return
       o.castShadow = true
@@ -916,6 +997,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
         if (spec.paint && m.name.includes(spec.paint)) paintMaterials.push(m)
         if (spec.tail && m.name.includes(spec.tail) && !modelTailMats.includes(m)) modelTailMats.push(m)
         if (spec.reverse && m.name.includes(spec.reverse.material)) lensMeshes.push(o)
+        if (spec.antenna && !antennaMat && m.name.includes(spec.antenna.material)) antennaMat = m
       }
     })
     setBodyColor(pendingBodyColor)
@@ -930,6 +1012,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     applyHeadlights()
 
     carGroup.add(root)
+    if (antennaMat) { antenna = createAntenna(spec.antenna, antennaMat); carGroup.add(antenna.mesh) }
     bodyGroup.visible = false               // hide primitive shell (body + emissive light panels)
 
     // Strip the model's own wheels so the procedural wheels (which spin/steer/show suspension
