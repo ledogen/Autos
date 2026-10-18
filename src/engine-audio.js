@@ -105,7 +105,7 @@ export function ensureEngineAudio () {
  * Per-frame update: map engine RPM → fundamental, open the filter with revs/throttle, and set volume.
  * Ramps every param with setTargetAtTime (~50 ms) so nothing zippers.
  */
-export function updateEngineAudio (rpm, throttle, firing = true) {
+export function updateEngineAudio (rpm, throttle, firing = true, cylinders = 6) {
   if (!started || !ctx) return
   const now = ctx.currentTime
   const tc = 0.05
@@ -120,7 +120,7 @@ export function updateEngineAudio (rpm, throttle, firing = true) {
   if (!firing) { master.gain.setTargetAtTime(0, now, 0.12); return }
 
   const r = Math.max(RPM_MIN, rpm || RPM_MIN)
-  const f0 = Math.max(F_MIN, (r / 60) * 3)      // V6 firing fundamental
+  const f0 = Math.max(F_MIN, (r / 60) * cylinders / 2)   // 4-stroke firing fundamental: cylinders/2 per rev
   for (const o of oscs) o.osc.frequency.setTargetAtTime(f0 * o.mult, now, tc)
 
   // Filter opens with revs + throttle → brighter under load / at high RPM.

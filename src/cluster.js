@@ -32,7 +32,7 @@ const W = 420
 const H = 204
 const TEMP  = { cx: 86,  cy: 70,  well: 33, scaleR: 26, start: 215, sweep: 110 }
 const FUEL  = { cx: 62,  cy: 136, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const TACH  = { cx: 180, cy: 102, well: 62, scaleR: 54, start: 135, sweep: 195, max: 6 }    // ×1000 RPM
+const TACH  = { cx: 180, cy: 102, well: 62, scaleR: 54, start: 135, sweep: 195 }    // dial top: _tachMax (setRedline)
 const SPEEDO= { cx: 318, cy: 102, well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
 // FEAT-33 ignition switch — a small well tucked diagonally into the housing's bottom-right corner.
 // It carries its OWN indent pad (smaller than DIAL_PAD) because at this size the standard ring would
@@ -112,11 +112,22 @@ export class GaugeCluster {
     this._keyTarget = KEY_ANGLE.on
     this._keyAngle = KEY_ANGLE.on
     this._drawn = {}   // the inputs of the last repaint (update()'s early-out)
+    this._redline = 5500   // rpm — setRedline() repaints the tach face when the fitted engine changes
+    this._tachMax = 6      // ×1000 rpm — the dial's top numeral
 
     this._bg = document.createElement('canvas')
     this._bg.width = W * this._dpr
     this._bg.height = H * this._dpr
     this._paintFace()
+  }
+
+  /** The fitted engine's redline (rpm). Dial top = next 1000 above redline + 250: V6 5500 → 6, I4 6250 → 7. */
+  setRedline (rpm) {
+    if (rpm === this._redline) return
+    this._redline = rpm
+    this._tachMax = Math.ceil((rpm + 250) / 1000)
+    this._paintFace()
+    this._drawn = {}
   }
 
   /** Seed the odometer. No argument → random high jalopy mileage (80k–160k miles). */
@@ -191,7 +202,7 @@ export class GaugeCluster {
     this._drawNeedle(ctx, TEMP, this._tempShown, 22, 2)
     this._drawLowFuelLamp(ctx)
     this._drawNeedle(ctx, FUEL, this._fuelShown, 22, 2)
-    this._drawNeedle(ctx, TACH, this._rpm / (TACH.max * 1000), 48, 3)
+    this._drawNeedle(ctx, TACH, this._rpm / (this._tachMax * 1000), 48, 3)
     this._drawNeedle(ctx, SPEEDO, this._speedMph / SPEEDO.max, 56, 3)
     this._drawKey(ctx)
   }
@@ -200,6 +211,8 @@ export class GaugeCluster {
 
   _paintFace () {
     const ctx = this._bg.getContext('2d')
+    ctx.setTransform(1, 0, 0, 1, 0, 0)        // setRedline() repaints: reset before re-scaling
+    ctx.clearRect(0, 0, this._bg.width, this._bg.height)
     ctx.scale(this._dpr, this._dpr)
 
     // Housing: successive dilations of the indent geometry. Each layer fully covers the next
@@ -400,26 +413,25 @@ export class GaugeCluster {
   }
 
   _paintTach (ctx) {
-    const g = TACH
-    for (let n = 0; n <= g.max * 2; n++) {           // minor tick every 500 RPM
-      const f = n / (g.max * 2)
+    const g = TACH, max = this._tachMax, red = this._redline / 1000
+    for (let n = 0; n <= max * 2; n++) {             // minor tick every 500 RPM
+      const f = n / (max * 2)
       const major = n % 2 === 0
-      const red = n / 2 >= 5.5
-      this._tick(ctx, g, f, g.scaleR, major ? 7 : 4, red ? RED : WHITE, major ? 2 : 1)
+      this._tick(ctx, g, f, g.scaleR, major ? 7 : 4, n / 2 >= red ? RED : WHITE, major ? 2 : 1)
     }
-    // Redline arc from 5.5 to 6.
+    // Redline arc from the redline to the top of the dial.
     ctx.strokeStyle = RED
     ctx.lineWidth = 3
     ctx.beginPath()
-    ctx.arc(g.cx, g.cy, g.scaleR + 2.5, gaugeAngle(g, 5.5 / 6), gaugeAngle(g, 1))
+    ctx.arc(g.cx, g.cy, g.scaleR + 2.5, gaugeAngle(g, red / max), gaugeAngle(g, 1))
     ctx.stroke()
-    // Numerals 0–6, the 6 in red.
+    // Numerals 0–max, the ones past the redline in red.
     ctx.font = 'bold 12px Arial, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    for (let n = 0; n <= g.max; n++) {
-      ctx.fillStyle = n === g.max ? RED : WHITE
-      this._labelAt(ctx, g, n / g.max, g.scaleR - 13, String(n))
+    for (let n = 0; n <= max; n++) {
+      ctx.fillStyle = n >= red ? RED : WHITE
+      this._labelAt(ctx, g, n / max, g.scaleR - 13, String(n))
     }
     // Legends.
     ctx.fillStyle = WHITE

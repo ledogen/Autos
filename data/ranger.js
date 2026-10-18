@@ -6,6 +6,7 @@
  * Do NOT Object.freeze() this object — Plan 03 mutates fields live via lil-gui sliders.
  */
 import { ENGINES } from './engines.js'
+import { TRANSMISSIONS } from './transmissions.js'
 
 export const RANGER_PARAMS = {
 
@@ -143,17 +144,18 @@ export const RANGER_PARAMS = {
   converterCouplingSR:       0.86,  // [-] speed ratio at/above which the converter couples 1:1 (TR=1)
   converterStallRPM:         2400,  // rpm — WOT stall speed (turbine held, foot flat)
 
-  // Automatic gearbox + final drive (4R44E-like). gearRatios[0] is 1st; wheel/axle torque =
-  // turbineTorque × gearRatio × finalDrive, split open-diff across the two rear wheels (RWD Phase 1).
-  gearRatios:   [2.47, 1.47, 1.00, 0.71],  // 4-speed ratios (1st→4th)
+  // Automatic gearbox + final drive. The box's ratios (gearRatios[0] is 1st, reverseRatio) live in
+  // data/transmissions.js and are spread here; wheel/axle torque = turbineTorque × gearRatio ×
+  // finalDrive, split open-diff across the two rear wheels (RWD Phase 1). S-pedal is reverse throttle.
+  transmission: '4r44e',
+  ...TRANSMISSIONS['4r44e'],
   finalDrive:   3.73,   // [-] axle final-drive ratio
-  reverseRatio: 2.47,   // [-] reverse gear reduction (S-pedal is the reverse throttle)
 
   // Automatic shift schedule. Thresholds are in COUPLED (locked/no-slip) engine RPM = road-speed-in-gear,
   // NOT the converter-slipping engineRPM — see drivetrain.js (else the box lugs in top gear on a climb
   // because the stall speed floors engineRPM above the downshift point). Hysteresis: an upshift is blocked
   // if it would immediately fall below (shiftDownEff + 200); shiftHoldTime is the min dwell after any shift.
-  shiftUpRPM:    5400,  // rpm(coupled) — upshift near redline (always-WOT play use, redline 5500)
+  // shiftUpRPM is the ENGINE's (data/engines.js) — it follows the redline.
   shiftDownRPM:  1300,  // rpm(coupled) — light-throttle/cruise downshift floor
   // kickdownRPM: WOT downshift point. The downshift threshold scales with throttle from shiftDownRPM (lift)
   // up to kickdownRPM (floored), so flooring it on a grade drops a gear into the power band. Keep below
