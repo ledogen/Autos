@@ -29,7 +29,8 @@
 //     in this module charges that cost — it is the anchor SM-3's repair/upkeep prices are authored
 //     against, and it REPLACES the old "$13-19 region-1 day" (two break-even jobs at the old k).
 //     This retires "break-even is the B/C boundary" and "par loses money" (2026-08-16).
-//   • Never charges the player: the loss past the base is the day and the wear.
+//   • A JOB never charges the player: the loss past the base is the day and the wear. Money leaves
+//     the wallet only by spend() — fuel at the pump and the tow (FEAT-50), the first debits.
 //
 // WHAT SCALES AND WHAT DOES NOT. The DOLLARS scale, base and tip alike: both are shares of the
 // same max, and the max rides dayTier × regionTier, so the tip is worth the same fraction of a
@@ -167,6 +168,16 @@ export const ECONOMY_PARAMS = {
         4.51, 4.58, 4.63, 4.68, 4.73, 4.76, 4.79, 4.82, 4.84, 4.87,        // 19-28
         4.88, 4.90,                                                        // 29-30
     ],
+
+    // ── FEAT-50 THE TOW [owner, 2026-10-16] — USER-OWNED ─────────────────────────────────────
+    // Out of fuel and parked, the Recovery chip offers a tow to the nearest place that sells fuel.
+    // Price = (flat call-out + per-km) × dayTier, so it rides the same treadmill as everything else.
+    // NEAR-PROHIBITIVE by design (DESIGN.md "Death & the tow decision"): $10 + $2/km makes a 2 km
+    // tow $14 on day 1 — about two at-par jobs — and the hours are the other half of the bill.
+    towFlat:       10,    // $ — call-out fee
+    towPerKm:      2,     // $ per km of tow (straight line to the destination)
+    towBaseHours:  1,     // game h — the wait for the truck
+    towHoursPerKm: 0.5,   // game h per km — the haul itself
 }
 
 /** Rank colours, ratified: D·C·B·A·S = red·orange·yellow·white·blue (DESIGN.md). */
@@ -459,6 +470,23 @@ export class EconomySystem {
         return paid
     }
 
+    /**
+     * FEAT-50: money OUT — the pump's sale, a tow. Refuses (returns false, charges nothing) rather
+     * than going negative: every caller prices against the wallet first (the pump stops at what you
+     * can pay), so a refusal is a caller bug, not a debt.
+     */
+    spend (amount) {
+        const cost = _cents(Math.max(0, isFinite(amount) ? amount : 0))
+        if (cost > runEconomy.money + 1e-9) return false
+        runEconomy.money = _cents(runEconomy.money - cost)
+        return true
+    }
+
+    money () { return runEconomy.money }
+
+    /** The day tier today — what a price authored at day-1 rates is multiplied by (FEAT-50 tow). */
+    tierNow () { return dayTier(this._getDay()) }
+
     points () { return runEconomy.halfPoints / 2 }
     missionCount () { return runEconomy.missions }
 
@@ -479,6 +507,10 @@ export class EconomySystem {
         this._read = read
         f.add(ECONOMY_PARAMS, 'k', 0.005, 0.2, 0.0005).name('k (max $/par-sec)')
         f.add(ECONOMY_PARAMS, 'baseFrac', 0, 1, 0.05).name('base pay (× max)')
+        f.add(ECONOMY_PARAMS, 'towFlat', 0, 50, 0.5).name('tow: call-out $')
+        f.add(ECONOMY_PARAMS, 'towPerKm', 0, 20, 0.25).name('tow: $ per km')
+        f.add(ECONOMY_PARAMS, 'towBaseHours', 0, 6, 0.25).name('tow: base hours')
+        f.add(ECONOMY_PARAMS, 'towHoursPerKm', 0, 3, 0.05).name('tow: hours per km')
         f.close()
         return f
     }

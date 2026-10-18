@@ -49,6 +49,9 @@ export const POI_PARAMS = {
                               // 2500 m region only ever offers ~4.7 km of spread and 3500 forced
                               // both stations onto opposite rims, leaving spawn in a station-free
                               // band. See the coverage note on _pickCoverage.
+    poiPumpMinSep:    1000,   // m — FEAT-50: the same anti-clustering floor for the FOUR gas pumps.
+                              // Four in a ~3 km region cannot each keep 2 km apart; 1 km still stops
+                              // two pumps sharing a junction.
     poiPadHalfLen:    7.0,    // m — half length of the lay-by, along the road
     poiPadHalfWid:    4.0,    // m — half width, across the road
     poiPadGap:        0.6,    // m — gap from the shoulder edge to the pad's near side
@@ -150,7 +153,7 @@ export const POI_PARAMS = {
  *
  * THE RULE WHEN A SEED CANNOT COMPLY (owner, 2026-08-05): **the count is hard, the distances
  * relax.** A region always gets its full roster; the siting radii widen in steps until a placement
- * exists. No seed ever ships without its second gas station. The only thing that can shorten the
+ * exists. No seed ever ships without its fourth gas pump. The only thing that can shorten the
  * roster is a pool with fewer pads than slots, which the region radius makes impossible in play
  * (it happens in the small-window gates, and they assert the priority order instead).
  *
@@ -193,12 +196,20 @@ export const POI_ROSTER = [
     { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn', variant: 1,
       tags: ['residence', 'larry'] },
 
-    // ── Required classes (9) ───────────────────────────────────────────────────────────────────
-    // "Never too far from a station" — the reason these two slots exist and the reason they are
-    // sited by coverage rather than by a spacing rule. Gas and the auto shop are solved
+    // ── Required classes (10) ──────────────────────────────────────────────────────────────────
+    // "Never too far from a station" — the reason the pump and auto-shop slots exist and the reason
+    // they are sited by coverage rather than by a spacing rule. Gas and the auto shop are solved
     // INDEPENDENTLY: no constraint was ratified between them, and an auto shop sharing a corner with
     // a pump reads fine.
-    { type: 'gasStation',   count: 2, model: null, siting: 'coverage' },
+    //
+    // FEAT-50 (owner, 2026-10-16): the PUMP and the STATION are two places. A gas pump is the lone
+    // roadside island (ASSET-14) — no storefront, so it only sells fuel: plentiful, because the
+    // player fills up often, and it posts nothing (no SOURCES row) and receives nothing
+    // (NOT_A_DESTINATION). The gas station IS the convenience store — a general-store variant with
+    // its own stock and missions, pump islands plus a storefront lot. It wears the placeholder cube
+    // until ASSET-13 joins the 'gasStation' pool, and its pump zones and shop arrive with that model.
+    { type: 'gasPump',      count: 4, modelPool: 'gasPump', siting: 'coverage', sepParam: 'poiPumpMinSep' },
+    { type: 'gasStation',   count: 1, modelPool: 'gasStation', siting: 'any' },
     { type: 'autoShop',     count: 2, model: null, siting: 'coverage' },
     // ANY FOOD VENDOR (FEAT-67 ruling, 2026-09-26; opening.md amended): the player delivers
     // ready-made meals from it as an independent gig contractor, not as staff, so the opening's
@@ -883,7 +894,7 @@ export class PoiSystem {
         const stdPool = pool.filter(q => (q.padKind ?? 'std') === 'std')
         const pick = (cands, n, salt, slot) =>
             slot.siting === 'nearSpawn' ? this._pickNearSpawn(cands, center, n, salt, P)
-          : slot.siting === 'coverage'  ? this._pickCoverage(cands, stdPool, n, P)
+          : slot.siting === 'coverage'  ? this._pickCoverage(cands, stdPool, n, P[slot.sepParam ?? 'poiStationMinSep'])
           :                               this._pickStable(cands, n, salt)
         for (const slot of POI_ROSTER) {
             // FEAT-105: a slot draws only from pads of its own kind. A big-pad slot that comes up short
@@ -940,6 +951,9 @@ export class PoiSystem {
                 // ASSET-74: the model's PARK box — park inside it to be offered work. Off the model,
                 // not the slot: it is the painted stalls, so a fallback cube has none.
                 q.park = spec?.park ?? null
+                // FEAT-50: the model's PUMP ZONES — pull alongside and pull the handbrake to use the pump.
+                // Off the model, like the park box: a pump island has them, a cube does not.
+                q.pumpZones = spec?.pumpZones ?? null
                 // FEAT-71: the lawn furniture / yard clutter standing in this POI's yard — the
                 // model's authored yard, else the slot's (none today; FEAT-105's farm pad will want one).
                 q.satellites = dressYard(q, seed, spec?.yard ?? slot.yard)
@@ -1015,13 +1029,18 @@ export class PoiSystem {
      * the actual requirement. The pool doubles as the sample of "where the player will be" — every
      * pad is on a road, and they are spread over the region by construction.
      *
-     * Exhaustive over pairs: n is 2 and the pool is tens, so this is ~10^3 distance evaluations.
-     * Guard rather than generalise — a third station would need a different search and a fresh
-     * ruling about what it is for.
+     * n = 2 (the auto shops) is EXHAUSTIVE over pairs: the pool is tens, so ~10^3 distance
+     * evaluations, and the result is the true optimum. n > 2 (FEAT-50's four gas pumps) is GREEDY
+     * farthest-point: the first pick is the pad that alone covers the pool best, and each next pick
+     * is the free pad farthest from every pick so far (subject to the same halving floor), then a
+     * swap pass improves it. Greedy k-centre is within 2× of the optimal worst-case distance before
+     * the swaps, and the whole search is a few passes instead of C(pool, n) subsets.
+     *
+     * @param {number} minSep — the slot's anti-clustering floor (poiStationMinSep / poiPumpMinSep).
      */
-    _pickCoverage (free, pool, n, P) {
-        if (n !== 2) throw new Error(`[poi] coverage siting is pair-only (asked for ${n})`)
-        if (free.length < 2) return free.slice(0, n)
+    _pickCoverage (free, pool, n, minSep) {
+        if (free.length <= n) return free.slice()
+        if (n > 2) return this._pickCoverageGreedy(free, pool, n, minSep)
         // Worst-case distance from any pad in the pool to the nearer of (a, b).
         const worst = (a, b) => {
             let w = 0
@@ -1031,7 +1050,7 @@ export class PoiSystem {
             }
             return w
         }
-        for (let sep = P.poiStationMinSep; ; sep *= 0.5) {
+        for (let sep = minSep; ; sep *= 0.5) {
             let best = null, bestW = Infinity
             for (let i = 0; i < free.length; i++) {
                 for (let j = i + 1; j < free.length; j++) {
@@ -1044,6 +1063,57 @@ export class PoiSystem {
             if (best) return best
             if (sep < 1) return free.slice(0, 2)                  // pathological pool — take any two
         }
+    }
+
+    /** Greedy farthest-point coverage for n > 2 — see _pickCoverage. Ties go to the earlier pad. */
+    _pickCoverageGreedy (free, pool, n, minSep) {
+        // Order-independent: the swap pass below is a LOCAL search, so the order it visits pads in
+        // can pick which local optimum it settles on. Sorting by pad id makes the answer a function of
+        // the SET of pads alone — the same region filtered by its main piece or not (region-pieces).
+        const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+        free = free.slice().sort(byId)
+        const d = (a, b) => Math.hypot(a.x - b.x, a.z - b.z)
+        let first = null, firstW = Infinity
+        for (const a of free) {
+            let w = 0
+            for (const q of pool) w = Math.max(w, d(q, a))
+            if (w < firstW) { firstW = w; first = a }
+        }
+        const picks = [first]
+        while (picks.length < n) {
+            const nearest = q => Math.min(...picks.map(p => d(q, p)))
+            let next = null
+            for (let sep = minSep; !next; sep *= 0.5) {
+                let far = -1
+                for (const q of free) {
+                    if (picks.includes(q)) continue
+                    const m = nearest(q)
+                    if ((m >= sep || sep < 1) && m > far) { far = m; next = q }
+                }
+            }
+            picks.push(next)
+        }
+        // Greedy farthest-point leans on the rim (each pick is the worst-covered pad, which is an
+        // outlier by construction). One SWAP pass pulls it back: replace any pick with any free pad
+        // that lowers the worst-case distance and keeps the floor, until no swap helps. n × pool ×
+        // pool per round — a few ×10^4 distance evaluations for four pumps.
+        const worst = set => {
+            let w = 0
+            for (const q of pool) { let m = Infinity; for (const p of set) m = Math.min(m, d(q, p)); if (m > w) w = m }
+            return w
+        }
+        const sepOk = (set, i, c) => set.every((p, k) => k === i || d(p, c) >= minSep)
+        let w = worst(picks)
+        for (let improved = true; improved;) {
+            improved = false
+            for (let i = 0; i < picks.length; i++) for (const c of free) {
+                if (picks.includes(c) || !sepOk(picks, i, c)) continue
+                const trial = picks.slice(); trial[i] = c
+                const tw = worst(trial)
+                if (tw < w - 1e-9) { picks[i] = c; w = tw; improved = true }
+            }
+        }
+        return picks
     }
 
     /** Drop every POI and release the pads (leaving story mode). */

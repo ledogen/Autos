@@ -67,3 +67,29 @@ cluster before the subtle tracks start mattering.
 - Price is read from a parameter, not hard-coded, so Q9A escalation can drive it later.
 - Free roam unaffected by default (debug refill / no-consequence floor).
 - Tunables (capacity, burn coefficients, price) exposed as USER-OWNED sliders; HUD/log audited.
+
+## Resolution (2026-10-17, branch `feature/gas-pump-poi`)
+
+**Shipped**, with the owner's 2026-10-16 rulings folded into DESIGN.md "Fuel and gas stations".
+- **The burn:**
+  - `data/engines.js` holds the engine registry (the Vulcan 3.0's torque curve + fuel-model inputs).
+  - `src/fuel.js` builds the rpm × pedal table by the Willans line and drains the tank each step,
+    × `fuelBurnScale` 7.
+  - Landed on the real-data bands: idle 0.33 gal/h, best BSFC 282 g/kWh at 1750 rpm and 85 % pedal,
+    27 / 25 / 21 mpg steady at 55 / 60 / 70.
+  - An empty tank kills the engine, and it cannot catch.
+  - Free roam floors at 5 % and never runs dry.
+- **Places:** a `gasPump` POI (ASSET-14, ×4, coverage-sited). Pump zones on both sides. No offers,
+  never a destination. `gasStation` ×1 stays the store, now FEAT-123.
+- **The pump visit** (`src/fuel-stop.js`): handbrake opens it, hold F pumps, handbrake down pays.
+  1.65 gal/s, so 10 s for a full tank. It has rolling drum counters and synthesized sounds
+  (`src/pump-audio.js`, FEAT-120 rows).
+- **Running dry:** a Recovery chip shows once parked. The tow costs (flat + per-km) × dayTier and
+  clock hours. Can't pay → "you broke down" → main menu.
+- **Gates:** `fuel-map`, `fuel-stop`, and `story-poi` coverage for n > 2. `offer-board` checks that no
+  offer wishes for a pump.
+- **Not done here:**
+  - The low-fuel sputter: spec'd in FEAT-120, built later.
+  - A pedal-aware shift schedule: FEAT-23's box upshifts at a fixed 5400 rpm, so a light foot saves
+    on the pedal axis only. Listed as owed in DESIGN.md.
+  - The emergency-gas grant: still stubbed.

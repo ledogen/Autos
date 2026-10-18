@@ -43,6 +43,7 @@ import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
 import { computeNormalForce, effectiveWheelRadius, getWheelPosition, mountLocal, stepSuspensionSubsteps, tireContactForce, TIRE_DAMP_ENGAGE, WHEEL_SOFT_BAND } from './suspension.js'
 import { REV_THRESHOLD, stepDrivetrain } from './drivetrain.js'
+import { stepFuel } from './fuel.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
 
@@ -654,6 +655,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
                    vehicleState.velocity.y * forward.y +
                    vehicleState.velocity.z * forward.z
   stepDrivetrain(vehicleState, params, dt, vForward)
+  stepFuel(vehicleState, params, dt)   // FEAT-50: burns off the pedal + rpm the drivetrain just used
 
   // ── Step 2.5: Suspension substep loop (Phase 4.1) ──────────────────────────────────────────
   // Integrates strutComp/strutCompVel at dt/N substeps. Writes:

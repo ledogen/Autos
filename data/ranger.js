@@ -5,6 +5,8 @@
  *
  * Do NOT Object.freeze() this object — Plan 03 mutates fields live via lil-gui sliders.
  */
+import { ENGINES } from './engines.js'
+
 export const RANGER_PARAMS = {
 
   // ── Geometry ──────────────────────────────────────────────────────────────
@@ -66,18 +68,24 @@ export const RANGER_PARAMS = {
   // tunable (Drivetrain & Brakes folder). Numbers picked for a 2002 Ranger 3.0L V6 + 4R44E 4-speed
   // auto so the climbing/taper behavior EMERGES from the model (not injected).
   //
-  // Engine torque curve: ascending [rpm, N·m] control points (piecewise-linear lookup in drivetrain.js).
-  // 2002 Ranger 3.0L Vulcan V6 ≈ 250 N·m (185 lb·ft) peak @ ~3750 rpm, ~145 hp @ 4750. Edit these points
-  // to reshape the curve; engineTorqueScale is the global slider multiplier over the whole curve.
-  engineTorqueCurve: [
-    [ 800, 160], [1200, 195], [2000, 225], [2800, 242], [3750, 250],
-    [4500, 240], [5200, 215], [5800, 150],
-  ],
+  // FEAT-50: the ENGINE lives in data/engines.js — torque curve (ascending [rpm, N·m] points,
+  // piecewise-linear in drivetrain.js), idle, redline, and the fuel model's inputs. Spread here so
+  // drivetrain.js and the sliders keep reading flat params.engineTorqueCurve etc. Another engine or
+  // an upgrade is another (or a patched) entry; see that file's header.
+  engine: 'vulcan30',
+  ...ENGINES.vulcan30,
   engineTorqueScale:  1.0,   // [-] global multiplier over the torque curve (slider)
-  engineIdleRPM:      750,   // rpm — governed idle floor; engine never drops below this
-  engineRedlineRPM:  5500,   // rpm — rev limiter cuts torque above this (over 200 rpm band)
   engineIdleThrottle:  0.0,  // [-] idle-throttle floor for creep torque; 0 = no creep (keeps BUG-20 slope-hold at zero input). Raise (~0.04) for authentic automatic idle-creep.
   engineRpmLag:        0.0,  // s — first-order lag on engine RPM (0 = instant; ~0.1 adds rev-flare feel)
+
+  // ── Fuel (FEAT-50) — USER-OWNED ───────────────────────────────────────────────────────────────
+  // The burn TABLE is the engine's (data/engines.js → src/fuel.js); these are the truck's side of it.
+  fuelTankGal:          16.5,  // gal — 2002 Ranger regular cab, short bed (service manual)
+  fuelBurnScale:        7,     // [-] GAMEPLAY multiplier over the honest table (owner 2026-10-16): WOT empties the tank in ~10–18 real min
+  fuelPricePerGal:      0.50,  // $ — read at the pump; Q9A cost escalation may drive it later
+  fuelStartFrac:        0.62,  // [-] story start: the truck was handed over "with some gas in it"
+  fuelFillGalPerS:      1.65,  // gal/s — a full 16.5 gal tank in 10 s of held F (owner 2026-10-16)
+  fuelFreeRoamFloorFrac: 0.05, // [-] free roam's no-consequence floor: the tank stops here and never runs dry
 
   // ── Ignition + starter (FEAT-33) ────────────────────────────────────────────────────────────────
   // The key has three positions (OFF / ON / START); see src/ignition.js. Catch time is what the

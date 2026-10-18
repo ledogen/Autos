@@ -109,11 +109,23 @@ export const POI_ICONS = {
     // own text. Nudged so the silhouette is symmetric about 12. (Bbox centre is the honest target
     // here because the pump's area centroid lands at 10.24 too — the wide body left of centre and
     // the thin hose column right of it happen to balance.)
-    gasStation:   { label: 'Gas',     color: '#ff7a5a', path:
+    // FEAT-50: the PUMP owns this glyph now — the lone island is what it draws. The station (a store
+    // with pumps) is the shopfront below.
+    gasPump:      { label: 'Gas',     color: '#ff7a5a', path:
         'M5.75 3 L14.25 3 A1.5 1.5 0 0 1 15.75 4.5 L15.75 7.5 L21.25 7.5 L21.25 23 L18.25 23'
       + ' L18.25 10.5 L15.75 10.5 L15.75 20.5 L17.25 20.5 L17.25 23 L2.75 23 L2.75 20.5'
       + ' L4.25 20.5 L4.25 4.5 A1.5 1.5 0 0 1 5.75 3 Z'
       + 'M6.75 6 L6.75 11 L13.25 11 L13.25 6 Z' },
+    // FEAT-50: the gas station — a convenience store, so a SHOPFRONT: the sign band across the top and
+    // the flat-roofed front under it are wound the same way and union (they overlap by half a unit so
+    // no seam shows); the door and the two windows are wound against them and punch through. Gas
+    // orange, a shade warmer than the pump, so the pair reads as one family with two kinds of stop.
+    gasStation:   { label: 'Station', color: '#ffa05a', path:
+        'M1.5 3.5 L22.5 3.5 L22.5 8.5 L1.5 8.5 Z'
+      + 'M3 8 L21 8 L21 21.5 L3 21.5 Z'
+      + 'M10 14 L10 21.5 L14 21.5 L14 14 Z'
+      + 'M5 11 L5 17 L8.5 17 L8.5 11 Z'
+      + 'M15.5 11 L15.5 17 L19 17 L19 11 Z' },
     // Shopping cart: handle, post and basket are ONE subpath, not three overlapping ones. The post
     // used to be its own polygon crossing the basket, so the stroke drew its edges straight through
     // the basket interior — a seam where the drawing wants clean space. Merged, the post's outer

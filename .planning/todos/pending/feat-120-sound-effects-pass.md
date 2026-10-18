@@ -160,6 +160,39 @@ status: todo · group: story
 Coin: two quick high sine pings (~2.6 / 3.9 kHz) on payout and wallet changes. Stingers: short
 musical hits on the D / par / S card reveal, rising in pitch and length with the grade.
 
+### Pump nozzle
+status: shipped · group: story · play: pump-audio.js playNozzle
+FEAT-50, `src/pump-audio.js`. The nozzle seating as the pump opens: sine thunk 170 → 55 Hz in 70 ms
+under a short lowpassed noise scuff. Also the nozzle out when a visit settles with nothing pumped.
+
+### Pump flow (motor hum + gas)
+status: shipped · group: story
+FEAT-50, `setPumpFlow(on)`. Held while F pumps: a 118 Hz sawtooth motor with a 5 Hz wobble, lowpassed
+to a hum, under resonant bandpassed noise around 1.4 kHz for the gas going in. Built once, gain-ramped
+so it spools up and down. Needs driving (on/off), so no one-shot preview.
+
+### Pump gallon bell
+status: shipped · group: story · play: pump-audio.js playGallonBell
+FEAT-50. One ding per whole gallon, like the mechanical pumps' bell: three inharmonic partials
+(1 : 2.76 : 5.40) on a 0.7 s decay.
+
+### Pump auto-shutoff
+status: shipped · group: story · play: pump-audio.js playShutoff
+FEAT-50. Tank full or wallet reached: a hard double clack, two highpassed noise bursts 45 ms apart.
+
+### Pump register (sale final)
+status: shipped · group: story · play: pump-audio.js playRegister
+FEAT-50. Handbrake down: a mechanical ka-chunk (low thunk + two noise bursts) then a bright till ding.
+
+### Low-fuel sputter
+status: todo · group: truck
+FEAT-50 follow-up — **the mechanic and the sound are built together** (owner, 2026-10-16: spec it, do not
+build it yet). Starts when the tank holds about **2 real minutes** of fuel at the running-average burn
+(src/fuel.js has the rate). Sputters average one every **10 s**, more often as the tank empties, and each
+is a matching momentary **torque loss** in the drivetrain — the engine actually stumbles, the sound only
+reports it. Sound: the engine drone cutting for a few firing events (gain dips on the oscillator stack in
+engine-audio.js) with a low pop or two (short lowpassed noise bursts), timed to the torque dip.
+
 ### Camera-aware mix
 status: todo · group: mix
 Not a sound, a bus: in cab view, lowpass the outside world (~2 kHz) as if heard through glass; in

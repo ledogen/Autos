@@ -174,6 +174,35 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const ignState = { engineHealth: 1 }
   ignFolder.add(ignState, 'engineHealth', 0, 1, 0.05).name('Engine Health (1 = fresh)')
     .onChange(v => callbacks.setEngineHealth?.(v))
+
+  // FEAT-50 fuel (src/fuel.js). Vehicle side first (tank, gameplay scale, price, pump rate), then the
+  // ENGINE's fuel-model inputs (data/engines.js, spread into params) — moving one rebuilds the rpm ×
+  // pedal table on the next step (fuelMapFor compares its inputs). The tank itself is vehicleState
+  // run state, so the readout and the two buttons go through callbacks.
+  const fuelFolder = driveFolder.addFolder('Fuel (FEAT-50)')
+  const fuelRead = { get gal () { return callbacks.fuelGal?.() ?? 0 } }
+  fuelFolder.add(fuelRead, 'gal').name('Tank (gal)').listen().disable()
+  fuelFolder.add({ refill: () => callbacks.setFuelGal?.(Infinity) }, 'refill').name('Refill')
+  fuelFolder.add({ drain: () => callbacks.setFuelGal?.(0) }, 'drain').name('Drain to empty')
+  fuelFolder.add(params, 'fuelTankGal', 2, 40, 0.5).name('Tank Capacity (gal)')
+  fuelFolder.add(params, 'fuelBurnScale', 0, 20, 0.5).name('Burn Scale × (gameplay)')
+  fuelFolder.add(params, 'fuelPricePerGal', 0, 3, 0.05).name('Price ($/gal)')
+  fuelFolder.add(params, 'fuelFillGalPerS', 0.2, 5, 0.05).name('Pump Rate (gal/s)')
+  fuelFolder.add(params, 'fuelStartFrac', 0, 1, 0.01).name('Story Start Fill')
+  fuelFolder.add(params, 'fuelFreeRoamFloorFrac', 0, 0.5, 0.01).name('Free-Roam Floor')
+  const mapFolder = fuelFolder.addFolder('Engine Fuel Map')
+  mapFolder.add(params, 'etaIndicated', 0.25, 0.45, 0.005).name('Indicated Efficiency η')
+  mapFolder.add(params, 'displacementL', 1, 7, 0.01).name('Displacement (L)')
+  mapFolder.add(params, 'fmepA', 40, 200, 1).name('Friction MEP a (kPa)')
+  mapFolder.add(params, 'fmepB', 0, 40, 0.5).name('Friction MEP b (kPa/krpm)')
+  mapFolder.add(params, 'fmepC', 0, 15, 0.25).name('Friction MEP c (kPa/krpm²)')
+  mapFolder.add(params, 'accessoryNm', 0, 30, 0.5).name('Accessory Drag (N·m)')
+  mapFolder.add(params, 'pumpingK', 0, 1, 0.01).name('Pumping Loss k')
+  mapFolder.add(params, 'mapFloor', 0.1, 0.5, 0.01).name('Manifold Floor')
+  mapFolder.add(params, 'enrichFrom', 0.5, 1, 0.01).name('Enrichment From (pedal)')
+  mapFolder.add(params, 'enrichMax', 0, 0.4, 0.01).name('Enrichment Max')
+  mapFolder.add(params, 'dfcoRPM', 800, 2500, 50).name('Decel Fuel Cut RPM')
+  mapFolder.close(); fuelFolder.close()
   driveFolder.add(params, 'maxBrakeTorqueFront', 200, 4000, 50).name('Brake Torque Front (N·m)')
   driveFolder.add(params, 'maxBrakeTorqueRear', 200, 4000, 50).name('Brake Torque Rear (N·m)')
   driveFolder.add(params, 'maxHandbrakeTorque', 500, 5000, 100).name('Handbrake Torque (Nm)')

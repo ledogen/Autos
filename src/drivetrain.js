@@ -155,6 +155,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // Idle-throttle floor lets the engine make a little torque for creep when engineIdleThrottle > 0
   // (default 0 = no creep, so BUG-20 static-slope hold is untouched at zero input).
   const pedalEff  = Math.max(pedal, params.engineIdleThrottle || 0)
+  st.pedal = pedalEff   // FEAT-50: the load the fuel map reads (src/fuel.js) — the same number the torque uses
   const stallRPM  = idle + pedalEff * (stallRPMwot - idle)
   const coupled   = turbineRPM / couplingSR
   let engineTarget = Math.max(idle, stallRPM, coupled)

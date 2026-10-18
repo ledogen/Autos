@@ -10,7 +10,11 @@
 //   2. the planners' graph is ONE connected piece, and the spawn's road is on it
 //   3. every POI and every newspaper customer sits on an edge of that graph
 //   4. the main piece is the LARGEST (DESIGN.md's rule; phase 1 picks the spawn's — they must agree)
-//   5. a seed with no stranded piece is UNTOUCHED: the same POIs as with no piece filter at all
+//   5. a seed with no stranded piece is UNTOUCHED: the filter drops only pads OFF the planners' graph
+//      (edges ending at a stub node no planner can route to — present on clean seeds too), and an
+//      identical pool gives identical POIs. FEAT-50: until the four gas pumps this was asserted as
+//      "the same POIs as with no filter at all", which only held because the pair siting never
+//      happened to pick one of those off-graph pads; farthest-point siting reaches for exactly them.
 //
 // Seeds: the four known splits (1222770136 the BUG-85 report, 30 and 31 from the 2026-10-12 sweep,
 // 3309753130 BUG-80's clip split) + two clean ones. If a router change heals a split seed, the
@@ -118,7 +122,11 @@ for (const s of [...SPLITS, ...CLEAN]) {
     if (!rep.stranded.length) {
         const bare = placePois(seed, road, C, null)
         const ids = (p) => p.list().map((q) => `${q.id}:${q.type}`).join() + '|' + p.customers().map((q) => q.id).join()
-        check('no stranded piece ⇒ the same POIs and customers as no filter', ids(poi) === ids(bare))
+        const kept = new Set(poi.pool().map((q) => q.id))
+        const dropped = bare.pool().filter((q) => !kept.has(q.id))
+        check('no stranded piece ⇒ the filter drops only pads off the planners\' graph',
+            dropped.every((q) => !onGraph(q)), dropped.filter(onGraph).map((q) => q.id).join(', '))
+        if (!dropped.length) check('no stranded piece and an identical pool ⇒ the same POIs and customers', ids(poi) === ids(bare))
     }
 }
 

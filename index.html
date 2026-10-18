@@ -527,6 +527,63 @@
       font: bold 0.9em/1.35 monospace; text-align: center;
     }
 
+    /* FEAT-50: the PUMP FACE — styled after the island's own gauge face (gas-pump.glb): a black
+       bezel, a red GASOLINE band, a cream face, and mechanical drum registers, white figures on
+       black wheels. The drums are 0–9 strips slid by translateY from main.js (_setDrums); the face
+       only owns the look. Bottom-centre, above the prompt line, while the pump is open and for the
+       receipt's hold after. */
+    #pump-display {
+      position: fixed; left: 50%; bottom: 150px; z-index: 89;
+      transform: translateX(-50%) translateY(16px) scale(0.96);
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.25s ease, transform 0.25s cubic-bezier(.2, 1.4, .4, 1);
+      background: #e9dfc4; border: 6px solid #141414; border-radius: 10px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+      width: 280px; font-family: monospace; color: #1b1b1b; overflow: hidden;
+    }
+    #pump-display.on { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+    #pump-display.receipt { transition: opacity 1.2s ease 1.2s, transform 0.25s; }
+    #pump-display.receipt.on { opacity: 0.94; }
+    #pump-display .pd-band {
+      background: #c4302a; color: #fff6e6; font: bold 15px/1 monospace; letter-spacing: 6px;
+      text-align: center; padding: 6px 0 5px; border-bottom: 3px solid #141414;
+    }
+    #pump-display .pd-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px 2px; }
+    #pump-display .pd-label { font: bold 13px/1 monospace; letter-spacing: 2px; }
+    #pump-display .pd-drums { display: inline-flex; align-items: flex-end; gap: 2px; font: bold 26px/1 monospace; }
+    #pump-display .pd-cur { font: bold 22px/1 monospace; margin-right: 2px; }
+    #pump-display .pd-drum {
+      display: inline-block; width: 0.72em; height: 1.15em; overflow: hidden;
+      background: linear-gradient(#000 0%, #262626 22%, #333 50%, #262626 78%, #000 100%);
+      border-radius: 2px; color: #f4f1e8; text-align: center;
+      box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.8);
+    }
+    #pump-display .pd-strip { display: block; line-height: 1.15em; transition: filter 0.15s; }
+    #pump-display.flowing .pd-drum:last-child .pd-strip { filter: blur(0.7px); }
+    #pump-display .pd-dot { font: bold 26px/1 monospace; margin: 0 1px; }
+    #pump-display.bounce .pd-drums { animation: pd-bounce 0.3s ease-out; }
+    @keyframes pd-bounce { 0% { transform: translateY(0); } 35% { transform: translateY(2px); } 100% { transform: translateY(0); } }
+    #pump-display .pd-foot {
+      display: flex; justify-content: space-between; margin: 8px 14px 0; padding: 5px 8px;
+      background: #141414; color: #ffcf6a; font: bold 12px/1.2 monospace; letter-spacing: 1px; border-radius: 3px;
+    }
+    #pump-display .pd-hint { padding: 8px 10px 9px; text-align: center; font-size: 12px; color: #3a3226; }
+    #pump-display .pd-hint .keycap { color: #1b1b1b; border-color: #6b6150; background: rgba(0, 0, 0, 0.06); }
+
+    /* FEAT-50: the Recovery card — opens to the left of its chip like the camp card. */
+    #recovery-card {
+      display: none; background: rgba(0, 0, 0, 0.66); border: 1px solid #ff9f43; padding: 8px 14px;
+      font-family: monospace; font-size: 14px; color: #ffd9a8; text-align: left; line-height: 1.5; pointer-events: auto;
+    }
+    #recovery-card .rc-head { color: #ff9f43; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; font-size: 12px; }
+    #recovery-card .rc-dim { color: #9fb3c8; font-size: 12px; }
+    #recovery-card .rc-opt {
+      display: block; margin: 4px 0 2px; padding: 5px 10px; cursor: pointer;
+      background: rgba(255, 159, 67, 0.14); color: #ffe2bf; border: 1px solid #ff9f43; border-radius: 4px;
+      font: 14px monospace;
+    }
+    #recovery-card .rc-opt:hover { background: rgba(255, 159, 67, 0.3); }
+    #recovery-card .rc-end { border-color: #ff5a4e; color: #ffb3ac; background: rgba(255, 90, 78, 0.12); }
     /* FEAT-46: POI interaction prompt (bottom-centre) — shown while stopped within range of a
        marker cube. Orange, to match the cubes and their map icons. */
     #poi-prompt {
@@ -1386,6 +1443,22 @@
            zone, under 20 kph, story mode, no job or route out, no POI in reach). Z or a click
            toggles "looking for a campsite"; while looking, the vibe bar + verdict card opens beside
            it, the siting ray runs, and the brake latch can make camp. -->
+      <!-- FEAT-50: Recovery. Shows only when you have run out of fuel AND parked (nothing pops up
+           mid-coast). X or a click opens the card: today one option, a tow to the nearest place
+           that sells fuel; later tows (anytime, to the service station) are more rows here. -->
+      <div class="hud-row" id="recovery-row" style="display:none">
+        <div class="hud-icon" id="recovery-icon" title="recovery (X)">
+          <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3,27 V17 H17 V11 H25 L30,19 H35 V27 Z" fill="#fff"/>
+            <path d="M19,13 H24 L27.5,19 H19 Z" fill="#1b2026"/>
+            <path d="M5,17 L13,6 M13,6 V12" stroke="#fff" stroke-width="2.4" stroke-linecap="round" fill="none"/>
+            <circle cx="10" cy="28.5" r="4" fill="#fff" stroke="#1b2026" stroke-width="2"/>
+            <circle cx="28" cy="28.5" r="4" fill="#fff" stroke="#1b2026" stroke-width="2"/>
+          </svg>
+          <span class="keycap">X</span>
+        </div>
+        <div id="recovery-card"></div>
+      </div>
       <div class="hud-row" id="camp-row">
         <div class="hud-icon" id="camp-icon" title="look for a campsite (Z)">
           <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
@@ -1438,6 +1511,14 @@
   <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI.
        Latching the parking brake (Space) there is what opens the offer — see _updateParkTriggers. -->
   <div id="poi-prompt"></div>
+  <!-- FEAT-50: the pump face (main.js _renderPumpDisplay builds the drums into #pd-sale / #pd-gal). -->
+  <div id="pump-display">
+    <div class="pd-band">GASOLINE</div>
+    <div class="pd-row"><span class="pd-label">SALE</span><span class="pd-drums"><span class="pd-cur">$</span><span class="pd-drums" id="pd-sale"></span></span></div>
+    <div class="pd-row"><span class="pd-label">GALLONS</span><span class="pd-drums" id="pd-gal"></span></div>
+    <div class="pd-foot"><span>PRICE PER GALLON</span><span id="pd-price">$0.50</span></div>
+    <div class="pd-hint" id="pd-hint"></div>
+  </div>
 
   <!-- FEAT-61 aim reticle + landing readout. The reticle sits at 25 % from the top, not centre
        (AIM_RETICLE_Y in main.js — a throw is an arc), and the aim direction is unprojected through

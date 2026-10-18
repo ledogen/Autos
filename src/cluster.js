@@ -11,9 +11,9 @@
 //
 // Data wiring:
 //   update(dt, speedMps, rpm) — live from physics (speed) and drivetrain (engineRPM).
-//   setFuelLevel(frac 0..1) / setCoolantTemp(frac 0..1) — PLACEHOLDER needles until the fuel
-//     model (FEAT-50) and coolant temp model (FEAT-51) exist; defaults sit at believable spots.
-//     The needles are fully wired — those tickets only have to call the setters.
+//   setFuelLevel(frac 0..1) — the tank, every frame from main.js (FEAT-50, src/fuel.js).
+//   setCoolantTemp(frac 0..1) — PLACEHOLDER needle until the coolant temp model (FEAT-51) exists;
+//     its default sits at a believable spot. The needle is fully wired — the ticket only calls it.
 //   seedOdometer(miles?) — random high "jalopy" mileage when omitted; accumulates real miles
 //     driven, and is re-seeded on each story-mode entry (the next run's jalopy). Once runs have
 //     a persistent jalopy identity, seed/save should key off that instead (noted in FEAT-49).
@@ -95,8 +95,8 @@ export class GaugeCluster {
     // Live needle state (first-order lag gives the needles a touch of mechanical damping).
     this._speedMph = 0
     this._rpm = 0
-    // Placeholder targets until FEAT-50 / FEAT-51 drive them: temp settles mid-gauge,
-    // fuel at ~5/8 — believable for a jalopy that was handed over "with some gas in it".
+    // Temp is a placeholder until FEAT-51 drives it (settles mid-gauge). Fuel is driven every frame
+    // (FEAT-50); 0.62 is only the value before the first frame — the same as fuelStartFrac.
     this._fuelFrac = 0.62
     this._tempFrac = 0.5
     this._fuelShown = 0      // sweep up from rest on load, like a key-on
@@ -122,7 +122,7 @@ export class GaugeCluster {
     this._odoMiles = miles !== undefined ? miles : 80000 + Math.floor(Math.random() * 80000)
   }
 
-  /** 0 = E, 1 = F. Placeholder until the fuel model (FEAT-50) calls this with a real level. */
+  /** 0 = E, 1 = F. Fed every frame from the tank (FEAT-50). */
   setFuelLevel (frac) { this._fuelFrac = Math.max(0, Math.min(1, frac)) }
 
   /** 0 = C, 1 = H. Placeholder until the coolant model (FEAT-51) calls this with a real temp. */

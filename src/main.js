@@ -25,13 +25,14 @@ import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-
 import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE, BARREL_CUBE_LAYERS } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
+import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
 import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
-import { parkPrompt } from './park-badge.js'                // FEAT-90: the blue P "park first" badge
+import { parkPrompt, keycap } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, snapCamera } from './camera.js'
@@ -74,7 +75,7 @@ import { HAUL_PAR_SLACK, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIME_SLACK, FREIGHT_T
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
-import { EconomySystem, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
+import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
@@ -91,6 +92,8 @@ import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown
 import { Leaderboard } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
+import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
+import { playNozzle, playGallonBell, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -1098,9 +1101,12 @@ async function _reseatTruckAtSpawnInner () {
   // FEAT-33 (owner, 2026-08-22): story mode re-seats you with a DEAD truck — starting the day by
   // starting the truck is the ritual SM-INV-6 wants. Free roam / lab / scenario hand you a running
   // one so a debug reset is never gated behind a keypress.
-  const { position, quaternion, velocity, angularVelocity, engineHealth, ...fresh } =
+  const { position, quaternion, velocity, angularVelocity, engineHealth, fuel, ...fresh } =
     makeVehicleState(RANGER_PARAMS, _gameMode === 'story' ? IGN_OFF : IGN_RUNNING)
   Object.assign(vehicleState, fresh)
+  // FEAT-50: a story tank survives every seat — a teleport, a tow — the way damage does; anywhere
+  // else a seat is a fresh truck with a full tank.
+  if (_gameMode !== 'story') vehicleState.fuel = fuel
   vehicleState.velocity.set(0, 0, 0)
   vehicleState.angularVelocity.set(0, 0, 0)
   // Every seat (R, teleport, reseed) lands the camera on the new pose outright — the chase spring
@@ -2344,6 +2350,12 @@ const _gui = initDebug(RANGER_PARAMS, {
   // writes vehicleState.engineHealth every step), so the slider pokes the track itself. Inert while
   // damage is disabled — the track is locked at nominal there, by design.
   setEngineHealth:     (v) => { damageModel.set('engine', v); damageModel.publish(RANGER_PARAMS) },
+  fuelGal:             () => vehicleState.fuel.gal,
+  setFuelGal:          (g) => {   // FEAT-50 debug Refill / Drain
+    const f = vehicleState.fuel
+    f.gal = Math.max(f.floorGal, Math.min(RANGER_PARAMS.fuelTankGal, g)); f.dry = f.gal <= 0
+    if (f.gal <= 0 && vehicleState.ignition) { vehicleState.ignition.state = IGN_OFF; vehicleState.ignition.event = 'shutoff' }
+  },
   // FEAT-36 gap 3: drop a settled barrel pyramid on the ground ahead of the truck. The one pile
   // the game has — everything else debris does is player-thrown, so this is the only way to watch
   // object↔object stacking. 8 m out along the truck's own forward (−Z in body space), seated on
@@ -2685,6 +2697,8 @@ const _ringMat = (color, opacity = 0.28) => new THREE.MeshBasicMaterial({
   depthWrite: false, toneMapped: false, alphaMap: _ringAlpha,
 })
 const _poiRingMat = _ringMat(0xff7a18)     // orange — park here to be offered a job
+const _pumpZoneMat = _ringMat(0x4fc8ff)    // FEAT-50: blue — pull alongside and park to use the pump
+const _pumpZoneMarks = []                  // the pump zones' curtains (two per island), rebuilt with the markers
 // ASSET-74: the same curtain round a PARK box instead of a circle — the ring with four sides. A unit
 // square (side 1, open top and bottom): 4 radial segments started at 45°, at radius √½. Shares the
 // ring's material and alpha ramp, so it reads as the same signal in a different shape.
@@ -2740,6 +2754,7 @@ function _rebuildPoiMarkers () {
   for (const { mesh } of _dropMarks.values()) mesh.geometry.dispose()   // per-mark geometry, not shared
   _dropMarks.clear()
   _customerRings.clear()
+  _pumpZoneMarks.length = 0
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
   for (const q of poiSystem.list()) {
@@ -2769,6 +2784,19 @@ function _rebuildPoiMarkers () {
       m.position.set(sat.x, sat.y, sat.z)
       m.rotation.y = sat.yaw
       _poiGroup.add(m)
+    }
+
+    // FEAT-50: a pump island's two zones — the store lot's box curtain, in fuel blue rather than
+    // job orange, because the brake there opens the pump, never an offer.
+    for (const zb of q.pumpZones ?? []) {
+      const w = dropZoneWorld(q, zb)
+      const m = new THREE.Mesh(_parkBoxGeo, _pumpZoneMat)
+      m.scale.set(2 * w.halfX, _POI_RING_H, 2 * w.halfZ)
+      m.position.set(w.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, w.z)
+      m.rotation.y = w.yaw
+      m.renderOrder = 5
+      _poiGroup.add(m)
+      _pumpZoneMarks.push(m)
     }
 
     // The ring means "park here and something happens", so it belongs only to markers where
@@ -2931,6 +2959,10 @@ function _updateMissionRings () {
     const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= POI_RING_SHOW_R
     ring.visible = id === pickId || (near && id !== activeId && !onMission && !ring.userData.hidden)
   }
+  // FEAT-50: pump zones show on a job too — running low mid-route is exactly when you need them —
+  // and drop away while the pump is open (you are already in one).
+  for (const m of _pumpZoneMarks)
+    m.visible = !fuelStop.isOpen && Math.hypot(m.position.x - vp.x, m.position.z - vp.z) <= POI_RING_SHOW_R
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
     _stageRing = new THREE.Mesh(_ringGeo, _stageRingMat)
@@ -4094,6 +4126,188 @@ function _campPromptState () {
   return g.inZone ? g : null
 }
 
+// ── FEAT-50: the pump visit ───────────────────────────────────────────────────────────────────
+// Pull alongside a pump island into one of its two zones (prop-models.js `pumpZones`), pull the
+// handbrake: the pump opens. HOLD F to pump — the whole time — and the handbrake down pays what is on
+// the counter (owner, 2026-10-16). FuelStop (src/fuel-stop.js) is the machine; this owns where you
+// are, the keys, the DOM and the sound. Stepped on the fixed physics step, so a fill is 10 s of real
+// driving time and pauses when the game does.
+const fuelStop = new FuelStop()
+let _fHeld = false
+window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() === 'f') _fHeld = true })
+window.addEventListener('keyup', e => { if (e.key.toLowerCase() === 'f') _fHeld = false })
+window.addEventListener('blur', () => { _fHeld = false })
+let _pumpReceiptT = 0     // s left on the settled receipt's hold
+let _pumpBounceT = 0      // s left on the counters' settle-bounce
+
+/** The pump island whose zone the truck is in (story mode, no dialogue up), or null. */
+function _pumpInReach () {
+  if (!storySystem.isActive() || storySystem.isEntering()) return null
+  if (_campUi || _campBusy) return null
+  const vp = vehicleState.position
+  for (const q of poiSystem.list()) {
+    if (!q.pumpZones || q.hidden || Math.hypot(q.x - vp.x, q.z - vp.z) > 20) continue
+    if (q.pumpZones.some(z => overDropZone(q, vp.x, vp.z, PARK_SLACK, z))) return q
+  }
+  return null
+}
+
+/** One physics step of an open pump. Handbrake down (or leaving story mode) settles the sale. */
+function _stepFuelStop (dt) {
+  if (!fuelStop.isOpen) return
+  if (!vehicleState.parked || !storySystem.isActive()) {
+    const { sale } = fuelStop.settle()
+    setPumpFlow(false)
+    if (sale > 0) { economySystem.spend(sale); playRegister() } else playNozzle()
+    _pumpReceiptT = sale > 0 ? 2.5 : 0
+    return
+  }
+  fuelStop.step(dt, _fHeld, vehicleState.fuel, RANGER_PARAMS, economySystem.money())
+  switch (fuelStop.event) {
+    case 'start':  setPumpFlow(true); break
+    case 'stop':   setPumpFlow(false); _pumpBounceT = 0.3; break
+    case 'full':   setPumpFlow(false); playShutoff(); _pumpBounceT = 0.3; break
+    case 'gallon': playGallonBell(); break
+  }
+}
+
+// The counters are MECHANICAL DRUMS, odometer-style: each drum is a 0–9 strip (plus a trailing 0
+// for the wrap) slid by translateY. The lowest drum turns continuously with the counter; every drum
+// above it holds its digit and only rolls over during the last tenth of the drum below it — the
+// carry a real register makes. So 4.99 → 5.00 is three drums turning together, not a jump.
+const _pumpEl = {}
+function _pumpDrums (id, n, dp) {
+  const el = document.getElementById(id)
+  if (!el || el.childElementCount) return
+  for (let i = 0; i < n; i++) {
+    if (i === n - dp) el.insertAdjacentHTML('beforeend', '<span class="pd-dot">.</span>')
+    el.insertAdjacentHTML('beforeend', '<span class="pd-drum"><span class="pd-strip">' + '0123456789'.split('').concat('0').join('<br>') + '</span></span>')
+  }
+}
+function _setDrums (id, value, dp) {
+  const strips = document.getElementById(id)?.querySelectorAll('.pd-strip')
+  if (!strips) return
+  const x = Math.max(0, value) * 10 ** dp           // in units of the lowest drum
+  const n = strips.length
+  let below = x % 10                                 // the lowest drum's continuous position
+  for (let i = n - 1; i >= 0; i--) {
+    const place = 10 ** (n - 1 - i)
+    let pos
+    if (i === n - 1) pos = below
+    else {
+      const whole = Math.floor(x / place) % 10
+      pos = whole + Math.max(0, below - 9)           // roll only while the drum below goes 9 → 0
+      below = pos
+    }
+    strips[i].style.transform = `translateY(${-pos * 1.15}em)`
+  }
+}
+/** Per frame: the pump face, its hint line, and the receipt's hold + fade. */
+function _renderPumpDisplay (dt) {
+  const el = _pumpEl.root ??= document.getElementById('pump-display')
+  if (!el) return
+  _pumpReceiptT = Math.max(0, _pumpReceiptT - dt)
+  _pumpBounceT = Math.max(0, _pumpBounceT - dt)
+  const show = fuelStop.isOpen || _pumpReceiptT > 0
+  el.classList.toggle('on', show)
+  if (!show) return
+  _pumpDrums('pd-sale', 4, 2); _pumpDrums('pd-gal', 5, 3)
+  const r = fuelStop.isOpen ? { gal: fuelStop.gal, sale: fuelStop.sale } : fuelStop.receipt
+  _setDrums('pd-sale', r.sale, 2)
+  _setDrums('pd-gal', r.gal, 3)
+  el.classList.toggle('flowing', fuelStop.state === 'pumping')
+  el.classList.toggle('bounce', _pumpBounceT > 0)
+  el.classList.toggle('receipt', !fuelStop.isOpen)
+  document.getElementById('pd-price').textContent = '$' + fuelStop.price.toFixed(2)
+  const tank = vehicleState.fuel, full = tank.gal >= RANGER_PARAMS.fuelTankGal - 1e-6
+  const broke = fuelStop.isOpen && fuelStop.price > 0 && economySystem.money() - fuelStop.sale < 0.005
+  document.getElementById('pd-hint').innerHTML = !fuelStop.isOpen ? 'thank you — drive safe'
+    : full ? `tank full · release the handbrake to pay`
+    : broke ? `that's all you can afford · release the handbrake to pay`
+    : `hold ${keycap('F')} to pump · release the handbrake to pay`
+}
+
+// ── FEAT-50: running dry — the Recovery chip ─────────────────────────────────────────────────
+// Nothing pops up when the engine dies: the chip appears in the right-hand icon column only once
+// you are dry AND parked (owner, 2026-10-16), the way the other context actions wait for the brake.
+// Today it holds one option — a tow to the nearest place that sells fuel — and later tows (anytime,
+// to the service station) are further rows in the same card. Can't afford it and you are out of
+// fuel: the run is over ("you broke down", SM-INV-1).
+let _recoveryOpen = false
+
+/** The nearest POI that sells fuel (a pump island, until ASSET-13's station has zones). */
+function _nearestFuelSeller () {
+  const vp = vehicleState.position
+  let best = null, bestD = Infinity
+  for (const q of poiSystem.list()) {
+    if (!q.pumpZones || q.hidden) continue
+    const d = Math.hypot(q.x - vp.x, q.z - vp.z)
+    if (d < bestD) { bestD = d; best = q }
+  }
+  return best && { q: best, km: bestD / 1000 }
+}
+
+function _towQuote () {
+  const dest = _nearestFuelSeller()
+  if (!dest) return null
+  return { ...dest, price: towPrice(dest.km, economySystem.tierNow(), ECONOMY_PARAMS), hours: towHours(dest.km, ECONOMY_PARAMS) }
+}
+
+function _towToFuel () {
+  const t = _towQuote()
+  if (!t || !economySystem.spend(t.price)) return
+  _recoveryOpen = false
+  // Into the road-side pump zone, nose along the island: model +X in world is (cos yaw, −sin yaw)
+  // and the truck's forward is (−sin h, −cos h), so h = yaw − π/2 lays the truck alongside.
+  // The seat is teleportToGround's minus its side effects: no "spawn point set" toast, and the R
+  // spawn is put back afterwards — a tow is a trip, not a new home.
+  const z = dropZoneWorld(t.q, t.q.pumpZones[0])
+  const prev = _spawnOverride
+  _spawnOverride = { align: true, x: z.x, z: z.z, heading: z.yaw - Math.PI / 2, drop: 0.3 }
+  storySystem?.notifyTeleport()
+  daySystem.advanceMinutes(t.hours * 60)
+  void _reseatTruckAtSpawn().then(() => {
+    _spawnOverride = prev
+    // The truck lands parked; clearing the edge detector lets the next poll open the pump at once.
+    _prevParkedForPoi = false
+  })
+}
+
+function _updateRecovery () {
+  const row = document.getElementById('recovery-row')
+  if (!row) return
+  const show = storySystem.isActive() && !storySystem.isEntering() && !!vehicleState.fuel?.dry
+    && vehicleState.fuel.gal <= 0 && !!vehicleState.parked && !fuelStop.isOpen
+  row.style.display = show ? 'flex' : 'none'
+  if (!show) { _recoveryOpen = false; return }
+  document.getElementById('recovery-icon')?.classList.toggle('on', _recoveryOpen)
+  document.getElementById('recovery-icon')?.classList.add('ready')
+  const card = document.getElementById('recovery-card')
+  card.style.display = _recoveryOpen ? 'block' : 'none'
+  if (!_recoveryOpen) return
+  const t = _towQuote()
+  const money = economySystem.money()
+  const html = !t ? '<div class="rc-head">out of fuel</div><div class="rc-dim">no tow can reach you here</div>'
+    : money + 1e-9 >= t.price
+      ? `<div class="rc-head">out of fuel</div>
+         <button class="rc-opt" id="rc-tow">tow to gas station — $${formatMoney(t.price)}</button>
+         <div class="rc-dim">${t.km.toFixed(1)} km · ${formatGameDuration(t.hours)} · you have $${formatMoney(money)}</div>`
+      : `<div class="rc-head">out of fuel</div>
+         <div class="rc-dim">can't afford a tow — $${formatMoney(t.price)}, you have $${formatMoney(money)}</div>
+         <button class="rc-opt rc-end" id="rc-end">end run — you broke down</button>`
+  if (card.dataset.html !== html) {   // repaint only on change: the poll is 10 Hz and buttons must stay clickable
+    card.dataset.html = html
+    card.innerHTML = html
+    document.getElementById('rc-tow')?.addEventListener('click', _towToFuel)
+    document.getElementById('rc-end')?.addEventListener('click', _backToMenu)
+  }
+}
+window.addEventListener('keydown', e => {
+  if (e.repeat || e.key.toLowerCase() !== 'x') return
+  if (document.getElementById('recovery-row')?.style.display === 'flex') { _recoveryOpen = !_recoveryOpen; _updateRecovery() }
+})
+document.getElementById('recovery-icon')?.addEventListener('click', () => { _recoveryOpen = !_recoveryOpen; _updateRecovery() })
+
 /** Can the truck knock on mom's door from here? (Same gates, minus the zone and the grading.) */
 function _atMomsHouse () {
   if (!storySystem.isActive() || storySystem.isEntering()) return false
@@ -4126,6 +4340,23 @@ function _updateParkTriggers () {
   // (owner, 2026-10-08), then the prompt sends you home for a few seconds.
   if (_updateFetchPrompt(poiEl, pulled)) {
     damageScreen.blocked ||= poiEl?.style.display === 'block'   // at the pickup: the brake is the fetch's
+    if (campRow) campRow.style.display = 'none'
+    return
+  }
+
+  // FEAT-50: a pump zone. The brake there opens the pump and nothing else — an open pump owns the
+  // brake until it is released (which pays), so no other parking action can answer it.
+  const pump = fuelStop.isOpen ? null : _pumpInReach()
+  if (fuelStop.isOpen || pump) {
+    damageScreen.blocked = true
+    if (pump && pulled) {
+      fuelStop.open(pump.id, RANGER_PARAMS.fuelPricePerGal)
+      playNozzle()
+    }
+    if (poiEl) {
+      poiEl.style.display = fuelStop.isOpen ? 'none' : 'block'
+      if (!fuelStop.isOpen) poiEl.innerHTML = parkPrompt('park to use the pump')
+    }
     if (campRow) campRow.style.display = 'none'
     return
   }
@@ -6112,6 +6343,7 @@ const storySystem = new StorySystem({
     // free-roam damage wipe (_reseatTruckAtSpawnInner) is skipped and a truck broken in free roam
     // drove straight into the new run. Per-run state (SM-INV-8): the run starts here, so does the truck.
     damageModel.setAll(1); damageModel.publish(RANGER_PARAMS)
+    vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)   // FEAT-50: "some gas in it"
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
     resetPaperRun()                  // …and starts back on Larry's four-house route (SM-INV-12)
     paperRouteSystem.abort()
@@ -6436,13 +6668,14 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
 })
 // FEAT-41: back out to the main menu. The mode is left FIRST — dropping to a menu while story mode
 // still holds a frozen region and a live day clock would leave both running behind the scene.
-document.getElementById('pm-menu')?.addEventListener('click', () => {
+function _backToMenu () {
   _exitScenario()
   if (missionSystem?.isActive()) missionSystem.exit()
   if (storySystem.isActive()) storySystem.exit()
   if (_labActive) exitLab()
   _showMainMenu()
-})
+}
+document.getElementById('pm-menu')?.addEventListener('click', _backToMenu)
 // Story mode is opt-in from this menu ONLY — a first-time visitor lands in free roam and is
 // never thrust into an unfinished mode. Switching the game mode also disables free-roam-only
 // affordances (teleport), which is the point of _gameMode existing.
@@ -6829,6 +7062,7 @@ function loop () {
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
     damageModel.tireCondCap = tireCondCap(TRUCK, _freight?.massKg ?? 0)   // FEAT-112: an overloaded bed pops tires
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
+    _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
     if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
@@ -7309,6 +7543,7 @@ function loop () {
     // FEAT-46/45: the POI + camping prompts, and the ONE parking-brake trigger behind both.
     // Still the ~10 Hz cadence: the `parked` latch is sticky, so the edge cannot fall between polls.
     _updateParkTriggers()
+    _updateRecovery()           // FEAT-50: the out-of-fuel chip, once parked
     // FEAT-45: the camping folder's read-outs ride the same 10 Hz poll and hit the same memoized
     // grade the prompt just computed. Gated to the SAME sub-20 kph window as the prompt on purpose:
     // grading costs a handful of terrain/water/scatter samples, and paying for it at speed to feed a
@@ -7417,6 +7652,11 @@ function loop () {
   // hidden while the map is open, live in chase/hood/freecam alike. update() early-outs when hidden.
   gaugeCluster.setVisible(!map2d.isOpen())
   gaugeCluster.setIgnition(keyPosition(vehicleState.ignition))
+  // FEAT-50: free roam (and the lab, scenarios) can never run dry — the tank stops at a floor. Set
+  // every frame from the mode rather than at each transition, so no entry/exit path can miss it.
+  vehicleState.fuel.floorGal = _gameMode === 'story' ? 0 : RANGER_PARAMS.fuelTankGal * RANGER_PARAMS.fuelFreeRoamFloorFrac
+  gaugeCluster.setFuelLevel(vehicleState.fuel.gal / RANGER_PARAMS.fuelTankGal)
+  _renderPumpDisplay(frameTime)
   gaugeCluster.update(frameTime, vehicleState.velocity.length(), vehicleState.drivetrain?.engineRPM ?? 0)
 
   // feature/teleport: show the "teleport here" button only in free-cam, where isTeleportEnabled()
