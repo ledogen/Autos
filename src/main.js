@@ -1749,8 +1749,8 @@ window.__car = () => ({ x: vehicleState.position.x, y: vehicleState.position.y, 
                         v: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) })
 
 // FEAT-49: gauge cluster (bottom-right canvas overlay). The odometer seeds to a random jalopy
-// mileage at boot and RE-seeds on every story-mode entry — "the next run's jalopy". Fuel/temp
-// needles are placeholders until the fuel (FEAT-50) and coolant (FEAT-51) models drive them.
+// mileage at boot and RE-seeds on every story-mode entry — "the next run's jalopy". The temp needle
+// reads damageModel's engine temperature (FEAT-51); fuel is a placeholder until FEAT-50.
 const gaugeCluster = new GaugeCluster(document.getElementById('cluster'))
 gaugeCluster.seedOdometer()
 
@@ -4310,6 +4310,7 @@ function _sleepAtCamp () {
     // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
     // and on a worn engine it is also the morning's first piece of news about what you're driving.
     vehicleState.ignition = makeIgnitionState(IGN_OFF)
+    damageModel.engineTempC = DAMAGE_PARAMS.tempAmbientC   // FEAT-51: a night off is a cold engine
     // You wake WHERE YOU SLEPT: the truck is untouched and the dialogue is still up. The pad stays
     // dug for as long as you stay camped; "break camp" is what closes it AND un-digs the bench.
     _campUi = { ..._campUi, mode: back }
@@ -6356,6 +6357,7 @@ async function _startStoryFromModal () {
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
+  damageModel.engineTempC = DAMAGE_PARAMS.tempAmbientC   // FEAT-51: ...and a cold engine
   storySystem.enter(seed)
 }
 // Quick Job launcher — the beta mission generator, now surfaced only inside story mode.
@@ -6625,7 +6627,7 @@ function _captureSession () {
     damage: damageModel ? {
       enabled: !!DAMAGE_PARAMS.enabled,
       condition: Object.fromEntries(Object.entries(damageModel.condition).map(([k, v]) => [k, +v.toFixed(3)])),
-      flat: damageModel.flat.slice(),
+      flat: damageModel.flat.slice(), engineTempC: +damageModel.engineTempC.toFixed(1),
       toeOffsetDeg: arr(damageModel.toeOffsetDeg, 2), camberOffsetDeg: arr(damageModel.camberOffsetDeg, 2),
     } : null,
     story: storySystem ? {
@@ -7446,6 +7448,7 @@ function loop () {
   // hidden while the map is open, live in chase/hood/freecam alike. update() early-outs when hidden.
   gaugeCluster.setVisible(!map2d.isOpen())
   gaugeCluster.setIgnition(keyPosition(vehicleState.ignition))
+  gaugeCluster.setCoolantTemp(damageModel.tempGaugeFrac())   // FEAT-51
   gaugeCluster.update(frameTime, vehicleState.velocity.length(), vehicleState.drivetrain?.engineRPM ?? 0)
 
   // feature/teleport: show the "teleport here" button only in free-cam, where isTeleportEnabled()

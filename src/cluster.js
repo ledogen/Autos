@@ -11,8 +11,8 @@
 //
 // Data wiring:
 //   update(dt, speedMps, rpm) — live from physics (speed) and drivetrain (engineRPM).
-//   setFuelLevel(frac 0..1) / setCoolantTemp(frac 0..1) — PLACEHOLDER needles until the fuel
-//     model (FEAT-50) and coolant temp model (FEAT-51) exist; defaults sit at believable spots.
+//   setFuelLevel(frac 0..1) — PLACEHOLDER needle until the fuel model (FEAT-50) exists.
+//   setCoolantTemp(frac 0..1) — fed every frame from DamageModel.tempGaugeFrac() (FEAT-51).
 //     The needles are fully wired — those tickets only have to call the setters.
 //   seedOdometer(miles?) — random high "jalopy" mileage when omitted; accumulates real miles
 //     driven, and is re-seeded on each story-mode entry (the next run's jalopy). Once runs have
@@ -95,10 +95,10 @@ export class GaugeCluster {
     // Live needle state (first-order lag gives the needles a touch of mechanical damping).
     this._speedMph = 0
     this._rpm = 0
-    // Placeholder targets until FEAT-50 / FEAT-51 drive them: temp settles mid-gauge,
-    // fuel at ~5/8 — believable for a jalopy that was handed over "with some gas in it".
+    // Fuel is a placeholder target until FEAT-50 drives it: ~5/8 — believable for a jalopy that was
+    // handed over "with some gas in it". Temp is driven every frame (FEAT-51); a cold engine reads C.
     this._fuelFrac = 0.62
-    this._tempFrac = 0.5
+    this._tempFrac = 0
     this._fuelShown = 0      // sweep up from rest on load, like a key-on
     this._tempShown = 0
     this._odoMiles = 0
@@ -125,7 +125,7 @@ export class GaugeCluster {
   /** 0 = E, 1 = F. Placeholder until the fuel model (FEAT-50) calls this with a real level. */
   setFuelLevel (frac) { this._fuelFrac = Math.max(0, Math.min(1, frac)) }
 
-  /** 0 = C, 1 = H. Placeholder until the coolant model (FEAT-51) calls this with a real temp. */
+  /** 0 = C, 1 = H (FEAT-51: C = 90 °C, mid = 100 °C, H = 110 °C on the stock thermostat). */
   setCoolantTemp (frac) { this._tempFrac = Math.max(0, Math.min(1, frac)) }
 
   /**

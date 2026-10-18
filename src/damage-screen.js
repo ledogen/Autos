@@ -57,7 +57,7 @@ const CONSEQUENCE = {
   brake:      'Worn brakes need more distance to stop.',
   engine:     'Less power. Most of the loss arrives in the last fifth of its life.',
   filter:     'A clogged filter wears the engine out faster. Cheap to replace.',
-  radiator:   'Takes front-end hits. Nothing more yet: the engine does not overheat.',
+  radiator:   'Cools the engine. Below half it cannot hold full throttle; near zero it barely holds idle.',
   headlights: 'A worn lamp dims, down to 40% when broken. Below half health it flickers over bumps.',
   alignment:  'Knocked-out toe and camber make the truck pull to one side.',
 }
@@ -114,6 +114,7 @@ function symptoms (m, id) {
     case 'damper': if (c < P.damperKnee) out.push(`Keeps bouncing after bumps under ${pct(P.damperKnee)}`); break
     case 'brake':  if (c < P.brakeKnee)  out.push(`Stopping distance growing under ${pct(P.brakeKnee)}`); break
     case 'engine': if (c < P.engineKnee) out.push(`Losing power fast under ${pct(P.engineKnee)}`); break
+    case 'radiator': if (c < 0.5) out.push(`Overheats under full load below 50%`); break
     case 'filter': if (c < P.filterKnee) out.push(`Wearing out the engine under ${pct(P.filterKnee)}`); break
     case 'headlights':
       if (c < P.headlightFlickerCond) out.push(`Flickers over bumps under ${pct(P.headlightFlickerCond)}`)
