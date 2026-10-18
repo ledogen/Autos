@@ -728,16 +728,27 @@ const ITEM_CATEGORIES = ['Food & drink', 'Consumables', 'Tools', 'Navigation', '
 const ITEM_STATUSES = ['todo', 'wip', 'shipped', 'cut'];
 const ITEM_BUILDS = ['effect', 'param', 'gate', 'model'];
 const list = (s) => (s || '').split(',').map((x) => x.trim()).filter(Boolean);
+/* Thumbnails are the game's own (assets/items/<camelId>.png, FEAT-122), matched
+ * to a row by name with case and punctuation dropped: "Chili dog" ↔ chiliDog.png. */
+const THUMB_DIR = 'assets/items';
+const squash = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+function itemThumbs() {
+  const dir = join(ROOT, THUMB_DIR);
+  if (!existsSync(dir)) return new Map();
+  return new Map(readdirSync(dir).filter((f) => extname(f) === '.png')
+    .map((f) => [squash(basename(f, '.png')), `${THUMB_DIR}/${f}`]));
+}
 
 function indexItems(tickets) {
   const { rows, warnings, ...rest } = indexBodyRows(tickets, ITEM_TICKET,
     { sections: ITEM_CATEGORIES, statuses: ITEM_STATUSES, guideHeading: 'How to read' });
+  const thumbs = itemThumbs();
   const items = rows.map(({ kv, section, ...r }) => {
     const build = list(kv.build);
     for (const b of build) {
       if (!ITEM_BUILDS.includes(b)) warnings.push({ file: rest.file, line: r.line + 1, msg: `"${r.title}": unknown build "${b}"` });
     }
-    return { ...r, category: section, design: kv.design || '', build, needs: list(kv.needs), where: list(kv.where) };
+    return { ...r, category: section, design: kv.design || '', build, needs: list(kv.needs), where: list(kv.where), thumb: thumbs.get(squash(r.title)) || null };
   });
   return { ...rest, warnings, items };
 }
@@ -960,6 +971,9 @@ function serve(port) {
       const file = join(ROOT, p);
       const type = AUDIO_MIME[extname(file).toLowerCase()];
       if (file.startsWith(join(ROOT, base) + '/') && type && existsSync(file)) { serveFile(res, file, type); return; }
+    }
+    if (p.startsWith(`/${THUMB_DIR}/`) && extname(p) === '.png' && !p.includes('..') && existsSync(join(ROOT, p))) {
+      serveFile(res, join(ROOT, p), 'image/png'); return;
     }
     const name = url.pathname === '/' ? '/app.html' : url.pathname;
     const file = join(HERE, name.replace(/^\/+/, ''));
