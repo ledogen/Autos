@@ -80,7 +80,11 @@ counts with region size comes later. The gas station and tackle shop posting job
   unavailable for **12 h**, then a fresh offer appears. *(FEAT-113, 2026-10-15: the offer never
   leaves the board, but a TAKEN round has a delivery deadline like every job.)*
 - **The gas station posts** (propane) under the budget; the **tackle shop posts fetches** of the
-  general-store sundries (owner, 2026-10-07; built FEAT-102).
+  general-store sundries (owner, 2026-10-07; built FEAT-102), and **its own goods** out to a
+  residence, farm or roadside spot (owner, 2026-10-16, BUG-88).
+- **No two live offers at a POI look alike (owner, 2026-10-16, BUG-88):** a newcomer may not
+  repeat an older sibling's destination, nor its thing where the source posts more than one. A
+  newcomer that would — or is left with no route — cycles to a new job.
 - **The stranded motorist (FEAT-102, owner 2026-10-08):** one job at a time — a ride to an auto
   shop, or a fetch of a spare tire (from an auto shop) or a jerry can (from a gas station). The
   car, ring, collider and map marker exist only while that job is open.
@@ -90,10 +94,16 @@ counts with region size comes later. The gas station and tackle shop posting job
 ### The job site and the bosses
 
 The job site sits **on the region wall** (SM-INV-13: the gate is a place). Region unlock is a boss
-battle, different per region: **R1 is the log drag**, **R2 is finishing the bridge**, a progress meter
-filled by courier jobs (workers) and haul jobs (lumber, stone) delivered to the site. Hovering the
-bridge site on the map reveals where supplies can be picked up. Until SM-4 opens, the job site is an
-ordinary job place; the bosses and region **modifiers** (undefined yet) are SM-4 work.
+battle. **R1's boss is the bridge site** (2026-10-12; the log drag is demoted to a toy/scenario): a
+progress meter filled by courier jobs (workers) and haul jobs (lumber, stone) delivered to the site,
+with a foreman to match. Hovering the site on the map reveals where supplies can be picked up.
+
+**Re-scoped 2026-10-16 (owner), DESIGN OPEN — see FEAT-103.** Region 1 only for now. The site is
+**not an ordinary job place**: it is unavailable until the player has the required good deeds, then
+always available, outside the budget. Open: what failing it costs (run death vs. starting over), and
+whether R1's boss is the bridge at all (its suppliers, lumber and rock, are R2/R3 yards) or e.g. an
+expedition searching for the road out of town. Later regions may get a job site or a different form.
+Region **modifiers** are undefined; all of it is SM-4 work.
 
 ### Names
 

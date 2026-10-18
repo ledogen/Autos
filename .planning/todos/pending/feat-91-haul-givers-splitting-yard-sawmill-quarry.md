@@ -138,6 +138,14 @@ a POI type region-specific. This ticket adds it:
 6. **POI models** — ASSET-36 splitting yard, ASSET-11 sawmill (amended), ASSET-35 quarry, each with its
    loader in the model and named empties for the bay and the release point.
 
+## Inherited from FEAT-88 (closed 2026-10-16)
+
+- **The per-load data** for lumber and rock: piece model, mass, size and form (FEAT-112's `loose`),
+  and the per-piece pay rate. Haul is firewood, lumber and rock only, for now.
+- **Per-piece rates are hand-set per yard, by tier** (owner, 2026-10-16): firewood tier 1, lumber
+  tier 2, rock tier 3. Not per kg. Scoring is the count delivered (FEAT-114).
+- The acceptance line "settling pays on mass aboard × roughness" is superseded by FEAT-114's count.
+
 ## Open questions — the owner's
 
 - **Misses at the bay** — recommendation above (paid on what you carry; misses stay on the ground).
@@ -147,7 +155,7 @@ a POI type region-specific. This ticket adds it:
 
 ## Not in scope
 
-- The log drag (main mission, missions.md). The sawmill is also its terminus; nothing here changes it.
+- The log drag (demoted to a free-roam toy / scenario, 2026-10-12; missions.md).
 - Unloading at the destination — the load despawns on settle, per FEAT-88.
 - Reputation or repeat-job escalation (ruling 1: parked).
 - Any HUD readout of load mass or condition (SM-INV-10). The squat and the engine note are the readout.

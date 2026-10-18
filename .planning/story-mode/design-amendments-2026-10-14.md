@@ -29,7 +29,7 @@ FEAT-104), and MILESTONES.md carries the build order so the next task can be pic
 | 13 | **A simple regional reputation**, earned by good deeds in the region, shown as "Reputation ×1.xx" on the result card. | New. Replaces day tier as pay's growth term. | FEAT-117 |
 | 14 | **Alpha run shape: three regions of about a week**, provisionally 7 / 6 / 5 days. | Supersedes 2026-10-12's ~12–14 days. | FEAT-69 |
 | 15 | **Re-solve the region pay step for three regions.** | `regionMult` is still solved for six. | FEAT-69 |
-| 16 | **OPEN: what earns the tip and the bonus item on haul and freight.** | Needs a ruling before FEAT-114. | — |
+| 16 | **Haul RULED 2026-10-16: scored on the count delivered, no speed tip, item on a stated count target.** Freight still OPEN. | Unblocks FEAT-114. | FEAT-114 |
 
 ---
 
@@ -87,7 +87,7 @@ above them, they stay warnings. The owner sets the numbers.
 |---|---|---|
 | **Courier** | Time against par | Shipped (FEAT-89) |
 | **Fragile** | **Cargo condition**, for both the tip and the bonus item (owner, 2026-10-14) | Changes FEAT-97 before it is built |
-| **Haul** | Pieces still aboard | Shipped as a pay multiplier (FEAT-88); the tip and the item are OPEN, §16 |
+| **Haul** | Pieces delivered, as a count; no speed tip; the item on a stated count target (ruled 2026-10-16, §16) | FEAT-114 |
 | **Freight** | A generous clock and heavy loads that pay well. Fast freight still tips, but the speed lane is courier | Shipped shape (FEAT-96: thresholds × 1.15, tip × 0.5, +3 % pay per 100 kg); the item is OPEN, §16 |
 
 Freight's draw is that it gives you time, so you can go slowly and spare a heavily loaded truck.
@@ -252,3 +252,31 @@ the player's choice.
 Alternatives the owner raised: haul on a combined score (pieces aboard and speed), and freight on
 pure completion with heavy loads gating the better rewards, or a lesser pool. Needs a ruling before
 FEAT-114 and before freight's bonus item is wired.
+
+**Haul RULED (owner, 2026-10-16) — the recommendation above is superseded.** The owner's objection:
+a car can't lose a haul piece, so on a share it always earns the item; only its capacity holds it to
+a lesser pool. The ruling scores the **count delivered**:
+
+- **Pay** = pieces delivered × the yard's per-piece rate. **No speed tip**: haul is decoupled from
+  courier, and the job's deadline (FEAT-113) is its only clock.
+- **Bonus item** = a delivered-count target stated on the offer ("bring 12 for the item"). The target
+  sets the rarity. A car caps at 8, so it chases low targets and gets them reliably; a truck chasing a
+  high target loads extra for margin, toward its soft limit, and has to keep it aboard.
+- Hauling in a car is safe, low-yield work by design. A car career's driving skill is courier.
+- *Option B, not ruled:* the item on throughput across the yard's rate-bonus window.
+
+- **Good deeds follow the count target too** (owner, 2026-10-16), replacing the share bands.
+
+**Freight's bonus-item POOL, ruled 2026-10-16 (owner).** Freight is **the trucker role**: it rewards
+the slow-but-sturdy build.
+
+- **Pool:** bubble wrap, furniture pad, heavy-duty pad (the fragile protection items, included on
+  purpose to encourage cross-specialisation); rubber bed mat and bedliner; **standard-duty** springs,
+  tires and dampers (fitted parts installed at a service station, not the spare tire); heavy-duty
+  anti-roll bars; extended bed, flatbed, stake bed, roof rack; heavy-duty radiator.
+- **Super-rare tier:** heavy-duty springs, dampers and tires.
+- Tiers for the rest are not yet set. **What earns** the item is still open (recommendation on
+  record: arriving without a heavy hit to the truck, the mass picks the pool).
+- Today `REWARDS` pools by **source POI**, not by mission family; a family pool is a new axis. The
+  owner wants **a separate conversation on mission rewards in general**: the major categories, and
+  how much they overlap and cross-pick. Build no freight pool before it.

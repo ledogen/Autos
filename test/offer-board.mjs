@@ -466,18 +466,46 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         if (new Set(sig2).size !== sig2.length) dupRoad++
         n++
     }
-    check('forced POI collisions: siblings with the same thing + reward never share a destination', dupPoi === 0, `${dupPoi}/${n}`)
+    check('forced POI collisions: siblings never share a destination', dupPoi === 0, `${dupPoi}/${n}`)
     check('forced roadside collisions: a clashing place name re-rolls until it differs', dupRoad === 0, `${dupRoad}/${n}`)
     check('the oldest offer keeps its destination — only the newcomer yields', older === 0, `${older}/${n}`)
-    // A sibling that differs in reward may share the destination (it is a different job).
+    // BUG-88 (owner, 2026-10-16): a different reward no longer makes it a different job — the
+    // destination still may not repeat.
     const b = make(3)
     const live = b.offers(food, T0)
     b.spec(live[0]).bonus = null
     b.spec(live[1]).bonus = { rewardId: 'coffee', name: 'Coffee', gate: 'C' }
-    b.spec(live[1]).thingId = b.spec(live[0]).thingId
-    const same = (o, ex) => ({ par: 300, distance: 2000, endPoiId: 'poi:5|6' })
-    b.planDistinct(live[0], same); b.planDistinct(live[1], same)
-    check('a different reward is a different job — the destination may repeat', live[0].route.endPoiId === live[1].route.endPoiId)
+    const prefs = ['poi:5|6', 'poi:7|8']
+    const first = (o, ex) => ({ par: 300, distance: 2000, endPoiId: prefs.find(id => !ex.has(id)) ?? null })
+    b.planDistinct(live[0], first); b.planDistinct(live[1], first)
+    check('a different reward does not let the destination repeat', live[0].route.endPoiId !== live[1].route.endPoiId)
+
+    // BUG-88: two offers at a multi-thing source. A repeated thing, or a strict wish left with no
+    // candidate (seed 6's two fetches from the one general store), CYCLES to a new job.
+    let pairs = 0, dupThing = 0, dead = 0
+    for (let seed = 1; seed <= 200; seed++) {
+        const bb = make(seed)
+        for (let t = T0; t < T0 + 24 * 3; t += 6) for (const id of bb.sources()) {
+            if (POIS.find(q => q.id === id).type !== 'tackleShop') continue
+            const lv = bb.offers(id, t)
+            if (lv.length < 2) continue
+            pairs++
+            // Force the worst case: the newcomer rolled the elder's thing.
+            const [old, nu] = [...lv].sort((x, y) => x.bornH - y.bornH || String(x.slot).localeCompare(String(y.slot)))
+            if (old.route === undefined && nu.route === undefined) {
+                nu._spec = { ...bb.spec(old) }
+            }
+            // A planner with ONE pickup for every fetch: a second fetch has nowhere left to go.
+            const one = (o, ex) => bb.spec(o).shape === 'fetch' && ex.has('store')
+                ? null : { par: 300, distance: 2000, endPoiId: bb.spec(o).shape === 'fetch' ? 'store' : null }
+            for (const o of lv) bb.planDistinct(o, one)
+            if (bb.spec(lv[0]).thingId === bb.spec(lv[1]).thingId) dupThing++
+            if (lv.some(o => !o.route)) dead++
+        }
+    }
+    check('BUG-88: siblings at a multi-thing source never share a thing (the newcomer cycles)', pairs > 0 && dupThing === 0,
+        `${dupThing}/${pairs}`)
+    check('BUG-88: a newcomer with no destination left cycles to a job that has one', pairs > 0 && dead === 0, `${dead}/${pairs}`)
 }
 
 // ── 15. haul (FEAT-88) ──────────────────────────────────────────────────────────────────────────
@@ -530,7 +558,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     // FEAT-50: a lone gas pump stands in the roster too — and must never be anyone's drop-off.
     const tagged = [...POIS, { id: 'poi:91|92', type: 'gasPump' }]
         .map(q => ({ ...q, tags: [q.type, ...(q.type === 'momsHouse' ? ['residence', 'mom'] : [])] }))
-    let taggedN = 0, taggedBad = 0, genericStrict = 0, roadside = 0, fetchN = 0, fetchBad = 0, pumpDest = 0, poiDest = 0
+    let taggedN = 0, taggedBad = 0, genericStrict = 0, roadside = 0, fetchN = 0, fetchBad = 0, roadN = 0, roadBad = 0, roadKinds = new Set(), pumpDest = 0, poiDest = 0
     for (let seed = 1; seed <= 60; seed++) {
         const b = make(seed)
         for (let t = T0; t < T0 + 24 * 4; t += 3) for (const id of b.sources()) for (const o of b.offers(id, t)) {
@@ -538,7 +566,11 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
             if (sp.family === 'papers') continue
             const w = b.destWish(o, tagged, new Set())
             if (w.kind === 'poi') { poiDest++; if (w.pois.some(q => q.type === 'gasPump')) pumpDest++ }
-            if (sp.to) {
+            if (sp.to?.includes('roadside')) {
+                // BUG-88: a matching POI or a roadside spot — never strict, never another class.
+                roadN++; roadKinds.add(w.kind)
+                if (w.strict || (w.kind === 'poi' && !w.pois.every(q => q.id !== o.poiId && sp.to.some(x => q.tags.includes(x))))) roadBad++
+            } else if (sp.to) {
                 taggedN++
                 if (w.kind !== 'poi' || !w.strict || !w.pois.length
                     || !w.pois.every(q => q.id !== o.poiId && sp.to.some(x => q.tags.includes(x)))) taggedBad++
@@ -559,14 +591,17 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         `${pumpDest}/${poiDest}`)
     check('a fetch asks strictly for its PICKUP class, and says it is a fetch (FEAT-102)', fetchN > 0 && fetchBad === 0,
         `${fetchBad}/${fetchN}`)
-    check('the tackle shop posts only fetches of general-store sundries',
+    check("a `to` naming 'roadside' goes to a matching POI or roadside, never strictly (BUG-88)",
+        roadN > 0 && roadBad === 0 && roadKinds.size === 2, `${roadBad}/${roadN}, kinds ${[...roadKinds]}`)
+    check('the tackle shop posts fetches of general-store sundries, and its own goods to homes or roadside',
         THINGS.filter(t => t.pools.includes('tackleShop') || t.fetchBy?.includes('tackleShop'))
-            .every(t => t.fetchBy?.includes('tackleShop') && t.pools.join() === 'generalStore'))
+            .every(t => t.fetchBy?.includes('tackleShop') ? t.pools.join() === 'generalStore'
+                : t.pools.join() === 'tackleShop' && t.to.join() === 'residence,roadside'))
     check('every fetchBy / fetchFrom names a real class',
         THINGS.every(t => [...(t.fetchBy ?? []), ...(t.fetchFrom ?? [])].every(x => POIS.some(q => q.type === x))))
     check('THINGS name only real classes in `to` (or the planned sawmill/quarry)',
         THINGS.every(t => !t.to || t.to.every(x => SOURCES[x] || POIS.some(q => q.type === x)
-            || ['sawmill', 'quarry'].includes(x))))
+            || ['sawmill', 'quarry', 'roadside'].includes(x))))
 }
 
 // ── 16. deadlines (FEAT-113) ────────────────────────────────────────────────────────────────────

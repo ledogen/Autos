@@ -57,7 +57,11 @@ function copyRuntimeAssets () {
       const glbs = readdirSync(resolve(root, 'assets/models'))
         .filter((f) => f.endsWith('.glb'))
         .map((f) => `assets/models/${f}`)
-      for (const rel of [...RUNTIME_ASSETS, ...DIAGNOSTIC_ASSETS, ...glbs]) {
+      // FEAT-122: inventory thumbnails, fetched by URL from inventory-screen.js — same rule.
+      const thumbs = readdirSync(resolve(root, 'assets/items'))
+        .filter((f) => f.endsWith('.png'))
+        .map((f) => `assets/items/${f}`)
+      for (const rel of [...RUNTIME_ASSETS, ...DIAGNOSTIC_ASSETS, ...glbs, ...thumbs]) {
         const dest = resolve(outDir, rel)
         mkdirSync(dirname(dest), { recursive: true })
         copyFileSync(resolve(root, rel), dest)

@@ -69,6 +69,13 @@ Every courier thing is a phrase on the card. Nothing renders.
 | R1 | a coil of rope | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
 | R1 | a ball of string | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
 | R1 | a ream of paper | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
+| R1 | a box of size-12 dry flies | tackleShop → residence / farm / roadside | existing (BUG-88, owner 2026-10-16); ~0.1 kg |
+| R1 | spinners and spoons | tackleShop → residence / farm / roadside | existing (BUG-88, owner 2026-10-16); 0.3–0.6 kg |
+| R1 | a bag of lead sinkers | tackleShop → residence / farm / roadside | existing (BUG-88, owner 2026-10-16); 0.3–0.6 kg |
+| R1 | a spool of 12 lb mono | tackleShop → residence / farm / roadside | existing (BUG-88, owner 2026-10-16); 0.1–0.2 kg |
+| R1 | a dozen nightcrawlers | tackleShop → residence / farm / roadside | existing (BUG-88, owner 2026-10-16); 0.2–0.3 kg |
+| R1 | a landing net | tackleShop → residence / farm / roadside | existing (BUG-88, owner 2026-10-16); 0.8–1.2 kg |
+| R1 | a tackle box | tackleShop → residence / farm / roadside | existing (BUG-88, owner 2026-10-16); 2–4 kg |
 | R1 | a box of paper clips | generalStore → any | existing |
 | R1 | cooking scissors | generalStore → any | existing |
 | R1 | a turkey baster | generalStore → any | existing |

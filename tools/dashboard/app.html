@@ -193,6 +193,8 @@
   .scard summary { cursor:pointer; color:var(--dimmer); font-size:12px; }
   .scard .body { font-size:13.5px; }
   .scard .body p:first-child { margin-top:6px; }
+  .scard .thumb { float:left; width:56px; height:56px; object-fit:contain; margin:0 12px 4px 0;
+                  background:var(--panel2); border-radius:6px; }
   .scard .drop { color:var(--dimmer); font-size:11.5px; margin-left:auto; }
   .guide { background:var(--panel); border:1px solid var(--line); border-radius:8px;
            padding:2px 14px; margin-bottom:14px; }
@@ -907,7 +909,8 @@ function itemMatches(x, f, q) {
 
 function itemCard(x) {
   const build = x.build.map(b => `<span class="badge" style="color:${BUILD_COLOR[b] || 'inherit'}">${b}</span>`).join(' ');
-  return `<div class="pcard scard">
+  return `<div class="pcard scard" style="overflow:hidden">
+      ${x.thumb ? `<img class="thumb" src="${x.thumb}" alt="" loading="lazy">` : ''}
       <div class="ph">
         <span class="pt">${esc(x.title)}</span>
         <span class="st" style="color:${SOUND_COLOR[x.status]}">${x.status}</span>

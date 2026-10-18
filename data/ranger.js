@@ -61,6 +61,9 @@ export const RANGER_PARAMS = {
   inertiaRoll:  (1 / 12) * 1360 * (1.85 ** 2 + 1.60 ** 2),  // kg·m² — roll,   678
   inertiaPitch: (1 / 12) * 1360 * (4.61 ** 2 + 1.60 ** 2),  // kg·m² — pitch, 2699
   inertiaYaw:   (1 / 12) * 1360 * (4.61 ** 2 + 1.85 ** 2),  // kg·m² — yaw,   2796
+  // FEAT-122: inventory slots on the stock truck (owner, 2026-10-16). Bed parts (FEAT-115) raise it.
+  // (The stowed kit's mass rides as `stowedKg`, set at runtime by main.js — see syncChassisMass.)
+  inventorySlots: 8,
 
   // ── Drivetrain (FEAT-23 Phase 1: engine → torque converter → automatic gearbox → final drive) ──
   // Replaces the old flat maxDriveTorque/maxReverseTorque stub. The chain lives in src/drivetrain.js,
@@ -76,6 +79,21 @@ export const RANGER_PARAMS = {
   ...ENGINES.vulcan30,
   engineTorqueScale:  1.0,   // [-] global multiplier over the torque curve (slider)
   engineIdleThrottle:  0.0,  // [-] idle-throttle floor for creep torque; 0 = no creep (keeps BUG-20 slope-hold at zero input). Raise (~0.04) for authentic automatic idle-creep.
+  // FEAT-51 engine heat. Heat follows fuel (drivetrain fuelPowerW); the radiator carries it away.
+  // radiatorRatedW = the fuel power a HALF-condition radiator holds right at tempHoldC (109 °C), set
+  // to this engine's peak (117 kW @ 5200): above 50% the stock truck survives full load, below it it
+  // does not. radiatorDeadFrac = what a 0% radiator still carries, as a fraction of rated — set to
+  // the idle burn (7 kW / 117 kW) so a wrecked radiator holds idle at 109 °C and nothing more.
+  // Capacity is linear in condition through those two anchors, so a new radiator carries ~2x rated.
+  engineIdlePowerW:   7000,    // W — fuel power at idle (the floor while running)
+  // Two masses, two clocks (owner 2026-10-16, see DamageModel._stepTemp). Warm mass runs on the 60x game
+  // clock: cold → 100 °C in ~24 s real at idle (24 game-minutes; 12 s felt too quick, owner 2026-10-17). Thermal mass runs on real time and is
+  // a leniency knob (~3x a real block): 0% radiator at full load, 100 → 110 °C in ~30 s (was 45 s at 500k;
+  // owner 2026-10-17: back-to-back WOT climbs on a 10% radiator survived — now it cooks on the first).
+  engineWarmMass:    140000,   // J/°C — thermostat closed: block + its own coolant, radiator cut out
+  engineThermalMass: 335000,   // J/°C — thermostat open, real time
+  radiatorRatedW:    117000,   // W — see above
+  radiatorDeadFrac:    0.06,   // [-] — see above
   engineRpmLag:        0.0,  // s — first-order lag on engine RPM (0 = instant; ~0.1 adds rev-flare feel)
 
   // ── Fuel (FEAT-50) — USER-OWNED ───────────────────────────────────────────────────────────────

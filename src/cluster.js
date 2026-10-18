@@ -12,8 +12,8 @@
 // Data wiring:
 //   update(dt, speedMps, rpm) — live from physics (speed) and drivetrain (engineRPM).
 //   setFuelLevel(frac 0..1) — the tank, every frame from main.js (FEAT-50, src/fuel.js).
-//   setCoolantTemp(frac 0..1) — PLACEHOLDER needle until the coolant temp model (FEAT-51) exists;
-//     its default sits at a believable spot. The needle is fully wired — the ticket only calls it.
+//   setCoolantTemp(frac 0..1) — fed every frame from DamageModel.tempGaugeFrac() (FEAT-51).
+//     Both needles are driven; the defaults below only cover the frames before the first feed.
 //   seedOdometer(miles?) — random high "jalopy" mileage when omitted; accumulates real miles
 //     driven, and is re-seeded on each story-mode entry (the next run's jalopy). Once runs have
 //     a persistent jalopy identity, seed/save should key off that instead (noted in FEAT-49).
@@ -95,10 +95,10 @@ export class GaugeCluster {
     // Live needle state (first-order lag gives the needles a touch of mechanical damping).
     this._speedMph = 0
     this._rpm = 0
-    // Temp is a placeholder until FEAT-51 drives it (settles mid-gauge). Fuel is driven every frame
-    // (FEAT-50); 0.62 is only the value before the first frame — the same as fuelStartFrac.
+    // Both are driven every frame — fuel from the tank (FEAT-50), temp from the engine (FEAT-51). These
+    // are the values before the first frame: fuel at fuelStartFrac's 0.62, a cold engine at C.
     this._fuelFrac = 0.62
-    this._tempFrac = 0.5
+    this._tempFrac = 0
     this._fuelShown = 0      // sweep up from rest on load, like a key-on
     this._tempShown = 0
     this._odoMiles = 0
@@ -125,7 +125,7 @@ export class GaugeCluster {
   /** 0 = E, 1 = F. Fed every frame from the tank (FEAT-50). */
   setFuelLevel (frac) { this._fuelFrac = Math.max(0, Math.min(1, frac)) }
 
-  /** 0 = C, 1 = H. Placeholder until the coolant model (FEAT-51) calls this with a real temp. */
+  /** 0 = C, 1 = H (FEAT-51: C = 90 °C, mid = 100 °C, H = 110 °C on the stock thermostat). */
   setCoolantTemp (frac) { this._tempFrac = Math.max(0, Math.min(1, frac)) }
 
   /**

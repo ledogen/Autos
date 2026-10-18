@@ -44,12 +44,14 @@ items.md; cut it here (`status: cut`) when items.md strikes it.
 
 **Not items, so not here:** fuel at the pump and repairs at the auto shop are storefront *services*
 (FEAT-104); brands and durability tiers (items.md §3d) are a modifier on every part, not a row of
-their own; cargo is `cargo.md`; story keys are knowledge.
+their own; cargo is `cargo.md`; story keys are knowledge; the campfire spawns to mark camp (only the
+cooking kit modifies it).
 
 ## Food & drink
 
 ### Coffee
-status: todo · design: ratified · build: effect · needs: quick slots · where: foodVendor, generalStore, gasStation, reward
+status: shipped · design: ratified · build: effect · needs: quick slots · where: foodVendor, generalStore, gasStation, reward
+In the inventory with its thumbnail; auto-binds to a quick key and drinks on the press (FEAT-122). Sold nowhere yet: reward only until FEAT-104.
 Energy now, sleepy earlier tomorrow — a loan against tomorrow. The energy clock ships (`src/day.js`),
 so the effect is a debt term on it. Already a REWARDS id (`coffee`), grant stubbed.
 
@@ -111,7 +113,7 @@ Top up mid-climb against the overheat → head-gasket chain.
 
 ### Emergency gas
 status: wip · design: implied · build: effect, model · needs: fuel · where: gasStation, reward
-The jerry can: a 2 gal RotoPax, single-use. REWARDS id `emergencyGas` exists; the grant is stubbed.
+The jerry can: a 2 gal RotoPax, single-use. REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122), no effect until fuel.
 
 ### Bubble wrap
 status: todo · design: ratified · build: effect · needs: cargo protection · where: generalStore
@@ -211,31 +213,30 @@ Hazard reports on the Highway's roads (FEAT-119).
 
 ## Camp gear
 
-### Bedroll and campfire
-status: todo · design: kit · build: model · needs: camp render · where: kit
-The default camp, no modifier. The bedroll fills one of the starter Pack's 2 slots; the fire takes
-none. Campfire model done (ASSET-24); nothing renders it yet (FEAT-66).
+### Bedroll
+status: wip · design: kit · build: model · needs: camp render · where: kit
+In the inventory, packed in the starter Pack, with its thumbnail (FEAT-122). The camp-render model is still owed.
+The baseline sleeping item, no bonus. Fills one of the starter Pack's 2 slots.
 
 ### Air mattress
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Sleeping item, rank 2 of 4: a flat increase to restfulness (energy recovery rate), any site. Swaps
-for the bedroll in its slot and in the render.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Sleeping item: +5% recovery rate. Swaps for the bedroll in its slot and in the render.
 
 ### Sleeping pad
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Sleeping item, rank 3 of 4: a larger flat increase to restfulness. Swaps for the bedroll.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Sleeping item: +10% recovery rate. Swaps for the bedroll.
 
 ### Deluxe sleeping pad
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Sleeping item, rank 4 of 4: the largest flat increase to restfulness. Swaps for the bedroll.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Sleeping item: +15% recovery rate, the best bed. Swaps for the bedroll.
 
 ### Blanket
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Add-on, own slot, not required to sleep: a flat increase to restfulness, stacking with the bed.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Add-on, own slot, not required to sleep: +5% recovery rate, adding to the bed and the sleeping bag.
 
 ### Sleeping bag
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Add-on, own slot, not required to sleep: a flat increase to restfulness, stacking with the bed.
+status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Add-on, own slot, not required to sleep: +10% recovery rate, adding to the bed and the blanket.
 Renders with the bed, not in place of it.
 
 ### Tent
@@ -269,7 +270,8 @@ status: todo · design: idea · build: effect · needs: camp render, hunger · w
 ## Backpacks
 
 ### Pack
-status: todo · design: ratified · build: effect · needs: camp render · where: kit
+status: wip · design: ratified · build: effect · needs: camp render · where: kit
+In the inventory (FEAT-122): equipped at run start with the bedroll, pack/unpack/equip in the Tab screen, thumbnail. Reach is not wired to `campRoadEdgeM` yet — the starter's 40 m is today's tether, so it waits on a second pack.
 The starter pack: 2 slots, the bedroll in one, one open. Reach 40 m (today's tether). The equipped pack must always hold a sleeping item.
 
 ### Daypack

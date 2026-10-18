@@ -636,6 +636,22 @@ export const PROP_MODELS = {
     seat: 0.6,
   },
 
+  // ASSET-15 — the PRODUCE STALL, 1752 tris, 12 materials, one baked 512x384 sign. A towable trailer:
+  // deck x -1.50..1.50, frame and tyres z ±1.13, the drawbar runs on to x +2.54 and the sign stands at
+  // x +1.54..2.70 (measured off the GLB). Serving face and sign to -Z (the road), length along +X, so
+  // it lies along a lay-by with no yawOffset.
+  // ITS OWN FARM POI (FEAT-74, owner 2026-10-16): one of the three farm slots (src/poi.js), on an
+  // ordinary lay-by — the player imagines the farmhouse just off the road. No pool tag: the slot
+  // names it, the barn's precedent.
+  // DECK MASS ONLY: frame, deck and crates up to 1.0 m. The drawbar, the sign and the roof are left
+  // soft, so a mirror clip on them doesn't stop the truck dead.
+  //   seat 2.0: the back of the frame (z +1.13) stands 0.87 m inside the pad's back edge.
+  produceStall: {
+    url: 'assets/models/produce-stall.glb',
+    collision: { shape: 'box', size: [3.0, 1.0, 2.26] },
+    seat: 2.0,
+  },
+
   // ASSET-74 — the GENERAL STORE, 1062 tris, 5 materials, one 512x512 atlas (the hand-lettered
   // "Country Store" board, the ICE placard and the ice chest's two flat colours). Stucco walls under a
   // red board-and-batten gable, door and sign to -Z (the road), an ice chest on the +X concrete stoop.

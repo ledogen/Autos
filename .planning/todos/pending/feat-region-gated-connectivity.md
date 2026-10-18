@@ -166,7 +166,7 @@ already covers it — and the bundle only covers the dev seed).
 
 **The ruling: warm the next region the moment the player ACCEPTS the region-unlock main mission.**
 
-- **Trigger** — the accept event on the region-unlock main mission (the log drag; `missions.md`
+- **Trigger** — the accept event on the region-unlock main mission (the R1 boss, FEAT-103 — was the log drag, demoted 2026-10-12; `missions.md`
   "Main missions"). Not chapter start. Accepting the drag is an **unambiguous commitment** to opening
   that specific trail, so nothing is ever warmed speculatively for a region the player never reaches.
 - **Which region is knowable** — unlock order is deterministic (constraint 3 above), so "the next

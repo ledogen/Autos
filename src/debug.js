@@ -391,6 +391,19 @@ export function initDebug (params, callbacks = {}, options = {}) {
     for (let i = 0; i < 4; i++) d.replaceTire(i); d.publish(params); _sync() } }, 'f').name('Fit 4 New Tires')
   void _readout
 
+  // ── Engine temperature (FEAT-51) ──────────────────────────────────────────────────────────────
+  // Live readout + the knobs. Poke the Radiator component above to move the cooling capacity.
+  const tempFolder = dmgFolder.addFolder('Engine Temp (FEAT-51)')
+  const _temp = { get c () { return _damage()?.engineTempC ?? 0 }, set c (_) {} }
+  tempFolder.add(_temp, 'c', 20, 130).name('Engine °C').listen().disable()
+  tempFolder.add(params, 'engineWarmMass', 40000, 300000, 1000).name('Warm-up mass (J/°C, game clock)')
+  tempFolder.add(params, 'engineThermalMass', 100000, 1500000, 10000).name('Hot mass (J/°C, real time)')
+  tempFolder.add(params, 'radiatorRatedW', 40000, 250000, 1000).name('Radiator rated (W @ 50%)')
+  tempFolder.add(params, 'radiatorDeadFrac', 0, 0.3, 0.005).name('Dead radiator (x rated)')
+  tempFolder.add(params, 'engineIdlePowerW', 0, 20000, 250).name('Idle fuel power (W)')
+  tempFolder.add(DAMAGE_PARAMS, 'overheatDerate', 0, 0.1, 0.005).name('Power loss / °C over')
+  tempFolder.add(DAMAGE_PARAMS, 'durOverheat', 100, 10000, 50).name('Overheat wear (°C·s to dead)')
+
   // ── Wear speed, per class ────────────────────────────────────────────────────────────────────
   // 1 = the calibrated rate in DAMAGE_PARAMS. Live, because every one of these rates has in
   // practice been set by driving and judging, and a code edit + reload per guess is the slow way

@@ -258,8 +258,11 @@ export const POI_ROSTER = [
     // pad with a clutter yard beside it. A region with no spot for that pad falls back to a lay-by
     // and the broadside barn, no yard (owner, 2026-10-08). The farm composite (ASSET-65..67)
     // replaces the lone barn later.
-    { type: 'farm',         count: 3, model: 'barn', fallbackModel: 'barnBroadside', siting: 'any',
+    { type: 'farm',         count: 2, model: 'barn', fallbackModel: 'barnBroadside', siting: 'any',
       tags: ['residence'] },
+    // FEAT-74 (owner, 2026-10-16): the third farm is the produce stall, its own farm POI on a lay-by —
+    // the farmhouse is imagined just off the road. Same class, same jobs, no yard.
+    { type: 'farm',         count: 1, model: 'produceStall', siting: 'any', tags: ['residence'] },
     { type: 'office',       count: 1, model: null, siting: 'any' },
     { type: 'school',       count: 1, model: null, siting: 'any' },
     { type: 'doctor',       count: 1, model: null, siting: 'any' },

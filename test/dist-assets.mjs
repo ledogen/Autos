@@ -15,6 +15,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { VEHICLE_MODELS } from '../data/vehicle-models.js'
+import { ITEMS } from '../data/items.js'
+import { POI_ROSTER, YARD_POOLS } from '../src/poi.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..')
@@ -48,12 +50,34 @@ for (const [url, keys] of urls) {
   else if (!covered(url)) fail(`${keys.join(', ')} → '${url}' is not copied into dist/ by vite.config.js (it will 404 on Pages)`)
 }
 
+// FEAT-74: every registry TAG has a consumer — a roster slot's modelPool or a yard pool. A tag nothing
+// names is a shipped model the game can never place (the produce stall sat that way for two months).
+// ORPHANS are deliberate and say why; delete the line when the consumer lands.
+const ORPHANS = {}   // FEAT-50 retired the last one: the gas pump's 'gasPump' tag is the gasPump slot's pool
+const named = new Set([...POI_ROSTER.map((s) => s.modelPool), ...Object.values(YARD_POOLS)].filter(Boolean))
+for (const [key, spec] of Object.entries(PROP_MODELS)) {
+  for (const tag of spec?.tags ?? []) {
+    if (!named.has(tag) && !ORPHANS[tag]) fail(`PROP_MODELS.${key} carries tag '${tag}', which no roster modelPool or YARD_POOLS names — it can never spawn`)
+  }
+}
+for (const tag of Object.keys(ORPHANS)) {
+  if (named.has(tag)) fail(`ORPHANS.${tag} now has a consumer — delete its line`)
+}
+
 // Sanity: the directory the glob reads is non-empty and holds the default vehicle. Guards a
 // mis-typed path in the plugin silently copying nothing.
 const glbs = existsSync(join(ROOT, 'assets/models'))
   ? readdirSync(join(ROOT, 'assets/models')).filter((f) => f.endsWith('.glb'))
   : []
 if (!glbs.includes('ranger.glb')) fail('assets/models/ranger.glb (default vehicle) missing from the model directory')
+
+// FEAT-122: every catalog item's thumbnail exists and the plugin enumerates assets/items/.
+if (!/readdirSync\(resolve\(root, 'assets\/items'\)\)/.test(cfg)) {
+  fail("vite.config.js no longer enumerates assets/items/ — inventory thumbnails will 404 on Pages")
+}
+for (const id of Object.keys(ITEMS)) {
+  if (!existsSync(join(ROOT, `assets/items/${id}.png`))) fail(`ITEMS.${id} has no thumbnail assets/items/${id}.png (render it: assets/models/src/items.py)`)
+}
 
 if (failed) {
   console.error(`\n[dist-assets] ${failed} failure(s)`)

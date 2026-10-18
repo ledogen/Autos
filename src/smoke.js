@@ -1,5 +1,8 @@
 /**
- * src/smoke.js — AUTOS tire smoke (FEAT — visual polish)
+ * src/smoke.js — AUTOS tire smoke (FEAT — visual polish), plus FEAT-51 hood steam
+ *
+ * Hood steam rides the same pool as a fifth emitter (see STEAM_* below): an overheating engine is
+ * the one non-tire thing that smokes, and a second system would be a second draw call for it.
  *
  * Grey burnout/wheelspin smoke, structurally identical to src/dust.js's instanced-billboard
  * puff pool, and built by its makeBillboardMesh (see that file's header for the rendering
@@ -53,6 +56,15 @@ const RAMP_TIME          = 0.5 // s — per-wheel intensity ramps linearly to it
                                // long, in both directions, so smoke builds up and dies down instead
                                // of popping instantly with the raw slip×load signal
 const LOAD_REF_G        = 9.81 // m/s² — used to derive nominal static per-wheel load from mass
+
+// FEAT-51 hood steam — a fifth emitter over the engine bay, driven by params._hoodSteam (0..1, set by
+// DamageModel.publish while the engine is over 110 °C). Same pool and shader as the tire smoke.
+const STEAM_RATE        = 28   // puffs/sec at full intensity
+const STEAM_COLOR       = 0xf4f4f4
+const STEAM_OPACITY     = 0.45
+const HOOD_Y            = 1.0  // m above ground — the Ranger's hood line
+const HOOD_BACK         = 0.35 // m behind the front axle — over the engine, not the grille
+const HOOD_HALF_W       = 0.55 // m — steam leaks along the whole hood seam, not one point
 
 export class TireSmokeSystem {
   /**
@@ -116,7 +128,7 @@ export class TireSmokeSystem {
       })
     }
     this._cursor = 0
-    this._emitAccum = [0, 0, 0, 0]
+    this._emitAccum = [0, 0, 0, 0, 0]   // four wheels + hood steam
     this._smoothIntensity = [0, 0, 0, 0]   // per-wheel ramped intensity (RAMP_TIME below)
     this._smokeColor = new THREE.Color()
     this._tmpColor = new THREE.Color()
@@ -135,11 +147,11 @@ export class TireSmokeSystem {
     return this._p[idx]
   }
 
-  _spawn (x, y, z, intensity, slipV, backX, backZ) {
+  _spawn (x, y, z, intensity, slipV, backX, backZ, steam = false) {
     const part = this._alloc()
     const p = this._params
 
-    this._smokeColor.set(p.smokeColor ?? 0xcfcfcf)
+    this._smokeColor.set(steam ? STEAM_COLOR : (p.smokeColor ?? 0xcfcfcf))
     const jitter = 0.85 + Math.random() * 0.3
     this._tmpColor.copy(this._smokeColor).multiplyScalar(jitter)
     part.r = this._tmpColor.r; part.g = this._tmpColor.g; part.b = this._tmpColor.b
@@ -149,7 +161,7 @@ export class TireSmokeSystem {
     part.age = 0
     part.life = LIFE_MIN + (LIFE_MAX - LIFE_MIN) * (0.4 + 0.6 * intensity) * (0.8 + Math.random() * 0.4)
     part.scale0 = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * Math.random()
-    part.peak = PEAK_OPACITY * Math.min(1, 0.35 + intensity)
+    part.peak = (steam ? STEAM_OPACITY : PEAK_OPACITY) * Math.min(1, 0.35 + intensity)
 
     part.x = x + (Math.random() - 0.5) * 0.3
     part.y = y + 0.08 + Math.random() * 0.12
@@ -320,6 +332,19 @@ export class TireSmokeSystem {
       }
       if (this._emitAccum[i] > 2) this._emitAccum[i] = 2
     }
+
+    // Hood steam: no slip kick — it rises off the hood and the truck drives out from under it.
+    const steam = params._hoodSteam ?? 0
+    if (steam > 0) {
+      this._emitAccum[4] += steam * STEAM_RATE * dt
+      let budget = 4
+      while (this._emitAccum[4] >= 1 && budget-- > 0) {
+        this._emitAccum[4] -= 1
+        const r = rotateByQuat((Math.random() * 2 - 1) * HOOD_HALF_W, HOOD_Y - params.cgHeight,
+          HOOD_BACK - L * wR, q)
+        this._spawn(px + r.x, py + r.y, pz + r.z, steam, 0, 0, 0, true)
+      }
+    } else this._emitAccum[4] = 0
 
     this._pack()
   }

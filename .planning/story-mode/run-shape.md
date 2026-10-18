@@ -215,8 +215,8 @@ Rough allocation of a **day** (16 clock-running hours), which is now the unit ra
 | Fuel, service, shopping | **clock paused**, ~2 real min | **none — no budget for it** |
 | **Total** | **16 h** | **16 h** |
 
-The log drag (main mission) is **4–8 min, longer trails deeper in**, and comes out of the region's day
-budget like any other job.
+The region boss (main mission; FEAT-103, design open) comes out of the region's day budget like any
+other job. *(The 4–8 min figure here was the log drag's, demoted to a toy 2026-10-12.)*
 
 ### The mission count
 

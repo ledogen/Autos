@@ -322,9 +322,9 @@ brakes — the player should not be asked to manage eight independent corners.
 | **Suspension springs** | front pair · rear pair | bump-stop PEAK force, per event (never integrated over time) + side impacts | spring rate falls, non-linearly (most of it in the last 30%) — bottoming out at **50% of stock, never zero** |
 | **Suspension dampers** | front pair · rear pair | high suspension displacement rate + side impacts | damping rate falls, non-linearly (most of it in the last 30%) |
 | **Brakes** | front pair · rear pair | ∫(brake torque × **wheel speed** × time) — the friction ENERGY the pads dissipate; **never** impact | max brake torque falls, non-linearly (most of it in the last 30%) |
-| **Engine** | one | front impact + coolant above 105 °C + slow f(rpm, torque, load), **multiplied by up to 20× on a blocked air filter** | available torque falls at all rpm (curve below) |
+| **Engine** | one | front impact + engine temp above 110 °C + slow f(rpm, torque, load), **multiplied by up to 20× on a blocked air filter** | available torque falls at all rpm (curve below) |
 | **Air filter** | one | the air the engine breathes — the same rpm × load the engine track integrates, since airflow is what carries the dust in | **nothing at all above 20%**, then engine wear multiplies hard. ~30 min of hard driving to replace. Cheap consumable; the asymmetry IS the mechanic |
-| **Radiator** | one | **impact only** | available cooling rate falls → coolant temperature climbs |
+| **Radiator** | one | **impact only** | available cooling rate falls → engine temperature climbs |
 | **Headlights** | left · right | front impact, much worse when the front bumper is compromised | flicker below 50%, permanently dark at 0% |
 | **Alignment** | ×4 per wheel | impact (front bumper protects front, rear bumper rear, each side protects its own) + **really hard bump-stop hits**, on a floor far above the spring track's so ordinary landings never touch it | random toe + camber offsets applied to the affected wheels, bounded |
 
@@ -442,13 +442,18 @@ brakes.** Effect: max available brake torque falls, non-linearly, most of it in 
 
 **Radiator.** **Impact only** — no wear track at all. Very sensitive once the front bumper is
 compromised. The radiator supplies a **cooling rate** to the engine; if that rate cannot carry the
-heat the engine is making at its current rpm and load, coolant temperature rises.
+heat the engine is making at its current rpm and load, engine temperature rises.
 
-- **30 °C** cold start → **90 °C** fully warmed with a healthy radiator.
-- **104 °C** — coolant begins to boil off. Once it has all boiled away, temperature rises freely.
-- **~105 °C** — engine damage begins.
-- Available cooling falls with radiator condition. **Below ~50%, a stock radiator can no longer
-  hold a stock engine at all rpm and load** — it still copes at idle or light load.
+**RE-RULED 2026-10-16 (owner, FEAT-51 — supersedes the 30/90/104/105 °C sketch and its boil-off):**
+no coolant level at all; radiator condition is the cooling capacity directly.
+
+- **100 °C** operating (thermostat, gauge mid). Gauge C = 90 °C, H = 110 °C.
+- **110 °C** — engine damage (0.1%/s per °C over) and temporary power loss (3%/°C) begin.
+- **50%** radiator holds the stock engine at full load just under the mark (109 °C); below it, it
+  cannot. **0%** holds idle at 109 °C and overheats under any real load.
+- Heat follows fuel (`fuelPowerW`, shared with FEAT-50); engine off soaks back to ambient overnight.
+- Warm-up/cool-off on game time (~24 s real from cold), overheat on real time (~30 s, 0% at full
+  load, 100 → 110 °C). Hood steam over 110 °C.
 
 This is **FEAT-51 (coolant temp)** arriving as part of this milestone rather than before it: build
 the honest temp signal and the FEAT-49 gauge needle together with the condition consequences.
@@ -547,11 +552,11 @@ owner's name for it.
 | 3. To-tags: destinations filtered by class | FEAT-100 | ✅ closed |
 | 4. Job supply: always-on sources, the budget, the lock rule | FEAT-101 | ✅ closed |
 | 5. Stranded motorist (+ the first slice of fetch) | FEAT-102 | ✅ closed |
-| 6. Job site POI (R1, on the wall) | FEAT-103 | open |
+| 6. Job site POI (R1, on the wall) | FEAT-103 | **design open** (owner, 2026-10-16) — it is the R1 boss, gated by good deeds; do not build |
 | 7. Minimal shop at the required classes | FEAT-104 | open |
-| Inventory — what the player owns this run; the one grant path for shop, rewards and finds | FEAT-122 | open — the owner's four questions first (slots vs mass, quick slots, the screen, felt mass) |
+| Inventory — what the player owns this run; the one grant path for shop, rewards and finds | FEAT-122 | built on `feature/feat-122`, all four questions answered (2026-10-16); merge pending |
 | Camp gear slots — what the shop sells renders at camp (items.md visible-kit rule) | FEAT-66 | open |
-| POI model pools — register the built models | FEAT-74 | open |
+| POI model pools — register the built models | FEAT-74 | open — produce stall is its own farm POI (2026-10-16) |
 | Placeholder-replacing models: office, doctor's office, job site, school | ASSET-69, ASSET-70, ASSET-71, ASSET-73 | open |
 
 **Mission types** (the delivery content carried forward from SM-2, plus demolition):
@@ -559,17 +564,17 @@ owner's name for it.
 | Type | Ticket | State |
 |---|---|---|
 | The offer board on the story map | FEAT-67 | open — built families live, remainder rides on each type |
-| Haul — loose cargo in the bed | FEAT-88 | open — firewood slice shipped; the per-load data the other yards need is left |
+| Haul — loose cargo in the bed | FEAT-88 | ✅ closed 2026-10-16 — haul is firewood, lumber, rock; the per-load data moved to FEAT-91 |
 | Courier — small items in the cab (point-to-point, multi-drop, fetch) | FEAT-89 | open — fetch's first slice shipped in FEAT-102 |
-| Haul yards — splitting yard R1, sawmill R2, quarry R3 | FEAT-91 | open — needs FEAT-88's per-load data. Ruled 2026-10-12: sawmill haul is loose boards, sawmill + quarry get a big pad |
+| Haul yards — splitting yard R1, sawmill R2, quarry R3 | FEAT-91 | open — carries the per-load data (from FEAT-88); rates hand-set per yard tier (2026-10-16). Ruled 2026-10-12: sawmill haul is loose boards, sawmill + quarry get a big pad |
 | Freight — strapped durable cargo | FEAT-96 | ✅ closed 2026-10-15 — the par-per-kg constant kept as a guess (owner) |
 | Fragile — strapped shock-sensitive cargo | FEAT-97 | **done** 2026-10-15 |
 | Demolition missions | FEAT-65 | open |
 | Paper route — throw and impact audio | FEAT-64 | open |
 | ~~Ratchet straps as an item for loose haul loads~~ | FEAT-110 | ✅ closed — cancelled 2026-10-14: straps are not an item |
-| Load verdicts — fits / warning / overload for the truck as configured | FEAT-112 | open — planned 2026-10-14 |
+| Load verdicts — fits / warning / overload for the truck as configured | FEAT-112 | **done** 2026-10-16 |
 | Delivery deadlines for every job; the mission clock on world time | FEAT-113 | **done** 2026-10-16 |
-| Haul — the player picks the quantity; yard rate bonuses | FEAT-114 | open — needs FEAT-112 and the haul tip/item ruling |
+| Haul — the player picks the quantity; yard rate bonuses | FEAT-114 | open — unblocked 2026-10-16: scored on the count delivered, no speed tip |
 | Bed upgrades as parts — roof rack, flatbed, stake bed, extended bed, light bar | FEAT-115 | open — needs FEAT-104, FEAT-112 |
 | Cargo protection — bubble wrap, furniture pad, heavy-duty pad | FEAT-116 | open — needs FEAT-97, FEAT-104 |
 | Pay grows with regional reputation, not the day | FEAT-117 | open — numbers from FEAT-69 |
@@ -584,9 +589,9 @@ Take the first item that is not blocked. Each one is a ticket with its own accep
 | 1 | ~~**FEAT-97** fragile~~ | done 2026-10-15 | — |
 | 2 | ~~**FEAT-118** camp pause~~ | done 2026-10-15 | — |
 | 3 | ~~**FEAT-113** deadlines + world-time clock~~ | done 2026-10-16 | — |
-| 4 | **FEAT-112** load verdicts | pure data and a card; unlocks FEAT-114 and FEAT-115 | the stock truck's soft and hard limits |
-| 5 | **FEAT-114** haul quantity + rate bonus | first user of the verdict limits | the haul tip/item ruling |
-| 6 | **FEAT-122** inventory | where purchases and FEAT-67's stubbed reward grants land; parallel to 4–5 (owner, 2026-10-16) | the owner's four open questions |
+| 4 | ~~**FEAT-112** load verdicts~~ | done 2026-10-16 | — |
+| 5 | **FEAT-114** haul quantity + rate bonus | first user of the verdict limits | — (ruled 2026-10-16) |
+| 6 | **FEAT-122** inventory | where purchases and FEAT-67's stubbed reward grants land; parallel to 4–5 (owner, 2026-10-16) | — built on `feature/feat-122`, merge pending |
 | 6b | **FEAT-104** minimal shop | the venue for every part and consumable | FEAT-122 |
 | 7 | **FEAT-115** bed upgrades, **FEAT-116** cargo protection | parts and consumables to sell | FEAT-104, FEAT-112 / FEAT-97 |
 | 8 | **FEAT-69** + **FEAT-117** economy re-cut and reputation | balance once the costs and the 7 / 6 / 5 shape are real | multi-day run data |
@@ -635,8 +640,8 @@ adopted — do not build them unprompted.
 | FEAT-43 | story region, remaining slices — confinement becomes the unlocked set, the diegetic boundary, closing the sandbox flags |
 
 FEAT-28 (the unlock primitive, now also carrying the per-region radius ladder) is in the free lane.
-FEAT-103's boss half (the R1 log drag, the R2 bridge meter) waits here; the ticket itself builds the
-job site as an ordinary place under SM-3.
+FEAT-103 is the R1 boss (owner, 2026-10-16): gated by good deeds, design open, so it lands here rather
+than as an ordinary SM-3 place.
 
 ## SM-5 — The World Turns (story delivery, horror)
 

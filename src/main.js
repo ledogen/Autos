@@ -76,6 +76,8 @@ import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: th
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
+import { InventorySystem } from './inventory.js'          // FEAT-122: what the player owns this run
+import { InventoryScreen } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
@@ -1753,8 +1755,8 @@ window.__car = () => ({ x: vehicleState.position.x, y: vehicleState.position.y, 
                         v: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) })
 
 // FEAT-49: gauge cluster (bottom-right canvas overlay). The odometer seeds to a random jalopy
-// mileage at boot and RE-seeds on every story-mode entry — "the next run's jalopy". Fuel/temp
-// needles are placeholders until the fuel (FEAT-50) and coolant (FEAT-51) models drive them.
+// mileage at boot and RE-seeds on every story-mode entry — "the next run's jalopy". The temp needle
+// reads damageModel's engine temperature (FEAT-51); fuel is a placeholder until FEAT-50.
 const gaugeCluster = new GaugeCluster(document.getElementById('cluster'))
 gaugeCluster.seedOdometer()
 
@@ -3152,6 +3154,21 @@ const economySystem = new EconomySystem({
   getRegion: () => 1,
 })
 
+// ── FEAT-122: the inventory ────────────────────────────────────────────────────────────────
+// One grant path (rewards now; the shop and finds later). Stowed kit is real load: every change
+// pushes its mass onto the chassis. start() empties it when the region goes live (story deps).
+const inventorySystem = new InventorySystem({
+  slotCap: () => RANGER_PARAMS.inventorySlots,
+  onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
+  onChange: () => inventoryScreen.render(),
+  effects: { coffee: () => daySystem.drinkCoffee() },
+})
+// Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
+const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
+  isSuppressed: () => menuStage.isActive(),
+  isBlocked: () => damageScreen.blocked,
+})
+
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
 // file owns the DOM (the mission-panel pattern).
 const dialogueSystem = new DialogueSystem()
@@ -3668,6 +3685,8 @@ missionSystem = new MissionSystem({
       result.letter = fragileGrade(result.health)
     }
     const s = economySystem.settle(result, mission)
+    // FEAT-122: the earned bonus goes in the truck — or waits on the swap prompt if it's full.
+    if (s.award) s.award.stowed = inventorySystem.grant(s.award.rewardId)
     if (mission?.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
     return s
   },
@@ -3839,9 +3858,11 @@ const _HAUL_PIECE = PROP_MODELS.firewoodBundleA.collision.size   // one bundle; 
  */
 function _offerVerdict (offer) {
   const sp = offerBoard.spec(offer)
-  if (sp?.bundles) return loadVerdict(TRUCK, { massKg: sp.massKg, size: _HAUL_PIECE, form: 'loose' })
+  // FEAT-122: stowed kit counts toward the same payload as the cargo (owner, 2026-10-16).
+  const massKg = (sp?.massKg ?? 0) + inventorySystem.stowedKg()
+  if (sp?.bundles) return loadVerdict(TRUCK, { massKg, size: _HAUL_PIECE, form: 'loose' })
   const row = sp?.load ? FREIGHT[sp.load] : null
-  return row ? loadVerdict(TRUCK, { massKg: sp.massKg, size: PROP_MODELS[row.model].collision.size, form: row.form }) : null
+  return row ? loadVerdict(TRUCK, { massKg, size: PROP_MODELS[row.model].collision.size, form: row.form }) : null
 }
 
 /**
@@ -4520,6 +4541,7 @@ function _sleepAtCamp () {
     // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
     // and on a worn engine it is also the morning's first piece of news about what you're driving.
     vehicleState.ignition = makeIgnitionState(IGN_OFF)
+    damageModel.engineTempC = DAMAGE_PARAMS.tempAmbientC   // FEAT-51: a night off is a cold engine
     // You wake WHERE YOU SLEPT: the truck is untouched and the dialogue is still up. The pad stays
     // dug for as long as you stay camped; "break camp" is what closes it AND un-digs the bench.
     _campUi = { ..._campUi, mode: back }
@@ -4715,6 +4737,8 @@ document.getElementById('cp-sleep-back')?.addEventListener('click', () => {
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
 document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
+// FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
+document.getElementById('cp-item')?.addEventListener('click', (e) => { inventoryScreen.request(); e.currentTarget.blur() })
 document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
 
 /**
@@ -4759,6 +4783,7 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
     + (bonus
       ? (award
         ? `<br><span class="mp-pay">Bonus: ${bonus.name} &check;</span>`
+          + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; Tab to make room</span>` : '')
         : `<br><span class="mp-dim">Bonus: ${bonus.name} missed (needed ${gateText(bonus.gate)})</span>`)
       : '')
 }
@@ -4921,7 +4946,7 @@ function _renderMissionUI () {
       // (mission.js, `rangersim-run-export/2`) writes them as par_s/margin_s and the whole runs/
       // calibration corpus is keyed on that. Display change only; do not prune the fields.
       // Then the money rows the offer card set up — Base pay answered, the tip beside it, the
-      // offer's bonus earned or missed (FEAT-67; the grant itself is stubbed). See _payRows.
+      // offer's bonus earned or missed (FEAT-67; the item lands in the FEAT-122 inventory). See _payRows.
       body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
@@ -5651,6 +5676,8 @@ moonSystem.addGui(_skyFolder)   // moon lives under Sky / Lighting — same look
 daySystem.addGui(_gui)
 // FEAT-53: economy folder — wallet/deeds/tier read-outs + the PROVISIONAL k and cap tunables.
 economySystem.addGui(_gui)
+// FEAT-122: grant any catalog item without running a mission.
+inventorySystem.addGui(_gui)
 // FEAT-45: camping folder — the live grade at the truck plus the site tunables. The one action is a
 // shortcut INTO the dialogue (skipping the 30-min chore and the carve), so the sleep flow can be
 // exercised without hunting for a legal site first.
@@ -6339,6 +6366,7 @@ const storySystem = new StorySystem({
     daySystem.start()   // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
+    inventorySystem.start()          // FEAT-122: items die with the run (SM-INV-8/9)
     // …and a fresh truck. Entry flips the mode to 'story' BEFORE it reseats, so the seat's
     // free-roam damage wipe (_reseatTruckAtSpawnInner) is skipped and a truck broken in free roam
     // drove straight into the new run. Per-run state (SM-INV-8): the run starts here, so does the truck.
@@ -6561,6 +6589,7 @@ async function _startStoryFromModal () {
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
+  damageModel.engineTempC = DAMAGE_PARAMS.tempAmbientC   // FEAT-51: ...and a cold engine
   storySystem.enter(seed)
 }
 // Quick Job launcher — the beta mission generator, now surfaced only inside story mode.
@@ -6767,6 +6796,7 @@ document.addEventListener('keydown', e => {
   if (seedModal && seedModal.style.display === 'flex') { _cancelSeedModal(); return }
   // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
   if (damageScreen.isOpen) { damageScreen.close(); return }
+  if (inventoryScreen.isOpen) { inventoryScreen.close(); return }   // FEAT-122: same rule
   // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
   // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
   // settings page and is otherwise inert until the world is handed back.
@@ -6830,7 +6860,7 @@ function _captureSession () {
     damage: damageModel ? {
       enabled: !!DAMAGE_PARAMS.enabled,
       condition: Object.fromEntries(Object.entries(damageModel.condition).map(([k, v]) => [k, +v.toFixed(3)])),
-      flat: damageModel.flat.slice(),
+      flat: damageModel.flat.slice(), engineTempC: +damageModel.engineTempC.toFixed(1),
       toeOffsetDeg: arr(damageModel.toeOffsetDeg, 2), camberOffsetDeg: arr(damageModel.camberOffsetDeg, 2),
     } : null,
     story: storySystem ? {
@@ -6966,6 +6996,7 @@ function loop () {
   }
   damageHUD.update(frameTime)   // SM-3 diagnostic readout — returns on the first line while hidden
   damageScreen.update(frameTime)   // FEAT-90: alert detection + icon tint at 10 Hz
+  inventoryScreen.update()         // FEAT-122: the park zone's lock; closes when the truck drives off
   _fragileBlink(frameTime)   // FEAT-97: the load's red hit blink fading out
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
@@ -7060,7 +7091,7 @@ function loop () {
     // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
-    damageModel.tireCondCap = tireCondCap(TRUCK, _freight?.massKg ?? 0)   // FEAT-112: an overloaded bed pops tires
+    damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
@@ -7652,6 +7683,7 @@ function loop () {
   // hidden while the map is open, live in chase/hood/freecam alike. update() early-outs when hidden.
   gaugeCluster.setVisible(!map2d.isOpen())
   gaugeCluster.setIgnition(keyPosition(vehicleState.ignition))
+  gaugeCluster.setCoolantTemp(damageModel.tempGaugeFrac())   // FEAT-51
   // FEAT-50: free roam (and the lab, scenarios) can never run dry — the tank stops at a floor. Set
   // every frame from the mode rather than at each transition, so no entry/exit path can miss it.
   vehicleState.fuel.floorGal = _gameMode === 'story' ? 0 : RANGER_PARAMS.fuelTankGal * RANGER_PARAMS.fuelFreeRoamFloorFrac

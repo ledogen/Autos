@@ -145,8 +145,9 @@ for (let seed = 1; seed <= SEEDS; seed++) {
 console.log(`       ${dressed} yards over ${SEEDS} seeds, ${props} props (${(props / dressed).toFixed(2)} each); ` +
     `count histogram 0..6: ${hist.join(' ')}`)
 const list = a => `${a.length}: ${a.slice(0, 6).join(', ')}`
-check('every residence and every farm on its farm pad is dressed (10 a region), nothing without a yard is',
-    dressed === SEEDS * 10 && bad.bareGround.length === 0, `${dressed} dressed; bare ${list(bad.bareGround)}`)
+// 9 a region: 5 residences + mom + Larry + the 2 barn farms. The produce-stall farm has no yard (FEAT-74).
+check('every residence and every farm on its farm pad is dressed (9 a region), nothing without a yard is',
+    dressed === SEEDS * 9 && bad.bareGround.length === 0, `${dressed} dressed; bare ${list(bad.bareGround)}`)
 check('3–6 props per house yard, 5–9 per farm yard (the model\'s yardCount)', bad.count.length === 0, list(bad.count))
 check('every prop stands wholly on the carved pad', bad.offPad.length === 0, list(bad.offPad))
 check('no prop overlaps the POI model\'s collision boxes', bad.inModel.length === 0, list(bad.inModel))
@@ -155,23 +156,25 @@ check('every prop is on the road side of its model', bad.backYard.length === 0, 
 check('every POI model stands on graded ground (pad + the carve\'s rim band)', bad.modelOffPad.length === 0, list([...new Set(bad.modelOffPad)]))
 check('…and none reaches past the pad toward the road', bad.modelRoadSide.length === 0, list([...new Set(bad.modelRoadSide)]))
 check('the barn is on the board (the farm model)', modelsSeen.has('barn'))
+check('the produce stall is on the board (FEAT-74: its own farm)', modelsSeen.has('produceStall'))
 
 // ── FEAT-105: farms take farm pads; a region without one falls back to the broadside barn ─────────
 {
     let onBig = true, fallback = true, bare = true, full = true
     for (let seed = 1; seed <= 40; seed++) {
-        const farms = build(seed).filter(q => q.type === 'farm')
-        onBig &&= farms.length === 3 && farms.every(q => q.padKind === 'farm' && q.modelKey === 'barn')
+        // FEAT-74: the produce-stall farm is not a barn and never wants a farm pad — leave it out here.
+        const farms = build(seed).filter(q => q.type === 'farm' && q.modelKey !== 'produceStall')
+        onBig &&= farms.length === 2 && farms.every(q => q.padKind === 'farm' && q.modelKey === 'barn')
         const none = build(seed, 0)
-        const f0 = none.filter(q => q.type === 'farm')
+        const f0 = none.filter(q => q.type === 'farm' && q.modelKey !== 'produceStall')
         full &&= none.length === POI_ROSTER.reduce((n, s) => n + s.count, 0)
-        fallback &&= f0.length === 3 && f0.every(q => q.padKind === 'std' && q.modelKey === 'barnBroadside')
+        fallback &&= f0.length === 2 && f0.every(q => q.padKind === 'std' && q.modelKey === 'barnBroadside')
         bare &&= f0.every(q => q.satellites.length === 0)
     }
     check('with farm pads in the pool, every farm stands on one, wearing the gable-to-road barn', onBig)
     check('with none, every farm falls back to a lay-by and the broadside barn — the roster stays full', fallback && full)
     check('…and a fallback barn has no yard, so no clutter', bare)
-    const lay = build(3).filter(q => q.type !== 'farm' && q.type !== 'generalStore')
+    const lay = build(3).filter(q => (q.type !== 'farm' || q.modelKey === 'produceStall') && q.type !== 'generalStore')
     check('no class but the farm and the general store ever takes a farm pad', lay.every(q => q.padKind === 'std'))
 }
 
