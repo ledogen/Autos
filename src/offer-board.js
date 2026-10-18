@@ -69,6 +69,20 @@ const rngFor = (key) => mulberry32(djb2(key))
 
 /** Can a `type` post this thing — as its courier giver (`pools`) or as a fetcher (`fetchBy`)? */
 const postsThing = (t, type) => t.pools.includes(type) || !!t.fetchBy?.includes(type)
+
+/** Every built thing a source `type` can post (empty for a non-source). */
+const postable = (type) => {
+    const src = SOURCES[type]
+    return src ? THINGS.filter(t => postsThing(t, type) && src.families.includes(t.family) && BUILT_FAMILIES.has(t.family)) : []
+}
+
+/**
+ * BUG-88: how many times planDistinct re-rolls a newcomer that duplicates an older sibling's thing or
+ * finds no destination left. Each attempt is one route plan; past this the slot shows nothing.
+ * ponytail: blind re-rolls. The tackle shop's worst case (9 of 16 things are fetches from one store)
+ * leaves (9/16)^16 ≈ 1e-4 of slots empty; drawing without replacement fixes that if it ever shows.
+ */
+const RE_ROLLS = 16
 const pick = (r, list) => list[Math.floor(r() * list.length)]
 
 /** Weighted pick over an object of { key: weight }, driven by one uniform draw `u`. */
@@ -180,11 +194,7 @@ export class OfferBoard {
     }
 
     /** Does this type have anything it could post — a source row and at least one built thing? */
-    _postsAnything (type) {
-        const src = SOURCES[type]
-        return !!src && THINGS.some(t => postsThing(t, type) && src.families.includes(t.family)
-            && BUILT_FAMILIES.has(t.family))
-    }
+    _postsAnything (type) { return postable(type).length > 0 }
 
     /**
      * DESYNC AT WORLD START: a slot's first offer is given a random AGE, uniform over its own rolled
@@ -418,21 +428,29 @@ export class OfferBoard {
      * destKind is null for papers (the paper route picks its own customers). destPick is the uniform
      * number the mission planner uses to choose among the destination POIs it can actually reach;
      * placeName is the roadside name, rolled always, used whenever no POI destination fits.
-     * to is the thing's destination classes (FEAT-100): a tagged thing always goes to a POI.
+     * to is the thing's destination classes (FEAT-100): a tagged thing always goes to a POI, unless
+     * its `to` names 'roadside' (BUG-88).
      */
     spec (offer) {
         if (!offer) return null
-        if (offer._spec !== undefined) return offer._spec
-        const src = SOURCES[offer.type]
-        const r = rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:spec`)
-        const things = THINGS.filter(t => postsThing(t, offer.type)
-            && src.families.includes(t.family) && BUILT_FAMILIES.has(t.family))
-        if (!things.length) return (offer._spec = null)
+        if (offer._spec === undefined) offer._spec = this._rollSpec(offer, 0)
+        return offer._spec
+    }
+
+    /**
+     * Roll an offer's content on attempt `n`. Attempt 0 is the offer as first posted; planDistinct
+     * asks for n ≥ 1 when the newcomer duplicates a sibling (BUG-88), each on its own streams.
+     */
+    _rollSpec (offer, n) {
+        const stream = (what) => rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:${what}` + (n ? `:${n}` : ''))
+        const r = stream('spec')
+        const things = postable(offer.type)
+        if (!things.length) return null
         // FAMILY FIRST, then the thing (owner, 2026-10-12: too little freight): every family a source
         // posts gets an even share there, however many phrases each has. Its own stream, so the
         // `spec` draws below — destination, place name, bonus — keep their order.
         const families = [...new Set(things.map(t => t.family))]
-        const family = pick(rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:family`), families)
+        const family = pick(stream('family'), families)
         const thing = pick(r, things.filter(t => t.family === family))
         const [lo, hi] = thing.massKg
         const m = lo + (hi - lo) * r()
@@ -463,12 +481,14 @@ export class OfferBoard {
         let bundles = null
         if (thing.family === 'haul') {
             const [bLo, bHi] = HAUL_BUNDLES
-            bundles = bLo + Math.floor(rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:bundles`)() * (bHi - bLo + 1))
+            bundles = bLo + Math.floor(stream('bundles')() * (bHi - bLo + 1))
         }
         // FEAT-102: a FETCH when this source is one of the thing's fetchers — go to a pickup (a POI of
         // `from`), park there, bring it back. Otherwise the courier shape, as built.
         const fetch = !!thing.fetchBy?.includes(offer.type)
-        return (offer._spec = {
+        // A `to` naming 'roadside' (BUG-88) keeps the generic POI-or-roadside roll, just narrowed.
+        const strictTo = !!thing.to && !thing.to.includes('roadside')
+        return {
             deadlineSlack: thing.deadlineSlack ?? DEADLINE_SLACK[thing.family],   // FEAT-113
             shape: fetch ? 'fetch' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
             family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
@@ -476,13 +496,13 @@ export class OfferBoard {
             // ÷ HAUL_PAR_SLACK: the haul's par is that much longer and pay rides par (data/offers.js).
             payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1)
                 * (thing.load ? 1 + FREIGHT_PAY_PER_KG * massKg : 1),   // FEAT-96: freight's weight bonus on pay
-            destKind: papers ? null : (thing.to || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
+            destKind: papers ? null : (strictTo || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
             // FEAT-97: a fragile load's tolerance and hit sound (src/fragile.js) — null otherwise.
             fragile: thing.family === 'fragile'
                 ? { shockFloorG: thing.shockFloorG, breakG: thing.breakG, sound: thing.sound } : null,
-        })
+        }
     }
 
     /**
@@ -498,15 +518,16 @@ export class OfferBoard {
     }
 
     /**
-     * Plan an offer's route so that NO TWO OFFERS AT A POI ARE THE SAME JOB (owner, 2026-09-27: two
-     * identical takeout orders to the gas station). Two offers are the same job when they carry the
-     * same thing AND the same reward AND go to the same place; the food vendor posts only takeout,
-     * so for it the destination is what has to differ.
+     * Plan an offer's route so that NO TWO OFFERS AT A POI LOOK ALIKE (owner, 2026-10-16, BUG-88 —
+     * widening 2026-09-27's "same thing AND reward AND place"). A newcomer may not repeat an older
+     * sibling's THING (unless its source posts only one — the food vendor's takeout, the yard's
+     * firewood), nor its DESTINATION: a POI (a fetch's is its pickup) or a roadside place name.
      *
-     * The rule is resolved oldest-first: each older sibling is planned first (memoised), and an
-     * offer whose thing + reward match a sibling's must avoid that sibling's destination — its
-     * planner is handed those POI ids to exclude, and a roadside drop re-rolls its place name until
-     * it differs. Older offers therefore never change under the player; only the newcomer yields.
+     * Resolved oldest-first: each older sibling is planned first (memoised), so older offers never
+     * change under the player; only the newcomer yields. A destination is avoided by handing the
+     * planner the used POI ids, and a roadside name re-rolls until it differs. A repeated thing, or
+     * a newcomer left with no route (a strict wish with every candidate used, or none in reach),
+     * CYCLES to a new job: its spec is re-rolled on attempt n's streams, up to RE_ROLLS times.
      *
      * @param {object} offer
      * @param {(offer:object, excludePoiIds:Set<string>) => object|null} planOne — the mission
@@ -515,19 +536,25 @@ export class OfferBoard {
      */
     planDistinct (offer, planOne) {
         if (offer.route !== undefined) return offer.route
-        const sp = this.spec(offer)
-        if (!sp) return (offer.route = null)
-        const same = []
+        if (!this.spec(offer)) return (offer.route = null)
+        const sibs = []
         for (const o of this.olderSiblings(offer)) {
-            const r = this.planDistinct(o, planOne), so = this.spec(o)
-            if (r && so && so.thingId === sp.thingId
-                && (so.bonus?.rewardId ?? null) === (sp.bonus?.rewardId ?? null)) same.push(r)
+            const r = this.planDistinct(o, planOne)
+            if (r) sibs.push({ r, sp: this.spec(o) })
         }
-        const m = planOne(offer, new Set(same.map(r => r.endPoiId).filter(Boolean)))
+        const usedThings = new Set(sibs.map(x => x.sp.thingId))
+        const usedPois = new Set(sibs.map(x => x.r.endPoiId).filter(Boolean))
+        const usedNames = new Set(sibs.filter(x => !x.r.endPoiId).map(x => x.r.placeName))
+        const oneThing = postable(offer.type).length === 1
+        let m = null
+        for (let n = 0; n < RE_ROLLS && !m; n++) {
+            if (n) offer._spec = this._rollSpec(offer, n)
+            if (!oneThing && usedThings.has(offer._spec.thingId)) continue
+            m = planOne(offer, usedPois)
+        }
         if (m && !m.endPoiId) {
-            const used = new Set(same.filter(r => !r.endPoiId).map(r => r.placeName))
-            let name = sp.placeName
-            for (let n = 1; used.has(name) && n <= 32; n++) {
+            let name = offer._spec.placeName
+            for (let n = 1; usedNames.has(name) && n <= 32; n++) {
                 name = this._placeName(rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:place:${n}`))
             }
             m.placeName = name
@@ -540,7 +567,8 @@ export class OfferBoard {
      * goes to any other POI on its DEST_POI_CHANCE roll, else to a roadside spot. A fetch wishes for
      * its pickup (see below). A thing with a
      * `to` (FEAT-100) goes only to a POI carrying one of those tags, and is STRICT: no candidate in
-     * reach means no route, never a roadside drop — roadside spots are for generic things only.
+     * reach means no route, never a roadside drop. A `to` that also names 'roadside' (BUG-88) keeps
+     * the generic DEST_POI_CHANCE roll, with its POI side narrowed to those tags.
      *
      * @param {object} offer
      * @param {object[]} pois — the roster (PoiSystem.list())
@@ -554,7 +582,9 @@ export class OfferBoard {
         const want = sp.shape === 'fetch' ? sp.from : sp.to
         const fits = (q) => q.id !== offer.poiId && !exclude.has(q.id)
             && (!want || want.some(t => q.tags?.includes(t)))
-        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict: !!want, fetch: sp.shape === 'fetch' }
+        // A `to` that names 'roadside' is not strict: no POI in reach drops it at a roadside spot.
+        const strict = !!want && !want.includes('roadside')
+        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict, fetch: sp.shape === 'fetch' }
     }
 
     /** A seeded stream for the mission planner's own rolls on this offer (route determinism). */

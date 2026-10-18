@@ -35,7 +35,7 @@ import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'
 import { PAD_RIM_HOLD } from '../src/road-carve.js'
 import { MissionSystem, REGION_MARGIN } from '../src/mission.js'
 import { OfferBoard } from '../src/offer-board.js'
-import { SOURCES } from '../data/offers.js'
+import { SOURCES, THINGS } from '../data/offers.js'
 import { mulberry32 } from '../src/seed.js'
 import { computePar } from '../src/par.js'
 import { bakeRoute, advanceProgress } from '../src/gps.js'
@@ -411,29 +411,31 @@ function boardRig (ms, nowH = 6) {
             n++
             const r = plan(o), to = board.spec(o).to
             if (!r) bad.push(W.poi.list().find(q => q.id === id)?.type)
-            // FEAT-100: a tagged thing always ends at a matching class.
+            // FEAT-100: a tagged thing always ends at a matching class — or roadside, when its `to`
+            // names 'roadside' (BUG-88).
             else if (to) {
                 tagged++
                 shortest = Math.min(shortest, r.distance)
                 const end = W.poi.list().find(q => q.id === r.endPoiId)
-                if (!end || !to.some(x => end.tags.includes(x))) tagBad.push(board.spec(o).thingId)
+                if (end ? !to.some(x => end.tags.includes(x)) : !to.includes('roadside')) tagBad.push(board.spec(o).thingId)
             }
         }
     }
-    // …and NO TWO LIVE OFFERS AT A POI ARE THE SAME JOB (owner, 2026-09-27): same thing + same
-    // reward + same destination is a duplicate. Checked on every POI at every sampled time.
+    // …and NO TWO LIVE OFFERS AT A POI LOOK ALIKE (owner, 2026-10-16, BUG-88): no shared
+    // destination, and no shared thing where the source posts more than one. Every POI, every sample.
     let dups = 0, pairs = 0
     for (let t = 6; t < 6 + 24 * 3; t += 0.5) {
         for (const id of board.sources()) {
-            const sig = board.offers(id, t).filter(o => board.spec(o).family !== 'papers').map(o => {
-                const r = plan(o), sp = board.spec(o)
-                return `${sp.thingId}|${sp.bonus?.rewardId ?? ''}|${r?.endPoiId ?? 'road:' + r?.placeName}`
-            })
-            pairs += sig.length
-            if (new Set(sig).size !== sig.length) dups++
+            const type = W.poi.list().find(q => q.id === id).type
+            const oneThing = THINGS.filter(x => x.pools.includes(type) || x.fetchBy?.includes(type)).length === 1
+            const live = board.offers(id, t).filter(o => board.spec(o).family !== 'papers' && plan(o))
+            const dest = live.map(o => o.route.endPoiId ?? 'road:' + o.route.placeName)
+            const thing = live.map(o => board.spec(o).thingId)
+            pairs += live.length
+            if (new Set(dest).size !== dest.length || (!oneThing && new Set(thing).size !== thing.length)) dups++
         }
     }
-    check('no two live offers at a POI are the same job (thing + reward + destination)', dups === 0,
+    check('no two live offers at a POI share a destination, or a thing (multi-thing sources)', dups === 0,
         `${dups} duplicate sets over ${pairs} offer-samples`)
     check('every delivery offer a source posts plans a route (no route-less cards)', bad.length === 0,
         `${bad.length}/${n} failed: ${[...new Set(bad)].join(', ')}`)

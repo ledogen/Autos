@@ -1,7 +1,8 @@
 ---
 id: BUG-88
 type: bug
-status: open
+status: closed
+closed: 2026-10-17
 severity: minor
 opened: 2026-10-16
 source: found by story-poi.mjs §7a on feature/feat-74 (the roster change moved the board's dice onto it)
@@ -38,5 +39,21 @@ What should the younger slot do? Options:
 
 ## Acceptance
 
-- [ ] story-poi §7a green on feature/feat-74's roster (seed 6).
-- [ ] No route-less card on any source, over several days of turnover.
+- [x] story-poi §7a green on feature/feat-74's roster (seed 6).
+- [x] No route-less card on any source, over several days of turnover.
+
+## Resolution (2026-10-17)
+
+Owner ruling 2026-10-16: neither option as written. **The destination matters more than the thing**,
+and a duplicate cycles to a new job.
+
+- `planDistinct` (`src/offer-board.js`) now enforces: a newcomer may not repeat an older sibling's
+  destination (a POI, a fetch's pickup, or a roadside name), nor its thing unless the source posts
+  only one (takeout, firewood). A repeated thing, or no route left, re-rolls the spec on attempt-n
+  streams (`_rollSpec`, up to `RE_ROLLS` = 16). Attempt 0 is the offer as first posted, so every
+  existing offer is unchanged until a collision.
+- This retires 2026-09-27's "a different reward is a different job".
+- The tackle shop gets its own courier goods (dry flies, spinners and spoons, lead sinkers, 12 lb
+  mono, nightcrawlers, a landing net, a tackle box) to `['residence', 'roadside']`. A `to` that names
+  'roadside' is the generic POI-or-roadside roll, narrowed to those tags (not strict).
+- Gates: offer-board §13b and §16, story-poi §7a. All 14 affected gates green.
