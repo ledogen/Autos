@@ -1,7 +1,7 @@
 ---
 id: FEAT-50
 type: feature
-status: open
+status: done
 opened: 2026-07-30
 severity: minor
 ratified: 2026-08-01 — "there should 100% be fuel in the game and gas stations" (owner)
