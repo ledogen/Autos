@@ -1191,9 +1191,44 @@ common, and quick, where the service station is expensive, rare, and costs hours
 opposite of the air filter, which does nothing until it does. Fuel teaches the player to read the
 cluster *before* the subtle tracks start mattering. Keep that contrast; it is doing free work.
 
+**Owner rulings 2026-10-16 (FEAT-50 shipped):**
+- **Pumps and stations are two places.**
+  - A **gas pump** is the lone roadside island (ASSET-14) with no storefront: it only sells fuel. It
+    is plentiful (**4 per region**, sited for coverage) because the player fills up often. It posts
+    no work and is never a delivery destination.
+  - A **gas station is the convenience store**: a general-store variant with its own stock (for
+    sale) and its own missions. It has two zone kinds, **pump zones** beside its islands and a
+    **storefront lot**, the way the general store has its stalls. There is **1 per region**.
+  - The station's model (ASSET-13), its pump zones and its shop arrive together. Until then it is a
+    cube that only posts work.
+- **The burn is a real table.** It runs over rpm × pedal, built from engine data (`data/engines.js`,
+  the 3.0 L Vulcan V6 as the baseline). Other vehicles' engines and engine upgrades are other or
+  patched entries with their own tables.
+  - The pedal feeds it directly, so a light foot burns less.
+  - A **×7 gameplay scale** sits over the honest table: flat-out driving empties the 16.5 gal tank
+    in about 10–18 real minutes.
+  - Fuel costs **$0.50/gal**, as a parameter.
+- **The pump visit:**
+  - Pull alongside the island into a zone and pull the handbrake: the pump opens.
+  - **Hold F** to pump, the whole time. A full tank takes **10 s**.
+  - The **handbrake down** pays what is on the counter, so a partial fill is the player's choice.
+  - The gallons and dollars counters roll in real time. This is the stop players repeat most, so it
+    gets polish and juice.
+- **Running dry** shows nothing until the player **parks**. Then a **Recovery** chip appears in the
+  right-hand icon column.
+  - Today its only option is a **tow to the nearest place that sells fuel**, available only when out
+    of fuel. It costs **(flat + per-km) × dayTier** and burns clock hours.
+  - If you can't afford it, the run ends ("you broke down").
+  - An anytime tow and a tow to the service station come later, as more rows in the same card.
+- **The low-fuel sputter** is specified, not built (FEAT-120): about 2 real minutes of warning,
+  roughly one stumble per 10 s and growing more frequent, each a matching torque loss.
+
 **Open:** tank capacity as a jalopy/part difference (a bigger tank is described-not-scored territory,
 SM-INV-10); whether a **jerry can** is a stowed tool with real mass (`items.md` §2 rules say it would
-be); and whether fuel price varies by station or only by run age.
+be — the *Emergency gas* reward's grant is still stubbed); and whether fuel price varies by station or
+only by run age. Also owed: a **pedal-aware shift schedule**. FEAT-23's automatic box upshifts at a
+fixed 5400 rpm whatever the pedal, so today a gentle driver saves only along the pedal axis and can
+never short-shift into a cheap low-rpm cell. The fuel table is ready for that schedule to read.
 
 ### The car: jalopy + parts [RATIFIED premise, DEFAULT details]
 

@@ -39,7 +39,7 @@
 
 import {
     THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, BONUS_PAY_MULT, GATE_WEIGHTS,
-    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, DEADLINE_SLACK,
+    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, DEADLINE_SLACK, NOT_A_DESTINATION,
 } from '../data/offers.js'
 import {
     FIRST_NAMES, FEMALE_CHANCE, LAST_NAMES, NICKNAMES, NICKNAME_CHANCE, POI_ADJECTIVES,
@@ -580,7 +580,7 @@ export class OfferBoard {
         // A FETCH (FEAT-102) wishes for its PICKUP — a POI of `from`, strictly — and says so, so the
         // planner returns the same way and settles back here.
         const want = sp.shape === 'fetch' ? sp.from : sp.to
-        const fits = (q) => q.id !== offer.poiId && !exclude.has(q.id)
+        const fits = (q) => q.id !== offer.poiId && !exclude.has(q.id) && !NOT_A_DESTINATION.has(q.type)
             && (!want || want.some(t => q.tags?.includes(t)))
         // A `to` that names 'roadside' is not strict: no POI in reach drops it at a roadside spot.
         const strict = !!want && !want.includes('roadside')

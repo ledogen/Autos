@@ -755,22 +755,43 @@ function boardRig (ms, nowH = 6) {
         const picks = list.filter(q => q.type === slot.type)
         if (slot.siting !== 'coverage') { picks.forEach(q => taken.add(q.id)); continue }
         const type = slot.type
+        const floor = POI_PARAMS[slot.sepParam ?? 'poiStationMinSep']
+        const pool = layBys.filter(q => !taken.has(q.id))
+        // Best achievable PAIR over the pads still free at this slot, under the same floor.
+        const bestPair = (minSep) => {
+            let best = Infinity
+            for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) {
+                if (Math.hypot(pool[i].x - pool[j].x, pool[i].z - pool[j].z) < minSep) continue
+                best = Math.min(best, worstCover(pool[i], pool[j]))
+            }
+            return best
+        }
+        if (picks.length > 2) {
+            // FEAT-50: the four gas pumps — GREEDY farthest-point, not exhaustive. What it must do:
+            // the full count, every pair clear of the floor, and coverage strictly better than the
+            // best any two pads could manage (the point of having four).
+            const gotN = layBys.reduce((w, q) => Math.max(w, Math.min(...picks.map(p => Math.hypot(q.x - p.x, q.z - p.z)))), 0)
+            let minSep = Infinity
+            for (let i = 0; i < picks.length; i++) for (let j = i + 1; j < picks.length; j++)
+                minSep = Math.min(minSep, Math.hypot(picks[i].x - picks[j].x, picks[i].z - picks[j].z))
+            const best2 = bestPair(POI_PARAMS.poiStationMinSep)
+            picks.forEach(q => taken.add(q.id))
+            check(`${type} ×${slot.count} all placed`, picks.length === slot.count, `${picks.length}`)
+            check(`${type}s clear their anti-clustering floor`, minSep >= floor - 1e-6, `${minSep.toFixed(0)} m vs ${floor} m`)
+            check(`${type}s cover better than the best possible pair`, gotN < best2, `${gotN.toFixed(0)} m vs pair ${best2.toFixed(0)} m`)
+            console.log(`       ${type}: ${picks.length}, closest two ${minSep.toFixed(0)} m apart, worst drive to one ${gotN.toFixed(0)} m`)
+            continue
+        }
         const pair = picks
         const sep = Math.hypot(pair[0].x - pair[1].x, pair[0].z - pair[1].z)
         const got = worstCover(pair[0], pair[1])
-        // Best achievable over the pads still free at this slot, under the same floor.
-        let best = Infinity
-        const pool = layBys.filter(q => !taken.has(q.id))
-        for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) {
-            if (Math.hypot(pool[i].x - pool[j].x, pool[i].z - pool[j].z) < POI_PARAMS.poiStationMinSep) continue
-            best = Math.min(best, worstCover(pool[i], pool[j]))
-        }
+        const best = bestPair(floor)
         picks.forEach(q => taken.add(q.id))
         check(`${type} pair minimises the worst drive to the nearest one`,
             got <= best + 1e-6, `got ${got.toFixed(0)} m, best available ${best.toFixed(0)} m`)
         check(`${type} pair clears the anti-clustering floor`,
-            sep >= POI_PARAMS.poiStationMinSep - 1e-6,
-            `${sep.toFixed(0)} m vs ${POI_PARAMS.poiStationMinSep} m`)
+            sep >= floor - 1e-6,
+            `${sep.toFixed(0)} m vs ${floor} m`)
         console.log(`       ${type}: ${sep.toFixed(0)} m apart, worst drive to one ${got.toFixed(0)} m`)
     }
 
@@ -779,10 +800,10 @@ function boardRig (ms, nowH = 6) {
     // lie to the player.
     //
     // Larry joined the givers when FEAT-61 Phase E2 landed: his brake opens the PAPER ROUTE, not an
-    // errand, so he passes the test this check is actually making. The day fuel or repairs ship,
-    // their types come off the false side of this line the same way — by having something to say.
+    // errand, so he passes the test this check is actually making.
     // FEAT-67: the flag is DERIVED from the board's source table — a type posts work iff it has a
-    // SOURCES row. The gas station, tackle shop and mom's house do not.
+    // SOURCES row. The gas station has one (it is a store, 2026-09-26); the gas PUMP, the tackle
+    // shop and mom's house do not — a pump's brake opens the pump (FEAT-50), never an offer.
     const GIVERS = new Set(Object.keys(SOURCES))
     check('exactly the markers with a mechanic source jobs',
         list.every(q => q.jobs === GIVERS.has(q.type)),

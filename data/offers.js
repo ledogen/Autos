@@ -321,6 +321,11 @@ export const REWARDS = [
 //   lockH      (optional) lock length after a completion or cancel, replacing the fresh full expiry.
 //   families   which families this source may post
 
+// FEAT-50: places no job ever ends at. A lone gas pump has no one to hand anything to — it sells fuel
+// and nothing else (owner, 2026-10-16) — so a generic delivery must never roll one as its drop-off.
+// src/offer-board.js destWish filters on it.
+export const NOT_A_DESTINATION = new Set(['gasPump'])
+
 export const SOURCES = {
     // ── always-on ──
     // Larry's paper route never expires and has no timer; after a round (or a cancel) he is

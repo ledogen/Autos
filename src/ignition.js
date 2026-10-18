@@ -50,6 +50,8 @@ export function makeIgnitionState (state = RUNNING) {
 export function catchTime (vehicleState, params) {
   const health = Math.max(0, Math.min(1, vehicleState.engineHealth ?? 1))
   if (health <= 0) return Infinity
+  // FEAT-50: an empty tank cranks forever too — the starter turns, nothing fires (src/fuel.js).
+  if (vehicleState.fuel && vehicleState.fuel.gal <= 0) return Infinity
   const fresh = params.ignitionCatchTime ?? 0.25
   const worn = params.ignitionCatchTimeWorn ?? 2.0
   return fresh + (1 - health) * (worn - fresh)

@@ -578,12 +578,21 @@ export const PROP_MODELS = {
     // surface. CAVEAT: the gauge face's red GASOLINE band is baked into the atlas at the same
     // red, and a palette swap would not move it — keep any pool to reds or re-bake per variant.
     //
-    // 'gasStation' IS A POOL OF ITS OWN, NOT 'residence' (owner ruling 2026-08-22): this POI
-    // is not a home, it sells you fuel. NOTHING CONSUMES THIS POOL YET — no roster slot
-    // in src/poi.js names it, so the model does not spawn. That is deliberate and matches the
-    // flamingo rule above: do not re-tag it residence to make it appear. The slot arrives
-    // with FEAT-50 refuelling, which is what gives a gas stop something to do.
-    tags: ['gasStation'],
+    // 'gasPump' IS A POOL OF ITS OWN, NOT 'residence' (owner ruling 2026-08-22): this POI is not a
+    // home, it sells you fuel. FEAT-50 (owner, 2026-10-16) made it the src/poi.js gasPump slot — the
+    // lone pump, four to a region — and NOT the gas station, which is a store with pumps (ASSET-13,
+    // tag 'gasStation'). Do not re-tag it residence, or gasStation, to make it appear elsewhere.
+    tags: ['gasPump'],
+    // FEAT-50 PUMP ZONES — pull alongside and pull the handbrake to use the pump. One per side of
+    // the island, model-local (+X along the island and the road, -Z toward the road — the same
+    // frame as the general store's `park` box). Each takes the 4.6 x 1.85 m truck with slack: the
+    // inner edge (|z| 0.95) stands 0.25 m off the island's collision face (|z| 0.70) so a mirror
+    // clears it, the outer edge (|z| 2.95) stays inside the pad's 4 m half-width, and the length is
+    // centred on the pumps (x +0.28), not on the pole. ASSET-13 authors its own for its islands.
+    pumpZones: [
+      { x: 0.28, z: -1.95, halfX: 2.6, halfZ: 1.0 },   // road side — the first pump's face (-Z)
+      { x: 0.28, z:  1.95, halfX: 2.6, halfZ: 1.0 },   // far side — the back-to-back pump
+    ],
   },
 
   // ASSET-66 — the farm BARN, 708 tris, 4 materials, 0 images. Gambrel roof, closed sliding

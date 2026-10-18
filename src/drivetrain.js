@@ -152,6 +152,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // Idle-throttle floor lets the engine make a little torque for creep when engineIdleThrottle > 0
   // (default 0 = no creep, so BUG-20 static-slope hold is untouched at zero input).
   const pedalEff  = Math.max(pedal, params.engineIdleThrottle || 0)
+  st.pedal = pedalEff   // FEAT-50: the load the fuel map reads (src/fuel.js) — the same number the torque uses
   const stallRPM  = idle + pedalEff * (stallRPMwot - idle)
   const coupled   = turbineRPM / couplingSR
   let engineTarget = Math.max(idle, stallRPM, coupled)
@@ -180,8 +181,10 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   let Teng = pedalEff * engineTorqueAt(engineRPM, curve) * (tune * (params._engineDamageScale ?? 1.0))
   if (engineRPM > redline) Teng *= Math.max(0, 1 - (engineRPM - redline) / 200)
 
-  // FEAT-51: the power the FUEL is paying for [W] — the one signal both the fuel tank and engine heat
-  // read. It is the torque the air charge supports, BEFORE damage: a worn or overheating engine burns
+  // FEAT-51: the power the FUEL is paying for [W] — the ENGINE HEAT signal (damage.js _stepTemp). The
+  // fuel TANK does not read it: it burns off the rpm × pedal fuel map (src/fuel.js, FEAT-50), which
+  // carries the friction, pumping and decel-cut-off terms this brake-power proxy cannot (owner
+  // 2026-10-17: tank on the map, heat stays here as signed off). It is the torque the air charge supports, BEFORE damage: a worn or overheating engine burns
   // the same fuel for less work, so damage must not cool it (the fix for an overheat is lifting off).
   // engineIdlePowerW is the idle burn, which no throttle position can go below while running.
   st.fuelPowerW = Math.max(params.engineIdlePowerW ?? 7000, Tair * engineRPM / RPM_PER_RAD)

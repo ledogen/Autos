@@ -555,14 +555,17 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
 // A thing with a `to` asks the planner for a POI of a listed class, strictly; a generic thing keeps
 // the DEST_POI_CHANCE roll and may go roadside. PoiSystem leads every POI's tags with its type.
 {
-    const tagged = POIS.map(q => ({ ...q, tags: [q.type, ...(q.type === 'momsHouse' ? ['residence', 'mom'] : [])] }))
-    let taggedN = 0, taggedBad = 0, genericStrict = 0, roadside = 0, fetchN = 0, fetchBad = 0, roadN = 0, roadBad = 0, roadKinds = new Set()
+    // FEAT-50: a lone gas pump stands in the roster too — and must never be anyone's drop-off.
+    const tagged = [...POIS, { id: 'poi:91|92', type: 'gasPump' }]
+        .map(q => ({ ...q, tags: [q.type, ...(q.type === 'momsHouse' ? ['residence', 'mom'] : [])] }))
+    let taggedN = 0, taggedBad = 0, genericStrict = 0, roadside = 0, fetchN = 0, fetchBad = 0, roadN = 0, roadBad = 0, roadKinds = new Set(), pumpDest = 0, poiDest = 0
     for (let seed = 1; seed <= 60; seed++) {
         const b = make(seed)
         for (let t = T0; t < T0 + 24 * 4; t += 3) for (const id of b.sources()) for (const o of b.offers(id, t)) {
             const sp = b.spec(o)
             if (sp.family === 'papers') continue
             const w = b.destWish(o, tagged, new Set())
+            if (w.kind === 'poi') { poiDest++; if (w.pois.some(q => q.type === 'gasPump')) pumpDest++ }
             if (sp.to?.includes('roadside')) {
                 // BUG-88: a matching POI or a roadside spot — never strict, never another class.
                 roadN++; roadKinds.add(w.kind)
@@ -584,6 +587,8 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('a tagged thing asks for a matching POI only, strictly (never roadside)', taggedN > 0 && taggedBad === 0,
         `${taggedBad}/${taggedN}`)
     check('a generic thing is never strict, and may still go roadside', genericStrict === 0 && roadside > 0)
+    check('no offer ever wishes for a gas pump as its destination (FEAT-50 NOT_A_DESTINATION)', poiDest > 0 && pumpDest === 0,
+        `${pumpDest}/${poiDest}`)
     check('a fetch asks strictly for its PICKUP class, and says it is a fetch (FEAT-102)', fetchN > 0 && fetchBad === 0,
         `${fetchBad}/${fetchN}`)
     check("a `to` naming 'roadside' goes to a matching POI or roadside, never strictly (BUG-88)",

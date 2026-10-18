@@ -12,7 +12,7 @@ or delete a file, update the relevant line here in the same commit — it's one 
 |---|---|
 | `index.html` | The single entry point (Vite root). |
 | `src/` | The product — shippable game engine, ES6 modules. No diagnostics, no dead code (see CLAUDE.md "src/ is the product"). |
-| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), freight loads (`freight.js`, FEAT-96 — model key + mass per strapped load; read by the debug "Load Cargo" menu), the item catalog (`items.js`, FEAT-122 — name, kind, mass, described-not-scored line, effect hook per ownable item; REWARDS grants by its ids), authored scenarios (`scenarios.js`, FEAT-62 — seed + world-coordinate poses, re-checked against the road by `test/scenario-route.mjs`). (The bundled route caches were deleted 2026-08-19 with the bake subsystem.) |
+| `data/` | Content-as-data: vehicle specs (`ranger.js`, `vehicles.js`), engines (`engines.js`, FEAT-50 — torque curve + fuel-model inputs per engine; a vehicle spreads one in), model registry (`vehicle-models.js`, `prop-models.js`), dialogue, flora, biomes, map icons, mission-board word lists + content tables (`offer-names.js`, `offers.js`, FEAT-67), freight loads (`freight.js`, FEAT-96 — model key + mass per strapped load; read by the debug "Load Cargo" menu), the item catalog (`items.js`, FEAT-122 — name, kind, mass, described-not-scored line, effect hook per ownable item; REWARDS grants by its ids), authored scenarios (`scenarios.js`, FEAT-62 — seed + world-coordinate poses, re-checked against the road by `test/scenario-route.mjs`). (The bundled route caches were deleted 2026-08-19 with the bake subsystem.) |
 | `assets/models/` | Hand-authored `.glb` assets + `CREDITS.md`. Convention: `.planning/research/ASSETS.md`; style: `ART-STYLE.md`. |
 | `assets/items/` | FEAT-122 inventory thumbnails, `<item id>.png` (256 px, transparent), one per `data/items.js` ITEMS key. Rendered in Blender by `assets/models/src/items.py` (models + one fixed rig); fetched by URL, copied to `dist/` by the vite.config.js plugin, gated by `test/dist-assets.mjs`. |
 | `vendor/box3d/` | Vendored Box3D WASM bindings. Imported ONLY by `src/physics-engine.js` (FEAT-48 seam). |
@@ -45,7 +45,8 @@ CLAUDE.md; everything else here is inventory.
 chassis factory, debris translation) · `tire.js` (Pacejka, pure math) · `suspension.js`
 (spring-damper struts, out-of-round tire radius) · `alignment.js` (static toe/camber signs,
 pure math — read by `physics.js` and `vehicle-model.js`) · `terrain-physics.js` (streamed heightfield colliders, MESH == PHYSICS) ·
-`drivetrain.js` (engine/converter/gearbox, FEAT-23) · `ignition.js` (key/starter state machine,
+`drivetrain.js` (engine/converter/gearbox, FEAT-23) · `fuel.js` (FEAT-50 engine fuel map — rpm × pedal
+table off `data/engines.js` by the Willans line — and the tank's per-step drain; pure) · `ignition.js` (key/starter state machine,
 FEAT-33 — pure, no DOM) · `vehicle.js` (Ackermann, input) · `vehicle-state.js` (THE canonical
 vehicleState shape — one factory, so the world truck and the FEAT-41 menu-stage truck cannot drift) ·
 `debris.js` (FEAT-36 dynamic props) · `physics-debug.js` (collider wireframes) · `damage.js` (SM-3
@@ -86,7 +87,7 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 `model-service.js` (FEAT-59 .glb import service) · `campfire.js` (FEAT-66 lit campfire: ASSET-24 + flames/embers/point light) · `smoke.js` · `dust.js` (also owns the shared billboard sheet `makeBillboardMesh` + `rotateByQuat`, used by smoke/dirt-spray) · `dirt-spray.js` ·
 `map2d.js` (M-key dev map).
 
-**Audio** — `engine-audio.js` · `tire-audio.js` (tonal stick-slip) · `wind-audio.js` · `heartbeat-audio.js` (FEAT-87 rank-bar lub-dub) · `glass-audio.js` (FEAT-87 rank tile shatter; FEAT-97 fragile cargo hits).
+**Audio** — `engine-audio.js` · `tire-audio.js` (tonal stick-slip) · `wind-audio.js` · `heartbeat-audio.js` (FEAT-87 rank-bar lub-dub) · `glass-audio.js` (FEAT-87 rank tile shatter; FEAT-97 fragile cargo hits) · `pump-audio.js` (FEAT-50 gas pump: nozzle, flow, gallon bell, shutoff, register).
 
 **Story mode & gameplay** — `story.js` (FEAT-43 gamemode sandbox) · `day.js` (day clock, FEAT-47) ·
 `economy.js` (payout/wallet/points spine, FEAT-53) · `inventory.js` (FEAT-122 per-run inventory —
@@ -94,7 +95,8 @@ slots, stacking, swap-prompt pending, quick-slot binding, stowed mass; pure) · 
 (FEAT-122 Tab screen — slot grid with thumbnails, pack popup, parked-only via the HUD park zone — + quick keys 1–4) · `offer-board.js` (FEAT-67 mission board —
 slots, expiry timers, seeded offers, names, card view-model; pure) · `load-verdict.js` (FEAT-112 fits / warning / overload
 for the truck as configured + the overloaded-tire cap; pure, no imports) · `mission.js` (mission generator
-+ run state machine) · `par.js` (FEAT-29 par oracle) · `poi.js` (lay-by POIs, FEAT-46) · `camp.js` (dispersed
++ run state machine) · `par.js` (FEAT-29 par oracle) · `poi.js` (lay-by POIs, FEAT-46) · `fuel-stop.js` (FEAT-50 the pump
+visit state machine — hold F, handbrake to pay — + the tow price; pure, the DOM is in main.js) · `camp.js` (dispersed
 camping, FEAT-45) · `dialogue.js` (character channel) · `paper-route.js` + `throw.js` (FEAT-61) ·
 `gps.js` (FEAT-39 nav overlay) · `cluster.js` (FEAT-49 gauge cluster — instrument panel, not
 clustering) · `rank-timer.js` (FEAT-87 live rank timer — band line-up, escalation, beats; pure, the

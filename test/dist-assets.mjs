@@ -53,7 +53,7 @@ for (const [url, keys] of urls) {
 // FEAT-74: every registry TAG has a consumer — a roster slot's modelPool or a yard pool. A tag nothing
 // names is a shipped model the game can never place (the produce stall sat that way for two months).
 // ORPHANS are deliberate and say why; delete the line when the consumer lands.
-const ORPHANS = { gasStation: 'FEAT-50 refuelling — the gas pump sells fuel, it hands out no work (2026-08-22)' }
+const ORPHANS = {}   // FEAT-50 retired the last one: the gas pump's 'gasPump' tag is the gasPump slot's pool
 const named = new Set([...POI_ROSTER.map((s) => s.modelPool), ...Object.values(YARD_POOLS)].filter(Boolean))
 for (const [key, spec] of Object.entries(PROP_MODELS)) {
   for (const tag of spec?.tags ?? []) {
