@@ -79,6 +79,11 @@ console.log('§3 two clocks: warm-up on game time, overheat on real time (owner 
   const vs = { drivetrain: { fuelPowerW: FULL, engineRPM: 750 }, throttle: 0 }
   const t = until(d, vs, (m) => m.engineTempC >= D.tempHotC)
   ok(t >= 30 && t <= 60, `0% radiator, full load: 100 → 110 °C in ${t.toFixed(1)} s of REAL time (30-60 s)`)
+  // The owner's complaint (2026-10-17): back-to-back WOT hill climbs survived on a 10% radiator at
+  // the old 45 s pace. A 60 s climb at ~95 kW must now cook it before the top.
+  const h = new DamageModel({ params: {} }); h.set('radiator', 0.1); h.engineTempC = 100
+  const th = until(h, { drivetrain: { fuelPowerW: 95000, engineRPM: 750 } }, (m) => m.engineTempC >= D.tempHotC)
+  ok(th < 60, `10% radiator, one 60 s WOT climb (~95 kW): over the mark after ${th.toFixed(1)} s`)
   ok(d.get('engine') > 0.99999 && p._engineDamageScale > 0.999 && p._hoodSteam > 0, `at the mark: no damage to speak of yet, but the hood is already steaming (${p._hoodSteam.toFixed(2)})`)
   for (let i = 0; i < 600; i++) d.step(vs, p, dt)
   ok(d.get('engine') < 1 && p._engineDamageScale < 1, `10 s over the mark: engine wearing (${(d.get('engine') * 100).toFixed(1)}%) and power derated (${p._engineDamageScale.toFixed(2)}) at ${d.engineTempC.toFixed(1)} °C`)

@@ -872,7 +872,7 @@ export class DamageModel {
    * (the 60x day clock: 15 s of idling is 15 minutes, plenty to come up to temperature). Overheating
    * is the consequence, so it runs on REAL time and slowly enough to react to. Below the thermostat
    * the light engineWarmMass applies (honest: a closed thermostat cuts the radiator and its coolant
-   * out of the loop); at and above it the heavy engineThermalMass, which is a leniency knob, ~4.5x a
+   * out of the loop); at and above it the heavy engineThermalMass, which is a leniency knob, ~3x a
    * real block, not physics.
    */
   _stepTemp (vehicleState, params, dt) {
