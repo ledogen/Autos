@@ -85,9 +85,9 @@ export const RANGER_PARAMS = {
   // Capacity is linear in condition through those two anchors, so a new radiator carries ~2x rated.
   engineIdlePowerW:   7000,    // W — fuel power at idle (the floor while running)
   // Two masses, two clocks (owner 2026-10-16, see DamageModel._stepTemp). Warm mass runs on the 60x game
-  // clock: cold → 100 °C in ~12 s real at idle (12 game-minutes). Thermal mass runs on real time and is
+  // clock: cold → 100 °C in ~24 s real at idle (24 game-minutes; 12 s felt too quick, owner 2026-10-17). Thermal mass runs on real time and is
   // a leniency knob (~4.5x a real block): 0% radiator at full load, 100 → 110 °C in ~45 s.
-  engineWarmMass:     70000,   // J/°C — thermostat closed: block + its own coolant, radiator cut out
+  engineWarmMass:    140000,   // J/°C — thermostat closed: block + its own coolant, radiator cut out
   engineThermalMass: 500000,   // J/°C — thermostat open, real time
   radiatorRatedW:    117000,   // W — see above
   radiatorDeadFrac:    0.06,   // [-] — see above

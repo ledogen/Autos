@@ -1113,8 +1113,8 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   holds idle just under the mark (109 °C) and overheats under any real load; a **50%** radiator holds
   the stock engine just under the mark at full load. Gauge: C = 90 °C, mid = 100 °C, H = 110 °C. The
   numbers and their gate: `src/damage.js` (`_stepTemp`), `test/damage-engine-temp.mjs`.
-  **Two clocks:** warming up and cooling off run on GAME time (cold → 100 °C in ~12 s real idling =
-  12 game-minutes; engine off cools on game time too, so pulling over and shutting a hot engine off
+  **Two clocks:** warming up and cooling off run on GAME time (cold → 100 °C in ~24 s real idling =
+  24 game-minutes; engine off cools on game time too, so pulling over and shutting a hot engine off
   is the escape). Overheating runs on REAL time and leniently: 0% radiator at full load takes ~45 s
   from 100 to 110 °C. Over 110 °C the hood **steams** — the player sees the damage, not just a gauge.
   > **REVERSES** MILESTONES.md's 30 → 90 °C / boil-off at 104 °C / damage at 105 °C sketch.

@@ -43,7 +43,7 @@ in, with **no coolant mechanic** (radiator condition is the cooling capacity dir
   radiator condition through two anchors at 109 °C: 0% holds idle, 50% holds full load.
 - Over 110 °C: torque derate 3%/°C (temporary) + engine wear 0.1%/s per °C. No gasket meter — the
   engine track at 0% is the blown gasket. Clamp 130 °C. Engine off soaks to ambient (cold mornings).
-- Two clocks (owner, same day): warm-up + engine-off cooling on GAME time (cold → 100 °C in ~12 s
+- Two clocks (owner, same day): warm-up + engine-off cooling on GAME time (cold → 100 °C in ~24 s
   real idling); overheating on REAL time (0% radiator, full load, 100 → 110 °C in ~45 s).
   `engineWarmMass` / `engineThermalMass` in data/ranger.js. Hood steam over 110 °C (src/smoke.js).
 - Gauge C/mid/H = 90/100/110 °C. Debug: Damage (SM-3) → Engine Temp. Gate: `damage-engine-temp`.

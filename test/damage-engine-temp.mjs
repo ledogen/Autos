@@ -73,7 +73,7 @@ console.log('§3 two clocks: warm-up on game time, overheat on real time (owner 
   const until = (d, vs, cond) => { let t = 0; while (!cond(d) && t < 3600) { d.step(vs, p, dt); t += dt } return t }
   const w = new DamageModel({ params: {} })
   const tw = until(w, { drivetrain: { fuelPowerW: IDLE, engineRPM: 750 } }, (d) => d.engineTempC >= D.tempThermostatC - 2)
-  ok(tw >= 10 && tw <= 15, `healthy truck idling from cold: ${D.tempAmbientC} → ${D.tempThermostatC - 2} °C in ${tw.toFixed(1)} s (10-15 s = that many game minutes)`)
+  ok(tw >= 20 && tw <= 30, `healthy truck idling from cold: ${D.tempAmbientC} → ${D.tempThermostatC - 2} °C in ${tw.toFixed(1)} s (20-30 s = that many game minutes)`)
 
   const d = new DamageModel({ params: {} }); d.set('radiator', 0); d.engineTempC = 100
   const vs = { drivetrain: { fuelPowerW: FULL, engineRPM: 750 }, throttle: 0 }
