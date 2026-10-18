@@ -89,9 +89,54 @@ export function fuelMapFor (params) {
     return _cacheMap
 }
 
-/** A fresh tank, `frac` full. */
+/** A fresh tank, `frac` full. The sputter fields are the low-fuel stumble's run state (stepSputter). */
 export function makeFuelState (params, frac = 1) {
-    return { gal: params.fuelTankGal * frac, floorGal: 0, dry: false }
+    return {
+        gal: params.fuelTankGal * frac, floorGal: 0, dry: false,
+        avgGalPerS: null,    // running average of the real burn (gal per real second)
+        sputterPhase: 0,     // progress toward the next stumble (1 = due, on average)
+        sputterNext: 1,      // this stumble's threshold — jittered about 1 so the gaps are irregular
+        sputterT: 0,         // s left in the current stumble (0 = running clean)
+        sputterDur: 0,       // s — the current stumble's length
+        sputterDepth: 0,     // [-] fraction of torque it takes at its worst
+        sputters: 0,         // stumbles so far — main.js plays one pop per increment
+        rng: 1,              // LCG state for the jitter: deterministic, no Math.random in the burn
+        torqueScale: 1,      // what drivetrain.js multiplies engine torque by (1 = clean)
+    }
+}
+
+const lerp = (a, b, x) => a + (b - a) * x
+
+/**
+ * The LOW-FUEL SPUTTER (owner, 2026-10-16). With about `sputterWarnS` real seconds of fuel left at the
+ * running-average burn, the pickup starts sucking air: the engine stumbles — a real, momentary loss
+ * of torque (torqueScale, read by drivetrain.js), which main.js voices as the drone dropping out
+ * plus a pop. The stumbles come irregularly, about one per `sputterIntervalStartS` at the first
+ * warning and tightening to one per `sputterIntervalEndS` at empty (≈10 s on average across the
+ * window), and each gets deeper and longer as the tank empties. "Fuel left" is measured against the
+ * AVERAGE burn, so lifting off does not instantly silence it and idling at a pump does not trigger it.
+ * Free roam (floorGal > 0) never runs dry, so it never sputters either.
+ */
+export function stepSputter (f, params, dt, burnGalPerS) {
+    const tau = params.sputterAvgS ?? 20
+    f.avgGalPerS = f.avgGalPerS == null ? burnGalPerS : f.avgGalPerS + (burnGalPerS - f.avgGalPerS) * (1 - Math.exp(-dt / tau))
+    const warn = params.sputterWarnS ?? 120
+    const left = f.gal / Math.max(1e-9, f.avgGalPerS)
+    if (f.floorGal <= 0 && f.gal > 0 && left < warn) {
+        const x = 1 - left / warn                   // 0 at the first warning → 1 at empty
+        f.sputterPhase += dt / lerp(params.sputterIntervalStartS ?? 20, params.sputterIntervalEndS ?? 6, x)
+        if (f.sputterPhase >= f.sputterNext && f.sputterT <= 0) {
+            f.rng = (Math.imul(f.rng, 1664525) + 1013904223) >>> 0
+            f.sputterPhase = 0
+            f.sputterNext = 0.5 + f.rng / 4294967296   // gaps jitter 0.5–1.5× the mean
+            f.sputterDur = f.sputterT = lerp(params.sputterDurStartS ?? 0.25, params.sputterDurEndS ?? 0.6, x)
+            f.sputterDepth = lerp(params.sputterDepthStart ?? 0.5, params.sputterDepthEnd ?? 0.95, x)
+            f.sputters++
+        }
+    } else f.sputterPhase = 0   // outside the window: a fill-up mid-sputter must not bank progress toward the next episode's first stumble
+    if (f.sputterT > 0) f.sputterT = Math.max(0, f.sputterT - dt)
+    // A stumble drops in and recovers: a half-sine over its length, deepest in the middle.
+    f.torqueScale = f.sputterT > 0 ? 1 - f.sputterDepth * Math.sin(Math.PI * (1 - f.sputterT / f.sputterDur)) : 1
 }
 
 /**
@@ -111,9 +156,11 @@ export function stepFuel (vehicleState, params, dt) {
     const cut = rpm > redline ? Math.max(0, 1 - (rpm - redline) / 200) : 1   // the limiter cuts fuel with torque
     const gph = fuelRateGph(fuelMapFor(params), rpm, st?.pedal ?? 0) * cut * (params.fuelBurnScale ?? 1)
     f.gal = Math.max(f.floorGal, f.gal - gph * dt / 3600)
+    stepSputter(f, params, dt, gph / 3600)
     if (f.gal <= 0 && ign) {
         f.gal = 0
         f.dry = true
+        f.sputterT = 0; f.torqueScale = 1
         ign.state = 'off'
         ign.event = 'shutoff'
     }

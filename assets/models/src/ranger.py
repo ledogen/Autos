@@ -539,7 +539,7 @@ def loft(part, rings, mat, cap_first=True, cap_last=True, band_mats=None, skip=N
 
 
 def tube(part, p0, p1, r, seg, mat, cap=True):
-    """Axis-aligned-ish prism between two points (antenna, exhaust, shifter)."""
+    """Axis-aligned-ish prism between two points (exhaust, shifter)."""
     import mathutils
     a, b = mathutils.Vector(p0), mathutils.Vector(p1)
     d = (b - a).normalized()
@@ -2444,8 +2444,10 @@ def build_trim(p):
         strut(p, (x, Y_COWL + 0.030, 1.188), (x + 0.300, Y_COWL + 0.018, 1.196),
               0.020, 0.014, "RangerTrim")
 
-    # Antenna mast on the right front fender — 8 tris, and unmistakable in profile.
-    tube(p, (0.782, 1.020, 1.118), (0.812, 1.002, 1.928), 0.011, 4, "RangerTrim")
+    # NO antenna mast here.  It is built procedurally by src/vehicle-model.js so it can
+    # BEND under the truck's motion; a mast baked into this mesh can only ride it rigidly.
+    # Its mount is `antenna` in data/vehicle-models.js, taken from where it used to stand:
+    # (0.782, 1.020, 1.118) -> (0.812, 1.002, 1.928) here, radius 0.011, RangerTrim.
 
 
 # ---------------------------------------------------------------------------
@@ -2737,7 +2739,7 @@ def evaluated_tris(ob):
 # ---------------------------------------------------------------------------
 def strut(part, p0, p1, w, t, mat):
     """Rectangular prism from p0 to p1.  w is measured across X-ish, t along the
-    prism's other cross axis.  Used for pillars, the antenna mast and the shifter."""
+    prism's other cross axis.  Used for pillars and the shifter."""
     import mathutils
     a, b = mathutils.Vector(p0), mathutils.Vector(p1)
     d = (b - a).normalized()

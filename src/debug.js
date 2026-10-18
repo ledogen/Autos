@@ -33,6 +33,8 @@ import { THROW_PARAMS } from './throw.js'                      // FEAT-61 Phase 
 import { PAPER_PARAMS, RR_PARAMS } from './paper-route.js'     // FEAT-61 Phase F: payout + re-plan
 import { DAMAGE_PARAMS, TRACKS, TRACK_IDS } from './damage.js' // SM-3: component condition model
 import { FREIGHT } from '../data/freight.js'                     // FEAT-96 scaffolding: Load Cargo
+import { ENGINES } from '../data/engines.js'                     // engine swap selector
+import { TRANSMISSIONS } from '../data/transmissions.js'         // gearbox swap selector
 
 // Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
 // can read them. Assigned inside initDebug(); null until then.
@@ -138,6 +140,13 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // D-08 / D-16: all write directly to RANGER_PARAMS (live mutation).
   const driveFolder = vehicleFolder.addFolder('Drivetrain & Brakes')
   // FEAT-23 engine → torque converter → automatic gearbox → final drive (src/drivetrain.js).
+  // Engine swap: copies the whole data/engines.js entry over the flat params (curve, idle, redline,
+  // cylinders, fuel-model inputs), the same spread data/ranger.js does at load. The fuel table
+  // rebuilds itself on the next step (fuelMapFor keys on those inputs). Gearbox stays the truck's.
+  driveFolder.add(params, 'engine', { '3.0 L Vulcan V6': 'vulcan30', '2.3 L Duratec I4': 'duratec23' }).name('Engine')
+    .onChange(k => { Object.assign(params, ENGINES[k]); gui.controllersRecursive().forEach(c => c.updateDisplay()) })
+  driveFolder.add(params, 'transmission', { '4R44E 4-speed auto': '4r44e', '5R55E 5-speed auto': '5r55e' }).name('Transmission')
+    .onChange(k => Object.assign(params, TRANSMISSIONS[k]))
   driveFolder.add(params, 'engineTorqueScale', 0.3, 2.0, 0.05).name('Engine Torque ×')
   driveFolder.add(params, 'engineIdleRPM', 500, 1200, 25).name('Idle RPM')
   driveFolder.add(params, 'engineRedlineRPM', 4000, 7000, 100).name('Redline RPM')
@@ -180,8 +189,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // pedal table on the next step (fuelMapFor compares its inputs). The tank itself is vehicleState
   // run state, so the readout and the two buttons go through callbacks.
   const fuelFolder = driveFolder.addFolder('Fuel (FEAT-50)')
-  const fuelRead = { get gal () { return callbacks.fuelGal?.() ?? 0 } }
-  fuelFolder.add(fuelRead, 'gal').name('Tank (gal)').listen().disable()
+  // The tank level is LIVE and SETTABLE: it follows the burn, and dragging it sets the gallons (clamped
+  // to the tank, and to free roam's floor outside story mode). 0 in story mode kills the engine.
+  const fuelRead = { get gal () { return callbacks.fuelGal?.() ?? 0 }, set gal (g) { callbacks.setFuelGal?.(g) } }
+  fuelFolder.add(fuelRead, 'gal', 0, 40, 0.1).name('Tank (gal)').listen()
   fuelFolder.add({ refill: () => callbacks.setFuelGal?.(Infinity) }, 'refill').name('Refill')
   fuelFolder.add({ drain: () => callbacks.setFuelGal?.(0) }, 'drain').name('Drain to empty')
   fuelFolder.add(params, 'fuelTankGal', 2, 40, 0.5).name('Tank Capacity (gal)')
@@ -190,6 +201,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   fuelFolder.add(params, 'fuelFillGalPerS', 0.2, 5, 0.05).name('Pump Rate (gal/s)')
   fuelFolder.add(params, 'fuelStartFrac', 0, 1, 0.01).name('Story Start Fill')
   fuelFolder.add(params, 'fuelFreeRoamFloorFrac', 0, 0.5, 0.01).name('Free-Roam Floor')
+  fuelFolder.add(params, 'fuelLowLightGal', 0, 8, 0.25).name('Low-Fuel Lamp (gal)')
   const mapFolder = fuelFolder.addFolder('Engine Fuel Map')
   mapFolder.add(params, 'etaIndicated', 0.25, 0.45, 0.005).name('Indicated Efficiency η')
   mapFolder.add(params, 'displacementL', 1, 7, 0.01).name('Displacement (L)')

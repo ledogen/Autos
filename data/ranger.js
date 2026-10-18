@@ -6,6 +6,7 @@
  * Do NOT Object.freeze() this object — Plan 03 mutates fields live via lil-gui sliders.
  */
 import { ENGINES } from './engines.js'
+import { TRANSMISSIONS } from './transmissions.js'
 
 export const RANGER_PARAMS = {
 
@@ -104,6 +105,19 @@ export const RANGER_PARAMS = {
   fuelStartFrac:        0.62,  // [-] story start: the truck was handed over "with some gas in it"
   fuelFillGalPerS:      1.65,  // gal/s — a full 16.5 gal tank in 10 s of held F (owner 2026-10-16)
   fuelFreeRoamFloorFrac: 0.05, // [-] free roam's no-consequence floor: the tank stops here and never runs dry
+  emergencyGasGal:      2,
+  fuelLowLightGal:      3,     // gal — the dash's low-fuel lamp (src/cluster.js) lights at or below this; 3 gal (~18 %) so it always leads the sputter, which at WOT starts with ~2.7 gal left
+  // Low-fuel sputter (src/fuel.js stepSputter, owner 2026-10-16): ~2 real minutes of warning, a
+  // stumble every 20 s at first tightening to every 6 s at empty (~10 s average), each deeper and
+  // longer than the last. Times are REAL seconds.
+  sputterWarnS:          120,   // s of fuel left (at the average burn) when it starts
+  sputterAvgS:           20,    // s — time constant of that average burn
+  sputterIntervalStartS: 20,    // s — mean gap between stumbles at the first warning
+  sputterIntervalEndS:   6,     // s — …and at empty
+  sputterDurStartS:      0.25,  // s — a stumble's length at the first warning
+  sputterDurEndS:        0.6,   // s — …and at empty
+  sputterDepthStart:     0.5,   // [-] torque it takes at its worst, first warning
+  sputterDepthEnd:       0.95,  // [-] …and at empty     // gal — what the Emergency gas can (data/items.js) pours in: a 2 gal RotoPax
 
   // ── Ignition + starter (FEAT-33) ────────────────────────────────────────────────────────────────
   // The key has three positions (OFF / ON / START); see src/ignition.js. Catch time is what the
@@ -130,17 +144,18 @@ export const RANGER_PARAMS = {
   converterCouplingSR:       0.86,  // [-] speed ratio at/above which the converter couples 1:1 (TR=1)
   converterStallRPM:         2400,  // rpm — WOT stall speed (turbine held, foot flat)
 
-  // Automatic gearbox + final drive (4R44E-like). gearRatios[0] is 1st; wheel/axle torque =
-  // turbineTorque × gearRatio × finalDrive, split open-diff across the two rear wheels (RWD Phase 1).
-  gearRatios:   [2.47, 1.47, 1.00, 0.71],  // 4-speed ratios (1st→4th)
+  // Automatic gearbox + final drive. The box's ratios (gearRatios[0] is 1st, reverseRatio) live in
+  // data/transmissions.js and are spread here; wheel/axle torque = turbineTorque × gearRatio ×
+  // finalDrive, split open-diff across the two rear wheels (RWD Phase 1). S-pedal is reverse throttle.
+  transmission: '4r44e',
+  ...TRANSMISSIONS['4r44e'],
   finalDrive:   3.73,   // [-] axle final-drive ratio
-  reverseRatio: 2.47,   // [-] reverse gear reduction (S-pedal is the reverse throttle)
 
   // Automatic shift schedule. Thresholds are in COUPLED (locked/no-slip) engine RPM = road-speed-in-gear,
   // NOT the converter-slipping engineRPM — see drivetrain.js (else the box lugs in top gear on a climb
   // because the stall speed floors engineRPM above the downshift point). Hysteresis: an upshift is blocked
   // if it would immediately fall below (shiftDownEff + 200); shiftHoldTime is the min dwell after any shift.
-  shiftUpRPM:    5400,  // rpm(coupled) — upshift near redline (always-WOT play use, redline 5500)
+  // shiftUpRPM is the ENGINE's (data/engines.js) — it follows the redline.
   shiftDownRPM:  1300,  // rpm(coupled) — light-throttle/cruise downshift floor
   // kickdownRPM: WOT downshift point. The downshift threshold scales with throttle from shiftDownRPM (lift)
   // up to kickdownRPM (floored), so flooring it on a grade drops a gear into the power band. Keep below

@@ -20,7 +20,7 @@ export const ITEMS = {
     spareTire:    { name: 'Spare tire',    kind: 'part',       massKg: 20,
                     desc: 'A full-size spare on a steel wheel. Heavy to carry around.' },
     // A 2 gal RotoPax: ~5.7 kg of gas + ~1.5 kg of can (data/offers.js REWARDS).
-    emergencyGas: { name: 'Emergency gas', kind: 'consumable', massKg: 7.2,
+    emergencyGas: { name: 'Emergency gas', kind: 'consumable', massKg: 7.2, use: 'gas',
                     desc: 'A small can of gas, for when the gauge lies.' },
 
     // ── Backpacks (items.md §2c) — `packSlots` camp items ride inside; `reachM` is how far past the
