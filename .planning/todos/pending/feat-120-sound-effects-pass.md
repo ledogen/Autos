@@ -287,20 +287,34 @@ Yard ambience (R3): crusher rumble, conveyor, rocks dropping. Positional, distan
 
 ## Engine bake
 
-### Engine (engine-sim recordings)
-status: todo · group: truck
-AngeTheGreat's open-source engine simulator. **Officially Windows-only** — use the desktop. Check
-its licence before shipping recordings.
-- **Model:** the Ranger's 4.0 Cologne V6 — a modest edit of one of the bundled example engines.
-- **Capture:** it has no file export; record its output with a loopback driver (a virtual audio
-  device that records whatever the computer plays).
-- **Grid:** dyno mode holds each RPM steady. ~8 RPM points (idle → redline) × 3 loads (off-throttle,
-  part, full) = 24 recordings of ~3 s. One afternoon.
+### Engine
+status: wip · group: truck
+AngeTheGreat's open-source engine simulator, recorded on the Windows desktop (its releases are
+Windows-only). Job sheet: `.planning/handoffs/HANDOFF-2026-10-17-engine-sim-bake.md`. Branch
+`feature/engine-audio` carries the takes between machines.
+- **Model:** the game's 3.0 Vulcan V6 (`data/engines.js` `vulcan30`), not the 4.0 Cologne.
+- **Dry, muffler-less.** engine-sim renders the manifolds + Y-pipe. The muffler and tailpipe are the
+  game's, applied after the pitch-shift, so a muffler is a swappable part and its resonances stay
+  fixed in Hz instead of sliding with the playback rate. engine-sim's own muffler impulse response
+  (the recorded echo fingerprint it convolves the exhaust pulse with) is replaced by a unit impulse,
+  which passes the signal through unchanged.
+- **Grid:** 8 rpm points spaced geometrically (750 → 5500, ratio ≈ 1.33, so no loop is shifted more
+  than ±15 %) × 3 loads (off / part ~30 % / full) + free idle = 25 loops of ≈ 2 s.
 - **Loop length:** each loop must be a **whole number of engine cycles** (one 4-stroke cycle = 2 revs
   = 0.1 s at 1200 rpm). Any other length makes the firing rhythm stumble at the seam.
-- **Runtime:** play the nearest recordings, `playbackRate = rpm / recordedRpm` covers the gaps,
-  crossfade between neighbours by RPM and load. First sample assets: add `assets/audio/` to the
-  `vite.config.js` copy plugin (fetched by URL, not ES-imported, same as the `.glb` files).
+- **Files:** loops + `manifest.json` in `assets/audio/engine/` (FLAC; ships). Raw takes, the `.mr`
+  script, the cutter and notes in `assets/audio/src/engine/` (committed, never ships).
+- **Runtime:** play the nearest recordings, `playbackRate = rpm / rpmMeasured` covers the gaps,
+  crossfade between neighbours by RPM and load, then the muffler. First sample assets: add
+  `assets/audio/engine/` to the `vite.config.js` copy plugin (fetched by URL, not ES-imported, same as
+  the `.glb` files).
+
+### Engine muffler reference
+status: wip · group: truck
+Three takes through engine-sim's **stock** muffler impulse response: free idle, 2340 part, 4140 full.
+The grid has dry loops at the same three points, so this card and the Engine card A/B straight away.
+Target for tuning the in-game muffler: dry loop + our muffler should land near these. Lives in
+`assets/audio/src/engine-muffler-reference/` (committed, never ships).
 
 ## Acceptance
 

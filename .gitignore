@@ -49,6 +49,10 @@ dist/
 # Last matching pattern wins, so this has to sit BELOW the negations, not beside its sibling rule.
 **/.DS_Store
 
+# Audio commits as FLAC only (lossless, ~half the size of WAV) — a stray WAV export would double the
+# history cost of every take. Same placement rule: below `!assets/**` or the negation re-admits it.
+assets/audio/**/*.wav
+
 # Bulk PHOTO reference — owner's own shots of the real truck, kept locally for modelling and not
 # worth 9.3 MB of permanent git history (21 files). Same placement rule as .DS_Store above: it has
 # to sit below `!references/**` or the negation re-admits it. Small reference art that IS worth

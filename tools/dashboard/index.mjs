@@ -683,8 +683,9 @@ function indexBodyRows(tickets, id, { sections, statuses, guideHeading }) {
 /* ── sounds ───────────────────────────────────────────────────────────────
  * FEAT-120: each `##` is a source (SOUND_SOURCES), each row's key line is
  * `status · group · play`. Takes are whatever audio files sit in
- * wip/audio/<slug>/ (git-invisible, where uploads land) and
- * assets/audio/<slug>/ (shipped). */
+ * wip/audio/<slug>/ (git-invisible, where uploads land),
+ * assets/audio/<slug>/ (shipped) and assets/audio/src/<slug>/ (committed
+ * source material that never ships, e.g. the engine muffler reference). */
 const SOUND_TICKET = 'FEAT-120';
 const SOUND_SOURCES = ['Synthesize', 'Record', 'Library', 'Engine bake'];
 const SOUND_STATUSES = ['todo', 'wip', 'shipped', 'cut'];
@@ -692,7 +693,7 @@ const AUDIO_MIME = {
   '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
   '.flac': 'audio/flac', '.m4a': 'audio/mp4',
 };
-const TAKE_DIRS = ['wip/audio', 'assets/audio'];
+const TAKE_DIRS = ['wip/audio', 'assets/audio', 'assets/audio/src'];
 const slugOf = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 function soundTakes(slug) {

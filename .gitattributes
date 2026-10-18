@@ -1,0 +1,4 @@
+# Audio is binary: a Windows clone's core.autocrlf must never rewrite line endings inside a take
+# (FEAT-120 engine bake — takes are recorded on the Windows desktop and pushed from there).
+*.flac binary
+*.wav binary
