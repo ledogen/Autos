@@ -98,6 +98,11 @@ export const VEHICLE_MODELS = {
       dampers: { softKg: 570, hardKg: 820 },
       tires:   { softKg: 570, hardKg: 820, popKg: 600 },
     },
+    // The whip antenna, built and bent procedurally by src/vehicle-model.js (createAntenna) — NOT in
+    // the .glb, where it could only ride the body rigidly. base/tip in body-local metres (same
+    // mapping as `bed`: ranger.py (0.782, 1.020, 1.118) -> (0.812, 1.002, 1.928)); radius at the
+    // base; `material` is matched by substring against the model's materials.
+    antenna: { base: [0.782, 0.467, -1.020], tip: [0.812, 1.277, -1.002], radius: 0.011, material: 'RangerTrim' },
     ownWheels: false,
     paint: 'RangerPaint',
     tail: 'RangerTail',
