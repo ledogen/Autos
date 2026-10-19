@@ -41,3 +41,11 @@ raw/duratec23_2340_part_stock.flac,part,0.3,2340,2340.0
 raw/duratec23_4140_full_stock.flac,full,1.0,4140,4140.0
 raw/duratec23_crank_stock.flac,crank,0.0,200,197.6
 raw/duratec23_crank500_stock.flac,crank,0.0,500,556.0
+raw/duratec23_750_motor.flac,motor,0.0,750,750.0
+raw/duratec23_1000_motor.flac,motor,0.0,1000,1000.0
+raw/duratec23_1325_motor.flac,motor,0.0,1325,1325.0
+raw/duratec23_1760_motor.flac,motor,0.0,1760,1760.0
+raw/duratec23_2340_motor.flac,motor,0.0,2340,2340.0
+raw/duratec23_3110_motor.flac,motor,0.0,3110,3110.0
+raw/duratec23_shutoff_dry.flac,shutoff,0.0,85,84.7
+raw/duratec23_shutoff_stock.flac,shutoff,0.0,85,84.7
