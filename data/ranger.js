@@ -175,6 +175,11 @@ export const RANGER_PARAMS = {
   shiftThrottleTau:     1.5,  // s — throttle-average time constant
   shiftHysteresisLight: 300,  // rpm(coupled) — anti-hunt headroom at a light foot
   kickdownDelay:        0.4,  // s — pedal held ≥ 95 % this long = kickdown (a feathered tap is not one)
+  // FEAT-126 manual gearbox (only read when the fitted box is transmissionType 'manual').
+  clutchAssist:    true,   // the clutch assistant (src/clutch-assist.js) stands between input and sim
+  clutchShiftMax:  0.15,   // [-] clutch engagement above which a shift is rejected (the clutch is "in")
+  manualShiftTime: 0.25,   // s — synchro time in N per shift (× _transShiftScale when the box is worn)
+  idleGovernorMax: 0.5,    // [-] most pedal the idle governor adds below idle (keeps a neutral engine alive)
   shiftThrottleCurve:   2,    // [-] exponent on the average: 2 keeps part throttle near the light end
                               //     (35 % → 12 % of the way to WOT), 1 = linear
 

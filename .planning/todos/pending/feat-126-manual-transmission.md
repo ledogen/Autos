@@ -63,6 +63,16 @@ Ranger's **M5OD-R1 5-speed**, added as a `data/transmissions.js` entry and swapp
 - **The Shift+R / Shift+C chords stay.** They are dev and free-roam tools; holding the clutch and
   pressing R simply sets the spawn.
 
+## Architecture ruling (owner, 2026-10-19, plan review)
+
+- **The clutch is ANALOG in the sim.** The drivetrain reads one engagement value,
+  `vehicleState.clutch` ∈ [0,1]. Today's pad and keyboard command it binarily, and a future analog
+  clutch axis maps straight onto it.
+- **The clutch assistant stands BETWEEN the input and the sim.** It is a pure layer,
+  `src/clutch-assist.js`, that turns the raw pedal and shift requests into the clutch command the sim
+  sees. The sim knows nothing about the assist.
+- The approved plan is in this session's plan file. It is summarised in the handoff once built.
+
 ## Acceptance
 
 - The M5OD-R1 drives with no torque converter. Engine speed is locked to road speed through the
