@@ -81,3 +81,25 @@ the same way the baked engine loops are built: always-running sources with modul
   page, freecam distance falloff, and the background-tab mute (it didn't reproduce).
 - The branch is ahead of `origin` by the merge and this handoff. The owner approved pushing it for the
   Windows brief.
+
+## Update, same day: Windows round 2 landed and is in game (`c184ce4`)
+
+- Both engines play their own loops (`manifest-<engine>.json`, loaded the first time an engine is asked
+  for). `idle_free` is now the off voice of the row nearest 750 rpm. The ~200 rpm `crank_dry` plays
+  through the muffler while the starter turns a dead engine.
+- The starter motor is Freesound #520773 (owner's pick, CC0), shipped as
+  `assets/audio/engine/starter-520773.flac`. It's a loop of 33 whole compression pulses, cut from the
+  site's HQ preview. Its donor cranks at ~136 rpm, 4.55 Hz, most likely an I4. It plays at
+  rate = starter rpm / 200, and `main.js` caps that speed at `starterFreeRPM` (the overrunning clutch).
+  Its slider is Starter Volume (`starterAudioLevel` 0.35). The synth crank graph is deleted; the clicks
+  stay. Credits are in `assets/audio/CREDITS.md`. The source and the cut live in
+  `wip/audio/starter-library-520773/`.
+- Measured in the browser (muted, analyser tee) at Engine Volume 0.5: V6 idle −43 dB rms, I4 idle −29,
+  crank −33.5. **Owner to judge by ear:** the I4 is ~14 dB hotter than the V6 (that's the bake's own
+  ratio), and the crank sits ~10 dB above the V6 idle.
+- Open owner calls from the Windows report:
+  - Lower the Vulcan's combustion randomness (0.5 → 0.1–0.35) for a free-running idle. That changes
+    every approved Vulcan loop.
+  - The flares can't peak sooner than ~0.65 s in the sim.
+- The dashboard's ▶ crank preview may now play the clicks only: the dashboard serves its own folder,
+  so the starter's relative fetch probably misses. Not checked.
