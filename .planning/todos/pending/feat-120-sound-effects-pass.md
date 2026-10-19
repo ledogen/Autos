@@ -76,8 +76,10 @@ FEAT-33, `src/engine-audio.js`. Preview holds the starter ~1.4 s, then fires the
   measured the fits is `wip/audio-render/render.html` (git-invisible).
 
 ### Engine shutoff
-status: shipped · group: truck · play: engine-audio.js playShutoffAudio
-FEAT-33 key-off thump.
+status: shipped · group: truck
+FEAT-120 (2026-10-19): the engine coasting down unfired after the key is cut — the engine-sim motoring
+rows (crank/motor loads) tracking the falling rpm in `src/engine-audio.js` `updateBake`. The FEAT-33
+synth key-off thump is deleted. No preview: it needs a live rpm to follow.
 
 ### Tyre slip (screech and dirt tear)
 status: shipped · group: truck

@@ -47,7 +47,7 @@ window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase he
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
-import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setEngineAudioTuning, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playShutoffAudio, playSputterPop } from './engine-audio.js'
+import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setEngineAudioTuning, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playSputterPop } from './engine-audio.js'
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes, playTireBlowout } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
@@ -6954,7 +6954,7 @@ document.addEventListener('keydown', e => {
 // ── Game loop ─────────────────────────────────────────────────────────────────
 // Fixed-timestep accumulator (RESEARCH §Pattern 2, gafferongames.com/post/fix_your_timestep/)
 // PHYSICS_DT = 1/60s; MAX_FRAME_TIME = 0.25s (T-01-04: spiral-of-death mitigation)
-let _ignEdge = null   // S-61: the ignition catch/shutoff edge, latched per step, played once per frame
+let _ignEdge = null   // S-61: the ignition catch edge, latched per step, played once per frame
 function loop () {
   requestAnimationFrame(loop)
   perfFrameBegin()   // PERF-26: closes out the previous frame's attribution, arms this one (no-op unless ?hitch)
@@ -7033,7 +7033,7 @@ function loop () {
     // S-61: stepIgnition clears ignition.event at the top of EVERY step, so on a 2+ step frame a
     // catch on step 1 is gone by the time the frame reads it. Latch the edge here, per step.
     const ignEv = vehicleState.ignition?.event
-    if (ignEv === 'catch' || ignEv === 'shutoff') _ignEdge = ignEv
+    if (ignEv === 'catch') _ignEdge = ignEv
     if (resetRequested) {
       // R-12: R while camped breaks camp first — the same close the dialogue's "break camp" button
       // runs (un-digs the pad, hides the fire, drops the camera focus, releases the FEAT-118 clock
@@ -7498,14 +7498,13 @@ function loop () {
   // against a running engine and the driver decides when to stop by letting go (owner, 2026-08-22).
   // start/stopCrankAudio are idempotent, so calling the level every frame is free.
   //
-  // The CATCH and SHUTOFF are edges. The state machine leaves a one-shot on ignition.event for
+  // The CATCH is an edge. The state machine leaves a one-shot on ignition.event for
   // exactly the step it happened on, and the NEXT step clears it — so the step loop latches it into
   // _ignEdge (S-61) and it is played here, once per frame, however many steps the frame ran.
   const ign = vehicleState.ignition
   if (ign) {
     if (_starterEngaged(ign)) startCrankAudio(Math.min(dtrain?.engineRPM ?? 0, RANGER_PARAMS.starterFreeRPM ?? 280)); else stopCrankAudio()   // the overrunning clutch: the starter never turns faster than its free speed
-    if (_ignEdge === 'catch') playCatchAudio()
-    else if (_ignEdge === 'shutoff') playShutoffAudio()
+    if (_ignEdge === 'catch') playCatchAudio()   // key-off has no one-shot: the coast-down is the motoring rows (engine-audio.js)
     ign.event = null
   }
   _ignEdge = null

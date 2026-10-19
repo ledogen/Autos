@@ -435,7 +435,7 @@ export function setEngineAudioTuning (dyn, outside, brightDb, boomDb, starter = 
 }
 
 
-// ── FEAT-33 / FEAT-120: starter, catch and shutoff ───────────────────────────────────────────────
+// ── FEAT-33 / FEAT-120: starter and catch ─────────────────────────────────────────────────────────
 //
 // STARTER: two recorded layers. The ENGINE being dragged over compression is the engine-sim crank take
 // (updateBake above, through the exhaust like every other loop). The STARTER MOTOR itself — whine,
@@ -450,8 +450,9 @@ export function setEngineAudioTuning (dyn, outside, brightDb, boomDb, starter = 
 // main.js hands in the STARTER's speed, not the engine's: past starterFreeRPM the overrunning clutch
 // lets go, so grinding a running engine stays at the starter's free speed.
 //
-// The solenoid and pinion clicks stay synthesized (short filtered noise bursts). Catch and shutoff
-// are one-shot voices that create, ramp and dispose.
+// The solenoid and pinion clicks stay synthesized (short filtered noise bursts). The catch is a
+// one-shot voice that creates, ramps and disposes. Key-off has no one-shot: the coast-down is the
+// motoring rows in updateBake.
 
 const STARTER_FILE = 'starter-520773.flac'
 const STARTER_REF_RPM = 200   // crank rpm at which the starter loop plays at its recorded speed
@@ -557,11 +558,6 @@ function _blip (f0, f1, dur, peak, cutoff) {
  */
 export function playCatchAudio () {
   _blip(38, 96, 0.42, 0.46, 2400)   // cranking firing rate → up past idle
-}
-
-/** Key cut: a short low thump under the drone's own fade-out. */
-export function playShutoffAudio () {
-  _blip(70, 30, 0.28, 0.22, 700)
 }
 
 /**
