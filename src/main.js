@@ -1539,12 +1539,15 @@ const FAR_SHADOW_HIDE = []
     // truck's whole shadow sat still for a frame and caught up on the next (owner saw it, 2026-09-29).
     if (!_farShadowPending || !sunFar.castShadow || sceneArg !== scene) return
     _farShadowPending = false
-    const wasVisible = FAR_SHADOW_HIDE.map(o => o.visible)
-    for (const o of FAR_SHADOW_HIDE) o.visible = false
+    // Near grass/brush casts into the near map only: at 0.25 m/texel a clump's shadow is mush, and
+    // its wind sway would freeze into a map refreshed every SHADOW_FAR_SNAP metres.
+    const hide = propSystem ? FAR_SHADOW_HIDE.concat(propSystem.coverCasters) : FAR_SHADOW_HIDE
+    const wasVisible = hide.map(o => o.visible)
+    for (const o of hide) o.visible = false
     this.needsUpdate = true          // global gate (already consumed by the near pass above)
     sunFar.shadow.needsUpdate = true // per-light gate
     shadowPass.call(this, [sunFar], sceneArg, camera)
-    FAR_SHADOW_HIDE.forEach((o, i) => { o.visible = wasVisible[i] })
+    hide.forEach((o, i) => { o.visible = wasVisible[i] })
   }
 }
 // Far-cascade follow state (mirrors the near light's, at the coarse snap).
@@ -2083,8 +2086,8 @@ const _hudText = (el, s) => { if (el && el.textContent !== s) el.textContent = s
 // THE EXTENT IS SIZED TO THE TRUCK, NOT TO THE WORLD, because the truck is very nearly the only
 // thing that CASTS into this map. Terrain (terrain.js) and road (road-mesh.js) set receiveShadow and
 // never castShadow; PERF-07 moved every prop to the baked shadow atlas (castShadow = false unless the
-// propCastShadow lever flips it back). The whole realtime caster set is the truck, plus FEAT-46's POI
-// cubes. A world-sized frustum was therefore spending its entire texel budget framing geometry that
+// propCastShadow lever flips it back). The whole realtime caster set is the truck, FEAT-46's POI
+// cubes, and the near FEAT-85 grass/brush pools (too fine for the bake; see prop-system castsNearShadow). A world-sized frustum was therefore spending its entire texel budget framing geometry that
 // contributes nothing to it — which is why the truck's shadow was blocky at any map size we could
 // afford. Shrinking extent to ±20 m is what buys the sharpness; the map sizes below are LOWER than
 // the world-framed ones they replace and still land 6-12× finer:
