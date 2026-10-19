@@ -18,6 +18,7 @@
 //
 // Run: node test/ignition-starter.mjs        (self-checking; exits non-zero on failure)
 
+import { TRANSMISSIONS } from '../data/transmissions.js'
 import { stepIgnition, keyPosition, makeIgnitionState, OFF, CRANKING, RUNNING } from '../src/ignition.js'
 import { stepDrivetrain } from '../src/drivetrain.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
@@ -162,15 +163,16 @@ console.log('\n── 6. drivetrain gating ────────────�
 }
 
 console.log('\n── 7. start transient (FEAT-120) ──────────────────────────────────────────────')
-for (const engine of ['vulcan30', 'duratec23']) {
-  const P = { ...RANGER_PARAMS, ...ENGINES[engine] }   // the debug menu's engine swap is the same Object.assign
-  console.log(`  [${engine}]`)
+for (const engine of ['vulcan30', 'duratec23']) for (const box of ['auto', 'm5odr1']) {
+  // the debug menu's engine and gearbox swaps are the same Object.assign; the manual starts in neutral
+  const P = { ...RANGER_PARAMS, ...ENGINES[engine], ...(box === 'auto' ? {} : TRANSMISSIONS[box]) }
+  console.log(`  [${engine} · ${box}]`)
   // Key held from rest at tempC; catch time stretched so the crank reaches steady speed first.
   // Returns the per-step rpm trace plus the step the engine caught on.
   const start = (tempC, catchS, holdS = catchS + 0.1, secs = 5) => {
     const p = { ...P, ignitionCatchTime: catchS }
-    const vs = { throttle: 0, brake: 0, wheelOmega: [0, 0, 0, 0], engineTempC: tempC,
-      ignition: makeIgnitionState(OFF), drivetrain: { engineRPM: 0, gear: 1, shiftTimer: 0 } }
+    const vs = { throttle: 0, brake: 0, clutch: 1, wheelOmega: [0, 0, 0, 0], engineTempC: tempC,
+      ignition: makeIgnitionState(OFF), drivetrain: { engineRPM: 0, gear: 1, shiftTimer: 0, mGear: 0 } }
     const rpm = [], torque = []; let caughtAt = -1
     for (let i = 0; i < secs / DT; i++) {
       stepIgnition(vs, p, DT, i * DT < holdS)
@@ -192,9 +194,9 @@ for (const engine of ['vulcan30', 'duratec23']) {
     const { vs, rpm, torque, caughtAt } = start(T, P.ignitionCatchTime)
     const peak = Math.max(...rpm.slice(caughtAt))
     check(caughtAt >= 0 && peak > idleT + 150 && peak < 2200, `${T} °C: the catch flares to ${peak.toFixed(0)} rpm (idle ${idleT} + 150 … 2200)`)
-    const settledAt = rpm.findIndex((r, i) => i > caughtAt + 6 && rpm.slice(i).every(x => Math.abs(x - idleT) < 20))
+    const settledAt = rpm.findIndex((r, i) => i > caughtAt + 6 && rpm.slice(i).every(x => Math.abs(x - idleT) < 30))   // ±30: the manual's P-only idle valve holds ~+20
     check(settledAt > 0 && (settledAt - caughtAt) * DT < 3, `${T} °C: settles to ${idleT} rpm in ${((settledAt - caughtAt) * DT).toFixed(2)} s (< 3 s)`)
-    check(vs.drivetrain.starting === false, `${T} °C: the transient hands the engine back to the quasi-static model`)
+    check(vs.drivetrain.starting === false, `${T} °C: the flare ends and hands back to the running model`)
     check(torque.every(t => t === 0), `${T} °C: no drive torque at any wheel from key-on to idle`)
   }
 }

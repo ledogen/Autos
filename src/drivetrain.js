@@ -127,22 +127,25 @@ export function idleTargetRPM (vehicleState, params) {
 // The owner chose this over the crank integrator it replaced (2026-10-19, "I like the simplicity"):
 // that model's emergent flare (1261 warm / 1435 cold) and engine-sim's start takes set the targets.
 // It hands back to the quasi-static model once the flare has decayed (x > START_HANDBACK_X). Absent
-// ignition ⇒ never runs.
+// ignition ⇒ never runs. The manual (stepManual) feeds the same target to its idle valve instead.
 const START_HANDBACK_X = 6
+
+/** The flare's rpm target `t` s after the catch, settling onto `idleTarget` (the curve above). */
+function startFlareRPM (t, idleTarget, params) {
+  const x = t / (params.engineStartFlareRiseS ?? 0.3)
+  const warmIdle = params.engineIdleRPM || 750
+  const cold = Math.max(0, Math.min(1, (idleTarget - warmIdle) / Math.max(1, (params.idleColdRPM ?? warmIdle) - warmIdle)))
+  const warmPeak = params.engineStartFlareRPM ?? 1325
+  const peak = warmPeak + cold * ((params.engineColdFlareRPM ?? 1490) - warmPeak)
+  return idleTarget + Math.max(0, peak - idleTarget) * x * Math.exp(1 - x)
+}
 
 function stepStart (st, vehicleState, params, dt, idleTarget) {
   const running = vehicleState.ignition.state === 'running'
   if (!st.starting) { st.starting = true; st.startT = 0 }
   st.startT = running ? st.startT + dt : 0
   const x = st.startT / (params.engineStartFlareRiseS ?? 0.3)
-  let target = params.ignitionCrankRPM ?? 200
-  if (running) {
-    const warmIdle = params.engineIdleRPM || 750
-    const cold = Math.max(0, Math.min(1, (idleTarget - warmIdle) / Math.max(1, (params.idleColdRPM ?? warmIdle) - warmIdle)))
-    const warmPeak = params.engineStartFlareRPM ?? 1325
-    const peak = warmPeak + cold * ((params.engineColdFlareRPM ?? 1490) - warmPeak)
-    target = idleTarget + Math.max(0, peak - idleTarget) * x * Math.exp(1 - x)
-  }
+  const target = running ? startFlareRPM(st.startT, idleTarget, params) : (params.ignitionCrankRPM ?? 200)
   st.engineRPM += (target - st.engineRPM) * (1 - Math.exp(-dt / (params.ignitionCrankRpmLag ?? 0.12)))
   st.fuelPowerW = running ? (params.engineIdlePowerW ?? 7000) : 0
   return !(running && x > START_HANDBACK_X)
@@ -383,7 +386,7 @@ function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve
   const gears      = params.gearRatios
   const nGears     = gears.length
   const finalDrive = params.finalDrive || 3.73
-  const idle       = params.engineIdleRPM || 750
+  const idle       = idleTargetRPM(vehicleState, params)   // FEAT-120: cold fast idle
   const redline    = params.engineRedlineRPM || 5500
   const J          = params.engineInertia ?? 0.18
   const ign        = vehicleState.ignition
@@ -440,12 +443,24 @@ function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve
     st.pedal       = 0
     return
   }
-  if (ign?.event === 'catch') st.engineOmega = Math.max(st.engineOmega, idle / RPM_PER_RAD)   // it caught: idling
+  if (ign?.event === 'catch') {   // it caught: idling, and the idle valve opens for the start flare
+    st.engineOmega = Math.max(st.engineOmega, idle / RPM_PER_RAD)
+    st.starting = true
+    st.startT = 0
+  }
+  // FEAT-120: during the flare the idle valve chases the start-flare target (the curve at stepStart)
+  // rather than the idle. The flywheel and clutch stay physical, so a launch mid-flare still bites.
+  let idleSet = idle
+  if (st.starting) {
+    st.startT += dt
+    if (st.startT / (params.engineStartFlareRiseS ?? 0.3) > START_HANDBACK_X) st.starting = false
+    else idleSet = startFlareRPM(st.startT, idle, params)
+  }
 
   // ── Engine torque at the current speed ──────────────────────────────────────────────────────────
   let wE  = st.engineOmega
   const rpm = wE * RPM_PER_RAD
-  const gov = Math.max(0, Math.min(1, (idle + 50 - rpm) / 200)) * (params.idleGovernorMax ?? 0.5)
+  const gov = Math.max(0, Math.min(1, (idleSet + 50 - rpm) / 200)) * (params.idleGovernorMax ?? 0.5)
   // The idle valve bypasses the throttle plate, so its air ADDS to the driver's: it also catches an rpm
   // dip under load (a lugging launch), not just a closed-throttle idle.
   const thr = Math.max(vehicleState.throttle || 0, params.engineIdleThrottle || 0)
