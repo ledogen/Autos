@@ -89,7 +89,7 @@
       "rpmLoop": 1000.0,
       "periodCorr": 1.0,
       "seamCorr": 1.0,
-      "startS": 3.871,
+      "startS": 2.453,
       "peakDbfs": -20.42
     },
     {
@@ -424,6 +424,21 @@
     },
     {
       "file": "duratec23_crank_dry.flac",
+      "load": "crank",
+      "throttle": 0.0,
+      "rpmTarget": 200.0,
+      "rpmDisplayed": 197.6,
+      "rpmMeasured": 197.6,
+      "cycles": 3,
+      "samples": 80383,
+      "rpmLoop": 197.5,
+      "periodCorr": 0.9507,
+      "seamCorr": 0.9997,
+      "startS": 4.043,
+      "peakDbfs": -66.76
+    },
+    {
+      "file": "duratec23_crank500_dry.flac",
       "load": "crank",
       "throttle": 0.0,
       "rpmTarget": 500.0,

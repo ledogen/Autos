@@ -57,10 +57,10 @@
       "cycles": 17,
       "samples": 89962,
       "rpmLoop": 1000.0,
-      "periodCorr": 0.8982,
-      "seamCorr": 0.9921,
-      "startS": 1.001,
-      "peakDbfs": -54.6
+      "periodCorr": 0.8142,
+      "seamCorr": 0.9922,
+      "startS": 3.157,
+      "peakDbfs": -54.74
     },
     {
       "file": "vulcan30_1000_part.flac",
@@ -100,12 +100,12 @@
       "rpmDisplayed": 1325.0,
       "rpmMeasured": 1325.0,
       "cycles": 22,
-      "samples": 87868,
+      "samples": 87867,
       "rpmLoop": 1325.0,
-      "periodCorr": 0.9851,
-      "seamCorr": 0.997,
-      "startS": 2.628,
-      "peakDbfs": -51.52
+      "periodCorr": 0.9787,
+      "seamCorr": 0.9994,
+      "startS": 2.719,
+      "peakDbfs": -51.61
     },
     {
       "file": "vulcan30_1325_part.flac",
@@ -132,10 +132,10 @@
       "cycles": 22,
       "samples": 87867,
       "rpmLoop": 1325.0,
-      "periodCorr": 0.9993,
+      "periodCorr": 0.9978,
       "seamCorr": 0.9999,
-      "startS": 2.902,
-      "peakDbfs": -23.93
+      "startS": 1.996,
+      "peakDbfs": -23.98
     },
     {
       "file": "vulcan30_1760_off.flac",
@@ -164,7 +164,7 @@
       "rpmLoop": 1760.0,
       "periodCorr": 0.9995,
       "seamCorr": 1.0,
-      "startS": 1.209,
+      "startS": 3.253,
       "peakDbfs": -21.66
     },
     {
@@ -282,10 +282,10 @@
       "cycles": 69,
       "samples": 88200,
       "rpmLoop": 4140.0,
-      "periodCorr": 0.9919,
-      "seamCorr": 1.0,
-      "startS": 2.536,
-      "peakDbfs": -24.47
+      "periodCorr": 0.9949,
+      "seamCorr": 0.9999,
+      "startS": 2.013,
+      "peakDbfs": -24.5
     },
     {
       "file": "vulcan30_4140_part.flac",
@@ -372,13 +372,28 @@
       "cycles": 12,
       "samples": 84672,
       "rpmLoop": 750.0,
-      "periodCorr": 0.7316,
-      "seamCorr": 0.9548,
-      "startS": 4.36,
-      "peakDbfs": -56.28
+      "periodCorr": 0.7514,
+      "seamCorr": 0.982,
+      "startS": 5.638,
+      "peakDbfs": -55.78
     },
     {
       "file": "vulcan30_crank_dry.flac",
+      "load": "crank",
+      "throttle": 0.0,
+      "rpmTarget": 200.0,
+      "rpmDisplayed": 200.5,
+      "rpmMeasured": 200.5,
+      "cycles": 3,
+      "samples": 79165,
+      "rpmLoop": 200.5,
+      "periodCorr": 0.5321,
+      "seamCorr": 0.9201,
+      "startS": 3.991,
+      "peakDbfs": -63.15
+    },
+    {
+      "file": "vulcan30_crank500_dry.flac",
       "load": "crank",
       "throttle": 0.0,
       "rpmTarget": 500.0,
