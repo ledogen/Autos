@@ -53,6 +53,11 @@ ENGINES = {
         # Free-running idle can't hold 750 +-10 (random combustion, 0.5): balanced dyno idle instead.
         idle="balanced",
         flare_kacc=1.0,
+        # Game-cadence starter (render-time override; the script keeps 70 lb-ft / 500 rpm): the
+        # game's stall torque, and a free speed tuned so engine-sim cranks at ~200 rpm (200.6).
+        starter=("111", "195"),
+        flares={"warm": ["--flare-peak", "1261", "--flare-decay", "1.7"],          # game numbers
+                "cold": ["--flare-peak", "1435", "--flare-settle", "1100", "--flare-decay", "1.0"]},
     ),
     "duratec23": dict(
         mr="engines/autos/duratec23.mr",
@@ -60,6 +65,11 @@ ENGINES = {
         air_table="0.0008:446,0.0013:727,0.0018:949,0.0023:1106,0.0028:1247,0.0033:1377,0.0038:1499,0.0043:1617",
         idle="free",                        # holds 750 +-10 running free on the plate (0.99919)
         flare_kacc=0.4,
+        # The I4's compression rebound flings it well above engine-sim's starter speed (the starter
+        # can push, not brake), so its free speed sits low: 95 rpm cranks it at ~200 (199.1).
+        starter=("111", "95"),
+        flares={"warm": ["--flare-peak", "1357"],                                   # game number
+                "cold": []},                                                         # 1430 -> 1100
     ),
 }
 LOADS = [("off", 0.0), ("part", 0.30), ("full", 1.0)]
@@ -120,23 +130,34 @@ def plan(engine):
         for load, thr in LOADS:
             add("%d_%s" % (rpm, load), load, thr, rpm, ["--rpm", str(rpm)], True)
     add("idle_free", "idle", 0.0, None, idle_args, True, seconds=IDLE_SECONDS, idle=True)
-    # Starter layer (FEAT-33): starter_torque 70 lb-ft and starter_speed 500 rpm, the same in both
-    # scripts. Crank = ignition off, loops. Start = ignition on, released when it catches; uncut.
-    add("crank_dry", "crank", 0.0, None, ["--crank"], True)
+    # Starter layer (FEAT-33). crank = the game's cadence (~200 rpm): render-time starter override,
+    # the scripts keep 70 lb-ft / 500 rpm. crank500 = those script values (the original crank takes).
+    # Crank = ignition off, loops. Start = ignition on, released when it catches; uncut.
+    game_starter = ["--starter-torque", cfg["starter"][0], "--starter-speed", cfg["starter"][1]]
+    # ~200 rpm = 0.6 s per cycle: 12 s gives the best-seam search enough windows.
+    add("crank_dry", "crank", 0.0, None, ["--crank"] + game_starter, True, rpm_target=200,
+        seconds=IDLE_SECONDS)
+    add("crank500_dry", "crank", 0.0, None, ["--crank"], True)
     for k in (1, 2, 3):
         add("start_%d_dry" % k, "start", 0.0, None, ["--start"], True, seconds=START_SECONDS,
             seed=100 + k, trace=True)
-    # Enriched start flare: the idle-air controller drives throttle along a scripted rpm trace.
-    flare = ["--start"] + iac + ["--iac-kacc", str(cfg["flare_kacc"])] + SPARK_RESERVE
+    # Enriched start flare: game-cadence crank with the idle-air valve cracked open (0.05; at ~200 rpm
+    # with it shut the sim never catches), caught above 400 rpm, then the idle-air controller drives
+    # throttle and spark along a scripted rpm trace with the game's flare numbers.
+    flare = (["--start"] + game_starter + ["--catch-rpm", "400", "--crank-throttle", "0.05"] + iac
+             + ["--iac-kacc", str(cfg["flare_kacc"])] + SPARK_RESERVE)
     for prof in ("warm", "cold"):
         for dry in (True, False):
             add("start_%s_%s" % (prof, "dry" if dry else "stock"), "start", 0.0, None,
-                flare + ["--start-profile", prof], dry, seconds=START_SECONDS, seed=111, trace=True)
+                flare + ["--start-profile", prof] + cfg["flares"][prof], dry, seconds=START_SECONDS,
+                seed=111, trace=True)
     # Stock references (script as proofed: stock IR, owner's noise).
     add("idle_free_stock", "idle", 0.0, None, idle_args, False, seconds=IDLE_SECONDS, idle=True)
     for tag, rpm, thr in REFERENCES:
         add("%s_stock" % tag, tag.split("_")[1], thr, rpm, ["--rpm", str(rpm)], False)
-    add("crank_stock", "crank", 0.0, None, ["--crank"], False)
+    add("crank_stock", "crank", 0.0, None, ["--crank"] + game_starter, False, rpm_target=200,
+        seconds=IDLE_SECONDS)
+    add("crank500_stock", "crank", 0.0, None, ["--crank"], False)
     return takes
 
 
@@ -202,7 +223,7 @@ def cmd_render(engine):
         rel = "raw/%s.flac" % t["name"]
         sf.write(os.path.join(HERE, rel), x * scale, sr, format="FLAC", subtype="PCM_24")
         rpm_measured = t["info"]["rpmMean"]
-        target = t["rpm"] or (round(t["info"]["starterRpm"]) if t["load"] == "crank"
+        target = t["rpm"] or t.get("rpm_target") or (round(t["info"]["starterRpm"]) if t["load"] == "crank"
                               else round(rpm_measured))
         rows.append([rel, t["load"], t["throttle"], target, round(rpm_measured, 1)])
         os.remove(t["tmp"])

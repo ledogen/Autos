@@ -60,13 +60,13 @@ def best_lag(x, start, win, lo, hi):
     return lags[i] + parabolic_peak(scores, i), float(scores[i])
 
 
-def refine_period(x, rpm_guess, sr=SR):
+def refine_period(x, rpm_guess, sr=SR, frac=SEARCH_FRAC):
     """True cycle period in samples (float), from autocorrelation."""
     t0 = 120.0 * sr / rpm_guess
     start = int(0.5 * sr)
     win = int(max(2 * t0, 0.25 * sr))
     # Coarse: one cycle, +-5 %.
-    lag1, _ = best_lag(x, start, win, int(t0 * (1 - SEARCH_FRAC)), int(t0 * (1 + SEARCH_FRAC)) + 1)
+    lag1, _ = best_lag(x, start, win, int(t0 * (1 - frac)), int(t0 * (1 + frac)) + 1)
     # Fine: many cycles apart, +-1/4 cycle, divides the integer-sample error by m.
     m = int((len(x) - start - win - lag1 / 4) / lag1) - 1
     m = min(max(m, 1), 40)
@@ -86,9 +86,20 @@ def rising_zero_crossing(x, near, span):
 
 
 def cut_loop(audio, rpm_guess, sr=SR):
+    """Cut one seamless loop; if the seam is poor, retry with a tight +-1 % period search around
+    the measured rpm (slow, rippling cranks can snag a wrong repeat in the +-5 % search)."""
+    loop, info = _cut_loop(audio, rpm_guess, sr, SEARCH_FRAC)
+    if info["seamCorr"] < 0.8:
+        loop2, info2 = _cut_loop(audio, rpm_guess, sr, 0.01)
+        if info2["seamCorr"] > info["seamCorr"]:
+            return loop2, info2
+    return loop, info
+
+
+def _cut_loop(audio, rpm_guess, sr, frac):
     """Cut one seamless loop. audio: (n,) or (n, ch). Returns (loop, info dict)."""
     mono = audio if audio.ndim == 1 else audio.mean(axis=1)
-    period, score = refine_period(mono, rpm_guess, sr)
+    period, score = refine_period(mono, rpm_guess, sr, frac)
     rpm = 120.0 * sr / period
     k = max(1, round(LOOP_TARGET_S * sr / period))
     tune = int(END_TUNE_S * sr)

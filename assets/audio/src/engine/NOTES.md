@@ -4,7 +4,7 @@ Briefs: `.planning/handoffs/HANDOFF-2026-10-17-engine-sim-bake.md`, then round 2
 `HANDOFF-2026-10-19-windows-i4-idle-flare.md`. Baked on the Windows desktop.
 
 ## Round 2 (2026-10-19): Duratec I4, idle fix, start flare — results
-- **Engines:** `vulcan30` (37 takes), `duratec23` (40). Run `python bake.py all <engine>`.
+- **Engines:** `vulcan30` (39 takes), `duratec23` (42). Run `python bake.py all <engine>`.
   Files are per engine: `takes-<engine>.csv`, `raw/render_log-<engine>.json`,
   `assets/audio/engine/manifest-<engine>.json` (`manifest.json` was renamed to
   `manifest-vulcan30.json`).
@@ -25,25 +25,45 @@ Briefs: `.planning/handoffs/HANDOFF-2026-10-17-engine-sim-bake.md`, then round 2
   - "± 10" is judged on rpm averaged over one 720° cycle, like a tachometer. Instantaneous crank
     speed ripples within every cycle at idle: about ±17 rpm on the V6, ±50 on the I4. That is
     normal and not hunting.
-- **Start flare (cycle-averaged peak, time after the catch):**
+- **Start flare (cycle-averaged peak, time after the catch)**, with the game's own numbers
+  (brief amendment 4324a883). Vulcan warm 1261 settling over 1.7 s, cold 1435 → 1100 in 1.0 s.
+  Duratec warm 1357, cold 1430 → 1100.
 
   | take | target | peak | when | settles |
   |---|---|---|---|---|
-  | vulcan30 warm | 1250 | **1275** | +0.74 s | ~730 |
-  | vulcan30 cold | 1430 | **1398** | +0.77 s | ~1095 |
-  | duratec23 warm | 1250 | **1230** | +1.11 s | ~725 |
-  | duratec23 cold | 1430 | **1412** | +1.11 s | ~1090 |
+  | vulcan30 warm | 1261 | **1282** | +0.74 s | ~740 |
+  | vulcan30 cold | 1435 | **1379** | +0.81 s | ~1095 |
+  | duratec23 warm | 1357 | **1383** | +0.96 s | ~730 |
+  | duratec23 cold | 1430 | **1449** | +1.00 s | ~1085 |
 
   The flare is a **scripted throttle trace, not modelled enrichment**. The renderer's idle-air
-  controller drives throttle and spark so the rpm follows a target: warm = catch → 1250 in 0.4 s →
-  750 over 1.5 s; cold = catch → 1430 in 0.4 s → 1100 over 1.0 s. The sim can't reach the peak in
-  0.4 s: the manifold has to fill and the crank has to spin up. Pushing harder only overshoots
-  (≥ 1374 warm) and the peak still comes ≥ 0.65 s after the catch. So the peak lands 0.74–1.1 s
-  after the catch, not 0.4 s. Traces: `raw/<engine>_start_{warm,cold}_dry_rpm.csv`, columns
-  time_s, rpm, starter, target, throttle (the throttle command), air (the airflow it means),
-  spark_deg.
-- **Catch rule changed:** the starter now releases when rpm stays above **1.15×** starter speed
-  (575 rpm) for 0.1 s. It was 1.3×. At closed throttle the engine creeps to ~600–630 rpm and often
+  controller drives throttle and spark so the rpm follows a target. It rises from the catch to the
+  peak over 0.4 s, then eases to the settle speed. The sim can't reach the peak in 0.4 s: the
+  manifold has to fill and the crank has to spin up. Pushing harder only overshoots, and the peak
+  still comes ≥ 0.65 s after the catch. So the peak lands 0.74–1.0 s after the catch.
+  - Flares crank at the game's cadence (below), with the throttle cracked open to **0.05** while
+    cranking: an open idle-air valve. At ~200 rpm with it shut, neither engine ever catches. Caught =
+    above **400 rpm** for 0.1 s.
+  - Traces: `raw/<engine>_start_{warm,cold}_dry_rpm.csv`, columns time_s, rpm, starter, target,
+    throttle (the command), air (the airflow it means), spark_deg.
+- **Crank at the game's cadence** (brief job 4): a render-time starter override; the scripts keep
+  70 lb·ft / 500 rpm. Torque is the game's stall torque, **111 lb·ft**. engine-sim's starter holds a
+  set speed with up to that torque. It can push but can't brake, so the free speed was tuned until
+  the crank averages ~200 rpm:
+  - vulcan30: starter speed **195 rpm** → crank **200.5 rpm** (195–220).
+  - duratec23: **95 rpm** → **197.6 rpm** (95–356). Its compression rebound flings the light I4
+    crank well above the starter's speed.
+  - Loops: `<engine>_crank_dry` (in the manifest, `rpmMeasured` ≈ 200) and `_crank_stock`. The old
+    500-rpm takes are kept as `<engine>_crank500_{dry,stock}`. They are identical to the previous
+    `_crank_*` files (vulcan30 501.6 rpm, duratec23 556 rpm).
+  - **Seam caveats.** vulcan30_crank_dry seams at **0.92**. engine-sim's speed-holding starter makes
+    the slow crank slightly irregular (period corr 0.53); its stock copy seams at 0.996.
+    **duratec23_crank_stock does not loop** (seam ≈ 0): at 200 rpm with the ignition off, the
+    owner's noise (V 1.0 / B 0.3) dominates the quiet crank. Use crank_dry ⊛ the engine-sim IR for
+    that A/B; that's proven equal to the stock render, apart from noise.
+  - Takes at ~200 rpm are 12 s long, so the best-seam search has enough windows (0.6 s per cycle).
+- **Catch rule changed** (catch-only starts, script starter): the starter now releases when rpm
+  stays above **1.15×** starter speed (575 rpm) for 0.1 s. It was 1.3×. At closed throttle the engine creeps to ~600–630 rpm and often
   never crossed 650, so it hit the 4 s limit. The Vulcan's catch-only starts now catch at 2.1–2.6 s.
 - **Level lock now uses one fixed factor for every engine: ×0.1852** (−14.65 dB, the Vulcan's dry
   factor), so the I4 sits at its honest loudness next to the V6. A take that would pass −1 dBFS
@@ -55,7 +75,8 @@ Briefs: `.planning/handoffs/HANDOFF-2026-10-17-engine-sim-bake.md`, then round 2
   - In the sim, the I4 is a little louder than the V6 at the same rpm and load: 5500 full is
     +14.3 vs +11.7 dB before scaling.
 - **Cutter now picks the best seam:** it tries every whole-cycle start across the take, and keeps
-  the best. With random combustion, some 2 s windows wrap far better than others. This raised
+  the best. If the seam is still under 0.8, it retries with a tight ±1 % period search around the
+  measured rpm. With random combustion, some 2 s windows wrap far better than others. This raised
   vulcan30 750 off from 0.85 to 0.94; every other grid loop is ≥ 0.99. `startS` in the cutter's
   output shows where each loop was cut.
 - **Idle takes** are 12 s long (more windows to choose from). The bake tries up to 5 fixed seeds per

@@ -108,10 +108,10 @@ index 7c871b1..f86474a 100644
          LevelingFilter m_levelingFilter;
 diff --git a/src/autos_render.cpp b/src/autos_render.cpp
 new file mode 100644
-index 0000000..9fa7cf6
+index 0000000..6ff8803
 --- /dev/null
 +++ b/src/autos_render.cpp
-@@ -0,0 +1,530 @@
+@@ -0,0 +1,556 @@
 +// AUTOS headless renderer for engine-sim (FEAT-120 engine bake).
 +//
 +// Runs the simulation offline, without a window or audio device, and writes the synthesizer's
@@ -213,6 +213,11 @@ index 0000000..9fa7cf6
 +    double sparkK = 0.1;    // spark loop: degrees of advance per rpm of error
 +    double sparkMax = 10.0; // spark loop limit, degrees either way
 +    double sparkOffset = 0; // fixed advance offset, degrees (tests)
++    double crankThrottle = 0;   // --crank-throttle: throttle held while cranking (an open IAC)
++    double catchRpm = 0;        // --catch-rpm: caught when above this for 0.1 s (0 = 1.15x starter)
++    double starterTorque = 0;   // --starter-torque lb-ft: render-time override (0 = script's)
++    double starterSpeed = 0;    // --starter-speed rpm: render-time override (0 = script's)
++    double flarePeak = 0, flareSettle = 0, flareDecay = 0, flareRise = 0.4;  // 0 = profile default
 +    double iacKacc = 0.3;   // flare: extra air while the target climbs (rpm per rpm/s)
 +    bool idleBalanced = false;  // free idle as zero-load dyno hold: air trimmed until dyno torque = 0
 +    std::string airSweep;   // --air-sweep a0:a1:n  free-run at fixed idle airflows, print rpm
@@ -258,6 +263,14 @@ index 0000000..9fa7cf6
 +        else if (a == "--spark-offset") o.sparkOffset = std::stod(next());
 +        else if (a == "--idle-balanced") o.idleBalanced = true;
 +        else if (a == "--iac-kacc") o.iacKacc = std::stod(next());
++        else if (a == "--starter-torque") o.starterTorque = std::stod(next());
++        else if (a == "--catch-rpm") o.catchRpm = std::stod(next());
++        else if (a == "--crank-throttle") o.crankThrottle = std::stod(next());
++        else if (a == "--starter-speed") o.starterSpeed = std::stod(next());
++        else if (a == "--flare-peak") o.flarePeak = std::stod(next());
++        else if (a == "--flare-settle") o.flareSettle = std::stod(next());
++        else if (a == "--flare-decay") o.flareDecay = std::stod(next());
++        else if (a == "--flare-rise") o.flareRise = std::stod(next());
 +        else if (a == "--air-sweep") { o.airSweep = next(); o.freeIdle = true; }
 +        else if (a == "--air-table") {
 +            const std::string s = next();
@@ -426,11 +439,17 @@ index 0000000..9fa7cf6
 +// Target rpm s seconds after the catch, starting from the rpm at the catch.
 +// warm: up to 1250 within 0.4 s, back down to 750 over 1.5 s, hold.
 +// cold: up to 1430 within 0.4 s, down to a 1100 fast idle over 1.0 s, hold.
++// --flare-peak/-settle/-decay/-rise override the profile's numbers.
++struct FlareShape { double peak, settle, decay, rise; };
++FlareShape g_flare = { 0, 0, 0, 0.4 };
 +double flareTarget(const std::string &profile, double s, double rpmAtCatch) {
 +    const bool cold = profile == "cold";
-+    const double peak = cold ? 1430 : 1250, settle = cold ? 1100 : 750, decay = cold ? 1.0 : 1.5;
-+    if (s < 0.4) return rpmAtCatch + (peak - rpmAtCatch) * smoothstep(s / 0.4);
-+    return settle + (peak - settle) * (1 - smoothstep((s - 0.4) / decay));
++    const double peak = g_flare.peak > 0 ? g_flare.peak : (cold ? 1430 : 1250);
++    const double settle = g_flare.settle > 0 ? g_flare.settle : (cold ? 1100 : 750);
++    const double decay = g_flare.decay > 0 ? g_flare.decay : (cold ? 1.0 : 1.5);
++    const double rise = g_flare.rise > 0 ? g_flare.rise : 0.4;
++    if (s < rise) return rpmAtCatch + (peak - rpmAtCatch) * smoothstep(s / rise);
++    return settle + (peak - settle) * (1 - smoothstep((s - rise) / decay));
 +}
 +
 +// Feedforward idle airflow for a target rpm, from the Vulcan's idle-plate sweep
@@ -497,7 +516,11 @@ index 0000000..9fa7cf6
 +    // --crank: ignition off, starter held throughout. --start: ignition on, starter held until the
 +    // engine catches (above 1.3x starter speed for 0.1 s, or 4 s max), then released; warmup is 0
 +    // so the whole start, flare and settle are recorded.
-+    r.engine->setSpeedControl(0.0);
++    g_flare = { o.flarePeak, o.flareSettle, o.flareDecay, o.flareRise };
++    // Render-time starter override (the game's starter model); the script's own values stay.
++    if (o.starterTorque > 0) sim.m_starterMotor.m_maxTorque = units::torque(o.starterTorque, units::ft_lb);
++    if (o.starterSpeed > 0) sim.m_starterMotor.m_rotationSpeed = -units::rpm(o.starterSpeed);
++    r.engine->setSpeedControl(o.crankThrottle);
 +    sim.m_starterMotor.m_enabled = true;
 +    if (o.crank) r.engine->getIgnitionModule()->m_enabled = false;
 +    const double crankS = o.start ? 1e9 : (o.crank ? 1e9 : 1.5), rampS = 1.0;
@@ -542,7 +565,8 @@ index 0000000..9fa7cf6
 +    };
 +    while (audio.size() < totalSamples) {
 +        if (o.start && sim.m_starterMotor.m_enabled) {
-+            aboveFor = r.engine->getRpm() > 1.15 * starterRpm ? aboveFor + frame : 0;   // pulling away
++            const double catchAt = o.catchRpm > 0 ? o.catchRpm : 1.15 * starterRpm;     // pulling away
++            aboveFor = r.engine->getRpm() > catchAt ? aboveFor + frame : 0;
 +            if (aboveFor >= 0.1 || t > 4.0) {
 +                sim.m_starterMotor.m_enabled = false;
 +                caughtAt = aboveFor >= 0.1 ? t : -1;
@@ -634,12 +658,14 @@ index 0000000..9fa7cf6
 +    std::printf("{\"out\": \"%s\", \"engine\": \"%s\", \"rate\": %d, \"samples\": %zu, "
 +                "\"rpmTarget\": %.1f, \"rpmMean\": %.1f, \"rpmMin\": %.1f, \"rpmMax\": %.1f, "
 +                "\"throttle\": %.3f, \"dynoTorqueNm\": %.1f, \"peak\": %.4f, \"peakDbfs\": %.2f, "
-+                "\"gain\": %.4f, \"freeIdle\": %s, \"mode\": \"%s\", \"starterRpm\": %.1f, \"caughtAtS\": %.3f}\n",
++                "\"gain\": %.4f, \"freeIdle\": %s, \"mode\": \"%s\", \"starterRpm\": %.1f, \"caughtAtS\": %.3f, "
++                "\"starterTorqueLbFt\": %.1f}\n",
 +        jsonEscape(o.out).c_str(), jsonEscape(r.engine->getName()).c_str(), rate, take.size(),
 +        o.rpm, rpmMean, rpmMin, rpmMax, o.throttle,
 +        rpmN ? torqueSum / rpmN : 0.0, peak, 20 * std::log10(peak + 1e-12),
 +        o.gain, o.freeIdle ? "true" : "false",
-+        o.crank ? "crank" : o.start ? "start" : o.freeIdle ? "free-idle" : "dyno", starterRpm, caughtAt);
++        o.crank ? "crank" : o.start ? "start" : o.freeIdle ? "free-idle" : "dyno", starterRpm, caughtAt,
++        sim.m_starterMotor.m_maxTorque / units::ft_lb);
 +    return 0;
 +}
 diff --git a/src/engine_sim_application.cpp b/src/engine_sim_application.cpp
