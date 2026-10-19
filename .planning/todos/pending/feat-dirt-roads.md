@@ -163,6 +163,10 @@ Two clean invariant ties; both are *why* this is worth more than ambient flavour
   fine-shader.
 - **Friction ordering + values:** asphalt vs dirt vs raw off-road terrain — and does dirt grip vary
   wet/dry or with the surface noise? Keep v1 a flat per-class scalar unless cheap.
+  **Grip is tire type × surface (owner, 2026-10-17, items.md §3g).** Five tire types (old / standard /
+  sport / off-road / LT): off-road tires match standard on pavement and beat everything on dirt; every
+  other tire, standard included, drops **a tiny bit** of dirt grip against today's single
+  `frictionCoeff`. Build the dirt μ as a per-tire-type table, not one dirt scalar.
 - **Wear coupling (story):** dirt roads don't add a wear *track*, but **dust exposure on dirt/dusty
   roads accelerates air-filter degradation** — a concrete, resolved tie into the SM-3 damage model
   (DESIGN.md "Damage, wear & repair"; air filter does ~nothing until ~20%, then accelerates engine
