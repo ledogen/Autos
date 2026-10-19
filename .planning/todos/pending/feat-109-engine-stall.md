@@ -69,3 +69,12 @@ with the clutch out and the engine dies, exactly as it should.
 The manual gearbox is now ticketed (`feat-126-manual-transmission.md`). The bog-down stall applies
 only with the **clutch assistant OFF**. With it on, the assistant pulls the clutch in near idle, so
 the engine can't stall (owner ruling).
+
+## 2026-10-19: bog-down stall SHIPPED with FEAT-126
+
+`src/drivetrain.js` `stepManual`: engaged in gear (clutch > 0.5) below `stallRPM` (engine data: Vulcan
+450, Duratec 500) sets `ignition.state = 'off'` / `event = 'shutoff'`. That is the fuel-empty kill
+pattern, so the shutoff audio and restarting with the key just work. The clutch assistant (default ON)
+makes it unreachable. Pinned in `test/manual-gearbox.mjs` §4.
+
+Whatever else this ticket lists beyond the bog-down stall is still open.

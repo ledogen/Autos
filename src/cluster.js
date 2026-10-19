@@ -159,6 +159,9 @@ export class GaugeCluster {
     this._keyTarget = KEY_ANGLE[next]
   }
 
+  /** FEAT-126: the gear readout in the tach face — 'R' / 'N' / '1'..'5' in a manual, 'D3' / 'R' in an automatic. */
+  setGear (label) { this._gear = String(label ?? '') }
+
   setVisible (v) {
     if (v === this._visible) return
     this._visible = v
@@ -190,10 +193,11 @@ export class GaugeCluster {
     const d = this._drawn
     if (d.speed === this._speedMph && d.rpm === this._rpm && d.temp === this._tempShown
         && d.fuel === this._fuelShown && d.odo === this._odoMiles
-        && d.key === this._keyAngle && d.keyPos === this._keyPos && d.low === this._lowLit()) return
+        && d.key === this._keyAngle && d.keyPos === this._keyPos && d.low === this._lowLit() && d.gear === this._gear) return
     d.speed = this._speedMph; d.rpm = this._rpm; d.temp = this._tempShown
     d.fuel = this._fuelShown; d.odo = this._odoMiles; d.key = this._keyAngle; d.keyPos = this._keyPos
     d.low = this._lowLit()
+    d.gear = this._gear
 
     const ctx = this._ctx
     ctx.clearRect(0, 0, W, H)
@@ -201,6 +205,7 @@ export class GaugeCluster {
     this._drawOdometer(ctx)
     this._drawNeedle(ctx, TEMP, this._tempShown, 22, 2)
     this._drawLowFuelLamp(ctx)
+    this._drawGear(ctx)
     this._drawNeedle(ctx, FUEL, this._fuelShown, 22, 2)
     this._drawNeedle(ctx, TACH, this._rpm / (this._tachMax * 1000), 48, 3)
     this._drawNeedle(ctx, SPEEDO, this._speedMph / SPEEDO.max, 56, 3)
@@ -532,6 +537,19 @@ export class GaugeCluster {
   // clear of the needle's sweep (which runs across the top of the dial). Like a real dash lamp it is
   // dark with the key off, a barely-there lens when unlit, and a glowing orange disc when lit.
   _lowLit () { return this._lowFuel && this._keyPos !== 'off' }
+
+  // FEAT-126: the gear, lit like the lamps (dark with the key off), in the tach face above RPM x1000 —
+  // under the needle, which is drawn after it.
+  _drawGear (ctx) {
+    if (!this._gear || this._keyPos === 'off') return
+    ctx.save()
+    ctx.font = 'bold 15px Arial, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = this._gear === 'R' ? LAMP_ORANGE : '#e8e8e0'
+    ctx.fillText(this._gear, TACH.cx, TACH.cy + 21)
+    ctx.restore()
+  }
   _drawLowFuelLamp (ctx) {
     const x = FUEL.cx - 15, y = FUEL.cy + 9, r = 3.2
     ctx.save()

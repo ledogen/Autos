@@ -28,11 +28,11 @@ export const TRANSMISSIONS = {
     // M5OD-R1 5-speed MANUAL (FEAT-126) — the Mazda-built box behind the 1991–2008 3.0 L / 2.3 L Ranger.
     // Ratios per The Ranger Station's Ranger manual-transmissions page and f150hub's M5OD-R1 spec
     // (the 4.0 L's R1HD is the taller 3.40/2.05/1.31). No torque converter: src/drivetrain.js stepManual,
-    // with the clutch the driver (or src/clutch-assist.js) commands.
+    // with the clutch the driver (or src/clutch-assist.js) commands. Clutch capacity is the truck's
+    // (data/ranger.js clutchMaxTorque).
     'm5odr1': {
         transmissionType: 'manual',
         gearRatios:   [3.72, 2.20, 1.50, 1.00, 0.79],  // 1st → 5th
         reverseRatio: 3.40,
-        clutchMaxTorque: 450,   // N·m — ~1.8× the Vulcan's peak: holds any engine torque once engaged
     },
 }

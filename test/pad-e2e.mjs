@@ -87,5 +87,24 @@ const inv = () => js(`!!document.querySelector("#inv-screen.open")`)
 const before = await inv()
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 check(!before && await inv(), `View tap opens the inventory (${before} -> ${await inv()})`)
+// FEAT-126 manual gearbox through the pad: A up, X down, LB clutch. Swapped in the way the debug
+// selector does it, on the app's own module instances.
+const appMod = (path) => `await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("${path}")))`
+await js(`(async () => { const R = (${appMod('/data/ranger.js')}).RANGER_PARAMS, T = (${appMod('/data/transmissions.js')}).TRANSMISSIONS
+  Object.assign(R, T.m5odr1); Object.assign(__vs.drivetrain, { mGear: 0, shiftT: 0, locked: false }); window.__R = R })()`)
+await sleep(300)
+await js('document.querySelector("#inv-screen.open") && document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }))')
+await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(300)   // RB: release the park latch
+const gear = () => js('__vs.drivetrain.mGear')
+await js('__fp.b[0] = 1'); await sleep(120); await js('__fp.b[0] = 0'); await sleep(600)
+check(await gear() === 1, `manual, assist ON: A alone shifts N → 1 (gear ${await gear()})`)
+await js('__fp.b[7] = 0.6'); await sleep(2500)
+s = await vs(); check(s.v > 3 && (await js('__vs.ignition.state')) === 'running', `RT launches it on the assist (${s.v.toFixed(1)} m/s, no stall)`)
+await js('__R.clutchAssist = false')
+await js('__fp.b[0] = 1'); await sleep(120); await js('__fp.b[0] = 0'); await sleep(600)
+check(await gear() === 1, `assist OFF: A without LB is rejected (gear ${await gear()})`)
+await js('__fp.b[4] = 1'); await sleep(200); await js('__fp.b[0] = 1'); await sleep(120); await js('__fp.b[0] = 0'); await sleep(600); await js('__fp.b[4] = 0')
+check(await gear() === 2, `assist OFF: LB + A shifts 1 → 2 (gear ${await gear()})`)
+await js('__fp.b[7] = 0; __R.clutchAssist = true')
 console.log(fails ? `${fails} FAILED` : 'ALL OK', '| console errors:', errs.length ? errs : 'none')
 c.close(); cleanup(); process.exit(fails ? 1 : 0)

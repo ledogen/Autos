@@ -82,3 +82,47 @@ Ranger's **M5OD-R1 5-speed**, added as a `data/transmissions.js` entry and swapp
   condition; a bog-down with the clutch engaged stalls (FEAT-109).
 - R-N-1..5 sequential works, and reverse is refused at speed.
 - The automatics are bit-identical (fingerprint-physics) whenever no manual is fitted.
+
+## Build state (2026-10-19, `feature/feat-125-controller`)
+
+SHIPPED, in four commits. The sim and the controls are complete.
+
+**The sim** (`src/drivetrain.js` `stepManual`, branched only for `transmissionType: 'manual'`):
+- The automatic path is fingerprint-identical.
+- The M5OD-R1 is 3.72 / 2.20 / 1.50 / 1.00 / 0.79, R 3.40, per The Ranger Station / f150hub.
+- **Analog clutch** `vehicleState.clutch`. Slip passes clutch × `clutchMaxTorque` (450 N·m) and
+  integrates the flywheel (`engineInertia`: V6 0.18, I4 0.12 kg·m²).
+- **Lock** couples the engine's reflected inertia, `Je·(gear·FD)²`, into the rear wheels through
+  `params._drivenInertia` in `src/physics.js`. Without it a locked engine followed every tire jolt of
+  a 1.22 kg·m² wheel and stalled on launches.
+- **Stall** below `stallRPM` (450 / 500) with the clutch biting.
+- **Engine braking** comes from the fuel model's own losses (`engineDragNm`), faded out over the first
+  10 % of pedal. About 1.0 m/s² lifting in 3rd at 45 mph, against 0.34 clutch-out.
+- **Idle governor** is additive to the throttle, which also catches a lugging launch.
+- **S is always the brake** in a manual.
+
+**Clutch assistant** `src/clutch-assist.js`:
+- OFF: pass-through.
+- ON:
+  - centrifugal-style engagement off engine speed (`assistEngageRPM`, `assistLaunchRPM`,
+    `assistLaunchThrottleRPM`);
+  - opens the clutch for a shift and re-engages at `assistReengageRate`;
+  - the pedal always wins.
+
+**Controls:** keyboard Shift / E / Q; pad LB / A / X.
+
+**Damage:** a `transmission` track, `manualOnly`. 2 % per forced shift; `_transShiftScale` runs
+through a knee (0.5 → 1.2×, 0 → 3×). The damage screen lists the track only while a manual is fitted.
+
+**Cluster:** a gear readout in the tach face. Manual R / N / 1–5; automatic D + gear / R.
+
+**Debug:** Transmission selector + "Manual gearbox (FEAT-126)" folder.
+
+**Gates:** `test/manual-gearbox.mjs` (sim layer with the clutch driven directly, assistant layer,
+damage model); `test/pad-e2e.mjs` +4 manual checks in the real app.
+
+**Still owed:**
+- The **run-setting UI.** Gearbox auto/manual and the clutch assistant on the Controls & Assists page
+  (FEAT-41). Until then the manual is reachable only through the debug swap.
+- **Owner play-test** on both pads, with the assist on and off.
+- Follow-ups not built: a gear-grind sound on a rejected shift (FEAT-120 list), rev-match assist.

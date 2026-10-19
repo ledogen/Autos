@@ -7707,6 +7707,14 @@ function loop () {
   gaugeCluster.setLowFuel(vehicleState.fuel.gal <= RANGER_PARAMS.fuelLowLightGal)
   _renderPumpDisplay(frameTime)
   gaugeCluster.setRedline(RANGER_PARAMS.engineRedlineRPM)   // repaints the tach face only on an engine swap
+  {
+    // FEAT-126 gear readout: the manual's own gate (N while a shift is in the synchro), the automatic's
+    // D + gear or R (activeGear 0 = reversing).
+    const dtr = vehicleState.drivetrain
+    gaugeCluster.setGear(RANGER_PARAMS.transmissionType === 'manual'
+      ? (dtr?.shifting || !dtr?.mGear ? 'N' : dtr.mGear < 0 ? 'R' : String(dtr.mGear))
+      : (dtr?.activeGear === 0 ? 'R' : 'D' + (dtr?.gear ?? 1)))
+  }
   gaugeCluster.update(frameTime, vehicleState.velocity.length(), vehicleState.drivetrain?.engineRPM ?? 0)
 
   // feature/teleport: show the "teleport here" button only in free-cam, where isTeleportEnabled()

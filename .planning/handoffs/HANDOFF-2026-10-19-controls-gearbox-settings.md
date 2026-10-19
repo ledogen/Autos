@@ -65,7 +65,15 @@ Sport/Normal.
 - The physics fingerprint changes for part throttle. That is expected; re-baseline it.
 - Also the ticket's original follow-up: today the 5R55E needs ~110–120 mph for top gear.
 
-### 3. Manual transmission (FEAT-126, new ticket — the big one)
+### 3. Manual transmission (FEAT-126, new ticket — the big one) — BUILT 2026-10-19, awaiting owner play-test
+
+The sim, the clutch assistant, the controls, the damage track and the cluster readout are all
+committed. See the "Build state" section in `feat-126-manual-transmission.md`. Two things are still
+owed:
+- the run-setting UI (#4 below);
+- the owner's play-test.
+
+Try it in free roam: debug → Vehicle → Drivetrain & Brakes → Transmission = M5OD-R1.
 
 The full rulings are in `feat-126-manual-transmission.md`:
 - An M5OD-R1 data entry.
@@ -82,6 +90,11 @@ The full rulings are in `feat-126-manual-transmission.md`:
 **Plan-mode this one** (multi-file: drivetrain, transmissions data, vehicle input, damage, ignition).
 
 ### 4. Settings → Controls & Assists page (FEAT-41)
+
+Add a **Gearbox: automatic / manual** run setting next to the clutch-assistant toggle. Owner ruling:
+the manual is a run setting. Story mode applies it at run start (`_startStoryFromModal` in main.js,
+where the other per-run resets live). Free roam applies it immediately, the same Object.assign plus
+drivetrain reset the debug selector does (`src/debug.js` Transmission onChange).
 
 The rulings are in `feat-game-menus-ui.md` → "Controls & Assists page — rulings":
 - Reachable from the main menu (`#mm-settings-panel`, today a stub in `index.html`) **and** a new

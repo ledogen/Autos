@@ -178,6 +178,8 @@ export const RANGER_PARAMS = {
   // FEAT-126 manual gearbox (only read when the fitted box is transmissionType 'manual').
   clutchAssist:    true,   // the clutch assistant (src/clutch-assist.js) stands between input and sim
   clutchShiftMax:  0.15,   // [-] clutch engagement above which a shift is rejected (the clutch is "in")
+  clutchMaxTorque: 450,    // N·m — clutch capacity, ~1.8× the Vulcan's peak: holds any engine torque once in
+  engineBrakeFade: 0.1,    // [-] pedal over which closed-throttle engine braking fades out
   manualShiftTime: 0.25,   // s — synchro time in N per shift (× _transShiftScale when the box is worn)
   idleGovernorMax: 0.5,    // [-] most pedal the idle governor adds below idle (keeps a neutral engine alive)
   // The clutch assistant (src/clutch-assist.js): engagement follows engine speed like a centrifugal
