@@ -704,6 +704,11 @@ here is *better*, everything here is a **trade you can feel through the wheel**.
 
 ### 3d. Component families & brands — the build matrix [RATIFIED 2026-08-09]
 
+> **Scope [owner, 2026-10-19]:** this taxonomy is for **chassis components** (springs, dampers, bars,
+> tires and the like), not for every mod. Power mods (exhaust, intake…), lighting and bed liners/mats
+> do not fit it and are not forced into it. An engine mod only really goes one way: more power.
+> Exhausts are their own ladder: **stock → sport → race → open headers** (FEAT-120 follow-up).
+
 **Most component families ship in three characters, priced against an OEM baseline.** This is the
 owner-specified shape of the shop, and it supersedes the single-axis reading in §3c (which treated
 "durability" as one lateral trade; it is actually two independent axes).
