@@ -166,7 +166,11 @@ export function setAudioPageActive (on) {
   pageActive = !!on
   if (!ctx) return                                  // no gesture yet — nothing to suspend
   if (pageActive) { if (ctx.state === 'suspended') ctx.resume() }
-  else if (ctx.state === 'running') ctx.suspend()
+  // Unconditional: `state` only flips when a resume() SETTLES, so a tab left while one is in flight
+  // (opening a real output device can take 100s of ms) still reads 'suspended' — gating on 'running'
+  // skipped the suspend and the late resume played on in the background. suspend/resume are
+  // processed in call order, so this one always lands last.
+  else ctx.suspend()
 }
 
 // ── FEAT-33: starter, catch and shutoff ──────────────────────────────────────────────────────────
