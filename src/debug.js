@@ -34,7 +34,7 @@ import { PAPER_PARAMS, RR_PARAMS } from './paper-route.js'     // FEAT-61 Phase 
 import { DAMAGE_PARAMS, TRACKS, TRACK_IDS } from './damage.js' // SM-3: component condition model
 import { FREIGHT } from '../data/freight.js'                     // FEAT-96 scaffolding: Load Cargo
 import { ENGINES } from '../data/engines.js'                     // engine swap selector
-import { TRANSMISSIONS } from '../data/transmissions.js'         // gearbox swap selector
+import { fitTransmission } from './drivetrain.js'                 // gearbox swap selector (FEAT-126)
 import { PAD_PARAMS } from './gamepad.js'                          // FEAT-125: controller feel
 
 // Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
@@ -161,11 +161,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     .onChange(k => { Object.assign(params, ENGINES[k]); gui.controllersRecursive().forEach(c => c.updateDisplay()) })
   driveFolder.add(params, 'transmission', { '4R44E 4-speed auto': '4r44e', '5R55E 5-speed auto': '5r55e', 'M5OD-R1 5-speed manual': 'm5odr1' }).name('Transmission')
     .onChange(k => {
-      Object.assign(params, TRANSMISSIONS[k])
-      // FEAT-126: a box swap lands a manual in N, clutch unlocked, no shift in flight.
-      const d = window.__vs?.drivetrain
-      if (d) { d.mGear = 0; d.shiftT = 0; d.shifting = false; d.locked = false }
-      params._drivenInertia = 0
+      fitTransmission(params, window.__vs, k)
       gui.controllersRecursive().forEach(c => c.updateDisplay())
     })
   driveFolder.add(params, 'engineTorqueScale', 0.3, 2.0, 0.05).name('Engine Torque ×')

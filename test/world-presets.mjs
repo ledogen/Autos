@@ -4,7 +4,9 @@
 //      (deep-equal against a structured clone taken before anything ran);
 //   2. Casual's values are exact: coarse 120 m, wGrade 290, POI spacing ×0.8 — and nothing else moves;
 //   3. applying is idempotent;
-//   4. world codes round-trip: '6/C' → (6, casual), 'my/world' stays a seed.
+//   4. world codes round-trip: '6/C' → (6, casual), 'my/world' stays a seed;
+//   5. the settings store (src/settings.js): save/load round-trips, and missing, corrupt or throwing
+//      storage gives the defaults.
 //
 // Run: node test/world-presets.mjs   (self-checking; exits non-zero on failure)
 
@@ -12,6 +14,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { POI_PARAMS } from '../src/poi.js'
 import { applyWorldPreset, activePreset, formatWorldCode, parseWorldCode } from '../src/world-presets.js'
+import { loadSettings, saveSettings, SETTINGS_DEFAULTS } from '../src/settings.js'
 
 let failures = 0
 const check = (ok, msg) => { console.log(`  ${ok ? '✓' : '✗'} ${msg}`); if (!ok) failures++ }
@@ -48,6 +51,23 @@ check(eq(parseWorldCode('6/X'), { seed: '6/X', preset: null }), "an unknown lett
 check(eq(parseWorldCode('6'), { seed: '6', preset: null }), "'6' → seed, no preset")
 for (const id of ['casual', 'classic'])
   check(eq(parseWorldCode(formatWorldCode('hello world', id)), { seed: 'hello world', preset: id }), `round-trip ${id}`)
+
+console.log('settings store')
+const mem = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) } }
+const st = mem()
+check(eq(loadSettings(st), { ...SETTINGS_DEFAULTS }), 'empty storage → defaults')
+const mine = { ...SETTINGS_DEFAULTS, worldPreset: 'casual', gearbox: 'manual', steerAssist: false }
+saveSettings(mine, st)
+check(eq(loadSettings(st), mine), 'save → load round-trips')
+st.setItem('autos-settings/1', '{not json')
+check(eq(loadSettings(st), { ...SETTINGS_DEFAULTS }), 'corrupt JSON → defaults')
+st.setItem('autos-settings/1', JSON.stringify({ gearbox: 'manual', steerAssist: 'yes', bogus: 1 }))
+const mixed = loadSettings(st)
+check(mixed.gearbox === 'manual' && mixed.steerAssist === true && !('bogus' in mixed), 'wrong types and unknown keys dropped')
+const boom = { getItem () { throw new Error('blocked') }, setItem () { throw new Error('blocked') } }
+check(eq(loadSettings(boom), { ...SETTINGS_DEFAULTS }), 'throwing storage → defaults')
+let threw = false; try { saveSettings(mine, boom) } catch { threw = true }
+check(!threw, 'save into throwing storage does not throw')
 
 if (failures) { console.log(`\n${failures} FAILED`); process.exit(1) }
 console.log('\nworld-presets: PASS')

@@ -24,7 +24,22 @@
  * (persists across steps for shift hysteresis + HUD). gear: 0 = reverse, 1..N = forward gear index.
  */
 
+import { TRANSMISSIONS } from '../data/transmissions.js'
+
 const RPM_PER_RAD = 60 / (2 * Math.PI)   // rad/s → rev/min
+
+/**
+ * Fit gearbox `key` (a data/transmissions.js entry) to the vehicle: its ratios spread over the params,
+ * and a manual lands in N, clutch unlocked, no shift in flight (FEAT-126). The one path behind the
+ * debug Transmission selector and the run setting (FEAT-41).
+ */
+export function fitTransmission (params, vehicleState, key) {
+  Object.assign(params, TRANSMISSIONS[key])
+  params.transmission = key
+  const d = vehicleState?.drivetrain
+  if (d) { d.mGear = 0; d.shiftT = 0; d.shifting = false; d.locked = false }
+  params._drivenInertia = 0
+}
 
 // Input-routing threshold, shared with physics.js's brake routing: reverse engages only when clearly
 // stopped/rolling back.

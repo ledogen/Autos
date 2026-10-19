@@ -115,6 +115,8 @@ schema) · `logger.js` (frame logger + IC loader) · `perf.js` (bucketed profile
 **Menus & shell** — `stage.js` (FEAT-41 MenuStage: the live 3D scene behind the main menu AND
 every mode-entry load — its OWN scene, camera, physics world and truck, so it keeps animating while
 the real world is being reseeded and routed. Only `main.js` constructs it; the pure-node gates never
-touch it, same rule as `debris.js`).
+touch it, same rule as `debris.js`) · `settings.js` (FEAT-41 the player's saved choices — world
+preset, gearbox, assists — under one localStorage key, defaults on any storage failure; main.js applies
+them).
 
 **Entry** — `main.js` (scene setup, fixed-step accumulator loop, wires everything). Its always-on `window.__*` dev handles are the CDP surface; `__cam` (the render camera) was added for `test/cdp-smoke.mjs` (INFRA-07), and `__story` / `__tp` / `__road` / `__world` exist only under `?prof=1`.
