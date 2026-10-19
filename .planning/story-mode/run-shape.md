@@ -215,8 +215,8 @@ Rough allocation of a **day** (16 clock-running hours), which is now the unit ra
 | Fuel, service, shopping | **clock paused**, ~2 real min | **none — no budget for it** |
 | **Total** | **16 h** | **16 h** |
 
-The region boss (main mission; FEAT-103, design open) comes out of the region's day budget like any
-other job. *(The 4–8 min figure here was the log drag's, demoted to a toy 2026-10-12.)*
+The region boss (main mission; FEAT-103) comes out of the region's day budget like any other job.
+R1's (2026-10-19): five trips behind a 6-deed gate ≈ 4 + 2.5 days of R1's provisional 7. *(The 4–8 min figure here was the log drag's, demoted to a toy 2026-10-12.)*
 
 ### The mission count
 

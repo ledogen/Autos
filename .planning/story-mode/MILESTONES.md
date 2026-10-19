@@ -552,7 +552,7 @@ owner's name for it.
 | 3. To-tags: destinations filtered by class | FEAT-100 | ✅ closed |
 | 4. Job supply: always-on sources, the budget, the lock rule | FEAT-101 | ✅ closed |
 | 5. Stranded motorist (+ the first slice of fetch) | FEAT-102 | ✅ closed |
-| 6. Job site POI (R1, on the wall) | FEAT-103 | **design open** (owner, 2026-10-16) — it is the R1 boss, gated by good deeds; do not build |
+| 6. Expedition camp (R1 boss, on the wall) | FEAT-103 | **shape ruled** (owner, 2026-10-19): a five-line requisition behind 6 good deeds; fail cost and pay still open — do not build |
 | 7. Minimal shop at the required classes | FEAT-104 | open |
 | Inventory — what the player owns this run; the one grant path for shop, rewards and finds | FEAT-122 | built on `feature/feat-122`, all four questions answered (2026-10-16); merge pending |
 | Camp gear slots — what the shop sells renders at camp (items.md visible-kit rule) | FEAT-66 | open |
@@ -640,8 +640,8 @@ adopted — do not build them unprompted.
 | FEAT-43 | story region, remaining slices — confinement becomes the unlocked set, the diegetic boundary, closing the sandbox flags |
 
 FEAT-28 (the unlock primitive, now also carrying the per-region radius ladder) is in the free lane.
-FEAT-103 is the R1 boss (owner, 2026-10-16): gated by good deeds, design open, so it lands here rather
-than as an ordinary SM-3 place.
+FEAT-103 is the R1 boss, the expedition camp (owner, 2026-10-16/19): gated by good deeds, so it lands
+here rather than as an ordinary SM-3 place.
 
 ## SM-5 — The World Turns (story delivery, horror)
 

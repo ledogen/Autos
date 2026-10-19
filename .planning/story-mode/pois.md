@@ -93,17 +93,18 @@ counts with region size comes later. The gas station and tackle shop posting job
 
 ### The job site and the bosses
 
-The job site sits **on the region wall** (SM-INV-13: the gate is a place). Region unlock is a boss
-battle. **R1's boss is the bridge site** (2026-10-12; the log drag is demoted to a toy/scenario): a
-progress meter filled by courier jobs (workers) and haul jobs (lumber, stone) delivered to the site,
-with a foreman to match. Hovering the site on the map reveals where supplies can be picked up.
+The boss place sits **on the region wall** (SM-INV-13: the gate is a place). Region unlock is a boss
+battle.
 
-**Re-scoped 2026-10-16 (owner), DESIGN OPEN — see FEAT-103.** Region 1 only for now. The site is
-**not an ordinary job place**: it is unavailable until the player has the required good deeds, then
-always available, outside the budget. Open: what failing it costs (run death vs. starting over), and
-whether R1's boss is the bridge at all (its suppliers, lumber and rock, are R2/R3 yards) or e.g. an
-expedition searching for the road out of town. Later regions may get a job site or a different form.
-Region **modifiers** are undefined; all of it is SM-4 work.
+**R1's boss is the expedition camp** (owner, 2026-10-19; supersedes the 2026-10-12 bridge site for
+R1): a camp at the wall searching for the Roamer's old trail out. It posts a **requisition** — five
+lines, one trip each: firewood (splitting yard), crew, food, fuel, gear. It is **not an ordinary job
+place**: unavailable until 6 good deeds, then always available, outside the budget. Lines are taken
+from the map, persist until delivered, and never lock the giver. Full design: FEAT-103.
+
+The bridge moves later (its suppliers, lumber and stone, are the R2 and R3 yards); the direction is
+one boss per region, fed by that region's yard. Region **modifiers** are undefined; all of it is SM-4
+work.
 
 ### Names
 
