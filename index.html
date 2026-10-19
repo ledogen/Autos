@@ -42,6 +42,7 @@
       text-transform: uppercase;
       margin-bottom: 6px;
     }
+    #pause-menu .pm-code { color: #6a7a88; font-size: 11px; margin: -10px 0 4px; user-select: text; }
     #pause-menu button {
       background: none;
       border: 1px solid #555;
@@ -215,14 +216,38 @@
       color: #55636f;
       font-size: 11px;
     }
-    /* Settings stub (FEAT-41 ships the frame; the pages themselves are still open on the ticket). */
-    #mm-settings-panel {
-      display: none;
-      flex-direction: column;
-      gap: 14px;
-    }
+    /* FEAT-41 Controls & Assists. One panel, two homes: a page of #main-menu, and reparented into
+       #pause-menu (main.js _openSettings) so the pause menu gets it in its own look. */
+    #mm-settings-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
     #main-menu.settings #mm-root { display: none; }
     #main-menu.settings #mm-settings-panel { display: flex; }
+    #pause-menu.settings > :not(#mm-settings-panel) { display: none; }
+    #pause-menu.settings #mm-settings-panel { display: flex; align-items: stretch; gap: 8px; }
+    #pause-menu #mm-settings-panel .mm-title { color: #00ff88; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+    /* FEAT-41 run setup: World / Truck / Assists, then start. Same page-swap as settings. */
+    #mm-setup-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
+    #main-menu.setup #mm-root { display: none; }
+    #main-menu.setup #mm-setup-panel { display: flex; }
+    .mm-group { color: #55636f; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; margin: 14px 0 4px 18px; }
+    #pause-menu .mm-group { margin: 8px 0 0 0; }
+    #su-seed {
+      background: rgba(255, 255, 255, 0.06); border: 1px solid #3a4650; color: #ffffff;
+      font-family: monospace; font-size: 15px; padding: 6px 10px; margin-left: 18px; width: 300px;
+    }
+    #su-code { color: #6a7a88; font-size: 12px; margin: 4px 0 0 18px; }
+    /* ◂ value ▸ selector: a row button; the arrows (or ←/→) cycle it. */
+    #main-menu button.mm-sel { width: 340px; display: flex; justify-content: space-between; }
+    button.mm-sel .sel-val { color: #ffffff; }
+    button.mm-sel .sel-val i { font-style: normal; color: #00ff88; padding: 0 6px; }
+    #pause-menu button.mm-sel { display: flex; justify-content: space-between; gap: 18px; }
+    #cs-bindings { border-collapse: collapse; font-size: 12px; color: #8fa0b0; margin: 0 0 12px 18px; }
+    #pause-menu #cs-bindings { margin-left: 0; }
+    #cs-bindings td { padding: 1px 14px 1px 0; }
+    #cs-bindings td:first-child { color: #b9c4cd; }
+    /* FEAT-41 menu-nav.js: the keyboard/pad highlight, drawn exactly like hover. */
+    #main-menu button.nav-focus { color: #ffffff; border-left-color: #00ff88; padding-left: 26px; }
+    #pause-menu button.nav-focus, #story-seed-modal button.nav-focus { background: rgba(255, 255, 255, 0.08); color: #ffffff; border-color: #888; }
+    input.nav-focus { border-color: #00ff88 !important; outline: none; }
     /* FEAT-62: the scenario list — same page-swap as settings. Buttons are built from
        data/scenarios.js by main.js (_renderScenarioList); each carries a dim blurb line. */
     #mm-scenarios-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
@@ -1293,10 +1318,12 @@
        corner button INSIDE story mode (#quickjob-btn), not a pause-menu entry. -->
   <div id="pause-menu">
     <div class="pm-title">paused</div>
+    <div class="pm-code" id="pm-code"></div>
     <button id="pm-resume">resume</button>
     <button id="pm-restart" style="display:none">restart</button>
     <button id="pm-story">story mode</button>
     <button id="pm-lab">testing lab</button>
+    <button id="pm-settings">settings</button>
     <button id="pm-menu">main menu</button>
   </div>
 
@@ -1349,13 +1376,38 @@
       <div id="mm-scenario-list"></div>
       <button id="mm-scenarios-back">back</button>
     </div>
+    <!-- FEAT-41 run setup. The selector rows (.mm-sel, data-key = a src/settings.js key) are filled in by
+         main.js from one option table; the seed field takes a world code (6/C selects Casual). -->
+    <div id="mm-setup-panel">
+      <div class="mm-title" id="su-title">new free roam</div>
+      <div class="mm-group">world</div>
+      <input id="su-seed" type="text" maxlength="24" spellcheck="false" placeholder="seed — leave blank for random">
+      <button class="mm-sel" data-key="worldPreset"></button>
+      <button class="mm-sel" data-key="worldTerrain"></button>
+      <button class="mm-sel" data-key="worldPoi"></button>
+      <button class="mm-sel" data-key="worldRoads"></button>
+      <div id="su-code"></div>
+      <div class="mm-group">truck</div>
+      <button class="mm-sel" data-key="gearbox"></button>
+      <div class="mm-group">assists</div>
+      <button class="mm-sel" data-key="steerAssist"></button>
+      <button class="mm-sel" data-key="clutchAssist"></button>
+      <div class="mm-group"></div>
+      <button id="su-start">start</button>
+      <button id="su-back">back</button>
+    </div>
+    <!-- FEAT-41 Controls & Assists. Saved the moment they change. Assists only: the world preset and
+         the gearbox are pre-game choices (the setup page), never changed inside a world. -->
     <div id="mm-settings-panel">
-      <div class="mm-title">settings</div>
-      <div class="mm-note">Nothing is wired here yet. Video quality, audio levels, controls and the
-        driver-assist page are still open on FEAT-41 — the debug panel (backtick) owns them for now.</div>
+      <div class="mm-title">controls &amp; assists</div>
+      <div class="mm-group">assists</div>
+      <button class="mm-sel" data-key="steerAssist"></button>
+      <button class="mm-sel" data-key="clutchAssist"></button>
+      <div class="mm-group">bindings</div>
+      <table id="cs-bindings"></table>
       <button id="mm-settings-back">back</button>
     </div>
-    <div class="mm-foot">esc pauses &middot; backtick opens the debug panel (not in scenarios)</div>
+    <div class="mm-foot">arrows or the pad choose &middot; esc pauses &middot; backtick opens the debug panel (not in scenarios)</div>
   </div>
 
   <!-- FEAT-41: load caption. Text is set from src/story.js via the setLoading dep, and from the

@@ -45,6 +45,8 @@ const DIAGNOSTIC_ASSETS = [
   'test/box3d-determinism.mjs',
   'vendor/box3d/dist/box3d.mjs',
   'vendor/box3d/dist/box3d.wasm',
+  // FEAT-125: gamepad input dashboard — open <pages-url>/test/pad-test.html on any machine with a pad.
+  'test/pad-test.html',
 ]
 
 function copyRuntimeAssets () {

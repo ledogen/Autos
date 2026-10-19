@@ -146,6 +146,24 @@ const STEPS = [
       return Math.acos(Math.max(-1, Math.min(1, -(fx * bx + fz * bz) / Math.hypot(fx, fz) / Math.hypot(bx, bz)))) * 180 / Math.PI })()`)
     check(off < 10, `chase camera ${off.toFixed(0)}° off the truck's tail 1 s after leaving freecam (need < 10°)`)
   }],
+  ['settings', async () => {
+    // FEAT-41: Controls & Assists opens inside the pause box; Esc steps back to the list, Esc resumes.
+    const shown = (id) => js(`getComputedStyle(document.getElementById("${id}")).display !== "none"`)
+    await tap('Escape')
+    check(await until(() => shown('pause-menu'), 1000), 'Esc did not pause')
+    const code = await js('document.getElementById("pm-code").textContent')
+    check(code === 'world 6/K', `pause menu shows the world code (got "${code}", want "world 6/K")`)
+    await js('document.getElementById("pm-settings").click()')
+    check(await shown('mm-settings-panel') && !await shown('pm-resume'), 'settings did not open in the pause box')
+    check(await js('document.querySelectorAll("#cs-bindings tr").length') > 10, 'binding chart is empty')
+    // FEAT-41 (owner, 2026-10-19): the world preset and the gearbox are pre-game only — never in here.
+    check(await js('!document.querySelector("#mm-settings-panel [data-key=gearbox], #mm-settings-panel [data-key=worldPreset]")'),
+      'the in-game settings page offers a pre-game choice (gearbox / difficulty)')
+    await tap('Escape')
+    check(!await shown('mm-settings-panel') && await shown('pm-resume'), 'Esc did not step back to the pause list')
+    await tap('Escape')
+    check(await until(async () => !await shown('pause-menu'), 1000), 'Esc did not resume')
+  }],
   ['lab', async () => {
     await js('document.getElementById("pm-lab").click()')
     await sleep(3000)
@@ -159,8 +177,10 @@ const STEPS = [
     check(c.y > await js(`window.terrain(${c.x}, ${c.z})`) - 1, `truck under the world after leaving the lab: y ${c.y.toFixed(1)}`)
   }],
   ['story', async () => {
+    // FEAT-41: pm-story opens the run setup page (the seed modal is left with the refusal only).
     await js('document.getElementById("pm-story").click()')
-    await js('document.getElementById("ss-seed").value = "6"; document.getElementById("ss-start").click()')
+    check(await js('document.getElementById("main-menu").classList.contains("setup")'), 'story did not open the setup page')
+    await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'story never went live (45 s): no run HUD / POIs, or the load stage stayed up')

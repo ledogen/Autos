@@ -17,9 +17,8 @@
  * baked into the table, so the table's shape and its gal/h stay true.
  */
 
-import { engineTorqueAt, frictionNm } from './drivetrain.js'
+import { engineTorqueAt, mepToNm, frictionNm, P_ATM } from './drivetrain.js'
 
-const P_ATM = 101.325          // kPa
 const LHV_MJ_PER_KG = 42.6     // E10 gasoline lower heating value
 const KG_PER_GAL = 2.82        // E10 gasoline, 0.745 kg/L
 export const FUEL_RPM_STEP = 250, FUEL_RPM_MIN = 500, FUEL_RPM_MAX = 6000
@@ -33,7 +32,7 @@ const KEYS = ['displacementL', 'etaIndicated', 'fmepA', 'fmepB', 'fmepC', 'acces
 /** Fuel flow [g/s] at one operating point, straight off the model (no table). */
 export function fuelGramsPerS (engine, rpm, pedal) {
     if (pedal <= 0 && rpm > engine.dfcoRPM) return 0                    // decel fuel cut-off
-    const k = engine.displacementL * 1e-3 / (4 * Math.PI)               // m³ → N·m per Pa of MEP
+    const k = mepToNm(engine)
     const Twot = engineTorqueAt(rpm, engine.engineTorqueCurve) * (engine.engineTorqueScale ?? 1)
     const Tb = pedal * Twot
     const Tf = frictionNm(engine, rpm)

@@ -45,6 +45,9 @@ export const ENGINES = {
         engineRedlineRPM: 5500,  // rpm — rev limiter cuts torque above this (over 200 rpm band)
         cylinders:        6,     // [-] firing pulses per rev = cylinders / 2 (src/engine-audio.js)
         shiftUpRPM:       5400,  // rpm(coupled) — WOT upshift, just under the limiter (always-WOT play)
+        shiftUpLightRPM:  2000,  // rpm(coupled) — upshift at a light foot (FEAT-124), into the cheap low-rpm map cells
+        engineInertia:    0.18,  // kg·m² — crank + flywheel + clutch; the manual's engine-speed state (FEAT-126)
+        stallRPM:         450,   // rpm — dragged below this with the clutch biting, the engine dies (FEAT-126)
 
         // ── Fuel model (FEAT-50) — USER-OWNED ──────────────────────────────────────────────────
         displacementL: 2.99,     // L — swept volume
@@ -75,6 +78,9 @@ export const ENGINES = {
         engineRedlineRPM: 6250,  // the PCM's rev limiter on the Duratec Ranger
         cylinders:        4,
         shiftUpRPM:       6000,  // past the 5250 power peak: the next gear still lands near 4750
+        shiftUpLightRPM:  2200,  // the I4 makes its torque higher up than the V6
+        engineInertia:    0.12,  // lighter crank and flywheel than the V6
+        stallRPM:         500,
 
         // ── Fuel model (FEAT-50) — USER-OWNED ──────────────────────────────────────────────────
         displacementL: 2.26,

@@ -98,7 +98,8 @@ function getBrakeTorque (wheelIndex, vehicleState, params, longVel) {
   // SM-3: worn pads deliver less torque. params._brakeScale{Front,Rear} is published by
   // src/damage.js; absent (headless gates, damage off) it reads as 1 and nothing changes.
   const brakeDmg = isRear ? (params._brakeScaleRear ?? 1) : (params._brakeScaleFront ?? 1)
-  if (vehicleState.brake > 0 && longVel > REV_THRESHOLD) {
+  // FEAT-126: in a MANUAL, S is always just the brake — reverse is a gear (R), not the pedal.
+  if (vehicleState.brake > 0 && (longVel > REV_THRESHOLD || params.transmissionType === 'manual')) {
     const maxBt = isRear ? (params.maxBrakeTorqueRear ?? 800) : (params.maxBrakeTorqueFront ?? 1200)
     return vehicleState.brake * maxBt * brakeDmg
   }
@@ -982,7 +983,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     // Newton converges in 1-3 iterations at 60Hz; the loop caps at 4 with a tight residual
     // tolerance. Only a grounded wheel (lastFn > 0) gets here; airborne ones took stepAirborneWheel.
     {
-      const wheelInertia = params.wheelInertia || 1.22
+      // FEAT-126: a manual with its clutch LOCKED drags the engine's inertia through the gearbox —
+      // published per rear wheel by stepManual (Je·(gear·final)²/2, ~17 kg·m² each in 1st vs the wheel's
+      // own 1.22). Absent/0 for the automatic, whose converter decouples the engine.
+      const wheelInertia = (params.wheelInertia || 1.22) + (i >= 2 ? (params._drivenInertia ?? 0) : 0)
       const driveTorque  = getDriveTorque(i, vehicleState, params)
       const brakeTorque  = getBrakeTorque(i, vehicleState, params, lastLongVelCur)
       if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque
@@ -1141,7 +1145,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
  * taken out, rolling at the wheel's own speed — so a take-off does not land on its old deflection.
  */
 function stepAirborneWheel (i, vehicleState, params, dt, longVel) {
-  const wheelInertia = params.wheelInertia || 1.22
+  const wheelInertia = (params.wheelInertia || 1.22) + (i >= 2 ? (params._drivenInertia ?? 0) : 0)   // FEAT-126, see the grounded solve
   const driveTorque  = getDriveTorque(i, vehicleState, params)
   const brakeTorque  = getBrakeTorque(i, vehicleState, params, longVel)
   if (vehicleState.brakeTorque) vehicleState.brakeTorque[i] = brakeTorque

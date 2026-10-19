@@ -105,18 +105,21 @@ check(shifts.length === 3 && shifts.every(r => Math.abs(r - I45.shiftUpRPM) < 50
 
 console.log('\n4. driving style, through the real drivetrain')
 // 55 mph held on the wheels; one run with a light foot, one floored. Same road speed, same minute.
-// Both land in the SAME gear today: FEAT-23's shift schedule is pedal-blind (shiftUpRPM 5400, tuned
-// for always-WOT play), so a gentle driver cannot short-shift into a low-rpm cell yet — the saving
-// here is the pedal axis alone. A pedal-aware upshift (the owner's "transmission mapping") would
-// widen it; raise this band when that lands.
+// FEAT-124's throttle-averaged schedule lets the light foot short-shift into top gear (low-rpm cells)
+// while the floored run holds the WOT gear, so the saving is the pedal axis AND the gear. The first
+// 10 s are discarded: the gearbox walks up from 1st while the throttle average settles.
 const burnAt = pedal => {
   const vs = { throttle: pedal, brake: 0, wheelOmega: [0, 0, 0, 0].fill(55 * 0.44704 / P.wheelRadius), ignition: makeIgnitionState(RUNNING), fuel: makeFuelState(P) }
   const p = { ...P }
-  for (let t = 0; t < 60; t += DT) { stepDrivetrain(vs, p, DT, 55 * 0.44704); stepFuel(vs, p, DT) }
-  return { gal: P.fuelTankGal - vs.fuel.gal, gear: vs.drivetrain.gear, rpm: vs.drivetrain.engineRPM }
+  for (let t = 0; t < 10; t += DT) { stepDrivetrain(vs, p, DT, 55 * 0.44704); stepFuel(vs, p, DT) }
+  const gal0 = vs.fuel.gal
+  for (let i = 0; i < 60 / DT; i++) { stepDrivetrain(vs, p, DT, 55 * 0.44704); stepFuel(vs, p, DT) }   // integer steps: exactly 60 s
+  return { gal: gal0 - vs.fuel.gal, gear: vs.drivetrain.gear, rpm: vs.drivetrain.engineRPM }
 }
 const light = burnAt(0.42), wot = burnAt(1)
-check(wot.gal > light.gal * 1.8, `floored burns ${(wot.gal / light.gal).toFixed(1)}× a light foot over the same minute (gear ${wot.gear} @ ${wot.rpm.toFixed(0)} vs gear ${light.gear} @ ${light.rpm.toFixed(0)} rpm)`)
+// 2.0× on the pedal axis alone (pedal-blind schedule, both in 2nd); the short-shift into 3rd lifts it
+// to ~3.2×. 2.6 sits between, so losing the short-shift fails here.
+check(wot.gal > light.gal * 2.6 && light.gear > wot.gear, `floored burns ${(wot.gal / light.gal).toFixed(1)}× a light foot over the same minute (gear ${wot.gear} @ ${wot.rpm.toFixed(0)} vs gear ${light.gear} @ ${light.rpm.toFixed(0)} rpm)`)
 check(Math.abs(light.gal - fuelRateGph(map, light.rpm, 0.42) * P.fuelBurnScale / 60) < 1e-6, `the burn is the table × fuelBurnScale (${P.fuelBurnScale}×), nothing else`)
 
 console.log('\n5. the tank')

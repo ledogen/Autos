@@ -64,7 +64,7 @@ export class StorySystem {
   /**
    * @param {object} deps - adapter into main.js (keeps this module free of engine imports):
    *   setGameMode(mode)          — flip window.__setGameMode
-   *   getWorldSeed()             — current numeric worldSeed
+   *   isWorldLoaded(seedStr)     — is this seed, under the active world preset, the world standing?
    *   applySeed(seedStr)         — reseed + regenerate the world; resolves when the rebuild settles
    *   clearSpawnOverride()       — drop any free-roam teleport spawn point, so the SEED decides
    *                                where the truck seats and therefore where the region centres
@@ -179,7 +179,7 @@ export class StorySystem {
     this._d.setQuickJobVisible(false)
 
     this._seed = seed          // the disclaimer names the seed that was refused
-    const reseed = this._d.applySeed && String(this._d.getWorldSeed()) !== seed
+    const reseed = this._d.applySeed && !this._d.isWorldLoaded(seed)
     const settled = reseed ? this._d.applySeed(seed) : this._d.reseat()
     Promise.resolve(settled)
       .catch(e => { console.warn('[story] world settle failed', e) })

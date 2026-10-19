@@ -296,6 +296,11 @@ Story mode does not replace what exists — it **forks** it. A **main menu** sel
   2026-10-12]:** lives (SM-INV-1 lives clause), free tows, assists, and inflation as **three** knobs —
   damage scaling, gas scaling, upgrade/other item costs. The default is none of them: "the way the
   game was meant to be played." A forgiving preset turns them on for the average gamer.
+  **Gearbox [RATIFIED 2026-10-19]:** automatic or manual is a run setting chosen on the run setup
+  page — in story mode it is the jalopy's **starting** box, fixed for the run; finding the opposite
+  box is future loot (FEAT-127). In free roam it is simply what the truck has. Like the world preset,
+  it is offered **only before the world is generated**; the in-game settings page carries assists and
+  (later) control remapping, never the world or the truck.
 - **One-off scenarios** — self-contained set pieces (Dodge the Rocks, Escape the Police,
   etc.), each reusing the same engine with a bespoke frame.
 
@@ -715,9 +720,14 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   everyday channel. Authored beats are the exception at gates, not the texture.*
 - **SM-INV-12 — Determinism discipline: worldgen is meta-free.**
   **[RATIFIED 2026-07-29, superseding the 2026-07-16 widening]** Three layers, not two:
-  - **Worldgen is a pure function of `(worldSeed, coords)`.** Terrain, router output, POI
-    placement and the road network are identical for every player on a given seed, forever,
+  - **Worldgen is a pure function of `(worldSeed, worldKnobs, coords)`.** Terrain, router output,
+    POI placement and the road network are identical for every player on a given world, forever,
     regardless of unlocks. **No meta-progression input reaches worldgen.**
+    *[Amended 2026-10-19] The world knobs (terrain relief, POI spacing, road climbs) are part of the
+    world's identity and its code — `6/K` is seed 6 Classic, `6/C` seed 6 Casual, `6/T80P120R290`
+    spells any other combination — exactly the route the 2026-08-01 difficulty rule below left open.
+    A code carries the VALUES, never a hash (a hash cannot rebuild its world). Sharing the code shares
+    the world. Classic is the world as it was before the knobs existed.*
   - **Run-layer world state is a pure function of `(worldSeed, runState, coords)`**, where
     `runState` carries **run age and run progress** only. This is where escalation lives —
     parameter states, consumed POIs, story-tier weirdness. It **resets completely on run reset**.
@@ -1454,6 +1464,14 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
   **not** reach worldgen: SM-INV-12 makes a seed mean the same world for every player, and a
   difficulty that changed terrain or roads would break seed sharing outright. If difficulty ever must
   affect generation, it has to become part of the seed's identity rather than a separate dial.
+  > **Amendment [RATIFIED 2026-10-19] — world difficulty presets, Casual / Classic.** Exactly that
+  > route: the world knobs are part of the world code (SM-INV-12). Three knobs on the run setup page:
+  > **terrain relief** and **POI spacing**, each 50–120 % of Classic in 10 % notches (nothing steeper
+  > than Classic — owner: "if it got much steeper than classic it would be quite deadly"), and **road
+  > climbs**, gentle (`roadV2.wGrade` 290, g* 5.9 %) or normal (180, 7.5 %). **Classic** is today's world
+  > (100/100/normal, code `K`); **Casual** is 80/80/gentle (code `C`); anything else prints as
+  > `T<t>P<p>R<wGrade>`. The hard grade cap and cTurn never move. The ratified run-start knobs (lives,
+  > tows, assists, inflation) are untouched by this.
 - **Saving is suspend-and-resume, not checkpointing.** One slot per profile; written on quit;
   **loading a save deletes it**; death deletes it. Resuming is not restoring — it's picking the run
   back up. Standard roguelike practice (Spelunky, FTL, Slay the Spire), and SM-INV-1 is intact:

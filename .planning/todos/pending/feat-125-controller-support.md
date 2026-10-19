@@ -47,3 +47,70 @@ each frame; there are no events for axes).
   mph. Light pedal should upshift early, full pedal late. Deliberately deferred until a real
   part-throttle exists to tune it against (feat-vehicle-drivetrain-architecture's "ideally
   throttle-dependent shift points").
+
+## Hardware findings (2026-10-18, Mac M4 + Chrome, via `test/pad-test.html`)
+
+- **Xbox One pad, Bluetooth:** `mapping: standard`, all analog inputs clean.
+- **8BitDo Ultimate 2C Wireless, 2.4 GHz dongle:** NOT visible to the browser on macOS. In that mode the
+  dongle's HID interfaces declare a keyboard (usage 0x01/0x06; this is what pops macOS's "set up your
+  keyboard" wizard) and a vendor page (0xFF7A). There is no gamepad/joystick usage, so the Gamepad API never
+  lists it. It is X-input, which macOS has no driver for. Expected to work on Windows.
+- **8BitDo Ultimate 2C Wireless, Bluetooth (mode switch → BT):** `mapping: standard`, analog triggers and
+  sticks correct. Pairing dropped twice; power-cycling the controller fixed it, and it has been stable since.
+  The two extra back shoulder buttons report nothing — out of scope (most pads lack them).
+- Both pads use the W3C standard layout, so FEAT-125 binds against standard indices only. There is no
+  per-device remap table until a pad that reports `mapping: ""` actually needs one.
+
+## Build state (2026-10-19, `feature/feat-125-controller`, commit 859e44b)
+
+SHIPPED on the branch:
+- `src/gamepad.js`:
+  - Analog triggers go straight to the pedals.
+  - Position steering with a slew limit.
+  - Buttons replay as synthetic key events.
+  - Last-moved wins.
+  - Unplug-safe.
+- Steering-assist toggle (`PAD_PARAMS.steerAssist`).
+- Right-stick orbit as a RATE, handing back to chase 2 s after release (also hood look and camp
+  orbit).
+- `test/pad-test.html`.
+- Debug folder Vehicle → Controller.
+
+## Pad layout — ruling (owner, 2026-10-19), Forza-style
+
+**Replaces the first-cut layout in `src/gamepad.js` BUTTON_KEYS:**
+
+| Button | Action |
+|---|---|
+| RT / LT | throttle / brake (analog) |
+| Left stick | steer |
+| Right stick | orbit cam |
+| **RB** | handbrake (hold) / park (tap) |
+| **LB** | clutch (hold) — manual gearbox only (FEAT-126) |
+| **A / X** | upshift / downshift — manual only; nothing in the automatic |
+| **B** (hold) | pump / aim |
+| Y (hold) | ignition |
+| Start | ~~map~~ **pause** (2026-10-19 re-map, below) |
+| View tap | ~~inventory~~ **map** |
+| **View hold 1 s** | reset truck |
+| D-pad ↑ / ↓ / ← / → | ~~headlights~~ **inventory** / camp / damage screen / **recovery** |
+| Right-stick click | camera mode |
+| Left-stick click | **headlights** (was unbound) |
+
+**Re-map — ruling (owner, 2026-10-19, with FEAT-41's run setup): Start = pause, View = map.** That
+displaced View's tap (the inventory). The owner's placement: "plan as written but headlights on left
+stick … inventory on D-pad up, damage on left" — **this keeps the D-pad strictly to screens.**
+SHIPPED in 31507cb. The live table is `BINDINGS` in `src/gamepad.js`; the Controls & Assists page's
+binding chart is generated from it, so the two cannot drift.
+
+**Menu navigation (SHIPPED 31507cb):** while a menu owns the screen (`src/menu-nav.js` sets
+`pad.menuActive`), the pad speaks the menu's keys — A = Enter, B = Escape (back), Start = Escape
+(unpause), D-pad and left stick = arrows with hold-repeat — and every other button is silent, with
+sticks and triggers zeroed. `node test/pad-e2e.mjs --port=3775` covers the layout and a pad-only menu
+run.
+
+## Still open on this ticket
+
+- Button glyphs in prompts (`park-badge.js keycap`).
+- Pad navigation of the in-game screens (inventory, map, offer board, damage).
+- Acceptance re-check in story mode with real hardware.

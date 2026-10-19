@@ -16,7 +16,7 @@ or delete a file, update the relevant line here in the same commit — it's one 
 | `assets/models/` | Hand-authored `.glb` assets + `CREDITS.md`. Convention: `.planning/research/ASSETS.md`; style: `ART-STYLE.md`. |
 | `assets/items/` | FEAT-122 inventory thumbnails, `<item id>.png` (256 px, transparent), one per `data/items.js` ITEMS key. Rendered in Blender by `assets/models/src/items.py` (models + one fixed rig); fetched by URL, copied to `dist/` by the vite.config.js plugin, gated by `test/dist-assets.mjs`. |
 | `vendor/box3d/` | Vendored Box3D WASM bindings. Imported ONLY by `src/physics-engine.js` (FEAT-48 seam). |
-| `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts, refactor fingerprints (`fingerprint-world.mjs` / `fingerprint-physics.mjs`: `--out` + `--compare` hash tables, review-2 S-80). Two working visual tools, run by hand: `impostor-ab.mjs` (CDP A/B of billboard impostors vs their 3D originals — PNG pairs + changed-pixel metrics) and `map-icon-sheet.mjs` (standalone SVG contact sheet of every `data/map-icons.js` glyph at map size). Pure node — never touches Vite — except `cdp-smoke.mjs` (INFRA-07), the one `browser: true` gate: it starts its own Vite on a free port and drives the real app in Chrome; `run-all.mjs` runs it only with `--browser` / `CDP_SMOKE=1`. |
+| `test/` | Headless gates (`gates.mjs` + `run-all.mjs`), shared libs (`lib/*.mjs`), replay harness (`replay.mjs`), rainy-day scripts, refactor fingerprints (`fingerprint-world.mjs` / `fingerprint-physics.mjs`: `--out` + `--compare` hash tables, review-2 S-80). Two working visual tools, run by hand: `impostor-ab.mjs` (CDP A/B of billboard impostors vs their 3D originals — PNG pairs + changed-pixel metrics) and `map-icon-sheet.mjs` (standalone SVG contact sheet of every `data/map-icons.js` glyph at map size). One standalone browser page, `pad-test.html` (FEAT-125 — live view of every connected gamepad's standard-layout and raw axes/buttons; shipped to Pages via vite.config.js). `pad-e2e.mjs` (FEAT-125 rainy-day script, not a gate) drives the real app on a running dev server with a scripted fake gamepad and checks the pad → vehicle/camera contract. Pure node — never touches Vite — except `cdp-smoke.mjs` (INFRA-07), the one `browser: true` gate: it starts its own Vite on a free port and drives the real app in Chrome; `run-all.mjs` runs it only with `--browser` / `CDP_SMOKE=1`. |
 | `tools/dashboard/` | `npm run dash` ticket-tracker viewer (:8010). Read-only over `.planning/todos/`, except the Sounds tab's upload, which writes takes into `wip/audio/<slug>/`. |
 | `wip/audio/<slug>/`, `assets/audio/<slug>/` | Sound takes, one folder per FEAT-120 sound (slug = its `###` heading). `wip/` is git-invisible (recordings in progress, dashboard uploads); promote to `assets/audio/` when the game plays it. |
 | `.planning/` | Planning record. **Live:** `todos/` (tracker), `story-mode/DESIGN.md` + `MILESTONES.md` (roadmap), `research/` (standing references). **Historical:** `phases/`, `milestones/`, handoffs, `STATE.md`. |
@@ -54,7 +54,7 @@ component condition model — reads vehicleState signals, writes `params._*Scale
 physics stack never imports it) · `fragile.js` (FEAT-97 fragile cargo condition — pure; main.js feeds
 it the strap's felt g each step).
 
-**World generation** — `seed.js` (djb2 / mulberry32 / FNV-1a hash32 / seedFor + the shared hash2 / clamp01 / smooth01, pure) · `terrain.js` (chunk ring, carve table, analytic
+**World generation** — `seed.js` (djb2 / mulberry32 / FNV-1a hash32 / seedFor + the shared hash2 / clamp01 / smooth01, pure) · `world-presets.js` (FEAT-41 world knobs — terrain relief, POI spacing, road climbs — and the Casual / Classic presets over them; writes absolute values into RANGER_PARAMS / POI_PARAMS from defaults captured at load; the world code `6/K` · `6/C` · `6/T80P120R290`) · `terrain.js` (chunk ring, carve table, analytic
 height) · `terrain-height.js` (THE height function + seeded noise + chunk grid constants and the Worker's
 height-param list — imported by main thread, worker, road.js, data/flora.js and the headless gates) · `terrain-worker.js` (chunk heightmap Worker, module entry) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
 rock classification) · `map-cover.js` (map-resolution forest cover) · `water.js` (ponds/streams
@@ -87,7 +87,7 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 `model-service.js` (FEAT-59 .glb import service) · `campfire.js` (FEAT-66 lit campfire: ASSET-24 + flames/embers/point light) · `smoke.js` · `dust.js` (also owns the shared billboard sheet `makeBillboardMesh` + `rotateByQuat`, used by smoke/dirt-spray) · `dirt-spray.js` ·
 `map2d.js` (M-key dev map).
 
-**Audio** — `engine-audio.js` · `tire-audio.js` (tonal stick-slip) · `wind-audio.js` · `heartbeat-audio.js` (FEAT-87 rank-bar lub-dub) · `glass-audio.js` (FEAT-87 rank tile shatter; FEAT-97 fragile cargo hits) · `pump-audio.js` (FEAT-50 gas pump: nozzle, flow, gallon bell, shutoff, register).
+**Audio** — `engine-audio.js` · `gearbox-audio.js` (FEAT-126 missed-shift grind) · `tire-audio.js` (tonal stick-slip) · `wind-audio.js` · `heartbeat-audio.js` (FEAT-87 rank-bar lub-dub) · `glass-audio.js` (FEAT-87 rank tile shatter; FEAT-97 fragile cargo hits) · `pump-audio.js` (FEAT-50 gas pump: nozzle, flow, gallon bell, shutoff, register).
 
 **Story mode & gameplay** — `story.js` (FEAT-43 gamemode sandbox) · `day.js` (day clock, FEAT-47) ·
 `economy.js` (payout/wallet/points spine, FEAT-53) · `inventory.js` (FEAT-122 per-run inventory —
@@ -115,6 +115,9 @@ schema) · `logger.js` (frame logger + IC loader) · `perf.js` (bucketed profile
 **Menus & shell** — `stage.js` (FEAT-41 MenuStage: the live 3D scene behind the main menu AND
 every mode-entry load — its OWN scene, camera, physics world and truck, so it keeps animating while
 the real world is being reseeded and routed. Only `main.js` constructs it; the pure-node gates never
-touch it, same rule as `debris.js`).
+touch it, same rule as `debris.js`) · `settings.js` (FEAT-41 the player's saved choices — world
+preset, gearbox, assists — under one localStorage key, defaults on any storage failure; main.js applies
+them) · `menu-nav.js` (FEAT-41 ↑/↓/←/→/Enter over whichever menu owns the screen — one path for keyboard
+and pad, the pad reaching it through gamepad.js's menu key map; a `.nav-focus` class, never DOM focus).
 
 **Entry** — `main.js` (scene setup, fixed-step accumulator loop, wires everything). Its always-on `window.__*` dev handles are the CDP surface; `__cam` (the render camera) was added for `test/cdp-smoke.mjs` (INFRA-07), and `__story` / `__tp` / `__road` / `__world` exist only under `?prof=1`.

@@ -178,6 +178,29 @@ export const RANGER_PARAMS = {
   // upshifts on the flat. rpm(coupled).
   shiftHysteresis: 800, // rpm(coupled) — headroom the higher gear must clear before upshifting
   shiftHoldTime: 0.6,   // s — minimum dwell between shifts (anti-hunt timer)
+  // FEAT-124 (owner 2026-10-19: ONE schedule, no modes): the upshift point and the anti-hunt band both
+  // slide with a time-weighted throttle average — exponential, time constant shiftThrottleTau — from
+  // their light-load ends (the ENGINE's shiftUpLightRPM; shiftHysteresisLight here) at average 0 up to
+  // today's shiftUpRPM / shiftHysteresis at average 1, shaped by shiftThrottleCurve. Averaged, not instantaneous, so a keyboard driver
+  // feathering W to ~40 % and a pad held at 40 % get the same shifts. Floored = today's rev-out.
+  shiftThrottleTau:     1.5,  // s — throttle-average time constant
+  shiftHysteresisLight: 300,  // rpm(coupled) — anti-hunt headroom at a light foot
+  kickdownDelay:        0.4,  // s — pedal held ≥ 95 % this long = kickdown (a feathered tap is not one)
+  // FEAT-126 manual gearbox (only read when the fitted box is transmissionType 'manual').
+  clutchAssist:    true,   // the clutch assistant (src/clutch-assist.js) stands between input and sim
+  clutchShiftMax:  0.15,   // [-] clutch engagement above which a shift is rejected (the clutch is "in")
+  clutchMaxTorque: 450,    // N·m — clutch capacity, ~1.8× the Vulcan's peak: holds any engine torque once in
+  engineBrakeFade: 0.1,    // [-] pedal over which closed-throttle engine braking fades out
+  manualShiftTime: 0.25,   // s — synchro time in N per shift (× _transShiftScale when the box is worn)
+  idleGovernorMax: 0.5,    // [-] most pedal the idle governor adds below idle (keeps a neutral engine alive)
+  // The clutch assistant (src/clutch-assist.js): engagement follows engine speed like a centrifugal
+  // clutch — 0 at idle + assistEngageRPM, 1 at assistLaunchRPM + assistLaunchThrottleRPM × throttle.
+  assistEngageRPM:         100,   // rpm above idle where it starts to bite
+  assistLaunchRPM:         1400,  // rpm where it is fully in, at zero throttle
+  assistLaunchThrottleRPM: 1200,  // rpm added at full throttle (a floored launch slips up to ~2600)
+  assistReengageRate:      5,     // 1/s — fastest the clutch comes back in after a shift (~0.2 s)
+  shiftThrottleCurve:   2,    // [-] exponent on the average: 2 keeps part throttle near the light end
+                              //     (35 % → 12 % of the way to WOT), 1 = linear
 
   // Wheelspin shift-lock (FEAT-23): on an open-diff RWD burnout the rear wheels spin faster than the
   // truck moves, inflating the coupled RPM past the upshift point → the box hunts mid-slide. When the

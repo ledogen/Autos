@@ -89,6 +89,11 @@ export const TRACKS = {
   // twice. Pinned in test/damage-filter-puncture.mjs.
   airFilter:  { label: 'Air Filter', cls: 'filter',     regions: [] },
   radiator:   { label: 'Radiator',   cls: 'radiator',   regions: ['front'] },
+  // FEAT-126: the MANUAL gearbox's synchros. Worn only by a shift forced with the clutch in (the sim
+  // rejects it and flags drivetrain.missShift); a worn box SHIFTS SLOWER (owner, 2026-10-19), it never
+  // pops out of gear. `regions: []` keeps impacts off it. `manualOnly`: the damage screen lists it only
+  // while a manual is fitted (an automatic truck has no synchros to show).
+  transmission: { label: 'Transmission', cls: 'transmission', regions: [], manualOnly: true },
   headlightL: { label: 'Headlight L', cls: 'headlights', regions: ['front'], side: 'left'  },
   headlightR: { label: 'Headlight R', cls: 'headlights', regions: ['front'], side: 'right' },
 
@@ -134,6 +139,10 @@ export const DAMAGE_PARAMS = {
   // Engine is the one curve the owner specified exactly: 100→20% costs 10% of torque, 20→0% costs
   // another 50%.
   engineKnee: 0.20, engineAtKnee: 0.90, engineAtZero: 0.40,
+  // FEAT-126 transmission: a multiplier on the synchro time (1 = new). A shift forced with the clutch
+  // in costs transMissWear of condition (owner's figure: 2 %).
+  transKnee: 0.50, transAtKnee: 1.2, transAtZero: 3.0,
+  transMissWear: 0.02,
   // Tires: condition scales the friction coefficient directly. Linear from new to bald is fine —
   // a half-worn tire really is meaningfully worse, unlike a half-worn spring.
   // Grip is FLAT-THEN-CLIFF, not linear: mu = atZero + (1 − atZero)·(1 − (1 − c)^tireMuExp).
@@ -832,6 +841,12 @@ export class DamageModel {
     return 1 + (P.filterEngineMult - 1) * t * t
   }
 
+  /** FEAT-126: synchro-time multiplier — 1 new, transAtZero (3×) when the box is dead. */
+  transShiftScale () {
+    const P = DAMAGE_PARAMS
+    return kneeResponse(this.get('transmission'), P.transKnee, P.transAtKnee, P.transAtZero)
+  }
+
   engineScale () {
     const P = DAMAGE_PARAMS
     return kneeResponse(this.get('engine'), P.engineKnee, P.engineAtKnee, P.engineAtZero)
@@ -1156,6 +1171,8 @@ export class DamageModel {
     params._damperScaleFront = this.damperScale(false)
     params._damperScaleRear  = this.damperScale(true)
     params._engineDamageScale = this.engineScale() * this.overheatScale()
+    params._transShiftScale   = this.transShiftScale()
+    this.manualBox = params.transmissionType === 'manual'   // the damage screen shows manualOnly tracks off this
     // Alignment is geometry, not a multiplier — published as the raw per-wheel offsets the
     // suspension applies on top of the static toe/camber. alignment.js consumes these (BUG-79).
     params._toeOffsetDeg    = this.toeOffsetDeg
@@ -1230,6 +1247,9 @@ export class DamageModel {
       this.publish(params)
       return
     }
+
+    // FEAT-126: a shift forced with the clutch in (one-shot from the manual gearbox sim).
+    if (vehicleState.drivetrain?.missShift) this.wear('transmission', P.transMissWear, 1)
 
     const slipVel  = vehicleState.slipVel
     const tireFlat = vehicleState.tireFlat

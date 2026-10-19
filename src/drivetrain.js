@@ -24,7 +24,22 @@
  * (persists across steps for shift hysteresis + HUD). gear: 0 = reverse, 1..N = forward gear index.
  */
 
+import { TRANSMISSIONS } from '../data/transmissions.js'
+
 const RPM_PER_RAD = 60 / (2 * Math.PI)   // rad/s → rev/min
+
+/**
+ * Fit gearbox `key` (a data/transmissions.js entry) to the vehicle: its ratios spread over the params,
+ * and a manual lands in N, clutch unlocked, no shift in flight (FEAT-126). The one path behind the
+ * debug Transmission selector and the run setting (FEAT-41).
+ */
+export function fitTransmission (params, vehicleState, key) {
+  Object.assign(params, TRANSMISSIONS[key])
+  params.transmission = key
+  const d = vehicleState?.drivetrain
+  if (d) { d.mGear = 0; d.shiftT = 0; d.shifting = false; d.locked = false }
+  params._drivenInertia = 0
+}
 
 // Input-routing threshold, shared with physics.js's brake routing: reverse engages only when clearly
 // stopped/rolling back.
@@ -51,15 +66,40 @@ export function engineTorqueAt (rpm, curve) {
   return curve[n - 1][1]
 }
 
+// ── Engine losses (FEAT-50 fuel model's terms; FEAT-126 reads them as engine braking) ──────────────
+export const P_ATM = 101.325   // kPa
+/** m³ of swept volume → N·m per Pa of mean effective pressure (four-stroke: Vd / 4π). */
+export const mepToNm = (engine) => engine.displacementL * 1e-3 / (4 * Math.PI)
+/** Friction torque [N·m] — the Barnes-Moss friction MEP (a + b·N + c·N², N in krpm) over the swept volume. */
+export const frictionNm = (engine, rpm) => { const Nk = rpm / 1000; return (engine.fmepA + engine.fmepB * Nk + engine.fmepC * Nk * Nk) * 1e3 * mepToNm(engine) }
 /**
- * Engine friction torque [N·m] at `rpm`: the friction mean effective pressure fmepA + fmepB·N + fmepC·N²
- * (kPa, N in krpm) over the swept volume. FEAT-50's fuel model uses it.
- * @param {object} engine - carries displacementL, fmepA, fmepB, fmepC (data/engines.js, spread into params).
+ * Closed-throttle engine DRAG [N·m]: friction + pumping against the idle vacuum (manifold at mapFloor)
+ * + accessories — the losses the fuel map makes the fuel pay for, turned around into engine braking.
+ * Only the manual gearbox reads it: the converter path has no engine braking.
  */
-export function frictionNm (engine, rpm) {
-  const k = engine.displacementL * 1e-3 / (4 * Math.PI)               // m³ → N·m per Pa of MEP
-  const Nk = rpm / 1000
-  return (engine.fmepA + engine.fmepB * Nk + engine.fmepC * Nk * Nk) * 1e3 * k
+export const engineDragNm = (engine, rpm) =>
+  frictionNm(engine, rpm) + engine.pumpingK * P_ATM * 1e3 * (1 - engine.mapFloor) * mepToNm(engine) + engine.accessoryNm
+
+// Rear differential (FEAT-23): open = equal split, wheels free. LSD/locked add an internal coupling
+// torque ∝ the rear wheels' speed difference that shuttles torque from the faster (spinning) wheel to
+// the slower (gripping) one — clamped/viscous for LSD, stiff for locked. Total axle torque is preserved
+// (couple is added to one wheel and subtracted from the other). Uses start-of-step wheel ω (operator-
+// split, like the rest of stepDrivetrain). diffLockCoupling is kept ≤ ~36 so this explicit term is stable.
+function splitRearAxle (T, axleTorque, vehicleState, params) {
+  const perWheel = axleTorque / 2
+  const mode = params.rearDiffMode || 'open'
+  let couple = 0
+  if (mode !== 'open') {
+    const dOm = (vehicleState.wheelOmega?.[2] ?? 0) - (vehicleState.wheelOmega?.[3] ?? 0)
+    if (mode === 'locked') {
+      couple = (params.diffLockCoupling ?? 30) * dOm
+    } else { // limited-slip
+      const cap = params.diffLsdMaxTorque ?? 400
+      couple = Math.max(-cap, Math.min(cap, (params.diffLsdCoupling ?? 25) * dOm))
+    }
+  }
+  T[2] = perWheel - couple   // faster rear wheel (higher ω) sheds torque to the slower one
+  T[3] = perWheel + couple
 }
 
 /**
@@ -168,6 +208,11 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   st.wheelspin = wheelspin
   const spinLock = params.wheelspinShiftLock !== false && wheelspin > (params.wheelspinThreshold ?? 7.5)
 
+  // FEAT-126: the manual gearbox is its own model (no converter, an analog clutch, engine inertia).
+  // Everything above is shared and pure; branching here leaves the automatic path untouched.
+  params._drivenInertia = 0   // only a locked manual clutch couples the engine's inertia to the wheels
+  if (params.transmissionType === 'manual') { stepManual(vehicleState, params, dt, vForward, st, T, axleOmega, curve); return }
+
   // ── FEAT-33 ignition gate: OFF / CRANKING short-circuit before any combustion happens ───────────
   // vehicleState.ignition ABSENT ⇒ RUNNING. That default is load-bearing: every headless gate builds
   // a vehicleState by hand with no ignition field, so they keep seeing exactly today's drivetrain and
@@ -253,27 +298,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   st.fuelPowerW = Math.max(params.engineIdlePowerW ?? 7000, Tair * engineRPM / RPM_PER_RAD)
 
   // ── Converter output → gearbox → final drive → axle → rear wheels ───────────────────────────────
-  const axleTorque = dir * TR * Teng * totalRatio
-  const perWheel   = axleTorque / 2
-
-  // Rear differential (FEAT-23): open = equal split, wheels free. LSD/locked add an internal coupling
-  // torque ∝ the rear wheels' speed difference that shuttles torque from the faster (spinning) wheel to
-  // the slower (gripping) one — clamped/viscous for LSD, stiff for locked. Total axle torque is preserved
-  // (couple is added to one wheel and subtracted from the other). Uses start-of-step wheel ω (operator-
-  // split, like the rest of stepDrivetrain). diffLockCoupling is kept ≤ ~36 so this explicit term is stable.
-  const mode = params.rearDiffMode || 'open'
-  let couple = 0
-  if (mode !== 'open') {
-    const dOm = (vehicleState.wheelOmega?.[2] ?? 0) - (vehicleState.wheelOmega?.[3] ?? 0)
-    if (mode === 'locked') {
-      couple = (params.diffLockCoupling ?? 30) * dOm
-    } else { // limited-slip
-      const cap = params.diffLsdMaxTorque ?? 400
-      couple = Math.max(-cap, Math.min(cap, (params.diffLsdCoupling ?? 25) * dOm))
-    }
-  }
-  T[2] = perWheel - couple   // faster rear wheel (higher ω) sheds torque to the slower one
-  T[3] = perWheel + couple
+  splitRearAxle(T, dir * TR * Teng * totalRatio, vehicleState, params)
 
   // ── Automatic shift schedule (forward only), keyed on the ROAD-SPEED proxy `coupled` ─────────────
   // CRITICAL: shifts key off `coupled` (= turbineRPM / couplingSR, the locked/no-slip engine speed for
@@ -286,13 +311,27 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // toward kickdownRPM so the box drops a gear into the power band instead of lugging the converter.
   // spinLock: hold the gear while the driven wheels are spinning (see wheelspin monitor above) — a
   // wheelspin-inflated coupled RPM is not real road speed, so shifting on it just hunts mid-slide.
+  // FEAT-124 (one schedule, no modes): BOTH shift points read a time-weighted throttle average, so a
+  // light foot upshifts early, a floored one revs out exactly as before, and a keyboard driver
+  // feathering W shifts like a pad held at the same average. The instantaneous pedal is read only for
+  // KICKDOWN, and only once it has been held at the floor for kickdownDelay. A feathered W tap is
+  // momentarily a floored pedal, and reading it raw kicked the box down on every tap, then the
+  // release let it straight back up (2-3-2-3 hunting).
+  const tauAvg = params.shiftThrottleTau ?? 1.5
+  st.throttleAvg = st.throttleAvg === undefined ? throttle : st.throttleAvg + (throttle - st.throttleAvg) * (1 - Math.exp(-dt / tauAvg))
+  st.floorTime = throttle >= 0.95 ? (st.floorTime || 0) + dt : 0
   if (!reverse && st.shiftTimer <= 0 && !spinLock) {
-    const shiftUp       = params.shiftUpRPM || 4300
+    const shiftUpWot    = params.shiftUpRPM || 4300
+    const shiftUpLight  = params.shiftUpLightRPM ?? shiftUpWot
+    const load          = st.throttleAvg ** (params.shiftThrottleCurve ?? 2)   // 0 light … 1 floored
+    const shiftUp       = shiftUpLight + load * (shiftUpWot - shiftUpLight)
     const shiftDownBase = params.shiftDownRPM || 1300
     const kickdown      = params.kickdownRPM || 2200
-    const shiftDownEff  = shiftDownBase + pedalEff * (kickdown - shiftDownBase)
+    const downLoad      = st.floorTime >= (params.kickdownDelay ?? 0.4) ? 1 : st.throttleAvg
+    const shiftDownEff  = shiftDownBase + downLoad * (kickdown - shiftDownBase)
     const holdTime      = params.shiftHoldTime || 0.6
-    const hysteresis    = params.shiftHysteresis ?? 800
+    const hystWot       = params.shiftHysteresis ?? 800
+    const hysteresis    = (params.shiftHysteresisLight ?? hystWot) + load * (hystWot - (params.shiftHysteresisLight ?? hystWot))
     if (st.gear < nGears && coupled > shiftUp) {
       // Anti-hunt (the key hysteresis lever): only upshift if the next gear's coupled RPM would land a
       // full `shiftHysteresis` band ABOVE the current downshift point — i.e. the higher gear has real
@@ -312,4 +351,168 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // persisted forward gear (st.gear stays the forward index so we resume in-gear after reversing).
   st.activeGear = reverse ? 0 : st.gear
   st.coupledRPM = coupled   // the road-speed-in-gear proxy the shift schedule keys off (logged for tuning)
+}
+
+/**
+ * FEAT-126 — the MANUAL gearbox: engine → clutch → sequential R-N-1..N box → final drive. No torque
+ * converter, so the engine gets its own speed STATE (st.engineOmega, inertia params.engineInertia):
+ * a slipping clutch, a dumped clutch and a stall all need the flywheel's stored energy.
+ *
+ * THE CLUTCH IS ANALOG HERE (owner, 2026-10-19). This model reads one number, vehicleState.clutch ∈
+ * [0,1] (1 = fully engaged), and knows nothing about who sets it: a binary pad button today, an analog
+ * axis later, the clutch assistant (src/clutch-assist.js) in between. Capacity Tcap = clutch ×
+ * clutchMaxTorque.
+ *   Slipping: the clutch passes Tcap in the slip direction; the engine integrates
+ *             Je·dωe/dt = Teng − Tclutch. When the slip changes sign inside a step with enough
+ *             capacity to hold the engine's torque, it LOCKS.
+ *   Locked:   ωe = clutch-disc speed (quasi-static — the same simplification the converter path makes)
+ *             and the engine's whole net torque goes through, until it exceeds Tcap or the clutch opens.
+ * Engine net torque = pedal·WOT curve (net brake torque, as the fuel model has it) on the gas, and the
+ * fuel model's own losses (engineDragNm) as ENGINE BRAKING as the throttle closes. An idle governor (an idle-air-valve stand-in) adds
+ * air below idle, on top of the driver's, so the engine idles in neutral and recovers a dip.
+ *
+ * Shifts are synchro physics only: vehicleState.shiftRequest (±1, consumed here) is accepted while the
+ * clutch is out (< clutchShiftMax), the box sits in N for manualShiftTime × _transShiftScale (a worn
+ * box shifts slower — src/damage.js) and lands. With the clutch in it is REJECTED, flagged
+ * st.missShift for the damage model (−2 % transmission). R only from N, at walking pace or below.
+ * STALL: engaged in gear below stallRPM kills the engine (the fuel-empty kill pattern, src/fuel.js).
+ *
+ * st.mGear: −1 R, 0 N, 1..N. activeGear mirrors it (0 while a shift is in flight).
+ */
+function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve) {
+  const gears      = params.gearRatios
+  const nGears     = gears.length
+  const finalDrive = params.finalDrive || 3.73
+  const idle       = params.engineIdleRPM || 750
+  const redline    = params.engineRedlineRPM || 5500
+  const J          = params.engineInertia ?? 0.18
+  const ign        = vehicleState.ignition
+  const ignState   = ign ? ign.state : 'running'
+  const clutch     = Math.max(0, Math.min(1, vehicleState.clutch ?? 1))
+  if (st.mGear === undefined) st.mGear = 0
+  if (st.engineOmega === undefined) st.engineOmega = (st.engineRPM ?? idle) / RPM_PER_RAD
+
+  // ── Shifts (synchro): accept with the clutch out, sit in N for the shift time, land ───────────────
+  const req = vehicleState.shiftRequest | 0
+  vehicleState.shiftRequest = 0
+  st.missShift = false
+  st.stalled   = false
+  if (req && !(st.shiftT > 0)) {
+    const from   = st.mGear
+    const target = Math.max(-1, Math.min(nGears, from + Math.sign(req)))
+    if (target === from) { /* already at the end of the gate */ }
+    else if (clutch > (params.clutchShiftMax ?? 0.15)) st.missShift = true          // clutch in: rejected
+    else if (target === -1 && Math.abs(vForward) > REV_THRESHOLD) { /* R refused while moving */ }
+    else {
+      st.shiftTo = target
+      st.shiftT  = (params.manualShiftTime ?? 0.25) * (params._transShiftScale ?? 1)
+      st.mGear   = 0
+    }
+  }
+  if (st.shiftT > 0) { st.shiftT -= dt; if (st.shiftT <= 0) { st.shiftT = 0; st.mGear = st.shiftTo } }
+  st.shifting = st.shiftT > 0
+
+  const g      = st.mGear
+  const ratio  = g > 0 ? gears[Math.min(g, nGears) - 1] : g < 0 ? -(params.reverseRatio || 3.4) : 0
+  const total  = ratio * finalDrive                 // signed: R turns the disc backwards
+  let omegaC   = axleOmega * total                  // clutch-disc (gearbox input) speed [rad/s]
+  const inGear = g !== 0
+  st.coupledRPM = Math.abs(omegaC) * RPM_PER_RAD
+  st.activeGear = g
+
+  // ── Engine off / cranking: no combustion ────────────────────────────────────────────────────────
+  if (ignState !== 'running') {
+    let wE = st.engineOmega
+    if (ignState === 'cranking') {
+      wE += ((params.ignitionCrankRPM ?? 250) / RPM_PER_RAD - wE) * (1 - Math.exp(-dt / (params.ignitionCrankRpmLag ?? 0.12)))
+    } else if (inGear && clutch > 0.5) {
+      // Dead engine in gear, clutch in: the wheels turn it over, and its compression and friction drag them.
+      wE = Math.abs(omegaC)
+      const drag = engineDragNm(params, wE * RPM_PER_RAD) * clutch
+      splitRearAxle(T, -Math.sign(omegaC) * drag * total, vehicleState, params)
+    } else {
+      wE *= Math.exp(-dt / (params.engineOffRpmLag ?? 0.7))
+    }
+    st.engineOmega = wE < 1 / RPM_PER_RAD ? 0 : wE
+    st.engineRPM   = st.engineOmega * RPM_PER_RAD
+    st.locked      = false
+    st.fuelPowerW  = 0
+    st.pedal       = 0
+    return
+  }
+  if (ign?.event === 'catch') st.engineOmega = Math.max(st.engineOmega, idle / RPM_PER_RAD)   // it caught: idling
+
+  // ── Engine torque at the current speed ──────────────────────────────────────────────────────────
+  let wE  = st.engineOmega
+  const rpm = wE * RPM_PER_RAD
+  const gov = Math.max(0, Math.min(1, (idle + 50 - rpm) / 200)) * (params.idleGovernorMax ?? 0.5)
+  // The idle valve bypasses the throttle plate, so its air ADDS to the driver's: it also catches an rpm
+  // dip under load (a lugging launch), not just a closed-throttle idle.
+  const thr = Math.max(vehicleState.throttle || 0, params.engineIdleThrottle || 0)
+  const pedalEff = thr + gov * (1 - thr)
+  st.pedal = pedalEff
+  const tune = params.engineTorqueScale ?? 1.0
+  const Twot = engineTorqueAt(rpm, curve) * tune
+  let Tdrive = pedalEff * Twot * (params._engineDamageScale ?? 1.0) * (vehicleState.fuel?.torqueScale ?? 1)
+  if (rpm > redline) Tdrive *= Math.max(0, 1 - (rpm - redline) / 200)               // rev limiter
+  // pedal × WOT is already NET brake torque (the fuel model's convention: its losses are paid out of
+  // indicated torque). The losses show up on their own only as the throttle closes — engine braking —
+  // faded in over the first engineBrakeFade of pedal so the torque has no step at zero.
+  const Tnet = Tdrive - Math.max(0, 1 - pedalEff / (params.engineBrakeFade ?? 0.1)) * engineDragNm(params, rpm)
+  st.fuelPowerW = Math.max(params.engineIdlePowerW ?? 7000, pedalEff * Twot * rpm / RPM_PER_RAD)
+
+  // ── Clutch: slip or lock ────────────────────────────────────────────────────────────────────────
+  const Tcap = inGear ? clutch * (params.clutchMaxTorque ?? 450) : 0
+  let Tcl = 0
+  // The DISC crossed the flywheel during the last step. Slipping, the clutch pushes the rear wheels at
+  // full capacity (~3.1 kN·m each in 1st) and a 1.22 kg·m² wheel can overshoot the engine's speed in ONE
+  // step; stepped as plain Coulomb friction the next step then pushes back at full capacity, and so on —
+  // a 20 Hz chatter (±42 rad/s at the wheel) that only ended once the engine bogged down to the disc
+  // (~2 s; capture autos-capture-1792409679576, a clutch dump at 2200 rpm, assist off). The engine-side
+  // check below cannot see a crossing the WHEELS made. So lock here, at the common speed that conserves
+  // momentum (the wheels' own inertia reflected to the disc vs the flywheel's), and let the locked path
+  // hand the engine's inertia to the wheel solver, which resolves the tire implicitly.
+  if (!st.locked && Tcap > 0 && st.slipSign && Math.sign(wE - omegaC) === -st.slipSign && Math.abs(Tnet) <= Tcap) {
+    const Jr = 2 * (params.wheelInertia || 1.22) / (total * total)   // both rears, reflected to the disc
+    const wC = (J * wE + Jr * omegaC) / (J + Jr)
+    const dAxle = (wC - omegaC) / total
+    vehicleState.wheelOmega[2] += dAxle
+    vehicleState.wheelOmega[3] += dAxle
+    omegaC = wC
+    st.coupledRPM = Math.abs(omegaC) * RPM_PER_RAD
+    st.locked = true
+  }
+  st.slipSign = 0
+  if (st.locked && (Tcap <= 0 || Math.abs(Tnet) > Tcap)) st.locked = false
+  if (st.locked) {
+    wE  = omegaC
+    Tcl = Tnet
+  } else {
+    const slip = wE - omegaC
+    if (Tcap > 0) st.slipSign = Math.sign(slip)   // for the next step's disc-crossing check above
+    Tcl = Tcap > 0 ? Tcap * Math.sign(slip) : 0
+    const wNext = wE + dt / J * (Tnet - Tcl)
+    if (Tcap > 0 && Math.sign(wNext - omegaC) !== Math.sign(slip)) {
+      // The slip crossed zero this step: the disc caught the flywheel.
+      wE = omegaC
+      if (Math.abs(Tnet) <= Tcap) { st.locked = true; Tcl = Tnet }
+    } else wE = wNext
+  }
+  if (wE < 0) wE = 0                                  // an engine does not run backwards
+  // Locked, the flywheel turns WITH the wheels: its inertia, reflected through the gearbox, joins the
+  // rear wheels' in the wheel solver (src/physics.js). Without it a locked engine would follow every
+  // tire-force jolt of a 1.22 kg·m² wheel — snapping rpm around, stalling on a launch.
+  params._drivenInertia = st.locked ? J * total * total / 2 : 0
+  st.engineOmega = wE
+  st.engineRPM   = wE * RPM_PER_RAD
+
+  // ── Stall: dragged below stallRPM with the clutch biting in gear ────────────────────────────────
+  if (ign && inGear && clutch > 0.5 && st.engineRPM < (params.stallRPM ?? 450)) {
+    ign.state = 'off'
+    ign.event = 'shutoff'
+    st.locked = false
+    st.stalled = true
+  }
+
+  splitRearAxle(T, Tcl * total, vehicleState, params)
 }

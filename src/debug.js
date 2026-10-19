@@ -34,7 +34,8 @@ import { PAPER_PARAMS, RR_PARAMS } from './paper-route.js'     // FEAT-61 Phase 
 import { DAMAGE_PARAMS, TRACKS, TRACK_IDS } from './damage.js' // SM-3: component condition model
 import { FREIGHT } from '../data/freight.js'                     // FEAT-96 scaffolding: Load Cargo
 import { ENGINES } from '../data/engines.js'                     // engine swap selector
-import { TRANSMISSIONS } from '../data/transmissions.js'         // gearbox swap selector
+import { fitTransmission } from './drivetrain.js'                 // gearbox swap selector (FEAT-126)
+import { PAD_PARAMS } from './gamepad.js'                          // FEAT-125: controller feel
 
 // Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
 // can read them. Assigned inside initDebug(); null until then.
@@ -127,6 +128,19 @@ export function initDebug (params, callbacks = {}, options = {}) {
     gui.controllersRecursive().forEach(c => c.updateDisplay())
   })
 
+  // ── Controller (FEAT-125) ──────────────────────────────────────────────────────
+  // Player-input feel, not vehicle physics — but it sits with the steering it shapes. Read live by
+  // gamepad.js (deadzones, curve) and vehicle.js (assist, slew) every frame.
+  const padFolder = vehicleFolder.addFolder('Controller (FEAT-125)')
+  padFolder.add(PAD_PARAMS, 'steerAssist').name('Steering assist (speed-scaled lock)')
+  padFolder.add(PAD_PARAMS, 'stickDeadzone', 0, 0.3, 0.01).name('Stick deadzone')
+  padFolder.add(PAD_PARAMS, 'triggerDeadzone', 0, 0.2, 0.01).name('Trigger deadzone')
+  padFolder.add(PAD_PARAMS, 'steerCurve', 1, 3, 0.05).name('Steer curve (1 = linear)')
+  padFolder.add(PAD_PARAMS, 'steerSlewRate', 1, 20, 0.5).name('Steer slew (rad/s)')
+  padFolder.add(PAD_PARAMS, 'orbitRate', 0.5, 6, 0.1).name('Right-stick orbit rate (rad/s)')
+  padFolder.add(PAD_PARAMS, 'orbitHold', 0, 5, 0.1).name('Orbit hold before chase (s)')
+  padFolder.close()
+
   // ── Mass & CG ──────────────────────────────────────────────────────────────────
   const massCgFolder = vehicleFolder.addFolder('Mass & CG')
   massCgFolder.add(params, 'cgHeight', 0.20, 1.20, 0.01).name('CG Height (m)')
@@ -145,8 +159,11 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // rebuilds itself on the next step (fuelMapFor keys on those inputs). Gearbox stays the truck's.
   driveFolder.add(params, 'engine', { '3.0 L Vulcan V6': 'vulcan30', '2.3 L Duratec I4': 'duratec23' }).name('Engine')
     .onChange(k => { Object.assign(params, ENGINES[k]); gui.controllersRecursive().forEach(c => c.updateDisplay()) })
-  driveFolder.add(params, 'transmission', { '4R44E 4-speed auto': '4r44e', '5R55E 5-speed auto': '5r55e' }).name('Transmission')
-    .onChange(k => Object.assign(params, TRANSMISSIONS[k]))
+  driveFolder.add(params, 'transmission', { '4R44E 4-speed auto': '4r44e', '5R55E 5-speed auto': '5r55e', 'M5OD-R1 5-speed manual': 'm5odr1' }).name('Transmission')
+    .onChange(k => {
+      fitTransmission(params, window.__vs, k)
+      gui.controllersRecursive().forEach(c => c.updateDisplay())
+    })
   driveFolder.add(params, 'engineTorqueScale', 0.3, 2.0, 0.05).name('Engine Torque ×')
   driveFolder.add(params, 'engineIdleRPM', 500, 1200, 25).name('Idle RPM')
   driveFolder.add(params, 'engineRedlineRPM', 4000, 7000, 100).name('Redline RPM')
@@ -158,9 +175,29 @@ export function initDebug (params, callbacks = {}, options = {}) {
   driveFolder.add(params, 'finalDrive', 2.5, 5.5, 0.01).name('Final Drive')
   driveFolder.add(params, 'reverseRatio', 1.5, 4.0, 0.01).name('Reverse Ratio')
   driveFolder.add(params, 'shiftUpRPM', 2500, 6500, 50).name('Upshift RPM')
+  // FEAT-126 manual gearbox — read only while the M5OD-R1 (transmissionType 'manual') is fitted.
+  const manFolder = driveFolder.addFolder('Manual gearbox (FEAT-126)')
+  manFolder.add(params, 'clutchAssist').name('Clutch assistant')
+  manFolder.add(params, 'clutchMaxTorque', 150, 900, 10).name('Clutch capacity (N·m)')
+  manFolder.add(params, 'engineInertia', 0.05, 0.5, 0.01).name('Engine inertia (kg·m²)')
+  manFolder.add(params, 'stallRPM', 200, 800, 10).name('Stall RPM')
+  manFolder.add(params, 'manualShiftTime', 0.05, 1.0, 0.01).name('Synchro time (s)')
+  manFolder.add(params, 'clutchShiftMax', 0, 0.5, 0.01).name('Shift needs clutch below')
+  manFolder.add(params, 'idleGovernorMax', 0, 1, 0.05).name('Idle governor max')
+  manFolder.add(params, 'engineBrakeFade', 0.01, 0.5, 0.01).name('Engine-brake fade (pedal)')
+  manFolder.add(params, 'assistLaunchRPM', 900, 3000, 50).name('Assist: full bite RPM')
+  manFolder.add(params, 'assistLaunchThrottleRPM', 0, 3000, 50).name('Assist: + RPM at WOT')
+  manFolder.add(params, 'assistReengageRate', 1, 20, 0.5).name('Assist: re-engage (1/s)')
+  manFolder.close()
+  // FEAT-124: the light-foot end of the throttle-averaged schedule (floored = the WOT values above/below).
+  driveFolder.add(params, 'shiftUpLightRPM', 1500, 4000, 50).name('Upshift RPM (light foot)')
+  driveFolder.add(params, 'shiftThrottleTau', 0.2, 5, 0.1).name('Shift throttle avg τ (s)')
+  driveFolder.add(params, 'shiftThrottleCurve', 1, 4, 0.1).name('Shift throttle curve (1 = linear)')
+  driveFolder.add(params, 'kickdownDelay', 0, 1.5, 0.05).name('Kickdown delay (s)')
   driveFolder.add(params, 'shiftDownRPM', 800, 3500, 50).name('Downshift RPM (cruise)')
   driveFolder.add(params, 'kickdownRPM', 1200, 4000, 50).name('Downshift RPM (WOT kickdown)')
   driveFolder.add(params, 'shiftHysteresis', 200, 2000, 50).name('Shift Hysteresis (RPM)')
+  driveFolder.add(params, 'shiftHysteresisLight', 0, 1500, 50).name('Shift Hysteresis, light foot (RPM)')
   driveFolder.add(params, 'shiftHoldTime', 0.1, 1.5, 0.05).name('Shift Hold (s)')
   driveFolder.add(params, 'wheelspinShiftLock').name('Wheelspin Shift-Lock')
   driveFolder.add(params, 'wheelspinThreshold', 1, 20, 0.5).name('Wheelspin Lock (m/s)')
