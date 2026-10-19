@@ -40,21 +40,28 @@ export const PAD_PARAMS = {
 
 export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0 }
 
-// Standard-layout button index → the key it replays. Left stick click (10), LB/RB (4/5) and Home
-// (16) are deliberately unbound; LT/RT (6/7) are analog, read below.
+// Standard-layout button index → the key it replays. Forza-style layout (owner, 2026-10-19 — the
+// table is in the FEAT-125 ticket). LB (4) / A (0) / X (2) are clutch / upshift / downshift for the
+// FEAT-126 manual gearbox and stay unbound until it exists (they do nothing in the automatic).
+// View (8) is tap-vs-hold, handled below. Left stick click (10) and Home (16) are unbound;
+// LT/RT (6/7) are analog, read in poll().
 const BUTTON_KEYS = {
-  0: ' ',     // A — handbrake (hold) / park latch (tap)
-  1: 'x',     // B — recovery
-  2: 'f',     // X — pump / aim (hold)
+  5: ' ',     // RB — handbrake (hold) / park latch (tap)
+  1: 'f',     // B — pump / aim (hold)
   3: 'i',     // Y — ignition (hold)
-  8: 'Tab',   // View/Back — inventory
   9: 'm',     // Start/Menu — map
   11: 'c',    // right stick click — camera mode
   12: 'l',    // D-pad up — headlights
   13: 'z',    // D-pad down — camp
   14: 'v',    // D-pad left — damage screen
-  15: 'r',    // D-pad right — reset truck
+  15: 'x',    // D-pad right — recovery
 }
+// View: a tap (released under VIEW_HOLD_MS) opens the inventory (Tab, sent on RELEASE — only then is
+// it known to be a tap); holding it VIEW_HOLD_MS resets the truck (r, keydown at the threshold,
+// keyup on release so vehicle.js's per-step keys.r read still sees it held).
+const VIEW = 8, VIEW_HOLD_MS = 1000
+let viewDownAt = -1      // performance.now() of the press, -1 while up
+let viewReset = false    // the hold already fired r this press
 
 const held = new Set()   // button indices whose keydown has been sent and keyup has not
 
@@ -70,7 +77,7 @@ function sendKey (type, key) {
 function poll () {
   // ponytail: every connected pad is merged (max trigger, largest stick, buttons OR'd) rather than
   // picking one — two pads on the desk both work. Per-player pads would need a real assignment.
-  let thr = 0, brk = 0, steer = 0, lookX = 0, lookY = 0, any = false
+  let thr = 0, brk = 0, steer = 0, lookX = 0, lookY = 0, any = false, viewDown = false
   const down = new Set()
   for (const gp of navigator.getGamepads()) {
     if (!gp || gp.mapping !== 'standard') continue
@@ -82,6 +89,7 @@ function poll () {
     const lx = deadzone(gp.axes[2], PAD_PARAMS.stickDeadzone), ly = deadzone(gp.axes[3], PAD_PARAMS.stickDeadzone)
     if (Math.hypot(lx, ly) > Math.hypot(lookX, lookY)) { lookX = lx; lookY = ly }
     for (const i in BUTTON_KEYS) if (gp.buttons[i]?.pressed) down.add(+i)
+    if (gp.buttons[VIEW]?.pressed) viewDown = true
   }
   pad.throttle = thr
   pad.brake = brk
@@ -92,6 +100,16 @@ function poll () {
   for (const i of down) if (!held.has(i)) { held.add(i); sendKey('keydown', BUTTON_KEYS[i]); pad.active = true }
   for (const i of held) if (!down.has(i)) { held.delete(i); sendKey('keyup', BUTTON_KEYS[i]) }
   if (thr > 0 || brk > 0 || steer !== 0) pad.active = true
+
+  if (viewDown) {
+    const now = performance.now()
+    if (viewDownAt < 0) { viewDownAt = now; viewReset = false; pad.active = true }
+    else if (!viewReset && now - viewDownAt >= VIEW_HOLD_MS) { viewReset = true; sendKey('keydown', 'r') }
+  } else if (viewDownAt >= 0) {
+    if (viewReset) sendKey('keyup', 'r')
+    else if (any) { sendKey('keydown', 'Tab'); sendKey('keyup', 'Tab') }   // not on an unplug mid-press
+    viewDownAt = -1
+  }
   if (!any) pad.active = false   // unplugged: the keyboard drives again with no keypress needed
 
   requestAnimationFrame(poll)

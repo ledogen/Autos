@@ -28,16 +28,16 @@ Hardware verified on the owner's Mac M4 in Chrome:
 - The 8BitDo's 2.4 GHz dongle is invisible on macOS (X-input, no driver).
 - `test/pad-test.html` is the hardware dashboard.
 
-The fake-pad end-to-end pattern is to inject `navigator.getGamepads` via CDP **after** boot. An
-init script is fine too; mind the syntax. Then drive `window.__fp`. The scratch scripts were not
-kept; the approach is in this session's transcript. If it's needed again, it is worth promoting to
-`test/` as a rainy-day script.
+Fake-pad end-to-end: `node test/pad-e2e.mjs --port=3775` (a rainy-day script, needs the dev server).
+Extend it for the shift buttons and the menu navigation.
 
 ## The queue — in this order (owner, 2026-10-19)
 
 All rulings are written into the tickets. **Read the ticket before starting each one.**
 
-### 1. Pad layout re-map (FEAT-125, small)
+### 1. Pad layout re-map (FEAT-125, small) — DONE 2026-10-19
+
+Shipped. `node test/pad-e2e.mjs --port=3775` covers the layout: 16 checks, including View tap/hold and the orbit.
 
 The Forza-style table is in `feat-125-controller-support.md` → "Pad layout — ruling".
 - Change `BUTTON_KEYS` in `src/gamepad.js`:
