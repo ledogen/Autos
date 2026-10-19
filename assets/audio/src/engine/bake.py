@@ -74,6 +74,7 @@ ENGINES = {
 }
 LOADS = [("off", 0.0), ("part", 0.30), ("full", 1.0)]
 REFERENCES = [("2340_part", 2340, 0.30), ("4140_full", 4140, 1.0)]
+MOTOR_RPM = [750, 1000, 1325, 1760, 2340, 3110]
 GAME_TORQUE = {800: 140, 1500: 170, 2500: 192, 3750: 209, 4500: 204, 5250: 195, 6000: 165}
 
 WARMUP_S = 5.0             # covers the renderer's 1.5 s crank + 1 s dyno ramp, then settling
@@ -107,7 +108,8 @@ def run(args):
 
 
 def render(script, out, take, seed, trace=None):
-    args = [script, "--out", out, "--throttle", str(take["throttle"]), "--warmup", str(WARMUP_S),
+    args = [script, "--out", out, "--throttle", str(take["throttle"]),
+            "--warmup", str(take.get("warmup", WARMUP_S)),
             "--seconds", str(take.get("seconds", SECONDS)), "--gain", str(GAIN), "--seed", str(seed)]
     args += take["args"]
     if trace:
@@ -158,6 +160,16 @@ def plan(engine):
     add("crank_stock", "crank", 0.0, None, ["--crank"] + game_starter, False, rpm_target=200,
         seconds=IDLE_SECONDS)
     add("crank500_stock", "crank", 0.0, None, ["--crank"], False)
+    # Round 3 (appended last, so the takes above keep their seeds): unfired MOTORING loops for the
+    # game's engine-kill coast (ignition off, dyno holding the rpm), and shutoff references: warm
+    # idle settled for 8 s, then key off when recording starts, coasting to a stop (uncut, + rpm CSV).
+    for rpm in MOTOR_RPM:
+        add("%d_motor" % rpm, "motor", 0.0, rpm, ["--rpm", str(rpm), "--ignition-off"], True)
+    idle_iac = (["--free-idle", "--idle-target", "750"] + iac + SPARK_RESERVE
+                if cfg["idle"] == "balanced" else ["--free-idle"])          # coast must run free
+    for dry in (True, False):
+        add("shutoff_%s" % ("dry" if dry else "stock"), "shutoff", 0.0, None,
+            idle_iac + ["--kill-at-record"], dry, warmup=8.0, seconds=3.5, seed=9, trace=True)
     return takes
 
 
