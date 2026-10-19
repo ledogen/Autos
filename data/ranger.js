@@ -126,15 +126,18 @@ export const RANGER_PARAMS = {
   // the SM-3 damage model's engine track writes every step — NOT a per-vehicle scripted timer.
   ignitionCatchTime:     0.25,  // s — crank time before the engine catches at full engine health
   ignitionCatchTimeWorn: 2.0,   // s — crank time as engine health approaches zero (owner 2026-09-05: raised 1.0→2.0, the decay was not significant enough at 1 s; linear 0.25→2.0; AT exactly 0 the engine never catches at all — see ignition.js catchTime)
-  // FEAT-120: cranking speed, ripple, the catch flare and the settle are NOT set here — they come out
-  // of the crank dynamics in src/drivetrain.js (stepStart). These are its starter and idle-control inputs.
-  starterStallNm:        150,   // N·m at the crank — stall torque. Owner's cadence pass 2026-10-19 with compression 100:
-                                //   ~185 rpm cold / ~210 warm, ±30% ripple. Must beat crankCompressionNm + friction or it can't crank
-  starterFreeRPM:        280,   // rpm at the crank — no-load speed; above it the overrunning clutch freewheels
+  // FEAT-120 start transient (src/drivetrain.js stepStart): a lag to the crank speed, then a flare curve.
+  ignitionCrankRPM:      200,   // rpm — cranking speed (the owner's 2026-10-19 cadence pass landed ~185 cold / ~210 warm)
+  ignitionCrankRpmLag:   0.12,  // s — lag on the cranking speed and on the flare after the catch
+  engineStartFlareRPM:   1325,  // rpm — flare curve's peak after the catch, warm engine. The lag shaves the excursion
+                                //   ~12%, so the tach actually peaks ~1260 (the replaced crank model's emergent 1261)
+  engineColdFlareRPM:    1490,  // rpm — same, stone-cold engine (idleColdC): actual peak ~1435
+  engineStartFlareRiseS: 0.3,   // s — time to the flare peak; settled by ~6× this
+  starterFreeRPM:        280,   // rpm at the crank — the starter's no-load speed; past it the overrunning clutch
+                                //   freewheels, so grinding a running engine plays the starter recording no faster (main.js)
   idleColdRPM:           1100,  // rpm — cold fast idle at idleColdC…
   idleColdC:             25,    // °C — …(ambient: a truck left overnight)…
   idleWarmC:             90,    // °C — …easing linearly to engineIdleRPM by here (FEAT-51 engine temperature)
-  idleAirKp:             3,     // [-] idle-air controller gain on the rpm error — higher settles faster, overshoots less
   // Key OFF but still in gear: the driveline drags the dead engine round through the converter, so
   // the truck coasts down on pumping/friction losses instead of freewheeling. engineOffDrag is that
   // drag at 1000 rpm of dragged engine speed; the effect fades below engineOffCouplingRPM as the

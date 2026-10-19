@@ -41,12 +41,6 @@ export const ENGINES = {
             [ 800, 160], [1200, 195], [2000, 225], [2800, 242], [3750, 250],
             [4500, 240], [5200, 215], [5800, 150],
         ],
-        // ── Start transient (FEAT-120, src/drivetrain.js stepStart) — estimates, tune by ear ──────────
-        engineInertia:      0.25,  // kg·m² — crank, flexplate, converter impeller + fluid
-        crankCompressionNm: 100,   // N·m — compression torque ripple while cranking (cylinders/2 per rev): the chug.
-                                   //   Must stay under starterStallNm minus friction or the starter stalls on a stroke
-        intakeVolumeRatio:  1.2,   // [-] intake plenum + runners ÷ displacement — how long the full manifold feeds the flare
-        frictionColdExtra:  0.5,   // [-] cold-oil friction: ×1.5 at idleColdC, easing to ×1 by idleWarmC (data/ranger.js)
         engineIdleRPM:    750,   // rpm — governed idle floor; engine never drops below this
         engineRedlineRPM: 5500,  // rpm — rev limiter cuts torque above this (over 200 rpm band)
         cylinders:        6,     // [-] firing pulses per rev = cylinders / 2 (src/engine-audio.js)
@@ -77,13 +71,6 @@ export const ENGINES = {
             [ 800, 140], [1500, 170], [2500, 192], [3750, 209],
             [4500, 204], [5250, 195], [6000, 165], [6500, 120],
         ],
-        // Start transient (FEAT-120) — estimates. Same flexplate/converter, a lighter crank. Four big
-        // cylinders 180° apart compress with no overlap, so the 2/rev ripple is lumpier than the V6's
-        // 3/rev even at the same amplitude. Plenum ~ the V6's, over less displacement.
-        engineInertia:      0.22,
-        crankCompressionNm: 100,
-        intakeVolumeRatio:  1.5,
-        frictionColdExtra:  0.5,
         engineIdleRPM:    750,
         engineRedlineRPM: 6250,  // the PCM's rev limiter on the Duratec Ranger
         cylinders:        4,

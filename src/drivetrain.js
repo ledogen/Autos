@@ -53,7 +53,7 @@ export function engineTorqueAt (rpm, curve) {
 
 /**
  * Engine friction torque [N·m] at `rpm`: the friction mean effective pressure fmepA + fmepB·N + fmepC·N²
- * (kPa, N in krpm) over the swept volume. FEAT-50's fuel model and the start transient below share it.
+ * (kPa, N in krpm) over the swept volume. FEAT-50's fuel model uses it.
  * @param {object} engine - carries displacementL, fmepA, fmepB, fmepC (data/engines.js, spread into params).
  */
 export function frictionNm (engine, rpm) {
@@ -76,80 +76,36 @@ export function idleTargetRPM (vehicleState, params) {
   return warm + cold * ((params.idleColdRPM ?? warm) - warm)
 }
 
-// ── FEAT-120: the start transient — key-on to settled idle, integrated as real crank dynamics ──────
+// ── FEAT-120: the start transient — key-on to settled idle, as a lag and a flare curve ───────────
 //
-// One rotating inertia J (crank, flexplate, converter impeller + fluid), acted on by:
-//   starter      Ts = starterStallNm · (1 − rpm/starterFreeRPM), only while engaged and only ≥ 0: the
-//                overrunning clutch freewheels once the engine outruns the starter.
-//   compression  Tc = −crankCompressionNm · sin(k·θ), k = cylinders/2 events per rev. Each stroke takes
-//                energy and the expansion gives it back, so it averages to zero but ripples the crank
-//                speed — the cranking chug, falling off as 1/ω² once the engine is turning fast.
-//   combustion   once caught: map · (WOT brake curve + friction). `map` is the intake manifold pressure
-//                as a fraction of atmospheric, i.e. the charge each cylinder gets.
-//   losses       friction × (1 + frictionColdExtra · cold) + accessoryNm.
-// So brake torque = map·Twot − (1 − map)·friction: the full curve at map 1, motoring friction at map 0.
-//
-// THE FLARE IS THE MANIFOLD. A stopped engine's manifold sits at atmospheric (map 1), and cranking at
-// ~250 rpm barely pumps it down. At the catch the first cylinders get a full charge, so the engine
-// leaps; the manifold then empties at the engine's pumping rate (rpm/120 displacements per second
-// against intakeVolumeRatio displacements of plenum) and the charge falls back to what the idle air
-// supplies. Inertia plus that lag overshoots: nothing in here scripts the flare.
-//
-// The idle controller sets the idle-air flow: the exact steady-state flow for the target, plus a
-// proportional correction (idleAirKp) on the error. The target is idleTargetRPM, so a cold engine
-// both needs more air (more friction) and is asked for more speed.
-//
-// It runs only from the key press until the idle settles, then hands the engine back to the
-// quasi-static model below (|rpm − target| < START_HANDOFF_RPM with the manifold settled). Absent
+// Cranking: the starter pulls the engine toward ignitionCrankRPM through a first-order lag
+// (ignitionCrankRpmLag). After the catch the engine follows a flare target through the same lag:
+//   target = idle + (peak − idle) · a(t),   a(t) = x·e^(1−x),  x = t / engineStartFlareRiseS
+// a(t) rises from 0, peaks at 1 when t = rise and is down to ~0.09 by 5× rise. `peak` runs from
+// engineStartFlareRPM (warm) to engineColdFlareRPM (stone cold) on the same cold fraction as the fast
+// idle, and `idle` is idleTargetRPM, so a cold engine settles onto its fast idle.
+// The owner chose this over the crank integrator it replaced (2026-10-19, "I like the simplicity"):
+// that model's emergent flare (1261 warm / 1435 cold) and engine-sim's start takes set the targets.
+// It hands back to the quasi-static model once the flare has decayed (x > START_HANDBACK_X). Absent
 // ignition ⇒ never runs.
-const START_HANDOFF_RPM = 15
-const START_MAX_SUBSTEPS = 48
-const START_SUBSTEP_RAD = 0.2   // compression phase advanced per substep: the ripple needs it resolved
+const START_HANDBACK_X = 6
 
-function stepStart (st, vehicleState, params, dt, idleTarget, curve) {
-  const ign = vehicleState.ignition
-  const running = ign.state === 'running'
-  const engaged = ign.state === 'cranking' || ign.startHeld
-  if (!st.starting) { st.starting = true; st.map = 1; st.crankAngle = 0; st.startT = 0 }
+function stepStart (st, vehicleState, params, dt, idleTarget) {
+  const running = vehicleState.ignition.state === 'running'
+  if (!st.starting) { st.starting = true; st.startT = 0 }
   st.startT = running ? st.startT + dt : 0
-
-  const J = params.engineInertia ?? 0.25
-  const k = (params.cylinders ?? 6) / 2
-  const Cc = params.crankCompressionNm ?? 80
-  const stall = params.starterStallNm ?? 95, free = params.starterFreeRPM ?? 500
-  const warmIdle = params.engineIdleRPM || 750
-  const cold = Math.max(0, Math.min(1, (idleTarget - warmIdle) / Math.max(1, (params.idleColdRPM ?? warmIdle) - warmIdle)))
-  const coldF = 1 + (params.frictionColdExtra ?? 0) * cold
-  const acc = params.accessoryNm ?? 0
-  const scale = (params.engineTorqueScale ?? 1) * (params._engineDamageScale ?? 1) * (vehicleState.fuel?.torqueScale ?? 1)
-  const Vr = params.intakeVolumeRatio ?? 1.2
-
-  // Idle air [displacements/s at atmospheric]: what holds idleTarget exactly, plus the P correction.
-  // Commanded the same way while cranking, which is why the manifold is still full at the catch.
-  const fT = frictionNm(params, idleTarget)
-  const mapSS = Math.min(1, (fT * coldF + acc) / (engineTorqueAt(idleTarget, curve) * scale + fT))
-  const air = Math.max(0, mapSS * idleTarget / 120 * (1 + (params.idleAirKp ?? 3) * (idleTarget - st.engineRPM) / idleTarget))
-
-  let w = st.engineRPM / RPM_PER_RAD, th = st.crankAngle, map = st.map
-  const n = Math.min(START_MAX_SUBSTEPS, Math.max(1, Math.ceil(k * w * dt / START_SUBSTEP_RAD)))
-  const h = dt / n
-  for (let i = 0; i < n; i++) {
-    const rpm = w * RPM_PER_RAD
-    const f = frictionNm(params, rpm)
-    const Ts = engaged ? Math.max(0, stall * (1 - rpm / free)) : 0
-    const Tc = -Cc * Math.sin(k * th)
-    const Ti = running ? map * (engineTorqueAt(rpm, curve) * scale + f) : 0
-    w = Math.max(0, w + (Ts + Tc + Ti - f * coldF - acc) / J * h)
-    th = (th + w * h) % (4 * Math.PI)   // one 720° four-stroke cycle: whole for any cylinder count
-    map = Math.min(1, Math.max(0, map + (air - map * rpm / 120) / Vr * h))
+  const x = st.startT / (params.engineStartFlareRiseS ?? 0.3)
+  let target = params.ignitionCrankRPM ?? 200
+  if (running) {
+    const warmIdle = params.engineIdleRPM || 750
+    const cold = Math.max(0, Math.min(1, (idleTarget - warmIdle) / Math.max(1, (params.idleColdRPM ?? warmIdle) - warmIdle)))
+    const warmPeak = params.engineStartFlareRPM ?? 1325
+    const peak = warmPeak + cold * ((params.engineColdFlareRPM ?? 1490) - warmPeak)
+    target = idleTarget + Math.max(0, peak - idleTarget) * x * Math.exp(1 - x)
   }
-  st.engineRPM = w * RPM_PER_RAD
-  st.crankAngle = th
-  st.map = map
-  st.fuelPowerW = running ? Math.max(params.engineIdlePowerW ?? 7000, map * engineTorqueAt(st.engineRPM, curve) * w) : 0
-
-  const settled = st.startT > 0.5 && Math.abs(st.engineRPM - idleTarget) < START_HANDOFF_RPM && Math.abs(map - mapSS) < 0.02
-  return !(running && settled)
+  st.engineRPM += (target - st.engineRPM) * (1 - Math.exp(-dt / (params.ignitionCrankRpmLag ?? 0.12)))
+  st.fuelPowerW = running ? (params.engineIdlePowerW ?? 7000) : 0
+  return !(running && x > START_HANDBACK_X)
 }
 
 /**
@@ -217,11 +173,11 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // a vehicleState by hand with no ignition field, so they keep seeing exactly today's drivetrain and
   // never have to crank the truck before driving it.
   const ignState = vehicleState.ignition ? vehicleState.ignition.state : 'running'
-  // Cranking and the catch-to-idle settle are integrated as crank dynamics (stepStart above). They make
+  // Cranking and the catch-to-idle settle are the start transient (stepStart above). They make
   // NO drive torque — T stays all zero — so cranking on a slope cannot creep the truck. A touch of pedal,
   // or a driveline already turning the engine faster, ends the transient early.
   if (ignState === 'cranking' || (ignState === 'running' && st.starting && pedal <= 0.02 && turbineRPM / couplingSR <= st.engineRPM)) {
-    if (stepStart(st, vehicleState, params, dt, idle, curve)) {
+    if (stepStart(st, vehicleState, params, dt, idle)) {
       st.pedal = 0
       st.activeGear = reverse ? 0 : st.gear
       st.coupledRPM = turbineRPM / couplingSR

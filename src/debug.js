@@ -172,12 +172,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const ignFolder = driveFolder.addFolder('Ignition & Starter')
   ignFolder.add(params, 'ignitionCatchTime', 0.05, 2.0, 0.05).name('Catch Time — healthy (s)')
   ignFolder.add(params, 'ignitionCatchTimeWorn', 0.5, 10, 0.25).name('Catch Time — worn (s)')
-  // FEAT-120: cranking speed, ripple and the catch flare come out of these (drivetrain.js stepStart).
-  ignFolder.add(params, 'starterStallNm', 40, 250, 5).name('Starter Stall (N·m)')
-  ignFolder.add(params, 'starterFreeRPM', 200, 1000, 10).name('Starter Free Speed (rpm)')
-  ignFolder.add(params, 'crankCompressionNm', 0, 120, 5).name('Compression Ripple (N·m)')
-  ignFolder.add(params, 'intakeVolumeRatio', 0.3, 3, 0.1).name('Intake Volume (× disp.)')
-  ignFolder.add(params, 'idleAirKp', 0.5, 10, 0.5).name('Idle-Air Gain')
+  // FEAT-120: the start transient (drivetrain.js stepStart).
+  ignFolder.add(params, 'ignitionCrankRPM', 100, 400, 10).name('Crank RPM')
+  ignFolder.add(params, 'engineStartFlareRPM', 750, 2000, 25).name('Start Flare RPM')
+  ignFolder.add(params, 'engineColdFlareRPM', 750, 2000, 25).name('Cold Flare RPM')
   ignFolder.add(params, 'idleColdRPM', 750, 1500, 25).name('Cold Fast Idle (rpm)')
   ignFolder.add(params, 'engineOffDrag', 0, 250, 5).name('Dead-Engine Drag (N·m/1000rpm)')
   ignFolder.add(params, 'engineOffCouplingRPM', 300, 2500, 50).name('Off-Coast Couple RPM')
