@@ -217,6 +217,14 @@ const BAKE_DIR = 'assets/audio/engine/'
 const LOADS = ['off', 'part', 'full']
 const PART_THROTTLE = 0.30          // the throttle the 'part' loops were rendered at
 const MUFFLER_GAIN_DB = 35          // the stock IR lifts the loudest dry loop by ~+34 dB (measured)
+// Per-engine output trim [dB], on top of MUFFLER_GAIN_DB: puts each engine's worst-case peak at the
+// speakers near −2 dBFS at the default Engine Volume 0.5. Measured offline by replaying updateBake's
+// mix (lift 0.55) through the stock IR over rpm 750 → limiter × throttle 0.6 / 1.0, two random loop
+// phases each: the Duratec peaked +7.2 dBFS (4350 rpm) and clipped audibly; the Vulcan +0.6 (3250).
+// The I4 runs hot because its firing frequency (2/rev) sits on the IR's 80–160 Hz peak from
+// 2400–4800 rpm, where the V6's (3/rev) has already climbed past it. Re-measure after a re-bake or
+// a muffler change.
+const ENGINE_TRIM_DB = { vulcan30: -2.5, duratec23: -9 }
 const EXTERIOR_TRIM_DB = -3.5       // the exterior path peaks ~2–3 dB hotter at +15/−12 (mostly the in-phase reflection)
 const GROUND_DELAY_S = 0.0006       // reflected − direct path, 0.2 m / 343 m/s
 const GROUND_GAIN = 0.7             // ~−3 dB: asphalt reflects most of it, the longer path spreads a little more
@@ -227,6 +235,13 @@ const GROUND_GAIN = 0.7             // ~−3 dB: asphalt reflects most of it, th
 const bakes = {}          // engine → null (none / loading) | { loudest, rows: [{ rpm, voices: [voice × 3] }], crank: voice|null }
 let activeEngine = null
 let muffler = null        // ConvolverNode — every engine's voices connect here
+let bakeTrim = null       // GainNode — per-engine trim (ENGINE_TRIM_DB), ahead of the compressor
+let comp = null           // DynamicsCompressorNode — the mild engine compressor (COMPRESSOR below)
+let compRatio = 2
+const COMP_THRESHOLD_DB = -14
+// The makeup gain WebAudio's compressor adds [dB]: 0.6 × the curve's cut at 0 dBFS, T·(1 − 1/ratio)
+// (the knee ends below 0 dBFS, so the plain ratio line applies there).
+const compMakeupDb = () => -0.6 * COMP_THRESHOLD_DB * (1 - 1 / compRatio)
 let bakeOut = null        // GainNode — the sampled engine's output, gated by enabled/volume
 let dynamics = 0.5
 let exterior = true, extBrightDb = 15, extBoomDb = -6
@@ -236,15 +251,41 @@ async function ensureExhaust () {
   if (muffler) return
   const ir = await ctx.decodeAudioData(await (await fetch(BAKE_DIR + 'muffler-stock.flac')).arrayBuffer())
   if (muffler) return
+  // COMPRESSOR (owner, 2026-10-19): mild, on every engine, between the trim and the volume so the
+  // Engine Volume slider doesn't change how hard it works. 2:1 above COMP_THRESHOLD_DB, which sits
+  // between idle (~−30 dB here) and wide-open throttle (~−6 dB rms on the I4, ~−10 on the V6), so it
+  // only acts on the loud end: measured ~−4 dB on the I4 near redline, ~−2 on the V6. The attack
+  // (20 ms) and release (300 ms) are slower than one idle firing pulse (27 ms on the V6), so it rides
+  // the level instead of pumping on each pulse. WebAudio's compressor ALWAYS adds makeup gain, by
+  // spec (1 / its gain at 0 dBFS)^0.6; at 2:1 above −24 dB that lifted the I4 idle 9 dB. bakeOut
+  // divides it back out (compMakeupDb), so idle is untouched. Ratio 1 = bypass.
+  bakeTrim = ctx.createGain()
+  comp = ctx.createDynamicsCompressor()
+  comp.threshold.value = COMP_THRESHOLD_DB
+  comp.knee.value = 6
+  comp.ratio.value = compRatio
+  comp.attack.value = 0.02
+  comp.release.value = 0.3
   bakeOut = ctx.createGain()
   bakeOut.gain.value = 0
-  bakeOut.connect(ctx.destination)
+  bakeTrim.connect(comp)
+  comp.connect(bakeOut)
+  // Safety limiter: idle below −3 dBFS, so at the default volume (trimmed above) it never acts; it
+  // only catches an Engine Volume turned up past 0.5, where the output would otherwise clip.
+  const limiter = ctx.createDynamicsCompressor()
+  limiter.threshold.value = -3
+  limiter.knee.value = 0
+  limiter.ratio.value = 20
+  limiter.attack.value = 0.002
+  limiter.release.value = 0.1
+  bakeOut.connect(limiter)
+  limiter.connect(ctx.destination)
   muffler = ctx.createConvolver()
   muffler.normalize = false         // engine-sim applies the IR raw; normalising would re-level it
   muffler.buffer = ir
   cabin = ctx.createGain()
   muffler.connect(cabin)
-  cabin.connect(bakeOut)
+  cabin.connect(bakeTrim)
   hiShelf = ctx.createBiquadFilter()
   hiShelf.type = 'highshelf'
   hiShelf.frequency.value = 800
@@ -262,7 +303,7 @@ async function ensureExhaust () {
   loShelf.connect(ground)
   ground.connect(groundGain)
   groundGain.connect(outside)
-  outside.connect(bakeOut)
+  outside.connect(bakeTrim)
 }
 
 /**
@@ -308,7 +349,7 @@ async function loadBake (engine) {
       row.voices[0].src.stop()
       row.voices[0] = voice(idle, bufs[grid.length])
     }
-    bakes[engine] = { rows: sorted, crank: crank ? voice(crank, bufs[bufs.length - 1]) : null,
+    bakes[engine] = { trimDb: ENGINE_TRIM_DB[engine] ?? 0, rows: sorted, crank: crank ? voice(crank, bufs[bufs.length - 1]) : null,
                       loudest: Math.max(...grid.map(l => l.peakDbfs)) }
   } catch (e) {
     console.warn('[engine-audio] baked loops for ' + engine + ' failed to load; keeping the drone', e)
@@ -329,7 +370,7 @@ function updateBake (bake, rpm, throttle, on, cranking, now) {
   const lift = v => Math.pow(10, dynamics * (bake.loudest - v.peakDbfs) / 20)
   if (bake.crank) {
     bake.crank.gain.gain.setTargetAtTime(cranking ? lift(bake.crank) : 0, now, 0.04)
-    if (cranking) bake.crank.src.playbackRate.setTargetAtTime(Math.max(0.2, rpm / bake.crank.rpmMeasured), now, 0.02)
+    if (cranking) bake.crank.src.playbackRate.setTargetAtTime(Math.max(CRANK_SOUND_FLOOR_RPM, rpm) / bake.crank.rpmMeasured, now, 0.02)
   }
   if (!on) {
     for (const row of bake.rows) for (const v of row.voices) v.gain.gain.setTargetAtTime(0, now, 0.12)   // same fade-out as the drone
@@ -359,21 +400,25 @@ function updateBake (bake, rpm, throttle, on, cranking, now) {
   outside.gain.setTargetAtTime(x * Math.pow(10, EXTERIOR_TRIM_DB / 20), now, 0.08)
   hiShelf.gain.setTargetAtTime(extBrightDb, now, tc)
   loShelf.gain.setTargetAtTime(extBoomDb, now, tc)
-  // Trim: undo the muffler's lift, so the loudest loop sits near full scale.
-  bakeOut.gain.setTargetAtTime(enabled ? volume * Math.pow(10, -MUFFLER_GAIN_DB / 20) : 0, now, tc)
+  // Trim: undo the muffler's lift, plus the per-engine headroom trim.
+  bakeTrim.gain.setTargetAtTime(Math.pow(10, (bake.trimDb - MUFFLER_GAIN_DB) / 20), now, tc)
+  comp.ratio.setTargetAtTime(compRatio, now, tc)
+  bakeOut.gain.setTargetAtTime(enabled ? volume * Math.pow(10, -compMakeupDb() / 20) : 0, now, tc)
 }
 
 /**
  * FEAT-120 sliders + listener. `dyn` 0..1 loudness flattening (LOUDNESS above); `outside` true for any
  * camera outside the cab; `brightDb` / `boomDb` the exterior high-shelf (800 Hz) and low-shelf (120 Hz)
- * gains (LISTENER above); `starter` the starter-motor recording's level (STARTER below).
+ * gains (LISTENER above); `starter` the starter-motor recording's level (STARTER below); `ratio` the
+ * engine compressor's ratio (COMPRESSOR above, 1 = off).
  */
-export function setEngineAudioTuning (dyn, outside, brightDb, boomDb, starter = STARTER_LEVEL) {
+export function setEngineAudioTuning (dyn, outside, brightDb, boomDb, starter = STARTER_LEVEL, ratio = 2) {
   dynamics = Math.min(1, Math.max(0, dyn))
   exterior = !!outside
   extBrightDb = brightDb
   extBoomDb = boomDb
   starterLevel = starter
+  compRatio = Math.max(1, ratio)
 }
 
 
@@ -398,6 +443,11 @@ export function setEngineAudioTuning (dyn, outside, brightDb, boomDb, starter = 
 const STARTER_FILE = 'starter-520773.flac'
 const STARTER_REF_RPM = 200   // crank rpm at which the starter loop plays at its recorded speed
 const STARTER_LEVEL = 0.35    // default starter-motor level, before the user volume scale
+// Both crank layers play no slower than this. The crank spins up from 0 in the first ~100 ms, and
+// following it down there slows the recordings to a growl (owner, 2026-10-19). A settled crank
+// rides 124–251 rpm cold / 155–268 warm, so the floor only shaves the deepest cold troughs.
+// ponytail: a flat floor; ramp it in over the spin-up instead if the trough flattening is audible.
+const CRANK_SOUND_FLOOR_RPM = 150
 
 let starterGain = null   // GainNode — the starter loop's on/off gate; its source runs for the life of the page
 let starterSrc = null
@@ -431,7 +481,7 @@ export function startCrankAudio (rpm = STARTER_REF_RPM) {
   if (!enabled) return
   ensureStarter()
   if (!starterGain) return
-  if (starterSrc) starterSrc.playbackRate.setTargetAtTime(Math.max(0.2, rpm / STARTER_REF_RPM), ctx.currentTime, 0.02)
+  if (starterSrc) starterSrc.playbackRate.setTargetAtTime(Math.max(CRANK_SOUND_FLOOR_RPM, rpm) / STARTER_REF_RPM, ctx.currentTime, 0.02)
   starterGain.gain.setTargetAtTime(volume * starterLevel, ctx.currentTime, 0.02)
   if (crankOn) return
   crankOn = true

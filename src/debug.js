@@ -263,6 +263,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   driveFolder.add(params, 'engineChaseBrightDb', 0, 30, 1).name('Chase Engine Bright (dB)')
   driveFolder.add(params, 'engineChaseBoomDb', -18, 6, 1).name('Chase Engine Boom (dB)')
   driveFolder.add(params, 'starterAudioLevel', 0, 1, 0.05).name('Starter Volume')
+  driveFolder.add(params, 'engineAudioCompRatio', 1, 8, 0.5).name('Engine Compression (ratio)')
   // Tire-slip audio (src/tire-audio.js) — read live every frame, no rebuild needed.
   driveFolder.add(params, 'tireAudioEnabled').name('Tire Audio')
   driveFolder.add(params, 'tireScreechVolume', 0, 1, 0.05).name('Screech Volume')

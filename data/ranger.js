@@ -215,6 +215,7 @@ export const RANGER_PARAMS = {
   engineChaseBrightDb: 15,   // FEAT-120: dB — outside cameras' high shelf above 800 Hz (gives back what the body strips)
   engineChaseBoomDb:  -12,   // FEAT-120: dB — outside cameras' low shelf below 120 Hz (no cabin boom outdoors)
   starterAudioLevel:  0.35,  // FEAT-120: starter-motor recording level (0..1, before Engine Volume)
+  engineAudioCompRatio: 2,   // FEAT-120: engine compressor ratio above −14 dB (1 = off; owner 2026-10-19: "a mild compressor")
 
   // Tire-slip audio (src/tire-audio.js): procedural squeal on pavement / noise tear on dirt, gated by
   // per-wheel slip velocity (silent < 4 m/s, full at 12 m/s). Shares the engine's AudioContext.
