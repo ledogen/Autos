@@ -66,7 +66,7 @@ import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorldPreset, activePreset, formatWorldCode, parseWorldCode } from './world-presets.js'   // FEAT-41: Casual / Classic — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
-import { PAD_PARAMS, BINDINGS } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
+import { pad, PAD_PARAMS, BINDINGS } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
@@ -7604,6 +7604,11 @@ function loop () {
   // lines crawled).
   if (_labActive) _gridGroundPlane.position.set(streamCenter.x, 0, streamCenter.z)
 
+  // FEAT-125: the pad unlocks WebAudio too. Its buttons replay as keydowns (the listener above), but
+  // the triggers and sticks are read directly and fire no event — so a player who only touched RT
+  // revved a silent engine until some button went down. Chrome counts gamepad input as the user
+  // gesture; the ensure* calls are idempotent (and resume a context that started suspended).
+  if (pad.active) { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio() }
   // FEAT-23: engine audio tracks RPM + throttle EVERY frame (no-op until the first keypress unlocks
   // WebAudio). PERF-16: deliberately OUTSIDE the throttled HUD block below — a 10 Hz pitch update would
   // make the engine note step audibly. Audio is not a DOM write, so the throttle does not apply to it.

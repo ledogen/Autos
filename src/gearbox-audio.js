@@ -15,7 +15,7 @@
 
 import { getAudioContext, whiteNoiseBuffer } from './engine-audio.js'
 
-const LEVEL = 0.45     // overall peak gain
+const LEVEL = 0.135    // overall peak gain — 30 % of the first cut (owner, 2026-10-19: "a little too loud")
 const DUR_S = 0.42     // s — the whole grind
 const TEETH = 8        // tooth passes per engine revolution, for the rasp rate (rpm/60 × TEETH)
 
