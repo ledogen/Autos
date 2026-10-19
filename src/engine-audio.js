@@ -110,7 +110,7 @@ export function ensureEngineAudio () {
  * Per-frame update: map engine RPM → fundamental, open the filter with revs/throttle, and set volume.
  * Ramps every param with setTargetAtTime (~50 ms) so nothing zippers.
  */
-export function updateEngineAudio (rpm, throttle, firing = true, cylinders = 6, engine = null) {
+export function updateEngineAudio (rpm, throttle, firing = true, cylinders = 6, engine = null, keyOff = false) {
   if (!started || !ctx) return
   const now = ctx.currentTime
   const tc = 0.05
@@ -121,7 +121,7 @@ export function updateEngineAudio (rpm, throttle, firing = true, cylinders = 6, 
   if (activeEngine !== engine && bakes[activeEngine]) silence(bakes[activeEngine], now)
   activeEngine = engine
   const bake = bakes[engine]
-  if (bake) updateBake(bake, rpm, throttle, enabled && firing, enabled && crankOn && !firing, now)
+  if (bake) updateBake(bake, rpm, throttle, enabled && firing, enabled && !firing && (crankOn || keyOff), now)
   if (!enabled || bake) { master.gain.setTargetAtTime(0, now, tc); return }
 
   // FEAT-33: `firing` is false whenever the ignition is not RUNNING. This drone models COMBUSTION,
@@ -232,7 +232,7 @@ const GROUND_GAIN = 0.7             // ~−3 dB: asphalt reflects most of it, th
 // One sample set per engine, each from its own assets/audio/engine/manifest-<engine>.json, fetched the
 // first time that engine is asked for. All of them feed the ONE exhaust chain below; a swapped-out
 // engine's voices sit at gain 0. An engine with no manifest (404) stays null and keeps the drone.
-const bakes = {}          // engine → null (none / loading) | { loudest, rows: [{ rpm, voices: [voice × 3] }], crank: voice|null }
+const bakes = {}          // engine → null (none / loading) | { loudest, rows: [{ rpm, voices: [voice × 3] }], motor: [voice] }
 let activeEngine = null
 let muffler = null        // ConvolverNode — every engine's voices connect here
 let bakeTrim = null       // GainNode — per-engine trim (ENGINE_TRIM_DB), ahead of the compressor
@@ -310,8 +310,9 @@ async function ensureExhaust () {
  * Load one engine's loops. The grid is rpm rows × LOADS. Two extra takes, when the manifest has them:
  * - `idle`: the free (or balanced) idle replaces the off voice of the row nearest its rpm. The dyno
  *   holding 750 at closed throttle is motoring a little, not idling; the idle take is the real thing.
- * - `crank`: the engine dragged round unfired at the game's cranking speed (~200 rpm, the take whose
- *   rpm is lowest — the `crank500` takes are the old 500 rpm starter). It plays while cranking.
+ * - `crank` (and `motor`, if a bake adds them): the engine turned UNFIRED — no combustion — at a held
+ *   rpm. Sorted by rpm they are the MOTORING rows: what plays while the starter cranks a dead engine,
+ *   while it coasts down after the key is cut, and while the driveline drags it round key-off.
  */
 async function loadBake (engine) {
   bakes[engine] = null
@@ -323,8 +324,8 @@ async function loadBake (engine) {
     const decode = async f => ctx.decodeAudioData(await (await fetch(BAKE_DIR + f)).arrayBuffer())
     const grid = manifest.loops.filter(l => LOADS.includes(l.load))
     const idle = manifest.loops.find(l => l.load === 'idle')
-    const crank = manifest.loops.filter(l => l.load === 'crank').sort((x, y) => x.rpmMeasured - y.rpmMeasured)[0]
-    const extra = [idle, crank].filter(Boolean)
+    const motor = manifest.loops.filter(l => l.load === 'crank' || l.load === 'motor').sort((x, y) => x.rpmMeasured - y.rpmMeasured)
+    const extra = [idle, ...motor].filter(Boolean)
     const bufs = await Promise.all([...grid, ...extra].map(l => decode(l.file)))
 
     const voice = (l, buf) => {
@@ -349,7 +350,7 @@ async function loadBake (engine) {
       row.voices[0].src.stop()
       row.voices[0] = voice(idle, bufs[grid.length])
     }
-    bakes[engine] = { trimDb: ENGINE_TRIM_DB[engine] ?? 0, rows: sorted, crank: crank ? voice(crank, bufs[bufs.length - 1]) : null,
+    bakes[engine] = { trimDb: ENGINE_TRIM_DB[engine] ?? 0, rows: sorted, motor: motor.map((l, i) => voice(l, bufs[bufs.length - motor.length + i])),
                       loudest: Math.max(...grid.map(l => l.peakDbfs)) }
   } catch (e) {
     console.warn('[engine-audio] baked loops for ' + engine + ' failed to load; keeping the drone', e)
@@ -358,19 +359,31 @@ async function loadBake (engine) {
 
 function silence (bake, now) {
   for (const row of bake.rows) for (const v of row.voices) v.gain.gain.setTargetAtTime(0, now, 0.05)
-  if (bake.crank) bake.crank.gain.gain.setTargetAtTime(0, now, 0.05)
+  for (const v of bake.motor) v.gain.gain.setTargetAtTime(0, now, 0.05)
 }
 
 /**
- * `on`: combustion (RUNNING and not stumbling). `cranking`: the starter is turning a dead engine —
- * the crank take plays instead of the grid. Off and not cranking fades everything out.
+ * `on`: combustion (RUNNING and not stumbling). `unfired`: the engine is turning with no combustion —
+ * cranking, or key-off (coasting down, or dragged round by the driveline) — and the MOTORING rows play
+ * instead of the grid, crossfaded by log-rpm the same way. That coast-down IS the engine-kill sound.
+ * They fade out between MOTOR_FADE_RPM and CRANK_SOUND_FLOOR_RPM: a crank's 0-rpm spin-up fades in
+ * there, and a dying engine's last turns fade out there.
  */
-function updateBake (bake, rpm, throttle, on, cranking, now) {
+function updateBake (bake, rpm, throttle, on, unfired, now) {
   const tc = 0.05
   const lift = v => Math.pow(10, dynamics * (bake.loudest - v.peakDbfs) / 20)
-  if (bake.crank) {
-    bake.crank.gain.gain.setTargetAtTime(cranking ? lift(bake.crank) : 0, now, 0.04)
-    if (cranking) bake.crank.src.playbackRate.setTargetAtTime(Math.max(CRANK_SOUND_FLOOR_RPM, rpm) / bake.crank.rpmMeasured, now, 0.02)
+  const m = bake.motor
+  if (m.length) {
+    const r = Math.max(CRANK_SOUND_FLOOR_RPM, rpm || 0)
+    const fade = unfired ? Math.min(1, Math.max(0, ((rpm || 0) - MOTOR_FADE_RPM) / (CRANK_SOUND_FLOOR_RPM - MOTOR_FADE_RPM))) : 0
+    let j = 0
+    while (j < m.length - 2 && r > m[j + 1].rpmMeasured) j++
+    const wr = m.length < 2 ? 0 : Math.min(1, Math.max(0, Math.log(r / m[j].rpmMeasured) / Math.log(m[j + 1].rpmMeasured / m[j].rpmMeasured)))
+    m.forEach((v, i) => {
+      const w = i === j ? 1 - wr : i === j + 1 ? wr : 0
+      v.gain.gain.setTargetAtTime(Math.sqrt(w) * fade * lift(v), now, 0.04)
+      if (w > 0) v.src.playbackRate.setTargetAtTime(r / v.rpmMeasured, now, 0.02)
+    })
   }
   if (!on) {
     for (const row of bake.rows) for (const v of row.voices) v.gain.gain.setTargetAtTime(0, now, 0.12)   // same fade-out as the drone
@@ -448,6 +461,7 @@ const STARTER_LEVEL = 0.35    // default starter-motor level, before the user vo
 // rides 124–251 rpm cold / 155–268 warm, so the floor only shaves the deepest cold troughs.
 // ponytail: a flat floor; ramp it in over the spin-up instead if the trough flattening is audible.
 const CRANK_SOUND_FLOOR_RPM = 150
+const MOTOR_FADE_RPM = 40    // the motoring rows are silent below this (see updateBake)
 
 let starterGain = null   // GainNode — the starter loop's on/off gate; its source runs for the life of the page
 let starterSrc = null
