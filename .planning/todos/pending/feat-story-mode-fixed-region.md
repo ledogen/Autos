@@ -68,7 +68,8 @@ the standing intent; story mode has no do-overs.
       entries" needs a menu layer to live in. Today entry is the `#story-seed-modal` off the pause
       menu, which is the deliberate placeholder. → **FEAT-41**.
 - [ ] **Diegetic boundary** — today's wall is an invisible clamp, legible only as the map overlay
-      ring. The trail-closed barrier (SM-INV-13) lands with → **FEAT-28**, which also owns the
+      ring. The boundary (SM-INV-13, amended 2026-10-19: roads trimmed at the wall, a visible hard
+      wall off-road, FEAT-103) lands with → **FEAT-28**, which also owns the
       macro-tile region model that should eventually decide where a region is *anchored* (today:
       the seed spawn).
 - [ ] **Confinement must become the UNLOCKED SET, not the current region** [2026-08-01]. DESIGN.md

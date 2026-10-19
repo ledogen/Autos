@@ -100,7 +100,10 @@ battle.
 R1): a camp at the wall searching for the Roamer's old trail out. It posts a **requisition** — five
 lines, one trip each: firewood (splitting yard), crew, food, fuel, gear. It is **not an ordinary job
 place**: unavailable until 6 good deeds, then always available, outside the budget. Lines are taken
-from the map, persist until delivered, and never lock the giver. Full design: FEAT-103.
+from the map, persist until delivered, and never lock the giver. Each line is also posted at its
+source POI — same job, two map tags. The camp sits at the end of the **trail**, the one road across
+R1's north wall that is trimmed at the wall rather than back to its junction; funding the camp and
+sleeping there reveals it. Full design: FEAT-103.
 
 The bridge moves later (its suppliers, lumber and stone, are the R2 and R3 yards); the direction is
 one boss per region, fed by that region's yard. Region **modifiers** are undefined; all of it is SM-4
