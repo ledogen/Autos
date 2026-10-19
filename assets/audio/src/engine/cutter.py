@@ -2,7 +2,7 @@
 
 Usage (from assets/audio/src/engine/):
     python cutter.py --selftest      synthetic check, no files needed
-    python cutter.py takes.csv       cut every take listed
+    python cutter.py takes-<engine>.csv <engine>   cut every take listed for that engine
 
 takes.csv columns: file,load,throttle,rpm_target,rpm_displayed
     file           raw take relative to this folder, e.g. raw/vulcan30_2340_part.flac
@@ -12,7 +12,7 @@ takes.csv columns: file,load,throttle,rpm_target,rpm_displayed
     rpm_displayed  rpm measured during the take (by engine-sim-render, or read off the sim)
 
 Outputs (paths relative to this folder):
-    dry takes        -> ../../engine/<name>.flac, listed in ../../engine/manifest.json
+    dry takes        -> ../../engine/<name>.flac, listed in ../../engine/manifest-<engine>.json
     *_stock takes    -> ../engine-muffler-reference/<name>.flac (not in the manifest)
     load "start"     -> ../engine-start-reference/<name>.flac, copied through uncut (not loops,
                         not in the manifest): key-on, crank, catch, flare and settle
@@ -91,16 +91,27 @@ def cut_loop(audio, rpm_guess, sr=SR):
     period, score = refine_period(mono, rpm_guess, sr)
     rpm = 120.0 * sr / period
     k = max(1, round(LOOP_TARGET_S * sr / period))
-    s = rising_zero_crossing(mono, int(START_S * sr), int(period / 2))
-    e0 = s + int(round(k * period))
     tune = int(END_TUNE_S * sr)
     w = max(int(XFADE_S * sr), int(period / 4))
-    if e0 + tune + w > len(mono):
-        raise ValueError("take too short for a %d-cycle loop starting at %.2f s" % (k, s / sr))
-    head = mono[s:s + w]
-    ends = np.arange(e0 - tune, e0 + tune + 1)
-    e = int(ends[np.argmax([ncorr(head, mono[j:j + w]) for j in ends])])
-    seam_corr = ncorr(head, mono[e:e + w])
+    # Try every whole-cycle start from START_S on and keep the best seam. With random combustion
+    # (light-load idle especially), some windows wrap far better than others.
+    best = None
+    first = int(START_S * sr)
+    for c in range(0, 10 ** 6):
+        s0 = first + int(round(c * period))
+        s = rising_zero_crossing(mono, s0, int(period / 2))
+        e0 = s + int(round(k * period))
+        if e0 + tune + w > len(mono):
+            break
+        head = mono[s:s + w]
+        ends = np.arange(e0 - tune, e0 + tune + 1)
+        e = int(ends[np.argmax([ncorr(head, mono[j:j + w]) for j in ends])])
+        corr = ncorr(head, mono[e:e + w])
+        if best is None or corr > best[2]:
+            best = (s, e, corr)
+    if best is None:
+        raise ValueError("take too short for a %d-cycle loop starting at %.2f s" % (k, first / sr))
+    s, e, seam_corr = best
 
     loop = audio[s:e].copy()
     f = int(XFADE_S * sr)
@@ -118,6 +129,7 @@ def cut_loop(audio, rpm_guess, sr=SR):
         "rpmLoop": round(120.0 * sr * k / (e - s), 1),  # rpm implied by the loop's exact length
         "periodCorr": round(score, 4),
         "seamCorr": round(seam_corr, 4),
+        "startS": round(s / sr, 3),
     }
 
 
@@ -154,7 +166,7 @@ def selftest():
     print("self-check passed")
 
 
-def main(csv_path):
+def main(csv_path, engine):
     root = os.path.dirname(os.path.abspath(csv_path))           # assets/audio/src/engine
     grid_dir = os.path.normpath(os.path.join(root, "..", "..", "engine"))
     ref_dir = os.path.normpath(os.path.join(root, "..", "engine-muffler-reference"))
@@ -199,17 +211,18 @@ def main(csv_path):
                 **info,
                 "peakDbfs": round(float(peak), 2),
             })
-    with open(os.path.join(grid_dir, "manifest.json"), "w", newline="\n") as fh:
-        json.dump({"engine": "vulcan30", "sampleRate": rate, "loops": entries}, fh, indent=2)
+    manifest = "manifest-%s.json" % engine
+    with open(os.path.join(grid_dir, manifest), "w", newline="\n") as fh:
+        json.dump({"engine": engine, "sampleRate": rate, "loops": entries}, fh, indent=2)
         fh.write("\n")
-    print("wrote manifest.json with %d grid loops" % len(entries))
+    print("wrote %s with %d grid loops" % (manifest, len(entries)))
 
 
 if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--selftest":
         selftest()
-    elif len(sys.argv) == 2:
-        main(sys.argv[1])
+    elif len(sys.argv) == 3:
+        main(sys.argv[1], sys.argv[2])
     else:
         print(__doc__)
         sys.exit(1)

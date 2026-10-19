@@ -1,0 +1,707 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index faa5a0b..13a74b2 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -299,6 +299,13 @@ target_include_directories(engine-sim-app
+ 
+ add_subdirectory(dependencies)
+ 
++# AUTOS: headless renderer (offline WAV output, fixed leveler gain)
++if (PIRANHA_ENABLED)
++    add_executable(engine-sim-render src/autos_render.cpp)
++    target_link_libraries(engine-sim-render engine-sim engine-sim-script-interpreter)
++    target_include_directories(engine-sim-render PUBLIC dependencies/submodules)
++endif (PIRANHA_ENABLED)
++
+ # GTEST
+ 
+ enable_testing()
+diff --git a/autos/README.md b/autos/README.md
+new file mode 100644
+index 0000000..0ffa15f
+--- /dev/null
++++ b/autos/README.md
+@@ -0,0 +1,16 @@
++# AUTOS additions to engine-sim v0.1.11a
++
++Branch `autos-011a` = upstream tag v0.1.11a + AUTOS commits (MIT, Copyright 2022 AngeTheGreat).
++
++- `src/autos_render.cpp` -> `engine-sim-render`: headless offline renderer (float WAV, fixed leveler gain,
++  dyno hold / free idle / crank / start modes, dyno sweep, rpm trace). Used by AUTOS `bake.py`.
++- `engine-sim-app` patch: leveler pinned to a fixed gain; hold L + scroll to change it.
++- `Synthesizer::setFloatSink`: float tap before int16 clipping.
++
++## Build (Windows)
++
++VS 2022 Build Tools, CMake 4.x, vcpkg `boost-filesystem:x64-windows-static-md` and
++`sdl2 sdl2-image:x64-windows`, WinFlexBison. Apply `autos/piranha-boost-is_absolute.patch` inside
++`dependencies/submodules/piranha` (Boost >= 1.85 removed `path::is_complete`). Configure with
++`-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DDISCORD_ENABLED=OFF` plus explicit SDL2/Flex/Bison paths; see the
++`Fork` section of AUTOS `assets/audio/src/engine/NOTES.md`. Deploy to `bin-autos/` beside the stock `bin/`.
+diff --git a/autos/piranha-boost-is_absolute.patch b/autos/piranha-boost-is_absolute.patch
+new file mode 100644
+index 0000000..948ec54
+--- /dev/null
++++ b/autos/piranha-boost-is_absolute.patch
+@@ -0,0 +1,13 @@
++﻿diff --git a/src/path.cpp b/src/path.cpp
++index 6e711184..839d9ffa 100644
++--- a/src/path.cpp
+++++ b/src/path.cpp
++@@ -73,7 +73,7 @@ std::string piranha::Path::getStem() const {
++ }
++ 
++ bool piranha::Path::isAbsolute() const {
++-    return m_path->is_complete();
+++    return m_path->is_absolute(); // AUTOS: is_complete() was removed in newer Boost; same meaning
++ }
++ 
++ bool piranha::Path::exists() const {
+diff --git a/include/ignition_module.h b/include/ignition_module.h
+index 7647262..34d5336 100644
+--- a/include/ignition_module.h
++++ b/include/ignition_module.h
+@@ -40,6 +40,7 @@ class IgnitionModule : public Part {
+         double getTimingAdvance();
+ 
+         bool m_enabled;
++        double m_autosAdvanceOffset = 0.0;   // AUTOS: added to the timing curve (radians); idle control
+ 
+     protected:
+         SparkPlug *getPlug(int i);
+diff --git a/include/intake.h b/include/intake.h
+index 4555a11..8c54300 100644
+--- a/include/intake.h
++++ b/include/intake.h
+@@ -47,6 +47,8 @@ class Intake : public Part {
+ 
+         inline double getRunnerFlowRate() const { return m_runnerFlowRate; }
+         inline double getThrottlePlatePosition() const { return m_idleThrottlePlatePosition * m_throttle; }
++        // AUTOS: the renderer's idle-air controller closes the idle plate and meters idle air itself.
++        inline void setIdleThrottlePlatePosition(double p) { m_idleThrottlePlatePosition = p; }
+         inline double getRunnerLength() const { return m_runnerLength; }
+         inline double getPlenumCrossSectionArea() const { return m_crossSectionArea; }
+         inline double getVelocityDecay() const { return m_velocityDecay; }
+diff --git a/include/synthesizer.h b/include/synthesizer.h
+index 7c871b1..f86474a 100644
+--- a/include/synthesizer.h
++++ b/include/synthesizer.h
+@@ -14,6 +14,7 @@
+ #include <mutex>
+ #include <atomic>
+ #include <condition_variable>
++#include <vector>
+ 
+ class Synthesizer {
+     public:
+@@ -92,6 +93,11 @@ class Synthesizer {
+         AudioParameters getAudioParameters();
+         void setAudioParameters(const AudioParameters &params);
+ 
++        // AUTOS: when set, every rendered sample is also appended here as float
++        // (after leveler and volume, before int16 rounding and clipping; 1.0 = INT16_MAX).
++        void setFloatSink(std::vector<float> *sink) { m_floatSink = sink; }
++        std::vector<float> *m_floatSink = nullptr;
++
+     //protected:
+         ButterworthLowPassFilter<float> m_antialiasing;
+         LevelingFilter m_levelingFilter;
+diff --git a/src/autos_render.cpp b/src/autos_render.cpp
+new file mode 100644
+index 0000000..9fa7cf6
+--- /dev/null
++++ b/src/autos_render.cpp
+@@ -0,0 +1,530 @@
++// AUTOS headless renderer for engine-sim (FEAT-120 engine bake).
++//
++// Runs the simulation offline, without a window or audio device, and writes the synthesizer's
++// output straight to a 32-bit float WAV at 44.1 kHz. The leveler (an always-on fast compressor in
++// the app) is pinned to a fixed gain, so relative loudness between takes is real.
++//
++// Usage (run from engine-sim's bin/ folder, like the app, so "../es/" and "../assets/" resolve):
++//   engine-sim-render <script.mr> --out take.wav --rpm 2340 --throttle 0.3 [options]
++//   engine-sim-render <script.mr> --out idle.wav --free-idle [--throttle 0] [options]
++//   engine-sim-render <script.mr> --sweep 1000:5500:250 --throttle 1     (dyno table, CSV to stdout)
++//
++// Options:
++//   --warmup S     seconds simulated before recording starts (default 3)
++//   --seconds S    seconds recorded (default 6)
++//   --gain G       fixed leveler gain (default 1). The app's leveler adapts between 1e-5 and 1.9.
++//   --volume V     synthesizer volume, applied after the leveler (default 1)
++//   --noise N      override the script's `noise` (V knob)
++//   --jitter J     override the script's `jitter` (B knob)
++//   --hf H         override the script's `hf_gain` (C knob)
++//   --seed N       random seed for the synthesizer's noise (default 1)
++//   --ir WAV       replace every exhaust's impulse response with this 16-bit WAV (e.g. a unit
++//                  impulse for dry takes); the script's own IRs are used otherwise
++//   --ir-volume V  volume for --ir (default 0.01, the library's scale)
++//
++// <script.mr> must call main(), like assets/main.mr. One summary line of JSON goes to stdout.
++
++#include "../include/engine.h"
++#include "../include/simulator.h"
++#include "../include/synthesizer.h"
++#include "../include/vehicle.h"
++#include "../include/transmission.h"
++#include "../include/impulse_response.h"
++#include "../include/exhaust_system.h"
++#include "../include/units.h"
++#include "../include/constants.h"
++#include "../scripting/include/compiler.h"
++
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <fstream>
++#include <string>
++#include <vector>
++
++#define NOMINMAX
++#include <windows.h>
++#include <dbghelp.h>
++#pragma comment(lib, "dbghelp.lib")
++
++namespace {
++
++void trace(const char *s) { if (std::getenv("AUTOS_TRACE")) { std::fprintf(stderr, "[trace] %s\n", s); std::fflush(stderr); } }
++
++// Print a symbolised call stack on a crash (needs the .pdb next to the exe).
++LONG WINAPI crashHandler(EXCEPTION_POINTERS *ep) {
++    HANDLE proc = GetCurrentProcess(), thread = GetCurrentThread();
++    SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
++    SymInitialize(proc, nullptr, TRUE);
++    std::fprintf(stderr, "engine-sim-render: crash 0x%08lX at %p\n",
++        ep->ExceptionRecord->ExceptionCode, ep->ExceptionRecord->ExceptionAddress);
++    CONTEXT ctx = *ep->ContextRecord;
++    STACKFRAME64 f = {};
++    f.AddrPC.Offset = ctx.Rip; f.AddrPC.Mode = AddrModeFlat;
++    f.AddrFrame.Offset = ctx.Rbp; f.AddrFrame.Mode = AddrModeFlat;
++    f.AddrStack.Offset = ctx.Rsp; f.AddrStack.Mode = AddrModeFlat;
++    for (int i = 0; i < 40 && StackWalk64(IMAGE_FILE_MACHINE_AMD64, proc, thread, &f, &ctx, nullptr,
++             SymFunctionTableAccess64, SymGetModuleBase64, nullptr); ++i) {
++        char buf[sizeof(SYMBOL_INFO) + 256] = {};
++        SYMBOL_INFO *sym = reinterpret_cast<SYMBOL_INFO *>(buf);
++        sym->SizeOfStruct = sizeof(SYMBOL_INFO); sym->MaxNameLen = 255;
++        DWORD64 d64 = 0; DWORD d32 = 0; IMAGEHLP_LINE64 line = {}; line.SizeOfStruct = sizeof(line);
++        const bool hasSym = SymFromAddr(proc, f.AddrPC.Offset, &d64, sym);
++        const bool hasLine = SymGetLineFromAddr64(proc, f.AddrPC.Offset, &d32, &line);
++        std::fprintf(stderr, "  #%02d %s  %s:%lu\n", i, hasSym ? sym->Name : "?",
++            hasLine ? line.FileName : "?", hasLine ? line.LineNumber : 0);
++    }
++    std::fflush(stderr);
++    return EXCEPTION_EXECUTE_HANDLER;
++}
++
++struct Options {
++    std::string script;
++    std::string out;
++    double rpm = 0;
++    double throttle = 0;
++    bool freeIdle = false;
++    bool crank = false;     // ignition off, starter held for the whole take
++    bool start = false;     // ignition on, starter held until it catches, then released
++    std::string rpmTrace;   // optional CSV: time_s,rpm,starter,target,throttle,air every frame
++    double idleTarget = 0;  // free idle: hold this rpm with the idle-air controller (0 = off)
++    std::string startProfile;  // start: "warm" or "cold" flare trace for the idle-air controller
++    double iacKp = 0.2;     // air loop: rpm of command per rpm of error
++    double iacKi = 0.4;     // air loop: rpm of command per rpm-second of summed error
++    double throttleGamma = 2.0;  // the script's throttle_gamma (both AUTOS engines use 2.0)
++    std::vector<std::pair<double, double>> airTable;  // --air-table air:rpm,... feedforward (rpm, air)
++    double sparkK = 0.1;    // spark loop: degrees of advance per rpm of error
++    double sparkMax = 10.0; // spark loop limit, degrees either way
++    double sparkOffset = 0; // fixed advance offset, degrees (tests)
++    double iacKacc = 0.3;   // flare: extra air while the target climbs (rpm per rpm/s)
++    bool idleBalanced = false;  // free idle as zero-load dyno hold: air trimmed until dyno torque = 0
++    std::string airSweep;   // --air-sweep a0:a1:n  free-run at fixed idle airflows, print rpm
++    bool sweep = false;
++    double sweepFrom = 0, sweepTo = 0, sweepStep = 0;
++    double warmup = 3.0;
++    double seconds = 6.0;
++    double gain = 1.0;
++    double volume = 1.0;
++    double noise = -1, jitter = -1, hf = -1;
++    unsigned int seed = 1;
++    std::string ir;
++    double irVolume = 0.01;
++};
++
++[[noreturn]] void fail(const std::string &msg) {
++    std::fprintf(stderr, "engine-sim-render: %s\n", msg.c_str());
++    std::exit(1);
++}
++
++Options parse(int argc, char **argv) {
++    Options o;
++    for (int i = 1; i < argc; ++i) {
++        const std::string a = argv[i];
++        auto next = [&]() -> std::string {
++            if (i + 1 >= argc) fail("missing value after " + a);
++            return argv[++i];
++        };
++        if (a == "--out") o.out = next();
++        else if (a == "--rpm") o.rpm = std::stod(next());
++        else if (a == "--throttle") o.throttle = std::stod(next());
++        else if (a == "--free-idle") o.freeIdle = true;
++        else if (a == "--crank") o.crank = true;
++        else if (a == "--start") o.start = true;
++        else if (a == "--rpm-trace") o.rpmTrace = next();
++        else if (a == "--idle-target") o.idleTarget = std::stod(next());
++        else if (a == "--start-profile") o.startProfile = next();
++        else if (a == "--iac-kp") o.iacKp = std::stod(next());
++        else if (a == "--iac-ki") o.iacKi = std::stod(next());
++        else if (a == "--throttle-gamma") o.throttleGamma = std::stod(next());
++        else if (a == "--spark-k") o.sparkK = std::stod(next());
++        else if (a == "--spark-max") o.sparkMax = std::stod(next());
++        else if (a == "--spark-offset") o.sparkOffset = std::stod(next());
++        else if (a == "--idle-balanced") o.idleBalanced = true;
++        else if (a == "--iac-kacc") o.iacKacc = std::stod(next());
++        else if (a == "--air-sweep") { o.airSweep = next(); o.freeIdle = true; }
++        else if (a == "--air-table") {
++            const std::string s = next();
++            size_t p = 0;
++            while (p < s.size()) {
++                size_t q = s.find(',', p);
++                if (q == std::string::npos) q = s.size();
++                double av = 0, rv = 0;
++                if (std::sscanf(s.substr(p, q - p).c_str(), "%lf:%lf", &av, &rv) != 2)
++                    fail("--air-table wants air:rpm,air:rpm,...");
++                o.airTable.push_back({ rv, av });
++                p = q + 1;
++            }
++            std::sort(o.airTable.begin(), o.airTable.end());
++        }
++        else if (a == "--warmup") o.warmup = std::stod(next());
++        else if (a == "--seconds") o.seconds = std::stod(next());
++        else if (a == "--gain") o.gain = std::stod(next());
++        else if (a == "--volume") o.volume = std::stod(next());
++        else if (a == "--noise") o.noise = std::stod(next());
++        else if (a == "--jitter") o.jitter = std::stod(next());
++        else if (a == "--hf") o.hf = std::stod(next());
++        else if (a == "--seed") o.seed = static_cast<unsigned int>(std::stoul(next()));
++        else if (a == "--ir") o.ir = next();
++        else if (a == "--ir-volume") o.irVolume = std::stod(next());
++        else if (a == "--sweep") {
++            o.sweep = true;
++            const std::string s = next();
++            if (std::sscanf(s.c_str(), "%lf:%lf:%lf", &o.sweepFrom, &o.sweepTo, &o.sweepStep) != 3
++                || o.sweepStep <= 0) fail("--sweep wants from:to:step, e.g. 1000:5500:250");
++        }
++        else if (!a.empty() && a[0] == '-') fail("unknown option " + a);
++        else if (o.script.empty()) o.script = a;
++        else fail("unexpected argument " + a);
++    }
++    if (o.script.empty()) fail("no script given");
++    if (!o.sweep && o.out.empty()) fail("--out is required (or use --sweep)");
++    if (!o.sweep && !o.freeIdle && !o.crank && !o.start && o.rpm <= 0)
++        fail("--rpm is required (or use --free-idle / --crank / --start / --sweep)");
++    return o;
++}
++
++// Minimal RIFF/WAVE reader: 16-bit PCM, first channel only (library IRs are mono 16-bit).
++std::vector<int16_t> readWav16(const std::string &path) {
++    std::ifstream f(path, std::ios::binary);
++    if (!f) fail("can't open impulse response " + path);
++    std::vector<char> d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
++    if (d.size() < 12 || std::memcmp(d.data(), "RIFF", 4) || std::memcmp(d.data() + 8, "WAVE", 4))
++        fail("not a WAV file: " + path);
++    int channels = 0, bits = 0;
++    size_t p = 12;
++    while (p + 8 <= d.size()) {
++        uint32_t size;
++        std::memcpy(&size, d.data() + p + 4, 4);
++        const char *id = d.data() + p;
++        const char *body = d.data() + p + 8;
++        if (!std::memcmp(id, "fmt ", 4)) {
++            uint16_t fmt, ch, bps;
++            std::memcpy(&fmt, body, 2);
++            std::memcpy(&ch, body + 2, 2);
++            std::memcpy(&bps, body + 14, 2);
++            if (fmt != 1 || bps != 16) fail("impulse response must be 16-bit PCM: " + path);
++            channels = ch;
++            bits = bps;
++        }
++        else if (!std::memcmp(id, "data", 4)) {
++            if (channels == 0) fail("WAV data before fmt chunk: " + path);
++            const size_t frames = size / (2 * channels);
++            std::vector<int16_t> out(frames);
++            for (size_t i = 0; i < frames; ++i) std::memcpy(&out[i], body + i * 2 * channels, 2);
++            return out;
++        }
++        p += 8 + size + (size & 1);
++    }
++    fail("no data chunk in " + path);
++}
++
++void writeWavFloat(const std::string &path, const std::vector<float> &s, int rate) {
++    std::ofstream f(path, std::ios::binary);
++    if (!f) fail("can't write " + path);
++    auto u32 = [&](uint32_t v) { f.write(reinterpret_cast<const char *>(&v), 4); };
++    auto u16 = [&](uint16_t v) { f.write(reinterpret_cast<const char *>(&v), 2); };
++    const uint32_t bytes = static_cast<uint32_t>(s.size() * 4);
++    f.write("RIFF", 4); u32(36 + bytes); f.write("WAVE", 4);
++    f.write("fmt ", 4); u32(16); u16(3 /* IEEE float */); u16(1); u32(rate); u32(rate * 4); u16(4); u16(32);
++    f.write("data", 4); u32(bytes);
++    f.write(reinterpret_cast<const char *>(s.data()), bytes);
++}
++
++struct Rig {
++    Engine *engine = nullptr;
++    Vehicle *vehicle = nullptr;
++    Transmission *transmission = nullptr;
++    Simulator *sim = nullptr;
++};
++
++Rig load(const Options &o) {
++    Rig r;
++    es_script::Compiler compiler;
++    trace("compiler init"); compiler.initialize();
++    if (!compiler.compile(o.script.c_str())) fail("script failed to compile; see error_log.log");
++    trace("compiled"); const es_script::Compiler::Output out = compiler.execute(); trace("executed");
++    compiler.destroy();
++    r.engine = out.engine;
++    r.vehicle = out.vehicle;
++    r.transmission = out.transmission;
++    if (r.engine == nullptr || r.vehicle == nullptr || r.transmission == nullptr)
++        fail("script did not set an engine, vehicle and transmission (does it call main()?)");
++
++    // Same order as EngineSimApplication::loadEngine (v0.1.11a), minus graphics and the audio thread.
++    r.engine->calculateDisplacement();
++    r.sim = new Simulator;
++    r.sim->setFluidSimulationSteps(8);
++    r.sim->setSimulationFrequency(static_cast<int>(r.engine->getSimulationFrequency()));
++    Simulator::Parameters simulatorParams;
++    simulatorParams.SystemType = Simulator::SystemType::NsvOptimized;
++    r.sim->initialize(simulatorParams);
++    trace("load simulation"); r.sim->loadSimulation(r.engine, r.vehicle, r.transmission); trace("simulation loaded");
++
++    Synthesizer &synth = *r.sim->getSynthesizer();
++    Synthesizer::AudioParameters ap = synth.getAudioParameters();
++    ap.InputSampleNoise = static_cast<float>(o.jitter >= 0 ? o.jitter : r.engine->getInitialJitter());
++    ap.AirNoise = static_cast<float>(o.noise >= 0 ? o.noise : r.engine->getInitialNoise());
++    ap.dF_F_mix = static_cast<float>(o.hf >= 0 ? o.hf : r.engine->getInitialHighFrequencyGain());
++    ap.Volume = static_cast<float>(o.volume);
++    ap.LevelerMinGain = ap.LevelerMaxGain = static_cast<float>(o.gain);
++    synth.setAudioParameters(ap);
++    synth.m_levelingFilter.p_minLevel = static_cast<float>(o.gain);   // read only at initialize()
++    synth.m_levelingFilter.p_maxLevel = static_cast<float>(o.gain);   // settles in ~50 samples
++
++    trace("loading IRs"); for (int i = 0; i < r.engine->getExhaustSystemCount(); ++i) {
++        ImpulseResponse *ir = r.engine->getExhaustSystem(i)->getImpulseResponse();
++        const bool override = !o.ir.empty();
++        const std::vector<int16_t> samples = readWav16(override ? o.ir : ir->getFilename());
++        synth.initializeImpulseResponse(samples.data(), static_cast<unsigned int>(samples.size()),
++            static_cast<float>(override ? o.irVolume : ir->getVolume()), i);
++    }
++
++    trace("IRs loaded"); r.engine->getIgnitionModule()->m_enabled = true;
++    r.engine->getIgnitionModule()->m_autosAdvanceOffset = o.sparkOffset * units::deg;
++    return r;
++}
++
++// Advance the simulation by about dt seconds and render whatever audio that produced.
++void step(Rig &r, double dt) {
++    Simulator &sim = *r.sim;
++    Synthesizer &synth = *sim.getSynthesizer();
++    sim.startFrame(dt);
++    while (sim.simulateStep()) { /* physics */ }
++    sim.endFrame();
++    // renderAudio() blocks until input is ready; only call it when there is some.
++    if (synth.m_inputChannels[0].Data.size() > 0 && synth.m_audioBuffer.size() < 2000) {
++        synth.renderAudio();
++    }
++    int16_t discard[4096];
++    while (sim.readAudioOutput(4096, discard) > 0) { /* drain the int16 copy */ }
++}
++
++double toRadPerS(double rpm) { return units::rpm(rpm); }
++
++double smoothstep(double x) {
++    x = std::min(1.0, std::max(0.0, x));
++    return x * x * (3 - 2 * x);
++}
++
++// Target rpm s seconds after the catch, starting from the rpm at the catch.
++// warm: up to 1250 within 0.4 s, back down to 750 over 1.5 s, hold.
++// cold: up to 1430 within 0.4 s, down to a 1100 fast idle over 1.0 s, hold.
++double flareTarget(const std::string &profile, double s, double rpmAtCatch) {
++    const bool cold = profile == "cold";
++    const double peak = cold ? 1430 : 1250, settle = cold ? 1100 : 750, decay = cold ? 1.0 : 1.5;
++    if (s < 0.4) return rpmAtCatch + (peak - rpmAtCatch) * smoothstep(s / 0.4);
++    return settle + (peak - settle) * (1 - smoothstep((s - 0.4) / decay));
++}
++
++// Feedforward idle airflow for a target rpm, from the Vulcan's idle-plate sweep
++// (airflow 0.0094 -> 718 rpm, 0.0126 -> 1020, 0.0157 -> 1272). The PI corrects the rest.
++double airFeedforward(double rpm) { return 0.0094 + (rpm - 718.0) * 1.14e-5; }
++
++// Feedforward from a measured table of (rpm, air): linear between points, extrapolated at the ends.
++double airFromTable(const std::vector<std::pair<double, double>> &tab, double rpm) {
++    if (tab.size() < 2) return tab.empty() ? airFeedforward(rpm) : tab[0].second;
++    size_t i = 1;
++    while (i + 1 < tab.size() && rpm > tab[i].first) ++i;
++    const auto &a = tab[i - 1], &b = tab[i];
++    return a.second + (rpm - a.first) * (b.second - a.second) / (b.first - a.first);
++}
++
++std::string jsonEscape(const std::string &s) {
++    std::string out;
++    for (char c : s) {
++        if (c == '\\' || c == '"') out += '\\';
++        out += c;
++    }
++    return out;
++}
++
++}  // namespace
++
++int main(int argc, char **argv) {
++    SetUnhandledExceptionFilter(crashHandler);
++    const Options o = parse(argc, argv);
++    std::srand(o.seed);
++    Rig r = load(o);
++    Simulator &sim = *r.sim;
++    const double frame = 1.0 / 120;
++    const int rate = 44100;
++
++    if (o.sweep) {
++        // Dyno table: start on the starter, then hold each rpm, settle, average the dyno torque.
++        r.engine->setSpeedControl(0.0);
++        sim.m_starterMotor.m_enabled = true;
++        for (double t = 0; t < 1.5; t += frame) step(r, frame);
++        sim.m_starterMotor.m_enabled = false;
++        sim.m_dyno.m_rotationSpeed = r.engine->getSpeed();
++        sim.m_dyno.m_enabled = true;
++        sim.m_dyno.m_hold = true;
++        r.engine->setSpeedControl(o.throttle);
++        std::printf("rpm,torque_Nm,power_kW,power_hp\n");
++        for (double rpm = o.sweepFrom; rpm <= o.sweepTo + 1e-9; rpm += o.sweepStep) {
++            sim.m_dyno.m_rotationSpeed = toRadPerS(rpm);
++            for (double t = 0; t < 1.5; t += frame) step(r, frame);
++            double sum = 0; int n = 0;
++            for (double t = 0; t < 0.5; t += frame) { step(r, frame); sum += sim.getFilteredDynoTorque(); ++n; }
++            const double torque = sum / n;                     // N*m, signed as engine-sim reports it
++            const double kw = torque * toRadPerS(rpm) / 1000.0;
++            std::printf("%.0f,%.1f,%.1f,%.1f\n", rpm, torque, kw, kw / 0.7457);
++            std::fflush(stdout);
++        }
++        return 0;
++    }
++
++    trace("loaded; rendering"); std::vector<float> audio;
++    sim.getSynthesizer()->setFloatSink(&audio);
++    // Start like a driver does in the app: crank on the starter at closed throttle until it runs.
++    // Engaging the dyno on a stopped engine and dragging it to speed leaves it motoring, unfired.
++    // --crank: ignition off, starter held throughout. --start: ignition on, starter held until the
++    // engine catches (above 1.3x starter speed for 0.1 s, or 4 s max), then released; warmup is 0
++    // so the whole start, flare and settle are recorded.
++    r.engine->setSpeedControl(0.0);
++    sim.m_starterMotor.m_enabled = true;
++    if (o.crank) r.engine->getIgnitionModule()->m_enabled = false;
++    const double crankS = o.start ? 1e9 : (o.crank ? 1e9 : 1.5), rampS = 1.0;
++    const double starterRpm = std::abs(units::toRpm(sim.m_starterMotor.m_rotationSpeed));
++    const double warmup = o.start ? 0.0 : o.warmup;
++    double caughtAt = -1, aboveFor = 0;
++    std::FILE *traceFile = o.rpmTrace.empty() ? nullptr : std::fopen(o.rpmTrace.c_str(), "w");
++    if (traceFile) std::fprintf(traceFile, "time_s,rpm,starter,target,throttle,air,spark_deg\n");
++
++
++    const size_t warmupSamples = static_cast<size_t>(warmup * rate);
++    const size_t totalSamples = warmupSamples + static_cast<size_t>(o.seconds * rate);
++    double t = 0, rpmSum = 0, rpmMin = 1e9, rpmMax = 0, torqueSum = 0, rampFrom = 0;
++    long rpmN = 0;
++    bool engaged = false;
++    // Idle-air controller (IAC). When on, the idle plate closes fully and all idle air comes
++    // through the throttle, so the controller can both add and remove air. It works in airflow
++    // units (flow factor = cos(plate * pi/2), plate = 1 - s^gamma), so it is close to linear:
++    // air = feedforward(target) + kp * error + ki * summed error. The sum freezes at the limits.
++    const bool iacWanted = (o.freeIdle && (o.idleTarget > 0 || !o.airSweep.empty()))
++        || (o.start && !o.startProfile.empty());
++    bool iacOn = false;
++    double iacStart = 0, rpmAtCatch = 0, rpmFilt = 0, rpmFast = 0, errSum = 0, air = 0, target = 0;
++    double cmd = 0, spark = 0;
++    std::vector<double> cycleBuf;
++    // --air-sweep: hold each fixed airflow for 4 s after the catch; print the mean rpm of its last 2 s.
++    double sweepA0 = 0, sweepA1 = 0, sweepSum = 0;
++    int sweepN = 0, sweepIdx = -1;
++    long sweepCnt = 0;
++    if (!o.airSweep.empty()
++        && std::sscanf(o.airSweep.c_str(), "%lf:%lf:%d", &sweepA0, &sweepA1, &sweepN) != 3)
++        fail("--air-sweep wants a0:a1:n");
++    auto applyAir = [&](double a) {
++        const double plate = std::acos(std::min(1.0, std::max(0.0, a))) * 2.0 / constants::pi;
++        cmd = std::pow(std::max(0.0, 1.0 - plate), 1.0 / o.throttleGamma);
++        r.engine->setSpeedControl(cmd);
++    };
++    auto startIac = [&]() {
++        for (int i = 0; i < r.engine->getIntakeCount(); ++i) r.engine->getIntake(i)->setIdleThrottlePlatePosition(1.0);
++        iacOn = true; iacStart = t; rpmAtCatch = r.engine->getRpm();
++        rpmFilt = rpmFast = rpmAtCatch; errSum = 0;
++    };
++    while (audio.size() < totalSamples) {
++        if (o.start && sim.m_starterMotor.m_enabled) {
++            aboveFor = r.engine->getRpm() > 1.15 * starterRpm ? aboveFor + frame : 0;   // pulling away
++            if (aboveFor >= 0.1 || t > 4.0) {
++                sim.m_starterMotor.m_enabled = false;
++                caughtAt = aboveFor >= 0.1 ? t : -1;
++                if (iacWanted) startIac();
++            }
++        }
++        if (iacOn && sweepN > 0) {
++            const int idx = static_cast<int>((t - iacStart) / 4.0);
++            if (idx != sweepIdx) {
++                if (sweepIdx >= 0 && sweepCnt > 0) std::printf("%.6f,%.1f\n", air, sweepSum / sweepCnt);
++                if (idx >= sweepN) { std::fflush(stdout); return 0; }
++                sweepIdx = idx; sweepSum = 0; sweepCnt = 0;
++                air = sweepN > 1 ? sweepA0 + (sweepA1 - sweepA0) * idx / (sweepN - 1) : sweepA0;
++                applyAir(air);
++            }
++            if (t - iacStart - 4.0 * idx > 2.0) { sweepSum += r.engine->getRpm(); ++sweepCnt; }
++        }
++        else if (iacOn && o.idleBalanced) {
++            // Balanced idle: the dyno holds the target; integrate the dyno torque to zero (the engine
++            // just sustains itself: free idle with the speed pinned). Freeze the air when recording.
++            target = o.idleTarget;
++            if (audio.size() < warmupSamples) {
++                errSum += -sim.getFilteredDynoTorque() * frame;
++                air = std::min(0.06, std::max(0.0, airFromTable(o.airTable, target + 5.0 * errSum)));
++                applyAir(air);
++            }
++        }
++        else if (iacOn) {
++            // Two loops, like an engine computer: a slow air loop (feedforward table + PI) sets the
++            // base speed; a fast spark loop trims advance on the very next firing to damp the wander.
++            const double rpmNow = r.engine->getRpm();
++            rpmFilt += (rpmNow - rpmFilt) * std::min(1.0, frame / 0.08);   // ~one cycle at idle
++            // Spark loop measures rpm averaged over exactly one 720-degree cycle: no firing ripple.
++            cycleBuf.push_back(rpmNow);
++            const size_t cycleFrames = static_cast<size_t>(std::max(1.0, std::round((120.0 / std::max(rpmFilt, 300.0)) / frame)));
++            while (cycleBuf.size() > cycleFrames) cycleBuf.erase(cycleBuf.begin());
++            rpmFast = 0; for (double v : cycleBuf) rpmFast += v; rpmFast /= cycleBuf.size();
++            target = o.start ? flareTarget(o.startProfile, t - iacStart, rpmAtCatch) : o.idleTarget;
++            const double err = target - rpmFilt;
++            // PI in rpm, mapped to air through the engine's own table: same gains suit any engine.
++            // Acceleration feedforward: while the target climbs, add air to spin up the crank.
++            const double dTarget = o.start
++                ? (flareTarget(o.startProfile, t - iacStart + frame, rpmAtCatch) - target) / frame : 0.0;
++            const double raw = airFromTable(o.airTable,
++                target + o.iacKp * err + o.iacKi * errSum + o.iacKacc * std::max(0.0, dTarget));
++            air = std::min(0.06, std::max(0.0, raw));
++            if (air == raw) errSum += err * frame;   // anti-windup: hold the sum while saturated
++            applyAir(air);
++            spark = std::min(o.sparkMax, std::max(-o.sparkMax, o.sparkK * (target - rpmFast)));
++            r.engine->getIgnitionModule()->m_autosAdvanceOffset = (o.sparkOffset + spark) * units::deg;
++        }
++        if (traceFile) std::fprintf(traceFile, "%.4f,%.1f,%d,%.1f,%.5f,%.6f,%.2f\n", t, r.engine->getRpm(),
++            sim.m_starterMotor.m_enabled ? 1 : 0, iacOn ? target : 0.0, iacOn ? cmd : o.throttle,
++            iacOn ? air : 0.0, spark);
++        if (t > crankS && sim.m_starterMotor.m_enabled) {
++            sim.m_starterMotor.m_enabled = false;
++            r.engine->setSpeedControl(o.throttle);
++            if (iacWanted) startIac();
++            if (!o.freeIdle || o.idleBalanced) {
++                // Then hold on the dyno, ramping the hold speed from where it is to the target.
++                rampFrom = r.engine->getSpeed();
++                sim.m_dyno.m_rotationSpeed = rampFrom;
++                sim.m_dyno.m_enabled = true;
++                sim.m_dyno.m_hold = true;
++                engaged = true;
++            }
++        }
++        if (engaged) {
++            const double a = std::min(1.0, (t - crankS) / rampS);
++            sim.m_dyno.m_rotationSpeed = rampFrom + a * (toRadPerS(o.idleBalanced ? o.idleTarget : o.rpm) - rampFrom);
++        }
++        step(r, frame);
++        t += frame;
++        if (audio.size() > warmupSamples) {
++            const double rpm = r.engine->getRpm();
++            rpmSum += rpm; rpmMin = std::min(rpmMin, rpm); rpmMax = std::max(rpmMax, rpm); ++rpmN;
++            torqueSum += sim.getFilteredDynoTorque();
++        }
++        if (t > warmup + o.seconds + 30) fail("audio fell behind the simulation (no output?)");
++    }
++    if (traceFile) std::fclose(traceFile);
++
++    std::vector<float> take(audio.begin() + warmupSamples, audio.begin() + totalSamples);
++    float peak = 0;
++    for (float v : take) peak = std::max(peak, std::abs(v));
++    writeWavFloat(o.out, take, rate);
++
++    const double rpmMean = rpmN ? rpmSum / rpmN : 0;
++    std::printf("{\"out\": \"%s\", \"engine\": \"%s\", \"rate\": %d, \"samples\": %zu, "
++                "\"rpmTarget\": %.1f, \"rpmMean\": %.1f, \"rpmMin\": %.1f, \"rpmMax\": %.1f, "
++                "\"throttle\": %.3f, \"dynoTorqueNm\": %.1f, \"peak\": %.4f, \"peakDbfs\": %.2f, "
++                "\"gain\": %.4f, \"freeIdle\": %s, \"mode\": \"%s\", \"starterRpm\": %.1f, \"caughtAtS\": %.3f}\n",
++        jsonEscape(o.out).c_str(), jsonEscape(r.engine->getName()).c_str(), rate, take.size(),
++        o.rpm, rpmMean, rpmMin, rpmMax, o.throttle,
++        rpmN ? torqueSum / rpmN : 0.0, peak, 20 * std::log10(peak + 1e-12),
++        o.gain, o.freeIdle ? "true" : "false",
++        o.crank ? "crank" : o.start ? "start" : o.freeIdle ? "free-idle" : "dyno", starterRpm, caughtAt);
++    return 0;
++}
+diff --git a/src/engine_sim_application.cpp b/src/engine_sim_application.cpp
+index c964f46..6930390 100644
+--- a/src/engine_sim_application.cpp
++++ b/src/engine_sim_application.cpp
+@@ -474,6 +474,13 @@ void EngineSimApplication::loadEngine(
+     audioParams.dF_F_mix = static_cast<float>(engine->getInitialHighFrequencyGain());
+     m_simulator.getSynthesizer()->setAudioParameters(audioParams);
+ 
++    // AUTOS proofing build: the leveler is a fast compressor (gain = target / decaying peak, up to
++    // 1.9x). It pumps between firing pulses and evens out idle vs WOT. Pin it to a fixed gain, so
++    // relative loudness is real, as in engine-sim-render. Start at -56.5 dB (stock-IR WOT free rev
++    // just under clipping); hold L + scroll to change it. Z still sets volume (it can only cut).
++    m_simulator.getSynthesizer()->m_levelingFilter.p_minLevel = 0.0015f;
++    m_simulator.getSynthesizer()->m_levelingFilter.p_maxLevel = 0.0015f;
++
+     for (int i = 0; i < engine->getExhaustSystemCount(); ++i) {
+         ImpulseResponse *response = engine->getExhaustSystem(i)->getImpulseResponse();
+ 
+@@ -732,6 +739,16 @@ void EngineSimApplication::processEngineInput() {
+ 
+         m_infoCluster->setLogMessage("[B] - Set high freq. noise to " + std::to_string(audioParams.InputSampleNoise));
+     }
++    else if (m_engine.IsKeyDown(ysKey::Code::L)) {
++        // AUTOS: fixed leveler gain, 1 dB per wheel notch (0.1 dB with Space).
++        LevelingFilter &lev = m_simulator.getSynthesizer()->m_levelingFilter;
++        const double stepDb = (fineControlMode ? 0.1 : 1.0) * mouseWheelDelta / 120.0;
++        const float g = static_cast<float>(lev.p_maxLevel * std::pow(10.0, stepDb / 20.0));
++        lev.p_minLevel = lev.p_maxLevel = clamp(g, 1e-6f, 10.0f);
++        fineControlInUse = true;
++
++        m_infoCluster->setLogMessage("[L] - Fixed gain " + std::to_string(20 * std::log10(lev.p_maxLevel)) + " dB");
++    }
+     else if (m_engine.IsKeyDown(ysKey::Code::N)) {
+         const double rate = fineControlMode
+             ? 10.0
+diff --git a/src/ignition_module.cpp b/src/ignition_module.cpp
+index e3642e4..9639bce 100644
+--- a/src/ignition_module.cpp
++++ b/src/ignition_module.cpp
+@@ -108,7 +108,7 @@ void IgnitionModule::resetIgnitionEvents() {
+ }
+ 
+ double IgnitionModule::getTimingAdvance() {
+-    return m_timingCurve->sampleTriangle(-m_crankshaft->m_body.v_theta);
++    return m_timingCurve->sampleTriangle(-m_crankshaft->m_body.v_theta) + m_autosAdvanceOffset;
+ }
+ 
+ IgnitionModule::SparkPlug *IgnitionModule::getPlug(int i) {
+diff --git a/src/synthesizer.cpp b/src/synthesizer.cpp
+index da541ba..4b58a18 100644
+--- a/src/synthesizer.cpp
++++ b/src/synthesizer.cpp
+@@ -319,6 +319,10 @@ int16_t Synthesizer::renderAudio(int inputSample) {
+ 
+     m_levelingFilter.p_target = m_audioParameters.LevelerTarget;
+     const float v_leveled = m_levelingFilter.f(signal) * m_audioParameters.Volume;
++    if (m_floatSink != nullptr) {
++        m_floatSink->push_back(v_leveled / INT16_MAX);
++    }
++
+     int r_int = std::lround(v_leveled);
+     if (r_int > INT16_MAX) {
+         r_int = INT16_MAX;
