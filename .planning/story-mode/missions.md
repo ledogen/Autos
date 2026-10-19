@@ -19,7 +19,7 @@ current and wins.** `design-amendments-2026-07-29.md` is a historical provenance
 | Restraint is graded, and zero health fails the job (§3, 2026-10-06) | — |
 | Fragile deeds and letter follow health, as haul's follow the load (FEAT-97) | — |
 | Time trials live in-run | Comparability between players — parked |
-| Main missions = **the bridge site** (R1 boss, 2026-10-12); beat/labor split | — |
+| Main missions = **the expedition camp** (R1 boss, 2026-10-19; was the bridge site); a five-line requisition; beat/labor split | — |
 | **Log drag demoted** to a free-roam toy / one-off scenario (2026-10-12) | Spawning the log reliably on random roads |
 | Clearance is run-layer | — |
 
@@ -629,6 +629,14 @@ between `data/prop-models.js` and mission generation, and it does not exist toda
 > the mission impossible) is the blocker, and even hitched it can be lost on a steep descent. **The
 > bridge site (below) is the region-1 boss.** The sections on the drag stay as the design record for
 > the toy. Three regions, three bosses (DESIGN.md ratification pass 2026-10-12).
+>
+> **2026-10-19 — owner: R1's boss is the expedition camp, not the bridge.** A camp at the wall
+> searching for the Roamer's old trail. It posts a **requisition**: five lines (firewood, crew, food,
+> fuel, gear), one trip each, one per mission type, behind a gate of 6 good deeds. Lines are taken
+> from the map and posted at both the camp and a fixed source POI; the clock starts at the pickup; a
+> missed line goes back on the list (no deadline lockout). No penalty for failing, no pay for now.
+> Funded, the player sleeps at the camp and wakes to the trail into R2. The bridge site (below) moves
+> to a later region, its yards' own. Full design: FEAT-103.
 
 ### Placement in the bible
 
@@ -903,6 +911,11 @@ carrying it — worth watching whether that fills the hole or makes it more obvi
 ---
 
 ## Change log
+
+**2026-10-19 — owner: R1's boss is the expedition camp.** A five-line requisition (one trip per
+mission type) behind 6 good deeds, acquired from the map, no deadline lockout, no fail penalty, no
+pay for now. Roads end before the wall; the camp sits on the one trail, revealed after a night at the
+funded camp (SM-INV-13 amended). Provenance: FEAT-103.
 
 **2026-10-12 — owner: bridge site is the first boss; log drag demoted to a toy/scenario.** Three
 regions, three bosses. Freight confirmed as the safe player's lane (fast freight rewards less than

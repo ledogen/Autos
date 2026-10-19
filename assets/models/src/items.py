@@ -41,7 +41,7 @@ MATS = {
     "CanvasDark": ((0.13, 0.12, 0.04, 1), 0.95),
     "Leather":    ((0.16, 0.06, 0.02, 1), 0.7),
     "Buckle":     ((0.45, 0.42, 0.36, 1), 0.45),
-    "Wool":       ((0.42, 0.04, 0.03, 1), 0.95),
+    "Wool":       ((0.09, 0.115, 0.026, 1), 0.95),
     "WoolStripe": ((0.78, 0.70, 0.52, 1), 0.95),
 }
 
@@ -205,7 +205,7 @@ def rrect(w, d, r, z, per=4, cx=0.0, cy=0.0):
 # ── Items ────────────────────────────────────────────────────────────────────────────────────────
 
 def build_coffee():
-    """A 12 oz paper to-go cup: tapered cup, rolled rim, kraft sleeve, domed sip lid."""
+    """A 12 oz paper to-go cup: tapered cup, rolled rim, kraft sleeve, squared-off sip lid."""
     b = Builder(); SEG = 32
     r = lambda z: 0.030 + (0.0455 - 0.030) * z / 0.128
     b.lathe([(0.0285, 0.0), (0.030, 0.002)] + [(r(z), z) for z in (0.02, 0.05, 0.08, 0.11, 0.126)]
@@ -213,9 +213,12 @@ def build_coffee():
     z0, z1 = 0.034, 0.094
     b.lathe([(r(z0), z0), (r(z0) + 0.0022, z0), (r(z0 + 0.03) + 0.0022, z0 + 0.03), (r(z1) + 0.0022, z1), (r(z1), z1)],
             SEG, "CupSleeve", cap_bottom=False, cap_top=False)
-    b.lathe([(0.0478, 0.1295), (0.0490, 0.1335), (0.0485, 0.1385), (0.0440, 0.1405), (0.0425, 0.1445),
-             (0.0335, 0.1468), (0.016, 0.1475), (0.0, 0.1478)], SEG, "CupLid", cap_bottom=False, cap_top=False)
-    b.cbox((0.0, -0.033, 0.1462), (0.016, 0.007, 0.004), "CupLid", ch=0.0015)   # sip hole spout, facing front
+    # Lid: a skirt over the rolled rim with a bead, a flat shelf, then a near-vertical wall up to a
+    # squared-off raised band around a recessed flat centre; the sip slot sits on the band at the front.
+    b.lathe([(0.0478, 0.1290), (0.0492, 0.1298), (0.0492, 0.1335), (0.0497, 0.1342), (0.0497, 0.1356),
+             (0.0492, 0.1362), (0.0444, 0.1366), (0.0434, 0.1478), (0.0426, 0.1488), (0.0372, 0.1488),
+             (0.0366, 0.1478), (0.0, 0.1478)], SEG, "CupLid", cap_bottom=False, cap_top=False)
+    b.cbox((0.0, -0.0400, 0.1489), (0.011, 0.0035, 0.0006), "Chili", ch=0.0)   # sip slot: coffee showing through
     return b.finish("coffee")
 
 
@@ -371,6 +374,50 @@ def build_emergencyGas():
 
 
 def build_pack():
+    """A small canvas book bag: boxy body with rounded top edges, two leather straps buckled over the
+    top, leather base, leather-flapped front pocket with two buckled straps, canvas webbing shoulder
+    straps on leather tabs, a leather grab loop."""
+    b = Builder()
+    body = ((0.0, 0.25, 0.085), (0.008, 0.262, 0.097), (0.02, 0.27, 0.10), (0.06, 0.274, 0.104), (0.20, 0.276, 0.106),
+            (0.31, 0.276, 0.106), (0.335, 0.272, 0.104), (0.352, 0.262, 0.098), (0.363, 0.246, 0.090), (0.369, 0.228, 0.082))
+    b.loft([rrect(w, d, min(0.025, d / 2 - 0.002), z, per=5) for z, w, d in body], "Canvas")
+    # Leather base, wrapped a few mm proud of the canvas.
+    base = ((0.0, 0.256, 0.091), (0.008, 0.268, 0.103), (0.02, 0.276, 0.106), (0.06, 0.280, 0.110))
+    b.loft([rrect(w, d, 0.026, z, per=5) for z, w, d in base], "Leather", cap_top=False)
+    # Two leather straps over the top, from the back down the front, buckled above the pocket.
+    over = [r for r in body if r[0] >= 0.30]
+    path = [(d / 2, z) for z, w, d in over] + [(-d / 2, z) for z, w, d in reversed(over)] + [(-body[4][2] / 2, 0.255)]
+    for x in (-0.06, 0.06):
+        for (y0, z0), (y1, z1) in zip(path, path[1:]):
+            t = Vector((0, y1 - y0, z1 - z0)).normalized(); n = (0, -t.z, t.y)
+            b.bar((x, y0, z0), (x, y1, z1), 0.022, "Leather", h=0.004, caps=False, up=n)
+        yb, bz = -body[4][2] / 2 - 0.003, 0.290
+        for (p, q) in (((x - 0.015, yb, bz - 0.011), (x + 0.015, yb, bz - 0.011)),
+                       ((x - 0.015, yb, bz + 0.011), (x + 0.015, yb, bz + 0.011)),
+                       ((x - 0.015, yb, bz - 0.011), (x - 0.015, yb, bz + 0.011)),
+                       ((x + 0.015, yb, bz - 0.011), (x + 0.015, yb, bz + 0.011))):
+            b.bar(p, q, 0.004, "Buckle")
+    # Front pocket under a leather flap, two short straps buckled down over it.
+    b.cbox((0.0, -0.068, 0.13), (0.20, 0.045, 0.15), "Canvas", ch=0.016)
+    b.cbox((0.0, -0.072, 0.197), (0.208, 0.050, 0.030), "Leather", ch=0.010)
+    for x in (-0.055, 0.055):
+        b.ribbon([(x, -0.0955, 0.192), (x, -0.0935, 0.15), (x, -0.092, 0.095)], (0, -1, 0), 0.018, 0.003, "Leather")
+        bz = 0.140
+        for (p, q) in (((x - 0.013, -0.098, bz - 0.010), (x + 0.013, -0.098, bz - 0.010)),
+                       ((x - 0.013, -0.098, bz + 0.010), (x + 0.013, -0.098, bz + 0.010)),
+                       ((x - 0.013, -0.098, bz - 0.010), (x - 0.013, -0.098, bz + 0.010)),
+                       ((x + 0.013, -0.098, bz - 0.010), (x + 0.013, -0.098, bz + 0.010))):
+            b.bar(p, q, 0.004, "Buckle")
+    # Canvas webbing shoulder straps on the back, anchored low on leather tabs; leather grab loop on top.
+    for x in (-0.06, 0.06):
+        b.ribbon([(x * 0.7, 0.040, 0.350), (x, 0.068, 0.31), (x * 1.1, 0.078, 0.20), (x * 1.25, 0.073, 0.08), (x * 1.3, 0.057, 0.040)],
+                 (0, 1, 0), 0.034, 0.006, "CanvasDark")
+        b.cbox((x * 1.3, 0.058, 0.036), (0.040, 0.010, 0.032), "Leather", ch=0.003)
+    b.ribbon([(-0.03, 0.012, 0.366), (-0.02, 0.016, 0.392), (0.02, 0.016, 0.392), (0.03, 0.012, 0.366)], (0, 1, 0.3), 0.018, 0.004, "Leather")
+    return b.finish("pack")
+
+
+def build_rucksack():
     """An old canvas rucksack: lofted body, top flap, front pocket, leather straps + buckles, haul loop."""
     b = Builder()
     rings = []
@@ -379,18 +426,38 @@ def build_pack():
                     (0.36, 0.295, 0.165), (0.40, 0.283, 0.155), (0.42, 0.27, 0.145), (0.445, 0.24, 0.12)):
         rings.append(rrect(w, d, 0.045, z, per=6))
     b.loft(rings, "Canvas")
-    # Top flap: a slab draped over the top and down the front (side profile in YZ, swept along X).
-    prof = [(0.07, 0.455), (0.02, 0.468), (-0.04, 0.462), (-0.085, 0.440), (-0.098, 0.400), (-0.100, 0.330), (-0.096, 0.300)]
-    hw = 0.150
-    for (y0, z0), (y1, z1) in zip(prof, prof[1:]):
-        for (ya, za, yb, zb, mat) in ((y0, z0, y1, z1, "CanvasDark"),):
-            n = Vector((0, -(z1 - z0), (y1 - y0))).normalized() * 0.012
-            b.face([(-hw, ya, za), (hw, ya, za), (hw, yb, zb), (-hw, yb, zb)], mat)
-            b.face([(-hw, yb - n.y, zb - n.z), (hw, yb - n.y, zb - n.z), (hw, ya - n.y, za - n.z), (-hw, ya - n.y, za - n.z)], mat)
-            b.face([(hw, ya, za), (hw, ya - n.y, za - n.z), (hw, yb - n.y, zb - n.z), (hw, yb, zb)], mat)
-            b.face([(-hw, yb, zb), (-hw, yb - n.y, zb - n.z), (-hw, ya - n.y, za - n.z), (-hw, ya, za)], mat)
-    y, z = prof[-1]
-    b.face([(-hw, y, z), (-hw, y + 0.012, z), (hw, y + 0.012, z), (hw, y, z)], "CanvasDark")
+    # Top flap: a soft lid draped over the top and down the front. A grid of (profile x across)
+    # points: the side profile in YZ, its edges drooping into the body as |v|^3 so the flap wraps the
+    # shoulders, and its front hem cut short at the corners into a U. Two skins 1 cm apart + a rim.
+    prof = [Vector(p) for p in ((0.07, 0.455), (0.02, 0.468), (-0.04, 0.462), (-0.085, 0.440), (-0.098, 0.400),
+                                (-0.100, 0.330), (-0.096, 0.300))]
+    arc = [0.0]
+    for p0, p1 in zip(prof, prof[1:]):
+        arc.append(arc[-1] + (p1 - p0).length)
+    def at(sv):   # (point, outward normal) on the profile at arc length sv
+        k = max(i for i in range(len(arc) - 1) if arc[i] <= sv) if sv < arc[-1] else len(arc) - 2
+        p0, p1 = prof[k], prof[k + 1]
+        t = (p1 - p0).normalized()
+        return p0.lerp(p1, (sv - arc[k]) / (p1 - p0).length), Vector((-t.y, t.x)) * -1
+    NU, NV, TH = 12, 10, 0.010
+    outer, inner = [], []
+    for i in range(NU):
+        ro, ri = [], []
+        for j in range(NV):
+            v = -1 + 2 * j / (NV - 1)
+            p, n = at((i / (NU - 1)) * (arc[-1] - 0.06 * v ** 4))
+            hw = 0.140 + 0.012 * (i / (NU - 1))
+            q = p - n * (0.038 * abs(v) ** 3)
+            ro.append((hw * v, q.x, q.y)); ri.append((hw * v * 0.97, q.x - n.x * TH, q.y - n.y * TH))
+        outer.append(ro); inner.append(ri)
+    for i in range(NU - 1):
+        for j in range(NV - 1):
+            b.face([outer[i][j], outer[i][j + 1], outer[i + 1][j + 1], outer[i + 1][j]], "CanvasDark")
+            b.face([inner[i + 1][j], inner[i + 1][j + 1], inner[i][j + 1], inner[i][j]], "CanvasDark")
+    rim = [(0, j) for j in range(NV)] + [(i, NV - 1) for i in range(1, NU)] + \
+          [(NU - 1, j) for j in range(NV - 2, -1, -1)] + [(i, 0) for i in range(NU - 2, 0, -1)]
+    for (i0, j0), (i1, j1) in zip(rim, rim[1:] + rim[:1]):
+        b.face([outer[i0][j0], inner[i0][j0], inner[i1][j1], outer[i1][j1]], "CanvasDark")
     # Front pocket.
     b.cbox((0.0, -0.105, 0.135), (0.215, 0.055, 0.17), "Canvas", ch=0.018)
     b.cbox((0.0, -0.110, 0.205), (0.222, 0.056, 0.035), "CanvasDark", ch=0.012)   # pocket flap
@@ -412,7 +479,7 @@ def build_pack():
     # Side compression pockets.
     for s in (-1, 1):
         b.cbox((s * 0.158, 0.0, 0.16), (0.04, 0.12, 0.17), "Canvas", ch=0.014)
-    return b.finish("pack")
+    return b.finish("rucksack")
 
 
 def build_bedroll():
@@ -448,7 +515,7 @@ def build_bedroll():
 
 BUILDERS = {
     "coffee": build_coffee, "chiliDog": build_chiliDog, "spareTire": build_spareTire,
-    "emergencyGas": build_emergencyGas, "pack": build_pack, "bedroll": build_bedroll,
+    "emergencyGas": build_emergencyGas, "pack": build_pack, "rucksack": build_rucksack, "bedroll": build_bedroll,
 }
 
 

@@ -34,7 +34,7 @@ items.md; cut it here (`status: cut`) when items.md strikes it.
   - `model` — a `.glb`, because the item is visible (camp pad, bed, bolted on the truck).
 - **needs** — a system that must exist first. `hunger` (items.md §1d), `quick slots` (§1c — keys
   1–4), `spoilage` (§1b), `timed effects` (§1a), `fishing` (FEAT-37), `fuel` (FEAT-50), `coolant`
-  (FEAT-51), `hazards` (FEAT-26/27), `cuts` (FEAT-52), `spirits` (spirits-and-pacts.md), `bed parts`
+  (FEAT-51), `hazards` (FEAT-26/27), `surfaces` (FEAT-38 per-surface μ), `cuts` (FEAT-52), `spirits` (spirits-and-pacts.md), `bed parts`
   (FEAT-115), `cargo protection` (FEAT-116), `load verdicts` (FEAT-112), `camp render` (FEAT-66).
   **Every item needs the inventory (FEAT-122), so it is not listed.**
 - **where** — how the player gets it. Storefronts use the POI type id from `src/poi.js`:
@@ -302,8 +302,8 @@ status: todo · design: ratified · build: param · where: autoShop
 A worse car without the literacy — the cursed item nobody had to author.
 
 ### Tire compound
-status: todo · design: proposed · build: param · where: autoShop
-Grip character and how it degrades; interacts with surface class.
+status: cut · design: proposed · build: param · where: autoShop
+Replaced by the named tire types (Old / Standard / Sport / Off-road / LT), items.md §3g.
 
 ### Brake pads (per axle)
 status: todo · design: proposed · build: param · where: autoShop
@@ -365,6 +365,29 @@ status: todo · design: idea · build: effect, model · needs: hazards · where:
 ### Heavy-gauge radiator
 status: todo · design: idea · build: param · needs: coolant · where: autoShop
 §3c's "space for more" — survives the front hit.
+
+### Old tires
+status: todo · design: proposed · build: param · where: autoShop, found
+items.md §3g. The bottom rung: worse than standard on pavement and dirt.
+
+### Standard tires
+status: shipped · design: ratified · build: param · where: kit
+items.md §3g. The tire the truck runs today (P235/75R15). When dirt lands it loses a tiny bit of dirt
+grip against today's single value (FEAT-38).
+
+### Sport tires
+status: todo · design: proposed · build: param · where: autoShop, reward
+items.md §3g. Better than standard on pavement, worse on dirt, wears out faster (§3d Sport).
+
+### Off-road tires
+status: todo · design: proposed · build: param · needs: surfaces · where: autoShop, reward
+items.md §3g. Same pavement grip as standard, best on dirt. Taller, wider, heavier: clearance and
+taller gearing. The dirt half waits on per-surface grip (FEAT-38, `muScale` in `src/tire.js`).
+
+### Off-road suspension
+status: todo · design: proposed · build: param · where: autoShop, reward
+items.md §3g — the lift kit. Ride height + travel (`suspensionBodyOffset*`, `suspensionTravel*`,
+`suspensionRestLength*`). Cost is emergent: higher CG, more roll, earlier rollover.
 
 ## Spirit gifts
 

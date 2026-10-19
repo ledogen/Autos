@@ -736,9 +736,14 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   Headless gates pin a default `runState` exactly as they previously pinned `metaState`;
   live-reactive systems (doze, ambush timing) stay flag-gated off (FEAT-26 precedent). Determinism
   is *stronger* under this rule, not weaker.
-- **SM-INV-13 — Progression gates are diegetic.** Region locks are trail-closed barriers a
-  ranger reopens (FEAT-28), not menu walls. XP-gating harder country needs an in-world
-  frame or it fights the world premise. [DEFAULT]
+- **SM-INV-13 — Progression gates are diegetic.** ~~Region locks are trail-closed barriers a
+  ranger reopens (FEAT-28), not menu walls.~~ **Roads end before the wall** — every road crossing
+  it is trimmed back to its junction, so the network just stops, with no signs. **The region boss
+  opens the way** (R1: the expedition camp finds the trail, FEAT-103). Off-road, the one non-diegetic
+  piece is honest rather than hidden: near the wall a warning, then a **visible hard wall**. XP-gating
+  harder country needs an in-world frame or it fights the world premise. [DEFAULT; **amended
+  2026-10-19** by the owner — a softer teleport-and-reorient was rejected as more complicated and
+  less transparent than showing the wall]
 - **SM-INV-14 — Region access is bought with mission *points*, not XP, and they are run-layer.**
   [RATIFIED 2026-08-01, replacing the XP formulation of 2026-07-29] Progress toward the next region
   is a **count of well-driven missions**, not an accumulating quantity:

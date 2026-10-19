@@ -69,7 +69,15 @@ already-validated reachable set," both sides bounded.
   interface — tractable because both regions are loaded & finite). This is the "rather add a bridge than
   prevent a cull" instinct, made cheap. **⚠ See "The unsatisfiable region" below — the discard pile can be
   empty of viable edges, and this ticket must own that case too.**
-- **Diegetic boundary:** a "Trail Closed / Area Beyond This Point Restricted" barrier at region edges so the
+- **⚠ Superseded 2026-10-19 (SM-INV-13 amended, FEAT-103):** no barrier object. Roads crossing a
+  wall are trimmed back to their junction (on the graph, before junctions and POIs are built); one
+  trail per opening wall is trimmed at the wall and hosts the region boss; off-road, a warning then a
+  visible hard wall. The trail is the only link across that wall until the player earns 2 good
+  deeds in R2; the other crossing roads are then restored at the next sleep. Never add a road — only
+  prune and restore existing edges. **Owed check:** measure over seeds how often no road crosses R1's north wall
+  into R2's largest piece — on such a seed R2 is unreachable (the unsatisfiable-region case below).
+  The original bullet, for the record:
+- ~~**Diegetic boundary:**~~ a "Trail Closed / Area Beyond This Point Restricted" barrier at region edges so the
   player physically can't enter an unvalidated region. On-theme for the forest-ranger world — the connectivity
   mechanism and the progression gate become the SAME in-world object (level up → ranger reopens the next trail
   → validated-connected by construction). THIS is the story-mode hook.

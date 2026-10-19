@@ -48,6 +48,10 @@ each file needs a line in `assets/audio/CREDITS.md`. Avoid **NC** (non-commercia
 Sound Effects archive. AI generators (ElevenLabs SFX, Stable Audio Open) are a fallback for the
 impossible-to-stage ones — check each tool's terms.
 
+**Suggested order.** (1) All the Synthesize items first — they need nothing from the owner.
+(2) One contact-mic session on metal: it unlocks the whole impact system. (3) Pull the ambiences from
+Sonniss. (4) The engine bake whenever there's a Windows afternoon.
+
 **The impact seam.** `PhysicsEngine.maxContactImpulse()` (FEAT-36 wear model) already gives the
 step's peak normal impulse and the body-local point, so loudness is free. **Open:** it does not say
 *what* was hit. Material needs either the other shape's handle out of the adapter (handles only, no

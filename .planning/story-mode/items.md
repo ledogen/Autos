@@ -633,7 +633,7 @@ repair"). These are the items money mostly exists to replace.
 |---|---|---|
 | **Open vs. LSD differential** | What the truck does when you get greedy mid-corner. The bible's canonical "described, never scored" example | **RATIFIED premise** |
 | **Power mods** | On an open-diff RWD truck, a *worse car* for a driver without the literacy — **a cursed item nobody had to author** | **RATIFIED premise** |
-| **Tire compound/type** | Grip character and how it degrades; interacts with surface class (FEAT-38) | **DEFAULT** |
+| **Tire compound/type** | Grip character and how it degrades; interacts with surface class (FEAT-38) | **Named 2026-10-17 — see §3g** |
 | **Brake pad grade, per axle** | Bias — a race pad changes what the truck does under braking | **DEFAULT** |
 | **Sport anti-roll bars** | Flattens roll and sharpens turn-in, but couples each axle side-to-side — one wheel's bump is now the other's problem, and a lifted inside wheel comes sooner | **DEFAULT** |
 
@@ -794,6 +794,35 @@ All three are §3d **Heavy-duty**-character parts: they carry load and drive wor
 §3c's "heavy-duty off-road suspension" row is now these two separate parts.
 Like every part they are bought mid-run and lost on death (SM-INV-8), and never print a number on
 the part (SM-INV-10); the card states the verdict in words.
+
+### 3g. Tire types and the lift [owner, 2026-10-17]
+
+*"This is a truck game after all — even if we don't have a lot of off-road driving, we should be
+able to lift our truck."* Tires are now a named ladder, and the lift is the first named part in §3d's
+**Off-road** family. Supersedes §3b's generic "tire compound/type" row.
+
+**Tire types.** Grip is set per tire type × surface (paved / dirt). The current tire is **Standard**.
+
+| Tire | Family | Pavement | Dirt | Other |
+|---|---|---|---|---|
+| **Old** | — (worse than OEM) | worse than standard | worse than standard | the bottom rung |
+| **Standard** | OEM — the tire the truck ships on today | baseline | baseline, **a tiny bit below today's** once dirt exists | — |
+| **Sport** | Sport | better than standard | worse than standard | lower durability (§3d) |
+| **Off-road** (all-terrain, e.g. 31×10.5R15) | Off-road | **same as standard — not a downgrade** | better than every other tire | taller, wider, heavier: more clearance, heavier unsprung mass, taller effective gearing |
+| **LT load-range-E** | Heavy-duty (§3f) | §3c's trade | — | raises the tire-pop onset |
+
+The dirt column waits on per-surface grip (FEAT-38). When dirt is built, **every non-off-road tire
+loses a tiny bit of dirt grip** against today's single grip value, so the off-road tire's advantage is
+partly made by the others dropping, not only by it gaining (owner, 2026-10-17).
+
+**Off-road suspension (lift kit).** Raises ride height and adds wheel travel: more clearance, fewer
+bump-stop hits on rough ground. The cost is emergent — a higher centre of gravity, so more body roll
+and an earlier rollover.
+
+All of these are param swaps on values the physics already reads (`wheelRadius`/`wheelWidth`/tire
+mass, and a per-type grip table feeding `muScale` in `src/tire.js`; `suspensionBodyOffset*`,
+`suspensionTravel*`, `suspensionRestLength*` in `data/ranger.js`). Fitting waits on FEAT-104 like
+every other part. Open (owner's call): whether a 31" tire needs the lift to clear the arches.
 
 ## 4. Cargo
 
