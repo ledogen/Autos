@@ -63,7 +63,10 @@ import { DirtSpraySystem } from './dirt-spray.js'
 import { SkySystem, SKY_CYCLE } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { MoonSystem } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
 import { parseWorldSeed, seedFor } from './seed.js'
-import { applyWorldPreset, activePreset } from './world-presets.js'   // FEAT-41: Casual / Classic — part of the world's identity
+import { applyWorldPreset, activePreset, formatWorldCode, parseWorldCode } from './world-presets.js'   // FEAT-41: Casual / Classic — part of the world's identity
+import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
+import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
+import { PAD_PARAMS, BINDINGS } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -1348,14 +1351,126 @@ let _simHeld = !_noMenu
 let _worldInit = false
 let _resolveWorldReady
 const _worldReady = new Promise((res) => { _resolveWorldReady = res })
-let _seedModalMode = 'story'   // 'story' | 'freeroam' — read by _startStoryFromModal
 
-document.getElementById('ss-start')?.addEventListener('click', _startStoryFromModal)
+document.getElementById('ss-start')?.addEventListener('click', () => _startStory(_resolveSeed(document.getElementById('ss-seed')?.value)))
 
-// Main-menu buttons. Free roam and story both go through the seed dialog; the lab is a debug rig
-// with no world of its own, so it just enters.
-document.getElementById('mm-freeroam')?.addEventListener('click', () => _showSeedModal(null, null, 'freeroam'))
-document.getElementById('mm-story')?.addEventListener('click', () => _showSeedModal(null, null, 'story'))
+// ── FEAT-41: run setup + Controls & Assists ──────────────────────────────────────────────────────
+// Every choice lives in src/settings.js (localStorage). The assists apply the moment they change; the
+// world preset and the gearbox are RUN settings, applied when a run starts (the gearbox also live in
+// free roam). Both pages draw their ◂ value ▸ rows from this one table, keyed by the settings key.
+const _settings = loadSettings()
+PAD_PARAMS.steerAssist = _settings.steerAssist
+RANGER_PARAMS.clutchAssist = _settings.clutchAssist
+const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own automatic
+const SELECTORS = {
+  worldPreset:  { name: 'difficulty',      opts: [['casual', 'casual'], ['classic', 'classic']] },
+  gearbox:      { name: 'gearbox',         opts: [['auto', 'automatic'], ['manual', 'manual']] },
+  steerAssist:  { name: 'steering assist', opts: [[true, 'on'], [false, 'off']] },
+  clutchAssist: { name: 'clutch assist',   opts: [[true, 'on'], [false, 'off']] },
+}
+let _setupMode = 'freeroam'   // 'freeroam' | 'story' — which run the setup page starts
+/** The gearbox is locked inside a story run: it is the jalopy's starting box (owner, 2026-10-19). */
+const _gearboxLocked = () => _worldInit && storySystem.isActive()
+function _fitGearbox () {
+  fitTransmission(RANGER_PARAMS, vehicleState, _settings.gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
+}
+/** Redraw every selector row (both pages) and the setup page's world-code line from _settings. */
+function _renderSelectors () {
+  for (const b of document.querySelectorAll('button.mm-sel')) {
+    const sel = SELECTORS[b.dataset.key]
+    const label = sel.opts.find(([v]) => v === _settings[b.dataset.key])?.[1] ?? '?'
+    const locked = b.dataset.key === 'gearbox' && b.closest('#mm-settings-panel') && _gearboxLocked()
+    b.classList.toggle('locked', !!locked)
+    b.innerHTML = `<span>${sel.name}</span><span class="sel-val"><i class="sel-prev">◂</i>`
+      + `${locked ? `${label} · locked for this run` : label}<i class="sel-next">▸</i></span>`
+  }
+  const code = document.getElementById('su-code')
+  if (code) code.textContent = `world code: ${formatWorldCode(parseWorldCode(document.getElementById('su-seed')?.value ?? '').seed || 'random', _settings.worldPreset)}`
+}
+/** Step a selector by `dir` (±1), save, and apply what applies live. */
+function _cycleSelector (b, dir) {
+  const key = b.dataset.key
+  if (b.classList.contains('locked')) return
+  const opts = SELECTORS[key].opts
+  const i = opts.findIndex(([v]) => v === _settings[key])
+  _settings[key] = opts[(i + dir + opts.length) % opts.length][0]
+  saveSettings(_settings)
+  if (key === 'steerAssist') PAD_PARAMS.steerAssist = _settings.steerAssist
+  if (key === 'clutchAssist') RANGER_PARAMS.clutchAssist = _settings.clutchAssist
+  // The settings page fits the gearbox live (free roam only — the row is locked in a story run).
+  if (key === 'gearbox' && b.closest('#mm-settings-panel') && _worldInit) _fitGearbox()
+  _renderSelectors()
+}
+for (const b of document.querySelectorAll('button.mm-sel')) {
+  b.addEventListener('click', (e) => _cycleSelector(b, e.target.closest('.sel-prev') ? -1 : 1))
+}
+// A clicked button keeps focus, and a focused button turns Space — the brake — into another click.
+// None of the menu buttons may take it (the #job-cancel trick).
+for (const b of document.querySelectorAll('#main-menu button, #pause-menu button')) {
+  b.addEventListener('mousedown', (e) => e.preventDefault())
+}
+function _openSetup (mode) {
+  _setupMode = mode
+  const t = document.getElementById('su-title')
+  if (t) t.textContent = mode === 'story' ? 'new story run' : 'new free roam'
+  // Always blank (owner, 2026-09-06): pre-filling the standing seed would quietly make "just press
+  // start" mean "replay the same world forever".
+  const inp = document.getElementById('su-seed')
+  if (inp) inp.value = ''
+  _renderSelectors()
+  document.getElementById('main-menu')?.classList.add('setup')
+}
+/** Start: save, resolve the code (6/C picks Casual), apply the preset and the gearbox, then go. */
+async function _startFromSetup () {
+  const inp = document.getElementById('su-seed')
+  inp?.blur()
+  const { seed, preset } = parseWorldCode(inp?.value ?? '')
+  if (preset) _settings.worldPreset = preset
+  saveSettings(_settings)
+  if (_setupMode === 'story') { await _startStory(_resolveSeed(seed)); return }
+  _enterStageLoad('building the world\u2026')
+  await _worldReady
+  applyWorldPreset(_settings.worldPreset)
+  _fitGearbox()
+  await _startFreeRoam(_resolveSeed(seed))
+}
+document.getElementById('mm-freeroam')?.addEventListener('click', () => _openSetup('freeroam'))
+document.getElementById('mm-story')?.addEventListener('click', () => _openSetup('story'))
+document.getElementById('su-start')?.addEventListener('click', () => { void _startFromSetup() })
+document.getElementById('su-back')?.addEventListener('click', () => document.getElementById('main-menu')?.classList.remove('setup'))
+document.getElementById('su-seed')?.addEventListener('input', (e) => {
+  const { preset } = parseWorldCode(e.target.value)
+  if (preset) _settings.worldPreset = preset   // typing 6/C selects Casual
+  _renderSelectors()
+})
+document.getElementById('su-seed')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); void _startFromSetup() }
+  else if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); document.getElementById('main-menu')?.classList.remove('setup') }
+  e.stopPropagation()   // keep WASD/M/Esc out of the world while typing a seed
+})
+// The binding chart, generated from gamepad.js's own table.
+{
+  const t = document.getElementById('cs-bindings')
+  const keyName = (k) => k === ' ' ? 'Space' : k.length === 1 ? k.toUpperCase() : k
+  if (t) t.innerHTML = '<tr><td></td><td>keyboard</td><td>pad</td></tr>'
+    + BINDINGS.map(b => `<tr><td>${b.action}</td><td>${keyName(b.key)}</td><td>${b.pad}</td></tr>`).join('')
+}
+/** Controls & Assists, from the main menu (a page) or the pause menu (reparented into its box). */
+function _openSettings (fromPause) {
+  const panel = document.getElementById('mm-settings-panel')
+  const host = document.getElementById(fromPause ? 'pause-menu' : 'main-menu')
+  if (!panel || !host) return
+  host.appendChild(panel)
+  host.classList.add('settings')
+  _renderSelectors()
+}
+function _closeSettings () {
+  document.getElementById('main-menu')?.classList.remove('settings')
+  document.getElementById('pause-menu')?.classList.remove('settings')
+}
+document.getElementById('pm-settings')?.addEventListener('click', () => _openSettings(true))
+
+// The lab is a debug rig with no world of its own, so it just enters.
 document.getElementById('mm-lab')?.addEventListener('click', async () => {
   _hideMainMenu()
   _enterStageLoad('building the world\u2026')   // the lab still needs the world's systems built
@@ -1399,12 +1514,8 @@ document.getElementById('mm-scenarios')?.addEventListener('click', () => {
 document.getElementById('mm-scenarios-back')?.addEventListener('click', () => {
   document.getElementById('main-menu')?.classList.remove('scenarios')
 })
-document.getElementById('mm-settings')?.addEventListener('click', () => {
-  document.getElementById('main-menu')?.classList.add('settings')
-})
-document.getElementById('mm-settings-back')?.addEventListener('click', () => {
-  document.getElementById('main-menu')?.classList.remove('settings')
-})
+document.getElementById('mm-settings')?.addEventListener('click', () => _openSettings(false))
+document.getElementById('mm-settings-back')?.addEventListener('click', _closeSettings)
 // "start anyway": the region behind the disclaimer is already built and frozen, so honouring this
 // costs nothing but a call. Story mode is a sandbox while it is being designed and going to LOOK at
 // what broke is a legitimate thing to want — the warning has been read, so this is informed.
@@ -1417,7 +1528,7 @@ document.getElementById('ss-anyway')?.addEventListener('click', () => {
 // this whole feature exists to avoid.
 document.getElementById('ss-cancel')?.addEventListener('click', () => _cancelSeedModal())
 document.getElementById('ss-seed')?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); _startStoryFromModal() }
+  if (e.key === 'Enter') { e.preventDefault(); _startStory(_resolveSeed(e.target.value)) }
   // The input is focused whenever the prompt is up, so THIS is the Esc the player actually presses —
   // it must do what cancel does. It used to only hide the prompt, which on a refused seed left
   // story mode active in its 'rejected' phase: no POIs, no wallet, and the region wall still on.
@@ -6084,7 +6195,7 @@ function _showPauseMenu () {
 
 function _hidePauseMenu () {
   const el = document.getElementById('pause-menu')
-  if (el) el.style.display = 'none'
+  if (el) { el.style.display = 'none'; el.classList.remove('settings') }
   _pauseOpen = false
 }
 
@@ -6483,19 +6594,14 @@ const storySystem = new StorySystem({
  * is told plainly and asked for a different one. Nothing rerolls — that was the owner's ruling
  * (2026-08-27), and it is why story mode does not need a nine-tile play area to be safe.
  */
-// FEAT-41: the same dialog now fronts FREE ROAM as well as story mode — both are "pick a world and
-// go", and there was no reason for free roam to be the one mode you could not choose a seed for.
-// The refusal block below stays story-only: free roam has no region to validate, so there is nothing
-// for world-validate.js to refuse.
-function _showSeedModal (report = null, rejectedSeed = null, mode = 'story') {
-  _seedModalMode = mode
+// FEAT-41: runs now start from the setup page (World / Truck / Assists); this dialog is left with the
+// story REFUSAL only — the report and a prompt for a different seed (or "start anyway").
+function _showSeedModal (report = null, rejectedSeed = null) {
   const el = document.getElementById('story-seed-modal')
   if (el) {
     el.style.display = 'flex'
     el.classList.toggle('rejected', !!report)
   }
-  const title = document.getElementById('ss-title')
-  if (title) title.textContent = mode === 'freeroam' ? 'free roam' : 'story mode'
   if (report) {
     const why = document.getElementById('ss-reject-why')
     const detail = document.getElementById('ss-reject-detail')
@@ -6515,9 +6621,8 @@ function _showSeedModal (report = null, rejectedSeed = null, mode = 'story') {
 }
 
 /** Blank ⇒ a fresh random world. Any other text is a seed verbatim (parseWorldSeed hashes it). */
-function _resolveSeedInput () {
-  const raw = (document.getElementById('ss-seed')?.value ?? '').trim()
-  return raw || String((Math.random() * 0x100000000) >>> 0)
+function _resolveSeed (raw) {
+  return (raw ?? '').trim() || String((Math.random() * 0x100000000) >>> 0)
 }
 /**
  * Back out of the seed prompt. Backing out of a REFUSED story seed also leaves story mode — the
@@ -6544,14 +6649,14 @@ function _showMainMenu () {
   const cap = document.getElementById('load-caption')
   if (cap) cap.style.display = 'none'
   const el = document.getElementById('main-menu')
-  if (el) { el.style.display = 'flex'; el.classList.remove('settings', 'scenarios') }
+  if (el) { el.style.display = 'flex'; el.classList.remove('settings', 'scenarios', 'setup') }
   menuStage.setActive(true)   // re-runs the drop when arriving from the world; a no-op at boot
   _simHeld = true
   document.body.classList.add('stage-on')
 }
 function _hideMainMenu () {
   const el = document.getElementById('main-menu')
-  if (el) { el.style.display = 'none'; el.classList.remove('settings', 'scenarios') }
+  if (el) { el.style.display = 'none'; el.classList.remove('settings', 'scenarios', 'setup') }
 }
 // The region-freeze blurb is a STORY-MODE fact; it was showing on free-roam and lab loads too.
 const LOAD_HINT_STORY = 'the whole region is routed once, up front — after this the roads are frozen and no routing runs while you drive.'
@@ -6600,15 +6705,16 @@ async function _startFreeRoam (seedStr) {
   }
 }
 
-async function _startStoryFromModal () {
-  const seed = _resolveSeedInput()
+/** A story run on `seed`, under the setup page's preset and gearbox (the jalopy's starting box). */
+async function _startStory (seed) {
   _hideSeedModal()
   map2d.reset()   // story always starts on a fresh map, even on the seed already loaded
   // The caption goes up BEFORE the await, not after: the player clicked, and the whole point of
   // wiring these buttons early is that the click is acknowledged even while init is still running.
   _enterStageLoad('building the world\u2026')
   await _worldReady
-  if (_seedModalMode === 'freeroam') { await _startFreeRoam(seed); return }
+  applyWorldPreset(_settings.worldPreset)
+  _fitGearbox()
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
@@ -6753,8 +6859,8 @@ document.getElementById('pm-story')?.addEventListener('click', () => {
   }
   if (_labActive) exitLab()
   _exitScenario()
-  _hidePauseMenu()
-  _showSeedModal()
+  _showMainMenu()
+  _openSetup('story')   // FEAT-41: a story run starts from the setup page, wherever it is asked for
 })
 // (grid world's "grid world" / "return to world" buttons were removed with it — the lab's own
 // toggle is the way in and out of a flat world now.)
@@ -6823,9 +6929,10 @@ document.addEventListener('keydown', e => {
   // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
   // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
   // settings page and is otherwise inert until the world is handed back.
-  if (menuStage.isActive()) { document.getElementById('main-menu')?.classList.remove('settings', 'scenarios'); return }
+  if (menuStage.isActive()) { document.getElementById('main-menu')?.classList.remove('settings', 'scenarios', 'setup'); return }
   const el = document.getElementById('pause-menu')
   if (!el) return
+  if (el.classList.contains('settings')) { _closeSettings(); return }   // Esc steps back to the pause list
   if (el.style.display === 'none' || el.style.display === '') {
     _showPauseMenu()
   } else {

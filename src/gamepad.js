@@ -40,24 +40,32 @@ export const PAD_PARAMS = {
 
 export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0 }
 
-// Standard-layout button index → the key it replays. Forza-style layout (owner, 2026-10-19 — the
-// table is in the FEAT-125 ticket). LB / A / X are the FEAT-126 manual gearbox's clutch (Shift, held)
-// and upshift / downshift (E / Q); the automatic ignores them. View (8) is tap-vs-hold, handled below.
-// Left stick click (10) and Home (16) are unbound; LT/RT (6/7) are analog, read in poll().
-const BUTTON_KEYS = {
-  4: 'Shift', // LB — clutch (hold), manual only
-  0: 'e',     // A — upshift, manual only
-  2: 'q',     // X — downshift, manual only
-  5: ' ',     // RB — handbrake (hold) / park latch (tap)
-  1: 'f',     // B — pump / aim (hold)
-  3: 'i',     // Y — ignition (hold)
-  9: 'm',     // Start/Menu — map
-  11: 'c',    // right stick click — camera mode
-  12: 'l',    // D-pad up — headlights
-  13: 'z',    // D-pad down — camp
-  14: 'v',    // D-pad left — damage screen
-  15: 'x',    // D-pad right — recovery
-}
+// THE BINDING TABLE (Forza-style layout, owner 2026-10-19 — the FEAT-125 ticket). Rows with a
+// `button` (standard-layout index) replay `key` while held; the rest are analog or tap-vs-hold, read
+// in poll(), and are here so the Controls & Assists page's chart is generated from this one table and
+// cannot drift from what the pad does. LB / A / X are the FEAT-126 manual gearbox's clutch and
+// shifts; the automatic ignores them. Left stick click (10) and Home (16) are unbound.
+export const BINDINGS = [
+  { action: 'throttle',              key: 'W',         pad: 'RT' },
+  { action: 'brake / reverse',       key: 'S',         pad: 'LT' },
+  { action: 'steer',                 key: 'A / D',     pad: 'left stick' },
+  { action: 'look around',           key: 'mouse drag', pad: 'right stick' },
+  { action: 'handbrake / park (tap)', key: ' ',        pad: 'RB', button: 5 },
+  { action: 'clutch (manual)',       key: 'Shift',     pad: 'LB', button: 4 },
+  { action: 'upshift (manual)',      key: 'e',         pad: 'A',  button: 0 },
+  { action: 'downshift (manual)',    key: 'q',         pad: 'X',  button: 2 },
+  { action: 'ignition (hold)',       key: 'i',         pad: 'Y',  button: 3 },
+  { action: 'pump / aim (hold)',     key: 'f',         pad: 'B',  button: 1 },
+  { action: 'camera mode',           key: 'c',         pad: 'right stick click', button: 11 },
+  { action: 'map',                   key: 'm',         pad: 'Start', button: 9 },
+  { action: 'inventory',             key: 'Tab',       pad: 'View (tap)' },
+  { action: 'reset truck',           key: 'r',         pad: 'View (hold 1 s)' },
+  { action: 'headlights',            key: 'l',         pad: 'D-pad ↑', button: 12 },
+  { action: 'camp',                  key: 'z',         pad: 'D-pad ↓', button: 13 },
+  { action: 'damage screen',         key: 'v',         pad: 'D-pad ←', button: 14 },
+  { action: 'recovery',              key: 'x',         pad: 'D-pad →', button: 15 },
+]
+const BUTTON_KEYS = Object.fromEntries(BINDINGS.filter(b => b.button != null).map(b => [b.button, b.key]))
 // View: a tap (released under VIEW_HOLD_MS) opens the inventory (Tab, sent on RELEASE — only then is
 // it known to be a tap); holding it VIEW_HOLD_MS resets the truck (r, keydown at the threshold,
 // keyup on release so vehicle.js's per-step keys.r read still sees it held).
