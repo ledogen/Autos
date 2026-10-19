@@ -54,8 +54,9 @@ const CAPACITY = {
 const isCoverKey = (key) => COVER_CATS.has(key.slice(0, key.indexOf('#')))
 // Near cover (grass/rye/sage, not the far-ring *Lo stand-ins) ALWAYS casts into the sun's realtime
 // near map, whatever the PERF-07 mode: the bake is 0.25 m/texel (a clump is mush there) and the
-// near map is ~2 cm/texel. The *Lo pools live past the ±20 m near box, so they never cast. main.js
-// keeps these out of the coarse far cascade (coverCasters) — same mush argument.
+// near map is ~2–3 cm/texel. The *Lo pools live ≥ one 64 m chunk out, past the ±40 m near box, so
+// they never cast. main.js keeps these out of the coarse far cascade (coverCasters) — same mush
+// argument.
 const castsNearShadow = (key) => isCoverKey(key) && !key.slice(0, key.indexOf('#')).endsWith('Lo')
 // Keys the PERF-07 shadow bake draws: not cover (mush at 0.25 m/texel) and not the FADE_CATS ground
 // litter — pebbles/medium rocks shrink to nothing by 77–133 m, but a baked speck outlived them to

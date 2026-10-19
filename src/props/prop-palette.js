@@ -250,7 +250,8 @@ export function buildCoverMaterial(cover = {}) {
   // blade's shadow sways with the blade and the blade never walks through its own stale shadow.
   // NO distance fade: in the shadow pass `cameraPosition` is the LIGHT's camera (~hundreds of m
   // off), so the fade would shrink every clump to nothing. Unneeded anyway — the near shadow box
-  // (±20 m) ends well inside the fade start (≥ 50 m at every tier).
+  // (±40 m around the truck) ends inside the fade start (≥ 50 m at every tier), and its corners
+  // fall in QUAL-18's edge dissolve.
   const coverDepthMaterial = new THREE.MeshDepthMaterial()
   coverDepthMaterial.onBeforeCompile = (shader) => patchCover(shader, `
       #ifdef USE_INSTANCING
