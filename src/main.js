@@ -63,6 +63,7 @@ import { DirtSpraySystem } from './dirt-spray.js'
 import { SkySystem, SKY_CYCLE } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { MoonSystem } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
 import { parseWorldSeed, seedFor } from './seed.js'
+import { applyWorldPreset, activePreset } from './world-presets.js'   // FEAT-41: Casual / Classic — part of the world's identity
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -573,10 +574,17 @@ function _spawnProbeBase (wseed, params) {
 // script, sig discipline and parity gate. v2 routes a whole region in ~2.8 s at 4x throttle and
 // the bundle had shrunk to 130 KB, so it was buying a second on the one seed it covered while
 // costing a subsystem; owner call 2026-08-19.)
-const _sessionRouteCache = new Map()   // String(seed) → exportRouteCache() payload
+// Keyed by WORLD (seed + preset), not seed: a Casual world routes over different terrain and prices,
+// so its routes must never import into the Classic one.
+const _sessionRouteCache = new Map()   // _worldKey() → exportRouteCache() payload
+/** A world's identity: the seed and the preset the params carry (FEAT-41, SM-INV-12). */
+const _worldKey = (seedStr) => `${parseWorldSeed(seedStr)}/${activePreset()}`
+let _builtWorldKey = null   // the key the live RoadSystem was built under (the stash's key on a rebuild)
+/** Is `seedStr` under the active preset the world already standing? Then entering it costs a re-seat. */
+const _isWorldLoaded = (seedStr) => _worldKey(seedStr) === _builtWorldKey
 function _importSessionRoutes () {
   if (!roadSystem) return
-  const mem = _sessionRouteCache.get(String(worldSeed))
+  const mem = _sessionRouteCache.get(_worldKey(worldSeed))
   if (mem) roadSystem.importRouteCache(mem)
 }
 
@@ -803,10 +811,11 @@ async function _rebuildFullNow () {
       // QUAL-14 perf: stash the outgoing instance's routes so toggling back to this seed later
       // in the session is instant (in-session only — nothing persists to disk).
       if (roadSystem._proto?.cls?.size) {
-        _sessionRouteCache.set(String(roadSystem._worldSeed), roadSystem.exportRouteCache())
+        _sessionRouteCache.set(_builtWorldKey, roadSystem.exportRouteCache())
       }
       roadSystem.disposeDebugLines()   // the old seed's centreline viz must not outlive its network
       roadSystem = new RoadSystem(worldSeed, RANGER_PARAMS)
+      _builtWorldKey = _worldKey(worldSeed)
       roadSystem.init(scene)
       roadSystem.setRadius(320)   // PERF (Tier 1): match the terrain ring, not 640 m — see initial setup
       // PERF-30: re-register the new instance with the network-Worker client (opts persist from
@@ -2578,6 +2587,7 @@ perfMark('init: physics engine ready')
 // RoadSystem is pure-function-of-(worldSeed, coords, params) — the tile cache is memoization
 // only; same seed always produces the same roads.
 roadSystem = new RoadSystem(worldSeed, RANGER_PARAMS)
+_builtWorldKey = _worldKey(worldSeed)
 roadSystem.init(scene)
 // Stream the road network at roughly the terrain view radius.
 // PERF (Tier 1): road stream radius ~matches the terrain ring (5×5 chunks ≈ 160–226 m), not 640 m.
@@ -6210,7 +6220,8 @@ async function _startScenario (def) {
   window.__setGameMode('scenario')
   setDebugLockout(true)
   try {
-    if (parseWorldSeed(def.seed) !== worldSeed) await applyWorldSeed(def.seed)
+    applyWorldPreset('classic')   // FEAT-41: a scenario is authored on (and timed against) Classic
+    if (!_isWorldLoaded(def.seed)) await applyWorldSeed(def.seed)
     // AFTER the reseed: applyWorldSeed clears the override, and the rebuild's own reseat runs first.
     _spawnOverride = { align: true, x: def.spawn.x, z: def.spawn.z, heading: def.spawn.heading, drop: 0 }
     await _seatOnStreamedGround()
@@ -6287,7 +6298,7 @@ const _storyWarmCenter = new THREE.Vector3()   // scratch for the region warm/re
 let _regionNetBuild = null   // PERF-30: { key, done } — the one in-flight story-region worker build
 const storySystem = new StorySystem({
   setGameMode: (m) => window.__setGameMode(m),
-  getWorldSeed: () => worldSeed,
+  isWorldLoaded: (seedStr) => _isWorldLoaded(seedStr),
   applySeed: (v) => applyWorldSeed(v),     // resolves when the rebuild + reseat have settled
   reseat: () => _reseatTruckAtSpawn(),     // resolves when the truck is seated at the spawn
   // THE SEED DECIDES WHERE THE WORLD IS, AND NOTHING ELSE (owner, 2026-08-11). A free-roam teleport
@@ -6582,7 +6593,7 @@ async function _startFreeRoam (seedStr) {
   if (_labActive) exitLab()
   window.__setGameMode('freeroam')
   try {
-    if (parseWorldSeed(seedStr) !== worldSeed) await applyWorldSeed(seedStr)
+    if (!_isWorldLoaded(seedStr)) await applyWorldSeed(seedStr)
     else await _reseatTruckAtSpawn()
   } finally {
     _exitStageLoad()   // a failed reseat must not leave the loading stage up with the sim held

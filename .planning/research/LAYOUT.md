@@ -54,7 +54,7 @@ component condition model — reads vehicleState signals, writes `params._*Scale
 physics stack never imports it) · `fragile.js` (FEAT-97 fragile cargo condition — pure; main.js feeds
 it the strap's felt g each step).
 
-**World generation** — `seed.js` (djb2 / mulberry32 / FNV-1a hash32 / seedFor + the shared hash2 / clamp01 / smooth01, pure) · `terrain.js` (chunk ring, carve table, analytic
+**World generation** — `seed.js` (djb2 / mulberry32 / FNV-1a hash32 / seedFor + the shared hash2 / clamp01 / smooth01, pure) · `world-presets.js` (FEAT-41 world difficulty presets Casual / Classic — writes absolute values into RANGER_PARAMS / POI_PARAMS from defaults captured at load; the `6/C` world code) · `terrain.js` (chunk ring, carve table, analytic
 height) · `terrain-height.js` (THE height function + seeded noise + chunk grid constants and the Worker's
 height-param list — imported by main thread, worker, road.js, data/flora.js and the headless gates) · `terrain-worker.js` (chunk heightmap Worker, module entry) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
 rock classification) · `map-cover.js` (map-resolution forest cover) · `water.js` (ponds/streams

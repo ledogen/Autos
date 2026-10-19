@@ -24,6 +24,7 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { snapshotRoadParams, buildNetworkSnapshot, makeNetworkInstance, pondDiscPad } from '../src/road-network-worker.js'
 import { buildRouteFields } from '../src/road-route-worker.js'
 import { routeEdgeV2 } from '../src/corridor-router.js'
+import { applyWorldPreset } from '../src/world-presets.js'
 
 const SEED = 6
 const R = 1600
@@ -281,6 +282,34 @@ const routeDispatcher = (rs, fields) => (jobs, epoch) => rs.ingestRoutedConnecti
     log(reroutes > 0, 'seed 7 window re-routes (the check below is not vacuous)', `${reroutes} BUG-56 C re-route(s) in the sync build`)
     compareExports('seed 7 pre-warm == sync build (re-routed edges keep their pins)', ref.exportNetwork(),
                    structuredClone(built.data), { skipTallies: true })
+}
+
+// ── 7: FEAT-41 — a Casual world reaches the worker ───────────────────────────────────────────
+// The preset writes coarseAmplitude (terrain) and roadV2.wGrade (router prices) into the live params;
+// the worker sees them only through the snapshot. A worker-path build under Casual must equal the
+// sync build under Casual, AND differ from Classic's — else the preset never reached the build.
+{
+    applyWorldPreset('casual')
+    const c = CENTERS[0]
+    const wC = new WaterSystem(SEED, RANGER_PARAMS, makeTerrainHeadless(SEED, RANGER_PARAMS, null).rawHeightWorld)
+    const discsC = (minX, minZ, maxX, maxZ) => {
+        const o = []
+        for (const p of wC.pondsNear(minX, minZ, maxX, maxZ)) o.push(p.floorX, p.floorZ, p.radius + p.skirt)
+        return o
+    }
+    const ref = new RoadSystem(SEED, RANGER_PARAMS)
+    ref.setWaterNoGo((x, z) => wC.isRoadNoGo(x, z), discsC)
+    ref.setRadius(R)
+    ref.update(new THREE.Vector3(c.x, 0, c.z))
+    const req = { seed: SEED, params: structuredClone(snapshotRoadParams(RANGER_PARAMS)), center: c, radius: R,
+                  pondDiscs: Float64Array.from(discsC(c.x - R - DISC_PAD, c.z - R - DISC_PAD, c.x + R + DISC_PAD, c.z + R + DISC_PAD)) }
+    const casual = ref.exportNetwork()
+    compareExports('casual: worker export == sync export', casual, structuredClone(buildNetworkSnapshot(req, null).data))
+    const classic = exportsByWindow[0].ref.exportNetwork()
+    const differs = !jsonEq(casual.runs.map(r => Array.from(r.pts)), classic.runs.map(r => Array.from(r.pts)))
+    log(differs, 'casual: the network differs from classic (the preset reached the build)',
+        `${casual.runs.length} casual runs vs ${classic.runs.length} classic`)
+    applyWorldPreset('classic')
 }
 
 console.log(`\n${fail === 0 ? 'ALL NETWORK-WORKER-PARITY CHECKS PASSED' : `${fail} CHECK(S) FAILED`} (${pass} passed)`)
