@@ -108,10 +108,10 @@ index 7c871b1..f86474a 100644
          LevelingFilter m_levelingFilter;
 diff --git a/src/autos_render.cpp b/src/autos_render.cpp
 new file mode 100644
-index 0000000..6ff8803
+index 0000000..f075661
 --- /dev/null
 +++ b/src/autos_render.cpp
-@@ -0,0 +1,556 @@
+@@ -0,0 +1,568 @@
 +// AUTOS headless renderer for engine-sim (FEAT-120 engine bake).
 +//
 +// Runs the simulation offline, without a window or audio device, and writes the synthesizer's
@@ -213,6 +213,8 @@ index 0000000..6ff8803
 +    double sparkK = 0.1;    // spark loop: degrees of advance per rpm of error
 +    double sparkMax = 10.0; // spark loop limit, degrees either way
 +    double sparkOffset = 0; // fixed advance offset, degrees (tests)
++    bool ignitionOff = false;   // --ignition-off: never fire (with --rpm: unfired motoring)
++    bool killAtRecord = false;  // --kill-at-record: ignition off when recording starts (coast-down)
 +    double crankThrottle = 0;   // --crank-throttle: throttle held while cranking (an open IAC)
 +    double catchRpm = 0;        // --catch-rpm: caught when above this for 0.1 s (0 = 1.15x starter)
 +    double starterTorque = 0;   // --starter-torque lb-ft: render-time override (0 = script's)
@@ -266,6 +268,8 @@ index 0000000..6ff8803
 +        else if (a == "--starter-torque") o.starterTorque = std::stod(next());
 +        else if (a == "--catch-rpm") o.catchRpm = std::stod(next());
 +        else if (a == "--crank-throttle") o.crankThrottle = std::stod(next());
++        else if (a == "--ignition-off") o.ignitionOff = true;
++        else if (a == "--kill-at-record") o.killAtRecord = true;
 +        else if (a == "--starter-speed") o.starterSpeed = std::stod(next());
 +        else if (a == "--flare-peak") o.flarePeak = std::stod(next());
 +        else if (a == "--flare-settle") o.flareSettle = std::stod(next());
@@ -522,7 +526,9 @@ index 0000000..6ff8803
 +    if (o.starterSpeed > 0) sim.m_starterMotor.m_rotationSpeed = -units::rpm(o.starterSpeed);
 +    r.engine->setSpeedControl(o.crankThrottle);
 +    sim.m_starterMotor.m_enabled = true;
-+    if (o.crank) r.engine->getIgnitionModule()->m_enabled = false;
++    if (o.crank || o.ignitionOff) r.engine->getIgnitionModule()->m_enabled = false;
++    bool killed = false;
++    double killedAt = -1;
 +    const double crankS = o.start ? 1e9 : (o.crank ? 1e9 : 1.5), rampS = 1.0;
 +    const double starterRpm = std::abs(units::toRpm(sim.m_starterMotor.m_rotationSpeed));
 +    const double warmup = o.start ? 0.0 : o.warmup;
@@ -573,7 +579,13 @@ index 0000000..6ff8803
 +                if (iacWanted) startIac();
 +            }
 +        }
-+        if (iacOn && sweepN > 0) {
++        if (o.killAtRecord && !killed && audio.size() >= warmupSamples) {
++            r.engine->getIgnitionModule()->m_enabled = false;   // key off: coast to a stop
++            killed = true;
++            killedAt = t;
++        }
++        if (killed) { /* key off: the idle-air controller stops too */ }
++        else if (iacOn && sweepN > 0) {
 +            const int idx = static_cast<int>((t - iacStart) / 4.0);
 +            if (idx != sweepIdx) {
 +                if (sweepIdx >= 0 && sweepCnt > 0) std::printf("%.6f,%.1f\n", air, sweepSum / sweepCnt);
@@ -658,13 +670,13 @@ index 0000000..6ff8803
 +    std::printf("{\"out\": \"%s\", \"engine\": \"%s\", \"rate\": %d, \"samples\": %zu, "
 +                "\"rpmTarget\": %.1f, \"rpmMean\": %.1f, \"rpmMin\": %.1f, \"rpmMax\": %.1f, "
 +                "\"throttle\": %.3f, \"dynoTorqueNm\": %.1f, \"peak\": %.4f, \"peakDbfs\": %.2f, "
-+                "\"gain\": %.4f, \"freeIdle\": %s, \"mode\": \"%s\", \"starterRpm\": %.1f, \"caughtAtS\": %.3f, "
++                "\"gain\": %.4f, \"freeIdle\": %s, \"mode\": \"%s\", \"starterRpm\": %.1f, \"caughtAtS\": %.3f, \"killedAtS\": %.3f, "
 +                "\"starterTorqueLbFt\": %.1f}\n",
 +        jsonEscape(o.out).c_str(), jsonEscape(r.engine->getName()).c_str(), rate, take.size(),
 +        o.rpm, rpmMean, rpmMin, rpmMax, o.throttle,
 +        rpmN ? torqueSum / rpmN : 0.0, peak, 20 * std::log10(peak + 1e-12),
 +        o.gain, o.freeIdle ? "true" : "false",
-+        o.crank ? "crank" : o.start ? "start" : o.freeIdle ? "free-idle" : "dyno", starterRpm, caughtAt,
++        o.crank ? "crank" : o.start ? "start" : o.freeIdle ? "free-idle" : "dyno", starterRpm, caughtAt, killedAt,
 +        sim.m_starterMotor.m_maxTorque / units::ft_lb);
 +    return 0;
 +}

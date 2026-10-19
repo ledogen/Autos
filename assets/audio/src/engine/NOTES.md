@@ -91,6 +91,33 @@ Briefs: `.planning/handoffs/HANDOFF-2026-10-17-engine-sim-bake.md`, then round 2
   `dependencies/submodules/piranha`, then build as in `autos/README.md`. The fork is also pushed
   to the private repo `ledogen/engine-sim`, branch `autos-011a`.
 
+## Round 3 (2026-10-19): motoring loops and shutoff references
+- **Motoring** (`load: "motor"` in the manifests): ignition off, the dyno holding the rpm, i.e. the
+  sound of the driveline dragging a dead engine. Rows 750, 1000, 1325, 1760, 2340 and 3110 for each
+  engine. They are dry, level-locked at ×0.1852 like the grid, and cut on whole cycles. **All 12
+  seam at ≥ 0.9997.** Dyno torque is negative (the dyno drives the engine): vulcan30 −47 N·m at 750,
+  −72 at 2340; duratec23 −16 and −39.
+- **Shutoff** (`<engine>_shutoff_{dry,stock}`, uncut in `engine-start-reference/`): warm idle
+  settled for 8 s, key off when recording starts (the idle-air controller freezes too), 3.5 s
+  recorded. The rpm trace is `raw/<engine>_shutoff_*_rpm.csv`; the key-off time is `killedAtS` in
+  `render_log-<engine>.json` (7.25 s for all four). Coast from ~750 rpm:
+
+  | | 500 rpm | 250 rpm | first near-stop | final stop | after the stop |
+  |---|---|---|---|---|---|
+  | vulcan30 | 0.18 s | 0.33 s | 0.48 s | **0.47 s** | one 17 rpm twitch |
+  | duratec23 | 0.19 s | 0.33 s | 0.42 s | **0.98 s** | rocks 6× against compression |
+
+  The Duratec's crank stalls against a compression stroke at 0.42 s, then rocks back and forth about
+  every 0.1 s with shrinking swings (286 → 225 → 174 → 130 → 90 → 24 rpm). The renderer logs speed
+  without its sign, so each swing is most likely a reversal. The V6's smaller cylinders and
+  overlapping strokes let it stop almost dead. Both stop well inside the game's ~2.4 s lag.
+- The Vulcan's shutoff idle runs free on the idle-air controller (the coast must be free, so no
+  balanced dyno idle).
+- **The renderer isn't perfectly deterministic.** Re-rendering with the same seeds moved a few
+  existing takes slightly: peaks by 0.01–0.5 dB, one loop by a sample, vulcan30 idle seam
+  0.982 → 0.955. Those re-renders were discarded and the committed files kept, so this round only
+  adds takes. Their `render_log` entries describe the discarded re-render.
+
 ## Idle: what was tried, and why the Vulcan uses a balanced idle
 - **Plate retune (Vulcan):** idle is balanced on a knife edge. 0.990 → 1272 rpm, 0.992 → 1020,
   0.994 → 718 hunting ±47, 0.996 stalls. No plate gives 750 ± 10.
