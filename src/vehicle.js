@@ -16,10 +16,14 @@
 import { getCameraMode } from './camera.js'
 import { stepIgnition } from './ignition.js'
 import { pad, PAD_PARAMS } from './gamepad.js'
+import { makeClutchAssist, stepClutchAssist } from './clutch-assist.js'
 
 // ── Keyboard input state (module-private) ────────────────────────────────────
-const keys = { w: false, s: false, a: false, d: false, r: false, i: false, ' ': false }
+// shift / e / q: the FEAT-126 manual gearbox's clutch pedal (held) and up / down shifts (rising edges).
+const keys = { w: false, s: false, a: false, d: false, r: false, i: false, ' ': false, shift: false, e: false, q: false }
 let _prevHandKey = false   // Space state last frame — rising-edge (tap) detection for the parking-brake toggle
+let _prevUp = false, _prevDown = false   // E / Q last step — rising edges are the shift requests
+const _clutchAssist = makeClutchAssist()
 
 // Register listeners at module load (module scripts run after parse — no DOMContentLoaded needed).
 // Shift+R is the "set spawn point here" control (handled in main.js) — it must NOT trigger the
@@ -115,6 +119,21 @@ export function updateVehicle (vehicleState, params, dt) {
   vehicleState.throttle  = vehicleState.smoothThrottle
   // S key: brake above walking pace, reverse below it (drivetrain.js decides which; REV_THRESHOLD).
   vehicleState.brake     = vehicleState.smoothBrake
+
+  // ── 1.5 Manual gearbox controls (FEAT-126): input → clutch assistant → sim ─────────────────────
+  // This module owns the raw controls (clutch pedal, shift edges); src/clutch-assist.js turns them into
+  // the ONE analog clutch engagement and the shift request the sim reads. The automatic ignores both.
+  if (params.transmissionType === 'manual') {
+    const up = !freecamActive && keys.e, down = !freecamActive && keys.q
+    const out = stepClutchAssist(_clutchAssist, {
+      pedal: (!freecamActive && keys.shift) ? 1 : 0,
+      shift: (up && !_prevUp ? 1 : 0) - (down && !_prevDown ? 1 : 0),
+      throttle: vehicleState.throttle,
+    }, { rpm: vehicleState.drivetrain?.engineRPM ?? 0, shifting: !!vehicleState.drivetrain?.shifting }, params, dt)
+    vehicleState.clutch = out.clutch
+    if (out.shiftRequest) vehicleState.shiftRequest = out.shiftRequest
+    _prevUp = up; _prevDown = down
+  }
   // ── Handbrake / parking-brake state machine (feature/teleport) ──────────────
   // Moving (>5 km/h): the handbrake is momentary — rear torque only while Space is held.
   // Near rest (<5 km/h): a Space TAP latches vehicleState.parked ON, so it keeps holding after

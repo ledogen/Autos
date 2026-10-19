@@ -41,11 +41,13 @@ export const PAD_PARAMS = {
 export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0 }
 
 // Standard-layout button index → the key it replays. Forza-style layout (owner, 2026-10-19 — the
-// table is in the FEAT-125 ticket). LB (4) / A (0) / X (2) are clutch / upshift / downshift for the
-// FEAT-126 manual gearbox and stay unbound until it exists (they do nothing in the automatic).
-// View (8) is tap-vs-hold, handled below. Left stick click (10) and Home (16) are unbound;
-// LT/RT (6/7) are analog, read in poll().
+// table is in the FEAT-125 ticket). LB / A / X are the FEAT-126 manual gearbox's clutch (Shift, held)
+// and upshift / downshift (E / Q); the automatic ignores them. View (8) is tap-vs-hold, handled below.
+// Left stick click (10) and Home (16) are unbound; LT/RT (6/7) are analog, read in poll().
 const BUTTON_KEYS = {
+  4: 'Shift', // LB — clutch (hold), manual only
+  0: 'e',     // A — upshift, manual only
+  2: 'q',     // X — downshift, manual only
   5: ' ',     // RB — handbrake (hold) / park latch (tap)
   1: 'f',     // B — pump / aim (hold)
   3: 'i',     // Y — ignition (hold)

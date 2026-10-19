@@ -180,6 +180,12 @@ export const RANGER_PARAMS = {
   clutchShiftMax:  0.15,   // [-] clutch engagement above which a shift is rejected (the clutch is "in")
   manualShiftTime: 0.25,   // s — synchro time in N per shift (× _transShiftScale when the box is worn)
   idleGovernorMax: 0.5,    // [-] most pedal the idle governor adds below idle (keeps a neutral engine alive)
+  // The clutch assistant (src/clutch-assist.js): engagement follows engine speed like a centrifugal
+  // clutch — 0 at idle + assistEngageRPM, 1 at assistLaunchRPM + assistLaunchThrottleRPM × throttle.
+  assistEngageRPM:         100,   // rpm above idle where it starts to bite
+  assistLaunchRPM:         1400,  // rpm where it is fully in, at zero throttle
+  assistLaunchThrottleRPM: 1200,  // rpm added at full throttle (a floored launch slips up to ~2600)
+  assistReengageRate:      5,     // 1/s — fastest the clutch comes back in after a shift (~0.2 s)
   shiftThrottleCurve:   2,    // [-] exponent on the average: 2 keeps part throttle near the light end
                               //     (35 % → 12 % of the way to WOT), 1 = linear
 

@@ -25,6 +25,7 @@ import { makeFuelState } from '../src/fuel.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { TRANSMISSIONS } from '../data/transmissions.js'
 import { makeEngineCtx } from './lib/engine-ctx.mjs'
+import { makeClutchAssist, stepClutchAssist } from '../src/clutch-assist.js'
 
 const DT = 1 / 60, MPH = 2.23694
 const ctx = await makeEngineCtx({ position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } }, RANGER_PARAMS)
@@ -179,6 +180,53 @@ console.log('\n9. a clutch dumped at the limiter spins the rears')
   let spin = 0
   step(P, vs, 90, () => { vs.throttle = 1; vs.clutch = 1; spin = Math.max(spin, dt(vs).wheelspin ?? 0) })
   check(rpm0 > 5000 && spin > (P.wheelspinThreshold ?? 7.5), `revved to ${rpm0.toFixed(0)} rpm, dumped: peak wheelspin ${spin.toFixed(1)} m/s`)
+}
+
+// The assistant in front of the sim: what src/vehicle.js does each step.
+function driveAssisted (P, vs, n, ctl) {
+  const a = vs._assist || (vs._assist = makeClutchAssist())
+  for (let i = 0; i < n; i++) {
+    const c = ctl(i) || {}
+    vs.throttle = c.throttle ?? 0; vs.brake = c.brake ?? 0
+    const out = stepClutchAssist(a, { pedal: c.pedal ?? 0, shift: c.shift ?? 0, throttle: vs.throttle },
+      { rpm: dt(vs).engineRPM, shifting: !!dt(vs).shifting }, P, DT)
+    vs.clutch = out.clutch
+    if (out.shiftRequest) vs.shiftRequest = out.shiftRequest
+    stepPhysics(vs, P, DT, qc, ctx)
+  }
+}
+
+console.log('\n10. the clutch assistant, ON')
+{
+  const { P, vs } = fresh()
+  driveAssisted(P, vs, 60, (i) => ({ shift: i === 0 ? 1 : 0 }))
+  driveAssisted(P, vs, 180, () => ({}))
+  check(dt(vs).mGear === 1 && vs.ignition.state === 'running' && Math.abs(vf(vs)) < 0.5,
+    `in 1st at idle, no pedal, no throttle: running and holding (${(vf(vs) * MPH).toFixed(1)} mph)`)
+  driveAssisted(P, vs, 240, () => ({ throttle: 0.5 }))
+  check(vs.ignition.state === 'running' && dt(vs).locked && vf(vs) * MPH > 10, `half throttle launches it: ${(vf(vs) * MPH).toFixed(1)} mph, clutch locked`)
+  let misses = 0
+  for (let t = 0; t < 60 * 60; t++) {
+    const up = dt(vs).mGear < 5 && dt(vs).engineRPM > 5000 && !dt(vs).shifting && !vs._assist.pending
+    driveAssisted(P, vs, 1, () => ({ throttle: 1, shift: up ? 1 : 0 }))
+    if (dt(vs).missShift) misses++
+  }
+  check(dt(vs).mGear === 5 && vf(vs) * MPH > 90 && misses === 0, `no-pedal upshifts reach 5th at ${(vf(vs) * MPH).toFixed(0)} mph, ${misses} rejected`)
+  driveAssisted(P, vs, 15 * 60, () => ({ brake: 1 }))
+  check(vs.ignition.state === 'running' && Math.abs(vf(vs)) < 0.3, `braked to a stop in ${dt(vs).mGear}th: still running (${dt(vs).engineRPM.toFixed(0)} rpm)`)
+  driveAssisted(P, vs, 5, () => ({ pedal: 1, throttle: 1 }))
+  check(vs.clutch === 0, `pedal down overrides the assist (clutch ${vs.clutch})`)
+}
+
+console.log('\n11. the clutch assistant, OFF')
+{
+  const { P, vs } = fresh({ gear: 2, v0: 10 })
+  P.clutchAssist = false
+  driveAssisted(P, vs, 1, () => ({ throttle: 0.2, shift: 1 }))
+  check(dt(vs).mGear === 2 && dt(vs).missShift, `no pedal: the request reaches the sim and is rejected (gear ${dt(vs).mGear})`)
+  driveAssisted(P, vs, 3, () => ({ pedal: 1 }))
+  driveAssisted(P, vs, 30, (i) => ({ pedal: 1, shift: i === 0 ? 1 : 0 }))
+  check(dt(vs).mGear === 3, `pedal down: 2nd → 3rd goes through (gear ${dt(vs).mGear})`)
 }
 
 console.log(`\nMANUAL-GEARBOX GATE: ${failures ? `${failures} FAILURE(S)` : 'all checks passed ✓'}`)
