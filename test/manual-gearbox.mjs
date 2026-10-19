@@ -26,6 +26,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { TRANSMISSIONS } from '../data/transmissions.js'
 import { makeEngineCtx } from './lib/engine-ctx.mjs'
 import { makeClutchAssist, stepClutchAssist } from '../src/clutch-assist.js'
+import { DamageModel, TRACKS } from '../src/damage.js'
 
 const DT = 1 / 60, MPH = 2.23694
 const ctx = await makeEngineCtx({ position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } }, RANGER_PARAMS)
@@ -227,6 +228,26 @@ console.log('\n11. the clutch assistant, OFF')
   driveAssisted(P, vs, 3, () => ({ pedal: 1 }))
   driveAssisted(P, vs, 30, (i) => ({ pedal: 1, shift: i === 0 ? 1 : 0 }))
   check(dt(vs).mGear === 3, `pedal down: 2nd → 3rd goes through (gear ${dt(vs).mGear})`)
+}
+
+console.log('\n12. the transmission damage track')
+{
+  const { P, vs } = fresh({ gear: 2, v0: 10 })
+  P.clutchAssist = false
+  const dm = new DamageModel({ params: P })
+  const c0 = dm.get('transmission')
+  for (let k = 0; k < 3; k++) {
+    driveAssisted(P, vs, 1, () => ({ throttle: 0.2, shift: 1 }))
+    dm.step(vs, P, DT)
+    driveAssisted(P, vs, 2, () => ({ throttle: 0.2 }))
+    dm.step(vs, P, DT)
+  }
+  check(Math.abs((c0 - dm.get('transmission')) - 0.06) < 1e-9, `3 forced shifts cost ${((c0 - dm.get('transmission')) * 100).toFixed(2)} % (3 × 2 %)`)
+  check(dm.manualBox === true && TRACKS.transmission.manualOnly, 'manualOnly track, and the model knows a manual is fitted')
+  dm.set('transmission', 0); dm.publish(P)
+  check(Math.abs(P._transShiftScale - 3) < 1e-9, `a dead box publishes _transShiftScale ${P._transShiftScale} (3×)`)
+  dm.set('transmission', 1); dm.publish(P)
+  check(P._transShiftScale === 1, 'a new box shifts at 1×')
 }
 
 console.log(`\nMANUAL-GEARBOX GATE: ${failures ? `${failures} FAILURE(S)` : 'all checks passed ✓'}`)

@@ -60,6 +60,7 @@ const CONSEQUENCE = {
   radiator:   'Cools the engine. Below half it cannot hold full throttle; near zero it barely holds idle.',
   headlights: 'A worn lamp dims, down to 40% when broken. Below half health it flickers over bumps.',
   alignment:  'Knocked-out toe and camber make the truck pull to one side.',
+  transmission: 'Forcing a shift without the clutch wears the synchros. A worn box takes longer to change gear.',
 }
 
 /**
@@ -84,6 +85,9 @@ const LIST_ROWS = 5
  * every threshold. Thresholds are read live from DAMAGE_PARAMS, so the debug sliders keep the text
  * honest.
  */
+/** FEAT-126: a manualOnly track (the transmission) exists only on a truck with a manual fitted. */
+const shown = (m, id) => !TRACKS[id]?.manualOnly || m.manualBox
+
 function symptoms (m, id) {
   const t = TRACKS[id], c = m.get(id), P = DAMAGE_PARAMS
   const pct = (x) => Math.round(x * 100) + '%'
@@ -116,6 +120,11 @@ function symptoms (m, id) {
     case 'engine': if (c < P.engineKnee) out.push(`Losing power fast under ${pct(P.engineKnee)}`); break
     case 'radiator': if (c < 0.5) out.push(`Overheats under full load below 50%`); break
     case 'filter': if (c < P.filterKnee) out.push(`Wearing out the engine under ${pct(P.filterKnee)}`); break
+    case 'transmission': {
+      const k = m.transShiftScale()
+      if (k > 1.05) out.push(`Shifts take ${k.toFixed(1)}× as long`)
+      break
+    }
     case 'headlights':
       if (c < P.headlightFlickerCond) out.push(`Flickers over bumps under ${pct(P.headlightFlickerCond)}`)
       break
@@ -482,6 +491,7 @@ export class DamageScreen {
     const m = this.model
     let hit = false
     for (const id in m.condition) {
+      if (!shown(m, id)) continue
       const c = m.condition[id]
       if (DAMAGE_PARAMS.enabled && (this._prev[id] ?? c) - c > DROP_ALERT) hit = true
       this._prev[id] = c
@@ -537,7 +547,7 @@ export class DamageScreen {
   /** The five worst parts, a flat tire counting as zero. Rebuilt only when what it shows changes. */
   _renderList () {
     const m = this.model
-    const rows = Object.keys(TRACKS).sort((a, b) => shownCond(m, a) - shownCond(m, b)).slice(0, LIST_ROWS)
+    const rows = Object.keys(TRACKS).filter(id => shown(m, id)).sort((a, b) => shownCond(m, a) - shownCond(m, b)).slice(0, LIST_ROWS)
       .map(id => ({ id, c: m.get(id), sym: symptoms(m, id) }))
     const key = rows.map(r => `${r.id}:${Math.round(r.c * 100)}:${r.sym.join('|')}`).join(',')
     if (key === this._listKey) return
