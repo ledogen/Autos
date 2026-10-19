@@ -7501,7 +7501,7 @@ function loop () {
   // _ignEdge (S-61) and it is played here, once per frame, however many steps the frame ran.
   const ign = vehicleState.ignition
   if (ign) {
-    if (_starterEngaged(ign)) startCrankAudio(); else stopCrankAudio()
+    if (_starterEngaged(ign)) startCrankAudio(dtrain?.engineRPM, RANGER_PARAMS.cylinders); else stopCrankAudio()
     if (_ignEdge === 'catch') playCatchAudio()
     else if (_ignEdge === 'shutoff') playShutoffAudio()
     ign.event = null

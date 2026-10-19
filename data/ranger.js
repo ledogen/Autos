@@ -125,8 +125,15 @@ export const RANGER_PARAMS = {
   // the SM-3 damage model's engine track writes every step — NOT a per-vehicle scripted timer.
   ignitionCatchTime:     0.25,  // s — crank time before the engine catches at full engine health
   ignitionCatchTimeWorn: 2.0,   // s — crank time as engine health approaches zero (owner 2026-09-05: raised 1.0→2.0, the decay was not significant enough at 1 s; linear 0.25→2.0; AT exactly 0 the engine never catches at all — see ignition.js catchTime)
-  ignitionCrankRPM:      250,   // rpm — speed the starter turns the engine at (makes no drive torque)
-  ignitionCrankRpmLag:   0.12,  // s — RPM lag while the starter picks the engine up
+  // FEAT-120: cranking speed, ripple, the catch flare and the settle are NOT set here — they come out
+  // of the crank dynamics in src/drivetrain.js (stepStart). These are its starter and idle-control inputs.
+  starterStallNm:        150,   // N·m at the crank — stall torque. Owner's cadence pass 2026-10-19 with compression 100:
+                                //   ~185 rpm cold / ~210 warm, ±30% ripple. Must beat crankCompressionNm + friction or it can't crank
+  starterFreeRPM:        280,   // rpm at the crank — no-load speed; above it the overrunning clutch freewheels
+  idleColdRPM:           1100,  // rpm — cold fast idle at idleColdC…
+  idleColdC:             25,    // °C — …(ambient: a truck left overnight)…
+  idleWarmC:             90,    // °C — …easing linearly to engineIdleRPM by here (FEAT-51 engine temperature)
+  idleAirKp:             3,     // [-] idle-air controller gain on the rpm error — higher settles faster, overshoots less
   // Key OFF but still in gear: the driveline drags the dead engine round through the converter, so
   // the truck coasts down on pumping/friction losses instead of freewheeling. engineOffDrag is that
   // drag at 1000 rpm of dragged engine speed; the effect fades below engineOffCouplingRPM as the

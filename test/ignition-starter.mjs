@@ -12,6 +12,10 @@
 //      (retarding torque opposing the wheels) and that drag fades out toward a stop.
 //   6. THE DEFAULT: a vehicleState with NO ignition field behaves exactly like today's drivetrain.
 //      Every other headless gate relies on this, so it is asserted here rather than assumed.
+//   7. FEAT-120 start transient (drivetrain.js stepStart): from rest the starter turns the engine
+//      over (never stalls on a stroke) at a cranking speed with a compression ripple; the catch
+//      flares above idle on the full manifold and settles to the idle target, then hands back to the
+//      quasi-static model; a cold engine fast-idles, a warm one does not; no drive torque throughout.
 //
 // Run: node test/ignition-starter.mjs        (self-checking; exits non-zero on failure)
 
@@ -132,8 +136,8 @@ console.log('\n── 6. drivetrain gating ────────────�
   const pCrank = { ...P }; const vsCrank = mkState(CRANKING)
   const tCrank = run(vsCrank, pCrank)
   check(tCrank.every(v => v === 0), 'CRANKING makes NO drive torque at any wheel')
-  check(Math.abs(vsCrank.drivetrain.engineRPM - P.ignitionCrankRPM) < 1900 && vsCrank.drivetrain.engineRPM < 2000,
-    `CRANKING pulls engine RPM toward ignitionCrankRPM (${vsCrank.drivetrain.engineRPM.toFixed(0)} rpm, falling from 2000)`)
+  check(vsCrank.drivetrain.engineRPM > 0 && vsCrank.drivetrain.engineRPM < 2000,
+    `CRANKING drags a spinning engine down toward cranking speed (${vsCrank.drivetrain.engineRPM.toFixed(0)} rpm, falling from 2000)`)
 
   const pOff = { ...P }; const vsOff = mkState(OFF)
   const tOff = run(vsOff, pOff)
@@ -155,6 +159,51 @@ console.log('\n── 6. drivetrain gating ────────────�
   const vsRev = { ...mkState(OFF), wheelOmega: [-omega, -omega, -omega, -omega] }
   stepDrivetrain(vsRev, pRev, DT, -20)
   check(pRev._driveTorque[2] > 0, `rolling backwards, the drag flips sign (${pRev._driveTorque[2].toFixed(1)} N·m) — always retarding`)
+}
+
+console.log('\n── 7. start transient (FEAT-120) ──────────────────────────────────────────────')
+{
+  // Key held from rest at tempC; catch time stretched so the crank reaches steady speed first.
+  // Returns the per-step rpm trace plus the step the engine caught on.
+  const start = (tempC, catchS, holdS = catchS + 0.1, secs = 5) => {
+    const p = { ...P, ignitionCatchTime: catchS }
+    const vs = { throttle: 0, brake: 0, wheelOmega: [0, 0, 0, 0], engineTempC: tempC,
+      ignition: makeIgnitionState(OFF), drivetrain: { engineRPM: 0, gear: 1, shiftTimer: 0 } }
+    const rpm = [], torque = []; let caughtAt = -1
+    for (let i = 0; i < secs / DT; i++) {
+      stepIgnition(vs, p, DT, i * DT < holdS)
+      if (vs.ignition.event === 'catch') caughtAt = i
+      stepDrivetrain(vs, p, DT, 0)
+      rpm.push(vs.drivetrain.engineRPM); torque.push(Math.max(...p._driveTorque.map(Math.abs)))
+    }
+    return { vs, rpm, torque, caughtAt }
+  }
+  const win = (a, i0, i1) => a.slice(i0, i1)
+  const mean = a => a.reduce((s, v) => s + v, 0) / a.length
+
+  // Cranking: a 2 s crank, steady part 1.0–2.0 s.
+  for (const T of [25, 95]) {
+    const { rpm } = start(T, 2.0)
+    const c = win(rpm, Math.round(1.0 / DT), Math.round(2.0 / DT))
+    const m = mean(c), lo = Math.min(...c), hi = Math.max(...c)
+    check(Math.min(...win(rpm, Math.round(0.3 / DT), Math.round(2.0 / DT))) > 20,
+      `${T} °C: the starter never stalls on a stroke from rest (min ${Math.min(...win(rpm, 18, 120)).toFixed(0)} rpm after 0.3 s)`)
+    check(m > 120 && m < 400, `${T} °C: cranks at ${m.toFixed(0)} rpm (real cranking 120–400)`)
+    check(hi - lo > 0.1 * m, `${T} °C: compression ripple present (${lo.toFixed(0)}–${hi.toFixed(0)} rpm)`)
+  }
+  const cold = start(25, 2.0), warm = start(95, 2.0)
+  check(mean(win(cold.rpm, 60, 120)) < mean(win(warm.rpm, 60, 120)), 'a cold engine cranks slower than a warm one (cold-oil friction)')
+
+  // Catch, flare, settle — at the healthy catch time.
+  for (const [T, idleT] of [[25, P.idleColdRPM], [95, P.engineIdleRPM]]) {
+    const { vs, rpm, torque, caughtAt } = start(T, P.ignitionCatchTime)
+    const peak = Math.max(...rpm.slice(caughtAt))
+    check(caughtAt >= 0 && peak > idleT + 150 && peak < 2200, `${T} °C: the catch flares to ${peak.toFixed(0)} rpm (idle ${idleT} + 150 … 2200)`)
+    const settledAt = rpm.findIndex((r, i) => i > caughtAt + 6 && rpm.slice(i).every(x => Math.abs(x - idleT) < 20))
+    check(settledAt > 0 && (settledAt - caughtAt) * DT < 3, `${T} °C: settles to ${idleT} rpm in ${((settledAt - caughtAt) * DT).toFixed(2)} s (< 3 s)`)
+    check(vs.drivetrain.starting === false, `${T} °C: the transient hands the engine back to the quasi-static model`)
+    check(torque.every(t => t === 0), `${T} °C: no drive torque at any wheel from key-on to idle`)
+  }
 }
 
 console.log(`\n${'═'.repeat(64)}`)

@@ -189,9 +189,9 @@ export function setAudioPageActive (on) {
 let crankGain = null     // GainNode — the crank loop's on/off gate. Its sources run for the life of
                          // the page behind this gate; starting/stopping is a gain ramp.
 let crankOn = false      // level state, so the per-frame calls from main.js are idempotent
+let chugLfo = null       // OscillatorNode — the compression beat, retuned every frame to the live crank speed
 
 const TOOTH_HZ = 33      // ring-gear teeth clattering past
-const CHUG_HZ = 12       // ~250 rpm × 3 firings/rev ÷ 60 — the compression beat
 const MOTOR_HZ = 88      // the starter motor's own (weak, mostly masked) pitch
 const CRANK_LEVEL = 0.34 // crank loop gain, before the user volume scale
 
@@ -222,9 +222,10 @@ function ensureCrankGraph () {
     const amt = ctx.createGain()
     amt.gain.value = depth
     lfo.connect(amt); amt.connect(g.gain); lfo.start()
+    return lfo
   }
   branch('bandpass', 1500, 1.0, 0.22, TOOTH_HZ, 0.18)   // teeth on the flywheel
-  branch('lowpass', 240, 0.9, 0.55, CHUG_HZ, 0.45)      // dragging it over compression
+  chugLfo = branch('lowpass', 240, 0.9, 0.55, 12, 0.45) // dragging it over compression (rate set per frame)
 
   const motor = ctx.createOscillator()
   motor.type = 'sawtooth'
@@ -238,13 +239,22 @@ function ensureCrankGraph () {
  * Starter engaged — LEVEL, not an edge: main.js calls this every frame the key is held at START,
  * including after the engine has caught (you really can keep grinding the starter against a running
  * engine, and holding the key is how the player decides when to stop). Idempotent.
+ *
+ * FEAT-120: the chug beats at the live compression rate, rpm/60 × cylinders/2. drivetrain.js integrates
+ * the crank speed stroke by stroke, so following it every frame lands the chug on the tach's ripple.
+ * Defaults are FEAT-33's fixed 250 rpm V6 (12.5 Hz) for callers with no engine (the dashboard ▶).
  */
-export function startCrankAudio () {
-  if (!enabled || crankOn) return
+export function startCrankAudio (rpm = 250, cylinders = 6) {
+  if (!enabled) return
   ensureCrankGraph()
   if (!crankGain) return
+  chugLfo.frequency.setTargetAtTime(Math.max(1, rpm / 60 * cylinders / 2), ctx.currentTime, 0.02)
+  if (crankOn) return
   crankOn = true
   crankGain.gain.setTargetAtTime(volume * CRANK_LEVEL, ctx.currentTime, 0.02)
+  // FEAT-120: the solenoid clicks and the pinion slams into mesh.
+  _noiseHit(0, 0.012, 'highpass', 2500, 0.7, 0.30)
+  _noiseHit(0.03, 0.08, 'lowpass', 380, 1.2, 0.75)
 }
 
 /** Key released off START (whether it caught or not). Idempotent. */
@@ -252,6 +262,21 @@ export function stopCrankAudio () {
   if (!crankOn) return
   crankOn = false
   if (crankGain && ctx) crankGain.gain.setTargetAtTime(0, ctx.currentTime, 0.04)
+  if (enabled && ctx) _noiseHit(0, 0.035, 'bandpass', 1500, 1.5, 0.30)   // FEAT-120: the pinion throws out
+}
+
+/** A filtered noise burst `at` s from now: the raw material for the starter's clicks. */
+function _noiseHit (at, dur, type, freq, Q, peak) {
+  const t = ctx.currentTime + at
+  const src = ctx.createBufferSource()
+  src.buffer = whiteNoiseBuffer(ctx, dur + 0.02)
+  const f = ctx.createBiquadFilter()
+  f.type = type; f.frequency.value = freq; f.Q.value = Q
+  const g = ctx.createGain()
+  g.gain.setValueAtTime(volume * peak, t)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  src.connect(f); f.connect(g); g.connect(ctx.destination)
+  src.start(t); src.stop(t + dur + 0.02)
 }
 
 /**

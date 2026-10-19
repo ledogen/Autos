@@ -887,6 +887,7 @@ export class DamageModel {
       T -= (T - P.tempAmbientC) * dt * clock / P.tempOffTau
     }
     this.engineTempC = Math.min(P.tempMaxC, T)
+    vehicleState.engineTempC = this.engineTempC   // FEAT-120: the cold-fast-idle seam (drivetrain.js idleTargetRPM)
   }
 
   /**

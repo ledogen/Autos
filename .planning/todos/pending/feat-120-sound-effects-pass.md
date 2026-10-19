@@ -63,6 +63,17 @@ then cuts the ignition. To be replaced or layered by the engine-sim bake below.
 ### Starter crank and catch
 status: shipped · group: truck · play: crank
 FEAT-33, `src/engine-audio.js`. Preview holds the starter ~1.4 s, then fires the catch.
+- **2026-10-19 (`feature/starter-sounds`):** the crank RPM is now real dynamics (`drivetrain.js`
+  `stepStart`: starter torque line, compression ripple, manifold-fed catch flare, cold fast idle), and
+  the FEAT-33 chug beats at the live compression rate (rpm/60 × cylinders/2), so it lands on the
+  tach's ripple. Solenoid click + pinion clunk on engage and a clack on release were added.
+- **Tried and reverted by the owner, don't re-propose as-is:** an RPM-keyed gear-mesh whine (read as a
+  slide whistle), a noise mesh band (fuzz), a motor growl, and a commutator-buzz synth spectrally
+  fitted to a real 2000 Ranger cold start (matched to 0.2 dB per third-octave above 300 Hz, same
+  143 Hz periodicity and 8 Hz pulse — still "sounds bad"). Synthesis has hit its ceiling here: the
+  next step is a **recording** of a real starter (fuel-pump relay pulled, ~10 s cranks), played at
+  `playbackRate = rpm / recordedRpm` over the engine-sim crank take. The offline render harness that
+  measured the fits is `wip/audio-render/render.html` (git-invisible).
 
 ### Engine shutoff
 status: shipped · group: truck · play: engine-audio.js playShutoffAudio
@@ -302,6 +313,15 @@ its licence before shipping recordings.
 - **Runtime:** play the nearest recordings, `playbackRate = rpm / recordedRpm` covers the gaps,
   crossfade between neighbours by RPM and load. First sample assets: add `assets/audio/` to the
   `vite.config.js` copy plugin (fetched by URL, not ES-imported, same as the `.glb` files).
+
+### Engine-sim crank and start takes
+status: todo · group: truck
+The starter layer above sits on the engine-sim piston/valve sound underneath it. Requested from the
+Windows bake 2026-10-18: `vulcan30_crank_dry` (ignition OFF, S held ~5 s, settled crank rpm logged,
+cut on whole 720° cycles so it loops), `vulcan30_start_1..3_dry` (crank → catch → 4 s of flare and
+settle, uncut, to check the game's flare shape against), one `vulcan30_crank_stock` for the A/B.
+Keep engine-sim's starter at 70 lb·ft / 500 rpm; the game's starter (150 N·m / 280 rpm after the
+owner's cadence pass) cranks slower, which `playbackRate = rpm / recordedRpm` absorbs.
 
 ## Acceptance
 
