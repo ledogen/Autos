@@ -38,3 +38,12 @@ each frame; there are no events for axes).
   follows it.
 - Unplugging mid-drive drops cleanly back to the keyboard, with no stuck throttle.
 - Every story action reachable on the keyboard is reachable on the pad.
+
+## Follow-up (owner, 2026-10-18)
+
+- **Pedal-aware shift schedule, once analog throttle lands.** The automatic upshifts only at the
+  engine's `shiftUpRPM` (data/engines.js), whatever the pedal. So at a light foot the truck holds 2nd
+  at 55 mph (4000–5100 rpm), and the top gears (4th on the 4R44E, 4th–5th on the 5R55E) need ~110–120
+  mph. Light pedal should upshift early, full pedal late. Deliberately deferred until a real
+  part-throttle exists to tune it against (feat-vehicle-drivetrain-architecture's "ideally
+  throttle-dependent shift points").

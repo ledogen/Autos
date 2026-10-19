@@ -49,6 +49,8 @@ export const ENGINES = {
         frictionColdExtra:  0.5,   // [-] cold-oil friction: ×1.5 at idleColdC, easing to ×1 by idleWarmC (data/ranger.js)
         engineIdleRPM:    750,   // rpm — governed idle floor; engine never drops below this
         engineRedlineRPM: 5500,  // rpm — rev limiter cuts torque above this (over 200 rpm band)
+        cylinders:        6,     // [-] firing pulses per rev = cylinders / 2 (src/engine-audio.js)
+        shiftUpRPM:       5400,  // rpm(coupled) — WOT upshift, just under the limiter (always-WOT play)
 
         // ── Fuel model (FEAT-50) — USER-OWNED ──────────────────────────────────────────────────
         displacementL: 2.99,     // L — swept volume
@@ -62,5 +64,35 @@ export const ENGINES = {
         enrichFrom:    0.85,     // [-] pedal above which power enrichment starts
         enrichMax:     0.15,     // [-] extra fuel at full pedal
         dfcoRPM:       1200,     // rpm — zero pedal above this cuts fuel entirely
+    },
+
+    // 2002 Ranger 2.3 L Duratec 23 I4 (Mazda MZR L3: DOHC, 4 valves/cyl, 87.5 × 94 mm, 9.7:1) — the
+    // Ranger's own base engine from mid-2001, replacing the 2.5 L Lima. 143 hp @ 5250, 154 lb·ft
+    // (209 N·m) @ 3750. The curve passes 195 N·m at 5250, which is 107 kW: the rated peak.
+    // Anchors (fueleconomy.gov, 2002 Ranger 2WD 2.3 L): 5-spd auto 18 / 23 / 20 mpg, 5-spd manual
+    // 21 / 25 / 23 — about 3 mpg better than the V6 across the board. Our gearbox is still the V6's
+    // 4R44E 4-speed unless the 5R55E is picked too (data/transmissions.js), so in-game mpg gaps will differ.
+    duratec23: {
+        engineTorqueCurve: [
+            [ 800, 140], [1500, 170], [2500, 192], [3750, 209],
+            [4500, 204], [5250, 195], [6000, 165], [6500, 120],
+        ],
+        engineIdleRPM:    750,
+        engineRedlineRPM: 6250,  // the PCM's rev limiter on the Duratec Ranger
+        cylinders:        4,
+        shiftUpRPM:       6000,  // past the 5250 power peak: the next gear still lands near 4750
+
+        // ── Fuel model (FEAT-50) — USER-OWNED ──────────────────────────────────────────────────
+        displacementL: 2.26,
+        etaIndicated:  0.385,    // a touch over the Vulcan: 4-valve pent-roof head, higher compression
+        fmepA:         97,
+        fmepB:         15,
+        fmepC:         5,
+        accessoryNm:   9,
+        pumpingK:      0.9,
+        mapFloor:      0.25,
+        enrichFrom:    0.85,
+        enrichMax:     0.15,
+        dfcoRPM:       1200,
     },
 }

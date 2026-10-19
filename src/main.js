@@ -7486,7 +7486,7 @@ function loop () {
     const fuel = vehicleState.fuel
     if (fuel.sputters !== _sputtersHeard) { if (fuel.sputters > _sputtersHeard) playSputterPop(fuel.sputterDepth); _sputtersHeard = fuel.sputters }
     updateEngineAudio(dtrain.engineRPM, vehicleState.throttle,
-      (vehicleState.ignition?.state ?? 'running') === 'running' && !(fuel.sputterT > 0))
+      (vehicleState.ignition?.state ?? 'running') === 'running' && !(fuel.sputterT > 0), RANGER_PARAMS.cylinders)
   }
 
   // FEAT-33 ignition audio, in two halves.
@@ -7706,6 +7706,7 @@ function loop () {
   gaugeCluster.setFuelLevel(vehicleState.fuel.gal / RANGER_PARAMS.fuelTankGal)
   gaugeCluster.setLowFuel(vehicleState.fuel.gal <= RANGER_PARAMS.fuelLowLightGal)
   _renderPumpDisplay(frameTime)
+  gaugeCluster.setRedline(RANGER_PARAMS.engineRedlineRPM)   // repaints the tach face only on an engine swap
   gaugeCluster.update(frameTime, vehicleState.velocity.length(), vehicleState.drivetrain?.engineRPM ?? 0)
 
   // feature/teleport: show the "teleport here" button only in free-cam, where isTeleportEnabled()
