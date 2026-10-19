@@ -1282,7 +1282,7 @@ renderer.shadowMap.enabled = true
 // their own distance fade in the terrain shader; this covers the truck's realtime map.
 // fadeStart 0.82 (up from the 0.72 default): the frustum is tighter now that the presets trade
 // extent for texel size, so the dissolve has to start later or it eats a visible chunk of the
-// shadowed world. 0.82 of the ±20 m near frustum ⇒ full shadows to ~16 m, gone by 20 m.
+// shadowed world. 0.82 of the ±40 m near frustum ⇒ full shadows to ~33 m, gone by 40 m.
 installShadowEdgeFade({ fadeStart: 0.82 })
 // BUG-78: the near map's shadow also gates the far cascade, so the truck can be kept OUT of the
 // far map (see the wrapped shadow pass by sunFar) without its shadow dropping to the near light's 40 % share.
@@ -1455,14 +1455,14 @@ sun.shadow.camera.far  = 500
 // world — the truck is very nearly the only caster in this map. Rationale + the caster audit are in
 // the QUALITY_PRESETS comment. applyQuality() overwrites these at boot; they only set the pre-boot
 // state, so keep them at the preset scale or the first frame renders a world-sized blur.
-sun.shadow.camera.left = sun.shadow.camera.bottom = -20
-sun.shadow.camera.right = sun.shadow.camera.top   =  20
+sun.shadow.camera.left = sun.shadow.camera.bottom = -40
+sun.shadow.camera.right = sun.shadow.camera.top   =  40
 scene.add(sun)
 scene.add(sun.target)   // FEAT-06: target must be in-scene for the per-frame shadow-follow to apply
 
 // ── Terrain shadow cascade (`sunFar`) ────────────────────────────────────────────────────────────
 // A SECOND directional light sharing `sun`'s direction and colour, differing only in shadow framing:
-// `sun` keeps QUAL-18's tight ±20 m box (what makes the truck's shadow crisp), `sunFar` renders a
+// `sun` keeps QUAL-18's tight ±40 m box (what makes the truck's shadow crisp), `sunFar` renders a
 // ±SHADOW_FAR_EXTENT box so TERRAIN casts at mountain scale — hills shading valleys at low sun,
 // which the truck-framed frustum structurally could not do.
 //
@@ -1539,12 +1539,15 @@ const FAR_SHADOW_HIDE = []
     // truck's whole shadow sat still for a frame and caught up on the next (owner saw it, 2026-09-29).
     if (!_farShadowPending || !sunFar.castShadow || sceneArg !== scene) return
     _farShadowPending = false
-    const wasVisible = FAR_SHADOW_HIDE.map(o => o.visible)
-    for (const o of FAR_SHADOW_HIDE) o.visible = false
+    // Near grass/brush casts into the near map only: at 0.25 m/texel a clump's shadow is mush, and
+    // its wind sway would freeze into a map refreshed every SHADOW_FAR_SNAP metres.
+    const hide = propSystem ? FAR_SHADOW_HIDE.concat(propSystem.coverCasters) : FAR_SHADOW_HIDE
+    const wasVisible = hide.map(o => o.visible)
+    for (const o of hide) o.visible = false
     this.needsUpdate = true          // global gate (already consumed by the near pass above)
     sunFar.shadow.needsUpdate = true // per-light gate
     shadowPass.call(this, [sunFar], sceneArg, camera)
-    FAR_SHADOW_HIDE.forEach((o, i) => { o.visible = wasVisible[i] })
+    hide.forEach((o, i) => { o.visible = wasVisible[i] })
   }
 }
 // Far-cascade follow state (mirrors the near light's, at the coarse snap).
@@ -1552,7 +1555,8 @@ let _lastFarSnapR = NaN, _lastFarSnapU = NaN, _lastFarGeomSig = NaN
 const _lastFarSunDir = new THREE.Vector3(NaN, NaN, NaN)
 
 // BUG-29: world-size of one shadow-map texel + scratch vectors for texel-snapping the shadow frustum
-// centre each frame (see the follow in loop()). frustumWidth / mapSize = 40 / 2048 ≈ 0.020 m/texel.
+// centre each frame (see the follow in loop()). frustumWidth / mapSize = 80 / 2048 ≈ 0.039 m/texel
+// pre-boot; applyQuality sets the tier's.
 // This snap is THE anti-shimmer mechanism: it must stay in step with the live extent/mapSize, which
 // is why every writer goes through applyShadowResolution(). A stale SHADOW_TEXEL is what makes a
 // texel-snapped shadow shimmer anyway — the symptom reads like "snapping doesn't work", but the
@@ -2083,8 +2087,8 @@ const _hudText = (el, s) => { if (el && el.textContent !== s) el.textContent = s
 // THE EXTENT IS SIZED TO THE TRUCK, NOT TO THE WORLD, because the truck is very nearly the only
 // thing that CASTS into this map. Terrain (terrain.js) and road (road-mesh.js) set receiveShadow and
 // never castShadow; PERF-07 moved every prop to the baked shadow atlas (castShadow = false unless the
-// propCastShadow lever flips it back). The whole realtime caster set is the truck, plus FEAT-46's POI
-// cubes. A world-sized frustum was therefore spending its entire texel budget framing geometry that
+// propCastShadow lever flips it back). The whole realtime caster set is the truck, FEAT-46's POI
+// cubes, and the near FEAT-85 grass/brush pools (too fine for the bake; see prop-system castsNearShadow). A world-sized frustum was therefore spending its entire texel budget framing geometry that
 // contributes nothing to it — which is why the truck's shadow was blocky at any map size we could
 // afford. Shrinking extent to ±20 m is what buys the sharpness; the map sizes below are LOWER than
 // the world-framed ones they replace and still land 6-12× finer:
@@ -2094,7 +2098,12 @@ const _hudText = (el, s) => { if (el && el.textContent !== s) el.textContent = s
 //     (3072→2048, 4096→3072), so High/Ultra get sharper AND cheaper than the world-framed sizing.
 //     The pass re-renders every frame the truck moves (PERF-16's `moving` trigger), so that fill is
 //     paid continuously while driving — this hands a chunk of it back.
-// What the tight extent costs: a caster further than ~20 m from the TRUCK gets no realtime shadow.
+// ±20 → ±40 m (2026-10-19) once the near FEAT-85 grass started casting here: ±20 cut grass shadows
+//   off at ~16 m. Normal/High doubled the map to HOLD their texel (2.6 / 1.95 cm); Ultra drops to
+//   High's 1.95 cm (holding 1.3 cm needs 6144², ~300 MB). Paired A/B, near map forced every frame:
+//   Normal +0.39 ms, High +0.49, Ultra +0.33. VRAM (colour + depth, 8 B/texel): Normal 18 → 75 MB,
+//   High 34 → 134, Ultra 75 → 134.
+// What the tight extent costs: a caster further than ~33–40 m from the TRUCK gets no realtime shadow.
 // Today that means only distant POI cubes (their shadow dissolves in via QUAL-18's fade as you drive
 // up) and props in the non-default realtime-cast mode. The world at large is unaffected — its prop
 // shadows come from the baked atlas in the terrain shader, which this frustum never fed.
@@ -2126,9 +2135,9 @@ const _hudText = (el, s) => { if (el && el.textContent !== s) el.textContent = s
 //   lands mostly inside lodRing.
 const QUALITY_PRESETS = {
   Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 20, shadowTilePx: 0,   cover: false, coverFade: [0, 0],     coverDensity: 0   },
-  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 1536, shadowExtent: 20, shadowTilePx: 256, cover: true,  coverFade: [50, 110],  coverDensity: 1.0 },
-  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 2048, shadowExtent: 20, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6 },
-  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 3072, shadowExtent: 20, shadowTilePx: 512, cover: true,  coverFade: [100, 190], coverDensity: 2.2 },
+  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 3072, shadowExtent: 40, shadowTilePx: 256, cover: true,  coverFade: [50, 110],  coverDensity: 1.0 },
+  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6 },
+  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 512, cover: true,  coverFade: [100, 190], coverDensity: 2.2 },
 }
 
 // PERF-07: set once the bake system exists (browser only — headless never constructs it), so
@@ -7261,7 +7270,7 @@ function loop () {
     if (_shadowRight.lengthSq() < 1e-8) _shadowRight.set(1, 0, 0)   // degenerate: sun straight overhead
     _shadowRight.normalize()
     _shadowUp.copy(_shadowFwd).cross(_shadowRight).normalize()
-    // Centre on the TRUCK, not the streaming/camera centre. The frustum is now truck-sized (±20 m,
+    // Centre on the TRUCK, not the streaming/camera centre. The frustum is now truck-sized (±40 m,
     // see QUALITY_PRESETS) because the truck is very nearly the only caster, so it has to track the
     // caster rather than the view — in freecam the truck keeps its shadow while you fly away, and
     // when parked, panning the camera no longer re-arms the shadow pass (PERF-16) for nothing.

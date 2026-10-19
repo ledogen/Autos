@@ -169,7 +169,8 @@ function bakeBlobs(P, rng, kind) {
  * @param {number} worldSeed
  * @param {object} [params=FLORA_PARAMS]
  * @returns {{ variants: Record<string, Array<{geo:THREE.BufferGeometry, collision:?object}>>,
- *            material: THREE.Material, coverMaterial: THREE.Material, groundMaterial: THREE.Material,
+ *            material: THREE.Material, coverMaterial: THREE.Material, coverDepthMaterial: THREE.Material,
+ *            groundMaterial: THREE.Material,
  *            coverUniforms: object, params: object }}
  */
 export function buildPalette(worldSeed, params = FLORA_PARAMS) {
@@ -196,8 +197,8 @@ export function buildPalette(worldSeed, params = FLORA_PARAMS) {
   if (params.rye)   variants.ryeLo   = bakeCover(params.rye, makeRyeLo)
   if (params.sage)  variants.sageLo  = bakeCover(params.sage, makeSageLo)
   const material = new THREE.MeshLambertMaterial({ vertexColors: true })
-  const { coverMaterial, groundMaterial, coverUniforms } = buildCoverMaterial(params.scatter?.cover)
-  return { variants, material, coverMaterial, groundMaterial, coverUniforms, params }
+  const { coverMaterial, coverDepthMaterial, groundMaterial, coverUniforms } = buildCoverMaterial(params.scatter?.cover)
+  return { variants, material, coverMaterial, coverDepthMaterial, groundMaterial, coverUniforms, params }
 }
 
 /**
@@ -233,19 +234,33 @@ export function buildCoverMaterial(cover = {}) {
         float cvStart = mix(uFadeStart * ${k.toFixed(2)}, cvEnd, cvJit * 0.75);
         float cvFade = 1.0 - smoothstep(cvStart, cvEnd, distance(cvOrigin, cameraPosition));
         transformed *= cvFade;`
-  const coverMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })
-  coverMaterial.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, coverUniforms)
-    shader.vertexShader = 'uniform float uTime, uWind, uFadeStart, uFadeEnd;\nattribute float aSway;\n' + shader.vertexShader
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      `#include <begin_vertex>` + fadeGLSL(1.0) + `
+  const windGLSL = `
         float cvPh = uTime * 1.4 + cvOrigin.x * 0.13 + cvOrigin.z * 0.11;
         float cvGust = 0.6 + 0.4 * sin(uTime * 0.37 + cvOrigin.x * 0.02 + cvOrigin.z * 0.017);
         transformed.xz += vec2(sin(cvPh), cos(cvPh * 0.8 + 0.9)) * (0.10 * uWind * cvGust * aSway * cvFade);   // 0.10: doubled, owner 2026-09-22`
-    )
+  const patchCover = (shader, fade) => {
+    Object.assign(shader.uniforms, coverUniforms)
+    shader.vertexShader = 'uniform float uTime, uWind, uFadeStart, uFadeEnd;\nattribute float aSway;\n' + shader.vertexShader
+    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>` + fade + windGLSL)
   }
+  const coverMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })
+  coverMaterial.onBeforeCompile = (shader) => patchCover(shader, fadeGLSL(1.0))
   coverMaterial.customProgramCacheKey = () => 'feat85-cover'
+  // The sun-shadow depth pass for the near cover pools (customDepthMaterial): the SAME wind, so a
+  // blade's shadow sways with the blade and the blade never walks through its own stale shadow.
+  // NO distance fade: in the shadow pass `cameraPosition` is the LIGHT's camera (~hundreds of m
+  // off), so the fade would shrink every clump to nothing. Unneeded anyway — the near shadow box
+  // (±40 m around the truck) ends inside the fade start (≥ 50 m at every tier), and its corners
+  // fall in QUAL-18's edge dissolve.
+  const coverDepthMaterial = new THREE.MeshDepthMaterial()
+  coverDepthMaterial.onBeforeCompile = (shader) => patchCover(shader, `
+      #ifdef USE_INSTANCING
+        vec3 cvOrigin = instanceMatrix[3].xyz;
+      #else
+        vec3 cvOrigin = vec3(0.0);
+      #endif
+        float cvFade = 1.0;`)
+  coverDepthMaterial.customProgramCacheKey = () => 'feat85-cover-depth'
   // Ground litter (FADE_CATS): the same shrink at 0.7× the window, no wind, front faces only.
   const groundMaterial = new THREE.MeshLambertMaterial({ vertexColors: true })
   groundMaterial.onBeforeCompile = (shader) => {
@@ -254,5 +269,5 @@ export function buildCoverMaterial(cover = {}) {
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>` + fadeGLSL(0.7))
   }
   groundMaterial.customProgramCacheKey = () => 'feat85-ground'
-  return { coverMaterial, groundMaterial, coverUniforms }
+  return { coverMaterial, coverDepthMaterial, groundMaterial, coverUniforms }
 }

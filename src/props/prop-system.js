@@ -49,9 +49,15 @@ const CAPACITY = {
   grass: 40000, rye: 6000, sage: 8000,
   grassLo: 80000, ryeLo: 10000, sageLo: 14000,
 }
-// FEAT-85: "cat#v" → is this a cover key (grass/brush)? Cover skips the shadow bake, the realtime
-// caster flag and the road-intrusion sweep (it stands beside the road ON PURPOSE).
+// FEAT-85: "cat#v" → is this a cover key (grass/brush)? Cover skips the shadow bake and the
+// road-intrusion sweep (it stands beside the road ON PURPOSE).
 const isCoverKey = (key) => COVER_CATS.has(key.slice(0, key.indexOf('#')))
+// Near cover (grass/rye/sage, not the far-ring *Lo stand-ins) ALWAYS casts into the sun's realtime
+// near map, whatever the PERF-07 mode: the bake is 0.25 m/texel (a clump is mush there) and the
+// near map is ~2–3 cm/texel. The *Lo pools live ≥ one 64 m chunk out, past the ±40 m near box, so
+// they never cast. main.js keeps these out of the coarse far cascade (coverCasters) — same mush
+// argument.
+const castsNearShadow = (key) => isCoverKey(key) && !key.slice(0, key.indexOf('#')).endsWith('Lo')
 // Keys the PERF-07 shadow bake draws: not cover (mush at 0.25 m/texel) and not the FADE_CATS ground
 // litter — pebbles/medium rocks shrink to nothing by 77–133 m, but a baked speck outlived them to
 // the 380 m shadow fade (R-16, owner 2026-10-15).
@@ -94,9 +100,10 @@ export class PropSystem {
     this._params = params
     this._chunkSize = params.chunkSize
 
-    const { variants, material, coverMaterial, groundMaterial, coverUniforms } = buildPalette(this._seed, params)
+    const { variants, material, coverMaterial, coverDepthMaterial, groundMaterial, coverUniforms } = buildPalette(this._seed, params)
     this._material = material
     this._coverMaterial = coverMaterial   // FEAT-85: wind + distance fade (uniforms shared below)
+    this._coverDepthMaterial = coverDepthMaterial   // near-cover shadow pass: the same wind, no fade
     this._groundMaterial = groundMaterial // small/medium rocks: the fade alone
     this._coverUniforms = coverUniforms
     this._variants = variants          // PERF-21: impostor bake needs the variant geometries
@@ -113,11 +120,12 @@ export class PropSystem {
     for (const cat of Object.keys(variants)) {
       const entries = variants[cat]
       const perVariant = Math.max(1, Math.floor((CAPACITY[cat] ?? 1000) / entries.length))
-      const isCover = COVER_CATS.has(cat)  // FEAT-85: cover material, no casting, no bake
+      const isCover = COVER_CATS.has(cat)  // FEAT-85: cover material, no bake
       entries.forEach((entry, v) => {
         const mesh = new THREE.InstancedMesh(entry.geo, isCover ? coverMaterial : (FADE_CATS.has(cat) ? groundMaterial : material), perVariant)
         mesh.frustumCulled = false           // PERF-05: chunk streaming bounds these
-        mesh.castShadow = castRealtime && !isCover   // PERF-07: realtime shadow only when baking is off
+        if (castsNearShadow(cat + '#')) mesh.customDepthMaterial = coverDepthMaterial
+        mesh.castShadow = false              // set by setShadowCasting() below
         mesh.receiveShadow = true
         // PERF-10: draw only the occupied slot prefix. mesh.count is maintained at `top` (the
         // high-water occupied index + 1) by _flush(); drawing full capacity pushed EVERY hidden
@@ -320,7 +328,14 @@ export class PropSystem {
    * The terrain-atlas strength + bake activity are toggled by the caller (main.js) alongside this.
    */
   setShadowCasting(v) {
-    for (const [key, rec] of this._meshes) rec.mesh.castShadow = v && !isCoverKey(key)
+    for (const [key, rec] of this._meshes) rec.mesh.castShadow = castsNearShadow(key) || (v && !isCoverKey(key))
+  }
+
+  /** The near-cover meshes casting into the sun's realtime map — main.js hides them from the far cascade. */
+  get coverCasters() {
+    const out = []
+    for (const [key, rec] of this._meshes) if (castsNearShadow(key)) out.push(rec.mesh)
+    return out
   }
 
   // ── FEAT-85 roadside cover (live dials — uniforms on the shared cover material) ─────────
@@ -1257,6 +1272,7 @@ export class PropSystem {
     if (this._impostors) { this._impostors.dispose(); this._impostors = null }
     this._material.dispose()
     this._coverMaterial.dispose()   // FEAT-85
+    this._coverDepthMaterial.dispose()
     this._groundMaterial.dispose()
     this._meshes.clear()
     this._chunks.clear()
