@@ -7482,7 +7482,7 @@ function loop () {
   if (dtrain) {
     setEngineAudioEnabled(RANGER_PARAMS.engineAudioEnabled !== false)
     setEngineAudioVolume(RANGER_PARAMS.engineAudioVolume ?? 0.5)
-    setEngineAudioTuning(RANGER_PARAMS.engineAudioDynamics, getCameraMode() !== 'hood', RANGER_PARAMS.engineChaseBrightDb, RANGER_PARAMS.engineChaseBoomDb)
+    setEngineAudioTuning(RANGER_PARAMS.engineAudioDynamics, getCameraMode() !== 'hood', RANGER_PARAMS.engineChaseBrightDb, RANGER_PARAMS.engineChaseBoomDb, RANGER_PARAMS.starterAudioLevel)
     // FEAT-50: a low-fuel stumble drops the drone out for its length, with one pop per stumble.
     const fuel = vehicleState.fuel
     if (fuel.sputters !== _sputtersHeard) { if (fuel.sputters > _sputtersHeard) playSputterPop(fuel.sputterDepth); _sputtersHeard = fuel.sputters }
@@ -7502,7 +7502,7 @@ function loop () {
   // _ignEdge (S-61) and it is played here, once per frame, however many steps the frame ran.
   const ign = vehicleState.ignition
   if (ign) {
-    if (_starterEngaged(ign)) startCrankAudio(dtrain?.engineRPM, RANGER_PARAMS.cylinders); else stopCrankAudio()
+    if (_starterEngaged(ign)) startCrankAudio(Math.min(dtrain?.engineRPM ?? 0, RANGER_PARAMS.starterFreeRPM ?? 280)); else stopCrankAudio()   // the overrunning clutch: the starter never turns faster than its free speed
     if (_ignEdge === 'catch') playCatchAudio()
     else if (_ignEdge === 'shutoff') playShutoffAudio()
     ign.event = null

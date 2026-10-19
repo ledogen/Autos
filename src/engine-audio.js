@@ -1,8 +1,8 @@
 /**
  * src/engine-audio.js — FEAT-23 / FEAT-120: engine sound tied to engine RPM.
  *
- * FEAT-120: an engine with a baked sample set (assets/audio/engine/manifest.json, today the Vulcan
- * V6 only) plays recorded engine-sim loops — see "FEAT-120: baked engine loops" below. Every other
+ * FEAT-120: an engine with a baked sample set (assets/audio/engine/manifest-<engine>.json: the Vulcan
+ * V6 and the Duratec I4) plays recorded engine-sim loops — see "FEAT-120: baked engine loops" below. Every other
  * engine, and the Vulcan until its loops have loaded, falls back to the FEAT-23 drone:
  *
  * Not a sample-based engine sim — just a small oscillator stack that sounds "engine-ish" without much
@@ -103,7 +103,7 @@ export function ensureEngineAudio () {
     oscs.push({ osc, gain: g, mult: r.mult })
   }
   started = true
-  loadBake()
+  ensureStarter()
 }
 
 /**
@@ -115,10 +115,14 @@ export function updateEngineAudio (rpm, throttle, firing = true, cylinders = 6, 
   const now = ctx.currentTime
   const tc = 0.05
 
-  // FEAT-120: the baked loops take over for the engine they were recorded from; the drone mutes.
-  const baked = bake && engine === bake.engine
-  updateBake(rpm, throttle, enabled && firing && baked, now)
-  if (!enabled || baked) { master.gain.setTargetAtTime(0, now, tc); return }
+  // FEAT-120: an engine with baked loops plays them and the drone mutes; the first frame asking for
+  // an engine starts its load, and the drone covers until it lands.
+  if (engine && !(engine in bakes)) loadBake(engine)
+  if (activeEngine !== engine && bakes[activeEngine]) silence(bakes[activeEngine], now)
+  activeEngine = engine
+  const bake = bakes[engine]
+  if (bake) updateBake(bake, rpm, throttle, enabled && firing, enabled && crankOn && !firing, now)
+  if (!enabled || bake) { master.gain.setTargetAtTime(0, now, tc); return }
 
   // FEAT-33: `firing` is false whenever the ignition is not RUNNING. This drone models COMBUSTION,
   // so it has to go silent for a dead engine — including the case that would otherwise sound worst,
@@ -150,11 +154,8 @@ export function setEngineAudioEnabled (on) {
 
 export function setEngineAudioVolume (v) {
   const next = Math.min(1, Math.max(0, v))
-  if (next === volume) return    // called every frame; only a real change re-targets the crank gain
+  if (next === volume) return    // called every frame; the voices re-read it on their next update
   volume = next
-  // The drone re-reads `volume` every frame; the crank loop is a level set once when it starts, so
-  // it has to be told about a mid-crank volume change or the slider appears not to work.
-  if (crankOn && crankGain && ctx) crankGain.gain.setTargetAtTime(volume * CRANK_LEVEL, ctx.currentTime, 0.05)
 }
 
 /**
@@ -179,9 +180,9 @@ export function setAudioPageActive (on) {
 
 // ── FEAT-120: baked engine loops ─────────────────────────────────────────────────────────────────
 //
-// engine-sim renders of the Vulcan (assets/audio/src/engine/NOTES.md): 8 rpm rows × 3 loads (off /
-// part 0.30 / full throttle), each a seamless loop at a dyno-held rpm. All 24 run for the life of the
-// page; each frame only re-targets gains and playbackRates (no per-frame node creation). The two rows
+// engine-sim renders per engine (assets/audio/src/engine/NOTES.md): 8–9 rpm rows × 3 loads (off /
+// part 0.30 / full throttle), each a seamless loop at a dyno-held rpm. Every loaded loop runs for the
+// life of the page; each frame only re-targets gains and playbackRates (no per-frame node creation). The two rows
 // bracketing the rpm and the two loads bracketing the throttle get weight, everything else sits at 0.
 // playbackRate = rpm / rpmMeasured pitch-shifts each loop to the live rpm.
 //
@@ -220,91 +221,138 @@ const EXTERIOR_TRIM_DB = -3.5       // the exterior path peaks ~2–3 dB hotter 
 const GROUND_DELAY_S = 0.0006       // reflected − direct path, 0.2 m / 343 m/s
 const GROUND_GAIN = 0.7             // ~−3 dB: asphalt reflects most of it, the longer path spreads a little more
 
-let bake = null           // { engine, loudest, rows: [{ rpm, voices: [{ src, gain, rpmMeasured, peakDbfs } × 3] }] }
-let bakeOut = null        // GainNode — the sampled engine's output, gated by firing/enabled/volume
+// One sample set per engine, each from its own assets/audio/engine/manifest-<engine>.json, fetched the
+// first time that engine is asked for. All of them feed the ONE exhaust chain below; a swapped-out
+// engine's voices sit at gain 0. An engine with no manifest (404) stays null and keeps the drone.
+const bakes = {}          // engine → null (none / loading) | { loudest, rows: [{ rpm, voices: [voice × 3] }], crank: voice|null }
+let activeEngine = null
+let muffler = null        // ConvolverNode — every engine's voices connect here
+let bakeOut = null        // GainNode — the sampled engine's output, gated by enabled/volume
 let dynamics = 0.5
 let exterior = true, extBrightDb = 15, extBoomDb = -6
 let cabin = null, outside = null, hiShelf = null, loShelf = null   // the listener split (LISTENER above)
 
-async function loadBake () {
+async function ensureExhaust () {
+  if (muffler) return
+  const ir = await ctx.decodeAudioData(await (await fetch(BAKE_DIR + 'muffler-stock.flac')).arrayBuffer())
+  if (muffler) return
+  bakeOut = ctx.createGain()
+  bakeOut.gain.value = 0
+  bakeOut.connect(ctx.destination)
+  muffler = ctx.createConvolver()
+  muffler.normalize = false         // engine-sim applies the IR raw; normalising would re-level it
+  muffler.buffer = ir
+  cabin = ctx.createGain()
+  muffler.connect(cabin)
+  cabin.connect(bakeOut)
+  hiShelf = ctx.createBiquadFilter()
+  hiShelf.type = 'highshelf'
+  hiShelf.frequency.value = 800
+  loShelf = ctx.createBiquadFilter()
+  loShelf.type = 'lowshelf'
+  loShelf.frequency.value = 120
+  const ground = ctx.createDelay(0.01)
+  ground.delayTime.value = GROUND_DELAY_S
+  const groundGain = ctx.createGain()
+  groundGain.gain.value = GROUND_GAIN
+  outside = ctx.createGain()
+  muffler.connect(hiShelf)
+  hiShelf.connect(loShelf)
+  loShelf.connect(outside)
+  loShelf.connect(ground)
+  ground.connect(groundGain)
+  groundGain.connect(outside)
+  outside.connect(bakeOut)
+}
+
+/**
+ * Load one engine's loops. The grid is rpm rows × LOADS. Two extra takes, when the manifest has them:
+ * - `idle`: the free (or balanced) idle replaces the off voice of the row nearest its rpm. The dyno
+ *   holding 750 at closed throttle is motoring a little, not idling; the idle take is the real thing.
+ * - `crank`: the engine dragged round unfired at the game's cranking speed (~200 rpm, the take whose
+ *   rpm is lowest — the `crank500` takes are the old 500 rpm starter). It plays while cranking.
+ */
+async function loadBake (engine) {
+  bakes[engine] = null
   try {
-    const manifest = await (await fetch(BAKE_DIR + 'manifest.json')).json()
+    const res = await fetch(BAKE_DIR + 'manifest-' + engine + '.json')
+    if (!res.ok) return
+    const manifest = await res.json()
+    await ensureExhaust()
     const decode = async f => ctx.decodeAudioData(await (await fetch(BAKE_DIR + f)).arrayBuffer())
     const grid = manifest.loops.filter(l => LOADS.includes(l.load))
-    const [ir, ...bufs] = await Promise.all([decode('muffler-stock.flac'), ...grid.map(l => decode(l.file))])
+    const idle = manifest.loops.find(l => l.load === 'idle')
+    const crank = manifest.loops.filter(l => l.load === 'crank').sort((x, y) => x.rpmMeasured - y.rpmMeasured)[0]
+    const extra = [idle, crank].filter(Boolean)
+    const bufs = await Promise.all([...grid, ...extra].map(l => decode(l.file)))
 
-    bakeOut = ctx.createGain()
-    bakeOut.gain.value = 0
-    bakeOut.connect(ctx.destination)
-    const muffler = ctx.createConvolver()
-    muffler.normalize = false         // engine-sim applies the IR raw; normalising would re-level it
-    muffler.buffer = ir
-    cabin = ctx.createGain()
-    muffler.connect(cabin)
-    cabin.connect(bakeOut)
-    hiShelf = ctx.createBiquadFilter()
-    hiShelf.type = 'highshelf'
-    hiShelf.frequency.value = 800
-    loShelf = ctx.createBiquadFilter()
-    loShelf.type = 'lowshelf'
-    loShelf.frequency.value = 120
-    const ground = ctx.createDelay(0.01)
-    ground.delayTime.value = GROUND_DELAY_S
-    const groundGain = ctx.createGain()
-    groundGain.gain.value = GROUND_GAIN
-    outside = ctx.createGain()
-    muffler.connect(hiShelf)
-    hiShelf.connect(loShelf)
-    loShelf.connect(outside)
-    loShelf.connect(ground)
-    ground.connect(groundGain)
-    groundGain.connect(outside)
-    outside.connect(bakeOut)
-
-    const rows = new Map()
-    grid.forEach((l, i) => {
+    const voice = (l, buf) => {
       const src = ctx.createBufferSource()
-      src.buffer = bufs[i]
+      src.buffer = buf
       src.loop = true
       const gain = ctx.createGain()
       gain.gain.value = 0
       src.connect(gain)
       gain.connect(muffler)
-      src.start(0, Math.random() * bufs[i].duration)
+      src.start(0, Math.random() * buf.duration)
+      return { src, gain, rpmMeasured: l.rpmMeasured, peakDbfs: l.peakDbfs }
+    }
+    const rows = new Map()
+    grid.forEach((l, i) => {
       if (!rows.has(l.rpmTarget)) rows.set(l.rpmTarget, { rpm: l.rpmTarget, voices: [] })
-      rows.get(l.rpmTarget).voices[LOADS.indexOf(l.load)] = { src, gain, rpmMeasured: l.rpmMeasured, peakDbfs: l.peakDbfs }
+      rows.get(l.rpmTarget).voices[LOADS.indexOf(l.load)] = voice(l, bufs[i])
     })
-    bake = { engine: manifest.engine, rows: [...rows.values()].sort((a, b) => a.rpm - b.rpm),
-             loudest: Math.max(...grid.map(l => l.peakDbfs)) }
+    const sorted = [...rows.values()].sort((x, y) => x.rpm - y.rpm)
+    if (idle) {
+      const row = sorted.reduce((best, r) => Math.abs(r.rpm - idle.rpmMeasured) < Math.abs(best.rpm - idle.rpmMeasured) ? r : best)
+      row.voices[0].src.stop()
+      row.voices[0] = voice(idle, bufs[grid.length])
+    }
+    bakes[engine] = { rows: sorted, crank: crank ? voice(crank, bufs[bufs.length - 1]) : null,
+                      loudest: Math.max(...grid.map(l => l.peakDbfs)) }
   } catch (e) {
-    console.warn('[engine-audio] baked engine loops failed to load; keeping the drone', e)
+    console.warn('[engine-audio] baked loops for ' + engine + ' failed to load; keeping the drone', e)
   }
 }
 
-function updateBake (rpm, throttle, on, now) {
-  if (!bake) return
-  const tc = 0.05
-  if (!on) { bakeOut.gain.setTargetAtTime(0, now, 0.12); return }   // same fade-out as the drone
+function silence (bake, now) {
+  for (const row of bake.rows) for (const v of row.voices) v.gain.gain.setTargetAtTime(0, now, 0.05)
+  if (bake.crank) bake.crank.gain.gain.setTargetAtTime(0, now, 0.05)
+}
 
-  const rows = bake.rows
-  const r = Math.max(rows[0].rpm * 0.5, rpm || rows[0].rpm)
-  // Row weights: linear in log-rpm between the two bracketing rows (the grid is geometric).
-  let j = 0
-  while (j < rows.length - 2 && r > rows[j + 1].rpm) j++
-  const wr = Math.min(1, Math.max(0, Math.log(r / rows[j].rpm) / Math.log(rows[j + 1].rpm / rows[j].rpm)))
-  // Load weights: off ↔ part over 0..PART_THROTTLE, part ↔ full above it.
-  const t = Math.min(1, Math.max(0, throttle || 0))
-  const wl = t <= PART_THROTTLE ? [1 - t / PART_THROTTLE, t / PART_THROTTLE, 0]
-                                : [0, (1 - t) / (1 - PART_THROTTLE), (t - PART_THROTTLE) / (1 - PART_THROTTLE)]
-  rows.forEach((row, i) => {
-    const w = i === j ? 1 - wr : i === j + 1 ? wr : 0
-    row.voices.forEach((v, l) => {
-      // sqrt: equal-power crossfade — the loops are uncorrelated, so their powers add, not amplitudes.
-      const lift = Math.pow(10, dynamics * (bake.loudest - v.peakDbfs) / 20)
-      v.gain.gain.setTargetAtTime(Math.sqrt(w * wl[l]) * lift, now, tc)
-      v.src.playbackRate.setTargetAtTime(r / v.rpmMeasured, now, tc)
+/**
+ * `on`: combustion (RUNNING and not stumbling). `cranking`: the starter is turning a dead engine —
+ * the crank take plays instead of the grid. Off and not cranking fades everything out.
+ */
+function updateBake (bake, rpm, throttle, on, cranking, now) {
+  const tc = 0.05
+  const lift = v => Math.pow(10, dynamics * (bake.loudest - v.peakDbfs) / 20)
+  if (bake.crank) {
+    bake.crank.gain.gain.setTargetAtTime(cranking ? lift(bake.crank) : 0, now, 0.04)
+    if (cranking) bake.crank.src.playbackRate.setTargetAtTime(Math.max(0.2, rpm / bake.crank.rpmMeasured), now, 0.02)
+  }
+  if (!on) {
+    for (const row of bake.rows) for (const v of row.voices) v.gain.gain.setTargetAtTime(0, now, 0.12)   // same fade-out as the drone
+  } else {
+    const rows = bake.rows
+    const r = Math.max(rows[0].rpm * 0.5, rpm || rows[0].rpm)
+    // Row weights: linear in log-rpm between the two bracketing rows (the grid is geometric).
+    let j = 0
+    while (j < rows.length - 2 && r > rows[j + 1].rpm) j++
+    const wr = Math.min(1, Math.max(0, Math.log(r / rows[j].rpm) / Math.log(rows[j + 1].rpm / rows[j].rpm)))
+    // Load weights: off ↔ part over 0..PART_THROTTLE, part ↔ full above it.
+    const t = Math.min(1, Math.max(0, throttle || 0))
+    const wl = t <= PART_THROTTLE ? [1 - t / PART_THROTTLE, t / PART_THROTTLE, 0]
+                                  : [0, (1 - t) / (1 - PART_THROTTLE), (t - PART_THROTTLE) / (1 - PART_THROTTLE)]
+    rows.forEach((row, i) => {
+      const w = i === j ? 1 - wr : i === j + 1 ? wr : 0
+      row.voices.forEach((v, l) => {
+        // sqrt: equal-power crossfade — the loops are uncorrelated, so their powers add, not amplitudes.
+        v.gain.gain.setTargetAtTime(Math.sqrt(w * wl[l]) * lift(v), now, tc)
+        v.src.playbackRate.setTargetAtTime(r / v.rpmMeasured, now, tc)
+      })
     })
-  })
+  }
 
   const x = exterior ? 1 : 0
   cabin.gain.setTargetAtTime(1 - x, now, 0.08)
@@ -312,104 +360,81 @@ function updateBake (rpm, throttle, on, now) {
   hiShelf.gain.setTargetAtTime(extBrightDb, now, tc)
   loShelf.gain.setTargetAtTime(extBoomDb, now, tc)
   // Trim: undo the muffler's lift, so the loudest loop sits near full scale.
-  bakeOut.gain.setTargetAtTime(volume * Math.pow(10, -MUFFLER_GAIN_DB / 20), now, tc)
+  bakeOut.gain.setTargetAtTime(enabled ? volume * Math.pow(10, -MUFFLER_GAIN_DB / 20) : 0, now, tc)
 }
 
 /**
  * FEAT-120 sliders + listener. `dyn` 0..1 loudness flattening (LOUDNESS above); `outside` true for any
  * camera outside the cab; `brightDb` / `boomDb` the exterior high-shelf (800 Hz) and low-shelf (120 Hz)
- * gains (LISTENER above).
+ * gains (LISTENER above); `starter` the starter-motor recording's level (STARTER below).
  */
-export function setEngineAudioTuning (dyn, outside, brightDb, boomDb) {
+export function setEngineAudioTuning (dyn, outside, brightDb, boomDb, starter = STARTER_LEVEL) {
   dynamics = Math.min(1, Math.max(0, dyn))
   exterior = !!outside
   extBrightDb = brightDb
   extBoomDb = boomDb
+  starterLevel = starter
 }
 
-// ── FEAT-33: starter, catch and shutoff ──────────────────────────────────────────────────────────
-//
-// Same philosophy as the drone above — no samples, just a small graph that reads as the right
-// mechanical event. The crank is a LOOP gated by its own gain node; catch and shutoff are one-shot
-// voices that create, ramp and dispose.
-//
-// The crank is built on NOISE, not oscillators. A starter is Bendix teeth skidding on a ring gear
-// and an engine being dragged over compression — broadband scraping, not a pitch. An earlier
-// oscillator version read as a beep for exactly that reason. So: one white-noise source split two
-// ways — a bandpass around 1.5 kHz for the teeth, a lowpass under 240 Hz for the barrel-roll of
-// compression — each amplitude-modulated at its own rate (fast clatter, slow chug). The only tone
-// left is a weak sawtooth for the motor itself, buried under the noise.
-//
-// AMPLITUDE MODULATION in WebAudio: connect an LFO oscillator to a GainNode's .gain param and its
-// output is ADDED to that param's current value. So base 0.22 with a ±0.18 LFO swings the gain
-// between 0.04 and 0.40 — that swing IS the chug.
 
-let crankGain = null     // GainNode — the crank loop's on/off gate. Its sources run for the life of
-                         // the page behind this gate; starting/stopping is a gain ramp.
+// ── FEAT-33 / FEAT-120: starter, catch and shutoff ───────────────────────────────────────────────
+//
+// STARTER: two recorded layers. The ENGINE being dragged over compression is the engine-sim crank take
+// (updateBake above, through the exhaust like every other loop). The STARTER MOTOR itself — whine,
+// pinion on the ring gear — is a recording: Freesound #520773 "Car not starting" by Ika.Komura, CC0
+// (assets/audio/CREDITS.md), cut to a 33-pulse loop of its steady crank. Four synthesized starter
+// voices were tried and rejected by the owner (FEAT-120 ticket); don't re-propose them.
+//
+// Its donor cranks at ~136 rpm (4.55 Hz compression pulses, most likely a four-cylinder). It plays
+// at playbackRate = rpm / STARTER_REF_RPM, so it sounds as recorded at the game's nominal crank and
+// tracks the live crank speed around that. ponytail: the donor's own chug rides along at its own
+// rhythm; if it fights the engine-sim chug on the V6, key the rate to pulse rate instead.
+// main.js hands in the STARTER's speed, not the engine's: past starterFreeRPM the overrunning clutch
+// lets go, so grinding a running engine stays at the starter's free speed.
+//
+// The solenoid and pinion clicks stay synthesized (short filtered noise bursts). Catch and shutoff
+// are one-shot voices that create, ramp and dispose.
+
+const STARTER_FILE = 'starter-520773.flac'
+const STARTER_REF_RPM = 200   // crank rpm at which the starter loop plays at its recorded speed
+const STARTER_LEVEL = 0.35    // default starter-motor level, before the user volume scale
+
+let starterGain = null   // GainNode — the starter loop's on/off gate; its source runs for the life of the page
+let starterSrc = null
+let starterLevel = STARTER_LEVEL
 let crankOn = false      // level state, so the per-frame calls from main.js are idempotent
-let chugLfo = null       // OscillatorNode — the compression beat, retuned every frame to the live crank speed
 
-const TOOTH_HZ = 33      // ring-gear teeth clattering past
-const MOTOR_HZ = 88      // the starter motor's own (weak, mostly masked) pitch
-const CRANK_LEVEL = 0.34 // crank loop gain, before the user volume scale
-
-function ensureCrankGraph () {
-  if (crankGain || !getAudioContext()) return
-  const out = ctx.createBiquadFilter()      // final tame — keeps the noise from turning into hiss
-  out.type = 'lowpass'
-  out.frequency.value = 2600
-  out.Q.value = 0.7
-
-  crankGain = ctx.createGain()
-  crankGain.gain.value = 0
-  out.connect(crankGain)
-  crankGain.connect(ctx.destination)
-
-  const noise = loopNoise(ctx, whiteNoiseBuffer(ctx, 2))   // a couple of seconds to loop — the raw material for the grind
-
-  // Modulated branch helper: noise → filter → gain, with an LFO swinging that gain.
-  const branch = (type, freq, Q, base, lfoHz, depth) => {
-    const f = ctx.createBiquadFilter()
-    f.type = type; f.frequency.value = freq; f.Q.value = Q
-    const g = ctx.createGain()
-    g.gain.value = base
-    noise.connect(f); f.connect(g); g.connect(out)
-    const lfo = ctx.createOscillator()
-    lfo.type = 'sine'
-    lfo.frequency.value = lfoHz
-    const amt = ctx.createGain()
-    amt.gain.value = depth
-    lfo.connect(amt); amt.connect(g.gain); lfo.start()
-    return lfo
+async function ensureStarter () {
+  if (starterGain || !getAudioContext()) return
+  starterGain = ctx.createGain()
+  starterGain.gain.value = 0
+  starterGain.connect(ctx.destination)
+  try {
+    const buf = await ctx.decodeAudioData(await (await fetch(BAKE_DIR + STARTER_FILE)).arrayBuffer())
+    starterSrc = ctx.createBufferSource()
+    starterSrc.buffer = buf
+    starterSrc.loop = true
+    starterSrc.connect(starterGain)
+    starterSrc.start(0, Math.random() * buf.duration)
+  } catch (e) {
+    console.warn('[engine-audio] starter recording failed to load; the starter is clicks only', e)
   }
-  branch('bandpass', 1500, 1.0, 0.22, TOOTH_HZ, 0.18)   // teeth on the flywheel
-  chugLfo = branch('lowpass', 240, 0.9, 0.55, 12, 0.45) // dragging it over compression (rate set per frame)
-
-  const motor = ctx.createOscillator()
-  motor.type = 'sawtooth'
-  motor.frequency.value = MOTOR_HZ
-  const mg = ctx.createGain()
-  mg.gain.value = 0.07
-  motor.connect(mg); mg.connect(out); motor.start()
 }
 
 /**
  * Starter engaged — LEVEL, not an edge: main.js calls this every frame the key is held at START,
  * including after the engine has caught (you really can keep grinding the starter against a running
  * engine, and holding the key is how the player decides when to stop). Idempotent.
- *
- * FEAT-120: the chug beats at the live compression rate, rpm/60 × cylinders/2. drivetrain.js integrates
- * the crank speed stroke by stroke, so following it every frame lands the chug on the tach's ripple.
- * Defaults are FEAT-33's fixed 250 rpm V6 (12.5 Hz) for callers with no engine (the dashboard ▶).
+ * @param {number} rpm - the starter's speed in crank rpm (main.js caps it at starterFreeRPM)
  */
-export function startCrankAudio (rpm = 250, cylinders = 6) {
+export function startCrankAudio (rpm = STARTER_REF_RPM) {
   if (!enabled) return
-  ensureCrankGraph()
-  if (!crankGain) return
-  chugLfo.frequency.setTargetAtTime(Math.max(1, rpm / 60 * cylinders / 2), ctx.currentTime, 0.02)
+  ensureStarter()
+  if (!starterGain) return
+  if (starterSrc) starterSrc.playbackRate.setTargetAtTime(Math.max(0.2, rpm / STARTER_REF_RPM), ctx.currentTime, 0.02)
+  starterGain.gain.setTargetAtTime(volume * starterLevel, ctx.currentTime, 0.02)
   if (crankOn) return
   crankOn = true
-  crankGain.gain.setTargetAtTime(volume * CRANK_LEVEL, ctx.currentTime, 0.02)
   // FEAT-120: the solenoid clicks and the pinion slams into mesh.
   _noiseHit(0, 0.012, 'highpass', 2500, 0.7, 0.30)
   _noiseHit(0.03, 0.08, 'lowpass', 380, 1.2, 0.75)
@@ -419,9 +444,10 @@ export function startCrankAudio (rpm = 250, cylinders = 6) {
 export function stopCrankAudio () {
   if (!crankOn) return
   crankOn = false
-  if (crankGain && ctx) crankGain.gain.setTargetAtTime(0, ctx.currentTime, 0.04)
+  if (starterGain && ctx) starterGain.gain.setTargetAtTime(0, ctx.currentTime, 0.04)
   if (enabled && ctx) _noiseHit(0, 0.035, 'bandpass', 1500, 1.5, 0.30)   // FEAT-120: the pinion throws out
 }
+
 
 /** A filtered noise burst `at` s from now: the raw material for the starter's clicks. */
 function _noiseHit (at, dur, type, freq, Q, peak) {
