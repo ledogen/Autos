@@ -21,6 +21,43 @@ every other player-facing feature (assists, cluster, story mode, scenarios) dock
 
 # FEAT-41: Game menus + UI improvements (major)
 
+## Build state — run setup + Controls & Assists (2026-10-19, `feature/feat-125-controller`)
+
+Branch commits ce57b5b → 31507cb, NOT yet merged. What landed:
+
+- **Run setup page** (`#mm-setup-panel`). Free roam and story both open it: World (seed field +
+  difficulty ◂ casual | classic ▸ + a live "world code: 6/K" line), Truck (gearbox ◂ automatic |
+  manual ▸), Assists (steering, clutch), then start / back. Typing `6/C` into the seed field selects
+  Casual. The seed modal is left with the story **refusal** only; pause → "story mode" opens the setup
+  page too.
+- **World difficulty presets** (`src/world-presets.js`, owner ruling below). Classic is today's world,
+  bit-exact; Casual = coarse amplitude ×0.8 (150 → 120 m), `roadV2.wGrade` 180 → 290, POI spacing ×0.8.
+  "Is this the same world?" now asks seed + preset (free roam, story, scenarios — scenarios always run
+  Classic), and the session route cache is keyed by world.
+- **Controls & Assists page** replaces the settings stub. Steering + clutch assist, the gearbox (fitted
+  live in free roam, "locked for this run" in a story run), and a read-only binding chart generated
+  from `src/gamepad.js` `BINDINGS`. Opens from the main menu and from a new pause-menu "settings"
+  button (the one panel is reparented into the pause box).
+- **Saved in localStorage** (`src/settings.js`, key `autos-settings/1`), defaults on missing, corrupt or
+  blocked storage. No last seed: the field stays blank (owner, 2026-09-06).
+- **Pad + keyboard menu navigation** (`src/menu-nav.js`): ↑/↓ highlight, ←/→ cycle a selector, Enter
+  activates; the pad maps onto those keys (FEAT-125). Main menu, its pages, the pause menu and the
+  refusal dialog. In-game screens are not covered yet.
+
+**Rulings (owner, 2026-10-19):**
+- **World difficulty is a preset: Casual / Classic.** ("Standard" was renamed Classic; Classic is
+  exactly today's world.) Preset-only for now; **per-notch custom settings are the goal later** — the
+  code letter can grow a suffix without breaking `K` / `C`.
+- **The preset is part of the world's identity**: the world code is `seed/K` or `seed/C`. This is the
+  route DESIGN.md's 2026-08-01 rule sanctions; SM-INV-12 is amended to match.
+- **Gearbox**: in free roam it is what the truck has; in story mode it is the jalopy's **starting** box.
+  Finding the opposite box is future loot — FEAT-127. Nothing is locked.
+- **Layout: one setup page** with ◂ value ▸ selectors.
+- **Pad: Start = pause, View = map** (FEAT-125 has the full re-map).
+
+Still open here: video quality / audio levels pages, the in-game chrome pass (USER-OWNED visual
+direction), pad navigation of the in-game screens (with FEAT-125), FEAT-39 aids joining the page.
+
 ## Build state — phase (a) SHIPPED 2026-09-06 (`feature/menus`)
 
 The **menu shell and the live 3D stage are built**; the settings pages and the chrome pass are not.

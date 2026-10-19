@@ -90,14 +90,24 @@ SHIPPED on the branch:
 | **A / X** | upshift / downshift — manual only; nothing in the automatic |
 | **B** (hold) | pump / aim |
 | Y (hold) | ignition |
-| Start | map |
-| View tap | inventory |
+| Start | ~~map~~ **pause** (2026-10-19 re-map, below) |
+| View tap | ~~inventory~~ **map** |
 | **View hold 1 s** | reset truck |
-| D-pad ↑ / ↓ / ← / → | headlights / camp / damage screen / **recovery** |
+| D-pad ↑ / ↓ / ← / → | ~~headlights~~ **inventory** / camp / damage screen / **recovery** |
 | Right-stick click | camera mode |
+| Left-stick click | **headlights** (was unbound) |
 
-**Menu navigation changes the meaning of A and B** (FEAT-41 ruling: A selects, B goes back).
-gamepad.js therefore needs to know when a menu owns the screen.
+**Re-map — ruling (owner, 2026-10-19, with FEAT-41's run setup): Start = pause, View = map.** That
+displaced View's tap (the inventory). The owner's placement: "plan as written but headlights on left
+stick … inventory on D-pad up, damage on left" — **this keeps the D-pad strictly to screens.**
+SHIPPED in 31507cb. The live table is `BINDINGS` in `src/gamepad.js`; the Controls & Assists page's
+binding chart is generated from it, so the two cannot drift.
+
+**Menu navigation (SHIPPED 31507cb):** while a menu owns the screen (`src/menu-nav.js` sets
+`pad.menuActive`), the pad speaks the menu's keys — A = Enter, B = Escape (back), Start = Escape
+(unpause), D-pad and left stick = arrows with hold-repeat — and every other button is silent, with
+sticks and triggers zeroed. `node test/pad-e2e.mjs --port=3775` covers the layout and a pad-only menu
+run.
 
 ## Still open on this ticket
 

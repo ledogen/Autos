@@ -2,9 +2,9 @@
 
 ```
 Worktree: /Users/ledogen/CodeShit/CarGame-feat-125-controller
-Branch:   feature/feat-125-controller   (off main 0b0f3cc)
+Branch:   feature/feat-125-controller   (off main 0b0f3cc; NOT merged)
 Serve:    http://localhost:3775          (npm run dev -- --port 3775 --strictPort, from the worktree)
-State:    859e44b = pad driving + orbit cam, committed. Ticket/handoff edits after it are uncommitted.
+State:    everything committed through the FEAT-41 run setup (ce57b5b → 31507cb + the docs commit).
           node_modules is a symlink to ../CarGame/node_modules (git-ignored).
 ```
 
@@ -89,7 +89,26 @@ The full rulings are in `feat-126-manual-transmission.md`:
 **Three open questions are listed in the ticket. Ask the owner at implementation; don't guess.**
 **Plan-mode this one** (multi-file: drivetrain, transmissions data, vehicle input, damage, ignition).
 
-### 4. Settings → Controls & Assists page (FEAT-41)
+### 4. Settings → Controls & Assists page (FEAT-41) — BUILT 2026-10-19, awaiting owner play-test
+
+Grew into the **run setup page** + world presets + Controls & Assists + pad menu navigation. Plan:
+`~/.claude/plans/resilient-drifting-valiant.md`; build state and rulings: `feat-game-menus-ui.md` →
+"Build state — run setup + Controls & Assists". The pad re-map (Start = pause, View = map, D-pad ↑ =
+inventory, left-stick click = headlights) is in `feat-125-controller-support.md`. FEAT-127 (the opposite
+gearbox as loot) was minted. DESIGN.md SM-INV-12 + the 2026-08-01 difficulty rule are amended for the
+Casual / Classic world presets (world code `seed/K` · `seed/C`).
+
+Proven: `world-presets` gate (new), `network-worker-parity` + a Casual build, physics + world
+fingerprints identical to d0aabe8 at Classic, `npm test -- --browser` green (cdp-smoke 14 steps),
+`node test/pad-e2e.mjs --port=3775` ALL OK (pad-only menu run included).
+
+**Next:** the owner tries it at :3775 on both pads (main menu → setup → Casual + manual → start;
+Start → pause → settings), then merge. Known side effect, not fixed: any RANGER_PARAMS change (a
+gearbox fit, the clutch-assist toggle) changes the network worker's params signature, so the next free-
+roam network build re-routes from scratch on the worker (stale-until-replaced, no visible break) — the
+debug sliders have always done this.
+
+The original brief, for history:
 
 Add a **Gearbox: automatic / manual** run setting next to the clutch-assistant toggle. Owner ruling:
 the manual is a run setting. Story mode applies it at run start (`_startStoryFromModal` in main.js,
