@@ -126,3 +126,11 @@ damage model); `test/pad-e2e.mjs` +4 manual checks in the real app.
   (FEAT-41). Until then the manual is reachable only through the debug swap.
 - **Owner play-test** on both pads, with the assist on and off.
 - Follow-ups not built: a gear-grind sound on a rejected shift (FEAT-120 list), rev-match assist.
+
+## Play-test follow-ups (owner, 2026-10-19) — DONE
+
+- **A missed shift grinds.** `src/gearbox-audio.js` `playGearGrind(rpm)`, fired from main.js's fixed step
+  on `drivetrain.missShift`.
+- **…and the damage screen alerts.** The 2 % transmission wear sat under the screen's 3 %-per-sample
+  drop threshold, so the alert never fired; the miss now raises it directly, like a landed impact.
+- **The gearbox is pre-game only:** chosen on the run setup page, never on the in-game settings page.

@@ -298,7 +298,9 @@ Story mode does not replace what exists — it **forks** it. A **main menu** sel
   game was meant to be played." A forgiving preset turns them on for the average gamer.
   **Gearbox [RATIFIED 2026-10-19]:** automatic or manual is a run setting chosen on the run setup
   page — in story mode it is the jalopy's **starting** box, fixed for the run; finding the opposite
-  box is future loot (FEAT-127). In free roam it is simply what the truck has.
+  box is future loot (FEAT-127). In free roam it is simply what the truck has. Like the world preset,
+  it is offered **only before the world is generated**; the in-game settings page carries assists and
+  (later) control remapping, never the world or the truck.
 - **One-off scenarios** — self-contained set pieces (Dodge the Rocks, Escape the Police,
   etc.), each reusing the same engine with a bespoke frame.
 

@@ -101,6 +101,7 @@ import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
 import { playNozzle, playGallonBell, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
+import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -1357,12 +1358,14 @@ document.getElementById('ss-start')?.addEventListener('click', () => _startStory
 
 // ── FEAT-41: run setup + Controls & Assists ──────────────────────────────────────────────────────
 // Every choice lives in src/settings.js (localStorage). The assists apply the moment they change; the
-// world preset and the gearbox are RUN settings, applied when a run starts (the gearbox also live in
-// free roam). Both pages draw their ◂ value ▸ rows from this one table, keyed by the settings key.
+// world preset and the gearbox are RUN settings, applied when a run starts and only offered before
+// one (owner, 2026-10-19 — the debug panel remains for live tweaks). Both pages draw their ◂ value ▸ rows from this one table, keyed by the settings key.
 const _settings = loadSettings()
 PAD_PARAMS.steerAssist = _settings.steerAssist
 RANGER_PARAMS.clutchAssist = _settings.clutchAssist
 const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own automatic
+// The world preset and the gearbox are PRE-GAME only (owner, 2026-10-19): they are part of what was
+// generated or fitted, so only the setup page shows them. Controls & Assists carries the assists.
 const SELECTORS = {
   worldPreset:  { name: 'difficulty',      opts: [['casual', 'casual'], ['classic', 'classic']] },
   gearbox:      { name: 'gearbox',         opts: [['auto', 'automatic'], ['manual', 'manual']] },
@@ -1370,8 +1373,6 @@ const SELECTORS = {
   clutchAssist: { name: 'clutch assist',   opts: [[true, 'on'], [false, 'off']] },
 }
 let _setupMode = 'freeroam'   // 'freeroam' | 'story' — which run the setup page starts
-/** The gearbox is locked inside a story run: it is the jalopy's starting box (owner, 2026-10-19). */
-const _gearboxLocked = () => _worldInit && storySystem.isActive()
 function _fitGearbox () {
   fitTransmission(RANGER_PARAMS, vehicleState, _settings.gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
 }
@@ -1380,10 +1381,8 @@ function _renderSelectors () {
   for (const b of document.querySelectorAll('button.mm-sel')) {
     const sel = SELECTORS[b.dataset.key]
     const label = sel.opts.find(([v]) => v === _settings[b.dataset.key])?.[1] ?? '?'
-    const locked = b.dataset.key === 'gearbox' && b.closest('#mm-settings-panel') && _gearboxLocked()
-    b.classList.toggle('locked', !!locked)
     b.innerHTML = `<span>${sel.name}</span><span class="sel-val"><i class="sel-prev">◂</i>`
-      + `${locked ? `${label} · locked for this run` : label}<i class="sel-next">▸</i></span>`
+      + `${label}<i class="sel-next">▸</i></span>`
   }
   const code = document.getElementById('su-code')
   if (code) code.textContent = `world code: ${formatWorldCode(parseWorldCode(document.getElementById('su-seed')?.value ?? '').seed || 'random', _settings.worldPreset)}`
@@ -1391,15 +1390,12 @@ function _renderSelectors () {
 /** Step a selector by `dir` (±1), save, and apply what applies live. */
 function _cycleSelector (b, dir) {
   const key = b.dataset.key
-  if (b.classList.contains('locked')) return
   const opts = SELECTORS[key].opts
   const i = opts.findIndex(([v]) => v === _settings[key])
   _settings[key] = opts[(i + dir + opts.length) % opts.length][0]
   saveSettings(_settings)
   if (key === 'steerAssist') PAD_PARAMS.steerAssist = _settings.steerAssist
   if (key === 'clutchAssist') RANGER_PARAMS.clutchAssist = _settings.clutchAssist
-  // The settings page fits the gearbox live (free roam only — the row is locked in a story run).
-  if (key === 'gearbox' && b.closest('#mm-settings-panel') && _worldInit) _fitGearbox()
   _renderSelectors()
 }
 for (const b of document.querySelectorAll('button.mm-sel')) {
@@ -7235,6 +7231,13 @@ function loop () {
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
     if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
+    // FEAT-126: a shift forced with the clutch in grinds, and is a damage event in its own right. Its
+    // 2 % wear is under the damage screen's per-sample drop threshold, so it raises the alert here,
+    // like a landed impact does below.
+    if (vehicleState.drivetrain?.missShift) {
+      playGearGrind(vehicleState.drivetrain.engineRPM)
+      if (DAMAGE_PARAMS.enabled) damageScreen.alert()
+    }
     // SM-3 collision damage: hand the hardest contact on the chassis this step (`hit`, read with
     // the rim strikes above) to the damage model, which decides whether that is an impact (see
     // feedContact — a contact is not).

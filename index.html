@@ -238,8 +238,6 @@
     #main-menu button.mm-sel { width: 340px; display: flex; justify-content: space-between; }
     button.mm-sel .sel-val { color: #ffffff; }
     button.mm-sel .sel-val i { font-style: normal; color: #00ff88; padding: 0 6px; }
-    button.mm-sel.locked { opacity: 0.45; cursor: default; }
-    button.mm-sel.locked .sel-val i { visibility: hidden; }
     #pause-menu button.mm-sel { display: flex; justify-content: space-between; gap: 18px; }
     #cs-bindings { border-collapse: collapse; font-size: 12px; color: #8fa0b0; margin: 0 0 12px 18px; }
     #pause-menu #cs-bindings { margin-left: 0; }
@@ -1393,15 +1391,13 @@
       <button id="su-start">start</button>
       <button id="su-back">back</button>
     </div>
-    <!-- FEAT-41 Controls & Assists. Saved the moment they change. The gearbox is a run setting: fitted
-         live in free roam, locked inside a story run (it is the jalopy's starting box). -->
+    <!-- FEAT-41 Controls & Assists. Saved the moment they change. Assists only: the world preset and
+         the gearbox are pre-game choices (the setup page), never changed inside a world. -->
     <div id="mm-settings-panel">
       <div class="mm-title">controls &amp; assists</div>
       <div class="mm-group">assists</div>
       <button class="mm-sel" data-key="steerAssist"></button>
       <button class="mm-sel" data-key="clutchAssist"></button>
-      <div class="mm-group">truck</div>
-      <button class="mm-sel" data-key="gearbox"></button>
       <div class="mm-group">bindings</div>
       <table id="cs-bindings"></table>
       <button id="mm-settings-back">back</button>

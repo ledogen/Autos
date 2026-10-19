@@ -34,9 +34,9 @@ Branch commits ce57b5b → 31507cb, NOT yet merged. What landed:
   bit-exact; Casual = coarse amplitude ×0.8 (150 → 120 m), `roadV2.wGrade` 180 → 290, POI spacing ×0.8.
   "Is this the same world?" now asks seed + preset (free roam, story, scenarios — scenarios always run
   Classic), and the session route cache is keyed by world.
-- **Controls & Assists page** replaces the settings stub. Steering + clutch assist, the gearbox (fitted
-  live in free roam, "locked for this run" in a story run), and a read-only binding chart generated
-  from `src/gamepad.js` `BINDINGS`. Opens from the main menu and from a new pause-menu "settings"
+- **Controls & Assists page** replaces the settings stub. Steering + clutch assist and a read-only
+  binding chart generated from `src/gamepad.js` `BINDINGS`. **No gearbox and no difficulty here**
+  (owner, 2026-10-19 play-test): both are pre-game only, on the setup page. Opens from the main menu and from a new pause-menu "settings"
   button (the one panel is reparented into the pause box).
 - **Saved in localStorage** (`src/settings.js`, key `autos-settings/1`), defaults on missing, corrupt or
   blocked storage. No last seed: the field stays blank (owner, 2026-09-06).
@@ -52,6 +52,11 @@ Branch commits ce57b5b → 31507cb, NOT yet merged. What landed:
   route DESIGN.md's 2026-08-01 rule sanctions; SM-INV-12 is amended to match.
 - **Gearbox**: in free roam it is what the truck has; in story mode it is the jalopy's **starting** box.
   Finding the opposite box is future loot — FEAT-127. Nothing is locked.
+- **Pre-game only (play-test, 2026-10-19):** the transmission type and the world difficulty are offered
+  ONLY on the setup page, before world generation — "we do not want to change the map POI density /
+  terrain size because somebody selected something in a menu after they started their world." Inside
+  a game the settings page carries the assists (and, later, control remapping), never the world. Live
+  tweaks remain the debug panel's job.
 - **Layout: one setup page** with ◂ value ▸ selectors.
 - **Pad: Start = pause, View = map** (FEAT-125 has the full re-map).
 

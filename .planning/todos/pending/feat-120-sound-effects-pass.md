@@ -92,6 +92,11 @@ FEAT-87 rank-timer lub-dub on a synthesized kick.
 status: shipped · group: ui · play: glass-audio.js playGlassBreak
 FEAT-87 tempered side-window pop.
 
+### Gear grind (missed shift)
+status: shipped · group: truck · play: gearbox-audio.js playGearGrind
+FEAT-126 shift forced with the clutch in: a clash, then bandpassed noise chopped at the tooth-passing
+rate (engine rpm/60 × 8, sagging 20 %) over the pulse train itself. ~0.4 s.
+
 ### Paper throw whoosh and impact
 status: todo · group: story
 Tracked in FEAT-64. Whoosh = bandpassed noise with a fast pitch sweep; impact = short thump + paper

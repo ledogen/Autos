@@ -107,6 +107,8 @@ s = await vs(); check(s.v > 3 && (await js('__vs.ignition.state')) === 'running'
 await js('__R.clutchAssist = false')
 await js('__fp.b[0] = 1'); await sleep(120); await js('__fp.b[0] = 0'); await sleep(600)
 check(await gear() === 1, `assist OFF: A without LB is rejected (gear ${await gear()})`)
+check(await js('document.getElementById("dmg-icon").classList.contains("on") && getComputedStyle(document.getElementById("dmg-alert")).display !== "none"'),
+      'the missed shift raises the damage alert (icon lit, alert card up)')
 await js('__fp.b[4] = 1'); await sleep(200); await js('__fp.b[0] = 1'); await sleep(120); await js('__fp.b[0] = 0'); await sleep(600); await js('__fp.b[4] = 0')
 check(await gear() === 2, `assist OFF: LB + A shifts 1 → 2 (gear ${await gear()})`)
 await js('__fp.b[7] = 0; __R.clutchAssist = true')
@@ -120,8 +122,10 @@ const A = 0, B = 1, START = 9, UP = 12, DOWN = 13, LEFT = 14, RIGHT = 15
 const navText = () => js('document.querySelector(".nav-focus")?.textContent ?? null')
 const selVal = (key) => js(`document.querySelector('#mm-setup-panel .mm-sel[data-key="${key}"] .sel-val').textContent`)
 await c.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html` })
-for (let t = 0; t < 40 && !(await js('!!document.getElementById("mm-freeroam")')); t++) await sleep(250)
-await sleep(1500)
+// Wait out worldgen: a main thread stalled past NAV_DELAY_MS with a button down reads as a held
+// (repeating) press, which is right for a player and noise for a scripted single press.
+for (let t = 0; t < 160 && !(await js('window.__rsReady === true')); t++) await sleep(250)
+await sleep(500)
 await js(fakePad)
 await press(DOWN)
 check(await navText() === 'free roam', `first D-pad press highlights the first item (${await navText()})`)
@@ -154,7 +158,7 @@ await press(DOWN); await press(DOWN, 3)
 check(await navText() === 'settings', `pause list: down ×3 from resume reaches settings (${await navText()})`)
 await press(A)
 check(await shown('mm-settings-panel'), 'A opens Controls & Assists inside the pause box')
-check((await js('document.querySelector("#mm-settings-panel .mm-sel[data-key=gearbox]").textContent')).includes('manual'), 'free roam: the gearbox row shows the fitted box, unlocked')
+check(await js('!document.querySelector("#mm-settings-panel [data-key=gearbox]")'), 'no gearbox row in the in-game settings (pre-game only)')
 await press(DOWN); await press(RIGHT)
 await js(`(async () => { window.__o = (${appMod('/src/gamepad.js')}).PAD_PARAMS.steerAssist })()`)
 await sleep(200)
@@ -166,8 +170,10 @@ await press(START)
 check(!await shown('pause-menu'), 'Start resumes')
 // Reload: the choices persist.
 await c.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html` })
-for (let t = 0; t < 40 && !(await js('!!document.getElementById("mm-freeroam")')); t++) await sleep(250)
-await sleep(1500)
+// Wait out worldgen: a main thread stalled past NAV_DELAY_MS with a button down reads as a held
+// (repeating) press, which is right for a player and noise for a scripted single press.
+for (let t = 0; t < 160 && !(await js('window.__rsReady === true')); t++) await sleep(250)
+await sleep(500)
 await js(fakePad)
 await press(DOWN); await press(A)
 check((await selVal('worldPreset')).includes('casual') && (await selVal('gearbox')).includes('manual')

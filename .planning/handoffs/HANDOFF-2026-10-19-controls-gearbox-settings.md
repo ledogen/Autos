@@ -102,8 +102,10 @@ Proven: `world-presets` gate (new), `network-worker-parity` + a Casual build, ph
 fingerprints identical to d0aabe8 at Classic, `npm test -- --browser` green (cdp-smoke 14 steps),
 `node test/pad-e2e.mjs --port=3775` ALL OK (pad-only menu run included).
 
-**Next:** the owner tries it at :3775 on both pads (main menu → setup → Casual + manual → start;
-Start → pause → settings), then merge. Known side effect, not fixed: any RANGER_PARAMS change (a
+**Owner play-test 2026-10-19: "everything else seems to work", plus three fixes, now done:** a missed
+shift GRINDS (`src/gearbox-audio.js`) and raises the damage-screen alert (its 2 % wear sat under the
+screen's 3 %-per-sample threshold, so it never alerted); the gearbox row left the in-game settings
+page — gearbox and difficulty are pre-game only. **Next:** merge. Known side effect, not fixed: any RANGER_PARAMS change (a
 gearbox fit, the clutch-assist toggle) changes the network worker's params signature, so the next free-
 roam network build re-routes from scratch on the worker (stale-until-replaced, no visible break) — the
 debug sliders have always done this.

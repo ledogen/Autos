@@ -154,6 +154,9 @@ const STEPS = [
     await js('document.getElementById("pm-settings").click()')
     check(await shown('mm-settings-panel') && !await shown('pm-resume'), 'settings did not open in the pause box')
     check(await js('document.querySelectorAll("#cs-bindings tr").length') > 10, 'binding chart is empty')
+    // FEAT-41 (owner, 2026-10-19): the world preset and the gearbox are pre-game only — never in here.
+    check(await js('!document.querySelector("#mm-settings-panel [data-key=gearbox], #mm-settings-panel [data-key=worldPreset]")'),
+      'the in-game settings page offers a pre-game choice (gearbox / difficulty)')
     await tap('Escape')
     check(!await shown('mm-settings-panel') && await shown('pm-resume'), 'Esc did not step back to the pause list')
     await tap('Escape')
@@ -179,10 +182,6 @@ const STEPS = [
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'story never went live (45 s): no run HUD / POIs, or the load stage stayed up')
-    // FEAT-41: the gearbox is the jalopy's starting box — locked on the settings page for the run.
-    await js('document.getElementById("pm-settings").click()')
-    check(await js('document.querySelector("#mm-settings-panel .mm-sel[data-key=gearbox]").classList.contains("locked")'), 'story: the gearbox row is not locked')
-    await js('document.getElementById("pause-menu").classList.remove("settings")')
   }],
   ['camp', async () => {
     // Mom's doorstep is the one camp face reachable without a zone hunt: pull the brake there.
