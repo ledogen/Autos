@@ -51,14 +51,17 @@ Ranger's **M5OD-R1 5-speed**, added as a `data/transmissions.js` entry and swapp
   The handbrake moves to **RB** on the pad (the Forza layout), and Space stays the handbrake on the
   keyboard. In the **automatic**, A/X and Q/E do nothing. The full pad layout lives in FEAT-125.
 
-## Open — ask at implementation
+## Answered (owner, 2026-10-19)
 
-- **What low transmission condition does** beyond counting rejected shifts. Options: it starts
-  popping out of gear, or shifts get slower. Repair price ties into the FEAT-69 re-price.
-- **Which gearbox story mode seats you in.** Is the manual a part you buy or swap, or a run setting?
-- **Keyboard clutch on Left Shift collides with the Shift+R (set spawn) and Shift+C (freecam)
-  chords.** Holding the clutch and pressing R sets the spawn instead of resetting. Is that
-  acceptable, or should the chords move?
+- **A worn transmission shifts SLOWER.** Shift time stretches as condition falls, the way a worn
+  synchro takes longer to match speeds.
+  - It does NOT pop out of gear. With sequential up/down buttons the player has no good way to find
+    the right gear again.
+  - Repair price joins the FEAT-69 re-price.
+- **Story mode stays automatic. The manual is a RUN SETTING** (picked at run start or in settings),
+  not an economy part.
+- **The Shift+R / Shift+C chords stay.** They are dev and free-roam tools; holding the clutch and
+  pressing R simply sets the spawn.
 
 ## Acceptance
 
