@@ -76,7 +76,6 @@ export function stepIgnition (vehicleState, params, dt, keyDown) {
     // A TAP kills it — not a hold. Allowed at any speed (owner, 2026-08-22): you really can turn the
     // key off at 50 mph, and the truck then coasts on a dragged engine rather than freewheeling.
     if (press) { ign.state = OFF; ign.crank = 0; ign.startHeld = false; ign.event = 'shutoff' }
-    if (ign.runT < 60) ign.runT += dt   // s since the catch — the start flare's clock (drivetrain.js); stops once it's moot
   } else {
     if (ign.state === OFF && press) {       // fresh press → engage the starter
       ign.state = CRANKING
@@ -94,7 +93,6 @@ export function stepIgnition (vehicleState, params, dt, keyDown) {
           ign.state = RUNNING
           ign.crank = 0
           ign.event = 'catch'
-          ign.runT = 0
           // startHeld stays true: a real key sits at START until the driver's hand lets go, so the
           // cluster keeps showing 2 o'clock for as long as they over-crank a running engine.
         }

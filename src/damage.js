@@ -887,6 +887,7 @@ export class DamageModel {
       T -= (T - P.tempAmbientC) * dt * clock / P.tempOffTau
     }
     this.engineTempC = Math.min(P.tempMaxC, T)
+    vehicleState.engineTempC = this.engineTempC   // FEAT-120: the cold-fast-idle seam (drivetrain.js idleTargetRPM)
   }
 
   /**
@@ -1155,9 +1156,6 @@ export class DamageModel {
     params._damperScaleFront = this.damperScale(false)
     params._damperScaleRear  = this.damperScale(true)
     params._engineDamageScale = this.engineScale() * this.overheatScale()
-    // FEAT-120 cold fast idle (drivetrain.js): 1 at ambient coolant, 0 at the thermostat.
-    params._engineColdFrac = Math.min(1, Math.max(0, (DAMAGE_PARAMS.tempThermostatC - this.engineTempC)
-      / (DAMAGE_PARAMS.tempThermostatC - DAMAGE_PARAMS.tempAmbientC)))
     // Alignment is geometry, not a multiplier — published as the raw per-wheel offsets the
     // suspension applies on top of the static toe/camber. alignment.js consumes these (BUG-79).
     params._toeOffsetDeg    = this.toeOffsetDeg
