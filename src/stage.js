@@ -443,7 +443,7 @@ export class MenuStage {
     // set by updateVehicle — which the stage does not call:
     //   handbrake — without it the rears free-wheel and the landing walks the truck off the mound;
     //   engineRPM — makeVehicleState seeds a warm 750 rpm idle, and the ignition OFF spin-down takes
-    //     engineOffRpmLag (~0.7 s), so a torque-converter creep pushes it forward for the whole drop.
+    //     engineOffRpmLag (~0.15 s), so a torque-converter creep pushes it forward for the whole drop.
     // A truck that has been sitting has a dead engine and its parking brake on.
     vs.handbrake = true
     vs.parked = true

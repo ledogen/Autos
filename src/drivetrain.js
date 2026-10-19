@@ -245,7 +245,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
     // Own RPM lag, NOT engineRpmLag (which defaults to 0 = instant and would snap the tach needle
     // from idle to zero in one step). A dying engine coasts down slowly on its own inertia, which is
     // the whole sound and look of shutting a truck off.
-    st.engineRPM += (target - st.engineRPM) * (1 - Math.exp(-dt / (params.engineOffRpmLag ?? 0.7)))
+    st.engineRPM += (target - st.engineRPM) * (1 - Math.exp(-dt / (params.engineOffRpmLag ?? 0.15)))
     if (st.engineRPM < 1) st.engineRPM = 0
     st.activeGear = reverse ? 0 : st.gear
     st.coupledRPM = turbineRPM / couplingSR

@@ -141,7 +141,8 @@ export const RANGER_PARAMS = {
   // fluid coupling slips, so a key-off roll frees up as you slow toward a stop.
   engineOffDrag:         90,    // N·m per 1000 rpm — dead-engine drag torque at the crankshaft
   engineOffCouplingRPM:  1100,  // rpm(turbine) — above this the converter drags the engine fully
-  engineOffRpmLag:       0.7,   // s — RPM lag as a killed engine coasts down
+  engineOffRpmLag:       0.15,  // s — RPM lag as a killed engine coasts down. 0.15 stops it from idle in ~0.45 s, matching
+                                //   engine-sim's Vulcan shutoff (0.47 s; owner 2026-10-19 — was 0.7, a ~2.4 s coast)
 
   // Torque converter (simplified quasi-static slip model): torque ratio = converterStallTorqueRatio
   // at zero speed ratio, falling to 1.0 at converterCouplingSR. converterStallRPM is the WOT stall
