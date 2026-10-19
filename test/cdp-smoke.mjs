@@ -151,6 +151,8 @@ const STEPS = [
     const shown = (id) => js(`getComputedStyle(document.getElementById("${id}")).display !== "none"`)
     await tap('Escape')
     check(await until(() => shown('pause-menu'), 1000), 'Esc did not pause')
+    const code = await js('document.getElementById("pm-code").textContent')
+    check(code === 'world 6/K', `pause menu shows the world code (got "${code}", want "world 6/K")`)
     await js('document.getElementById("pm-settings").click()')
     check(await shown('mm-settings-panel') && !await shown('pm-resume'), 'settings did not open in the pause box')
     check(await js('document.querySelectorAll("#cs-bindings tr").length') > 10, 'binding chart is empty')

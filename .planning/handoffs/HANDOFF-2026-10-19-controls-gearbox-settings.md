@@ -105,7 +105,11 @@ fingerprints identical to d0aabe8 at Classic, `npm test -- --browser` green (cdp
 **Owner play-test 2026-10-19: "everything else seems to work", plus three fixes, now done:** a missed
 shift GRINDS (`src/gearbox-audio.js`) and raises the damage-screen alert (its 2 % wear sat under the
 screen's 3 %-per-sample threshold, so it never alerted); the gearbox row left the in-game settings
-page — gearbox and difficulty are pre-game only. **Next:** merge. Known side effect, not fixed: any RANGER_PARAMS change (a
+page — gearbox and difficulty are pre-game only. Second round (same day): pad triggers/sticks now
+unlock audio; a clutch-dump chatter fixed (the disc crossing the flywheel now locks — manual-gearbox
+§13); grind at 20 %; the world KNOBS exposed on the setup page (terrain relief / POI spacing 50–120 %,
+road climbs gentle/normal) with the readable world code `seed/T80P120R290`, shown in the pause menu.
+**Next:** owner play-test, then merge. Known side effect, not fixed: any RANGER_PARAMS change (a
 gearbox fit, the clutch-assist toggle) changes the network worker's params signature, so the next free-
 roam network build re-routes from scratch on the worker (stale-until-replaced, no visible break) — the
 debug sliders have always done this.

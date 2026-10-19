@@ -30,8 +30,11 @@ Branch commits ce57b5b → 31507cb, NOT yet merged. What landed:
   manual ▸), Assists (steering, clutch), then start / back. Typing `6/C` into the seed field selects
   Casual. The seed modal is left with the story **refusal** only; pause → "story mode" opens the setup
   page too.
-- **World difficulty presets** (`src/world-presets.js`, owner ruling below). Classic is today's world,
-  bit-exact; Casual = coarse amplitude ×0.8 (150 → 120 m), `roadV2.wGrade` 180 → 290, POI spacing ×0.8.
+- **World knobs** (`src/world-presets.js`, owner rulings below): terrain relief and POI spacing 50–120 %
+  in 10 % notches, road climbs gentle (wGrade 290) / normal (180). Classic (100/100/normal) is today's
+  world, bit-exact; Casual is 80/80/gentle. A "difficulty" row names the preset the knobs match
+  ("custom" otherwise) and sets them. The world code is `seed/K`, `seed/C` or `seed/T80P120R290`; typing
+  one into the seed field sets the knobs, and the pause menu shows the running world's code.
   "Is this the same world?" now asks seed + preset (free roam, story, scenarios — scenarios always run
   Classic), and the session route cache is keyed by world.
 - **Controls & Assists page** replaces the settings stub. Steering + clutch assist and a read-only
@@ -45,9 +48,10 @@ Branch commits ce57b5b → 31507cb, NOT yet merged. What landed:
   refusal dialog. In-game screens are not covered yet.
 
 **Rulings (owner, 2026-10-19):**
-- **World difficulty is a preset: Casual / Classic.** ("Standard" was renamed Classic; Classic is
-  exactly today's world.) Preset-only for now; **per-notch custom settings are the goal later** — the
-  code letter can grow a suffix without breaking `K` / `C`.
+- **World difficulty: Casual / Classic presets over three knobs** ("Standard" was renamed Classic;
+  Classic is exactly today's world). Knobs exposed 2026-10-19 (second pass): terrain relief, POI
+  spacing, road climbs; ranges stop at Classic on the steep side. Long term: many more player options.
+- **Replayability:** the code carries the knob VALUES (readable suffix), not a hash.
 - **The preset is part of the world's identity**: the world code is `seed/K` or `seed/C`. This is the
   route DESIGN.md's 2026-08-01 rule sanctions; SM-INV-12 is amended to match.
 - **Gearbox**: in free roam it is what the truck has; in story mode it is the jalopy's **starting** box.

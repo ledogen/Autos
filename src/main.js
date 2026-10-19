@@ -63,7 +63,7 @@ import { DirtSpraySystem } from './dirt-spray.js'
 import { SkySystem, SKY_CYCLE } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { MoonSystem } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
 import { parseWorldSeed, seedFor } from './seed.js'
-import { applyWorldPreset, activePreset, formatWorldCode, parseWorldCode } from './world-presets.js'   // FEAT-41: Casual / Classic — part of the world's identity
+import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
 import { pad, PAD_PARAMS, BINDINGS } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
@@ -582,8 +582,8 @@ function _spawnProbeBase (wseed, params) {
 // Keyed by WORLD (seed + preset), not seed: a Casual world routes over different terrain and prices,
 // so its routes must never import into the Classic one.
 const _sessionRouteCache = new Map()   // _worldKey() → exportRouteCache() payload
-/** A world's identity: the seed and the preset the params carry (FEAT-41, SM-INV-12). */
-const _worldKey = (seedStr) => `${parseWorldSeed(seedStr)}/${activePreset()}`
+/** A world's identity: the seed and the world knobs the params carry (FEAT-41, SM-INV-12). */
+const _worldKey = (seedStr) => `${parseWorldSeed(seedStr)}/${worldTag(activeWorld())}`
 let _builtWorldKey = null   // the key the live RoadSystem was built under (the stash's key on a rebuild)
 /** Is `seedStr` under the active preset the world already standing? Then entering it costs a re-seat. */
 const _isWorldLoaded = (seedStr) => _worldKey(seedStr) === _builtWorldKey
@@ -1364,10 +1364,19 @@ const _settings = loadSettings()
 PAD_PARAMS.steerAssist = _settings.steerAssist
 RANGER_PARAMS.clutchAssist = _settings.clutchAssist
 const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own automatic
-// The world preset and the gearbox are PRE-GAME only (owner, 2026-10-19): they are part of what was
+// The world knobs and the gearbox are PRE-GAME only (owner, 2026-10-19): they are part of what was
 // generated or fitted, so only the setup page shows them. Controls & Assists carries the assists.
+// `difficulty` is not stored: it names the preset the three knobs match ("custom" when none), and
+// picking one sets the knobs.
+/** The setup page's world, from the saved knobs. */
+const _world = () => ({ t: _settings.worldTerrain, p: _settings.worldPoi, r: _settings.worldRoads })
+const _setWorld = (w) => { _settings.worldTerrain = w.t; _settings.worldPoi = w.p; _settings.worldRoads = w.r }
 const SELECTORS = {
-  worldPreset:  { name: 'difficulty',      opts: [['casual', 'casual'], ['classic', 'classic']] },
+  worldPreset:  { name: 'difficulty',      opts: [['casual', 'casual'], ['classic', 'classic']],
+                  get: () => presetOf(_world()) ?? 'custom', set: (id) => _setWorld(WORLD_PRESETS[id]) },
+  worldTerrain: { name: 'terrain relief',  opts: KNOBS.t.map(v => [v, `${v} %`]) },
+  worldPoi:     { name: 'POI spacing',     opts: KNOBS.p.map(v => [v, `${v} %`]) },
+  worldRoads:   { name: 'road climbs',     opts: KNOBS.r },
   gearbox:      { name: 'gearbox',         opts: [['auto', 'automatic'], ['manual', 'manual']] },
   steerAssist:  { name: 'steering assist', opts: [[true, 'on'], [false, 'off']] },
   clutchAssist: { name: 'clutch assist',   opts: [[true, 'on'], [false, 'off']] },
@@ -1380,19 +1389,21 @@ function _fitGearbox () {
 function _renderSelectors () {
   for (const b of document.querySelectorAll('button.mm-sel')) {
     const sel = SELECTORS[b.dataset.key]
-    const label = sel.opts.find(([v]) => v === _settings[b.dataset.key])?.[1] ?? '?'
+    const value = sel.get ? sel.get() : _settings[b.dataset.key]
+    const label = sel.opts.find(([v]) => v === value)?.[1] ?? value
     b.innerHTML = `<span>${sel.name}</span><span class="sel-val"><i class="sel-prev">◂</i>`
       + `${label}<i class="sel-next">▸</i></span>`
   }
   const code = document.getElementById('su-code')
-  if (code) code.textContent = `world code: ${formatWorldCode(parseWorldCode(document.getElementById('su-seed')?.value ?? '').seed || 'random', _settings.worldPreset)}`
+  if (code) code.textContent = `world code: ${formatWorldCode(parseWorldCode(document.getElementById('su-seed')?.value ?? '').seed || 'random', _world())}`
 }
 /** Step a selector by `dir` (±1), save, and apply what applies live. */
 function _cycleSelector (b, dir) {
   const key = b.dataset.key
-  const opts = SELECTORS[key].opts
-  const i = opts.findIndex(([v]) => v === _settings[key])
-  _settings[key] = opts[(i + dir + opts.length) % opts.length][0]
+  const { opts, get, set } = SELECTORS[key]
+  const i = opts.findIndex(([v]) => v === (get ? get() : _settings[key]))   // -1 (custom) steps onto either end
+  const next = opts[(i + dir + opts.length) % opts.length][0]
+  if (set) set(next); else _settings[key] = next
   saveSettings(_settings)
   if (key === 'steerAssist') PAD_PARAMS.steerAssist = _settings.steerAssist
   if (key === 'clutchAssist') RANGER_PARAMS.clutchAssist = _settings.clutchAssist
@@ -1417,17 +1428,17 @@ function _openSetup (mode) {
   _renderSelectors()
   document.getElementById('main-menu')?.classList.add('setup')
 }
-/** Start: save, resolve the code (6/C picks Casual), apply the preset and the gearbox, then go. */
+/** Start: save, resolve the code (6/C, 6/T80P120R290 set the knobs), apply the world and the gearbox, go. */
 async function _startFromSetup () {
   const inp = document.getElementById('su-seed')
   inp?.blur()
-  const { seed, preset } = parseWorldCode(inp?.value ?? '')
-  if (preset) _settings.worldPreset = preset
+  const { seed, world } = parseWorldCode(inp?.value ?? '')
+  if (world) _setWorld(world)
   saveSettings(_settings)
   if (_setupMode === 'story') { await _startStory(_resolveSeed(seed)); return }
   _enterStageLoad('building the world\u2026')
   await _worldReady
-  applyWorldPreset(_settings.worldPreset)
+  applyWorld(_world())
   _fitGearbox()
   await _startFreeRoam(_resolveSeed(seed))
 }
@@ -1436,8 +1447,8 @@ document.getElementById('mm-story')?.addEventListener('click', () => _openSetup(
 document.getElementById('su-start')?.addEventListener('click', () => { void _startFromSetup() })
 document.getElementById('su-back')?.addEventListener('click', () => document.getElementById('main-menu')?.classList.remove('setup'))
 document.getElementById('su-seed')?.addEventListener('input', (e) => {
-  const { preset } = parseWorldCode(e.target.value)
-  if (preset) _settings.worldPreset = preset   // typing 6/C selects Casual
+  const { world } = parseWorldCode(e.target.value)
+  if (world) _setWorld(world)   // typing a world code sets the knobs
   _renderSelectors()
 })
 document.getElementById('su-seed')?.addEventListener('keydown', (e) => {
@@ -6191,6 +6202,9 @@ function _showPauseMenu () {
   // the way OUT ("free roam") while story mode is active.
   const storyBtn = document.getElementById('pm-story')
   if (storyBtn) storyBtn.textContent = storySystem.isActive() ? 'free roam' : 'story mode'
+  // FEAT-41: the world code, so a random world can be shared and replayed.
+  const codeEl = document.getElementById('pm-code')
+  if (codeEl) codeEl.textContent = `world ${formatWorldCode(_seedString, activeWorld())}`
   // FEAT-62: restart only means something inside a scenario.
   const restartBtn = document.getElementById('pm-restart')
   if (restartBtn) restartBtn.style.display = scenarioSystem.isActive() ? '' : 'none'
@@ -6335,7 +6349,7 @@ async function _startScenario (def) {
   window.__setGameMode('scenario')
   setDebugLockout(true)
   try {
-    applyWorldPreset('classic')   // FEAT-41: a scenario is authored on (and timed against) Classic
+    applyWorld(WORLD_PRESETS.classic)   // FEAT-41: a scenario is authored on (and timed against) Classic
     if (!_isWorldLoaded(def.seed)) await applyWorldSeed(def.seed)
     // AFTER the reseed: applyWorldSeed clears the override, and the rebuild's own reseat runs first.
     _spawnOverride = { align: true, x: def.spawn.x, z: def.spawn.z, heading: def.spawn.heading, drop: 0 }
@@ -6717,7 +6731,7 @@ async function _startStory (seed) {
   // wiring these buttons early is that the click is acknowledged even while init is still running.
   _enterStageLoad('building the world\u2026')
   await _worldReady
-  applyWorldPreset(_settings.worldPreset)
+  applyWorld(_world())
   _fitGearbox()
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed

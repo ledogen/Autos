@@ -24,7 +24,7 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { snapshotRoadParams, buildNetworkSnapshot, makeNetworkInstance, pondDiscPad } from '../src/road-network-worker.js'
 import { buildRouteFields } from '../src/road-route-worker.js'
 import { routeEdgeV2 } from '../src/corridor-router.js'
-import { applyWorldPreset } from '../src/world-presets.js'
+import { applyWorld, WORLD_PRESETS } from '../src/world-presets.js'
 
 const SEED = 6
 const R = 1600
@@ -289,7 +289,7 @@ const routeDispatcher = (rs, fields) => (jobs, epoch) => rs.ingestRoutedConnecti
 // the worker sees them only through the snapshot. A worker-path build under Casual must equal the
 // sync build under Casual, AND differ from Classic's — else the preset never reached the build.
 {
-    applyWorldPreset('casual')
+    applyWorld(WORLD_PRESETS.casual)
     const c = CENTERS[0]
     const wC = new WaterSystem(SEED, RANGER_PARAMS, makeTerrainHeadless(SEED, RANGER_PARAMS, null).rawHeightWorld)
     const discsC = (minX, minZ, maxX, maxZ) => {
@@ -309,7 +309,7 @@ const routeDispatcher = (rs, fields) => (jobs, epoch) => rs.ingestRoutedConnecti
     const differs = !jsonEq(casual.runs.map(r => Array.from(r.pts)), classic.runs.map(r => Array.from(r.pts)))
     log(differs, 'casual: the network differs from classic (the preset reached the build)',
         `${casual.runs.length} casual runs vs ${classic.runs.length} classic`)
-    applyWorldPreset('classic')
+    applyWorld(WORLD_PRESETS.classic)
 }
 
 console.log(`\n${fail === 0 ? 'ALL NETWORK-WORKER-PARITY CHECKS PASSED' : `${fail} CHECK(S) FAILED`} (${pass} passed)`)

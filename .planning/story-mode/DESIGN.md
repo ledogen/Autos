@@ -720,13 +720,14 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   everyday channel. Authored beats are the exception at gates, not the texture.*
 - **SM-INV-12 — Determinism discipline: worldgen is meta-free.**
   **[RATIFIED 2026-07-29, superseding the 2026-07-16 widening]** Three layers, not two:
-  - **Worldgen is a pure function of `(worldSeed, worldPreset, coords)`.** Terrain, router output,
+  - **Worldgen is a pure function of `(worldSeed, worldKnobs, coords)`.** Terrain, router output,
     POI placement and the road network are identical for every player on a given world, forever,
     regardless of unlocks. **No meta-progression input reaches worldgen.**
-    *[Amended 2026-10-19] The world difficulty preset (Casual / Classic) is part of the world's
-    identity and its code — `6/K` is seed 6 Classic, `6/C` seed 6 Casual — exactly the route the
-    2026-08-01 difficulty rule below left open. A world is (seed, preset); sharing the code shares
-    the world. Classic is the world as it was before presets existed.*
+    *[Amended 2026-10-19] The world knobs (terrain relief, POI spacing, road climbs) are part of the
+    world's identity and its code — `6/K` is seed 6 Classic, `6/C` seed 6 Casual, `6/T80P120R290`
+    spells any other combination — exactly the route the 2026-08-01 difficulty rule below left open.
+    A code carries the VALUES, never a hash (a hash cannot rebuild its world). Sharing the code shares
+    the world. Classic is the world as it was before the knobs existed.*
   - **Run-layer world state is a pure function of `(worldSeed, runState, coords)`**, where
     `runState` carries **run age and run progress** only. This is where escalation lives —
     parameter states, consumed POIs, story-tier weirdness. It **resets completely on run reset**.
@@ -1459,11 +1460,13 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
   difficulty that changed terrain or roads would break seed sharing outright. If difficulty ever must
   affect generation, it has to become part of the seed's identity rather than a separate dial.
   > **Amendment [RATIFIED 2026-10-19] — world difficulty presets, Casual / Classic.** Exactly that
-  > route: the preset is part of the world code (`seed/K`, `seed/C`, SM-INV-12). **Classic** is today's
-  > world. **Casual** = terrain relief ×0.8 (coarse amplitude 150 → 120 m), the router's preferred
-  > climb eased (`roadV2.wGrade` 180 → 290, g* 7.5 % → 5.9 %), POI spacing ×0.8; the hard grade cap
-  > and cTurn stay. Preset-only for now; per-notch custom settings are the stated later goal. The
-  > ratified run-start knobs (lives, tows, assists, inflation) are untouched by this.
+  > route: the world knobs are part of the world code (SM-INV-12). Three knobs on the run setup page:
+  > **terrain relief** and **POI spacing**, each 50–120 % of Classic in 10 % notches (nothing steeper
+  > than Classic — owner: "if it got much steeper than classic it would be quite deadly"), and **road
+  > climbs**, gentle (`roadV2.wGrade` 290, g* 5.9 %) or normal (180, 7.5 %). **Classic** is today's world
+  > (100/100/normal, code `K`); **Casual** is 80/80/gentle (code `C`); anything else prints as
+  > `T<t>P<p>R<wGrade>`. The hard grade cap and cTurn never move. The ratified run-start knobs (lives,
+  > tows, assists, inflation) are untouched by this.
 - **Saving is suspend-and-resume, not checkpointing.** One slot per profile; written on quit;
   **loading a save deletes it**; death deletes it. Resuming is not restoring — it's picking the run
   back up. Standard roguelike practice (Spelunky, FTL, Slay the Spire), and SM-INV-1 is intact:

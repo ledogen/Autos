@@ -8,7 +8,11 @@
 const KEY = 'autos-settings/1'
 
 export const SETTINGS_DEFAULTS = Object.freeze({
-  worldPreset: 'classic',   // src/world-presets.js id
+  // The world knobs (src/world-presets.js KNOBS), Classic's by default. Off-grid values from an old or
+  // edited save fall back to Classic when applied.
+  worldTerrain: 100,        // terrain relief, % of Classic
+  worldPoi: 100,            // POI spacing, % of Classic
+  worldRoads: 180,          // roadV2.wGrade: 180 normal (Classic) · 290 gentle
   gearbox: 'auto',          // 'auto' = the truck's own automatic · 'manual' = the M5OD-R1 (FEAT-126)
   steerAssist: true,        // PAD_PARAMS.steerAssist (FEAT-125)
   clutchAssist: true,       // RANGER_PARAMS.clutchAssist (FEAT-126)

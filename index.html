@@ -42,6 +42,7 @@
       text-transform: uppercase;
       margin-bottom: 6px;
     }
+    #pause-menu .pm-code { color: #6a7a88; font-size: 11px; margin: -10px 0 4px; user-select: text; }
     #pause-menu button {
       background: none;
       border: 1px solid #555;
@@ -1317,6 +1318,7 @@
        corner button INSIDE story mode (#quickjob-btn), not a pause-menu entry. -->
   <div id="pause-menu">
     <div class="pm-title">paused</div>
+    <div class="pm-code" id="pm-code"></div>
     <button id="pm-resume">resume</button>
     <button id="pm-restart" style="display:none">restart</button>
     <button id="pm-story">story mode</button>
@@ -1381,6 +1383,9 @@
       <div class="mm-group">world</div>
       <input id="su-seed" type="text" maxlength="24" spellcheck="false" placeholder="seed — leave blank for random">
       <button class="mm-sel" data-key="worldPreset"></button>
+      <button class="mm-sel" data-key="worldTerrain"></button>
+      <button class="mm-sel" data-key="worldPoi"></button>
+      <button class="mm-sel" data-key="worldRoads"></button>
       <div id="su-code"></div>
       <div class="mm-group">truck</div>
       <button class="mm-sel" data-key="gearbox"></button>

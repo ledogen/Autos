@@ -135,7 +135,13 @@ await press(DOWN)   // lands on the seed field
 check(await js('document.activeElement?.id') === 'su-seed', 'the seed field takes the highlight AND focus')
 await press(DOWN); await press(LEFT)
 check((await selVal('worldPreset')).includes('casual'), `difficulty ◂ → casual (${await selVal('worldPreset')})`)
-await press(DOWN); await press(RIGHT)
+const codeLine = () => js('document.getElementById("su-code").textContent')
+await press(DOWN); await press(RIGHT)   // terrain relief 80 → 90 %
+check((await selVal('worldPreset')).includes('custom') && await codeLine() === 'world code: random/T90P80R290',
+      `one terrain notch off Casual reads custom, code spelled out (${await selVal('worldPreset')} · ${await codeLine()})`)
+await press(LEFT)
+check((await selVal('worldPreset')).includes('casual') && await codeLine() === 'world code: random/C', `back to 80 % is Casual again (${await codeLine()})`)
+await press(DOWN, 3); await press(RIGHT)   // past POI spacing and road climbs to the gearbox
 check((await selVal('gearbox')).includes('manual'), `gearbox ▸ → manual (${await selVal('gearbox')})`)
 check(await js('document.getElementById("su-code").textContent') === 'world code: random/C', `code line follows (${await js('document.getElementById("su-code").textContent')})`)
 await press(DOWN, 3)
@@ -149,7 +155,7 @@ await sleep(200)
 const R = await js('window.__o')
 check(R.amp === 120 && R.wG === 290 && R.box === 'm5odr1', `casual + manual applied (coarse ${R.amp}, wGrade ${R.wG}, box ${R.box})`)
 const saved = await js('localStorage.getItem("autos-settings/1")')
-check(saved && JSON.parse(saved).worldPreset === 'casual' && JSON.parse(saved).gearbox === 'manual', `saved: ${saved}`)
+check(saved && JSON.parse(saved).worldTerrain === 80 && JSON.parse(saved).worldRoads === 290 && JSON.parse(saved).gearbox === 'manual', `saved: ${saved}`)
 // Start = pause; the pad then walks the pause list into settings and flips the steering assist.
 const shown = (id) => js(`getComputedStyle(document.getElementById("${id}")).display !== "none"`)
 await press(START)
