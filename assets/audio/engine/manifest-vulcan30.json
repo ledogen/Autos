@@ -10,10 +10,11 @@
       "rpmDisplayed": 750.0,
       "rpmMeasured": 750.0,
       "cycles": 12,
-      "samples": 84697,
-      "rpmLoop": 749.8,
+      "samples": 84675,
+      "rpmLoop": 750.0,
       "periodCorr": 0.7021,
-      "seamCorr": 0.8501,
+      "seamCorr": 0.9371,
+      "startS": 2.116,
       "peakDbfs": -58.23
     },
     {
@@ -24,11 +25,12 @@
       "rpmDisplayed": 750.0,
       "rpmMeasured": 750.0,
       "cycles": 12,
-      "samples": 84673,
+      "samples": 84672,
       "rpmLoop": 750.0,
       "periodCorr": 0.9789,
-      "seamCorr": 0.9983,
-      "peakDbfs": -36.66
+      "seamCorr": 0.9996,
+      "startS": 2.27,
+      "peakDbfs": -36.65
     },
     {
       "file": "vulcan30_750_full.flac",
@@ -38,10 +40,11 @@
       "rpmDisplayed": 750.0,
       "rpmMeasured": 750.0,
       "cycles": 12,
-      "samples": 84671,
+      "samples": 84672,
       "rpmLoop": 750.0,
       "periodCorr": 0.9792,
-      "seamCorr": 0.9991,
+      "seamCorr": 0.9997,
+      "startS": 2.909,
       "peakDbfs": -35.56
     },
     {
@@ -52,11 +55,12 @@
       "rpmDisplayed": 1000.0,
       "rpmMeasured": 1000.0,
       "cycles": 17,
-      "samples": 89963,
+      "samples": 89962,
       "rpmLoop": 1000.0,
-      "periodCorr": 0.8142,
-      "seamCorr": 0.9502,
-      "peakDbfs": -54.74
+      "periodCorr": 0.8982,
+      "seamCorr": 0.9921,
+      "startS": 1.001,
+      "peakDbfs": -54.6
     },
     {
       "file": "vulcan30_1000_part.flac",
@@ -69,7 +73,8 @@
       "samples": 89964,
       "rpmLoop": 1000.0,
       "periodCorr": 0.9956,
-      "seamCorr": 0.9991,
+      "seamCorr": 0.9999,
+      "startS": 1.601,
       "peakDbfs": -31.21
     },
     {
@@ -83,7 +88,8 @@
       "samples": 89964,
       "rpmLoop": 1000.0,
       "periodCorr": 0.9942,
-      "seamCorr": 0.9998,
+      "seamCorr": 0.9999,
+      "startS": 3.039,
       "peakDbfs": -29.61
     },
     {
@@ -94,10 +100,11 @@
       "rpmDisplayed": 1325.0,
       "rpmMeasured": 1325.0,
       "cycles": 22,
-      "samples": 87867,
+      "samples": 87868,
       "rpmLoop": 1325.0,
       "periodCorr": 0.9851,
-      "seamCorr": 0.9952,
+      "seamCorr": 0.997,
+      "startS": 2.628,
       "peakDbfs": -51.52
     },
     {
@@ -111,7 +118,8 @@
       "samples": 87867,
       "rpmLoop": 1325.0,
       "periodCorr": 0.9977,
-      "seamCorr": 0.9998,
+      "seamCorr": 0.9999,
+      "startS": 3.897,
       "peakDbfs": -25.95
     },
     {
@@ -124,9 +132,10 @@
       "cycles": 22,
       "samples": 87867,
       "rpmLoop": 1325.0,
-      "periodCorr": 0.9978,
-      "seamCorr": 0.9987,
-      "peakDbfs": -23.98
+      "periodCorr": 0.9993,
+      "seamCorr": 0.9999,
+      "startS": 2.902,
+      "peakDbfs": -23.93
     },
     {
       "file": "vulcan30_1760_off.flac",
@@ -136,10 +145,11 @@
       "rpmDisplayed": 1760.0,
       "rpmMeasured": 1760.0,
       "cycles": 29,
-      "samples": 87196,
+      "samples": 87198,
       "rpmLoop": 1760.0,
       "periodCorr": 0.9916,
-      "seamCorr": 0.9951,
+      "seamCorr": 0.9992,
+      "startS": 2.02,
       "peakDbfs": -42.03
     },
     {
@@ -153,7 +163,8 @@
       "samples": 87198,
       "rpmLoop": 1760.0,
       "periodCorr": 0.9995,
-      "seamCorr": 0.9999,
+      "seamCorr": 1.0,
+      "startS": 1.209,
       "peakDbfs": -21.66
     },
     {
@@ -167,8 +178,9 @@
       "samples": 87198,
       "rpmLoop": 1760.0,
       "periodCorr": 0.9997,
-      "seamCorr": 0.9998,
-      "peakDbfs": -19.23
+      "seamCorr": 1.0,
+      "startS": 3.454,
+      "peakDbfs": -19.21
     },
     {
       "file": "vulcan30_2340_off.flac",
@@ -178,10 +190,11 @@
       "rpmDisplayed": 2340.0,
       "rpmMeasured": 2340.0,
       "cycles": 39,
-      "samples": 88201,
+      "samples": 88200,
       "rpmLoop": 2340.0,
       "periodCorr": 0.9909,
-      "seamCorr": 0.9986,
+      "seamCorr": 0.9998,
+      "startS": 1.925,
       "peakDbfs": -33.77
     },
     {
@@ -196,7 +209,8 @@
       "rpmLoop": 2340.0,
       "periodCorr": 0.9994,
       "seamCorr": 1.0,
-      "peakDbfs": -18.22
+      "startS": 1.051,
+      "peakDbfs": -18.21
     },
     {
       "file": "vulcan30_2340_full.flac",
@@ -209,8 +223,9 @@
       "samples": 88200,
       "rpmLoop": 2340.0,
       "periodCorr": 0.9997,
-      "seamCorr": 0.9998,
-      "peakDbfs": -15.16
+      "seamCorr": 1.0,
+      "startS": 2.385,
+      "peakDbfs": -15.15
     },
     {
       "file": "vulcan30_3110_off.flac",
@@ -220,10 +235,11 @@
       "rpmDisplayed": 3110.0,
       "rpmMeasured": 3110.0,
       "cycles": 52,
-      "samples": 88485,
+      "samples": 88483,
       "rpmLoop": 3110.0,
       "periodCorr": 0.9928,
-      "seamCorr": 0.9994,
+      "seamCorr": 0.9998,
+      "startS": 2.542,
       "peakDbfs": -28.34
     },
     {
@@ -237,8 +253,9 @@
       "samples": 88484,
       "rpmLoop": 3110.0,
       "periodCorr": 0.9996,
-      "seamCorr": 0.9997,
-      "peakDbfs": -15.63
+      "seamCorr": 0.9999,
+      "startS": 3.315,
+      "peakDbfs": -15.61
     },
     {
       "file": "vulcan30_3110_full.flac",
@@ -251,7 +268,8 @@
       "samples": 88484,
       "rpmLoop": 3110.0,
       "periodCorr": 0.9997,
-      "seamCorr": 0.9999,
+      "seamCorr": 1.0,
+      "startS": 2.392,
       "peakDbfs": -11.42
     },
     {
@@ -262,11 +280,12 @@
       "rpmDisplayed": 4140.0,
       "rpmMeasured": 4140.0,
       "cycles": 69,
-      "samples": 88199,
+      "samples": 88200,
       "rpmLoop": 4140.0,
-      "periodCorr": 0.9949,
-      "seamCorr": 0.9988,
-      "peakDbfs": -24.5
+      "periodCorr": 0.9919,
+      "seamCorr": 1.0,
+      "startS": 2.536,
+      "peakDbfs": -24.47
     },
     {
       "file": "vulcan30_4140_part.flac",
@@ -279,8 +298,9 @@
       "samples": 88200,
       "rpmLoop": 4140.0,
       "periodCorr": 0.9995,
-      "seamCorr": 0.9999,
-      "peakDbfs": -14.6
+      "seamCorr": 1.0,
+      "startS": 1.464,
+      "peakDbfs": -14.59
     },
     {
       "file": "vulcan30_4140_full.flac",
@@ -293,7 +313,8 @@
       "samples": 88200,
       "rpmLoop": 4140.0,
       "periodCorr": 0.9997,
-      "seamCorr": 0.9997,
+      "seamCorr": 1.0,
+      "startS": 3.58,
       "peakDbfs": -7.89
     },
     {
@@ -307,7 +328,8 @@
       "samples": 88521,
       "rpmLoop": 5500.0,
       "periodCorr": 0.9965,
-      "seamCorr": 0.9991,
+      "seamCorr": 0.9999,
+      "startS": 2.875,
       "peakDbfs": -21.02
     },
     {
@@ -321,8 +343,9 @@
       "samples": 88521,
       "rpmLoop": 5500.0,
       "periodCorr": 0.9993,
-      "seamCorr": 0.9997,
-      "peakDbfs": -15.34
+      "seamCorr": 0.9999,
+      "startS": 3.837,
+      "peakDbfs": -15.33
     },
     {
       "file": "vulcan30_5500_full.flac",
@@ -335,22 +358,24 @@
       "samples": 88521,
       "rpmLoop": 5500.0,
       "periodCorr": 0.9995,
-      "seamCorr": 0.9996,
+      "seamCorr": 1.0,
+      "startS": 2.265,
       "peakDbfs": -3.0
     },
     {
       "file": "vulcan30_idle_free.flac",
       "load": "idle",
       "throttle": 0.0,
-      "rpmTarget": 718.0,
-      "rpmDisplayed": 718.1,
-      "rpmMeasured": 701.8,
+      "rpmTarget": 750.0,
+      "rpmDisplayed": 750.0,
+      "rpmMeasured": 750.0,
       "cycles": 12,
-      "samples": 90496,
-      "rpmLoop": 701.7,
-      "periodCorr": 0.497,
-      "seamCorr": -0.0451,
-      "peakDbfs": -57.87
+      "samples": 84672,
+      "rpmLoop": 750.0,
+      "periodCorr": 0.7316,
+      "seamCorr": 0.9548,
+      "startS": 4.36,
+      "peakDbfs": -56.28
     },
     {
       "file": "vulcan30_crank_dry.flac",
@@ -363,8 +388,9 @@
       "samples": 84402,
       "rpmLoop": 501.6,
       "periodCorr": 0.9876,
-      "seamCorr": 0.9957,
-      "peakDbfs": -62.87
+      "seamCorr": 0.9982,
+      "startS": 3.393,
+      "peakDbfs": -62.86
     }
   ]
 }
