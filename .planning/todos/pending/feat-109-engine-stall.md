@@ -63,3 +63,9 @@ with the clutch out and the engine dies, exactly as it should.
 - FEAT-33 ignition + starter, `.planning/todos/completed/feat-ignition-starter.md` — the state
   machine, the params, and the four owner rulings this ticket was carved out of.
 - `src/ignition.js`, `src/drivetrain.js` (the ignition gate + dead-engine drag).
+
+## 2026-10-19: unblocked by FEAT-126
+
+The manual gearbox is now ticketed (`feat-126-manual-transmission.md`). The bog-down stall applies
+only with the **clutch assistant OFF**. With it on, the assistant pulls the clutch in near idle, so
+the engine can't stall (owner ruling).

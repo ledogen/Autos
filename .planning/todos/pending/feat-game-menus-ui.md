@@ -224,3 +224,22 @@ the menu with the sim's look. Owner-specified beat sheet:
   (FEAT-34 player HUD), `feat-player-music-streaming.md` (FEAT-58 audio/radio).
 - Current UI surfaces to reconcile: `src/debug.js` (lil-gui + green HUD + spawn toast), quality
   presets (PERF-08/10).
+
+## Controls & Assists page — rulings (owner, 2026-10-19, via FEAT-125)
+
+The next settings work is the **Controls & Assists** page:
+- **Reachable from the main menu AND the Esc pause menu.** Add a "settings" button to `#pause-menu`,
+  so assists can be flipped mid-drive.
+- **First contents:**
+  - Assist toggles: the **steering assist** (FEAT-125 `PAD_PARAMS.steerAssist` — speed-scaled lock vs
+    full linear lock) and the **clutch assistant** (FEAT-126).
+  - A **read-only binding chart** for pad + keyboard.
+  - The FEAT-39 handling aids (traction control, ABS and the rest) join this page as they are built.
+  - **No rebinding**, and **no feel sliders** on this page. Deadzones, curve, slew and orbit stay in
+    the debug panel.
+- **Persisted in localStorage** — settings only, never world data, so the cold-generation rule is
+  untouched. Wrap every read and write in try/catch, and fall back to defaults when storage is
+  unavailable.
+- **Pad-navigable:** a small focus system (D-pad or stick moves focus, A selects, B goes back) for
+  the settings page plus the main and pause menus. The in-game screens (inventory, map, offer board,
+  damage) follow later, in one pass.

@@ -60,3 +60,47 @@ each frame; there are no events for axes).
   The two extra back shoulder buttons report nothing — out of scope (most pads lack them).
 - Both pads use the W3C standard layout, so FEAT-125 binds against standard indices only. There is no
   per-device remap table until a pad that reports `mapping: ""` actually needs one.
+
+## Build state (2026-10-19, `feature/feat-125-controller`, commit 859e44b)
+
+SHIPPED on the branch:
+- `src/gamepad.js`:
+  - Analog triggers go straight to the pedals.
+  - Position steering with a slew limit.
+  - Buttons replay as synthetic key events.
+  - Last-moved wins.
+  - Unplug-safe.
+- Steering-assist toggle (`PAD_PARAMS.steerAssist`).
+- Right-stick orbit as a RATE, handing back to chase 2 s after release (also hood look and camp
+  orbit).
+- `test/pad-test.html`.
+- Debug folder Vehicle → Controller.
+
+## Pad layout — ruling (owner, 2026-10-19), Forza-style
+
+**Replaces the first-cut layout in `src/gamepad.js` BUTTON_KEYS:**
+
+| Button | Action |
+|---|---|
+| RT / LT | throttle / brake (analog) |
+| Left stick | steer |
+| Right stick | orbit cam |
+| **RB** | handbrake (hold) / park (tap) |
+| **LB** | clutch (hold) — manual gearbox only (FEAT-126) |
+| **A / X** | upshift / downshift — manual only; nothing in the automatic |
+| **B** (hold) | pump / aim |
+| Y (hold) | ignition |
+| Start | map |
+| View tap | inventory |
+| **View hold 1 s** | reset truck |
+| D-pad ↑ / ↓ / ← / → | headlights / camp / damage screen / **recovery** |
+| Right-stick click | camera mode |
+
+**Menu navigation changes the meaning of A and B** (FEAT-41 ruling: A selects, B goes back).
+gamepad.js therefore needs to know when a menu owns the screen.
+
+## Still open on this ticket
+
+- Button glyphs in prompts (`park-badge.js keycap`).
+- Pad navigation of the in-game screens (inventory, map, offer board, damage).
+- Acceptance re-check in story mode with real hardware.
