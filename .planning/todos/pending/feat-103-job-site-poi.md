@@ -78,9 +78,10 @@ edge, the 3.3 km arc (~2.9 km long)**. R1's outer arc and two side walls never o
   owner rejected a softer teleport-and-reorient: more complicated and less transparent.
 - **Funding it:** deliver the fifth line, **sleep at the camp, wake to the trail**. The overnight
   hides the network rebuild (FEAT-28 wants the unlock load hidden) and costs only the night.
-- **The other R1↔R2 roads stay pruned for the run** (owner, 2026-10-19: *"simpler to just prune
-  existing roads instead of trying to add some back"*). The trail is the only link between R1 and R2;
-  every later trip between them runs through the camp. Story mode only ever hides edges.
+- **The other R1↔R2 roads come back after 2 good deeds earned in R2**, revealed at the next sleep
+  (owner, 2026-10-19). Until then the trail is the only link. Story mode only ever prunes and restores
+  existing edges; it never adds a road (owner: *"simpler to just prune existing roads instead of
+  trying to add some back"*).
 - **The requisition is boss-only.** No ordinary giver posts one.
 - **A seed with no road across the north wall into R2's network** is a bigger problem than this
   ticket — R2 is unreachable. It must be checked (measured over seeds) under FEAT-28 before this is
