@@ -128,6 +128,12 @@ export const RANGER_PARAMS = {
   ignitionCatchTimeWorn: 2.0,   // s — crank time as engine health approaches zero (owner 2026-09-05: raised 1.0→2.0, the decay was not significant enough at 1 s; linear 0.25→2.0; AT exactly 0 the engine never catches at all — see ignition.js catchTime)
   ignitionCrankRPM:      250,   // rpm — speed the starter turns the engine at (makes no drive torque)
   ignitionCrankRpmLag:   0.12,  // s — RPM lag while the starter picks the engine up
+  // Start flare (FEAT-120, owner 2026-10-19): the rpm the engine flares to just after the catch, and
+  // the fast idle a cold engine holds until the coolant reaches the thermostat (src/drivetrain.js).
+  engineStartFlareRPM:   1250,  // rpm — flare peak, warm engine
+  engineColdFlareRPM:    1430,  // rpm — flare peak, stone-cold engine (ambient coolant)
+  engineFastIdleRPM:     1100,  // rpm — cold fast idle; fades linearly to engineIdleRPM as coolant warms to the thermostat
+  engineStartFlareRiseS: 0.3,   // s — time to the flare peak; back near idle by ~5× this
   // Key OFF but still in gear: the driveline drags the dead engine round through the converter, so
   // the truck coasts down on pumping/friction losses instead of freewheeling. engineOffDrag is that
   // drag at 1000 rpm of dragged engine speed; the effect fades below engineOffCouplingRPM as the

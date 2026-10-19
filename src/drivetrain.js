@@ -153,16 +153,30 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // (default 0 = no creep, so BUG-20 static-slope hold is untouched at zero input).
   const pedalEff  = Math.max(pedal, params.engineIdleThrottle || 0)
   st.pedal = pedalEff   // FEAT-50: the load the fuel map reads (src/fuel.js) — the same number the torque uses
-  const stallRPM  = idle + pedalEff * (stallRPMwot - idle)
+  // FEAT-120 start flare + cold fast idle: on a key start the PCM opens the idle-air valve and runs
+  // rich, so the rpm flares past idle and decays back. Shape a(t) = x·e^(1−x), x = t / rise: peaks
+  // at 1 when t = rise, ~0.1 by 5× rise. A cold engine (coolant below the thermostat) also holds a
+  // fast idle that fades as it warms. Only after a key start (ignition.runT set by src/ignition.js),
+  // so a truck spawned running — and every headless gate — keeps the plain idle floor.
+  const runT = vehicleState.ignition?.runT
+  let idleEff = idle
+  if (runT !== undefined) {
+    const cold = params._engineColdFrac ?? 0   // src/damage.js; no damage model ⇒ warm
+    const base = idle + cold * ((params.engineFastIdleRPM ?? 1100) - idle)
+    const peak = (params.engineStartFlareRPM ?? 1250) + cold * ((params.engineColdFlareRPM ?? 1430) - (params.engineStartFlareRPM ?? 1250))
+    const x = runT / (params.engineStartFlareRiseS ?? 0.3)
+    idleEff = base + Math.max(0, peak - base) * x * Math.exp(1 - x)
+  }
+  const stallRPM  = idleEff + pedalEff * (stallRPMwot - idleEff)
   const coupled   = turbineRPM / couplingSR
-  let engineTarget = Math.max(idle, stallRPM, coupled)
+  let engineTarget = Math.max(idleEff, stallRPM, coupled)
   if (engineTarget > redline + 200) engineTarget = redline + 200   // rev-limiter ceiling
 
   const tau = params.engineRpmLag || 0
   st.engineRPM = tau > 0
     ? st.engineRPM + (engineTarget - st.engineRPM) * Math.min(1, dt / tau)
     : engineTarget
-  if (st.engineRPM < idle) st.engineRPM = idle
+  if (st.engineRPM < idleEff) st.engineRPM = idleEff
   const engineRPM = st.engineRPM
 
   // ── Torque converter: speed ratio → torque ratio (stall multiplication → 1:1 coupling) ──────────
