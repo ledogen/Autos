@@ -7,6 +7,7 @@
  */
 
 import * as THREE from 'three'
+import { pad, PAD_PARAMS } from './gamepad.js'
 
 // ── Module-level camera state ──────────────────────────────────────────────────
 let cameraMode = 'chase'  // 'chase' | 'hood' | 'freecam'
@@ -98,6 +99,11 @@ let dragLastY    = 0
 let orbitTheta   = Math.PI              // start directly behind car (+Z world = behind -Z-facing car)
 let orbitPhi     = 0.38                 // ≈ 22° elevation, matches rough chase offset angle
 let orbitRadius  = ORBIT_RADIUS_DEFAULT // actual camera-to-car distance, synced each follow frame
+// FEAT-125 right-stick look: the stick drives the SAME orbit angles as the drag (chase, camp focus)
+// and the same hood look offset, as a RATE. While padLookT > 0 the view counts as dragged; it is
+// re-armed to PAD_PARAMS.orbitHold by any deflection and runs down once the stick is centred, so
+// the chase swing-back (or hood recentre) starts orbitHold seconds after the last touch.
+let padLookT     = 0
 
 // ── Hood-cam drag-look state ─────────────────────────────────────────────────────
 // Yaw/pitch offset (radians) layered on top of the body-locked hood orientation. Dragging
@@ -354,6 +360,20 @@ export function updateCamera (camera, vehicleState, dt) {
   _snapNext = false
   if (snap) reverseView = swinging = false   // a fresh seat starts facing forward, no swing in flight
 
+  if (snap) padLookT = 0
+  if (cameraMode !== 'freecam' && (pad.lookX || pad.lookY)) {
+    padLookT = PAD_PARAMS.orbitHold
+    const r = PAD_PARAMS.orbitRate * dt
+    if (cameraMode === 'hood') {   // stick right / up = look right / up
+      hoodLookYaw   = Math.max(-HOOD_LOOK_YAW_CLAMP,   Math.min(HOOD_LOOK_YAW_CLAMP,   hoodLookYaw   - pad.lookX * r))
+      hoodLookPitch = Math.max(-HOOD_LOOK_PITCH_CLAMP, Math.min(HOOD_LOOK_PITCH_CLAMP, hoodLookPitch - pad.lookY * r))
+    } else {                        // same signs as a mouse drag in the stick's direction
+      orbitTheta -= pad.lookX * r
+      orbitPhi    = Math.max(-1.2, Math.min(1.2, orbitPhi + pad.lookY * r))
+    }
+  } else padLookT = Math.max(0, padLookT - dt)
+  const padLook = padLookT > 0
+
   if (cameraMode === 'freecam') {
     // ── Freecam branch: WASD fly along look direction, Space/Ctrl vertical, Shift boost ──
     // Forward vector derived from freecamPitch + freecamYaw in YXZ Euler order (D-03).
@@ -399,7 +419,7 @@ export function updateCamera (camera, vehicleState, dt) {
   }
 
   if (cameraMode === 'chase') {
-    if (isDragging || aimMode) {
+    if (isDragging || aimMode || padLook) {
       // ── Orbit mode: place camera at fixed spherical offset in world space ──────
       // Car continues moving; camera tracks car position but holds the dragged angle
       // AND the actual radius captured at drag-start (see orbitRadius comment above) —
@@ -505,7 +525,7 @@ export function updateCamera (camera, vehicleState, dt) {
 
     // Drag-look re-center: when not actively dragging, ease the look offset back to forward so
     // releasing the mouse snaps the view back over the hood (chase-cam-style snap-back behind).
-    if (!isDragging) {
+    if (!isDragging && !padLook) {
       const decay = Math.exp(-HOOD_RECENTER_STIFFNESS * dt)
       hoodLookYaw   *= decay
       hoodLookPitch *= decay

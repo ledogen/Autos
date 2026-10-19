@@ -1,0 +1,147 @@
+<!doctype html>
+<!-- FEAT-125 step 1 — gamepad input dashboard. Standalone, unlinked from the game.
+     Shows exactly what the browser's Gamepad API reports for every connected pad: the standard-layout
+     view (what the game will bind against) and the raw axes/buttons arrays (what to read when a pad
+     reports mapping "" — i.e. the browser did not recognise it and the indices are device-specific).
+     Dev: http://localhost:<port>/test/pad-test.html · Pages: <pages-url>/test/pad-test.html -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pad Test</title>
+<style>
+  :root { --bg:#16181c; --card:#1f2228; --line:#353a43; --fg:#e6e8eb; --dim:#8a919c; --on:#4fc3f7; --warn:#ffb74d; --bad:#ef5350; --ok:#81c784; }
+  body { background:var(--bg); color:var(--fg); font:13px/1.4 ui-monospace, Menlo, Consolas, monospace; margin:0; padding:16px; }
+  h1 { font-size:16px; margin:0 0 4px; } h2 { font-size:14px; margin:0; } h3 { font-size:12px; color:var(--dim); margin:12px 0 6px; font-weight:normal; text-transform:uppercase; letter-spacing:.06em; }
+  .hint { color:var(--dim); margin-bottom:16px; }
+  .pad { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:12px; margin-bottom:16px; }
+  .meta { color:var(--dim); margin:4px 0 0; } .meta b { color:var(--fg); font-weight:normal; }
+  .meta .std { color:var(--ok); } .meta .nonstd { color:var(--warn); }
+  .row { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; }
+  .stick { text-align:center; } .stick canvas { background:#111317; border:1px solid var(--line); border-radius:50%; cursor:pointer; display:block; }
+  .btns { display:flex; flex-wrap:wrap; gap:4px; }
+  .b { min-width:34px; padding:4px 6px; border:1px solid var(--line); border-radius:4px; text-align:center; position:relative; overflow:hidden; }
+  .b .fill { position:absolute; left:0; bottom:0; right:0; background:var(--on); opacity:.35; }
+  .b.p { border-color:var(--on); color:var(--on); }
+  .b span { position:relative; }
+  .bar { display:grid; grid-template-columns:70px 1fr 62px; gap:8px; align-items:center; margin:2px 0; }
+  .track { height:12px; background:#111317; border:1px solid var(--line); position:relative; }
+  .track .f { position:absolute; top:0; bottom:0; background:var(--on); }
+  .track .mid { position:absolute; left:50%; top:-2px; bottom:-2px; width:1px; background:var(--dim); }
+  .last { color:var(--warn); min-height:1.4em; }
+  button { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:4px 10px; font:inherit; cursor:pointer; }
+  .log { max-height:160px; overflow:auto; color:var(--dim); white-space:pre; }
+</style>
+</head>
+<body>
+<h1>Pad Test — FEAT-125</h1>
+<div class="hint">Press any button on a controller to wake it (browsers hide pads until a button is pressed on this page). Click a stick circle to clear its trace.</div>
+<div id="pads"><div class="pad">No gamepad yet.</div></div>
+<h3>Connect / disconnect log</h3>
+<div class="log" id="log"></div>
+
+<script>
+// W3C "standard" layout: buttons[i] / axes[i] carry these meanings ONLY when pad.mapping === 'standard'.
+const STD_BTN = ['A','B','X','Y','LB','RB','LT','RT','Back','Start','LS','RS','Up','Down','Left','Right','Home']
+const STD_AXIS = ['LS x','LS y','RS x','RS y']
+const TRAIL = 400                       // stick trace length, in polled samples
+const cards = new Map()                 // pad.index → { el, trails, prev, lastT, hz }
+const logEl = document.getElementById('log')
+const log = (s) => { logEl.textContent = `${new Date().toLocaleTimeString()}  ${s}\n` + logEl.textContent }
+
+addEventListener('gamepadconnected', (e) => log(`+ [${e.gamepad.index}] ${e.gamepad.id}  mapping="${e.gamepad.mapping}"  ${e.gamepad.axes.length} axes / ${e.gamepad.buttons.length} buttons`))
+addEventListener('gamepaddisconnected', (e) => { log(`- [${e.gamepad.index}] ${e.gamepad.id}`); cards.get(e.gamepad.index)?.el.remove(); cards.delete(e.gamepad.index) })
+
+function makeCard (pad) {
+  const el = document.createElement('div')
+  el.className = 'pad'
+  const std = pad.mapping === 'standard'
+  el.innerHTML = `
+    <h2>[${pad.index}] ${pad.id.replace(/</g, '&lt;')}</h2>
+    <div class="meta">mapping: <b class="${std ? 'std' : 'nonstd'}">${std ? 'standard' : `"${pad.mapping}" — NOT recognised, read the raw view`}</b>
+      · ${pad.axes.length} axes · ${pad.buttons.length} buttons · update rate <b class="hz">–</b> Hz
+      · rumble: ${pad.vibrationActuator ? '<button class="rumble">test</button>' : 'not exposed'}</div>
+    <div class="last">last input: –</div>
+    ${std ? `<h3>Standard layout</h3>
+    <div class="row">
+      <div class="stick"><canvas width="160" height="160" data-s="0"></canvas><div class="sv">LS</div></div>
+      <div class="stick"><canvas width="160" height="160" data-s="1"></canvas><div class="sv">RS</div></div>
+      <div style="flex:1;min-width:260px">
+        <div class="bar"><span>LT</span><div class="track"><div class="f lt"></div></div><span class="ltv"></span></div>
+        <div class="bar"><span>RT</span><div class="track"><div class="f rt"></div></div><span class="rtv"></span></div>
+        <div class="btns std-btns" style="margin-top:10px">${STD_BTN.map((n) => `<div class="b"><div class="fill"></div><span>${n}</span></div>`).join('')}</div>
+      </div>
+    </div>` : ''}
+    <h3>Raw axes</h3><div class="raw-axes">${pad.axes.map((_, i) => `<div class="bar"><span>axis ${i}</span><div class="track"><div class="mid"></div><div class="f"></div></div><span class="v"></span></div>`).join('')}</div>
+    <h3>Raw buttons</h3><div class="btns raw-btns">${pad.buttons.map((_, i) => `<div class="b"><div class="fill"></div><span>${i}</span></div>`).join('')}</div>`
+  document.getElementById('pads').querySelector(':scope > .pad:not([data-i])')?.remove()
+  el.dataset.i = pad.index
+  document.getElementById('pads').append(el)
+  el.querySelector('.rumble')?.addEventListener('click', () => navigator.getGamepads()[pad.index]?.vibrationActuator
+    ?.playEffect('dual-rumble', { duration: 400, strongMagnitude: 1, weakMagnitude: 0.5 }))
+  const trails = [[], []]
+  el.querySelectorAll('canvas').forEach((c) => c.addEventListener('click', () => { trails[c.dataset.s].length = 0 }))
+  return { el, trails, prev: null, lastT: pad.timestamp, n: 0, t0: performance.now() }
+}
+
+function drawStick (canvas, trail, x, y) {
+  const g = canvas.getContext('2d'), r = 76, c = 80
+  g.clearRect(0, 0, 160, 160)
+  g.strokeStyle = '#353a43'
+  g.beginPath(); g.arc(c, c, r, 0, 7); g.moveTo(c - r, c); g.lineTo(c + r, c); g.moveTo(c, c - r); g.lineTo(c, c + r); g.stroke()
+  trail.push(x, y); if (trail.length > TRAIL * 2) trail.splice(0, 2)
+  g.fillStyle = 'rgba(79,195,247,.35)'
+  for (let i = 0; i < trail.length; i += 2) g.fillRect(c + trail[i] * r - 1, c + trail[i + 1] * r - 1, 2, 2)
+  g.fillStyle = '#4fc3f7'; g.beginPath(); g.arc(c + x * r, c + y * r, 5, 0, 7); g.fill()
+}
+
+const setBtn = (div, b) => { div.classList.toggle('p', b.pressed); div.firstChild.style.height = `${b.value * 100}%` }
+
+function frame () {
+  for (const pad of navigator.getGamepads()) {
+    if (!pad) continue
+    let card = cards.get(pad.index)
+    if (!card) cards.set(pad.index, card = makeCard(pad))
+    const { el } = card
+
+    // Update rate: how often the pad's own timestamp advances (a Bluetooth pad reports far less often than 60 Hz when idle).
+    if (pad.timestamp !== card.lastT) { card.lastT = pad.timestamp; card.n++ }
+    const now = performance.now()
+    if (now - card.t0 > 1000) { el.querySelector('.hz').textContent = Math.round(card.n * 1000 / (now - card.t0)); card.n = 0; card.t0 = now }
+
+    // Last input: the single biggest change since the previous poll — the "press it and see which index lights" readout.
+    const cur = [...pad.axes.map((v, i) => ['axis ' + i, v]), ...pad.buttons.map((b, i) => ['button ' + i, b.value])]
+    if (card.prev) {
+      let best = null, bd = 0.02
+      cur.forEach(([k, v], i) => { const d = Math.abs(v - card.prev[i][1]); if (d > bd) { bd = d; best = [k, v] } })
+      if (best) el.querySelector('.last').textContent = `last input: ${best[0]}${pad.mapping === 'standard' ? ` (${best[0].startsWith('axis') ? STD_AXIS[+best[0].slice(5)] ?? 'extra' : STD_BTN[+best[0].slice(7)] ?? 'extra'})` : ''} = ${best[1].toFixed(3)}`
+    }
+    card.prev = cur
+
+    el.querySelectorAll('.raw-axes .bar').forEach((row, i) => {
+      const v = pad.axes[i], f = row.querySelector('.f')
+      f.style.left = `${50 + Math.min(v, 0) * 50}%`; f.style.width = `${Math.abs(v) * 50}%`
+      row.querySelector('.v').textContent = v.toFixed(3)
+    })
+    el.querySelectorAll('.raw-btns .b').forEach((d, i) => setBtn(d, pad.buttons[i]))
+
+    if (pad.mapping === 'standard') {
+      el.querySelectorAll('.std-btns .b').forEach((d, i) => pad.buttons[i] && setBtn(d, pad.buttons[i]))
+      for (const [cls, i] of [['lt', 6], ['rt', 7]]) {
+        const v = pad.buttons[i].value
+        el.querySelector('.' + cls).style.width = `${v * 100}%`
+        el.querySelector(`.${cls}v`).textContent = v.toFixed(3)
+      }
+      el.querySelectorAll('.stick').forEach((s, k) => {
+        const x = pad.axes[k * 2], y = pad.axes[k * 2 + 1]
+        drawStick(s.querySelector('canvas'), card.trails[k], x, y)
+        s.querySelector('.sv').textContent = `${k ? 'RS' : 'LS'}  x ${x.toFixed(3)}  y ${y.toFixed(3)}  |r| ${Math.hypot(x, y).toFixed(3)}`
+      })
+    }
+  }
+  requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame)
+</script>
+</body>
+</html>

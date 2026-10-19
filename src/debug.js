@@ -35,6 +35,7 @@ import { DAMAGE_PARAMS, TRACKS, TRACK_IDS } from './damage.js' // SM-3: componen
 import { FREIGHT } from '../data/freight.js'                     // FEAT-96 scaffolding: Load Cargo
 import { ENGINES } from '../data/engines.js'                     // engine swap selector
 import { TRANSMISSIONS } from '../data/transmissions.js'         // gearbox swap selector
+import { PAD_PARAMS } from './gamepad.js'                          // FEAT-125: controller feel
 
 // Module-level bindings so updatePacejkaCurve and updateTravelBars (defined at module scope)
 // can read them. Assigned inside initDebug(); null until then.
@@ -126,6 +127,19 @@ export function initDebug (params, callbacks = {}, options = {}) {
     window.__syncChassisMass?.()
     gui.controllersRecursive().forEach(c => c.updateDisplay())
   })
+
+  // ── Controller (FEAT-125) ──────────────────────────────────────────────────────
+  // Player-input feel, not vehicle physics — but it sits with the steering it shapes. Read live by
+  // gamepad.js (deadzones, curve) and vehicle.js (assist, slew) every frame.
+  const padFolder = vehicleFolder.addFolder('Controller (FEAT-125)')
+  padFolder.add(PAD_PARAMS, 'steerAssist').name('Steering assist (speed-scaled lock)')
+  padFolder.add(PAD_PARAMS, 'stickDeadzone', 0, 0.3, 0.01).name('Stick deadzone')
+  padFolder.add(PAD_PARAMS, 'triggerDeadzone', 0, 0.2, 0.01).name('Trigger deadzone')
+  padFolder.add(PAD_PARAMS, 'steerCurve', 1, 3, 0.05).name('Steer curve (1 = linear)')
+  padFolder.add(PAD_PARAMS, 'steerSlewRate', 1, 20, 0.5).name('Steer slew (rad/s)')
+  padFolder.add(PAD_PARAMS, 'orbitRate', 0.5, 6, 0.1).name('Right-stick orbit rate (rad/s)')
+  padFolder.add(PAD_PARAMS, 'orbitHold', 0, 5, 0.1).name('Orbit hold before chase (s)')
+  padFolder.close()
 
   // ── Mass & CG ──────────────────────────────────────────────────────────────────
   const massCgFolder = vehicleFolder.addFolder('Mass & CG')

@@ -47,3 +47,16 @@ each frame; there are no events for axes).
   mph. Light pedal should upshift early, full pedal late. Deliberately deferred until a real
   part-throttle exists to tune it against (feat-vehicle-drivetrain-architecture's "ideally
   throttle-dependent shift points").
+
+## Hardware findings (2026-10-18, Mac M4 + Chrome, via `test/pad-test.html`)
+
+- **Xbox One pad, Bluetooth:** `mapping: standard`, all analog inputs clean.
+- **8BitDo Ultimate 2C Wireless, 2.4 GHz dongle:** NOT visible to the browser on macOS. In that mode the
+  dongle's HID interfaces declare a keyboard (usage 0x01/0x06; this is what pops macOS's "set up your
+  keyboard" wizard) and a vendor page (0xFF7A). There is no gamepad/joystick usage, so the Gamepad API never
+  lists it. It is X-input, which macOS has no driver for. Expected to work on Windows.
+- **8BitDo Ultimate 2C Wireless, Bluetooth (mode switch → BT):** `mapping: standard`, analog triggers and
+  sticks correct. Pairing dropped twice; power-cycling the controller fixed it, and it has been stable since.
+  The two extra back shoulder buttons report nothing — out of scope (most pads lack them).
+- Both pads use the W3C standard layout, so FEAT-125 binds against standard indices only. There is no
+  per-device remap table until a pad that reports `mapping: ""` actually needs one.

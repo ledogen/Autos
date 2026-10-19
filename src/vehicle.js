@@ -1,5 +1,6 @@
 /**
- * Vehicle input and control module. Owns the driving keys, the throttle/brake ramps, steer
+ * Vehicle input and control module. Owns the driving keys (and consumes gamepad.js's analog pad —
+ * FEAT-125: triggers as pedals, stick as position steering), the throttle/brake ramps, steer
  * accumulation + Ackermann geometry, the handbrake/park latch, and the ignition key step.
  * updateVehicle returns true when R was pressed; main.js does the actual respawn.
  * Does NOT perform physics integration — that is physics.js.
@@ -14,6 +15,7 @@
 
 import { getCameraMode } from './camera.js'
 import { stepIgnition } from './ignition.js'
+import { pad, PAD_PARAMS } from './gamepad.js'
 
 // ── Keyboard input state (module-private) ────────────────────────────────────
 const keys = { w: false, s: false, a: false, d: false, r: false, i: false, ' ': false }
@@ -84,8 +86,10 @@ export function updateVehicle (vehicleState, params, dt) {
   // ── 1. Throttle / Brake (M1-05, FEAT-01) ──────────────────────────────────
   // Ramp smoothed accumulators toward raw input; fast release, slow press.
   // _controlAtten is 1 except during a story-mode doze, when it is 0 (see setControlAttenuation).
-  const rawThrottle = ((!freecamActive && keys.w) ? 1 : 0) * _controlAtten
-  const rawBrake    = ((!freecamActive && keys.s) ? 1 : 0) * _controlAtten
+  // FEAT-125: while the pad drives (gamepad.js, last-moved wins) the triggers ARE the pedals.
+  const padDrives   = !freecamActive && pad.active
+  const rawThrottle = (padDrives ? pad.throttle : (!freecamActive && keys.w) ? 1 : 0) * _controlAtten
+  const rawBrake    = (padDrives ? pad.brake    : (!freecamActive && keys.s) ? 1 : 0) * _controlAtten
   // FEAT-33: asking for throttle on a dead engine raises a one-shot the HUD turns into "hold I to
   // start the truck" (story mode seats you in a dead truck; free roam hands you a running one, so
   // this only ever fires where the ritual applies). Set here because this module owns driver input;
@@ -93,14 +97,21 @@ export function updateVehicle (vehicleState, params, dt) {
   // hinted — the driver is already doing the right thing and just has not held it long enough.
   if (rawThrottle > 0 && vehicleState.ignition && vehicleState.ignition.state === 'off')
     vehicleState.ignitionHint = true
-  if (rawThrottle > vehicleState.smoothThrottle)
-    vehicleState.smoothThrottle = Math.min(vehicleState.smoothThrottle + params.throttleRampRate * dt, rawThrottle)
-  else
-    vehicleState.smoothThrottle = Math.max(vehicleState.smoothThrottle - params.releaseRampRate * dt, rawThrottle)
-  if (rawBrake > vehicleState.smoothBrake)
-    vehicleState.smoothBrake = Math.min(vehicleState.smoothBrake + params.brakeRampRate * dt, rawBrake)
-  else
-    vehicleState.smoothBrake = Math.max(vehicleState.smoothBrake - params.releaseRampRate * dt, rawBrake)
+  if (padDrives) {
+    // A real pedal is not ramped — the keyboard ramps below are a stand-in for one. Writing the
+    // smoothed accumulators too means a switch back to the keyboard ramps on from where the pad left.
+    vehicleState.smoothThrottle = rawThrottle
+    vehicleState.smoothBrake    = rawBrake
+  } else {
+    if (rawThrottle > vehicleState.smoothThrottle)
+      vehicleState.smoothThrottle = Math.min(vehicleState.smoothThrottle + params.throttleRampRate * dt, rawThrottle)
+    else
+      vehicleState.smoothThrottle = Math.max(vehicleState.smoothThrottle - params.releaseRampRate * dt, rawThrottle)
+    if (rawBrake > vehicleState.smoothBrake)
+      vehicleState.smoothBrake = Math.min(vehicleState.smoothBrake + params.brakeRampRate * dt, rawBrake)
+    else
+      vehicleState.smoothBrake = Math.max(vehicleState.smoothBrake - params.releaseRampRate * dt, rawBrake)
+  }
   vehicleState.throttle  = vehicleState.smoothThrottle
   // S key: brake above walking pace, reverse below it (drivetrain.js decides which; REV_THRESHOLD).
   vehicleState.brake     = vehicleState.smoothBrake
@@ -108,14 +119,14 @@ export function updateVehicle (vehicleState, params, dt) {
   // Moving (>5 km/h): the handbrake is momentary — rear torque only while Space is held.
   // Near rest (<5 km/h): a Space TAP latches vehicleState.parked ON, so it keeps holding after
   // release (the same held state a spawn/teleport starts in — see _reseatTruckAtSpawn). While
-  // parked, another Space tap — or pressing W/S — toggles it fully OFF so the truck can roll again.
+  // parked, another Space tap — or pressing W/S, or either pad trigger — toggles it fully OFF so the truck can roll again.
   // Steering (A/D) does NOT release it. Held through free-cam so the truck stays put while you fly.
   const PARK_SPEED = 1.389   // m/s ≈ 5 km/h
   const spd     = Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z)
   const handKey = !freecamActive && keys[' ']
   const handTap = handKey && !_prevHandKey                       // rising edge (press this frame)
   if (vehicleState.parked) {
-    if (handTap || (!freecamActive && (keys.w || keys.s))) vehicleState.parked = false
+    if (handTap || (!freecamActive && (keys.w || keys.s)) || rawThrottle > 0 || rawBrake > 0) vehicleState.parked = false
   } else if (handTap && spd < PARK_SPEED) {
     vehicleState.parked = true                                   // latch when tapped near rest
   }
@@ -131,15 +142,27 @@ export function updateVehicle (vehicleState, params, dt) {
   // M1-08: at speed=speedSteerRef (15 m/s ≈ 54 km/h) max steer is halved.
   // Denominator grows linearly with speed.
   const dynamicMaxSteer = params.maxSteerAngle / (1 + speed / params.speedSteerRef)
+  // FEAT-125 steering assist: ON, the pad gets the same speed-scaled envelope as the keyboard; OFF,
+  // the full stick is full lock at any speed (the stick IS the wheel). The keyboard always gets the assist.
+  const steerLimit = (padDrives && !PAD_PARAMS.steerAssist) ? params.maxSteerAngle : dynamicMaxSteer
 
   // ── 3. Steer accumulation (M1-07) ──────────────────────────────────────────
   // Attenuated the same way as throttle/brake: during a doze the steer keys stop feeding the
   // integration, but the decay branch below is deliberately left alone so the wheels drift back to
   // centre on their own rather than freezing at whatever lock they were at.
-  if (!freecamActive && keys.a) vehicleState.steerAngle += params.steerRate * dt * _controlAtten
-  if (!freecamActive && keys.d) vehicleState.steerAngle -= params.steerRate * dt * _controlAtten
+  if (padDrives) {
+    // POSITION steering: the stick deflection is the wheel angle as a fraction of the limit (stick
+    // left = −x = positive steerAngle), slewed at steerSlewRate. A doze (attenuation 0) aims at
+    // centre, so the wheels return through the same slew rather than snapping.
+    const target = -pad.steer * steerLimit * _controlAtten
+    const slew = PAD_PARAMS.steerSlewRate * dt
+    vehicleState.steerAngle += Math.max(-slew, Math.min(slew, target - vehicleState.steerAngle))
+  } else {
+    if (!freecamActive && keys.a) vehicleState.steerAngle += params.steerRate * dt * _controlAtten
+    if (!freecamActive && keys.d) vehicleState.steerAngle -= params.steerRate * dt * _controlAtten
+  }
 
-  if (freecamActive || (!keys.a && !keys.d)) {
+  if (!padDrives && (freecamActive || (!keys.a && !keys.d))) {
     // Decay toward zero at steerDecayRate (rad/s)
     const decay = params.steerDecayRate * dt
     if (Math.abs(vehicleState.steerAngle) <= decay) {
@@ -151,7 +174,7 @@ export function updateVehicle (vehicleState, params, dt) {
 
   // T-03-01: clamp to dynamic max — prevents unbounded accumulation even if
   // steerRate is increased via debug slider.
-  vehicleState.steerAngle = Math.max(-dynamicMaxSteer, Math.min(dynamicMaxSteer, vehicleState.steerAngle))
+  vehicleState.steerAngle = Math.max(-steerLimit, Math.min(steerLimit, vehicleState.steerAngle))
 
   // ── 4. Ackermann per-wheel steer angles (M1-06) ────────────────────────────
   // RESEARCH §Pattern 5 formula (cited: raw.org/book/kinematics/ackerman-steering/).
