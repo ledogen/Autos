@@ -77,6 +77,13 @@ export const ENGINES = {
             [ 800, 140], [1500, 170], [2500, 192], [3750, 209],
             [4500, 204], [5250, 195], [6000, 165], [6500, 120],
         ],
+        // Start transient (FEAT-120) — estimates. Same flexplate/converter, a lighter crank. Four big
+        // cylinders 180° apart compress with no overlap, so the 2/rev ripple is lumpier than the V6's
+        // 3/rev even at the same amplitude. Plenum ~ the V6's, over less displacement.
+        engineInertia:      0.22,
+        crankCompressionNm: 100,
+        intakeVolumeRatio:  1.5,
+        frictionColdExtra:  0.5,
         engineIdleRPM:    750,
         engineRedlineRPM: 6250,  // the PCM's rev limiter on the Duratec Ranger
         cylinders:        4,

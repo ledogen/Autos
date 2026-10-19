@@ -22,6 +22,7 @@
 import { stepIgnition, keyPosition, makeIgnitionState, OFF, CRANKING, RUNNING } from '../src/ignition.js'
 import { stepDrivetrain } from '../src/drivetrain.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
+import { ENGINES } from '../data/engines.js'
 
 const DT = 1 / 60
 let failures = 0
@@ -162,7 +163,9 @@ console.log('\n── 6. drivetrain gating ────────────�
 }
 
 console.log('\n── 7. start transient (FEAT-120) ──────────────────────────────────────────────')
-{
+for (const engine of ['vulcan30', 'duratec23']) {
+  const P = { ...RANGER_PARAMS, ...ENGINES[engine] }   // the debug menu's engine swap is the same Object.assign
+  console.log(`  [${engine}]`)
   // Key held from rest at tempC; catch time stretched so the crank reaches steady speed first.
   // Returns the per-step rpm trace plus the step the engine caught on.
   const start = (tempC, catchS, holdS = catchS + 0.1, secs = 5) => {
