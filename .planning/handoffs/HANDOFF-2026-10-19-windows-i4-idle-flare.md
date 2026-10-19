@@ -54,13 +54,32 @@ with the same controller from job 2, driving throttle to follow a **target rpm t
 
 - **Warm start:** catch → flare to ~1250 rpm within ~0.4 s → decay to 750 over ~1.5 s → hold.
 - **Cold start:** catch → flare to ~1430 rpm → settle at a ~1100 rpm fast idle for the rest of the take.
+- These targets are what the game's own crank dynamics produce (`test/ignition-starter.mjs`). Vulcan:
+  1261 rpm warm, settling in 1.7 s; 1435 cold, onto 1100 in 1.0 s. Duratec I4: 1357 warm. Match those.
 - Same start procedure as the current start takes (closed pedal, starter until it catches). 8 s each.
 - **Takes:** `<engine>_start_warm_dry` and `<engine>_start_cold_dry`, each with its rpm CSV
   (`time_s, rpm, starter`, plus the throttle the controller commanded). Render a stock-IR copy of each
   for listening. They stay uncut, in `assets/audio/src/engine-start-reference/` like the others.
 - Note in NOTES.md that the flare is a scripted throttle trace, not modelled enrichment.
 
-## 4. Open risk from 10-18
+## 4. Re-render the crank at the game's cadence (both engines)
+
+The game's starter is now real dynamics (`src/drivetrain.js` `stepStart`): stall 150 N·m (≈ 111 lb·ft),
+free speed 280 rpm, compression ripple 100 N·m. It cranks at **~185 rpm cold / ~210 warm**. Your
+crank take settles at 501.6 rpm (70 lb·ft / 500 rpm), so the game would have to play it at ×0.4,
+which drops the pitch about 1.3 octaves. That's too far.
+
+- Render `<engine>_crank_dry` / `_crank_stock` with `starter_torque 111 lb_ft`, `starter_speed 280 rpm`
+  as a **render-time override**. Leave the script's own values alone.
+- Target ~200 rpm. If engine-sim's own compression and friction land it far off, tune the override
+  until it sits at 190–210, and log the values you used.
+- Cut on whole 720° cycles so it loops, as before. Log `rpmMeasured` in the manifest.
+- Keep the old 500-rpm crank takes; don't delete them.
+- This **supersedes** this brief's note that the starter values must match `vulcan30.mr` for the
+  start takes. Render the flare takes (job 3) with the same override, so the crank leading into the
+  catch matches the game.
+
+## 5. Open risk from 10-18
 
 Commit the engine-sim fork's diff (branch `autos-011a` vs `v0.1.11a`) as
 `assets/audio/src/engine/engine-sim-autos.patch`. If that clone is lost, nothing can be re-rendered.
