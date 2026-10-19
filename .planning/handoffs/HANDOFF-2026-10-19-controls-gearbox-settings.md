@@ -50,9 +50,11 @@ The Forza-style table is in `feat-125-controller-support.md` → "Pad layout —
   non-trivial bit.
 - Update the e2e checks: A tap → park becomes RB, and D-pad → reset becomes View-hold.
 
-### 2. Throttle-dependent shift schedule (FEAT-124, re-scoped)
+### 2. Throttle-dependent shift schedule (FEAT-124, re-scoped) — DONE 2026-10-19
 
-The ruling is in `feat-124-drive-modes.md` → "Ruling — ONE schedule, no modes". There is no
+Shipped and closed. See the resolution in `.planning/todos/completed/feat-124-drive-modes.md`; the gate is `test/shift-schedule.mjs`.
+
+The ruling is in `completed/feat-124-drive-modes.md` → "Ruling — ONE schedule, no modes". There is no
 Sport/Normal.
 - Add an EMA of throttle to the drivetrain state.
 - The upshift point interpolates from a new per-engine light-load upshift rpm (add it beside

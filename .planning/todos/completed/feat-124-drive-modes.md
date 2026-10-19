@@ -1,7 +1,7 @@
 ---
 id: FEAT-124
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-10-17
 relates: FEAT-23 (drivetrain + shift schedule), FEAT-50 (fuel map — the payoff), FEAT-125 (controller
@@ -65,3 +65,36 @@ Acceptance changes accordingly:
 - The physics fingerprint WILL change for part-throttle runs. That is expected; re-baseline it.
 
 Each engine needs a light-load upshift point beside `shiftUpRPM` in data/engines.js.
+
+## Resolution (2026-10-19, `feature/feat-125-controller`)
+
+Shipped as ONE throttle-averaged schedule (`src/drivetrain.js`, shift block):
+- **Upshift point** = `shiftUpLightRPM` + load × (`shiftUpRPM` − light), where
+  load = (throttle average)^`shiftThrottleCurve`. The average is an exponential one with a time
+  constant `shiftThrottleTau` = 1.5 s, and the curve exponent is 2. Light ends: Vulcan 2000 rpm,
+  Duratec 2200 rpm (data/engines.js).
+- **The anti-hunt band slides the same way**, from `shiftHysteresisLight` 300 rpm to `shiftHysteresis`
+  800. With the 800 band alone, 4th could not engage below ~65 mph at a light foot.
+- **Part-throttle downshifts read the same average.** Kickdown needs the pedal held ≥ 95 % for
+  `kickdownDelay` = 0.4 s. On the raw pedal, every feathered W tap kicked the box down and the
+  release let it straight back up (2-3-2-3 hunting). That was invisible before only because nothing
+  upshifted early.
+
+Measured in a flat-plane study with the full physics, 4R44E / 5R55E:
+
+| Speed | Before | After |
+|---|---|---|
+| 30 mph | 1st @ 3870 | 2nd / 3rd @ 2270 |
+| 55 mph | 2nd @ 4120 / 5220 | 4th @ 1920, 5th @ 2035 |
+| WOT | 37 / 68 / 102 mph @ 5400 | identical |
+
+Fuel at 55 mph: floored burns 3.2× a light foot. It was 2.0× when the only saving was the pedal.
+
+Gates:
+- New `test/shift-schedule.mjs`.
+- `test/fuel-map.mjs` style band raised 1.8 → 2.6, plus a 10 s settle and an integer step count.
+- drivetrain-climb unchanged and passing.
+- Debug: Drivetrain & Brakes has five new sliders.
+
+Known residue: a keyboard *launch* feathered at ~30 % can blip 2→1 once around 20 mph on the 4R44E,
+because the average is still climbing when 1→2 fires. Not seen at steady pedal.

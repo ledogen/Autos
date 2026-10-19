@@ -225,13 +225,27 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // toward kickdownRPM so the box drops a gear into the power band instead of lugging the converter.
   // spinLock: hold the gear while the driven wheels are spinning (see wheelspin monitor above) — a
   // wheelspin-inflated coupled RPM is not real road speed, so shifting on it just hunts mid-slide.
+  // FEAT-124 (one schedule, no modes): BOTH shift points read a time-weighted throttle average, so a
+  // light foot upshifts early, a floored one revs out exactly as before, and a keyboard driver
+  // feathering W shifts like a pad held at the same average. The instantaneous pedal is read only for
+  // KICKDOWN, and only once it has been held at the floor for kickdownDelay. A feathered W tap is
+  // momentarily a floored pedal, and reading it raw kicked the box down on every tap, then the
+  // release let it straight back up (2-3-2-3 hunting).
+  const tauAvg = params.shiftThrottleTau ?? 1.5
+  st.throttleAvg = st.throttleAvg === undefined ? throttle : st.throttleAvg + (throttle - st.throttleAvg) * (1 - Math.exp(-dt / tauAvg))
+  st.floorTime = throttle >= 0.95 ? (st.floorTime || 0) + dt : 0
   if (!reverse && st.shiftTimer <= 0 && !spinLock) {
-    const shiftUp       = params.shiftUpRPM || 4300
+    const shiftUpWot    = params.shiftUpRPM || 4300
+    const shiftUpLight  = params.shiftUpLightRPM ?? shiftUpWot
+    const load          = st.throttleAvg ** (params.shiftThrottleCurve ?? 2)   // 0 light … 1 floored
+    const shiftUp       = shiftUpLight + load * (shiftUpWot - shiftUpLight)
     const shiftDownBase = params.shiftDownRPM || 1300
     const kickdown      = params.kickdownRPM || 2200
-    const shiftDownEff  = shiftDownBase + pedalEff * (kickdown - shiftDownBase)
+    const downLoad      = st.floorTime >= (params.kickdownDelay ?? 0.4) ? 1 : st.throttleAvg
+    const shiftDownEff  = shiftDownBase + downLoad * (kickdown - shiftDownBase)
     const holdTime      = params.shiftHoldTime || 0.6
-    const hysteresis    = params.shiftHysteresis ?? 800
+    const hystWot       = params.shiftHysteresis ?? 800
+    const hysteresis    = (params.shiftHysteresisLight ?? hystWot) + load * (hystWot - (params.shiftHysteresisLight ?? hystWot))
     if (st.gear < nGears && coupled > shiftUp) {
       // Anti-hunt (the key hysteresis lever): only upshift if the next gear's coupled RPM would land a
       // full `shiftHysteresis` band ABOVE the current downshift point — i.e. the higher gear has real
