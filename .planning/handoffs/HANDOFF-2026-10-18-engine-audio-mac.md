@@ -86,6 +86,23 @@
    `assets/audio/src/`, which doesn't ship. Verify on a Pages build (FEAT-120 acceptance).
 5. Volume/enable sliders beside the existing audio sliders.
 
+## Second pass (owner, 2026-10-18 — do NOT act on this in the first build)
+
+- **Rev limiter sounded exaggerated in engine-sim.** The fuel cut was very aggressive and loud, and
+  the rpm dropped too far on each cut. The owner thinks softening the sim's fuel-cut settings would
+  help. The current setting is `vulcan30.mr:372`: `rev_limit 6200 rpm`, `limiter_duration 0.2` s.
+  A 0.2 s cut is long, and that is the deep rpm drop.
+- **Check first: this setting may not reach the game at all.** The grid tops out at 5500 and the
+  limiter is set to 6200 on purpose, so no take contains a limiter cut. In-game, the limiter sound
+  comes from OUR drivetrain. `drivetrain.js:172` and `fuel.js:111` use a soft linear torque/fuel
+  taper over 200 rpm above redline (5500), not a timed cut. That sound is whatever the sample player
+  does as load falls to "off" near redline. So on the first build, listen to the limiter in-game
+  before changing the sim. Changing the sim only matters if we add a dedicated limiter take. If we
+  do, use a short `limiter_duration` (≈0.02–0.05 s) so the cut is a stutter, not a dip.
+- Measured on the first build (2026-10-18, revving in park): the game's limiter HOLDS a steady
+  5700 rpm on the 5500-full loop pitched ×1.036. There is no cut at all, so in-game the limiter
+  currently has no stutter. If the owner wants one, it's a game-side drivetrain change, not a sim one.
+
 ## Messaging the Windows session
 
 It doesn't show in ListAgents from the Mac. The owner relays by hand. Its job sheet is

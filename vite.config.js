@@ -61,7 +61,10 @@ function copyRuntimeAssets () {
       const thumbs = readdirSync(resolve(root, 'assets/items'))
         .filter((f) => f.endsWith('.png'))
         .map((f) => `assets/items/${f}`)
-      for (const rel of [...RUNTIME_ASSETS, ...DIAGNOSTIC_ASSETS, ...glbs, ...thumbs]) {
+      // FEAT-120: the baked engine loops + manifest + muffler IR, fetched by URL from engine-audio.js.
+      // Only assets/audio/engine/ ships; assets/audio/src/ (raw takes, references, tools) never does.
+      const engineAudio = readdirSync(resolve(root, 'assets/audio/engine')).map((f) => `assets/audio/engine/${f}`)
+      for (const rel of [...RUNTIME_ASSETS, ...DIAGNOSTIC_ASSETS, ...glbs, ...thumbs, ...engineAudio]) {
         const dest = resolve(outDir, rel)
         mkdirSync(dirname(dest), { recursive: true })
         copyFileSync(resolve(root, rel), dest)

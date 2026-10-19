@@ -1,5 +1,9 @@
 /**
- * src/engine-audio.js — FEAT-23: a deliberately simple WebAudio engine drone tied to engine RPM.
+ * src/engine-audio.js — FEAT-23 / FEAT-120: engine sound tied to engine RPM.
+ *
+ * FEAT-120: an engine with a baked sample set (assets/audio/engine/manifest.json, today the Vulcan
+ * V6 only) plays recorded engine-sim loops — see "FEAT-120: baked engine loops" below. Every other
+ * engine, and the Vulcan until its loops have loaded, falls back to the FEAT-23 drone:
  *
  * Not a sample-based engine sim — just a small oscillator stack that sounds "engine-ish" without much
  * cost or code. Firing frequency for a 4-stroke V6 is 3 firings/rev (cylinders/2), so the fundamental is
@@ -99,18 +103,22 @@ export function ensureEngineAudio () {
     oscs.push({ osc, gain: g, mult: r.mult })
   }
   started = true
+  loadBake()
 }
 
 /**
  * Per-frame update: map engine RPM → fundamental, open the filter with revs/throttle, and set volume.
  * Ramps every param with setTargetAtTime (~50 ms) so nothing zippers.
  */
-export function updateEngineAudio (rpm, throttle, firing = true, cylinders = 6) {
+export function updateEngineAudio (rpm, throttle, firing = true, cylinders = 6, engine = null) {
   if (!started || !ctx) return
   const now = ctx.currentTime
   const tc = 0.05
 
-  if (!enabled) { master.gain.setTargetAtTime(0, now, tc); return }
+  // FEAT-120: the baked loops take over for the engine they were recorded from; the drone mutes.
+  const baked = bake && engine === bake.engine
+  updateBake(rpm, throttle, enabled && firing && baked, now)
+  if (!enabled || baked) { master.gain.setTargetAtTime(0, now, tc); return }
 
   // FEAT-33: `firing` is false whenever the ignition is not RUNNING. This drone models COMBUSTION,
   // so it has to go silent for a dead engine — including the case that would otherwise sound worst,
@@ -167,6 +175,156 @@ export function setAudioPageActive (on) {
   if (!ctx) return                                  // no gesture yet — nothing to suspend
   if (pageActive) { if (ctx.state === 'suspended') ctx.resume() }
   else if (ctx.state === 'running') ctx.suspend()
+}
+
+// ── FEAT-120: baked engine loops ─────────────────────────────────────────────────────────────────
+//
+// engine-sim renders of the Vulcan (assets/audio/src/engine/NOTES.md): 8 rpm rows × 3 loads (off /
+// part 0.30 / full throttle), each a seamless loop at a dyno-held rpm. All 24 run for the life of the
+// page; each frame only re-targets gains and playbackRates (no per-frame node creation). The two rows
+// bracketing the rpm and the two loads bracketing the throttle get weight, everything else sits at 0.
+// playbackRate = rpm / rpmMeasured pitch-shifts each loop to the live rpm.
+//
+// The loops are DRY (no exhaust). The chain after the mix is the exhaust, game-side so parts can swap
+// without a re-bake:
+//   loops → muffler (ConvolverNode — WebAudio's convolution node, loaded with engine-sim's own stock
+//   IR, proven to reproduce the sim's stock sound exactly) ─┬─ cabin ───────────────────────┬─ trim → out
+//                                                          └─ exterior (shelves + ground) ─┘
+// No air-noise stage. engine-sim's V knob only noise-modulates the 0.99·f half of its signal, and the
+// dry signal is dominated by the OTHER half, 0.01·f′ (f′ = df/dt, so it is ×441 per sample-step).
+// The 2026-10-18 first build multiplied the WHOLE loop by noise and turned the engine into hiss.
+// Measured since: dry ⊛ IR alone matches the V 1.0 stock references within ±1 dB in every octave
+// band 63 Hz–8 kHz, at 750 off, 2340 part and 4140 full.
+
+// LISTENER: the stock IR is a steep low-pass (+40 dB at 80–160 Hz, −50 dB at the top), which is
+// what a body shell does — panels lose ~6 dB/octave more with frequency (the mass law) and the cabin
+// booms. So the plain muffler output IS the cabin (hood cam). An outside camera hears the tailpipe
+// direct: a high shelf (a filter lifting everything above its corner) gives back the top the body
+// took, a low shelf takes out the boom, and the road adds one reflection — pipe 0.4 m up, camera
+// 1.8 m up and 6 m back is a 0.2 m longer path, 0.6 ms late, first comb notch near 850 Hz. The two
+// paths are copies of one signal (correlated), so they crossfade linearly, not equal-power.
+// ponytail: chase/freecam get the fixed 6 m chase geometry; no distance falloff or panning yet —
+// add a PannerNode (WebAudio's 3D positioner) when an orbiting or far freecam needs it.
+
+// LOUDNESS: the real range is ~55 dB from 750 off to 5500 full, so idle is inaudible beside WOT.
+// `dynamics` (0..1) lifts each loop by dynamics × (its distance below the loudest loop, in dB),
+// from the manifest's peakDbfs: 0 = the sim's true levels, 1 = every loop equally loud.
+// ponytail: a static per-loop lift, not a compressor; swap in a DynamicsCompressorNode if the
+// static curve can't follow load changes well enough.
+
+const BAKE_DIR = 'assets/audio/engine/'
+const LOADS = ['off', 'part', 'full']
+const PART_THROTTLE = 0.30          // the throttle the 'part' loops were rendered at
+const MUFFLER_GAIN_DB = 35          // the stock IR lifts the loudest dry loop by ~+34 dB (measured)
+const EXTERIOR_TRIM_DB = -3.5       // the exterior path peaks ~2–3 dB hotter at +15/−12 (mostly the in-phase reflection)
+const GROUND_DELAY_S = 0.0006       // reflected − direct path, 0.2 m / 343 m/s
+const GROUND_GAIN = 0.7             // ~−3 dB: asphalt reflects most of it, the longer path spreads a little more
+
+let bake = null           // { engine, loudest, rows: [{ rpm, voices: [{ src, gain, rpmMeasured, peakDbfs } × 3] }] }
+let bakeOut = null        // GainNode — the sampled engine's output, gated by firing/enabled/volume
+let dynamics = 0.5
+let exterior = true, extBrightDb = 15, extBoomDb = -6
+let cabin = null, outside = null, hiShelf = null, loShelf = null   // the listener split (LISTENER above)
+
+async function loadBake () {
+  try {
+    const manifest = await (await fetch(BAKE_DIR + 'manifest.json')).json()
+    const decode = async f => ctx.decodeAudioData(await (await fetch(BAKE_DIR + f)).arrayBuffer())
+    const grid = manifest.loops.filter(l => LOADS.includes(l.load))
+    const [ir, ...bufs] = await Promise.all([decode('muffler-stock.flac'), ...grid.map(l => decode(l.file))])
+
+    bakeOut = ctx.createGain()
+    bakeOut.gain.value = 0
+    bakeOut.connect(ctx.destination)
+    const muffler = ctx.createConvolver()
+    muffler.normalize = false         // engine-sim applies the IR raw; normalising would re-level it
+    muffler.buffer = ir
+    cabin = ctx.createGain()
+    muffler.connect(cabin)
+    cabin.connect(bakeOut)
+    hiShelf = ctx.createBiquadFilter()
+    hiShelf.type = 'highshelf'
+    hiShelf.frequency.value = 800
+    loShelf = ctx.createBiquadFilter()
+    loShelf.type = 'lowshelf'
+    loShelf.frequency.value = 120
+    const ground = ctx.createDelay(0.01)
+    ground.delayTime.value = GROUND_DELAY_S
+    const groundGain = ctx.createGain()
+    groundGain.gain.value = GROUND_GAIN
+    outside = ctx.createGain()
+    muffler.connect(hiShelf)
+    hiShelf.connect(loShelf)
+    loShelf.connect(outside)
+    loShelf.connect(ground)
+    ground.connect(groundGain)
+    groundGain.connect(outside)
+    outside.connect(bakeOut)
+
+    const rows = new Map()
+    grid.forEach((l, i) => {
+      const src = ctx.createBufferSource()
+      src.buffer = bufs[i]
+      src.loop = true
+      const gain = ctx.createGain()
+      gain.gain.value = 0
+      src.connect(gain)
+      gain.connect(muffler)
+      src.start(0, Math.random() * bufs[i].duration)
+      if (!rows.has(l.rpmTarget)) rows.set(l.rpmTarget, { rpm: l.rpmTarget, voices: [] })
+      rows.get(l.rpmTarget).voices[LOADS.indexOf(l.load)] = { src, gain, rpmMeasured: l.rpmMeasured, peakDbfs: l.peakDbfs }
+    })
+    bake = { engine: manifest.engine, rows: [...rows.values()].sort((a, b) => a.rpm - b.rpm),
+             loudest: Math.max(...grid.map(l => l.peakDbfs)) }
+  } catch (e) {
+    console.warn('[engine-audio] baked engine loops failed to load; keeping the drone', e)
+  }
+}
+
+function updateBake (rpm, throttle, on, now) {
+  if (!bake) return
+  const tc = 0.05
+  if (!on) { bakeOut.gain.setTargetAtTime(0, now, 0.12); return }   // same fade-out as the drone
+
+  const rows = bake.rows
+  const r = Math.max(rows[0].rpm * 0.5, rpm || rows[0].rpm)
+  // Row weights: linear in log-rpm between the two bracketing rows (the grid is geometric).
+  let j = 0
+  while (j < rows.length - 2 && r > rows[j + 1].rpm) j++
+  const wr = Math.min(1, Math.max(0, Math.log(r / rows[j].rpm) / Math.log(rows[j + 1].rpm / rows[j].rpm)))
+  // Load weights: off ↔ part over 0..PART_THROTTLE, part ↔ full above it.
+  const t = Math.min(1, Math.max(0, throttle || 0))
+  const wl = t <= PART_THROTTLE ? [1 - t / PART_THROTTLE, t / PART_THROTTLE, 0]
+                                : [0, (1 - t) / (1 - PART_THROTTLE), (t - PART_THROTTLE) / (1 - PART_THROTTLE)]
+  rows.forEach((row, i) => {
+    const w = i === j ? 1 - wr : i === j + 1 ? wr : 0
+    row.voices.forEach((v, l) => {
+      // sqrt: equal-power crossfade — the loops are uncorrelated, so their powers add, not amplitudes.
+      const lift = Math.pow(10, dynamics * (bake.loudest - v.peakDbfs) / 20)
+      v.gain.gain.setTargetAtTime(Math.sqrt(w * wl[l]) * lift, now, tc)
+      v.src.playbackRate.setTargetAtTime(r / v.rpmMeasured, now, tc)
+    })
+  })
+
+  const x = exterior ? 1 : 0
+  cabin.gain.setTargetAtTime(1 - x, now, 0.08)
+  outside.gain.setTargetAtTime(x * Math.pow(10, EXTERIOR_TRIM_DB / 20), now, 0.08)
+  hiShelf.gain.setTargetAtTime(extBrightDb, now, tc)
+  loShelf.gain.setTargetAtTime(extBoomDb, now, tc)
+  // Trim: undo the muffler's lift, so the loudest loop sits near full scale.
+  bakeOut.gain.setTargetAtTime(volume * Math.pow(10, -MUFFLER_GAIN_DB / 20), now, tc)
+}
+
+/**
+ * FEAT-120 sliders + listener. `dyn` 0..1 loudness flattening (LOUDNESS above); `outside` true for any
+ * camera outside the cab; `brightDb` / `boomDb` the exterior high-shelf (800 Hz) and low-shelf (120 Hz)
+ * gains (LISTENER above).
+ */
+export function setEngineAudioTuning (dyn, outside, brightDb, boomDb) {
+  dynamics = Math.min(1, Math.max(0, dyn))
+  exterior = !!outside
+  extBrightDb = brightDb
+  extBoomDb = boomDb
 }
 
 // ── FEAT-33: starter, catch and shutoff ──────────────────────────────────────────────────────────

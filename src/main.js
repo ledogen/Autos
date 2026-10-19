@@ -47,7 +47,7 @@ window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase he
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
-import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playShutoffAudio, playSputterPop } from './engine-audio.js'
+import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setEngineAudioTuning, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playShutoffAudio, playSputterPop } from './engine-audio.js'
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes, playTireBlowout } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
@@ -7482,11 +7482,12 @@ function loop () {
   if (dtrain) {
     setEngineAudioEnabled(RANGER_PARAMS.engineAudioEnabled !== false)
     setEngineAudioVolume(RANGER_PARAMS.engineAudioVolume ?? 0.5)
+    setEngineAudioTuning(RANGER_PARAMS.engineAudioDynamics, getCameraMode() !== 'hood', RANGER_PARAMS.engineChaseBrightDb, RANGER_PARAMS.engineChaseBoomDb)
     // FEAT-50: a low-fuel stumble drops the drone out for its length, with one pop per stumble.
     const fuel = vehicleState.fuel
     if (fuel.sputters !== _sputtersHeard) { if (fuel.sputters > _sputtersHeard) playSputterPop(fuel.sputterDepth); _sputtersHeard = fuel.sputters }
     updateEngineAudio(dtrain.engineRPM, vehicleState.throttle,
-      (vehicleState.ignition?.state ?? 'running') === 'running' && !(fuel.sputterT > 0), RANGER_PARAMS.cylinders)
+      (vehicleState.ignition?.state ?? 'running') === 'running' && !(fuel.sputterT > 0), RANGER_PARAMS.cylinders, RANGER_PARAMS.engine)
   }
 
   // FEAT-33 ignition audio, in two halves.

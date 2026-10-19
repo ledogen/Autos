@@ -204,6 +204,9 @@ export const RANGER_PARAMS = {
   // engine RPM. Starts on the first keypress (browser autoplay gate). Placeholder sound — revisit later.
   engineAudioEnabled: true,  // master toggle for engine sound
   engineAudioVolume:  0.5,   // 0..1 volume
+  engineAudioDynamics: 0.5,  // FEAT-120: 0 = the bake's true ~55 dB idle-to-WOT range, 1 = every loop equally loud
+  engineChaseBrightDb: 15,   // FEAT-120: dB — outside cameras' high shelf above 800 Hz (gives back what the body strips)
+  engineChaseBoomDb:  -12,   // FEAT-120: dB — outside cameras' low shelf below 120 Hz (no cabin boom outdoors)
 
   // Tire-slip audio (src/tire-audio.js): procedural squeal on pavement / noise tear on dirt, gated by
   // per-wheel slip velocity (silent < 4 m/s, full at 12 m/s). Shares the engine's AudioContext.
