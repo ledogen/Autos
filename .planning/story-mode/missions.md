@@ -19,7 +19,7 @@ current and wins.** `design-amendments-2026-07-29.md` is a historical provenance
 | Restraint is graded, and zero health fails the job (§3, 2026-10-06) | — |
 | Fragile deeds and letter follow health, as haul's follow the load (FEAT-97) | — |
 | Time trials live in-run | Comparability between players — parked |
-| Main missions = **the expedition camp** (R1 boss, 2026-10-19; was the bridge site); a five-line requisition; beat/labor split | What brings the other R1↔R2 roads back (FEAT-103) |
+| Main missions = **the expedition camp** (R1 boss, 2026-10-19; was the bridge site); a five-line requisition; beat/labor split | — |
 | **Log drag demoted** to a free-roam toy / one-off scenario (2026-10-12) | Spawning the log reliably on random roads |
 | Clearance is run-layer | — |
 

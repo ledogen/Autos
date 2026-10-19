@@ -78,20 +78,14 @@ edge, the 3.3 km arc (~2.9 km long)**. R1's outer arc and two side walls never o
   owner rejected a softer teleport-and-reorient: more complicated and less transparent.
 - **Funding it:** deliver the fifth line, **sleep at the camp, wake to the trail**. The overnight
   hides the network rebuild (FEAT-28 wants the unlock load hidden) and costs only the night.
-- **Then the rest of the north wall:** only the trail at first; every other trimmed R1↔R2 road comes
-  back later, revealed during a sleep.
-
-## Open — the owner's
-
-1. **What brings the other R1↔R2 roads back:** a couple of days after the trail, or a number of good
-   deeds earned in R2? Proposed: **2 R2 good deeds**, revealed at the next sleep after (deeds are
-   already the gate currency and are deterministic; a day count is a hidden timer).
-2. **Is the requisition boss-only, or a general mission family** that ordinary givers can post for a
-   larger reward? A non-boss requisition would need a real payout — part of the separate
-   mission-rewards conversation.
-3. **No road crosses the north wall into R2's network:** then R2 is unreachable on that seed anyway —
-   FEAT-28's "unsatisfiable region" case, owned there.
+- **The other R1↔R2 roads stay pruned for the run** (owner, 2026-10-19: *"simpler to just prune
+  existing roads instead of trying to add some back"*). The trail is the only link between R1 and R2;
+  every later trip between them runs through the camp. Story mode only ever hides edges.
+- **The requisition is boss-only.** No ordinary giver posts one.
+- **A seed with no road across the north wall into R2's network** is a bigger problem than this
+  ticket — R2 is unreachable. It must be checked (measured over seeds) under FEAT-28 before this is
+  built.
 
 ## Acceptance
 
-Written when the open questions are ruled and FEAT-28's walls exist.
+Written when FEAT-28's walls exist and the north-wall crossing check has been measured.
