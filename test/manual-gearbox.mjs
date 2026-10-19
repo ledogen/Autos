@@ -250,5 +250,23 @@ console.log('\n12. the transmission damage track')
   check(P._transShiftScale === 1, 'a new box shifts at 1×')
 }
 
+
+console.log('\n13. a clutch dump at 2200 rpm (the capture\'s pedal) locks at once, no chatter')
+{
+  const { P, vs } = fresh()
+  vs.clutch = 0; vs.shiftRequest = 1; step(P, vs, 30)
+  dt(vs).engineOmega = 2200 / 9.5493
+  let lockedAt = -1, flips = 0, prevSign = 0
+  step(P, vs, 120, (i) => {
+    vs.clutch = 1; vs.throttle = Math.min(0.85, 0.33 + i * DT * 1.5)   // the capture's pedal: 0.33 → 0.85 in ~0.35 s
+    const w = vs.wheelOmega[2], sg = Math.sign(w)
+    if (prevSign && sg && sg !== prevSign) flips++
+    if (sg) prevSign = sg
+    if (lockedAt < 0 && dt(vs).locked) lockedAt = i
+  })
+  check(lockedAt >= 0 && lockedAt <= 3, `locked ${lockedAt} step(s) after the bite`)
+  check(flips === 0, `the rear wheels never reverse (${flips} sign flips — the chatter flipped every step)`)
+  check(vs.ignition.state === 'running' && vf(vs) > 4, `still running, ${(vf(vs) * MPH).toFixed(1)} mph after 2 s`)
+}
 console.log(`\nMANUAL-GEARBOX GATE: ${failures ? `${failures} FAILURE(S)` : 'all checks passed ✓'}`)
 process.exit(failures ? 1 : 0)

@@ -365,7 +365,7 @@ function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve
   const g      = st.mGear
   const ratio  = g > 0 ? gears[Math.min(g, nGears) - 1] : g < 0 ? -(params.reverseRatio || 3.4) : 0
   const total  = ratio * finalDrive                 // signed: R turns the disc backwards
-  const omegaC = axleOmega * total                  // clutch-disc (gearbox input) speed [rad/s]
+  let omegaC   = axleOmega * total                  // clutch-disc (gearbox input) speed [rad/s]
   const inGear = g !== 0
   st.coupledRPM = Math.abs(omegaC) * RPM_PER_RAD
   st.activeGear = g
@@ -414,12 +414,32 @@ function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve
   // ── Clutch: slip or lock ────────────────────────────────────────────────────────────────────────
   const Tcap = inGear ? clutch * (params.clutchMaxTorque ?? 450) : 0
   let Tcl = 0
+  // The DISC crossed the flywheel during the last step. Slipping, the clutch pushes the rear wheels at
+  // full capacity (~3.1 kN·m each in 1st) and a 1.22 kg·m² wheel can overshoot the engine's speed in ONE
+  // step; stepped as plain Coulomb friction the next step then pushes back at full capacity, and so on —
+  // a 20 Hz chatter (±42 rad/s at the wheel) that only ended once the engine bogged down to the disc
+  // (~2 s; capture autos-capture-1792409679576, a clutch dump at 2200 rpm, assist off). The engine-side
+  // check below cannot see a crossing the WHEELS made. So lock here, at the common speed that conserves
+  // momentum (the wheels' own inertia reflected to the disc vs the flywheel's), and let the locked path
+  // hand the engine's inertia to the wheel solver, which resolves the tire implicitly.
+  if (!st.locked && Tcap > 0 && st.slipSign && Math.sign(wE - omegaC) === -st.slipSign && Math.abs(Tnet) <= Tcap) {
+    const Jr = 2 * (params.wheelInertia || 1.22) / (total * total)   // both rears, reflected to the disc
+    const wC = (J * wE + Jr * omegaC) / (J + Jr)
+    const dAxle = (wC - omegaC) / total
+    vehicleState.wheelOmega[2] += dAxle
+    vehicleState.wheelOmega[3] += dAxle
+    omegaC = wC
+    st.coupledRPM = Math.abs(omegaC) * RPM_PER_RAD
+    st.locked = true
+  }
+  st.slipSign = 0
   if (st.locked && (Tcap <= 0 || Math.abs(Tnet) > Tcap)) st.locked = false
   if (st.locked) {
     wE  = omegaC
     Tcl = Tnet
   } else {
     const slip = wE - omegaC
+    if (Tcap > 0) st.slipSign = Math.sign(slip)   // for the next step's disc-crossing check above
     Tcl = Tcap > 0 ? Tcap * Math.sign(slip) : 0
     const wNext = wE + dt / J * (Tnet - Tcl)
     if (Tcap > 0 && Math.sign(wNext - omegaC) !== Math.sign(slip)) {
