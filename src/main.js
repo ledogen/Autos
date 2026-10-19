@@ -67,6 +67,7 @@ import { applyWorldPreset, activePreset, formatWorldCode, parseWorldCode } from 
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
 import { PAD_PARAMS, BINDINGS } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
+import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -1446,7 +1447,7 @@ document.getElementById('su-seed')?.addEventListener('input', (e) => {
 document.getElementById('su-seed')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); void _startFromSetup() }
   else if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); document.getElementById('main-menu')?.classList.remove('setup') }
-  e.stopPropagation()   // keep WASD/M/Esc out of the world while typing a seed
+  e.stopPropagation()   // keep WASD/M/Esc out of the world while typing a seed (menu-nav.js sees arrows first: it listens in capture)
 })
 // The binding chart, generated from gamepad.js's own table.
 {
@@ -1469,6 +1470,12 @@ function _closeSettings () {
   document.getElementById('pause-menu')?.classList.remove('settings')
 }
 document.getElementById('pm-settings')?.addEventListener('click', () => _openSettings(true))
+initMenuNav()
+// Esc / pad B steps back out of a menu page from the first frame. The main Esc handler further down
+// does this too, but it only exists once the world is built — until then the pages were one-way.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !_worldInit) document.getElementById('main-menu')?.classList.remove('settings', 'scenarios', 'setup')
+})
 
 // The lab is a debug rig with no world of its own, so it just enters.
 document.getElementById('mm-lab')?.addEventListener('click', async () => {
@@ -5851,7 +5858,8 @@ perfMark('init: spawn reseated')  // D-arc
 // Backtick toggles them from debug.js's own backtick listener, under the panel's lockout (R-13).
 document.addEventListener('keydown', e => {
   // FEAT-16: M toggles the 2D top-down map overlay (sim keeps running underneath).
-  if (e.key === 'm' || e.key === 'M') {
+  // Not while the stage owns the screen: the map is a world screen, and body.stage-on hides it anyway.
+  if ((e.key === 'm' || e.key === 'M') && !document.body.classList.contains('stage-on')) {
     // FEAT-43's region window used to be set here, on the keypress. BUG-68 moved it INTO the map
     // (Map2D._syncRegionWindow, run on open and per frame): doing it only here meant any other way
     // of opening or re-targeting the map — mission framing is the live one — left the map's cap at

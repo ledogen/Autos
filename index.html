@@ -245,6 +245,10 @@
     #pause-menu #cs-bindings { margin-left: 0; }
     #cs-bindings td { padding: 1px 14px 1px 0; }
     #cs-bindings td:first-child { color: #b9c4cd; }
+    /* FEAT-41 menu-nav.js: the keyboard/pad highlight, drawn exactly like hover. */
+    #main-menu button.nav-focus { color: #ffffff; border-left-color: #00ff88; padding-left: 26px; }
+    #pause-menu button.nav-focus, #story-seed-modal button.nav-focus { background: rgba(255, 255, 255, 0.08); color: #ffffff; border-color: #888; }
+    input.nav-focus { border-color: #00ff88 !important; outline: none; }
     /* FEAT-62: the scenario list — same page-swap as settings. Buttons are built from
        data/scenarios.js by main.js (_renderScenarioList); each carries a dim blurb line. */
     #mm-scenarios-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
@@ -1402,7 +1406,7 @@
       <table id="cs-bindings"></table>
       <button id="mm-settings-back">back</button>
     </div>
-    <div class="mm-foot">esc pauses &middot; backtick opens the debug panel (not in scenarios)</div>
+    <div class="mm-foot">arrows or the pad choose &middot; esc pauses &middot; backtick opens the debug panel (not in scenarios)</div>
   </div>
 
   <!-- FEAT-41: load caption. Text is set from src/story.js via the setLoading dep, and from the
