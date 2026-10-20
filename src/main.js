@@ -4181,10 +4181,9 @@ function _updateFetchPrompt (poiEl, pulled) {
     return true
   }
   _fetchHomeMsg = null
-  if (!pickId) return false
-  // On the outbound leg away from the pickup: nothing to say, and nothing else may answer the brake.
-  if (poiEl) poiEl.style.display = 'none'
-  return true
+  // Away from the pickup the fetch has nothing to say, and the brake falls through to the pump,
+  // the camp and mom's door: a job is player state, not world state (owner, 2026-10-19).
+  return false
 }
 
 /** Who a fetch goes home to, as the prompt and the HUD say it. */
