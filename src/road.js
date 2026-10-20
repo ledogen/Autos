@@ -2502,16 +2502,6 @@ export class RoadSystem {
         return regions.length ? regions : null
     }
 
-    // FEAT-13: the terminal heading the routed edge `at → toward` leaves the anchor `at` with (and the
-    // ribbon-weld target there) = the EDGE's OWN direction toward its neighbour, so edges meeting at a
-    // junction DIVERGE toward their neighbours (a shared per-cell heading made them all leave parallel and
-    // overlap — the near-parallel-graze step bug). A straight pass-through still gets ~G1 for free (the two
-    // opposite edges' headings are collinear); corners/junctions bend/diverge. Pure / window-invariant.
-    _edgeTerminalHeading(at, toward) {
-        const a = this._nodePos(at), b = this._nodePos(toward)
-        return Math.atan2(b.z - a.z, b.x - a.x)
-    }
-
     // ── FEAT-13 v2 graph topology — Urquhart graph over a blue-noise anchor set ──────────────────────
     // The lattice (one grid anchor per cell + spanning-forest neighbour edges) is replaced by:
     //   (1) BLUE-NOISE anchor SITES — multiple seeded candidates per macro-cell, Poisson-disk thinned, so
@@ -10773,28 +10763,36 @@ export class RoadSystem {
         }
         // (tx[N-1]/tz[N-1] = forward tangent of the last segment.)
 
-        // FEAT-10: seal the ribbon across run joins. The ribbon cross-section frame is runProfile.tx/tz;
-        // at a run's endpoints the LOCAL last-segment direction kinks vs the neighbour run, so the two
-        // runs' ±halfWidth edge vertices don't meet → an outside-of-bend wedge (terrain shows through),
-        // even though the centerline is continuous. Every run touching a node targets that node's edge
-        // heading (_edgeTerminalHeading toward the neighbour), so blending each run's endpoint
-        // tangent toward it over roadJoinWeldLength makes adjacent endpoint cross-sections COINCIDE → the
-        // edges line up → the join seals. Not an average/weld: it's the shared node tangent both runs
-        // already agree on. (Guarded against a reverse-stored run by the forward-dot check.)
+        // FEAT-10: seal the ribbon across a DEGREE-2 run join. The ribbon cross-section frame is
+        // runProfile.tx/tz; at the join the two runs' last-segment directions kink, so their ±halfWidth
+        // edge vertices don't meet → an outside-of-bend wedge (terrain shows through), even though the
+        // centerline is continuous. Both runs blend their endpoint tangent over roadJoinWeldLength toward
+        // the BISECTOR of the two built away-tangents (a mitre), so the end cross-sections COINCIDE.
+        // The target comes from the routed points (_graphNodeStrands), never the node-to-node chord: the
+        // v2 router does not leave a node along that chord (median 20°, up to 105° off), and aiming there
+        // twisted the ribbon's first 6 m into a bow-tie (owner capture 1792452228448, 72° twist).
+        // ≥3-way nodes and >120° elbows get no weld: a junction pad covers the end (cutback 10 m > 6 m).
         {
             const Rw = p.roadJoinWeldLength ?? 6
-            if (Rw > 0 && netEntry.cellA && netEntry.cellB) {
-                const hS = this._edgeTerminalHeading(netEntry.cellA, netEntry.cellB)
-                const hE = this._edgeTerminalHeading(netEntry.cellB, netEntry.cellA)
-                let sx = Math.cos(hS), sz = Math.sin(hS), ex = Math.cos(hE), ez = Math.sin(hE)
-                const fwdS = tx[0] * sx + tz[0] * sz >= 0, fwdE = tx[N - 1] * ex + tz[N - 1] * ez >= 0
+            const weldDir = (id, isStart) => {
+                if (!id) return null
+                const st = this._graphNodeStrands(id)
+                if (st.length !== 2) return null
+                const own = st.find(s => s.key === runKey), oth = st[0] === own ? st[1] : st[0]
+                if (!own || own.wx * oth.wx + own.wz * oth.wz > 0.5) return null   // kink > 120°: pad elbow
+                const ax = own.wx - oth.wx, az = own.wz - oth.wz, L = Math.hypot(ax, az), sg = isStart ? 1 : -1
+                return { x: sg * ax / L, z: sg * az / L }
+            }
+            const wS = Rw > 0 ? weldDir(netEntry.cellA, true) : null
+            const wE = Rw > 0 ? weldDir(netEntry.cellB, false) : null
+            if (wS || wE) {
                 const aS = arcPos[0], aE = arcPos[N - 1]
                 for (let i = 0; i < N; i++) {
                     let bx = tx[i], bz = tz[i]
                     const dS = arcPos[i] - aS
-                    if (fwdS && dS < Rw) { const t = 1 - dS / Rw, f = t * t * (3 - 2 * t); bx += (sx - bx) * f; bz += (sz - bz) * f }
+                    if (wS && dS < Rw) { const t = 1 - dS / Rw, f = t * t * (3 - 2 * t); bx += (wS.x - bx) * f; bz += (wS.z - bz) * f }
                     const dE = aE - arcPos[i]
-                    if (fwdE && dE < Rw) { const t = 1 - dE / Rw, f = t * t * (3 - 2 * t); bx += (ex - bx) * f; bz += (ez - bz) * f }
+                    if (wE && dE < Rw) { const t = 1 - dE / Rw, f = t * t * (3 - 2 * t); bx += (wE.x - bx) * f; bz += (wE.z - bz) * f }
                     const L = Math.hypot(bx, bz) || 1e-8
                     tx[i] = bx / L; tz[i] = bz / L
                 }

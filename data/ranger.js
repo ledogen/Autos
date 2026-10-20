@@ -827,9 +827,9 @@ export const RANGER_PARAMS = {
   roadJunctionBlendMaxGrade: 0.12, // rise/run — max artificial grade the junction blend may add
 
   // FEAT-10: roadJoinWeldLength — how far from a run's endpoints the ribbon cross-section tangent
-  // blends toward the node's edge heading (_edgeTerminalHeading), so adjacent runs build the
-  // SAME endpoint cross-section and their ribbon edges line up (seals the outside-of-bend wedge at run
-  // joins). m. 0 = off (endpoint tangent = local last-segment direction, the un-sealed default).
+  // blends toward the mitre (bisector) of the two built tangents at a DEGREE-2 join, so both runs build
+  // the SAME endpoint cross-section and their ribbon edges line up (seals the outside-of-bend wedge at
+  // run joins). m. 0 = off (endpoint tangent = local last-segment direction, the un-sealed default).
   roadJoinWeldLength: 6,
 
   // roadFilletRadius: junction pad corner fillet radius (QUAL-11). The tangent arc joining two
