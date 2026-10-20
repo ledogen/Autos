@@ -23,6 +23,7 @@
       /* surfaces + lines */
       --hud-bg: rgba(0, 0, 0, 0.6);
       --card-bg: rgba(0, 0, 0, 0.86);
+      --menu-bg: rgba(0, 0, 0, 0.7);
       --line: #3a4450;
       --line-card: #4a5a6a;
       --line-control: #55606b;
@@ -63,7 +64,7 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: var(--card-bg);
+      background: var(--menu-bg);
       border: 1px solid var(--line-card);
       padding: 28px 40px;
       font-family: var(--font);
@@ -107,7 +108,7 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: var(--card-bg);
+      background: var(--menu-bg);
       border: 1px solid var(--line-card);
       padding: 26px 34px;
       font-family: var(--font);
@@ -407,6 +408,8 @@
       min-width: 380px;
       text-align: center;
     }
+    /* The camp card is a menu you sit in, not a card you read: lighter, like pause (owner, 2026-10-20). */
+    #camp-panel { background: var(--menu-bg); }
     /* FEAT-61 aim reticle — a 20 px ring at screen centre (the brief). pointer-events none so it
        can never eat a drag, and no transition: it must appear the instant F goes down or it lies
        about when aiming started. */

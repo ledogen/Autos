@@ -58,7 +58,8 @@ border).
 | Token | Value | Use | Replaces |
 |---|---|---|---|
 | `--hud-bg` | `rgba(0,0,0,0.6)` | Readouts you look *through*: mission HUD, wallet, energy, GPS | 0.55, 0.62, 0.66 |
-| `--card-bg` | `rgba(0,0,0,0.86)` | Things you *read and act on*: cards, modals, pause | 0.72, 0.82 |
+| `--card-bg` | `rgba(0,0,0,0.86)` | Things you *read*: mission, paper, dialogue and scenario cards | 0.72 |
+| `--menu-bg` | `rgba(0,0,0,0.7)` | Menus you *sit in* with the world still visible: pause, seed prompt, camp card | 0.82 |
 | `--scrim` | `rgba(4,7,10,α)` | Gradients over the menu stage (α ramps 0.94 → 0) | — |
 | `--line` | `#3a4450` | HUD box border, dividers | `#3b4753`, `#3a4650`, `#2c343d` |
 | `--line-card` | `#4a5a6a` | Card / modal border | `#444` |
