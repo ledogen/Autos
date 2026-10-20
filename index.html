@@ -248,6 +248,10 @@
     #main-menu button.nav-focus { color: #ffffff; border-left-color: #00ff88; padding-left: 26px; }
     #pause-menu button.nav-focus, #story-seed-modal button.nav-focus { background: rgba(255, 255, 255, 0.08); color: #ffffff; border-color: #888; }
     input.nav-focus { border-color: #00ff88 !important; outline: none; }
+    /* FEAT-133: the in-game cards each style their buttons their own way, so the pad's highlight is an
+       outline that reads on all of them (light paper cards and dark screens alike). */
+    #mission-panel .nav-focus, #paper-panel .nav-focus, #scenario-panel .nav-focus, #camp-panel .nav-focus,
+    #recovery-card .nav-focus, #inv-screen .nav-focus, #dmg-screen .nav-focus { outline: 2px solid #00c870; outline-offset: 2px; }
     /* FEAT-62: the scenario list — same page-swap as settings. Buttons are built from
        data/scenarios.js by main.js (_renderScenarioList); each carries a dim blurb line. */
     #mm-scenarios-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }

@@ -25,6 +25,7 @@ import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN }
 import { biomeAt, isWetGround, BIOME } from './biome.js'
 import { REGION_RADIUS_M } from './story.js'   // MIN_VIEW_SPAN_M — the widest the map may zoom out to
 import { FLORA_PARAMS } from '../data/flora.js'
+import { pad, PAD_PARAMS } from './gamepad.js'   // FEAT-133: the right stick drives a virtual cursor
 
 // Streamed radius of the map's own RoadSystem around the pan cursor. Sized by the AREA it covers,
 // not the radius: the streamed band carries a wide margin, so 2200 actually built a 6.3 × 6.2 km
@@ -408,6 +409,7 @@ export class Map2D {
         // FEAT-67: the mission board view + the parked-panel cycle hook (see the constructor doc).
         this._getBoard = getBoard || (() => null)
         this._onCycle = onCycle || null
+        pad.mapActive = () => this._open   // FEAT-133: the pad switches to its map layout (gamepad.js MAP_KEYS)
         this._hoverPoi = null      // the source POI under the cursor, or null
         this._hoverIdx = 0         // which of its live offers the card shows (Q / E)
         this._hoverView = null     // this frame's board view for it (card + route)
@@ -483,6 +485,10 @@ export class Map2D {
         this._dragging = false
         this._lastX = 0
         this._lastY = 0
+
+        // FEAT-133: true while _hoverX/_hoverY belong to the pad's virtual cursor, not the mouse.
+        this._padCursor = false
+        this._padT = 0                   // performance.now() of the last _padStep, for its dt
 
         // Bound listeners (so show/hide can add+remove the exact same refs).
         this._onDown  = this._onMouseDown.bind(this)
@@ -705,7 +711,7 @@ export class Map2D {
         this._canvas.addEventListener('wheel', this._onWheel, { passive: false })
         this._canvas.addEventListener('dblclick', this._onDbl)
         this._canvas.addEventListener('mouseleave', this._onLeave)
-        window.addEventListener('keydown', this._onKey)   // FEAT-67: Q / E cycle offers
+        window.addEventListener('keydown', this._onKey, true)   // FEAT-67: Q / E cycle offers (capture: see _onKeyDown)
         // NOT marking the background dirty here. A reopen with nothing changed blits the bitmap
         // left from the last open: repainting it was the whole open hitch (measured 2026-10-15,
         // dpr 2: ~100 ms free roam, ~300 ms story — _paintGround's cover raster, not the network).
@@ -761,10 +767,11 @@ export class Map2D {
         this._canvas.removeEventListener('wheel', this._onWheel)
         this._canvas.removeEventListener('dblclick', this._onDbl)
         this._canvas.removeEventListener('mouseleave', this._onLeave)
-        window.removeEventListener('keydown', this._onKey)
+        window.removeEventListener('keydown', this._onKey, true)
         this._hoverX = undefined         // the cursor is not over a closed map (stale card on reopen)
         this._hoverPoi = null
         this._hoverView = null
+        this._padCursor = false
     }
 
     /**
@@ -785,11 +792,15 @@ export class Map2D {
      * that the map is open behind. Q and E are bound nowhere else in the game.
      */
     _onKeyDown(e) {
-        if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
+        if (e.ctrlKey || e.metaKey || e.altKey) return
         const t = e.target
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
         const d = e.code === 'KeyQ' ? -1 : e.code === 'KeyE' ? 1 : 0
         if (!d) return
+        // FEAT-133: on the map Q / E page offers and nothing else — caught at window capture and
+        // stopped (autorepeats too), so vehicle.js's document listener never sees a manual shift.
+        e.stopPropagation()
+        if (e.repeat) return
         if (this._hoverPoi) {
             const n = this._hoverView?.count ?? 0
             if (n > 1) this._hoverIdx = ((this._hoverIdx + d) % n + n) % n
@@ -1085,6 +1096,13 @@ export class Map2D {
     }
 
     _onMouseMove(e) {
+        // FEAT-133: the mouse takes the hover back only when it really moves — Chrome fires a
+        // zero-movement mousemove when the canvas appears under a resting pointer.
+        if (this._padCursor) {
+            if (!e.movementX && !e.movementY) return
+            this._padCursor = false
+            this._canvas.style.cursor = this._dragging ? 'grabbing' : 'grab'
+        }
         // Road-Feel QoL: remember the hover position so render() can show world coords under the
         // cursor (correlates the map with test/road-character.mjs worst-offender x/z listings).
         const rect = this._canvas.getBoundingClientRect()
@@ -1113,25 +1131,80 @@ export class Map2D {
         if (!this._dragging) return
         this._dragging = false
         this._canvas.style.cursor = 'grab'
-        // Re-stream (chunked) only if the anchor drifted far from where we last streamed, and
-        // debounced so a flurry of small drags doesn't kick off repeated streams. Inside a locked
-        // story region the anchor never moves, so panning costs nothing at all.
+        this._restreamIfDrifted()
+    }
+
+    // Re-stream (chunked) only if the anchor drifted far from where we last streamed, and
+    // debounced so a flurry of small drags doesn't kick off repeated streams. Inside a locked
+    // story region the anchor never moves, so panning costs nothing at all.
+    _restreamIfDrifted() {
         if (this._anchorDrifted()) {
             clearTimeout(this._streamTimer)
             this._streamTimer = setTimeout(() => this._startStream(), STREAM_DEBOUNCE)
         }
     }
 
+    /**
+     * FEAT-133: the pad's virtual cursor. Shown only while the pad is the active input (gamepad.js
+     * pad.active — whichever moved last drives). It stays pinned at the sheet centre and the right
+     * stick slides the map under it at PAD_PARAMS.mapPanRate px/s (owner, 2026-10-19: the cursor
+     * never travels the screen). It writes the SAME _hoverX/_hoverY the mouse does, so POI hover
+     * cards, Q / E (LB / RB on the pad — gamepad.js MAP_KEYS) and the coordinate marginalia all work
+     * unchanged. The triggers zoom about it (pad.zoom = RT − LT, PAD_PARAMS.mapZoomRate e-folds/s).
+     */
+    _padStep() {
+        const now = performance.now()
+        const dt = Math.min(0.1, (now - (this._padT || now)) / 1000)
+        this._padT = now
+        if (!pad.active) {   // a key was pressed: the keyboard (and so the mouse) drives again
+            if (this._padCursor) { this._padCursor = false; this._hoverX = undefined; this._canvas.style.cursor = 'grab' }
+            return
+        }
+        const s = this._sheet()
+        if (!this._padCursor) {
+            if (this._hoverX !== undefined && !pad.lookX && !pad.lookY) return   // the mouse has it
+            this._padCursor = true
+            this._canvas.style.cursor = 'none'   // one cursor on screen, not two
+        }
+        this._hoverX = s.cx; this._hoverY = s.cy
+        if (pad.lookX || pad.lookY) {
+            const r = PAD_PARAMS.mapPanRate * dt / this._zoom
+            this._panX += pad.lookX * r
+            this._panZ += pad.lookY * r
+            this._deferBgRedraw()
+            this._restreamIfDrifted()
+        }
+        if (pad.zoom) this._zoomAbout(this._hoverX, this._hoverY, Math.exp(pad.zoom * PAD_PARAMS.mapZoomRate * dt))
+    }
+
+    // FEAT-133: the pad cursor — a ringed crosshair in map ink, so it reads on paper and over water.
+    _drawPadCursor(ctx) {
+        if (!this._padCursor) return
+        const x = this._hoverX, y = this._hoverY
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(242,239,228,0.9)'
+        for (const pass of [0, 1]) {
+            ctx.beginPath()
+            ctx.arc(x, y, 9, 0, Math.PI * 2)
+            ctx.moveTo(x - 15, y); ctx.lineTo(x - 5, y); ctx.moveTo(x + 5, y); ctx.lineTo(x + 15, y)
+            ctx.moveTo(x, y - 15); ctx.lineTo(x, y - 5); ctx.moveTo(x, y + 5); ctx.lineTo(x, y + 15)
+            ctx.stroke()
+            ctx.lineWidth = 1.5; ctx.strokeStyle = MAP_INK
+        }
+    }
+
     _onWheelEvent(e) {
         e.preventDefault()
-        // Zoom about the cursor — a PURE canvas transform, no re-stream.
         const rect = this._canvas.getBoundingClientRect()
-        const mx = e.clientX - rect.left, my = e.clientY - rect.top
+        this._zoomAbout(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.0015))
+    }
+
+    // Zoom about a screen point (the cursor) — a PURE canvas transform, no re-stream. The wheel and
+    // the pad's triggers (FEAT-133) both come through here.
+    _zoomAbout(mx, my, factor) {
         const s = this._sheet()
         // World point under the cursor before zoom.
         const wx = (mx - s.cx) / this._zoom + this._panX
         const wz = (my - s.cy) / this._zoom + this._panZ
-        const factor = Math.exp(-e.deltaY * 0.0015)
         this._zoom = this._clampZoom(this._zoom * factor)
         // Keep that same world point under the cursor after zoom.
         this._panX = wx - (mx - s.cx) / this._zoom
@@ -1208,6 +1281,7 @@ export class Map2D {
                       dx - k * this._bgOffX, dy - k * this._bgOffY,
                       W * BG_OVERSCAN * k, H * BG_OVERSCAN * k)
 
+        this._padStep()          // FEAT-133: before the hover pick, which reads the cursor it moves
         this._updateHover()      // FEAT-67: before the layers — the hovered offer replaces the drawn route
         this._drawRegion(ctx)    // under the mission route — it's world furniture, not the subject
         this._drawCampZones(ctx) // FEAT-45: yellow casing on the road stretches inside a camp zone
@@ -1220,6 +1294,7 @@ export class Map2D {
         this._drawCar(ctx)
         this._drawCollar(ctx)    // LAST of the map layers: it masks the margin (see _drawCollar)
         this._drawOfferCard(ctx) // FEAT-67: over everything, clamped inside the sheet
+        this._drawPadCursor(ctx) // FEAT-133: over the card it opened, or it would vanish under it
         this._drawCursorCoords(ctx)
         if (this._canTeleport()) this._drawTeleportPrompt(ctx)
         if (this._streaming) this._drawStreamingBadge(ctx)
@@ -2510,13 +2585,16 @@ export class Map2D {
             const cap = B.FSS * k + 6 * k
             const ins = 4 * k + 3 * k                        // inner rule inset + breathing room
             const ktop = y + ins
-            let kx = x + W - ins - cap
-            for (const key of ['E', 'Q']) {
+            // FEAT-133: the pad pages with its bumpers, so a pad player is shown those instead.
+            const keys = pad.active ? ['RB', 'LB'] : ['E', 'Q']
+            const capW = Math.max(cap, ctx.measureText(keys[0]).width + 6 * k)
+            let kx = x + W - ins - capW
+            for (const key of keys) {
                 ctx.strokeStyle = '#6a6458'; ctx.lineWidth = Math.max(1, 0.8 * k)
-                ctx.strokeRect(kx + 0.5, ktop + 0.5, cap - 1, cap - 1)
+                ctx.strokeRect(kx + 0.5, ktop + 0.5, capW - 1, cap - 1)
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#4a453c'
-                ctx.fillText(key, kx + cap / 2, ktop + cap / 2 + 0.5)
-                kx -= cap + 4 * k
+                ctx.fillText(key, kx + capW / 2, ktop + cap / 2 + 0.5)
+                kx -= capW + 4 * k
             }
             ctx.textBaseline = 'top'
             ctx.textAlign = 'right'; ctx.fillStyle = '#6a6458'

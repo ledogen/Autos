@@ -76,6 +76,40 @@ await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sl
 check(!mapBefore && await mapShown(), `View tap opens the map (${mapBefore} -> ${await mapShown()})`)
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 check(!await mapShown(), 'a second View tap closes it')
+// FEAT-133: on the map the cursor stays at the centre, the right stick pans, and LB / RB page offers as Q / E.
+// The window spy registers before the map opens, so it sees keys ahead of the map's capture handler;
+// the document spy sits where vehicle.js listens, so a stopped Q / E never reaches the gearbox.
+await js(`window.__win = []; window.__doc = []
+  window.addEventListener('keydown', e => __win.push(e.key), true); document.addEventListener('keydown', e => __doc.push(e.key))`)
+await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
+const mc = () => js('(() => { const m = __map2d(), s = m._sheet(); return { on: m._padCursor, x: m._hoverX, y: m._hoverY, cx: s.cx, cy: s.cy, x1: s.x1, px: m._panX } })()')
+let m = await mc()
+check(m.on && m.x === m.cx && m.y === m.cy, `pad cursor shows at the sheet centre (${m.on}, ${m.x?.toFixed(0)},${m.y?.toFixed(0)})`)
+await js('__fp.axes[2] = 1'); await sleep(300); await js('__fp.axes[2] = 0'); await sleep(100)
+const m2 = await mc()
+check(m2.x === m2.cx && m2.y === m2.cy && m2.px > m.px, `right stick pans the map under a fixed cursor (pan +${(m2.px - m.px).toFixed(0)} m)`)
+await js('__win.length = 0; __doc.length = 0')   // drop the View tap's m
+await js('__fp.b[4] = 1'); await sleep(150); await js('__fp.b[4] = 0'); await sleep(150)
+await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(150)
+await js('__fp.b[0] = 1'); await sleep(150); await js('__fp.b[0] = 0'); await sleep(150)
+const wk = await js('__win.join()'), dk = await js('__doc.join()')
+check(wk === 'q,e', `LB / RB send Q / E on the map, A is silent (window saw "${wk}")`)
+check(!/[qe]/.test(dk), `Q / E stop at the map, never reaching the gearbox (document saw "${dk}")`)
+// Triggers zoom about the cursor (RT in, LT out) and drive nothing; the camera does not orbit behind the map.
+const zm = () => js('__map2d()._zoom'), camXZ = () => js('(() => { const p = __cam().position; return [p.x, p.z] })()')
+const z0 = await zm(), c0 = await camXZ()
+await js('__fp.b[7] = 1'); await sleep(400)
+const thrOnMap = (await vs()).thr
+await js('__fp.b[7] = 0'); await sleep(100)
+const z1 = await zm()
+await js('__fp.b[6] = 1'); await sleep(400); await js('__fp.b[6] = 0'); await sleep(100)
+const z2 = await zm()
+check(z1 > z0 * 1.5 && z2 < z1 / 1.5 && thrOnMap === 0, `RT zooms in, LT out, no throttle (${z0.toFixed(3)} → ${z1.toFixed(3)} → ${z2.toFixed(3)}, thr ${thrOnMap})`)
+await js('__fp.axes[2] = -1'); await sleep(600); await js('__fp.axes[2] = 0'); await sleep(100)
+const c1 = await camXZ()
+check(Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) < 0.5, `the right stick does not orbit the camera behind the map (moved ${Math.hypot(c1[0] - c0[0], c1[1] - c0[1]).toFixed(2)} m)`)
+await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
+check(!await mapShown(), 'View closes the map again')
 // Right stick = orbit RATE; the view holds orbitHold (2 s) after release, then chase swings back.
 // Bearing of the camera around the truck, relative to directly behind it (deg).
 const off = () => js(`(() => { const c = __cam().position, p = __vs.position, q = __vs.quaternion
@@ -86,11 +120,42 @@ await js('__fp.axes[2] = 1'); await sleep(600); await js('__fp.axes[2] = 0')
 const o1 = await off(); check(Math.abs(o1) > 45, `0.6 s full right stick orbits the view (${o1.toFixed(0)} deg off behind)`)
 await sleep(1500); const o2 = await off(); check(Math.abs(o2 - o1) < 3, `1.5 s after release it HOLDS (${o2.toFixed(0)} deg)`)
 await sleep(2500); const o3 = await off(); check(Math.abs(o3) < 10, `~4 s after release it is back behind (${o3.toFixed(0)} deg)`)
+// Paper throw: hold B (= F) aims — the reticle shows — and releasing it throws (free roam: a practice throw).
+const reticle = () => js('getComputedStyle(document.getElementById("aim-reticle")).display !== "none"')
+await js('__fp.b[1] = 1'); await sleep(400)
+const aimed = await reticle()
+await js('__fp.b[1] = 0'); await sleep(300)
+check(aimed && !await reticle(), `B held aims (reticle ${aimed}), release throws (reticle gone)`)
+await sleep(4000)   // let the post-throw view hold run out before the next checks
+// FEAT-133 RB split while aiming on a route (throwReady forced on — a route needs a whole story run):
+// a tap under throwTapMs throws (F down + up) and sends no Space; a hold becomes Space (handbrake).
+// Spied at key level: the truck sits parked on a slope here, and parked reads as handbrake on.
+await js(`(async () => { const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("/src/gamepad.js")))
+  window.__padMod = m; window.__tr0 = m.pad.throwReady; m.pad.throwReady = () => true
+  window.__fk = 0; window.__sk = 0
+  window.addEventListener('keydown', e => { if (e.key === 'f') __fk++; if (e.key === ' ') __sk++ }, true) })()`)
+await sleep(200)
+await js('__fp.b[5] = 1'); await sleep(100); await js('__fp.b[5] = 0'); await sleep(200)
+check(await js('__fk') === 1 && await js('__sk') === 0, `aiming: RB tap throws (F ${await js('__fk')}x), no handbrake blip (Space ${await js('__sk')}x)`)
+await js('__fp.b[5] = 1'); await sleep(400)
+const hbHold = (await vs()).hb
+await js('__fp.b[5] = 0; __padMod.pad.throwReady = __tr0'); await sleep(60)
+check(hbHold && await js('__sk') === 1 && await js('__fk') === 1, `aiming: RB held past the tap is the handbrake, no throw (Space ${await js('__sk')}x, F ${await js('__fk')}x)`)
+// The hold's Space edge released the park latch; tap straight back in before the slope rolls it.
+await js('__fp.b[5] = 1'); await sleep(100); await js('__fp.b[5] = 0'); await sleep(300)
+check((await vs()).parked, 'a plain RB tap re-parks it')
 // D-pad up = inventory (Tab); A does nothing in the automatic.
 const inv = () => js(`!!document.querySelector("#inv-screen.open")`)
 const before = await inv()
 await js('__fp.b[12] = 1'); await sleep(200); await js('__fp.b[12] = 0'); await sleep(500)
 check(!before && await inv(), `D-pad up opens the inventory (${before} -> ${await inv()})`)
+// FEAT-133: a card — the D-pad moves a highlight over it (first press places it), B backs out.
+await js('__fp.b[15] = 1'); await sleep(150); await js('__fp.b[15] = 0'); await sleep(150)
+await js('__fp.b[15] = 1'); await sleep(150); await js('__fp.b[15] = 0'); await sleep(150)
+check(await js('!!document.querySelector("#inv-screen .nav-focus")') && await inv(), 'D-pad highlights inside the inventory and does not close it')
+await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
+check(!await inv(), 'B closes the inventory')
+await js('__fp.b[12] = 1'); await sleep(200); await js('__fp.b[12] = 0'); await sleep(500)
 // FEAT-126 manual gearbox through the pad: A up, X down, LB clutch. Swapped in the way the debug
 // selector does it, on the app's own module instances.
 const appMod = (path) => `await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("${path}")))`
