@@ -306,7 +306,7 @@ export class PoiPhysics {
       const yaw = q.modelYaw ?? q.yaw ?? 0
       const body = this._eng.createBody({
         // modelX/Z, not the pad centre: a model may be `seat`ed toward the back of its pad (FEAT-71).
-        type: 'static', position: { x: q.modelX ?? q.x, y: q.y, z: q.modelZ ?? q.z },
+        type: 'static', position: { x: q.modelX ?? q.x, y: q.baseY ?? q.y, z: q.modelZ ?? q.z },   // BUG-91
         quaternion: { x: 0, y: Math.sin(yaw * 0.5), z: 0, w: Math.cos(yaw * 0.5) },
         userData: { kind: 'poi', id: q.id },
       })

@@ -945,6 +945,12 @@ export class PoiSystem {
                 const seat = spec?.seat ?? 0, along = spec?.seatAlong ?? 0
                 q.modelX = q.x + q.nx * seat + Math.cos(q.modelYaw) * along
                 q.modelZ = q.z + q.nz * seat - Math.sin(q.modelYaw) * along
+                // BUG-91: the height the model, its colliders and the cube stand on — the CARVED
+                // GROUND, not q.y. q.y is the pad's design top; _poiPadCarve grades the bench to
+                // q.y − roadClearanceMargin (same default) and physics rides that dirt, so a model
+                // base-seated at q.y floated 15 cm over its own pad. The camp seat (main.js) already
+                // corrects for the same gap. q.y stays the pad's record: the carve keys off it.
+                q.baseY = q.y - (P.roadClearanceMargin ?? 0.25)
                 // BUG-43: which colour from the model's curated palette. A slot may pin it (the
                 // two story houses must never match); otherwise a raw hash off the pad id, which
                 // spawnModel takes modulo the palette length. Ignored by a model with no palette.
@@ -1187,7 +1193,7 @@ export class PoiSystem {
             const wx = cx - (q.modelX ?? q.x), wz = cz - (q.modelZ ?? q.z)
             const reach = Math.hypot(Math.abs(ox) + hx, Math.abs(oz) + hz) + r
             if (wx * wx + wz * wz > reach * reach) continue
-            const bcy = q.y + oy                      // box centre: base-seated on the pad
+            const bcy = (q.baseY ?? q.y) + oy         // box centre: base-seated on the carved ground (BUG-91)
             const dy = cy - bcy
             if (dy > hy + r || dy < -hy - r) continue
             // Into the marker's own frame: undo yaw about Y. (cos, −sin; sin, cos) is the inverse
