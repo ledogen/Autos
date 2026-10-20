@@ -13,7 +13,7 @@
 //      the full §3f package does.
 //
 // Pure node: no THREE, no DOM.
-import { PARTS, SLOTS, FAMILY_DURABILITY } from '../data/parts.js'
+import { PARTS, SLOTS, FAMILY_DURABILITY, RARITY_COLOR } from '../data/parts.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 import { PartsSystem, runParts } from '../src/parts.js'
@@ -43,7 +43,7 @@ for (const slot of Object.keys(SLOTS)) {
   }
 }
 for (const [id, p] of Object.entries(PARTS)) {
-  check(`${id}: known slot and family`, SLOTS[p.slot] && p.family in FAMILY_DURABILITY)
+  check(`${id}: known slot, family and rarity`, SLOTS[p.slot] && p.family in FAMILY_DURABILITY && p.rarity in RARITY_COLOR)
   check(`${id}: desc carries no digit (SM-INV-10)`, !/\d/.test(p.desc), p.desc)
 }
 

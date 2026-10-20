@@ -8,8 +8,12 @@
 //            parts take a slot EACH (owner, 2026-10-16). Fitted parts take none (not built yet).
 //   massKg   real load on the chassis while stowed (items.md rule 2 — a load, never a stat)
 //   desc     described, never scored (SM-INV-10): no numbers, ever — the gate checks for digits
+//   thumb    the thumbnail's file stem when it isn't the id (parts share one per slot)
+//   rarity   parts only: the colour behind the icon (data/parts.js RARITY_COLOR)
 //   use      the effect hook main.js supplies, if the effect is built. Usable items auto-bind to
 //            a free quick slot (keys 1–4, items.md §1c).
+
+import { PARTS } from './parts.js'
 
 export const ITEMS = {
     coffee:       { name: 'Coffee',        kind: 'consumable', massKg: 0.5, use: 'coffee',
@@ -31,6 +35,11 @@ export const ITEMS = {
     // ── Camp gear (items.md §2b) — `sleep` marks a sleeping item: the equipped pack always holds one.
     bedroll:      { name: 'Bedroll',       kind: 'camp',       massKg: 2.5, sleep: true,
                     desc: 'A rolled bed for the ground. Better than the dirt, not by much.' },
+
+    // ── Vehicle parts (data/parts.js), owned UNFITTED: a slot each, and the entry carries the part's
+    //    wear as `cond`. A massless part ('No lift') is an absence, not a thing you can carry.
+    ...Object.fromEntries(Object.entries(PARTS).filter(([, p]) => p.massKg > 0)
+        .map(([id, p]) => [id, { name: p.name, kind: 'part', massKg: p.massKg, desc: p.desc, thumb: p.slot, rarity: p.rarity }])),
 }
 
 /** Kinds that stack into one slot per item kind. */

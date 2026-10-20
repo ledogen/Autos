@@ -270,6 +270,25 @@ const STEPS = [
     check(h1 !== h0 && w1 !== w0, `backtick flipped panel ${h0}→${h1}, wireframes ${w0}→${w1} (must flip both)`)
     check(h2 === h0 && w2 === w0, 'second backtick did not restore the panel and wireframes')
   }],
+  ['service', async () => {
+    // SM-3: park at an auto shop → the service screen; both tabs render; Esc closes it.
+    const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
+      return q ? { x: q.x, z: q.z, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
+    if (!p) { console.log('  service: no auto shop in this region — step skipped'); return }
+    await js(`window.__teleport(${p.x}, ${p.z}, ${p.h})`)
+    await sleep(2500)
+    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+    await tap(' ')
+    const open = () => js('document.getElementById("svc-screen").checkVisibility()')
+    check(await until(open, 2000), 'parking at the auto shop opened no service screen')
+    await js('document.querySelector("#svc-screen [data-tab=parts]")?.click()')
+    const rows = await js('document.querySelectorAll("#svc-screen .sv-slot").length')
+    check(rows === 8, `parts tab shows ${rows} slots, want 8`)
+    await tap('Escape')
+    check(await until(async () => !await open(), 1000), 'Esc left the service screen open')
+    await tap(' ')   // brake off: the next step parks fresh
+    await sleep(300)
+  }],
   ['offer', async () => {
     // A plain delivery giver (no bed-over-drop or park-box rule) with a live offer: seat the truck on
     // its pad (q.x/z — the solid model stands off it at modelX/Z), pull the brake, accept, drive.
@@ -285,6 +304,11 @@ const STEPS = [
     // checkVisibility, not the element's own display: while the job is still planning the button
     // has no display of its own but its #mp-actions row is hidden, and a click there is lost.
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+    // SM-3: an auto shop's brake opens the service center; its jobs button hands over to the offer.
+    if (p.type === 'autoShop') {
+      check(await until(() => vis('svc-screen'), 2000), 'parking at the auto shop opened no service screen')
+      await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+    }
     check(await until(() => vis('mp-accept'), 2000), `parking at the ${p.type} pad opened no offer`)
     await js('document.getElementById("mp-accept").click()')
     const hudText = () => js('document.querySelector("#mission-hud .hud-text").textContent.trim()')

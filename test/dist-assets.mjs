@@ -75,8 +75,9 @@ if (!glbs.includes('ranger.glb')) fail('assets/models/ranger.glb (default vehicl
 if (!/readdirSync\(resolve\(root, 'assets\/items'\)\)/.test(cfg)) {
   fail("vite.config.js no longer enumerates assets/items/ — inventory thumbnails will 404 on Pages")
 }
-for (const id of Object.keys(ITEMS)) {
-  if (!existsSync(join(ROOT, `assets/items/${id}.png`))) fail(`ITEMS.${id} has no thumbnail assets/items/${id}.png (render it: assets/models/src/items.py)`)
+for (const [id, it] of Object.entries(ITEMS)) {
+  const f = it.thumb ?? id
+  if (!existsSync(join(ROOT, `assets/items/${f}.png`))) fail(`ITEMS.${id} has no thumbnail assets/items/${f}.png (render it: assets/models/src/items.py)`)
 }
 
 if (failed) {

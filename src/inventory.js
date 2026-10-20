@@ -81,19 +81,20 @@ export class InventorySystem {
 
     /**
      * THE grant path. Returns 'taken', 'pending' (no room — the swap prompt), or null for an id the
-     * catalog doesn't know.
+     * catalog doesn't know. `extra` rides on each non-stacking entry — a used part's `cond`
+     * ({ trackId: condition }, src/parts.js) comes off the truck this way and goes back on with it.
      */
-    grant (id, n = 1) {
+    grant (id, n = 1, extra = null) {
         if (!ITEMS[id]) return null
         if (!this.fits(id, n)) {
-            runInventory.pending = { id, n }
+            runInventory.pending = { id, n, extra }
             this._changed()
             return 'pending'
         }
         const e = _stacks(id) && runInventory.entries.find(e => e.id === id)
         if (e) e.n += n
         else if (_stacks(id)) runInventory.entries.push({ id, n })
-        else for (let i = 0; i < n; i++) runInventory.entries.push(_newEntry(id))
+        else for (let i = 0; i < n; i++) runInventory.entries.push({ ..._newEntry(id), ...extra })
         this._changed()
         return 'taken'
     }
@@ -103,12 +104,21 @@ export class InventorySystem {
         const p = runInventory.pending
         if (!p || !this.fits(p.id, p.n)) return false
         runInventory.pending = null
-        return this.grant(p.id, p.n) === 'taken'
+        return this.grant(p.id, p.n, p.extra) === 'taken'
     }
 
     leavePending () {
         runInventory.pending = null
         this._changed()
+    }
+
+    /** Take the entry at `index` out to bolt it on (the service center): returns it, or null. */
+    take (index) {
+        const e = runInventory.entries[index]
+        if (!e || ITEMS[e.id].kind !== 'part') return null
+        runInventory.entries.splice(index, 1)
+        this._changed()
+        return e
     }
 
     /** Drop the entry at `index` (the whole stack, for a stacking kind). Never the equipped pack or a
@@ -192,7 +202,7 @@ export class InventorySystem {
         return runInventory.entries.map((e, index) => {
             const q = runInventory.quick.indexOf(e.id)
             return { index, id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id), key: q < 0 ? null : q + 1,
-                     equipped: !!e.equipped, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
+                     equipped: !!e.equipped, cond: e.cond ?? null, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
         })
     }
 

@@ -21,8 +21,10 @@
  */
 
 import { keycap } from './park-badge.js'
+import { ITEMS } from '../data/items.js'
+import { RARITY_COLOR } from '../data/parts.js'
 
-const THUMB = (id) => `assets/items/${id}.png`
+const THUMB = (id) => `assets/items/${ITEMS[id]?.thumb ?? id}.png`
 
 const CSS = `
 #inv-screen { display: none; position: fixed; inset: 0; z-index: 95; background: rgba(6,8,10,0.45);
@@ -80,7 +82,9 @@ const btn = (act, label, enabled = true, data = '') =>
 /** One slot square. `it` is a catalog row (+ n/key/equipped for truck entries), or null for empty. */
 function slotHtml (it, attrs = '', cls = '') {
   if (!it) return `<div class="inv-slot ${cls}" ${attrs}></div>`
-  return `<div class="inv-slot full${it.equipped ? ' worn' : ''} ${cls}" ${attrs}>`
+  // A part's rarity tints the slot behind its shared per-slot icon (data/parts.js RARITY_COLOR).
+  const tint = it.rarity ? ` style="background:${RARITY_COLOR[it.rarity]}40"` : ''
+  return `<div class="inv-slot full${it.equipped ? ' worn' : ''} ${cls}" ${attrs}${tint}>`
     + `<img src="${THUMB(it.id)}" alt="" onerror="this.parentNode.classList.add('noimg'); this.remove()">`
     + `<span class="sl-name">${it.name}</span>`
     + (it.n > 1 ? `<span class="sl-n">&times;${it.n}</span>` : '')

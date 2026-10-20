@@ -43,6 +43,13 @@ MATS = {
     "Buckle":     ((0.45, 0.42, 0.36, 1), 0.45),
     "Wool":       ((0.09, 0.115, 0.026, 1), 0.95),
     "WoolStripe": ((0.78, 0.70, 0.52, 1), 0.95),
+    # SM-3 part slots — saturated man-made paint (ART-STYLE), cast iron and friction material.
+    "SpringRed":  ((0.60, 0.04, 0.03, 1), 0.45),
+    "ShockYellow": ((0.85, 0.55, 0.02, 1), 0.45),
+    "Chrome":     ((0.62, 0.63, 0.64, 1), 0.25),
+    "CastIron":   ((0.16, 0.16, 0.17, 1), 0.75),
+    "Friction":   ((0.09, 0.08, 0.07, 1), 0.95),
+    "LiftBlue":   ((0.03, 0.18, 0.55, 1), 0.5),
 }
 
 
@@ -513,7 +520,166 @@ def build_bedroll():
     return b.finish("bedroll")
 
 
+# ── SM-3 part slots — ONE thumbnail per slot (owner, 2026-10-20): every part in a slot shares it, the
+#    inventory tints the square behind it by rarity. File stems are data/parts.js SLOTS keys.
+
+def build_tires():
+    """A set of tires, two lying flat in a stack: carcass with the bead hole, lugged tread band."""
+    b = Builder(); SEG = 32
+    for lvl in range(2):
+        b.M = Matrix.Translation((0.03 * lvl, -0.02 * lvl, 0.1175 + 0.24 * lvl))
+        hw = 0.1175
+        b.lathe([(0.192, -hw + 0.02), (0.26, -hw - 0.004), (0.345, -hw + 0.012), (0.358, -hw + 0.030),
+                 (0.358, hw - 0.030), (0.345, hw - 0.012), (0.26, hw + 0.004), (0.192, hw - 0.02),
+                 (0.192, -hw + 0.02)], SEG, "Rubber", cap_bottom=False, cap_top=False)
+        for k in range(SEG):
+            a = 2 * math.pi * (k + 0.5 * (lvl % 2)) / SEG
+            for row in (-1, 1):
+                da = math.pi / SEG * 0.7
+                pts = [(rr * math.cos(aa), rr * math.sin(aa), row * 0.048 + zz)
+                       for aa in (a - da, a + da) for rr in (0.356, 0.369) for zz in (-0.04, 0.04)]
+                b.hull(pts, "Rubber")
+    b.M = Matrix.Identity(4)
+    return b.finish("tires")
+
+
+def build_springs():
+    """A coil spring standing up: six turns of round wire, closed (flat) ends, red powder coat."""
+    b = Builder(); R, wire, turns, H, N = 0.075, 0.016, 6, 0.36, 18
+    pts = []
+    for k in range(turns * N + 1):
+        t = k / N
+        z = 0.0 if t < 0.6 else H if t > turns - 0.6 else (t - 0.6) / (turns - 1.2) * H
+        a = 2 * math.pi * t
+        pts.append((R * math.cos(a), R * math.sin(a), z + wire / 2))
+    for p0, p1 in zip(pts, pts[1:]):
+        b.bar(p0, p1, wire, "SpringRed", caps=False)
+    return b.finish("springs")
+
+
+def build_dampers():
+    """A shock absorber: painted body, dust boot, chrome shaft, a bushed eye at each end."""
+    b = Builder(); SEG = 16
+    b.lathe([(0.026, 0.05), (0.026, 0.27)], SEG, "ShockYellow")
+    b.lathe([(0.022, 0.27), (0.022, 0.30), (0.019, 0.31)], SEG, "CanBlack")
+    b.lathe([(0.009, 0.31), (0.009, 0.42)], 10, "Chrome")
+    for z in (0.035, 0.44):
+        b.M = Matrix.Translation((0, 0, z)) @ Matrix.Rotation(math.pi / 2, 4, "X")
+        b.lathe([(0.022, -0.02), (0.022, 0.02)], SEG, "SteelDark")
+        b.lathe([(0.011, -0.025), (0.011, 0.025)], 10, "CanBlack")
+        b.M = Matrix.Identity(4)
+    b.bar((0, 0, 0.035), (0, 0, 0.05), 0.02, "SteelDark")
+    b.bar((0, 0, 0.42), (0, 0, 0.44), 0.016, "Chrome")
+    return b.finish("dampers")
+
+
+def _arc(r, a0, a1, n, z=0.0):
+    return [(r * math.cos(a0 + (a1 - a0) * k / n), r * math.sin(a0 + (a1 - a0) * k / n), z) for k in range(n + 1)]
+
+
+def build_padsFront():
+    """A pair of disc pads: steel backing plates with ears, thick friction blocks facing each other."""
+    b = Builder()
+    for side in (-1, 1):
+        y = side * 0.03
+        outer, inner = _arc(0.15, math.radians(60), math.radians(120), 8), _arc(0.10, math.radians(120), math.radians(60), 8)
+        ring = [(p[0], y, p[1] - 0.10) for p in outer + inner]   # the arcs drawn in X–Z
+        back = [(x, y + side * 0.006, z) for x, _, z in ring]
+        b.loft([ring, back], "Steel")
+        lin_o, lin_i = _arc(0.145, math.radians(64), math.radians(116), 8), _arc(0.105, math.radians(116), math.radians(64), 8)
+        lr = [(p[0], y, p[1] - 0.10) for p in lin_o + lin_i]
+        lf = [(x, y - side * 0.016, z) for x, _, z in lr]
+        b.loft([lf, lr], "Friction")
+        for ex in (-0.085, 0.085):   # the ears that ride the caliper slides
+            b.cbox((ex, y + side * 0.003, 0.03), (0.03, 0.006, 0.018), "Steel")
+    return b.finish("padsFront")
+
+
+def build_padsRear():
+    """A pair of drum shoes: T-section steel shoe (curved table + web) with a bonded lining."""
+    b = Builder(); n = 12
+    for side in (-1, 1):
+        a0, a1 = (math.radians(15), math.radians(165)) if side > 0 else (math.radians(195), math.radians(345))
+        b.M = Matrix.Rotation(math.pi / 2, 4, "X")
+        tab_o, tab_i = _arc(0.125, a0, a1, n), _arc(0.118, a0, a1, n)
+        b.loft([[(x, y, -0.022) for x, y, _ in tab_o] + [(x, y, -0.022) for x, y, _ in reversed(tab_i)],
+                [(x, y, 0.022) for x, y, _ in tab_o] + [(x, y, 0.022) for x, y, _ in reversed(tab_i)]], "Steel")
+        web_o, web_i = _arc(0.118, a0, a1, n), _arc(0.085, a0, a1, n)
+        b.loft([[(x, y, -0.003) for x, y, _ in web_o] + [(x, y, -0.003) for x, y, _ in reversed(web_i)],
+                [(x, y, 0.003) for x, y, _ in web_o] + [(x, y, 0.003) for x, y, _ in reversed(web_i)]], "Steel")
+        la0, la1 = a0 + 0.12, a1 - 0.12
+        lin_o, lin_i = _arc(0.135, la0, la1, n), _arc(0.125, la0, la1, n)
+        b.loft([[(x, y, -0.020) for x, y, _ in lin_o] + [(x, y, -0.020) for x, y, _ in reversed(lin_i)],
+                [(x, y, 0.020) for x, y, _ in lin_o] + [(x, y, 0.020) for x, y, _ in reversed(lin_i)]], "Friction")
+    b.M = Matrix.Identity(4)
+    return b.finish("padsRear")
+
+
+def build_arb():
+    """An anti-roll bar: a long bent torsion bar with two rubber bushings and their clamp brackets."""
+    b = Builder(); d = 0.024
+    path = [(-0.42, 0.20, 0.0), (-0.40, 0.10, 0.0), (-0.36, 0.03, 0.0), (-0.30, 0.0, 0.0),
+            (0.30, 0.0, 0.0), (0.36, 0.03, 0.0), (0.40, 0.10, 0.0), (0.42, 0.20, 0.0)]
+    for p0, p1 in zip(path, path[1:]):
+        b.bar(p0, p1, d, "SpringRed", caps=False)
+    for x in (-0.42, 0.42):   # flattened eye ends for the end links
+        b.M = Matrix.Translation((x, 0.21, 0)) @ Matrix.Rotation(0, 4, "Z")
+        b.lathe([(0.022, -0.006), (0.022, 0.006)], 12, "SpringRed")
+        b.M = Matrix.Identity(4)
+    for x in (-0.18, 0.18):
+        b.M = Matrix.Translation((x, 0, 0)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
+        b.lathe([(0.026, -0.025), (0.026, 0.025)], 12, "CanBlack")
+        b.M = Matrix.Identity(4)
+        b.cbox((x, 0, 0.032), (0.05, 0.03, 0.006), "Steel")
+        b.cbox((x, 0.035, 0.012), (0.05, 0.006, 0.04), "Steel")
+    return b.finish("arb")
+
+
+def build_diff():
+    """A rear differential: cast pumpkin with a bolted cover, pinion snout and flange, axle tube stubs."""
+    b = Builder(); SEG = 24
+    b.M = Matrix.Rotation(math.pi / 2, 4, "X")   # pumpkin axis along Y (pinion toward −Y)
+    b.lathe([(0.0, -0.11), (0.10, -0.10), (0.14, -0.06), (0.15, 0.0), (0.145, 0.05), (0.13, 0.07)], SEG, "CastIron",
+            cap_bottom=False)
+    b.lathe([(0.15, 0.07), (0.15, 0.085), (0.13, 0.10), (0.0, 0.11)], SEG, "Steel", cap_bottom=False)   # the cover
+    for k in range(10):
+        a = 2 * math.pi * k / 10
+        b.M_save = b.M
+        b.M = b.M @ Matrix.Translation((0.14 * math.cos(a), 0.14 * math.sin(a), 0.085))
+        b.lathe([(0.008, 0.0), (0.008, 0.008)], 6, "SteelDark")
+        b.M = b.M_save
+    b.lathe([(0.05, -0.20), (0.06, -0.10)], 16, "CastIron", cap_bottom=False, cap_top=False)   # pinion snout
+    b.lathe([(0.0, -0.24), (0.055, -0.24), (0.055, -0.22), (0.03, -0.21), (0.03, -0.20)], 16, "Steel", cap_top=False)
+    b.M = Matrix.Rotation(math.pi / 2, 4, "Y")   # axle tubes along X
+    for side in (-1, 1):
+        b.lathe([(0.04, side * 0.12), (0.04, side * 0.30)] if side > 0 else [(0.04, -0.30), (0.04, -0.12)], 16, "CastIron")
+    b.M = Matrix.Identity(4)
+    return b.finish("diff")
+
+
+def build_lift():
+    """A lift kit: two tapered lift blocks, a pair of U-bolts, and two coil spacers, in blue anodise."""
+    b = Builder()
+    for x in (-0.12, 0.12):
+        b.hull([(x + dx, dy, z) for dx in (-0.035, 0.035) for dy in (-0.075, 0.075)
+                for z in (0.0, 0.06 + 0.012 * dy / 0.075)], "LiftBlue")   # tapered: sets the pinion angle
+        for y in (-0.05, 0.05):   # a U-bolt over each block
+            b.bar((x - 0.045, y, 0.0), (x - 0.045, y, 0.13), 0.012, "Chrome")
+            b.bar((x + 0.045, y, 0.0), (x + 0.045, y, 0.13), 0.012, "Chrome")
+            pts = _arc(0.045, math.pi, 0, 6)
+            for p0, p1 in zip(pts, pts[1:]):
+                b.bar((x + p0[0], y, 0.13 + p0[1]), (x + p1[0], y, 0.13 + p1[1]), 0.012, "Chrome", caps=False)
+    for x in (-0.12, 0.12):   # coil spacers for the front
+        b.M = Matrix.Translation((x, 0.22, 0))
+        b.lathe([(0.09, 0.0), (0.09, 0.05), (0.06, 0.05), (0.06, 0.0)], 20, "LiftBlue", cap_bottom=False, cap_top=False)
+        b.lathe([(0.06, 0.0), (0.09, 0.0)], 20, "LiftBlue", cap_bottom=False, cap_top=False)
+        b.M = Matrix.Identity(4)
+    return b.finish("lift")
+
+
 BUILDERS = {
+    "tires": build_tires, "springs": build_springs, "dampers": build_dampers, "padsFront": build_padsFront,
+    "padsRear": build_padsRear, "arb": build_arb, "diff": build_diff, "lift": build_lift,
     "coffee": build_coffee, "chiliDog": build_chiliDog, "spareTire": build_spareTire,
     "emergencyGas": build_emergencyGas, "pack": build_pack, "rucksack": build_rucksack, "bedroll": build_bedroll,
 }

@@ -83,6 +83,8 @@ import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: stor
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { InventorySystem } from './inventory.js'          // FEAT-122: what the player owns this run
 import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
+import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
+import { ServiceScreen } from './service-screen.js'
 import { InventoryScreen } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
@@ -3361,6 +3363,34 @@ const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isBlocked: () => damageScreen.blocked,
 })
 
+// SM-3: every auto shop is a service center (owner, 2026-10-20). Selling a part is money made, so it
+// goes through addSpot like every other mid-run credit; labour goes on the clock like the tow.
+let _servicePoi = null
+const serviceCenter = new ServiceCenter({
+  damage: damageModel, parts: partsSystem, inventory: inventorySystem,
+  money: () => economySystem.money(), spend: ($) => economySystem.spend($), earn: ($) => economySystem.addSpot($),
+  tier: () => economySystem.tierNow(),
+  advanceHours: (h) => daySystem.advanceMinutes(h * 60),
+  onChange: () => serviceScreen.render(),
+})
+const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
+  jobs: () => _servicePoi ? _takeableOffers(_servicePoi.id, daySystem.clockH()).length : 0,
+  // The shop still posts work: the button hands the brake to the offer, as parking does elsewhere.
+  openJobs: () => {
+    const offers = _takeableOffers(_servicePoi.id, daySystem.clockH())
+    if (offers.length) missionSystem.enterFromPoi(_servicePoi, offers, _planOffer)
+  },
+})
+
+/** The auto shop the truck is parked by, or null. Not while an offer is up (that owns the brake). */
+function _serviceInReach () {
+  if (!storySystem.isActive() || storySystem.isEntering()) return null
+  if (['generating', 'offer'].includes(missionSystem?.state)) return null
+  const vp = vehicleState.position
+  const q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
+  return q?.type === 'autoShop' ? q : null
+}
+
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
 // file owns the DOM (the mission-panel pattern).
 const dialogueSystem = new DialogueSystem()
@@ -4590,6 +4620,23 @@ function _updateParkTriggers () {
     if (poiEl) {
       poiEl.style.display = fuelStop.isOpen ? 'none' : 'block'
       if (!fuelStop.isOpen) poiEl.innerHTML = parkPrompt('park to use the pump')
+    }
+    if (campRow) campRow.style.display = 'none'
+    return
+  }
+
+  // SM-3: an auto shop is a service center. The brake opens the service screen and the shop's jobs are
+  // a button inside it, so the brake means one thing here (the pump's rule).
+  const shop = serviceScreen.isOpen ? null : _serviceInReach()
+  if (serviceScreen.isOpen || shop) {
+    damageScreen.blocked = true
+    if (shop && pulled) {
+      _servicePoi = shop
+      serviceScreen.open(offerBoard?.poiName(shop.id) ?? 'Auto shop')
+    }
+    if (poiEl) {
+      poiEl.style.display = serviceScreen.isOpen ? 'none' : 'block'
+      if (!serviceScreen.isOpen) poiEl.innerHTML = parkPrompt('park for service')
     }
     if (campRow) campRow.style.display = 'none'
     return
@@ -7045,6 +7092,7 @@ document.addEventListener('keydown', e => {
   // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
   if (damageScreen.isOpen) { damageScreen.close(); return }
   if (inventoryScreen.isOpen) { inventoryScreen.close(); return }   // FEAT-122: same rule
+  if (serviceScreen.isOpen) { serviceScreen.close(); return }       // SM-3: same rule
   // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
   // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
   // settings page and is otherwise inert until the world is handed back.
@@ -7246,6 +7294,7 @@ function loop () {
   damageHUD.update(frameTime)   // SM-3 diagnostic readout — returns on the first line while hidden
   damageScreen.update(frameTime)   // FEAT-90: alert detection + icon tint at 10 Hz
   inventoryScreen.update()         // FEAT-122: the park zone's lock; closes when the truck drives off
+  serviceScreen.update()           // SM-3: closes when the truck drives off
   _fragileBlink(frameTime)   // FEAT-97: the load's red hit blink fading out
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
@@ -7302,7 +7351,8 @@ function loop () {
     // (dropped catch-up steps, slow motion) never bills world time for road the truck did not drive.
     // FEAT-118: a pitched camp (or mom's) is a planning pause — idle there, the clock and energy
     // hold until an action (sleep, break camp) spends or resumes it. The confirm face is not camp yet.
-    if (!_campUi || _campUi.mode === 'confirm') daySystem.update(PHYSICS_DT)
+    // SM-3: browsing the service center is free — its work adds its own hours (owner, 2026-10-20).
+    if ((!_campUi || _campUi.mode === 'confirm') && !serviceScreen.isOpen) daySystem.update(PHYSICS_DT)
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
