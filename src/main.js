@@ -82,6 +82,7 @@ import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's str
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { InventorySystem } from './inventory.js'          // FEAT-122: what the player owns this run
+import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
 import { InventoryScreen } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
@@ -1275,6 +1276,12 @@ const vehicleState = makeVehicleState(RANGER_PARAMS)
 const damageModel = new DamageModel({ params: RANGER_PARAMS })
 damageModel.publish(RANGER_PARAMS)
 window.__damage = damageModel   // debug panel + the damage GUI read this
+// SM-3: the fitted parts. Free roam drives whatever params hold; a story run starts on stock parts
+// (onRegionLive). A fit changes the load ratings (TRUCK) and the damage conditions, so both re-read.
+const partsSystem = new PartsSystem({ params: RANGER_PARAMS, damage: damageModel, onChange: () => {
+  TRUCK = truckConfig(DEFAULT_VEHICLE_MODEL, partsSystem.loadUpgrades())
+  damageModel.publish(RANGER_PARAMS)
+} })
 // The diagnostic readout, toggled from the debug panel's Damage folder. Hidden by default and free
 // while hidden; it is how a drive's wear is evaluated, since wear rates and a tenth-of-a-second
 // impact are otherwise invisible from behind the wheel.
@@ -4048,9 +4055,9 @@ const _boardView = {
   },
 }
 
-// FEAT-112: the truck as configured NOW. Stock until FEAT-115's bed parts exist — then this folds
-// the installed upgrades (truckConfig's second argument) and has to be re-read when they change.
-const TRUCK = truckConfig(DEFAULT_VEHICLE_MODEL)
+// FEAT-112: the truck as configured NOW — the fitted parts' load ratings folded over the stock ones.
+// Re-read by partsSystem's onChange on every fit.
+let TRUCK = truckConfig(DEFAULT_VEHICLE_MODEL)
 const _HAUL_PIECE = PROP_MODELS.firewoodBundleA.collision.size   // one bundle; the pile is FEAT-114's
 /**
  * FEAT-112: this offer's load verdict on the truck as configured, or null for cab cargo (courier,
@@ -5917,6 +5924,7 @@ daySystem.addGui(_gui)
 economySystem.addGui(_gui)
 // FEAT-122: grant any catalog item without running a mission.
 inventorySystem.addGui(_gui)
+partsSystem.addGui(_gui)
 // FEAT-45: camping folder — the live grade at the truck plus the site tunables. The one action is a
 // shortcut INTO the dialogue (skipping the 30-min chore and the carve), so the sleep flow can be
 // exercised without hunting for a legal site first.
@@ -6614,7 +6622,8 @@ const storySystem = new StorySystem({
     // …and a fresh truck. Entry flips the mode to 'story' BEFORE it reseats, so the seat's
     // free-roam damage wipe (_reseatTruckAtSpawnInner) is skipped and a truck broken in free roam
     // drove straight into the new run. Per-run state (SM-INV-8): the run starts here, so does the truck.
-    damageModel.setAll(1); damageModel.publish(RANGER_PARAMS)
+    damageModel.setAll(1)
+    partsSystem.start()              // SM-3: stock parts, new — publishes the damage model
     vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)   // FEAT-50: "some gas in it"
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
     resetPaperRun()                  // …and starts back on Larry's four-house route (SM-INV-12)
