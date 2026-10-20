@@ -189,14 +189,16 @@ under a short lowpassed noise scuff. Also the nozzle out when a visit settles wi
 
 ### Pump flow (motor hum + gas)
 status: shipped · group: story
-FEAT-50, `setPumpFlow(on)`. Held while F pumps: a 118 Hz sawtooth motor with a 5 Hz wobble, lowpassed
-to a hum, under resonant bandpassed noise around 1.4 kHz for the gas going in. Built once, gain-ramped
+FEAT-50, `setPumpFlow(on)`. Held while F pumps: a 62 Hz sawtooth motor with a 5 Hz wobble, lowpassed
+to a hum, a 62 Hz sine reinforcing its fundamental, under resonant bandpassed noise around 900 Hz for the gas going in
+(2026-10-20: was 118 Hz / no sub / 1.4 kHz and louder; owner wanted more bass, less level). Built once, gain-ramped
 so it spools up and down. Needs driving (on/off), so no one-shot preview.
 
-### Pump gallon bell
-status: shipped · group: story · play: pump-audio.js playGallonBell
-FEAT-50. One ding per whole gallon, like the mechanical pumps' bell: three inharmonic partials
-(1 : 2.76 : 5.40) on a 0.7 s decay.
+### Pump gallon click
+status: shipped · group: story · play: pump-audio.js playGallonClick
+FEAT-50. One tick per whole gallon, the mechanical counter's detent: a 12 ms highpassed noise tick
+over a tiny low knock. (Was a three-partial struck-bell ding until 2026-10-20 — owner: "the dinging
+should be reduced to a click".)
 
 ### Pump auto-shutoff
 status: shipped · group: story · play: pump-audio.js playShutoff

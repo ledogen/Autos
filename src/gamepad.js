@@ -30,9 +30,11 @@ export const PAD_PARAMS = {
   steerAssist: true,
   stickDeadzone:   0.08,  // |x| below this reads 0; the rest is rescaled so travel still spans 0..1
   triggerDeadzone: 0.03,
-  // Center softening k: out = (1−k)·x + k·x·|x|. 0 = linear; 1 = a parabola through ±1 — slope 1−k at
-  // centre (finer small corrections), 1+k at the ends (full lock still at full stick). Only with the
-  // steering assist OFF: the assist's speed-scaled envelope is the shaping when it is on.
+  // Center softening k, 0 … 1.5: out = sign(x)·|x|^(1+k) (steerCurve). 0 = linear, 1 = the parabola x·|x|,
+  // 1.5 = |x|^2.5 — always through ±1, so full stick is still full lock. Owner 2026-10-20: 100 % was
+  // "almost perfect" and wanted room past it, so the old blend (1−k)·x + k·x·|x| — which goes
+  // negative-slope at centre past k = 1 — became a power law; 0 % and 100 % are unchanged. Only with
+  // the steering assist OFF: the assist's speed-scaled envelope is the shaping when it is on.
   steerShape:      0,
   steerSlewRate:   6.0,   // rad/s — max wheel-angle rate, so a flicked stick can't step the physics
   // Right stick = camera orbit RATE (not a 1:1 map of the mouse drag): full deflection turns the
@@ -78,6 +80,7 @@ export const BINDINGS = [
   { action: 'camera mode',           key: 'c',         pad: 'right stick click', button: 11 },
   { action: 'headlights',            key: 'l',         pad: 'left stick click', button: 10 },
   { action: 'pause',                 key: 'Escape',    pad: 'Start', button: 9 },
+  { action: 'back (menus, cards, map)', key: 'Esc',     pad: 'B' },
   { action: 'map',                   key: 'm',         pad: 'View (tap)' },
   { action: 'map: prev / next offer', key: 'Q / E',    pad: 'LB / RB (map open)' },
   { action: 'map: zoom in / out',    key: 'wheel',     pad: 'RT / LT (map open)' },
@@ -97,7 +100,8 @@ const MENU_KEYS = { 0: 'Enter', 1: 'Escape', 9: 'Escape' }
 // and A / X go silent, so paging through offers can never shift a manual gearbox. The rest of the
 // layout drives as usual; the right stick is the map's cursor (map2d.js reads pad.lookX/Y).
 // The map also holds the truck like a menu does: its triggers are the zoom (pad.zoom).
-const MAP_KEYS = { ...BUTTON_KEYS, 4: 'q', 5: 'e' }
+// B is Escape there, the general back (owner, 2026-10-20): it closes the map.
+const MAP_KEYS = { ...BUTTON_KEYS, 1: 'Escape', 4: 'q', 5: 'e' }
 delete MAP_KEYS[0]; delete MAP_KEYS[2]
 // FEAT-133: while an in-game card is up (offer, result, camp, inventory… — menu-nav.js cardContainer)
 // the D-pad moves its highlight, A presses it and B is Escape (back: closes the inventory and damage
@@ -123,6 +127,15 @@ let rbAt = -1            // performance.now() of a held-back press, -1 when none
 let rbBrake = false      // Space is down for RB
 
 const held = new Map()   // button index → the key whose keydown was sent and keyup has not been
+// The map opened mid-drive (owner, 2026-10-20). A trigger already down when the map opens stays the
+// truck's pedal — and the left stick stays its steering — until that trigger is let go; only then does
+// it become the map's zoom. So glancing at the map at speed no longer cuts the throttle or slams the
+// zoom. Per trigger; null while the map is shut.
+let padShown = false     // body.pad-on, as last written
+let mapPass = null       // { thr, brk } — that trigger still belongs to the truck
+
+/** Center softening: sign(x)·|x|^(1+k). Shared with the settings page's plot (main.js). */
+export const steerCurve = (x, k) => Math.sign(x) * Math.abs(x) ** (1 + k)
 
 const deadzone = (v, d) => Math.abs(v) < d ? 0 : Math.sign(v) * (Math.abs(v) - d) / (1 - d)
 
@@ -160,12 +173,23 @@ function poll () {
       if (ax < -NAV_STICK) nav.add('ArrowLeft'); if (ax > NAV_STICK) nav.add('ArrowRight')
     }
   }
-  pad.zoom = map ? thr - brk : 0
-  if (menu || map) { thr = brk = steer = 0 }   // the sticks and triggers are the menu's / map's, not the truck's
+  if (!map) mapPass = null
+  else {
+    mapPass ??= { thr: thr > 0, brk: brk > 0 }
+    if (!thr) mapPass.thr = false
+    if (!brk) mapPass.brk = false
+  }
+  pad.zoom = map ? (mapPass.thr ? 0 : thr) - (mapPass.brk ? 0 : brk) : 0
+  // The sticks and triggers are the menu's / map's, not the truck's — bar a trigger the map opened under.
+  if (menu) thr = brk = steer = 0
+  else if (map) {
+    if (!mapPass.thr) thr = 0
+    if (!mapPass.brk) brk = 0
+    if (!mapPass.thr && !mapPass.brk) steer = 0
+  }
   pad.throttle = thr
   pad.brake = brk
-  const k = PAD_PARAMS.steerAssist ? 0 : PAD_PARAMS.steerShape
-  pad.steer = (1 - k) * steer + k * steer * Math.abs(steer)
+  pad.steer = steerCurve(steer, PAD_PARAMS.steerAssist ? 0 : PAD_PARAMS.steerShape)
   pad.lookX = lookX   // camera.js reads these; looking around never takes the driving away from
   pad.lookY = lookY   // the keyboard, so they do not set pad.active
 
@@ -211,6 +235,8 @@ function poll () {
     viewDownAt = -1
   }
   if (!any) pad.active = false   // unplugged: the keyboard drives again with no keypress needed
+  // Key hints show the device that last drove (park-badge.js keycap: body.pad-on swaps the labels).
+  if (pad.active !== padShown) { padShown = pad.active; document.body.classList.toggle('pad-on', padShown) }
 
   requestAnimationFrame(poll)
 }

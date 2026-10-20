@@ -437,10 +437,11 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   let nightFactor = 0
 
   // Headlight mode: 0 = off, 1 = low beam, 2 = high beam. 'L' cycles off→low→high→off.
-  // Default low so the lamps read immediately. applyHeadlights() syncs the emissive LENS panels and
+  // Default OFF (owner, 2026-10-20: the truck spawns with its lights off; was low beam), and every
+  // fresh run starts off again (main.js _startStory / _startFreeRoam). applyHeadlights() syncs the emissive LENS panels and
   // the beam SHAPE (distance/angle/aim) to the mode; the cast INTENSITY is set per-frame in
   // syncMeshesToState so it can scale with the day/night factor (and pick up GUI edits live).
-  let headlightMode = 1
+  let headlightMode = 0
 
   // SM-3 damage flicker. damage.js publishes params._headlightFlicker = [left, right], 0 = steady,
   // 1 = worst. A damaged lamp is a loose connection: it burns steady at rest and on smooth road, and

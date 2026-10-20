@@ -223,6 +223,10 @@
     #main-menu.settings #mm-settings-panel { display: flex; }
     #pause-menu.settings > :not(#mm-settings-panel) { display: none; }
     #pause-menu.settings #mm-settings-panel { display: flex; align-items: stretch; gap: 8px; }
+    #mm-bindings-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
+    #mm-settings-panel.bindings > :not(#mm-bindings-panel) { display: none; }
+    #mm-settings-panel.bindings > #mm-bindings-panel { display: flex; }
+    #pause-menu #mm-bindings-panel { align-items: stretch; gap: 8px; }
     #pause-menu #mm-settings-panel .mm-title { color: #00ff88; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
     /* FEAT-41 run setup: World / Truck / Assists, then start. Same page-swap as settings. */
     #mm-setup-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
@@ -554,16 +558,22 @@
       pointer-events: none;
     }
 
-    /* FEAT-90: the "park first" badge — the urban parking sign: a white P on a blue rounded
-       square with a white rim (owner, 2026-10-15; was an orange P in a circle) — and the keycap
-       drawn beside key hints. One look everywhere a prompt asks you to park; the markup comes from
-       src/park-badge.js. */
+    /* FEAT-90: the "park first" badge — the word PARK and the handbrake's keycap on the parking
+       sign's blue (owner, 2026-10-20; was a white P sign, before that an orange P in a circle) —
+       and the keycap drawn beside key hints. One look everywhere a prompt asks you to park; the
+       markup comes from src/park-badge.js. */
     .park-badge {
-      display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
-      width: 1.35em; height: 1.35em; margin-right: 0.45em; vertical-align: -0.25em;
+      display: inline-flex; align-items: center; gap: 0.3em; box-sizing: border-box;
+      padding: 0.1em 0.2em 0.1em 0.4em; margin-right: 0.45em; vertical-align: -0.2em; white-space: nowrap;
       border-radius: 0.22em; background: #0b3d91; color: #fff; border: 0.09em solid #fff;
-      font: bold 0.9em/1 sans-serif; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+      font: bold 0.8em/1.2 sans-serif; letter-spacing: 0.05em; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
     }
+    .park-badge .keycap { margin: 0; letter-spacing: 0; }
+    /* Key hints carry both labels (park-badge.js keycap); the device that last drove picks which shows.
+       body.pad-on is gamepad.js's pad.active. */
+    .kc-pad { display: none; }
+    body.pad-on .kc-kb { display: none; }
+    body.pad-on .kc-pad { display: inline; }
     .keycap {
       display: inline-block; min-width: 1.1em; padding: 0 0.35em; margin: 0 0.1em;
       border: 1px solid #8a96a3; border-bottom-width: 2px; border-radius: 3px;
@@ -680,7 +690,7 @@
       font-size: 10px; background: #1b2026;
     }
     /* FEAT-122: the PARK ZONE — the icons that only work while parked (damage V, inventory Tab),
-       boxed together under the P sign that owns them (owner, 2026-10-16). Camp stays outside: the
+       boxed together under the PARK badge that owns them (owner, 2026-10-16). Camp stays outside: the
        brake is how you make camp. Locked (not parked, or the brake belongs to a POI here): the sign
        is up and the icons stay backgrounded. Parked: the sign fades. inventory-screen.js update()
        owns the .locked flag; a press while locked pulses the sign (.hint). Each row keeps the
@@ -693,7 +703,7 @@
     #park-zone .hud-row { width: 46px; justify-content: flex-start; }
     #park-zone .hud-row > * { flex-shrink: 0; }
     #park-zone .pz-badge {
-      position: absolute; top: -9px; left: -9px; margin: 0; font-size: 15px;
+      position: absolute; top: -11px; right: 4px; margin: 0; font-size: 12px;
       transition: opacity 0.4s;
     }
     #park-zone:not(.locked) .pz-badge { opacity: 0.25; }
@@ -1385,7 +1395,7 @@
   <div id="main-menu">
     <div id="mm-root">
       <div class="mm-title">autos</div>
-      <button id="mm-story">new game</button>
+      <button id="mm-story">story mode</button>
       <button id="mm-freeroam">free roam</button>
       <button id="mm-scenarios">scenarios</button>
       <button id="mm-lab">testing lab</button>
@@ -1426,9 +1436,15 @@
       <button class="mm-sel" data-key="clutchAssist"></button>
       <div class="mm-group">controller</div>
       <button class="mm-sel" data-key="stickDeadzone"></button>
-      <div class="mm-group">bindings</div>
-      <table id="cs-bindings"></table>
+      <div class="mm-group"></div>
+      <button id="mm-bindings">bindings</button>
       <button id="mm-settings-back">back</button>
+      <!-- The chart is its own sub-page (owner, 2026-10-20: the rows crowded the settings page). -->
+      <div id="mm-bindings-panel">
+        <div class="mm-group">bindings</div>
+        <table id="cs-bindings"></table>
+        <button id="mm-bindings-back">back</button>
+      </div>
     </div>
     <div class="mm-foot">arrows or the pad choose &middot; esc pauses &middot; backtick opens the debug panel (not in scenarios)</div>
   </div>
@@ -1537,7 +1553,7 @@
     <!-- The icon column. damage-screen.js prepends its own row (the truck, V) above these. -->
     <div id="hud-icons">
       <!-- FEAT-122: the park zone — damage-screen.js and inventory-screen.js append their rows. -->
-      <div id="park-zone" class="locked"><span class="park-badge pz-badge" aria-label="park">P</span></div>
+      <div id="park-zone" class="locked"><span class="park-badge pz-badge" aria-label="park">PARK<span class="keycap"><span class="kc-kb">Space</span><span class="kc-pad">RB</span></span></span></div>
       <!-- FEAT-45 Phase D: making camp. The tent shows only where the old camp prompt did (a camp
            zone, under 20 kph, story mode, no job or route out, no POI in reach). Z or a click
            toggles "looking for a campsite"; while looking, the vibe bar + verdict card opens beside
@@ -1554,7 +1570,7 @@
             <circle cx="10" cy="28.5" r="4" fill="#fff" stroke="#1b2026" stroke-width="2"/>
             <circle cx="28" cy="28.5" r="4" fill="#fff" stroke="#1b2026" stroke-width="2"/>
           </svg>
-          <span class="keycap">X</span>
+          <span class="keycap"><span class="kc-kb">X</span><span class="kc-pad">D→</span></span>
         </div>
         <div id="recovery-card"></div>
       </div>
@@ -1566,7 +1582,7 @@
             <path d="M20,19 L26,33 H14 Z" fill="#6b4423"/>
             <path d="M3,34.5 H37" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
           </svg>
-          <span class="keycap">Z</span>
+          <span class="keycap"><span class="kc-kb">Z</span><span class="kc-pad">D↓</span></span>
         </div>
         <div id="camp-prompt">
           <div class="vibe-bar" id="camp-vibe">
@@ -1727,7 +1743,7 @@
 
   <!-- Spawn-point-set toast — fades out ~3 s after any spawn change (main.js showSpawnToast). -->
   <div id="spawn-toast">spawn point set</div>
-  <div id="ignition-hint">hold <span class="k">I</span> to start the truck</div>
+  <div id="ignition-hint">hold <span class="k"><span class="kc-kb">I</span><span class="kc-pad">Y</span></span> to start the truck</div>
 
   <!-- Controls cheat-sheet (lower-left, click header to collapse). Wired in main.js. -->
   <div id="controls" class="collapsed">

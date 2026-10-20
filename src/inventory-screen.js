@@ -3,10 +3,10 @@
  *
  * Owner rulings (2026-10-16) that shape it:
  *   - PARKED ONLY, like the damage screen (V). Tab or a click on the icon opens it while the
- *     parking brake is latched; otherwise the press pulses the park zone's P sign. Releasing the
+ *     parking brake is latched; otherwise the press pulses the park zone's PARK badge. Releasing the
  *     brake closes it. `isBlocked` (a POI owns the brake here) keeps it shut, the same as V.
  *     I is the ignition, hence Tab.
- *   - THE PARK ZONE (index.html #park-zone) boxes this icon with the damage icon under the P sign.
+ *   - THE PARK ZONE (index.html #park-zone) boxes this icon with the damage icon under the PARK badge.
  *     update() owns its .locked flag. Camp stays outside the zone.
  *   - Keys 1–4 use the item bound to that quick slot ANY time, driving included (items.md §1c).
  *   - The truck's slots are drawn as a grid — every slot, empty ones too — each item as its
@@ -154,7 +154,7 @@ export class InventoryScreen {
 
   _locked () { return this.isBlocked() || !this.vehicleState.parked }
 
-  /** Tab, the icon, or the camp button: open while parked, close if open, else hint at the P sign. */
+  /** Tab, the icon, or the camp button: open while parked, close if open, else hint at the PARK badge. */
   request () {
     if (this.isOpen) { this.close(); return }
     if (this.isSuppressed() || this.isBlocked()) return

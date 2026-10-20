@@ -104,6 +104,13 @@ let orbitRadius  = ORBIT_RADIUS_DEFAULT // actual camera-to-car distance, synced
 // re-armed to PAD_PARAMS.orbitHold by any deflection and runs down once the stick is centred, so
 // the chase swing-back (or hood recentre) starts orbitHold seconds after the last touch.
 let padLookT     = 0
+// Owner, 2026-10-20: with the truck STOPPED the look lingers — the countdown holds for as long as the
+// truck sits still with no pedal down — and the first press of throttle or brake/reverse from a stop
+// hands the view straight back to the chase cam (which swings round the right way, reverseView).
+// Moving, orbitHold applies as before. A pedal press that STARTS while moving never recentres, so
+// aiming a paper throw while driving is untouched.
+const LOOK_LINGER_SPEED = 0.5   // m/s — "stopped", for the linger and the pedal recentre
+let _pedalWas    = false
 
 // ── Hood-cam drag-look state ─────────────────────────────────────────────────────
 // Yaw/pitch offset (radians) layered on top of the body-locked hood orientation. Dragging
@@ -361,6 +368,10 @@ export function updateCamera (camera, vehicleState, dt) {
   if (snap) reverseView = swinging = false   // a fresh seat starts facing forward, no swing in flight
 
   if (snap) padLookT = 0
+  const still = Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) < LOOK_LINGER_SPEED
+  const pedal = vehicleState.throttle > 0.05 || vehicleState.brake > 0.05
+  if (pedal && !_pedalWas && still) padLookT = 0
+  _pedalWas = pedal
   // FEAT-133: not while the map is open — there the right stick pans the map.
   if (cameraMode !== 'freecam' && !pad.mapActive() && (pad.lookX || pad.lookY)) {
     padLookT = PAD_PARAMS.orbitHold
@@ -372,7 +383,7 @@ export function updateCamera (camera, vehicleState, dt) {
       orbitTheta -= pad.lookX * r
       orbitPhi    = Math.max(-1.2, Math.min(1.2, orbitPhi + pad.lookY * r))
     }
-  } else padLookT = Math.max(0, padLookT - dt)
+  } else if (!(still && !pedal)) padLookT = Math.max(0, padLookT - dt)
   const padLook = padLookT > 0
 
   if (cameraMode === 'freecam') {

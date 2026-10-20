@@ -289,7 +289,7 @@ const CSS = `
 #dmg-alert .da-dim { color: #9fb3c8; }
 /* Driving: just the badge, no card — anything wordier is in the way of someone racing somewhere. */
 #dmg-alert.badge-only { background: none; border: none; padding: 0; }
-#dmg-alert .park-badge.big { width: 30px; height: 30px; margin: 0; font-size: 18px; vertical-align: middle;
+#dmg-alert .park-badge.big { margin: 0; font-size: 15px; vertical-align: middle;
   box-shadow: 0 0 0 2px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.4); }
 
 #dmg-screen { display: none; position: fixed; inset: 0; z-index: 95; background: rgba(6,8,10,0.45);
@@ -584,7 +584,7 @@ export class DamageScreen {
     const open = `${keycap('V')} <span class="da-dim">to open</span>`
     this.alertEl.innerHTML =
         mode === 'driving' ? PARK_BADGE.replace('park-badge', 'park-badge big')
-      : mode === 'stopped' ? `<div>${PARK_BADGE}${keycap('Space')}</div><div>${open}</div>`
+      : mode === 'stopped' ? `<div>${PARK_BADGE}</div><div>${open}</div>`
       : `<div>${open}</div>`
   }
 
