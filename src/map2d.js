@@ -290,6 +290,19 @@ const GLYPH_MIN_PX   = 16
 // Costs OVERSCAN² in redraw work and bitmap memory, which is why it is 2 and not 3.
 const BG_OVERSCAN = 2
 
+// ── Background rebuild, time-sliced ───────────────────────────────────────────────────────────
+// The sharp rebuild after a pan/zoom settles costs 50–150 ms (measured 2026-10-20, 1400×900:
+// ~60% the ground raster, ~30% contours, the rest water). Done in one go it froze the whole map for
+// that long every time a pan stopped — most visible on the pad, where the stick pans continuously
+// and stops often. So it is drawn into a SECOND bitmap a band at a time, BG_SLICE_MS of bands per
+// frame, while render() keeps blitting the old bitmap through the transform delta; the finished
+// bitmap swaps in whole. Bands are clipped to whole device rows and each is drawn over a rect
+// widened by BG_SEAM_M of world, so every edge effect (cover blur, hillshade differences, raster
+// smoothing) lands outside the clip and the bands meet without a seam.
+const BG_BANDS    = 16     // horizontal bands per rebuild
+const BG_SLICE_MS = 6      // ms of bands per frame (always at least one band)
+const BG_SEAM_M   = 96     // m — (COVER_COUNT_BLUR + 2) cover cells: the widest edge effect
+
 // ── The collar (border) ───────────────────────────────────────────────────────────────────────
 // The sheet is buried in an off-white margin carrying tick marks and an A–Z / 1–n index, so any
 // single frame reads as a photograph of a whole printed map rather than as a viewport onto one.
@@ -480,6 +493,8 @@ export class Map2D {
         this._bgPanZ  = 0
         this._bgZoom  = 0
         this._bgTimer = 0                // settle-redraw debounce handle
+        this._bgNext  = document.createElement('canvas')   // the rebuild in progress — see BG_BANDS
+        this._bgJob   = null             // { panX, panZ, zoom, step, band } while one is in flight
 
         // Drag-pan state.
         this._dragging = false
@@ -885,6 +900,7 @@ export class Map2D {
         this._streamStep = 0
         this._regionFrozen = null   // BUG-68: a new seed / road params is a new world to freeze
         this._bgDirty = true        // the cached sheet shows the old world — see show()
+        this._bgJob = null          // …and so would a half-built one
         // FEAT-17: re-apply the water no-go so the fresh instance routes around ponds like play does.
         if (this._waterNoGoFns) this._road.setWaterNoGo(this._waterNoGoFns[0], this._waterNoGoFns[1])
         // PERF-30: register with the network-Worker client (whole builds off-thread — see _pump).
@@ -1068,6 +1084,8 @@ export class Map2D {
         this._bgOffY = Math.round(h * (BG_OVERSCAN - 1) / 2)
         this._bg.width  = Math.round(w * BG_OVERSCAN * dpr)
         this._bg.height = Math.round(h * BG_OVERSCAN * dpr)
+        this._bgZoom = 0      // resizing cleared the bitmap: nothing valid to blit while rebuilding
+        this._bgJob = null    // a half-built one is the old size
         this._canvas.style.width = w + 'px'
         this._canvas.style.height = h + 'px'
         // The CSS size, kept so render-time code never reads clientWidth/Height (a layout read —
@@ -1261,7 +1279,9 @@ export class Map2D {
         // …and if play has registered more of its region since we copied it, re-take the copy.
         if (this._playOutgrewMap()) this._startStream()
         if (this._sizeStale()) this._resize()
-        if (this._bgDirty) { this._drawBackground(); this._bgDirty = false }
+        if (this._bgDirty && !this._bgJob) { this._startBackground(); this._bgDirty = false }
+        // Nothing valid on screen yet (first open, resize) → finish now rather than paint in bands.
+        if (this._bgJob) this._stepBackground(this._bgZoom ? BG_SLICE_MS : Infinity)
 
         const ctx = this._ctx
         const W = this._cssW, H = this._cssH
@@ -1352,28 +1372,63 @@ export class Map2D {
         ctx.textAlign = 'left'
     }
 
-    _drawBackground() {
-        const ctx = this._bg.getContext('2d')
-        const W = this._cssW, H = this._cssH
+    // Begin a rebuild for the CURRENT transform. A dirty raised mid-rebuild waits for this one to
+    // finish (render() checks _bgJob) instead of restarting it, so a stream ticking in chunks can
+    // never starve the sheet of a finished bitmap.
+    _startBackground() {
+        const n = this._bgNext
+        if (n.width !== this._bg.width || n.height !== this._bg.height) { n.width = this._bg.width; n.height = this._bg.height }
+        else { const c = n.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, n.width, n.height) }
         const ox = this._bgOffX, oy = this._bgOffY
-        // Translate by the overscan margin so every layer below can keep drawing in ordinary
-        // SCREEN coordinates via _sx/_sy — the margin then falls outside [0,W]x[0,H] naturally,
-        // and nothing but this line has to know the bitmap is oversized.
-        ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0)
-        ctx.clearRect(0, 0, W * BG_OVERSCAN, H * BG_OVERSCAN)
-        ctx.translate(ox, oy)
-        // Record the transform this bitmap is valid for — render() blits through the delta.
-        this._bgPanX = this._panX; this._bgPanZ = this._panZ; this._bgZoom = this._zoom
+        // One contour step for the whole bitmap, so every band samples the same world lattice.
+        this._bgJob = { panX: this._panX, panZ: this._panZ, zoom: this._zoom, band: 0,
+                        step: this._topoStep(this._cssW + 2 * ox, this._cssH + 2 * oy) }
+    }
 
-        this._drawTopo(ctx, -ox, -oy, W + ox, H + oy)
-        // Water and the vegetation/marsh glyphs go OVER the contours and UNDER the roads, which is
-        // the order a quadrangle is printed in: the blue plate reads through the brown, and the
-        // black road plate covers both.
-        this._drawWater(ctx)
-        this._drawGlyphs(ctx)
-        this._drawRoads(ctx)
-        this._drawCrossings(ctx)
-        this._drawNodes(ctx)
+    // Draw bands of the rebuild for up to `budgetMs`, then swap it in once the last band is down.
+    _stepBackground(budgetMs) {
+        const job = this._bgJob
+        const ctx = this._bgNext.getContext('2d')
+        const W = this._cssW, ox = this._bgOffX, oy = this._bgOffY, dpr = this._dpr
+        const rows = this._bgNext.height
+        // Every layer reads the view through _panX/_panZ/_zoom (_sx/_sy). The live view may have
+        // moved since the job began, so the job's transform is swapped in for the draw and back out.
+        const live = [this._panX, this._panZ, this._zoom]
+        this._panX = job.panX; this._panZ = job.panZ; this._zoom = job.zoom
+        const seam = BG_SEAM_M * job.zoom
+        const t0 = performance.now()
+        try {
+            do {
+                // Band edges on whole DEVICE rows, so the antialiased clip never half-covers a row.
+                const y0 = Math.round(rows * job.band / BG_BANDS) / dpr - oy
+                const y1 = Math.round(rows * (job.band + 1) / BG_BANDS) / dpr - oy
+                // Translate by the overscan margin so every layer can keep drawing in ordinary
+                // SCREEN coordinates via _sx/_sy — the margin then falls outside [0,W]x[0,H].
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+                ctx.translate(ox, oy)
+                ctx.save()
+                ctx.beginPath(); ctx.rect(-ox, y0, W + 2 * ox, y1 - y0); ctx.clip()
+                this._drawTopo(ctx, -ox, y0 - seam, W + ox, y1 + seam, job.step)
+                // Water and the vegetation/marsh glyphs go OVER the contours and UNDER the roads,
+                // which is the order a quadrangle is printed in: the blue plate reads through the
+                // brown, and the black road plate covers both.
+                this._drawWater(ctx)
+                this._drawGlyphs(ctx)
+                this._drawRoads(ctx)
+                this._drawCrossings(ctx)
+                this._drawNodes(ctx)
+                ctx.restore()
+                job.band++
+            } while (job.band < BG_BANDS && performance.now() - t0 < budgetMs)
+        } finally {
+            [this._panX, this._panZ, this._zoom] = live
+        }
+        if (job.band < BG_BANDS) return
+        // Done: swap the bitmaps and record the transform this one is valid for — render() blits
+        // through the delta.
+        const b = this._bg; this._bg = this._bgNext; this._bgNext = b
+        this._bgPanX = job.panX; this._bgPanZ = job.panZ; this._bgZoom = job.zoom
+        this._bgJob = null
     }
 
     // (1) The topographic sheet: pale-green vegetated ground + brown contour lines.
@@ -1395,7 +1450,7 @@ export class Map2D {
      *        cached background is overscanned, so this is normally inset by a negative margin on
      *        two sides and past the canvas on the other two.
      */
-    _drawTopo(ctx, px0, py0, px1, py1) {
+    _drawTopo(ctx, px0, py0, px1, py1, step) {
         const road = this._road
         if (!road) return
         const Wpx = px1 - px0, Hpx = py1 - py0
@@ -1405,21 +1460,16 @@ export class Map2D {
         // finished sheet in the order a printer would lay them down.
         this._paintGround(ctx, px0, py0, Wpx, Hpx)
 
-        // ── Sample grid. One cell margin past each edge so contours reach the rect's border
-        //    instead of stopping a cell short of it.
-        let step = Math.min(TOPO_STEP_MAX, Math.max(TOPO_STEP_MIN, TOPO_STEP_PX / this._zoom))
-        let nx = Math.ceil(Wpx / (step * this._zoom)) + 3
-        let nz = Math.ceil(Hpx / (step * this._zoom)) + 3
-        if (nx > TOPO_GRID_MAX || nz > TOPO_GRID_MAX) {
-            const k = Math.max(nx, nz) / TOPO_GRID_MAX
-            step *= k
-            nx = Math.ceil(nx / k); nz = Math.ceil(nz / k)
-        }
-        // World origin of the grid = the world point under the rect's top-left screen corner,
-        // backed off one cell.
+        // ── Sample grid, on a WORLD lattice of `step` (snapped, like the cover raster): every band
+        //    of a rebuild then samples the same points and meets its neighbour without a seam, and
+        //    a rebuild at the same zoom reprints the same lines instead of re-sampling them a
+        //    fraction of a cell over. One cell margin past each edge so contours reach the rect's
+        //    border instead of stopping a cell short of it.
         const s = this._sheet()
-        const x0 = this._panX + (px0 - s.cx) / this._zoom - step
-        const z0 = this._panZ + (py0 - s.cy) / this._zoom - step
+        const x0 = (Math.floor((this._panX + (px0 - s.cx) / this._zoom) / step) - 1) * step
+        const z0 = (Math.floor((this._panZ + (py0 - s.cy) / this._zoom) / step) - 1) * step
+        const nx = Math.ceil(Wpx / (step * this._zoom)) + 4
+        const nz = Math.ceil(Hpx / (step * this._zoom)) + 4
 
         const h = new Float32Array(nx * nz)
         for (let j = 0; j < nz; j++) {
@@ -1497,6 +1547,15 @@ export class Map2D {
         // both are hairlines now, so a width ratio alone would not have carried the distinction.
         strokeBatch(thin,  CONTOUR_COLOR, CONTOUR_W)
         strokeBatch(thick, INDEX_COLOR,   INDEX_W)
+    }
+
+    // Contour sample step (m) for a SCREEN rect of Wpx × Hpx at the current zoom: TOPO_STEP_PX on
+    // screen, clamped to the field's useful band, and coarsened if the grid would pass TOPO_GRID_MAX
+    // cells on an axis. Computed once per rebuild for the WHOLE bitmap, never per band.
+    _topoStep(Wpx, Hpx) {
+        const step = Math.min(TOPO_STEP_MAX, Math.max(TOPO_STEP_MIN, TOPO_STEP_PX / this._zoom))
+        const n = Math.ceil(Math.max(Wpx, Hpx) / (step * this._zoom)) + 3
+        return n > TOPO_GRID_MAX ? step * n / TOPO_GRID_MAX : step
     }
 
     // (1a) The ground wash: green where the forest stands, white where it does not, hillshaded.
