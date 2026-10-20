@@ -4396,8 +4396,9 @@ function _renderPumpDisplay (dt) {
   el.classList.toggle('bounce', _pumpBounceT > 0)
   el.classList.toggle('receipt', !fuelStop.isOpen)
   document.getElementById('pd-price').textContent = '$' + fuelStop.price.toFixed(2)
-  const tank = vehicleState.fuel, full = tank.gal >= RANGER_PARAMS.fuelTankGal - 1e-6
   const broke = fuelStop.isOpen && fuelStop.price > 0 && economySystem.money() - fuelStop.sale < 0.005
+  // a latched shutoff still reads full while the idling engine sips the tank a hair below it
+  const full = vehicleState.fuel.gal >= RANGER_PARAMS.fuelTankGal - 1e-6 || (fuelStop.cutoff && !broke)
   document.getElementById('pd-hint').innerHTML = !fuelStop.isOpen ? 'thank you — drive safe'
     : full ? `tank full · release the handbrake to pay`
     : broke ? `that's all you can afford · release the handbrake to pay`

@@ -55,6 +55,12 @@ console.log('\n2. a full tank in 10 s')
   const atFull = s.gal
   run(s, fuel, 1, true)
   check(s.gal === atFull && s.state === 'open', 'holding on past full pumps nothing more')
+  let ev = []
+  for (let i = 0; i < 120; i++) { fuel.gal -= 1e-4; s.step(DT, true, fuel, P, Infinity); if (s.event) ev.push(s.event) }
+  check(ev.length === 0 && s.gal === atFull, `idling at the pump with F held stays shut off (${ev.length} events)`)
+  run(s, fuel, 0.1, false)
+  ev = run(s, fuel, 0.5, true)
+  check(ev.length === 1 && ev[0] === 'full' && Math.abs(fuel.gal - P.fuelTankGal) < 1e-9, 'releasing and pressing F again tops it back off')
 }
 
 console.log('\n3. the wallet is the limit')

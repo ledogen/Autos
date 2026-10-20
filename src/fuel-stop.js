@@ -27,7 +27,7 @@ export class FuelStop {
         this.price = 0       // $/gal locked when the nozzle went in
         this.event = null
         this.receipt = null  // { gal, sale } of the last settled visit, for the display's hold
-        this.cutoff = false  // the last stop was the pump's (full / wallet), not the driver's
+        this.cutoff = false  // the pump shut itself off (full / wallet) and stays off until F is released
     }
 
     /** The sale on the counter, $ — the dollar drum reads this. */
@@ -55,15 +55,15 @@ export class FuelStop {
         const space = Math.max(0, params.fuelTankGal - fuel.gal)
         const afford = this.price > 0 ? Math.max(0, wallet / this.price - this.gal) : Infinity
         const room = Math.min(space, afford)
-        if (!held || room <= 1e-9) {
-            if (this.state === 'pumping') {
-                this.cutoff = held           // still held ⇒ the pump stopped, not the driver
-                this.event = held ? 'full' : 'stop'
-            }
+        // The shutoff LATCHES while F stays held: an idling engine burns a sliver below full, and
+        // without the latch the pump restarted every step — a click-flow-click loop.
+        if (!held || room <= 1e-9 || this.cutoff) {
+            if (this.state === 'pumping') this.event = held ? 'full' : 'stop'
+            this.cutoff = held && (this.cutoff || this.state === 'pumping')
             this.state = 'open'
             return
         }
-        if (this.state === 'open') { this.state = 'pumping'; this.cutoff = false; this.event = 'start' }
+        if (this.state === 'open') { this.state = 'pumping'; this.event = 'start' }
         const before = this.gal
         const dg = Math.min(params.fuelFillGalPerS * dt, room)
         this.gal += dg
