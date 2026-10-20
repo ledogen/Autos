@@ -35,7 +35,7 @@ const check = (label, ok, detail = '') => {
 check('pinned: dayLengthSec 1440', DAY_PARAMS.dayLengthSec === 1440)
 check('pinned: energy ladder 16/4/2, debt floor 8', DAY_PARAMS.fullEnergyH === 16 && DAY_PARAMS.sleepyAtH === 4
   && DAY_PARAMS.tiredAtH === 2 && DAY_PARAMS.sleepDebtMaxH === 8)
-check('pinned: coffee +5/−3', DAY_PARAMS.coffeeReliefH === 5 && DAY_PARAMS.coffeeDebtH === 3)
+check('pinned: coffee +5/−2', DAY_PARAMS.coffeeReliefH === 5 && DAY_PARAMS.coffeeDebtH === 2)
 check('pinned: sleep rates 4/3 and 8/3 (mean 2.0, best exactly 2× worst)',
   DAY_PARAMS.sleepRateWorstH === 4 / 3 && DAY_PARAMS.sleepRateBestH === 8 / 3)
 
@@ -165,10 +165,10 @@ const mkDay = () => {
   check('setup: 3 h left', Math.abs(sys.energyH() - 3) < 1e-9)
   sys.drinkCoffee()
   check('coffee: +5 now', Math.abs(sys.energyH() - 8) < 1e-9, `e=${sys.energyH()}`)
-  check('coffee: +3 debt held for wake', sys.coffeeDebt() === 3)
+  check('coffee: +2 debt held for wake', sys.coffeeDebt() === 2)
   sys.drinkCoffee(); sys.drinkCoffee(); sys.drinkCoffee()
   check('coffee clamps at a full tank', sys.energyH() <= DAY_PARAMS.fullEnergyH)
-  check('debt stacks per cup', sys.coffeeDebt() === 12)
+  check('debt stacks per cup', sys.coffeeDebt() === 8)
   DAY_PARAMS.dayLengthSec = 1440
 }
 
@@ -202,19 +202,19 @@ const mkDay = () => {
   check('the debt comes off the night: −2 + 16 = 14, not full', near(sys.energyH(), 14), `e=${sys.energyH()}`)
 
   sys.update(12)                                 // 09:00 + 12 h = 21:00, 2 h left
-  sys.drinkCoffee()                              // 7 h left, debt 3
+  sys.drinkCoffee()                              // 7 h left, debt 2
   const d2 = runState.day
   sys.sleep(9, 0.5)                              // 21:00 + 9 h crosses midnight; recovery uncapped, THEN −debt
   check('a midnight inside the sleep increments the day (again)', runState.day === d2 + 1)
-  // settled = 7 + 2.0·9 − 3 = 22 → clamps to 16: sleeping in DID pay the loan off.
+  // settled = 7 + 2.0·9 − 2 = 23 → clamps to 16: sleeping in DID pay the loan off.
   check('the loan is settled before the clamp (sleep-in offsets it)', sys.energyH() === DAY_PARAMS.fullEnergyH)
   check('the loan is cleared at wake', sys.coffeeDebt() === 0)
 
   // Short sleep with a debt: charged once, exactly.
   sys.update(14)                                 // 2 h left
-  sys.drinkCoffee()                              // 7 h left, debt 3
-  sys.sleep(2, 0)                                // settled = 7 + (4/3)·2 − 3 = 6⅔
-  check('short sleep charges the debt once, uncapped', near(sys.energyH(), 20 / 3), `e=${sys.energyH()}`)
+  sys.drinkCoffee()                              // 7 h left, debt 2
+  sys.sleep(2, 0)                                // settled = 7 + (4/3)·2 − 2 = 7⅔
+  check('short sleep charges the debt once, uncapped', near(sys.energyH(), 23 / 3), `e=${sys.energyH()}`)
   check('debt does not survive the wake', sys.coffeeDebt() === 0)
 
   // Deep debt: a short night can wake you STILL exhausted — the debt is real, not cosmetic.

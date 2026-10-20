@@ -63,6 +63,13 @@ MATS = {
     "LabelYellow":((0.85, 0.60, 0.02, 1), 0.6),
     "Bubble":     ((0.55, 0.68, 0.75, 1), 0.2),
     "BubbleSheet":((0.42, 0.55, 0.62, 1), 0.3),
+    "PadOrange":  ((0.82, 0.30, 0.02, 1), 0.55),
+    "PadNavy":    ((0.03, 0.07, 0.20, 1), 0.55),
+    "BagGreen":   ((0.05, 0.13, 0.06, 1), 0.65),
+    "Flannel":    ((0.55, 0.38, 0.18, 1), 0.95),
+    "PlugBrown":  ((0.13, 0.05, 0.02, 1), 0.7),
+    "CheckStripe":((0.08, 0.02, 0.018, 1), 0.95),
+    "CheckDeep":  ((0.012, 0.010, 0.010, 1), 0.95),
 }
 
 
@@ -538,113 +545,225 @@ def build_bedroll():
 # also the future data/items.js key.
 
 def build_airMattress():
-    """A camping air mattress, long along X: vinyl sides, flocked top in six tubes, a pillow bolster, valve."""
+    """A camping air mattress, long along X: a round, bulging vinyl body and a flocked top quilted by
+    dimples pressed into the surface, with a raised pillow zone at the head and a valve."""
     b = Builder()
-    L, W, H = 1.88, 0.76, 0.15
-    b.loft([rrect(L - 2 * i, W - 2 * i, 0.07 - i, z, per=5) for z, i in ((0.0, 0.03), (0.02, 0.0), (H, 0.0))], "Vinyl")
-    for k in range(6):
-        y = -W / 2 + (k + 0.5) * W / 6
-        b.M = Matrix.Translation((0, y, H - 0.015)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
-        x0, x1 = -L / 2 + 0.035, L / 2 - 0.32
-        b.lathe([(0.0, x0), (0.045, x0 + 0.01), (W / 12, x0 + 0.04), (W / 12, x1 - 0.04), (0.045, x1 - 0.01), (0.0, x1)],
-                12, "Flock", cap_bottom=False, cap_top=False)
-    b.M = Matrix.Identity(4)
-    b.cbox((L / 2 - 0.17, 0, H + 0.03), (0.28, W - 0.03, 0.12), "Flock", ch=0.05)
-    b.M = Matrix.Translation((L / 2 - 0.42, -W / 2, 0.075)) @ Matrix.Rotation(math.pi / 2, 4, "X")
-    b.lathe([(0.016, -0.004), (0.016, 0.008), (0.012, 0.010), (0.012, 0.022), (0.0, 0.024)], 12, "Buckle")
+    L, W, H = 1.88, 0.76, 0.17
+    b.loft([rrect(L - 2 * i, W - 2 * i, 0.16 - i, z, per=7) for z, i in
+            ((0.0, 0.05), (0.02, 0.018), (0.06, 0.0), (0.11, 0.0), (0.15, 0.018), (H, 0.045))], "Vinyl", cap_top=False)
+    # Flocked top: a height field over the top ring's footprint, dimpled on a coil-beam grid. Its
+    # border sits on the body's top ring, so the round edge carries straight on into the quilting.
+    NX, NY = 72, 30
+    ring = rrect(L - 0.09, W - 0.09, 0.115, H, per=7)
+    def inside(x, y):   # rounded-rectangle test, shrunk to the top ring
+        ax, ay, r = abs(x) - ((L - 0.09) / 2 - 0.115), abs(y) - ((W - 0.09) / 2 - 0.115), 0.115
+        return (ax <= 0 or ay <= 0 or ax * ax + ay * ay <= r * r) and abs(x) <= (L - 0.09) / 2 and abs(y) <= (W - 0.09) / 2
+    def z(x, y):
+        dx = ((x + L / 2) % 0.105) - 0.0525; dy = ((y + W / 2) % 0.095) - 0.0475
+        dimple = 0.019 * math.exp(-(dx * dx + dy * dy) / (2 * 0.015 ** 2))
+        pillow = 0.05 * max(0.0, min(1.0, (x - (L / 2 - 0.42)) / 0.06)) * max(0.0, min(1.0, ((L / 2 - 0.04) - x) / 0.10))
+        edge = min((L - 0.09) / 2 - abs(x), (W - 0.09) / 2 - abs(y))
+        puff = 0.022 * min(1.0, max(0.0, edge) / 0.06) ** 0.5
+        return H + puff + pillow - (dimple if pillow < 0.01 else 0.0)
+    xs = [-(L - 0.09) / 2 + (L - 0.09) * i / NX for i in range(NX + 1)]
+    ys = [-(W - 0.09) / 2 + (W - 0.09) * j / NY for j in range(NY + 1)]
+    for i in range(NX):
+        for j in range(NY):
+            c = [(xs[i], ys[j]), (xs[i + 1], ys[j]), (xs[i + 1], ys[j + 1]), (xs[i], ys[j + 1])]
+            if all(inside(x, y) for x, y in c):
+                b.face([(x, y, z(x, y)) for x, y in c], "Flock")
+    b.face(list(reversed(ring)), "Vinyl")   # floor under the field, closes any corner sliver
+    b.M = Matrix.Translation((L / 2 - 0.50, -W / 2 + 0.002, 0.085)) @ Matrix.Rotation(math.pi / 2, 4, "X")
+    b.lathe([(0.018, -0.004), (0.018, 0.008), (0.013, 0.010), (0.013, 0.024), (0.0, 0.026)], 12, "Buckle")
     b.M = Matrix.Identity(4)
     return b.finish("airMattress")
 
 
-def build_sleepingPad():
-    """Accordion-folded closed-cell foam: eight panels, yellow/silver faces alternating fold to fold,
-    rounded hinges on alternate sides, egg-crate bumps on the top panel."""
+
+
+def inflatable_pad(name, L, W0, W1, H, pitch, top, bottom, pillow=0.0):
+    """An unrolled inflatable pad, long along X: stadium cross-sections lofted along the length,
+    their height pinched at every lateral baffle so the tubes read; tapers W0 (head) → W1 (foot)."""
     b = Builder()
-    N, X, Y, T = 8, 0.51, 0.13, 0.021
-    for i in range(N):
-        mat = "FoamYellow" if i % 2 else "FoamSilver"
-        b.cbox((0.003 * ((i * 7) % 3 - 1), 0, i * T + T / 2), (X, Y, T * 0.96), mat, ch=0.004)
-        if i < N - 1:   # the fold to the next panel, on alternating long edges
-            s = 1 if i % 2 else -1
-            b.M = Matrix.Translation((0, s * (Y / 2 - T * 0.45), (i + 1) * T)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
-            b.lathe([(T * 0.92, -X / 2 + 0.002), (T * 0.92, X / 2 - 0.002)], 10, mat)
-            b.M = Matrix.Identity(4)
-    top = N * T
-    for ix in range(17):   # corrugated top face: low rounded ridges across the panel
-        x = -0.232 + ix * 0.029
-        b.M = Matrix.Translation((x, 0, top - 0.002)) @ Matrix.Rotation(math.pi / 2, 4, "X")
-        b.lathe([(0.0085, -Y / 2 + 0.006), (0.0085, Y / 2 - 0.006)], 8, "FoamYellow")
+    n_ring, seg = int(L / pitch) * 8, 12
+    rings, mats = [], []
+    for i in range(n_ring + 1):
+        x = -L / 2 + L * i / n_ring
+        t = (x + L / 2) / L
+        w = W0 + (W1 - W0) * max(0.0, (t - 0.35) / 0.65)   # head two-thirds straight, then taper
+        tube = 0.80 + 0.20 * abs(math.sin(math.pi * (x + L / 2) / pitch))
+        end = min(1.0, (L / 2 - abs(x)) / 0.03) ** 0.5
+        h = H * tube * (0.35 + 0.65 * end) + (pillow if x < -L / 2 + 0.30 and x > -L / 2 + 0.04 else 0.0)
+        r = h / 2; half = max(w / 2 - r, 0.01)
+        pts = []
+        for k in range(seg + 1):   # +Y end cap, then −Y end cap
+            a = -math.pi / 2 + math.pi * k / seg
+            pts.append((x, half + r * math.cos(a), r + r * math.sin(a)))
+        for k in range(seg + 1):
+            a = math.pi / 2 + math.pi * k / seg
+            pts.append((x, -half + r * math.cos(a), r + r * math.sin(a)))
+        rings.append(pts)
+    n = len(rings[0])
+    for a, c in zip(rings, rings[1:]):
+        for k in range(n):
+            j = (k + 1) % n
+            b.face([a[k], a[j], c[j], c[k]], top if (a[k][2] + a[j][2]) / 2 > max(p[2] for p in a) / 2 else bottom)
+    b.face(list(reversed(rings[0])), bottom); b.face(rings[-1], bottom)
+    # Valve at the foot, on the near (−Y) shoulder.
+    b.M = Matrix.Translation((L / 2 - 0.06, -W1 / 2 + 0.06, H * 0.95))
+    b.lathe([(0.012, 0.0), (0.012, 0.010), (0.009, 0.012), (0.009, 0.022), (0.0, 0.023)], 12, "Buckle")
     b.M = Matrix.Identity(4)
-    return b.finish("sleepingPad")
+    return b.finish(name)
+
+
+
+
+def build_sleepingPad():
+    """A thin backpacking pad, unrolled: insulated, lateral baffles, tapered foot, valve."""
+    return inflatable_pad("sleepingPad", 1.83, 0.51, 0.40, 0.064, 0.085, "PadOrange", "FoamSilver")
+
+
 
 
 def build_deluxeSleepingPad():
-    """A thick self-inflating pad rolled tight: red shell, cream foam showing as a spiral at the
-    ends, two black compression straps with buckles, a brass valve."""
-    b = Builder(); SEG = 24
-    R, L = 0.085, 0.66
-    b.M = Matrix.Translation((0, 0, R)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
-    b.lathe([(0.0, -L / 2), (R - 0.006, -L / 2), (R, -L / 2 + 0.006), (R, L / 2 - 0.006), (R - 0.006, L / 2), (0.0, L / 2)],
-            SEG, "ShellRed", cap_bottom=False, cap_top=False)
-    for s in (-1, 1):   # foam turns of the roll, a hair proud of each end
-        for r0, r1 in ((0.006, 0.022), (0.029, 0.047), (0.054, 0.073)):
-            z = s * (L / 2 + 0.0006)
-            b.lathe([(r0, z), (r1, z)] if s > 0 else [(r1, z), (r0, z)], SEG, "FoamCream", cap_bottom=False, cap_top=False)
-    for zz in (-0.19, 0.19):
-        b.lathe([(R + 0.001, zz - 0.013), (R + 0.005, zz - 0.013), (R + 0.005, zz + 0.013), (R + 0.001, zz + 0.013)],
-                SEG, "Nylon", cap_bottom=False, cap_top=False)
-        a = math.radians(-80)
-        b.cbox(((R + 0.007) * math.cos(a), (R + 0.007) * math.sin(a), zz), (0.010, 0.012, 0.036), "Buckle", ch=0.002)
-    b.M = b.M @ Matrix.Translation((0.0, -0.064, L / 2))
-    b.lathe([(0.009, 0.0), (0.009, 0.010), (0.011, 0.012), (0.011, 0.022), (0.0, 0.023)], 12, "Buckle")
-    b.M = Matrix.Identity(4)
-    return b.finish("deluxeSleepingPad")
+    """The thick insulated pad, unrolled: wide and rectangular, deep baffles, a raised pillow end."""
+    return inflatable_pad("deluxeSleepingPad", 1.93, 0.64, 0.64, 0.10, 0.12, "PadNavy", "FoamSilver", pillow=0.035)
+
+
 
 
 def build_blanket():
-    """A folded red wool blanket: four layers with a rounded fold across the front, black bands."""
+    """A folded wool blanket in buffalo check: one continuous fold profile swept along X, so every
+    band wraps the top, the round fold and the back without a seam; the crossings run darker."""
     b = Builder()
     X, Y, T, N = 0.46, 0.34, 0.022, 4
-    jit = ((0.004, -0.002), (-0.005, 0.003), (0.002, 0.004), (-0.003, -0.001))
-    for i in range(N):
-        b.cbox((jit[i][0], 0.012 + jit[i][1], i * T + T / 2), (X, Y - 0.024, T * 0.98), "RedWool", ch=0.009)
-    Hs = N * T
-    b.M = Matrix.Translation((0, -Y / 2 + Hs / 2, Hs / 2)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
-    b.lathe([(Hs / 2, -X / 2 + 0.006), (Hs / 2, X / 2 - 0.006)], 16, "RedWool")
-    XB = (-0.172, -0.057, 0.057, 0.172)   # buffalo check: bands across (over the fold) and along
-    for x in XB:
-        b.lathe([(Hs / 2 + 0.0015, x - 0.026), (Hs / 2 + 0.0015, x + 0.026)], 16, "BlackWool", cap_bottom=False, cap_top=False)
-    b.M = Matrix.Identity(4)
-    for x in XB:
-        b.cbox((x, 0.012, Hs + 0.0008), (0.052, Y - 0.05, 0.003), "BlackWool")
-        b.cbox((x, Y / 2 + 0.0015, Hs / 2), (0.052, 0.004, Hs - 0.006), "BlackWool")
-    for y in (-0.045, 0.075):
-        b.cbox((0, y, Hs + 0.0014), (X - 0.02, 0.052, 0.003), "BlackWool")
-        b.cbox((X / 2 + 0.0015, y, Hs / 2), (0.004, 0.052, Hs - 0.006), "BlackWool")
+    Hs = N * T; R = Hs / 2
+    # Profile in (y, z), a closed loop: back-bottom → front fold → top → back face (stepped layers).
+    prof = []
+    yf = -Y / 2 + R
+    step = 0.004
+    y = Y / 2
+    while y > yf:
+        prof.append((y, 0.0)); y -= step
+    for k in range(25):
+        a = -math.pi / 2 - math.pi * k / 24
+        prof.append((yf + R * math.cos(a), R + R * math.sin(a)))
+    y = yf + step
+    while y < Y / 2:
+        prof.append((y, Hs)); y += step
+    for i in range(N, 0, -1):   # the back face: each layer bulges out a little past the one under it
+        prof += [(Y / 2 + 0.004, i * T - 0.004), (Y / 2 + 0.006, i * T - T / 2), (Y / 2 + 0.002, (i - 1) * T + 0.003)]
+    across = [(-0.172, 0.036), (-0.06, 0.036), (0.06, 0.036), (0.172, 0.036)]   # (centre x, width)
+    along_top = (-0.06, 0.07)                                                 # centre y on the top
+    def on_along(y, z):
+        if z > Hs - 1e-6:
+            return any(abs(y - c) < 0.018 for c in along_top)
+        if y < yf and z > 1e-6:   # on the fold: one band at ~45° up the round front
+            ang = math.degrees(math.atan2(z - R, y - yf))
+            return abs(ang - 135) < math.degrees(0.018 / R)
+        return False
+    xb = sorted({-X / 2, X / 2} | {c + s * w / 2 for c, w in across for s in (-1, 1)})
+    xs = []
+    for x0, x1 in zip(xb, xb[1:]):   # a few rings per stretch so the soft end corners can taper
+        xs += [x0 + (x1 - x0) * k / 2 for k in range(2)]
+    xs.append(X / 2)
+    def ring(x):
+        e = min(1.0, (X / 2 - abs(x)) / 0.012)
+        s = 0.94 + 0.06 * e
+        return [(x, py * s, R + (pz - R) * s) for py, pz in prof]
+    rings = [ring(x) for x in xs]
+    n = len(prof)
+    for ra, rb_, xa, xb_ in zip(rings, rings[1:], xs, xs[1:]):
+        xm = (xa + xb_) / 2
+        cross = any(abs(xm - c) < w / 2 for c, w in across)
+        for k in range(n):
+            j = (k + 1) % n
+            pm = ((prof[k][0] + prof[j][0]) / 2, (prof[k][1] + prof[j][1]) / 2)
+            al = on_along(*pm)
+            mat = "CheckDeep" if cross and al else ("CheckStripe" if cross or al else "RedWool")
+            b.face([ra[k], ra[j], rb_[j], rb_[k]], mat)
+    b.face(list(reversed(rings[0])), "RedWool"); b.face(rings[-1], "RedWool")
     return b.finish("blanket")
 
 
+
+
 def build_sleepingBag():
-    """A sleeping bag in its stuff sack, standing: orange nylon body pinched by four compression
-    straps, dark lid, buckles, drawcord lock and loop on top."""
-    b = Builder(); SEG = 32
-    prof = ((0.0, 0.092), (0.012, 0.108), (0.035, 0.116), (0.09, 0.119), (0.20, 0.121), (0.31, 0.118), (0.36, 0.111), (0.385, 0.100))
-    dip = lambda a: 1 - 0.07 * ((1 + math.cos(4 * (a - math.pi / 4))) / 2) ** 6
-    rings = [[(r * dip(2 * math.pi * k / SEG) * math.cos(2 * math.pi * k / SEG),
-               r * dip(2 * math.pi * k / SEG) * math.sin(2 * math.pi * k / SEG), z) for k in range(SEG)] for z, r in prof]
-    b.loft(rings, "NylonOrange", cap_top=False)
-    b.lathe([(0.104, 0.378), (0.100, 0.398), (0.080, 0.414), (0.045, 0.424), (0.0, 0.427)], SEG, "NylonDark", cap_bottom=False)
-    for k in range(4):
-        a = math.pi / 4 + k * math.pi / 2
-        b.M = Matrix.Rotation(a, 4, "Z")
-        pts = [(r * 0.93 + 0.003, 0.0, z) for z, r in prof[1:-1]] + [(0.096, 0.0, 0.395)]
-        b.ribbon(pts, (1, 0, 0), 0.022, 0.003, "Nylon")
-        b.cbox((0.121 * 0.93 + 0.008, 0.0, 0.30), (0.010, 0.030, 0.036), "Nylon", ch=0.003)
-        b.cbox((0.121 * 0.93 + 0.013, 0.0, 0.30), (0.004, 0.024, 0.008), "Buckle")
+    """A rectangular sleeping bag laid out flat, its near head corner unzipped and turned back to
+    show the flannel lining — ready to slide into. Quilted top, zipper along the open edges."""
+    b = Builder()
+    L, W, s = 1.90, 0.85, 0.05
+    nu, nv, nc = int(round(L / s)), int(round(W / s)), 14   # fold line u + v = nc·s
+    zb, ht = 0.040, 0.045
+    # Bottom layer: a soft slab, outer shell; its top shows flannel where the corner is turned back.
+    b.cbox((0, 0, zb / 2), (L, W, zb), "BagGreen", ch=0.012)
+    b.cbox((0, 0, zb + 0.0005), (L - 0.03, W - 0.03, 0.001), "Flannel")
+    # Grid in (u, v): u from the +X end, v from the −Y side. x = L/2 − u, y = v − W/2.
+    def top_z(u, v):
+        d = (u % 0.19) - 0.095
+        seam = 0.012 * math.exp(-(d * d) / (2 * 0.012 ** 2))
+        edge = min(u, L - u, v, W - v)
+        return zb + ht * min(1.0, max(0.0, edge) / 0.05) ** 0.6 - seam
+    P = lambda u, v, z: (L / 2 - u, v - W / 2, z)
+    def tris(i, j):
+        a, bb, c, d = (i, j), (i + 1, j), (i, j + 1), (i + 1, j + 1)
+        return [((a, bb, c), i + j + 1), ((bb, d, c), i + j + 2)]
+    keep, flap = [], []
+    for i in range(nu):
+        for j in range(nv):
+            for t, smax in tris(i, j):
+                (flap if smax <= nc else keep).append(t)
+    for t in keep:
+        b.face([P(i * s, j * s, top_z(i * s, j * s)) for i, j in t], "BagGreen")
+    # Walls under the kept top's boundary (edges used once), down to the bottom layer.
+    def boundary(ts):
+        cnt = {}
+        for t in ts:
+            for e in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])):
+                k = tuple(sorted(e)); cnt[k] = cnt.get(k, 0) + 1
+        return [k for k, c in cnt.items() if c == 1]
+    fold = lambda e: all(i + j == nc for i, j in e)
+    zf = zb + ht + 0.004
+    for (i0, j0), (i1, j1) in boundary(keep):
+        u0, v0, u1, v1 = i0 * s, j0 * s, i1 * s, j1 * s
+        if fold(((i0, j0), (i1, j1))):   # the bend up into the turned-back flap
+            continue   # the rounded bend below closes this edge
+        else:
+            b.face([P(u0, v0, zb), P(u1, v1, zb), P(u1, v1, top_z(u1, v1)), P(u0, v0, top_z(u0, v0))], "BagGreen")
+    # The flap: reflected across the fold (u, v) → (c − v, c − u), lying on the top, lining up.
+    c = nc * s
+    R = lambda u, v: (c - v, c - u)
+    th = 0.030
+    def flap_z(u, v):   # puffy toward the middle of the flap, thin at its zipped edges and the fold
+        e = min(c - u, c - v, (u + v - c) / math.sqrt(2))   # distance to the zipped edges and the fold
+        return zf + th + 0.020 * min(1.0, max(0.0, e) / 0.08) ** 0.6
+    for t in flap:
+        q = [R(i * s, j * s) for i, j in t]
+        b.face([P(u, v, flap_z(u, v)) for u, v in q], "Flannel")
+        b.face([P(u, v, zf) for u, v in reversed(q)], "BagGreen")
+    for (i0, j0), (i1, j1) in boundary(flap):
+        if fold(((i0, j0), (i1, j1))):
+            continue
+        (u0, v0), (u1, v1) = R(i0 * s, j0 * s), R(i1 * s, j1 * s)
+        b.face([P(u0, v0, zf), P(u1, v1, zf), P(u1, v1, flap_z(u1, v1)), P(u0, v0, flap_z(u0, v0))], "BagGreen")
+        b.bar(P(u0, v0, flap_z(u0, v0) + 0.002), P(u1, v1, flap_z(u1, v1) + 0.002), 0.014, "Nylon", h=0.006)   # zip tape on the flap edge
+    # The bend: a soft roll of shell along the fold line, from the kept top up to the flap.
+    a3, b3 = Vector(P(c, 0.0, 0.0)), Vector(P(0.0, c, 0.0))
+    rr = (zf + th - zb) / 2
+    b.M = (Matrix.Translation(((a3 + b3) / 2) + Vector((0, 0, zb + rr)))
+           @ (b3 - a3).normalized().to_track_quat("Z", "Y").to_matrix().to_4x4())
+    half = (b3 - a3).length / 2
+    b.lathe([(0.0, -half), (rr * 0.8, -half + 0.004), (rr, -half + 0.02), (rr, half - 0.02), (rr * 0.8, half - 0.004), (0.0, half)],
+            14, "BagGreen", cap_bottom=False, cap_top=False)
     b.M = Matrix.Identity(4)
-    b.cbox((0, 0, 0.436), (0.016, 0.012, 0.020), "Nylon", ch=0.004)
-    b.ribbon([(-0.004, 0, 0.444), (-0.012, 0, 0.462), (0.0, 0, 0.472), (0.012, 0, 0.462), (0.004, 0, 0.444)], (0, -1, 0), 0.004, 0.003, "Nylon")
+    # Zipper along the opened legs on the bottom layer, then on along the near side seam.
+    b.bar(P(0.0, 0.008, zb + 0.003), P(c, 0.008, zb + 0.003), 0.016, "Nylon", h=0.006)
+    b.bar(P(0.008, 0.0, zb + 0.003), P(0.008, c, zb + 0.003), 0.016, "Nylon", h=0.006)
+    b.bar(P(c, 0.001, zb + 0.004), P(L - 0.02, 0.001, zb + 0.004), 0.008, "Nylon", h=0.006)
+    b.cbox(P(c + 0.02, -0.006, zb + 0.004), (0.022, 0.012, 0.010), "Buckle", ch=0.002)   # zip pull
     return b.finish("sleepingBag")
+
+
 
 
 def build_zipTies():
@@ -673,7 +792,8 @@ def build_zipTies():
 
 
 def build_ductTape():
-    """A roll of silver duct tape on edge, cardboard core, the loose end lying out along the ground."""
+    """A roll of silver duct tape on edge, cardboard core; the loose end wraps the underside of the
+    roll and runs straight out along the ground — one strip, no gap where it leaves."""
     b = Builder(); SEG = 36
     Ro, Ri, Hw = 0.060, 0.040, 0.024
     b.M = Matrix.Translation((0, 0, Ro)) @ Matrix.Rotation(math.pi / 2, 4, "X")
@@ -681,42 +801,79 @@ def build_ductTape():
             cap_bottom=False, cap_top=False)
     b.lathe([(Ri + 0.0002, Hw + 0.0006), (0.0345, Hw + 0.0006), (0.0345, -Hw - 0.0006), (Ri + 0.0002, -Hw - 0.0006)], SEG, "Cardboard",
             cap_bottom=False, cap_top=False)
-    for r in (0.047, 0.054):   # the wraps, read as faint steps on the faces
-        for s in (-1, 1):
-            z = s * (Hw + 0.0003)
-            b.lathe([(r, z), (r + 0.0012, z)] if s > 0 else [(r + 0.0012, z), (r, z)], SEG, "SteelDark", cap_bottom=False, cap_top=False)
+    for r in (0.047, 0.054):
+        for sg in (-1, 1):
+            z = sg * (Hw + 0.0003)
+            b.lathe([(r, z), (r + 0.0012, z)] if sg > 0 else [(r + 0.0012, z), (r, z)], SEG, "SteelDark", cap_bottom=False, cap_top=False)
     b.M = Matrix.Identity(4)
-    tail = [(-0.012, 0, 0.0012), (0.03, 0, 0.0008), (0.08, 0, 0.0008), (0.11, 0, 0.004), (0.122, 0, 0.012)]
-    b.ribbon([(x, 0, z) for x, _, z in tail], (0, 0, 1), 2 * Hw, 0.0008, "TapeSilver")
+    # The strip's centre line in XZ: an arc hugging the roll from the back round to the bottom, then
+    # flat along the ground and curling up at the end. Two skins 0.8 mm apart along the local normal.
+    r = Ro + 0.0006
+    path = [(r * math.cos(a), Ro + r * math.sin(a)) for a in (math.radians(d) for d in range(205, 271, 5))]
+    path += [(0.03, 0.0006), (0.06, 0.0006), (0.09, 0.0006), (0.11, 0.003), (0.122, 0.011)]
+    hw = Hw - 0.0005
+    def norm(k):   # toward the roll's centre on the arc, up on the ground
+        p0, p1 = Vector(path[max(k - 1, 0)]), Vector(path[min(k + 1, len(path) - 1)])
+        d = (p1 - p0).normalized()
+        return Vector((-d.y, d.x))
+    for k in range(len(path) - 1):
+        (x0, z0), (x1, z1) = path[k], path[k + 1]
+        n0, n1 = norm(k), norm(k + 1)
+        o0 = (x0 + n0.x * 0.0008, z0 + n0.y * 0.0008); o1 = (x1 + n1.x * 0.0008, z1 + n1.y * 0.0008)
+        b.face([(x0, hw, z0), (x1, hw, z1), (x1, -hw, z1), (x0, -hw, z0)], "TapeSilver")
+        b.face([(o0[0], -hw, o0[1]), (o1[0], -hw, o1[1]), (o1[0], hw, o1[1]), (o0[0], hw, o0[1])], "TapeSilver")
     return b.finish("ductTape")
 
 
+
+
 def build_tirePatches():
-    """A red tin patch kit, lid open: stacks of orange patches, a steel scuffer, and the cement tube."""
+    """A roadside tire plug kit laid out: T-handle spiral reamer, T-handle insertion needle with a
+    plug threaded through its eye, and a few sticky string plugs."""
     b = Builder()
-    X, Y, H, t = 0.10, 0.065, 0.020, 0.0012
-    b.cbox((0, 0, t / 2), (X, Y, t), "TinRed")
-    for c, s in (((0, -Y / 2 + t / 2, H / 2), (X, t, H)), ((0, Y / 2 - t / 2, H / 2), (X, t, H)),
-                 ((-X / 2 + t / 2, 0, H / 2), (t, Y, H)), ((X / 2 - t / 2, 0, H / 2), (t, Y, H))):
-        b.cbox(c, s, "TinRed")
-    b.cbox((-0.012, 0, H / 2), (t, Y - 2 * t, H * 0.8), "TinRed")    # divider
-    for px, py in ((-0.034, -0.016), (-0.034, 0.016), (-0.0, -0.016)):
-        for k in range(3):
-            b.M = Matrix.Translation((px + 0.0008 * k, py, t + k * 0.0032))
-            b.lathe([(0.0125, 0.0), (0.0125, 0.0028)], 16, "PatchOrange")
-    b.M = Matrix.Identity(4)
-    b.cbox((0.025, 0.012, t + 0.001), (0.032, 0.022, 0.002), "Steel", ch=0.0005)
-    b.M = Matrix.Translation((0, Y / 2, H)) @ Matrix.Rotation(math.radians(-14), 4, "X")
-    b.cbox((0, t / 2, Y / 2 + 0.001), (X + 0.002, t, Y + 0.002), "TinRed")
-    b.cbox((0, -0.002, Y / 2 + 0.001), (X - 0.004, 0.004, Y - 0.004), "TinRed", ch=0.0015)
-    b.M = Matrix.Translation((0.004, -Y / 2 - 0.016, 0.0095)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
-    b.lathe([(0.004, -0.036), (0.009, -0.028), (0.0095, -0.010), (0.0095, 0.022), (0.006, 0.027), (0.004, 0.030), (0.004, 0.034)],
-            16, "Steel", cap_bottom=False, cap_top=False)
-    b.lathe([(0.0055, 0.032), (0.0055, 0.045), (0.0, 0.046)], 12, "CanBlack")
-    b.cbox((0, 0, -0.040), (0.0025, 0.020, 0.010), "Steel")
-    b.lathe([(0.0098, -0.006), (0.0098, 0.014)], 16, "LabelYellow", cap_bottom=False, cap_top=False)
-    b.M = Matrix.Identity(4)
+    def t_tool(origin, yaw, tip):
+        M0 = Matrix.Translation(origin) @ Matrix.Rotation(yaw, 4, "Z")
+        # Handle: a fat round bar along local Y, lying on the ground.
+        b.M = M0 @ Matrix.Translation((0, 0, 0.012)) @ Matrix.Rotation(math.pi / 2, 4, "X")
+        b.lathe([(0.0, -0.050), (0.008, -0.049), (0.012, -0.044), (0.012, 0.044), (0.008, 0.049), (0.0, 0.050)], 12, "TinRed",
+                cap_bottom=False, cap_top=False)
+        b.M = M0 @ Matrix.Translation((0, 0, 0.012)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
+        b.lathe([(0.0075, 0.010), (0.0075, 0.022), (0.0045, 0.026)], 12, "Steel", cap_bottom=False)   # ferrule
+        b.M = M0
+        tip(b)
+        b.M = Matrix.Identity(4)
+    def reamer(b):   # a square bar twisted along its length: reads as the spiral rasp
+        rings = []
+        for k in range(29):
+            t = k / 28; x = 0.026 + 0.075 * t; z = 0.012 - 0.0085 * t
+            a = t * 6 * math.pi; s = 0.0034 * (1 - 0.35 * max(0, t - 0.85) / 0.15)
+            rings.append([(x, s * math.cos(a + q * math.pi / 2), z + s * math.sin(a + q * math.pi / 2)) for q in range(4)])
+        b.loft(rings, "Steel")
+    def needle(b):   # flat blade, open eye slot near the tip
+        z0, z1 = 0.012, 0.0035
+        zx = lambda x: z0 + (z1 - z0) * (x - 0.026) / 0.075
+        b.bar((0.026, 0, zx(0.026)), (0.080, 0, zx(0.080)), 0.0055, "Steel", h=0.0016)
+        for y in (-0.0022, 0.0022):
+            b.bar((0.080, y, zx(0.080)), (0.096, y, zx(0.096)), 0.0014, "Steel", h=0.0016)
+        b.bar((0.096, 0, zx(0.096)), (0.101, 0, zx(0.101)), 0.0055, "Steel", h=0.0016)
+        # A plug threaded through the eye, both tails hanging forward to the ground.
+        for sy in (-1, 1):
+            b.bar((0.088, 0, zx(0.088) + 0.001), (0.078, sy * 0.018, 0.0016), 0.0065, "PlugBrown", h=0.0028)
+            b.bar((0.078, sy * 0.018, 0.0016), (0.060, sy * 0.034, 0.0016), 0.0065, "PlugBrown", h=0.0028)
+    t_tool((-0.035, 0.03, 0), math.radians(-28), reamer)
+    t_tool((-0.050, -0.045, 0), math.radians(-8), needle)
+    rnd = random.Random(3)
+    for k in range(4):   # loose plugs, each a strip with a slight kink, lying in a little fan
+        x0, y0 = 0.035 + 0.008 * k, -0.095 + 0.006 * k
+        a = math.radians(-60 + 9 * k)
+        mid = (x0 + 0.045 * math.cos(a), y0 + 0.045 * math.sin(a))
+        end = (mid[0] + 0.048 * math.cos(a + 0.18), mid[1] + 0.048 * math.sin(a + 0.18))
+        zk = 0.0015 + 0.0029 * k
+        b.bar((x0, y0, zk), (mid[0], mid[1], zk + 0.0006), 0.0065, "PlugBrown", h=0.0028)
+        b.bar((mid[0], mid[1], zk + 0.0006), (end[0], end[1], zk), 0.0065, "PlugBrown", h=0.0028)
     return b.finish("tirePatches")
+
+
 
 
 def build_stopLeak():
@@ -735,23 +892,27 @@ def build_stopLeak():
 
 
 def build_bubbleWrap():
-    """A roll of bubble wrap on a cardboard core, a sheet unrolled across the ground in front of it."""
-    b = Builder(); rnd = random.Random(5)
+    """A roll of bubble wrap on a cardboard core, a sheet unrolled across the ground in front of it.
+    Bubbles: wide and low, fewer of them."""
+    b = Builder()
     R, L, SEG = 0.10, 0.40, 32
-    def bubble(p, n, t1, t2, rb=0.0085, hb=0.0055):
-        b.hull([p + rb * (math.cos(f) * t1 + math.sin(f) * t2) for f in (2 * math.pi * k / 6 for k in range(6))] + [p + n * hb], "Bubble")
+    PITCH, RB, HB = 0.033, 0.0135, 0.0042
+    def bubble(p, n, t1, t2):
+        ring = lambda r, h: [p + r * (math.cos(f) * t1 + math.sin(f) * t2) + n * h for f in (2 * math.pi * k / 8 for k in range(8))]
+        b.hull(ring(RB, 0.0) + ring(RB * 0.72, HB * 0.75) + [p + n * HB], "Bubble")
     b.M = Matrix.Translation((0, 0, R)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
     b.lathe([(0.032, -L / 2), (R - 0.004, -L / 2), (R, -L / 2 + 0.004), (R, L / 2 - 0.004), (R - 0.004, L / 2), (0.032, L / 2)],
             SEG, "BubbleSheet", cap_bottom=False, cap_top=False)
     b.lathe([(0.032, L / 2 + 0.008), (0.026, L / 2 + 0.008), (0.026, -L / 2 - 0.008), (0.032, -L / 2 - 0.008), (0.032, L / 2 + 0.008)],
             SEG, "Cardboard", cap_bottom=False, cap_top=False)
-    for s in (-1, 1):
+    for sg in (-1, 1):
         for r in (0.045, 0.060, 0.075, 0.090):
-            z = s * (L / 2 + 0.0005)
-            b.lathe([(r, z), (r + 0.0025, z)] if s > 0 else [(r + 0.0025, z), (r, z)], SEG, "Bubble", cap_bottom=False, cap_top=False)
-    n_around = 30
-    for row in range(17):
-        z = -L / 2 + 0.018 + row * 0.0215
+            z = sg * (L / 2 + 0.0005)
+            b.lathe([(r, z), (r + 0.0025, z)] if sg > 0 else [(r + 0.0025, z), (r, z)], SEG, "Bubble", cap_bottom=False, cap_top=False)
+    n_around = int(2 * math.pi * R / PITCH)
+    rows = int((L - 0.02) / PITCH)
+    for row in range(rows):
+        z = -L / 2 + 0.010 + PITCH / 2 + row * PITCH
         for k in range(n_around):
             a = 2 * math.pi * (k + 0.5 * (row % 2)) / n_around
             n = Vector((math.cos(a), math.sin(a), 0)); t1 = Vector((-math.sin(a), math.cos(a), 0)); t2 = Vector((0, 0, 1))
@@ -759,11 +920,11 @@ def build_bubbleWrap():
     b.M = Matrix.Identity(4)
     D = 0.20
     b.cbox((0, -D / 2 - 0.005, 0.001), (L - 0.004, D, 0.002), "BubbleSheet")
-    for row in range(int(D / 0.0215)):
-        y = -0.016 - row * 0.0215
-        for k in range(18):
-            x = -L / 2 + 0.018 + k * 0.0215 + (0.0107 if row % 2 else 0)
-            if x < L / 2 - 0.01:
+    for row in range(int(D / PITCH)):
+        y = -0.020 - row * PITCH
+        for k in range(rows + 1):
+            x = -L / 2 + 0.010 + PITCH / 2 + k * PITCH + (PITCH / 2 if row % 2 else 0)
+            if x < L / 2 - 0.012:
                 bubble(Vector((x, y, 0.002)), Vector((0, 0, 1)), Vector((1, 0, 0)), Vector((0, 1, 0)))
     return b.finish("bubbleWrap")
 

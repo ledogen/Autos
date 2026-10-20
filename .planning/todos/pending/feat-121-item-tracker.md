@@ -53,15 +53,20 @@ status: shipped · design: ratified · build: effect · needs: quick slots · wh
 In the inventory with its thumbnail; auto-binds to a quick key and drinks on the press (FEAT-122). Sold nowhere yet: reward only until FEAT-104.
 Energy now, sleepy earlier tomorrow — a loan against tomorrow. The energy clock ships (`src/day.js`),
 so the effect is a debt term on it. Already a REWARDS id (`coffee`), grant stubbed.
+**Ruled 2026-10-20:** +5 h / −2 h (`src/day.js`, was −3), $3, reward from the food vendor and gas
+station (C–B), never found.
 
 ### Energy drink
-status: todo · design: idea · build: effect · needs: quick slots · where: gasStation, generalStore
+status: todo · design: ratified · build: effect · needs: quick slots · where: gasStation, generalStore, reward
+**Ruled 2026-10-20:** +5 h now, a crash of −2.5 h four hours later. $4. Reward from the gas station
+and general store (C–B), never found.
 Coffee's short, steep twin: a bigger hit and the crash comes the same day. Must carry a debt or it is
 free alertness (fish's job).
 
 ### Chili dog
 status: todo · design: proposed · build: effect · needs: hunger · where: foodVendor, reward
 Already a REWARDS id (`chiliDog`, kind food). A meal: resets the hunger clock.
+**Ruled 2026-10-20:** a plain meal that holds hunger 10 h. $5. Food vendor only (B–A), never found.
 
 ### Diner meal
 status: todo · design: proposed · build: effect · needs: hunger, timed effects · where: foodVendor
@@ -86,12 +91,12 @@ cooked fish carries timed effects is the owner's open call (items.md §1a).
 
 ### Spare tire
 status: todo · design: implied · build: effect, model · where: autoShop, reward
-Fitting it is a 30 min timeskip that clears the flat. Real mass all the time. Already a REWARDS id
+Fitting it is a 90 min timeskip (owner, 2026-10-20) that clears the flat. Real mass all the time. Already a REWARDS id
 (`spareTire`). Flats ship (`flat[]`, FEAT-94).
 
 ### Tire patches
 status: todo · design: proposed · build: effect · where: autoShop, generalStore
-Fixes the puncture, restores no condition. Leaves the tire flat until re-inflated (bike pump 2 h,
+Patching is a 30 min timeskip (2026-10-20). Fixes the puncture, restores no condition. Leaves the tire flat until re-inflated (bike pump 2 h,
 compressor 30 min).
 
 ### Spare air filter
@@ -100,11 +105,11 @@ Resets the `airFilter` track in `src/damage.js` at the roadside.
 
 ### Zip ties
 status: todo · design: proposed · build: effect · where: generalStore, autoShop
-Field repair, ~10% on the `armor*` / `headlight*` tracks. Several per pack.
+Field repair, ~10% on the `armor*` / `headlight*` tracks. Several per pack. 15 min per use; holds for the run (2026-10-20).
 
 ### Duct tape
 status: todo · design: proposed · build: effect · where: generalStore
-Field repair, ~25% on body panels. Open: does it fall off after some hours?
+Field repair, ~25% on body panels. 15 min per use; holds for the run (2026-10-20).
 
 ### Coolant jug
 status: cut · design: proposed · build: effect · where: autoShop, gasStation
@@ -114,7 +119,8 @@ cooling capacity. Replaced by stop-leak.
 ### Stop-leak
 status: todo · design: proposed · build: effect · where: autoShop, gasStation
 Field repair: restores 15% radiator condition (owner, 2026-10-16). Under FEAT-51 that is cooling
-capacity directly — aimed at the overheat → power loss → engine wear chain.
+capacity directly — aimed at the overheat → power loss → engine wear chain. 15 min; holds for the run
+(2026-10-20).
 
 ### Emergency gas
 status: wip · design: implied · build: effect, model · where: gasStation, reward
@@ -243,6 +249,9 @@ Add-on, own slot, not required to sleep: +5% recovery rate, adding to the bed an
 status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Add-on, own slot, not required to sleep: +10% recovery rate, adding to the bed and the blanket.
 Renders with the bed, not in place of it.
+Camp render (owner, 2026-10-20): shown unrolled, corner unzipped and turned back; layered variants
+for bag + blanket (and the other pairings) are owed so the stack looks natural. Pads likewise render
+unrolled, which is why their thumbnails are unrolled inflatables.
 
 ### Tent
 status: todo · design: idea · build: effect · needs: camp render · where: generalStore

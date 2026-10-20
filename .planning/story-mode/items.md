@@ -54,10 +54,10 @@ Used up. Per-job or per-day decisions, not permanent upgrades.
 
 | Item | What it does | Source | Cost | Status |
 |---|---|---|---|---|
-| **Coffee** | Alert now, sleepy earlier tomorrow. **A loan against tomorrow, repaid at interest.** The canonical consumable and the shape every other one is measured against. | Bought (towns, stations) | Tomorrow's hours | **RATIFIED** — DESIGN.md "The day and the clock" |
+| **Coffee** | Alert now, sleepy earlier tomorrow. **A loan against tomorrow, repaid at interest.** The canonical consumable and the shape every other one is measured against. **+5 h now, −2 h off the next wake-up** (owner, 2026-10-20; was −3: five hours awake costs about three hours of sleep, so the cup has to beat that ratio or nobody drinks it). | Bought (general store, gas station, food vendor), **$3** | Tomorrow's hours | **RATIFIED** — DESIGN.md "The day and the clock"; figures §7 rulings 2026-10-20 |
 | ~~**Cargo straps**~~ **[STRUCK 2026-10-14 — not an item; FEAT-110 closed, see §3e]** | Makes the **next fragile cargo** more resilient by changing the coupling between chassis and load — the cargo sees less shock than the truck does. Enables freight-grade fragile work you'd otherwise turn down. | Bought or found | Cash; a slot; trivial mass | **IDEA** — `IDEAS.md` 2026-07-29. *Open: single-use per job, degrades over several, or a reusable tool?* |
 | **Fish (eaten)** | Alertness that **does not have to be repaid** — the only honest restoration in the game. *"Coffee is debt. Fish is income."* | Caught; best at a favored water | A long relationship with the water | **PROPOSED** — `spirits-and-pacts.md` #04. ⚠ Depends on The Confluence, which is deferred |
-| **Spare tire** | Recovers from a puncture without a tow. **Fitting it is a 30 min timeskip** (owner, 2026-09-30). Puncture is a hard fail state in the wear model. | Bought/found; starts in some jalopies | Real mass, all the time | **IMPLIED** — named in DESIGN.md "The car" as a stowed consumable; behavior unspecified |
+| **Spare tire** | Recovers from a puncture without a tow. **Fitting it is a 90 min timeskip** (owner, 2026-10-20; was 30 min, 2026-09-30). Puncture is a hard fail state in the wear model. | Bought/found; starts in some jalopies | Real mass, all the time | **IMPLIED** — named in DESIGN.md "The car" as a stowed consumable; behavior unspecified |
 | **Air filter (spare)** | Replacement for the track the player must actively *watch* — it does ~nothing until it does. | Bought/found | Cash; a slot | **IMPLIED** — same |
 | **Fuel** | The tank. Burn is a function of rpm and load, so a par-beating drive costs fuel as well as wear. **The one cost that scales with distance** — SM-INV-5 keeps wear off the distance axis, and this is what fills it. Bought at gas stations. | Gas stations (a POI type) | Cash — and the detour, if you let it get low | **RATIFIED** — owner, 2026-08-01. Reverses this row's old *NOT DESIGNED*. Ticket FEAT-50; gauge already ships (FEAT-49). See DESIGN.md "Fuel and gas stations" |
 | **Jerry can** | Fuel you carry. The cheap answer to running dry, which is otherwise the breakdown predicament (tow, or don't). | Bought/found | Cash; a slot; **real mass, always** — and it is fuel, so it is not trivial mass | **IMPLIED** — falls out of the fuel ruling; see the tools carry-cost question in §2. **Shipped as a bonus item** (owner, 2026-10-08): *Emergency gas*, a single-use 2 gal RotoPax, earned from gas-station and stranded-motorist offers (`data/offers.js` REWARDS `emergencyGas`; grant still stubbed) |
@@ -213,7 +213,7 @@ and cargo. Keys 1–4 are currently unbound in `src/` (checked 2026-09-24).
 | Item | As stated | Kind | Read |
 |---|---|---|---|
 | **Coffee** | Restores restfulness on the go | Consumable | **Already ratified as an item** (§1 row 1) — this adds *how you use it*: one keypress, mid-drive, no stopping. The loan still stands: alert now, sleepy earlier tomorrow. The quick slot changes the verb, not the price |
-| **Energy drink** | Same job as coffee | Consumable | Needs to differ from coffee or it's a duplicate. The natural split is **the shape of the loan**: coffee borrows from *tomorrow*; an energy drink hits harder and faster, and the **crash comes the same day, a few hours later**. A short, steep loan versus a long, soft one — a real choice between two slots. ⚠ As stated ("restores restfulness") it would be free alertness, which is fish's role alone (*coffee is debt, fish is income*). It has to carry a debt |
+| **Energy drink** | Same job as coffee | Consumable | **RULED 2026-10-20: +5 h now, and a crash of half that (−2.5 h) four hours later, the same day.** $4. Needs to differ from coffee or it's a duplicate. The natural split is **the shape of the loan**: coffee borrows from *tomorrow*; an energy drink hits harder and faster, and the **crash comes the same day, a few hours later**. A short, steep loan versus a long, soft one — a real choice between two slots. ⚠ As stated ("restores restfulness") it would be free alertness, which is fish's role alone (*coffee is debt, fish is income*). It has to carry a debt |
 | **Sacred object / totem / charm** | Grants a **percentage damage reduction**, or **invulnerability** — **both versions are timed** (owner 2026-09-24: "the percentage version is also either on cooldown or consumable") | Cooldown or consumable, either version | **Two versions, both kept.** *Reduction*: for a while, knocks land softer on the truck. *Invulnerability*: a **short window you trigger** — "for a moment, nothing touches the truck" — an event that asks for a timing decision (you press it as you see the crash coming). The owner's ruling that the reduction is timed too takes out the floor objection: nothing is permanent, so it doesn't raise the floor (SM-INV-9). **Still to hold:** the reduction must never be *shown* as a number (rule 1, SM-INV-10). The player feels it; no "−30%" appears anywhere. It is also exactly §1a-E ("damage resistance for the truck"), and the fiction resolves that category error: this is a spirit's gift, not food. In both versions the physics still happens (SM-INV-1; the truck still rolls), and only the damage is softened or skipped. **Source: the Host** (`spirits-and-pacts.md` #02, owner 2026-09-24). The charm is the *active* form of the Host's damage-resistance reward; the *passive* form is slower wear while you're in favour. Its price beyond the cooldown is still open, and the Host's good-nights streak is the natural candidate. It dies with the run (rule 3) |
 
 Open, and the owner's to settle:
@@ -224,9 +224,8 @@ Open, and the owner's to settle:
   charms? And is "cooldown" meant for spirit gifts only?
 - **How does the player see a slot's state** (a charge left, a cooldown ticking) without a meter?
   This is §1a's question 1 again. The quick slots are the first place it has to be answered for real.
-- **Does using an item while driving cost anything physical?** For example, one hand off the wheel
-  for a second. That's optional flavour, but it fits AUTOS, and it would make "while driving" a
-  decision rather than a free action.
+- ~~**Does using an item while driving cost anything physical?**~~ **RULED 2026-10-20: no — a free
+  action.**
 - **Four slots or fewer?** The number of slots is itself a load budget. Fewer slots make each one a
   harder choice (rule 4).
 
@@ -239,9 +238,11 @@ faster. Eating resets the clock. There is one clock on the driver, and it is sti
 | Hours since last meal | Energy drain | Reads as |
 |---|---|---|
 | 0 – ~6 h | ×1 (baseline) | Fed. Nothing happens |
-| ~6 h+ | **×1.25 – ×1.5, rising** | *You're running on empty* — the sleepy stage arrives earlier in the day |
+| hold expired | **×1.25, rising to ×1.5** | *You're running on empty* — the sleepy stage arrives earlier in the day |
 
-*(Figures proposed, not ruled. The shape is ruled: a rate, not a meter, and mild.)*
+**RULED 2026-10-20:** the rate is ×1.25 rising to ×1.5. **The threshold depends on the food:** each
+food carries its own *hold*. A standard meal (a burger) holds about **8 h** — energy does not drain
+asleep, so two of them cover a 16 h waking day. The chili dog holds **10 h**.
 
 **Why this shape.** A separate hunger meter would add a pressure mainly so items can relieve it, and it
 would be a second clock competing with energy for the player's attention. As a drain rate it costs
@@ -435,6 +436,9 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 > "tent model + animated campfire w/ dynamic shadows"): that render work and this table are the same
 > job seen from two ends.
 
+> **Vibe-assist cap [RULED 2026-10-20]:** cot + canopy + binoculars together add at most **+0.3** to a
+> site's 0–1 vibe.
+>
 > **Two axes: some gear scales the energy, some gear scales the vibe.** [RULED 2026-08-01, owner —
 > supersedes this section's original "it multiplies the energy, *never* the vibe."] The site's vibe
 > score decides what a night at that spot is worth (`r(vibe) = lerp(4/3, 8/3, vibe)` h/h in `src/day.js`).
@@ -925,16 +929,35 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 | Item | Form | What it does | Note |
 |---|---|---|---|
 | **Zip ties** | Consumable | Field repair: restores **~10%** condition on a light component — **headlights, body panels** (the `armor*` and `headlight*` tracks in `src/damage.js`) | Gets you home, not fixed. Cheap, light, several per pack |
-| **Duct tape** | Consumable | Field repair: **~25%** on **body panels** | The bigger patch, narrower target. Open: do field repairs hold, or fall off after some hours? |
+| **Duct tape** | Consumable | Field repair: **~25%** on **body panels** | The bigger patch, narrower target. **Holds for the run; 15 min per use** (owner, 2026-10-20) |
 | ~~**Coolant jug**~~ | — | **STRUCK (owner, 2026-10-16).** FEAT-51 shipped with no coolant mechanic — radiator condition *is* the cooling capacity — so there is nothing to top up | Replaced by stop-leak, below |
 | **Stop-leak** | Consumable | Field repair: restores **15%** radiator condition (owner, 2026-10-16). Under FEAT-51 that is directly cooling capacity — a 35% radiator patched to 50% holds full load again | Aimed at the overheat → power loss → engine wear chain (`missions.md` §3c). Pairs with heavy hauls on long grades |
 | **Hi-lift jack** | Carried tool (real mass) | **Right a rolled truck** where it lies — Halo's flip, in a truck. Replaces the tow for a rollover that didn't break anything | ⚠ SM-INV-1 (death is crash or breakdown only): a rollover the jack can fix must not count as the crash. Needs a ruling on where "rolled" ends and "crashed" begins — likely the damage state at rest, not the rollover itself. May also be the §2 quick-jack's other job — one tool, not two, if so |
 | **Light bar** | Fitted part | See further at night | Simple and safe. Pairs with the Night Owl's nocturnal bargain: makes his hours more usable, not safe. Real mass and drag up high, if we want a cost |
-| **Tire patches** | Consumable | **Fixes the puncture and nothing else** — the tire keeps whatever condition it had when it popped. Restores **no durability**; a worn tire is still worn | Owner, 2026-09-30 (brought back from the rejected list; no small-vs-large puncture split). A patch alone leaves the tire flat — it still has to be re-inflated (pump or compressor, below). The spare trade: the spare is real mass all the time and a fresh tire; the patch is light and puts you back on the same rubber. §1's spare-tire row calls a puncture a hard fail; with patches it is recoverable at the roadside. Kept worth carrying on good tires by FEAT-93 (hazard punctures at any condition) |
+| **Tire patches** | Consumable | **Patching takes 30 min** (owner, 2026-10-20). **Fixes the puncture and nothing else** — the tire keeps whatever condition it had when it popped. Restores **no durability**; a worn tire is still worn | Owner, 2026-09-30 (brought back from the rejected list; no small-vs-large puncture split). A patch alone leaves the tire flat — it still has to be re-inflated (pump or compressor, below). The spare trade: the spare is real mass all the time and a fresh tire; the patch is light and puts you back on the same rubber. §1's spare-tire row calls a puncture a hard fail; with patches it is recoverable at the roadside. Kept worth carrying on good tires by FEAT-93 (hazard punctures at any condition) |
 | **Bike pump** | Always in the truck — not bought, not a slot | Re-inflates a patched tire: a **2 h timeskip** | Owner, 2026-09-30. The baseline that makes a patch usable at all. The cost is daylight |
 | **Compressor** | Carried tool | Re-inflates a patched tire: a **30 min timeskip** | Owner, 2026-09-30 — **brought back** in a different job: not airing down for grip (our tire model has no pressure–grip term), but **turning a 2 h patch stop into a 30 min one**. Worthless without patches; patches are slow without it. No inflation state needed — re-inflation is just a timeskip, and the `flat[]` flag clears at the end of it |
 | **Rubber bed mat** | Carried (loose in the bed) | Raises friction between haul cargo and the bed floor. The load stops **sliding** but can still **bounce**, so you still read the road | The cheap, early version. Physically one number — the cargo-to-floor friction coefficient in the bed well. **It is the lesser option** (owner, 2026-09-30): it either grips less than the bedliner, or wears out, or both — **undecided** |
 | **Bedliner** | Fitted part (service shop) | The same friction increase as the mat, done properly: **works well, never wears out** | **The real, desirable upgrade** (owner, 2026-09-30). "Permanent" means for the run — like every part it dies with the run (SM-INV-8). Still only stops sliding, never bouncing, so the FEAT-110 objection doesn't return |
+
+### Item setup rulings (owner, 2026-10-20 — the item setup page)
+
+- **Field repairs last the run** and simply add to the part's condition percentage — keep it simple.
+  Zip ties, duct tape and stop-leak each cost **15 min**. Patching a tire costs **30 min**. Changing a
+  whole tire (the spare) costs **90 min**.
+- **Quick-slot items are a free action** while driving.
+- **Bonus items are handed over by the receiver**, as a tip at delivery. The reward pool is a
+  **50/50 roll between the giver's pool and the destination's**; a fetch (giver = receiver) uses the
+  giver's pool only.
+- **Hunger** is a per-food hold (§1d): a standard meal holds ~8 h, the chili dog 10 h; past the hold
+  the drain is ×1.25 rising to ×1.5.
+- **Vibe assists** cap at +0.3 combined (§2b).
+- **Coffee** +5 / −2, $3, sold at the general store, gas station and food vendor, a reward from the
+  food vendor and gas station (C–B), never found. **Energy drink** +5 now, −2.5 four hours later, $4,
+  general store and gas station (sold and reward, C–B), never found. **Chili dog** a plain meal, holds
+  10 h, $5, food vendor only (B–A), never found.
+- *Open from the same pass:* whether item prices scale with the furthest region (DESIGN.md (10)) or
+  only with the clock — the owner recalls a clock-only ruling; asked, not settled.
 
 ### Kept, but blocked or needs a mechanism
 

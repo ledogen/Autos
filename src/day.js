@@ -42,9 +42,10 @@ export const DAY_PARAMS = {
     // (consequence stays SM-INV-1 dozes; the debt deepens the ledger, not the punishment).
     sleepDebtMaxH: 8,
 
-    // Coffee: relief now, debt against the NEXT wake-up. Deliberately net positive (+5 vs −3).
+    // Coffee: relief now, debt against the NEXT wake-up. Deliberately net positive (+5 vs −2, owner
+    // 2026-10-20): 5 h awake costs ~3 h of sleep, so the cup must beat that ratio or nobody drinks it.
     coffeeReliefH: 5,
-    coffeeDebtH:   3,
+    coffeeDebtH:   2,
 
     // ── Sleep recovery (FEAT-45 Phase D) — hours of energy bought per hour slept ───────────────
     // THE ARITHMETIC (ratified 2026-07-30; rescaled 2026-08-02 with the 16 h tank).
@@ -223,7 +224,7 @@ export class DaySystem {
 
     /**
      * A cup of coffee: hours back now, a smaller number of hours off the next wake-up.
-     * NET POSITIVE BY DESIGN (+5 now vs −3 tomorrow) — coffee is a real tool, not a trap; the cost
+     * NET POSITIVE BY DESIGN (+5 now vs −2 tomorrow) — coffee is a real tool, not a trap; the cost
      * is that tomorrow's day is shorter, which is a scheduling problem, not a punishment.
      * The debt is only HELD here in Phase B; Phase D's sleep flow is what charges and clears it.
      */
