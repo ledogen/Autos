@@ -33,8 +33,7 @@ items.md; cut it here (`status: cut`) when items.md strikes it.
   - `gate` — the effect already ships; owning the item turns it on.
   - `model` — a `.glb`, because the item is visible (camp pad, bed, bolted on the truck).
 - **needs** — a system that must exist first. `hunger` (items.md §1d), `quick slots` (§1c — keys
-  1–4), `spoilage` (§1b), `timed effects` (§1a), `fishing` (FEAT-37), `fuel` (FEAT-50), `coolant`
-  (FEAT-51), `hazards` (FEAT-26/27), `surfaces` (FEAT-38 per-surface μ), `cuts` (FEAT-52), `spirits` (spirits-and-pacts.md), `bed parts`
+  1–4), `spoilage` (§1b), `timed effects` (§1a), `fishing` (FEAT-37), `hazards` (FEAT-26/27), `surfaces` (FEAT-38 per-surface μ), `cuts` (FEAT-52), `spirits` (spirits-and-pacts.md), `bed parts`
   (FEAT-115), `cargo protection` (FEAT-116), `load verdicts` (FEAT-112), `camp render` (FEAT-66).
   **Every item needs the inventory (FEAT-122), so it is not listed.**
 - **where** — how the player gets it. Storefronts use the POI type id from `src/poi.js`:
@@ -108,12 +107,18 @@ status: todo · design: proposed · build: effect · where: generalStore
 Field repair, ~25% on body panels. Open: does it fall off after some hours?
 
 ### Coolant jug
-status: todo · design: proposed · build: effect · needs: coolant · where: autoShop, gasStation
-Top up mid-climb against the overheat → head-gasket chain.
+status: cut · design: proposed · build: effect · where: autoShop, gasStation
+Struck in items.md (owner, 2026-10-16): FEAT-51 has no coolant to top up — radiator condition is the
+cooling capacity. Replaced by stop-leak.
+
+### Stop-leak
+status: todo · design: proposed · build: effect · where: autoShop, gasStation
+Field repair: restores 15% radiator condition (owner, 2026-10-16). Under FEAT-51 that is cooling
+capacity directly — aimed at the overheat → power loss → engine wear chain.
 
 ### Emergency gas
-status: wip · design: implied · build: effect, model · needs: fuel · where: gasStation, reward
-The jerry can: a 2 gal RotoPax, single-use. REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122), no effect until fuel.
+status: wip · design: implied · build: effect, model · where: gasStation, reward
+The jerry can: a 2 gal RotoPax, single-use. REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122). Fuel shipped (FEAT-50, 2026-10-17); the pour itself is still unbuilt.
 
 ### Bubble wrap
 status: todo · design: ratified · build: effect · needs: cargo protection · where: generalStore
@@ -363,8 +368,8 @@ status: todo · design: idea · build: effect, model · needs: hazards · where:
 §3c's "space for more" — counters the sharp-rock line.
 
 ### Heavy-gauge radiator
-status: todo · design: idea · build: param · needs: coolant · where: autoShop
-§3c's "space for more" — survives the front hit.
+status: todo · design: idea · build: param · where: autoShop
+§3c's "space for more" — survives the front hit. (FEAT-51 shipped: radiator condition is the cooling capacity.)
 
 ### Old tires
 status: todo · design: proposed · build: param · where: autoShop, found
