@@ -684,6 +684,55 @@ export const PROP_MODELS = {
     park: { x: 0, z: -6.975, halfX: 6.75, halfZ: 2.475 },
   },
 
+  // ASSET-13 — the GAS STATION, 1482 tris, 7 materials, one 1024x512 atlas (FOOD MART, GAS x3, ICE,
+  // PROPANE, the pump register face). The station IS the convenience store (FEAT-123, owner 2026-10-16).
+  // Layout by the owner (2026-10-19): the store at the back, ONE island right in front of its doors with
+  // a lane either side running ALONG the street, so you drive straight through; two nose-in storefront
+  // bays beside the store's +X end wall; one concrete slab, road edge to the store's back wall, under it all.
+  // Built by assets/models/src/gas-station.py, which prints every number below — copy them across.
+  //
+  // ON THE FARM PAD (22 x 11.2 m), the big-pad kind it shares with the general store and the barns; a
+  // region with no spot for one stands the placeholder cube on a lay-by (the slot's fallbackModel null).
+  //   seat 0.6: the slab's road edge (model z -6.2) ON the pad's road edge (5.6). The store's back wall
+  //   then stands 1.2 m past the far edge, inside the 1.6 m band the carve holds at pad depth
+  //   (road-carve.js PAD_RIM_HOLD) — the barn's precedent.
+  //   seatAlong -2.4: the slab (model x -5.5..10.3) centred on the pad, 3.1 m bare at each end.
+  //
+  // MATERIALS. StationFascia (white) and StationAccent (red) are the brand — recolourable, no palette
+  // declared yet (nothing passes a variant). StationLamp (six soffit lenses) and StationSign (every
+  // lettered face) are the NIGHT HOOKS: unlit in the file (ticket rule — no glow baked in); attach lights
+  // / emissive at placement.
+  //
+  // COLLISION, per part, so the forecourt is DRIVABLE — never one box. The canopy (soffit 4.6 m, 2.8 m
+  // over the truck), the slab, the stoop and the painted bays are not colliders.
+  gasStation: {
+    url: 'assets/models/gas-station.glb',
+    collision: {
+      shape: 'box', size: [9.0, 4.58, 5.0],
+      boxes: [
+        { c: [0, 2.29, 3.7], s: [9.0, 4.58, 5.0] },          // the store, to the coping
+        { c: [0, 0.95, -3.0], s: [5.0, 1.9, 1.2] },          // the island, up to the pump's head
+        { c: [-1.8, 2.3, -3.0], s: [0.5, 4.6, 0.5] },        // canopy post (collar width)
+        { c: [1.8, 2.3, -3.0], s: [0.5, 4.6, 0.5] },         // canopy post
+        { c: [3.63, 1.092, 0.7], s: [1.5, 2.184, 0.8] },     // ice chest + placard, on the stoop
+        { c: [-3.7, 1.0, 0.72], s: [1.3, 2.0, 0.8] },        // propane cage + placard, on the stoop
+      ],
+    },
+    pad: 'farm',
+    seat: 0.6,
+    seatAlong: -2.4,
+    // FEAT-50 PUMP ZONES — one per lane, each side of the island (gasPump's convention: inner edge
+    // 0.25 m off the island's collision face, the 4.6 x 1.85 m truck with slack). Each keeps 0.35 m to
+    // the pad's road edge / the stoop face.
+    pumpZones: [
+      { x: 0, z: -4.85, halfX: 2.6, halfZ: 1.0 },   // road-side lane
+      { x: 0, z: -1.15, halfX: 2.6, halfZ: 1.0 },   // store-side lane, in front of the doors
+    ],
+    // FEAT-123 STOREFRONT — the two bays, line to line (2.55 x 6.0 m each). 2.3 m along the road from
+    // both pump zones, so parking for the shop never trips the pump; entered from the store-side lane.
+    park: { x: 7.45, z: 2.8, halfX: 2.55, halfZ: 3.0 },
+  },
+
   // ASSET-31 — ROAD FURNITURE: seven Californian roadside signs on a timber 4x4.
   // 52 tris each, three materials (SignPost / SignBack / SignFace), one 512x512 baked face
   // per sign. Built by ONE generator, assets/models/src/road-signs.py — the steel-drum

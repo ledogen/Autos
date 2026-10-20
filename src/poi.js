@@ -206,10 +206,13 @@ export const POI_ROSTER = [
     // roadside island (ASSET-14) — no storefront, so it only sells fuel: plentiful, because the
     // player fills up often, and it posts nothing (no SOURCES row) and receives nothing
     // (NOT_A_DESTINATION). The gas station IS the convenience store — a general-store variant with
-    // its own stock and missions, pump islands plus a storefront lot. It wears the placeholder cube
-    // until ASSET-13 joins the 'gasStation' pool, and its pump zones and shop arrive with that model.
+    // its own stock and missions, pump islands plus a storefront lot. ASSET-13 is its model, on a FARM
+    // pad (it is 15.8 x 12.4 m — a lay-by cannot hold it). NAMED, not pooled: slotPadKind reads only
+    // `slot.model`, so a pool would put it on a 14 x 8 lay-by. No farm pad in the region → the cube on
+    // a lay-by (fallbackModel null, the general store's rule). The pump zones and the storefront park
+    // box come off the model; the shop's stock waits on FEAT-121.
     { type: 'gasPump',      count: 4, modelPool: 'gasPump', siting: 'coverage', sepParam: 'poiPumpMinSep' },
-    { type: 'gasStation',   count: 1, modelPool: 'gasStation', siting: 'any' },
+    { type: 'gasStation',   count: 1, model: 'gasStation', fallbackModel: null, siting: 'any' },
     { type: 'autoShop',     count: 2, model: null, siting: 'coverage' },
     // ANY FOOD VENDOR (FEAT-67 ruling, 2026-09-26; opening.md amended): the player delivers
     // ready-made meals from it as an independent gig contractor, not as staff, so the opening's

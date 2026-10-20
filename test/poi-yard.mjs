@@ -174,8 +174,9 @@ check('the produce stall is on the board (FEAT-74: its own farm)', modelsSeen.ha
     check('with farm pads in the pool, every farm stands on one, wearing the gable-to-road barn', onBig)
     check('with none, every farm falls back to a lay-by and the broadside barn — the roster stays full', fallback && full)
     check('…and a fallback barn has no yard, so no clutter', bare)
-    const lay = build(3).filter(q => (q.type !== 'farm' || q.modelKey === 'produceStall') && q.type !== 'generalStore')
-    check('no class but the farm and the general store ever takes a farm pad', lay.every(q => q.padKind === 'std'))
+    const lay = build(3).filter(q => (q.type !== 'farm' || q.modelKey === 'produceStall') &&
+        q.type !== 'generalStore' && q.type !== 'gasStation')
+    check('no class but the farm, the general store and the gas station ever takes a farm pad', lay.every(q => q.padKind === 'std'))
 }
 
 // ── ASSET-74: the general store shares the farm pad; you park in its PARK box ───────────────────
@@ -210,6 +211,40 @@ check('the produce stall is on the board (FEAT-74: its own farm)', modelsSeen.ha
     check('…and the box\'s road-side edge is the pad\'s road edge (you pull straight in off the road)', roadEdge)
     check('parking in the box answers the trigger; 1 m past its road-side edge does not', trigger)
 }
+// ── ASSET-13: the gas station on the farm pad — two pump lanes, a storefront park box apart ────────
+{
+    // A model-frame box's four world corners, grown by `g` on every side (the same mapping as
+    // dropZoneWorld: +X along the road, +Z away from it).
+    const corners = (q, b, g = 0) => {
+        const z = dropZoneWorld(q, b)
+        const ax = Math.cos(z.yaw), az = -Math.sin(z.yaw), bx = Math.sin(z.yaw), bz = Math.cos(z.yaw)
+        return [[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([sx, sz]) => [
+            z.x + sx * (z.halfX + g) * ax + sz * (z.halfZ + g) * bx, z.z + sx * (z.halfX + g) * az + sz * (z.halfZ + g) * bz])
+    }
+    let onBig = true, fallback = true, zonesOnPad = true, parkGraded = true, apart = true
+    for (let seed = 1; seed <= 40; seed++) {
+        const [st] = build(seed).filter(q => q.type === 'gasStation')
+        onBig &&= !!st && st.padKind === 'farm' && st.modelKey === 'gasStation' && !!st.park && st.pumpZones?.length === 2
+        const [f0] = build(seed, 0).filter(q => q.type === 'gasStation')
+        fallback &&= !!f0 && f0.padKind === 'std' && f0.modelKey === null && f0.park === null && f0.pumpZones === null
+        if (!st?.park) continue
+        for (const zb of st.pumpZones)
+            for (const [x, z] of corners(st, zb)) if (padSd(st, x - st.x, z - st.z) > 1e-6) zonesOnPad = false
+        for (const [x, z] of corners(st, st.park)) if (padSd(st, x - st.x, z - st.z) > PAD_RIM_HOLD) parkGraded = false
+        // Parking for the shop must never trip the pump: no corner of the park box (grown by the 0.3 m
+        // trigger slack) is over a pump zone (also grown by it), and the reverse.
+        for (const zb of st.pumpZones) {
+            if (corners(st, st.park, 0.3).some(([x, z]) => overDropZone(st, x, z, 0.3, zb))) apart = false
+            if (corners(st, zb, 0.3).some(([x, z]) => overDropZone(st, x, z, 0.3, st.park))) apart = false
+        }
+    }
+    check('with farm pads free, the gas station stands on one, with its two pump zones and park box', onBig)
+    check('with none, it falls back to a lay-by and the placeholder cube, with no zones', fallback)
+    check('both pump lanes lie wholly on the pad', zonesOnPad)
+    check('its storefront bays lie on graded ground (the pad + the carve\'s rim band)', parkGraded)
+    check('the storefront park box and the pump zones never overlap, trigger slack included', apart)
+}
+
 const allKeys = [...new Set(Object.values(YARD_POOLS))].flatMap(modelsTagged)
 check('every pool member actually appears somewhere', allKeys.every(k => keysSeen.has(k)),
     allKeys.filter(k => !keysSeen.has(k)).join(', '))

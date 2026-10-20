@@ -38,3 +38,21 @@ and left the station as a placeholder cube that posts work. This ticket makes th
 - Pulling alongside its islands opens the same pump visit as a lone pump.
 - Parking in the storefront lot opens its offers and its shop, as two different zones.
 - The tow's "nearest place that sells fuel" includes stations, which falls out of `q.pumpZones`.
+
+## Progress (2026-10-20, branch feature/gas-station)
+
+Done:
+
+- **Model.** ASSET-13 shipped and renders in the `gasStation` slot. It sits on the existing **farm**
+  pad kind (22 × 11.2 m); no new `PAD_KINDS` entry was needed.
+- **Slot is named, not pooled.** The slot now reads `model: 'gasStation', fallbackModel: null` (the
+  general store's rule), not `modelPool`. `slotPadKind` reads only `slot.model`, so a pooled slot
+  would always draw a 14 × 8 lay-by. With no farm pad in the region, the station falls back to the
+  cube on a lay-by.
+- **`pumpZones`.** Two zones, one per lane each side of the single island. FEAT-50's pump visit, the
+  curtains and the tow destination pick them up unchanged.
+- **Storefront `park` box.** Two nose-in bays beside the store, clear of both pump zones. Parking
+  there runs the existing park-for-offers path, so the station's offers open from it.
+
+Still open: the **stock and the shop UI**. Both are blocked on FEAT-121, the item tracker, which has
+to exist before there is anywhere to put what you buy.
