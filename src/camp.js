@@ -54,17 +54,22 @@ export const CAMP_PARAMS = {
     campPadGapM:     0.6,   // m — gap from the shoulder edge to the pad's near side (poiPadGap's twin)
     campShadeR:      10,    // m — tree-count reach for the shade score (owner, 2026-07-30: shade
                             // reads a wider ring than flatness — a pine 8 m off still shades the pad)
-    campMaxUnevenM:  0.9,   // m — spread at/above which the flatness SCORE bottoms out at zero.
+    campMaxUnevenM:  1.2,   // m — spread at/above which the flatness SCORE bottoms out at zero.
                             // (Was also the campable gate; split 2026-07-31 — see campGateUnevenM.
                             // 0.6 → 0.9 same day: the score curve was too strict — ordinary decent
-                            // ground was reading as mediocre.)
-    campGateUnevenM: 1.2,   // m — spread above which a site is NOT campable at all (owner,
+                            // ground was reading as mediocre. 0.9 → 1.2 owner 2026-10-19, with the
+                            // gate, so a bad campsite stays a real step up from the truck.)
+    campGateUnevenM: 1.5,   // m — spread above which a site is NOT campable at all (owner,
                             // 2026-07-31: the shared 0.6 floor made even a crappy site too hard to
-                            // find on hilly ground). Between the two, a site camps at zero flatness
-                            // credit — extra flatness is still rewarded on the same curve.
+                            // find on hilly ground; 1.2 → 1.5 2026-10-19). Between the two, a site
+                            // camps at zero flatness credit — extra flatness is still rewarded on
+                            // the same curve.
     campShadeFullN:  5,     // trees inside the shade ring that earn FULL shade credit (owner: 5
                             // over the 10 m ring — 3 was tuned for the old 6 m reach)
-    campWaterR:      30,    // m — how far out water still counts for anything
+    campWaterR:      50,    // m — how far out water still counts for anything, and the "fishable"
+                            // reach (owner 2026-10-19: 30 → 50). ponytail: _streamScan keeps 5×8
+                            // probes, so its outer ring is ~39 m between spokes — a narrow stream
+                            // grazing the far edge can slip through; add rings if that shows up.
     campWaterBestM:  5,     // m — at or inside this, full water credit (camping ON the bank is best)
     campMomsRadiusM: 25,    // m — park-trigger radius at mom's house
 

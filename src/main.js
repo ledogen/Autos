@@ -4267,24 +4267,30 @@ function _exitCampScene () {
 
 // The camp dialogue's state, or null when it is closed. One object so every render reads one thing:
 //   mode  'confirm' (make camp?) | 'camp' (break camp · sleep · fish) | 'sleep' (timer) | 'moms'
+//         | 'truck'
 //   site  the graded record the camp was made from (vibe + waterFound + pad); null at mom's
 //   moms  true when this is mom's house — fixed average vibe, no pad, no fish. Mom's is a POI
 //         (poi.js roster), NOT a camp; it borrows this dialogue's sleep path and nothing else.
+//   truck true when sleeping in the cab (owner, 2026-10-19) — legal ANYWHERE, camp zone or not, at
+//         day.js's flat truckSleepRateH. Same shape as mom's: no pad, no fire, no fish.
 let _campUi = null
 let _campBusy = false   // a fade is in flight: no second trigger, no double-dug pad
 
 /**
- * The campsite grade to show for the truck's current position, or null when nothing should show.
- * In a zone, below 20 kph, story mode, mission idle, dialogue closed. Being outside the tether or
- * on bad ground does NOT return null — those are the prompt's two failure copies, and telling the
- * player why they cannot camp here is the entire job of a prompt.
+ * What the tent and its card show, or null when neither should: story mode, mission idle,
+ * dialogue closed. Not looking → { collapsed } (the tent alone). Looking → ALWAYS a card (owner,
+ * 2026-10-19: Z is a true toggle, so a hunt left on at speed reads on screen instead of popping up
+ * when you next slow down): { fast } above 20 kph, { truck } off camping ground, else the graded
+ * site. Outside the tether or on bad ground is NOT null — those are the card's failure copies, and
+ * telling the player why they cannot camp here is the entire job of a prompt.
  */
 // "Looking for a campsite" — toggled by the tent icon or Z (owner, 2026-07-31: the full
 // bar-and-copy prompt was intrusive when just driving through a zone; 2026-10-16: the bottom chip
-// became the tent in the top-right icon column). Not looking, the tent is the whole UI AND the
+// became the tent in the top-right icon column; 2026-10-19: the tent shows everywhere in story
+// mode, because the truck is a bed anywhere). Not looking, the tent is the whole UI AND the
 // siting ray never runs AND the brake latch will not open the camp dialogue — looking is how the
-// player says "I'm shopping for ground now". Session-sticky on purpose: it stays on from zone to
-// zone until they turn it off.
+// player says "I'm shopping for ground now". Session-sticky on purpose: it stays on until they
+// turn it off.
 let _campSeek = false
 
 function _campPromptState () {
@@ -4295,12 +4301,12 @@ function _campPromptState () {
   if (missionSystem && missionSystem.state !== 'idle' && !missionSystem.isOnJob()) return null
   if (paperRouteSystem.isActive() && !paperRouteSystem.isCarrying()) return null
   if (_campUi || _campBusy) return null
-  if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return null
-  if (!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)) return null
-  // Collapsed: the zone test above (a point-in-disc scan) is ALL we pay — no ray, no grading.
+  // Collapsed: nothing is paid at all — no zone scan, no ray, no grading.
   if (!_campSeek) return { collapsed: true }
+  if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return { fast: true }
+  if (!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)) return { truck: true }
   const g = campSystem.evaluate(vehicleState.position.x, vehicleState.position.z)
-  return g.inZone ? g : null
+  return g.inZone ? g : { truck: true }
 }
 
 // ── FEAT-50: the pump visit ───────────────────────────────────────────────────────────────────
@@ -4556,16 +4562,21 @@ function _updateParkTriggers () {
 
   const camp = _campPromptState()
   const seeking = camp && !camp.collapsed
-  // Mom's door outranks an idle tent (a doorstep is a specific affordance, like a POI) but
-  // yields to an ACTIVE campsite hunt — mid-seek the bar is what the player is reading.
-  const moms = !seeking && _atMomsHouse()
+  const site = seeking && camp.inZone && camp.withinTether && camp.flat && camp.pad ? camp : null
+  // Mom's door outranks an idle tent and the truck (a doorstep is a specific affordance, like a
+  // POI, and a bed beats the cab) but yields to a campable site mid-hunt — the bar is what the
+  // player is reading.
+  const moms = !site && _atMomsHouse()
 
   if (pulled) {
-    if (seeking && camp.withinTether && camp.flat && camp.pad) {
-      _campUi = { mode: 'confirm', site: camp, moms: false }
+    if (site) {
+      _campUi = { mode: 'confirm', site, moms: false }
       _renderCampUI()
     } else if (moms) {
       _campUi = { mode: 'moms', site: null, moms: true }
+      _renderCampUI()
+    } else if (seeking && !camp.fast) {
+      _campUi = { mode: 'truck', site: null, moms: false, truck: true }
       _renderCampUI()
     }
   }
@@ -4600,21 +4611,30 @@ function _updateParkTriggers () {
   // Once the dialogue is up the DIALOGUE owns the ring — the confirm face leaves it standing on the
   // site it is asking about — so this 10 Hz poll must not stamp it off underneath (showCamp is
   // false whenever _campUi is set).
-  if (!_campUi) _updateCampMarker(showCamp && seeking && camp.withinTether && camp.flat ? camp : null)
+  if (!_campUi) _updateCampMarker(showCamp && site ? site : null)
   if (!showCamp) return
   document.getElementById('camp-icon')?.classList.toggle('on', seeking)
   document.getElementById('camp-prompt').style.display = seeking ? 'block' : 'none'
   if (!seeking) return
-  _renderVibeBar(camp)
+  // The bar only where there is ground being graded; at speed and off camping ground it would be
+  // an empty meter.
+  const graded = !!camp.inZone
+  for (const id of ['camp-vibe', 'camp-vibe-legend']) document.getElementById(id).style.display = graded ? '' : 'none'
+  if (graded) _renderVibeBar(camp)
   // "not flat" now means the WHOLE siting ray failed the flatness gate — every candidate from the
   // road edge out to the tether — not merely that the verge beside the truck did.
   // cands 0 ⇒ every rung was rejected before grading — in practice because it crowded a road
   // (camp.js CAMP_ROAD_CLEAR_TOL_M: beside a junction or a spur there is no room for a bench).
+  // Every failure falls back to the truck — except at mom's, where the bottom prompt owns the brake.
+  const why = !graded            ? 'no camping here'
+            : !camp.withinTether ? 'too far from the road'
+            : camp.cands === 0   ? 'no room off the road'
+            :                      'not flat'
   document.getElementById('camp-prompt-text').innerHTML =
-      !camp.withinTether ? 'too far from the road'
-    : camp.cands === 0   ? 'no room off the road'
-    : !camp.flat         ? 'not flat'
-    :                      parkPrompt('park to make camp')
+      camp.fast ? 'slow down to look for a campsite'
+    : site      ? parkPrompt('park to make camp')
+    : moms      ? why
+    :             `${why}<br>${parkPrompt('park to sleep in the truck')}`
 }
 
 /** The stacked vibe bar: four segments whose max widths ARE the 40/15/20/25 VIBE_W weights. */
@@ -4686,12 +4706,17 @@ function _makeCamp () {
   })
 }
 
-/** Sleep the chosen number of hours at this site's vibe (mom's house is a fixed average 0.5). */
+/** What a night here is worth, as day.js reads it: the site's vibe, mom's fixed 0.5, or 'truck'. */
+const _campVibe = (st) => st?.truck ? 'truck' : st?.moms ? 0.5 : (st?.site?.vibe ?? 0.5)
+/** The face the sleep timer returns to. */
+const _campHome = (st) => st.moms ? 'moms' : st.truck ? 'truck' : 'camp'
+
+/** Sleep the chosen number of hours at this site's vibe (mom's house 0.5, the truck its own rate). */
 function _sleepAtCamp () {
   if (!_campUi || _campBusy) return
   const hours = parseInt(document.getElementById('cp-hours')?.value ?? '8', 10) || 8
-  const vibe = _campUi.moms ? 0.5 : (_campUi.site?.vibe ?? 0.5)
-  const back = _campUi.moms ? 'moms' : 'camp'
+  const vibe = _campVibe(_campUi)
+  const back = _campHome(_campUi)
   _campFade(() => {
     daySystem.sleep(hours, vibe)
     // FEAT-33: you turned the key off to make camp, so you wake to a dead truck and start the
@@ -4741,7 +4766,7 @@ function _closeCampUi () {
  */
 function _syncSleepRow () {
   const h = parseInt(document.getElementById('cp-hours')?.value ?? '8', 10) || 8
-  const vibe = _campUi?.moms ? 0.5 : (_campUi?.site?.vibe ?? 0.5)
+  const vibe = _campVibe(_campUi)
   const full  = daySystem.fullEnergyH()
   const floor = daySystem.debtFloorH()
   const now   = daySystem.energyH()
@@ -4776,14 +4801,17 @@ function _syncSleepRow () {
 }
 
 // Ground flavour for the confirm face's stats line. Both cuts sit well inside camp.js's two
-// spread thresholds — campMaxUnevenM 0.9 m (where the flatness SCORE reaches zero) and
-// campGateUnevenM 1.2 m (where the site stops being campable at all) — so by the time the word
+// spread thresholds — campMaxUnevenM 1.2 m (where the flatness SCORE reaches zero) and
+// campGateUnevenM 1.5 m (where the site stops being campable at all) — so by the time the word
 // reads "hilly" the yellow segment is already nearly gone, and the two agree.
 const CAMP_FLAT_M = 0.2   // m of spread at/below which the ground reads as dead flat
 const CAMP_TILT_M = 0.6   // …and at/below which it is merely inclined; above that, hilly
 // The view word, on the RAW view fraction (viewScore / VIBE_W.view — the score before its weight).
 const CAMP_VIEW_BIG = 0.6   // at/above this the outlook is worth mentioning as the reason to stop
 const CAMP_VIEW_OK  = 0.3   // …and at/above this it is at least open; below, you are walled in
+
+// The truck's disclaimer (owner, 2026-10-19), on its face and its sleep timer.
+const TRUCK_SLEEP_NOTE = '<span class="cp-dim">campsites provide more rest than your truck</span>'
 
 /**
  * Render the camp dialogue. day.js/camp.js stay renderer-agnostic (the mission-panel pattern) —
@@ -4799,21 +4827,23 @@ function _renderCampUI () {
   const set  = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt }
   const isSleep = st.mode === 'sleep'
   const isConfirm = st.mode === 'confirm'
+  const isHome = st.mode === 'camp' || st.mode === 'moms' || st.mode === 'truck'
   const vibe = st.moms ? 0.5 : (st.site?.vibe ?? 0)
 
-  set('cp-title', st.moms ? "mom's house" : 'camp')
+  set('cp-title', st.moms ? "mom's house" : st.truck ? 'the truck' : 'camp')
   show('cp-make',   isConfirm)
+  show('cp-truck',  isConfirm)
   show('cp-cancel', isConfirm)
-  show('cp-break',  st.mode === 'camp' || st.mode === 'moms')
-  show('cp-sleep',  st.mode === 'camp' || st.mode === 'moms')
+  show('cp-break',  isHome)
+  show('cp-sleep',  isHome)
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
-  show('cp-item',   st.mode === 'camp')
-  show('cp-map',    st.mode === 'camp' || st.mode === 'moms')
+  show('cp-item',   st.mode === 'camp' || st.mode === 'truck')
+  show('cp-map',    isHome)
   show('cp-spirits', st.mode === 'camp')
   show('cp-sleep-go',   isSleep)
   show('cp-sleep-back', isSleep)
   show('cp-sleep-panel', isSleep)
-  set('cp-break', st.moms ? 'leave' : 'break camp')
+  set('cp-break', st.moms || st.truck ? 'leave' : 'break camp')
   show('cp-vibe',        isConfirm)
   show('cp-vibe-legend', isConfirm)
   if (isConfirm) _renderVibeBar(st.site, document.getElementById('cp-vibe'))
@@ -4846,7 +4876,9 @@ function _renderCampUI () {
         // No water ⇒ the word is simply absent. A greyed "fishable" would read as a broken promise.
         + (st.site.waterFound ? ' &middot; <span class="cp-water">fishable</span>' : '')
     } else if (isSleep) {
-      body.innerHTML = '<span class="cp-dim">how long?</span>'
+      body.innerHTML = '<span class="cp-dim">how long?</span>' + (st.truck ? `<br>${TRUCK_SLEEP_NOTE}` : '')
+    } else if (st.truck) {
+      body.innerHTML = `the seat goes back as far as it goes.<br>${TRUCK_SLEEP_NOTE}`
     } else if (st.moms) {
       body.innerHTML = 'the porch light is on.<br><span class="cp-dim">a bed, and an average night&rsquo;s sleep</span>'
     } else {
@@ -4888,7 +4920,14 @@ document.getElementById('cp-sleep')?.addEventListener('click', () => {
 })
 document.getElementById('cp-sleep-back')?.addEventListener('click', () => {
   if (!_campUi) return
-  _campUi = { ..._campUi, mode: _campUi.moms ? 'moms' : 'camp' }
+  _campUi = { ..._campUi, mode: _campHome(_campUi) }
+  _renderCampUI()
+})
+// The confirm face's fallback (owner, 2026-10-19): a site was found but you'd rather not dig it.
+document.getElementById('cp-truck')?.addEventListener('click', () => {
+  if (!_campUi || _campBusy) return
+  setCameraFocus(null)   // the confirm face had the camera on the pad
+  _campUi = { mode: 'truck', site: null, moms: false, truck: true }
   _renderCampUI()
 })
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)

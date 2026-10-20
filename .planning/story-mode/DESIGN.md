@@ -657,6 +657,13 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   good night; a bad one (or the last campable ground far behind you) means waking half-tired.
   The first yawn still means "I am N km from anywhere I'd want to wake up" — the last leg of
   the day is finding good ground before you camp, not the press itself. [RATIFIED 2026-07-19]
+  > **[AMENDED 2026-10-19, owner] You can always sleep in the truck.** The camp gate now decides
+  > *how well* you sleep, not *whether*: Z opens the camp card anywhere in story mode, and off
+  > campable ground (or on a site you'd rather not dig) the brake sleeps you in the cab at a flat
+  > **1 h of energy per hour slept** (`truckSleepRateH`; the worst campsite is 4/3) — no fire, no
+  > fish, and the card says *campsites provide more rest than your truck*. Same day the site
+  > bands were relaxed (flatness score zero at 1.2 m, campable to 1.5 m) and water/fishable reach
+  > went 30 → 50 m, so a bad campsite stays a real step up from the cab.
 - **SM-INV-7 — Every run starts in a randomized jalopy, and every run is technically
   capable of beating the game.** No meta power curve that makes early runs uncompletable
   or late runs comfortable. The randomized bad car forces the player to re-read the truck
