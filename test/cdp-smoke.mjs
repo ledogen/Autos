@@ -156,6 +156,14 @@ const STEPS = [
     await js('document.getElementById("pm-settings").click()')
     check(await shown('mm-settings-panel') && !await shown('pm-resume'), 'settings did not open in the pause box')
     check(await js('document.querySelectorAll("#cs-bindings tr").length') > 10, 'binding chart is empty')
+    // The chart is a sub-page (owner, 2026-10-20): hidden on settings, opened by "bindings", Esc steps back.
+    // offsetParent, not display: the chart's own display never changes, its page's does.
+    const seen = (id) => js(`document.getElementById("${id}").offsetParent !== null`)
+    check(!await seen('cs-bindings'), 'the binding chart shows on the settings page itself')
+    await js('document.getElementById("mm-bindings").click()')
+    check(await seen('cs-bindings') && !await seen('mm-settings-back'), 'bindings did not open its own page')
+    await tap('Escape')
+    check(await until(async () => !await seen('cs-bindings') && await seen('mm-settings-back'), 1000), 'Esc did not step back from bindings to settings')
     // FEAT-41 (owner, 2026-10-19): the world preset and the gearbox are pre-game only — never in here.
     check(await js('!document.querySelector("#mm-settings-panel [data-key=gearbox], #mm-settings-panel [data-key=worldPreset]")'),
       'the in-game settings page offers a pre-game choice (gearbox / difficulty)')
@@ -209,9 +217,14 @@ const STEPS = [
 
     // The truck (owner, 2026-10-19): Z always opens the card, and the brake sleeps you in the cab
     // anywhere — straight to the truck face off camping ground, via "sleep in the truck" on a site.
+    // q: a centreline point 300 m from mom's, and off: 9 m out to its side — past the 5 m ribbon and the
+    // 2.5 m shoulder (owner, 2026-10-20: the cab needs the truck's centre off the ribbon).
     const q = await js(`(() => { const m = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
-      for (const e of window.__roadSys()._network.values()) for (const q of e.points)
-        if (Math.hypot(q.x - m.x, q.z - m.z) > 300) return { x: q.x, z: q.z }
+      for (const e of window.__roadSys()._network.values()) for (let i = 0; i + 1 < e.points.length; i++) {
+        const q = e.points[i], n = e.points[i + 1]
+        if (Math.hypot(q.x - m.x, q.z - m.z) < 300) continue
+        const tx = n.x - q.x, tz = n.z - q.z, l = Math.hypot(tx, tz) || 1
+        return { x: q.x, z: q.z, ox: q.x + tz / l * 9, oz: q.z - tx / l * 9 } }
       return null })()`)
     check(q, "no road point 300 m from mom's house")
     await js(`window.__teleport(${q.x}, ${q.z}, 0)`)
@@ -222,7 +235,17 @@ const STEPS = [
     check(text, 'Z opened no camp card')
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
     await tap(' ')
-    check(await until(panel, 2000), `parking with the card up ("${text}") opened no camp panel`)
+    await sleep(600)
+    if (await panel()) {   // a campable site beside the road: its truck fallback must refuse on the ribbon
+      check(await js('document.getElementById("cp-truck").disabled'), 'on the ribbon, the site card still offered the truck')
+      await js('document.getElementById("cp-cancel").click()')
+    } else check(text.includes('park on the shoulder'), `on the ribbon the card does not say "park on the shoulder" ("${text}")`)
+    await js(`window.__teleport(${q.ox}, ${q.oz}, 0)`)
+    await sleep(2500)
+    const text2 = await until(card, 2000)
+    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+    await tap(' ')
+    check(await until(panel, 2000), `parking off the ribbon with the card up ("${text2}") opened no camp panel`)
     const title = () => js('document.getElementById("cp-title").textContent')
     if (await title() === 'camp') await js('document.getElementById("cp-truck").click()')
     check(await title() === 'the truck', `no truck face (title "${await title()}")`)

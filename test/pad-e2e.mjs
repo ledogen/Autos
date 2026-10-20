@@ -110,7 +110,12 @@ const c1 = await camXZ()
 check(Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) < 0.5, `the right stick does not orbit the camera behind the map (moved ${Math.hypot(c1[0] - c0[0], c1[1] - c0[1]).toFixed(2)} m)`)
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 check(!await mapShown(), 'View closes the map again')
-// Right stick = orbit RATE; the view holds orbitHold (2 s) after release, then chase swings back.
+// B is the general back (owner, 2026-10-20): it closes the map too.
+await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
+await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
+check(!await mapShown(), 'B closes the map')
+// Right stick = orbit RATE. Stopped, the view LINGERS where it was pointed (owner, 2026-10-20) until a
+// pedal is pressed; then the chase swings back behind.
 // Bearing of the camera around the truck, relative to directly behind it (deg).
 const off = () => js(`(() => { const c = __cam().position, p = __vs.position, q = __vs.quaternion
   const fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))   // body -Z in world
@@ -119,7 +124,12 @@ const off = () => js(`(() => { const c = __cam().position, p = __vs.position, q 
 await js('__fp.axes[2] = 1'); await sleep(600); await js('__fp.axes[2] = 0')
 const o1 = await off(); check(Math.abs(o1) > 45, `0.6 s full right stick orbits the view (${o1.toFixed(0)} deg off behind)`)
 await sleep(1500); const o2 = await off(); check(Math.abs(o2 - o1) < 3, `1.5 s after release it HOLDS (${o2.toFixed(0)} deg)`)
-await sleep(2500); const o3 = await off(); check(Math.abs(o3) < 10, `~4 s after release it is back behind (${o3.toFixed(0)} deg)`)
+await sleep(2500); const o3 = await off(); check(Math.abs(o3 - o1) < 3, `stopped, ~4 s after release it still lingers (${o3.toFixed(0)} deg)`)
+// The tap releases the park latch and the truck sits on a slope: re-park at once (RB tap), so the
+// checks below start parked; the swing-back has already been handed over by then.
+await js('__fp.b[6] = 0.6'); await sleep(150); await js('__fp.b[6] = 0')
+await js('__fp.b[5] = 1'); await sleep(100); await js('__fp.b[5] = 0')
+await sleep(2000); const o4 = await off(); check(Math.abs(o4) < 10, `a brake tap from a stop swings it back behind (${o4.toFixed(0)} deg)`)
 // Paper throw: hold B (= F) aims — the reticle shows — and releasing it throws (free roam: a practice throw).
 const reticle = () => js('getComputedStyle(document.getElementById("aim-reticle")).display !== "none"')
 await js('__fp.b[1] = 1'); await sleep(400)
@@ -193,7 +203,7 @@ for (let t = 0; t < 160 && !(await js('window.__rsReady === true')); t++) await 
 await sleep(500)
 await js(fakePad)
 await press(DOWN)
-check(await navText() === 'new game', `first D-pad press highlights the first item (${await navText()})`)
+check(await navText() === 'story mode', `first D-pad press highlights the first item (${await navText()})`)
 await press(DOWN)
 check(await navText() === 'free roam', `second reaches free roam (${await navText()})`)
 await press(A)
