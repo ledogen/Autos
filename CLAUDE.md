@@ -22,6 +22,10 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
   only the adapter.
 - **Performance**: Target 60fps on a mid-range laptop with terrain active — physics must be lightweight
 - **LLM maintainability**: Code is primarily maintained by LLM sessions. Conventions must be explicit, self-documenting, and resistant to drift across sessions.
+- **Public repo, private paid content**: the repo is public (CC BY-NC 4.0). Paid content — skins and any
+  future store item — NEVER commits here: it is served from the owner's server to accounts that own it.
+  No third-party asset under an NC/ND or other non-commercial license may enter the repo either (it
+  would block the owner's own sales). Outside contributions are covered by `CONTRIBUTING.md`.
 
 ## Communicating with the owner
 
