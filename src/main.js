@@ -2910,7 +2910,7 @@ function _rebuildPoiMarkers () {
       const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true, variant: q.modelVariant })
       // pad records are base-seated, and so are the models. modelX/Z, not the pad centre: a model
       // may be `seat`ed toward the back of the pad to leave its yard on the road side (FEAT-71).
-      m.position.set(q.modelX, q.y, q.modelZ)
+      m.position.set(q.modelX, q.baseY, q.modelZ)   // BUG-91: the carved ground, not the pad's design top
       // modelYaw = the pad's road-facing yaw plus the asset's own yawOffset (a Winnebago parks
       // broadside, a trailer stands square) — see the yawOffset note in data/prop-models.js.
       m.rotation.y = q.modelYaw ?? q.yaw
@@ -2918,7 +2918,7 @@ function _rebuildPoiMarkers () {
       _poiMeshes.set(q.id, m)
     } else {
       const cube = new THREE.Mesh(_poiCubeGeo, _poiCubeMat)
-      cube.position.set(q.x, q.y + half, q.z)
+      cube.position.set(q.x, q.baseY + half, q.z)
       cube.castShadow = true
       _poiGroup.add(cube)
       _poiMeshes.set(q.id, cube)

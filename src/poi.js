@@ -206,10 +206,13 @@ export const POI_ROSTER = [
     // roadside island (ASSET-14) — no storefront, so it only sells fuel: plentiful, because the
     // player fills up often, and it posts nothing (no SOURCES row) and receives nothing
     // (NOT_A_DESTINATION). The gas station IS the convenience store — a general-store variant with
-    // its own stock and missions, pump islands plus a storefront lot. It wears the placeholder cube
-    // until ASSET-13 joins the 'gasStation' pool, and its pump zones and shop arrive with that model.
+    // its own stock and missions, pump islands plus a storefront lot. ASSET-13 is its model, on a FARM
+    // pad (it is 15.8 x 12.4 m — a lay-by cannot hold it). NAMED, not pooled: slotPadKind reads only
+    // `slot.model`, so a pool would put it on a 14 x 8 lay-by. No farm pad in the region → the cube on
+    // a lay-by (fallbackModel null, the general store's rule). The pump zones and the storefront park
+    // box come off the model; the shop's stock waits on FEAT-121.
     { type: 'gasPump',      count: 4, modelPool: 'gasPump', siting: 'coverage', sepParam: 'poiPumpMinSep' },
-    { type: 'gasStation',   count: 1, modelPool: 'gasStation', siting: 'any' },
+    { type: 'gasStation',   count: 1, model: 'gasStation', fallbackModel: null, siting: 'any' },
     { type: 'autoShop',     count: 2, model: null, siting: 'coverage' },
     // ANY FOOD VENDOR (FEAT-67 ruling, 2026-09-26; opening.md amended): the player delivers
     // ready-made meals from it as an independent gig contractor, not as staff, so the opening's
@@ -945,6 +948,12 @@ export class PoiSystem {
                 const seat = spec?.seat ?? 0, along = spec?.seatAlong ?? 0
                 q.modelX = q.x + q.nx * seat + Math.cos(q.modelYaw) * along
                 q.modelZ = q.z + q.nz * seat - Math.sin(q.modelYaw) * along
+                // BUG-91: the height the model, its colliders and the cube stand on — the CARVED
+                // GROUND, not q.y. q.y is the pad's design top; _poiPadCarve grades the bench to
+                // q.y − roadClearanceMargin (same default) and physics rides that dirt, so a model
+                // base-seated at q.y floated 15 cm over its own pad. The camp seat (main.js) already
+                // corrects for the same gap. q.y stays the pad's record: the carve keys off it.
+                q.baseY = q.y - (P.roadClearanceMargin ?? 0.25)
                 // BUG-43: which colour from the model's curated palette. A slot may pin it (the
                 // two story houses must never match); otherwise a raw hash off the pad id, which
                 // spawnModel takes modulo the palette length. Ignored by a model with no palette.
@@ -1187,7 +1196,7 @@ export class PoiSystem {
             const wx = cx - (q.modelX ?? q.x), wz = cz - (q.modelZ ?? q.z)
             const reach = Math.hypot(Math.abs(ox) + hx, Math.abs(oz) + hz) + r
             if (wx * wx + wz * wz > reach * reach) continue
-            const bcy = q.y + oy                      // box centre: base-seated on the pad
+            const bcy = (q.baseY ?? q.y) + oy         // box centre: base-seated on the carved ground (BUG-91)
             const dy = cy - bcy
             if (dy > hy + r || dy < -hy - r) continue
             // Into the marker's own frame: undo yaw about Y. (cos, −sin; sin, cos) is the inverse

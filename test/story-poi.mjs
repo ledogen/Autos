@@ -189,6 +189,20 @@ const W = makeWorld(C.x, C.z, R)
     W.road.setPoiPads(W.poi.list())               // restore the region under test
 }
 
+// ── BUG-91: every POI stands ON its carved ground, not 15 cm over it ────────────────────────────
+{
+    // q.y is the pad's design top; the bench is carved roadClearanceMargin below it and physics rides
+    // that dirt. The model, the cube and the colliders all stand at q.baseY — which must BE the ground
+    // under the model origin (every origin is well inside its pad, clear of the road-side feather).
+    let worst = 0, who = ''
+    for (const q of W.poi.list()) {
+        const d = Math.abs(W.terrain.analyticHeight(q.modelX, q.modelZ) - q.baseY)
+        if (d > worst) { worst = d; who = q.type }
+    }
+    check('every POI\'s base (model, cube, colliders) is the carved ground under it', worst < 0.01,
+        `worst ${(worst * 100).toFixed(1)} cm${who ? ` (${who})` : ''}`)
+}
+
 // ── 4. the pad is a real, flat bench off the shoulder ───────────────────────────────────────────
 {
     let checked = 0, notFlat = 0, notCarved = 0, worstFlat = 0
