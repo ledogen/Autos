@@ -85,6 +85,7 @@ import { InventorySystem } from './inventory.js'          // FEAT-122: what the 
 import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
+import { recoveryCard, fitSpare, SPARE_FIT_H } from './recovery.js'   // SM-3: the Recovery card
 import { InventoryScreen } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
@@ -4491,79 +4492,120 @@ function _renderPumpDisplay (dt) {
     : `hold ${keycap('F')} to pump · release the handbrake to pay`
 }
 
-// ── FEAT-50: running dry — the Recovery chip ─────────────────────────────────────────────────
-// Nothing pops up when the engine dies: the chip appears in the right-hand icon column only once
-// you are dry AND parked (owner, 2026-10-16), the way the other context actions wait for the brake.
-// Today it holds one option — a tow to the nearest place that sells fuel — and later tows (anytime,
-// to the service station) are further rows in the same card. Can't afford it and you are out of
-// fuel: the run is over ("you broke down", SM-INV-1).
+// ── The Recovery chip (FEAT-50 running dry → SM-3 in full) ───────────────────────────────────
+// Nothing pops up when the truck gives out: the chip sits in the right-hand icon column whenever you
+// are PARKED in a story run (a tow is a phone call — SM-3, 2026-10-20), and the card lists what fits
+// the moment (src/recovery.js): pour the gas can, fit the spare, tow to the nearest gas station (dry)
+// or service center (any time). Can't continue and can't afford any of it: the run is over ("you
+// broke down", SM-INV-1).
 let _recoveryOpen = false
 
-/** The nearest POI that sells fuel (a pump island, until ASSET-13's station has zones). */
-function _nearestFuelSeller () {
+/** The nearest POI passing `test`, with its distance in km. */
+function _nearestPoi (test) {
   const vp = vehicleState.position
   let best = null, bestD = Infinity
   for (const q of poiSystem.list()) {
-    if (!q.pumpZones || q.hidden) continue
+    if (q.hidden || !test(q)) continue
     const d = Math.hypot(q.x - vp.x, q.z - vp.z)
     if (d < bestD) { bestD = d; best = q }
   }
   return best && { q: best, km: bestD / 1000 }
 }
 
-function _towQuote () {
-  const dest = _nearestFuelSeller()
+/** A tow quote to the nearest POI passing `test`, or null when none is in the region. */
+function _towQuote (test) {
+  const dest = _nearestPoi(test)
   if (!dest) return null
   return { ...dest, price: towPrice(dest.km, economySystem.tierNow(), ECONOMY_PARAMS), hours: towHours(dest.km, ECONOMY_PARAMS) }
 }
+// A pump island sells fuel (until ASSET-13's station has zones); an auto shop is a service center.
+const _FUEL_SELLER = q => !!q.pumpZones
+const _SERVICE_CENTER = q => q.type === 'autoShop'
 
-function _towToFuel () {
-  const t = _towQuote()
+/**
+ * Pay for a tow and land at `seat`. The seat is teleportToGround's minus its side effects: no "spawn
+ * point set" toast, and the R spawn is put back afterwards — a tow is a trip, not a new home. The
+ * truck lands parked; clearing the edge detector lets the next poll answer the brake at once (the
+ * pump opens, the service screen opens).
+ */
+function _towTo (t, seat) {
   if (!t || !economySystem.spend(t.price)) return
   _recoveryOpen = false
-  // Into the road-side pump zone, nose along the island: model +X in world is (cos yaw, −sin yaw)
-  // and the truck's forward is (−sin h, −cos h), so h = yaw − π/2 lays the truck alongside.
-  // The seat is teleportToGround's minus its side effects: no "spawn point set" toast, and the R
-  // spawn is put back afterwards — a tow is a trip, not a new home.
-  const z = dropZoneWorld(t.q, t.q.pumpZones[0])
   const prev = _spawnOverride
-  _spawnOverride = { align: true, x: z.x, z: z.z, heading: z.yaw - Math.PI / 2, drop: 0.3 }
+  _spawnOverride = { align: true, drop: 0.3, ...seat }
   storySystem?.notifyTeleport()
   daySystem.advanceMinutes(t.hours * 60)
   void _reseatTruckAtSpawn().then(() => {
     _spawnOverride = prev
-    // The truck lands parked; clearing the edge detector lets the next poll open the pump at once.
     _prevParkedForPoi = false
   })
+}
+function _towToFuel () {
+  const t = _towQuote(_FUEL_SELLER)
+  if (!t) return
+  // Into the road-side pump zone, nose along the island: model +X in world is (cos yaw, −sin yaw)
+  // and the truck's forward is (−sin h, −cos h), so h = yaw − π/2 lays the truck alongside.
+  const z = dropZoneWorld(t.q, t.q.pumpZones[0])
+  _towTo(t, { x: z.x, z: z.z, heading: z.yaw - Math.PI / 2 })
+}
+function _towToShop () {
+  const t = _towQuote(_SERVICE_CENTER)
+  if (t) _towTo(t, { x: t.q.x, z: t.q.z, heading: Math.atan2(-t.q.tx, -t.q.tz) })
+}
+function _fitSpare () {
+  if (fitSpare(damageModel, inventorySystem) < 0) return
+  damageModel.publish(RANGER_PARAMS)
+  daySystem.advanceMinutes(SPARE_FIT_H * 60)
+}
+
+const _RC_LABEL = {
+  gas: () => 'pour in the gas can',
+  spare: (o) => o.enabled ? `fit the spare — ${formatGameDuration(SPARE_FIT_H)}` : 'fit the spare — no spare aboard',
+  towFuel: (o) => `tow to gas station — $${formatMoney(o.tow.price)}`,
+  towShop: (o) => `tow to service center — $${formatMoney(o.tow.price)}`,
+}
+const _RC_ACT = {
+  gas: () => inventorySystem.use('emergencyGas'), spare: _fitSpare,
+  towFuel: _towToFuel, towShop: _towToShop, end: _backToMenu,
 }
 
 function _updateRecovery () {
   const row = document.getElementById('recovery-row')
   if (!row) return
-  const show = storySystem.isActive() && !storySystem.isEntering() && !!vehicleState.fuel?.dry
-    && vehicleState.fuel.gal <= 0 && !!vehicleState.parked && !fuelStop.isOpen
+  const show = storySystem.isActive() && !storySystem.isEntering() && !!vehicleState.parked
+    && !fuelStop.isOpen && !serviceScreen.isOpen
   row.style.display = show ? 'flex' : 'none'
   if (!show) { _recoveryOpen = false; return }
-  document.getElementById('recovery-icon')?.classList.toggle('on', _recoveryOpen)
-  document.getElementById('recovery-icon')?.classList.add('ready')
+  const fuel = vehicleState.fuel
+  const owned = inventorySystem.list()
+  const money = economySystem.money()
+  const c = recoveryCard({
+    dry: !!fuel?.dry && fuel.gal <= 0,
+    gasCan: owned.some(r => r.id === 'emergencyGas'),
+    engineDead: damageModel.get('engine') <= 0,
+    flats: damageModel.flat.flatMap((f, i) => f ? [i] : []),
+    spare: owned.some(r => r.id === 'spareTire' && !r.flat),
+    money,
+    fuelTow: _towQuote(_FUEL_SELLER),
+    shopTow: _towQuote(_SERVICE_CENTER),
+  })
+  // The icon lights when something is actually wrong; a sound truck's chip is just the phone.
+  const icon = document.getElementById('recovery-icon')
+  icon?.classList.toggle('on', _recoveryOpen)
+  icon?.classList.toggle('ready', c.head !== 'roadside')
   const card = document.getElementById('recovery-card')
   card.style.display = _recoveryOpen ? 'block' : 'none'
   if (!_recoveryOpen) return
-  const t = _towQuote()
-  const money = economySystem.money()
-  const html = !t ? '<div class="rc-head">out of fuel</div><div class="rc-dim">no tow can reach you here</div>'
-    : money + 1e-9 >= t.price
-      ? `<div class="rc-head">out of fuel</div>
-         <button class="rc-opt" id="rc-tow">tow to gas station — $${formatMoney(t.price)}</button>
-         <div class="rc-dim">${t.km.toFixed(1)} km · ${formatGameDuration(t.hours)} · you have $${formatMoney(money)}</div>`
-      : `<div class="rc-head">out of fuel</div>
-         <div class="rc-dim">can't afford a tow — $${formatMoney(t.price)}, you have $${formatMoney(money)}</div>
-         <button class="rc-opt rc-end" id="rc-end">end run — you broke down</button>`
+  const html = `<div class="rc-head">${c.head}</div>`
+    + c.opts.map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
+      + (o.tow ? `<div class="rc-dim">${o.tow.km.toFixed(1)} km · ${formatGameDuration(o.tow.hours)}</div>` : '')).join('')
+    + (c.opts.length ? '' : '<div class="rc-dim">no tow can reach you here</div>')
+    + `<div class="rc-dim">you have $${formatMoney(money)}</div>`
+    + (c.canEnd ? '<button class="rc-opt rc-end" data-act="end">end run — you broke down</button>' : '')
   if (card.dataset.html !== html) {   // repaint only on change: the poll is 10 Hz and buttons must stay clickable
     card.dataset.html = html
     card.innerHTML = html
-    document.getElementById('rc-tow')?.addEventListener('click', _towToFuel)
-    document.getElementById('rc-end')?.addEventListener('click', _backToMenu)
+    for (const b of card.querySelectorAll('button[data-act]')) b.addEventListener('click', () => _RC_ACT[b.dataset.act]())
   }
 }
 window.addEventListener('keydown', e => {

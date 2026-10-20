@@ -270,7 +270,8 @@ export class InventoryScreen {
     const r = this.sel != null ? rows[this.sel] : null
     if (!r) return `<div class="st-hint">Click an item to use it, drop it, or open a pack.</div>`
     const inv = this.inventory
-    const head = `<div class="st-name">${r.name}${r.equipped ? '<span class="st-tag">equipped</span>' : ''}</div>`
+    const head = `<div class="st-name">${r.name}${r.equipped ? '<span class="st-tag">equipped</span>' : ''}`
+      + `${r.flat ? '<span class="st-tag">flat</span>' : ''}</div>`
       + `<div class="st-desc">${r.desc}</div>`
     if (r.contents) {
       const packed = r.contents[this.packSel]

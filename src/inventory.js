@@ -202,7 +202,7 @@ export class InventorySystem {
         return runInventory.entries.map((e, index) => {
             const q = runInventory.quick.indexOf(e.id)
             return { index, id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id), key: q < 0 ? null : q + 1,
-                     equipped: !!e.equipped, cond: e.cond ?? null, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
+                     equipped: !!e.equipped, cond: e.cond ?? null, flat: !!e.flat, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
         })
     }
 
