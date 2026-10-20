@@ -4,7 +4,7 @@ AUTOS is a browser-based, physics-first vehicle sim. The source is available for
 
 **Play:** https://ledogen.github.io/Autos/
 
-This is the official build, maintained by ledogen.
+This is the official build, maintained by ledogen. Questions or interest: ledogen@gmail.com
 
 ## Run locally
 
