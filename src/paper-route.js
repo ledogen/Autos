@@ -898,6 +898,12 @@ export class PaperRouteSystem {
     /** Papers still in the truck. Zero does not end the route; the last one LANDING does. */
     stock () { return this.run ? this.run.stock : 0 }
     delivered () { return this.run ? this.run.hits.size : 0 }
+
+    /** FEAT-133: is a customer still owed a paper within r metres of (x, z)? (The pad's throw gate.) */
+    owedWithin (x, z, r) {
+        if (this.state !== 'running') return false
+        return this.route.customers.some(c => !this.run.hits.has(c.id) && Math.hypot(c.x - x, c.z - z) < r)
+    }
     /** Seconds on the route's clock so far. Elapsed, not remaining: there is no bell to count to. */
     elapsed () { return this.run ? this.run.elapsed : 0 }
 

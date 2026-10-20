@@ -361,7 +361,8 @@ export function updateCamera (camera, vehicleState, dt) {
   if (snap) reverseView = swinging = false   // a fresh seat starts facing forward, no swing in flight
 
   if (snap) padLookT = 0
-  if (cameraMode !== 'freecam' && (pad.lookX || pad.lookY)) {
+  // FEAT-133: not while the map is open — there the right stick pans the map.
+  if (cameraMode !== 'freecam' && !pad.mapActive() && (pad.lookX || pad.lookY)) {
     padLookT = PAD_PARAMS.orbitHold
     const r = PAD_PARAMS.orbitRate * dt
     if (cameraMode === 'hood') {   // stick right / up = look right / up
@@ -565,6 +566,9 @@ export function setAimMode (on, cursorX = dragLastX, cursorY = dragLastY) {
 
 /** True while hold-to-aim is engaged. */
 export function isAiming () { return aimMode }
+
+/** FEAT-133: true while the right stick is steering the view (moved, or within orbitHold of it). */
+export function isPadLooking () { return padLookT > 0 }
 
 /**
  * Point the camera at a world spot instead of the truck (FEAT-45: the camp pad), or pass null to

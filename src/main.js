@@ -35,7 +35,7 @@ import { DamageScreen } from './damage-screen.js'           // FEAT-90: the play
 import { parkPrompt, keycap } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
-import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, snapCamera } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
@@ -3618,6 +3618,21 @@ function _canThrow () {
   const throwingPaper = (RANGER_PARAMS.throwProjectile ?? 'paper') === 'paper'
   return !throwingPaper || !storySystem.isActive() || paperRouteSystem.isRunning()
 }
+
+// FEAT-133: the PAD's throw (owner, 2026-10-19). On a running paper route, rolling above 5 mph or
+// beside a house still owed a paper, the right stick aims — the reticle rises while it is steering
+// the view — and an RB TAP throws (gamepad.js holds the press back to tell it from a handbrake hold).
+// A route only, never free roam: there the stick is just looking around (B hold still practises).
+// The speed / owed-house gate keeps a tap at rest a PARK, except right at a customer's door.
+const PAD_THROW_MIN_SPEED = 2.235   // m/s = 5 mph
+const PAD_THROW_NEAR_M    = 30      // m to a customer still owed a paper
+pad.canThrow = () => {
+  if (!_worldInit || _simHeld || map2d.isOpen() || getCameraMode() !== 'chase' || !paperRouteSystem.isRunning()) return false
+  const v = vehicleState.velocity, p = vehicleState.position
+  return Math.hypot(v.x, v.z) > PAD_THROW_MIN_SPEED || paperRouteSystem.owedWithin(p.x, p.z, PAD_THROW_NEAR_M)
+}
+pad.throwReady = () => pad.active && isPadLooking() && pad.canThrow()
+let _padReticle = false   // the pad's aim put the reticle up
 document.addEventListener('keydown', e => {
   if (e.key !== 'f' && e.key !== 'F') return
   if (e.ctrlKey || e.metaKey || e.altKey) return
@@ -3635,7 +3650,7 @@ document.addEventListener('keyup', e => {
   if (e.key !== 'f' && e.key !== 'F') return
   if (!isAiming()) return                       // never aimed (wrong camera mode) — never throws
   const rt = document.getElementById('aim-reticle')
-  if (rt) rt.style.display = 'none'
+  if (rt && !_padReticle) rt.style.display = 'none'
   // The route ended while F was held (the last paper landed): drop the aim, throw nothing.
   if (!_canThrow()) { setAimMode(false); return }
   // On a route, a throw costs a paper — and an empty truck cannot throw. Spent at RELEASE, not at
@@ -7845,6 +7860,14 @@ function loop () {
     // PERF-26 INSTRUMENT: renamed off the `frame.` prefix — it is now NESTED inside frame.postStream,
     // and perf.js sums every frame.* label to compute `unattr`, so leaving it would double-count.
     perfAdd('post.gps.update', performance.now() - _ptG)
+  }
+
+  // FEAT-133: the pad's aim raises and drops the reticle. Written only on the edge, and never
+  // dropped from under an F hold (_fHeld, the pump's own tracker), which owns it while held.
+  if (pad.throwReady() !== _padReticle) {
+    _padReticle = !_padReticle
+    const rt = document.getElementById('aim-reticle')
+    if (rt && (_padReticle || !_fHeld)) rt.style.display = _padReticle ? 'block' : 'none'
   }
 
   // FEAT-16: redraw the 2D map overlay only while it's open (off the hot path otherwise).

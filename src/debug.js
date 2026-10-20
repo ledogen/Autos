@@ -139,6 +139,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   padFolder.add(PAD_PARAMS, 'steerSlewRate', 1, 20, 0.5).name('Steer slew (rad/s)')
   padFolder.add(PAD_PARAMS, 'orbitRate', 0.5, 6, 0.1).name('Right-stick orbit rate (rad/s)')
   padFolder.add(PAD_PARAMS, 'orbitHold', 0, 5, 0.1).name('Orbit hold before chase (s)')
+  padFolder.add(PAD_PARAMS, 'mapPanRate', 200, 1500, 50).name('Map pan speed (px/s)')
+  padFolder.add(PAD_PARAMS, 'mapZoomRate', 0.5, 5, 0.1).name('Map trigger zoom rate (e-folds/s)')
+  padFolder.add(PAD_PARAMS, 'throwTapMs', 80, 400, 10).name('RB throw tap, max (ms)')
   padFolder.close()
 
   // ── Mass & CG ──────────────────────────────────────────────────────────────────
