@@ -216,7 +216,7 @@
       color: #55636f;
       font-size: 11px;
     }
-    /* FEAT-41 Controls & Assists. One panel, two homes: a page of #main-menu, and reparented into
+    /* FEAT-41 settings. One panel, two homes: a page of #main-menu, and reparented into
        #pause-menu (main.js _openSettings) so the pause menu gets it in its own look. */
     #mm-settings-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
     #main-menu.settings #mm-root { display: none; }
@@ -236,9 +236,24 @@
     }
     #su-code { color: #6a7a88; font-size: 12px; margin: 4px 0 0 18px; }
     /* ◂ value ▸ selector: a row button; the arrows (or ←/→) cycle it. */
-    #main-menu button.mm-sel { width: 340px; display: flex; justify-content: space-between; }
+    #main-menu button.mm-sel { width: 380px; display: flex; justify-content: space-between; }
+    button.mm-sel > span { white-space: nowrap; }
     button.mm-sel .sel-val { color: #ffffff; }
-    button.mm-sel .sel-val i { font-style: normal; color: #00ff88; padding: 0 6px; }
+    button.mm-sel .sel-val i { font-style: normal; color: #00ff88; padding: 0 6px; display: inline-block;
+      font-size: 1.35em; line-height: 1; vertical-align: -0.08em; transition: transform 0.08s, color 0.08s, text-shadow 0.08s; }
+    button.mm-sel .sel-val i:hover { transform: scale(1.45); color: #b6ffd9; text-shadow: 0 0 8px #00ff88; }
+    button.mm-sel .sel-val i:active { transform: scale(1.2); }
+    /* A slider row: the same ◂ value ▸ selector, its value drawn as a bar (click the bar to set it). */
+    button.mm-sel .sel-bar { display: inline-block; width: 50px; height: 6px; margin-right: 8px; vertical-align: middle;
+      background: #3a4650; cursor: pointer; }
+    button.mm-sel .sel-bar b { display: block; height: 100%; background: #00ff88; }
+    /* A row's plot: a line of its own under the value (flex-wrap), only while the row is highlighted. */
+    button.mm-sel { flex-wrap: wrap; }
+    button.mm-sel .sel-plot { display: none; flex-basis: 100%; height: 90px; margin: 8px 0 4px; fill: none; }
+    button.mm-sel.nav-focus .sel-plot { display: block; }
+    button.mm-sel .sel-plot * { vector-effect: non-scaling-stroke; }
+    button.mm-sel .sel-plot path { stroke: #3a4650; stroke-width: 1; }
+    button.mm-sel .sel-plot polyline { stroke: #00ff88; stroke-width: 2; stroke-linejoin: round; }
     #pause-menu button.mm-sel { display: flex; justify-content: space-between; gap: 18px; }
     #cs-bindings { border-collapse: collapse; font-size: 12px; color: #8fa0b0; margin: 0 0 12px 18px; }
     #pause-menu #cs-bindings { margin-left: 0; }
@@ -1365,8 +1380,8 @@
   <div id="main-menu">
     <div id="mm-root">
       <div class="mm-title">autos</div>
+      <button id="mm-story">new game</button>
       <button id="mm-freeroam">free roam</button>
-      <button id="mm-story">story mode</button>
       <button id="mm-scenarios">scenarios</button>
       <button id="mm-lab">testing lab</button>
       <button id="mm-settings">settings</button>
@@ -1376,12 +1391,14 @@
       <div id="mm-scenario-list"></div>
       <button id="mm-scenarios-back">back</button>
     </div>
-    <!-- FEAT-41 run setup. The selector rows (.mm-sel, data-key = a src/settings.js key) are filled in by
-         main.js from one option table; the seed field takes a world code (6/C selects Casual). -->
+    <!-- FEAT-41 run setup = the GENERATION settings: what the world and the truck are. The selector rows
+         (.mm-sel, data-key = a src/settings.js key) are filled in by main.js from one option table; the seed
+         field takes a pasted world code (6/C selects Casual). Assists and controls are NOT here — they are the
+         player's, not the run's, and live on the settings page (owner, 2026-10-20). -->
     <div id="mm-setup-panel">
-      <div class="mm-title" id="su-title">new free roam</div>
+      <div class="mm-title" id="su-title">new game</div>
       <div class="mm-group">world</div>
-      <input id="su-seed" type="text" maxlength="24" spellcheck="false" placeholder="seed — leave blank for random">
+      <input id="su-seed" type="text" maxlength="24" spellcheck="false" placeholder="seed or world code — blank for random">
       <button class="mm-sel" data-key="worldPreset"></button>
       <button class="mm-sel" data-key="worldTerrain"></button>
       <button class="mm-sel" data-key="worldPoi"></button>
@@ -1389,20 +1406,21 @@
       <div id="su-code"></div>
       <div class="mm-group">truck</div>
       <button class="mm-sel" data-key="gearbox"></button>
-      <div class="mm-group">assists</div>
-      <button class="mm-sel" data-key="steerAssist"></button>
-      <button class="mm-sel" data-key="clutchAssist"></button>
       <div class="mm-group"></div>
       <button id="su-start">start</button>
       <button id="su-back">back</button>
     </div>
-    <!-- FEAT-41 Controls & Assists. Saved the moment they change. Assists only: the world preset and
-         the gearbox are pre-game choices (the setup page), never changed inside a world. -->
+    <!-- FEAT-41 settings: the player's own choices, saved the moment they change and applied live, from the
+         main menu and the pause menu alike. Never anything generated or fitted: the world and the gearbox
+         are the setup page's (pre-game only). -->
     <div id="mm-settings-panel">
-      <div class="mm-title">controls &amp; assists</div>
+      <div class="mm-title">settings</div>
       <div class="mm-group">assists</div>
       <button class="mm-sel" data-key="steerAssist"></button>
+      <button class="mm-sel" data-key="steerShape"></button>
       <button class="mm-sel" data-key="clutchAssist"></button>
+      <div class="mm-group">controller</div>
+      <button class="mm-sel" data-key="stickDeadzone"></button>
       <div class="mm-group">bindings</div>
       <table id="cs-bindings"></table>
       <button id="mm-settings-back">back</button>
