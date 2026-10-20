@@ -8072,12 +8072,13 @@ export class RoadSystem {
     }
 
     /**
-     * THE LAST RUNG (BUG-56 B0): the convex hull of every leg mouth, seeded with a half-width disc
-     * at the node. Crude on purpose — it has no fillets, no throat sweep and no back-arc bulb, so a
-     * junction that lands here is paved as one flat convex plaza rather than a shaped intersection.
-     * What it buys is that it CANNOT FAIL: a hull is simple by construction, so _ringSelfIntersects
-     * has nothing to reject, and the disc guarantees at least three distinct points and that the
-     * node itself is interior even when every leg leaves on the same side.
+     * THE LAST RUNG (BUG-56 B0): the convex hull of every leg's ribbon width at its mouth AND at the
+     * node (the leg's own cross-section chord through the node centre). Crude on purpose — it has no
+     * fillets and no throat sweep, so a junction that lands here is paved as one flat convex plaza
+     * rather than a shaped intersection. What it buys is that it CANNOT FAIL: a hull is simple by construction, so _ringSelfIntersects
+     * has nothing to reject, and the node chords guarantee at least three distinct points and that the
+     * node itself is inside even when every leg leaves on the same side — without the half-width disc
+     * that used to seed it (a round back on a one-sided pad).
      *
      * Landing here is a SYMPTOM, not a resolution — the legs that force it are the same
      * shallow-departure forks B4/B5/B6 are about, and as those land the population here should
@@ -8091,13 +8092,10 @@ export class RoadSystem {
         const nx = node.pos.x, nz = node.pos.z
         const pts = []
         for (const l of legs) {
-            pts.push({ x: l.cx - l.dz * halfWidth, z: l.cz + l.dx * halfWidth })
-            pts.push({ x: l.cx + l.dz * halfWidth, z: l.cz - l.dx * halfWidth })
-        }
-        const D = 12
-        for (let i = 0; i < D; i++) {
-            const a = 2 * Math.PI * i / D
-            pts.push({ x: nx + Math.cos(a) * halfWidth, z: nz + Math.sin(a) * halfWidth })
+            for (const [cx, cz] of [[l.cx, l.cz], [nx, nz]]) {
+                pts.push({ x: cx - l.dz * halfWidth, z: cz + l.dx * halfWidth })
+                pts.push({ x: cx + l.dz * halfWidth, z: cz - l.dx * halfWidth })
+            }
         }
         return _convexHullXZ(pts)
     }
@@ -8152,7 +8150,6 @@ export class RoadSystem {
      */
     _junctionRingWeld(node) {
         const params = this._params
-        const nx = node.pos.x, nz = node.pos.z
         const m = this._junctionMouths(node)
         if (!m) return null
         const { legs, T, halfWidth } = m
@@ -8175,29 +8172,22 @@ export class RoadSystem {
             while (gap <= 0) gap += 2 * Math.PI
             if (gap > STRAIGHT_GAP && n >= 3) {
                 // Wide back gap: through-road back (anti-parallel legs) keeps a straight chord; an OPEN
-                // sector gets a node-centred bulb through the roadless gap so the whole throat is tiled.
+                // sector follows both legs' real outer edges in to the node (openBack), so the pad there
+                // is exactly the two ribbons' own pavement. (A node-centred bulb used to sweep the
+                // roadless gap — a round patch up to 29 m across, owner capture 1792452436172.)
                 if (A.dx * B.dx + A.dz * B.dz < -0.85) continue   // through-road back: straight chord
-                for (const p of this._nodeBackArc(nx, nz, eA, eB, A.bear + gap / 2)) ring.push(p)
+                const ce = this._cornerEdgeFillet(A, B, halfWidth, filletR, T, true)
+                for (const p of ce ?? this._cornerJoin(eA, A, eB, B, filletR, T)) ring.push(p)
                 continue
             }
             // A narrow Y-throat needs no special rung any more (BUG-59): its two mouths sit past the
             // point where the ribbons parted (per-leg cutback, _detectNodeJunctions), so the facing
             // mouth edges are already clear of each other and the ordinary crotch fillet below
             // closes the gore at the parting point.
-            // Deg-2 kink corners: keep the legacy farther-from-node pick, but with a DIRECTION-CORRECT
-            // node arc — _nodeBackArc sweeps through THIS corner's own angular sector (midBear), where
-            // the old short-way _nodeCornerArc ran a reflex corner's arc through the OPPOSITE (crotch)
-            // sector and left a hairpin apex unpaved (seed-7 709,-256, ~13 m hole). A kink's convex
-            // side needs the outward arc (a straight-chord join cuts the bend's sagitta out of the
-            // pavement); its concave side keeps the corner join. n≥3 never lands here with a reflex
-            // gap (STRAIGHT_GAP < π), so this stays a deg-2-only rule.
-            if (n === 2) {
-                const corner = this._cornerJoin(eA, A, eB, B, filletR, T)
-                const arc = this._nodeBackArc(nx, nz, eA, eB, A.bear + gap / 2)
-                const minR = (pts) => pts.reduce((m, p) => Math.min(m, Math.hypot(p.x - nx, p.z - nz)), Infinity)
-                for (const p of (minR(corner) < minR(arc) - 1e-3 ? arc : corner)) ring.push(p)
-                continue
-            }
+            // Deg-2 kink corners (only a degenerate 2-leg node whose connector arc failed lands here):
+            // both sides follow the true ribbon edges — the concave side to its crotch, the convex side
+            // in to the node (a straight-chord join would cut the bend's sagitta out of the pavement and
+            // leave a hairpin apex unpaved, seed-7 709,-256).
             // Road-side crotch: INTERIOR fillet — tuck the pad boundary concavely into the crotch,
             // tangent to both ribbon edges (a real curb return). The old node-centred OUTWARD-arc
             // override made every corner bulge; the "exposed flat throat" it guarded against is covered
@@ -8205,7 +8195,7 @@ export class RoadSystem {
             // walk (_cornerEdgeFillet): on curved legs the straight edge-LINE intersection _cornerJoin
             // uses lands wrong (or misses) and un-tucks the corner; the walk follows the real ribbon
             // edges to the real crotch apex. _ringSelfIntersects remains the gate.
-            const ce = this._cornerEdgeFillet(A, B, halfWidth, filletR, T)
+            const ce = this._cornerEdgeFillet(A, B, halfWidth, filletR, T, n === 2)
             if (ce) { for (const p of ce) ring.push(p); continue }
             for (const p of this._cornerJoin(eA, A, eB, B, filletR, T)) ring.push(p)
         }
@@ -8288,9 +8278,11 @@ export class RoadSystem {
      * missed their fillet window and fell to the fat Hermite, leaving the pad bulged. Returns ring
      * points strictly between eA and eB (mouth edge points, pushed by the caller): down A's true edge
      * → fillet → back up B's true edge. null when the edges never cross inside the walk (diverging
-     * gore — caller falls back to _cornerJoin). Pure fn of the streamed network (D-16).
+     * gore — caller falls back to _cornerJoin), unless `openBack`: then a diverging pair returns both
+     * true edges walked in to where they come closest (the node end on a clean pair), so an open back sector is paved as exactly the two
+     * ribbons' own pavement. Pure fn of the streamed network (D-16).
      */
-    _cornerEdgeFillet(A, B, halfWidth, filletR, T) {
+    _cornerEdgeFillet(A, B, halfWidth, filletR, T, openBack = false) {
         const STEP = 1.0
         const walkIn = (l, side) => {
             const a0 = l.s > 0 ? 0 : l.len            // node-end arc of this leg
@@ -8326,7 +8318,18 @@ export class RoadSystem {
             const extB = pB[j].ext + u * (pB[j + 1].ext - pB[j].ext)
             if (!best || extA + extB > best.extA + best.extB) best = { extA, extB, x: ax + t * (bx - ax), z: az + t * (bz - az) }
         }
-        if (!best) return null
+        if (!best) {
+            if (!openBack) return null
+            // Join the two edges where they come closest — the node end on a clean pair; a metre or so
+            // out where a run bends in its first metres and the node-end points land crossed (seed-6
+            // 5541,-89).
+            let bi = 0, bj = 0, bd = Infinity
+            for (let i = 0; i < pA.length - 1; i++) for (let j = 0; j < pB.length - 1; j++) {
+                const d = Math.hypot(pA[i].x - pB[j].x, pA[i].z - pB[j].z)
+                if (d < bd) { bd = d; bi = i; bj = j }
+            }
+            return [...pA.slice(bi, -1).reverse(), ...pB.slice(bj, -1)]
+        }
         const extMaxA = pA[pA.length - 1].ext, extMaxB = pB[pB.length - 1].ext
         // Hand the fillet off to the straight-line builder a few metres up each edge from the apex,
         // using the LOCAL sample positions/tangents there (the edges are locally straight over ≤6 m).
@@ -8341,22 +8344,6 @@ export class RoadSystem {
         for (const p of corner) out.push(p)
         for (let j = ib; j <= pB.length - 2; j++) out.push(pB[j])   // back up B's edge (eB pushed next)
         return out
-    }
-
-    /** Node-centred OUTWARD arc across an OPEN back sector (LONG way through the roadless gap). Detours
-     *  the boundary around the node so the whole throat is tiled (one-sided trident). (Formerly _nodeBackArc.) */
-    _nodeBackArc(nx, nz, eA, eB, midBear) {
-        const rA = Math.hypot(eA.x - nx, eA.z - nz), rB = Math.hypot(eB.x - nx, eB.z - nz)
-        const r = (rA + rB) * 0.5
-        const bA = Math.atan2(eA.x - nx, eA.z - nz)
-        const bB = Math.atan2(eB.x - nx, eB.z - nz)
-        const norm = (a) => { while (a < 0) a += 2 * Math.PI; while (a >= 2 * Math.PI) a -= 2 * Math.PI; return a }
-        const dPos = norm(bB - bA)
-        const dB = (norm(midBear - bA) < dPos) ? dPos : dPos - 2 * Math.PI
-        const steps = Math.max(2, Math.min(20, Math.ceil(Math.abs(dB) * r / 1.2)))
-        const pts = []
-        for (let s = 1; s < steps; s++) { const bear = bA + dB * (s / steps); pts.push({ x: nx + Math.sin(bear) * r, z: nz + Math.cos(bear) * r }) }
-        return pts
     }
 
     /** XZ self-intersection test for an assembled pad boundary. (Formerly _ringSelfIntersects.) */

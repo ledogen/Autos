@@ -1319,8 +1319,8 @@ export class RoadMeshSystem {
 
         // ── Boundary: the welded pad ring is now built + cached in road.js (_buildJunctionRing, by
         // _networkRev) so it is the SINGLE source shared by the collision carve (_junctionPadCarve) and
-        // this mesh — mesh == collision by construction. The fallback ladder (exact weld → shrunk fillets
-        // → legacy circle pad) + _ringSelfIntersects gate all live there now (road.js).
+        // this mesh — mesh == collision by construction. The ladder (exact weld → convex-hull floor) +
+        // _ringSelfIntersects gate live there (road.js).
         const ring = node.ring
         if (!ring || ring.length < 3) return null
 
