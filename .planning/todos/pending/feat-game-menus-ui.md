@@ -271,6 +271,21 @@ the menu with the sim's look. Owner-specified beat sheet:
 - Current UI surfaces to reconcile: `src/debug.js` (lil-gui + green HUD + spawn toast), quality
   presets (PERF-08/10).
 
+## Generation vs settings split — ruling (owner, 2026-10-20, `feature/settings-split`)
+
+Supersedes the 10-19 rulings below where they differ.
+- **Two pages, two kinds of choice.** *New game* (the setup page) holds only what gets generated or
+  fitted: seed / pasted world code, difficulty and the world knobs, the gearbox. *Settings* holds the
+  player's own choices: assists, controller feel, bindings (eventually). Settings never appear on the
+  setup page; the setup page's rows never appear in settings.
+- The main menu's first item is **new game** (the story run's setup page); free roam keeps its own.
+  A **resume** entry joins later, once story saves exist.
+- **Feel sliders are now allowed** on the settings page (reverses the 10-19 "no feel sliders"):
+  stick deadzone (4 / 8 / 12 / 16 %) shipped first, and a **center softening** slider beside the steering
+  assist (0–100 % in 10 % notches, with a tiny unlabelled plot of the map): out = (1−k)·x + k·x·|x|,
+  linear at 0, a parabola through ±1 at 100 %. Shown, and applied, only with the steering assist OFF.
+  Rebinding stays a later item.
+
 ## Controls & Assists page — rulings (owner, 2026-10-19, via FEAT-125)
 
 The next settings work is the **Controls & Assists** page:

@@ -1356,16 +1356,17 @@ const _worldReady = new Promise((res) => { _resolveWorldReady = res })
 
 document.getElementById('ss-start')?.addEventListener('click', () => _startStory(_resolveSeed(document.getElementById('ss-seed')?.value)))
 
-// ── FEAT-41: run setup + Controls & Assists ──────────────────────────────────────────────────────
-// Every choice lives in src/settings.js (localStorage). The assists apply the moment they change; the
-// world preset and the gearbox are RUN settings, applied when a run starts and only offered before
-// one (owner, 2026-10-19 — the debug panel remains for live tweaks). Both pages draw their ◂ value ▸ rows from this one table, keyed by the settings key.
+// ── FEAT-41: run setup + settings ────────────────────────────────────────────────────────────────
+// Every choice lives in src/settings.js (localStorage). Two kinds, two pages (owner, 2026-10-20):
+//   GENERATION (setup page, pre-game only): the world knobs and the gearbox — what was generated or
+//     fitted, applied when a run starts (the debug panel remains for live tweaks).
+//   PLAYER (settings page, main menu + pause menu): assists and controller feel — applied the moment
+//     they change, never part of a world. Each is the same-named field of the object in _LIVE.
+// Both pages draw their ◂ value ▸ rows from this one table, keyed by the settings key.
 const _settings = loadSettings()
-PAD_PARAMS.steerAssist = _settings.steerAssist
-RANGER_PARAMS.clutchAssist = _settings.clutchAssist
+const _LIVE = { steerAssist: PAD_PARAMS, steerShape: PAD_PARAMS, clutchAssist: RANGER_PARAMS, stickDeadzone: PAD_PARAMS }
+for (const [k, o] of Object.entries(_LIVE)) o[k] = _settings[k]
 const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own automatic
-// The world knobs and the gearbox are PRE-GAME only (owner, 2026-10-19): they are part of what was
-// generated or fitted, so only the setup page shows them. Controls & Assists carries the assists.
 // `difficulty` is not stored: it names the preset the three knobs match ("custom" when none), and
 // picking one sets the knobs.
 /** The setup page's world, from the saved knobs. */
@@ -1379,7 +1380,13 @@ const SELECTORS = {
   worldRoads:   { name: 'road climbs',     opts: KNOBS.r },
   gearbox:      { name: 'gearbox',         opts: [['auto', 'automatic'], ['manual', 'manual']] },
   steerAssist:  { name: 'steering assist', opts: [[true, 'on'], [false, 'off']] },
+  // A slider: 0 % linear … 100 % parabolic (gamepad.js steerShape), with a tiny plot of the map.
+  // i / 10 so the saved value round-trips to exactly the same notch. Shown only with the assist off —
+  // the only time it acts.
+  steerShape:   { name: 'center softening', slider: true, plot: (x, k) => (1 - k) * x + k * x * Math.abs(x),
+                  show: () => !_settings.steerAssist, opts: Array.from({ length: 11 }, (_, i) => [i / 10, `${i * 10} %`]) },
   clutchAssist: { name: 'clutch assist',   opts: [[true, 'on'], [false, 'off']] },
+  stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
 }
 let _setupMode = 'freeroam'   // 'freeroam' | 'story' — which run the setup page starts
 function _fitGearbox () {
@@ -1390,9 +1397,19 @@ function _renderSelectors () {
   for (const b of document.querySelectorAll('button.mm-sel')) {
     const sel = SELECTORS[b.dataset.key]
     const value = sel.get ? sel.get() : _settings[b.dataset.key]
-    const label = sel.opts.find(([v]) => v === value)?.[1] ?? value
+    let label = sel.opts.find(([v]) => v === value)?.[1] ?? value
+    if (sel.slider) label = `<span class="sel-bar"><b style="width:${value * 100}%"></b></span>${label}`
+    // output vs input over [-1, 1]: faint axes, the curve. Its own line under the row, shown only
+    // while the row is highlighted (index.html .sel-plot).
+    let plot = ''
+    if (sel.plot) {
+      const pts = Array.from({ length: 41 }, (_, i) => { const x = i / 20 - 1; return `${x},${-sel.plot(x, value)}` }).join(' ')
+      plot = `<svg class="sel-plot" viewBox="-1.1 -1.1 2.2 2.2" preserveAspectRatio="xMaxYMid meet">`
+        + `<path d="M-1 0H1M0 -1V1"/><polyline points="${pts}"/></svg>`
+    }
+    b.style.display = sel.show && !sel.show() ? 'none' : ''
     b.innerHTML = `<span>${sel.name}</span><span class="sel-val"><i class="sel-prev">◂</i>`
-      + `${label}<i class="sel-next">▸</i></span>`
+      + `${label}<i class="sel-next">▸</i></span>${plot}`
   }
   const code = document.getElementById('su-code')
   if (code) code.textContent = `world code: ${formatWorldCode(parseWorldCode(document.getElementById('su-seed')?.value ?? '').seed || 'random', _world())}`
@@ -1402,15 +1419,27 @@ function _cycleSelector (b, dir) {
   const key = b.dataset.key
   const { opts, get, set } = SELECTORS[key]
   const i = opts.findIndex(([v]) => v === (get ? get() : _settings[key]))   // -1 (custom) steps onto either end
-  const next = opts[(i + dir + opts.length) % opts.length][0]
+  // A slider stops at its ends; a selector wraps. `dir` may step more than one notch (a bar click).
+  const next = SELECTORS[key].slider
+    ? opts[Math.max(0, Math.min(opts.length - 1, i + dir))][0]
+    : opts[(i + dir + opts.length) % opts.length][0]
   if (set) set(next); else _settings[key] = next
   saveSettings(_settings)
-  if (key === 'steerAssist') PAD_PARAMS.steerAssist = _settings.steerAssist
-  if (key === 'clutchAssist') RANGER_PARAMS.clutchAssist = _settings.clutchAssist
+  if (_LIVE[key]) _LIVE[key][key] = _settings[key]
   _renderSelectors()
 }
 for (const b of document.querySelectorAll('button.mm-sel')) {
-  b.addEventListener('click', (e) => _cycleSelector(b, e.target.closest('.sel-prev') ? -1 : 1))
+  b.addEventListener('click', (e) => {
+    const bar = e.target.closest('.sel-bar')
+    if (bar) {   // a slider's bar: jump to the notch under the pointer
+      const { opts } = SELECTORS[b.dataset.key]
+      const r = bar.getBoundingClientRect()
+      const want = Math.round((e.clientX - r.left) / r.width * (opts.length - 1))
+      _cycleSelector(b, want - opts.findIndex(([v]) => v === _settings[b.dataset.key]))
+      return
+    }
+    _cycleSelector(b, e.target.closest('.sel-prev') ? -1 : 1)
+  })
 }
 // A clicked button keeps focus, and a focused button turns Space — the brake — into another click.
 // None of the menu buttons may take it (the #job-cancel trick).
@@ -1420,7 +1449,7 @@ for (const b of document.querySelectorAll('#main-menu button, #pause-menu button
 function _openSetup (mode) {
   _setupMode = mode
   const t = document.getElementById('su-title')
-  if (t) t.textContent = mode === 'story' ? 'new story run' : 'new free roam'
+  if (t) t.textContent = mode === 'story' ? 'new game' : 'new free roam'
   // Always blank (owner, 2026-09-06): pre-filling the standing seed would quietly make "just press
   // start" mean "replay the same world forever".
   const inp = document.getElementById('su-seed')
@@ -1463,7 +1492,7 @@ document.getElementById('su-seed')?.addEventListener('keydown', (e) => {
   if (t) t.innerHTML = '<tr><td></td><td>keyboard</td><td>pad</td></tr>'
     + BINDINGS.map(b => `<tr><td>${b.action}</td><td>${keyName(b.key)}</td><td>${b.pad}</td></tr>`).join('')
 }
-/** Controls & Assists, from the main menu (a page) or the pause menu (reparented into its box). */
+/** Settings, from the main menu (a page) or the pause menu (reparented into its box). */
 function _openSettings (fromPause) {
   const panel = document.getElementById('mm-settings-panel')
   const host = document.getElementById(fromPause ? 'pause-menu' : 'main-menu')

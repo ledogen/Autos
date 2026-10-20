@@ -30,7 +30,10 @@ export const PAD_PARAMS = {
   steerAssist: true,
   stickDeadzone:   0.08,  // |x| below this reads 0; the rest is rescaled so travel still spans 0..1
   triggerDeadzone: 0.03,
-  steerCurve:      1.0,   // response exponent on the stick: 1 = linear, >1 = finer near centre
+  // Center softening k: out = (1−k)·x + k·x·|x|. 0 = linear; 1 = a parabola through ±1 — slope 1−k at
+  // centre (finer small corrections), 1+k at the ends (full lock still at full stick). Only with the
+  // steering assist OFF: the assist's speed-scaled envelope is the shaping when it is on.
+  steerShape:      0,
   steerSlewRate:   6.0,   // rad/s — max wheel-angle rate, so a flicked stick can't step the physics
   // Right stick = camera orbit RATE (not a 1:1 map of the mouse drag): full deflection turns the
   // view at orbitRate; orbitHold seconds after the stick is let go the chase cam takes back over.
@@ -55,7 +58,7 @@ export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, l
 
 // THE BINDING TABLE (Forza-style layout, owner 2026-10-19 — the FEAT-125 ticket). Rows with a
 // `button` (standard-layout index) replay `key` while held; the rest are analog or tap-vs-hold, read
-// in poll(), and are here so the Controls & Assists page's chart is generated from this one table and
+// in poll(), and are here so the settings page's chart is generated from this one table and
 // cannot drift from what the pad does. LB / A / X are the FEAT-126 manual gearbox's clutch and
 // shifts; the automatic ignores them. Start pauses and View is the map (owner, 2026-10-19), which
 // moved the inventory to D-pad ↑ and the headlights to the left stick click — the D-pad is all
@@ -161,7 +164,8 @@ function poll () {
   if (menu || map) { thr = brk = steer = 0 }   // the sticks and triggers are the menu's / map's, not the truck's
   pad.throttle = thr
   pad.brake = brk
-  pad.steer = Math.sign(steer) * Math.abs(steer) ** PAD_PARAMS.steerCurve
+  const k = PAD_PARAMS.steerAssist ? 0 : PAD_PARAMS.steerShape
+  pad.steer = (1 - k) * steer + k * steer * Math.abs(steer)
   pad.lookX = lookX   // camera.js reads these; looking around never takes the driving away from
   pad.lookY = lookY   // the keyboard, so they do not set pad.active
 
