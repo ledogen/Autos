@@ -167,6 +167,14 @@ names are matched by substring so they must be stable. Third-party models get a 
 **no textures**, faceted (never smooth-shaded), detail carried as geometry rather than maps,
 desaturated nature against saturated man-made objects. `trailer-home-a.glb` is the reference piece.
 
+### UI (the 2D layer)
+
+**UI style is `.planning/research/UI-STYLE.md` — read it before adding or restyling any menu, HUD,
+card or prompt.** Two families (System = green, the game as software; Story = blue-titled cards,
+the world talking), real-world objects copy the object (the pump face is the reference piece), one
+pinned monospace font at a 12 px floor, and a fixed token palette. Never type a hex value that is
+not in it.
+
 ### Diagnostic tools (all live in test/, triggered externally)
 
 - **The main.js smoke (INFRA-07):** `node test/cdp-smoke.mjs [--headed]`, or `npm run test:all -- --browser`

@@ -279,36 +279,36 @@ const CSS = `
 /* The chip itself is the shared .hud-icon (index.html); only the truck's taller shape and the alert
    look are specific to it. */
 #dmg-icon { height: 62px; }
-#dmg-icon.on { border-color: #e0705c; }
+#dmg-icon.on { border-color: var(--bad); }
 #dmg-icon.pulse { animation: dmg-pulse 0.55s ease-in-out 3; }
 @keyframes dmg-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(224,112,92,0); transform: scale(1); }
   50%      { box-shadow: 0 0 14px 3px rgba(224,112,92,0.75); transform: scale(1.08); } }
-#dmg-alert { display: none; background: rgba(0,0,0,0.62); border: 1px solid #3a4450; border-radius: 4px;
-  padding: 6px 10px; font: 12px/1.6 monospace; color: #e6ecf2; white-space: nowrap; }
-#dmg-alert .da-dim { color: #9fb3c8; }
+#dmg-alert { display: none; background: var(--hud-bg); border: 1px solid var(--line); border-radius: 4px;
+  padding: 6px 10px; font: 12px/1.6 var(--font); color: var(--text); white-space: nowrap; }
+#dmg-alert .da-dim { color: var(--text-dim); }
 /* Driving: just the badge, no card — anything wordier is in the way of someone racing somewhere. */
 #dmg-alert.badge-only { background: none; border: none; padding: 0; }
 #dmg-alert .park-badge.big { margin: 0; font-size: 15px; vertical-align: middle;
   box-shadow: 0 0 0 2px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.4); }
 
 #dmg-screen { display: none; position: fixed; inset: 0; z-index: 95; background: rgba(6,8,10,0.45);
-  align-items: center; justify-content: center; font-family: monospace; color: #e6ecf2; }
+  align-items: center; justify-content: center; font-family: var(--font); color: var(--text); }
 #dmg-screen.open { display: flex; }
-#dmg-screen .ds-card { background: rgba(14,17,20,0.92); border: 1px solid #3a4450; border-radius: 8px;
+#dmg-screen .ds-card { background: rgba(14,17,20,0.92); border: 1px solid var(--line); border-radius: 8px;
   padding: 12px 18px 12px; display: flex; flex-direction: column; align-items: center; }
 #dmg-screen .ds-head { width: 100%; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-#dmg-screen .ds-title { flex: 1; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #9fb3c8; }
-#dmg-screen .ds-btn { width: 24px; height: 24px; border-radius: 50%; border: 1px solid #56616c;
-  background: transparent; color: #c8d2dc; font: bold 13px monospace; cursor: pointer; padding: 0; }
-#dmg-screen .ds-btn:hover { border-color: #c8d2dc; }
+#dmg-screen .ds-title { flex: 1; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); }
+#dmg-screen .ds-btn { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line-control);
+  background: transparent; color: var(--text-body); font: bold 14px var(--font); cursor: pointer; padding: 0; }
+#dmg-screen .ds-btn:hover { border-color: var(--text-body); }
 #dmg-screen .ds-svg { height: min(60vh, 460px); width: auto; display: block; margin: 4px 0; }
 #dmg-screen .ds-part { cursor: help; transition: filter 0.15s; }
 #dmg-screen .ds-part[data-paint="stroke"] { fill: none; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
 #dmg-screen .ds-part[data-track^="tire"] { fill: #1b2026; stroke-width: 4; }
 #dmg-screen .ds-part[data-track^="spring"] { stroke-width: 2.4; }
 #dmg-screen .ds-part[data-track^="damper"] { stroke-width: 2.4; fill: none; }
-#dmg-screen .ds-part[data-track^="align"] { font: 6.5px/1 monospace; }
+#dmg-screen .ds-part[data-track^="align"] { font: 6.5px/1 var(--font); }   /* SVG user units — scaled with the drawing */
 #dmg-screen .ds-part.flat { stroke-dasharray: 5 4; }
 #dmg-screen .ds-part.hot { filter: brightness(1.45) drop-shadow(0 0 3px rgba(255,255,255,0.55)); }
 #dmg-screen .ds-hit { fill: transparent; cursor: help; }
@@ -316,28 +316,28 @@ const CSS = `
 #dmg-screen .ds-detail-dot { fill: #0e1114; pointer-events: none; }
 #dmg-screen .ds-body { display: flex; align-items: stretch; gap: 18px; }
 #dmg-screen .ds-side { width: 210px; display: flex; flex-direction: column; padding-top: 10px; }
-#dmg-screen .ds-sub { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #6f7c88;
+#dmg-screen .ds-sub { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint);
   margin-bottom: 6px; }
 #dmg-screen .ds-row { padding: 5px 7px; border-radius: 4px; border-left: 3px solid; cursor: help;
   margin-bottom: 3px; background: rgba(255,255,255,0.03); }
 #dmg-screen .ds-row:hover, #dmg-screen .ds-row.hot { background: rgba(255,255,255,0.10); }
 #dmg-screen .ds-row > * { pointer-events: none; }
-#dmg-screen .dr-top { display: flex; justify-content: space-between; font-size: 12px; color: #c8d2dc; }
+#dmg-screen .dr-top { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-body); }
 #dmg-screen .dr-pct { font-weight: bold; }
-#dmg-screen .dr-sym { font-size: 11px; line-height: 1.35; color: #f0a08f; margin-top: 2px; }
+#dmg-screen .dr-sym { font-size: 12px; line-height: 1.35; color: var(--bad-text); margin-top: 2px; }
 #dmg-screen .ds-legend { margin-top: auto; display: flex; align-items: flex-start; gap: 6px;
-  font-size: 10px; line-height: 6px; color: #9fb3c8; }
+  font-size: 12px; line-height: 6px; color: var(--text-dim); }
 #dmg-screen .ds-scale { flex: 1; }
 #dmg-screen .ds-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 1px; }
-#dmg-screen .ds-ticks { position: relative; height: 12px; margin-top: 5px; color: #6f7c88; }
+#dmg-screen .ds-ticks { position: relative; height: 12px; margin-top: 5px; color: var(--text-faint); }
 #dmg-screen .ds-ticks span { position: absolute; transform: translateX(-50%); }
 #dmg-tip { display: none; position: fixed; z-index: 96; pointer-events: none; max-width: 260px;
-  background: rgba(10,12,14,0.95); border: 1px solid #3a4450; border-radius: 4px; padding: 6px 9px;
-  font: 12px/1.45 monospace; color: #e6ecf2; }
-#dmg-tip .dt-name { color: #c8d2dc; }
+  background: rgba(10,12,14,0.95); border: 1px solid var(--line); border-radius: 4px; padding: 6px 9px;
+  font: 12px/1.45 var(--font); color: var(--text); }
+#dmg-tip .dt-name { color: var(--text-body); }
 #dmg-tip .dt-pct { font-size: 16px; font-weight: bold; }
-#dmg-tip .dt-extra { color: #f0a08f; }
-#dmg-tip .dt-why { margin-top: 4px; padding-top: 4px; border-top: 1px solid #2c343d; color: #9fb3c8;
+#dmg-tip .dt-extra { color: var(--bad-text); }
+#dmg-tip .dt-why { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); color: var(--text-dim);
   white-space: normal; }
 `
 
