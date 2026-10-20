@@ -180,6 +180,7 @@ const mkDay = () => {
   // check stays ===, which holds in FP because doubling is exact.
   check('r(0.5) = 2.0 h/h (average site: 8 h = full from empty)', Math.abs(sys.recoveryRate(0.5) - 2.0) < 1e-9)
   check('r(1) = 2 × r(0) (best site is exactly twice the worst)', sys.recoveryRate(1) === 2 * sys.recoveryRate(0))
+  check('truck = 1 h/h, below the worst campsite', sys.recoveryRate('truck') === 1 && sys.recoveryRate('truck') < sys.recoveryRate(0))
 
   const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps
 

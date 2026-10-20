@@ -56,6 +56,10 @@ export const DAY_PARAMS = {
     // Change these two together or the "average = full in 8 h" contract quietly breaks.
     sleepRateWorstH: 4 / 3,
     sleepRateBestH:  8 / 3,
+    // Sleeping in the truck (owner, 2026-10-19): allowed ANYWHERE, even off campable ground, at a
+    // flat rate below the worst campsite's 4/3 — 8 h in the cab buys 8 h, waking half a tank from
+    // empty. Not a vibe: the truck has no site to grade. Callers pass the 'truck' sentinel.
+    truckSleepRateH: 1,
 
     // Blink cadence — MEAN IN-GAME HOURS BETWEEN BLINKS, per stage (Poisson ⇒ exponential gaps).
     // Ratified default is "on average once per in-game hour" in every blinking stage; kept as three
@@ -270,7 +274,8 @@ export class DaySystem {
      * a short night from deep sleep debt can genuinely wake you still exhausted (owner, 2026-08-02).
      *
      * @param {number} hours integer hours from the sleep timer
-     * @param {number} vibe  0..1 campsite score (mom's house passes a fixed 0.5)
+     * @param {number|'truck'} vibe  0..1 campsite score (mom's house passes a fixed 0.5), or
+     *                              'truck' for a night in the cab (truckSleepRateH)
      */
     sleep (hours, vibe) {
         const h = Math.max(0, hours)
@@ -308,6 +313,7 @@ export class DaySystem {
 
     /** Hours of energy one hour of sleep buys at this campsite. See the arithmetic in DAY_PARAMS. */
     recoveryRate (vibe) {
+        if (vibe === 'truck') return DAY_PARAMS.truckSleepRateH
         const v = Math.max(0, Math.min(1, vibe ?? 0.5))
         return DAY_PARAMS.sleepRateWorstH + (DAY_PARAMS.sleepRateBestH - DAY_PARAMS.sleepRateWorstH) * v
     }
@@ -472,6 +478,7 @@ export class DaySystem {
         f.add(DAY_PARAMS, 'coffeeDebtH', 0, 10, 0.5).name('coffee debt (h)')
         f.add(DAY_PARAMS, 'sleepRateWorstH', 0.5, 6, 0.05).name('sleep rate worst (h/h)')
         f.add(DAY_PARAMS, 'sleepRateBestH', 0.5, 6, 0.05).name('sleep rate best (h/h)')
+        f.add(DAY_PARAMS, 'truckSleepRateH', 0.25, 6, 0.05).name('sleep rate truck (h/h)')
         f.add(DAY_PARAMS, 'blinkMeanSleepyH', 0.1, 4, 0.05).name('sleepy gap (h)')
         f.add(DAY_PARAMS, 'blinkMeanTiredH', 0.1, 4, 0.05).name('tired gap (h)')
         f.add(DAY_PARAMS, 'blinkMeanExhaustedH', 0.1, 4, 0.05).name('exhausted gap (h)')

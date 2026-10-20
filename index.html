@@ -1168,8 +1168,9 @@
     #doze-overlay .lid-bottom { bottom: 0; transform: translateY(100%); }
 
     /* ── FEAT-45 Phase D: the camping surfaces ─────────────────────────────────────────────
-       SM-INV-3: every one of these is a NEAR-STOPPED surface. Nothing here is ever on the
-       driving HUD — the tent needs a camp zone under a slow truck, the panel needs a park.
+       SM-INV-3: no meter here is ever on the driving HUD. The tent shows anywhere in story mode
+       (the truck is a bed anywhere, 2026-10-19), but above 20 kph its card only says "slow down";
+       the vibe bar needs a camp zone under a slow truck, the panel needs a park.
 
        The tent icon is a National Park Service road-sign pictogram: white tent stencil on NPS
        brown. It lives in the top-right icon column (#hud-dock); its card carries the vibe bar. */
@@ -1692,6 +1693,7 @@
     </div>
     <div id="cp-actions" class="mp-felt-row" style="margin-top:14px; gap:8px;">
       <button id="cp-make">make camp &middot; 30 min</button>
+      <button id="cp-truck">sleep in the truck</button>
       <button id="cp-cancel">abandon</button>
       <button id="cp-break">break camp</button>
       <button id="cp-sleep">sleep</button>

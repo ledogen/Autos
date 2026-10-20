@@ -206,6 +206,32 @@ const STEPS = [
     check(await until(async () => !await panel(), 2000), 'R left the camp panel up')
     const h1 = await clock(); await sleep(3000)
     check(await clock() !== h1, 'clock did not resume after R closed the camp')
+
+    // The truck (owner, 2026-10-19): Z always opens the card, and the brake sleeps you in the cab
+    // anywhere — straight to the truck face off camping ground, via "sleep in the truck" on a site.
+    const q = await js(`(() => { const m = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
+      for (const e of window.__roadSys()._network.values()) for (const q of e.points)
+        if (Math.hypot(q.x - m.x, q.z - m.z) > 300) return { x: q.x, z: q.z }
+      return null })()`)
+    check(q, "no road point 300 m from mom's house")
+    await js(`window.__teleport(${q.x}, ${q.z}, 0)`)
+    await sleep(2500)
+    await tap('z')
+    const card = () => js('getComputedStyle(document.getElementById("camp-prompt")).display !== "none" && document.getElementById("camp-prompt-text").textContent')
+    const text = await until(card, 2000)
+    check(text, 'Z opened no camp card')
+    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+    await tap(' ')
+    check(await until(panel, 2000), `parking with the card up ("${text}") opened no camp panel`)
+    const title = () => js('document.getElementById("cp-title").textContent')
+    if (await title() === 'camp') await js('document.getElementById("cp-truck").click()')
+    check(await title() === 'the truck', `no truck face (title "${await title()}")`)
+    await js('document.getElementById("cp-sleep").click()')
+    check(await js('document.getElementById("cp-body").textContent.includes("campsites provide more rest")'),
+      'the truck sleep face is missing its disclaimer')
+    await js('document.getElementById("cp-sleep-back").click(); document.getElementById("cp-break").click()')
+    check(await until(async () => !await panel(), 2000), '"leave" did not close the truck face')
+    await tap('z')   // hunt off again, so later parks open nothing
   }],
   ['inventory', async () => {
     // FEAT-122: parked only (like V) — Tab driving pulses the park sign and opens nothing; parked,
