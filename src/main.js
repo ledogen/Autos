@@ -3596,19 +3596,19 @@ function _scoreLanding (hit) {
       // read-out quotes the money it just earned rather than a percentage the player has to convert
       // in their head. `scored.pay` is banked money — the fare is not in it, because that depends
       // on when you finish and the route can still take it back.
-      _showThrowReadout(`<span style="color:#7ed957">${scored.dist.toFixed(2)} m`
+      _showThrowReadout(`<span style="color:var(--money)">${scored.dist.toFixed(2)} m`
         + ` &nbsp;·&nbsp; +$${formatMoney(scored.pay)}</span>`)
     } else if (scored.already) {
       // Not a failure — a paper spent. Saying so is the difference between "that did nothing" and
       // "you already did this one", and only one of those tells you to drive on.
-      _showThrowReadout('<span style="color:#8a939c">they already have one</span>')
+      _showThrowReadout('<span style="color:var(--text-dim)">they already have one</span>')
     } else if (scored.dist < 25) {
-      _showThrowReadout(`<span style="color:#ff9f43">missed by ${(scored.dist - R).toFixed(1)} m</span>`)
+      _showThrowReadout(`<span style="color:var(--warn)">missed by ${(scored.dist - R).toFixed(1)} m</span>`)
     } else {
       // ON A ROUTE, A THROW ALWAYS ANSWERS. The distance gate above is right for a practice throw
       // in open country — but during a route, silence is indistinguishable from a broken mission,
       // which is exactly how this read as one (owner, 2026-08-09).
-      _showThrowReadout('<span style="color:#ff9f43">nobody on your route lives there</span>')
+      _showThrowReadout('<span style="color:var(--warn)">nobody on your route lives there</span>')
     }
     return
   }
@@ -3620,9 +3620,9 @@ function _scoreLanding (hit) {
   }
   const q = best ? accuracyScore(bestD, R) : 0
   if (q > 0) {
-    _showThrowReadout(`<span style="color:#7ed957">${bestD.toFixed(2)} m — ${Math.round(q * 100)}%</span>`)
+    _showThrowReadout(`<span style="color:var(--money)">${bestD.toFixed(2)} m — ${Math.round(q * 100)}%</span>`)
   } else if (best && bestD < 25) {
-    _showThrowReadout(`<span style="color:#ff9f43">missed by ${(bestD - R).toFixed(1)} m</span>`)
+    _showThrowReadout(`<span style="color:var(--warn)">missed by ${(bestD - R).toFixed(1)} m</span>`)
   }
 }
 
@@ -3690,7 +3690,7 @@ document.addEventListener('keyup', e => {
   const throwingPaper = (RANGER_PARAMS.throwProjectile ?? 'paper') === 'paper'
   const onRound = throwingPaper && paperRouteSystem.isRunning()
   if (onRound && !paperRouteSystem.takePaper()) {
-    _showThrowReadout('<span style="color:#ff9f43">out of papers</span>')
+    _showThrowReadout('<span style="color:var(--warn)">out of papers</span>')
     setAimMode(false)
     return
   }
@@ -5186,7 +5186,7 @@ function _renderMissionUI () {
       // calibration corpus is keyed on that. Display change only; do not prune the fields.
       // Then the money rows the offer card set up — Base pay answered, the tip beside it, the
       // offer's bonus earned or missed (FEAT-67; the item lands in the FEAT-122 inventory). See _payRows.
-      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
+      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || 'var(--text-bright)'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
           ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award,
@@ -5303,7 +5303,7 @@ function _renderPaperUI () {
         unmountExportRow('paper-panel')
         break
       }
-      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
+      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || 'var(--text-bright)'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         // The "+N% early" badge went with the expediency bonus it reported [2026-08-17]. Pace is
         // now paid through the shared margin line, so the letter and the time money already say it
@@ -5315,7 +5315,7 @@ function _renderPaperUI () {
         // payment, banked as the papers landed. Showing only the settlement would look like a pay cut.
         + _payRows({ base: r.base, tip: r.tip, spot: r.spot, points: r.points })
         + (r.advanced
-          ? `<br><span style="color:#ffdc3c">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
+          ? `<br><span style="color:var(--money)">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
           : '')
       // FEAT-30 calibration form, same one the POI result card shows (owner, 2026-08-17): a paper
       // round could not be recorded at all before this, so par had nothing to be fitted against for
