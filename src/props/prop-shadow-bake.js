@@ -355,8 +355,9 @@ export class ShadowBakeSystem {
     r.getClearColor(this._prevClear)
     r.setClearColor(0x000000, 0)
 
-    const n = Math.min(MAX_BAKES_PER_CALL, this._dirty.length)
-    for (let i = 0; i < n; i++) {
+    // The queue is re-checked every pass: a dropped tile (below) doesn't count against the cap, so a
+    // count taken up front could outrun the queue and shift() undefined.
+    for (let i = 0; i < MAX_BAKES_PER_CALL && this._dirty.length; i++) {
       if (i > 0 && performance.now() >= deadline) break
       const k = this._dirty.shift()
       this._dirtySet.delete(k)
@@ -365,7 +366,7 @@ export class ShadowBakeSystem {
       const cz = parseInt(k.slice(comma + 1), 10)
       // PERF-33: a tile queued for a chunk that has since left the window would stamp shadows into a
       // slot the terrain now samples for a DIFFERENT chunk — drop it (it re-queues if it comes back).
-      if (!this._inWindow(cx, cz)) { i--; if (!this._dirty.length) break; continue }
+      if (!this._inWindow(cx, cz)) { i--; continue }
       const tp = this._tilePx
       const tx = pmod(cx, ATLAS_N), tz = pmod(cz, ATLAS_N)
       this._owner[tz * ATLAS_N + tx] = k
