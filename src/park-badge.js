@@ -22,9 +22,10 @@ import { BINDINGS } from './gamepad.js'
 const PAD_CAP = new Map(BINDINGS.map(b => [b.key.toLowerCase(), b.pad.replace(/ \(.*\)$/, '').replace('D-pad ', 'D')]))
 PAD_CAP.set('space', PAD_CAP.get(' '))
 
-/** A key hint, drawn as a small keycap that reads the pad's button while the pad drives. */
+/** A key hint, drawn as a small keycap that reads the pad's button while the pad drives. `label` may be
+ *  a number: the inventory's quick-slot keys 1–4. */
 export function keycap (label) {
-  const pad = PAD_CAP.get(label.toLowerCase())
+  const pad = PAD_CAP.get(String(label).toLowerCase())
   return pad
     ? `<span class="keycap"><span class="kc-kb">${label}</span><span class="kc-pad">${pad}</span></span>`
     : `<span class="keycap">${label}</span>`
