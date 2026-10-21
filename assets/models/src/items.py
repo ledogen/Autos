@@ -397,7 +397,7 @@ def build_emergencyGas():
     """A 2 gal RotoPax-style flat pack: rounded slab with the mounting hole, ribs, top handle, black cap."""
     b = Builder()
     W, H, T, C = 0.375, 0.315, 0.100, 0.014
-    N = 64
+    N = 24   # lower poly (owner, 2026-10-21)
     def outline(w, h, r, cx=0, cz=0):
         out = []
         for k in range(N):
@@ -436,14 +436,25 @@ def build_emergencyGas():
                 b.cbox(((x0[0] + x0[1]) / 2, y + s * 0.003, zc + zz), (x0[1] - x0[0], 0.010, 0.016), "CanRed", ch=0.003)
     # Carry handle along the top, and the black cap on the top-right shoulder.
     top = zc + H / 2
-    b.bar((-0.095, 0, top - 0.010), (-0.080, 0, top + 0.040), 0.034, "CanRed", h=0.030)
-    b.bar((0.045, 0, top - 0.010), (0.030, 0, top + 0.040), 0.034, "CanRed", h=0.030)
-    b.bar((-0.090, 0, top + 0.040), (0.040, 0, top + 0.040), 0.034, "CanRed", h=0.030)
+    def arch(x0, x1, z1, lw, th, k):   # the handle's side outline: two legs and a bar, corners cut by k
+        z0 = top - 0.012
+        return [(x0, z0), (x0 + lw, z0), (x0 + lw, z1 - th - k), (x0 + lw + k, z1 - th), (x1 - lw - k, z1 - th),
+                (x1 - lw, z1 - th - k), (x1 - lw, z0), (x1, z0), (x1, z1 - k), (x1 - k, z1), (x0 + k, z1), (x0, z1 - k)]
+    HT, CH = 0.032, 0.005   # handle thickness; chamfer on its front and back edges (owner, 2026-10-21: one solid)
+    full = arch(-0.110, 0.060, top + 0.055, 0.032, 0.026, 0.012)
+    inset = arch(-0.110 + CH, 0.060 - CH, top + 0.055 - CH, 0.032 - 2 * CH, 0.026 - 2 * CH, 0.012)
+    hl = [(inset, -HT / 2), (full, -HT / 2 + CH), (full, HT / 2 - CH), (inset, HT / 2)]
+    for (la, ya), (lb, yb) in zip(hl, hl[1:]):
+        for k in range(len(full)):
+            j = (k + 1) % len(full)
+            b.face([(la[k][0], ya, la[k][1]), (la[j][0], ya, la[j][1]), (lb[j][0], yb, lb[j][1]), (lb[k][0], yb, lb[k][1])], "CanRed")
+    for lp, y in ((inset, -HT / 2), (inset, HT / 2)):
+        b.face([(x, y, z_) for x, z_ in lp], "CanRed")
     b.M = Matrix.Translation((0.128, 0, top - 0.012)) @ Matrix.Rotation(math.radians(-18), 4, "Y")
-    b.lathe([(0.030, 0.0), (0.030, 0.012), (0.033, 0.014), (0.033, 0.040), (0.030, 0.044), (0.0, 0.046)], 16, "CanBlack", cap_top=False)
-    for k in range(16):  # knurl ribs on the cap
-        a = 2 * math.pi * (k + 0.5) / 16
-        b.bar((0.034 * math.cos(a), 0.034 * math.sin(a), 0.016), (0.034 * math.cos(a), 0.034 * math.sin(a), 0.038), 0.004, "CanBlack")
+    b.lathe([(0.040, 0.0), (0.040, 0.014), (0.044, 0.017), (0.044, 0.050), (0.040, 0.055), (0.0, 0.057)], 12, "CanBlack", cap_top=False)
+    for k in range(12):  # knurl ribs on the (bigger) cap
+        a = 2 * math.pi * (k + 0.5) / 12
+        b.bar((0.045 * math.cos(a), 0.045 * math.sin(a), 0.019), (0.045 * math.cos(a), 0.045 * math.sin(a), 0.047), 0.005, "CanBlack")
     b.M = Matrix.Identity(4)
     return b.finish("emergencyGas")
 
@@ -453,20 +464,21 @@ def build_pack():
     top, leather base, leather-flapped front pocket with two buckled straps, canvas webbing shoulder
     straps on leather tabs, a leather grab loop."""
     b = Builder()
-    body = ((0.0, 0.25, 0.085), (0.008, 0.262, 0.097), (0.02, 0.27, 0.10), (0.06, 0.274, 0.104), (0.20, 0.276, 0.106),
-            (0.31, 0.276, 0.106), (0.335, 0.272, 0.104), (0.352, 0.262, 0.098), (0.363, 0.246, 0.090), (0.369, 0.228, 0.082))
-    b.loft([rrect(w, d, min(0.025, d / 2 - 0.002), z, per=5) for z, w, d in body], "Canvas")
+    D = 0.106   # body depth at its widest
+    body = ((0.0, 0.25, 0.085), (0.02, 0.27, 0.10), (0.20, 0.276, D), (0.31, 0.276, D), (0.350, 0.264, 0.099),
+            (0.369, 0.228, 0.082))   # lower poly (owner, 2026-10-21)
+    b.loft([rrect(w, d, min(0.025, d / 2 - 0.002), z, per=2) for z, w, d in body], "Canvas")
     # Leather base, wrapped a few mm proud of the canvas.
-    base = ((0.0, 0.256, 0.091), (0.008, 0.268, 0.103), (0.02, 0.276, 0.106), (0.06, 0.280, 0.110))
-    b.loft([rrect(w, d, 0.026, z, per=5) for z, w, d in base], "Leather", cap_top=False)
+    base = ((0.0, 0.256, 0.091), (0.02, 0.276, 0.106), (0.06, 0.280, 0.110))
+    b.loft([rrect(w, d, 0.026, z, per=2) for z, w, d in base], "Leather", cap_top=False)
     # Two leather straps over the top, from the back down the front, buckled above the pocket.
     over = [r for r in body if r[0] >= 0.30]
-    path = [(d / 2, z) for z, w, d in over] + [(-d / 2, z) for z, w, d in reversed(over)] + [(-body[4][2] / 2, 0.255)]
+    path = [(d / 2, z) for z, w, d in over] + [(-d / 2, z) for z, w, d in reversed(over)] + [(-D / 2, 0.255)]
     for x in (-0.06, 0.06):
         for (y0, z0), (y1, z1) in zip(path, path[1:]):
             t = Vector((0, y1 - y0, z1 - z0)).normalized(); n = (0, -t.z, t.y)
             b.bar((x, y0, z0), (x, y1, z1), 0.022, "Leather", h=0.004, caps=False, up=n)
-        yb, bz = -body[4][2] / 2 - 0.003, 0.290
+        yb, bz = -D / 2 - 0.003, 0.290
         for (p, q) in (((x - 0.015, yb, bz - 0.011), (x + 0.015, yb, bz - 0.011)),
                        ((x - 0.015, yb, bz + 0.011), (x + 0.015, yb, bz + 0.011)),
                        ((x - 0.015, yb, bz - 0.011), (x - 0.015, yb, bz + 0.011)),
@@ -496,10 +508,9 @@ def build_rucksack():
     """An old canvas rucksack: lofted body, top flap, front pocket, leather straps + buckles, haul loop."""
     b = Builder()
     rings = []
-    for z, w, d in ((0.0, 0.26, 0.13), (0.008, 0.276, 0.146), (0.02, 0.285, 0.155), (0.06, 0.298, 0.168),
-                    (0.10, 0.305, 0.175), (0.17, 0.309, 0.178), (0.24, 0.31, 0.178), (0.30, 0.304, 0.172),
-                    (0.36, 0.295, 0.165), (0.40, 0.283, 0.155), (0.42, 0.27, 0.145), (0.445, 0.24, 0.12)):
-        rings.append(rrect(w, d, 0.045, z, per=6))
+    for z, w, d in ((0.0, 0.26, 0.13), (0.02, 0.285, 0.155), (0.10, 0.305, 0.175), (0.24, 0.31, 0.178),
+                    (0.36, 0.295, 0.165), (0.42, 0.27, 0.145), (0.445, 0.24, 0.12)):   # lower poly (owner, 2026-10-21)
+        rings.append(rrect(w, d, 0.045, z, per=2))
     b.loft(rings, "Canvas")
     # Top flap: a soft lid draped over the top and down the front. A grid of (profile x across)
     # points: the side profile in YZ, its edges drooping into the body as |v|^3 so the flap wraps the
@@ -536,16 +547,17 @@ def build_rucksack():
     # Front pocket.
     b.cbox((0.0, -0.105, 0.135), (0.215, 0.055, 0.17), "Canvas", ch=0.018)
     b.cbox((0.0, -0.110, 0.205), (0.222, 0.056, 0.035), "CanvasDark", ch=0.012)   # pocket flap
-    # Two leather straps: from under the top flap down over the pocket, with buckles.
+    # Two leather straps from under the top flap, buckled above the pocket; the pocket's own two short
+    # straps run down from its flap (owner, 2026-10-21: the long ones clipped through it — do it like the pack).
+    def buckle(x, y, bz, hw, hh, t):
+        for (p, q) in (((x - hw, y, bz - hh), (x + hw, y, bz - hh)), ((x - hw, y, bz + hh), (x + hw, y, bz + hh)),
+                       ((x - hw, y, bz - hh), (x - hw, y, bz + hh)), ((x + hw, y, bz - hh), (x + hw, y, bz + hh))):
+            b.bar(p, q, t, "Buckle")
     for x in (-0.065, 0.065):
-        b.ribbon([(x, -0.103, 0.335), (x, -0.104, 0.300), (x, -0.124, 0.230), (x, -0.136, 0.170), (x, -0.135, 0.105)],
-                 (0, -1, 0), 0.024, 0.004, "Leather")
-        bz = 0.150
-        for (p, q) in (((x - 0.017, -0.140, bz - 0.013), (x + 0.017, -0.140, bz - 0.013)),
-                       ((x - 0.017, -0.140, bz + 0.013), (x + 0.017, -0.140, bz + 0.013)),
-                       ((x - 0.017, -0.140, bz - 0.013), (x - 0.017, -0.140, bz + 0.013)),
-                       ((x + 0.017, -0.140, bz - 0.013), (x + 0.017, -0.140, bz + 0.013))):
-            b.bar(p, q, 0.005, "Buckle")
+        b.ribbon([(x, -0.103, 0.335), (x, -0.100, 0.300), (x, -0.094, 0.270), (x, -0.092, 0.236)], (0, -1, 0), 0.024, 0.004, "Leather")
+        buckle(x, -0.097, 0.262, 0.017, 0.013, 0.005)
+        b.ribbon([(x * 0.85, -0.1395, 0.200), (x * 0.85, -0.1345, 0.150), (x * 0.85, -0.134, 0.090)], (0, -1, 0), 0.020, 0.003, "Leather")
+        buckle(x * 0.85, -0.137, 0.140, 0.014, 0.011, 0.004)
     # Shoulder straps on the back, and the haul loop on top.
     for x in (-0.075, 0.075):
         b.ribbon([(x * 0.8, 0.075, 0.420), (x, 0.115, 0.380), (x * 1.15, 0.125, 0.240), (x * 1.3, 0.115, 0.080), (x * 1.3, 0.085, 0.03)],
@@ -559,7 +571,7 @@ def build_rucksack():
 
 def build_bedroll():
     """A rolled wool blanket: stepped spiral ends, cream stripe bands, two leather straps with buckles."""
-    b = Builder(); SEG = 20
+    b = Builder(); SEG = 15   # owner, 2026-10-21
     R, L = 0.088, 0.56
     b.M = Matrix.Translation((0, 0, R)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
     # Body, with the spiral read from three stepped layers at each end.
@@ -1448,31 +1460,29 @@ def build_bikePump():
     for sx in (-1, 1):   # the feet
         b.hull([(sx * dx, dy, z) for dx in (0.018, 0.105) for dy in (-0.030, 0.030) for z in (0.0, 0.012)]
                + [(sx * 0.112, 0.0, 0.006)], "CanBlack")
-    b.lathe([(0.0, 0.0), (0.036, 0.0), (0.036, 0.024), (0.026, 0.040), (0.026, 0.050), (0.0, 0.051)], 16, "CanBlack")   # base boss
-    b.lathe([(0.0225, 0.050), (0.0225, 0.600)], 16, "Steel", cap_bottom=False, cap_top=False)   # barrel
-    b.lathe([(0.0255, 0.596), (0.0255, 0.618), (0.010, 0.624), (0.0, 0.625)], 16, "CanBlack", cap_bottom=False)   # top cap
-    b.lathe([(0.0055, 0.624), (0.0055, 0.680)], 10, "Chrome", cap_bottom=False, cap_top=False)   # plunger rod
+    # Lower poly, fatter barrel, bigger gauge and handle so it reads small (owner, 2026-10-21).
+    b.lathe([(0.0, 0.0), (0.042, 0.0), (0.042, 0.024), (0.032, 0.040), (0.032, 0.050), (0.0, 0.051)], 10, "CanBlack")   # base boss
+    b.lathe([(0.028, 0.050), (0.028, 0.600)], 10, "Steel", cap_bottom=False, cap_top=False)   # barrel
+    b.lathe([(0.031, 0.596), (0.031, 0.618), (0.012, 0.624), (0.0, 0.625)], 10, "CanBlack", cap_bottom=False)   # top cap
+    b.lathe([(0.0065, 0.624), (0.0065, 0.680)], 6, "Chrome", cap_bottom=False, cap_top=False)   # plunger rod
     b.M = Matrix.Translation((0, 0, 0.690)) @ Matrix.Rotation(math.pi / 2, 4, "Y")   # T-handle along X
-    hp = [(0.0, -0.096), (0.010, -0.095), (0.0145, -0.090)]
-    for k in range(17):
-        z = -0.082 + 0.164 * k / 16
-        hp.append((0.0145 if abs(z) > 0.020 else 0.0115, z))
-    hp += [(0.0145, 0.090), (0.010, 0.095), (0.0, 0.096)]
-    b.lathe(hp, 12, "CanBlack", cap_bottom=False, cap_top=False)
+    hp = [(0.0, -0.125), (0.013, -0.124), (0.019, -0.118), (0.019, -0.026), (0.014, -0.022), (0.014, 0.022), (0.019, 0.026),
+          (0.019, 0.118), (0.013, 0.124), (0.0, 0.125)]
+    b.lathe(hp, 8, "CanBlack", cap_bottom=False, cap_top=False)
     b.M = Matrix.Identity(4)
     # Gauge on the base, face toward the viewer.
-    b.M = Matrix.Translation((0.0, -0.040, 0.075)) @ Matrix.Rotation(math.radians(75), 4, "X")
-    b.lathe([(0.0, -0.010), (0.034, -0.010), (0.037, 0.0), (0.037, 0.006), (0.033, 0.008)], 20, "CanBlack", cap_top=False)
-    b.lathe([(0.033, 0.005), (0.0, 0.005)], 20, "GaugeFace", cap_bottom=False, cap_top=False)
-    b.bar((0.0, 0.0, 0.0058), (0.016, 0.018, 0.0058), 0.003, "CanRed", h=0.0008)
+    b.M = Matrix.Translation((0.0, -0.052, 0.100)) @ Matrix.Rotation(math.radians(75), 4, "X")
+    b.lathe([(0.0, -0.012), (0.049, -0.012), (0.053, 0.0), (0.053, 0.007), (0.048, 0.009)], 12, "CanBlack", cap_top=False)
+    b.lathe([(0.048, 0.006), (0.0, 0.006)], 12, "GaugeFace", cap_bottom=False, cap_top=False)
+    b.bar((0.0, 0.0, 0.0068), (0.024, 0.026, 0.0068), 0.004, "CanRed", h=0.0010)
     b.M = Matrix.Identity(4)
-    b.bar((0.0, -0.022, 0.060), (0.0, -0.030, 0.068), 0.010, "CanBlack")
+    b.bar((0.0, -0.026, 0.088), (0.0, -0.040, 0.096), 0.012, "CanBlack")
     # Hose: out of the base, a loop out to the side, up to a clip high on the barrel, chuck parked.
-    hose = [(0.030, 0.012, 0.030), (0.060, 0.030, 0.030), (0.085, 0.040, 0.080), (0.090, 0.040, 0.180), (0.080, 0.035, 0.300),
-            (0.060, 0.030, 0.400), (0.040, 0.026, 0.470), (0.030, 0.024, 0.500)]
-    b.tube(hose, 0.0055, 8, "CanBlack")
-    b.cbox((0.0, 0.024, 0.500), (0.050, 0.010, 0.020), "CanBlack", ch=0.003)   # holster clip on the barrel
-    b.tube([(0.030, 0.024, 0.500), (0.030, 0.024, 0.535), (0.030, 0.024, 0.560)], 0.0095, 10, "CanRed")   # chuck
+    hose = [(0.036, 0.014, 0.030), (0.066, 0.034, 0.030), (0.092, 0.044, 0.080), (0.097, 0.044, 0.180), (0.087, 0.040, 0.300),
+            (0.066, 0.035, 0.400), (0.046, 0.032, 0.470), (0.036, 0.031, 0.500)]
+    b.tube(hose, 0.0070, 6, "CanBlack")
+    b.cbox((0.0, 0.030, 0.500), (0.060, 0.010, 0.022), "CanBlack", ch=0.003)   # holster clip on the barrel
+    b.tube([(0.036, 0.031, 0.500), (0.036, 0.031, 0.535), (0.036, 0.031, 0.562)], 0.0110, 8, "CanRed")   # chuck
     return b.finish("bikePump")
 
 

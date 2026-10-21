@@ -77,7 +77,7 @@ vendor: holds hunger 8 h, 30 min to eat, $5–10, eat-in only.
 ### Burger
 status: todo · design: proposed · build: effect · needs: hunger · where: foodVendor
 The standard meal, its own item (owner, 2026-10-21): holds hunger ~8 h, so two cover a waking day.
-Spoilage and price open.
+Spoils in 16 h; $5; a C–B reward from the food vendor; never found (2026-10-21).
 
 ### Packed lunch
 status: todo · design: ratified · build: effect · needs: hunger, spoilage · where: reward
@@ -87,7 +87,8 @@ $6. Holds hunger 8 h; fresh 24 h. Never found.
 ### Groceries
 status: todo · design: idea · build: effect · needs: hunger, spoilage, camp render · where: generalStore
 A delayed meal (owner, 2026-10-20): bought, carried, cooked into a meal at camp — only with the
-cooking kit. Still on the spoilage clock. Figures open on the item setup page.
+cooking kit. Still on the spoilage clock. Ruled 2026-10-21: the meal holds 10 h; cook evening or morning;
+the cooler slows them (×1/6); no kit bonus on top. Fresh-for, meals per bag and cook time still open.
 
 ### Bag of peanuts
 status: todo · design: proposed · build: effect · needs: hunger · where: gasStation
@@ -186,8 +187,9 @@ status: todo · design: ratified · build: effect · needs: cargo protection · 
 3 uses, any fragile item: medium damage reduction (FEAT-116).
 
 ### Ice
-status: todo · design: idea · build: effect · needs: spoilage · where: gasStation, generalStore
-One of three unruled candidates for the cooler's running cost (items.md §2). Only if the owner picks it.
+status: todo · design: proposed · build: effect · needs: spoilage · where: gasStation, generalStore
+The cooler's running cost (owner, 2026-10-21): a bag lasts 72 h, so the cooler is refilled every 3 days.
+Sold at the gas station and the general store; price open.
 
 ### Dynamite
 status: todo · design: blocked · build: effect · needs: hazards, cuts · where: found
@@ -221,8 +223,8 @@ Roadside wrenching, paired with the jack. Behaviour unspecified.
 
 ### Cooler
 status: todo · design: idea · build: effect, model · needs: spoilage · where: tackleShop, generalStore
-×1/6 spoilage rate: fish keeps ~36 h instead of ~6 h; holds 4 fish (owner, 2026-10-21). Its cost (ice /
-bed volume / slot) is unruled.
+×1/6 spoilage rate: fish keeps ~36 h instead of ~6 h; holds 4 fish (owner, 2026-10-21). **Runs on ice,
+refilled every 3 days** (Ice row). General store + tackle shop, $10–30; tackle-shop reward A–S; rare find.
 
 ### Better cooler
 status: todo · design: idea · build: effect, model · needs: spoilage · where: tackleShop
