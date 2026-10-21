@@ -136,7 +136,7 @@ export class ServiceScreen {
       case 'repair': s.repair(id); break
       case 'repairAll': s.repairAll(); break
       case 'buy': s.buyAndFit(id, b.dataset.socket); break
-      case 'stow': s.buyToBed(id); break
+      case 'stow': s.buyToInventory(id); break
       case 'fit': s.fitFromInventory(+b.dataset.index, b.dataset.socket); break
       case 'swap': s.swapPair(+b.dataset.index, TIRES.indexOf(b.dataset.socket)); break
       case 'repairOwned': s.repairOwned(+b.dataset.index); break
@@ -181,7 +181,7 @@ export class ServiceScreen {
         + btn('repairAll', 'repair all', money + 1e-9 >= all.price, '', ' ok') + `</div>`
     } else h += `<div class="sv-empty">Nothing on the truck needs fixing.</div>`
     if (owned.length) {
-      h += `<div class="sv-slot"><div class="sv-slothead">In the truck bed</div>`
+      h += `<div class="sv-slot"><div class="sv-slothead">In your inventory</div>`
         + owned.map(r => `<div class="sv-row">${chip(r.id)}<span class="sv-name">${PARTS[r.id].name}`
           + `${r.flat ? ' <span class="sv-desc">flat</span>' : ''}</span>${bar(r.cond, r.flat)}`
           + `<span class="sv-cost">${cost(r.price, r.hours)}</span>`
@@ -218,7 +218,7 @@ export class ServiceScreen {
         // carries once a roadside swap has left another one on it.
         const on = r.tire && r.tire !== PARTS[r.id].mounted?.tire ? `, ${PARTS[r.tire].name.toLowerCase()}` : ''
         h += `<div class="sv-row">${chip(r.id)}<span class="sv-name">${PARTS[r.id].name} <span class="sv-desc">`
-          + `${r.under ? 'under the bed' : 'yours'}${r.flat ? ', flat' : ''}${on}</span></span>`
+          + `yours${r.flat ? ', flat' : ''}${on}</span></span>`
           + (tracked ? bar(r.cond ?? 1, r.flat) : '')
           + (PARTS[r.id].mounted
             ? this._socketBtns('swap', 'swap', TIRES.map(sk => [sk, true]), !busy && !r.flat, `data-index="${r.index}"`)
@@ -233,7 +233,7 @@ export class ServiceScreen {
           + `<span class="sv-cost">$${formatMoney(s.buyPrice(id))}</span>`
           // A tire's or wheel's buttons name the corners and take their own line; it can also be
           // bought to carry (the spare, or any tire or wheel as one).
-          + (sockets.length > 1 ? `<span class="sv-acts">${buy} ${btn('stow', 'to bed', afford, `data-id="${id}"`)}</span>` : buy)
+          + (sockets.length > 1 ? `<span class="sv-acts">${buy} ${btn('stow', 'to inventory', afford, `data-id="${id}"`)}</span>` : buy)
           + `</div>`
       }
       h += `</div>`

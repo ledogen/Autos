@@ -12,9 +12,6 @@
 //      equipping a spare moves the bed across; the equipped pack and a loaded pack can't be dropped.
 //   7. Catalog: every REWARDS id is an ITEMS id (the grant path can't miss), and no desc carries a
 //      digit (SM-INV-10 — described, never scored).
-//   8. The spare carrier (owner, 2026-10-21): the first spare rides under the bed — no slot, no
-//      stowed mass, so it never touches the cargo system — and fits even with the bed full; a second
-//      spare takes a bed slot like any part.
 //
 // Pure node: no THREE, no DOM.
 import { InventorySystem, runInventory } from '../src/inventory.js'
@@ -137,14 +134,6 @@ const bad = Object.entries(ITEMS).filter(([, it]) => !(it.massKg > 0) || !it.nam
 check('every item has a name and a positive mass', bad.length === 0, bad.join(', '))
 check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind === 'pack' && ITEMS.pack.packSlots >= 2
   && ITEMS.bedroll.kind === 'camp' && ITEMS.bedroll.sleep === true)
-
-// ── 8. The spare carrier ──────────────────────────────────────────────────────────────────────
-inv.start()
-for (let i = 0; i < 7; i++) inv.grant('tireStandard')
-check('a spare fits under a full bed', inv.slotsUsed() === 8 && inv.grant('spareTire') === 'taken'
-  && inv.slotsUsed() === 8 && inv.list().find(r => r.id === 'spareTire')?.under)
-check('…and adds no stowed mass', Math.abs(inv.stowedKg() - (KIT_KG + 7 * ITEMS.tireStandard.massKg)) < 1e-9, inv.stowedKg())
-check('a second spare needs a bed slot', inv.grant('spareTire') === 'pending')
 
 console.log(fails === 0 ? '\ninventory gate: ALL OK' : `\ninventory gate: ${fails} FAILURE(S)`)
 process.exit(fails === 0 ? 0 : 1)

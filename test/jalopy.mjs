@@ -4,7 +4,7 @@
 //   2. Only the ruled parts vary: tires standard or old, the front bar stock or gone; everything else
 //      is the stock part — stock springs, shocks and brakes, the open diff, no lift.
 //   3. Over many runs the rare branches all show up: an old tire, no front bar, a run with no spare.
-//   4. The spare, when there is one, rides in the carrier under the bed with its wear in range.
+//   4. The spare, when there is one, is in the inventory with its wear in range.
 //   5. A seed is a truck: the same seed rolls the same jalopy.
 //
 // Pure node: no THREE, no DOM.
@@ -53,7 +53,7 @@ for (let seed = 1; seed <= N; seed++) {
   if (j.spare) {
     spares++
     const [lo, hi] = JALOPY_SPARE.cond
-    if (!j.spare.under || j.spare.cond < lo || j.spare.cond > hi) { spareOk = false; badDetail = JSON.stringify(j.spare) }
+    if (j.spare.cond < lo || j.spare.cond > hi) { spareOk = false; badDetail = JSON.stringify(j.spare) }
   }
 }
 check('1. every track starts inside its range', inRange, badDetail)
@@ -61,7 +61,7 @@ check('2. only the ruled parts vary; the rest is stock', partsOk, badDetail)
 check('3. the rare branches show up: an old tire, no front bar, runs with and without a spare',
   seen.has('tireOld') && seen.has('arbFrontNone') && spares > 0 && spares < N, `spares ${spares}/${N}`)
 check('   …a spare about as often as ruled', Math.abs(spares / N - JALOPY_SPARE.p) < 0.08, `${spares}/${N}`)
-check('4. the spare rides under the bed with its wear in range', spareOk, badDetail)
+check('4. the spare is in the inventory with its wear in range', spareOk, badDetail)
 check('5. the same seed rolls the same jalopy', JSON.stringify(roll(77)) === JSON.stringify(roll(77)))
 
 console.log(fails ? `\n${fails} FAILED` : '\njalopy gate: ALL OK')

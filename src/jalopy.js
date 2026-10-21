@@ -24,7 +24,7 @@ export const JALOPY_PARTS = {
   tire: { tireStandard: 50, tireOld: 35 },
   arbFront: { arbFrontStock: 90, arbFrontNone: 10 },
 }
-/** The spare in the carrier under the bed: how often there is one, and its wear. */
+/** The spare in the inventory: how often there is one, and its wear. */
 export const JALOPY_SPARE = { p: 0.6, cond: [0.4, 0.8] }
 
 /**

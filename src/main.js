@@ -4581,7 +4581,7 @@ function _fitSpare (entry) {
 
 /**
  * The inventory screen's plug choices (owner, 2026-10-21): with the plug kit selected they plug the
- * truck's first flat; with a flat tire in the bed selected they plug that one. "Pump the tire by hand"
+ * truck's first flat; with a flat tire in the inventory selected they plug that one. "Pump the tire by hand"
  * is always offered; "Inflate tire" when a compressor is aboard. Each is the whole stop.
  */
 const _PLUG_LABEL = {
@@ -4590,13 +4590,13 @@ const _PLUG_LABEL = {
 }
 function _tireActions (row) {
   const owned = inventorySystem.list()
-  const bed = row.flat && PARTS[row.id]?.slot === 'tire'
-  if (row.id !== 'tirePlugKit' && !(bed && owned.some(r => r.id === 'tirePlugKit'))) return []
-  const enabled = bed || damageModel.flat.includes(true)
+  const loose = row.flat && PARTS[row.id]?.slot === 'tire'
+  if (row.id !== 'tirePlugKit' && !(loose && owned.some(r => r.id === 'tirePlugKit'))) return []
+  const enabled = loose || damageModel.flat.includes(true)
   return plugMethods(inventorySystem).map(how => ({
     label: `${_PLUG_LABEL[how].label} — ${formatGameDuration(PLUG_H[how])}`, icon: _PLUG_LABEL[how].icon, enabled,
     run: () => {
-      const h = plugTire(damageModel, inventorySystem, how, bed ? row.index : null)
+      const h = plugTire(damageModel, inventorySystem, how, loose ? row.index : null)
       if (h < 0) return
       damageModel.publish(RANGER_PARAMS)
       daySystem.advanceMinutes(h * 60)

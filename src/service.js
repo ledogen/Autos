@@ -137,7 +137,7 @@ export class ServiceCenter {
     }
 
     /** Buy a new part to carry, not fit — a spare for the road. Full inventory → the swap prompt. */
-    buyToBed (id) {
+    buyToInventory (id) {
         if (!PARTS[id] || !this.spend(this.buyPrice(id))) return false
         this.inventory.grant(id, 1, { cond: 1 })
         this.onChange()
@@ -156,7 +156,7 @@ export class ServiceCenter {
 
     /**
      * Swap the mounted pair at inventory entry `index` (a spare, or the flat pair a roadside swap left
-     * in the carrier) with `corner`'s tire and wheel: the pair that comes off takes its place, still
+     * in the inventory) with `corner`'s tire and wheel: the pair that comes off takes its place, still
      * mounted — so a tire the spare displaced can go back on. A flat pair won't go on. A tire's labour.
      */
     swapPair (index, corner) {

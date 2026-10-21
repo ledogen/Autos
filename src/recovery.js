@@ -11,10 +11,10 @@
 //                   gas can, fitting the spare and plugging a tire are the inventory screen's.
 //
 // Roadside tire work (owner, 2026-10-21; the factory jack and the bike pump are always aboard):
-//   SPARE   90 min. The spare goes on the first flat corner, tire AND wheel (it is a mounted spare,
-//           carried under the bed); the punctured pair comes off still mounted and goes where the
-//           spare was — the carrier — as a flat spare.
-//   PLUG    one plug per kit, on the truck's first flat or on a flat tire in the bed. It fixes the
+//   SPARE   90 min. The spare goes on the first flat corner, tire AND wheel (it is a mounted pair,
+//           carried in the inventory); the punctured pair comes off still mounted, as a flat spare,
+//           into the slot the spare left.
+//   PLUG    one plug per kit, on the truck's first flat or on a flat tire in the inventory. It fixes the
 //           hole, not the wear: the tire keeps its condition. Then the air: 2 h by hand with the
 //           pump, 30 min with a compressor — each the WHOLE stop, plug included.
 //
@@ -49,7 +49,7 @@ export function recoveryCard (s) {
  * wear, its wheel with its own (a new spare is data/parts.js `mounted`: a standard tire on a new steel
  * wheel) — a bent rim there is gone with it. The punctured pair comes off STILL MOUNTED, as a flat
  * spare that remembers its tire, wear and wheel (owner, 2026-10-20: roadside swaps keep the old part),
- * into the carrier the spare left — one entry, so it never needs two slots. A plug kit or the service
+ * into the inventory slot the spare left — one entry, so there is always room. A plug kit or the service
  * center makes it a spare again. Returns the corner, or -1 if there was nothing to do (a sound truck,
  * or a spare that is itself flat). The caller puts SPARE_FIT_H on the clock.
  */
@@ -67,20 +67,20 @@ export function plugMethods (inventory) {
 
 /**
  * Plug a puncture and air the tire up `how` ('pump' | 'compressor'), spending one plug kit. The tire
- * is the truck's first flat corner, or the flat tire at inventory entry `bedIndex`. Its condition is
+ * is the truck's first flat corner, or the flat tire at inventory entry `invIndex`. Its condition is
  * untouched. Returns the hours the stop takes, or -1 with nothing spent (no kit, no compressor for
  * 'compressor', or nothing flat there).
  */
-export function plugTire (damage, inventory, how, bedIndex = null) {
+export function plugTire (damage, inventory, how, invIndex = null) {
   const owned = inventory.list()
   if (!owned.some(r => r.id === 'tirePlugKit') || !plugMethods(inventory).includes(how)) return -1
-  if (bedIndex == null) {
+  if (invIndex == null) {
     const corner = damage.flat.indexOf(true)
     if (corner < 0) return -1
     damage.flat[corner] = false
   } else {
-    if (!owned[bedIndex]?.flat) return -1
-    inventory.amend(bedIndex, { flat: false })
+    if (!owned[invIndex]?.flat) return -1
+    inventory.amend(invIndex, { flat: false })
   }
   inventory.consume('tirePlugKit')
   return PLUG_H[how]

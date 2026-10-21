@@ -114,7 +114,7 @@ check('no lift leaves nothing on the bench', svc.off === null)
 // ── 6. Repairing a part as its own item ───────────────────────────────────────────────────────
 const owned = svc.ownedRepairRows()
 const flat = owned.find(r => r.flat)
-check('the flat tire in the bed is on the list', !!flat && flat.price > 0, JSON.stringify(owned))
+check('the flat tire in the inventory is on the list', !!flat && flat.price > 0, JSON.stringify(owned))
 wallet = 100; hours = 0
 check('repair it', svc.repairOwned(flat.index) && near(wallet, 100 - flat.price) && near(hours, flat.hours))
 check('…it comes back new and holding air', inventory.list().some(r => r.id === 'tireStandard' && r.cond === 1 && !r.flat))
@@ -124,7 +124,7 @@ check('a part with nothing missing isn\'t on the list', svc.ownedRepairRows().ev
 // ── 7. A tire to carry ────────────────────────────────────────────────────────────────────────
 wallet = 100
 const spares = () => inventory.list().filter(r => r.id === 'spareTire').length
-check('buy a spare to carry: charged, new, in the bed', svc.buyToBed('spareTire') && near(wallet, 100 - PARTS.spareTire.price)
+check('buy a spare to carry: charged, new, in the inventory', svc.buyToInventory('spareTire') && near(wallet, 100 - PARTS.spareTire.price)
   && spares() === 1 && inventory.list().find(r => r.id === 'spareTire').cond === 1)
 
 // ── 8. Swapping a mounted pair ────────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ inventory.amend(sp().index, { flat: false })
 const was = { tire: parts.fitted('tireFL'), cond: damage.get('tireFL') }
 check('swap the pair onto a corner: its tire, wear and wheel', svc.swapPair(sp().index, 0) && parts.fitted('tireFL') === 'tireSport'
   && damage.get('tireFL') === 0.7 && damage.get('wheelFL') === 0.5 && hours === SLOTS.tireFL.hours)
-check('…and the corner\'s pair takes its place, mounted', sp().under && sp().tire === was.tire && sp().cond === was.cond
+check('…and the corner\'s pair takes its place, mounted', sp().tire === was.tire && sp().cond === was.cond
   && sp().wheelCond === 1, JSON.stringify(sp()))
 
 console.log(fails ? `\n${fails} FAILED` : '\nservice gate: ALL OK')

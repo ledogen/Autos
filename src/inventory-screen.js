@@ -39,8 +39,6 @@ const CSS = `
 #inv-screen .is-pending { padding: 7px 9px; margin-bottom: 10px; border-radius: 4px;
   border: 1px solid #c9a24a; background: rgba(201,162,74,0.10); font-size: 12px; line-height: 1.5; }
 #inv-screen .is-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-#inv-screen .is-under { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; align-items: center; }
-#inv-screen .is-under span { grid-column: span 3; text-align: right; font-size: 12px; color: var(--text-dim); }
 .inv-slot { position: relative; aspect-ratio: 1; border-radius: 6px; box-sizing: border-box;
   background: rgba(255,255,255,0.04); border: 1px dashed var(--line); }
 .inv-slot.full { border: 1px solid var(--line-control); background: rgba(255,255,255,0.07); cursor: pointer; }
@@ -266,11 +264,10 @@ export class InventoryScreen {
     if (this.sel != null && !rows[this.sel]) { this.sel = null; this.packSel = -1 }
     this.tip.dataset.for = ''
     const p = inv.pending()
-    // The bed's slots, then the spare carrier under it (one mounted spare, outside the slots).
-    const bed = rows.filter(r => !r.under), under = rows.find(r => r.under)
-    const cell = (r) => slotHtml(r ?? null, r ? `data-slot="${r.index}"` : '', r && r.index === this.sel ? 'sel' : '')
     let grid = ''
-    for (let i = 0; i < Math.max(inv.slotCap(), bed.length); i++) grid += cell(bed[i])
+    for (let i = 0; i < Math.max(inv.slotCap(), rows.length); i++) {
+      grid += slotHtml(rows[i] ?? null, rows[i] ? `data-slot="${i}"` : '', i === this.sel ? 'sel' : '')
+    }
     this.card.innerHTML =
       `<div class="is-head"><span class="is-title">Inventory</span>`
       + `<button class="is-x" data-act="close" title="close (Tab / Esc)">&times;</button></div>`
@@ -279,7 +276,6 @@ export class InventoryScreen {
           + btn('take', 'take it', inv.fits(p.id, p.n)) + btn('leave', 'leave it') + `</div>`
         : '')
       + `<div class="is-grid">${grid}</div>`
-      + `<div class="is-under"><span>under the bed</span>${cell(under)}</div>`
       + `<div class="is-strip">${this._strip(rows)}</div>`
   }
 
