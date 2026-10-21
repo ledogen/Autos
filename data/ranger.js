@@ -213,9 +213,27 @@ export const RANGER_PARAMS = {
 
   // Service brake, split front/rear (front-biased like a real car — more clamp up front where weight
   // transfers under braking). Consumed per-wheel by getBrakeTorque (front = wheels 0/1, rear = 2/3).
-  maxBrakeTorqueFront: 1300,  // N·m — front axle service-brake torque per wheel-pair path
-  maxBrakeTorqueRear:   450,  // N·m — rear axle service-brake torque (reduced to curb rear lockup)
+  maxBrakeTorqueFront: 1430,  // N·m — front axle service-brake torque per wheel-pair path (+10 % 2026-10-21, FEAT-135: reaches ABS on dry)
+  maxBrakeTorqueRear:   495,  // N·m — rear axle service-brake torque (reduced to curb rear lockup; +10 % with the front)
   maxHandbrakeTorque: 4000, // N·m — rear-only handbrake; doubled from 2000 to actually lock rears; exposed as slider (D-16)
+  // Anti-lock brakes (src/abs.js): a period 4-channel controller — wheel sensors, a reference speed,
+  // and a build/hold/dump valve per wheel. Pressures are fractions of full line pressure.
+  abs:            true,   // driver assist, on by default (settings page)
+  absRefDecel:    11.8,   // m/s² — fastest the reference speed may fall (1.2 g; no truck stops harder)
+  absRefMargin:   1.0,    // m/s² — reference falls this much faster than the decel sensor reads
+  absAccelTau:    0.1,    // s — decel-sensor low-pass time constant
+  // absSlipDump is calibrated to OUR tire, as a real ECU is to its: this Pacejka crests at 40–50 %
+  // slip (s = slip × tireRelaxationLength) where a road tire crests at 10–15 %. 0.2 dragged the
+  // wheel down the steep side (+6 % dry stop, +14 % loose); 0.3 sits just under the crest (+1.4 %
+  // dry, +9 % loose) and still steers (test/abs-stop.mjs).
+  absSlipDump:    0.30,   // [-] wheel slip vs reference above which the valve dumps
+  absDecelHold:   15.7,   // m/s² — wheel deceleration (1.6 g) above which the valve holds
+  absAccelHold:   10,     // m/s² — wheel re-acceleration (1 g) above which the valve holds (recovery)
+  absDumpRate:    15,     // 1/s — pressure vented per second while dumping (full → 0 in 67 ms)
+  absBuildRate:   15,     // 1/s — fast re-apply after a dump, up to absReapplyFrac of the lock pressure
+  absReapplyFrac: 0.8,    // [-] fraction of the last lock pressure the fast re-apply restores
+  absReapplyRate: 3,      // 1/s — stepped re-apply above that (0 → full in 0.33 s)
+  absMinSpeed:    2.2,    // m/s — reference speed below which ABS stands down (8 km/h)
 
   // ── Rear differential (FEAT-23 Phase 2 seed) ──────────────────────────────────────────────────
   // rearDiffMode: 'open' | 'lsd' | 'locked'. Selected in the debug panel (Vehicle → Differentials →

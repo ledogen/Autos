@@ -81,6 +81,12 @@ MATS = {
     "Zinc":       ((0.52, 0.50, 0.40, 1), 0.4),
     "Brass":      ((0.55, 0.36, 0.07, 1), 0.4),
     "GaugeFace":  ((0.82, 0.82, 0.80, 1), 0.5),
+    # Stop-leak bottle (2026-10-21): printed label colours.
+    "BottleNavy": ((0.010, 0.018, 0.050, 1), 0.45),
+    "CapRed":     ((0.70, 0.02, 0.025, 1), 0.45),
+    "LabelGreen": ((0.05, 0.38, 0.05, 1), 0.5),
+    "LabelOrange":((0.88, 0.36, 0.02, 1), 0.5),
+    "LabelRed":   ((0.72, 0.03, 0.02, 1), 0.5),
 }
 
 
@@ -276,9 +282,9 @@ def build_coffee():
     z0, z1 = 0.034, 0.094
     b.lathe([(r(z0), z0), (r(z0) + 0.0022, z0), (r(z0 + 0.03) + 0.0022, z0 + 0.03), (r(z1) + 0.0022, z1), (r(z1), z1)],
             SEG, "CupSleeve", cap_bottom=False, cap_top=False, phase=PH)
-    # Lid: a skirt over the rolled rim with a bead, a flat shelf, then a near-vertical wall up to a
+    # Lid: a skirt reaching down past the rolled rim (owner, 2026-10-21) with a bead, a flat shelf, then a near-vertical wall up to a
     # squared-off raised band around a recessed flat centre; the sip slot sits on the band at the front.
-    b.lathe([(0.0478, 0.1290), (0.0492, 0.1298), (0.0492, 0.1335), (0.0497, 0.1342), (0.0497, 0.1356),
+    b.lathe([(0.0458, 0.1252), (0.0490, 0.1252), (0.0492, 0.1262), (0.0492, 0.1335), (0.0497, 0.1342), (0.0497, 0.1356),
              (0.0492, 0.1362), (0.0444, 0.1366), (0.0434, 0.1478), (0.0426, 0.1488), (0.0372, 0.1488),
              (0.0366, 0.1478), (0.0, 0.1478)], SEG, "CupLid", cap_bottom=False, cap_top=False, phase=PH)
     ap = 0.0403 * math.cos(math.pi / SEG)   # the raised band's mid radius, measured to the front flat
@@ -911,17 +917,70 @@ def build_tirePlugKit():
 
 
 def build_stopLeak():
-    """A bottle of radiator stop-leak: white bottle, yellow label with a red band, knurled black cap."""
-    b = Builder(); SEG = 28
-    b.lathe([(0.0, 0.0), (0.032, 0.0), (0.036, 0.004), (0.036, 0.128), (0.032, 0.143), (0.022, 0.158), (0.015, 0.166),
-             (0.015, 0.176)], SEG, "PlasticWhite", cap_bottom=False, cap_top=False)
-    b.lathe([(0.0365, 0.022), (0.0365, 0.116)], SEG, "LabelYellow", cap_bottom=False, cap_top=False)
-    b.lathe([(0.0369, 0.080), (0.0369, 0.094)], SEG, "CanRed", cap_bottom=False, cap_top=False)
-    b.lathe([(0.0369, 0.036), (0.0369, 0.041)], SEG, "CanBlack", cap_bottom=False, cap_top=False)
-    b.lathe([(0.0175, 0.170), (0.0175, 0.197), (0.0145, 0.2005), (0.0, 0.201)], SEG, "CanBlack", cap_bottom=False)
-    for k in range(18):
-        a = 2 * math.pi * (k + 0.5) / 18
-        b.bar((0.018 * math.cos(a), 0.018 * math.sin(a), 0.173), (0.018 * math.cos(a), 0.018 * math.sin(a), 0.195), 0.0025, "CanBlack")
+    """A bottle of radiator stop-leak, ten-sided (owner, 2026-10-21): dark navy bottle, red cap, a
+    printed label whose colour bands rise to the right, and STOP over LEAK in two lines. Bands and
+    letters are laid out flat (u = distance round the bottle from the front facet's centre, z = height),
+    cut at the facet edges and folded onto the facets, so every piece lies flat on its facet."""
+    b = Builder(); N = 10; R = 0.036
+    TH = math.atan2(VIEW_DIR.y, VIEW_DIR.x)            # the front facet faces the camera
+    PH = TH - math.pi / N                              # lathe phase that centres a facet on TH
+    ap, w = R * math.cos(math.pi / N), 2 * R * math.sin(math.pi / N)
+    b.lathe([(0.0, 0.0), (0.032, 0.0), (R, 0.004), (R, 0.129), (0.0345, 0.140), (0.030, 0.150), (0.024, 0.157),
+             (0.0185, 0.161), (0.0175, 0.164), (0.0175, 0.170)], N, "BottleNavy", cap_top=False, phase=PH)
+    b.lathe([(0.0175, 0.166), (0.0198, 0.166), (0.0198, 0.170), (0.0175, 0.170)], N, "CapRed",
+            cap_bottom=False, cap_top=False, phase=PH)
+    b.lathe([(0.0175, 0.1705), (0.0205, 0.1705), (0.0205, 0.1925), (0.0183, 0.1950), (0.0, 0.1952)], N, "CapRed",
+            cap_bottom=False, phase=PH)
+    for k in range(2 * N):   # cap ribs: on the corners and on each facet's centre, sitting on the surface
+        a = PH + math.pi * k / N
+        rr = (0.0205 if k % 2 == 0 else 0.0205 * math.cos(math.pi / N)) + 0.0006
+        b.bar((rr * math.cos(a), rr * math.sin(a), 0.1725), (rr * math.cos(a), rr * math.sin(a), 0.1915), 0.0018, "CapRed")
+
+    def clip(poly, a, c, k):   # keep the part of a 2D polygon where a*u + c*z <= k
+        out = []
+        for i, p in enumerate(poly):
+            q = poly[(i + 1) % len(poly)]
+            dp, dq = a * p[0] + c * p[1] - k, a * q[0] + c * q[1] - k
+            if dp <= 0:
+                out.append(p)
+            if dp * dq < 0:
+                t = dp / (dp - dq); out.append((p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])))
+        return out
+
+    def decal(poly, mat, lift):   # fold a flat (u, z) polygon onto the facets, `lift` proud of them
+        sc = 1 + lift / ap
+        for j in range(-N // 2, N // 2):
+            piece = clip(clip(poly, 1, 0, (j + 0.5) * w), -1, 0, -(j - 0.5) * w)
+            if len(piece) < 3:
+                continue
+            ph = TH + 2 * math.pi * j / N
+            b.face([((ap * math.cos(ph) - (u - j * w) * math.sin(ph)) * sc,
+                     (ap * math.sin(ph) + (u - j * w) * math.cos(ph)) * sc, z) for u, z in piece], mat)
+
+    S, Z0, Z1, U = 0.30, 0.006, 0.127, N * w / 2        # band slope, label bottom/top, half the way round
+    def band(lo, hi, mat):   # lo/hi: the band's edges at the front (u = 0); None = the label's own edge
+        poly = [(-U, Z0), (U, Z0), (U, Z1), (-U, Z1)]
+        if lo is not None:
+            poly = clip(poly, S, -1, -lo)
+        if hi is not None:
+            poly = clip(poly, -S, 1, hi)
+        decal(poly, mat, 0.0003)
+    band(None, 0.033, "LabelOrange"); band(0.033, 0.044, "LabelGreen")
+    band(0.091, 0.102, "LabelGreen"); band(0.107, 0.115, "LabelRed")
+
+    def words(text, size, offset, centre, mat, lift):   # Blender's text -> triangles, tilted with the bands
+        cu = bpy.data.curves.new("txt", "FONT"); cu.body = text; cu.size = size; cu.offset = offset
+        cu.shear = 0.15; cu.align_x = "CENTER"; cu.align_y = "CENTER"
+        ob = bpy.data.objects.new("txt", cu); bpy.context.collection.objects.link(ob)
+        ev = ob.evaluated_get(bpy.context.evaluated_depsgraph_get()); me = ev.to_mesh()
+        ca, sa = math.cos(math.atan(S)), math.sin(math.atan(S))
+        for p in me.polygons:
+            decal([(centre[0] + me.vertices[i].co.x * ca - me.vertices[i].co.y * sa,
+                    centre[1] + me.vertices[i].co.x * sa + me.vertices[i].co.y * ca) for i in p.vertices], mat, lift)
+        ev.to_mesh_clear(); bpy.data.objects.remove(ob); bpy.data.curves.remove(cu)
+    words("STOP", 0.024, 0.0008, (0.0, 0.0790), "LabelOrange", 0.0009)
+    words("LEAK", 0.024, 0.0018, (0.0, 0.0560), "PlasticWhite", 0.0006)   # white outline, like the print
+    words("LEAK", 0.024, 0.0008, (0.0, 0.0560), "LabelRed", 0.0009)
     return b.finish("stopLeak")
 
 

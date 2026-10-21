@@ -149,6 +149,8 @@ export const GATES = [
     desc: 'BUG-27: hard body slams honor params.bodyRestitution without amplifying it (sampled-once bias, accumulated-impulse solver, tamed Baumgarte) — no phantom spin/launch, no energy gain, rest stable' },
   { file: 'drivetrain-climb.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-23: auto-trans + torque-converter climbs 20–30% grades from a stop, no drive/brake oscillation; accel tapers; 4-gear progression, no shift hunting' },
+  { file: 'abs-stop.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'ABS (src/abs.js): 25 m/s full-pedal stops off/on at μ 0.8/0.35 — no lock above cut-out, 3–15 Hz front cycling, ≤ 1.2× locked distance, steers where locked fronts plough' },
   { file: 'ignition-starter.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-33: ignition/starter state machine (hold-to-crank catches at ignitionCatchTime, early release aborts and discards progress, tap-kills, held key cannot restart through a shutoff, catch time scales with engineHealth) + drivetrain gating (OFF/CRANKING make no drive torque, a killed engine in gear drags and that drag fades toward a stop, and an ABSENT ignition field behaves exactly like RUNNING — the default every other headless gate relies on) + FEAT-120 start transient (cranks from rest without stalling at a rippling 120–400 rpm, slower cold, catch flares 150+ over idle and settles inside 3 s to cold fast idle / warm idle, hands back to the quasi-static model, zero drive torque throughout)' },
   { file: 'fuel-map.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],

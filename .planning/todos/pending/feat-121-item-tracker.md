@@ -143,8 +143,8 @@ built on feature/parts, not merged.
 status: wip · design: ratified · build: effect · where: autoShop, reward, found
 Renamed from tire patches (owner, 2026-10-21). In ITEMS as `tirePlugKit` (`use: 'plug'`) with its
 thumbnail and a REWARDS row (auto shop, gas station, work site; B–A). One plug per kit, $5–10, rare
-roadside find. Plugging is 30 min, fixes the hole and restores no condition; then inflate — 2 h by hand
-(bike pump) or 30 min with the compressor. **The effect is handed to the parts session (feature/parts).**
+roadside find. It fixes the hole and restores no condition. The whole repair, plugging and
+inflating, is 2 h by hand (bike pump) or 30 min with the compressor (owner, 2026-10-21). **The effect is handed to the parts session (feature/parts).**
 
 ### Spare air filter
 status: todo · design: implied · build: effect · where: autoShop
@@ -197,12 +197,12 @@ Clears one hazard on one cut, once.
 
 ### Bike pump
 status: todo · design: ratified · build: effect · where: kit
-Always in the truck, not bought, not in the inventory. Re-inflates a plugged tire: 2 h. The repair card's
+Always in the truck, not bought, not in the inventory. Plug + pump is 2 h in all. The repair card's
 *Pump the tire by hand* button carries its pictogram, `assets/items/bikePump.png` (2026-10-21).
 
 ### Compressor
 status: wip · design: proposed · build: effect · where: autoShop
-Re-inflates a plugged tire in 30 min instead of 2 h. In ITEMS as `compressor` (tool, 4 kg) with its
+Makes a plug repair 30 min in all instead of 2 h. In ITEMS as `compressor` (tool, 4 kg) with its
 thumbnail (2026-10-21); owning it adds the *Inflate tire* button. Worthless without plugs.
 
 ### Quick-jack

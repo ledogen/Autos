@@ -60,7 +60,7 @@ function makeCard (pad) {
     <h2>[${pad.index}] ${pad.id.replace(/</g, '&lt;')}</h2>
     <div class="meta">mapping: <b class="${std ? 'std' : 'nonstd'}">${std ? 'standard' : `"${pad.mapping}" — NOT recognised, read the raw view`}</b>
       · ${pad.axes.length} axes · ${pad.buttons.length} buttons · update rate <b class="hz">–</b> Hz
-      · rumble: ${pad.vibrationActuator ? '<button class="rumble">test</button>' : 'not exposed'}</div>
+      · rumble <button class="rumble">test</button> <span class="rv">${pad.vibrationActuator ? `effects: ${(pad.vibrationActuator.effects ?? ['dual-rumble']).join(', ')}` : 'not exposed by this browser'}</span></div>
     <div class="last">last input: –</div>
     ${std ? `<h3>Standard layout</h3>
     <div class="row">
@@ -77,8 +77,18 @@ function makeCard (pad) {
   document.getElementById('pads').querySelector(':scope > .pad:not([data-i])')?.remove()
   el.dataset.i = pad.index
   document.getElementById('pads').append(el)
-  el.querySelector('.rumble')?.addEventListener('click', () => navigator.getGamepads()[pad.index]?.vibrationActuator
-    ?.playEffect('dual-rumble', { duration: 400, strongMagnitude: 1, weakMagnitude: 0.5 }))
+  // Always offered: the click itself reports why nothing buzzed (BUG-92 — Chrome on the Mac over BT has no actuator).
+  // Plays the pad's trigger rumble too where listed (Xbox on Windows), so both motors sets get a turn.
+  el.querySelector('.rumble').addEventListener('click', async () => {
+    const out = el.querySelector('.rv'), a = navigator.getGamepads()[pad.index]?.vibrationActuator
+    if (!a) { out.textContent = 'no actuator — this browser exposes no rumble for this pad'; return }
+    try {
+      const r = await a.playEffect('dual-rumble', { duration: 600, strongMagnitude: 1, weakMagnitude: 1 })
+      if (a.effects?.includes('trigger-rumble'))
+        await a.playEffect('trigger-rumble', { duration: 600, leftTrigger: 1, rightTrigger: 1 })
+      out.textContent = `played: ${r} — no buzz means the browser accepted it but the pad ignored it`
+    } catch (e) { out.textContent = `failed: ${e.message}` }
+  })
   const trails = [[], []]
   el.querySelectorAll('canvas').forEach((c) => c.addEventListener('click', () => { trails[c.dataset.s].length = 0 }))
   return { el, trails, prev: null, lastT: pad.timestamp, n: 0, t0: performance.now() }

@@ -16,6 +16,7 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   gearbox: 'auto',          // 'auto' = the truck's own automatic · 'manual' = the M5OD-R1 (FEAT-126)
   steerAssist: true,        // PAD_PARAMS.steerAssist (FEAT-125)
   clutchAssist: true,       // RANGER_PARAMS.clutchAssist (FEAT-126)
+  abs: true,                // RANGER_PARAMS.abs — anti-lock brakes (src/abs.js)
   stickDeadzone: 0.08,      // PAD_PARAMS.stickDeadzone — keep equal to gamepad.js's default
   steerShape: 0,            // PAD_PARAMS.steerShape — likewise (0 linear … 1 parabolic … 1.5)
   // No last seed: the seed field is always blank (owner, 2026-09-06) — remembering it would make

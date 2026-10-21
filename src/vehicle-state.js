@@ -14,6 +14,7 @@
 import * as THREE from 'three'
 import { makeIgnitionState } from './ignition.js'
 import { makeFuelState } from './fuel.js'
+import { makeAbs } from './abs.js'
 import { computeStaticEquilibrium } from './suspension.js'
 
 /**
@@ -56,6 +57,7 @@ export function makeVehicleState (params, ignitionKey = undefined) {
     rimForceRoad:    [0, 0, 0, 0],                   // N   — rim load from ROAD/terrain: the squashed-carcass load past full compression (a different measurement from rimForce — see suspension.js)
     rimForce:        [0, 0, 0, 0],                   // N   — engine contact FORCE on each WHEEL HARD CORE (QUAL-25). Non-zero only when the rim itself is hit — rim damage
     brakeTorque:     [0, 0, 0, 0],                   // N·m — applied brake torque (brake wear)
+    abs:             makeAbs(),                      // anti-lock controller state; stepped by stepPhysics, a.p[] read by getBrakeTorque, a.pulse by vehicle.js (rumble)
     wheelPhase:      [0, 0, 0, 0],                   // per-wheel spin phase [rad], fixed-step; feeds the out-of-round radius (params.wheelRunout)
     drivetrain:      { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1 },  // FEAT-23 engine/converter/gearbox state; stepped by stepDrivetrain, read by HUD/logger
     ignition:        makeIgnitionState(ignitionKey),    // FEAT-33 key state (OFF/CRANKING/RUNNING); stepped by updateVehicle, read by stepDrivetrain + the cluster. Free roam spawns RUNNING.
