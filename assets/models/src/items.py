@@ -98,6 +98,7 @@ MATS = {
     "PotatoSkin": ((0.20, 0.10, 0.035, 1), 0.9),
     "PotatoEye":  ((0.045, 0.022, 0.008, 1), 0.9),
     "JerryGreen": ((0.085, 0.11, 0.035, 1), 0.55),
+    "WheelPaint": ((0.17, 0.175, 0.18, 1), 0.4),
 }
 
 
@@ -1124,6 +1125,39 @@ def build_tire():
     return b.finish("tire")
 
 
+def build_wheel():
+    """Part icon `wheel` (owner, 2026-10-21: wheels and tires are separate parts): a bare pressed-steel
+    15x7 wheel standing on its flange, outer face to the viewer — drop-centre rim, a dished centre disc
+    with six oval vents, five lug holes on the 4.5 in circle, the centre bore and a valve stem."""
+    b = Builder(); SEG = 24
+    b.M = Matrix.Translation((0, 0, 0.202)) @ Matrix.Rotation(math.pi / 2, 4, "Y")   # axis along X, +z = the outer face
+    rim = [(0.198, -0.102), (0.202, -0.097), (0.196, -0.089), (0.191, -0.086), (0.191, -0.058), (0.168, -0.044),
+           (0.165, -0.034), (0.165, 0.018), (0.187, 0.038), (0.191, 0.050), (0.191, 0.086), (0.196, 0.089),
+           (0.202, 0.097), (0.198, 0.102)]
+    b.lathe(rim + [(r - 0.004, z) for r, z in reversed(rim)] + [rim[0]], SEG, "WheelPaint", cap_bottom=False, cap_top=False)
+    disc = [(0.163, 0.012), (0.150, 0.018), (0.105, 0.058), (0.090, 0.050), (0.048, 0.050), (0.042, 0.058), (0.036, 0.058)]
+    b.lathe(disc + [(r, z - 0.004) for r, z in reversed(disc)] + [disc[0]], SEG, "WheelPaint", cap_bottom=False, cap_top=False)
+    def spot(r, z, a, along, half_r, half_t, n=10):   # a dark hole drawn on the disc, in its own tangent plane
+        er, et = Vector((math.cos(a), math.sin(a), 0)), Vector((-math.sin(a), math.cos(a), 0))
+        t = (er * along[0] + Vector((0, 0, along[1]))).normalized(); nrm = t.cross(et)
+        if nrm.z < 0:
+            nrm = -nrm
+        c = er * r + Vector((0, 0, z)) + nrm * 0.0006
+        b.face([c + t * half_r * math.cos(2 * math.pi * k / n) + et * half_t * math.sin(2 * math.pi * k / n) for k in range(n)], "SteelDark")
+    for k in range(6):   # vents on the disc's slope, between the lugs
+        spot(0.1275, 0.038, 2 * math.pi * (k + 0.5) / 6, (-0.045, 0.040), 0.019, 0.014)
+    for k in range(5):   # lug holes on the flat mounting face
+        spot(0.057, 0.050, 2 * math.pi * k / 5, (1, 0), 0.0075, 0.0075, 8)
+    spot(0.0, 0.058, 0.0, (1, 0), 0.036, 0.036, 12)   # centre bore
+    a = math.radians(-20)   # valve stem through the well, leaning out past the flange
+    er = Vector((math.cos(a), math.sin(a), 0))
+    p0 = er * 0.174 + Vector((0, 0, 0.026)); p1 = er * 0.184 + Vector((0, 0, 0.056))
+    b.tube([p0, p1], 0.0045, 6, "Rubber")
+    b.tube([p1, p1 + (p1 - p0).normalized() * 0.012], 0.0032, 6, "CanBlack")
+    b.M = Matrix.Identity(4)
+    return b.finish("wheel")
+
+
 def build_springs():
     """Part icon `springs`: one coil spring standing on end — round wire, closed ends, red powder coat."""
     b = Builder()
@@ -1578,13 +1612,13 @@ BUILDERS = {
     "airMattress": build_airMattress, "sleepingPad": build_sleepingPad, "deluxeSleepingPad": build_deluxeSleepingPad,
     "blanket": build_blanket, "sleepingBag": build_sleepingBag, "zipTies": build_zipTies, "ductTape": build_ductTape,
     "tirePlugKit": build_tirePlugKit, "stopLeak": build_stopLeak, "bubbleWrap": build_bubbleWrap,
-    "tire": build_tire, "springs": build_springs, "dampers": build_dampers, "pads": build_pads, "shoes": build_shoes, "arb": build_arb,
+    "tire": build_tire, "wheel": build_wheel, "springs": build_springs, "dampers": build_dampers, "pads": build_pads, "shoes": build_shoes, "arb": build_arb,
     "diff": build_diff, "lift": build_lift, "compressor": build_compressor, "bikePump": build_bikePump,
     "potato": build_potato, "jerryCan": build_jerryCan,
 }
 BATCH2 = ["airMattress", "sleepingPad", "deluxeSleepingPad", "blanket", "sleepingBag",
           "zipTies", "ductTape", "tirePlugKit", "stopLeak", "bubbleWrap"]
-PARTS = ["tire", "springs", "dampers", "pads", "shoes", "arb", "diff", "lift"]
+PARTS = ["tire", "wheel", "springs", "dampers", "pads", "shoes", "arb", "diff", "lift"]
 MARGIN = {"tirePlugKit": 1.03}   # a tighter crop where the item reads better close up
 
 
