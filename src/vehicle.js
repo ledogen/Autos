@@ -15,7 +15,7 @@
 
 import { getCameraMode } from './camera.js'
 import { stepIgnition } from './ignition.js'
-import { pad, PAD_PARAMS } from './gamepad.js'
+import { pad, PAD_PARAMS, padKick } from './gamepad.js'
 import { makeClutchAssist, stepClutchAssist } from './clutch-assist.js'
 
 // ── Keyboard input state (module-private) ────────────────────────────────────
@@ -119,6 +119,8 @@ export function updateVehicle (vehicleState, params, dt) {
   vehicleState.throttle  = vehicleState.smoothThrottle
   // S key: brake above walking pace, reverse below it (drivetrain.js decides which; REV_THRESHOLD).
   vehicleState.brake     = vehicleState.smoothBrake
+  // ABS dumped a cylinder last step: the pedal kicks back — on a pad, felt in the trigger.
+  if (padDrives && vehicleState.abs?.pulse) padKick()
 
   // ── 1.5 Manual gearbox controls (FEAT-126): input → clutch assistant → sim ─────────────────────
   // This module owns the raw controls (clutch pedal, shift edges); src/clutch-assist.js turns them into
