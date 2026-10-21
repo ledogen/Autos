@@ -85,30 +85,40 @@ Never sold (owner, 2026-10-21): a bonus item from residences, farms and the food
 $6. Holds hunger 8 h; fresh 24 h. Never found.
 
 ### Groceries
-status: todo · design: idea · build: effect · needs: hunger, spoilage, camp render · where: generalStore
+status: todo · design: ratified · build: effect · needs: hunger, spoilage, camp render · where: generalStore, farm, reward
 A delayed meal (owner, 2026-10-20): bought, carried, cooked into a meal at camp — only with the
-cooking kit. Still on the spoilage clock. Ruled 2026-10-21: the meal holds 10 h; cook evening or morning;
-the cooler slows them (×1/6); no kit bonus on top. Fresh-for, meals per bag and cook time still open.
+cooking kit. Still on the spoilage clock. Ruled 2026-10-21: one meal a bag, holds 10 h, +30 min to cook,
+evening or morning; fresh 24 h, and the cooler slows them (×1/6); no kit bonus on top. $5 at the general
+store and farms (a farm sells for the first time); a farm and general-store reward (B–A); never found.
+
+### Potato
+status: todo · design: proposed · build: effect · needs: hunger · where: generalStore, reward
+New (owner, 2026-10-21). Inedible raw; cooked on the campfire — the only food that needs no cooking
+kit — it is a decent meal. Sold at the general store; a farm reward. Hold, cook time and shelf life open.
 
 ### Bag of peanuts
-status: todo · design: proposed · build: effect · needs: hunger · where: gasStation
-A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2–4 h, stacks 3–5; the
-higher it stacks, the less it holds. All food can be eaten while driving.
+status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 3. Under $5;
+a C–B reward from the gas station and general store; less rare as a find than the others; found roadside near gas stations, rarely. All food can be
+eaten while driving.
 
 ### Gummy worms
-status: todo · design: proposed · build: effect · needs: hunger · where: gasStation
-A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2–4 h, stacks 3–5; the
-higher it stacks, the less it holds. All food can be eaten while driving.
+status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2 h, stacks 5. Under $5;
+a C–B reward from the gas station and general store; found roadside near gas stations, rarely. All food can be
+eaten while driving.
 
 ### Spicy chips
-status: todo · design: proposed · build: effect · needs: hunger · where: gasStation
-A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2–4 h, stacks 3–5; the
-higher it stacks, the less it holds. All food can be eaten while driving.
+status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 3. Under $5;
+a C–B reward from the gas station; found roadside near gas stations, rarely. All food can be
+eaten while driving.
 
 ### Candy bar
-status: todo · design: proposed · build: effect · needs: hunger · where: gasStation
-A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2–4 h, stacks 3–5; the
-higher it stacks, the less it holds. All food can be eaten while driving.
+status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 4. Under $5;
+a C–B reward from the gas station; found roadside near gas stations, rarely. All food can be
+eaten while driving.
 
 ### Salmon
 status: todo · design: proposed · build: effect, model · needs: fishing, spoilage · where: caught
@@ -148,16 +158,20 @@ roadside find. It fixes the hole and restores no condition. The whole repair, pl
 inflating, is 2 h by hand (bike pump) or 30 min with the compressor (owner, 2026-10-21). **The effect is built on feature/parts (08baccc5, unmerged):** the buttons sit in the inventory's detail strip.
 
 ### Spare air filter
-status: todo · design: implied · build: effect · where: autoShop
-Resets the `airFilter` track in `src/damage.js` at the roadside.
+status: todo · design: ratified · build: effect · where: autoShop, reward, found
+Sets the `airFilter` track in `src/damage.js` to the spare's own condition at the roadside, in 15 min.
+Each spare carries a condition like the spare tire: new from the auto shop ($10), never great as a
+roadside find. A reward from the auto shop and gas station (B–A). Ruled 2026-10-21.
 
 ### Zip ties
-status: todo · design: proposed · build: effect · where: generalStore, autoShop
-Field repair, ~10% on the `armor*` / `headlight*` tracks. Several per pack. 15 min per use; holds for the run (2026-10-20).
+status: todo · design: ratified · build: effect · where: generalStore, autoShop, reward, found
+Field repair, 10% on the `armor*` / `headlight*` tracks and the radiator. 5 per pack. 15 min per use;
+holds for the run (2026-10-20). $5–10; an auto-shop reward (B–A); a rare roadside find (2026-10-21).
 
 ### Duct tape
-status: todo · design: proposed · build: effect · where: generalStore
-Field repair, ~25% on body panels. 15 min per use; holds for the run (2026-10-20).
+status: todo · design: ratified · build: effect · where: generalStore, reward, found
+Field repair, 20% on body panels. 3 uses per roll. 15 min per use; holds for the run (2026-10-20). $5–10;
+a reward from the auto shop, gas station and general store (B–A); a rare roadside find (2026-10-21).
 
 ### Coolant jug
 status: cut · design: proposed · build: effect · where: autoShop, gasStation
@@ -165,18 +179,24 @@ Struck in items.md (owner, 2026-10-16): FEAT-51 has no coolant to top up — rad
 cooling capacity. Replaced by stop-leak.
 
 ### Stop-leak
-status: todo · design: proposed · build: effect · where: autoShop, gasStation
-Field repair: restores 15% radiator condition (owner, 2026-10-16). Under FEAT-51 that is cooling
-capacity directly — aimed at the overheat → power loss → engine wear chain. 15 min; holds for the run
-(2026-10-20).
+status: todo · design: ratified · build: effect · where: autoShop, gasStation, reward
+Field repair: restores 15% radiator condition (owner, 2026-10-16), never past 50%. Under FEAT-51 that
+is cooling capacity directly — aimed at the overheat → power loss → engine wear chain. One use per
+bottle; 15 min; holds for the run (2026-10-20). $5–10; a reward from both (B–A); never found (2026-10-21).
 
 ### Emergency gas
-status: wip · design: implied · build: effect, model · where: gasStation, reward
-The jerry can: a 2 gal RotoPax, single-use. REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122). Fuel shipped (FEAT-50, 2026-10-17); the pour itself is still unbuilt.
+status: wip · design: ratified · build: effect, model · where: gasStation, reward
+A 2 gal RotoPax, single-use — the low-tier fuel reward. REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122). Fuel shipped (FEAT-50, 2026-10-17); the pour itself is still unbuilt. Ruled 2026-10-21: parked only, a 10 min timeskip; $5–10; a gas-station and stranded-motorist reward (B–A); never found.
+
+### Jerry can
+status: todo · design: proposed · build: effect · where: reward
+New (owner, 2026-10-21): a refillable 5 gal can — pour it, refill it at any pump. A top-tier reward.
+Shares the emergency-gas pour. Gate, givers and pour time open on the item setup page.
 
 ### Bubble wrap
-status: todo · design: ratified · build: effect · needs: cargo protection · where: generalStore
-1 use, any fragile item: high threshold increase (FEAT-116).
+status: todo · design: ratified · build: effect · needs: cargo protection · where: generalStore, reward
+1 use, any fragile item: thresholds ×2 (FEAT-116). Spent by the job it protects; how it is put on is open
+(the job card, or on the load in the bed). A reward from work sites and fragile jobs (A–S) (2026-10-21).
 
 ### Furniture pad
 status: todo · design: ratified · build: effect · needs: cargo protection · where: generalStore

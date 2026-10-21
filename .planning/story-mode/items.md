@@ -57,11 +57,13 @@ Used up. Per-job or per-day decisions, not permanent upgrades.
 | **Coffee** | Alert now, sleepy earlier tomorrow. **A loan against tomorrow, repaid at interest.** The canonical consumable and the shape every other one is measured against. **+5 h now, −2 h off the next wake-up** (owner, 2026-10-20; was −3: five hours awake costs about three hours of sleep, so the cup has to beat that ratio or nobody drinks it). | Bought (general store, gas station, food vendor), **$3** | Tomorrow's hours | **RATIFIED** — DESIGN.md "The day and the clock"; figures §7 rulings 2026-10-20 |
 | ~~**Cargo straps**~~ **[STRUCK 2026-10-14 — not an item; FEAT-110 closed, see §3e]** | Makes the **next fragile cargo** more resilient by changing the coupling between chassis and load — the cargo sees less shock than the truck does. Enables freight-grade fragile work you'd otherwise turn down. | Bought or found | Cash; a slot; trivial mass | **IDEA** — `IDEAS.md` 2026-07-29. *Open: single-use per job, degrades over several, or a reusable tool?* |
 | **Fish (eaten)** | Alertness that **does not have to be repaid** — the only honest restoration in the game. *"Coffee is debt. Fish is income."* | Caught; best at a favored water | A long relationship with the water | **PROPOSED** — `spirits-and-pacts.md` #04. ⚠ Depends on The Confluence, which is deferred. **Four species (owner, 2026-10-21): salmon, rainbow trout, brown trout, catfish — each carries a different effect** (§5) |
-| **Groceries** | **A delayed meal.** Bought at the general store, carried, and **cooked into a meal at camp — only if you own the cooking kit**. **Ruled 2026-10-21:** the cooked meal holds 10 h; cook it in the evening or the morning before you break camp; the cooler slows them like fish; the kit's flat food bonus does not apply on top — cooking them *is* the kit's bonus. They still spoil (§1b), so they buy hours, not days. The meal for later in a run, when you camp far from a food vendor and the next stop with a kitchen is a day's drive off. | Bought (general store) | Cash; the spoilage clock; and the cooking kit's ≈23 kg on every mile | **IDEA** — owner, 2026-10-20. Figures open (the item setup page) |
+| **Groceries** | **A delayed meal.** Bought at the general store **or a farm** (owner, 2026-10-21), carried, and **cooked into a meal at camp — only if you own the cooking kit**. **Ruled 2026-10-21:** one meal per bag; the cooked meal holds 10 h; cooking adds 30 min; cook it in the evening or the morning before you break camp; fresh for 24 h, and the cooler slows them like fish; the kit's flat food bonus does not apply on top — cooking them *is* the kit's bonus. $5; a reward from farms and the general store (B–A); never found. They still spoil (§1b), so they buy hours, not days. The meal for later in a run, when you camp far from a food vendor and the next stop with a kitchen is a day's drive off. | Bought (general store, farm) | Cash; the spoilage clock; and the cooking kit's ≈23 kg on every mile | **RATIFIED** — owner, 2026-10-20; every figure set 2026-10-21 (the item setup page). Needs hunger (§1d) and the cooking kit |
+| **Potato** | **The campfire meal** (owner, 2026-10-21). **Inedible raw.** Cooked on the campfire — **the only food you can cook without the cooking kit** — it becomes a decent meal. | Bought (general store); a reward from farms | Cash; a slot | **PROPOSED** — owner, 2026-10-21. Figures open (the item setup page): its hold, cook time, how long it keeps, and whether fish can still be cooked on the fire (§1b) |
 | **Spare tire** | Recovers from a puncture without a tow. **Fitting it is a 90 min timeskip** (owner, 2026-10-20; was 30 min, 2026-09-30). Puncture is a hard fail state in the wear model. **Ruled 2026-10-21:** self-contained — the truck always carries the factory jack. Full-size only, no donut. **Two items in different pools: worn (50–80% condition, ~$15) and new (~$25).** Sold at the auto shop; a bonus item from the auto shop and stranded motorists (A–S); a rare roadside find. | Bought/found; starts in some jalopies | Real mass, all the time | **IMPLIED** — named in DESIGN.md "The car" as a stowed consumable; behavior unspecified |
-| **Air filter (spare)** | Replacement for the track the player must actively *watch* — it does ~nothing until it does. | Bought/found | Cash; a slot | **IMPLIED** — same |
+| **Air filter (spare)** | Replacement for the track the player must actively *watch* — it does ~nothing until it does. **Ruled 2026-10-21:** fitting takes 15 min and sets the filter to **the spare's own condition** — every spare filter carries one, like the spare tire: the auto shop sells them new ($10), and a roadside find is never in great shape. Sold at the auto shop; a reward from the auto shop and gas station (B–A). | Bought/found | Cash; a slot | **RATIFIED** — owner, 2026-10-21 (the item setup page) |
 | **Fuel** | The tank. Burn is a function of rpm and load, so a par-beating drive costs fuel as well as wear. **The one cost that scales with distance** — SM-INV-5 keeps wear off the distance axis, and this is what fills it. Bought at gas stations. | Gas stations (a POI type) | Cash — and the detour, if you let it get low | **RATIFIED** — owner, 2026-08-01. Reverses this row's old *NOT DESIGNED*. Ticket FEAT-50; gauge already ships (FEAT-49). See DESIGN.md "Fuel and gas stations" |
-| **Jerry can** | Fuel you carry. The cheap answer to running dry, which is otherwise the breakdown predicament (tow, or don't). | Bought/found | Cash; a slot; **real mass, always** — and it is fuel, so it is not trivial mass | **IMPLIED** — falls out of the fuel ruling; see the tools carry-cost question in §2. **Shipped as a bonus item** (owner, 2026-10-08): *Emergency gas*, a single-use 2 gal RotoPax, earned from gas-station and stranded-motorist offers (`data/offers.js` REWARDS `emergencyGas`; grant still stubbed) |
+| **Jerry can** | **A refillable 5 gal can** (owner, 2026-10-21): pour it into the tank, refill it at any pump. Fuel you carry — the cheap answer to running dry, which is otherwise the breakdown predicament (tow, or don't). **A top-tier reward**, rare on purpose: carried full, it all but retires running dry. | A reward (gate, givers and whether it is ever sold: the item setup page) | A slot; **real mass, always** — 5 gal of gas is ~14 kg plus the can | **PROPOSED** — owner, 2026-10-21. Was IMPLIED (falls out of the fuel ruling) |
+| **Emergency gas** | **A single-use 2 gal RotoPax** (owner, 2026-10-08). **Ruled 2026-10-21:** poured parked only, a 10 min timeskip; gone once poured. $5–10 at the gas station; a reward from gas stations and stranded motorists (B–A) — the low-tier fuel reward, under the jerry can; never found. | Bought (gas station); a reward | Cash; a slot; 7.2 kg | **RATIFIED** — owner, 2026-10-21. In the game files (`data/items.js` `emergencyGas`, `data/offers.js` REWARDS); the grant is stubbed and the pour unbuilt |
 
 > **The coffee test.** Coffee works because its cost is in a *different currency* than its payout
 > (hours for alertness) and lands *later*. Any consumable that pays and costs in the same currency is
@@ -151,7 +153,8 @@ before the buff question is settled.
 | **Chili dog** | **16 h** (2026-10-21) | Gone |
 | **Packed lunch** | **24 h** (2026-10-21) | Gone |
 | **Burger** | **16 h** (2026-10-21, like the chili dog) | Gone |
-| **Groceries** | open — **the cooler slows them like fish (×1/6)** (2026-10-21) | Gone |
+| **Groceries** | **24 h**; the cooler slows them like fish (×1/6) (2026-10-21) | Gone |
+| **Potato** | open (2026-10-21) — inedible until cooked on the campfire | Gone |
 | *(everything else)* | unspecified | Cooked fish and food-as-cargo still want a figure |
 
 **What the fish number actually does.** The day is 12–16 h (the alertness ladder, FEAT-54), so a
@@ -266,9 +269,11 @@ spends daylight, so it can't turn into a chore. Thirst is out (owner, 2026-09-30
   vendor, never found), the **dinner meal** (renamed from diner meal:
   one generic sit-down meal at the food vendor, 8 h, 30 min to eat, $5–10, eat-in only), the chili dog
   (10 h, spoils in 16 h), the **packed lunch** (never sold — a $6 reward from homes, farms and the food
-  vendor, B–A; 8 h; fresh 24 h), groceries (§1, cooked at camp: the meal holds 10 h), and four gas-station snacks split from
-  one: **bag of peanuts, gummy worms, spicy chips, candy bar** — each holds 2–4 h and stacks 3–5, and the
-  higher one stacks the less it holds.
+  vendor, B–A; 8 h; fresh 24 h), groceries (§1, cooked at camp: the meal holds 10 h), the **potato** (§1, cooked on the campfire, no kit
+  needed; inedible raw), and four gas-station snacks split from one: **bag of peanuts 3 h × 3, spicy chips
+  3 h × 3, candy bar 3 h × 4, gummy worms 2 h × 5** (hold × stack, owner 2026-10-21). All under $5; a C–B
+  reward from the gas station (peanuts and gummy worms also the general store); found roadside near gas
+  stations — rare, peanuts less so.
 - **The "reduce energy drain" items** the owner asked for — they are simply the meals, and the
   effect is honest (a fed driver tires at the normal rate).
 - **A home for §1a's timed effects.** A meal is the natural carrier for *"for the next 8 h"*: a
@@ -789,13 +794,18 @@ thresholds** (`shockFloorG`, `breakG`, FEAT-97) — never a flat amount.
 
 | Item | Uses | Works on | Effect |
 |---|---|---|---|
-| **Bubble wrap** | 1 | any fragile item | high threshold increase |
+| **Bubble wrap** | 1 | any fragile item | high threshold increase — **×2** (owner, 2026-10-21) |
 | **Furniture pad** | 3 | `furniture`-tagged items | low threshold increase and low damage reduction |
 | **Heavy-duty pad** | 3 | any fragile item | medium damage reduction |
 
 **Straps are not an item.** Rocks and firewood can't be strapped, haul's loose-load chaos is the
 point, and an item held at one giver and missing at the next is arbitrary. Straps stay as fiction on
 the strapped families. FEAT-110 is closed; the paid-gate-on-fragile idea is in IDEAS.md, unratified.
+
+**A use belongs to one job** (owner, 2026-10-21): it is spent by the job it protects. How you put it
+on is open — a choice on the fragile job card when you take the job, or applied to the load once it
+is in the bed and spent at delivery. Bubble wrap is sold at the general store and is a reward from work
+sites and fragile jobs (A–S).
 
 ### 3f. Load-rating parts — what moves the weight limit [owner, 2026-10-16]
 
@@ -943,16 +953,16 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 | **Navigation / info** | — | map, beacon, GPS, shortcut GPS, **light bar**, *CB radio (FEAT-119)* | — |
 | **Cargo / mission** | ~~*straps (FEAT-110)*~~ **bubble wrap, furniture pad, heavy-duty pad (§3e)** | cooler, chain, **rubber bed mat, bedliner** | — |
 | **Camp / night** | — | camp vibe gear, **backpacks (§2c)** | — |
-| **Fuel / time** | jerry can | — | — |
+| **Fuel / time** | emergency gas, jerry can | — | — |
 
 ### Accepted (owner, 2026-09-30) — all PROPOSED until figures are set
 
 | Item | Form | What it does | Note |
 |---|---|---|---|
-| **Zip ties** | Consumable | Field repair: restores **~10%** condition on a light component — **headlights, body panels** (the `armor*` and `headlight*` tracks in `src/damage.js`) | Gets you home, not fixed. Cheap, light, several per pack |
-| **Duct tape** | Consumable | Field repair: **~25%** on **body panels** | The bigger patch, narrower target. **Holds for the run; 15 min per use** (owner, 2026-10-20) |
+| **Zip ties** | Consumable | Field repair: restores **10%** condition on a light component — **headlights, body panels and the radiator** (the `armor*`, `headlight*` and radiator tracks in `src/damage.js`) | Gets you home, not fixed. **Figures set 2026-10-21:** 5 per pack, $5–10 at the general store and auto shop, an auto-shop reward (B–A), a rare roadside find |
+| **Duct tape** | Consumable | Field repair: **20%** on **body panels** (2026-10-21; was ~25%) | The bigger patch, narrower target. **Holds for the run; 15 min per use** (owner, 2026-10-20). **Figures set 2026-10-21:** 3 uses per roll, $5–10 at the general store, a reward from the auto shop, gas station and general store (B–A), a rare roadside find |
 | ~~**Coolant jug**~~ | — | **STRUCK (owner, 2026-10-16).** FEAT-51 shipped with no coolant mechanic — radiator condition *is* the cooling capacity — so there is nothing to top up | Replaced by stop-leak, below |
-| **Stop-leak** | Consumable | Field repair: restores **15%** radiator condition (owner, 2026-10-16). Under FEAT-51 that is directly cooling capacity — a 35% radiator patched to 50% holds full load again | Aimed at the overheat → power loss → engine wear chain (`missions.md` §3c). Pairs with heavy hauls on long grades |
+| **Stop-leak** | Consumable | Field repair: restores **15%** radiator condition (owner, 2026-10-16). Under FEAT-51 that is directly cooling capacity — a 35% radiator patched to 50% holds full load again | Aimed at the overheat → power loss → engine wear chain (`missions.md` §3c). Pairs with heavy hauls on long grades. **Figures set 2026-10-21:** one use per bottle; **never patches the radiator past 50%**; $5–10 at the gas station and auto shop, a reward from both (B–A), never found |
 | **Hi-lift jack** | Carried tool (real mass) | **Right a rolled truck** where it lies — Halo's flip, in a truck. Replaces the tow for a rollover that didn't break anything | ⚠ SM-INV-1 (death is crash or breakdown only): a rollover the jack can fix must not count as the crash. Needs a ruling on where "rolled" ends and "crashed" begins — likely the damage state at rest, not the rollover itself. May also be the §2 quick-jack's other job — one tool, not two, if so |
 | **Light bar** | Fitted part | See further at night | Simple and safe. Pairs with the Night Owl's nocturnal bargain: makes his hours more usable, not safe. Real mass and drag up high, if we want a cost |
 | **Tire plug kit** *(was tire patches — renamed 2026-10-21)* | Consumable | **Plugging takes 30 min** (owner, 2026-10-20). **One plug per kit.** Sold at the auto shop, $5–10; a bonus item from the auto shop, gas station and work site (B–A); a rare roadside find (2026-10-21). In the game files as `tirePlugKit`. **Fixes the puncture and nothing else** — the tire keeps whatever condition it had when it popped. Restores **no durability**; a worn tire is still worn | Owner, 2026-09-30 (brought back from the rejected list; no small-vs-large puncture split). A patch alone leaves the tire flat — it still has to be re-inflated (pump or compressor, below); the 30 min is folded into those totals (2026-10-21). The spare trade: the spare is real mass all the time and a fresh tire; the patch is light and puts you back on the same rubber. §1's spare-tire row calls a puncture a hard fail; with patches it is recoverable at the roadside. Kept worth carrying on good tires by FEAT-93 (hazard punctures at any condition) |
@@ -999,8 +1009,25 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 - **The cooler runs on ice**: refill it every 3 days. Ice is a consumable sold at the gas station and the
   general store. The cooler: general store and tackle shop, $10–30, tackle-shop reward A–S, rare find (§2).
 - **Spare tire**: signed off as drawn; a later idea is to sell wheels and tires separately (not ruled).
+- **Wheels and tires** (owner's question, 2026-10-21, not ruled): separate wheel and tire items with the
+  combo as a third, or tires only with the wheel always repaired at the shop.
 - **New idea, not ruled:** since the item models exist anyway, drop items into the world and give the
   truck a *proximity inventory*: walk or drive up to an item to load it, or drop one where you stand.
+
+**Third pass (owner, 2026-10-21, later):**
+
+- **Potato** (new): bought at the general store, a farm reward; inedible raw, and the only food you can
+  cook on the campfire without the kit — a decent meal once cooked (§1).
+- **Groceries are also sold at farms** (§1); every grocery figure is now set: one meal a bag, fresh 24 h,
+  +30 min to cook, $5, a farm and general-store reward (B–A), never found.
+- **Jerry can** (new): a refillable 5 gal can, a top-tier reward. **Emergency gas** is the low-tier one:
+  parked only, 10 min, single use, $5–10, gas station and stranded motorist (B–A), never found (§1).
+- **Snacks**: peanuts 3 h × 3, spicy chips 3 h × 3, candy bar 3 h × 4, gummy worms 2 h × 5 (§1d).
+- **Spare air filter**: 15 min to fit; each spare carries its own condition — new from the shop ($10),
+  never great from the roadside (§1).
+- **Field repairs**: zip ties 10% × 5 and now also the radiator; duct tape 20% × 3; stop-leak one use,
+  never past 50% (§7).
+- **Bubble wrap** ×2, spent by the job it protects; how it is put on is open (§3e).
 
 ### Kept, but blocked or needs a mechanism
 
@@ -1066,7 +1093,7 @@ camber), but it is a reversal of a written ruling — **owner's call**.
    ruling in FEAT-122.
 4. **Consumables-as-real-mass is stated but never quantified.** It's the rule that makes tools
    interesting (§2) and it currently has no numbers behind it.
-5. **Spare tire, air filter, quick-jack, breaker bar are named but undesigned.** They appear in one
+5. **Quick-jack and breaker bar are named but undesigned** (the spare tire and air filter were ruled 2026-10-21). They appear in one
    sentence of DESIGN.md as examples of stowed consumables. Whether roadside repair is even a
    player action is unspecified — which is a *mechanic* question, not an asset one.
 6. **The chain may not be an item at all.** If the log drag supplies it, it belongs to the mission,

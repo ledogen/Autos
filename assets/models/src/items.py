@@ -92,7 +92,18 @@ MATS = {
     "GasketGrey": ((0.08, 0.08, 0.085, 1), 0.8),
     "Foam":       ((0.025, 0.025, 0.025, 1), 0.95),
     "Copper":     ((0.62, 0.28, 0.12, 1), 0.35),
+    # Round 6 (2026-10-21). Diecast colours come from SHEEN below; this is the viewport colour.
+    "Diecast":    ((0.20, 0.21, 0.22, 1), 0.35),
+    "DiecastDark":((0.14, 0.145, 0.15, 1), 0.4),
+    "PotatoSkin": ((0.20, 0.10, 0.035, 1), 0.9),
+    "PotatoEye":  ((0.045, 0.022, 0.008, 1), 0.9),
+    "JerryGreen": ((0.085, 0.11, 0.035, 1), 0.55),
 }
+
+
+# Bare cast metal (dark, mid, light) linear grey by facet facing — no environment map in this rig, so
+# reflections are painted on per facet (owner, 2026-10-21: the compressor's metal read as white paint).
+SHEEN = {"Diecast": (0.05, 0.20, 0.62), "DiecastDark": (0.035, 0.13, 0.40)}
 
 
 def get_material(name):
@@ -103,6 +114,18 @@ def get_material(name):
     b = next(n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
     b.inputs["Base Color"].default_value = col; b.inputs["Roughness"].default_value = rough
     b.inputs["Metallic"].default_value = 0.0
+    if name in SHEEN:   # base colour from the facet's facing: bright up-left, dark down — reads as bare metal
+        nt = m.node_tree; geo = nt.nodes.new("ShaderNodeNewGeometry")
+        dot = nt.nodes.new("ShaderNodeVectorMath"); dot.operation = "DOT_PRODUCT"
+        dot.inputs[1].default_value = Vector((-0.45, 0.25, 0.86)).normalized()
+        ramp = nt.nodes.new("ShaderNodeValToRGB"); els = ramp.color_ramp.elements
+        dark, mid, light = SHEEN[name]
+        els[0].position, els[0].color = 0.0, (dark, dark, dark * 1.05, 1)
+        els[1].position, els[1].color = 1.0, (light, light, light * 1.02, 1)
+        e = els.new(0.5); e.color = (mid, mid, mid * 1.04, 1)
+        rng = nt.nodes.new("ShaderNodeMapRange"); rng.inputs["From Min"].default_value = -1.0
+        nt.links.new(geo.outputs["Normal"], dot.inputs[0]); nt.links.new(dot.outputs["Value"], rng.inputs["Value"])
+        nt.links.new(rng.outputs["Result"], ramp.inputs["Fac"]); nt.links.new(ramp.outputs["Color"], b.inputs["Base Color"])
     m.diffuse_color = col; m.roughness = rough
     return m
 
@@ -749,12 +772,13 @@ def build_blanket():
 
 def build_sleepingBag():
     """A rectangular sleeping bag laid out flat, its near head corner unzipped and turned back to
-    show the flannel lining — ready to slide into. The head end (+X) has a drawcord and cord lock. Lofted top quilted in puffy baffles; the turned-back
+    show the flannel lining — ready to slide into. The head end (+X) is framed by a thick stuffed collar,
+    which folds over with the flap. Lofted top quilted in puffy baffles; the turned-back
     flap is the top layer's own fill, so it drapes over the baffles and rolls round a fold whose
     radius is that fill's thickness — the open corner sits up on top of the bag."""
     b = Builder()
     L, W, s = 1.90, 0.85, 0.025
-    nu, nv, nc = int(round(L / s)), int(round(W / s)), 28   # fold line u + v = nc·s (0.70 m)
+    nu, nv, nc = int(round(L / s)), int(round(W / s)), 24   # fold line u + v = nc·s (0.60 m: leaves a third of the head collar on the bag)
     zb, ht = 0.050, 0.085   # bottom layer; the top layer's loft at its fullest
     # Bottom layer: a soft slab, outer shell; its top shows flannel where the corner is turned back.
     b.cbox((0, 0, zb / 2), (L, W, zb), "BagGreen", ch=0.020)
@@ -796,7 +820,7 @@ def build_sleepingBag():
         b.face([P(u, v, over(u, v)) for u, v in q], "Flannel")
         b.face([P(u, v, under(u, v)) for u, v in reversed(q)], "BagGreen")
     for (i0, j0), (i1, j1) in boundary(flap):
-        if fold(((i0, j0), (i1, j1))):
+        if fold(((i0, j0), (i1, j1))) or i0 == i1 == 0:   # the head edge carries the collar, not a zip
             continue
         (u0, v0), (u1, v1) = R(i0 * s, j0 * s), R(i1 * s, j1 * s)
         if over(u0, v0) - under(u0, v0) > 0.002 or over(u1, v1) - under(u1, v1) > 0.002:
@@ -818,14 +842,17 @@ def build_sleepingBag():
             b.face([ra[m], ra[m + 1], rb_[m + 1], rb_[m]], "Flannel")
     # Zipper along the opened legs on the bottom layer, then on along the near side seam.
     b.bar(P(0.0, 0.008, zb + 0.003), P(c, 0.008, zb + 0.003), 0.016, "Nylon", h=0.006)
-    b.bar(P(0.008, 0.0, zb + 0.003), P(0.008, c, zb + 0.003), 0.016, "Nylon", h=0.006)
     b.bar(P(c, 0.001, zb + 0.004), P(L - 0.02, 0.001, zb + 0.004), 0.008, "Nylon", h=0.006)
     b.cbox(P(c + 0.02, -0.006, zb + 0.004), (0.022, 0.012, 0.010), "Buckle", ch=0.002)   # zip pull
-    # The head end (+X) carries a drawcord: it leaves its channel at the far corner through a cord lock.
-    hz = top_z(0.012, W - 0.012)
-    b.tube([P(0.012, W - 0.10, hz - 0.004), P(0.006, W - 0.04, hz + 0.004), P(-0.012, W - 0.030, hz - 0.010),
-            P(-0.040, W - 0.050, zb * 0.6), P(-0.090, W - 0.060, 0.004)], 0.0035, 6, "Nylon")
-    b.cbox(P(-0.064, W - 0.056, 0.012), (0.026, 0.018, 0.016), "CanBlack", ch=0.004)
+    # The head opening is framed by a thick stuffed collar on the top layer's edge (owner, 2026-10-21; it
+    # replaced a drawcord too small to see). It folds with the flap: the collar's centre line, inset dc
+    # from the edge, meets the fold at (dc, c − dc), turns 90° there and runs on along the turned-back
+    # edge, resting on the bag the flap now covers.
+    RC, dc = 0.060, 0.045
+    nk, nf = 6, 12
+    kept = [P(dc, (W - 0.045) + ((c - dc + 0.03) - (W - 0.045)) * k / nk, zb + RC) for k in range(nk + 1)]
+    turned = [P(u, c - dc, under(u, c - dc) + RC) for u in (dc + 0.03 + (c - 0.075 - dc) * k / nf for k in range(nf + 1))]
+    b.tube(kept + [P(dc, c - dc, zb + RC + 0.035)] + turned, RC, 10, "BagGreen")
     return b.finish("sleepingBag")
 
 
@@ -1067,9 +1094,9 @@ def build_tire():
     liner = [(Rb - 0.004, hw - 0.032), (Rb + 0.012, hw - 0.040), (0.30, hw - 0.045), (0.335, hw - 0.050),
              (0.335, -hw + 0.050), (0.30, -hw + 0.045), (Rb + 0.012, -hw + 0.040), (Rb - 0.004, -hw + 0.032)]
     b.lathe(outer + liner + [outer[0]], SEG, "Rubber", cap_bottom=False, cap_top=False)
-    for zs in (1, -1):   # a raised rim-protector band on each sidewall
-        b.lathe([(0.296, zs * (hw + 0.002)), (0.300, zs * (hw + 0.006)), (0.306, zs * (hw + 0.006)), (0.310, zs * (hw + 0.002))]
-                if zs > 0 else [(0.310, -hw - 0.002), (0.306, -hw - 0.006), (0.300, -hw - 0.006), (0.296, -hw - 0.002)],
+    for sd in (1, -1):   # a raised rim-protector band on each sidewall
+        b.lathe([(0.296, sd * (hw + 0.002)), (0.300, sd * (hw + 0.006)), (0.306, sd * (hw + 0.006)), (0.310, sd * (hw + 0.002))]
+                if sd > 0 else [(0.310, -hw - 0.002), (0.306, -hw - 0.006), (0.300, -hw - 0.006), (0.296, -hw - 0.002)],
                 SEG, "Rubber", cap_bottom=False, cap_top=False)
     # Tread: N pitches × five rows of blocks, skewed a little, the rows staggered.
     N = 60
@@ -1100,7 +1127,7 @@ def build_tire():
 def build_springs():
     """Part icon `springs`: one coil spring standing on end — round wire, closed ends, red powder coat."""
     b = Builder()
-    R, wr, H, turns, te, N = 0.064, 0.0075, 0.30, 7.0, 0.9, 12   # lower poly (owner, 2026-10-21)
+    R, wr, H, turns, te, N = 0.064, 0.0095, 0.30, 6.0, 0.9, 12   # one coil fewer, fatter wire (owner, 2026-10-21)
     pe = 2 * wr + 0.0005
     pa = (H - 2 * wr - 2 * te * pe) / (turns - 2 * te)
     def z(t):
@@ -1381,13 +1408,14 @@ def build_compressor():
     """A 12 V portable compressor, the kind with a handle on top (owner, 2026-10-21): chrome tray base,
     silver motor can along X with a grey end cap, chrome crankcase with a big knurled air filter, a
     fluted cylinder and finned head, a steel strap arching from head to motor end under a foam grip,
-    and red/black leads to copper-jawed battery clamps lying in front."""
+    and red/black leads to copper-jawed battery clamps lying in front. Bare cast metal, not chrome paint
+    (owner, 2026-10-21: it read as painted white)."""
     b = Builder()
     W = b.M = Matrix.Rotation(math.radians(65), 4, "Z")   # filter end to the near left, like the photo
-    b.prism([(x, y) for x, y, _ in rrect(0.26, 0.15, 0.012, 0, per=3)], 0.0, 0.005, "Chrome")   # stamped tray
+    b.prism([(x, y) for x, y, _ in rrect(0.26, 0.15, 0.012, 0, per=3)], 0.0, 0.005, "Diecast")   # stamped tray
     for (x0, y0), (x1, y1) in (((-0.124, -0.069), (0.124, -0.069)), ((-0.124, 0.069), (0.124, 0.069)),
                                ((-0.124, -0.069), (-0.124, 0.069)), ((0.124, -0.069), (0.124, 0.069))):
-        b.bar((x0, y0, 0.008), (x1, y1, 0.008), 0.006, "Chrome")                                  # its rolled lip
+        b.bar((x0, y0, 0.008), (x1, y1, 0.008), 0.006, "Diecast")                                  # its rolled lip
     for sx in (-1, 1):
         for sy in (-1, 1):
             b.M = W @ Matrix.Translation((sx * 0.105, sy * 0.055, -0.004))
@@ -1395,44 +1423,44 @@ def build_compressor():
     # Motor: a can along X, a grey gasket plate with four nuts, and a grey domed end cap.
     MZ = 0.070
     b.M = W @ Matrix.Translation((0, 0, MZ)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
-    b.lathe([(0.040, -0.008), (0.044, -0.004), (0.044, 0.100), (0.040, 0.104)], 16, "Alu", cap_bottom=False, cap_top=False)
+    b.lathe([(0.040, -0.008), (0.044, -0.004), (0.044, 0.100), (0.040, 0.104)], 16, "DiecastDark", cap_bottom=False, cap_top=False)
     b.lathe([(0.040, 0.114), (0.040, 0.134), (0.035, 0.147), (0.023, 0.155), (0.0, 0.157)], 16, "GasketGrey", cap_bottom=False)
     b.M = W
     b.cbox((0.109, 0, MZ), (0.010, 0.100, 0.100), "GasketGrey", ch=0.006)
-    b.cbox((-0.011, 0, MZ), (0.010, 0.098, 0.098), "Chrome", ch=0.004)                           # crankcase flange
+    b.cbox((-0.011, 0, MZ), (0.010, 0.098, 0.098), "Diecast", ch=0.004)                           # crankcase flange
     for sy in (-1, 1):
         for sz in (-1, 1):
             b.M = W @ Matrix.Translation((0.114, sy * 0.037, MZ + sz * 0.037)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
-            b.lathe([(0.0055, 0.0), (0.0055, 0.006), (0.0, 0.006)], 6, "Chrome", cap_bottom=False)
+            b.lathe([(0.0055, 0.0), (0.0055, 0.006), (0.0, 0.006)], 6, "Diecast", cap_bottom=False)
     b.M = W
     for x in (0.020, 0.085):
-        b.cbox((x, 0, 0.022), (0.012, 0.060, 0.026), "Chrome", ch=0.002)                          # motor brackets
+        b.cbox((x, 0, 0.022), (0.012, 0.060, 0.026), "Diecast", ch=0.002)                          # motor brackets
     # Crankcase, fluted cylinder and finned head, standing at the -X end.
     CX = -0.052
     b.M = W @ Matrix.Translation((CX, 0, 0))
-    b.lathe([(0.030, 0.006), (0.036, 0.016), (0.036, 0.105), (0.031, 0.115)], 16, "Chrome", cap_bottom=False)
-    b.lathe([(0.029, 0.115), (0.029, 0.166)], 16, "Alu", cap_bottom=False, cap_top=False)
+    b.lathe([(0.030, 0.006), (0.036, 0.016), (0.036, 0.105), (0.031, 0.115)], 16, "Diecast", cap_bottom=False)
+    b.lathe([(0.029, 0.115), (0.029, 0.166)], 16, "DiecastDark", cap_bottom=False, cap_top=False)
     for k in range(16):
         b.M = W @ Matrix.Translation((CX, 0, 0)) @ Matrix.Rotation(2 * math.pi * k / 16, 4, "Z")
-        b.bar((0.032, 0, 0.117), (0.032, 0, 0.164), 0.008, "Alu", h=0.003)
+        b.bar((0.032, 0, 0.117), (0.032, 0, 0.164), 0.008, "DiecastDark", h=0.003)
     b.M = W
-    b.cbox((CX, 0, 0.180), (0.082, 0.082, 0.030), "Chrome", ch=0.006)
+    b.cbox((CX, 0, 0.180), (0.082, 0.082, 0.030), "Diecast", ch=0.006)
     for k in range(4):
-        b.cbox((CX, -0.027 + 0.018 * k, 0.203), (0.070, 0.005, 0.018), "Chrome", ch=0.002)
+        b.cbox((CX, -0.027 + 0.018 * k, 0.203), (0.070, 0.005, 0.018), "Diecast", ch=0.002)
     # Air filter: a big knurled disc on the crankcase's outer end, its paper label facing out.
     b.M = W @ Matrix.Translation((CX - 0.036, 0, 0.060)) @ Matrix.Rotation(-math.pi / 2, 4, "Y")
     b.lathe([(0.016, -0.004), (0.016, 0.008), (0.040, 0.008), (0.042, 0.010), (0.042, 0.026), (0.040, 0.028), (0.0, 0.028)],
-            20, "Chrome", cap_bottom=False)
+            20, "Diecast", cap_bottom=False)
     b.lathe([(0.032, 0.0284), (0.0, 0.0284)], 20, "GaugeFace", cap_bottom=False, cap_top=False)
     for k in range(30):
         a = 2 * math.pi * (k + 0.5) / 30
-        b.bar((0.0425 * math.cos(a), 0.0425 * math.sin(a), 0.011), (0.0425 * math.cos(a), 0.0425 * math.sin(a), 0.025), 0.0022, "Chrome")
+        b.bar((0.0425 * math.cos(a), 0.0425 * math.sin(a), 0.011), (0.0425 * math.cos(a), 0.0425 * math.sin(a), 0.025), 0.0022, "Diecast")
     b.M = W
     # Handle: a steel strap from the head's side, up, across and down onto the gasket plate; foam grip on top.
     strap = [(-0.009, 0.166), (-0.009, 0.205), (-0.004, 0.222), (0.008, 0.231), (0.100, 0.231), (0.112, 0.222),
              (0.116, 0.205), (0.116, 0.114)]
     for (x0, z0), (x1, z1) in zip(strap, strap[1:]):
-        b.bar((x0, 0, z0), (x1, 0, z1), 0.003, "Chrome", h=0.050, up=(0, 1, 0))
+        b.bar((x0, 0, z0), (x1, 0, z1), 0.003, "Diecast", h=0.050, up=(0, 1, 0))
     b.M = W @ Matrix.Translation((0, 0, 0.231)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
     b.lathe([(0.0, 0.014), (0.017, 0.014), (0.020, 0.017), (0.020, 0.091), (0.017, 0.094), (0.0, 0.094)], 12, "Foam")
     b.M = W
@@ -1486,6 +1514,64 @@ def build_bikePump():
     return b.finish("bikePump")
 
 
+def build_potato():
+    """A russet potato (owner, 2026-10-21: the campfire meal): a lumpy faceted ovoid, brown skin, a
+    few dark eyes, lying with its long axis across the view."""
+    b = Builder(); rnd = random.Random(7)
+    A, B, C = 0.068, 0.044, 0.035   # half-axes: 136 x 88 x 70 mm
+    bumps = [(Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(-1, 1))).normalized(), rnd.uniform(-0.14, 0.16))
+             for _ in range(9)]
+    rad = lambda d: 1 + sum(h * math.exp(-(1 - d.dot(n)) / 0.25) for n, h in bumps)   # a few broad lumps
+    dirs = [Vector((1, 0, 0)), Vector((-1, 0, 0))]
+    for i in range(1, 8):
+        th = math.pi * i / 8
+        dirs += [Vector((math.cos(th), math.sin(th) * math.cos(ph), math.sin(th) * math.sin(ph)))
+                 for ph in (2 * math.pi * (k + 0.5 * (i % 2)) / 12 for k in range(12))]
+    pts = [Vector((A * d.x, B * d.y, C * d.z)) * rad(d) for d in dirs]
+    lift = -min(p.z for p in pts)
+    b.M = Matrix.Rotation(math.atan2(VIEW_DIR.x, -VIEW_DIR.y), 4, "Z") @ Matrix.Translation((0, 0, lift))   # long axis along screen-right
+    b.hull(pts, "PotatoSkin")
+    see = Matrix.Rotation(-math.atan2(VIEW_DIR.x, -VIEW_DIR.y), 4, "Z") @ VIEW_DIR   # the eye, in the potato's frame
+    for k in range(2, len(pts), 9):   # eyes: small dark pentagons just proud of the skin, on the side we see
+        p, d = pts[k], dirs[k]
+        n = Vector((d.x / A, d.y / B, d.z / C)).normalized()
+        if n.dot(see) < 0.45:
+            continue
+        t1 = n.cross(Vector((0, 0, 1)) if abs(n.z) < 0.9 else Vector((1, 0, 0))).normalized(); t2 = n.cross(t1)
+        ring = [p + n * 0.0008 + (t1 * math.cos(2 * math.pi * j / 5) + t2 * math.sin(2 * math.pi * j / 5)) * 0.0055 for j in range(5)]
+        b.hull(ring + [p - n * 0.003], "PotatoEye")
+    b.M = Matrix.Identity(4)
+    return b.finish("potato")
+
+
+def build_jerryCan():
+    """A 5 gal steel jerry can (owner, 2026-10-21: the refillable top-tier fuel reward), NATO pattern:
+    a pressed X on each broad face, the welded seam round the middle, three handles on top and the
+    spout with its cam-lever cap at the front corner. Olive paint, so it never reads as the red
+    emergency can."""
+    b = Builder()
+    W, D, H, ch = 0.345, 0.165, 0.470, 0.022
+    b.cbox((0, 0, H / 2), (W, D, H), "JerryGreen", ch=ch)
+    seam = [(-W / 2, 0, 0.006), (-W / 2, 0, H - ch), (-W / 2 + ch, 0, H), (W / 2 - ch, 0, H), (W / 2, 0, H - ch), (W / 2, 0, 0.006)]
+    for p0, p1 in zip(seam, seam[1:]):
+        vert = abs(p0[0] - p1[0]) < 1e-9
+        b.bar(p0, p1, 0.012 if vert else 0.004, "JerryGreen", h=0.004 if vert else 0.012)
+    for sy in (-1, 1):   # the pressed X inside a raised frame, both broad faces
+        x0, x1, z0, z1 = -W / 2 + 0.040, W / 2 - 0.040, 0.040, H - 0.040
+        frame_ = [(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]
+        for (ax, az), (bx, bz) in list(zip(frame_, frame_[1:])) + [((x0, z0), (x1, z1)), ((x1, z0), (x0, z1))]:
+            b.bar((ax, sy * D / 2, az), (bx, sy * D / 2, bz), 0.022, "JerryGreen", h=0.010, up=(0, 1, 0))
+    for xc in (-0.105, -0.035, 0.035):   # three handles in the seam plane: one to carry, two to pass it on
+        b.tube([(xc - 0.028, 0, H - 0.004), (xc - 0.028, 0, H + 0.030), (xc - 0.020, 0, H + 0.038),
+                (xc + 0.020, 0, H + 0.038), (xc + 0.028, 0, H + 0.030), (xc + 0.028, 0, H - 0.004)], 0.0075, 8, "JerryGreen")
+    b.M = Matrix.Translation((0.112, 0, H - 0.006)) @ Matrix.Rotation(math.radians(18), 4, "Y")   # spout, leaning out
+    b.lathe([(0.024, 0.0), (0.024, 0.026)], 12, "SteelDark", cap_bottom=False, cap_top=False)
+    b.lathe([(0.031, 0.024), (0.031, 0.042), (0.025, 0.049), (0.0, 0.049)], 12, "JerryGreen")
+    b.bar((-0.031, 0, 0.036), (-0.062, 0, 0.010), 0.016, "JerryGreen", h=0.007)   # the cam lever, folded down
+    b.M = Matrix.Identity(4)
+    return b.finish("jerryCan")
+
+
 BUILDERS = {
     "coffee": build_coffee, "chiliDog": build_chiliDog, "spareTire": build_spareTire,
     "emergencyGas": build_emergencyGas, "pack": build_pack, "rucksack": build_rucksack, "bedroll": build_bedroll,
@@ -1494,6 +1580,7 @@ BUILDERS = {
     "tirePlugKit": build_tirePlugKit, "stopLeak": build_stopLeak, "bubbleWrap": build_bubbleWrap,
     "tire": build_tire, "springs": build_springs, "dampers": build_dampers, "pads": build_pads, "shoes": build_shoes, "arb": build_arb,
     "diff": build_diff, "lift": build_lift, "compressor": build_compressor, "bikePump": build_bikePump,
+    "potato": build_potato, "jerryCan": build_jerryCan,
 }
 BATCH2 = ["airMattress", "sleepingPad", "deluxeSleepingPad", "blanket", "sleepingBag",
           "zipTies", "ductTape", "tirePlugKit", "stopLeak", "bubbleWrap"]
