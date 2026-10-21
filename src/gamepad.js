@@ -36,7 +36,7 @@ export const PAD_PARAMS = {
   // negative-slope at centre past k = 1 — became a power law; 0 % and 100 % are unchanged. Only with
   // the steering assist OFF: the assist's speed-scaled envelope is the shaping when it is on.
   steerShape:      0,
-  steerSlewRate:   6.0,   // rad/s — max wheel-angle rate, so a flicked stick can't step the physics
+  steerSlewRate:   4.8,   // rad/s (6.0 → 4.8, −20 % 2026-10-21) — max wheel-angle rate, so a flicked stick can't step the physics
   // Right stick = camera orbit RATE (not a 1:1 map of the mouse drag): full deflection turns the
   // view at orbitRate; orbitHold seconds after the stick is let go the chase cam takes back over.
   orbitRate: 2.0,         // rad/s at full deflection (FEAT-133: one rate, aiming a paper too)

@@ -60,7 +60,7 @@ export const VEHICLES = {
 
     // ── Steering ─────────────────────────────────────────────────────────────
     maxSteerAngle:  0.65,   // ~37° — more lock for initiating drifts
-    steerRate:      1.5,
+    steerRate:      1.2,    // 1.5 → 1.2 (−20 %, 2026-10-21)
     steerDecayRate: 2.5,
     speedSteerRef:  18,
 

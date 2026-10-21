@@ -822,7 +822,8 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
 Sleepiness is the per-run clock — soft, diegetic, no arrival deadlines. It runs in **two bands**
 [RATIFIED 2026-07-31]:
 
-- **Sleepy** — the warning band. Yawns and heavy eyelids; no doze yet. This is the read the whole
+- **Sleepy** — the warning band. Yawns, heavy eyelids and slower steering (owner 2026-10-21: the
+  wheel turns at ×0.75 rate, falling to ×0.5 by exhaustion — slowed, never dropped); no doze yet. This is the read the whole
   day-shape below is built on: *"I am N km from anywhere I'd want to wake up."* A careful player
   enters this band **every day**, on purpose, as the signal to go find ground.
 - **Tired** — the danger band. This is where **dozing begins**: eyes close, controls drop, periods
