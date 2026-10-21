@@ -153,6 +153,9 @@ export const PARTS = {
                      patch: { arbStiffnessFront: 4500 }, desc: 'The factory front bar.' },
     arbFrontSport: { name: 'Sport front anti-roll bar', slot: 'arbFront', family: 'sport', rarity: 'uncommon', price: 10, massKg: 8,
                      patch: { arbStiffnessFront: 9500 }, desc: 'A thicker front bar. Flat and sharp on pavement, and it pushes.' },
+    // A jalopy sometimes rolls in with its front bar gone (owner, 2026-10-21).
+    arbFrontNone:  { name: 'No front anti-roll bar', slot: 'arbFront', family: 'oem', rarity: 'common', price: 0, massKg: 0,
+                     patch: { arbStiffnessFront: 0 }, desc: 'The front wheels move free of each other. It leans, and it turns in.' },
     arbRearNone:   { name: 'No rear anti-roll bar', slot: 'arbRear', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
                      patch: { arbStiffnessRear: 0 }, desc: 'The rear wheels move free of each other.' },
     arbRearSport:  { name: 'Sport rear anti-roll bar', slot: 'arbRear', family: 'sport', rarity: 'uncommon', price: 8, massKg: 6,

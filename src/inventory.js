@@ -36,6 +36,10 @@ export const runInventory = {
 const _stacks = (id) => STACKING_KINDS.has(ITEMS[id].kind)
 const _isPack = (e) => ITEMS[e?.id]?.kind === 'pack'
 const _isBed = (id) => !!ITEMS[id]?.sleep
+// The spare carrier under the bed (owner, 2026-10-21): ONE mounted spare rides there, outside the
+// slots and the stowed load — it is part of the truck, as the factory's is, so it never touches the
+// cargo system. A second spare goes in the bed like anything else.
+const UNDER = 'spareTire'
 const _newEntry = (id) => ITEMS[id].kind === 'pack' ? { id, n: 1, equipped: false, contents: [] } : { id, n: 1 }
 
 export class InventorySystem {
@@ -62,9 +66,10 @@ export class InventorySystem {
     }
 
     slotCap () { return this._slotCap() }
-    slotsUsed () { return runInventory.entries.length }
+    slotsUsed () { return runInventory.entries.filter(e => !e.under).length }
+    underFree () { return !runInventory.entries.some(e => e.under) }
     stowedKg () {
-        return runInventory.entries.reduce((kg, e) => kg + e.n * ITEMS[e.id].massKg
+        return runInventory.entries.filter(e => !e.under).reduce((kg, e) => kg + e.n * ITEMS[e.id].massKg
             + (e.contents ?? []).reduce((k, id) => k + ITEMS[id].massKg, 0), 0)
     }
     equippedIndex () { return runInventory.entries.findIndex(e => e.equipped) }
@@ -74,6 +79,7 @@ export class InventorySystem {
 
     /** Slots a grant of `n` × `id` would need right now. */
     _need (id, n) {
+        if (id === UNDER && this.underFree()) n--
         if (!_stacks(id)) return n
         return runInventory.entries.some(e => e.id === id) ? 0 : 1
     }
@@ -94,7 +100,9 @@ export class InventorySystem {
         const e = _stacks(id) && runInventory.entries.find(e => e.id === id)
         if (e) e.n += n
         else if (_stacks(id)) runInventory.entries.push({ id, n })
-        else for (let i = 0; i < n; i++) runInventory.entries.push({ ..._newEntry(id), ...extra })
+        else for (let i = 0; i < n; i++) {
+            runInventory.entries.push({ ..._newEntry(id), ...extra, ...(id === UNDER && this.underFree() && { under: true }) })
+        }
         this._changed()
         return 'taken'
     }
@@ -199,9 +207,9 @@ export class InventorySystem {
      * out of the inventory while the effect runs — the effect gets its entry (a spare's wear) and the
      * room it left — and goes back where it was if the effect returns false: "nothing to do right
      * now, keep it" (FEAT-50: a gas can poured into a full tank would only be wasted). False too if
-     * not owned or its effect isn't built.
+     * not owned or its effect isn't built. Default: the one under the bed first, then the first in it.
      */
-    use (id, i = runInventory.entries.findIndex(e => e.id === id)) {
+    use (id, i = this._first(id)) {
         const e = runInventory.entries[i]
         if (e?.id !== id || !this.usable(id)) return false
         if (--e.n <= 0) runInventory.entries.splice(i, 1)
@@ -211,6 +219,11 @@ export class InventorySystem {
         }
         this._changed()
         return true
+    }
+
+    _first (id) {
+        const u = runInventory.entries.findIndex(e => e.id === id && e.under)
+        return u >= 0 ? u : runInventory.entries.findIndex(e => e.id === id)
     }
 
     /** Keys 1–4: use whatever quick slot `slot` (0-based) points at. */
@@ -224,7 +237,8 @@ export class InventorySystem {
         return runInventory.entries.map((e, index) => {
             const q = runInventory.quick.indexOf(e.id)
             return { index, id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id), key: q < 0 ? null : q + 1,
-                     equipped: !!e.equipped, cond: e.cond ?? null, flat: !!e.flat, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
+                     equipped: !!e.equipped, under: !!e.under, cond: e.cond ?? null, flat: !!e.flat,
+                     tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
         })
     }
 

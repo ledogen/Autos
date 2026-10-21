@@ -87,6 +87,7 @@ import { ServiceCenter } from './service.js'              // SM-3: repairs and p
 import { ServiceScreen } from './service-screen.js'
 import { PARTS } from '../data/parts.js'   // SM-3: which inventory entries are tires
 import { recoveryCard, fitSpare, SPARE_FIT_H, plugTire, plugMethods, PLUG_H } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
+import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
@@ -6774,7 +6775,9 @@ const storySystem = new StorySystem({
     // free-roam damage wipe (_reseatTruckAtSpawnInner) is skipped and a truck broken in free roam
     // drove straight into the new run. Per-run state (SM-INV-8): the run starts here, so does the truck.
     damageModel.setAll(1)
-    partsSystem.start()              // SM-3: stock parts, new — publishes the damage model
+    partsSystem.start()              // SM-3: stock parts, new…
+    rollJalopy({ parts: partsSystem, damage: damageModel, inventory: inventorySystem }, (Math.random() * 2 ** 32) >>> 0)   // …then this run's jalopy (SM-INV-7)
+    damageModel.publish(RANGER_PARAMS)
     vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)   // FEAT-50: "some gas in it"
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
     resetPaperRun()                  // …and starts back on Larry's four-house route (SM-INV-12)

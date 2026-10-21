@@ -103,7 +103,7 @@ parts — fit lays a part's patch over params (a tire's grip per wheel as `_tire
 durability, returns the outgoing part with its wear and puncture; load ratings for truckConfig; pure) · `service.js` (SM-3 service center rules — repair quotes, repair /
 repair all, repair an inventory part as its own item, buy & fit, fit from inventory, sell / keep the benched part; pure) · `service-screen.js` (its Repairs/Parts
 screen, opened by the brake at an auto shop) · `recovery.js` (SM-3 Recovery card — stuck test, the tows that fit;
-fitSpare and plugTire, the roadside tire work the inventory screen offers; pure, the DOM is in main.js) · `camp.js` (dispersed
+fitSpare and plugTire, the roadside tire work the inventory screen offers; pure, the DOM is in main.js) · `jalopy.js` (SM-3 the run's starting truck — a seeded roll of wear, tires, front bar and the under-bed spare over stock parts; pure) · `camp.js` (dispersed
 camping, FEAT-45) · `dialogue.js` (character channel) · `paper-route.js` + `throw.js` (FEAT-61) ·
 `gps.js` (FEAT-39 nav overlay) · `cluster.js` (FEAT-49 gauge cluster — instrument panel, not
 clustering) · `rank-timer.js` (FEAT-87 live rank timer — band line-up, escalation, beats; pure, the

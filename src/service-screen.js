@@ -138,6 +138,7 @@ export class ServiceScreen {
       case 'buy': s.buyAndFit(id, b.dataset.socket); break
       case 'stow': s.buyToBed(id); break
       case 'fit': s.fitFromInventory(+b.dataset.index, b.dataset.socket); break
+      case 'swap': s.swapPair(+b.dataset.index, TIRES.indexOf(b.dataset.socket)); break
       case 'repairOwned': s.repairOwned(+b.dataset.index); break
       case 'sell': s.settleOff('sell'); break
       case 'keep': s.settleOff('keep'); break
@@ -213,9 +214,15 @@ export class ServiceScreen {
       }
       for (const r of owned) {
         if (PARTS[r.id]?.slot !== kind) continue
-        h += `<div class="sv-row">${chip(r.id)}<span class="sv-name">${PARTS[r.id].name} <span class="sv-desc">${r.flat ? 'yours, flat' : 'yours'}</span></span>`
+        // A spare is a mounted pair: it swaps with a corner's tire and wheel, and says which tire it
+        // carries once a roadside swap has left another one on it.
+        const on = r.tire && r.tire !== PARTS[r.id].mounted?.tire ? `, ${PARTS[r.tire].name.toLowerCase()}` : ''
+        h += `<div class="sv-row">${chip(r.id)}<span class="sv-name">${PARTS[r.id].name} <span class="sv-desc">`
+          + `${r.under ? 'under the bed' : 'yours'}${r.flat ? ', flat' : ''}${on}</span></span>`
           + (tracked ? bar(r.cond ?? 1, r.flat) : '')
-          + this._socketBtns('fit', 'fit', socketsFor(r.id).map(sk => [sk, true]), !busy && !r.flat, `data-index="${r.index}"`) + `</div>`
+          + (PARTS[r.id].mounted
+            ? this._socketBtns('swap', 'swap', TIRES.map(sk => [sk, true]), !busy && !r.flat, `data-index="${r.index}"`)
+            : this._socketBtns('fit', 'fit', socketsFor(r.id).map(sk => [sk, true]), !busy && !r.flat, `data-index="${r.index}"`)) + `</div>`
       }
       for (const id of Object.keys(PARTS).filter(id => PARTS[id].slot === kind)) {
         const open = socketsFor(id).map(sk => [sk, s.parts.fitted(sk) !== id])   // none for the spare: carried only

@@ -14,7 +14,7 @@
 // catalog, so the headless gate runs it in pure node; damage arrives as a constructor dependency.
 
 import { PARTS, SLOTS, FAMILY_DURABILITY, stockPart, takes, socketsFor } from '../data/parts.js'
-import { TIRE_IDS } from './damage.js'
+import { TIRE_IDS, WHEEL_IDS } from './damage.js'
 
 // Load rating → every socket a part carrying it can sit in: { tires: [4 corners], springs: [front, rear], … }
 const RATED = {}
@@ -67,6 +67,19 @@ export class PartsSystem {
         this._fit(id, socket, cond ?? 1)
         this._onChange()
         return off
+    }
+
+    /**
+     * Put a MOUNTED pair on `corner` (0=FL … 3=RR), tire and wheel: `m` is a spare's inventory entry,
+     * { tire?, cond?, wheel?, wheelCond? }, and what it doesn't name is a new spare (data/parts.js
+     * `mounted`). Returns the pair that came off in the same shape, still mounted, with its puncture.
+     * The roadside spare and the service center's swap both come through here.
+     */
+    fitMounted (m, corner) {
+        const def = PARTS.spareTire.mounted
+        const tire = this.fit(m.tire ?? def.tire, m.cond, TIRE_IDS[corner])
+        const wheel = this.fit(m.wheel ?? def.wheel, m.wheelCond, WHEEL_IDS[corner])
+        return { tire: tire.id, cond: tire.cond, flat: tire.flat, wheel: wheel.id, wheelCond: wheel.cond }
     }
 
     _fit (id, socket, cond) {

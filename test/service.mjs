@@ -12,6 +12,9 @@
 //   5. A massless stock part (no lift) leaves nothing on the bench.
 //   6. A part in inventory is repaired as its own item: a flat tire patched and renewed, for money
 //      and hours; a sound one has nothing to repair.
+//   7. A tire bought to carry goes into the inventory new.
+//   8. A mounted pair (the spare, or the flat pair a roadside swap left) swaps with a corner's tire and
+//      wheel for a tire's labour; the corner's pair takes its place, still mounted. A flat pair won't go on.
 //
 // Pure node: no THREE, no DOM.
 import { ServiceCenter } from '../src/service.js'
@@ -19,7 +22,7 @@ import { PartsSystem } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
 import { InventorySystem } from '../src/inventory.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { PARTS, REPAIRS } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIRS } from '../data/parts.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -123,6 +126,18 @@ wallet = 100
 const spares = () => inventory.list().filter(r => r.id === 'spareTire').length
 check('buy a spare to carry: charged, new, in the bed', svc.buyToBed('spareTire') && near(wallet, 100 - PARTS.spareTire.price)
   && spares() === 1 && inventory.list().find(r => r.id === 'spareTire').cond === 1)
+
+// ── 8. Swapping a mounted pair ────────────────────────────────────────────────────────────────
+svc.close(); inventory.start(); hours = 0
+const sp = () => inventory.list().find(r => r.id === 'spareTire')
+inventory.grant('spareTire', 1, { cond: 0.7, flat: true, tire: 'tireSport', wheel: 'wheelSteel', wheelCond: 0.5 })
+check('a flat pair won\'t go on', !svc.swapPair(sp().index, 0))
+inventory.amend(sp().index, { flat: false })
+const was = { tire: parts.fitted('tireFL'), cond: damage.get('tireFL') }
+check('swap the pair onto a corner: its tire, wear and wheel', svc.swapPair(sp().index, 0) && parts.fitted('tireFL') === 'tireSport'
+  && damage.get('tireFL') === 0.7 && damage.get('wheelFL') === 0.5 && hours === SLOTS.tireFL.hours)
+check('…and the corner\'s pair takes its place, mounted', sp().under && sp().tire === was.tire && sp().cond === was.cond
+  && sp().wheelCond === 1, JSON.stringify(sp()))
 
 console.log(fails ? `\n${fails} FAILED` : '\nservice gate: ALL OK')
 process.exit(fails ? 1 : 0)

@@ -154,6 +154,20 @@ export class ServiceCenter {
         return true
     }
 
+    /**
+     * Swap the mounted pair at inventory entry `index` (a spare, or the flat pair a roadside swap left
+     * in the carrier) with `corner`'s tire and wheel: the pair that comes off takes its place, still
+     * mounted — so a tire the spare displaced can go back on. A flat pair won't go on. A tire's labour.
+     */
+    swapPair (index, corner) {
+        const r = this.inventory.list()[index]
+        if (this.off || !PARTS[r?.id]?.mounted || r.flat) return false
+        this.inventory.amend(index, this.parts.fitMounted(r, corner))
+        this.advanceHours(SLOTS.tireFL.hours)
+        this.onChange()
+        return true
+    }
+
     _swap (id, cond, socket) {
         const off = this.parts.fit(id, cond, socket)
         this.advanceHours(SLOTS[socket].hours)

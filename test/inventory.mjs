@@ -12,6 +12,9 @@
 //      equipping a spare moves the bed across; the equipped pack and a loaded pack can't be dropped.
 //   7. Catalog: every REWARDS id is an ITEMS id (the grant path can't miss), and no desc carries a
 //      digit (SM-INV-10 — described, never scored).
+//   8. The spare carrier (owner, 2026-10-21): the first spare rides under the bed — no slot, no
+//      stowed mass, so it never touches the cargo system — and fits even with the bed full; a second
+//      spare takes a bed slot like any part.
 //
 // Pure node: no THREE, no DOM.
 import { InventorySystem, runInventory } from '../src/inventory.js'
@@ -33,7 +36,7 @@ const inv = new InventorySystem({
 
 // ── 1. The starting kit ───────────────────────────────────────────────────────────────────────
 const KIT_KG = ITEMS.pack.massKg + ITEMS.bedroll.massKg
-inv.grant('spareTire')
+inv.grant('tireStandard')
 inv.start()
 const kit = inv.list()
 check('start() resets to the kit: one slot, the equipped Pack holding the bedroll', inv.slotsUsed() === 1
@@ -46,28 +49,28 @@ inv.grant('coffee'); inv.grant('coffee', 2)
 check('consumables stack: 3 coffees = 1 slot', inv.slotsUsed() === 2 && inv.list()[1].n === 3)
 inv.grant('chiliDog')
 check('food stacks by kind into its own slot', inv.slotsUsed() === 3)
-inv.grant('spareTire'); inv.grant('spareTire')
+inv.grant('tireStandard'); inv.grant('tireStandard')
 check('parts take a slot each: 2 tires = 2 slots', inv.slotsUsed() === 5)
 check('unknown id is refused, not stored', inv.grant('noSuchThing') === null && inv.slotsUsed() === 5)
 
 // ── 4. Mass ───────────────────────────────────────────────────────────────────────────────────
-const want = KIT_KG + 3 * ITEMS.coffee.massKg + ITEMS.chiliDog.massKg + 2 * ITEMS.spareTire.massKg
+const want = KIT_KG + 3 * ITEMS.coffee.massKg + ITEMS.chiliDog.massKg + 2 * ITEMS.tireStandard.massKg
 check('stowedKg sums every unit', Math.abs(inv.stowedKg() - want) < 1e-9, `${inv.stowedKg()} vs ${want}`)
 check('onMassChange saw the latest mass', Math.abs(massKg - want) < 1e-9, `${massKg} vs ${want}`)
 
 // ── 3. Full → swap prompt ─────────────────────────────────────────────────────────────────────
-for (let i = 0; i < 3; i++) inv.grant('spareTire')
+for (let i = 0; i < 3; i++) inv.grant('tireStandard')
 check('8 of 8 slots filled', inv.slotsUsed() === 8)
 check('a stacking kind already owned still fits when full', inv.grant('coffee') === 'taken')
-check('a 9th slot goes to pending', inv.grant('spareTire') === 'pending' && inv.slotsUsed() === 8
-  && inv.pending()?.id === 'spareTire')
-check('pending adds no mass', Math.abs(inv.stowedKg() - (want + ITEMS.coffee.massKg + 3 * ITEMS.spareTire.massKg)) < 1e-9)
+check('a 9th slot goes to pending', inv.grant('tireStandard') === 'pending' && inv.slotsUsed() === 8
+  && inv.pending()?.id === 'tireStandard')
+check('pending adds no mass', Math.abs(inv.stowedKg() - (want + ITEMS.coffee.massKg + 3 * ITEMS.tireStandard.massKg)) < 1e-9)
 check('take refuses while still full', inv.takePending() === false && inv.pending() !== null)
-const tireAt = inv.list().findIndex(r => r.id === 'spareTire')
+const tireAt = inv.list().findIndex(r => r.id === 'tireStandard')
 inv.drop(tireAt)
 check('drop frees a slot', inv.slotsUsed() === 7)
 check('take succeeds after the drop', inv.takePending() === true && inv.pending() === null && inv.slotsUsed() === 8)
-inv.grant('spareTire')
+inv.grant('tireStandard')
 inv.leavePending()
 check('leave clears the prompt and stores nothing', inv.pending() === null && inv.slotsUsed() === 8)
 
@@ -134,6 +137,14 @@ const bad = Object.entries(ITEMS).filter(([, it]) => !(it.massKg > 0) || !it.nam
 check('every item has a name and a positive mass', bad.length === 0, bad.join(', '))
 check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind === 'pack' && ITEMS.pack.packSlots >= 2
   && ITEMS.bedroll.kind === 'camp' && ITEMS.bedroll.sleep === true)
+
+// ── 8. The spare carrier ──────────────────────────────────────────────────────────────────────
+inv.start()
+for (let i = 0; i < 7; i++) inv.grant('tireStandard')
+check('a spare fits under a full bed', inv.slotsUsed() === 8 && inv.grant('spareTire') === 'taken'
+  && inv.slotsUsed() === 8 && inv.list().find(r => r.id === 'spareTire')?.under)
+check('…and adds no stowed mass', Math.abs(inv.stowedKg() - (KIT_KG + 7 * ITEMS.tireStandard.massKg)) < 1e-9, inv.stowedKg())
+check('a second spare needs a bed slot', inv.grant('spareTire') === 'pending')
 
 console.log(fails === 0 ? '\ninventory gate: ALL OK' : `\ninventory gate: ${fails} FAILURE(S)`)
 process.exit(fails === 0 ? 0 : 1)

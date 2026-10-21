@@ -4,11 +4,12 @@
 //   2. The card is the tows only (owner, 2026-10-20 — the gas can and the spare are inventory uses):
 //      the fuel tow only when dry, the service-center tow any time, each priced against the wallet.
 //   3. End run only when stuck AND no tow is affordable.
-//   4. The spare (inventory.use → fitSpare): a mounted spare, so its tire goes on the first flat corner
-//      with its wear and its wheel goes on new (a bent rim there is gone); the flat is gone. The
-//      punctured tire comes off as ITSELF — flat, with its wear — in the room the spare left, and its
-//      wheel, with its own wear, waits at the swap prompt when there's no more room. A sound truck, or
-//      a flat spare, leaves the spare where it was.
+//   4. The spare (inventory.use → fitSpare): it rides in the carrier under the bed. It is a mounted
+//      pair, so its tire goes on the first flat corner with its wear and its wheel with its own (a bent
+//      rim there is gone); the flat is gone. The punctured pair comes off STILL MOUNTED into the
+//      carrier the spare left — remembering its tire, wear and wheel, and needing no bed slot even
+//      with the bed full. Plugged, it goes back on as itself. A sound truck, or a flat spare, leaves
+//      the spare where it was.
 //   5. The plug kit (owner, 2026-10-21): one plug per kit, on the truck's first flat or a flat tire in
 //      the bed; the hole is fixed, the wear is not. The stop is 2 h by hand, 30 min with a compressor,
 //      and the compressor is only offered when one is aboard. Nothing is spent when nothing happens.
@@ -51,22 +52,24 @@ const damage = new DamageModel({ params })
 const parts = new PartsSystem({ params, damage })
 const inv = new InventorySystem({ slotCap: () => 2, effects: { spare: (e) => fitSpare(parts, damage, inv, e) >= 0 } })
 parts.start(); inv.start()
-const bed = () => inv.list().filter(r => r.kind === 'part')   // the run starts with a pack in a slot
+const spare = () => inv.list().find(r => r.id === 'spareTire')
 inv.grant('spareTire', 1, { cond: 0.9 })
-check('nothing to do without a flat: the spare stays', !inv.use('spareTire') && bed()[0]?.id === 'spareTire')
-damage.flat[2] = true; damage.set('tireRL', 0.35); damage.set('wheelRL', 0.4)
-check('the spare goes on with a full inventory', inv.slotsUsed() === inv.slotCap() && inv.use('spareTire'))
-check('…on the flat corner, with its wear, holding air', parts.fitted('tireRL') === 'tireStandard' && damage.get('tireRL') === 0.9 && !damage.flat[2])
+check('the spare rides under the bed, in no slot', spare()?.under && inv.slotsUsed() === 1)
+check('nothing to do without a flat: the spare stays', !inv.use('spareTire') && spare()?.under && spare().cond === 0.9)
+inv.grant('tireOld')   // the bed is full now: the swap can't lean on a free slot
+parts.fit('tireSport', 0.35, 'tireRL'); damage.flat[2] = true; damage.set('wheelRL', 0.4)
+check('the spare goes on with the bed full', inv.slotsUsed() === inv.slotCap() && inv.use('spareTire'))
+check('…its tire on the flat corner, with its wear, holding air', parts.fitted('tireRL') === 'tireStandard' && damage.get('tireRL') === 0.9 && !damage.flat[2])
 check('…on its own wheel, new', parts.fitted('wheelRL') === 'wheelSteel' && damage.get('wheelRL') === 1)
-check('the bent wheel waits at the swap prompt with its wear', inv.pending()?.id === 'wheelSteel' && inv.pending().extra.cond === 0.4,
-  JSON.stringify(inv.pending()))
-inv.leavePending()
-const off = bed()
-check('the punctured tire is kept as itself, flat, with its wear',
-  off.length === 1 && off[0].id === 'tireStandard' && off[0].flat && off[0].cond === 0.35, JSON.stringify(off))
-inv.drop(off[0].index); inv.grant('spareTire', 1, { cond: 0.5, flat: true })
+const off = spare()
+check('the flat pair goes into the carrier, still mounted: its tire, wear and wheel', off?.under && off.flat
+  && off.tire === 'tireSport' && off.cond === 0.35 && off.wheel === 'wheelSteel' && off.wheelCond === 0.4
+  && inv.pending() === null, JSON.stringify(off))
 damage.flat[0] = true
-check('a flat spare is never fitted', !inv.use('spareTire') && damage.flat[0] && bed()[0]?.flat)
+check('a flat spare is never fitted', !inv.use('spareTire') && damage.flat[0] && spare()?.flat)
+inv.amend(spare().index, { flat: false })   // a plug kit's work (section 5)
+check('plugged, it goes back on as itself', inv.use('spareTire') && parts.fitted('tireFL') === 'tireSport'
+  && damage.get('tireFL') === 0.35 && damage.get('wheelFL') === 0.4 && !damage.flat[0])
 
 check('the spare takes 90 min', SPARE_FIT_H === 1.5)
 
