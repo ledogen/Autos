@@ -144,7 +144,7 @@ status: wip · design: ratified · build: effect · where: autoShop, reward, fou
 Renamed from tire patches (owner, 2026-10-21). In ITEMS as `tirePlugKit` (`use: 'plug'`) with its
 thumbnail and a REWARDS row (auto shop, gas station, work site; B–A). One plug per kit, $5–10, rare
 roadside find. It fixes the hole and restores no condition. The whole repair, plugging and
-inflating, is 2 h by hand (bike pump) or 30 min with the compressor (owner, 2026-10-21). **The effect is handed to the parts session (feature/parts).**
+inflating, is 2 h by hand (bike pump) or 30 min with the compressor (owner, 2026-10-21). **The effect is built on feature/parts (08baccc5, unmerged):** the buttons sit in the inventory's detail strip.
 
 ### Spare air filter
 status: todo · design: implied · build: effect · where: autoShop
@@ -372,7 +372,8 @@ Replaced by the named tire types (Old / Standard / Sport / Off-road / LT), items
 
 ### Brake pads (per axle)
 status: todo · design: proposed · build: param · where: autoShop
-Pad grade per axle sets bias.
+Pad grade per axle sets bias. **Pads are front-only; the rear axle has drum shoes** (owner, 2026-10-21) —
+feature/parts already names its rear slot "Rear brake shoes". Icons: `pads.png` (front), `shoes.png` (rear).
 
 ### Sport anti-roll bars
 status: todo · design: ratified · build: param · where: autoShop

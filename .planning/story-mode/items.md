@@ -653,7 +653,7 @@ repair"). These are the items money mostly exists to replace.
 | **Open vs. LSD differential** | What the truck does when you get greedy mid-corner. The bible's canonical "described, never scored" example | **RATIFIED premise** |
 | **Power mods** | On an open-diff RWD truck, a *worse car* for a driver without the literacy — **a cursed item nobody had to author** | **RATIFIED premise** |
 | **Tire compound/type** | Grip character and how it degrades; interacts with surface class (FEAT-38) | **Named 2026-10-17 — see §3g** |
-| **Brake pad grade, per axle** | Bias — a race pad changes what the truck does under braking | **DEFAULT** |
+| **Brake pad grade, per axle** | Bias — a race pad changes what the truck does under braking. **Front pads, rear drum shoes** (owner, 2026-10-21) | **DEFAULT** |
 | **Sport anti-roll bars** | Flattens roll and sharpens turn-in, but couples each axle side-to-side — one wheel's bump is now the other's problem, and a lifted inside wheel comes sooner | **DEFAULT** |
 
 **ARB values [owner-specified 2026-08-09].** Stock is the asymmetric factory setup; sport is a matched
