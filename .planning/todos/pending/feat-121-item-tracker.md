@@ -148,9 +148,9 @@ Fitting it is a 90 min timeskip (owner, 2026-10-20) that clears the flat. Real m
 (`spareTire`). Flats ship (`flat[]`, FEAT-94). **Ruled 2026-10-21:** self-contained (factory jack always
 aboard), full-size only; worn (50–80%, ~$15) and new (~$25) variants in different pools; auto shop;
 reward from the auto shop and stranded motorist (A–S); rare roadside find. The fit (`use: 'spare'`) is
-built on feature/parts, not merged. **Under the bed** (owner, 2026-10-21): one carrier outside the slots
-and stowed mass; a second spare takes a bed slot. The swapped-off pair takes an ordinary bed slot, like any
-other tire (owner), as a flat spare (tire id + both wears); a plug kit or the shop restores it; the shop can swap any mounted pair per
+built on feature/parts, not merged. **An ordinary inventory part, one slot** (owner, 2026-10-21: parts go
+in the inventory, never the bed). The swapped-off pair goes into the slot the spare left, as a flat
+spare (tire id + both wears); a plug kit or the shop restores it; the shop can swap any mounted pair per
 corner. Jalopies start with one 60% of the time, at 40–80%.
 
 ### Tire plug kit
