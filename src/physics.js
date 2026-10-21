@@ -44,6 +44,7 @@ import { computeTireForces } from './tire.js'
 import { computeNormalForce, effectiveWheelRadius, getWheelPosition, mountLocal, stepSuspensionSubsteps, tireContactForce, TIRE_DAMP_ENGAGE, WHEEL_SOFT_BAND } from './suspension.js'
 import { REV_THRESHOLD, stepDrivetrain } from './drivetrain.js'
 import { stepFuel } from './fuel.js'
+import { stepAbs } from './abs.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
 
@@ -99,9 +100,12 @@ function getBrakeTorque (wheelIndex, vehicleState, params, longVel) {
   // src/damage.js; absent (headless gates, damage off) it reads as 1 and nothing changes.
   const brakeDmg = isRear ? (params._brakeScaleRear ?? 1) : (params._brakeScaleFront ?? 1)
   // FEAT-126: in a MANUAL, S is always just the brake — reverse is a gear (R), not the pedal.
+  // ABS (src/abs.js) owns the line pressure at each wheel when present: the pedal, less whatever the
+  // controller has vented. Without vehicleState.abs (headless gates) the pedal goes straight through.
+  let service = 0
   if (vehicleState.brake > 0 && (longVel > REV_THRESHOLD || params.transmissionType === 'manual')) {
     const maxBt = isRear ? (params.maxBrakeTorqueRear ?? 800) : (params.maxBrakeTorqueFront ?? 1200)
-    return vehicleState.brake * maxBt * brakeDmg
+    service = (vehicleState.abs ? vehicleState.abs.p[wheelIndex] : vehicleState.brake) * maxBt * brakeDmg
   }
 
   // Handbrake: rear wheels only, FULL clamping torque at all speeds. A handbrake is a fixed brake, so
@@ -111,11 +115,13 @@ function getBrakeTorque (wheelIndex, vehicleState, params, longVel) {
   // on a slope sat in the weak zone and the rear wheels ROLLED instead of locking → it slid downhill on
   // grades far below the friction angle. Full torque locks the rears; the tire then holds (static) or
   // skids (kinetic) per the slope vs friction angle, which is the correct behaviour.
+  // The handbrake is mechanical — it bypasses the ABS valves — so it holds even while ABS vents the
+  // rear cylinders under the pedal: the stronger of the two clamps wins.
   if (vehicleState.handbrake && isRear) {
-    return params.maxHandbrakeTorque * brakeDmg
+    return Math.max(service, params.maxHandbrakeTorque * brakeDmg)
   }
 
-  return 0
+  return service
 }
 
 // Body (frame/bumper/undercarriage) contact restitution — DEFAULT for params.bodyRestitution.
@@ -659,6 +665,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
                    vehicleState.velocity.z * forward.z
   stepDrivetrain(vehicleState, params, dt, vForward)
   stepFuel(vehicleState, params, dt)   // FEAT-50: burns off the pedal + rpm the drivetrain just used
+  // ABS samples the wheel speeds as they stand at the start of the step — one loop of sensor lag.
+  if (vehicleState.abs) stepAbs(vehicleState.abs, vehicleState.brake || 0, vehicleState.wheelOmega, vehicleState.velocity, forward, params, dt)
 
   // ── Step 2.5: Suspension substep loop (Phase 4.1) ──────────────────────────────────────────
   // Integrates strutComp/strutCompVel at dt/N substeps. Writes:
