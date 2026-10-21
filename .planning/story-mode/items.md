@@ -863,6 +863,12 @@ tire only:** old 12 kg, standard 12, sport 11.5, off-road 14.4 (standard × 1.2,
 spare stays the mounted pair (§1). The wheel and tire reward gates and pools are placeholders (B–A, the
 auto shop) until set on the item setup page.
 
+**A flat needs a spare** (owner, 2026-10-21). The spare, a wheel and a tire are all mission rewards and
+all sold at the auto shop — but only the spare, a tire already mounted on a wheel, goes on at the
+roadside. A loose tire can't: you have no tools to seat a bead. Loose tires and wheels are mounted at
+the service center only (the plug kit still fixes a hole in place). **Their flavor text says so plainly**
+— a tire's reads *"Just a tire. Can't drive on it without a rim."*
+
 ## 4. Cargo
 
 Not owned — carried, for someone, under a scoring axis. Cargo is the mission type made physical, so
@@ -1017,7 +1023,8 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
   general store. The cooler: general store and tackle shop, $10–30, tackle-shop reward A–S, rare find (§2).
 - **Spare tire**: signed off as drawn; a later idea is to sell wheels and tires separately (ruled the same day, below).
 - **Wheels and tires are separate parts**, both sold at the auto shop and both rewards; the spare is the
-  mounted pair and fixes a bent rim when fitted (§3g, built on feature/parts).
+  mounted pair and fixes a bent rim when fitted (§3g, built on feature/parts). **A flat needs a spare**: a
+  loose tire can't go on at the roadside (no tools to seat a bead), and each one's flavor text says so.
 - **New idea, not ruled:** since the item models exist anyway, drop items into the world and give the
   truck a *proximity inventory*: walk or drive up to an item to load it, or drop one where you stand.
 

@@ -446,6 +446,8 @@ status: wip · design: ratified · build: param, model · where: autoShop, rewar
 Its own part (owner, 2026-10-21): wheels and tires are separate (items.md §3g). The stock wheel,
 `wheelSteel` on feature/parts: one socket per corner (30 min), $8, 9 kg; a bent rim is its damage. A
 reward too (placeholder gate B–A, auto shop). Icon `wheel.png`. Model ticket exists (asset-steel-wheels).
+Shop-mounted only: a flat at the roadside needs the spare, since there are no tools to seat a bead
+(owner, 2026-10-21). Its desc must say it is just a rim.
 
 ### Skid plates
 status: todo · design: idea · build: effect, model · needs: hazards · where: autoShop
@@ -462,7 +464,8 @@ items.md §3g. The bottom rung: worse than standard on pavement and dirt.
 ### Standard tires
 status: shipped · design: ratified · build: param · where: kit
 items.md §3g. The tire the truck runs today (P235/75R15). A part of its own since 2026-10-21 (12 kg,
-tire only; sold at the auto shop and a reward, placeholder gate B–A). When dirt lands it loses a tiny bit of dirt
+tire only; sold at the auto shop and a reward, placeholder gate B–A). Shop-mounted only; every tire's
+desc reads "Just a tire. Can't drive on it without a rim" (owner, 2026-10-21). When dirt lands it loses a tiny bit of dirt
 grip against today's single value (FEAT-38).
 
 ### Sport tires
