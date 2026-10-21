@@ -1066,7 +1066,8 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   50% down to 25%** (84 → 72 kN); **sensitivity ramps hard below 25%** (72 → 30 kN at 10%, flat below).
   Tire patches + the always-carried bike pump / optional compressor make a puncture recoverable at the
   roadside without a spare (`items.md` §7). **Roadside times (owner, 2026-09-30), all timeskips:** fit
-  the spare 30 min · patch + bike pump 2 h · patch + compressor 30 min. A patch fixes the hole only and
+  the spare 90 min (was 30; owner, 2026-10-20) · patch + bike pump 2 h · patch + compressor 30 min. The
+  patch times are the **whole repair**, plugging included (owner, 2026-10-21). A patch fixes the hole only and
   restores no condition. This supersedes the ~1–2 h swap below. Hazard punctures at any condition:
   FEAT-93. Driving on a flat: FEAT-94.
 - **Repair = roadside self-change.** Pull over and swap the tire — **not a minigame**, it just burns

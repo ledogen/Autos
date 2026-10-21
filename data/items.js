@@ -25,7 +25,7 @@ export const ITEMS = {
     // One plug per kit; the effect ('plug') is the parts session's (owner hand-off 2026-10-21).
     tirePlugKit:  { name: 'Tire plug kit', kind: 'consumable', massKg: 0.3, use: 'plug',
                     desc: 'Sticky string plugs and the tools to push one in. Fixes the hole, not the wear.' },
-    // A 12 V portable inflator: re-inflating a plugged tire is 30 min with it, 2 h by hand (items.md §7).
+    // A 12 V portable inflator: a plug repair is 30 min in all with it, 2 h by hand (items.md §7).
     compressor:   { name: 'Compressor',    kind: 'tool',       massKg: 4,
                     desc: 'A little pump that runs off the lighter socket. Airs a tire up while you wait.' },
 
