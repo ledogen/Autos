@@ -463,6 +463,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // A puncture is state, not condition, so "Restore All" alone would leave a flat tire flat.
   dmgFolder.add({ f: () => { const d = _damage(); if (!d) return
     for (let i = 0; i < 4; i++) d.replaceTire(i); d.publish(params); _sync() } }, 'f').name('Fit 4 New Tires')
+  // SM-3 play-testing the spare and the plug kit: pop the first tire still holding air, as a real
+  // puncture does (the bang and the alert come off `popped`).
+  dmgFolder.add({ f: () => { const d = _damage(); const i = d ? d.flat.indexOf(false) : -1; if (i < 0) return
+    d.flat[i] = true; d.popped.push(i); d.publish(params); _sync() } }, 'f').name('Puncture a Tire')
   void _readout
 
   // ── Engine temperature (FEAT-51) ──────────────────────────────────────────────────────────────
