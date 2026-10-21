@@ -113,7 +113,7 @@ export const ARMOR_REGIONS = { front: 'armorFront', left: 'armorLeft', right: 'a
 export const TRACK_IDS = Object.keys(TRACKS)
 // Per-corner track ids, indexed 0=FL 1=FR 2=RL 3=RR (GLOSSARY.md §Wheel Index).
 export const TIRE_IDS = ['tireFL', 'tireFR', 'tireRL', 'tireRR']
-const WHEEL_IDS = ['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR']
+export const WHEEL_IDS = ['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR']
 
 // ── Tunables ──────────────────────────────────────────────────────────────────────────────────────
 // Every number here is a [DEFAULT] pending a driven calibration pass — the shapes are ratified, the

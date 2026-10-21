@@ -9,8 +9,10 @@
 //               a part is what the durability system tracks: one tire, or one axle's pair of springs,
 //               shocks, brakes or roll bar), with its swap labour in game hours (`hours`, [DEFAULT]).
 //               `takes` names the part slot it accepts when that isn't its own key: the four tire
-//               corners all take a 'tire', so one race tire on one corner is the player's call.
-//   slot        which socket (or, for tires, which kind of socket) it fits. Every socket has a STOCK
+//               corners all take a 'tire', so one race tire on one corner is the player's call. The
+//               wheel is its own part under the tire (owner, 2026-10-21: the damage model already
+//               tracks them apart), so the four wheel corners take a 'wheel' the same way.
+//   slot        which socket (or, for tires and wheels, which kind of socket) it fits. Every socket has a STOCK
 //               part (`stock: true`) carrying the 2002 Ranger's own values (data/ranger.js), so
 //               swapping back to stock restores them exactly. Every part in a slot patches the SAME
 //               keys, and no two slots share a key — test/parts.mjs pins both.
@@ -40,6 +42,10 @@ export const SLOTS = {
     tireFR:       { name: 'Front-right tire',  takes: 'tire', hours: 0.25, tracks: ['tireFR'] },
     tireRL:       { name: 'Rear-left tire',    takes: 'tire', hours: 0.25, tracks: ['tireRL'] },
     tireRR:       { name: 'Rear-right tire',   takes: 'tire', hours: 0.25, tracks: ['tireRR'] },
+    wheelFL:      { name: 'Front-left wheel',  takes: 'wheel', hours: 0.5, tracks: ['wheelFL'] },
+    wheelFR:      { name: 'Front-right wheel', takes: 'wheel', hours: 0.5, tracks: ['wheelFR'] },
+    wheelRL:      { name: 'Rear-left wheel',   takes: 'wheel', hours: 0.5, tracks: ['wheelRL'] },
+    wheelRR:      { name: 'Rear-right wheel',  takes: 'wheel', hours: 0.5, tracks: ['wheelRR'] },
     springsFront: { name: 'Front springs',     hours: 1.5,  tracks: ['springFront'] },
     springsRear:  { name: 'Rear springs',      hours: 1.5,  tracks: ['springRear'] },
     dampersFront: { name: 'Front shocks',      hours: 0.75, tracks: ['damperFront'] },
@@ -54,8 +60,9 @@ export const SLOTS = {
 
 /** The part slot a socket accepts. */
 export const takes = (socket) => SLOTS[socket].takes ?? socket
-/** The sockets a part can go in (four for a tire, one for anything else). */
-export const socketsFor = (id) => Object.keys(SLOTS).filter(s => takes(s) === PARTS[id]?.slot)
+/** The sockets a part can go in (four for a tire or wheel, one for anything else, none for the spare —
+ *  it goes on as its tire and its wheel, src/recovery.js fitSpare). */
+export const socketsFor = (id) => PARTS[id]?.mounted ? [] : Object.keys(SLOTS).filter(s => takes(s) === PARTS[id]?.slot)
 /** The inventory thumbnail's stem (assets/items/<stem>.png): the part's own `icon`, else its slot's —
  *  front and rear halves share one. */
 export const partIcon = (id) => PARTS[id].icon ?? PARTS[id].slot.replace(/(Front|Rear)$/, '')
@@ -71,21 +78,29 @@ const HD_DAMPERS = { dampers: { softKg: 800, hardKg: 1100 } }
 
 export const PARTS = {
     // ── Tires (§3g) — ONE tire each, any corner. Grip is against the stock tire; dirt grip waits on
-    //    FEAT-38. The spare is its own part (owner, 2026-10-20): a full-size spare on a steel wheel, new
-    //    at ~$25 (owner, 2026-10-21; a worn one, 50–80%, comes from the reward pools).
-    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 3, massKg: 20, grip: 0.9,
+    //    FEAT-38. Masses are the tire alone (a 225/70R15 is ~12 kg); the all-terrain is the standard
+    //    one's × 1.2 (owner, 2026-10-21).
+    //    The spare is its own part (owner, 2026-10-20): a full-size spare MOUNTED on a steel wheel, new
+    //    at ~$25 (owner, 2026-10-21; a worn one, 50–80%, comes from the reward pools). It is carried,
+    //    never fitted as itself: `mounted` names what goes on the corner (src/recovery.js fitSpare).
+    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 3, massKg: 12, grip: 0.9,
                      patch: {}, desc: 'Hard, cracked rubber off something else. It rolls.' },
-    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 6, massKg: 20, grip: 1, stock: true,
+    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 6, massKg: 12, grip: 1, stock: true,
                      patch: {}, desc: 'The all-season tire the truck left the factory on.' },
-    spareTire:     { name: 'Spare tire',           slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 20, grip: 1,
+    spareTire:     { name: 'Spare tire',           slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 21, grip: 1, mounted: { tire: 'tireStandard', wheel: 'wheelSteel' },
                      patch: {}, desc: 'A full-size spare on a steel wheel. Heavy to carry around.' },
-    tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 8.5, massKg: 19, grip: 1.1,
+    tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 8.5, massKg: 11.5, grip: 1.1,
                      patch: {}, desc: 'Soft and sticky on pavement. Lost on dirt, and it wears fast.' },
-    tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 9, massKg: 23, grip: 1,
+    tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 9, massKg: 14.4, grip: 1,
                      patch: {}, desc: 'Chunky tread. No worse on pavement, and at home on dirt.' },
-    tireLT:        { name: 'Load-range E tire',    slot: 'tire', family: 'hd', rarity: 'uncommon', price: 10, massKg: 24, grip: 0.95,
+    tireLT:        { name: 'Load-range E tire',    slot: 'tire', family: 'hd', rarity: 'uncommon', price: 10, massKg: 15, grip: 0.95,
                      patch: {}, load: LT_LOAD,
                      desc: 'A stiff sidewall built to carry weight. Dull to steer, hard to pop.' },
+
+    // ── Wheels — ONE wheel each, any corner, under its tire (owner, 2026-10-21). A bent one runs out
+    //    of round (damage.js wheelRunoutAtZero); the shop straightens it or sells a new one.
+    wheelSteel:    { name: 'Steel wheel',          slot: 'wheel', family: 'oem', rarity: 'common', price: 8, massKg: 9, stock: true,
+                     patch: {}, desc: 'A pressed-steel rim, the kind the truck came on. It bends before it breaks.' },
 
     // ── Springs and shocks (§3f) — one axle's pair. Load ratings: §3f's package, [DEFAULT] numbers.
     springsFrontOEM: { name: 'Stock front springs', slot: 'springsFront', family: 'oem', rarity: 'common', price: 7, massKg: 14, stock: true,

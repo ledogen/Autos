@@ -302,6 +302,11 @@ export const REWARDS = [
       pools: ['gasStation', 'strandedMotorist'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'workSite'] },
+    // Tires and wheels are rewards as well as shop stock (owner, 2026-10-21). Gates and pools [DEFAULT].
+    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'],
+      pools: ['autoShop'] },
+    { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'],
+      pools: ['autoShop'] },
 ]
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────

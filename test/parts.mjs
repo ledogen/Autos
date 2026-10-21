@@ -9,6 +9,7 @@
 //   3. fit() lays the patch over params, returns what came off with its wear, sets the socket's track
 //      to the incoming part's condition (new = 1, used = carried), and sets its family's durability —
 //      a heavy-duty spring loses half as much to the same insult. A part refuses a socket it doesn't fit.
+//      The spare is carried, never fitted as itself: what it is mounted on must fit.
 //   4. Tires are single, per corner: one sport tire changes that wheel's grip only, goes on holding
 //      air, and the tire that came off reports its puncture.
 //   5. Load ratings: the weakest part sets the limits, so one heavy-duty axle or three load-range
@@ -46,7 +47,9 @@ for (const kind of new Set(Object.keys(SLOTS).map(takes))) {
 }
 for (const [s, def] of Object.entries(SLOTS)) check(`${s}: at most one track`, def.tracks.length <= 1)
 for (const [id, p] of Object.entries(PARTS)) {
-  check(`${id}: fits a socket, known family and rarity`, socketsFor(id).length > 0 && p.family in FAMILY_DURABILITY && p.rarity in RARITY_COLOR)
+  // The mounted spare fits nothing as itself: its tire and its wheel each must.
+  const fits = p.mounted ? Object.values(p.mounted).every(m => socketsFor(m).length > 0) : socketsFor(id).length > 0
+  check(`${id}: fits a socket, known family and rarity`, fits && p.family in FAMILY_DURABILITY && p.rarity in RARITY_COLOR)
   check(`${id}: a tire carries grip, nothing else does`, (p.slot === 'tire') === (typeof p.grip === 'number'))
   check(`${id}: desc carries no digit (SM-INV-10)`, !/\d/.test(p.desc), p.desc)
 }

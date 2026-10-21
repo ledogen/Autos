@@ -4,9 +4,11 @@
 //   2. The card is the tows only (owner, 2026-10-20 — the gas can and the spare are inventory uses):
 //      the fuel tow only when dry, the service-center tow any time, each priced against the wallet.
 //   3. End run only when stuck AND no tow is affordable.
-//   4. The spare (inventory.use → fitSpare): it goes on the first flat corner with its wear, the flat
-//      is gone, and the punctured tire comes off as ITSELF — flat, with its wear — into the inventory,
-//      in the room the spare left. A sound truck, or a flat spare, leaves the spare where it was.
+//   4. The spare (inventory.use → fitSpare): a mounted spare, so its tire goes on the first flat corner
+//      with its wear and its wheel goes on new (a bent rim there is gone); the flat is gone. The
+//      punctured tire comes off as ITSELF — flat, with its wear — in the room the spare left, and its
+//      wheel, with its own wear, waits at the swap prompt when there's no more room. A sound truck, or
+//      a flat spare, leaves the spare where it was.
 //   5. The plug kit (owner, 2026-10-21): one plug per kit, on the truck's first flat or a flat tire in
 //      the bed; the hole is fixed, the wear is not. The stop is 2 h by hand, 30 min with a compressor,
 //      and the compressor is only offered when one is aboard. Nothing is spent when nothing happens.
@@ -52,9 +54,13 @@ parts.start(); inv.start()
 const bed = () => inv.list().filter(r => r.kind === 'part')   // the run starts with a pack in a slot
 inv.grant('spareTire', 1, { cond: 0.9 })
 check('nothing to do without a flat: the spare stays', !inv.use('spareTire') && bed()[0]?.id === 'spareTire')
-damage.flat[2] = true; damage.set('tireRL', 0.35)
+damage.flat[2] = true; damage.set('tireRL', 0.35); damage.set('wheelRL', 0.4)
 check('the spare goes on with a full inventory', inv.slotsUsed() === inv.slotCap() && inv.use('spareTire'))
-check('…on the flat corner, with its wear, holding air', parts.fitted('tireRL') === 'spareTire' && damage.get('tireRL') === 0.9 && !damage.flat[2])
+check('…on the flat corner, with its wear, holding air', parts.fitted('tireRL') === 'tireStandard' && damage.get('tireRL') === 0.9 && !damage.flat[2])
+check('…on its own wheel, new', parts.fitted('wheelRL') === 'wheelSteel' && damage.get('wheelRL') === 1)
+check('the bent wheel waits at the swap prompt with its wear', inv.pending()?.id === 'wheelSteel' && inv.pending().extra.cond === 0.4,
+  JSON.stringify(inv.pending()))
+inv.leavePending()
 const off = bed()
 check('the punctured tire is kept as itself, flat, with its wear',
   off.length === 1 && off[0].id === 'tireStandard' && off[0].flat && off[0].cond === 0.35, JSON.stringify(off))

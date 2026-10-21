@@ -3399,6 +3399,7 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
     const offers = _takeableOffers(_servicePoi.id, daySystem.clockH())
     if (offers.length) missionSystem.enterFromPoi(_servicePoi, offers, _planOffer)
   },
+  openMap: () => map2d.toggle(),
 })
 
 /** The auto shop the truck is parked by, or null. Not while an offer is up (that owns the brake). */
@@ -7200,7 +7201,7 @@ document.addEventListener('keydown', e => {
   // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
   if (damageScreen.isOpen) { damageScreen.close(); return }
   if (inventoryScreen.isOpen) { inventoryScreen.close(); return }   // FEAT-122: same rule
-  if (serviceScreen.isOpen) { serviceScreen.close(); return }       // SM-3: same rule
+  if (serviceScreen.isOpen && !map2d.isOpen()) { serviceScreen.close(); return }   // SM-3: same rule (the map over it goes first)
   // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
   // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
   // settings page and is otherwise inert until the world is handed back.

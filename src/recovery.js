@@ -11,7 +11,8 @@
 //                   gas can, fitting the spare and plugging a tire are the inventory screen's.
 //
 // Roadside tire work (owner, 2026-10-21; the factory jack and the bike pump are always aboard):
-//   SPARE   90 min. The spare goes on the first flat corner; the punctured tire comes off as itself.
+//   SPARE   90 min. The spare goes on the first flat corner, tire AND wheel (it is a mounted spare);
+//           the punctured tire and its wheel come off as themselves.
 //   PLUG    one plug per kit, on the truck's first flat or on a flat tire in the bed. It fixes the
 //           hole, not the wear: the tire keeps its condition. Then the air: 2 h by hand with the
 //           pump, 30 min with a compressor — each the WHOLE stop, plug included.
@@ -19,7 +20,8 @@
 // The chip shows whenever the truck is parked in a story run — a tow is a phone call, not an event —
 // and the card lists what fits the moment. Pure: main.js supplies the state and owns the DOM.
 
-import { TIRE_IDS } from './damage.js'
+import { TIRE_IDS, WHEEL_IDS } from './damage.js'
+import { PARTS } from '../data/parts.js'
 
 export const SPARE_FIT_H = 1.5                              // owner, 2026-10-21 (was 30 min)
 export const PLUG_H = { pump: 2, compressor: 0.5 }          // the whole stop, by how the tire is aired up
@@ -44,16 +46,21 @@ export function recoveryCard (s) {
 
 /**
  * The spare's inventory effect: bolt `spare` (its entry, already out of the inventory — inventory.use)
- * onto the first flat corner, with its wear. The punctured tire comes off as ITSELF, flat and with its
- * wear, into the inventory (owner, 2026-10-20: roadside swaps keep the old part, no sale) — a patch
- * kit or the service center brings it back. Returns the corner, or -1 if there was nothing to do (a
- * sound truck, or a spare that is itself flat). The caller puts SPARE_FIT_H on the clock.
+ * onto the first flat corner. It is a tire mounted on a wheel (data/parts.js `mounted`), so both go on:
+ * the tire with the spare's wear, the wheel new — a bent rim there is gone with it. The punctured tire
+ * comes off as ITSELF, flat and with its wear, and its wheel with its own (owner, 2026-10-20: roadside
+ * swaps keep the old part, no sale) — a plug kit or the service center brings the tire back. A full
+ * inventory sends the second one to the swap prompt. Returns the corner, or -1 if there was nothing to
+ * do (a sound truck, or a spare that is itself flat). The caller puts SPARE_FIT_H on the clock.
  */
 export function fitSpare (parts, damage, inventory, spare) {
   const corner = damage.flat.indexOf(true)
   if (corner < 0 || spare.flat) return -1
-  const off = parts.fit('spareTire', spare.cond, TIRE_IDS[corner])
-  inventory.grant(off.id, 1, { cond: off.cond, flat: true })
+  const { tire, wheel } = PARTS.spareTire.mounted
+  const offTire = parts.fit(tire, spare.cond, TIRE_IDS[corner])
+  const offWheel = parts.fit(wheel, 1, WHEEL_IDS[corner])
+  inventory.grant(offTire.id, 1, { cond: offTire.cond, flat: true })
+  inventory.grant(offWheel.id, 1, { cond: offWheel.cond })
   return corner
 }
 

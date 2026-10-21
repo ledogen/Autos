@@ -7,13 +7,15 @@
  *             goes on any corner, so its buttons name the corner. A part that comes off waits on the
  *             bench: sell it or keep it.
  * The shop still posts jobs (owner, 2026-10-20): the header's "jobs" button hands over to the offer.
+ * "map" opens the map over the screen (owner, 2026-10-21: the camp card has one); the screen hides
+ * under it and the clock stays held.
  *
  * Described, never scored (SM-INV-10): conditions are colour bars, parts are names, prices are money,
  * rarity is the tint behind the icon (data/parts.js RARITY_COLOR). Rules live in src/service.js; this
  * reads it and the DOM only (the inventory-screen.js layout).
  */
 
-import { PARTS, SLOTS, RARITY_COLOR, takes, partIcon } from '../data/parts.js'
+import { PARTS, SLOTS, RARITY_COLOR, takes, socketsFor, partIcon } from '../data/parts.js'
 import { formatMoney } from './economy.js'
 import { bandColor } from './damage-screen.js'
 import { formatGameDuration } from './offer-board.js'
@@ -23,6 +25,7 @@ const CSS = `
 #svc-screen { display: none; position: fixed; inset: 0; z-index: 95; background: rgba(6,8,10,0.45);
   align-items: center; justify-content: center; font-family: var(--font); color: var(--text-body); }
 #svc-screen.open { display: flex; }
+body.map-open #svc-screen { visibility: hidden; }
 #svc-screen .sv-card { background: var(--card-bg); border: 1px solid var(--line-card);
   padding: 12px 16px 14px; width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow-y: auto; box-sizing: border-box; }
 #svc-screen .sv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -67,7 +70,6 @@ const chip = (id) => `<span class="sv-chip" style="background-color:${RARITY_COL
 const btn = (act, label, enabled = true, data = '', cls = '') =>
   `<button class="sv-btn${cls}" data-act="${act}" ${data}${enabled ? '' : ' disabled'}>${label}</button>`
 const TIRES = ['tireFL', 'tireFR', 'tireRL', 'tireRR']
-const CORNER = { tireFL: 'FL', tireFR: 'FR', tireRL: 'RL', tireRR: 'RR' }
 const cost = (price, hours) => `$${formatMoney(price)} · ${formatGameDuration(hours)}`
 
 export class ServiceScreen {
@@ -77,12 +79,14 @@ export class ServiceScreen {
    * @param {object} o
    * @param {() => number} o.jobs - live offers at this shop
    * @param {() => void} o.openJobs - close the screen and hand the brake to the offer
+   * @param {() => void} o.openMap - show the map over the screen
    */
-  constructor (service, vehicleState, { jobs, openJobs }) {
+  constructor (service, vehicleState, { jobs, openJobs, openMap }) {
     this.service = service
     this.vehicleState = vehicleState
     this.jobs = jobs
     this.openJobs = openJobs
+    this.openMap = openMap
     this.isOpen = false
     this.tab = 'repairs'
     this.name = ''
@@ -127,6 +131,7 @@ export class ServiceScreen {
     switch (b.dataset.act) {
       case 'close': this.close(); return
       case 'jobs': this.close(); this.openJobs(); return
+      case 'map': this.openMap(); return
       case 'tab': this.tab = b.dataset.tab; break
       case 'repair': s.repair(id); break
       case 'repairAll': s.repairAll(); break
@@ -147,6 +152,7 @@ export class ServiceScreen {
     this.card.innerHTML =
       `<div class="sv-head"><span class="sv-title">${this.name} · service</span>`
       + `<span class="sv-wallet">$${formatMoney(s.money())}</span>`
+      + btn('map', 'map')
       + (jobs ? btn('jobs', `jobs (${jobs})`) : '')
       + `<button class="sv-x" data-act="close" title="close (Esc)">&times;</button></div>`
       + `<div class="sv-tabs">`
@@ -184,10 +190,10 @@ export class ServiceScreen {
     return h
   }
 
-  /** One button per socket the part could go in: a plain label for a one-socket part, the corner for a tire. */
+  /** One button per socket the part could go in: a plain label for a one-socket part, the corner for a tire or wheel. */
   _socketBtns (act, label, sockets, ok, data) {
     return sockets.map(([sk, enabled]) =>
-      btn(act, sockets.length > 1 ? CORNER[sk] : label, ok && enabled, `${data} data-socket="${sk}"`)).join(' ')
+      btn(act, sockets.length > 1 ? sk.slice(-2) : label, ok && enabled, `${data} data-socket="${sk}"`)).join(' ')
   }
 
   _parts () {
@@ -197,7 +203,7 @@ export class ServiceScreen {
     for (const kind of [...new Set(Object.keys(SLOTS).map(takes))]) {
       const sockets = Object.keys(SLOTS).filter(sk => takes(sk) === kind)
       const tracked = SLOTS[sockets[0]].tracks.length > 0
-      const head = sockets.length > 1 ? 'Tires' : SLOTS[sockets[0]].name
+      const head = { tire: 'Tires', wheel: 'Wheels' }[kind] ?? SLOTS[sockets[0]].name
       h += `<div class="sv-slot"><div class="sv-slothead">${head} · ${formatGameDuration(SLOTS[sockets[0]].hours)} to swap</div>`
       for (const sk of sockets) {
         const fitted = s.parts.fitted(sk)
@@ -209,17 +215,17 @@ export class ServiceScreen {
         if (PARTS[r.id]?.slot !== kind) continue
         h += `<div class="sv-row">${chip(r.id)}<span class="sv-name">${PARTS[r.id].name} <span class="sv-desc">${r.flat ? 'yours, flat' : 'yours'}</span></span>`
           + (tracked ? bar(r.cond ?? 1, r.flat) : '')
-          + this._socketBtns('fit', 'fit', sockets.map(sk => [sk, true]), !busy && !r.flat, `data-index="${r.index}"`) + `</div>`
+          + this._socketBtns('fit', 'fit', socketsFor(r.id).map(sk => [sk, true]), !busy && !r.flat, `data-index="${r.index}"`) + `</div>`
       }
       for (const id of Object.keys(PARTS).filter(id => PARTS[id].slot === kind)) {
-        const open = sockets.map(sk => [sk, s.parts.fitted(sk) !== id])
-        if (!open.some(([, e]) => e) && kind !== 'tire') continue
+        const open = socketsFor(id).map(sk => [sk, s.parts.fitted(sk) !== id])   // none for the spare: carried only
+        if (!open.some(([, e]) => e) && sockets.length === 1) continue
         const afford = money + 1e-9 >= s.buyPrice(id)
         const buy = this._socketBtns('buy', 'buy & fit', open, !busy && afford, `data-id="${id}"`)
         h += `<div class="sv-row${sockets.length > 1 ? ' wrap' : ''}">${chip(id)}<span class="sv-name">${PARTS[id].name}<div class="sv-desc">${PARTS[id].desc}</div></span>`
           + `<span class="sv-cost">$${formatMoney(s.buyPrice(id))}</span>`
-          // A tire's buttons name the corners and take their own line; it can also be bought to carry
-          // (the spare, or any tire as one).
+          // A tire's or wheel's buttons name the corners and take their own line; it can also be
+          // bought to carry (the spare, or any tire or wheel as one).
           + (sockets.length > 1 ? `<span class="sv-acts">${buy} ${btn('stow', 'to bed', afford, `data-id="${id}"`)}</span>` : buy)
           + `</div>`
       }

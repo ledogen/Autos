@@ -16,14 +16,18 @@
 // The renderer-agnostic half (the fuel-stop.js pattern): main.js owns the DOM, this owns the rules,
 // so a headless gate can drive a whole visit. Every dependency arrives through the constructor.
 
-import { PARTS, SLOTS, REPAIRS, SELL_FRACTION, socketsFor } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIRS, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
 import { TRACKS } from './damage.js'
 
 const cents = (x) => Math.round(x * 100) / 100
 const REPAIR_FLOOR = 0.02   // missing condition below which the bench has nothing to do
 const socketOfTrack = (id) => Object.keys(SLOTS).find(s => SLOTS[s].tracks.includes(id)) ?? null
-/** A part's damage class (the REPAIRS row), or null for a part the damage model doesn't track. */
-const classOf = (id) => { const t = SLOTS[socketsFor(id)[0]]?.tracks[0]; return t ? TRACKS[t].cls : null }
+/** A part's damage class (the REPAIRS row), or null for a part the damage model doesn't track. By the
+ *  kind of socket, so the spare (which never goes on as itself) is still a tire to repair. */
+const classOf = (id) => {
+    const t = SLOTS[Object.keys(SLOTS).find(s => takes(s) === PARTS[id]?.slot)]?.tracks[0]
+    return t ? TRACKS[t].cls : null
+}
 
 export class ServiceCenter {
     /**

@@ -13,7 +13,7 @@
 // Run-layer state is a plain module object (the runEconomy / runInventory pattern). Imports only the
 // catalog, so the headless gate runs it in pure node; damage arrives as a constructor dependency.
 
-import { PARTS, SLOTS, FAMILY_DURABILITY, stockPart, takes } from '../data/parts.js'
+import { PARTS, SLOTS, FAMILY_DURABILITY, stockPart, takes, socketsFor } from '../data/parts.js'
 import { TIRE_IDS } from './damage.js'
 
 // Load rating → every socket a part carrying it can sit in: { tires: [4 corners], springs: [front, rear], … }
@@ -61,7 +61,7 @@ export class PartsSystem {
      * Returns what came off as { id, cond, flat }, or null if `id` doesn't fit there.
      */
     fit (id, cond = null, socket = PARTS[id]?.slot) {
-        if (!PARTS[id] || !SLOTS[socket] || takes(socket) !== PARTS[id].slot) return null
+        if (!socketsFor(id).includes(socket)) return null
         const wheel = TIRE_IDS.indexOf(socket)
         const off = { id: runParts.fitted[socket], cond: this.condOf(socket), flat: wheel >= 0 && this._damage.flat[wheel] }
         this._fit(id, socket, cond ?? 1)
@@ -105,7 +105,7 @@ export class PartsSystem {
         const f = gui.addFolder('Story · Parts (SM-3)')
         const self = this
         for (const socket of Object.keys(SLOTS)) {
-            const ids = Object.keys(PARTS).filter(id => PARTS[id].slot === takes(socket))
+            const ids = Object.keys(PARTS).filter(id => socketsFor(id).includes(socket))
             // An accessor, so the dropdown follows fits made elsewhere (a run start, the shop).
             const ctl = { get part () { return runParts.fitted[socket] ?? stockPart(socket) }, set part (id) { self.fit(id, null, socket) } }
             f.add(ctl, 'part', Object.fromEntries(ids.map(id => [PARTS[id].name, id])))
