@@ -22,6 +22,12 @@ export const ITEMS = {
     // A 2 gal RotoPax: ~5.7 kg of gas + ~1.5 kg of can (data/offers.js REWARDS).
     emergencyGas: { name: 'Emergency gas', kind: 'consumable', massKg: 7.2, use: 'gas',
                     desc: 'A small can of gas, for when the gauge lies.' },
+    // One plug per kit; the effect ('plug') is the parts session's (owner hand-off 2026-10-21).
+    tirePlugKit:  { name: 'Tire plug kit', kind: 'consumable', massKg: 0.3, use: 'plug',
+                    desc: 'Sticky string plugs and the tools to push one in. Fixes the hole, not the wear.' },
+    // A 12 V portable inflator: re-inflating a plugged tire is 30 min with it, 2 h by hand (items.md §7).
+    compressor:   { name: 'Compressor',    kind: 'tool',       massKg: 4,
+                    desc: 'A little pump that runs off the lighter socket. Airs a tire up while you wait.' },
 
     // ── Backpacks (items.md §2c) — `packSlots` camp items ride inside; `reachM` is how far past the
     //    road edge camp may be (campRoadEdgeM — not wired yet: the starter's is today's tether).

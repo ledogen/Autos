@@ -70,6 +70,17 @@ MATS = {
     "PlugBrown":  ((0.13, 0.05, 0.02, 1), 0.7),
     "CheckStripe":((0.08, 0.02, 0.018, 1), 0.95),
     "CheckDeep":  ((0.012, 0.010, 0.010, 1), 0.95),
+    # SM-3 part icons + tire-repair kit (2026-10-21) — saturated paint, cast iron, friction material.
+    "SpringRed":  ((0.60, 0.04, 0.03, 1), 0.45),
+    "ShockYellow":((0.85, 0.55, 0.02, 1), 0.45),
+    "Chrome":     ((0.62, 0.63, 0.64, 1), 0.25),
+    "CastIron":   ((0.16, 0.16, 0.17, 1), 0.75),
+    "Friction":   ((0.09, 0.08, 0.07, 1), 0.95),
+    "ArbBlue":    ((0.03, 0.18, 0.55, 1), 0.5),
+    "PolyRed":    ((0.55, 0.04, 0.03, 1), 0.6),
+    "Zinc":       ((0.52, 0.50, 0.40, 1), 0.4),
+    "Brass":      ((0.55, 0.36, 0.07, 1), 0.4),
+    "GaugeFace":  ((0.82, 0.82, 0.80, 1), 0.5),
 }
 
 
@@ -190,6 +201,30 @@ class Builder:
         self.face([L[0], inn(L[0]), inn(R[0]), R[0]], mat)
         self.face([R[-1], inn(R[-1]), inn(L[-1]), L[-1]], mat)
 
+    def tube(self, path, r, seg, mat, caps=True):
+        """A round tube swept along a polyline, frames parallel-transported so it never twists."""
+        P = [Vector(p) for p in path]
+        T = [(P[min(i + 1, len(P) - 1)] - P[max(i - 1, 0)]).normalized() for i in range(len(P))]
+        u = T[0].cross(Vector((0, 0, 1)) if abs(T[0].z) < 0.9 else Vector((1, 0, 0))).normalized()
+        rings = []
+        for i, p in enumerate(P):
+            u = (u - T[i] * u.dot(T[i])).normalized()
+            v = T[i].cross(u)
+            rings.append([p + (u * math.cos(2 * math.pi * k / seg) + v * math.sin(2 * math.pi * k / seg)) * r for k in range(seg)])
+        self.loft(rings, mat, cap_bottom=caps, cap_top=caps)
+
+    def prism(self, outline, z0, z1, mat, top=True, bottom=True):
+        """Extrude a CCW (x, y) outline from z0 to z1."""
+        n = len(outline)
+        for k in range(n):
+            j = (k + 1) % n
+            (xa, ya), (xb, yb) = outline[k], outline[j]
+            self.face([(xa, ya, z0), (xb, yb, z0), (xb, yb, z1), (xa, ya, z1)], mat)
+        if bottom:
+            self.face([(x, y, z0) for x, y in reversed(outline)], mat)
+        if top:
+            self.face([(x, y, z1) for x, y in outline], mat)
+
     def finish(self, name):
         bm = self.bm
         bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
@@ -232,20 +267,22 @@ def rrect(w, d, r, z, per=4, cx=0.0, cy=0.0):
 # ── Items ────────────────────────────────────────────────────────────────────────────────────────
 
 def build_coffee():
-    """A 12 oz paper to-go cup: tapered cup, rolled rim, kraft sleeve, squared-off sip lid."""
-    b = Builder(); SEG = 32
+    """A 12 oz paper to-go cup: tapered cup, rolled rim, kraft sleeve, squared-off sip lid. Seven-sided
+    (owner, 2026-10-21: lower poly reads with more spice than a smooth round cup)."""
+    b = Builder(); SEG = 7; PH = math.radians(-90) + math.pi / SEG   # seven sides, a flat facing front
     r = lambda z: 0.030 + (0.0455 - 0.030) * z / 0.128
     b.lathe([(0.0285, 0.0), (0.030, 0.002)] + [(r(z), z) for z in (0.02, 0.05, 0.08, 0.11, 0.126)]
-            + [(0.0472, 0.129), (0.0472, 0.1325)], SEG, "CupPaper", cap_top=False)
+            + [(0.0472, 0.129), (0.0472, 0.1325)], SEG, "CupPaper", cap_top=False, phase=PH)
     z0, z1 = 0.034, 0.094
     b.lathe([(r(z0), z0), (r(z0) + 0.0022, z0), (r(z0 + 0.03) + 0.0022, z0 + 0.03), (r(z1) + 0.0022, z1), (r(z1), z1)],
-            SEG, "CupSleeve", cap_bottom=False, cap_top=False)
+            SEG, "CupSleeve", cap_bottom=False, cap_top=False, phase=PH)
     # Lid: a skirt over the rolled rim with a bead, a flat shelf, then a near-vertical wall up to a
     # squared-off raised band around a recessed flat centre; the sip slot sits on the band at the front.
     b.lathe([(0.0478, 0.1290), (0.0492, 0.1298), (0.0492, 0.1335), (0.0497, 0.1342), (0.0497, 0.1356),
              (0.0492, 0.1362), (0.0444, 0.1366), (0.0434, 0.1478), (0.0426, 0.1488), (0.0372, 0.1488),
-             (0.0366, 0.1478), (0.0, 0.1478)], SEG, "CupLid", cap_bottom=False, cap_top=False)
-    b.cbox((0.0, -0.0400, 0.1489), (0.011, 0.0035, 0.0006), "Chili", ch=0.0)   # sip slot: coffee showing through
+             (0.0366, 0.1478), (0.0, 0.1478)], SEG, "CupLid", cap_bottom=False, cap_top=False, phase=PH)
+    ap = 0.0403 * math.cos(math.pi / SEG)   # the raised band's mid radius, measured to the front flat
+    b.cbox((0.0, -ap, 0.1489), (0.011, 0.0035, 0.0006), "Chili", ch=0.0)   # sip slot: coffee showing through
     return b.finish("coffee")
 
 
@@ -546,7 +583,7 @@ def build_bedroll():
 
 def build_airMattress():
     """A camping air mattress, long along X: a round, bulging vinyl body and a flocked top quilted by
-    dimples pressed into the surface, with a raised pillow zone at the head and a valve."""
+    dimples pressed into the surface, and a valve. No pillow: the sleeping bag lies on it in camp."""
     b = Builder()
     L, W, H = 1.88, 0.76, 0.17
     b.loft([rrect(L - 2 * i, W - 2 * i, 0.16 - i, z, per=7) for z, i in
@@ -561,10 +598,9 @@ def build_airMattress():
     def z(x, y):
         dx = ((x + L / 2) % 0.105) - 0.0525; dy = ((y + W / 2) % 0.095) - 0.0475
         dimple = 0.019 * math.exp(-(dx * dx + dy * dy) / (2 * 0.015 ** 2))
-        pillow = 0.05 * max(0.0, min(1.0, (x - (L / 2 - 0.42)) / 0.06)) * max(0.0, min(1.0, ((L / 2 - 0.04) - x) / 0.10))
         edge = min((L - 0.09) / 2 - abs(x), (W - 0.09) / 2 - abs(y))
         puff = 0.022 * min(1.0, max(0.0, edge) / 0.06) ** 0.5
-        return H + puff + pillow - (dimple if pillow < 0.01 else 0.0)
+        return H + puff - dimple
     xs = [-(L - 0.09) / 2 + (L - 0.09) * i / NX for i in range(NX + 1)]
     ys = [-(W - 0.09) / 2 + (W - 0.09) * j / NY for j in range(NY + 1)]
     for i in range(NX):
@@ -619,8 +655,8 @@ def inflatable_pad(name, L, W0, W1, H, pitch, top, bottom, pillow=0.0):
 
 
 def build_sleepingPad():
-    """A thin backpacking pad, unrolled: insulated, lateral baffles, tapered foot, valve."""
-    return inflatable_pad("sleepingPad", 1.83, 0.51, 0.40, 0.064, 0.085, "PadOrange", "FoamSilver")
+    """A thin backpacking pad, unrolled: insulated, rectangular, lateral baffles, valve."""
+    return inflatable_pad("sleepingPad", 1.83, 0.51, 0.51, 0.064, 0.085, "PadOrange", "FoamSilver")
 
 
 
@@ -690,20 +726,21 @@ def build_blanket():
 
 def build_sleepingBag():
     """A rectangular sleeping bag laid out flat, its near head corner unzipped and turned back to
-    show the flannel lining — ready to slide into. Quilted top, zipper along the open edges."""
+    show the flannel lining — ready to slide into. Lofted top quilted in puffy baffles; the turned-back
+    flap is the top layer's own fill, so it drapes over the baffles and rolls round a fold whose
+    radius is that fill's thickness — the open corner sits up on top of the bag."""
     b = Builder()
-    L, W, s = 1.90, 0.85, 0.05
-    nu, nv, nc = int(round(L / s)), int(round(W / s)), 14   # fold line u + v = nc·s
-    zb, ht = 0.040, 0.045
+    L, W, s = 1.90, 0.85, 0.025
+    nu, nv, nc = int(round(L / s)), int(round(W / s)), 28   # fold line u + v = nc·s (0.70 m)
+    zb, ht = 0.050, 0.085   # bottom layer; the top layer's loft at its fullest
     # Bottom layer: a soft slab, outer shell; its top shows flannel where the corner is turned back.
-    b.cbox((0, 0, zb / 2), (L, W, zb), "BagGreen", ch=0.012)
-    b.cbox((0, 0, zb + 0.0005), (L - 0.03, W - 0.03, 0.001), "Flannel")
+    b.cbox((0, 0, zb / 2), (L, W, zb), "BagGreen", ch=0.020)
+    b.cbox((0, 0, zb + 0.0005), (L - 0.04, W - 0.04, 0.001), "Flannel")
     # Grid in (u, v): u from the +X end, v from the −Y side. x = L/2 − u, y = v − W/2.
-    def top_z(u, v):
-        d = (u % 0.19) - 0.095
-        seam = 0.012 * math.exp(-(d * d) / (2 * 0.012 ** 2))
+    def top_z(u, v):   # baffles puff between the sewn-through seams; the loft rounds down at the zips
+        baffle = 0.80 + 0.20 * math.sin(math.pi * ((u % 0.19) / 0.19))
         edge = min(u, L - u, v, W - v)
-        return zb + ht * min(1.0, max(0.0, edge) / 0.05) ** 0.6 - seam
+        return zb + ht * baffle * min(1.0, max(0.0, edge) / 0.10) ** 0.5
     P = lambda u, v, z: (L / 2 - u, v - W / 2, z)
     def tris(i, j):
         a, bb, c, d = (i, j), (i + 1, j), (i, j + 1), (i + 1, j + 1)
@@ -715,55 +752,50 @@ def build_sleepingBag():
                 (flap if smax <= nc else keep).append(t)
     for t in keep:
         b.face([P(i * s, j * s, top_z(i * s, j * s)) for i, j in t], "BagGreen")
-    # Walls under the kept top's boundary (edges used once), down to the bottom layer.
-    def boundary(ts):
+    def boundary(ts):   # edges used by one triangle only
         cnt = {}
         for t in ts:
             for e in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])):
                 k = tuple(sorted(e)); cnt[k] = cnt.get(k, 0) + 1
         return [k for k, c in cnt.items() if c == 1]
     fold = lambda e: all(i + j == nc for i, j in e)
-    zf = zb + ht + 0.004
-    for (i0, j0), (i1, j1) in boundary(keep):
-        u0, v0, u1, v1 = i0 * s, j0 * s, i1 * s, j1 * s
-        if fold(((i0, j0), (i1, j1))):   # the bend up into the turned-back flap
-            continue   # the rounded bend below closes this edge
-        else:
-            b.face([P(u0, v0, zb), P(u1, v1, zb), P(u1, v1, top_z(u1, v1)), P(u0, v0, top_z(u0, v0))], "BagGreen")
-    # The flap: reflected across the fold (u, v) → (c − v, c − u), lying on the top, lining up.
+    # The flap: reflected across the fold (u, v) → (c − v, c − u). Its underside rests on the kept top
+    # it now covers; its thickness is the fill it had where it came from (thin at its zipped edges).
     c = nc * s
     R = lambda u, v: (c - v, c - u)
-    th = 0.030
-    def flap_z(u, v):   # puffy toward the middle of the flap, thin at its zipped edges and the fold
-        e = min(c - u, c - v, (u + v - c) / math.sqrt(2))   # distance to the zipped edges and the fold
-        return zf + th + 0.020 * min(1.0, max(0.0, e) / 0.08) ** 0.6
+    under = lambda u, v: top_z(u, v) + 0.003                    # (u, v) = where the flap now lies
+    over = lambda u, v: under(u, v) + top_z(*R(u, v)) - zb      # R(u, v) = where that bit came from
     for t in flap:
         q = [R(i * s, j * s) for i, j in t]
-        b.face([P(u, v, flap_z(u, v)) for u, v in q], "Flannel")
-        b.face([P(u, v, zf) for u, v in reversed(q)], "BagGreen")
+        b.face([P(u, v, over(u, v)) for u, v in q], "Flannel")
+        b.face([P(u, v, under(u, v)) for u, v in reversed(q)], "BagGreen")
     for (i0, j0), (i1, j1) in boundary(flap):
         if fold(((i0, j0), (i1, j1))):
             continue
         (u0, v0), (u1, v1) = R(i0 * s, j0 * s), R(i1 * s, j1 * s)
-        b.face([P(u0, v0, zf), P(u1, v1, zf), P(u1, v1, flap_z(u1, v1)), P(u0, v0, flap_z(u0, v0))], "BagGreen")
-        b.bar(P(u0, v0, flap_z(u0, v0) + 0.002), P(u1, v1, flap_z(u1, v1) + 0.002), 0.014, "Nylon", h=0.006)   # zip tape on the flap edge
-    # The bend: a soft roll of shell along the fold line, from the kept top up to the flap.
-    a3, b3 = Vector(P(c, 0.0, 0.0)), Vector(P(0.0, c, 0.0))
-    rr = (zf + th - zb) / 2
-    b.M = (Matrix.Translation(((a3 + b3) / 2) + Vector((0, 0, zb + rr)))
-           @ (b3 - a3).normalized().to_track_quat("Z", "Y").to_matrix().to_4x4())
-    half = (b3 - a3).length / 2
-    b.lathe([(0.0, -half), (rr * 0.8, -half + 0.004), (rr, -half + 0.02), (rr, half - 0.02), (rr * 0.8, half - 0.004), (0.0, half)],
-            14, "BagGreen", cap_bottom=False, cap_top=False)
-    b.M = Matrix.Identity(4)
+        if over(u0, v0) - under(u0, v0) > 0.002 or over(u1, v1) - under(u1, v1) > 0.002:
+            b.face([P(u0, v0, under(u0, v0)), P(u1, v1, under(u1, v1)), P(u1, v1, over(u1, v1)), P(u0, v0, over(u0, v0))], "BagGreen")
+        b.bar(P(u0, v0, over(u0, v0) + 0.002), P(u1, v1, over(u1, v1) + 0.002), 0.014, "Nylon", h=0.006)   # zip tape on the flap edge
+    # The bend: the top layer rolls 180° along the fold, from the bottom layer up to the flap's face.
+    # Per station: a half circle bulging over the opened corner, radius = the fill's thickness there.
+    nrm = Vector((1, -1, 0)).normalized()   # toward the opened corner, in x/y
+    rings = []
+    for k in range(nc * 2 + 1):
+        uf = c * (1 - k / (nc * 2)); vf = c - uf
+        z0, z1 = zb, over(uf, vf)
+        rad, zc = (z1 - z0) / 2, (z1 + z0) / 2
+        base = Vector(P(uf, vf, 0.0))
+        rings.append([base + nrm * (rad * math.sin(math.pi * m / 10)) + Vector((0, 0, zc - rad * math.cos(math.pi * m / 10)))
+                      for m in range(11)])
+    for ra, rb_ in zip(rings, rings[1:]):
+        for m in range(10):
+            b.face([ra[m], ra[m + 1], rb_[m + 1], rb_[m]], "BagGreen")
     # Zipper along the opened legs on the bottom layer, then on along the near side seam.
     b.bar(P(0.0, 0.008, zb + 0.003), P(c, 0.008, zb + 0.003), 0.016, "Nylon", h=0.006)
     b.bar(P(0.008, 0.0, zb + 0.003), P(0.008, c, zb + 0.003), 0.016, "Nylon", h=0.006)
     b.bar(P(c, 0.001, zb + 0.004), P(L - 0.02, 0.001, zb + 0.004), 0.008, "Nylon", h=0.006)
     b.cbox(P(c + 0.02, -0.006, zb + 0.004), (0.022, 0.012, 0.010), "Buckle", ch=0.002)   # zip pull
     return b.finish("sleepingBag")
-
-
 
 
 def build_zipTies():
@@ -793,7 +825,8 @@ def build_zipTies():
 
 def build_ductTape():
     """A roll of silver duct tape on edge, cardboard core; the loose end wraps the underside of the
-    roll and runs straight out along the ground — one strip, no gap where it leaves."""
+    roll and runs straight out along the ground. Its far end dives under the roll's surface, so there
+    is no step where the loose layer begins."""
     b = Builder(); SEG = 36
     Ro, Ri, Hw = 0.060, 0.040, 0.024
     b.M = Matrix.Translation((0, 0, Ro)) @ Matrix.Rotation(math.pi / 2, 4, "X")
@@ -808,8 +841,10 @@ def build_ductTape():
     b.M = Matrix.Identity(4)
     # The strip's centre line in XZ: an arc hugging the roll from the back round to the bottom, then
     # flat along the ground and curling up at the end. Two skins 0.8 mm apart along the local normal.
-    r = Ro + 0.0006
-    path = [(r * math.cos(a), Ro + r * math.sin(a)) for a in (math.radians(d) for d in range(205, 271, 5))]
+    def r(d):   # starts tucked under the roll's faceted surface, eases out to sit on it by 205°
+        t = min(1.0, max(0.0, (d - 150) / 55))
+        return Ro - 0.0014 + 0.0023 * (3 * t * t - 2 * t * t * t)
+    path = [(r(d) * math.cos(math.radians(d)), Ro + r(d) * math.sin(math.radians(d))) for d in range(150, 271, 5)]
     path += [(0.03, 0.0006), (0.06, 0.0006), (0.09, 0.0006), (0.11, 0.003), (0.122, 0.011)]
     hw = Hw - 0.0005
     def norm(k):   # toward the roll's centre on the arc, up on the ground
@@ -827,51 +862,50 @@ def build_ductTape():
 
 
 
-def build_tirePatches():
-    """A roadside tire plug kit laid out: T-handle spiral reamer, T-handle insertion needle with a
-    plug threaded through its eye, and a few sticky string plugs."""
+def build_tirePlugKit():
+    """A roadside tire plug kit, laid out like the photo on its box: the T-handle spiral reamer and
+    the T-handle insertion needle side by side, one handle up and one down, and five sticky string
+    plugs in a neat row beside them. Grips carry finger grooves."""
     b = Builder()
+    # The grip, along local Y: three finger scallops either side of the ferrule.
+    prof = [(0.0, -0.054), (0.007, -0.0535), (0.0115, -0.051)]
+    zs = [-0.048 + 0.096 * k / 48 for k in range(49)]
+    for z in zs:
+        a = abs(z)
+        g = math.sin(math.pi * (a - 0.012) / 0.0113) ** 2 if 0.012 < a < 0.046 else 0.0
+        prof.append((0.0135 - 0.0028 * g, z))
+    prof += [(0.0115, 0.051), (0.007, 0.0535), (0.0, 0.054)]
     def t_tool(origin, yaw, tip):
         M0 = Matrix.Translation(origin) @ Matrix.Rotation(yaw, 4, "Z")
-        # Handle: a fat round bar along local Y, lying on the ground.
-        b.M = M0 @ Matrix.Translation((0, 0, 0.012)) @ Matrix.Rotation(math.pi / 2, 4, "X")
-        b.lathe([(0.0, -0.050), (0.008, -0.049), (0.012, -0.044), (0.012, 0.044), (0.008, 0.049), (0.0, 0.050)], 12, "TinRed",
-                cap_bottom=False, cap_top=False)
-        b.M = M0 @ Matrix.Translation((0, 0, 0.012)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
-        b.lathe([(0.0075, 0.010), (0.0075, 0.022), (0.0045, 0.026)], 12, "Steel", cap_bottom=False)   # ferrule
+        b.M = M0 @ Matrix.Translation((0, 0, 0.0135)) @ Matrix.Rotation(math.pi / 2, 4, "X")
+        b.lathe(prof, 12, "TinRed", cap_bottom=False, cap_top=False)
+        b.M = M0 @ Matrix.Translation((0, 0, 0.0135)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
+        b.lathe([(0.0080, 0.011), (0.0080, 0.022), (0.0060, 0.025), (0.0045, 0.028)], 12, "Steel", cap_bottom=False)   # ferrule
         b.M = M0
         tip(b)
         b.M = Matrix.Identity(4)
-    def reamer(b):   # a square bar twisted along its length: reads as the spiral rasp
+    zx = lambda x: 0.0135 + (0.0030 - 0.0135) * (x - 0.028) / 0.080   # shaft runs down to rest its tip on the ground
+    def reamer(b):   # a square bar twisted along its length — the spiral rasp — to a point
         rings = []
-        for k in range(29):
-            t = k / 28; x = 0.026 + 0.075 * t; z = 0.012 - 0.0085 * t
-            a = t * 6 * math.pi; s = 0.0034 * (1 - 0.35 * max(0, t - 0.85) / 0.15)
-            rings.append([(x, s * math.cos(a + q * math.pi / 2), z + s * math.sin(a + q * math.pi / 2)) for q in range(4)])
+        for k in range(41):
+            t = k / 40; x = 0.028 + 0.080 * t
+            a = t * 7 * math.pi; s = 0.0036 * (1.0 if t < 0.85 else 1 - 0.8 * (t - 0.85) / 0.15)
+            rings.append([(x, s * math.cos(a + q * math.pi / 2), zx(x) + s * math.sin(a + q * math.pi / 2)) for q in range(4)])
         b.loft(rings, "Steel")
-    def needle(b):   # flat blade, open eye slot near the tip
-        z0, z1 = 0.012, 0.0035
-        zx = lambda x: z0 + (z1 - z0) * (x - 0.026) / 0.075
-        b.bar((0.026, 0, zx(0.026)), (0.080, 0, zx(0.080)), 0.0055, "Steel", h=0.0016)
+    def needle(b):   # a flat blade with an open eye near the tip
+        b.bar((0.028, 0, zx(0.028)), (0.084, 0, zx(0.084)), 0.0058, "Steel", h=0.0018)
         for y in (-0.0022, 0.0022):
-            b.bar((0.080, y, zx(0.080)), (0.096, y, zx(0.096)), 0.0014, "Steel", h=0.0016)
-        b.bar((0.096, 0, zx(0.096)), (0.101, 0, zx(0.101)), 0.0055, "Steel", h=0.0016)
-        # A plug threaded through the eye, both tails hanging forward to the ground.
-        for sy in (-1, 1):
-            b.bar((0.088, 0, zx(0.088) + 0.001), (0.078, sy * 0.018, 0.0016), 0.0065, "PlugBrown", h=0.0028)
-            b.bar((0.078, sy * 0.018, 0.0016), (0.060, sy * 0.034, 0.0016), 0.0065, "PlugBrown", h=0.0028)
-    t_tool((-0.035, 0.03, 0), math.radians(-28), reamer)
-    t_tool((-0.050, -0.045, 0), math.radians(-8), needle)
-    rnd = random.Random(3)
-    for k in range(4):   # loose plugs, each a strip with a slight kink, lying in a little fan
-        x0, y0 = 0.035 + 0.008 * k, -0.095 + 0.006 * k
-        a = math.radians(-60 + 9 * k)
-        mid = (x0 + 0.045 * math.cos(a), y0 + 0.045 * math.sin(a))
-        end = (mid[0] + 0.048 * math.cos(a + 0.18), mid[1] + 0.048 * math.sin(a + 0.18))
-        zk = 0.0015 + 0.0029 * k
-        b.bar((x0, y0, zk), (mid[0], mid[1], zk + 0.0006), 0.0065, "PlugBrown", h=0.0028)
-        b.bar((mid[0], mid[1], zk + 0.0006), (end[0], end[1], zk), 0.0065, "PlugBrown", h=0.0028)
-    return b.finish("tirePatches")
+            b.bar((0.084, y, zx(0.084)), (0.100, y, zx(0.100)), 0.0014, "Steel", h=0.0018)
+        b.bar((0.100, 0, zx(0.100)), (0.108, 0, zx(0.108)), 0.0040, "Steel", h=0.0018)
+    t_tool((-0.072, 0.017, 0.0), 0.0, reamer)        # handle on the left, shaft pointing right
+    t_tool((0.072, -0.017, 0.0), math.pi, needle)    # handle on the right, shaft pointing left
+    for k in range(5):   # five string plugs in a row, each with a slight kink
+        y = -0.088 - 0.0135 * k
+        kink = 0.0035 * (1 if k % 2 else -1)
+        pts = [(-0.050, y, 0.0014), (-0.004, y + kink, 0.0016), (0.050, y + 0.6 * kink, 0.0014)]
+        b.bar(pts[0], pts[1], 0.0068, "PlugBrown", h=0.0028)
+        b.bar(pts[1], pts[2], 0.0068, "PlugBrown", h=0.0028)
+    return b.finish("tirePlugKit")
 
 
 
@@ -929,15 +963,361 @@ def build_bubbleWrap():
     return b.finish("bubbleWrap")
 
 
+# ── SM-3 part icons (2026-10-21) — ONE thumbnail per part kind (data/parts.js partIcon(): the slot
+#    with Front/Rear dropped). Every part of a kind shares it; the inventory tints the square behind it
+#    by rarity, so the background stays transparent like every other item.
+
+def build_tire():
+    """Part icon `tire`: one bare P235/75R15 standing on its tread, no wheel — all-season tread in
+    five rows, a raised band and lettering on the sidewall, the bead opening showing the liner."""
+    b = Builder(); SEG = 44
+    hw, Ro, Rb = 0.1175, 0.367, 0.192
+    b.M = Matrix.Translation((0, 0, Ro)) @ Matrix.Rotation(math.pi / 2, 4, "Y")   # axis along X, sidewall to the viewer
+    outer = [(Rb, -hw + 0.020), (0.205, -hw + 0.005), (0.26, -hw - 0.004), (0.315, -hw), (0.345, -hw + 0.012),
+             (0.356, -hw + 0.026), (0.356, hw - 0.026), (0.345, hw - 0.012), (0.315, hw), (0.26, hw + 0.004),
+             (0.205, hw - 0.005), (Rb, hw - 0.020)]
+    liner = [(Rb - 0.004, hw - 0.032), (Rb + 0.012, hw - 0.040), (0.30, hw - 0.045), (0.335, hw - 0.050),
+             (0.335, -hw + 0.050), (0.30, -hw + 0.045), (Rb + 0.012, -hw + 0.040), (Rb - 0.004, -hw + 0.032)]
+    b.lathe(outer + liner + [outer[0]], SEG, "Rubber", cap_bottom=False, cap_top=False)
+    for zs in (1, -1):   # a raised rim-protector band on each sidewall
+        b.lathe([(0.296, zs * (hw + 0.002)), (0.300, zs * (hw + 0.006)), (0.306, zs * (hw + 0.006)), (0.310, zs * (hw + 0.002))]
+                if zs > 0 else [(0.310, -hw - 0.002), (0.306, -hw - 0.006), (0.300, -hw - 0.006), (0.296, -hw - 0.002)],
+                SEG, "Rubber", cap_bottom=False, cap_top=False)
+    # Tread: N pitches × five rows of blocks, skewed a little, the rows staggered.
+    N = 60
+    rows = [(-0.104, -0.068, 0.0), (-0.058, -0.022, 0.5), (-0.014, 0.014, 0.25), (0.022, 0.058, 0.75), (0.068, 0.104, 0.0)]
+    for k in range(N):
+        for z0, z1, ph in rows:
+            a = 2 * math.pi * (k + ph) / N
+            da = math.pi / N * 0.78
+            sk = 0.06 * (1 if z0 < 0 else -1)
+            pts = []
+            for zz in (z0, z1):
+                aa = a + sk * (zz - (z0 + z1) / 2) / 0.04 * da
+                for e in (-da, da):
+                    for rr in (0.352, 0.367 if abs(zz) < 0.1 else 0.362):
+                        pts.append((rr * math.cos(aa + e), rr * math.sin(aa + e), zz))
+            b.hull(pts, "Rubber")
+    for k in range(18):   # moulded lettering on the near sidewall: short raised strokes along an arc
+        a = math.radians(100 + 4.2 * k)
+        if k in (5, 11):
+            continue
+        for rr0, rr1 in ((0.262, 0.284),) if k % 3 else ((0.262, 0.272), (0.276, 0.284)):
+            b.bar((rr0 * math.cos(a), rr0 * math.sin(a), hw + 0.006), (rr1 * math.cos(a), rr1 * math.sin(a), hw + 0.006),
+                  0.0035, "Rubber", h=0.004)
+    b.M = Matrix.Identity(4)
+    return b.finish("tire")
+
+
+def build_springs():
+    """Part icon `springs`: one coil spring standing on end — round wire, closed ends, red powder coat."""
+    b = Builder()
+    R, wr, H, turns, te, N = 0.064, 0.0075, 0.30, 7.0, 0.9, 28
+    pe = 2 * wr + 0.0005
+    pa = (H - 2 * wr - 2 * te * pe) / (turns - 2 * te)
+    def z(t):
+        if t < te:
+            return wr + pe * t
+        if t > turns - te:
+            return H - wr - pe * (turns - t)
+        return wr + pe * te + pa * (t - te)
+    path = [(R * math.cos(2 * math.pi * k / N), R * math.sin(2 * math.pi * k / N), z(k / N)) for k in range(int(turns * N) + 1)]
+    b.tube(path, wr, 10, "SpringRed")
+    return b.finish("springs")
+
+
+def build_dampers():
+    """Part icon `dampers`: one shock absorber lying on the ground — yellow body, black seal cap and
+    dust boot, chrome shaft, a bushed eye at each end."""
+    b = Builder(); SEG = 18
+    rb = 0.0275
+    M0 = Matrix.Translation((0, 0, rb)) @ Matrix.Rotation(math.radians(100), 4, "Z") @ Matrix.Rotation(math.pi / 2, 4, "Y")
+    def at(z, *rot):
+        m = M0 @ Matrix.Translation((0, 0, z))
+        for r in rot:
+            m = m @ r
+        return m
+    b.M = M0
+    b.lathe([(0.0, 0.024), (0.022, 0.026), (rb, 0.036), (rb, 0.300)], SEG, "ShockYellow", cap_top=False)
+    b.lathe([(rb, 0.300), (0.024, 0.304), (0.024, 0.318), (0.012, 0.320)], SEG, "CanBlack", cap_top=False)   # seal cap
+    folds = [(0.020 if k % 2 == 0 else 0.0245, 0.320 + 0.0095 * k) for k in range(11)]
+    b.lathe(folds, SEG, "CanBlack", cap_bottom=False, cap_top=False)   # dust boot
+    b.lathe([(0.0090, 0.415), (0.0090, 0.452)], 12, "Chrome", cap_bottom=False, cap_top=False)
+    b.lathe([(0.0, 0.452), (0.016, 0.452), (0.016, 0.462), (0.0, 0.464)], 12, "SteelDark")
+    for z in (0.0, 0.486):   # the eyes: steel ring, rubber bushing, sleeve through
+        b.M = at(z, Matrix.Rotation(math.pi / 2, 4, "Y"))
+        b.lathe([(0.0145, -0.019), (0.0235, -0.019), (0.0235, 0.019), (0.0145, 0.019), (0.0145, -0.019)], SEG, "SteelDark",
+                cap_bottom=False, cap_top=False)
+        b.lathe([(0.0075, -0.021), (0.0145, -0.021), (0.0145, 0.021), (0.0075, 0.021), (0.0075, -0.021)], 12, "CanBlack",
+                cap_bottom=False, cap_top=False)
+        b.lathe([(0.0045, -0.024), (0.0075, -0.024), (0.0075, 0.024), (0.0045, 0.024), (0.0045, -0.024)], 10, "Chrome",
+                cap_bottom=False, cap_top=False)
+    b.M = M0
+    b.bar((0, 0, 0.014), (0, 0, 0.026), 0.018, "SteelDark")
+    b.bar((0, 0, 0.462), (0, 0, 0.472), 0.016, "SteelDark")
+    b.M = Matrix.Identity(4)
+    return b.finish("dampers")
+
+
+def build_pads():
+    """Part icon `pads`: a pair of disc brake pads, one friction side up, one turned over to show its
+    steel backing and shim. (One icon for front pads and rear shoes alike.)"""
+    b = Builder()
+    C = (0.0, -0.2475)
+    pol = lambda phi, r: (C[0] + r * math.cos(math.radians(phi)), C[1] + r * math.sin(math.radians(phi)))
+    tan = lambda phi: (-math.sin(math.radians(phi)), math.cos(math.radians(phi)))
+    def plate_outline():
+        out = [pol(76 + 28 * k / 14, 0.275) for k in range(15)]
+        t = tan(104); a, c = pol(104, 0.256), pol(104, 0.240)
+        out += [a, (a[0] + t[0] * 0.008, a[1] + t[1] * 0.008), (c[0] + t[0] * 0.008, c[1] + t[1] * 0.008), c]
+        out += [pol(104 - 28 * k / 10, 0.220) for k in range(11)]
+        t = tan(76); c, a = pol(76, 0.240), pol(76, 0.256)
+        out += [c, (c[0] - t[0] * 0.008, c[1] - t[1] * 0.008), (a[0] - t[0] * 0.008, a[1] - t[1] * 0.008), a]
+        return out
+    def block(p0, p1, z0, z1):   # one friction half, chamfered ends
+        n = 8
+        lo = [pol(p0 + (p1 - p0) * k / n, 0.270) for k in range(n + 1)] + [pol(p1 - (p1 - p0) * k / n, 0.225) for k in range(n + 1)]
+        q0, q1 = p0 + 0.9, p1 - 0.9
+        hi = [pol(q0 + (q1 - q0) * k / n, 0.267) for k in range(n + 1)] + [pol(q1 - (q1 - q0) * k / n, 0.228) for k in range(n + 1)]
+        b.loft([[(x, y, z0) for x, y in lo], [(x, y, z1) for x, y in hi]], "Friction")
+    po = plate_outline()
+    # Pad 1, in front, friction up: two blocks split by the centre slot, a wear-indicator tab.
+    b.M = Matrix.Translation((0.0, -0.038, 0.0))
+    b.prism(po, 0.0, 0.0055, "Steel")
+    block(77.5, 89.4, 0.0055, 0.0175); block(90.6, 102.5, 0.0055, 0.0175)
+    tab = Vector(pol(79, 0.262))
+    b.bar((tab.x, tab.y, 0.0055), (tab.x, tab.y, 0.021), 0.007, "Steel", h=0.0012)
+    b.bar((tab.x, tab.y, 0.021), (tab.x + 0.005, tab.y + 0.004, 0.025), 0.007, "Steel", h=0.0012)
+    # Pad 2, behind, turned over: friction on the ground, steel back and its black shim on top.
+    b.M = Matrix.Translation((0.012, 0.038, 0.0175)) @ Matrix.Rotation(math.radians(-6), 4, "Z") @ Matrix.Rotation(math.pi, 4, "Y")
+    b.prism(po, 0.0, 0.0055, "Steel")
+    block(77.5, 89.4, 0.0055, 0.0175); block(90.6, 102.5, 0.0055, 0.0175)
+    shim = [pol(78 + 24 * k / 12, 0.268) for k in range(13)] + [pol(102 - 24 * k / 8, 0.227) for k in range(9)]
+    b.prism(shim, -0.0008, 0.0, "CanBlack")
+    b.M = Matrix.Identity(4)
+    return b.finish("pads")
+
+
+def build_arb():
+    """Part icon `arb`: an anti-roll bar lying flat — a blue torsion bar bent into a wide U, flattened
+    eye ends for the end links, two red urethane bushings in steel brackets."""
+    b = Builder()
+    rb, zc = 0.016, 0.031
+    half, arm, rr = 0.40, 0.30, 0.08
+    path = []
+    for k in range(9):   # left arm, running in toward the bend
+        path.append((-half, arm - (arm - rr) * k / 8, zc))
+    for k in range(1, 10):
+        a = math.pi - (math.pi / 2) * k / 9
+        path.append((-half + rr + rr * math.cos(a), rr - rr * math.sin(a) * 1.0, zc))
+    for k in range(1, 12):
+        path.append((-half + rr + (2 * (half - rr)) * k / 12, 0.0, zc))
+    for k in range(1, 10):
+        a = math.pi / 2 - (math.pi / 2) * k / 9
+        path.append((half - rr + rr * math.cos(a), rr - rr * math.sin(a), zc))
+    for k in range(1, 9):
+        path.append((half, rr + (arm - rr) * k / 8, zc))
+    yaw = Matrix.Rotation(math.radians(-28), 4, "Z")
+    b.M = yaw
+    b.tube(path, rb, 12, "ArbBlue")
+    for sx in (-1, 1):   # flattened paddle with an eye hole
+        x = sx * half
+        b.hull([(x + dx, arm + dy, zc + dz) for dx in (-0.024, 0.024) for dy in (0.0, 0.060) for dz in (-0.007, 0.007)], "ArbBlue")
+        b.M = yaw @ Matrix.Translation((x, arm + 0.036, zc))
+        b.lathe([(0.0, 0.0072), (0.012, 0.0072)], 12, "SteelDark", cap_bottom=False, cap_top=False)
+        b.M = yaw
+    for x in (-0.20, 0.20):
+        b.M = yaw @ Matrix.Translation((x, 0.0, zc)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
+        b.lathe([(rb + 0.001, -0.028), (0.029, -0.028), (0.031, -0.024), (0.031, 0.024), (0.029, 0.028), (rb + 0.001, 0.028)],
+                14, "PolyRed", cap_bottom=False, cap_top=False)
+        b.M = yaw
+        # Bracket: a steel strap over the bushing, flanges out to the sides with a bolt each.
+        strap = [(x, 0.0335 * math.cos(math.pi * k / 12), zc + 0.0335 * math.sin(math.pi * k / 12)) for k in range(13)]
+        for p0, p1 in zip(strap, strap[1:]):
+            b.bar(p0, p1, 0.003, "Steel", h=0.040, caps=False, up=(1, 0, 0))
+        for sy in (-1, 1):
+            b.cbox((x, sy * 0.047, 0.0015), (0.040, 0.028, 0.003), "Steel")
+            b.M = yaw @ Matrix.Translation((x, sy * 0.052, 0.003))
+            b.lathe([(0.0, 0.0), (0.0075, 0.0), (0.0075, 0.006), (0.0, 0.006)], 6, "Zinc", cap_bottom=False, cap_top=False)
+            b.M = yaw
+    b.M = Matrix.Identity(4)
+    return b.finish("arb")
+
+
+def build_diff():
+    """Part icon `diff`: a rear axle centre section — cast pumpkin with a ten-bolt cover facing the
+    viewer, pinion snout and companion flange behind, axle-tube stubs with spring perches."""
+    b = Builder(); SEG = 28
+    zc = 0.150
+    M0 = Matrix.Translation((0, 0, zc)) @ Matrix.Rotation(math.radians(-24), 4, "Z") @ Matrix.Rotation(math.radians(-90), 4, "X")
+    # local z → +Y (toward the pinion, away from the viewer); the cover is at local z < 0.
+    b.M = M0
+    b.lathe([(0.138, -0.052), (0.143, -0.040), (0.148, -0.012), (0.142, 0.030), (0.118, 0.074), (0.080, 0.106),
+             (0.058, 0.124), (0.054, 0.186), (0.050, 0.192)], SEG, "CastIron", cap_bottom=False, cap_top=False)
+    b.lathe([(0.0, -0.106), (0.050, -0.104), (0.100, -0.094), (0.128, -0.078), (0.140, -0.066), (0.151, -0.064),
+             (0.151, -0.052), (0.138, -0.052)], SEG, "Steel", cap_bottom=False, cap_top=False)   # cover + flange
+    for k in range(10):   # cover bolts round the flange, heads toward the viewer
+        a = 2 * math.pi * (k + 0.5) / 10
+        b.M = M0 @ Matrix.Translation((0.1445 * math.cos(a), 0.1445 * math.sin(a), -0.064))
+        b.lathe([(0.0, 0.0), (0.0075, 0.0), (0.0075, -0.007), (0.0, -0.007)], 6, "SteelDark", cap_bottom=False, cap_top=False)
+    b.M = M0 @ Matrix.Translation((0.03, -0.06, -0.095)) @ Matrix.Rotation(math.radians(-14), 4, "X")
+    b.lathe([(0.0, 0.0), (0.012, 0.0), (0.012, -0.010), (0.0, -0.010)], 6, "SteelDark", cap_bottom=False, cap_top=False)   # fill plug
+    b.M = M0
+    b.lathe([(0.050, 0.192), (0.036, 0.196), (0.036, 0.214), (0.058, 0.216), (0.058, 0.230), (0.022, 0.232), (0.0, 0.232)],
+            SEG, "SteelDark", cap_bottom=False, cap_top=False)   # pinion seal + companion flange
+    for k in range(4):
+        a = 2 * math.pi * (k + 0.5) / 4
+        b.M = M0 @ Matrix.Translation((0.044 * math.cos(a), 0.044 * math.sin(a), 0.230))
+        b.lathe([(0.0, 0.0), (0.006, 0.0), (0.006, 0.008), (0.0, 0.008)], 6, "Steel", cap_bottom=False, cap_top=False)
+    # Axle tubes along local X, out of the pumpkin's sides; spring perches on top of each.
+    for sx in (-1, 1):
+        b.M = M0 @ Matrix.Rotation(math.pi / 2, 4, "Y")
+        prof = [(0.0, 0.30), (0.039, 0.30), (0.039, 0.16), (0.052, 0.14), (0.052, 0.09)]
+        b.lathe(prof if sx < 0 else [(r, -z) for r, z in reversed(prof)], 20, "CastIron", cap_bottom=False, cap_top=False)
+        b.M = M0
+        b.cbox((sx * 0.235, -0.046, 0.0), (0.070, 0.012, 0.064), "SteelDark", ch=0.003)   # perch, on the tube's top
+        b.cbox((sx * 0.235, -0.054, 0.0), (0.020, 0.008, 0.020), "Steel", ch=0.002)       # centre-pin boss
+    b.M = Matrix.Identity(4)
+    return b.finish("diff")
+
+
+def build_lift():
+    """Part icon `lift`: a lift kit laid out — two tapered rear blocks, each straddled by a pair of
+    zinc U-bolts with nuts, and two orange front strut spacers with their studs."""
+    b = Builder()
+    for bx in (-0.10, 0.10):
+        b.hull([(bx + dx, dy, z) for dx in (-0.032, 0.032) for dy in (-0.075, 0.075) for z in (0.0, 0.056 + 0.008 * dy / 0.075)]
+               + [(bx + dx * 0.9, dy * 0.95, 0.060 + 0.008 * dy / 0.075) for dx in (-0.032, 0.032) for dy in (-0.075, 0.075)], "CastIron")
+        b.M = Matrix.Translation((bx, 0.0, 0.064))
+        b.lathe([(0.0085, 0.0), (0.0085, 0.010), (0.0, 0.011)], 10, "SteelDark", cap_bottom=False)   # centre pin
+        b.M = Matrix.Identity(4)
+        for y in (-0.050, 0.050):   # a U-bolt over the block, legs down either side
+            path = [(bx - 0.042, y, 0.0)] + [(bx - 0.042, y, 0.012 + 0.098 * k / 6) for k in range(1, 7)]
+            path += [(bx - 0.042 * math.cos(math.pi * k / 10), y, 0.110 + 0.042 * math.sin(math.pi * k / 10)) for k in range(1, 10)]
+            path += [(bx + 0.042, y, 0.110 - 0.098 * k / 6) for k in range(0, 7)] + [(bx + 0.042, y, 0.0)]
+            b.tube(path, 0.0072, 10, "Zinc")
+            for sx in (-1, 1):
+                b.M = Matrix.Translation((bx + sx * 0.042, y, 0.0))
+                b.lathe([(0.0, 0.0), (0.016, 0.0), (0.016, 0.003), (0.0, 0.003)], 10, "Zinc", cap_bottom=False, cap_top=False)   # washer
+                b.lathe([(0.0, 0.003), (0.012, 0.003), (0.012, 0.016), (0.0, 0.016)], 6, "SteelDark", cap_bottom=False, cap_top=False)   # nut
+                b.M = Matrix.Identity(4)
+    for sx in (-1, 1):   # strut spacers in front, studs up
+        b.M = Matrix.Translation((sx * 0.105, -0.215, 0.0))
+        b.lathe([(0.055, 0.0), (0.088, 0.0), (0.088, 0.044), (0.083, 0.050), (0.060, 0.050), (0.055, 0.044), (0.055, 0.0)], 24,
+                "NylonOrange", cap_bottom=False, cap_top=False)
+        for k in range(3):
+            a = 2 * math.pi * k / 3 + 0.4
+            b.M = Matrix.Translation((sx * 0.105 + 0.0715 * math.cos(a), -0.215 + 0.0715 * math.sin(a), 0.050))
+            b.lathe([(0.0055, 0.0), (0.0055, 0.022), (0.0035, 0.025), (0.0, 0.025)], 8, "Zinc", cap_bottom=False)
+            b.M = Matrix.Identity(4)
+    return b.finish("lift")
+
+
+def build_compressor():
+    """A 12 V portable tire inflator: red motor can on a black base, finned silver pump head with a
+    pressure gauge, a coiled air hose ending in a brass chuck, and the power cord to a lighter plug."""
+    b = Builder()
+    b.prism([(x, y) for x, y, _ in rrect(0.20, 0.11, 0.02, 0, per=4)], 0.0, 0.014, "CanBlack")
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            b.M = Matrix.Translation((sx * 0.080, sy * 0.040, -0.004))
+            b.lathe([(0.0, 0.0), (0.009, 0.0), (0.009, 0.004), (0.0, 0.004)], 8, "Rubber", cap_bottom=False, cap_top=False)
+    # Motor: a can along X, end caps black, cooling slots in the rear cap.
+    b.M = Matrix.Translation((-0.025, 0.0, 0.062)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
+    b.lathe([(0.0, -0.070), (0.036, -0.068), (0.044, -0.060), (0.044, -0.052)], 20, "CanBlack", cap_bottom=False, cap_top=False)
+    b.lathe([(0.046, -0.052), (0.046, 0.040)], 20, "CanRed", cap_bottom=False, cap_top=False)
+    b.lathe([(0.044, 0.040), (0.044, 0.050), (0.030, 0.056), (0.0, 0.056)], 20, "CanBlack", cap_bottom=False, cap_top=False)
+    for k in range(6):
+        a = 2 * math.pi * k / 6
+        b.bar((0.012 * math.cos(a), 0.012 * math.sin(a), -0.0695), (0.030 * math.cos(a), 0.030 * math.sin(a), -0.0665), 0.006, "Rubber", h=0.002)
+    b.M = Matrix.Identity(4)
+    b.cbox((-0.025, 0.0, 0.016), (0.070, 0.060, 0.008), "CanBlack", ch=0.003)   # motor saddle
+    # Pump head: finned cylinder standing at the +X end, black head cap.
+    b.M = Matrix.Translation((0.062, 0.0, 0.014))
+    fins = [(0.024, 0.0)]
+    for k in range(9):
+        z = 0.006 + 0.0085 * k
+        fins += [(0.024, z), (0.034, z + 0.0012), (0.034, z + 0.0040), (0.024, z + 0.0052)]
+    fins += [(0.024, 0.086), (0.030, 0.088), (0.030, 0.104), (0.020, 0.108), (0.0, 0.109)]
+    b.lathe(fins, 20, "Steel", cap_bottom=False)
+    b.lathe([(0.031, 0.088), (0.031, 0.105), (0.021, 0.110), (0.0, 0.111)], 20, "CanBlack", cap_bottom=False)
+    b.M = Matrix.Identity(4)
+    b.bar((0.062, -0.020, 0.112), (0.062, -0.040, 0.128), 0.010, "Steel")   # gauge stalk
+    b.M = Matrix.Translation((0.062, -0.044, 0.131)) @ Matrix.Rotation(math.radians(-52), 4, "X")
+    b.lathe([(0.0, -0.006), (0.027, -0.006), (0.029, 0.0), (0.029, 0.006), (0.025, 0.007)], 20, "CanBlack", cap_top=False)
+    b.lathe([(0.025, 0.004), (0.0, 0.004)], 20, "GaugeFace", cap_bottom=False, cap_top=False)
+    b.bar((0.0, 0.0, 0.0048), (0.012, 0.014, 0.0048), 0.0025, "CanRed", h=0.0008)
+    b.M = Matrix.Identity(4)
+    # Air hose: out of the head, down, and a flat coil on the ground in front; brass chuck at the end.
+    hose = [(0.090, 0.0, 0.070), (0.110, -0.010, 0.050), (0.118, -0.030, 0.020), (0.110, -0.060, 0.006)]
+    cx, cy = 0.040, -0.120
+    for k in range(1, 50):
+        t = k / 49; a = math.radians(-20) - 2.6 * math.pi * t; rr = 0.072 - 0.020 * t
+        hose.append((cx + rr * math.cos(a), cy + rr * math.sin(a), 0.006 + 0.0002 * k))
+    b.tube(hose, 0.0055, 8, "CanBlack")
+    end, prev = Vector(hose[-1]), Vector(hose[-2])
+    d = (end - prev).normalized()
+    b.tube([end, end + d * 0.012, end + d * 0.040], 0.0075, 10, "Brass")
+    # Power cord from the motor's rear cap out to the left, ending in a lighter-socket plug.
+    cord = [(-0.097, 0.0, 0.062), (-0.115, 0.010, 0.040), (-0.125, 0.030, 0.012), (-0.140, 0.060, 0.004), (-0.170, 0.075, 0.004),
+            (-0.200, 0.060, 0.004), (-0.225, 0.035, 0.004)]
+    b.tube(cord, 0.004, 8, "CanBlack")
+    tip, prev = Vector(cord[-1]), Vector(cord[-2])
+    d = (tip - prev).normalized()
+    b.tube([tip, tip + d * 0.010, tip + d * 0.050], 0.011, 12, "CanBlack")
+    b.tube([tip + d * 0.050, tip + d * 0.062], 0.007, 10, "Steel")
+    b.tube([tip + d * 0.062, tip + d * 0.066], 0.003, 6, "CanRed")
+    return b.finish("compressor")
+
+
+def build_bikePump():
+    """The bike pump — always in the truck, never an item; this is the repair card's pictogram. A
+    floor pump: two feet, steel barrel, gauge at the foot, T-handle, hose clipped up the barrel."""
+    b = Builder()
+    for sx in (-1, 1):   # the feet
+        b.hull([(sx * dx, dy, z) for dx in (0.018, 0.105) for dy in (-0.030, 0.030) for z in (0.0, 0.012)]
+               + [(sx * 0.112, 0.0, 0.006)], "CanBlack")
+    b.lathe([(0.0, 0.0), (0.036, 0.0), (0.036, 0.024), (0.026, 0.040), (0.026, 0.050), (0.0, 0.051)], 16, "CanBlack")   # base boss
+    b.lathe([(0.0225, 0.050), (0.0225, 0.600)], 16, "Steel", cap_bottom=False, cap_top=False)   # barrel
+    b.lathe([(0.0255, 0.596), (0.0255, 0.618), (0.010, 0.624), (0.0, 0.625)], 16, "CanBlack", cap_bottom=False)   # top cap
+    b.lathe([(0.0055, 0.624), (0.0055, 0.680)], 10, "Chrome", cap_bottom=False, cap_top=False)   # plunger rod
+    b.M = Matrix.Translation((0, 0, 0.690)) @ Matrix.Rotation(math.pi / 2, 4, "Y")   # T-handle along X
+    hp = [(0.0, -0.096), (0.010, -0.095), (0.0145, -0.090)]
+    for k in range(17):
+        z = -0.082 + 0.164 * k / 16
+        hp.append((0.0145 if abs(z) > 0.020 else 0.0115, z))
+    hp += [(0.0145, 0.090), (0.010, 0.095), (0.0, 0.096)]
+    b.lathe(hp, 12, "CanBlack", cap_bottom=False, cap_top=False)
+    b.M = Matrix.Identity(4)
+    # Gauge on the base, face toward the viewer.
+    b.M = Matrix.Translation((0.0, -0.040, 0.075)) @ Matrix.Rotation(math.radians(75), 4, "X")
+    b.lathe([(0.0, -0.010), (0.034, -0.010), (0.037, 0.0), (0.037, 0.006), (0.033, 0.008)], 20, "CanBlack", cap_top=False)
+    b.lathe([(0.033, 0.005), (0.0, 0.005)], 20, "GaugeFace", cap_bottom=False, cap_top=False)
+    b.bar((0.0, 0.0, 0.0058), (0.016, 0.018, 0.0058), 0.003, "CanRed", h=0.0008)
+    b.M = Matrix.Identity(4)
+    b.bar((0.0, -0.022, 0.060), (0.0, -0.030, 0.068), 0.010, "CanBlack")
+    # Hose: out of the base, a loop out to the side, up to a clip high on the barrel, chuck parked.
+    hose = [(0.030, 0.012, 0.030), (0.060, 0.030, 0.030), (0.085, 0.040, 0.080), (0.090, 0.040, 0.180), (0.080, 0.035, 0.300),
+            (0.060, 0.030, 0.400), (0.040, 0.026, 0.470), (0.030, 0.024, 0.500)]
+    b.tube(hose, 0.0055, 8, "CanBlack")
+    b.cbox((0.0, 0.024, 0.500), (0.050, 0.010, 0.020), "CanBlack", ch=0.003)   # holster clip on the barrel
+    b.tube([(0.030, 0.024, 0.500), (0.030, 0.024, 0.535), (0.030, 0.024, 0.560)], 0.0095, 10, "CanRed")   # chuck
+    return b.finish("bikePump")
+
+
 BUILDERS = {
     "coffee": build_coffee, "chiliDog": build_chiliDog, "spareTire": build_spareTire,
     "emergencyGas": build_emergencyGas, "pack": build_pack, "rucksack": build_rucksack, "bedroll": build_bedroll,
     "airMattress": build_airMattress, "sleepingPad": build_sleepingPad, "deluxeSleepingPad": build_deluxeSleepingPad,
     "blanket": build_blanket, "sleepingBag": build_sleepingBag, "zipTies": build_zipTies, "ductTape": build_ductTape,
-    "tirePatches": build_tirePatches, "stopLeak": build_stopLeak, "bubbleWrap": build_bubbleWrap,
+    "tirePlugKit": build_tirePlugKit, "stopLeak": build_stopLeak, "bubbleWrap": build_bubbleWrap,
+    "tire": build_tire, "springs": build_springs, "dampers": build_dampers, "pads": build_pads, "arb": build_arb,
+    "diff": build_diff, "lift": build_lift, "compressor": build_compressor, "bikePump": build_bikePump,
 }
 BATCH2 = ["airMattress", "sleepingPad", "deluxeSleepingPad", "blanket", "sleepingBag",
-          "zipTies", "ductTape", "tirePatches", "stopLeak", "bubbleWrap"]
+          "zipTies", "ductTape", "tirePlugKit", "stopLeak", "bubbleWrap"]
+PARTS = ["tire", "springs", "dampers", "pads", "arb", "diff", "lift"]
+MARGIN = {"tirePlugKit": 1.03}   # a tighter crop where the item reads better close up
 
 
 # ── Render rig ───────────────────────────────────────────────────────────────────────────────────
@@ -974,12 +1354,12 @@ def fresh_scene():
 
 
 def frame(cam, ob, margin=1.12):
-    """Aim the ortho camera along −VIEW_DIR and fit the object's bounding box, centred."""
+    """Aim the ortho camera along −VIEW_DIR and fit the object's silhouette (its vertices), centred."""
     rot = (-VIEW_DIR).to_track_quat("-Z", "Y")
     right, up = rot @ Vector((1, 0, 0)), rot @ Vector((0, 1, 0))
-    corners = [ob.matrix_world @ Vector(c) for c in ob.bound_box]
+    corners = [ob.matrix_world @ v.co for v in ob.data.vertices]
     rs, us = [c.dot(right) for c in corners], [c.dot(up) for c in corners]
-    centre = sum(corners, Vector()) / 8
+    centre = sum(corners, Vector()) / len(corners)
     off = right * ((max(rs) + min(rs)) / 2 - centre.dot(right)) + up * ((max(us) + min(us)) / 2 - centre.dot(up))
     cam.rotation_mode = "QUATERNION"; cam.rotation_quaternion = rot
     cam.location = centre + off + VIEW_DIR * 5.0
@@ -990,7 +1370,7 @@ def frame(cam, ob, margin=1.12):
 def run(item_id):
     sc, cam = fresh_scene()
     ob = BUILDERS[item_id]()
-    frame(cam, ob)
+    frame(cam, ob, MARGIN.get(item_id, 1.12))
     os.makedirs(OUT_DIR, exist_ok=True)
     sc.render.filepath = os.path.join(OUT_DIR, f"{item_id}.png")
     bpy.ops.render.render(write_still=True)

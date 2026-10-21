@@ -300,6 +300,8 @@ export const REWARDS = [
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
     { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['C', 'B'],
       pools: ['gasStation', 'strandedMotorist'] },
+    { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
+      pools: ['autoShop', 'gasStation', 'workSite'] },
 ]
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────

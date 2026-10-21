@@ -27,8 +27,9 @@ Step 7 of **Places and Missions**. No shop code exists today.
 
 ## Amended 2026-10-14 (owner)
 
-- **Prices follow the furthest region unlocked**, not the shop's own region (design-amendments-
-  2026-10-14.md §11). One function, so a region-1 shop visited from region 2 charges region-2 prices.
+- ~~**Prices follow the furthest region unlocked**, not the shop's own region (design-amendments-
+  2026-10-14.md §11). One function, so a region-1 shop visited from region 2 charges region-2 prices.~~
+  **Retired 2026-10-21 (owner):** prices scale with the clock only (`dayTier`), wherever you buy.
 - Stock levels stay out of this minimal shop; they arrive with the bed upgrades (FEAT-115).
 - The camp gets the same clock pause in FEAT-118.
 

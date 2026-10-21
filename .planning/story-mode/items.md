@@ -56,8 +56,9 @@ Used up. Per-job or per-day decisions, not permanent upgrades.
 |---|---|---|---|---|
 | **Coffee** | Alert now, sleepy earlier tomorrow. **A loan against tomorrow, repaid at interest.** The canonical consumable and the shape every other one is measured against. **+5 h now, −2 h off the next wake-up** (owner, 2026-10-20; was −3: five hours awake costs about three hours of sleep, so the cup has to beat that ratio or nobody drinks it). | Bought (general store, gas station, food vendor), **$3** | Tomorrow's hours | **RATIFIED** — DESIGN.md "The day and the clock"; figures §7 rulings 2026-10-20 |
 | ~~**Cargo straps**~~ **[STRUCK 2026-10-14 — not an item; FEAT-110 closed, see §3e]** | Makes the **next fragile cargo** more resilient by changing the coupling between chassis and load — the cargo sees less shock than the truck does. Enables freight-grade fragile work you'd otherwise turn down. | Bought or found | Cash; a slot; trivial mass | **IDEA** — `IDEAS.md` 2026-07-29. *Open: single-use per job, degrades over several, or a reusable tool?* |
-| **Fish (eaten)** | Alertness that **does not have to be repaid** — the only honest restoration in the game. *"Coffee is debt. Fish is income."* | Caught; best at a favored water | A long relationship with the water | **PROPOSED** — `spirits-and-pacts.md` #04. ⚠ Depends on The Confluence, which is deferred |
-| **Spare tire** | Recovers from a puncture without a tow. **Fitting it is a 90 min timeskip** (owner, 2026-10-20; was 30 min, 2026-09-30). Puncture is a hard fail state in the wear model. | Bought/found; starts in some jalopies | Real mass, all the time | **IMPLIED** — named in DESIGN.md "The car" as a stowed consumable; behavior unspecified |
+| **Fish (eaten)** | Alertness that **does not have to be repaid** — the only honest restoration in the game. *"Coffee is debt. Fish is income."* | Caught; best at a favored water | A long relationship with the water | **PROPOSED** — `spirits-and-pacts.md` #04. ⚠ Depends on The Confluence, which is deferred. **Four species (owner, 2026-10-21): salmon, rainbow trout, brown trout, catfish — each carries a different effect** (§5) |
+| **Groceries** | **A delayed meal.** Bought at the general store, carried, and **cooked into a meal at camp — only if you own the cooking kit**. They still spoil (§1b), so they buy hours, not days. The meal for later in a run, when you camp far from a food vendor and the next stop with a kitchen is a day's drive off. | Bought (general store) | Cash; the spoilage clock; and the cooking kit's ≈23 kg on every mile | **IDEA** — owner, 2026-10-20. Figures open (the item setup page) |
+| **Spare tire** | Recovers from a puncture without a tow. **Fitting it is a 90 min timeskip** (owner, 2026-10-20; was 30 min, 2026-09-30). Puncture is a hard fail state in the wear model. **Ruled 2026-10-21:** self-contained — the truck always carries the factory jack. Full-size only, no donut. **Two items in different pools: worn (50–80% condition, ~$15) and new (~$25).** Sold at the auto shop; a bonus item from the auto shop and stranded motorists (A–S); a rare roadside find. | Bought/found; starts in some jalopies | Real mass, all the time | **IMPLIED** — named in DESIGN.md "The car" as a stowed consumable; behavior unspecified |
 | **Air filter (spare)** | Replacement for the track the player must actively *watch* — it does ~nothing until it does. | Bought/found | Cash; a slot | **IMPLIED** — same |
 | **Fuel** | The tank. Burn is a function of rpm and load, so a par-beating drive costs fuel as well as wear. **The one cost that scales with distance** — SM-INV-5 keeps wear off the distance axis, and this is what fills it. Bought at gas stations. | Gas stations (a POI type) | Cash — and the detour, if you let it get low | **RATIFIED** — owner, 2026-08-01. Reverses this row's old *NOT DESIGNED*. Ticket FEAT-50; gauge already ships (FEAT-49). See DESIGN.md "Fuel and gas stations" |
 | **Jerry can** | Fuel you carry. The cheap answer to running dry, which is otherwise the breakdown predicament (tow, or don't). | Bought/found | Cash; a slot; **real mass, always** — and it is fuel, so it is not trivial mass | **IMPLIED** — falls out of the fuel ruling; see the tools carry-cost question in §2. **Shipped as a bonus item** (owner, 2026-10-08): *Emergency gas*, a single-use 2 gal RotoPax, earned from gas-station and stranded-motorist offers (`data/offers.js` REWARDS `emergencyGas`; grant still stubbed) |
@@ -145,9 +146,11 @@ before the buff question is settled.
 
 | Perishable | Fresh for | Consequence when it runs out |
 |---|---|---|
-| **Fish, uncooked** | **~4–5 h** | Gone. Cook and eat it on the spot, or lose it |
-| **Fish, in a cooler** | **~24 h basic, ~48 h better** | You can carry it, camp on it, and still eat it tomorrow — a two-rung ladder, see below |
-| *(everything else)* | unspecified | Cooked fish, bought food and food-as-cargo all want a figure |
+| **Fish, uncooked** | **~6 h** (2026-10-21; was ~4–5 h) | Gone. Cook and eat it on the spot, or lose it |
+| **Fish, in a cooler** | **~36 h** (2026-10-21: ×1/6; the better cooler is open) | You can carry it, camp on it, and still eat it tomorrow — a two-rung ladder, see below |
+| **Chili dog** | **16 h** (2026-10-21) | Gone |
+| **Packed lunch** | **24 h** (2026-10-21) | Gone |
+| *(everything else)* | unspecified | Cooked fish, groceries, the burger and food-as-cargo still want a figure |
 
 **What the fish number actually does.** The day is 12–16 h (the alertness ladder, FEAT-54), so a
 fish landed in the morning is dead by mid-afternoon. Without cooling, **fishing early is a
@@ -186,6 +189,10 @@ insulation, priced as durability is priced.
 **SM-INV-10 is satisfied the same way the camp gear satisfies it:** the multiplier is legal as
 *internals* — the game is full of them — provided the figure never surfaces in the UI. The player is
 told *the fish is still good* or *the fish has turned*, never a percentage or a countdown bar.
+
+**RULED 2026-10-21 (the item setup page):** uncooled fish keep ~6 h; **the cooler holds 4 fish** and keeps them
+~36 h (×1/6 — so the proposal table below is superseded for the first rung). The better cooler's figure
+is open, and it now needs to sit above 36 h.
 
 Open, and the owner's:
 
@@ -252,7 +259,13 @@ spends daylight, so it can't turn into a chore. Thirst is out (owner, 2026-09-30
 **What it gives the catalog, all at once:**
 
 - **A food class.** Diner meals, a packed lunch, cooked fish, gas-station junk food. Each resets the
-  hunger clock; they differ in what else they do.
+  hunger clock; they differ in what else they do. **The roster as of 2026-10-21:** the **burger** (its
+  own item at the food vendor — the standard meal, ~8 h), the **dinner meal** (renamed from diner meal:
+  one generic sit-down meal at the food vendor, 8 h, 30 min to eat, $5–10, eat-in only), the chili dog
+  (10 h, spoils in 16 h), the **packed lunch** (never sold — a $6 reward from homes, farms and the food
+  vendor, B–A; 8 h; fresh 24 h), groceries (§1, cooked at camp), and four gas-station snacks split from
+  one: **bag of peanuts, gummy worms, spicy chips, candy bar** — each holds 2–4 h and stacks 3–5, and the
+  higher one stacks the less it holds.
 - **The "reduce energy drain" items** the owner asked for — they are simply the meals, and the
   effect is honest (a fed driver tires at the normal rate).
 - **A home for §1a's timed effects.** A meal is the natural carrier for *"for the next 8 h"*: a
@@ -272,7 +285,9 @@ Open, and the owner's:
   fish). Otherwise you start the day already on the clock — which gives the cooking kit its real job.
 - **Food on the spoilage clock (§1b).** Bought food needs a fresh-for figure; a packed lunch that
   turns by afternoon is the natural first one.
-- **Quick slot or stop?** Snacks from a quick slot while driving (§1c); meals only when stopped.
+- ~~**Quick slot or stop?** Snacks from a quick slot while driving (§1c); meals only when stopped.~~
+  **RULED 2026-10-21: all food can be eaten while driving.** (The dinner meal is eaten at the vendor
+  because it is a sit-down menu item, not because carried food needs a stop.)
 
 ## 2. Tools
 
@@ -285,7 +300,7 @@ plus a slot**, paid on every mile you carry it, against a payoff you only occasi
 | **Breaker bar** | Roadside wrenching. Paired with the quick-jack in the bible's own list. | Bought/found | Real mass, always | **IMPLIED** — same |
 | **Chain** | Chains onto a downed log for the drag. **A one-sided distance constraint** — zero force slack, hard tension taut — and the snatch impulse *is* the damage signal. | Main-mission equipment | The truck, by design | **RATIFIED premise** — `missions.md` "Main missions". *Open: carried item, or supplied by the mission?* |
 | **Fishing gear** | Required for the fishing minigame. | ? | ? | **IMPLIED / UNSPECIFIED** — see the gap note below |
-| **Cooler** | **A flat rate reduction on the spoilage clock (§1b).** Uncooled, a fish is good for about four or five hours — cook it on the spot or lose it. In the cooler it keeps for a day or two, so you can carry the catch, camp on it, and eat it tomorrow. **Primarily fishing kit** — it is the thing that lets a catch leave the water without being eaten where it was landed. | Bought/found | Cash; a slot; **deliberately trivial mass — which is the problem, see the note below** | **IDEA** — owner, 2026-08-22 |
+| **Cooler** | **A flat rate reduction on the spoilage clock (§1b).** Uncooled, a fish is good for about four or five hours — cook it on the spot or lose it. In the cooler it keeps for a day or two, so you can carry the catch, camp on it, and eat it tomorrow. **Ruled 2026-10-21: ~6 h uncooled → ~36 h in the cooler, and it holds 4 fish.** **Primarily fishing kit** — it is the thing that lets a catch leave the water without being eaten where it was landed. | Bought/found | Cash; a slot; **deliberately trivial mass — which is the problem, see the note below** | **IDEA** — owner, 2026-08-22 |
 | **GPS unit** | **Draws the mission route in the 3D world** so you drive it by looking out of the windscreen instead of stopping to read the map — FEAT-39's chevrons + junction arrow boards, already shipped in `src/gps.js`. A **direct convenience upgrade for any player**, and deliberately a common find: it does not make you *faster*, it makes knowing-the-way *free*. A skilled player reads the map and spends the cash elsewhere. **Until you find one, the paper map (FEAT-16, `M`) is all you get** — navigation is map-reading, landmarks, and memory. | Found or bought within a run | Cash; a slot; trivial mass — the real cost is that you had to *earn* legibility | **RATIFIED premise** — owner, 2026-07-31: "GPS should be an item; until you find it you navigate via the map alone." *Open: strictly per-run (SM-INV-8 says items die with the run — you re-find it every run), or does knowing-where-one-sells count as the literacy that persists?* |
 | **Destination beacon** | Shows a **beam of light rising from the destination**, visible over terrain from far off. Gives *bearing*, not route — the point is that it makes **off-route travel** findable: you can leave the road, crest the ridge, and steer by the light. It answers "where," never "how." | Found or bought within a run | Cash; a slot | **IDEA** — owner, 2026-07-31. *Open: always-on while carried, or aimed/activated? Render: a sky-beam is cheap and reads at range, but must respect fog/night (day/night pass made fogColor a radiance value).* |
 | **Shortcut GPS** | **The Shortcut's relationship, rendered on the windscreen.** It ties cut generation (FEAT-52) into the on-screen navigation — FEAT-39's chevrons and junction boards applied to **cuts** as well as roads. It shows you what the Shortcut has **already revealed to you**, so it is worthless at zero esteem and better the warmer he gets. Par is unaffected: par is always the road route (SM-INV-2). The advanced GPS — very rare. | Found or bought within a run; **very rare** | Cash; a slot | **RATIFIED** — owner, 2026-08-02 (**rebuilt**; was "his knowledge on a chip, strictly stronger than his pact"). *The "what is a shortcut" tech question is ANSWERED: cuts are real worldgen objects (FEAT-52), not an overland-routing problem.* |
@@ -426,7 +441,7 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 | **Binoculars** | **Vibe axis — view.** Something to look at from a site with nothing much to look at. Inert on a spot that already has the valley in front of it. **Unblocked:** view is now a real segment — `VIBE_W = { flat .40, view .15, shade .20, water .25 }` in `src/camp.js`, re-ratified 2026-08-01, and the raw score is `skylineView()`'s angular field-of-vision scan. So the deficit this fills is `1 − viewScore`, and it is **the cheapest entry in this table to build** — the only camp-gear row whose whole dependency chain already ships. | Bought/found | Cash; a slot; negligible mass | **IDEA** — 2026-08-01; **owner re-affirmed 2026-08-18** |
 | **Backpack** | **Moved to §2c — backpacks are now their own item class** (owner, 2026-10-16). The reach idea below survives as one of a pack's two traits. | — | — | see §2c |
 | **Camp shovel** / **Long-handled shovel** | **Permission — a fourth axis, the Backpack's twin.** Lets you **dig a level pad on sloped ground**: raises the campable gate (`campGateUnevenM`, the max height spread across the 6 m pad, 1.2 m today ≈ 8–11° of slope depending on how the pad sits on the fall line). Two tiers: the folding camp shovel moderate, the long-handled shovel to roughly **20°**. Fills no vibe segment — a dug bench on a hillside still scores zero flatness, and **the Cot is what pays that deficit**, so the two stack rather than overlap. **Measured, raw terrain, seeds 1/6/42, random pad orientation:** today's 1.2 m gate passes **~5–7%** of the map; **1.6 m (≈11–15°) → ~10%**; **2.2 m (≈15–20°) → ~20%**; 3.0 m (≈20–27°) → ~35%. So each tier roughly doubles the campable ground — 2.2 m is the "max 20°" figure. | Bought — the general store already stocks shovels (`data/offers.js` cargo `shovel`, ~2 kg); long-handled tier rarer/pricier | Cash; a slot; ~1 kg / ~2.5 kg | **IDEA** — owner, 2026-10-15. **No extra clock time** (owner, 2026-10-15): the dig is folded into the existing 30-min make-camp chore (`src/day.js`), whatever the slope. *Open: does the long shovel replace the camp shovel or stack?* |
-| **Cooking kit** | ~50 lb (≈23 kg) of always-carried mass. Renders as an **A-frame over the campfire with a Dutch oven hanging from it**. Gives a **flat bonus to the effect of food items** — there is deliberately no cooking *system*, no recipes, no ingredients. | Bought/found | ≈23 kg on every mile, for a benefit collected only at camp | **IDEA** — 2026-07-30. ⚠ Depends on food items, which do not exist (§1: fish is PROPOSED, and upstream of a fishing minigame nobody has framed) |
+| **Cooking kit** | ~50 lb (≈23 kg) of always-carried mass. Renders as an **A-frame over the campfire with a Dutch oven hanging from it**. Gives a **flat bonus to the effect of food items** — there is deliberately no cooking *system* and no recipes. **One ingredient exists:** groceries (§1), which only the kit can turn into a meal (owner, 2026-10-20 — amends this row's original *no ingredients*). | Bought/found | ≈23 kg on every mile, for a benefit collected only at camp | **IDEA** — 2026-07-30. ⚠ Depends on food items, which do not exist (§1: fish is PROPOSED, and upstream of a fishing minigame nobody has framed) |
 
 > **The visible-kit rule.** Camp gear is the one category whose ownership is legible *without a UI*:
 > what you carry is what renders at the site, so **the campsite is the inventory screen**. That is
@@ -761,10 +776,10 @@ configuration that FEAT-112's load verdicts read.
 | **Roof rack** | a second space for long, light loads; stacks with any bed |
 | **Light bar** | no load effect (§7) |
 
-**Pricing and finding them.** A part costs what the **furthest region you have unlocked** charges,
-wherever you buy it, so a trip back to region 1 is never a cheap shopping run. Shops stock a subset,
-upgrades also come as infrequent mission rewards, and lower-tier parts stay in the later pools at the
-later price.
+**Pricing and finding them.** ~~A part costs what the furthest region you have unlocked charges.~~
+**A part's price scales with the clock only** (owner, 2026-10-21 — the furthest-region rule is retired;
+a region gives better income and rewards). Shops stock a subset, upgrades also come as infrequent
+mission rewards, and lower-tier parts stay in the later pools.
 
 **Cargo protection** (FEAT-116) for fragile loads. **Every effect is proportional to the item's own
 thresholds** (`shockFloorG`, `breakG`, FEAT-97) — never a flat amount.
@@ -870,7 +885,7 @@ second use, and it **conflicts with *coffee is debt, fish is income***; see §1a
 the cooked-at-camp compromise.
 
 **Fish spoil in about four or five hours, and a cooler buys a day or two** [owner-specified
-2026-08-22; the clock is §1b, the item is §2]. This is the first hard number the catch category has
+2026-08-22; the clock is §1b, the item is §2; **re-cut 2026-10-21: ~6 h uncooled, ~36 h cooled**]. This is the first hard number the catch category has
 ever had, and it does two useful things at once. **Uncooled, the catch is not a resource — it is an
 appointment:** cook and eat it where you are, or lose it, so fishing in the morning costs you the
 middle of the day. **Cooled, it becomes a thing you carry**, which is the first time anything in this
@@ -884,9 +899,12 @@ category touches the world outside *eat it at camp tonight*. That cuts two ways:
   depleting. Stockpiled fish is stored alertness, and stored restoration is a power floor
   (SM-INV-9) — *coffee is debt, fish is income* only stays honest while the income is perishable.
   The cheap guard: **cold slows spoilage, it never stops it**, so a cooler buys *travel*, not
-  *storage* — the clock keeps running and the box holds few fish. Owner's call, flagged not resolved.
+  *storage* — the clock keeps running and the box holds few fish. **Resolved 2026-10-21 (owner): cold
+  slows spoilage, never stops it, and the cooler holds 4 fish.**
 
-**Species: unspecified, and that's the burn-down question.** Nothing in the docs names a single fish.
+**Species: named 2026-10-21 (owner) — salmon, rainbow trout, brown trout, catfish — and species carry
+different effects.** What each one does, and where it bites, is open on the item setup page; the axes
+below are the candidates. *(Before 10-21: unspecified, and that was the burn-down question.)*
 Before authoring a species list, the axis it varies along has to exist. Candidates, cheapest first:
 
 | Axis | What a species would mean | Note |
@@ -934,9 +952,9 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 | **Stop-leak** | Consumable | Field repair: restores **15%** radiator condition (owner, 2026-10-16). Under FEAT-51 that is directly cooling capacity — a 35% radiator patched to 50% holds full load again | Aimed at the overheat → power loss → engine wear chain (`missions.md` §3c). Pairs with heavy hauls on long grades |
 | **Hi-lift jack** | Carried tool (real mass) | **Right a rolled truck** where it lies — Halo's flip, in a truck. Replaces the tow for a rollover that didn't break anything | ⚠ SM-INV-1 (death is crash or breakdown only): a rollover the jack can fix must not count as the crash. Needs a ruling on where "rolled" ends and "crashed" begins — likely the damage state at rest, not the rollover itself. May also be the §2 quick-jack's other job — one tool, not two, if so |
 | **Light bar** | Fitted part | See further at night | Simple and safe. Pairs with the Night Owl's nocturnal bargain: makes his hours more usable, not safe. Real mass and drag up high, if we want a cost |
-| **Tire patches** | Consumable | **Patching takes 30 min** (owner, 2026-10-20). **Fixes the puncture and nothing else** — the tire keeps whatever condition it had when it popped. Restores **no durability**; a worn tire is still worn | Owner, 2026-09-30 (brought back from the rejected list; no small-vs-large puncture split). A patch alone leaves the tire flat — it still has to be re-inflated (pump or compressor, below). The spare trade: the spare is real mass all the time and a fresh tire; the patch is light and puts you back on the same rubber. §1's spare-tire row calls a puncture a hard fail; with patches it is recoverable at the roadside. Kept worth carrying on good tires by FEAT-93 (hazard punctures at any condition) |
-| **Bike pump** | Always in the truck — not bought, not a slot | Re-inflates a patched tire: a **2 h timeskip** | Owner, 2026-09-30. The baseline that makes a patch usable at all. The cost is daylight |
-| **Compressor** | Carried tool | Re-inflates a patched tire: a **30 min timeskip** | Owner, 2026-09-30 — **brought back** in a different job: not airing down for grip (our tire model has no pressure–grip term), but **turning a 2 h patch stop into a 30 min one**. Worthless without patches; patches are slow without it. No inflation state needed — re-inflation is just a timeskip, and the `flat[]` flag clears at the end of it |
+| **Tire plug kit** *(was tire patches — renamed 2026-10-21)* | Consumable | **Plugging takes 30 min** (owner, 2026-10-20). **One plug per kit.** Sold at the auto shop, $5–10; a bonus item from the auto shop, gas station and work site (B–A); a rare roadside find (2026-10-21). In the game files as `tirePlugKit`. **Fixes the puncture and nothing else** — the tire keeps whatever condition it had when it popped. Restores **no durability**; a worn tire is still worn | Owner, 2026-09-30 (brought back from the rejected list; no small-vs-large puncture split). A patch alone leaves the tire flat — it still has to be re-inflated (pump or compressor, below). The spare trade: the spare is real mass all the time and a fresh tire; the patch is light and puts you back on the same rubber. §1's spare-tire row calls a puncture a hard fail; with patches it is recoverable at the roadside. Kept worth carrying on good tires by FEAT-93 (hazard punctures at any condition) |
+| **Bike pump** | Always in the truck — not bought, not a slot | Re-inflates a patched tire: a **2 h timeskip** | Owner, 2026-09-30. The baseline that makes a patch usable at all. The cost is daylight. **The repair card (owner, 2026-10-21):** two confirm buttons — *Pump the tire by hand* (always there, 2 h, a small pump pictogram) and, if you own a compressor, *Inflate tire* with the compressor's icon (30 min). Follows UI-STYLE.md |
+| **Compressor** | Carried tool | Re-inflates a patched tire: a **30 min timeskip** | Owner, 2026-09-30 — **brought back** in a different job: not airing down for grip (our tire model has no pressure–grip term), but **turning a 2 h patch stop into a 30 min one**. Worthless without patches; patches are slow without it. In the game files as `compressor` (2026-10-21). No inflation state needed — re-inflation is just a timeskip, and the `flat[]` flag clears at the end of it |
 | **Rubber bed mat** | Carried (loose in the bed) | Raises friction between haul cargo and the bed floor. The load stops **sliding** but can still **bounce**, so you still read the road | The cheap, early version. Physically one number — the cargo-to-floor friction coefficient in the bed well. **It is the lesser option** (owner, 2026-09-30): it either grips less than the bedliner, or wears out, or both — **undecided** |
 | **Bedliner** | Fitted part (service shop) | The same friction increase as the mat, done properly: **works well, never wears out** | **The real, desirable upgrade** (owner, 2026-09-30). "Permanent" means for the run — like every part it dies with the run (SM-INV-8). Still only stops sliding, never bouncing, so the FEAT-110 objection doesn't return |
 
@@ -956,8 +974,23 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
   food vendor and gas station (C–B), never found. **Energy drink** +5 now, −2.5 four hours later, $4,
   general store and gas station (sold and reward, C–B), never found. **Chili dog** a plain meal, holds
   10 h, $5, food vendor only (B–A), never found.
-- *Open from the same pass:* whether item prices scale with the furthest region (DESIGN.md (10)) or
-  only with the clock — the owner recalls a clock-only ruling; asked, not settled.
+- ~~*Open from the same pass:* whether item prices scale with the furthest region (DESIGN.md (10)) or
+  only with the clock.~~ **Settled 2026-10-21: clock only** — DESIGN.md (10) is retired.
+
+**Second pass (owner, 2026-10-21):**
+
+- **Inflating a plugged tire** is its own step: 2 h by hand with the bike pump, 30 min with a compressor.
+  The repair card shows both as buttons (§7).
+- **All food can be eaten while driving** (§1d).
+- **Tire patches are renamed the tire plug kit**: one plug per kit, sources in §7. Handed to the parts
+  session (feature/parts) to build.
+- **Spare tire**: self-contained (the factory jack is always in the truck), full-size only, worn and new
+  variants in different pools (§1).
+- **Food**: the burger is its own item; the diner meal is renamed the dinner meal; the gas-station snacks
+  split into four; the packed lunch is reward-only; the chili dog spoils in 16 h (§1d).
+- **Fish**: four species with different effects; ~6 h uncooled, ~36 h in a cooler that holds 4 (§1b, §5).
+- **New idea, not ruled:** since the item models exist anyway, drop items into the world and give the
+  truck a *proximity inventory*: walk or drive up to an item to load it, or drop one where you stand.
 
 ### Kept, but blocked or needs a mechanism
 
