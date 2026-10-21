@@ -149,8 +149,8 @@ Fitting it is a 90 min timeskip (owner, 2026-10-20) that clears the flat. Real m
 aboard), full-size only; worn (50–80%, ~$15) and new (~$25) variants in different pools; auto shop;
 reward from the auto shop and stranded motorist (A–S); rare roadside find. The fit (`use: 'spare'`) is
 built on feature/parts, not merged. **Under the bed** (owner, 2026-10-21): one carrier outside the slots
-and stowed mass; a second spare takes a bed slot. The swapped-off pair goes back in the carrier as a flat
-spare (tire id + both wears); a plug kit or the shop restores it; the shop can swap any mounted pair per
+and stowed mass; a second spare takes a bed slot. The swapped-off pair takes an ordinary bed slot, like any
+other tire (owner), as a flat spare (tire id + both wears); a plug kit or the shop restores it; the shop can swap any mounted pair per
 corner. Jalopies start with one 60% of the time, at 40–80%.
 
 ### Tire plug kit
@@ -189,7 +189,7 @@ bottle; 15 min; holds for the run (2026-10-20). $5–10; a reward from both (B�
 
 ### Emergency gas
 status: wip · design: ratified · build: effect, model · where: gasStation, reward
-A 2 gal RotoPax, single-use — the low-tier fuel reward. REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122). Fuel shipped (FEAT-50, 2026-10-17); the pour itself is still unbuilt. Ruled 2026-10-21: parked only, a 10 min timeskip; $5–10; a gas-station and stranded-motorist reward (B–A); never found.
+A 2 gal RotoPax, single-use — the mid-tier fuel reward (B–A). REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122). Fuel shipped (FEAT-50, 2026-10-17); the pour itself is still unbuilt. Ruled 2026-10-21: parked only, a 10 min timeskip; $5–10; a gas-station and stranded-motorist reward (B–A); never found.
 
 ### Jerry can
 status: todo · design: proposed · build: effect · where: reward
