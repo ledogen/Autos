@@ -1248,9 +1248,9 @@ cluster *before* the subtle tracks start mattering. Keep that contrast; it is do
   dropping out and a pop.
 
 **Open:** tank capacity as a jalopy/part difference (a bigger tank is described-not-scored territory,
-SM-INV-10); whether a **jerry can** is a stowed tool with real mass (`items.md` §2 rules say it would
-be — the *Emergency gas* can now pours 2 gal from the inventory, but carries no fuel-mass model of
-its own beyond the item's 7.2 kg); and whether fuel price varies by station or only by run age. Also
+SM-INV-10); whether the fuel cans carry a fuel-mass model beyond their item mass (the *Emergency gas*
+can pours 2 gal and weighs 7.2 kg; the **jerry can** is a refillable 5 gal top-tier reward, owner
+2026-10-21, `items.md` §1); and whether fuel price varies by station or only by run age. Also
 owed: **drive modes** (FEAT-124, owner 2026-10-17). Sport is today's rev-out box. Normal shifts
 early or late on a time-weighted average of the throttle, so a feathering keyboard player and a
 controller player (FEAT-125) both reach the fuel map's cheap low-rpm cells.
