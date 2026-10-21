@@ -111,6 +111,10 @@ offer appears there. It is the only always-on addition.
   earns a bonus** — D exists to tell you that you were slow.
 - **Rewards are themed to the source.** Burger Barn → food for a fast finish; Grandma → a themed
   gizmo or consumable; the (rare) auto parts store → a spare tire or similar vehicle part.
+  **Amended 2026-10-20 (owner, item setup page):** the **receiver** hands the bonus over as a tip at
+  delivery, and the pool is a **50/50 roll between the giver's and the destination's** (REWARDS
+  `pools` then lists destination classes too). A fetch, where giver and receiver are the same place,
+  uses the giver's pool only. Not built yet — `src/offer-board.js` still rolls the giver's pool.
 - **One bonus item per offer, no tiering** (owner, 2026-10-08 — retires the 2026-08-17 tier ladder).
   Every offer pays cash too; a bonus rides on top, never instead ($0-cash offers retired, same ruling).
 - **Scope here: named and displayed, the grant is stubbed.** Settlement records which bonus was earned;

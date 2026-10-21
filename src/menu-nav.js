@@ -3,7 +3,7 @@
 // ONE code path for both devices: the arrows move a highlight over the visible items of whichever
 // menu or card owns the screen — SPATIALLY, to the nearest item that way, so a row of buttons and
 // the inventory grid work like a list does (FEAT-133); off the end, ↑/↓ wrap round the list. ←/→
-// cycle a ◂ value ▸ selector when the highlighted item is one. Enter activates. The pad reaches
+// cycle a ◂ value ▸ selector (or step a range slider) when the highlighted item is one. Enter activates. The pad reaches
 // it through gamepad.js's menu key map (D-pad / left stick → arrows, A → Enter, B → Escape), so there
 // is no pad-specific menu code at all. Escape is never consumed here: the menus' own Esc handling
 // (back / resume / cancel) is the same for both devices already.
@@ -92,7 +92,7 @@ function nearest (items, from, dx, dy) {
 function onKey (e) {
   const c = menuContainer() ?? cardContainer()
   if (!c) return
-  const typing = document.activeElement?.tagName === 'INPUT'
+  const typing = document.activeElement?.tagName === 'INPUT' && document.activeElement.type !== 'range'
   if (e.key === 'Escape') { requestAnimationFrame(sync); return }
   // A text field keeps its own ←/→ (caret) and Enter (start).
   if (typing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Enter')) return
@@ -115,6 +115,14 @@ function onKey (e) {
   }
   const sel = e.key === 'ArrowLeft' ? cur.querySelector('.sel-prev') : e.key === 'ArrowRight' ? cur.querySelector('.sel-next') : null
   if (sel) { sel.click(); return }
+  // A range slider (the camp card's sleep hours) takes ←/→ itself. Done here, not left to the browser:
+  // the pad's D-pad arrives as synthetic key events, which never move a native slider (owner,
+  // 2026-10-20: the sleep slider would not budge on a pad).
+  if (cur.type === 'range' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.key === 'ArrowLeft' ? cur.stepDown() : cur.stepUp()
+    cur.dispatchEvent(new Event('input', { bubbles: true }))
+    return
+  }
   const dx = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0, dy = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0
   const next = nearest(items, cur, dx, dy)
   if (next) highlight(next)

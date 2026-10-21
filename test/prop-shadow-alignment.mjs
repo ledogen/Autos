@@ -15,10 +15,13 @@
 //      ground — i.e. where the realtime shadow map would put it.
 //   3. TILE: the toroidal tile index (pmod) matches the shader's mod(floor(...), N) for negative
 //      chunks, and the live prop ring diameter fits inside ATLAS_N (no tile collisions).
+//   4. QUEUE: update() drains a queue whose stale (out-of-window) tiles are dropped mid-pass without
+//      reading past its end — a dropped tile used to leave the pass count ahead of the queue and
+//      shift() undefined ("reading 'indexOf'").
 //
 // Pure node — no renderer; the camera frustum/view matrices are plain Three.js math.
 import * as THREE from 'three'
-import { makeBakeCamera, shearFromSun, shadowShearScale, ATLAS_N } from '../src/props/prop-shadow-bake.js'
+import { makeBakeCamera, shearFromSun, shadowShearScale, ATLAS_N, ShadowBakeSystem } from '../src/props/prop-shadow-bake.js'
 
 const CHUNK = 64
 let fails = 0
@@ -122,6 +125,23 @@ const rings = [...mainSrc.matchAll(/propRing:\s*(\d+)/g)].map((m) => +m[1])
 check('propRing values found in main.js', rings.length > 0)
 const maxRing = Math.max(...rings, 0)
 check(`prop ring diameter fits atlas (2*(${maxRing}+1)+1 ≤ ${ATLAS_N})`, 2 * (maxRing + 1) + 1 <= ATLAS_N)
+
+// ── 4. Queue: a dropped stale tile never runs the pass past the end of the queue ──────────────
+{
+  const bake = Object.create(ShadowBakeSystem.prototype)
+  const rect = { set () {} }
+  let baked = 0
+  Object.assign(bake, {
+    _dirty: ['9,9', '0,0'], _dirtySet: new Set(['9,9', '0,0']), _owner: [], _tilePx: 1,
+    _prevClear: new THREE.Color(), _cam: new THREE.OrthographicCamera(), _rt: { viewport: rect, scissor: rect },
+    _inWindow: (cx) => cx === 0, _tileSource: () => ({}),
+    _renderer: { getRenderTarget () {}, getClearAlpha: () => 1, getClearColor () {}, setClearColor () {},
+                 setRenderTarget () {}, render () { baked++ } },
+  })
+  let threw = null
+  try { bake.update() } catch (e) { threw = e.message }
+  check('update() drains a queue with a stale tile at its head', !threw && baked === 1 && !bake._dirty.length, threw ?? `baked ${baked}`)
+}
 
 if (fails) { console.error(`\nprop-shadow-alignment: ${fails} FAILED`); process.exit(1) }
 console.log('\nprop-shadow-alignment: all checks passed')

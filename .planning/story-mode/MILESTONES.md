@@ -43,7 +43,7 @@ history below is retained as written.
     SM-INV-12 run-layer object, introduced here); **energy** (18 h tank, 1 h/h drain) with the
     sleepy/tired/exhausted ladder at 14/16/18 h awake; eyelid blinks escalating into 200–600 /
     400–1000 ms control-loss dozes (flag-gated off by default — the `day-clock.mjs` gate proves
-    inertness); coffee +5 h now / −3 h at wake (net positive).
+    inertness); coffee +5 h now / −2 h at wake (net positive; −3 until 2026-10-20).
   - `src/camp.js` — dispersed-camping zones (~20% global density, ~1 km discs, window-invariant,
     `camp-zones.mjs` gate) rendered as BLM-style yellow road casings on the map, camping tethered
     to ≤ 20 m of the road edge; park-to-make-camp on the FEAT-46 brake-latch edge; the **vibe**

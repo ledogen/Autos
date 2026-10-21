@@ -33,8 +33,8 @@ truck configuration (FEAT-112):
 
 The three bed swaps replace the bed, one at a time. The roof rack and light bar stack.
 
-**Price and stock** (design-amendments-2026-10-14 §11): a part's price follows the furthest region
-unlocked, not the shop's region. A shop stocks a subset; upgrades also come as infrequent rewards
+**Price and stock** (design-amendments-2026-10-14 §11): ~~a part's price follows the furthest region
+unlocked, not the shop's region~~ — retired 2026-10-21: a part's price scales with the clock only. A shop stocks a subset; upgrades also come as infrequent rewards
 (`REWARDS`, kind `part`). Lower-tier parts stay findable later, at the later price.
 
 ## Open
@@ -47,4 +47,4 @@ unlocked, not the shop's region. A shop stocks a subset; upgrades also come as i
 
 - [ ] Each upgrade changes the FEAT-112 verdicts through its `apply` alone; a gate covers it.
 - [ ] Bought at a shop, carried as real mass, lost on death.
-- [ ] Price follows the furthest region unlocked; a gate covers a region-1 shop visited from region 2.
+- [ ] Price scales with the clock (`dayTier`) only — the furthest-region rule is retired (owner, 2026-10-21).

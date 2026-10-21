@@ -68,5 +68,6 @@ design-amendments-2026-10-14.md §12–15 change the problem:
   Recount the point budget against it.
 - **Re-solve `regionMult` for three regions** (it is solved for six). The step must cover the cost
   growth since the run began and still be a raise over the old region at full reputation.
-- Parts are priced by the furthest region unlocked (§11), so their prices follow the region step,
-  scaled by the upgrade/item-cost knob.
+- ~~Parts are priced by the furthest region unlocked (§11), so their prices follow the region step,
+  scaled by the upgrade/item-cost knob.~~ **Retired 2026-10-21 (owner):** parts scale with the clock
+  (`dayTier`) like every other cost, times the upgrade/item-cost knob. No region term.

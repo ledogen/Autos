@@ -66,7 +66,7 @@ import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
-import { pad, PAD_PARAMS, BINDINGS } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
+import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
@@ -104,7 +104,7 @@ import { Leaderboard } from './leaderboard.js'             // FEAT-62: best time
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
-import { playNozzle, playGallonBell, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
+import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG } from './fragile.js'   // FEAT-97: a fragile load's condition
@@ -1390,11 +1390,11 @@ const SELECTORS = {
   worldRoads:   { name: 'road climbs',     opts: KNOBS.r },
   gearbox:      { name: 'gearbox',         opts: [['auto', 'automatic'], ['manual', 'manual']] },
   steerAssist:  { name: 'steering assist', opts: [[true, 'on'], [false, 'off']] },
-  // A slider: 0 % linear … 100 % parabolic (gamepad.js steerShape), with a tiny plot of the map.
+  // A slider: 0 % linear … 100 % parabolic … 150 % (gamepad.js steerCurve), with a tiny plot of the map.
   // i / 10 so the saved value round-trips to exactly the same notch. Shown only with the assist off —
   // the only time it acts.
-  steerShape:   { name: 'center softening', slider: true, plot: (x, k) => (1 - k) * x + k * x * Math.abs(x),
-                  show: () => !_settings.steerAssist, opts: Array.from({ length: 11 }, (_, i) => [i / 10, `${i * 10} %`]) },
+  steerShape:   { name: 'center softening', slider: true, plot: steerCurve, max: 1.5,
+                  show: () => !_settings.steerAssist, opts: Array.from({ length: 16 }, (_, i) => [i / 10, `${i * 10} %`]) },
   clutchAssist: { name: 'clutch assist',   opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
 }
@@ -1408,7 +1408,7 @@ function _renderSelectors () {
     const sel = SELECTORS[b.dataset.key]
     const value = sel.get ? sel.get() : _settings[b.dataset.key]
     let label = sel.opts.find(([v]) => v === value)?.[1] ?? value
-    if (sel.slider) label = `<span class="sel-bar"><b style="width:${value * 100}%"></b></span>${label}`
+    if (sel.slider) label = `<span class="sel-bar"><b style="width:${value / (sel.max ?? 1) * 100}%"></b></span>${label}`
     // output vs input over [-1, 1]: faint axes, the curve. Its own line under the row, shown only
     // while the row is highlighted (index.html .sel-plot).
     let plot = ''
@@ -1482,6 +1482,8 @@ async function _startFromSetup () {
   await _startFreeRoam(_resolveSeed(seed))
 }
 document.getElementById('mm-freeroam')?.addEventListener('click', () => _openSetup('freeroam'))
+// Story mode opens on new game: with no save to resume (saving is not built yet) that is the only
+// page it can open. A resume entry takes over here once story saves exist (feat-game-menus-ui).
 document.getElementById('mm-story')?.addEventListener('click', () => _openSetup('story'))
 document.getElementById('su-start')?.addEventListener('click', () => { void _startFromSetup() })
 document.getElementById('su-back')?.addEventListener('click', () => document.getElementById('main-menu')?.classList.remove('setup'))
@@ -1509,9 +1511,19 @@ function _openSettings (fromPause) {
   if (!panel || !host) return
   host.appendChild(panel)
   host.classList.add('settings')
+  panel.classList.remove('bindings')
   _renderSelectors()
 }
+/** Back out of settings: the bindings sub-page first, then the page. */
+/** Esc on the main menu: out of the bindings sub-page, else back to the root list. */
+function _menuPageBack () {
+  const mm = document.getElementById('main-menu')
+  if (mm?.classList.contains('settings')) { _closeSettings(); return }
+  mm?.classList.remove('scenarios', 'setup')
+}
 function _closeSettings () {
+  const panel = document.getElementById('mm-settings-panel')
+  if (panel?.classList.contains('bindings')) { panel.classList.remove('bindings'); return }
   document.getElementById('main-menu')?.classList.remove('settings')
   document.getElementById('pause-menu')?.classList.remove('settings')
 }
@@ -1520,7 +1532,7 @@ initMenuNav()
 // Esc / pad B steps back out of a menu page from the first frame. The main Esc handler further down
 // does this too, but it only exists once the world is built — until then the pages were one-way.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !_worldInit) document.getElementById('main-menu')?.classList.remove('settings', 'scenarios', 'setup')
+  if (e.key === 'Escape' && !_worldInit) _menuPageBack()
 })
 
 // The lab is a debug rig with no world of its own, so it just enters.
@@ -1569,6 +1581,8 @@ document.getElementById('mm-scenarios-back')?.addEventListener('click', () => {
 })
 document.getElementById('mm-settings')?.addEventListener('click', () => _openSettings(false))
 document.getElementById('mm-settings-back')?.addEventListener('click', _closeSettings)
+document.getElementById('mm-bindings')?.addEventListener('click', () => document.getElementById('mm-settings-panel')?.classList.add('bindings'))
+document.getElementById('mm-bindings-back')?.addEventListener('click', _closeSettings)
 // "start anyway": the region behind the disclaimer is already built and frozen, so honouring this
 // costs nothing but a call. Story mode is a sandbox while it is being designed and going to LOOK at
 // what broke is a legitimate thing to want — the warning has been read, so this is informed.
@@ -1801,7 +1815,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
-const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
+const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -3634,19 +3648,19 @@ function _scoreLanding (hit) {
       // read-out quotes the money it just earned rather than a percentage the player has to convert
       // in their head. `scored.pay` is banked money — the fare is not in it, because that depends
       // on when you finish and the route can still take it back.
-      _showThrowReadout(`<span style="color:#7ed957">${scored.dist.toFixed(2)} m`
+      _showThrowReadout(`<span style="color:var(--money)">${scored.dist.toFixed(2)} m`
         + ` &nbsp;·&nbsp; +$${formatMoney(scored.pay)}</span>`)
     } else if (scored.already) {
       // Not a failure — a paper spent. Saying so is the difference between "that did nothing" and
       // "you already did this one", and only one of those tells you to drive on.
-      _showThrowReadout('<span style="color:#8a939c">they already have one</span>')
+      _showThrowReadout('<span style="color:var(--text-dim)">they already have one</span>')
     } else if (scored.dist < 25) {
-      _showThrowReadout(`<span style="color:#ff9f43">missed by ${(scored.dist - R).toFixed(1)} m</span>`)
+      _showThrowReadout(`<span style="color:var(--warn)">missed by ${(scored.dist - R).toFixed(1)} m</span>`)
     } else {
       // ON A ROUTE, A THROW ALWAYS ANSWERS. The distance gate above is right for a practice throw
       // in open country — but during a route, silence is indistinguishable from a broken mission,
       // which is exactly how this read as one (owner, 2026-08-09).
-      _showThrowReadout('<span style="color:#ff9f43">nobody on your route lives there</span>')
+      _showThrowReadout('<span style="color:var(--warn)">nobody on your route lives there</span>')
     }
     return
   }
@@ -3658,9 +3672,9 @@ function _scoreLanding (hit) {
   }
   const q = best ? accuracyScore(bestD, R) : 0
   if (q > 0) {
-    _showThrowReadout(`<span style="color:#7ed957">${bestD.toFixed(2)} m — ${Math.round(q * 100)}%</span>`)
+    _showThrowReadout(`<span style="color:var(--money)">${bestD.toFixed(2)} m — ${Math.round(q * 100)}%</span>`)
   } else if (best && bestD < 25) {
-    _showThrowReadout(`<span style="color:#ff9f43">missed by ${(bestD - R).toFixed(1)} m</span>`)
+    _showThrowReadout(`<span style="color:var(--warn)">missed by ${(bestD - R).toFixed(1)} m</span>`)
   }
 }
 
@@ -3728,7 +3742,7 @@ document.addEventListener('keyup', e => {
   const throwingPaper = (RANGER_PARAMS.throwProjectile ?? 'paper') === 'paper'
   const onRound = throwingPaper && paperRouteSystem.isRunning()
   if (onRound && !paperRouteSystem.takePaper()) {
-    _showThrowReadout('<span style="color:#ff9f43">out of papers</span>')
+    _showThrowReadout('<span style="color:var(--warn)">out of papers</span>')
     setAimMode(false)
     return
   }
@@ -4431,7 +4445,7 @@ function _stepFuelStop (dt) {
     case 'start':  setPumpFlow(true); break
     case 'stop':   setPumpFlow(false); _pumpBounceT = 0.3; break
     case 'full':   setPumpFlow(false); playShutoff(); _pumpBounceT = 0.3; break
-    case 'gallon': playGallonBell(); break
+    case 'gallon': playGallonClick(); break
   }
 }
 
@@ -4703,6 +4717,9 @@ function _updateParkTriggers () {
   // POI, and a bed beats the cab) but yields to a campable site mid-hunt — the bar is what the
   // player is reading.
   const moms = !site && _atMomsHouse()
+  // The truck is no bed while it stands on the road (owner, 2026-10-20): its centre has to be off the
+  // ribbon — on the shoulder or further out — before the cab will do for a night.
+  const onRoad = seeking && !site && !moms && _truckOnRibbon()
 
   if (pulled) {
     if (site) {
@@ -4711,7 +4728,7 @@ function _updateParkTriggers () {
     } else if (moms) {
       _campUi = { mode: 'moms', site: null, moms: true }
       _renderCampUI()
-    } else if (seeking && !camp.fast) {
+    } else if (seeking && !camp.fast && !onRoad) {
       _campUi = { mode: 'truck', site: null, moms: false, truck: true }
       _renderCampUI()
     }
@@ -4729,7 +4746,7 @@ function _updateParkTriggers () {
       const now = daySystem.clockH()
       const live = _takeableOffers(poi.id, now).length
       const next = offerBoard?.nextTurnoverH(poi.id, now)
-      // FEAT-90: every "park to …" line carries the blue P badge; the status line does not.
+      // FEAT-90: every "park to …" line carries the PARK badge; the status line does not.
       poiEl.innerHTML = !live
         ? (next != null ? `no work here right now — new offer in ${formatGameDuration(next - now)}`
                         : 'no work here right now')
@@ -4770,7 +4787,21 @@ function _updateParkTriggers () {
       camp.fast ? 'slow down to look for a campsite'
     : site      ? parkPrompt('park to make camp')
     : moms      ? why
+    : onRoad    ? `${why}<br>park on the shoulder to sleep in the truck`
     :             `${why}<br>${parkPrompt('park to sleep in the truck')}`
+}
+
+/** The live card's "back" — the button that closes it without committing to anything — or null.
+ *  Breaking a real camp is not a back (it costs the pad), so a made camp has none. */
+function _cardBackButton () {
+  const up = (id) => { const b = document.getElementById(id); return b && b.offsetParent !== null && !b.disabled ? b : null }
+  return up('cp-sleep-back') ?? up('cp-cancel') ?? up('mp-decline') ?? up('pp-decline')
+    ?? (_campUi && (_campUi.truck || _campUi.moms) ? up('cp-break') : null)
+}
+
+/** The truck's centre is on a road's paved ribbon (camp.js's own pavement test, nearRoadInfo). */
+function _truckOnRibbon () {
+  return campSystem.nearRoadInfo(vehicleState.position.x, vehicleState.position.z).onSurface
 }
 
 /** The stacked vibe bar: four segments whose max widths ARE the 40/15/20/25 VIBE_W weights. */
@@ -4969,6 +5000,10 @@ function _renderCampUI () {
   set('cp-title', st.moms ? "mom's house" : st.truck ? 'the truck' : 'camp')
   show('cp-make',   isConfirm)
   show('cp-truck',  isConfirm)
+  // The confirm face's truck fallback obeys the same shoulder rule as the brake does.
+  const truckOnRoad = isConfirm && _truckOnRibbon()
+  const tb = document.getElementById('cp-truck')
+  if (tb) { tb.disabled = truckOnRoad; tb.textContent = truckOnRoad ? 'park on the shoulder to sleep in the truck' : 'sleep in the truck' }
   show('cp-cancel', isConfirm)
   show('cp-break',  isHome)
   show('cp-sleep',  isHome)
@@ -5014,7 +5049,7 @@ function _renderCampUI () {
     } else if (isSleep) {
       body.innerHTML = '<span class="cp-dim">how long?</span>' + (st.truck ? `<br>${TRUCK_SLEEP_NOTE}` : '')
     } else if (st.truck) {
-      body.innerHTML = `the seat goes back as far as it goes.<br>${TRUCK_SLEEP_NOTE}`
+      body.innerHTML = `should have got a double cab.<br>${TRUCK_SLEEP_NOTE}`   // owner, 2026-10-20
     } else if (st.moms) {
       body.innerHTML = 'the porch light is on.<br><span class="cp-dim">a bed, and an average night&rsquo;s sleep</span>'
     } else {
@@ -5279,7 +5314,7 @@ function _renderMissionUI () {
       // calibration corpus is keyed on that. Display change only; do not prune the fields.
       // Then the money rows the offer card set up — Base pay answered, the tip beside it, the
       // offer's bonus earned or missed (FEAT-67; the item lands in the FEAT-122 inventory). See _payRows.
-      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
+      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || 'var(--text-bright)'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
           ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award,
@@ -5396,7 +5431,7 @@ function _renderPaperUI () {
         unmountExportRow('paper-panel')
         break
       }
-      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || '#fff'}">${r.letter}</span>`
+      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || 'var(--text-bright)'}">${r.letter}</span>`
         + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
         // The "+N% early" badge went with the expediency bonus it reported [2026-08-17]. Pace is
         // now paid through the shared margin line, so the letter and the time money already say it
@@ -5408,7 +5443,7 @@ function _renderPaperUI () {
         // payment, banked as the papers landed. Showing only the settlement would look like a pay cut.
         + _payRows({ base: r.base, tip: r.tip, spot: r.spot, points: r.points })
         + (r.advanced
-          ? `<br><span style="color:#ffdc3c">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
+          ? `<br><span style="color:var(--money)">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
           : '')
       // FEAT-30 calibration form, same one the POI result card shows (owner, 2026-08-17): a paper
       // round could not be recorded at all before this, so par had nothing to be fitted against for
@@ -6858,6 +6893,7 @@ function _showMainMenu () {
   menuStage.setActive(true)   // re-runs the drop when arriving from the world; a no-op at boot
   _simHeld = true
   document.body.classList.add('stage-on')
+  _syncAudioPageActive()
 }
 function _hideMainMenu () {
   const el = document.getElementById('main-menu')
@@ -6872,6 +6908,7 @@ function _enterStageLoad (text, hint = '') {
   menuStage.setActive(true)
   _simHeld = true
   document.body.classList.add('stage-on')
+  _syncAudioPageActive()
   const cap = document.getElementById('load-caption')
   if (cap) cap.style.display = 'flex'
   const t = document.getElementById('sl-text')
@@ -6887,6 +6924,7 @@ function _exitStageLoad () {
   menuStage.setActive(false)
   _simHeld = false
   document.body.classList.remove('stage-on')
+  _syncAudioPageActive()
   // The chase camera is a spring and it has been sitting wherever the last mode left it. Without
   // this it slides onto the truck over about a second the moment the world appears, which reads as
   // the camera "arriving" rather than the world simply being there (owner, 2026-09-06).
@@ -6902,6 +6940,7 @@ async function _startFreeRoam (seedStr) {
   if (storySystem.isActive()) storySystem.exit()
   if (_labActive) exitLab()
   window.__setGameMode('freeroam')
+  setHeadlightMode(0)   // a fresh run: lights off (owner, 2026-10-20)
   try {
     if (!_isWorldLoaded(seedStr)) await applyWorldSeed(seedStr)
     else await _reseatTruckAtSpawn()
@@ -6923,6 +6962,7 @@ async function _startStory (seed) {
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
+  setHeadlightMode(0)           // ...with its lights off (owner, 2026-10-20)
   damageModel.engineTempC = DAMAGE_PARAMS.tempAmbientC   // FEAT-51: ...and a cold engine
   storySystem.enter(seed)
 }
@@ -7135,10 +7175,17 @@ document.addEventListener('keydown', e => {
   // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
   // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
   // settings page and is otherwise inert until the world is handed back.
-  if (menuStage.isActive()) { document.getElementById('main-menu')?.classList.remove('settings', 'scenarios', 'setup'); return }
+  if (menuStage.isActive()) { _menuPageBack(); return }
   const el = document.getElementById('pause-menu')
   if (!el) return
   if (el.classList.contains('settings')) { _closeSettings(); return }   // Esc steps back to the pause list
+  // Esc / pad B is the general BACK (owner, 2026-10-20): a card up steps back out of it, then the map
+  // closes — only with neither does it pause. Not while paused: there Esc resumes, as before.
+  if (el.style.display !== 'flex') {
+    const back = _cardBackButton()
+    if (back) { back.click(); return }
+    if (map2d.isOpen()) { map2d.hide(); return }
+  }
   if (el.style.display === 'none' || el.style.display === '') {
     _showPauseMenu()
   } else {
@@ -7235,8 +7282,12 @@ function _captureSession () {
 // fires window blur but NOT visibilitychange (the tab is still visible), while switching browser
 // tabs / minimising fires visibilitychange. Mute on either; unmute only when focused AND visible,
 // so returning focus to a still-hidden tab doesn't restart the drone.
-const _audioPageActive = () => document.hasFocus() && !document.hidden
-const _syncAudioPageActive = () => setAudioPageActive(_audioPageActive())
+// The stage counts as "not looking" too: behind the menu or a load the sim is held, so the engine,
+// tires and wind would otherwise drone on at whatever the last frame left them (owner, 2026-10-20:
+// free roam → story mode → back left the engine running at the main menu).
+// Declarations, not consts: the stage transitions above call this during module init, ahead of this line.
+function _audioPageActive () { return document.hasFocus() && !document.hidden && !document.body.classList.contains('stage-on') }
+function _syncAudioPageActive () { setAudioPageActive(_audioPageActive()) }
 window.addEventListener('blur',  _syncAudioPageActive)
 window.addEventListener('focus', _syncAudioPageActive)
 document.addEventListener('visibilitychange', _syncAudioPageActive)

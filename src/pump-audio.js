@@ -6,11 +6,14 @@
  *
  *   NOZZLE   — playNozzle(): the nozzle seating in the filler neck. A sine thunk 170 → 55 Hz in
  *              70 ms under a short lowpassed noise scuff. On open.
- *   FLOW     — setPumpFlow(on): held while F pumps. Two layers built once and only gain-ramped:
- *              the pump motor (a sawtooth at 118 Hz with a slow 5 Hz wobble, lowpassed to a hum)
- *              and the gas going in (bandpassed noise around 1.4 kHz with a little resonance).
- *   BELL     — playGallonBell(): one ding per gallon, like the mechanical pumps' bell. Three
- *              inharmonic partials (1 : 2.76 : 5.40, a struck small bell) on a 0.7 s decay.
+ *   FLOW     — setPumpFlow(on): held while F pumps. Three layers built once and only gain-ramped:
+ *              the pump motor (a sawtooth at 62 Hz with a slow 5 Hz wobble, lowpassed to a hum),
+ *              a sine on its fundamental for weight (the bass, owner 2026-10-20), and the gas
+ *              going in (bandpassed noise around 900 Hz with a little resonance). Was 118 Hz with
+ *              no sub and the gas at 1.4 kHz: thin, and too loud for a sound you hold.
+ *   CLICK    — playGallonClick(): one tick per gallon, the mechanical counter's detent. A 12 ms
+ *              highpassed noise tick over a tiny low knock. (Was a struck-bell ding — owner
+ *              2026-10-20: "the dinging should be reduced to a click".)
  *   SHUTOFF  — playShutoff(): the auto-shutoff — a hard double clack (two highpassed noise
  *              bursts 45 ms apart) when the tank is full or the wallet runs out.
  *   REGISTER — playRegister(): handbrake down, sale final. A mechanical ka-chunk (low thunk +
@@ -81,9 +84,11 @@ export function playNozzle () {
     _burst(ctx, out, t, 0.06, 'lowpass', 900, 0.7, 0.35)
 }
 
-export function playGallonBell () {
+export function playGallonClick () {
     const ctx = _live(); if (!ctx) return
-    _bell(ctx, _out(ctx, LEVEL * 0.55), ctx.currentTime, 1850, 0.5, 0.7)
+    const t = ctx.currentTime, out = _out(ctx, LEVEL * 0.5)
+    _burst(ctx, out, t, 0.012, 'highpass', 3000, 0.7, 0.6)
+    _thunk(ctx, out, t, 320, 140, 0.015, 0.25)
 }
 
 export function playShutoff () {
@@ -113,19 +118,25 @@ function _ensureFlow (ctx) {
     // Motor: sawtooth hum with a slow wobble on the pitch.
     const motor = ctx.createOscillator()
     motor.type = 'sawtooth'
-    motor.frequency.value = 118
+    motor.frequency.value = 62
     const wob = ctx.createOscillator(); wob.frequency.value = 5
-    const wobG = ctx.createGain(); wobG.gain.value = 2.5
+    const wobG = ctx.createGain(); wobG.gain.value = 1.3
     wob.connect(wobG); wobG.connect(motor.frequency)
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 0.7
-    const motorG = ctx.createGain(); motorG.gain.value = 0.16
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300; lp.Q.value = 0.7
+    const motorG = ctx.createGain(); motorG.gain.value = 0.22
     motor.connect(lp); lp.connect(motorG); motorG.connect(master)
-    // Gas going in: resonant bandpassed noise.
+    // Sub: a sine on the motor's fundamental — the weight a thin sawtooth alone does not have. Not an
+    // octave under: 31 Hz is below what laptop speakers reproduce, so it would be heard on headphones only.
+    const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.value = 62
+    const subG = ctx.createGain(); subG.gain.value = 0.35
+    wobG.connect(sub.frequency)   // the same wobble, so the two never beat against each other
+    sub.connect(subG); subG.connect(master)
+    // Gas going in: resonant bandpassed noise, lower and quieter than the motor.
     const hiss = loopNoise(ctx, _buf(ctx))
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 1.6
-    const hissG = ctx.createGain(); hissG.gain.value = 0.22
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 1.4
+    const hissG = ctx.createGain(); hissG.gain.value = 0.12
     hiss.connect(bp); bp.connect(hissG); hissG.connect(master)
-    motor.start(); wob.start()
+    motor.start(); wob.start(); sub.start()
     return (_flow = { master })
 }
 
@@ -134,5 +145,5 @@ export function setPumpFlow (on) {
     const ctx = _live(); if (!ctx) return
     if (!on && !_flow) return
     const { master } = _ensureFlow(ctx)
-    master.gain.setTargetAtTime(on ? LEVEL * 0.6 : 0, ctx.currentTime, on ? 0.08 : 0.05)
+    master.gain.setTargetAtTime(on ? LEVEL * 0.35 : 0, ctx.currentTime, on ? 0.08 : 0.05)
 }

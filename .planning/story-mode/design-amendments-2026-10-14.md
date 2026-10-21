@@ -24,7 +24,7 @@ FEAT-104), and MILESTONES.md carries the build order so the next task can be pic
 | 8 | **The player picks the haul quantity**, inside the truck's verdict limits. Yards run limited-time rate bonuses. | Reverses the rolled 10–15 bundle count (FEAT-88, 2026-10-05). | FEAT-114 |
 | 9 | **Straps are not an item.** FEAT-110 is closed. Straps stay as fiction on strapped loads. | Closes FEAT-110; strikes the items.md straps row. | — |
 | 10 | **Cargo protection consumables:** bubble wrap, furniture pad, heavy-duty pad. Every effect is proportional to the item's own thresholds, never additive. | New items. Needs a `furniture` tag on cargo. | FEAT-116 |
-| 11 | **Parts are priced by the furthest region unlocked**, and shops do not stock everything. | New pricing rule. Kills "go back to region 1 and buy it out". | FEAT-104, FEAT-115 |
+| 11 | ~~**Parts are priced by the furthest region unlocked**~~ (retired 2026-10-21 — clock only), and shops do not stock everything. | New pricing rule. Kills "go back to region 1 and buy it out". | FEAT-104, FEAT-115 |
 | 12 | **Pay scales with work done, not with the day.** Day tier leaves pay. Costs keep it, and the difficulty knobs scale them. | Retires two ratified rules (below). | FEAT-117, FEAT-69 |
 | 13 | **A simple regional reputation**, earned by good deeds in the region, shown as "Reputation ×1.xx" on the result card. | New. Replaces day tier as pay's growth term. | FEAT-117 |
 | 14 | **Alpha run shape: three regions of about a week**, provisionally 7 / 6 / 5 days. | Supersedes 2026-10-12's ~12–14 days. | FEAT-69 |
@@ -176,6 +176,8 @@ cost. The figures are open. The `furniture` tag goes on the dining chairs, the d
 full-length mirror, the wardrobe and the piano (cargo.md § Fragile).
 
 ## 11. Parts pricing and availability
+
+> **The price half is retired 2026-10-21 (owner, the item setup page): costs scale with the clock only (`dayTier`); a region gives better income and rewards, never higher prices.** The stock half stands.
 
 **A part's price follows the furthest region you have unlocked, not the shop you stand in.** Where
 you are decides what is for sale; how far you have come decides what it costs. A player who goes

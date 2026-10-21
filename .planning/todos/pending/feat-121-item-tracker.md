@@ -33,8 +33,7 @@ items.md; cut it here (`status: cut`) when items.md strikes it.
   - `gate` — the effect already ships; owning the item turns it on.
   - `model` — a `.glb`, because the item is visible (camp pad, bed, bolted on the truck).
 - **needs** — a system that must exist first. `hunger` (items.md §1d), `quick slots` (§1c — keys
-  1–4), `spoilage` (§1b), `timed effects` (§1a), `fishing` (FEAT-37), `fuel` (FEAT-50), `coolant`
-  (FEAT-51), `hazards` (FEAT-26/27), `surfaces` (FEAT-38 per-surface μ), `cuts` (FEAT-52), `spirits` (spirits-and-pacts.md), `bed parts`
+  1–4), `spoilage` (§1b), `timed effects` (§1a), `fishing` (FEAT-37), `hazards` (FEAT-26/27), `surfaces` (FEAT-38 per-surface μ), `cuts` (FEAT-52), `spirits` (spirits-and-pacts.md), `bed parts`
   (FEAT-115), `cargo protection` (FEAT-116), `load verdicts` (FEAT-112), `camp render` (FEAT-66).
   **Every item needs the inventory (FEAT-122), so it is not listed.**
 - **where** — how the player gets it. Storefronts use the POI type id from `src/poi.js`:
@@ -54,46 +53,98 @@ status: shipped · design: ratified · build: effect · needs: quick slots · wh
 In the inventory with its thumbnail; auto-binds to a quick key and drinks on the press (FEAT-122). Sold nowhere yet: reward only until FEAT-104.
 Energy now, sleepy earlier tomorrow — a loan against tomorrow. The energy clock ships (`src/day.js`),
 so the effect is a debt term on it. Already a REWARDS id (`coffee`), grant stubbed.
+**Ruled 2026-10-20:** +5 h / −2 h (`src/day.js`, was −3), $3, reward from the food vendor and gas
+station (C–B), never found.
 
 ### Energy drink
-status: todo · design: idea · build: effect · needs: quick slots · where: gasStation, generalStore
+status: todo · design: ratified · build: effect · needs: quick slots · where: gasStation, generalStore, reward
+**Ruled 2026-10-20:** +5 h now, a crash of −2.5 h four hours later. $4. Reward from the gas station
+and general store (C–B), never found.
 Coffee's short, steep twin: a bigger hit and the crash comes the same day. Must carry a debt or it is
 free alertness (fish's job).
 
 ### Chili dog
 status: todo · design: proposed · build: effect · needs: hunger · where: foodVendor, reward
 Already a REWARDS id (`chiliDog`, kind food). A meal: resets the hunger clock.
+**Ruled 2026-10-20:** a plain meal that holds hunger 10 h. $5. Food vendor only (B–A), never found.
+Spoils in 16 h (2026-10-21).
 
-### Diner meal
-status: todo · design: proposed · build: effect · needs: hunger, timed effects · where: foodVendor
-A sit-down meal. Resets hunger; the carrier for "for the next 8 h" effects (a hearty breakfast holds
-the clock longer, a greasy one makes you sleepy after).
+### Dinner meal
+status: todo · design: proposed · build: effect · needs: hunger · where: foodVendor
+Renamed from diner meal (owner, 2026-10-21). One generic sit-down meal, a menu item at the food
+vendor: holds hunger 8 h, 30 min to eat, $5–10, eat-in only.
+
+### Burger
+status: todo · design: proposed · build: effect · needs: hunger · where: foodVendor
+The standard meal, its own item (owner, 2026-10-21): holds hunger ~8 h, so two cover a waking day.
+Spoilage and price open.
 
 ### Packed lunch
-status: todo · design: proposed · build: effect · needs: hunger, spoilage · where: generalStore
-Resets hunger on the road. The natural first non-fish figure on the spoilage clock (turns by
-afternoon).
+status: todo · design: ratified · build: effect · needs: hunger, spoilage · where: reward
+Never sold (owner, 2026-10-21): a bonus item from residences, farms and the food vendor (B–A), worth
+$6. Holds hunger 8 h; fresh 24 h. Never found.
 
-### Gas-station snacks
-status: todo · design: proposed · build: effect · needs: hunger, quick slots · where: gasStation
-The quick-slot meal — eaten while driving. Smaller than a meal.
+### Groceries
+status: todo · design: idea · build: effect · needs: hunger, spoilage, camp render · where: generalStore
+A delayed meal (owner, 2026-10-20): bought, carried, cooked into a meal at camp — only with the
+cooking kit. Still on the spoilage clock. Figures open on the item setup page.
 
-### Fish
+### Bag of peanuts
+status: todo · design: proposed · build: effect · needs: hunger · where: gasStation
+A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2–4 h, stacks 3–5; the
+higher it stacks, the less it holds. All food can be eaten while driving.
+
+### Gummy worms
+status: todo · design: proposed · build: effect · needs: hunger · where: gasStation
+A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2–4 h, stacks 3–5; the
+higher it stacks, the less it holds. All food can be eaten while driving.
+
+### Spicy chips
+status: todo · design: proposed · build: effect · needs: hunger · where: gasStation
+A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2–4 h, stacks 3–5; the
+higher it stacks, the less it holds. All food can be eaten while driving.
+
+### Candy bar
+status: todo · design: proposed · build: effect · needs: hunger · where: gasStation
+A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2–4 h, stacks 3–5; the
+higher it stacks, the less it holds. All food can be eaten while driving.
+
+### Salmon
 status: todo · design: proposed · build: effect, model · needs: fishing, spoilage · where: caught
-Alertness that is not repaid — *coffee is debt, fish is income*. ~4–5 h fresh uncooled. Whether
-cooked fish carries timed effects is the owner's open call (items.md §1a).
+A fish species (owner, 2026-10-21 — fish split into four). Alertness that is not repaid; ~6 h fresh
+uncooled, ~36 h in the cooler. Species carry different effects — which, is open.
+
+### Rainbow trout
+status: todo · design: proposed · build: effect, model · needs: fishing, spoilage · where: caught
+A fish species (owner, 2026-10-21 — fish split into four). Alertness that is not repaid; ~6 h fresh
+uncooled, ~36 h in the cooler. Species carry different effects — which, is open.
+
+### Brown trout
+status: todo · design: proposed · build: effect, model · needs: fishing, spoilage · where: caught
+A fish species (owner, 2026-10-21 — fish split into four). Alertness that is not repaid; ~6 h fresh
+uncooled, ~36 h in the cooler. Species carry different effects — which, is open.
+
+### Catfish
+status: todo · design: proposed · build: effect, model · needs: fishing, spoilage · where: caught
+A fish species (owner, 2026-10-21 — fish split into four). Alertness that is not repaid; ~6 h fresh
+uncooled, ~36 h in the cooler. Species carry different effects — which, is open.
 
 ## Consumables
 
 ### Spare tire
-status: todo · design: implied · build: effect, model · where: autoShop, reward
-Fitting it is a 30 min timeskip that clears the flat. Real mass all the time. Already a REWARDS id
-(`spareTire`). Flats ship (`flat[]`, FEAT-94).
+status: wip · design: ratified · build: effect · where: autoShop, reward, found
+Fitting it is a 90 min timeskip (owner, 2026-10-20) that clears the flat. Real mass all the time. Already a REWARDS id
+(`spareTire`). Flats ship (`flat[]`, FEAT-94). **Ruled 2026-10-21:** self-contained (factory jack always
+aboard), full-size only; worn (50–80%, ~$15) and new (~$25) variants in different pools; auto shop;
+reward from the auto shop and stranded motorist (A–S); rare roadside find. The fit (`use: 'spare'`) is
+built on feature/parts, not merged.
 
-### Tire patches
-status: todo · design: proposed · build: effect · where: autoShop, generalStore
-Fixes the puncture, restores no condition. Leaves the tire flat until re-inflated (bike pump 2 h,
-compressor 30 min).
+### Tire plug kit
+status: wip · design: ratified · build: effect · where: autoShop, reward, found
+Renamed from tire patches (owner, 2026-10-21). In ITEMS as `tirePlugKit` (`use: 'plug'`) with its
+thumbnail and a REWARDS row (auto shop, gas station, work site; B–A). One plug per kit, $5–10, rare
+roadside find. Plugging is 30 min, fixes the hole and restores no condition; then inflate — 2 h by hand
+(bike pump) or 30 min with the compressor. **The effect is handed to the parts session (feature/parts).**
 
 ### Spare air filter
 status: todo · design: implied · build: effect · where: autoShop
@@ -101,19 +152,26 @@ Resets the `airFilter` track in `src/damage.js` at the roadside.
 
 ### Zip ties
 status: todo · design: proposed · build: effect · where: generalStore, autoShop
-Field repair, ~10% on the `armor*` / `headlight*` tracks. Several per pack.
+Field repair, ~10% on the `armor*` / `headlight*` tracks. Several per pack. 15 min per use; holds for the run (2026-10-20).
 
 ### Duct tape
 status: todo · design: proposed · build: effect · where: generalStore
-Field repair, ~25% on body panels. Open: does it fall off after some hours?
+Field repair, ~25% on body panels. 15 min per use; holds for the run (2026-10-20).
 
 ### Coolant jug
-status: todo · design: proposed · build: effect · needs: coolant · where: autoShop, gasStation
-Top up mid-climb against the overheat → head-gasket chain.
+status: cut · design: proposed · build: effect · where: autoShop, gasStation
+Struck in items.md (owner, 2026-10-16): FEAT-51 has no coolant to top up — radiator condition is the
+cooling capacity. Replaced by stop-leak.
+
+### Stop-leak
+status: todo · design: proposed · build: effect · where: autoShop, gasStation
+Field repair: restores 15% radiator condition (owner, 2026-10-16). Under FEAT-51 that is cooling
+capacity directly — aimed at the overheat → power loss → engine wear chain. 15 min; holds for the run
+(2026-10-20).
 
 ### Emergency gas
-status: wip · design: implied · build: effect, model · needs: fuel · where: gasStation, reward
-The jerry can: a 2 gal RotoPax, single-use. REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122), no effect until fuel.
+status: wip · design: implied · build: effect, model · where: gasStation, reward
+The jerry can: a 2 gal RotoPax, single-use. REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122). Fuel shipped (FEAT-50, 2026-10-17); the pour itself is still unbuilt.
 
 ### Bubble wrap
 status: todo · design: ratified · build: effect · needs: cargo protection · where: generalStore
@@ -138,16 +196,19 @@ Clears one hazard on one cut, once.
 ## Tools
 
 ### Bike pump
-status: todo · design: proposed · build: effect · where: kit
-Always in the truck, not bought. Re-inflates a patched tire: a 2 h timeskip.
+status: todo · design: ratified · build: effect · where: kit
+Always in the truck, not bought, not in the inventory. Re-inflates a plugged tire: 2 h. The repair card's
+*Pump the tire by hand* button carries its pictogram, `assets/items/bikePump.png` (2026-10-21).
 
 ### Compressor
-status: todo · design: proposed · build: effect · where: autoShop
-Re-inflates a patched tire in 30 min instead of 2 h. Worthless without patches.
+status: wip · design: proposed · build: effect · where: autoShop
+Re-inflates a plugged tire in 30 min instead of 2 h. In ITEMS as `compressor` (tool, 4 kg) with its
+thumbnail (2026-10-21); owning it adds the *Inflate tire* button. Worthless without plugs.
 
 ### Quick-jack
 status: todo · design: implied · build: effect · where: autoShop, found
-Roadside lift that makes a spare usable. May be the hi-lift's other job — one tool, not two.
+Roadside lift that makes a spare usable. May be the hi-lift's other job — one tool, not two. ⚠ The
+spare no longer needs it: the factory jack is always in the truck (owner, 2026-10-21).
 
 ### Hi-lift jack
 status: todo · design: proposed · build: effect, model · where: autoShop
@@ -160,11 +221,12 @@ Roadside wrenching, paired with the jack. Behaviour unspecified.
 
 ### Cooler
 status: todo · design: idea · build: effect, model · needs: spoilage · where: tackleShop, generalStore
-×0.2 spoilage rate: fish keeps ~24 h. Its cost (ice / bed volume / slot) is unruled.
+×1/6 spoilage rate: fish keeps ~36 h instead of ~6 h; holds 4 fish (owner, 2026-10-21). Its cost (ice /
+bed volume / slot) is unruled.
 
 ### Better cooler
 status: todo · design: idea · build: effect, model · needs: spoilage · where: tackleShop
-×0.1: fish keeps ~48 h.
+Must beat the cooler's ~36 h; its figure is open.
 
 ### Fishing gear
 status: todo · design: implied · build: effect · needs: fishing · where: tackleShop
@@ -238,6 +300,9 @@ Add-on, own slot, not required to sleep: +5% recovery rate, adding to the bed an
 status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Add-on, own slot, not required to sleep: +10% recovery rate, adding to the bed and the blanket.
 Renders with the bed, not in place of it.
+Camp render (owner, 2026-10-20): shown unrolled, corner unzipped and turned back; layered variants
+for bag + blanket (and the other pairings) are owed so the stack looks natural. Pads likewise render
+unrolled, which is why their thumbnails are unrolled inflatables.
 
 ### Tent
 status: todo · design: idea · build: effect · needs: camp render · where: generalStore
@@ -265,7 +330,7 @@ Raises it to ~2.2 m (≈20°). Open: replaces the camp shovel or stacks?
 
 ### Cooking kit
 status: todo · design: idea · build: effect · needs: camp render, hunger · where: generalStore
-≈23 kg always carried; flat bonus to food effects. Model is ASSET-25 (A-frame + Dutch oven).
+≈23 kg always carried; flat bonus to food effects; the only way to cook groceries (2026-10-20). Model is ASSET-25 (A-frame + Dutch oven).
 
 ## Backpacks
 
@@ -363,8 +428,8 @@ status: todo · design: idea · build: effect, model · needs: hazards · where:
 §3c's "space for more" — counters the sharp-rock line.
 
 ### Heavy-gauge radiator
-status: todo · design: idea · build: param · needs: coolant · where: autoShop
-§3c's "space for more" — survives the front hit.
+status: todo · design: idea · build: param · where: autoShop
+§3c's "space for more" — survives the front hit. (FEAT-51 shipped: radiator condition is the cooling capacity.)
 
 ### Old tires
 status: todo · design: proposed · build: param · where: autoShop, found

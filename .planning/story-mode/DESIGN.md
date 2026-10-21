@@ -248,8 +248,8 @@ unpaid and locks the giver. (5) **The mission clock runs on world time**, so cam
 spends time against the tip rather than forfeiting it — this replaces "short, perishable ones die
 overnight" with the deadline. (6) **The camp pause** (2026-08-02) is restated and ticketed. (7)
 **Haul: the player picks the quantity**; yards run rate bonuses. (8) **Straps are not an item**
-(FEAT-110 closed). (9) **Cargo protection is proportional**, never additive. (10) **Parts are priced
-by the furthest region unlocked.** (11) **Pay grows with work, not the day:** `dayTier` leaves pay
+(FEAT-110 closed). (9) **Cargo protection is proportional**, never additive. (10) ~~**Parts are priced
+by the furthest region unlocked.**~~ **Retired 2026-10-21 (owner, the item setup page): costs scale with the clock only (`dayTier`); a region gives better income and rewards, never higher prices.** (11) **Pay grows with work, not the day:** `dayTier` leaves pay
 and scales costs only; pay rides the region step × a capped **regional reputation** shown on the
 result card. Retires "accept at 1 a.m., buy tomorrow's rate". (12) **Alpha run shape: three regions,
 provisionally 7 / 6 / 5 days.** Open: what earns haul's and freight's tip and bonus item. Provenance:
