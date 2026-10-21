@@ -144,7 +144,7 @@ status: wip · design: ratified · build: effect · where: autoShop, reward, fou
 Renamed from tire patches (owner, 2026-10-21). In ITEMS as `tirePlugKit` (`use: 'plug'`) with its
 thumbnail and a REWARDS row (auto shop, gas station, work site; B–A). One plug per kit, $5–10, rare
 roadside find. It fixes the hole and restores no condition. The whole repair, plugging and
-inflating, is 2 h by hand (bike pump) or 30 min with the compressor (owner, 2026-10-21). **The effect is handed to the parts session (feature/parts).**
+inflating, is 2 h by hand (bike pump) or 30 min with the compressor (owner, 2026-10-21). **The effect is built on feature/parts (08baccc5, unmerged):** the buttons sit in the inventory's detail strip.
 
 ### Spare air filter
 status: todo · design: implied · build: effect · where: autoShop
