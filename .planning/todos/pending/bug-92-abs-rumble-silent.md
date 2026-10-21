@@ -37,3 +37,7 @@ navigator.getGamepads().find(Boolean).vibrationActuator.playEffect('dual-rumble'
 
 ## Acceptance
 On the owner's pad and browser, cycling ABS is felt as pulsation, and it stops when ABS releases.
+
+## Finding 2026-10-21
+Owner ran the probe in Chrome on the Mac over Bluetooth. `vibrationActuator` is **null**, so Chrome exposes no rumble for that pad. It is suspect 1, and no code change in `padKick` can fix it. `padKick` already skips a pad with no actuator, so it stays as is for setups that do support rumble. Next: run the same probe in Safari, and with the pad on a USB cable.
+Safari: the pad does not drive the truck at all (FEAT-136), so rumble cannot be tested there. Only a USB cable in Chrome is left to try.
