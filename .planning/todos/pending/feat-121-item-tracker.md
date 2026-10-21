@@ -372,7 +372,8 @@ Replaced by the named tire types (Old / Standard / Sport / Off-road / LT), items
 
 ### Brake pads (per axle)
 status: todo · design: proposed · build: param · where: autoShop
-Pad grade per axle sets bias.
+Pad grade per axle sets bias. **Pads are front-only; the rear axle has drum shoes** (owner, 2026-10-21) —
+feature/parts already names its rear slot "Rear brake shoes". Icons: `pads.png` (front), `shoes.png` (rear).
 
 ### Sport anti-roll bars
 status: todo · design: ratified · build: param · where: autoShop
