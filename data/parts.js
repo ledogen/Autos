@@ -105,24 +105,25 @@ export const PARTS = {
     dampersRearHD:   { name: 'Heavy-duty rear shocks', slot: 'dampersRear', family: 'hd', rarity: 'uncommon', price: 11, massKg: 7,
                        patch: { suspensionDampingRear: 6000 }, load: HD_DAMPERS,
                        desc: 'Firm valving that settles a loaded bed. Busy and harsh when empty.' },
-    // ── Brake pads, per axle (DESIGN.md: pad grades per axle set the bias). [DEFAULT] torques.
+    // ── Brake pads, per axle (DESIGN.md: pad grades per axle set the bias). [DEFAULT] torques; the
+    //    whole ladder rose 10 % with the stock brakes for ABS (FEAT-135, 2026-10-21).
     padsFrontStd:  { name: 'Standard front pads',  slot: 'padsFront', family: 'oem', rarity: 'common', price: 5, massKg: 2, stock: true,
-                     patch: { maxBrakeTorqueFront: 1300 },
+                     patch: { maxBrakeTorqueFront: 1430 },
                      desc: 'Organic pads. Quiet, gentle, forgiving.' },
     padsFrontSport:{ name: 'Sport front pads',     slot: 'padsFront', family: 'sport', rarity: 'uncommon', price: 8, massKg: 2,
-                     patch: { maxBrakeTorqueFront: 1550 },
+                     patch: { maxBrakeTorqueFront: 1705 },
                      desc: 'Semi-metallic. More bite up front, and they eat themselves faster.' },
     padsFrontRace: { name: 'Race front pads',      slot: 'padsFront', family: 'sport', rarity: 'rare', price: 12, massKg: 2,
-                     patch: { maxBrakeTorqueFront: 1800 },
+                     patch: { maxBrakeTorqueFront: 1980 },
                      desc: 'Grabby and loud. Locks the fronts if you stab them.' },
     padsRearStd:   { name: 'Standard rear shoes',  slot: 'padsRear', family: 'oem', rarity: 'common', price: 5, massKg: 3, stock: true,
-                     patch: { maxBrakeTorqueRear: 450 },
+                     patch: { maxBrakeTorqueRear: 495 },
                      desc: 'Factory drum shoes, set soft so the light rear never locks.' },
     padsRearSport: { name: 'Sport rear shoes',     slot: 'padsRear', family: 'sport', rarity: 'uncommon', price: 8, massKg: 3,
-                     patch: { maxBrakeTorqueRear: 600 },
+                     patch: { maxBrakeTorqueRear: 660 },
                      desc: 'More rear bite. The back steps out sooner under hard braking.' },
     padsRearRace:  { name: 'Race rear shoes',      slot: 'padsRear', family: 'sport', rarity: 'rare', price: 12, massKg: 3,
-                     patch: { maxBrakeTorqueRear: 750 },
+                     patch: { maxBrakeTorqueRear: 825 },
                      desc: 'Aggressive rear lining. Brake while turning and the tail comes round.' },
 
     // ── Anti-roll bars (§3b — the ratified sport pair; stock is the code's 4500 front, no rear bar).
