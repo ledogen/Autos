@@ -54,8 +54,9 @@ export const SLOTS = {
 export const takes = (socket) => SLOTS[socket].takes ?? socket
 /** The sockets a part can go in (four for a tire, one for anything else). */
 export const socketsFor = (id) => Object.keys(SLOTS).filter(s => takes(s) === PARTS[id]?.slot)
-/** The inventory thumbnail's stem: front and rear halves share one icon (assets/items/<stem>.png). */
-export const partIcon = (id) => PARTS[id].slot.replace(/(Front|Rear)$/, '')
+/** The inventory thumbnail's stem: front and rear halves share one icon (assets/items/<stem>.png) —
+ *  except the brakes: pads up front, drum shoes at the rear (owner, 2026-10-21). */
+export const partIcon = (id) => PARTS[id].slot === 'padsRear' ? 'shoes' : PARTS[id].slot.replace(/(Front|Rear)$/, '')
 
 /** The tint behind a part's icon, per rarity (owner, 2026-10-20: gray, green, blue, orange). */
 export const RARITY_COLOR = { common: '#8a929b', uncommon: '#4fa35a', rare: '#3f7fd6', legendary: '#e0892c' }
