@@ -59,7 +59,7 @@ Used up. Per-job or per-day decisions, not permanent upgrades.
 | **Fish (eaten)** | Alertness that **does not have to be repaid** — the only honest restoration in the game. *"Coffee is debt. Fish is income."* | Caught; best at a favored water | A long relationship with the water | **PROPOSED** — `spirits-and-pacts.md` #04. ⚠ Depends on The Confluence, which is deferred. **Four species (owner, 2026-10-21): salmon, rainbow trout, brown trout, catfish — each carries a different effect** (§5) |
 | **Groceries** | **A delayed meal.** Bought at the general store **or a farm** (owner, 2026-10-21), carried, and **cooked into a meal at camp — only if you own the cooking kit**. **Ruled 2026-10-21:** one meal per bag; the cooked meal holds 10 h; cooking adds 30 min; cook it in the evening or the morning before you break camp; fresh for 24 h, and the cooler slows them like fish; the kit's flat food bonus does not apply on top — cooking them *is* the kit's bonus. $5; a reward from farms and the general store (B–A); never found. They still spoil (§1b), so they buy hours, not days. The meal for later in a run, when you camp far from a food vendor and the next stop with a kitchen is a day's drive off. | Bought (general store, farm) | Cash; the spoilage clock; and the cooking kit's ≈23 kg on every mile | **RATIFIED** — owner, 2026-10-20; every figure set 2026-10-21 (the item setup page). Needs hunger (§1d) and the cooking kit |
 | **Potato** | **The campfire meal** (owner, 2026-10-21). **Inedible raw.** Cooked on the campfire — **the only food you can cook without the cooking kit** — it becomes a decent meal. | Bought (general store); a reward from farms | Cash; a slot | **PROPOSED** — owner, 2026-10-21. Figures open (the item setup page): its hold, cook time, how long it keeps, and whether fish can still be cooked on the fire (§1b) |
-| **Spare tire** | Recovers from a puncture without a tow. **Fitting it is a 90 min timeskip** (owner, 2026-10-20; was 30 min, 2026-09-30). Puncture is a hard fail state in the wear model. **Ruled 2026-10-21:** self-contained — the truck always carries the factory jack. Full-size only, no donut. **Two items in different pools: worn (50–80% condition, ~$15) and new (~$25).** Sold at the auto shop; a bonus item from the auto shop and stranded motorists (A–S); a rare roadside find. | Bought/found; starts in some jalopies | Real mass, all the time | **IMPLIED** — named in DESIGN.md "The car" as a stowed consumable; behavior unspecified |
+| **Spare tire** | Recovers from a puncture without a tow. **Fitting it is a 90 min timeskip** (owner, 2026-10-20; was 30 min, 2026-09-30). Puncture is a hard fail state in the wear model. **Ruled 2026-10-21:** self-contained — the truck always carries the factory jack. Full-size only, no donut. **Two items in different pools: worn (50–80% condition, ~$15) and new (~$25).** Sold at the auto shop; a bonus item from the auto shop and stranded motorists (A–S); a rare roadside find. **The spare is the mounted pair** (2026-10-21, now that wheels and tires are separate parts, §3g): a standard tire on a new steel wheel, 21 kg, so fitting it also replaces a bent rim on that corner. | Bought/found; starts in some jalopies | Real mass, all the time | **IMPLIED** — named in DESIGN.md "The car" as a stowed consumable; behavior unspecified |
 | **Air filter (spare)** | Replacement for the track the player must actively *watch* — it does ~nothing until it does. **Ruled 2026-10-21:** fitting takes 15 min and sets the filter to **the spare's own condition** — every spare filter carries one, like the spare tire: the auto shop sells them new ($10), and a roadside find is never in great shape. Sold at the auto shop; a reward from the auto shop and gas station (B–A). | Bought/found | Cash; a slot | **RATIFIED** — owner, 2026-10-21 (the item setup page) |
 | **Fuel** | The tank. Burn is a function of rpm and load, so a par-beating drive costs fuel as well as wear. **The one cost that scales with distance** — SM-INV-5 keeps wear off the distance axis, and this is what fills it. Bought at gas stations. | Gas stations (a POI type) | Cash — and the detour, if you let it get low | **RATIFIED** — owner, 2026-08-01. Reverses this row's old *NOT DESIGNED*. Ticket FEAT-50; gauge already ships (FEAT-49). See DESIGN.md "Fuel and gas stations" |
 | **Jerry can** | **A refillable 5 gal can** (owner, 2026-10-21): pour it into the tank, refill it at any pump. Fuel you carry — the cheap answer to running dry, which is otherwise the breakdown predicament (tow, or don't). **A top-tier reward**, rare on purpose: carried full, it all but retires running dry. | A reward (gate, givers and whether it is ever sold: the item setup page) | A slot; **real mass, always** — 5 gal of gas is ~14 kg plus the can | **PROPOSED** — owner, 2026-10-21. Was IMPLIED (falls out of the fuel ruling) |
@@ -856,6 +856,13 @@ mass, and a per-type grip table feeding `muScale` in `src/tire.js`; `suspensionB
 `suspensionTravel*`, `suspensionRestLength*` in `data/ranger.js`). Fitting waits on FEAT-104 like
 every other part. Open (owner's call): whether a 31" tire needs the lift to clear the arches.
 
+**Wheels and tires are separate parts** (owner, 2026-10-21, ruled through the parts session). Both are
+sold at the auto shop and both are mission rewards. The **steel wheel** is the stock wheel: its own
+socket on each corner (30 min to fit), $8, 9 kg; a bent rim is that part's damage. **Tire masses are
+tire only:** old 12 kg, standard 12, sport 11.5, off-road 14.4 (standard × 1.2, owner), LT 15. The
+spare stays the mounted pair (§1). The wheel and tire reward gates and pools are placeholders (B–A, the
+auto shop) until set on the item setup page.
+
 ## 4. Cargo
 
 Not owned — carried, for someone, under a scoring axis. Cargo is the mission type made physical, so
@@ -1008,9 +1015,9 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
   cooking them is the kit's whole bonus (§1).
 - **The cooler runs on ice**: refill it every 3 days. Ice is a consumable sold at the gas station and the
   general store. The cooler: general store and tackle shop, $10–30, tackle-shop reward A–S, rare find (§2).
-- **Spare tire**: signed off as drawn; a later idea is to sell wheels and tires separately (not ruled).
-- **Wheels and tires** (owner's question, 2026-10-21, not ruled): separate wheel and tire items with the
-  combo as a third, or tires only with the wheel always repaired at the shop.
+- **Spare tire**: signed off as drawn; a later idea is to sell wheels and tires separately (ruled the same day, below).
+- **Wheels and tires are separate parts**, both sold at the auto shop and both rewards; the spare is the
+  mounted pair and fixes a bent rim when fitted (§3g, built on feature/parts).
 - **New idea, not ruled:** since the item models exist anyway, drop items into the world and give the
   truck a *proximity inventory*: walk or drive up to an item to load it, or drop one where you stand.
 
