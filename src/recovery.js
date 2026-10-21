@@ -6,19 +6,21 @@
 //
 //   CAN'T CONTINUE  out of fuel with no gas can aboard, or an engine at 0% (it never catches —
 //                   src/ignition.js). A flat is not: the truck still drives on one (FEAT-94).
-//   OPTIONS         pour the gas can · fit the spare (a flat, owner 2026-09-30: 30 min) · tow to the
-//                   nearest gas station (when dry) · tow to the nearest service center (any time)
+//   OPTIONS         the tows only (owner, 2026-10-20): to the nearest gas station when dry, to the
+//                   nearest service center any time, each with its distance and cost. Pouring the
+//                   gas can and fitting the spare are the inventory screen's (ITEMS[].use).
 //
 // The chip shows whenever the truck is parked in a story run — a tow is a phone call, not an event —
 // and the card lists what fits the moment. Pure: main.js supplies the state and owns the DOM.
+
+import { TIRE_IDS } from './damage.js'
 
 export const SPARE_FIT_H = 0.5   // owner, 2026-09-30: fitting the spare costs 30 min
 
 /**
  * @param {object} s
  *   dry, gasCan, engineDead   booleans
- *   flats                     flat corner indices (0=FL 1=FR 2=RL 3=RR)
- *   spare                     a good spare tire is aboard
+ *   flats                     flat corner indices (0=FL 1=FR 2=RL 3=RR) — the headline only
  *   money                     the wallet
  *   fuelTow, shopTow          { price, km, hours } to the nearest gas station / service center, or null
  * @returns {{ head: string, stuck: boolean, opts: Array<{act, enabled, tow?}>, canEnd: boolean }}
@@ -27,8 +29,6 @@ export function recoveryCard (s) {
   const stuck = (s.dry && !s.gasCan) || s.engineDead
   const head = s.engineDead ? "engine won't start" : s.dry ? 'out of fuel' : s.flats.length ? 'flat tire' : 'roadside'
   const opts = []
-  if (s.dry && s.gasCan) opts.push({ act: 'gas', enabled: true })
-  if (s.flats.length) opts.push({ act: 'spare', enabled: s.spare })
   // A tow to the pump is only an answer to an empty tank; the service center takes anything.
   if (s.dry && s.fuelTow) opts.push({ act: 'towFuel', enabled: s.money + 1e-9 >= s.fuelTow.price, tow: s.fuelTow })
   if (s.shopTow) opts.push({ act: 'towShop', enabled: s.money + 1e-9 >= s.shopTow.price, tow: s.shopTow })
@@ -36,20 +36,16 @@ export function recoveryCard (s) {
 }
 
 /**
- * Bolt the spare onto the first flat corner. The punctured tire comes off into the inventory as a
- * FLAT spare, keeping its wear (owner, 2026-10-20: roadside swaps keep the old part, no sale) — a
- * patch kit can bring it back when one exists. Returns the corner, or -1 if there was nothing to do.
- * The caller puts SPARE_FIT_H on the clock.
+ * The spare's inventory effect: bolt `spare` (its entry, already out of the inventory — inventory.use)
+ * onto the first flat corner, with its wear. The punctured tire comes off as ITSELF, flat and with its
+ * wear, into the inventory (owner, 2026-10-20: roadside swaps keep the old part, no sale) — a patch
+ * kit or the service center brings it back. Returns the corner, or -1 if there was nothing to do (a
+ * sound truck, or a spare that is itself flat). The caller puts SPARE_FIT_H on the clock.
  */
-export function fitSpare (damage, inventory) {
+export function fitSpare (parts, damage, inventory, spare) {
   const corner = damage.flat.indexOf(true)
-  const index = inventory.list().findIndex(r => r.id === 'spareTire' && !r.flat)
-  if (corner < 0 || index < 0) return -1
-  const id = ['tireFL', 'tireFR', 'tireRL', 'tireRR'][corner]
-  const spare = inventory.take(index)
-  const worn = damage.get(id)
-  damage.set(id, spare.cond?.tire ?? 1)
-  damage.flat[corner] = false
-  inventory.grant('spareTire', 1, { cond: { tire: worn }, flat: true })
+  if (corner < 0 || spare.flat) return -1
+  const off = parts.fit('spareTire', spare.cond, TIRE_IDS[corner])
+  inventory.grant(off.id, 1, { cond: off.cond, flat: true })
   return corner
 }

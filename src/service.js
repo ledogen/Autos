@@ -5,6 +5,8 @@
 //   • REPAIR and BUY are separate. A repair restores the fitted part's tracks to 100% for money and
 //     labour hours (data/parts.js REPAIRS, pro rata on the missing condition). Buying is the only way
 //     to change a part's family.
+//   • A part is one tire, or one axle's pair (data/parts.js SLOTS). A part in the inventory can be
+//     repaired as its own item — a flat tire patched, a worn one renewed — and refitted later.
 //   • A part that comes off is SOLD (half its price × its condition) or KEPT in inventory with its
 //     wear. A massless stock part ('No lift') is an absence: nothing to sell or keep.
 //   • Browsing is free — the frame loop holds the clock while the screen is open — and each repair or
@@ -14,12 +16,14 @@
 // The renderer-agnostic half (the fuel-stop.js pattern): main.js owns the DOM, this owns the rules,
 // so a headless gate can drive a whole visit. Every dependency arrives through the constructor.
 
-import { PARTS, SLOTS, REPAIRS, SELL_FRACTION } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIRS, SELL_FRACTION, socketsFor } from '../data/parts.js'
 import { TRACKS } from './damage.js'
 
 const cents = (x) => Math.round(x * 100) / 100
 const REPAIR_FLOOR = 0.02   // missing condition below which the bench has nothing to do
-const slotOfTrack = (id) => Object.keys(SLOTS).find(s => SLOTS[s].tracks.includes(id)) ?? null
+const socketOfTrack = (id) => Object.keys(SLOTS).find(s => SLOTS[s].tracks.includes(id)) ?? null
+/** A part's damage class (the REPAIRS row), or null for a part the damage model doesn't track. */
+const classOf = (id) => { const t = SLOTS[socketsFor(id)[0]]?.tracks[0]; return t ? TRACKS[t].cls : null }
 
 export class ServiceCenter {
     /**
@@ -33,24 +37,29 @@ export class ServiceCenter {
     constructor (deps) {
         Object.assign(this, deps)
         this.onChange ??= () => {}
-        this.off = null      // the part just taken off, waiting on sell / keep: { id, cond }
+        this.off = null      // the part just taken off, waiting on sell / keep: { id, cond, flat }
     }
 
     // ── Repairs ──────────────────────────────────────────────────────────────────────────────────
 
-    /** What restoring one track to 100% costs now: { price, hours }. Zero for a sound track. */
-    repairQuote (id) {
-        const d = this.damage, t = TRACKS[id], r = REPAIRS[t.cls]
-        const missing = 1 - d.get(id)
-        // A flat is a hole, not wear: patching it is a whole tire's labour even on fresh rubber.
-        const need = t.cls === 'tire' && d.flat[t.wheel] ? Math.max(missing, 0.25) : missing
-        // Below the floor it isn't a repair line: a drive leaves every track a hair under new.
+    /**
+     * Restoring `cond` → 100% on a part of class `cls` ({ price, hours }), pro rata on what's missing.
+     * `partId` prices the classes REPAIRS leaves to the part. A flat is a hole, not wear: patching it
+     * is a quarter tire's labour even on fresh rubber. Below the floor it isn't a repair: a drive
+     * leaves every track a hair under new.
+     */
+    _quote (cls, partId, cond, flat) {
+        const r = REPAIRS[cls]
+        const need = flat ? Math.max(1 - cond, 0.25) : 1 - cond
         if (need < REPAIR_FLOOR) return { price: 0, hours: 0 }
-        const slot = slotOfTrack(id)
-        const full = r.price ?? PARTS[this.parts.fitted(slot)].price / SLOTS[slot].tracks.length
-        return { price: cents(full * need * this.tier()), hours: r.hours * need }
+        return { price: cents((r.price ?? PARTS[partId].price) * need * this.tier()), hours: r.hours * need }
     }
 
+    /** What restoring one fitted track to 100% costs now: { price, hours }. Zero for a sound track. */
+    repairQuote (id) {
+        const t = TRACKS[id], socket = socketOfTrack(id)
+        return this._quote(t.cls, socket && this.parts.fitted(socket), this.damage.get(id), t.cls === 'tire' && this.damage.flat[t.wheel])
+    }
     /** Every track that wants work, worst first. A manual's synchros only while a manual is fitted. */
     repairRows () {
         return Object.keys(TRACKS)
@@ -87,46 +96,55 @@ export class ServiceCenter {
         return true
     }
 
+    /** Parts in the inventory that want work — a worn or flat tire, a tired spring pair — worst first. */
+    ownedRepairRows () {
+        return this.inventory.list()
+            .filter(r => classOf(r.id))
+            .map(r => ({ index: r.index, id: r.id, cond: r.cond ?? 1, flat: r.flat, ...this._quote(classOf(r.id), r.id, r.cond ?? 1, r.flat) }))
+            .filter(r => r.hours > 0)
+            .sort((a, b) => a.cond - b.cond)
+    }
+
+    /** Repair inventory entry `index` to new, as its own item (owner, 2026-10-20). */
+    repairOwned (index) {
+        const r = this.ownedRepairRows().find(r => r.index === index)
+        if (!r || !this.spend(r.price)) return false
+        this.inventory.take(index)
+        this.inventory.grant(r.id, 1, { cond: 1 })
+        this.advanceHours(r.hours)
+        this.onChange()
+        return true
+    }
+
     // ── Parts ────────────────────────────────────────────────────────────────────────────────────
 
     buyPrice (id) { return cents(PARTS[id].price * this.tier()) }
 
-    /** What a part sells back for: half its price × its mean condition (new = 1). */
+    /** What a part sells back for: half its price × its condition (new = 1). */
     sellValue (id, cond = null) {
-        const c = cond ? Object.values(cond) : []
-        const mean = c.length ? c.reduce((a, b) => a + b, 0) / c.length : 1
-        return cents(PARTS[id].price * SELL_FRACTION * mean * this.tier())
+        return cents(PARTS[id].price * SELL_FRACTION * (cond ?? 1) * this.tier())
     }
 
-    /** The shop's parts for each slot that aren't fitted now: { slot: [id…] }. 'No lift' is how a lift comes off. */
-    stock () {
-        const out = {}
-        for (const slot of Object.keys(SLOTS)) {
-            out[slot] = Object.keys(PARTS).filter(id => PARTS[id].slot === slot && id !== this.parts.fitted(slot))
-        }
-        return out
-    }
-
-    /** Buy a new part and bolt it on. The old one waits in `off` for sell / keep. */
-    buyAndFit (id) {
-        if (this.off || !PARTS[id] || !this.spend(this.buyPrice(id))) return false
-        this._swap(id, null)
+    /** Buy a new part and bolt it into `socket` (a tire needs its corner). The old one waits in `off`. */
+    buyAndFit (id, socket = PARTS[id]?.slot) {
+        if (this.off || !socketsFor(id).includes(socket) || this.parts.fitted(socket) === id || !this.spend(this.buyPrice(id))) return false
+        this._swap(id, null, socket)
         return true
     }
 
-    /** Bolt on a part from inventory (entry `index`), with its wear. */
-    fitFromInventory (index) {
+    /** Bolt on a part from inventory (entry `index`), with its wear. A flat tire is repaired first. */
+    fitFromInventory (index, socket) {
         if (this.off) return false
         const e = this.inventory.list()[index]
-        if (!e || !PARTS[e.id]) return false
+        if (!e || e.flat || !socketsFor(e.id).includes(socket ?? PARTS[e.id]?.slot)) return false
         this.inventory.take(index)
-        this._swap(e.id, e.cond)
+        this._swap(e.id, e.cond, socket ?? PARTS[e.id].slot)
         return true
     }
 
-    _swap (id, cond) {
-        const off = this.parts.fit(id, cond)
-        this.advanceHours(SLOTS[PARTS[id].slot].hours)
+    _swap (id, cond, socket) {
+        const off = this.parts.fit(id, cond, socket)
+        this.advanceHours(SLOTS[socket].hours)
         this.off = PARTS[off.id].massKg > 0 ? off : null
         this.onChange()
     }
@@ -137,11 +155,10 @@ export class ServiceCenter {
         if (!off) return false
         this.off = null
         if (how === 'sell') this.earn(this.sellValue(off.id, off.cond))
-        else this.inventory.grant(off.id, 1, { cond: off.cond })
+        else this.inventory.grant(off.id, 1, { cond: off.cond, flat: off.flat })
         this.onChange()
         return true
     }
-
     /** Leaving with a part still on the bench keeps it — nothing is ever thrown away silently. */
     close () { if (this.off) this.settleOff('keep') }
 }

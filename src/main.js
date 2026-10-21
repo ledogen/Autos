@@ -3356,7 +3356,7 @@ const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
   onChange: () => inventoryScreen.render(),
-  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan },
+  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, spare: _fitSpare },
 })
 // Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
 const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
@@ -4552,20 +4552,18 @@ function _towToShop () {
   const t = _towQuote(_SERVICE_CENTER)
   if (t) _towTo(t, { x: t.q.x, z: t.q.z, heading: Math.atan2(-t.q.tx, -t.q.tz) })
 }
-function _fitSpare () {
-  if (fitSpare(damageModel, inventorySystem) < 0) return
+/** The spare's inventory effect (ITEMS.spareTire.use): onto the first flat, 30 min on the clock. */
+function _fitSpare (entry) {
+  if (fitSpare(partsSystem, damageModel, inventorySystem, entry) < 0) return false
   damageModel.publish(RANGER_PARAMS)
   daySystem.advanceMinutes(SPARE_FIT_H * 60)
 }
 
 const _RC_LABEL = {
-  gas: () => 'pour in the gas can',
-  spare: (o) => o.enabled ? `fit the spare — ${formatGameDuration(SPARE_FIT_H)}` : 'fit the spare — no spare aboard',
-  towFuel: (o) => `tow to gas station — $${formatMoney(o.tow.price)}`,
-  towShop: (o) => `tow to service center — $${formatMoney(o.tow.price)}`,
+  towFuel: (o) => `tow to gas station · ${o.tow.km.toFixed(1)} km — $${formatMoney(o.tow.price)}`,
+  towShop: (o) => `tow to service center · ${o.tow.km.toFixed(1)} km — $${formatMoney(o.tow.price)}`,
 }
 const _RC_ACT = {
-  gas: () => inventorySystem.use('emergencyGas'), spare: _fitSpare,
   towFuel: _towToFuel, towShop: _towToShop, end: _backToMenu,
 }
 
@@ -4584,7 +4582,6 @@ function _updateRecovery () {
     gasCan: owned.some(r => r.id === 'emergencyGas'),
     engineDead: damageModel.get('engine') <= 0,
     flats: damageModel.flat.flatMap((f, i) => f ? [i] : []),
-    spare: owned.some(r => r.id === 'spareTire' && !r.flat),
     money,
     fuelTow: _towQuote(_FUEL_SELLER),
     shopTow: _towQuote(_SERVICE_CENTER),
@@ -4598,7 +4595,7 @@ function _updateRecovery () {
   if (!_recoveryOpen) return
   const html = `<div class="rc-head">${c.head}</div>`
     + c.opts.map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
-      + (o.tow ? `<div class="rc-dim">${o.tow.km.toFixed(1)} km · ${formatGameDuration(o.tow.hours)}</div>` : '')).join('')
+      + `<div class="rc-dim">${formatGameDuration(o.tow.hours)} on the hook</div>`).join('')
     + (c.opts.length ? '' : '<div class="rc-dim">no tow can reach you here</div>')
     + `<div class="rc-dim">you have $${formatMoney(money)}</div>`
     + (c.canEnd ? '<button class="rc-opt rc-end" data-act="end">end run — you broke down</button>' : '')

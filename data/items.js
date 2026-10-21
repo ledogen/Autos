@@ -8,12 +8,12 @@
 //            parts take a slot EACH (owner, 2026-10-16). Fitted parts take none (not built yet).
 //   massKg   real load on the chassis while stowed (items.md rule 2 — a load, never a stat)
 //   desc     described, never scored (SM-INV-10): no numbers, ever — the gate checks for digits
-//   thumb    the thumbnail's file stem when it isn't the id (parts share one per slot)
+//   thumb    the thumbnail's file stem when it isn't the id (parts share one per kind)
 //   rarity   parts only: the colour behind the icon (data/parts.js RARITY_COLOR)
 //   use      the effect hook main.js supplies, if the effect is built. Usable items auto-bind to
 //            a free quick slot (keys 1–4, items.md §1c).
 
-import { PARTS } from './parts.js'
+import { PARTS, partIcon } from './parts.js'
 
 export const ITEMS = {
     coffee:       { name: 'Coffee',        kind: 'consumable', massKg: 0.5, use: 'coffee',
@@ -21,7 +21,7 @@ export const ITEMS = {
     chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3,
                     desc: 'Still warm, for now.' },
     // P235/75R15 on a steel rim.
-    spareTire:    { name: 'Spare tire',    kind: 'part',       massKg: 20,
+    spareTire:    { name: 'Spare tire',    kind: 'part',       massKg: 20, use: 'spare',
                     desc: 'A full-size spare on a steel wheel. Heavy to carry around.' },
     // A 2 gal RotoPax: ~5.7 kg of gas + ~1.5 kg of can (data/offers.js REWARDS).
     emergencyGas: { name: 'Emergency gas', kind: 'consumable', massKg: 7.2, use: 'gas',
@@ -37,9 +37,10 @@ export const ITEMS = {
                     desc: 'A rolled bed for the ground. Better than the dirt, not by much.' },
 
     // ── Vehicle parts (data/parts.js), owned UNFITTED: a slot each, and the entry carries the part's
-    //    wear as `cond`. A massless part ('No lift') is an absence, not a thing you can carry.
-    ...Object.fromEntries(Object.entries(PARTS).filter(([, p]) => p.massKg > 0)
-        .map(([id, p]) => [id, { name: p.name, kind: 'part', massKg: p.massKg, desc: p.desc, thumb: p.slot, rarity: p.rarity }])),
+    //    wear as `cond`. A massless part ('No lift') is an absence, not a thing you can carry. The
+    //    spare keeps its own line above (its icon, and `use`: fit it on a flat, roadside).
+    ...Object.fromEntries(Object.entries(PARTS).filter(([id, p]) => p.massKg > 0 && id !== 'spareTire')
+        .map(([id, p]) => [id, { name: p.name, kind: 'part', massKg: p.massKg, desc: p.desc, thumb: partIcon(id), rarity: p.rarity }])),
 }
 
 /** Kinds that stack into one slot per item kind. */

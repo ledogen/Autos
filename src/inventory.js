@@ -177,16 +177,20 @@ export class InventorySystem {
     }
 
     /**
-     * Use one unit: run its effect and spend it. False if not owned or its effect isn't built — or if
-     * the effect itself returns false, which means "nothing to do right now, keep it" (FEAT-50: a gas
-     * can poured into a full tank would only be wasted).
+     * Use one unit (entry `i`, default the first of `id`): run its effect and spend it. The unit is
+     * out of the inventory while the effect runs — the effect gets its entry (a spare's wear) and the
+     * room it left — and goes back where it was if the effect returns false: "nothing to do right
+     * now, keep it" (FEAT-50: a gas can poured into a full tank would only be wasted). False too if
+     * not owned or its effect isn't built.
      */
-    use (id) {
-        const i = runInventory.entries.findIndex(e => e.id === id)
-        if (i < 0 || !this.usable(id)) return false
-        if (this._effects[ITEMS[id].use]() === false) return false
+    use (id, i = runInventory.entries.findIndex(e => e.id === id)) {
         const e = runInventory.entries[i]
+        if (e?.id !== id || !this.usable(id)) return false
         if (--e.n <= 0) runInventory.entries.splice(i, 1)
+        if (this._effects[ITEMS[id].use](e) === false) {
+            if (e.n++ <= 0) runInventory.entries.splice(i, 0, e)
+            return false
+        }
         this._changed()
         return true
     }

@@ -209,7 +209,7 @@ export class InventoryScreen {
         case 'close': this.close(); return
         case 'take': inv.takePending(); break
         case 'leave': inv.leavePending(); break
-        case 'use': inv.use(inv.list()[this.sel].id); break
+        case 'use': inv.use(inv.list()[this.sel].id, this.sel); break
         case 'drop': inv.drop(this.sel); this.sel = null; break
         case 'pack': inv.packItem(this.sel); this.sel = null; break
         case 'equip': inv.equip(this.sel); break

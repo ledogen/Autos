@@ -5,10 +5,13 @@
 //   2. repair(): charges, restores to 100%, adds the labour hours; a flat is re-aired and a bent wheel's
 //      alignment straightened; a wallet that can't cover it changes nothing.
 //   3. repairAll(): all or nothing.
-//   4. Buy & fit: charges the part, bolts it on new, adds the slot's labour; the old part waits on the
-//      bench until sold (half price × condition) or kept (into inventory WITH its wear); refitting
-//      the kept part from inventory brings that wear back. Closing with a part on the bench keeps it.
+//   4. Buy & fit: charges the part, bolts it on new, adds the socket's labour; the old part waits on
+//      the bench until sold (half price × condition) or kept (into inventory WITH its wear, and its
+//      puncture); refitting the kept part from inventory brings that wear back, on any corner for a
+//      tire. A flat tire won't go on. Closing with a part on the bench keeps it.
 //   5. A massless stock part (no lift) leaves nothing on the bench.
+//   6. A part in inventory is repaired as its own item: a flat tire patched and renewed, for money
+//      and hours; a sound one has nothing to repair.
 //
 // Pure node: no THREE, no DOM.
 import { ServiceCenter } from '../src/service.js'
@@ -50,7 +53,7 @@ tier = 1.5
 check('…× the day tier', near(svc.repairQuote('engine').price, REPAIRS.engine.price / 2 * 1.5))
 tier = 1
 damage.set('springRear', 0)
-check('springs share the fitted part\'s price per axle', near(svc.repairQuote('springRear').price, PARTS.springsOEM.price / 2))
+check('a spring pair costs the fitted pair', near(svc.repairQuote('springRear').price, PARTS.springsRearOEM.price))
 
 // ── 2. repair() ───────────────────────────────────────────────────────────────────────────────
 wallet = 100; hours = 0
@@ -74,33 +77,45 @@ check('repair all, all of it', svc.repairAll() && svc.repairRows().length === 0 
 
 // ── 4. Buy, fit, sell / keep ──────────────────────────────────────────────────────────────────
 wallet = 100; hours = 0
-damage.set('damperFront', 0.6); damage.set('damperRear', 0.2)
-check('buy heavy-duty shocks', svc.buyAndFit('dampersHD') && near(wallet, 100 - PARTS.dampersHD.price)
-  && params.suspensionDampingFront === PARTS.dampersHD.patch.suspensionDampingFront && damage.get('damperRear') === 1)
-check('the slot\'s labour is on the clock', hours === 1.5, hours)
-check('the old shocks wait on the bench with their wear', svc.off?.id === 'dampersOEM' && svc.off.cond.damperRear === 0.2)
-check('no second swap while one waits', !svc.buyAndFit('tiresSport'))
+damage.set('damperRear', 0.2)
+check('buy heavy-duty rear shocks', svc.buyAndFit('dampersRearHD') && near(wallet, 100 - PARTS.dampersRearHD.price)
+  && params.suspensionDampingRear === PARTS.dampersRearHD.patch.suspensionDampingRear && damage.get('damperRear') === 1)
+check('the socket\'s labour is on the clock', hours === 0.75, hours)
+check('the old shocks wait on the bench with their wear', svc.off?.id === 'dampersRearOEM' && svc.off.cond === 0.2)
+check('no second swap while one waits', !svc.buyAndFit('tireSport', 'tireFL'))
 const before = wallet
 svc.settleOff('sell')
-check('sold for half price × condition', near(wallet - before, PARTS.dampersOEM.price * 0.5 * 0.4), wallet - before)
+check('sold for half price × condition', near(wallet - before, PARTS.dampersRearOEM.price * 0.5 * 0.2), wallet - before)
 
-svc.buyAndFit('tiresSport')
-damage.set('tireFL', 0.3)
+check('a tire needs a corner', !svc.buyAndFit('tireSport'))
+damage.set('tireFL', 0.3); damage.flat[0] = true
+svc.buyAndFit('tireSport', 'tireFL')
 svc.settleOff('keep')
-const kept = inventory.list().find(r => r.id === 'tiresStandard')
-check('kept tires go to inventory', !!kept && kept.cond?.tireFL === 1)
-svc.buyAndFit('tiresOld'); svc.settleOff('keep')
-const idx = inventory.list().findIndex(r => r.id === 'tiresSport')
-check('the worn sport tires are in inventory', idx >= 0 && inventory.list()[idx].cond.tireFL === 0.3)
-svc.fitFromInventory(idx)
-check('refit from inventory brings the wear back', parts.fitted('tires') === 'tiresSport' && damage.get('tireFL') === 0.3
-  && !inventory.list().some(r => r.id === 'tiresSport'))
+const kept = inventory.list().find(r => r.id === 'tireStandard')
+check('the flat comes off and is kept, flat, with its wear', !!kept && kept.flat && kept.cond === 0.3, JSON.stringify(kept))
+check('a flat tire won\'t go on', !svc.fitFromInventory(kept.index, 'tireRR'))
+damage.set('tireFL', 0.6)
+svc.buyAndFit('tireOld', 'tireFL'); svc.settleOff('keep')
+const idx = inventory.list().findIndex(r => r.id === 'tireSport')
+check('the worn sport tire is in inventory', idx >= 0 && inventory.list()[idx].cond === 0.6 && !inventory.list()[idx].flat)
+svc.fitFromInventory(idx, 'tireRR')
+check('refit on another corner brings the wear back', parts.fitted('tireRR') === 'tireSport' && damage.get('tireRR') === 0.6
+  && !inventory.list().some(r => r.id === 'tireSport'))
 svc.close()
-check('closing with a part on the bench keeps it', !svc.off && inventory.list().some(r => r.id === 'tiresOld'))
+check('closing with a part on the bench keeps it', !svc.off && inventory.list().filter(r => r.id === 'tireStandard').length === 2)
 
 // ── 5. Nothing to bench ───────────────────────────────────────────────────────────────────────
 svc.buyAndFit('liftKit')
 check('no lift leaves nothing on the bench', svc.off === null)
+
+// ── 6. Repairing a part as its own item ───────────────────────────────────────────────────────
+const owned = svc.ownedRepairRows()
+const flat = owned.find(r => r.flat)
+check('the flat tire in the bed is on the list', !!flat && flat.price > 0, JSON.stringify(owned))
+wallet = 100; hours = 0
+check('repair it', svc.repairOwned(flat.index) && near(wallet, 100 - flat.price) && near(hours, flat.hours))
+check('…it comes back new and holding air', inventory.list().some(r => r.id === 'tireStandard' && r.cond === 1 && !r.flat))
+check('a part with nothing missing isn\'t on the list', svc.ownedRepairRows().every(r => r.cond < 1 || r.flat))
 
 console.log(fails ? `\n${fails} FAILED` : '\nservice gate: ALL OK')
 process.exit(fails ? 1 : 0)

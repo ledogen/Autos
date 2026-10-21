@@ -1,16 +1,19 @@
 // test/recovery.mjs — SM-3 Recovery card gate.
 //
 //   1. Can't continue = dry with no gas can, or a dead engine. A flat alone is not.
-//   2. Options fit the moment: gas can when dry and aboard; the spare on a flat (disabled with none);
-//      the fuel tow only when dry; the service-center tow any time; each tow priced against the wallet.
-//   3. End run only when stuck AND nothing on the card can be done.
-//   4. fitSpare: the spare goes on the first flat corner with its wear, the flat is gone, and the
-//      punctured tire is kept as a FLAT spare with its own wear; a flat spare is never fitted.
+//   2. The card is the tows only (owner, 2026-10-20 — the gas can and the spare are inventory uses):
+//      the fuel tow only when dry, the service-center tow any time, each priced against the wallet.
+//   3. End run only when stuck AND no tow is affordable.
+//   4. The spare (inventory.use → fitSpare): it goes on the first flat corner with its wear, the flat
+//      is gone, and the punctured tire comes off as ITSELF — flat, with its wear — into the inventory,
+//      in the room the spare left. A sound truck, or a flat spare, leaves the spare where it was.
 //
 // Pure node: no THREE, no DOM.
 import { recoveryCard, fitSpare } from '../src/recovery.js'
 import { InventorySystem } from '../src/inventory.js'
+import { PartsSystem } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
+import { RANGER_PARAMS } from '../data/ranger.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -18,40 +21,43 @@ const check = (label, ok, detail = '') => {
   if (!ok) fails++
 }
 const tow = (price) => ({ price, km: 2, hours: 1 })
-const base = { dry: false, gasCan: false, engineDead: false, flats: [], spare: false, money: 20, fuelTow: tow(14), shopTow: tow(16) }
+const base = { dry: false, gasCan: false, engineDead: false, flats: [], money: 20, fuelTow: tow(14), shopTow: tow(16) }
 const acts = (c) => c.opts.map(o => o.act + (o.enabled ? '' : '-')).join()
 
 // ── 1–3. The card ─────────────────────────────────────────────────────────────────────────────
 let c = recoveryCard(base)
 check('a sound parked truck: roadside, not stuck, the shop tow only', c.head === 'roadside' && !c.stuck && acts(c) === 'towShop')
 c = recoveryCard({ ...base, flats: [2] })
-check('a flat is not stuck; no spare greys the option', c.head === 'flat tire' && !c.stuck && acts(c) === 'spare-,towShop')
+check('a flat is not stuck, and the card is still just the tow', c.head === 'flat tire' && !c.stuck && acts(c) === 'towShop')
 c = recoveryCard({ ...base, dry: true, gasCan: true })
-check('dry with a can: not stuck, can first, both tows', !c.stuck && acts(c) === 'gas,towFuel,towShop')
+check('dry with a can: not stuck, both tows', !c.stuck && acts(c) === 'towFuel,towShop')
 c = recoveryCard({ ...base, dry: true, money: 15 })
 check('dry, no can: stuck, fuel tow affordable, shop tow not', c.stuck && acts(c) === 'towFuel,towShop-' && !c.canEnd)
 c = recoveryCard({ ...base, dry: true, money: 5 })
 check('dry and broke: the run can end', c.stuck && c.canEnd)
+c = recoveryCard({ ...base, dry: true, gasCan: true, money: 0 })
+check('dry and broke with a can: the can is the way out, never the end', !c.canEnd)
 c = recoveryCard({ ...base, engineDead: true, money: 5, fuelTow: null, shopTow: null })
 check('dead engine, no tow can reach: the run can end', c.head === "engine won't start" && c.canEnd)
-c = recoveryCard({ ...base, flats: [0], money: 0 })
-check('a flat and broke never ends the run', !c.canEnd)
 
-// ── 4. fitSpare ───────────────────────────────────────────────────────────────────────────────
-const damage = new DamageModel()
-const inv = new InventorySystem({ slotCap: () => 8 })
-inv.start()
-check('nothing to do without a flat', fitSpare(damage, inv) === -1)
+// ── 4. The spare ──────────────────────────────────────────────────────────────────────────────
+const params = { ...RANGER_PARAMS }
+const damage = new DamageModel({ params })
+const parts = new PartsSystem({ params, damage })
+const inv = new InventorySystem({ slotCap: () => 2, effects: { spare: (e) => fitSpare(parts, damage, inv, e) >= 0 } })
+parts.start(); inv.start()
+const bed = () => inv.list().filter(r => r.kind === 'part')   // the run starts with a pack in a slot
+inv.grant('spareTire', 1, { cond: 0.9 })
+check('nothing to do without a flat: the spare stays', !inv.use('spareTire') && bed()[0]?.id === 'spareTire')
 damage.flat[2] = true; damage.set('tireRL', 0.35)
-check('nothing to do without a spare', fitSpare(damage, inv) === -1)
-inv.grant('spareTire', 1, { cond: { tire: 0.9 } })
-check('the spare goes on the flat corner', fitSpare(damage, inv) === 2)
-check('…with its wear, and holds air', damage.get('tireRL') === 0.9 && !damage.flat[2])
-const flatSpare = inv.list().filter(r => r.id === 'spareTire')
-check('the punctured tire is kept as a flat spare with its wear',
-  flatSpare.length === 1 && flatSpare[0].flat && flatSpare[0].cond.tire === 0.35)
+check('the spare goes on with a full inventory', inv.slotsUsed() === inv.slotCap() && inv.use('spareTire'))
+check('…on the flat corner, with its wear, holding air', parts.fitted('tireRL') === 'spareTire' && damage.get('tireRL') === 0.9 && !damage.flat[2])
+const off = bed()
+check('the punctured tire is kept as itself, flat, with its wear',
+  off.length === 1 && off[0].id === 'tireStandard' && off[0].flat && off[0].cond === 0.35, JSON.stringify(off))
+inv.drop(off[0].index); inv.grant('spareTire', 1, { cond: 0.5, flat: true })
 damage.flat[0] = true
-check('a flat spare is never fitted', fitSpare(damage, inv) === -1 && damage.flat[0])
+check('a flat spare is never fitted', !inv.use('spareTire') && damage.flat[0] && bed()[0]?.flat)
 
 console.log(fails ? `\n${fails} FAILED` : '\nrecovery gate: ALL OK')
 process.exit(fails ? 1 : 0)

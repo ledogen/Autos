@@ -282,8 +282,8 @@ const STEPS = [
     const open = () => js('document.getElementById("svc-screen").checkVisibility()')
     check(await until(open, 2000), 'parking at the auto shop opened no service screen')
     await js('document.querySelector("#svc-screen [data-tab=parts]")?.click()')
-    const rows = await js('document.querySelectorAll("#svc-screen .sv-slot").length')
-    check(rows === 8, `parts tab shows ${rows} slots, want 8`)
+    // A tire is one part that goes on any corner: the shop offers it per corner.
+    check(await js('!!document.querySelector("#svc-screen [data-act=buy][data-socket=tireRR]")'), 'parts tab offers no tire per corner')
     await tap('Escape')
     check(await until(async () => !await open(), 1000), 'Esc left the service screen open')
     await tap(' ')   // brake off: the next step parks fresh

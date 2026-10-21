@@ -112,7 +112,7 @@ export const ARMOR_REGIONS = { front: 'armorFront', left: 'armorLeft', right: 'a
 
 export const TRACK_IDS = Object.keys(TRACKS)
 // Per-corner track ids, indexed 0=FL 1=FR 2=RL 3=RR (GLOSSARY.md §Wheel Index).
-const TIRE_IDS  = ['tireFL', 'tireFR', 'tireRL', 'tireRR']
+export const TIRE_IDS = ['tireFL', 'tireFR', 'tireRL', 'tireRR']
 const WHEEL_IDS = ['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR']
 
 // ── Tunables ──────────────────────────────────────────────────────────────────────────────────────
@@ -1163,7 +1163,8 @@ export class DamageModel {
   publish (params = this.params) {
     if (!params) return
     const mu = params._tireMuScale || (params._tireMuScale = [1, 1, 1, 1])
-    for (let i = 0; i < 4; i++) mu[i] = this.tireMuScale(i)
+    // × the fitted tire's grip against the stock one (src/parts.js publishes params._tireGrip per corner).
+    for (let i = 0; i < 4; i++) mu[i] = this.tireMuScale(i) * (params._tireGrip?.[i] ?? 1)
     params._brakeScaleFront  = this.brakeScale(false)
     params._brakeScaleRear   = this.brakeScale(true)
     params._springScaleFront = this.springScale(false)

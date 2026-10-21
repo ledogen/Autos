@@ -1,9 +1,11 @@
 /**
  * SM-3 — the service center screen. Opens when the parking brake latches at an auto shop (main.js
  * _updateParkTriggers); closes on Esc, the ×, or the brake coming off. Two tabs:
- *   Repairs — every worn track with its price and labour, and "repair all".
- *   Parts   — per slot: what is fitted, the shop's other parts (buy & fit), and parts from your
- *             inventory (fit). A part that comes off waits on the bench: sell it or keep it.
+ *   Repairs — every worn track with its price and labour, and "repair all"; then the worn or flat
+ *             parts in your inventory, each repaired as its own item.
+ *   Parts   — per kind of part: what is fitted, the shop's parts (buy & fit) and yours (fit). A tire
+ *             goes on any corner, so its buttons name the corner. A part that comes off waits on the
+ *             bench: sell it or keep it.
  * The shop still posts jobs (owner, 2026-10-20): the header's "jobs" button hands over to the offer.
  *
  * Described, never scored (SM-INV-10): conditions are colour bars, parts are names, prices are money,
@@ -11,7 +13,7 @@
  * reads it and the DOM only (the inventory-screen.js layout).
  */
 
-import { PARTS, SLOTS, RARITY_COLOR } from '../data/parts.js'
+import { PARTS, SLOTS, RARITY_COLOR, takes, partIcon } from '../data/parts.js'
 import { formatMoney } from './economy.js'
 import { formatGameDuration } from './offer-board.js'
 
@@ -55,11 +57,11 @@ const CSS = `
 /** Condition → the damage screen's green-through-red. */
 const condColor = (c) => `hsl(${Math.round(120 * Math.max(0, Math.min(1, c)))}, 60%, 45%)`
 const bar = (c) => `<span class="sv-bar"><i style="width:${Math.round(c * 100)}%;background:${condColor(c)}"></i></span>`
-const meanCond = (cond) => { const v = Object.values(cond ?? {}); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 1 }
 const chip = (id) => `<span class="sv-chip" style="background-color:${RARITY_COLOR[PARTS[id].rarity]}55;`
-  + `background-image:url(assets/items/${PARTS[id].slot}.png)"></span>`
+  + `background-image:url(assets/items/${partIcon(id)}.png)"></span>`
 const btn = (act, label, enabled = true, data = '') =>
   `<button class="sv-btn" data-act="${act}" ${data}${enabled ? '' : ' disabled'}>${label}</button>`
+const CORNER = { tireFL: 'FL', tireFR: 'FR', tireRL: 'RL', tireRR: 'RR' }
 const cost = (price, hours) => `$${formatMoney(price)} · ${formatGameDuration(hours)}`
 
 export class ServiceScreen {
@@ -122,8 +124,9 @@ export class ServiceScreen {
       case 'tab': this.tab = b.dataset.tab; break
       case 'repair': s.repair(id); break
       case 'repairAll': s.repairAll(); break
-      case 'buy': s.buyAndFit(id); break
-      case 'fit': s.fitFromInventory(+b.dataset.index); break
+      case 'buy': s.buyAndFit(id, b.dataset.socket); break
+      case 'fit': s.fitFromInventory(+b.dataset.index, b.dataset.socket); break
+      case 'repairOwned': s.repairOwned(+b.dataset.index); break
       case 'sell': s.settleOff('sell'); break
       case 'keep': s.settleOff('keep'); break
     }
@@ -153,35 +156,60 @@ export class ServiceScreen {
   }
 
   _repairs () {
-    const s = this.service, rows = s.repairRows(), money = s.money()
-    if (!rows.length) return `<div class="sv-empty">Nothing needs fixing.</div>`
-    const all = s.repairAllQuote()
-    return rows.map(r => `<div class="sv-row"><span class="sv-name">${r.label}</span>${bar(r.cond)}`
-        + `<span class="sv-cost">${cost(r.price, r.hours)}</span>`
-        + btn('repair', 'repair', money + 1e-9 >= r.price, `data-id="${r.id}"`) + `</div>`).join('')
-      + `<div class="sv-foot"><span class="sv-name">Everything</span><span class="sv-cost">${cost(all.price, all.hours)}</span>`
-      + btn('repairAll', 'repair all', money + 1e-9 >= all.price) + `</div>`
+    const s = this.service, rows = s.repairRows(), owned = s.ownedRepairRows(), money = s.money()
+    let h = ''
+    if (rows.length) {
+      const all = s.repairAllQuote()
+      h += rows.map(r => `<div class="sv-row"><span class="sv-name">${r.label}</span>${bar(r.cond)}`
+          + `<span class="sv-cost">${cost(r.price, r.hours)}</span>`
+          + btn('repair', 'repair', money + 1e-9 >= r.price, `data-id="${r.id}"`) + `</div>`).join('')
+        + `<div class="sv-foot"><span class="sv-name">Everything</span><span class="sv-cost">${cost(all.price, all.hours)}</span>`
+        + btn('repairAll', 'repair all', money + 1e-9 >= all.price) + `</div>`
+    } else h += `<div class="sv-empty">Nothing on the truck needs fixing.</div>`
+    if (owned.length) {
+      h += `<div class="sv-slot"><div class="sv-slothead">In the truck bed</div>`
+        + owned.map(r => `<div class="sv-row">${chip(r.id)}<span class="sv-name">${PARTS[r.id].name}`
+          + `${r.flat ? ' <span class="sv-desc">flat</span>' : ''}</span>${bar(r.cond)}`
+          + `<span class="sv-cost">${cost(r.price, r.hours)}</span>`
+          + btn('repairOwned', 'repair', money + 1e-9 >= r.price, `data-index="${r.index}"`) + `</div>`).join('')
+        + `</div>`
+    }
+    return h
+  }
+
+  /** One button per socket the part could go in: a plain label for a one-socket part, the corner for a tire. */
+  _socketBtns (act, label, sockets, ok, data) {
+    return sockets.map(([sk, enabled]) =>
+      btn(act, sockets.length > 1 ? CORNER[sk] : label, ok && enabled, `${data} data-socket="${sk}"`)).join(' ')
   }
 
   _parts () {
-    const s = this.service, money = s.money(), stock = s.stock(), busy = !!s.off
+    const s = this.service, money = s.money(), busy = !!s.off
     const owned = s.inventory.list()
     let h = ''
-    for (const slot of Object.keys(SLOTS)) {
-      const fitted = s.parts.fitted(slot)
-      const tracks = SLOTS[slot].tracks
-      h += `<div class="sv-slot"><div class="sv-slothead">${SLOTS[slot].name} · ${formatGameDuration(SLOTS[slot].hours)} to swap</div>`
-        + `<div class="sv-row">${chip(fitted)}<span class="sv-name">${PARTS[fitted].name} <span class="sv-desc">fitted</span></span>`
-        + (tracks.length ? bar(meanCond(s.parts.condOf(slot))) : '') + `</div>`
-      for (const r of owned) {
-        if (PARTS[r.id]?.slot !== slot) continue
-        h += `<div class="sv-row">${chip(r.id)}<span class="sv-name">${PARTS[r.id].name} <span class="sv-desc">yours</span></span>`
-          + (tracks.length ? bar(meanCond(r.cond)) : '') + btn('fit', 'fit', !busy, `data-index="${r.index}"`) + `</div>`
+    for (const kind of [...new Set(Object.keys(SLOTS).map(takes))]) {
+      const sockets = Object.keys(SLOTS).filter(sk => takes(sk) === kind)
+      const tracked = SLOTS[sockets[0]].tracks.length > 0
+      const head = sockets.length > 1 ? 'Tires' : SLOTS[sockets[0]].name
+      h += `<div class="sv-slot"><div class="sv-slothead">${head} · ${formatGameDuration(SLOTS[sockets[0]].hours)} to swap</div>`
+      for (const sk of sockets) {
+        const fitted = s.parts.fitted(sk)
+        h += `<div class="sv-row">${chip(fitted)}<span class="sv-name">${PARTS[fitted].name} <span class="sv-desc">`
+          + `${sockets.length > 1 ? SLOTS[sk].name.toLowerCase() : 'fitted'}</span></span>`
+          + (tracked ? bar(s.parts.condOf(sk)) : '') + `</div>`
       }
-      for (const id of stock[slot]) {
+      for (const r of owned) {
+        if (PARTS[r.id]?.slot !== kind) continue
+        h += `<div class="sv-row">${chip(r.id)}<span class="sv-name">${PARTS[r.id].name} <span class="sv-desc">${r.flat ? 'yours, flat' : 'yours'}</span></span>`
+          + (tracked ? bar(r.cond ?? 1) : '')
+          + this._socketBtns('fit', 'fit', sockets.map(sk => [sk, true]), !busy && !r.flat, `data-index="${r.index}"`) + `</div>`
+      }
+      for (const id of Object.keys(PARTS).filter(id => PARTS[id].slot === kind)) {
+        const open = sockets.map(sk => [sk, s.parts.fitted(sk) !== id])
+        if (!open.some(([, e]) => e)) continue
         h += `<div class="sv-row">${chip(id)}<span class="sv-name">${PARTS[id].name}<div class="sv-desc">${PARTS[id].desc}</div></span>`
           + `<span class="sv-cost">$${formatMoney(s.buyPrice(id))}</span>`
-          + btn('buy', 'buy & fit', !busy && money + 1e-9 >= s.buyPrice(id), `data-id="${id}"`) + `</div>`
+          + this._socketBtns('buy', 'buy & fit', open, !busy && money + 1e-9 >= s.buyPrice(id), `data-id="${id}"`) + `</div>`
       }
       h += `</div>`
     }
