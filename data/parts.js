@@ -18,6 +18,8 @@
 //   rarity      'common' | 'uncommon' | 'rare' | 'legendary' — how scarce it is, shown as the colour
 //               behind its slot's shared icon (owner, 2026-10-20: race gear is rare, sport uncommon).
 //               A colour, never a number (SM-INV-10).
+//   icon        the thumbnail stem when the slot's won't do: brakes are pads OR drum shoes by what the
+//               part is, not by axle (owner, 2026-10-21 — this truck has rear drums, a later one may not)
 //   patch       the params it writes (absolute values for THIS truck — a part is for a Ranger)
 //   grip        tires only: this tire's friction against the stock tire's (params.frictionCoeff stays
 //               the truck-wide base). Per corner, so it is published per wheel (src/parts.js).
@@ -42,8 +44,8 @@ export const SLOTS = {
     springsRear:  { name: 'Rear springs',      hours: 1.5,  tracks: ['springRear'] },
     dampersFront: { name: 'Front shocks',      hours: 0.75, tracks: ['damperFront'] },
     dampersRear:  { name: 'Rear shocks',       hours: 0.75, tracks: ['damperRear'] },
-    padsFront:    { name: 'Front brake pads',  hours: 1,    tracks: ['brakeFront'] },
-    padsRear:     { name: 'Rear brake shoes',  hours: 1,    tracks: ['brakeRear'] },
+    brakesFront:  { name: 'Front brakes',      hours: 1,    tracks: ['brakeFront'] },
+    brakesRear:   { name: 'Rear brakes',       hours: 1,    tracks: ['brakeRear'] },
     arbFront:     { name: 'Front anti-roll bar', hours: 0.5, tracks: [] },
     arbRear:      { name: 'Rear anti-roll bar',  hours: 0.5, tracks: [] },
     diff:         { name: 'Rear differential', hours: 3,    tracks: [] },
@@ -54,9 +56,9 @@ export const SLOTS = {
 export const takes = (socket) => SLOTS[socket].takes ?? socket
 /** The sockets a part can go in (four for a tire, one for anything else). */
 export const socketsFor = (id) => Object.keys(SLOTS).filter(s => takes(s) === PARTS[id]?.slot)
-/** The inventory thumbnail's stem: front and rear halves share one icon (assets/items/<stem>.png) —
- *  except the brakes: pads up front, drum shoes at the rear (owner, 2026-10-21). */
-export const partIcon = (id) => PARTS[id].slot === 'padsRear' ? 'shoes' : PARTS[id].slot.replace(/(Front|Rear)$/, '')
+/** The inventory thumbnail's stem (assets/items/<stem>.png): the part's own `icon`, else its slot's —
+ *  front and rear halves share one. */
+export const partIcon = (id) => PARTS[id].icon ?? PARTS[id].slot.replace(/(Front|Rear)$/, '')
 
 /** The tint behind a part's icon, per rarity (owner, 2026-10-20: gray, green, blue, orange). */
 export const RARITY_COLOR = { common: '#8a929b', uncommon: '#4fa35a', rare: '#3f7fd6', legendary: '#e0892c' }
@@ -106,24 +108,25 @@ export const PARTS = {
     dampersRearHD:   { name: 'Heavy-duty rear shocks', slot: 'dampersRear', family: 'hd', rarity: 'uncommon', price: 11, massKg: 7,
                        patch: { suspensionDampingRear: 6000 }, load: HD_DAMPERS,
                        desc: 'Firm valving that settles a loaded bed. Busy and harsh when empty.' },
-    // ── Brake pads, per axle (DESIGN.md: pad grades per axle set the bias). [DEFAULT] torques; the
-    //    whole ladder rose 10 % with the stock brakes for ABS (FEAT-135, 2026-10-21).
-    padsFrontStd:  { name: 'Standard front pads',  slot: 'padsFront', family: 'oem', rarity: 'common', price: 5, massKg: 2, stock: true,
+    // ── Brakes, per axle (DESIGN.md: pad grades per axle set the bias): pads up front, drum shoes at
+    //    the rear on this truck. [DEFAULT] torques; the whole ladder rose 10 % with the stock brakes
+    //    for ABS (FEAT-135, 2026-10-21).
+    brakesFrontStd:  { name: 'Standard front pads',  slot: 'brakesFront', icon: 'pads', family: 'oem', rarity: 'common', price: 5, massKg: 2, stock: true,
                      patch: { maxBrakeTorqueFront: 1430 },
                      desc: 'Organic pads. Quiet, gentle, forgiving.' },
-    padsFrontSport:{ name: 'Sport front pads',     slot: 'padsFront', family: 'sport', rarity: 'uncommon', price: 8, massKg: 2,
+    brakesFrontSport:{ name: 'Sport front pads',     slot: 'brakesFront', icon: 'pads', family: 'sport', rarity: 'uncommon', price: 8, massKg: 2,
                      patch: { maxBrakeTorqueFront: 1705 },
                      desc: 'Semi-metallic. More bite up front, and they eat themselves faster.' },
-    padsFrontRace: { name: 'Race front pads',      slot: 'padsFront', family: 'sport', rarity: 'rare', price: 12, massKg: 2,
+    brakesFrontRace: { name: 'Race front pads',      slot: 'brakesFront', icon: 'pads', family: 'sport', rarity: 'rare', price: 12, massKg: 2,
                      patch: { maxBrakeTorqueFront: 1980 },
                      desc: 'Grabby and loud. Locks the fronts if you stab them.' },
-    padsRearStd:   { name: 'Standard rear shoes',  slot: 'padsRear', family: 'oem', rarity: 'common', price: 5, massKg: 3, stock: true,
+    brakesRearStd:   { name: 'Standard rear shoes',  slot: 'brakesRear', icon: 'shoes', family: 'oem', rarity: 'common', price: 5, massKg: 3, stock: true,
                      patch: { maxBrakeTorqueRear: 495 },
                      desc: 'Factory drum shoes, set soft so the light rear never locks.' },
-    padsRearSport: { name: 'Sport rear shoes',     slot: 'padsRear', family: 'sport', rarity: 'uncommon', price: 8, massKg: 3,
+    brakesRearSport: { name: 'Sport rear shoes',     slot: 'brakesRear', icon: 'shoes', family: 'sport', rarity: 'uncommon', price: 8, massKg: 3,
                      patch: { maxBrakeTorqueRear: 660 },
                      desc: 'More rear bite. The back steps out sooner under hard braking.' },
-    padsRearRace:  { name: 'Race rear shoes',      slot: 'padsRear', family: 'sport', rarity: 'rare', price: 12, massKg: 3,
+    brakesRearRace:  { name: 'Race rear shoes',      slot: 'brakesRear', icon: 'shoes', family: 'sport', rarity: 'rare', price: 12, massKg: 3,
                      patch: { maxBrakeTorqueRear: 825 },
                      desc: 'Aggressive rear lining. Brake while turning and the tail comes round.' },
 
