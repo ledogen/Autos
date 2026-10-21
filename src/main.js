@@ -85,7 +85,8 @@ import { InventorySystem } from './inventory.js'          // FEAT-122: what the 
 import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
-import { recoveryCard, fitSpare, SPARE_FIT_H } from './recovery.js'   // SM-3: the Recovery card
+import { PARTS } from '../data/parts.js'   // SM-3: which inventory entries are tires
+import { recoveryCard, fitSpare, SPARE_FIT_H, plugTire, plugMethods, PLUG_H } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { InventoryScreen } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
@@ -3370,12 +3371,14 @@ const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
   onChange: () => inventoryScreen.render(),
-  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, spare: _fitSpare },
+  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, spare: _fitSpare,
+    plug: () => { inventoryScreen.show('tirePlugKit'); return false } },   // the kit is spent by the choice it opens
 })
 // Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
 const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isSuppressed: () => menuStage.isActive(),
   isBlocked: () => damageScreen.blocked,
+  actions: _tireActions,
 })
 
 // SM-3: every auto shop is a service center (owner, 2026-10-20). Selling a part is money made, so it
@@ -4566,11 +4569,36 @@ function _towToShop () {
   const t = _towQuote(_SERVICE_CENTER)
   if (t) _towTo(t, { x: t.q.x, z: t.q.z, heading: Math.atan2(-t.q.tx, -t.q.tz) })
 }
-/** The spare's inventory effect (ITEMS.spareTire.use): onto the first flat, 30 min on the clock. */
+/** The spare's inventory effect (ITEMS.spareTire.use): onto the first flat, parked, 90 min on the clock. */
 function _fitSpare (entry) {
-  if (fitSpare(partsSystem, damageModel, inventorySystem, entry) < 0) return false
+  if (!vehicleState.parked || fitSpare(partsSystem, damageModel, inventorySystem, entry) < 0) return false
   damageModel.publish(RANGER_PARAMS)
   daySystem.advanceMinutes(SPARE_FIT_H * 60)
+}
+
+/**
+ * The inventory screen's plug choices (owner, 2026-10-21): with the plug kit selected they plug the
+ * truck's first flat; with a flat tire in the bed selected they plug that one. "Pump the tire by hand"
+ * is always offered; "Inflate tire" when a compressor is aboard. Each is the whole stop.
+ */
+const _PLUG_LABEL = {
+  pump: { label: 'Pump the tire by hand', icon: 'bikePump' },
+  compressor: { label: 'Inflate tire', icon: 'compressor' },
+}
+function _tireActions (row) {
+  const owned = inventorySystem.list()
+  const bed = row.flat && PARTS[row.id]?.slot === 'tire'
+  if (row.id !== 'tirePlugKit' && !(bed && owned.some(r => r.id === 'tirePlugKit'))) return []
+  const enabled = bed || damageModel.flat.includes(true)
+  return plugMethods(inventorySystem).map(how => ({
+    label: `${_PLUG_LABEL[how].label} — ${formatGameDuration(PLUG_H[how])}`, icon: _PLUG_LABEL[how].icon, enabled,
+    run: () => {
+      const h = plugTire(damageModel, inventorySystem, how, bed ? row.index : null)
+      if (h < 0) return
+      damageModel.publish(RANGER_PARAMS)
+      daySystem.advanceMinutes(h * 60)
+    },
+  }))
 }
 
 const _RC_LABEL = {

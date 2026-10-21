@@ -7,9 +7,12 @@
 //   4. The spare (inventory.use → fitSpare): it goes on the first flat corner with its wear, the flat
 //      is gone, and the punctured tire comes off as ITSELF — flat, with its wear — into the inventory,
 //      in the room the spare left. A sound truck, or a flat spare, leaves the spare where it was.
+//   5. The plug kit (owner, 2026-10-21): one plug per kit, on the truck's first flat or a flat tire in
+//      the bed; the hole is fixed, the wear is not. The stop is 2 h by hand, 30 min with a compressor,
+//      and the compressor is only offered when one is aboard. Nothing is spent when nothing happens.
 //
 // Pure node: no THREE, no DOM.
-import { recoveryCard, fitSpare } from '../src/recovery.js'
+import { recoveryCard, fitSpare, plugTire, plugMethods, SPARE_FIT_H } from '../src/recovery.js'
 import { InventorySystem } from '../src/inventory.js'
 import { PartsSystem } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
@@ -58,6 +61,28 @@ check('the punctured tire is kept as itself, flat, with its wear',
 inv.drop(off[0].index); inv.grant('spareTire', 1, { cond: 0.5, flat: true })
 damage.flat[0] = true
 check('a flat spare is never fitted', !inv.use('spareTire') && damage.flat[0] && bed()[0]?.flat)
+
+check('the spare takes 90 min', SPARE_FIT_H === 1.5)
+
+// ── 5. The plug kit ───────────────────────────────────────────────────────────────────────────
+const inv2 = new InventorySystem({ slotCap: () => 8 })
+inv2.start()
+const kits = () => inv2.list().find(r => r.id === 'tirePlugKit')?.n ?? 0
+damage.flat.fill(false)
+check('no kit, nothing happens', plugTire(damage, inv2, 'pump') === -1)
+inv2.grant('tirePlugKit', 2)
+check('a sound truck spends no plug', plugTire(damage, inv2, 'pump') === -1 && kits() === 2)
+check('the pump is always there; no compressor, no compressor', plugMethods(inv2).join() === 'pump'
+  && plugTire(damage, inv2, 'compressor') === -1)
+damage.flat[1] = true; damage.set('tireFR', 0.6)
+check('by hand: the whole stop is two hours', plugTire(damage, inv2, 'pump') === 2)
+check('…the hole is fixed, the wear is not, one plug spent', !damage.flat[1] && damage.get('tireFR') === 0.6 && kits() === 1)
+inv2.grant('compressor'); inv2.grant('tireSport', 1, { cond: 0.7, flat: true })
+const bedTire = inv2.list().find(r => r.id === 'tireSport')
+check('a compressor aboard offers both', plugMethods(inv2).join() === 'pump,compressor')
+check('a flat tire in the bed, with the compressor: half an hour', plugTire(damage, inv2, 'compressor', bedTire.index) === 0.5)
+const plugged = inv2.list().find(r => r.id === 'tireSport')
+check('…it holds air, keeps its wear, and the last kit is gone', !plugged.flat && plugged.cond === 0.7 && kits() === 0)
 
 console.log(fails ? `\n${fails} FAILED` : '\nrecovery gate: ALL OK')
 process.exit(fails ? 1 : 0)

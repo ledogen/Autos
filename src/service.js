@@ -64,7 +64,8 @@ export class ServiceCenter {
     repairRows () {
         return Object.keys(TRACKS)
             .filter(id => !TRACKS[id].manualOnly || this.damage.manualBox)
-            .map(id => ({ id, label: TRACKS[id].label, cond: this.damage.get(id), ...this.repairQuote(id) }))
+            .map(id => ({ id, label: TRACKS[id].label, cond: this.damage.get(id),
+                flat: TRACKS[id].cls === 'tire' && this.damage.flat[TRACKS[id].wheel], ...this.repairQuote(id) }))
             .filter(r => r.price > 0 || r.hours > 0)
             .sort((a, b) => a.cond - b.cond)
     }
@@ -109,8 +110,7 @@ export class ServiceCenter {
     repairOwned (index) {
         const r = this.ownedRepairRows().find(r => r.index === index)
         if (!r || !this.spend(r.price)) return false
-        this.inventory.take(index)
-        this.inventory.grant(r.id, 1, { cond: 1 })
+        this.inventory.amend(index, { cond: 1, flat: false })
         this.advanceHours(r.hours)
         this.onChange()
         return true
@@ -129,6 +129,14 @@ export class ServiceCenter {
     buyAndFit (id, socket = PARTS[id]?.slot) {
         if (this.off || !socketsFor(id).includes(socket) || this.parts.fitted(socket) === id || !this.spend(this.buyPrice(id))) return false
         this._swap(id, null, socket)
+        return true
+    }
+
+    /** Buy a new part to carry, not fit — a spare for the road. Full inventory → the swap prompt. */
+    buyToBed (id) {
+        if (!PARTS[id] || !this.spend(this.buyPrice(id))) return false
+        this.inventory.grant(id, 1, { cond: 1 })
+        this.onChange()
         return true
     }
 

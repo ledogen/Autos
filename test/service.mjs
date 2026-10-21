@@ -117,5 +117,12 @@ check('repair it', svc.repairOwned(flat.index) && near(wallet, 100 - flat.price)
 check('…it comes back new and holding air', inventory.list().some(r => r.id === 'tireStandard' && r.cond === 1 && !r.flat))
 check('a part with nothing missing isn\'t on the list', svc.ownedRepairRows().every(r => r.cond < 1 || r.flat))
 
+
+// ── 7. A tire to carry ────────────────────────────────────────────────────────────────────────
+wallet = 100
+const spares = () => inventory.list().filter(r => r.id === 'spareTire').length
+check('buy a spare to carry: charged, new, in the bed', svc.buyToBed('spareTire') && near(wallet, 100 - PARTS.spareTire.price)
+  && spares() === 1 && inventory.list().find(r => r.id === 'spareTire').cond === 1)
+
 console.log(fails ? `\n${fails} FAILED` : '\nservice gate: ALL OK')
 process.exit(fails ? 1 : 0)

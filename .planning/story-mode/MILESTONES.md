@@ -502,7 +502,8 @@ underlying geometry has to be introduced first.
   is sold at half price × condition or kept with its wear, an inventory part is repaired as its own item,
   browsing holds the clock, work adds labour hours), and the **Recovery card in full** (`src/recovery.js` —
   the tows only, distance and cost, to the gas station or the service center; end run when stuck and broke.
-  The gas can and the spare are inventory uses). Patch kit and part thumbnails: the items session. Prices/hours are placeholders for FEAT-69.
+  The gas can, the spare (90 min) and the tire plug kit are inventory uses — a plug is the whole stop: 2 h by
+  hand, 30 min with a compressor, owner 2026-10-21). Part thumbnails: the items session. Prices/hours are placeholders for FEAT-69.
 - **Repair, tow & death**: roadside self-service vs. town station, both cost time + money. **Tow** =
   fast-travel to nearest town, priced near-prohibitively; can't-afford-tow ends the run. Two deaths
   only (SM-INV-1): fatal crash impact or unrecoverable breakdown.

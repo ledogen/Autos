@@ -75,7 +75,7 @@ const BANDS = [
   { min: 0.3, color: '#e8893a' },   // damaged
   { min: 0,   color: '#e5574a' },   // failing
 ]
-const bandColor = (c) => BANDS.find(b => c >= b.min).color
+export const bandColor = (c) => BANDS.find(b => c >= b.min).color
 /** Condition as the eye should read it: a flat tire is failing however much tread it has left. */
 const shownCond = (m, id) => (TRACKS[id].cls === 'tire' && m.flat[TRACKS[id].wheel] ? 0 : m.get(id))
 const LIST_ROWS = 5

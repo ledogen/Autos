@@ -8,14 +8,21 @@
 //                   src/ignition.js). A flat is not: the truck still drives on one (FEAT-94).
 //   OPTIONS         the tows only (owner, 2026-10-20): to the nearest gas station when dry, to the
 //                   nearest service center any time, each with its distance and cost. Pouring the
-//                   gas can and fitting the spare are the inventory screen's (ITEMS[].use).
+//                   gas can, fitting the spare and plugging a tire are the inventory screen's.
+//
+// Roadside tire work (owner, 2026-10-21; the factory jack and the bike pump are always aboard):
+//   SPARE   90 min. The spare goes on the first flat corner; the punctured tire comes off as itself.
+//   PLUG    one plug per kit, on the truck's first flat or on a flat tire in the bed. It fixes the
+//           hole, not the wear: the tire keeps its condition. Then the air: 2 h by hand with the
+//           pump, 30 min with a compressor — each the WHOLE stop, plug included.
 //
 // The chip shows whenever the truck is parked in a story run — a tow is a phone call, not an event —
 // and the card lists what fits the moment. Pure: main.js supplies the state and owns the DOM.
 
 import { TIRE_IDS } from './damage.js'
 
-export const SPARE_FIT_H = 0.5   // owner, 2026-09-30: fitting the spare costs 30 min
+export const SPARE_FIT_H = 1.5                              // owner, 2026-10-21 (was 30 min)
+export const PLUG_H = { pump: 2, compressor: 0.5 }          // the whole stop, by how the tire is aired up
 
 /**
  * @param {object} s
@@ -48,4 +55,30 @@ export function fitSpare (parts, damage, inventory, spare) {
   const off = parts.fit('spareTire', spare.cond, TIRE_IDS[corner])
   inventory.grant(off.id, 1, { cond: off.cond, flat: true })
   return corner
+}
+
+/** How a plugged tire can be aired up now: the pump always, the compressor if one is aboard. */
+export function plugMethods (inventory) {
+  return inventory.list().some(r => r.id === 'compressor') ? ['pump', 'compressor'] : ['pump']
+}
+
+/**
+ * Plug a puncture and air the tire up `how` ('pump' | 'compressor'), spending one plug kit. The tire
+ * is the truck's first flat corner, or the flat tire at inventory entry `bedIndex`. Its condition is
+ * untouched. Returns the hours the stop takes, or -1 with nothing spent (no kit, no compressor for
+ * 'compressor', or nothing flat there).
+ */
+export function plugTire (damage, inventory, how, bedIndex = null) {
+  const owned = inventory.list()
+  if (!owned.some(r => r.id === 'tirePlugKit') || !plugMethods(inventory).includes(how)) return -1
+  if (bedIndex == null) {
+    const corner = damage.flat.indexOf(true)
+    if (corner < 0) return -1
+    damage.flat[corner] = false
+  } else {
+    if (!owned[bedIndex]?.flat) return -1
+    inventory.amend(bedIndex, { flat: false })
+  }
+  inventory.consume('tirePlugKit')
+  return PLUG_H[how]
 }

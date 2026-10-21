@@ -15,52 +15,58 @@
 
 import { PARTS, SLOTS, RARITY_COLOR, takes, partIcon } from '../data/parts.js'
 import { formatMoney } from './economy.js'
+import { bandColor } from './damage-screen.js'
 import { formatGameDuration } from './offer-board.js'
 
+// UI-STYLE.md: a Story card (the shop talking) — tokens only, square panel, story buttons.
 const CSS = `
 #svc-screen { display: none; position: fixed; inset: 0; z-index: 95; background: rgba(6,8,10,0.45);
-  align-items: center; justify-content: center; font-family: monospace; color: #e6ecf2; }
+  align-items: center; justify-content: center; font-family: var(--font); color: var(--text-body); }
 #svc-screen.open { display: flex; }
-#svc-screen .sv-card { background: rgba(14,17,20,0.94); border: 1px solid #3a4450; border-radius: 8px;
-  padding: 12px 16px 14px; width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow-y: auto; box-sizing: border-box; }
+#svc-screen .sv-card { background: var(--card-bg); border: 1px solid var(--line-card);
+  padding: 12px 16px 14px; width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow-y: auto; box-sizing: border-box; }
 #svc-screen .sv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-#svc-screen .sv-title { flex: 1; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #9fb3c8; }
-#svc-screen .sv-wallet { font-size: 12px; color: #c8d2dc; }
-#svc-screen .sv-x { width: 24px; height: 24px; border-radius: 50%; border: 1px solid #56616c;
-  background: transparent; color: #c8d2dc; font: bold 13px monospace; cursor: pointer; padding: 0; }
-#svc-screen .sv-tabs { display: flex; gap: 4px; margin-bottom: 10px; border-bottom: 1px solid #2c343d; }
-#svc-screen .sv-tab { font: 12px monospace; color: #9fb3c8; background: transparent; border: 0;
-  border-bottom: 2px solid transparent; padding: 4px 10px; cursor: pointer; }
-#svc-screen .sv-tab.on { color: #e6ecf2; border-bottom-color: #e6ecf2; }
-#svc-screen .sv-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+#svc-screen .sv-title { flex: 1; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent-story); }
+#svc-screen .sv-wallet { font-size: 14px; color: var(--money); }
+#svc-screen .sv-x { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line-control);
+  background: transparent; color: var(--text-body); font: bold 14px var(--font); cursor: pointer; padding: 0; }
+#svc-screen .sv-tabs { display: flex; gap: 4px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
+#svc-screen .sv-tab { font: 14px var(--font); color: var(--text-dim); background: transparent; border: 0;
+  border-bottom: 2px solid transparent; padding: 4px 10px; cursor: pointer; transition: color 0.1s; }
+#svc-screen .sv-tab:hover { color: var(--text-bright); }
+#svc-screen .sv-tab.on { color: var(--text-bright); border-bottom-color: var(--accent-story); }
+#svc-screen .sv-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; }
 #svc-screen .sv-name { flex: 1; min-width: 0; }
-#svc-screen .sv-desc { font-size: 11px; color: #6f7c88; line-height: 1.35; }
-#svc-screen .sv-bar { width: 60px; height: 6px; border-radius: 3px; background: #2c343d; overflow: hidden; flex: none; }
+#svc-screen .sv-row.wrap { flex-wrap: wrap; }
+#svc-screen .sv-acts { flex-basis: 100%; display: flex; justify-content: flex-end; gap: 4px; }
+#svc-screen .sv-desc { font-size: 12px; color: var(--text-dim); line-height: 1.35; }
+#svc-screen .sv-bar { width: 60px; height: 6px; background: var(--line); overflow: hidden; flex: none; }
 #svc-screen .sv-bar i { display: block; height: 100%; }
-#svc-screen .sv-cost { width: 104px; text-align: right; color: #9fb3c8; font-size: 11px; flex: none; }
-#svc-screen .sv-btn { font: 11px monospace; color: #c8d2dc; background: transparent; border: 1px solid #56616c;
-  border-radius: 3px; padding: 2px 8px; cursor: pointer; flex: none; }
-#svc-screen .sv-btn:hover:not(:disabled) { border-color: #c8d2dc; }
+#svc-screen .sv-cost { width: 112px; text-align: right; color: var(--text-dim); font-size: 12px; flex: none; }
+#svc-screen .sv-btn { font: 12px var(--font); color: var(--text-body); background: transparent; border: 1px solid var(--line-control);
+  border-radius: 3px; padding: 2px 8px; cursor: pointer; flex: none; transition: background 0.1s, border-color 0.1s; }
+#svc-screen .sv-btn:hover:not(:disabled) { background: rgba(255,255,255,0.09); border-color: var(--line-hover); color: var(--text-bright); }
 #svc-screen .sv-btn:disabled { opacity: 0.35; cursor: default; }
-#svc-screen .sv-slot { margin-top: 10px; padding-top: 8px; border-top: 1px solid #2c343d; }
+#svc-screen .sv-btn.ok { border-color: var(--accept); color: var(--accept-text); }
+#svc-screen .sv-slot { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
 #svc-screen .sv-slot:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
-#svc-screen .sv-slothead { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #6f7c88; margin-bottom: 2px; }
-#svc-screen .sv-chip { width: 22px; height: 22px; border-radius: 4px; flex: none; background-size: contain;
+#svc-screen .sv-slothead { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-faint); margin-bottom: 2px; }
+#svc-screen .sv-chip { width: 28px; height: 28px; border-radius: 3px; flex: none; background-size: contain;
   background-repeat: no-repeat; background-position: center; }
-#svc-screen .sv-bench { padding: 7px 9px; margin-bottom: 10px; border-radius: 4px;
-  border: 1px solid #c9a24a; background: rgba(201,162,74,0.10); font-size: 12px; line-height: 1.6; }
-#svc-screen .sv-empty { font-size: 12px; color: #6f7c88; padding: 6px 0; }
+#svc-screen .sv-bench { padding: 7px 9px; margin-bottom: 10px; border: 1px solid var(--warn-line);
+  background: rgba(255,176,32,0.10); color: var(--warn-text); font-size: 14px; line-height: 1.6; }
+#svc-screen .sv-empty { font-size: 14px; color: var(--text-faint); padding: 6px 0; }
 #svc-screen .sv-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 8px;
-  border-top: 1px solid #2c343d; font-size: 12px; }
+  border-top: 1px solid var(--line); font-size: 14px; }
 `
 
-/** Condition → the damage screen's green-through-red. */
-const condColor = (c) => `hsl(${Math.round(120 * Math.max(0, Math.min(1, c)))}, 60%, 45%)`
-const bar = (c) => `<span class="sv-bar"><i style="width:${Math.round(c * 100)}%;background:${condColor(c)}"></i></span>`
+/** Condition, coloured by the damage screen's bands (the palette's one owner, UI-STYLE.md §3). */
+const bar = (c, flat = false) => `<span class="sv-bar"><i style="width:${Math.round(c * 100)}%;background:${bandColor(flat ? 0 : c)}"></i></span>`
 const chip = (id) => `<span class="sv-chip" style="background-color:${RARITY_COLOR[PARTS[id].rarity]}55;`
   + `background-image:url(assets/items/${partIcon(id)}.png)"></span>`
-const btn = (act, label, enabled = true, data = '') =>
-  `<button class="sv-btn" data-act="${act}" ${data}${enabled ? '' : ' disabled'}>${label}</button>`
+const btn = (act, label, enabled = true, data = '', cls = '') =>
+  `<button class="sv-btn${cls}" data-act="${act}" ${data}${enabled ? '' : ' disabled'}>${label}</button>`
+const TIRES = ['tireFL', 'tireFR', 'tireRL', 'tireRR']
 const CORNER = { tireFL: 'FL', tireFR: 'FR', tireRL: 'RL', tireRR: 'RR' }
 const cost = (price, hours) => `$${formatMoney(price)} · ${formatGameDuration(hours)}`
 
@@ -125,6 +131,7 @@ export class ServiceScreen {
       case 'repair': s.repair(id); break
       case 'repairAll': s.repairAll(); break
       case 'buy': s.buyAndFit(id, b.dataset.socket); break
+      case 'stow': s.buyToBed(id); break
       case 'fit': s.fitFromInventory(+b.dataset.index, b.dataset.socket); break
       case 'repairOwned': s.repairOwned(+b.dataset.index); break
       case 'sell': s.settleOff('sell'); break
@@ -160,16 +167,16 @@ export class ServiceScreen {
     let h = ''
     if (rows.length) {
       const all = s.repairAllQuote()
-      h += rows.map(r => `<div class="sv-row"><span class="sv-name">${r.label}</span>${bar(r.cond)}`
+      h += rows.map(r => `<div class="sv-row"><span class="sv-name">${r.label}</span>${bar(r.cond, r.flat)}`
           + `<span class="sv-cost">${cost(r.price, r.hours)}</span>`
           + btn('repair', 'repair', money + 1e-9 >= r.price, `data-id="${r.id}"`) + `</div>`).join('')
         + `<div class="sv-foot"><span class="sv-name">Everything</span><span class="sv-cost">${cost(all.price, all.hours)}</span>`
-        + btn('repairAll', 'repair all', money + 1e-9 >= all.price) + `</div>`
+        + btn('repairAll', 'repair all', money + 1e-9 >= all.price, '', ' ok') + `</div>`
     } else h += `<div class="sv-empty">Nothing on the truck needs fixing.</div>`
     if (owned.length) {
       h += `<div class="sv-slot"><div class="sv-slothead">In the truck bed</div>`
         + owned.map(r => `<div class="sv-row">${chip(r.id)}<span class="sv-name">${PARTS[r.id].name}`
-          + `${r.flat ? ' <span class="sv-desc">flat</span>' : ''}</span>${bar(r.cond)}`
+          + `${r.flat ? ' <span class="sv-desc">flat</span>' : ''}</span>${bar(r.cond, r.flat)}`
           + `<span class="sv-cost">${cost(r.price, r.hours)}</span>`
           + btn('repairOwned', 'repair', money + 1e-9 >= r.price, `data-index="${r.index}"`) + `</div>`).join('')
         + `</div>`
@@ -196,20 +203,25 @@ export class ServiceScreen {
         const fitted = s.parts.fitted(sk)
         h += `<div class="sv-row">${chip(fitted)}<span class="sv-name">${PARTS[fitted].name} <span class="sv-desc">`
           + `${sockets.length > 1 ? SLOTS[sk].name.toLowerCase() : 'fitted'}</span></span>`
-          + (tracked ? bar(s.parts.condOf(sk)) : '') + `</div>`
+          + (tracked ? bar(s.parts.condOf(sk), s.damage.flat[TIRES.indexOf(sk)]) : '') + `</div>`
       }
       for (const r of owned) {
         if (PARTS[r.id]?.slot !== kind) continue
         h += `<div class="sv-row">${chip(r.id)}<span class="sv-name">${PARTS[r.id].name} <span class="sv-desc">${r.flat ? 'yours, flat' : 'yours'}</span></span>`
-          + (tracked ? bar(r.cond ?? 1) : '')
+          + (tracked ? bar(r.cond ?? 1, r.flat) : '')
           + this._socketBtns('fit', 'fit', sockets.map(sk => [sk, true]), !busy && !r.flat, `data-index="${r.index}"`) + `</div>`
       }
       for (const id of Object.keys(PARTS).filter(id => PARTS[id].slot === kind)) {
         const open = sockets.map(sk => [sk, s.parts.fitted(sk) !== id])
-        if (!open.some(([, e]) => e)) continue
-        h += `<div class="sv-row">${chip(id)}<span class="sv-name">${PARTS[id].name}<div class="sv-desc">${PARTS[id].desc}</div></span>`
+        if (!open.some(([, e]) => e) && kind !== 'tire') continue
+        const afford = money + 1e-9 >= s.buyPrice(id)
+        const buy = this._socketBtns('buy', 'buy & fit', open, !busy && afford, `data-id="${id}"`)
+        h += `<div class="sv-row${sockets.length > 1 ? ' wrap' : ''}">${chip(id)}<span class="sv-name">${PARTS[id].name}<div class="sv-desc">${PARTS[id].desc}</div></span>`
           + `<span class="sv-cost">$${formatMoney(s.buyPrice(id))}</span>`
-          + this._socketBtns('buy', 'buy & fit', open, !busy && money + 1e-9 >= s.buyPrice(id), `data-id="${id}"`) + `</div>`
+          // A tire's buttons name the corners and take their own line; it can also be bought to carry
+          // (the spare, or any tire as one).
+          + (sockets.length > 1 ? `<span class="sv-acts">${buy} ${btn('stow', 'to bed', afford, `data-id="${id}"`)}</span>` : buy)
+          + `</div>`
       }
       h += `</div>`
     }

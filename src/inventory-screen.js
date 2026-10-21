@@ -62,6 +62,9 @@ const CSS = `
   border-radius: 3px; padding: 2px 8px; cursor: pointer; margin-right: 4px; }
 #inv-screen .is-btn:hover:not(:disabled) { border-color: var(--text-body); }
 #inv-screen .is-btn:disabled { opacity: 0.35; cursor: default; }
+#inv-screen .st-acts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+#inv-screen .st-acts .is-btn { display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 0; }
+#inv-screen .st-acts img { width: 28px; height: 28px; object-fit: contain; }
 #inv-tip { display: none; position: fixed; z-index: 96; pointer-events: none; width: 210px;
   background: rgba(10,12,14,0.95); border: 1px solid var(--line); border-radius: 4px; padding: 6px 9px;
   font: 12px/1.45 var(--font); color: var(--text); }
@@ -106,12 +109,15 @@ export class InventoryScreen {
    * @param {object} [o]
    * @param {() => boolean} [o.isSuppressed] - the menu stage owns the screen (Tab and 1–4 inert).
    * @param {() => boolean} [o.isBlocked] - the brake belongs to something else here (a POI).
+   * @param {(row) => Array<{label: string, icon?: string, enabled?: boolean, run: () => void}>} [o.actions] - extra choices
+   *   for the selected item, each a confirm button (main.js: plugging a tire — by hand or compressor).
    */
-  constructor (inventory, vehicleState, { isSuppressed = () => false, isBlocked = () => false } = {}) {
+  constructor (inventory, vehicleState, { isSuppressed = () => false, isBlocked = () => false, actions = () => [] } = {}) {
     this.inventory = inventory
     this.vehicleState = vehicleState
     this.isSuppressed = isSuppressed
     this.isBlocked = isBlocked
+    this.actions = actions
     this.isOpen = false
     this.sel = null       // selected truck entry index
     this.packSel = -1     // selected slot inside the selected pack
@@ -175,6 +181,13 @@ export class InventoryScreen {
     this.render()
   }
 
+  /** Open (if the truck allows it) with the first `id` selected — a quick key whose item needs a choice. */
+  show (id) {
+    if (!this.isOpen) { this.request(); if (!this.isOpen) return }
+    const i = this.inventory.list().findIndex(r => r.id === id)
+    if (i >= 0) { this.sel = i; this.packSel = -1; this.render() }
+  }
+
   close () {
     if (!this.isOpen) return
     this.isOpen = false
@@ -214,6 +227,7 @@ export class InventoryScreen {
         case 'pack': inv.packItem(this.sel); this.sel = null; break
         case 'equip': inv.equip(this.sel); break
         case 'unpack': inv.unpackItem(this.sel, this.packSel); this.packSel = -1; break
+        case 'action': this.actions(inv.list()[this.sel])[+b.dataset.i]?.run(); break
       }
     } else if (s?.dataset.slot != null) {
       const i = +s.dataset.slot
@@ -284,8 +298,11 @@ export class InventoryScreen {
     const eq = rows.find(x => x.equipped)
     const canPack = r.kind === 'camp' && eq
       && (eq.contents.length < eq.packSlots || (r.sleep && eq.contents.some(c => c.sleep)))
+    const acts = this.actions(r)
     return head
-      + (r.usable ? btn('use', 'use') : '')
+      + (acts.length ? `<div class="st-acts">${acts.map((a, i) => btn('action',
+        (a.icon ? `<img src="${THUMB(a.icon)}" alt="">` : '') + a.label, a.enabled ?? true, `data-i="${i}"`)).join('')}</div>` : '')
+      + (r.usable && !acts.length ? btn('use', 'use') : '')
       + (r.kind === 'camp' ? btn('pack', r.sleep && eq?.contents.some(c => c.sleep) ? 'swap into pack' : 'pack', canPack) : '')
       + btn('drop', 'drop')
   }

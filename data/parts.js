@@ -68,12 +68,13 @@ const HD_DAMPERS = { dampers: { softKg: 800, hardKg: 1100 } }
 
 export const PARTS = {
     // ── Tires (§3g) — ONE tire each, any corner. Grip is against the stock tire; dirt grip waits on
-    //    FEAT-38. The spare is its own part (owner, 2026-10-20): a full-size spare on a steel wheel.
+    //    FEAT-38. The spare is its own part (owner, 2026-10-20): a full-size spare on a steel wheel, new
+    //    at ~$25 (owner, 2026-10-21; a worn one, 50–80%, comes from the reward pools).
     tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 3, massKg: 20, grip: 0.9,
                      patch: {}, desc: 'Hard, cracked rubber off something else. It rolls.' },
     tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 6, massKg: 20, grip: 1, stock: true,
                      patch: {}, desc: 'The all-season tire the truck left the factory on.' },
-    spareTire:     { name: 'Spare tire',           slot: 'tire', family: 'oem', rarity: 'common', price: 10, massKg: 20, grip: 1,
+    spareTire:     { name: 'Spare tire',           slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 20, grip: 1,
                      patch: {}, desc: 'A full-size spare on a steel wheel. Heavy to carry around.' },
     tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 8.5, massKg: 19, grip: 1.1,
                      patch: {}, desc: 'Soft and sticky on pavement. Lost on dirt, and it wears fast.' },

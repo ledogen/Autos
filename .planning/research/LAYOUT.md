@@ -93,7 +93,7 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 **Story mode & gameplay** — `story.js` (FEAT-43 gamemode sandbox) · `day.js` (day clock, FEAT-47) ·
 `economy.js` (payout/wallet/points spine, FEAT-53) · `inventory.js` (FEAT-122 per-run inventory —
 slots, stacking, swap-prompt pending, quick-slot binding, stowed mass; pure) · `inventory-screen.js`
-(FEAT-122 Tab screen — slot grid with thumbnails, pack popup, parked-only via the HUD park zone — + quick keys 1–4) · `offer-board.js` (FEAT-67 mission board —
+(FEAT-122 Tab screen — slot grid with thumbnails, pack popup, parked-only via the HUD park zone, extra confirm choices per item from main.js (plugging a tire) — + quick keys 1–4) · `offer-board.js` (FEAT-67 mission board —
 slots, expiry timers, seeded offers, names, card view-model; pure) · `load-verdict.js` (FEAT-112 fits / warning / overload
 for the truck as configured + the overloaded-tire cap; pure, no imports) · `mission.js` (mission generator
 + run state machine) · `par.js` (FEAT-29 par oracle) · `poi.js` (lay-by POIs, FEAT-46) · `fuel-stop.js` (FEAT-50 the pump
@@ -102,7 +102,7 @@ parts — fit lays a part's patch over params (a tire's grip per wheel as `_tire
 durability, returns the outgoing part with its wear and puncture; load ratings for truckConfig; pure) · `service.js` (SM-3 service center rules — repair quotes, repair /
 repair all, repair an inventory part as its own item, buy & fit, fit from inventory, sell / keep the benched part; pure) · `service-screen.js` (its Repairs/Parts
 screen, opened by the brake at an auto shop) · `recovery.js` (SM-3 Recovery card — stuck test, the tows that fit;
-fitSpare, the spare's inventory effect; pure, the DOM is in main.js) · `camp.js` (dispersed
+fitSpare and plugTire, the roadside tire work the inventory screen offers; pure, the DOM is in main.js) · `camp.js` (dispersed
 camping, FEAT-45) · `dialogue.js` (character channel) · `paper-route.js` + `throw.js` (FEAT-61) ·
 `gps.js` (FEAT-39 nav overlay) · `cluster.js` (FEAT-49 gauge cluster — instrument panel, not
 clustering) · `rank-timer.js` (FEAT-87 live rank timer — band line-up, escalation, beats; pure, the

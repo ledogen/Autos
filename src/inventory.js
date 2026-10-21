@@ -121,6 +121,24 @@ export class InventorySystem {
         return e
     }
 
+    /** Change fields on the entry at `index` in place — a repaired part's `cond`, a plugged tire's `flat`. */
+    amend (index, fields) {
+        const e = runInventory.entries[index]
+        if (!e) return false
+        Object.assign(e, fields)
+        this._changed()
+        return true
+    }
+
+    /** Spend one unit of `id` without its effect (a plug kit spent by the repair it was chosen for). */
+    consume (id) {
+        const i = runInventory.entries.findIndex(e => e.id === id)
+        if (i < 0) return false
+        if (--runInventory.entries[i].n <= 0) runInventory.entries.splice(i, 1)
+        this._changed()
+        return true
+    }
+
     /** Drop the entry at `index` (the whole stack, for a stacking kind). Never the equipped pack or a
      *  pack with anything in it. */
     drop (index) {
