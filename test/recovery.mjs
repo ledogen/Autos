@@ -79,6 +79,8 @@ const tools = new InventorySystem({ slotCap: () => 8 }); tools.start()
 check('the spare takes 2 h with the factory jack', spareFitHours(tools) === 2)
 tools.grant('compressor')
 check('…1 h 30 with a compressor', spareFitHours(tools) === 1.5)
+tools.grant('quickJack')
+check('…30 min with a quick-jack as well', spareFitHours(tools) === 0.5)
 
 // ── 5. The plug kit ───────────────────────────────────────────────────────────────────────────
 const inv2 = new InventorySystem({ slotCap: () => 8 })

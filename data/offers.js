@@ -302,24 +302,27 @@ export const REWARDS = [
       pools: ['gasStation', 'strandedMotorist'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'workSite'] },
-    // Tires, wheels, the lift, the LSD and the compressor (owner, 2026-10-22, the setup page). Where the
-    // page named no givers, the auto shop [DEFAULT]. The LSD is a barn find: the farm, S only.
+    // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
+    // barn find is a roadside-find event (items.md §6), not a giver.
     { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'],
       pools: ['autoShop', 'farm'] },
     { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'],
       pools: ['autoShop', 'strandedMotorist', 'farm'] },
     { id: 'tireSport',  name: 'Sport tire',  kind: 'part',       gates: ['A', 'S'],
-      pools: ['autoShop'] },
+      pools: ['autoShop', 'strandedMotorist'] },
     { id: 'tireOffroad', name: 'All-terrain tire', kind: 'part', gates: ['A', 'S'],
-      pools: ['autoShop'] },
+      pools: ['farm', 'autoShop', 'workSite'] },
     { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'],
       pools: ['autoShop', 'farm', 'residence'] },
     { id: 'liftKit',    name: 'Lift kit',    kind: 'part',       gates: ['B', 'A'],
-      pools: ['autoShop'] },
+      pools: ['workSite', 'autoShop', 'farm'] },
     { id: 'diffLSD',    name: 'Limited-slip differential', kind: 'part', gates: ['S'],
-      pools: ['farm'] },
+      pools: ['autoShop', 'strandedMotorist', 'residence'] },
     { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'],
       pools: ['autoShop', 'workSite'] },
+    // Takes an hour off a spare change (src/recovery.js spareFitHours), never off a plug.
+    { id: 'quickJack',  name: 'Quick-jack',  kind: 'tool',       gates: ['A', 'S'],
+      pools: ['autoShop', 'strandedMotorist'] },
     // The spare air filter (items.md, ratified): a reward from the auto shop and the gas station.
     { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation'] },

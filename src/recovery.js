@@ -30,7 +30,7 @@ import { PARTS, SLOTS } from '../data/parts.js'
 /**
  * Hours to change a tire for the spare (owner, 2026-10-22): 2 h with the factory jack and wrench; a
  * compressor (an impact gun off it) takes 30 min off, a quick-jack 1 h, and they stack — 30 min with
- * both. (The quick-jack's item row comes from the items session.)
+ * both. Neither shortens a plug: "you don't need to jack to plug" (owner).
  */
 export const spareFitHours = (inventory) => {
   const has = (id) => inventory.list().some(r => r.id === id)

@@ -27,6 +27,7 @@ export const STOCK_WEIGHT = {
     spareTire:        4,     // the mounted wheel + tire
     tirePlugKit:      10,
     compressor:       1,
+    quickJack:        1,      // [DEFAULT] Rarely, until the owner picks
 
     // Brakes
     brakesFrontStd:   10,
