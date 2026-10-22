@@ -161,12 +161,13 @@ roadside find. It fixes the hole and restores no condition. The whole repair, pl
 inflating, is 2 h by hand (bike pump) or 30 min with the compressor (owner, 2026-10-21). **The effect is built on feature/parts (08baccc5, unmerged):** the buttons sit in the inventory's detail strip.
 
 ### Spare air filter
-status: todo · design: ratified · build: effect · where: autoShop, reward, found
+status: wip · design: ratified · build: effect · where: autoShop, reward, found
 Sets the `airFilter` track in `src/damage.js` to the spare's own condition at the roadside, in 15 min.
 Each spare carries a condition like the spare tire: new from the auto shop ($10), never great as a
-roadside find. A reward from the auto shop and gas station (B–A). Ruled 2026-10-21. Shares the
-`airFilter.png` icon with the shop branch's `airFilterStock` part (2026-10-22), which is priced $3 as a
-stand-in. Whether they are one item is asked of the parts session.
+roadside find. A reward from the auto shop and gas station (B–A). Ruled 2026-10-21. It is the
+air filter part, `airFilterStock`, built to this row on feature/parts (f5fa9cf9, 2026-10-22): $10, "Fit it
+— 15 min" from the inventory, the old filter comes off into the inventory with its own condition, and a
+REWARDS row (auto shop, gas station; B–A). Icon `airFilter.png`.
 
 ### Zip ties
 status: todo · design: ratified · build: effect · where: generalStore, autoShop, reward, found
