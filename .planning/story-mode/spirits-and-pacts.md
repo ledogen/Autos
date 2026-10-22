@@ -644,6 +644,8 @@ player has fewer of them.
 > - **Active:** the **sacred object** (`items.md` §1c), used from a quick slot while driving. It
 >   comes in two forms: a timed damage reduction, or a short invulnerability window you trigger as
 >   you see the crash coming. It is on a cooldown or single-use, and it dies with the run.
+>   **⚠ Superseded 2026-10-22 (owner, items setup page): timed damage reduction only** — the
+>   invulnerability window is dropped (`items.md` §1c, Host's charm).
 >
 > The passive form is the Host's steady reward for margin. The active one is the moment you spend it.
 > *Scratched for now (owner, 2026-09-24): a separate maintenance spirit, "the Tinkerer" (restoration

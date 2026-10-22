@@ -36,6 +36,11 @@ suspension they want, and either races over or plans a mission or two to fund it
   so new is the only way to 100%. Alignment is an adjustment: always back to 100%.
 - **Numbers** (fill chance, category and rarity weights, used/new split, used condition range) are
   proposed as [DEFAULT] in the build and go to the owner to approve or modify.
+- **Numbers approved (owner, 2026-10-22, on the items setup page):** fill chance **6% an hour** (about
+  2.5 of 4 slots full); used condition **40–85%**; one per-item likelihood shared by the shelf and the
+  mission rewards, the words weighing **Often 10 · Sometimes 4 · Rarely 1 · Hardly ever 0.25**. The
+  new-versus-used share is re-asked. Per-item tiers are being set on the page and are handed to the
+  parts session to fold into `data/stock-weights.js`. Prices set the same day: items.md §7, fifth pass.
 
 Being built on `feature/parts-shop` (off feature/parts), with the service screen split into My Vehicle /
 Parts Shop / My Items.
