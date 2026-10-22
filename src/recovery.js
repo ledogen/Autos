@@ -25,6 +25,8 @@
 // and the card lists what fits the moment. Pure: main.js supplies the state and owns the DOM.
 
 
+import { PARTS, SLOTS } from '../data/parts.js'
+
 export const SPARE_FIT_H = 1.5                              // owner, 2026-10-21 (was 30 min)
 export const PLUG_H = { pump: 2, compressor: 0.5 }          // the whole stop, by how the tire is aired up
 
@@ -61,6 +63,22 @@ export function fitSpare (parts, damage, inventory, index, corner) {
   if (r?.id !== 'spareTire' || r.flat || !(corner >= 0 && corner < 4)) return -1
   inventory.grant('spareTire', 1, parts.fitMounted(inventory.take(index), corner))
   return corner
+}
+
+/**
+ * Fit a part the player can swap by hand (`roadside: true` in data/parts.js — the spare air filter,
+ * items.md, ratified): the part at inventory entry `index` goes on its socket with its wear, and the one
+ * that comes off takes the room it left, with its own. Returns the labour hours (the socket's), or -1
+ * with nothing changed.
+ */
+export function fitRoadside (parts, inventory, index) {
+  const r = inventory.list()[index], p = PARTS[r?.id]
+  if (!p?.roadside) return -1
+  const off = parts.fit(r.id, r.cond, p.slot)
+  if (!off) return -1
+  inventory.take(index)
+  if (off.id && PARTS[off.id].massKg > 0) inventory.grant(off.id, 1, { cond: off.cond })
+  return SLOTS[p.slot].hours
 }
 
 /** How a plugged tire can be aired up now: the pump always, the compressor if one is aboard. */

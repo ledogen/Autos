@@ -31,6 +31,7 @@ import { formatMoney } from './economy.js'
 import { bandColor } from './damage-screen.js'
 import { formatGameDuration } from './offer-board.js'
 import { shelfName } from './shop-stock.js'
+import { BACK_BUTTON } from './park-badge.js'
 
 // UI-STYLE.md: a Story card (the shop talking) — tokens only, square panel, story buttons. The screen
 // itself lets the pointer through, so a drag on the world still orbits the camera round the truck.
@@ -45,8 +46,6 @@ body:has(#svc-screen.open) #quickjob-btn { visibility: hidden; }   /* it sits wh
 #svc-screen .sv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 #svc-screen .sv-title { flex: 1; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent-story); }
 #svc-screen .sv-wallet { font-size: 14px; color: var(--money); }
-#svc-screen .sv-x { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line-control);
-  background: transparent; color: var(--text-body); font: bold 14px var(--font); cursor: pointer; padding: 0; }
 #svc-screen .sv-tabs { display: flex; gap: 4px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
 #svc-screen .sv-tab { font: 14px var(--font); color: var(--text-dim); background: transparent; border: 0;
   border-bottom: 2px solid transparent; padding: 4px 10px; cursor: pointer; transition: color 0.1s; }
@@ -267,10 +266,11 @@ export class ServiceScreen {
       + `<span class="sv-wallet">$${formatMoney(s.money())}</span>`
       + btn('map', 'map')
       + (jobs ? btn('jobs', `jobs (${jobs})`) : '')
-      + `<button class="sv-x" data-act="close" title="close (Esc)">&times;</button></div>`
+      + `</div>`
       + `<div class="sv-tabs">${tab('vehicle', 'My Vehicle')}${tab('shop', 'Parts Shop')}</div>`
       + (s.off ? this._bench() : '')
       + (this.tab === 'vehicle' ? this._vehicle() : this._shop())
+      + BACK_BUTTON   // the card's way out (owner, 2026-10-21: replaces the corner ×)
   }
 
   _bench () {

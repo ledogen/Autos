@@ -14,9 +14,12 @@
 //      tire in the inventory; the hole is fixed, the wear is not. The stop is 2 h by hand, 30 min with
 //      a compressor, and the compressor is only offered when one is aboard. Nothing is spent when
 //      nothing happens.
+//   6. A part you swap by hand (the spare air filter, items.md): it goes on with its wear for the
+//      socket's labour (15 min); the old one comes off into the inventory with its own. Anything else
+//      is refused.
 //
 // Pure node: no THREE, no DOM.
-import { recoveryCard, fitSpare, plugTire, plugMethods, SPARE_FIT_H } from '../src/recovery.js'
+import { recoveryCard, fitSpare, plugTire, plugMethods, SPARE_FIT_H, fitRoadside } from '../src/recovery.js'
 import { InventorySystem } from '../src/inventory.js'
 import { PartsSystem } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
@@ -93,6 +96,14 @@ check('a compressor aboard offers both', plugMethods(inv2).join() === 'pump,comp
 check('a flat tire in the inventory, with the compressor: half an hour', plugTire(damage, inv2, 'compressor', { index: looseTire.index }) === 0.5)
 const plugged = inv2.list().find(r => r.id === 'tireSport')
 check('…it holds air, keeps its wear, and the last kit is gone', !plugged.flat && plugged.cond === 0.7 && kits() === 0)
+
+// ── 6. The spare air filter ───────────────────────────────────────────────────────────────────
+damage.set('airFilter', 0.15)
+inv2.grant('airFilterStock', 1, { cond: 0.9 })
+const filt = () => inv2.list().find(r => r.id === 'airFilterStock')
+check('a part with no roadside fit is refused', fitRoadside(parts, inv2, inv2.list().findIndex(r => r.id === 'compressor')) === -1)
+check('the filter goes on in 15 min, with its wear', fitRoadside(parts, inv2, filt().index) === 0.25 && damage.get('airFilter') === 0.9)
+check('…and the clogged one comes off into the inventory', filt()?.cond === 0.15, JSON.stringify(filt()))
 
 console.log(fails ? `\n${fails} FAILED` : '\nrecovery gate: ALL OK')
 process.exit(fails ? 1 : 0)

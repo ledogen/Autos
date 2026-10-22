@@ -32,7 +32,7 @@ import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component c
 import { truckConfig, loadVerdict, tireCondCap } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
-import { parkPrompt, keycap } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
+import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
@@ -68,6 +68,7 @@ import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the pla
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
+import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -86,8 +87,8 @@ import { PartsSystem } from './parts.js'                  // SM-3: what is bolte
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
 import { startShelves, shelf, take as takeShelf, shelfName } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf
-import { PARTS } from '../data/parts.js'   // SM-3: which inventory entries are tires
-import { recoveryCard, fitSpare, SPARE_FIT_H, plugTire, plugMethods, PLUG_H } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
+import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
+import { recoveryCard, fitSpare, SPARE_FIT_H, plugTire, plugMethods, PLUG_H, fitRoadside } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
@@ -3384,7 +3385,7 @@ const inventorySystem = new InventorySystem({
 const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isSuppressed: () => menuStage.isActive(),
   isBlocked: () => damageScreen.blocked,
-  actions: _tireActions,
+  actions: _partActions,
 })
 window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
 // The recovery chip joins the park zone last, under V and Tab (owner, 2026-10-22).
@@ -4445,6 +4446,7 @@ function _campPromptState () {
 // are, the keys, the DOM and the sound. Stepped on the fixed physics step, so a fill is 10 s of real
 // driving time and pauses when the game does.
 const fuelStop = new FuelStop()
+pad.pumpActive = () => fuelStop.isOpen   // the pad's A pumps while the pump is open (gamepad.js PUMP_KEYS)
 let _fHeld = false
 window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() === 'f') _fHeld = true })
 window.addEventListener('keyup', e => { if (e.key.toLowerCase() === 'f') _fHeld = false })
@@ -4606,7 +4608,7 @@ function _towToShop () {
 const _CORNER = ['FL', 'FR', 'RL', 'RR']
 const _tireNote = (c) => PARTS[partsSystem.fitted(`tire${_CORNER[c]}`)]?.name ?? 'Tire'
 const _backToInventory = () => { if (vehicleState.parked) inventoryScreen.open() }
-const _afterTireWork = (h) => { damageModel.publish(RANGER_PARAMS); daySystem.advanceMinutes(h * 60) }
+const _afterRoadsideWork = (h) => { damageModel.publish(RANGER_PARAMS); daySystem.advanceMinutes(h * 60) }
 
 /** The spare's inventory effect (ITEMS.spareTire.use): any corner, flat or not, 90 min on the clock. */
 function _pickSpare (e) {
@@ -4617,7 +4619,7 @@ function _pickSpare (e) {
     note: _tireNote,
     about: `The spare: ${condLine({ ...e, kind: 'part' })}.` + (e.flat ? ' Plug it before it goes on.' : ''),
     actions: ({ corner }) => [{ label: `Swap it on — ${formatGameDuration(SPARE_FIT_H)}`, run: () => {
-      if (fitSpare(partsSystem, damageModel, inventorySystem, inventorySystem.indexOf(e), corner) >= 0) _afterTireWork(SPARE_FIT_H)
+      if (fitSpare(partsSystem, damageModel, inventorySystem, inventorySystem.indexOf(e), corner) >= 0) _afterRoadsideWork(SPARE_FIT_H)
     } }],
     onClose: _backToInventory,
   })
@@ -4642,14 +4644,21 @@ function _pickPlug (target = null) {
       .map(r => ({ index: r.index, name: r.name, line: condLine(r, { air: false }), flat: r.flat, ok: r.flat })),
     actions: (t) => plugMethods(inventorySystem).map(how => ({
       label: `${_PLUG_LABEL[how].label} — ${formatGameDuration(PLUG_H[how])}`, icon: _PLUG_LABEL[how].icon,
-      run: () => { const h = plugTire(damageModel, inventorySystem, how, t); if (h >= 0) _afterTireWork(h) },
+      run: () => { const h = plugTire(damageModel, inventorySystem, how, t); if (h >= 0) _afterRoadsideWork(h) },
     })),
     onClose: _backToInventory,
   })
 }
 
-/** A flat tire selected in the inventory, with a kit aboard: plug it (the picker, with it picked). */
-function _tireActions (row) {
+/**
+ * The inventory's roadside choices for the selected item: a flat tire, with a kit aboard, opens the plug
+ * picker with it picked; a part you can swap by hand (the air filter) goes on, the time on the button.
+ */
+function _partActions (row) {
+  if (PARTS[row.id]?.roadside) {
+    return [{ label: `Fit it — ${formatGameDuration(SLOTS[PARTS[row.id].slot].hours)}`,
+      run: () => { const h = fitRoadside(partsSystem, inventorySystem, row.index); if (h >= 0) _afterRoadsideWork(h) } }]
+  }
   if (!row.flat || PARTS[row.id]?.slot !== 'tire' || !inventorySystem.list().some(r => r.id === 'tirePlugKit')) return []
   return [{ label: 'Plug this tire', icon: 'tirePlugKit', run: () => _pickPlug({ index: row.index }) }]
 }
@@ -4701,7 +4710,7 @@ function _updateRecovery () {
 /** X or a click: open/close the card once parked; driving, pulse the park zone's PARK badge. */
 function _toggleRecovery () {
   if (document.getElementById('recovery-row')?.style.display !== 'flex') return
-  if (!vehicleState.parked || damageScreen.blocked) { inventoryScreen.hint(); return }
+  if (!vehicleState.parked || damageScreen.blocked) { hintPark(); return }
   _recoveryOpen = !_recoveryOpen
   _updateRecovery()
 }
@@ -7212,15 +7221,6 @@ function _teleportToFreecam () {
 }
 document.getElementById('teleport-btn')?.addEventListener('click', _teleportToFreecam)
 
-// ── Controls cheat-sheet collapse toggle (feature/teleport) ───────────────────────────────
-{
-  const box = document.getElementById('controls')
-  const toggle = document.getElementById('controls-toggle')
-  toggle?.addEventListener('click', () => {
-    const collapsed = box.classList.toggle('collapsed')
-    toggle.innerHTML = collapsed ? 'controls &#9656;' : 'controls &#9662;'   // ▸ collapsed / ▾ open
-  })
-}
 document.addEventListener('keydown', e => {
   // T → free-cam teleport (usable while pointer-locked, where the button can't be clicked).
   if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) _teleportToFreecam()

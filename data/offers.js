@@ -307,6 +307,9 @@ export const REWARDS = [
       pools: ['autoShop'] },
     { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'],
       pools: ['autoShop'] },
+    // The spare air filter (items.md, ratified): a reward from the auto shop and the gas station.
+    { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'],
+      pools: ['autoShop', 'gasStation'] },
 ]
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────

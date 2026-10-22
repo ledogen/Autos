@@ -198,8 +198,10 @@ export const PARTS = {
                      patch: {}, desc: 'The factory six, on a pallet. A long day to swap.' },
     radiatorStock: { name: 'Stock radiator',       slot: 'radiator', family: 'oem', rarity: 'common', price: 22, massKg: 7, stock: true,
                      patch: {}, desc: 'The factory radiator. Keeps the engine cool when it isn’t leaking.' },
-    airFilterStock:{ name: 'Air filter',           slot: 'airFilter', family: 'oem', rarity: 'common', price: 3, massKg: 0.5, stock: true,
-                     patch: {}, desc: 'A paper filter. A clean one lets the engine breathe.' },
+    // items.md's ratified "Spare air filter" is this part: $10 new at the auto shop, 15 min to fit at the
+    // roadside (`roadside`: src/recovery.js fitRoadside), carries its own condition.
+    airFilterStock:{ name: 'Air filter',           slot: 'airFilter', family: 'oem', rarity: 'common', price: 10, massKg: 0.5, stock: true,
+                     roadside: true, patch: {}, desc: 'A paper filter. A clean one lets the engine breathe. Swaps in by hand, no shop needed.' },
     headlightStock:{ name: 'Headlight',            slot: 'headlight', family: 'oem', rarity: 'common', price: 4, massKg: 1.5, stock: true,
                      patch: {}, desc: 'A sealed beam lamp, either side.' },
 }
