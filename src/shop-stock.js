@@ -1,6 +1,6 @@
 // ── SM-3 / FEAT-137: the rotating shelf — what each auto shop has in stock right now ─────────────
 //
-// The numbers and the intent are data/shop-stock.js. This runs them:
+// The numbers and the intent are data/shop-stock.js; what turns up, data/stock-weights.js. This runs them:
 //   • Each shop has SHELF_SLOTS slots, `{ id, cond, expiresAt } | null`. Every whole game hour each
 //     EMPTY slot rolls (an expired item empties its slot first, the same hour).
 //   • A roll is a pure function of (run seed, shop POI id, game hour, slot) — mulberry32 over seedFor —
@@ -16,7 +16,8 @@
 
 import { PARTS } from '../data/parts.js'
 import { ITEMS } from '../data/items.js'
-import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, SHELF_CATEGORIES, RARITY_WEIGHT, ITEM_PRICE } from '../data/shop-stock.js'
+import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, ITEM_PRICE } from '../data/shop-stock.js'
+import { STOCK_WEIGHT } from '../data/stock-weights.js'
 import { mulberry32, seedFor, hash32 } from './seed.js'
 
 export const runShelves = {
@@ -26,11 +27,8 @@ export const runShelves = {
 
 const CATCH_UP_H = LIFE_H[1]
 
-/** Category → [[id, weight], …]: a category's items, weighted by rarity (a named item weighs 1). */
-const POOL = Object.fromEntries(Object.entries(SHELF_CATEGORIES).map(([k, c]) => [k, c.ids
-    ? c.ids.map(id => [id, 1])
-    : Object.keys(PARTS).filter(id => c.slots.includes(PARTS[id].slot) && PARTS[id].massKg > 0 && !PARTS[id].mounted)
-        .map(id => [id, RARITY_WEIGHT[PARTS[id].rarity] ?? 0])]))
+/** What can fill a slot: every id the stock table weighs above nothing. */
+const STOCK = Object.entries(STOCK_WEIGHT).filter(([, w]) => w > 0)
 
 const pick = (pairs, r) => {
     r *= pairs.reduce((a, [, w]) => a + w, 0)
@@ -42,7 +40,7 @@ export function rollSlot (poiId, h, slot) {
     const rand = mulberry32(seedFor(runShelves.seed, 'shelf', hash32(String(poiId)), h, slot))
     if (rand() >= P_FILL) return null
     const span = ([lo, hi]) => lo + (hi - lo) * rand()
-    const id = pick(POOL[pick(Object.entries(SHELF_CATEGORIES).map(([k, c]) => [k, c.w]), rand())], rand())
+    const id = pick(STOCK, rand())
     const cond = PARTS[id] ? (rand() < P_NEW ? 1 : span(USED_COND)) : null
     return { id, cond, expiresAt: h + span(LIFE_H) }
 }

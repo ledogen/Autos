@@ -1,7 +1,9 @@
 // test/shop-stock.mjs — SM-3 / FEAT-137 rotating shelf gate (owner, 2026-10-22).
 //
-//   1. Rolls over many shop-hours: the fill rate, the category frequencies and, within a category,
-//      the rarity split, each within tolerance of data/shop-stock.js; never a massless 'none' part.
+//   1. Rolls over many shop-hours: the fill rate, and each item's share of the fills following its
+//      data/stock-weights.js weight; nothing outside the table, never a massless 'none' part, and
+//      every stocked id sellable (a part, or an item with a price). Mission rewards share the table:
+//      over many draws a source's bonus rewards follow the same weights (unlisted = 1).
 //   2. Condition: new at P_NEW, otherwise used inside USED_COND; non-part items carry none.
 //   3. Lifetimes inside LIFE_H.
 //   4. Mean occupancy of a shelf run hour by hour (reported; checked against the two-state estimate).
@@ -10,18 +12,28 @@
 //
 // Pure node: no THREE, no DOM.
 import { rollSlot, startShelves, shelf, take, shelfPrice, runShelves } from '../src/shop-stock.js'
-import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, SHELF_CATEGORIES, RARITY_WEIGHT, ITEM_PRICE } from '../data/shop-stock.js'
+import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, ITEM_PRICE } from '../data/shop-stock.js'
+import { STOCK_WEIGHT } from '../data/stock-weights.js'
 import { PARTS } from '../data/parts.js'
+import { ITEMS } from '../data/items.js'
+import { REWARDS } from '../data/offers.js'
+import { pickReward } from '../src/offer-board.js'
+import { mulberry32 } from '../src/seed.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
   console.log(`${ok ? '[ ok ]' : '[FAIL]'} ${label}${ok ? '' : '  ' + detail}`)
   if (!ok) fails++
 }
-const catOf = (id) => Object.keys(SHELF_CATEGORIES).find(k => SHELF_CATEGORIES[k].ids?.includes(id)
-  || (!PARTS[id]?.mounted && SHELF_CATEGORIES[k].slots?.includes(PARTS[id]?.slot)))
+/** |got − want| inside 4 standard errors of a binomial share over n draws. */
+const share = (label, hits, n, want) => {
+  const got = hits / n, sd = Math.sqrt(want * (1 - want) / n)
+  check(`${label}: ${(got * 100).toFixed(2)}% ≈ ${(want * 100).toFixed(2)}%`, Math.abs(got - want) < 4 * sd + 1e-4)
+}
 
 // ── 1. Roll statistics ────────────────────────────────────────────────────────────────────────
+const bad = Object.keys(STOCK_WEIGHT).filter(id => !ITEMS[id] || !(PARTS[id] ? PARTS[id].massKg > 0 : ITEM_PRICE[id] > 0))
+check('every stocked id is a carried part or a priced item', bad.length === 0, bad.join())
 startShelves(12345)
 const fills = []
 let rolls = 0
@@ -34,23 +46,22 @@ for (let shop = 0; shop < 40; shop++) {
 }
 const pFill = fills.length / rolls
 check(`fill rate ${pFill.toFixed(4)} ≈ P_FILL ${P_FILL}`, Math.abs(pFill - P_FILL) < 0.003)
-const W = Object.values(SHELF_CATEGORIES).reduce((a, c) => a + c.w, 0)
-const byCat = {}
-for (const e of fills) byCat[catOf(e.id)] = (byCat[catOf(e.id)] ?? 0) + 1
-for (const [k, c] of Object.entries(SHELF_CATEGORIES)) {
-  const want = c.w / W, got = (byCat[k] ?? 0) / fills.length
-  const sd = Math.sqrt(want * (1 - want) / fills.length)
-  check(`category ${k}: ${(got * 100).toFixed(2)}% ≈ ${(want * 100).toFixed(2)}%`, Math.abs(got - want) < 4 * sd + 1e-4)
-}
-check('never a massless part', fills.every(e => !PARTS[e.id] || PARTS[e.id].massKg > 0))
-// Rarity inside the biggest part category: tires.
-const tires = fills.filter(e => catOf(e.id) === 'tires')
-const tireIds = Object.keys(PARTS).filter(id => PARTS[id].slot === 'tire' && !PARTS[id].mounted)
-const tw = tireIds.reduce((a, id) => a + RARITY_WEIGHT[PARTS[id].rarity], 0)
-for (const id of tireIds) {
-  const want = RARITY_WEIGHT[PARTS[id].rarity] / tw, got = tires.filter(e => e.id === id).length / tires.length
-  const sd = Math.sqrt(want * (1 - want) / tires.length)
-  check(`tires: ${id} (${PARTS[id].rarity}) ${(got * 100).toFixed(1)}% ≈ ${(want * 100).toFixed(1)}%`, Math.abs(got - want) < 4 * sd)
+const W = Object.values(STOCK_WEIGHT).reduce((a, w) => a + w, 0)
+const n = {}
+for (const e of fills) n[e.id] = (n[e.id] ?? 0) + 1
+check('nothing outside the table', Object.keys(n).every(id => STOCK_WEIGHT[id] > 0))
+for (const [id, w] of Object.entries(STOCK_WEIGHT)) share(`shelf ${id}`, n[id] ?? 0, fills.length, w / W)
+
+// Rewards: every source's pool at every gate, drawn many times, follows the same weights.
+for (const src of [...new Set(REWARDS.flatMap(r => r.pools))]) {
+  for (const gate of ['C', 'B', 'A', 'S']) {
+    const at = REWARDS.filter(r => r.pools.includes(src) && r.gates.includes(gate))
+    if (at.length < 2) continue
+    const rand = mulberry32(7), N = 40000, got = {}
+    for (let i = 0; i < N; i++) { const id = pickReward(at, rand()).id; got[id] = (got[id] ?? 0) + 1 }
+    const tw = at.reduce((a, r) => a + (STOCK_WEIGHT[r.id] ?? 1), 0)
+    for (const r of at) share(`reward ${src}/${gate} ${r.id}`, got[r.id] ?? 0, N, (STOCK_WEIGHT[r.id] ?? 1) / tw)
+  }
 }
 
 // ── 2. Condition ──────────────────────────────────────────────────────────────────────────────

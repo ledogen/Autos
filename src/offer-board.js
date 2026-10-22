@@ -46,6 +46,7 @@ import {
     POI_ADJECTIVE_CHANCE, POI_THE_CHANCE, BUSINESS_TYPES, NAME_FORMS, HOUSEHOLDS, PLACE_NOUNS, LANDMARKS,
 } from '../data/offer-names.js'
 import { djb2, mulberry32 } from './seed.js'
+import { STOCK_WEIGHT } from '../data/stock-weights.js'   // the bonus reward pick shares the shelf's weights
 import { basePay, formatMoney } from './economy.js'
 import { DAY_PARAMS } from './day.js'
 
@@ -86,6 +87,10 @@ const RE_ROLLS = 16
 const pick = (r, list) => list[Math.floor(r() * list.length)]
 
 /** Weighted pick over an object of { key: weight }, driven by one uniform draw `u`. */
+/** The bonus reward among eligible REWARDS rows `at`, for a uniform draw `u`: weighted by the stock
+ *  table the auto-shop shelf uses (owner, 2026-10-22). A reward the table doesn't list weighs 1 [DEFAULT]. */
+export const pickReward = (at, u) => at.find(x => x.id === pickWeighted(u, Object.fromEntries(at.map(x => [x.id, STOCK_WEIGHT[x.id] ?? 1]))))
+
 function pickWeighted (u, weights) {
     const keys = Object.keys(weights)
     const total = keys.reduce((s, k) => s + weights[k], 0)
@@ -469,8 +474,9 @@ export class OfferBoard {
             for (const g of Object.keys(GATE_WEIGHTS)) if (pool.some(x => x.gates.includes(g))) w[g] = GATE_WEIGHTS[g]
             if (Object.keys(w).length) {
                 const gate = pickWeighted(gateRoll, w)
+                // Which reward: weighted by the stock table the auto-shop shelf uses (owner, 2026-10-22).
                 const at = pool.filter(x => x.gates.includes(gate))
-                const reward = at[Math.floor(rewardRoll * at.length)]
+                const reward = pickReward(at, rewardRoll)
                 bonus = { rewardId: reward.id, name: reward.name, gate }
             }
         }

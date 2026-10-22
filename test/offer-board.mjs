@@ -651,8 +651,8 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
 {
     const src = readFileSync(new URL('../src/offer-board.js', import.meta.url), 'utf8')
     const imports = [...src.matchAll(/from\s+'([^']+)'/g)].map(m => m[1]).sort()
-    const allowed = ['../data/offer-names.js', '../data/offers.js', './day.js', './economy.js', './seed.js']
-    check('offer-board.js imports only its tables, seed.js, economy.js and day.js (the clock unit)',
+    const allowed = ['../data/offer-names.js', '../data/offers.js', '../data/stock-weights.js', './day.js', './economy.js', './seed.js']
+    check('offer-board.js imports only its tables (stock-weights.js: the reward pick, 2026-10-22), seed.js, economy.js and day.js (the clock unit)',
         JSON.stringify(imports) === JSON.stringify(allowed), imports.join(', '))
     check('offer-board.js never reads Math.random', !/Math\.random/.test(src.replace(/\/\/.*$/gm, '')))
 }
