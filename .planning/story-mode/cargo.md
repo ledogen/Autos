@@ -156,6 +156,7 @@ now** (owner, 2026-10-10) — there is one region; the Region column is the desi
 | R2 | five railway ties | generalStore / gasStation / farm → generalStore / gasStation / farm | ASSET-52 | 455 | posted (owner, 2026-10-12). 5 hardwood ties, 7×9 in × 2.6 m, × 91 kg. Rides angled over the tailgate |
 | R3 | a job box | residence → workSite | ASSET-57 | 175 | posted (route: owner, 2026-10-11). 95 kg steel chest + ~80 kg of tools — the tools are unseen, so that half is an assumption |
 | R3 | a Persian rug or two | | ASSET-58 | 30–60 per roll | not posted. **A range because there is no model yet** |
+| R3 | a stock engine (a used 4.0 V6, crate-ready) | | none yet (the part's icon `engine.png` only) | ~180 | **proposed — owner idea, 2026-10-22:** *"This would make for a sweet freight delivery as well."* The same engine as the stock-engine part (items.md / FEAT-121, 180 kg). Not posted; shipper open. **R3 is a placeholder** (a valuable load reads late), the owner's to set |
 
 **How freight pays** (owner, 2026-10-11; numbers in `data/offers.js`): par × (1 + 0.0007 × kg) for
 the time the load costs; pay × (1 + 0.0003 × kg) on top, so pay outgrows time; every rank threshold

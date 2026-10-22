@@ -95,7 +95,7 @@ MATS = {
     # Round 6 (2026-10-21). Diecast colours come from SHEEN below; this is the viewport colour.
     "Diecast":    ((0.20, 0.21, 0.22, 1), 0.35),
     "DiecastDark":((0.14, 0.145, 0.15, 1), 0.4),
-    "PotatoSkin": ((0.20, 0.10, 0.035, 1), 0.9),
+    "PotatoSkin": ((0.30, 0.17, 0.07, 1), 0.9),
     "PotatoEye":  ((0.045, 0.022, 0.008, 1), 0.9),
     "JerryGreen": ((0.085, 0.11, 0.035, 1), 0.55),
     "WheelPaint": ((0.17, 0.175, 0.18, 1), 0.4),
@@ -109,6 +109,49 @@ MATS = {
     "Lens":       ((0.80, 0.85, 0.90, 1), 0.05),
     "EngineBlue": ((0.03, 0.10, 0.42, 1), 0.5),
     "Pallet":     ((0.42, 0.28, 0.12, 1), 0.95),
+    # Round 7 reworks (2026-10-22): plastic jerry can, russet skin, the Ranger's own lamp colours.
+    "PlasticRed": ((0.62, 0.030, 0.018, 1), 0.45),
+    "PotatoDark": ((0.15, 0.075, 0.028, 1), 0.9),
+    "LampLens":   ((0.700, 0.690, 0.640, 1), 0.22),   # = ranger.py RangerLens
+    "LampAmber":  ((0.640, 0.215, 0.010, 1), 0.28),   # = ranger.py RangerAmber
+    # Round 7 food (2026-10-22).
+    "Lettuce":    ((0.10, 0.36, 0.04, 1), 0.7),
+    "Tomato":     ((0.62, 0.06, 0.03, 1), 0.5),
+    "Cheese":     ((0.90, 0.52, 0.03, 1), 0.5),
+    "Sesame":     ((0.86, 0.78, 0.55, 1), 0.7),
+    "Kraft":      ((0.46, 0.30, 0.14, 1), 0.95),
+    "KraftDark":  ((0.20, 0.12, 0.05, 1), 0.95),
+    "Apple":      ((0.60, 0.04, 0.03, 1), 0.4),
+    "Stem":       ((0.10, 0.06, 0.02, 1), 0.8),
+    "Baguette":   ((0.62, 0.36, 0.11, 1), 0.85),
+    "Carrot":     ((0.85, 0.28, 0.02, 1), 0.7),
+    "FoilRed":    ((0.62, 0.04, 0.03, 1), 0.3),
+    "FoilOrange": ((0.88, 0.30, 0.02, 1), 0.3),
+    "Peanut":     ((0.62, 0.40, 0.17, 1), 0.8),
+    "CandyBrown": ((0.11, 0.045, 0.02, 1), 0.35),
+    "GummyBlue":  ((0.03, 0.22, 0.85, 1), 0.3),
+    "GummyRed":   ((0.80, 0.03, 0.03, 1), 0.3),
+    "GummyGreen": ((0.12, 0.62, 0.05, 1), 0.3),
+    "GummyYellow":((0.92, 0.62, 0.02, 1), 0.3),
+    "GummyOrange":((0.92, 0.30, 0.02, 1), 0.3),
+    "DrinkYellow":((0.88, 0.64, 0.02, 1), 0.3),
+    # Round 7 gear (2026-10-22).
+    "CoolerBlue": ((0.03, 0.15, 0.52, 1), 0.5),
+    "CoolerTan":  ((0.52, 0.42, 0.27, 1), 0.7),
+    "Gold":       ((0.85, 0.58, 0.05, 1), 0.35),
+    "Rope":       ((0.62, 0.55, 0.40, 1), 0.9),
+    "JackRed":    ((0.66, 0.025, 0.02, 1), 0.45),
+    "Ash":        ((0.58, 0.40, 0.20, 1), 0.8),
+    "BladeBlack": ((0.035, 0.035, 0.04, 1), 0.5),
+    "Screen":     ((0.025, 0.035, 0.045, 1), 0.3),
+    "MapGreen":   ((0.10, 0.35, 0.10, 1), 0.6),
+    "PadBlue":    ((0.04, 0.12, 0.42, 1), 0.9),
+    "PadGrey":    ((0.10, 0.10, 0.11, 1), 0.9),
+    "RubberLight":((0.09, 0.09, 0.095, 1), 0.9),
+    "Lime":       ((0.35, 0.85, 0.02, 1), 0.4),
+    "IceBag":     ((0.60, 0.72, 0.80, 1), 0.3),
+    "IceBlue":    ((0.03, 0.18, 0.62, 1), 0.4),
+    "IceCube":    ((0.80, 0.88, 0.94, 1), 0.15),
 }
 
 
@@ -1146,29 +1189,31 @@ def build_tire():
 
 def build_wheel():
     """Part icon `wheel` (owner, 2026-10-21: wheels and tires are separate parts): a bare pressed-steel
-    15x7 wheel standing on its flange, outer face to the viewer — drop-centre rim, a dished centre disc
-    with six oval vents, five lug holes on the 4.5 in circle, the centre bore and a valve stem."""
+    15x7 wheel standing on its flange, its face to the viewer (owner, 2026-10-22: "rotate 180°, I'd like
+    to see the face" — the hub side showed before) — drop-centre rim, the disc dished in from the outer
+    side of the well with six oval vents, five lug holes on the 4.5 in circle, the centre bore and the
+    valve stem. Local +z is the face."""
     b = Builder(); SEG = 24
-    b.M = Matrix.Translation((0, 0, 0.202)) @ Matrix.Rotation(math.pi / 2, 4, "Y")   # axis along X, +z = the outer face
+    b.M = Matrix.Rotation(math.radians(-25), 4, "Z") @ Matrix.Translation((0, 0, 0.202)) @ Matrix.Rotation(math.pi / 2, 4, "Y")   # face turned toward the eye
     rim = [(0.198, -0.102), (0.202, -0.097), (0.196, -0.089), (0.191, -0.086), (0.191, -0.058), (0.168, -0.044),
            (0.165, -0.034), (0.165, 0.018), (0.187, 0.038), (0.191, 0.050), (0.191, 0.086), (0.196, 0.089),
            (0.202, 0.097), (0.198, 0.102)]
     b.lathe(rim + [(r - 0.004, z) for r, z in reversed(rim)] + [rim[0]], SEG, "WheelPaint", cap_bottom=False, cap_top=False)
-    disc = [(0.163, 0.012), (0.150, 0.018), (0.105, 0.058), (0.090, 0.050), (0.048, 0.050), (0.042, 0.058), (0.036, 0.058)]
+    disc = [(0.161, 0.018), (0.150, 0.010), (0.105, -0.022), (0.090, -0.016), (0.048, -0.016), (0.042, -0.024), (0.036, -0.024)]   # dished away from the face
     b.lathe(disc + [(r, z - 0.004) for r, z in reversed(disc)] + [disc[0]], SEG, "WheelPaint", cap_bottom=False, cap_top=False)
-    def spot(r, z, a, along, half_r, half_t, n=10):   # a dark hole drawn on the disc, in its own tangent plane
+    def spot(r, z, a, along, half_r, half_t, n=10):   # a through-hole: dark on both skins of the disc, each in its tangent plane
         er, et = Vector((math.cos(a), math.sin(a), 0)), Vector((-math.sin(a), math.cos(a), 0))
         t = (er * along[0] + Vector((0, 0, along[1]))).normalized(); nrm = t.cross(et)
         if nrm.z < 0:
             nrm = -nrm
-        c = er * r + Vector((0, 0, z)) + nrm * 0.0006
-        b.face([c + t * half_r * math.cos(2 * math.pi * k / n) + et * half_t * math.sin(2 * math.pi * k / n) for k in range(n)], "SteelDark")
+        for c in (er * r + Vector((0, 0, z)) + nrm * 0.0006, er * r + Vector((0, 0, z - 0.004)) - nrm * 0.0006):
+            b.face([c + t * half_r * math.cos(2 * math.pi * k / n) + et * half_t * math.sin(2 * math.pi * k / n) for k in range(n)], "SteelDark")
     for k in range(6):   # vents on the disc's slope, between the lugs
-        spot(0.1275, 0.038, 2 * math.pi * (k + 0.5) / 6, (-0.045, 0.040), 0.019, 0.014)
+        spot(0.1275, -0.006, 2 * math.pi * (k + 0.5) / 6, (-0.045, -0.032), 0.019, 0.014)
     for k in range(5):   # lug holes on the flat mounting face
-        spot(0.057, 0.050, 2 * math.pi * k / 5, (1, 0), 0.0075, 0.0075, 8)
-    spot(0.0, 0.058, 0.0, (1, 0), 0.036, 0.036, 12)   # centre bore
-    a = math.radians(-20)   # valve stem through the well, leaning out past the flange
+        spot(0.057, -0.016, 2 * math.pi * k / 5, (1, 0), 0.0075, 0.0075, 8)
+    spot(0.0, -0.024, 0.0, (1, 0), 0.036, 0.036, 12)   # centre bore
+    a = math.radians(-20)   # valve stem through the well's outer wall, leaning out toward the face
     er = Vector((math.cos(a), math.sin(a), 0))
     p0 = er * 0.174 + Vector((0, 0, 0.026)); p1 = er * 0.184 + Vector((0, 0, 0.056))
     b.tube([p0, p1], 0.0045, 6, "Rubber")
@@ -1568,59 +1613,77 @@ def build_bikePump():
 
 
 def build_potato():
-    """A russet potato (owner, 2026-10-21: the campfire meal): a lumpy faceted ovoid, brown skin, a
-    few dark eyes, lying with its long axis across the view."""
-    b = Builder(); rnd = random.Random(7)
-    A, B, C = 0.068, 0.044, 0.035   # half-axes: 136 x 88 x 70 mm
-    bumps = [(Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(-1, 1))).normalized(), rnd.uniform(-0.14, 0.16))
-             for _ in range(9)]
-    rad = lambda d: 1 + sum(h * math.exp(-(1 - d.dot(n)) / 0.25) for n, h in bumps)   # a few broad lumps
-    dirs = [Vector((1, 0, 0)), Vector((-1, 0, 0))]
-    for i in range(1, 8):
-        th = math.pi * i / 8
-        dirs += [Vector((math.cos(th), math.sin(th) * math.cos(ph), math.sin(th) * math.sin(ph)))
-                 for ph in (2 * math.pi * (k + 0.5 * (i % 2)) / 12 for k in range(12))]
-    pts = [Vector((A * d.x, B * d.y, C * d.z)) * rad(d) for d in dirs]
-    lift = -min(p.z for p in pts)
-    b.M = Matrix.Rotation(math.atan2(VIEW_DIR.x, -VIEW_DIR.y), 4, "Z") @ Matrix.Translation((0, 0, lift))   # long axis along screen-right
-    b.hull(pts, "PotatoSkin")
-    see = Matrix.Rotation(-math.atan2(VIEW_DIR.x, -VIEW_DIR.y), 4, "Z") @ VIEW_DIR   # the eye, in the potato's frame
-    for k in range(2, len(pts), 9):   # eyes: small dark pentagons just proud of the skin, on the side we see
-        p, d = pts[k], dirs[k]
-        n = Vector((d.x / A, d.y / B, d.z / C)).normalized()
-        if n.dot(see) < 0.45:
-            continue
+    """A russet potato (owner, 2026-10-21: the campfire meal; 10-22: "you can do better"): a long,
+    flattened, slightly bent tuber, one end fuller; broad lumps, sunken eyes with a dark bud in each,
+    and mottled russet skin (darker facets) — a lat-long skin, not a hull, so the eyes can dip in."""
+    b = Builder(); rnd = random.Random(11)
+    A, B, C = 0.072, 0.044, 0.034   # half-axes: 144 x 88 x 68 mm
+    NI, NJ = 22, 26
+    bumps = [(Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(-1, 1))).normalized(), rnd.uniform(-0.07, 0.09)) for _ in range(14)]
+    eyes = [Vector(v).normalized() for v in ((0.55, -0.55, 0.62), (-0.35, -0.75, 0.55), (0.05, -0.35, 0.94), (0.92, -0.25, 0.30),
+                                               (-0.80, -0.30, 0.52), (0.30, -0.92, -0.10), (-0.10, 0.40, 0.90))]
+    def surf(u, v):   # u along the length (0..pi), v round it
+        d = Vector((-math.cos(u), math.sin(u) * math.cos(v), math.sin(u) * math.sin(v)))
+        r = 1 + sum(h * math.exp(-(1 - d.dot(n)) / 0.18) for n, h in bumps)
+        r -= sum(0.075 * max(0.0, 1 - (1 - d.dot(e)) / 0.012) for e in eyes)   # the eye pits
+        x = A * d.x * r
+        return Vector((x, B * d.y * r * (1 + 0.10 * d.x) + 0.010 * (1 - (d.x) ** 2), C * d.z * r * (1 + 0.08 * d.x))), d
+    us = [math.pi * (i + 0.5) / NI for i in range(NI)]
+    rings = [[surf(u, 2 * math.pi * j / NJ)[0] for j in range(NJ)] for u in us]
+    lift = -min(p.z for ring in rings for p in ring)
+    b.M = Matrix.Rotation(math.atan2(VIEW_DIR.x, -VIEW_DIR.y) + 0.25, 4, "Z") @ Matrix.Translation((0, 0, lift))   # long axis near screen-right
+    for ra, rb in zip(rings, rings[1:]):
+        for j in range(NJ):
+            k = (j + 1) % NJ
+            b.face([ra[j], ra[k], rb[k], rb[j]], "PotatoDark" if rnd.random() < 0.16 else "PotatoSkin")
+    b.face(list(reversed(rings[0])), "PotatoSkin"); b.face(rings[-1], "PotatoSkin")
+    for e in eyes:   # a dark bud at the bottom of each pit
+        u = math.acos(max(-1.0, min(1.0, -e.x))); v = math.atan2(e.z, e.y)
+        c, _ = surf(u, v)
+        n = (surf(u + 0.02, v)[0] - surf(u - 0.02, v)[0]).cross(surf(u, v + 0.02)[0] - surf(u, v - 0.02)[0]).normalized()
+        if n.dot(c) < 0:
+            n = -n
         t1 = n.cross(Vector((0, 0, 1)) if abs(n.z) < 0.9 else Vector((1, 0, 0))).normalized(); t2 = n.cross(t1)
-        ring = [p + n * 0.0008 + (t1 * math.cos(2 * math.pi * j / 5) + t2 * math.sin(2 * math.pi * j / 5)) * 0.0055 for j in range(5)]
-        b.hull(ring + [p - n * 0.003], "PotatoEye")
+        b.face([c + n * 0.0012 + (t1 * math.cos(2 * math.pi * q / 5) * 0.0060 + t2 * math.sin(2 * math.pi * q / 5) * 0.0040) for q in range(5)], "PotatoEye")
     b.M = Matrix.Identity(4)
     return b.finish("potato")
 
 
 def build_jerryCan():
-    """A 5 gal steel jerry can (owner, 2026-10-21: the refillable top-tier fuel reward), NATO pattern:
-    a pressed X on each broad face, the welded seam round the middle, three handles on top and the
-    spout with its cam-lever cap at the front corner. Olive paint, so it never reads as the red
-    emergency can."""
+    """A 5 gal jerry can (owner, 2026-10-21: the refillable top-tier fuel reward; 10-22: "the red plastic
+    injection molded type"): a round-shouldered red plastic body with moulded side panels and a yellow
+    warning label, the carry handle moulded into the top, the spout neck with its black cap at the
+    front corner and a small vent cap at the back."""
     b = Builder()
-    W, D, H, ch = 0.345, 0.165, 0.470, 0.022
-    b.cbox((0, 0, H / 2), (W, D, H), "JerryGreen", ch=ch)
-    seam = [(-W / 2, 0, 0.006), (-W / 2, 0, H - ch), (-W / 2 + ch, 0, H), (W / 2 - ch, 0, H), (W / 2, 0, H - ch), (W / 2, 0, 0.006)]
-    for p0, p1 in zip(seam, seam[1:]):
-        vert = abs(p0[0] - p1[0]) < 1e-9
-        b.bar(p0, p1, 0.012 if vert else 0.004, "JerryGreen", h=0.004 if vert else 0.012)
-    for sy in (-1, 1):   # the pressed X inside a raised frame, both broad faces
-        x0, x1, z0, z1 = -W / 2 + 0.040, W / 2 - 0.040, 0.040, H - 0.040
-        frame_ = [(x0, z0), (x1, z0), (x1, z1), (x0, z1), (x0, z0)]
-        for (ax, az), (bx, bz) in list(zip(frame_, frame_[1:])) + [((x0, z0), (x1, z1)), ((x1, z0), (x0, z1))]:
-            b.bar((ax, sy * D / 2, az), (bx, sy * D / 2, bz), 0.022, "JerryGreen", h=0.010, up=(0, 1, 0))
-    for xc in (-0.105, -0.035, 0.035):   # three handles in the seam plane: one to carry, two to pass it on
-        b.tube([(xc - 0.028, 0, H - 0.004), (xc - 0.028, 0, H + 0.030), (xc - 0.020, 0, H + 0.038),
-                (xc + 0.020, 0, H + 0.038), (xc + 0.028, 0, H + 0.030), (xc + 0.028, 0, H - 0.004)], 0.0075, 8, "JerryGreen")
-    b.M = Matrix.Translation((0.112, 0, H - 0.006)) @ Matrix.Rotation(math.radians(18), 4, "Y")   # spout, leaning out
-    b.lathe([(0.024, 0.0), (0.024, 0.026)], 12, "SteelDark", cap_bottom=False, cap_top=False)
-    b.lathe([(0.031, 0.024), (0.031, 0.042), (0.025, 0.049), (0.0, 0.049)], 12, "JerryGreen")
-    b.bar((-0.031, 0, 0.036), (-0.062, 0, 0.010), 0.016, "JerryGreen", h=0.007)   # the cam lever, folded down
+    L, W, H, R = 0.380, 0.190, 0.300, 0.045
+    b.M = Matrix.Rotation(math.radians(8), 4, "Z")
+    rings = [rrect(L - 0.030, W - 0.030, R - 0.015, 0.0, per=3), rrect(L - 0.006, W - 0.006, R - 0.003, 0.008, per=3),
+             rrect(L, W, R, 0.022, per=3), rrect(L, W, R, H - 0.040, per=3), rrect(L - 0.012, W - 0.012, R - 0.006, H - 0.014, per=3),
+             rrect(L - 0.040, W - 0.050, R - 0.020, H, per=3)]
+    b.loft(rings, "PlasticRed")
+    for sy in (-1, 1):   # moulded panels standing proud on both broad faces
+        y = sy * (W / 2 + 0.004)
+        out = [(x, z) for x, z, _ in rrect(L - 0.090, H - 0.110, 0.030, 0, per=3)]
+        b.loft([[(x, sy * W / 2 - sy * 0.002, z + H / 2 - 0.005) for x, z in out], [(x, y, z + H / 2 - 0.005) for x, z in out]], "PlasticRed", cap_bottom=False)
+        if sy < 0:   # warning label on the side we see
+            b.loft([[(x * 0.55 - 0.020, y - 0.0005 * 0, z * 0.45 + H / 2 - 0.030) for x, z in out],
+                    [(x * 0.55 - 0.020, y - 0.0015, z * 0.45 + H / 2 - 0.030) for x, z in out]], "LabelYellow", cap_bottom=False)
+            for k in range(3):
+                zz = H / 2 - 0.012 - 0.018 * k
+                b.bar((-0.080, y - 0.0025, zz), (0.040 - 0.030 * (k == 2), y - 0.0025, zz), 0.005, "CanBlack", h=0.001, up=(0, 1, 0))
+    # Carry handle moulded into the top: a flat bar arching from the back shoulder over to mid-top.
+    hp = [(-0.150, H - 0.012), (-0.140, H + 0.030), (-0.115, H + 0.048), (0.010, H + 0.048), (0.035, H + 0.030), (0.045, H - 0.010)]
+    for (x0, z0), (x1, z1) in zip(hp, hp[1:]):
+        b.bar((x0, 0, z0), (x1, 0, z1), 0.030, "PlasticRed", h=0.024, up=(0, 1, 0))
+    # Spout neck and its black cap, leaning out at the front corner; vent cap at the back.
+    b.M = Matrix.Rotation(math.radians(8), 4, "Z") @ Matrix.Translation((0.128, 0, H - 0.020)) @ Matrix.Rotation(math.radians(25), 4, "Y")
+    b.lathe([(0.026, 0.0), (0.026, 0.030)], 12, "PlasticRed", cap_bottom=False, cap_top=False)
+    b.lathe([(0.033, 0.026), (0.033, 0.052), (0.028, 0.058), (0.0, 0.059)], 12, "CanBlack")
+    for k in range(12):
+        a = 2 * math.pi * (k + 0.5) / 12
+        b.bar((0.034 * math.cos(a), 0.034 * math.sin(a), 0.029), (0.034 * math.cos(a), 0.034 * math.sin(a), 0.050), 0.004, "CanBlack")
+    b.M = Matrix.Rotation(math.radians(8), 4, "Z") @ Matrix.Translation((-0.160, 0.040, H - 0.020))
+    b.lathe([(0.012, 0.0), (0.012, 0.018), (0.0, 0.019)], 8, "CanBlack", cap_bottom=False)
     b.M = Matrix.Identity(4)
     return b.finish("jerryCan")
 
@@ -1652,65 +1715,63 @@ def build_airFilter():
 
 
 def build_headlight():
-    """Part icon `headlight` (2026-10-22): one composite headlamp, either side — a chrome reflector bowl
-    round one bulb (with its shield cap) set in a chrome face, an amber corner lamp in the clipped
-    outer corner that wraps onto the end, a clear lens over the front, the black housing tapering back
-    to the bulb socket, mounting tabs on top."""
+    """Part icon `headlight` (owner, 2026-10-22: "rip it straight out of the ranger model"): the left
+    headlamp's own lens and amber wraparound faces from assets/models/ranger.glb, turned to face the
+    viewer with the wrap on the near side, on a black housing hulled back from them. No reflector or
+    bulb — the truck model has none, so the icon doesn't either."""
+    src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ranger.glb")   # assets/models/
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=src)
+    new = [o for o in bpy.data.objects if o not in before]
+    body = next(o for o in new if o.type == "MESH" and any(m and m.name == "RangerLens" for m in o.data.materials))
+    names = [m.name if m else "" for m in body.data.materials]
+    pick = {names.index("RangerLens"): "LampLens", names.index("RangerAmber"): "LampAmber"}
+    faces = []
+    for p in body.data.polygons:
+        c = body.matrix_world @ p.center
+        if p.material_index in pick and c.x < 0 and c.y > 0:   # the front-left lamp
+            faces.append(([body.matrix_world @ body.data.vertices[v].co for v in p.vertices], pick[p.material_index]))
+    for o in new:
+        data = o.data; bpy.data.objects.remove(o)
+        if data and data.users == 0:
+            bpy.data.meshes.remove(data)
+    for m in list(bpy.data.materials):
+        if m.name.startswith("Ranger") and m.users == 0:
+            bpy.data.materials.remove(m)
+    pts = [v for f, _ in faces for v in f]
+    ctr = sum(pts, Vector()) / len(pts)
+    YAW = math.radians(26)
+    T = Matrix.Rotation(YAW, 4, "Z") @ Matrix.Rotation(math.pi, 4, "Z") @ Matrix.Translation(-ctr)   # nose to the viewer, wrap to +X
     b = Builder()
-    R = b.M = Matrix.Rotation(math.radians(15), 4, "Z")
-    X0, X1, Z0, Z1, XS, D, BAND = -0.150, 0.150, 0.020, 0.180, 0.055, 0.110, 0.045
-    CUT = 0.055                                                           # the clipped outer-bottom corner
-    cx, cz, RR, RB = -0.048, 0.100, 0.064, 0.071                          # reflector centre, rim, bezel
-    face = [(X0, Z0), (X1 - CUT, Z0), (X1, Z0 + CUT), (X1, Z1), (X0, Z1)]
-    ring = lambda y, k=1.0: [((x - 0.0) * k, y, cz + (z - cz) * k) for x, z in face]
-    # Housing: straight for a band behind the face, then tapering to the back and the socket's boss.
-    b.loft([ring(0.0), ring(BAND), ring(D, 0.78)], "Urethane", cap_bottom=False)
-    b.M = R @ Matrix.Translation((cx * 0.78, D, cz)) @ Matrix.Rotation(-math.pi / 2, 4, "X")
-    b.lathe([(0.028, 0.0), (0.028, 0.016), (0.022, 0.022), (0.0, 0.022)], 12, "Urethane", cap_bottom=False)
-    b.M = R
-    # Chrome face round the reflector, dished REC deep toward the bowl: quads from the bezel circle out to
-    # the cell's edge, corners included.
-    REC = 0.014
-    cell = (X0, XS, Z0, Z1)
-    corners = [math.atan2(z - cz, x - cx) % (2 * math.pi) for x in cell[:2] for z in cell[2:]]
-    angs = sorted(set([2 * math.pi * k / 24 for k in range(24)] + corners))
-    def edge(a):
-        dx, dz = math.cos(a), math.sin(a)
-        tx = (XS - cx) / dx if dx > 1e-9 else (X0 - cx) / dx if dx < -1e-9 else 1e9
-        tz = (Z1 - cz) / dz if dz > 1e-9 else (Z0 - cz) / dz if dz < -1e-9 else 1e9
-        t = min(tx, tz); return (cx + dx * t, 0.0, cz + dz * t)
-    for a0, a1 in zip(angs, angs[1:] + angs[:1]):
-        b.face([(cx + RB * math.cos(a0), REC, cz + RB * math.sin(a0)), (cx + RB * math.cos(a1), REC, cz + RB * math.sin(a1)), edge(a1), edge(a0)], "Mirror")
-    # Reflector: a parabolic bowl (focus 22 mm) behind a bezel ring; the bulb, its socket and shield cap.
-    f = 0.022; dep = RR * RR / (4 * f)
-    b.M = R @ Matrix.Translation((cx, REC, cz)) @ Matrix.Rotation(math.pi / 2, 4, "X")   # local +Z = toward the front
-    b.lathe([(r, -dep + r * r / (4 * f)) for r in (0.013, 0.022, 0.031, 0.040, 0.049, 0.057, RR)], 24, "Mirror", cap_bottom=False, cap_top=False)
-    b.lathe([(RB, 0.0), (RB, 0.004), (RR, 0.004), (RR, 0.0)], 24, "Urethane", cap_bottom=False, cap_top=False)
-    b.lathe([(0.0, -dep + 0.003), (0.013, -dep + 0.003)], 12, "Urethane", cap_bottom=False, cap_top=False)
-    zb = -dep + 0.003
-    b.lathe([(0.006, zb), (0.009, zb + 0.008), (0.009, zb + 0.024), (0.006, zb + 0.030), (0.0, zb + 0.031)], 10, "PlasticWhite", cap_bottom=False)
-    b.lathe([(0.0, zb + 0.030), (0.011, zb + 0.030), (0.012, zb + 0.036), (0.0, zb + 0.038)], 10, "Mirror", cap_bottom=False)
-    b.M = R
-    # Amber corner lamp: the outer cell, ribbed, and a strip wrapping onto the end.
-    amber = [(XS, Z0), (X1 - CUT, Z0), (X1, Z0 + CUT), (X1, Z1), (XS, Z1)]
-    b.loft([[(x, yy, z) for x, z in amber] for yy in (0.0, -0.004)], "Amber")
-    for k in range(5):
-        x = XS + 0.014 + (X1 - XS - 0.028) * k / 4
-        zlo = max(Z0, Z0 + CUT - (X1 - x)) + 0.012
-        b.bar((x, -0.0055, zlo), (x, -0.0055, Z1 - 0.012), 0.004, "Amber", h=0.003, up=(0, 1, 0))
-    b.prism([(X1, 0.006), (X1 + 0.006, 0.006), (X1 + 0.006, BAND - 0.006), (X1, BAND - 0.006)], Z0 + CUT + 0.010, Z1 - 0.010, "Amber")
-    # Clear lens over the face, skirted back to the housing's front edge.
-    b.face([(x, -0.012, z) for x, z in face], "Lens")
-    for (x0, z0), (x1, z1) in zip(face, face[1:] + face[:1]):
-        b.face([(x0, -0.012, z0), (x1, -0.012, z1), (x1, 0.0, z1), (x0, 0.0, z0)], "Lens")
-    # Mounting tabs on top, each with its bolt hole.
-    for x in (-0.115, 0.090):
-        b.cbox((x, 0.036, Z1 + 0.012), (0.026, 0.006, 0.030), "Urethane", ch=0.002)
-        b.M = R @ Matrix.Translation((x, 0.0328, Z1 + 0.016)) @ Matrix.Rotation(math.pi / 2, 4, "X")
-        b.lathe([(0.0, 0.0), (0.0055, 0.0)], 8, "SteelDark", cap_bottom=False, cap_top=False)
-        b.M = R
+    loc = [[(T @ v) for v in f] for f, _ in faces]
+    lift = -min(v.z for f in loc for v in f) + 0.012
+    b.M = Matrix.Translation((0, 0, lift))
+    allv = [v for f in loc for v in f]
+    back = Matrix.Rotation(YAW, 4, "Z") @ Vector((0, 1, 0))                 # the truck's rearward, after the turn
+    mid = sum(allv, Vector()) / len(allv); D = 0.050
+    hc = mid + back * D / 2                                                 # the housing's middle
+    for f, (_, mat) in zip(loc, faces):   # the lamp faces, a hair proud of the housing
+        n = (f[1] - f[0]).cross(f[2] - f[0]).normalized()
+        if n.dot(sum(f, Vector()) / len(f) - hc) < 0:
+            n = -n
+        b.face([v + n * 0.002 for v in f], mat)
+    rim = [mid + (v - mid) * 1.07 + back * 0.006 for v in allv]            # the housing's lip, a border round the lens
+    b.hull(rim + [mid + back * D + (v - mid) * 0.72 for v in allv], "Urethane")   # tapering back
+    zt = max(v.z for v in rim)
+    side = Matrix.Rotation(YAW, 4, "Z") @ Vector((-1, 0, 0))
+    for k in (-0.35, 0.30):   # mounting tabs on top, each with its bolt hole
+        c = mid + side * (k * 0.32) + back * 0.022; c.z = zt + 0.012
+        q = back.to_track_quat("Z", "Y").to_matrix().to_4x4()
+        b.M = Matrix.Translation((0, 0, lift)) @ Matrix.Translation(c) @ q
+        b.cbox((0, 0, 0), (0.026, 0.028, 0.006), "Urethane", ch=0.002)
+        b.lathe([(0.0, -0.0031), (0.0055, -0.0031)], 8, "SteelDark", cap_bottom=False, cap_top=False)
+    b.M = Matrix.Translation((0, 0, lift)) @ Matrix.Translation(mid + back * D) @ back.to_track_quat("Z", "Y").to_matrix().to_4x4()
+    b.lathe([(0.028, 0.0), (0.028, 0.020), (0.024, 0.026), (0.0, 0.026)], 12, "Urethane", cap_bottom=False)   # bulb socket
+    b.cbox((0.0, 0.0, 0.034), (0.020, 0.014, 0.018), "CanBlack", ch=0.002)                                     # connector
+    b.tube([(0.0, 0.0, 0.043), (0.0, 0.020, 0.060), (0.012, 0.040, 0.066)], 0.004, 6, "CanBlack")
     b.M = Matrix.Identity(4)
     return b.finish("headlight")
+
 
 def build_radiator():
     """Part icon `radiator` (2026-10-22): the stock crossflow radiator standing up — aluminium core (flat
@@ -1865,6 +1926,515 @@ def build_engine():
     return b.finish("engine")
 
 
+def pillow_bag(b, L, W, T, mat, seal_mat=None, C=0.014, paint=None):
+    """A sealed snack bag lying flat along X: a lens-section body puffed in the middle, flat crimped
+    seals C long at both ends. `paint(x, y)` may name a material for the body face there (printed
+    bands follow the skin exactly). Returns top(x, y), the top surface's height, for decals."""
+    env = lambda x: max(0.0, math.sin(math.pi * min(1.0, max(0.0, (x + L / 2 - C) / (L - 2 * C))))) ** 0.45
+    prof = lambda y: max(0.0, 1 - (2 * y / W) ** 2) ** 0.6
+    top = lambda x, y: T / 2 * (1 + env(x) * prof(y))
+    bot = lambda x, y: T / 2 * (1 - env(x) * prof(y))
+    ys = [-W / 2 + W * k / 8 for k in range(9)]
+    rings = []
+    for i in range(11):
+        x = -L / 2 + C + (L - 2 * C) * i / 10
+        rings.append([(x, y, top(x, y)) for y in ys] + [(x, y, bot(x, y)) for y in reversed(ys[1:-1])])
+    n = len(rings[0])
+    for ra, rb in zip(rings, rings[1:]):
+        for k in range(n):
+            q = [ra[k], ra[(k + 1) % n], rb[(k + 1) % n], rb[k]]
+            cx, cy = sum(v[0] for v in q) / 4, sum(v[1] for v in q) / 4
+            b.face(q, (paint and paint(cx, cy)) or mat)
+    b.face(list(reversed(rings[0])), mat); b.face(rings[-1], mat)
+    for sx in (-1, 1):   # the crimped seals: a flat strip with a ridge every few mm
+        x0, x1 = sx * (L / 2 - C), sx * L / 2
+        b.cbox(((x0 + x1) / 2, 0, T / 2), (C, W, 0.0016), seal_mat or mat)
+        for k in range(3):
+            xr = x0 + (x1 - x0) * (k + 0.5) / 3
+            b.bar((xr, -W / 2 + 0.002, T / 2 + 0.0008), (xr, W / 2 - 0.002, T / 2 + 0.0008), 0.0012, seal_mat or mat, h=0.0008)
+    return top
+
+
+def decal(b, pts, z_at, mat, lift=0.0009):
+    """A flat (x, y) polygon laid onto a surface z_at(x, y): a fan of triangles, each corner on the skin."""
+    cx = sum(p[0] for p in pts) / len(pts); cy = sum(p[1] for p in pts) / len(pts)
+    P = lambda x, y: (x, y, z_at(x, y) + lift)
+    n = 4   # each fan triangle split n x n so it follows the skin
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]):
+        at = lambda i, j: (cx + (x0 - cx) * i / n + (x1 - x0) * j / n, cy + (y0 - cy) * i / n + (y1 - y0) * j / n)   # i along centre->edge, j along the edge
+        for i in range(n):
+            for j in range(i + 1):
+                b.face([P(*at(i, j)), P(*at(i + 1, j)), P(*at(i + 1, j + 1))], mat)
+                if j < i:
+                    b.face([P(*at(i, j)), P(*at(i + 1, j + 1)), P(*at(i, j + 1))], mat)
+
+
+def ellipse(cx, cy, rx, ry, n=14, rot=0.0):
+    c, s_ = math.cos(rot), math.sin(rot)
+    return [(cx + rx * math.cos(2 * math.pi * k / n) * c - ry * math.sin(2 * math.pi * k / n) * s_,
+             cy + rx * math.cos(2 * math.pi * k / n) * s_ + ry * math.sin(2 * math.pi * k / n) * c) for k in range(n)]
+
+
+def build_burger():
+    """Burger (owner 2026-10-21/22: the standard meal, "The classic"): sesame bun, a beef patty, a slice
+    of cheese with its corners hanging over, lettuce frill and tomato."""
+    b = Builder(); SEG = 16
+    b.lathe([(0.0, 0.0), (0.050, 0.0), (0.056, 0.006), (0.057, 0.016), (0.052, 0.022), (0.0, 0.022)], SEG, "Bun")       # heel
+    b.lathe([(0.0, 0.022), (0.059, 0.022), (0.061, 0.029), (0.059, 0.037), (0.0, 0.037)], SEG, "Sausage")               # patty
+    sq = [(0.050 * math.cos(math.pi / 4 + k * math.pi / 2), 0.050 * math.sin(math.pi / 4 + k * math.pi / 2)) for k in range(4)]
+    b.M = Matrix.Rotation(0.3, 4, "Z")
+    b.prism([(x * 1.18, y * 1.18) for x, y in sq], 0.037, 0.040, "Cheese")                                             # cheese slice
+    for x, y in sq:   # corners folded down over the patty
+        b.bar((x * 1.18, y * 1.18, 0.0385), (x * 1.30, y * 1.30, 0.028), 0.030, "Cheese", h=0.003)
+    b.M = Matrix.Identity(4)
+    b.lathe([(0.0, 0.040), (0.058, 0.040), (0.058, 0.046), (0.0, 0.046)], SEG, "Tomato")                                # tomato
+    frill = [(0.064 if k % 2 else 0.056) for k in range(20)]
+    b.loft([[(r * math.cos(2 * math.pi * k / 20), r * math.sin(2 * math.pi * k / 20), 0.046 + (0.003 if k % 2 else 0)) for k, r in enumerate(frill)],
+            [(0.050 * math.cos(2 * math.pi * k / 20), 0.050 * math.sin(2 * math.pi * k / 20), 0.050) for k in range(20)]], "Lettuce")
+    crown = [(0.0, 0.049), (0.058, 0.049), (0.061, 0.056), (0.058, 0.070), (0.050, 0.081), (0.036, 0.089), (0.018, 0.093), (0.0, 0.094)]
+    b.lathe(crown, SEG, "Bun")
+    rnd = random.Random(3)
+    for k in range(16):   # sesame seeds on the crown's visible side
+        a = rnd.uniform(-2.6, 0.9); r = rnd.uniform(0.012, 0.048)
+        z = 0.094 - 0.0185 * (r / 0.03) ** 2 * 0.6 - (0.004 if r > 0.04 else 0)
+        n = Vector((r * math.cos(a), r * math.sin(a), 0.11)).normalized()
+        c = Vector((r * math.cos(a), r * math.sin(a), max(z, 0.06) + 0.0012))
+        t1 = n.cross(Vector((0, 0, 1))).normalized() if abs(n.z) < 0.99 else Vector((1, 0, 0)); t2 = n.cross(t1)
+        b.face([c + t1 * 0.0035 * math.cos(2 * math.pi * q / 6) + t2 * 0.0019 * math.sin(2 * math.pi * q / 6) for q in range(6)], "Sesame")
+    return b.finish("burger")
+
+
+def apple(b, x, y, r=0.038):
+    b.M = Matrix.Translation((x, y, 0))
+    b.lathe([(0.0, 0.004), (r * 0.55, 0.0), (r * 0.95, r * 0.45), (r, r * 0.95), (r * 0.85, r * 1.45), (r * 0.45, r * 1.75), (r * 0.12, r * 1.62), (0.0, r * 1.55)], 14, "Apple")
+    b.tube([(0, 0, r * 1.55), (0.002, 0, r * 1.95)], 0.0022, 6, "Stem")
+    b.hull([(0.002, 0, r * 1.85), (0.018, 0.006, r * 1.98), (0.026, 0.002, r * 1.92), (0.012, -0.004, r * 1.86), (0.010, 0.0, r * 1.92)], "Lettuce")
+    b.M = Matrix.Identity(4)
+
+
+def paper_bag(b, W, D, H, seed, top_open=True):
+    """A kraft paper bag: side gussets creased in, the walls crinkled a little. Open: walls with a
+    dark inside, the top edge cut in a zigzag. Returns the top height."""
+    rnd = random.Random(seed)
+    def ring(z, j=0.0, gus=1.0):
+        g = 0.20 * D * gus
+        pts = [(W / 2, -D / 2), (W / 2, D / 2), (0, D / 2), (-W / 2, D / 2), (-W / 2, -D / 2), (0, -D / 2)]
+        pts = [(-W / 2, -D / 2), (0.0, -D / 2), (W / 2, -D / 2), (W / 2 - g, 0.0), (W / 2, D / 2), (0.0, D / 2), (-W / 2, D / 2), (-W / 2 + g, 0.0)]
+        return [(x + rnd.uniform(-j, j), y + rnd.uniform(-j, j), z) for x, y in pts]
+    zs = [0.0, 0.25 * H, 0.55 * H, 0.80 * H, H]
+    rings = [ring(z, 0.0 if z == 0 else 0.004, 0.2 if z == 0 else 1.0) for z in zs]
+    b.loft(rings, "Kraft", cap_bottom=True, cap_top=not top_open)
+    if top_open:
+        inner = [[(x * 0.97, y * 0.95, z) for x, y, z in r] for r in rings[1:]]
+        b.loft(list(reversed(inner)), "KraftDark", cap_bottom=False, cap_top=True)
+        for p0, p1 in zip(rings[-1], rings[-1][1:] + rings[-1][:1]):   # the zigzag cut
+            for k in range(4):
+                a = Vector(p0).lerp(Vector(p1), k / 4); c = Vector(p0).lerp(Vector(p1), (k + 1) / 4); m = a.lerp(c, 0.5)
+                b.face([a, c, m + Vector((0, 0, 0.008))], "Kraft")
+    return H
+
+
+def build_packedLunch():
+    """Packed lunch (owner: "Homemade!"): a brown paper lunch sack with its top rolled down twice, and an
+    apple beside it."""
+    b = Builder()
+    b.M = Matrix.Rotation(math.radians(20), 4, "Z")
+    W, D, H = 0.130, 0.080, 0.190
+    paper_bag(b, W, D, H, 5, top_open=False)
+    for k, (z, t) in enumerate(((H - 0.004, 0.016), (H - 0.020, 0.016))):   # the rolled top
+        b.cbox((0.0, -0.002 * k, z - 0.004), (W + 0.004, D + 0.006 + 0.004 * k, t), "Kraft", ch=0.006)
+    b.M = Matrix.Identity(4)
+    apple(b, 0.118, -0.050)
+    return b.finish("packedLunch")
+
+
+def build_groceries():
+    """Groceries (owner: "Fresh and goes together easy"): an open kraft grocery bag with a baguette, a
+    head of greens and carrots standing out of it."""
+    b = Builder()
+    b.M = Matrix.Rotation(math.radians(18), 4, "Z")
+    W, D, H = 0.280, 0.170, 0.300
+    paper_bag(b, W, D, H, 9)
+    b.M = Matrix.Rotation(math.radians(18), 4, "Z") @ Matrix.Translation((-0.070, 0.020, 0.150)) @ Matrix.Rotation(math.radians(-14), 4, "Y")
+    b.lathe([(0.0, 0.0), (0.024, 0.020), (0.032, 0.080), (0.032, 0.230), (0.024, 0.290), (0.0, 0.305)], 10, "Baguette")
+    for k in range(4):   # the baguette's slashes
+        z = 0.200 + 0.024 * k
+        b.bar((-0.026, -0.022, z), (-0.012, -0.030, z + 0.016), 0.006, "Bun", h=0.003)
+    b.M = Matrix.Rotation(math.radians(18), 4, "Z")
+    rnd = random.Random(4)
+    for k in range(7):   # a head of greens
+        a = 2 * math.pi * k / 7; c = Vector((0.050 + 0.030 * math.cos(a), 0.015 + 0.025 * math.sin(a), H + 0.020 + rnd.uniform(0, 0.02)))
+        b.hull([c + Vector((rnd.uniform(-0.035, 0.035), rnd.uniform(-0.030, 0.030), rnd.uniform(-0.03, 0.04))) for _ in range(10)], "Lettuce")
+    for k, (x, y, lean) in enumerate(((0.100, -0.040, 0.30), (0.118, -0.020, 0.45))):   # carrots and their fronds
+        top = Vector((x + lean * 0.06, y - 0.01, H + 0.050))
+        b.tube([Vector((x, y, H - 0.050)), top], 0.011, 8, "Carrot")
+        for q in range(4):
+            a = q * 1.4
+            b.tube([top, top + Vector((0.020 * math.cos(a), 0.020 * math.sin(a), 0.045))], 0.0035, 5, "Lettuce")
+    b.M = Matrix.Identity(4)
+    return b.finish("groceries")
+
+
+def build_bagOfPeanuts():
+    """Bag of peanuts (owner: "Mmm, salty"): a small red foil snack bag, a yellow oval label with three
+    peanuts printed on it."""
+    b = Builder()
+    b.M = Matrix.Rotation(math.radians(35), 4, "Z") @ Matrix.Rotation(math.radians(28), 4, "X")
+    top = pillow_bag(b, 0.150, 0.100, 0.032, "FoilRed")
+    decal(b, ellipse(0.0, 0.0, 0.046, 0.032), top, "LabelYellow")
+    for x, y, r in ((-0.022, 0.006, 0.5), (0.0, -0.010, -0.3), (0.022, 0.008, 0.9)):   # peanuts: two lobes each
+        for dx in (-0.006, 0.006):
+            decal(b, ellipse(x + dx * math.cos(r), y + dx * math.sin(r), 0.0075, 0.0060, 10), top, "Peanut", lift=0.0018)
+    b.M = Matrix.Identity(4)
+    return b.finish("bagOfPeanuts")
+
+
+def build_spicyChips():
+    """Spicy chips (owner: "Almost too hot"): an orange chip bag with a red band and a yellow flame."""
+    b = Builder()
+    b.M = Matrix.Rotation(math.radians(35), 4, "Z") @ Matrix.Rotation(math.radians(28), 4, "X")
+    top = pillow_bag(b, 0.240, 0.170, 0.066, "FoilOrange", seal_mat="FoilRed", C=0.018, paint=lambda x, y: "FoilRed" if x < -0.070 else None)
+    flame = [(0.000, -0.042), (0.026, -0.034), (0.040, -0.012), (0.040, 0.012), (0.030, 0.030), (0.036, 0.058), (0.016, 0.036), (0.010, 0.050),
+             (0.002, 0.078), (-0.008, 0.040), (-0.018, 0.052), (-0.022, 0.030), (-0.036, 0.044), (-0.040, 0.010), (-0.034, -0.016), (-0.020, -0.034)]   # (across, up the print)
+    decal(b, [(u + 0.012, v) for v, u in flame], top, "LabelYellow", lift=0.0012)
+    decal(b, [(0.55 * u + 0.004, 0.55 * v) for v, u in flame], top, "FoilRed", lift=0.0020)
+    b.M = Matrix.Identity(4)
+    return b.finish("spicyChips")
+
+
+def build_candyBar():
+    """Candy bar (owner: "A bit melty"): a chocolate bar in its wrapper, crimped fins at both ends, a red
+    label band round the middle."""
+    b = Builder()
+    b.M = Matrix.Rotation(math.radians(35), 4, "Z")
+    L, W, T = 0.130, 0.042, 0.016
+    b.cbox((0, 0, T / 2), (L, W, T), "CandyBrown", ch=0.004)
+    b.cbox((0.012, 0, T / 2), (0.050, W + 0.002, T + 0.002), "CapRed", ch=0.004)
+    b.cbox((0.012, 0, T / 2), (0.054, W + 0.0024, 0.004), "LabelYellow")
+    for sx in (-1, 1):   # crimped fins, zigzag edge
+        x0 = sx * L / 2; x1 = sx * (L / 2 + 0.014)
+        zig = [(x0, -W / 2 - 0.002)] + [(x1 if k % 2 == 0 else x1 - sx * 0.003, -W / 2 - 0.002 + (W + 0.004) * k / 8) for k in range(9)] + [(x0, W / 2 + 0.002)]
+        b.prism(zig if sx > 0 else list(reversed(zig)), T / 2 - 0.0008, T / 2 + 0.0008, "CandyBrown")
+    b.M = Matrix.Identity(4)
+    return b.finish("candyBar")
+
+
+def build_gummyWorms():
+    """Gummy worms (owner: "Only a couple blue ones"): a loose pile of two-tone worms, two of them blue."""
+    b = Builder(); rnd = random.Random(21)
+    pairs = [("GummyRed", "GummyYellow"), ("GummyGreen", "GummyOrange"), ("GummyOrange", "GummyYellow"), ("GummyBlue", "GummyRed"),
+             ("GummyRed", "GummyGreen"), ("GummyYellow", "GummyGreen"), ("GummyBlue", "GummyYellow")]
+    for k, (ma, mb) in enumerate(pairs):
+        a0 = rnd.uniform(0, math.pi); L = rnd.uniform(0.10, 0.13); x0, y0 = rnd.uniform(-0.03, 0.03), rnd.uniform(-0.03, 0.03)
+        z = 0.0055 + 0.0085 * (k % 3)
+        path = []
+        for i in range(17):
+            t = i / 16 - 0.5
+            w = 0.010 * math.sin(2 * math.pi * (1.6 * t + k * 0.3))
+            path.append(Vector((x0 + math.cos(a0) * L * t - math.sin(a0) * w, y0 + math.sin(a0) * L * t + math.cos(a0) * w, z)))
+        b.tube(path[:9], 0.0055, 8, ma); b.tube(path[8:], 0.0055, 8, mb)
+    return b.finish("gummyWorms")
+
+
+def build_energyDrink():
+    """Energy drink: a tall 16 oz can, yellow with one big black lightning bolt down the front and a
+    silver lid. Generic on purpose — no real brand's look."""
+    b = Builder(); R = 0.033
+    b.M = Matrix.Rotation(math.radians(35), 4, "Z")
+    b.lathe([(0.0, 0.003), (0.022, 0.0), (0.030, 0.004), (0.033, 0.012)], 16, "Diecast", cap_bottom=False, cap_top=False)
+    b.lathe([(0.033, 0.012), (0.033, 0.150)], 16, "DrinkYellow", cap_bottom=False, cap_top=False)
+    b.lathe([(0.033, 0.150), (0.028, 0.162), (0.027, 0.168), (0.025, 0.168), (0.025, 0.165), (0.0, 0.165)], 16, "Diecast", cap_bottom=False)
+    b.bar((0.004, -0.004, 0.1665), (0.004, 0.012, 0.1665), 0.010, "Diecast", h=0.002)   # the tab
+    a0 = -math.pi / 2 - math.radians(35) + 0.15                                       # the side facing the eye
+    on = lambda sx, z: (R * 1.03 * math.cos(a0 + sx / R), R * 1.03 * math.sin(a0 + sx / R), z)   # (arc length, height) -> skin
+    for poly in ([(-0.006, 0.142), (0.016, 0.142), (0.005, 0.094), (-0.017, 0.094)],          # the bolt: upper bar,
+                 [(-0.017, 0.094), (0.017, 0.094), (0.017, 0.082), (-0.017, 0.082)],          # the jog,
+                 [(-0.004, 0.082), (0.017, 0.082), (-0.013, 0.024)]):                        # the spike
+        cx = sum(p[0] for p in poly) / len(poly); cz = sum(p[1] for p in poly) / len(poly)
+        for (x0, z0), (x1, z1) in zip(poly, poly[1:] + poly[:1]):
+            b.face([on(cx, cz), on(x0, z0), on((x0 + x1) / 2, (z0 + z1) / 2)], "CanBlack"); b.face([on(cx, cz), on((x0 + x1) / 2, (z0 + z1) / 2), on(x1, z1)], "CanBlack")
+    b.M = Matrix.Identity(4)
+    return b.finish("energyDrink")
+
+def build_ice():
+    """Ice (owner: "Cold and wet"): a gas-station bag of ice lying flat — frosted pale bag, a blue band,
+    cubes pressing up through the plastic."""
+    b = Builder(); rnd = random.Random(8)
+    b.M = Matrix.Rotation(math.radians(35), 4, "Z") @ Matrix.Rotation(math.radians(28), 4, "X")
+    top = pillow_bag(b, 0.380, 0.260, 0.110, "IceBag", C=0.020, paint=lambda x, y: "IceBlue" if abs(x) < 0.050 else None)
+    for k in range(14):
+        x, y = rnd.uniform(-0.15, 0.15), rnd.uniform(-0.09, 0.09)
+        if abs(x) < 0.068:
+            continue
+        b.M = Matrix.Rotation(math.radians(35), 4, "Z") @ Matrix.Rotation(math.radians(28), 4, "X") @ Matrix.Translation((x, y, top(x, y) - 0.006)) @ Matrix.Rotation(rnd.uniform(0, 3), 4, "Z") @ Matrix.Rotation(rnd.uniform(-0.4, 0.4), 4, "X")
+        b.cbox((0, 0, 0), (0.040, 0.040, 0.032), "IceCube", ch=0.008)
+    b.M = Matrix.Identity(4)
+    return b.finish("ice")
+
+
+def cooler_box(b, L, W, H, LH, body, lid, R=0.040, wall=1.0):
+    """A cooler's body (tapering a little to the foot) and its lid, rounded corners. Returns the lid top."""
+    b.loft([rrect(L - 0.030, W - 0.030, R - 0.010, 0.0, per=3), rrect(L - 0.006, W - 0.006, R - 0.003, 0.012, per=3),
+            rrect(L, W, R, H, per=3)], body, cap_bottom=True, cap_top=True)
+    b.loft([rrect(L + 0.006, W + 0.006, R + 0.003, H, per=3), rrect(L + 0.006, W + 0.006, R + 0.003, H + LH - 0.012, per=3),
+            rrect(L - 0.014, W - 0.014, R - 0.008, H + LH, per=3)], lid)
+    return H + LH
+
+
+def build_cooler():
+    """Cooler (owner: "Keeps stuff cold"; runs on ice, refilled every three days): a 48 qt two-tone
+    cooler — blue body, white lid with two cup rings, swing handles at the ends, a drain cap."""
+    b = Builder()
+    W0 = b.M = Matrix.Rotation(math.radians(20), 4, "Z")
+    L, W, H = 0.560, 0.340, 0.300
+    top = cooler_box(b, L, W, H, 0.060, "CoolerBlue", "PlasticWhite")
+    for x in (0.150, 0.215):   # cup rings in the lid
+        b.M = W0 @ Matrix.Translation((x, -0.090, top - 0.004))
+        b.lathe([(0.030, 0.004), (0.026, 0.0), (0.0, 0.0)], 14, "PlasticWhite", cap_bottom=False)
+    b.M = W0
+    for sx in (-1, 1):   # swing handles: a bar across each end, pivots in bosses
+        x = sx * (L / 2 + 0.010)
+        b.tube([(x, -0.120, H - 0.040), (x + sx * 0.030, -0.110, H - 0.090), (x + sx * 0.030, 0.110, H - 0.090), (x, 0.120, H - 0.040)], 0.008, 8, "PlasticWhite")
+        for y in (-0.120, 0.120):
+            b.M = W0 @ Matrix.Translation((x - sx * 0.004, y, H - 0.040)) @ Matrix.Rotation(sx * math.pi / 2, 4, "Y")
+            b.lathe([(0.016, 0.0), (0.016, 0.010), (0.0, 0.012)], 10, "CoolerBlue", cap_bottom=False)
+            b.M = W0
+    b.M = W0 @ Matrix.Translation((L / 2 - 0.080, -W / 2 + 0.006, 0.030)) @ Matrix.Rotation(math.pi / 2, 4, "X")
+    b.lathe([(0.014, 0.0), (0.014, 0.010), (0.010, 0.014), (0.0, 0.014)], 10, "PlasticWhite", cap_bottom=False)   # drain cap
+    b.M = Matrix.Identity(4)
+    return b.finish("cooler")
+
+
+def build_iceKing():
+    """Ice King (owner, 2026-10-22: the better cooler, renamed — ice keeps five days): a heavy
+    roto-moulded cooler, tan, thick lid, black rubber T-latches, rope handles in black grips, a gold
+    crown on the front."""
+    b = Builder()
+    W0 = b.M = Matrix.Rotation(math.radians(20), 4, "Z")
+    L, W, H = 0.660, 0.400, 0.330
+    top = cooler_box(b, L, W, H, 0.085, "CoolerTan", "CoolerTan", R=0.035)
+    b.loft([rrect(L - 0.060, W - 0.060, 0.025, top, per=3), rrect(L - 0.070, W - 0.070, 0.022, top + 0.010, per=3)], "CoolerTan")   # raised lid panel
+    for x in (-0.180, 0.180):   # T-latches over the lid lip
+        b.cbox((x, -W / 2 - 0.006, H - 0.010), (0.022, 0.012, 0.090), "Rubber", ch=0.003)
+        b.cbox((x, -W / 2 - 0.009, H - 0.062), (0.060, 0.016, 0.022), "Rubber", ch=0.004)
+    for sx in (-1, 1):   # rope handles in black grips
+        x = sx * (L / 2 + 0.004)
+        b.tube([(x, -0.100, H - 0.050), (x + sx * 0.050, -0.080, H - 0.075), (x + sx * 0.050, 0.080, H - 0.075), (x, 0.100, H - 0.050)], 0.0065, 6, "Rope")
+        b.tube([(x + sx * 0.050, -0.050, H - 0.075), (x + sx * 0.050, 0.050, H - 0.075)], 0.014, 8, "Rubber")
+    crown = [(-0.050, 0.150), (0.050, 0.150), (0.058, 0.215), (0.030, 0.185), (0.0, 0.230), (-0.030, 0.185), (-0.058, 0.215)]
+    y = -W / 2 - 0.0012
+    cx = 0.0; cz = 0.180
+    for (x0, z0), (x1, z1) in zip(crown, crown[1:] + crown[:1]):   # the crown, fanned from its middle
+        b.face([(cx, y, cz), (x0, y, z0), (x1, y, z1)], "Gold")
+    b.M = Matrix.Identity(4)
+    return b.finish("iceKing")
+
+
+def build_quickJack():
+    """Quick-jack (owner, 2026-10-22: takes an hour off the spare change): a low red trolley jack —
+    side plates, steel front wheels, swivel casters, the lift arm up to a ribbed saddle, the pump at
+    the back and its handle angled up, a black grip."""
+    b = Builder()
+    W0 = b.M = Matrix.Rotation(math.radians(-30), 4, "Z")
+    for sy in (-1, 1):   # side plates, tall at the back, low at the nose
+        y = sy * 0.115
+        b.hull([(x, y + dy, z) for x, z in ((-0.270, 0.040), (-0.270, 0.150), (0.000, 0.120), (0.270, 0.060), (0.270, 0.030), (-0.200, 0.030)) for dy in (-0.004, 0.004)], "JackRed")
+        b.M = W0 @ Matrix.Translation((0.240, y + sy * 0.022, 0.040)) @ Matrix.Rotation(math.pi / 2, 4, "X")   # front wheel
+        b.lathe([(0.0, -0.014), (0.040, -0.014), (0.040, 0.014), (0.0, 0.014)], 14, "Steel", cap_bottom=False, cap_top=False)
+        b.M = W0
+        b.cbox((-0.240, y, 0.060), (0.040, 0.030, 0.030), "SteelDark", ch=0.004)                                      # caster fork
+        b.M = W0 @ Matrix.Translation((-0.250, y, 0.025)) @ Matrix.Rotation(math.pi / 2, 4, "X")
+        b.lathe([(0.0, -0.012), (0.025, -0.012), (0.025, 0.012), (0.0, 0.012)], 12, "Rubber", cap_bottom=False, cap_top=False)
+        b.M = W0
+        b.bar((-0.120, y - sy * 0.012, 0.110), (0.190, y - sy * 0.012, 0.165), 0.020, "JackRed", h=0.030)            # lift arm
+    b.cbox((-0.200, 0, 0.130), (0.140, 0.230, 0.010), "JackRed", ch=0.002)                                              # top plate
+    b.M = W0 @ Matrix.Translation((0.200, 0, 0.165))
+    b.lathe([(0.0, 0.0), (0.048, 0.0), (0.048, 0.016), (0.040, 0.020), (0.0, 0.020)], 16, "Diecast", cap_bottom=False)  # saddle
+    for k in range(3):
+        b.lathe([(0.012 + 0.012 * k, 0.020), (0.016 + 0.012 * k, 0.024), (0.020 + 0.012 * k, 0.020)], 16, "DiecastDark", cap_bottom=False, cap_top=False)
+    b.M = W0 @ Matrix.Translation((-0.150, 0, 0.060)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
+    b.lathe([(0.032, -0.080), (0.032, 0.060), (0.024, 0.075), (0.0, 0.078)], 12, "Diecast", cap_bottom=False)            # pump cylinder
+    b.M = W0
+    hdl = [Vector((-0.270, 0, 0.110)), Vector((-0.640, 0, 0.420))]
+    b.tube(hdl, 0.013, 8, "JackRed")
+    b.tube([hdl[1], hdl[1] + (hdl[1] - hdl[0]).normalized() * 0.120], 0.018, 8, "Rubber")
+    b.M = Matrix.Identity(4)
+    return b.finish("quickJack")
+
+
+def build_hiLiftJack():
+    """Hi-lift jack (owner, 2026-10-22: rights a rolled truck by a few seconds of roll torque, live in
+    the physics): a 48 in farm jack lying on its side — the black perforated standard, a foot plate,
+    the red climbing mechanism with its lifting nose, the long handle clipped along the bar, the top
+    clamp."""
+    b = Builder()
+    W0 = b.M = Matrix.Rotation(math.radians(100), 4, "Z")   # along the screen diagonal, so the detail isn't a sliver
+    L = 1.220
+    b.cbox((0, 0, 0.012), (L, 0.044, 0.008), "CanBlack")                       # the web, lying flat
+    for sy in (-1, 1):
+        b.cbox((0, sy * 0.022, 0.012), (L, 0.006, 0.024), "CanBlack")          # flanges
+    for k in range(40):   # the holes through the web
+        x = -0.52 + 0.026 * k
+        b.M = W0 @ Matrix.Translation((x, 0, 0.0163))
+        b.lathe([(0.0, 0.0), (0.0075, 0.0)], 8, "SteelDark", cap_bottom=False, cap_top=False)
+        b.M = W0
+    b.cbox((-L / 2 - 0.006, 0, 0.060), (0.012, 0.130, 0.120), "CanBlack", ch=0.004)   # foot plate, on its edge
+    b.cbox((L / 2 - 0.020, 0, 0.024), (0.040, 0.060, 0.040), "JackRed", ch=0.004)     # top clamp
+    b.cbox((0.120, 0, 0.040), (0.200, 0.090, 0.070), "JackRed", ch=0.010)             # the mechanism
+    b.hull([(x, y, z) for x in (0.040, 0.120) for y in (-0.045, -0.140) for z in (0.020, 0.060 if y > -0.1 else 0.040)], "JackRed")   # lifting nose
+    for x in (0.070, 0.170):
+        b.M = W0 @ Matrix.Translation((x, 0, 0.076))
+        b.lathe([(0.0, 0.0), (0.009, 0.0), (0.009, 0.008), (0.0, 0.008)], 8, "Diecast", cap_bottom=False)   # climbing pins
+        b.M = W0
+    b.tube([(0.200, 0.070, 0.024), (L / 2 - 0.060, 0.070, 0.024)], 0.014, 8, "JackRed")   # handle, stowed along the bar
+    b.cbox((L / 2 - 0.080, 0.050, 0.024), (0.030, 0.050, 0.030), "SteelDark", ch=0.004)   # handle clip
+    b.M = Matrix.Identity(4)
+    return b.finish("hiLiftJack")
+
+
+def shovel(b, L_handle, blade_mat, d_grip):
+    """A round-point shovel lying along X, blade at +X dished upward, socket and wooden shaft back to
+    the grip end at x = 0."""
+    BL, BW = 0.300, 0.230
+    x0 = L_handle                       # where the blade's top edge sits
+    for i in range(6):   # the dished blade: rows across, the round point at the far end
+        for j in range(6):
+            def P(i_, j_):
+                v = i_ / 6; u = j_ / 6 - 0.5
+                half = BW / 2 * (1 - max(0.0, (v - 0.55) / 0.45) ** 2) ** 0.5 if v > 0.55 else BW / 2
+                x = x0 + BL * v; y = 2 * u * half
+                return (x, y, 0.010 + 0.040 * (2 * u) ** 2 * (1 - 0.5 * v) + 0.010 * (1 - v))
+            b.face([P(i, j), P(i, j + 1), P(i + 1, j + 1), P(i + 1, j)], blade_mat)
+            b.face([tuple(c - (0, 0, 0.003)[k] for k, c in enumerate(q)) for q in (P(i + 1, j), P(i + 1, j + 1), P(i, j + 1), P(i, j))], blade_mat)
+    b.bar((x0, -BW / 2, 0.055), (x0, BW / 2, 0.055), 0.012, blade_mat, h=0.006)            # the rolled step
+    b.tube([(x0 - 0.140, 0, 0.032), (x0 + 0.080, 0, 0.030)], 0.020, 8, blade_mat)         # the socket
+    b.tube([(0.0, 0, 0.034), (x0 - 0.120, 0, 0.032)], 0.0175, 8, "Ash")                   # the shaft
+    if d_grip:
+        b.tube([(0.010, 0, 0.034), (-0.060, -0.055, 0.034), (-0.130, -0.055, 0.034), (-0.130, 0.055, 0.034), (-0.060, 0.055, 0.034), (0.010, 0, 0.034)], 0.011, 8, "BladeBlack")
+        b.tube([(-0.130, -0.055, 0.034), (-0.130, 0.055, 0.034)], 0.016, 8, "BladeBlack")
+
+
+def build_shovel():
+    """Shovel (owner, 2026-10-22: renamed from the camp shovel — digs a pad on a slope): a short
+    round-point shovel with a black blade and a D-grip."""
+    b = Builder()
+    b.M = Matrix.Rotation(math.radians(100), 4, "Z")   # along the screen diagonal
+    shovel(b, 0.700, "BladeBlack", True)
+    b.M = Matrix.Identity(4)
+    return b.finish("shovel")
+
+
+def build_longHandledShovel():
+    """Long-handled shovel: the second rung — a red-bladed round-point shovel on a long straight shaft."""
+    b = Builder()
+    b.M = Matrix.Rotation(math.radians(100), 4, "Z")   # along the screen diagonal
+    shovel(b, 1.150, "JackRed", False)
+    b.M = Matrix.Identity(4)
+    return b.finish("longHandledShovel")
+
+
+def build_gpsUnit():
+    """GPS unit (owner, 2026-10-22: "it's a minimap"): a dash GPS on its suction mount, the screen
+    showing a map — grey roads, a green park, the blue route and the orange position arrow."""
+    b = Builder()
+    W0 = Matrix.Rotation(math.radians(28), 4, "Z")
+    T = W0 @ Matrix.Translation((0, 0, 0.060)) @ Matrix.Rotation(math.radians(-12), 4, "X")   # leaned back a little
+    b.M = T
+    b.loft([[(x, y, z) for x, z, _ in rrect(w, h, r, 0, per=3)] for w, h, r, y in ((0.126, 0.082, 0.010, 0.013), (0.132, 0.088, 0.012, 0.002), (0.128, 0.084, 0.010, -0.010))], "CanBlack")
+    y = -0.0105
+    b.face([(x, y, z) for x, z, _ in reversed(rrect(0.112, 0.068, 0.004, 0, per=2))], "Screen")
+    y -= 0.0006
+    def quad(pts, mat):
+        b.face([(x, y, z) for x, z in pts], mat)
+    quad([(-0.054, -0.032), (-0.020, -0.032), (-0.020, -0.004), (-0.054, -0.004)], "MapGreen")
+    for (x0, z0), (x1, z1), w in (((-0.056, 0.010), (0.056, 0.016), 0.006), ((0.012, -0.034), (0.024, 0.034), 0.006), ((-0.056, -0.020), (0.010, 0.030), 0.004)):
+        d = Vector((x1 - x0, z1 - z0)).normalized(); n = Vector((-d.y, d.x)) * w / 2
+        quad([(x0 + n.x, z0 + n.y), (x0 - n.x, z0 - n.y), (x1 - n.x, z1 - n.y), (x1 + n.x, z1 + n.y)], "PlasticWhite")
+    y -= 0.0006
+    route = [(0.000, -0.030), (0.016, -0.004), (0.020, 0.013), (0.048, 0.016)]
+    for (x0, z0), (x1, z1) in zip(route, route[1:]):
+        d = Vector((x1 - x0, z1 - z0)).normalized(); n = Vector((-d.y, d.x)) * 0.0035
+        quad([(x0 + n.x, z0 + n.y), (x0 - n.x, z0 - n.y), (x1 - n.x, z1 - n.y), (x1 + n.x, z1 + n.y)], "GummyBlue")
+    y -= 0.0006
+    quad([(0.000, -0.020), (-0.008, -0.034), (0.000, -0.030), (0.008, -0.034)], "LabelOrange")
+    b.M = W0
+    b.tube([(0.0, 0.018, 0.060), (0.0, 0.040, 0.030), (0.0, 0.050, 0.012)], 0.006, 8, "CanBlack")             # mount arm
+    b.M = W0 @ Matrix.Translation((0.0, 0.050, 0.0))
+    b.lathe([(0.0, 0.0), (0.034, 0.0), (0.030, 0.005), (0.010, 0.012), (0.0, 0.013)], 16, "GasketGrey", cap_bottom=False)   # suction cup
+    b.M = Matrix.Identity(4)
+    return b.finish("gpsUnit")
+
+
+def moving_pad(b, L, W, layers, t, cloth, stitch, binding):
+    """A folded moving pad: `layers` quilted folds stacked, rounded fold edges alternating sides, bound
+    edges, a diamond stitch grid on the top fold."""
+    for k in range(layers):
+        z0 = k * t; sx = 1 if k % 2 == 0 else -1
+        b.cbox((-sx * 0.006, 0, z0 + t / 2), (L - 0.012, W, t * 0.96), cloth, ch=t * 0.30)
+        b.cbox((-sx * 0.006, -W / 2 - 0.0006, z0 + t / 2), (L - 0.030, 0.003, t * 0.35), binding)       # bound edge, near side
+        b.M = b.M @ Matrix.Translation((sx * (L / 2 - 0.006), 0, z0 + t)) @ Matrix.Rotation(math.pi / 2, 4, "X")
+        b.lathe([(t * 0.5, -W / 2), (t * 0.5, W / 2)], 8, cloth, cap_bottom=True, cap_top=True)            # the fold
+        b.M = b.M @ Matrix.Rotation(-math.pi / 2, 4, "X") @ Matrix.Translation((-sx * (L / 2 - 0.006), 0, -(z0 + t)))
+    zt = layers * t + 0.0008
+    hx, hy = L / 2 - 0.022, W / 2 - 0.016                       # the stitched field
+    step = 0.055
+    for sgn in (-1, 1):   # diagonal lines y = sgn * x + c, clipped to the field
+        for k in range(-12, 13):
+            c = k * step
+            ends = []
+            for x in (-hx, hx):
+                y = sgn * x + c
+                if -hy <= y <= hy:
+                    ends.append((x, y))
+            for y in (-hy, hy):
+                x = (y - c) * sgn
+                if -hx <= x <= hx:
+                    ends.append((x, y))
+            ends = sorted(set(ends))
+            if len(ends) >= 2 and math.dist(ends[0], ends[-1]) > 0.02:
+                b.bar((ends[0][0], ends[0][1], zt), (ends[-1][0], ends[-1][1], zt), 0.003, stitch, h=0.0012)
+
+def build_furniturePad():
+    """Furniture pad (owner: "Covered in fiberglass for some reason"): a folded blue moving blanket,
+    quilted in diamonds, black bound edges."""
+    b = Builder()
+    b.M = Matrix.Rotation(math.radians(30), 4, "Z")
+    moving_pad(b, 0.440, 0.300, 3, 0.022, "PadBlue", "PadNavy", "Nylon")
+    b.M = Matrix.Identity(4)
+    return b.finish("furniturePad")
+
+
+def build_heavyDutyPad():
+    """Heavy-duty pad (owner: "Not very padded"): the thick charcoal moving pad, quilted, orange bound
+    edges."""
+    b = Builder()
+    b.M = Matrix.Rotation(math.radians(30), 4, "Z")
+    moving_pad(b, 0.440, 0.300, 3, 0.032, "PadGrey", "Nylon", "PadOrange")
+    b.M = Matrix.Identity(4)
+    return b.finish("heavyDutyPad")
+
+
+def build_rubberBedMat():
+    """Rubber bed mat (owner, 2026-10-22: grips less than the bedliner): a black ribbed rubber mat,
+    rolled, its end unrolled on the ground in front, a spiral on the roll's end."""
+    b = Builder()
+    W0 = b.M = Matrix.Rotation(math.radians(5), 4, "Z")   # the roll's end turned toward the eye
+    L, R = 0.560, 0.085
+    b.M = W0 @ Matrix.Translation((0, 0.040, R)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
+    b.lathe([(R, -L / 2), (R, L / 2)], 18, "Rubber")
+    b.M = W0
+    for sx in (-1, 1):   # the spiral on each end of the roll
+        pts = [Vector((sx * (L / 2 + 0.0008), 0.040 + r * math.cos(a), R + r * math.sin(a))) for a, r in ((t * 0.4, 0.012 + 0.0115 * t * 0.4 / (2 * math.pi) * 2) for t in range(46))]
+        for p0, p1 in zip(pts, pts[1:]):
+            b.bar(p0, p1, 0.003, "RubberLight", h=0.0012, up=(1, 0, 0))
+    b.cbox((0, -0.120, 0.003), (L, 0.240, 0.006), "Rubber")                  # the unrolled tongue
+    for k in range(9):   # its ribs
+        y = -0.225 + 0.024 * k
+        b.cbox((0, y, 0.0075), (L - 0.020, 0.006, 0.004), "RubberLight", ch=0.001)
+    b.M = Matrix.Identity(4)
+    return b.finish("rubberBedMat")
+
+
 BUILDERS = {
     "coffee": build_coffee, "chiliDog": build_chiliDog, "spareTire": build_spareTire,
     "emergencyGas": build_emergencyGas, "pack": build_pack, "rucksack": build_rucksack, "bedroll": build_bedroll,
@@ -1875,6 +2445,11 @@ BUILDERS = {
     "diff": build_diff, "lift": build_lift, "compressor": build_compressor, "bikePump": build_bikePump,
     "potato": build_potato, "jerryCan": build_jerryCan, "airFilter": build_airFilter, "headlight": build_headlight,
     "radiator": build_radiator, "engine": build_engine,
+    "burger": build_burger, "packedLunch": build_packedLunch, "groceries": build_groceries, "bagOfPeanuts": build_bagOfPeanuts,
+    "spicyChips": build_spicyChips, "candyBar": build_candyBar, "gummyWorms": build_gummyWorms, "energyDrink": build_energyDrink, "ice": build_ice,
+    "cooler": build_cooler, "iceKing": build_iceKing, "quickJack": build_quickJack, "hiLiftJack": build_hiLiftJack, "shovel": build_shovel,
+    "longHandledShovel": build_longHandledShovel, "gpsUnit": build_gpsUnit, "furniturePad": build_furniturePad, "heavyDutyPad": build_heavyDutyPad,
+    "rubberBedMat": build_rubberBedMat,
 }
 BATCH2 = ["airMattress", "sleepingPad", "deluxeSleepingPad", "blanket", "sleepingBag",
           "zipTies", "ductTape", "tirePlugKit", "stopLeak", "bubbleWrap"]
