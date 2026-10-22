@@ -1128,8 +1128,10 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   balance the game around, not a bug.
 - **Overheat → temp power loss + engine wear**; repeated/long overheat → **blown head gasket**.
   **RULED (owner, 2026-10-16, FEAT-51): no separate gasket meter.** Overheat wears the engine track
-  (severity × time over 110 °C), and the engine at 0% — which already never catches — IS the blown
-  gasket. One mechanism.
+  (severity × time over 110 °C), and the engine at 0% IS the blown gasket. One mechanism. **A worn
+  engine always starts (owner, 2026-10-22, reversing the never-catch at 0%: "otherwise we don't have
+  a game")** — it is just gutless: 40% power at 0%, the loss spread over the bottom half (knee at
+  50%). Dying at idle was floated and parked.
 - **No coolant mechanic [owner, 2026-10-16].** Radiator condition is the cooling capacity, directly:
   heat follows fuel burned, the radiator carries it off through a 100 °C thermostat. Anchors: a good
   radiator holds 100 °C at any load; **110 °C** is where damage and power loss start; a **0%** radiator

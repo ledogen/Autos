@@ -4,7 +4,7 @@ type: feature
 status: open
 severity: minor
 opened: 2026-10-21
-source: owner, 2026-10-21 — "as with all sold auto parts, only sometimes not always. We should probably come up with a stock table with probabilities for items that will rotate and be on sale"
+source: owner, 2026-10-21 — "as with all sold auto parts, only sometimes not always. We should probably come up with a stock table with probabilities for items that will rotate and be on sale"; mechanism ruled 2026-10-22
 relates: SM-3, FEAT-115 (bed upgrades as parts — "a shop stocks a subset"), FEAT-69 (repair-economy prices), FEAT-121 (item tracker)
 ---
 
@@ -18,30 +18,32 @@ shop items such as the worn spare and the tire plug kit — are on sale **only s
 being missing from today's shelf is what makes a reward or a roadside find land as an event
 (SM-INV-7), and it gives a reason to visit a second shop.
 
-## Shape (to be filled in by the owner — the data is the owner's call)
+## Ruled (owner, 2026-10-22)
 
-A stock table: per item, the **chance it is on the shelf** at a given shop on a given day. It might
-also need:
+"Think shade tree mechanic and you pulled up without an appointment." A very limited selection with
+nothing guaranteed: some brakes, a couple of tires, a wheel or two, maybe a wheel-and-tire combo. Rarely
+suspension, shocks, an anti-roll bar, a radiator or a lift kit; exceedingly rarely a differential or an
+engine. Mostly used, occasionally new. The point: a player checks the map, sees the LSD or the off-road
+suspension they want, and either races over or plans a mission or two to fund it before it is gone.
 
-- **What it rotates on.** Per shop per day is the obvious key: seeded from the shop and the day, so
-  a revisit the same day shows the same shelf. That keeps it run-layer randomness, with no save data.
-- **Rarity as the default.** The parts' `rarity` (common / uncommon / rare) could set the default
-  chance, with per-item overrides for the ones the owner names: the worn spare (50–80%, ~$15) and
-  plug kits ($5–10).
-- **Always stocked.** Some things might be on every shelf: the stock part for each socket, so a
-  repair-by-replacement is always possible. Repairs themselves are labour and are never out of stock.
-- **Which shops.** Auto shop only, or the general store and gas station too (plug kits, zip ties,
-  duct tape, stop-leak are sold at more than one place per items.md).
+- **Mechanism:** each auto shop has **4 shelf slots**. Every game hour, each EMPTY slot rolls (most rolls
+  come up empty). A filled slot holds one item until its own timer runs out, **6–48 h**. Buying empties it.
+- **Visible from the map**, each item with its time left. In-world you rang them, the same way you know
+  the missions.
+- **Repairs never come off the shelf** (they are labour). Replace-only parts (tires, pads/shoes,
+  headlights, air filter) are bought here or exchanged from your own inventory; repairable ones
+  (springs, shocks, radiator, wheels, engine, transmission, armor) go to at most **80% in 5% steps**,
+  so new is the only way to 100%. Alignment is an adjustment: always back to 100%.
+- **Numbers** (fill chance, category and rarity weights, used/new split, used condition range) are
+  proposed as [DEFAULT] in the build and go to the owner to approve or modify.
+
+Being built on `feature/parts-shop` (off feature/parts), with the service screen split into My Vehicle /
+Parts Shop / My Items.
 
 ## Acceptance
 
-- [ ] The owner supplies the table: per item (or per rarity) a stock chance, and the shops that
-      carry it.
-- [ ] The service screen's Parts tab shows only today's shelf; fitted parts and the player's own
-      parts are always listed.
-- [ ] The same shop on the same day shows the same shelf (seeded, not re-rolled per visit).
-- [ ] A headless gate pins the frequencies over many shop-days and the same-day stability.
-
-## Not yet
-
-Blocked on the owner's table. Don't invent the probabilities.
+- [ ] The owner approves the [DEFAULT] numbers.
+- [ ] The Parts Shop shows only the shelf, each item with condition, price and time left; the map
+      shows the same.
+- [ ] Rolls are seeded per (run, shop, hour), so a revisit agrees and a gate can pin them.
+- [ ] A headless gate pins the frequencies, the 6–48 h lifetimes, expiry and buying.
