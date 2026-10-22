@@ -164,7 +164,9 @@ inflating, is 2 h by hand (bike pump) or 30 min with the compressor (owner, 2026
 status: todo · design: ratified · build: effect · where: autoShop, reward, found
 Sets the `airFilter` track in `src/damage.js` to the spare's own condition at the roadside, in 15 min.
 Each spare carries a condition like the spare tire: new from the auto shop ($10), never great as a
-roadside find. A reward from the auto shop and gas station (B–A). Ruled 2026-10-21.
+roadside find. A reward from the auto shop and gas station (B–A). Ruled 2026-10-21. Shares the
+`airFilter.png` icon with the shop branch's `airFilterStock` part (2026-10-22), which is priced $3 as a
+stand-in. Whether they are one item is asked of the parts session.
 
 ### Zip ties
 status: todo · design: ratified · build: effect · where: generalStore, autoShop, reward, found
@@ -455,6 +457,22 @@ Shop-mounted only: a flat at the roadside needs the spare, since there are no to
 ### Skid plates
 status: todo · design: idea · build: effect, model · needs: hazards · where: autoShop
 §3c's "space for more" — counters the sharp-rock line.
+
+### Stock engine
+status: wip · design: proposed · build: param · where: autoShop
+New part on feature/parts-shop (2026-10-22), `engineStock`: the engine bay had damage tracks and no part,
+so exchange and the shelf had nothing to sell. A used stock 4.0 V6, 180 kg, 8 h to swap, $90 stand-in.
+Icon `engine.png`.
+
+### Stock radiator
+status: wip · design: proposed · build: param · where: autoShop
+New part on feature/parts-shop (2026-10-22), `radiatorStock`: 7 kg, 1.5 h to swap, $22 stand-in. Icon
+`radiator.png`, shared with the heavy-gauge radiator below.
+
+### Headlight
+status: wip · design: proposed · build: param · where: autoShop
+New part on feature/parts-shop (2026-10-22), `headlightStock`: one unit, either side, 1.5 kg, 30 min to
+swap, $4 stand-in. Icon `headlight.png`.
 
 ### Heavy-gauge radiator
 status: todo · design: idea · build: param · where: autoShop

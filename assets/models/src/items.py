@@ -99,12 +99,24 @@ MATS = {
     "PotatoEye":  ((0.045, 0.022, 0.008, 1), 0.9),
     "JerryGreen": ((0.085, 0.11, 0.035, 1), 0.55),
     "WheelPaint": ((0.17, 0.175, 0.18, 1), 0.4),
+    # Engine-bay parts (2026-10-22): filter paper, urethane, lamp optics, painted iron, pallet wood.
+    "FilterPaper":((0.72, 0.60, 0.34, 1), 0.95),
+    "Urethane":   ((0.05, 0.05, 0.055, 1), 0.8),
+    "FilterCrease":((0.13, 0.10, 0.05, 1), 0.95),
+    "Rust":       ((0.20, 0.075, 0.03, 1), 0.9),
+    "Amber":      ((0.90, 0.38, 0.0, 1), 0.3),
+    "Mirror":     ((0.40, 0.41, 0.42, 1), 0.2),
+    "Lens":       ((0.80, 0.85, 0.90, 1), 0.05),
+    "EngineBlue": ((0.03, 0.10, 0.42, 1), 0.5),
+    "Pallet":     ((0.42, 0.28, 0.12, 1), 0.95),
 }
 
 
 # Bare cast metal (dark, mid, light) linear grey by facet facing — no environment map in this rig, so
 # reflections are painted on per facet (owner, 2026-10-21: the compressor's metal read as white paint).
-SHEEN = {"Diecast": (0.05, 0.20, 0.62), "DiecastDark": (0.035, 0.13, 0.40)}
+SHEEN = {"Diecast": (0.05, 0.20, 0.62), "DiecastDark": (0.035, 0.13, 0.40), "Mirror": (0.02, 0.28, 0.95),
+         "FilterPaper": ((0.34, 0.27, 0.13), (0.76, 0.65, 0.40), (0.96, 0.87, 0.60))}   # a stop may be an RGB triple
+ALPHA = {"Lens": 0.22}   # see-through: the headlight's clear lens
 
 
 def get_material(name):
@@ -120,13 +132,20 @@ def get_material(name):
         dot = nt.nodes.new("ShaderNodeVectorMath"); dot.operation = "DOT_PRODUCT"
         dot.inputs[1].default_value = Vector((-0.45, 0.25, 0.86)).normalized()
         ramp = nt.nodes.new("ShaderNodeValToRGB"); els = ramp.color_ramp.elements
+        rgb = lambda v, blue: (*v, 1) if isinstance(v, tuple) else (v, v, v * blue, 1)
         dark, mid, light = SHEEN[name]
-        els[0].position, els[0].color = 0.0, (dark, dark, dark * 1.05, 1)
-        els[1].position, els[1].color = 1.0, (light, light, light * 1.02, 1)
-        e = els.new(0.5); e.color = (mid, mid, mid * 1.04, 1)
+        els[0].position, els[0].color = 0.0, rgb(dark, 1.05)
+        els[1].position, els[1].color = 1.0, rgb(light, 1.02)
+        e = els.new(0.5); e.color = rgb(mid, 1.04)
         rng = nt.nodes.new("ShaderNodeMapRange"); rng.inputs["From Min"].default_value = -1.0
         nt.links.new(geo.outputs["Normal"], dot.inputs[0]); nt.links.new(dot.outputs["Value"], rng.inputs["Value"])
         nt.links.new(rng.outputs["Result"], ramp.inputs["Fac"]); nt.links.new(ramp.outputs["Color"], b.inputs["Base Color"])
+    if name in ALPHA:
+        b.inputs["Alpha"].default_value = ALPHA[name]
+        try:
+            m.surface_render_method = "BLENDED"
+        except (AttributeError, TypeError):
+            m.blend_method = "BLEND"
     m.diffuse_color = col; m.roughness = rough
     return m
 
@@ -1606,6 +1625,246 @@ def build_jerryCan():
     return b.finish("jerryCan")
 
 
+def build_airFilter():
+    """Part icon `airFilter` (2026-10-22): the stock panel filter — a pleated paper pack in a urethane
+    frame, tipped toward the viewer, the folds running straight away from them so both faces of every
+    fold show: the sunlit one cream, the other in shade."""
+    b = Builder()
+    b.M = Matrix.Rotation(math.radians(35), 4, "Z") @ Matrix.Rotation(math.radians(30), 4, "X")
+    L, W, H = 0.300, 0.200, 0.046                     # outside of the frame
+    PL, PW, N = 0.272, 0.172, 15                      # the pleat pack and its folds
+    top, low, cr = 0.038, 0.014, 0.0012                 # fold peaks, valleys, half-width of the shadowed crease
+    xs = [-PL / 2 + PL * k / (2 * N) for k in range(2 * N + 1)]
+    for k in range(2 * N):
+        xa, xb = xs[k], xs[k + 1]
+        if k % 2 == 0:   # falling face, then the crease
+            b.face([(xa, -PW / 2, top), (xb - cr, -PW / 2, low), (xb - cr, PW / 2, low), (xa, PW / 2, top)], "FilterPaper")
+            b.face([(xb - cr, -PW / 2, low), (xb, -PW / 2, low - 0.001), (xb, PW / 2, low - 0.001), (xb - cr, PW / 2, low)], "FilterCrease")
+        else:
+            b.face([(xa, -PW / 2, low - 0.001), (xa + cr, -PW / 2, low), (xa + cr, PW / 2, low), (xa, PW / 2, low - 0.001)], "FilterCrease")
+            b.face([(xa + cr, -PW / 2, low), (xb, -PW / 2, top), (xb, PW / 2, top), (xa + cr, PW / 2, low)], "FilterPaper")
+    # The frame: outer wall, chamfered top lip, inner wall down past the folds, bottom.
+    rings = [rrect(L, W, 0.010, 0.0, per=2), rrect(L, W, 0.010, H - 0.005, per=2), rrect(L - 0.010, W - 0.010, 0.006, H, per=2),
+             rrect(PL, PW, 0.002, H, per=2), rrect(PL, PW, 0.002, 0.0, per=2), rrect(L, W, 0.010, 0.0, per=2)]
+    b.loft(rings, "Urethane", cap_bottom=False, cap_top=False)
+    b.M = Matrix.Identity(4)
+    return b.finish("airFilter")
+
+
+def build_headlight():
+    """Part icon `headlight` (2026-10-22): one composite headlamp, either side — a chrome reflector bowl
+    round one bulb (with its shield cap) set in a chrome face, an amber corner lamp in the clipped
+    outer corner that wraps onto the end, a clear lens over the front, the black housing tapering back
+    to the bulb socket, mounting tabs on top."""
+    b = Builder()
+    R = b.M = Matrix.Rotation(math.radians(15), 4, "Z")
+    X0, X1, Z0, Z1, XS, D, BAND = -0.150, 0.150, 0.020, 0.180, 0.055, 0.110, 0.045
+    CUT = 0.055                                                           # the clipped outer-bottom corner
+    cx, cz, RR, RB = -0.048, 0.100, 0.064, 0.071                          # reflector centre, rim, bezel
+    face = [(X0, Z0), (X1 - CUT, Z0), (X1, Z0 + CUT), (X1, Z1), (X0, Z1)]
+    ring = lambda y, k=1.0: [((x - 0.0) * k, y, cz + (z - cz) * k) for x, z in face]
+    # Housing: straight for a band behind the face, then tapering to the back and the socket's boss.
+    b.loft([ring(0.0), ring(BAND), ring(D, 0.78)], "Urethane", cap_bottom=False)
+    b.M = R @ Matrix.Translation((cx * 0.78, D, cz)) @ Matrix.Rotation(-math.pi / 2, 4, "X")
+    b.lathe([(0.028, 0.0), (0.028, 0.016), (0.022, 0.022), (0.0, 0.022)], 12, "Urethane", cap_bottom=False)
+    b.M = R
+    # Chrome face round the reflector, dished REC deep toward the bowl: quads from the bezel circle out to
+    # the cell's edge, corners included.
+    REC = 0.014
+    cell = (X0, XS, Z0, Z1)
+    corners = [math.atan2(z - cz, x - cx) % (2 * math.pi) for x in cell[:2] for z in cell[2:]]
+    angs = sorted(set([2 * math.pi * k / 24 for k in range(24)] + corners))
+    def edge(a):
+        dx, dz = math.cos(a), math.sin(a)
+        tx = (XS - cx) / dx if dx > 1e-9 else (X0 - cx) / dx if dx < -1e-9 else 1e9
+        tz = (Z1 - cz) / dz if dz > 1e-9 else (Z0 - cz) / dz if dz < -1e-9 else 1e9
+        t = min(tx, tz); return (cx + dx * t, 0.0, cz + dz * t)
+    for a0, a1 in zip(angs, angs[1:] + angs[:1]):
+        b.face([(cx + RB * math.cos(a0), REC, cz + RB * math.sin(a0)), (cx + RB * math.cos(a1), REC, cz + RB * math.sin(a1)), edge(a1), edge(a0)], "Mirror")
+    # Reflector: a parabolic bowl (focus 22 mm) behind a bezel ring; the bulb, its socket and shield cap.
+    f = 0.022; dep = RR * RR / (4 * f)
+    b.M = R @ Matrix.Translation((cx, REC, cz)) @ Matrix.Rotation(math.pi / 2, 4, "X")   # local +Z = toward the front
+    b.lathe([(r, -dep + r * r / (4 * f)) for r in (0.013, 0.022, 0.031, 0.040, 0.049, 0.057, RR)], 24, "Mirror", cap_bottom=False, cap_top=False)
+    b.lathe([(RB, 0.0), (RB, 0.004), (RR, 0.004), (RR, 0.0)], 24, "Urethane", cap_bottom=False, cap_top=False)
+    b.lathe([(0.0, -dep + 0.003), (0.013, -dep + 0.003)], 12, "Urethane", cap_bottom=False, cap_top=False)
+    zb = -dep + 0.003
+    b.lathe([(0.006, zb), (0.009, zb + 0.008), (0.009, zb + 0.024), (0.006, zb + 0.030), (0.0, zb + 0.031)], 10, "PlasticWhite", cap_bottom=False)
+    b.lathe([(0.0, zb + 0.030), (0.011, zb + 0.030), (0.012, zb + 0.036), (0.0, zb + 0.038)], 10, "Mirror", cap_bottom=False)
+    b.M = R
+    # Amber corner lamp: the outer cell, ribbed, and a strip wrapping onto the end.
+    amber = [(XS, Z0), (X1 - CUT, Z0), (X1, Z0 + CUT), (X1, Z1), (XS, Z1)]
+    b.loft([[(x, yy, z) for x, z in amber] for yy in (0.0, -0.004)], "Amber")
+    for k in range(5):
+        x = XS + 0.014 + (X1 - XS - 0.028) * k / 4
+        zlo = max(Z0, Z0 + CUT - (X1 - x)) + 0.012
+        b.bar((x, -0.0055, zlo), (x, -0.0055, Z1 - 0.012), 0.004, "Amber", h=0.003, up=(0, 1, 0))
+    b.prism([(X1, 0.006), (X1 + 0.006, 0.006), (X1 + 0.006, BAND - 0.006), (X1, BAND - 0.006)], Z0 + CUT + 0.010, Z1 - 0.010, "Amber")
+    # Clear lens over the face, skirted back to the housing's front edge.
+    b.face([(x, -0.012, z) for x, z in face], "Lens")
+    for (x0, z0), (x1, z1) in zip(face, face[1:] + face[:1]):
+        b.face([(x0, -0.012, z0), (x1, -0.012, z1), (x1, 0.0, z1), (x0, 0.0, z0)], "Lens")
+    # Mounting tabs on top, each with its bolt hole.
+    for x in (-0.115, 0.090):
+        b.cbox((x, 0.036, Z1 + 0.012), (0.026, 0.006, 0.030), "Urethane", ch=0.002)
+        b.M = R @ Matrix.Translation((x, 0.0328, Z1 + 0.016)) @ Matrix.Rotation(math.pi / 2, 4, "X")
+        b.lathe([(0.0, 0.0), (0.0055, 0.0)], 8, "SteelDark", cap_bottom=False, cap_top=False)
+        b.M = R
+    b.M = Matrix.Identity(4)
+    return b.finish("headlight")
+
+def build_radiator():
+    """Part icon `radiator` (2026-10-22): the stock crossflow radiator standing up — aluminium core (flat
+    tubes across, the fin pack between), black plastic end tanks on crimped headers, the upper hose neck
+    and the filler cap on the left tank, the lower neck, transmission-cooler fittings and drain cock on
+    the right, rubber mounting pegs."""
+    b = Builder()
+    R = b.M = Matrix.Rotation(math.radians(15), 4, "Z")
+    CX, Z0, Z1, T = 0.330, 0.035, 0.465, 0.032      # core half-width, bottom, top, thickness (front face y = 0)
+    TX, TZ0, TZ1 = CX + 0.034, 0.014, 0.486         # tank centre x, bottom, top
+    b.cbox((0, T / 2, (Z0 + Z1) / 2), (2 * CX, T - 0.004, Z1 - Z0), "DiecastDark")            # the fin pack
+    n = 18
+    for k in range(n):                                                                       # tubes, proud of the fins
+        b.cbox((0, T / 2, Z0 + 0.014 + (Z1 - Z0 - 0.028) * (k + 0.5) / n), (2 * CX, T + 0.004, 0.009), "Diecast", ch=0.002)
+    for z in (Z0 + 0.006, Z1 - 0.006):                                                       # side channels
+        b.cbox((0, T / 2, z), (2 * CX, T + 0.008, 0.012), "Diecast", ch=0.002)
+    for sx in (-1, 1):
+        b.cbox((sx * (CX + 0.004), T / 2, (TZ0 + TZ1) / 2), (0.010, T + 0.016, TZ1 - TZ0 - 0.012), "Diecast", ch=0.002)   # header
+        b.cbox((sx * TX, T / 2, (TZ0 + TZ1) / 2), (0.054, 0.058, TZ1 - TZ0), "Nylon", ch=0.010)                         # tank
+        b.M = R @ Matrix.Translation((sx * TX, T / 2, 0.0))                                                              # bottom peg
+        b.lathe([(0.0, 0.0), (0.011, 0.0), (0.011, 0.016), (0.0, 0.016)], 8, "Rubber", cap_bottom=False, cap_top=False)
+        b.M = R
+    b.M = R @ Matrix.Translation((TX, T / 2 + 0.010, TZ1))                                                               # top peg
+    b.lathe([(0.0, -0.004), (0.010, -0.004), (0.010, 0.016), (0.0, 0.016)], 8, "Rubber", cap_bottom=False)
+    def neck(sx, z):   # a hose neck out of the tank's outer side, beaded, open end dark
+        b.M = R @ Matrix.Translation((sx * (TX + 0.024), T / 2, z)) @ Matrix.Rotation(sx * math.pi / 2, 4, "Y")
+        b.lathe([(0.019, 0.0), (0.019, 0.034), (0.023, 0.038), (0.023, 0.044), (0.019, 0.048), (0.019, 0.056), (0.014, 0.056), (0.014, 0.046), (0.0, 0.046)],
+                14, "Nylon", cap_bottom=False, cap_top=False)
+    neck(-1, 0.405); neck(1, 0.095)
+    # Filler neck and cap on the left tank, a little forward of centre.
+    b.M = R @ Matrix.Translation((-TX, T / 2 - 0.004, TZ1 - 0.004))
+    b.lathe([(0.017, 0.0), (0.017, 0.014), (0.024, 0.016), (0.026, 0.021), (0.026, 0.027), (0.020, 0.033), (0.0, 0.034)], 16, "Mirror", cap_bottom=False)
+    for sy in (-1, 1):
+        b.bar((0, sy * 0.010, 0.030), (0, sy * 0.010, 0.040), 0.040, "Mirror", h=0.004, up=(0, 1, 0))
+    b.M = R
+    # Transmission-cooler fittings (brass hex) and the drain cock on the right tank.
+    for z in (0.200, 0.290):
+        b.M = R @ Matrix.Translation((TX + 0.026, T / 2, z)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
+        b.lathe([(0.0, -0.002), (0.012, -0.002), (0.012, 0.009), (0.007, 0.009), (0.007, 0.022), (0.0, 0.022)], 6, "Brass", cap_bottom=False)
+    b.M = R
+    b.cbox((TX, -0.016, 0.050), (0.016, 0.008, 0.022), "PlasticWhite", ch=0.002)
+    b.M = Matrix.Identity(4)
+    return b.finish("radiator")
+
+
+def build_engine():
+    """Part icon `engine` (2026-10-22): the used stock 4.0 V6, crate-ready on a pallet. Crank along Y, the
+    front (belt drive) toward the viewer: painted block and 60° heads, black valve covers (yellow oil
+    cap), the cast intake plenum and throttle body on top, timing cover, balancer, water pump,
+    alternator, steering pump, A/C compressor and idler on one serpentine belt, rusty exhaust logs,
+    an orange oil filter and the yellow dipstick loop, the flexplate behind."""
+    b = Builder()
+    R = b.M = Matrix.Rotation(math.radians(-8), 4, "Z")
+    def at(p, d=(0, 0, 1)):   # lathe frame: origin p, local +Z along d
+        b.M = R @ Matrix.Translation(p) @ Vector(d).normalized().to_track_quat("Z", "Y").to_matrix().to_4x4()
+    # Pallet: three stringers along Y, five deck boards across.
+    for x in (-0.26, 0.0, 0.26):
+        b.cbox((x, 0, 0.040), (0.060, 0.78, 0.080), "Pallet", ch=0.004)
+    for k in range(5):
+        b.cbox((0, -0.33 + 0.165 * k, 0.089), (0.64, 0.105, 0.018), "Pallet", ch=0.003)
+    Z0 = 0.098; ZC = Z0 + 0.235                      # pallet top; crank centre
+    YF, YR = -0.25, 0.25                             # block front / rear faces
+    # Oil pan: deep sump forward, shallow behind; its flange rail.
+    b.cbox((0, -0.11, Z0 + 0.085), (0.28, 0.24, 0.170), "SteelDark", ch=0.012)
+    b.cbox((0, 0.115, Z0 + 0.130), (0.30, 0.21, 0.080), "SteelDark", ch=0.010)
+    b.cbox((0, 0.0, Z0 + 0.175), (0.38, 0.49, 0.014), "SteelDark", ch=0.003)
+    # Lower block (crankcase skirt).
+    b.cbox((0, 0, (Z0 + 0.182 + ZC + 0.06) / 2), (0.40, YR - YF, ZC + 0.06 - Z0 - 0.182), "EngineBlue", ch=0.012)
+    # Banks at ±30°: cylinder block, head, valve cover — each a hull in the bank's own (along a, across p) frame.
+    def bank_hull(sx, s0, s1, w0, w1, y0, y1, mat, ich=0.0):
+        a = Vector((sx * 0.5, 0, 0.8660)); pv = Vector((0.8660 * sx, 0, -0.5 * sx)); c = Vector((0, 0, ZC))
+        pts = []
+        for s_, w_, ins in ((s0, w0, 0.0), (s1, w1, ich)):
+            for t in (-w_ / 2, w_ / 2):
+                for y in (y0 + ins, y1 - ins):
+                    q = c + a * s_ + pv * t; pts.append((q.x, y, q.z))
+        b.hull(pts, mat)
+        return a, pv, c
+    for sx, dy in ((1, -0.020), (-1, 0.020)):        # the right bank sits a little forward
+        bank_hull(sx, 0.06, 0.245, 0.17, 0.17, YF + dy + 0.005, YR + dy - 0.005, "EngineBlue")
+        bank_hull(sx, 0.245, 0.335, 0.19, 0.185, YF + dy - 0.005, YR + dy - 0.015, "EngineBlue")
+        a, pv, c = bank_hull(sx, 0.335, 0.395, 0.175, 0.13, YF + dy + 0.005, YR + dy - 0.025, "CanBlack", ich=0.025)
+        for t in (-0.035, 0.0, 0.035):               # ribs on the valve cover
+            q = c + a * 0.399 + pv * t
+            b.bar((q.x, YF + dy + 0.06, q.z), (q.x, YR + dy - 0.08, q.z), 0.008, "CanBlack", h=0.010)
+        if sx == 1:                                  # oil filler cap
+            q = c + a * 0.395 + pv * 0.0
+            at((q.x, YF + dy + 0.045, q.z), a)
+            b.lathe([(0.0, -0.004), (0.024, -0.004), (0.024, 0.016), (0.020, 0.022), (0.0, 0.022)], 12, "LabelYellow", cap_bottom=False)
+            b.M = R
+        # Exhaust log along the head's outer face, three runners, rusty.
+        q = c + a * 0.27 + pv * 0.125
+        b.tube([(q.x, YF + dy + 0.05, q.z - 0.02), (q.x, YR + dy - 0.03, q.z - 0.02)], 0.024, 10, "Rust")
+        for y in (-0.15, 0.0, 0.15):
+            h0 = c + a * 0.29 + pv * 0.09
+            b.tube([(h0.x, y + dy, h0.z), (q.x, y + dy, q.z - 0.02)], 0.020, 8, "Rust")
+        b.tube([(q.x, YR + dy - 0.03, q.z - 0.02), (q.x + sx * 0.01, YR + dy - 0.01, q.z - 0.10)], 0.024, 10, "Rust")
+    # Intake: the lower manifold filling the V, the plenum on top, the throttle body at its front.
+    b.hull([(x, y, z) for x in (-0.10, 0.10) for y in (-0.20, 0.18) for z in (ZC + 0.20, ZC + 0.34)], "Diecast")
+    b.cbox((0.0, -0.01, ZC + 0.390), (0.230, 0.40, 0.100), "Diecast", ch=0.030)
+    for y in (-0.13, 0.0, 0.13):                     # runner bumps down each side of the plenum
+        for sx in (-1, 1):
+            b.tube([(sx * 0.105, y, ZC + 0.410), (sx * 0.125, y, ZC + 0.370), (sx * 0.110, y, ZC + 0.320)], 0.020, 8, "Diecast")
+    at((0.0, -0.21, ZC + 0.395), (0, -1, 0))
+    b.lathe([(0.040, 0.0), (0.040, 0.050), (0.032, 0.050), (0.032, 0.040), (0.0, 0.040)], 16, "Diecast", cap_bottom=False, cap_top=False)
+    b.M = R
+    # Timing cover over the block front.
+    b.hull([(x * k, y, z) for y in (YF - 0.035, YF + 0.01) for x, z in ((0.17, Z0 + 0.18), (0.19, ZC + 0.08), (0.13, ZC + 0.29), (0.0, ZC + 0.33))
+            for k in (-1, 1)], "Diecast")
+    # Belt drive on the front plane: (x, z, radius) of each pulley; the belt is their convex hull.
+    YP = YF - 0.060
+    pulleys = [(0.0, ZC, 0.085, "SteelDark"), (0.0, ZC + 0.190, 0.062, "SteelDark"), (0.205, ZC + 0.300, 0.034, "SteelDark"),
+               (-0.185, ZC + 0.270, 0.058, "SteelDark"), (-0.205, ZC + 0.020, 0.056, "SteelDark"), (0.115, ZC + 0.105, 0.036, "Diecast")]
+    for x, z, r, m in pulleys:
+        at((x, YP - 0.014, z), (0, -1, 0))
+        b.lathe([(0.0, -0.010), (r, -0.010), (r, 0.0), (r - 0.006, 0.004), (r - 0.006, 0.020), (r, 0.024), (r, 0.030), (r * 0.45, 0.030), (r * 0.45, 0.036), (0.0, 0.036)],
+                20 if r > 0.05 else 14, m, cap_bottom=False)
+    b.M = R
+    ring = [(x + (r + 0.004) * math.cos(2 * math.pi * k / 36), z + (r + 0.004) * math.sin(2 * math.pi * k / 36)) for x, z, r, _ in pulleys for k in range(36)]
+    ring = sorted(set(ring)); cross = lambda o, p, q: (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0])
+    lo, hi = [], []
+    for pt in ring:                                  # convex hull, monotone chain
+        while len(lo) >= 2 and cross(lo[-2], lo[-1], pt) <= 0: lo.pop()
+        lo.append(pt)
+    for pt in reversed(ring):
+        while len(hi) >= 2 and cross(hi[-2], hi[-1], pt) <= 0: hi.pop()
+        hi.append(pt)
+    hullp = lo[:-1] + hi[:-1]
+    for (x0, z0), (x1, z1) in zip(hullp, hullp[1:] + hullp[:1]):
+        if math.hypot(x1 - x0, z1 - z0) > 1e-4:
+            b.bar((x0, YP - 0.001, z0), (x1, YP - 0.001, z1), 0.007, "Rubber", h=0.024, up=(0, 1, 0))
+    # Alternator and steering pump bodies behind their pulleys.
+    at((0.205, YP + 0.020, ZC + 0.300), (0, 1, 0))
+    b.lathe([(0.020, 0.0), (0.060, 0.010), (0.066, 0.025), (0.066, 0.100), (0.050, 0.120), (0.0, 0.125)], 16, "Diecast", cap_bottom=False)
+    at((-0.185, YP + 0.020, ZC + 0.270), (0, 1, 0))
+    b.lathe([(0.018, 0.0), (0.045, 0.008), (0.045, 0.080), (0.0, 0.085)], 12, "SteelDark", cap_bottom=False)
+    at((-0.205, YP + 0.020, ZC + 0.020), (0, 1, 0))
+    b.lathe([(0.020, 0.0), (0.060, 0.010), (0.060, 0.130), (0.0, 0.135)], 14, "Diecast", cap_bottom=False)
+    b.M = R
+    # Oil filter off the right of the block, angled down-out; dipstick tube up to its yellow loop.
+    at((0.195, -0.06, Z0 + 0.250), (0.85, 0, -0.35))
+    b.lathe([(0.030, -0.01), (0.046, 0.0), (0.048, 0.010), (0.048, 0.105), (0.042, 0.115), (0.0, 0.117)], 16, "PatchOrange", cap_bottom=False)
+    b.M = R
+    dip = [(0.205, -0.17, ZC + 0.03), (0.240, -0.18, ZC + 0.15), (0.255, -0.19, ZC + 0.34)]
+    b.tube(dip, 0.005, 6, "Steel")
+    lp = [(0.255 + 0.020 * math.sin(2 * math.pi * k / 12), -0.19, ZC + 0.36 + 0.020 * math.cos(2 * math.pi * k / 12) - 0.0) for k in range(13)]
+    b.tube(lp, 0.005, 6, "LabelYellow")
+    # Flexplate behind the block.
+    at((0.0, YR + 0.005, ZC), (0, 1, 0))
+    b.lathe([(0.0, 0.0), (0.150, 0.0), (0.150, 0.012), (0.0, 0.012)], 24, "Steel", cap_bottom=False, cap_top=False)
+    b.M = Matrix.Identity(4)
+    return b.finish("engine")
+
+
 BUILDERS = {
     "coffee": build_coffee, "chiliDog": build_chiliDog, "spareTire": build_spareTire,
     "emergencyGas": build_emergencyGas, "pack": build_pack, "rucksack": build_rucksack, "bedroll": build_bedroll,
@@ -1614,11 +1873,12 @@ BUILDERS = {
     "tirePlugKit": build_tirePlugKit, "stopLeak": build_stopLeak, "bubbleWrap": build_bubbleWrap,
     "tire": build_tire, "wheel": build_wheel, "springs": build_springs, "dampers": build_dampers, "pads": build_pads, "shoes": build_shoes, "arb": build_arb,
     "diff": build_diff, "lift": build_lift, "compressor": build_compressor, "bikePump": build_bikePump,
-    "potato": build_potato, "jerryCan": build_jerryCan,
+    "potato": build_potato, "jerryCan": build_jerryCan, "airFilter": build_airFilter, "headlight": build_headlight,
+    "radiator": build_radiator, "engine": build_engine,
 }
 BATCH2 = ["airMattress", "sleepingPad", "deluxeSleepingPad", "blanket", "sleepingBag",
           "zipTies", "ductTape", "tirePlugKit", "stopLeak", "bubbleWrap"]
-PARTS = ["tire", "wheel", "springs", "dampers", "pads", "shoes", "arb", "diff", "lift"]
+PARTS = ["tire", "wheel", "springs", "dampers", "pads", "shoes", "arb", "diff", "lift", "engine", "radiator", "airFilter", "headlight"]
 MARGIN = {"tirePlugKit": 1.03}   # a tighter crop where the item reads better close up
 
 
