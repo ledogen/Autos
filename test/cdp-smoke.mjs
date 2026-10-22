@@ -336,9 +336,13 @@ const STEPS = [
     await tap(' ')
     const open = () => js('document.getElementById("svc-screen").checkVisibility()')
     check(await until(open, 2000), 'parking at the auto shop opened no service screen')
-    await js('document.querySelector("#svc-screen [data-tab=parts]")?.click()')
-    // A tire is one part that goes on any corner: the shop offers it per corner.
-    check(await js('!!document.querySelector("#svc-screen [data-act=buy][data-socket=tireRR]")'), 'parts tab offers no tire per corner')
+    // My Vehicle lists every corner's tire; selecting one opens its repair / exchange panel.
+    await js('document.querySelector("#svc-screen [data-act=sel][data-key=tireRR]")?.click()')
+    check(await js('!!document.querySelector("#svc-screen .sv-panel")'), 'selecting a My Vehicle row opened no panel')
+    // The Parts Shop is the shop's four-slot shelf (items or empty slots) and My Items.
+    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
+    check(await js('/On the shelf/i.test(document.querySelector("#svc-screen").textContent) && /My items/i.test(document.querySelector("#svc-screen").textContent)'),
+      'the Parts Shop tab shows no shelf')
     await tap('Escape')
     check(await until(async () => !await open(), 1000), 'Esc left the service screen open')
     await tap(' ')   // brake off: the next step parks fresh

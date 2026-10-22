@@ -85,6 +85,7 @@ import { InventorySystem } from './inventory.js'          // FEAT-122: what the 
 import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
+import { startShelves, shelf, take as takeShelf, shelfName } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf
 import { PARTS } from '../data/parts.js'   // SM-3: which inventory entries are tires
 import { recoveryCard, fitSpare, SPARE_FIT_H, plugTire, plugMethods, PLUG_H } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
@@ -3397,6 +3398,7 @@ const serviceCenter = new ServiceCenter({
   money: () => economySystem.money(), spend: ($) => economySystem.spend($), earn: ($) => economySystem.addSpot($),
   tier: () => economySystem.tierNow(),
   advanceHours: (h) => daySystem.advanceMinutes(h * 60),
+  stock: () => shelf(_servicePoi.id, daySystem.clockH()), unstock: (i) => takeShelf(_servicePoi.id, i),
   onChange: () => serviceScreen.render(),
 })
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
@@ -3407,6 +3409,17 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
     if (offers.length) missionSystem.enterFromPoi(_servicePoi, offers, _planOffer)
   },
   openMap: () => map2d.toggle(),
+  nowH: () => daySystem.clockH(),
+  // A front three-quarter view of the parked truck while the screen is open (owner, 2026-10-22): the
+  // orbit's bearing is the nose turned 40° aside, far enough back to hold the whole truck. A drag still
+  // orbits it; closing hands the view back to the chase cam. The truck stays put on its own: the
+  // latched handbrake holds it through a preview's resettle (a lift on and off fifteen times moved it
+  // 6 mm on a flat pad, headless).
+  onView: (on) => {
+    if (!on) { setCameraFocus(null); return }
+    const p = vehicleState.position, f = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+    setCameraFocus({ x: p.x, y: p.y, z: p.z }, { theta: Math.atan2(f.x, f.z) + 0.7, radius: 7.5 })
+  },
 })
 
 /** The auto shop the truck is parked by, or null. Not while an offer is up (that owns the brake). */
@@ -4093,7 +4106,8 @@ const _boardView = {
     const next = offerBoard.nextTurnoverH(poiId, now)
     const nextText = next != null ? formatGameDuration(next - now) : null
     const n = offers.length
-    if (!n) return { count: 0, idx: 0, card: null, poly: null, nextText }
+    const shelf = _shelfView(poiId, now)
+    if (!n) return { count: 0, idx: 0, card: null, poly: null, nextText, shelf }
     const i = ((idx % n) + n) % n
     const o = offers[i]
     const papers = offerBoard.spec(o)?.family === 'papers'
@@ -4108,8 +4122,16 @@ const _boardView = {
     return { count: n, idx: i, card, poly,
              // FEAT-102: a fetch's preview points at its PICKUP — its own end is back where you stand.
              start: route?.start ?? poly?.[0] ?? null, end: route?.legs?.[0].end ?? route?.end ?? poly?.[poly.length - 1] ?? null,
-             nextText }
+             nextText, shelf }
   },
+}
+
+/** FEAT-137: an auto shop's shelf as its map card lists it — you rang them, the way you know about
+ *  the jobs. One line per slot: the item and how long it stays, or null for an empty slot. */
+function _shelfView (poiId, now) {
+  if (poiSystem.list().find(q => q.id === poiId)?.type !== 'autoShop') return null
+  return shelf(poiId, now).map(e => e && {
+    name: shelfName(e), used: e.cond !== null && e.cond < 1, left: formatGameDuration(e.expiresAt - now) })
 }
 
 // FEAT-112: the truck as configured NOW — the fitted parts' load ratings folded over the stock ones.
@@ -6807,6 +6829,7 @@ const storySystem = new StorySystem({
     damageModel.setAll(1)
     partsSystem.start()              // SM-3: stock parts, new…
     rollJalopy({ parts: partsSystem, damage: damageModel, inventory: inventorySystem }, (Math.random() * 2 ** 32) >>> 0)   // …then this run's jalopy (SM-INV-7)
+    startShelves((Math.random() * 2 ** 32) >>> 0)   // FEAT-137: every auto shop's shelf, this run's rolls
     damageModel.publish(RANGER_PARAMS)
     vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)   // FEAT-50: "some gas in it"
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again

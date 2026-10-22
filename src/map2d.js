@@ -2589,7 +2589,8 @@ export class Map2D {
         const fN = `${B.FS * k}px ${MAP_LABEL_FONT}`, fB = `700 ${B.FS * k}px ${MAP_LABEL_FONT}`
         const fS = `600 ${B.FSS * k}px ${MAP_LABEL_FONT}`
         const H = baseH * k + (c?.verdict ? B.LH * k : 0)   // FEAT-112: a load verdict adds one row
-        const bonusH = c?.bonus ? B.BONUS * k : 0
+        const bonusH = (c?.bonus ? B.BONUS * k : 0)
+            + (v.shelf ? (B.PAD * 2 + B.HEAD + v.shelf.length * B.LH) * k : 0)   // FEAT-137: an auto shop's shelf form
         const M = 12 * k                                  // margin from the sheet's edge
 
         // ── placement: the corner that hides the least of the route ──
@@ -2613,6 +2614,28 @@ export class Map2D {
         }
         this._cardCorner = best
         const [x, y] = corners[best]
+
+        // ── an auto shop's shelf (FEAT-137), the last form at the bottom: each slot's item and how long
+        //    it stays, or an empty slot. You rang them, the way you know about the jobs.
+        if (v.shelf) {
+            const sh = (B.PAD * 2 + B.HEAD + v.shelf.length * B.LH) * k
+            const sy = y + H + (c?.bonus ? B.BONUS * k : 0) - 1.5 * k
+            const inL = x + PAD + B.BAR * k
+            this._cardFrame(ctx, x, sy, W, sh + 1.5 * k, k, EMPTY_DIAMOND_COLOR)
+            ctx.textBaseline = 'top'; ctx.textAlign = 'left'
+            ctx.font = fS; ctx.fillStyle = '#6a6458'
+            ctx.fillText('ON THE SHELF', inL, sy + PAD)
+            v.shelf.forEach((e, i) => {
+                const ly = sy + PAD + HEAD + i * LH
+                ctx.textAlign = 'left'
+                ctx.font = e ? fB : fN; ctx.fillStyle = e ? '#1a1a1a' : '#777'
+                ctx.fillText(e ? e.name + (e.used ? ', used' : '') : 'empty', inL, ly)
+                if (!e) return
+                ctx.textAlign = 'right'; ctx.font = fN; ctx.fillStyle = '#555'
+                ctx.fillText(e.left, x + W - PAD, ly)
+            })
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+        }
 
         // ── the card body ──
         const accent = c ? (FAMILY_COLOR[c.family] ?? EMPTY_DIAMOND_COLOR) : EMPTY_DIAMOND_COLOR
@@ -2694,7 +2717,7 @@ export class Map2D {
         // ── the bonus form, tacked onto the bottom ──
         if (c.bonus) {
             const by = y + H - 1.5 * k
-            this._cardFrame(ctx, x, by, W, bonusH + 1.5 * k, k, '#d4a017')
+            this._cardFrame(ctx, x, by, W, B.BONUS * k + 1.5 * k, k, '#d4a017')
             ctx.font = fS; ctx.fillStyle = '#8a6a00'
             ctx.fillText('BONUS', inL, by + 9 * k)
             ctx.font = fB; ctx.fillStyle = '#4a3a00'

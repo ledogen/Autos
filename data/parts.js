@@ -56,6 +56,13 @@ export const SLOTS = {
     arbRear:      { name: 'Rear anti-roll bar',  hours: 0.5, tracks: [] },
     diff:         { name: 'Rear differential', hours: 3,    tracks: [] },
     lift:         { name: 'Lift',              hours: 4,    tracks: [] },
+    // The engine bay (owner, 2026-10-22): these were damage tracks with no part; exchange and the shop
+    // shelf need them to exist as parts. Either headlight socket takes the one 'headlight' part.
+    engine:       { name: 'Engine',            hours: 8,    tracks: ['engine'] },
+    radiator:     { name: 'Radiator',          hours: 1.5,  tracks: ['radiator'] },
+    airFilter:    { name: 'Air filter',        hours: 0.25, tracks: ['airFilter'] },
+    headlightL:   { name: 'Left headlight',    takes: 'headlight', hours: 0.5, tracks: ['headlightL'] },
+    headlightR:   { name: 'Right headlight',   takes: 'headlight', hours: 0.5, tracks: ['headlightR'] },
 }
 
 /** The part slot a socket accepts. */
@@ -181,6 +188,20 @@ export const PARTS = {
                      patch: { suspensionBodyOffsetFront: -0.05, suspensionBodyOffsetRear: -0.015,
                               suspensionTravelFront: 0.30, suspensionTravelRear: 0.30 },
                      desc: 'Spacers and longer shocks. Clears ruts and rocks; leans more, and rolls sooner.' },
+
+    // ── The engine bay (owner, 2026-10-22). Stock only for now: they patch nothing — the part IS its
+    //    damage track's condition. Prices [DEFAULT]: a new engine sits well above a rebuild to the
+    //    bench's cap (REPAIRS.engine × REPAIR_CAP), a radiator just above a weld to it; the filter and
+    //    headlight are replace-only and keep the old repair rates. A crate engine is ~180 kg of bed load.
+    //    (A different transmission is deferred: the gearbox type is the run-setup preset, FEAT-125/126.)
+    engineStock:   { name: 'Stock engine',         slot: 'engine', family: 'oem', rarity: 'common', price: 90, massKg: 180, stock: true,
+                     patch: {}, desc: 'The factory six, on a pallet. A long day to swap.' },
+    radiatorStock: { name: 'Stock radiator',       slot: 'radiator', family: 'oem', rarity: 'common', price: 22, massKg: 7, stock: true,
+                     patch: {}, desc: 'The factory radiator. Keeps the engine cool when it isn’t leaking.' },
+    airFilterStock:{ name: 'Air filter',           slot: 'airFilter', family: 'oem', rarity: 'common', price: 3, massKg: 0.5, stock: true,
+                     patch: {}, desc: 'A paper filter. A clean one lets the engine breathe.' },
+    headlightStock:{ name: 'Headlight',            slot: 'headlight', family: 'oem', rarity: 'common', price: 4, massKg: 1.5, stock: true,
+                     patch: {}, desc: 'A sealed beam lamp, either side.' },
 }
 
 /** The stock part for a socket. */
@@ -188,22 +209,27 @@ export const stockPart = (socket) => Object.keys(PARTS).find(id => PARTS[id].slo
 
 // ── The service center's repair bench (owner accepted these placeholders 2026-10-20; FEAT-69 tunes).
 // Per damage CLASS (src/damage.js TRACKS): `price` $ and `hours` to take ONE track from 0 to 100%, at
-// day-1 rates. A partial repair is charged pro rata on the missing condition. `price: null` = the
-// fitted part's price (a worn pair of springs costs a new pair).
+// day-1 rates, charged pro rata on the gap repaired. `price: null` = the fitted part's price (a worn
+// pair of springs costs a new pair).
+// A class missing here is REPLACE-ONLY (owner, 2026-10-22): tires, brakes, the air filter and the
+// headlights are exchanged or bought, never repaired — "you can only replace pads". A repair reaches
+// REPAIR_CAP at most, in REPAIR_STEP increments: only a new part is 100%. Alignment is an adjustment,
+// not wear — it always goes straight back to 100%.
 export const REPAIRS = {
-    tire:         { price: 6,    hours: 0.5 },
-    wheel:        { price: 8,    hours: 1 },
-    armor:        { price: 10,   hours: 2 },
-    spring:       { price: null, hours: 2 },
-    damper:       { price: null, hours: 1.5 },
-    brake:        { price: null, hours: 1 },
-    engine:       { price: 60,   hours: 4 },
-    filter:       { price: 2,    hours: 0.5 },
-    radiator:     { price: 20,   hours: 2 },
-    headlights:   { price: 3,    hours: 0.5 },
+    wheel:        { price: 8,    hours: 1 },     // straightened
+    armor:        { price: 10,   hours: 2 },     // panel beaten
+    spring:       { price: null, hours: 2 },     // re-arched
+    damper:       { price: null, hours: 1.5 },   // rebuilt
+    engine:       { price: 60,   hours: 4 },     // rebuilt
+    radiator:     { price: 20,   hours: 2 },     // welded
     alignment:    { price: 4,    hours: 0.5 },
-    transmission: { price: 30,   hours: 3 },
+    transmission: { price: 30,   hours: 3 },     // rebuilt
 }
+export const REPAIR_CAP = 0.8
+export const REPAIR_STEP = 0.05
+/** The shop can still patch a flat: fixes the hole, not the wear — about a plug kit's price, and its
+ *  half hour. [DEFAULT] (owner to confirm 2026-10-22). */
+export const PATCH = { price: 5, hours: 0.5 }
 
 /** A part sold back to the shop fetches half its price × its condition (owner, 2026-10-20). */
 export const SELL_FRACTION = 0.5
