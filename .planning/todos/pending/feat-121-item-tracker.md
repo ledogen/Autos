@@ -260,10 +260,11 @@ the shop session's $15 stand-in); sold at the auto shop, rarely; an A–S reward
 work sites (rare); never found.
 
 ### Quick-jack
-status: todo · design: ratified · build: effect · where: autoShop, reward
+status: wip · design: ratified · build: effect · where: autoShop, reward
+In ITEMS as `quickJack` (tool, 15 kg stand-in; cf60e9a4) with its thumbnail; the reward row, $30 shelf price and time saving are built on feature/parts.
 Roadside lift. **Ruled 2026-10-22:** takes 1 h off changing a whole tire (the spare's 2 h fit), and
 stacks with the compressor's 30 min. The spare does not need it — the factory jack is always in the
-truck. $30; sold at the auto shop; an A–S reward from the auto shop and stranded motorists; never found.
+truck. It does not shorten a plug repair: "you don't need to jack to plug" (owner, 2026-10-22). $30; sold at the auto shop; an A–S reward from the auto shop and stranded motorists; never found.
 
 ### Hi-lift jack
 status: todo · design: proposed · build: effect, model · where: autoShop, reward
@@ -321,8 +322,8 @@ FEAT-16 (`M`). Listed so the navigation ladder reads whole.
 ### GPS unit
 status: todo · design: ratified · build: gate, effect · where: autoShop, reward, found
 FEAT-39's route overlay already ships; story mode boots with it off until the item is owned. Never
-an ETA. **Owner, 2026-10-22: "it's a minimap."** No minimap exists in `src/`, hence `effect`; whether
-it replaces the in-world chevrons or joins them is open. Strictly per run; uncommon; $10–30; sold at
+an ETA. **Owner, 2026-10-22: "it's a minimap."** No minimap exists in `src/`, hence `effect`. It shows
+**alongside** the in-world chevrons, not instead of them (owner, 2026-10-22). Strictly per run; uncommon; $10–30; sold at
 the auto shop, rarely; an A–S reward from the auto shop and stranded motorists. Roadside find: open.
 
 ### Destination beacon
