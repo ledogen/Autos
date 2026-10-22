@@ -20,10 +20,13 @@
 
 import { PARTS, SLOTS, REPAIRS, REPAIR_CAP, REPAIR_STEP, PATCH, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
 import { TRACKS, TIRE_IDS, WHEEL_IDS } from './damage.js'
+import { shelfPrice } from './shop-stock.js'
 
 const cents = (x) => Math.round(x * 100) / 100
 const EPS = 1e-9
 const ALIGN_FLOOR = 0.02   // a drive leaves alignment a hair under straight: not a job
+/** A tire or wheel socket's corner (0=FL … 3=RR), else −1. */
+const cornerOf = (socket) => Math.max(TIRE_IDS.indexOf(socket), WHEEL_IDS.indexOf(socket))
 const socketOfTrack = (id) => Object.keys(SLOTS).find(s => SLOTS[s].tracks.includes(id)) ?? null
 /** A part's damage class (the REPAIRS row), or null for a part the damage model doesn't track. By the
  *  kind of socket, so the spare (which never goes on as itself) is still a tire. */
@@ -52,12 +55,14 @@ export class ServiceCenter {
      *   money() / spend($) / earn($)   the wallet (economySystem.money / spend / addSpot)
      *   tier()                     the price multiplier now (economySystem.tierNow)
      *   advanceHours(h)            labour on the clock (daySystem.advanceMinutes)
+     *   stock() / unstock(i)       this shop's shelf now (src/shop-stock.js shelf / take)
      *   onChange()                 something changed; the screen re-renders
      */
     constructor (deps) {
         Object.assign(this, deps)
         this.onChange ??= () => {}
         this.off = null      // the part just taken off, waiting on sell / keep: { id, cond, flat }
+        this._preview = null // PartsSystem.snapshot() while a shelf item is fitted for a look
     }
 
     // ── Repairs ──────────────────────────────────────────────────────────────────────────────────
@@ -149,29 +154,87 @@ export class ServiceCenter {
 
     // ── Parts ────────────────────────────────────────────────────────────────────────────────────
 
-    buyPrice (id) { return cents(PARTS[id].price * this.tier()) }
-
     /** What a part sells back for: half its price × its condition (new = 1). */
     sellValue (id, cond = null) {
         return cents(PARTS[id].price * SELL_FRACTION * (cond ?? 1) * this.tier())
     }
 
-    /** Buy a new part and bolt it into `socket` (a tire needs its corner). The old one waits in `off`. */
-    buyAndFit (id, socket = PARTS[id]?.slot) {
-        if (this.off || !socketsFor(id).includes(socket) || this.parts.fitted(socket) === id || !this.spend(this.buyPrice(id))) return false
-        this._swap(id, null, socket)
-        return true
-    }
-
-    /** Buy a new part to carry, not fit — a spare for the road. Full inventory → the swap prompt. */
-    buyToInventory (id) {
-        if (!PARTS[id] || !this.spend(this.buyPrice(id))) return false
-        this.inventory.grant(id, 1, { cond: 1 })
+    /** Sell the part at inventory entry `index` to the shop (sellValue). Parts only. */
+    sellOwned (index) {
+        const r = this.inventory.list()[index]
+        if (r?.kind !== 'part') return false
+        this.inventory.take(index)
+        this.earn(this.sellValue(r.id, r.cond))
         this.onChange()
         return true
     }
 
-    /** Bolt on a part from inventory (entry `index`), with its wear. A flat tire is repaired first. */
+    // ── The shelf: this shop's stock right now (src/shop-stock.js; the deps `stock()` / `unstock(i)`).
+    //    The Parts Shop sells ONLY what is on it — repairs are labour and never out of stock.
+
+    /** Shelf slot `i`'s price now (a used part is priced by its condition), or null if it is empty. */
+    shelfPrice (i) {
+        const e = this.stock()[i]
+        return e ? cents(shelfPrice(e) * this.tier()) : null
+    }
+
+    /** Buy shelf slot `i` and bolt it into `socket` (a tire or wheel needs its corner), with its
+     *  condition. The old part waits in `off`. */
+    buyAndFit (i, socket) {
+        const e = this.stock()[i]
+        if (this.off || !e || !socketsFor(e.id).includes(socket) || !this.spend(this.shelfPrice(i))) return false
+        this.unstock(i)
+        this._swap(e.id, e.cond, socket)
+        return true
+    }
+
+    /** Buy shelf slot `i` to carry. Full inventory → the swap prompt. */
+    buyToInventory (i) {
+        const e = this.stock()[i]
+        if (!e || !this.spend(this.shelfPrice(i))) return false
+        this.unstock(i)
+        this.inventory.grant(e.id, 1, e.cond === null ? null : { cond: e.cond })
+        this.onChange()
+        return true
+    }
+
+    /**
+     * Fit shelf slot `i` onto `socket` for a look — nothing charged, no clock, nothing benched. Only one
+     * at a time; unpreview() puts back exactly what was there (PartsSystem.snapshot). Every real action
+     * goes through unpreview first (the screen's click handler, close()).
+     */
+    preview (i, socket) {
+        this.unpreview()
+        const e = this.stock()[i]
+        if (this.off || !e || !socketsFor(e.id).includes(socket)) return false
+        this._preview = this.parts.snapshot()
+        this.parts.fit(e.id, e.cond, socket)
+        return true
+    }
+
+    unpreview () {
+        if (!this._preview) return
+        this.parts.restore(this._preview)
+        this._preview = null
+    }
+
+    // ── Exchange: a socket's part for one you own ────────────────────────────────────────────────
+
+    /** Inventory entries that can go into `socket` now: a part that fits it and holds air; on a tire
+     *  or wheel corner, a mounted pair too (it swaps whole, swapPair). */
+    exchangeOptions (socket) {
+        const corner = cornerOf(socket)
+        return this.inventory.list().filter(r => !r.flat && (socketsFor(r.id).includes(socket) || (corner >= 0 && PARTS[r.id]?.mounted)))
+    }
+
+    /** Swap `socket`'s part for inventory entry `index`: the old part goes to the bench with its wear. */
+    exchange (index, socket) {
+        return PARTS[this.inventory.list()[index]?.id]?.mounted
+            ? this.swapPair(index, cornerOf(socket))
+            : this.fitFromInventory(index, socket)
+    }
+
+    /** Bolt on a part from inventory (entry `index`), with its wear. A flat tire is patched first. */
     fitFromInventory (index, socket) {
         if (this.off) return false
         const e = this.inventory.list()[index]
@@ -213,5 +276,8 @@ export class ServiceCenter {
         return true
     }
     /** Leaving with a part still on the bench keeps it — nothing is ever thrown away silently. */
-    close () { if (this.off) this.settleOff('keep') }
+    close () {
+        this.unpreview()
+        if (this.off) this.settleOff('keep')
+    }
 }

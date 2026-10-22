@@ -24,6 +24,8 @@ for (const s of Object.keys(SLOTS)) {
     }
 }
 
+const PATCH_KEYS = [...new Set(Object.values(PARTS).flatMap(p => Object.keys(p.patch)))]
+
 export const runParts = {
     fitted: {},     // socket → part id
 }
@@ -80,6 +82,35 @@ export class PartsSystem {
         const tire = this.fit(m.tire ?? def.tire, m.cond, TIRE_IDS[corner])
         const wheel = this.fit(m.wheel ?? def.wheel, m.wheelCond, WHEEL_IDS[corner])
         return { tire: tire.id, cond: tire.cond, flat: tire.flat, wheel: wheel.id, wheelCond: wheel.cond }
+    }
+
+    /**
+     * Everything a fit can touch, for the shop's live preview to put back EXACTLY (owner, 2026-10-22):
+     * every param any part patches, the per-wheel grip, the fitted map, each track's condition and
+     * durability, the flats. restore() hands it back and re-runs onChange.
+     */
+    snapshot () {
+        const d = this._damage
+        return {
+            params: Object.fromEntries(PATCH_KEYS.map(k => [k, this._params[k]])),
+            grip: this._params._tireGrip?.slice(),
+            fitted: { ...runParts.fitted },
+            condition: { ...d.condition },
+            durability: { ...d._durabilityScale },
+            flat: d.flat.slice(),
+        }
+    }
+
+    restore (s) {
+        const d = this._damage
+        Object.assign(this._params, s.params)
+        if (s.grip) this._params._tireGrip.splice(0, 4, ...s.grip)
+        runParts.fitted = { ...s.fitted }
+        Object.assign(d.condition, s.condition)
+        for (const k of Object.keys(d._durabilityScale)) if (!(k in s.durability)) delete d._durabilityScale[k]
+        Object.assign(d._durabilityScale, s.durability)
+        d.flat.splice(0, 4, ...s.flat)
+        this._onChange()
     }
 
     _fit (id, socket, cond) {

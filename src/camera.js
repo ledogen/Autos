@@ -156,6 +156,7 @@ export function snapCamera () { _snapNext = true }
 // Freecam still wins outright: it is the dev tool and must never be trapped by a game state.
 let focusTarget    = null              // THREE.Vector3 or null
 const FOCUS_RADIUS = 5                 // m — the fire fills the frame (owner, 2026-10-01: 10 → 7 → 5)
+let focusRadius    = FOCUS_RADIUS      // the live focus's radius (the service screen frames the whole truck)
 const FOCUS_PHI    = 0.45              // rad — a gentle look-down set on entry; drag from there
 
 // ── Input listeners ────────────────────────────────────────────────────────────
@@ -418,9 +419,9 @@ export function updateCamera (camera, vehicleState, dt) {
     // the same theta/phi and the handoff in either direction is continuous.
     const cosP   = Math.cos(orbitPhi)
     const goalPos = _goalPos.set(
-      focusTarget.x + FOCUS_RADIUS * cosP * Math.sin(orbitTheta),
-      focusTarget.y + FOCUS_RADIUS * Math.sin(orbitPhi),
-      focusTarget.z + FOCUS_RADIUS * cosP * Math.cos(orbitTheta)
+      focusTarget.x + focusRadius * cosP * Math.sin(orbitTheta),
+      focusTarget.y + focusRadius * Math.sin(orbitPhi),
+      focusTarget.z + focusRadius * cosP * Math.cos(orbitTheta)
     )
     camera.position.lerp(goalPos, snap ? 1 : 1 - Math.exp(-CHASE_STIFFNESS * dt))
     camera.lookAt(focusTarget)
@@ -584,12 +585,17 @@ export function isPadLooking () { return padLookT > 0 }
 /**
  * Point the camera at a world spot instead of the truck (FEAT-45: the camp pad), or pass null to
  * hand it back to chase/hood. No-op on the freecam path — the dev camera outranks game states.
+ * SM-3's service screen frames the parked truck through the same seam: `theta` seats the orbit's
+ * bearing on entry (the front three-quarter) and `radius` backs off far enough to hold the truck.
  *
  * @param {{x:number,y:number,z:number}|null} p
+ * @param {{theta?:number, radius?:number}} [o]
  */
-export function setCameraFocus (p) {
+export function setCameraFocus (p, { theta = null, radius = FOCUS_RADIUS } = {}) {
   if (!p) { focusTarget = null; return }
   if (!focusTarget) orbitPhi = FOCUS_PHI   // seat the look-down once, on entry; drag owns it after
+  if (theta !== null) orbitTheta = theta
+  focusRadius = radius
   focusTarget = new THREE.Vector3(p.x, p.y, p.z)
 }
 
