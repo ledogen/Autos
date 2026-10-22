@@ -268,7 +268,7 @@ truck. It does not shorten a plug repair: "you don't need to jack to plug" (owne
 
 ### Hi-lift jack
 status: todo · design: proposed · build: effect, model · where: autoShop, reward
-Rights a rolled truck where it lies. **Ruled 2026-10-22:** usable on any roll the death check did not
+Rights a rolled truck where it lies; the mechanic is **FEAT-138** (the parts session's). Icon `hiLiftJack.png`. **Ruled 2026-10-22:** usable on any roll the death check did not
 end (the SM-INV-1 answer). It applies a roll torque for a set time (2–5 s) to a truck that is not on
 its wheels, in the direction the player picks; live in the physics, not a timeskip; a cooldown stops
 abuse; it will not flip the truck in every case. 13 kg. Sold at the auto shop; a reward from the auto
