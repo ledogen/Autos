@@ -125,9 +125,9 @@ export const RANGER_PARAMS = {
   // interpolation runs on vehicleState.engineHealth (absent ⇒ 1 ⇒ ignitionCatchTime flat), which
   // the SM-3 damage model's engine track writes every step — NOT a per-vehicle scripted timer.
   ignitionCatchTime:     0.25,  // s — crank time before the engine catches at full engine health
-  ignitionCatchTimeWorn: 2.0,   // s — crank time as engine health approaches zero (owner 2026-09-05: raised 1.0→2.0, the decay was not significant enough at 1 s; linear 0.25→2.0; AT exactly 0 the engine never catches at all — see ignition.js catchTime)
+  ignitionCatchTimeWorn: 2.0,   // s — crank time as engine health approaches zero (owner 2026-09-05: raised 1.0→2.0, the decay was not significant enough at 1 s; linear 0.25→2.0; a worn engine always starts, owner 2026-10-22 — see ignition.js catchTime)
   // FEAT-120 start transient (src/drivetrain.js stepStart): a lag to the crank speed, then a flare curve.
-  ignitionCrankRPM:      200,   // rpm — cranking speed (the owner's 2026-10-19 cadence pass landed ~185 cold / ~210 warm)
+  ignitionCrankRPM:      450,   // rpm — cranking speed (owner 2026-10-22: 200 sounded like the starter was barely turning over)
   ignitionCrankRpmLag:   0.12,  // s — lag on the cranking speed and on the flare after the catch
   engineStartFlareRPM:   1325,  // rpm — flare curve's peak after the catch, warm engine. The lag shaves the excursion
                                 //   ~12%, so the tach actually peaks ~1260 (the replaced crank model's emergent 1261)

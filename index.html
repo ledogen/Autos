@@ -1603,9 +1603,10 @@
            zone, under 20 kph, story mode, no job or route out, no POI in reach). Z or a click
            toggles "looking for a campsite"; while looking, the vibe bar + verdict card opens beside
            it, the siting ray runs, and the brake latch can make camp. -->
-      <!-- FEAT-50: Recovery. Shows only when you have run out of fuel AND parked (nothing pops up
-           mid-coast). X or a click opens the card: today one option, a tow to the nearest place
-           that sells fuel; later tows (anytime, to the service station) are more rows here. -->
+      <!-- FEAT-50 / SM-3: Recovery — the tows. It belongs to the park zone (owner, 2026-10-22: so it
+           is clear you park to use it, rather than a chip that appears from nowhere); main.js moves it
+           in after the V and Tab rows. Always there in a story run, backgrounded until parked; X or a
+           click opens the card. -->
       <div class="hud-row" id="recovery-row" style="display:none">
         <div class="hud-icon" id="recovery-icon" title="recovery (X)">
           <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">

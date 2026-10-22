@@ -213,6 +213,9 @@ export class InventorySystem {
         return true
     }
 
+    /** Where an entry an effect was handed (use → effect) sits now: a choice it opens acts on it later. */
+    indexOf (entry) { return runInventory.entries.indexOf(entry) }
+
     /** Keys 1–4: use whatever quick slot `slot` (0-based) points at. */
     useQuick (slot) {
         const id = runInventory.quick[slot]

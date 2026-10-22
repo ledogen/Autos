@@ -213,7 +213,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   ignFolder.add(params, 'ignitionCatchTime', 0.05, 2.0, 0.05).name('Catch Time — healthy (s)')
   ignFolder.add(params, 'ignitionCatchTimeWorn', 0.5, 10, 0.25).name('Catch Time — worn (s)')
   // FEAT-120: the start transient (drivetrain.js stepStart).
-  ignFolder.add(params, 'ignitionCrankRPM', 100, 400, 10).name('Crank RPM')
+  ignFolder.add(params, 'ignitionCrankRPM', 100, 700, 10).name('Crank RPM')
   ignFolder.add(params, 'engineStartFlareRPM', 750, 2000, 25).name('Start Flare RPM')
   ignFolder.add(params, 'engineColdFlareRPM', 750, 2000, 25).name('Cold Flare RPM')
   ignFolder.add(params, 'idleColdRPM', 750, 1500, 25).name('Cold Fast Idle (rpm)')

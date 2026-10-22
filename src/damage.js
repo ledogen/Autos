@@ -128,17 +128,18 @@ export const DAMAGE_PARAMS = {
   nominalCondition: 0.75,
 
   // ── Effect curves ───────────────────────────────────────────────────────────────────────────────
-  // "Most of the reduction in the last 30% of health" — a two-segment line with a knee. Above the
-  // knee the component is nearly as good as new; below it, it falls off a cliff. `kneeResponse()`.
+  // A two-segment line with a knee (`kneeResponse()`): above the knee the part loses a tenth, below it
+  // the rest. Knees MOVED to 50% on 2026-10-22 (owner): at 30% a jalopy's worn springs and engine
+  // drove nearly like new, so loss now spreads across the whole bottom half. The ends are unchanged.
   // springAtZero RAISED to 0.50 on 2026-08-20 (owner). At 0.25 the truck sat down on its bump stops
   // and stopped being drivable. A real spring never yields flat — it always keeps some elastic — so
   // half rate is both the playable floor and the honest one.
-  springKnee: 0.30, springAtKnee: 0.90, springAtZero: 0.50,
-  damperKnee: 0.30, damperAtKnee: 0.90, damperAtZero: 0.25,
-  brakeKnee:  0.30, brakeAtKnee:  0.90, brakeAtZero:  0.25,
-  // Engine is the one curve the owner specified exactly: 100→20% costs 10% of torque, 20→0% costs
-  // another 50%.
-  engineKnee: 0.20, engineAtKnee: 0.90, engineAtZero: 0.40,
+  springKnee: 0.50, springAtKnee: 0.90, springAtZero: 0.50,
+  damperKnee: 0.50, damperAtKnee: 0.90, damperAtZero: 0.25,
+  brakeKnee:  0.50, brakeAtKnee:  0.90, brakeAtZero:  0.25,
+  // Engine: 100→50% costs 10% of torque, 50→0% another 50% (owner, 2026-10-22: a worn engine always
+  // starts, it is just gutless — 91% at 55%, 70% at 30%, 40% at 0).
+  engineKnee: 0.50, engineAtKnee: 0.90, engineAtZero: 0.40,
   // FEAT-126 transmission: a multiplier on the synchro time (1 = new). A shift forced with the clutch
   // in costs transMissWear of condition (owner's figure: 2 %).
   transKnee: 0.50, transAtKnee: 1.2, transAtZero: 3.0,

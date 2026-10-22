@@ -31,6 +31,11 @@
  *     Colour is STEPPED into bands, not a gradient. The exact number lives in the list and the card.
  *   - A symptom line ("vulnerable to punctures under 50%") appears only once a part has actually
  *     crossed the threshold that causes it, so a healthy truck shows no warnings at all.
+ *   - PICK MODE (owner, 2026-10-22): roadside tire work picks its tire HERE, on the same pictogram,
+ *     instead of the game choosing one. Only the tires and wheels stay live; hovering a corner shows
+ *     its tire, its wheel and whether it is flat. The side column lists the four corners (and, for a
+ *     plug, the tires in the inventory), and once one is picked the confirm buttons say how long the
+ *     job takes. pick(job) — main.js builds the jobs (the spare, the plug kit).
  *
  * Imports nothing from the physics stack. It reads the DamageModel (conditions, flat flags, the
  * alignment/runout readouts) and vehicleState.parked, and writes only to the DOM.
@@ -46,6 +51,8 @@ const HINT_S = 2.5         // how long the "park first" hint stays up after V wh
 // at the boundary does not flicker the card between its two faces.
 const STOPPED_MS = 0.5, MOVING_MS = 1.0
 const CORNERS = ['FL', 'FR', 'RL', 'RR']   // wheel index 0..3 (GLOSSARY.md §Wheel Index)
+const CORNER_NAME = ['Front left', 'Front right', 'Rear left', 'Rear right']
+const pct = (c) => Math.round(c * 100) + '%'
 
 /** One line per class: what the damage does to the truck. Shown in the hover card. */
 const CONSEQUENCE = {
@@ -55,7 +62,7 @@ const CONSEQUENCE = {
   spring:     'A tired spring sags. The truck sits lower and bottoms out on bumps sooner.',
   damper:     'A worn damper stops controlling the spring, so the truck keeps bouncing after a bump.',
   brake:      'Worn brakes need more distance to stop.',
-  engine:     'Less power. Most of the loss arrives in the last fifth of its life.',
+  engine:     'Less power. It falls away fast below half. A worn engine still starts, just slower.',
   filter:     'A clogged filter wears the engine out faster. Cheap to replace.',
   radiator:   'Cools the engine. Below half it cannot hold full throttle; near zero it barely holds idle.',
   headlights: 'A worn lamp dims, down to 40% when broken. Below half health it flickers over bumps.',
@@ -331,6 +338,31 @@ const CSS = `
 #dmg-screen .ds-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 1px; }
 #dmg-screen .ds-ticks { position: relative; height: 12px; margin-top: 5px; color: var(--text-faint); }
 #dmg-screen .ds-ticks span { position: absolute; transform: translateX(-50%); }
+/* Pick mode: only the tires and wheels stay live; the side column becomes the picker. */
+#dmg-screen.picking .ds-side > .ds-sub, #dmg-screen.picking .ds-list, #dmg-screen.picking .ds-legend { display: none; }
+#dmg-screen .ds-pick { display: none; flex-direction: column; gap: 4px; }
+#dmg-screen.picking .ds-pick { display: flex; }
+#dmg-screen.picking .ds-part:not([data-track^="tire"]):not([data-track^="wheel"]), #dmg-screen.picking .ds-hit,
+#dmg-screen.picking .ds-neutral, #dmg-screen.picking .ds-detail, #dmg-screen.picking .ds-detail-dot { opacity: 0.25; pointer-events: none; }
+#dmg-screen.picking .ds-part[data-track^="tire"], #dmg-screen.picking .ds-part[data-track^="wheel"] { cursor: pointer; }
+#dmg-screen .ds-part.picked { filter: brightness(1.6) drop-shadow(0 0 4px rgba(255,255,255,0.8)); }
+#dmg-screen .ds-pick .ds-sub { margin: 6px 0 0; }
+#dmg-screen .ds-pbtn { display: block; width: 100%; text-align: left; font: 12px var(--font); color: var(--text-body);
+  background: transparent; border: 1px solid var(--line-control); border-left: 3px solid; border-radius: 3px;
+  padding: 4px 7px; cursor: pointer; transition: background 0.1s, border-color 0.1s; }
+#dmg-screen .ds-pbtn:hover:not(:disabled) { background: rgba(255,255,255,0.09); border-color: var(--line-hover); }
+#dmg-screen .ds-pbtn.on { background: rgba(255,255,255,0.12); border-color: var(--text-bright); }
+#dmg-screen .ds-pbtn:disabled { opacity: 0.4; cursor: default; }
+#dmg-screen .ds-pbtn.ok, #dmg-screen .ds-pbtn.cancel { border-left-width: 1px; }
+#dmg-screen .ds-pbtn.ok { display: flex; align-items: center; gap: 6px; border-color: var(--accept); color: var(--accept-text); }
+#dmg-screen .ds-pbtn.cancel { margin-top: 4px; color: var(--text-dim); }
+#dmg-screen .ds-pbtn img { width: 28px; height: 28px; object-fit: contain; }
+#dmg-screen .ds-pbtn .dr-top > * { pointer-events: none; }
+#dmg-screen .dp-line { display: block; color: var(--text-dim); margin-top: 2px; }
+#dmg-screen .dp-flat { color: var(--bad-text); }
+#dmg-screen .ds-scroll { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+#dmg-screen .dp-about { font-size: 12px; line-height: 1.4; color: var(--text-body); margin-top: 6px; }
+#dmg-screen .dp-hint { font-size: 12px; color: var(--text-faint); margin-top: 6px; }
 #dmg-tip { display: none; position: fixed; z-index: 96; pointer-events: none; max-width: 260px;
   background: rgba(10,12,14,0.95); border: 1px solid var(--line); border-radius: 4px; padding: 6px 9px;
   font: 12px/1.45 var(--font); color: var(--text); }
@@ -387,19 +419,27 @@ export class DamageScreen {
     this.screen.id = 'dmg-screen'
     this.screen.innerHTML =
       `<div class="ds-card">`
-      + `<div class="ds-head"><span class="ds-title">Vehicle condition</span>`
+      + `<div class="ds-head"><span class="ds-title"></span>`
       + `<button class="ds-btn" data-act="close" title="close (V / Esc)">&times;</button></div>`
       + `<div class="ds-body">${buildPictogram()}`
-      + `<div class="ds-side"><div class="ds-sub">Worst parts</div><div class="ds-list"></div>`
+      + `<div class="ds-side"><div class="ds-sub">Worst parts</div><div class="ds-list"></div><div class="ds-pick"></div>`
       + `<div class="ds-legend">${buildLegend()}</div></div></div>`
       + `</div>`
     document.body.appendChild(this.screen)
     this.parts = [...this.screen.querySelectorAll('[data-track]')]   // pictogram only: the list is still empty
     this.listEl = this.screen.querySelector('.ds-list')
+    this.pickEl = this.screen.querySelector('.ds-pick')
+    this.titleEl = this.screen.querySelector('.ds-title')
     this._listKey = ''
+    this._job = null       // pick mode's job (pick()), else null
+    this._target = null    // what it has picked: { corner } or { index } (an inventory entry)
     for (const b of this.screen.querySelectorAll('.ds-btn')) b.addEventListener('mousedown', (e) => e.preventDefault())
     this.screen.querySelector('[data-act="close"]').addEventListener('click', () => this.close())
-    this.screen.addEventListener('click', (e) => { if (e.target === this.screen) this.close() })
+    this.screen.addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault() })
+    this.screen.addEventListener('click', (e) => {
+      if (e.target === this.screen) this.close()
+      else if (this._job) this._onPick(e)
+    })
 
     // Hover card.
     this.tip = document.createElement('div')
@@ -440,6 +480,7 @@ export class DamageScreen {
 
   open () {
     this.isOpen = true
+    this.titleEl.textContent = this._job?.title ?? 'Vehicle condition'
     this.alerting = false        // viewed — the icon goes back to being an optional tab
     this._hintT = 0
     this.iconEl.classList.remove('on')
@@ -451,8 +492,91 @@ export class DamageScreen {
   close () {
     if (!this.isOpen) return
     this.isOpen = false
-    this.screen.classList.remove('open')
+    this.screen.classList.remove('open', 'picking')
     this._setHover(null)
+    const job = this._job
+    this._job = null
+    this._target = null
+    this._markPicked()
+    job?.onClose?.()
+  }
+
+  /**
+   * Open in pick mode. `job`:
+   *   title                     the card's title
+   *   corner(c) → bool          can corner c (0=FL..3=RR) be picked
+   *   note(c) → string          optional: what is on that corner (its tire's name)
+   *   loose                     optional: inventory tires [{ index, name, line, ok }] — `ok` = pickable
+   *   about                     optional: one line under the list (the spare's own condition)
+   *   target                    optional: picked at open ({ corner } or { index })
+   *   actions(target)           the confirm buttons [{ label, icon?, run }]; the screen closes after run
+   *   onClose()                 called however it closes (main.js goes back to the inventory)
+   * Parked only, like V: otherwise it shows the park hint and returns false.
+   */
+  pick (job) {
+    if (this.isOpen) this.close()
+    if (this.isSuppressed() || this.blocked) return false
+    if (!this.vehicleState.parked) { this._hintT = HINT_S; this._renderCard(); return false }
+    this._job = job
+    this._target = job.target ?? null
+    this.screen.classList.add('picking')
+    this.open()
+    this._renderPick()
+    return true
+  }
+
+  _onPick (e) {
+    const b = e.target.closest('button[data-act]')
+    if (b?.dataset.act === 'pick-do') {
+      this._job.actions(this._target)[+b.dataset.i]?.run()
+      this.close()
+      return
+    }
+    if (b?.dataset.act === 'pick-cancel') { this.close(); return }
+    const inv = e.target.closest('[data-inv]')
+    const t = TRACKS[e.target.closest('[data-track]')?.dataset.track]
+    if (inv) this._target = { index: +inv.dataset.inv }
+    else if ((t?.cls === 'tire' || t?.cls === 'wheel') && this._job.corner(t.wheel)) this._target = { corner: t.wheel }
+    else return
+    this._renderPick()
+  }
+
+  /** Pick mode's side column: the corners, the inventory's tires, and the confirm once one is picked. */
+  _renderPick () {
+    const m = this.model, j = this._job, T = this._target
+    const row = (attrs, ok, on, band, name, flat, line) =>
+      `<button class="ds-pbtn${on ? ' on' : ''}" ${attrs}${ok ? '' : ' disabled'} style="border-left-color:${band}">`
+      + `<span class="dr-top"><span>${name}</span>${flat ? '<span class="dp-flat">flat</span>' : ''}</span>`
+      + `<span class="dp-line">${line}</span></button>`
+    let h = `<div class="ds-sub">On the truck</div>`
+    for (let c = 0; c < 4; c++) {
+      const C = CORNERS[c]
+      h += row(`data-track="tire${C}"`, j.corner(c), T?.corner === c, bandColor(shownCond(m, `tire${C}`)),
+        CORNER_NAME[c], m.flat[c], `${j.note?.(c) ?? 'Tire'} ${pct(m.get(`tire${C}`))} · wheel ${pct(m.get(`wheel${C}`))}`)
+    }
+    if (j.loose?.length) {
+      h += `<div class="ds-sub">In your inventory</div><div class="ds-scroll">`
+        + j.loose.map(r => row(`data-inv="${r.index}"`, r.ok, T?.index === r.index, NEUTRAL, r.name, r.flat, r.line)).join('')
+        + `</div>`
+    }
+    if (j.about) h += `<div class="dp-about">${j.about}</div>`
+    const what = T == null ? null : T.corner != null ? CORNER_NAME[T.corner] : j.loose.find(r => r.index === T.index)?.name
+    h += what
+      ? `<div class="ds-sub">${what}</div>` + j.actions(T).map((a, i) => `<button class="ds-pbtn ok" data-act="pick-do" data-i="${i}">`
+        + (a.icon ? `<img src="assets/items/${a.icon}.png" alt="">` : '') + `${a.label}</button>`).join('')
+      : `<div class="dp-hint">Pick a tire.</div>`
+    h += `<button class="ds-pbtn cancel" data-act="pick-cancel">cancel</button>`
+    this.pickEl.innerHTML = h
+    this._markPicked()
+  }
+
+  /** Light the picked corner's tire and wheel on the pictogram. */
+  _markPicked () {
+    const c = this._target?.corner
+    for (const el of this.parts) {
+      const t = TRACKS[el.dataset.track]
+      el.classList.toggle('picked', c != null && t.wheel === c && (t.cls === 'tire' || t.cls === 'wheel'))
+    }
   }
 
   /** The truck was made whole under the alert (a free-roam reseat): there is nothing left to see. */
@@ -602,6 +726,15 @@ export class DamageScreen {
     const m = this.model
     const t = TRACKS[id]
     const c = m.get(id)
+    if (this._job && (t.cls === 'tire' || t.cls === 'wheel')) {
+      // Pick mode: the corner as a whole — what you are choosing between.
+      const C = CORNERS[t.wheel], tc = shownCond(m, `tire${C}`)
+      this.tip.innerHTML = `<div class="dt-name">${CORNER_NAME[t.wheel]}</div>`
+        + `<div>${this._job.note?.(t.wheel) ?? 'Tire'} <b style="color:${bandColor(tc)}">${pct(m.get(`tire${C}`))}</b>`
+        + `${m.flat[t.wheel] ? ' <span class="dt-extra">flat</span>' : ''}</div>`
+        + `<div>Wheel <b style="color:${bandColor(m.get(`wheel${C}`))}">${pct(m.get(`wheel${C}`))}</b></div>`
+      return
+    }
     this.tip.innerHTML =
       `<div class="dt-name">${t.label}</div>`
       + `<div class="dt-pct" style="color:${bandColor(shownCond(m, id))}">${Math.round(c * 100)}%</div>`

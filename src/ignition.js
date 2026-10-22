@@ -43,13 +43,12 @@ export function makeIgnitionState (state = RUNNING) {
 
 /**
  * Catch time [s] for the current engine condition. health 1 → ignitionCatchTime, approaching 0 →
- * ignitionCatchTimeWorn, linear between. AT health 0 the engine never catches (owner, 2026-09-04:
- * a dead engine cranks forever — Infinity, so the starter grinds and nothing fires). Absent health
- * reads as 1 (headless gates build vehicleState by hand with no wear model).
+ * ignitionCatchTimeWorn at 0, linear between. A worn engine ALWAYS starts (owner, 2026-10-22,
+ * reversing 2026-09-04's never-catch at 0: "otherwise we don't have a game" — it is just gutless,
+ * damage.js engineAtZero). Absent health reads as 1 (headless gates build vehicleState by hand).
  */
 export function catchTime (vehicleState, params) {
   const health = Math.max(0, Math.min(1, vehicleState.engineHealth ?? 1))
-  if (health <= 0) return Infinity
   // FEAT-50: an empty tank cranks forever too — the starter turns, nothing fires (src/fuel.js).
   if (vehicleState.fuel && vehicleState.fuel.gal <= 0) return Infinity
   const fresh = params.ignitionCatchTime ?? 0.25

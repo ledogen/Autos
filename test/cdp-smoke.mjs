@@ -284,6 +284,38 @@ const STEPS = [
     const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
   }],
+  ['tires', async () => {
+    // SM-3 roadside tire work (owner, 2026-10-22): using the spare or the plug kit opens the damage
+    // screen's picker; nothing happens until a tire is picked and the timed button confirmed. The
+    // recovery chip lives in the park zone.
+    check(await js('!!document.querySelector("#park-zone #recovery-row")'), 'recovery chip is not in the park zone')
+    const inv = () => js('document.getElementById("inv-screen").classList.contains("open")')
+    const picking = () => js('document.getElementById("dmg-screen").classList.contains("picking")')
+    if (!await js('window.__vs.parked')) await tap(' ')
+    check(await until(() => js('window.__vs.parked'), 1000), 'Space did not park')
+    await js('window.__inv.grant("spareTire"); window.__inv.grant("tirePlugKit"); window.__damage.flat[1] = true')
+    const useItem = async (id) => {
+      if (!await inv()) { await tap('Tab'); await until(inv, 1000) }
+      const i = await js(`window.__inv.list().findIndex(r => r.id === "${id}")`)
+      await js(`document.querySelector('#inv-screen .inv-slot[data-slot="${i}"]').click()`)
+      await js('document.querySelector("#inv-screen [data-act=use], #inv-screen [data-act=action]").click()')
+      check(await until(picking, 1000), `using ${id} opened no tire picker`)
+    }
+    await useItem('spareTire')
+    check(await js('document.querySelectorAll("#dmg-screen .ds-pbtn[data-track]:not(:disabled)").length') === 4, 'the spare cannot go on every corner')
+    check(await js('!document.querySelector("#dmg-screen [data-act=pick-do]")'), 'a confirm showed before a tire was picked')
+    await js('document.querySelector("#dmg-screen .ds-pbtn[data-track=tireFR]").click()')
+    await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()')
+    check(await until(inv, 1000), 'the picker did not hand back to the inventory')
+    check(await js('!window.__damage.flat[1] && window.__inv.list().some(r => r.id === "spareTire" && r.flat)'), 'the spare did not swap onto the flat corner')
+    await useItem('tirePlugKit')
+    check(await js('document.querySelectorAll("#dmg-screen .ds-pbtn[data-track]:not(:disabled)").length') === 0, 'a plug was offered for a tire holding air')
+    await js('document.querySelector("#dmg-screen .ds-pbtn[data-inv]:not(:disabled)").click()')
+    await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()')
+    check(await js('window.__inv.list().every(r => !r.flat && r.id !== "tirePlugKit")'), 'the plug did not fix the flat spare, or the kit was not spent')
+    await tap('Escape')
+    check(await until(async () => !await inv(), 1000), 'Esc left the inventory open')
+  }],
   ['backtick', async () => {
     // R-13: one gate for the panel and the wireframes — they flip together, and flip back.
     const st = () => js('[document.querySelector(".lil-gui.root").style.display === "none", window.__physWireframes.enabled]')

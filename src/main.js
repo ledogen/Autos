@@ -88,7 +88,7 @@ import { ServiceScreen } from './service-screen.js'
 import { PARTS } from '../data/parts.js'   // SM-3: which inventory entries are tires
 import { recoveryCard, fitSpare, SPARE_FIT_H, plugTire, plugMethods, PLUG_H } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
-import { InventoryScreen } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
+import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
@@ -3373,8 +3373,11 @@ const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
   onChange: () => inventoryScreen.render(),
-  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, spare: _fitSpare,
-    plug: () => { inventoryScreen.show('tirePlugKit'); return false } },   // the kit is spent by the choice it opens
+  // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
+  // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
+  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan,
+    spare: (e) => { queueMicrotask(() => _pickSpare(e)); return false },
+    plug: () => { queueMicrotask(() => _pickPlug()); return false } },
 })
 // Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
 const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
@@ -3382,6 +3385,9 @@ const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isBlocked: () => damageScreen.blocked,
   actions: _tireActions,
 })
+window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
+// The recovery chip joins the park zone last, under V and Tab (owner, 2026-10-22).
+document.getElementById('park-zone')?.append(document.getElementById('recovery-row'))
 
 // SM-3: every auto shop is a service center (owner, 2026-10-20). Selling a part is money made, so it
 // goes through addSpot like every other mid-run credit; labour goes on the clock like the tow.
@@ -4513,11 +4519,11 @@ function _renderPumpDisplay (dt) {
 }
 
 // ── The Recovery chip (FEAT-50 running dry → SM-3 in full) ───────────────────────────────────
-// Nothing pops up when the truck gives out: the chip sits in the right-hand icon column whenever you
-// are PARKED in a story run (a tow is a phone call — SM-3, 2026-10-20), and the card lists what fits
-// the moment (src/recovery.js): pour the gas can, fit the spare, tow to the nearest gas station (dry)
-// or service center (any time). Can't continue and can't afford any of it: the run is over ("you
-// broke down", SM-INV-1).
+// Nothing pops up when the truck gives out: the chip sits in the PARK ZONE with V and Tab (owner,
+// 2026-10-22), always there in a story run and live once parked, like them (a tow is a phone call —
+// SM-3, 2026-10-20). The card lists the tows (src/recovery.js): to the nearest gas station (dry) or
+// service center (any time). Can't continue and can't afford any of it: the run is over ("you broke
+// down", SM-INV-1).
 let _recoveryOpen = false
 
 /** The nearest POI passing `test`, with its distance in km. */
@@ -4572,36 +4578,58 @@ function _towToShop () {
   const t = _towQuote(_SERVICE_CENTER)
   if (t) _towTo(t, { x: t.q.x, z: t.q.z, heading: Math.atan2(-t.q.tx, -t.q.tz) })
 }
-/** The spare's inventory effect (ITEMS.spareTire.use): onto the first flat, parked, 90 min on the clock. */
-function _fitSpare (entry) {
-  if (!vehicleState.parked || fitSpare(partsSystem, damageModel, inventorySystem, entry) < 0) return false
-  damageModel.publish(RANGER_PARAMS)
-  daySystem.advanceMinutes(SPARE_FIT_H * 60)
+// ── Roadside tire work (owner, 2026-10-22): the player picks the tire on the damage screen's
+// pictogram (DamageScreen.pick), sees each corner's tire, wheel and air, and confirms with the time on
+// the button. Cancel or done, it goes back to the inventory.
+const _CORNER = ['FL', 'FR', 'RL', 'RR']
+const _tireNote = (c) => PARTS[partsSystem.fitted(`tire${_CORNER[c]}`)]?.name ?? 'Tire'
+const _backToInventory = () => { if (vehicleState.parked) inventoryScreen.open() }
+const _afterTireWork = (h) => { damageModel.publish(RANGER_PARAMS); daySystem.advanceMinutes(h * 60) }
+
+/** The spare's inventory effect (ITEMS.spareTire.use): any corner, flat or not, 90 min on the clock. */
+function _pickSpare (e) {
+  inventoryScreen.close()
+  damageScreen.pick({
+    title: 'Fit the spare',
+    corner: () => !e.flat,
+    note: _tireNote,
+    about: `The spare: ${condLine({ ...e, kind: 'part' })}.` + (e.flat ? ' Plug it before it goes on.' : ''),
+    actions: ({ corner }) => [{ label: `Swap it on — ${formatGameDuration(SPARE_FIT_H)}`, run: () => {
+      if (fitSpare(partsSystem, damageModel, inventorySystem, inventorySystem.indexOf(e), corner) >= 0) _afterTireWork(SPARE_FIT_H)
+    } }],
+    onClose: _backToInventory,
+  })
 }
 
 /**
- * The inventory screen's plug choices (owner, 2026-10-21): with the plug kit selected they plug the
- * truck's first flat; with a flat tire in the inventory selected they plug that one. "Pump the tire by hand"
- * is always offered; "Inflate tire" when a compressor is aboard. Each is the whole stop.
+ * The plug kit (owner, 2026-10-21): any flat — a corner, or a tire in the inventory. "Pump it by hand"
+ * is always offered; "Inflate it" when a compressor is aboard. Each is the whole stop.
  */
 const _PLUG_LABEL = {
-  pump: { label: 'Pump the tire by hand', icon: 'bikePump' },
-  compressor: { label: 'Inflate tire', icon: 'compressor' },
+  pump: { label: 'Pump it up by hand', icon: 'bikePump' },
+  compressor: { label: 'Inflate it with the compressor', icon: 'compressor' },
 }
+function _pickPlug (target = null) {
+  inventoryScreen.close()
+  damageScreen.pick({
+    title: 'Plug a tire',
+    target,
+    corner: (c) => damageModel.flat[c],
+    note: _tireNote,
+    loose: inventorySystem.list().filter(r => PARTS[r.id]?.slot === 'tire')
+      .map(r => ({ index: r.index, name: r.name, line: condLine(r, { air: false }), flat: r.flat, ok: r.flat })),
+    actions: (t) => plugMethods(inventorySystem).map(how => ({
+      label: `${_PLUG_LABEL[how].label} — ${formatGameDuration(PLUG_H[how])}`, icon: _PLUG_LABEL[how].icon,
+      run: () => { const h = plugTire(damageModel, inventorySystem, how, t); if (h >= 0) _afterTireWork(h) },
+    })),
+    onClose: _backToInventory,
+  })
+}
+
+/** A flat tire selected in the inventory, with a kit aboard: plug it (the picker, with it picked). */
 function _tireActions (row) {
-  const owned = inventorySystem.list()
-  const loose = row.flat && PARTS[row.id]?.slot === 'tire'
-  if (row.id !== 'tirePlugKit' && !(loose && owned.some(r => r.id === 'tirePlugKit'))) return []
-  const enabled = loose || damageModel.flat.includes(true)
-  return plugMethods(inventorySystem).map(how => ({
-    label: `${_PLUG_LABEL[how].label} — ${formatGameDuration(PLUG_H[how])}`, icon: _PLUG_LABEL[how].icon, enabled,
-    run: () => {
-      const h = plugTire(damageModel, inventorySystem, how, loose ? row.index : null)
-      if (h < 0) return
-      damageModel.publish(RANGER_PARAMS)
-      daySystem.advanceMinutes(h * 60)
-    },
-  }))
+  if (!row.flat || PARTS[row.id]?.slot !== 'tire' || !inventorySystem.list().some(r => r.id === 'tirePlugKit')) return []
+  return [{ label: 'Plug this tire', icon: 'tirePlugKit', run: () => _pickPlug({ index: row.index }) }]
 }
 
 const _RC_LABEL = {
@@ -4615,27 +4643,25 @@ const _RC_ACT = {
 function _updateRecovery () {
   const row = document.getElementById('recovery-row')
   if (!row) return
-  const show = storySystem.isActive() && !storySystem.isEntering() && !!vehicleState.parked
-    && !fuelStop.isOpen && !serviceScreen.isOpen
+  const show = storySystem.isActive() && !storySystem.isEntering() && !fuelStop.isOpen && !serviceScreen.isOpen
   row.style.display = show ? 'flex' : 'none'
-  if (!show) { _recoveryOpen = false; return }
+  const live = show && !!vehicleState.parked && !damageScreen.blocked
+  const icon = document.getElementById('recovery-icon')
+  icon?.classList.toggle('ready', live)
+  const card = document.getElementById('recovery-card')
+  if (!live) { _recoveryOpen = false; card.style.display = 'none'; icon?.classList.remove('on'); return }
   const fuel = vehicleState.fuel
   const owned = inventorySystem.list()
   const money = economySystem.money()
   const c = recoveryCard({
     dry: !!fuel?.dry && fuel.gal <= 0,
     gasCan: owned.some(r => r.id === 'emergencyGas'),
-    engineDead: damageModel.get('engine') <= 0,
     flats: damageModel.flat.flatMap((f, i) => f ? [i] : []),
     money,
     fuelTow: _towQuote(_FUEL_SELLER),
     shopTow: _towQuote(_SERVICE_CENTER),
   })
-  // The icon lights when something is actually wrong; a sound truck's chip is just the phone.
-  const icon = document.getElementById('recovery-icon')
   icon?.classList.toggle('on', _recoveryOpen)
-  icon?.classList.toggle('ready', c.head !== 'roadside')
-  const card = document.getElementById('recovery-card')
   card.style.display = _recoveryOpen ? 'block' : 'none'
   if (!_recoveryOpen) return
   const html = `<div class="rc-head">${c.head}</div>`
@@ -4650,11 +4676,15 @@ function _updateRecovery () {
     for (const b of card.querySelectorAll('button[data-act]')) b.addEventListener('click', () => _RC_ACT[b.dataset.act]())
   }
 }
-window.addEventListener('keydown', e => {
-  if (e.repeat || e.key.toLowerCase() !== 'x') return
-  if (document.getElementById('recovery-row')?.style.display === 'flex') { _recoveryOpen = !_recoveryOpen; _updateRecovery() }
-})
-document.getElementById('recovery-icon')?.addEventListener('click', () => { _recoveryOpen = !_recoveryOpen; _updateRecovery() })
+/** X or a click: open/close the card once parked; driving, pulse the park zone's PARK badge. */
+function _toggleRecovery () {
+  if (document.getElementById('recovery-row')?.style.display !== 'flex') return
+  if (!vehicleState.parked || damageScreen.blocked) { inventoryScreen.hint(); return }
+  _recoveryOpen = !_recoveryOpen
+  _updateRecovery()
+}
+window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() === 'x') _toggleRecovery() })
+document.getElementById('recovery-icon')?.addEventListener('click', _toggleRecovery)
 
 /** Can the truck knock on mom's door from here? (Same gates, minus the zone and the grading.) */
 function _atMomsHouse () {
@@ -8013,7 +8043,7 @@ function loop () {
     // FEAT-46/45: the POI + camping prompts, and the ONE parking-brake trigger behind both.
     // Still the ~10 Hz cadence: the `parked` latch is sticky, so the edge cannot fall between polls.
     _updateParkTriggers()
-    _updateRecovery()           // FEAT-50: the out-of-fuel chip, once parked
+    _updateRecovery()           // FEAT-50 / SM-3: the recovery chip in the park zone
     // FEAT-45: the camping folder's read-outs ride the same 10 Hz poll and hit the same memoized
     // grade the prompt just computed. Gated to the SAME sub-20 kph window as the prompt on purpose:
     // grading costs a handful of terrain/water/scatter samples, and paying for it at speed to feed a

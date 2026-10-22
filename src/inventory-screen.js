@@ -14,6 +14,8 @@
  *   - Backpacks (items.md §2c): hover a pack to see its slots; click it to open it and pack or
  *     unpack. Counts may show (×3); mass and effects never do (SM-INV-10).
  *   - A grant that doesn't fit shows here first as the swap prompt.
+ *   - A part shows its wear (owner, 2026-10-22): a spare is a tire on a wheel, so both, and whether
+ *     it holds air. condLine() — the roadside tire picker (damage-screen.js) shows the same line.
  *   - The clock: runs on the road; held at camp by the frame loop's `_campUi` gate (main.js).
  *
  * Layout follows damage-screen.js (one class, own CSS, own DOM). Reads/writes only the
@@ -22,7 +24,7 @@
 
 import { keycap } from './park-badge.js'
 import { ITEMS } from '../data/items.js'
-import { RARITY_COLOR } from '../data/parts.js'
+import { PARTS, RARITY_COLOR } from '../data/parts.js'
 
 const THUMB = (id) => `assets/items/${ITEMS[id]?.thumb ?? id}.png`
 
@@ -55,6 +57,7 @@ const CSS = `
 #inv-screen .is-strip { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); min-height: 52px; }
 #inv-screen .st-name { font-size: 14px; }
 #inv-screen .st-tag { font-size: 12px; color: #c9a24a; margin-left: 6px; }
+#inv-screen .st-cond, #inv-tip .tp-cond { font-size: 12px; color: var(--text-body); margin-top: 2px; }
 #inv-screen .st-desc { font-size: 12px; line-height: 1.4; color: var(--text-dim); margin: 3px 0 7px; }
 #inv-screen .st-pack { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
 #inv-screen .st-hint { font-size: 12px; color: var(--text-faint); }
@@ -81,6 +84,19 @@ const ICON = '<svg viewBox="0 0 40 40" width="40" height="40" fill="none" stroke
 
 const btn = (act, label, enabled = true, data = '') =>
   `<button class="is-btn" data-act="${act}" ${data}${enabled ? '' : ' disabled'}>${label}</button>`
+
+/**
+ * A part's wear as the player reads it ('' for anything else): a spare's tire and wheel, a tire's air.
+ * `air: false` leaves the air out, for a row that flags a flat on its own (the tire picker).
+ */
+export function condLine (r, { air: withAir = true } = {}) {
+  if (r.kind !== 'part') return ''
+  const pct = (c) => Math.round((c ?? 1) * 100) + '%'
+  const air = withAir && PARTS[r.id]?.slot === 'tire' ? (r.flat ? ' · flat' : ' · holding air') : ''
+  if (r.id !== 'spareTire') return `Condition ${pct(r.cond)}${air}`
+  const tire = r.tire && r.tire !== 'tireStandard' ? PARTS[r.tire].name : 'Tire'
+  return `${tire} ${pct(r.cond)} · wheel ${pct(r.wheelCond)}${air}`
+}
 
 /** One slot square. `it` is a catalog row (+ n/key/equipped for truck entries), or null for empty. */
 function slotHtml (it, attrs = '', cls = '') {
@@ -168,7 +184,7 @@ export class InventoryScreen {
   request () {
     if (this.isOpen) { this.close(); return }
     if (this.isSuppressed() || this.isBlocked()) return
-    if (!this.vehicleState.parked) { this._hint(); return }
+    if (!this.vehicleState.parked) { this.hint(); return }
     this.open()
   }
 
@@ -179,13 +195,6 @@ export class InventoryScreen {
     this.screen.classList.add('open')
     this.iconEl.classList.add('on')
     this.render()
-  }
-
-  /** Open (if the truck allows it) with the first `id` selected — a quick key whose item needs a choice. */
-  show (id) {
-    if (!this.isOpen) { this.request(); if (!this.isOpen) return }
-    const i = this.inventory.list().findIndex(r => r.id === id)
-    if (i >= 0) { this.sel = i; this.packSel = -1; this.render() }
   }
 
   close () {
@@ -204,7 +213,8 @@ export class InventoryScreen {
     if (this.isOpen && (locked || this.isSuppressed())) this.close()
   }
 
-  _hint () {
+  /** Pulse the park zone's PARK badge: "park first". Also the recovery chip's (main.js). */
+  hint () {
     const b = this.zoneBadge
     if (!b) return
     b.classList.remove('hint')
@@ -247,6 +257,7 @@ export class InventoryScreen {
     if (this.tip.dataset.for !== s.dataset.slot) {
       this.tip.dataset.for = s.dataset.slot
       this.tip.innerHTML = `<div>${row.name}${row.equipped ? ' <span style="color:#c9a24a">equipped</span>' : ''}</div>`
+        + (condLine(row) ? `<div class="tp-cond">${condLine(row)}</div>` : '')
         + `<div class="tp-desc">${row.desc}</div>`
         + (row.contents ? `<div class="tp-pack">${packSlotsHtml(row)}</div>` : '')
     }
@@ -284,8 +295,8 @@ export class InventoryScreen {
     const r = this.sel != null ? rows[this.sel] : null
     if (!r) return `<div class="st-hint">Click an item to use it, drop it, or open a pack.</div>`
     const inv = this.inventory
-    const head = `<div class="st-name">${r.name}${r.equipped ? '<span class="st-tag">equipped</span>' : ''}`
-      + `${r.flat ? '<span class="st-tag">flat</span>' : ''}</div>`
+    const head = `<div class="st-name">${r.name}${r.equipped ? '<span class="st-tag">equipped</span>' : ''}</div>`
+      + (condLine(r) ? `<div class="st-cond">${condLine(r)}</div>` : '')
       + `<div class="st-desc">${r.desc}</div>`
     if (r.contents) {
       const packed = r.contents[this.packSel]
