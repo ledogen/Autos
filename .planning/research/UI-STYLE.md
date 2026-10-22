@@ -167,7 +167,7 @@ band; do not invent a number between bands.
 
 | Band | z | Members |
 |---|---|---|
-| World chrome | 85–89 | controls box 85, gauge cluster 86, HUD readouts / dock / prompts 88, pump face 89 |
+| World chrome | 86–89 | gauge cluster 86, HUD readouts / dock / prompts 88, pump face 89 |
 | Map | 90–91 | 2D map 90; run HUD lifts to 91 while the map is open |
 | Story cards | 95–97 | cards 95, dialogue / quick-job / toasts 96, aim reticle + throw readout 97 |
 | Pause | 100 | pause menu |

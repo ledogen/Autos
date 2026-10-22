@@ -329,7 +329,7 @@
 
     /* FEAT-41: while the stage owns the screen, the in-world chrome must be off it — the menu's
        scrim is deliberately transparent on the right, so anything left standing (the gauge cluster,
-       the controls box, lil-gui, stats) would sit on top of the shot. !important so a later inline
+       lil-gui, stats) would sit on top of the shot. !important so a later inline
        style.display from main.js cannot leak a panel onto the menu, and so simply dropping the class
        restores every element's own display without main.js re-asserting any of them. */
     body.stage-on > div:not(#main-menu):not(#load-caption):not(#story-seed-modal):not(#boot-loading),
@@ -474,8 +474,8 @@
     }
     .dlg-text { line-height: 1.7; }
     /* The control-glyph colour. This class IS the markup mechanism (src/dialogue.js) — authored
-       cards wrap a key in it, and nothing parses anything. Yellow because that is already the
-       game's "press this" colour in the controls box. */
+       cards wrap a key in it, and nothing parses anything. Yellow because that is the game's
+       "press this" colour (--key). */
     .dlg-text .dlg-key {
       color: var(--key);
       font-weight: bold;
@@ -623,6 +623,25 @@
       background: rgba(255, 255, 255, 0.08); color: var(--text);
       font: bold max(12px, 0.9em)/1.35 var(--font); text-align: center;
     }
+    /* A pad face button or stick, drawn round as on the pad (park-badge.js padLabel); the keycap
+       holding one drops its own frame. */
+    body.pad-on .kc-round {
+      display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
+      width: 1.5em; height: 1.5em; border: 1px solid #8a96a3; border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08); line-height: 1; vertical-align: middle;
+    }
+    body.pad-on .keycap:has(> .kc-round) { border: none; background: none; padding: 0; min-width: 0; }
+    /* A card's back button (park-badge.js BACK_BUTTON): the key that does the same, then "back".
+       Story-family button. */
+    .card-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .card-back {
+      display: inline-flex; align-items: center; gap: 7px; padding: 4px 12px 4px 6px; cursor: pointer;
+      background: transparent; border: 1px solid var(--line-control); color: var(--text-body);
+      font: 12px var(--font); letter-spacing: 1px; text-transform: uppercase;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .card-back:hover { background: rgba(255, 255, 255, 0.09); border-color: var(--line-hover); }
+    .card-back .keycap { margin: 0; }
 
     /* FEAT-50: the PUMP FACE — styled after the island's own gauge face (gas-pump.glb): a black
        bezel, a red GASOLINE band, a cream face, and mechanical drum registers, white figures on
@@ -728,32 +747,75 @@
     .hud-icon.ready { opacity: 0.75; }
     .hud-icon.on, .hud-icon:hover { opacity: 1; }
     .hud-icon svg { width: 100%; height: 100%; display: block; }
+    /* The key tab: one size and shape for every chip, whatever the label (V, Tab, a pad button),
+       so the tabs line up down the column (owner, 2026-10-21). On the pad they go: the whole column
+       is one B-hold menu, and #hud-b-hint says so once. */
     .hud-icon .keycap {
-      position: absolute; left: -7px; bottom: -6px; margin: 0;
-      font-size: 12px; background: #1b2026;
+      position: absolute; left: -9px; bottom: -8px; margin: 0; box-sizing: border-box;
+      display: flex; align-items: center; justify-content: center; width: 32px; height: 22px; padding: 0;
+      font-size: 14px; line-height: 1; background: #1b2026;
     }
+    body.pad-on .hud-icon .keycap { display: none; }
+    #hud-b-hint { display: none; align-items: center; gap: 6px; font: 12px var(--font); color: var(--text-dim);
+      letter-spacing: 1px; text-transform: uppercase; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
+    body.pad-on #hud-b-hint { display: flex; }
+    /* The B-hold menu's label (src/hud-menu.js): the pick's name left of it, with the ↑/↓ chevrons. */
+    #hud-menu-label {
+      position: fixed; z-index: 89; display: none; align-items: center; gap: 8px; pointer-events: none;
+      transform: translate(-100%, -50%); white-space: nowrap;
+      font: 14px var(--font); letter-spacing: 2px; text-transform: uppercase; color: var(--text-bright);
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    }
+    body.hud-menu-on #hud-menu-label { display: flex; }
+    #hud-menu-label svg { width: 10px; height: 18px; fill: none; stroke: var(--accent-story); stroke-width: 1.8;
+      stroke-linecap: round; stroke-linejoin: round; }
+    #hud-menu-label.solo svg { display: none; }
+    #hud-b-hint .kc-round { color: var(--text); }
     /* FEAT-122: the PARK ZONE — the icons that only work while parked (damage V, inventory Tab),
-       boxed together under the PARK badge that owns them (owner, 2026-10-16). Camp stays outside: the
-       brake is how you make camp. Locked (not parked, or the brake belongs to a POI here): the sign
-       is up and the icons stay backgrounded. Parked: the sign fades. inventory-screen.js update()
+       grouped under the PARK stencil that owns them (owner, 2026-10-16). Camp stays outside:
+       the brake is how you make camp. Locked (not parked, or the brake belongs to a POI here): the
+       stencil is up and the icons stay backgrounded. Parked: the stencil is gone. inventory-screen.js update()
        owns the .locked flag; a press while locked pulses the sign (.hint). Each row keeps the
-       icon's width so an alert card overflows to the left instead of widening the box. */
-    #park-zone {
-      position: relative; display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
-      padding: 7px; border-radius: 11px;
-      background: rgba(11, 61, 145, 0.16); border: 1px solid rgba(120, 160, 230, 0.35);
-    }
+       icon's width so nothing beside an icon can widen the zone. Frameless (owner, 2026-10-21): the
+       stencil alone marks it, and its icons line up with the camp icon below. */
+    #park-zone { position: relative; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
     #park-zone .hud-row { width: 46px; justify-content: flex-start; }
+    /* Inventory on top whatever order the screens are built in (owner, 2026-10-21). */
+    #park-zone #inv-dock { order: -1; }
     #park-zone .hud-row > * { flex-shrink: 0; }
+    /* The sign is a stencil: P-A-R-K in frameless block capitals stacked top to bottom over the
+       zone, in front of its icons to say they are shut (owner, 2026-10-21; was a blue badge with the
+       handbrake's keycap on the zone's top edge — the keycap went because the four letters fill
+       the zone's height on their own). Impact is the owner's call and the one exception to
+       UI-STYLE's single font; Arial Black stands in where it is missing. Upright vertical text
+       stacks the letters on an even pitch (24 px so four sit inside the two icons' 102 px, pulse included, and never reach the camp icon), outlined dark so they read over the icon art. Centred by margin: auto, not a translate, so the .hint pulse's
+       transform stays free. Parked, it is gone entirely. */
     #park-zone .pz-badge {
-      position: absolute; top: -11px; right: 4px; margin: 0; font-size: 12px;
-      transition: opacity 0.4s;
+      position: absolute; inset: 0; z-index: 3; width: fit-content; height: fit-content; margin: auto;
+      writing-mode: vertical-lr; text-orientation: upright; padding: 0;
+      background: none; border: none; box-shadow: none; color: var(--text-bright);
+      font: 24px/1 Impact, 'Arial Black', sans-serif; letter-spacing: -0.12em;
+      text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.9), -1px -1px 0 rgba(0, 0, 0, 0.9), 1px -1px 0 rgba(0, 0, 0, 0.9),
+                   -1px 1px 0 rgba(0, 0, 0, 0.9), 0 2px 6px rgba(0, 0, 0, 0.7);
+      pointer-events: none; transition: opacity 0.4s;
     }
-    #park-zone:not(.locked) .pz-badge { opacity: 0.25; }
-    #park-zone .pz-badge.hint { animation: pz-hint 0.5s ease-in-out 3; }
-    @keyframes pz-hint {
-      0%, 100% { transform: scale(1); box-shadow: 0 0 0 1px rgba(0,0,0,0.45); }
-      50%      { transform: scale(1.35); box-shadow: 0 0 12px 3px rgba(120,170,255,0.8); } }
+    #park-zone:not(.locked) .pz-badge { opacity: 0; }
+    #park-zone .pz-badge.hint { animation: pz-hint 0.5s ease-in-out 2; }
+    @keyframes pz-hint { 50% { transform: scale(1.1); color: var(--accent-story); } }
+
+    /* An inventory or damage screen open: the world mutes behind its scrim, the top-right column
+       (wallet, energy, icons) rises through it, and the open screen's icon is lit — the game goes
+       quiet, the UI you are using stays loud (owner, 2026-10-21). The screens sit at z 95. */
+    #inv-screen, #dmg-screen { backdrop-filter: saturate(0.25); }
+    body:has(#inv-screen.open, #dmg-screen.open) #hud-dock { z-index: 96; }
+    /* The pad's B-hold icon menu (src/hud-menu.js) wears the same lit look on its pick, and wakes the
+       column's usable icons while it is held — the locked park zone's stay down, as they are off it. */
+    body.hud-menu-on .hud-icon { opacity: 0.85; }
+    body.hud-menu-on #park-zone.locked .hud-icon { opacity: 0.35; }
+    body:has(#inv-screen.open) #inv-icon, body:has(#dmg-screen.open) #dmg-icon, #hud-icons .hud-icon.menu-sel {
+      opacity: 1; border-color: var(--accent-story);
+      box-shadow: 0 0 0 1px var(--accent-story), 0 0 12px rgba(127, 194, 255, 0.45);
+    }
 
     /* FEAT-53: the run wallet — top-right, story mode only. Money and good deeds are RUN state,
        not mission state: visible whenever the region is live, including mid-drive (owner,
@@ -1148,34 +1210,6 @@
       background: rgba(255, 255, 255, 0.1);
       color: var(--text-bright);
     }
-    /* Controls cheat-sheet, lower-left. Click the header to collapse/expand. Sits BELOW the
-       map overlay (z 90) so it hides while the map is open. Map-legend design language. */
-    #controls {
-      position: fixed;
-      left: 20px;
-      bottom: 20px;
-      background: var(--hud-bg);
-      border: 1px solid var(--line-hover);
-      color: var(--text-body);
-      font-family: var(--font);
-      font-size: 12px;
-      line-height: 1.5;
-      z-index: 85;
-      user-select: none;
-      max-width: 220px;
-    }
-    #controls-toggle {
-      cursor: pointer;
-      padding: 5px 10px;
-      color: var(--text-bright);
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      font-size: 12px;
-    }
-    #controls-toggle:hover { background: rgba(255, 255, 255, 0.08); }
-    #controls-body { padding: 2px 10px 8px 10px; }
-    #controls-body .k { color: var(--text-bright); display: inline-block; min-width: 62px; }
-    #controls.collapsed #controls-body { display: none; }
     /* "spawn point set" toast — fades out; shown whenever the spawn point changes.
        FEAT-33: "hold I to start the truck" — shown when the driver asks for throttle with the
        ignition off (story mode seats you in a dead truck). Same toast family; the key itself is
@@ -1455,6 +1489,10 @@
          player's, not the run's, and live on the settings page (owner, 2026-10-20). -->
     <div id="mm-setup-panel">
       <div class="mm-title" id="su-title">new game</div>
+      <!-- Start and back lead, above the knobs: start is the page's first item, so it is where the
+           menu highlight lands (menu-nav.js items[0]) — "just press start" (owner, 2026-10-21). -->
+      <button id="su-start">start</button>
+      <button id="su-back">back</button>
       <div class="mm-group">world</div>
       <input id="su-seed" type="text" maxlength="24" spellcheck="false" placeholder="seed or world code — blank for random">
       <button class="mm-sel" data-key="worldPreset"></button>
@@ -1464,9 +1502,6 @@
       <div id="su-code"></div>
       <div class="mm-group">truck</div>
       <button class="mm-sel" data-key="gearbox"></button>
-      <div class="mm-group"></div>
-      <button id="su-start">start</button>
-      <button id="su-back">back</button>
     </div>
     <!-- FEAT-41 settings: the player's own choices, saved the moment they change and applied live, from the
          main menu and the pause menu alike. Never anything generated or fitted: the world and the gearbox
@@ -1596,8 +1631,9 @@
 
     <!-- The icon column. damage-screen.js prepends its own row (the truck, V) above these. -->
     <div id="hud-icons">
+      <div id="hud-b-hint">hold <span class="kc-pad kc-round">B</span></div>
       <!-- FEAT-122: the park zone — damage-screen.js and inventory-screen.js append their rows. -->
-      <div id="park-zone" class="locked"><span class="park-badge pz-badge" aria-label="park">PARK<span class="keycap"><span class="kc-kb">Space</span><span class="kc-pad">RB</span></span></span></div>
+      <div id="park-zone" class="locked"><span class="park-badge pz-badge" aria-label="park">PARK</span></div>
       <!-- FEAT-45 Phase D: making camp. The tent shows only where the old camp prompt did (a camp
            zone, under 20 kph, story mode, no job or route out, no POI in reach). Z or a click
            toggles "looking for a campsite"; while looking, the vibe bar + verdict card opens beside
@@ -1614,7 +1650,7 @@
             <circle cx="10" cy="28.5" r="4" fill="#fff" stroke="#1b2026" stroke-width="2"/>
             <circle cx="28" cy="28.5" r="4" fill="#fff" stroke="#1b2026" stroke-width="2"/>
           </svg>
-          <span class="keycap"><span class="kc-kb">X</span><span class="kc-pad">D→</span></span>
+          <span class="keycap">X</span>
         </div>
         <div id="recovery-card"></div>
       </div>
@@ -1626,7 +1662,7 @@
             <path d="M20,19 L26,33 H14 Z" fill="#6b4423"/>
             <path d="M3,34.5 H37" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
           </svg>
-          <span class="keycap"><span class="kc-kb">Z</span><span class="kc-pad">D↓</span></span>
+          <span class="keycap">Z</span>
         </div>
         <div id="camp-prompt">
           <div class="vibe-bar" id="camp-vibe">
@@ -1787,28 +1823,7 @@
 
   <!-- Spawn-point-set toast — fades out ~3 s after any spawn change (main.js showSpawnToast). -->
   <div id="spawn-toast">spawn point set</div>
-  <div id="ignition-hint">hold <span class="k"><span class="kc-kb">I</span><span class="kc-pad">Y</span></span> to start the truck</div>
-
-  <!-- Controls cheat-sheet (lower-left, click header to collapse). Wired in main.js. -->
-  <div id="controls" class="collapsed">
-    <div id="controls-toggle">controls &#9656;</div>
-    <div id="controls-body">
-      <div><span class="k">WASD</span>drive</div>
-      <div><span class="k">Space</span>handbrake</div>
-      <div><span class="k">R</span>reset to spawn</div>
-      <div><span class="k">Shift+R</span>set spawn here</div>
-      <div><span class="k">C</span>camera view</div>
-      <div><span class="k">Shift+C</span>free-cam</div>
-      <div><span class="k">T</span>teleport (free-cam)</div>
-      <div><span class="k">M</span>map (dbl-click TP)</div>
-      <div><span class="k">V</span>vehicle condition (parked)</div>
-      <div><span class="k">Z</span>look for a campsite</div>
-      <div><span class="k">Tab</span>inventory</div>
-      <div><span class="k">1–4</span>quick items</div>
-      <div><span class="k">Esc</span>pause menu</div>
-      <div><span class="k">&#96;</span>debug panel</div>
-    </div>
-  </div>
+  <div id="ignition-hint">hold <span class="k"><span class="kc-kb">I</span><span class="kc-pad kc-round">Y</span></span> to start the truck</div>
 
   <script type="module" src="src/main.js"></script>
 </body>

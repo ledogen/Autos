@@ -87,13 +87,13 @@ SHIPPED on the branch:
 | Right stick | orbit cam |
 | **RB** | handbrake (hold) / park (tap) |
 | **LB** | clutch (hold) — manual gearbox only (FEAT-126) |
-| **A / X** | upshift / downshift — manual only; nothing in the automatic |
-| **B** (hold) | pump / aim |
+| **A / X** | upshift / downshift — manual only; nothing in the automatic. **A (hold) pumps while the pump is open** (2026-10-21) |
+| **B** (hold) | ~~pump / aim~~ **icon menu**: D-pad ↑/↓ walks the HUD column, release opens (2026-10-21) |
 | Y (hold) | ignition |
 | Start | ~~map~~ **pause** (2026-10-19 re-map, below) |
 | View tap | ~~inventory~~ **map** |
 | **View hold 1 s** | reset truck |
-| D-pad ↑ / ↓ / ← / → | ~~headlights~~ **inventory** / camp / damage screen / **recovery** |
+| D-pad ↑ / ↓ / ← / → | ~~headlights~~ ~~inventory / camp / damage screen / recovery~~ **free** while driving (2026-10-21); B + ←/→ reserved |
 | Right-stick click | camera mode |
 | Left-stick click | **headlights** (was unbound) |
 
@@ -102,6 +102,22 @@ displaced View's tap (the inventory). The owner's placement: "plan as written bu
 stick … inventory on D-pad up, damage on left" — **this keeps the D-pad strictly to screens.**
 SHIPPED in 31507cb. The live table is `BINDINGS` in `src/gamepad.js`; the Controls & Assists page's
 binding chart is generated from it, so the two cannot drift.
+
+**Re-map — ruling (owner, 2026-10-21): the side menu behind B.** Hold B in the drive layout and the
+HUD icon column becomes a menu (`src/hud-menu.js`): it opens on the top icon, nearest the HOLD Ⓑ
+prompt (owner, 2026-10-22; was recovery, else camp, else the last pick), D-pad ↑/↓ walks it, releasing B opens the pick, a
+tap opens the pre-selection. The park zone's icons are OFF the menu while it is locked and the cursor
+wraps round what is left; nothing usable → no menu, PARK pulses. B stays "back" in menus, cards and
+the map, and a back never opens the icon menu. The D-pad is free while driving; B + ←/→ is reserved.
+The pump moved to A (open pump only). B's free-roam practice-throw aim is gone (routes throw with the
+right stick + RB tap). The keyboard is unchanged.
+
+**Why B and not the D-pad — ruling (owner, 2026-10-21): spend as few buttons as possible on menus.**
+A D-pad quick-select (Horizon Zero Dawn: ↑/↓ cycle, ← use, B back only) was weighed and rejected:
+it costs three D-pad directions for four icons, and more tabs and more actions needing a button are
+expected — the budget is being kept free for them. Mashing B into the menu by accident is accepted:
+one more B closes whatever opened. A stationary-frame "drum" of scrolling icons is parked until the
+column grows past ~5 items (at 2–3 it reads A–B–A).
 
 **Menu navigation (SHIPPED 31507cb):** while a menu owns the screen (`src/menu-nav.js` sets
 `pad.menuActive`), the pad speaks the menu's keys — A = Enter, B = Escape (back), Start = Escape
