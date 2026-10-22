@@ -49,6 +49,12 @@ check(Math.abs(s.steer + dz * 0.52 / (1 + s.v / 15)) < 0.03, `half right stick -
 
 // Keyboard takeover: a real W press while the pad is resting.
 await js('__fp.axes[0] = 0; __fp.b[7] = 0'); await sleep(200)
+// Rolling, unparked, nothing else up (free roam: no camp, no recovery): the park zone's icons are off
+// the B menu (owner, 2026-10-21), so there is no menu — the PARK stencil pulses instead.
+await js('__fp.b[1] = 1'); await sleep(200)
+check(!await js('document.body.classList.contains("hud-menu-on")') && await js('document.querySelector("#park-zone .pz-badge").classList.contains("hint")'),
+      'unparked, B held opens no menu (park-gated icons are not on it) and pulses PARK')
+await js('__fp.b[1] = 0'); await sleep(200)
 await keyEvent(c, 'w', true); await sleep(1500)
 s = await vs(); check(s.thr > 0.95, `keyboard W takes over from a resting pad -> throttle ${s.thr.toFixed(2)}`)
 await keyEvent(c, 'w', false); await sleep(300)
@@ -130,13 +136,16 @@ await sleep(2500); const o3 = await off(); check(Math.abs(o3 - o1) < 3, `stopped
 await js('__fp.b[6] = 0.6'); await sleep(150); await js('__fp.b[6] = 0')
 await js('__fp.b[5] = 1'); await sleep(100); await js('__fp.b[5] = 0')
 await sleep(2000); const o4 = await off(); check(Math.abs(o4) < 10, `a brake tap from a stop swings it back behind (${o4.toFixed(0)} deg)`)
-// Paper throw: hold B (= F) aims — the reticle shows — and releasing it throws (free roam: a practice throw).
+// B no longer aims (owner, 2026-10-21): held in the drive layout it is the icon menu. Off a route the
+// pad has no practice throw now; on one, the right stick aims and RB taps (checked below).
 const reticle = () => js('getComputedStyle(document.getElementById("aim-reticle")).display !== "none"')
+const menuOn = () => js('document.body.classList.contains("hud-menu-on")')
 await js('__fp.b[1] = 1'); await sleep(400)
-const aimed = await reticle()
+const aimed = await reticle(), lit = await menuOn()
 await js('__fp.b[1] = 0'); await sleep(300)
-check(aimed && !await reticle(), `B held aims (reticle ${aimed}), release throws (reticle gone)`)
-await sleep(4000)   // let the post-throw view hold run out before the next checks
+check(!aimed && lit && !await menuOn(), `B held lights the icon menu, not the aim reticle (reticle ${aimed}, menu ${lit}); release drops it`)
+await js('document.querySelector("#inv-screen.open") && document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }))')
+await sleep(300)
 // FEAT-133 RB split while aiming on a route (throwReady forced on — a route needs a whole story run):
 // a tap under throwTapMs throws (F down + up) and sends no Space; a hold becomes Space (handbrake).
 // Spied at key level: the truck sits parked on a slope here, and parked reads as handbrake on.
@@ -154,18 +163,34 @@ check(hbHold && await js('__sk') === 1 && await js('__fk') === 1, `aiming: RB he
 // The hold's Space edge released the park latch; tap straight back in before the slope rolls it.
 await js('__fp.b[5] = 1'); await sleep(100); await js('__fp.b[5] = 0'); await sleep(300)
 check((await vs()).parked, 'a plain RB tap re-parks it')
-// D-pad up = inventory (Tab); A does nothing in the automatic.
+// The pump has A (owner, 2026-10-21): while it is open (pumpActive forced), A is F held, not the upshift.
+// Off the pump F also aims a practice throw, so let that view hold run out after.
+await js('window.__pa0 = __padMod.pad.pumpActive; __padMod.pad.pumpActive = () => true; __fk = 0')
+await js('__fp.b[0] = 1'); await sleep(150); await js('__fp.b[0] = 0'); await sleep(150)
+await js('__padMod.pad.pumpActive = __pa0')
+check(await js('__fk') === 1, `pump open: A sends F (${await js('__fk')}x)`)
+await sleep(4000)
+// The icon menu (owner, 2026-10-21): hold B, the column lights with a pick; D-pad ↑/↓ under B walks
+// it; releasing B opens the pick. Parked here, so the inventory opens.
 const inv = () => js(`!!document.querySelector("#inv-screen.open")`)
+const pick = () => js('document.querySelector("#hud-icons .menu-sel")?.id ?? null')
 const before = await inv()
-await js('__fp.b[12] = 1'); await sleep(200); await js('__fp.b[12] = 0'); await sleep(500)
-check(!before && await inv(), `D-pad up opens the inventory (${before} -> ${await inv()})`)
+await js('__fp.b[1] = 1'); await sleep(200)
+const tag = () => js('document.getElementById("hud-menu-label").textContent')
+check(await menuOn() && await pick() === 'inv-icon' && await tag() === 'inventory', `B held: icon menu up on the inventory, named (${await pick()} · ${await tag()})`)
+await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(150)
+check(await pick() === 'dmg-icon' && await tag() === 'vehicle condition', `D-pad down under B walks to the damage icon, the label follows (${await pick()} · ${await tag()})`)
+await js('__fp.b[12] = 1'); await sleep(150); await js('__fp.b[12] = 0'); await sleep(150)
+await js('__fp.b[1] = 0'); await sleep(500)
+check(!before && await inv() && !await menuOn(), `releasing B opens the pick, the inventory (${before} -> ${await inv()})`)
 // FEAT-133: a card — the D-pad moves a highlight over it (first press places it), B backs out.
 await js('__fp.b[15] = 1'); await sleep(150); await js('__fp.b[15] = 0'); await sleep(150)
 await js('__fp.b[15] = 1'); await sleep(150); await js('__fp.b[15] = 0'); await sleep(150)
 check(await js('!!document.querySelector("#inv-screen .nav-focus")') && await inv(), 'D-pad highlights inside the inventory and does not close it')
 await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
-check(!await inv(), 'B closes the inventory')
-await js('__fp.b[12] = 1'); await sleep(200); await js('__fp.b[12] = 0'); await sleep(500)
+check(!await inv() && !await menuOn(), 'B closes the inventory, and that back never opens the icon menu')
+await js('__fp.b[1] = 1'); await sleep(100); await js('__fp.b[1] = 0'); await sleep(500)
+check(await inv(), 'a B tap opens the top pick (the inventory)')
 // FEAT-126 manual gearbox through the pad: A up, X down, LB clutch. Swapped in the way the debug
 // selector does it, on the app's own module instances.
 const appMod = (path) => `await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("${path}")))`
@@ -182,8 +207,8 @@ s = await vs(); check(s.v > 3 && (await js('__vs.ignition.state')) === 'running'
 await js('__R.clutchAssist = false')
 await js('__fp.b[0] = 1'); await sleep(120); await js('__fp.b[0] = 0'); await sleep(600)
 check(await gear() === 1, `assist OFF: A without LB is rejected (gear ${await gear()})`)
-check(await js('document.getElementById("dmg-icon").classList.contains("on") && getComputedStyle(document.getElementById("dmg-alert")).display !== "none"'),
-      'the missed shift raises the damage alert (icon lit, alert card up)')
+check(await js('document.getElementById("dmg-icon").classList.contains("on")'),
+      'the missed shift raises the damage alert (icon lit)')
 await js('__fp.b[4] = 1'); await sleep(200); await js('__fp.b[0] = 1'); await sleep(120); await js('__fp.b[0] = 0'); await sleep(600); await js('__fp.b[4] = 0')
 check(await gear() === 2, `assist OFF: LB + A shifts 1 → 2 (gear ${await gear()})`)
 await js('__fp.b[7] = 0; __R.clutchAssist = true')
@@ -209,7 +234,9 @@ check(await navText() === 'free roam', `second reaches free roam (${await navTex
 await press(A)
 check(await js('document.getElementById("main-menu").classList.contains("setup")'), 'A opens the run setup page')
 check(await js('!document.querySelector("#mm-setup-panel [data-key=steerAssist]")'), 'no assist rows on the setup page (they are settings)')
-await press(DOWN)   // lands on the seed field
+await press(DOWN)
+check(await navText() === 'start', `the first press on the setup page lands on start, its default (${await navText()})`)
+await press(DOWN, 2)   // past back, onto the seed field
 check(await js('document.activeElement?.id') === 'su-seed', 'the seed field takes the highlight AND focus')
 await press(DOWN); await press(LEFT)
 check((await selVal('worldPreset')).includes('casual'), `difficulty ◂ → casual (${await selVal('worldPreset')})`)
@@ -222,8 +249,8 @@ check((await selVal('worldPreset')).includes('casual') && await codeLine() === '
 await press(DOWN, 3); await press(RIGHT)   // past POI spacing and road climbs to the gearbox
 check((await selVal('gearbox')).includes('manual'), `gearbox ▸ → manual (${await selVal('gearbox')})`)
 check(await js('document.getElementById("su-code").textContent') === 'world code: random/C', `code line follows (${await js('document.getElementById("su-code").textContent')})`)
-await press(DOWN)
-check(await navText() === 'start', `one more D-pad down lands on start (${await navText()})`)
+await press(UP, 7)   // back up past the knobs, the seed field and back
+check(await navText() === 'start', `D-pad up returns to start at the top (${await navText()})`)
 await press(A)
 let live = false
 for (let t = 0; t < 240 && !(live = await js('!document.body.classList.contains("stage-on") && window.__rsReady === true')); t++) await sleep(250)

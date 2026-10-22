@@ -68,6 +68,7 @@ import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the pla
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
+import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -4373,6 +4374,7 @@ function _campPromptState () {
 // are, the keys, the DOM and the sound. Stepped on the fixed physics step, so a fill is 10 s of real
 // driving time and pauses when the game does.
 const fuelStop = new FuelStop()
+pad.pumpActive = () => fuelStop.isOpen   // the pad's A pumps while the pump is open (gamepad.js PUMP_KEYS)
 let _fHeld = false
 window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() === 'f') _fHeld = true })
 window.addEventListener('keyup', e => { if (e.key.toLowerCase() === 'f') _fHeld = false })
@@ -7031,15 +7033,6 @@ function _teleportToFreecam () {
 }
 document.getElementById('teleport-btn')?.addEventListener('click', _teleportToFreecam)
 
-// ── Controls cheat-sheet collapse toggle (feature/teleport) ───────────────────────────────
-{
-  const box = document.getElementById('controls')
-  const toggle = document.getElementById('controls-toggle')
-  toggle?.addEventListener('click', () => {
-    const collapsed = box.classList.toggle('collapsed')
-    toggle.innerHTML = collapsed ? 'controls &#9656;' : 'controls &#9662;'   // ▸ collapsed / ▾ open
-  })
-}
 document.addEventListener('keydown', e => {
   // T → free-cam teleport (usable while pointer-locked, where the button can't be clicked).
   if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.metaKey) _teleportToFreecam()
