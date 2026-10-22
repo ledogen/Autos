@@ -260,7 +260,8 @@ the shop session's $15 stand-in); sold at the auto shop, rarely; an A–S reward
 work sites (rare); never found.
 
 ### Quick-jack
-status: todo · design: ratified · build: effect · where: autoShop, reward
+status: wip · design: ratified · build: effect · where: autoShop, reward
+In ITEMS as `quickJack` (tool, 15 kg stand-in; cf60e9a4) with its thumbnail; the reward row, $30 shelf price and time saving are built on feature/parts.
 Roadside lift. **Ruled 2026-10-22:** takes 1 h off changing a whole tire (the spare's 2 h fit), and
 stacks with the compressor's 30 min. The spare does not need it — the factory jack is always in the
 truck. It does not shorten a plug repair: "you don't need to jack to plug" (owner, 2026-10-22). $30; sold at the auto shop; an A–S reward from the auto shop and stranded motorists; never found.
