@@ -36,3 +36,7 @@ moving on is always a raise.
 - [ ] `payoutFor` / `basePay` no longer read `dayTier`; `economy.mjs` covers the new terms.
 - [ ] Reputation rises with good deeds in the region, caps, and resets on entering a new region.
 - [ ] The result card shows the multiplier; the offer card's base pay includes it.
+
+## Amended 2026-10-21 (owner)
+
+Two giver traits move good deeds, and so reputation: **Off the books** gives none; **The right thing to do** adds ½ at C or better (FEAT-142). Deeds follow `pointsFor(letter)` on every type (FEAT-138). See design-amendments-2026-10-21-mission-recut.md §10.

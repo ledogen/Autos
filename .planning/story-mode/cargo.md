@@ -157,7 +157,7 @@ now** (owner, 2026-10-10) — there is one region; the Region column is the desi
 | R3 | a job box | residence → workSite | ASSET-57 | 175 | posted (route: owner, 2026-10-11). 95 kg steel chest + ~80 kg of tools — the tools are unseen, so that half is an assumption |
 | R3 | a Persian rug or two | | ASSET-58 | 30–60 per roll | not posted. **A range because there is no model yet** |
 
-**How freight pays** (owner, 2026-10-11; numbers in `data/offers.js`): par × (1 + 0.0007 × kg) for
+**How freight pays** (owner, 2026-10-11; numbers in `data/offers.js`; **superseded in part 2026-10-21**, see the rulings below): par × (1 + 0.0007 × kg) for
 the time the load costs; pay × (1 + 0.0003 × kg) on top, so pay outgrows time; every rank threshold
 × 1.15 (par pace is a B); the tip × 0.5. Haul wins the fast run; freight is the reliable earner.
 
@@ -251,6 +251,22 @@ Provenance: `design-amendments-2026-10-14.md`.
 - Not named, so still unrouted: grandma's vase keeps its residence → any row; the windshield keeps
   autoShop → any; the pelican case and the x-ray machine post nowhere yet.
 - Everything is R1 for now (the 2026-10-10 ruling stands).
+
+## Rulings (owner, 2026-10-21) — loads are picked from a stock
+
+Provenance: `design-amendments-2026-10-21-mission-recut.md`.
+
+- **Haul and freight givers have a limited stock; the player picks the load** (FEAT-114). Haul
+  ranks on pieces delivered, freight on kg delivered (FEAT-138). Haul's R1 S is a brimming stock
+  bed — measured, the owner expects 22–26 firewood bundles.
+- **Freight becomes a unit and a count** (FEAT-140). Divisible loads (bags, blocks, crates, ties,
+  drums) list a unit mass; the picker chooses the count and the bed fills visibly. Indivisible loads
+  (a job box, one drum, a rug) keep their as-built mass and can't usually reach S. This replaces
+  "every modelled load is ONE number, as built" for divisible cargo.
+- **Light freight gets a roster pass inside FEAT-140** — each light load (empty propane, small crate,
+  eight tyres, …) is dropped, moved to courier, or turned into a unit cargo, decided with the owner.
+- "How freight pays" below is superseded: the 1.15 time slack retires (time no longer ranks freight);
+  the par-per-kg stretch stays; the tip multiplier and pay-per-kg stay as FEAT-69 knobs.
 
 ## Adding cargo
 

@@ -258,3 +258,11 @@ brakes fade, and it overheats on long climbs. So the freight card differs from t
 - **Freight's bonus measure** (load condition? truck wear?), decided when freight is built.
 - Fold these rulings into missions.md "The job board — discovery and expiry" (still marked OPEN).
 - The list contents themselves (owner authoring session).
+
+## Amended 2026-10-21 (owner)
+
+- On haul and freight the bonus gate **prints as a number** ("deliver 10+", "400 kg+") and only rolls when the giver's stock can meet it — built in FEAT-114.
+- The card gains a **giver-traits slot, bottom-left** (FEAT-142).
+- Papers still roll no bonus until Larry has a reward pool (open).
+
+See design-amendments-2026-10-21-mission-recut.md §6, §10.

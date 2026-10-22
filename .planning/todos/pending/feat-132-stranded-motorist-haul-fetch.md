@@ -19,3 +19,7 @@ out / be lost like other haul loads.
 - [ ] Stranded motorist can post a haul-family fetch; the wheel+tire spawns in the bed at the pickup PARK.
 - [ ] Delivered condition counts as for any haul load.
 - [ ] Courier-class fetch items (jerry can) stay courier unless the owner says otherwise.
+
+## Amended 2026-10-21 (owner)
+
+A one-piece fetch can never rank above D on counts, so this job **ranks on time, like courier** (FEAT-138). The stranded motorist never gives a rare reward, so an easy rank costs nothing. See design-amendments-2026-10-21-mission-recut.md §12.15.

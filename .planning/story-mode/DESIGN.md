@@ -252,8 +252,23 @@ overnight" with the deadline. (6) **The camp pause** (2026-08-02) is restated an
 by the furthest region unlocked.**~~ **Retired 2026-10-21 (owner, the item setup page): costs scale with the clock only (`dayTier`); a region gives better income and rewards, never higher prices.** (11) **Pay grows with work, not the day:** `dayTier` leaves pay
 and scales costs only; pay rides the region step × a capped **regional reputation** shown on the
 result card. Retires "accept at 1 a.m., buy tomorrow's rate". (12) **Alpha run shape: three regions,
-provisionally 7 / 6 / 5 days.** Open: what earns haul's and freight's tip and bonus item. Provenance:
+provisionally 7 / 6 / 5 days.** ~~Open: what earns haul's and freight's tip and bonus item.~~
+*Answered 2026-10-21, below.* Provenance:
 [design-amendments-2026-10-14.md](design-amendments-2026-10-14.md).
+
+**Ratification pass 2026-10-21 (project owner) — every mission type ranks on its own axis.** (1)
+**Rank is the career's core skill; the tip is speed**, on every type. Courier letters on time
+(unchanged); **haul on pieces delivered**; **freight on kg delivered**, the player loading what they
+dare; **fragile on remaining health** (unchanged); papers on time against a deadline. (2) Haul and
+freight pay per piece / per kg delivered, the tip scaled by the amount; **fragile's base is half
+guaranteed, half × health**, and its tip moves from condition to speed. (3) **The giver has a limited
+stock**; the player picks the load; a bonus gate prints as a count or kg and only rolls when the stock
+can meet it. (4) **Freight is units:** the bed fills visibly; indivisible loads keep their mass. (5)
+**Papers: any N customers, a deadline from the shortest route through N, the route ends at N.** (6)
+**The HUD strip shows each type's rank axis and the live letter**; fragile adds a health bar and a
+combined-g bar. (7) **Giver traits**, 0–2 per offer. (8) **Rank thresholds step by region, never by
+day** — the day ramp retires (SM-INV-2 below). Tickets FEAT-138 to FEAT-142 and a re-scoped FEAT-114.
+Provenance: [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md).
 
 **Companion design notes** (downstream of this bible; where they disagree with it, *it* wins):
 [missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag and bridge-site main missions),
@@ -459,6 +474,20 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > analysis in this project argued the par ramp was redundant *with* Q9A; that argument assumed the
   > ramp reduced income as the run aged. Under the 2026-08-01 model income *rises* with run age, and
   > the tightening thresholds are what stop that from being free.
+
+  > **Amendment [OWNER 2026-10-21] — the thresholds step by REGION, never by day.** The day ramp
+  > above (`rankThresholds(day)`) retires. Its one job was braking pay that rose with the day, and day
+  > tier left pay on 2026-10-14 — a raise earned through reputation needs no brake. Count and kg can't
+  > tighten by day anyway: they are facts about the bed, so a day-ramped count soon passes what the bed
+  > holds. Instead the thresholds are a table keyed by **type and region**: within a region the stock
+  > truck tops out around B or A and **that region's upgrades reach S**; the next region resets the
+  > player to B/A until its upgrades. Freight's kg letters step up (R2/R3 S past the stock truck's legal
+  > limit); haul's counts step through each region's cargo (later S past a brimming stock bed — the bet
+  > is to over-fill); fragile steps through more sensitive cargo, never its health letters; courier and
+  > papers may tighten slightly per region (tentative). Costs still escalate with the day (Q9A). This
+  > is the clause's own logic — *a better car raises payout* — with the region step making the next
+  > region hard again. Thresholds never read the player's truck (FEAT-112). Provenance:
+  > [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md) §11b; FEAT-138.
 - **SM-INV-3 — Par is never rendered as a countdown; timers are a flavor, not the driver.**
   [RATIFIED as amended 2026-07-16] The par economy is a payout curve, felt as *how hard am I
   willing to push*, never *3:41 remaining* — putting par on the HUD makes the whole game a
@@ -473,6 +502,12 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > the HUD states the due time ("due Day 3, 2 am") — a fixed time, **never a countdown**, so the core
   > of this invariant stands: par is never rendered, and the deadline is generous enough (at least
   > par +50 %) that it is a backstop, not the thing you drive against. Provenance: the FEAT-113 ticket.
+
+  > **Amendment [OWNER 2026-10-21] — papers drive against their deadline.** The paper route's deadline
+  > is par × 1.5 of the shortest route through the N customers the player chooses to serve; par stays
+  > the C/D line and the deadline is the end of D, so for papers the deadline *is* the thing you drive
+  > against. It is still shown as a clock time, never a countdown — the no-digit FEAT-87 bar carries
+  > "how close am I". Never "bell". Provenance: [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md) §7; FEAT-141.
 
   > **Amendment [RATIFIED 2026-08-01] — rank is par's player-facing surface.** The player never sees
   > par and never needs to: they see **a letter and a number** — how they did, and what they earned.
@@ -643,7 +678,9 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > card follows (a strapped load still costs the 1 h clean-up). The giver's slot locks at the
   > deadline under the lock rule. **The two cards are a pair:** the offer card quotes one number,
   > *Base pay*, the guaranteed amount; the result card answers it in the same words — *Base pay*,
-  > then *Tip* — and the tip is never mentioned on the offer.
+  > then *Tip* — and the tip is never mentioned on the offer. *(One exception, owner 2026-10-21: the
+  > "Big tipper" giver trait names it by design — FEAT-142. Haul and freight quote a **rate** — "Base
+  > pay $0.40 a bundle" — because the load is picked after the card; the picker shows the total.)*
 - **SM-INV-5 — Wear accrues on time + intensity, never distance.** Hours and engine torque
   are both integrated; wear compounds with how hard you drive, not just how long. This is
   the lever that separates intense mission driving from casual point-to-point freeroam
@@ -800,6 +837,15 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   A strong early run still buys the next region sooner, and because costs escalate with run age
   (Q9A), arriving early means arriving **before the country gets expensive**. Points are not progress
   so much as **a head start against the cost curve** — with no rendered clock anywhere (SM-INV-3).
+
+  > **Amendment [OWNER 2026-10-21] — every type's deeds follow its own letter; two traits move them.**
+  > `pointsFor(letter)` (1 at B+, ½ at C) on every type; haul's share bands and fragile's health bands
+  > retire, because each letter now carries its own axis. Two giver traits (FEAT-142) touch deeds:
+  > **Off the books** pays more and gives none; **The right thing to do** pays less and adds **½** on
+  > top of the job's own, **only at C or better**, so a deed is still earned by driving. That ½ counts
+  > toward FEAT-103's six-deed gate. On freight the letter is chosen at the dock and kept by surviving
+  > the drive — carrying an overload safely is the competence it measures. Provenance:
+  > [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md) §2, §10.
 - **SM-INV-15 — No in-run vehicle purchase.** [RATIFIED 2026-07-29] **You cannot buy a different car
   during a run.** Parts, yes — deeply. Vehicles, no. Three reasons, all owner-stated, and worth
   keeping in the code comment that will inevitably ask *"why not just add a dealership"*:
@@ -944,6 +990,11 @@ than cosmetic meaning. Item rewards die with the run like everything else (SM-IN
 and clearance (main missions) are separate axes; **rank is computed per-axis** so the letter — and
 therefore the bonus objective — works on any job.
 
+> **Amendment [OWNER 2026-10-21] — on haul and freight the gate prints as a number.** The letter *is*
+> a count or a weight there, so the card prints the threshold behind it ("deliver 10+", "400 kg+"),
+> and a bonus only rolls when the giver's stock can meet its gate. Capacity caps rank: a car can't
+> carry enough to reach the upper counts, so no vehicle needs barring from any reward. FEAT-114.
+
 > **Amendment [RATIFIED 2026-08-17] — non-margin mission types price themselves.** Freight's
 > flat-rate payout was flagged here as an unratified bend of SM-INV-4; it is now ratified, as a
 > **bounded exception rather than a one-off**. SM-INV-4 continues to govern **margin** missions
@@ -969,6 +1020,23 @@ therefore the bonus objective — works on any job.
 > at 100 %, none at 50 % or below, linear between). The clock does not tip it. Condition does not cut
 > the base — *"an item at 25 % condition wouldn't even be worth carrying."* Zero condition still fails
 > the job. Provenance: FEAT-97.
+
+> **Amendment [OWNER 2026-10-21] — every type ranks on its own axis; the tip is speed.** Supersedes
+> the two fragile lines above and haul's "no speed tip" (2026-10-16).
+>
+> | Type | Letter | Tip | Base |
+> |---|---|---|---|
+> | Courier | time vs par | speed | guaranteed |
+> | Haul | pieces delivered (absolute, per cargo; R1 S = a brimming stock bed) | speed × amount delivered | per piece delivered |
+> | Freight | kg delivered (R1 S = 125 % of the rated payload, provisional) | speed × amount delivered | per kg delivered |
+> | Fragile | remaining health | **speed** | **half guaranteed, half × health** |
+> | Papers | time; the route ends at N; deadline = par × 1.5 | speed + accuracy money | the fare |
+>
+> Freight is no longer a margin job: the player loads what they dare from the giver's stock, so the
+> letter is chosen at the dock and **kept** by surviving the drive. The guaranteed half answers the
+> 10-15 objection — damaged cargo is still worth delivering; destroyed cargo still fails and pays
+> nothing. Every pay term reads the count, kg, health or time, never the letter (SM-INV-4 holds). Base
+> pay is still × par. Provenance: [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md); FEAT-138.
 
 > **Amendment [OWNER 2026-10-08] — $0-cash missions are retired.** Every job pays some cash, even for
 > bare completion (SM-INV-4's base pay). A bonus item rides **on top of** cash, never instead of it;
