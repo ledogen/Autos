@@ -148,7 +148,10 @@ Fitting it is a 90 min timeskip (owner, 2026-10-20) that clears the flat. Real m
 (`spareTire`). Flats ship (`flat[]`, FEAT-94). **Ruled 2026-10-21:** self-contained (factory jack always
 aboard), full-size only; worn (50–80%, ~$15) and new (~$25) variants in different pools; auto shop;
 reward from the auto shop and stranded motorist (A–S); rare roadside find. The fit (`use: 'spare'`) is
-built on feature/parts, not merged.
+built on feature/parts, not merged. **An ordinary inventory part, one slot** (owner, 2026-10-21: parts go
+in the inventory, never the bed). The swapped-off pair goes into the slot the spare left, as a flat
+spare (tire id + both wears); a plug kit or the shop restores it; the shop can swap any mounted pair per
+corner. Jalopies start with one 60% of the time, at 40–80%.
 
 ### Tire plug kit
 status: wip · design: ratified · build: effect · where: autoShop, reward, found
@@ -186,7 +189,7 @@ bottle; 15 min; holds for the run (2026-10-20). $5–10; a reward from both (B�
 
 ### Emergency gas
 status: wip · design: ratified · build: effect, model · where: gasStation, reward
-A 2 gal RotoPax, single-use — the low-tier fuel reward. REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122). Fuel shipped (FEAT-50, 2026-10-17); the pour itself is still unbuilt. Ruled 2026-10-21: parked only, a 10 min timeskip; $5–10; a gas-station and stranded-motorist reward (B–A); never found.
+A 2 gal RotoPax, single-use — the mid-tier fuel reward (B–A). REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122). Fuel shipped (FEAT-50, 2026-10-17); the pour itself is still unbuilt. Ruled 2026-10-21: parked only, a 10 min timeskip; $5–10; a gas-station and stranded-motorist reward (B–A); never found.
 
 ### Jerry can
 status: todo · design: proposed · build: effect · where: reward
@@ -446,6 +449,8 @@ status: wip · design: ratified · build: param, model · where: autoShop, rewar
 Its own part (owner, 2026-10-21): wheels and tires are separate (items.md §3g). The stock wheel,
 `wheelSteel` on feature/parts: one socket per corner (30 min), $8, 9 kg; a bent rim is its damage. A
 reward too (placeholder gate B–A, auto shop). Icon `wheel.png`. Model ticket exists (asset-steel-wheels).
+Shop-mounted only: a flat at the roadside needs the spare, since there are no tools to seat a bead
+(owner, 2026-10-21). Its desc must say it is just a rim.
 
 ### Skid plates
 status: todo · design: idea · build: effect, model · needs: hazards · where: autoShop
@@ -462,7 +467,8 @@ items.md §3g. The bottom rung: worse than standard on pavement and dirt.
 ### Standard tires
 status: shipped · design: ratified · build: param · where: kit
 items.md §3g. The tire the truck runs today (P235/75R15). A part of its own since 2026-10-21 (12 kg,
-tire only; sold at the auto shop and a reward, placeholder gate B–A). When dirt lands it loses a tiny bit of dirt
+tire only; sold at the auto shop and a reward, placeholder gate B–A). Shop-mounted only; every tire's
+desc reads "Just a tire. Can't drive on it without a rim" (owner, 2026-10-21). When dirt lands it loses a tiny bit of dirt
 grip against today's single value (FEAT-38).
 
 ### Sport tires
