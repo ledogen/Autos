@@ -28,6 +28,10 @@ export const ITEMS = {
     // A 12 V portable inflator: a plug repair is 30 min in all with it, 2 h by hand (items.md §7).
     compressor:   { name: 'Compressor',    kind: 'tool',       massKg: 4,
                     desc: 'A little pump that runs off the lighter socket. Airs a tire up while you wait.' },
+    // A low steel trolley jack, ~15 kg [DEFAULT]: takes 1 h off the spare change, never a plug repair
+    // (owner, 2026-10-22 — "you don't need to jack to plug"). The time saving is the parts session's.
+    quickJack:    { name: 'Quick-jack',    kind: 'tool',       massKg: 15,
+                    desc: 'A low trolley jack that rolls under the truck. Gets a spare on quicker than the factory jack.' },
 
     // ── Backpacks (items.md §2c) — `packSlots` camp items ride inside; `reachM` is how far past the
     //    road edge camp may be (campRoadEdgeM — not wired yet: the starter's is today's tether).
