@@ -11,7 +11,7 @@
 //                   gas can, fitting the spare and plugging a tire are the inventory screen's.
 //
 // Roadside tire work (owner, 2026-10-21; the factory jack and the bike pump are always aboard):
-//   SPARE   90 min. The spare goes on the corner the player picks, tire AND wheel (it is a mounted
+//   SPARE   2 h, less with tools (spareFitHours). The spare goes on the corner the player picks, tire AND wheel (it is a mounted
 //           pair, carried in the inventory). Any corner, flat or not (owner, 2026-10-22: "swap any
 //           tire for any reason at any time"); the pair that comes off goes into the inventory still
 //           mounted, flat if it was.
@@ -27,7 +27,15 @@
 
 import { PARTS, SLOTS } from '../data/parts.js'
 
-export const SPARE_FIT_H = 1.5                              // owner, 2026-10-21 (was 30 min)
+/**
+ * Hours to change a tire for the spare (owner, 2026-10-22): 2 h with the factory jack and wrench; a
+ * compressor (an impact gun off it) takes 30 min off, a quick-jack 1 h, and they stack — 30 min with
+ * both. (The quick-jack's item row comes from the items session.)
+ */
+export const spareFitHours = (inventory) => {
+  const has = (id) => inventory.list().some(r => r.id === id)
+  return 2 - (has('compressor') ? 0.5 : 0) - (has('quickJack') ? 1 : 0)
+}
 export const PLUG_H = { pump: 2, compressor: 0.5 }          // the whole stop, by how the tire is aired up
 
 /**
@@ -56,7 +64,7 @@ export function recoveryCard (s) {
  * puncture (owner, 2026-10-20: roadside swaps keep the old part), into the room the spare left — one
  * entry, so there is always room. A plug kit or the service center makes a flat one a spare again.
  * Returns the corner, or -1 with nothing changed (not a spare, a flat spare, no such corner). The
- * caller puts SPARE_FIT_H on the clock.
+ * caller puts spareFitHours() on the clock.
  */
 export function fitSpare (parts, damage, inventory, index, corner) {
   const r = inventory.list()[index]

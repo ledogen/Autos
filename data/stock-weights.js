@@ -12,51 +12,62 @@
 // Likelihood is deliberately SEPARATE from `rarity`: rarity is only the icon tint. Stock springs are
 // plain grey, yet seldom on a shade-tree shelf.
 //
-// Relative weights; only the ratios matter. [DEFAULT] — derived 2026-10-22 from the first proposal's
-// category weight × the part's share by rarity (common 6 : uncommon 3 : rare 1) within its category:
-// tires 30, brakes 20, wheels 12, mounted spare 10, air filter 8, headlight 8, plug kit 8, springs 4,
-// shocks 4, anti-roll bars 3, radiator 3, lift kit 2, compressor 2, differential 1, engine 0.5.
+// Relative weights; only the ratios matter. The owner's tiers (2026-10-22): Often 10 · Sometimes 4 ·
+// Rarely 1 · Hardly ever 0.25. Rows marked [DEFAULT] are not set yet and keep the first proposal's
+// category weight × rarity share.
 
 export const STOCK_WEIGHT = {
     // Tires and wheels
-    tireOld:          8.57,
-    tireStandard:     8.57,
-    tireSport:        4.29,
-    tireOffroad:      4.29,
-    tireLT:           4.29,
-    wheelSteel:       12,
-    spareTire:        10,     // the mounted wheel + tire
-    tirePlugKit:      8,
-    compressor:       2,
+    tireOld:          10,
+    tireStandard:     10,
+    tireSport:        4,
+    tireOffroad:      1,
+    tireLT:           1,
+    wheelSteel:       10,
+    spareTire:        4,     // the mounted wheel + tire
+    tirePlugKit:      10,
+    compressor:       1,
 
     // Brakes
-    brakesFrontStd:   6,
-    brakesFrontSport: 3,
+    brakesFrontStd:   10,
+    brakesFrontSport: 4,
     brakesFrontRace:  1,
-    brakesRearStd:    6,
-    brakesRearSport:  3,
+    brakesRearStd:    10,
+    brakesRearSport:  4,
     brakesRearRace:   1,
 
     // Springs, shocks, anti-roll bars, lift
-    springsFrontOEM:  1.33,
-    springsFrontHD:   0.67,
-    springsRearOEM:   1.33,
-    springsRearHD:    0.67,
-    dampersFrontOEM:  1.33,
-    dampersFrontHD:   0.67,
-    dampersRearOEM:   1.33,
-    dampersRearHD:    0.67,
-    arbFrontStock:    1.5,
-    arbFrontSport:    0.75,
-    arbRearSport:     0.75,
-    liftKit:          2,
+    springsFrontOEM:  1.33,   // [DEFAULT]
+    springsFrontHD:   0.67,   // [DEFAULT]
+    springsRearOEM:   1.33,   // [DEFAULT]
+    springsRearHD:    0.67,   // [DEFAULT]
+    dampersFrontOEM:  1.33,   // [DEFAULT]
+    dampersFrontHD:   0.67,   // [DEFAULT]
+    dampersRearOEM:   1.33,   // [DEFAULT]
+    dampersRearHD:    0.67,   // [DEFAULT]
+    springsFrontSport: 0.67,  // [DEFAULT] — the sport tier, like HD
+    springsRearSport: 0.67,   // [DEFAULT]
+    dampersFrontSport: 0.67,  // [DEFAULT]
+    dampersRearSport: 0.67,   // [DEFAULT]
+    arbFrontStock:    1.5,   // [DEFAULT]
+    arbFrontSport:    0.75,   // [DEFAULT]
+    arbRearSport:     0.75,   // [DEFAULT]
+    liftKit:          2,   // [DEFAULT]
 
     // Engine bay and drivetrain
-    airFilterStock:   8,
-    headlightStock:   8,
-    radiatorStock:    3,
-    diffOpen:         0.75,
-    diffLSD:          0.13,
-    diffLocked:       0.13,
-    engineStock:      0.5,
+    airFilterStock:   10,
+    headlightStock:   10,
+    radiatorStock:    1,
+    diffOpen:         4,
+    diffLSD:          0.25,
+    diffWelded:       4,
+    engineStock:      0.25,
+
+    // Rewards only: never on the shelf (REWARD_ONLY below)
+    emergencyGas:     4,
+    coffee:           4,
+    chiliDog:         4,
 }
+
+/** Weighted for mission rewards but never stocked on a shelf (the owner's reward-only rows). */
+export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog'])

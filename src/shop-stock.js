@@ -17,7 +17,7 @@
 import { PARTS } from '../data/parts.js'
 import { ITEMS } from '../data/items.js'
 import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, ITEM_PRICE } from '../data/shop-stock.js'
-import { STOCK_WEIGHT } from '../data/stock-weights.js'
+import { STOCK_WEIGHT, REWARD_ONLY } from '../data/stock-weights.js'
 import { mulberry32, seedFor, hash32 } from './seed.js'
 
 export const runShelves = {
@@ -28,7 +28,7 @@ export const runShelves = {
 const CATCH_UP_H = LIFE_H[1]
 
 /** What can fill a slot: every id the stock table weighs above nothing. */
-const STOCK = Object.entries(STOCK_WEIGHT).filter(([, w]) => w > 0)
+const STOCK = Object.entries(STOCK_WEIGHT).filter(([id, w]) => w > 0 && !REWARD_ONLY.has(id))
 
 const pick = (pairs, r) => {
     r *= pairs.reduce((a, [, w]) => a + w, 0)

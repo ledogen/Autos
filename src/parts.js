@@ -118,7 +118,7 @@ export class PartsSystem {
         Object.assign(this._params, part.patch)
         runParts.fitted[socket] = id
         for (const t of SLOTS[socket].tracks) {
-            this._damage.setDurability(t, FAMILY_DURABILITY[part.family])
+            this._damage.setDurability(t, part.durability ?? FAMILY_DURABILITY[part.family])   // a part's own wins (the sport tire)
             this._damage.set(t, cond)
         }
         const wheel = TIRE_IDS.indexOf(socket)

@@ -88,7 +88,7 @@ import { ServiceCenter } from './service.js'              // SM-3: repairs and p
 import { ServiceScreen } from './service-screen.js'
 import { startShelves, shelf, take as takeShelf, shelfName } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf
 import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
-import { recoveryCard, fitSpare, SPARE_FIT_H, plugTire, plugMethods, PLUG_H, fitRoadside } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
+import { recoveryCard, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
@@ -4610,7 +4610,7 @@ const _tireNote = (c) => PARTS[partsSystem.fitted(`tire${_CORNER[c]}`)]?.name ??
 const _backToInventory = () => { if (vehicleState.parked) inventoryScreen.open() }
 const _afterRoadsideWork = (h) => { damageModel.publish(RANGER_PARAMS); daySystem.advanceMinutes(h * 60) }
 
-/** The spare's inventory effect (ITEMS.spareTire.use): any corner, flat or not, 90 min on the clock. */
+/** The spare's inventory effect (ITEMS.spareTire.use): any corner, flat or not, spareFitHours() on the clock. */
 function _pickSpare (e) {
   inventoryScreen.close()
   damageScreen.pick({
@@ -4618,8 +4618,9 @@ function _pickSpare (e) {
     corner: () => !e.flat,
     note: _tireNote,
     about: `The spare: ${condLine({ ...e, kind: 'part' })}.` + (e.flat ? ' Plug it before it goes on.' : ''),
-    actions: ({ corner }) => [{ label: `Swap it on — ${formatGameDuration(SPARE_FIT_H)}`, run: () => {
-      if (fitSpare(partsSystem, damageModel, inventorySystem, inventorySystem.indexOf(e), corner) >= 0) _afterRoadsideWork(SPARE_FIT_H)
+    actions: ({ corner }) => [{ label: `Swap it on — ${formatGameDuration(spareFitHours(inventorySystem))}`, run: () => {
+      const h = spareFitHours(inventorySystem)
+      if (fitSpare(partsSystem, damageModel, inventorySystem, inventorySystem.indexOf(e), corner) >= 0) _afterRoadsideWork(h)
     } }],
     onClose: _backToInventory,
   })

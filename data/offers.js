@@ -302,11 +302,24 @@ export const REWARDS = [
       pools: ['gasStation', 'strandedMotorist'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'workSite'] },
-    // Tires and wheels are rewards as well as shop stock (owner, 2026-10-21). Gates and pools [DEFAULT].
+    // Tires, wheels, the lift, the LSD and the compressor (owner, 2026-10-22, the setup page). Where the
+    // page named no givers, the auto shop [DEFAULT]. The LSD is a barn find: the farm, S only.
+    { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'],
+      pools: ['autoShop', 'farm'] },
     { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'],
+      pools: ['autoShop', 'strandedMotorist', 'farm'] },
+    { id: 'tireSport',  name: 'Sport tire',  kind: 'part',       gates: ['A', 'S'],
+      pools: ['autoShop'] },
+    { id: 'tireOffroad', name: 'All-terrain tire', kind: 'part', gates: ['A', 'S'],
       pools: ['autoShop'] },
     { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'],
+      pools: ['autoShop', 'farm', 'residence'] },
+    { id: 'liftKit',    name: 'Lift kit',    kind: 'part',       gates: ['B', 'A'],
       pools: ['autoShop'] },
+    { id: 'diffLSD',    name: 'Limited-slip differential', kind: 'part', gates: ['S'],
+      pools: ['farm'] },
+    { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'],
+      pools: ['autoShop', 'workSite'] },
     // The spare air filter (items.md, ratified): a reward from the auto shop and the gas station.
     { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation'] },

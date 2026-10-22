@@ -13,7 +13,7 @@
 // Pure node: no THREE, no DOM.
 import { rollSlot, startShelves, shelf, take, shelfPrice, runShelves } from '../src/shop-stock.js'
 import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, ITEM_PRICE } from '../data/shop-stock.js'
-import { STOCK_WEIGHT } from '../data/stock-weights.js'
+import { STOCK_WEIGHT, REWARD_ONLY } from '../data/stock-weights.js'
 import { PARTS } from '../data/parts.js'
 import { ITEMS } from '../data/items.js'
 import { REWARDS } from '../data/offers.js'
@@ -32,7 +32,8 @@ const share = (label, hits, n, want) => {
 }
 
 // ── 1. Roll statistics ────────────────────────────────────────────────────────────────────────
-const bad = Object.keys(STOCK_WEIGHT).filter(id => !ITEMS[id] || !(PARTS[id] ? PARTS[id].massKg > 0 : ITEM_PRICE[id] > 0))
+const SHELF = Object.fromEntries(Object.entries(STOCK_WEIGHT).filter(([id]) => !REWARD_ONLY.has(id)))
+const bad = Object.keys(SHELF).filter(id => !ITEMS[id] || !(PARTS[id] ? PARTS[id].massKg > 0 : ITEM_PRICE[id] > 0))
 check('every stocked id is a carried part or a priced item', bad.length === 0, bad.join())
 startShelves(12345)
 const fills = []
@@ -46,11 +47,11 @@ for (let shop = 0; shop < 40; shop++) {
 }
 const pFill = fills.length / rolls
 check(`fill rate ${pFill.toFixed(4)} ≈ P_FILL ${P_FILL}`, Math.abs(pFill - P_FILL) < 0.003)
-const W = Object.values(STOCK_WEIGHT).reduce((a, w) => a + w, 0)
+const W = Object.values(SHELF).reduce((a, w) => a + w, 0)
 const n = {}
 for (const e of fills) n[e.id] = (n[e.id] ?? 0) + 1
-check('nothing outside the table', Object.keys(n).every(id => STOCK_WEIGHT[id] > 0))
-for (const [id, w] of Object.entries(STOCK_WEIGHT)) share(`shelf ${id}`, n[id] ?? 0, fills.length, w / W)
+check('nothing outside the table, nothing reward-only', Object.keys(n).every(id => SHELF[id] > 0))
+for (const [id, w] of Object.entries(SHELF)) share(`shelf ${id}`, n[id] ?? 0, fills.length, w / W)
 
 // Rewards: every source's pool at every gate, drawn many times, follows the same weights.
 for (const src of [...new Set(REWARDS.flatMap(r => r.pools))]) {

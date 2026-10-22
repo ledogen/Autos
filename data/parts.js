@@ -87,18 +87,22 @@ export const PARTS = {
     // ── Tires (§3g) — ONE tire each, any corner. Grip is against the stock tire; dirt grip waits on
     //    FEAT-38. Masses are the tire alone (a 225/70R15 is ~12 kg); the all-terrain is the standard
     //    one's × 1.2 (owner, 2026-10-21).
+    //    Prices (owner, 2026-10-22, the page's bands — old $5–10, the rest $10–30; [DEFAULT] within):
+    //    old $7, standard $15, sport $20, all-terrain $20. Sport grip +10% on pavement and wears ×1.25
+    //    (`durability` 0.8 overrides its family). Its −10% and the all-terrain's +15% ON DIRT wait on
+    //    FEAT-38: grip is one number per tire until the physics knows what each tire stands on.
     //    The spare is its own part (owner, 2026-10-20): a full-size spare MOUNTED on a steel wheel, new
     //    at ~$25 (owner, 2026-10-21; a worn one, 50–80%, comes from the reward pools). It is carried,
     //    never fitted as itself: `mounted` names what goes on the corner (src/recovery.js fitSpare).
-    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 3, massKg: 12, grip: 0.9,
+    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 7, massKg: 12, grip: 0.9,
                      patch: {}, desc: 'Just a tire: hard, cracked rubber off something else. Can’t drive on it without a rim; the shop mounts it.' },
-    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 6, massKg: 12, grip: 1, stock: true,
+    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 15, massKg: 12, grip: 1, stock: true,
                      patch: {}, desc: 'Just a tire, the all-season the truck left the factory on. Can’t drive on it without a rim; the shop mounts it.' },
     spareTire:     { name: 'Spare tire',           slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 21, grip: 1, mounted: { tire: 'tireStandard', wheel: 'wheelSteel' },
                      patch: {}, desc: 'A tire already mounted on a steel wheel. Bolt it on in place of a flat. Heavy to carry around.' },
-    tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 8.5, massKg: 11.5, grip: 1.1,
+    tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 20, massKg: 11.5, grip: 1.1, durability: 0.8,
                      patch: {}, desc: 'Just a tire, soft and sticky on pavement, lost on dirt, and it wears fast. Can’t drive on it without a rim; the shop mounts it.' },
-    tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 9, massKg: 14.4, grip: 1,
+    tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 20, massKg: 14.4, grip: 1,
                      patch: {}, desc: 'Just a tire, chunky tread: no worse on pavement, at home on dirt. Can’t drive on it without a rim; the shop mounts it.' },
     tireLT:        { name: 'Load-range E tire',    slot: 'tire', family: 'hd', rarity: 'uncommon', price: 10, massKg: 15, grip: 0.95,
                      patch: {}, load: LT_LOAD,
@@ -123,6 +127,15 @@ export const PARTS = {
     springsRearHD:   { name: 'Heavy-duty rear springs', slot: 'springsRear', family: 'hd', rarity: 'uncommon', price: 13, massKg: 21,
                        patch: { suspensionStiffnessRear: 52000 }, load: HD_SPRINGS,
                        desc: 'An extra leaf. Sits level under a load, bucks when empty.' },
+    // Sport tier (owner, 2026-10-22): stiffer than stock, softer than HD, stock height, stock load
+    // rating; Sport family, so they wear faster. [DEFAULT] +35% rate, +40% damping (the page's middle
+    // options), priced between stock and HD.
+    springsFrontSport: { name: 'Sport front springs', slot: 'springsFront', family: 'sport', rarity: 'uncommon', price: 10, massKg: 14,
+                       patch: { suspensionStiffnessFront: 44550 },
+                       desc: 'Stiffer coils at the stock height. Sharp on pavement, firm over bumps, and they tire sooner.' },
+    springsRearSport:  { name: 'Sport rear springs',  slot: 'springsRear', family: 'sport', rarity: 'uncommon', price: 10, massKg: 16,
+                       patch: { suspensionStiffnessRear: 44550 },
+                       desc: 'Stiffer leaves at the stock height. Squats less, skips over bumps, and they tire sooner.' },
     dampersFrontOEM: { name: 'Stock front shocks',  slot: 'dampersFront', family: 'oem', rarity: 'common', price: 6, massKg: 6, stock: true,
                        patch: { suspensionDampingFront: 3500 }, desc: 'Factory shocks, tuned for an empty bed.' },
     dampersFrontHD:  { name: 'Heavy-duty front shocks', slot: 'dampersFront', family: 'hd', rarity: 'uncommon', price: 11, massKg: 7,
@@ -133,6 +146,12 @@ export const PARTS = {
     dampersRearHD:   { name: 'Heavy-duty rear shocks', slot: 'dampersRear', family: 'hd', rarity: 'uncommon', price: 11, massKg: 7,
                        patch: { suspensionDampingRear: 6000 }, load: HD_DAMPERS,
                        desc: 'Firm valving that settles a loaded bed. Busy and harsh when empty.' },
+    dampersFrontSport: { name: 'Sport front shocks', slot: 'dampersFront', family: 'sport', rarity: 'uncommon', price: 9, massKg: 6,
+                       patch: { suspensionDampingFront: 4900 },
+                       desc: 'Quick, firm valving. The nose stays put and the ride gets busy. They wear out faster.' },
+    dampersRearSport:  { name: 'Sport rear shocks',  slot: 'dampersRear', family: 'sport', rarity: 'uncommon', price: 9, massKg: 6,
+                       patch: { suspensionDampingRear: 5600 },
+                       desc: 'Quick, firm valving. The tail settles fast and the ride gets busy. They wear out faster.' },
     // ── Brakes, per axle (DESIGN.md: pad grades per axle set the bias): pads up front, drum shoes at
     //    the rear on this truck. [DEFAULT] torques; the whole ladder rose 10 % with the stock brakes
     //    for ABS (FEAT-135, 2026-10-21).
@@ -175,9 +194,11 @@ export const PARTS = {
     diffLSD:       { name: 'Limited-slip differential', slot: 'diff', family: 'sport', rarity: 'rare', price: 40, massKg: 32,
                      patch: { rearDiffMode: 'lsd' },
                      desc: 'Clutch packs share the drive. Pulls out of corners, and pushes into them.' },
-    diffLocked:    { name: 'Locker',               slot: 'diff', family: 'offroad', rarity: 'rare', price: 35, massKg: 32,
+    // The welded diff replaces the locker (owner, 2026-10-22): "its cheaper … I do want a silly locked
+    // diff option to show up occasionally". Same physics as a locker. Price [DEFAULT], under its $35.
+    diffWelded:    { name: 'Welded differential', slot: 'diff', family: 'offroad', rarity: 'uncommon', price: 15, massKg: 30,
                      patch: { rearDiffMode: 'locked' },
-                     desc: 'Both rear wheels turn together, always. Unstoppable in mud, wrong on a tight turn.' },
+                     desc: 'The spider gears welded solid. Both rear wheels turn together, always: they chirp and hop through every tight turn.' },
 
     // ── Lift (§3g — the first Off-road part). Body offset: NEGATIVE raises the body. [DEFAULT] 5 cm.
     liftNone:      { name: 'No lift',              slot: 'lift', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
@@ -190,11 +211,11 @@ export const PARTS = {
                      desc: 'Spacers and longer shocks. Clears ruts and rocks; leans more, and rolls sooner.' },
 
     // ── The engine bay (owner, 2026-10-22). Stock only for now: they patch nothing — the part IS its
-    //    damage track's condition. Prices [DEFAULT]: a new engine sits well above a rebuild to the
-    //    bench's cap (REPAIRS.engine × REPAIR_CAP), a radiator just above a weld to it; the filter and
-    //    headlight are replace-only and keep the old repair rates. A crate engine is ~180 kg of bed load.
+    //    damage track's condition. Prices (owner, 2026-10-22): engine $60 — CHEAPER than a rebuild to
+    //    the bench's cap ($64, REPAIRS.engine × REPAIR_CAP), radiator $22, the same as a weld to it,
+    //    headlight $6; the filter is items.md's spare air filter. A crate engine is ~180 kg of load.
     //    (A different transmission is deferred: the gearbox type is the run-setup preset, FEAT-125/126.)
-    engineStock:   { name: 'Stock engine',         slot: 'engine', family: 'oem', rarity: 'common', price: 90, massKg: 180, stock: true,
+    engineStock:   { name: 'Stock engine',         slot: 'engine', family: 'oem', rarity: 'common', price: 60, massKg: 180, stock: true,
                      patch: {}, desc: 'The factory six, on a pallet. A long day to swap.' },
     radiatorStock: { name: 'Stock radiator',       slot: 'radiator', family: 'oem', rarity: 'common', price: 22, massKg: 7, stock: true,
                      patch: {}, desc: 'The factory radiator. Keeps the engine cool when it isn’t leaking.' },
@@ -202,7 +223,7 @@ export const PARTS = {
     // roadside (`roadside`: src/recovery.js fitRoadside), carries its own condition.
     airFilterStock:{ name: 'Air filter',           slot: 'airFilter', family: 'oem', rarity: 'common', price: 10, massKg: 0.5, stock: true,
                      roadside: true, patch: {}, desc: 'A paper filter. A clean one lets the engine breathe. Swaps in by hand, no shop needed.' },
-    headlightStock:{ name: 'Headlight',            slot: 'headlight', family: 'oem', rarity: 'common', price: 4, massKg: 1.5, stock: true,
+    headlightStock:{ name: 'Headlight',            slot: 'headlight', family: 'oem', rarity: 'common', price: 6, massKg: 1.5, stock: true,
                      patch: {}, desc: 'A sealed beam lamp, either side.' },
 }
 
@@ -222,8 +243,11 @@ export const REPAIRS = {
     armor:        { price: 10,   hours: 2 },     // panel beaten
     spring:       { price: null, hours: 2 },     // re-arched
     damper:       { price: null, hours: 1.5 },   // rebuilt
-    engine:       { price: 60,   hours: 4 },     // rebuilt
-    radiator:     { price: 20,   hours: 2 },     // welded
+    // Owner, 2026-10-22: a rebuild to the cap costs MORE than a used engine ($64 vs $60 new) — "it
+    // should be more expensive to repair an engine than to swap in a used one"; a weld to 80% is $22,
+    // the price of a new radiator. These are 0→100% rates, so × 0.8 is the cap's price.
+    engine:       { price: 80,   hours: 4 },     // rebuilt
+    radiator:     { price: 27.5, hours: 2 },     // welded
     alignment:    { price: 4,    hours: 0.5 },
     transmission: { price: 30,   hours: 3 },     // rebuilt
 }

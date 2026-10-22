@@ -19,7 +19,7 @@
 //      is refused.
 //
 // Pure node: no THREE, no DOM.
-import { recoveryCard, fitSpare, plugTire, plugMethods, SPARE_FIT_H, fitRoadside } from '../src/recovery.js'
+import { recoveryCard, fitSpare, plugTire, plugMethods, spareFitHours, fitRoadside } from '../src/recovery.js'
 import { InventorySystem } from '../src/inventory.js'
 import { PartsSystem } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
@@ -75,7 +75,10 @@ damage.set('tireRR', 0.5)
 check('a sound corner swaps too, and its pair comes off holding air', spare().flat && (inv.amend(spare().index, { flat: false }), fit(3) === 3)
   && damage.get('tireRR') === 1 && !spare().flat && spare().cond === 0.5, JSON.stringify(spare()))
 
-check('the spare takes 90 min', SPARE_FIT_H === 1.5)
+const tools = new InventorySystem({ slotCap: () => 8 }); tools.start()
+check('the spare takes 2 h with the factory jack', spareFitHours(tools) === 2)
+tools.grant('compressor')
+check('…1 h 30 with a compressor', spareFitHours(tools) === 1.5)
 
 // ── 5. The plug kit ───────────────────────────────────────────────────────────────────────────
 const inv2 = new InventorySystem({ slotCap: () => 8 })
