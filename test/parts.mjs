@@ -14,6 +14,8 @@
 //      air, and the tire that came off reports its puncture.
 //   5. Load ratings: the weakest part sets the limits, so one heavy-duty axle or three load-range
 //      tires move nothing and the full §3f package does.
+//   6. Ride height: sport springs sit 30 mm under stock with 30 mm less bump travel at rest, and stack
+//      with the lift kit instead of overwriting it (owner, 2026-10-22).
 //
 // Pure node: no THREE, no DOM.
 import { PARTS, SLOTS, FAMILY_DURABILITY, RARITY_COLOR, takes, socketsFor } from '../data/parts.js'
@@ -104,6 +106,26 @@ parts.fit('tireLT', null, 'tireRR')
 check('the full package raises both limits', limits().softKg === 800 && limits().hardKg === 1100, JSON.stringify(limits()))
 parts.fit('dampersRearOEM')
 check('one stock shock axle pulls them back', limits().softKg === 570, JSON.stringify(limits()))
+
+// ── 6. Ride height — lowering springs stack with the lift ─────────────────────────────────────
+// Static ride per axle (suspension.js computeStaticEquilibrium's geometry, the terms that change).
+const sag = (ax) => params.mass * params['weight' + ax] / 2 * 9.81 / params['suspensionStiffness' + ax]
+const ride = (ax) => params['suspensionRestLength' + ax] - sag(ax) - params['suspensionBodyOffset' + ax]
+const bump = (ax) => params['suspensionTravel' + ax] - sag(ax)
+parts.start()
+const at = (f) => ({ Front: f('Front'), Rear: f('Rear') })
+const stockRide = at(ride), stockBump = at(bump)
+parts.fit('springsFrontSport'); parts.fit('springsRearSport')
+for (const ax of ['Front', 'Rear']) {
+  check(`sport springs: ${ax} sits 30 mm low`, Math.abs(stockRide[ax] - ride(ax) - 0.03) < 0.001, (stockRide[ax] - ride(ax)).toFixed(4))
+  check(`sport springs: ${ax} has 30 mm less bump travel`, Math.abs(stockBump[ax] - bump(ax) - 0.03) < 0.001, (stockBump[ax] - bump(ax)).toFixed(4))
+}
+parts.fit('liftKit')
+check('lift kit over sport springs: both count', params.suspensionTravelFront === PARTS.liftKit.patch.suspensionTravelFront - PARTS.springsFrontSport.drop
+  && params.suspensionRestLengthRear === PARTS.liftKit.patch.suspensionRestLengthRear - PARTS.springsRearSport.drop)
+parts.fit('springsFrontOEM'); parts.fit('springsRearOEM'); parts.fit('liftNone')
+check('back to stock restores the factory geometry', ['RestLength', 'Travel', 'BodyOffset'].every(k =>
+  ['Front', 'Rear'].every(ax => params['suspension' + k + ax] === RANGER_PARAMS['suspension' + k + ax])))
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed')
 process.exit(fails ? 1 : 0)

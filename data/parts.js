@@ -118,37 +118,41 @@ export const PARTS = {
     // ── Springs and shocks (§3f) — one axle's pair. Load ratings: §3f's package, [DEFAULT] numbers.
     springsFrontOEM: { name: 'Stock front springs', slot: 'springsFront', family: 'oem', rarity: 'common', price: 7, massKg: 14, stock: true,
                        patch: { suspensionStiffnessFront: 33000 }, desc: 'The factory coils.' },
-    springsFrontHD:  { name: 'Heavy-duty front springs', slot: 'springsFront', family: 'hd', rarity: 'uncommon', price: 13, massKg: 17,
+    springsFrontHD:  { name: 'Heavy-duty front springs', slot: 'springsFront', family: 'hd', rarity: 'uncommon', price: 25, massKg: 17,
                        patch: { suspensionStiffnessFront: 46000 }, load: HD_SPRINGS,
                        desc: 'Stiffer coils. Hold the nose up under a load, and crash over bumps when empty.' },
     springsRearOEM:  { name: 'Stock rear springs',  slot: 'springsRear', family: 'oem', rarity: 'common', price: 7, massKg: 16, stock: true,
                        patch: { suspensionStiffnessRear: 33000 }, desc: 'The factory leaf packs.' },
-    springsRearHD:   { name: 'Heavy-duty rear springs', slot: 'springsRear', family: 'hd', rarity: 'uncommon', price: 13, massKg: 21,
+    springsRearHD:   { name: 'Heavy-duty rear springs', slot: 'springsRear', family: 'hd', rarity: 'uncommon', price: 25, massKg: 21,
                        patch: { suspensionStiffnessRear: 52000 }, load: HD_SPRINGS,
                        desc: 'An extra leaf. Sits level under a load, bucks when empty.' },
     // Sport tier (owner, 2026-10-22): stiffer than stock, softer than HD, stock height, stock load
     // rating; Sport family, so they wear faster. [DEFAULT] +35% rate, +40% damping (the page's middle
-    // options). Prices: springs $15, shocks $20 (owner, 2026-10-22).
-    springsFrontSport: { name: 'Sport front springs', slot: 'springsFront', family: 'sport', rarity: 'uncommon', price: 15, massKg: 14,
+    // options). Prices: springs $15, shocks $15; heavy-duty is the endgame mod at $25 (owner, 2026-10-22).
+    // Lowering springs (owner, 2026-10-22): they sit 30 mm under stock. `drop` (m) shortens the spring's
+    // free length; the stiffer rate alone sags 29 mm (front) / 24 mm (rear) less than stock, so the drop
+    // is that plus 30 mm. The bump stop is bolted to the body, so the bump travel shrinks by the same
+    // drop (src/parts.js _rideHeight): about 30 mm less bump travel than stock at rest.
+    springsFrontSport: { name: 'Sport front springs', slot: 'springsFront', family: 'sport', rarity: 'uncommon', price: 15, massKg: 14, drop: 0.059,
                        patch: { suspensionStiffnessFront: 44550 },
-                       desc: 'Stiffer coils at the stock height. Sharp on pavement, firm over bumps, and they tire sooner.' },
-    springsRearSport:  { name: 'Sport rear springs',  slot: 'springsRear', family: 'sport', rarity: 'uncommon', price: 15, massKg: 16,
+                       desc: 'Shorter, stiffer coils that drop the nose. Flat and sharp on pavement; they hit the stops sooner on rough ground and tire sooner.' },
+    springsRearSport:  { name: 'Sport rear springs',  slot: 'springsRear', family: 'sport', rarity: 'uncommon', price: 15, massKg: 16, drop: 0.054,
                        patch: { suspensionStiffnessRear: 44550 },
-                       desc: 'Stiffer leaves at the stock height. Squats less, skips over bumps, and they tire sooner.' },
+                       desc: 'Lowering leaves, stiffer than stock. Squats less and corners flat; bottoms out sooner loaded or on rough ground, and they tire sooner.' },
     dampersFrontOEM: { name: 'Stock front shocks',  slot: 'dampersFront', family: 'oem', rarity: 'common', price: 6, massKg: 6, stock: true,
                        patch: { suspensionDampingFront: 3500 }, desc: 'Factory shocks, tuned for an empty bed.' },
-    dampersFrontHD:  { name: 'Heavy-duty front shocks', slot: 'dampersFront', family: 'hd', rarity: 'uncommon', price: 11, massKg: 7,
+    dampersFrontHD:  { name: 'Heavy-duty front shocks', slot: 'dampersFront', family: 'hd', rarity: 'uncommon', price: 25, massKg: 7,
                        patch: { suspensionDampingFront: 5000 }, load: HD_DAMPERS,
                        desc: 'Firm valving that settles a loaded truck. Busy and harsh when empty.' },
     dampersRearOEM:  { name: 'Stock rear shocks',   slot: 'dampersRear', family: 'oem', rarity: 'common', price: 6, massKg: 6, stock: true,
                        patch: { suspensionDampingRear: 4000 }, desc: 'Factory shocks, tuned for an empty bed.' },
-    dampersRearHD:   { name: 'Heavy-duty rear shocks', slot: 'dampersRear', family: 'hd', rarity: 'uncommon', price: 11, massKg: 7,
+    dampersRearHD:   { name: 'Heavy-duty rear shocks', slot: 'dampersRear', family: 'hd', rarity: 'uncommon', price: 25, massKg: 7,
                        patch: { suspensionDampingRear: 6000 }, load: HD_DAMPERS,
                        desc: 'Firm valving that settles a loaded bed. Busy and harsh when empty.' },
-    dampersFrontSport: { name: 'Sport front shocks', slot: 'dampersFront', family: 'sport', rarity: 'uncommon', price: 20, massKg: 6,
+    dampersFrontSport: { name: 'Sport front shocks', slot: 'dampersFront', family: 'sport', rarity: 'uncommon', price: 15, massKg: 6,
                        patch: { suspensionDampingFront: 4900 },
                        desc: 'Quick, firm valving. The nose stays put and the ride gets busy. They wear out faster.' },
-    dampersRearSport:  { name: 'Sport rear shocks',  slot: 'dampersRear', family: 'sport', rarity: 'uncommon', price: 20, massKg: 6,
+    dampersRearSport:  { name: 'Sport rear shocks',  slot: 'dampersRear', family: 'sport', rarity: 'uncommon', price: 15, massKg: 6,
                        patch: { suspensionDampingRear: 5600 },
                        desc: 'Quick, firm valving. The tail settles fast and the ride gets busy. They wear out faster.' },
     // ── Brakes, per axle (DESIGN.md: pad grades per axle set the bias): pads up front, drum shoes at
@@ -202,10 +206,12 @@ export const PARTS = {
     // ── Lift (§3g — the first Off-road part). Body offset: NEGATIVE raises the body. [DEFAULT] 5 cm.
     liftNone:      { name: 'No lift',              slot: 'lift', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
                      patch: { suspensionBodyOffsetFront: 0.0, suspensionBodyOffsetRear: 0.035,
+                              suspensionRestLengthFront: 0.20, suspensionRestLengthRear: 0.22,
                               suspensionTravelFront: 0.25, suspensionTravelRear: 0.25 },
                      desc: 'Factory ride height.' },
     liftKit:       { name: 'Lift kit',             slot: 'lift', family: 'offroad', rarity: 'uncommon', price: 30, massKg: 20,
                      patch: { suspensionBodyOffsetFront: -0.05, suspensionBodyOffsetRear: -0.015,
+                              suspensionRestLengthFront: 0.20, suspensionRestLengthRear: 0.22,
                               suspensionTravelFront: 0.30, suspensionTravelRear: 0.30 },
                      desc: 'Spacers and longer shocks. Clears ruts and rocks; leans more, and rolls sooner.' },
 

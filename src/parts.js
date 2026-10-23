@@ -117,6 +117,7 @@ export class PartsSystem {
         const part = PARTS[id]
         Object.assign(this._params, part.patch)
         runParts.fitted[socket] = id
+        this._rideHeight()
         for (const t of SLOTS[socket].tracks) {
             this._damage.setDurability(t, part.durability ?? FAMILY_DURABILITY[part.family])   // a part's own wins (the sport tire)
             this._damage.set(t, cond)
@@ -126,6 +127,18 @@ export class PartsSystem {
             // A tire going on holds air: a puncture is state beside the condition (damage.js setAll).
             this._damage.flat[wheel] = false
             ;(this._params._tireGrip ??= [1, 1, 1, 1])[wheel] = part.grip
+        }
+    }
+
+    /** The lift owns the strut's length and bump travel; a lowering spring (`drop`) takes its drop off
+     *  both, so the lift and the springs stack instead of one patch overwriting the other. */
+    _rideHeight () {
+        const lift = PARTS[runParts.fitted.lift]?.patch
+        if (!lift) return
+        for (const ax of ['Front', 'Rear']) {
+            const drop = PARTS[runParts.fitted['springs' + ax]]?.drop ?? 0
+            this._params['suspensionRestLength' + ax] = lift['suspensionRestLength' + ax] - drop
+            this._params['suspensionTravel' + ax] = lift['suspensionTravel' + ax] - drop
         }
     }
 
