@@ -112,6 +112,17 @@ export const ECONOMY_PARAMS = {
     tipZero:      1.23,   // where the tip runs out — SOLVED: 2 − fullTipRatio, so par earns half (gated)
     fragileLinePerKm: 0.02,   // FEAT-139: health a fragile line eases per km of route (2 points/km). PROVISIONAL
 
+    // GAME-FEEL REVIEW 2026-10-23 (R-01): the run opens with the LAST PAYCHECK from the burger joint —
+    // opening.md's own proposed flavour ("a closing door, not a floor"). One max day-1 job's worth. It
+    // exists for a structural reason: the haul yard sells its stock up front (FEAT-114 §5b) and a $0
+    // wallet made the always-on yard the first disabled button a new player meets. Scales with
+    // nothing: a fixed day-1 sum.
+    startCash:    10,
+    // GAME-FEEL REVIEW 2026-10-23 (R-02): the good deeds that open the expedition camp (FEAT-103,
+    // owner 2026-10-19: "gated by 6 good deeds"). The ONE copy: the run HUD's "2 / 6", the result
+    // card's tally and the intro card all read it. FEAT-103 reads it when the camp lands.
+    campDeeds:    6,
+
     // ── FEAT-138 RANK THRESHOLDS, BY TYPE AND REGION [owner, 2026-10-21] ──────────────────────
     // Every type ranks on its own axis (design-amendments-2026-10-21-mission-recut.md §1–2, §11b).
     // Each list is indexed by region (1-based → [0]); past the list holds the last entry, the
@@ -297,6 +308,19 @@ export function basePay (par, payTier, payMult = 1) {
 }
 
 /**
+ * GAME-FEEL REVIEW 2026-10-23 (R-03): the two numbers the offer card quotes — the guaranteed base and
+ * the most the drive can pay (base + the whole tip pool × tipMult). Both to the cent, the base
+ * exactly basePay() so the result card still answers it. Restores the 2026-08-17 "pay range on the
+ * card" (struck 2026-09-30 for a base-only quote): a tip the player can see is a tip they can plan
+ * toward; one they can't is a surprise, which is nice once and then just hidden information.
+ */
+export function payRange (par, payTier, payMult = 1, tipMult = 1) {
+    const base = basePay(par, payTier, payMult)
+    const line = _cents(payoutFor(par, 0, payTier) * payMult)   // ratio 0: the whole tip
+    return { base, max: _cents(base + (line - base) * tipMult) }
+}
+
+/**
  * The payout as the two cards state it [owner, 2026-09-29]: `base` is the guaranteed amount the
  * offer card quoted (basePay), `tip` is everything the line paid above it, `total` is what the
  * wallet receives. Rounded to the cent the way settle() rounds, and the split is exact to the
@@ -320,10 +344,10 @@ export function splitPayout (par, ratio, payTier, payMult = 1, tipMult = 1) {
  * the load. Destroyed (health 0) has failed and pays nothing. Integer cents, so base + tip === total
  * exactly, as splitPayout guarantees.
  */
-export function splitFragilePayout (par, ratio, health, payTier, payMult = 1) {
+export function splitFragilePayout (par, ratio, health, payTier, payMult = 1, tipMult = 1) {
     const h = isFinite(health) ? Math.min(1, Math.max(0, health)) : 0
     if (h <= 0) return { base: 0, tip: 0, total: 0 }
-    const line = splitPayout(par, ratio, payTier, payMult)
+    const line = splitPayout(par, ratio, payTier, payMult, tipMult)
     const baseC = Math.round(line.base * 100 * (0.5 + 0.5 * h))
     const tipC = Math.round(line.tip * 100)
     return { base: baseC / 100, tip: tipC / 100, total: (baseC + tipC) / 100 }
@@ -399,7 +423,7 @@ export class EconomySystem {
 
     /** Begin a story run: empty wallet, zero deeds. Called from onRegionLive beside daySystem.start(). */
     start () {
-        runEconomy.money = 0
+        runEconomy.money = ECONOMY_PARAMS.startCash   // R-01: the last paycheck
         runEconomy.halfPoints = 0
         runEconomy.missions = 0
     }
@@ -442,11 +466,15 @@ export class EconomySystem {
         // tips on SPEED, the plain ratio (FEAT-138). FEAT-96: freight's tip is then scaled by its
         // tip multiplier (a FEAT-69 balancing knob). A haul's payMult already carries the pieces
         // delivered (main.js onSettle), so base and tip both scale with the load.
-        const tipMult = isFinite(mission?.tipMult) ? mission.tipMult : 1
+        // GAME-FEEL REVIEW 2026-10-23 (R-04): ON A BONUS OFFER THE ITEM *IS* THE TIP. The cash tip is
+        // zero and the base is the full line's base (data/offers.js: BONUS_PAY_MULT retired). One
+        // slot, two currencies: a job tips in cash for speed, or in an item for its gate, never both
+        // and never a half-price cash line the player couldn't value. Base pay stays guaranteed.
+        const tipMult = mission?.bonus ? 0 : isFinite(mission?.tipMult) ? mission.tipMult : 1
         // FEAT-97: a fragile job (result.health set by main.js) cuts half its base by condition.
         const tier = t.payTier ?? t.dayTier ?? 1
         const { base, tip, total: payout } = result.health != null
-            ? splitFragilePayout(result.par, result.ratio, result.health, tier, mult)
+            ? splitFragilePayout(result.par, result.ratio, result.health, tier, mult, tipMult)
             : splitPayout(result.par, result.ratio, tier, mult, tipMult)
         // FEAT-138: good deeds read the letter on EVERY type — and the letter is already the type's
         // own axis (haul's count, freight's kg, fragile's health). The share and health bands retired.

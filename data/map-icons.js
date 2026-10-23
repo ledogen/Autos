@@ -167,6 +167,15 @@ export const POI_ICONS = {
  * diamonds take a family colour; glyph POIs (food, store, auto shop, Larry) keep their own. A
  * diamond's colour is its first live offer's family (a budget giver holds up to two, FEAT-101).
  */
+/**
+ * GAME-FEEL REVIEW 2026-10-23 (R-08): how a card HEADS each family. The code key `delivery` stays
+ * (never rename a key), but the player reads COURIER — FEAT-89's ratified name — because every one
+ * of the four bed/cab types is "a delivery", so DELIVERY told them nothing the others didn't.
+ */
+export const FAMILY_LABEL = {
+    delivery: 'COURIER', fragile: 'FRAGILE', papers: 'PAPERS', haul: 'HAUL', demolition: 'DEMOLITION', freight: 'FREIGHT',
+}
+
 export const FAMILY_COLOR = {
     delivery:   '#5ad06a',   // green
     fragile:    '#ff9f43',   // orange

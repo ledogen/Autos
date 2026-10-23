@@ -23,7 +23,7 @@
 // Pure node: no THREE, no worldgen, no DOM.
 import {
   ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankTable, payoutFor, pointsFor,
-  runEconomy, EconomySystem, formatDeeds, basePay, splitPayout, bonusEarned, RANKS,
+  runEconomy, EconomySystem, formatDeeds, basePay, payRange, splitPayout, bonusEarned, RANKS,
 } from '../src/economy.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT, amountGrade } from '../src/par.js'
 import { runState } from '../src/day.js'
@@ -273,14 +273,14 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   const eco = new EconomySystem({ getDay: () => 3 })
   runEconomy.money = 999; runEconomy.halfPoints = 9; runEconomy.missions = 4
   eco.start()
-  check('start() zeroes the run wallet/points/missions',
-    runEconomy.money === 0 && runEconomy.halfPoints === 0 && runEconomy.missions === 0)
+  check('start() opens the run on the last paycheck (R-01) with zero points/missions',
+    runEconomy.money === ECONOMY_PARAMS.startCash && runEconomy.halfPoints === 0 && runEconomy.missions === 0)
   // ratio 0.83 IS a B under the re-cut bands (A 0.81 < 0.83 ≤ B 0.87). Kept in step with the bands
   // on purpose: the fixture asserts a letter, so a band move that leaves it behind would have it
   // claiming a letter the ratio no longer earns (it read 0.78 before 2026-09-07, now an A).
   const r = eco.settle({ par: 180, ratio: 0.83, letter: 'B' }, { terms: eco.terms() })
   check('settle accrues money + points + mission count',
-    runEconomy.money === r.payout && eco.points() === 1 && eco.missionCount() === 1)
+    runEconomy.money === cents(ECONOMY_PARAMS.startCash + r.payout) && eco.points() === 1 && eco.missionCount() === 1)
   check('payout is to the cent', r.payout === cents(r.payout))
   check('payout keeps its cents (par 181 at par pays $7.54, not $8)', splitPayout(181, 1, dayTier(1) * regionTier(1)).total === 7.54)
   check('runState stays narrow — no money/points on the day-boundary object',
@@ -389,16 +389,21 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   }
   check('bonusEarned: X or better, S only, D never earns (full 5×5 truth table)', tt)
 
-  // Money is IDENTICAL with and without a bonus record, apart from BONUS_PAY_MULT.
+  // R-04 (game-feel review 2026-10-23): on a bonus offer THE ITEM IS THE TIP — the base is the full
+  // line's base and the cash tip is zero, whatever the ratio. payMult still scales the whole line.
   runEconomy.money = 0
   const plain = eco.settle({ par, ratio: 0.8, letter: 'A' }, { terms })
   const withRec = eco.settle({ par, ratio: 0.8, letter: 'A' }, { terms, bonus: { rewardId: 'x', name: 'X', gate: 'B' } })
   const halved = eco.settle({ par, ratio: 0.8, letter: 'A' },
                             { terms, bonus: { rewardId: 'x', name: 'X', gate: 'B' }, payMult: 0.5 })
-  check('a bonus record alone never changes the money', plain.payout === withRec.payout)
-  check('the cash cut is payMult on the whole line (continuous in ratio)',
-    halved.payout === cents(payoutFor(par, 0.8, terms.payTier) * 0.5))
+  check('a bonus job pays the plain job\'s base and no cash tip (the item is the tip)',
+    withRec.base === plain.base && withRec.tip === 0 && withRec.payout === plain.base)
+  check('payMult still scales a bonus job\'s (base-only) line', halved.payout === basePay(par, terms.payTier, 0.5))
   check('an earned bonus is recorded as an award', withRec.award?.rewardId === 'x')
+  const pr = payRange(par, terms.payTier)
+  check('payRange: base is basePay, max is the whole line at ratio 0 (R-03)',
+    pr.base === basePay(par, terms.payTier) && pr.max === cents(payoutFor(par, 0, terms.payTier)))
+  check('payRange honours the tip multiplier', payRange(par, terms.payTier, 1, 0.5).max === cents(pr.base + (pr.max - pr.base) * 0.5))
   const missed = eco.settle({ par, ratio: 1.1, letter: 'D' }, { terms, bonus: { rewardId: 'y', name: 'Y', gate: 'C' } })
   check('a D earns no award, whatever the gate', missed.award === null)
   check('…but a D still settles its base pay (failed on time, not unpaid)', missed.payout >= basePay(par, terms.payTier))

@@ -20,7 +20,32 @@ export const PAPER_ROUTE_INTRO = [
     },
 ]
 
+/**
+ * GAME-FEEL REVIEW 2026-10-23 (R-11): the run's opening cards — the goal, the deed rule, the pay
+ * rule — played once when a story run goes live. Until FEAT-147 builds the firing and the uncle's
+ * first day, this is the one place the player is told WHAT THE RUN IS FOR: six good deeds and the
+ * expedition camp (FEAT-103). The uncle is the tutorial's voice (FEAT-147). Three cards, no more.
+ */
+export const RUN_INTRO = [
+    {
+        speaker: 'Uncle Larry',
+        text: `Jay. There's an expedition camped up at the north road, looking for a way out of here. `
+            + `They take on anyone with <span class="dlg-key">six good deeds</span> to their name. That's your way out too.`,
+    },
+    {
+        speaker: 'Uncle Larry',
+        text: `A good deed is a job done right &mdash; a <span class="dlg-key">B</span> or better. Scrape a C and it's half of one. `
+            + `Every job card tells you what it's asking for. Read it before you take it.`,
+    },
+    {
+        speaker: 'Uncle Larry',
+        text: `Pay is a base you keep no matter what, plus a tip for driving it quick &mdash; unless the card offers you `
+            + `an item instead of the tip. Your last paycheck's in the glovebox. Go.`,
+    },
+]
+
 /** Sequence keys for DialogueSystem.play()'s once-per-run gate. */
 export const DLG = {
     paperRouteIntro: 'paper-route-intro',
+    runIntro: 'run-intro',
 }

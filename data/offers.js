@@ -64,9 +64,14 @@ const HOUSEWARES = ['generalStore', 'residence']
 // (owner, 2026-10-15): very fragile and fragile were pulled toward sturdy.
 // `tier` keys the tier's health lines (economy.js RANK_TABLE.fragile); `tierName` is how the card and
 // every doc say it — Very fragile / Fragile / Sturdy (owner, 2026-10-23: one set of words everywhere).
-const VERY_FRAGILE = { tier: 'veryFragile', tierName: 'Very fragile', shockFloorG: 1.15, breakG: 4.0, sound: 'glass' }  // rough road nibbles; a crest landing destroys
-const FRAGILE      = { tier: 'fragile',     tierName: 'Fragile',      shockFloorG: 1.2,  breakG: 4.75, sound: 'thud' }
-const STURDY       = { tier: 'sturdy',      tierName: 'Sturdy',       shockFloorG: 1.3,  breakG: 5.5, sound: 'thud' }    // a crest landing costs most of it; a roll ends it
+// `careMult` — GAME-FEEL REVIEW 2026-10-23 (R-05): a CARE PREMIUM on the whole pay line, by tier. Pay
+// rode par alone, so a very fragile mirror over 0.8 km quoted $1.56 against a courier note over the
+// same road at the same $1.56 — the restraint the job demands was free to the giver and strictly
+// worse for the driver (slower, and half the base at stake). A dominated job type is dead content.
+// PROVISIONAL multipliers; the Collector / Easygoing traits (FEAT-142) will multiply on top.
+const VERY_FRAGILE = { tier: 'veryFragile', tierName: 'Very fragile', shockFloorG: 1.15, breakG: 4.0, sound: 'glass', careMult: 1.3 }  // rough road nibbles; a crest landing destroys
+const FRAGILE      = { tier: 'fragile',     tierName: 'Fragile',      shockFloorG: 1.2,  breakG: 4.75, sound: 'thud', careMult: 1.15 }
+const STURDY       = { tier: 'sturdy',      tierName: 'Sturdy',       shockFloorG: 1.3,  breakG: 5.5, sound: 'thud', careMult: 1.0 }    // a crest landing costs most of it; a roll ends it
 
 export const THINGS = [
     // FEAT-88 haul. massKg is ignored for a haul thing — the card's weight is pieces × HAUL_BUNDLE_KG,
@@ -414,8 +419,14 @@ export const BUDGET_JOBS = 12
 // piece aboard at delivery. A bigger load pays more, weighs more and has more pieces to lose; the
 // rank is the count delivered (FEAT-138), so loading past S is insurance the player pays for.
 
-/** [min, max] firewood bundles in a yard's stock, inclusive (owner, 2026-10-22). The pick is 1…stock. */
-export const HAUL_STOCK = [12, 30]
+/**
+ * [min, max] firewood bundles in a yard's stock, inclusive (owner, 2026-10-22). The pick is 1…stock.
+ * GAME-FEEL REVIEW 2026-10-23 (R-06): the floor is the C count (economy.js RANK_TABLE.haul firewood C
+ * 14, was 12) so every haul can earn at least half a good deed. A stock of 12 or 13 posted a job that
+ * could never count toward the camp, and nothing on the card said so. "Most jobs can't reach S" (owner)
+ * still holds: S is 25.
+ */
+export const HAUL_STOCK = [14, 30]
 
 /**
  * What a piece costs to load, as a share of the job's base pay per piece (owner, 2026-10-22: "half of
@@ -499,11 +510,21 @@ export const EXPIRY_NOISE = 0.3
 /** 0..1 — share of offers that carry a bonus item. */
 export const BONUS_CHANCE = 0.25
 
+// BONUS_PAY_MULT (0.5× cash on a bonus offer) RETIRED — GAME-FEEL REVIEW 2026-10-23 (R-04): on a bonus
+// offer the ITEM IS THE TIP. Base pay is the full line's base, the cash tip is zero, and the item is
+// earned at its gate (economy.js settle). The reason to skip one is the same as before — you want
+// cash — but now the card can say exactly what is traded: the speed tip for the item.
+
 /**
- * Pay multiplier on an offer that carries a bonus. Bonus offers must pay LESS cash, or there is no
- * reason ever to skip one: take them only when you want the item. PLACEHOLDER — owner to set.
+ * GAME-FEEL REVIEW 2026-10-23 (R-07): what a reward is WORTH, in day-1 dollars, for the card's "Tip:
+ * Compressor ($20)". A carrot with no number on it can't be weighed against the cash tip it replaces.
+ * Parts and shelf items read their own price (data/parts.js, data/shop-stock.js ITEM_PRICE); these
+ * are the consumables and meals from items.md §1/§7. A price, never a stat (SM-INV-10).
  */
-export const BONUS_PAY_MULT = 0.5
+export const REWARD_VALUE = {
+    coffee: 3, energyDrink: 4, chiliDog: 5, dinnerMeal: 5, emergencyGas: 8,
+    zipTies: 8, ductTape: 8, stopLeak: 8, rubberBedMat: 8,
+}
 
 /**
  * Gate weights — equal (owner, 2026-09-26). Reward value tracks gate difficulty through item
