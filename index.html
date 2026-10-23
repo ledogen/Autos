@@ -935,7 +935,7 @@
       font-size: 12px;
       color: var(--text);
     }
-    #job-due, #job-haul {
+    #job-due, #job-cargo {
       display: none;
       margin-top: 6px;
       font-family: var(--font);
@@ -1706,8 +1706,9 @@
   <!-- FEAT-113: the job's deadline under the rank tile; the text node after the label is written by
        _updateJobDue in main.js. -->
   <div id="job-due"><span class="rt-label">Due:</span><span></span></div>
-  <!-- FEAT-139: a haul's live count under the rank/due column, written by _syncHaulLine in main.js. -->
-  <div id="job-haul"></div>
+  <!-- FEAT-139: the haul's live count / the freight's kg under the rank/due column, written by
+       _syncCargoLine in main.js. -->
+  <div id="job-cargo"></div>
   </div>
 
   <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI.

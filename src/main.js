@@ -3269,17 +3269,21 @@ function _haulStep () {
 }
 
 /**
- * The haul's line under the run readout (owner, 2026-10-23): "carrying 14 bundles / 18 for the item
- * reward" — the count in the bed now, and the count the item needs; never a letter. Its own element
- * in #job-stack so the top bar keeps only the run readout. Empty (hidden) for every other job.
+ * FEAT-139: the load line under the run readout, in #job-stack so the top bar keeps only the run
+ * readout. Haul (owner, 2026-10-23): "carrying 14 bundles / 18 for the item reward" — the count in
+ * the bed now and the count the item needs, never a letter. Freight (§2b): "carrying 710 kg" — the
+ * load is strapped, so it never changes, and its tier is internal. Hidden for every other job.
  */
-function _syncHaulLine (j) {
-  const el = document.getElementById('job-haul')
+function _syncCargoLine (j) {
+  const el = document.getElementById('job-cargo')
   if (!el) return
-  const on = !!j?.bundles && _haul?.mission === j
-  const need = on && j.bonus ? rankTable('haul', j.terms?.region ?? 1, 'firewood')[j.bonus.gate] : null
-  el.textContent = on ? `carrying ${_haulAboard()} bundles` + (need != null ? ` / ${need} for the item reward` : '') : ''
-  el.style.display = on ? 'block' : 'none'
+  let text = ''
+  if (j?.bundles && _haul?.mission === j) {
+    const need = j.bonus ? rankTable('haul', j.terms?.region ?? 1, 'firewood')[j.bonus.gate] : null
+    text = `carrying ${_haulAboard()} bundles` + (need != null ? ` / ${need} for the item reward` : '')
+  } else if (j?.cargoKg && !j.fragile) text = `carrying ${j.cargoKg} kg`
+  el.textContent = text
+  el.style.display = text ? 'block' : 'none'
 }
 
 /** Is debris body `h` inside the truck's bed well right now? */
@@ -5219,7 +5223,7 @@ function _renderMissionUI () {
 
   // FEAT-113: a job past its deadline reads the same in every on-job state — park and sign it off.
   const expired = m.isOnJob() && !!m.mission?.expired
-  _syncHaulLine(m.state === 'running' && !expired ? m.mission : null)   // FEAT-139: the haul's count line
+  _syncCargoLine(m.state === 'running' && !expired ? m.mission : null)   // FEAT-139: the load line
   switch (expired ? 'expired' : m.state) {
     case 'expired':
       show(panel, false); show(hud, true)
@@ -5646,9 +5650,10 @@ function _rankTimerSource () {
   if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
     if (m.mission.expired) return null   // FEAT-113: a job that pays nothing has no rank to chase
     // No bar where the clock is not what the letter reads (owner, 2026-10-15): a fragile job is
-    // lettered on condition, a haul on the clock AND the load — a bar falling S → A on the clock
-    // promises a grade the job does not give. Courier and freight keep it (time pays their tip).
-    if (m.mission.fragile || m.mission.bundles) return null
+    // lettered on condition, a haul on the count delivered — a bar falling S → A on the clock
+    // promises a grade the job does not give. Freight too (FEAT-139, §2b): its letter is the kg,
+    // internal, though time still pays its tip. Courier keeps the bar.
+    if (m.mission.fragile || m.mission.bundles || m.mission.cargoKg) return null
     return { key: m.mission, elapsed: m.elapsed, par: m.mission.par,
              thresholds: m.mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT,
              gate: m.mission.bonus?.gate ?? null }

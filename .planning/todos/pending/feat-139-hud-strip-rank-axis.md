@@ -52,13 +52,13 @@ and the item.
 ## Acceptance
 
 - [ ] Every type's strip shows its rank axis and the live letter, per the table — except freight.
-- [ ] Freight: the strip shows `Freight · <kg>` and the due time, with no letter and no FEAT-87 bar
+- [x] Freight: the strip shows `Freight · <kg>` and the due time, with no letter and no FEAT-87 bar
       (`_rankTimerSource` returns none for freight).
-- [ ] Freight result card shows no letter or tier (main.js onSettle still sets `result.letter` from
+- [x] Freight result card shows no letter or tier (main.js onSettle still sets `result.letter` from
       `amountGrade` for freight; it stays internal for the bonus and the deed — owner, 2026-10-22, §2b answer 1).
-- [ ] Haul shows how many more lost pieces drop a letter.
+- [x] ~~Haul shows how many more lost pieces drop a letter.~~ Superseded 2026-10-23: no letter on haul; the line names the item's count (addendum).
 - [ ] Fragile shows the health bar and the combined-g bar with both marks, at the cargo's own values.
-- [ ] No countdown digits; `test/rank-timer.mjs` green.
+- [x] No countdown digits; `test/rank-timer.mjs` green.
 
 ## Addendum 2026-10-23 — haul row BUILT, in the owner's new form (with FEAT-114)
 
@@ -68,3 +68,15 @@ Haul shows no letter (the letter only decides the item), so there is no "lost pi
 warning either. Built: `#job-haul` in `#job-stack` (index.html), written by `_syncHaulLine` in main.js
 at the 10 Hz panel poll from `_haulAboard()`. A haul with no bonus shows only "carrying N bundles". The
 haul acceptance line is met in this form. Freight, fragile and papers rows are still open.
+
+## Addendum 2026-10-23 — freight BUILT; papers already met
+
+- **Freight:** `_rankTimerSource` returns no bar when the job has `cargoKg`, the same as fragile and haul.
+  `test/rank-timer.mjs` pins this. The load line `#job-cargo` (renamed from `#job-haul`, written by
+  `_syncCargoLine`) reads "carrying 710 kg". It is static, because the load is strapped. The due line
+  sits above it. The result card was already unlettered for freight (onSettle `lettered`). Time still
+  pays freight's tip (`FREIGHT_TIP_MULT`); the bar is gone by the §2b ruling regardless.
+- **Papers needed no change.** The top bar already reads "3 / 4 delivered   12 papers", with the FEAT-87
+  bar and letter under it, and the due time as a clock time.
+- **Open: fragile only.** That is the health bar and the combined-g bar. Decide first whether fragile
+  keeps its letter, given the haul ruling that the letter matters only for the item.
