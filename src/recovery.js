@@ -21,11 +21,15 @@
 //   The player picks on the damage screen's pictogram (DamageScreen.pick), which shows each corner's
 //   tire, wheel and flat, and the time, before a confirm.
 //
+// Field repairs (items.md §7, owner 2026-10-20/21): zip ties and duct tape, each use a 15 min stop on
+// one part picked the same way (FIELD_REPAIR). The jerry can pours like the emergency gas (pourCan).
+//
 // The chip shows whenever the truck is parked in a story run — a tow is a phone call, not an event —
 // and the card lists what fits the moment. Pure: main.js supplies the state and owns the DOM.
 
 
-import { PARTS, SLOTS } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIR_CAP } from '../data/parts.js'
+import { ITEMS } from '../data/items.js'
 
 /**
  * Hours to change a tire for the spare (owner, 2026-10-22): 2 h with the factory jack and wrench; a
@@ -112,4 +116,44 @@ export function plugTire (damage, inventory, how, { corner = null, index = null 
   }
   inventory.consume('tirePlugKit')
   return PLUG_H[how]
+}
+
+/**
+ * What each field repair mends, by how much, and how long a use takes. Zip ties: a headlight, a body
+ * panel or the radiator; duct tape: a body panel only. Neither takes a part past REPAIR_CAP, the
+ * service center's own ceiling [DEFAULT — no field cap was ruled].
+ */
+const PANELS = ['armorFront', 'armorLeft', 'armorRight', 'armorRear']
+export const FIELD_REPAIR = {
+  zipTies:  { gain: 0.10, hours: 0.25, tracks: [...PANELS, 'headlightL', 'headlightR', 'radiator'] },
+  ductTape: { gain: 0.20, hours: 0.25, tracks: PANELS },
+}
+export const fieldRepairable = (damage, track) => damage.get(track) < REPAIR_CAP - 1e-9
+export const fieldRepairTo = (damage, id, track) => Math.min(REPAIR_CAP, damage.get(track) + FIELD_REPAIR[id].gain)
+
+/**
+ * One use of field repair `id` on `track`: the part gains its share up to the cap, and one use is spent.
+ * Returns the hours the stop takes, or -1 with nothing spent (none aboard, not its part, at the cap).
+ */
+export function fieldRepair (damage, inventory, id, track) {
+  const fr = FIELD_REPAIR[id]
+  if (!fr?.tracks.includes(track) || !fieldRepairable(damage, track) || !inventory.list().some(r => r.id === id)) return -1
+  damage.set(track, fieldRepairTo(damage, id, track))
+  inventory.consume(id)
+  return fr.hours
+}
+
+/**
+ * Pour the can at inventory entry `index` into the tank: as much as it holds or the tank takes. The
+ * can stays, lighter. Returns the gallons poured, or 0 with nothing moved (not a can, empty, tank full).
+ */
+export function pourCan (fuel, tankGal, inventory, index) {
+  const r = inventory.list()[index]
+  if (!ITEMS[r?.id]?.capGal) return 0
+  const g = Math.min(r.gal, tankGal - fuel.gal)
+  if (g < 0.05) return 0
+  fuel.gal += g
+  fuel.dry = false
+  inventory.amend(index, { gal: r.gal - g })
+  return g
 }

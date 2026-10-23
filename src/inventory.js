@@ -36,7 +36,9 @@ export const runInventory = {
 const _stacks = (id) => STACKING_KINDS.has(ITEMS[id].kind)
 const _isPack = (e) => ITEMS[e?.id]?.kind === 'pack'
 const _isBed = (id) => !!ITEMS[id]?.sleep
-const _newEntry = (id) => ITEMS[id].kind === 'pack' ? { id, n: 1, equipped: false, contents: [] } : { id, n: 1 }
+// A can (`capGal`) comes full; its entry carries the gallons in it as `gal`.
+const _newEntry = (id) => ITEMS[id].kind === 'pack' ? { id, n: 1, equipped: false, contents: [] }
+    : ITEMS[id].capGal ? { id, n: 1, gal: ITEMS[id].capGal } : { id, n: 1 }
 
 export class InventorySystem {
     /**
@@ -64,7 +66,7 @@ export class InventorySystem {
     slotCap () { return this._slotCap() }
     slotsUsed () { return runInventory.entries.length }
     stowedKg () {
-        return runInventory.entries.reduce((kg, e) => kg + e.n * ITEMS[e.id].massKg
+        return runInventory.entries.reduce((kg, e) => kg + e.n * ITEMS[e.id].massKg + (e.gal ?? 0) * (ITEMS[e.id].kgPerGal ?? 0)
             + (e.contents ?? []).reduce((k, id) => k + ITEMS[id].massKg, 0), 0)
     }
     equippedIndex () { return runInventory.entries.findIndex(e => e.equipped) }
@@ -135,11 +137,17 @@ export class InventorySystem {
         return true
     }
 
-    /** Spend one unit of `id` without its effect (a plug kit spent by the repair it was chosen for). */
+    /**
+     * Spend one unit of `id` without its effect (a plug kit spent by the repair it was chosen for). An
+     * item with `uses` (a pack of zip ties, a roll of tape) spends one use of the open unit, kept on
+     * the stack as `left`; the unit goes when its last use does, and the next one opens full.
+     */
     consume (id) {
         const i = runInventory.entries.findIndex(e => e.id === id)
         if (i < 0) return false
-        if (--runInventory.entries[i].n <= 0) runInventory.entries.splice(i, 1)
+        const e = runInventory.entries[i], uses = ITEMS[id].uses ?? 1
+        e.left = (e.left ?? uses) - 1
+        if (e.left <= 0) { delete e.left; if (--e.n <= 0) runInventory.entries.splice(i, 1) }
         this._changed()
         return true
     }
@@ -218,6 +226,15 @@ export class InventorySystem {
         return true
     }
 
+    /** The cans aboard as fill views { entry, gal, cap } for the pump; refill() writes them back. */
+    cans () {
+        return runInventory.entries.filter(e => ITEMS[e.id].capGal).map(e => ({ entry: e, gal: e.gal, cap: ITEMS[e.id].capGal }))
+    }
+    refill (cans) {
+        for (const c of cans) { const i = this.indexOf(c.entry); if (i >= 0) runInventory.entries[i].gal = c.gal }
+        this._changed()
+    }
+
     /** Where an entry an effect was handed (use → effect) sits now: a choice it opens acts on it later. */
     indexOf (entry) { return runInventory.entries.indexOf(entry) }
 
@@ -233,7 +250,7 @@ export class InventorySystem {
             const q = runInventory.quick.indexOf(e.id)
             return { index, id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id), key: q < 0 ? null : q + 1,
                      equipped: !!e.equipped, cond: e.cond ?? null, flat: !!e.flat,
-                     tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
+                     tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, left: e.left ?? ITEMS[e.id].uses ?? null, gal: e.gal ?? null, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
         })
     }
 

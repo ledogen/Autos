@@ -7,7 +7,8 @@
  *   pull alongside the island, into a pump zone, and pull the handbrake  → open()
  *   HOLD F to pump — the whole time; let go and it pauses, press again and it resumes
  *   the handbrake down confirms the sale                                   → settle()
- * so a partial fill is the player's own call. A full 16.5 gal tank takes 10 s of held F
+ * so a partial fill is the player's own call. Once the tank is full the nozzle goes on into the jerry
+ * cans aboard, in order, on the same counter (owner, 2026-10-21: refill at any pump for the fuel price). A full 16.5 gal tank takes 10 s of held F
  * (fuelFillGalPerS). The counter can never run past the wallet: the pump stops at what you can pay,
  * the way a prepaid pump does, so settling can always charge exactly what it shows.
  *
@@ -28,6 +29,7 @@ export class FuelStop {
         this.event = null
         this.receipt = null  // { gal, sale } of the last settled visit, for the display's hold
         this.cutoff = false  // the pump shut itself off (full / wallet) and stays off until F is released
+        this.cans = []       // fill views { gal, cap } of the jerry cans aboard (InventorySystem.cans)
     }
 
     /** The sale on the counter, $ — the dollar drum reads this. */
@@ -36,12 +38,13 @@ export class FuelStop {
     get isOpen () { return this.state !== 'idle' }
 
     /** Nozzle in. `price` is locked for the visit, so a mid-fill price change cannot move the counter. */
-    open (poiId, price) {
+    open (poiId, price, cans = []) {
         this.state = 'open'
         this.poiId = poiId
         this.gal = 0
         this.price = price
         this.cutoff = false
+        this.cans = cans
         this.event = 'open'
     }
 
@@ -52,7 +55,8 @@ export class FuelStop {
     step (dt, held, fuel, params, wallet) {
         this.event = null
         if (this.state === 'idle') return
-        const space = Math.max(0, params.fuelTankGal - fuel.gal)
+        const tank = Math.max(0, params.fuelTankGal - fuel.gal)
+        const space = tank + this.cans.reduce((g, c) => g + c.cap - c.gal, 0)
         const afford = this.price > 0 ? Math.max(0, wallet / this.price - this.gal) : Infinity
         const room = Math.min(space, afford)
         // The shutoff LATCHES while F stays held: an idling engine burns a sliver below full, and
@@ -67,7 +71,9 @@ export class FuelStop {
         const before = this.gal
         const dg = Math.min(params.fuelFillGalPerS * dt, room)
         this.gal += dg
-        fuel.gal = Math.min(params.fuelTankGal, fuel.gal + dg)
+        fuel.gal += Math.min(dg, tank)
+        let over = dg - Math.min(dg, tank)
+        for (const c of this.cans) { const a = Math.min(over, c.cap - c.gal); c.gal += a; over -= a }
         if (fuel.gal > 0) fuel.dry = false
         if (dg >= room - 1e-9) { this.state = 'open'; this.cutoff = true; this.event = 'full' }
         else if (Math.floor(this.gal) > Math.floor(before) && this.event === null) this.event = 'gallon'

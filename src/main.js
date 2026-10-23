@@ -88,7 +88,8 @@ import { ServiceCenter } from './service.js'              // SM-3: repairs and p
 import { ServiceScreen } from './service-screen.js'
 import { startShelves, shelf, take as takeShelf, shelfName } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf
 import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
-import { recoveryCard, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
+import { recoveryCard, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside, FIELD_REPAIR, fieldRepair,
+  fieldRepairable, fieldRepairTo, pourCan } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
@@ -3404,8 +3405,15 @@ function _pourGasCan () {
   if (space < 0.05) return false
   f.gal += Math.min(RANGER_PARAMS.emergencyGasGal, space)
   f.dry = false
-  playNozzle(); setPumpFlow(true); setTimeout(() => setPumpFlow(false), 1200)
-  daySystem.advanceMinutes(10)
+  _pourStop()
+}
+function _pourStop () { playNozzle(); setPumpFlow(true); setTimeout(() => setPumpFlow(false), 1200); daySystem.advanceMinutes(10) }
+
+// The jerry can (items.md §1): poured the same way, but the can stays — as much as it holds or the
+// tank takes, lighter by what went in. The pick is deferred like the spare's, so use() has put it back.
+function _pourJerry (e) {
+  if (!vehicleState.parked) { hintPark(); return }
+  if (pourCan(vehicleState.fuel, RANGER_PARAMS.fuelTankGal, inventorySystem, inventorySystem.indexOf(e)) > 0) _pourStop()
 }
 
 // Stop-leak (items.md §7, owner 2026-10-16/21): +15% radiator, never past 50% — a 15 min stop,
@@ -3430,6 +3438,8 @@ const inventorySystem = new InventorySystem({
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
   effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
     spare: (e) => { queueMicrotask(() => _pickSpare(e)); return false },
+    fieldRepair: (e) => { queueMicrotask(() => _pickFieldRepair(e.id)); return false },
+    jerry: (e) => { queueMicrotask(() => _pourJerry(e)); return false },
     plug: () => { queueMicrotask(() => _pickPlug()); return false } },
 })
 // Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
@@ -4538,6 +4548,7 @@ function _stepFuelStop (dt) {
   if (!fuelStop.isOpen) return
   if (!vehicleState.parked || !storySystem.isActive()) {
     const { sale } = fuelStop.settle()
+    if (fuelStop.cans.length) inventorySystem.refill(fuelStop.cans)
     setPumpFlow(false)
     if (sale > 0) { economySystem.spend(sale); playRegister() } else playNozzle()
     _pumpReceiptT = sale > 0 ? 2.5 : 0
@@ -4602,10 +4613,12 @@ function _renderPumpDisplay (dt) {
   document.getElementById('pd-price').textContent = '$' + fuelStop.price.toFixed(2)
   const broke = fuelStop.isOpen && fuelStop.price > 0 && economySystem.money() - fuelStop.sale < 0.005
   // a latched shutoff still reads full while the idling engine sips the tank a hair below it
-  const full = vehicleState.fuel.gal >= RANGER_PARAMS.fuelTankGal - 1e-6 || (fuelStop.cutoff && !broke)
+  const tankFull = vehicleState.fuel.gal >= RANGER_PARAMS.fuelTankGal - 1e-6
+  const full = (tankFull && !fuelStop.cans.some(c => c.cap - c.gal > 1e-6)) || (fuelStop.cutoff && !broke)
   document.getElementById('pd-hint').innerHTML = !fuelStop.isOpen ? 'thank you — drive safe'
-    : full ? `tank full · release the handbrake to pay`
+    : full ? `${fuelStop.cans.length ? 'all full' : 'tank full'} · release the handbrake to pay`
     : broke ? `that's all you can afford · release the handbrake to pay`
+    : tankFull ? `tank full · hold ${keycap('F')} to fill the jerry can · release the handbrake to pay`
     : `hold ${keycap('F')} to pump · release the handbrake to pay`
 }
 
@@ -4718,6 +4731,23 @@ function _pickPlug (target = null) {
   })
 }
 
+/** Zip ties or duct tape (FIELD_REPAIR): any of its parts below the cap, one use and 15 min a pick. */
+function _pickFieldRepair (id) {
+  inventoryScreen.close()
+  const pct = (c) => Math.round(c * 100) + '%'
+  damageScreen.pick({
+    title: `Patch it up — ${inventorySystem.nameOf(id).toLowerCase()}`,
+    tracks: FIELD_REPAIR[id].tracks.map(t => ({ id: t, ok: fieldRepairable(damageModel, t),
+      line: fieldRepairable(damageModel, t) ? `${pct(damageModel.get(t))} → ${pct(fieldRepairTo(damageModel, id, t))}`
+        : `${pct(damageModel.get(t))} · as far as it goes` })),
+    actions: ({ track }) => [{ label: `Patch it — ${formatGameDuration(FIELD_REPAIR[id].hours)}`, icon: id, run: () => {
+      const h = fieldRepair(damageModel, inventorySystem, id, track)
+      if (h >= 0) _afterRoadsideWork(h)
+    } }],
+    onClose: _backToInventory,
+  })
+}
+
 /**
  * The inventory's roadside choices for the selected item: a flat tire, with a kit aboard, opens the plug
  * picker with it picked; a part you can swap by hand (the air filter) goes on, the time on the button.
@@ -4754,7 +4784,7 @@ function _updateRecovery () {
   const money = economySystem.money()
   const c = recoveryCard({
     dry: !!fuel?.dry && fuel.gal <= 0,
-    gasCan: owned.some(r => r.id === 'emergencyGas'),
+    gasCan: owned.some(r => r.id === 'emergencyGas' || r.gal > 0.05),
     flats: damageModel.flat.flatMap((f, i) => f ? [i] : []),
     money,
     fuelTow: _towQuote(_FUEL_SELLER),
@@ -4827,7 +4857,7 @@ function _updateParkTriggers () {
   if (fuelStop.isOpen || pump) {
     damageScreen.blocked = true
     if (pump && pulled) {
-      fuelStop.open(pump.id, RANGER_PARAMS.fuelPricePerGal)
+      fuelStop.open(pump.id, RANGER_PARAMS.fuelPricePerGal, inventorySystem.cans())
       playNozzle()
     }
     if (poiEl) {

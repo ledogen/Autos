@@ -174,7 +174,7 @@ export const THINGS = [
     // debris.js DEBRIS_TYPES key) for the whole job, and losing it out of the bed FAILS the job.
     // `atPickup`: parking at the shop skips the world clock `min` minutes while they change it. The
     // job's timer counts the wait and par grows by it (main.js _planOffer), and pay with par.
-    { id: 'spareTire',  phrase: 'a spare tire',            family: 'delivery', massKg: [18, 18],   // = RANGER_PARAMS.wheelMass (owner, 2026-10-22: every tire matches the truck's physics)
+    { id: 'spareTire',  phrase: 'a spare tire',            family: 'delivery', massKg: [21, 21],   // = data/items.js spareTire: tire + steel wheel, the realistic figure (owner, 2026-10-23)
       pools: [], fetchFrom: ['autoShop'], fetchBy: ['strandedMotorist'], loose: 'spareTire',
       atPickup: { min: 15, park: 'park to have the tire changed', done: 'tire changed' } },
     // A PASSENGER (cargo.md People): the motorist themselves, to an auto shop. `passenger` makes the
@@ -307,6 +307,9 @@ export const REWARDS = [
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
     { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['B', 'A'],   // mid tier (owner, 2026-10-21)
       pools: ['gasStation', 'strandedMotorist'] },
+    // The refillable 5 gal jerry can (items.md §1): the top-tier answer to running dry, so A–S only.
+    { id: 'jerryCan',   name: 'Jerry can',   kind: 'tool',       gates: ['A', 'S'],
+      pools: ['gasStation'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'workSite'] },
     // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
@@ -333,7 +336,7 @@ export const REWARDS = [
     // The spare air filter (items.md, ratified): a reward from the auto shop and the gas station.
     { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation'] },
-    // Items setup page rulings (owner, 2026-10-20/21). Zip ties' and duct tape's repairs aren't built yet.
+    // Items setup page rulings (owner, 2026-10-20/21).
     { id: 'energyDrink', name: 'Energy drink', kind: 'consumable', gates: ['C', 'B'],
       pools: ['gasStation', 'generalStore'] },
     { id: 'stopLeak',   name: 'Stop-leak',   kind: 'consumable', gates: ['B', 'A'],

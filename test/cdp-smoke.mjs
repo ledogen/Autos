@@ -313,6 +313,19 @@ const STEPS = [
     await js('document.querySelector("#dmg-screen .ds-pbtn[data-inv]:not(:disabled)").click()')
     await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()')
     check(await js('window.__inv.list().every(r => !r.flat && r.id !== "tirePlugKit")'), 'the plug did not fix the flat spare, or the kit was not spent')
+    // Field repairs: zip ties pick a PART (a dented panel), a confirm patches it and spends one use.
+    await js('window.__inv.grant("zipTies"); window.__damage.set("armorLeft", 0.4)')
+    await useItem('zipTies')
+    await js('document.querySelector("#dmg-screen .ds-pbtn[data-track=armorLeft]").click()')
+    await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()')
+    check(await js('Math.abs(window.__damage.get("armorLeft") - 0.5) < 1e-6 && window.__inv.list().find(r => r.id === "zipTies")?.left === 4'),
+      'zip ties did not patch the panel, or no use was spent')
+    // The jerry can pours what the tank takes and stays aboard.
+    await js('window.__inv.grant("jerryCan"); window.__vs.fuel.gal = 1')
+    if (!await inv()) { await tap('Tab'); await until(inv, 1000) }
+    await js(`window.__inv.use("jerryCan", window.__inv.list().findIndex(r => r.id === "jerryCan"))`)
+    check(await until(() => js('window.__vs.fuel.gal === 6 && window.__inv.list().find(r => r.id === "jerryCan")?.gal === 0'), 1000),
+      'the jerry can did not pour into the tank, or did not stay aboard')
     await tap('Escape')
     check(await until(async () => !await inv(), 1000), 'Esc left the inventory open')
   }],
