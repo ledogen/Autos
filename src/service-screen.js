@@ -408,7 +408,7 @@ export class ServiceScreen {
       if (!open) continue
       const bq = s.beadQuote(), canBead = money + 1e-9 >= bq.price
       h += `<div class="sv-panel"><div class="sv-row"><span class="sv-name">Sell it to the shop</span>`
-        + btn('sellOwned', `sell for $${formatMoney(s.sellValue(r.id, r.cond))}`, true, `data-index="${r.index}"`) + `</div>`
+        + btn('sellOwned', `sell for $${formatMoney(s.ownedValue(r))}`, true, `data-index="${r.index}"`) + `</div>`
       if (m) {
         h += `<div class="sv-row"><span class="sv-name">Split into tire and wheel</span><span class="sv-cost">${cost(bq.price, bq.hours)}</span>`
           + btn('split', 'split', canBead && s.inventory.fits(r.wheel ?? m.wheel), `data-index="${r.index}"`, ' ok') + `</div>`

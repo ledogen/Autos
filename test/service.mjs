@@ -170,12 +170,14 @@ inventory.take(spr.index)
 // ── 7. Off the shelf to carry; selling what you own ───────────────────────────────────────────
 wallet = 100
 const spares = () => inventory.list().filter(r => r.id === 'spareTire')
-check('buy a used spare to carry: charged, worn, in the inventory', svc.buyToInventory(2) && near(wallet, 100 - PARTS.spareTire.price * 0.6)
+check('buy a used spare to carry: charged, worn, in the inventory', svc.buyToInventory(2) && near(wallet, 100 - (PARTS.tireStandard.price * 0.6 + PARTS.wheelSteel.price + BEAD.price))
   && spares().length === 1 && spares()[0].cond === 0.6 && shelf[2] === null)
 check('a plug kit too: no condition', svc.buyToInventory(3) && inventory.list().some(r => r.id === 'tirePlugKit' && r.cond === null))
 const sold = inventory.list().find(r => r.id === 'tireStandard')
 wallet = 0
 check('sell a part from the inventory: half price × condition', svc.sellOwned(sold.index) && near(wallet, PARTS.tireStandard.price * 0.5 * sold.cond))
+check('a mounted tire sells as its tire plus its wheel', near(svc.ownedValue({ id: 'spareTire', tire: 'tireSport', cond: 0.5, wheel: 'wheelSteel', wheelCond: 0.25 }),
+  PARTS.tireSport.price * 0.5 * 0.5 + PARTS.wheelSteel.price * 0.5 * 0.25))
 check('only parts sell', !svc.sellOwned(inventory.list().find(r => r.id === 'tirePlugKit').index))
 
 // ── 8. Swapping a mounted pair ────────────────────────────────────────────────────────────────

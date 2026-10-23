@@ -14,7 +14,7 @@
 // runEconomy / runInventory, so it follows them into any save. main.js rolls the run seed at run start
 // (onRegionLive, as it does the jalopy's). Pure: no THREE, no DOM.
 
-import { PARTS } from '../data/parts.js'
+import { PARTS, BEAD } from '../data/parts.js'
 import { ITEMS } from '../data/items.js'
 import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, ITEM_PRICE } from '../data/shop-stock.js'
 import { STOCK_WEIGHT, REWARD_ONLY } from '../data/stock-weights.js'
@@ -73,7 +73,13 @@ export function take (poiId, slot) {
 }
 
 /** A shelf item's price before the day tier: a part's price × its condition (new = 1), or the item's. */
-export const shelfPrice = (e) => PARTS[e.id] ? PARTS[e.id].price * e.cond : ITEM_PRICE[e.id]
+/** A used part costs its price × condition. A mounted tire is priced as its parts (owner, 2026-10-23):
+ *  the tire at its condition, a new wheel, and the bead job that mounted them. */
+export const shelfPrice = (e) => {
+    const m = PARTS[e.id]?.mounted
+    if (m) return PARTS[m.tire].price * e.cond + PARTS[m.wheel].price + BEAD.price
+    return PARTS[e.id] ? PARTS[e.id].price * e.cond : ITEM_PRICE[e.id]
+}
 
 /** How the shelf names an item. */
 export const shelfName = (e) => PARTS[e.id]?.name ?? ITEMS[e.id].name

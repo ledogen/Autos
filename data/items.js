@@ -22,7 +22,7 @@ export const ITEMS = {
                     desc: 'Still warm, for now.' },
     // P235/75R15 on a steel rim.
     spareTire:    { name: 'Mounted tire',  kind: 'part',       massKg: 21, use: 'spare',
-                    desc: 'A tire on its wheel, ready to bolt on in place of a flat. Heavy to carry around.' },
+                    desc: 'A tire on its wheel. Bolts on in place of a flat.' },
     // A 2 gal RotoPax: ~5.7 kg of gas + ~1.5 kg of can (data/offers.js REWARDS).
     emergencyGas: { name: 'Emergency gas', kind: 'consumable', massKg: 7.2, use: 'gas',
                     desc: 'A small can of gas, for when the gauge lies.' },

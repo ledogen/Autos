@@ -162,12 +162,20 @@ export class ServiceCenter {
         return cents(PARTS[id].price * SELL_FRACTION * (cond ?? 1) * this.tier())
     }
 
-    /** Sell the part at inventory entry `index` to the shop (sellValue). Parts only. */
+    /** What inventory row `r` sells for: a mounted tire is its tire plus its wheel, each at its own
+     *  wear (owner, 2026-10-23), so selling it whole or split differs only by the split's bead job. */
+    ownedValue (r) {
+        const m = PARTS[r.id]?.mounted
+        return m ? cents(this.sellValue(r.tire ?? m.tire, r.cond) + this.sellValue(r.wheel ?? m.wheel, r.wheelCond))
+                 : this.sellValue(r.id, r.cond)
+    }
+
+    /** Sell the part at inventory entry `index` to the shop (ownedValue). Parts only. */
     sellOwned (index) {
         const r = this.inventory.list()[index]
         if (r?.kind !== 'part') return false
         this.inventory.take(index)
-        this.earn(this.sellValue(r.id, r.cond))
+        this.earn(this.ownedValue(r))
         this.onChange()
         return true
     }

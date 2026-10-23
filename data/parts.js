@@ -94,18 +94,18 @@ export const PARTS = {
     //    at ~$25 (owner, 2026-10-21; a worn one, 50–80%, comes from the reward pools). It is carried,
     //    never fitted as itself: `mounted` names what goes on the corner (src/recovery.js fitSpare).
     tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 7, massKg: 12, grip: 0.9,
-                     patch: {}, desc: 'Just a tire: hard, cracked rubber off something else. Can’t drive on it without a rim; the shop mounts it.' },
+                     patch: {}, desc: 'Cracked and dry rotted rubber. Slippery and fragile.' },
     tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 15, massKg: 12, grip: 1, stock: true,
-                     patch: {}, desc: 'Just a tire, the all-season the truck left the factory on. Can’t drive on it without a rim; the shop mounts it.' },
+                     patch: {}, desc: 'The factory all-season. Fine everywhere, great nowhere.' },
     spareTire:     { name: 'Mounted tire',         slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 21, grip: 1, mounted: { tire: 'tireStandard', wheel: 'wheelSteel' },
-                     patch: {}, desc: 'A tire on its wheel, ready to bolt on in place of a flat. Heavy to carry around.' },
+                     patch: {}, desc: 'A tire on its wheel. Bolts on in place of a flat.' },
     tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 20, massKg: 11.5, grip: 1.1, durability: 0.8,
-                     patch: {}, desc: 'Just a tire, soft and sticky on pavement, lost on dirt, and it wears fast. Can’t drive on it without a rim; the shop mounts it.' },
+                     patch: {}, desc: 'Sticky. Great grip on pavement, not so good on dirt. Wears fast.' },
     tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 25, massKg: 14.4, grip: 1,
-                     patch: {}, desc: 'Just a tire, chunky tread: no worse on pavement, at home on dirt. Can’t drive on it without a rim; the shop mounts it.' },
+                     patch: {}, desc: 'Chunky tread. At home on dirt, no worse on pavement. Heavy.' },
     tireLT:        { name: 'Load-range E tire',    slot: 'tire', family: 'hd', rarity: 'uncommon', price: 10, massKg: 15, grip: 0.95,
                      patch: {}, load: LT_LOAD,
-                     desc: 'Just a tire, with a stiff sidewall built to carry weight. Can’t drive on it without a rim; the shop mounts it.' },
+                     desc: 'Stiff sidewalls built to carry a load. A little less grip.' },
 
     // ── Wheels — ONE wheel each, any corner, under its tire (owner, 2026-10-21). A bent one runs out
     //    of round (damage.js wheelRunoutAtZero); the shop straightens it or sells a new one.
@@ -113,7 +113,7 @@ export const PARTS = {
     //    ever mounted at the service center — the mounted spare is the roadside answer. A part's desc
     //    says plainly what it does.
     wheelSteel:    { name: 'Steel wheel',          slot: 'wheel', family: 'oem', rarity: 'common', price: 8, massKg: 9, stock: true,
-                     patch: {}, desc: 'Just a rim, no tire: pressed steel, the kind the truck came on. It bends before it breaks. The shop mounts a tire on it.' },
+                     patch: {}, desc: 'Pressed steel, like the factory’s. Bends before it breaks.' },
 
     // ── Springs and shocks (§3f) — one axle's pair. Load ratings: §3f's package, [DEFAULT] numbers.
     springsFrontOEM: { name: 'Stock front springs', slot: 'springsFront', family: 'oem', rarity: 'common', price: 7, massKg: 14, stock: true,
