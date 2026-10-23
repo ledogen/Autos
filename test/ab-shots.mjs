@@ -71,7 +71,7 @@ launchChrome(APP, { port: CDP })
 const client = await connect({ port: CDP })
 await sleep(10000)
 for (let i = 0; i < 30; i++) { const r = await client.evalJS(`typeof window.__view==='function'`); if (r.val) break; await sleep(500) }
-await client.evalJS(`const st=document.createElement('style'); st.textContent='#hud,#cluster,#teleport-btn,#controls{display:none!important}'; document.head.appendChild(st)`)
+await client.evalJS(`const st=document.createElement('style'); st.textContent='#hud,#cluster,#teleport-btn{display:none!important}'; document.head.appendChild(st)`)
 if (EVAL) { const r = await client.evalJS(EVAL); if (r.err) console.error('eval:', r.err) }
 for (const c of CASES) {
   if (ONLY && !ONLY.some(k => c.id.startsWith(k))) continue

@@ -282,6 +282,12 @@ status: todo · group: story
 Split firewood: the strike, the split, the pieces falling. 20 takes; the yard ambience loop is built
 from these at random intervals.
 
+### Fuel can pour (glug)
+status: todo · group: story
+Owner, 2026-10-22: a "glug glug glug" for pouring the jerry can and the emergency gas into the tank
+(items.md §1; both are a 10 min parked pour). Tip a can or a big bottle of water into a funnel: the
+glug is air bubbling back up the spout. Slow and fast tilts, 10 takes, plus a 10 s loopable run.
+
 ## Library
 
 ### Rock slide

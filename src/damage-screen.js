@@ -8,15 +8,14 @@
  *
  * Owner rulings (2026-09-29) that shape it:
  *   - The screen is GATED BEHIND PARKING. V or a click on the icon opens it only while the parking
- *     brake is latched. Driving, the same input shows the park hint instead. Releasing the brake
+ *     brake is latched. Driving, the same input pulses the PARK stencil instead. Releasing the brake
  *     closes the screen, because the truck is driving away. Esc closes it too (main.js gives it
  *     the key ahead of the pause menu).
  *   - The icon is a .hud-icon chip in the top-right column under the wallet (owner, 2026-10-16),
  *     with V drawn on its corner so the key is learnable before the alert ever fires. Backgrounded
- *     while driving, READY once parked. A damage event flashes it and holds it present with an
- *     alert card to its left until the screen is opened. The card says as little as
- *     the moment allows (owner, 2026-10-01): driving, it is the P badge alone; stopped, it adds the
- *     keys; parked, just "V to open".
+ *     while driving, READY once parked. A damage event flashes it and holds it lit until the screen
+ *     is opened. There is no alert card beside it any more (owner, 2026-10-21: "get rid of all this
+ *     stuff"); V while driving pulses the park zone's PARK stencil, as Tab does.
  *   - BLOCKED where parking already means something else (owner, 2026-10-16): in a POI's reach the
  *     brake opens the offer, so V does nothing and the icon stays backgrounded. main.js sets
  *     `blocked` from the same poll that owns the park trigger.
@@ -37,14 +36,10 @@
  */
 
 import { TRACKS, DAMAGE_PARAMS } from './damage.js'
-import { PARK_BADGE, keycap } from './park-badge.js'
+import { keycap, hintPark, BACK_BUTTON } from './park-badge.js'
 
 const REFRESH_S = 0.1      // 10 Hz — condition moves on the scale of minutes
 const DROP_ALERT = 0.03    // a part losing more than 3 points in one sample is a damage event
-const HINT_S = 2.5         // how long the "park first" hint stays up after V while driving
-// Ground speed (m/s) band for 'stopped' vs 'driving'. Two thresholds (hysteresis) so a truck creeping
-// at the boundary does not flicker the card between its two faces.
-const STOPPED_MS = 0.5, MOVING_MS = 1.0
 const CORNERS = ['FL', 'FR', 'RL', 'RR']   // wheel index 0..3 (GLOSSARY.md §Wheel Index)
 
 /** One line per class: what the damage does to the truck. Shown in the hover card. */
@@ -276,32 +271,22 @@ function buildIcon () {
 }
 
 const CSS = `
-/* The chip itself is the shared .hud-icon (index.html); only the truck's taller shape and the alert
-   look are specific to it. */
-#dmg-icon { height: 62px; }
+/* The chip itself is the shared .hud-icon (index.html), square like every other (owner, 2026-10-21;
+   it was 62 px tall for the truck); only the alert look is specific to it. */
 #dmg-icon.on { border-color: var(--bad); }
 #dmg-icon.pulse { animation: dmg-pulse 0.55s ease-in-out 3; }
 @keyframes dmg-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(224,112,92,0); transform: scale(1); }
   50%      { box-shadow: 0 0 14px 3px rgba(224,112,92,0.75); transform: scale(1.08); } }
-#dmg-alert { display: none; background: var(--hud-bg); border: 1px solid var(--line); border-radius: 4px;
-  padding: 6px 10px; font: 12px/1.6 var(--font); color: var(--text); white-space: nowrap; }
-#dmg-alert .da-dim { color: var(--text-dim); }
-/* Driving: just the badge, no card — anything wordier is in the way of someone racing somewhere. */
-#dmg-alert.badge-only { background: none; border: none; padding: 0; }
-#dmg-alert .park-badge.big { margin: 0; font-size: 15px; vertical-align: middle;
-  box-shadow: 0 0 0 2px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.4); }
 
 #dmg-screen { display: none; position: fixed; inset: 0; z-index: 95; background: rgba(6,8,10,0.45);
   align-items: center; justify-content: center; font-family: var(--font); color: var(--text); }
 #dmg-screen.open { display: flex; }
 #dmg-screen .ds-card { background: rgba(14,17,20,0.92); border: 1px solid var(--line); border-radius: 8px;
   padding: 12px 18px 12px; display: flex; flex-direction: column; align-items: center; }
-#dmg-screen .ds-head { width: 100%; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-#dmg-screen .ds-title { flex: 1; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); }
-#dmg-screen .ds-btn { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line-control);
-  background: transparent; color: var(--text-body); font: bold 14px var(--font); cursor: pointer; padding: 0; }
-#dmg-screen .ds-btn:hover { border-color: var(--text-body); }
+#dmg-screen .ds-head { width: 100%; margin-bottom: 4px; }
+#dmg-screen .ds-title { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); }
+#dmg-screen .card-foot { align-self: stretch; }
 #dmg-screen .ds-svg { height: min(60vh, 460px); width: auto; display: block; margin: 4px 0; }
 #dmg-screen .ds-part { cursor: help; transition: filter 0.15s; }
 #dmg-screen .ds-part[data-paint="stroke"] { fill: none; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
@@ -354,28 +339,24 @@ export class DamageScreen {
     this.isOpen = false
     this.alerting = false
     this._acc = REFRESH_S
-    this._hintT = 0
     this._hover = null
     this._prev = { ...model.condition }
     this._prevFlat = model.flat.slice()
-    this._cardKey = ''
-    this._moving = false
 
     const style = document.createElement('style')
     style.textContent = CSS
     document.head.appendChild(style)
 
-    // A row at the TOP of the right-hand icon column: the icon + the alert card to its left.
+    // A row in the park zone: the icon.
     this.blocked = false
     this.dock = document.createElement('div')
     this.dock.id = 'dmg-dock'
     this.dock.className = 'hud-row'
-    this.dock.innerHTML = `<div id="dmg-icon" class="hud-icon" title="vehicle condition (V)">${buildIcon()}${keycap('V')}</div><div id="dmg-alert"></div>`
+    this.dock.innerHTML = `<div id="dmg-icon" class="hud-icon" title="vehicle condition (V)">${buildIcon()}${keycap('V')}</div>`
     // FEAT-122: inside the park zone (index.html), the top of the right-hand icon column.
     const column = document.getElementById('park-zone') || document.getElementById('hud-icons') || document.body
     column.append(this.dock)
     this.iconEl = this.dock.querySelector('#dmg-icon')
-    this.alertEl = this.dock.querySelector('#dmg-alert')
     this.iconAgg = [...this.iconEl.querySelectorAll('[data-agg]')]
     // mousedown preventDefault keeps focus off the icon: Space is the parking brake, and a focused
     // element would swallow the tap.
@@ -387,17 +368,17 @@ export class DamageScreen {
     this.screen.id = 'dmg-screen'
     this.screen.innerHTML =
       `<div class="ds-card">`
-      + `<div class="ds-head"><span class="ds-title">Vehicle condition</span>`
-      + `<button class="ds-btn" data-act="close" title="close (V / Esc)">&times;</button></div>`
+      + `<div class="ds-head"><span class="ds-title">Vehicle condition</span></div>`
       + `<div class="ds-body">${buildPictogram()}`
       + `<div class="ds-side"><div class="ds-sub">Worst parts</div><div class="ds-list"></div>`
       + `<div class="ds-legend">${buildLegend()}</div></div></div>`
+      + BACK_BUTTON
       + `</div>`
     document.body.appendChild(this.screen)
     this.parts = [...this.screen.querySelectorAll('[data-track]')]   // pictogram only: the list is still empty
     this.listEl = this.screen.querySelector('.ds-list')
     this._listKey = ''
-    for (const b of this.screen.querySelectorAll('.ds-btn')) b.addEventListener('mousedown', (e) => e.preventDefault())
+    this.screen.querySelector('.card-back').addEventListener('mousedown', (e) => e.preventDefault())
     this.screen.querySelector('[data-act="close"]').addEventListener('click', () => this.close())
     this.screen.addEventListener('click', (e) => { if (e.target === this.screen) this.close() })
 
@@ -430,22 +411,20 @@ export class DamageScreen {
     this._paintIcon()
   }
 
-  /** V or an icon click: open while parked, close if open, otherwise show the park hint. */
+  /** V or an icon click: open while parked, close if open, otherwise pulse the PARK stencil. */
   request () {
     if (this.isSuppressed() || this.blocked) return
     if (this.isOpen) { this.close(); return }
-    if (!this.vehicleState.parked) { this._hintT = HINT_S; this._renderCard(); return }
+    if (!this.vehicleState.parked) { hintPark(); return }
     this.open()
   }
 
   open () {
     this.isOpen = true
     this.alerting = false        // viewed — the icon goes back to being an optional tab
-    this._hintT = 0
     this.iconEl.classList.remove('on')
     this.screen.classList.add('open')
     this._paintScreen()
-    this._renderCard()
   }
 
   close () {
@@ -459,7 +438,6 @@ export class DamageScreen {
   clearAlert () {
     this.alerting = false
     this.iconEl.classList.remove('on')
-    this._renderCard()
   }
 
   /** A damage event: flash the icon and hold the alert until the screen is opened. */
@@ -471,7 +449,6 @@ export class DamageScreen {
     this.iconEl.classList.remove('pulse')
     void this.iconEl.offsetWidth
     this.iconEl.classList.add('pulse')
-    this._renderCard()
   }
 
   /** @param {number} dt - real seconds since the last frame. */
@@ -481,7 +458,6 @@ export class DamageScreen {
     if (hidden || this.blocked) this.close()
     if (hidden) return
     this.iconEl.classList.toggle('ready', !this.blocked && !!this.vehicleState.parked)
-    if (this._hintT > 0) { this._hintT -= dt; if (this._hintT <= 0) this._renderCard() }
     this._acc += dt
     if (this._acc < REFRESH_S) return
     this._acc = 0
@@ -505,7 +481,6 @@ export class DamageScreen {
     if (this.isOpen && !this.vehicleState.parked) this.close()   // driving away
     this._paintIcon()
     if (this.isOpen) { this._paintScreen(); if (this._hover) this._renderTip(this._hover) }
-    this._renderCard()
   }
 
   // ── rendering ────────────────────────────────────────────────────────────────────────────────
@@ -559,33 +534,6 @@ export class DamageScreen {
         + sym.map(l => `<div class="dr-sym">${l}</div>`).join('')
         + `</div>`
     }).join('')
-  }
-
-  /**
-   * The alert card beside the icon, in three modes (owner, 2026-10-01):
-   *   driving → the P badge alone, larger. A racing player gets the reminder and nothing to read.
-   *   stopped → "P Space" / "V to open": now there is time to read how to park.
-   *   parked  → "V to open".
-   * Rebuilt only when what it says changes.
-   */
-  _renderCard () {
-    const show = !this.isOpen && (this.alerting || this._hintT > 0)
-    const vs = this.vehicleState
-    const v = Math.hypot(vs.velocity?.x || 0, vs.velocity?.z || 0)
-    if (v < STOPPED_MS) this._moving = false
-    else if (v > MOVING_MS) this._moving = true
-    const mode = vs.parked ? 'parked' : this._moving ? 'driving' : 'stopped'
-    const key = show ? mode : ''
-    if (key === this._cardKey) return
-    this._cardKey = key
-    this.alertEl.style.display = show ? 'block' : 'none'
-    if (!show) return
-    this.alertEl.classList.toggle('badge-only', mode === 'driving')
-    const open = `${keycap('V')} <span class="da-dim">to open</span>`
-    this.alertEl.innerHTML =
-        mode === 'driving' ? PARK_BADGE.replace('park-badge', 'park-badge big')
-      : mode === 'stopped' ? `<div>${PARK_BADGE}</div><div>${open}</div>`
-      : `<div>${open}</div>`
   }
 
   _setHover (id) {

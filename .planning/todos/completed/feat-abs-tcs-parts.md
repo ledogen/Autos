@@ -1,7 +1,7 @@
 ---
 id: FEAT-57
 type: feature
-status: open
+status: cut
 opened: 2026-07-20
 severity: minor
 source: user-request
@@ -16,6 +16,13 @@ matching FEAT-39 assist. Reserve-the-idea capture; design against the parts pool
 ---
 
 # FEAT-57: ABS + traction control as installable parts
+
+## Resolution — cut (owner, 2026-10-22)
+
+"Kill these. These are assists available in the settings menu. Not parts." (items setup page.) ABS and
+traction control stay driver assists in the settings (FEAT-39 / FEAT-125 presets); there is no
+hardware part, so nothing gates the assists. items.md lists ABS/TC under Rejected; FEAT-121 marks the
+row cut.
 
 ## Context
 

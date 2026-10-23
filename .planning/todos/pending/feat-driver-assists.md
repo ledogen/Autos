@@ -57,6 +57,9 @@ only the display.
 
 ## The GPS assist (navigation, owner-specified)
 
+**Story-mode GPS unit (owner, 2026-10-22):** the item is "a minimap", and it shows **alongside** these
+in-world arrows, not instead of them (items.md §2, FEAT-121). No minimap exists in `src/` yet.
+
 5. **GPS.** A turn-by-turn navigation aid: **arrows directing you at every intersection** toward the
    current objective (a mission destination, a campsite, a chosen map waypoint). Not input
    modulation — it's a HUD/world overlay that reads the road **graph + router** to know the route and
@@ -124,6 +127,8 @@ FEAT-57 makes ABS and traction control **installable hardware** on the truck. Pr
   toggles may then be **gated by hardware presence** — you can't enable ABS the truck doesn't have.
   Understeer/oversteer reduction have no hardware analog, so they stay pure difficulty aids.
 This split is a **design question, not settled** — flag for owner at planning.
+**Settled 2026-10-22 (owner): no hardware.** FEAT-57 is cut — *"these are assists available in the
+settings menu. not parts"* — so the ABS/TCS assists are settings toggles only, never gated by a part.
 
 ## Story-mode fit (flag)
 

@@ -20,7 +20,7 @@
  * InventorySystem, vehicleState.parked and the DOM.
  */
 
-import { keycap } from './park-badge.js'
+import { keycap, hintPark, BACK_BUTTON } from './park-badge.js'
 
 const THUMB = (id) => `assets/items/${id}.png`
 
@@ -30,10 +30,8 @@ const CSS = `
 #inv-screen.open { display: flex; }
 #inv-screen .is-card { background: rgba(14,17,20,0.92); border: 1px solid var(--line); border-radius: 8px;
   padding: 12px 16px 14px; width: 320px; }
-#inv-screen .is-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-#inv-screen .is-title { flex: 1; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); }
-#inv-screen .is-x { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line-control);
-  background: transparent; color: var(--text-body); font: bold 14px var(--font); cursor: pointer; padding: 0; }
+#inv-screen .is-head { margin-bottom: 10px; }
+#inv-screen .is-title { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); }
 #inv-screen .is-pending { padding: 7px 9px; margin-bottom: 10px; border-radius: 4px;
   border: 1px solid #c9a24a; background: rgba(201,162,74,0.10); font-size: 12px; line-height: 1.5; }
 #inv-screen .is-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
@@ -117,7 +115,6 @@ export class InventoryScreen {
     document.head.appendChild(style)
 
     this.zone = document.getElementById('park-zone')
-    this.zoneBadge = this.zone?.querySelector('.pz-badge') ?? null
     this.dock = document.createElement('div')
     this.dock.id = 'inv-dock'
     this.dock.className = 'hud-row'
@@ -158,7 +155,7 @@ export class InventoryScreen {
   request () {
     if (this.isOpen) { this.close(); return }
     if (this.isSuppressed() || this.isBlocked()) return
-    if (!this.vehicleState.parked) { this._hint(); return }
+    if (!this.vehicleState.parked) { hintPark(); return }
     this.open()
   }
 
@@ -185,14 +182,6 @@ export class InventoryScreen {
     this.zone?.classList.toggle('locked', locked)
     this.iconEl.classList.toggle('ready', !locked)
     if (this.isOpen && (locked || this.isSuppressed())) this.close()
-  }
-
-  _hint () {
-    const b = this.zoneBadge
-    if (!b) return
-    b.classList.remove('hint')
-    void b.offsetWidth   // restart the pulse mid-flight (damage-screen.js alert pattern)
-    b.classList.add('hint')
   }
 
   _onClick (e) {
@@ -251,14 +240,14 @@ export class InventoryScreen {
       grid += slotHtml(rows[i] ?? null, rows[i] ? `data-slot="${i}"` : '', i === this.sel ? 'sel' : '')
     }
     this.card.innerHTML =
-      `<div class="is-head"><span class="is-title">Inventory</span>`
-      + `<button class="is-x" data-act="close" title="close (Tab / Esc)">&times;</button></div>`
+      `<div class="is-head"><span class="is-title">Inventory</span></div>`
       + (p
         ? `<div class="is-pending">No room for <b>${inv.nameOf(p.id)}</b>. Drop something to make room.<br>`
           + btn('take', 'take it', inv.fits(p.id, p.n)) + btn('leave', 'leave it') + `</div>`
         : '')
       + `<div class="is-grid">${grid}</div>`
       + `<div class="is-strip">${this._strip(rows)}</div>`
+      + BACK_BUTTON
   }
 
   /** What you can do with the selected item. */

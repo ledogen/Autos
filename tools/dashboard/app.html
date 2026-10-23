@@ -388,8 +388,8 @@ function md(src, escaped = false) {
  * URL and Back works between list and detail. Each filterable view has its own
  * axes; a chip toggles an axis of whichever view is on screen. */
 const TYPES = ['milestone', 'feature', 'bug', 'perf', 'quality', 'infra', 'asset'];
-const STATUSES = ['open', 'closed', 'cancelled'];
-const STATUS_COLOR = { open: '#6fb3ff', closed: '#7fd97f', cancelled: '#8b94a3' };
+const STATUSES = ['open', 'idea', 'closed', 'cancelled'];
+const STATUS_COLOR = { open: '#6fb3ff', idea: '#d9b36f', closed: '#7fd97f', cancelled: '#8b94a3' };
 const DEFAULTS = {
   tickets: { type: [], status: ['open'], sev: [], lane: [] },
   cargo: { kind: [], region: [], place: [], asset: [] },

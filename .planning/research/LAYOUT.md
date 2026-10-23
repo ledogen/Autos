@@ -120,6 +120,8 @@ the real world is being reseeded and routed. Only `main.js` constructs it; the p
 touch it, same rule as `debris.js`) · `settings.js` (FEAT-41 the player's saved choices — world
 preset, gearbox, assists — under one localStorage key, defaults on any storage failure; main.js applies
 them) · `menu-nav.js` (FEAT-41 ↑/↓/←/→/Enter over whichever menu owns the screen — one path for keyboard
-and pad, the pad reaching it through gamepad.js's menu key map; a `.nav-focus` class, never DOM focus).
+and pad, the pad reaching it through gamepad.js's menu key map; a `.nav-focus` class, never DOM focus) ·
+`hud-menu.js` (the pad's B-hold icon menu over the HUD column: D-pad ↑/↓ walks the usable icons,
+release clicks the pick; gamepad.js drives it through `pad.hudMenu`).
 
 **Entry** — `main.js` (scene setup, fixed-step accumulator loop, wires everything). Its always-on `window.__*` dev handles are the CDP surface; `__cam` (the render camera) was added for `test/cdp-smoke.mjs` (INFRA-07), and `__story` / `__tp` / `__road` / `__world` exist only under `?prof=1`.

@@ -50,6 +50,9 @@ export const DEBRIS_TYPES = {
   bundleA: { model: 'firewoodBundleA', massKg: 11, friction: 0.8, restitution: 0.05 },
   bundleB: { model: 'firewoodBundleB', massKg: 11, friction: 0.8, restitution: 0.05 },
   bundleC: { model: 'firewoodBundleC', massKg: 11, friction: 0.8, restitution: 0.05 },
+  // The stranded motorist's tire, loose in the bed (data/offers.js `loose`). 18 kg = RANGER_PARAMS.wheelMass, the
+  // truck's own wheel and tire, as are data/items.js and the offer row. Rubber on the bed ribs grips.
+  spareTire: { model: 'spareTire', massKg: 18, friction: 0.9, restitution: 0.3 },
 }
 
 /** The three bundle variants, in a fixed order so a hash picks one deterministically. */
@@ -242,6 +245,36 @@ export function cubeLayout (count, side, pitchGap = 0.02, gap = 0.002, radius = 
 }
 
 /** The 8 corners of a flat [x,y,z,…] point list's bounding box — the crash-proof fallback hull. */
+const HULL_THIN = 40   // points kept by thinHull — 3·40 − 6 = 114 edges, 228 half-edges < Box3D's 255
+
+/**
+ * The `n` most spread-out of a flat [x,y,z,…] point list (farthest-point sampling, seeded from the
+ * point farthest from the first) — the convex hull of these is the engine-buildable stand-in for a
+ * hull that is too complex. Deterministic: same points, same pick.
+ */
+export function thinHull (pts, n = HULL_THIN) {
+  const m = pts.length / 3
+  if (m <= n) return pts
+  const d = new Float64Array(m).fill(Infinity)
+  const out = new Float32Array(n * 3)
+  const far = (i) => {   // shrink every point's distance-to-the-kept-set by point i; return the farthest
+    let best = 0
+    for (let k = 0; k < m; k++) {
+      const dx = pts[k * 3] - pts[i * 3], dy = pts[k * 3 + 1] - pts[i * 3 + 1], dz = pts[k * 3 + 2] - pts[i * 3 + 2]
+      d[k] = Math.min(d[k], dx * dx + dy * dy + dz * dz)
+      if (d[k] > d[best]) best = k
+    }
+    return best
+  }
+  let i = far(0)
+  d.fill(Infinity)
+  for (let j = 0; j < n; j++) {
+    out.set(pts.subarray(i * 3, i * 3 + 3), j * 3)
+    i = far(i)
+  }
+  return out
+}
+
 export function bboxCorners (pts) {
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
   for (let i = 0; i < pts.length; i += 3) {
@@ -284,11 +317,15 @@ export class DebrisSystem {
       const proto = this._extractHull(rec.template)
       if (proto && !spec.box && !(this._hullVolume(proto.hull) > 0)) {
         // The engine could not build this hull (Box3D caps a hull at 255 half-edges, and a
-        // densely faceted round asset can exceed it). Left alone it has NaN mass and takes the
-        // whole world unstable. Fall back to the hull's bounding box — wrong shape, right size,
-        // never a crash — and say so, because the asset needs fewer facets.
-        console.warn(`[debris] '${spec.model}' hull is too complex for the engine; using its bounding box`)
-        proto.hull = bboxCorners(proto.hull)
+        // densely faceted round asset — a tire, any detailed item model — exceeds it). Left alone it
+        // has NaN mass and takes the whole world unstable. Hull the HULL_THIN most spread-out
+        // vertices instead: a hull of n points has at most 3n − 6 edges, so 40 always fits. Only if
+        // that fails too does it fall back to the bounding box — wrong shape, right size, never a crash.
+        proto.hull = thinHull(proto.hull)
+        if (!(this._hullVolume(proto.hull) > 0)) {
+          console.warn(`[debris] '${spec.model}' hull is too complex for the engine; using its bounding box`)
+          proto.hull = bboxCorners(proto.hull)
+        }
       }
       if (proto && spec.box) proto.hull = bboxCorners(proto.hull)
       if (proto) {

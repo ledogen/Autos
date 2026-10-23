@@ -753,7 +753,8 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   doesn't grant +5 handling; it changes what the truck does when you get greedy mid-corner.
   Power mods on an open-diff RWD truck are a *worse car* for a driver without the literacy —
   that's a cursed item nobody had to author, and it only works because nothing is hidden.
-  [DEFAULT]
+  Wear is a state, not a score: the service screen shows a part's condition as a percentage
+  (owner, 2026-10-22). [DEFAULT]
 - **SM-INV-11 — The *ambient* world-story is emergent (parameter states + the doze); authored
   story beats are permitted, but stay in-world.** *Re-keyed 2026-07-29: parameter states are driven
   by **run progress** (`runState`), not `metaState` — the mechanism is unchanged, the input moved
@@ -1181,13 +1182,16 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   50% down to 25%** (84 → 72 kN); **sensitivity ramps hard below 25%** (72 → 30 kN at 10%, flat below).
   Tire patches + the always-carried bike pump / optional compressor make a puncture recoverable at the
   roadside without a spare (`items.md` §7). **Roadside times (owner, 2026-09-30), all timeskips:** fit
-  the spare 90 min (was 30; owner, 2026-10-20) · patch + bike pump 2 h · patch + compressor 30 min. The
+  the spare **2 h** (owner, 2026-10-22; was 90 min, 2026-10-20; 30 before), **−30 min with the compressor,
+  −1 h with the quick-jack, stacking** (1 h 30 / 1 h / 30 min) · patch + bike pump 2 h · patch +
+  compressor 30 min. The
   patch times are the **whole repair**, plugging included (owner, 2026-10-21). A patch fixes the hole only and
   restores no condition. This supersedes the ~1–2 h swap below. Hazard punctures at any condition:
   FEAT-93. Driving on a flat: FEAT-94.
 - **Repair = roadside self-change.** Pull over and swap the tire — **not a minigame**, it just burns
   ~1–2 in-game hours (OEM kit) and **requires a spare/replacement tire in inventory**. A found/bought
-  **quick-jack or breaker-bar item cuts the time** (you still need a tire ready).
+  **quick-jack cuts the time** (−1 h, above; you still need a tire ready). The breaker bar is cut
+  (owner, 2026-10-22).
 - **Inventory weight is real load** (honest physics): carried spare tires and the quick-change tool have
   mass, shifting the truck's CoG and handling while stowed — a load, never a stat (SM-INV-10).
 
@@ -1243,8 +1247,10 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   balance the game around, not a bug.
 - **Overheat → temp power loss + engine wear**; repeated/long overheat → **blown head gasket**.
   **RULED (owner, 2026-10-16, FEAT-51): no separate gasket meter.** Overheat wears the engine track
-  (severity × time over 110 °C), and the engine at 0% — which already never catches — IS the blown
-  gasket. One mechanism.
+  (severity × time over 110 °C), and the engine at 0% IS the blown gasket. One mechanism. **A worn
+  engine always starts (owner, 2026-10-22, reversing the never-catch at 0%: "otherwise we don't have
+  a game")** — it is just gutless: 40% power at 0%, the loss spread over the bottom half (knee at
+  50%). Dying at idle was floated and parked.
 - **No coolant mechanic [owner, 2026-10-16].** Radiator condition is the cooling capacity, directly:
   heat follows fuel burned, the radiator carries it off through a 100 °C thermostat. Anchors: a good
   radiator holds 100 °C at any load; **110 °C** is where damage and power loss start; a **0%** radiator
@@ -1376,7 +1382,7 @@ Run start: parts randomized from a pool of crap (SM-INV-7). Parts are architectu
 not stat sticks (SM-INV-10) — open vs LSD diff, power, tires, plus the wear-model parts:
 brake-pad grades per axle (bias), radiator (cooling headroom), and starting condition on every
 track (a jalopy rolls in already half-worn). Consumables/tools ride here too — spare tires, air
-filters, a quick-jack/breaker-bar — and, stowed, they are **real mass** that shifts CoG and
+filters, a quick-jack — and, stowed, they are **real mass** that shifts CoG and
 handling (honest physics, not a stat). FEAT-23's drivetrain architecture + parts-selector phases
 are the substrate; the jalopy generator is a seeded roll over that same architecture space, now
 including starting wear. Mid-run finds (an LSD in a barn, a better radiator) are events.

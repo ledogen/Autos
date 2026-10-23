@@ -54,17 +54,21 @@ export const PAD_PARAMS = {
 // mapActive: set by src/map2d.js — true while the map is open (the pad then speaks MAP_KEYS).
 // zoom: RT − LT while the map is open, in [-1, 1] (map2d.js reads it); 0 otherwise.
 // canThrow / throwReady: set by main.js — a paper throw is possible (the right stick aims), and
-// the reticle is up as well (RB tap throws).
+// the reticle is up as well (RB tap throws). pumpActive: set by main.js — the pump is open, so A
+// pumps. hudMenu: set by src/hud-menu.js — the B-hold icon menu ({ open, move, select, cancel }).
 export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, zoom: 0,
-  menuActive: () => false, cardActive: () => false, mapActive: () => false, canThrow: () => false, throwReady: () => false }
+  menuActive: () => false, cardActive: () => false, mapActive: () => false, canThrow: () => false, throwReady: () => false,
+  pumpActive: () => false, hudMenu: null }
 
 // THE BINDING TABLE (Forza-style layout, owner 2026-10-19 — the FEAT-125 ticket). Rows with a
 // `button` (standard-layout index) replay `key` while held; the rest are analog or tap-vs-hold, read
 // in poll(), and are here so the settings page's chart is generated from this one table and
 // cannot drift from what the pad does. LB / A / X are the FEAT-126 manual gearbox's clutch and
 // shifts; the automatic ignores them. Start pauses and View is the map (owner, 2026-10-19), which
-// moved the inventory to D-pad ↑ and the headlights to the left stick click — the D-pad is all
-// screens. Home (16) is unbound.
+// moved the headlights to the left stick click. The side-menu icons (inventory, damage, camp,
+// recovery) sit behind ONE button, B held (owner, 2026-10-21): the D-pad is free while driving, and
+// B + ←/→ is reserved for a later action. Their rows carry `B (…)` so every key tab reads "B". The
+// pump left B for A, at the pump only. Home (16) is unbound.
 export const BINDINGS = [
   { action: 'throttle',              key: 'W',         pad: 'RT' },
   { action: 'brake / reverse',       key: 'S',         pad: 'LT' },
@@ -76,7 +80,7 @@ export const BINDINGS = [
   { action: 'upshift (manual)',      key: 'e',         pad: 'A',  button: 0 },
   { action: 'downshift (manual)',    key: 'q',         pad: 'X',  button: 2 },
   { action: 'ignition (hold)',       key: 'i',         pad: 'Y',  button: 3 },
-  { action: 'pump / aim (hold)',     key: 'f',         pad: 'B',  button: 1 },
+  { action: 'pump (hold)',           key: 'f',         pad: 'A (pump open)' },
   { action: 'camera mode',           key: 'c',         pad: 'right stick click', button: 11 },
   { action: 'headlights',            key: 'l',         pad: 'left stick click', button: 10 },
   { action: 'pause',                 key: 'Escape',    pad: 'Start', button: 9 },
@@ -86,10 +90,10 @@ export const BINDINGS = [
   { action: 'map: zoom in / out',    key: 'wheel',     pad: 'RT / LT (map open)' },
   { action: 'cards: pick / press',   key: 'arrows / Enter', pad: 'D-pad / A (card up)' },
   { action: 'reset truck',           key: 'r',         pad: 'View (hold 1 s)' },
-  { action: 'inventory',             key: 'Tab',       pad: 'D-pad ↑', button: 12 },
-  { action: 'camp',                  key: 'z',         pad: 'D-pad ↓', button: 13 },
-  { action: 'damage screen',         key: 'v',         pad: 'D-pad ←', button: 14 },
-  { action: 'recovery',              key: 'x',         pad: 'D-pad →', button: 15 },
+  { action: 'inventory',             key: 'Tab',       pad: 'B (hold, ↑/↓, release)' },
+  { action: 'damage screen',         key: 'v',         pad: 'B (hold, ↑/↓, release)' },
+  { action: 'camp',                  key: 'z',         pad: 'B (hold, ↑/↓, release)' },
+  { action: 'recovery',              key: 'x',         pad: 'B (hold, ↑/↓, release)' },
 ]
 const BUTTON_KEYS = Object.fromEntries(BINDINGS.filter(b => b.button != null).map(b => [b.button, b.key]))
 // While a menu owns the screen (pad.menuActive, from src/menu-nav.js) the pad speaks the menu's keys
@@ -110,6 +114,8 @@ delete MAP_KEYS[0]; delete MAP_KEYS[2]
 const CARD_KEYS = { ...BUTTON_KEYS, 0: 'Enter', 1: 'Escape' }
 for (const i of [2, 12, 13, 14, 15]) delete CARD_KEYS[i]
 const CARD_MAP_KEYS = { ...CARD_KEYS, 4: 'q', 5: 'e' }
+// The pump is open (pad.pumpActive): A is F, held to pump — parked at the pump, A has nothing to shift.
+const PUMP_KEYS = { ...BUTTON_KEYS, 0: 'f' }
 const NAV = [['ArrowUp', 12], ['ArrowDown', 13], ['ArrowLeft', 14], ['ArrowRight', 15]]
 const NAV_DELAY_MS = 400, NAV_REPEAT_MS = 120, NAV_STICK = 0.5
 const navNext = new Map()   // arrow key → performance.now() of its next repeat, while held
@@ -125,6 +131,13 @@ let viewReset = false    // the hold already fired r this press
 const RB = 5
 let rbAt = -1            // performance.now() of a held-back press, -1 when none
 let rbBrake = false      // Space is down for RB
+// B in the drive layout holds the icon menu (src/hud-menu.js via pad.hudMenu): press opens it, D-pad
+// ↑/↓ edges walk it, release opens the pick. A B press that began in a menu, card or the map was a
+// "back" and stays one: it can never open the icon menu when the layout drops to drive under it.
+const B = 1, UP = 12, DOWN = 13
+let bMenu = false        // the icon menu is open on this B press
+let bSpent = false       // this B press belongs to something else (it was a back)
+let dPrev = 0            // last frame's D-pad ↑ (1) / ↓ (2) bits, for edges
 
 const held = new Map()   // button index → the key whose keydown was sent and keyup has not been
 // The map opened mid-drive (owner, 2026-10-20). A trigger already down when the map opens stays the
@@ -164,9 +177,11 @@ function poll () {
   // picking one — two pads on the desk both work. Per-player pads would need a real assignment.
   let thr = 0, brk = 0, steer = 0, lookX = 0, lookY = 0, any = false, viewDown = false, rbDown = false
   const menu = pad.menuActive(), card = !menu && pad.cardActive(), map = !menu && pad.mapActive()
-  const keys = menu ? MENU_KEYS : card ? (map ? CARD_MAP_KEYS : CARD_KEYS) : map ? MAP_KEYS : BUTTON_KEYS
+  let keys = menu ? MENU_KEYS : card ? (map ? CARD_MAP_KEYS : CARD_KEYS) : map ? MAP_KEYS : BUTTON_KEYS
   const drive = keys === BUTTON_KEYS
+  if (drive && pad.pumpActive()) keys = PUMP_KEYS
   const down = new Set(), nav = new Set()
+  let bDown = false, dpad = 0
   for (const gp of navigator.getGamepads()) {
     if (!gp || gp.mapping !== 'standard') continue
     any = true
@@ -179,6 +194,9 @@ function poll () {
     for (const i in keys) if (gp.buttons[i]?.pressed && !(drive && +i === RB)) down.add(+i)
     if (gp.buttons[RB]?.pressed) rbDown = true
     if (gp.buttons[VIEW]?.pressed) viewDown = true
+    if (gp.buttons[B]?.pressed) bDown = true
+    if (gp.buttons[UP]?.pressed) dpad |= 1
+    if (gp.buttons[DOWN]?.pressed) dpad |= 2
     if (menu || card) for (const [k, b] of NAV) if (gp.buttons[b]?.pressed) nav.add(k)
     if (menu) {   // the left stick navigates a menu; on a card it is still steering
       const ax = gp.axes[0], ay = gp.axes[1]
@@ -225,6 +243,18 @@ function poll () {
     if (rbBrake) sendKey('keyup', ' ')
     rbAt = -1; rbBrake = false
   }
+  if (drive && bDown && !bSpent) {
+    if (!bMenu) { bMenu = true; pad.active = true; pad.hudMenu?.open() }
+    if (dpad & 1 & ~dPrev) pad.hudMenu?.move(-1)
+    if (dpad & 2 & ~dPrev) pad.hudMenu?.move(1)
+  } else if (bMenu) {
+    bMenu = false
+    if (drive && any) pad.hudMenu?.select()   // released: open the pick
+    else pad.hudMenu?.cancel()                // a menu/card took over, or the pad was unplugged
+  }
+  if (!drive && bDown) bSpent = true
+  if (!bDown) bSpent = false
+  dPrev = dpad
   for (const k of nav) {
     const t = navNext.get(k)
     if (t === undefined || now >= t) {
