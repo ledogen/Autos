@@ -305,10 +305,13 @@ export const REWARDS = [
     { id: 'spareTire',  name: 'Spare tire',  kind: 'part',       gates: ['A', 'S'],
       pools: ['autoShop', 'strandedMotorist'] },
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
-    { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['C', 'B'],
+    { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['B', 'A'],   // mid tier (owner, 2026-10-21)
       pools: ['gasStation', 'strandedMotorist'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'workSite'] },
+    // Field repair on body panels (items.md §7, owner 2026-10-21); the effect isn't built yet.
+    { id: 'ductTape',   name: 'Duct tape',   kind: 'consumable', gates: ['B', 'A'],
+      pools: ['autoShop', 'gasStation', 'generalStore'] },
     // The dinner meal as an invitation (items.md §1d, owner 2026-10-22): the customer feeds you when
     // the job is in. Being fed waits on hunger, which isn't built.
     { id: 'dinnerMeal', name: 'Dinner invitation', kind: 'food', gates: ['C', 'B'], dineIn: true,

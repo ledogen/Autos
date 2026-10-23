@@ -192,9 +192,10 @@ holds for the run (2026-10-20). $5–10; an auto-shop reward (B–A); a rare roa
 Flavor: "A mechanic's best friend" (owner, 2026-10-22).
 
 ### Duct tape
-status: todo · design: ratified · build: effect · where: generalStore, reward, found
+status: wip · design: ratified · build: effect · where: generalStore, reward, found
 Field repair, 20% on body panels. 3 uses per roll. 15 min per use; holds for the run (2026-10-20). $5–10;
 a reward from the auto shop, gas station and general store (B–A); a rare roadside find (2026-10-21).
+**In the game 2026-10-23** (`ductTape`, 0.35 kg): the reward is live on main; the repair effect is not built.
 
 ### Coolant jug
 status: cut · design: proposed · build: effect · where: autoShop, gasStation

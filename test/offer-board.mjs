@@ -425,7 +425,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
 
 // ── 13. bonus share ─────────────────────────────────────────────────────────────────────────────
 {
-    const count = { foodVendor: [0, 0], generalStore: [0, 0], larrysHouse: [0, 0] }
+    const count = { foodVendor: [0, 0], doctor: [0, 0], larrysHouse: [0, 0] }
     for (let seed = 1; seed <= 200; seed++) {
         const b = make(seed)
         for (let t = T0; t < T0 + 24 * 3; t += 2) for (const q of POIS) {
@@ -436,7 +436,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     const share = count.foodVendor[0] / count.foodVendor[1]
     check('bonus share ≈ 25 % where the source has rewards', Math.abs(share - 0.25) < 0.03, share.toFixed(3))
     check('no bonus where the source has no rewards (givers, Larry)',
-        count.generalStore[0] === 0 && count.larrysHouse[0] === 0)   // a residence posts the dinner invitation (owner, 2026-10-22)
+        count.doctor[0] === 0 && count.larrysHouse[0] === 0)   // residences (dinner) and general stores (duct tape) reward now
 }
 
 // ── 13b. no two offers at a POI are the same job ────────────────────────────────────────────────
