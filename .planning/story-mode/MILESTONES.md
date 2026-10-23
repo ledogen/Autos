@@ -49,7 +49,7 @@ How the cut works:
 | FEAT-43 | story region — only the slices one region needs; "confinement becomes the unlocked set" is beta |
 | FEAT-114 | haul quantity — built on `feature/mission-recut`, merge it |
 | FEAT-104, FEAT-137 | shop + rotating shelf — built on `feature/parts`, lands with it |
-| FEAT-122 | inventory — already on main (`feature/feat-122` has nothing left to merge); verify and close |
+| FEAT-122 | inventory — ✅ closed 2026-10-23, on main |
 | FEAT-91 | haul yards — the R1 splitting yard only; sawmill and quarry are beta |
 | FEAT-89 | courier, three shapes |
 | FEAT-67 | the offer board |
@@ -60,7 +60,7 @@ How the cut works:
 | FEAT-125, FEAT-133, FEAT-136 | controller support, pad on the map, cross-browser pads |
 | FEAT-34 | instrument cluster |
 | FEAT-120 | sound-effects pass |
-| FEAT-109 | engine stall |
+| FEAT-109 | engine stall — ✅ closed 2026-10-23, shipped with FEAT-126's gearbox |
 | FEAT-128 | truck shuts off at camp |
 | FEAT-93, FEAT-94 | hazard punctures, driving on a flat |
 | FEAT-66 | camp gear slots |
@@ -231,7 +231,7 @@ story-mode go-ahead. Listed so that picking one up never feels like a detour.
 | **FEAT-23** drivetrain architecture P2–P5 | Parts-as-cars substrate (SM-INV-10). The parts-selector phase becomes the jalopy generator's roll-space in SM-3. |
 | **FEAT-04a** visual vehicle swap | Jalopy variety reads visually — and, post-2026-07-29, the garage's roster is *starting vehicles*, so this carries more weight than it used to. |
 | **FEAT-52** off-network generator | ONE generator for spurs, cuts, camping areas, logging sites and POI candidates (DESIGN.md "The off-network layer"). Absorbs FEAT-38 mode B and FEAT-32's siting. Substrate for the deferred Highway/Shortcut pair. **Two passes as of 2026-08-02** — inherent difficulty (free), then discrete **carved** hazards that the Shortcut's esteem clears; hazard *placement* stays worldgen, *removal* is run-layer. Also owes #05 the **intentional-non-shortcut-skip detector** (>~200 m of road distance saved off-network, penalty scaled by magnitude). |
-| **FEAT-109** engine stall | Waits on FEAT-23's manual transmission (owner, 2026-08-22: no stall behind a torque converter). A stall is a breakdown predicament, never a death (SM-INV-1). |
+| **FEAT-109** engine stall | ✅ closed 2026-10-23 — shipped with the FEAT-126 gearbox. Waits on FEAT-23's manual transmission (owner, 2026-08-22: no stall behind a torque converter). A stall is a breakdown predicament, never a death (SM-INV-1). |
 | **FEAT-38 / FEAT-32** dirt roads; logged and clearcut forest | Their siting is absorbed by FEAT-52 (above). Dirt roads add a second surface class and the dispersed-camping spurs. |
 | **FEAT-41** game menus + UI | The shell every player-facing feature docks into, including the mode split SM-1 needs. |
 
