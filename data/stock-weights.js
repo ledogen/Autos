@@ -24,7 +24,7 @@ export const STOCK_WEIGHT = {
     tireLT:           1,
     wheelSteel:       10,
     spareTire:        4,     // the mounted wheel + tire
-    tirePlugKit:      10,
+    tirePlugKit:      4,
     compressor:       1,
     quickJack:        1,      // Rarely (owner, 2026-10-22)
 
@@ -48,7 +48,7 @@ export const STOCK_WEIGHT = {
     springsFrontHD:    0.25,
     springsRearHD:     0.25,
     dampersFrontHD:    0.25,
-    dampersRearHD:     1,     // Rarely, the one HD row above Hardly ever (as the owner picked it)
+    dampersRearHD:     0.25,
     arbFrontStock:     1,
     arbFrontSport:     0.25,
     arbRearSport:      0.25,
@@ -63,11 +63,18 @@ export const STOCK_WEIGHT = {
     diffWelded:       4,
     engineStock:      0.25,
 
+    // Field repairs (owner, 2026-10-23): zip ties and stop-leak are sold at the auto shop too
+    zipTies:          4,
+    stopLeak:         4,
+
     // Rewards only: never on the shelf (REWARD_ONLY below)
     emergencyGas:     4,
-    coffee:           4,
+    coffee:           10,
     chiliDog:         4,
+    ductTape:         4,     // sold only at the general store, which has no shelf
+    energyDrink:      10,
+    dinnerMeal:       4,     // eaten on the spot, never stowed
 }
 
 /** Weighted for mission rewards but never stocked on a shelf (the owner's reward-only rows). */
-export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog'])
+export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog', 'ductTape', 'energyDrink', 'dinnerMeal'])

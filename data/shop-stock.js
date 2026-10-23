@@ -18,4 +18,5 @@ export const P_NEW = 0.15             // otherwise used:
 export const USED_COND = [0.4, 0.85]  //   condition, uniform
 
 /** Shelf items that aren't parts: no condition, priced here. */
-export const ITEM_PRICE = { tirePlugKit: 7, compressor: 20, quickJack: 30 }   // owner, 2026-10-22
+export const ITEM_PRICE = { tirePlugKit: 7, compressor: 20, quickJack: 30,   // owner, 2026-10-22
+    zipTies: 5, stopLeak: 8 }   // [DEFAULT] inside the owner's $5–10 band (2026-10-23)
