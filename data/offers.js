@@ -392,20 +392,6 @@ export const HAUL_PAR_SLACK = 1.1
 export const FREIGHT_PAR_SLACK_PER_KG = 0.0007
 
 /**
- * Freight is the EASY delivery (owner, 2026-10-11): strapped, it cannot be lost, so it grades
- * looser and tips less than haul, which can. Both are frozen onto the mission as contract terms.
- *
- * FREIGHT_TIME_SLACK — every rank threshold × this at accept, and the tip curve reads the ratio ÷
- * this: S comes easier (≤ 0.886 × par instead of 0.77) and D comes later (past 1.15 × par instead of
- * 1.0). Par pace grades B, not C.
- *
- * FREIGHT_TIP_MULT — a flat multiplier on the tip only. Base pay is untouched, so a heavy load keeps
- * its base-pay lead through par × FREIGHT_PAR_SLACK_PER_KG. At 0.5 a freight S pays 1.5 × base,
- * against 2 × base on haul and courier.
- */
-export const FREIGHT_TIME_SLACK = 1.15
-
-/**
  * Freight's weight bonus on PAY alone (owner, 2026-10-11): payMult × (1 + this × kg), on top of the
  * par stretch. Par grows 7 % per 100 kg and is the extra TIME the load costs; this adds 3 % per
  * 100 kg of money that time does not eat, so pay outgrows time and narrows the per-minute gap to
@@ -413,6 +399,13 @@ export const FREIGHT_TIME_SLACK = 1.15
  * earner. In the card's Base pay too.
  */
 export const FREIGHT_PAY_PER_KG = 0.0003
+/**
+ * FREIGHT_TIP_MULT — a flat multiplier on freight's tip only, frozen onto the mission at accept.
+ * Base pay is untouched, so a heavy load keeps its base-pay lead through par ×
+ * FREIGHT_PAR_SLACK_PER_KG. At 0.5 a freight drive at the S pace pays 1.5 × base, against 2 × base
+ * on haul and courier. A FEAT-69 balancing knob, not a design rule (owner, 2026-10-21, tentatively).
+ * Freight's letter is the kg delivered (FEAT-138); its old time slack (× 1.15) retired with that.
+ */
 export const FREIGHT_TIP_MULT = 0.5
 
 // FEAT-113 DELIVERY DEADLINES (owner, 2026-10-15 — replaces the 10-14 fixed bands). A job must be

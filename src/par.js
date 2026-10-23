@@ -385,10 +385,10 @@ export function formatTime(sec) {
  * band that contains par" (and, for the paper route specifically, the 2026-08-14 confirmation of
  * it); see DESIGN.md SM-INV-3 and missions.md for the amendment.
  *
- * Why C never tightens while S/A/B do: par IS the pass line by definition. If C drifted below 1.0
- * on later days, a drive exactly at par would start failing, and par would stop meaning the one
- * thing this whole re-anchor exists to make it mean. The ramp squeezes the GOOD letters instead.
- * (Gated: test/economy.mjs pins C === 1.0 on every day — the replacement for the old B > 1.0 pin.)
+ * Why C never moves: par IS the pass line by definition. If C drifted below 1.0, a drive exactly at
+ * par would start failing, and par would stop meaning the one thing this whole re-anchor exists to
+ * make it mean. (Gated: test/economy.mjs pins C === 1.0 in every region — the replacement for the
+ * old B > 1.0 pin. The day ramp that squeezed S/A/B retired 2026-10-21, FEAT-138.)
  *
  * Fitted 2026-08-16 against four v1-road drives the owner labelled with the letter each SHOULD
  * have earned — ratio 0.687 "solid S" · 0.712 "barely S" · 0.809 "mid C" · 0.910 "middle C" — which
@@ -447,53 +447,28 @@ export function formatTime(sec) {
  */
 export const RANK_THRESHOLDS_DEFAULT = { S: 0.77, A: 0.81, B: 0.87, C: 1.00 }
 
-/*
- * FEAT-88 — the HAUL letter (owner, 2026-10-05): "the letter grade should be an overall ranking
- * on how you performed a mission". A courier job is all clock, so its letter is gradeRun's. A haul
- * is clock AND load, so its letter blends the two, each first put on one LETTER SCALE (C = 1,
- * B = 2, A = 3, S = 4; D below 1):
- *   time  — 4 at the S line, 3 at A, 2 at B, 1 at C (par), linear between; past S it keeps
- *           climbing at the A→S slope up to HAUL_TIME_CAP ("screaming fast"), past par it keeps
- *           falling at the B→C slope.
- *   load  — 4 at HAUL_LOAD_S of the pieces delivered, HAUL_LOAD_SLOPE letters per whole load
- *           (1.5 letters per 10 %), capped at 4: a full bed is S-level, never better.
- * The letter is the AVERAGE. Owner's anchors: S time with 90 % delivered = S; 40 % delivered,
- * screaming fast = (5 − 3.5) / 2 = 0.75 = D. Display only, like every letter (SM-INV-3) — pay is
- * the ratio × the share aboard, never this.
+/**
+ * FEAT-138: the letter for an AMOUNT, higher is better — haul's pieces delivered, freight's kg
+ * delivered, fragile's health (owner, 2026-10-21: every type ranks on its own axis). `t` is that
+ * type's `{S, A, B, C}` floors: economy.js rankTable() for haul and freight, FRAGILE_THRESHOLDS for
+ * fragile. Display only, like every letter (SM-INV-3): money reads the count, the kg or the health,
+ * never this.
  */
-export const HAUL_LOAD_S = 0.9
-export const HAUL_LOAD_SLOPE = 15
-export const HAUL_TIME_CAP = 5
-
-/** A run's time on the letter scale (C = 1 … S = 4), from its par ratio. */
-export function timeScore(ratio, t = RANK_THRESHOLDS_DEFAULT) {
-    const pts = [[t.S, 4], [t.A, 3], [t.B, 2], [t.C, 1]]
-    if (ratio <= t.S) return Math.min(HAUL_TIME_CAP, 4 + (t.S - ratio) / (t.A - t.S))
-    for (let i = 1; i < pts.length; i++) {
-        const [r0, s0] = pts[i - 1], [r1, s1] = pts[i]
-        if (ratio <= r1) return s0 + (s1 - s0) * (ratio - r0) / (r1 - r0)
-    }
-    return 1 - (ratio - t.C) / (t.C - t.B)
-}
-
-/** A haul's letter: the average of its time and load on the letter scale. */
-const _letterOf = (score) => score >= 4 ? 'S' : score >= 3 ? 'A' : score >= 2 ? 'B' : score >= 1 ? 'C' : 'D'
-/** A delivered share (or a condition) on the letter scale: 4 at HAUL_LOAD_S, capped at 4. */
-const _loadScore = (share) => Math.min(4, 4 + (share - HAUL_LOAD_S) * HAUL_LOAD_SLOPE)
-
-export function haulGrade(ratio, share, thresholds = RANK_THRESHOLDS_DEFAULT) {
-    const time = timeScore(ratio, thresholds)
-    const load = _loadScore(share)
-    const score = (time + load) / 2
-    return { letter: _letterOf(score), score, time, load }
+export function amountGrade (amount, t) {
+    if (amount >= t.S) return 'S'
+    if (amount >= t.A) return 'A'
+    if (amount >= t.B) return 'B'
+    if (amount >= t.C) return 'C'
+    return 'D'
 }
 
 /**
- * FEAT-97: a fragile job's letter reads the cargo's CONDITION alone (owner, 2026-10-14) — haul's
- * load score with no clock half: S ≥ 90 %, A ≥ 83.3 %, B ≥ 76.7 %, C ≥ 70 %, D below.
+ * FEAT-97: a fragile job's letter reads the cargo's CONDITION alone (owner, 2026-10-14), a letter per
+ * 1/15 of health below 90 % — the same floors in every region (§11b: later regions post more sensitive cargo instead).
  */
+export const FRAGILE_THRESHOLDS = { S: 0.9, A: 0.9 - 1 / 15, B: 0.9 - 2 / 15, C: 0.9 - 3 / 15 }   // 90 / 83.3 / 76.7 / 70 %
 export function fragileGrade(health) {
-    return _letterOf(_loadScore(health))
+    return amountGrade(health, FRAGILE_THRESHOLDS)
 }
 
 /**
@@ -502,8 +477,8 @@ export function fragileGrade(health) {
  *
  * The letter is DISPLAY bucketing of the continuous ratio (SM-INV-3 as amended: rank is
  * display only — the result card, and live on the FEAT-87 rank timer) — payout is computed from the ratio, never from the letter.
- * `thresholds` is injected by the caller (economy.js day ramp); nothing here may learn what a
- * run day is, and `day` must never reach computePar.
+ * `thresholds` is injected by the caller (economy.js rankTable, by region); nothing here may learn
+ * what a run day is, and `day` must never reach computePar.
  */
 export function gradeRun(elapsed, par, thresholds = RANK_THRESHOLDS_DEFAULT) {
     const ratio = par > 0 ? elapsed / par : Infinity

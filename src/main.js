@@ -76,11 +76,11 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
 import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
-import { HAUL_PAR_SLACK, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIME_SLACK, FREIGHT_TIP_MULT, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
+import { HAUL_PAR_SLACK, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
-import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
+import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, rankTable } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds
 import { InventorySystem } from './inventory.js'          // FEAT-122: what the player owns this run
 import { InventoryScreen } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
@@ -93,7 +93,7 @@ import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './th
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planTourJob, customersForTier } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
-import { formatTime, RANK_THRESHOLDS_DEFAULT, haulGrade, fragileGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-88 haul letter; FEAT-97 fragile letter
+import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade, fragileGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight letter; FEAT-97 fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
 import { Leaderboard } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
@@ -3881,20 +3881,26 @@ missionSystem = new MissionSystem({
   // FEAT-67: a settled board job — ANY letter, D included — completes its offer, and the slot then
   // waits out that offer's original expiry before re-rolling.
   onSettle: (result, mission) => {
-    // FEAT-88: a haul pays the ordinary line × the share of the load still in the bed. Counted
-    // here, at arrival, then the load is gone — the economy only ever sees a scaled payMult, so
-    // base + tip still sum to the total and the result card stays honest.
+    // FEAT-138 (owner, 2026-10-21): every type ranks on its own axis, against its region's
+    // thresholds (economy.js rankTable — the region frozen at accept, never the day).
+    const region = mission?.terms?.region ?? 1
+    // FEAT-88: a haul pays the ordinary line × the share of the load still in the bed — i.e. the
+    // per-bundle rate × the pieces delivered (offer-board.js payMult), base and tip alike, so dumping
+    // half the load never pays more. Counted here, at arrival, then the load is gone — the economy
+    // only ever sees a scaled payMult, so base + tip still sum to the total and the card stays honest.
     if (mission?.bundles) {
       result.loaded = mission.bundles
       result.aboard = _haul?.mission === mission ? _haulAboard() : 0
-      // The letter is the run's OVERALL rank: clock and load blended (par.js haulGrade).
-      result.letter = haulGrade(result.ratio, result.aboard / mission.bundles,
-                                mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT).letter
+      // The letter is the pieces DELIVERED, an absolute count per cargo (FEAT-138).
+      result.letter = amountGrade(result.aboard, rankTable('haul', region, 'firewood'))
       mission = { ...mission, payMult: mission.payMult * result.aboard / mission.bundles }
       _haulClear()
     }
-    // FEAT-97: a fragile job is paid and lettered on the condition it arrived in (economy.js
-    // splitFragilePayout, par.js fragileGrade). Read here, before the load comes off.
+    // FEAT-138: freight's letter is the kg DELIVERED. It is strapped (welded), so what arrives is what
+    // was loaded: the rank is chosen at the dock, and the job is surviving the drive with it.
+    if (mission?.cargoKg && !mission.fragile) result.letter = amountGrade(mission.cargoKg, rankTable('freight', region))
+    // FEAT-97: a fragile job is lettered on the condition it arrived in, and half its base follows it
+    // (economy.js splitFragilePayout, par.js fragileGrade). Read here, before the load comes off.
     if (mission?.fragile) {
       result.health = _freight?.mission === mission && _freight.health ? _freight.health.health : 0
       result.letter = fragileGrade(result.health)
@@ -4170,12 +4176,9 @@ function _planOffer (offer) {
       m.fragile = s.fragile   // FEAT-97: tolerance + sound, or null
       if (s.load) {
         m.par *= 1 + FREIGHT_PAR_SLACK_PER_KG * s.massKg
-        // Freight grades looser and tips less than haul (owner, 2026-10-11) — data/offers.js. Not
-        // fragile: its tip and letter read the cargo's condition, never the clock.
-        if (!s.fragile) {
-          m.timeSlack = FREIGHT_TIME_SLACK
-          m.tipMult = FREIGHT_TIP_MULT
-        }
+        // Freight tips less than haul (owner, 2026-10-11; a FEAT-69 knob since 2026-10-21) —
+        // data/offers.js. Not fragile: it tips the whole line.
+        if (!s.fragile) m.tipMult = FREIGHT_TIP_MULT
       }
     }
     return m

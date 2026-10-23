@@ -35,7 +35,7 @@
 // Accuracy scales the per-delivery rate and NOTHING else. The rank is the par ratio through the
 // same gradeRun() every other mission type uses — par is the C/D boundary (SM-INV-3 as re-anchored
 // 2026-08-16; this REVERSES the 2026-08-14 "par is a B, and B contains par" confirmation, owner's
-// call, applied game-wide), the day ramp tightens the good letters — gated on full coverage,
+// call, applied game-wide), the region's thresholds (FEAT-138) — gated on full coverage,
 // because you can always be quick by skipping people.
 //
 // The shape this used to buy: "slow and careful" and "fast and ragged" paid about the same, which
@@ -209,7 +209,7 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
 
     // THE CLOCK GRADES [ratified 2026-08-14]. The letter is the par ratio through the SAME
     // gradeRun() every other mission type uses — par is the C/D boundary (re-anchored 2026-08-16),
-    // and the day ramp tightens the good letters — so a paper route's B means what a POI job's B
+    // on the region's time thresholds (FEAT-138) — so a paper route's B means what a POI job's B
     // means. That shared meaning is the point, and it is why the re-anchor had to reverse the
     // 2026-08-14 "par is a B" ruling HERE too rather than leaving this mission type behind on the
     // old convention. It used to be coverage × meanAccuracy,

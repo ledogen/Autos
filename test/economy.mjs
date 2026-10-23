@@ -22,10 +22,10 @@
 //
 // Pure node: no THREE, no worldgen, no DOM.
 import {
-  ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankThresholds, payoutFor, pointsFor,
+  ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankTable, payoutFor, pointsFor,
   runEconomy, EconomySystem, formatDeeds, basePay, splitPayout, bonusEarned, RANKS,
 } from '../src/economy.js'
-import { gradeRun, RANK_THRESHOLDS_DEFAULT, haulGrade, timeScore } from '../src/par.js'
+import { gradeRun, RANK_THRESHOLDS_DEFAULT, amountGrade } from '../src/par.js'
 import { runState } from '../src/day.js'
 import { readFileSync } from 'node:fs'
 
@@ -52,7 +52,7 @@ check('the retired anchors are deleted (breakEven, payoutZero, payoutCap, payout
 // Neither ratio anchor is a free number. The whole tip lands ON the day-1 S threshold, so a rank
 // refit must move it; and tipZero is solved from "par earns exactly half the tip", so it must move
 // with fullTipRatio. Assert the identities, so a band re-cut that forgets either fails here.
-check('fullTipRatio IS the day-1 S threshold, not an independent constant', P.fullTipRatio === P.rankDay1.S)
+check('fullTipRatio IS region 1\'s time S threshold, not an independent constant', P.fullTipRatio === P.RANK_TABLE.time[0].S)
 check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 * 1.0 - P.fullTipRatio))
 
 // ── 1. SM-INV-4: the payout line's anchors [RE-CUT 2026-09-30, owner] ───────────────────────────
@@ -82,8 +82,8 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   check('day-1 ladder: every S pays 100%, every C 75–91%, a slow D 50%',
     frac(0.77) === 1 && frac(0.70) === 1 && frac(1.0) >= 0.75 - 1e-12 && frac(0.851) < 0.92 && frac(2) === 0.5,
     `S ${frac(0.77).toFixed(3)} · B/C ${frac(0.85).toFixed(3)} · par ${frac(1).toFixed(3)} · D ${frac(2).toFixed(3)}`)
-  check('an S earns the WHOLE tip on every day (S only tightens below fullTipRatio)', (() => {
-    for (let d = 1; d <= 30; d++) if (!near(payoutFor(par, rankThresholds(d).S, tier), max)) return false
+  check('an S earns the WHOLE tip in every region (no region\'s S sits above fullTipRatio)', (() => {
+    for (let rg = 1; rg <= 6; rg++) if (!near(payoutFor(par, rankTable('time', rg).S, tier), max)) return false
     return true
   })())
   check('tier multiplies linearly', near(payoutFor(par, 1.0, 2.66), 2.66 * payoutFor(par, 1.0, 1.0)))
@@ -163,7 +163,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
 {
   let payOk = true, ptsOk = true
   for (let day = 1; day <= 12; day++) {
-    const th = rankThresholds(day), tier = dayTier(day)
+    const th = rankTable('time', 1), tier = dayTier(day)
     let prevPay = Infinity, prevPts = Infinity
     for (let ratio = 0.5; ratio <= 2.0; ratio += 0.01) {
       const pay = payoutFor(180, ratio, tier)
@@ -209,57 +209,51 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   // a well-meaning tweak to either table silently breaks the progression curve. Job lengths are
   // the MEASURED region-1 average (180 s, 2026-09-30) and the ratified 2× for region 6 (the ladder
   // is mission length, run-shape.md) — not the old nominal 360/720.
-  const B_DRIVE = 0.83   // a B under rankDay1 (A 0.81 < 0.83 ≤ B 0.87) — the reference drive
+  const B_DRIVE = 0.83   // a B on region 1's time row (A 0.81 < 0.83 ≤ B 0.87) — the reference drive
   const pay = (par, day, region) => payoutFor(par, B_DRIVE, dayTier(day) * regionTier(region))
   const start = pay(180, 1, 1), end = pay(360, 20, 6)
   check('a day-1 region-1 job pays $5-15', start >= 5 && start <= 15, `got $${start.toFixed(2)}`)
   check('a day-20 region-6 job pays $500-1500', end >= 500 && end <= 1500, `got $${end.toFixed(0)}`)
 }
 
-// ── 6. rankThresholds: ordered, tightening, C IS par on every day, day 1 === par.js default ─────
-// [RE-ANCHORED 2026-08-16] The old pin here was `A < 1.0 < B` — "B is the band containing par".
-// Par is now the C/D boundary, so the pin inverts: C sits exactly ON 1.0, and it must NOT tighten
-// with the day. If C ever drifted below 1.0, a drive exactly at par would start failing on later
-// days and par would stop meaning "the slowest passing drive" — which is the entire point of the
-// re-anchor. The ramp is allowed to squeeze S/A/B and nothing else.
+// ── 6. FEAT-138: the threshold table — by type and REGION, never by day ────────────────────────
+// [RE-ANCHORED 2026-08-16] C sits exactly ON 1.0: par is the C/D boundary. [2026-10-21, FEAT-138] The
+// day ramp retired; thresholds step by region (design-amendments-2026-10-21-mission-recut.md §11b).
 {
-  let ordered = true, cIsPar = true, tightening = true, sTightens = false
-  let prev = null
-  for (let d = 1; d <= 30; d++) {
-    const t = rankThresholds(d)
-    if (!(t.S < t.A && t.A < t.B && t.B < t.C)) ordered = false
-    if (Math.abs(t.C - 1.0) > 1e-12) cIsPar = false        // par IS the C/D boundary, every day
-    if (prev) for (const k of ['S', 'A', 'B', 'C']) if (t[k] > prev[k] + 1e-12) tightening = false
-    if (prev && t.S < prev.S - 1e-12) sTightens = true
-    prev = t
-  }
-  check('thresholds ordered S<A<B<C, days 1..30', ordered)
-  check('C IS par (=== 1.0) on EVERY day — the ramp never moves the pass line', cIsPar)
-  check('the ramp still bites: S tightens across the run', sTightens)
-  check('thresholds non-increasing in day (tighten, never loosen)', tightening)
-  const d1 = rankThresholds(1)
-  check('day 1 deep-equals par.js RANK_THRESHOLDS_DEFAULT',
-    ['S', 'A', 'B', 'C'].every(k => d1[k] === RANK_THRESHOLDS_DEFAULT[k]))
-  check('gradeRun default arg IS day 1 (3-arg === 2-arg at day 1)',
-    gradeRun(170, 180).letter === gradeRun(170, 180, rankThresholds(1)).letter)
-  check('day ramp changes the letter, never the ratio', (() => {
-    const early = gradeRun(0.76 * 180, 180, rankThresholds(1))   // S on day 1 (S ≤ 0.77)
-    const late = gradeRun(0.76 * 180, 180, rankThresholds(20))   // A on day 20 (S has tightened to 0.75)
-    return early.letter === 'S' && late.letter === 'A' && near(early.ratio, late.ratio)
-  })())
-  // S MUST STILL BE REACHABLE ON THE LAST DAY. This is the regression that prompted the whole
-  // 2026-08-16 re-anchor: the previous ramp tightened S to 0.74 by day 20, which was faster than
-  // ANY of the 20 recorded drives in runs/, so S was mathematically dead for the back half of
-  // every run and nobody had decided that. The best drive in the corpus sits at ratio 0.654; keep
-  // day-20 S at or above it or the letter goes extinct again, silently.
-  //
-  // The bar is now the best HONEST drive in runs-v2/, ratio 0.740 [2026-09-07; that drive, 0003, was
-  // archived to runs-v2/pre-feat80-grip/ on 2026-09-10 — the best new-grip drive, 0019, is also 0.740]. The corpus also
-  // holds a 0.668, but that run skipped 471 m of its 2762 m route (17%, peaking 210 m off the
-  // centerline) — it was never a driving result and must not be allowed to certify a threshold.
-  // The v1 figure this replaced was 0.654, measured on roads the router no longer builds.
-  check('S survives day 20 (threshold ≥ the best HONEST recorded drive, 0.740)',
-    rankThresholds(20).S >= 0.740, `day-20 S = ${rankThresholds(20).S.toFixed(3)}`)
+  const T = P.RANK_TABLE
+  const rows = [...T.time, ...T.haul.firewood, ...T.freight]
+  check('time rows ordered S<A<B<C (lower is better)', T.time.every(t => t.S < t.A && t.A < t.B && t.B < t.C))
+  check('count and kg rows ordered S>A>B>C (higher is better)',
+    [...T.haul.firewood, ...T.freight].every(t => t.S > t.A && t.A > t.B && t.B > t.C))
+  check('C IS par (=== 1.0) in EVERY region — the pass line never moves', T.time.every(t => t.C === 1.0))
+  check('region 1 time deep-equals par.js RANK_THRESHOLDS_DEFAULT',
+    ['S', 'A', 'B', 'C'].every(k => rankTable('time', 1)[k] === RANK_THRESHOLDS_DEFAULT[k]))
+  check('gradeRun default arg IS region 1 (3-arg === 2-arg)',
+    gradeRun(170, 180).letter === gradeRun(170, 180, rankTable('time', 1)).letter)
+  // Haul S is MEASURED (test/measure-haul-brim.mjs, 2026-10-22: a brimming stock bed = 25); A/B/C
+  // are 85/70/55 % of it rounded UP (owner, 2026-10-21 §12.1).
+  check('haul firewood: S 25 (measured), A/B/C = ceil(85/70/55 % of S) in every region',
+    T.haul.firewood.every(t => t.S === 25 && t.A === Math.ceil(0.85 * t.S) && t.B === Math.ceil(0.70 * t.S) && t.C === Math.ceil(0.55 * t.S)),
+    JSON.stringify(T.haul.firewood[0]))
+  check('freight R1 (PROVISIONAL): 712 / 570 / 428 / 285 kg — 125/100/75/50 % of the 570 kg rating',
+    ['S', 'A', 'B', 'C'].every((k, i) => rankTable('freight', 1)[k] === [712, 570, 428, 285][i]))
+  check('the table lookup clamps like regionTier (region 0 → 1, region 9 → the last row)',
+    rankTable('time', 0) === T.time[0] && rankTable('freight', 9) === T.freight[T.freight.length - 1]
+      && rankTable('haul', 1.7, 'firewood') === T.haul.firewood[0])
+  check('every row has all four letters, finite', rows.every(t => ['S', 'A', 'B', 'C'].every(k => isFinite(t[k]))))
+  // NOTHING READS THE DAY FOR A LETTER: the same region accepted on day 1 and day 20 gets identical
+  // thresholds. (The day still moves the pay tier — that is the cost treadmill, not difficulty.)
+  let day = 1
+  const eco = new EconomySystem({ getDay: () => day, getRegion: () => 1 })
+  const early = eco.terms(); day = 20
+  const late = eco.terms()
+  check('terms(): day 1 and day 20 freeze the SAME thresholds in one region',
+    ['S', 'A', 'B', 'C'].every(k => early.thresholds[k] === late.thresholds[k]) && early.payTier !== late.payTier)
+  // S MUST STAY REACHABLE. The best HONEST drive in runs-v2/ is ratio 0.740 [2026-09-07; 0003, later
+  // archived to runs-v2/pre-feat80-grip/; the best new-grip drive, 0019, is also 0.740]. A 0.668 run
+  // skipped 471 m of its route and must not certify a threshold. Keep every region's S at or above it.
+  check('S is reachable in every region (threshold ≥ the best HONEST recorded drive, 0.740)',
+    T.time.every(t => t.S >= 0.740))
 }
 
 // ── 7. Points accrue as exact integer halves ────────────────────────────────────────────────────
@@ -294,9 +288,10 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
 }
 
 // ── 8b. Haul: pay × the share of the load aboard (FEAT-88) ─────────────────────────────────────
-// main.js's onSettle hands the economy a mission whose payMult is already × aboard / loaded. The
-// economy must carry that factor straight through: the same job with 9 of 12 bundles pays 9/12 of
-// the full load (to the cent's rounding), and base + tip still sum to the total.
+// main.js's onSettle hands the economy a mission whose payMult is already × aboard / loaded — the
+// per-bundle rate × the pieces delivered. The economy must carry that factor straight through: the
+// same job with 9 of 12 bundles pays 9/12 of the full load (to the cent's rounding), base AND tip
+// alike (dumping half the load never pays more), and base + tip still sum to the total.
 {
   const eco = new EconomySystem({ getDay: () => 1 })
   eco.start()
@@ -306,29 +301,25 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   const none = eco.settle(res, { terms, payMult: 0 })
   check('9 of 12 bundles aboard pays 9/12 of the full load', Math.abs(part.payout - full.payout * 9 / 12) <= 0.01,
     `${part.payout} vs ${full.payout} × 0.75`)
+  check('…the tip scales with the load too, not just the base', Math.abs(part.tip - full.tip * 9 / 12) <= 0.01)
   check('base + tip === total on a partial load', sumsTo(part.base, part.tip, part.payout))
   check('an empty bed pays nothing (floor at zero, SM-INV-4)', none.payout === 0)
-  // Good deeds on a haul follow the share DELIVERED, not the letter (owner, 2026-10-05).
-  const deeds = (aboard, loaded) => eco.settle({ ...res, letter: 'S', aboard, loaded }, { terms }).points
-  check('haul good deeds: > 2/3 delivered → 1, 1/3..2/3 → ½, < 1/3 → 0 — whatever the letter',
-    deeds(12, 12) === 1 && deeds(9, 12) === 1 && deeds(8, 12) === 0.5 && deeds(4, 12) === 0.5
-    && deeds(3, 12) === 0 && deeds(0, 11) === 0,
-    [deeds(12, 12), deeds(9, 12), deeds(8, 12), deeds(4, 12), deeds(3, 12), deeds(0, 11)].join(','))
+  // FEAT-138: good deeds read the letter on every type — the share bands retired.
+  const deeds = (letter) => eco.settle({ ...res, letter, aboard: 3, loaded: 12 }, { terms }).points
+  check('haul good deeds follow the letter (pointsFor), not a share band',
+    deeds('S') === 1 && deeds('B') === 1 && deeds('C') === 0.5 && deeds('D') === 0)
 }
 
-// ── 8c. The haul letter: clock and load blended (owner, 2026-10-05) ────────────────────────────
+// ── 8c. FEAT-138: haul letters on the COUNT delivered, freight on the KG ────────────────────────
 {
-  const T = RANK_THRESHOLDS_DEFAULT
-  const g = (ratio, share) => haulGrade(ratio, share, T).letter
-  check('time score hits the letter lines: S 4, A 3, B 2, C (par) 1',
-    [T.S, T.A, T.B, T.C].map(r => timeScore(r, T)).every((v, i) => Math.abs(v - (4 - i)) < 1e-9))
-  check('owner anchor: S time with 90 % delivered is an S', g(T.S, 0.9) === 'S')
-  check('owner anchor: 40 % delivered, screaming fast, is a D', g(0.5, 0.4) === 'D')
-  check('a full load cannot lift a par drive above B (load caps at S-level)', g(T.C, 1) === 'B')
+  const H = rankTable('haul', 1, 'firewood'), F = rankTable('freight', 1)
+  const h = (n) => amountGrade(n, H), f = (kg) => amountGrade(kg, F)
+  check('haul: 25 → S, 22 → A, 18 → B, 14 → C, 13 → D (each floor is inclusive)',
+    h(25) === 'S' && h(30) === 'S' && h(24) === 'A' && h(22) === 'A' && h(18) === 'B' && h(14) === 'C' && h(13) === 'D' && h(0) === 'D')
+  check('freight: 712 → S, 570 → A, 428 → B, 285 → C, below → D',
+    f(712) === 'S' && f(711.9) === 'A' && f(570) === 'A' && f(428) === 'B' && f(285) === 'C' && f(284) === 'D')
   check('the letter never improves as pieces are lost',
-    [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4].map(s => 'DCBAS'.indexOf(g(T.A, s))).every((v, i, a) => i === 0 || v <= a[i - 1]))
-  check('…nor as the clock slows',
-    [0.7, 0.77, 0.81, 0.87, 1.0, 1.1, 1.3].map(r => 'DCBAS'.indexOf(g(r, 0.9))).every((v, i, a) => i === 0 || v <= a[i - 1]))
+    Array.from({ length: 31 }, (_, i) => 'DCBAS'.indexOf(h(30 - i))).every((v, i, a) => i === 0 || v <= a[i - 1]))
 }
 
 // ── 9. The terms lock: settle on the ACCEPTED day, not the finished day ─────────────────────────
@@ -343,8 +334,8 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   const settled = eco.settle({ par: 180, ratio: ECONOMY_PARAMS.fullTipRatio, letter: 'S' }, { terms })
   check('terms lock: day-3 tier paid despite finishing on day 4',
     settled.payout === cents(ECONOMY_PARAMS.k * 180 * dayTier(3)) && dayTier(3) !== dayTier(4))
-  check('terms carry day-3 thresholds (frozen)',
-    terms.day === 3 && terms.thresholds.S === rankThresholds(3).S && Object.isFrozen(terms.thresholds))
+  check('terms carry the region\'s thresholds (frozen)',
+    terms.day === 3 && terms.thresholds.S === rankTable('time', terms.region).S && Object.isFrozen(terms.thresholds))
   check('terms compose payTier = dayTier × regionTier',
     near(terms.payTier, terms.dayTier * terms.regionTier))
 }
@@ -416,10 +407,10 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
 // ── 10. Purity ──────────────────────────────────────────────────────────────────────────────────
 {
   let stable = true
-  const a = payoutFor(233.7, 0.87, 1.52), b = rankThresholds(5), c = dayTier(6)
+  const a = payoutFor(233.7, 0.87, 1.52), b = rankTable('time', 2), c = dayTier(6)
   for (let i = 0; i < 1000; i++) {
     if (payoutFor(233.7, 0.87, 1.52) !== a) stable = false
-    const t = rankThresholds(5)
+    const t = rankTable('time', 2)
     if (t.S !== b.S || t.C !== b.C) stable = false
     if (dayTier(6) !== c) stable = false
   }

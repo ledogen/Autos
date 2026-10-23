@@ -5,8 +5,9 @@
 // square-law on its peak. What must hold:
 //   1. the data joins up — every fragile thing names a load, a tolerance with floor < break, a sound,
 //      and a shipper that posts fragile; the furniture tag is on the five pieces (FEAT-116);
-//   2. the pay: the base guaranteed, + the whole tip pool × the tip share — all of it at 100 %, none
-//      at 50 % (owner, 2026-10-15); the letter reads condition alone; a burst prices once;
+//   2. the pay (owner, 2026-10-21, FEAT-138): half the base guaranteed, half × health, + the SPEED tip
+//      a courier drive earns at the same ratio; destroyed pays 0; the letter reads condition alone and
+//      good deeds read the letter; a burst prices once;
 //   3. the calibration table (the ticket's, on the freight-strap rig): paved driving costs nothing,
 //      washboard nibbles glassware and costs sturdy pieces little, a 1 m crest landing destroys
 //      glassware and costs sturdy pieces most of it, a rollover destroys everything;
@@ -25,7 +26,7 @@ import { makeVehicleState } from '../src/vehicle-state.js'
 import { computeStaticEquilibrium } from '../src/suspension.js'
 import { RUNNING } from '../src/ignition.js'
 import { strapPose } from '../src/debris.js'
-import { splitFragilePayout, splitPayout, haulPointsFor } from '../src/economy.js'
+import { splitFragilePayout, splitPayout, pointsFor, EconomySystem } from '../src/economy.js'
 import { fragileGrade } from '../src/par.js'
 import { makeFragile, feltG, shockCost } from '../src/fragile.js'
 
@@ -49,17 +50,27 @@ ok(furn.every(id => THINGS.find(t => t.id === id)?.furniture) && THINGS.filter(t
 
 // ── 2. pay, letter, events ───────────────────────────────────────────────────────────────────
 console.log('pay:')
-const full = splitPayout(180, 0, 1), base = full.base, pool = full.tip
-const at = (h) => splitFragilePayout(180, h, 1)
-ok(JSON.stringify(at(1)) === JSON.stringify(full), `100 % pays base + the whole tip pool ($${full.total})`)
-ok(at(0.75).base === base && Math.abs(at(0.75).tip - pool / 2) < 0.006, `75 % pays the base + half the tip ($${at(0.75).total})`)
-ok(at(0.5).tip === 0 && at(0.25).tip === 0 && at(0.25).base === base && at(0.01).base === base, '50 % and below tip nothing; the base is guaranteed down to 1 %')
-ok(at(0).total === 0, 'destroyed pays $0')
-ok([0, 0.33, 0.61, 0.9, 1].every(h => { const p = at(h); return Math.round(p.base * 100) + Math.round(p.tip * 100) === Math.round(p.total * 100) }),
+const S = 0.77, SLOW = 1.5   // a ratio at the whole tip, and one past the tip's end
+const courier = (r) => splitPayout(180, r, 1)
+const at = (h, r = S) => splitFragilePayout(180, r, h, 1)
+const base = courier(S).base
+ok(JSON.stringify(at(1)) === JSON.stringify(courier(S)), `100 % at S pace pays what a courier S pays ($${courier(S).total})`)
+ok(Math.abs(at(0.5).base - base * 0.75) < 0.006 && Math.abs(at(0.01).base - base * 0.505) < 0.006,
+  `half the base is guaranteed, half × health: 50 % → base × 0.75 ($${at(0.5).base}), 1 % → × 0.505`)
+ok([1, 0.75, 0.3].every(h => at(h).tip === courier(S).tip) && at(0.6, 0.95).tip === courier(0.95).tip && at(1, SLOW).tip === 0,
+  'the tip is SPEED: the courier tip at the same ratio, whatever the condition; slow tips nothing')
+ok(at(0).total === 0 && at(0, SLOW).total === 0, 'destroyed pays $0')
+ok([0, 0.33, 0.61, 0.9, 1].every(h => [S, 0.9, SLOW].every(r => { const p = at(h, r); return Math.round(p.base * 100) + Math.round(p.tip * 100) === Math.round(p.total * 100) })),
   'base + tip === total, to the cent')
 ok(fragileGrade(0.95) === 'S' && fragileGrade(0.85) === 'A' && fragileGrade(0.8) === 'B' && fragileGrade(0.72) === 'C' && fragileGrade(0.6) === 'D',
   'the letter reads condition: 95 % S · 85 % A · 80 % B · 72 % C · 60 % D')
-ok(haulPointsFor(0.9) === 1 && haulPointsFor(0.5) === 0.5 && haulPointsFor(0.2) === 0, 'good deeds follow condition (haul bands)')
+{
+  const eco = new EconomySystem()
+  const deeds = (h) => eco.settle({ par: 180, ratio: S, health: h, letter: fragileGrade(h) }, { terms: eco.terms() }).points
+  ok([0.95, 0.85, 0.72, 0.6].every(h => deeds(h) === pointsFor(fragileGrade(h))), 'good deeds read the letter (pointsFor), on condition')
+  const paid = eco.settle({ par: 180, ratio: 0.95, health: 0.6, letter: 'D' }, { terms: eco.terms() })
+  ok(paid.payout === at(0.6, 0.95).total, `settle() pays the fragile split at the drive's ratio ($${paid.payout})`)
+}
 
 console.log('events:')
 const tier = { shockFloorG: 1, breakG: 3 }

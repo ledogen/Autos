@@ -1,7 +1,7 @@
 ---
 id: FEAT-138
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-10-21
 source: owner, 2026-10-21 — "rank should be based on the core principle of the mission type"; "all
@@ -64,13 +64,48 @@ truck:
 
 ## Acceptance
 
-- [ ] A threshold table keyed by type and region; nothing reads the run day for a letter.
-- [ ] Haul letters on the count delivered; freight on kg delivered; fragile unchanged; the one-piece
+- [x] A threshold table keyed by type and region; nothing reads the run day for a letter.
+- [x] Haul letters on the count delivered; freight on kg delivered; fragile unchanged; the one-piece
       fetch on time.
-- [ ] The haul S count is measured headless and recorded in the table with the measurement method.
-- [ ] Haul, freight and fragile tip on the time ratio; haul's and freight's tips scale with the amount
+- [x] The haul S count is measured headless and recorded in the table with the measurement method.
+- [x] Haul, freight and fragile tip on the time ratio; haul's and freight's tips scale with the amount
       delivered (dumping half the load never pays more).
-- [ ] Fragile base = half guaranteed + half × health; health 0 fails and pays 0.
-- [ ] `pointsFor(letter)` gives every type's deeds.
-- [ ] `test/economy.mjs`, `test/haul-load.mjs`, `test/fragile-cargo.mjs` updated; "the day, in plain
+- [x] Fragile base = half guaranteed + half × health; health 0 fails and pays 0.
+- [x] `pointsFor(letter)` gives every type's deeds.
+- [x] `test/economy.mjs`, `test/haul-load.mjs`, `test/fragile-cargo.mjs` updated; "the day, in plain
       words" re-checked under the new base pay.
+
+## Resolution (2026-10-22)
+
+- **One table** — `economy.js` `ECONOMY_PARAMS.RANK_TABLE`, read by `rankTable(kind, region, cargoId)`.
+  It is keyed by type and region (the region clamps like `regionTier`). `rankThresholds(day)`,
+  `rankDay1`, `rankDayLate` and `rankTightenDays` are deleted. `terms()` freezes region 1's time row,
+  and haul and freight read theirs at settle from the frozen `terms.region`.
+  - Courier/papers time: today's day-1 values in every region (R2/R3 PROVISIONAL).
+  - Haul firewood: **S 25, A 22, B 18, C 14** (A/B/C = 85/70/55 % of S, rounded up). R2/R3 copy R1,
+    PROVISIONAL.
+  - Freight: 712/570/428/285 kg, PROVISIONAL in every region.
+- **Haul S measured** with `test/measure-haul-brim.mjs`. It uses the game's own loader (truck parked
+  square, 5 seeds per N), sharing the rig `test/lib/haul-rig.mjs` with the `haul-load` gate.
+  - The bed is full to the rail at ~20–21 bundles.
+  - N 26 is the largest load whose heap stays within half a bundle of the rail; N 28 mounds up to
+    0.34 m. The median aboard at N 26 is 25.
+  - `inBedWell` alone can't measure this: it counts a piece up to 0.6 m over the rail, so its count
+    never plateaus below ~40.
+- **Letters:** `par.js` `amountGrade(amount, t)` (higher is better) grades haul on pieces delivered
+  and freight on `cargoKg`. `fragileGrade` now goes through it with the same 90/83.3/76.7/70 % floors.
+  `haulGrade`, `timeScore` and the HAUL_LOAD_* / HAUL_TIME_CAP constants are deleted. The one-piece
+  fetch needs nothing new: it grades on time through `gradeRun`, and FEAT-132 wires it up.
+- **Pay:**
+  - Fragile: `splitFragilePayout(par, ratio, health, …)` = base × (½ + ½·health) + the courier
+    speed tip. Health 0 pays $0. `FRAGILE_TIP_ZERO` / `fragileTipShare` are deleted.
+  - Freight: `FREIGHT_TIME_SLACK` is retired (offers.js, mission.js accept, main.js, settle), so its
+    tip reads the plain ratio × `FREIGHT_TIP_MULT`.
+  - Haul: unchanged. Its payMult was already the rate × pieces delivered, base and tip together.
+- **Deeds:** `pointsFor(letter)` on every type. `haulPointsFor` is deleted.
+- **Interim (owner, 2026-10-22):** until FEAT-114's picker, today's 10–15-bundle offers top out at C,
+  and most freight grades D. Only 455 kg+ loads reach B. `feature/mission-recut` does not merge to
+  main before FEAT-114.
+- **"The day, in plain words":** courier pay is untouched, and the break-even checks in
+  `test/economy.mjs` §1 still pass.
+- The FEAT-87 rank timer still draws time bands on haul/freight/fragile. FEAT-139 re-cuts the strip.
