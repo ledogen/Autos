@@ -47,7 +47,7 @@ import {
 } from '../data/offer-names.js'
 import { djb2, mulberry32 } from './seed.js'
 import { STOCK_WEIGHT } from '../data/stock-weights.js'   // the bonus reward pick shares the shelf's weights
-import { basePay, formatMoney, rankTable } from './economy.js'
+import { basePay, formatMoney, rankTable, fragileLines } from './economy.js'
 import { DAY_PARAMS } from './day.js'
 
 /**
@@ -117,13 +117,16 @@ export function gateText (gate) { return gate === 'S' ? 'S only' : `${gate} or b
 /**
  * A bonus gate as the card prints it (FEAT-114, amendment §6). Haul ranks on the count delivered
  * (FEAT-138), so its gate prints the count, never the letter: "deliver 18+ bundles" (owner, 2026-10-23:
- * the letter only ever decides the item, so the card names the threshold). Freight's tier is
+ * the letter only ever decides the item, so the card names the threshold). Fragile likewise prints
+ * the condition it must arrive in: "arrives 83%+ intact" (owner, 2026-10-23) — its tier's line, eased
+ * by the route's `km` (economy.js fragileLines). Freight's tier is
  * INTERNAL (owner, 2026-10-22): the load is the poster's, the roll only offers items its mass can
- * reach, so the bonus is simply earned on delivery. Every other family keeps the letter.
- * `kind` is 'haul' | 'freight' | anything else.
+ * reach, so the bonus is simply earned on delivery. Courier keeps the letter.
+ * `kind` is 'haul' | 'fragile' | 'freight' | anything else; `cargoId` is the haul cargo or the fragile tier.
  */
-export function gateLine (gate, kind, region = 1, cargoId = 'firewood') {
+export function gateLine (gate, kind, region = 1, cargoId = 'firewood', km = 0) {
     if (kind === 'haul') return `deliver ${rankTable('haul', region, cargoId)[gate]}+ bundles`
+    if (kind === 'fragile') return `arrives ${Math.round(fragileLines(region, cargoId, km)[gate] * 100)}%+ intact`
     if (kind === 'freight') return 'on delivery'
     return gateText(gate)
 }
@@ -548,7 +551,7 @@ export class OfferBoard {
             atPickup: thing.atPickup ?? null,   // a fetch's wait at the pickup: { min, park, done } prompts
             // FEAT-97: a fragile load's tolerance and hit sound (src/fragile.js) — null otherwise.
             fragile: thing.family === 'fragile'
-                ? { shockFloorG: thing.shockFloorG, breakG: thing.breakG, sound: thing.sound } : null,
+                ? { tier: thing.tier, tierName: thing.tierName, shockFloorG: thing.shockFloorG, breakG: thing.breakG, sound: thing.sound } : null,
         }
     }
 
@@ -756,7 +759,7 @@ export class OfferBoard {
      *        configured NOW, or null (cab cargo). Computed by the caller — the board never sees the truck
      *        (SM-INV-12), it only words the verdict.
      * @returns {{family, portrait: {sex,name}|null, flavor: string|null, sentence: Array<{t:string,b?:boolean}>,
-     *            pay: string|null, terms: string[], bonus: string|null,
+     *            pay: string|null, terms: string[], times: string[], bonus: string|null,
      *            verdict: {level: 'warning'|'overload', text: string}|null}|null}
      */
     card (offer, { nowH, payTier = 1, route = null, customers = null, verdict = null } = {}) {
@@ -791,13 +794,17 @@ export class OfferBoard {
             : `Base pay $${formatMoney(basePay(par, payTier, sp.payMult))}`
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
+        if (sp.fragile) terms.push(sp.fragile.tierName)   // what the player is up against (owner, 2026-10-23)
         terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
         // A haul's card is the rate, the cost, the distance, the stock and the reward line — nothing
         // else (owner, 2026-10-23: the timers overran the map card). The due time shows from accept.
+        // The clocks ride their OWN row (`times`, 2026-10-23): one row of distance + tier + kg + both
+        // timers ran ~60 characters against the ~45 the map card fits, and spilled off it.
+        const times = []
         const expiresInH = offer.expiresH - nowH
         // A never-expiring offer (Larry's) shows no timer at all (owner, 2026-10-07).
-        if (!sp.stock && isFinite(expiresInH)) terms.push(`expires in ${formatGameDuration(expiresInH)}`)
-        if (!sp.stock && par > 0) terms.push(`deliver within ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept
+        if (!sp.stock && isFinite(expiresInH)) times.push(`expires in ${formatGameDuration(expiresInH)}`)
+        if (!sp.stock && par > 0) times.push(`deliver within ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept
         return {
             family: sp.family,
             badge: jobBadge(sp),
@@ -811,8 +818,10 @@ export class OfferBoard {
             sentence,
             pay,
             terms,
+            times,
             // Larry's card shows base pay only (owner ruling) — papers never roll a bonus anyway.
-            bonus: sp.bonus ? `Bonus: ${sp.bonus.name} — ${gateLine(sp.bonus.gate, sp.family, this._region, sp.thingId)}` : null,
+            bonus: sp.bonus ? `Bonus: ${sp.bonus.name} — ${gateLine(sp.bonus.gate, sp.family, this._region,
+                sp.fragile ? sp.fragile.tier : sp.thingId, (route?.distance ?? 0) / 1000)}` : null,
             // FEAT-112: a load that fits says nothing. Otherwise the worst reason, in words:
             // "Warning: this load exceeds the recommended weight limit", "Overload: too heavy".
             verdict: verdict && verdict.verdict !== 'fits'

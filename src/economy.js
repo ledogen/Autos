@@ -110,6 +110,7 @@ export const ECONOMY_PARAMS = {
     baseFrac:     0.5,    // completion alone: this share of the max is guaranteed — the card's "Base pay"
     fullTipRatio: 0.77,   // the whole tip at this ratio and faster — MUST equal RANK_TABLE.time[0].S (gated)
     tipZero:      1.23,   // where the tip runs out — SOLVED: 2 − fullTipRatio, so par earns half (gated)
+    fragileLinePerKm: 0.02,   // FEAT-139: health a fragile line eases per km of route (2 points/km). PROVISIONAL
 
     // ── FEAT-138 RANK THRESHOLDS, BY TYPE AND REGION [owner, 2026-10-21] ──────────────────────
     // Every type ranks on its own axis (design-amendments-2026-10-21-mission-recut.md §1–2, §11b).
@@ -148,6 +149,18 @@ export const ECONOMY_PARAMS = {
             { S: 712, A: 570, B: 428, C: 285 },   // PROVISIONAL
             { S: 712, A: 570, B: 428, C: 285 },   // PROVISIONAL
         ],
+        // CONDITION ON ARRIVAL (health 0..1), higher is better, PER FRAGILITY TIER (owner, 2026-10-23,
+        // lever A: the harder cargo gets the easier line; the tier is data/offers.js `tier`). Read
+        // through fragileLines(), which eases every line by fragileLinePerKm per km of route. The
+        // same in every region (§11b: later regions post more sensitive cargo instead), so ONE row
+        // each. Whole percents: the card and the HUD print them, so "83%" is exactly 0.83. Fragile is
+        // the old single row (FEAT-97, a letter per ~1/15 below 90 %); very fragile and sturdy are
+        // PROVISIONAL — owner to sign off on a drive.
+        fragile: {
+            veryFragile: [{ S: 0.80, A: 0.72, B: 0.64, C: 0.56 }],   // PROVISIONAL
+            fragile:     [{ S: 0.90, A: 0.83, B: 0.77, C: 0.70 }],
+            sturdy:      [{ S: 0.95, A: 0.90, B: 0.85, C: 0.80 }],   // PROVISIONAL
+        },
     },
 
     // THE END-OF-RUN PAYOUT CEILING [measured 2026-08-17 at the then k 0.024 — RESOLVED by regionMult
@@ -232,8 +245,23 @@ export function dayTier(day) {
  */
 export function rankTable (kind, region, cargoId) {
     const T = ECONOMY_PARAMS.RANK_TABLE
-    const rows = kind === 'haul' ? T.haul[cargoId] : T[kind]
+    const rows = Array.isArray(T[kind]) ? T[kind] : T[kind][cargoId]   // haul by cargo, fragile by tier
     return rows[Math.min(Math.max(1, Math.floor(region || 1)), rows.length) - 1]
+}
+
+/**
+ * FEAT-139: a fragile job's {S, A, B, C} health lines — its tier's row, each line eased by
+ * fragileLinePerKm per km of the planned route (owner, 2026-10-23). More road is more chances at the
+ * few big hits that dominate damage, so a long drive is a little more forgiving; a short one, the most
+ * lucrative per minute, keeps the full line. Whole percents, floored at 0. `km` is frozen with the
+ * route, so the card, the HUD and the settle read the same lines.
+ * ponytail: linear in km, uncapped — a region-1 route is a few km; cap it if long routes reach 0.
+ */
+export function fragileLines (region, tier, km) {
+    const t = rankTable('fragile', region, tier)
+    const d = ECONOMY_PARAMS.fragileLinePerKm * Math.max(0, km || 0)
+    const ease = (x) => Math.max(0, Math.round((x - d) * 100) / 100)
+    return { S: ease(t.S), A: ease(t.A), B: ease(t.B), C: ease(t.C) }
 }
 
 /**

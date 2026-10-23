@@ -337,6 +337,46 @@ the felt g, vertical included (floors 1.15–1.3 g; a 1 m crest lands at 4.6–4
 cornering peaks around 0.6 g), so a flat 2D g-g circle would almost never show what breaks the load.
 The bar reads the same scalar `fragile.js` already computes, so no chassis-frame vector is needed.
 
+## 9b. No letter on haul or fragile; the threshold is named (owner, 2026-10-23)
+
+**RULED.** *"Rank isn't important. We already told the player how much they're making per piece …
+Rank is only important insofar as it determines if you get the item or not."* Haul, and then fragile
+("fragile can drop the letter"), show **no letter anywhere**: not on the offer card, the slider, the
+HUD or the result card. Freight was already letterless (§2b). The letter stays **internal**. It still
+decides the bonus item (`bonusEarned`) and the good deeds (`pointsFor`, SM-INV-14).
+
+- **The card names the threshold:** haul "deliver 18+ bundles", fragile "arrives 83%+ intact".
+- **The top bar keeps only the run readout** ("2.39 km to go"). The load sits on its own line under it:
+  - haul: "carrying 14 bundles / 18 for the item reward" (live);
+  - fragile: two vertical bars instead of a line (owner, 2026-10-23 second pass). **DAMAGE** is the §9 felt-g
+    bar, marked **1%** (where one hit costs 1 % of health) and **100%** (the break). **HEALTH** runs full green
+    to empty red, with its percent under it. A posted reward shows to its right: "Reward [icon] if health ≥ 83%";
+  - freight: "carrying 710 kg".
+- **The fragile floors are whole percents:** 90 / 83 / 77 / 70 %, moved from 83.3 / 76.7. The card prints
+  them, so a line the player reads as 83 % is exactly 0.83. They now live in `economy.js` `RANK_TABLE.fragile`.
+- The §9 table's haul row (`Haul · 12 aboard · A` / `lose 2 → B`) and the "+ letter" on fragile's row are
+  **superseded** by this section.
+
+## 9c. Fragility tiers: named, and each with its own line, eased by route length (owner, 2026-10-23)
+
+**RULED.**
+- **One set of words everywhere: Very fragile / Fragile / Sturdy.** These were the code's GLASSWARE /
+  DELICATE / STURDY (floors 1.15 / 1.2 / 1.3 g, breaks 4.0 / 4.75 / 5.5 g). The card's terms line names
+  the tier: "2.4 km · Very fragile · 9 kg".
+- **The tier moves the line (lever A).** "It is patently true that durable cargo is easier to deliver
+  at 90% than fragile cargo is." Each tier has its own health lines in `RANK_TABLE.fragile`:
+  - Very fragile: 80 / 72 / 64 / 56 %. PROVISIONAL.
+  - Fragile: 90 / 83 / 77 / 70 %, the old single row.
+  - Sturdy: 95 / 90 / 85 / 80 %. PROVISIONAL.
+  The items on offer are unchanged; the harder cargo gets the easier line.
+- **Route length eases the line.** Every line drops `fragileLinePerKm` (0.02, so 2 points per km,
+  PROVISIONAL) per km of the planned route. *"The more ground you cover, the more likely it is for those
+  events to occur."* A short route keeps the full line on purpose. Short routes are the most lucrative
+  per minute, so they are the ones to guard hardest. The km is frozen with the route, so the card, the
+  HUD and the result card read the same line.
+- The card's clocks ("expires in …", "deliver within …") moved to their own row, because the one terms
+  row overflowed the map card.
+
 ## 10. Giver traits
 
 **RULED.** Traits replace the idea of a random pay roll. (The audit found no random roll exists today:

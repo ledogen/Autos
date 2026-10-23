@@ -539,6 +539,13 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > against. It is still shown as a clock time, never a countdown — the no-digit FEAT-87 bar carries
   > "how close am I". Never "bell". Provenance: [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md) §7; FEAT-141.
 
+  > **Amendment [OWNER 2026-10-23] — the deadline counts down.** Reverses *"never a countdown"* in the
+  > two amendments above: the HUD reads **"Due in: 2h 05m"** (game time), not "Due: Day 3, 2 am". It
+  > counts to the DEADLINE, never to par, so the core stands: par is never rendered. The card's window
+  > ("deliver within 6h 00m") already let a player back out par × (1 + slack); the countdown makes that
+  > live. On papers (FEAT-141) the deadline is the end of D, so there it is the nearest thing to a par
+  > clock — accepted with the ruling. Provenance: FEAT-139 addendum, 2026-10-23.
+
   > **Amendment [RATIFIED 2026-08-01] — rank is par's player-facing surface.** The player never sees
   > par and never needs to: they see **a letter and a number** — how they did, and what they earned.
   > Ranks are **D · C · B · A · S** (`gradeRun()` in `src/par.js` already computes them), coloured
