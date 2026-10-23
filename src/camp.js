@@ -520,6 +520,7 @@ export class CampSystem {
             const lat = lat0 + t * reach
             const cx = nr.roadX + nr.nx * lat, cz = nr.roadZ + nr.nz * lat
             if (road.queryNearest(cx, cz, clearR)) continue   // on/against another road: not a site
+            if (road.poiPadBlocked(cx, cz, P.campPadHalfM)) continue   // a POI's lot is flat because it is paved, not a site (owner, 2026-10-23)
             const c = this._gradeFlat(cx, cz, nr, P, t)
             if (!c) continue                       // off the terrain: not a site
             out.cands++

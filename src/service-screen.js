@@ -113,12 +113,24 @@ const where = (sk) => /[FR][LR]$/.test(sk) ? sk.slice(-2) : { L: 'left', R: 'rig
 const dim = (t) => `<div class="sv-empty">${t}</div>`
 const isFlat = (d, track) => TRACKS[track]?.cls === 'tire' && d.flat[TRACKS[track].wheel]
 
-/** My Vehicle, grouped. A key is a socket (data/parts.js SLOTS) or, for what has no part, a track. */
+/** My Vehicle: the heading names the component, a row names only where it sits (owner, 2026-10-23).
+ *  A key is a socket (data/parts.js SLOTS) or, for what has no part, a track; a row with no label
+ *  is a component of its own and keeps its name. */
+const CORNERS = [['FL', 'Front left'], ['FR', 'Front right'], ['RL', 'Rear left'], ['RR', 'Rear right']]
+const corners = (k) => CORNERS.map(([c, l]) => [k + c, l])
+const axles = (k) => [[k + 'Front', 'Front'], [k + 'Rear', 'Rear']]
 const GROUPS = [
-  ['Wheels & tires', ['FL', 'FR', 'RL', 'RR'].flatMap(c => [`tire${c}`, `wheel${c}`, `align${c}`])],
-  ['Suspension & brakes', ['brakesFront', 'brakesRear', 'springsFront', 'springsRear', 'dampersFront', 'dampersRear', 'arbFront', 'arbRear', 'lift']],
-  ['Engine & drivetrain', ['engine', 'radiator', 'airFilter', 'transmission', 'diff']],
-  ['Body & lights', ['headlightL', 'headlightR', 'armorFront', 'armorLeft', 'armorRight', 'armorRear']],
+  ['Wheels', corners('wheel')],
+  ['Tires', corners('tire')],
+  ['Alignment', corners('align')],
+  ['Brakes', axles('brakes')],
+  ['Springs', axles('springs')],
+  ['Shocks', axles('dampers')],
+  ['Anti-roll bars', axles('arb')],
+  ['Lift', [['lift']]],
+  ['Engine & drivetrain', [['engine'], ['radiator'], ['airFilter'], ['transmission'], ['diff']]],
+  ['Headlights', [['headlightL', 'Left'], ['headlightR', 'Right']]],
+  ['Armor', [['armorFront', 'Front'], ['armorLeft', 'Left'], ['armorRight', 'Right'], ['armorRear', 'Rear']]],
 ]
 
 export class ServiceScreen {
@@ -287,10 +299,10 @@ export class ServiceScreen {
   _vehicle () {
     const d = this.service.damage
     return GROUPS.map(([title, keys]) => `<div class="sv-slot"><div class="sv-slothead">${title}</div>`
-      + keys.filter(k => !TRACKS[k]?.manualOnly || d.manualBox).map(k => this._vehicleRow(k)).join('') + `</div>`).join('')
+      + keys.filter(([k]) => !TRACKS[k]?.manualOnly || d.manualBox).map(([k, label]) => this._vehicleRow(k, label)).join('') + `</div>`).join('')
   }
 
-  _vehicleRow (k) {
+  _vehicleRow (k, label) {
     const s = this.service, d = s.damage
     const socket = SLOTS[k] ? k : null
     const track = socket ? SLOTS[k].tracks[0] : k
@@ -298,8 +310,8 @@ export class ServiceScreen {
     const flat = isFlat(d, track)
     const open = this.sel === k
     return `<button class="sv-line${open ? ' on' : ''}" data-act="sel" data-key="${k}">`
-      + `<span class="sv-name">${socket ? SLOTS[k].name : TRACKS[k].label}`
-      + `${part ? ` <span class="sv-desc">${PARTS[part].name}</span>` : ''}</span>`
+      + `<span class="sv-name">${label ?? (socket ? SLOTS[k].name : TRACKS[k].label)}`
+      + `${part && !PARTS[part].stock ? ` <span class="sv-desc">${PARTS[part].name}</span>` : ''}</span>`   // only what isn't factory
       + (flat ? '<span class="sv-flat">flat</span>' : '')
       + (track ? bar(d.get(track), flat) : '') + `</button>`
       + (open ? `<div class="sv-panel">${this._vehicleActs(socket, track, flat)}</div>` : '')
@@ -343,7 +355,7 @@ export class ServiceScreen {
     return `<button class="sv-step" data-act="step" data-key="${key}" title="← → set how far">`
       + `<i class="sel-prev">◀</i>${hbar(cond, t)}<i class="sel-next">▶</i>`
       + `<span class="sv-pct">${Math.round(cond * 100)}% → ${Math.round(t * 100)}%</span></button>`
-      + `<div class="sv-row"><span class="sv-name sv-desc">Up to the white mark; past the faint line only a new part goes.</span>`
+      + `<div class="sv-row"><span class="sv-name sv-desc">You can only repair to ${Math.round(REPAIR_CAP * 100)}%, otherwise fit a new component.</span>`
       + `<span class="sv-cost">${cost(q.price, q.hours)}</span>`
       + btn('repair', 'repair', this.service.money() + 1e-9 >= q.price, `data-key="${key}"`, ' ok') + `</div>`
   }

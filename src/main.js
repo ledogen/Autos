@@ -81,7 +81,7 @@ import { HAUL_PAR_SLACK, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIME_SLACK, FREIGHT_T
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
-import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay } from './economy.js'  // FEAT-53: payout, wallet, good deeds
+import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, runEconomy } from './economy.js'  // FEAT-53: payout, wallet, good deeds
 import { InventorySystem } from './inventory.js'          // FEAT-122: what the player owns this run
 import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
@@ -3388,6 +3388,7 @@ const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   actions: _partActions,
 })
 window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
+window.__econ = runEconomy      // dev handle — set the wallet for a play-test (`__econ.money = 200`)
 // The recovery chip joins the park zone last, under V and Tab (owner, 2026-10-22).
 document.getElementById('park-zone')?.append(document.getElementById('recovery-row'))
 
@@ -4423,6 +4424,12 @@ let _campBusy = false   // a fade is in flight: no second trigger, no double-dug
 // turn it off.
 let _campSeek = false
 
+/** Inside a POI's ring, the radius its park trigger answers: the place does the work there, so the
+ *  tent and the tow stand down (owner, 2026-10-23). Mom's door is its own test (_atMomsHouse). */
+function _inPoiRing () {
+  return !!poiSystem.nearest(vehicleState.position.x, vehicleState.position.z, POI_PARAMS.poiInteractR)
+}
+
 function _campPromptState () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   // FEAT-113 (owner, 2026-10-15): a job IN HAND may camp — the night spends world time against its
@@ -4431,6 +4438,7 @@ function _campPromptState () {
   if (missionSystem && missionSystem.state !== 'idle' && !missionSystem.isOnJob()) return null
   if (paperRouteSystem.isActive() && !paperRouteSystem.isCarrying()) return null
   if (_campUi || _campBusy) return null
+  if (_inPoiRing()) return null
   // Collapsed: nothing is paid at all — no zone scan, no ray, no grading.
   if (!_campSeek) return { collapsed: true }
   if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return { fast: true }
@@ -4657,7 +4665,7 @@ function _pickPlug (target = null) {
  */
 function _partActions (row) {
   if (PARTS[row.id]?.roadside) {
-    return [{ label: `Fit it — ${formatGameDuration(SLOTS[PARTS[row.id].slot].hours)}`,
+    return [{ label: `Replace it — ${formatGameDuration(SLOTS[PARTS[row.id].slot].hours)}`,
       run: () => { const h = fitRoadside(partsSystem, inventorySystem, row.index); if (h >= 0) _afterRoadsideWork(h) } }]
   }
   if (!row.flat || PARTS[row.id]?.slot !== 'tire' || !inventorySystem.list().some(r => r.id === 'tirePlugKit')) return []
@@ -4675,7 +4683,7 @@ const _RC_ACT = {
 function _updateRecovery () {
   const row = document.getElementById('recovery-row')
   if (!row) return
-  const show = storySystem.isActive() && !storySystem.isEntering() && !fuelStop.isOpen && !serviceScreen.isOpen
+  const show = storySystem.isActive() && !storySystem.isEntering() && !fuelStop.isOpen && !serviceScreen.isOpen && !_inPoiRing()
   row.style.display = show ? 'flex' : 'none'
   const live = show && !!vehicleState.parked && !damageScreen.blocked
   const icon = document.getElementById('recovery-icon')
