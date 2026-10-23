@@ -149,8 +149,9 @@ uncooled, ~36 h in the cooler. Species carry different effects — which, is ope
 
 ## Consumables
 
-### Spare tire
+### Mounted tire
 status: wip · design: ratified · build: effect · where: autoShop, reward, found
+Renamed from *Spare tire* (owner, 2026-10-23); the id stays `spareTire`.
 Fitting it is a 2 h timeskip that clears the flat (owner, 2026-10-22 — supersedes 90 min, 2026-10-20);
 the compressor takes 30 min off and the quick-jack 1 h, and they stack. Real mass all the time. Already a REWARDS id
 (`spareTire`). Flats ship (`flat[]`, FEAT-94). **Ruled 2026-10-21:** self-contained (factory jack always
@@ -159,7 +160,7 @@ reward from the auto shop and stranded motorist (A–S); rare roadside find. The
 built on feature/parts, not merged. **An ordinary inventory part, one slot** (owner, 2026-10-21: parts go
 in the inventory, never the bed). The swapped-off pair goes into the slot the spare left, as a flat
 spare (tire id + both wears); a plug kit or the shop restores it; the shop can swap any mounted pair per
-corner. Jalopies start with one 60% of the time, at 40–80%. Flavor: "This could help out in a pinch"
+corner (a bead job $2/15 min, a hub swap $1/10 min — items.md §3g). Jalopies start with one 60% of the time, at 40–80%. Flavor: "This could help out in a pinch"
 (owner, 2026-10-22). The owner's world-drop / proximity-inventory idea is FEAT-143 (world items +
 proximity inventory, in progress on feature/stranded-spare).
 
@@ -174,7 +175,7 @@ Flavor: "I hope I don't have to use this" (owner, 2026-10-22).
 ### Spare air filter
 status: wip · design: ratified · build: effect · where: autoShop, reward, found
 Sets the `airFilter` track in `src/damage.js` to the spare's own condition at the roadside, in 15 min.
-Each spare carries a condition like the spare tire: new from the auto shop ($10), never great as a
+Each spare carries a condition like the mounted tire: new from the auto shop ($10), never great as a
 roadside find. A reward from the auto shop and gas station (B–A). Ruled 2026-10-21. It is the
 air filter part, `airFilterStock`, built to this row on feature/parts (f5fa9cf9, 2026-10-22): $10, "Fit it
 — 15 min" from the inventory, the old filter comes off into the inventory with its own condition, and a
