@@ -46,6 +46,7 @@ const CANON_STATUS = {
   resolved: 'closed', fixed: 'closed', merged: 'closed', 'closed-merged': 'closed',
   cancelled: 'cancelled', wontfix: 'cancelled', 'closed-invalid': 'cancelled',
   'closed-reverted': 'cancelled', deferred: 'cancelled',
+  idea: 'idea',   // spitballing — kept, not on the roadmap (owner, 2026-10-22)
 };
 const CANON_SEVERITY = {
   critical: 'critical',
