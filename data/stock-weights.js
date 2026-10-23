@@ -13,8 +13,7 @@
 // plain grey, yet seldom on a shade-tree shelf.
 //
 // Relative weights; only the ratios matter. The owner's tiers (2026-10-22): Often 10 · Sometimes 4 ·
-// Rarely 1 · Hardly ever 0.25. Rows marked [DEFAULT] are not set yet and keep the first proposal's
-// category weight × rarity share.
+// Rarely 1 · Hardly ever 0.25.
 
 export const STOCK_WEIGHT = {
     // Tires and wheels
@@ -37,23 +36,23 @@ export const STOCK_WEIGHT = {
     brakesRearSport:  4,
     brakesRearRace:   1,
 
-    // Springs, shocks, anti-roll bars, lift
-    springsFrontOEM:  1.33,   // [DEFAULT]
-    springsFrontHD:   0.67,   // [DEFAULT]
-    springsRearOEM:   1.33,   // [DEFAULT]
-    springsRearHD:    0.67,   // [DEFAULT]
-    dampersFrontOEM:  1.33,   // [DEFAULT]
-    dampersFrontHD:   0.67,   // [DEFAULT]
-    dampersRearOEM:   1.33,   // [DEFAULT]
-    dampersRearHD:    0.67,   // [DEFAULT]
-    springsFrontSport: 0.67,  // [DEFAULT] — the sport tier, like HD
-    springsRearSport: 0.67,   // [DEFAULT]
-    dampersFrontSport: 0.67,  // [DEFAULT]
-    dampersRearSport: 0.67,   // [DEFAULT]
-    arbFrontStock:    1.5,   // [DEFAULT]
-    arbFrontSport:    0.75,   // [DEFAULT]
-    arbRearSport:     0.75,   // [DEFAULT]
-    liftKit:          2,   // [DEFAULT]
+    // Springs, shocks, anti-roll bars, lift (owner, 2026-10-23)
+    springsFrontOEM:   4,
+    springsRearOEM:    4,
+    dampersFrontOEM:   4,
+    dampersRearOEM:    4,
+    springsFrontSport: 1,
+    springsRearSport:  1,
+    dampersFrontSport: 1,
+    dampersRearSport:  1,
+    springsFrontHD:    0.25,
+    springsRearHD:     0.25,
+    dampersFrontHD:    0.25,
+    dampersRearHD:     1,     // Rarely, the one HD row above Hardly ever (as the owner picked it)
+    arbFrontStock:     1,
+    arbFrontSport:     0.25,
+    arbRearSport:      0.25,
+    liftKit:           1,
 
     // Engine bay and drivetrain
     airFilterStock:   10,
