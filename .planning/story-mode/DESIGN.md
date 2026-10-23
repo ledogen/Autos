@@ -702,7 +702,8 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   doesn't grant +5 handling; it changes what the truck does when you get greedy mid-corner.
   Power mods on an open-diff RWD truck are a *worse car* for a driver without the literacy —
   that's a cursed item nobody had to author, and it only works because nothing is hidden.
-  [DEFAULT]
+  Wear is a state, not a score: the service screen shows a part's condition as a percentage
+  (owner, 2026-10-22). [DEFAULT]
 - **SM-INV-11 — The *ambient* world-story is emergent (parameter states + the doze); authored
   story beats are permitted, but stay in-world.** *Re-keyed 2026-07-29: parameter states are driven
   by **run progress** (`runState`), not `metaState` — the mechanism is unchanged, the input moved
