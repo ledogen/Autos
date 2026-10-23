@@ -295,7 +295,7 @@ export const REWARDS = [
       pools: ['foodVendor'] },
     { id: 'coffee',     name: 'Coffee',      kind: 'consumable', gates: ['C', 'B'],
       pools: ['foodVendor', 'gasStation'] },
-    { id: 'spareTire',  name: 'Spare tire',  kind: 'part',       gates: ['A', 'S'],
+    { id: 'spareTire',  name: 'Mounted tire', kind: 'part',       gates: ['A', 'S'],
       pools: ['autoShop', 'strandedMotorist'] },
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
     { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['C', 'B'],

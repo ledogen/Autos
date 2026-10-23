@@ -4622,10 +4622,10 @@ const _afterRoadsideWork = (h) => { damageModel.publish(RANGER_PARAMS); daySyste
 function _pickSpare (e) {
   inventoryScreen.close()
   damageScreen.pick({
-    title: 'Fit the spare',
+    title: 'Fit the mounted tire',
     corner: () => !e.flat,
     note: _tireNote,
-    about: `The spare: ${condLine({ ...e, kind: 'part' })}.` + (e.flat ? ' Plug it before it goes on.' : ''),
+    about: `The mounted tire: ${condLine({ ...e, kind: 'part' })}.` + (e.flat ? ' Plug it before it goes on.' : ''),
     actions: ({ corner }) => [{ label: `Swap it on — ${formatGameDuration(spareFitHours(inventorySystem))}`, run: () => {
       const h = spareFitHours(inventorySystem)
       if (fitSpare(partsSystem, damageModel, inventorySystem, inventorySystem.indexOf(e), corner) >= 0) _afterRoadsideWork(h)
