@@ -422,7 +422,7 @@ export class OfferBoard {
      * The offer's content, rolled on first read from its own `spec` stream — so WHEN it is read never
      * changes WHAT it is. Null only if the source has no built thing to post (a table gap).
      *
-     * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate}|null, payMult,
+     * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate,dineIn?}|null, payMult,
      *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null,
      *   passenger: boolean, shape: 'courier'|'fetch', from: string[]|null, load: string|null,
      *   deadlineSlack: number }
@@ -477,7 +477,7 @@ export class OfferBoard {
                 // Which reward: weighted by the stock table the auto-shop shelf uses (owner, 2026-10-22).
                 const at = pool.filter(x => x.gates.includes(gate))
                 const reward = pickReward(at, rewardRoll)
-                bonus = { rewardId: reward.id, name: reward.name, gate }
+                bonus = { rewardId: reward.id, name: reward.name, gate, ...(reward.dineIn && { dineIn: true }) }
             }
         }
 
@@ -505,6 +505,8 @@ export class OfferBoard {
             destKind: papers ? null : (strictTo || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
+            loose: thing.loose ?? null, // one loose bed body (src/debris.js kind) — the motorist's tire
+            atPickup: thing.atPickup ?? null,   // a fetch's wait at the pickup: { min, park, done } prompts
             // FEAT-97: a fragile load's tolerance and hit sound (src/fragile.js) — null otherwise.
             fragile: thing.family === 'fragile'
                 ? { shockFloorG: thing.shockFloorG, breakG: thing.breakG, sound: thing.sound } : null,
@@ -675,11 +677,16 @@ export class OfferBoard {
         return { name, people }
     }
 
-    /** One name form filled in (data/offer-names.js header). Each slot draws only if present. */
+    /**
+     * One name form filled in (data/offer-names.js header). Each slot draws only if present.
+     * "{the}{adj}{biz}" must never shrink to the bare business word — a shop called just "Radiator"
+     * (seed 3652181436) — so when {the} rolls empty the adjective is forced.
+     */
     _fillForm (form, p, type, r) {
+        let the = null   // stays null in forms with no {the} slot — "Deb's Burgers" needs no adjective
         return form
-            .replace('{the}', () => (r() < POI_THE_CHANCE ? 'The ' : ''))
-            .replace('{adj}', () => (r() < POI_ADJECTIVE_CHANCE ? pick(r, POI_ADJECTIVES) + ' ' : ''))
+            .replace('{the}', () => (the = r() < POI_THE_CHANCE ? 'The ' : ''))
+            .replace('{adj}', () => (r() < POI_ADJECTIVE_CHANCE || the === '' ? pick(r, POI_ADJECTIVES) + ' ' : ''))
             .replace('{biz}', () => pick(r, BUSINESS_TYPES[type]))
             .replace('{first}', () => p.first)
             .replace('{last}', () => p.last)

@@ -18,6 +18,87 @@ fine), or finishing a *harness* for a later milestone (also fine — see FEAT-29
 violation is starting a milestone whose prerequisites are missing, and the `Requires:` lines make
 that visible before you start rather than after.
 
+## Release cuts [owner, 2026-10-23]
+
+**Alpha = one region**, playable end to end and mostly bug-free. **The bar: a polished demo** (owner,
+2026-10-23) — "it'll be missing a lot of content but the things that are there should be complete."
+So an alpha ticket closes on its whole acceptance, not a stub, and anything the player sees in the
+alpha is real: no placeholder models. **The region is today's 2500 m story circle** (owner,
+2026-10-23); the ladder's R1 sector is beta. **Beta = three or five regions**,
+plus shortcuts, dirt roads and spirits. **Later** = everything else. Provenance:
+[design-amendments-2026-10-23-release-cuts.md](design-amendments-2026-10-23-release-cuts.md).
+
+How the cut works:
+- **These tables are the only place a release is set.** The dashboard reads them like the lane
+  tables (first cell naming a ticket) and shows a **release** chip.
+- **Nothing is deleted.** A ticket no table lists is **later**, except open **bugs**, which default
+  to **alpha**. To move a bug out, list it under Later.
+- **Releases cut across lanes.** A lane says what a ticket needs first. A release says when it ships.
+  An alpha ticket whose only blocker is beta work (FEAT-28, region unlocks) is unblocked for its
+  alpha slice. The row says what that slice is.
+- **Design text past the alpha keeps its wording** under a one-line banner saying which release it
+  belongs to.
+
+### Alpha
+
+| Ticket | Alpha slice |
+|---|---|
+| FEAT-146 | the run ends: camp (win), death, or throw in the towel — then a summary |
+| FEAT-147 | tutorial + opening: the firing, the uncle, the first day |
+| FEAT-103 | the expedition camp is the win. No unlock and no FEAT-28: the camp sits on the story circle's edge, at the end of a road |
+| FEAT-43 | story region — only the slices one region needs; "confinement becomes the unlocked set" is beta |
+| FEAT-114 | haul quantity — built on `feature/mission-recut`, merge it |
+| FEAT-104, FEAT-137 | shop + rotating shelf — built on `feature/parts`, lands with it |
+| FEAT-122 | inventory — ✅ closed 2026-10-23, on main |
+| FEAT-91 | haul yards — the R1 splitting yard only; sawmill and quarry are beta |
+| FEAT-89 | courier, three shapes |
+| FEAT-67 | the offer board |
+| FEAT-69 | the economy re-cut, for one region |
+| FEAT-41 | menus — whatever the alpha's screens need |
+| FEAT-129 | favicon |
+| FEAT-77 | road clearance — in progress; its gate is a known red, fix it |
+| FEAT-125, FEAT-133, FEAT-136 | controller support, pad on the map, cross-browser pads |
+| FEAT-34 | instrument cluster |
+| FEAT-120 | sound-effects pass |
+| FEAT-109 | engine stall — ✅ closed 2026-10-23, shipped with FEAT-126's gearbox |
+| FEAT-128 | truck shuts off at camp |
+| FEAT-93, FEAT-94 | hazard punctures, driving on a flat |
+| FEAT-66 | camp gear slots |
+| FEAT-42 | saves — suspend and resume |
+| FEAT-132 | the stranded motorist posts a haul fetch |
+| ASSET-71 | the job site model — the expedition camp is a real model, not a placeholder |
+| ASSET-69, ASSET-70, ASSET-73 | office, doctor's office, school — they replace placeholders the alpha shows |
+| ASSET-32 | the uncle's van — the uncle is in the alpha |
+
+**Branches to land first** — the playable work sitting off main:
+- `feature/parts` — SM-3 parts, service, recovery and the shop (34 commits, plus uncommitted work in
+  its worktree).
+- `feature/mission-recut` — FEAT-114. Standing rule: never merge before FEAT-114 is done.
+- `feature/sleepy-steer` — one commit (slower steer, drowsy steering). Owner's call.
+
+**Bugs:** every open bug is alpha by default (see above), including both known red gates: BUG-77
+(tunnels) and FEAT-77 (road clearance, listed above).
+
+### Beta
+
+| Ticket | Why beta |
+|---|---|
+| FEAT-28 | region unlocks — the ladder, the walls, the unlock load |
+| FEAT-52 | the off-network generator — shortcuts, spurs, cuts |
+| FEAT-38 | dirt roads |
+| FEAT-32 | logged forest — sited by FEAT-52 |
+
+Spirits have no ticket yet. Their design ([spirits-and-pacts.md](spirits-and-pacts.md), the
+Highway/Shortcut pair) is beta, and their tickets get minted at entry.
+
+### Later
+
+Unlisted features are later already. List a ticket here only to move it out of a default — for
+example a bug that won't block the alpha.
+
+| Ticket | Why later |
+|---|---|
+
 Tickets get minted into `.planning/todos/pending/` **at milestone entry, not all up front** — the
 design has open questions (DESIGN.md §Open questions) and minting everything now would freeze answers
 we haven't earned.
@@ -150,7 +231,7 @@ story-mode go-ahead. Listed so that picking one up never feels like a detour.
 | **FEAT-23** drivetrain architecture P2–P5 | Parts-as-cars substrate (SM-INV-10). The parts-selector phase becomes the jalopy generator's roll-space in SM-3. |
 | **FEAT-04a** visual vehicle swap | Jalopy variety reads visually — and, post-2026-07-29, the garage's roster is *starting vehicles*, so this carries more weight than it used to. |
 | **FEAT-52** off-network generator | ONE generator for spurs, cuts, camping areas, logging sites and POI candidates (DESIGN.md "The off-network layer"). Absorbs FEAT-38 mode B and FEAT-32's siting. Substrate for the deferred Highway/Shortcut pair. **Two passes as of 2026-08-02** — inherent difficulty (free), then discrete **carved** hazards that the Shortcut's esteem clears; hazard *placement* stays worldgen, *removal* is run-layer. Also owes #05 the **intentional-non-shortcut-skip detector** (>~200 m of road distance saved off-network, penalty scaled by magnitude). |
-| **FEAT-109** engine stall | Waits on FEAT-23's manual transmission (owner, 2026-08-22: no stall behind a torque converter). A stall is a breakdown predicament, never a death (SM-INV-1). |
+| **FEAT-109** engine stall | ✅ closed 2026-10-23 — shipped with the FEAT-126 gearbox. Waits on FEAT-23's manual transmission (owner, 2026-08-22: no stall behind a torque converter). A stall is a breakdown predicament, never a death (SM-INV-1). |
 | **FEAT-38 / FEAT-32** dirt roads; logged and clearcut forest | Their siting is absorbed by FEAT-52 (above). Dirt roads add a second surface class and the dispersed-camping spurs. |
 | **FEAT-41** game menus + UI | The shell every player-facing feature docks into, including the mode split SM-1 needs. |
 
@@ -561,7 +642,7 @@ owner's name for it.
 | 3. To-tags: destinations filtered by class | FEAT-100 | ✅ closed |
 | 4. Job supply: always-on sources, the budget, the lock rule | FEAT-101 | ✅ closed |
 | 5. Stranded motorist (+ the first slice of fetch) | FEAT-102 | ✅ closed |
-| 6. Expedition camp (R1 boss, on the wall) | FEAT-103 | **design ruled** (owner, 2026-10-19): a five-line requisition behind 6 good deeds, roads trimmed at the wall, the camp on the one trail; waits on FEAT-28 — do not build |
+| 6. Expedition camp (R1 boss, on the wall) | FEAT-103 | **design ruled** (owner, 2026-10-19): a five-line requisition behind 6 good deeds, roads trimmed at the wall, the camp on the one trail; waits on FEAT-28 — do not build. **Alpha slice unblocked 2026-10-23** (§ Release cuts): the camp is the win, no unlock |
 | 7. Minimal shop at the required classes | FEAT-104 | open |
 | Inventory — what the player owns this run; the one grant path for shop, rewards and finds | FEAT-122 | built on `feature/feat-122`, all four questions answered (2026-10-16); merge pending |
 | Camp gear slots — what the shop sells renders at camp (items.md visible-kit rule) | FEAT-66 | open |
@@ -647,6 +728,7 @@ adopted — do not build them unprompted.
 |---|---|
 | FEAT-42 | the two save stores — durable `metaState` + the single-slot `runSave` |
 | FEAT-43 | story region, remaining slices — confinement becomes the unlocked set, the diegetic boundary, closing the sandbox flags |
+| FEAT-146 | the run ends — camp, death or the towel — and a summary (alpha: no FEAT-28 needed) |
 
 FEAT-28 (the unlock primitive, now also carrying the per-region radius ladder) is in the free lane.
 FEAT-103 is the R1 boss, the expedition camp (owner, 2026-10-16/19): gated by good deeds, so it lands
@@ -697,6 +779,7 @@ before it can close.
 | Ticket | What |
 |---|---|
 | FEAT-37 | fishing minigame — a reason to stop at water |
+| FEAT-147 | tutorial + opening — the firing and the uncle (alpha: needs nothing from SM-4) |
 
 ---
 

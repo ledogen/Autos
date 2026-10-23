@@ -1,7 +1,8 @@
 ---
 id: FEAT-126
 type: feature
-status: open
+status: closed
+closed: 2026-10-23
 severity: minor
 opened: 2026-10-19
 relates: FEAT-125 (controller — the pad layout this binds into), FEAT-124 (shift schedule — the
@@ -134,3 +135,7 @@ damage model); `test/pad-e2e.mjs` +4 manual checks in the real app.
 - **…and the damage screen alerts.** The 2 % transmission wear sat under the screen's 3 %-per-sample
   drop threshold, so the alert never fired; the miss now raises it directly, like a landed impact.
 - **The gearbox is pre-game only:** chosen on the run setup page, never on the in-game settings page.
+
+## Resolution — closed (owner, 2026-10-23)
+
+Shipped on main: 7597782b (gearbox sim), 4d18e6c3 (clutch assistant + controls), d0aabe82 (cluster readout), 6976dc90 / 1ad3e3c5 / 28c1c8b9 (fixes). Follow-ups not built are listed above. Closed by the owner.

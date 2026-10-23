@@ -59,8 +59,8 @@ Used up. Per-job or per-day decisions, not permanent upgrades.
 | **Fish (eaten)** | Alertness that **does not have to be repaid** — the only honest restoration in the game. *"Coffee is debt. Fish is income."* | Caught; best at a favored water | A long relationship with the water | **PROPOSED** — `spirits-and-pacts.md` #04. ⚠ Depends on The Confluence, which is deferred. **Four species (owner, 2026-10-21): salmon, rainbow trout, brown trout, catfish — each carries a different effect** (§5) |
 | **Groceries** | **A delayed meal.** Bought at the general store **or a farm** (owner, 2026-10-21), carried, and **cooked into a meal at camp — only if you own the cooking kit**. **Ruled 2026-10-21:** one meal per bag; the cooked meal holds 10 h; cooking adds 30 min; cook it in the evening or the morning before you break camp; fresh for 24 h, and the cooler slows them like fish; the kit's flat food bonus does not apply on top — cooking them *is* the kit's bonus. $5; a reward from farms and the general store (B–A); never found. They still spoil (§1b), so they buy hours, not days. The meal for later in a run, when you camp far from a food vendor and the next stop with a kitchen is a day's drive off. Flavor: *"Fresh and goes together easy"* (owner, 2026-10-22). | Bought (general store, farm) | Cash; the spoilage clock; and the cooking kit's ≈23 kg on every mile | **RATIFIED** — owner, 2026-10-20; every figure set 2026-10-21 (the item setup page). Needs hunger (§1d) and the cooking kit |
 | **Potato** | **The campfire meal** (owner, 2026-10-21). **Inedible raw.** Cooked on the campfire — **the only food you can cook without the cooking kit** — it becomes a decent meal. **Ruled 2026-10-22:** the cooked potato holds hunger 4 h; cooking adds 30 min; raw it never spoils, cooked it keeps 24 h; the cooking kit's food bonus applies to it; 5 to a slot. Under $5; a C–B reward from farms; never found. **Fish cooks on the campfire too** (§1b) — the potato is not the only campfire food, only the only one you buy. Flavor: *"Potato"*. | Bought (general store); a reward from farms | Cash; a slot | **RATIFIED** — owner, 2026-10-21; every figure set 2026-10-22 (the item setup page) |
-| **Spare tire** | Recovers from a puncture without a tow. **Fitting it is a 2 h timeskip** (owner, 2026-10-22). **This supersedes the 90 min of 2026-10-20**, which had replaced 30 min (2026-09-30). **The compressor takes 30 min off and the quick-jack 1 h, and they stack** (§2): 1 h 30 min with the compressor, 1 h with the quick-jack, 30 min with both. Puncture is a hard fail state in the wear model. **Ruled 2026-10-21:** self-contained — the truck always carries the factory jack. Full-size only, no donut. **Two items in different pools: worn (50–80% condition, ~$15) and new (~$25).** Sold at the auto shop; a bonus item from the auto shop and stranded motorists (A–S); a rare roadside find. **The spare is the mounted pair** (2026-10-21, now that wheels and tires are separate parts, §3g): a standard tire on a new steel wheel, 21 kg, so fitting it also replaces a bent rim on that corner. **It is an ordinary inventory part, one slot** (owner, 2026-10-21: parts go in the inventory, never the bed — the bed stays open for hauling and freight; this retired a same-day under-bed carrier). After a roadside swap the punctured pair comes off still mounted, as a flat spare that keeps its tire and both wears, into the slot the spare left — so there is always room. A plug kit or the shop makes it a spare again. Flavor: *"This could help out in a pinch"* (owner, 2026-10-22). | Bought/found; in the inventory of 60% of jalopies, at 40–80% | Real mass, all the time | **RATIFIED** — owner, 2026-10-20/21 (the item setup page); the fit is built on feature/parts, not merged |
-| **Air filter (spare)** | Replacement for the track the player must actively *watch* — it does ~nothing until it does. **Ruled 2026-10-21:** fitting takes 15 min and sets the filter to **the spare's own condition** — every spare filter carries one, like the spare tire: the auto shop sells them new ($10), and a roadside find is never in great shape. Sold at the auto shop; a reward from the auto shop and gas station (B–A). | Bought/found | Cash; a slot | **RATIFIED** — owner, 2026-10-21 (the item setup page) |
+| **Mounted tire** (id `spareTire`; renamed from *Spare tire*, owner 2026-10-23) | Recovers from a puncture without a tow. **Fitting it is a 2 h timeskip** (owner, 2026-10-22). **This supersedes the 90 min of 2026-10-20**, which had replaced 30 min (2026-09-30). **The compressor takes 30 min off and the quick-jack 1 h, and they stack** (§2): 1 h 30 min with the compressor, 1 h with the quick-jack, 30 min with both. Puncture is a hard fail state in the wear model. **Ruled 2026-10-21:** self-contained — the truck always carries the factory jack. Full-size only, no donut. **Two items in different pools: worn (50–80% condition) and new.** **Priced as its parts** (owner, 2026-10-23): on the shelf, the tire's price × its condition + a new wheel + the $2 bead job, so a new one is $25; sold back, half the tire's value plus half the wheel's, each at its own condition. Sold at the auto shop; a bonus item from the auto shop and stranded motorists (A–S); a rare roadside find. **The spare is the mounted pair** (2026-10-21, now that wheels and tires are separate parts, §3g): a standard tire on a new steel wheel, 18 kg — the truck's own wheel-and-tire mass, `wheelMass` in data/ranger.js (owner, 2026-10-22: every tire matches the truck physics; was 21 kg), so fitting it also replaces a bent rim on that corner. **It is an ordinary inventory part, one slot** (owner, 2026-10-21: parts go in the inventory, never the bed — the bed stays open for hauling and freight; this retired a same-day under-bed carrier). After a roadside swap the punctured pair comes off still mounted, as a flat spare that keeps its tire and both wears, into the slot the spare left — so there is always room. A plug kit or the shop makes it a spare again. Flavor: *"A tire mounted on a wheel."* (owner, 2026-10-23; was *"This could help out in a pinch"*). | Bought/found; in the inventory of 60% of jalopies, at 40–80% | Real mass, all the time | **RATIFIED** — owner, 2026-10-20/21 (the item setup page); the fit is built on feature/parts, not merged |
+| **Air filter (spare)** | Replacement for the track the player must actively *watch* — it does ~nothing until it does. **Ruled 2026-10-21:** fitting takes 15 min and sets the filter to **the spare's own condition** — every spare filter carries one, like the mounted tire: the auto shop sells them new ($10), and a roadside find is never in great shape. Sold at the auto shop; a reward from the auto shop and gas station (B–A). | Bought/found | Cash; a slot | **RATIFIED** — owner, 2026-10-21 (the item setup page) |
 | **Fuel** | The tank. Burn is a function of rpm and load, so a par-beating drive costs fuel as well as wear. **The one cost that scales with distance** — SM-INV-5 keeps wear off the distance axis, and this is what fills it. Bought at gas stations. | Gas stations (a POI type) | Cash — and the detour, if you let it get low | **RATIFIED** — owner, 2026-08-01. Reverses this row's old *NOT DESIGNED*. Ticket FEAT-50; gauge already ships (FEAT-49). See DESIGN.md "Fuel and gas stations" |
 | **Jerry can** | **A refillable 5 gal can** (owner, 2026-10-21): pour it into the tank, refill it at any pump. Fuel you carry — the cheap answer to running dry, which is otherwise the breakdown predicament (tow, or don't). **A top-tier reward**, rare on purpose: carried full, it all but retires running dry. **Ruled 2026-10-22:** poured parked, a 10 min timeskip like the emergency gas; **18 kg full** (14 kg of gas + a 4 kg steel can). An A–S reward from the gas station; **sold at the gas station, rarely**, for $30; a very rare roadside find. **Pouring sounds like a glug glug glug** — for the jerry can and the emergency gas (owner, 2026-10-22; FEAT-120). | A reward (gas station); bought (gas station, rarely); found (very rare) | Cash; a slot; **real mass, always** — 18 kg full | **RATIFIED** — owner, 2026-10-21; every figure set 2026-10-22 (the item setup page). Was IMPLIED (falls out of the fuel ruling) |
 | **Emergency gas** | **A single-use 2 gal RotoPax** (owner, 2026-10-08). **Ruled 2026-10-21:** poured parked only, a 10 min timeskip; gone once poured. $5–10 at the gas station; a reward from gas stations and stranded motorists (B–A — mid tier, confirmed 2026-10-21), under the top-tier jerry can; never found. | Bought (gas station); a reward | Cash; a slot; 7.2 kg | **RATIFIED** — owner, 2026-10-21. In the game files (`data/items.js` `emergencyGas`, `data/offers.js` REWARDS); the grant is stubbed and the pour unbuilt |
@@ -275,7 +275,9 @@ spends daylight, so it can't turn into a chore. Thirst is out (owner, 2026-09-30
   one generic sit-down meal at the food vendor, 8 h, 30 min to eat, $5–10, eat-in only, never found;
   **as a reward it is a dinner invitation** (owner, 2026-10-22): a C–B reward from residences, the
   food vendor and farms, where the customer asks you to join them for dinner — optional, 30 min, and you
-  are fully fed), the chili dog
+  are fully fed; **built 2026-10-23** as `dinnerMeal`, a `dineIn` reward: on any job those givers post,
+  as with every reward (owner), the result card asks *stay for dinner (30 min)* or *decline*; being fed
+  waits on hunger), the chili dog
   (10 h, spoils in 16 h), the **packed lunch** (never sold — a $6 reward from homes, farms and the food
   vendor, B–A; 8 h; fresh 24 h), groceries (§1, cooked at camp: the meal holds 10 h), the **potato** (§1, cooked on the campfire, no kit
   needed; inedible raw; holds 4 h), and four gas-station snacks split from one: **bag of peanuts 3 h × 3, spicy chips
@@ -916,8 +918,25 @@ auto shop) until set on the item setup page.~~ **Set 2026-10-22 (the item setup 
 **A flat needs a spare** (owner, 2026-10-21). The spare, a wheel and a tire are all mission rewards and
 all sold at the auto shop — but only the spare, a tire already mounted on a wheel, goes on at the
 roadside. A loose tire can't: you have no tools to seat a bead. Loose tires and wheels are mounted at
-the service center only (the plug kit still fixes a hole in place). **Their flavor text says so plainly**
-— a tire's reads *"Just a tire. Can't drive on it without a rim."*
+the service center only (the plug kit still fixes a hole in place).
+
+**Descriptions** (owner, 2026-10-23; built on feature/parts). They replace the shared *"Just a tire.
+Can't drive on it without a rim"* of 2026-10-21; the shop-only mounting rule stands.
+
+| Part | In-game description |
+|---|---|
+| Old tires | *"Cracked and dry rotted rubber. Slippery and fragile."* |
+| Standard tires | *"The factory all-season. Fine everywhere, great nowhere."* |
+| Mounted tire | *"A tire mounted on a wheel."* |
+| Sport tires | *"Sticky. Great grip on pavement, not so good on dirt. Wears fast."* |
+| Off-road (all-terrain) tires | *"Chunky tread. At home on dirt, no worse on pavement. Heavy."* |
+| LT load-range-E tires | *"Stiff sidewalls built to carry a load. A little less grip."* |
+| Steel wheel | *"Standard. Heavy. Bends before it breaks."* |
+
+**Shop tire work** (owner, 2026-10-23; built on feature/parts): a **bead job** (mount or unmount a tire)
+is **$2 and 15 min**; a **hub swap** (a wheel off or on a corner) is **$1 and 10 min**. A mounted tire
+onto a corner is 2 hub swaps. A loose tire or wheel onto a corner is 2 hub swaps and 2 bead jobs.
+Splitting a mounted tire into a wheel and a tire, or combining them, is 1 bead job.
 
 ## 4. Cargo
 
@@ -1012,7 +1031,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 | Acts on | Consumable | Equipable | Active |
 |---|---|---|---|
 | **Driver / energy** | coffee, fish, **meals (§1d)** | camp energy gear | coffee, energy drink, snacks |
-| **Truck / damage** | spare tire, air filter, **zip ties, duct tape, stop-leak, tire patches** | parts (§3), quick-jack, ~~breaker bar~~, **hi-lift, bike pump (always), compressor** | Host charm |
+| **Truck / damage** | mounted tire, air filter, **zip ties, duct tape, stop-leak, tire patches** | parts (§3), quick-jack, ~~breaker bar~~, **hi-lift, bike pump (always), compressor** | Host charm |
 | **Navigation / info** | — | map, beacon, GPS, shortcut GPS, **light bar**, *CB radio (FEAT-119)* | — |
 | **Cargo / mission** | ~~*straps (FEAT-110)*~~ **bubble wrap, furniture pad, heavy-duty pad (§3e)** | cooler, chain, **rubber bed mat, bedliner** | — |
 | **Camp / night** | — | camp vibe gear, **backpacks (§2c)** | — |
@@ -1145,6 +1164,16 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 - **Dinner meal** as a reward is a dinner invitation (§1d).
 - **The quick-jack does not shorten a plug repair** — *"you don't need to jack to plug"* — only the spare
   change (§2). **The GPS minimap shows alongside FEAT-39's in-world chevrons** (§2).
+
+**Sixth pass (owner, 2026-10-23):**
+
+- **Spare tire is renamed Mounted tire** (§1); the id stays `spareTire`.
+- **Shop tire work** is priced as bead jobs and hub swaps (§3g).
+- **Tire and wheel descriptions** set, one per part (§3g); the mounted tire's replaces its 10-22 flavor line.
+- **The mounted tire is priced as its parts** (§1): new $25; selling it back pays half of each part's value.
+- **Two descriptions revised** the same day: the mounted tire's and the steel wheel's (§3g).
+- **The dinner invitation is built** (§1d): a reward on any job from residences, farms and the food
+  vendor; the result card offers it as a choice, and staying costs 30 min.
 
 ### Kept, but blocked or needs a mechanism
 

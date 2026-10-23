@@ -169,8 +169,14 @@ export const THINGS = [
     // A 5 gal can: ~14 kg of fuel plus the can.
     { id: 'jerryCan',   phrase: 'a full jerry can',        family: 'delivery', massKg: [17, 19],
       pools: ['gasStation'], fetchBy: ['strandedMotorist'] },
-    { id: 'spareTire',  phrase: 'a spare tire',            family: 'delivery', massKg: [10, 15],
-      pools: [], fetchFrom: ['autoShop'], fetchBy: ['strandedMotorist'] },
+    // The canon (owner, 2026-10-22): you take the motorist's OWN wheel and flat tire to the shop, they
+    // change the tire, you drive it back. `loose`: it rides in the bed as one loose debris body (src/
+    // debris.js DEBRIS_TYPES key) for the whole job, and losing it out of the bed FAILS the job.
+    // `atPickup`: parking at the shop skips the world clock `min` minutes while they change it. The
+    // job's timer counts the wait and par grows by it (main.js _planOffer), and pay with par.
+    { id: 'spareTire',  phrase: 'a spare tire',            family: 'delivery', massKg: [18, 18],   // = RANGER_PARAMS.wheelMass (owner, 2026-10-22: every tire matches the truck's physics)
+      pools: [], fetchFrom: ['autoShop'], fetchBy: ['strandedMotorist'], loose: 'spareTire',
+      atPickup: { min: 15, park: 'park to have the tire changed', done: 'tire changed' } },
     // A PASSENGER (cargo.md People): the motorist themselves, to an auto shop. `passenger` makes the
     // card read "needs a ride to …"; the mass is the person, riding in the cab.
     { id: 'motoristRide', phrase: 'a ride',                family: 'delivery', massKg: [55, 100],
@@ -286,9 +292,10 @@ export const THINGS = [
 //   kind     'food' | 'consumable' | 'tool' | 'part'  (items.md §1 / §2 / §3)
 //   gates    which offer gates it may appear under (see RANK GATES above)
 //   pools    which sources may offer it
+//   dineIn   (optional) true for a meal eaten on the spot at delivery — nothing is stowed.
 //
 // An earned reward is granted into the inventory by its id (FEAT-122) — every id here must be in
-// data/items.js ITEMS (the inventory gate checks). Its effect applies only if built.
+// data/items.js ITEMS (the inventory gate checks), except a dineIn one. Its effect applies only if built.
 
 export const REWARDS = [
     { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'],
@@ -326,6 +333,10 @@ export const REWARDS = [
     // The spare air filter (items.md, ratified): a reward from the auto shop and the gas station.
     { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation'] },
+    // The dinner meal as an invitation (items.md §1d, owner 2026-10-22): the customer feeds you when
+    // the job is in. Being fed waits on hunger, which isn't built.
+    { id: 'dinnerMeal', name: 'Dinner invitation', kind: 'food', gates: ['C', 'B'], dineIn: true,
+      pools: ['residence', 'farm', 'foodVendor'] },
 ]
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────

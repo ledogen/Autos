@@ -496,7 +496,8 @@ export class MissionSystem {
      */
     pickupPoiId() {
         const legs = this.mission?.legs
-        return this.state === 'running' && legs && this.leg === 0 ? legs[0].poiId : null
+        // A failed fetch (its loose load lost on the way out) has nothing left to hand over.
+        return this.state === 'running' && legs && this.leg === 0 && !this.mission.failed ? legs[0].poiId : null
     }
 
     /**

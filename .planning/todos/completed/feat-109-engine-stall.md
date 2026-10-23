@@ -1,7 +1,8 @@
 ---
 id: FEAT-109
 type: feature
-status: open
+status: closed
+closed: 2026-10-23
 opened: 2026-08-22
 severity: minor
 source: user-request
@@ -78,3 +79,7 @@ pattern, so the shutoff audio and restarting with the key just work. The clutch 
 makes it unreachable. Pinned in `test/manual-gearbox.mjs` §4.
 
 Whatever else this ticket lists beyond the bog-down stall is still open.
+
+## Resolution — closed (owner, 2026-10-23)
+
+Shipped with the FEAT-126 manual gearbox — the stall is part of its sim (7597782b, "manual gearbox sim — M5OD-R1, analog clutch, engine inertia, stall, engine braking"). Closed by the owner.

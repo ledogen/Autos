@@ -2516,6 +2516,34 @@ def run(item_id):
     return ob
 
 
+# ── World export — an item model that also lives in the 3D world (a bed load, a ground pickup) ────
+# The same builder, laid in its REST pose (how it lies on the ground), base-seated and centred on its
+# footprint, written to assets/models/<file>.glb. No collider mesh: the game's debris loader hulls the
+# render vertices itself (src/debris.js, thinned to fit the engine's hull limit).
+GLB_DIR = os.path.join(os.path.dirname(OUT_DIR), "models")
+WORLD = {"spareTire": ("spare-tire", Matrix.Rotation(math.pi / 2, 4, "X"))}   # file, rest rotation (tire: lying flat)
+
+
+def export_glb(item_id):
+    fresh_scene()
+    ob = BUILDERS[item_id]()
+    fname, rest = WORLD[item_id]
+    ob.data.transform(rest)
+    vs = [v.co for v in ob.data.vertices]
+    lo = Vector((min(v.x for v in vs), min(v.y for v in vs), min(v.z for v in vs)))
+    hi = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
+    ob.data.transform(Matrix.Translation((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -lo.z)))
+    path = os.path.join(GLB_DIR, f"{fname}.glb")
+    win = bpy.context.window_manager.windows[0]   # the exporter needs a window context (freight.py _ui_override)
+    with bpy.context.temp_override(window=win, area=win.screen.areas[0]):
+        bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", export_draco_mesh_compression_enable=False,
+                                  export_yup=True, export_apply=True, export_materials="EXPORT", export_texcoords=False,
+                                  export_normals=True, export_cameras=False, export_lights=False, use_selection=False)
+    tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+    print(f"{item_id}: {tris} tris, {hi - lo} m -> {path}")
+    return ob
+
+
 def run_all():
     for k in BUILDERS:
         run(k)
