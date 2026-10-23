@@ -417,7 +417,7 @@ export class OfferBoard {
      * The offer's content, rolled on first read from its own `spec` stream — so WHEN it is read never
      * changes WHAT it is. Null only if the source has no built thing to post (a table gap).
      *
-     * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate}|null, payMult,
+     * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate,dineIn?}|null, payMult,
      *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null,
      *   passenger: boolean, shape: 'courier'|'fetch', from: string[]|null, load: string|null,
      *   deadlineSlack: number }
@@ -471,7 +471,7 @@ export class OfferBoard {
                 const gate = pickWeighted(gateRoll, w)
                 const at = pool.filter(x => x.gates.includes(gate))
                 const reward = at[Math.floor(rewardRoll * at.length)]
-                bonus = { rewardId: reward.id, name: reward.name, gate }
+                bonus = { rewardId: reward.id, name: reward.name, gate, ...(reward.dineIn && { dineIn: true }) }
             }
         }
 

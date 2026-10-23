@@ -292,9 +292,10 @@ export const THINGS = [
 //   kind     'food' | 'consumable' | 'tool' | 'part'  (items.md §1 / §2 / §3)
 //   gates    which offer gates it may appear under (see RANK GATES above)
 //   pools    which sources may offer it
+//   dineIn   (optional) true for a meal eaten on the spot at delivery — nothing is stowed.
 //
 // An earned reward is granted into the inventory by its id (FEAT-122) — every id here must be in
-// data/items.js ITEMS (the inventory gate checks). Its effect applies only if built.
+// data/items.js ITEMS (the inventory gate checks), except a dineIn one. Its effect applies only if built.
 
 export const REWARDS = [
     { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'],
@@ -308,6 +309,10 @@ export const REWARDS = [
       pools: ['gasStation', 'strandedMotorist'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'workSite'] },
+    // The dinner meal as an invitation (items.md §1d, owner 2026-10-22): the customer feeds you when
+    // the job is in. Being fed waits on hunger, which isn't built.
+    { id: 'dinnerMeal', name: 'Dinner invitation', kind: 'food', gates: ['C', 'B'], dineIn: true,
+      pools: ['residence', 'farm', 'foodVendor'] },
 ]
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────

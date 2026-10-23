@@ -70,12 +70,14 @@ Already a REWARDS id (`chiliDog`, kind food). A meal: resets the hunger clock.
 Spoils in 16 h (2026-10-21). Flavor: "Kinda gross" (owner, 2026-10-22).
 
 ### Dinner meal
-status: todo · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
+status: wip · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
 Renamed from diner meal (owner, 2026-10-21). One generic sit-down meal, a menu item at the food
 vendor: holds hunger 8 h, 30 min to eat, $5–10, eat-in only, never found. Flavor: "A hearty meal.
 Dine in only" (owner, 2026-10-22). **As a reward it is a dinner invitation** (owner, 2026-10-22): a C–B
 reward from residences, the food vendor and farms — the customer asks you to join them for dinner;
-optional, 30 min, and you are fully fed. Needs its own effect on the delivery card.
+optional, 30 min, and you are fully fed. **Built 2026-10-23** (`dinnerMeal`, `dineIn: true` in REWARDS): any
+job those givers post, as with every reward (owner); the result card asks "stay for dinner (30 min)" or
+"decline" (owner, 2026-10-23). Being fed waits on hunger.
 
 ### Burger
 status: todo · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
@@ -162,7 +164,7 @@ sold back, half the tire's value plus half the wheel's, each at its own conditio
 built on feature/parts, not merged. **An ordinary inventory part, one slot** (owner, 2026-10-21: parts go
 in the inventory, never the bed). The swapped-off pair goes into the slot the spare left, as a flat
 spare (tire id + both wears); a plug kit or the shop restores it; the shop can swap any mounted pair per
-corner (a bead job $2/15 min, a hub swap $1/10 min — items.md §3g). Jalopies start with one 60% of the time, at 40–80%. Desc: "A tire on its wheel. Bolts on in place of a flat."
+corner (a bead job $2/15 min, a hub swap $1/10 min — items.md §3g). Jalopies start with one 60% of the time, at 40–80%. Desc: "A tire mounted on a wheel."
 (owner, 2026-10-23; was "This could help out in a pinch", 2026-10-22). The owner's world-drop / proximity-inventory idea is FEAT-143 (world items +
 proximity inventory, in progress on feature/stranded-spare).
 
@@ -526,7 +528,7 @@ Its own part (owner, 2026-10-21): wheels and tires are separate (items.md §3g).
 **Set 2026-10-22:** $5–10; a B–A reward from the auto shop, farms and residences; a rare roadside find.
 Icon `wheel.png`. Model ticket exists (asset-steel-wheels).
 Shop-mounted only: a flat at the roadside needs the spare, since there are no tools to seat a bead
-(owner, 2026-10-21). Desc: "Pressed steel, like the factory's. Bends before it breaks." (owner, 2026-10-23).
+(owner, 2026-10-21). Desc: "Standard. Heavy. Bends before it breaks." (owner, 2026-10-23).
 
 ### Skid plates
 status: todo · design: idea · build: effect, model · needs: hazards · where: autoShop

@@ -10,7 +10,7 @@
 //   6. Backpacks (items.md §2c): packed camp gear frees its truck slot but keeps its mass; a full
 //      pack refuses; only camp gear packs; the equipped pack keeps a bed (swap, never remove);
 //      equipping a spare moves the bed across; the equipped pack and a loaded pack can't be dropped.
-//   7. Catalog: every REWARDS id is an ITEMS id (the grant path can't miss), and no desc carries a
+//   7. Catalog: every REWARDS id but a dineIn meal is an ITEMS id (the grant path can't miss), and no desc carries a
 //      digit (SM-INV-10 — described, never scored).
 //
 // Pure node: no THREE, no DOM.
@@ -126,7 +126,7 @@ check('equip refuses a full pack with no bed in it', ids(spareAt()) === 'testTar
 delete ITEMS.testTarp
 
 // ── 7. Catalog ────────────────────────────────────────────────────────────────────────────────
-const missing = REWARDS.filter(r => !ITEMS[r.id]).map(r => r.id)
+const missing = REWARDS.filter(r => !r.dineIn && !ITEMS[r.id]).map(r => r.id)
 check('every REWARDS id is in ITEMS', missing.length === 0, missing.join(', '))
 const digits = Object.entries(ITEMS).filter(([, it]) => /\d/.test(it.desc)).map(([id]) => id)
 check('no item desc carries a digit (SM-INV-10)', digits.length === 0, digits.join(', '))

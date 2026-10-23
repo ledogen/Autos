@@ -3938,8 +3938,9 @@ missionSystem = new MissionSystem({
       result.letter = fragileGrade(result.health)
     }
     const s = economySystem.settle(result, mission)
-    // FEAT-122: the earned bonus goes in the truck — or waits on the swap prompt if it's full.
-    if (s.award) s.award.stowed = inventorySystem.grant(s.award.rewardId)
+    // FEAT-122: the earned bonus goes in the truck — or waits on the swap prompt if it's full. A dine-in
+    // meal (the dinner invitation) is never stowed: the result card offers it instead.
+    if (s.award) s.award.stowed = mission.bonus.dineIn ? 'dinner' : inventorySystem.grant(s.award.rewardId)
     if (mission?.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
     return s
   },
@@ -5290,6 +5291,8 @@ function _renderMissionUI () {
       // beside it to re-run the same route (testing/calibration: a known-road second lap).
       const nb = document.getElementById('mp-accept')
       if (nb) nb.textContent = 'continue'
+      // The dinner invitation is optional (owner, 2026-10-23): accept stays 30 min, decline drives on.
+      if (r.award?.stowed === 'dinner') { btn('mp-decline', true); if (nb) nb.textContent = 'stay for dinner (30 min)' }
       break
     }
     default:
@@ -5762,7 +5765,11 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   // On the result card this button is CONTINUE: put the finished run down and carry on driving in
   // story mode. It no longer auto-rolls the next job — with POIs as the job source, the next one is
   // something you go and find, not something handed to you at the drop point.
-  if (missionSystem.state === 'done') { missionSystem.exit(); return }
+  if (missionSystem.state === 'done') {
+    // The dinner invitation, taken: 30 min at their table. Being fed waits on hunger (items.md §1d).
+    if (missionSystem.result?.award?.stowed === 'dinner') daySystem.advanceMinutes(30)
+    missionSystem.exit(); return
+  }
   // FEAT-67: take the offer OFF THE BOARD first, re-checking it is still live — a food offer lives
   // ~2 real minutes, so it can expire with the panel up. If it has gone, the panel re-presents what
   // is live now instead of accepting a job the board no longer has.
@@ -7090,7 +7097,9 @@ document.addEventListener('keydown', e => {
   // it, so the brake release is the obvious way out — and vehicle.js drops the park latch on that
   // same tap, which leaves the truck ready to roll AND re-arms the trigger, so another pull re-offers.
   // preventDefault so the tap can't ALSO activate whichever panel button last took focus.
-  if (e.key === ' ' && missionSystem?.state === 'offer') { e.preventDefault(); missionSystem.exit() }
+  // The dinner invitation's DECLINE is the same tap (owner, 2026-10-23).
+  if (e.key === ' ' && (missionSystem?.state === 'offer'
+      || (missionSystem?.state === 'done' && missionSystem.result?.award?.stowed === 'dinner'))) { e.preventDefault(); missionSystem.exit() }
   // Shift+R → set the spawn point to the truck's current pose (does not move the truck).
   if (e.shiftKey && (e.key === 'r' || e.key === 'R')) {
     if (isTeleportEnabled()) setSpawnHere()
