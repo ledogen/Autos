@@ -20,7 +20,10 @@
 //   7. A shelf item bought to carry goes into the inventory with its condition; a part you own sells
 //      for half price × condition; only parts sell.
 //   8. A mounted pair (the spare, or the flat pair a roadside swap left) swaps with a corner's tire and
-//      wheel for a tire's labour; the corner's pair takes its place, still mounted. A flat pair won't go on.
+//      wheel for two hub swaps; the corner's pair takes its place, still mounted. A flat pair won't go on.
+//   9. Tire work is bead jobs and hub swaps (owner, 2026-10-23): a loose tire onto a corner is 2 hub +
+//      2 bead, charged with the shelf price; split and combine are one bead job each, every part keeping
+//      its wear and the tire its puncture; split needs a free slot; only a loose tire meets a loose wheel.
 //
 // Pure node: no THREE, no DOM.
 import { ServiceCenter } from '../src/service.js'
@@ -28,7 +31,7 @@ import { PartsSystem } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
 import { InventorySystem } from '../src/inventory.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { PARTS, SLOTS, REPAIRS, REPAIR_CAP, PATCH } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIRS, REPAIR_CAP, PATCH, BEAD, HUB } from '../data/parts.js'
 import { repairTargets } from '../src/service.js'
 
 let fails = 0
@@ -122,7 +125,7 @@ hours = 0
 check('exchange: offered for any corner, fitted with its wear', svc.exchangeOptions('tireRR').some(r => r.index === idx)
   && !svc.exchangeOptions('wheelRR').some(r => r.index === idx) && svc.exchange(idx, 'tireRR')
   && parts.fitted('tireRR') === 'tireSport' && damage.get('tireRR') === 0.5 && !inventory.list().some(r => r.id === 'tireSport'))
-check('…for the socket\'s labour, the old part to the bench', hours === SLOTS.tireRR.hours && svc.off?.id === 'tireStandard')
+check('…for 2 hub swaps and 2 bead jobs, the old part to the bench', near(hours, 2 * HUB.hours + 2 * BEAD.hours) && svc.off?.id === 'tireStandard')
 svc.close()
 check('closing with a part on the bench keeps it', !svc.off && inventory.list().filter(r => r.id === 'tireStandard').length === 2)
 
@@ -183,9 +186,33 @@ check('a flat pair won\'t go on', !svc.swapPair(sp().index, 0))
 inventory.amend(sp().index, { flat: false })
 const was = { tire: parts.fitted('tireFL'), cond: damage.get('tireFL') }
 check('swap the pair onto a corner: its tire, wear and wheel', svc.swapPair(sp().index, 0) && parts.fitted('tireFL') === 'tireSport'
-  && damage.get('tireFL') === 0.7 && damage.get('wheelFL') === 0.5 && hours === SLOTS.tireFL.hours)
+  && damage.get('tireFL') === 0.7 && damage.get('wheelFL') === 0.5 && near(hours, 2 * HUB.hours))
 check('…and the corner\'s pair takes its place, mounted', sp().tire === was.tire && sp().cond === was.cond
   && sp().wheelCond === 1, JSON.stringify(sp()))
+
+// ── 9. Bead jobs and hub swaps ────────────────────────────────────────────────────────────────
+svc.close(); inventory.start(); wallet = 100; hours = 0
+stock(['tireOffroad'])
+check('buy & fit a tire: the part plus 2 hub + 2 bead', svc.buyAndFit(0, 'tireRL')
+  && near(wallet, 100 - PARTS.tireOffroad.price - 2 * HUB.price - 2 * BEAD.price), wallet)
+svc.settleOff('sell')
+inventory.start(); wallet = 100; hours = 0
+inventory.grant('spareTire', 1, { cond: 0.6, flat: true, tire: 'tireSport', wheel: 'wheelSteel', wheelCond: 0.4 })
+check('split: a tire and a wheel, each with its wear, the puncture on the tire', svc.split(sp().index)
+  && !sp() && inventory.list().some(r => r.id === 'tireSport' && r.cond === 0.6 && r.flat)
+  && inventory.list().some(r => r.id === 'wheelSteel' && r.cond === 0.4)
+  && near(wallet, 100 - BEAD.price) && near(hours, BEAD.hours), JSON.stringify(inventory.list()))
+const ti = inventory.list().find(r => r.id === 'tireSport').index, wi = inventory.list().find(r => r.id === 'wheelSteel').index
+check('a tire is offered the wheel, and only loose ones', svc.combineOptions(ti).map(r => r.index).join() === String(wi)
+  && svc.combineOptions(wi).map(r => r.index).join() === String(ti))
+check('combine: one mounted tire, both wears kept', svc.combine(wi, ti) && inventory.list().filter(r => r.kind === 'part').length === 1
+  && sp()?.tire === 'tireSport' && sp().cond === 0.6 && sp().flat && sp().wheel === 'wheelSteel' && sp().wheelCond === 0.4
+  && near(wallet, 100 - 2 * BEAD.price), JSON.stringify(inventory.list()))
+check('a mounted tire combines with nothing', svc.combineOptions(sp().index).length === 0)
+const full = new InventorySystem({ slotCap: () => inventory.slotsUsed() })   // the pack + the spare: no room
+const tight = new ServiceCenter({ ...svc, inventory: full, off: null })
+const si = full.list().findIndex(r => r.id === 'spareTire')
+check('split needs a free slot', si >= 0 && !tight.split(si) && full.list()[si].id === 'spareTire', JSON.stringify(full.list().map(r => r.id)))
 
 console.log(fails ? `\n${fails} FAILED` : '\nservice gate: ALL OK')
 process.exit(fails ? 1 : 0)

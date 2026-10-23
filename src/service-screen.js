@@ -64,6 +64,7 @@ body:has(#svc-screen.open) #quickjob-btn { visibility: hidden; }   /* it sits wh
 #svc-screen .sv-flat { font-size: 12px; color: var(--bad-text); }
 #svc-screen .sv-bar { width: 60px; height: 6px; background: var(--line); overflow: hidden; flex: none; }
 #svc-screen .sv-bar i { display: block; height: 100%; }
+#svc-screen .sv-part { padding-left: 40px; }
 #svc-screen .sv-pct { width: 36px; text-align: right; color: var(--text-dim); font-size: 12px; flex: none; }
 #svc-screen .sv-cost { width: 112px; text-align: right; color: var(--text-dim); font-size: 12px; flex: none; }
 #svc-screen .sv-btn { font: 12px var(--font); color: var(--text-body); background: transparent; border: 1px solid var(--line-control);
@@ -263,6 +264,8 @@ export class ServiceScreen {
       case 'patchOwned': s.patchOwned(+b.dataset.index); break
       case 'exchange': s.exchange(+b.dataset.index, b.dataset.socket); break
       case 'sellOwned': s.sellOwned(+b.dataset.index); this.sel = null; break
+      case 'split': s.split(+b.dataset.index); this.sel = null; break
+      case 'combine': s.combine(+b.dataset.index, +b.dataset.with); this.sel = null; break
       case 'buy': s.buyAndFit(+b.dataset.slot, b.dataset.socket); break
       case 'stow': s.buyToInventory(+b.dataset.slot); break
       case 'sell': s.settleOff('sell'); break
@@ -338,10 +341,13 @@ export class ServiceScreen {
     }
     if (socket) {
       const opts = s.exchangeOptions(socket)
-      h += `<div class="sv-sub">Exchange · ${formatGameDuration(SLOTS[socket].hours)}</div>`
-        + (opts.length ? opts.map(r => `<div class="sv-row">${chip(r.id)}<span class="sv-name">${r.name}`
-            + `${PARTS[r.id].mounted ? ' <span class="sv-desc">tire and wheel</span>' : ''}</span>${bar(r.cond ?? 1)}`
-            + btn('exchange', 'exchange', !s.off, `data-index="${r.index}" data-socket="${socket}"`) + `</div>`).join('')
+      h += `<div class="sv-sub">Exchange</div>`
+        + (opts.length ? opts.map(r => {
+            const q = s.fitLabour(r.id, socket)
+            return `<div class="sv-row">${chip(r.id)}<span class="sv-name">${r.name}</span>${bar(r.cond ?? 1)}`
+              + `<span class="sv-cost">${cost(q.price, q.hours)}</span>`
+              + btn('exchange', 'exchange', !s.off && money + 1e-9 >= q.price, `data-index="${r.index}" data-socket="${socket}"`) + `</div>`
+          }).join('')
           : dim('Nothing you carry fits here.'))
     }
     return h
@@ -367,14 +373,16 @@ export class ServiceScreen {
     let h = `<div class="sv-slot"><div class="sv-slothead">On the shelf</div>`
     s.stock().forEach((e, i) => {
       if (!e) { h += dim('An empty shelf.'); return }
-      const price = s.shelfPrice(i), ok = !s.off && money + 1e-9 >= price
-      const sockets = socketsFor(e.id)
+      const price = s.shelfPrice(i), sockets = socketsFor(e.id)
+      const fitQ = sockets.length ? s.fitLabour(e.id, sockets[0]) : { price: 0 }
+      const ok = !s.off && money + 1e-9 >= price + fitQ.price
       const fit = sockets.length > 1
         ? sockets.map(sk => btn('buy', where(sk), ok, `data-slot="${i}" data-socket="${sk}"`)).join(' ')
         : sockets.length ? btn('buy', 'buy & fit', ok, `data-slot="${i}" data-socket="${sockets[0]}"`) : ''
       const state = e.cond === null ? '' : e.cond >= 1 ? 'new · ' : 'used · '
       h += `<div class="sv-row wrap sv-shelf" data-slot="${i}">${chip(e.id)}<span class="sv-name">${shelfName(e)}`
-        + ` <span class="sv-desc">${state}gone in ${formatGameDuration(e.expiresAt - now)}</span>`
+        + ` <span class="sv-desc">${state}gone in ${formatGameDuration(e.expiresAt - now)}`
+        + `${fitQ.price ? ` · fitting $${formatMoney(fitQ.price)}` : ''}</span>`
         + `<div class="sv-desc">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</div></span>`
         + (e.cond !== null ? bar(e.cond) : '') + `<span class="sv-cost">$${formatMoney(price)}</span>`
         + `<span class="sv-acts">${fit} ${btn('stow', 'to inventory', money + 1e-9 >= price, `data-slot="${i}"`)}</span></div>`
@@ -390,11 +398,28 @@ export class ServiceScreen {
     if (!owned.length) return h + dim('You carry no parts.') + `</div>`
     for (const r of owned) {
       const key = `i:${r.index}`, open = this.sel === key, cond = r.cond ?? 1
+      const m = PARTS[r.id].mounted
+      const flat = r.flat ? '<span class="sv-flat">flat</span>' : ''
+      // A mounted tire shows its two parts, each with its own wear (owner, 2026-10-23).
       h += `<button class="sv-line${open ? ' on' : ''}" data-act="sel" data-key="${key}">${chip(r.id)}<span class="sv-name">${r.name}</span>`
-        + (r.flat ? '<span class="sv-flat">flat</span>' : '') + bar(cond, r.flat) + `</button>`
+        + (m ? '' : flat + bar(cond, r.flat)) + `</button>`
+        + (m ? `<div class="sv-row sv-part"><span class="sv-name sv-desc">Tire · ${PARTS[r.tire ?? m.tire].name}</span>${flat}${bar(cond, r.flat)}</div>`
+          + `<div class="sv-row sv-part"><span class="sv-name sv-desc">Wheel · ${PARTS[r.wheel ?? m.wheel].name}</span>${bar(r.wheelCond ?? 1)}</div>` : '')
       if (!open) continue
+      const bq = s.beadQuote(), canBead = money + 1e-9 >= bq.price
       h += `<div class="sv-panel"><div class="sv-row"><span class="sv-name">Sell it to the shop</span>`
         + btn('sellOwned', `sell for $${formatMoney(s.sellValue(r.id, r.cond))}`, true, `data-index="${r.index}"`) + `</div>`
+      if (m) {
+        h += `<div class="sv-row"><span class="sv-name">Split into tire and wheel</span><span class="sv-cost">${cost(bq.price, bq.hours)}</span>`
+          + btn('split', 'split', canBead && s.inventory.fits(r.wheel ?? m.wheel), `data-index="${r.index}"`, ' ok') + `</div>`
+      }
+      const partners = s.combineOptions(r.index)
+      if (partners.length) {
+        h += `<div class="sv-sub">Combine · ${cost(bq.price, bq.hours)}</div>`
+          + partners.map(p => `<div class="sv-row">${chip(p.id)}<span class="sv-name">${p.name}</span>`
+            + (p.flat ? '<span class="sv-flat">flat</span>' : '') + bar(p.cond ?? 1, p.flat)
+            + btn('combine', 'combine', canBead, `data-index="${r.index}" data-with="${p.index}"`, ' ok') + `</div>`).join('')
+      }
       if (fix.get(r.index)?.targets.length) h += `<div class="sv-sub">Repair</div>` + this._repair(key, cond, (t) => s.ownedQuote(r.index, t))
       if (r.flat) {
         const q = s.patchQuote()

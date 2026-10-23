@@ -262,5 +262,14 @@ export const REPAIR_STEP = 0.05
  *  half hour (owner, 2026-10-22). */
 export const PATCH = { price: 5, hours: 0.5 }
 
+/** Tire work at the shop is two jobs, and every corner action is a count of them (owner, 2026-10-23):
+ *  a BEAD job mounts or unmounts a tire on a wheel; a HUB swap takes a mounted tire off a corner or
+ *  puts one on. A loose tire or wheel onto a corner is 2 hub + 2 bead (the old pair off and on, the
+ *  old part off its partner, the new one on); a mounted tire is 2 hub; split or combine is 1 bead.
+ *  The roadside has no bead tools: only the spare's hub swap (src/recovery.js). [DEFAULT] numbers,
+ *  owner-approved. */
+export const BEAD = { price: 2, hours: 0.25 }
+export const HUB = { price: 1, hours: 1 / 6 }
+
 /** A part sold back to the shop fetches half its price × its condition (owner, 2026-10-20). */
 export const SELL_FRACTION = 0.5

@@ -14,11 +14,14 @@
 //   • Browsing is free — the frame loop holds the clock while the screen is open — and each repair or
 //     swap adds its labour hours, the way the tow does.
 //   • Prices ride the day tier like the tow (economy.tierNow); FEAT-69 re-cuts them.
+//   • Tires and wheels (owner, 2026-10-23): a loose tire, a loose wheel, or a mounted tire (the spare's
+//     item: tire + wheel, each with its own wear). Corner work is priced as BEAD jobs and HUB swaps
+//     (data/parts.js); the bench splits a mounted tire or combines a tire and a wheel, one bead job each.
 //
 // The renderer-agnostic half (the fuel-stop.js pattern): main.js owns the DOM, this owns the rules,
 // so a headless gate can drive a whole visit. Every dependency arrives through the constructor.
 
-import { PARTS, SLOTS, REPAIRS, REPAIR_CAP, REPAIR_STEP, PATCH, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIRS, REPAIR_CAP, REPAIR_STEP, PATCH, BEAD, HUB, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
 import { TRACKS, TIRE_IDS, WHEEL_IDS } from './damage.js'
 import { shelfPrice } from './shop-stock.js'
 
@@ -179,12 +182,14 @@ export class ServiceCenter {
     }
 
     /** Buy shelf slot `i` and bolt it into `socket` (a tire or wheel needs its corner), with its
-     *  condition. The old part waits in `off`. */
+     *  condition, paying for the part and the fitting. The old part waits in `off`. */
     buyAndFit (i, socket) {
         const e = this.stock()[i]
-        if (this.off || !e || !socketsFor(e.id).includes(socket) || !this.spend(this.shelfPrice(i))) return false
+        if (this.off || !e || !socketsFor(e.id).includes(socket)) return false
+        const q = this.fitLabour(e.id, socket)
+        if (!this.spend(cents(this.shelfPrice(i) + q.price))) return false
         this.unstock(i)
-        this._swap(e.id, e.cond, socket)
+        this._swap(e.id, e.cond, socket, q)
         return true
     }
 
@@ -238,29 +243,88 @@ export class ServiceCenter {
     fitFromInventory (index, socket) {
         if (this.off) return false
         const e = this.inventory.list()[index]
-        if (!e || e.flat || !socketsFor(e.id).includes(socket ?? PARTS[e.id]?.slot)) return false
+        socket ??= PARTS[e?.id]?.slot
+        if (!e || e.flat || !socketsFor(e.id).includes(socket)) return false
+        const q = this.fitLabour(e.id, socket)
+        if (!this.spend(q.price)) return false
         this.inventory.take(index)
-        this._swap(e.id, e.cond, socket ?? PARTS[e.id].slot)
+        this._swap(e.id, e.cond, socket, q)
+        return true
+    }
+
+    /** `hubs` hub swaps and `beads` bead jobs, at today's tier. */
+    _jobs (hubs, beads) {
+        return { price: cents((hubs * HUB.price + beads * BEAD.price) * this.tier()), hours: hubs * HUB.hours + beads * BEAD.hours }
+    }
+
+    /** The labour to put part `id` into `socket`: on a corner, a mounted tire is the pair off and on
+     *  (2 hub); a loose tire or wheel also comes off and goes on its partner (+2 bead). Any other
+     *  socket is its hours and no fee. */
+    fitLabour (id, socket) {
+        if (cornerOf(socket) < 0) return { price: 0, hours: SLOTS[socket].hours }
+        return this._jobs(2, PARTS[id].mounted ? 0 : 2)
+    }
+
+    /** Splitting a mounted tire, or combining a tire and a wheel: one bead job. */
+    beadQuote () { return this._jobs(0, 1) }
+
+    /** Split the mounted tire at inventory entry `index` into its tire and its wheel, each with its
+     *  wear (the tire keeps its puncture). Needs a free slot: one entry becomes two. */
+    split (index) {
+        const r = this.inventory.list()[index], m = PARTS[r?.id]?.mounted
+        if (!m || !this.inventory.fits(r.wheel ?? m.wheel)) return false
+        const q = this.beadQuote()
+        if (!this.spend(q.price)) return false
+        this.inventory.take(index)
+        this.inventory.grant(r.tire ?? m.tire, 1, { cond: r.cond, flat: r.flat })
+        this.inventory.grant(r.wheel ?? m.wheel, 1, { cond: r.wheelCond ?? null })
+        this.advanceHours(q.hours)
+        this.onChange()
+        return true
+    }
+
+    /** The loose wheels a loose tire at `index` can be mounted on, or the loose tires for a wheel. */
+    combineOptions (index) {
+        const want = { tire: 'wheel', wheel: 'tire' }[PARTS[this.inventory.list()[index]?.id]?.slot]
+        const loose = (id) => PARTS[id] && !PARTS[id].mounted
+        if (!want || !loose(this.inventory.list()[index].id)) return []
+        return this.inventory.list().filter(r => loose(r.id) && PARTS[r.id].slot === want)
+    }
+
+    /** Mount the tire and the wheel at inventory entries `a` and `b` (either order) into one mounted
+     *  tire, each keeping its wear. */
+    combine (a, b) {
+        if (!this.combineOptions(a).some(r => r.index === b)) return false
+        const list = this.inventory.list()
+        const [tire, wheel] = PARTS[list[a].id].slot === 'tire' ? [list[a], list[b]] : [list[b], list[a]]
+        const q = this.beadQuote()
+        if (!this.spend(q.price)) return false
+        for (const i of [a, b].sort((x, y) => y - x)) this.inventory.take(i)   // the later one first: indices hold
+        this.inventory.grant('spareTire', 1, { tire: tire.id, cond: tire.cond, flat: tire.flat, wheel: wheel.id, wheelCond: wheel.cond })
+        this.advanceHours(q.hours)
+        this.onChange()
         return true
     }
 
     /**
      * Swap the mounted pair at inventory entry `index` (a spare, or the flat pair a roadside swap left
      * in the inventory) with `corner`'s tire and wheel: the pair that comes off takes its place, still
-     * mounted — so a tire the spare displaced can go back on. A flat pair won't go on. A tire's labour.
+     * mounted — so a tire the spare displaced can go back on. A flat pair won't go on. Two hub swaps.
      */
     swapPair (index, corner) {
         const r = this.inventory.list()[index]
         if (this.off || !PARTS[r?.id]?.mounted || r.flat) return false
+        const q = this.fitLabour(r.id, TIRE_IDS[corner])
+        if (!this.spend(q.price)) return false
         this.inventory.amend(index, this.parts.fitMounted(r, corner))
-        this.advanceHours(SLOTS.tireFL.hours)
+        this.advanceHours(q.hours)
         this.onChange()
         return true
     }
 
-    _swap (id, cond, socket) {
+    _swap (id, cond, socket, q) {
         const off = this.parts.fit(id, cond, socket)
-        this.advanceHours(SLOTS[socket].hours)
+        this.advanceHours(q.hours)
         this.off = PARTS[off.id].massKg > 0 ? off : null
         this.onChange()
     }
