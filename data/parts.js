@@ -98,7 +98,7 @@ export const PARTS = {
     tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 15, massKg: 12, grip: 1, stock: true,
                      patch: {}, desc: 'The factory all-season. Fine everywhere, great nowhere.' },
     spareTire:     { name: 'Mounted tire',         slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 21, grip: 1, mounted: { tire: 'tireStandard', wheel: 'wheelSteel' },
-                     patch: {}, desc: 'A tire on its wheel. Bolts on in place of a flat.' },
+                     patch: {}, desc: 'A tire mounted on a wheel.' },
     tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 20, massKg: 11.5, grip: 1.1, durability: 0.8,
                      patch: {}, desc: 'Sticky. Great grip on pavement, not so good on dirt. Wears fast.' },
     tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 25, massKg: 14.4, grip: 1,
@@ -113,7 +113,7 @@ export const PARTS = {
     //    ever mounted at the service center — the mounted spare is the roadside answer. A part's desc
     //    says plainly what it does.
     wheelSteel:    { name: 'Steel wheel',          slot: 'wheel', family: 'oem', rarity: 'common', price: 8, massKg: 9, stock: true,
-                     patch: {}, desc: 'Pressed steel, like the factory’s. Bends before it breaks.' },
+                     patch: {}, desc: 'Standard. Heavy. Bends before it breaks.' },
 
     // ── Springs and shocks (§3f) — one axle's pair. Load ratings: §3f's package, [DEFAULT] numbers.
     springsFrontOEM: { name: 'Stock front springs', slot: 'springsFront', family: 'oem', rarity: 'common', price: 7, massKg: 14, stock: true,
