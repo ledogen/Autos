@@ -671,11 +671,16 @@ export class OfferBoard {
         return { name, people }
     }
 
-    /** One name form filled in (data/offer-names.js header). Each slot draws only if present. */
+    /**
+     * One name form filled in (data/offer-names.js header). Each slot draws only if present.
+     * "{the}{adj}{biz}" must never shrink to the bare business word — a shop called just "Radiator"
+     * (seed 3652181436) — so when {the} rolls empty the adjective is forced.
+     */
     _fillForm (form, p, type, r) {
+        let the = null   // stays null in forms with no {the} slot — "Deb's Burgers" needs no adjective
         return form
-            .replace('{the}', () => (r() < POI_THE_CHANCE ? 'The ' : ''))
-            .replace('{adj}', () => (r() < POI_ADJECTIVE_CHANCE ? pick(r, POI_ADJECTIVES) + ' ' : ''))
+            .replace('{the}', () => (the = r() < POI_THE_CHANCE ? 'The ' : ''))
+            .replace('{adj}', () => (r() < POI_ADJECTIVE_CHANCE || the === '' ? pick(r, POI_ADJECTIVES) + ' ' : ''))
             .replace('{biz}', () => pick(r, BUSINESS_TYPES[type]))
             .replace('{first}', () => p.first)
             .replace('{last}', () => p.last)

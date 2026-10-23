@@ -327,7 +327,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
 
 // ── 11. names ───────────────────────────────────────────────────────────────────────────────────
 {
-    let dupPoi = 0, dupPerson = 0, formBad = 0, personBad = 0, houseBad = 0, dupHouse = 0
+    let dupPoi = 0, dupPerson = 0, formBad = 0, personBad = 0, houseBad = 0, dupHouse = 0, bareBiz = 0
     const formOff = new Set()
     for (let seed = 1; seed <= 300; seed++) {
         const b = make(seed)
@@ -340,6 +340,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         for (const q of POIS.filter(p => (SOURCES[p.type] || NAME_FORMS[p.type]) && p.type !== 'larrysHouse')) {
             const ppl = b.people(q.id)
             if (NAME_FORMS[q.type]) {
+                if (BUSINESS_TYPES[q.type]?.includes(b.poiName(q.id))) { bareBiz++; formOff.add(`${q.type}: ${b.poiName(q.id)}`) }
                 if (!fromForms(q.type, b.poiName(q.id) ?? '', ppl[0])) { formBad++; formOff.add(`${q.type}: ${b.poiName(q.id)}`) }
             } else if (FIXED.has(b.poiName(q.id))) {
                 // a fixed-name source (the gas station) keeps its placeholder name
@@ -354,6 +355,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('people are unique within a region (300 seeds)', dupPerson === 0, `${dupPerson}`)
     check('every source — and every receive-only class (office, school) — is named by its class\'s forms (300 seeds)', formBad === 0,
         `${formBad}: ${[...formOff].slice(0, 5).join(' · ')}`)
+    check('no POI is named by its bare business word — never just "Radiator" (300 seeds)', bareBiz === 0, `${bareBiz}`)
     check('a class with no forms is ONE person, no place name — just the person', personBad === 0, `${personBad}`)
     check('a household shares one last name', houseBad === 0, `${houseBad}`)
     check('no two households in a region share a surname (300 seeds)', dupHouse === 0, `${dupHouse}`)
