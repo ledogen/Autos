@@ -156,7 +156,7 @@ uncooled, ~36 h in the cooler. Species carry different effects — which, is ope
 status: wip · design: ratified · build: effect · where: autoShop, reward, found
 Renamed from *Spare tire* (owner, 2026-10-23); the id stays `spareTire`.
 Fitting it is a 2 h timeskip that clears the flat (owner, 2026-10-22 — supersedes 90 min, 2026-10-20);
-the compressor takes 30 min off and the quick-jack 1 h, and they stack. Real mass all the time. Already a REWARDS id
+the compressor takes 30 min off and the quick-jack 1 h, and they stack. Real mass all the time: **21 kg**, the 12 kg tire + 9 kg wheel (owner, 2026-10-23, reversing 10-22's 18 kg). Already a REWARDS id
 (`spareTire`). Flats ship (`flat[]`, FEAT-94). **Ruled 2026-10-21:** self-contained (factory jack always
 aboard), full-size only; worn (50–80%) and new variants in different pools; auto shop;
 reward from the auto shop and stranded motorist (A–S); rare roadside find. **Priced as its parts** (owner,
@@ -191,13 +191,13 @@ status: wip · design: ratified · build: effect · where: generalStore, autoSho
 Field repair, 10% on the `armor*` / `headlight*` tracks and the radiator. 5 per pack. 15 min per use;
 holds for the run (2026-10-20). $5–10; an auto-shop reward (B–A); a rare roadside find (2026-10-21).
 Flavor: "A mechanic's best friend" (owner, 2026-10-22).
-**In the game 2026-10-23** (`zipTies`, 0.2 kg): a live B–A auto-shop reward; the repair (which light part, 10%, 15 min) is the parts session's and isn't built.
+**In the game 2026-10-23** (`zipTies`, 0.2 kg): a live B–A auto-shop reward. **The repair is built on feature/parts** (`use: 'fieldRepair'`, 5 uses): picked on the damage screen, 15 min a use, capped at 80% [DEFAULT]. Shelf: Sometimes, $5 [DEFAULT].
 
 ### Duct tape
 status: wip · design: ratified · build: effect · where: generalStore, reward, found
 Field repair, 20% on body panels. 3 uses per roll. 15 min per use; holds for the run (2026-10-20). $5–10;
 a reward from the auto shop, gas station and general store (B–A); a rare roadside find (2026-10-21).
-**In the game 2026-10-23** (`ductTape`, 0.35 kg): the reward is live on main; the repair effect is not built.
+**In the game 2026-10-23** (`ductTape`, 0.35 kg): the reward is live on main. **The repair is built on feature/parts** (`use: 'fieldRepair'`, 3 uses): picked on the damage screen, 15 min a use, capped at 80% [DEFAULT].
 
 ### Coolant jug
 status: cut · design: proposed · build: effect · where: autoShop, gasStation
@@ -210,7 +210,7 @@ Field repair: restores 15% radiator condition (owner, 2026-10-16), never past 50
 is cooling capacity directly — aimed at the overheat → power loss → engine wear chain. One use per
 bottle; 15 min; holds for the run (2026-10-20). $5–10; a reward from both (B–A); never found (2026-10-21).
 Flavor: "Maybe this will keep 'er going" (owner, 2026-10-22).
-**In the game 2026-10-23** (`stopLeak`, 0.5 kg, `use: 'stopLeak'`): parked, +15% radiator up to 50%, a 15 min stop (main.js `_pourStopLeak`); a B–A reward from the auto shop and gas station.
+**In the game 2026-10-23** (`stopLeak`, 0.5 kg, `use: 'stopLeak'`): parked, +15% radiator up to 50%, a 15 min stop (main.js `_pourStopLeak`); a B–A reward from the auto shop and gas station. Shelf (feature/parts): Sometimes, $8 [DEFAULT].
 
 ### Emergency gas
 status: wip · design: ratified · build: effect, model · where: gasStation, reward
@@ -224,6 +224,9 @@ New (owner, 2026-10-21): a refillable 5 gal can — pour it, refill it at any pu
 Shares the emergency-gas pour. **Ruled 2026-10-22:** parked, a 10 min pour; 18 kg full (14 kg of gas +
 a 4 kg steel can); an A–S reward from the gas station; sold at the gas station, rarely, $30; a very
 rare roadside find. The pour sounds like a glug glug glug (FEAT-120).
+**Built 2026-10-23 on feature/parts** (`jerryCan`, tool, 4 kg empty, 5 gal × 2.82 kg = 18.1 kg full, `use: 'jerry'`):
+poured parked in 10 min, the can stays; the pump fills it after the tank on one counter; an A–S gas-station
+reward. Not built: the gas-station sale (no shelf there) and the roadside find (no find system).
 
 ### Bubble wrap
 status: todo · design: ratified · build: effect · needs: cargo protection · where: generalStore, reward
