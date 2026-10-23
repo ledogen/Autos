@@ -100,10 +100,12 @@ damage.set('damperRear', 0.2)
 stock(['dampersRearHD'], ['tireSport', 0.5], ['tirePlugKit'])
 check('a used part is priced by its condition, × tier', near(svc.shelfPrice(1), PARTS.tireSport.price * 0.5)
   && (tier = 2, near(svc.shelfPrice(1), PARTS.tireSport.price)) && (tier = 1) && svc.shelfPrice(2) > 0)
-check('buy heavy-duty rear shocks', svc.buyAndFit(0, 'dampersRear') && near(wallet, 100 - PARTS.dampersRearHD.price)
+check('buy heavy-duty rear shocks, fitted for the shop\'s minimum charge', svc.buyAndFit(0, 'dampersRear') && near(wallet, 100 - PARTS.dampersRearHD.price - SU.price)
   && params.suspensionDampingRear === PARTS.dampersRearHD.patch.suspensionDampingRear && damage.get('damperRear') === 1)
 check('…the slot is empty now', shelf[0] === null && !svc.buyAndFit(0, 'dampersRear'))
 check('the socket\'s labour is on the clock', hours === 0.75, hours)
+check('an exchange off the tires pays the minimum charge too, × tier', svc.fitLabour('springsFrontHD', 'springsFront').price === SU.price
+  && (tier = 2, svc.fitLabour('springsFrontHD', 'springsFront').price === 2 * SU.price) && (tier = 1))
 check('the old shocks wait on the bench with their wear', svc.off?.id === 'dampersRearOEM' && svc.off.cond === 0.2)
 check('no second swap while one waits', !svc.buyAndFit(1, 'tireFL'))
 const before = wallet
