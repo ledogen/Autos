@@ -309,7 +309,13 @@ export const REWARDS = [
       pools: ['gasStation', 'strandedMotorist'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'workSite'] },
-    // Field repair on body panels (items.md §7, owner 2026-10-21); the effect isn't built yet.
+    // Items setup page rulings (owner, 2026-10-20/21). Zip ties' and duct tape's repairs aren't built yet.
+    { id: 'energyDrink', name: 'Energy drink', kind: 'consumable', gates: ['C', 'B'],
+      pools: ['gasStation', 'generalStore'] },
+    { id: 'stopLeak',   name: 'Stop-leak',   kind: 'consumable', gates: ['B', 'A'],
+      pools: ['autoShop', 'gasStation'] },
+    { id: 'zipTies',    name: 'Zip ties',    kind: 'consumable', gates: ['B', 'A'],
+      pools: ['autoShop'] },
     { id: 'ductTape',   name: 'Duct tape',   kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'generalStore'] },
     // The dinner meal as an invitation (items.md §1d, owner 2026-10-22): the customer feeds you when

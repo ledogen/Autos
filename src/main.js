@@ -32,7 +32,7 @@ import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component c
 import { truckConfig, loadVerdict, tireCondCap } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
-import { parkPrompt, keycap } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
+import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
@@ -3384,12 +3384,26 @@ const economySystem = new EconomySystem({
 // full tank refuses (returns false), so the can is kept rather than wasted. A dry engine is not
 // restarted for you: the gas only makes the key work again (ignition.js catchTime).
 let _sputtersHeard = 0   // fuel.sputters already voiced (a fresh tank resets the count, hence !== above)
+// Poured parked only, a 10 min stop (owner, 2026-10-21); false keeps the can.
 function _pourGasCan () {
+  if (!vehicleState.parked) { hintPark(); return false }
   const f = vehicleState.fuel, space = RANGER_PARAMS.fuelTankGal - f.gal
   if (space < 0.05) return false
   f.gal += Math.min(RANGER_PARAMS.emergencyGasGal, space)
   f.dry = false
   playNozzle(); setPumpFlow(true); setTimeout(() => setPumpFlow(false), 1200)
+  daySystem.advanceMinutes(10)
+}
+
+// Stop-leak (items.md §7, owner 2026-10-16/21): +15% radiator, never past 50% — a 15 min stop,
+// parked. False keeps the bottle: not parked, or the radiator is already at the cap.
+const STOP_LEAK_GAIN = 0.15, STOP_LEAK_CAP = 0.5
+function _pourStopLeak () {
+  if (!vehicleState.parked) { hintPark(); return false }
+  const c = damageModel.get('radiator')
+  if (c >= STOP_LEAK_CAP) return false
+  damageModel.set('radiator', Math.min(STOP_LEAK_CAP, c + STOP_LEAK_GAIN))
+  daySystem.advanceMinutes(15)
 }
 
 // ── FEAT-122: the inventory ────────────────────────────────────────────────────────────────
@@ -3399,7 +3413,7 @@ const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
   onChange: () => inventoryScreen.render(),
-  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan },
+  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak },
 })
 // Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
 const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
@@ -4830,6 +4844,8 @@ function _makeCamp () {
 
 /** What a night here is worth, as day.js reads it: the site's vibe, mom's fixed 0.5, or 'truck'. */
 const _campVibe = (st) => st?.truck ? 'truck' : st?.moms ? 0.5 : (st?.site?.vibe ?? 0.5)
+/** The packed sleeping gear's recovery bonus — at a camp only: the cab and mom's bed are their own. */
+const _campRest = (st) => st?.truck || st?.moms ? 0 : inventorySystem.restBonus()
 /** The face the sleep timer returns to. */
 const _campHome = (st) => st.moms ? 'moms' : st.truck ? 'truck' : 'camp'
 
@@ -4840,7 +4856,7 @@ function _sleepAtCamp () {
   const vibe = _campVibe(_campUi)
   const back = _campHome(_campUi)
   _campFade(() => {
-    daySystem.sleep(hours, vibe)
+    daySystem.sleep(hours, vibe, _campRest(_campUi))
     // FEAT-33: you turned the key off to make camp, so you wake to a dead truck and start the
     // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
     // and on a worn engine it is also the morning's first piece of news about what you're driving.
@@ -4892,7 +4908,7 @@ function _syncSleepRow () {
   const full  = daySystem.fullEnergyH()
   const floor = daySystem.debtFloorH()
   const now   = daySystem.energyH()
-  const wake  = daySystem.previewWake(h, vibe)
+  const wake  = daySystem.previewWake(h, vibe, _campRest(_campUi))
   const wh    = daySystem.previewWakeHour(h)
 
   // Map an energy value to a bar fraction, and lay a segment between the zero tick and the value.

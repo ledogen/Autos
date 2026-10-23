@@ -68,6 +68,11 @@ export class InventorySystem {
             + (e.contents ?? []).reduce((k, id) => k + ITEMS[id].massKg, 0), 0)
     }
     equippedIndex () { return runInventory.entries.findIndex(e => e.equipped) }
+    /** Camp sleep's recovery bonus: the `rest` of everything in the equipped pack (items.md §2b). */
+    restBonus () {
+        const p = runInventory.entries.find(e => e.equipped)
+        return (p?.contents ?? []).reduce((s, id) => s + (ITEMS[id].rest ?? 0), 0)
+    }
     pending () { return runInventory.pending }
     nameOf (id) { return ITEMS[id]?.name ?? id }
     usable (id) { const h = ITEMS[id]?.use; return !!(h && this._effects[h]) }

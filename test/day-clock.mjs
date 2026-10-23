@@ -172,6 +172,31 @@ const mkDay = () => {
   DAY_PARAMS.dayLengthSec = 1440
 }
 
+// ── 6b. Energy drink and sleeping gear (owner, 2026-10-16/20) ─────────────────────────────────────
+{
+  const { sys } = mkDay()
+  sys.start()
+  DAY_PARAMS.dayLengthSec = 24
+  sys.update(13)                                 // 3 h left
+  sys.drinkEnergy()
+  check('energy drink: +5 now, nothing owed at wake', Math.abs(sys.energyH() - 8) < 1e-9 && sys.coffeeDebt() === 0)
+  sys.update(3.9)
+  check('…no crash before 4 h', Math.abs(sys.energyH() - 4.1) < 1e-6, `e=${sys.energyH()}`)
+  sys.update(0.2)
+  check('…the crash lands at 4 h: −2.5 on top of the hours awake', Math.abs(sys.energyH() - 1.4) < 1e-6, `e=${sys.energyH()}`)
+  sys.drinkEnergy(); sys.advanceMinutes(240)
+  check('…a time skip lands it too', Math.abs(sys.energyH() - (1.4 + 5 - 4 - 2.5)) < 1e-6, `e=${sys.energyH()}`)
+  sys.drinkEnergy()
+  const wake = sys.previewWake(8, 0.5)
+  sys.sleep(8, 0.5)
+  sys.update(5)
+  check('…a sleep before it sleeps it off: the night is the preview, and nothing lands after',
+    Math.abs(sys.energyH() - (wake - 5)) < 1e-9, `e=${sys.energyH()} wake=${wake}`)
+  check('sleeping gear: recovery ×(1 + rest) at a camp; the cab keeps its own rate',
+    Math.abs(sys.recoveryRate(0.5, 0.15) - 2.0 * 1.15) < 1e-9 && sys.recoveryRate('truck', 0.15) === DAY_PARAMS.truckSleepRateH)
+  DAY_PARAMS.dayLengthSec = 1440
+}
+
 // ── 7. Sleep: the ratified recovery arithmetic + the loan settled at wake ───────────────────────
 {
   const { sys } = mkDay()
