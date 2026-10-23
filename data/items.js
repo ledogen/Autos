@@ -32,6 +32,10 @@ export const ITEMS = {
     // A 12 V portable inflator: a plug repair is 30 min in all with it, 2 h by hand (items.md §7).
     compressor:   { name: 'Compressor',    kind: 'tool',       massKg: 4,
                     desc: 'A little pump that runs off the lighter socket. Airs a tire up while you wait.' },
+    // A ~0.35 kg roll, 3 uses (items.md §7): 20% on a body panel, 15 min, holds for the run. The repair
+    // effect is the parts session's and isn't built, so for now it is carried only.
+    ductTape:     { name: 'Duct tape',     kind: 'consumable', massKg: 0.35,
+                    desc: 'Holds a panel on for the rest of the run. Not pretty, but it holds.' },
     // A low steel trolley jack, ~15 kg [DEFAULT]: takes 1 h off the spare change, never a plug repair
     // (owner, 2026-10-22 — "you don't need to jack to plug"). The time saving is the parts session's.
     quickJack:    { name: 'Quick-jack',    kind: 'tool',       massKg: 15,
