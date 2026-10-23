@@ -263,12 +263,24 @@ dare; **fragile on remaining health** (unchanged); papers on time against a dead
 freight pay per piece / per kg delivered, the tip scaled by the amount; **fragile's base is half
 guaranteed, half × health**, and its tip moves from condition to speed. (3) **The giver has a limited
 stock**; the player picks the load; a bonus gate prints as a count or kg and only rolls when the stock
-can meet it. (4) **Freight is units:** the bed fills visibly; indivisible loads keep their mass. (5)
+can meet it. (4) ~~**Freight is units:** the bed fills visibly; indivisible loads keep their mass.~~ *(Reversed 2026-10-22: every freight load is as-built.)* (5)
 **Papers: any N customers, a deadline from the shortest route through N, the route ends at N.** (6)
 **The HUD strip shows each type's rank axis and the live letter**; fragile adds a health bar and a
 combined-g bar. (7) **Giver traits**, 0–2 per offer. (8) **Rank thresholds step by region, never by
 day** — the day ramp retires (SM-INV-2 below). Tickets FEAT-138 to FEAT-142 and a re-scoped FEAT-114.
 Provenance: [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md).
+
+**Owner amendment 2026-10-22 — freight is posted, not picked.** Reverses "the player loading what
+they dare" in (1) and the freight half of (3). Someone needs a thing shipped, so they post it: the
+load and its mass are the offer's, and **there is no freight picker**. The kg tiers stay **internal**:
+they only decide which bonus item a load may carry (a heavy load can carry a better one). The player
+sees the payload weight and the item, never a tier: *"Bonus: X — on delivery"*. Freight is **binary
+— delivered or not**: no letter on the HUD strip, no letter on the result card. Pay is unchanged.
+Haul is untouched. **Same-day owner answers:** freight deeds read the **internal** letter
+(`pointsFor`); every freight load keeps **one as-built mass**, which reverses (4) above (FEAT-140
+cancelled); a light load (under 285 kg) carrying no item is intended, and freight's future is a
+roster of purpose-designed **heavy** loads. Still open: Wholesale on freight (FEAT-142 builds it
+haul-only). Provenance: amendment §2b.
 
 **Companion design notes** (downstream of this bible; where they disagree with it, *it* wins):
 [missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag and bridge-site main missions),
@@ -482,7 +494,8 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > holds. Instead the thresholds are a table keyed by **type and region**: within a region the stock
   > truck tops out around B or A and **that region's upgrades reach S**; the next region resets the
   > player to B/A until its upgrades. Freight's kg letters step up (R2/R3 S past the stock truck's legal
-  > limit); haul's counts step through each region's cargo (later S past a brimming stock bed — the bet
+  > limit; *internal since 2026-10-22 — on freight the step shows as the heavier postings an upgraded
+  > truck can accept and the better items they carry, never as a letter*); haul's counts step through each region's cargo (later S past a brimming stock bed — the bet
   > is to over-fill); fragile steps through more sensitive cargo, never its health letters; courier and
   > papers may tighten slightly per region (tentative). Costs still escalate with the day (Q9A). This
   > is the clause's own logic — *a better car raises payout* — with the region step making the next
@@ -679,8 +692,9 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > deadline under the lock rule. **The two cards are a pair:** the offer card quotes one number,
   > *Base pay*, the guaranteed amount; the result card answers it in the same words — *Base pay*,
   > then *Tip* — and the tip is never mentioned on the offer. *(One exception, owner 2026-10-21: the
-  > "Big tipper" giver trait names it by design — FEAT-142. Haul and freight quote a **rate** — "Base
-  > pay $0.40 a bundle" — because the load is picked after the card; the picker shows the total.)*
+  > "Big tipper" giver trait names it by design — FEAT-142. Haul quotes a **rate** — "Base
+  > pay $0.40 a bundle" — because the load is picked after the card; the picker shows the total.
+  > Freight's load is posted, so its card quotes one Base pay number (owner, 2026-10-22).)*
 - **SM-INV-5 — Wear accrues on time + intensity, never distance.** Hours and engine torque
   are both integrated; wear compounds with how hard you drive, not just how long. This is
   the lever that separates intense mission driving from casual point-to-point freeroam
@@ -843,9 +857,18 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > retire, because each letter now carries its own axis. Two giver traits (FEAT-142) touch deeds:
   > **Off the books** pays more and gives none; **The right thing to do** pays less and adds **½** on
   > top of the job's own, **only at C or better**, so a deed is still earned by driving. That ½ counts
-  > toward FEAT-103's six-deed gate. On freight the letter is chosen at the dock and kept by surviving
-  > the drive — carrying an overload safely is the competence it measures. Provenance:
+  > toward FEAT-103's six-deed gate. ~~On freight the letter is chosen at the dock and kept by surviving
+  > the drive — carrying an overload safely is the competence it measures.~~ Provenance:
   > [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md) §2, §10.
+  >
+  > **Amendment [OWNER 2026-10-22] — freight deeds read the internal letter.** Owner: *"use internal
+  > letter."* Freight is posted with its load and shows no letter (amendment §2b), so its deed is
+  > `pointsFor` on the **internal** kg letter, as the code already does. **The tension is accepted
+  > knowingly:** the point is set by the posting the player chose to take, not by a load they picked
+  > (missions.md: points are *"a measure of competence, not of the offer you happened to be given"*).
+  > Choosing a heavy job and surviving it is the competence. A flat deed on delivery was rejected: it
+  > would make bare completion progress. By extension (flagged, not asked directly), **The right
+  > thing to do**'s +½ at C or better reads the same internal letter on freight.
 - **SM-INV-15 — No in-run vehicle purchase.** [RATIFIED 2026-07-29] **You cannot buy a different car
   during a run.** Parts, yes — deeply. Vehicles, no. Three reasons, all owner-stated, and worth
   keeping in the code comment that will inevitably ask *"why not just add a dealership"*:
@@ -990,10 +1013,19 @@ than cosmetic meaning. Item rewards die with the run like everything else (SM-IN
 and clearance (main missions) are separate axes; **rank is computed per-axis** so the letter — and
 therefore the bonus objective — works on any job.
 
-> **Amendment [OWNER 2026-10-21] — on haul and freight the gate prints as a number.** The letter *is*
-> a count or a weight there, so the card prints the threshold behind it ("deliver 10+", "400 kg+"),
+> **Amendment [OWNER 2026-10-21] — on haul ~~and freight~~ the gate prints as a number.** The letter *is*
+> a count ~~or a weight~~ there, so the card prints the threshold behind it ("deliver 10+"~~, "400 kg+"~~),
 > and a bonus only rolls when the giver's stock can meet its gate. Capacity caps rank: a car can't
 > carry enough to reach the upper counts, so no vehicle needs barring from any reward. FEAT-114.
+
+> **Amendment [OWNER 2026-10-22] — a freight bonus is earned on delivery.** Freight's load is posted,
+> so its kg tier is fixed before the drive. The tier stays internal and only picks which items the
+> load may carry. The card says *"Bonus: X — on delivery"*, with no rank and no weight. The gate can
+> stay a letter in code: the offer only rolls a gate the posted mass meets. This bends the 10-08 rule
+> ("its earning rank is declared up front") for freight only: the earning condition declared is
+> delivery. A load under the C line (285 kg) carries no item, **on purpose** (owner, same day):
+> freight is to be about heavy weight, and its light loads were the wrong roster. Provenance:
+> amendment §2b.
 
 > **Amendment [RATIFIED 2026-08-17] — non-margin mission types price themselves.** Freight's
 > flat-rate payout was flagged here as an unratified bend of SM-INV-4; it is now ratified, as a
@@ -1028,12 +1060,12 @@ therefore the bonus objective — works on any job.
 > |---|---|---|---|
 > | Courier | time vs par | speed | guaranteed |
 > | Haul | pieces delivered (absolute, per cargo; R1 S = a brimming stock bed) | speed × amount delivered | per piece delivered |
-> | Freight | kg delivered (R1 S = 125 % of the rated payload, provisional) | speed × amount delivered | per kg delivered |
+> | Freight | kg delivered (R1 S = 125 % of the rated payload, provisional) — **internal since 2026-10-22, never shown** | speed × amount delivered | per kg delivered |
 > | Fragile | remaining health | **speed** | **half guaranteed, half × health** |
 > | Papers | time; the route ends at N; deadline = par × 1.5 | speed + accuracy money | the fare |
 >
-> Freight is no longer a margin job: the player loads what they dare from the giver's stock, so the
-> letter is chosen at the dock and **kept** by surviving the drive. The guaranteed half answers the
+> Freight is no longer a margin job: ~~the player loads what they dare from the giver's stock, so the
+> letter is chosen at the dock and **kept** by surviving the drive~~ *(reversed 2026-10-22, below)*. The guaranteed half answers the
 > 10-15 objection — damaged cargo is still worth delivering; destroyed cargo still fails and pays
 > nothing. Every pay term reads the count, kg, health or time, never the letter (SM-INV-4 holds). Base
 > pay is still × par. Provenance: [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md); FEAT-138.
@@ -1045,6 +1077,13 @@ therefore the bonus objective — works on any job.
 > through the wear and crashes that caused it, and the purchase must never be a crippling gamble. The
 > picker caps the load at what the wallet affords. Freight is not bought: its overload cost is the
 > wear of carrying it. Provenance: amendment §5b; FEAT-114.
+>
+> **Freight is posted, not picked (owner, 2026-10-22).** The poster sets the load; there is no freight
+> picker and no freight stock. The kg tier is internal: it picks the bonus item and is never shown.
+> Strapped cargo can't be lost, so freight is **binary — delivered or not**: no letter on the strip or
+> the result card, and the bonus is earned on delivery. Pay is unchanged (base per kg + the speed tip),
+> and since the load is known at posting the card quotes one Base pay number. Provenance: amendment
+> §2b; FEAT-114, FEAT-139.
 
 > **Amendment [OWNER 2026-10-08] — $0-cash missions are retired.** Every job pays some cash, even for
 > bare completion (SM-INV-4's base pay). A bonus item rides **on top of** cash, never instead of it;

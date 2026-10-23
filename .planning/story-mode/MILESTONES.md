@@ -574,10 +574,10 @@ owner's name for it.
 | ~~Ratchet straps as an item for loose haul loads~~ | FEAT-110 | ✅ closed — cancelled 2026-10-14: straps are not an item |
 | Load verdicts — fits / warning / overload for the truck as configured | FEAT-112 | **done** 2026-10-16 |
 | Delivery deadlines for every job; the mission clock on world time | FEAT-113 | **done** 2026-10-16 |
-| Haul and freight — the player picks the load from the giver's stock; count / kg bonus gates | FEAT-114 | open — **re-scoped 2026-10-21**: freight too, stock-capped, rate bonus retired; needs FEAT-138 |
+| Haul — the player picks the load from the giver's stock; count bonus gates | FEAT-114 | open — **re-scoped 2026-10-21**: stock-capped, rate bonus retired; needs FEAT-138. **2026-10-22: haul only** — freight is posted, not picked (amendment §2b) |
 | Every type ranks on its own axis; speed is the tip; thresholds step by region | FEAT-138 | open — the scoring core of the 2026-10-21 amendment |
 | The HUD strip shows each type's rank axis and the live letter (+ fragile health and combined-g bars) | FEAT-139 | open — needs FEAT-138 |
-| Freight is a unit and a count; the bed fills visibly; light-freight roster pass | FEAT-140 | open — needs FEAT-114 |
+| ~~Freight is a unit and a count; the bed fills visibly; light-freight roster pass~~ | FEAT-140 | ✅ closed — **cancelled 2026-10-22** (owner): freight is posted, every load as-built; the roster becomes "design heavy freight loads", owner-owned in cargo.md (amendment §2b) |
 | Papers — any N customers against a deadline from the shortest route | FEAT-141 | open — needs FEAT-138 |
 | Giver traits — 0–2 per offer on the card | FEAT-142 | open — needs FEAT-138 |
 | Bed upgrades as parts — roof rack, flatbed, stake bed, extended bed, light bar | FEAT-115 | open — needs FEAT-104, FEAT-112 |
@@ -596,9 +596,9 @@ Take the first item that is not blocked. Each one is a ticket with its own accep
 | 3 | ~~**FEAT-113** deadlines + world-time clock~~ | done 2026-10-16 | — |
 | 4 | ~~**FEAT-112** load verdicts~~ | done 2026-10-16 | — |
 | 5 | **FEAT-138** per-type rank axes | the 2026-10-21 scoring core; everything below builds on it | — |
-| 5a | **FEAT-114** stock + load picker + count gates | first user of the verdict limits; haul and freight | FEAT-138 |
+| 5a | **FEAT-114** stock + load picker + count gates | first user of the verdict limits; haul only (2026-10-22) | FEAT-138 |
 | 5b | **FEAT-139** HUD strip, **FEAT-141** papers, **FEAT-142** giver traits | independent of each other | FEAT-138 |
-| 5c | **FEAT-140** freight units | freight letters are empty until this ships | FEAT-114 |
+| 5c | ~~**FEAT-140** freight units~~ | cancelled 2026-10-22: loads stay as-built (§2b) | — |
 | 6 | **FEAT-122** inventory | where purchases and FEAT-67's stubbed reward grants land; parallel to 4–5 (owner, 2026-10-16) | — built on `feature/feat-122`, merge pending |
 | 6b | **FEAT-104** minimal shop | the venue for every part and consumable | FEAT-122 |
 | 7 | **FEAT-115** bed upgrades, **FEAT-116** cargo protection | parts and consumables to sell | FEAT-104, FEAT-112 / FEAT-97 |

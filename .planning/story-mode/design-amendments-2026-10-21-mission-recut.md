@@ -8,6 +8,10 @@ the decisions are not. Items marked **OPEN** carry a recommendation and are not 
 > buildable work is FEAT-138 to FEAT-142 plus a rewritten FEAT-114 (§13). This file is the provenance
 > record and the fuller argument. One item stays open: Larry's reward pool (§7). If this file ever
 > disagrees with DESIGN.md, **DESIGN.md wins.**
+>
+> **2026-10-22: §2b reverses the freight picker.** Freight is posted with its load; the player never
+> picks it, and never sees a freight letter. §2b is folded into DESIGN.md. The owner answered three
+> of its four questions the same day (§2b, end); Wholesale on freight stays open.
 
 **This is a planning pass, not a build.** §13 is the ticket plan, sliced so each ticket can be built
 on its own.
@@ -33,17 +37,18 @@ unlock the bonus rewards."*
 | # | Amendment | Status | Changes | Ticket |
 |---|---|---|---|---|
 | 1 | Haul ranks on the count delivered, on absolute thresholds per cargo | RULED | Replaces the shipped time + load blend (`haulGrade`) | FEAT-138 |
-| 2 | Freight ranks on kg delivered; the player picks the load ("load what you dare"); S ≈ 125 % of the rated payload | RULED | Freight is no longer a margin job; the time slack retires | FEAT-114, FEAT-138 |
+| 2 | Freight ranks on kg delivered; the player picks the load ("load what you dare"); S ≈ 125 % of the rated payload | RULED, **picker and visible letter reversed by 2b** | Freight is no longer a margin job; the time slack retires | FEAT-114, FEAT-138 |
+| 2b | **Freight is posted, not picked (2026-10-22).** The load is the poster's. The kg tiers stay internal and only choose which items the load can carry. The bonus is earned on delivery. No freight letter anywhere the player looks. Deeds read the internal letter; loads stay as-built; light loads carry no item; heavy loads are to be designed | RULED (Wholesale on freight OPEN) | **Reverses** 2's "load what you dare", 5's freight picker and stock, 6's freight kg gate, 9's freight letter, 11's units | FEAT-114, FEAT-139; FEAT-140 cancelled |
 | 3 | Every type tips on speed (papers also keep accuracy money) | RULED | **Reverses** haul's "no speed tip" (10-16) and fragile's condition tip (10-14) | FEAT-138 |
 | 4 | Fragile base pay: half guaranteed, half × health | RULED | **Reverses** "condition does not cut the base" (10-15) | FEAT-138 |
-| 5 | The giver has a limited stock; it can be below S. Wholesale is the rare big stock | RULED | Extends FEAT-114's picker to freight and caps it at the stock | FEAT-114 |
+| 5 | The giver has a limited stock; it can be below S. Wholesale is the rare big stock | RULED; **haul only since 2b** | Extends FEAT-114's picker to freight and caps it at the stock | FEAT-114 |
 | 5b | Haul stock is bought at half the base pay per piece (2026-10-22) | RULED | Loading past S stops being free; an expired haul costs its purchase | FEAT-114 |
-| 6 | Bonus gates print as a count or a weight, and roll only when the stock can meet them | RULED | The gate mechanism is unchanged; only the card text and the roll condition change | FEAT-114 |
+| 6 | Bonus gates print as a count or a weight, and roll only when the stock can meet them | RULED; **freight prints "on delivery" since 2b** | The gate mechanism is unchanged; only the card text and the roll condition change | FEAT-114 |
 | 7 | Papers: a deadline returns, any N customers count, the time comes from the shortest route through N, the GPS draws it, the route ends at N | RULED | **Reverses** "no time limits" (09-30) for papers, and per-tier customer placement | FEAT-141 |
 | 8 | The player may pick any unlocked paper route size | RULED | Larry posts more than the top rung | FEAT-141 |
-| 9 | The HUD strip shows each type's rank axis **and** the live letter. Fragile adds a health bar and a combined-g bar | RULED | **Reverses** "no number on the HUD" for fragile and freight cargo | FEAT-139 |
+| 9 | The HUD strip shows each type's rank axis **and** the live letter. Fragile adds a health bar and a combined-g bar | RULED; **freight shows no letter since 2b** | **Reverses** "no number on the HUD" for fragile and freight cargo | FEAT-139 |
 | 10 | Giver traits, 0–2 per offer, bottom-left of the card | RULED | New. **There is no random pay roll today**, so traits add variety; they replace nothing | FEAT-142 |
-| 11 | A bigger load is more units in the bed; indivisible loads keep their mass | RULED | Freight loads are built as one mass each today | FEAT-140 |
+| 11 | A bigger load is more units in the bed; indivisible loads keep their mass | RULED; **reversed by 2b: every freight load is as-built; FEAT-140 cancelled** | Freight loads are built as one mass each today | FEAT-140 |
 | 12 | **Rank thresholds step by region, never by day.** The stock truck tops out around B/A in a region; that region's upgrades reach S | RULED | **Retires** the day ramp on the time thresholds (`rankThresholds(day)`); re-keys SM-INV-2's 08-01 amendment | FEAT-138 |
 
 ---
@@ -72,6 +77,10 @@ bundles as the expected answer. A 85 %, B 70 %, C 55 % of that count, D below. T
 text's guess of about 15.
 
 ## 2. Freight — kg delivered, load what you dare
+
+> **Superseded in part by §2b (owner, 2026-10-22).** The player no longer picks the load, and the kg
+> letter is no longer shown. The kg table below survives as the **internal** tier that picks the
+> bonus item. The text is kept as history.
 
 **RULED.** Freight ranks on the kg delivered. The giver has a stock, and the player loads as much as
 they dare. Freight stays strapped (welded), so it can't lose cargo: **the rank is chosen at the dock,
@@ -108,6 +117,79 @@ Ranger's FEAT-112 limits (570 kg soft, 820 kg hard, tire pops from 600 kg):
 - `FREIGHT_TIP_MULT` (× 0.5) and `FREIGHT_PAY_PER_KG` **stay, as FEAT-69 balancing knobs**, not design
   rules (owner, tentatively).
 
+## 2b. Freight is posted, not picked (owner, 2026-10-22)
+
+**RULED.** The owner, verbatim:
+
+> *"side note about freight missions. Fundamentally all we're changing is we're gating certain item
+> rewards behind certain cargo sizes my original intention was somebody needs something shipped so
+> they post a mission about it. That interferes with the freight picker mechanic. I think freight
+> should just be posted and it should show you an item reward and it won't be gated behind a tier. It
+> will just be gated upon completion. We can keep the tiers internal and use that to determine the
+> logic of what items can be selected. But there's no reason to tell the player this is a B tier
+> cargo. If you finish with B tier or better, you get a reward. We can just say finish the mission
+> and get this reward. To the player, they just see the payload weight and the item and they make the
+> judgment call. There isn't really a tier to the gameplay for us to give them a tier card at the end
+> of the mission or anything since it's only evaluated binary delivered or not"*
+
+**What it means:**
+
+- **Someone needs a thing shipped, so they post it.** The load and its mass come from the offer. There
+  is **no freight load picker** and no freight stock.
+- **The kg tiers stay, but internal.** They decide which bonus items a load of that mass may carry. A
+  heavy load can carry a better item. The §2 table (712 / 570 / 428 / 285 kg, still provisional) is
+  now that item-tier table.
+- **The player never sees a freight tier or letter.** The card shows the payload weight and the item.
+  The bonus line reads *"Bonus: X — on delivery"*.
+- **Freight is binary: delivered or not.** Strapped cargo can't be lost on the road, so the kg that
+  arrives is the kg posted. Delivery earns the item. There is no letter on the HUD strip (§9) and no
+  letter or tier on the result card.
+- **Pay is unchanged:** base per kg + the speed tip (§3, §4). Because the load is known at posting,
+  the card can quote **one Base pay number** again, not a rate (§4's rate stays for haul). Par and
+  the deadline are set at posting, as before the picker.
+- **Haul is not touched.** Haul keeps the player-picked count (FEAT-114), the count letter and the
+  "deliver N+" gates.
+
+**For the implementer:** the bonus gate can stay a letter inside. The offer only rolls a gate the
+posted mass already meets, so `bonusEarned` is always true on delivery. Nothing new is needed there.
+
+**Reverses:**
+- §2: "load what you dare", and "the rank is chosen at the dock". The letter is now set by the
+  poster, and never shown.
+- §5: the freight half of the stock and picker. FEAT-114 is haul-only again.
+- §6: freight's "400 kg+" gate text. Freight prints "on delivery".
+- §9: the freight strip `Freight · 710 kg · S`. Freight shows no letter.
+- §11: units and "the picker chooses the count". Every freight load keeps one as-built mass
+  (answer 2 below).
+- §12.14 for freight: deeds now read the internal letter (answer 1 below).
+
+**The owner's answers (2026-10-22).** Three of the four questions are ruled; one stays open.
+
+1. **Good deeds on freight — RULED: the internal letter.** Owner: *"use internal letter."* Freight
+   deeds are `pointsFor(the internal kg letter)`: 1 at B+, ½ at C, 0 at D. The code already does
+   this (FEAT-138). **The SM-INV-14 tension is accepted knowingly.** The point is now set by the
+   posting you chose to take, not by a load you picked. missions.md reads SM-INV-14 as *"points are a
+   measure of competence, not of the offer you happened to be given."* Choosing a heavy job and
+   surviving it is the competence freight measures.
+   - **By extension (not asked directly; flagged):** the "The right thing to do" trait's +½ at C or
+     better reads the same internal letter on freight. A light (internal D) charity freight adds
+     nothing.
+   - *Options not taken:* a flat deed on delivery (would make bare completion progress); no deed
+     from freight.
+2. **FEAT-140, freight units — RULED: as-built.** Owner: *"as-built for now is simpler."* Every
+   freight load keeps one as-built mass. Heavy internal tiers come from heavy loads, never from a
+   bigger count. FEAT-140 (units, the bed stacker) is cancelled as superseded. "Visible load, real
+   mass" holds, because each load is modelled at its real mass.
+3. **Wholesale on freight (FEAT-142) — OPEN.** It was "a big stock at a lower rate", and freight has no
+   stock now. Either it is haul-only, or on freight it means "a heavier posting at a lower rate per
+   kg". FEAT-142 builds it haul-only until the owner rules. Recommendation: haul-only, the simplest.
+4. **Light freight loads — RULED: no item is intended.** Owner: *"Yes, I've realized I need to design
+   a bunch of heavy freight items and make this mission type truly about heavy weight. I just
+   selected inappropriate loads before."* A load under 285 kg (internal D) carries no bonus item,
+   under the 10-08 rule. **Freight's future is a roster of purpose-designed HEAVY loads.** §11's
+   light-freight roster pass becomes "design heavy freight loads": owner-owned work, recorded in
+   cargo.md (Rulings 2026-10-22). Each new load mints its own asset ticket.
+
 ## 3. The tip is speed on every type
 
 **RULED.** Every type tips on the time line against par. Papers also keep their accuracy money (§7).
@@ -137,9 +219,13 @@ Ranger's FEAT-112 limits (570 kg soft, 820 kg hard, tire pops from 600 kg):
   jobs. So "per piece" means the piece multiplies the par-based line; it is not a flat fee.
 - **The offer card can't quote one guaranteed number** on haul and freight, because the load isn't
   picked yet. **RULED:** the card quotes a rate ("Base pay $0.40 a bundle"), and the
-  picker shows the total as the count changes.
+  picker shows the total as the count changes. *(2026-10-22, §2b: haul only. Freight's load is
+  posted, so its card quotes one Base pay number.)*
 
 ## 5. Stock and the load picker
+
+> **Haul only since §2b (owner, 2026-10-22).** Freight has no stock and no picker: the poster sets
+> the load. Read "haul or freight" below as "haul".
 
 **RULED.** A haul or freight giver has a limited stock. The player picks how much to load, from 1 up to
 the smaller of the stock and the truck's hard limit. This extends FEAT-114 (haul quantity picker) to
@@ -172,6 +258,9 @@ delivery pays per piece as §4 says.
   what makes the spare pieces a choice.)
 
 ## 6. Bonus items on haul and freight
+
+> **Freight changed by §2b (owner, 2026-10-22).** A freight bonus prints *"— on delivery"*, never
+> a weight. It only rolls when the posted load's internal tier meets its gate.
 
 **RULED.** The bonus gate prints as a number: "Bonus: tie-down kit — deliver 10+" or "400 kg+". A bonus
 only rolls when the stock can meet its gate.
@@ -232,7 +321,7 @@ Base is half guaranteed, half × health (§4).
 |---|---|---|
 | Courier | unchanged: the FEAT-87 boundary bar + letter | the bar itself |
 | Haul | `Haul · 12 aboard · A` | `lose 2 → B` |
-| Freight | `Freight · 710 kg · S` | the due time (fixed while driving: freight can't lose cargo) |
+| Freight | ~~`Freight · 710 kg · S`~~ **§2b:** `Freight · 710 kg`, no letter | the due time (fixed while driving: freight can't lose cargo) |
 | Fragile | health bar + letter | **a live accelerometer** |
 | Papers | `Papers · 3/4` + the FEAT-87 boundary bar + letter | the bar; the due time as a clock time |
 
@@ -284,6 +373,10 @@ job pays the same dollars per kilometre right now, and traits are how one stands
 - **RULED:** that extra point counts toward FEAT-103's six-deed boss gate. A deed is a deed.
 
 ## 11. RULED — how a bigger load is shown
+
+> **Reversed by §2b (owner, 2026-10-22): as-built.** There is no picker, and every freight load keeps
+> one as-built mass (*"as-built for now is simpler"*). FEAT-140 is cancelled. The light-freight roster
+> pass below becomes "design heavy freight loads" (§2b answer 4). "Visible load, real mass" stands.
 
 The owner's question: modify the cargo's existing mass, or fill the bed with more and more cases,
 boxes or pallets as the weight rises?
@@ -354,7 +447,8 @@ region, never the player's truck.
 1. **Haul S** = a brimming stock-Ranger bed, measured; the owner expects 22–26 firewood bundles. A, B
    and C at 85, 70 and 55 % of it (§1). RULED.
 2. **Freight letters** at 125 / 100 / 75 / 50 % of the 570 kg rating (§2). **PROVISIONAL:** the owner
-   play-tests and signs off once unit cargo exists.
+   play-tests and signs off once unit cargo exists. *(2026-10-22, §2b: internal item tiers, never
+   shown.)*
 3. **Freight knobs** stay as FEAT-69 balancing knobs (§2). RULED, tentatively.
 4. **The card** quotes a rate; the picker shows the total (§4). RULED.
 5. **The yard rate bonus retires** in favour of traits (§5). RULED.
@@ -364,10 +458,11 @@ region, never the player's truck.
 9. **Ladder:** a finished round at B or better advances (§7). RULED.
 10. **No papers bonus for now.** Larry's reward pool is OPEN, a character question (§7).
 11. **The right thing to do:** +½ point at C or better, and it counts toward FEAT-103 (§10). RULED.
-12. **Units** for divisible freight; indivisible loads keep their mass; a freight roster pass follows
+12. ~~**Units** for divisible freight;~~ *(reversed 2026-10-22, §2b: every load as-built)* indivisible loads keep their mass; a freight roster pass follows
     (§11). RULED.
 13. **The difficulty ramp is per region, never per day** (§11b). RULED.
 14. **Good deeds use `pointsFor(letter)` on every type.** The share and health bands retire. RULED.
+    *(2026-10-22: freight has no player letter now; its deeds read the internal letter, §2b answer 1.)*
 15. **A one-piece fetch** (FEAT-132's stranded motorist) ranks on time, like courier. The owner: a
     stranded motorist never gives a rare reward, so an easy rank there costs nothing. RULED.
 
@@ -379,9 +474,9 @@ list.
 | # | Ticket | Scope | Blocked on |
 |---|---|---|---|
 | 1 | **FEAT-138** scoring core | Per-type grades (count, kg, health, time); the region threshold table; the day ramp retires; the speed tip on haul, freight and fragile; fragile's half-guaranteed base; deeds through `pointsFor`; the one-piece fetch on time | — |
-| 2 | **FEAT-114** (rewritten) stock + load picker + count gates | The giver's stock; the picker for haul and freight; the verdict on the picked load; par and deadline after the pick; the rate on the card; bonus gates printed as counts or kg, rolled only when the stock meets them; the yard rate bonus retires | FEAT-138 |
+| 2 | **FEAT-114** (rewritten) stock + load picker + count gates | *(§2b: haul only; freight keeps only its "on delivery" bonus line.)* The giver's stock; the picker for haul and freight; the verdict on the picked load; par and deadline after the pick; the rate on the card; bonus gates printed as counts or kg, rolled only when the stock meets them; the yard rate bonus retires | FEAT-138 |
 | 3 | **FEAT-139** the HUD strip per type | Rank axis + live letter on every type; the fragile health bar; the combined-g bar with its damage and destruction marks | FEAT-138 |
-| 4 | **FEAT-140** freight units | Unit cargo + count; a procedural bed stacker; the freight roster pass | FEAT-114 |
+| 4 | ~~**FEAT-140** freight units~~ | ~~Unit cargo + count; a procedural bed stacker; the freight roster pass.~~ *Cancelled 2026-10-22 (§2b): loads stay as-built; the roster becomes "design heavy freight loads" (cargo.md).* | — |
 | 5 | **FEAT-141** papers deadline re-cut | Any-N customers; the subset plotter; the deadline; end at N; route-size choice; the GPS route; the B-or-better ladder; "bell" → "deadline" | FEAT-138 |
 | 6 | **FEAT-142** giver traits | The TRAITS table, its roll stream, the card's bottom-left slot, term changes at accept and settle | FEAT-138 |
 
@@ -440,5 +535,13 @@ Every earlier ruling this file touches. **R** = reverses a ratified ruling or sh
 | SM-INV-14: deeds are competence, impossible to inflate | DESIGN.md:766-798 | 08-01 | 2, 10 | A |
 | SM-INV-2: the performance ramp lives in the thresholds | DESIGN.md:445; economy.js:210 | 08-01 | 12.13 | A |
 | Offers are the same for every vehicle | amendments-10-14:69; feat-112 | 10-14 | 1 | kept |
-| The freight mass menu needs ratification | feat-96; items.md:110 | 08-18 / 10-06 | 5 | W — this ratifies it |
+| The freight mass menu needs ratification | feat-96; items.md:110 | 08-18 / 10-06 | 5, 2b | W — this ratified it; **§2b (10-22) narrows it**: the choice is between posted offers (each a fixed load), never a quantity at the dock |
 | Courier's strip is described as a "countdown" | (conversation wording) | — | 9 | W — it is the no-digit boundary bar |
+| Freight: the player picks the load ("load what you dare") | this file §2, §5; DESIGN.md; missions.md; feat-114 | 10-21 | 2b | R |
+| Freight's letter is chosen at the dock and shown | this file §2, §9; feat-139; DESIGN.md SM-INV-14 amendment | 10-21 | 2b | R |
+| Freight's bonus gate prints as a weight ("400 kg+") | this file §6; DESIGN.md bonus-gate amendment; feat-114 | 10-21 | 2b | R |
+| Haul and freight quote a rate on the card | DESIGN.md SM-INV-4 card pair; this file §4 | 10-21 | 2b | A — haul only |
+| Freight deeds via `pointsFor(letter)` | this file §12.14; feat-138; DESIGN.md SM-INV-14 amendment | 10-21 | 2b | A — the internal letter (owner 10-22); SM-INV-14 tension accepted |
+| Freight is units; the picker chooses the count | this file §11; feat-140; cargo.md 10-21 rulings | 10-21 | 2b | R — as-built (owner 10-22); FEAT-140 cancelled |
+| Light freight gets a roster pass (drop / move / unitise) | this file §11; feat-140; cargo.md | 10-21 | 2b | A — becomes "design heavy freight loads" (owner 10-22) |
+| The bonus's earning rank is declared on the card | DESIGN.md (10-08 amendment) | 10-08 | 2b | A — freight declares "on delivery" |

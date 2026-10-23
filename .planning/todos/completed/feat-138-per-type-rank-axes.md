@@ -109,3 +109,20 @@ truck:
 - **"The day, in plain words":** courier pay is untouched, and the break-even checks in
   `test/economy.mjs` §1 still pass.
 - The FEAT-87 rank timer still draws time bands on haul/freight/fragile. FEAT-139 re-cuts the strip.
+
+## Addendum (owner, 2026-10-22) — the freight kg letter becomes internal
+
+Amendment §2b: freight is **posted, not picked**. The poster sets the load, so its kg letter is fixed
+before the drive and is **never shown**. It only decides which bonus items the load may carry.
+
+- What this ticket shipped stays: `rankTable('freight', …)` and `amountGrade` on `cargoKg` now read
+  as the internal item tier. Pay is unchanged.
+- **Code follow-ups** (none belong to this closed ticket):
+  - The freight offer card's bonus line reads *"— on delivery"* and only rolls a gate the posted mass
+    meets → FEAT-114 (already in the `gateLine` work on this branch).
+  - No freight letter on the HUD strip, no FEAT-87 bar on freight, no letter or tier on the freight
+    result card → FEAT-139.
+  - Freight deeds go through `pointsFor(letter)` on the internal letter. **Ruled the same day**
+    (owner: *"use internal letter"*), with the SM-INV-14 tension accepted. No code change.
+  - Every freight load stays as-built (FEAT-140 cancelled), so `rankTable('freight', …)` reads the
+    posted load's own mass. A load under 285 kg carries no bonus item, on purpose.

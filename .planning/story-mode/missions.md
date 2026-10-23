@@ -444,6 +444,15 @@ truck and what the truck does to the cargo**.
 > §3b and §3c below are live again as each type's reasoning, except where this block overrides
 > them: §3b's suspension-telemetry signal and §3c's flat-rate pricing.
 
+> **[AMENDED 2026-10-22, owner] Freight is posted, not picked.** The poster sets the load; there is
+> no freight picker or stock. The kg tier below is **internal**: it picks the bonus item and is never
+> shown. Freight is binary, delivered or not: the card reads *"Bonus: X — on delivery"*, and no letter
+> appears on the strip or the result card. Pay is unchanged. Haul is untouched. Overrides the 10-21
+> block's freight picker, freight letter and kg gate. Same-day owner answers: deeds read the internal
+> letter; every load stays **as-built** (FEAT-140 cancelled, overriding "Freight is units" below); a
+> light load carries no item, and freight's future is purpose-designed **heavy** loads. Still open:
+> Wholesale on freight. Provenance: `design-amendments-2026-10-21-mission-recut.md` §2b.
+
 > **[AMENDED 2026-10-21, owner] Every type ranks on its own axis; the tip is speed.** Provenance:
 > `design-amendments-2026-10-21-mission-recut.md`. Supersedes the "What each type rewards" table in the 10-14 block below, haul's
 > "no speed tip" (10-16), and freight's "what earns the item is OPEN".
@@ -951,6 +960,10 @@ carrying it — worth watching whether that fills the hole or makes it more obvi
 ---
 
 ## Change log
+
+**2026-10-22 — owner: freight is posted, not picked.** No freight picker; the load is the poster's.
+The kg tier is internal and only picks the bonus item; the bonus is earned on delivery; no freight
+letter is shown. Provenance: `design-amendments-2026-10-21-mission-recut.md` §2b.
 
 **2026-10-21 — owner: every mission type ranks on its own axis.** Courier on time, haul on pieces
 delivered, freight on kg delivered (load what you dare), fragile on health, papers on time against a

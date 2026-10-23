@@ -31,7 +31,7 @@ except Generous and Stingy.
 | Generous | all but papers | more pay |
 | Stingy | all but papers | less pay |
 | Big tipper | all but papers | less base, a bigger tip pool |
-| Wholesale | haul, freight | a big stock, enough to fill the truck; a lower rate per piece or kg |
+| Wholesale | haul, ~~freight~~ **OPEN** | a big stock, enough to fill the truck; a lower rate per piece ~~or kg~~ |
 | Off the books | all but papers | more pay; no good-deed point, no reputation |
 | The right thing to do | all but papers | less pay; +½ good-deed point at C or better; counts toward FEAT-103 |
 
@@ -46,6 +46,13 @@ except Generous and Stingy.
 - **Big tipper reverses** DESIGN.md "the tip is never mentioned on the offer" at wording level
   (owner-accepted).
 - Wholesale replaces FEAT-114's retired yard rate bonus as the "rare, juicy haul".
+- **OPEN (owner) — Wholesale on freight.** Freight is posted with a fixed load since 2026-10-22
+  (amendment §2b); it has no stock for Wholesale to enlarge. Either Wholesale is haul-only, or on
+  freight it means "a heavier posting at a lower rate per kg" (which also lifts the internal tier,
+  so a better item). Recommendation: haul-only, the simpler one. Build it haul-only until ruled.
+- **The right thing to do on freight — RULED by extension (2026-10-22, flagged).** The owner ruled
+  that freight deeds read the internal kg letter (amendment §2b answer 1). So the trait's +½ at C or
+  better reads that same internal letter. A light (internal D) freight gets no extra ½.
 - `data/offers.js` TRAITS table; `offer-board.js` `_rollSpec` + `card()`; term changes at accept
   (`mission.js`, main.js ~4160–4178); deed and reputation changes in `economy.js` settle and FEAT-117.
 
