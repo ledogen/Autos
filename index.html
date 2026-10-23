@@ -311,7 +311,7 @@
     /* FEAT-133: the in-game cards each style their buttons their own way, so the pad's highlight is an
        outline that reads on all of them (light paper cards and dark screens alike). */
     #mission-panel .nav-focus, #paper-panel .nav-focus, #scenario-panel .nav-focus, #camp-panel .nav-focus,
-    #recovery-card .nav-focus, #inv-screen .nav-focus, #dmg-screen .nav-focus { outline: 2px solid var(--accent-system); outline-offset: 2px; }
+    #recovery-card .nav-focus, #inv-screen .nav-focus, #dmg-screen .nav-focus, #svc-screen .nav-focus { outline: 2px solid var(--accent-system); outline-offset: 2px; }
     /* FEAT-62: the scenario list — same page-swap as settings. Buttons are built from
        data/scenarios.js by main.js (_renderScenarioList); each carries a dim blurb line. */
     #mm-scenarios-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
@@ -699,6 +699,7 @@
       font: 14px var(--font);
     }
     #recovery-card .rc-opt:hover { background: rgba(255, 159, 67, 0.3); }
+    #recovery-card .rc-opt:disabled { opacity: 0.4; cursor: default; background: transparent; }
     #recovery-card .rc-end { border-color: var(--bad); color: var(--bad-text); background: rgba(255, 90, 78, 0.12); }
     /* FEAT-46: POI interaction prompt (bottom-centre) — shown while stopped within range of a
        marker cube. Orange, to match the cubes and their map icons. */
@@ -1643,9 +1644,10 @@
            zone, under 20 kph, story mode, no job or route out, no POI in reach). Z or a click
            toggles "looking for a campsite"; while looking, the vibe bar + verdict card opens beside
            it, the siting ray runs, and the brake latch can make camp. -->
-      <!-- FEAT-50: Recovery. Shows only when you have run out of fuel AND parked (nothing pops up
-           mid-coast). X or a click opens the card: today one option, a tow to the nearest place
-           that sells fuel; later tows (anytime, to the service station) are more rows here. -->
+      <!-- FEAT-50 / SM-3: Recovery — the tows. It belongs to the park zone (owner, 2026-10-22: so it
+           is clear you park to use it, rather than a chip that appears from nowhere); main.js moves it
+           in after the V and Tab rows. Always there in a story run, backgrounded until parked; X or a
+           click opens the card. -->
       <div class="hud-row" id="recovery-row" style="display:none">
         <div class="hud-icon" id="recovery-icon" title="recovery (X)">
           <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">

@@ -10,7 +10,7 @@
 //   6. Backpacks (items.md §2c): packed camp gear frees its truck slot but keeps its mass; a full
 //      pack refuses; only camp gear packs; the equipped pack keeps a bed (swap, never remove);
 //      equipping a spare moves the bed across; the equipped pack and a loaded pack can't be dropped.
-//   7. Catalog: every REWARDS id is an ITEMS id (the grant path can't miss), and no desc carries a
+//   7. Catalog: every REWARDS id but a dineIn meal is an ITEMS id (the grant path can't miss), and no desc carries a
 //      digit (SM-INV-10 — described, never scored).
 //
 // Pure node: no THREE, no DOM.
@@ -33,7 +33,7 @@ const inv = new InventorySystem({
 
 // ── 1. The starting kit ───────────────────────────────────────────────────────────────────────
 const KIT_KG = ITEMS.pack.massKg + ITEMS.bedroll.massKg
-inv.grant('spareTire')
+inv.grant('tireStandard')
 inv.start()
 const kit = inv.list()
 check('start() resets to the kit: one slot, the equipped Pack holding the bedroll', inv.slotsUsed() === 1
@@ -46,28 +46,28 @@ inv.grant('coffee'); inv.grant('coffee', 2)
 check('consumables stack: 3 coffees = 1 slot', inv.slotsUsed() === 2 && inv.list()[1].n === 3)
 inv.grant('chiliDog')
 check('food stacks by kind into its own slot', inv.slotsUsed() === 3)
-inv.grant('spareTire'); inv.grant('spareTire')
+inv.grant('tireStandard'); inv.grant('tireStandard')
 check('parts take a slot each: 2 tires = 2 slots', inv.slotsUsed() === 5)
 check('unknown id is refused, not stored', inv.grant('noSuchThing') === null && inv.slotsUsed() === 5)
 
 // ── 4. Mass ───────────────────────────────────────────────────────────────────────────────────
-const want = KIT_KG + 3 * ITEMS.coffee.massKg + ITEMS.chiliDog.massKg + 2 * ITEMS.spareTire.massKg
+const want = KIT_KG + 3 * ITEMS.coffee.massKg + ITEMS.chiliDog.massKg + 2 * ITEMS.tireStandard.massKg
 check('stowedKg sums every unit', Math.abs(inv.stowedKg() - want) < 1e-9, `${inv.stowedKg()} vs ${want}`)
 check('onMassChange saw the latest mass', Math.abs(massKg - want) < 1e-9, `${massKg} vs ${want}`)
 
 // ── 3. Full → swap prompt ─────────────────────────────────────────────────────────────────────
-for (let i = 0; i < 3; i++) inv.grant('spareTire')
+for (let i = 0; i < 3; i++) inv.grant('tireStandard')
 check('8 of 8 slots filled', inv.slotsUsed() === 8)
 check('a stacking kind already owned still fits when full', inv.grant('coffee') === 'taken')
-check('a 9th slot goes to pending', inv.grant('spareTire') === 'pending' && inv.slotsUsed() === 8
-  && inv.pending()?.id === 'spareTire')
-check('pending adds no mass', Math.abs(inv.stowedKg() - (want + ITEMS.coffee.massKg + 3 * ITEMS.spareTire.massKg)) < 1e-9)
+check('a 9th slot goes to pending', inv.grant('tireStandard') === 'pending' && inv.slotsUsed() === 8
+  && inv.pending()?.id === 'tireStandard')
+check('pending adds no mass', Math.abs(inv.stowedKg() - (want + ITEMS.coffee.massKg + 3 * ITEMS.tireStandard.massKg)) < 1e-9)
 check('take refuses while still full', inv.takePending() === false && inv.pending() !== null)
-const tireAt = inv.list().findIndex(r => r.id === 'spareTire')
+const tireAt = inv.list().findIndex(r => r.id === 'tireStandard')
 inv.drop(tireAt)
 check('drop frees a slot', inv.slotsUsed() === 7)
 check('take succeeds after the drop', inv.takePending() === true && inv.pending() === null && inv.slotsUsed() === 8)
-inv.grant('spareTire')
+inv.grant('tireStandard')
 inv.leavePending()
 check('leave clears the prompt and stores nothing', inv.pending() === null && inv.slotsUsed() === 8)
 
@@ -125,8 +125,16 @@ inv.packItem(tarpAt(), spareAt())
 check('equip refuses a full pack with no bed in it', ids(spareAt()) === 'testTarp,testTarp' && inv.equip(spareAt()) === false)
 delete ITEMS.testTarp
 
+// ── 6b. Sleeping gear (items.md §2b): the equipped pack's `rest` adds up; a bed swaps for the bedroll
+inv.start()
+check('the bare bedroll adds no rest', inv.restBonus() === 0)
+inv.grant('blanket'); inv.packItem(inv.list().findIndex(r => r.id === 'blanket'))
+inv.grant('deluxeSleepingPad'); inv.packItem(inv.list().findIndex(r => r.id === 'deluxeSleepingPad'))
+check('blanket + deluxe pad = +20%, the bedroll back in a truck slot',
+  Math.abs(inv.restBonus() - 0.20) < 1e-9 && inv.list().some(r => r.id === 'bedroll'), String(inv.restBonus()))
+
 // ── 7. Catalog ────────────────────────────────────────────────────────────────────────────────
-const missing = REWARDS.filter(r => !ITEMS[r.id]).map(r => r.id)
+const missing = REWARDS.filter(r => !r.dineIn && !ITEMS[r.id]).map(r => r.id)
 check('every REWARDS id is in ITEMS', missing.length === 0, missing.join(', '))
 const digits = Object.entries(ITEMS).filter(([, it]) => /\d/.test(it.desc)).map(([id]) => id)
 check('no item desc carries a digit (SM-INV-10)', digits.length === 0, digits.join(', '))

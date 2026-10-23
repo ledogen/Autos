@@ -251,10 +251,10 @@ overnight" with the deadline. (6) **The camp pause** (2026-08-02) is restated an
 (FEAT-110 closed). (9) **Cargo protection is proportional**, never additive. (10) ~~**Parts are priced
 by the furthest region unlocked.**~~ **Retired 2026-10-21 (owner, the item setup page): costs scale with the clock only (`dayTier`); a region gives better income and rewards, never higher prices.** (11) **Pay grows with work, not the day:** `dayTier` leaves pay
 and scales costs only; pay rides the region step × a capped **regional reputation** shown on the
-result card. Retires "accept at 1 a.m., buy tomorrow's rate". (12) **Alpha run shape: three regions,
-provisionally 7 / 6 / 5 days.** ~~Open: what earns haul's and freight's tip and bonus item.~~
-*Answered 2026-10-21, below.* Provenance:
-[design-amendments-2026-10-14.md](design-amendments-2026-10-14.md).
+result card. Retires "accept at 1 a.m., buy tomorrow's rate". (12) ~~**Alpha run shape: three regions,
+provisionally 7 / 6 / 5 days.**~~ *Re-scoped 2026-10-23: this is now a **beta** candidate — alpha is one
+region.* ~~Open: what earns haul's and freight's tip and bonus item.~~ *Answered 2026-10-21, below.*
+Provenance: [design-amendments-2026-10-14.md](design-amendments-2026-10-14.md).
 
 **Ratification pass 2026-10-21 (project owner) — every mission type ranks on its own axis.** (1)
 **Rank is the career's core skill; the tip is speed**, on every type. Courier letters on time
@@ -281,6 +281,21 @@ Haul is untouched. **Same-day owner answers:** freight deeds read the **internal
 cancelled); a light load (under 285 kg) carrying no item is intended, and freight's future is a
 roster of purpose-designed **heavy** loads. Still open: Wholesale on freight (FEAT-142 builds it
 haul-only). Provenance: amendment §2b.
+
+**Ratification pass 2026-10-23** (project owner): **release cuts — ship a playable, mostly bug-free
+alpha before adding more.** (1) **Alpha = one region.** **Beta = three or five regions**, plus
+shortcuts, dirt roads and spirits. **Later** = everything else. (2) **Nothing is deleted:** the
+`## Release cuts` tables in [MILESTONES.md](MILESTONES.md) set each ticket's release, an unlisted
+ticket is later (open bugs default to alpha), and design text past the alpha keeps its wording
+under a one-line banner. (3) **The alpha run ends three ways:** reach the expedition camp (win), die
+(SM-INV-1 unchanged — running out of money ends the run as an unaffordable recovery), or **throw in
+the towel** from the pause menu. (4) **Every ending shows a run summary**; the death→new-run loop
+and the garage stay SM-4. (5) **The alpha story is three beats:** the firing, the uncle (the
+tutorial's voice), the expedition camp. (6) With one region, FEAT-103's camp needs no unlock and no
+FEAT-28. (7) **The alpha region is today's 2500 m story circle**; the ladder's R1 sector is beta. (8)
+**The alpha is a polished demo**: little content, but what is there is complete — no stubs, no
+placeholder models. Provenance:
+[design-amendments-2026-10-23-release-cuts.md](design-amendments-2026-10-23-release-cuts.md).
 
 **Companion design notes** (downstream of this bible; where they disagree with it, *it* wins):
 [missions.md](missions.md) (mission taxonomy, XP/payout scoring, the log-drag and bridge-site main missions),
@@ -445,6 +460,8 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > truck is reset to the road, the cargo is lost, and vehicle condition is **floored at 25%** (a
   > healthier truck keeps what it has). Out of lives, death is exactly as above. The default mode
   > has no lives. **Respawn is a development / free-roam tool only** and never exists in story mode.
+  > **Throwing in the towel [owner, 2026-10-23]** — ending the run from the pause menu — is the
+  > player's choice, not a fail state, so this invariant holds. It shows the same run summary (FEAT-146).
 - **SM-INV-2 — Par never scales with the car.** Fixed reference friction, road geometry
   only. If a better build raises par, every upgrade quietly hands back its own reward and
   the flywheel stalls. A better car raises *payout*, not lowers *risk* — the player drives
@@ -1434,6 +1451,8 @@ spirit-unlock plumbing yet.**
 
 ### How spirits introduce themselves [RATIFIED 2026-08-01]
 
+> **Beta (owner, 2026-10-23)** — spirits are not in the alpha; this stays as written for the beta (MILESTONES.md § Release cuts).
+
 **A spirit's first appearance must not interrupt driving.** Driving is the game; a beat that arrives
 mid-corner is the one delivery mistake that turns an authored moment into an imposition. So:
 
@@ -1458,6 +1477,8 @@ natural staging and the doze already frames it. Whether his *first* meeting may 
 **open** — see `spirits-and-pacts.md` #01.
 
 ### How spirits exist without persisting [RATIFIED 2026-07-29]
+
+> **Beta (owner, 2026-10-23)** — spirits are not in the alpha; this stays as written for the beta (MILESTONES.md § Release cuts).
 
 Spirits do not need meta-persistence, and do not get it. The model, in four lines:
 
@@ -1629,6 +1650,8 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
   of repetitions without becoming a chore.
 
 ### The world: regions, story states, spirits
+
+> **Release cut (owner, 2026-10-23)** — the alpha is **one region** with no unlocks, story states or spirits. Multiple regions, shortcuts, dirt roads and spirits are **beta**. This section stays as written (MILESTONES.md § Release cuts).
 
 - **Region unlock = FEAT-28.** The connectivity-validation gate and the progression gate are
   the same mechanism and the same in-world object (trail-closed barrier). Story beats/XP

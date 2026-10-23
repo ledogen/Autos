@@ -284,6 +284,38 @@ const STEPS = [
     const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
   }],
+  ['tires', async () => {
+    // SM-3 roadside tire work (owner, 2026-10-22): using the spare or the plug kit opens the damage
+    // screen's picker; nothing happens until a tire is picked and the timed button confirmed. The
+    // recovery chip lives in the park zone.
+    check(await js('!!document.querySelector("#park-zone #recovery-row")'), 'recovery chip is not in the park zone')
+    const inv = () => js('document.getElementById("inv-screen").classList.contains("open")')
+    const picking = () => js('document.getElementById("dmg-screen").classList.contains("picking")')
+    if (!await js('window.__vs.parked')) await tap(' ')
+    check(await until(() => js('window.__vs.parked'), 1000), 'Space did not park')
+    await js('window.__inv.grant("spareTire"); window.__inv.grant("tirePlugKit"); window.__damage.flat[1] = true')
+    const useItem = async (id) => {
+      if (!await inv()) { await tap('Tab'); await until(inv, 1000) }
+      const i = await js(`window.__inv.list().findIndex(r => r.id === "${id}")`)
+      await js(`document.querySelector('#inv-screen .inv-slot[data-slot="${i}"]').click()`)
+      await js('document.querySelector("#inv-screen [data-act=use], #inv-screen [data-act=action]").click()')
+      check(await until(picking, 1000), `using ${id} opened no tire picker`)
+    }
+    await useItem('spareTire')
+    check(await js('document.querySelectorAll("#dmg-screen .ds-pbtn[data-track]:not(:disabled)").length') === 4, 'the spare cannot go on every corner')
+    check(await js('!document.querySelector("#dmg-screen [data-act=pick-do]")'), 'a confirm showed before a tire was picked')
+    await js('document.querySelector("#dmg-screen .ds-pbtn[data-track=tireFR]").click()')
+    await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()')
+    check(await until(inv, 1000), 'the picker did not hand back to the inventory')
+    check(await js('!window.__damage.flat[1] && window.__inv.list().some(r => r.id === "spareTire" && r.flat)'), 'the spare did not swap onto the flat corner')
+    await useItem('tirePlugKit')
+    check(await js('document.querySelectorAll("#dmg-screen .ds-pbtn[data-track]:not(:disabled)").length') === 0, 'a plug was offered for a tire holding air')
+    await js('document.querySelector("#dmg-screen .ds-pbtn[data-inv]:not(:disabled)").click()')
+    await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()')
+    check(await js('window.__inv.list().every(r => !r.flat && r.id !== "tirePlugKit")'), 'the plug did not fix the flat spare, or the kit was not spent')
+    await tap('Escape')
+    check(await until(async () => !await inv(), 1000), 'Esc left the inventory open')
+  }],
   ['backtick', async () => {
     // R-13: one gate for the panel and the wireframes — they flip together, and flip back.
     const st = () => js('[document.querySelector(".lil-gui.root").style.display === "none", window.__physWireframes.enabled]')
@@ -292,6 +324,29 @@ const STEPS = [
     await tap('`'); const [h2, w2] = await st()
     check(h1 !== h0 && w1 !== w0, `backtick flipped panel ${h0}→${h1}, wireframes ${w0}→${w1} (must flip both)`)
     check(h2 === h0 && w2 === w0, 'second backtick did not restore the panel and wireframes')
+  }],
+  ['service', async () => {
+    // SM-3: park at an auto shop → the service screen; both tabs render; Esc closes it.
+    const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
+      return q ? { x: q.x, z: q.z, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
+    if (!p) { console.log('  service: no auto shop in this region — step skipped'); return }
+    await js(`window.__teleport(${p.x}, ${p.z}, ${p.h})`)
+    await sleep(2500)
+    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+    await tap(' ')
+    const open = () => js('document.getElementById("svc-screen").checkVisibility()')
+    check(await until(open, 2000), 'parking at the auto shop opened no service screen')
+    // My Vehicle lists every corner's tire; selecting one opens its repair / exchange panel.
+    await js('document.querySelector("#svc-screen [data-act=sel][data-key=tireRR]")?.click()')
+    check(await js('!!document.querySelector("#svc-screen .sv-panel")'), 'selecting a My Vehicle row opened no panel')
+    // The Parts Shop is the shop's four-slot shelf (items or empty slots) and My Items.
+    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
+    check(await js('/On the shelf/i.test(document.querySelector("#svc-screen").textContent) && /My items/i.test(document.querySelector("#svc-screen").textContent)'),
+      'the Parts Shop tab shows no shelf')
+    await tap('Escape')
+    check(await until(async () => !await open(), 1000), 'Esc left the service screen open')
+    await tap(' ')   // brake off: the next step parks fresh
+    await sleep(300)
   }],
   ['offer', async () => {
     // A plain delivery giver (no bed-over-drop or park-box rule) with a live offer: seat the truck on
@@ -308,6 +363,11 @@ const STEPS = [
     // checkVisibility, not the element's own display: while the job is still planning the button
     // has no display of its own but its #mp-actions row is hidden, and a click there is lost.
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+    // SM-3: an auto shop's brake opens the service center; its jobs button hands over to the offer.
+    if (p.type === 'autoShop') {
+      check(await until(() => vis('svc-screen'), 2000), 'parking at the auto shop opened no service screen')
+      await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+    }
     check(await until(() => vis('mp-accept'), 2000), `parking at the ${p.type} pad opened no offer`)
     await js('document.getElementById("mp-accept").click()')
     const hudText = () => js('document.querySelector("#mission-hud .hud-text").textContent.trim()')

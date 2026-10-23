@@ -57,11 +57,12 @@ so the effect is a debt term on it. Already a REWARDS id (`coffee`), grant stubb
 station (C–B), never found.
 
 ### Energy drink
-status: todo · design: ratified · build: effect · needs: quick slots · where: gasStation, generalStore, reward
+status: wip · design: ratified · build: effect · needs: quick slots · where: gasStation, generalStore, reward
 **Ruled 2026-10-20:** +5 h now, a crash of −2.5 h four hours later. $4. Reward from the gas station
 and general store (C–B), never found.
 Coffee's short, steep twin: a bigger hit and the crash comes the same day. Must carry a debt or it is
 free alertness (fish's job).
+**In the game 2026-10-23** (`energyDrink`, 0.5 kg, `use: 'energy'`): +5 h now, the −2.5 h crash lands 4 h later (day.js `drinkEnergy`; a sleep first sleeps it off [DEFAULT]); a C–B reward from the gas station and general store. Not sold yet (no general-store shelf).
 
 ### Chili dog
 status: todo · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
@@ -70,12 +71,14 @@ Already a REWARDS id (`chiliDog`, kind food). A meal: resets the hunger clock.
 Spoils in 16 h (2026-10-21). Flavor: "Kinda gross" (owner, 2026-10-22).
 
 ### Dinner meal
-status: todo · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
+status: wip · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
 Renamed from diner meal (owner, 2026-10-21). One generic sit-down meal, a menu item at the food
 vendor: holds hunger 8 h, 30 min to eat, $5–10, eat-in only, never found. Flavor: "A hearty meal.
 Dine in only" (owner, 2026-10-22). **As a reward it is a dinner invitation** (owner, 2026-10-22): a C–B
 reward from residences, the food vendor and farms — the customer asks you to join them for dinner;
-optional, 30 min, and you are fully fed. Needs its own effect on the delivery card.
+optional, 30 min, and you are fully fed. **Built 2026-10-23** (`dinnerMeal`, `dineIn: true` in REWARDS): any
+job those givers post, as with every reward (owner); the result card asks "stay for dinner (30 min)" or
+"decline" (owner, 2026-10-23). Being fed waits on hunger.
 
 ### Burger
 status: todo · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
@@ -149,18 +152,21 @@ uncooled, ~36 h in the cooler. Species carry different effects — which, is ope
 
 ## Consumables
 
-### Spare tire
+### Mounted tire
 status: wip · design: ratified · build: effect · where: autoShop, reward, found
+Renamed from *Spare tire* (owner, 2026-10-23); the id stays `spareTire`.
 Fitting it is a 2 h timeskip that clears the flat (owner, 2026-10-22 — supersedes 90 min, 2026-10-20);
 the compressor takes 30 min off and the quick-jack 1 h, and they stack. Real mass all the time. Already a REWARDS id
 (`spareTire`). Flats ship (`flat[]`, FEAT-94). **Ruled 2026-10-21:** self-contained (factory jack always
-aboard), full-size only; worn (50–80%, ~$15) and new (~$25) variants in different pools; auto shop;
-reward from the auto shop and stranded motorist (A–S); rare roadside find. The fit (`use: 'spare'`) is
+aboard), full-size only; worn (50–80%) and new variants in different pools; auto shop;
+reward from the auto shop and stranded motorist (A–S); rare roadside find. **Priced as its parts** (owner,
+2026-10-23): on the shelf, the tire's price × its condition + a new wheel + the $2 bead job, so new is $25;
+sold back, half the tire's value plus half the wheel's, each at its own condition. The fit (`use: 'spare'`) is
 built on feature/parts, not merged. **An ordinary inventory part, one slot** (owner, 2026-10-21: parts go
 in the inventory, never the bed). The swapped-off pair goes into the slot the spare left, as a flat
 spare (tire id + both wears); a plug kit or the shop restores it; the shop can swap any mounted pair per
-corner. Jalopies start with one 60% of the time, at 40–80%. Flavor: "This could help out in a pinch"
-(owner, 2026-10-22). The owner's world-drop / proximity-inventory idea is FEAT-143 (world items +
+corner (a bead job $2/15 min, a hub swap $1/10 min — items.md §3g). Jalopies start with one 60% of the time, at 40–80%. Desc: "A tire mounted on a wheel."
+(owner, 2026-10-23; was "This could help out in a pinch", 2026-10-22). The owner's world-drop / proximity-inventory idea is FEAT-143 (world items +
 proximity inventory, in progress on feature/stranded-spare).
 
 ### Tire plug kit
@@ -174,22 +180,24 @@ Flavor: "I hope I don't have to use this" (owner, 2026-10-22).
 ### Spare air filter
 status: wip · design: ratified · build: effect · where: autoShop, reward, found
 Sets the `airFilter` track in `src/damage.js` to the spare's own condition at the roadside, in 15 min.
-Each spare carries a condition like the spare tire: new from the auto shop ($10), never great as a
+Each spare carries a condition like the mounted tire: new from the auto shop ($10), never great as a
 roadside find. A reward from the auto shop and gas station (B–A). Ruled 2026-10-21. It is the
 air filter part, `airFilterStock`, built to this row on feature/parts (f5fa9cf9, 2026-10-22): $10, "Fit it
 — 15 min" from the inventory, the old filter comes off into the inventory with its own condition, and a
 REWARDS row (auto shop, gas station; B–A). Icon `airFilter.png`.
 
 ### Zip ties
-status: todo · design: ratified · build: effect · where: generalStore, autoShop, reward, found
+status: wip · design: ratified · build: effect · where: generalStore, autoShop, reward, found
 Field repair, 10% on the `armor*` / `headlight*` tracks and the radiator. 5 per pack. 15 min per use;
 holds for the run (2026-10-20). $5–10; an auto-shop reward (B–A); a rare roadside find (2026-10-21).
 Flavor: "A mechanic's best friend" (owner, 2026-10-22).
+**In the game 2026-10-23** (`zipTies`, 0.2 kg): a live B–A auto-shop reward; the repair (which light part, 10%, 15 min) is the parts session's and isn't built.
 
 ### Duct tape
-status: todo · design: ratified · build: effect · where: generalStore, reward, found
+status: wip · design: ratified · build: effect · where: generalStore, reward, found
 Field repair, 20% on body panels. 3 uses per roll. 15 min per use; holds for the run (2026-10-20). $5–10;
 a reward from the auto shop, gas station and general store (B–A); a rare roadside find (2026-10-21).
+**In the game 2026-10-23** (`ductTape`, 0.35 kg): the reward is live on main; the repair effect is not built.
 
 ### Coolant jug
 status: cut · design: proposed · build: effect · where: autoShop, gasStation
@@ -197,16 +205,18 @@ Struck in items.md (owner, 2026-10-16): FEAT-51 has no coolant to top up — rad
 cooling capacity. Replaced by stop-leak.
 
 ### Stop-leak
-status: todo · design: ratified · build: effect · where: autoShop, gasStation, reward
+status: wip · design: ratified · build: effect · where: autoShop, gasStation, reward
 Field repair: restores 15% radiator condition (owner, 2026-10-16), never past 50%. Under FEAT-51 that
 is cooling capacity directly — aimed at the overheat → power loss → engine wear chain. One use per
 bottle; 15 min; holds for the run (2026-10-20). $5–10; a reward from both (B–A); never found (2026-10-21).
 Flavor: "Maybe this will keep 'er going" (owner, 2026-10-22).
+**In the game 2026-10-23** (`stopLeak`, 0.5 kg, `use: 'stopLeak'`): parked, +15% radiator up to 50%, a 15 min stop (main.js `_pourStopLeak`); a B–A reward from the auto shop and gas station.
 
 ### Emergency gas
 status: wip · design: ratified · build: effect, model · where: gasStation, reward
 A 2 gal RotoPax, single-use — the mid-tier fuel reward (B–A). REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122). Fuel shipped (FEAT-50, 2026-10-17); the pour itself is still unbuilt. Ruled 2026-10-21: parked only, a 10 min timeskip; $5–10; a gas-station and stranded-motorist reward (B–A); never found.
 The pour sounds like a glug glug glug, same as the jerry can (owner, 2026-10-22; FEAT-120).
+**The pour is now parked only and a 10 min stop** (2026-10-23, as ruled 10-21).
 
 ### Jerry can
 status: todo · design: ratified · build: effect · where: gasStation, reward, found
@@ -347,28 +357,33 @@ In the inventory, packed in the starter Pack, with its thumbnail (FEAT-122). The
 The baseline sleeping item, no bonus. Fills one of the starter Pack's 2 slots.
 
 ### Air mattress
-status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Sleeping item: +5% recovery rate. Swaps for the bedroll in its slot and in the render.
+**In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Sleeping pad
-status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Sleeping item: +10% recovery rate. Swaps for the bedroll.
+**In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Deluxe sleeping pad
-status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Sleeping item: +15% recovery rate, the best bed. Swaps for the bedroll.
+**In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Blanket
-status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Add-on, own slot, not required to sleep: +5% recovery rate, adding to the bed and the sleeping bag.
+**In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Sleeping bag
-status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Add-on, own slot, not required to sleep: +10% recovery rate, adding to the bed and the blanket.
 Renders with the bed, not in place of it.
 Camp render (owner, 2026-10-20): shown unrolled, corner unzipped and turned back; layered variants
 for bag + blanket (and the other pairings) are owed so the stack looks natural. Pads likewise render
 unrolled, which is why their thumbnails are unrolled inflatables.
+**In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Tent
 status: todo · design: idea · build: effect · needs: camp render · where: generalStore
@@ -483,6 +498,7 @@ setup page. Icon `dampers.png`.
 ### LT load-range-E tires
 status: todo · design: ratified · build: param, effect · needs: load verdicts · where: autoShop
 Raises the tire rating; overloaded, they shift down the puncture curve (the effect half).
+Desc: "Stiff sidewalls built to carry a load. A little less grip." (owner, 2026-10-23).
 
 ### ABS / traction control
 status: cut · design: proposed · build: effect · where: autoShop
@@ -522,7 +538,7 @@ Its own part (owner, 2026-10-21): wheels and tires are separate (items.md §3g).
 **Set 2026-10-22:** $5–10; a B–A reward from the auto shop, farms and residences; a rare roadside find.
 Icon `wheel.png`. Model ticket exists (asset-steel-wheels).
 Shop-mounted only: a flat at the roadside needs the spare, since there are no tools to seat a bead
-(owner, 2026-10-21). Its desc must say it is just a rim.
+(owner, 2026-10-21). Desc: "Standard. Heavy. Bends before it breaks." (owner, 2026-10-23).
 
 ### Skid plates
 status: todo · design: idea · build: effect, model · needs: hazards · where: autoShop
@@ -553,28 +569,28 @@ status: todo · design: idea · build: param · where: autoShop
 status: todo · design: ratified · build: param · where: autoShop, reward, found
 items.md §3g. The bottom rung: −10% grip on pavement and dirt (owner, 2026-10-22). They show up found
 or in a junkyard (a rare roadside find), and the auto shop sells them, $5–10; a C–B reward from the
-auto shop and farms.
+auto shop and farms. Desc: "Cracked and dry rotted rubber. Slippery and fragile." (owner, 2026-10-23).
 
 ### Standard tires
 status: shipped · design: ratified · build: param · where: kit, autoShop, reward, found
 items.md §3g. The tire the truck runs today (P235/75R15). A part of its own since 2026-10-21 (12 kg,
 tire only; sold at the auto shop). **Set 2026-10-22:** $10–30; a B–A reward from the auto shop,
-stranded motorists and farms; a rare roadside find. Shop-mounted only; every tire's
-desc reads "Just a tire. Can't drive on it without a rim" (owner, 2026-10-21). When dirt lands it loses a tiny bit of dirt
+stranded motorists and farms; a rare roadside find. Shop-mounted only. Desc: "The factory all-season.
+Fine everywhere, great nowhere." (owner, 2026-10-23; each tire now has its own, items.md §3g). When dirt lands it loses a tiny bit of dirt
 grip against today's single value (FEAT-38).
 
 ### Sport tires
 status: todo · design: proposed · build: param · where: autoShop, reward
 items.md §3g. Better than standard on pavement, worse on dirt, wears out faster (§3d Sport): +10% /
 −10%, wear ×1.25 (owner, 2026-10-22). $10–30 at the auto shop; an A–S reward from the auto shop and
-stranded motorists. Roadside find: open.
+stranded motorists. Roadside find: open. Desc: "Sticky. Great grip on pavement, not so good on dirt. Wears fast."
 
 ### Off-road tires
 status: todo · design: proposed · build: param · needs: surfaces · where: autoShop, reward
 items.md §3g. Same pavement grip as standard, +15% on dirt (owner, 2026-10-22). Taller, wider,
 heavier: clearance and taller gearing; fits without the lift. The dirt half waits on per-surface grip
 (FEAT-38, `muScale` in `src/tire.js`). $10–30 at the auto shop; an A–S reward from farms, the auto
-shop and work sites. Roadside find: open.
+shop and work sites. Roadside find: open. Desc: "Chunky tread. At home on dirt, no worse on pavement. Heavy."
 
 ### Off-road suspension
 status: todo · design: ratified · build: param · where: autoShop, reward

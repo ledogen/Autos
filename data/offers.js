@@ -292,19 +292,20 @@ export const THINGS = [
 //   kind     'food' | 'consumable' | 'tool' | 'part'  (items.md §1 / §2 / §3)
 //   gates    which offer gates it may appear under (see RANK GATES above)
 //   pools    which sources may offer it
+//   dineIn   (optional) true for a meal eaten on the spot at delivery — nothing is stowed.
 //
 // An earned reward is granted into the inventory by its id (FEAT-122) — every id here must be in
-// data/items.js ITEMS (the inventory gate checks). Its effect applies only if built.
+// data/items.js ITEMS (the inventory gate checks), except a dineIn one. Its effect applies only if built.
 
 export const REWARDS = [
     { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'],
       pools: ['foodVendor'] },
     { id: 'coffee',     name: 'Coffee',      kind: 'consumable', gates: ['C', 'B'],
       pools: ['foodVendor', 'gasStation'] },
-    { id: 'spareTire',  name: 'Spare tire',  kind: 'part',       gates: ['A', 'S'],
+    { id: 'spareTire',  name: 'Mounted tire', kind: 'part',       gates: ['A', 'S'],
       pools: ['autoShop', 'strandedMotorist'] },
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
-    { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['C', 'B'],
+    { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['B', 'A'],   // mid tier (owner, 2026-10-21)
       pools: ['gasStation', 'strandedMotorist'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'workSite'] },
@@ -313,6 +314,43 @@ export const REWARDS = [
     // day its thumbnail exists (test/dist-assets.mjs needs assets/items/bedliner.png).
     { id: 'rubberBedMat', name: 'Rubber bed mat', kind: 'tool', gates: ['B', 'A'],
       pools: ['firewoodYard'] },
+    // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
+    // barn find is a roadside-find event (items.md §6), not a giver.
+    { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'],
+      pools: ['autoShop', 'farm'] },
+    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'],
+      pools: ['autoShop', 'strandedMotorist', 'farm'] },
+    { id: 'tireSport',  name: 'Sport tire',  kind: 'part',       gates: ['A', 'S'],
+      pools: ['autoShop', 'strandedMotorist'] },
+    { id: 'tireOffroad', name: 'All-terrain tire', kind: 'part', gates: ['A', 'S'],
+      pools: ['farm', 'autoShop', 'workSite'] },
+    { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'],
+      pools: ['autoShop', 'farm', 'residence'] },
+    { id: 'liftKit',    name: 'Lift kit',    kind: 'part',       gates: ['B', 'A'],
+      pools: ['workSite', 'autoShop', 'farm'] },
+    { id: 'diffLSD',    name: 'Limited-slip differential', kind: 'part', gates: ['S'],
+      pools: ['autoShop', 'strandedMotorist', 'residence'] },
+    { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'],
+      pools: ['autoShop', 'workSite'] },
+    // Takes an hour off a spare change (src/recovery.js spareFitHours), never off a plug.
+    { id: 'quickJack',  name: 'Quick-jack',  kind: 'tool',       gates: ['A', 'S'],
+      pools: ['autoShop', 'strandedMotorist'] },
+    // The spare air filter (items.md, ratified): a reward from the auto shop and the gas station.
+    { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'],
+      pools: ['autoShop', 'gasStation'] },
+    // Items setup page rulings (owner, 2026-10-20/21). Zip ties' and duct tape's repairs aren't built yet.
+    { id: 'energyDrink', name: 'Energy drink', kind: 'consumable', gates: ['C', 'B'],
+      pools: ['gasStation', 'generalStore'] },
+    { id: 'stopLeak',   name: 'Stop-leak',   kind: 'consumable', gates: ['B', 'A'],
+      pools: ['autoShop', 'gasStation'] },
+    { id: 'zipTies',    name: 'Zip ties',    kind: 'consumable', gates: ['B', 'A'],
+      pools: ['autoShop'] },
+    { id: 'ductTape',   name: 'Duct tape',   kind: 'consumable', gates: ['B', 'A'],
+      pools: ['autoShop', 'gasStation', 'generalStore'] },
+    // The dinner meal as an invitation (items.md §1d, owner 2026-10-22): the customer feeds you when
+    // the job is in. Being fed waits on hunger, which isn't built.
+    { id: 'dinnerMeal', name: 'Dinner invitation', kind: 'food', gates: ['C', 'B'], dineIn: true,
+      pools: ['residence', 'farm', 'foodVendor'] },
 ]
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────

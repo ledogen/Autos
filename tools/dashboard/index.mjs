@@ -281,6 +281,37 @@ function laneOf(t, lanes) {
   return t.type === 'asset' ? 'asset' : 'unplaced';
 }
 
+/* ── releases ─────────────────────────────────────────────────────────
+ * Which release a ticket ships in is declared ONLY by the tables under
+ * MILESTONES.md `## Release cuts` (owner, 2026-10-23): an `### Alpha` / `### Beta`
+ * / `### Later` subsection, first cell naming a ticket, the
+ * same rule as lanes. Unlisted open tickets default to `later`, except bugs,
+ * which default to `alpha` (the alpha is meant to be mostly bug-free). */
+function indexReleases() {
+  const abs = join(ROOT, '.planning', 'story-mode', 'MILESTONES.md');
+  const rel = new Map();
+  if (!existsSync(abs)) return rel;
+  let inCuts = false;
+  let sub = null;
+  for (const l of readFileSync(abs, 'utf8').split('\n')) {
+    let m;
+    if ((m = /^##\s+(.+)$/.exec(l))) { inCuts = /^release cuts/i.test(m[1]); sub = null; }
+    else if ((m = /^###\s+(.+)$/.exec(l))) sub = inCuts ? m[1].trim().toLowerCase() : null;
+    else if (sub && l.startsWith('|')) {
+      const cell = l.split('|').map((c) => c.match(TICKET_RE)?.filter((r) => !r.startsWith('SM-')))
+        .find((ids) => ids?.length);
+      for (const id of cell || []) if (!rel.has(id)) rel.set(id, sub);
+    }
+  }
+  return rel;
+}
+
+function releaseOf(t, rel) {
+  if (rel.has(t.id)) return rel.get(t.id);
+  if (t.type === 'milestone' || t.status !== 'open') return null;
+  return t.type === 'bug' ? 'alpha' : 'later';
+}
+
 /* ── tickets ──────────────────────────────────────────────────────────── */
 function indexTickets() {
   const tickets = [];
@@ -350,6 +381,8 @@ function indexTickets() {
   tickets.push(...indexMilestones());
   const lanes = indexLanes();
   for (const t of tickets) t.lane = laneOf(t, lanes);
+  const releases = indexReleases();
+  for (const t of tickets) t.release = releaseOf(t, releases);
 
   // Newest-first within a class, except milestones: SM-1..SM-5 is a build order,
   // so reading it backwards is nonsense.

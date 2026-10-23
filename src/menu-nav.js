@@ -42,7 +42,7 @@ function menuContainer () {
 /** FEAT-133: the live in-game card, or null. Screens first: the camp card opens the inventory over itself. */
 function cardContainer () {
   if ($('dialogue-panel')?.style.display === 'block') return null
-  for (const id of ['inv-screen', 'dmg-screen']) { const el = $(id); if (el?.classList.contains('open')) return el }
+  for (const id of ['inv-screen', 'dmg-screen', 'svc-screen']) { const el = $(id); if (el?.classList.contains('open')) return el }
   for (const id of ['camp-panel', 'mission-panel', 'paper-panel', 'scenario-panel', 'recovery-card']) {
     const el = $(id)
     if (el?.style.display === 'block') return el

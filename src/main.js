@@ -32,7 +32,7 @@ import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component c
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
-import { parkPrompt, keycap } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
+import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
@@ -81,9 +81,16 @@ import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_M
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
-import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, rankTable } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds
+import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, runEconomy, rankTable } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds
 import { InventorySystem } from './inventory.js'          // FEAT-122: what the player owns this run
-import { InventoryScreen } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
+import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
+import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
+import { ServiceScreen } from './service-screen.js'
+import { startShelves, shelf, take as takeShelf, shelfName } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf
+import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
+import { recoveryCard, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
+import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
+import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, stockPrice } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
@@ -1276,6 +1283,12 @@ const vehicleState = makeVehicleState(RANGER_PARAMS)
 const damageModel = new DamageModel({ params: RANGER_PARAMS })
 damageModel.publish(RANGER_PARAMS)
 window.__damage = damageModel   // debug panel + the damage GUI read this
+// SM-3: the fitted parts. Free roam drives whatever params hold; a story run starts on stock parts
+// (onRegionLive). A fit changes the load ratings (TRUCK) and the damage conditions, so both re-read.
+const partsSystem = new PartsSystem({ params: RANGER_PARAMS, damage: damageModel, onChange: () => {
+  TRUCK = truckConfig(DEFAULT_VEHICLE_MODEL, partsSystem.loadUpgrades())
+  damageModel.publish(RANGER_PARAMS)
+} })
 // The diagnostic readout, toggled from the debug panel's Damage folder. Hidden by default and free
 // while hidden; it is how a drive's wear is evaluated, since wear rates and a tenth-of-a-second
 // impact are otherwise invisible from behind the wheel.
@@ -3402,12 +3415,26 @@ const economySystem = new EconomySystem({
 // full tank refuses (returns false), so the can is kept rather than wasted. A dry engine is not
 // restarted for you: the gas only makes the key work again (ignition.js catchTime).
 let _sputtersHeard = 0   // fuel.sputters already voiced (a fresh tank resets the count, hence !== above)
+// Poured parked only, a 10 min stop (owner, 2026-10-21); false keeps the can.
 function _pourGasCan () {
+  if (!vehicleState.parked) { hintPark(); return false }
   const f = vehicleState.fuel, space = RANGER_PARAMS.fuelTankGal - f.gal
   if (space < 0.05) return false
   f.gal += Math.min(RANGER_PARAMS.emergencyGasGal, space)
   f.dry = false
   playNozzle(); setPumpFlow(true); setTimeout(() => setPumpFlow(false), 1200)
+  daySystem.advanceMinutes(10)
+}
+
+// Stop-leak (items.md §7, owner 2026-10-16/21): +15% radiator, never past 50% — a 15 min stop,
+// parked. False keeps the bottle: not parked, or the radiator is already at the cap.
+const STOP_LEAK_GAIN = 0.15, STOP_LEAK_CAP = 0.5
+function _pourStopLeak () {
+  if (!vehicleState.parked) { hintPark(); return false }
+  const c = damageModel.get('radiator')
+  if (c >= STOP_LEAK_CAP) return false
+  damageModel.set('radiator', Math.min(STOP_LEAK_CAP, c + STOP_LEAK_GAIN))
+  daySystem.advanceMinutes(15)
 }
 
 // ── FEAT-122: the inventory ────────────────────────────────────────────────────────────────
@@ -3417,13 +3444,63 @@ const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
   onChange: () => inventoryScreen.render(),
-  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan },
+  // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
+  // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
+  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
+    spare: (e) => { queueMicrotask(() => _pickSpare(e)); return false },
+    plug: () => { queueMicrotask(() => _pickPlug()); return false } },
 })
 // Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
 const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isSuppressed: () => menuStage.isActive(),
   isBlocked: () => damageScreen.blocked,
+  actions: _partActions,
 })
+window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
+window.__econ = runEconomy      // dev handle — set the wallet for a play-test (`__econ.money = 200`)
+// The recovery chip joins the park zone last, under V and Tab (owner, 2026-10-22).
+document.getElementById('park-zone')?.append(document.getElementById('recovery-row'))
+
+// SM-3: every auto shop is a service center (owner, 2026-10-20). Selling a part is money made, so it
+// goes through addSpot like every other mid-run credit; labour goes on the clock like the tow.
+let _servicePoi = null
+const serviceCenter = new ServiceCenter({
+  damage: damageModel, parts: partsSystem, inventory: inventorySystem,
+  money: () => economySystem.money(), spend: ($) => economySystem.spend($), earn: ($) => economySystem.addSpot($),
+  tier: () => economySystem.tierNow(),
+  advanceHours: (h) => daySystem.advanceMinutes(h * 60),
+  stock: () => shelf(_servicePoi.id, daySystem.clockH()), unstock: (i) => takeShelf(_servicePoi.id, i),
+  onChange: () => serviceScreen.render(),
+})
+const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
+  jobs: () => _servicePoi ? _takeableOffers(_servicePoi.id, daySystem.clockH()).length : 0,
+  // The shop still posts work: the button hands the brake to the offer, as parking does elsewhere.
+  openJobs: () => {
+    const offers = _takeableOffers(_servicePoi.id, daySystem.clockH())
+    if (offers.length) missionSystem.enterFromPoi(_servicePoi, offers, _planOffer)
+  },
+  openMap: () => map2d.toggle(),
+  nowH: () => daySystem.clockH(),
+  // A front three-quarter view of the parked truck while the screen is open (owner, 2026-10-22): the
+  // orbit's bearing is the nose turned 40° aside, far enough back to hold the whole truck. A drag still
+  // orbits it; closing hands the view back to the chase cam. The truck stays put on its own: the
+  // latched handbrake holds it through a preview's resettle (a lift on and off fifteen times moved it
+  // 6 mm on a flat pad, headless).
+  onView: (on) => {
+    if (!on) { setCameraFocus(null); return }
+    const p = vehicleState.position, f = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
+    setCameraFocus({ x: p.x, y: p.y, z: p.z }, { theta: Math.atan2(f.x, f.z) + 0.7, radius: 7.5 })
+  },
+})
+
+/** The auto shop the truck is parked by, or null. Not while an offer is up (that owns the brake). */
+function _serviceInReach () {
+  if (!storySystem.isActive() || storySystem.isEntering()) return null
+  if (['generating', 'offer'].includes(missionSystem?.state)) return null
+  const vp = vehicleState.position
+  const q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
+  return q?.type === 'autoShop' ? q : null
+}
 
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
 // file owns the DOM (the mission-panel pattern).
@@ -3962,8 +4039,9 @@ missionSystem = new MissionSystem({
       result.letter = fragileGrade(result.health)
     }
     const s = economySystem.settle(result, mission)
-    // FEAT-122: the earned bonus goes in the truck — or waits on the swap prompt if it's full.
-    if (s.award) s.award.stowed = inventorySystem.grant(s.award.rewardId)
+    // FEAT-122: the earned bonus goes in the truck — or waits on the swap prompt if it's full. A dine-in
+    // meal (the dinner invitation) is never stowed: the result card offers it instead.
+    if (s.award) s.award.stowed = mission.bonus.dineIn ? 'dinner' : inventorySystem.grant(s.award.rewardId)
     if (mission?.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
     return s
   },
@@ -4106,7 +4184,8 @@ const _boardView = {
     const next = offerBoard.nextTurnoverH(poiId, now)
     const nextText = next != null ? formatGameDuration(next - now) : null
     const n = offers.length
-    if (!n) return { count: 0, idx: 0, card: null, poly: null, nextText }
+    const shelf = _shelfView(poiId, now)
+    if (!n) return { count: 0, idx: 0, card: null, poly: null, nextText, shelf }
     const i = ((idx % n) + n) % n
     const o = offers[i]
     const papers = offerBoard.spec(o)?.family === 'papers'
@@ -4121,14 +4200,22 @@ const _boardView = {
     return { count: n, idx: i, card, poly,
              // FEAT-102: a fetch's preview points at its PICKUP — its own end is back where you stand.
              start: route?.start ?? poly?.[0] ?? null, end: route?.legs?.[0].end ?? route?.end ?? poly?.[poly.length - 1] ?? null,
-             nextText }
+             nextText, shelf }
   },
 }
 
-// FEAT-112: the truck as configured NOW. Stock until FEAT-115's bed parts exist — then this folds
-// the installed upgrades (truckConfig's second argument) and has to be re-read when they change.
-const TRUCK = truckConfig(DEFAULT_VEHICLE_MODEL)
-const _HAUL_PIECE = PROP_MODELS.firewoodBundleA.collision.size   // one bundle
+/** FEAT-137: an auto shop's shelf as its map card lists it — you rang them, the way you know about
+ *  the jobs. One line per slot: the item and how long it stays, or null for an empty slot. */
+function _shelfView (poiId, now) {
+  if (poiSystem.list().find(q => q.id === poiId)?.type !== 'autoShop') return null
+  return shelf(poiId, now).map(e => e && {
+    name: shelfName(e), used: e.cond !== null && e.cond < 1, left: formatGameDuration(e.expiresAt - now) })
+}
+
+// FEAT-112: the truck as configured NOW — the fitted parts' load ratings folded over the stock ones.
+// Re-read by partsSystem's onChange on every fit.
+let TRUCK = truckConfig(DEFAULT_VEHICLE_MODEL)
+const _HAUL_PIECE = PROP_MODELS.firewoodBundleA.collision.size   // one bundle; the pile is FEAT-114's
 /**
  * FEAT-112: this offer's load verdict on the truck as configured, or null for cab cargo (courier,
  * papers — always fits). Handed to offerBoard.card(); never to the roll (SM-INV-12). `pieces` is a
@@ -4464,6 +4551,12 @@ let _campBusy = false   // a fade is in flight: no second trigger, no double-dug
 // turn it off.
 let _campSeek = false
 
+/** Inside a POI's ring, the radius its park trigger answers: the place does the work there, so the
+ *  tent and the tow stand down (owner, 2026-10-23). Mom's door is its own test (_atMomsHouse). */
+function _inPoiRing () {
+  return !!poiSystem.nearest(vehicleState.position.x, vehicleState.position.z, POI_PARAMS.poiInteractR)
+}
+
 function _campPromptState () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   // FEAT-113 (owner, 2026-10-15): a job IN HAND may camp — the night spends world time against its
@@ -4472,6 +4565,7 @@ function _campPromptState () {
   if (missionSystem && missionSystem.state !== 'idle' && !missionSystem.isOnJob()) return null
   if (paperRouteSystem.isActive() && !paperRouteSystem.isCarrying()) return null
   if (_campUi || _campBusy) return null
+  if (_inPoiRing()) return null
   // Collapsed: nothing is paid at all — no zone scan, no ray, no grading.
   if (!_campSeek) return { collapsed: true }
   if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return { fast: true }
@@ -4583,86 +4677,181 @@ function _renderPumpDisplay (dt) {
     : `hold ${keycap('F')} to pump · release the handbrake to pay`
 }
 
-// ── FEAT-50: running dry — the Recovery chip ─────────────────────────────────────────────────
-// Nothing pops up when the engine dies: the chip appears in the right-hand icon column only once
-// you are dry AND parked (owner, 2026-10-16), the way the other context actions wait for the brake.
-// Today it holds one option — a tow to the nearest place that sells fuel — and later tows (anytime,
-// to the service station) are further rows in the same card. Can't afford it and you are out of
-// fuel: the run is over ("you broke down", SM-INV-1).
+// ── The Recovery chip (FEAT-50 running dry → SM-3 in full) ───────────────────────────────────
+// Nothing pops up when the truck gives out: the chip sits in the PARK ZONE with V and Tab (owner,
+// 2026-10-22), always there in a story run and live once parked, like them (a tow is a phone call —
+// SM-3, 2026-10-20). The card lists the tows (src/recovery.js): to the nearest gas station (dry) or
+// service center (any time). Can't continue and can't afford any of it: the run is over ("you broke
+// down", SM-INV-1).
 let _recoveryOpen = false
 
-/** The nearest POI that sells fuel (a pump island, until ASSET-13's station has zones). */
-function _nearestFuelSeller () {
+/** The nearest POI passing `test`, with its distance in km. */
+function _nearestPoi (test) {
   const vp = vehicleState.position
   let best = null, bestD = Infinity
   for (const q of poiSystem.list()) {
-    if (!q.pumpZones || q.hidden) continue
+    if (q.hidden || !test(q)) continue
     const d = Math.hypot(q.x - vp.x, q.z - vp.z)
     if (d < bestD) { bestD = d; best = q }
   }
   return best && { q: best, km: bestD / 1000 }
 }
 
-function _towQuote () {
-  const dest = _nearestFuelSeller()
+/** A tow quote to the nearest POI passing `test`, or null when none is in the region. */
+function _towQuote (test) {
+  const dest = _nearestPoi(test)
   if (!dest) return null
   return { ...dest, price: towPrice(dest.km, economySystem.tierNow(), ECONOMY_PARAMS), hours: towHours(dest.km, ECONOMY_PARAMS) }
 }
+// A pump island sells fuel (until ASSET-13's station has zones); an auto shop is a service center.
+const _FUEL_SELLER = q => !!q.pumpZones
+const _SERVICE_CENTER = q => q.type === 'autoShop'
 
-function _towToFuel () {
-  const t = _towQuote()
+/**
+ * Pay for a tow and land at `seat`. The seat is teleportToGround's minus its side effects: no "spawn
+ * point set" toast, and the R spawn is put back afterwards — a tow is a trip, not a new home. The
+ * truck lands parked; clearing the edge detector lets the next poll answer the brake at once (the
+ * pump opens, the service screen opens).
+ */
+function _towTo (t, seat) {
   if (!t || !economySystem.spend(t.price)) return
   _recoveryOpen = false
-  // Into the road-side pump zone, nose along the island: model +X in world is (cos yaw, −sin yaw)
-  // and the truck's forward is (−sin h, −cos h), so h = yaw − π/2 lays the truck alongside.
-  // The seat is teleportToGround's minus its side effects: no "spawn point set" toast, and the R
-  // spawn is put back afterwards — a tow is a trip, not a new home.
-  const z = dropZoneWorld(t.q, t.q.pumpZones[0])
   const prev = _spawnOverride
-  _spawnOverride = { align: true, x: z.x, z: z.z, heading: z.yaw - Math.PI / 2, drop: 0.3 }
+  _spawnOverride = { align: true, drop: 0.3, ...seat }
   storySystem?.notifyTeleport()
   daySystem.advanceMinutes(t.hours * 60)
   void _reseatTruckAtSpawn().then(() => {
     _spawnOverride = prev
-    // The truck lands parked; clearing the edge detector lets the next poll open the pump at once.
     _prevParkedForPoi = false
   })
+}
+function _towToFuel () {
+  const t = _towQuote(_FUEL_SELLER)
+  if (!t) return
+  // Into the road-side pump zone, nose along the island: model +X in world is (cos yaw, −sin yaw)
+  // and the truck's forward is (−sin h, −cos h), so h = yaw − π/2 lays the truck alongside.
+  const z = dropZoneWorld(t.q, t.q.pumpZones[0])
+  _towTo(t, { x: z.x, z: z.z, heading: z.yaw - Math.PI / 2 })
+}
+function _towToShop () {
+  const t = _towQuote(_SERVICE_CENTER)
+  if (t) _towTo(t, { x: t.q.x, z: t.q.z, heading: Math.atan2(-t.q.tx, -t.q.tz) })
+}
+// ── Roadside tire work (owner, 2026-10-22): the player picks the tire on the damage screen's
+// pictogram (DamageScreen.pick), sees each corner's tire, wheel and air, and confirms with the time on
+// the button. Cancel or done, it goes back to the inventory.
+const _CORNER = ['FL', 'FR', 'RL', 'RR']
+const _tireNote = (c) => PARTS[partsSystem.fitted(`tire${_CORNER[c]}`)]?.name ?? 'Tire'
+const _backToInventory = () => { if (vehicleState.parked) inventoryScreen.open() }
+const _afterRoadsideWork = (h) => { damageModel.publish(RANGER_PARAMS); daySystem.advanceMinutes(h * 60) }
+
+/** The spare's inventory effect (ITEMS.spareTire.use): any corner, flat or not, spareFitHours() on the clock. */
+function _pickSpare (e) {
+  inventoryScreen.close()
+  damageScreen.pick({
+    title: 'Fit the mounted tire',
+    corner: () => !e.flat,
+    note: _tireNote,
+    about: `The mounted tire: ${condLine({ ...e, kind: 'part' })}.` + (e.flat ? ' Plug it before it goes on.' : ''),
+    actions: ({ corner }) => [{ label: `Swap it on — ${formatGameDuration(spareFitHours(inventorySystem))}`, run: () => {
+      const h = spareFitHours(inventorySystem)
+      if (fitSpare(partsSystem, damageModel, inventorySystem, inventorySystem.indexOf(e), corner) >= 0) _afterRoadsideWork(h)
+    } }],
+    onClose: _backToInventory,
+  })
+}
+
+/**
+ * The plug kit (owner, 2026-10-21): any flat — a corner, or a tire in the inventory. "Pump it by hand"
+ * is always offered; "Inflate it" when a compressor is aboard. Each is the whole stop.
+ */
+const _PLUG_LABEL = {
+  pump: { label: 'Pump it up by hand', icon: 'bikePump' },
+  compressor: { label: 'Inflate it with the compressor', icon: 'compressor' },
+}
+function _pickPlug (target = null) {
+  inventoryScreen.close()
+  damageScreen.pick({
+    title: 'Plug a tire',
+    target,
+    corner: (c) => damageModel.flat[c],
+    note: _tireNote,
+    loose: inventorySystem.list().filter(r => PARTS[r.id]?.slot === 'tire')
+      .map(r => ({ index: r.index, name: r.name, line: condLine(r, { air: false }), flat: r.flat, ok: r.flat })),
+    actions: (t) => plugMethods(inventorySystem).map(how => ({
+      label: `${_PLUG_LABEL[how].label} — ${formatGameDuration(PLUG_H[how])}`, icon: _PLUG_LABEL[how].icon,
+      run: () => { const h = plugTire(damageModel, inventorySystem, how, t); if (h >= 0) _afterRoadsideWork(h) },
+    })),
+    onClose: _backToInventory,
+  })
+}
+
+/**
+ * The inventory's roadside choices for the selected item: a flat tire, with a kit aboard, opens the plug
+ * picker with it picked; a part you can swap by hand (the air filter) goes on, the time on the button.
+ */
+function _partActions (row) {
+  if (PARTS[row.id]?.roadside) {
+    return [{ label: `Replace it — ${formatGameDuration(SLOTS[PARTS[row.id].slot].hours)}`,
+      run: () => { const h = fitRoadside(partsSystem, inventorySystem, row.index); if (h >= 0) _afterRoadsideWork(h) } }]
+  }
+  if (!row.flat || PARTS[row.id]?.slot !== 'tire' || !inventorySystem.list().some(r => r.id === 'tirePlugKit')) return []
+  return [{ label: 'Plug this tire', icon: 'tirePlugKit', run: () => _pickPlug({ index: row.index }) }]
+}
+
+const _RC_LABEL = {
+  towFuel: (o) => `tow to gas station · ${o.tow.km.toFixed(1)} km — $${formatMoney(o.tow.price)}`,
+  towShop: (o) => `tow to service center · ${o.tow.km.toFixed(1)} km — $${formatMoney(o.tow.price)}`,
+}
+const _RC_ACT = {
+  towFuel: _towToFuel, towShop: _towToShop, end: _backToMenu,
 }
 
 function _updateRecovery () {
   const row = document.getElementById('recovery-row')
   if (!row) return
-  const show = storySystem.isActive() && !storySystem.isEntering() && !!vehicleState.fuel?.dry
-    && vehicleState.fuel.gal <= 0 && !!vehicleState.parked && !fuelStop.isOpen
+  const show = storySystem.isActive() && !storySystem.isEntering() && !fuelStop.isOpen && !serviceScreen.isOpen && !_inPoiRing()
   row.style.display = show ? 'flex' : 'none'
-  if (!show) { _recoveryOpen = false; return }
-  document.getElementById('recovery-icon')?.classList.toggle('on', _recoveryOpen)
-  document.getElementById('recovery-icon')?.classList.add('ready')
+  const live = show && !!vehicleState.parked && !damageScreen.blocked
+  const icon = document.getElementById('recovery-icon')
+  icon?.classList.toggle('ready', live)
   const card = document.getElementById('recovery-card')
+  if (!live) { _recoveryOpen = false; card.style.display = 'none'; icon?.classList.remove('on'); return }
+  const fuel = vehicleState.fuel
+  const owned = inventorySystem.list()
+  const money = economySystem.money()
+  const c = recoveryCard({
+    dry: !!fuel?.dry && fuel.gal <= 0,
+    gasCan: owned.some(r => r.id === 'emergencyGas'),
+    flats: damageModel.flat.flatMap((f, i) => f ? [i] : []),
+    money,
+    fuelTow: _towQuote(_FUEL_SELLER),
+    shopTow: _towQuote(_SERVICE_CENTER),
+  })
+  icon?.classList.toggle('on', _recoveryOpen)
   card.style.display = _recoveryOpen ? 'block' : 'none'
   if (!_recoveryOpen) return
-  const t = _towQuote()
-  const money = economySystem.money()
-  const html = !t ? '<div class="rc-head">out of fuel</div><div class="rc-dim">no tow can reach you here</div>'
-    : money + 1e-9 >= t.price
-      ? `<div class="rc-head">out of fuel</div>
-         <button class="rc-opt" id="rc-tow">tow to gas station — $${formatMoney(t.price)}</button>
-         <div class="rc-dim">${t.km.toFixed(1)} km · ${formatGameDuration(t.hours)} · you have $${formatMoney(money)}</div>`
-      : `<div class="rc-head">out of fuel</div>
-         <div class="rc-dim">can't afford a tow — $${formatMoney(t.price)}, you have $${formatMoney(money)}</div>
-         <button class="rc-opt rc-end" id="rc-end">end run — you broke down</button>`
+  const html = `<div class="rc-head">${c.head}</div>`
+    + c.opts.map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
+      + `<div class="rc-dim">${formatGameDuration(o.tow.hours)} on the hook</div>`).join('')
+    + (c.opts.length ? '' : '<div class="rc-dim">no tow can reach you here</div>')
+    + `<div class="rc-dim">you have $${formatMoney(money)}</div>`
+    + (c.canEnd ? '<button class="rc-opt rc-end" data-act="end">end run — you broke down</button>' : '')
   if (card.dataset.html !== html) {   // repaint only on change: the poll is 10 Hz and buttons must stay clickable
     card.dataset.html = html
     card.innerHTML = html
-    document.getElementById('rc-tow')?.addEventListener('click', _towToFuel)
-    document.getElementById('rc-end')?.addEventListener('click', _backToMenu)
+    for (const b of card.querySelectorAll('button[data-act]')) b.addEventListener('click', () => _RC_ACT[b.dataset.act]())
   }
 }
-window.addEventListener('keydown', e => {
-  if (e.repeat || e.key.toLowerCase() !== 'x') return
-  if (document.getElementById('recovery-row')?.style.display === 'flex') { _recoveryOpen = !_recoveryOpen; _updateRecovery() }
-})
-document.getElementById('recovery-icon')?.addEventListener('click', () => { _recoveryOpen = !_recoveryOpen; _updateRecovery() })
+/** X or a click: open/close the card once parked; driving, pulse the park zone's PARK badge. */
+function _toggleRecovery () {
+  if (document.getElementById('recovery-row')?.style.display !== 'flex') return
+  if (!vehicleState.parked || damageScreen.blocked) { hintPark(); return }
+  _recoveryOpen = !_recoveryOpen
+  _updateRecovery()
+}
+window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() === 'x') _toggleRecovery() })
+document.getElementById('recovery-icon')?.addEventListener('click', _toggleRecovery)
 
 /** Can the truck knock on mom's door from here? (Same gates, minus the zone and the grading.) */
 function _atMomsHouse () {
@@ -4712,6 +4901,23 @@ function _updateParkTriggers () {
     if (poiEl) {
       poiEl.style.display = fuelStop.isOpen ? 'none' : 'block'
       if (!fuelStop.isOpen) poiEl.innerHTML = parkPrompt('park to use the pump')
+    }
+    if (campRow) campRow.style.display = 'none'
+    return
+  }
+
+  // SM-3: an auto shop is a service center. The brake opens the service screen and the shop's jobs are
+  // a button inside it, so the brake means one thing here (the pump's rule).
+  const shop = serviceScreen.isOpen ? null : _serviceInReach()
+  if (serviceScreen.isOpen || shop) {
+    damageScreen.blocked = true
+    if (shop && pulled) {
+      _servicePoi = shop
+      serviceScreen.open(offerBoard?.poiName(shop.id) ?? 'Auto shop')
+    }
+    if (poiEl) {
+      poiEl.style.display = serviceScreen.isOpen ? 'none' : 'block'
+      if (!serviceScreen.isOpen) poiEl.innerHTML = parkPrompt('park for service')
     }
     if (campRow) campRow.style.display = 'none'
     return
@@ -4897,6 +5103,8 @@ function _makeCamp () {
 
 /** What a night here is worth, as day.js reads it: the site's vibe, mom's fixed 0.5, or 'truck'. */
 const _campVibe = (st) => st?.truck ? 'truck' : st?.moms ? 0.5 : (st?.site?.vibe ?? 0.5)
+/** The packed sleeping gear's recovery bonus — at a camp only: the cab and mom's bed are their own. */
+const _campRest = (st) => st?.truck || st?.moms ? 0 : inventorySystem.restBonus()
 /** The face the sleep timer returns to. */
 const _campHome = (st) => st.moms ? 'moms' : st.truck ? 'truck' : 'camp'
 
@@ -4907,7 +5115,7 @@ function _sleepAtCamp () {
   const vibe = _campVibe(_campUi)
   const back = _campHome(_campUi)
   _campFade(() => {
-    daySystem.sleep(hours, vibe)
+    daySystem.sleep(hours, vibe, _campRest(_campUi))
     // FEAT-33: you turned the key off to make camp, so you wake to a dead truck and start the
     // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
     // and on a worn engine it is also the morning's first piece of news about what you're driving.
@@ -4959,7 +5167,7 @@ function _syncSleepRow () {
   const full  = daySystem.fullEnergyH()
   const floor = daySystem.debtFloorH()
   const now   = daySystem.energyH()
-  const wake  = daySystem.previewWake(h, vibe)
+  const wake  = daySystem.previewWake(h, vibe, _campRest(_campUi))
   const wh    = daySystem.previewWakeHour(h)
 
   // Map an energy value to a bar fraction, and lay a segment between the zero tick and the value.
@@ -5371,6 +5579,8 @@ function _renderMissionUI () {
       // beside it to re-run the same route (testing/calibration: a known-road second lap).
       const nb = document.getElementById('mp-accept')
       if (nb) nb.textContent = 'continue'
+      // The dinner invitation is optional (owner, 2026-10-23): accept stays 30 min, decline drives on.
+      if (r.award?.stowed === 'dinner') { btn('mp-decline', true); if (nb) nb.textContent = 'stay for dinner (30 min)' }
       break
     }
     default:
@@ -5848,7 +6058,11 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   // On the result card this button is CONTINUE: put the finished run down and carry on driving in
   // story mode. It no longer auto-rolls the next job — with POIs as the job source, the next one is
   // something you go and find, not something handed to you at the drop point.
-  if (missionSystem.state === 'done') { missionSystem.exit(); return }
+  if (missionSystem.state === 'done') {
+    // The dinner invitation, taken: 30 min at their table. Being fed waits on hunger (items.md §1d).
+    if (missionSystem.result?.award?.stowed === 'dinner') daySystem.advanceMinutes(30)
+    missionSystem.exit(); return
+  }
   // FEAT-67: take the offer OFF THE BOARD first, re-checking it is still live — a food offer lives
   // ~2 real minutes, so it can expire with the panel up. If it has gone, the panel re-presents what
   // is live now instead of accepting a job the board no longer has.
@@ -6098,6 +6312,7 @@ daySystem.addGui(_gui)
 economySystem.addGui(_gui)
 // FEAT-122: grant any catalog item without running a mission.
 inventorySystem.addGui(_gui)
+partsSystem.addGui(_gui)
 // FEAT-45: camping folder — the live grade at the truck plus the site tunables. The one action is a
 // shortcut INTO the dialogue (skipping the 30-min chore and the carve), so the sleep flow can be
 // exercised without hunting for a legal site first.
@@ -6795,7 +7010,11 @@ const storySystem = new StorySystem({
     // …and a fresh truck. Entry flips the mode to 'story' BEFORE it reseats, so the seat's
     // free-roam damage wipe (_reseatTruckAtSpawnInner) is skipped and a truck broken in free roam
     // drove straight into the new run. Per-run state (SM-INV-8): the run starts here, so does the truck.
-    damageModel.setAll(1); damageModel.publish(RANGER_PARAMS)
+    damageModel.setAll(1)
+    partsSystem.start()              // SM-3: stock parts, new…
+    rollJalopy({ parts: partsSystem, damage: damageModel, inventory: inventorySystem }, (Math.random() * 2 ** 32) >>> 0)   // …then this run's jalopy (SM-INV-7)
+    startShelves((Math.random() * 2 ** 32) >>> 0)   // FEAT-137: every auto shop's shelf, this run's rolls
+    damageModel.publish(RANGER_PARAMS)
     vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)   // FEAT-50: "some gas in it"
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
     resetPaperRun()                  // …and starts back on Larry's four-house route (SM-INV-12)
@@ -7189,7 +7408,9 @@ document.addEventListener('keydown', e => {
   // it, so the brake release is the obvious way out — and vehicle.js drops the park latch on that
   // same tap, which leaves the truck ready to roll AND re-arms the trigger, so another pull re-offers.
   // preventDefault so the tap can't ALSO activate whichever panel button last took focus.
-  if (e.key === ' ' && missionSystem?.state === 'offer') { e.preventDefault(); missionSystem.exit() }
+  // The dinner invitation's DECLINE is the same tap (owner, 2026-10-23).
+  if (e.key === ' ' && (missionSystem?.state === 'offer'
+      || (missionSystem?.state === 'done' && missionSystem.result?.award?.stowed === 'dinner'))) { e.preventDefault(); missionSystem.exit() }
   // Shift+R → set the spawn point to the truck's current pose (does not move the truck).
   if (e.shiftKey && (e.key === 'r' || e.key === 'R')) {
     if (isTeleportEnabled()) setSpawnHere()
@@ -7215,6 +7436,7 @@ document.addEventListener('keydown', e => {
   // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
   if (damageScreen.isOpen) { damageScreen.close(); return }
   if (inventoryScreen.isOpen) { inventoryScreen.close(); return }   // FEAT-122: same rule
+  if (serviceScreen.isOpen && !map2d.isOpen()) { serviceScreen.close(); return }   // SM-3: same rule (the map over it goes first)
   // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
   // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
   // settings page and is otherwise inert until the world is handed back.
@@ -7427,6 +7649,7 @@ function loop () {
   damageHUD.update(frameTime)   // SM-3 diagnostic readout — returns on the first line while hidden
   damageScreen.update(frameTime)   // FEAT-90: alert detection + icon tint at 10 Hz
   inventoryScreen.update()         // FEAT-122: the park zone's lock; closes when the truck drives off
+  serviceScreen.update()           // SM-3: closes when the truck drives off
   _fragileBlink(frameTime)   // FEAT-97: the load's red hit blink fading out
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
@@ -7483,7 +7706,8 @@ function loop () {
     // (dropped catch-up steps, slow motion) never bills world time for road the truck did not drive.
     // FEAT-118: a pitched camp (or mom's) is a planning pause — idle there, the clock and energy
     // hold until an action (sleep, break camp) spends or resumes it. The confirm face is not camp yet.
-    if (!_campUi || _campUi.mode === 'confirm') daySystem.update(PHYSICS_DT)
+    // SM-3: browsing the service center is free — its work adds its own hours (owner, 2026-10-20).
+    if ((!_campUi || _campUi.mode === 'confirm') && !serviceScreen.isOpen) daySystem.update(PHYSICS_DT)
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
@@ -8025,7 +8249,7 @@ function loop () {
     // FEAT-46/45: the POI + camping prompts, and the ONE parking-brake trigger behind both.
     // Still the ~10 Hz cadence: the `parked` latch is sticky, so the edge cannot fall between polls.
     _updateParkTriggers()
-    _updateRecovery()           // FEAT-50: the out-of-fuel chip, once parked
+    _updateRecovery()           // FEAT-50 / SM-3: the recovery chip in the park zone
     // FEAT-45: the camping folder's read-outs ride the same 10 Hz poll and hit the same memoized
     // grade the prompt just computed. Gated to the SAME sub-20 kph window as the prompt on purpose:
     // grading costs a handful of terrain/water/scatter samples, and paying for it at speed to feed a

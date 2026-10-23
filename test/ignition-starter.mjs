@@ -73,11 +73,11 @@ console.log('\n── 2. releasing early aborts and discards the crank ───
 
 console.log('\n── 3. catch time scales with engine health (the SM-3 wear seam) ──────────────')
 {
-  // Owner ruling 2026-09-04: linear 0.25 s → ignitionCatchTimeWorn as health → 0, but AT health 0
-  // the engine never catches at all — crank forever, nothing fires.
-  const dead = crankFor(P.ignitionCatchTimeWorn * 4, 0)
-  check(dead.vs.ignition.state === CRANKING && dead.caught === null,
-    `health 0 NEVER catches (cranked ${(P.ignitionCatchTimeWorn * 4).toFixed(1)}s, still grinding)`)
+  // Linear 0.25 s → ignitionCatchTimeWorn as health → 0, and a dead engine still starts (owner,
+  // 2026-10-22, reversing 2026-09-04's never-catch: "otherwise we don't have a game").
+  const dead = crankFor(P.ignitionCatchTimeWorn + 4 * DT, 0)
+  check(dead.caught !== null && Math.abs(dead.caught - P.ignitionCatchTimeWorn) <= 2 * DT + 1e-9,
+    `health 0 still catches, at ${dead.caught?.toFixed(2)}s ≈ ignitionCatchTimeWorn ${P.ignitionCatchTimeWorn}s`)
   const nearDead = crankFor(P.ignitionCatchTimeWorn + 4 * DT, 0.02)
   const nearWorn = P.ignitionCatchTime + 0.98 * (P.ignitionCatchTimeWorn - P.ignitionCatchTime)
   check(Math.abs(nearDead.caught - nearWorn) <= 2 * DT + 1e-9,
@@ -187,7 +187,9 @@ for (const engine of ['vulcan30', 'duratec23']) for (const box of ['auto', 'm5od
 
   // Cranking: a 2 s crank, steady part 1.0–2.0 s.
   const m = mean(win(start(25, 2.0).rpm, Math.round(1.0 / DT), Math.round(2.0 / DT)))
-  check(m > 120 && m < 400, `cranks at ${m.toFixed(0)} rpm (real cranking 120–400)`)
+  // Real cranking is 120–400 rpm; the owner set 450 (2026-10-22) so the starter doesn't sound like
+  // it is barely turning over, hence the 500 ceiling.
+  check(m > 120 && m < 500, `cranks at ${m.toFixed(0)} rpm (real cranking 120–400; owner's 450)`)
 
   // Catch, flare, settle — at the healthy catch time.
   for (const [T, idleT] of [[25, P.idleColdRPM], [95, P.engineIdleRPM]]) {

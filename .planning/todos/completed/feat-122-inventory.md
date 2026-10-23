@@ -1,7 +1,8 @@
 ---
 id: FEAT-122
 type: feature
-status: open
+status: closed
+closed: 2026-10-23
 severity: major
 opened: 2026-10-16
 source: owner, 2026-10-16 — "we'll have to build the inventory system and storefronts"
@@ -90,3 +91,7 @@ Kept open for the deferred list below. Don't start any of these without the owne
 
 **Not here — SM-4:** the inventory surviving save/load inside a run rides on the run save (FEAT-42).
 This ticket keeps it in memory.
+
+## Resolution — closed (owner, 2026-10-23)
+
+Built on `feature/feat-122` and fully merged to main (the branch has nothing left ahead of main). Closed by the owner.

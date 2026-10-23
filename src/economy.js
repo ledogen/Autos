@@ -200,7 +200,7 @@ export const ECONOMY_PARAMS = {
     // tow $14 on day 1 — about two at-par jobs — and the hours are the other half of the bill.
     towFlat:       10,    // $ — call-out fee
     towPerKm:      2,     // $ per km of tow (straight line to the destination)
-    towBaseHours:  1,     // game h — the wait for the truck
+    towBaseHours:  3,     // game h — the wait for the truck: you're in the boonies, 3 h at least (owner, 2026-10-23)
     towHoursPerKm: 0.5,   // game h per km — the haul itself
 }
 
