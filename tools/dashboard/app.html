@@ -389,9 +389,10 @@ function md(src, escaped = false) {
  * axes; a chip toggles an axis of whichever view is on screen. */
 const TYPES = ['milestone', 'feature', 'bug', 'perf', 'quality', 'infra', 'asset'];
 const STATUSES = ['open', 'idea', 'closed', 'cancelled'];
+const RELEASES = ['alpha', 'beta', 'later'];
 const STATUS_COLOR = { open: '#6fb3ff', idea: '#d9b36f', closed: '#7fd97f', cancelled: '#8b94a3' };
 const DEFAULTS = {
-  tickets: { type: [], status: ['open'], sev: [], lane: [] },
+  tickets: { type: [], status: ['open'], sev: [], lane: [], rel: [] },
   cargo: { kind: [], region: [], place: [], asset: [] },
   sounds: { status: [], group: [] },
   items: { build: [], needs: [], where: [], design: [], status: [] },
@@ -424,6 +425,7 @@ function matches(t, f, q) {
   if (f.status.length && !f.status.includes(t.status)) return false;
   if (f.sev.length && !f.sev.includes(t.severity)) return false;   // t.severity null ⇒ excluded
   if (f.lane.length && !f.lane.includes(t.lane)) return false;     // lanes come from MILESTONES.md tables
+  if (f.rel.length && !f.rel.includes(t.release)) return false;    // so do releases (§ Release cuts)
   if (q) {
     const hay = `${t.id} ${t.title} ${t.blurb} ${t.body}`.toLowerCase();
     if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
@@ -455,6 +457,7 @@ function viewTickets() {
   const nStat = (v) => TICKETS.filter(t => t.status === v && matches(t, { ...f, status: [] }, q)).length;
   const nSev = (v) => TICKETS.filter(t => t.severity === v && matches(t, { ...f, sev: [] }, q)).length;
   const nLane = (v) => TICKETS.filter(t => t.lane === v && matches(t, { ...f, lane: [] }, q)).length;
+  const nRel = (v) => TICKETS.filter(t => t.release === v && matches(t, { ...f, rel: [] }, q)).length;
 
   const rows = shown.map(t => `
     <li>
@@ -480,6 +483,8 @@ function viewTickets() {
       <div class="frow"><span class="flabel">Lane</span>
         ${LANES.map(v => chip('lane', v, f.lane.includes(v), nLane(v),
           v === 'unplaced' ? css('bug') : v.startsWith('SM-') ? css('milestone') : '')).join('')}</div>
+      <div class="frow"><span class="flabel">Release</span>
+        ${RELEASES.map(v => chip('rel', v, f.rel.includes(v), nRel(v), v === 'alpha' ? css('feature') : '')).join('')}</div>
     </div>
     <div class="count">${shown.length} of ${TICKETS.length} tickets${q ? ` matching “${esc(q)}”` : ''}</div>
     <ul class="list">${rows || '<li><span class="tblurb">nothing matches</span></li>'}</ul>`;
@@ -508,6 +513,7 @@ function viewTicket(id) {
       ${fmRow('type', t.type + (t.typeRaw !== t.type ? ` <i style="color:var(--perf)">(${t.typeRaw})</i>` : ''))}
       ${fmRow('status', t.status + (t.statusRaw !== t.status ? ` <i style="color:var(--perf)">(${t.statusRaw})</i>` : ''))}
       ${fmRow('lane', t.lane && esc(t.lane))}
+      ${fmRow('release', t.release && esc(t.release))}
       ${t.severity ? fmRow('severity', `<span style="color:${css(t.severity)}">${t.severity}</span>`) : ''}
       ${fmRow('opened', t.opened)} ${fmRow('updated', t.updated)}
       ${fmRow(t.phase === 'shipped' ? 'shipped' : 'closed', t.closed)}

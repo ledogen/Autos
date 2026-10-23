@@ -4,6 +4,9 @@
 the bible disagree, the bible wins. Companions: `opening.md`, `missions.md`, `run-shape.md`,
 `IDEAS.md`.*
 
+> **Beta (owner, 2026-10-23).** Spirits are not in the alpha. Kept word for word for the beta — see
+> MILESTONES.md § Release cuts.
+
 **Reconciliation note 2026-07-29 (partial).** This document arrived as the **pre-alignment draft** —
 it predates the other companion docs' reconciliation pass and the owner's 2026-07-29 decisions.
 Mechanically applied on landing: **terminology aligned to DESIGN.md (*spirits*, not *sprites*** — the
