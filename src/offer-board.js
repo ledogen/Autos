@@ -499,6 +499,8 @@ export class OfferBoard {
             destKind: papers ? null : (strictTo || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
+            loose: thing.loose ?? null, // one loose bed body (src/debris.js kind) — the motorist's tire
+            atPickup: thing.atPickup ?? null,   // a fetch's wait at the pickup: { min, park, done } prompts
             // FEAT-97: a fragile load's tolerance and hit sound (src/fragile.js) — null otherwise.
             fragile: thing.family === 'fragile'
                 ? { shockFloorG: thing.shockFloorG, breakG: thing.breakG, sound: thing.sound } : null,

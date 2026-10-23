@@ -72,7 +72,7 @@ import './hud-menu.js'                                     // the pad's B-hold i
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
-import { MissionSystem, REGION_MARGIN } from './mission.js'  // story mode (beta)
+import { MissionSystem, REGION_MARGIN, secPerGameH } from './mission.js'  // story mode (beta)
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
@@ -2688,14 +2688,7 @@ async function _loadFreight (key, massKg, mission = null, health = null) {
   // A `floorSeated` model (the angled plywood) already stands on the wheelhouses in its own geometry: width 0
   // keeps strapPose from lifting it onto them a second time.
   const pose = strapPose(bed, e, PROP_MODELS[row.model].floorSeated ? 0 : (PROP_MODELS[row.model].collision?.size?.[0] ?? 2 * e.x) / 2)
-  // vehicleState is the authoritative pose (physics.js Step 1.5); push it so the weld's frames are
-  // taken against where the truck IS, not the last step's pose (matters straight after a reseat).
-  physicsEngine.setTransform(vehicleChassis, vehicleState.position, vehicleState.quaternion)
-  _fP.set(pose.x, pose.y, pose.z).applyQuaternion(vehicleState.quaternion).add(vehicleState.position)
-  _fV.copy(_fP).sub(vehicleState.position)
-  _fV.crossVectors(vehicleState.angularVelocity, _fV).add(vehicleState.velocity)   // v + ω × r: the bed's own velocity there
-  const v = { x: _fV.x, y: _fV.y, z: _fV.z }
-  const q = vehicleState.quaternion, w = vehicleState.angularVelocity
+  const { v, q, w } = _bedPoint(pose)
   // FEAT-97: a fragile load carries its condition. A re-strap hands the same tracker back — a reseat
   // never repairs the cargo.
   const fragile = mission ? mission.fragile : _DEBUG_FRAGILE[key]
@@ -2706,10 +2699,54 @@ async function _loadFreight (key, massKg, mission = null, health = null) {
   _freight = { body, joint, key, massKg, mission, blink: 0, sound: fragile?.sound ?? null,
                health: fragile ? (health ?? makeFragile(fragile)) : null }
 }
+/**
+ * Body-local bed point `pose` → world, in _fP; returns the bed's own velocity there (v + ω × r) and
+ * the truck's attitude and spin, for a body that must start AT REST relative to the bed.
+ */
+function _bedPoint (pose) {
+  // vehicleState is the authoritative pose (physics.js Step 1.5); push it so a weld's frames are
+  // taken against where the truck IS, not the last step's pose (matters straight after a reseat).
+  physicsEngine.setTransform(vehicleChassis, vehicleState.position, vehicleState.quaternion)
+  _fP.set(pose.x, pose.y, pose.z).applyQuaternion(vehicleState.quaternion).add(vehicleState.position)
+  _fV.copy(_fP).sub(vehicleState.position)
+  _fV.crossVectors(vehicleState.angularVelocity, _fV).add(vehicleState.velocity)
+  return { v: { x: _fV.x, y: _fV.y, z: _fV.z }, q: vehicleState.quaternion, w: vehicleState.angularVelocity }
+}
+
+// ── The loose bed load — ONE unwelded body (data/offers.js `loose`: the stranded motorist's tire) ──
+// Dropped at accept where strapPose puts a load (centred, against the front wall, between the
+// wheelhouses), 1 cm above the ribs so it settles rather than starts in contact. Nothing holds it:
+// it slides, bounces and can be lost. Pinned and noDamage like FEAT-88's bundles. Pay never reads it.
+const LOOSE_SETTLE_GAP = 0.01   // m
+const LOOSE_LOST_S = 1.0        // s out of the bed well before the load counts as LOST — a bump that lifts it is not
+let _loose = null   // { body, kind, massKg, mission, outSince } — or null
+
+/** Losing the loose load fails its job (owner, 2026-10-22) — the same dead end as wrecked fragile cargo. */
+function _looseStep () {
+  const L = _loose
+  if (!L?.mission || L.mission.failed) return
+  if (_inBed(L.body)) { L.outSince = null; return }
+  L.outSince ??= simTime
+  if (simTime - L.outSince >= LOOSE_LOST_S) { L.mission.failed = true; _disarmJobCancel() }
+}
+function _loadLoose (kind, massKg, mission) {
+  if (_loose) { debrisSystem.remove([_loose.body]); _loose = null }
+  const bed = DEFAULT_VEHICLE_MODEL.bed, e = debrisSystem.halfExtents(kind)
+  if (!bed || !e) return   // no open bed, or the model is still loading (it loads at boot)
+  const pose = strapPose(bed, e)
+  pose.y += LOOSE_SETTLE_GAP
+  const { v, q, w } = _bedPoint(pose)
+  const body = debrisSystem.spawn(kind, { x: _fP.x, y: _fP.y, z: _fP.z }, v,
+    { spin: { x: w.x, y: w.y, z: w.z }, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true, massKg })
+  _loose = { body, kind, massKg, mission }
+}
+
 // A seat (R, teleport, reseed, region re-fit) moves the truck in one jump; a weld to the load left
-// behind would yank them together across it. Re-strap the same load on the new pose instead.
+// behind would yank them together across it. Re-strap the same load on the new pose instead — and
+// put the loose load back in the bed, where a reset means it to be.
 function _restrapFreight () {
   if (_freight) void _loadFreight(_freight.key, _freight.massKg, _freight.mission, _freight.health)
+  if (_loose) _loadLoose(_loose.kind, _loose.massKg, _loose.mission)
 }
 
 // ── FEAT-97: the fragile load's shocks ───────────────────────────────────────────────────────
@@ -3231,19 +3268,19 @@ function _haulStep () {
   }
 }
 
+/** Is debris body `h` inside the truck's bed well right now? */
+const _ibP = new THREE.Vector3(), _ibQ = new THREE.Quaternion()
+function _inBed (h) {
+  const bed = DEFAULT_VEHICLE_MODEL.bed
+  if (!bed) return false
+  physicsEngine.getTransform(vehicleChassis, _haulV, _haulQ)
+  physicsEngine.getTransform(h, _ibP, _ibQ)
+  return inBedWell(_ibP.sub(_haulV).applyQuaternion(_haulQ.invert()), bed)
+}
+
 /** Pieces of the live load inside the bed well right now. */
 function _haulAboard () {
-  const bed = DEFAULT_VEHICLE_MODEL.bed
-  if (!_haul || !bed) return 0
-  physicsEngine.getTransform(vehicleChassis, _haulV, _haulQ)
-  _haulQ.invert()
-  const cp = _haulV.clone(), p = new THREE.Vector3(), q = new THREE.Quaternion()
-  let n = 0
-  for (const h of _haul.handles) {
-    physicsEngine.getTransform(h, p, q)
-    if (inBedWell(p.sub(cp).applyQuaternion(_haulQ), bed)) n++
-  }
-  return n
+  return _haul ? _haul.handles.filter(_inBed).length : 0
 }
 
 function _haulClear () {
@@ -4169,6 +4206,8 @@ function _planOffer (offer) {
       m.load = s.load
       m.cargoKg = s.load ? s.massKg : null
       m.fragile = s.fragile   // FEAT-97: tolerance + sound, or null
+      m.loose = s.loose ? { kind: s.loose, massKg: s.massKg } : null   // the bed's one loose body
+      m.atPickup = s.atPickup   // a fetch's wait at the pickup (the tire change), or null
       if (s.load) {
         m.par *= 1 + FREIGHT_PAR_SLACK_PER_KG * s.massKg
         // Freight grades looser and tips less than haul (owner, 2026-10-11) — data/offers.js. Not
@@ -4178,6 +4217,9 @@ function _planOffer (offer) {
           m.tipMult = FREIGHT_TIP_MULT
         }
       }
+      // The pickup wait (the tire change) runs on the job's clock, so par carries it (owner,
+      // 2026-10-22) — and pay rides par like any other par time.
+      if (s.atPickup) m.par += s.atPickup.min / 60 * secPerGameH()
     }
     return m
   })
@@ -4228,11 +4270,13 @@ function _updateFetchPrompt (poiEl, pulled) {
     // general store's lot, ASSET-74) — inside the box, whose curtain is the halo you park in.
     const near = pq && Math.hypot(pq.x - vp.x, pq.z - vp.z) <= POI_PARAMS.poiInteractR
       && (!pq.park || overDropZone(pq, vp.x, vp.z, PARK_SLACK, pq.park))
+    const at = missionSystem.mission.atPickup
     if (near && pulled && missionSystem.acquire()) {
-      _fetchHomeMsg = `get back to ${_fetchHomeLabel(missionSystem.mission)}!`
+      if (at?.min) daySystem.advanceMinutes(at.min)   // the tire change — on the job's timer too; _planOffer put it in par
+      _fetchHomeMsg = `${at ? `${at.done} — ` : ''}get back to ${_fetchHomeLabel(missionSystem.mission)}!`
       _fetchHomeUntil = now + FETCH_HOME_MSG_S * 1000
     } else if (near) {
-      if (poiEl) { poiEl.style.display = 'block'; poiEl.innerHTML = parkPrompt('park to acquire mission item') }
+      if (poiEl) { poiEl.style.display = 'block'; poiEl.innerHTML = parkPrompt(at?.park ?? 'park to acquire mission item') }
       return true
     }
   }
@@ -5729,6 +5773,7 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   // FEAT-96: a freight job's load is handed over at accept, already strapped — no drop, no loading beat.
   const j = missionSystem.mission
   if (j?.load && missionSystem.isOnJob()) void _loadFreight(j.load, j.cargoKg, j)
+  if (j?.loose && missionSystem.isOnJob()) _loadLoose(j.loose.kind, j.loose.massKg, j)
 })
 document.getElementById('mp-prev')?.addEventListener('click', () => missionSystem.cycle(-1))
 document.getElementById('mp-next')?.addEventListener('click', () => missionSystem.cycle(+1))
@@ -6934,6 +6979,7 @@ function _jobCancelLabel () {
   if (!vehicleState.parked) return parkPrompt('park to abandon')
   // An intact strapped load still costs the clean-up hour, but it reads "abandon job" (owner,
   // 2026-10-15: "clean up" only once the cargo is actually wrecked).
+  if (missionSystem.mission?.failed && missionSystem.mission.loose) return 'tire lost · abandon job'
   return _strappedJob() && missionSystem.mission.failed ? 'cargo destroyed · clean up' : 'abandon job'   // FEAT-97
 }
 function _syncJobCancel (hud, on) {
@@ -7370,6 +7416,7 @@ function loop () {
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
     _fragileStep()   // FEAT-97: the fragile load's shocks, on the step that produced them
+    _looseStep()     // the loose load: out of the bed too long fails the job
     // SM-3: integrate component wear on the SAME fixed step the physics ran, so condition is
     // framerate-independent like everything else (INFRA-03 determinism). Reads the honest signals
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
@@ -7843,6 +7890,9 @@ function loop () {
     // mission and stays until replaced.) The weld dies with the body.
     if (_freight?.mission && (!missionSystem?.isOnJob() || missionSystem.mission !== _freight.mission)) {
       debrisSystem.remove([_freight.body]); _freight = null
+    }
+    if (_loose && (!missionSystem?.isOnJob() || missionSystem.mission !== _loose.mission)) {
+      debrisSystem.remove([_loose.body]); _loose = null
     }
     // FEAT-67: a parked offer panel carries a live expiry, and the offer can expire under it.
     if (missionSystem?.state === 'offer' && missionSystem.offer && offerBoard) {

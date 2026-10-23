@@ -570,6 +570,9 @@ function boardRig (ms, nowH = 6) {
             guideOut !== ms.mission && guideOut.segments.length === n && guideOut.segments.every((g, j) => g === segs[j]))
         check('driving through the pickup does not pick it up — you must park', ms.state === 'running' && ms.leg === 0
             && ms.pickupPoiId() === pick.id)
+        ms.mission.failed = true
+        check('a failed fetch (its loose tire lost) has no pickup to park at', ms.pickupPoiId() === null && ms.acquire() === false && ms.leg === 0)
+        ms.mission.failed = false
         check('parking there acquires the item (acquire → the return leg)', ms.acquire() === true && ms.leg === 1)
         check('…once', ms.acquire() === false && ms.pickupPoiId() === null)
         check('the GPS is handed the RETURN leg alone, as a new route (no outbound pass to snap onto)',

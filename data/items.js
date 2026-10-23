@@ -17,7 +17,7 @@ export const ITEMS = {
     chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3,
                     desc: 'Still warm, for now.' },
     // P235/75R15 on a steel rim.
-    spareTire:    { name: 'Spare tire',    kind: 'part',       massKg: 20,
+    spareTire:    { name: 'Spare tire',    kind: 'part',       massKg: 18,   // = RANGER_PARAMS.wheelMass
                     desc: 'A full-size spare on a steel wheel. Heavy to carry around.' },
     // A 2 gal RotoPax: ~5.7 kg of gas + ~1.5 kg of can (data/offers.js REWARDS).
     emergencyGas: { name: 'Emergency gas', kind: 'consumable', massKg: 7.2, use: 'gas',
