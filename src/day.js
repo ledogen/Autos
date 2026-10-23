@@ -46,6 +46,12 @@ export const DAY_PARAMS = {
     // 2026-10-20): 5 h awake costs ~3 h of sleep, so the cup must beat that ratio or nobody drinks it.
     coffeeReliefH: 5,
     coffeeDebtH:   2,
+    // Energy drink (owner, 2026-10-20): coffee's short, steep twin. Relief now, and a crash of half
+    // that a few hours later, the SAME day — coffee borrows from tomorrow, this from this afternoon.
+    // A sleep before the crash sleeps it off [DEFAULT]: the sleep preview and the night stay one sum.
+    energyDrinkReliefH:     5,
+    energyDrinkCrashH:      2.5,
+    energyDrinkCrashAfterH: 4,
 
     // ── Sleep recovery (FEAT-45 Phase D) — hours of energy bought per hour slept ───────────────
     // THE ARITHMETIC (ratified 2026-07-30; rescaled 2026-08-02 with the 16 h tank).
@@ -117,6 +123,7 @@ export class DaySystem {
         // ── Energy / blinks ───────────────────────────────────────────────────────────────────
         this._energyH   = DAY_PARAMS.fullEnergyH
         this._coffeeDebt = 0
+        this._crashes   = []      // energy drinks' crashes still to come: [{ atH (clockH), h }]
         // SM-INV-12 FLAG-GATE. Blinks and dozes are live-reactive, so they are OFF at construction
         // and stay off until main.js turns them on for a live story region. Headless gates never
         // construct this system at all, and even if they did, attenuation() is identically 1 and
@@ -134,6 +141,7 @@ export class DaySystem {
         runState.day = 1
         this._energyH = DAY_PARAMS.fullEnergyH
         this._coffeeDebt = 0
+        this._crashes = []
         this._blink = null
         this._signalArmed = true
         this._nextBlinkH = Infinity
@@ -168,6 +176,7 @@ export class DaySystem {
         // drain is the hour advance itself. Floors at −sleepDebtMaxH: past empty the meter keeps
         // falling into sleep debt (owner, 2026-08-02), so the night that repays it must be longer.
         this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - dHour)
+        this._crash()
         this._updateBlinks(dHour, dtSec)
         this._push(false)
     }
@@ -234,6 +243,21 @@ export class DaySystem {
         this._syncGui()
     }
 
+    /** An energy drink: hours back now, and a crash of half that later the same day (see DAY_PARAMS). */
+    drinkEnergy () {
+        this._energyH = Math.min(DAY_PARAMS.fullEnergyH, this._energyH + DAY_PARAMS.energyDrinkReliefH)
+        this._crashes.push({ atH: this.clockH() + DAY_PARAMS.energyDrinkCrashAfterH, h: DAY_PARAMS.energyDrinkCrashH })
+        this._syncGui()
+    }
+
+    /** Land every energy-drink crash the clock has reached. */
+    _crash () {
+        if (!this._crashes.length) return
+        const now = this.clockH()
+        for (const c of this._crashes) if (c.atH <= now) this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - c.h)
+        this._crashes = this._crashes.filter(c => c.atH > now)
+    }
+
     /**
      * FEAT-55 debug: jump the meter to an exact energy value (clamped to the meter's domain).
      * Pure state write — the blink scheduler re-reads the stage on the next update() tick, and
@@ -260,6 +284,7 @@ export class DaySystem {
         const dH = Math.max(0, m) / 60
         this._advanceHours(dH)
         this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - dH)
+        this._crash()
         this._endSkip()
     }
 
@@ -277,14 +302,16 @@ export class DaySystem {
      * @param {number} hours integer hours from the sleep timer
      * @param {number|'truck'} vibe  0..1 campsite score (mom's house passes a fixed 0.5), or
      *                              'truck' for a night in the cab (truckSleepRateH)
+     * @param {number} [rest]       the camp sleeping gear's recovery bonus (items.md §2b), 0.15 = +15%
      */
-    sleep (hours, vibe) {
+    sleep (hours, vibe, rest = 0) {
         const h = Math.max(0, hours)
         this._advanceHours(h)
+        this._crashes = []   // slept off (DAY_PARAMS energyDrink*)
         // ONE CODE PATH with the sleep dialogue's live preview: previewWake IS this arithmetic, and
         // sleep() is previewWake plus the two mutations (clock already advanced, debt cleared). They
         // cannot drift because there is only one of them.
-        this._energyH = this.previewWake(h, vibe)
+        this._energyH = this.previewWake(h, vibe, rest)
         this._coffeeDebt = 0
         this._endSkip()
     }
@@ -301,8 +328,8 @@ export class DaySystem {
      * @param {number} vibe 0..1
      * @returns {number} energy in hours at wake, in [−sleepDebtMaxH, fullEnergyH]
      */
-    previewWake (hours, vibe) {
-        const settled = this._energyH + this.recoveryRate(vibe) * Math.max(0, hours) - this._coffeeDebt
+    previewWake (hours, vibe, rest = 0) {
+        const settled = this._energyH + this.recoveryRate(vibe, rest) * Math.max(0, hours) - this._coffeeDebt
         return Math.max(-DAY_PARAMS.sleepDebtMaxH, Math.min(DAY_PARAMS.fullEnergyH, settled))
     }
 
@@ -312,11 +339,12 @@ export class DaySystem {
         return h < 0 ? h + 24 : h
     }
 
-    /** Hours of energy one hour of sleep buys at this campsite. See the arithmetic in DAY_PARAMS. */
-    recoveryRate (vibe) {
+    /** Hours of energy one hour of sleep buys at this campsite. See the arithmetic in DAY_PARAMS.
+     *  `rest` is the sleeping gear's bonus, added up and applied once: ×(1 + rest) [DEFAULT]. */
+    recoveryRate (vibe, rest = 0) {
         if (vibe === 'truck') return DAY_PARAMS.truckSleepRateH
         const v = Math.max(0, Math.min(1, vibe ?? 0.5))
-        return DAY_PARAMS.sleepRateWorstH + (DAY_PARAMS.sleepRateBestH - DAY_PARAMS.sleepRateWorstH) * v
+        return (DAY_PARAMS.sleepRateWorstH + (DAY_PARAMS.sleepRateBestH - DAY_PARAMS.sleepRateWorstH) * v) * (1 + rest)
     }
 
     /** Clock-only jump, sharing update()'s midnight rule (the run boundary SM-INV-12 permits). */

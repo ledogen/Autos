@@ -125,6 +125,14 @@ inv.packItem(tarpAt(), spareAt())
 check('equip refuses a full pack with no bed in it', ids(spareAt()) === 'testTarp,testTarp' && inv.equip(spareAt()) === false)
 delete ITEMS.testTarp
 
+// ── 6b. Sleeping gear (items.md §2b): the equipped pack's `rest` adds up; a bed swaps for the bedroll
+inv.start()
+check('the bare bedroll adds no rest', inv.restBonus() === 0)
+inv.grant('blanket'); inv.packItem(inv.list().findIndex(r => r.id === 'blanket'))
+inv.grant('deluxeSleepingPad'); inv.packItem(inv.list().findIndex(r => r.id === 'deluxeSleepingPad'))
+check('blanket + deluxe pad = +20%, the bedroll back in a truck slot',
+  Math.abs(inv.restBonus() - 0.20) < 1e-9 && inv.list().some(r => r.id === 'bedroll'), String(inv.restBonus()))
+
 // ── 7. Catalog ────────────────────────────────────────────────────────────────────────────────
 const missing = REWARDS.filter(r => !r.dineIn && !ITEMS[r.id]).map(r => r.id)
 check('every REWARDS id is in ITEMS', missing.length === 0, missing.join(', '))

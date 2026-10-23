@@ -32,6 +32,16 @@ export const ITEMS = {
     // A 12 V portable inflator: a plug repair is 30 min in all with it, 2 h by hand (items.md §7).
     compressor:   { name: 'Compressor',    kind: 'tool',       massKg: 4,
                     desc: 'A little pump that runs off the lighter socket. Airs a tire up while you wait.' },
+    // Coffee's short, steep twin (items.md §1a): relief now, a crash later the same day (DAY_PARAMS).
+    energyDrink:  { name: 'Energy drink',  kind: 'consumable', massKg: 0.5, use: 'energy',
+                    desc: 'Hits fast and hard. The crash comes later the same day.' },
+    // One bottle: radiator back up to half at most, a 15 min stop (items.md §7; main.js _pourStopLeak).
+    stopLeak:     { name: 'Stop-leak',     kind: 'consumable', massKg: 0.5, use: 'stopLeak',
+                    desc: "Maybe this will keep 'er going." },
+    // A pack of 5, 10% on a headlight, body panel or the radiator, 15 min a use (items.md §7). The
+    // repair effect is the parts session's and isn't built, so for now it is carried only.
+    zipTies:      { name: 'Zip ties',      kind: 'consumable', massKg: 0.2,
+                    desc: "A mechanic's best friend." },
     // A ~0.35 kg roll, 3 uses (items.md §7): 20% on a body panel, 15 min, holds for the run. The repair
     // effect is the parts session's and isn't built, so for now it is carried only.
     ductTape:     { name: 'Duct tape',     kind: 'consumable', massKg: 0.35,
@@ -49,6 +59,19 @@ export const ITEMS = {
     // ── Camp gear (items.md §2b) — `sleep` marks a sleeping item: the equipped pack always holds one.
     bedroll:      { name: 'Bedroll',       kind: 'camp',       massKg: 2.5, sleep: true,
                     desc: 'A rolled bed for the ground. Better than the dirt, not by much.' },
+    // `rest` is the bonus on camp sleep's recovery rate while packed (owner, 2026-10-16), summed and
+    // applied once (day.js recoveryRate). The beds replace the bedroll; the blanket and the sleeping
+    // bag are add-ons in their own slot. Masses [DEFAULT].
+    airMattress:  { name: 'Air mattress',  kind: 'camp',       massKg: 3,   sleep: true, rest: 0.05,
+                    desc: 'Off the rocks, mostly. Leaks a little by morning.' },
+    sleepingPad:  { name: 'Sleeping pad',  kind: 'camp',       massKg: 1,   sleep: true, rest: 0.10,
+                    desc: 'A foam pad that keeps the cold ground away from you.' },
+    deluxeSleepingPad: { name: 'Deluxe sleeping pad', kind: 'camp', massKg: 2, sleep: true, rest: 0.15,
+                    desc: 'Thick and self-inflating. The best night you can have outdoors.' },
+    blanket:      { name: 'Blanket',       kind: 'camp',       massKg: 1,   rest: 0.05,
+                    desc: 'A wool blanket on top of whatever you sleep on.' },
+    sleepingBag:  { name: 'Sleeping bag',  kind: 'camp',       massKg: 1.5, rest: 0.10,
+                    desc: 'Zip in and stay warm. Goes on top of the bed.' },
 
     // ── Vehicle parts (data/parts.js), owned UNFITTED: a slot each, and the entry carries the part's
     //    wear as `cond`. A massless part ('No lift') is an absence, not a thing you can carry. The

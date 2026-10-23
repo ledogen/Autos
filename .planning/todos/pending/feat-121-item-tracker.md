@@ -57,11 +57,12 @@ so the effect is a debt term on it. Already a REWARDS id (`coffee`), grant stubb
 station (C–B), never found.
 
 ### Energy drink
-status: todo · design: ratified · build: effect · needs: quick slots · where: gasStation, generalStore, reward
+status: wip · design: ratified · build: effect · needs: quick slots · where: gasStation, generalStore, reward
 **Ruled 2026-10-20:** +5 h now, a crash of −2.5 h four hours later. $4. Reward from the gas station
 and general store (C–B), never found.
 Coffee's short, steep twin: a bigger hit and the crash comes the same day. Must carry a debt or it is
 free alertness (fish's job).
+**In the game 2026-10-23** (`energyDrink`, 0.5 kg, `use: 'energy'`): +5 h now, the −2.5 h crash lands 4 h later (day.js `drinkEnergy`; a sleep first sleeps it off [DEFAULT]); a C–B reward from the gas station and general store. Not sold yet (no general-store shelf).
 
 ### Chili dog
 status: todo · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
@@ -186,10 +187,11 @@ air filter part, `airFilterStock`, built to this row on feature/parts (f5fa9cf9,
 REWARDS row (auto shop, gas station; B–A). Icon `airFilter.png`.
 
 ### Zip ties
-status: todo · design: ratified · build: effect · where: generalStore, autoShop, reward, found
+status: wip · design: ratified · build: effect · where: generalStore, autoShop, reward, found
 Field repair, 10% on the `armor*` / `headlight*` tracks and the radiator. 5 per pack. 15 min per use;
 holds for the run (2026-10-20). $5–10; an auto-shop reward (B–A); a rare roadside find (2026-10-21).
 Flavor: "A mechanic's best friend" (owner, 2026-10-22).
+**In the game 2026-10-23** (`zipTies`, 0.2 kg): a live B–A auto-shop reward; the repair (which light part, 10%, 15 min) is the parts session's and isn't built.
 
 ### Duct tape
 status: wip · design: ratified · build: effect · where: generalStore, reward, found
@@ -203,16 +205,18 @@ Struck in items.md (owner, 2026-10-16): FEAT-51 has no coolant to top up — rad
 cooling capacity. Replaced by stop-leak.
 
 ### Stop-leak
-status: todo · design: ratified · build: effect · where: autoShop, gasStation, reward
+status: wip · design: ratified · build: effect · where: autoShop, gasStation, reward
 Field repair: restores 15% radiator condition (owner, 2026-10-16), never past 50%. Under FEAT-51 that
 is cooling capacity directly — aimed at the overheat → power loss → engine wear chain. One use per
 bottle; 15 min; holds for the run (2026-10-20). $5–10; a reward from both (B–A); never found (2026-10-21).
 Flavor: "Maybe this will keep 'er going" (owner, 2026-10-22).
+**In the game 2026-10-23** (`stopLeak`, 0.5 kg, `use: 'stopLeak'`): parked, +15% radiator up to 50%, a 15 min stop (main.js `_pourStopLeak`); a B–A reward from the auto shop and gas station.
 
 ### Emergency gas
 status: wip · design: ratified · build: effect, model · where: gasStation, reward
 A 2 gal RotoPax, single-use — the mid-tier fuel reward (B–A). REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122). Fuel shipped (FEAT-50, 2026-10-17); the pour itself is still unbuilt. Ruled 2026-10-21: parked only, a 10 min timeskip; $5–10; a gas-station and stranded-motorist reward (B–A); never found.
 The pour sounds like a glug glug glug, same as the jerry can (owner, 2026-10-22; FEAT-120).
+**The pour is now parked only and a 10 min stop** (2026-10-23, as ruled 10-21).
 
 ### Jerry can
 status: todo · design: ratified · build: effect · where: gasStation, reward, found
@@ -353,28 +357,33 @@ In the inventory, packed in the starter Pack, with its thumbnail (FEAT-122). The
 The baseline sleeping item, no bonus. Fills one of the starter Pack's 2 slots.
 
 ### Air mattress
-status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Sleeping item: +5% recovery rate. Swaps for the bedroll in its slot and in the render.
+**In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Sleeping pad
-status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Sleeping item: +10% recovery rate. Swaps for the bedroll.
+**In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Deluxe sleeping pad
-status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Sleeping item: +15% recovery rate, the best bed. Swaps for the bedroll.
+**In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Blanket
-status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Add-on, own slot, not required to sleep: +5% recovery rate, adding to the bed and the sleeping bag.
+**In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Sleeping bag
-status: todo · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Add-on, own slot, not required to sleep: +10% recovery rate, adding to the bed and the blanket.
 Renders with the bed, not in place of it.
 Camp render (owner, 2026-10-20): shown unrolled, corner unzipped and turned back; layered variants
 for bag + blanket (and the other pairings) are owed so the stack looks natural. Pads likewise render
 unrolled, which is why their thumbnails are unrolled inflatables.
+**In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Tent
 status: todo · design: idea · build: effect · needs: camp render · where: generalStore

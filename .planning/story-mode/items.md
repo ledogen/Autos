@@ -1176,6 +1176,14 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
   vendor; the result card offers it as a choice, and staying costs 30 min.
 - **Duct tape is a live reward** (§7) from the general store, gas station and auto shop; its repair is
   not built. **Emergency gas** now rewards at its ruled B–A (the code still said C–B).
+- **Built from the setup page** (ratified, nothing blocking): the **energy drink** (+5 h, the −2.5 h crash
+  4 h later; a sleep first sleeps it off [DEFAULT]), **stop-leak** (parked, +15% radiator to 50%, 15 min),
+  **zip ties** (the reward only; the repair waits on the parts session), and the five **sleeping items**
+  (their recovery bonus on camp sleep, added up [DEFAULT]; masses [DEFAULT]; no shelf or reward yet).
+  The emergency gas pour is now parked only and a 10 min stop, as ruled. **Not built, and why:** the
+  jerry can (needs per-can fill and the pump, which sit on feature/parts), the GPS unit (no minimap
+  exists), the rucksack and power mods (figures open), the chain and Shortcut GPS (their systems don't
+  exist), the bike pump (never an item).
 
 ### Kept, but blocked or needs a mechanism
 
