@@ -19,7 +19,8 @@
  * 2026-10-20): the header's "jobs" button hands over to the offer. "map" opens the map over the
  * screen (owner, 2026-10-21); the screen hides under it and the clock stays held.
  *
- * Described, never scored (SM-INV-10): conditions are colour bars, parts are names, prices are money,
+ * Described, never scored (SM-INV-10): parts are names, prices are money, conditions are colour bars
+ * with their percentage (wear is a state, not a score: owner, 2026-10-22),
  * rarity is the tint behind the icon (data/parts.js RARITY_COLOR). Rules live in src/service.js; this
  * reads it and the DOM only (the inventory-screen.js layout).
  */
@@ -63,6 +64,7 @@ body:has(#svc-screen.open) #quickjob-btn { visibility: hidden; }   /* it sits wh
 #svc-screen .sv-flat { font-size: 12px; color: var(--bad-text); }
 #svc-screen .sv-bar { width: 60px; height: 6px; background: var(--line); overflow: hidden; flex: none; }
 #svc-screen .sv-bar i { display: block; height: 100%; }
+#svc-screen .sv-pct { width: 36px; text-align: right; color: var(--text-dim); font-size: 12px; flex: none; }
 #svc-screen .sv-cost { width: 112px; text-align: right; color: var(--text-dim); font-size: 12px; flex: none; }
 #svc-screen .sv-btn { font: 12px var(--font); color: var(--text-body); background: transparent; border: 1px solid var(--line-control);
   border-radius: 3px; padding: 2px 8px; cursor: pointer; flex: none; transition: background 0.1s, border-color 0.1s; }
@@ -94,6 +96,7 @@ body:has(#svc-screen.open) #quickjob-btn { visibility: hidden; }   /* it sits wh
 
 /** Condition, coloured by the damage screen's bands (the palette's one owner, UI-STYLE.md §3). */
 const bar = (c, flat = false) => `<span class="sv-bar"><i style="width:${Math.round(c * 100)}%;background:${bandColor(flat ? 0 : c)}"></i></span>`
+  + `<span class="sv-pct">${Math.round(c * 100)}%</span>`
 /** The repair bar: where the part is now, what the repair adds, the target marker, the bench's cap. */
 const pct = (x) => `${(x * 100).toFixed(1)}%`
 const hbar = (c, t) => `<span class="sv-hbar"><span class="now" style="width:${pct(c)};background:${bandColor(c)}"></span>`
@@ -338,7 +341,8 @@ export class ServiceScreen {
     if (!this._targets(key).length) return dim('As good as the bench gets it. Only a new one is better.')
     const t = this._target(key), q = quote(t)
     return `<button class="sv-step" data-act="step" data-key="${key}" title="← → set how far">`
-      + `<i class="sel-prev">◀</i>${hbar(cond, t)}<i class="sel-next">▶</i></button>`
+      + `<i class="sel-prev">◀</i>${hbar(cond, t)}<i class="sel-next">▶</i>`
+      + `<span class="sv-pct">${Math.round(cond * 100)}% → ${Math.round(t * 100)}%</span></button>`
       + `<div class="sv-row"><span class="sv-name sv-desc">Up to the white mark; past the faint line only a new part goes.</span>`
       + `<span class="sv-cost">${cost(q.price, q.hours)}</span>`
       + btn('repair', 'repair', this.service.money() + 1e-9 >= q.price, `data-key="${key}"`, ' ok') + `</div>`

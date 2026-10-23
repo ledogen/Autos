@@ -87,8 +87,7 @@ export const PARTS = {
     // ── Tires (§3g) — ONE tire each, any corner. Grip is against the stock tire; dirt grip waits on
     //    FEAT-38. Masses are the tire alone (a 225/70R15 is ~12 kg); the all-terrain is the standard
     //    one's × 1.2 (owner, 2026-10-21).
-    //    Prices (owner, 2026-10-22, the page's bands — old $5–10, the rest $10–30; [DEFAULT] within):
-    //    old $7, standard $15, sport $20, all-terrain $20. Sport grip +10% on pavement and wears ×1.25
+    //    Prices (owner, 2026-10-22): old $7, standard $15, sport $20, all-terrain $25. Sport grip +10% on pavement and wears ×1.25
     //    (`durability` 0.8 overrides its family). Its −10% and the all-terrain's +15% ON DIRT wait on
     //    FEAT-38: grip is one number per tire until the physics knows what each tire stands on.
     //    The spare is its own part (owner, 2026-10-20): a full-size spare MOUNTED on a steel wheel, new
@@ -102,7 +101,7 @@ export const PARTS = {
                      patch: {}, desc: 'A tire already mounted on a steel wheel. Bolt it on in place of a flat. Heavy to carry around.' },
     tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 20, massKg: 11.5, grip: 1.1, durability: 0.8,
                      patch: {}, desc: 'Just a tire, soft and sticky on pavement, lost on dirt, and it wears fast. Can’t drive on it without a rim; the shop mounts it.' },
-    tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 20, massKg: 14.4, grip: 1,
+    tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 25, massKg: 14.4, grip: 1,
                      patch: {}, desc: 'Just a tire, chunky tread: no worse on pavement, at home on dirt. Can’t drive on it without a rim; the shop mounts it.' },
     tireLT:        { name: 'Load-range E tire',    slot: 'tire', family: 'hd', rarity: 'uncommon', price: 10, massKg: 15, grip: 0.95,
                      patch: {}, load: LT_LOAD,
@@ -129,11 +128,11 @@ export const PARTS = {
                        desc: 'An extra leaf. Sits level under a load, bucks when empty.' },
     // Sport tier (owner, 2026-10-22): stiffer than stock, softer than HD, stock height, stock load
     // rating; Sport family, so they wear faster. [DEFAULT] +35% rate, +40% damping (the page's middle
-    // options), priced between stock and HD.
-    springsFrontSport: { name: 'Sport front springs', slot: 'springsFront', family: 'sport', rarity: 'uncommon', price: 10, massKg: 14,
+    // options). Prices: springs $15, shocks $20 (owner, 2026-10-22).
+    springsFrontSport: { name: 'Sport front springs', slot: 'springsFront', family: 'sport', rarity: 'uncommon', price: 15, massKg: 14,
                        patch: { suspensionStiffnessFront: 44550 },
                        desc: 'Stiffer coils at the stock height. Sharp on pavement, firm over bumps, and they tire sooner.' },
-    springsRearSport:  { name: 'Sport rear springs',  slot: 'springsRear', family: 'sport', rarity: 'uncommon', price: 10, massKg: 16,
+    springsRearSport:  { name: 'Sport rear springs',  slot: 'springsRear', family: 'sport', rarity: 'uncommon', price: 15, massKg: 16,
                        patch: { suspensionStiffnessRear: 44550 },
                        desc: 'Stiffer leaves at the stock height. Squats less, skips over bumps, and they tire sooner.' },
     dampersFrontOEM: { name: 'Stock front shocks',  slot: 'dampersFront', family: 'oem', rarity: 'common', price: 6, massKg: 6, stock: true,
@@ -146,10 +145,10 @@ export const PARTS = {
     dampersRearHD:   { name: 'Heavy-duty rear shocks', slot: 'dampersRear', family: 'hd', rarity: 'uncommon', price: 11, massKg: 7,
                        patch: { suspensionDampingRear: 6000 }, load: HD_DAMPERS,
                        desc: 'Firm valving that settles a loaded bed. Busy and harsh when empty.' },
-    dampersFrontSport: { name: 'Sport front shocks', slot: 'dampersFront', family: 'sport', rarity: 'uncommon', price: 9, massKg: 6,
+    dampersFrontSport: { name: 'Sport front shocks', slot: 'dampersFront', family: 'sport', rarity: 'uncommon', price: 20, massKg: 6,
                        patch: { suspensionDampingFront: 4900 },
                        desc: 'Quick, firm valving. The nose stays put and the ride gets busy. They wear out faster.' },
-    dampersRearSport:  { name: 'Sport rear shocks',  slot: 'dampersRear', family: 'sport', rarity: 'uncommon', price: 9, massKg: 6,
+    dampersRearSport:  { name: 'Sport rear shocks',  slot: 'dampersRear', family: 'sport', rarity: 'uncommon', price: 20, massKg: 6,
                        patch: { suspensionDampingRear: 5600 },
                        desc: 'Quick, firm valving. The tail settles fast and the ride gets busy. They wear out faster.' },
     // ── Brakes, per axle (DESIGN.md: pad grades per axle set the bias): pads up front, drum shoes at
@@ -254,7 +253,7 @@ export const REPAIRS = {
 export const REPAIR_CAP = 0.8
 export const REPAIR_STEP = 0.05
 /** The shop can still patch a flat: fixes the hole, not the wear — about a plug kit's price, and its
- *  half hour. [DEFAULT] (owner to confirm 2026-10-22). */
+ *  half hour (owner, 2026-10-22). */
 export const PATCH = { price: 5, hours: 0.5 }
 
 /** A part sold back to the shop fetches half its price × its condition (owner, 2026-10-20). */

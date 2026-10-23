@@ -9,8 +9,7 @@
 // its own LIFE_H; buying it empties the slot. WHAT fills it is data/stock-weights.js (per item, shared
 // with the mission rewards).
 //
-// Owner-approved 2026-10-22 (the setup page): the slots, P_FILL, LIFE_H, USED_COND. P_NEW is still
-// [DEFAULT] (the question is open).
+// Owner-approved 2026-10-22 (the setup page): the slots, P_FILL, LIFE_H, USED_COND, P_NEW.
 
 export const SHELF_SLOTS = 4
 export const P_FILL = 0.06            // per empty slot per game hour
