@@ -9,7 +9,7 @@
 //
 // Checks:
 //   (a) DETERMINISM — the same key gives the same drop points, spins and variants; another key does not.
-//   (b) LOADING — 10 and 15 bundles dropped on a truck parked squarely over the zone: at least 80%
+//   (b) LOADING — the stock's ends (12 and 30 bundles) dropped on a truck parked squarely over the zone: at least 80%
 //       land in the well (the loader is sloppy — a lost piece or two is part of the job, owner
 //       2026-10-09); one parked a metre off catches under 80% (parking is the skill).
 //   (No RIDE check: spilling on the drive is the player's fault and the point of a loose heap —
@@ -20,7 +20,7 @@
 //
 // Run: node test/haul-load.mjs
 
-import { HAUL_BUNDLES, HAUL_BUNDLE_KG } from '../data/offers.js'
+import { HAUL_STOCK, HAUL_BUNDLE_KG } from '../data/offers.js'
 import { GROUP_DEBRIS } from '../src/physics-engine.js'
 import { DEBRIS_TYPES, DEBRIS_CAP, DebrisSystem, bedDropPoints } from '../src/debris.js'
 import { BED, HULLS, hullVolume, truck, useGameHulls, load, aboard } from './lib/haul-rig.mjs'
@@ -59,7 +59,7 @@ console.log('(a) determinism:')
 }
 
 console.log("(b) loading a parked truck:")
-for (const n of HAUL_BUNDLES) {
+for (const n of HAUL_STOCK) {
   const t = await truck()
   load(t, n, `haul:6:gate:${n}`)
   const a = aboard(t)
@@ -67,7 +67,7 @@ for (const n of HAUL_BUNDLES) {
   t.engine.dispose()
 }
 {
-  const n = HAUL_BUNDLES[1], t = await truck()
+  const n = 15, t = await truck()
   load(t, n, `haul:6:gate:${n}`, { off: 1.0 })
   const a = aboard(t)
   ok(a < n * 0.8, `parked a metre off the zone: ${a} of ${n} in the bed`)
@@ -77,7 +77,7 @@ for (const n of HAUL_BUNDLES) {
 console.log('(d) cargo never reads as an impact:')
 for (const noDamage of [true, false]) {
   const t = await truck()
-  load(t, HAUL_BUNDLES[1], 'haul:6:gate:wear', { noDamage })
+  load(t, 15, 'haul:6:gate:wear', { noDamage })
   const hit = t.engine.maxContactImpulse(t.chassis)
   ok(noDamage ? hit.impulse === 0 : hit.impulse > 0,
     `${noDamage ? 'flagged' : 'UNflagged (control)'}: chassis contact impulse ${hit.impulse.toFixed(1)} N·s`)

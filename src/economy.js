@@ -510,6 +510,8 @@ export class EconomySystem {
         this._ctrls.push(f.add(read, 'missions').name('missions').disable())
         this._ctrls.push(f.add(read, 'tier').name('day tier').disable())
         this._read = read
+        // Test money (owner, 2026-10-22): fund a run to try priced things without driving for it.
+        f.add({ add: () => { runEconomy.money = _cents(runEconomy.money + 50) } }, 'add').name('wallet +$50')
         f.add(ECONOMY_PARAMS, 'k', 0.005, 0.2, 0.0005).name('k (max $/par-sec)')
         f.add(ECONOMY_PARAMS, 'baseFrac', 0, 1, 0.05).name('base pay (× max)')
         f.add(ECONOMY_PARAMS, 'towFlat', 0, 50, 0.5).name('tow: call-out $')

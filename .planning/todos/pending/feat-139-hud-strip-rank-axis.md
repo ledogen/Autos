@@ -9,7 +9,7 @@ source: owner, 2026-10-21 — "Whatever the strip is showing should also show wh
   threshold and instant destruction limits."
 relates: FEAT-87 (the rank timer strip), FEAT-97 (fragile health), FEAT-113 (due time), FEAT-138
 requires: FEAT-138
-design: design-amendments-2026-10-21-mission-recut.md §9
+design: design-amendments-2026-10-21-mission-recut.md §9, §2b (freight, 2026-10-22)
 ---
 
 # FEAT-139: The HUD strip shows each type's rank axis and the live letter
@@ -20,7 +20,7 @@ design: design-amendments-2026-10-21-mission-recut.md §9
 |---|---|---|
 | Courier | unchanged: the FEAT-87 boundary bar + letter | the bar itself |
 | Haul | `Haul · 12 aboard · A` | `lose 2 → B` |
-| Freight | `Freight · 710 kg · S` | the due time (static while driving — freight can't lose cargo) |
+| Freight | `Freight · 710 kg` — **no letter** (owner, 2026-10-22, §2b) | the due time (static while driving — freight can't lose cargo) |
 | Fragile | a health bar + letter | **a vertical bar of the combined felt g** |
 | Papers | `Papers · 3/4` + the FEAT-87 boundary bar + letter | the bar; the due time as a clock time |
 
@@ -30,6 +30,13 @@ already computes — damage reads the magnitude, vertical included). Two marks o
 cornering peaks around 0.6 g, a 1 m crest lands at 4.6–4.8 g.
 
 The health bar is for now. Later, damage should show on the cargo itself (texture, deformation).
+
+**Freight shows no tier anywhere (owner, 2026-10-22, amendment §2b).** Freight is posted with a fixed
+load, and its kg tier is internal: it only picks the bonus item. The job is binary, delivered or not.
+So the strip shows the payload weight and the due time, nothing else. The FEAT-87 boundary bar goes
+too: it draws time-letter bands that freight's letter never read (FEAT-138 already moved freight's
+letter to kg). The result card shows no letter or tier for freight. It shows delivered, Base pay, Tip
+and the item.
 
 ## Notes
 
@@ -44,7 +51,20 @@ The health bar is for now. Later, damage should show on the cargo itself (textur
 
 ## Acceptance
 
-- [ ] Every type's strip shows its rank axis and the live letter, per the table.
+- [ ] Every type's strip shows its rank axis and the live letter, per the table — except freight.
+- [ ] Freight: the strip shows `Freight · <kg>` and the due time, with no letter and no FEAT-87 bar
+      (`_rankTimerSource` returns none for freight).
+- [ ] Freight result card shows no letter or tier (main.js onSettle still sets `result.letter` from
+      `amountGrade` for freight; it stays internal for the bonus and the deed — owner, 2026-10-22, §2b answer 1).
 - [ ] Haul shows how many more lost pieces drop a letter.
 - [ ] Fragile shows the health bar and the combined-g bar with both marks, at the cargo's own values.
 - [ ] No countdown digits; `test/rank-timer.mjs` green.
+
+## Addendum 2026-10-23 — haul row BUILT, in the owner's new form (with FEAT-114)
+
+Owner: "keep only the [run readout] in the top bar. Below the top bar put 'carrying xx bundles / xx
+for the item reward'." This **supersedes the table's haul row**, `Haul · 12 aboard · A` / `lose 2 → B`.
+Haul shows no letter (the letter only decides the item), so there is no "lost pieces drop a letter"
+warning either. Built: `#job-haul` in `#job-stack` (index.html), written by `_syncHaulLine` in main.js
+at the 10 Hz panel poll from `_haulAboard()`. A haul with no bonus shows only "carrying N bundles". The
+haul acceptance line is met in this form. Freight, fragile and papers rows are still open.

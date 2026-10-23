@@ -25,6 +25,9 @@ export const ITEMS = {
     // One plug per kit; the effect ('plug') is the parts session's (owner hand-off 2026-10-21).
     tirePlugKit:  { name: 'Tire plug kit', kind: 'consumable', massKg: 0.3, use: 'plug',
                     desc: 'Sticky string plugs and the tools to push one in. Fixes the hole, not the wear.' },
+    // A haul reward (owner, 2026-10-22): a 3/8" rubber mat cut for a compact bed, ~15 kg. Effect unbuilt.
+    rubberBedMat: { name: 'Rubber bed mat', kind: 'tool',      massKg: 15,
+                    desc: 'A heavy rubber mat for the bed floor. Loose cargo stops sliding around.' },
     // A 12 V portable inflator: a plug repair is 30 min in all with it, 2 h by hand (items.md §7).
     compressor:   { name: 'Compressor',    kind: 'tool',       massKg: 4,
                     desc: 'A little pump that runs off the lighter socket. Airs a tire up while you wait.' },

@@ -302,6 +302,11 @@ export const REWARDS = [
       pools: ['gasStation', 'strandedMotorist'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'workSite'] },
+    // The haul yard's rewards (owner, 2026-10-22; items.md §7): the mat is the lesser grip; its
+    // friction effect isn't built yet — the item is granted. The bedliner (A–S here) joins the
+    // day its thumbnail exists (test/dist-assets.mjs needs assets/items/bedliner.png).
+    { id: 'rubberBedMat', name: 'Rubber bed mat', kind: 'tool', gates: ['B', 'A'],
+      pools: ['firewoodYard'] },
 ]
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────
@@ -335,7 +340,9 @@ export const SOURCES = {
     larrysHouse:  { slots: 1,      expiryH: null, lockH: 12, families: ['papers'] },
     // FEAT-88/91: the region-1 haul yard. Haul only for now — FEAT-91 also has it give and take
     // courier jobs, which lands with FEAT-89.
-    firewoodYard: { slots: 2,      expiryH: 24, families: ['haul'] },
+    // ONE offer at a time (owner, 2026-10-22): one stock, at most one reward, one count to pick —
+    // no comparing several rewards' thresholds against the picker.
+    firewoodYard: { slots: 1,      expiryH: 24, families: ['haul'] },
     foodVendor:   { slots: [2, 3], expiryH: 2,  families: ['delivery'] },
     // ── the budget (FEAT-101) ──
     generalStore:     { cap: 2, expiryH: 24,       families: ['delivery', 'fragile', 'freight'] },
@@ -356,28 +363,35 @@ export const BUDGET_JOBS = 12
 
 // ── Haul loads (FEAT-88, owner 2026-10-04) ──────────────────────────────────────────────────
 //
-// A haul offer rolls how many pieces it is, and the pay scales with that: a bigger load is a
-// juicier job, and also more weight squatting the truck and more pieces to lose. That is the lever
-// that lets the market pull the player between careers. Pay = the ordinary par line × pieces ×
-// HAUL_PAY_PER_BUNDLE, then × (pieces aboard at delivery ÷ pieces in the offer) at settle.
+// A haul giver has a STOCK, and the player picks how many pieces to load from it (FEAT-114, owner
+// 2026-10-21) and BUYS them (§5b, 2026-10-22). Pay = the ordinary par line × HAUL_PAY_PER_BUNDLE per
+// piece aboard at delivery. A bigger load pays more, weighs more and has more pieces to lose; the
+// rank is the count delivered (FEAT-138), so loading past S is insurance the player pays for.
 
-/** [min, max] firewood bundles per offer, inclusive. Owner, 2026-10-05 (was 7–12 on the first drive). */
-export const HAUL_BUNDLES = [10, 15]
+/** [min, max] firewood bundles in a yard's stock, inclusive (owner, 2026-10-22). The pick is 1…stock. */
+export const HAUL_STOCK = [12, 30]
+
+/**
+ * What a piece costs to load, as a share of the job's base pay per piece (owner, 2026-10-22: "half of
+ * base is pretty appropriate"). Cheap on purpose: a failed haul already costs money in wear, and the
+ * purchase must never be a crippling gamble. Charged at accept; an expired or abandoned haul keeps
+ * it. A FEAT-69 knob.
+ */
+export const HAUL_STOCK_PRICE = 0.5
 
 /** kg per bundle. A real shrink-wrapped bundle is ~0.75 ft³, 10–12 kg (src/debris.js bundleA..C). */
 export const HAUL_BUNDLE_KG = 11
 
 /**
  * Pay per bundle as a fraction of an ordinary delivery over the same route. 1/10: a 10-bundle load
- * pays what a delivery would, 15 bundles pay 1.5× — the same 1×–1.5× spread the first 7–12 range had
- * at 1/8 (re-weighted with the range, owner 2026-10-05). PLACEHOLDER — tune on a drive.
+ * pays what a delivery would (owner 2026-10-05). PLACEHOLDER — tune on a drive.
  */
 export const HAUL_PAY_PER_BUNDLE = 1 / 10
 
 /**
  * Par on a haul is the route's par × this (owner, 2026-10-05: "the added weight slows the truck
  * slightly, so par should be ~10% longer"). Pay rides par, so the per-bundle rate is divided by the
- * same factor in the offer's payMult (src/offer-board.js) — a 10-bundle haul still pays exactly what
+ * same factor in the offer's per-piece payMult (src/offer-board.js) — 10 bundles delivered pay exactly what
  * a courier job over that route pays; only the clock it is graded against is longer.
  */
 export const HAUL_PAR_SLACK = 1.1

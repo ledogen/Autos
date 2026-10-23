@@ -39,14 +39,14 @@
 
 import {
     THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, BONUS_PAY_MULT, GATE_WEIGHTS,
-    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, DEADLINE_SLACK, NOT_A_DESTINATION,
+    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, DEADLINE_SLACK, NOT_A_DESTINATION,
 } from '../data/offers.js'
 import {
     FIRST_NAMES, FEMALE_CHANCE, LAST_NAMES, NICKNAMES, NICKNAME_CHANCE, POI_ADJECTIVES,
     POI_ADJECTIVE_CHANCE, POI_THE_CHANCE, BUSINESS_TYPES, NAME_FORMS, HOUSEHOLDS, PLACE_NOUNS, LANDMARKS,
 } from '../data/offer-names.js'
 import { djb2, mulberry32 } from './seed.js'
-import { basePay, formatMoney } from './economy.js'
+import { basePay, formatMoney, rankTable } from './economy.js'
 import { DAY_PARAMS } from './day.js'
 
 /**
@@ -110,6 +110,28 @@ export function jobBadge (sp) {
 export function gateText (gate) { return gate === 'S' ? 'S only' : `${gate} or better` }
 
 /**
+ * A bonus gate as the card prints it (FEAT-114, amendment §6). Haul ranks on the count delivered
+ * (FEAT-138), so its gate prints the count, never the letter: "deliver 18+ bundles" (owner, 2026-10-23:
+ * the letter only ever decides the item, so the card names the threshold). Freight's tier is
+ * INTERNAL (owner, 2026-10-22): the load is the poster's, the roll only offers items its mass can
+ * reach, so the bonus is simply earned on delivery. Every other family keeps the letter.
+ * `kind` is 'haul' | 'freight' | anything else.
+ */
+export function gateLine (gate, kind, region = 1, cargoId = 'firewood') {
+    if (kind === 'haul') return `deliver ${rankTable('haul', region, cargoId)[gate]}+ bundles`
+    if (kind === 'freight') return 'on delivery'
+    return gateText(gate)
+}
+
+/**
+ * What one haul piece costs to load (FEAT-114 §5b): HAUL_STOCK_PRICE of the job's base pay per piece,
+ * to the cent. `pieceMult` is the haul spec's per-piece payMult.
+ */
+export function stockPrice (par, payTier, pieceMult) {
+    return Math.round(HAUL_STOCK_PRICE * basePay(par, payTier, pieceMult) * 100) / 100
+}
+
+/**
  * A game-time duration as a card reads it: "18 min", "2h 05m", "1d 4h". Game hours in, so the
  * figure means the same thing whether the player sleeps through it or drives through it.
  */
@@ -150,9 +172,11 @@ export class OfferBoard {
      * @param {number} o.seed        world seed
      * @param {Array<{id:string,type:string}>} o.pois — PoiSystem.list(), the roster
      * @param {number} o.nowH        the absolute game clock at creation (DaySystem.clockH())
+     * @param {number} [o.region]    the story region (1-based) — which rank row a bonus gate reads
      */
-    constructor ({ seed, pois, nowH }) {
+    constructor ({ seed, pois, nowH, region = 1 }) {
         this._seed = seed >>> 0
+        this._region = region
         this._now = nowH
         this._pois = new Map()
         for (const q of pois || []) this._pois.set(q.id, q)
@@ -418,13 +442,14 @@ export class OfferBoard {
      * changes WHAT it is. Null only if the source has no built thing to post (a table gap).
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate}|null, payMult,
-     *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null,
+     *   destKind: 'poi'|'roadside'|null, destPick, placeName, stock: number|null, to: string[]|null,
      *   passenger: boolean, shape: 'courier'|'fetch', from: string[]|null, load: string|null,
      *   deadlineSlack: number }
      * deadlineSlack (FEAT-113): the deadline is par × (1 + it) from accept — see deadlineH().
-     * bundles is the haul load's piece count (FEAT-88), null for every other family. It is drawn on
-     * its OWN `bundles` stream: one more draw on `spec` would shift the destination and place name
-     * of every existing offer on every seed.
+     * stock is the haul giver's piece count (FEAT-114) — the player picks 1…stock at accept — null
+     * for every other family. It is drawn on its OWN `stock` stream: one more draw on `spec` would
+     * shift the destination and place name of every existing offer on every seed. A haul's payMult
+     * and its card's pay are PER PIECE; massKg is the whole stock's.
      * destKind is null for papers (the paper route picks its own customers). destPick is the uniform
      * number the mission planner uses to choose among the destination POIs it can actually reach;
      * placeName is the roadside name, rolled always, used whenever no POI destination fits.
@@ -458,15 +483,25 @@ export class OfferBoard {
         const people = this._names.get(offer.poiId)?.people ?? []
         const person = people.length ? people[Math.floor(r() * people.length)] : null
 
+        const stockRoll = thing.family === 'haul' ? stream('stock')() : null
+
         // BONUS (25 %). The gate is drawn only among gates this source actually has a reward for,
         // so a source whose list lacks an S reward still posts bonuses at the full share instead of
         // silently rolling a gate it cannot fill. A source with no rewards at all never bonuses.
+        // FEAT-114 §6: a freight gate is a kg the load is posted with, so it is drawn only among gates
+        // the load meets — a freight bonus is always earned on delivery. A haul gate is a count, and
+        // the STOCK follows the gate instead (below): the bonus keeps its full share (owner, 2026-10-23:
+        // filtering on a pre-drawn stock cut the yard's share to 18 %).
         let bonus = null
         const bonusRoll = r(), gateRoll = r(), rewardRoll = r()
+        const amount = thing.family === 'freight' ? { have: massKg, row: rankTable('freight', this._region) } : null
         if (bonusRoll < BONUS_CHANCE) {
             const pool = REWARDS.filter(w => w.pools.includes(offer.type))
             const w = {}
-            for (const g of Object.keys(GATE_WEIGHTS)) if (pool.some(x => x.gates.includes(g))) w[g] = GATE_WEIGHTS[g]
+            for (const g of Object.keys(GATE_WEIGHTS)) {
+                if (amount && amount.have < amount.row[g]) continue
+                if (pool.some(x => x.gates.includes(g))) w[g] = GATE_WEIGHTS[g]
+            }
             if (Object.keys(w).length) {
                 const gate = pickWeighted(gateRoll, w)
                 const at = pool.filter(x => x.gates.includes(gate))
@@ -474,15 +509,18 @@ export class OfferBoard {
                 bonus = { rewardId: reward.id, name: reward.name, gate }
             }
         }
+        // The haul stock: uniform over HAUL_STOCK, floored at the bonus gate's count so the reward is
+        // always reachable on what the yard has.
+        let stock = null
+        if (stockRoll != null) {
+            const [sLo, sHi] = HAUL_STOCK
+            const lo = bonus ? Math.max(sLo, rankTable('haul', this._region, thing.id)[bonus.gate]) : sLo
+            stock = lo + Math.floor(stockRoll * (sHi - lo + 1))
+        }
 
         const papers = thing.family === 'papers'
         const destRoll = r(), destPick = r()
         const placeName = this._placeName(r)
-        let bundles = null
-        if (thing.family === 'haul') {
-            const [bLo, bHi] = HAUL_BUNDLES
-            bundles = bLo + Math.floor(stream('bundles')() * (bHi - bLo + 1))
-        }
         // FEAT-102: a FETCH when this source is one of the thing's fetchers — go to a pickup (a POI of
         // `from`), park there, bring it back. Otherwise the courier shape, as built.
         const fetch = !!thing.fetchBy?.includes(offer.type)
@@ -492,9 +530,10 @@ export class OfferBoard {
             deadlineSlack: thing.deadlineSlack ?? DEADLINE_SLACK[thing.family],   // FEAT-113
             shape: fetch ? 'fetch' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
             family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
-            massKg: bundles ? bundles * HAUL_BUNDLE_KG : massKg, bundles,
-            // ÷ HAUL_PAR_SLACK: the haul's par is that much longer and pay rides par (data/offers.js).
-            payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1)
+            massKg: stock ? stock * HAUL_BUNDLE_KG : massKg, stock,
+            // Haul: PER PIECE — the pick multiplies it at accept. ÷ HAUL_PAR_SLACK: the haul's par is
+            // that much longer and pay rides par (data/offers.js).
+            payMult: (bonus ? BONUS_PAY_MULT : 1) * (stock ? HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1)
                 * (thing.load ? 1 + FREIGHT_PAY_PER_KG * massKg : 1),   // FEAT-96: freight's weight bonus on pay
             destKind: papers ? null : (strictTo || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
@@ -719,8 +758,8 @@ export class OfferBoard {
         } else {
             if (n?.name) sentence.push({ t: ` at ${n.name}` })
             const dest = route?.endPoiId ? this.placeLabel(route.endPoiId) : (route?.placeName ?? sp.placeName)
-            if (sp.bundles) {
-                sentence.push({ t: ' needs ' }, { t: `${sp.bundles} bundles of ${sp.phrase}`, b: true },
+            if (sp.stock) {
+                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true },
                               { t: ' hauled to ' }, { t: dest, b: true }, { t: '.' })
             } else {
                 // A passenger is the poster themselves: "Earl needs a ride to Rust Belt Auto." A fetch
@@ -732,15 +771,20 @@ export class OfferBoard {
             }
         }
         const par = route?.par
-        const pay = par > 0 ? `Base pay $${formatMoney(basePay(par, payTier, sp.payMult))}`
-                  : null
+        // FEAT-114: a haul quotes a RATE — the load isn't picked yet; the picker shows the total.
+        const pay = !(par > 0) ? null
+            : sp.stock ? `Base pay $${formatMoney(basePay(par, payTier, sp.payMult))} a bundle`
+                + ` · costs $${formatMoney(stockPrice(par, payTier, sp.payMult))}`
+            : `Base pay $${formatMoney(basePay(par, payTier, sp.payMult))}`
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
-        terms.push(`${sp.massKg} kg`)
+        terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
+        // A haul's card is the rate, the cost, the distance, the stock and the reward line — nothing
+        // else (owner, 2026-10-23: the timers overran the map card). The due time shows from accept.
         const expiresInH = offer.expiresH - nowH
         // A never-expiring offer (Larry's) shows no timer at all (owner, 2026-10-07).
-        if (isFinite(expiresInH)) terms.push(`expires in ${formatGameDuration(expiresInH)}`)
-        if (par > 0) terms.push(`deliver within ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept
+        if (!sp.stock && isFinite(expiresInH)) terms.push(`expires in ${formatGameDuration(expiresInH)}`)
+        if (!sp.stock && par > 0) terms.push(`deliver within ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept
         return {
             family: sp.family,
             badge: jobBadge(sp),
@@ -755,7 +799,7 @@ export class OfferBoard {
             pay,
             terms,
             // Larry's card shows base pay only (owner ruling) — papers never roll a bonus anyway.
-            bonus: sp.bonus ? `Bonus: ${sp.bonus.name} — ${gateText(sp.bonus.gate)}` : null,
+            bonus: sp.bonus ? `Bonus: ${sp.bonus.name} — ${gateLine(sp.bonus.gate, sp.family, this._region, sp.thingId)}` : null,
             // FEAT-112: a load that fits says nothing. Otherwise the worst reason, in words:
             // "Warning: this load exceeds the recommended weight limit", "Overload: too heavy".
             verdict: verdict && verdict.verdict !== 'fits'

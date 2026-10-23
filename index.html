@@ -873,7 +873,7 @@
       font-size: 12px;
       color: var(--text);
     }
-    #job-due {
+    #job-due, #job-haul {
       display: none;
       margin-top: 6px;
       font-family: var(--font);
@@ -1076,6 +1076,8 @@
     #mission-panel .mp-warning { color: var(--warn); }   /* FEAT-112 load verdicts */
     #mission-panel .mp-overload { color: var(--bad-text); font-weight: 700; }
     #mission-panel button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #mp-pick { display: none; margin: 8px 0; gap: 10px; align-items: center; }   /* FEAT-114 haul picker */
+    #mp-count { width: 160px; }
     /* an abandoned job's headline, its $0 and a lost or destroyed load (owner, 2026-10-15) */
     #mission-panel .mp-bad, #paper-panel .mp-bad { color: var(--bad-text); }
     #pp-accept { border-color: var(--accept); color: var(--accept-text); }
@@ -1507,6 +1509,9 @@
   <div id="mission-panel">
     <div class="mp-title">story mode <span class="mp-beta">beta</span></div>
     <div id="mp-body">rolling a job&hellip;</div>
+    <!-- FEAT-114: the haul load picker. Outside #mp-body because the offer panel repaints that at
+         10 Hz, which would reset a slider inside it. main.js shows it only on a haul offer. -->
+    <div id="mp-pick"><input id="mp-count" type="range" min="1" max="30" step="1" value="1"> <span id="mp-pick-text"></span></div>
     <!-- FEAT-30 calibration: the subjective read is the ground truth PAR_REF is fitted to, so it
          is captured AT export time in one click rather than left to be remembered later. The
          prompt states the standard explicitly — without it the scale drifts between sessions. -->
@@ -1665,6 +1670,8 @@
   <!-- FEAT-113: the job's deadline under the rank tile; the text node after the label is written by
        _updateJobDue in main.js. -->
   <div id="job-due"><span class="rt-label">Due:</span><span></span></div>
+  <!-- FEAT-139: a haul's live count under the rank/due column, written by _syncHaulLine in main.js. -->
+  <div id="job-haul"></div>
   </div>
 
   <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI.
