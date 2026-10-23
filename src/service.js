@@ -21,7 +21,7 @@
 // The renderer-agnostic half (the fuel-stop.js pattern): main.js owns the DOM, this owns the rules,
 // so a headless gate can drive a whole visit. Every dependency arrives through the constructor.
 
-import { PARTS, SLOTS, REPAIRS, REPAIR_CAP, REPAIR_STEP, PATCH, BEAD, HUB, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP, REPAIR_CAP, REPAIR_STEP, PATCH, BEAD, HUB, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
 import { TRACKS, TIRE_IDS, WHEEL_IDS } from './damage.js'
 import { shelfPrice } from './shop-stock.js'
 
@@ -70,11 +70,13 @@ export class ServiceCenter {
 
     // ── Repairs ──────────────────────────────────────────────────────────────────────────────────
 
-    /** Taking a part of class `cls` from `cond` to `target`: pro rata on the gap, × the day tier.
-     *  `partId` prices the classes REPAIRS leaves to the part. */
-    _quote (cls, partId, cond, target) {
+    /** Taking a part of class `cls` from `cond` to `target`: REPAIR_SETUP, then pro rata on the gap,
+     *  × the day tier. `partId` prices the classes REPAIRS leaves to the part. `onTruck`: the
+     *  mechanic has to get at it first. */
+    _quote (cls, partId, cond, target, onTruck) {
         const r = REPAIRS[cls], gap = Math.max(0, target - cond)
-        return { price: cents((r.price ?? PARTS[partId].price) * gap * this.tier()), hours: r.hours * gap }
+        return { price: cents((REPAIR_SETUP.price + (r.price ?? PARTS[partId].price) * gap) * this.tier()),
+                 hours: (onTruck ? REPAIR_SETUP.hours : 0) + r.hours * gap }
     }
 
     /** What the bench can bring fitted track `id` up to (repairTargets). */
@@ -86,7 +88,7 @@ export class ServiceCenter {
     /** What repairing fitted track `id` to `target` costs now (default: as far as it goes). */
     repairQuote (id, target = this.targets(id).at(-1)) {
         const socket = socketOfTrack(id)
-        return this._quote(TRACKS[id].cls, socket && this.parts.fitted(socket), this.damage.get(id), target ?? 0)
+        return this._quote(TRACKS[id].cls, socket && this.parts.fitted(socket), this.damage.get(id), target ?? 0, true)
     }
 
     /** Repair one fitted track to `target` (one of targets(id)). False, nothing charged, if it isn't
@@ -130,7 +132,7 @@ export class ServiceCenter {
     /** What repairing inventory entry `index` to `target` costs now. */
     ownedQuote (index, target) {
         const r = this.inventory.list()[index]
-        return this._quote(classOf(r.id), r.id, r.cond ?? 1, target)
+        return this._quote(classOf(r.id), r.id, r.cond ?? 1, target, false)
     }
 
     /** Repair inventory entry `index` to `target`, as its own item (owner, 2026-10-20). */

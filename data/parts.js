@@ -256,6 +256,11 @@ export const REPAIRS = {
     alignment:    { price: 4,    hours: 0.5 },
     transmission: { price: 30,   hours: 3 },     // rebuilt
 }
+/** Every repair starts with this before the clock on the gap runs (owner, 2026-10-23): the shop's
+ *  minimum charge, and the time to get at the part (half an hour to reach a damper before revalving
+ *  it). It keeps the shop from being a pit stop that tops everything up to the cap. A part already off
+ *  the truck, in the inventory, pays the charge but not the access time. [DEFAULT] $5 / 30 min. */
+export const REPAIR_SETUP = { price: 5, hours: 0.5 }
 export const REPAIR_CAP = 0.8
 export const REPAIR_STEP = 0.05
 /** The shop can still patch a flat: fixes the hole, not the wear — about a plug kit's price, and its
