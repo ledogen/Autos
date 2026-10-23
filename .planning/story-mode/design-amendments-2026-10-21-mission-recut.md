@@ -37,6 +37,7 @@ unlock the bonus rewards."*
 | 3 | Every type tips on speed (papers also keep accuracy money) | RULED | **Reverses** haul's "no speed tip" (10-16) and fragile's condition tip (10-14) | FEAT-138 |
 | 4 | Fragile base pay: half guaranteed, half × health | RULED | **Reverses** "condition does not cut the base" (10-15) | FEAT-138 |
 | 5 | The giver has a limited stock; it can be below S. Wholesale is the rare big stock | RULED | Extends FEAT-114's picker to freight and caps it at the stock | FEAT-114 |
+| 5b | Haul stock is bought at half the base pay per piece (2026-10-22) | RULED | Loading past S stops being free; an expired haul costs its purchase | FEAT-114 |
 | 6 | Bonus gates print as a count or a weight, and roll only when the stock can meet them | RULED | The gate mechanism is unchanged; only the card text and the roll condition change | FEAT-114 |
 | 7 | Papers: a deadline returns, any N customers count, the time comes from the shortest route through N, the GPS draws it, the route ends at N | RULED | **Reverses** "no time limits" (09-30) for papers, and per-tier customer placement | FEAT-141 |
 | 8 | The player may pick any unlocked paper route size | RULED | Larry posts more than the top rung | FEAT-141 |
@@ -149,6 +150,26 @@ freight and caps it at the stock.
 - The load verdict (fits / warning / overload, FEAT-112) reads the **picked** load, not the offer.
 - **RULED:** retire FEAT-114's limited-time yard rate bonus. Wholesale and Generous (§10) do the same
   job through one system instead of two.
+
+## 5b. Haul stock is bought (owner, 2026-10-22)
+
+**RULED.** The yard charges for every piece loaded, at **half the job's base pay per piece**. The
+delivery pays per piece as §4 says.
+
+- **Why:** §1 made loading past S the margin, but a spilled piece cost nothing, so once the picker
+  existed the only sensible pick was "all of it". With a price, an extra piece pays for itself only
+  if it arrives more often than price ÷ pay of the time: about 28–55 % depending on pace. Pieces in
+  the well still almost always arrive; the ones mounded over the rail are the real trade, money for
+  rank insurance.
+- **Cheap on purpose.** A failed haul (or freight) already costs money: the hard hit or the rollover
+  that failed it wore the truck. The owner: *"I don't want them to gamble $20 on a $30 mission because
+  a failure there would be crippling."* At half base the purchase is a quarter of the S pay.
+- **What it changes:** an expired or abandoned haul costs its purchase (it otherwise pays nothing). A
+  piece that misses the bed at the yard was still bought, so bad parking costs too. The picker's top
+  is min(stock, hard limit, what the wallet affords).
+- **Freight is not bought.** Its overload already costs money in wear. (Haul's weight wears the truck
+  the same way, through the bump stops, brakes and engine; the price is not a wear substitute, it is
+  what makes the spare pieces a choice.)
 
 ## 6. Bonus items on haul and freight
 

@@ -13,7 +13,7 @@ source: owner, 2026-10-12 — "I like the idea of a limited-time rate bonus for 
 relates: FEAT-88 (haul — the rolled count this replaces), FEAT-91 (haul yards), FEAT-112 (the limits),
   data/offers.js (`HAUL_BUNDLES`, `HAUL_PAY_PER_BUNDLE`)
 requires: FEAT-112 (load verdicts), FEAT-138 (count / kg letters)
-design: design-amendments-2026-10-21-mission-recut.md §5, §6 (supersedes design-amendments-2026-10-14.md §8, §16)
+design: design-amendments-2026-10-21-mission-recut.md §5, §5b, §6 (supersedes design-amendments-2026-10-14.md §8, §16)
 ---
 
 # FEAT-114: Haul and freight — the player picks the load from the giver's stock
@@ -34,6 +34,9 @@ design: design-amendments-2026-10-21-mission-recut.md §5, §6 (supersedes desig
 - **The player picks how much to load:** 1 up to the smaller of the stock and the truck's hard limit.
   Past the soft limit the picker warns (FEAT-112). The verdict reads the **picked** load, not the
   offer.
+- **Haul stock is bought** (owner, 2026-10-22, §5b): the yard charges **half the job's base pay per
+  piece** for every piece loaded, deducted when the load drops. The picker's top is also capped by
+  the wallet. An expired or abandoned haul costs its purchase. Freight is not bought.
 - **Par and the deadline are computed after the pick** (haul × `HAUL_PAR_SLACK`, freight ×
   `FREIGHT_PAR_SLACK_PER_KG`).
 - **The card quotes a rate** ("Base pay $0.40 a bundle"); the picker shows the total as the count
@@ -51,7 +54,9 @@ design: design-amendments-2026-10-21-mission-recut.md §5, §6 (supersedes desig
 - [ ] Picker for haul and freight: 1 … min(stock, hard limit), warning past the soft limit, verdict on
       the picked load.
 - [ ] Par and deadline follow the picked load.
-- [ ] Card shows the rate; the picker shows the total.
+- [ ] Haul: the purchase (½ base × pieces) is charged at loading, capped by the wallet, shown on the
+      picker beside the pay; an expired haul keeps the charge.
+- [ ] Card shows the rate; the picker shows the total (and, on haul, the purchase).
 - [ ] Bonus gates show as counts / kg and only roll when the stock meets them.
 - [ ] `HAUL_BUNDLES` gone; `test/offer-board.mjs`, `test/load-verdict.mjs`, `test/haul-load.mjs`
       updated.

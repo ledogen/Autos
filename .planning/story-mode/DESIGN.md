@@ -1037,6 +1037,14 @@ therefore the bonus objective — works on any job.
 > 10-15 objection — damaged cargo is still worth delivering; destroyed cargo still fails and pays
 > nothing. Every pay term reads the count, kg, health or time, never the letter (SM-INV-4 holds). Base
 > pay is still × par. Provenance: [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md); FEAT-138.
+>
+> **Haul stock is bought (owner, 2026-10-22).** The yard charges for every piece loaded, at **half
+> that job's base pay per piece**, and the delivery pays per piece as above. A spare piece is paid-for
+> insurance on the rank, not free; a piece that spills, misses the bed at the yard, or rides an
+> expired job is money lost. The price is kept cheap on purpose: a failed haul already costs money
+> through the wear and crashes that caused it, and the purchase must never be a crippling gamble. The
+> picker caps the load at what the wallet affords. Freight is not bought: its overload cost is the
+> wear of carrying it. Provenance: amendment §5b; FEAT-114.
 
 > **Amendment [OWNER 2026-10-08] — $0-cash missions are retired.** Every job pays some cash, even for
 > bare completion (SM-INV-4's base pay). A bonus item rides **on top of** cash, never instead of it;
