@@ -192,6 +192,12 @@ const STEPS = [
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'story never went live (45 s): no run HUD / POIs, or the load stage stayed up')
+    // R-11 (game-feel review): the run opens on Uncle Larry's intro cards, and while a card is up every
+    // key advances it and goes nowhere else — so the brake taps below would only turn pages. Read them off.
+    const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+    check(await until(dlg, 3000), 'the run opened with no intro cards (R-11)')
+    for (let i = 0; i < 8 && await dlg(); i++) { await tap('Enter'); await sleep(250) }
+    check(!await dlg(), 'the intro cards did not close after 8 presses')
   }],
   ['camp', async () => {
     // Mom's doorstep is the one camp face reachable without a zone hunt: pull the brake there.
@@ -354,7 +360,7 @@ const STEPS = [
     check(await js('!!document.querySelector("#svc-screen .sv-panel")'), 'selecting a My Vehicle row opened no panel')
     // The Parts Shop is the shop's four-slot shelf (items or empty slots) and My Items.
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
-    check(await js('/On the shelf/i.test(document.querySelector("#svc-screen").textContent) && /My items/i.test(document.querySelector("#svc-screen").textContent)'),
+    check(await js('/For sale/i.test(document.querySelector("#svc-screen").textContent) && /My items/i.test(document.querySelector("#svc-screen").textContent)'),
       'the Parts Shop tab shows no shelf')
     await tap('Escape')
     check(await until(async () => !await open(), 1000), 'Esc left the service screen open')
