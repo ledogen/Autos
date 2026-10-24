@@ -39,8 +39,8 @@
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine } from '../src/offer-board.js'
-import { THINGS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
-import { basePay, formatMoney, rankTable } from '../src/economy.js'
+import { THINGS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
 // Could POI `q`'s rolled name have come from one of its class's forms? Each form becomes a regex
@@ -406,18 +406,20 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         }
     }
     const cp = b.card(plain.o, { nowH: plain.t, payTier: 1.52, route })
-    check('base pay == economy.basePay at ratio 1 for a plain offer',
-        cp.pay === `Base pay $${formatMoney(basePay(360, 1.52))}`, cp.pay)
+    const pr = payRange(360, 1.52)
+    check('a plain offer quotes the whole line and what moves it — "Pay $B – $M based on speed" (R-03/R-20)',
+        cp.pay === `Pay $${formatMoney(pr.base)} – $${formatMoney(pr.max)} based on speed`, cp.pay)
+    check('every courier card states its deed line as numerals (R-09/R-19)', cp.deed === 'Deed: 1 if B or better · 1/2 at C', cp.deed)
     const cb = b.card(bonused.o, { nowH: bonused.t, payTier: 1.52, route })
-    check(`a bonus offer quotes ${BONUS_PAY_MULT}× base pay`,
-        cb.pay === `Base pay $${formatMoney(basePay(360, 1.52, BONUS_PAY_MULT))}`, cb.pay)
-    check('the bonus line names the item and its gate', cb.bonus?.includes(b.spec(bonused.o).bonus.name)
-        && cb.bonus.includes(gateText(b.spec(bonused.o).bonus.gate)))
+    check('a bonus offer quotes the FULL base, flat, and no cash tip (R-04: the item is the tip)',
+        cb.pay === `Pay $${formatMoney(basePay(360, 1.52))} flat`, cb.pay)
+    check('the tip line names the item and its gate', cb.bonus?.startsWith('Tip: ') && cb.bonus.includes(b.spec(bonused.o).bonus.name)
+        && cb.bonus.includes(gateText(b.spec(bonused.o).bonus.gate)), cb.bonus)
     check('gate text: "S only" / "X or better"', gateText('S') === 'S only' && gateText('B') === 'B or better')
-    check('the card states distance and weight, then expiry and the delivery window on their own row',
+    check('the card states distance and weight, then "available for:" and "time limit:" on their own row (R-10)',
         cp.terms.length === 2 && cp.terms[0] === '2.4 km' && cp.times.length === 2
-        && cp.times[0] === `expires in ${formatGameDuration(plain.o.expiresH - plain.t)}`
-        && cp.times[1] === `deliver within ${formatGameDuration(b.deadlineH(plain.o, route.par))}`, [...cp.terms, ...cp.times].join(' | '))
+        && cp.times[0] === `available for: ${formatGameDuration(plain.o.expiresH - plain.t)}`
+        && cp.times[1] === `time limit: ${formatGameDuration(b.deadlineH(plain.o, route.par))}`, [...cp.terms, ...cp.times].join(' | '))
     check('a roadside drop names its rolled place', cp.sentence.some(r => r.t === b.spec(plain.o).placeName))
     const dest = POIS.find(q => q.type === 'gasStation').id
     const cd = b.card(plain.o, { nowH: plain.t, route: { ...route, endPoiId: dest } })
@@ -527,15 +529,19 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
             counts.add(sp.stock)
             if (sp.massKg !== sp.stock * HAUL_BUNDLE_KG) badMass++
             // PER PIECE: the pick multiplies it at accept (main.js), so the card quotes a rate.
-            const want = (sp.bonus ? BONUS_PAY_MULT : 1) * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK
+            const want = HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK   // R-04: no bonus cut
             const card = b.card(o, { nowH: t, route: { par: 300, distance: 3000 } })
+            const pr = payRange(300, 1, want)
+            // R-20: a haul reads as a trade — what a bundle costs, what it sells for.
+            const wantPay = `Bundle costs $${formatMoney(stockPrice(300, 1, want))} · sells for `
+                + (sp.bonus ? `$${formatMoney(pr.base)} flat` : `$${formatMoney(pr.base)} – $${formatMoney(pr.max)} by speed`)
             if (Math.abs(sp.payMult - want) > 1e-12
-                || card.pay !== `Base pay $${formatMoney(basePay(300, 1, want))} a bundle · costs $${formatMoney(stockPrice(300, 1, want))}`
+                || card.pay !== wantPay
                 || card.terms.join('|') !== `3.0 km|${sp.stock} bundles available`) badPay++
             // §6: a gate the stock can't meet never rolls; the card prints the count behind it.
             if (sp.bonus) {
                 gated++
-                if (sp.stock < S[sp.bonus.gate] || !card.bonus.endsWith(`deliver ${S[sp.bonus.gate]}+ bundles`)) badGate++
+                if (sp.stock < S[sp.bonus.gate] || !card.bonus.endsWith(`if ${S[sp.bonus.gate]}+ bundles delivered`)) badGate++
             }
         }
     }
@@ -545,8 +551,8 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('the offer weight is the whole stock × the bundle mass', badMass === 0)
     check('pay is per bundle; the card is the rate, the cost, the distance and the stock — no timers', badPay === 0)
     check('a haul bonus gate is always reachable on the stock, and prints as a count', gated > 0 && badGate === 0
-        && gateLine('B', 'haul', 1) === `deliver ${S.B}+ bundles` && gateLine('A', 'freight', 1) === 'on delivery'
-        && gateLine('A', null, 1) === gateText('A'), `${badGate}/${gated} haul bonuses`)
+        && gateLine('B', 'haul', 1) === `if ${S.B}+ bundles delivered` && gateLine('A', 'freight', 1) === 'upon delivery'
+        && gateLine('A', null, 1) === `if ${gateText('A')}`, `${badGate}/${gated} haul bonuses`)
     // Owner, 2026-10-05: 10 bundles pays a courier job. The haul's par is HAUL_PAR_SLACK longer and
     // pay rides par, so on the haul's own (longer) par the 10-bundle multiplier must undo it.
     check('10 bundles on the haul par pays exactly a courier job on the route par',
@@ -689,8 +695,9 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
 {
     const src = readFileSync(new URL('../src/offer-board.js', import.meta.url), 'utf8')
     const imports = [...src.matchAll(/from\s+'([^']+)'/g)].map(m => m[1]).sort()
-    const allowed = ['../data/offer-names.js', '../data/offers.js', '../data/stock-weights.js', './day.js', './economy.js', './seed.js']
-    check('offer-board.js imports only its tables (stock-weights.js: the reward pick, 2026-10-22), seed.js, economy.js and day.js (the clock unit)',
+    // R-07: parts.js and shop-stock.js (both data) price a reward for the card's "Tip: Compressor ($20)".
+    const allowed = ['../data/offer-names.js', '../data/offers.js', '../data/parts.js', '../data/shop-stock.js', '../data/stock-weights.js', './day.js', './economy.js', './seed.js']
+    check('offer-board.js imports only its tables (stock-weights.js: the reward pick, 2026-10-22; parts.js + shop-stock.js: reward prices, R-07), seed.js, economy.js and day.js (the clock unit)',
         JSON.stringify(imports) === JSON.stringify(allowed), imports.join(', '))
     check('offer-board.js never reads Math.random', !/Math\.random/.test(src.replace(/\/\/.*$/gm, '')))
 }

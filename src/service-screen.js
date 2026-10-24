@@ -370,7 +370,9 @@ export class ServiceScreen {
 
   _shop () {
     const s = this.service, money = s.money(), now = this.nowH()
-    let h = `<div class="sv-slot"><div class="sv-slothead">On the shelf</div>`
+    // R-24 (owner, 2026-10-24): "For sale", and when the next item lands.
+    const nxt = s.nextStock?.()
+    let h = `<div class="sv-slot"><div class="sv-slothead">For sale${nxt ? ` <span class="sv-desc">· new stock in ${nxt}</span>` : ''}</div>`
     s.stock().forEach((e, i) => {
       if (!e) { h += dim('An empty shelf.'); return }
       const price = s.shelfPrice(i), sockets = socketsFor(e.id)

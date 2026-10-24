@@ -81,21 +81,21 @@ import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_M
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
-import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, runEconomy, rankTable, fragileLines } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
+import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem } from './inventory.js'          // FEAT-122: what the player owns this run
 import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
-import { startShelves, shelf, take as takeShelf, shelfName } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf
+import { startShelves, shelf, take as takeShelf, shelfName, nextStockH } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
 import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
 import { recoveryCard, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
-import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, stockPrice } from './offer-board.js'   // FEAT-67: the mission board
+import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine, stockPrice } from './offer-board.js'   // FEAT-67: the mission board; R-17 the promise lines
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
-import { PAPER_ROUTE_INTRO, DLG } from '../data/dialogue.js'
+import { PAPER_ROUTE_INTRO, RUN_INTRO, DLG } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -1946,6 +1946,7 @@ const map2d = new Map2D({
 // Dev handles for the FEAT-68 checkpoint tooling (CDP probes: map renders, drive-through tests).
 // Same always-on precedent as window.__view.
 window.__map2d = () => map2d
+window.__mission = () => missionSystem   // CDP play-through: the live job (markers(), state) for drive scripts
 window.__teleport = (x, z, heading, drop = 0.5) => teleportToGround(x, z, heading, drop)
 window.__car = () => ({ x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
                         v: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) })
@@ -2785,21 +2786,23 @@ function _fragileStep () {
  * FEAT-139: the fragile load's two bars, per frame (owner, 2026-10-23). DAMAGE is the felt g: it
  * holds the step peak and falls back with JG_FALL_S, so a one-step landing spike stays readable. Its
  * scale runs to JG_TOP × the load's break g. The marks are where ONE hit costs 1 % of health and
- * 100 % (the break), both from the load's tier (fragile.js onePctG). The fill goes amber above the
- * floor (any cost) and red at the break.
+ * 100 % (the break): fragile.js shockCost is ((g − floor)/(break − floor))², so 1 % sits a tenth of
+ * the way from floor to break. The fill goes amber above the floor (any cost) and red at the break.
  * HEALTH is the condition, full green → empty red, with its percent under it — floored, so "83%" is
- * never shown for a load at 82.9 % that misses an 83 % line. A posted reward shows right of it:
- * "Reward [icon] if health ≥ 83%". Shown from accept to the end of a fragile job.
+ * never shown for a load at 82.9 % that misses an 83 % line. Shown from accept to the end of a fragile
+ * job. (The posted reward sits in the promise lines under it since R-17.)
  */
 const JG_FALL_S = 0.4, JG_TOP = 1.2
-let _jgEls = null, _jgShown = 0, _jgBand = '', _jgKey = null
+// R-32 (owner, 2026-10-24): a hit past the 1 % line LATCHES the bar at its peak for JG_HOLD_S (1 s) before it
+// falls — a shock is over in a frame or two, and a bar that only ever decayed never showed how hard it hit.
+const JG_HOLD_S = 1   // owner, 2026-10-24: "latch for 1s instead"
+let _jgEls = null, _jgShown = 0, _jgBand = '', _jgKey = null, _jgHoldUntil = 0, _jgFloor = 0
 function _updateFragileG (dt) {
   if (!_jgEls) {
     const root = document.getElementById('job-g')
     if (!root) return
     _jgEls = { root, fill: root.querySelector('.jg-fill'), floor: root.querySelector('.jg-floor'), brk: root.querySelector('.jg-break'),
-               health: root.querySelector('.jg-health'), val: root.querySelector('.jg-val'),
-               reward: root.querySelector('.jg-reward'), need: root.querySelector('.jg-need') }
+               health: root.querySelector('.jg-health'), val: root.querySelector('.jg-val') }
   }
   const f = _freight, m = missionSystem
   // From ACCEPT, not the start ring (owner, 2026-10-23): the load is strapped in and counting shocks
@@ -2813,21 +2816,16 @@ function _updateFragileG (dt) {
   if (_jgKey !== f.mission) {
     _jgKey = f.mission
     _jgEls.root.style.display = 'flex'
-    _jgEls.floor.style.bottom = `calc(${100 * onePctG(fr) / top}% - 1px)`
+    _jgFloor = onePctG(fr)   // the tier's 1 % mark (fragile.js)
+    _jgEls.floor.style.bottom = `calc(${100 * _jgFloor / top}% - 1px)`
     _jgEls.brk.style.bottom = `calc(${100 * fr.breakG / top}% - 1px)`
-    const b = f.mission.bonus
-    _jgEls.reward.style.display = b ? 'flex' : 'none'
-    if (b) {
-      const img = _jgEls.reward.querySelector('img')
-      // A reward with no thumbnail yet shows its name (the inventory screen's rule).
-      img.style.display = ''
-      img.onerror = () => { img.style.display = 'none'; _jgEls.need.textContent = `${b.name} ${_jgEls.need.textContent}` }
-      img.src = `assets/items/${b.rewardId}.png`; img.alt = b.name; img.title = b.name
-      _jgEls.need.textContent = `if health ≥ ${Math.round(_fragileLinesOf(f.mission)[b.gate] * 100)}%`
-    }
+    // The posted reward moved to the promise lines (R-17): it floated bare here and was unreadable
+    // against the sky (owner, 2026-10-24).
   }
-  _jgShown = Math.max(f.gPeak ?? 0, _jgShown * Math.exp(-dt / JG_FALL_S))
+  const peak = f.gPeak ?? 0, now = performance.now() / 1000
   f.gPeak = 0
+  if (peak >= _jgShown) { _jgShown = peak; if (peak > _jgFloor) _jgHoldUntil = now + JG_HOLD_S }
+  else if (now >= _jgHoldUntil) _jgShown *= Math.exp(-dt / JG_FALL_S)
   _jgEls.fill.style.transform = `scaleY(${Math.min(1, _jgShown / top)})`
   const band = _jgShown >= fr.breakG ? 'var(--bad)' : _jgShown > fr.shockFloorG ? 'var(--warn)' : 'var(--text)'
   if (band !== _jgBand) { _jgBand = band; _jgEls.fill.style.background = band }
@@ -3340,25 +3338,6 @@ function _haulStep () {
   }
 }
 
-/**
- * FEAT-139: the load line under the run readout, in #job-stack so the top bar keeps only the run
- * readout. Haul (owner, 2026-10-23): "carrying 14 bundles / 18 for the item reward" — the count in
- * the bed now and the count the item needs, never a letter. Freight (§2b): "carrying 710 kg" — the
- * load is strapped, so it never changes, and its tier is internal. Hidden for every other job;
- * fragile's condition sits under its HEALTH bar instead (_updateFragileG).
- */
-function _syncCargoLine (j) {
-  const el = document.getElementById('job-cargo')
-  if (!el) return
-  let text = ''
-  if (j?.bundles && _haul?.mission === j) {
-    const need = j.bonus ? rankTable('haul', j.terms?.region ?? 1, 'firewood')[j.bonus.gate] : null
-    text = `carrying ${_haulAboard()} bundles` + (need != null ? ` / ${need} for the item reward` : '')
-  } else if (j?.cargoKg && !j.fragile) text = `carrying ${j.cargoKg} kg`
-  el.textContent = text
-  el.style.display = text ? 'block' : 'none'
-}
-
 /** Is debris body `h` inside the truck's bed well right now? */
 const _ibP = new THREE.Vector3(), _ibQ = new THREE.Quaternion()
 function _inBed (h) {
@@ -3530,6 +3509,7 @@ const serviceCenter = new ServiceCenter({
   tier: () => economySystem.tierNow(),
   advanceHours: (h) => daySystem.advanceMinutes(h * 60),
   stock: () => shelf(_servicePoi.id, daySystem.clockH()), unstock: (i) => takeShelf(_servicePoi.id, i),
+  nextStock: () => _shelfNext(_servicePoi.id, daySystem.clockH()),   // R-24: "new stock in 3h 10m"
   onChange: () => serviceScreen.render(),
 })
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
@@ -4021,10 +4001,15 @@ function unmountExportRow (panelId) {
   if (row && row.parentElement?.id === panelId) row.style.display = 'none'
 }
 
+// R-13: the FEAT-30 calibration form (name, note, "how fast did you feel") is instrumentation. It
+// buried the payoff under a questionnaire on every result card, so in story mode it shows only while
+// the debug panel is open — where the par-fitting sessions that need it already live. Free roam and
+// Quick Job keep it as before.
 function mountExportRow (panelId, beforeId) {
   const row = document.getElementById('mp-export-row')
   const panel = document.getElementById(panelId)
   if (!row || !panel) return
+  if (storySystem?.isActive() && _gui?.domElement.style.display === 'none') { row.style.display = 'none'; return }
   const before = beforeId ? document.getElementById(beforeId) : null
   if (row.parentElement !== panel || (before && row.nextElementSibling !== before)) {
     panel.insertBefore(row, before)
@@ -4245,7 +4230,8 @@ const _boardView = {
     const nextText = next != null ? formatGameDuration(next - now) : null
     const n = offers.length
     const shelf = _shelfView(poiId, now)
-    if (!n) return { count: 0, idx: 0, card: null, poly: null, nextText, shelf }
+    const shelfNext = shelf ? _shelfNext(poiId, now) : null   // R-24
+    if (!n) return { count: 0, idx: 0, card: null, poly: null, nextText, shelf, shelfNext }
     const i = ((idx % n) + n) % n
     const o = offers[i]
     const papers = offerBoard.spec(o)?.family === 'papers'
@@ -4260,8 +4246,13 @@ const _boardView = {
     return { count: n, idx: i, card, poly,
              // FEAT-102: a fetch's preview points at its PICKUP — its own end is back where you stand.
              start: route?.start ?? poly?.[0] ?? null, end: route?.legs?.[0].end ?? route?.end ?? poly?.[poly.length - 1] ?? null,
-             nextText, shelf }
+             nextText, shelf, shelfNext }
   },
+}
+/** R-24: when the shop's next item lands, as a duration — or null when nothing is due for two days. */
+function _shelfNext (poiId, now) {
+  const h = nextStockH(poiId, now)
+  return h != null ? formatGameDuration(h - now) : null
 }
 
 /** FEAT-137: an auto shop's shelf as its map card lists it — you rang them, the way you know about
@@ -4306,9 +4297,11 @@ function _haulPick (offer) {
   const afford = price > 0 ? Math.floor(economySystem.money() / price + 1e-9) : sp.stock
   const max = Math.max(0, Math.min(sp.stock, hardN, afford))
   const n = Math.max(1, Math.min(max, parseInt(document.getElementById('mp-count')?.value, 10) || max))
+  const range = payRange(j.par, payTier, sp.payMult * n, sp.bonus ? 0 : 1)   // R-04: a bonus haul's tip is the item
   return { sp, offerId: offer.id, price, max, n, cost: Math.round(n * price * 100) / 100,
-           base: basePay(j.par, payTier, sp.payMult * n),
-           need: sp.bonus ? rankTable('haul', region, sp.thingId)[sp.bonus.gate] : null }
+           base: range.base, maxPay: range.max,
+           need: sp.bonus ? rankTable('haul', region, sp.thingId)[sp.bonus.gate] : null,
+           deedNeed: rankTable('haul', region, sp.thingId).B }
 }
 /** FEAT-114: show the picker for a haul offer — re-seeded to its max when the offer changes. */
 let _pickOfferId = null
@@ -4321,22 +4314,43 @@ function _syncHaulPick (pick) {
   el.max = String(Math.max(1, pick.max))
   if (_pickOfferId !== pick.offerId) { _pickOfferId = pick.offerId; el.value = String(pick.max); pick = _haulPick(missionSystem.offer) }
   el.disabled = pick.max < 1
-  const t = document.getElementById('mp-pick-text')
+  const t = document.getElementById('mp-pick-text'), note = document.getElementById('mp-pick-note')
+  // R-14: the slider states the PROFIT — what the drive banks after the stock is paid for — rather than
+  // leaving "base $5.83 · costs $2.99" for the player to subtract ("profit", owner 2026-10-24; "nets"
+  // was ambiguous). The range, or the base alone on a bonus haul (its tip is the item).
+  const net = (v) => `$${formatMoney(Math.max(0, v - pick.cost))}`
   if (t) t.innerHTML = pick.max < 1 ? '<span class="mp-bad">can&rsquo;t afford the stock</span>'
-    : `<b>${pick.n}</b> bundles &middot; base <span class="mp-pay">$${formatMoney(pick.base)}</span>`
-      + ` &middot; costs $${formatMoney(pick.cost)}`
-      // No letter (owner, 2026-10-23): it only decides the item, so the readout names the threshold.
-      + (pick.need != null && pick.n < pick.need ? ` &middot; <span class="mp-bad">too few for the ${pick.sp.bonus.name}</span>` : '')
+    : `<b>${pick.n}</b> bundles &middot; cost $${formatMoney(pick.cost)} &middot; profit <span class="mp-pay">${net(pick.base)}</span>`
+      + (pick.sp.bonus ? ' flat' : ` &ndash; <span class="mp-pay">${net(pick.maxPay)}</span> by speed`)
+  // R-25 (bug, owner 2026-10-24): the warnings used to be appended to the same line, so dragging under
+  // the item's count grew the text, widened the panel, moved the slider under the pointer, changed the
+  // value, dropped the warning — a stutter loop. They live on their OWN fixed-height line now (CSS
+  // #mp-pick-note), so nothing the readout says can move the slider. No letter (owner, 2026-10-23):
+  // the count is the threshold.
+  if (note) note.innerHTML = pick.max < 1 ? '' : [
+    pick.need != null && pick.n < pick.need ? `too few for the ${pick.sp.bonus.name}` : '',
+    pick.n < pick.deedNeed ? `deed: ${pick.n < rankTable('haul', economySystem.terms().region, pick.sp.thingId).C ? '0' : '1/2'} at this count` : '',
+  ].filter(Boolean).join(' &middot; ')
 }
 /** FEAT-114: a bonus gate as the result card states it — the count on haul, never a letter. */
 /** FEAT-139: a fragile mission's health lines — its tier's row, eased by the planned route's km. */
 function _fragileLinesOf (j) {
   return fragileLines(j.terms?.region ?? 1, j.fragile.tier, (j.distance ?? 0) / 1000)
 }
+/** R-09: what a FULL deed needed on this job, as the result card names a miss or a half. */
+function _missionDeedNeed (j) {
+  if (j.fragile) return `${Math.round(_fragileLinesOf(j).B * 100)}%+ intact`
+  if (j.bundles) return `${rankTable('haul', j.terms?.region ?? 1, 'firewood').B}+ bundles`
+  if (j.cargoKg) return `a ${rankTable('freight', j.terms?.region ?? 1).B} kg+ load`
+  return 'B or better'
+}
+/** The job's kind for gateLine / deedLine, and the cargo id those read the tables by. */
+function _missionKind (j) {
+  return j.fragile ? 'fragile' : j.bundles ? 'haul' : j.cargoKg ? 'freight' : null
+}
 function _missionGateLine (j) {
-  if (j.fragile) return `${Math.round(_fragileLinesOf(j)[j.bonus.gate] * 100)}%+ condition`
-  if (j.bundles) return `${rankTable('haul', j.terms?.region ?? 1, 'firewood')[j.bonus.gate]}+ bundles`
-  return gateLine(j.bonus.gate, j.cargoKg ? 'freight' : null, j.terms?.region ?? 1)
+  // R-17: the same words the card used — gateLine's grammar, with fragile's lines eased by this route's km.
+  return gateLine(j.bonus.gate, _missionKind(j), j.terms?.region ?? 1, j.fragile ? j.fragile.tier : 'firewood', (j.distance ?? 0) / 1000)
 }
 
 /**
@@ -5431,25 +5445,67 @@ function _panelHead (flavorHtml) {
  *
  * `base`/`tip`/`spot` are dollars to the cent, all printed through formatMoney.
  */
-function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null, haul = null, condition = null, gate = null }) {
-  const row = (label, money) => `<br><span class="mp-dim">${label}</span> <span class="mp-pay">$${money}</span>`
-  // FEAT-88: the load's count, answered (the running HUD shows it live — owner, 2026-10-23).
-  return (haul ? `<br><span class="mp-dim">Firewood delivered</span> <span class="mp-pay">${haul.aboard} / ${haul.loaded}</span>` : '')
+function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null, haul = null, condition = null, gate = null, deedNeed = null }) {
+  // N-04 / FEAT-131 (owner, 2026-10-24: "yes pls build it"): the rows LAND in the promise order — what
+  // was delivered, the base, the tip, the deed — a beat apart (.mp-reveal, one delay per row). The
+  // cash tip counts up and the deed tally ticks from the old total to the new (_revealResult).
+  let i = 0
+  const beat = (html) => `<span class="mp-reveal" style="animation-delay:${(0.45 * i++).toFixed(2)}s">${html}</span>`
+  const row = (label, money, attrs = '') => beat(`<br><span class="mp-dim">${label}</span> <span class="mp-pay"${attrs}>$${money}</span>`)
+  // R-02/R-09/R-19: the deed answers the card's deed line as a NUMERAL, and the tally dangles the camp:
+  // "+1 deed · 3 / 6"; a half says what the whole needed; a miss is red — it is a currency not earned.
+  const halfNow = economySystem.snapshot().halfPoints
+  const goal = (h) => `${formatDeeds(h)} / ${ECONOMY_PARAMS.campDeeds}`
+  const tally = `<span class="mp-dim" data-tally="${goal(halfNow)}">· ${goal(halfNow - points * 2)}</span>`
+  const deed = points > 0
+    ? beat(`<br><span class="mp-deed">+${points >= 1 ? '1' : '1/2'} deed</span>`
+        + (points < 1 && deedNeed ? ` <span class="mp-dim">(1 needed ${deedNeed})</span>` : '') + ` ${tally}`)
+    : deedNeed ? beat(`<br><span class="mp-bad">no deed</span> <span class="mp-dim">(needed ${deedNeed})</span> ${tally}`) : ''
+  // FEAT-88: the load's count, answered — and N-08: what became of the rest, so a short count has a cause.
+  const spilled = haul ? haul.loaded - haul.aboard : 0
+  return (haul ? beat(`<br><span class="mp-dim">Firewood delivered</span> <span class="mp-pay">${haul.aboard} / ${haul.loaded}</span>`
+        + (haul.aboard === 0 ? ` <span class="mp-bad">the load spilled on the way &mdash; nothing arrived</span>`
+          : spilled > 0 ? ` <span class="mp-dim">(${spilled} spilled on the way)</span>` : '')) : '')
     // FEAT-97: likewise the fragile load's condition (live on the HUD too since FEAT-139).
-    + (condition != null ? `<br><span class="mp-dim">Cargo condition</span> <span class="mp-pay">${Math.round(condition * 100)}%</span>` : '')
-    + row('Base pay', formatMoney(base))
-    + row('Tip', formatMoney(tip))
-    + (haul?.bought > 0 ? `<br><span class="mp-dim">Stock bought</span> <span class="mp-pay mp-bad">&minus;$${formatMoney(haul.bought)}</span>` : '')
-    + (points > 0
-      ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${points} good deed${points > 1 ? 's' : ''}</span>`
-      : '')
-    + (spot != null ? row('Accuracy bonus', formatMoney(spot)) : '')
+    + (condition != null ? beat(`<br><span class="mp-dim">Cargo condition</span> <span class="mp-pay">${Math.round(condition * 100)}%</span>`) : '')
+    // R-20: the result says where each dollar came from — "Base pay" (docked for damage on fragile), then
+    // "Speed tip" or the item that stood in for it.
+    + beat(`<br><span class="mp-dim">Base pay</span> <span class="mp-pay">$${formatMoney(base)}</span>`
+        + (condition != null && condition < 1 ? ` <span class="mp-dim">docked for damage</span>` : ''))
+    // R-04: on a bonus job the Tip row IS the item — earned, or what it needed. Otherwise the cash tip.
     + (bonus
       ? (award
-        ? `<br><span class="mp-pay">Bonus: ${bonus.name} &check;</span>`
-          + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; Tab to make room</span>` : '')
-        : `<br><span class="mp-dim">Bonus: ${bonus.name} missed (needed ${gate ?? gateText(bonus.gate)})</span>`)
-      : '')
+        ? beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-pay">${bonus.name} &check;</span>`
+          + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; Tab to make room</span>` : ''))
+        : beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-dim">${bonus.name} missed &mdash; ${gate ?? gateText(bonus.gate)}</span>`))
+      : row('Speed tip', formatMoney(tip), ` data-countup="${tip}"`))
+    + (haul?.bought > 0 ? beat(`<br><span class="mp-dim">Stock bought</span> <span class="mp-pay mp-bad">&minus;$${formatMoney(haul.bought)}</span>`) : '')
+    + deed
+    + (spot != null ? row('Accuracy bonus', formatMoney(spot)) : '')
+}
+/**
+ * N-04: run the result card's reveal on the rows _payRows just wrote: each `data-countup` amount counts
+ * up over 0.7 s once its row has landed (an ease-out, so the last cents settle), and each `data-tally`
+ * flips from the old total to the new half a second after its row. Idempotent per render — a re-render
+ * writes fresh rows and the stale timers find theirs disconnected.
+ */
+function _revealResult (body) {
+  const t0 = performance.now()
+  const delayOf = (el) => (parseFloat(el.closest('.mp-reveal')?.style.animationDelay) || 0) * 1000
+  for (const el of body.querySelectorAll('[data-countup]')) {
+    const target = parseFloat(el.dataset.countup), delay = delayOf(el)
+    el.textContent = '$0.00'
+    const tick = (t) => {
+      if (!el.isConnected) return
+      const k = Math.min(1, Math.max(0, (t - t0 - delay) / 700))
+      el.textContent = `$${formatMoney(target * (1 - Math.pow(1 - k, 3)))}`
+      if (k < 1) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }
+  for (const el of body.querySelectorAll('[data-tally]')) {
+    setTimeout(() => { if (el.isConnected) { el.textContent = `· ${el.dataset.tally}`; el.classList.add('mp-tick') } }, delayOf(el) + 500)
+  }
 }
 
 /** FEAT-113: the result card of a job signed off past its deadline (POI job and paper route alike). */
@@ -5496,11 +5552,14 @@ function _renderMissionUI () {
 
   // FEAT-113: a job past its deadline reads the same in every on-job state — park and sign it off.
   const expired = m.isOnJob() && !!m.mission?.expired
-  _syncCargoLine(m.state === 'running' && !expired ? m.mission : null)   // FEAT-139: the load line
+  // R-23: the readout goes red for bad news (the running case and the expired case set it; every other
+  // state clears it — toggled only there so the pop animation runs once per turn, not per tick).
+  if (m.state !== 'running' && !expired) hud.classList.remove('mh-bad')
   switch (expired ? 'expired' : m.state) {
     case 'expired':
       show(panel, false); show(hud, true)
-      hudText.textContent = 'job expired · park and sign it off'
+      hud.classList.add('mh-bad')
+      hudText.textContent = 'OUT OF TIME · park and sign the job off'
       break
     case 'generating':
       show(panel, true); show(hud, false)
@@ -5527,23 +5586,24 @@ function _renderMissionUI () {
           + (m.offers.length > 1 ? `<span class="mp-dim">offer ${m.offerIdx + 1} / ${m.offers.length}</span><br>` : '')
           + (card.badge ? `<span class="job-badge">${esc(card.badge)}</span>` : '')   // placeholder type badge
           + card.sentence.map(r => r.b ? `<b>${esc(r.t)}</b>` : esc(r.t)).join('') + '<br>'
-          + (card.pay ? `<span class="mp-pay">${esc(card.pay)}</span> &nbsp;` : '')
+          + (card.pay ? `<span class="mp-pay">${esc(card.pay)}</span><br>` : '')   // its own line (owner, 2026-10-24: the haul trade line wrapped the terms)
           + `<span class="mp-dim">${[...card.terms, ...card.times].map(esc).join(' &middot; ')}</span><br>`
-          + (card.bonus ? `${esc(card.bonus)}<br>` : '')
+          + (card.deed ? `<span class="mp-deed">${esc(card.deed)}</span><br>` : '')   // R-09; R-21 deeds wear the story blue
+          + (card.bonus ? `<span class="mp-tip">${esc(card.bonus)}</span><br>` : '')   // R-04: the item that replaces the cash tip
           + (card.verdict ? `<span class="mp-verdict mp-${card.verdict.level}">${esc(card.verdict.text)}</span><br>` : '')
         : `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
           + `${j.edges} leg${j.edges === 1 ? '' : 's'}</span><br>`)
         // FEAT-46: a POI job does NOT move you — you are already parked at the marker, and claiming
-        // otherwise would have the panel lying about the one thing the player is about to feel.
-        + (j.fromPoi
-          ? `<span class="mp-dim">starts here &mdash; turn around as you like; the clock starts when you leave the circle</span>`
-          : `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`)
+        // otherwise would have the panel lying about the one thing the player is about to feel. The
+        // "starts here — the clock starts when you leave the circle" line is gone (owner, 2026-10-24:
+        // the staging readout and the green ring already say it twice).
+        + (j.fromPoi ? '' : `<span class="mp-dim">green pin is the start &mdash; you'll be moved there</span>`)
       // FEAT-46: the offer is exactly three actions — decline · regenerate · accept.
       // FEAT-53: on a PAID (POI) job the regenerate button is hidden outright — a dead button is
       // worse than no button. The mission.js PAID_JOB_DO_OVERS guard stays behind it as defence
       // against a devtools click; Quick Job (the unpaid calibration rig) keeps the button.
       btn('mp-accept', true); btn('mp-decline', true); btn('mp-retry', false)
-      btn('mp-regen', !j.fromPoi); btn('mp-quit', false)
+      btn('mp-regen', !j.fromPoi)
       btn('mp-prev', m.offers.length > 1); btn('mp-next', m.offers.length > 1)
       unmountExportRow('mission-panel')
       // Clear the per-run note so the previous run's note cannot ride along with the next export.
@@ -5565,24 +5625,29 @@ function _renderMissionUI () {
       // The POI start. No digits and no hold — the only thing the player needs told is what starts
       // the clock, and the green ring that just replaced the marker's orange one says where.
       show(panel, false); show(hud, true)
-      hudText.textContent = 'leave the green circle to start'
+      hudText.textContent = 'leave the green circle to start' + _dueSuffix()
       break
-    case 'running':
+    case 'running': {
       show(panel, false); show(hud, true)
       // Distance to go ALONG THE ROUTE (crow-flies grew while driving a winding route correctly,
       // which read as "wrong way"). No par, no target — SM-INV-3. No elapsed either (owner,
       // 2026-10-15): the rank bar under it already reads time against par.
       // FEAT-102: a fetch also says which leg — out to the pickup, or home.
-      hudText.textContent = `${km(m.routeRemaining())} to go`
+      // R-23: unless the job has just turned — then the bad news takes the line (_jobBeat).
+      const beat = _jobBeat(m)
+      hud.classList.toggle('mh-bad', !!beat)
+      hudText.textContent = beat ?? `${km(m.routeRemaining())} to go`
         + (m.mission?.legs ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`) : '')
+        + _dueSuffix()
       break
+    }
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = m.result
       if (r.expired) {   // FEAT-113: signed off past the deadline — no letter, no pay
         body.innerHTML = _expiredCard(r.dueH)
         btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', false)
-        btn('mp-regen', false); btn('mp-quit', false); btn('mp-prev', false); btn('mp-next', false)
+        btn('mp-regen', false); btn('mp-prev', false); btn('mp-next', false)
         unmountExportRow('mission-panel')
         const nb = document.getElementById('mp-accept')
         if (nb) nb.textContent = 'continue'
@@ -5591,7 +5656,7 @@ function _renderMissionUI () {
       if (r.abandoned) {
         body.innerHTML = _abandonedCard(r)
         btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', !m.mission?.fromPoi)
-        btn('mp-regen', false); btn('mp-quit', true)
+        btn('mp-regen', false)
         btn('mp-prev', false); btn('mp-next', false)
         unmountExportRow('mission-panel')   // nothing finished, nothing to calibrate against
         const nb = document.getElementById('mp-accept')
@@ -5616,24 +5681,23 @@ function _renderMissionUI () {
       // calibration corpus is keyed on that. Display change only; do not prune the fields.
       // Then the money rows the offer card set up — Base pay answered, the tip beside it, the
       // offer's bonus earned or missed (FEAT-67; the item lands in the FEAT-122 inventory). See _payRows.
-      // Haul, freight and fragile show NO letter (owner, 2026-10-22 §2b / 2026-10-23): it stays internal — it
-      // decides the item and the deeds — so the card reads the time, then what was delivered.
-      const lettered = !(m.mission?.bundles || m.mission?.cargoKg || m.mission?.fragile)
-      body.innerHTML = (lettered
-        ? `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || 'var(--text-bright)'}">${r.letter}</span>`
-          + ` &nbsp;<span class="mp-dim">·</span>&nbsp; ` : '')
-        + `<span class="mp-big">${formatTime(r.elapsed)}</span>`
+      // NO letter on any result card (owner, 2026-10-22 §2b / 2026-10-23 for haul, freight, fragile; Q-3
+      // 2026-10-24 for courier too): the letter decides the item and the deeds and lives only on the live
+      // rank bar, so every type's card reads the time, then the money, then the deed.
+      body.innerHTML = `<span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
           ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award,
                        haul: r.loaded ? { aboard: r.aboard, loaded: r.loaded, bought: m.mission?.stockCost ?? 0 } : null,
-                       condition: r.health ?? null, gate: m.mission?.bonus ? _missionGateLine(m.mission) : null })
+                       condition: r.health ?? null, gate: m.mission?.bonus ? _missionGateLine(m.mission) : null,
+                       deedNeed: _missionDeedNeed(m.mission) })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
-      // The result card is exactly three actions: retry · continue · back to free roam (that is the
-      // DOM order too). The calibration form above them stays — the subjective read is the ground
+      if (paid) _revealResult(body)   // N-04: the staged reveal — tip count-up, deed tally tick
+      // The result card is two actions: retry · continue (R-31, owner 2026-10-24: no "back to free roam"
+      // here — leaving the mode is the pause menu's job). The calibration form above them stays — the subjective read is the ground
       // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
       // FEAT-53: no retry on a paid job (the payout exploit) — hidden here, gated in mission.js.
       btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', !m.mission?.fromPoi)
-      btn('mp-regen', false); btn('mp-quit', true)
+      btn('mp-regen', false)
       btn('mp-prev', false); btn('mp-next', false)
       // Reclaim the shared felt buttons for the POI job — a paper round finishing first
       // would otherwise leave them pointed at paperRouteSystem (see _exportSource), and would
@@ -5687,10 +5751,12 @@ function _renderPaperUI () {
 
   // FEAT-113: past Larry's deadline the round reads the same in staging and running.
   const expired = p.isCarrying() && !!p.run?.expired
+  if (!expired) hud.classList.remove('mh-bad')
   switch (expired ? 'expired' : p.state) {
     case 'expired':
       show(panel, false); show(hud, true); show(acts, false, 'flex')
-      hudText.textContent = 'route expired · park and sign it off'
+      hud.classList.add('mh-bad')   // R-23: the same red beat as a job's bad news
+      hudText.textContent = 'OUT OF TIME · park and sign the route off'
       break
     case 'planning':
       // NOTHING (owner, 2026-08-15). This card was cover for a pause the player never experiences:
@@ -5715,24 +5781,27 @@ function _renderPaperUI () {
         + `${stock} papers in the truck `
         + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
         // FEAT-67: Larry's card states base pay only — the fare at par, before the tips.
-        + `<span class="mp-pay">Base pay $${formatMoney(basePay(r.par, economySystem.terms().payTier))}</span>`
-        + (p.offer ? ` &nbsp;<span class="mp-dim">expires in ${formatGameDuration(p.offer.expiresH - daySystem.clockH())}`
-          + (offerBoard?.spec(p.offer) ? ` &middot; deliver within ${formatGameDuration(offerBoard.deadlineH(p.offer, r.par))}` : '')
+        // R-03: base and fast, like every card. R-16: Larry's offer never expires (SOURCES expiryH
+        // null), and this line printed "expires in Infinityd NaNh" — only a finite board clock shows.
+        + (() => { const pr = payRange(r.par, economySystem.terms().payTier); return `<span class="mp-pay">Pay $${formatMoney(pr.base)} &ndash; $${formatMoney(pr.max)} based on speed</span>` })()
+        + (p.offer ? ` &nbsp;<span class="mp-dim">${isFinite(p.offer.expiresH) ? `available for: ${formatGameDuration(p.offer.expiresH - daySystem.clockH())} &middot; ` : ''}`
+          + (offerBoard?.spec(p.offer) ? `time limit: ${formatGameDuration(offerBoard.deadlineH(p.offer, r.par))}` : '')
           + `</span>` : '')
+        + `<br><span class="mp-deed">Deed: 1 if B or better &middot; 1/2 at C</span>`
       break
     }
     case 'staging':
       // Same words the POI job uses, because it is the same threshold and the same promise: sort
       // yourself out on the pad for as long as you like, the clock starts at the green line.
       show(panel, false); show(hud, true); show(acts, false, 'flex')
-      hudText.textContent = 'leave the green circle to start the route'
+      hudText.textContent = 'leave the green circle to start the route' + _dueSuffix()
       break
     case 'running': {
       show(panel, false); show(hud, true)
       // Delivered/total and the inventory — the two facts you act on. No elapsed (owner, 2026-10-15):
       // the rank bar under it reads time against par.
       hudText.textContent = `${p.delivered()} / ${p.route.customers.length} delivered   `
-        + `${p.stock()} paper${p.stock() === 1 ? '' : 's'}`
+        + `${p.stock()} paper${p.stock() === 1 ? '' : 's'}` + _dueSuffix()
       break
     }
     case 'done': {
@@ -5802,6 +5871,13 @@ function _setRunHudVisible (on) {
   const el = document.getElementById('run-hud')
   if (el) el.style.display = on ? 'block' : 'none'
   if (!on) _runHudKey = ''
+  _syncDebugHud()
+}
+// N-07 (owner, 2026-10-24: "it should only appear in debug"): the SPIN/SLIP/FPS readout (#hud, top-left)
+// is a diagnostic. In story it shows only while the debug panel is open; free roam keeps it.
+function _syncDebugHud () {
+  const h = document.getElementById('hud')
+  if (h) h.style.display = storySystem.isActive() && _gui?.domElement.style.display === 'none' ? 'none' : ''
 }
 function _renderRunHud () {
   if (!storySystem.isActive() || storySystem.isEntering()) return
@@ -5817,7 +5893,8 @@ function _renderRunHud () {
   _runHudKey = key
   const deeds = formatDeeds(s.halfPoints)
   el.innerHTML = `<span class="rh-money">$${formatMoney(s.money)}</span><br>`
-    + `<span class="rh-deeds">${s.halfPoints === 0 ? 'no' : deeds} good deed${s.halfPoints === 2 ? '' : 's'}</span><br>`
+    // R-02: the tally reads against the camp's gate, so the carrot is on the HUD from minute one.
+    + `<span class="rh-deeds">${deeds} / ${ECONOMY_PARAMS.campDeeds} good deeds</span><br>`
     + `<span class="rh-clock">${clock}</span>`
   el.style.display = 'block'
 }
@@ -5920,6 +5997,8 @@ const RT = RANK_TIMER_PARAMS
 let _rtEls = null, _rtKey = null, _rtLayout = null, _rtPrev = -1, _rtLetter = '', _rtHot = false
 let _rtBeatT = 0, _rtShown = false, _rtPhase = 0, _rtLastNow = 0
 let _rtKickT = -1   // performance.now()/1000 of the last heartbeat (-1: none since calm) — drives the tile's thump
+let _rtNearKey = null, _rtNear = false   // R-22: the near-the-goal latch, per job
+let _rtLive = '', _rtLiveInt = 0   // R-28: the band the clock is in NOW + how close the next line is — the promise line's rung
 function _rankTimerSource () {
   const m = missionSystem
   if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
@@ -5929,9 +6008,14 @@ function _rankTimerSource () {
     // promises a grade the job does not give. Freight too (FEAT-139, §2b): its letter is the kg,
     // internal, though time still pays its tip. Courier keeps the bar.
     if (m.mission.fragile || m.mission.bundles || m.mission.cargoKg) return null
+    // R-22 (owner, 2026-10-24): the bar shows only once the goal is NEAR — the last nearFrac of the
+    // route (never under nearMinM) — and stays from there. Latched per job, so a GPS re-plan that
+    // lengthens the route cannot take it away again.
+    if (_rtNearKey !== m.mission) { _rtNearKey = m.mission; _rtNear = false }
+    if (!_rtNear && m.state === 'running') _rtNear = m.routeRemaining() <= Math.max(RT.nearMinM, RT.nearFrac * (m.mission.distance ?? 0))
     return { key: m.mission, elapsed: m.elapsed, par: m.mission.par,
              thresholds: m.mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT,
-             gate: m.mission.bonus?.gate ?? null }
+             gate: m.mission.bonus?.gate ?? null, near: _rtNear }
   }
   const p = paperRouteSystem
   if (p && p.isCarrying() && p.run && p.route && !p.run.expired) {
@@ -5946,7 +6030,103 @@ function _rankTimerSource () {
 // par × (1 + slack), 1.5–4× par, so the digits never reveal the rank lines. Game time, so it ticks
 // once a game minute (one real second). Its own element in #job-stack, so it shows from accept, and
 // on fragile and haul jobs, which have no rank bar.
-let _jobDueText = null
+// ── R-17: THE PROMISE LINES — "Reward [icon] Coffee · if 80%+ intact", "Deed 1 if 18+ bundles delivered" ──
+// One format on every type (owner, 2026-10-24: "stylistically align these common information displays
+// so even though they're different they're all familiar to the novice player"), in a dark box so it
+// reads against the sky (the fragile reward used to float bare on #job-g). Each line is the card's own
+// promise restated live, and its COLOUR is the feeler: green with margin, amber on the line, red once
+// lost — fragile by health against its line, haul by the count still aboard, freight is earned on
+// arrival, courier by the letter under the rank bar once that bar is showing (before that the line
+// stays neutral: R-22 hides the clock until the goal is near, and a colour must not leak it early).
+let _jpRoot = null, _jpHtml = null
+function _promiseTone (margin) {   // margin ≥ 0: how far inside the line (1 = comfortable); < 0: lost
+  if (margin == null) return 'var(--text)'
+  if (margin < 0) return 'var(--bad-text)'
+  return `color-mix(in oklch, var(--money) ${Math.round(100 * Math.min(1, margin))}%, var(--warn))`
+}
+// R-28 (owner, 2026-10-24): descending rewards show ONLY THE TIER HELD and its own condition — "1 · 18+
+// bundles", then "1/2 · 14+ bundles", then "no deed" — never the whole ladder (the owner's second note:
+// "1 · below 18" read as if 14–18 still paid 1). A ladder is [{ what, line }] top-down; the held rung is
+// the first whose line the live value still clears. The colour is the margin to that line; a lost
+// reward (or deed) is struck out (R-33).
+function _promiseRows (m) {
+  const j = m.mission
+  if (!j || !m.isOnJob() || j.expired || j.failed || !j.fromPoi) return null
+  const region = j.terms?.region ?? 1
+  const kind = _missionKind(j)
+  // The job's own axis: the live value, the line for a letter, how a line is spoken, and the margin
+  // that counts as comfortable in its units (health: all the headroom; bundles: four spare).
+  let value = null, lineOf, below, marginTo
+  if (kind === 'fragile') {
+    const L = _fragileLinesOf(j)
+    if (_freight?.mission === j && _freight.health) value = _freight.health.health
+    lineOf = (l) => L[l]; below = (x) => `${Math.round(x * 100)}%+ intact`
+    marginTo = (x) => (value - x) / Math.max(0.01, 1 - x)
+  } else if (kind === 'haul') {
+    const T = rankTable('haul', region, 'firewood')
+    value = _haul?.mission === j ? _haulAboard() : j.bundles
+    lineOf = (l) => T[l]; below = (x) => `${x}+ bundles`; marginTo = (x) => (value - x) / 4
+  } else if (kind === 'freight') {
+    const T = rankTable('freight', region)
+    value = j.cargoKg; lineOf = (l) => T[l]; below = () => 'upon delivery'; marginTo = () => 1
+  } else {
+    // Courier: the rung is the band the clock is in NOW (_rtLive, read every frame whether or not the
+    // bar is showing — R-22 hides the bar, not the deed you still hold); the margin is how close the
+    // next line is (rank-timer's own escalateS ramp: amber through the last ten seconds). No digits.
+    value = _rtLive ? 4 - 'SABCD'.indexOf(_rtLive) : null
+    lineOf = (l) => 4 - 'SABCD'.indexOf(l); below = (x) => gateText('SABCD'[4 - x])
+    marginTo = () => 1 - _rtLiveInt
+  }
+  const rung = (ladder) => {
+    if (value == null) return { what: ladder[0].what, next: below(ladder[0].line), tone: _promiseTone(null) }
+    const i = ladder.findIndex(r => r.line == null || value >= r.line)
+    const held = ladder[i]
+    if (held.line == null) return { what: held.what, next: null, tone: 'var(--bad-text)', lost: true }
+    return { what: held.what, next: below(held.line), tone: _promiseTone(marginTo(held.line)) }
+  }
+  const rows = []
+  if (j.bonus) rows.push({ label: 'Reward', icon: j.bonus.rewardId, ...rung([{ what: j.bonus.name, line: lineOf(j.bonus.gate) }, { what: j.bonus.name, line: null }]) })
+  // The deed: 1 at the B line, 1/2 at C (SM-INV-14). Freight's C is 0 kg (R-18), so it never reads "0".
+  // R-33: at the bottom it reads "no deed", struck through (owner: "i know i said numbers only").
+  rows.push({ label: 'Deed', ...rung([{ what: '1', line: lineOf('B') }, { what: '1/2', line: lineOf('C') }, { what: 'no deed', line: null }]) })
+  // R-29: the load's count lives here too (it was its own bare line, #job-cargo), so the overlay is one box.
+  if (kind === 'haul') rows.unshift({ label: 'Cargo', what: `${value} bundle${value === 1 ? '' : 's'} aboard`, tone: 'var(--text)' })
+  else if (kind === 'freight') rows.unshift({ label: 'Cargo', what: `${j.cargoKg} kg`, tone: 'var(--text)' })
+  return rows
+}
+function _updateJobPromise () {
+  if (!_jpRoot) { _jpRoot = document.getElementById('job-promise'); if (!_jpRoot) return }
+  const rows = storySystem.isActive() && !storySystem.isEntering() ? _promiseRows(missionSystem) : null
+  const html = rows?.length ? rows.map(r => `<div class="jp-row"><span class="rt-label${r.label === 'Deed' ? ' jp-deed' : ''}">${r.label}</span>`
+      + (r.icon ? `<img src="assets/items/${r.icon}.png" alt="" onerror="this.style.display='none'">` : '')
+      + `<span class="jp-text" style="color:${r.tone}"><span${r.lost ? ' class="jp-lost"' : ''}>${r.what}</span>${r.next ? ` · ${r.next}` : ''}</span></div>`).join('') : ''   // R-33: lost = struck out
+  if (html === _jpHtml) return
+  _jpHtml = html
+  _jpRoot.innerHTML = html
+  _jpRoot.style.display = html ? 'block' : 'none'
+}
+// R-23 (owner, 2026-10-24): the top-centre readout lands the bad news LIVE — the moment the job turns,
+// not on the result card. Persistent while the condition holds; a partial spill flashes for a beat.
+const HUD_BEAT_S = 3
+let _spill = { key: null, aboard: -1, lost: 0, until: 0 }
+function _jobBeat (m) {
+  const j = m.mission
+  if (!j) return null
+  if (j.failed) return j.fragile ? 'CARGO DESTROYED · park and clean up' : j.loose ? 'TIRE LOST · park and abandon the job' : 'CARGO LOST · park and abandon the job'
+  if (j.bundles && _haul?.mission === j) {
+    const aboard = _haulAboard(), now = performance.now() / 1000
+    if (_spill.key !== j) _spill = { key: j, aboard, lost: 0, until: 0 }
+    if (aboard < _spill.aboard) { _spill.lost += _spill.aboard - aboard; _spill.until = now + HUD_BEAT_S }
+    else if (now >= _spill.until) _spill.lost = 0
+    _spill.aboard = aboard
+    if (aboard === 0) return 'LOAD LOST · nothing left in the bed'
+    if (now < _spill.until) return `${_spill.lost} BUNDLE${_spill.lost > 1 ? 'S' : ''} LOST`   // the Cargo row says what is left (R-29)
+  }
+  return null
+}
+// R-30 (owner, 2026-10-24): "due in" moved UP into the top readout beside the distance ("1.24 km to go ·
+// due in 2h 05m") so the overlay under it is one box (#job-promise). This keeps the string current.
+let _jobDueText = ''
 function _updateJobDue () {
   let h = null
   if (storySystem.isActive() && !storySystem.isEntering()) {
@@ -5954,14 +6134,9 @@ function _updateJobDue () {
     if (m?.isOnJob() && !m.mission?.expired) h = m.mission?.dueH
     else if (p?.isCarrying() && !p.run?.expired) h = p.run?.dueH
   }
-  const text = Number.isFinite(h) ? formatGameDuration(h - daySystem.clockH()) : ''
-  if (text === _jobDueText) return
-  _jobDueText = text
-  const el = document.getElementById('job-due')
-  if (!el) return
-  el.lastChild.textContent = text
-  el.style.display = text ? 'block' : 'none'
+  _jobDueText = Number.isFinite(h) ? formatGameDuration(h - daySystem.clockH()) : ''
 }
+const _dueSuffix = () => _jobDueText ? `   · due in ${_jobDueText}` : ''
 function _updateRankTimer () {
   if (!_rtEls) {
     const root = document.getElementById('rank-timer')
@@ -5973,7 +6148,7 @@ function _updateRankTimer () {
   const src = (storySystem.isActive() && !storySystem.isEntering()) ? _rankTimerSource() : null
   if (!src) {
     if (_rtKey !== null) {       // the job ended or was put down: hide once, forget the layout
-      _rtKey = null; _rtLayout = null; _rtHot = false; _rtShown = false
+      _rtKey = null; _rtLayout = null; _rtHot = false; _rtShown = false; _rtLive = ''; _rtLiveInt = 0
       _rtEls.root.style.display = 'none'
       _rtEls.root.classList.remove('rt-lost', 'rt-slow', 'rt-in', 'rt-closed')
       _rtEls.card.style.boxShadow = ''; _rtEls.card.style.borderColor = ''
@@ -6017,16 +6192,18 @@ function _updateRankTimer () {
   const e = src.elapsed
   const f = rankTimerFrame(_rtLayout, e, _rtPrev < 0 ? e : _rtPrev, RT)
   _rtPrev = e
-  // The pop: absent until appearS before the S/A line, then on for the rest of the job (the
-  // rt-in class runs the entrance animation once).
-  if (f.shown !== _rtShown) {
-    _rtShown = f.shown
-    E.root.style.display = f.shown ? 'block' : 'none'
-    E.root.classList.toggle('rt-in', f.shown)
+  _rtLive = f.letter; _rtLiveInt = f.intensity
+  // The pop: a paper round pops appearS before the S/A line; a courier job pops when the goal is
+  // near (R-22, `src.near`). Then on for the rest of the job (the rt-in class runs the entrance once).
+  const shown = src.near != null ? src.near : f.shown
+  if (shown !== _rtShown) {
+    _rtShown = shown
+    E.root.style.display = shown ? 'block' : 'none'
+    E.root.classList.toggle('rt-in', shown)
   }
-  if (!f.shown) return
+  if (!shown) return
   // Deep in D the strip closes (rank-timer.js closeAfterDS); the tile below it stays to the end.
-  E.root.classList.toggle('rt-closed', !f.barShown)
+  E.root.classList.toggle('rt-closed', !f.next && e >= _rtLayout.slowT + RT.closeAfterDS)
   // The scroll: the pointer is at pointerFrac of the view; the strip's origin (elapsed 0) slides
   // left of it by elapsed × pxPerS.
   E.strip.style.transform = `translateX(${RT.viewW * RT.pointerFrac - e * RT.pxPerS}px)`
@@ -6174,7 +6351,7 @@ function _refreshParkedOffers () {
   if (keep > 0) { missionSystem.offerIdx = keep; missionSystem.cycle(0) }
 }
 // FEAT-46: DECLINE puts the job down and leaves you in story mode with nothing active — it does not
-// leave the mode. (Leaving is the pause menu's job, and #mp-quit in the result card.) Walking away
+// leave the mode. (Leaving is the pause menu's job.) Walking away
 // from an offer is an ordinary thing to do; quitting the game mode is not.
 document.getElementById('mp-decline')?.addEventListener('click', () => missionSystem.exit())
 document.getElementById('mp-regen')?.addEventListener('click', () => missionSystem.regenerate())
@@ -6209,12 +6386,6 @@ for (const b of document.querySelectorAll('.mp-felt')) {
     setTimeout(() => { b.textContent = b.dataset.label }, 1500)
   })
 }
-document.getElementById('mp-quit')?.addEventListener('click', () => {
-  missionSystem.exit()
-  // FEAT-43: a mission only ever runs INSIDE story mode, so "back to free roam" leaves the whole
-  // mode — route through StorySystem.exit() to restore streaming radii + debug tooling.
-  if (storySystem.isActive()) storySystem.exit()
-})
 
 // Phase 9 (SURF-01 / SURF-03): RoadMeshSystem — ribbon mesh sweep with crown + camber.
 // Constructed after both terrainSystem and roadSystem exist.
@@ -7001,7 +7172,15 @@ const storySystem = new StorySystem({
   validateRegion: (centre, radius) => validateArea(roadSystem, centre, discArea(radius, REGION_MARGIN), RANGER_PARAMS),
   onSeedRejected: (seed, report) => _showSeedModal(report, seed),
   hidePauseMenu: () => _hidePauseMenu(),
-  setQuickJobVisible: (visible) => { const el = document.getElementById('quickjob-btn'); if (el) el.style.display = visible ? 'block' : 'none' },
+  // R-12: Quick Job is the unpaid calibration rig (mission.js PAID_JOB_DO_OVERS); a polished alpha
+  // should not show a dev button in the corner of every run. It still appears whenever the debug
+  // panel is open (backtick), which is where its users are. R-11: the moment the stage drops is the
+  // first moment the player can read anything — the run's opening cards play here, once per run.
+  setQuickJobVisible: (visible) => {
+    _quickJobWanted = visible
+    _syncQuickJob()
+    if (visible) { dialogueSystem.play(DLG.runIntro, RUN_INTRO); _renderDialogue() }
+  },
   // FEAT-41: the entry load is now WATCHED, not waited out behind a black panel. This is the one
   // signal that covers every story entry (main menu, pause button, a rejected-seed retry), so the
   // stage is raised and dropped from here rather than at each call site.
@@ -7308,6 +7487,16 @@ async function _startStory (seed) {
 // Same gates as _poiInReach: you cannot take work while doing work. Ungated, a click mid-job reset
 // a TAKEN board job to 'generating' (no cancel, no slot lock) or started a mission beside a live
 // paper route — the two siblings that must never run at once.
+let _quickJobWanted = false
+function _syncQuickJob () {
+  const el = document.getElementById('quickjob-btn')
+  if (!el) return
+  const guiOpen = _gui?.domElement.style.display !== 'none'
+  el.style.display = _quickJobWanted && guiOpen ? 'block' : 'none'
+  _syncDebugHud()   // N-07: the stats readout follows the panel too
+}
+// The debug panel toggles on backtick (debug.js); the rig follows it on the next tick.
+document.addEventListener('keydown', (e) => { if (e.key === '`') setTimeout(_syncQuickJob, 0) })
 document.getElementById('quickjob-btn')?.addEventListener('click', () => {
   if (!missionSystem || missionSystem.state !== 'idle' || paperRouteSystem.isActive() || _campUi) return
   missionSystem.enter()
@@ -7906,6 +8095,7 @@ function loop () {
   // near-boundary pulse runs at a rate a 10 Hz poll would stutter).
   _updateRankTimer()
   _updateJobDue()
+  _updateJobPromise()   // R-17: the reward / deed lines, coloured live
 
   // FEAT-22: water submersion flag — CG vs the local water surface (pond plane). Once per render
   // frame (not per physics substep): v1 only SETS the flag; nothing in stepPhysics consumes it yet.

@@ -834,7 +834,9 @@
       line-height: 1.5;
     }
     #run-hud .rh-money { font-size: 18px; color: var(--money); }
-    #run-hud .rh-deeds { color: var(--key); }
+    /* R-21 (owner, 2026-10-24, tentative): deeds are a currency — one colour everywhere, the story blue.
+       Revert = this line back to var(--key) and the .mp-deed / .jp-deed rules below. */
+    #run-hud .rh-deeds { color: var(--accent-story); }
     #run-hud .rh-clock { color: var(--text-dim); letter-spacing: 1px; }
     /* Over the map too (it sits at z 90): the clock is where a job card's "due Day 3, 2 am" is read,
        and offers are mostly weighed from the map (owner, 2026-10-15). */
@@ -936,23 +938,31 @@
       font-size: 12px;
       color: var(--text);
     }
-    #job-due, #job-cargo {
-      display: none;
-      margin-top: 6px;
-      font-family: var(--font);
-      font-size: 14px;
-      color: var(--text);
-      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
+    /* R-17/R-28: the promise lines — "Cargo 14 bundles aboard" / "Reward [icon] Coffee · below 80%" /
+       "Deed 1 · 1/2 below 82%" — one format on every job type, in the run readout's own dark box so it
+       reads against the sky, and the ONLY box under the readout (R-29/R-30: the bare due and cargo lines
+       folded into it and the top readout). main.js _updateJobPromise writes the rows and sets each
+       value's colour inline: green with margin → amber on the line → red once lost; a lost reward is
+       struck through as well (R-33: the red alone was not clear enough against the amber). */
+    #job-promise {
+      display: none; margin-top: 6px; padding: 4px 12px;
+      background: var(--hud-bg); border: 1px solid var(--line);
+      font-family: var(--font); font-size: 13px; color: var(--text); text-align: left;
     }
-    #job-due .rt-label { margin-right: 10px; }
+    #job-promise .jp-row { display: flex; align-items: center; gap: 8px; line-height: 22px; }
+    #job-promise .rt-label { font-size: 11px; min-width: 7ch; }
+    #job-promise .jp-deed { color: var(--accent-story); }   /* R-21: deeds in the story blue */
+    #job-promise img { width: 22px; height: 22px; object-fit: contain; }
+    #job-promise .jp-lost { text-decoration: line-through; text-decoration-thickness: 2px; }
+    /* R-23: the readout turns red for bad news — CARGO DESTROYED, LOAD LOST, OUT OF TIME — and pops once. */
+    #mission-hud.mh-bad, #paper-hud.mh-bad {
+      color: var(--bad-text); border-color: var(--bad-line); font-weight: 700;
+      animation: rt-pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1);
+    }
     /* FEAT-139: fragile's felt-g bar. The fill scales by per-frame transform, never a transition. */
     #job-g { display: none; margin-top: 8px; gap: 18px; font-family: var(--font); color: var(--text); }
     #job-g .jg-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
     #job-g .jg-val { font-size: 14px; margin-top: -2px; }
-    #job-g .jg-reward { display: none; align-self: center; align-items: center; gap: 8px; font-size: 12px;
-      margin-bottom: 40px;   /* centred on the bars, not on the bars + their labels */
-      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8); }
-    #job-g .jg-reward img { width: 40px; height: 40px; object-fit: contain; }
     #job-g .jg-mark span {
       position: absolute; right: calc(100% + 6px); top: 50%; transform: translateY(-50%);
       font-family: var(--font); font-size: 12px; white-space: nowrap;
@@ -988,7 +998,7 @@
       display: flex; align-items: center; justify-content: center; gap: 10px;
       margin: 8px 0 0;
     }
-    #rank-timer .rt-label, #job-due .rt-label, #job-g .rt-label {
+    #rank-timer .rt-label, #job-g .rt-label {
       font-size: 14px; font-weight: bold; letter-spacing: 2px; color: var(--text-body);
       text-transform: uppercase;
       text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
@@ -1160,10 +1170,21 @@
     #mission-panel .mp-warning { color: var(--warn); }   /* FEAT-112 load verdicts */
     #mission-panel .mp-overload { color: var(--bad-text); font-weight: 700; }
     #mission-panel button:disabled { opacity: 0.4; cursor: not-allowed; }
-    #mp-pick { display: none; margin: 8px 0; gap: 10px; align-items: center; }   /* FEAT-114 haul picker */
+    #mp-pick { display: none; margin: 8px 0; gap: 10px; align-items: center; flex-wrap: wrap; }   /* FEAT-114 haul picker */
     #mp-count { width: 160px; }
+    /* R-25: the picker's warnings on their own line, a fixed height whether or not there is one — a line
+       that appears under the pointer must never reflow the slider (the stutter loop). */
+    #mp-pick-note { flex-basis: 100%; min-height: 1.5em; font-size: 12px; color: var(--bad-text); }
     /* an abandoned job's headline, its $0 and a lost or destroyed load (owner, 2026-10-15) */
     #mission-panel .mp-bad, #paper-panel .mp-bad { color: var(--bad-text); }
+    #mission-panel .mp-tip { color: var(--warn); }   /* R-04: the item that replaces the cash tip, the map card's gold form */
+    #mission-panel .mp-deed, #paper-panel .mp-deed { color: var(--accent-story); }   /* R-21: deeds in the story blue */
+    /* N-04 / FEAT-131: the result card's rows land one beat apart (delay set inline per row); the
+       tally flashes bright when it ticks to the new total. */
+    #mp-body .mp-reveal, #pp-body .mp-reveal { opacity: 0; animation: mp-in 0.35s ease-out forwards; }
+    @keyframes mp-in { from { opacity: 0; } to { opacity: 1; } }
+    #mp-body .mp-tick, #pp-body .mp-tick { animation: mp-tick 0.6s ease-out; }
+    @keyframes mp-tick { 0% { color: var(--text-bright); } 100% { color: var(--text-dim); } }
     #pp-accept { border-color: var(--accept); color: var(--accept-text); }
 
     /* FEAT-31 testing lab readout — top of the right-hand column, out of the way of the left-hand debug HUD. */
@@ -1568,7 +1589,7 @@
     <div id="mp-body">rolling a job&hellip;</div>
     <!-- FEAT-114: the haul load picker. Outside #mp-body because the offer panel repaints that at
          10 Hz, which would reset a slider inside it. main.js shows it only on a haul offer. -->
-    <div id="mp-pick"><input id="mp-count" type="range" min="1" max="30" step="1" value="1"> <span id="mp-pick-text"></span></div>
+    <div id="mp-pick"><input id="mp-count" type="range" min="1" max="30" step="1" value="1"> <span id="mp-pick-text"></span><span id="mp-pick-note"></span></div>
     <!-- FEAT-30 calibration: the subjective read is the ground truth PAR_REF is fitted to, so it
          is captured AT export time in one click rather than left to be remembered later. The
          prompt states the standard explicitly — without it the scale drifts between sessions. -->
@@ -1597,7 +1618,6 @@
       <button id="mp-retry" title="testing only — real story mode has no do-overs">retry</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
       <button id="mp-accept">accept mission</button>
-      <button id="mp-quit">back to free roam</button>
     </div>
   </div>
   <!-- FEAT-62: the scenario finish card (mission-panel chrome). Filled by main.js _renderScenarioUI;
@@ -1726,20 +1746,16 @@
     </div>
     <div class="rt-title"><span class="rt-label">Rank:</span><span class="rt-letter-box" id="rt-letter-box"><span id="rt-letter">S</span></span></div>
   </div>
-  <!-- FEAT-113: the job's deadline under the rank tile; the text node after the label is written by
-       _updateJobDue in main.js. -->
-  <div id="job-due"><span class="rt-label">Due in:</span><span></span></div>
-  <!-- FEAT-139: the haul's live count / the freight's kg under the rank/due column, written by
-       _syncCargoLine in main.js. -->
-  <div id="job-cargo"></div>
+  <!-- R-17/R-28: the promise lines — the load aboard, the job's reward and its deed, restated live in one
+       format on every type, written by _updateJobPromise in main.js (each value coloured by its margin).
+       The due time is in the top readout (R-30). -->
+  <div id="job-promise"></div>
   <!-- FEAT-139: a fragile load's two bars, written per frame by _updateFragileG in main.js. DAMAGE is
        the felt g, marked where one hit costs 1 % of health (amber) and 100 % (red, the break). HEALTH
-       is the condition, full green → empty red, its percent under it. The reward, when the job posts
-       one, sits right of HEALTH: "Reward [icon] if health ≥ 83%". -->
+       is the condition, full green → empty red, its percent under it. -->
   <div id="job-g">
     <div class="jg-col"><div class="jg-bar"><div class="jg-fill"></div><div class="jg-mark jg-floor"><span>1%</span></div><div class="jg-mark jg-break"><span>100%</span></div></div><span class="rt-label">Damage</span></div>
     <div class="jg-col"><div class="jg-bar"><div class="jg-fill jg-health"></div></div><span class="rt-label">Health</span><span class="jg-val"></span></div>
-    <div class="jg-reward"><span class="rt-label">Reward</span><img alt=""><span class="jg-need"></span></div>
   </div>
   </div>
 

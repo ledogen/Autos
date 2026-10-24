@@ -23,7 +23,7 @@
 // Pure node: no THREE, no worldgen, no DOM.
 import {
   ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankTable, payoutFor, pointsFor,
-  runEconomy, EconomySystem, formatDeeds, basePay, splitPayout, bonusEarned, RANKS,
+  runEconomy, EconomySystem, formatDeeds, basePay, payRange, splitPayout, bonusEarned, RANKS,
 } from '../src/economy.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT, amountGrade } from '../src/par.js'
 import { runState } from '../src/day.js'
@@ -235,8 +235,8 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   check('haul firewood: S 25 (measured), A/B/C = ceil(85/70/55 % of S) in every region',
     T.haul.firewood.every(t => t.S === 25 && t.A === Math.ceil(0.85 * t.S) && t.B === Math.ceil(0.70 * t.S) && t.C === Math.ceil(0.55 * t.S)),
     JSON.stringify(T.haul.firewood[0]))
-  check('freight R1 (PROVISIONAL): 712 / 570 / 428 / 285 kg — 125/100/75/50 % of the 570 kg rating',
-    ['S', 'A', 'B', 'C'].every((k, i) => rankTable('freight', 1)[k] === [712, 570, 428, 285][i]))
+  check('freight R1 (PROVISIONAL): 712 / 570 / 285 / 0 kg — S/A at 125/100 % of the 570 kg rating, B at half it, C at ZERO so every load earns at least ½ a deed (R-18)',
+    ['S', 'A', 'B', 'C'].every((k, i) => rankTable('freight', 1)[k] === [712, 570, 285, 0][i]))
   check('the table lookup clamps like regionTier (region 0 → 1, region 9 → the last row)',
     rankTable('time', 0) === T.time[0] && rankTable('freight', 9) === T.freight[T.freight.length - 1]
       && rankTable('haul', 1.7, 'firewood') === T.haul.firewood[0])
@@ -273,14 +273,14 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   const eco = new EconomySystem({ getDay: () => 3 })
   runEconomy.money = 999; runEconomy.halfPoints = 9; runEconomy.missions = 4
   eco.start()
-  check('start() zeroes the run wallet/points/missions',
-    runEconomy.money === 0 && runEconomy.halfPoints === 0 && runEconomy.missions === 0)
+  check('start() opens the run on the last paycheck (R-01) with zero points/missions',
+    runEconomy.money === ECONOMY_PARAMS.startCash && runEconomy.halfPoints === 0 && runEconomy.missions === 0)
   // ratio 0.83 IS a B under the re-cut bands (A 0.81 < 0.83 ≤ B 0.87). Kept in step with the bands
   // on purpose: the fixture asserts a letter, so a band move that leaves it behind would have it
   // claiming a letter the ratio no longer earns (it read 0.78 before 2026-09-07, now an A).
   const r = eco.settle({ par: 180, ratio: 0.83, letter: 'B' }, { terms: eco.terms() })
   check('settle accrues money + points + mission count',
-    runEconomy.money === r.payout && eco.points() === 1 && eco.missionCount() === 1)
+    runEconomy.money === cents(ECONOMY_PARAMS.startCash + r.payout) && eco.points() === 1 && eco.missionCount() === 1)
   check('payout is to the cent', r.payout === cents(r.payout))
   check('payout keeps its cents (par 181 at par pays $7.54, not $8)', splitPayout(181, 1, dayTier(1) * regionTier(1)).total === 7.54)
   check('runState stays narrow — no money/points on the day-boundary object',
@@ -316,8 +316,8 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   const h = (n) => amountGrade(n, H), f = (kg) => amountGrade(kg, F)
   check('haul: 25 → S, 22 → A, 18 → B, 14 → C, 13 → D (each floor is inclusive)',
     h(25) === 'S' && h(30) === 'S' && h(24) === 'A' && h(22) === 'A' && h(18) === 'B' && h(14) === 'C' && h(13) === 'D' && h(0) === 'D')
-  check('freight: 712 → S, 570 → A, 428 → B, 285 → C, below → D',
-    f(712) === 'S' && f(711.9) === 'A' && f(570) === 'A' && f(428) === 'B' && f(285) === 'C' && f(284) === 'D')
+  check('freight: 712 → S, 570 → A, 285 → B, anything lighter → C (never D: a strapped load always arrives, R-18)',
+    f(712) === 'S' && f(711.9) === 'A' && f(570) === 'A' && f(428) === 'B' && f(285) === 'B' && f(284) === 'C' && f(1) === 'C')
   check('the letter never improves as pieces are lost',
     Array.from({ length: 31 }, (_, i) => 'DCBAS'.indexOf(h(30 - i))).every((v, i, a) => i === 0 || v <= a[i - 1]))
 }
@@ -389,16 +389,21 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   }
   check('bonusEarned: X or better, S only, D never earns (full 5×5 truth table)', tt)
 
-  // Money is IDENTICAL with and without a bonus record, apart from BONUS_PAY_MULT.
+  // R-04 (game-feel review 2026-10-23): on a bonus offer THE ITEM IS THE TIP — the base is the full
+  // line's base and the cash tip is zero, whatever the ratio. payMult still scales the whole line.
   runEconomy.money = 0
   const plain = eco.settle({ par, ratio: 0.8, letter: 'A' }, { terms })
   const withRec = eco.settle({ par, ratio: 0.8, letter: 'A' }, { terms, bonus: { rewardId: 'x', name: 'X', gate: 'B' } })
   const halved = eco.settle({ par, ratio: 0.8, letter: 'A' },
                             { terms, bonus: { rewardId: 'x', name: 'X', gate: 'B' }, payMult: 0.5 })
-  check('a bonus record alone never changes the money', plain.payout === withRec.payout)
-  check('the cash cut is payMult on the whole line (continuous in ratio)',
-    halved.payout === cents(payoutFor(par, 0.8, terms.payTier) * 0.5))
+  check('a bonus job pays the plain job\'s base and no cash tip (the item is the tip)',
+    withRec.base === plain.base && withRec.tip === 0 && withRec.payout === plain.base)
+  check('payMult still scales a bonus job\'s (base-only) line', halved.payout === basePay(par, terms.payTier, 0.5))
   check('an earned bonus is recorded as an award', withRec.award?.rewardId === 'x')
+  const pr = payRange(par, terms.payTier)
+  check('payRange: base is basePay, max is the whole line at ratio 0 (R-03)',
+    pr.base === basePay(par, terms.payTier) && pr.max === cents(payoutFor(par, 0, terms.payTier)))
+  check('payRange honours the tip multiplier', payRange(par, terms.payTier, 1, 0.5).max === cents(pr.base + (pr.max - pr.base) * 0.5))
   const missed = eco.settle({ par, ratio: 1.1, letter: 'D' }, { terms, bonus: { rewardId: 'y', name: 'Y', gate: 'C' } })
   check('a D earns no award, whatever the gate', missed.award === null)
   check('…but a D still settles its base pay (failed on time, not unpaid)', missed.payout >= basePay(par, terms.payTier))

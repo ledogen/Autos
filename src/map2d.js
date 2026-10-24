@@ -19,7 +19,10 @@
 
 import * as THREE from 'three'
 import { RoadSystem } from './road.js'
-import { POI_ICONS, POI_ICON_PX, NEWSPAPER, FAMILY_COLOR, EMPTY_DIAMOND_COLOR } from '../data/map-icons.js'   // FEAT-60/67: map glyphs
+import { POI_ICONS, POI_ICON_PX, NEWSPAPER, FAMILY_COLOR, FAMILY_LABEL, EMPTY_DIAMOND_COLOR } from '../data/map-icons.js'   // FEAT-60/67: map glyphs; R-08 family labels
+// R-21 (owner, 2026-10-24, tentative): deeds are a currency and wear one ink everywhere — the paper
+// card's blue here, --accent-story on the HUD and the panels.
+const DEED_INK = '#2a5d9f'
 import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN }
     from './map-cover.js'
 import { biomeAt, isWetGround, BIOME } from './biome.js'
@@ -2588,8 +2591,9 @@ export class Map2D {
         const TX = PAD + B.BAR * k + PORT + 12 * k        // text column, right of the portrait
         const fN = `${B.FS * k}px ${MAP_LABEL_FONT}`, fB = `700 ${B.FS * k}px ${MAP_LABEL_FONT}`
         const fS = `600 ${B.FSS * k}px ${MAP_LABEL_FONT}`
-        // FEAT-112: a load verdict adds one row; so do the clocks (`times`, their own row since 2026-10-23).
-        const H = baseH * k + (c?.verdict ? B.LH * k : 0) + (c?.times?.length ? B.LH * k : 0)
+        // FEAT-112: a load verdict adds one row; so do the clocks (`times`, their own row since 2026-10-23)
+        // and the deed line (R-09).
+        const H = baseH * k + (c?.verdict ? B.LH * k : 0) + (c?.times?.length ? B.LH * k : 0) + (c?.deed ? B.LH * k : 0)
         const bonusH = (c?.bonus ? B.BONUS * k : 0)
             + (v.shelf ? (B.PAD * 2 + B.HEAD + v.shelf.length * B.LH) * k : 0)   // FEAT-137: an auto shop's shelf form
         const M = 12 * k                                  // margin from the sheet's edge
@@ -2625,7 +2629,10 @@ export class Map2D {
             this._cardFrame(ctx, x, sy, W, sh + 1.5 * k, k, EMPTY_DIAMOND_COLOR)
             ctx.textBaseline = 'top'; ctx.textAlign = 'left'
             ctx.font = fS; ctx.fillStyle = '#6a6458'
-            ctx.fillText('ON THE SHELF', inL, sy + PAD)
+            // R-24 (owner, 2026-10-24): "FOR SALE", and when the next item lands — so the player knows
+            // whether a look back is worth it, without ever waiting on an empty roll.
+            ctx.fillText('FOR SALE', inL, sy + PAD)
+            if (v.shelfNext) { ctx.textAlign = 'right'; ctx.fillText(`NEW STOCK IN ${v.shelfNext.toUpperCase()}`, x + W - PAD, sy + PAD); ctx.textAlign = 'left' }
             v.shelf.forEach((e, i) => {
                 const ly = sy + PAD + HEAD + i * LH
                 ctx.textAlign = 'left'
@@ -2659,7 +2666,7 @@ export class Map2D {
             ctx.fillStyle = '#6a6458'
             hx += bw + 6 * k
         }
-        ctx.fillText(c ? c.family.toUpperCase() : 'NO WORK', hx, ty)
+        ctx.fillText(c ? (FAMILY_LABEL[c.family] ?? c.family.toUpperCase()) : 'NO WORK', hx, ty)   // R-08: COURIER, not DELIVERY
         if (v.count > 1) {
             // "offer 2 / 3", then the Q and E keys drawn as KEYCAPS — as bare text the counter and
             // the prompt ran together into one string of letters and numbers. The keys sit TUCKED INTO
@@ -2712,18 +2719,21 @@ export class Map2D {
         ty += LH
         this._drawRuns(ctx, [{ t: c.terms.join('  ·  ') }], inL, ty, fN, fB, '#444')
         if (c.times?.length) { ty += LH; this._drawRuns(ctx, [{ t: c.times.join('  ·  ') }], inL, ty, fN, fB, '#444') }
+        // R-09: the deed line — the third promise. R-21 (owner, 2026-10-24, tentative): deeds are a
+        // currency, so they wear ONE ink everywhere — the story blue here, --accent-story on the HUD.
+        if (c.deed) { ty += LH; this._drawRuns(ctx, [{ t: c.deed, b: true }], inL, ty, fN, fB, DEED_INK) }
         // FEAT-112: the load verdict — amber for a warning, red for an overload (which cannot be taken).
         if (c.verdict) this._drawRuns(ctx, [{ t: c.verdict.text, b: true }], inL, ty + LH, fN, fB,
                                       c.verdict.level === 'overload' ? '#b3261e' : '#a06800')
 
-        // ── the bonus form, tacked onto the bottom ──
+        // ── the TIP form, tacked onto the bottom (R-04: the item that replaces the cash tip) ──
         if (c.bonus) {
             const by = y + H - 1.5 * k
             this._cardFrame(ctx, x, by, W, B.BONUS * k + 1.5 * k, k, '#d4a017')
             ctx.font = fS; ctx.fillStyle = '#8a6a00'
-            ctx.fillText('BONUS', inL, by + 9 * k)
+            ctx.fillText('TIP · INSTEAD OF CASH', inL, by + 9 * k)
             ctx.font = fB; ctx.fillStyle = '#4a3a00'
-            ctx.fillText(c.bonus.replace(/^Bonus:\s*/, ''), inL, by + 23 * k)
+            ctx.fillText(c.bonus.replace(/^Tip:\s*/, ''), inL, by + 23 * k)
         }
         ctx.textBaseline = 'alphabetic'
     }
