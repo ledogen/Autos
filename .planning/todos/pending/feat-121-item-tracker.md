@@ -68,7 +68,7 @@ free alertness (fish's job).
 status: todo · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
 Already a REWARDS id (`chiliDog`, kind food). A meal: resets the hunger clock.
 **Ruled 2026-10-20:** a plain meal that holds hunger 10 h. $5. Food vendor only (B–A), never found.
-Spoils in 16 h (2026-10-21). Flavor: "Kinda gross" (owner, 2026-10-22).
+Spoils in 16 h (2026-10-21). Flavor: "Kinda gross" (owner, 2026-10-22) — the in-game desc since 2026-10-24.
 
 ### Dinner meal
 status: wip · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
@@ -175,7 +175,7 @@ Renamed from tire patches (owner, 2026-10-21). In ITEMS as `tirePlugKit` (`use: 
 thumbnail and a REWARDS row (auto shop, gas station, work site; B–A). One plug per kit, $5–10, rare
 roadside find. It fixes the hole and restores no condition. The whole repair, plugging and
 inflating, is 2 h by hand (bike pump) or 30 min with the compressor (owner, 2026-10-21). **The effect is built on feature/parts (08baccc5, unmerged):** the buttons sit in the inventory's detail strip.
-Flavor: "I hope I don't have to use this" (owner, 2026-10-22).
+Flavor: "I hope I don't have to use this" (owner, 2026-10-22) — the in-game desc since 2026-10-24.
 
 ### Spare air filter
 status: wip · design: ratified · build: effect · where: autoShop, reward, found
@@ -191,7 +191,7 @@ status: wip · design: ratified · build: effect · where: generalStore, autoSho
 Field repair, 10% on the `armor*` / `headlight*` tracks and the radiator. 5 per pack. 15 min per use;
 holds for the run (2026-10-20). $5–10; an auto-shop reward (B–A); a rare roadside find (2026-10-21).
 Flavor: "A mechanic's best friend" (owner, 2026-10-22).
-**In the game 2026-10-23** (`zipTies`, 0.2 kg): a live B–A auto-shop reward. **The repair is built on feature/parts** (`use: 'fieldRepair'`, 5 uses): picked on the damage screen, 15 min a use, capped at 80% [DEFAULT]. Shelf: Sometimes, $5 [DEFAULT].
+**In the game 2026-10-23** (`zipTies`, 0.2 kg): a live B–A auto-shop reward. **The repair is built on feature/parts** (`use: 'fieldRepair'`, 5 uses): picked on the damage screen, 15 min a use, capped at 80% [DEFAULT]. Shelf: Sometimes, **$10** (owner, 2026-10-24).
 
 ### Duct tape
 status: wip · design: ratified · build: effect · where: generalStore, reward, found
@@ -210,7 +210,7 @@ Field repair: restores 15% radiator condition (owner, 2026-10-16), never past 50
 is cooling capacity directly — aimed at the overheat → power loss → engine wear chain. One use per
 bottle; 15 min; holds for the run (2026-10-20). $5–10; a reward from both (B–A); never found (2026-10-21).
 Flavor: "Maybe this will keep 'er going" (owner, 2026-10-22).
-**In the game 2026-10-23** (`stopLeak`, 0.5 kg, `use: 'stopLeak'`): parked, +15% radiator up to 50%, a 15 min stop (main.js `_pourStopLeak`); a B–A reward from the auto shop and gas station. Shelf (feature/parts): Sometimes, $8 [DEFAULT].
+**In the game 2026-10-23** (`stopLeak`, 0.5 kg, `use: 'stopLeak'`): parked, +15% radiator up to 50%, a 15 min stop (main.js `_pourStopLeak`); a B–A reward from the auto shop and gas station. Shelf (feature/parts): Sometimes, **$10** (owner, 2026-10-24).
 
 ### Emergency gas
 status: wip · design: ratified · build: effect, model · where: gasStation, reward
@@ -285,7 +285,7 @@ Rights a rolled truck where it lies; the mechanic is **FEAT-138** (the parts ses
 end (the SM-INV-1 answer). It applies a roll torque for a set time (2–5 s) to a truck that is not on
 its wheels, in the direction the player picks; live in the physics, not a timeskip; a cooldown stops
 abuse; it will not flip the truck in every case. 13 kg. Sold at the auto shop; a reward from the auto
-shop and stranded motorists. Open: rank gate, price, roadside find, torque and cooldown figures.
+shop and stranded motorists. **Ruled 2026-10-24:** A–S, $10–30, never found. Open: torque and cooldown figures.
 
 ### Breaker bar
 status: cut · design: implied · build: effect · where: autoShop
@@ -465,7 +465,9 @@ A worse car without the literacy — the cursed item nobody had to author. **Rul
 power per rung; the exhaust ladder is stock → sport → open headers → race (open headers are the
 loudest and a little sketchy, not the most powerful). Added, figures open: cold-air intake, cams,
 light flywheel, turbo, supercharger, chip tune, race ECU. Sold at the auto shop; a reward from the
-auto shop, stranded motorists and residences. Rank gate, price and finds open.
+auto shop, stranded motorists and residences. **Split into its pieces 2026-10-24** (owner): sport exhaust, open
+headers, race exhaust, cold-air intake, cams, light flywheel, turbo, supercharger, chip tune, race ECU — each
+priced and specified on its own card on the setup page (gain, rev band, limiter, inertia, lag, mass).
 
 ### Tire compound
 status: cut · design: proposed · build: param · where: autoShop
