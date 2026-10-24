@@ -128,7 +128,7 @@ export const PARTS = {
                        desc: 'An extra leaf. Sits level under a load, bucks when empty.' },
     // Sport tier (owner, 2026-10-22): stiffer than stock, softer than HD, stock height, stock load
     // rating; Sport family, so they wear faster. [DEFAULT] +35% rate, +40% damping (the page's middle
-    // options). Prices: springs $15, shocks $15; heavy-duty is the endgame mod at $25 (owner, 2026-10-22).
+    // options). Prices: springs $15, shocks $15 (re-asked against HD $25 and KEPT, owner 2026-10-24); heavy-duty is the endgame mod at $25 (owner, 2026-10-22).
     // Lowering springs (owner, 2026-10-22): they sit 30 mm under stock. `drop` (m) shortens the spring's
     // free length; the stiffer rate alone sags 29 mm (front) / 24 mm (rear) less than stock, so the drop
     // is that plus 30 mm. The bump stop is bolted to the body, so the bump travel shrinks by the same
@@ -261,7 +261,7 @@ export const REPAIRS = {
  *  it). It keeps the shop from being a pit stop that tops everything up to the cap. A part already off
  *  the truck, in the inventory, pays the charge but not the access time. [DEFAULT] $5 / 30 min. */
 export const REPAIR_SETUP = { price: 5, hours: 0.5 }
-export const REPAIR_CAP = 0.8
+export const REPAIR_CAP = 0.8    // ratified by the owner 2026-10-24 (was [DEFAULT])
 export const REPAIR_STEP = 0.05
 /** The shop can still patch a flat: fixes the hole, not the wear — about a plug kit's price, and its
  *  half hour (owner, 2026-10-22). */

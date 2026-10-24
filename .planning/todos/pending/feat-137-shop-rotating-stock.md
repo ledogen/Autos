@@ -47,7 +47,7 @@ Parts Shop / My Items.
 
 ## Acceptance
 
-- [ ] The owner approves the [DEFAULT] numbers.
+- [x] The owner approves the [DEFAULT] numbers (approved as built, 2026-10-24).
 - [ ] The Parts Shop shows only the shelf, each item with condition, price and time left; the map
       shows the same.
 - [ ] Rolls are seeded per (run, shop, hour), so a revisit agrees and a gate can pin them.

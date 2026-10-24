@@ -27,10 +27,33 @@ mechanic, so it belongs with the parts/recovery work (src/recovery.js), not in t
 - **The item:** a carried tool, 13 kg (a real 48″ hi-lift). Separate from the quick-jack. Sold at the
   auto shop; a reward from the auto shop and stranded motorists.
 
+## Ruled 2026-10-24
+
+- **Rank gate A–S, $10–30, never a roadside find** (owner, items page 10-24).
+- **Cooldown 5 s real time** (owner).
+- **The torque** (owner asked "how much torque does it take to flip a car on its roof and for how long"):
+  the jack has to lift the centre of gravity over the pivot line; past that balance point gravity finishes
+  the roll. The peak torque is `m·g·d` with `d` the horizontal distance from the pivot to the CG, and it
+  falls to zero at the balance angle. For the stock Ranger (data/ranger.js: 1360 kg, cgHeight 0.55 m,
+  bodyWidth 1.66 m, roof ≈ 1.7 m):
+  - **Roof → side.** Pivot = the roof rail; d = 0.83 m, CG 1.15 m above the roof. Peak 11.1 kN·m,
+    balance at 36°, work 3.6 kJ.
+  - **Side → wheels.** Pivot = the sill / outer tire edge; d = 0.55 m, CG 0.83 m out. Peak 7.3 kN·m,
+    balance at 34°, work 2.2 kJ.
+  - So a constant applied torque must beat the starting value or nothing moves. **Proposal:** apply
+    `10.5 N·m per kg × mass` (≈ 14 kN·m stock, 1.3× the roof case, 2× the side case) for **up to 3 s**,
+    cut the instant the truck passes the balance point. With that margin the balance point arrives in
+    about 1 s from the roof and 1 s from the side (I ≈ 3400 / 2000 kg·m² about the pivot), so the 2–5 s
+    window is plenty; the leftover time is what makes it look like a heave rather than a flick. A truck
+    lying across a slope with its roof downhill, a heavier or armoured truck, or a wheel caught on a
+    rock raises `d` or `I` and is how it "sometimes fails" from the physics.
+  - On its side only the second stage applies; from the roof the same press is needed twice (one per
+    stage), each with its own cooldown.
+
 ## Open (the owner's call)
 
-- Rank gate, price, likelihood (data/stock-weights.js), and whether it's ever a roadside find.
-- The torque, its duration within 2–5 s, and the cooldown length.
+- The torque proposal above: approve 10.5 N·m/kg × 3 s, or move it.
+- Likelihood tier (data/stock-weights.js).
 - Its input: which press uses it, and how the direction is chosen (controller button budget:
   the B menu or an existing contextual press before a fresh button).
 
