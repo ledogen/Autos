@@ -57,6 +57,11 @@ export function setLaunchHold (on) { _launchHold = on }
 // multiply by 1, so headless gates (which never construct DaySystem) see identical vehicle input.
 let _controlAtten = 1
 export function setControlAttenuation (f) { _controlAtten = Math.max(0, Math.min(1, Number(f) || 0)) }
+// Drowsy steering (owner 2026-10-21): from the sleepy band down, the wheel turns slower — the key
+// accumulation rate and the pad slew both scale by this. Unlike _controlAtten it never drops an
+// input, it only slows it. main.js drives it from DaySystem.steerRateScale(); default 1 ⇒ inert.
+let _steerRateScale = 1
+export function setSteerRateScale (f) { _steerRateScale = Math.max(0, Math.min(1, Number(f) || 0)) }
 
 /**
  * Update vehicle input state for one fixed physics step.
@@ -176,11 +181,11 @@ export function updateVehicle (vehicleState, params, dt) {
     // left = −x = positive steerAngle), slewed at steerSlewRate. A doze (attenuation 0) aims at
     // centre, so the wheels return through the same slew rather than snapping.
     const target = -pad.steer * steerLimit * _controlAtten
-    const slew = PAD_PARAMS.steerSlewRate * dt
+    const slew = PAD_PARAMS.steerSlewRate * _steerRateScale * dt
     vehicleState.steerAngle += Math.max(-slew, Math.min(slew, target - vehicleState.steerAngle))
   } else {
-    if (!freecamActive && keys.a) vehicleState.steerAngle += params.steerRate * dt * _controlAtten
-    if (!freecamActive && keys.d) vehicleState.steerAngle -= params.steerRate * dt * _controlAtten
+    if (!freecamActive && keys.a) vehicleState.steerAngle += params.steerRate * _steerRateScale * dt * _controlAtten
+    if (!freecamActive && keys.d) vehicleState.steerAngle -= params.steerRate * _steerRateScale * dt * _controlAtten
   }
 
   if (!padDrives && (freecamActive || (!keys.a && !keys.d))) {

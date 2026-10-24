@@ -29,6 +29,10 @@ export const DAY_PARAMS = {
                            //   day; at 18 dawn drifted 2 h per night)
     sleepyAtH:     4,      // energy remaining at/below which the driver is SLEEPY  (12 h awake)
     tiredAtH:      2,      // …TIRED      (14 h awake)
+    // Steer-rate multiplier (owner 2026-10-21) — slower hands: steps to sleepySteerScale on entering
+    // SLEEPY, then falls linearly with energy to exhaustedSteerScale at 0 h left and holds there.
+    sleepySteerScale:    0.75,
+    exhaustedSteerScale: 0.5,
     // EXHAUSTED is energy <= 0 (16 h awake). Exhaustion has no deeper STAGE — but see sleepDebtMaxH:
     // the number keeps falling below 0, so staying up late is repaid at the next sleep.
     // The ladder reads energy REMAINING (4/2/0), so the 2026-08-02 tank shrink moved the stages'
@@ -201,7 +205,7 @@ export class DaySystem {
     // hours-of-waking remaining, full = 16 h, draining 1:1 with the in-game clock. The stages read
     // the REMAINDER, not elapsed time, so a coffee genuinely walks the driver back down the ladder:
     //   rested    > 4 h left            — nothing happens
-    //   sleepy   <= 4 h  (12 h awake)   — eyelid animation only, NO control loss. A warning you feel.
+    //   sleepy   <= 4 h  (12 h awake)   — eyelids + slower steering (×0.75 → ×0.5 at 0 h), no doze. A warning you feel.
     //   tired    <= 2 h  (14 h awake)   — one long signal blink on entry, then 200–600 ms DOZES
     //   exhausted <= 0   (16 h awake)   — 400–1000 ms dozes
     // SM-INV-1: a doze drops the inputs and lets the physics decide. It is never a fail state and
@@ -379,6 +383,13 @@ export class DaySystem {
         return Math.max(0, 1 - (b.t - b.closeMs - b.holdMs) / b.openMs)
     }
 
+    // Gated with the blinks: drowsiness effects are on only where the eyelids can fire (never free roam).
+    steerRateScale () {
+        if (!this._blinksEnabled || this.stage() === 'rested') return 1
+        const t = Math.max(0, this._energyH) / DAY_PARAMS.sleepyAtH   // 1 at sleepy onset → 0 exhausted
+        return DAY_PARAMS.exhaustedSteerScale + t * (DAY_PARAMS.sleepySteerScale - DAY_PARAMS.exhaustedSteerScale)
+    }
+
     /**
      * Driver-input factor for vehicle.js: 0 while dozing, 1 otherwise. IDENTICALLY 1 whenever blinks
      * are disabled, no blink is running, or the running blink is a no-loss one (sleepy / the tired
@@ -502,6 +513,8 @@ export class DaySystem {
         // eyelids ARE the readout in play; these numbers exist for tuning only).
         f.add(DAY_PARAMS, 'fullEnergyH', 4, 24, 0.5).name('full energy (h)')
         f.add(DAY_PARAMS, 'sleepyAtH', 0, 8, 0.5).name('sleepy at (h left)')
+        f.add(DAY_PARAMS, 'sleepySteerScale', 0.3, 1, 0.05).name('sleepy steer rate ×')
+        f.add(DAY_PARAMS, 'exhaustedSteerScale', 0.3, 1, 0.05).name('exhausted steer rate ×')
         f.add(DAY_PARAMS, 'tiredAtH', 0, 6, 0.5).name('tired at (h left)')
         f.add(DAY_PARAMS, 'coffeeReliefH', 0, 10, 0.5).name('coffee relief (h)')
         f.add(DAY_PARAMS, 'coffeeDebtH', 0, 10, 0.5).name('coffee debt (h)')

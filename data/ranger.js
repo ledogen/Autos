@@ -354,7 +354,7 @@ export const RANGER_PARAMS = {
 
   // ── Steering ─────────────────────────────────────────────────────────────
   maxSteerAngle:  0.52,  // rad (~30°) — max steer angle at low speed
-  steerRate:      1.2,   // rad/s — accumulation rate while steering key is held
+  steerRate:      0.96,  // rad/s (1.2 → 0.96, owner 2026-10-21: −20 %) — accumulation rate while steering key is held
   steerDecayRate: 2.0,   // rad/s — return-to-zero rate when key is released
   speedSteerRef:  15,    // m/s — reference speed at which max steer is halved (M1-08)
 

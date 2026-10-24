@@ -33,7 +33,7 @@ import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdic
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
 import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
-import { updateVehicle, setLaunchHold, setControlAttenuation } from './vehicle.js'
+import { updateVehicle, setLaunchHold, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
@@ -7345,6 +7345,7 @@ const storySystem = new StorySystem({
     daySystem.stop()    // FEAT-47: clock off, sky handed back to free roam's noon look
     daySystem.setBlinksEnabled(false)   // …and the eyelids can never fire in free roam
     setControlAttenuation(1)            // belt-and-braces: leave the driver's inputs whole
+    setSteerRateScale(1)
     offerBoard?.clearRoutes()           // FEAT-67: routes hold live centerlines — never keep them across a region
     offerBoard = null                   // …and the board belongs to the run that just ended
     _dropLarryTour()
@@ -8118,6 +8119,7 @@ function loop () {
   // over in a dozen frames, so a 100 ms cadence would quantise the eyelids into a stutter and let
   // the attenuation lag the blink. Two style writes on cached elements — cheap enough to afford.
   setControlAttenuation(daySystem.attenuation())   // identically 1 outside a doze
+  setSteerRateScale(daySystem.steerRateScale())    // 1 when rested
   _updateDozeOverlay(daySystem.eyelidFactor())
   // FEAT-55: the Energy meter scrolls on the same per-frame cadence — the creep is the display.
   _updateEnergyMeter()
