@@ -50,9 +50,12 @@ mechanic, so it belongs with the parts/recovery work (src/recovery.js), not in t
   - On its side only the second stage applies; from the roof the same press is needed twice (one per
     stage), each with its own cooldown.
 
+- **Torque APPROVED (owner, 2026-10-24): 10.5 N·m per kg of truck mass, applied for up to 3 s, cut the
+  instant the truck passes the balance point; 5 s real-time cooldown.** Ready to build in Lane B
+  (`.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md`).
+
 ## Open (the owner's call)
 
-- The torque proposal above: approve 10.5 N·m/kg × 3 s, or move it.
 - Likelihood tier (data/stock-weights.js).
 - Its input: which press uses it, and how the direction is chosen (controller button budget:
   the B menu or an existing contextual press before a fresh button).
