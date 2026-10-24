@@ -114,6 +114,16 @@ console.log('\n7. the tow')
   check(towHours(2, E) === E.towBaseHours + 2 * E.towHoursPerKm, `and costs ${towHours(2, E)} h on the clock`)
 }
 
+console.log('\n8. the jerry cans fill once the tank is full')
+{
+  const s = new FuelStop(), fuel = { gal: P.fuelTankGal - 1, floorGal: 0, dry: false }
+  const cans = [{ gal: 4, cap: 5 }, { gal: 0, cap: 5 }]
+  s.open('poi:1', 0.5, cans)
+  const ev = run(s, fuel, 10, true)
+  check(fuel.gal === P.fuelTankGal && cans[0].gal === 5 && cans[1].gal === 5, 'the tank first, then each can to the brim')
+  check(Math.abs(s.gal - 7) < 1e-9 && ev.includes('full'), `one counter for all of it (${s.gal.toFixed(2)} gal), then the shutoff`)
+}
+
 console.log(`\n${'═'.repeat(64)}`)
 if (failures) { console.log(`FUEL-STOP GATE: ${failures} FAILURE(S)`); process.exit(1) }
 console.log('FUEL-STOP GATE: all checks passed ✓')

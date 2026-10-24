@@ -17,9 +17,13 @@
 //   6. A part you swap by hand (the spare air filter, items.md): it goes on with its wear for the
 //      socket's labour (15 min); the old one comes off into the inventory with its own. Anything else
 //      is refused.
+//   7. Field repairs (items.md §7): zip ties +10% on a panel, lamp or the radiator; duct tape +20% on a
+//      panel only; 15 min a use, never past REPAIR_CAP; a pack's uses run down before the next opens.
+//   8. The jerry can: pours what the tank takes and stays, lighter; empty or into a full tank, nothing.
 //
 // Pure node: no THREE, no DOM.
-import { recoveryCard, fitSpare, plugTire, plugMethods, spareFitHours, fitRoadside } from '../src/recovery.js'
+import { recoveryCard, fitSpare, plugTire, plugMethods, spareFitHours, fitRoadside, fieldRepair, pourCan } from '../src/recovery.js'
+import { REPAIR_CAP } from '../data/parts.js'
 import { InventorySystem } from '../src/inventory.js'
 import { PartsSystem } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
@@ -109,6 +113,38 @@ const filt = () => inv2.list().find(r => r.id === 'airFilterStock')
 check('a part with no roadside fit is refused', fitRoadside(parts, inv2, inv2.list().findIndex(r => r.id === 'compressor')) === -1)
 check('the filter goes on in 15 min, with its wear', fitRoadside(parts, inv2, filt().index) === 0.25 && damage.get('airFilter') === 0.9)
 check('…and the clogged one comes off into the inventory', filt()?.cond === 0.15, JSON.stringify(filt()))
+
+// ── 7. Field repairs ──────────────────────────────────────────────────────────────────────────
+const fr = new InventorySystem({ slotCap: () => 8 }); fr.start()
+fr.grant('zipTies', 2); fr.grant('ductTape')
+const zips = () => fr.list().find(r => r.id === 'zipTies')
+damage.set('headlightL', 0.3); damage.set('armorLeft', 0.75); damage.set('radiator', 0.5)
+check('zip ties on a lamp: +10%, 15 min', fieldRepair(damage, fr, 'zipTies', 'headlightL') === 0.25
+  && Math.abs(damage.get('headlightL') - 0.4) < 1e-9)
+check('…one use of the open pack is spent', zips().n === 2 && zips().left === 4, JSON.stringify(zips()))
+check('zip ties on the radiator', fieldRepair(damage, fr, 'zipTies', 'radiator') === 0.25 && Math.abs(damage.get('radiator') - 0.6) < 1e-9)
+check('duct tape on a lamp is refused, nothing spent', fieldRepair(damage, fr, 'ductTape', 'headlightL') === -1
+  && fr.list().find(r => r.id === 'ductTape').left === 3)
+check('duct tape on a panel stops at the cap', fieldRepair(damage, fr, 'ductTape', 'armorLeft') === 0.25 && damage.get('armorLeft') === REPAIR_CAP)
+check('…and a part at the cap is refused', fieldRepair(damage, fr, 'zipTies', 'armorLeft') === -1)
+for (let i = 0; i < 3; i++) { damage.set('headlightR', 0.1); fieldRepair(damage, fr, 'zipTies', 'headlightR') }
+check('the fifth use finishes the pack and the next opens full', zips().n === 1 && zips().left === 5, JSON.stringify(zips()))
+for (let i = 0; i < 5; i++) { damage.set('headlightR', 0.1); fieldRepair(damage, fr, 'zipTies', 'headlightR') }
+check('…and the last pack is gone with its last use', !zips() && fieldRepair(damage, fr, 'zipTies', 'headlightR') === -1)
+
+// ── 8. The jerry can ──────────────────────────────────────────────────────────────────────────
+const jc = new InventorySystem({ slotCap: () => 8 }); jc.start()
+const kg0 = jc.stowedKg()
+jc.grant('jerryCan')
+const can = () => jc.list().find(r => r.id === 'jerryCan')
+check('a jerry can comes full: 5 gal, 16 kg', can().gal === 5 && Math.abs(jc.stowedKg() - kg0 - 16.1) < 0.01, `${(jc.stowedKg() - kg0).toFixed(2)} kg`)
+const tank = { gal: 14.5, dry: false }
+check('it pours what the tank takes', pourCan(tank, 16.5, jc, can().index) === 2 && tank.gal === 16.5 && can().gal === 3)
+check('…and stays, lighter', Math.abs(jc.stowedKg() - kg0 - 2 - 3 * 2.82) < 0.01)
+check('into a full tank, nothing moves', pourCan(tank, 16.5, jc, can().index) === 0 && can().gal === 3)
+const dry = { gal: 0, dry: true }
+check('a dry tank takes the rest', pourCan(dry, 16.5, jc, can().index) === 3 && !dry.dry && can().gal === 0)
+check('an empty can pours nothing', pourCan({ gal: 0, dry: true }, 16.5, jc, can().index) === 0)
 
 console.log(fails ? `\n${fails} FAILED` : '\nrecovery gate: ALL OK')
 process.exit(fails ? 1 : 0)

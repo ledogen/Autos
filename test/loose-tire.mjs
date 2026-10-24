@@ -4,7 +4,7 @@
 // tris of lathed carcass and tread lugs. Hulled whole it is far past Box3D's 255-half-edge limit, so
 // debris.js thinHull keeps the 40 most spread-out vertices and hulls those — the path every detailed
 // item model will take into the world. Checks:
-//   (1) the thinned hull builds, spans the model's own 0.73 × 0.24 m, and lands the spec mass (18 kg, the truck's own wheelMass);
+//   (1) the thinned hull builds, spans the model's own 0.73 × 0.24 m, and lands the spec mass (21 kg, a tire on a steel wheel);
 //   (2) dropped where main.js _loadLoose drops it (strapPose + 1 cm), the tire settles flat on the
 //       ribs and stays in the bed — 60 mph straight, then a slalom at 60 mph.
 //

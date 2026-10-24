@@ -12,6 +12,8 @@
 //   rarity   parts only: the colour behind the icon (data/parts.js RARITY_COLOR)
 //   use      the effect hook main.js supplies, if the effect is built. Usable items auto-bind to
 //            a free quick slot (keys 1–4, items.md §1c).
+//   uses     uses per unit (a pack, a roll), when more than one: the stack tracks the open one's `left`
+//   capGal   a can's fill, gallons: the entry carries `gal`, and its mass is `kgPerGal` × gal on top
 
 import { PARTS, partIcon } from './parts.js'
 
@@ -20,8 +22,9 @@ export const ITEMS = {
                     desc: 'Wakes you up now. You will feel it in the morning.' },
     chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3,
                     desc: 'Kinda gross.' },   // the owner's flavor line (setup page, 10-22)
-    // P235/75R15 on a steel rim.
-    spareTire:    { name: 'Mounted tire',  kind: 'part',       massKg: 18, use: 'spare',   // = RANGER_PARAMS.wheelMass
+    // P235/75R15 on a steel rim: the standard tire (12 kg) + the steel wheel (9 kg), the realistic
+    // figure (owner, 2026-10-23). Not RANGER_PARAMS.wheelMass, which is the suspension's unsprung mass.
+    spareTire:    { name: 'Mounted tire',  kind: 'part',       massKg: PARTS.spareTire.massKg, use: 'spare',
                     desc: 'A tire mounted on a wheel.' },
     // A 2 gal RotoPax: ~5.7 kg of gas + ~1.5 kg of can (data/offers.js REWARDS).
     emergencyGas: { name: 'Emergency gas', kind: 'consumable', massKg: 7.2, use: 'gas',
@@ -41,14 +44,19 @@ export const ITEMS = {
     // One bottle: radiator back up to half at most, a 15 min stop (items.md §7; main.js _pourStopLeak).
     stopLeak:     { name: 'Stop-leak',     kind: 'consumable', massKg: 0.5, use: 'stopLeak',
                     desc: "Maybe this will keep 'er going." },
-    // A pack of 5, 10% on a headlight, body panel or the radiator, 15 min a use (items.md §7). The
-    // repair effect is the parts session's and isn't built, so for now it is carried only.
-    zipTies:      { name: 'Zip ties',      kind: 'consumable', massKg: 0.2,
+    // A pack of 5, 10% on a headlight, body panel or the radiator, 15 min a use (items.md §7; the
+    // effect is src/recovery.js FIELD_REPAIR).
+    zipTies:      { name: 'Zip ties',      kind: 'consumable', massKg: 0.2, use: 'fieldRepair', uses: 5,
                     desc: "A mechanic's best friend." },
-    // A ~0.35 kg roll, 3 uses (items.md §7): 20% on a body panel, 15 min, holds for the run. The repair
-    // effect is the parts session's and isn't built, so for now it is carried only.
-    ductTape:     { name: 'Duct tape',     kind: 'consumable', massKg: 0.35,
+    // A ~0.35 kg roll, 3 uses (items.md §7): 20% on a body panel, 15 min, holds for the run (the
+    // effect is src/recovery.js FIELD_REPAIR).
+    ductTape:     { name: 'Duct tape',     kind: 'consumable', massKg: 0.35, use: 'fieldRepair', uses: 3,
                     desc: 'Holds a panel on for the rest of the run. Not pretty, but it holds.' },
+    // A refillable 5 gal steel can (items.md §1, owner 2026-10-21/22): 4 kg empty, 18 kg full (E10 at
+    // 2.82 kg/gal = src/fuel.js KG_PER_GAL). Poured parked, 10 min; refilled at any pump. A tool, so
+    // each can is its own slot and remembers its fill.
+    jerryCan:     { name: 'Jerry can',     kind: 'tool',       massKg: 2, use: 'jerry', capGal: 5, kgPerGal: 2.82,
+                    desc: 'A plastic can of gas. Fill it at any pump.' },
     // A low steel trolley jack, ~15 kg [DEFAULT]: takes 1 h off the spare change, never a plug repair
     // (owner, 2026-10-22 — "you don't need to jack to plug"). The time saving is the parts session's.
     quickJack:    { name: 'Quick-jack',    kind: 'tool',       massKg: 15,

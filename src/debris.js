@@ -50,9 +50,9 @@ export const DEBRIS_TYPES = {
   bundleA: { model: 'firewoodBundleA', massKg: 11, friction: 0.8, restitution: 0.05 },
   bundleB: { model: 'firewoodBundleB', massKg: 11, friction: 0.8, restitution: 0.05 },
   bundleC: { model: 'firewoodBundleC', massKg: 11, friction: 0.8, restitution: 0.05 },
-  // The stranded motorist's tire, loose in the bed (data/offers.js `loose`). 18 kg = RANGER_PARAMS.wheelMass, the
-  // truck's own wheel and tire, as are data/items.js and the offer row. Rubber on the bed ribs grips.
-  spareTire: { model: 'spareTire', massKg: 18, friction: 0.9, restitution: 0.3 },
+  // The stranded motorist's tire, loose in the bed (data/offers.js `loose`). 21 kg, a tire on a steel
+  // wheel (owner, 2026-10-23: the realistic figure), as are data/items.js and the offer row. Rubber on the bed ribs grips.
+  spareTire: { model: 'spareTire', massKg: 21, friction: 0.9, restitution: 0.3 },
 }
 
 /** The three bundle variants, in a fixed order so a hash picks one deterministically. */

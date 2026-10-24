@@ -34,7 +34,8 @@
  *     instead of the game choosing one. Only the tires and wheels stay live; hovering a corner shows
  *     its tire, its wheel and whether it is flat. The side column lists the four corners (and, for a
  *     plug, the tires in the inventory), and once one is picked the confirm buttons say how long the
- *     job takes. pick(job) — main.js builds the jobs (the spare, the plug kit).
+ *     job takes. pick(job) — main.js builds the jobs (the spare, the plug kit). A field repair (zip
+ *     ties, duct tape) picks a PART instead: its `tracks` are what stays live and what the column lists.
  *
  * Imports nothing from the physics stack. It reads the DamageModel (conditions, flat flags, the
  * alignment/runout readouts) and vehicleState.parked, and writes only to the DOM.
@@ -323,13 +324,13 @@ const CSS = `
 #dmg-screen .ds-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 1px; }
 #dmg-screen .ds-ticks { position: relative; height: 12px; margin-top: 5px; color: var(--text-faint); }
 #dmg-screen .ds-ticks span { position: absolute; transform: translateX(-50%); }
-/* Pick mode: only the tires and wheels stay live; the side column becomes the picker. */
+/* Pick mode: only what the job can pick stays live (.pickable); the side column becomes the picker. */
 #dmg-screen.picking .ds-side > .ds-sub, #dmg-screen.picking .ds-list, #dmg-screen.picking .ds-legend { display: none; }
 #dmg-screen .ds-pick { display: none; flex-direction: column; gap: 4px; }
 #dmg-screen.picking .ds-pick { display: flex; }
-#dmg-screen.picking .ds-part:not([data-track^="tire"]):not([data-track^="wheel"]), #dmg-screen.picking .ds-hit,
+#dmg-screen.picking .ds-part:not(.pickable), #dmg-screen.picking .ds-hit:not(.pickable),
 #dmg-screen.picking .ds-neutral, #dmg-screen.picking .ds-detail, #dmg-screen.picking .ds-detail-dot { opacity: 0.25; pointer-events: none; }
-#dmg-screen.picking .ds-part[data-track^="tire"], #dmg-screen.picking .ds-part[data-track^="wheel"] { cursor: pointer; }
+#dmg-screen.picking .pickable { cursor: pointer; }
 #dmg-screen .ds-part.picked { filter: brightness(1.6) drop-shadow(0 0 4px rgba(255,255,255,0.8)); }
 #dmg-screen .ds-pick .ds-sub { margin: 6px 0 0; }
 #dmg-screen .ds-pbtn { display: block; width: 100%; text-align: left; font: 12px var(--font); color: var(--text-body);
@@ -412,7 +413,7 @@ export class DamageScreen {
     this.titleEl = this.screen.querySelector('.ds-title')
     this._listKey = ''
     this._job = null       // pick mode's job (pick()), else null
-    this._target = null    // what it has picked: { corner } or { index } (an inventory entry)
+    this._target = null    // what it has picked: { corner }, { index } (an inventory entry) or { track }
     this.screen.querySelector('.card-back').addEventListener('mousedown', (e) => e.preventDefault())
     this.screen.querySelector('[data-act="close"]').addEventListener('click', () => this.close())
     this.screen.addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault() })
@@ -483,10 +484,11 @@ export class DamageScreen {
    * Open in pick mode. `job`:
    *   title                     the card's title
    *   corner(c) → bool          can corner c (0=FL..3=RR) be picked
+   *   tracks                    instead of corners: the parts on offer [{ id, ok, line }] (a field repair)
    *   note(c) → string          optional: what is on that corner (its tire's name)
    *   loose                     optional: inventory tires [{ index, name, line, ok }] — `ok` = pickable
    *   about                     optional: one line under the list (the spare's own condition)
-   *   target                    optional: picked at open ({ corner } or { index })
+   *   target                    optional: picked at open ({ corner }, { index } or { track })
    *   actions(target)           the confirm buttons [{ label, icon?, run }]; the screen closes after run
    *   onClose()                 called however it closes (main.js goes back to the inventory)
    * Parked only, like V: otherwise it shows the park hint and returns false.
@@ -497,6 +499,10 @@ export class DamageScreen {
     if (!this.vehicleState.parked) { this._hintT = HINT_S; this._renderCard(); return false }
     this._job = job
     this._target = job.target ?? null
+    for (const el of this.parts) {
+      const t = TRACKS[el.dataset.track]
+      el.classList.toggle('pickable', job.tracks ? job.tracks.some(r => r.id === el.dataset.track) : t.cls === 'tire' || t.cls === 'wheel')
+    }
     this.screen.classList.add('picking')
     this.open()
     this._renderPick()
@@ -511,9 +517,12 @@ export class DamageScreen {
       return
     }
     const inv = e.target.closest('[data-inv]')
-    const t = TRACKS[e.target.closest('[data-track]')?.dataset.track]
+    const id = e.target.closest('[data-track]')?.dataset.track, t = TRACKS[id]
     if (inv) this._target = { index: +inv.dataset.inv }
-    else if ((t?.cls === 'tire' || t?.cls === 'wheel') && this._job.corner(t.wheel)) this._target = { corner: t.wheel }
+    else if (this._job.tracks) {
+      if (!this._job.tracks.find(r => r.id === id)?.ok) return
+      this._target = { track: id }
+    } else if ((t?.cls === 'tire' || t?.cls === 'wheel') && this._job.corner(t.wheel)) this._target = { corner: t.wheel }
     else return
     this._renderPick()
   }
@@ -526,7 +535,9 @@ export class DamageScreen {
       + `<span class="dr-top"><span>${name}</span>${flat ? '<span class="dp-flat">flat</span>' : ''}</span>`
       + `<span class="dp-line">${line}</span></button>`
     let h = `<div class="ds-sub">On the truck</div>`
-    for (let c = 0; c < 4; c++) {
+    if (j.tracks) h += j.tracks.map(r => row(`data-track="${r.id}"`, r.ok, T?.track === r.id, bandColor(shownCond(m, r.id)),
+      TRACKS[r.id].label, false, r.line)).join('')
+    else for (let c = 0; c < 4; c++) {
       const C = CORNERS[c]
       h += row(`data-track="tire${C}"`, j.corner(c), T?.corner === c, bandColor(shownCond(m, `tire${C}`)),
         CORNER_NAME[c], m.flat[c], `${j.note?.(c) ?? 'Tire'} ${pct(m.get(`tire${C}`))} · wheel ${pct(m.get(`wheel${C}`))}`)
@@ -537,21 +548,22 @@ export class DamageScreen {
         + `</div>`
     }
     if (j.about) h += `<div class="dp-about">${j.about}</div>`
-    const what = T == null ? null : T.corner != null ? CORNER_NAME[T.corner] : j.loose.find(r => r.index === T.index)?.name
+    const what = T == null ? null : T.track ? TRACKS[T.track].label : T.corner != null ? CORNER_NAME[T.corner]
+      : j.loose.find(r => r.index === T.index)?.name
     h += what
       ? `<div class="ds-sub">${what}</div>` + j.actions(T).map((a, i) => `<button class="ds-pbtn ok" data-act="pick-do" data-i="${i}">`
         + (a.icon ? `<img src="assets/items/${a.icon}.png" alt="">` : '') + `${a.label}</button>`).join('')
-      : `<div class="dp-hint">Pick a tire.</div>`
+      : `<div class="dp-hint">Pick a ${j.tracks ? 'part' : 'tire'}.</div>`
     this.pickEl.innerHTML = h
     this._markPicked()
   }
 
-  /** Light the picked corner's tire and wheel on the pictogram. */
+  /** Light the picked part, or the picked corner's tire and wheel, on the pictogram. */
   _markPicked () {
-    const c = this._target?.corner
+    const c = this._target?.corner, id = this._target?.track
     for (const el of this.parts) {
       const t = TRACKS[el.dataset.track]
-      el.classList.toggle('picked', c != null && t.wheel === c && (t.cls === 'tire' || t.cls === 'wheel'))
+      el.classList.toggle('picked', el.dataset.track === id || (c != null && t.wheel === c && (t.cls === 'tire' || t.cls === 'wheel')))
     }
   }
 
@@ -671,7 +683,7 @@ export class DamageScreen {
     const m = this.model
     const t = TRACKS[id]
     const c = m.get(id)
-    if (this._job && (t.cls === 'tire' || t.cls === 'wheel')) {
+    if (this._job && !this._job.tracks && (t.cls === 'tire' || t.cls === 'wheel')) {
       // Pick mode: the corner as a whole — what you are choosing between.
       const C = CORNERS[t.wheel], tc = shownCond(m, `tire${C}`)
       this.tip.innerHTML = `<div class="dt-name">${CORNER_NAME[t.wheel]}</div>`

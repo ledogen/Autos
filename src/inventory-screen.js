@@ -84,10 +84,12 @@ const btn = (act, label, enabled = true, data = '') =>
   `<button class="is-btn" data-act="${act}" ${data}${enabled ? '' : ' disabled'}>${label}</button>`
 
 /**
- * A part's wear as the player reads it ('' for anything else): a spare's tire and wheel, a tire's air.
+ * A part's wear as the player reads it, a can's fill, a pack's uses ('' for anything else): a spare's tire and wheel, a tire's air.
  * `air: false` leaves the air out, for a row that flags a flat on its own (the tire picker).
  */
 export function condLine (r, { air: withAir = true } = {}) {
+  if (r.gal != null) return `${r.gal.toFixed(1)} of ${r.capGal} gal`
+  if (r.uses) return `${r.left} of ${r.uses} uses left` + (r.n > 1 ? ' in the open one' : '')
   if (r.kind !== 'part') return ''
   const pct = (c) => Math.round((c ?? 1) * 100) + '%'
   const air = withAir && PARTS[r.id]?.slot === 'tire' ? (r.flat ? ' · flat' : ' · holding air') : ''
