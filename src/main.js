@@ -5200,6 +5200,9 @@ function _makeCamp () {
   if (!site?.pad || _campBusy) return
   _campFade(() => {
     daySystem.advanceMinutes(30)   // the chore costs the day 30 minutes of energy, like any 30 min
+    // FEAT-128: making camp turns the key off — no idle drone or fuel burn through camp, and break
+    // camp leaves it off, so the player cranks it (I) like any other start.
+    vehicleState.ignition = makeIgnitionState(IGN_OFF)
     // The bench rides the POI pad carve (RoadSystem._padsAll) — same records, same zero-authority
     // road gate, so digging a camp can no more move the ribbon than a lay-by can.
     roadSystem?.setCampPads(campSystem.makeCampAt(site.pad))
