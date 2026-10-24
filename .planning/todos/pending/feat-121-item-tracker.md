@@ -221,10 +221,10 @@ The pour sounds like a glug glug glug, same as the jerry can (owner, 2026-10-22;
 ### Jerry can
 status: todo · design: ratified · build: effect · where: gasStation, reward, found
 New (owner, 2026-10-21): a refillable 5 gal can — pour it, refill it at any pump. A top-tier reward.
-Shares the emergency-gas pour. **Ruled 2026-10-22:** parked, a 10 min pour; 18 kg full (14 kg of gas +
-a 4 kg steel can); an A–S reward from the gas station; sold at the gas station, rarely, $30; a very
+Shares the emergency-gas pour. **Ruled 2026-10-22:** parked, a 10 min pour; **16 kg full (14 kg of gas +
+a 2 kg plastic can** — owner, 2026-10-24, matching the reference photo; was a 4 kg steel can, 18 kg); an A–S reward from the gas station; sold at the gas station, rarely, $30; a very
 rare roadside find. The pour sounds like a glug glug glug (FEAT-120).
-**Built 2026-10-23 on feature/parts** (`jerryCan`, tool, 4 kg empty, 5 gal × 2.82 kg = 18.1 kg full, `use: 'jerry'`):
+**Built 2026-10-23 on feature/parts** (`jerryCan`, tool, 4 kg empty, 5 gal × 2.82 kg = 18.1 kg full, `use: 'jerry'`; **owed: 2 kg empty, 16.1 kg full, a plastic can**):
 poured parked in 10 min, the can stays; the pump fills it after the tank on one counter; an A–S gas-station
 reward. Not built: the gas-station sale (no shelf there) and the roadside find (no find system).
 
