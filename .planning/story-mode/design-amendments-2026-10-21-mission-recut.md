@@ -365,12 +365,12 @@ decides the bonus item (`bonusEarned`) and the good deeds (`pointsFor`, SM-INV-1
   the tier: "2.4 km · Very fragile · 9 kg".
 - **The tier moves the line (lever A).** "It is patently true that durable cargo is easier to deliver
   at 90% than fragile cargo is." Each tier has its own health lines in `RANK_TABLE.fragile`:
-  - Very fragile: 80 / 72 / 64 / 56 %. PROVISIONAL.
+  - Very fragile: 80 / 72 / 64 / 56 %. Signed off 2026-10-24.
   - Fragile: 90 / 83 / 77 / 70 %, the old single row.
-  - Sturdy: 95 / 90 / 85 / 80 %. PROVISIONAL.
+  - Sturdy: 95 / 90 / 85 / 80 %. Signed off 2026-10-24.
   The items on offer are unchanged; the harder cargo gets the easier line.
-- **Route length eases the line.** Every line drops `fragileLinePerKm` (0.02, so 2 points per km,
-  PROVISIONAL) per km of the planned route. *"The more ground you cover, the more likely it is for those
+- **Route length eases the line.** Every line drops `fragileLinePerKm` per km of the planned route, by
+  tier (owner, 2026-10-24, replacing a flat 2): Very fragile 3 points/km, Fragile 2, Sturdy 1. *"The more ground you cover, the more likely it is for those
   events to occur."* A short route keeps the full line on purpose. Short routes are the most lucrative
   per minute, so they are the ones to guard hardest. The km is frozen with the route, so the card, the
   HUD and the result card read the same line.

@@ -75,10 +75,11 @@ ok(gateLine('S', 'fragile', 1, 'fragile') === 'arrives 90%+ intact' && gateLine(
   const L = (tier, km = 0) => fragileLines(1, tier, km)
   ok(['S', 'A', 'B', 'C'].every(k => L('veryFragile')[k] < L('fragile')[k] && L('fragile')[k] < L('sturdy')[k]),
     'per tier: very fragile lines < fragile < sturdy')
-  const d = ECONOMY_PARAMS.fragileLinePerKm
-  ok(d > 0 && ['S', 'A', 'B', 'C'].every(k => Math.abs(L('fragile', 5)[k] - (L('fragile')[k] - 5 * d)) < 1e-9)
+  const P = ECONOMY_PARAMS.fragileLinePerKm
+  ok(P.veryFragile > P.fragile && P.fragile > P.sturdy && P.sturdy > 0, 'the harder the cargo, the faster its line eases per km')
+  ok(['veryFragile', 'fragile', 'sturdy'].every(t => ['S', 'A', 'B', 'C'].every(k => Math.abs(L(t, 5)[k] - (L(t)[k] - 5 * P[t])) < 1e-9))
     && ['S', 'A', 'B', 'C'].every(k => Number.isInteger(Math.round(L('fragile', 3.7)[k] * 1e6) / 1e4)),
-    `a longer route eases every line ${(100 * d).toFixed(0)} points/km, in whole percents (fragile S at 5 km: ${L('fragile', 5).S})`)
+    `a longer route eases every line by its tier's points/km, in whole percents (S at 5 km: ${L('veryFragile', 5).S} / ${L('fragile', 5).S} / ${L('sturdy', 5).S})`)
   ok(gateLine('S', 'fragile', 1, 'sturdy', 5) === `arrives ${Math.round(L('sturdy', 5).S * 100)}%+ intact`, 'the card prints the eased line')
   ok(THINGS.filter(t => t.family === 'fragile').every(t => ECONOMY_PARAMS.RANK_TABLE.fragile[t.tier] && t.tierName),
     'every fragile thing names a tier with a line row and a card word')
