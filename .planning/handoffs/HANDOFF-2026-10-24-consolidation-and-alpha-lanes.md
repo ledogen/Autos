@@ -113,4 +113,6 @@ FEAT-42 saves (suspend/resume) late in the alpha; FEAT-69 once Lane A gives a fi
 
 Full suite on the merged main (4e7095d4): 105/107, the two known reds road-tunnel (BUG-77) and road-clearance
 (FEAT-77). `node test/cdp-smoke.mjs`: 15/15 after it learned to read off the R-11 intro cards and the "For sale"
-heading (400dea6b). It flakes under load; rerun alone. Tracker page: see the owner's recap.
+heading (400dea6b). It flakes under load; rerun alone.
+
+**Tracker page** (lanes, per-task status, agent per lane): https://claude.ai/artifact/8P7QDPAaKxKPtJuf6zvRVH
