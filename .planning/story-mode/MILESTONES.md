@@ -70,11 +70,10 @@ How the cut works:
 | ASSET-69, ASSET-70, ASSET-73 | office, doctor's office, school — they replace placeholders the alpha shows |
 | ASSET-32 | the uncle's van — the uncle is in the alpha |
 
-**Branches to land first** — the playable work sitting off main:
-- `feature/parts` — SM-3 parts, service, recovery and the shop (34 commits, plus uncommitted work in
-  its worktree).
-- `feature/mission-recut` — FEAT-114. Standing rule: never merge before FEAT-114 is done.
-- `feature/sleepy-steer` — one commit (slower steer, drowsy steering). Owner's call.
+**Branches landed 2026-10-24:** `feature/mission-recut` (FEAT-138/114/139), `feature/game-feel` (the
+mission-feel review R-01..R-34) and `feature/parts` are on main and deleted; one checkout from here on.
+`feature/sleepy-steer` — one commit (slower steer, drowsy steering) — is still the owner's call.
+The alpha build order and lanes: `.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md`.
 
 **Bugs:** every open bug is alpha by default (see above), including both known red gates: BUG-77
 (tunnels) and FEAT-77 (road clearance, listed above).
@@ -675,7 +674,22 @@ owner's name for it.
 | Pay grows with regional reputation, not the day | FEAT-117 | open — numbers from FEAT-69 |
 | The camp is a planning pause | FEAT-118 | **done** 2026-10-15 (c89995b) |
 
-### Next up — build order [2026-10-14; mission re-cut inserted 2026-10-21]
+### Next up — build order [2026-10-24, the alpha]
+
+Supersedes the 2026-10-14 table below it. Items 5, 6 and 6b landed on 2026-10-24; item 7 (FEAT-115,
+FEAT-116) is not in the alpha table and drops to later. The alpha's critical path is the run's SHAPE
+— today a run starts and never ends — so it goes first, in one lane, while two parallel lanes take
+the machine and the content. Lanes and resume prompts:
+`.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md`.
+
+| Lane | Order | Owns |
+|---|---|---|
+| A — the run has a shape | FEAT-103 alpha camp → FEAT-146 endings + summary → FEAT-147 opening + tutorial (FEAT-148 lines) → FEAT-128, FEAT-66 | story.js, camp.js, dialogue, the camp POI type |
+| B — the machine bites back | FEAT-93 → FEAT-94 → FEAT-132 → FEAT-138 (owner numbers) → BUG-89/54/92 | damage, tire, recovery, parts, physics gates |
+| C — content and polish | ASSET-71, ASSET-32 → ASSET-69/70/73 → FEAT-120 sound pass → items rulings live, FEAT-129 | assets/, audio, items rows |
+| Spare | owner's front of mind; BUG-90, BUG-77 + FEAT-77 (red gates), FEAT-133/136, FEAT-141/142, FEAT-42; FEAT-69 once a run can finish | — |
+
+### Build order [2026-10-14] — superseded, kept for the record
 
 Take the first item that is not blocked. Each one is a ticket with its own acceptance list.
 
