@@ -687,7 +687,7 @@ the machine and the content. Lanes and resume prompts:
 | A — the run has a shape | FEAT-103 alpha camp → FEAT-146 endings + summary → FEAT-147 opening + tutorial (FEAT-148 lines) → FEAT-128, FEAT-66 | story.js, camp.js, dialogue, the camp POI type |
 | B — the machine bites back | FEAT-93 → FEAT-94 → FEAT-132 → FEAT-138 (owner numbers) → BUG-89/54/92 | damage, tire, recovery, parts, physics gates |
 | C — content and polish | ASSET-71, ASSET-32 → ASSET-69/70/73 → FEAT-120 sound pass → items rulings live, FEAT-129 | assets/, audio, items rows |
-| Spare | owner's front of mind; BUG-90, BUG-77 + FEAT-77 (red gates), FEAT-133/136, FEAT-141/142, FEAT-42; FEAT-69 once a run can finish | — |
+| Spare | owner's front of mind; BUG-90, BUG-77 + FEAT-77 (red gates), FEAT-133/136, FEAT-141 papers deadline, FEAT-142 giver traits, FEAT-42; FEAT-69 once a run can finish | — |
 
 ### Build order [2026-10-14] — superseded, kept for the record
 

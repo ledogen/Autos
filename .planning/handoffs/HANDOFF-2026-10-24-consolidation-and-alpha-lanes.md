@@ -99,8 +99,15 @@ Owns: assets/, wip/, src/*-audio.js, data/items.js rows + thumbnails, items.md, 
 
 The owner's play-tests and anything they surface; the alpha bugs not owned above (BUG-90 road dips,
 BUG-77 tunnels + FEAT-77 clearance — both known red gates; BUG-64/67/81 road geometry); FEAT-133/136
-controller finish; FEAT-141/142 (papers deadline, giver traits) if the owner wants them in the alpha;
-FEAT-42 saves (suspend/resume) late in the alpha; FEAT-69 once Lane A gives a finishable run.
+controller finish; FEAT-42 saves (suspend/resume) late in the alpha; FEAT-69 once Lane A gives a finishable run.
+Two mission-board tickets sit here too, each its own task (owner, 2026-10-24: "split them properly"):
+- **FEAT-141 Papers, "any N against a deadline"** (major): every customer is deliverable from the start; the
+  plotter finds the shortest route covering N and that par × 1.5 is the deadline; the GPS draws it; the round
+  ends at N or expires; "bell" leaves the code and docs. Files: paper-route.js, the paper planner, the GPS line.
+- **FEAT-142 Giver traits** (minor): a TRAITS table, 0–2 per offer from the offer's own seeded stream, shown
+  bottom-left of the card; each trait moves the quoted pay/terms at accept and settle (Off the books gives no
+  deed; The right thing to do gives +½ at C or better). Nothing exists in code yet. Open owner question:
+  Wholesale on freight. Files: offer-board.js card(), data/offers.js, test/offer-board.mjs.
 
 ## Resume prompts (paste one per session)
 
