@@ -4,7 +4,7 @@
 Worktree: /Users/ledogen/CodeShit/CarGame-game-feel
 Branch:   feature/game-feel   (off feature/mission-recut @ 5415f362 + its uncommitted fragile work, snapshotted as 1eb6dff3)
 Serve:    http://localhost:3776
-State:    all review changes committed (see git log); nothing half-done
+State:    round 1 committed (8524bf5d); ROUNDS 2 + 3 (R-17..R-34) uncommitted in the working tree pending the owner's verdicts
 Review:   the keep/cut page — see "Review page" below
 ```
 
@@ -72,6 +72,55 @@ pre-existing on main.
 | N-08 | A total-loss haul result reads "$0.00 / $0.00 / Stock bought −$2.99" with no cause; one line ("the load spilled") would land the lesson. |
 | N-09 | "[flavor line]" placeholder on every panel: author the lines or hide the quote until written (alpha: no stubs). |
 | N-10 | Day cost is invisible; a "today's costs ≈ $7.50" line would make the organizing-problem arithmetic legible. Waits on FEAT-69's repair pricing. |
+
+## Round 2 (2026-10-24) — built from the owner's verdicts and notes
+
+Every R-01..R-16 row came back **keep** (R-10 reworded to "available for:" / "time limit:", R-14 "nets"
+→ "profit"). The owner's message and row notes asked for more; each is its own row again on the page
+(R-17..R-27, plus Q-1..Q-5 answers/questions). R-NN tags are in the code comments.
+
+| # | Change | Files |
+|---|---|---|
+| R-17 | **Promise lines** in the overlay (`#job-promise`): REWARD [icon] name · condition / DEED 1 · condition, one grammar on every type (`gateLine`: "if 22+ bundles delivered", "if 80%+ intact", "upon delivery", "if B or better"), the value coloured by live margin (green → amber on the line → red lost). Fragile's bare reward and haul's "/ 18 for the item" moved in here. | main.js `_promiseRows`/`_updateJobPromise`, index.html, offer-board.js |
+| R-18 | **Freight deed floor ½** (PROVISIONAL): RANK_TABLE.freight B 285 / C 0 (A/S unchanged); a zero line never gates an item, so "a light load carries no item" (10-22) still holds. | economy.js, offer-board.js (gate roll, deedLine), tests |
+| R-19 | **Deeds are numerals** everywhere: "Deed: 1 if … · 1/2 at …", "+1/2 deed (1 needed …)", "no deed" in red. | offer-board.js deedLine, main.js _payRows/_syncHaulPick |
+| R-20 | **Pay wording** per the owner: "Pay $B – $M based on speed" / "flat"; haul "Bundle costs $c · sells for $b – $m by speed"; picker "cost · profit … by speed"; fragile term "damage docks the base"; result rows "Base pay" (+ "docked for damage") / "Speed tip" / "Tip (item)". | offer-board.js card(), main.js, tests |
+| R-21 | **Deeds in the story blue** (TENTATIVE): `.rh-deeds`, `.mp-deed`, `.jp-deed`, map2d `DEED_INK`. | index.html, map2d.js |
+| R-22 | **Courier rank bar only near the goal**: `nearFrac` 0.25 / `nearMinM` 400, latched per job; papers keep appearS. | rank-timer.js params, main.js `_rankTimerSource` |
+| R-23 | **Live bad-news beats** in the top-centre readout (`.mh-bad`): CARGO DESTROYED / TIRE LOST / LOAD LOST / "N BUNDLES LOST · M still aboard" (3 s) / OUT OF TIME (jobs + papers); haul result names the spill. | main.js `_jobBeat`, index.html |
+| R-24 | **Shop "For sale" + new-stock clock**: `nextStockH` walks the seeded rolls to the next non-empty one; map card "FOR SALE · NEW STOCK IN 3H 10M"; shop screen heading. | shop-stock.js, main.js `_shelfNext`, map2d.js, service-screen.js |
+| R-25 | **Bug**: haul slider stutter loop — warnings moved to their own fixed-height line (`#mp-pick-note`). | main.js, index.html |
+| R-26 | **Result reveal** (N-04): rows land a beat apart, tip counts up, deed tally ticks old → new. Audio left to FEAT-120/131. | main.js `_revealResult`, index.html `.mp-reveal` |
+| R-27 | **Debug stats HUD** (`#hud`) hidden in story unless the debug panel is open (N-07). | main.js `_syncDebugHud` |
+| — | FEAT-148 ticket: owner-authored lines (giver flavor, sleep reminder, intro) — N-09/N-10. | .planning/todos/pending/feat-148-authored-lines.md |
+
+Open on the page as Q rows: Q-1 fragile tip is speed, base is docked (card now says so; flip offered);
+Q-2 job site vs expedition camp — docs conflict, recommendation SPLIT (nothing changed); Q-3 drop the
+letter from courier's result card too?; Q-4 N-06 dropped (harness); Q-5 N-10 → FEAT-148.
+
+Gates after round 2: `npm test` 24 affected, 23 green + freight-strap updated to the new kg table and
+green; rank-timer / shop-stock / service by hand, green. Known reds unchanged.
+
+## Round 3 (2026-10-24, later) — the owner's second pass on the overlay
+
+| # | Change | Files |
+|---|---|---|
+| R-28 | **Next rung only** in the promise lines: "DEED 1 · below 82%" → "1/2 · below 65%" → "0"; reward "Bed mat · below 22 bundles". `_promiseRows` is a ladder walk per type (value, lineOf, below, marginTo). | main.js `_promiseRows` |
+| R-29 | **Cargo row** in the box ("CARGO 10 bundles aboard" / "710 kg"); `#job-cargo` + `_syncCargoLine` deleted; the spill beat drops "· N still aboard". | main.js, index.html |
+| R-30 | **Due in** moved into the top readout ("2.39 km to go · due in 4h 10m", papers and staging too); `#job-due` deleted, `_updateJobDue` keeps `_jobDueText`, `_dueSuffix()` appends it. | main.js, index.html |
+| R-31 | **"back to free roam"** button deleted from the result cards (element, listener, `btn('mp-quit')` calls). | main.js, index.html |
+| R-32 | **Damage bar peak hold**: a hit past the 1 % mark latches the bar `JG_HOLD_S` = 0.2 s, then the 0.4 s decay resumes. | main.js `_updateFragileG` |
+| R-33 | **Lost reward struck through** (`.jp-lost`), still red; deed 0 is red only. | main.js, index.html |
+| R-34 | **Courier rung live all drive**: `_rtLive`/`_rtLiveInt` read every frame in `_updateRankTimer` (before the shown gate); deed row "1 · if slower than B", amber in the last escalateS. No digits (SM-INV-3). | main.js |
+
+Q-6 (page): the owner's "x:xx or better for S" timer idea — recommended against (SM-INV-3 as amended;
+rank-timer.js bans the string); R-34 is the no-digits answer; digits are one line + an amendment if
+the owner insists. Q-7: every tip is speed (item offers have no cash tip; the item is the tip).
+
+Gates after round 3: `npm test` 24 affected, all green. CDP drive (seed 6, courier/haul/freight):
+overlay "Cargo 22 bundles aboard / Deed 1 · below 18 bundles", "Deed 1 · if slower than B", "Deed 1/2 ·
+upon delivery", readout "2.39 km to go · due in 4h 10m", result card continue-only; no console errors.
+Courier did not settle in that drive (harness approach, not code — it settled in the round-2 drive).
 
 ## Review page
 

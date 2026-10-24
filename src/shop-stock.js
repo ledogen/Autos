@@ -66,6 +66,26 @@ export function shelf (poiId, nowH) {
     return s.slots.map(e => e && e.expiresAt > nowH ? e : null)
 }
 
+/**
+ * GAME-FEEL REVIEW 2026-10-24 (R-24, owner: "a new stock timer … don't want them to wait for an empty
+ * roll"): the game hour the NEXT item lands on this shelf, or null when nothing is due within
+ * CATCH_UP_H. The rolls are a pure function of (seed, shop, hour, slot), so the future is readable:
+ * walk each slot forward from the first hour it is empty (now, or when its item expires) to the first
+ * hour that rolls something. Exact unless a purchase empties a slot early — then the real answer is sooner.
+ */
+export function nextStockH (poiId, nowH) {
+    const H = Math.floor(nowH)
+    const slots = shelf(poiId, nowH)
+    let best = null
+    for (let i = 0; i < SHELF_SLOTS; i++) {
+        const from = slots[i] ? Math.ceil(slots[i].expiresAt) : H + 1
+        for (let h = from; h <= H + CATCH_UP_H && (best === null || h < best); h++) {
+            if (rollSlot(poiId, h, i)) { best = h; break }
+        }
+    }
+    return best
+}
+
 /** Bought: the slot empties (and rolls again from the next hour). */
 export function take (poiId, slot) {
     const s = runShelves.shops[poiId]

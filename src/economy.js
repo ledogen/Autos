@@ -152,13 +152,16 @@ export const ECONOMY_PARAMS = {
                 { S: 25, A: 22, B: 18, C: 14 },   // PROVISIONAL
             ],
         },
-        // KG DELIVERED, higher is better. PROVISIONAL — the owner play-tests and signs off: 125 / 100 /
-        // 75 / 50 % of the Ranger's 570 kg rating (FEAT-112). R2/R3 S sits past what the stock truck
-        // can legally carry (that region's spring/bed upgrades reach it); numbers at play-test.
+        // KG DELIVERED, higher is better. PROVISIONAL — the owner play-tests and signs off. S / A are
+        // 125 / 100 % of the Ranger's 570 kg rating (FEAT-112). GAME-FEEL REVIEW 2026-10-24 (R-18, owner:
+        // "freight should always give at least half a good deed … full over ~300 kg"): B is the old C
+        // line (285 kg, half the rating) and C is ZERO — a strapped load always arrives, so every
+        // freight job earns at least ½ a deed and a light load is a lighter deed, never none. R2/R3 S
+        // sits past what the stock truck can legally carry (that region's upgrades reach it).
         freight: [
-            { S: 712, A: 570, B: 428, C: 285 },   // PROVISIONAL
-            { S: 712, A: 570, B: 428, C: 285 },   // PROVISIONAL
-            { S: 712, A: 570, B: 428, C: 285 },   // PROVISIONAL
+            { S: 712, A: 570, B: 285, C: 0 },   // PROVISIONAL
+            { S: 712, A: 570, B: 285, C: 0 },   // PROVISIONAL
+            { S: 712, A: 570, B: 285, C: 0 },   // PROVISIONAL
         ],
         // CONDITION ON ARRIVAL (health 0..1), higher is better, PER FRAGILITY TIER (owner, 2026-10-23,
         // lever A: the harder cargo gets the easier line; the tier is data/offers.js `tier`). Read

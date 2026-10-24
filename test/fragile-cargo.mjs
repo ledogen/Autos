@@ -67,8 +67,8 @@ ok([0, 0.33, 0.61, 0.9, 1].every(h => [S, 0.9, SLOW].every(r => { const p = at(h
 ok(fragileGrade(0.95) === 'S' && fragileGrade(0.85) === 'A' && fragileGrade(0.8) === 'B' && fragileGrade(0.72) === 'C' && fragileGrade(0.6) === 'D',
   'the letter reads condition: 95 % S · 85 % A · 80 % B · 72 % C · 60 % D')
 // FEAT-139: fragile shows no letter; the card names the condition the item needs, in whole percents.
-ok(gateLine('S', 'fragile', 1, 'fragile') === 'arrives 90%+ intact' && gateLine('A', 'fragile', 1, 'fragile') === 'arrives 83%+ intact'
-  && gateLine('B', 'fragile', 1, 'fragile') === 'arrives 77%+ intact', 'the fragile bonus prints its condition: 90 / 83 / 77 %')
+ok(gateLine('S', 'fragile', 1, 'fragile') === 'if 90%+ intact' && gateLine('A', 'fragile', 1, 'fragile') === 'if 83%+ intact'
+  && gateLine('B', 'fragile', 1, 'fragile') === 'if 77%+ intact', 'the fragile bonus prints its condition: 90 / 83 / 77 %')
 // FEAT-139 (owner, 2026-10-23): the tier moves the line — the harder cargo gets the easier one — and
 // every line eases fragileLinePerKm per km of route, in whole percents.
 {
@@ -79,7 +79,7 @@ ok(gateLine('S', 'fragile', 1, 'fragile') === 'arrives 90%+ intact' && gateLine(
   ok(d > 0 && ['S', 'A', 'B', 'C'].every(k => Math.abs(L('fragile', 5)[k] - (L('fragile')[k] - 5 * d)) < 1e-9)
     && ['S', 'A', 'B', 'C'].every(k => Number.isInteger(Math.round(L('fragile', 3.7)[k] * 1e6) / 1e4)),
     `a longer route eases every line ${(100 * d).toFixed(0)} points/km, in whole percents (fragile S at 5 km: ${L('fragile', 5).S})`)
-  ok(gateLine('S', 'fragile', 1, 'sturdy', 5) === `arrives ${Math.round(L('sturdy', 5).S * 100)}%+ intact`, 'the card prints the eased line')
+  ok(gateLine('S', 'fragile', 1, 'sturdy', 5) === `if ${Math.round(L('sturdy', 5).S * 100)}%+ intact`, 'the card prints the eased line')
   ok(THINGS.filter(t => t.family === 'fragile').every(t => ECONOMY_PARAMS.RANK_TABLE.fragile[t.tier] && t.tierName),
     'every fragile thing names a tier with a line row and a card word')
 }

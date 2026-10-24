@@ -128,10 +128,12 @@ export function gateText (gate) { return gate === 'S' ? 'S only' : `${gate} or b
  * `kind` is 'haul' | 'fragile' | 'freight' | anything else; `cargoId` is the haul cargo or the fragile tier.
  */
 export function gateLine (gate, kind, region = 1, cargoId = 'firewood', km = 0) {
-    if (kind === 'haul') return `deliver ${rankTable('haul', region, cargoId)[gate]}+ bundles`
-    if (kind === 'fragile') return `arrives ${Math.round(fragileLines(region, cargoId, km)[gate] * 100)}%+ intact`
-    if (kind === 'freight') return 'on delivery'
-    return gateText(gate)
+    // R-17 (owner, 2026-10-24): ONE grammar on every surface — "if 22+ bundles delivered", "if 80%+
+    // intact", "upon delivery", "if B or better" — so the card, the live HUD line and the result read alike.
+    if (kind === 'haul') return `if ${rankTable('haul', region, cargoId)[gate]}+ bundles delivered`
+    if (kind === 'fragile') return `if ${Math.round(fragileLines(region, cargoId, km)[gate] * 100)}%+ intact`
+    if (kind === 'freight') return 'upon delivery'
+    return `if ${gateText(gate)}`
 }
 
 /**
@@ -151,15 +153,16 @@ export function rewardValue (id) {
  * could have read first. Freight's deed is set by the posted mass, so the card says so up front.
  */
 export function deedLine (kind, region = 1, cargoId = 'firewood', km = 0, massKg = 0) {
-    if (kind === 'haul') { const t = rankTable('haul', region, cargoId); return `Good deed: deliver ${t.B}+ bundles · half at ${t.C}+` }
-    if (kind === 'fragile') { const t = fragileLines(region, cargoId, km); return `Good deed: arrives ${Math.round(t.B * 100)}%+ intact · half at ${Math.round(t.C * 100)}%+` }
+    // R-19 (owner, 2026-10-24): deeds are a currency, so they are always a NUMERAL — "1", "1/2" — never
+    // "one" or "half"; and the gate is stated in the job's own axis (gateLine's grammar).
+    if (kind === 'haul') return `Deed: 1 ${gateLine('B', kind, region, cargoId)} · 1/2 at ${rankTable('haul', region, cargoId).C}+`
+    if (kind === 'fragile') return `Deed: 1 ${gateLine('B', kind, region, cargoId, km)} · 1/2 at ${Math.round(fragileLines(region, cargoId, km).C * 100)}%+`
     if (kind === 'freight') {
+        // R-18: every freight load earns at least 1/2 (its C line is 0 kg); the posted kg decides which.
         const t = rankTable('freight', region)
-        if (massKg >= t.B) return 'Good deed: on delivery'
-        if (massKg >= t.C) return 'Half a good deed: on delivery — a light load'
-        return `No good deed: a load under ${t.C} kg`
+        return massKg >= t.B ? 'Deed: 1 upon delivery' : `Deed: 1/2 upon delivery — under ${t.B} kg`
     }
-    return 'Good deed: B or better · half at C'
+    return 'Deed: 1 if B or better · 1/2 at C'
 }
 
 /**
@@ -538,7 +541,9 @@ export class OfferBoard {
             const pool = REWARDS.filter(w => w.pools.includes(offer.type))
             const w = {}
             for (const g of Object.keys(GATE_WEIGHTS)) {
-                if (amount && amount.have < amount.row[g]) continue
+                // R-18 keeps the ruling that a light load carries no item (DESIGN.md, owner 2026-10-22):
+                // freight's C line is now 0 kg (every load earns ½ a deed), so a zero line never gates an item.
+                if (amount && (amount.have < amount.row[g] || !(amount.row[g] > 0))) continue
                 if (pool.some(x => x.gates.includes(g))) w[g] = GATE_WEIGHTS[g]
             }
             if (Object.keys(w).length) {
@@ -831,15 +836,21 @@ export class OfferBoard {
         const tipMult = sp.load && !sp.fragile ? FREIGHT_TIP_MULT : 1
         const range = par > 0 ? payRange(par, payTier, sp.payMult, tipMult) : null
         const money = (v) => `$${formatMoney(v)}`
+        // R-20 (owner, 2026-10-24): "Pay $3.63 – $7.27 based on speed" — the range and what moves it,
+        // in one breath; a bonus offer pays its base flat (the TIP form below says what replaces the
+        // tip). A haul reads as a trade: "Bundle costs $0.25 · sells for $0.50 – $1.00 by speed".
         const pay = !range ? null
-            : sp.stock ? (sp.bonus ? `${money(range.base)} a bundle` : `${money(range.base)} – ${money(range.max)} a bundle`)
-                + ` · stock ${money(stockPrice(par, payTier, sp.payMult))} each`
-            : sp.bonus ? `Pay ${money(range.base)} base`
-            : `Pay ${money(range.base)} base · up to ${money(range.max)} fast`
+            : sp.stock ? `Bundle costs ${money(stockPrice(par, payTier, sp.payMult))} · sells for `
+                + (sp.bonus ? `${money(range.base)} flat` : `${money(range.base)} – ${money(range.max)} by speed`)
+            : sp.bonus ? `Pay ${money(range.base)} flat`
+            : `Pay ${money(range.base)} – ${money(range.max)} based on speed`
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
         if (sp.fragile) terms.push(sp.fragile.tierName)   // what the player is up against (owner, 2026-10-23)
         terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
+        // R-20: the tip is speed on fragile too; what the condition moves is the BASE (splitFragilePayout
+        // pays half of it flat and half × health) — the owner asked, so the card says it.
+        if (sp.fragile) terms.push('damage docks the base')
         // A haul's card is the rate, the cost, the distance, the stock and the reward line — nothing
         // else (owner, 2026-10-23: the timers overran the map card). The due time shows from accept.
         // The clocks ride their OWN row (`times`, 2026-10-23): one row of distance + tier + kg + both
@@ -850,8 +861,9 @@ export class OfferBoard {
         // R-10: two clocks in one grammar ("expires in … · deliver within …") read as one deadline
         // twice. The board clock is how long the offer stays POSTED; the other is the delivery window
         // once taken — so say each in its own words.
-        if (!sp.stock && isFinite(expiresInH)) times.push(`posted ${formatGameDuration(expiresInH)} more`)
-        if (!sp.stock && par > 0) times.push(`${formatGameDuration(this.deadlineH(offer, par))} to deliver`)   // FEAT-113: from accept
+        // Reworded again 2026-10-24 (owner): "available for: 10h" and "time limit: 4h 22m".
+        if (!sp.stock && isFinite(expiresInH)) times.push(`available for: ${formatGameDuration(expiresInH)}`)
+        if (!sp.stock && par > 0) times.push(`time limit: ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept
         return {
             family: sp.family,
             badge: jobBadge(sp),

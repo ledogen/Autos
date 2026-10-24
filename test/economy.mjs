@@ -235,8 +235,8 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   check('haul firewood: S 25 (measured), A/B/C = ceil(85/70/55 % of S) in every region',
     T.haul.firewood.every(t => t.S === 25 && t.A === Math.ceil(0.85 * t.S) && t.B === Math.ceil(0.70 * t.S) && t.C === Math.ceil(0.55 * t.S)),
     JSON.stringify(T.haul.firewood[0]))
-  check('freight R1 (PROVISIONAL): 712 / 570 / 428 / 285 kg — 125/100/75/50 % of the 570 kg rating',
-    ['S', 'A', 'B', 'C'].every((k, i) => rankTable('freight', 1)[k] === [712, 570, 428, 285][i]))
+  check('freight R1 (PROVISIONAL): 712 / 570 / 285 / 0 kg — S/A at 125/100 % of the 570 kg rating, B at half it, C at ZERO so every load earns at least ½ a deed (R-18)',
+    ['S', 'A', 'B', 'C'].every((k, i) => rankTable('freight', 1)[k] === [712, 570, 285, 0][i]))
   check('the table lookup clamps like regionTier (region 0 → 1, region 9 → the last row)',
     rankTable('time', 0) === T.time[0] && rankTable('freight', 9) === T.freight[T.freight.length - 1]
       && rankTable('haul', 1.7, 'firewood') === T.haul.firewood[0])
@@ -316,8 +316,8 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   const h = (n) => amountGrade(n, H), f = (kg) => amountGrade(kg, F)
   check('haul: 25 → S, 22 → A, 18 → B, 14 → C, 13 → D (each floor is inclusive)',
     h(25) === 'S' && h(30) === 'S' && h(24) === 'A' && h(22) === 'A' && h(18) === 'B' && h(14) === 'C' && h(13) === 'D' && h(0) === 'D')
-  check('freight: 712 → S, 570 → A, 428 → B, 285 → C, below → D',
-    f(712) === 'S' && f(711.9) === 'A' && f(570) === 'A' && f(428) === 'B' && f(285) === 'C' && f(284) === 'D')
+  check('freight: 712 → S, 570 → A, 285 → B, anything lighter → C (never D: a strapped load always arrives, R-18)',
+    f(712) === 'S' && f(711.9) === 'A' && f(570) === 'A' && f(428) === 'B' && f(285) === 'B' && f(284) === 'C' && f(1) === 'C')
   check('the letter never improves as pieces are lost',
     Array.from({ length: 31 }, (_, i) => 'DCBAS'.indexOf(h(30 - i))).every((v, i, a) => i === 0 || v <= a[i - 1]))
 }

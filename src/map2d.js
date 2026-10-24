@@ -20,6 +20,9 @@
 import * as THREE from 'three'
 import { RoadSystem } from './road.js'
 import { POI_ICONS, POI_ICON_PX, NEWSPAPER, FAMILY_COLOR, FAMILY_LABEL, EMPTY_DIAMOND_COLOR } from '../data/map-icons.js'   // FEAT-60/67: map glyphs; R-08 family labels
+// R-21 (owner, 2026-10-24, tentative): deeds are a currency and wear one ink everywhere — the paper
+// card's blue here, --accent-story on the HUD and the panels.
+const DEED_INK = '#2a5d9f'
 import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN }
     from './map-cover.js'
 import { biomeAt, isWetGround, BIOME } from './biome.js'
@@ -2626,7 +2629,10 @@ export class Map2D {
             this._cardFrame(ctx, x, sy, W, sh + 1.5 * k, k, EMPTY_DIAMOND_COLOR)
             ctx.textBaseline = 'top'; ctx.textAlign = 'left'
             ctx.font = fS; ctx.fillStyle = '#6a6458'
-            ctx.fillText('ON THE SHELF', inL, sy + PAD)
+            // R-24 (owner, 2026-10-24): "FOR SALE", and when the next item lands — so the player knows
+            // whether a look back is worth it, without ever waiting on an empty roll.
+            ctx.fillText('FOR SALE', inL, sy + PAD)
+            if (v.shelfNext) { ctx.textAlign = 'right'; ctx.fillText(`NEW STOCK IN ${v.shelfNext.toUpperCase()}`, x + W - PAD, sy + PAD); ctx.textAlign = 'left' }
             v.shelf.forEach((e, i) => {
                 const ly = sy + PAD + HEAD + i * LH
                 ctx.textAlign = 'left'
@@ -2713,8 +2719,9 @@ export class Map2D {
         ty += LH
         this._drawRuns(ctx, [{ t: c.terms.join('  ·  ') }], inL, ty, fN, fB, '#444')
         if (c.times?.length) { ty += LH; this._drawRuns(ctx, [{ t: c.times.join('  ·  ') }], inL, ty, fN, fB, '#444') }
-        // R-09: the deed line — the third promise, in the same ink as the terms.
-        if (c.deed) { ty += LH; this._drawRuns(ctx, [{ t: c.deed }], inL, ty, fN, fB, '#444') }
+        // R-09: the deed line — the third promise. R-21 (owner, 2026-10-24, tentative): deeds are a
+        // currency, so they wear ONE ink everywhere — the story blue here, --accent-story on the HUD.
+        if (c.deed) { ty += LH; this._drawRuns(ctx, [{ t: c.deed, b: true }], inL, ty, fN, fB, DEED_INK) }
         // FEAT-112: the load verdict — amber for a warning, red for an overload (which cannot be taken).
         if (c.verdict) this._drawRuns(ctx, [{ t: c.verdict.text, b: true }], inL, ty + LH, fN, fB,
                                       c.verdict.level === 'overload' ? '#b3261e' : '#a06800')

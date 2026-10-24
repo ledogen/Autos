@@ -45,7 +45,13 @@ export const RANK_TIMER_PARAMS = {
     pxPerS:     6,      // strip scale — one second of elapsed is this many pixels of scroll
     viewW:      240,    // px — the visible window of the strip (40 s; 35 s of it AHEAD)
     pointerFrac: 1 / 8, // the fixed pointer sits this far across the view (so 7/8 of it is AHEAD)
-    appearS:    15,     // s — the bar pops up this long before the S/A line, not before
+    appearS:    15,     // s — the bar pops up this long before the S/A line, not before (paper rounds)
+    // R-22 (owner, 2026-10-24): on a courier job the bar shows only NEAR THE GOAL — "if you're
+    // definitely not making C there's no need to watch it go S > A > B". main.js latches it on once the
+    // route remaining is inside the last nearFrac of the drive (never under nearMinM), and from then
+    // to the end of the job. A paper round has no one goal, so it keeps appearS.
+    nearFrac:   0.25,
+    nearMinM:   400,    // m
     escalateS:  10,     // s — a line within this many seconds ramps the bar from calm to flashy
     // The pulse [owner, 2026-10-01: "slow and mild leading into fast, stronger pulsing right
     // before breakaway"; top raised 120 → 140 bpm with the kick-drum heartbeat, 2026-10-02]: ONE
