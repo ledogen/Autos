@@ -450,8 +450,7 @@ export const RANK_THRESHOLDS_DEFAULT = { S: 0.77, A: 0.81, B: 0.87, C: 1.00 }
 /**
  * FEAT-138: the letter for an AMOUNT, higher is better — haul's pieces delivered, freight's kg
  * delivered, fragile's health (owner, 2026-10-21: every type ranks on its own axis). `t` is that
- * type's `{S, A, B, C}` floors: economy.js rankTable() for haul and freight, FRAGILE_THRESHOLDS for
- * fragile. Display only, like every letter (SM-INV-3): money reads the count, the kg or the health,
+ * type's `{S, A, B, C}` floors, from economy.js rankTable(). Display only, like every letter (SM-INV-3): money reads the count, the kg or the health,
  * never this.
  */
 export function amountGrade (amount, t) {
@@ -460,15 +459,6 @@ export function amountGrade (amount, t) {
     if (amount >= t.B) return 'B'
     if (amount >= t.C) return 'C'
     return 'D'
-}
-
-/**
- * FEAT-97: a fragile job's letter reads the cargo's CONDITION alone (owner, 2026-10-14), a letter per
- * 1/15 of health below 90 % — the same floors in every region (§11b: later regions post more sensitive cargo instead).
- */
-export const FRAGILE_THRESHOLDS = { S: 0.9, A: 0.9 - 1 / 15, B: 0.9 - 2 / 15, C: 0.9 - 3 / 15 }   // 90 / 83.3 / 76.7 / 70 %
-export function fragileGrade(health) {
-    return amountGrade(health, FRAGILE_THRESHOLDS)
 }
 
 /**

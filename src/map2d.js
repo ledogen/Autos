@@ -2588,7 +2588,8 @@ export class Map2D {
         const TX = PAD + B.BAR * k + PORT + 12 * k        // text column, right of the portrait
         const fN = `${B.FS * k}px ${MAP_LABEL_FONT}`, fB = `700 ${B.FS * k}px ${MAP_LABEL_FONT}`
         const fS = `600 ${B.FSS * k}px ${MAP_LABEL_FONT}`
-        const H = baseH * k + (c?.verdict ? B.LH * k : 0)   // FEAT-112: a load verdict adds one row
+        // FEAT-112: a load verdict adds one row; so do the clocks (`times`, their own row since 2026-10-23).
+        const H = baseH * k + (c?.verdict ? B.LH * k : 0) + (c?.times?.length ? B.LH * k : 0)
         const bonusH = (c?.bonus ? B.BONUS * k : 0)
             + (v.shelf ? (B.PAD * 2 + B.HEAD + v.shelf.length * B.LH) * k : 0)   // FEAT-137: an auto shop's shelf form
         const M = 12 * k                                  // margin from the sheet's edge
@@ -2710,6 +2711,7 @@ export class Map2D {
         else if (c.family === 'papers') this._drawRuns(ctx, [{ t: 'planning the route…' }], inL, ty, fN, fB, '#777')
         ty += LH
         this._drawRuns(ctx, [{ t: c.terms.join('  ·  ') }], inL, ty, fN, fB, '#444')
+        if (c.times?.length) { ty += LH; this._drawRuns(ctx, [{ t: c.times.join('  ·  ') }], inL, ty, fN, fB, '#444') }
         // FEAT-112: the load verdict — amber for a warning, red for an overload (which cannot be taken).
         if (c.verdict) this._drawRuns(ctx, [{ t: c.verdict.text, b: true }], inL, ty + LH, fN, fB,
                                       c.verdict.level === 'overload' ? '#b3261e' : '#a06800')

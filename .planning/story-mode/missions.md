@@ -473,8 +473,9 @@ truck and what the truck does to the cargo**.
 >   loads keep their mass and are the honest small jobs. Light freight gets a roster pass.
 > - **Thresholds step by region, never by day** (DESIGN.md SM-INV-2): the stock truck tops out around
 >   B/A in a region; that region's upgrades reach S.
-> - **The HUD strip** shows each type's rank axis and the live letter (FEAT-139); fragile adds a health
->   bar and a combined-g bar with its damage and destruction marks. Reverses "no HUD number" (10-06).
+> - **The HUD strip** shows each type's rank axis (FEAT-139); fragile adds a combined-g bar with its
+>   damage and destruction marks. Reverses "no HUD number" (10-06). **2026-10-23 (amendment §9b):** haul,
+>   freight and fragile show no letter anywhere; the card and the HUD name the item's threshold instead.
 > - **Giver traits** (FEAT-142), 0–2 per offer: Impatient / Patient, Collector / Easygoing,
 >   Generous / Stingy, Big tipper, Wholesale, Off the books, The right thing to do.
 > - **Good deeds** follow `pointsFor(letter)` on every type; the share and health bands retire.

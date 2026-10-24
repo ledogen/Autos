@@ -61,10 +61,12 @@ const HOUSEWARES = ['generalStore', 'residence']
 // (test/fragile-cargo.mjs pins them): hard paved driving peaks ~0.6 g, ±4 cm washboard at 15 m/s
 // ~1.3 g, a 1 m drop at speed ~4.7 g, a rollover 6–13 g. Free fall reads 1 g, so no floor sits
 // below 1 — airtime is free, the landing is what costs. A floor AT 1 g took damage constantly
-// (owner, 2026-10-15): glassware and delicate were pulled toward sturdy.
-const GLASSWARE = { shockFloorG: 1.15, breakG: 4.0, sound: 'glass' }  // rough road nibbles; a crest landing destroys
-const DELICATE  = { shockFloorG: 1.2, breakG: 4.75, sound: 'thud' }
-const STURDY    = { shockFloorG: 1.3, breakG: 5.5, sound: 'thud' }    // a crest landing costs most of it; a roll ends it
+// (owner, 2026-10-15): very fragile and fragile were pulled toward sturdy.
+// `tier` keys the tier's health lines (economy.js RANK_TABLE.fragile); `tierName` is how the card and
+// every doc say it — Very fragile / Fragile / Sturdy (owner, 2026-10-23: one set of words everywhere).
+const VERY_FRAGILE = { tier: 'veryFragile', tierName: 'Very fragile', shockFloorG: 1.15, breakG: 4.0, sound: 'glass' }  // rough road nibbles; a crest landing destroys
+const FRAGILE      = { tier: 'fragile',     tierName: 'Fragile',      shockFloorG: 1.2,  breakG: 4.75, sound: 'thud' }
+const STURDY       = { tier: 'sturdy',      tierName: 'Sturdy',       shockFloorG: 1.3,  breakG: 5.5, sound: 'thud' }    // a crest landing costs most of it; a roll ends it
 
 export const THINGS = [
     // FEAT-88 haul. massKg is ignored for a haul thing — the card's weight is pieces × HAUL_BUNDLE_KG,
@@ -250,27 +252,27 @@ export const THINGS = [
     // Routes are the owner's 2026-10-15 ruling (cargo.md). The crated rows ride the large crate
     // with their contents as text. Pelican case and x-ray machine have no shipper yet, so no row.
     { id: 'milkBottles', phrase: 'a crate of milk bottles', family: 'fragile', massKg: [40, 40],
-      pools: ['generalStore'], to: ['residence'], load: 'largeCrate', ...GLASSWARE },
+      pools: ['generalStore'], to: ['residence'], load: 'largeCrate', ...VERY_FRAGILE },
     { id: 'canningJars', phrase: 'a crate of canning jars', family: 'fragile', massKg: [20, 20],
-      pools: ['generalStore'], to: ['residence'], load: 'largeCrate', ...GLASSWARE },
+      pools: ['generalStore'], to: ['residence'], load: 'largeCrate', ...VERY_FRAGILE },
     { id: 'eggs',        phrase: 'a crate of eggs',         family: 'fragile', massKg: [31, 31],
-      pools: ['farm'], to: ['residence'], load: 'largeCrate', ...GLASSWARE, sound: 'thud' },
+      pools: ['farm'], to: ['residence'], load: 'largeCrate', ...VERY_FRAGILE, sound: 'thud' },
     { id: 'fineChina',   phrase: 'a crate of fine china',   family: 'fragile', massKg: [30, 30],
-      pools: HOUSEWARES, to: ['residence'], load: 'largeCrate', ...GLASSWARE },
+      pools: HOUSEWARES, to: ['residence'], load: 'largeCrate', ...VERY_FRAGILE },
     { id: 'vase',        phrase: "grandma's vase",          family: 'fragile', massKg: [9, 9],
-      pools: ['residence'], load: 'ornateVase', ...GLASSWARE },
+      pools: ['residence'], load: 'ornateVase', ...VERY_FRAGILE },
     { id: 'ornateVase',  phrase: 'an ornate vase',          family: 'fragile', massKg: [9, 9],
-      pools: HOUSEWARES, to: ['residence'], load: 'ornateVase', ...GLASSWARE },
+      pools: HOUSEWARES, to: ['residence'], load: 'ornateVase', ...VERY_FRAGILE },
     { id: 'mirror',      phrase: 'a full-length mirror',    family: 'fragile', massKg: [16, 16],
-      pools: HOUSEWARES, to: ['residence'], load: 'fullLengthMirror', ...GLASSWARE, furniture: true },
+      pools: HOUSEWARES, to: ['residence'], load: 'fullLengthMirror', ...VERY_FRAGILE, furniture: true },
     { id: 'windshield',  phrase: 'a windshield',            family: 'fragile', massKg: [14, 14],
-      pools: ['autoShop'], load: 'largeCrate', ...DELICATE, sound: 'glass' },   // laminated, so tougher than plate (owner, 2026-10-15); crated until it has a model
+      pools: ['autoShop'], load: 'largeCrate', ...FRAGILE, sound: 'glass' },   // laminated, so tougher than plate (owner, 2026-10-15); crated until it has a model
     { id: 'glassPanes',  phrase: 'ten panes of glass',      family: 'fragile', massKg: [240, 240],
-      pools: ['generalStore'], load: 'glassPanes', ...GLASSWARE },
+      pools: ['generalStore'], load: 'glassPanes', ...VERY_FRAGILE },
     { id: 'diningChairs', phrase: 'four dining chairs',     family: 'fragile', massKg: [24, 24],
-      pools: HOUSEWARES, to: ['residence'], load: 'diningChairs', ...DELICATE, furniture: true },
+      pools: HOUSEWARES, to: ['residence'], load: 'diningChairs', ...FRAGILE, furniture: true },
     { id: 'framedArtwork', phrase: 'a framed painting, crated', family: 'fragile', massKg: [16, 16],
-      pools: HOUSEWARES, to: ['residence'], load: 'framedArtwork', ...DELICATE },
+      pools: HOUSEWARES, to: ['residence'], load: 'framedArtwork', ...FRAGILE },
     { id: 'diningTable', phrase: 'a dining table',          family: 'fragile', massKg: [45, 45],
       pools: HOUSEWARES, to: ['residence'], load: 'diningTable', ...STURDY, furniture: true },
     { id: 'wardrobe',    phrase: 'a wardrobe',              family: 'fragile', massKg: [120, 120],

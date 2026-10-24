@@ -223,8 +223,8 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   const T = P.RANK_TABLE
   const rows = [...T.time, ...T.haul.firewood, ...T.freight]
   check('time rows ordered S<A<B<C (lower is better)', T.time.every(t => t.S < t.A && t.A < t.B && t.B < t.C))
-  check('count and kg rows ordered S>A>B>C (higher is better)',
-    [...T.haul.firewood, ...T.freight].every(t => t.S > t.A && t.A > t.B && t.B > t.C))
+  check('count, kg and health rows ordered S>A>B>C (higher is better)',
+    [...T.haul.firewood, ...T.freight, ...Object.values(T.fragile).flat()].every(t => t.S > t.A && t.A > t.B && t.B > t.C))
   check('C IS par (=== 1.0) in EVERY region — the pass line never moves', T.time.every(t => t.C === 1.0))
   check('region 1 time deep-equals par.js RANK_THRESHOLDS_DEFAULT',
     ['S', 'A', 'B', 'C'].every(k => rankTable('time', 1)[k] === RANK_THRESHOLDS_DEFAULT[k]))

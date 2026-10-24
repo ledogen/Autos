@@ -266,7 +266,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     b.advance(T0 + 24 * 30)
     check("Larry's offer never expires (still the first one after 30 days)", ls.offer === lo && !isFinite(lo.expiresH))
     const card = b.card(lo, { nowH: T0 + 24 * 30 })
-    check("…and his card shows no timer", !card.terms.some(x => x.startsWith('expires')), card.terms.join(' | '))
+    check("…and his card shows no timer", !card.times.some(x => x.startsWith('expires')), card.times.join(' | '))
     check("…nor does the map schedule a turnover there", b.nextTurnoverH(larry, T0 + 24 * 30) === null)
     const lf = T0 + 24 * 30 + 1
     b.take(lo.id, lf - 1); b.complete(lo.id, lf)
@@ -414,9 +414,10 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('the bonus line names the item and its gate', cb.bonus?.includes(b.spec(bonused.o).bonus.name)
         && cb.bonus.includes(gateText(b.spec(bonused.o).bonus.gate)))
     check('gate text: "S only" / "X or better"', gateText('S') === 'S only' && gateText('B') === 'B or better')
-    check('the card states distance, weight, expiry and the delivery window', cp.terms.length === 4 && cp.terms[0] === '2.4 km'
-        && cp.terms[2] === `expires in ${formatGameDuration(plain.o.expiresH - plain.t)}`
-        && cp.terms[3] === `deliver within ${formatGameDuration(b.deadlineH(plain.o, route.par))}`, cp.terms.join(' | '))
+    check('the card states distance and weight, then expiry and the delivery window on their own row',
+        cp.terms.length === 2 && cp.terms[0] === '2.4 km' && cp.times.length === 2
+        && cp.times[0] === `expires in ${formatGameDuration(plain.o.expiresH - plain.t)}`
+        && cp.times[1] === `deliver within ${formatGameDuration(b.deadlineH(plain.o, route.par))}`, [...cp.terms, ...cp.times].join(' | '))
     check('a roadside drop names its rolled place', cp.sentence.some(r => r.t === b.spec(plain.o).placeName))
     const dest = POIS.find(q => q.type === 'gasStation').id
     const cd = b.card(plain.o, { nowH: plain.t, route: { ...route, endPoiId: dest } })
