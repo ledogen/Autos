@@ -111,7 +111,7 @@ import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the 
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
-import { makeFragile, feltG } from './fragile.js'   // FEAT-97: a fragile load's condition
+import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -2816,7 +2816,7 @@ function _updateFragileG (dt) {
   if (_jgKey !== f.mission) {
     _jgKey = f.mission
     _jgEls.root.style.display = 'flex'
-    _jgFloor = fr.shockFloorG + 0.1 * (fr.breakG - fr.shockFloorG)   // the 1 % mark
+    _jgFloor = onePctG(fr)   // the tier's 1 % mark (fragile.js)
     _jgEls.floor.style.bottom = `calc(${100 * _jgFloor / top}% - 1px)`
     _jgEls.brk.style.bottom = `calc(${100 * fr.breakG / top}% - 1px)`
     // The posted reward moved to the promise lines (R-17): it floated bare here and was unreadable

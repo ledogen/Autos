@@ -365,15 +365,23 @@ decides the bonus item (`bonusEarned`) and the good deeds (`pointsFor`, SM-INV-1
   the tier: "2.4 km · Very fragile · 9 kg".
 - **The tier moves the line (lever A).** "It is patently true that durable cargo is easier to deliver
   at 90% than fragile cargo is." Each tier has its own health lines in `RANK_TABLE.fragile`:
-  - Very fragile: 80 / 72 / 64 / 56 %. PROVISIONAL.
+  - Very fragile: 80 / 72 / 64 / 56 %. Signed off 2026-10-24.
   - Fragile: 90 / 83 / 77 / 70 %, the old single row.
-  - Sturdy: 95 / 90 / 85 / 80 %. PROVISIONAL.
+  - Sturdy: 95 / 90 / 85 / 80 %. Signed off 2026-10-24.
   The items on offer are unchanged; the harder cargo gets the easier line.
-- **Route length eases the line.** Every line drops `fragileLinePerKm` (0.02, so 2 points per km,
-  PROVISIONAL) per km of the planned route. *"The more ground you cover, the more likely it is for those
+- **Route length eases the line.** Every line drops `fragileLinePerKm` per km of the planned route, by
+  tier (owner, 2026-10-24, replacing a flat 2): Very fragile 3 points/km, Fragile 2, Sturdy 1. *"The more ground you cover, the more likely it is for those
   events to occur."* A short route keeps the full line on purpose. Short routes are the most lucrative
   per minute, so they are the ones to guard hardest. The km is frozen with the route, so the card, the
   HUD and the result card read the same line.
+- **The break is harder to reach (owner, 2026-10-24).** "1 % damage at the same threshold, but 100 %
+  requires more." Every tier's break g rose 1.5× (4.0 / 4.75 / 5.5 → 6.0 / 7.1 / 8.25 g). The g where one
+  hit costs 1 % stayed put (1.435 / 1.555 / 1.72 g), as did the floors. Each tier now carries that
+  `onePctG`, and `fragile.js` sets the cost exponent from it (about 1.6, was 2). A 1 m crest (4.6–4.8 g)
+  now leaves very fragile cargo at 43 %, fragile at 60 % and sturdy at 68 %; before, it destroyed very
+  fragile and left sturdy at 33 %. A rollover (10 g and up) still destroys every tier. Side effect: hits
+  just above the floor cost slightly more (5 s of washboard on very fragile: 0.5 → 0.7 % lost).
+- **Eggs are Fragile**, not Very fragile (owner, 2026-10-24).
 - The card's clocks ("expires in …", "deliver within …") moved to their own row, because the one terms
   row overflowed the map card.
 

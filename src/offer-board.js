@@ -590,7 +590,7 @@ export class OfferBoard {
             atPickup: thing.atPickup ?? null,   // a fetch's wait at the pickup: { min, park, done } prompts
             // FEAT-97: a fragile load's tolerance and hit sound (src/fragile.js) — null otherwise.
             fragile: thing.family === 'fragile'
-                ? { tier: thing.tier, tierName: thing.tierName, shockFloorG: thing.shockFloorG, breakG: thing.breakG, sound: thing.sound } : null,
+                ? { tier: thing.tier, tierName: thing.tierName, shockFloorG: thing.shockFloorG, onePctG: thing.onePctG, breakG: thing.breakG, sound: thing.sound } : null,
         }
     }
 

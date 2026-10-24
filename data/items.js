@@ -19,7 +19,7 @@ export const ITEMS = {
     coffee:       { name: 'Coffee',        kind: 'consumable', massKg: 0.5, use: 'coffee',
                     desc: 'Wakes you up now. You will feel it in the morning.' },
     chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3,
-                    desc: 'Still warm, for now.' },
+                    desc: 'Kinda gross.' },   // the owner's flavor line (setup page, 10-22)
     // P235/75R15 on a steel rim.
     spareTire:    { name: 'Mounted tire',  kind: 'part',       massKg: 18, use: 'spare',   // = RANGER_PARAMS.wheelMass
                     desc: 'A tire mounted on a wheel.' },
@@ -28,7 +28,7 @@ export const ITEMS = {
                     desc: 'A small can of gas, for when the gauge lies.' },
     // One plug per kit; the effect ('plug') is the parts session's (owner hand-off 2026-10-21).
     tirePlugKit:  { name: 'Tire plug kit', kind: 'consumable', massKg: 0.3, use: 'plug',
-                    desc: 'Sticky string plugs and the tools to push one in. Fixes the hole, not the wear.' },
+                    desc: "I hope I don't have to use this." },   // the owner's flavor line (setup page, 10-22)
     // A haul reward (owner, 2026-10-22): a 3/8" rubber mat cut for a compact bed, ~15 kg. Effect unbuilt.
     rubberBedMat: { name: 'Rubber bed mat', kind: 'tool',      massKg: 15,
                     desc: 'A heavy rubber mat for the bed floor. Loose cargo stops sliding around.' },

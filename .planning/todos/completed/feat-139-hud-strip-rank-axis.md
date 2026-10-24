@@ -1,7 +1,7 @@
 ---
 id: FEAT-139
 type: feature
-status: open
+status: done
 severity: minor
 opened: 2026-10-21
 source: owner, 2026-10-21 — "Whatever the strip is showing should also show what rank you have. For
@@ -118,3 +118,9 @@ everywhere (data/offers.js `tier` + `tierName`). The card's terms row names the 
 own health-line row (`RANK_TABLE.fragile`, read through `fragileLines(region, tier, km)`), eased by
 `fragileLinePerKm` per km of the planned route. The card, the HUD reward text, the result card and the
 settle letter all read it. The card clocks now ride their own `times` row.
+
+## Resolution 2026-10-24
+
+Closed after the owner's fragile drive on :3554 (owner: "commit"). All five rows are built. Still owed
+the owner's sign-off, as PROVISIONAL knobs in `economy.js`: the Very fragile row 80/72/64/56, the Sturdy
+row 95/90/85/80, and `fragileLinePerKm` 0.02.
