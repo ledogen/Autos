@@ -1,12 +1,23 @@
-# Handoff 2026-10-24 — one folder, and the alpha in four lanes
+# Handoff 2026-10-24 — main is the integration branch, and the alpha in four lanes
 
-Worktree: /Users/ledogen/CodeShit/CarGame (the only checkout)
-Branch:   main
-Serve:    http://localhost:8000 (`npm run dev`), dashboard :8010 (`npm run dash`)
-State:    clean after 7f0120e1; `feature/sleepy-steer` is the one branch left (owner's call, below)
+Main checkout: /Users/ledogen/CodeShit/CarGame (branch `main`, :8000, dashboard :8010) — INTEGRATION ONLY: nobody
+builds features here; lanes merge into it at task boundaries (`git merge --no-ff feature/<lane>` from main, gates first).
+State: clean after 7e298f52; every old branch (mission-recut, game-feel, parts, sleepy-steer) is merged and deleted.
 
-Work ONLY in this checkout. Every session starts here. Commit with `git commit -- <paths>`, small and
-often, and run `npm test` before each commit — four sessions share one working tree now.
+**One worktree per lane** (owner, 2026-10-24 second pass: one shared tree "sounds annoying", worktrees have been fine
+save for test load). Each lane's session works ONLY in its own worktree, merges main in often (`git merge main`),
+and lands at a task boundary. The main checkout stays free for the items session (cargame-11) and merges.
+
+| Lane | Worktree | Branch | Serve |
+|---|---|---|---|
+| A — the run has a shape | /Users/ledogen/CodeShit/CarGame-run-shape | feature/run-shape | http://localhost:3731 |
+| B — the machine bites back | /Users/ledogen/CodeShit/CarGame-machine | feature/machine | http://localhost:3282 |
+| C — content and polish | /Users/ledogen/CodeShit/CarGame-content | feature/content | http://localhost:3774 |
+| Spare — front of mind | /Users/ledogen/CodeShit/CarGame-spare | feature/spare | http://localhost:3885 |
+
+Each worktree's `node_modules` is a symlink to the main checkout's. Dev servers were started 2026-10-24
+(`npm run dev -- --port <port> --strictPort` from the worktree; restart the same way if one is gone).
+Heavy gates: run `npm test` in your worktree; leave `npm run test:all` to the merge into main, one lane at a time.
 
 ## What landed today (2026-10-24)
 
@@ -21,9 +32,9 @@ Worktrees `CarGame-game-feel`, `CarGame-mission-recut`, `CarGame-parts` and thei
 their dev servers (:3776, :3554, :3115) stopped. Review page (verdicts, all keep):
 https://claude.ai/artifact/YHLoevQnoJ1y5BYmksVVVZ · item setup page: https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu
 
-**Left for the owner:** `feature/sleepy-steer` (d739b7f3, one commit: 20 % slower steer, drowsy steering
-×0.75 → ×0.5; 77 commits behind, conflicts in src/main.js). Merge-and-resolve, or delete the branch and
-the `CarGame-sleepy-steer` worktree (:3767).
+`feature/sleepy-steer` (20 % slower steer, drowsy steering ×0.75 → ×0.5) merged 2d59aa2c on the owner's word; gone too.
+Owner rulings 2026-10-24 (7e298f52): REPAIR_CAP 80 % and sport springs $15 ratified; FEAT-137 shelf numbers
+approved; FEAT-138 hi-lift cooldown 5 s real time, torque derivation in the ticket (10.5 N·m/kg × 3 s proposed).
 
 ## Where the alpha stands
 
@@ -39,18 +50,17 @@ table, after today:
 - **Big and parallel-safe:** FEAT-120 (sound pass), the five alpha models (ASSET-71 camp, 69 office, 70
   doctor, 73 school, 32 uncle's van).
 - **Waits on run data:** FEAT-69 (the economy re-cut needs multi-day runs through a finished loop).
-- **Owner rulings owed, no code until then:** FEAT-137 [DEFAULT] shelf numbers; parts' REPAIR_CAP 80 %
-  and sport spring/shock $15; FEAT-138 hi-lift torque/cooldown; Q-6 courier digits (recommended no);
-  sleepy-steer.
+- **Owner rulings owed, no code until then:** FEAT-138's torque proposal (10.5 N·m/kg × 3 s) and its
+  likelihood tier; Q-6 courier digits (recommended no).
 - **SM-3's old "Next up" items 7 (FEAT-115 bed upgrades, FEAT-116 cargo protection) are not in the alpha
   table → later.** They drop out of the build order.
 - **Bugs default to alpha** (13 open): BUG-54, 58, 63, 64, 67, 69, 73, 74, 77, 81, 89, 90, 92.
 
 ## The four lanes
 
-The rule that makes four sessions in one folder work: **each lane owns its files**, main.js edits stay
-inside the lane's own functions, and nobody edits another lane's files without a message. Shared files
-(main.js, index.html, data/items.js, data/offers.js) are edited in small hunks and committed at once.
+Each lane is its own worktree (table above). The rule that keeps the merges clean: **each lane owns its
+files**, main.js edits stay inside the lane's own functions, and nobody edits another lane's files without
+a message. Merge main into the lane often; land the lane into main at a task boundary with the gates green.
 
 ### Lane A — the run has a shape (critical path)
 
@@ -94,12 +104,13 @@ FEAT-42 saves (suspend/resume) late in the alpha; FEAT-69 once Lane A gives a fi
 
 ## Resume prompts (paste one per session)
 
-- **A:** "Work in /Users/ledogen/CodeShit/CarGame on main. Read .planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md § Lane A, then .planning/todos/pending/feat-103-job-site-poi.md. Build FEAT-103's alpha slice. Own only Lane A's files."
-- **B:** "… § Lane B, then feat-93-hazard-punctures-any-condition.md and feat-94-driving-on-a-flat.md. Build FEAT-93 then FEAT-94. Own only Lane B's files."
-- **C:** "… § Lane C. Model ASSET-71 (the expedition camp) per .planning/research/ASSETS.md and ART-STYLE.md, then ASSET-32. Own only Lane C's files."
-- **Spare:** "… § Spare. Ask the owner what is front of mind; default to BUG-90."
+- **A:** "Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read .planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md § Lane A, then .planning/todos/pending/feat-103-job-site-poi.md. Build FEAT-103's alpha slice. Own only Lane A's files; merge main in before you start."
+- **B:** "Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Work ONLY there. Read the handoff § Lane B, then feat-93-hazard-punctures-any-condition.md and feat-94-driving-on-a-flat.md. Build FEAT-93 then FEAT-94. Own only Lane B's files."
+- **C:** "Worktree /Users/ledogen/CodeShit/CarGame-content, branch feature/content, serve :3774. Work ONLY there. Read the handoff § Lane C. Model ASSET-71 (the expedition camp) per .planning/research/ASSETS.md and ART-STYLE.md, then ASSET-32. Own only Lane C's files."
+- **Spare:** "Worktree /Users/ledogen/CodeShit/CarGame-spare, branch feature/spare, serve :3885. Work ONLY there. Read the handoff § Spare. Ask the owner what is front of mind; default to BUG-90."
 
 ## Gates
 
-Full suite on the merged main: see the owner's recap (run after 4e7095d4). Known reds: road-tunnel
-(BUG-77), road-clearance (FEAT-77). `node test/cdp-smoke.mjs` flakes under load; rerun alone.
+Full suite on the merged main (4e7095d4): 105/107, the two known reds road-tunnel (BUG-77) and road-clearance
+(FEAT-77). `node test/cdp-smoke.mjs`: 15/15 after it learned to read off the R-11 intro cards and the "For sale"
+heading (400dea6b). It flakes under load; rerun alone. Tracker page: see the owner's recap.

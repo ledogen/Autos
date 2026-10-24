@@ -72,7 +72,7 @@ How the cut works:
 
 **Branches landed 2026-10-24:** `feature/mission-recut` (FEAT-138/114/139), `feature/game-feel` (the
 mission-feel review R-01..R-34) and `feature/parts` are on main and deleted; one checkout from here on.
-`feature/sleepy-steer` — one commit (slower steer, drowsy steering) — is still the owner's call.
+`feature/sleepy-steer` merged the same day. Lanes now run as worktrees `CarGame-run-shape` / `-machine` / `-content` / `-spare`; main is the integration branch.
 The alpha build order and lanes: `.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md`.
 
 **Bugs:** every open bug is alpha by default (see above), including both known red gates: BUG-77
