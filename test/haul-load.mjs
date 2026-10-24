@@ -9,7 +9,7 @@
 //
 // Checks:
 //   (a) DETERMINISM — the same key gives the same drop points, spins and variants; another key does not.
-//   (b) LOADING — 10 and 15 bundles dropped on a truck parked squarely over the zone: at least 80%
+//   (b) LOADING — the stock's ends (12 and 30 bundles) dropped on a truck parked squarely over the zone: at least 80%
 //       land in the well (the loader is sloppy — a lost piece or two is part of the job, owner
 //       2026-10-09); one parked a metre off catches under 80% (parking is the skill).
 //   (No RIDE check: spilling on the drive is the player's fault and the point of a loose heap —
@@ -20,137 +20,31 @@
 //
 // Run: node test/haul-load.mjs
 
-import fs from 'node:fs'
-import * as THREE from 'three'
-import { PROP_MODELS } from '../data/prop-models.js'
-import { RANGER_PARAMS } from '../data/ranger.js'
-import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
-import { HAUL_BUNDLES, HAUL_BUNDLE_KG } from '../data/offers.js'
-import { createPhysicsEngine, GROUP_TERRAIN, GROUP_DEBRIS } from '../src/physics-engine.js'
-import { stepPhysics, createVehicleChassis } from '../src/physics.js'
-import { makeVehicleState } from '../src/vehicle-state.js'
-import { computeStaticEquilibrium } from '../src/suspension.js'
-import { RUNNING } from '../src/ignition.js'
-import { DebrisSystem, DEBRIS_TYPES, DEBRIS_CAP, bedDropPoints, inBedWell, bboxCorners } from '../src/debris.js'
+import { HAUL_STOCK, HAUL_BUNDLE_KG } from '../data/offers.js'
+import { GROUP_DEBRIS } from '../src/physics-engine.js'
+import { DEBRIS_TYPES, DEBRIS_CAP, DebrisSystem, bedDropPoints } from '../src/debris.js'
+import { BED, HULLS, hullVolume, truck, useGameHulls, load, aboard } from './lib/haul-rig.mjs'
 
-const DT = 1 / 60
-const BED = DEFAULT_VEHICLE_MODEL.bed
-const DROP_Y = 3.3, DROP_GAP = 0.3          // main.js HAUL_DROP_Y (above the pad) / HAUL_DROP_GAP
-
-/** A GLB's vertices centred on their bbox — the hull debris.js builds (same reader as cargo-bed). */
-function glbHull (url) {
-  const buf = fs.readFileSync(new URL('../' + url, import.meta.url))
-  const jl = buf.readUInt32LE(12)
-  const js = JSON.parse(buf.subarray(20, 20 + jl).toString('utf8'))
-  const binOff = 20 + jl + 8
-  const pts = []
-  for (const n of js.nodes) {
-    if (n.mesh == null) continue
-    const m = new THREE.Matrix4().compose(
-      new THREE.Vector3(...(n.translation || [0, 0, 0])),
-      new THREE.Quaternion(...(n.rotation || [0, 0, 0, 1])),
-      new THREE.Vector3(...(n.scale || [1, 1, 1])))
-    for (const pr of js.meshes[n.mesh].primitives) {
-      const a = js.accessors[pr.attributes.POSITION], bv = js.bufferViews[a.bufferView]
-      const off = buf.byteOffset + binOff + (bv.byteOffset || 0) + (a.byteOffset || 0)
-      const f = new Float32Array(buf.buffer.slice(off, off + a.count * 12))
-      for (let i = 0; i < a.count; i++) pts.push(new THREE.Vector3(f[3 * i], f[3 * i + 1], f[3 * i + 2]).applyMatrix4(m))
-    }
-  }
-  const c = new THREE.Box3().setFromPoints(pts).getCenter(new THREE.Vector3())
-  return pts.flatMap(v => [v.x - c.x, v.y - c.y, v.z - c.z])
-}
-const HULLS = Object.fromEntries(Object.entries(DEBRIS_TYPES).filter(([k]) => k.startsWith('bundle'))
-  .map(([k, spec]) => [k, glbHull(PROP_MODELS[spec.model].url)]))
-const SPEC = DEBRIS_TYPES.bundleA
 const SIZE = [0.32, 0.33, 0.45]   // the largest extents across the variants — for the drop-point clearance check
 
 let fail = 0
 const ok = (cond, msg) => { console.log(`  ${cond ? '✓' : '✗'} ${msg}`); if (!cond) fail = 1 }
-
-/** A truck parked on flat ground with its bed empty. */
-async function truck () {
-  const P = { ...RANGER_PARAMS }
-  P._tireFz = [0, 0, 0, 0]; P._suspForceAccum = [0, 0, 0, 0]
-  P._hubNormalXZ = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }))
-  const engine = await createPhysicsEngine()
-  const ground = engine.createBody({ type: 'static', position: { x: 0, y: -5, z: 0 } })
-  engine.addBox(ground, { x: 3000, y: 5, z: 3000 }, { friction: 0.9, group: GROUP_TERRAIN })
-  const vs = makeVehicleState(P, RUNNING)
-  const eq = computeStaticEquilibrium(P)
-  vs.position.set(0, eq.bodyY, 1000)
-  vs.strutComp = [...eq.strutComp]
-  const chassis = createVehicleChassis(engine, vs, P, { bed: BED })
-  const flat = (cx, cy, cz, r) => {
-    const d = r - cy
-    return d > 0 ? [{ normal: new THREE.Vector3(0, 1, 0), depth: d, contactPoint: new THREE.Vector3(cx, 0, cz) }] : []
-  }
-  const live = []
-  const t = { P, engine, vs, chassis, live, ctx: { engine, chassis }, flat, debris: { _eng: engine, _live: live } }
-  t.step = () => {
-    DebrisSystem.prototype.beforeStep.call(t.debris, chassis, BED)
-    stepPhysics(vs, P, DT, flat, t.ctx)
-  }
-  return t
-}
-
-/**
- * Drop `n` bundles the way _haulStep does, then let them settle. The zone is laid where a squarely
- * parked bed would be (the truck's own frame); `off` slides the zone sideways by that many metres —
- * the same as parking that far off it.
- */
-function load (t, n, key, { noDamage = true, off = 0 } = {}) {
-  const drops = bedDropPoints(n, BED, key)
-  const v = new THREE.Vector3(), q = new THREE.Quaternion(), qd = new THREE.Quaternion()
-  t.vs.throttle = 0; t.vs.brake = 0; t.vs.handbrake = true   // parked: the latch holds the handbrake
-  for (let s = 0, i = 0; s < Math.round(((n - 1) * DROP_GAP + 3) / DT); s++) {
-    while (i < n && s * DT >= i * DROP_GAP) {
-      const d = drops[i++]
-      v.set(d.x + off, 0, d.z).applyQuaternion(t.vs.quaternion).add(t.vs.position)
-      v.y = DROP_Y                                 // above the pad (the ground plane is y = 0)
-      q.copy(t.vs.quaternion).multiply(qd.set(d.quaternion.x, d.quaternion.y, d.quaternion.z, d.quaternion.w))
-      const body = t.engine.createBody({ type: 'dynamic', position: { x: v.x, y: v.y, z: v.z },
-        quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, linearVelocity: { x: 0, y: -1.2, z: 0 },
-        angularVelocity: d.spin, userData: { kind: 'debris', noDamage } })
-      // Density by debris.js's own probe, so each variant weighs exactly its massKg on its own hull.
-      const rho = DEBRIS_TYPES[d.kind].massKg / DebrisSystem.prototype._hullVolume.call({ _eng: t.engine }, HULLS[d.kind])
-      t.engine.addHull(body, HULLS[d.kind], { density: rho, friction: SPEC.friction, restitution: SPEC.restitution, group: GROUP_DEBRIS })
-      t.live.push({ body, cargo: false, prevP: new THREE.Vector3(), prevQ: new THREE.Quaternion() })
-    }
-    t.step()
-  }
-}
-
-/** Bundles inside the well right now — the settle count. */
-function aboard (t) {
-  const cp = new THREE.Vector3(), cq = new THREE.Quaternion(), p = new THREE.Vector3(), q = new THREE.Quaternion()
-  t.engine.getTransform(t.chassis, cp, cq)
-  cq.invert()
-  return t.live.filter(r => { t.engine.getTransform(r.body, p, q); return inBedWell(p.sub(cp).applyQuaternion(cq), BED) }).length
-}
 
 console.log('(0) every bundle hull builds, at the mass offers.js says:')
 {
   const t = await truck()
   const masses = Object.keys(HULLS).map(k => {
     const b = t.engine.createBody({ type: 'dynamic', position: { x: 0, y: 50, z: 0 } })
-    t.engine.addHull(b, HULLS[k], { density: DEBRIS_TYPES[k].massKg / DebrisSystem.prototype._hullVolume.call({ _eng: t.engine }, HULLS[k]), group: GROUP_DEBRIS })
+    t.engine.addHull(b, HULLS[k], { density: DEBRIS_TYPES[k].massKg / hullVolume(t.engine, HULLS[k]), group: GROUP_DEBRIS })
     return t.engine.getMass(b)
   })
   ok(masses.every(m => Math.abs(m - HAUL_BUNDLE_KG) < 0.01), `every variant is ${HAUL_BUNDLE_KG} kg on its own hull (${masses.map(m => m.toFixed(2)).join(', ')})`)
   t.engine.dispose()
 }
 
-// From here on the load uses what the GAME would build: debris.js falls back to a variant's
-// bounding box when the engine refuses its hull, so (b)–(d) test the shipped behaviour even while
-// (0) is red on an asset.
-{
-  const t = await truck()
-  for (const k of Object.keys(HULLS)) {
-    if (!(DebrisSystem.prototype._hullVolume.call({ _eng: t.engine }, HULLS[k]) > 0)) HULLS[k] = bboxCorners(HULLS[k])
-  }
-  t.engine.dispose()
-}
+// From here on the load uses what the GAME would build (haul-rig.mjs useGameHulls), so (b)–(d) test
+// the shipped behaviour even while (0) is red on an asset.
+await useGameHulls()
 
 console.log('(a) determinism:')
 {
@@ -165,7 +59,7 @@ console.log('(a) determinism:')
 }
 
 console.log("(b) loading a parked truck:")
-for (const n of HAUL_BUNDLES) {
+for (const n of HAUL_STOCK) {
   const t = await truck()
   load(t, n, `haul:6:gate:${n}`)
   const a = aboard(t)
@@ -173,7 +67,7 @@ for (const n of HAUL_BUNDLES) {
   t.engine.dispose()
 }
 {
-  const n = HAUL_BUNDLES[1], t = await truck()
+  const n = 15, t = await truck()
   load(t, n, `haul:6:gate:${n}`, { off: 1.0 })
   const a = aboard(t)
   ok(a < n * 0.8, `parked a metre off the zone: ${a} of ${n} in the bed`)
@@ -183,7 +77,7 @@ for (const n of HAUL_BUNDLES) {
 console.log('(d) cargo never reads as an impact:')
 for (const noDamage of [true, false]) {
   const t = await truck()
-  load(t, HAUL_BUNDLES[1], 'haul:6:gate:wear', { noDamage })
+  load(t, 15, 'haul:6:gate:wear', { noDamage })
   const hit = t.engine.maxContactImpulse(t.chassis)
   ok(noDamage ? hit.impulse === 0 : hit.impulse > 0,
     `${noDamage ? 'flagged' : 'UNflagged (control)'}: chassis contact impulse ${hit.impulse.toFixed(1)} N·s`)

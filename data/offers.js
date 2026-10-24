@@ -35,8 +35,9 @@
 //   passenger (optional) true when the thing is the poster themselves — the card says "a ride to …"
 //   load     (freight, FEAT-96) the bed load's key in data/freight.js — the model the job straps in.
 //            massKg is then the load's real mass, rolled per offer.
-//   shockFloorG, breakG, sound  (fragile, FEAT-97) the felt g below which the load takes no harm,
-//            the g one hit needs to destroy it, and its hit sound — spread from a tier below.
+//   shockFloorG, onePctG, breakG, sound  (fragile, FEAT-97) the felt g below which the load takes no
+//            harm, the g where one hit costs 1 %, the g one hit needs to destroy it, and its hit
+//            sound — spread from a tier below (fragile.js shockCost).
 //   furniture (optional, FEAT-116) true for the pieces the furniture pad protects.
 //   to       (optional, FEAT-100) the POI tags it may be delivered to — a class (`farm`) or a
 //            fixture tag. Absent = generic: any POI or a roadside spot (cargo.md "From → to").
@@ -61,10 +62,14 @@ const HOUSEWARES = ['generalStore', 'residence']
 // (test/fragile-cargo.mjs pins them): hard paved driving peaks ~0.6 g, ±4 cm washboard at 15 m/s
 // ~1.3 g, a 1 m drop at speed ~4.7 g, a rollover 6–13 g. Free fall reads 1 g, so no floor sits
 // below 1 — airtime is free, the landing is what costs. A floor AT 1 g took damage constantly
-// (owner, 2026-10-15): glassware and delicate were pulled toward sturdy.
-const GLASSWARE = { shockFloorG: 1.15, breakG: 4.0, sound: 'glass' }  // rough road nibbles; a crest landing destroys
-const DELICATE  = { shockFloorG: 1.2, breakG: 4.75, sound: 'thud' }
-const STURDY    = { shockFloorG: 1.3, breakG: 5.5, sound: 'thud' }    // a crest landing costs most of it; a roll ends it
+// (owner, 2026-10-15): very fragile and fragile were pulled toward sturdy.
+// `tier` keys the tier's health lines (economy.js RANK_TABLE.fragile); `tierName` is how the card and
+// every doc say it — Very fragile / Fragile / Sturdy (owner, 2026-10-23: one set of words everywhere).
+// Breaks raised 1.5× (owner, 2026-10-24: "100 % harder to reach"); the 1 % g stayed where the old
+// breaks (4.0 / 4.75 / 5.5) put it. Rough road nibbles; a 1 m crest costs roughly half; a roll ends it.
+const VERY_FRAGILE = { tier: 'veryFragile', tierName: 'Very fragile', shockFloorG: 1.15, onePctG: 1.435, breakG: 6.0,  sound: 'glass' }
+const FRAGILE      = { tier: 'fragile',     tierName: 'Fragile',      shockFloorG: 1.2,  onePctG: 1.555, breakG: 7.1,  sound: 'thud' }
+const STURDY       = { tier: 'sturdy',      tierName: 'Sturdy',       shockFloorG: 1.3,  onePctG: 1.72,  breakG: 8.25, sound: 'thud' }
 
 export const THINGS = [
     // FEAT-88 haul. massKg is ignored for a haul thing — the card's weight is pieces × HAUL_BUNDLE_KG,
@@ -250,27 +255,27 @@ export const THINGS = [
     // Routes are the owner's 2026-10-15 ruling (cargo.md). The crated rows ride the large crate
     // with their contents as text. Pelican case and x-ray machine have no shipper yet, so no row.
     { id: 'milkBottles', phrase: 'a crate of milk bottles', family: 'fragile', massKg: [40, 40],
-      pools: ['generalStore'], to: ['residence'], load: 'largeCrate', ...GLASSWARE },
+      pools: ['generalStore'], to: ['residence'], load: 'largeCrate', ...VERY_FRAGILE },
     { id: 'canningJars', phrase: 'a crate of canning jars', family: 'fragile', massKg: [20, 20],
-      pools: ['generalStore'], to: ['residence'], load: 'largeCrate', ...GLASSWARE },
+      pools: ['generalStore'], to: ['residence'], load: 'largeCrate', ...VERY_FRAGILE },
     { id: 'eggs',        phrase: 'a crate of eggs',         family: 'fragile', massKg: [31, 31],
-      pools: ['farm'], to: ['residence'], load: 'largeCrate', ...GLASSWARE, sound: 'thud' },
+      pools: ['farm'], to: ['residence'], load: 'largeCrate', ...FRAGILE },
     { id: 'fineChina',   phrase: 'a crate of fine china',   family: 'fragile', massKg: [30, 30],
-      pools: HOUSEWARES, to: ['residence'], load: 'largeCrate', ...GLASSWARE },
+      pools: HOUSEWARES, to: ['residence'], load: 'largeCrate', ...VERY_FRAGILE },
     { id: 'vase',        phrase: "grandma's vase",          family: 'fragile', massKg: [9, 9],
-      pools: ['residence'], load: 'ornateVase', ...GLASSWARE },
+      pools: ['residence'], load: 'ornateVase', ...VERY_FRAGILE },
     { id: 'ornateVase',  phrase: 'an ornate vase',          family: 'fragile', massKg: [9, 9],
-      pools: HOUSEWARES, to: ['residence'], load: 'ornateVase', ...GLASSWARE },
+      pools: HOUSEWARES, to: ['residence'], load: 'ornateVase', ...VERY_FRAGILE },
     { id: 'mirror',      phrase: 'a full-length mirror',    family: 'fragile', massKg: [16, 16],
-      pools: HOUSEWARES, to: ['residence'], load: 'fullLengthMirror', ...GLASSWARE, furniture: true },
+      pools: HOUSEWARES, to: ['residence'], load: 'fullLengthMirror', ...VERY_FRAGILE, furniture: true },
     { id: 'windshield',  phrase: 'a windshield',            family: 'fragile', massKg: [14, 14],
-      pools: ['autoShop'], load: 'largeCrate', ...DELICATE, sound: 'glass' },   // laminated, so tougher than plate (owner, 2026-10-15); crated until it has a model
+      pools: ['autoShop'], load: 'largeCrate', ...FRAGILE, sound: 'glass' },   // laminated, so tougher than plate (owner, 2026-10-15); crated until it has a model
     { id: 'glassPanes',  phrase: 'ten panes of glass',      family: 'fragile', massKg: [240, 240],
-      pools: ['generalStore'], load: 'glassPanes', ...GLASSWARE },
+      pools: ['generalStore'], load: 'glassPanes', ...VERY_FRAGILE },
     { id: 'diningChairs', phrase: 'four dining chairs',     family: 'fragile', massKg: [24, 24],
-      pools: HOUSEWARES, to: ['residence'], load: 'diningChairs', ...DELICATE, furniture: true },
+      pools: HOUSEWARES, to: ['residence'], load: 'diningChairs', ...FRAGILE, furniture: true },
     { id: 'framedArtwork', phrase: 'a framed painting, crated', family: 'fragile', massKg: [16, 16],
-      pools: HOUSEWARES, to: ['residence'], load: 'framedArtwork', ...DELICATE },
+      pools: HOUSEWARES, to: ['residence'], load: 'framedArtwork', ...FRAGILE },
     { id: 'diningTable', phrase: 'a dining table',          family: 'fragile', massKg: [45, 45],
       pools: HOUSEWARES, to: ['residence'], load: 'diningTable', ...STURDY, furniture: true },
     { id: 'wardrobe',    phrase: 'a wardrobe',              family: 'fragile', massKg: [120, 120],
@@ -309,6 +314,11 @@ export const REWARDS = [
       pools: ['gasStation', 'strandedMotorist'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'workSite'] },
+    // The haul yard's rewards (owner, 2026-10-22; items.md §7): the mat is the lesser grip; its
+    // friction effect isn't built yet — the item is granted. The bedliner (A–S here) joins the
+    // day its thumbnail exists (test/dist-assets.mjs needs assets/items/bedliner.png).
+    { id: 'rubberBedMat', name: 'Rubber bed mat', kind: 'tool', gates: ['B', 'A'],
+      pools: ['firewoodYard'] },
     // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
     // barn find is a roadside-find event (items.md §6), not a giver.
     { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'],
@@ -379,7 +389,9 @@ export const SOURCES = {
     larrysHouse:  { slots: 1,      expiryH: null, lockH: 12, families: ['papers'] },
     // FEAT-88/91: the region-1 haul yard. Haul only for now — FEAT-91 also has it give and take
     // courier jobs, which lands with FEAT-89.
-    firewoodYard: { slots: 2,      expiryH: 24, families: ['haul'] },
+    // ONE offer at a time (owner, 2026-10-22): one stock, at most one reward, one count to pick —
+    // no comparing several rewards' thresholds against the picker.
+    firewoodYard: { slots: 1,      expiryH: 24, families: ['haul'] },
     foodVendor:   { slots: [2, 3], expiryH: 2,  families: ['delivery'] },
     // ── the budget (FEAT-101) ──
     generalStore:     { cap: 2, expiryH: 24,       families: ['delivery', 'fragile', 'freight'] },
@@ -400,28 +412,35 @@ export const BUDGET_JOBS = 12
 
 // ── Haul loads (FEAT-88, owner 2026-10-04) ──────────────────────────────────────────────────
 //
-// A haul offer rolls how many pieces it is, and the pay scales with that: a bigger load is a
-// juicier job, and also more weight squatting the truck and more pieces to lose. That is the lever
-// that lets the market pull the player between careers. Pay = the ordinary par line × pieces ×
-// HAUL_PAY_PER_BUNDLE, then × (pieces aboard at delivery ÷ pieces in the offer) at settle.
+// A haul giver has a STOCK, and the player picks how many pieces to load from it (FEAT-114, owner
+// 2026-10-21) and BUYS them (§5b, 2026-10-22). Pay = the ordinary par line × HAUL_PAY_PER_BUNDLE per
+// piece aboard at delivery. A bigger load pays more, weighs more and has more pieces to lose; the
+// rank is the count delivered (FEAT-138), so loading past S is insurance the player pays for.
 
-/** [min, max] firewood bundles per offer, inclusive. Owner, 2026-10-05 (was 7–12 on the first drive). */
-export const HAUL_BUNDLES = [10, 15]
+/** [min, max] firewood bundles in a yard's stock, inclusive (owner, 2026-10-22). The pick is 1…stock. */
+export const HAUL_STOCK = [12, 30]
+
+/**
+ * What a piece costs to load, as a share of the job's base pay per piece (owner, 2026-10-22: "half of
+ * base is pretty appropriate"). Cheap on purpose: a failed haul already costs money in wear, and the
+ * purchase must never be a crippling gamble. Charged at accept; an expired or abandoned haul keeps
+ * it. A FEAT-69 knob.
+ */
+export const HAUL_STOCK_PRICE = 0.5
 
 /** kg per bundle. A real shrink-wrapped bundle is ~0.75 ft³, 10–12 kg (src/debris.js bundleA..C). */
 export const HAUL_BUNDLE_KG = 11
 
 /**
  * Pay per bundle as a fraction of an ordinary delivery over the same route. 1/10: a 10-bundle load
- * pays what a delivery would, 15 bundles pay 1.5× — the same 1×–1.5× spread the first 7–12 range had
- * at 1/8 (re-weighted with the range, owner 2026-10-05). PLACEHOLDER — tune on a drive.
+ * pays what a delivery would (owner 2026-10-05). PLACEHOLDER — tune on a drive.
  */
 export const HAUL_PAY_PER_BUNDLE = 1 / 10
 
 /**
  * Par on a haul is the route's par × this (owner, 2026-10-05: "the added weight slows the truck
  * slightly, so par should be ~10% longer"). Pay rides par, so the per-bundle rate is divided by the
- * same factor in the offer's payMult (src/offer-board.js) — a 10-bundle haul still pays exactly what
+ * same factor in the offer's per-piece payMult (src/offer-board.js) — 10 bundles delivered pay exactly what
  * a courier job over that route pays; only the clock it is graded against is longer.
  */
 export const HAUL_PAR_SLACK = 1.1
@@ -436,20 +455,6 @@ export const HAUL_PAR_SLACK = 1.1
 export const FREIGHT_PAR_SLACK_PER_KG = 0.0007
 
 /**
- * Freight is the EASY delivery (owner, 2026-10-11): strapped, it cannot be lost, so it grades
- * looser and tips less than haul, which can. Both are frozen onto the mission as contract terms.
- *
- * FREIGHT_TIME_SLACK — every rank threshold × this at accept, and the tip curve reads the ratio ÷
- * this: S comes easier (≤ 0.886 × par instead of 0.77) and D comes later (past 1.15 × par instead of
- * 1.0). Par pace grades B, not C.
- *
- * FREIGHT_TIP_MULT — a flat multiplier on the tip only. Base pay is untouched, so a heavy load keeps
- * its base-pay lead through par × FREIGHT_PAR_SLACK_PER_KG. At 0.5 a freight S pays 1.5 × base,
- * against 2 × base on haul and courier.
- */
-export const FREIGHT_TIME_SLACK = 1.15
-
-/**
  * Freight's weight bonus on PAY alone (owner, 2026-10-11): payMult × (1 + this × kg), on top of the
  * par stretch. Par grows 7 % per 100 kg and is the extra TIME the load costs; this adds 3 % per
  * 100 kg of money that time does not eat, so pay outgrows time and narrows the per-minute gap to
@@ -457,6 +462,13 @@ export const FREIGHT_TIME_SLACK = 1.15
  * earner. In the card's Base pay too.
  */
 export const FREIGHT_PAY_PER_KG = 0.0003
+/**
+ * FREIGHT_TIP_MULT — a flat multiplier on freight's tip only, frozen onto the mission at accept.
+ * Base pay is untouched, so a heavy load keeps its base-pay lead through par ×
+ * FREIGHT_PAR_SLACK_PER_KG. At 0.5 a freight drive at the S pace pays 1.5 × base, against 2 × base
+ * on haul and courier. A FEAT-69 balancing knob, not a design rule (owner, 2026-10-21, tentatively).
+ * Freight's letter is the kg delivered (FEAT-138); its old time slack (× 1.15) retired with that.
+ */
 export const FREIGHT_TIP_MULT = 0.5
 
 // FEAT-113 DELIVERY DEADLINES (owner, 2026-10-15 — replaces the 10-14 fixed bands). A job must be

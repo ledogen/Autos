@@ -5,11 +5,12 @@
 // square-law on its peak. What must hold:
 //   1. the data joins up — every fragile thing names a load, a tolerance with floor < break, a sound,
 //      and a shipper that posts fragile; the furniture tag is on the five pieces (FEAT-116);
-//   2. the pay: the base guaranteed, + the whole tip pool × the tip share — all of it at 100 %, none
-//      at 50 % (owner, 2026-10-15); the letter reads condition alone; a burst prices once;
+//   2. the pay (owner, 2026-10-21, FEAT-138): half the base guaranteed, half × health, + the SPEED tip
+//      a courier drive earns at the same ratio; destroyed pays 0; the letter reads condition alone and
+//      good deeds read the letter; a burst prices once;
 //   3. the calibration table (the ticket's, on the freight-strap rig): paved driving costs nothing,
-//      washboard nibbles glassware and costs sturdy pieces little, a 1 m crest landing destroys
-//      glassware and costs sturdy pieces most of it, a rollover destroys everything;
+//      washboard nibbles very fragile and costs sturdy pieces little, a 1 m crest landing destroys
+//      very fragile and costs sturdy pieces most of it, a rollover destroys everything;
 //   4. the felt g at rest is ~0 (gravity is removed, not counted), and the same run twice gives the
 //      same health (SM-INV-12).
 
@@ -25,9 +26,11 @@ import { makeVehicleState } from '../src/vehicle-state.js'
 import { computeStaticEquilibrium } from '../src/suspension.js'
 import { RUNNING } from '../src/ignition.js'
 import { strapPose } from '../src/debris.js'
-import { splitFragilePayout, splitPayout, haulPointsFor } from '../src/economy.js'
-import { fragileGrade } from '../src/par.js'
-import { makeFragile, feltG, shockCost } from '../src/fragile.js'
+import { splitFragilePayout, splitPayout, pointsFor, EconomySystem, rankTable, fragileLines, ECONOMY_PARAMS } from '../src/economy.js'
+import { amountGrade } from '../src/par.js'
+import { gateLine } from '../src/offer-board.js'
+const fragileGrade = (h) => amountGrade(h, rankTable('fragile', 1, 'fragile'))
+import { makeFragile, feltG, shockCost, onePctG } from '../src/fragile.js'
 
 const DT = 1 / 60
 const BED = DEFAULT_VEHICLE_MODEL.bed
@@ -39,7 +42,7 @@ console.log('data:')
 const fragile = THINGS.filter(t => t.family === 'fragile')
 ok(BUILT_FAMILIES.has('fragile'), 'fragile is a built family')
 ok(fragile.length > 0 && fragile.every(t => FREIGHT[t.load]), `every fragile thing (${fragile.length}) names a load in data/freight.js`)
-ok(fragile.every(t => t.shockFloorG >= 1 && t.breakG > t.shockFloorG && ['glass', 'thud', 'piano'].includes(t.sound)),
+ok(fragile.every(t => t.shockFloorG >= 1 && t.onePctG > t.shockFloorG && t.breakG > t.onePctG && ['glass', 'thud', 'piano'].includes(t.sound)),
   'every fragile thing has a floor ≥ 1 g (free fall is free), a break above it, and a sound')
 ok(fragile.every(t => t.pools.length > 0 && t.pools.every(k => SOURCES[k]?.families.includes('fragile'))),
   'every fragile thing has a shipper, and each shipper posts fragile')
@@ -49,23 +52,51 @@ ok(furn.every(id => THINGS.find(t => t.id === id)?.furniture) && THINGS.filter(t
 
 // ── 2. pay, letter, events ───────────────────────────────────────────────────────────────────
 console.log('pay:')
-const full = splitPayout(180, 0, 1), base = full.base, pool = full.tip
-const at = (h) => splitFragilePayout(180, h, 1)
-ok(JSON.stringify(at(1)) === JSON.stringify(full), `100 % pays base + the whole tip pool ($${full.total})`)
-ok(at(0.75).base === base && Math.abs(at(0.75).tip - pool / 2) < 0.006, `75 % pays the base + half the tip ($${at(0.75).total})`)
-ok(at(0.5).tip === 0 && at(0.25).tip === 0 && at(0.25).base === base && at(0.01).base === base, '50 % and below tip nothing; the base is guaranteed down to 1 %')
-ok(at(0).total === 0, 'destroyed pays $0')
-ok([0, 0.33, 0.61, 0.9, 1].every(h => { const p = at(h); return Math.round(p.base * 100) + Math.round(p.tip * 100) === Math.round(p.total * 100) }),
+const S = 0.77, SLOW = 1.5   // a ratio at the whole tip, and one past the tip's end
+const courier = (r) => splitPayout(180, r, 1)
+const at = (h, r = S) => splitFragilePayout(180, r, h, 1)
+const base = courier(S).base
+ok(JSON.stringify(at(1)) === JSON.stringify(courier(S)), `100 % at S pace pays what a courier S pays ($${courier(S).total})`)
+ok(Math.abs(at(0.5).base - base * 0.75) < 0.006 && Math.abs(at(0.01).base - base * 0.505) < 0.006,
+  `half the base is guaranteed, half × health: 50 % → base × 0.75 ($${at(0.5).base}), 1 % → × 0.505`)
+ok([1, 0.75, 0.3].every(h => at(h).tip === courier(S).tip) && at(0.6, 0.95).tip === courier(0.95).tip && at(1, SLOW).tip === 0,
+  'the tip is SPEED: the courier tip at the same ratio, whatever the condition; slow tips nothing')
+ok(at(0).total === 0 && at(0, SLOW).total === 0, 'destroyed pays $0')
+ok([0, 0.33, 0.61, 0.9, 1].every(h => [S, 0.9, SLOW].every(r => { const p = at(h, r); return Math.round(p.base * 100) + Math.round(p.tip * 100) === Math.round(p.total * 100) })),
   'base + tip === total, to the cent')
 ok(fragileGrade(0.95) === 'S' && fragileGrade(0.85) === 'A' && fragileGrade(0.8) === 'B' && fragileGrade(0.72) === 'C' && fragileGrade(0.6) === 'D',
   'the letter reads condition: 95 % S · 85 % A · 80 % B · 72 % C · 60 % D')
-ok(haulPointsFor(0.9) === 1 && haulPointsFor(0.5) === 0.5 && haulPointsFor(0.2) === 0, 'good deeds follow condition (haul bands)')
+// FEAT-139: fragile shows no letter; the card names the condition the item needs, in whole percents.
+ok(gateLine('S', 'fragile', 1, 'fragile') === 'arrives 90%+ intact' && gateLine('A', 'fragile', 1, 'fragile') === 'arrives 83%+ intact'
+  && gateLine('B', 'fragile', 1, 'fragile') === 'arrives 77%+ intact', 'the fragile bonus prints its condition: 90 / 83 / 77 %')
+// FEAT-139 (owner, 2026-10-23): the tier moves the line — the harder cargo gets the easier one — and
+// every line eases fragileLinePerKm per km of route, in whole percents.
+{
+  const L = (tier, km = 0) => fragileLines(1, tier, km)
+  ok(['S', 'A', 'B', 'C'].every(k => L('veryFragile')[k] < L('fragile')[k] && L('fragile')[k] < L('sturdy')[k]),
+    'per tier: very fragile lines < fragile < sturdy')
+  const P = ECONOMY_PARAMS.fragileLinePerKm
+  ok(P.veryFragile > P.fragile && P.fragile > P.sturdy && P.sturdy > 0, 'the harder the cargo, the faster its line eases per km')
+  ok(['veryFragile', 'fragile', 'sturdy'].every(t => ['S', 'A', 'B', 'C'].every(k => Math.abs(L(t, 5)[k] - (L(t)[k] - 5 * P[t])) < 1e-9))
+    && ['S', 'A', 'B', 'C'].every(k => Number.isInteger(Math.round(L('fragile', 3.7)[k] * 1e6) / 1e4)),
+    `a longer route eases every line by its tier's points/km, in whole percents (S at 5 km: ${L('veryFragile', 5).S} / ${L('fragile', 5).S} / ${L('sturdy', 5).S})`)
+  ok(gateLine('S', 'fragile', 1, 'sturdy', 5) === `arrives ${Math.round(L('sturdy', 5).S * 100)}%+ intact`, 'the card prints the eased line')
+  ok(THINGS.filter(t => t.family === 'fragile').every(t => ECONOMY_PARAMS.RANK_TABLE.fragile[t.tier] && t.tierName),
+    'every fragile thing names a tier with a line row and a card word')
+}
+{
+  const eco = new EconomySystem()
+  const deeds = (h) => eco.settle({ par: 180, ratio: S, health: h, letter: fragileGrade(h) }, { terms: eco.terms() }).points
+  ok([0.95, 0.85, 0.72, 0.6].every(h => deeds(h) === pointsFor(fragileGrade(h))), 'good deeds read the letter (pointsFor), on condition')
+  const paid = eco.settle({ par: 180, ratio: 0.95, health: 0.6, letter: 'D' }, { terms: eco.terms() })
+  ok(paid.payout === at(0.6, 0.95).total, `settle() pays the fragile split at the drive's ratio ($${paid.payout})`)
+}
 
 console.log('events:')
 const tier = { shockFloorG: 1, breakG: 3 }
 const burst = makeFragile(tier), evs = []
 for (const g of [0.2, 1.5, 2.0, 1.8, 0.9, 0.2]) { const e = burst.step(g); if (e) evs.push(e) }
-ok(evs.length === 1 && Math.abs(evs[0].peakG - 2) < 1e-9 && Math.abs(burst.health - (1 - shockCost(2, 1, 3))) < 1e-12,
+ok(evs.length === 1 && Math.abs(evs[0].peakG - 2) < 1e-9 && Math.abs(burst.health - (1 - shockCost(2, tier))) < 1e-12,
   `a burst above the floor is ONE event priced on its peak (cost ${(evs[0]?.cost * 100).toFixed(0)} %)`)
 const calm = makeFragile(tier)
 for (let i = 0; i < 600; i++) calm.step(0.95 * Math.abs(Math.sin(i)))
@@ -75,12 +106,12 @@ ok(smash.health === 0 && smash.step(5) === null, 'one hit at break destroys it, 
 
 // ── 3–4. physics: the calibration table ──────────────────────────────────────────────────────
 console.log('physics:')
-// The light vase stands for glassware: mass is real, and 240 kg of panes damps the bed so much that
+// The light vase stands for very fragile: mass is real, and 240 kg of panes damps the bed so much that
 // the same washboard reaches it at ~1.06 g against the vase's ~1.34 (logged as `panes`, not asserted).
 const TIERS = {
-  glassware: THINGS.find(t => t.id === 'ornateVase'),
+  veryFragile: THINGS.find(t => t.id === 'ornateVase'),
   panes: THINGS.find(t => t.id === 'glassPanes'),
-  delicate: THINGS.find(t => t.id === 'framedArtwork'),
+  fragile: THINGS.find(t => t.id === 'framedArtwork'),
   sturdy: THINGS.find(t => t.id === 'uprightPiano'),
 }
 // One scenario, one tier: the truck on a flat ground box (the chassis's crash surface) with the
@@ -137,20 +168,23 @@ for (const [tk, thing] of Object.entries(TIERS)) {
   console.log(`    ${tk.padEnd(9)} ` + Object.entries(res[tk]).map(([sk, r]) => `${sk} ${pct(r.health)} (${r.peak.toFixed(2)} g)`).join(' · '))
 }
 const all = Object.values(res)
-ok(all.every(r => r.rest.last < 0.01 && r.rest.health === 1), `settled at rest the load feels ~0 g (${res.glassware.rest.last.toFixed(4)}) — gravity is removed, and the spawn settle costs nothing`)
+ok(all.every(r => r.rest.last < 0.01 && r.rest.health === 1), `settled at rest the load feels ~0 g (${res.veryFragile.rest.last.toFixed(4)}) — gravity is removed, and the spawn settle costs nothing`)
 ok(all.every(r => r.paved.health === 1), 'paved driving at pace costs nothing, any tier')
-// Washboard NIBBLES glassware rather than eating it — a floor at 1 g took damage constantly (owner,
-// 2026-10-15) — and the tiers stay in order: glassware loses the most, sturdy the least.
+// Washboard NIBBLES very fragile rather than eating it — a floor at 1 g took damage constantly (owner,
+// 2026-10-15) — and the tiers stay in order: very fragile loses the most, sturdy the least.
 const wb = (t) => res[t].washboard.health
-ok(wb('glassware') < 1 && wb('glassware') > 0.95, `5 s of washboard nibbles glassware (${(100 * (1 - wb('glassware'))).toFixed(1)} % lost)`)
-ok(wb('glassware') <= wb('delicate') && wb('delicate') <= wb('sturdy') && res.delicate.crest.health <= res.sturdy.crest.health,
-  'the tiers stay in order: glassware ≤ delicate ≤ sturdy on washboard and on the crest')
+ok(wb('veryFragile') < 1 && wb('veryFragile') > 0.95, `5 s of washboard nibbles very fragile (${(100 * (1 - wb('veryFragile'))).toFixed(1)} % lost)`)
+ok(wb('veryFragile') <= wb('fragile') && wb('fragile') <= wb('sturdy') && res.fragile.crest.health <= res.sturdy.crest.health,
+  'the tiers stay in order: very fragile ≤ fragile ≤ sturdy on washboard and on the crest')
 ok(res.sturdy.washboard.health > 0.95, `washboard costs a sturdy piece little (${pct(res.sturdy.washboard.health)})`)
-ok(res.glassware.crest.health === 0, 'a 1 m crest landing destroys glassware')
-ok(res.sturdy.crest.health > 0 && res.sturdy.crest.health < 0.6, `a 1 m crest landing costs a sturdy piece most of it (${pct(res.sturdy.crest.health)})`)
+// Breaks raised 1.5× with the 1 % g held (owner, 2026-10-24): a crest no longer destroys any tier.
+ok(res.veryFragile.crest.health > 0 && res.veryFragile.crest.health < 0.5, `a 1 m crest landing costs very fragile cargo more than half (${pct(res.veryFragile.crest.health)})`)
+ok(res.sturdy.crest.health > 0.5 && res.sturdy.crest.health < 0.85, `a 1 m crest landing costs a sturdy piece about a third (${pct(res.sturdy.crest.health)})`)
+ok(['veryFragile', 'fragile', 'sturdy'].every(t => Math.abs(shockCost(onePctG(TIERS[t]), TIERS[t]) - 0.01) < 1e-12),
+  'one hit at a tier\'s 1 % g costs exactly 1 %')
 ok(all.every(r => r.rollover.health === 0), 'a rollover destroys every tier')
-const again = await run(TIERS.glassware, SCEN.washboard)
-ok(again.health === res.glassware.washboard.health, 'same run, same health (SM-INV-12)')
+const again = await run(TIERS.veryFragile, SCEN.washboard)
+ok(again.health === res.veryFragile.washboard.health, 'same run, same health (SM-INV-12)')
 
 console.log(fail ? '\nFRAGILE-CARGO: FAIL' : '\nFRAGILE-CARGO: all checks passed')
 process.exit(fail)

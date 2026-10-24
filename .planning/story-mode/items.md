@@ -112,6 +112,10 @@ says described, never scored. Two things have to be answered before any of these
 
 Idea **A** carried a freight mechanic with it, and the mechanic is the more valuable half:
 
+> **Narrowed 2026-10-22 (owner):** freight is **posted**, each offer a fixed load; there is no load
+> picker at the dock. The choice is which posted offer to take. The weight sets which bonus item it
+> can carry, never a shown tier. Provenance: `design-amendments-2026-10-21-mission-recut.md` §2b.
+
 > At a freight giver, you're shown **a variety of objects to pick from**. Each has a mass. Some are
 > **too heavy for your vehicle to carry** — outside its budget. You raise the budget by **upgrading
 > suspension and tires**, which lets you take the heavier items: harder to deliver, worth more money.

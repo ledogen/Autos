@@ -48,3 +48,7 @@ unlocked, not the shop's region~~ — retired 2026-10-21: a part's price scales 
 - [ ] Each upgrade changes the FEAT-112 verdicts through its `apply` alone; a gate covers it.
 - [ ] Bought at a shop, carried as real mass, lost on death.
 - [ ] Price scales with the clock (`dayTier`) only — the furthest-region rule is retired (owner, 2026-10-21).
+
+## Amended 2026-10-21 (owner)
+
+Rank thresholds now step **by region** (FEAT-138): R2/R3 freight S sits past the stock truck's legal limit, and later haul S past a brimming stock bed. **These upgrades are what reach S in each region**, so each one must raise the FEAT-112 limits or hold more of a load. See design-amendments-2026-10-21-mission-recut.md §11b.

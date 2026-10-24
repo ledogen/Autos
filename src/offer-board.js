@@ -39,7 +39,7 @@
 
 import {
     THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, BONUS_PAY_MULT, GATE_WEIGHTS,
-    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, DEADLINE_SLACK, NOT_A_DESTINATION,
+    DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, DEADLINE_SLACK, NOT_A_DESTINATION,
 } from '../data/offers.js'
 import {
     FIRST_NAMES, FEMALE_CHANCE, LAST_NAMES, NICKNAMES, NICKNAME_CHANCE, POI_ADJECTIVES,
@@ -47,7 +47,7 @@ import {
 } from '../data/offer-names.js'
 import { djb2, mulberry32 } from './seed.js'
 import { STOCK_WEIGHT } from '../data/stock-weights.js'   // the bonus reward pick shares the shelf's weights
-import { basePay, formatMoney } from './economy.js'
+import { basePay, formatMoney, rankTable, fragileLines } from './economy.js'
 import { DAY_PARAMS } from './day.js'
 
 /**
@@ -115,6 +115,31 @@ export function jobBadge (sp) {
 export function gateText (gate) { return gate === 'S' ? 'S only' : `${gate} or better` }
 
 /**
+ * A bonus gate as the card prints it (FEAT-114, amendment §6). Haul ranks on the count delivered
+ * (FEAT-138), so its gate prints the count, never the letter: "deliver 18+ bundles" (owner, 2026-10-23:
+ * the letter only ever decides the item, so the card names the threshold). Fragile likewise prints
+ * the condition it must arrive in: "arrives 83%+ intact" (owner, 2026-10-23) — its tier's line, eased
+ * by the route's `km` (economy.js fragileLines). Freight's tier is
+ * INTERNAL (owner, 2026-10-22): the load is the poster's, the roll only offers items its mass can
+ * reach, so the bonus is simply earned on delivery. Courier keeps the letter.
+ * `kind` is 'haul' | 'fragile' | 'freight' | anything else; `cargoId` is the haul cargo or the fragile tier.
+ */
+export function gateLine (gate, kind, region = 1, cargoId = 'firewood', km = 0) {
+    if (kind === 'haul') return `deliver ${rankTable('haul', region, cargoId)[gate]}+ bundles`
+    if (kind === 'fragile') return `arrives ${Math.round(fragileLines(region, cargoId, km)[gate] * 100)}%+ intact`
+    if (kind === 'freight') return 'on delivery'
+    return gateText(gate)
+}
+
+/**
+ * What one haul piece costs to load (FEAT-114 §5b): HAUL_STOCK_PRICE of the job's base pay per piece,
+ * to the cent. `pieceMult` is the haul spec's per-piece payMult.
+ */
+export function stockPrice (par, payTier, pieceMult) {
+    return Math.round(HAUL_STOCK_PRICE * basePay(par, payTier, pieceMult) * 100) / 100
+}
+
+/**
  * A game-time duration as a card reads it: "18 min", "2h 05m", "1d 4h". Game hours in, so the
  * figure means the same thing whether the player sleeps through it or drives through it.
  */
@@ -155,9 +180,11 @@ export class OfferBoard {
      * @param {number} o.seed        world seed
      * @param {Array<{id:string,type:string}>} o.pois — PoiSystem.list(), the roster
      * @param {number} o.nowH        the absolute game clock at creation (DaySystem.clockH())
+     * @param {number} [o.region]    the story region (1-based) — which rank row a bonus gate reads
      */
-    constructor ({ seed, pois, nowH }) {
+    constructor ({ seed, pois, nowH, region = 1 }) {
         this._seed = seed >>> 0
+        this._region = region
         this._now = nowH
         this._pois = new Map()
         for (const q of pois || []) this._pois.set(q.id, q)
@@ -423,13 +450,14 @@ export class OfferBoard {
      * changes WHAT it is. Null only if the source has no built thing to post (a table gap).
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate,dineIn?}|null, payMult,
-     *   destKind: 'poi'|'roadside'|null, destPick, placeName, bundles: number|null, to: string[]|null,
+     *   destKind: 'poi'|'roadside'|null, destPick, placeName, stock: number|null, to: string[]|null,
      *   passenger: boolean, shape: 'courier'|'fetch', from: string[]|null, load: string|null,
      *   deadlineSlack: number }
      * deadlineSlack (FEAT-113): the deadline is par × (1 + it) from accept — see deadlineH().
-     * bundles is the haul load's piece count (FEAT-88), null for every other family. It is drawn on
-     * its OWN `bundles` stream: one more draw on `spec` would shift the destination and place name
-     * of every existing offer on every seed.
+     * stock is the haul giver's piece count (FEAT-114) — the player picks 1…stock at accept — null
+     * for every other family. It is drawn on its OWN `stock` stream: one more draw on `spec` would
+     * shift the destination and place name of every existing offer on every seed. A haul's payMult
+     * and its card's pay are PER PIECE; massKg is the whole stock's.
      * destKind is null for papers (the paper route picks its own customers). destPick is the uniform
      * number the mission planner uses to choose among the destination POIs it can actually reach;
      * placeName is the roadside name, rolled always, used whenever no POI destination fits.
@@ -463,15 +491,25 @@ export class OfferBoard {
         const people = this._names.get(offer.poiId)?.people ?? []
         const person = people.length ? people[Math.floor(r() * people.length)] : null
 
+        const stockRoll = thing.family === 'haul' ? stream('stock')() : null
+
         // BONUS (25 %). The gate is drawn only among gates this source actually has a reward for,
         // so a source whose list lacks an S reward still posts bonuses at the full share instead of
         // silently rolling a gate it cannot fill. A source with no rewards at all never bonuses.
+        // FEAT-114 §6: a freight gate is a kg the load is posted with, so it is drawn only among gates
+        // the load meets — a freight bonus is always earned on delivery. A haul gate is a count, and
+        // the STOCK follows the gate instead (below): the bonus keeps its full share (owner, 2026-10-23:
+        // filtering on a pre-drawn stock cut the yard's share to 18 %).
         let bonus = null
         const bonusRoll = r(), gateRoll = r(), rewardRoll = r()
+        const amount = thing.family === 'freight' ? { have: massKg, row: rankTable('freight', this._region) } : null
         if (bonusRoll < BONUS_CHANCE) {
             const pool = REWARDS.filter(w => w.pools.includes(offer.type))
             const w = {}
-            for (const g of Object.keys(GATE_WEIGHTS)) if (pool.some(x => x.gates.includes(g))) w[g] = GATE_WEIGHTS[g]
+            for (const g of Object.keys(GATE_WEIGHTS)) {
+                if (amount && amount.have < amount.row[g]) continue
+                if (pool.some(x => x.gates.includes(g))) w[g] = GATE_WEIGHTS[g]
+            }
             if (Object.keys(w).length) {
                 const gate = pickWeighted(gateRoll, w)
                 // Which reward: weighted by the stock table the auto-shop shelf uses (owner, 2026-10-22).
@@ -480,15 +518,18 @@ export class OfferBoard {
                 bonus = { rewardId: reward.id, name: reward.name, gate, ...(reward.dineIn && { dineIn: true }) }
             }
         }
+        // The haul stock: uniform over HAUL_STOCK, floored at the bonus gate's count so the reward is
+        // always reachable on what the yard has.
+        let stock = null
+        if (stockRoll != null) {
+            const [sLo, sHi] = HAUL_STOCK
+            const lo = bonus ? Math.max(sLo, rankTable('haul', this._region, thing.id)[bonus.gate]) : sLo
+            stock = lo + Math.floor(stockRoll * (sHi - lo + 1))
+        }
 
         const papers = thing.family === 'papers'
         const destRoll = r(), destPick = r()
         const placeName = this._placeName(r)
-        let bundles = null
-        if (thing.family === 'haul') {
-            const [bLo, bHi] = HAUL_BUNDLES
-            bundles = bLo + Math.floor(stream('bundles')() * (bHi - bLo + 1))
-        }
         // FEAT-102: a FETCH when this source is one of the thing's fetchers — go to a pickup (a POI of
         // `from`), park there, bring it back. Otherwise the courier shape, as built.
         const fetch = !!thing.fetchBy?.includes(offer.type)
@@ -498,9 +539,10 @@ export class OfferBoard {
             deadlineSlack: thing.deadlineSlack ?? DEADLINE_SLACK[thing.family],   // FEAT-113
             shape: fetch ? 'fetch' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
             family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
-            massKg: bundles ? bundles * HAUL_BUNDLE_KG : massKg, bundles,
-            // ÷ HAUL_PAR_SLACK: the haul's par is that much longer and pay rides par (data/offers.js).
-            payMult: (bonus ? BONUS_PAY_MULT : 1) * (bundles ? bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1)
+            massKg: stock ? stock * HAUL_BUNDLE_KG : massKg, stock,
+            // Haul: PER PIECE — the pick multiplies it at accept. ÷ HAUL_PAR_SLACK: the haul's par is
+            // that much longer and pay rides par (data/offers.js).
+            payMult: (bonus ? BONUS_PAY_MULT : 1) * (stock ? HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1)
                 * (thing.load ? 1 + FREIGHT_PAY_PER_KG * massKg : 1),   // FEAT-96: freight's weight bonus on pay
             destKind: papers ? null : (strictTo || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
@@ -509,7 +551,7 @@ export class OfferBoard {
             atPickup: thing.atPickup ?? null,   // a fetch's wait at the pickup: { min, park, done } prompts
             // FEAT-97: a fragile load's tolerance and hit sound (src/fragile.js) — null otherwise.
             fragile: thing.family === 'fragile'
-                ? { shockFloorG: thing.shockFloorG, breakG: thing.breakG, sound: thing.sound } : null,
+                ? { tier: thing.tier, tierName: thing.tierName, shockFloorG: thing.shockFloorG, onePctG: thing.onePctG, breakG: thing.breakG, sound: thing.sound } : null,
         }
     }
 
@@ -717,7 +759,7 @@ export class OfferBoard {
      *        configured NOW, or null (cab cargo). Computed by the caller — the board never sees the truck
      *        (SM-INV-12), it only words the verdict.
      * @returns {{family, portrait: {sex,name}|null, flavor: string|null, sentence: Array<{t:string,b?:boolean}>,
-     *            pay: string|null, terms: string[], bonus: string|null,
+     *            pay: string|null, terms: string[], times: string[], bonus: string|null,
      *            verdict: {level: 'warning'|'overload', text: string}|null}|null}
      */
     card (offer, { nowH, payTier = 1, route = null, customers = null, verdict = null } = {}) {
@@ -732,8 +774,8 @@ export class OfferBoard {
         } else {
             if (n?.name) sentence.push({ t: ` at ${n.name}` })
             const dest = route?.endPoiId ? this.placeLabel(route.endPoiId) : (route?.placeName ?? sp.placeName)
-            if (sp.bundles) {
-                sentence.push({ t: ' needs ' }, { t: `${sp.bundles} bundles of ${sp.phrase}`, b: true },
+            if (sp.stock) {
+                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true },
                               { t: ' hauled to ' }, { t: dest, b: true }, { t: '.' })
             } else {
                 // A passenger is the poster themselves: "Earl needs a ride to Rust Belt Auto." A fetch
@@ -745,15 +787,24 @@ export class OfferBoard {
             }
         }
         const par = route?.par
-        const pay = par > 0 ? `Base pay $${formatMoney(basePay(par, payTier, sp.payMult))}`
-                  : null
+        // FEAT-114: a haul quotes a RATE — the load isn't picked yet; the picker shows the total.
+        const pay = !(par > 0) ? null
+            : sp.stock ? `Base pay $${formatMoney(basePay(par, payTier, sp.payMult))} a bundle`
+                + ` · costs $${formatMoney(stockPrice(par, payTier, sp.payMult))}`
+            : `Base pay $${formatMoney(basePay(par, payTier, sp.payMult))}`
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
-        terms.push(`${sp.massKg} kg`)
+        if (sp.fragile) terms.push(sp.fragile.tierName)   // what the player is up against (owner, 2026-10-23)
+        terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
+        // A haul's card is the rate, the cost, the distance, the stock and the reward line — nothing
+        // else (owner, 2026-10-23: the timers overran the map card). The due time shows from accept.
+        // The clocks ride their OWN row (`times`, 2026-10-23): one row of distance + tier + kg + both
+        // timers ran ~60 characters against the ~45 the map card fits, and spilled off it.
+        const times = []
         const expiresInH = offer.expiresH - nowH
         // A never-expiring offer (Larry's) shows no timer at all (owner, 2026-10-07).
-        if (isFinite(expiresInH)) terms.push(`expires in ${formatGameDuration(expiresInH)}`)
-        if (par > 0) terms.push(`deliver within ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept
+        if (!sp.stock && isFinite(expiresInH)) times.push(`expires in ${formatGameDuration(expiresInH)}`)
+        if (!sp.stock && par > 0) times.push(`deliver within ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept
         return {
             family: sp.family,
             badge: jobBadge(sp),
@@ -767,8 +818,10 @@ export class OfferBoard {
             sentence,
             pay,
             terms,
+            times,
             // Larry's card shows base pay only (owner ruling) — papers never roll a bonus anyway.
-            bonus: sp.bonus ? `Bonus: ${sp.bonus.name} — ${gateText(sp.bonus.gate)}` : null,
+            bonus: sp.bonus ? `Bonus: ${sp.bonus.name} — ${gateLine(sp.bonus.gate, sp.family, this._region,
+                sp.fragile ? sp.fragile.tier : sp.thingId, (route?.distance ?? 0) / 1000)}` : null,
             // FEAT-112: a load that fits says nothing. Otherwise the worst reason, in words:
             // "Warning: this load exceeds the recommended weight limit", "Overload: too heavy".
             verdict: verdict && verdict.verdict !== 'fits'

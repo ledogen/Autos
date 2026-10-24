@@ -158,7 +158,7 @@ now** (owner, 2026-10-10) — there is one region; the Region column is the desi
 | R3 | a Persian rug or two | | ASSET-58 | 30–60 per roll | not posted. **A range because there is no model yet** |
 | R3 | a stock engine (a used 4.0 V6, crate-ready) | | none yet (the part's icon `engine.png` only) | ~180 | **proposed — owner idea, 2026-10-22:** *"This would make for a sweet freight delivery as well."* The same engine as the stock-engine part (items.md / FEAT-121, 180 kg). Not posted; shipper open. **R3 is a placeholder** (a valuable load reads late), the owner's to set |
 
-**How freight pays** (owner, 2026-10-11; numbers in `data/offers.js`): par × (1 + 0.0007 × kg) for
+**How freight pays** (owner, 2026-10-11; numbers in `data/offers.js`; **superseded in part 2026-10-21**, see the rulings below): par × (1 + 0.0007 × kg) for
 the time the load costs; pay × (1 + 0.0003 × kg) on top, so pay outgrows time; every rank threshold
 × 1.15 (par pace is a B); the tip × 0.5. Haul wins the fast run; freight is the reliable earner.
 
@@ -252,6 +252,43 @@ Provenance: `design-amendments-2026-10-14.md`.
 - Not named, so still unrouted: grandma's vase keeps its residence → any row; the windshield keeps
   autoShop → any; the pelican case and the x-ray machine post nowhere yet.
 - Everything is R1 for now (the 2026-10-10 ruling stands).
+
+## Rulings (owner, 2026-10-21) — loads are picked from a stock
+
+Provenance: `design-amendments-2026-10-21-mission-recut.md`.
+
+- **Haul and freight givers have a limited stock; the player picks the load** (FEAT-114). Haul
+  ranks on pieces delivered, freight on kg delivered (FEAT-138). Haul's R1 S is a brimming stock
+  bed — measured, the owner expects 22–26 firewood bundles.
+- ~~**Freight becomes a unit and a count** (FEAT-140).~~ *Reversed 2026-10-22: every load stays as-built; FEAT-140 cancelled.* Divisible loads (bags, blocks, crates, ties,
+  drums) list a unit mass; the picker chooses the count and the bed fills visibly. Indivisible loads
+  (a job box, one drum, a rug) keep their as-built mass and can't usually reach S. This replaces
+  "every modelled load is ONE number, as built" for divisible cargo.
+- ~~**Light freight gets a roster pass inside FEAT-140**~~ *2026-10-22: now "design heavy freight loads", below.* — each light load (empty propane, small crate,
+  eight tyres, …) is dropped, moved to courier, or turned into a unit cargo, decided with the owner.
+- "How freight pays" below is superseded: the 1.15 time slack retires (time no longer ranks freight);
+  the par-per-kg stretch stays; the tip multiplier and pay-per-kg stay as FEAT-69 knobs.
+
+## Rulings (owner, 2026-10-22) — freight is posted, not picked
+
+Provenance: `design-amendments-2026-10-21-mission-recut.md` §2b. Overrides the freight half of the
+10-21 rulings above.
+
+- **Each freight offer is a fixed load**, set by whoever posts it. There is no freight picker and no
+  freight stock. Haul keeps its picker.
+- **The kg tier is internal.** It decides which bonus item a load may carry; the player sees only the
+  weight and the item. A load under the C line (285 kg) carries **no item, on purpose** (owner:
+  *"I've realized I need to design a bunch of heavy freight items and make this mission type truly
+  about heavy weight. I just selected inappropriate loads before."*).
+- **Every freight load keeps one as-built mass** (owner: *"as-built for now is simpler"*). No unit +
+  count, no bed stacker; FEAT-140 is cancelled. A heavy tier comes from a heavy load.
+- **Deeds read the internal letter** (owner: *"use internal letter"*), like the bonus.
+- **OWNER-OWNED FOLLOW-UP — design a roster of heavy freight loads.** This replaces the 10-21
+  "light-freight roster pass". Each load is a purpose-built heavy object at its real mass. The R1
+  internal lines to aim at (provisional, FEAT-138): C 285 · B 428 · A 570 · S 712 kg, against the
+  stock Ranger's 570 kg rating and 820 kg hard cap (FEAT-112). Each new load gets a row above and its
+  own `asset-*.md` ticket (Adding cargo, below). What happens to today's light rows (drop, move to
+  courier, keep as item-less jobs) is decided per row in the same pass.
 
 ## Adding cargo
 

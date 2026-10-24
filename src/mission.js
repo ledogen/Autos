@@ -361,23 +361,14 @@ export class MissionSystem {
      */
     accept() {
         if (this.state !== 'offer' || !this.mission) return
-        // FEAT-53: freeze the TERMS of the contract — day tier AND rank thresholds — at the moment
-        // of commitment (SM-INV-4; owner 2026-08-01: lock both). Settlement reads these, never the
+        // FEAT-53: freeze the TERMS of the contract — pay tier, region and rank thresholds — at the
+        // moment of commitment (SM-INV-4; owner 2026-08-01: lock both). Settlement reads these, never the
         // finish-day's values, so a job accepted at 23:58 pays and grades on the day you took it.
         // The converse — accepting at 1 a.m. to buy tomorrow's HIGHER tier — is a RATIFIED feature
         // (DESIGN.md: "Nobody authored it; do not 'fix' it").
         if (this._getTerms) this.mission.terms = this._getTerms()
         this.mission.dueH = this.offer?.dueH ?? null   // FEAT-113: stamped by the board's take()
         this.mission.expired = false
-        // FEAT-96: a job with a time slack (freight) grades on looser letters — every frozen threshold
-        // × the slack, so the result letter and the rank bar both follow. The tip reads the same slack
-        // in economy.js settle().
-        const slack = this.mission.timeSlack
-        if (slack && this.mission.terms?.thresholds) {
-            const t = this.mission.terms.thresholds
-            this.mission.terms = { ...this.mission.terms,
-                thresholds: Object.freeze(Object.fromEntries(Object.keys(t).map(k => [k, t[k] * slack]))) }
-        }
         // FEAT-67: taking the offer OFF THE BOARD is main.js's job, done just before this call (it
         // owns the board and re-checks the offer is still live — a food offer lives ~2 real minutes).
         this._launch({ seat: !this.mission.fromPoi, setSpawn: true, load: !!this.mission.bundles })

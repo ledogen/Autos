@@ -936,7 +936,7 @@
       font-size: 12px;
       color: var(--text);
     }
-    #job-due {
+    #job-due, #job-cargo {
       display: none;
       margin-top: 6px;
       font-family: var(--font);
@@ -945,6 +945,26 @@
       text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
     }
     #job-due .rt-label { margin-right: 10px; }
+    /* FEAT-139: fragile's felt-g bar. The fill scales by per-frame transform, never a transition. */
+    #job-g { display: none; margin-top: 8px; gap: 18px; font-family: var(--font); color: var(--text); }
+    #job-g .jg-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    #job-g .jg-val { font-size: 14px; margin-top: -2px; }
+    #job-g .jg-reward { display: none; align-self: center; align-items: center; gap: 8px; font-size: 12px;
+      margin-bottom: 40px;   /* centred on the bars, not on the bars + their labels */
+      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8); }
+    #job-g .jg-reward img { width: 40px; height: 40px; object-fit: contain; }
+    #job-g .jg-mark span {
+      position: absolute; right: calc(100% + 6px); top: 50%; transform: translateY(-50%);
+      font-family: var(--font); font-size: 12px; white-space: nowrap;
+      text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
+    }
+    #job-g .jg-floor span { color: var(--warn); }
+    #job-g .jg-break span { color: var(--bad-text); }
+    #job-g .jg-bar { position: relative; width: 12px; height: 90px; background: var(--hud-bg); border: 1px solid var(--line-control); }
+    #job-g .jg-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; background: var(--text); transform-origin: bottom; transform: scaleY(0); }
+    #job-g .jg-mark { position: absolute; left: -4px; right: -4px; height: 2px; }
+    #job-g .jg-floor { background: var(--warn); }
+    #job-g .jg-break { background: var(--bad); }
     #rank-timer .rt-card {
       background: linear-gradient(180deg, rgba(14, 18, 24, 0.82), rgba(0, 0, 0, 0.7));
       border: 1px solid var(--line);
@@ -968,11 +988,12 @@
       display: flex; align-items: center; justify-content: center; gap: 10px;
       margin: 8px 0 0;
     }
-    #rank-timer .rt-label, #job-due .rt-label {
+    #rank-timer .rt-label, #job-due .rt-label, #job-g .rt-label {
       font-size: 14px; font-weight: bold; letter-spacing: 2px; color: var(--text-body);
       text-transform: uppercase;
       text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
     }
+    #job-g .rt-label { font-size: 12px; letter-spacing: 1px; }
     /* The rank TILE (owner, 2026-10-02: the bare glowing letter "isn't doing it"): a solid square
        in the rank colour (background set inline) with the letter dark on it, top-lit like the
        strip's bands. Near a line _updateRankTimer writes `scale` + `filter: brightness` inline on
@@ -1139,6 +1160,8 @@
     #mission-panel .mp-warning { color: var(--warn); }   /* FEAT-112 load verdicts */
     #mission-panel .mp-overload { color: var(--bad-text); font-weight: 700; }
     #mission-panel button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #mp-pick { display: none; margin: 8px 0; gap: 10px; align-items: center; }   /* FEAT-114 haul picker */
+    #mp-count { width: 160px; }
     /* an abandoned job's headline, its $0 and a lost or destroyed load (owner, 2026-10-15) */
     #mission-panel .mp-bad, #paper-panel .mp-bad { color: var(--bad-text); }
     #pp-accept { border-color: var(--accept); color: var(--accept-text); }
@@ -1543,6 +1566,9 @@
   <div id="mission-panel">
     <div class="mp-title">story mode <span class="mp-beta">beta</span></div>
     <div id="mp-body">rolling a job&hellip;</div>
+    <!-- FEAT-114: the haul load picker. Outside #mp-body because the offer panel repaints that at
+         10 Hz, which would reset a slider inside it. main.js shows it only on a haul offer. -->
+    <div id="mp-pick"><input id="mp-count" type="range" min="1" max="30" step="1" value="1"> <span id="mp-pick-text"></span></div>
     <!-- FEAT-30 calibration: the subjective read is the ground truth PAR_REF is fitted to, so it
          is captured AT export time in one click rather than left to be remembered later. The
          prompt states the standard explicitly — without it the scale drifts between sessions. -->
@@ -1702,7 +1728,19 @@
   </div>
   <!-- FEAT-113: the job's deadline under the rank tile; the text node after the label is written by
        _updateJobDue in main.js. -->
-  <div id="job-due"><span class="rt-label">Due:</span><span></span></div>
+  <div id="job-due"><span class="rt-label">Due in:</span><span></span></div>
+  <!-- FEAT-139: the haul's live count / the freight's kg under the rank/due column, written by
+       _syncCargoLine in main.js. -->
+  <div id="job-cargo"></div>
+  <!-- FEAT-139: a fragile load's two bars, written per frame by _updateFragileG in main.js. DAMAGE is
+       the felt g, marked where one hit costs 1 % of health (amber) and 100 % (red, the break). HEALTH
+       is the condition, full green → empty red, its percent under it. The reward, when the job posts
+       one, sits right of HEALTH: "Reward [icon] if health ≥ 83%". -->
+  <div id="job-g">
+    <div class="jg-col"><div class="jg-bar"><div class="jg-fill"></div><div class="jg-mark jg-floor"><span>1%</span></div><div class="jg-mark jg-break"><span>100%</span></div></div><span class="rt-label">Damage</span></div>
+    <div class="jg-col"><div class="jg-bar"><div class="jg-fill jg-health"></div></div><span class="rt-label">Health</span><span class="jg-val"></span></div>
+    <div class="jg-reward"><span class="rt-label">Reward</span><img alt=""><span class="jg-need"></span></div>
+  </div>
   </div>
 
   <!-- FEAT-46: "park to begin mission" prompt, shown when the truck is stopped beside a POI.

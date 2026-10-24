@@ -38,9 +38,9 @@
 //  14. IMPORT DISCIPLINE — the board imports only its tables, seed.js and economy.js, and never
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
-import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel } from '../src/offer-board.js'
-import { THINGS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_BUNDLES, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
-import { basePay, formatMoney } from '../src/economy.js'
+import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine } from '../src/offer-board.js'
+import { THINGS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_PAY_MULT, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { basePay, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
 // Could POI `q`'s rolled name have come from one of its class's forms? Each form becomes a regex
@@ -143,7 +143,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         }
     }
     check('with no player the whole board is live, always (10 days × 3 seeds)', notFull === 0, `${notFull} samples short`)
-    check('…and it holds 17–18 jobs', lo >= 17 && hi <= 18, `${lo}–${hi}`)
+    check('…and it holds 16–17 jobs (the yard posts one at a time, owner 2026-10-22)', lo >= 16 && hi <= 17, `${lo}–${hi}`)
     check('no budget giver ever holds more than its cap', overCap === 0, `${overCap}`)
     const givers = POIS.filter(q => SOURCES[q.type]?.cap).length
     check('every budget giver hosts work at some point (the refill is uniform, not sticky)',
@@ -266,7 +266,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     b.advance(T0 + 24 * 30)
     check("Larry's offer never expires (still the first one after 30 days)", ls.offer === lo && !isFinite(lo.expiresH))
     const card = b.card(lo, { nowH: T0 + 24 * 30 })
-    check("…and his card shows no timer", !card.terms.some(x => x.startsWith('expires')), card.terms.join(' | '))
+    check("…and his card shows no timer", !card.times.some(x => x.startsWith('expires')), card.times.join(' | '))
     check("…nor does the map schedule a turnover there", b.nextTurnoverH(larry, T0 + 24 * 30) === null)
     const lf = T0 + 24 * 30 + 1
     b.take(lo.id, lf - 1); b.complete(lo.id, lf)
@@ -414,9 +414,10 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('the bonus line names the item and its gate', cb.bonus?.includes(b.spec(bonused.o).bonus.name)
         && cb.bonus.includes(gateText(b.spec(bonused.o).bonus.gate)))
     check('gate text: "S only" / "X or better"', gateText('S') === 'S only' && gateText('B') === 'B or better')
-    check('the card states distance, weight, expiry and the delivery window', cp.terms.length === 4 && cp.terms[0] === '2.4 km'
-        && cp.terms[2] === `expires in ${formatGameDuration(plain.o.expiresH - plain.t)}`
-        && cp.terms[3] === `deliver within ${formatGameDuration(b.deadlineH(plain.o, route.par))}`, cp.terms.join(' | '))
+    check('the card states distance and weight, then expiry and the delivery window on their own row',
+        cp.terms.length === 2 && cp.terms[0] === '2.4 km' && cp.times.length === 2
+        && cp.times[0] === `expires in ${formatGameDuration(plain.o.expiresH - plain.t)}`
+        && cp.times[1] === `deliver within ${formatGameDuration(b.deadlineH(plain.o, route.par))}`, [...cp.terms, ...cp.times].join(' | '))
     check('a roadside drop names its rolled place', cp.sentence.some(r => r.t === b.spec(plain.o).placeName))
     const dest = POIS.find(q => q.type === 'gasStation').id
     const cd = b.card(plain.o, { nowH: plain.t, route: { ...route, endPoiId: dest } })
@@ -510,36 +511,71 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('BUG-88: a newcomer with no destination left cycles to a job that has one', pairs > 0 && dead === 0, `${dead}/${pairs}`)
 }
 
-// ── 15. haul (FEAT-88) ──────────────────────────────────────────────────────────────────────────
+// ── 15. haul (FEAT-88; stock + picker FEAT-114) ──────────────────────────────────────────────────
 {
-    let wrongPlace = 0, badCount = 0, badMass = 0, badPay = 0, n = 0
+    let wrongPlace = 0, badCount = 0, badMass = 0, badPay = 0, badGate = 0, n = 0, gated = 0
     const counts = new Set()
+    const S = rankTable('haul', 1, 'firewood')
     for (let seed = 1; seed <= 60; seed++) {
         const b = make(seed)
         for (let t = T0; t < T0 + 24 * 5; t += 3) for (const id of b.sources()) for (const o of b.offers(id, t)) {
             const sp = b.spec(o)
-            if (sp.family !== 'haul') { if (sp.bundles != null) badCount++; continue }
+            if (sp.family !== 'haul') { if (sp.stock != null) badCount++; continue }
             n++
             if (o.type !== 'firewoodYard') wrongPlace++
-            if (!Number.isInteger(sp.bundles) || sp.bundles < HAUL_BUNDLES[0] || sp.bundles > HAUL_BUNDLES[1]) badCount++
-            counts.add(sp.bundles)
-            if (sp.massKg !== sp.bundles * HAUL_BUNDLE_KG) badMass++
-            const want = (sp.bonus ? BONUS_PAY_MULT : 1) * sp.bundles * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK
+            if (!Number.isInteger(sp.stock) || sp.stock < HAUL_STOCK[0] || sp.stock > HAUL_STOCK[1]) badCount++
+            counts.add(sp.stock)
+            if (sp.massKg !== sp.stock * HAUL_BUNDLE_KG) badMass++
+            // PER PIECE: the pick multiplies it at accept (main.js), so the card quotes a rate.
+            const want = (sp.bonus ? BONUS_PAY_MULT : 1) * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK
             const card = b.card(o, { nowH: t, route: { par: 300, distance: 3000 } })
-            if (Math.abs(sp.payMult - want) > 1e-12 || card.pay !== `Base pay $${formatMoney(basePay(300, 1, want))}`) badPay++
+            if (Math.abs(sp.payMult - want) > 1e-12
+                || card.pay !== `Base pay $${formatMoney(basePay(300, 1, want))} a bundle · costs $${formatMoney(stockPrice(300, 1, want))}`
+                || card.terms.join('|') !== `3.0 km|${sp.stock} bundles available`) badPay++
+            // §6: a gate the stock can't meet never rolls; the card prints the count behind it.
+            if (sp.bonus) {
+                gated++
+                if (sp.stock < S[sp.bonus.gate] || !card.bonus.endsWith(`deliver ${S[sp.bonus.gate]}+ bundles`)) badGate++
+            }
         }
     }
     check('haul rolls, and only at the firewood yard', n > 0 && wrongPlace === 0, `${n} hauls, ${wrongPlace} elsewhere`)
-    check(`every haul is ${HAUL_BUNDLES[0]}..${HAUL_BUNDLES[1]} bundles (and only hauls have a count)`, badCount === 0)
-    check('the whole range rolls', counts.size === HAUL_BUNDLES[1] - HAUL_BUNDLES[0] + 1, [...counts].sort((a, b) => a - b).join(','))
-    check('the card weight is bundles × the bundle mass', badMass === 0)
-    check('pay scales per bundle, and the card quotes exactly that', badPay === 0)
+    check(`every haul stocks ${HAUL_STOCK[0]}..${HAUL_STOCK[1]} bundles (and only hauls have a stock)`, badCount === 0)
+    check('the whole range rolls', counts.size === HAUL_STOCK[1] - HAUL_STOCK[0] + 1, [...counts].sort((a, b) => a - b).join(','))
+    check('the offer weight is the whole stock × the bundle mass', badMass === 0)
+    check('pay is per bundle; the card is the rate, the cost, the distance and the stock — no timers', badPay === 0)
+    check('a haul bonus gate is always reachable on the stock, and prints as a count', gated > 0 && badGate === 0
+        && gateLine('B', 'haul', 1) === `deliver ${S.B}+ bundles` && gateLine('A', 'freight', 1) === 'on delivery'
+        && gateLine('A', null, 1) === gateText('A'), `${badGate}/${gated} haul bonuses`)
     // Owner, 2026-10-05: 10 bundles pays a courier job. The haul's par is HAUL_PAR_SLACK longer and
     // pay rides par, so on the haul's own (longer) par the 10-bundle multiplier must undo it.
     check('10 bundles on the haul par pays exactly a courier job on the route par',
         Math.abs(basePay(300 * HAUL_PAR_SLACK, 1, 10 * HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK) - basePay(300, 1, 1)) < 1e-9)
+    // §5b: a piece costs HAUL_STOCK_PRICE of its base pay, to the cent — so a delivered piece always nets more than it cost.
+    {
+        const pm = HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK, bp = basePay(330, 1.3, pm), price = stockPrice(330, 1.3, pm)
+        check('a bundle costs half its base pay, to the cent', Math.abs(price - Math.round(HAUL_STOCK_PRICE * bp * 100) / 100) < 1e-9
+            && Math.round(price * 100) === price * 100 && price < bp, `$${price} vs base $${bp}`)
+    }
+    // Freight (owner, 2026-10-22): the tier is internal — only items the load's kg can reach roll,
+    // and the card says the bonus comes on delivery.
+    {
+        const F = rankTable('freight', 1)
+        let bad = 0, fg = 0
+        for (let seed = 1; seed <= 60; seed++) {
+            const b = make(seed)
+            for (let t = T0; t < T0 + 24 * 5; t += 3) for (const id of b.sources()) for (const o of b.offers(id, t)) {
+                const sp = b.spec(o)
+                if (sp.family !== 'freight' || !sp.bonus) continue
+                fg++
+                const card = b.card(o, { nowH: t })
+                if (sp.massKg < F[sp.bonus.gate] || !card.bonus.endsWith('on delivery')) bad++
+            }
+        }
+        check('a freight bonus is always reachable on the load (tier internal, owner 2026-10-22) and reads "on delivery"', bad === 0, `${bad}/${fg} freight bonuses`)
+    }
 
-    // The bundle count is drawn on its OWN stream: adding the yard must not move any other offer.
+    // The stock is drawn on its OWN stream: adding the yard must not move any other offer.
     const without = POIS.filter(q => q.type !== 'firewoodYard')
     const key = (sp) => JSON.stringify([sp.family, sp.thingId, sp.massKg, sp.bonus, sp.payMult, sp.destKind, sp.destPick, sp.placeName])
     let moved = 0

@@ -29,7 +29,7 @@ import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
 import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
-import { truckConfig, loadVerdict, tireCondCap } from './load-verdict.js'   // FEAT-112: fits / warning / overload
+import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
 import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
@@ -77,11 +77,11 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
 import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
-import { HAUL_PAR_SLACK, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIME_SLACK, FREIGHT_TIP_MULT, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
+import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
-import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, runEconomy } from './economy.js'  // FEAT-53: payout, wallet, good deeds
+import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, runEconomy, rankTable, fragileLines } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem } from './inventory.js'          // FEAT-122: what the player owns this run
 import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
@@ -91,7 +91,7 @@ import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entri
 import { recoveryCard, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
-import { OfferBoard, formatGameDuration, formatDue, gateText } from './offer-board.js'   // FEAT-67: the mission board
+import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, stockPrice } from './offer-board.js'   // FEAT-67: the mission board
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
@@ -101,7 +101,7 @@ import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './th
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planTourJob, customersForTier } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
-import { formatTime, RANK_THRESHOLDS_DEFAULT, haulGrade, fragileGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-88 haul letter; FEAT-97 fragile letter
+import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
 import { Leaderboard } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
@@ -111,7 +111,7 @@ import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the 
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
-import { makeFragile, feltG } from './fragile.js'   // FEAT-97: a fragile load's condition
+import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -2765,18 +2765,77 @@ function _restrapFreight () {
 // ── FEAT-97: the fragile load's shocks ───────────────────────────────────────────────────────
 // Per fixed step: the strap's force on the load ÷ its mass, plus gravity, is the g it feels
 // (src/fragile.js). A banked hit plays the load's sound and blinks it red, both scaled by what the
-// hit cost. No number reaches the HUD (SM-INV-10). At zero the job has FAILED: it pays nothing and
+// hit cost. The HUD shows the condition and the felt g (FEAT-139, reversing FEAT-97's no-number rule;
+// SM-INV-10 is about parts). At zero the job has FAILED: it pays nothing and
 // can no longer be delivered, and "clean up cargo" (+1 h) is the only way out of it.
 const FRAGILE_BLINK_S = 0.3   // s for a full-strength blink to fade out
 const _jf = { x: 0, y: 0, z: 0 }
 function _fragileStep () {
   const f = _freight
   if (!f?.health || f.health.health <= 0) return
-  const ev = f.health.step(feltG(physicsEngine.jointForce(f.joint, _jf), f.massKg))
+  const g = feltG(physicsEngine.jointForce(f.joint, _jf), f.massKg)
+  f.gPeak = Math.max(f.gPeak ?? 0, g)   // FEAT-139: the g bar reads the peak since its last frame
+  const ev = f.health.step(g)
   if (!ev) return
   playCargoHit(f.sound, ev.cost)
   f.blink = Math.max(f.blink, Math.min(1, 0.4 + 2 * ev.cost))
   if (f.health.health <= 0 && f.mission) { f.mission.failed = true; _disarmJobCancel() }
+}
+/**
+ * FEAT-139: the fragile load's two bars, per frame (owner, 2026-10-23). DAMAGE is the felt g: it
+ * holds the step peak and falls back with JG_FALL_S, so a one-step landing spike stays readable. Its
+ * scale runs to JG_TOP × the load's break g. The marks are where ONE hit costs 1 % of health and
+ * 100 % (the break), both from the load's tier (fragile.js onePctG). The fill goes amber above the
+ * floor (any cost) and red at the break.
+ * HEALTH is the condition, full green → empty red, with its percent under it — floored, so "83%" is
+ * never shown for a load at 82.9 % that misses an 83 % line. A posted reward shows right of it:
+ * "Reward [icon] if health ≥ 83%". Shown from accept to the end of a fragile job.
+ */
+const JG_FALL_S = 0.4, JG_TOP = 1.2
+let _jgEls = null, _jgShown = 0, _jgBand = '', _jgKey = null
+function _updateFragileG (dt) {
+  if (!_jgEls) {
+    const root = document.getElementById('job-g')
+    if (!root) return
+    _jgEls = { root, fill: root.querySelector('.jg-fill'), floor: root.querySelector('.jg-floor'), brk: root.querySelector('.jg-break'),
+               health: root.querySelector('.jg-health'), val: root.querySelector('.jg-val'),
+               reward: root.querySelector('.jg-reward'), need: root.querySelector('.jg-need') }
+  }
+  const f = _freight, m = missionSystem
+  // From ACCEPT, not the start ring (owner, 2026-10-23): the load is strapped in and counting shocks
+  // the moment the job is taken (_loadFreight at accept, _fragileStep ungated), so the bars show it.
+  const fr = f?.health && f.mission && f.mission === m.mission && m.isOnJob() && !m.mission.expired ? f.mission.fragile : null
+  if (!fr) {
+    if (_jgKey) { _jgEls.root.style.display = 'none'; _jgKey = null; _jgShown = 0 }
+    return
+  }
+  const top = fr.breakG * JG_TOP
+  if (_jgKey !== f.mission) {
+    _jgKey = f.mission
+    _jgEls.root.style.display = 'flex'
+    _jgEls.floor.style.bottom = `calc(${100 * onePctG(fr) / top}% - 1px)`
+    _jgEls.brk.style.bottom = `calc(${100 * fr.breakG / top}% - 1px)`
+    const b = f.mission.bonus
+    _jgEls.reward.style.display = b ? 'flex' : 'none'
+    if (b) {
+      const img = _jgEls.reward.querySelector('img')
+      // A reward with no thumbnail yet shows its name (the inventory screen's rule).
+      img.style.display = ''
+      img.onerror = () => { img.style.display = 'none'; _jgEls.need.textContent = `${b.name} ${_jgEls.need.textContent}` }
+      img.src = `assets/items/${b.rewardId}.png`; img.alt = b.name; img.title = b.name
+      _jgEls.need.textContent = `if health ≥ ${Math.round(_fragileLinesOf(f.mission)[b.gate] * 100)}%`
+    }
+  }
+  _jgShown = Math.max(f.gPeak ?? 0, _jgShown * Math.exp(-dt / JG_FALL_S))
+  f.gPeak = 0
+  _jgEls.fill.style.transform = `scaleY(${Math.min(1, _jgShown / top)})`
+  const band = _jgShown >= fr.breakG ? 'var(--bad)' : _jgShown > fr.shockFloorG ? 'var(--warn)' : 'var(--text)'
+  if (band !== _jgBand) { _jgBand = band; _jgEls.fill.style.background = band }
+  const h = f.health.health
+  _jgEls.health.style.transform = `scaleY(${h})`
+  _jgEls.health.style.background = `color-mix(in oklch, var(--money) ${Math.round(h * 100)}%, var(--bad))`
+  const pct = `${Math.floor(h * 100)}%`
+  if (_jgEls.val.textContent !== pct) _jgEls.val.textContent = pct
 }
 function _fragileBlink (dt) {
   if (!(_freight?.blink > 0)) return
@@ -3279,6 +3338,25 @@ function _haulStep () {
   if (_haul.handles.length === n && simTime >= _haul.t0 + (n - 1) * HAUL_DROP_GAP + HAUL_SETTLE_S) {
     missionSystem.loadingDone()
   }
+}
+
+/**
+ * FEAT-139: the load line under the run readout, in #job-stack so the top bar keeps only the run
+ * readout. Haul (owner, 2026-10-23): "carrying 14 bundles / 18 for the item reward" — the count in
+ * the bed now and the count the item needs, never a letter. Freight (§2b): "carrying 710 kg" — the
+ * load is strapped, so it never changes, and its tier is internal. Hidden for every other job;
+ * fragile's condition sits under its HEALTH bar instead (_updateFragileG).
+ */
+function _syncCargoLine (j) {
+  const el = document.getElementById('job-cargo')
+  if (!el) return
+  let text = ''
+  if (j?.bundles && _haul?.mission === j) {
+    const need = j.bonus ? rankTable('haul', j.terms?.region ?? 1, 'firewood')[j.bonus.gate] : null
+    text = `carrying ${_haulAboard()} bundles` + (need != null ? ` / ${need} for the item reward` : '')
+  } else if (j?.cargoKg && !j.fragile) text = `carrying ${j.cargoKg} kg`
+  el.textContent = text
+  el.style.display = text ? 'block' : 'none'
 }
 
 /** Is debris body `h` inside the truck's bed well right now? */
@@ -3996,23 +4074,29 @@ missionSystem = new MissionSystem({
   // FEAT-67: a settled board job — ANY letter, D included — completes its offer, and the slot then
   // waits out that offer's original expiry before re-rolling.
   onSettle: (result, mission) => {
-    // FEAT-88: a haul pays the ordinary line × the share of the load still in the bed. Counted
-    // here, at arrival, then the load is gone — the economy only ever sees a scaled payMult, so
-    // base + tip still sum to the total and the result card stays honest.
+    // FEAT-138 (owner, 2026-10-21): every type ranks on its own axis, against its region's
+    // thresholds (economy.js rankTable — the region frozen at accept, never the day).
+    const region = mission?.terms?.region ?? 1
+    // FEAT-88: a haul pays the ordinary line × the share of the load still in the bed — i.e. the
+    // per-bundle rate × the pieces delivered (offer-board.js payMult), base and tip alike, so dumping
+    // half the load never pays more. Counted here, at arrival, then the load is gone — the economy
+    // only ever sees a scaled payMult, so base + tip still sum to the total and the card stays honest.
     if (mission?.bundles) {
       result.loaded = mission.bundles
       result.aboard = _haul?.mission === mission ? _haulAboard() : 0
-      // The letter is the run's OVERALL rank: clock and load blended (par.js haulGrade).
-      result.letter = haulGrade(result.ratio, result.aboard / mission.bundles,
-                                mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT).letter
+      // The letter is the pieces DELIVERED, an absolute count per cargo (FEAT-138).
+      result.letter = amountGrade(result.aboard, rankTable('haul', region, 'firewood'))
       mission = { ...mission, payMult: mission.payMult * result.aboard / mission.bundles }
       _haulClear()
     }
-    // FEAT-97: a fragile job is paid and lettered on the condition it arrived in (economy.js
-    // splitFragilePayout, par.js fragileGrade). Read here, before the load comes off.
+    // FEAT-138: freight's letter is the kg DELIVERED. It is strapped (welded), so what arrives is what
+    // was loaded: the rank is chosen at the dock, and the job is surviving the drive with it.
+    if (mission?.cargoKg && !mission.fragile) result.letter = amountGrade(mission.cargoKg, rankTable('freight', region))
+    // FEAT-97: a fragile job is lettered on the condition it arrived in, and half its base follows it
+    // (economy.js splitFragilePayout; rankTable fragile). Read here, before the load comes off.
     if (mission?.fragile) {
       result.health = _freight?.mission === mission && _freight.health ? _freight.health.health : 0
-      result.letter = fragileGrade(result.health)
+      result.letter = amountGrade(result.health, _fragileLinesOf(mission))
     }
     const s = economySystem.settle(result, mission)
     // FEAT-122: the earned bonus goes in the truck — or waits on the swap prompt if it's full. A dine-in
@@ -4194,15 +4278,65 @@ let TRUCK = truckConfig(DEFAULT_VEHICLE_MODEL)
 const _HAUL_PIECE = PROP_MODELS.firewoodBundleA.collision.size   // one bundle; the pile is FEAT-114's
 /**
  * FEAT-112: this offer's load verdict on the truck as configured, or null for cab cargo (courier,
- * papers — always fits). Handed to offerBoard.card(); never to the roll (SM-INV-12).
+ * papers — always fits). Handed to offerBoard.card(); never to the roll (SM-INV-12). `pieces` is a
+ * haul's PICKED count (FEAT-114); without it a haul is judged on its whole stock.
  */
-function _offerVerdict (offer) {
+function _offerVerdict (offer, pieces = null) {
   const sp = offerBoard.spec(offer)
   // FEAT-122: stowed kit counts toward the same payload as the cargo (owner, 2026-10-16).
-  const massKg = (sp?.massKg ?? 0) + inventorySystem.stowedKg()
-  if (sp?.bundles) return loadVerdict(TRUCK, { massKg, size: _HAUL_PIECE, form: 'loose' })
+  const massKg = (sp?.stock && pieces != null ? pieces * HAUL_BUNDLE_KG : sp?.massKg ?? 0) + inventorySystem.stowedKg()
+  if (sp?.stock) return loadVerdict(TRUCK, { massKg, size: _HAUL_PIECE, form: 'loose' })
   const row = sp?.load ? FREIGHT[sp.load] : null
   return row ? loadVerdict(TRUCK, { massKg, size: PROP_MODELS[row.model].collision.size, form: row.form }) : null
+}
+
+/**
+ * FEAT-114: the haul load picker's read for the parked offer, or null when it isn't a haul. The pick
+ * runs 1…max, max = the smallest of the stock, the truck's hard limit after stowed kit, and what the
+ * wallet can buy at stockPrice (§5b). `n` is the slider's value clamped into that; max 0 = can't
+ * afford a single piece.
+ */
+function _haulPick (offer) {
+  const sp = offer && offerBoard ? offerBoard.spec(offer) : null
+  const j = missionSystem.mission
+  if (!sp?.stock || !(j?.par > 0)) return null
+  const { payTier, region } = economySystem.terms()
+  const price = stockPrice(j.par, payTier, sp.payMult)
+  const hardN = Math.floor((massLimits(TRUCK).hardKg - inventorySystem.stowedKg()) / HAUL_BUNDLE_KG)
+  const afford = price > 0 ? Math.floor(economySystem.money() / price + 1e-9) : sp.stock
+  const max = Math.max(0, Math.min(sp.stock, hardN, afford))
+  const n = Math.max(1, Math.min(max, parseInt(document.getElementById('mp-count')?.value, 10) || max))
+  return { sp, offerId: offer.id, price, max, n, cost: Math.round(n * price * 100) / 100,
+           base: basePay(j.par, payTier, sp.payMult * n),
+           need: sp.bonus ? rankTable('haul', region, sp.thingId)[sp.bonus.gate] : null }
+}
+/** FEAT-114: show the picker for a haul offer — re-seeded to its max when the offer changes. */
+let _pickOfferId = null
+function _syncHaulPick (pick) {
+  const row = document.getElementById('mp-pick'), el = document.getElementById('mp-count')
+  if (!row || !el) return
+  row.style.display = pick ? 'flex' : 'none'
+  if (!pick) { _pickOfferId = null; return }
+  el.min = '1'
+  el.max = String(Math.max(1, pick.max))
+  if (_pickOfferId !== pick.offerId) { _pickOfferId = pick.offerId; el.value = String(pick.max); pick = _haulPick(missionSystem.offer) }
+  el.disabled = pick.max < 1
+  const t = document.getElementById('mp-pick-text')
+  if (t) t.innerHTML = pick.max < 1 ? '<span class="mp-bad">can&rsquo;t afford the stock</span>'
+    : `<b>${pick.n}</b> bundles &middot; base <span class="mp-pay">$${formatMoney(pick.base)}</span>`
+      + ` &middot; costs $${formatMoney(pick.cost)}`
+      // No letter (owner, 2026-10-23): it only decides the item, so the readout names the threshold.
+      + (pick.need != null && pick.n < pick.need ? ` &middot; <span class="mp-bad">too few for the ${pick.sp.bonus.name}</span>` : '')
+}
+/** FEAT-114: a bonus gate as the result card states it — the count on haul, never a letter. */
+/** FEAT-139: a fragile mission's health lines — its tier's row, eased by the planned route's km. */
+function _fragileLinesOf (j) {
+  return fragileLines(j.terms?.region ?? 1, j.fragile.tier, (j.distance ?? 0) / 1000)
+}
+function _missionGateLine (j) {
+  if (j.fragile) return `${Math.round(_fragileLinesOf(j)[j.bonus.gate] * 100)}%+ condition`
+  if (j.bundles) return `${rankTable('haul', j.terms?.region ?? 1, 'firewood')[j.bonus.gate]}+ bundles`
+  return gateLine(j.bonus.gate, j.cargoKg ? 'freight' : null, j.terms?.region ?? 1)
 }
 
 /**
@@ -4285,9 +4419,11 @@ function _planOffer (offer) {
       // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).
       m.offerId = o.id
       m.bonus = s.bonus
-      m.payMult = s.payMult
-      m.bundles = s.bundles   // FEAT-88: a haul load's piece count — null for every other family
-      if (s.bundles) m.par *= HAUL_PAR_SLACK   // the load slows the truck; payMult already ÷ the same
+      // FEAT-114: a haul's spec pays PER PIECE; the plan assumes the whole stock until the picker
+      // sets the real count at accept (bundles + payMult are rewritten there).
+      m.payMult = s.stock ? s.payMult * s.stock : s.payMult
+      m.bundles = s.stock   // FEAT-88: a haul load's piece count — null for every other family
+      if (s.stock) m.par *= HAUL_PAR_SLACK   // the load slows the truck; payMult already ÷ the same
       // FEAT-96: a freight load is strapped in at accept. Its par grows with its mass and pay rides
       // par, NOT divided back out — a heavier load pays more (data/offers.js FREIGHT_PAR_SLACK_PER_KG).
       m.load = s.load
@@ -4297,12 +4433,9 @@ function _planOffer (offer) {
       m.atPickup = s.atPickup   // a fetch's wait at the pickup (the tire change), or null
       if (s.load) {
         m.par *= 1 + FREIGHT_PAR_SLACK_PER_KG * s.massKg
-        // Freight grades looser and tips less than haul (owner, 2026-10-11) — data/offers.js. Not
-        // fragile: its tip and letter read the cargo's condition, never the clock.
-        if (!s.fragile) {
-          m.timeSlack = FREIGHT_TIME_SLACK
-          m.tipMult = FREIGHT_TIP_MULT
-        }
+        // Freight tips less than haul (owner, 2026-10-11; a FEAT-69 knob since 2026-10-21) —
+        // data/offers.js. Not fragile: it tips the whole line.
+        if (!s.fragile) m.tipMult = FREIGHT_TIP_MULT
       }
       // The pickup wait (the tire change) runs on the job's clock, so par carries it (owner,
       // 2026-10-22) — and pay rides par like any other par time.
@@ -5269,6 +5402,7 @@ document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.togg
 // FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
 document.getElementById('cp-item')?.addEventListener('click', (e) => { inventoryScreen.request(); e.currentTarget.blur() })
 document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
+document.getElementById('mp-count')?.addEventListener('input', () => _renderMissionUI())   // FEAT-114
 
 /**
  * FEAT-67: the head of a parked offer panel — the giver's portrait beside their line of dialogue.
@@ -5297,14 +5431,15 @@ function _panelHead (flavorHtml) {
  *
  * `base`/`tip`/`spot` are dollars to the cent, all printed through formatMoney.
  */
-function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null, haul = null, condition = null }) {
+function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = null, haul = null, condition = null, gate = null }) {
   const row = (label, money) => `<br><span class="mp-dim">${label}</span> <span class="mp-pay">$${money}</span>`
-  // FEAT-88: the one place a load's count is shown — after the drive, never during (SM-INV-10).
+  // FEAT-88: the load's count, answered (the running HUD shows it live — owner, 2026-10-23).
   return (haul ? `<br><span class="mp-dim">Firewood delivered</span> <span class="mp-pay">${haul.aboard} / ${haul.loaded}</span>` : '')
-    // FEAT-97: likewise the fragile load's condition — on the card after the drive, never on the HUD.
+    // FEAT-97: likewise the fragile load's condition (live on the HUD too since FEAT-139).
     + (condition != null ? `<br><span class="mp-dim">Cargo condition</span> <span class="mp-pay">${Math.round(condition * 100)}%</span>` : '')
     + row('Base pay', formatMoney(base))
     + row('Tip', formatMoney(tip))
+    + (haul?.bought > 0 ? `<br><span class="mp-dim">Stock bought</span> <span class="mp-pay mp-bad">&minus;$${formatMoney(haul.bought)}</span>` : '')
     + (points > 0
       ? ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-pay">+${points} good deed${points > 1 ? 's' : ''}</span>`
       : '')
@@ -5313,7 +5448,7 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
       ? (award
         ? `<br><span class="mp-pay">Bonus: ${bonus.name} &check;</span>`
           + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; Tab to make room</span>` : '')
-        : `<br><span class="mp-dim">Bonus: ${bonus.name} missed (needed ${gateText(bonus.gate)})</span>`)
+        : `<br><span class="mp-dim">Bonus: ${bonus.name} missed (needed ${gate ?? gateText(bonus.gate)})</span>`)
       : '')
 }
 
@@ -5336,9 +5471,11 @@ function _abandonedCard (r, extra = '') {
       ? dim(`Cargo condition</span> <span class="mp-pay">${Math.round(c.health * 100)}%`)
       : '<br><span class="mp-bad">Cargo destroyed</span>')
     : dim('Cargo remaining</span> <span class="mp-pay">1 / 1')
+  // FEAT-114 §5b: the stock was bought at accept and is not refunded.
+  const bought = c?.bought > 0 ? `<br><span class="mp-dim">Stock bought</span> <span class="mp-pay mp-bad">&minus;$${formatMoney(c.bought)}</span>` : ''
   return `<span class="mp-big mp-bad">Abandoned</span>`
     + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
-    + extra + cargo
+    + extra + cargo + bought
     + `<br><span class="mp-dim">Pay</span> <span class="mp-pay mp-bad">$${formatMoney(0)}</span>`
 }
 
@@ -5359,6 +5496,7 @@ function _renderMissionUI () {
 
   // FEAT-113: a job past its deadline reads the same in every on-job state — park and sign it off.
   const expired = m.isOnJob() && !!m.mission?.expired
+  _syncCargoLine(m.state === 'running' && !expired ? m.mission : null)   // FEAT-139: the load line
   switch (expired ? 'expired' : m.state) {
     case 'expired':
       show(panel, false); show(hud, true)
@@ -5377,9 +5515,11 @@ function _renderMissionUI () {
       const j = m.mission
       // FEAT-67: a board offer reads as its card — the sentence, then base pay and the terms, then
       // the bonus. The same view-model the map's hover card draws, so the two can never disagree.
+      const pick = _haulPick(m.offer)   // FEAT-114: null unless a haul
+      _syncHaulPick(pick)
       const card = m.offer && offerBoard
         ? offerBoard.card(m.offer, { nowH: daySystem.clockH(), payTier: economySystem.terms().payTier, route: j,
-                                     verdict: _offerVerdict(m.offer) })
+                                     verdict: _offerVerdict(m.offer, pick ? _haulPick(m.offer).n : null) })
         : null
       const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       body.innerHTML = (card
@@ -5388,7 +5528,7 @@ function _renderMissionUI () {
           + (card.badge ? `<span class="job-badge">${esc(card.badge)}</span>` : '')   // placeholder type badge
           + card.sentence.map(r => r.b ? `<b>${esc(r.t)}</b>` : esc(r.t)).join('') + '<br>'
           + (card.pay ? `<span class="mp-pay">${esc(card.pay)}</span> &nbsp;` : '')
-          + `<span class="mp-dim">${card.terms.map(esc).join(' &middot; ')}</span><br>`
+          + `<span class="mp-dim">${[...card.terms, ...card.times].map(esc).join(' &middot; ')}</span><br>`
           + (card.bonus ? `${esc(card.bonus)}<br>` : '')
           + (card.verdict ? `<span class="mp-verdict mp-${card.verdict.level}">${esc(card.verdict.text)}</span><br>` : '')
         : `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
@@ -5476,11 +5616,17 @@ function _renderMissionUI () {
       // calibration corpus is keyed on that. Display change only; do not prune the fields.
       // Then the money rows the offer card set up — Base pay answered, the tip beside it, the
       // offer's bonus earned or missed (FEAT-67; the item lands in the FEAT-122 inventory). See _payRows.
-      body.innerHTML = `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || 'var(--text-bright)'}">${r.letter}</span>`
-        + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
+      // Haul, freight and fragile show NO letter (owner, 2026-10-22 §2b / 2026-10-23): it stays internal — it
+      // decides the item and the deeds — so the card reads the time, then what was delivered.
+      const lettered = !(m.mission?.bundles || m.mission?.cargoKg || m.mission?.fragile)
+      body.innerHTML = (lettered
+        ? `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || 'var(--text-bright)'}">${r.letter}</span>`
+          + ` &nbsp;<span class="mp-dim">·</span>&nbsp; ` : '')
+        + `<span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (paid
           ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award,
-                       haul: r.loaded ? { aboard: r.aboard, loaded: r.loaded } : null, condition: r.health ?? null })
+                       haul: r.loaded ? { aboard: r.aboard, loaded: r.loaded, bought: m.mission?.stockCost ?? 0 } : null,
+                       condition: r.health ?? null, gate: m.mission?.bonus ? _missionGateLine(m.mission) : null })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
       // The result card is exactly three actions: retry · continue · back to free roam (that is the
       // DOM order too). The calibration form above them stays — the subjective read is the ground
@@ -5510,8 +5656,12 @@ function _renderMissionUI () {
   }
   const nb = document.getElementById('mp-accept')
   if (m.state === 'offer' && nb) nb.textContent = 'accept mission'
-  // FEAT-112: an overload cannot be taken — the card line above says why.
-  if (nb) nb.disabled = m.state === 'offer' && !!m.offer && _offerVerdict(m.offer)?.verdict === 'overload'
+  if (m.state !== 'offer') _syncHaulPick(null)
+  // FEAT-112: an overload cannot be taken — the card line above says why. FEAT-114: nor a haul the
+  // wallet can't buy a single piece of.
+  const pick = m.state === 'offer' ? _haulPick(m.offer) : null
+  if (nb) nb.disabled = m.state === 'offer' && !!m.offer
+    && (_offerVerdict(m.offer, pick?.n ?? null)?.verdict === 'overload' || (pick != null && pick.max < 1))
   _syncJobCancel(hud, storySystem.isActive() && m.isOnJob())
 }
 
@@ -5775,9 +5925,10 @@ function _rankTimerSource () {
   if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
     if (m.mission.expired) return null   // FEAT-113: a job that pays nothing has no rank to chase
     // No bar where the clock is not what the letter reads (owner, 2026-10-15): a fragile job is
-    // lettered on condition, a haul on the clock AND the load — a bar falling S → A on the clock
-    // promises a grade the job does not give. Courier and freight keep it (time pays their tip).
-    if (m.mission.fragile || m.mission.bundles) return null
+    // lettered on condition, a haul on the count delivered — a bar falling S → A on the clock
+    // promises a grade the job does not give. Freight too (FEAT-139, §2b): its letter is the kg,
+    // internal, though time still pays its tip. Courier keeps the bar.
+    if (m.mission.fragile || m.mission.bundles || m.mission.cargoKg) return null
     return { key: m.mission, elapsed: m.elapsed, par: m.mission.par,
              thresholds: m.mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT,
              gate: m.mission.bonus?.gate ?? null }
@@ -5789,10 +5940,12 @@ function _rankTimerSource () {
   }
   return null
 }
-// FEAT-113: the job's deadline, "DUE: Day 3, 2 am", under the rank tile (owner, 2026-10-15: the due
-// time and the rank timer are related, so they read together). A fixed time, never a countdown
-// (SM-INV-3). Its own element in #job-stack, so it shows from accept, and on fragile and haul jobs,
-// which have no rank bar.
+// FEAT-113: the job's deadline, "DUE IN: 2h 05m", under the rank tile (owner, 2026-10-15: the due
+// time and the rank timer are related, so they read together). A COUNTDOWN to the deadline since
+// 2026-10-23 (owner; SM-INV-3 amended — it was a fixed clock time). Never to par: the deadline is
+// par × (1 + slack), 1.5–4× par, so the digits never reveal the rank lines. Game time, so it ticks
+// once a game minute (one real second). Its own element in #job-stack, so it shows from accept, and
+// on fragile and haul jobs, which have no rank bar.
 let _jobDueText = null
 function _updateJobDue () {
   let h = null
@@ -5801,7 +5954,7 @@ function _updateJobDue () {
     if (m?.isOnJob() && !m.mission?.expired) h = m.mission?.dueH
     else if (p?.isCarrying() && !p.run?.expired) h = p.run?.dueH
   }
-  const text = Number.isFinite(h) ? formatDue(h) : ''
+  const text = Number.isFinite(h) ? formatGameDuration(h - daySystem.clockH()) : ''
   if (text === _jobDueText) return
   _jobDueText = text
   const el = document.getElementById('job-due')
@@ -5981,9 +6134,21 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   // ~2 real minutes, so it can expire with the panel up. If it has gone, the panel re-presents what
   // is live now instead of accepting a job the board no longer has.
   const o = missionSystem.offer
-  if (o && offerBoard && _offerVerdict(o)?.verdict === 'overload') return   // FEAT-112: the button is disabled too
+  const pick = _haulPick(o)   // FEAT-114: the haul's picked count, or null
+  if (pick && pick.max < 1) return   // can't afford a piece — the button is disabled too
+  if (o && offerBoard && _offerVerdict(o, pick?.n ?? null)?.verdict === 'overload') return   // FEAT-112: the button is disabled too
   if (o && offerBoard && !offerBoard.take(o.id, daySystem.clockH(), missionSystem.mission?.par)) { _refreshParkedOffers(); return }
+  if (pick) {
+    // The pick becomes the contract BEFORE accept() freezes it: the loader drops `bundles`, settle
+    // pays payMult × aboard ÷ bundles, so the pay is per piece delivered (FEAT-138).
+    const pm = missionSystem.mission
+    pm.bundles = pick.n
+    pm.payMult = pick.sp.payMult * pick.n
+    pm.stockCost = pick.cost
+  }
   missionSystem.accept()
+  // §5b: the stock is bought at accept and never refunded — an expired or abandoned haul keeps it.
+  if (pick && missionSystem.isOnJob()) economySystem.spend(pick.cost)
   // FEAT-96: a freight job's load is handed over at accept, already strapped — no drop, no loading beat.
   const j = missionSystem.mission
   if (j?.load && missionSystem.isOnJob()) void _loadFreight(j.load, j.cargoKg, j)
@@ -6934,6 +7099,7 @@ const storySystem = new StorySystem({
     // (it starts on the run's clock). A new run, a new board: nothing survives from the last one.
     offerBoard = new OfferBoard({
       seed: worldSeed, pois: poiSystem.list(), nowH: daySystem.clockH(),
+      region: economySystem.terms().region,   // FEAT-114: which rank row a bonus gate must be reachable on
     })
     // ORDER MATTERS: the roster decides where mom lives, and camping is handed that answer.
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping
@@ -7214,7 +7380,7 @@ function _syncJobCancel (hud, on) {
 /** What became of the load, for the abandoned card — null when the job carries none (yet). */
 function _abandonCargo () {
   const m = missionSystem?.mission
-  if (_haul && _haul.mission === m) return { kind: 'haul', aboard: _haulAboard(), loaded: m.bundles }
+  if (_haul && _haul.mission === m) return { kind: 'haul', aboard: _haulAboard(), loaded: m.bundles, bought: m.stockCost ?? 0 }
   if (_freight && _freight.mission === m) {
     return m.fragile ? { kind: 'fragile', health: _freight.health?.health ?? 0 } : { kind: 'load' }
   }
@@ -7552,6 +7718,7 @@ function loop () {
   inventoryScreen.update()         // FEAT-122: the park zone's lock; closes when the truck drives off
   serviceScreen.update()           // SM-3: closes when the truck drives off
   _fragileBlink(frameTime)   // FEAT-97: the load's red hit blink fading out
+  _updateFragileG(frameTime)   // FEAT-139: the fragile load's felt-g bar
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
   // (a 150 ms frame is followed by one paying ~9 physics steps) land in no bucket at all, and the

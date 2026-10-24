@@ -13,6 +13,7 @@ current and wins.** `design-amendments-2026-07-29.md` is a historical provenance
 | Decided | Open |
 |---|---|
 | Five scoring axes; four delivery types — courier, haul, freight, fragile (§3, 2026-10-06) | Job discovery + expiry model (§"The job board") |
+| **Each type ranks on its own axis; the tip is speed; thresholds step by region** (§3, 2026-10-21) | Larry's reward pool (§2) |
 | Points not XP; continuous payout; rank as surface | Exact `k` (maintenance cost per par-second) |
 | Payout continuous on par ratio, base × par | — |
 | The farm is its own POI type, source of produce freight (FEAT-96) | — |
@@ -195,6 +196,18 @@ SM-INV-4 (payout is margin; bare completion pays ~nothing).
 abandoning the ones going badly. Unresolved in the bible; not resolved here.
 
 ### 2. The paper route — **coverage**
+
+> **[AMENDED 2026-10-21, owner] Any N customers, against a deadline.** Every customer is deliverable;
+> the player serves any N (4, 9, … — any unlocked size, their choice). The plotter picks the shortest
+> route through N from the start and the **deadline** is that route's par × 1.5; the GPS draws it.
+> The route **ends at the Nth delivery** (past N was rejected: a tight cluster would be an abusable
+> daily payout). Letters on time — par is C/D, the deadline is the end of D. Pay keeps the fare, the
+> time tip and accuracy money. Unfinished at the deadline: the round expires, banked accuracy money
+> stays, no fare, letter or rung. A finished round at **B or better** earns the next rung. No bonus
+> item until Larry has a reward pool (open — the owner wants him to give something no other POI does,
+> perhaps spirit-related). **Never "bell" — always "deadline".** The coverage-ratio text below
+> (`parEff`, per-tier customers, the perfect-round ladder) is superseded where it disagrees.
+> Provenance: `design-amendments-2026-10-21-mission-recut.md` §7; FEAT-141.
 
 The first real mission type. Given by the uncle (see `opening.md`).
 
@@ -430,6 +443,43 @@ truck and what the truck does to the cargo**.
 >
 > §3b and §3c below are live again as each type's reasoning, except where this block overrides
 > them: §3b's suspension-telemetry signal and §3c's flat-rate pricing.
+
+> **[AMENDED 2026-10-22, owner] Freight is posted, not picked.** The poster sets the load; there is
+> no freight picker or stock. The kg tier below is **internal**: it picks the bonus item and is never
+> shown. Freight is binary, delivered or not: the card reads *"Bonus: X — on delivery"*, and no letter
+> appears on the strip or the result card. Pay is unchanged. Haul is untouched. Overrides the 10-21
+> block's freight picker, freight letter and kg gate. Same-day owner answers: deeds read the internal
+> letter; every load stays **as-built** (FEAT-140 cancelled, overriding "Freight is units" below); a
+> light load carries no item, and freight's future is purpose-designed **heavy** loads. Still open:
+> Wholesale on freight. Provenance: `design-amendments-2026-10-21-mission-recut.md` §2b.
+
+> **[AMENDED 2026-10-21, owner] Every type ranks on its own axis; the tip is speed.** Provenance:
+> `design-amendments-2026-10-21-mission-recut.md`. Supersedes the "What each type rewards" table in the 10-14 block below, haul's
+> "no speed tip" (10-16), and freight's "what earns the item is OPEN".
+>
+> | Type | Letter (the bonus gate) | Tip | Base | Ticket |
+> |---|---|---|---|---|
+> | **Courier** | time vs par | speed | guaranteed | unchanged |
+> | **Haul** | **pieces delivered**, absolute counts per cargo; R1 S = a brimming stock bed (measured; owner expects 22–26 bundles) | speed × amount delivered | per piece delivered | FEAT-138 |
+> | **Freight** | **kg delivered**; R1 S 712 / A 570 / B 428 / C 285 kg (provisional, owner play-tests) | speed × amount delivered | per kg delivered | FEAT-138 |
+> | **Fragile** | remaining health (unchanged) | **speed** | **half guaranteed, half × health** | FEAT-138 |
+> | **Papers** | time; route ends at N; deadline = par × 1.5 (§2) | speed + accuracy money | the fare | FEAT-141 |
+> | One-piece fetch (FEAT-132) | time | speed | guaranteed | FEAT-138 |
+>
+> - **Stock and the picker** (FEAT-114, re-scoped): the giver has a limited stock, often below S;
+>   the player loads 1 … min(stock, hard limit). The card quotes a rate; the bonus gate prints as a
+>   count or kg and only rolls when the stock can meet it. The yard rate bonus retires.
+> - **Freight is units** (FEAT-140): divisible cargo is a unit + a count, stacked visibly; indivisible
+>   loads keep their mass and are the honest small jobs. Light freight gets a roster pass.
+> - **Thresholds step by region, never by day** (DESIGN.md SM-INV-2): the stock truck tops out around
+>   B/A in a region; that region's upgrades reach S.
+> - **The HUD strip** shows each type's rank axis (FEAT-139); fragile adds a combined-g bar with its
+>   damage and destruction marks. Reverses "no HUD number" (10-06). **2026-10-23 (amendment §9b):** haul,
+>   freight and fragile show no letter anywhere; the card and the HUD name the item's threshold instead.
+> - **Giver traits** (FEAT-142), 0–2 per offer: Impatient / Patient, Collector / Easygoing,
+>   Generous / Stingy, Big tipper, Wholesale, Off the books, The right thing to do.
+> - **Good deeds** follow `pointsFor(letter)` on every type; the share and health bands retire.
+> - Freight's bonus **pool** (below) stands; **what earns it** is now the kg letter.
 
 > **[AMENDED 2026-10-14, owner] Scoring, load verdicts, deadlines.** Provenance:
 > `design-amendments-2026-10-14.md`. A planning pass; each piece is a ticket.
@@ -911,6 +961,16 @@ carrying it — worth watching whether that fills the hole or makes it more obvi
 ---
 
 ## Change log
+
+**2026-10-22 — owner: freight is posted, not picked.** No freight picker; the load is the poster's.
+The kg tier is internal and only picks the bonus item; the bonus is earned on delivery; no freight
+letter is shown. Provenance: `design-amendments-2026-10-21-mission-recut.md` §2b.
+
+**2026-10-21 — owner: every mission type ranks on its own axis.** Courier on time, haul on pieces
+delivered, freight on kg delivered (load what you dare), fragile on health, papers on time against a
+deadline over any N customers. Every type tips on speed; fragile's base is half guaranteed. Stock +
+picker, freight units, a per-type HUD strip, giver traits, thresholds per region not per day.
+Provenance: `design-amendments-2026-10-21-mission-recut.md`; FEAT-114, FEAT-138 to FEAT-142.
 
 **2026-10-19 — owner: R1's boss is the expedition camp.** A five-line requisition (one trip per
 mission type) behind 6 good deeds, acquired from the map, no deadline lockout, no fail penalty, no

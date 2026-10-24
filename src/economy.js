@@ -35,22 +35,22 @@
 // WHAT SCALES AND WHAT DOES NOT. The DOLLARS scale, base and tip alike: both are shares of the
 // same max, and the max rides dayTier × regionTier, so the tip is worth the same fraction of a
 // day's costs on day 20 as on day 1 (owner, 2026-09-30: tips must not lose their value; the
-// pressure to drive fast stays on for the whole run — gated). What does NOT move with the day is
-// the pair of RATIOS the tip is earned between, even though the rank thresholds do. That is
-// deliberate and required by SM-INV-4: payout is continuous in the ratio and rank is display only,
-// so money must never be a function of the letter. Consequence to know: `fullTipRatio` is pinned
-// to the DAY-1 S threshold, and S only tightens from there (0.77 → 0.75 by day 20), so an S earns
-// the whole tip on every day; late in the run a drive at the top of the A band does too.
+// pressure to drive fast stays on for the whole run — gated). What does NOT move is the pair of
+// RATIOS the tip is earned between. SM-INV-4: payout is continuous in the ratio and rank is display
+// only, so money must never be a function of the letter. `fullTipRatio` is pinned to region 1's
+// time S threshold (RANK_TABLE.time), so an S earns the whole tip.
 //
-// SM-INV-2 — the difficulty ramp lives HERE (dayTier + rank thresholds), never in par. `day`
-//   flows into dayTier() and rankThresholds() and NOTHING in this module can reach computePar.
-//   Par is priced once, by geometry, and never moves.
+// SM-INV-2 — the difficulty ramp lives HERE, never in par. The rank thresholds step by REGION
+//   (RANK_TABLE, owner 2026-10-21 — design-amendments-2026-10-21-mission-recut.md §11b; the day
+//   ramp on the letters is retired). The day moves only dayTier. NOTHING in this module can reach
+//   computePar: par is priced once, by geometry, and never moves.
 // SM-INV-3 — this module computes numbers. Rank is display bucketing (par.js gradeRun), shown on
 //   on the result card and, since FEAT-87, live on the rank-timer strip as boundary proximity
 //   (never digits); nothing here renders, and no consumer may derive an ETA/countdown from these
 //   values.
-// SM-INV-14 — progress is MISSION POINTS: 1 at B or better, ½ at C, 0 at D. Run-layer, resets
-//   with the run. Points buy access (region gating, SM-4); money buys parts (SM-3).
+// SM-INV-14 — progress is MISSION POINTS: 1 at B or better, ½ at C, 0 at D, on EVERY type's own
+//   letter (FEAT-138 — haul's count, freight's kg, fragile's health, courier's time). Run-layer,
+//   resets with the run. Points buy access (region gating, SM-4); money buys parts (SM-3).
 //
 // Isolation discipline (the story.js / day.js rule): imports NOTHING. Day arrives through the
 // deps adapter; thresholds flow OUT to par.js's gradeRun as an argument. Headless by nature.
@@ -94,17 +94,9 @@
  *     now sit 0.30 of ratio apart instead of 0.40, so the payout LINE is ~33% steeper — margin is
  *     worth more per unit of ratio, while both anchor VALUES are unchanged. That steepening falls
  *     out of the band re-cut; it was not a separate decision.
- *   • rankDayLate tightens S/A/B by a flat −0.02 of ratio by day 20 — the brake on the rising tier.
- *     SOFTENED from the old ~7% [owner, 2026-08-16]: at 7% the S threshold outran the best drive
- *     anyone had ever recorded, so S was mathematically dead from roughly mid-run (0 of 20 corpus
- *     drives could reach day-20 S). The −0.02 was carried through the 2026-09-07 re-cut unchanged,
- *     so day-20 S is 0.75 and the best HONEST drive on record (0.740 in runs-v2/) still clears it —
- *     the same live-to-day-20 invariant, re-checked against the v2 corpus.
- *   • **C DOES NOT TIGHTEN. It is pinned at exactly 1.0 on every day.** Par is the pass line by
- *     definition; if C drifted below 1.0 a drive exactly at par would start failing and par would
- *     stop meaning the one thing the 2026-08-16 re-anchor exists to make it mean. The ramp
- *     squeezes S/A/B only. The economy gate pins C === 1.0 on every day — this REPLACES the old
- *     "B > 1.0" pin, which encoded the reversed arrangement.
+ *   • C is pinned at exactly 1.0 in every region: par is the pass line by definition (the 2026-08-16
+ *     re-anchor). The day ramp that once tightened S/A/B by day (rankDayLate, −0.02 by day 20)
+ *     retired 2026-10-21 (FEAT-138); thresholds step by region instead (RANK_TABLE).
  */
 export const ECONOMY_PARAMS = {
     // THE MAX RATE [owner, 2026-09-30]: $ per second of par a job pays at its ceiling (an S drive),
@@ -116,15 +108,61 @@ export const ECONOMY_PARAMS = {
 
     // The payout line, as named anchors rather than magic numbers in the formula (module header).
     baseFrac:     0.5,    // completion alone: this share of the max is guaranteed — the card's "Base pay"
-    fullTipRatio: 0.77,   // the whole tip at this ratio and faster — MUST equal rankDay1.S (gated)
+    fullTipRatio: 0.77,   // the whole tip at this ratio and faster — MUST equal RANK_TABLE.time[0].S (gated)
     tipZero:      1.23,   // where the tip runs out — SOLVED: 2 − fullTipRatio, so par earns half (gated)
+    // FEAT-139: health a fragile line eases per km of route, per tier (owner, 2026-10-24: 3 / 2 / 1 points/km).
+    fragileLinePerKm: { veryFragile: 0.03, fragile: 0.02, sturdy: 0.01 },
 
-    // Rank thresholds (ratio = elapsed/par). rankDay1 MUST equal par.js RANK_THRESHOLDS_DEFAULT
-    // (this module imports nothing, so it's a mirrored constant — the economy gate asserts the
-    // equality). Linear interpolation day 1 → rankTightenDays, clamped flat on both sides.
-    rankDay1:   { S: 0.77, A: 0.81, B: 0.87, C: 1.00 },   // B widened 0.85 → 0.87 (owner, 2026-10-01)
-    rankDayLate:{ S: 0.75, A: 0.79, B: 0.85, C: 1.00 },   // C pinned — see the note above
-    rankTightenDays: 20,
+    // ── FEAT-138 RANK THRESHOLDS, BY TYPE AND REGION [owner, 2026-10-21] ──────────────────────
+    // Every type ranks on its own axis (design-amendments-2026-10-21-mission-recut.md §1–2, §11b).
+    // Each list is indexed by region (1-based → [0]); past the list holds the last entry, the
+    // regionTier clamp. Keyed by region, NEVER by the day and NEVER by the player's truck (FEAT-112:
+    // offers are the same for every vehicle). Read through rankTable().
+    RANK_TABLE: {
+        // A RATIO (elapsed/par), lower is better — courier, papers, the one-piece fetch (FEAT-132).
+        // Region 1 MUST equal par.js RANK_THRESHOLDS_DEFAULT (this module imports nothing, so it's a
+        // mirrored constant — the economy gate asserts the equality). B widened 0.85 → 0.87 (owner,
+        // 2026-10-01). C is par in every region. R2/R3 PROVISIONAL: the owner may tighten them
+        // slightly ("I could maybe see wanting to scale timing slightly as well").
+        time: [
+            { S: 0.77, A: 0.81, B: 0.87, C: 1.00 },
+            { S: 0.77, A: 0.81, B: 0.87, C: 1.00 },   // PROVISIONAL
+            { S: 0.77, A: 0.81, B: 0.87, C: 1.00 },   // PROVISIONAL
+        ],
+        // PIECES DELIVERED, higher is better, per haul cargo (one yard per region, each its own cargo).
+        // S = a BRIMMING stock-Ranger bed, MEASURED 2026-10-22 by test/measure-haul-brim.mjs: the game's
+        // loader, the truck parked square, 5 seeds per N; the bed is full to the rail at ~20–21, N 26
+        // is the largest load whose heap stays within half a bundle of the rail (N 28 mounds), and a
+        // median 25 of those stay aboard → S 25. A/B/C = 85/70/55 % of S, rounded UP (a whole bundle
+        // clears a line). R2/R3 PROVISIONAL: later regions' cargo sets S past brimming (§11b).
+        haul: {
+            firewood: [
+                { S: 25, A: 22, B: 18, C: 14 },
+                { S: 25, A: 22, B: 18, C: 14 },   // PROVISIONAL
+                { S: 25, A: 22, B: 18, C: 14 },   // PROVISIONAL
+            ],
+        },
+        // KG DELIVERED, higher is better. PROVISIONAL — the owner play-tests and signs off: 125 / 100 /
+        // 75 / 50 % of the Ranger's 570 kg rating (FEAT-112). R2/R3 S sits past what the stock truck
+        // can legally carry (that region's spring/bed upgrades reach it); numbers at play-test.
+        freight: [
+            { S: 712, A: 570, B: 428, C: 285 },   // PROVISIONAL
+            { S: 712, A: 570, B: 428, C: 285 },   // PROVISIONAL
+            { S: 712, A: 570, B: 428, C: 285 },   // PROVISIONAL
+        ],
+        // CONDITION ON ARRIVAL (health 0..1), higher is better, PER FRAGILITY TIER (owner, 2026-10-23,
+        // lever A: the harder cargo gets the easier line; the tier is data/offers.js `tier`). Read
+        // through fragileLines(), which eases every line by fragileLinePerKm per km of route. The
+        // same in every region (§11b: later regions post more sensitive cargo instead), so ONE row
+        // each. Whole percents: the card and the HUD print them, so "83%" is exactly 0.83. Fragile is
+        // the old single row (FEAT-97, a letter per ~1/15 below 90 %); very fragile and sturdy signed
+        // off by the owner, 2026-10-24.
+        fragile: {
+            veryFragile: [{ S: 0.80, A: 0.72, B: 0.64, C: 0.56 }],
+            fragile:     [{ S: 0.90, A: 0.83, B: 0.77, C: 0.70 }],
+            sturdy:      [{ S: 0.95, A: 0.90, B: 0.85, C: 0.80 }],
+        },
+    },
 
     // THE END-OF-RUN PAYOUT CEILING [measured 2026-08-17 at the then k 0.024 — RESOLVED by regionMult
     // below; the figures are that day's, and region-1 par now measures ~3 h]. The owner's stated targets are ~$5-15
@@ -203,17 +241,28 @@ export function dayTier(day) {
 }
 
 /**
- * Rank thresholds for a run day — the difficulty ramp (SM-INV-2 as amended: the ramp lives in
- * the letters, par never moves). Linear per-key interpolation rankDay1 → rankDayLate over days
- * 1..rankTightenDays, held flat past the end.
+ * FEAT-138: a type's rank thresholds in a region — `kind` 'time' | 'freight', or 'haul' with the
+ * cargo id. Region clamps like regionTier: <1 reads as 1, past the list holds the last entry.
  */
-export function rankThresholds(day) {
-    const P = ECONOMY_PARAMS
-    const t = Math.min(Math.max(0, (day - 1) / (P.rankTightenDays - 1)), 1)
-    const out = {}
-    for (const key of ['S', 'A', 'B', 'C'])
-        out[key] = P.rankDay1[key] + (P.rankDayLate[key] - P.rankDay1[key]) * t
-    return out
+export function rankTable (kind, region, cargoId) {
+    const T = ECONOMY_PARAMS.RANK_TABLE
+    const rows = Array.isArray(T[kind]) ? T[kind] : T[kind][cargoId]   // haul by cargo, fragile by tier
+    return rows[Math.min(Math.max(1, Math.floor(region || 1)), rows.length) - 1]
+}
+
+/**
+ * FEAT-139: a fragile job's {S, A, B, C} health lines — its tier's row, each line eased by
+ * its tier's fragileLinePerKm per km of the planned route (owner, 2026-10-23; per tier 2026-10-24). More road is more chances at the
+ * few big hits that dominate damage, so a long drive is a little more forgiving; a short one, the most
+ * lucrative per minute, keeps the full line. Whole percents, floored at 0. `km` is frozen with the
+ * route, so the card, the HUD and the settle read the same lines.
+ * ponytail: linear in km, uncapped — a region-1 route is a few km; cap it if long routes reach 0.
+ */
+export function fragileLines (region, tier, km) {
+    const t = rankTable('fragile', region, tier)
+    const d = ECONOMY_PARAMS.fragileLinePerKm[tier] * Math.max(0, km || 0)
+    const ease = (x) => Math.max(0, Math.round((x - d) * 100) / 100)
+    return { S: ease(t.S), A: ease(t.A), B: ease(t.B), C: ease(t.C) }
 }
 
 /**
@@ -223,8 +272,8 @@ export function rankThresholds(day) {
  * the wallet.
  *
  * Bounded on both sides: never below the base (`baseFrac` of the max — completion alone), never
- * above the max (the whole tip, at `fullTipRatio` and faster). Both anchors are day-INDEPENDENT —
- * see the module header on why money must not follow the tightening letters.
+ * above the max (the whole tip, at `fullTipRatio` and faster). Both anchors are fixed — see the
+ * module header on why money must never follow the letters.
  */
 export function payoutFor(par, ratio, tier) {
     if (!isFinite(par) || par <= 0 || !isFinite(ratio) || !isFinite(tier)) return 0
@@ -265,23 +314,19 @@ export function splitPayout (par, ratio, payTier, payMult = 1, tipMult = 1) {
 }
 
 /**
- * FEAT-97: fragile pay is earned by CONDITION, not the clock (owner, 2026-10-14 / 10-15). Base pay is
- * GUARANTEED, as on every job (the 2026-09-29 ruling) — "an item at 25 % would not be worth carrying"
- * if condition cut it too. Condition drives the tip alone: the job's whole tip pool × the tip share,
- * all of it at 100 %, none at FRAGILE_TIP_ZERO or below, linear between. The pool is what the line
- * tips at its best (ratio 0). Destroyed (0) pays nothing — the job has failed. Integer cents, so
- * base + tip === total exactly, as splitPayout guarantees.
+ * FEAT-97 / FEAT-138: fragile pay (owner, 2026-10-21 — design-amendments-2026-10-21-mission-recut.md
+ * §3–4, reversing the 10-14/10-15 condition tip and guaranteed base). HALF the base is guaranteed and
+ * the other half × health: "the cargo is always worth delivering as long as it's not destroyed". The
+ * tip is SPEED, the time line's tip at `ratio` like every other type — speed pays, and speed breaks
+ * the load. Destroyed (health 0) has failed and pays nothing. Integer cents, so base + tip === total
+ * exactly, as splitPayout guarantees.
  */
-export const FRAGILE_TIP_ZERO = 0.5
-export function fragileTipShare (health) {
-    return Math.min(1, Math.max(0, (health - FRAGILE_TIP_ZERO) / (1 - FRAGILE_TIP_ZERO)))
-}
-export function splitFragilePayout (par, health, payTier, payMult = 1) {
+export function splitFragilePayout (par, ratio, health, payTier, payMult = 1) {
     const h = isFinite(health) ? Math.min(1, Math.max(0, health)) : 0
-    const fullC = Math.round(payoutFor(par, 0, payTier) * payMult * 100)
-    const poolBaseC = Math.min(fullC, Math.round(basePay(par, payTier, payMult) * 100))
-    const baseC = h > 0 ? poolBaseC : 0
-    const tipC  = Math.round((fullC - poolBaseC) * fragileTipShare(h))
+    if (h <= 0) return { base: 0, tip: 0, total: 0 }
+    const line = splitPayout(par, ratio, payTier, payMult)
+    const baseC = Math.round(line.base * 100 * (0.5 + 0.5 * h))
+    const tipC = Math.round(line.tip * 100)
     return { base: baseC / 100, tip: tipC / 100, total: (baseC + tipC) / 100 }
 }
 
@@ -296,14 +341,6 @@ export function bonusEarned (letter, gate) {
     const i = RANKS.indexOf(letter), g = RANKS.indexOf(gate)
     if (i < 0 || g < 0 || letter === 'D' || gate === 'D') return false
     return i <= g
-}
-
-/**
- * Good deeds for a haul, by the share of the load delivered (owner, 2026-10-05): more than two
- * thirds → 1, a third to two thirds → ½, under a third → 0. Exactly 2/3 is the middle band.
- */
-export function haulPointsFor(share) {
-    return share > 2 / 3 ? 1 : share >= 1 / 3 ? 0.5 : 0
 }
 
 /** SM-INV-14: 1 point at B or better, ½ at C, 0 at D. Never a function of time taken. */
@@ -369,12 +406,12 @@ export class EconomySystem {
     }
 
     /**
-     * The terms of a job at the moment it is ACCEPTED — day tier AND rank thresholds, frozen.
+     * The terms of a job at the moment it is ACCEPTED — pay tier, region and time thresholds, frozen.
      * mission.js stamps this onto the mission so settlement reads the contract you took, not the
      * day you finished on. The 1 a.m. accept buying tomorrow's rate is a RATIFIED FEATURE
-     * (DESIGN.md: "Nobody authored it; do not 'fix' it"), and locking the thresholds with it is
-     * the owner's 2026-08-01 ruling: finishing after midnight must not silently re-grade you on
-     * a tighter table.
+     * (DESIGN.md: "Nobody authored it; do not 'fix' it"). The thresholds are the REGION's
+     * (FEAT-138), never the day's; haul and freight read theirs from `region` at settle
+     * (rankTable), which is the same thing, since the table is static per region.
      */
     terms () {
         const day = this._getDay()
@@ -386,7 +423,7 @@ export class EconomySystem {
         // even if it is settled after moving on, exactly as the day tier already worked.
         return Object.freeze({
             day, region, dayTier: dt, regionTier: rt, payTier: dt * rt,
-            thresholds: Object.freeze(rankThresholds(day)),
+            thresholds: Object.freeze({ ...rankTable('time', region) }),
         })
     }
 
@@ -402,22 +439,19 @@ export class EconomySystem {
         // whole curve, so pay stays continuous in the ratio (SM-INV-4). Frozen on the mission at
         // accept with the rest of the terms; a job with no board offer behind it pays the full line.
         const mult = isFinite(mission?.payMult) ? mission.payMult : 1
-        // Base + tip, as the cards state it (owner, 2026-09-29). `payout` stays the total.
-        // FEAT-96: freight's contract terms — the tip reads the ratio ÷ its time slack (the same slack
-        // its letters were loosened by at accept) and is then scaled by its tip multiplier.
-        const slack = isFinite(mission?.timeSlack) ? mission.timeSlack : 1
+        // Base + tip, as the cards state it (owner, 2026-09-29). `payout` stays the total. Every type
+        // tips on SPEED, the plain ratio (FEAT-138). FEAT-96: freight's tip is then scaled by its
+        // tip multiplier (a FEAT-69 balancing knob). A haul's payMult already carries the pieces
+        // delivered (main.js onSettle), so base and tip both scale with the load.
         const tipMult = isFinite(mission?.tipMult) ? mission.tipMult : 1
-        // FEAT-97: a fragile job (result.health set by main.js) is paid on condition instead.
+        // FEAT-97: a fragile job (result.health set by main.js) cuts half its base by condition.
         const tier = t.payTier ?? t.dayTier ?? 1
-        const fragile = result.health != null
-        const { base, tip, total: payout } = fragile
-            ? splitFragilePayout(result.par, result.health, tier, mult)
-            : splitPayout(result.par, result.ratio / slack, tier, mult, tipMult)
-        // FEAT-88 (owner, 2026-10-05): a haul's good deeds are what you DELIVERED, not the letter —
-        // a fast run with an empty bed is not a good deed. result.aboard/loaded come from main.js.
-        // FEAT-97: a fragile job's follow what ARRIVED, the same bands on its condition.
-        const points = fragile ? haulPointsFor(result.health)
-            : result.loaded ? haulPointsFor(result.aboard / result.loaded) : pointsFor(result.letter)
+        const { base, tip, total: payout } = result.health != null
+            ? splitFragilePayout(result.par, result.ratio, result.health, tier, mult)
+            : splitPayout(result.par, result.ratio, tier, mult, tipMult)
+        // FEAT-138: good deeds read the letter on EVERY type — and the letter is already the type's
+        // own axis (haul's count, freight's kg, fragile's health). The share and health bands retired.
+        const points = pointsFor(result.letter)
         runEconomy.money = _cents(runEconomy.money + payout)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
