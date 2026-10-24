@@ -52,8 +52,8 @@ export const ITEMS = {
     // A refillable 5 gal steel can (items.md §1, owner 2026-10-21/22): 4 kg empty, 18 kg full (E10 at
     // 2.82 kg/gal = src/fuel.js KG_PER_GAL). Poured parked, 10 min; refilled at any pump. A tool, so
     // each can is its own slot and remembers its fill.
-    jerryCan:     { name: 'Jerry can',     kind: 'tool',       massKg: 4, use: 'jerry', capGal: 5, kgPerGal: 2.82,
-                    desc: 'A steel can of gas. Fill it at any pump.' },
+    jerryCan:     { name: 'Jerry can',     kind: 'tool',       massKg: 2, use: 'jerry', capGal: 5, kgPerGal: 2.82,
+                    desc: 'A plastic can of gas. Fill it at any pump.' },
     // A low steel trolley jack, ~15 kg [DEFAULT]: takes 1 h off the spare change, never a plug repair
     // (owner, 2026-10-22 — "you don't need to jack to plug"). The time saving is the parts session's.
     quickJack:    { name: 'Quick-jack',    kind: 'tool',       massKg: 15,

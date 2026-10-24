@@ -137,10 +137,10 @@ const jc = new InventorySystem({ slotCap: () => 8 }); jc.start()
 const kg0 = jc.stowedKg()
 jc.grant('jerryCan')
 const can = () => jc.list().find(r => r.id === 'jerryCan')
-check('a jerry can comes full: 5 gal, 18 kg', can().gal === 5 && Math.abs(jc.stowedKg() - kg0 - 18.1) < 0.01, `${(jc.stowedKg() - kg0).toFixed(2)} kg`)
+check('a jerry can comes full: 5 gal, 16 kg', can().gal === 5 && Math.abs(jc.stowedKg() - kg0 - 16.1) < 0.01, `${(jc.stowedKg() - kg0).toFixed(2)} kg`)
 const tank = { gal: 14.5, dry: false }
 check('it pours what the tank takes', pourCan(tank, 16.5, jc, can().index) === 2 && tank.gal === 16.5 && can().gal === 3)
-check('…and stays, lighter', Math.abs(jc.stowedKg() - kg0 - 4 - 3 * 2.82) < 0.01)
+check('…and stays, lighter', Math.abs(jc.stowedKg() - kg0 - 2 - 3 * 2.82) < 0.01)
 check('into a full tank, nothing moves', pourCan(tank, 16.5, jc, can().index) === 0 && can().gal === 3)
 const dry = { gal: 0, dry: true }
 check('a dry tank takes the rest', pourCan(dry, 16.5, jc, can().index) === 3 && !dry.dry && can().gal === 0)
