@@ -111,7 +111,7 @@ import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the 
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
-import { makeFragile, feltG } from './fragile.js'   // FEAT-97: a fragile load's condition
+import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -2785,8 +2785,8 @@ function _fragileStep () {
  * FEAT-139: the fragile load's two bars, per frame (owner, 2026-10-23). DAMAGE is the felt g: it
  * holds the step peak and falls back with JG_FALL_S, so a one-step landing spike stays readable. Its
  * scale runs to JG_TOP × the load's break g. The marks are where ONE hit costs 1 % of health and
- * 100 % (the break): fragile.js shockCost is ((g − floor)/(break − floor))², so 1 % sits a tenth of
- * the way from floor to break. The fill goes amber above the floor (any cost) and red at the break.
+ * 100 % (the break), both from the load's tier (fragile.js onePctG). The fill goes amber above the
+ * floor (any cost) and red at the break.
  * HEALTH is the condition, full green → empty red, with its percent under it — floored, so "83%" is
  * never shown for a load at 82.9 % that misses an 83 % line. A posted reward shows right of it:
  * "Reward [icon] if health ≥ 83%". Shown from accept to the end of a fragile job.
@@ -2813,7 +2813,7 @@ function _updateFragileG (dt) {
   if (_jgKey !== f.mission) {
     _jgKey = f.mission
     _jgEls.root.style.display = 'flex'
-    _jgEls.floor.style.bottom = `calc(${100 * (fr.shockFloorG + 0.1 * (fr.breakG - fr.shockFloorG)) / top}% - 1px)`
+    _jgEls.floor.style.bottom = `calc(${100 * onePctG(fr) / top}% - 1px)`
     _jgEls.brk.style.bottom = `calc(${100 * fr.breakG / top}% - 1px)`
     const b = f.mission.bonus
     _jgEls.reward.style.display = b ? 'flex' : 'none'

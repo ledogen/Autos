@@ -30,7 +30,7 @@ import { splitFragilePayout, splitPayout, pointsFor, EconomySystem, rankTable, f
 import { amountGrade } from '../src/par.js'
 import { gateLine } from '../src/offer-board.js'
 const fragileGrade = (h) => amountGrade(h, rankTable('fragile', 1, 'fragile'))
-import { makeFragile, feltG, shockCost } from '../src/fragile.js'
+import { makeFragile, feltG, shockCost, onePctG } from '../src/fragile.js'
 
 const DT = 1 / 60
 const BED = DEFAULT_VEHICLE_MODEL.bed
@@ -42,7 +42,7 @@ console.log('data:')
 const fragile = THINGS.filter(t => t.family === 'fragile')
 ok(BUILT_FAMILIES.has('fragile'), 'fragile is a built family')
 ok(fragile.length > 0 && fragile.every(t => FREIGHT[t.load]), `every fragile thing (${fragile.length}) names a load in data/freight.js`)
-ok(fragile.every(t => t.shockFloorG >= 1 && t.breakG > t.shockFloorG && ['glass', 'thud', 'piano'].includes(t.sound)),
+ok(fragile.every(t => t.shockFloorG >= 1 && t.onePctG > t.shockFloorG && t.breakG > t.onePctG && ['glass', 'thud', 'piano'].includes(t.sound)),
   'every fragile thing has a floor ≥ 1 g (free fall is free), a break above it, and a sound')
 ok(fragile.every(t => t.pools.length > 0 && t.pools.every(k => SOURCES[k]?.families.includes('fragile'))),
   'every fragile thing has a shipper, and each shipper posts fragile')
@@ -96,7 +96,7 @@ console.log('events:')
 const tier = { shockFloorG: 1, breakG: 3 }
 const burst = makeFragile(tier), evs = []
 for (const g of [0.2, 1.5, 2.0, 1.8, 0.9, 0.2]) { const e = burst.step(g); if (e) evs.push(e) }
-ok(evs.length === 1 && Math.abs(evs[0].peakG - 2) < 1e-9 && Math.abs(burst.health - (1 - shockCost(2, 1, 3))) < 1e-12,
+ok(evs.length === 1 && Math.abs(evs[0].peakG - 2) < 1e-9 && Math.abs(burst.health - (1 - shockCost(2, tier))) < 1e-12,
   `a burst above the floor is ONE event priced on its peak (cost ${(evs[0]?.cost * 100).toFixed(0)} %)`)
 const calm = makeFragile(tier)
 for (let i = 0; i < 600; i++) calm.step(0.95 * Math.abs(Math.sin(i)))
@@ -177,8 +177,11 @@ ok(wb('veryFragile') < 1 && wb('veryFragile') > 0.95, `5 s of washboard nibbles 
 ok(wb('veryFragile') <= wb('fragile') && wb('fragile') <= wb('sturdy') && res.fragile.crest.health <= res.sturdy.crest.health,
   'the tiers stay in order: very fragile ≤ fragile ≤ sturdy on washboard and on the crest')
 ok(res.sturdy.washboard.health > 0.95, `washboard costs a sturdy piece little (${pct(res.sturdy.washboard.health)})`)
-ok(res.veryFragile.crest.health === 0, 'a 1 m crest landing destroys very fragile cargo')
-ok(res.sturdy.crest.health > 0 && res.sturdy.crest.health < 0.6, `a 1 m crest landing costs a sturdy piece most of it (${pct(res.sturdy.crest.health)})`)
+// Breaks raised 1.5× with the 1 % g held (owner, 2026-10-24): a crest no longer destroys any tier.
+ok(res.veryFragile.crest.health > 0 && res.veryFragile.crest.health < 0.5, `a 1 m crest landing costs very fragile cargo more than half (${pct(res.veryFragile.crest.health)})`)
+ok(res.sturdy.crest.health > 0.5 && res.sturdy.crest.health < 0.85, `a 1 m crest landing costs a sturdy piece about a third (${pct(res.sturdy.crest.health)})`)
+ok(['veryFragile', 'fragile', 'sturdy'].every(t => Math.abs(shockCost(onePctG(TIERS[t]), TIERS[t]) - 0.01) < 1e-12),
+  'one hit at a tier\'s 1 % g costs exactly 1 %')
 ok(all.every(r => r.rollover.health === 0), 'a rollover destroys every tier')
 const again = await run(TIERS.veryFragile, SCEN.washboard)
 ok(again.health === res.veryFragile.washboard.health, 'same run, same health (SM-INV-12)')

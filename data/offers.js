@@ -35,8 +35,9 @@
 //   passenger (optional) true when the thing is the poster themselves — the card says "a ride to …"
 //   load     (freight, FEAT-96) the bed load's key in data/freight.js — the model the job straps in.
 //            massKg is then the load's real mass, rolled per offer.
-//   shockFloorG, breakG, sound  (fragile, FEAT-97) the felt g below which the load takes no harm,
-//            the g one hit needs to destroy it, and its hit sound — spread from a tier below.
+//   shockFloorG, onePctG, breakG, sound  (fragile, FEAT-97) the felt g below which the load takes no
+//            harm, the g where one hit costs 1 %, the g one hit needs to destroy it, and its hit
+//            sound — spread from a tier below (fragile.js shockCost).
 //   furniture (optional, FEAT-116) true for the pieces the furniture pad protects.
 //   to       (optional, FEAT-100) the POI tags it may be delivered to — a class (`farm`) or a
 //            fixture tag. Absent = generic: any POI or a roadside spot (cargo.md "From → to").
@@ -64,9 +65,11 @@ const HOUSEWARES = ['generalStore', 'residence']
 // (owner, 2026-10-15): very fragile and fragile were pulled toward sturdy.
 // `tier` keys the tier's health lines (economy.js RANK_TABLE.fragile); `tierName` is how the card and
 // every doc say it — Very fragile / Fragile / Sturdy (owner, 2026-10-23: one set of words everywhere).
-const VERY_FRAGILE = { tier: 'veryFragile', tierName: 'Very fragile', shockFloorG: 1.15, breakG: 4.0, sound: 'glass' }  // rough road nibbles; a crest landing destroys
-const FRAGILE      = { tier: 'fragile',     tierName: 'Fragile',      shockFloorG: 1.2,  breakG: 4.75, sound: 'thud' }
-const STURDY       = { tier: 'sturdy',      tierName: 'Sturdy',       shockFloorG: 1.3,  breakG: 5.5, sound: 'thud' }    // a crest landing costs most of it; a roll ends it
+// Breaks raised 1.5× (owner, 2026-10-24: "100 % harder to reach"); the 1 % g stayed where the old
+// breaks (4.0 / 4.75 / 5.5) put it. Rough road nibbles; a 1 m crest costs roughly half; a roll ends it.
+const VERY_FRAGILE = { tier: 'veryFragile', tierName: 'Very fragile', shockFloorG: 1.15, onePctG: 1.435, breakG: 6.0,  sound: 'glass' }
+const FRAGILE      = { tier: 'fragile',     tierName: 'Fragile',      shockFloorG: 1.2,  onePctG: 1.555, breakG: 7.1,  sound: 'thud' }
+const STURDY       = { tier: 'sturdy',      tierName: 'Sturdy',       shockFloorG: 1.3,  onePctG: 1.72,  breakG: 8.25, sound: 'thud' }
 
 export const THINGS = [
     // FEAT-88 haul. massKg is ignored for a haul thing — the card's weight is pieces × HAUL_BUNDLE_KG,
@@ -256,7 +259,7 @@ export const THINGS = [
     { id: 'canningJars', phrase: 'a crate of canning jars', family: 'fragile', massKg: [20, 20],
       pools: ['generalStore'], to: ['residence'], load: 'largeCrate', ...VERY_FRAGILE },
     { id: 'eggs',        phrase: 'a crate of eggs',         family: 'fragile', massKg: [31, 31],
-      pools: ['farm'], to: ['residence'], load: 'largeCrate', ...VERY_FRAGILE, sound: 'thud' },
+      pools: ['farm'], to: ['residence'], load: 'largeCrate', ...FRAGILE },
     { id: 'fineChina',   phrase: 'a crate of fine china',   family: 'fragile', massKg: [30, 30],
       pools: HOUSEWARES, to: ['residence'], load: 'largeCrate', ...VERY_FRAGILE },
     { id: 'vase',        phrase: "grandma's vase",          family: 'fragile', massKg: [9, 9],
