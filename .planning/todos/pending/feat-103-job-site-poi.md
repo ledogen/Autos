@@ -25,6 +25,14 @@ edge, the 3.3 km arc (~2.9 km long)**. R1's outer arc and two side walls never o
 
 ## Ruled
 
+**The camp is its own POI type; the construction site stays a client** (owner, 2026-10-24, game-feel
+review Q-2: "go with rec. split them"). The `workSite` POI ("{last} Construction") keeps posting courier
+and freight jobs and receiving cinder blocks, concrete and the job box. The expedition camp is a NEW
+type this ticket adds, on the story circle's edge at the end of a road (alpha slice), behind the
+six-deed lock. Nothing is pulled from the offer pools for it. ASSET-71 is the camp's model; the
+construction site keeps whatever placeholder-replacing model it gets later.
+
+
 **The boss.**
 - **R1 only, for now.** It is the R1 boss: the mission that lets you leave region 1.
 - **It is an expedition camp**, not a bridge: a crew at the wall searching for the Roamer's old trail

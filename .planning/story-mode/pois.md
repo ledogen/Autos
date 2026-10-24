@@ -103,7 +103,8 @@ place**: unavailable until 6 good deeds, then always available, outside the budg
 from the map, persist until delivered, and never lock the giver. Each line is also posted at its
 source POI — same job, two map tags. The camp sits at the end of the **trail**, the one road across
 R1's north wall that is trimmed at the wall rather than back to its junction; funding the camp and
-sleeping there reveals it. Full design: FEAT-103.
+sleeping there reveals it. Full design: FEAT-103. **Ruled 2026-10-24:** the camp is its own POI type; the `workSite` construction site stays an
+ordinary client and keeps its freight (game-feel review Q-2).
 
 The bridge moves later (its suppliers, lumber and stone, are the R2 and R3 yards); the direction is
 one boss per region, fed by that region's yard. Region **modifiers** are undefined; all of it is SM-4
