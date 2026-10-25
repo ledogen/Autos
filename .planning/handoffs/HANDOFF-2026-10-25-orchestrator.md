@@ -22,8 +22,7 @@ They will paste a list of feedback items, some small, some not. For each item, i
 2. **Otherwise it is a ticket.** Write `.planning/todos/pending/<class>-<NN>-<slug>.md` with the tracker's
    frontmatter (`id`, `type`, `status: open`, `severity`, `opened`, `source: owner, 2026-10-25 — "<their words>"`,
    `relates:`) plus one line **`lane: A | B | C | Spare`** under the frontmatter, a `## What` and a
-   `## Acceptance` checklist. Next free numbers: FEAT-149, BUG-93, ASSET-74+ (check `ls .planning/todos/pending
-   .planning/todos/completed | sort -t- -k2 -n | tail` first). Then add the task to the lane on the tracker
+   `## Acceptance` checklist. Next free numbers: FEAT-149, BUG-93, ASSET-76 (check with `grep -h '^id:' .planning/todos/*/*.md | sort -t- -k2 -n | tail` first). Then add the task to the lane on the tracker
    page (below) and, if that lane's session is running, tell it in one message.
 3. **Owner-only questions** (design, economy numbers, words in the world's voice) get asked back in one line
    with a recommendation; never invented. The owner writes dialogue and character text (FEAT-148).
@@ -91,7 +90,9 @@ Alpha = the 2500 m circle, a polished demo; FEAT-115/116 are later. Provenance: 
 
 ## Open at hand-off
 
-- Lane sessions had not started as of this write-up; the owner pastes each lane's resume prompt from the tracker page.
+- **Lane A is running**: its worktree is 1 commit ahead (b2377fd4 FEAT-128 "making camp turns the key off" — it
+  took the small one first; FEAT-103 → 146 → 147 still ahead of it). It merges main itself; do not fast-forward it.
+  Lanes B, C and Spare were untouched at 3e517906; the owner pastes their resume prompts from the tracker page.
   Two old windows (cargame-5a in the deleted parts folder, haul-stock-picker in the deleted mission-recut folder)
   should be closed.
 - Unruled: Q-6 courier digits; FEAT-138's shelf likelihood tier; FEAT-146/147 card wording and the FEAT-148 lines.
