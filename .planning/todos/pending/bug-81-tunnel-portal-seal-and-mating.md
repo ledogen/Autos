@@ -2,10 +2,11 @@
 id: BUG-81
 type: bug
 status: pending
-severity: medium
+severity: major
 opened: 2026-10-05
-source: Owner report (in-game observation, no capture yet).
+source: Owner report (in-game observation, no capture yet). Second report 2026-10-25 (below).
 ---
+lane: Spare
 
 # BUG-81 — tunnel portals don't seal to the mountain; bore shoulder doesn't mate the approach; driving onto the portal from above floats/teleports the car
 
@@ -18,6 +19,18 @@ source: Owner report (in-game observation, no capture yet).
    mouth — a visible step or seam at the portal line.
 3. **Glitchy collision at the portal mouth.** Driving down onto the portal from above (over the
    top of the mouth) often makes the car float and then teleport.
+
+## Owner, 2026-10-25 (plane play-test)
+
+> "i touched a tunnel portal and it messed up my whole everything lol. launched me super hard truck
+> was totaled."
+
+Item 3 at full force: a brush against the portal (not a drive onto it from above) threw the truck
+hard enough to total it. Severity raised to major. The visual side (holes at the portal, shadows
+inside the bore) is split out as BUG-93 so this ticket is the physics: find which overlap kicks —
+portal ring trimesh vs heightfield, bore lining vs the depressed bore slot (terrain-physics.js
+~66), or the suspension probes vs the analytic terrain — with a capture at the portal and
+`node test/replay.mjs`, before touching the seal.
 
 ## Where to look
 
@@ -36,6 +49,9 @@ source: Owner report (in-game observation, no capture yet).
 - BUG-67 — portal opening inside a junction.
 
 ## Acceptance
+
+- [ ] Brushing a portal ring at road speed never launches the chassis (BUG-54's damage-energy
+      readout stays under a hard landing's); proven on a capture replay, then a drive.
 
 - Portal ring meets the terrain on its full perimeter at the headwall line — no daylight gap, no
   ring floating clear of the slope — across a multi-seed census of portals (headless, numeric:

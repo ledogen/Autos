@@ -113,6 +113,7 @@
         { id: 'FEAT-132', what: 'The stranded motorist posts a haul fetch — wheel + tire ride in the bed.' },
         { id: 'FEAT-138', what: 'Hi-lift jack — right a rolled truck where it lies. Approved 2026-10-24: 10.5 N·m per kg for up to 3 s, cut at the balance point, 5 s real-time cooldown. Ready to build.' },
         { id: 'BUG-89/54/92', what: 'Rolled truck slides too far · chassis launched at extreme travel · ABS kick never rumbles the pad.' },
+        { id: 'FEAT-150', what: 'Auto shift schedule — hangs in 1st (the hysteresis band vs the 1st→2nd step), lugs 3rd instead of kicking down (kickdownRPM 2400 → ~3200). Owner 10-25; numbers in the ticket.' },
       ],
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Work ONLY there. Read ' + HANDOFF + ' § Lane B, then feat-93-hazard-punctures-any-condition.md and feat-94-driving-on-a-flat.md. Build FEAT-93 then FEAT-94. Own only Lane B\'s files.' },
     { id: 'c', name: 'C — content and polish', goal: 'Models, sound, items. Lane A needs the first two models.',
@@ -124,6 +125,9 @@
         { id: 'ASSET-69/70/73', what: 'Office, doctor\'s office, school — the placeholders the alpha shows.' },
         { id: 'FEAT-120', what: 'Sound-effects pass, source by source (dashboard → Sounds is the tracker).' },
         { id: 'FEAT-121/129', what: 'Item-setup rulings going live (the standing items loop) · favicon.' },
+        { id: 'FEAT-149', what: 'Knockable lawn ornaments — gnome, beach ball, flamingo become debris bodies on contact and roll away; the fire pit and the rest stay solid. (owner 10-25)' },
+        { id: 'ASSET-76', what: 'Fire pit re-export at 1.2× (owner 10-25: "20% bigger"); registry box to match.' },
+        { id: 'FEAT-120 ↳', what: 'Ratchet strap click (freight accept) + release (job end) — the owner records these; the entries are in the ticket.' },
       ],
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-content, branch feature/content, serve :3774. Work ONLY there. Read ' + HANDOFF + ' § Lane C. Model ASSET-71 (the expedition camp) per .planning/research/ASSETS.md and ART-STYLE.md, then ASSET-32. Own only Lane C\'s files.' },
     { id: 's', name: 'Spare — front of mind', goal: 'Whatever you surface; the alpha bugs nobody else owns.',
@@ -131,11 +135,13 @@
       owns: 'whatever the task touches — say so to the lane that owns it',
       tasks: [
         { id: 'BUG-90', what: 'Occasional bad dips in the road surface.' },
+        { id: 'FEAT-42', what: 'Saves — MOVED UP (owner 10-25, major): closing the laptop lid discards the tab and the run is gone. Write runSave on pagehide, resume once on boot (delete-on-load). Workaround meanwhile: Chrome Memory Saver → keep localhost active.' },
+        { id: 'BUG-81', what: 'Tunnel portal LAUNCH (major, owner 10-25: "touched a portal… truck was totaled") — the physics kick at the portal; capture + replay first.' },
+        { id: 'BUG-93', what: 'Tunnel portals: terrain holes still, and grass/prop shadows inside the bores. Screenshot-pair loop until the gaps are closed (owner 10-25).' },
         { id: 'BUG-77 · FEAT-77', what: 'The two known red gates — tunnel spans and road clearance.' },
         { id: 'FEAT-133/136', what: 'Controller finish — pad on the map and cards; cross-browser pads.' },
         { id: 'FEAT-141', what: 'Papers, "any N against a deadline" — every customer deliverable from the start; the plotter\'s shortest N-route × 1.5 is the deadline, the GPS draws it; the round ends at N or expires; "bell" leaves code and docs. (major)' },
         { id: 'FEAT-142', what: 'Giver traits — a TRAITS table, 0–2 per offer from its own seeded stream, bottom-left of the card; each moves the quoted pay and terms at accept and settle (Off the books: no deed; The right thing to do: +½ at C+). Nothing in code yet. Open: Wholesale on freight. (minor)' },
-        { id: 'FEAT-42', what: 'Saves — suspend and resume, late in the alpha.' },
         { id: 'FEAT-69', what: 'The economy re-cut, once Lane A gives a run that can finish.' },
       ],
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-spare, branch feature/spare, serve :3885. Work ONLY there. Read ' + HANDOFF + ' § Spare. Ask the owner what is front of mind; default to BUG-90.' },
@@ -144,6 +150,8 @@
     'FEAT-138 hi-lift: its likelihood tier on the shelf (data/stock-weights.js). The torque is approved.',
     'Q-6 on the review page: a courier countdown with digits — recommended against (SM-INV-3); unruled.',
     'FEAT-146/147: the win and towel card wording, how the firing is shown (card or staged scene), and the FEAT-148 lines — yours to write.',
+    'The second scenario (data/scenarios.js ranger-hollow, from the two 10-24 captures) needs its NAME — "the hollow" is a stand-in; rename before anyone has a leaderboard entry.',
+    'BONUS_LEG_MIN_M is 1.5 km (you said "1.5 or 2"); say if you want 2.',
   ]
   const STATES = ['todo', 'doing', 'done', 'blocked']
   const state = { tasks: {}, lanes: {} }

@@ -42,4 +42,26 @@ export const SCENARIOS = [
     ],
     finish: { x: -251.24, z:  926.53, heading:  1.1146 },
   },
+  {
+    // Owner's second scenario (2026-10-25, captures autos-capture-1792861006788.json → …118377.json:
+    // "new scenarios mission from here to here"). One road, no junctions: 1.54 km that falls 107 m
+    // in its first 900 m (~12 % mean grade) into a hollow, then climbs 25 m out and eases down to the
+    // finish. Poses extracted headless from the routed road; the name is a stand-in until the owner
+    // names it (the id is the leaderboard key — rename BEFORE a board exists, not after).
+    id: 'ranger-hollow',
+    name: 'the hollow',
+    blurb: '1.5 km, 110 m down into the hollow and out, five gates',
+    seed: '477662008',
+    gateHalfWidth: 7,
+    spawn:  { x:  -517.58, z:   605.99, heading:  1.3878 },
+    start:  { x:  -529.43, z:   604.33, heading:  1.5859 },
+    gates: [
+      { x:  -703.76, z:   746.44, heading:  1.3136 },
+      { x:  -879.95, z:   565.84, heading:  0.5156 },
+      { x:  -952.83, z:   319.95, heading:  0.2714 },
+      { x: -1144.93, z:   234.01, heading:  1.1177 },
+      { x: -1371.94, z:   139.46, heading:  0.8483 },
+    ],
+    finish: { x: -1609.35, z:    63.98, heading:  2.0154 },
+  },
 ]

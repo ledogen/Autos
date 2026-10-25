@@ -515,6 +515,11 @@ export const EXPIRY_NOISE = 0.3
 
 /** 0..1 — share of offers that carry a bonus item. */
 export const BONUS_CHANCE = 0.25
+// An offer carrying an item plans no leg shorter than this (road metres): a 0.3 km courier handed
+// out a mounted tire on S (owner, 2026-10-25: "increase the item reward floor to 1.5 or 2 km").
+// Enforced by the planner (src/mission.js minM) so the card never has to strip a promised tip —
+// a bonus offer whose every destination is nearer simply does not plan, and is not posted as takeable.
+export const BONUS_LEG_MIN_M = 1500
 
 // BONUS_PAY_MULT (0.5× cash on a bonus offer) RETIRED — GAME-FEEL REVIEW 2026-10-23 (R-04): on a bonus
 // offer the ITEM IS THE TIP. Base pay is the full line's base, the cash tip is zero, and the item is

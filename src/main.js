@@ -77,7 +77,7 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
 import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
-import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
+import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
@@ -4437,7 +4437,7 @@ function _planOffer (offer) {
     const poi = poiSystem.list().find(q => q.id === o.poiId)
     if (!s || !poi || s.family === 'papers') return null
     const dest = offerBoard.destWish(o, poiSystem.list(), exclude)
-    const m = missionSystem.planOffer(poi, { rng: offerBoard.routeRng(o), dest })
+    const m = missionSystem.planOffer(poi, { rng: offerBoard.routeRng(o), dest, minM: s.bonus ? BONUS_LEG_MIN_M : 0 })   // an item needs the distance
     if (m) {
       // The contract's board-side terms ride on the mission: which offer it is (complete/cancel),
       // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).

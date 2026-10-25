@@ -4,7 +4,7 @@ type: feature
 status: open
 opened: 2026-07-21
 rescoped: 2026-07-31 — two stores, not one (see "Reconciliation")
-severity: minor
+severity: major
 source: user question 2026-07-21 — "how do we save roguelike metaprogression without maintaining a server?"
 relates_to: >
   story mode (.planning/story-mode/DESIGN.md — "The garage", "Run shape and saving", SM-INV-8 as
@@ -14,6 +14,26 @@ relates_to: >
 depends_on: nothing to build the stores; consumers land with SM-1/SM-3/SM-4
 blocks: SM-4's run lifecycle — a 4–6 h run is unplayable without a resume
 ---
+lane: Spare
+
+## ⚑ Owner, 2026-10-25 — moved up: closing the laptop lid loses the run
+
+> "major issue. if i close the lid on my laptop it seems like chrome refreshes the page which resets
+> me to the menu. in lieu of a save function this clears all progress..."
+
+That is Chrome's Memory Saver discarding the tab on sleep and reloading it on wake; nothing in the
+page can stop a discard, only survive it. So the `runSave` half of this ticket is now ALPHA work,
+not "late in the alpha": write the run on `pagehide` / `visibilitychange` → hidden (the only hooks
+that fire before a discard — `beforeunload` does not), and on boot, if a `runSave` exists, resume
+it (delete-on-load as specified below). The delete-on-load rule keeps this from being a checkpoint
+exploit: the player is resumed exactly once into the state they left. The "autosave at day
+boundaries?" open question below is answered by this: the write is on HIDE, not on a schedule.
+
+Until it lands, the owner's workaround: chrome://settings/performance → "Always keep these sites
+active" → add `localhost` (and the Pages origin). Memory Saver then never discards the tab.
+
+Acceptance added: close the lid mid-run for a minute, open it — the run is where it was; a second
+reload after that finds no save (it was consumed).
 
 # FEAT-42: Two save stores — durable `metaState` + a single-slot `runSave`
 
