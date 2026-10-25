@@ -22,7 +22,7 @@ They will paste a list of feedback items, some small, some not. For each item, i
 2. **Otherwise it is a ticket.** Write `.planning/todos/pending/<class>-<NN>-<slug>.md` with the tracker's
    frontmatter (`id`, `type`, `status: open`, `severity`, `opened`, `source: owner, 2026-10-25 — "<their words>"`,
    `relates:`) plus one line **`lane: A | B | C | Spare`** under the frontmatter, a `## What` and a
-   `## Acceptance` checklist. Next free numbers: FEAT-149, BUG-93, ASSET-76 (check with `grep -h '^id:' .planning/todos/*/*.md | sort -t- -k2 -n | tail` first). Then add the task to the lane on the tracker
+   `## Acceptance` checklist. Next free numbers: FEAT-151, BUG-94, ASSET-77 (check with `grep -h '^id:' .planning/todos/*/*.md | sort -t- -k2 -n | tail` first). Then add the task to the lane on the tracker
    page (below) and, if that lane's session is running, tell it in one message.
 3. **Owner-only questions** (design, economy numbers, words in the world's voice) get asked back in one line
    with a recommendation; never invented. The owner writes dialogue and character text (FEAT-148).
@@ -39,8 +39,14 @@ Report each item back as one line: done (hash) / ticket (id, lane) / question.
 | Spare — front of mind | /Users/ledogen/CodeShit/CarGame-spare | feature/spare | :3885 | whatever the task touches; says so to the owning lane |
 
 Mission-board code (offer-board.js, mission.js, paper-route.js, economy.js, the map card) has no lane; it is the
-orchestrator's or Spare's. The items session **cargame-11** works in THIS checkout on main (ITEMS rows, thumbnails,
-items.md) — tell it before touching data/items.js, and ask it to hold commits while you merge a lane in.
+orchestrator's or Spare's. (The items session that used to work in this checkout is gone: **cargame-11 is now the
+Spare lane's session** in CarGame-spare, since 2026-10-25. Nothing else edits main.)
+
+**2026-10-25, first triage done (7d619063):** menu cursor wakes on open, footer hint, menu lens shift, courier /
+item-reward leg floors (POI_LEG_MIN for strict wishes too; BONUS_LEG_MIN_M 1.5 km), the second scenario
+`ranger-hollow` (owner still owes its name), strap click/release sound entries; tickets FEAT-149 (C), FEAT-150 (B),
+BUG-93 (Spare), ASSET-76 (C); BUG-81 and FEAT-42 raised to major and moved up in Spare. Unreproduced: the owner's
+"inventory thumbnails are text now" — all 55 load in the real page on :8000; ask for the URL and a reload.
 
 Each worktree's `node_modules` is a symlink to main's. Restart a dead server from its worktree:
 `npm run dev -- --port <port> --strictPort`. Order of the lanes' work and the resume prompts: the plan of record.
