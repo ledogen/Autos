@@ -1,0 +1,238 @@
+<title>Alpha Lanes</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+  /* Layout: a dispatch board — one column per lane on a wide screen, a stack on a phone; the same
+     token palette as the mission-feel review page so the two read as one set of owner tools. */
+  :root {
+    --bg: #f3f1ec; --panel: #ffffff; --fg: #1d1f1a; --dim: #5e6358; --line: #d9d6cc;
+    --money: #1d7a33; --warn: #a06800; --bad: #b3261e; --key: #2f6fbd; --chip: #e9e6dd; --story: #2a5d9f;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #161815; --panel: #1f221d; --fg: #e8e6dc; --dim: #9a9f92; --line: #343830;
+    --money: #6fd37f; --warn: #e3b34a; --bad: #ff6b5e; --key: #7fb0ff; --chip: #2a2e27; --story: #8fb5ee; color-scheme: dark } }
+  :root[data-theme="dark"] {
+    --bg: #161815; --panel: #1f221d; --fg: #e8e6dc; --dim: #9a9f92; --line: #343830;
+    --money: #6fd37f; --warn: #e3b34a; --bad: #ff6b5e; --key: #7fb0ff; --chip: #2a2e27; --story: #8fb5ee; color-scheme: dark }
+  body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
+         padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 60px; }
+  main { max-width: 1240px; margin: 0 auto; }
+  h1 { font-family: var(--mono); font-weight: 600; font-size: 22px; letter-spacing: .5px; margin: 0 0 4px; text-wrap: balance; }
+  .sub { color: var(--dim); margin: 0 0 14px; max-width: 78ch; }
+  .sub code, .meta code, .task code { font-family: var(--mono); font-size: 12.5px; background: var(--chip); padding: 1px 5px; border-radius: 3px; }
+  a { color: var(--key); }
+  .strip { display: flex; flex-wrap: wrap; gap: 8px 22px; font-family: var(--mono); font-size: 13px; color: var(--dim);
+           border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 10px 0; margin-bottom: 22px; }
+  .strip b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .strip .doing b { color: var(--warn) } .strip .done b { color: var(--money) } .strip .blocked b { color: var(--bad) }
+  .state { margin-left: auto; }
+  h2 { font-family: var(--mono); font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--dim); margin: 28px 0 10px; }
+  .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; align-items: start; }
+  .lane { background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--story); padding: 14px 16px 12px; min-width: 0; }
+  .lane.critical { border-top-color: var(--bad); }
+  .lane h3 { font-family: var(--mono); font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .lane .goal { color: var(--dim); margin: 0 0 10px; font-size: 14px; }
+  .meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-family: var(--mono); font-size: 12px; margin: 0 0 10px; }
+  .meta span:nth-child(odd) { color: var(--dim); text-transform: uppercase; letter-spacing: 1px; font-size: 10.5px; padding-top: 3px; }
+  .meta span:nth-child(even) { min-width: 0; overflow-wrap: anywhere; }
+  .agent { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+  .agent label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); }
+  .agent input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; padding: 5px 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 3px; }
+  .tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .task { display: grid; grid-template-columns: 76px 1fr; gap: 4px 10px; align-items: start; padding: 6px 0; border-top: 1px solid var(--line); }
+  .task:first-child { border-top: none; }
+  .task button.st { font-family: var(--mono); font-size: 11px; letter-spacing: .5px; text-transform: uppercase; padding: 4px 0; border: 1px solid var(--line);
+                    background: var(--chip); color: var(--dim); cursor: pointer; border-radius: 3px; width: 100%; }
+  .task button.st:focus-visible { outline: 2px solid var(--key); outline-offset: 1px; }
+  .task button.st.doing { background: var(--warn); color: #fff; border-color: var(--warn); }
+  .task button.st.done { background: var(--money); color: #fff; border-color: var(--money); }
+  .task button.st.blocked { background: var(--bad); color: #fff; border-color: var(--bad); }
+  .task .what { min-width: 0; }
+  .task .id { font-family: var(--mono); font-weight: 600; color: var(--key); font-size: 13px; margin-right: 6px; }
+  .task.done .what { color: var(--dim); } .task.done .id { color: var(--dim); }
+  .task .why { color: var(--dim); font-size: 13px; margin: 0; }
+  .task textarea { grid-column: 2; width: 100%; box-sizing: border-box; min-height: 30px; font-family: var(--sans); font-size: 13px; padding: 4px 8px;
+                   border: 1px solid var(--line); background: var(--bg); color: var(--fg); resize: vertical; border-radius: 3px; }
+  .task textarea:placeholder-shown { min-height: 26px; }
+  .owed { background: var(--panel); border: 1px solid var(--line); padding: 10px 16px; }
+  .owed ul { margin: 0; padding-left: 18px; }
+  .owed li { margin: 4px 0; }
+  .saved { font-family: var(--mono); font-size: 11px; color: var(--dim); min-height: 1.3em; margin-top: 6px; }
+  .prompt { font-family: var(--mono); font-size: 12px; background: var(--chip); padding: 8px 10px; border-radius: 3px; margin-top: 10px; white-space: pre-wrap; overflow-wrap: anywhere; position: relative; }
+  .prompt button { position: absolute; top: 6px; right: 6px; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; border-radius: 3px; }
+  details summary { cursor: pointer; font-family: var(--mono); font-size: 12px; color: var(--dim); margin-top: 8px; }
+  @media (prefers-reduced-motion: no-preference) { .task button.st { transition: background .15s, color .15s; } }
+</style>
+<main>
+  <h1>Alpha Lanes</h1>
+  <p class="sub">The alpha build order in four lanes, one worktree each, main as the integration branch. Click a task's status to cycle it (todo → doing → done → blocked); notes and the agent name save to the page. The plan of record is the handoff in the repo:
+    <code>.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md</code> (open it from the <a href="http://localhost:8010">dashboard</a> on your machine). Related pages: <a href="https://claude.ai/artifact/YHLoevQnoJ1y5BYmksVVVZ">mission-feel review</a> · <a href="https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu">item setup</a>.</p>
+  <div class="strip">
+    <span class="doing">doing <b id="n-doing">0</b></span>
+    <span class="done">done <b id="n-done">0</b></span>
+    <span class="blocked">blocked <b id="n-blocked">0</b></span>
+    <span>todo <b id="n-todo">0</b></span>
+    <span class="state" id="state">connecting to the store…</span>
+  </div>
+  <div class="board" id="board"></div>
+  <h2>Owner rulings owed</h2>
+  <div class="owed"><ul id="owed"></ul></div>
+  <h2>Landed 2026-10-24</h2>
+  <div class="owed"><ul>
+    <li><b>mission-recut</b> → main (2e0e1aed): every type ranks on its own axis, the haul picker, freight and fragile tiers.</li>
+    <li><b>game-feel</b> → main (6fba599a): the mission-feel review R-01..R-34, all kept.</li>
+    <li><b>parts</b> → main (4e7095d4): zip ties, duct tape, the plastic jerry can, the $5 floor, the likelihood table.</li>
+    <li><b>sleepy-steer</b> → main (2d59aa2c): 20 % slower steering, drowsy ramp.</li>
+    <li>Full suite 105/107 (known reds road-tunnel, road-clearance); browser smoke 15/15. Old worktrees and branches deleted.</li>
+  </ul></div>
+</main>
+<script>
+(() => {
+  const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  const HANDOFF = '.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md'
+  const LANES = [
+    { id: 'a', name: 'A — the run has a shape', critical: true, goal: 'The critical path: today a run starts and never ends.',
+      wt: '/Users/ledogen/CodeShit/CarGame-run-shape', branch: 'feature/run-shape', port: 3731,
+      owns: 'story.js, camp.js, dialogue, poi.js (the camp type), the story sections of main.js',
+      tasks: [
+        { id: 'FEAT-103', what: 'Alpha camp — the expedition camp as its own POI type at the end of a road on the circle\'s edge; five-line requisition behind 6 deeds; completing it is the win. No wall, no FEAT-28. The construction site stays a client.' },
+        { id: 'FEAT-146', what: 'The run ends — death card, "throw in the towel" in the pause menu, win card, one summary → main menu.' },
+        { id: 'FEAT-147', what: 'Opening + tutorial — the firing, the uncle, first-day prompts; FEAT-148\'s flavor-line plumbing rides along (the owner writes the words).' },
+        { id: 'FEAT-128', what: 'Truck shuts off at camp.' },
+        { id: 'FEAT-66', what: 'Camp gear renders at the campsite (visible-kit rule).' },
+      ],
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read ' + HANDOFF + ' § Lane A, then .planning/todos/pending/feat-103-job-site-poi.md. Build FEAT-103\'s alpha slice. Own only Lane A\'s files; merge main in before you start.' },
+    { id: 'b', name: 'B — the machine bites back', goal: 'Physics, damage, parts and recovery.',
+      wt: '/Users/ledogen/CodeShit/CarGame-machine', branch: 'feature/machine', port: 3282,
+      owns: 'damage.js, tire.js, recovery.js, parts.js, service*.js, data/parts.js, data/stock-weights.js, physics gates',
+      tasks: [
+        { id: 'FEAT-93', what: 'Hazard punctures — a hard enough rock hit pops a tire at any condition.' },
+        { id: 'FEAT-94', what: 'Driving on a flat wrecks that corner, and the player is told it is flat (no percentage).' },
+        { id: 'FEAT-132', what: 'The stranded motorist posts a haul fetch — wheel + tire ride in the bed.' },
+        { id: 'FEAT-138', what: 'Hi-lift jack — right a rolled truck where it lies. Approved 2026-10-24: 10.5 N·m per kg for up to 3 s, cut at the balance point, 5 s real-time cooldown. Ready to build.' },
+        { id: 'BUG-89/54/92', what: 'Rolled truck slides too far · chassis launched at extreme travel · ABS kick never rumbles the pad.' },
+      ],
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Work ONLY there. Read ' + HANDOFF + ' § Lane B, then feat-93-hazard-punctures-any-condition.md and feat-94-driving-on-a-flat.md. Build FEAT-93 then FEAT-94. Own only Lane B\'s files.' },
+    { id: 'c', name: 'C — content and polish', goal: 'Models, sound, items. Lane A needs the first two models.',
+      wt: '/Users/ledogen/CodeShit/CarGame-content', branch: 'feature/content', port: 3774,
+      owns: 'assets/, wip/, src/*-audio.js, data/items.js rows + thumbnails, items.md, FEAT-120/121',
+      tasks: [
+        { id: 'ASSET-71', what: 'The expedition camp model (Lane A\'s win needs it; no placeholder in the alpha).' },
+        { id: 'ASSET-32', what: 'The uncle\'s van (Lane A\'s opening).' },
+        { id: 'ASSET-69/70/73', what: 'Office, doctor\'s office, school — the placeholders the alpha shows.' },
+        { id: 'FEAT-120', what: 'Sound-effects pass, source by source (dashboard → Sounds is the tracker).' },
+        { id: 'FEAT-121/129', what: 'Item-setup rulings going live (the standing items loop) · favicon.' },
+      ],
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-content, branch feature/content, serve :3774. Work ONLY there. Read ' + HANDOFF + ' § Lane C. Model ASSET-71 (the expedition camp) per .planning/research/ASSETS.md and ART-STYLE.md, then ASSET-32. Own only Lane C\'s files.' },
+    { id: 's', name: 'Spare — front of mind', goal: 'Whatever you surface; the alpha bugs nobody else owns.',
+      wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
+      owns: 'whatever the task touches — say so to the lane that owns it',
+      tasks: [
+        { id: 'BUG-90', what: 'Occasional bad dips in the road surface.' },
+        { id: 'BUG-77 · FEAT-77', what: 'The two known red gates — tunnel spans and road clearance.' },
+        { id: 'FEAT-133/136', what: 'Controller finish — pad on the map and cards; cross-browser pads.' },
+        { id: 'FEAT-141', what: 'Papers, "any N against a deadline" — every customer deliverable from the start; the plotter\'s shortest N-route × 1.5 is the deadline, the GPS draws it; the round ends at N or expires; "bell" leaves code and docs. (major)' },
+        { id: 'FEAT-142', what: 'Giver traits — a TRAITS table, 0–2 per offer from its own seeded stream, bottom-left of the card; each moves the quoted pay and terms at accept and settle (Off the books: no deed; The right thing to do: +½ at C+). Nothing in code yet. Open: Wholesale on freight. (minor)' },
+        { id: 'FEAT-42', what: 'Saves — suspend and resume, late in the alpha.' },
+        { id: 'FEAT-69', what: 'The economy re-cut, once Lane A gives a run that can finish.' },
+      ],
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-spare, branch feature/spare, serve :3885. Work ONLY there. Read ' + HANDOFF + ' § Spare. Ask the owner what is front of mind; default to BUG-90.' },
+  ]
+  const OWED = [
+    'FEAT-138 hi-lift: its likelihood tier on the shelf (data/stock-weights.js). The torque is approved.',
+    'Q-6 on the review page: a courier countdown with digits — recommended against (SM-INV-3); unruled.',
+    'FEAT-146/147: the win and towel card wording, how the firing is shown (card or staged scene), and the FEAT-148 lines — yours to write.',
+  ]
+  const STATES = ['todo', 'doing', 'done', 'blocked']
+  const state = { tasks: {}, lanes: {} }
+  let db = null, canWrite = true
+  const el = (id) => document.getElementById(id)
+  const tid = (l, t) => `${l.id}-${t.id.replace(/[^A-Za-z0-9]+/g, '_')}`
+
+  el('board').innerHTML = LANES.map(l => `<section class="lane${l.critical ? ' critical' : ''}" id="lane-${l.id}">
+    <h3>${esc(l.name)}</h3>
+    <p class="goal">${esc(l.goal)}</p>
+    <div class="meta"><span>worktree</span><span><code>${esc(l.wt)}</code></span><span>branch</span><span><code>${esc(l.branch)}</code></span>
+      <span>serve</span><span><a href="http://localhost:${l.port}">localhost:${l.port}</a></span><span>owns</span><span>${esc(l.owns)}</span></div>
+    <div class="agent"><label for="agent-${l.id}">agent</label><input id="agent-${l.id}" data-lane="${l.id}" placeholder="session name, e.g. cargame-5a"></div>
+    <ul class="tasks">${l.tasks.map(t => { const id = tid(l, t); return `<li class="task" id="task-${id}">
+      <button class="st" data-task="${id}" id="st-${id}">todo</button>
+      <div class="what"><span class="id">${esc(t.id)}</span>${esc(t.what)}</div>
+      <textarea id="note-${id}" data-task="${id}" placeholder="note"></textarea></li>` }).join('')}</ul>
+    <details><summary>resume prompt</summary><div class="prompt" id="prompt-${l.id}">${esc(l.prompt)}<button data-copy="prompt-${l.id}">copy</button></div></details>
+    <div class="saved" id="saved-${l.id}"></div>
+  </section>`).join('')
+  el('owed').innerHTML = OWED.map(o => `<li>${esc(o)}</li>`).join('')
+
+  function paint () {
+    const counts = { todo: 0, doing: 0, done: 0, blocked: 0 }
+    for (const l of LANES) {
+      const li = el('agent-' + l.id), a = state.lanes[l.id]?.agent ?? ''
+      if (document.activeElement !== li && li.value !== a) li.value = a
+      li.disabled = !canWrite
+      for (const t of l.tasks) {
+        const id = tid(l, t), s = state.tasks[id] || {}, st = STATES.includes(s.status) ? s.status : 'todo'
+        counts[st]++
+        const b = el('st-' + id); b.textContent = st; b.className = 'st ' + st; b.disabled = !canWrite
+        el('task-' + id).classList.toggle('done', st === 'done')
+        const ta = el('note-' + id)
+        if (document.activeElement !== ta && (s.note ?? '') !== ta.value) ta.value = s.note ?? ''
+        ta.disabled = !canWrite
+      }
+    }
+    for (const k of STATES) el('n-' + k).textContent = counts[k]
+  }
+  paint()
+
+  const timers = {}
+  async function save (coll, id, laneId, patch) {
+    const bag = coll === 'tasks' ? state.tasks : state.lanes
+    bag[id] = { ...(bag[id] || {}), ...patch }
+    paint()
+    if (!db) return
+    const out = el('saved-' + laneId)
+    out.textContent = 'saving…'
+    try {
+      await db.doc(`${coll}/${id}`).set({ ...bag[id], at: new Date().toISOString() })
+      out.textContent = 'saved'
+    } catch (e) {
+      out.textContent = e?.code === 'invalid_argument' ? 'read-only here' : 'not saved — ' + (e?.code || 'error')
+      if (e?.code === 'invalid_argument') { canWrite = false; paint() }
+    }
+  }
+  const laneOf = (taskId) => taskId.split('-')[0]
+  document.addEventListener('click', (e) => {
+    const c = e.target.closest('button[data-copy]')
+    if (c) {
+      const text = el(c.dataset.copy).childNodes[0].textContent
+      navigator.clipboard?.writeText(text).then(() => { c.textContent = 'copied'; setTimeout(() => { c.textContent = 'copy' }, 1200) })
+        .catch(() => { const r = document.createRange(); r.selectNodeContents(el(c.dataset.copy)); getSelection().removeAllRanges(); getSelection().addRange(r) })
+      return
+    }
+    const b = e.target.closest('button[data-task]')
+    if (!b || !canWrite) return
+    const id = b.dataset.task, cur = state.tasks[id]?.status ?? 'todo'
+    save('tasks', id, laneOf(id), { status: STATES[(STATES.indexOf(cur) + 1) % STATES.length] })
+  })
+  document.addEventListener('input', (e) => {
+    const ta = e.target.closest('textarea[data-task]')
+    if (ta) { const id = ta.dataset.task; clearTimeout(timers[id]); timers[id] = setTimeout(() => save('tasks', id, laneOf(id), { note: ta.value }), 600); return }
+    const ag = e.target.closest('input[data-lane]')
+    if (ag) { const id = ag.dataset.lane; clearTimeout(timers['L' + id]); timers['L' + id] = setTimeout(() => save('lanes', id, id, { agent: ag.value }), 600) }
+  })
+  ;(async () => {
+    const use = window.claude?.use
+    db = use ? await use('db') : null
+    if (!db) { el('state').textContent = 'no store in this view — changes will not persist'; return }
+    const user = await use('user')
+    const w = await user?.can?.('data.write')
+    if (w === false) { canWrite = false; paint() }
+    el('state').textContent = canWrite ? 'changes save to the page' : 'read-only view'
+    const onErr = (err) => { el('state').textContent = 'store error: ' + (err?.code || 'unknown') }
+    db.collection('tasks').onSnapshot((snap) => { for (const d of snap.docs) { const x = d.data() || {}; state.tasks[d.id] = { status: x.status ?? 'todo', note: x.note ?? '' } } paint() }, onErr)
+    db.collection('lanes').onSnapshot((snap) => { for (const d of snap.docs) { const x = d.data() || {}; state.lanes[d.id] = { agent: x.agent ?? '' } } paint() }, onErr)
+  })()
+})()
+</script>
