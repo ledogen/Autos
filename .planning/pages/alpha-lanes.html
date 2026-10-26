@@ -60,6 +60,22 @@
   .prompt { font-family: var(--mono); font-size: 12px; background: var(--chip); padding: 8px 10px; border-radius: 3px; margin-top: 10px; white-space: pre-wrap; overflow-wrap: anywhere; position: relative; }
   .prompt button { position: absolute; top: 6px; right: 6px; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; border-radius: 3px; }
   details summary { cursor: pointer; font-family: var(--mono); font-size: 12px; color: var(--dim); margin-top: 8px; }
+  /* The orchestrator's inbox: the owner types items here; the orchestrator drains them on wake. */
+  .orch { background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--money); padding: 14px 16px 12px; margin-bottom: 22px; }
+  .orch h3 { font-family: var(--mono); font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .orch .add { display: flex; gap: 8px; margin: 10px 0 8px; }
+  .orch textarea { flex: 1; min-height: 44px; font-family: var(--sans); font-size: 14px; padding: 6px 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); resize: vertical; border-radius: 3px; }
+  .orch button.go { font-family: var(--mono); font-size: 12px; padding: 0 14px; border: 1px solid var(--money); background: var(--money); color: #fff; cursor: pointer; border-radius: 3px; }
+  .orch button.go:disabled { opacity: .5; cursor: default; }
+  .inbox { list-style: none; margin: 0; padding: 0; }
+  .inbox li { display: grid; grid-template-columns: 76px 1fr; gap: 4px 10px; padding: 7px 0; border-top: 1px solid var(--line); align-items: start; }
+  .inbox .chip { font-family: var(--mono); font-size: 11px; letter-spacing: .5px; text-transform: uppercase; text-align: center; padding: 4px 0; border-radius: 3px; background: var(--chip); color: var(--dim); }
+  .inbox .chip.new { background: var(--warn); color: #fff; } .inbox .chip.done { background: var(--money); color: #fff; }
+  .inbox .chip.ticket { background: var(--key); color: #fff; } .inbox .chip.question { background: var(--bad); color: #fff; }
+  .inbox .text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .inbox .reply { color: var(--dim); font-size: 13px; margin: 2px 0 0; white-space: pre-wrap; }
+  .inbox .when { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .inbox button.x { grid-column: 1; font-family: var(--mono); font-size: 10.5px; padding: 2px 0; border: 1px solid var(--line); background: transparent; color: var(--dim); cursor: pointer; border-radius: 3px; }
   @media (prefers-reduced-motion: no-preference) { .task button.st { transition: background .15s, color .15s; } }
 </style>
 <main>
@@ -73,6 +89,16 @@
     <span>todo <b id="n-todo">0</b></span>
     <span class="state" id="state">connecting to the store…</span>
   </div>
+  <section class="orch" id="orch">
+    <h3>Orchestrator — the inbox</h3>
+    <p class="goal">Type a feedback item, a bug, a ruling, a question — one per entry, whenever it occurs to you. The orchestrator drains the list on wake and answers each in place: <b>done</b> (with the hash), <b>ticket</b> (id and lane) or <b>question</b> (what it needs from you).</p>
+    <div class="meta"><span>window</span><span><code>CarGame  :8000</code> — the main checkout, branch <code>main</code>, <a href="http://localhost:8000">localhost:8000</a>, <a href="http://localhost:8010">dashboard</a></span>
+      <span>resume</span><span>after a /clear type <code>orchestrator</code> — it reads its standing handoff and drains this inbox; it keeps no state of its own</span></div>
+    <div class="add"><textarea id="in-text" placeholder="new item…"></textarea><button class="go" id="in-add">add</button></div>
+    <ul class="inbox" id="inbox"></ul>
+    <details id="in-done-wrap"><summary id="in-done-sum">handled</summary><ul class="inbox" id="inbox-done"></ul></details>
+    <div class="saved" id="saved-orch"></div>
+  </section>
   <div class="board" id="board"></div>
   <h2>Owner rulings owed</h2>
   <div class="owed"><ul id="owed"></ul></div>
@@ -99,6 +125,8 @@
         { id: 'FEAT-147', what: 'Opening + tutorial — the firing, the uncle, first-day prompts; FEAT-148\'s flavor-line plumbing rides along (the owner writes the words).' },
         { id: 'FEAT-128', what: 'Truck shuts off at camp.' },
         { id: 'FEAT-66', what: 'Camp gear renders at the campsite (visible-kit rule).' },
+        { id: 'BUG-95', what: 'Z while already parked shows "park to…" instead of opening the camp card — make the arm count as the pull (owner 10-26).' },
+        { id: 'FEAT-151', what: 'Tiredness is not dangerous enough — blinks more often at every stage, longer dozes when tired/exhausted; proposed numbers in the ticket (owner 10-26).' },
       ],
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read ' + HANDOFF + ' § Lane A, then this page\'s Lane A handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/a.handoff here.' },
     { id: 'b', name: 'B — the machine bites back', goal: 'Physics, damage, parts and recovery.',
@@ -125,6 +153,9 @@
         { id: 'FEAT-149', what: 'Knockable lawn ornaments — gnome, beach ball, flamingo become debris bodies on contact and roll away; the fire pit and the rest stay solid. (owner 10-25)' },
         { id: 'ASSET-76', what: 'Fire pit re-export at 1.2× (owner 10-25: "20% bigger"); registry box to match.' },
         { id: 'FEAT-120 ↳', what: 'Ratchet strap click (freight accept) + release (job end) — the owner records these; the entries are in the ticket.' },
+        { id: 'FEAT-120 ↳', what: 'Pump register → a cash-register cha-ching, not the ding (owner 10-26); entry in the ticket.' },
+        { id: 'BUG-94', what: 'Moon halo rings the UNLIT limb, outlining the phase mask — gate the glow by the terminator, not a bigger mask (owner 10-26).' },
+        { id: 'BUG-96', what: 'Distant-tree billboards mirror-flip at some headings (the sun-side U flip) and read badly at low sun — three options in the ticket (owner 10-26).' },
       ],
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-content, branch feature/content, serve :3774. Work ONLY there. Read ' + HANDOFF + ' § Lane C, then this page\'s Lane C handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/c.handoff here.' },
     { id: 's', name: 'Spare — front of mind', goal: 'Whatever you surface; the alpha bugs nobody else owns.',
@@ -149,7 +180,7 @@
     'FEAT-146/147: the win and towel card wording, how the firing is shown (card or staged scene), and the FEAT-148 lines — yours to write.',
   ]
   const STATES = ['todo', 'doing', 'done', 'blocked']
-  const state = { tasks: {}, lanes: {} }
+  const state = { tasks: {}, lanes: {}, inbox: {} }
   let db = null, canWrite = true
   const el = (id) => document.getElementById(id)
   const tid = (l, t) => `${l.id}-${t.id.replace(/[^A-Za-z0-9]+/g, '_')}`
@@ -186,6 +217,17 @@
       }
     }
     for (const k of STATES) el('n-' + k).textContent = counts[k]
+    // The inbox: new items first (oldest at the top, the order they were written), handled ones folded.
+    const items = Object.entries(state.inbox).map(([id, x]) => ({ id, ...x })).sort((a, b) => (a.at || '').localeCompare(b.at || ''))
+    const when = (x) => x.at ? new Date(x.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+    const row = (x) => `<li id="in-${x.id}"><span class="chip ${esc(x.status || 'new')}">${esc(x.status || 'new')}</span>
+      <div class="text">${esc(x.text || '')}${x.reply ? `<p class="reply">${esc(x.reply)}</p>` : ''}<div class="when">${esc(when(x))}${x.handledAt ? ' → ' + esc(when({ at: x.handledAt })) : ''}</div></div>
+      ${canWrite ? `<button class="x" data-del="${x.id}">remove</button>` : ''}</li>`
+    const fresh = items.filter(x => !x.status || x.status === 'new'), done = items.filter(x => x.status && x.status !== 'new').reverse()
+    el('inbox').innerHTML = fresh.length ? fresh.map(row).join('') : '<li><span class="chip">—</span><div class="text" style="color:var(--dim)">nothing waiting</div></li>'
+    el('inbox-done').innerHTML = done.map(row).join('')
+    el('in-done-sum').textContent = `handled (${done.length})`
+    el('in-add').disabled = !canWrite
   }
   paint()
 
@@ -206,7 +248,26 @@
     }
   }
   const laneOf = (taskId) => taskId.split('-')[0]
+  async function addItem () {
+    const ta = el('in-text'), text = ta.value.trim()
+    if (!text || !canWrite) return
+    const id = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14) + '-' + Math.random().toString(36).slice(2, 6)
+    const doc = { text, at: new Date().toISOString(), status: 'new' }
+    state.inbox[id] = doc; ta.value = ''; paint()
+    if (!db) return
+    const out = el('saved-orch'); out.textContent = 'saving…'
+    try { await db.doc('inbox/' + id).set(doc); out.textContent = 'saved' } catch (e) { out.textContent = 'not saved — ' + (e?.code || 'error') }
+  }
+  el('in-add').addEventListener('click', addItem)
+  el('in-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addItem() } })
   document.addEventListener('click', (e) => {
+    const d = e.target.closest('button[data-del]')
+    if (d && canWrite) {
+      const id = d.dataset.del
+      delete state.inbox[id]; paint()
+      db?.doc('inbox/' + id).delete().catch(() => {})
+      return
+    }
     const c = e.target.closest('button[data-copy]')
     if (c) {
       const text = el(c.dataset.copy).childNodes[0].textContent
@@ -234,6 +295,7 @@
     const onErr = (err) => { el('state').textContent = 'store error: ' + (err?.code || 'unknown') }
     db.collection('tasks').onSnapshot((snap) => { for (const d of snap.docs) { const x = d.data() || {}; state.tasks[d.id] = { status: x.status ?? 'todo', note: x.note ?? '' } } paint() }, onErr)
     db.collection('lanes').onSnapshot((snap) => { for (const d of snap.docs) { const x = d.data() || {}; state.lanes[d.id] = { handoff: typeof x.handoff === 'string' ? x.handoff : '' } } paint() }, onErr)
+    db.collection('inbox').onSnapshot((snap) => { state.inbox = {}; for (const d of snap.docs) { const x = d.data() || {}; state.inbox[d.id] = { text: String(x.text ?? ''), at: x.at, status: x.status, reply: x.reply, handledAt: x.handledAt } } paint() }, onErr)
   })()
 })()
 </script>

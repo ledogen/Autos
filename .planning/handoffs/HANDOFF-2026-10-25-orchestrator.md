@@ -12,6 +12,18 @@ code and platform terms inline, never physics, maths, git or design.
 
 ## What the owner will do next
 
+**Resume word: `orchestrator`.** This session keeps no state of its own: read this file, then the tracker page's
+db, then act. Window title `CarGame  :8000` (the main checkout; `title.sh` labels it from the directory, so a /clear
+does not lose it).
+
+**On wake, first:** `ArtifactData list` on the page (url below) — collection `lanes` (each lane's `handoff`, written
+before its /clear), `tasks` (status/note per row), and **`inbox`**: the owner types feedback items into the page's
+Orchestrator card (since 2026-10-26) instead of pasting a list. Give the owner a four-line board summary, then drain
+the inbox: each `inbox/<id>` doc is `{text, at, status:'new'}`; handle it exactly like a pasted item (below) and
+`update` the doc with `{status: 'done'|'ticket'|'question', reply: '<one line: hash / id + lane / the question>',
+handledAt: <ISO>}`. The owner reads the replies on the page; "remove" there deletes a doc. A pasted list in chat still
+works the same way — the inbox is the asynchronous path (plane, phone).
+
 They will paste a list of feedback items, some small, some not. For each item, in order:
 
 1. **Can it just be done?** A wording change, a CSS line, a number, a doc fix, a one-function change that no
