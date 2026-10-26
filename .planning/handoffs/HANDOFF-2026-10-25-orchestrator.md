@@ -44,7 +44,7 @@ Spare lane's session** in CarGame-spare, since 2026-10-25. Nothing else edits ma
 
 **2026-10-25, first triage done (7d619063):** menu cursor wakes on open, footer hint, menu lens shift, courier /
 item-reward leg floors (POI_LEG_MIN for strict wishes too; BONUS_LEG_MIN_M 1.5 km), the second scenario
-`ranger-hollow` (owner still owes its name), strap click/release sound entries; tickets FEAT-149 (C), FEAT-150 (B),
+`ranger-descent-2` "descent 2" (named 10-26; 1.5 km item floor confirmed), strap click/release sound entries; tickets FEAT-149 (C), FEAT-150 (B),
 BUG-93 (Spare), ASSET-76 (C); BUG-81 and FEAT-42 raised to major and moved up in Spare. Unreproduced: the owner's
 "inventory thumbnails are text now" — all 55 load in the real page on :8000; ask for the URL and a reload.
 
