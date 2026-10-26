@@ -205,8 +205,12 @@ status: shipped · group: story · play: pump-audio.js playShutoff
 FEAT-50. Tank full or wallet reached: a hard double clack, two highpassed noise bursts 45 ms apart.
 
 ### Pump register (sale final)
-status: shipped · group: story · play: pump-audio.js playRegister
+status: todo · group: story · play: pump-audio.js playRegister
 FEAT-50. Handbrake down: a mechanical ka-chunk (low thunk + two noise bursts) then a bright till ding.
+**Redo (owner, 2026-10-26): it should be a cash-register cha-ching** — the drawer-bell ring (two
+struck partials, ~2.4 and ~3.2 kHz, 0.4 s) with the drawer sliding open and hitting its stop
+underneath, not the current single ding. Synthesize or library (CC0); keep the `playRegister` entry
+point and the handbrake-down trigger.
 
 ### Low-fuel sputter
 status: shipped · group: truck · play: engine-audio.js playSputterPop
