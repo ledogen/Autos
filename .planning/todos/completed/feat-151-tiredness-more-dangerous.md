@@ -1,7 +1,7 @@
 ---
 id: FEAT-151
 type: feature
-status: open
+status: done
 severity: minor
 opened: 2026-10-26
 source: owner, 2026-10-26 — "Being tired in general is not dangerous enough. All three levels need more frequent interruptions and the latter ones need to increase duration as well."
@@ -38,3 +38,12 @@ n = 1 is not calibration: state the numbers you shipped and why in the ticket's 
 - [ ] Tired and exhausted dozes are longer; sleepy's blink stays harmless (no control loss).
 - [ ] Sleep-debt and recovery arithmetic unchanged (day.js header contract).
 - [ ] DESIGN.md's sleep section updated if it states the cadence.
+
+## Resolution (2026-10-26)
+Shipped the proposal table as the `DAY_PARAMS` defaults in src/day.js. The owner drove it and approved.
+At 1 in-game hour ≈ 1 real minute, the mean gap between blinks is ~30 s sleepy, ~20 s tired and
+~12 s exhausted (all were ~60 s). Dozes hold 300–900 ms when tired and 700–1600 ms when exhausted.
+Thresholds, the sleepy blink, steer scaling and the sleep-debt arithmetic are untouched;
+`test/day-clock.mjs` passes. DESIGN.md's sleep section states no cadence, so it is unchanged.
+The ticket said GUI sliders exist for these knobs; they don't (DAY_PARAMS has none). Tuning stays
+by editing day.js.
