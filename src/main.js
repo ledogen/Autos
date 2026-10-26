@@ -8033,7 +8033,7 @@ function loop () {
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
     // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
-    const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
+    const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
     damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
