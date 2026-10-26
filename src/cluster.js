@@ -100,6 +100,7 @@ export class GaugeCluster {
     // are the values before the first frame: fuel at fuelStartFrac's 0.62, a cold engine at C.
     this._fuelFrac = 0.62
     this._lowFuel = false
+    this._flat = false
     this._tempFrac = 0
     this._fuelShown = 0      // sweep up from rest on load, like a key-on
     this._tempShown = 0
@@ -140,6 +141,9 @@ export class GaugeCluster {
 
   /** FEAT-50: the low-fuel lamp's sender — true below the warning level. Lit only with the key on. */
   setLowFuel (on) { this._lowFuel = !!on }
+
+  /** FEAT-94: the tire-pressure lamp's sender — true while any tire is flat. Lit only with the key on. */
+  setFlat (on) { this._flat = !!on }
 
   /** 0 = C, 1 = H (FEAT-51: C = 90 °C, mid = 100 °C, H = 110 °C on the stock thermostat). */
   setCoolantTemp (frac) { this._tempFrac = Math.max(0, Math.min(1, frac)) }
@@ -193,10 +197,11 @@ export class GaugeCluster {
     const d = this._drawn
     if (d.speed === this._speedMph && d.rpm === this._rpm && d.temp === this._tempShown
         && d.fuel === this._fuelShown && d.odo === this._odoMiles
-        && d.key === this._keyAngle && d.keyPos === this._keyPos && d.low === this._lowLit() && d.gear === this._gear) return
+        && d.key === this._keyAngle && d.keyPos === this._keyPos && d.low === this._lowLit() && d.flat === this._flatLit() && d.gear === this._gear) return
     d.speed = this._speedMph; d.rpm = this._rpm; d.temp = this._tempShown
     d.fuel = this._fuelShown; d.odo = this._odoMiles; d.key = this._keyAngle; d.keyPos = this._keyPos
     d.low = this._lowLit()
+    d.flat = this._flatLit()
     d.gear = this._gear
 
     const ctx = this._ctx
@@ -205,6 +210,7 @@ export class GaugeCluster {
     this._drawOdometer(ctx)
     this._drawNeedle(ctx, TEMP, this._tempShown, 22, 2)
     this._drawLowFuelLamp(ctx)
+    this._drawFlatLamp(ctx)
     this._drawGear(ctx)
     this._drawNeedle(ctx, FUEL, this._fuelShown, 22, 2)
     this._drawNeedle(ctx, TACH, this._rpm / (this._tachMax * 1000), 48, 3)
@@ -562,6 +568,30 @@ export class GaugeCluster {
     } else {
       ctx.fillStyle = '#3a2410'   // the unlit lens: just enough to see there is a lamp there
     }
+    ctx.fill()
+    ctx.restore()
+  }
+
+  // FEAT-94: the TIRE PRESSURE lamp — the standard symbol (a tire's cross-section, open at the top,
+  // with a "!" in it) in the speedo face above MPH, mirroring the gear in the tach. A state, never a
+  // number (SM-INV-10): it says a tire is flat, not which one or how much — the pop and the pull
+  // already say which. Under the needle, which is drawn after it.
+  _flatLit () { return this._flat && this._keyPos !== 'off' }
+  _drawFlatLamp (ctx) {
+    const x = SPEEDO.cx, y = SPEEDO.cy + 20, r = 7
+    const lit = this._flatLit()
+    ctx.save()
+    if (lit) { ctx.shadowColor = 'rgba(255,150,30,0.9)'; ctx.shadowBlur = 7 }
+    ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_ORANGE : '#3a2410'
+    ctx.lineWidth = 1.8
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.arc(x, y, r, -60 * DEG, 240 * DEG)   // clockwise round the bottom: open at the top
+    ctx.moveTo(x, y - 4)
+    ctx.lineTo(x, y + 1)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(x, y + 3.6, 1, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
   }

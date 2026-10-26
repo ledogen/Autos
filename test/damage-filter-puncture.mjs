@@ -182,5 +182,37 @@ console.log('\n§4 what a flat actually does')
   ok(e.flat[2] === false && e.get('tireRL') === 1, 'fitting a new tire clears both the flat and the wear')
 }
 
+console.log('\n§5 driving on a flat (FEAT-94): the tire shreds first, then that side panel')
+{
+  // Straight-line cruise on one flat: velocity alone drives this track, nothing else in the state.
+  const cruise = (d, kmh, km) => {
+    const v = kmh / 3.6, vs = { velocity: { x: v, y: 0, z: 0 } }
+    for (let i = 0; i < km * 1000 / v / DT; i++) d.step(vs, P, DT)
+  }
+  const flatFL = () => { const d = fresh(); d.setAll(1); d.flat[0] = true; return d }
+  const others = ['armorRight', 'armorFront', 'armorRear', 'springFront', 'springRear', 'damperFront', 'damperRear',
+    'wheelFL', 'wheelFR', 'wheelRL', 'wheelRR', 'tireFR', 'tireRL', 'tireRR']
+
+  const d = flatFL(); cruise(d, 50, 1.9)
+  ok(d.get('tireFL') > 0 && d.get('armorLeft') === 1, `1.9 km at 50 km/h: the tire is going (${(d.get('tireFL') * 100).toFixed(0)}%), the body untouched — no damage the instant it pops`)
+  cruise(d, 50, 0.2)
+  ok(d.get('tireFL') === 0, '2 km shreds it')
+  cruise(d, 50, 3.9)
+  ok(d.get('armorLeft') > 0 && d.get('armorLeft') < 0.1, `then 4 km takes the left panel nearly to 0 (${(d.get('armorLeft') * 100).toFixed(1)}%)...`)
+  cruise(d, 50, 0.2)
+  ok(d.get('armorLeft') === 0, '...and past it, to 0')
+  ok(others.every(id => d.get(id) === 1), 'springs, dampers, rims, the other tires and the other panels lose nothing')
+
+  const r = fresh(); r.setAll(1); r.flat[3] = true; r.set('tireRR', 0); cruise(r, 50, 1)
+  ok(r.get('armorRight') < 1 && r.get('armorLeft') === 1, 'a right-side flat beats up the RIGHT panel')
+
+  const slow = flatFL(); cruise(slow, 25, 2)
+  ok(Math.abs(slow.get('tireFL') - 0.5) < 0.02, `the same 2 km at 25 km/h costs half (tire at ${(slow.get('tireFL') * 100).toFixed(0)}%) — limping is a real option`)
+
+  const parked = flatFL()
+  for (let i = 0; i < 600 / DT; i++) parked.step({ velocity: { x: 0, y: 0, z: 0 } }, P, DT)
+  ok(parked.get('tireFL') === 1 && parked.get('armorLeft') === 1, 'ten minutes parked on a flat costs nothing')
+}
+
 console.log(fail ? '\nFAIL — the filter/puncture model has drifted' : '\nPASS — the filter clogs on airflow and punctures need a worn tire and a hard hit')
 process.exit(fail)

@@ -530,6 +530,15 @@ export const DAMAGE_PARAMS = {
   // all and the wheel would sink through the road.
   tireFlatRate:    0.05,     // x stock tire spring rate when flat
   tireFlatMu:      0.70,     // x grip when flat — the owner's 30% loss
+  // FEAT-94 (owner, 2026-10-26): driving on a flat shreds the TIRE first, then the flapping carcass
+  // beats up that side's body panel. Springs, dampers and the rim get nothing extra — a flat rides
+  // like a very bumpy road, and the rim already takes its strikes through the 5% carcass. The tire's
+  // own condition is the run-down bar before the body is touched, so the damage never starts the
+  // instant it pops. Both are v^2 x dt (SM-INV-5: intensity x time, not distance), so per km the
+  // cost goes as speed and limping slowly is a real option. Anchors at 50 km/h (13.9 m/s, v^2 = 193):
+  // 2 km shreds a new tire, 4 more km takes the side panel 100% -> 0. Starting values, tune by feel.
+  durFlatTire:  27800,       // m^2/s — integral of v^2 dt that takes a flat tire 100% -> 0
+  durFlatArmor: 55600,       // m^2/s — same, the side panel, once the tire is at 0
 
   // ── Live tuning multipliers ────────────────────────────────────────────────────────────────
   // Per-class wear SPEED, 1 = the calibrated rate above. These exist so wear can be tuned by feel
@@ -1282,6 +1291,17 @@ export class DamageModel {
         const f = Math.abs(tireFlat?.[i] || 0)
         if (v <= 0 && f <= 0) continue
         this.wear(TIRE_IDS[i], (v + P.tireWCorner * f) * dt, P.durTire)
+      }
+    }
+
+    // ── Driving on a flat (FEAT-94): tire first, then the side panel — see durFlatTire ─────────
+    const vel = vehicleState.velocity
+    const v2 = vel ? vel.x * vel.x + vel.y * vel.y + vel.z * vel.z : 0
+    if (v2 > 0) {
+      for (let i = 0; i < 4; i++) {
+        if (!this.flat[i]) continue
+        if (this.get(TIRE_IDS[i]) > 0) this.wear(TIRE_IDS[i], v2 * dt, P.durFlatTire)
+        else this.wear(i % 2 ? 'armorRight' : 'armorLeft', v2 * dt, P.durFlatArmor)
       }
     }
 
