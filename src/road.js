@@ -7486,12 +7486,9 @@ export class RoadSystem {
             // the legs' grades so it matches the ribbons at the weld). Run surface unchanged off connectors.
             const domGrade = cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY
             cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: domGrade }
-            // On-ribbon decal (clearance) edge: where a run overlaps the connector, keep the RUN's edge
-            // (latDist = run lat) rather than min(run,connector). The connector centreline is inset from
-            // the run near the node, so min() would move the decal dropoff to run-lat ~5.6 — a ~0.15 m
-            // step in the "flat" band the shoulder-lateral gate tolerances tightly, offset from the real
-            // road edge. Only where there is NO run (the bend-outside void) does the connector's own edge
-            // (co.lat) govern its decal.
+            // latDist stays the RUN's lateral (the run ribbon's edge + the POI-pad gate below); the
+            // connector strip's own edge is tested separately by the decal branch (BUG-90). Only where
+            // there is NO run (the bend-outside void) does the connector's own edge stand in for it.
             if (!nr) { latDist = co.lat; arcSEff = co.arcS; runKey = '' }
         }
 
@@ -7522,6 +7519,7 @@ export class RoadSystem {
         // (QUAL-07 mesh == collision); the merged dirt `cs2.gradeY` is the surface only where no
         // asphalt is drawn.
         let gradeY = cs2.gradeY
+        const onRun = nr && latDist < halfWidth && this._leafEndDist(runKey, arcSEff) >= 0
         if (cs2.padTopY != null) {
             // ── On-PAD (inside the junction ring) ── road-mesh.js buildJunctionFootprint puts every
             // pad vertex at `_nodeSurfaceTop(node,x,z) + apronLift`, which is exactly padTopY. So the
@@ -7540,7 +7538,7 @@ export class RoadSystem {
             // has that identical step there. No potholes either: potholes are an on-ribbon-only
             // physics-side micro-noise (D-03) and the pad geometry is smooth.
             gradeY = cs2.padTopY
-        } else if (nr && latDist < halfWidth && this._leafEndDist(runKey, arcSEff) >= 0) {
+        } else if (onRun || (co && co.lat < halfWidth)) {
             // ── On-RIBBON ── ride the asphalt decal: the LEG cross-section's own design top
             // (cs.gradeY + clearanceMargin) — the same field the ribbon mesh vertices ride
             // (sampleRoadTopY) — plus the SURF-06 pothole micro-noise (D-03, physics-only).
@@ -7553,8 +7551,13 @@ export class RoadSystem {
             // the run's last vertex, so there is no asphalt to ride out on the dangling-end cap.
             // Without the gate physics floated clearanceMargin above the drawn dirt for the whole
             // cap (lat ≈ 0 straight off the end), the one place mesh == collision was breaking there.
+            // BUG-90: OR on the deg-2 connector strip (_buildDeg2Ribbon sweeps ±halfWidth along the
+            // arc, Y = sampleRoadTopY). Its fillet cuts the inside of the bend past both runs' edges;
+            // testing only the run's lat dropped the wheel clearanceMargin into the dirt there while it
+            // visibly drove on asphalt — a 0.15 m sink, then a lip back up onto the next leg's ribbon.
+            // Potholes stay run-ribbon only: the strip is drawn smooth.
             gradeY = (cs ? cs.gradeY : cs2.gradeY) + clearanceMargin
-            if (p.potholeEnabled) {
+            if (onRun && p.potholeEnabled) {
                 const rq = roadQuality(arcSEff, runKey, this._worldSeed)
                 gradeY += potholeNoise(wx, wz, rq, p)
             }

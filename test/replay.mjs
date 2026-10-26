@@ -23,7 +23,11 @@ import { sampleRegion, HARD_RADIUS_FLOOR_M } from './lib/road-headless.mjs'
 import { WaterSystem } from '../src/water.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
-const path = process.argv[2]
+const path = process.argv.slice(2).find(a => !a.startsWith('--'))
+// --surface-changed: a fix moved the road surface on purpose, so an OLD event capture's rd_gh no longer
+// matches. The terrain self-check then reports instead of aborting, and the recorded inputs replay on
+// the CURRENT surface — the before/after proof for a surface fix (BUG-90).
+const surfaceChanged = process.argv.includes('--surface-changed')
 if (!path) { console.error('usage: node test/replay.mjs <capture.json>'); process.exit(2) }
 
 let capture
@@ -129,7 +133,7 @@ if (capture.kind === 'place') {
 
 } else if (capture.kind === 'event') {
     const { replayEvent } = await import('./lib/physics-replay.mjs')   // lazy: only the event path loads physics+terrain
-    const res = await replayEvent(capture, { THREE })
+    const res = await replayEvent(capture, { THREE, surfaceChanged })
     if (!res.ok) fail = 1
 }
 
